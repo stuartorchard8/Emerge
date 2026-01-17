@@ -1,8 +1,10 @@
 plugins {
     id("buildsrc.convention.kotlin-mpp")
+    alias(libs.plugins.androidLibrary)
 }
 
 kotlin {
+    androidTarget()
     jvm()
     js(IR) { browser() }
 
@@ -20,3 +22,10 @@ kotlin {
     }
 }
 
+android {
+    namespace = "org.emerge.net.loopback"
+    compileSdk = 35
+    defaultConfig {
+        minSdk = 26
+    }
+}

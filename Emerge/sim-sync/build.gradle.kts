@@ -1,8 +1,10 @@
 plugins {
     id("buildsrc.convention.kotlin-mpp")
+    alias(libs.plugins.androidLibrary)
 }
 
 kotlin {
+    androidTarget()
     jvm()
     js(IR) { browser() }
 
@@ -22,3 +24,10 @@ kotlin {
     }
 }
 
+android {
+    namespace = "org.emerge.sim.sync"
+    compileSdk = 35
+    defaultConfig {
+        minSdk = 26
+    }
+}
