@@ -9,8 +9,8 @@ import android.view.View
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import kotlin.concurrent.thread
 import kotlin.math.max
+import kotlin.concurrent.thread
 import org.emerge.net.loopback.Loopback
 import org.emerge.net.tcp.Tcp
 import org.emerge.net.api.Pipe
@@ -22,8 +22,9 @@ import org.emerge.sim.core.physics.PhysicsReducer
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2Fx
 import org.emerge.sim.sync.Codec
-import org.emerge.sim.sync.LockstepClient
-import org.emerge.sim.sync.LockstepHost
+import org.emerge.sim.sync.auth.AuthoritativeClient
+import org.emerge.sim.sync.auth.AuthoritativeHost
+import org.emerge.sim.sync.auth.StateCodec
 
 class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,6 +69,43 @@ private class PhysicsLockstepView(
         }
     }
 
+    private val stateCodec = object : StateCodec<PhysicsState> {
+        override fun encode(state: PhysicsState): ByteArray {
+            // width/height are constant in this demo; still encode for robustness.
+            val w = org.emerge.net.codec.ByteWriter()
+            w.writeInt(state.width.raw)
+            w.writeInt(state.height.raw)
+            w.writeInt(state.bodies.size)
+            for ((pid, body) in state.bodies) {
+                w.writeInt(pid.value)
+                w.writeInt(body.pos.x.raw)
+                w.writeInt(body.pos.y.raw)
+                w.writeInt(body.vel.x.raw)
+                w.writeInt(body.vel.y.raw)
+                w.writeInt(body.radius.raw)
+            }
+            return w.toByteArray()
+        }
+
+        override fun decode(bytes: ByteArray): PhysicsState {
+            val c = org.emerge.net.codec.ByteCursor(bytes)
+            val width = Fx(c.readInt())
+            val height = Fx(c.readInt())
+            val n = c.readInt()
+            val bodies = LinkedHashMap<PlayerId, CircleBody>(n)
+            repeat(n) {
+                val pid = PlayerId(c.readInt())
+                val px = Fx(c.readInt())
+                val py = Fx(c.readInt())
+                val vx = Fx(c.readInt())
+                val vy = Fx(c.readInt())
+                val r = Fx(c.readInt())
+                bodies[pid] = CircleBody(pid, Vec2Fx(px, py), Vec2Fx(vx, vy), r)
+            }
+            return PhysicsState(width = width, height = height, bodies = bodies)
+        }
+    }
+
     // --- Networking wiring ---
     // We support:
     // - loopback: single device demo (host + 2 clients in-process)
@@ -75,77 +113,14 @@ private class PhysicsLockstepView(
     // - join: device joins a host at hostIp:port
 
     private val localPlayerId: PlayerId
-    private val localClientPipe: Pipe
-    private val hostPeers: Map<PlayerId, Pipe>?
+    private val localClientPipe: Pipe?
+    private val host: AuthoritativeHost<PhysicsState, PhysicsInput>?
+    private val client: AuthoritativeClient<PhysicsState, PhysicsInput>?
 
     private val loopbackBotClientPipe: Pipe?
 
     @Volatile
     private var netStatus: String = "net: init"
-
-    init {
-        when (mode) {
-            MainActivity.MODE_HOST -> {
-                localPlayerId = PlayerId(0)
-
-                // Create an in-process pipe pair for local client <-> host
-                val local = Loopback.createPair()
-                localClientPipe = local.first
-                val localHostPipe = local.second
-
-                // Accept one remote TCP client for player 1
-                val listener = Tcp.listen(port = port, backlog = 1)
-                val remote = DelegatingPipe()
-                thread(isDaemon = true, name = "net-accept") {
-                    netStatus = "net: waiting on :$port"
-                    try {
-                        remote.setDelegate(listener.accept())
-                        netStatus = "net: connected"
-                    } catch (t: Throwable) {
-                        netStatus = "net: accept failed: ${t.javaClass.simpleName}"
-                    }
-                }
-
-                hostPeers = mapOf(PlayerId(0) to localHostPipe, PlayerId(1) to remote)
-                loopbackBotClientPipe = null
-            }
-
-            MainActivity.MODE_JOIN -> {
-                localPlayerId = PlayerId(1)
-
-                // IMPORTANT: never connect on the UI thread (will crash with NetworkOnMainThreadException).
-                val remote = DelegatingPipe()
-                localClientPipe = remote
-                thread(isDaemon = true, name = "net-connect") {
-                    netStatus = "net: connecting to $hostIp:$port"
-                    try {
-                        remote.setDelegate(Tcp.connect(host = hostIp, port = port))
-                        netStatus = "net: connected"
-                    } catch (t: Throwable) {
-                        netStatus = "net: connect failed: ${t.javaClass.simpleName}"
-                    }
-                }
-
-                hostPeers = null
-                loopbackBotClientPipe = null
-            }
-
-            else -> {
-                // loopback mode (default)
-                localPlayerId = PlayerId(0)
-                val local = Loopback.createPair()
-                localClientPipe = local.first
-                val localHostPipe = local.second
-
-                val bot = Loopback.createPair()
-                loopbackBotClientPipe = bot.first
-                val botHostPipe = bot.second
-
-                hostPeers = mapOf(PlayerId(0) to localHostPipe, PlayerId(1) to botHostPipe)
-                netStatus = "net: loopback"
-            }
-        }
-    }
 
     private val initial = PhysicsState(
         width = worldW,
@@ -166,34 +141,104 @@ private class PhysicsLockstepView(
         ),
     )
 
-    private val localClient = LockstepClient(
-        playerId = localPlayerId,
-        initialState = initial,
-        reducer = { s, inputs -> reducer.reduce(s, inputs) },
-        inputCodec = inputCodec,
-        pipe = localClientPipe,
-    )
+    init {
+        when (mode) {
+            MainActivity.MODE_HOST -> {
+                localPlayerId = PlayerId(0)
 
-    private val host: LockstepHost<PhysicsState, PhysicsInput>? =
-        hostPeers?.let { peers ->
-            LockstepHost(
-                initialState = initial,
-                reducer = { s, inputs -> reducer.reduce(s, inputs) },
-                inputCodec = inputCodec,
-                peers = peers,
-            )
-        }
+                // Create an in-process pipe pair for local client <-> host
+                localClientPipe = null
+                loopbackBotClientPipe = null
 
-    private val loopbackBotClient: LockstepClient<PhysicsState, PhysicsInput>? =
-        loopbackBotClientPipe?.let { pipe ->
-            LockstepClient(
-                playerId = PlayerId(1),
-                initialState = initial,
-                reducer = { s, inputs -> reducer.reduce(s, inputs) },
-                inputCodec = inputCodec,
-                pipe = pipe,
-            )
+                host = AuthoritativeHost(
+                    initialState = initial,
+                    reducer = { s, inputs -> reducer.reduce(s, inputs) },
+                    inputCodec = inputCodec,
+                    stateCodec = stateCodec,
+                    joinPolicy = { s, pid ->
+                        // Spawn new player at deterministic spot.
+                        val bodies = LinkedHashMap(s.bodies)
+                        val x = 100 + (pid.value * 70)
+                        val y = 250
+                        bodies[pid] = CircleBody(pid, Vec2Fx(Fx.fromInt(x), Fx.fromInt(y)), Vec2Fx(Fx(0), Fx(0)), radius)
+                        s.copy(bodies = bodies)
+                    },
+                )
+
+                // Accept clients continuously
+                thread(isDaemon = true, name = "net-accept-loop") {
+                    try {
+                        netStatus = "net: host listening :$port"
+                        val listener = Tcp.listen(port = port, backlog = 8)
+                        while (true) {
+                            val pipe = listener.accept()
+                            host.acceptClient(pipe)
+                            netStatus = "net: client joined"
+                        }
+                    } catch (t: Throwable) {
+                        netStatus = "net: accept failed: ${t.javaClass.simpleName}"
+                    }
+                }
+
+                client = null
+            }
+
+            MainActivity.MODE_JOIN -> {
+                // placeholder; actual assigned id comes from welcome snapshot.
+                localPlayerId = PlayerId(0)
+                loopbackBotClientPipe = null
+                host = null
+
+                val remote = DelegatingPipe()
+                localClientPipe = remote
+                client = AuthoritativeClient(pipe = remote, inputCodec = inputCodec, stateCodec = stateCodec)
+
+                thread(isDaemon = true, name = "net-connect") {
+                    var attempt = 0
+                    while (true) {
+                        attempt += 1
+                        netStatus = "net: connecting to $hostIp:$port (try $attempt)"
+                        try {
+                            remote.setDelegate(Tcp.connect(host = hostIp, port = port))
+                            netStatus = "net: connected (handshake)"
+                            client.startHandshake()
+                            break
+                        } catch (t: Throwable) {
+                            val msg = t.message?.take(60) ?: ""
+                            netStatus = "net: connect failed: ${t.javaClass.simpleName} $msg"
+                            try {
+                                Thread.sleep(500L)
+                            } catch (_: InterruptedException) {
+                                break
+                            }
+                        }
+                    }
+                }
+            }
+
+            else -> {
+                // loopback mode (default)
+                localPlayerId = PlayerId(0)
+                loopbackBotClientPipe = null
+                localClientPipe = null
+                host = AuthoritativeHost(
+                    initialState = initial,
+                    reducer = { s, inputs -> reducer.reduce(s, inputs) },
+                    inputCodec = inputCodec,
+                    stateCodec = stateCodec,
+                    joinPolicy = { s, pid ->
+                        val bodies = LinkedHashMap(s.bodies)
+                        bodies[pid] = CircleBody(pid, Vec2Fx(Fx.fromInt(400), Fx.fromInt(250)), Vec2Fx(Fx(0), Fx(0)), radius)
+                        s.copy(bodies = bodies)
+                    },
+                )
+                client = null
+                netStatus = "net: host-only (no join)"
+            }
         }
+    }
+
+    // Authoritative mode keeps "state of record" on the host; join clients render the last snapshot.
 
     private val paintBg = Paint().apply { color = Color.rgb(0x11, 0x11, 0x11) }
     private val paintMe = Paint().apply { color = Color.rgb(0x2E, 0x86, 0xAB) }
@@ -207,20 +252,17 @@ private class PhysicsLockstepView(
     private val handler = Handler(Looper.getMainLooper())
     private val tickRunnable = object : Runnable {
         override fun run() {
-            // Local player input from touch
-            localClient.sendLocalInput(currentTouchInput)
-
-            // In loopback mode we simulate a 2nd client locally.
-            loopbackBotClient?.let { botClient ->
-                val t = localClient.tick.value.toInt()
-                val botAx = if ((t / 30) % 2 == 0) 1 else -1
-                val botAy = if ((t / 45) % 2 == 0) 1 else -1
-                botClient.sendLocalInput(PhysicsInput(botAx, botAy))
+            host?.let { h ->
+                // Host always runs immediately
+                h.pollNetwork()
+                h.setLocalInput(PlayerId(0), currentTouchInput)
+                h.step()
             }
 
-            host?.poll()
-            localClient.poll()
-            loopbackBotClient?.poll()
+            client?.let { c ->
+                c.poll()
+                c.sendInput(currentTouchInput)
+            }
 
             invalidate()
             handler.postDelayed(this, 16L)
@@ -243,20 +285,22 @@ private class PhysicsLockstepView(
         super.onDraw(canvas)
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paintBg)
 
-        val state = localClient.state
+        val state = client?.state ?: host?.state ?: initial
         val sx = width.toFloat() / worldW.toIntFloor().toFloat()
         val sy = height.toFloat() / worldH.toIntFloor().toFloat()
         val sr = max(0.1f, (sx + sy) * 0.5f)
 
         for ((pid, body) in state.bodies) {
-            val p = if (pid == localPlayerId) paintMe else paintOther
+            val myId = client?.playerId ?: localPlayerId
+            val p = if (pid == myId) paintMe else paintOther
             val r = body.radius.toIntFloor().toFloat()
             val cx = body.pos.x.toIntFloor().toFloat() * sx
             val cy = body.pos.y.toIntFloor().toFloat() * sy
             canvas.drawCircle(cx, cy, r * sr, p)
         }
 
-        canvas.drawText("mode=$mode tick=${localClient.tick.value}", 16f, 40f, paintHud)
+        val tick = client?.tick?.value ?: host?.tick?.value ?: 0L
+        canvas.drawText("mode=$mode tick=$tick", 16f, 40f, paintHud)
         canvas.drawText(netStatus, 16f, 80f, paintHud)
     }
 

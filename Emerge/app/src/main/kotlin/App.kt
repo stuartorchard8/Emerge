@@ -11,7 +11,10 @@ import javax.swing.JFrame
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
 import javax.swing.Timer
+import org.emerge.net.codec.ByteCursor
+import org.emerge.net.codec.ByteWriter
 import org.emerge.net.loopback.Loopback
+import org.emerge.net.tcp.Tcp
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.CircleBody
 import org.emerge.sim.core.physics.Fx
@@ -22,11 +25,25 @@ import org.emerge.sim.core.physics.Vec2Fx
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.LockstepClient
 import org.emerge.sim.sync.LockstepHost
+import org.emerge.sim.sync.auth.AuthoritativeClient
+import org.emerge.sim.sync.auth.StateCodec
 
-fun main() {
-    SwingUtilities.invokeLater {
-        PhysicsLockstepSwingDemo().start()
+fun main(args: Array<String>) {
+    // Usage:
+    // - (default) lockstep demo:
+    //     gradlew :app:run
+    // - join Android host (authoritative):
+    //     gradlew :app:run --args="join 192.168.0.102 7777"
+    if (args.isNotEmpty() && args[0] == "join") {
+        val host = args.getOrNull(1) ?: error("Missing host ip. Usage: join <hostIp> <port>")
+        val port = args.getOrNull(2)?.toIntOrNull() ?: error("Missing/invalid port. Usage: join <hostIp> <port>")
+        SwingUtilities.invokeLater {
+            AuthoritativeJoinSwingClient(host, port).start()
+        }
+        return
     }
+
+    SwingUtilities.invokeLater { PhysicsLockstepSwingDemo().start() }
 }
 
 private class PhysicsLockstepSwingDemo {
@@ -132,6 +149,81 @@ private class PhysicsLockstepSwingDemo {
     }
 }
 
+private class AuthoritativeJoinSwingClient(
+    private val hostIp: String,
+    private val port: Int,
+) {
+    private val worldW = Fx.fromInt(800)
+    private val worldH = Fx.fromInt(500)
+
+    private val inputCodec = object : Codec<PhysicsInput> {
+        override fun encode(value: PhysicsInput): ByteArray =
+            byteArrayOf(value.ax.toByte(), value.ay.toByte())
+
+        override fun decode(bytes: ByteArray): PhysicsInput {
+            require(bytes.size == 2)
+            return PhysicsInput(bytes[0].toInt(), bytes[1].toInt())
+        }
+    }
+
+    private val stateCodec = object : StateCodec<PhysicsState> {
+        override fun encode(state: PhysicsState): ByteArray {
+            val w = ByteWriter()
+            w.writeInt(state.width.raw)
+            w.writeInt(state.height.raw)
+            w.writeInt(state.bodies.size)
+            for ((pid, body) in state.bodies) {
+                w.writeInt(pid.value)
+                w.writeInt(body.pos.x.raw)
+                w.writeInt(body.pos.y.raw)
+                w.writeInt(body.vel.x.raw)
+                w.writeInt(body.vel.y.raw)
+                w.writeInt(body.radius.raw)
+            }
+            return w.toByteArray()
+        }
+
+        override fun decode(bytes: ByteArray): PhysicsState {
+            val c = ByteCursor(bytes)
+            val width = Fx(c.readInt())
+            val height = Fx(c.readInt())
+            val n = c.readInt()
+            val bodies = LinkedHashMap<PlayerId, CircleBody>(n)
+            repeat(n) {
+                val pid = PlayerId(c.readInt())
+                val px = Fx(c.readInt())
+                val py = Fx(c.readInt())
+                val vx = Fx(c.readInt())
+                val vy = Fx(c.readInt())
+                val r = Fx(c.readInt())
+                bodies[pid] = CircleBody(pid, Vec2Fx(px, py), Vec2Fx(vx, vy), r)
+            }
+            return PhysicsState(width = width, height = height, bodies = bodies)
+        }
+    }
+
+    private val ui = AuthClientWindow(
+        title = "Desktop Join ($hostIp:$port) - WASD",
+        myColor = Color(0x2E86AB),
+        worldW = worldW,
+        worldH = worldH,
+    )
+
+    fun start() {
+        val pipe = Tcp.connect(hostIp, port)
+        val client = AuthoritativeClient(pipe = pipe, inputCodec = inputCodec, stateCodec = stateCodec)
+        client.startHandshake()
+        ui.show()
+
+        Timer(16) {
+            client.poll()
+            // Send input once we have an assigned player id
+            client.sendInput(ui.currentInput())
+            ui.repaintWorld(client)
+        }.start()
+    }
+}
+
 private class ClientWindow(
     title: String,
     private val myPlayerId: PlayerId,
@@ -193,17 +285,17 @@ private class ClientWindow(
 
     fun currentInput(): PhysicsInput {
         val (ax, ay) = if (useWasd) {
-                val left = KeyEvent.VK_A in pressed
-                val right = KeyEvent.VK_D in pressed
-                val up = KeyEvent.VK_W in pressed
-                val down = KeyEvent.VK_S in pressed
-                axis(left, right) to axis(up, down)
+            val left = KeyEvent.VK_A in pressed
+            val right = KeyEvent.VK_D in pressed
+            val up = KeyEvent.VK_W in pressed
+            val down = KeyEvent.VK_S in pressed
+            axis(left, right) to axis(up, down)
         } else {
-                val left = KeyEvent.VK_LEFT in pressed
-                val right = KeyEvent.VK_RIGHT in pressed
-                val up = KeyEvent.VK_UP in pressed
-                val down = KeyEvent.VK_DOWN in pressed
-                axis(left, right) to axis(up, down)
+            val left = KeyEvent.VK_LEFT in pressed
+            val right = KeyEvent.VK_RIGHT in pressed
+            val up = KeyEvent.VK_UP in pressed
+            val down = KeyEvent.VK_DOWN in pressed
+            axis(left, right) to axis(up, down)
         }
         return PhysicsInput(ax, ay)
     }
@@ -216,3 +308,87 @@ private class ClientWindow(
         }
 }
 
+private class AuthClientWindow(
+    title: String,
+    private val myColor: Color,
+    private val worldW: Fx,
+    private val worldH: Fx,
+) {
+    private val pressed = HashSet<Int>()
+    private var lastState: PhysicsState? = null
+    private var lastMyId: PlayerId? = null
+    private var lastTick: Long = 0L
+
+    private val panel = object : JPanel() {
+        override fun getPreferredSize(): Dimension =
+            Dimension(worldW.toIntFloor(), worldH.toIntFloor())
+
+        override fun paintComponent(g: Graphics) {
+            super.paintComponent(g)
+            val g2 = g as Graphics2D
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g2.color = Color(0x111111)
+            g2.fillRect(0, 0, width, height)
+
+            val state = lastState ?: return
+            val myId = lastMyId
+            for ((pid, body) in state.bodies) {
+                g2.color = if (myId != null && pid == myId) myColor else Color(0xCCCCCC)
+                val r = body.radius.toIntFloor()
+                val x = body.pos.x.toIntFloor() - r
+                val y = body.pos.y.toIntFloor() - r
+                g2.fillOval(x, y, r * 2, r * 2)
+            }
+
+            g2.color = Color(0xEEEEEE)
+            g2.drawString("tick=$lastTick playerId=${myId?.value ?: "?"}", 10, 20)
+        }
+    }
+
+    private val frame = JFrame(title).apply {
+        contentPane = panel
+        panel.isFocusable = true
+        pack()
+        setLocationByPlatform(true)
+        defaultCloseOperation = JFrame.EXIT_ON_CLOSE
+        isResizable = false
+        panel.addKeyListener(object : KeyAdapter() {
+            override fun keyPressed(e: KeyEvent) {
+                pressed.add(e.keyCode)
+            }
+
+            override fun keyReleased(e: KeyEvent) {
+                pressed.remove(e.keyCode)
+            }
+        })
+    }
+
+    fun show() {
+        frame.isVisible = true
+        panel.requestFocusInWindow()
+    }
+
+    fun repaintWorld(client: AuthoritativeClient<PhysicsState, PhysicsInput>) {
+        lastState = client.state
+        lastMyId = client.playerId
+        lastTick = client.tick.value
+        panel.repaint()
+    }
+
+    fun currentInput(): PhysicsInput {
+        val left = KeyEvent.VK_A in pressed
+        val right = KeyEvent.VK_D in pressed
+        val up = KeyEvent.VK_W in pressed
+        val down = KeyEvent.VK_S in pressed
+        val ax = axis(left, right)
+        val ay = axis(up, down)
+        return PhysicsInput(ax, ay)
+    }
+
+    private fun axis(neg: Boolean, pos: Boolean): Int =
+        when {
+            neg && !pos -> -1
+            pos && !neg -> 1
+            else -> 0
+        }
+}

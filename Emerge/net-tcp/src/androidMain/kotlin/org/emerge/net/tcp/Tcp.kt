@@ -16,7 +16,10 @@ object Tcp {
 
     fun listen(port: Int, backlog: Int = 1): Listener {
         require(port in 1..65535)
-        val ss = ServerSocket(port, backlog)
+        // Make quick restarts on the same port more reliable.
+        val ss = ServerSocket()
+        ss.reuseAddress = true
+        ss.bind(InetSocketAddress(port), backlog)
         return Listener(ss)
     }
 
