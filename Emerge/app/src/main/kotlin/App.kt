@@ -1,70 +1,218 @@
 package org.example.app
 
+import java.awt.Color
+import java.awt.Dimension
+import java.awt.Graphics
+import java.awt.Graphics2D
+import java.awt.RenderingHints
+import java.awt.event.KeyAdapter
+import java.awt.event.KeyEvent
+import javax.swing.JFrame
+import javax.swing.JPanel
+import javax.swing.SwingUtilities
+import javax.swing.Timer
 import org.emerge.net.loopback.Loopback
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.demo.DemoInput
-import org.emerge.sim.core.demo.DemoReducer
-import org.emerge.sim.core.demo.DemoState
-import org.emerge.sim.core.demo.Vec2i
+import org.emerge.sim.core.physics.CircleBody
+import org.emerge.sim.core.physics.Fx
+import org.emerge.sim.core.physics.PhysicsInput
+import org.emerge.sim.core.physics.PhysicsReducer
+import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.Vec2Fx
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.LockstepClient
 import org.emerge.sim.sync.LockstepHost
 
 fun main() {
-    // Tiny single-process demo that exercises the architecture:
-    // - :sim-core (deterministic reducer)
-    // - :sim-sync (lockstep)
-    // - :net-loopback (transport)
+    SwingUtilities.invokeLater {
+        PhysicsLockstepSwingDemo().start()
+    }
+}
 
-    val (c0, h0) = Loopback.createPair()
-    val (c1, h1) = Loopback.createPair()
+private class PhysicsLockstepSwingDemo {
+    private val worldW = Fx.fromInt(800)
+    private val worldH = Fx.fromInt(500)
+    private val radius = Fx.fromInt(16)
 
-    val initial = DemoState(
-        positions = mapOf(
-            PlayerId(0) to Vec2i(0, 0),
-            PlayerId(1) to Vec2i(0, 0),
-        ),
-    )
+    private val pair0 = Loopback.createPair()
+    private val c0 = pair0.first
+    private val h0 = pair0.second
 
-    val inputCodec = object : Codec<DemoInput> {
-        override fun encode(value: DemoInput): ByteArray =
-            byteArrayOf(value.move.x.toByte(), value.move.y.toByte())
+    private val pair1 = Loopback.createPair()
+    private val c1 = pair1.first
+    private val h1 = pair1.second
 
-        override fun decode(bytes: ByteArray): DemoInput {
+    private val reducer = PhysicsReducer()
+
+    private val inputCodec = object : Codec<PhysicsInput> {
+        override fun encode(value: PhysicsInput): ByteArray =
+            byteArrayOf(value.ax.toByte(), value.ay.toByte())
+
+        override fun decode(bytes: ByteArray): PhysicsInput {
             require(bytes.size == 2)
-            return DemoInput(Vec2i(bytes[0].toInt(), bytes[1].toInt()))
+            return PhysicsInput(bytes[0].toInt(), bytes[1].toInt())
         }
     }
 
-    val host = LockstepHost(
+    private val initial = PhysicsState(
+        width = worldW,
+        height = worldH,
+        bodies = mapOf(
+            PlayerId(0) to CircleBody(
+                playerId = PlayerId(0),
+                pos = Vec2Fx(Fx.fromInt(200), Fx.fromInt(250)),
+                vel = Vec2Fx(Fx.fromRaw(0), Fx.fromRaw(0)),
+                radius = radius,
+            ),
+            PlayerId(1) to CircleBody(
+                playerId = PlayerId(1),
+                pos = Vec2Fx(Fx.fromInt(600), Fx.fromInt(250)),
+                vel = Vec2Fx(Fx.fromRaw(0), Fx.fromRaw(0)),
+                radius = radius,
+            ),
+        ),
+    )
+
+    private val host = LockstepHost(
         initialState = initial,
-        reducer = { s, inputs -> DemoReducer.reduce(s, inputs) },
+        reducer = { s, inputs -> reducer.reduce(s, inputs) },
         inputCodec = inputCodec,
         peers = mapOf(PlayerId(0) to h0, PlayerId(1) to h1),
     )
 
-    val client0 = LockstepClient(
+    private val client0 = LockstepClient(
         playerId = PlayerId(0),
         initialState = initial,
-        reducer = { s, inputs -> DemoReducer.reduce(s, inputs) },
+        reducer = { s, inputs -> reducer.reduce(s, inputs) },
         inputCodec = inputCodec,
         pipe = c0,
     )
-    val client1 = LockstepClient(
+
+    private val client1 = LockstepClient(
         playerId = PlayerId(1),
         initialState = initial,
-        reducer = { s, inputs -> DemoReducer.reduce(s, inputs) },
+        reducer = { s, inputs -> reducer.reduce(s, inputs) },
         inputCodec = inputCodec,
         pipe = c1,
     )
 
-    repeat(10) { _ ->
-        client0.sendLocalInput(DemoInput(Vec2i(1, 0)))
-        client1.sendLocalInput(DemoInput(Vec2i(0, 1)))
-        host.poll()
-        client0.poll()
-        client1.poll()
+    private val ui0 = ClientWindow(
+        title = "Client 0 (WASD)",
+        myPlayerId = PlayerId(0),
+        client = client0,
+        myColor = Color(0x2E86AB),
+        worldW = worldW,
+        worldH = worldH,
+        useWasd = true,
+    )
+    private val ui1 = ClientWindow(
+        title = "Client 1 (Arrows)",
+        myPlayerId = PlayerId(1),
+        client = client1,
+        myColor = Color(0xF18F01),
+        worldW = worldW,
+        worldH = worldH,
+        useWasd = false,
+    )
 
-        println("tick=${host.tick.value} hostState=${host.state}")
+    fun start() {
+        ui0.show()
+        ui1.show()
+
+        // 60Hz lockstep tick
+        Timer(16) {
+            client0.sendLocalInput(ui0.currentInput())
+            client1.sendLocalInput(ui1.currentInput())
+            host.poll()
+            client0.poll()
+            client1.poll()
+            ui0.repaintWorld()
+            ui1.repaintWorld()
+        }.start()
     }
 }
+
+private class ClientWindow(
+    title: String,
+    private val myPlayerId: PlayerId,
+    private val client: LockstepClient<PhysicsState, PhysicsInput>,
+    private val myColor: Color,
+    private val worldW: Fx,
+    private val worldH: Fx,
+    private val useWasd: Boolean,
+) {
+    private val pressed = HashSet<Int>()
+
+    private val panel = object : JPanel() {
+        override fun getPreferredSize(): Dimension =
+            Dimension(worldW.toIntFloor(), worldH.toIntFloor())
+
+        override fun paintComponent(g: Graphics) {
+            super.paintComponent(g)
+            val g2 = g as Graphics2D
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g2.color = Color(0x111111)
+            g2.fillRect(0, 0, width, height)
+
+            val state = client.state
+            for ((pid, body) in state.bodies) {
+                g2.color = if (body.playerId == myPlayerId) myColor else Color(0xCCCCCC)
+                val r = body.radius.toIntFloor()
+                val x = body.pos.x.toIntFloor() - r
+                val y = body.pos.y.toIntFloor() - r
+                g2.fillOval(x, y, r * 2, r * 2)
+            }
+        }
+    }
+
+    private val frame = JFrame(title).apply {
+        contentPane = panel
+        panel.isFocusable = true
+        panel.requestFocusInWindow()
+        pack()
+        setLocationByPlatform(true)
+        defaultCloseOperation = JFrame.EXIT_ON_CLOSE
+        isResizable = false
+        panel.addKeyListener(object : KeyAdapter() {
+            override fun keyPressed(e: KeyEvent) {
+                pressed.add(e.keyCode)
+            }
+
+            override fun keyReleased(e: KeyEvent) {
+                pressed.remove(e.keyCode)
+            }
+        })
+    }
+
+    fun show() {
+        frame.isVisible = true
+        panel.requestFocusInWindow()
+    }
+
+    fun repaintWorld() = panel.repaint()
+
+    fun currentInput(): PhysicsInput {
+        val (ax, ay) = if (useWasd) {
+                val left = KeyEvent.VK_A in pressed
+                val right = KeyEvent.VK_D in pressed
+                val up = KeyEvent.VK_W in pressed
+                val down = KeyEvent.VK_S in pressed
+                axis(left, right) to axis(up, down)
+        } else {
+                val left = KeyEvent.VK_LEFT in pressed
+                val right = KeyEvent.VK_RIGHT in pressed
+                val up = KeyEvent.VK_UP in pressed
+                val down = KeyEvent.VK_DOWN in pressed
+                axis(left, right) to axis(up, down)
+        }
+        return PhysicsInput(ax, ay)
+    }
+
+    private fun axis(neg: Boolean, pos: Boolean): Int =
+        when {
+            neg && !pos -> -1
+            pos && !neg -> 1
+            else -> 0
+        }
+}
+
