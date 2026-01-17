@@ -21,6 +21,7 @@ out/
 
 ### Android ###
 local.properties
+.build/
 
 ### Eclipse ###
 .apt_generated

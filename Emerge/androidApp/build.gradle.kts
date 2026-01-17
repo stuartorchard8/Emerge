@@ -3,6 +3,10 @@ plugins {
     kotlin("android")
 }
 
+// Workaround for Windows file locking on AGP intermediates (R.jar).
+// Moving build output away from `androidApp/build` avoids clashes with tools that may scan/hold that folder.
+buildDir = file("$rootDir/.build/androidApp")
+
 android {
     namespace = "org.emerge.androidapp"
     compileSdk = 35
