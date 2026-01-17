@@ -4,7 +4,8 @@ plugins {
 }
 
 // Workaround for Windows file locking on Gradle/AGP intermediates (classes.jar/R.jar).
-buildDir = file("$rootDir/.build/net-loopback-${System.currentTimeMillis()}")
+// Use a fresh build directory per invocation so tasks don't need to overwrite previously-locked outputs.
+buildDir = file("$rootDir/.build/net-tcp-${System.currentTimeMillis()}")
 
 kotlin {
     androidTarget {
@@ -17,7 +18,6 @@ kotlin {
         }
     }
     jvm()
-    js(IR) { browser() }
 
     sourceSets {
         commonMain {
@@ -34,7 +34,7 @@ kotlin {
 }
 
 android {
-    namespace = "org.emerge.net.loopback"
+    namespace = "org.emerge.net.tcp"
     compileSdk = 35
     defaultConfig {
         minSdk = 26
@@ -44,3 +44,4 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
+

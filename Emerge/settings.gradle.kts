@@ -40,6 +40,7 @@ include(":sim-core")
 include(":sim-sync")
 include(":net-api")
 include(":net-loopback")
+include(":net-tcp")
 include(":net-tcp-jvm")
 
 rootProject.name = "Emerge"

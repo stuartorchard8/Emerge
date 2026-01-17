@@ -3,6 +3,9 @@ plugins {
     alias(libs.plugins.androidLibrary)
 }
 
+// Workaround for Windows file locking on Gradle/AGP intermediates (classes.jar/R.jar).
+buildDir = file("$rootDir/.build/net-api-${System.currentTimeMillis()}")
+
 kotlin {
     androidTarget {
         compilations.all {

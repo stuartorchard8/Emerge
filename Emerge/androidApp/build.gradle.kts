@@ -4,8 +4,9 @@ plugins {
 }
 
 // Workaround for Windows file locking on AGP intermediates (R.jar).
-// Moving build output away from `androidApp/build` avoids clashes with tools that may scan/hold that folder.
-buildDir = file("$rootDir/.build/androidApp")
+// Some Windows setups (AV/indexers) can hold `R.jar` open between builds; to avoid "Couldn't delete ... R.jar",
+// use a fresh build directory per invocation so AGP doesn't need to delete previous outputs.
+buildDir = file("$rootDir/.build/androidApp-${System.currentTimeMillis()}")
 
 android {
     namespace = "org.emerge.androidapp"
@@ -15,7 +16,7 @@ android {
         applicationId = "org.emerge.androidapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
+        versionCode = 6
         versionName = "0.1"
     }
 
@@ -45,5 +46,6 @@ dependencies {
     implementation(project(":sim-core"))
     implementation(project(":sim-sync"))
     implementation(project(":net-loopback"))
+    implementation(project(":net-tcp"))
 }
 
