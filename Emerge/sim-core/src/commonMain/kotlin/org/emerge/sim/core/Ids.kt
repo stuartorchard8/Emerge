@@ -1,0 +1,14 @@
+package org.emerge.sim.core
+
+data class PlayerId(val value: Int) {
+    init {
+        require(value >= 0) { "PlayerId must be >= 0, got $value" }
+    }
+}
+
+data class Tick(val value: Long) {
+    init {
+        require(value >= 0L) { "Tick must be >= 0, got $value" }
+    }
+}
+

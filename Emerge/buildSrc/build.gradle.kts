@@ -6,7 +6,8 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(18)
+    // Intentionally do not hard-pin a toolchain version.
+    // This keeps the project easy to build on fresh machines without extra JDK installs.
 }
 
 dependencies {

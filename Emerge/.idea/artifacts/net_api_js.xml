@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="net-api-js">
+    <output-path>$PROJECT_DIR$/net-api/build/libs</output-path>
+    <root id="archive" name="net-api-js.jar">
+      <element id="module-output" name="Emerge.net-api.jsMain" />
+    </root>
+  </artifact>
+</component>

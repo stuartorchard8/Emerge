@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="sim-sync-js">
+    <output-path>$PROJECT_DIR$/sim-sync/build/libs</output-path>
+    <root id="archive" name="sim-sync-js.jar">
+      <element id="module-output" name="Emerge.sim-sync.jsMain" />
+    </root>
+  </artifact>
+</component>
