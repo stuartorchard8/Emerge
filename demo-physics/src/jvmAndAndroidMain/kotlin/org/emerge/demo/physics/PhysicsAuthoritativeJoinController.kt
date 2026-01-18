@@ -30,7 +30,6 @@ class PhysicsAuthoritativeJoinController(
         },
     )
 
-    @Volatile private var reconnecting: Boolean = false
     @Volatile private var netStatus: String = "net: init"
 
     init {
@@ -41,14 +40,24 @@ class PhysicsAuthoritativeJoinController(
         thread(isDaemon = true, name = "net-connect") {
             var attempt = 0
             while (true) {
+                // Important: only attempt (re)connect when the client is fully disconnected.
+                // If we swap the underlying pipe while handshaking, we can miss the WELCOME packet.
+                if (client.connectionState != AuthoritativeClient.ConnectionState.DISCONNECTED) {
+                    try {
+                        Thread.sleep(50L)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                    continue
+                }
+
                 attempt += 1
                 netStatus = "net: connecting to $hostIp:$port (try $attempt)"
                 try {
                     remote.setDelegate(Tcp.connect(host = hostIp, port = port))
                     netStatus = "net: connected (handshake)"
                     client.resetConnection("connect")
-                    client.startHandshake(force = true)
-                    break
+                    client.startHandshake(force = true) // sets HANDSHAKING
                 } catch (t: Throwable) {
                     val msg = t.message?.take(60) ?: ""
                     netStatus = "net: connect failed: ${t.javaClass.simpleName} $msg"
@@ -62,41 +71,9 @@ class PhysicsAuthoritativeJoinController(
         }
     }
 
-    private fun startReconnect() {
-        reconnecting = true
-        thread(isDaemon = true, name = "net-reconnect") {
-            var attempt = 0
-            while (true) {
-                attempt += 1
-                netStatus = "net: reconnecting $hostIp:$port (try $attempt)"
-                try {
-                    remote.setDelegate(Tcp.connect(host = hostIp, port = port))
-                    netStatus = "net: reconnected (handshake)"
-                    client.resetConnection("reconnect")
-                    client.startHandshake(force = true)
-                    reconnecting = false
-                    break
-                } catch (t: Throwable) {
-                    val msg = t.message?.take(60) ?: ""
-                    netStatus = "net: reconnect failed: ${t.javaClass.simpleName} $msg"
-                    try {
-                        Thread.sleep(500L)
-                    } catch (_: InterruptedException) {
-                        reconnecting = false
-                        break
-                    }
-                }
-            }
-        }
-    }
-
     fun tick(localInput: PhysicsInput): AuthoritativeDemoFrame {
         client.poll()
         client.sendInput(localInput)
-
-        if (client.connectionState == AuthoritativeClient.ConnectionState.DISCONNECTED && !reconnecting) {
-            startReconnect()
-        }
 
         val state: PhysicsState? = client.state
         val myId: PlayerId? = client.playerId
