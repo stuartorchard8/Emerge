@@ -118,6 +118,10 @@ private class PhysicsLockstepView(
     private val client: AuthoritativeClient<PhysicsState, PhysicsInput>?
 
     private val loopbackBotClientPipe: Pipe?
+    private val joinRemote: DelegatingPipe?
+
+    @Volatile
+    private var reconnecting: Boolean = false
 
     @Volatile
     private var netStatus: String = "net: init"
@@ -149,6 +153,7 @@ private class PhysicsLockstepView(
                 // Create an in-process pipe pair for local client <-> host
                 localClientPipe = null
                 loopbackBotClientPipe = null
+                joinRemote = null
 
                 host = AuthoritativeHost(
                     initialState = initial,
@@ -191,7 +196,15 @@ private class PhysicsLockstepView(
 
                 val remote = DelegatingPipe()
                 localClientPipe = remote
-                client = AuthoritativeClient(pipe = remote, inputCodec = inputCodec, stateCodec = stateCodec)
+                joinRemote = remote
+                client = AuthoritativeClient(
+                    pipe = remote,
+                    inputCodec = inputCodec,
+                    stateCodec = stateCodec,
+                    onDisconnected = { reason ->
+                        netStatus = "net: disconnected ($reason)"
+                    },
+                )
 
                 thread(isDaemon = true, name = "net-connect") {
                     var attempt = 0
@@ -201,7 +214,8 @@ private class PhysicsLockstepView(
                         try {
                             remote.setDelegate(Tcp.connect(host = hostIp, port = port))
                             netStatus = "net: connected (handshake)"
-                            client.startHandshake()
+                            client.resetConnection("connect")
+                            client.startHandshake(force = true)
                             break
                         } catch (t: Throwable) {
                             val msg = t.message?.take(60) ?: ""
@@ -220,6 +234,7 @@ private class PhysicsLockstepView(
                 // loopback mode (default)
                 localPlayerId = PlayerId(0)
                 loopbackBotClientPipe = null
+                joinRemote = null
                 localClientPipe = null
                 host = AuthoritativeHost(
                     initialState = initial,
@@ -262,6 +277,13 @@ private class PhysicsLockstepView(
             client?.let { c ->
                 c.poll()
                 c.sendInput(currentTouchInput)
+
+                if (mode == MainActivity.MODE_JOIN &&
+                    c.connectionState == AuthoritativeClient.ConnectionState.DISCONNECTED &&
+                    !reconnecting
+                ) {
+                    startReconnect(c)
+                }
             }
 
             invalidate()
@@ -329,6 +351,35 @@ private class PhysicsLockstepView(
             }
         }
         return true
+    }
+
+    private fun startReconnect(c: AuthoritativeClient<PhysicsState, PhysicsInput>) {
+        val remote = joinRemote ?: return
+        reconnecting = true
+        thread(isDaemon = true, name = "net-reconnect") {
+            var attempt = 0
+            while (true) {
+                attempt += 1
+                netStatus = "net: reconnecting $hostIp:$port (try $attempt)"
+                try {
+                    remote.setDelegate(Tcp.connect(host = hostIp, port = port))
+                    netStatus = "net: reconnected (handshake)"
+                    c.resetConnection("reconnect")
+                    c.startHandshake(force = true)
+                    reconnecting = false
+                    break
+                } catch (t: Throwable) {
+                    val msg = t.message?.take(60) ?: ""
+                    netStatus = "net: reconnect failed: ${t.javaClass.simpleName} $msg"
+                    try {
+                        Thread.sleep(500L)
+                    } catch (_: InterruptedException) {
+                        reconnecting = false
+                        break
+                    }
+                }
+            }
+        }
     }
 }
 
