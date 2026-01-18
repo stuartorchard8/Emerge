@@ -13,6 +13,16 @@ dependencies {
     implementation(project(":sim-physics-codec"))
     implementation(project(":net-loopback"))
     implementation(project(":net-tcp"))
+
+    // LWJGL (desktop GPU rendering)
+    // Minimal set: glfw + opengl + core + natives (Windows).
+    implementation(platform("org.lwjgl:lwjgl-bom:3.3.3"))
+    implementation("org.lwjgl:lwjgl")
+    implementation("org.lwjgl:lwjgl-glfw")
+    implementation("org.lwjgl:lwjgl-opengl")
+    runtimeOnly("org.lwjgl:lwjgl::natives-windows")
+    runtimeOnly("org.lwjgl:lwjgl-glfw::natives-windows")
+    runtimeOnly("org.lwjgl:lwjgl-opengl::natives-windows")
 }
 
 application {

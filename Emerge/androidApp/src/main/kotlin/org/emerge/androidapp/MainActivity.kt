@@ -16,12 +16,14 @@ import org.emerge.net.tcp.Tcp
 import org.emerge.net.api.Pipe
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.camera.OrthoCamera2D
+import org.emerge.sim.core.camera.TorusOrthoCamera2D
 import org.emerge.sim.core.physics.CircleBody
 import org.emerge.sim.core.physics.Fx
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsReducer
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2Fx
+import org.emerge.sim.core.space.Torus2D
 import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.auth.AuthoritativeClient
@@ -34,18 +36,29 @@ class MainActivity : Activity() {
         val mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_LOOPBACK
         val hostIp = intent.getStringExtra(EXTRA_HOST_IP) ?: "127.0.0.1"
         val port = intent.getIntExtra(EXTRA_PORT, 7777)
-        val view = PhysicsLockstepView(this, mode = mode, hostIp = hostIp, port = port)
-        setContentView(view)
+        // Prefer GPU shader renderer; allow fallback via --es renderer canvas
+        val renderer = intent.getStringExtra(EXTRA_RENDERER) ?: RENDERER_GL
+        val content: View =
+            if (renderer == RENDERER_CANVAS) {
+                PhysicsLockstepView(this, mode = mode, hostIp = hostIp, port = port)
+            } else {
+                TorusGlSurfaceView(this, mode = mode, hostIp = hostIp, port = port)
+            }
+        setContentView(content)
     }
 
     companion object {
         const val EXTRA_MODE = "mode" // "host" | "join" | "loopback"
         const val EXTRA_HOST_IP = "hostIp"
         const val EXTRA_PORT = "port"
+        const val EXTRA_RENDERER = "renderer" // "gl" | "canvas"
 
         const val MODE_HOST = "host"
         const val MODE_JOIN = "join"
         const val MODE_LOOPBACK = "loopback"
+
+        const val RENDERER_GL = "gl"
+        const val RENDERER_CANVAS = "canvas"
     }
 }
 
@@ -222,7 +235,9 @@ private class PhysicsLockstepView(
         isAntiAlias = true
     }
 
-    private val camera = OrthoCamera2D(worldW = worldW, worldH = worldH, zoom = 2)
+    private val torus = Torus2D(width = worldW, height = worldH)
+    private val camera = TorusOrthoCamera2D(torus = torus, zoom = 2)
+    private var raster: TorusRasterAndroid? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private val tickRunnable = object : Runnable {
@@ -270,24 +285,22 @@ private class PhysicsLockstepView(
         val state = client?.state ?: host?.state ?: initial
         val myId = client?.playerId ?: localPlayerId
         val focus = state.bodies[myId]?.pos ?: Vec2Fx(Fx(worldW.raw / 2), Fx(worldH.raw / 2))
-        val topLeft = camera.topLeftForFocus(focus)
-
-        val viewW = max(1, camera.viewW.toIntFloor())
-        val viewH = max(1, camera.viewH.toIntFloor())
-
-        val scaleX = width.toFloat() / viewW.toFloat()
-        val scaleY = height.toFloat() / viewH.toFloat()
-        val s = max(0.1f, minOf(scaleX, scaleY))
-        val ox = (width - (viewW * s)).coerceAtLeast(0f) * 0.5f
-        val oy = (height - (viewH * s)).coerceAtLeast(0f) * 0.5f
-
-        for ((pid, body) in state.bodies) {
-            val p = if (pid == myId) paintMe else paintOther
-            val r = (body.radius.toIntFloor().toFloat() * s).coerceAtLeast(1f)
-            val cx = ox + ((body.pos.x - topLeft.x).toIntFloor().toFloat() * s)
-            val cy = oy + ((body.pos.y - topLeft.y).toIntFloor().toFloat() * s)
-            canvas.drawCircle(cx, cy, r, p)
-        }
+        // Shader-like torus render: rasterize at reduced resolution, then scale up.
+        val viewW = camera.viewW
+        val viewH = camera.viewH
+        val rasterW = max(1, width / 2)
+        val rasterH = max(1, height / 2)
+        val tr = (raster ?: TorusRasterAndroid(rasterW, rasterH)).also { raster = it }
+        tr.ensureSize(rasterW, rasterH)
+        tr.render(
+            torus = torus,
+            state = state,
+            myId = myId,
+            focusWrapped = focus,
+            viewW = viewW,
+            viewH = viewH,
+        )
+        canvas.drawBitmap(tr.bitmap, null, android.graphics.Rect(0, 0, width, height), null)
 
         val tick = client?.tick?.value ?: host?.tick?.value ?: 0L
         canvas.drawText("mode=$mode tick=$tick", 16f, 40f, paintHud)
@@ -351,7 +364,7 @@ private class PhysicsLockstepView(
     }
 }
 
-private class DelegatingPipe : Pipe {
+internal class DelegatingPipe : Pipe {
     @Volatile private var delegate: Pipe? = null
 
     fun setDelegate(pipe: Pipe) {

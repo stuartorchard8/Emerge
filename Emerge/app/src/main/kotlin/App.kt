@@ -17,7 +17,7 @@ import org.emerge.net.loopback.Loopback
 import org.emerge.net.api.Pipe
 import org.emerge.net.tcp.Tcp
 import org.emerge.sim.codec.physics.PhysicsNetCodecs
-import org.emerge.sim.core.camera.OrthoCamera2D
+import org.emerge.sim.core.camera.TorusOrthoCamera2D
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.CircleBody
 import org.emerge.sim.core.physics.Fx
@@ -25,6 +25,7 @@ import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsReducer
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2Fx
+import org.emerge.sim.core.space.Torus2D
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.LockstepClient
 import org.emerge.sim.sync.LockstepHost
@@ -36,24 +37,61 @@ fun main(args: Array<String>) {
     // Usage:
     // - (default) lockstep demo:
     //     gradlew :app:run
-    // - run authoritative host (desktop):
+    // - run authoritative host (desktop) [GPU default]:
     //     gradlew :app:run --args="host 7777"
-    // - join Android host (authoritative):
+    // - join Android host (authoritative) [GPU default]:
     //     gradlew :app:run --args="join 192.168.0.102 7777"
+    // - run authoritative host (desktop) with Swing renderer:
+    //     gradlew :app:run --args="host-swing 7777"
+    // - join Android host (authoritative) with Swing renderer:
+    //     gradlew :app:run --args="join-swing 192.168.0.102 7777"
+    // - join Android host (authoritative) with LWJGL/OpenGL shader renderer:
+    //     gradlew :app:run --args="join-gl 192.168.0.102 7777"
+    // - join Android host (LWJGL/OpenGL) for a few seconds then exit (test automation):
+    //     gradlew :app:run --args="join-gl-once 192.168.0.102 7777 4000"
     // - join Android host once (headless smoke test; exits):
     //     gradlew :app:run --args="join-once 192.168.0.102 7777"
     if (args.isNotEmpty()) {
         when (args[0]) {
             "host" -> {
                 val port = args.getOrNull(1)?.toIntOrNull() ?: error("Missing/invalid port. Usage: host <port>")
+                runHostGl(port)
+                return
+            }
+            "host-gl" -> {
+                val port = args.getOrNull(1)?.toIntOrNull() ?: error("Missing/invalid port. Usage: host-gl <port>")
+                runHostGl(port)
+                return
+            }
+            "host-swing" -> {
+                val port = args.getOrNull(1)?.toIntOrNull() ?: error("Missing/invalid port. Usage: host-swing <port>")
                 SwingUtilities.invokeLater { AuthoritativeHostSwingDemo(port).start() }
                 return
             }
             "join" -> {
                 val host = args.getOrNull(1) ?: error("Missing host ip. Usage: join <hostIp> <port>")
                 val port = args.getOrNull(2)?.toIntOrNull() ?: error("Missing/invalid port. Usage: join <hostIp> <port>")
+                runJoinGl(hostIp = host, port = port)
+                return
+            }
+            "join-swing" -> {
+                val host = args.getOrNull(1) ?: error("Missing host ip. Usage: join-swing <hostIp> <port>")
+                val port = args.getOrNull(2)?.toIntOrNull() ?: error("Missing/invalid port. Usage: join-swing <hostIp> <port>")
                 SwingUtilities.invokeLater { AuthoritativeJoinSwingClient(host, port).start() }
                 return
+            }
+            "join-gl" -> {
+                val host = args.getOrNull(1) ?: error("Missing host ip. Usage: join-gl <hostIp> <port>")
+                val port = args.getOrNull(2)?.toIntOrNull() ?: error("Missing/invalid port. Usage: join-gl <hostIp> <port>")
+                runJoinGl(hostIp = host, port = port)
+                return
+            }
+            "join-gl-once" -> {
+                val host = args.getOrNull(1) ?: error("Missing host ip. Usage: join-gl-once <hostIp> <port> <ms>")
+                val port = args.getOrNull(2)?.toIntOrNull() ?: error("Missing/invalid port. Usage: join-gl-once <hostIp> <port> <ms>")
+                val ms = args.getOrNull(3)?.toLongOrNull() ?: error("Missing/invalid ms. Usage: join-gl-once <hostIp> <port> <ms>")
+                val ok = runJoinGl(hostIp = host, port = port, maxRunMs = ms)
+                exitProcess(if (ok) 0 else 1)
             }
             "join-once" -> {
                 val host = args.getOrNull(1) ?: error("Missing host ip. Usage: join-once <hostIp> <port>")
@@ -320,7 +358,9 @@ private class ClientWindow(
     private val useWasd: Boolean,
 ) {
     private val pressed = HashSet<Int>()
-    private val camera = OrthoCamera2D(worldW = worldW, worldH = worldH, zoom = 2)
+    private val torus = Torus2D(width = worldW, height = worldH)
+    private val camera = TorusOrthoCamera2D(torus = torus, zoom = 2)
+    private var raster: TorusRaster? = null
 
     private val panel = object : JPanel() {
         override fun getPreferredSize(): Dimension =
@@ -335,22 +375,17 @@ private class ClientWindow(
 
             val state = client.state
             val focus = state.bodies[myPlayerId]?.pos ?: Vec2Fx(Fx(worldW.raw / 2), Fx(worldH.raw / 2))
-            val topLeft = camera.topLeftForFocus(focus)
-            val viewW = camera.viewW.toIntFloor().coerceAtLeast(1)
-            val viewH = camera.viewH.toIntFloor().coerceAtLeast(1)
-            val scaleX = width.toDouble() / viewW.toDouble()
-            val scaleY = height.toDouble() / viewH.toDouble()
-            val scale = minOf(scaleX, scaleY)
-            val ox = ((width.toDouble() - (viewW * scale)) * 0.5).toInt()
-            val oy = ((height.toDouble() - (viewH * scale)) * 0.5).toInt()
-
-            for ((pid, body) in state.bodies) {
-                g2.color = if (body.playerId == myPlayerId) myColor else Color(0xCCCCCC)
-                val r = (body.radius.toIntFloor().toDouble() * scale).toInt().coerceAtLeast(1)
-                val cx = ox + (((body.pos.x - topLeft.x).toIntFloor().toDouble()) * scale).toInt()
-                val cy = oy + (((body.pos.y - topLeft.y).toIntFloor().toDouble()) * scale).toInt()
-                g2.fillOval(cx - r, cy - r, r * 2, r * 2)
-            }
+            val tr = (raster ?: TorusRaster(width, height)).also { raster = it }
+            tr.ensureSize(width, height)
+            tr.render(
+                torus = torus,
+                state = state,
+                myId = myPlayerId,
+                focusWrapped = focus,
+                viewW = camera.viewW,
+                viewH = camera.viewH,
+            )
+            g2.drawImage(tr.image, 0, 0, null)
         }
     }
 
@@ -416,7 +451,9 @@ private class AuthClientWindow(
     private var lastMyId: PlayerId? = null
     private var lastTick: Long = 0L
     @Volatile private var status: String = ""
-    private val camera = OrthoCamera2D(worldW = worldW, worldH = worldH, zoom = 2)
+    private val torus = Torus2D(width = worldW, height = worldH)
+    private val camera = TorusOrthoCamera2D(torus = torus, zoom = 2)
+    private var raster: TorusRaster? = null
 
     private val panel = object : JPanel() {
         override fun getPreferredSize(): Dimension =
@@ -433,22 +470,18 @@ private class AuthClientWindow(
             val myId = lastMyId
             if (state != null) {
                 val focus = if (myId != null) state.bodies[myId]?.pos else null
-                val topLeft = camera.topLeftForFocus(focus ?: Vec2Fx(Fx(worldW.raw / 2), Fx(worldH.raw / 2)))
-                val viewW = camera.viewW.toIntFloor().coerceAtLeast(1)
-                val viewH = camera.viewH.toIntFloor().coerceAtLeast(1)
-                val scaleX = width.toDouble() / viewW.toDouble()
-                val scaleY = height.toDouble() / viewH.toDouble()
-                val scale = minOf(scaleX, scaleY)
-                val ox = ((width.toDouble() - (viewW * scale)) * 0.5).toInt()
-                val oy = ((height.toDouble() - (viewH * scale)) * 0.5).toInt()
-
-                for ((pid, body) in state.bodies) {
-                    g2.color = if (myId != null && pid == myId) myColor else Color(0xCCCCCC)
-                    val r = (body.radius.toIntFloor().toDouble() * scale).toInt().coerceAtLeast(1)
-                    val cx = ox + (((body.pos.x - topLeft.x).toIntFloor().toDouble()) * scale).toInt()
-                    val cy = oy + (((body.pos.y - topLeft.y).toIntFloor().toDouble()) * scale).toInt()
-                    g2.fillOval(cx - r, cy - r, r * 2, r * 2)
-                }
+                val focusWrapped = focus ?: Vec2Fx(Fx(worldW.raw / 2), Fx(worldH.raw / 2))
+                val tr = (raster ?: TorusRaster(width, height)).also { raster = it }
+                tr.ensureSize(width, height)
+                tr.render(
+                    torus = torus,
+                    state = state,
+                    myId = myId,
+                    focusWrapped = focusWrapped,
+                    viewW = camera.viewW,
+                    viewH = camera.viewH,
+                )
+                g2.drawImage(tr.image, 0, 0, null)
             }
 
             g2.color = Color(0xEEEEEE)
@@ -598,7 +631,9 @@ private class HostWindow(
     private var lastState: PhysicsState? = null
     private var lastTick: Long = 0L
     @Volatile private var status: String = ""
-    private val camera = OrthoCamera2D(worldW = worldW, worldH = worldH, zoom = 2)
+    private val torus = Torus2D(width = worldW, height = worldH)
+    private val camera = TorusOrthoCamera2D(torus = torus, zoom = 2)
+    private var raster: TorusRaster? = null
 
     private val panel = object : JPanel() {
         override fun getPreferredSize(): Dimension =
@@ -613,22 +648,17 @@ private class HostWindow(
 
             val state = lastState ?: return
             val focus = state.bodies[myPlayerId]?.pos ?: Vec2Fx(Fx(worldW.raw / 2), Fx(worldH.raw / 2))
-            val topLeft = camera.topLeftForFocus(focus)
-            val viewW = camera.viewW.toIntFloor().coerceAtLeast(1)
-            val viewH = camera.viewH.toIntFloor().coerceAtLeast(1)
-            val scaleX = width.toDouble() / viewW.toDouble()
-            val scaleY = height.toDouble() / viewH.toDouble()
-            val scale = minOf(scaleX, scaleY)
-            val ox = ((width.toDouble() - (viewW * scale)) * 0.5).toInt()
-            val oy = ((height.toDouble() - (viewH * scale)) * 0.5).toInt()
-
-            for ((pid, body) in state.bodies) {
-                g2.color = if (pid == myPlayerId) myColor else Color(0xCCCCCC)
-                val r = (body.radius.toIntFloor().toDouble() * scale).toInt().coerceAtLeast(1)
-                val cx = ox + (((body.pos.x - topLeft.x).toIntFloor().toDouble()) * scale).toInt()
-                val cy = oy + (((body.pos.y - topLeft.y).toIntFloor().toDouble()) * scale).toInt()
-                g2.fillOval(cx - r, cy - r, r * 2, r * 2)
-            }
+            val tr = (raster ?: TorusRaster(width, height)).also { raster = it }
+            tr.ensureSize(width, height)
+            tr.render(
+                torus = torus,
+                state = state,
+                myId = myPlayerId,
+                focusWrapped = focus,
+                viewW = camera.viewW,
+                viewH = camera.viewH,
+            )
+            g2.drawImage(tr.image, 0, 0, null)
 
             g2.color = Color(0xEEEEEE)
             g2.drawString("tick=$lastTick hostPlayer=${myPlayerId.value}", 10, 20)
@@ -689,7 +719,7 @@ private class HostWindow(
         }
 }
 
-private class DelegatingPipe : Pipe {
+internal class DelegatingPipe : Pipe {
     @Volatile private var delegate: Pipe? = null
 
     fun setDelegate(pipe: Pipe) {
