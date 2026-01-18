@@ -17,6 +17,7 @@ import org.emerge.net.loopback.Loopback
 import org.emerge.net.api.Pipe
 import org.emerge.net.tcp.Tcp
 import org.emerge.sim.codec.physics.PhysicsNetCodecs
+import org.emerge.sim.core.camera.OrthoCamera2D
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.CircleBody
 import org.emerge.sim.core.physics.Fx
@@ -319,6 +320,7 @@ private class ClientWindow(
     private val useWasd: Boolean,
 ) {
     private val pressed = HashSet<Int>()
+    private val camera = OrthoCamera2D(worldW = worldW, worldH = worldH, zoom = 2)
 
     private val panel = object : JPanel() {
         override fun getPreferredSize(): Dimension =
@@ -332,12 +334,22 @@ private class ClientWindow(
             g2.fillRect(0, 0, width, height)
 
             val state = client.state
+            val focus = state.bodies[myPlayerId]?.pos ?: Vec2Fx(Fx(worldW.raw / 2), Fx(worldH.raw / 2))
+            val topLeft = camera.topLeftForFocus(focus)
+            val viewW = camera.viewW.toIntFloor().coerceAtLeast(1)
+            val viewH = camera.viewH.toIntFloor().coerceAtLeast(1)
+            val scaleX = width.toDouble() / viewW.toDouble()
+            val scaleY = height.toDouble() / viewH.toDouble()
+            val scale = minOf(scaleX, scaleY)
+            val ox = ((width.toDouble() - (viewW * scale)) * 0.5).toInt()
+            val oy = ((height.toDouble() - (viewH * scale)) * 0.5).toInt()
+
             for ((pid, body) in state.bodies) {
                 g2.color = if (body.playerId == myPlayerId) myColor else Color(0xCCCCCC)
-                val r = body.radius.toIntFloor()
-                val x = body.pos.x.toIntFloor() - r
-                val y = body.pos.y.toIntFloor() - r
-                g2.fillOval(x, y, r * 2, r * 2)
+                val r = (body.radius.toIntFloor().toDouble() * scale).toInt().coerceAtLeast(1)
+                val cx = ox + (((body.pos.x - topLeft.x).toIntFloor().toDouble()) * scale).toInt()
+                val cy = oy + (((body.pos.y - topLeft.y).toIntFloor().toDouble()) * scale).toInt()
+                g2.fillOval(cx - r, cy - r, r * 2, r * 2)
             }
         }
     }
@@ -404,6 +416,7 @@ private class AuthClientWindow(
     private var lastMyId: PlayerId? = null
     private var lastTick: Long = 0L
     @Volatile private var status: String = ""
+    private val camera = OrthoCamera2D(worldW = worldW, worldH = worldH, zoom = 2)
 
     private val panel = object : JPanel() {
         override fun getPreferredSize(): Dimension =
@@ -419,12 +432,22 @@ private class AuthClientWindow(
             val state = lastState
             val myId = lastMyId
             if (state != null) {
+                val focus = if (myId != null) state.bodies[myId]?.pos else null
+                val topLeft = camera.topLeftForFocus(focus ?: Vec2Fx(Fx(worldW.raw / 2), Fx(worldH.raw / 2)))
+                val viewW = camera.viewW.toIntFloor().coerceAtLeast(1)
+                val viewH = camera.viewH.toIntFloor().coerceAtLeast(1)
+                val scaleX = width.toDouble() / viewW.toDouble()
+                val scaleY = height.toDouble() / viewH.toDouble()
+                val scale = minOf(scaleX, scaleY)
+                val ox = ((width.toDouble() - (viewW * scale)) * 0.5).toInt()
+                val oy = ((height.toDouble() - (viewH * scale)) * 0.5).toInt()
+
                 for ((pid, body) in state.bodies) {
                     g2.color = if (myId != null && pid == myId) myColor else Color(0xCCCCCC)
-                    val r = body.radius.toIntFloor()
-                    val x = body.pos.x.toIntFloor() - r
-                    val y = body.pos.y.toIntFloor() - r
-                    g2.fillOval(x, y, r * 2, r * 2)
+                    val r = (body.radius.toIntFloor().toDouble() * scale).toInt().coerceAtLeast(1)
+                    val cx = ox + (((body.pos.x - topLeft.x).toIntFloor().toDouble()) * scale).toInt()
+                    val cy = oy + (((body.pos.y - topLeft.y).toIntFloor().toDouble()) * scale).toInt()
+                    g2.fillOval(cx - r, cy - r, r * 2, r * 2)
                 }
             }
 
@@ -575,6 +598,7 @@ private class HostWindow(
     private var lastState: PhysicsState? = null
     private var lastTick: Long = 0L
     @Volatile private var status: String = ""
+    private val camera = OrthoCamera2D(worldW = worldW, worldH = worldH, zoom = 2)
 
     private val panel = object : JPanel() {
         override fun getPreferredSize(): Dimension =
@@ -588,12 +612,22 @@ private class HostWindow(
             g2.fillRect(0, 0, width, height)
 
             val state = lastState ?: return
+            val focus = state.bodies[myPlayerId]?.pos ?: Vec2Fx(Fx(worldW.raw / 2), Fx(worldH.raw / 2))
+            val topLeft = camera.topLeftForFocus(focus)
+            val viewW = camera.viewW.toIntFloor().coerceAtLeast(1)
+            val viewH = camera.viewH.toIntFloor().coerceAtLeast(1)
+            val scaleX = width.toDouble() / viewW.toDouble()
+            val scaleY = height.toDouble() / viewH.toDouble()
+            val scale = minOf(scaleX, scaleY)
+            val ox = ((width.toDouble() - (viewW * scale)) * 0.5).toInt()
+            val oy = ((height.toDouble() - (viewH * scale)) * 0.5).toInt()
+
             for ((pid, body) in state.bodies) {
                 g2.color = if (pid == myPlayerId) myColor else Color(0xCCCCCC)
-                val r = body.radius.toIntFloor()
-                val x = body.pos.x.toIntFloor() - r
-                val y = body.pos.y.toIntFloor() - r
-                g2.fillOval(x, y, r * 2, r * 2)
+                val r = (body.radius.toIntFloor().toDouble() * scale).toInt().coerceAtLeast(1)
+                val cx = ox + (((body.pos.x - topLeft.x).toIntFloor().toDouble()) * scale).toInt()
+                val cy = oy + (((body.pos.y - topLeft.y).toIntFloor().toDouble()) * scale).toInt()
+                g2.fillOval(cx - r, cy - r, r * 2, r * 2)
             }
 
             g2.color = Color(0xEEEEEE)

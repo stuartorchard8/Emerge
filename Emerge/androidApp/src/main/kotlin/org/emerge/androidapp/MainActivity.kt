@@ -15,6 +15,7 @@ import org.emerge.net.loopback.Loopback
 import org.emerge.net.tcp.Tcp
 import org.emerge.net.api.Pipe
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.camera.OrthoCamera2D
 import org.emerge.sim.core.physics.CircleBody
 import org.emerge.sim.core.physics.Fx
 import org.emerge.sim.core.physics.PhysicsInput
@@ -221,6 +222,8 @@ private class PhysicsLockstepView(
         isAntiAlias = true
     }
 
+    private val camera = OrthoCamera2D(worldW = worldW, worldH = worldH, zoom = 2)
+
     private val handler = Handler(Looper.getMainLooper())
     private val tickRunnable = object : Runnable {
         override fun run() {
@@ -265,17 +268,25 @@ private class PhysicsLockstepView(
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paintBg)
 
         val state = client?.state ?: host?.state ?: initial
-        val sx = width.toFloat() / worldW.toIntFloor().toFloat()
-        val sy = height.toFloat() / worldH.toIntFloor().toFloat()
-        val sr = max(0.1f, (sx + sy) * 0.5f)
+        val myId = client?.playerId ?: localPlayerId
+        val focus = state.bodies[myId]?.pos ?: Vec2Fx(Fx(worldW.raw / 2), Fx(worldH.raw / 2))
+        val topLeft = camera.topLeftForFocus(focus)
+
+        val viewW = max(1, camera.viewW.toIntFloor())
+        val viewH = max(1, camera.viewH.toIntFloor())
+
+        val scaleX = width.toFloat() / viewW.toFloat()
+        val scaleY = height.toFloat() / viewH.toFloat()
+        val s = max(0.1f, minOf(scaleX, scaleY))
+        val ox = (width - (viewW * s)).coerceAtLeast(0f) * 0.5f
+        val oy = (height - (viewH * s)).coerceAtLeast(0f) * 0.5f
 
         for ((pid, body) in state.bodies) {
-            val myId = client?.playerId ?: localPlayerId
             val p = if (pid == myId) paintMe else paintOther
-            val r = body.radius.toIntFloor().toFloat()
-            val cx = body.pos.x.toIntFloor().toFloat() * sx
-            val cy = body.pos.y.toIntFloor().toFloat() * sy
-            canvas.drawCircle(cx, cy, r * sr, p)
+            val r = (body.radius.toIntFloor().toFloat() * s).coerceAtLeast(1f)
+            val cx = ox + ((body.pos.x - topLeft.x).toIntFloor().toFloat() * s)
+            val cy = oy + ((body.pos.y - topLeft.y).toIntFloor().toFloat() * s)
+            canvas.drawCircle(cx, cy, r, p)
         }
 
         val tick = client?.tick?.value ?: host?.tick?.value ?: 0L
