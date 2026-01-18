@@ -1,0 +1,6 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="net-tcp-jvm">
+    <output-path>$PROJECT_DIR$/.build/net-tcp-1768733676140/libs</output-path>
+    <root id="archive" name="net-tcp-jvm.jar" />
+  </artifact>
+</component>

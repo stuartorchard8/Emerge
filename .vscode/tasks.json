@@ -1,0 +1,164 @@
+{
+  "version": "2.0.0",
+  "inputs": [
+    {
+      "id": "androidDeviceSerial",
+      "type": "promptString",
+      "description": "Android device serial (from `adb devices`), leave blank to use default device",
+      "default": "92520220706503"
+    },
+    {
+      "id": "androidHostIp",
+      "type": "promptString",
+      "description": "Host IP (for join mode)",
+      "default": "192.168.0.102"
+    },
+    {
+      "id": "androidPort",
+      "type": "promptString",
+      "description": "Port",
+      "default": "7777"
+    }
+  ],
+  "tasks": [
+    {
+      "label": "gradle :app:classes",
+      "type": "shell",
+      "command": "${workspaceFolder}\\\\gradlew.bat",
+      "args": [
+        ":app:classes"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "android: adb devices",
+      "type": "shell",
+      "command": "adb",
+      "args": ["devices"],
+      "problemMatcher": []
+    },
+    {
+      "label": "android: gradle :androidApp:installDebug (default device)",
+      "type": "shell",
+      "command": "${workspaceFolder}\\\\gradlew.bat",
+      "args": [":androidApp:installDebug"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "android: gradle :androidApp:installDebug (prompt serial)",
+      "type": "shell",
+      "command": "${workspaceFolder}\\\\gradlew.bat",
+      "args": [
+        ":androidApp:installDebug",
+        "-Pandroid.injected.device.serial=${input:androidDeviceSerial}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "android: launch (loopback, gl)",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "-s",
+        "${input:androidDeviceSerial}",
+        "shell",
+        "am",
+        "start",
+        "-n",
+        "org.emerge.androidapp/.MainActivity",
+        "--es",
+        "mode",
+        "loopback",
+        "--es",
+        "renderer",
+        "gl"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "android: launch (host, gl)",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "-s",
+        "${input:androidDeviceSerial}",
+        "shell",
+        "am",
+        "start",
+        "-n",
+        "org.emerge.androidapp/.MainActivity",
+        "--es",
+        "mode",
+        "host",
+        "--es",
+        "renderer",
+        "gl",
+        "--ei",
+        "port",
+        "${input:androidPort}"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "android: launch (join, gl) — prompt host/port",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "-s",
+        "${input:androidDeviceSerial}",
+        "shell",
+        "am",
+        "start",
+        "-n",
+        "org.emerge.androidapp/.MainActivity",
+        "--es",
+        "mode",
+        "join",
+        "--es",
+        "renderer",
+        "gl",
+        "--es",
+        "hostIp",
+        "${input:androidHostIp}",
+        "--ei",
+        "port",
+        "${input:androidPort}"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "android: installDebug + launch (loopback, gl) [prompt serial]",
+      "dependsOn": [
+        "android: gradle :androidApp:installDebug (prompt serial)",
+        "android: launch (loopback, gl)"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "android: installDebug + launch (host, gl) [prompt serial]",
+      "dependsOn": [
+        "android: gradle :androidApp:installDebug (prompt serial)",
+        "android: launch (host, gl)"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "android: installDebug + launch (join, gl) [prompt serial]",
+      "dependsOn": [
+        "android: gradle :androidApp:installDebug (prompt serial)",
+        "android: launch (join, gl) — prompt host/port"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}
+

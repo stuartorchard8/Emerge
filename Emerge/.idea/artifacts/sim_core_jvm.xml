@@ -1,8 +1,0 @@
-<component name="ArtifactManager">
-  <artifact type="jar" name="sim-core-jvm">
-    <output-path>$PROJECT_DIR$/sim-core/build/libs</output-path>
-    <root id="archive" name="sim-core-jvm.jar">
-      <element id="module-output" name="Emerge.sim-core.jvmMain" />
-    </root>
-  </artifact>
-</component>

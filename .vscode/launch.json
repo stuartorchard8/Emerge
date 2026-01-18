@@ -1,0 +1,105 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Emerge Desktop: Default (lockstep Swing)",
+      "type": "java",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "gradle :app:classes",
+      "mainClass": "org.example.app.AppKt",
+      "projectName": "app"
+    },
+    {
+      "name": "Emerge Desktop: Host (GL) :7777",
+      "type": "java",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "gradle :app:classes",
+      "mainClass": "org.example.app.AppKt",
+      "projectName": "app",
+      "args": ["host", "7777"]
+    },
+    {
+      "name": "Emerge Desktop: Host (Swing) :7777",
+      "type": "java",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "gradle :app:classes",
+      "mainClass": "org.example.app.AppKt",
+      "projectName": "app",
+      "args": ["host-swing", "7777"]
+    },
+    {
+      "name": "Emerge Desktop: Join (GL) — prompt host/port",
+      "type": "java",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "gradle :app:classes",
+      "mainClass": "org.example.app.AppKt",
+      "projectName": "app",
+      "args": ["join", "${input:hostIp}", "${input:hostPort}"]
+    },
+    {
+      "name": "Emerge Desktop: Join (Swing) — prompt host/port",
+      "type": "java",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "gradle :app:classes",
+      "mainClass": "org.example.app.AppKt",
+      "projectName": "app",
+      "args": ["join-swing", "${input:hostIp}", "${input:hostPort}"]
+    },
+    {
+      "name": "Emerge Desktop: Join (GL) — prompt host/port (alias join-gl)",
+      "type": "java",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "gradle :app:classes",
+      "mainClass": "org.example.app.AppKt",
+      "projectName": "app",
+      "args": ["join-gl", "${input:hostIp}", "${input:hostPort}"]
+    },
+    {
+      "name": "Emerge Desktop: Join (GL once) — prompt host/port/ms",
+      "type": "java",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "gradle :app:classes",
+      "mainClass": "org.example.app.AppKt",
+      "projectName": "app",
+      "args": ["join-gl-once", "${input:hostIp}", "${input:hostPort}", "${input:runMs}"]
+    },
+    {
+      "name": "Emerge Desktop: Join (headless once) — prompt host/port",
+      "type": "java",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "gradle :app:classes",
+      "mainClass": "org.example.app.AppKt",
+      "projectName": "app",
+      "args": ["join-once", "${input:hostIp}", "${input:hostPort}"]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "hostIp",
+      "type": "promptString",
+      "description": "Host IP (Android/desktop host)",
+      "default": "192.168.0.102"
+    },
+    {
+      "id": "hostPort",
+      "type": "promptString",
+      "description": "Host port",
+      "default": "7777"
+    },
+    {
+      "id": "runMs",
+      "type": "promptString",
+      "description": "Run duration ms (join-gl-once)",
+      "default": "4000"
+    }
+  ]
+}
+
