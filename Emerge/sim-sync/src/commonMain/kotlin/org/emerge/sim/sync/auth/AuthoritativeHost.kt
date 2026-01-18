@@ -5,6 +5,7 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.Tick
 import org.emerge.sim.core.TickStepper
 import org.emerge.sim.sync.Codec
+import org.emerge.sim.sync.platform.sleepMillis
 
 /**
  * Server-authoritative simulation host.
@@ -41,11 +42,7 @@ class AuthoritativeHost<S, I>(
             pkt = pipe.receive()
             if (pkt == null) {
                 // Avoid a hot spin; Pipe is polling-based.
-                try {
-                    Thread.sleep(1L)
-                } catch (_: Throwable) {
-                    // ignore
-                }
+                sleepMillis(1L)
             }
         } while (pkt == null)
 

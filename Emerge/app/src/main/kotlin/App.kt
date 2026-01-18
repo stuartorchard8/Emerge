@@ -12,11 +12,11 @@ import javax.swing.JFrame
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
 import javax.swing.Timer
-import org.emerge.net.codec.ByteCursor
-import org.emerge.net.codec.ByteWriter
+import kotlin.system.exitProcess
 import org.emerge.net.loopback.Loopback
 import org.emerge.net.api.Pipe
 import org.emerge.net.tcp.Tcp
+import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.CircleBody
 import org.emerge.sim.core.physics.Fx
@@ -39,6 +39,8 @@ fun main(args: Array<String>) {
     //     gradlew :app:run --args="host 7777"
     // - join Android host (authoritative):
     //     gradlew :app:run --args="join 192.168.0.102 7777"
+    // - join Android host once (headless smoke test; exits):
+    //     gradlew :app:run --args="join-once 192.168.0.102 7777"
     if (args.isNotEmpty()) {
         when (args[0]) {
             "host" -> {
@@ -52,10 +54,68 @@ fun main(args: Array<String>) {
                 SwingUtilities.invokeLater { AuthoritativeJoinSwingClient(host, port).start() }
                 return
             }
+            "join-once" -> {
+                val host = args.getOrNull(1) ?: error("Missing host ip. Usage: join-once <hostIp> <port>")
+                val port = args.getOrNull(2)?.toIntOrNull() ?: error("Missing/invalid port. Usage: join-once <hostIp> <port>")
+                val ok = joinOnce(hostIp = host, port = port)
+                exitProcess(if (ok) 0 else 1)
+            }
         }
     }
 
     SwingUtilities.invokeLater { PhysicsLockstepSwingDemo().start() }
+}
+
+/**
+ * Headless join smoke test for verifying that desktop can connect + handshake + receive first snapshot.
+ */
+private fun joinOnce(hostIp: String, port: Int): Boolean {
+    val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
+    val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
+    val pipe =
+        try {
+            Tcp.connect(hostIp, port)
+        } catch (t: Throwable) {
+            val msg = t.message?.take(120) ?: ""
+            println("join-once: connect failed: ${t.javaClass.simpleName} $msg")
+            return false
+        }
+
+    val client = AuthoritativeClient(
+        pipe = pipe,
+        inputCodec = inputCodec,
+        stateCodec = stateCodec,
+        onDisconnected = { reason ->
+            println("join-once: disconnected: $reason")
+        },
+    )
+
+    println("join-once: connecting $hostIp:$port")
+    client.resetConnection("join-once")
+    client.startHandshake(force = true)
+
+    val deadlineMs = System.currentTimeMillis() + 6_000L
+    while (System.currentTimeMillis() < deadlineMs) {
+        client.poll()
+        if (client.connectionState == AuthoritativeClient.ConnectionState.CONNECTED && client.playerId != null && client.state != null) {
+            println("join-once: OK (playerId=${client.playerId} tick=${client.tick.value})")
+            return true
+        }
+        if (client.connectionState == AuthoritativeClient.ConnectionState.DISCONNECTED) {
+            val r = client.lastDisconnectReason ?: "disconnected"
+            println("join-once: FAILED ($r)")
+            return false
+        }
+        try {
+            Thread.sleep(5L)
+        } catch (_: InterruptedException) {
+            break
+        }
+    }
+
+    val r = client.lastDisconnectReason ?: "timeout waiting for welcome/snapshot"
+    println("join-once: FAILED ($r)")
+    return false
 }
 
 private class PhysicsLockstepSwingDemo {
@@ -73,15 +133,7 @@ private class PhysicsLockstepSwingDemo {
 
     private val reducer = PhysicsReducer()
 
-    private val inputCodec = object : Codec<PhysicsInput> {
-        override fun encode(value: PhysicsInput): ByteArray =
-            byteArrayOf(value.ax.toByte(), value.ay.toByte())
-
-        override fun decode(bytes: ByteArray): PhysicsInput {
-            require(bytes.size == 2)
-            return PhysicsInput(bytes[0].toInt(), bytes[1].toInt())
-        }
-    }
+    private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
 
     private val initial = PhysicsState(
         width = worldW,
@@ -168,51 +220,8 @@ private class AuthoritativeJoinSwingClient(
     private val worldW = Fx.fromInt(800)
     private val worldH = Fx.fromInt(500)
 
-    private val inputCodec = object : Codec<PhysicsInput> {
-        override fun encode(value: PhysicsInput): ByteArray =
-            byteArrayOf(value.ax.toByte(), value.ay.toByte())
-
-        override fun decode(bytes: ByteArray): PhysicsInput {
-            require(bytes.size == 2)
-            return PhysicsInput(bytes[0].toInt(), bytes[1].toInt())
-        }
-    }
-
-    private val stateCodec = object : StateCodec<PhysicsState> {
-        override fun encode(state: PhysicsState): ByteArray {
-            val w = ByteWriter()
-            w.writeInt(state.width.raw)
-            w.writeInt(state.height.raw)
-            w.writeInt(state.bodies.size)
-            for ((pid, body) in state.bodies) {
-                w.writeInt(pid.value)
-                w.writeInt(body.pos.x.raw)
-                w.writeInt(body.pos.y.raw)
-                w.writeInt(body.vel.x.raw)
-                w.writeInt(body.vel.y.raw)
-                w.writeInt(body.radius.raw)
-            }
-            return w.toByteArray()
-        }
-
-        override fun decode(bytes: ByteArray): PhysicsState {
-            val c = ByteCursor(bytes)
-            val width = Fx(c.readInt())
-            val height = Fx(c.readInt())
-            val n = c.readInt()
-            val bodies = LinkedHashMap<PlayerId, CircleBody>(n)
-            repeat(n) {
-                val pid = PlayerId(c.readInt())
-                val px = Fx(c.readInt())
-                val py = Fx(c.readInt())
-                val vx = Fx(c.readInt())
-                val vy = Fx(c.readInt())
-                val r = Fx(c.readInt())
-                bodies[pid] = CircleBody(pid, Vec2Fx(px, py), Vec2Fx(vx, vy), r)
-            }
-            return PhysicsState(width = width, height = height, bodies = bodies)
-        }
-    }
+    private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
+    private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
 
     private val ui = AuthClientWindow(
         title = "Desktop Join ($hostIp:$port) - WASD",
@@ -222,6 +231,7 @@ private class AuthoritativeJoinSwingClient(
     )
 
     @Volatile private var reconnecting: Boolean = false
+    @Volatile private var sawFirstState: Boolean = false
 
     fun start() {
         val remote = DelegatingPipe()
@@ -289,6 +299,10 @@ private class AuthoritativeJoinSwingClient(
                         }
                     }
                 }
+            }
+            if (!sawFirstState && client.state != null && client.playerId != null) {
+                sawFirstState = true
+                println("join-ui: first snapshot (playerId=${client.playerId} tick=${client.tick.value})")
             }
             ui.repaintWorld(client)
         }.start()
@@ -402,20 +416,25 @@ private class AuthClientWindow(
             g2.color = Color(0x111111)
             g2.fillRect(0, 0, width, height)
 
-            val state = lastState ?: return
+            val state = lastState
             val myId = lastMyId
-            for ((pid, body) in state.bodies) {
-                g2.color = if (myId != null && pid == myId) myColor else Color(0xCCCCCC)
-                val r = body.radius.toIntFloor()
-                val x = body.pos.x.toIntFloor() - r
-                val y = body.pos.y.toIntFloor() - r
-                g2.fillOval(x, y, r * 2, r * 2)
+            if (state != null) {
+                for ((pid, body) in state.bodies) {
+                    g2.color = if (myId != null && pid == myId) myColor else Color(0xCCCCCC)
+                    val r = body.radius.toIntFloor()
+                    val x = body.pos.x.toIntFloor() - r
+                    val y = body.pos.y.toIntFloor() - r
+                    g2.fillOval(x, y, r * 2, r * 2)
+                }
             }
 
             g2.color = Color(0xEEEEEE)
             g2.drawString("tick=$lastTick playerId=${myId?.value ?: "?"}", 10, 20)
             if (status.isNotBlank()) {
                 g2.drawString(status, 10, 40)
+            }
+            if (state == null) {
+                g2.drawString("waiting for welcome/snapshot...", 10, 60)
             }
         }
     }
@@ -481,51 +500,8 @@ private class AuthoritativeHostSwingDemo(
 
     private val reducer = PhysicsReducer()
 
-    private val inputCodec = object : Codec<PhysicsInput> {
-        override fun encode(value: PhysicsInput): ByteArray =
-            byteArrayOf(value.ax.toByte(), value.ay.toByte())
-
-        override fun decode(bytes: ByteArray): PhysicsInput {
-            require(bytes.size == 2)
-            return PhysicsInput(bytes[0].toInt(), bytes[1].toInt())
-        }
-    }
-
-    private val stateCodec = object : StateCodec<PhysicsState> {
-        override fun encode(state: PhysicsState): ByteArray {
-            val w = ByteWriter()
-            w.writeInt(state.width.raw)
-            w.writeInt(state.height.raw)
-            w.writeInt(state.bodies.size)
-            for ((pid, body) in state.bodies) {
-                w.writeInt(pid.value)
-                w.writeInt(body.pos.x.raw)
-                w.writeInt(body.pos.y.raw)
-                w.writeInt(body.vel.x.raw)
-                w.writeInt(body.vel.y.raw)
-                w.writeInt(body.radius.raw)
-            }
-            return w.toByteArray()
-        }
-
-        override fun decode(bytes: ByteArray): PhysicsState {
-            val c = ByteCursor(bytes)
-            val width = Fx(c.readInt())
-            val height = Fx(c.readInt())
-            val n = c.readInt()
-            val bodies = LinkedHashMap<PlayerId, CircleBody>(n)
-            repeat(n) {
-                val pid = PlayerId(c.readInt())
-                val px = Fx(c.readInt())
-                val py = Fx(c.readInt())
-                val vx = Fx(c.readInt())
-                val vy = Fx(c.readInt())
-                val r = Fx(c.readInt())
-                bodies[pid] = CircleBody(pid, Vec2Fx(px, py), Vec2Fx(vx, vy), r)
-            }
-            return PhysicsState(width = width, height = height, bodies = bodies)
-        }
-    }
+    private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
+    private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
 
     private val initial = PhysicsState(
         width = worldW,

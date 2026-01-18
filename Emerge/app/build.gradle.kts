@@ -10,6 +10,7 @@ plugins {
 dependencies {
     implementation(project(":sim-core"))
     implementation(project(":sim-sync"))
+    implementation(project(":sim-physics-codec"))
     implementation(project(":net-loopback"))
     implementation(project(":net-tcp"))
 }
