@@ -7,12 +7,15 @@ import java.awt.Graphics2D
 import java.awt.RenderingHints
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
-import kotlin.concurrent.thread
 import javax.swing.JFrame
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
 import javax.swing.Timer
 import kotlin.system.exitProcess
+import org.emerge.demo.physics.PhysicsAuthoritativeHostController
+import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
+import org.emerge.demo.physics.PhysicsDemoConfig
+import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.net.loopback.Loopback
 import org.emerge.net.api.Pipe
 import org.emerge.net.tcp.Tcp
@@ -30,7 +33,6 @@ import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.LockstepClient
 import org.emerge.sim.sync.LockstepHost
 import org.emerge.sim.sync.auth.AuthoritativeClient
-import org.emerge.sim.sync.auth.AuthoritativeHost
 import org.emerge.sim.sync.auth.StateCodec
 
 fun main(args: Array<String>) {
@@ -299,11 +301,11 @@ private class AuthoritativeJoinSwingClient(
     private val hostIp: String,
     private val port: Int,
 ) {
-    private val worldW = Fx.fromInt(800)
-    private val worldH = Fx.fromInt(500)
-
-    private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
-    private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
+    private val cfg = PhysicsDemoConfig()
+    private val worldW = cfg.worldW
+    private val worldH = cfg.worldH
+    private val initial: PhysicsState = createDefaultInitialState(cfg)
+    private val controller = PhysicsAuthoritativeJoinController(hostIp = hostIp, port = port, cfg = cfg)
 
     private val ui = AuthClientWindow(
         title = "Desktop Join ($hostIp:$port) - WASD",
@@ -312,81 +314,24 @@ private class AuthoritativeJoinSwingClient(
         worldH = worldH,
     )
 
-    @Volatile private var reconnecting: Boolean = false
     @Volatile private var sawFirstState: Boolean = false
 
     fun start() {
-        val remote = DelegatingPipe()
-
-        val client = AuthoritativeClient(
-            pipe = remote,
-            inputCodec = inputCodec,
-            stateCodec = stateCodec,
-            onDisconnected = { reason ->
-                ui.setStatus("disconnected ($reason)")
-            },
-        )
         ui.show()
 
-        thread(isDaemon = true, name = "net-connect") {
-            var attempt = 0
-            while (true) {
-                attempt += 1
-                ui.setStatus("connecting $hostIp:$port (try $attempt)")
-                try {
-                    remote.setDelegate(Tcp.connect(hostIp, port))
-                    ui.setStatus("connected (handshake)")
-                    client.resetConnection("connect")
-                    client.startHandshake(force = true)
-                    break
-                } catch (t: Throwable) {
-                    val msg = t.message?.take(60) ?: ""
-                    ui.setStatus("connect failed: ${t.javaClass.simpleName} $msg")
-                    try {
-                        Thread.sleep(500L)
-                    } catch (_: InterruptedException) {
-                        break
-                    }
-                }
-            }
-        }
-
         Timer(16) {
-            client.poll()
-            // Send input once we have an assigned player id
-            client.sendInput(ui.currentInput())
-            if (client.connectionState == AuthoritativeClient.ConnectionState.DISCONNECTED && !reconnecting) {
-                reconnecting = true
-                thread(isDaemon = true, name = "net-reconnect") {
-                    var attempt = 0
-                    while (true) {
-                        attempt += 1
-                        ui.setStatus("reconnecting $hostIp:$port (try $attempt)")
-                        try {
-                            remote.setDelegate(Tcp.connect(hostIp, port))
-                            ui.setStatus("reconnected (handshake)")
-                            client.resetConnection("reconnect")
-                            client.startHandshake(force = true)
-                            reconnecting = false
-                            break
-                        } catch (t: Throwable) {
-                            val msg = t.message?.take(60) ?: ""
-                            ui.setStatus("reconnect failed: ${t.javaClass.simpleName} $msg")
-                            try {
-                                Thread.sleep(500L)
-                            } catch (_: InterruptedException) {
-                                reconnecting = false
-                                break
-                            }
-                        }
-                    }
-                }
-            }
-            if (!sawFirstState && client.state != null && client.playerId != null) {
+            val frame = controller.tick(ui.currentInput())
+            if (!sawFirstState && frame.state != null && frame.myId != null) {
                 sawFirstState = true
-                println("join-ui: first snapshot (playerId=${client.playerId} tick=${client.tick.value})")
+                println("join-ui: first snapshot (playerId=${frame.myId} tick=${frame.tick})")
             }
-            ui.repaintWorld(client)
+            ui.repaintWorld(
+                state = frame.state,
+                myId = frame.myId,
+                tick = frame.tick,
+                status = frame.status,
+                fallbackState = initial,
+            )
         }.start()
     }
 }
@@ -565,10 +510,17 @@ private class AuthClientWindow(
         panel.requestFocusInWindow()
     }
 
-    fun repaintWorld(client: AuthoritativeClient<PhysicsState, PhysicsInput>) {
-        lastState = client.state
-        lastMyId = client.playerId
-        lastTick = client.tick.value
+    fun repaintWorld(
+        state: PhysicsState?,
+        myId: PlayerId?,
+        tick: Long,
+        status: String,
+        fallbackState: PhysicsState,
+    ) {
+        lastState = state ?: fallbackState
+        lastMyId = myId
+        lastTick = tick
+        this.status = status
         panel.repaint()
     }
 
@@ -597,41 +549,11 @@ private class AuthClientWindow(
 private class AuthoritativeHostSwingDemo(
     private val port: Int,
 ) {
-    private val worldW = Fx.fromInt(800)
-    private val worldH = Fx.fromInt(500)
-    private val radius = Fx.fromInt(16)
-
-    private val reducer = PhysicsReducer()
-
-    private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
-    private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
-
-    private val initial = PhysicsState(
-        width = worldW,
-        height = worldH,
-        bodies = mapOf(
-            PlayerId(0) to CircleBody(
-                playerId = PlayerId(0),
-                pos = Vec2Fx(Fx.fromInt(200), Fx.fromInt(250)),
-                vel = Vec2Fx(Fx(0), Fx(0)),
-                radius = radius,
-            ),
-        ),
-    )
-
-    private val host = AuthoritativeHost(
-        initialState = initial,
-        reducer = { s, inputs -> reducer.reduce(s, inputs) },
-        inputCodec = inputCodec,
-        stateCodec = stateCodec,
-        joinPolicy = { s, pid ->
-            val bodies = LinkedHashMap(s.bodies)
-            val x = 100 + (pid.value * 70)
-            val y = 250
-            bodies[pid] = CircleBody(pid, Vec2Fx(Fx.fromInt(x), Fx.fromInt(y)), Vec2Fx(Fx(0), Fx(0)), radius)
-            s.copy(bodies = bodies)
-        },
-    )
+    private val cfg = PhysicsDemoConfig()
+    private val worldW = cfg.worldW
+    private val worldH = cfg.worldH
+    private val initial: PhysicsState = createDefaultInitialState(cfg)
+    private val controller = PhysicsAuthoritativeHostController(port = port, cfg = cfg, acceptRemoteClients = true)
 
     private val ui = HostWindow(
         title = "Desktop Host (:$port) - WASD",
@@ -643,26 +565,11 @@ private class AuthoritativeHostSwingDemo(
 
     fun start() {
         ui.show()
-        ui.setStatus("listening :$port")
-
-        thread(isDaemon = true, name = "net-accept") {
-            try {
-                val listener = Tcp.listen(port = port, backlog = 8)
-                while (true) {
-                    val pipe = listener.accept()
-                    host.acceptClient(pipe)
-                    ui.setStatus("client joined")
-                }
-            } catch (t: Throwable) {
-                ui.setStatus("accept failed: ${t.javaClass.simpleName}")
-            }
-        }
 
         Timer(16) {
-            host.pollNetwork()
-            host.setLocalInput(PlayerId(0), ui.currentInput())
-            host.step()
-            ui.repaintWorld(host.state, host.tick.value)
+            val frame = controller.tick(ui.currentInput())
+            ui.setStatus(frame.status)
+            ui.repaintWorld(frame.state ?: initial, frame.tick)
         }.start()
     }
 }
@@ -766,18 +673,4 @@ private class HostWindow(
             pos && !neg -> 1
             else -> 0
         }
-}
-
-internal class DelegatingPipe : Pipe {
-    @Volatile private var delegate: Pipe? = null
-
-    fun setDelegate(pipe: Pipe) {
-        delegate = pipe
-    }
-
-    override fun send(packet: ByteArray) {
-        delegate?.send(packet)
-    }
-
-    override fun receive(): ByteArray? = delegate?.receive()
 }

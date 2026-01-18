@@ -1,10 +1,10 @@
 package org.example.app
 
-import kotlin.concurrent.thread
 import kotlin.math.max
 import kotlin.math.min
-import org.emerge.net.tcp.Tcp
-import org.emerge.sim.codec.physics.PhysicsNetCodecs
+import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
+import org.emerge.demo.physics.PhysicsDemoConfig
+import org.emerge.demo.physics.packBodiesToFloatArray
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.camera.TorusCoverTracker
 import org.emerge.sim.core.physics.Fx
@@ -12,9 +12,6 @@ import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2Fx
 import org.emerge.sim.core.space.Torus2D
-import org.emerge.sim.sync.Codec
-import org.emerge.sim.sync.auth.AuthoritativeClient
-import org.emerge.sim.sync.auth.StateCodec
 import org.lwjgl.glfw.GLFW.GLFW_CONTEXT_VERSION_MAJOR
 import org.lwjgl.glfw.GLFW.GLFW_CONTEXT_VERSION_MINOR
 import org.lwjgl.glfw.GLFW.GLFW_KEY_A
@@ -90,43 +87,10 @@ import org.lwjgl.system.MemoryUtil.NULL
 internal const val MAX_BODIES = 128
 
 fun runJoinGl(hostIp: String, port: Int, maxRunMs: Long? = null): Boolean {
-    val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
-    val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
-
-    val remote = DelegatingPipe()
-    val client = AuthoritativeClient(
-        pipe = remote,
-        inputCodec = inputCodec,
-        stateCodec = stateCodec,
-        onDisconnected = { reason ->
-            println("join-gl: disconnected ($reason)")
-        },
-    )
+    val cfg = PhysicsDemoConfig()
+    val controller = PhysicsAuthoritativeJoinController(hostIp = hostIp, port = port, cfg = cfg)
 
     var sawFirstSnapshot: Boolean = false
-
-    thread(isDaemon = true, name = "net-connect") {
-        var attempt = 0
-        while (true) {
-            attempt += 1
-            try {
-                println("join-gl: connecting $hostIp:$port (try $attempt)")
-                remote.setDelegate(Tcp.connect(hostIp, port))
-                client.resetConnection("connect")
-                client.startHandshake(force = true)
-                println("join-gl: connected (handshake)")
-                break
-            } catch (t: Throwable) {
-                val msg = t.message?.take(100) ?: ""
-                println("join-gl: connect failed: ${t.javaClass.simpleName} $msg")
-                try {
-                    Thread.sleep(500L)
-                } catch (_: InterruptedException) {
-                    break
-                }
-            }
-        }
-    }
 
     if (!glfwInit()) error("GLFW init failed")
     glfwDefaultWindowHints()
@@ -173,6 +137,7 @@ fun runJoinGl(hostIp: String, port: Int, maxRunMs: Long? = null): Boolean {
     var zoom = 0.75f // <1 => zoom out (see multiple tiles)
     var torus: Torus2D? = null
     var tracker: TorusCoverTracker? = null
+    val bodiesFloats = FloatArray(4 * MAX_BODIES)
     val startedAt = System.currentTimeMillis()
 
     while (!glfwWindowShouldClose(window)) {
@@ -182,19 +147,16 @@ fun runJoinGl(hostIp: String, port: Int, maxRunMs: Long? = null): Boolean {
         if (pressed[GLFW_KEY_MINUS]) zoom = max(0.05f, zoom * 0.98f)
         if (pressed[GLFW_KEY_EQUAL]) zoom = min(20f, zoom * 1.02f)
 
-        client.poll()
-        if (!sawFirstSnapshot && client.state != null && client.playerId != null) {
-            sawFirstSnapshot = true
-            println("join-gl: first snapshot (playerId=${client.playerId} tick=${client.tick.value})")
-        }
-
         // WASD input
         val ax = axis(pressed[GLFW_KEY_A], pressed[GLFW_KEY_D])
         val ay = axis(pressed[GLFW_KEY_W], pressed[GLFW_KEY_S])
-        client.sendInput(PhysicsInput(ax, ay))
-
-        val state = client.state
-        val myId = client.playerId
+        val frame = controller.tick(PhysicsInput(ax, ay))
+        val state: PhysicsState? = frame.state
+        val myId = frame.myId
+        if (!sawFirstSnapshot && state != null && myId != null) {
+            sawFirstSnapshot = true
+            println("join-gl: first snapshot (playerId=$myId tick=${frame.tick})")
+        }
 
         // Update world/torus info once we have state
         if (state != null && torus == null) {
@@ -243,21 +205,9 @@ fun runJoinGl(hostIp: String, port: Int, maxRunMs: Long? = null): Boolean {
                 glUniform1i(uBodyCount, n)
 
                 val fb = st.mallocFloat(4 * MAX_BODIES)
-                for (i in 0 until MAX_BODIES) {
-                    val base = i * 4
-                    if (i < n) {
-                        val b = bodies[i]
-                        fb.put(base + 0, b.pos.x.raw.toFloat() / Fx.SCALE.toFloat())
-                        fb.put(base + 1, b.pos.y.raw.toFloat() / Fx.SCALE.toFloat())
-                        fb.put(base + 2, b.radius.raw.toFloat() / Fx.SCALE.toFloat())
-                        fb.put(base + 3, b.playerId.value.toFloat())
-                    } else {
-                        fb.put(base + 0, 0f)
-                        fb.put(base + 1, 0f)
-                        fb.put(base + 2, 0f)
-                        fb.put(base + 3, -1f)
-                    }
-                }
+                packBodiesToFloatArray(state = state, maxBodies = MAX_BODIES, out = bodiesFloats)
+                fb.put(bodiesFloats, 0, 4 * MAX_BODIES)
+                fb.flip()
                 glUniform4fv(uBodies, fb)
             } else {
                 // no state yet: still set something valid

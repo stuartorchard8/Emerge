@@ -1,22 +1,18 @@
 package org.example.app
 
-import kotlin.concurrent.thread
 import kotlin.math.max
 import kotlin.math.min
-import org.emerge.net.tcp.Tcp
-import org.emerge.sim.codec.physics.PhysicsNetCodecs
+import org.emerge.demo.physics.PhysicsAuthoritativeHostController
+import org.emerge.demo.physics.PhysicsDemoConfig
+import org.emerge.demo.physics.createDefaultInitialState
+import org.emerge.demo.physics.packBodiesToFloatArray
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.camera.TorusCoverTracker
-import org.emerge.sim.core.physics.CircleBody
 import org.emerge.sim.core.physics.Fx
 import org.emerge.sim.core.physics.PhysicsInput
-import org.emerge.sim.core.physics.PhysicsReducer
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2Fx
 import org.emerge.sim.core.space.Torus2D
-import org.emerge.sim.sync.Codec
-import org.emerge.sim.sync.auth.AuthoritativeHost
-import org.emerge.sim.sync.auth.StateCodec
 import org.lwjgl.glfw.GLFW.GLFW_CONTEXT_VERSION_MAJOR
 import org.lwjgl.glfw.GLFW.GLFW_CONTEXT_VERSION_MINOR
 import org.lwjgl.glfw.GLFW.GLFW_KEY_A
@@ -65,55 +61,9 @@ import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
 
 fun runHostGl(port: Int) {
-    val worldW = Fx.fromInt(800)
-    val worldH = Fx.fromInt(500)
-    val radius = Fx.fromInt(16)
-
-    val reducer = PhysicsReducer()
-    val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
-    val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
-
-    val initial = PhysicsState(
-        width = worldW,
-        height = worldH,
-        bodies = mapOf(
-            PlayerId(0) to CircleBody(
-                playerId = PlayerId(0),
-                pos = Vec2Fx(Fx.fromInt(200), Fx.fromInt(250)),
-                vel = Vec2Fx(Fx(0), Fx(0)),
-                radius = radius,
-            ),
-        ),
-    )
-
-    val host = AuthoritativeHost(
-        initialState = initial,
-        reducer = { s, inputs -> reducer.reduce(s, inputs) },
-        inputCodec = inputCodec,
-        stateCodec = stateCodec,
-        joinPolicy = { s, pid ->
-            val bodies = LinkedHashMap(s.bodies)
-            val x = 100 + (pid.value * 70)
-            val y = 250
-            bodies[pid] = CircleBody(pid, Vec2Fx(Fx.fromInt(x), Fx.fromInt(y)), Vec2Fx(Fx(0), Fx(0)), radius)
-            s.copy(bodies = bodies)
-        },
-    )
-
-    thread(isDaemon = true, name = "net-accept") {
-        try {
-            val listener = Tcp.listen(port = port, backlog = 8)
-            println("host-gl: listening :$port")
-            while (true) {
-                val pipe = listener.accept()
-                host.acceptClient(pipe)
-                println("host-gl: client joined")
-            }
-        } catch (t: Throwable) {
-            val msg = t.message?.take(120) ?: ""
-            println("host-gl: accept failed: ${t.javaClass.simpleName} $msg")
-        }
-    }
+    val cfg = PhysicsDemoConfig()
+    val initial = createDefaultInitialState(cfg)
+    val controller = PhysicsAuthoritativeHostController(port = port, cfg = cfg, acceptRemoteClients = true)
 
     if (!glfwInit()) error("GLFW init failed")
     glfwDefaultWindowHints()
@@ -150,8 +100,9 @@ fun runHostGl(port: Int) {
     val uBodies = glGetUniformLocation(program, "uBodies")
 
     var zoom = 0.75f
-    val torus = Torus2D(width = worldW, height = worldH)
+    val torus = Torus2D(width = cfg.worldW, height = cfg.worldH)
     val tracker = TorusCoverTracker(torus, initial.bodies[PlayerId(0)]!!.pos)
+    val bodiesFloats = FloatArray(4 * MAX_BODIES)
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents()
@@ -161,12 +112,8 @@ fun runHostGl(port: Int) {
 
         val ax = axis(pressed[GLFW_KEY_A], pressed[GLFW_KEY_D])
         val ay = axis(pressed[GLFW_KEY_W], pressed[GLFW_KEY_S])
-        host.setLocalInput(PlayerId(0), PhysicsInput(ax, ay))
-
-        host.pollNetwork()
-        host.step()
-
-        val state = host.state
+        val frame = controller.tick(PhysicsInput(ax, ay))
+        val state: PhysicsState = frame.state ?: initial
         val myId = PlayerId(0)
 
         MemoryStack.stackPush().use { st ->
@@ -201,21 +148,9 @@ fun runHostGl(port: Int) {
             glUniform1i(uBodyCount, n)
 
             val fb = st.mallocFloat(4 * MAX_BODIES)
-            for (i in 0 until MAX_BODIES) {
-                val base = i * 4
-                if (i < n) {
-                    val b = bodies[i]
-                    fb.put(base + 0, b.pos.x.raw.toFloat() / Fx.SCALE.toFloat())
-                    fb.put(base + 1, b.pos.y.raw.toFloat() / Fx.SCALE.toFloat())
-                    fb.put(base + 2, b.radius.raw.toFloat() / Fx.SCALE.toFloat())
-                    fb.put(base + 3, b.playerId.value.toFloat())
-                } else {
-                    fb.put(base + 0, 0f)
-                    fb.put(base + 1, 0f)
-                    fb.put(base + 2, 0f)
-                    fb.put(base + 3, -1f)
-                }
-            }
+            packBodiesToFloatArray(state = state, maxBodies = MAX_BODIES, out = bodiesFloats)
+            fb.put(bodiesFloats, 0, 4 * MAX_BODIES)
+            fb.flip()
             glUniform4fv(uBodies, fb)
             glDrawArrays(GL_TRIANGLES, 0, 3)
         }

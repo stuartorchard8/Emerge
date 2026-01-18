@@ -16,7 +16,7 @@ android {
         applicationId = "org.emerge.androidapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
+        versionCode = 18
         versionName = "0.1"
     }
 
@@ -43,6 +43,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":demo-physics"))
     implementation(project(":sim-core"))
     implementation(project(":sim-sync"))
     implementation(project(":sim-physics-codec"))

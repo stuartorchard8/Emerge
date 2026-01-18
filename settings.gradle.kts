@@ -43,5 +43,6 @@ include(":net-api")
 include(":net-loopback")
 include(":net-tcp")
 include(":net-tcp-jvm")
+include(":demo-physics")
 
 rootProject.name = "Emerge"

@@ -8,6 +8,7 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":demo-physics"))
     implementation(project(":sim-core"))
     implementation(project(":sim-sync"))
     implementation(project(":sim-physics-codec"))

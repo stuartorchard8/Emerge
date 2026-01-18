@@ -1,31 +1,26 @@
 package org.emerge.androidapp
 
 import android.app.Activity
-import android.graphics.Color
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
-import kotlin.concurrent.thread
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
-import org.emerge.net.api.Pipe
-import org.emerge.net.tcp.Tcp
-import org.emerge.sim.codec.physics.PhysicsNetCodecs
+import org.emerge.demo.physics.AuthoritativeDemoFrame
+import org.emerge.demo.physics.PhysicsAuthoritativeHostController
+import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
+import org.emerge.demo.physics.PhysicsDemoConfig
+import org.emerge.demo.physics.createDefaultInitialState
+import org.emerge.demo.physics.packBodiesToFloatArray
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.camera.TorusCoverTracker
-import org.emerge.sim.core.physics.CircleBody
 import org.emerge.sim.core.physics.Fx
 import org.emerge.sim.core.physics.PhysicsInput
-import org.emerge.sim.core.physics.PhysicsReducer
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2Fx
 import org.emerge.sim.core.space.Torus2D
-import org.emerge.sim.sync.Codec
-import org.emerge.sim.sync.auth.AuthoritativeClient
-import org.emerge.sim.sync.auth.AuthoritativeHost
-import org.emerge.sim.sync.auth.StateCodec
 
 /**
  * Android GPU shader renderer (OpenGL ES 2.0):
@@ -38,31 +33,11 @@ internal class TorusGlSurfaceView(
     private val hostIp: String,
     private val port: Int,
 ) : GLSurfaceView(activity) {
-    private val worldW = Fx.fromInt(800)
-    private val worldH = Fx.fromInt(500)
-    private val radius = Fx.fromInt(16)
+    private val cfg = PhysicsDemoConfig()
+    private val initial: PhysicsState = createDefaultInitialState(cfg)
 
-    private val reducer = PhysicsReducer()
-
-    private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
-    private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
-
-    private val localPlayerId: PlayerId
-    private val host: AuthoritativeHost<PhysicsState, PhysicsInput>?
-    private val client: AuthoritativeClient<PhysicsState, PhysicsInput>?
-    private val joinRemote: DelegatingPipe?
-
-    @Volatile private var reconnecting: Boolean = false
-    @Volatile private var netStatus: String = "net: init"
-
-    private val initial = PhysicsState(
-        width = worldW,
-        height = worldH,
-        bodies = mapOf(
-            PlayerId(0) to CircleBody(PlayerId(0), Vec2Fx(Fx.fromInt(200), Fx.fromInt(250)), Vec2Fx(Fx(0), Fx(0)), radius),
-            PlayerId(1) to CircleBody(PlayerId(1), Vec2Fx(Fx.fromInt(600), Fx.fromInt(250)), Vec2Fx(Fx(0), Fx(0)), radius),
-        ),
-    )
+    private val hostController: PhysicsAuthoritativeHostController?
+    private val joinController: PhysicsAuthoritativeJoinController?
 
     @Volatile private var currentTouchInput: PhysicsInput = PhysicsInput(0, 0)
 
@@ -76,32 +51,17 @@ internal class TorusGlSurfaceView(
     private val handler = Handler(Looper.getMainLooper())
     private val tickRunnable = object : Runnable {
         override fun run() {
-            host?.let { h ->
-                h.pollNetwork()
-                h.setLocalInput(PlayerId(0), currentTouchInput)
-                h.step()
-            }
-
-            client?.let { c ->
-                c.poll()
-                c.sendInput(currentTouchInput)
-                if (mode == MainActivity.MODE_JOIN &&
-                    c.connectionState == AuthoritativeClient.ConnectionState.DISCONNECTED &&
-                    !reconnecting
-                ) {
-                    startReconnect(c)
+            val f: AuthoritativeDemoFrame =
+                when {
+                    hostController != null -> hostController.tick(currentTouchInput)
+                    joinController != null -> joinController.tick(currentTouchInput)
+                    else -> AuthoritativeDemoFrame(state = initial, myId = PlayerId(0), tick = 0L, status = "net: init")
                 }
-            }
-
-            val st = client?.state ?: host?.state ?: initial
-            val myId = client?.playerId ?: localPlayerId
-            val tick = client?.tick?.value ?: host?.tick?.value ?: 0L
-            val status = netStatus
             synchronized(stateLock) {
-                latestState = st
-                latestMyId = myId
-                latestTick = tick
-                latestStatus = status
+                latestState = f.state ?: initial
+                latestMyId = f.myId
+                latestTick = f.tick
+                latestStatus = f.status
             }
 
             requestRender()
@@ -129,93 +89,19 @@ internal class TorusGlSurfaceView(
 
         when (mode) {
             MainActivity.MODE_HOST -> {
-                localPlayerId = PlayerId(0)
-                joinRemote = null
-                client = null
-                host = AuthoritativeHost(
-                    initialState = initial,
-                    reducer = { s, inputs -> reducer.reduce(s, inputs) },
-                    inputCodec = inputCodec,
-                    stateCodec = stateCodec,
-                    joinPolicy = { s, pid ->
-                        val bodies = LinkedHashMap(s.bodies)
-                        val x = 100 + (pid.value * 70)
-                        val y = 250
-                        bodies[pid] = CircleBody(pid, Vec2Fx(Fx.fromInt(x), Fx.fromInt(y)), Vec2Fx(Fx(0), Fx(0)), radius)
-                        s.copy(bodies = bodies)
-                    },
-                )
-
-                thread(isDaemon = true, name = "net-accept-loop") {
-                    try {
-                        netStatus = "net: host listening :$port"
-                        val listener = Tcp.listen(port = port, backlog = 8)
-                        while (true) {
-                            val pipe = listener.accept()
-                            host.acceptClient(pipe)
-                            netStatus = "net: client joined"
-                        }
-                    } catch (t: Throwable) {
-                        netStatus = "net: accept failed: ${t.javaClass.simpleName}"
-                    }
-                }
+                hostController = PhysicsAuthoritativeHostController(port = port, cfg = cfg, acceptRemoteClients = true)
+                joinController = null
             }
 
             MainActivity.MODE_JOIN -> {
-                localPlayerId = PlayerId(0)
-                host = null
-                val remote = DelegatingPipe()
-                joinRemote = remote
-                client = AuthoritativeClient(
-                    pipe = remote,
-                    inputCodec = inputCodec,
-                    stateCodec = stateCodec,
-                    onDisconnected = { reason ->
-                        netStatus = "net: disconnected ($reason)"
-                    },
-                )
-
-                thread(isDaemon = true, name = "net-connect") {
-                    var attempt = 0
-                    while (true) {
-                        attempt += 1
-                        netStatus = "net: connecting to $hostIp:$port (try $attempt)"
-                        try {
-                            remote.setDelegate(Tcp.connect(host = hostIp, port = port))
-                            netStatus = "net: connected (handshake)"
-                            client.resetConnection("connect")
-                            client.startHandshake(force = true)
-                            break
-                        } catch (t: Throwable) {
-                            val msg = t.message?.take(60) ?: ""
-                            netStatus = "net: connect failed: ${t.javaClass.simpleName} $msg"
-                            try {
-                                Thread.sleep(500L)
-                            } catch (_: InterruptedException) {
-                                break
-                            }
-                        }
-                    }
-                }
+                hostController = null
+                joinController = PhysicsAuthoritativeJoinController(hostIp = hostIp, port = port, cfg = cfg)
             }
 
             else -> {
                 // default: host-only loopback-ish (no join)
-                localPlayerId = PlayerId(0)
-                joinRemote = null
-                client = null
-                host = AuthoritativeHost(
-                    initialState = initial,
-                    reducer = { s, inputs -> reducer.reduce(s, inputs) },
-                    inputCodec = inputCodec,
-                    stateCodec = stateCodec,
-                    joinPolicy = { s, pid ->
-                        val bodies = LinkedHashMap(s.bodies)
-                        bodies[pid] = CircleBody(pid, Vec2Fx(Fx.fromInt(400), Fx.fromInt(250)), Vec2Fx(Fx(0), Fx(0)), radius)
-                        s.copy(bodies = bodies)
-                    },
-                )
-                netStatus = "net: host-only (no join)"
+                hostController = PhysicsAuthoritativeHostController(port = port, cfg = cfg, acceptRemoteClients = false)
+                joinController = null
             }
         }
     }
@@ -255,35 +141,6 @@ internal class TorusGlSurfaceView(
             }
         }
         return true
-    }
-
-    private fun startReconnect(c: AuthoritativeClient<PhysicsState, PhysicsInput>) {
-        val remote = joinRemote ?: return
-        reconnecting = true
-        thread(isDaemon = true, name = "net-reconnect") {
-            var attempt = 0
-            while (true) {
-                attempt += 1
-                netStatus = "net: reconnecting $hostIp:$port (try $attempt)"
-                try {
-                    remote.setDelegate(Tcp.connect(host = hostIp, port = port))
-                    netStatus = "net: reconnected (handshake)"
-                    c.resetConnection("reconnect")
-                    c.startHandshake(force = true)
-                    reconnecting = false
-                    break
-                } catch (t: Throwable) {
-                    val msg = t.message?.take(60) ?: ""
-                    netStatus = "net: reconnect failed: ${t.javaClass.simpleName} $msg"
-                    try {
-                        Thread.sleep(500L)
-                    } catch (_: InterruptedException) {
-                        reconnecting = false
-                        break
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -386,23 +243,8 @@ private class TorusGlRenderer(
         GLES20.glUniform2f(uTopLeft, topLeftX, topLeftY)
         GLES20.glUniform1i(uMyId, myId?.value ?: -1)
 
-        val bodies = st.bodies.values.toList()
-        val n = minOf(maxBodies, bodies.size)
-        for (i in 0 until maxBodies) {
-            val base = i * 4
-            if (i < n) {
-                val b = bodies[i]
-                bodiesFloats[base + 0] = b.pos.x.raw.toFloat() / Fx.SCALE.toFloat()
-                bodiesFloats[base + 1] = b.pos.y.raw.toFloat() / Fx.SCALE.toFloat()
-                bodiesFloats[base + 2] = b.radius.raw.toFloat() / Fx.SCALE.toFloat()
-                bodiesFloats[base + 3] = b.playerId.value.toFloat()
-            } else {
-                bodiesFloats[base + 0] = 0f
-                bodiesFloats[base + 1] = 0f
-                bodiesFloats[base + 2] = 0f
-                bodiesFloats[base + 3] = -1f
-            }
-        }
+        val n = minOf(maxBodies, st.bodies.size)
+        packBodiesToFloatArray(state = st, maxBodies = maxBodies, out = bodiesFloats)
         GLES20.glUniform1i(uBodyCount, n)
         GLES20.glUniform4fv(uBodies0, maxBodies, bodiesFloats, 0)
 
