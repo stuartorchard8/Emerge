@@ -184,29 +184,13 @@ private class PhysicsLockstepView(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val x = event.x
-        val y = event.y
-        val cx = width * 0.5f
-        val cy = height * 0.5f
-        val dx = x - cx
-        val dy = y - cy
-
-        currentTouchInput = when (event.actionMasked) {
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> PhysicsInput(0, 0)
-            else -> {
-                val ax = when {
-                    dx < -40f -> -1
-                    dx > 40f -> 1
-                    else -> 0
-                }
-                val ay = when {
-                    dy < -40f -> -1
-                    dy > 40f -> 1
-                    else -> 0
-                }
-                PhysicsInput(ax, ay)
-            }
-        }
+        currentTouchInput = TouchInputMapper.toPhysicsInput(
+            widthPx = width,
+            heightPx = height,
+            x = event.x,
+            y = event.y,
+            actionMasked = event.actionMasked,
+        )
         return true
     }
 

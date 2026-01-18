@@ -12,15 +12,13 @@ import org.emerge.demo.physics.AuthoritativeDemoFrame
 import org.emerge.demo.physics.PhysicsAuthoritativeHostController
 import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
 import org.emerge.demo.physics.PhysicsDemoConfig
+import org.emerge.demo.physics.TorusShaderSources
+import org.emerge.demo.physics.TorusViewComputer
 import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.demo.physics.packBodiesToFloatArray
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.camera.TorusCoverTracker
-import org.emerge.sim.core.physics.Fx
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.Vec2Fx
-import org.emerge.sim.core.space.Torus2D
 
 /**
  * Android GPU shader renderer (OpenGL ES 2.0):
@@ -117,29 +115,13 @@ internal class TorusGlSurfaceView(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val x = event.x
-        val y = event.y
-        val cx = width * 0.5f
-        val cy = height * 0.5f
-        val dx = x - cx
-        val dy = y - cy
-
-        currentTouchInput = when (event.actionMasked) {
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> PhysicsInput(0, 0)
-            else -> {
-                val ax = when {
-                    dx < -40f -> -1
-                    dx > 40f -> 1
-                    else -> 0
-                }
-                val ay = when {
-                    dy < -40f -> -1
-                    dy > 40f -> 1
-                    else -> 0
-                }
-                PhysicsInput(ax, ay)
-            }
-        }
+        currentTouchInput = TouchInputMapper.toPhysicsInput(
+            widthPx = width,
+            heightPx = height,
+            x = event.x,
+            y = event.y,
+            actionMasked = event.actionMasked,
+        )
         return true
     }
 }
@@ -168,14 +150,13 @@ private class TorusGlRenderer(
     private val maxBodies = 128
     private val bodiesFloats = FloatArray(4 * maxBodies)
 
-    private var torus: Torus2D? = null
-    private var tracker: TorusCoverTracker? = null
+    private val view = TorusViewComputer()
 
     // zoom < 1 => zoom out (view larger than world)
     private var zoom: Float = 0.75f
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        program = linkProgram(vertexShaderSrc, fragmentShaderSrc(maxBodies))
+        program = linkProgram(TorusShaderSources.vertexGles2(), TorusShaderSources.fragmentGles2(maxBodies))
         aPos = GLES20.glGetAttribLocation(program, "aPos")
 
         uResolution = GLES20.glGetUniformLocation(program, "uResolution")
@@ -196,25 +177,8 @@ private class TorusGlRenderer(
     override fun onDrawFrame(gl: GL10?) {
         val frame = getState()
         val st = frame.state
-
-        if (torus == null) torus = Torus2D(width = st.width, height = st.height)
-        val t = torus!!
-
-        val worldW = st.width.raw.toFloat() / Fx.SCALE.toFloat()
-        val worldH = st.height.raw.toFloat() / Fx.SCALE.toFloat()
-
-        val viewW = worldW / zoom
-        val viewH = worldH / zoom
-
         val myId = frame.myId
-        val focusWrapped =
-            if (myId != null) st.bodies[myId]?.pos ?: Vec2Fx(Fx(st.width.raw / 2), Fx(st.height.raw / 2))
-            else Vec2Fx(Fx(st.width.raw / 2), Fx(st.height.raw / 2))
-
-        val tr = (tracker ?: TorusCoverTracker(t, focusWrapped)).also { tracker = it }
-        val focusCover = tr.update(focusWrapped)
-        val topLeftX = focusCover.x.raw.toFloat() / Fx.SCALE.toFloat() - viewW * 0.5f
-        val topLeftY = focusCover.y.raw.toFloat() / Fx.SCALE.toFloat() - viewH * 0.5f
+        val params = view.compute(state = st, myId = myId, zoom = zoom)
 
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         GLES20.glUseProgram(program)
@@ -238,9 +202,9 @@ private class TorusGlRenderer(
         val vp = IntArray(4)
         GLES20.glGetIntegerv(GLES20.GL_VIEWPORT, vp, 0)
         GLES20.glUniform2f(uResolution, vp[2].toFloat(), vp[3].toFloat())
-        GLES20.glUniform2f(uWorld, worldW, worldH)
-        GLES20.glUniform2f(uView, viewW, viewH)
-        GLES20.glUniform2f(uTopLeft, topLeftX, topLeftY)
+        GLES20.glUniform2f(uWorld, params.worldW, params.worldH)
+        GLES20.glUniform2f(uView, params.viewW, params.viewH)
+        GLES20.glUniform2f(uTopLeft, params.topLeftCoverX, params.topLeftCoverY)
         GLES20.glUniform1i(uMyId, myId?.value ?: -1)
 
         val n = minOf(maxBodies, st.bodies.size)
@@ -287,63 +251,5 @@ private class TorusGlRenderer(
         return s
     }
 
-    private val vertexShaderSrc = """
-        attribute vec2 aPos;
-        void main() {
-            gl_Position = vec4(aPos, 0.0, 1.0);
-        }
-    """.trimIndent()
-
-    private fun fragmentShaderSrc(maxBodies: Int): String = """
-        precision mediump float;
-        precision mediump int;
-        #define MAX_BODIES $maxBodies
-
-        uniform vec2 uResolution;
-        uniform vec2 uWorld;
-        uniform vec2 uView;
-        uniform vec2 uTopLeft;
-        uniform int uBodyCount;
-        uniform int uMyId;
-        uniform vec4 uBodies[MAX_BODIES];
-
-        vec2 wrap2(vec2 p, vec2 size) {
-            vec2 q = mod(p, size);
-            if (q.x < 0.0) q.x += size.x;
-            if (q.y < 0.0) q.y += size.y;
-            return q;
-        }
-
-        float wrapDelta(float d, float size) {
-            float halfSize = 0.5 * size;
-            float x = mod(d + halfSize, size) - halfSize;
-            return x;
-        }
-
-        void main() {
-            vec2 uv = gl_FragCoord.xy / uResolution;
-            vec2 cover = uTopLeft + uv * uView;
-            vec2 p = wrap2(cover, uWorld);
-
-            vec3 col = vec3(0.07, 0.07, 0.07);
-            float best = 1e30;
-
-            for (int i = 0; i < MAX_BODIES; i++) {
-                if (i >= uBodyCount) break;
-                vec4 b = uBodies[i];
-                float dx = wrapDelta(p.x - b.x, uWorld.x);
-                float dy = wrapDelta(p.y - b.y, uWorld.y);
-                float d2 = dx*dx + dy*dy;
-                float r2 = b.z*b.z;
-                if (d2 <= r2 && d2 < best) {
-                    best = d2;
-                    int pid = int(b.w + 0.5);
-                    if (pid == uMyId) col = vec3(0.18, 0.53, 0.67);
-                    else col = vec3(0.80, 0.80, 0.80);
-                }
-            }
-            gl_FragColor = vec4(col, 1.0);
-        }
-    """.trimIndent()
 }
 

@@ -421,13 +421,6 @@ private class ClientWindow(
         }
         return PhysicsInput(ax, ay)
     }
-
-    private fun axis(neg: Boolean, pos: Boolean): Int =
-        when {
-            neg && !pos -> -1
-            pos && !neg -> 1
-            else -> 0
-        }
 }
 
 private class AuthClientWindow(
@@ -537,13 +530,6 @@ private class AuthClientWindow(
         val ay = axis(up, down)
         return PhysicsInput(ax, ay)
     }
-
-    private fun axis(neg: Boolean, pos: Boolean): Int =
-        when {
-            neg && !pos -> -1
-            pos && !neg -> 1
-            else -> 0
-        }
 }
 
 private class AuthoritativeHostSwingDemo(
@@ -666,11 +652,4 @@ private class HostWindow(
         val ay = axis(up, down)
         return PhysicsInput(ax, ay)
     }
-
-    private fun axis(neg: Boolean, pos: Boolean): Int =
-        when {
-            neg && !pos -> -1
-            pos && !neg -> 1
-            else -> 0
-        }
 }

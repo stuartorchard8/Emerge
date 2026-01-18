@@ -4,6 +4,7 @@ import kotlin.math.max
 import kotlin.math.min
 import org.emerge.demo.physics.PhysicsAuthoritativeHostController
 import org.emerge.demo.physics.PhysicsDemoConfig
+import org.emerge.demo.physics.TorusViewComputer
 import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.demo.physics.packBodiesToFloatArray
 import org.emerge.sim.core.PlayerId
@@ -100,8 +101,7 @@ fun runHostGl(port: Int) {
     val uBodies = glGetUniformLocation(program, "uBodies")
 
     var zoom = 0.75f
-    val torus = Torus2D(width = cfg.worldW, height = cfg.worldH)
-    val tracker = TorusCoverTracker(torus, initial.bodies[PlayerId(0)]!!.pos)
+    val view = TorusViewComputer()
     val bodiesFloats = FloatArray(4 * MAX_BODIES)
 
     while (!glfwWindowShouldClose(window)) {
@@ -128,19 +128,10 @@ fun runHostGl(port: Int) {
             glClear(GL_COLOR_BUFFER_BIT)
 
             glUniform2f(uResolution, fbW.toFloat(), fbH.toFloat())
-            val worldWf = state.width.raw.toFloat() / Fx.SCALE.toFloat()
-            val worldHf = state.height.raw.toFloat() / Fx.SCALE.toFloat()
-            glUniform2f(uWorld, worldWf, worldHf)
-
-            val viewW = worldWf / zoom
-            val viewH = worldHf / zoom
-            glUniform2f(uView, viewW, viewH)
-
-            val focusWrapped = state.bodies[myId]?.pos ?: Vec2Fx(Fx(state.width.raw / 2), Fx(state.height.raw / 2))
-            val focusCover = tracker.update(focusWrapped)
-            val topLeftCoverX = focusCover.x.raw.toFloat() / Fx.SCALE.toFloat() - viewW * 0.5f
-            val topLeftCoverY = focusCover.y.raw.toFloat() / Fx.SCALE.toFloat() - viewH * 0.5f
-            glUniform2f(uTopLeft, topLeftCoverX, topLeftCoverY)
+            val params = view.compute(state = state, myId = myId, zoom = zoom)
+            glUniform2f(uWorld, params.worldW, params.worldH)
+            glUniform2f(uView, params.viewW, params.viewH)
+            glUniform2f(uTopLeft, params.topLeftCoverX, params.topLeftCoverY)
 
             glUniform1i(uMyId, myId.value)
             val bodies = state.bodies.values.toList()
