@@ -4,7 +4,7 @@ import kotlin.math.max
 import kotlin.math.min
 import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
 import org.emerge.demo.physics.PhysicsDemoConfig
-import org.emerge.demo.physics.TorusShaderSources
+import org.emerge.demo.physics.TorusGlProgramFactory
 import org.emerge.demo.physics.TorusViewComputer
 import org.emerge.demo.physics.packBodiesToFloatArray
 import org.emerge.sim.core.PlayerId
@@ -45,33 +45,21 @@ import org.lwjgl.glfw.GLFW.glfwSetWindowShouldClose
 import org.lwjgl.opengl.GL
 import org.lwjgl.opengl.GL33C.GL_ARRAY_BUFFER
 import org.lwjgl.opengl.GL33C.GL_COLOR_BUFFER_BIT
-import org.lwjgl.opengl.GL33C.GL_COMPILE_STATUS
 import org.lwjgl.opengl.GL33C.GL_FLOAT
-import org.lwjgl.opengl.GL33C.GL_FRAGMENT_SHADER
 import org.lwjgl.opengl.GL33C.GL_LINK_STATUS
 import org.lwjgl.opengl.GL33C.GL_TRIANGLES
-import org.lwjgl.opengl.GL33C.GL_VERTEX_SHADER
 import org.lwjgl.opengl.GL33C.glClear
 import org.lwjgl.opengl.GL33C.glClearColor
 import org.lwjgl.opengl.GL33C.glDeleteProgram
 import org.lwjgl.opengl.GL33C.glDeleteShader
 import org.lwjgl.opengl.GL33C.glDrawArrays
-import org.lwjgl.opengl.GL33C.glGetProgramInfoLog
 import org.lwjgl.opengl.GL33C.glGetProgrami
-import org.lwjgl.opengl.GL33C.glGetShaderInfoLog
-import org.lwjgl.opengl.GL33C.glGetShaderi
 import org.lwjgl.opengl.GL33C.glGetUniformLocation
-import org.lwjgl.opengl.GL33C.glLinkProgram
-import org.lwjgl.opengl.GL33C.glShaderSource
 import org.lwjgl.opengl.GL33C.glUseProgram
 import org.lwjgl.opengl.GL33C.glUniform1f
 import org.lwjgl.opengl.GL33C.glUniform1i
 import org.lwjgl.opengl.GL33C.glUniform2f
 import org.lwjgl.opengl.GL33C.glUniform4fv
-import org.lwjgl.opengl.GL33C.glCompileShader
-import org.lwjgl.opengl.GL33C.glCreateProgram
-import org.lwjgl.opengl.GL33C.glCreateShader
-import org.lwjgl.opengl.GL33C.glAttachShader
 import org.lwjgl.opengl.GL33C.glBindBuffer
 import org.lwjgl.opengl.GL33C.glBindVertexArray
 import org.lwjgl.opengl.GL33C.glBufferData
@@ -117,7 +105,7 @@ fun runJoinGl(hostIp: String, port: Int, maxRunMs: Long? = null): Boolean {
     glfwShowWindow(window)
     GL.createCapabilities()
 
-    val program = buildProgram(vertexShaderSrc, fragmentShaderSrc)
+    val program = TorusGlProgramFactory.createProgramGl330(MAX_BODIES)
     glUseProgram(program)
 
     // Fullscreen triangle (no VBO needed), but some drivers want a VAO bound in core profile.
@@ -212,40 +200,5 @@ fun runJoinGl(hostIp: String, port: Int, maxRunMs: Long? = null): Boolean {
     return sawFirstSnapshot
 }
 
-internal fun buildProgram(vs: String, fs: String): Int {
-    val v = compileShader(GL_VERTEX_SHADER, vs)
-    val f = compileShader(GL_FRAGMENT_SHADER, fs)
-    val p = glCreateProgram()
-    glAttachShader(p, v)
-    glAttachShader(p, f)
-    glLinkProgram(p)
-    val ok = glGetProgrami(p, GL_LINK_STATUS)
-    if (ok == 0) {
-        val log = glGetProgramInfoLog(p)
-        glDeleteShader(v)
-        glDeleteShader(f)
-        glDeleteProgram(p)
-        error("Program link failed:\n$log")
-    }
-    glDeleteShader(v)
-    glDeleteShader(f)
-    return p
-}
-
-internal fun compileShader(type: Int, src: String): Int {
-    val s = glCreateShader(type)
-    glShaderSource(s, src)
-    glCompileShader(s)
-    val ok = glGetShaderi(s, GL_COMPILE_STATUS)
-    if (ok == 0) {
-        val log = glGetShaderInfoLog(s)
-        glDeleteShader(s)
-        error("Shader compile failed:\n$log\n\nSource:\n$src")
-    }
-    return s
-}
-
-internal val vertexShaderSrc: String = TorusShaderSources.vertexGl330()
-
-internal val fragmentShaderSrc: String = TorusShaderSources.fragmentGl330(MAX_BODIES)
+// Shader compile/link is now provided by demo-physics via TorusGlProgramFactory.
 

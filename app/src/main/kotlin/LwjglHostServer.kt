@@ -4,6 +4,7 @@ import kotlin.math.max
 import kotlin.math.min
 import org.emerge.demo.physics.PhysicsAuthoritativeHostController
 import org.emerge.demo.physics.PhysicsDemoConfig
+import org.emerge.demo.physics.TorusGlProgramFactory
 import org.emerge.demo.physics.TorusViewComputer
 import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.demo.physics.packBodiesToFloatArray
@@ -87,7 +88,7 @@ fun runHostGl(port: Int) {
     glfwShowWindow(window)
     GL.createCapabilities()
 
-    val program = buildProgram(vertexShaderSrc, fragmentShaderSrc)
+    val program = TorusGlProgramFactory.createProgramGl330(MAX_BODIES)
     glUseProgram(program)
     val vao = glGenVertexArrays()
     glBindVertexArray(vao)

@@ -13,6 +13,7 @@ import org.emerge.demo.physics.PhysicsAuthoritativeHostController
 import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
 import org.emerge.demo.physics.PhysicsDemoConfig
 import org.emerge.demo.physics.TorusShaderSources
+import org.emerge.demo.physics.TorusGlProgramFactory
 import org.emerge.demo.physics.TorusViewComputer
 import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.demo.physics.packBodiesToFloatArray
@@ -156,7 +157,7 @@ private class TorusGlRenderer(
     private var zoom: Float = 0.75f
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        program = linkProgram(TorusShaderSources.vertexGles2(), TorusShaderSources.fragmentGles2(maxBodies))
+        program = TorusGlProgramFactory.createProgramGles2(maxBodies)
         aPos = GLES20.glGetAttribLocation(program, "aPos")
 
         uResolution = GLES20.glGetUniformLocation(program, "uResolution")
@@ -214,41 +215,6 @@ private class TorusGlRenderer(
 
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 3)
         GLES20.glDisableVertexAttribArray(aPos)
-    }
-
-    private fun linkProgram(vs: String, fs: String): Int {
-        val v = compileShader(GLES20.GL_VERTEX_SHADER, vs)
-        val f = compileShader(GLES20.GL_FRAGMENT_SHADER, fs)
-        val p = GLES20.glCreateProgram()
-        GLES20.glAttachShader(p, v)
-        GLES20.glAttachShader(p, f)
-        GLES20.glLinkProgram(p)
-        val linkStatus = IntArray(1)
-        GLES20.glGetProgramiv(p, GLES20.GL_LINK_STATUS, linkStatus, 0)
-        if (linkStatus[0] == 0) {
-            val log = GLES20.glGetProgramInfoLog(p)
-            GLES20.glDeleteShader(v)
-            GLES20.glDeleteShader(f)
-            GLES20.glDeleteProgram(p)
-            error("GL program link failed: $log")
-        }
-        GLES20.glDeleteShader(v)
-        GLES20.glDeleteShader(f)
-        return p
-    }
-
-    private fun compileShader(type: Int, src: String): Int {
-        val s = GLES20.glCreateShader(type)
-        GLES20.glShaderSource(s, src)
-        GLES20.glCompileShader(s)
-        val compiled = IntArray(1)
-        GLES20.glGetShaderiv(s, GLES20.GL_COMPILE_STATUS, compiled, 0)
-        if (compiled[0] == 0) {
-            val log = GLES20.glGetShaderInfoLog(s)
-            GLES20.glDeleteShader(s)
-            error("GL shader compile failed: $log\n\n$src")
-        }
-        return s
     }
 
 }

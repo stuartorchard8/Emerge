@@ -34,6 +34,14 @@ kotlin {
         androidMain.dependsOn(jvmAndAndroidMain)
         jvmMain.dependsOn(jvmAndAndroidMain)
 
+        jvmMain {
+            dependencies {
+                // Desktop GL shader compile/link helpers (LWJGL)
+                implementation(platform("org.lwjgl:lwjgl-bom:3.3.3"))
+                implementation("org.lwjgl:lwjgl-opengl")
+            }
+        }
+
         commonMain {
             dependencies {
                 api(project(":sim-core"))
