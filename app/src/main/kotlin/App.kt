@@ -11,10 +11,20 @@ import javax.swing.JFrame
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
 import javax.swing.Timer
+import javax.swing.JButton
+import javax.swing.JComboBox
+import javax.swing.JLabel
+import javax.swing.JTextField
+import java.awt.GridBagConstraints
+import java.awt.GridBagLayout
+import java.awt.Insets
 import kotlin.system.exitProcess
 import org.emerge.demo.physics.PhysicsAuthoritativeHostController
 import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
 import org.emerge.demo.physics.PhysicsDemoConfig
+import org.emerge.demo.physics.LaunchMode
+import org.emerge.demo.physics.LaunchSettings
+import org.emerge.demo.physics.RenderBackend
 import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.net.loopback.Loopback
 import org.emerge.net.api.Pipe
@@ -36,75 +46,114 @@ import org.emerge.sim.sync.auth.AuthoritativeClient
 import org.emerge.sim.sync.auth.StateCodec
 
 fun main(args: Array<String>) {
-    // Usage:
-    // - (default) lockstep demo:
-    //     gradlew :app:run
-    // - run authoritative host (desktop) [GPU default]:
-    //     gradlew :app:run --args="host 7777"
-    // - join Android host (authoritative) [GPU default]:
-    //     gradlew :app:run --args="join 192.168.0.102 7777"
-    // - run authoritative host (desktop) with Swing renderer:
-    //     gradlew :app:run --args="host-swing 7777"
-    // - join Android host (authoritative) with Swing renderer:
-    //     gradlew :app:run --args="join-swing 192.168.0.102 7777"
-    // - join Android host (authoritative) with LWJGL/OpenGL shader renderer:
-    //     gradlew :app:run --args="join-gl 192.168.0.102 7777"
-    // - join Android host (LWJGL/OpenGL) for a few seconds then exit (test automation):
-    //     gradlew :app:run --args="join-gl-once 192.168.0.102 7777 4000"
-    // - join Android host once (headless smoke test; exits):
-    //     gradlew :app:run --args="join-once 192.168.0.102 7777"
-    if (args.isNotEmpty()) {
-        when (args[0]) {
-            "host" -> {
-                val port = args.getOrNull(1)?.toIntOrNull() ?: error("Missing/invalid port. Usage: host <port>")
-                runHostGl(port)
-                return
+    // Single launch path: always start with an in-app launcher UI.
+    // (Args are intentionally ignored now; configure Host/Join/Local from the launcher screen.)
+    SwingUtilities.invokeLater { DesktopLauncher().show() }
+}
+
+private class DesktopLauncher {
+    private val modeBox = JComboBox(arrayOf("Local", "Host", "Join"))
+    private val renderBox = JComboBox(arrayOf("GPU (OpenGL)", "CPU (Swing)"))
+    private val hostIpField = JTextField("127.0.0.1", 16)
+    private val portField = JTextField("7777", 6)
+
+    private val frame = JFrame("Emerge - Launcher").apply {
+        defaultCloseOperation = JFrame.EXIT_ON_CLOSE
+        contentPane = JPanel(GridBagLayout()).apply {
+            background = Color(0x11, 0x11, 0x11)
+            val c = GridBagConstraints().apply {
+                fill = GridBagConstraints.HORIZONTAL
+                insets = Insets(8, 8, 8, 8)
+                weightx = 1.0
             }
-            "host-gl" -> {
-                val port = args.getOrNull(1)?.toIntOrNull() ?: error("Missing/invalid port. Usage: host-gl <port>")
-                runHostGl(port)
-                return
+
+            fun row(y: Int, label: String, comp: java.awt.Component) {
+                c.gridy = y
+                c.gridx = 0
+                c.weightx = 0.0
+                add(JLabel(label).apply { foreground = Color(0xEE, 0xEE, 0xEE) }, c)
+                c.gridx = 1
+                c.weightx = 1.0
+                add(comp, c)
             }
-            "host-swing" -> {
-                val port = args.getOrNull(1)?.toIntOrNull() ?: error("Missing/invalid port. Usage: host-swing <port>")
-                SwingUtilities.invokeLater { AuthoritativeHostSwingDemo(port).start() }
-                return
+
+            row(0, "Mode", modeBox)
+            row(1, "Renderer", renderBox)
+            row(2, "Host IP (Join)", hostIpField)
+            row(3, "Port", portField)
+
+            val start = JButton("Start").apply {
+                addActionListener {
+                    val settings = readSettings()
+                    dispose()
+                    startDemo(settings)
+                }
             }
-            "join" -> {
-                val host = args.getOrNull(1) ?: error("Missing host ip. Usage: join <hostIp> <port>")
-                val port = args.getOrNull(2)?.toIntOrNull() ?: error("Missing/invalid port. Usage: join <hostIp> <port>")
-                runJoinGl(hostIp = host, port = port)
-                return
+
+            c.gridy = 4
+            c.gridx = 0
+            c.gridwidth = 2
+            add(start, c)
+
+            modeBox.addItemListener { syncEnabledFields() }
+            syncEnabledFields()
+        }
+
+        pack()
+        setLocationByPlatform(true)
+        isResizable = false
+    }
+
+    fun show() {
+        frame.isVisible = true
+    }
+
+    private fun syncEnabledFields() {
+        val mode = selectedMode()
+        hostIpField.isEnabled = (mode == LaunchMode.JOIN)
+    }
+
+    private fun selectedMode(): LaunchMode =
+        when (modeBox.selectedIndex) {
+            1 -> LaunchMode.HOST
+            2 -> LaunchMode.JOIN
+            else -> LaunchMode.LOCAL
+        }
+
+    private fun selectedBackend(): RenderBackend =
+        if (renderBox.selectedIndex == 0) RenderBackend.GPU else RenderBackend.CPU
+
+    private fun readSettings(): LaunchSettings {
+        val port = portField.text.trim().toIntOrNull() ?: 7777
+        val hostIp = hostIpField.text.trim().ifBlank { "127.0.0.1" }
+        return LaunchSettings(
+            mode = selectedMode(),
+            renderBackend = selectedBackend(),
+            hostIp = hostIp,
+            port = port,
+        )
+    }
+
+    private fun startDemo(settings: LaunchSettings) {
+        when (settings.mode) {
+            LaunchMode.LOCAL -> {
+                // Desktop local demo is the existing lockstep loopback Swing UI.
+                SwingUtilities.invokeLater { PhysicsLockstepSwingDemo().start() }
             }
-            "join-swing" -> {
-                val host = args.getOrNull(1) ?: error("Missing host ip. Usage: join-swing <hostIp> <port>")
-                val port = args.getOrNull(2)?.toIntOrNull() ?: error("Missing/invalid port. Usage: join-swing <hostIp> <port>")
-                SwingUtilities.invokeLater { AuthoritativeJoinSwingClient(host, port).start() }
-                return
+            LaunchMode.HOST -> {
+                when (settings.renderBackend) {
+                    RenderBackend.CPU -> SwingUtilities.invokeLater { AuthoritativeHostSwingDemo(settings.port).start() }
+                    RenderBackend.GPU -> Thread { runHostGl(settings.port) }.start()
+                }
             }
-            "join-gl" -> {
-                val host = args.getOrNull(1) ?: error("Missing host ip. Usage: join-gl <hostIp> <port>")
-                val port = args.getOrNull(2)?.toIntOrNull() ?: error("Missing/invalid port. Usage: join-gl <hostIp> <port>")
-                runJoinGl(hostIp = host, port = port)
-                return
-            }
-            "join-gl-once" -> {
-                val host = args.getOrNull(1) ?: error("Missing host ip. Usage: join-gl-once <hostIp> <port> <ms>")
-                val port = args.getOrNull(2)?.toIntOrNull() ?: error("Missing/invalid port. Usage: join-gl-once <hostIp> <port> <ms>")
-                val ms = args.getOrNull(3)?.toLongOrNull() ?: error("Missing/invalid ms. Usage: join-gl-once <hostIp> <port> <ms>")
-                val ok = runJoinGl(hostIp = host, port = port, maxRunMs = ms)
-                exitProcess(if (ok) 0 else 1)
-            }
-            "join-once" -> {
-                val host = args.getOrNull(1) ?: error("Missing host ip. Usage: join-once <hostIp> <port>")
-                val port = args.getOrNull(2)?.toIntOrNull() ?: error("Missing/invalid port. Usage: join-once <hostIp> <port>")
-                val ok = joinOnce(hostIp = host, port = port)
-                exitProcess(if (ok) 0 else 1)
+            LaunchMode.JOIN -> {
+                when (settings.renderBackend) {
+                    RenderBackend.CPU -> SwingUtilities.invokeLater { AuthoritativeJoinSwingClient(settings.hostIp, settings.port).start() }
+                    RenderBackend.GPU -> Thread { runJoinGl(hostIp = settings.hostIp, port = settings.port) }.start()
+                }
             }
         }
     }
-
-    SwingUtilities.invokeLater { PhysicsLockstepSwingDemo().start() }
 }
 
 private fun drawBodiesTorusTiled(

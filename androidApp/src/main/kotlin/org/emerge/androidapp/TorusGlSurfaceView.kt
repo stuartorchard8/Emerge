@@ -9,6 +9,7 @@ import android.view.MotionEvent
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import org.emerge.demo.physics.AuthoritativeDemoFrame
+import org.emerge.demo.physics.LaunchMode
 import org.emerge.demo.physics.PhysicsAuthoritativeHostController
 import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
 import org.emerge.demo.physics.PhysicsDemoConfig
@@ -28,15 +29,25 @@ import org.emerge.sim.core.physics.PhysicsState
  */
 internal class TorusGlSurfaceView(
     private val activity: Activity,
-    private val mode: String,
+    private val mode: LaunchMode,
     private val hostIp: String,
     private val port: Int,
 ) : GLSurfaceView(activity) {
     private val cfg = PhysicsDemoConfig()
     private val initial: PhysicsState = createDefaultInitialState(cfg)
 
-    private val hostController: PhysicsAuthoritativeHostController?
-    private val joinController: PhysicsAuthoritativeJoinController?
+    private val hostController: PhysicsAuthoritativeHostController? =
+        when (mode) {
+            LaunchMode.HOST -> PhysicsAuthoritativeHostController(port = port, cfg = cfg, acceptRemoteClients = true)
+            LaunchMode.LOCAL -> PhysicsAuthoritativeHostController(port = port, cfg = cfg, acceptRemoteClients = false)
+            LaunchMode.JOIN -> null
+        }
+
+    private val joinController: PhysicsAuthoritativeJoinController? =
+        when (mode) {
+            LaunchMode.JOIN -> PhysicsAuthoritativeJoinController(hostIp = hostIp, port = port, cfg = cfg)
+            else -> null
+        }
 
     @Volatile private var currentTouchInput: PhysicsInput = PhysicsInput(0, 0)
 
@@ -85,24 +96,6 @@ internal class TorusGlSurfaceView(
         setRenderer(renderer)
         // Must be set *after* setRenderer() (GLThread created), otherwise GLSurfaceView crashes.
         renderMode = RENDERMODE_WHEN_DIRTY
-
-        when (mode) {
-            MainActivity.MODE_HOST -> {
-                hostController = PhysicsAuthoritativeHostController(port = port, cfg = cfg, acceptRemoteClients = true)
-                joinController = null
-            }
-
-            MainActivity.MODE_JOIN -> {
-                hostController = null
-                joinController = PhysicsAuthoritativeJoinController(hostIp = hostIp, port = port, cfg = cfg)
-            }
-
-            else -> {
-                // default: host-only loopback-ish (no join)
-                hostController = PhysicsAuthoritativeHostController(port = port, cfg = cfg, acceptRemoteClients = false)
-                joinController = null
-            }
-        }
     }
 
     override fun onAttachedToWindow() {
