@@ -1,4 +1,4 @@
-package org.example.app
+package org.emerge.desktop
 
 internal fun axis(neg: Boolean, pos: Boolean): Int =
     when {

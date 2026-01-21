@@ -1,4 +1,4 @@
-package org.example.app
+package org.emerge.desktop
 
 import kotlin.math.max
 import kotlin.math.min

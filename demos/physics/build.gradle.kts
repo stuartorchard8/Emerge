@@ -7,6 +7,8 @@ plugins {
 buildDir = file("$rootDir/.build/demo-physics-${System.currentTimeMillis()}")
 
 kotlin {
+    applyDefaultHierarchyTemplate()
+
     androidTarget {
         compilations.all {
             compileTaskProvider.configure {
@@ -23,7 +25,7 @@ kotlin {
         val androidMain by getting
         val jvmMain by getting
 
-        // Both Android + desktop are JVM-based, so we can share socket/threading demo glue here.
+        // Android + desktop are both JVM-based; share the TCP/threading glue here.
         val jvmAndAndroidMain by creating {
             dependsOn(commonMain)
             dependencies {

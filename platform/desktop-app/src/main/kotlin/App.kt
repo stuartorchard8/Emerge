@@ -1,4 +1,4 @@
-package org.example.app
+package org.emerge.desktop
 
 import java.awt.Color
 import java.awt.Dimension

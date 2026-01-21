@@ -8,6 +8,8 @@ plugins {
 buildDir = file("$rootDir/.build/net-tcp-${System.currentTimeMillis()}")
 
 kotlin {
+    applyDefaultHierarchyTemplate()
+
     androidTarget {
         compilations.all {
             compileTaskProvider.configure {
