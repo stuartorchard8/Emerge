@@ -18,7 +18,6 @@ This repo is a Kotlin Multiplatform foundation for a game engine (simulation + n
   - `:engine:net:api` (base `Pipe` + byte codecs)
   - `:engine:net:transports:loopback` → `:engine:net:api`
   - `:engine:net:transports:tcp` → `:engine:net:api`
-  - `:engine:net:transports:tcp-jvm` → `:engine:net:api` (candidate for removal if redundant)
 
 - **Simulation**
   - `:engine:sim:core` (deterministic tick + torus + toy physics)
@@ -40,7 +39,6 @@ graph TD
     net_api[engine:net:api]
     net_loop[engine:net:transports:loopback]
     net_tcp[engine:net:transports:tcp]
-    net_tcp_jvm[engine:net:transports:tcp-jvm]
     sim_core[engine:sim:core]
     sim_sync[engine:sim:sync]
     sim_codec_phys[engine:sim:codecs:physics]
@@ -57,7 +55,6 @@ graph TD
 
   net_loop --> net_api
   net_tcp --> net_api
-  net_tcp_jvm --> net_api
 
   sim_sync --> sim_core
   sim_sync --> net_api
@@ -83,17 +80,23 @@ Use the Gradle Wrapper:
 - **Desktop**: `./gradlew :platform:desktop-app:run`
 - **Android debug**: `./gradlew :platform:android-app:installDebug`
 
+### Kotlin Multiplatform notes (source set hierarchy)
+
+This repo **adopts the default Kotlin MPP hierarchy template** (so Android/JVM/JS source sets follow Kotlin’s standard layout).
+
+Some modules intentionally add a single shared source set called **`jvmAndAndroidMain`** (with sources in
+`src/jvmAndAndroidMain/kotlin`) for “JVM-only glue” that should compile on both desktop JVM and Android.
+
 ### Roadmap
 
 #### Must-do (correctness + maintainability)
 
-- [ ] **Make `DelegatingPipe` truly thread-safe in common code** (use an `expect/actual` atomic ref or `kotlinx.atomicfu`)
-- [ ] **Resolve Kotlin MPP hierarchy warnings** (either adopt the default hierarchy template or explicitly disable it in `gradle.properties`)
-- [ ] **Rename desktop package/main class** (`org.example.app.AppKt` → `org.emerge.desktop.AppKt` or similar)
+- [x] **Make `DelegatingPipe` truly thread-safe in common code** (implemented via `expect/actual` `AtomicRef`)
+- [x] **Adopt the default Kotlin MPP hierarchy template**
+- [x] **Rename desktop package/main class** (`org.emerge.desktop.AppKt`)
 
 #### Should-do (reduce friction)
 
-- [ ] **Decide fate of `:engine:net:transports:tcp-jvm`** (remove if unused; otherwise document why it exists vs `tcp`)
 - [ ] **Split CI tasks**: “quick checks” vs “full build” (JS browser tests + Android lint can be slow/flaky)
 - [ ] **Tame Windows build dir workaround**: timestamped `buildDir` avoids file locks but hurts caching; consider a narrower workaround
 

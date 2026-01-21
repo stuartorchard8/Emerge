@@ -44,7 +44,6 @@ include(":engine:sim:codecs:physics")
 include(":engine:net:api")
 include(":engine:net:transports:loopback")
 include(":engine:net:transports:tcp")
-include(":engine:net:transports:tcp-jvm")
 
 include(":demos:physics")
 
