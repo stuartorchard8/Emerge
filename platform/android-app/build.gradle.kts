@@ -3,10 +3,14 @@ plugins {
     kotlin("android")
 }
 
-// Workaround for Windows file locking on AGP intermediates (R.jar).
-// Some Windows setups (AV/indexers) can hold `R.jar` open between builds; to avoid "Couldn't delete ... R.jar",
-// use a fresh build directory per invocation so AGP doesn't need to delete previous outputs.
-buildDir = file("$rootDir/.build/androidApp-${System.currentTimeMillis()}")
+// Build dir strategy (Windows-friendly):
+// - Default: stable build dir for good caching and predictable disk usage.
+// - If you hit Windows file locks (AV/indexers holding AGP intermediates like R.jar), set:
+//   `-Pemerge.uniqueBuildDir=true`
+//   (and consider excluding `.build/` from real-time scanning).
+val uniqueBuildDir: Boolean = (findProperty("emerge.uniqueBuildDir") as String?)?.toBoolean() ?: false
+val buildDirName = if (uniqueBuildDir) "android-app-${System.currentTimeMillis()}" else "android-app"
+buildDir = file("$rootDir/.build/$buildDirName")
 
 android {
     namespace = "org.emerge.androidapp"

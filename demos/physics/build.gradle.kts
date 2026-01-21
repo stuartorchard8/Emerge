@@ -3,8 +3,14 @@ plugins {
     alias(libs.plugins.androidLibrary)
 }
 
-// Workaround for Windows file locking on Gradle/AGP intermediates (classes.jar/R.jar).
-buildDir = file("$rootDir/.build/demo-physics-${System.currentTimeMillis()}")
+// Build dir strategy (Windows-friendly):
+// - Default: stable build dir for good caching and predictable disk usage.
+// - If you hit Windows file locks (AV/indexers holding intermediates), set:
+//   `-Pemerge.uniqueBuildDir=true`
+//   (and consider excluding `.build/` from real-time scanning).
+val uniqueBuildDir: Boolean = (findProperty("emerge.uniqueBuildDir") as String?)?.toBoolean() ?: false
+val buildDirName = if (uniqueBuildDir) "demo-physics-${System.currentTimeMillis()}" else "demo-physics"
+buildDir = file("$rootDir/.build/$buildDirName")
 
 kotlin {
     applyDefaultHierarchyTemplate()

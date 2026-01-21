@@ -87,17 +87,18 @@ This repo **adopts the default Kotlin MPP hierarchy template** (so Android/JVM/J
 Some modules intentionally add a single shared source set called **`jvmAndAndroidMain`** (with sources in
 `src/jvmAndAndroidMain/kotlin`) for “JVM-only glue” that should compile on both desktop JVM and Android.
 
+### Windows notes (AV / file locking)
+
+On some Windows setups, real-time AV/indexers can hold Gradle/AGP intermediates open (common symptom: failing to delete something like `R.jar`).
+
+This repo uses a **stable** `.build/<module>` directory by default for good caching.
+If you still hit file locks you have two options:
+
+- **Recommended**: exclude the repo’s `.build/` directory from real-time scanning.
+- **Fallback**: run Gradle with `-Pemerge.uniqueBuildDir=true` to use a fresh `.build/<module>-<timestamp>` per invocation (avoids deletes, but uses more disk and reduces caching).
+
+
 ### Roadmap
-
-#### Must-do (correctness + maintainability)
-
-- [x] **Make `DelegatingPipe` truly thread-safe in common code** (implemented via `expect/actual` `AtomicRef`)
-- [x] **Adopt the default Kotlin MPP hierarchy template**
-- [x] **Rename desktop package/main class** (`org.emerge.desktop.AppKt`)
-
-#### Should-do (reduce friction)
-
-- [ ] **Tame Windows build dir workaround**: timestamped `buildDir` avoids file locks but hurts caching; consider a narrower workaround
 
 #### Nice-to-have (engine direction)
 
