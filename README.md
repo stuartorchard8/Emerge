@@ -1,23 +1,103 @@
 # Emerge
 
-This project uses [Gradle](https://gradle.org/).
-To build and run the application, use the *Gradle* tool window by clicking the Gradle icon in the right-hand toolbar,
-or run it directly from the terminal:
+This repo is a Kotlin Multiplatform foundation for a game engine (simulation + networking) with demo hosts for desktop + Android.
 
-* Run `./gradlew run` to build and run the application.
-* Run `./gradlew build` to only build the application.
-* Run `./gradlew check` to run all checks, including tests.
-* Run `./gradlew clean` to clean all build outputs.
+### Repo layout (how to navigate)
 
-Note the usage of the Gradle Wrapper (`./gradlew`).
-This is the suggested way to use Gradle in production projects.
+- **`engine/`**: reusable engine modules (simulation + networking)
+- **`demos/`**: sample implementations that exercise engine modules (currently: physics)
+- **`platform/`**: platform hosts / apps (desktop + Android)
+- **`buildSrc/`**: Gradle convention plugins
+- **`gradle/`**: version catalog + wrapper
 
-[Learn more about the Gradle Wrapper](https://docs.gradle.org/current/userguide/gradle_wrapper.html).
+### Gradle modules (what depends on what)
 
-[Learn more about Gradle tasks](https://docs.gradle.org/current/userguide/command_line_interface.html#common_tasks).
+#### Core layering
 
-This project follows the suggested multi-module setup and consists of the `app` and `utils` subprojects.
-The shared build logic was extracted to a convention plugin located in `buildSrc`.
+- **Transports**
+  - `:engine:net:api` (base `Pipe` + byte codecs)
+  - `:engine:net:transports:loopback` → `:engine:net:api`
+  - `:engine:net:transports:tcp` → `:engine:net:api`
+  - `:engine:net:transports:tcp-jvm` → `:engine:net:api` (candidate for removal if redundant)
 
-This project uses a version catalog (see `gradle/libs.versions.toml`) to declare and version dependencies
-and both a build cache and a configuration cache (see `gradle.properties`).
+- **Simulation**
+  - `:engine:sim:core` (deterministic tick + torus + toy physics)
+  - `:engine:sim:sync` → `:engine:sim:core`, `:engine:net:api`
+  - `:engine:sim:codecs:physics` → `:engine:sim:core`, `:engine:sim:sync`, `:engine:net:api`
+
+- **Demos**
+  - `:demos:physics` → `:engine:sim:*`, `:engine:net:api`, `:engine:net:transports:tcp`
+
+- **Platform hosts**
+  - `:platform:desktop-app` → `:demos:physics` (+ LWJGL)
+  - `:platform:android-app` → `:demos:physics`
+
+#### Visual map
+
+```mermaid
+graph TD
+  subgraph engine
+    net_api[engine:net:api]
+    net_loop[engine:net:transports:loopback]
+    net_tcp[engine:net:transports:tcp]
+    net_tcp_jvm[engine:net:transports:tcp-jvm]
+    sim_core[engine:sim:core]
+    sim_sync[engine:sim:sync]
+    sim_codec_phys[engine:sim:codecs:physics]
+  end
+
+  subgraph demos
+    demo_phys[demos:physics]
+  end
+
+  subgraph platform
+    desktop[platform:desktop-app]
+    android[platform:android-app]
+  end
+
+  net_loop --> net_api
+  net_tcp --> net_api
+  net_tcp_jvm --> net_api
+
+  sim_sync --> sim_core
+  sim_sync --> net_api
+  sim_codec_phys --> sim_core
+  sim_codec_phys --> sim_sync
+  sim_codec_phys --> net_api
+
+  demo_phys --> sim_core
+  demo_phys --> sim_sync
+  demo_phys --> sim_codec_phys
+  demo_phys --> net_api
+  demo_phys --> net_tcp
+
+  desktop --> demo_phys
+  android --> demo_phys
+```
+
+### Build & run
+
+Use the Gradle Wrapper:
+
+- **Build everything**: `./gradlew build`
+- **Desktop**: `./gradlew :platform:desktop-app:run`
+- **Android debug**: `./gradlew :platform:android-app:installDebug`
+
+### Roadmap
+
+#### Must-do (correctness + maintainability)
+
+- [ ] **Make `DelegatingPipe` truly thread-safe in common code** (use an `expect/actual` atomic ref or `kotlinx.atomicfu`)
+- [ ] **Resolve Kotlin MPP hierarchy warnings** (either adopt the default hierarchy template or explicitly disable it in `gradle.properties`)
+- [ ] **Rename desktop package/main class** (`org.example.app.AppKt` → `org.emerge.desktop.AppKt` or similar)
+
+#### Should-do (reduce friction)
+
+- [ ] **Decide fate of `:engine:net:transports:tcp-jvm`** (remove if unused; otherwise document why it exists vs `tcp`)
+- [ ] **Split CI tasks**: “quick checks” vs “full build” (JS browser tests + Android lint can be slow/flaky)
+- [ ] **Tame Windows build dir workaround**: timestamped `buildDir` avoids file locks but hurts caching; consider a narrower workaround
+
+#### Nice-to-have (engine direction)
+
+- [ ] Consider extracting reusable rendering utilities from `:demos:physics` into `engine/render/*` if they’re meant to be engine features
+- [ ] Add a `:platform:web-app` host to match the existing JS targets (even a minimal harness)

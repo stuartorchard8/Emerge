@@ -4,7 +4,8 @@ plugins {
 }
 
 // Workaround for Windows file locking on Gradle/AGP intermediates (classes.jar/R.jar).
-buildDir = file("$rootDir/.build/sim-sync-${System.currentTimeMillis()}")
+// Use a fresh build directory per invocation so tasks don't need to overwrite previously-locked outputs.
+buildDir = file("$rootDir/.build/net-tcp-${System.currentTimeMillis()}")
 
 kotlin {
     androidTarget {
@@ -17,26 +18,36 @@ kotlin {
         }
     }
     jvm()
-    js(IR) { browser() }
 
     sourceSets {
+        val commonMain by getting
+        val androidMain by getting
+        val jvmMain by getting
+
+        // Both Android + desktop are JVM-based, so we can share Java-socket code here
+        // without duplicating it in androidMain + jvmMain.
+        val jvmAndAndroidMain by creating {
+            dependsOn(commonMain)
+        }
+
+        androidMain.dependsOn(jvmAndAndroidMain)
+        jvmMain.dependsOn(jvmAndAndroidMain)
+
         commonMain {
             dependencies {
-                api(project(":sim-core"))
-                api(project(":net-api"))
+                api(project(":engine:net:api"))
             }
         }
         commonTest {
             dependencies {
                 implementation(kotlin("test"))
-                implementation(project(":net-loopback"))
             }
         }
     }
 }
 
 android {
-    namespace = "org.emerge.sim.sync"
+    namespace = "org.emerge.net.tcp"
     compileSdk = 35
     defaultConfig {
         minSdk = 26
@@ -46,3 +57,4 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
+

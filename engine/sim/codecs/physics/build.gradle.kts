@@ -22,9 +22,9 @@ kotlin {
     sourceSets {
         commonMain {
             dependencies {
-                api(project(":sim-core"))
-                api(project(":sim-sync"))
-                api(project(":net-api"))
+                api(project(":engine:sim:core"))
+                api(project(":engine:sim:sync"))
+                api(project(":engine:net:api"))
             }
         }
         commonTest {

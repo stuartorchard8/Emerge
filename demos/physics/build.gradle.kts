@@ -4,8 +4,7 @@ plugins {
 }
 
 // Workaround for Windows file locking on Gradle/AGP intermediates (classes.jar/R.jar).
-// Use a fresh build directory per invocation so tasks don't need to overwrite previously-locked outputs.
-buildDir = file("$rootDir/.build/net-tcp-${System.currentTimeMillis()}")
+buildDir = file("$rootDir/.build/demo-physics-${System.currentTimeMillis()}")
 
 kotlin {
     androidTarget {
@@ -24,18 +23,31 @@ kotlin {
         val androidMain by getting
         val jvmMain by getting
 
-        // Both Android + desktop are JVM-based, so we can share Java-socket code here
-        // without duplicating it in androidMain + jvmMain.
+        // Both Android + desktop are JVM-based, so we can share socket/threading demo glue here.
         val jvmAndAndroidMain by creating {
             dependsOn(commonMain)
+            dependencies {
+                implementation(project(":engine:net:transports:tcp"))
+            }
         }
 
         androidMain.dependsOn(jvmAndAndroidMain)
         jvmMain.dependsOn(jvmAndAndroidMain)
 
+        jvmMain {
+            dependencies {
+                // Desktop GL shader compile/link helpers (LWJGL)
+                implementation(platform("org.lwjgl:lwjgl-bom:3.3.3"))
+                implementation("org.lwjgl:lwjgl-opengl")
+            }
+        }
+
         commonMain {
             dependencies {
-                api(project(":net-api"))
+                api(project(":engine:sim:core"))
+                api(project(":engine:sim:sync"))
+                api(project(":engine:sim:codecs:physics"))
+                api(project(":engine:net:api"))
             }
         }
         commonTest {
@@ -47,7 +59,7 @@ kotlin {
 }
 
 android {
-    namespace = "org.emerge.net.tcp"
+    namespace = "org.emerge.demo.physics"
     compileSdk = 35
     defaultConfig {
         minSdk = 26

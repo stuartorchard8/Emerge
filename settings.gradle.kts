@@ -34,15 +34,18 @@ plugins {
 // Include subprojects in the build.
 // If there are changes in only one of the projects, Gradle will rebuild only the one that has changed.
 // Learn more about structuring projects with Gradle - https://docs.gradle.org/8.7/userguide/multi_project_builds.html
-include(":app")
-include(":androidApp")
-include(":sim-core")
-include(":sim-sync")
-include(":sim-physics-codec")
-include(":net-api")
-include(":net-loopback")
-include(":net-tcp")
-include(":net-tcp-jvm")
-include(":demo-physics")
+include(":platform:desktop-app")
+include(":platform:android-app")
+
+include(":engine:sim:core")
+include(":engine:sim:sync")
+include(":engine:sim:codecs:physics")
+
+include(":engine:net:api")
+include(":engine:net:transports:loopback")
+include(":engine:net:transports:tcp")
+include(":engine:net:transports:tcp-jvm")
+
+include(":demos:physics")
 
 rootProject.name = "Emerge"

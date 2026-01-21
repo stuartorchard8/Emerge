@@ -4,7 +4,7 @@ plugins {
 }
 
 // Workaround for Windows file locking on Gradle/AGP intermediates (classes.jar/R.jar).
-buildDir = file("$rootDir/.build/net-loopback-${System.currentTimeMillis()}")
+buildDir = file("$rootDir/.build/sim-sync-${System.currentTimeMillis()}")
 
 kotlin {
     androidTarget {
@@ -22,19 +22,21 @@ kotlin {
     sourceSets {
         commonMain {
             dependencies {
-                api(project(":net-api"))
+                api(project(":engine:sim:core"))
+                api(project(":engine:net:api"))
             }
         }
         commonTest {
             dependencies {
                 implementation(kotlin("test"))
+                implementation(project(":engine:net:transports:loopback"))
             }
         }
     }
 }
 
 android {
-    namespace = "org.emerge.net.loopback"
+    namespace = "org.emerge.sim.sync"
     compileSdk = 35
     defaultConfig {
         minSdk = 26

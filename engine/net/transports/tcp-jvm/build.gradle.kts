@@ -3,7 +3,7 @@ plugins {
 }
 
 dependencies {
-    api(project(":net-api"))
+    api(project(":engine:net:api"))
     testImplementation(kotlin("test"))
 }
 
