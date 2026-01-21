@@ -97,7 +97,6 @@ Some modules intentionally add a single shared source set called **`jvmAndAndroi
 
 #### Should-do (reduce friction)
 
-- [ ] **Split CI tasks**: “quick checks” vs “full build” (JS browser tests + Android lint can be slow/flaky)
 - [ ] **Tame Windows build dir workaround**: timestamped `buildDir` avoids file locks but hurts caching; consider a narrower workaround
 
 #### Nice-to-have (engine direction)
