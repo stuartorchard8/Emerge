@@ -4,7 +4,7 @@ plugins {
 }
 
 // Stable build dir (expect AV exclusions instead of per-run build dirs).
-buildDir = file("$rootDir/.build/sim-sync")
+buildDir = file("$rootDir/.build/render-torus")
 
 kotlin {
     androidTarget {
@@ -22,20 +22,25 @@ kotlin {
         commonMain {
             dependencies {
                 api(project(":engine:sim:core"))
-                api(project(":engine:net:api"))
+            }
+        }
+        jvmMain {
+            dependencies {
+                // Desktop GL program compilation/linking (LWJGL)
+                implementation(platform("org.lwjgl:lwjgl-bom:3.3.3"))
+                implementation("org.lwjgl:lwjgl-opengl")
             }
         }
         commonTest {
             dependencies {
                 implementation(kotlin("test"))
-                implementation(project(":engine:net:transports:loopback"))
             }
         }
     }
 }
 
 android {
-    namespace = "org.emerge.sim.sync"
+    namespace = "org.emerge.render.torus"
     compileSdk = 35
     defaultConfig {
         minSdk = 26
@@ -45,3 +50,4 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
+

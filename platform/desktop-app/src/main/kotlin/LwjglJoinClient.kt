@@ -4,9 +4,9 @@ import kotlin.math.max
 import kotlin.math.min
 import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
 import org.emerge.demo.physics.PhysicsDemoConfig
-import org.emerge.demo.physics.TorusGlProgramFactory
-import org.emerge.demo.physics.TorusViewComputer
-import org.emerge.demo.physics.packBodiesToFloatArray
+import org.emerge.render.torus.TorusGlProgramFactory
+import org.emerge.render.torus.TorusViewComputer
+import org.emerge.render.torus.packBodiesToFloatArray
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.Fx
 import org.emerge.sim.core.physics.PhysicsInput
@@ -200,5 +200,5 @@ fun runJoinGl(hostIp: String, port: Int, maxRunMs: Long? = null): Boolean {
     return sawFirstSnapshot
 }
 
-// Shader compile/link is now provided by demo-physics via TorusGlProgramFactory.
+// Shader compile/link is provided by :engine:render:torus via TorusGlProgramFactory.
 

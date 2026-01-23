@@ -1,4 +1,4 @@
-package org.emerge.demo.physics
+package org.emerge.render.torus
 
 import org.emerge.sim.core.physics.Fx
 import org.emerge.sim.core.physics.PhysicsState

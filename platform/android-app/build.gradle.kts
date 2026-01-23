@@ -3,14 +3,8 @@ plugins {
     kotlin("android")
 }
 
-// Build dir strategy (Windows-friendly):
-// - Default: stable build dir for good caching and predictable disk usage.
-// - If you hit Windows file locks (AV/indexers holding AGP intermediates like R.jar), set:
-//   `-Pemerge.uniqueBuildDir=true`
-//   (and consider excluding `.build/` from real-time scanning).
-val uniqueBuildDir: Boolean = (findProperty("emerge.uniqueBuildDir") as String?)?.toBoolean() ?: false
-val buildDirName = if (uniqueBuildDir) "android-app-${System.currentTimeMillis()}" else "android-app"
-buildDir = file("$rootDir/.build/$buildDirName")
+// Stable build dir (expect AV exclusions instead of per-run build dirs).
+buildDir = file("$rootDir/.build/android-app")
 
 android {
     namespace = "org.emerge.androidapp"
@@ -20,7 +14,7 @@ android {
         applicationId = "org.emerge.androidapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 26
+        versionCode = 28
         versionName = "0.1"
     }
 
@@ -49,6 +43,7 @@ android {
 dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation(project(":demos:physics"))
+    implementation(project(":engine:render:torus"))
     implementation(project(":engine:sim:core"))
     implementation(project(":engine:sim:sync"))
     implementation(project(":engine:sim:codecs:physics"))

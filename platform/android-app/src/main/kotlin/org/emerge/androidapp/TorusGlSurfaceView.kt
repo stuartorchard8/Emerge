@@ -13,11 +13,10 @@ import org.emerge.demo.physics.LaunchMode
 import org.emerge.demo.physics.PhysicsAuthoritativeHostController
 import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
 import org.emerge.demo.physics.PhysicsDemoConfig
-import org.emerge.demo.physics.TorusShaderSources
-import org.emerge.demo.physics.TorusGlProgramFactory
-import org.emerge.demo.physics.TorusViewComputer
 import org.emerge.demo.physics.createDefaultInitialState
-import org.emerge.demo.physics.packBodiesToFloatArray
+import org.emerge.render.torus.TorusGlProgramFactory
+import org.emerge.render.torus.TorusViewComputer
+import org.emerge.render.torus.packBodiesToFloatArray
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState

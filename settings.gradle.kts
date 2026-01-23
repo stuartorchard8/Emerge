@@ -41,6 +41,8 @@ include(":engine:sim:core")
 include(":engine:sim:sync")
 include(":engine:sim:codecs:physics")
 
+include(":engine:render:torus")
+
 include(":engine:net:api")
 include(":engine:net:transports:loopback")
 include(":engine:net:transports:tcp")

@@ -1,4 +1,4 @@
-package org.emerge.demo.physics
+package org.emerge.render.torus
 
 object TorusShaderSources {
     fun vertexGles2(): String =

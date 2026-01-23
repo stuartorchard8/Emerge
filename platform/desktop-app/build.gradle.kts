@@ -13,6 +13,7 @@ plugins {
 
 dependencies {
     implementation(project(":demos:physics"))
+    implementation(project(":engine:render:torus"))
     implementation(project(":engine:sim:core"))
     implementation(project(":engine:sim:sync"))
     implementation(project(":engine:sim:codecs:physics"))

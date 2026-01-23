@@ -1,4 +1,4 @@
-package org.emerge.demo.physics
+package org.emerge.render.torus
 
 import org.lwjgl.opengl.GL33C.GL_COMPILE_STATUS
 import org.lwjgl.opengl.GL33C.GL_FRAGMENT_SHADER

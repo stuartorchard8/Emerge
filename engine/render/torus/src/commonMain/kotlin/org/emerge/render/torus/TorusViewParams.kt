@@ -1,4 +1,4 @@
-package org.emerge.demo.physics
+package org.emerge.render.torus
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.camera.TorusCoverTracker

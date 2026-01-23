@@ -82,7 +82,7 @@ Use the Gradle Wrapper:
 
 ### Kotlin Multiplatform notes (source set hierarchy)
 
-This repo **adopts the default Kotlin MPP hierarchy template** (so Android/JVM/JS source sets follow Kotlin’s standard layout).
+This repo **adopts the default Kotlin MPP hierarchy template** (so Android/JVM source sets follow Kotlin’s standard layout).
 
 Some modules intentionally add a single shared source set called **`jvmAndAndroidMain`** (with sources in
 `src/jvmAndAndroidMain/kotlin`) for “JVM-only glue” that should compile on both desktop JVM and Android.
@@ -91,11 +91,8 @@ Some modules intentionally add a single shared source set called **`jvmAndAndroi
 
 On some Windows setups, real-time AV/indexers can hold Gradle/AGP intermediates open (common symptom: failing to delete something like `R.jar`).
 
-This repo uses a **stable** `.build/<module>` directory by default for good caching.
-If you still hit file locks you have two options:
-
-- **Recommended**: exclude the repo’s `.build/` directory from real-time scanning.
-- **Fallback**: run Gradle with `-Pemerge.uniqueBuildDir=true` to use a fresh `.build/<module>-<timestamp>` per invocation (avoids deletes, but uses more disk and reduces caching).
+This repo uses **stable** `.build/<module>` directories (no per-run timestamped build dirs).
+If you hit file locks, the intended fix is to **exclude the repo’s `.build/` directory from real-time scanning**.
 
 
 ### Roadmap
@@ -103,4 +100,3 @@ If you still hit file locks you have two options:
 #### Nice-to-have (engine direction)
 
 - [ ] Consider extracting reusable rendering utilities from `:demos:physics` into `engine/render/*` if they’re meant to be engine features
-- [ ] Add a `:platform:web-app` host to match the existing JS targets (even a minimal harness)
