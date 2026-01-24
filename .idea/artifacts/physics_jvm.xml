@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="physics-jvm">
+    <output-path>$PROJECT_DIR$/.build/sim-physics-codec/libs</output-path>
+    <root id="archive" name="physics-jvm.jar">
+      <element id="module-output" name="Emerge.engine.sim.codecs.physics.jvmMain" />
+    </root>
+  </artifact>
+</component>

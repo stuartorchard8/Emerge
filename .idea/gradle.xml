@@ -20,16 +20,25 @@
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$" />
-            <option value="$PROJECT_DIR$/androidApp" />
-            <option value="$PROJECT_DIR$/app" />
             <option value="$PROJECT_DIR$/buildSrc" />
-            <option value="$PROJECT_DIR$/net-api" />
-            <option value="$PROJECT_DIR$/net-loopback" />
-            <option value="$PROJECT_DIR$/net-tcp" />
-            <option value="$PROJECT_DIR$/net-tcp-jvm" />
-            <option value="$PROJECT_DIR$/sim-core" />
-            <option value="$PROJECT_DIR$/sim-physics-codec" />
-            <option value="$PROJECT_DIR$/sim-sync" />
+            <option value="$PROJECT_DIR$/demos" />
+            <option value="$PROJECT_DIR$/demos/physics" />
+            <option value="$PROJECT_DIR$/engine" />
+            <option value="$PROJECT_DIR$/engine/net" />
+            <option value="$PROJECT_DIR$/engine/net/api" />
+            <option value="$PROJECT_DIR$/engine/net/transports" />
+            <option value="$PROJECT_DIR$/engine/net/transports/loopback" />
+            <option value="$PROJECT_DIR$/engine/net/transports/tcp" />
+            <option value="$PROJECT_DIR$/engine/render" />
+            <option value="$PROJECT_DIR$/engine/render/torus" />
+            <option value="$PROJECT_DIR$/engine/sim" />
+            <option value="$PROJECT_DIR$/engine/sim/codecs" />
+            <option value="$PROJECT_DIR$/engine/sim/codecs/physics" />
+            <option value="$PROJECT_DIR$/engine/sim/core" />
+            <option value="$PROJECT_DIR$/engine/sim/sync" />
+            <option value="$PROJECT_DIR$/platform" />
+            <option value="$PROJECT_DIR$/platform/android-app" />
+            <option value="$PROJECT_DIR$/platform/desktop-app" />
           </set>
         </option>
       </GradleProjectSettings>
