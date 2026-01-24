@@ -52,8 +52,8 @@ fun main(args: Array<String>) {
 }
 
 private class DesktopLauncher {
-    private val modeBox = JComboBox(arrayOf("Local", "Host", "Join"))
-    private val renderBox = JComboBox(arrayOf("GPU (OpenGL)", "CPU (Swing)"))
+    private val modeBox = JComboBox(LaunchMode.entries.map(LaunchMode::name).toTypedArray())
+    private val renderBox = JComboBox(RenderBackend.entries.map(RenderBackend::name).toTypedArray())
     private val hostIpField = JTextField("127.0.0.1", 16)
     private val portField = JTextField("7777", 6)
 
@@ -105,6 +105,11 @@ private class DesktopLauncher {
     }
 
     fun show() {
+        val defaultLaunchSettings = LaunchSettings()
+        modeBox.selectedItem = defaultLaunchSettings.mode.name
+        renderBox.selectedItem = defaultLaunchSettings.renderBackend.name
+        hostIpField.text = defaultLaunchSettings.hostIp
+        portField.text = defaultLaunchSettings.port.toString()
         frame.isVisible = true
     }
 

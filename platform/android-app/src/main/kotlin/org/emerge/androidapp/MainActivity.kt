@@ -38,17 +38,20 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         // Single launch path: always start in-app with a launcher UI.
         // (We still read intent extras only to prefill the UI for convenience.)
+        val defaultLaunchSettings = LaunchSettings()
         val initial = LaunchSettings(
             mode = when (intent.getStringExtra(EXTRA_MODE)) {
                 MODE_HOST -> LaunchMode.HOST
                 MODE_JOIN -> LaunchMode.JOIN
-                else -> LaunchMode.LOCAL
+                MODE_LOOPBACK -> LaunchMode.LOCAL
+                else -> defaultLaunchSettings.mode
             },
-            hostIp = intent.getStringExtra(EXTRA_HOST_IP) ?: "127.0.0.1",
-            port = intent.getIntExtra(EXTRA_PORT, 7777),
+            hostIp = intent.getStringExtra(EXTRA_HOST_IP) ?: defaultLaunchSettings.hostIp,
+            port = intent.getIntExtra(EXTRA_PORT, defaultLaunchSettings.port),
             renderBackend = when (intent.getStringExtra(EXTRA_RENDERER)) {
                 RENDERER_CANVAS -> RenderBackend.CPU
-                else -> RenderBackend.GPU
+                RENDERER_GL -> RenderBackend.GPU
+                else -> defaultLaunchSettings.renderBackend
             },
         )
         setContentView(LauncherView(activity = this, initial = initial))
@@ -85,10 +88,10 @@ private class LauncherView(
         setPadding(pad, pad, pad, pad)
 
         modeSpinner = Spinner(context)
-        modeSpinner.adapter = themedSpinnerAdapter(listOf("Local", "Host", "Join"))
+        modeSpinner.adapter = themedSpinnerAdapter(LaunchMode.entries.map(LaunchMode::name).toList())
 
         rendererSpinner = Spinner(context)
-        rendererSpinner.adapter = themedSpinnerAdapter(listOf("GPU (GL)", "CPU (Canvas)"))
+        rendererSpinner.adapter = themedSpinnerAdapter(RenderBackend.entries.map(RenderBackend::name).toList())
 
         hostIpEdit = EditText(context).apply {
             hint = "Host IP (for Join)"
