@@ -44,7 +44,7 @@ internal class TorusGlSurfaceView(
 
     private val joinController: PhysicsAuthoritativeJoinController? =
         when (mode) {
-            LaunchMode.JOIN -> PhysicsAuthoritativeJoinController(hostIp = hostIp, port = port, cfg = cfg)
+            LaunchMode.JOIN -> PhysicsAuthoritativeJoinController(hostIp = hostIp, port = port)
             else -> null
         }
 

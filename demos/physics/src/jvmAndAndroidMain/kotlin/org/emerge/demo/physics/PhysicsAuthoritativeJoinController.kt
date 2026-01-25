@@ -14,11 +14,9 @@ import org.emerge.sim.sync.auth.StateCodec
 class PhysicsAuthoritativeJoinController(
     private val hostIp: String,
     private val port: Int,
-    private val cfg: PhysicsDemoConfig = PhysicsDemoConfig(),
-) {
+) : PhysicsAuthoritativeController() {
     private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
     private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
-    private val initial: PhysicsState = createDefaultInitialState(cfg)
 
     private val remote = DelegatingPipe()
     private val client = AuthoritativeClient(
@@ -71,7 +69,7 @@ class PhysicsAuthoritativeJoinController(
         }
     }
 
-    fun tick(localInput: PhysicsInput): AuthoritativeDemoFrame {
+    override fun tick(localInput: PhysicsInput): AuthoritativeDemoFrame {
         client.poll()
         client.sendInput(localInput)
 

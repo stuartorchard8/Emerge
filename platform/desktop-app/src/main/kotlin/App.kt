@@ -1,49 +1,25 @@
 package org.emerge.desktop
 
-import java.awt.Color
-import java.awt.Dimension
-import java.awt.Graphics
-import java.awt.Graphics2D
-import java.awt.RenderingHints
-import java.awt.event.KeyAdapter
-import java.awt.event.KeyEvent
-import javax.swing.JFrame
-import javax.swing.JPanel
-import javax.swing.SwingUtilities
-import javax.swing.Timer
-import javax.swing.JButton
-import javax.swing.JComboBox
-import javax.swing.JLabel
-import javax.swing.JTextField
-import java.awt.GridBagConstraints
-import java.awt.GridBagLayout
-import java.awt.Insets
-import kotlin.system.exitProcess
-import org.emerge.demo.physics.PhysicsAuthoritativeHostController
-import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
-import org.emerge.demo.physics.PhysicsDemoConfig
-import org.emerge.demo.physics.LaunchMode
-import org.emerge.demo.physics.LaunchSettings
-import org.emerge.demo.physics.RenderBackend
-import org.emerge.demo.physics.createDefaultInitialState
-import org.emerge.net.loopback.Loopback
-import org.emerge.net.api.Pipe
-import org.emerge.net.tcp.Tcp
-import org.emerge.sim.codec.physics.PhysicsNetCodecs
-import org.emerge.sim.core.camera.TorusOrthoCamera2D
+import java.awt.*
+import javax.swing.*
+import org.emerge.demo.physics.*
+import org.emerge.render.torus.*
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.CircleBody
-import org.emerge.sim.core.physics.Fx
-import org.emerge.sim.core.physics.PhysicsInput
-import org.emerge.sim.core.physics.PhysicsReducer
-import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.Vec2Fx
+import org.emerge.sim.core.camera.TorusOrthoCamera2D
+import org.emerge.sim.core.physics.*
 import org.emerge.sim.core.space.Torus2D
-import org.emerge.sim.sync.Codec
-import org.emerge.sim.sync.LockstepClient
-import org.emerge.sim.sync.LockstepHost
-import org.emerge.sim.sync.auth.AuthoritativeClient
-import org.emerge.sim.sync.auth.StateCodec
+import org.lwjgl.glfw.GLFW.*
+import org.lwjgl.opengl.*
+import org.lwjgl.opengl.GL11.*
+import org.lwjgl.opengl.GL20.*
+import org.lwjgl.opengl.GL30.*
+import org.lwjgl.system.MemoryStack
+import org.lwjgl.system.MemoryUtil.NULL
+import java.awt.event.*
+import kotlin.math.*
+import kotlin.use
+
+internal const val MAX_BODIES = 128
 
 fun main(args: Array<String>) {
     // Single launch path: always start with an in-app launcher UI.
@@ -67,7 +43,7 @@ private class DesktopLauncher {
                 weightx = 1.0
             }
 
-            fun row(y: Int, label: String, comp: java.awt.Component) {
+            fun row(y: Int, label: String, comp: Component) {
                 c.gridy = y
                 c.gridx = 0
                 c.weightx = 0.0
@@ -100,7 +76,7 @@ private class DesktopLauncher {
         }
 
         pack()
-        setLocationByPlatform(true)
+        isLocationByPlatform = true
         isResizable = false
     }
 
@@ -142,8 +118,11 @@ private class DesktopLauncher {
     private fun startDemo(settings: LaunchSettings) {
         when (settings.mode) {
             LaunchMode.LOCAL -> {
-                // Desktop local demo is the existing lockstep loopback Swing UI.
-                SwingUtilities.invokeLater { PhysicsLockstepSwingDemo().start() }
+                when (settings.renderBackend) {
+                    // N.B. CPU technically opens a network connection
+                    RenderBackend.CPU -> SwingUtilities.invokeLater { AuthoritativeHostSwingDemo(settings.port).start() }
+                    RenderBackend.GPU -> Thread { runLocalGl(settings.port) }.start()
+                }
             }
             LaunchMode.HOST -> {
                 when (settings.renderBackend) {
@@ -158,6 +137,131 @@ private class DesktopLauncher {
                 }
             }
         }
+    }
+
+    fun runLocalGl(port: Int) {
+        val controller = PhysicsAuthoritativeHostController(port = port, cfg = PhysicsDemoConfig(), acceptRemoteClients = false)
+        runGl("Emerge local-gl", controller)
+    }
+
+    fun runHostGl(port: Int) {
+        val controller = PhysicsAuthoritativeHostController(port = port, cfg = PhysicsDemoConfig(), acceptRemoteClients = true)
+        runGl("Emerge host-gl (:$port)", controller)
+    }
+
+    fun runJoinGl(hostIp: String, port: Int) {
+        val controller = PhysicsAuthoritativeJoinController(hostIp = hostIp, port = port)
+        runGl("Emerge join-gl ($hostIp:$port)", controller)
+    }
+
+    fun runGl(title: String, controller: PhysicsAuthoritativeController) {
+        if (!glfwInit()) error("GLFW init failed")
+        glfwDefaultWindowHints()
+        glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE)
+        glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE)
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3)
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3)
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE)
+
+        val window = glfwCreateWindow(960, 600, title, NULL, NULL)
+        if (window == NULL) error("Failed to create GLFW window")
+
+        val pressed = BooleanArray(512)
+        glfwSetKeyCallback(window) { win, key, _, action, _ ->
+            if (key in 0 until pressed.size) {
+                pressed[key] = (action != GLFW_RELEASE)
+            }
+            if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+                glfwSetWindowShouldClose(win, true)
+            }
+        }
+
+        glfwMakeContextCurrent(window)
+        glfwSwapInterval(1)
+        glfwShowWindow(window)
+        GL.createCapabilities()
+
+        val program = TorusGlProgramFactory.createProgramGl330(MAX_BODIES)
+        glUseProgram(program)
+
+        // Fullscreen triangle (no VBO needed), but some drivers want a VAO bound in core profile.
+        val vao = glGenVertexArrays()
+        glBindVertexArray(vao)
+
+        // Uniform locations
+        val uResolution = glGetUniformLocation(program, "uResolution")
+        val uWorld = glGetUniformLocation(program, "uWorld")
+        val uView = glGetUniformLocation(program, "uView")
+        val uCenter = glGetUniformLocation(program, "uCenter")
+        val uBodyCount = glGetUniformLocation(program, "uBodyCount")
+        val uMyId = glGetUniformLocation(program, "uMyId")
+        val uBodies = glGetUniformLocation(program, "uBodies")
+
+        var zoom = 0.75f // <1 => zoom out (see multiple tiles)
+        val view = TorusViewComputer()
+        val bodiesFloats = FloatArray(4 * MAX_BODIES)
+
+        while (!glfwWindowShouldClose(window)) {
+            glfwPollEvents()
+
+            // zoom controls: '-' zoom out, '=' zoom in
+            if (pressed[GLFW_KEY_MINUS]) zoom = max(0.05f, zoom * 0.98f)
+            if (pressed[GLFW_KEY_EQUAL]) zoom = min(20f, zoom * 1.02f)
+
+            // WASD input
+            val ax = axis(pressed[GLFW_KEY_A], pressed[GLFW_KEY_D])
+            val ay = axis(pressed[GLFW_KEY_W], pressed[GLFW_KEY_S])
+            val frame = controller.tick(PhysicsInput(ax, ay))
+            val state: PhysicsState? = frame.state
+            val myId = frame.myId
+
+            MemoryStack.stackPush().use { st ->
+                val pw = st.mallocInt(1)
+                val ph = st.mallocInt(1)
+                glfwGetFramebufferSize(window, pw, ph)
+                val fbW = max(1, pw[0])
+                val fbH = max(1, ph[0])
+                glViewport(0, 0, fbW, fbH)
+
+                glClearColor(0.07f, 0.07f, 0.07f, 1f)
+                glClear(GL_COLOR_BUFFER_BIT)
+
+                glUniform2f(uResolution, fbW.toFloat(), fbH.toFloat())
+
+                if (state != null) {
+                    val params = view.compute(state = state, myId = myId, zoom = zoom)
+                    glUniform2f(uWorld, params.worldW, params.worldH)
+                    glUniform2f(uView, params.viewW, params.viewH)
+                    glUniform2f(uCenter, params.topLeftCoverX, params.topLeftCoverY)
+
+                    glUniform1i(uMyId, myId?.value ?: -1)
+                    val bodies = state.bodies.values.toList()
+                    val n = min(MAX_BODIES, bodies.size)
+                    glUniform1i(uBodyCount, n)
+
+                    val fb = st.mallocFloat(4 * MAX_BODIES)
+                    packBodiesToFloatArray(state = state, maxBodies = MAX_BODIES, out = bodiesFloats)
+                    fb.put(bodiesFloats, 0, 4 * MAX_BODIES)
+                    fb.flip()
+                    glUniform4fv(uBodies, fb)
+                } else {
+                    // no state yet: still set something valid
+                    glUniform2f(uWorld, 1f, 1f)
+                    glUniform2f(uView, 1f, 1f)
+                    glUniform2f(uCenter, 0f, 0f)
+                    glUniform1i(uMyId, -1)
+                    glUniform1i(uBodyCount, 0)
+                }
+
+                glDrawArrays(GL_TRIANGLES, 0, 3)
+            }
+
+            glfwSwapBuffers(window)
+        }
+
+        glDeleteProgram(program)
+        glfwDestroyWindow(window)
+        glfwTerminate()
     }
 }
 
@@ -204,153 +308,6 @@ private fun drawBodiesTorusTiled(
     }
 }
 
-/**
- * Headless join smoke test for verifying that desktop can connect + handshake + receive first snapshot.
- */
-private fun joinOnce(hostIp: String, port: Int): Boolean {
-    val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
-    val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
-    val pipe =
-        try {
-            Tcp.connect(hostIp, port)
-        } catch (t: Throwable) {
-            val msg = t.message?.take(120) ?: ""
-            println("join-once: connect failed: ${t.javaClass.simpleName} $msg")
-            return false
-        }
-
-    val client = AuthoritativeClient(
-        pipe = pipe,
-        inputCodec = inputCodec,
-        stateCodec = stateCodec,
-        onDisconnected = { reason ->
-            println("join-once: disconnected: $reason")
-        },
-    )
-
-    println("join-once: connecting $hostIp:$port")
-    client.resetConnection("join-once")
-    client.startHandshake(force = true)
-
-    val deadlineMs = System.currentTimeMillis() + 6_000L
-    while (System.currentTimeMillis() < deadlineMs) {
-        client.poll()
-        if (client.connectionState == AuthoritativeClient.ConnectionState.CONNECTED && client.playerId != null && client.state != null) {
-            println("join-once: OK (playerId=${client.playerId} tick=${client.tick.value})")
-            return true
-        }
-        if (client.connectionState == AuthoritativeClient.ConnectionState.DISCONNECTED) {
-            val r = client.lastDisconnectReason ?: "disconnected"
-            println("join-once: FAILED ($r)")
-            return false
-        }
-        try {
-            Thread.sleep(5L)
-        } catch (_: InterruptedException) {
-            break
-        }
-    }
-
-    val r = client.lastDisconnectReason ?: "timeout waiting for welcome/snapshot"
-    println("join-once: FAILED ($r)")
-    return false
-}
-
-private class PhysicsLockstepSwingDemo {
-    private val worldW = Fx.fromInt(800)
-    private val worldH = Fx.fromInt(500)
-    private val radius = Fx.fromInt(16)
-
-    private val pair0 = Loopback.createPair()
-    private val c0 = pair0.first
-    private val h0 = pair0.second
-
-    private val pair1 = Loopback.createPair()
-    private val c1 = pair1.first
-    private val h1 = pair1.second
-
-    private val reducer = PhysicsReducer()
-
-    private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
-
-    private val initial = PhysicsState(
-        width = worldW,
-        height = worldH,
-        bodies = mapOf(
-            PlayerId(0) to CircleBody(
-                playerId = PlayerId(0),
-                pos = Vec2Fx(Fx.fromInt(200), Fx.fromInt(250)),
-                vel = Vec2Fx(Fx.fromRaw(0), Fx.fromRaw(0)),
-                radius = radius,
-            ),
-            PlayerId(1) to CircleBody(
-                playerId = PlayerId(1),
-                pos = Vec2Fx(Fx.fromInt(600), Fx.fromInt(250)),
-                vel = Vec2Fx(Fx.fromRaw(0), Fx.fromRaw(0)),
-                radius = radius,
-            ),
-        ),
-    )
-
-    private val host = LockstepHost(
-        initialState = initial,
-        reducer = { s, inputs -> reducer.reduce(s, inputs) },
-        inputCodec = inputCodec,
-        peers = mapOf(PlayerId(0) to h0, PlayerId(1) to h1),
-    )
-
-    private val client0 = LockstepClient(
-        playerId = PlayerId(0),
-        initialState = initial,
-        reducer = { s, inputs -> reducer.reduce(s, inputs) },
-        inputCodec = inputCodec,
-        pipe = c0,
-    )
-
-    private val client1 = LockstepClient(
-        playerId = PlayerId(1),
-        initialState = initial,
-        reducer = { s, inputs -> reducer.reduce(s, inputs) },
-        inputCodec = inputCodec,
-        pipe = c1,
-    )
-
-    private val ui0 = ClientWindow(
-        title = "Client 0 (WASD)",
-        myPlayerId = PlayerId(0),
-        client = client0,
-        myColor = Color(0x2E86AB),
-        worldW = worldW,
-        worldH = worldH,
-        useWasd = true,
-    )
-    private val ui1 = ClientWindow(
-        title = "Client 1 (Arrows)",
-        myPlayerId = PlayerId(1),
-        client = client1,
-        myColor = Color(0xF18F01),
-        worldW = worldW,
-        worldH = worldH,
-        useWasd = false,
-    )
-
-    fun start() {
-        ui0.show()
-        ui1.show()
-
-        // 60Hz lockstep tick
-        Timer(16) {
-            client0.sendLocalInput(ui0.currentInput())
-            client1.sendLocalInput(ui1.currentInput())
-            host.poll()
-            client0.poll()
-            client1.poll()
-            ui0.repaintWorld()
-            ui1.repaintWorld()
-        }.start()
-    }
-}
-
 private class AuthoritativeJoinSwingClient(
     private val hostIp: String,
     private val port: Int,
@@ -359,7 +316,7 @@ private class AuthoritativeJoinSwingClient(
     private val worldW = cfg.worldW
     private val worldH = cfg.worldH
     private val initial: PhysicsState = createDefaultInitialState(cfg)
-    private val controller = PhysicsAuthoritativeJoinController(hostIp = hostIp, port = port, cfg = cfg)
+    private val controller = PhysicsAuthoritativeJoinController(hostIp = hostIp, port = port)
 
     private val ui = AuthClientWindow(
         title = "Desktop Join ($hostIp:$port) - WASD",
@@ -387,93 +344,6 @@ private class AuthoritativeJoinSwingClient(
                 fallbackState = initial,
             )
         }.start()
-    }
-}
-
-private class ClientWindow(
-    title: String,
-    private val myPlayerId: PlayerId,
-    private val client: LockstepClient<PhysicsState, PhysicsInput>,
-    private val myColor: Color,
-    private val worldW: Fx,
-    private val worldH: Fx,
-    private val useWasd: Boolean,
-) {
-    private val pressed = HashSet<Int>()
-    private val torus = Torus2D(width = worldW, height = worldH)
-    private val camera = TorusOrthoCamera2D(torus = torus, zoom = 2)
-
-    private val panel = object : JPanel() {
-        override fun getPreferredSize(): Dimension =
-            Dimension(worldW.toIntFloor(), worldH.toIntFloor())
-
-        override fun paintComponent(g: Graphics) {
-            super.paintComponent(g)
-            val g2 = g as Graphics2D
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            g2.color = Color(0x111111)
-            g2.fillRect(0, 0, width, height)
-
-            val state = client.state
-            val focus = state.bodies[myPlayerId]?.pos ?: Vec2Fx(Fx(worldW.raw / 2), Fx(worldH.raw / 2))
-            val topLeft = camera.topLeftForFocus(focus)
-            drawBodiesTorusTiled(
-                g2 = g2,
-                widthPx = width,
-                heightPx = height,
-                torus = torus,
-                state = state,
-                topLeft = topLeft,
-                viewW = camera.viewW,
-                viewH = camera.viewH,
-                myId = myPlayerId,
-                myColor = myColor,
-                otherColor = Color(0xCCCCCC),
-            )
-        }
-    }
-
-    private val frame = JFrame(title).apply {
-        contentPane = panel
-        panel.isFocusable = true
-        panel.requestFocusInWindow()
-        pack()
-        setLocationByPlatform(true)
-        defaultCloseOperation = JFrame.EXIT_ON_CLOSE
-        isResizable = false
-        panel.addKeyListener(object : KeyAdapter() {
-            override fun keyPressed(e: KeyEvent) {
-                pressed.add(e.keyCode)
-            }
-
-            override fun keyReleased(e: KeyEvent) {
-                pressed.remove(e.keyCode)
-            }
-        })
-    }
-
-    fun show() {
-        frame.isVisible = true
-        panel.requestFocusInWindow()
-    }
-
-    fun repaintWorld() = panel.repaint()
-
-    fun currentInput(): PhysicsInput {
-        val (ax, ay) = if (useWasd) {
-            val left = KeyEvent.VK_A in pressed
-            val right = KeyEvent.VK_D in pressed
-            val up = KeyEvent.VK_W in pressed
-            val down = KeyEvent.VK_S in pressed
-            axis(left, right) to axis(up, down)
-        } else {
-            val left = KeyEvent.VK_LEFT in pressed
-            val right = KeyEvent.VK_RIGHT in pressed
-            val up = KeyEvent.VK_UP in pressed
-            val down = KeyEvent.VK_DOWN in pressed
-            axis(left, right) to axis(up, down)
-        }
-        return PhysicsInput(ax, ay)
     }
 }
 
@@ -538,7 +408,7 @@ private class AuthClientWindow(
         contentPane = panel
         panel.isFocusable = true
         pack()
-        setLocationByPlatform(true)
+        isLocationByPlatform = true
         defaultCloseOperation = JFrame.EXIT_ON_CLOSE
         isResizable = false
         panel.addKeyListener(object : KeyAdapter() {
@@ -569,10 +439,6 @@ private class AuthClientWindow(
         lastTick = tick
         this.status = status
         panel.repaint()
-    }
-
-    fun setStatus(text: String) {
-        status = text
     }
 
     fun currentInput(): PhysicsInput {
@@ -634,12 +500,13 @@ private class HostWindow(
 
         override fun paintComponent(g: Graphics) {
             super.paintComponent(g)
+            val state = lastState ?: return
+
             val g2 = g as Graphics2D
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             g2.color = Color(0x111111)
             g2.fillRect(0, 0, width, height)
 
-            val state = lastState ?: return
             val focus = state.bodies[myPlayerId]?.pos ?: Vec2Fx(Fx(worldW.raw / 2), Fx(worldH.raw / 2))
             val topLeft = camera.topLeftForFocus(focus)
             drawBodiesTorusTiled(
@@ -668,7 +535,7 @@ private class HostWindow(
         contentPane = panel
         panel.isFocusable = true
         pack()
-        setLocationByPlatform(true)
+        isLocationByPlatform = true
         defaultCloseOperation = JFrame.EXIT_ON_CLOSE
         isResizable = false
         panel.addKeyListener(object : KeyAdapter() {

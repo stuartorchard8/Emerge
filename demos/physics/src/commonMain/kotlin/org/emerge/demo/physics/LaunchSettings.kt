@@ -14,11 +14,6 @@ data class LaunchSettings(
 )
 
 enum class LaunchMode {
-    /**
-     * No remote networking required.
-     * - Desktop: local lockstep demo.
-     * - Android: host-only (no remote clients) authoritative demo.
-     */
     LOCAL,
     HOST,
     JOIN,
