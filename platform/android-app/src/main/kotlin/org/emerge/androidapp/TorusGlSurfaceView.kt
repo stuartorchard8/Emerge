@@ -135,7 +135,7 @@ private class TorusGlRenderer(
     private var uResolution: Int = -1
     private var uWorld: Int = -1
     private var uView: Int = -1
-    private var uTopLeft: Int = -1
+    private var uCenter: Int = -1
     private var uBodyCount: Int = -1
     private var uMyId: Int = -1
     private var uBodies0: Int = -1
@@ -155,7 +155,7 @@ private class TorusGlRenderer(
         uResolution = GLES20.glGetUniformLocation(program, "uResolution")
         uWorld = GLES20.glGetUniformLocation(program, "uWorld")
         uView = GLES20.glGetUniformLocation(program, "uView")
-        uTopLeft = GLES20.glGetUniformLocation(program, "uTopLeft")
+        uCenter = GLES20.glGetUniformLocation(program, "uCenter")
         uBodyCount = GLES20.glGetUniformLocation(program, "uBodyCount")
         uMyId = GLES20.glGetUniformLocation(program, "uMyId")
         uBodies0 = GLES20.glGetUniformLocation(program, "uBodies[0]")
@@ -197,7 +197,7 @@ private class TorusGlRenderer(
         GLES20.glUniform2f(uResolution, vp[2].toFloat(), vp[3].toFloat())
         GLES20.glUniform2f(uWorld, params.worldW, params.worldH)
         GLES20.glUniform2f(uView, params.viewW, params.viewH)
-        GLES20.glUniform2f(uTopLeft, params.topLeftCoverX, params.topLeftCoverY)
+        GLES20.glUniform2f(uCenter, params.topLeftCoverX, params.topLeftCoverY)
         GLES20.glUniform1i(uMyId, myId?.value ?: -1)
 
         val n = minOf(maxBodies, st.bodies.size)

@@ -96,7 +96,7 @@ fun runHostGl(port: Int) {
     val uResolution = glGetUniformLocation(program, "uResolution")
     val uWorld = glGetUniformLocation(program, "uWorld")
     val uView = glGetUniformLocation(program, "uView")
-    val uTopLeft = glGetUniformLocation(program, "uTopLeft")
+    val uCenter = glGetUniformLocation(program, "uCenter")
     val uBodyCount = glGetUniformLocation(program, "uBodyCount")
     val uMyId = glGetUniformLocation(program, "uMyId")
     val uBodies = glGetUniformLocation(program, "uBodies")
@@ -132,7 +132,7 @@ fun runHostGl(port: Int) {
             val params = view.compute(state = state, myId = myId, zoom = zoom)
             glUniform2f(uWorld, params.worldW, params.worldH)
             glUniform2f(uView, params.viewW, params.viewH)
-            glUniform2f(uTopLeft, params.topLeftCoverX, params.topLeftCoverY)
+            glUniform2f(uCenter, params.topLeftCoverX, params.topLeftCoverY)
 
             glUniform1i(uMyId, myId.value)
             val bodies = state.bodies.values.toList()

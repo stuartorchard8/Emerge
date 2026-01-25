@@ -21,7 +21,7 @@ object TorusShaderSources {
         uniform vec2 uResolution;
         uniform vec2 uWorld;
         uniform vec2 uView;
-        uniform vec2 uTopLeft;
+        uniform vec2 uCenter;
         uniform int uBodyCount;
         uniform int uMyId;
         uniform vec4 uBodies[MAX_BODIES];
@@ -40,11 +40,12 @@ object TorusShaderSources {
         }
 
         void main() {
+            float aspect = uResolution.x / uResolution.y;
             vec2 uv = gl_FragCoord.xy / uResolution;
-            vec2 cover = uTopLeft + uv * uView;
+            vec2 cover = uCenter + (uv - 0.5) * vec2(uView.x*aspect, -uView.y);
             vec2 p = wrap2(cover, uWorld);
 
-            vec3 col = vec3(0.07, 0.07, 0.07);
+            vec3 col = vec3(mod(p/100.0,1.0), 0.0);
             float best = 1e30;
 
             for (int i = 0; i < MAX_BODIES; i++) {
@@ -89,7 +90,7 @@ object TorusShaderSources {
         uniform vec2 uResolution;
         uniform vec2 uWorld;
         uniform vec2 uView;
-        uniform vec2 uTopLeft;      // cover-space (unwrapped) top-left in world units
+        uniform vec2 uCenter;
 
         uniform int uBodyCount;
         uniform int uMyId;
@@ -109,11 +110,12 @@ object TorusShaderSources {
         }
 
         void main() {
+            float aspect = uResolution.x / uResolution.y;
             vec2 uv = gl_FragCoord.xy / uResolution;
-            vec2 cover = uTopLeft + uv * uView;
+            vec2 cover = uCenter + (uv - 0.5) * vec2(uView.x*aspect, -uView.y);
             vec2 p = wrap2(cover, uWorld);
 
-            vec3 col = vec3(0.07, 0.07, 0.07);
+            vec3 col = vec3(mod(p/100.0,1.0), 0.0);
             float best = 1e30;
 
             for (int i = 0; i < uBodyCount; i++) {
@@ -134,4 +136,3 @@ object TorusShaderSources {
         }
         """.trimIndent()
 }
-

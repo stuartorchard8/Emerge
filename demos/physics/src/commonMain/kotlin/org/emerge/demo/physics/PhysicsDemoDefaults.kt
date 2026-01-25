@@ -7,9 +7,9 @@ import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2Fx
 
 data class PhysicsDemoConfig(
-    val worldW: Fx = Fx.fromInt(800),
-    val worldH: Fx = Fx.fromInt(500),
-    val radius: Fx = Fx.fromInt(16),
+    val worldW: Fx = Fx.fromInt(100),
+    val worldH: Fx = Fx.fromInt(100),
+    val radius: Fx = Fx.fromInt(8),
 )
 
 fun createDefaultInitialState(cfg: PhysicsDemoConfig): PhysicsState =
@@ -19,13 +19,13 @@ fun createDefaultInitialState(cfg: PhysicsDemoConfig): PhysicsState =
         bodies = mapOf(
             PlayerId(0) to CircleBody(
                 playerId = PlayerId(0),
-                pos = Vec2Fx(Fx.fromInt(200), Fx.fromInt(250)),
+                pos = Vec2Fx(Fx.fromInt(0), Fx.fromInt(0)),
                 vel = Vec2Fx(Fx(0), Fx(0)),
                 radius = cfg.radius,
             ),
             PlayerId(1) to CircleBody(
                 playerId = PlayerId(1),
-                pos = Vec2Fx(Fx.fromInt(600), Fx.fromInt(250)),
+                pos = Vec2Fx(Fx.fromInt(20), Fx.fromInt(20)),
                 vel = Vec2Fx(Fx(0), Fx(0)),
                 radius = cfg.radius,
             ),

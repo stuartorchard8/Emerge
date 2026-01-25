@@ -45,8 +45,8 @@ class TorusViewComputer {
         val tr = (tracker ?: TorusCoverTracker(t, focusWrapped)).also { tracker = it }
         val focusCover = tr.update(focusWrapped)
 
-        val topLeftCoverX = focusCover.x.raw.toFloat() / scale - viewW * 0.5f
-        val topLeftCoverY = focusCover.y.raw.toFloat() / scale - viewH * 0.5f
+        val topLeftCoverX = focusCover.x.raw.toFloat() / scale
+        val topLeftCoverY = focusCover.y.raw.toFloat() / scale
 
         return TorusViewParams(
             worldW = worldW,
