@@ -29,7 +29,6 @@ fun main(args: Array<String>) {
 
 private class DesktopLauncher {
     private val modeBox = JComboBox(LaunchMode.entries.map(LaunchMode::name).toTypedArray())
-    private val renderBox = JComboBox(RenderBackend.entries.map(RenderBackend::name).toTypedArray())
     private val hostIpField = JTextField("127.0.0.1", 16)
     private val portField = JTextField("7777", 6)
 
@@ -54,7 +53,6 @@ private class DesktopLauncher {
             }
 
             row(0, "Mode", modeBox)
-            row(1, "Renderer", renderBox)
             row(2, "Host IP (Join)", hostIpField)
             row(3, "Port", portField)
 
@@ -83,7 +81,6 @@ private class DesktopLauncher {
     fun show() {
         val defaultLaunchSettings = LaunchSettings()
         modeBox.selectedItem = defaultLaunchSettings.mode.name
-        renderBox.selectedItem = defaultLaunchSettings.renderBackend.name
         hostIpField.text = defaultLaunchSettings.hostIp
         portField.text = defaultLaunchSettings.port.toString()
         frame.isVisible = true
@@ -101,15 +98,11 @@ private class DesktopLauncher {
             else -> LaunchMode.LOCAL
         }
 
-    private fun selectedBackend(): RenderBackend =
-        if (renderBox.selectedIndex == 0) RenderBackend.GPU else RenderBackend.CPU
-
     private fun readSettings(): LaunchSettings {
         val port = portField.text.trim().toIntOrNull() ?: 7777
         val hostIp = hostIpField.text.trim().ifBlank { "127.0.0.1" }
         return LaunchSettings(
             mode = selectedMode(),
-            renderBackend = selectedBackend(),
             hostIp = hostIp,
             port = port,
         )
@@ -117,25 +110,9 @@ private class DesktopLauncher {
 
     private fun startDemo(settings: LaunchSettings) {
         when (settings.mode) {
-            LaunchMode.LOCAL -> {
-                when (settings.renderBackend) {
-                    // N.B. CPU technically opens a network connection
-                    RenderBackend.CPU -> SwingUtilities.invokeLater { AuthoritativeHostSwingDemo(settings.port).start() }
-                    RenderBackend.GPU -> Thread { runLocalGl(settings.port) }.start()
-                }
-            }
-            LaunchMode.HOST -> {
-                when (settings.renderBackend) {
-                    RenderBackend.CPU -> SwingUtilities.invokeLater { AuthoritativeHostSwingDemo(settings.port).start() }
-                    RenderBackend.GPU -> Thread { runHostGl(settings.port) }.start()
-                }
-            }
-            LaunchMode.JOIN -> {
-                when (settings.renderBackend) {
-                    RenderBackend.CPU -> SwingUtilities.invokeLater { AuthoritativeJoinSwingClient(settings.hostIp, settings.port).start() }
-                    RenderBackend.GPU -> Thread { runJoinGl(hostIp = settings.hostIp, port = settings.port) }.start()
-                }
-            }
+            LaunchMode.LOCAL -> Thread { runLocalGl(settings.port) }.start()
+            LaunchMode.HOST -> Thread { runHostGl(settings.port) }.start()
+            LaunchMode.JOIN -> Thread { runJoinGl(hostIp = settings.hostIp, port = settings.port) }.start()
         }
     }
 
@@ -262,315 +239,5 @@ private class DesktopLauncher {
         glDeleteProgram(program)
         glfwDestroyWindow(window)
         glfwTerminate()
-    }
-}
-
-private fun drawBodiesTorusTiled(
-    g2: Graphics2D,
-    widthPx: Int,
-    heightPx: Int,
-    torus: Torus2D,
-    state: PhysicsState,
-    topLeft: Vec2Fx,
-    viewW: Fx,
-    viewH: Fx,
-    myId: PlayerId?,
-    myColor: Color,
-    otherColor: Color,
-) {
-    val viewWi = viewW.toIntFloor().coerceAtLeast(1)
-    val viewHi = viewH.toIntFloor().coerceAtLeast(1)
-    val scaleX = widthPx.toDouble() / viewWi.toDouble()
-    val scaleY = heightPx.toDouble() / viewHi.toDouble()
-    val scale = minOf(scaleX, scaleY)
-    val ox = ((widthPx.toDouble() - (viewWi * scale)) * 0.5).toInt()
-    val oy = ((heightPx.toDouble() - (viewHi * scale)) * 0.5).toInt()
-
-    val offX = torus.tileOffsetsRawX()
-    val offY = torus.tileOffsetsRawY()
-
-    for ((pid, body) in state.bodies) {
-        g2.color = if (myId != null && pid == myId) myColor else otherColor
-        val r = (body.radius.toIntFloor().toDouble() * scale).toInt().coerceAtLeast(1)
-        for (dx in offX) {
-            for (dy in offY) {
-                val localXRaw = body.pos.x.raw + dx - topLeft.x.raw
-                val localYRaw = body.pos.y.raw + dy - topLeft.y.raw
-                val localX = localXRaw.toDouble() / Fx.SCALE.toDouble()
-                val localY = localYRaw.toDouble() / Fx.SCALE.toDouble()
-                if (localX < -2.0 || localY < -2.0) continue
-                if (localX > viewWi + 2.0 || localY > viewHi + 2.0) continue
-                val cx = ox + (localX * scale).toInt()
-                val cy = oy + (localY * scale).toInt()
-                g2.fillOval(cx - r, cy - r, r * 2, r * 2)
-            }
-        }
-    }
-}
-
-private class AuthoritativeJoinSwingClient(
-    private val hostIp: String,
-    private val port: Int,
-) {
-    private val cfg = PhysicsDemoConfig()
-    private val worldW = cfg.worldW
-    private val worldH = cfg.worldH
-    private val initial: PhysicsState = createDefaultInitialState(cfg)
-    private val controller = PhysicsAuthoritativeJoinController(hostIp = hostIp, port = port)
-
-    private val ui = AuthClientWindow(
-        title = "Desktop Join ($hostIp:$port) - WASD",
-        myColor = Color(0x2E86AB),
-        worldW = worldW,
-        worldH = worldH,
-    )
-
-    @Volatile private var sawFirstState: Boolean = false
-
-    fun start() {
-        ui.show()
-
-        Timer(16) {
-            val frame = controller.tick(ui.currentInput())
-            if (!sawFirstState && frame.state != null && frame.myId != null) {
-                sawFirstState = true
-                println("join-ui: first snapshot (playerId=${frame.myId} tick=${frame.tick})")
-            }
-            ui.repaintWorld(
-                state = frame.state,
-                myId = frame.myId,
-                tick = frame.tick,
-                status = frame.status,
-                fallbackState = initial,
-            )
-        }.start()
-    }
-}
-
-private class AuthClientWindow(
-    title: String,
-    private val myColor: Color,
-    private val worldW: Fx,
-    private val worldH: Fx,
-) {
-    private val pressed = HashSet<Int>()
-    private var lastState: PhysicsState? = null
-    private var lastMyId: PlayerId? = null
-    private var lastTick: Long = 0L
-    @Volatile private var status: String = ""
-    private val torus = Torus2D(width = worldW, height = worldH)
-    private val camera = TorusOrthoCamera2D(torus = torus, zoom = 2)
-
-    private val panel = object : JPanel() {
-        override fun getPreferredSize(): Dimension =
-            Dimension(worldW.toIntFloor(), worldH.toIntFloor())
-
-        override fun paintComponent(g: Graphics) {
-            super.paintComponent(g)
-            val g2 = g as Graphics2D
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            g2.color = Color(0x111111)
-            g2.fillRect(0, 0, width, height)
-
-            val state = lastState
-            val myId = lastMyId
-            if (state != null) {
-                val focus = if (myId != null) state.bodies[myId]?.pos else null
-                val focusWrapped = focus ?: Vec2Fx(Fx(worldW.raw / 2), Fx(worldH.raw / 2))
-                val topLeft = camera.topLeftForFocus(focusWrapped)
-                drawBodiesTorusTiled(
-                    g2 = g2,
-                    widthPx = width,
-                    heightPx = height,
-                    torus = torus,
-                    state = state,
-                    topLeft = topLeft,
-                    viewW = camera.viewW,
-                    viewH = camera.viewH,
-                    myId = myId,
-                    myColor = myColor,
-                    otherColor = Color(0xCCCCCC),
-                )
-            }
-
-            g2.color = Color(0xEEEEEE)
-            g2.drawString("tick=$lastTick playerId=${myId?.value ?: "?"}", 10, 20)
-            if (status.isNotBlank()) {
-                g2.drawString(status, 10, 40)
-            }
-            if (state == null) {
-                g2.drawString("waiting for welcome/snapshot...", 10, 60)
-            }
-        }
-    }
-
-    private val frame = JFrame(title).apply {
-        contentPane = panel
-        panel.isFocusable = true
-        pack()
-        isLocationByPlatform = true
-        defaultCloseOperation = JFrame.EXIT_ON_CLOSE
-        isResizable = false
-        panel.addKeyListener(object : KeyAdapter() {
-            override fun keyPressed(e: KeyEvent) {
-                pressed.add(e.keyCode)
-            }
-
-            override fun keyReleased(e: KeyEvent) {
-                pressed.remove(e.keyCode)
-            }
-        })
-    }
-
-    fun show() {
-        frame.isVisible = true
-        panel.requestFocusInWindow()
-    }
-
-    fun repaintWorld(
-        state: PhysicsState?,
-        myId: PlayerId?,
-        tick: Long,
-        status: String,
-        fallbackState: PhysicsState,
-    ) {
-        lastState = state ?: fallbackState
-        lastMyId = myId
-        lastTick = tick
-        this.status = status
-        panel.repaint()
-    }
-
-    fun currentInput(): PhysicsInput {
-        val left = KeyEvent.VK_A in pressed
-        val right = KeyEvent.VK_D in pressed
-        val up = KeyEvent.VK_W in pressed
-        val down = KeyEvent.VK_S in pressed
-        val ax = axis(left, right)
-        val ay = axis(up, down)
-        return PhysicsInput(ax, ay)
-    }
-}
-
-private class AuthoritativeHostSwingDemo(
-    private val port: Int,
-) {
-    private val cfg = PhysicsDemoConfig()
-    private val worldW = cfg.worldW
-    private val worldH = cfg.worldH
-    private val initial: PhysicsState = createDefaultInitialState(cfg)
-    private val controller = PhysicsAuthoritativeHostController(port = port, cfg = cfg, acceptRemoteClients = true)
-
-    private val ui = HostWindow(
-        title = "Desktop Host (:$port) - WASD",
-        myPlayerId = PlayerId(0),
-        myColor = Color(0x2E86AB),
-        worldW = worldW,
-        worldH = worldH,
-    )
-
-    fun start() {
-        ui.show()
-
-        Timer(16) {
-            val frame = controller.tick(ui.currentInput())
-            ui.setStatus(frame.status)
-            ui.repaintWorld(frame.state ?: initial, frame.tick)
-        }.start()
-    }
-}
-
-private class HostWindow(
-    title: String,
-    private val myPlayerId: PlayerId,
-    private val myColor: Color,
-    private val worldW: Fx,
-    private val worldH: Fx,
-) {
-    private val pressed = HashSet<Int>()
-    private var lastState: PhysicsState? = null
-    private var lastTick: Long = 0L
-    @Volatile private var status: String = ""
-    private val torus = Torus2D(width = worldW, height = worldH)
-    private val camera = TorusOrthoCamera2D(torus = torus, zoom = 2)
-
-    private val panel = object : JPanel() {
-        override fun getPreferredSize(): Dimension =
-            Dimension(worldW.toIntFloor(), worldH.toIntFloor())
-
-        override fun paintComponent(g: Graphics) {
-            super.paintComponent(g)
-            val state = lastState ?: return
-
-            val g2 = g as Graphics2D
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            g2.color = Color(0x111111)
-            g2.fillRect(0, 0, width, height)
-
-            val focus = state.bodies[myPlayerId]?.pos ?: Vec2Fx(Fx(worldW.raw / 2), Fx(worldH.raw / 2))
-            val topLeft = camera.topLeftForFocus(focus)
-            drawBodiesTorusTiled(
-                g2 = g2,
-                widthPx = width,
-                heightPx = height,
-                torus = torus,
-                state = state,
-                topLeft = topLeft,
-                viewW = camera.viewW,
-                viewH = camera.viewH,
-                myId = myPlayerId,
-                myColor = myColor,
-                otherColor = Color(0xCCCCCC),
-            )
-
-            g2.color = Color(0xEEEEEE)
-            g2.drawString("tick=$lastTick hostPlayer=${myPlayerId.value}", 10, 20)
-            if (status.isNotBlank()) {
-                g2.drawString(status, 10, 40)
-            }
-        }
-    }
-
-    private val frame = JFrame(title).apply {
-        contentPane = panel
-        panel.isFocusable = true
-        pack()
-        isLocationByPlatform = true
-        defaultCloseOperation = JFrame.EXIT_ON_CLOSE
-        isResizable = false
-        panel.addKeyListener(object : KeyAdapter() {
-            override fun keyPressed(e: KeyEvent) {
-                pressed.add(e.keyCode)
-            }
-
-            override fun keyReleased(e: KeyEvent) {
-                pressed.remove(e.keyCode)
-            }
-        })
-    }
-
-    fun show() {
-        frame.isVisible = true
-        panel.requestFocusInWindow()
-    }
-
-    fun repaintWorld(state: PhysicsState, tick: Long) {
-        lastState = state
-        lastTick = tick
-        panel.repaint()
-    }
-
-    fun setStatus(text: String) {
-        status = text
-    }
-
-    fun currentInput(): PhysicsInput {
-        val left = KeyEvent.VK_A in pressed
-        val right = KeyEvent.VK_D in pressed
-        val up = KeyEvent.VK_W in pressed
-        val down = KeyEvent.VK_S in pressed
-        val ax = axis(left, right)
-        val ay = axis(up, down)
-        return PhysicsInput(ax, ay)
     }
 }

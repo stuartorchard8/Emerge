@@ -44,8 +44,9 @@ object TorusShaderSources {
             vec2 uv = gl_FragCoord.xy / uResolution;
             vec2 cover = uCenter + (uv - 0.5) * vec2(uView.x*aspect, -uView.y);
             vec2 p = wrap2(cover, uWorld);
-
-            vec3 col = vec3(mod(p/100.0,1.0), 0.0);
+            
+            vec2 world_uv = mod(p/100.0,1.0);
+            vec3 col = vec3(abs(world_uv-0.5)*2.0, 0.0);
             float best = 1e30;
 
             for (int i = 0; i < MAX_BODIES; i++) {
@@ -115,7 +116,8 @@ object TorusShaderSources {
             vec2 cover = uCenter + (uv - 0.5) * vec2(uView.x*aspect, -uView.y);
             vec2 p = wrap2(cover, uWorld);
 
-            vec3 col = vec3(mod(p/100.0,1.0), 0.0);
+            vec2 world_uv = mod(p/100.0,1.0);
+            vec3 col = vec3(abs(world_uv-0.5)*2.0, 0.0);
             float best = 1e30;
 
             for (int i = 0; i < uBodyCount; i++) {
