@@ -13,7 +13,7 @@ import org.emerge.sim.sync.auth.StateCodec
 
 class PhysicsAuthoritativeHostController(
     private val port: Int,
-    cfg: PhysicsDemoConfig = PhysicsDemoConfig(),
+    cfg: PhysicsConfig = PhysicsConfig(),
     acceptRemoteClients: Boolean = true,
 ) : PhysicsAuthoritativeController() {
     private val reducer = PhysicsReducer()
@@ -54,11 +54,11 @@ class PhysicsAuthoritativeHostController(
         }
     }
 
-    override fun tick(localInput: PhysicsInput): AuthoritativeDemoFrame {
+    override fun tick(localInput: PhysicsInput): PhysicsFrame {
         host.pollNetwork()
         host.setLocalInput(PlayerId(0), localInput)
         host.step()
-        return AuthoritativeDemoFrame(
+        return PhysicsFrame(
             state = host.state,
             myId = PlayerId(0),
             tick = host.tick.value,

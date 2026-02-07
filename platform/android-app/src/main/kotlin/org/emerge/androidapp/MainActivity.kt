@@ -2,10 +2,7 @@ package org.emerge.androidapp
 
 import android.app.Activity
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.text.InputType
-import android.view.MotionEvent
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -13,24 +10,9 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import kotlin.math.max
-import org.emerge.demo.physics.AuthoritativeDemoFrame
 import org.emerge.demo.physics.LaunchMode
 import org.emerge.demo.physics.LaunchSettings
-import org.emerge.demo.physics.PhysicsAuthoritativeHostController
-import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
-import org.emerge.demo.physics.PhysicsDemoConfig
-import org.emerge.demo.physics.createDefaultInitialState
-import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.camera.TorusOrthoCamera2D
-import org.emerge.sim.core.physics.Fx
-import org.emerge.sim.core.physics.PhysicsInput
-import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.Vec2Fx
-import org.emerge.sim.core.space.Torus2D
 
 class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,7 +37,6 @@ class MainActivity : Activity() {
         const val EXTRA_MODE = "mode" // "host" | "join" | "loopback"
         const val EXTRA_HOST_IP = "hostIp"
         const val EXTRA_PORT = "port"
-        const val EXTRA_RENDERER = "renderer" // "gl" | "canvas"
 
         const val MODE_HOST = "host"
         const val MODE_JOIN = "join"
@@ -68,8 +49,8 @@ private class LauncherView(
     initial: LaunchSettings,
 ) : LinearLayout(activity) {
     private val modeSpinner: Spinner
-    private val hostIpEdit: EditText
-    private val portEdit: EditText
+    private val hostIpField: EditText
+    private val portField: EditText
 
     init {
         orientation = VERTICAL
@@ -80,14 +61,14 @@ private class LauncherView(
         modeSpinner = Spinner(context)
         modeSpinner.adapter = themedSpinnerAdapter(LaunchMode.entries.map(LaunchMode::name).toList())
 
-        hostIpEdit = EditText(context).apply {
+        hostIpField = EditText(context).apply {
             hint = "Host IP (for Join)"
             setText(initial.hostIp)
             setTextColor(Color.rgb(0xEE, 0xEE, 0xEE))
             setHintTextColor(Color.rgb(0x88, 0x88, 0x88))
         }
 
-        portEdit = EditText(context).apply {
+        portField = EditText(context).apply {
             hint = "Port"
             inputType = InputType.TYPE_CLASS_NUMBER
             setText(initial.port.toString())
@@ -97,7 +78,9 @@ private class LauncherView(
 
         val start = Button(context).apply {
             text = "Start"
-            setOnClickListener { startSelected() }
+            setOnClickListener {
+                activity.setContentView(TorusGlSurfaceView(activity, readSettings()))
+            }
         }
 
         val modeLabel = TextView(context).apply {
@@ -110,8 +93,8 @@ private class LauncherView(
 
         addView(modeLabel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(modeSpinner, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        addView(hostIpEdit, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        addView(portEdit, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        addView(hostIpField, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        addView(portField, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(start, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
         // Prefill selections
@@ -136,10 +119,6 @@ private class LauncherView(
             }
     }
 
-    private fun syncEnabledFields() {
-        hostIpEdit.isEnabled = selectedMode() == LaunchMode.JOIN
-    }
-
     private fun themedSpinnerAdapter(items: List<String>): ArrayAdapter<String> =
         object : ArrayAdapter<String>(context, android.R.layout.simple_spinner_item, items) {
             init {
@@ -159,6 +138,10 @@ private class LauncherView(
             }
         }
 
+    private fun syncEnabledFields() {
+        hostIpField.isEnabled = selectedMode() == LaunchMode.JOIN
+    }
+
     private fun selectedMode(): LaunchMode =
         when (modeSpinner.selectedItemPosition) {
             1 -> LaunchMode.HOST
@@ -166,14 +149,13 @@ private class LauncherView(
             else -> LaunchMode.LOCAL
         }
 
-    private fun startSelected() {
-        val settings = LaunchSettings(
+    private fun readSettings(): LaunchSettings {
+        val port = portField.text.toString().trim().toIntOrNull() ?: 7777
+        val hostIp = hostIpField.text.toString().trim().ifBlank { "127.0.0.1" }
+        return LaunchSettings(
             mode = selectedMode(),
-            hostIp = hostIpEdit.text?.toString()?.trim().orEmpty().ifBlank { "127.0.0.1" },
-            port = portEdit.text?.toString()?.toIntOrNull() ?: 7777,
+            hostIp = hostIp,
+            port = port,
         )
-
-        val content: View = TorusGlSurfaceView(activity, mode = settings.mode, hostIp = settings.hostIp, port = settings.port)
-        activity.setContentView(content)
     }
 }

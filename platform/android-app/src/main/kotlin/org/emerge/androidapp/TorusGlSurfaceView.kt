@@ -8,16 +8,17 @@ import android.os.Looper
 import android.view.MotionEvent
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
-import org.emerge.demo.physics.AuthoritativeDemoFrame
 import org.emerge.demo.physics.LaunchMode
+import org.emerge.demo.physics.LaunchSettings
+import org.emerge.demo.physics.PhysicsAuthoritativeController
 import org.emerge.demo.physics.PhysicsAuthoritativeHostController
 import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
-import org.emerge.demo.physics.PhysicsDemoConfig
+import org.emerge.demo.physics.PhysicsConfig
+import org.emerge.demo.physics.PhysicsFrame
 import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.render.torus.TorusGlProgramFactory
 import org.emerge.render.torus.TorusViewComputer
 import org.emerge.render.torus.packBodiesToFloatArray
-import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 
@@ -27,50 +28,36 @@ import org.emerge.sim.core.physics.PhysicsState
  * - Simulation/networking stays on CPU and feeds uniforms each frame.
  */
 internal class TorusGlSurfaceView(
-    private val activity: Activity,
-    private val mode: LaunchMode,
-    private val hostIp: String,
-    private val port: Int,
+    activity: Activity,
+    settings: LaunchSettings,
 ) : GLSurfaceView(activity) {
-    private val cfg = PhysicsDemoConfig()
+    private val cfg = PhysicsConfig()
     private val initial: PhysicsState = createDefaultInitialState(cfg)
 
-    private val hostController: PhysicsAuthoritativeHostController? =
-        when (mode) {
-            LaunchMode.HOST -> PhysicsAuthoritativeHostController(port = port, cfg = cfg, acceptRemoteClients = true)
-            LaunchMode.LOCAL -> PhysicsAuthoritativeHostController(port = port, cfg = cfg, acceptRemoteClients = false)
-            LaunchMode.JOIN -> null
-        }
-
-    private val joinController: PhysicsAuthoritativeJoinController? =
-        when (mode) {
-            LaunchMode.JOIN -> PhysicsAuthoritativeJoinController(hostIp = hostIp, port = port)
-            else -> null
+    private val controller: PhysicsAuthoritativeController =
+        when (settings.mode) {
+            LaunchMode.HOST -> PhysicsAuthoritativeHostController(port = settings.port, cfg = cfg, acceptRemoteClients = true)
+            LaunchMode.LOCAL -> PhysicsAuthoritativeHostController(port = settings.port, cfg = cfg, acceptRemoteClients = false)
+            LaunchMode.JOIN -> PhysicsAuthoritativeJoinController(hostIp = settings.hostIp, port = settings.port)
         }
 
     @Volatile private var currentTouchInput: PhysicsInput = PhysicsInput(0, 0)
 
     // Data shared to GL thread
     private val stateLock = Any()
-    private var latestState: PhysicsState = initial
-    private var latestMyId: PlayerId? = null
-    private var latestTick: Long = 0L
-    private var latestStatus: String = ""
+    private var latestFrame = PhysicsFrame(
+        initial,
+        null,
+        0L,
+        "",
+    )
 
     private val handler = Handler(Looper.getMainLooper())
     private val tickRunnable = object : Runnable {
         override fun run() {
-            val f: AuthoritativeDemoFrame =
-                when {
-                    hostController != null -> hostController.tick(currentTouchInput)
-                    joinController != null -> joinController.tick(currentTouchInput)
-                    else -> AuthoritativeDemoFrame(state = initial, myId = PlayerId(0), tick = 0L, status = "net: init")
-                }
+            val f: PhysicsFrame = controller.tick(currentTouchInput)
             synchronized(stateLock) {
-                latestState = f.state ?: initial
-                latestMyId = f.myId
-                latestTick = f.tick
-                latestStatus = f.status
+                latestFrame = f
             }
 
             requestRender()
@@ -83,12 +70,7 @@ internal class TorusGlSurfaceView(
         val renderer = TorusGlRenderer(
             getState = {
                 synchronized(stateLock) {
-                    GlFrame(
-                        state = latestState,
-                        myId = latestMyId,
-                        tick = latestTick,
-                        status = latestStatus,
-                    )
+                    latestFrame
                 }
             }
         )
@@ -119,15 +101,8 @@ internal class TorusGlSurfaceView(
     }
 }
 
-private data class GlFrame(
-    val state: PhysicsState,
-    val myId: PlayerId?,
-    val tick: Long,
-    val status: String,
-)
-
 private class TorusGlRenderer(
-    private val getState: () -> GlFrame,
+    private val getState: () -> PhysicsFrame,
 ) : GLSurfaceView.Renderer {
     private var program: Int = 0
     private var aPos: Int = -1

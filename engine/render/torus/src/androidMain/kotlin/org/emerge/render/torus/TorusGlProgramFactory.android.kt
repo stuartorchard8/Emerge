@@ -4,8 +4,8 @@ import android.opengl.GLES20
 
 actual object TorusGlProgramFactory {
     actual fun createProgramGles2(maxBodies: Int): Int {
-        val vs = TorusShaderSources.vertexGles2()
-        val fs = TorusShaderSources.fragmentGles2(maxBodies)
+        val vs = Gles2ShaderSources.vertexGles2()
+        val fs = Gles2ShaderSources.fragmentGles2(maxBodies)
         return linkProgram(
             vType = GLES20.GL_VERTEX_SHADER,
             vSrc = vs,

@@ -16,6 +16,7 @@ import kotlin.time.Duration.Companion.seconds
  * - Applies latest snapshots from host.
  */
 class AuthoritativeClient<S, I>(
+    initialState: S,
     private val pipe: Pipe,
     private val inputCodec: Codec<I>,
     private val stateCodec: StateCodec<S>,
@@ -35,7 +36,7 @@ class AuthoritativeClient<S, I>(
     var tick: Tick = Tick(0)
         private set
 
-    var state: S? = null
+    var state: S = initialState
         private set
 
     var connectionState: ConnectionState = ConnectionState.DISCONNECTED

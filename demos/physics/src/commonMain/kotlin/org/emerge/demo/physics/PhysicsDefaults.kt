@@ -6,13 +6,13 @@ import org.emerge.sim.core.physics.Fx
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2Fx
 
-data class PhysicsDemoConfig(
+data class PhysicsConfig(
     val worldW: Fx = Fx.fromInt(100),
     val worldH: Fx = Fx.fromInt(100),
     val radius: Fx = Fx.fromInt(8),
 )
 
-fun createDefaultInitialState(cfg: PhysicsDemoConfig): PhysicsState =
+fun createDefaultInitialState(cfg: PhysicsConfig): PhysicsState =
     PhysicsState(
         width = cfg.worldW,
         height = cfg.worldH,
@@ -36,7 +36,7 @@ fun createDefaultInitialState(cfg: PhysicsDemoConfig): PhysicsState =
  * Join policy used by both desktop and Android demos:
  * - deterministic spawn positions based on player id
  */
-fun defaultJoinPolicy(cfg: PhysicsDemoConfig): (PhysicsState, PlayerId) -> PhysicsState =
+fun defaultJoinPolicy(cfg: PhysicsConfig): (PhysicsState, PlayerId) -> PhysicsState =
     { s, pid ->
         val bodies = LinkedHashMap(s.bodies)
         val x = 100 + (pid.value * 70)

@@ -20,6 +20,7 @@ class PhysicsAuthoritativeJoinController(
 
     private val remote = DelegatingPipe()
     private val client = AuthoritativeClient(
+        initialState = createDefaultInitialState(PhysicsConfig()),
         pipe = remote,
         inputCodec = inputCodec,
         stateCodec = stateCodec,
@@ -69,15 +70,15 @@ class PhysicsAuthoritativeJoinController(
         }
     }
 
-    override fun tick(localInput: PhysicsInput): AuthoritativeDemoFrame {
+    override fun tick(localInput: PhysicsInput): PhysicsFrame {
         client.poll()
         client.sendInput(localInput)
 
-        val state: PhysicsState? = client.state
+        val state: PhysicsState = client.state
         val myId: PlayerId? = client.playerId
         val tick = client.tick.value
 
-        return AuthoritativeDemoFrame(
+        return PhysicsFrame(
             state = state,
             myId = myId,
             tick = tick,
