@@ -45,27 +45,26 @@ class PhysicsReducer(
                 val b = next[bId]!!
 
                 // Use shortest torus delta for distance checks + separation.
-                val dx = torus.deltaRaw(a.pos.x.raw, b.pos.x.raw, state.width.raw)
-                val dy = torus.deltaRaw(a.pos.y.raw, b.pos.y.raw, state.height.raw)
-                val distSq = dx.toLong() * dx.toLong() + dy.toLong() * dy.toLong()
+                val delta = torus.delta(a.pos, b.pos)
+                val distSq = delta.distSqRaw()
                 val minDist = a.radius.raw + b.radius.raw
                 val minDistSq = minDist.toLong() * minDist.toLong()
                 if (distSq >= minDistSq) continue
 
                 // Separate along dominant axis (cheap + deterministic)
-                val overlap = minDist - approxDistRaw(dx, dy, minDist)
+                val overlap = minDist - approxDistRaw(delta, minDist)
                 if (overlap <= 0) continue
 
-                if (abs(dx) >= abs(dy)) {
+                if (abs(delta.x.raw) >= abs(delta.y.raw)) {
                     val push = overlap / 2
-                    val sign = if (dx >= 0) 1 else -1
+                    val sign = if (delta.x.raw >= 0) 1 else -1
                     val aPos = torus.wrap(Vec2Fx(Fx.fromRaw(a.pos.x.raw + sign * push), a.pos.y))
                     val bPos = torus.wrap(Vec2Fx(Fx.fromRaw(b.pos.x.raw - sign * push), b.pos.y))
                     next[aId] = a.copy(pos = aPos, vel = Vec2Fx(-a.vel.x, a.vel.y))
                     next[bId] = b.copy(pos = bPos, vel = Vec2Fx(-b.vel.x, b.vel.y))
                 } else {
                     val push = overlap / 2
-                    val sign = if (dy >= 0) 1 else -1
+                    val sign = if (delta.y.raw >= 0) 1 else -1
                     val aPos = torus.wrap(Vec2Fx(a.pos.x, Fx.fromRaw(a.pos.y.raw + sign * push)))
                     val bPos = torus.wrap(Vec2Fx(b.pos.x, Fx.fromRaw(b.pos.y.raw - sign * push)))
                     next[aId] = a.copy(pos = aPos, vel = Vec2Fx(a.vel.x, -a.vel.y))
@@ -77,11 +76,11 @@ class PhysicsReducer(
         return state.copy(bodies = next)
     }
 
-    private fun approxDistRaw(dx: Int, dy: Int, fallback: Int): Int {
+    private fun approxDistRaw(vec2Fx: Vec2Fx, fallback: Int): Int {
         // We avoid sqrt for determinism/dep-free. This returns a cheap Manhattan-ish distance in raw units.
         // It is only used to decide overlap magnitude; if it ever returns 0, use fallback to avoid huge overlap.
-        val adx = abs(dx)
-        val ady = abs(dy)
+        val adx = abs(vec2Fx.x.raw)
+        val ady = abs(vec2Fx.y.raw)
         val d = adx + ady
         return if (d == 0) fallback else d
     }

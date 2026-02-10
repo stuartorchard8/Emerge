@@ -32,11 +32,6 @@ class Torus2D(
     /**
      * Shortest signed delta from [b] to [a] on the torus, in raw units (range approx [-size/2, +size/2]).
      */
-    fun deltaRaw(aRaw: Int, bRaw: Int, sizeRaw: Int): Int {
-        val d = aRaw - bRaw
-        return wrapDeltaRaw(d, sizeRaw)
-    }
-
     fun delta(a: Fx, b: Fx, size: Fx): Fx = Fx(wrapDeltaRaw(a.raw - b.raw, size.raw))
 
     fun delta(a: Vec2Fx, b: Vec2Fx): Vec2Fx =
@@ -64,11 +59,5 @@ class Torus2D(
         if (x > half) x -= size
         return x
     }
-
-    /**
-     * Offsets used for seam-correct rendering (draw 3x3 tiled copies).
-     */
-    fun tileOffsetsRawX(): IntArray = intArrayOf(-width.raw, 0, width.raw)
-    fun tileOffsetsRawY(): IntArray = intArrayOf(-height.raw, 0, height.raw)
 }
 
