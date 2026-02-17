@@ -1,6 +1,5 @@
 package org.emerge.render.torus
 
-import org.emerge.sim.core.physics.Fx
 import org.emerge.sim.core.physics.PhysicsState
 
 /**
@@ -16,14 +15,14 @@ fun packBodiesToFloatArray(
     require(out.size >= 4 * maxBodies) { "out must be at least 4*maxBodies floats" }
     val bodies = state.bodies.values.toList()
     val n = minOf(maxBodies, bodies.size)
-    val scale = Fx.SCALE.toFloat()
     for (i in 0 until maxBodies) {
         val base = i * 4
         if (i < n) {
             val b = bodies[i]
-            out[base + 0] = b.pos.x.raw.toFloat() / scale
-            out[base + 1] = b.pos.y.raw.toFloat() / scale
-            out[base + 2] = b.radius.raw.toFloat() / scale
+            // Scale everything by the world size
+            out[base + 0] = b.pos.x.toFloat()/state.halfWidth
+            out[base + 1] = b.pos.y.toFloat()/state.halfWidth
+            out[base + 2] = b.radius.toFloat()/state.halfWidth
             out[base + 3] = b.playerId.value.toFloat()
         } else {
             out[base + 0] = 0f

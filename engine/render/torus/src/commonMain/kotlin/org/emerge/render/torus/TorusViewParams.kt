@@ -2,10 +2,8 @@ package org.emerge.render.torus
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.camera.TorusCoverTracker
-import org.emerge.sim.core.physics.Fx
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2Fx
-import org.emerge.sim.core.space.Torus2D
 
 data class TorusViewParams(
     val worldW: Float,
@@ -22,31 +20,25 @@ data class TorusViewParams(
  * Keeps a [TorusCoverTracker] so we can compute a stable "cover-space" top-left that avoids camera wrap jitter.
  */
 class TorusViewComputer {
-    private var torus: Torus2D? = null
     private var tracker: TorusCoverTracker? = null
 
     fun compute(state: PhysicsState, myId: PlayerId?, zoom: Float): TorusViewParams {
-        if (torus == null) {
-            torus = Torus2D(width = state.width, height = state.height)
-        }
-        val t = torus!!
-        val scale = Fx.SCALE.toFloat()
-        val worldW = state.width.raw.toFloat() / scale
-        val worldH = state.height.raw.toFloat() / scale
+        val worldW = 2f
+        val worldH = 2f
 
         // zoom < 1 => zoom out
         val viewW = worldW / zoom
         val viewH = worldH / zoom
 
         val focusWrapped: Vec2Fx =
-            if (myId != null) state.bodies[myId]?.pos ?: Vec2Fx(Fx(state.width.raw / 2), Fx(state.height.raw / 2))
-            else Vec2Fx(Fx(state.width.raw / 2), Fx(state.height.raw / 2))
+            if (myId != null) state.bodies[myId]?.pos ?: Vec2Fx(state.halfWidth, state.halfHeight)
+            else Vec2Fx(state.halfWidth, state.halfHeight)
 
-        val tr = (tracker ?: TorusCoverTracker(t, focusWrapped)).also { tracker = it }
+        val tr = (tracker ?: TorusCoverTracker(focusWrapped)).also { tracker = it }
         val focusCover = tr.update(focusWrapped)
 
-        val topLeftCoverX = focusCover.x.raw.toFloat() / scale
-        val topLeftCoverY = focusCover.y.raw.toFloat() / scale
+        val topLeftCoverX = focusCover.x.toFloat()/state.halfWidth
+        val topLeftCoverY = focusCover.y.toFloat()/state.halfWidth
 
         return TorusViewParams(
             worldW = worldW,

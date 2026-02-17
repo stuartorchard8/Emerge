@@ -22,11 +22,11 @@ object Gl330ShaderSources {
         #version 330 core
         out vec4 FragColor;
 
+
         uniform vec2 uResolution;
         uniform vec2 uWorld;
         uniform vec2 uView;
         uniform vec2 uCenter;
-
         uniform int uBodyCount;
         uniform int uMyId;
         uniform vec4 uBodies[$maxBodies]; // x,y,r,playerId
@@ -50,9 +50,9 @@ object Gl330ShaderSources {
             vec2 cover = uCenter + (uv - 0.5) * vec2(uView.x*aspect, -uView.y);
             vec2 p = wrap2(cover, uWorld);
 
-            vec2 world_uv = mod(p/100.0,1.0);
-            vec3 col = vec3(abs(world_uv-0.5)*2.0, 0.0);
+            vec3 col = vec3(0f);
             float best = 1e30;
+            vec2 guv = cover;
 
             for (int i = 0; i < uBodyCount; i++) {
                 vec4 b = uBodies[i];
@@ -62,12 +62,30 @@ object Gl330ShaderSources {
                 float r2 = b.z*b.z;
                 if (d2 <= r2 && d2 < best) {
                     best = d2;
-                    int pid = int(b.w + 0.5);
-                    if (pid == uMyId) col = vec3(0.18, 0.53, 0.67);
-                    else col = vec3(0.80, 0.80, 0.80);
+                    float w = b.w+3.0;
+                    float a = (1f-d2*100f);
+                    col = mod(vec3(w/1.9, w/2.9, w/4.9),1.0)*a;
                 }
+                guv -= vec2(dx, dy)/(d2*d2*20000.0);
             }
-
+            guv = wrap2(guv, uWorld);
+            
+            if (best == 1e30) {
+                float freq_maj = 1.0;
+                float freq_min = 8.0;
+                
+                vec2 uv_maj = abs(mod(guv/uWorld*freq_maj,1.0)-0.5);
+                float grid_maj = max(uv_maj.x, uv_maj.y)*2.0;
+                vec2 uv_min = abs(mod(guv/uWorld*freq_min,1.0)-0.5);
+                float grid_min = max(uv_min.x, uv_min.y)*2.0;
+                
+                float scale_maj = freq_maj/32.0;
+                float scale_min = freq_min/64.0;
+                
+                float grid = max((grid_maj-(1.0-1.0*scale_maj))/scale_maj, (grid_min-(1.0-1.0*scale_min))/(scale_min*2.0));
+                
+                col = vec3(grid);
+            }
             FragColor = vec4(col, 1.0);
         }
         """.trimIndent()

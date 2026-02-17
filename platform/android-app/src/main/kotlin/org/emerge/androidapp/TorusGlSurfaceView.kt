@@ -146,6 +146,7 @@ private class TorusGlRenderer(
         val frame = getState()
         val st = frame.state
         val myId = frame.myId
+        val scale = Int.MAX_VALUE.toFloat()
         val params = view.compute(state = st, myId = myId, zoom = zoom)
 
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)

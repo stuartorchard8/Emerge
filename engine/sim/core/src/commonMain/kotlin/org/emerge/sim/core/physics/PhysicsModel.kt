@@ -6,12 +6,12 @@ data class CircleBody(
     val playerId: PlayerId,
     val pos: Vec2Fx,
     val vel: Vec2Fx,
-    val radius: Fx,
+    val radius: Int,
 )
 
 data class PhysicsState(
-    val width: Fx,
-    val height: Fx,
+    val halfWidth: Int,
+    val halfHeight: Int,
     val bodies: Map<PlayerId, CircleBody>,
 )
 

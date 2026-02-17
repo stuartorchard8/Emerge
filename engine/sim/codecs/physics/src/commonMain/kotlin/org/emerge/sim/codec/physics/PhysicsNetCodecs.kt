@@ -4,7 +4,6 @@ import org.emerge.net.codec.ByteCursor
 import org.emerge.net.codec.ByteWriter
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.CircleBody
-import org.emerge.sim.core.physics.Fx
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2Fx
@@ -32,36 +31,36 @@ object PhysicsNetCodecs {
         object : StateCodec<PhysicsState> {
             override fun encode(state: PhysicsState): ByteArray {
                 val w = ByteWriter()
-                w.writeInt(state.width.raw)
-                w.writeInt(state.height.raw)
+                w.writeInt(state.halfWidth)
+                w.writeInt(state.halfHeight)
                 w.writeInt(state.bodies.size)
                 for ((pid, body) in state.bodies) {
                     w.writeInt(pid.value)
-                    w.writeInt(body.pos.x.raw)
-                    w.writeInt(body.pos.y.raw)
-                    w.writeInt(body.vel.x.raw)
-                    w.writeInt(body.vel.y.raw)
-                    w.writeInt(body.radius.raw)
+                    w.writeInt(body.pos.x)
+                    w.writeInt(body.pos.y)
+                    w.writeInt(body.vel.x)
+                    w.writeInt(body.vel.y)
+                    w.writeInt(body.radius)
                 }
                 return w.toByteArray()
             }
 
             override fun decode(bytes: ByteArray): PhysicsState {
                 val c = ByteCursor(bytes)
-                val width = Fx(c.readInt())
-                val height = Fx(c.readInt())
+                val halfWidth = c.readInt()
+                val halfHeight = c.readInt()
                 val n = c.readInt()
                 val bodies = LinkedHashMap<PlayerId, CircleBody>(n)
                 repeat(n) {
                     val pid = PlayerId(c.readInt())
-                    val px = Fx(c.readInt())
-                    val py = Fx(c.readInt())
-                    val vx = Fx(c.readInt())
-                    val vy = Fx(c.readInt())
-                    val r = Fx(c.readInt())
+                    val px = c.readInt()
+                    val py = c.readInt()
+                    val vx = c.readInt()
+                    val vy = c.readInt()
+                    val r = c.readInt()
                     bodies[pid] = CircleBody(pid, Vec2Fx(px, py), Vec2Fx(vx, vy), r)
                 }
-                return PhysicsState(width = width, height = height, bodies = bodies)
+                return PhysicsState(halfWidth = halfWidth, halfHeight = halfHeight, bodies = bodies)
             }
         }
 }

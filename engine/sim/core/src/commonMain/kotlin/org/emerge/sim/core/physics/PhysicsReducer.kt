@@ -3,7 +3,8 @@ package org.emerge.sim.core.physics
 import kotlin.math.abs
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
-import org.emerge.sim.core.space.Torus2D
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 /**
  * Simple deterministic "arcade physics":
@@ -14,23 +15,21 @@ import org.emerge.sim.core.space.Torus2D
  * - naive circle-circle separation + velocity swap-ish
  */
 class PhysicsReducer(
-    private val accelPerTick: Fx = Fx.fromRaw(120), // 0.12 units/tick^2 at SCALE=1000
-    private val damping: Fx = Fx.fromRaw(985), // ~0.985 per tick
+    private val accelPerTick: Int = 1024*1024,
 ) : SimReducer<PhysicsState, PhysicsInput> {
 
     override fun reduce(state: PhysicsState, inputs: Map<PlayerId, PhysicsInput>): PhysicsState {
-        val torus = Torus2D(width = state.width, height = state.height)
         val next = LinkedHashMap<PlayerId, CircleBody>(state.bodies.size)
 
         // Integrate
         for ((pid, body) in state.bodies) {
             val inp = inputs[pid] ?: PhysicsInput(0, 0)
-            val ax = Fx.fromInt(inp.ax) * accelPerTick
-            val ay = Fx.fromInt(inp.ay) * accelPerTick
+            val ax = inp.ax * accelPerTick
+            val ay = inp.ay * accelPerTick
             val acc = Vec2Fx(ax, ay)
 
-            var vel = (body.vel + acc) * damping
-            var pos = torus.wrap(body.pos + vel)
+            val vel = (body.vel + acc)//maxDamping*damping
+            val pos = body.pos + vel
 
             next[pid] = body.copy(pos = pos, vel = vel)
         }
@@ -45,44 +44,51 @@ class PhysicsReducer(
                 val b = next[bId]!!
 
                 // Use shortest torus delta for distance checks + separation.
-                val delta = torus.delta(a.pos, b.pos)
-                val distSq = delta.distSqRaw()
-                val minDist = a.radius.raw + b.radius.raw
+                val delta = a.pos - b.pos
+                val minDist = a.radius + b.radius
+                val xPen = minDist-abs(delta.x)
+                val yPen = minDist-abs(delta.y)
+                if (xPen <= 0 || yPen <= 0) continue
+
+                val distSq = delta.distSq()
                 val minDistSq = minDist.toLong() * minDist.toLong()
                 if (distSq >= minDistSq) continue
 
-                // Separate along dominant axis (cheap + deterministic)
-                val overlap = minDist - approxDistRaw(delta, minDist)
-                if (overlap <= 0) continue
+                val norm = delta.estNorm()
+                val dist = delta.dot(norm)
+                if (dist == 0f) continue
 
-                if (abs(delta.x.raw) >= abs(delta.y.raw)) {
-                    val push = overlap / 2
-                    val sign = if (delta.x.raw >= 0) 1 else -1
-                    val aPos = torus.wrap(Vec2Fx(Fx.fromRaw(a.pos.x.raw + sign * push), a.pos.y))
-                    val bPos = torus.wrap(Vec2Fx(Fx.fromRaw(b.pos.x.raw - sign * push), b.pos.y))
-                    next[aId] = a.copy(pos = aPos, vel = Vec2Fx(-a.vel.x, a.vel.y))
-                    next[bId] = b.copy(pos = bPos, vel = Vec2Fx(-b.vel.x, b.vel.y))
-                } else {
-                    val push = overlap / 2
-                    val sign = if (delta.y.raw >= 0) 1 else -1
-                    val aPos = torus.wrap(Vec2Fx(a.pos.x, Fx.fromRaw(a.pos.y.raw + sign * push)))
-                    val bPos = torus.wrap(Vec2Fx(b.pos.x, Fx.fromRaw(b.pos.y.raw - sign * push)))
-                    next[aId] = a.copy(pos = aPos, vel = Vec2Fx(a.vel.x, -a.vel.y))
-                    next[bId] = b.copy(pos = bPos, vel = Vec2Fx(b.vel.x, -b.vel.y))
-                }
+                val pen = minDist-dist
+                val pushF = norm*pen
+                val push = Vec2Fx(pushF.x.roundToInt(), pushF.y.roundToInt())
+
+                val velDelta = b.vel-a.vel
+                val velAlongNorm = max(0f, velDelta.dot(norm))*0.999f
+                val pushVel = norm*velAlongNorm
+                val pushVelI = Vec2Fx(pushVel.x.roundToInt(), pushVel.y.roundToInt())
+
+                next[aId] = a.copy(vel = a.vel+pushVelI, pos = a.pos+push/2)
+                next[bId] = b.copy(vel = b.vel-pushVelI, pos = b.pos-push/2)
             }
         }
 
         return state.copy(bodies = next)
     }
 
-    private fun approxDistRaw(vec2Fx: Vec2Fx, fallback: Int): Int {
-        // We avoid sqrt for determinism/dep-free. This returns a cheap Manhattan-ish distance in raw units.
-        // It is only used to decide overlap magnitude; if it ever returns 0, use fallback to avoid huge overlap.
-        val adx = abs(vec2Fx.x.raw)
-        val ady = abs(vec2Fx.y.raw)
-        val d = adx + ady
-        return if (d == 0) fallback else d
+    fun longISqrt(n: Long): Long {
+        if (n < 2) return n
+        var low = 1L
+        var high = n / 2
+        var result = 1L
+        while (low <= high) {
+            val mid = low + (high - low) / 2
+            if (mid <= n / mid) {
+                result = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        return result
     }
 }
-
