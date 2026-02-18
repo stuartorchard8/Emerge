@@ -1,6 +1,14 @@
 package org.emerge.render.torus
 
-object Gl330ShaderSources {
+object ShaderSources {
+    fun vertexGles2(): String =
+        """
+        attribute vec2 aPos;
+        void main() {
+            gl_Position = vec4(aPos, 0.0, 1.0);
+        }
+        """.trimIndent()
+
     fun vertexGl330(): String =
         """
         #version 330 core
@@ -14,14 +22,11 @@ object Gl330ShaderSources {
         }
         """.trimIndent()
 
-    /**
-     * Desktop GL uses `#version 330 core` and can use `MAX_BODIES` as a literal in the uniform array.
-     */
-    fun fragmentGl330(maxBodies: Int): String =
+    fun fragmentGles2(maxBodies: Int): String =
         """
-        #version 330 core
-        out vec4 FragColor;
-
+        precision mediump float;
+        precision mediump int;
+        #define MAX_BODIES $maxBodies
 
         uniform vec2 uResolution;
         uniform vec2 uWorld;
@@ -29,7 +34,7 @@ object Gl330ShaderSources {
         uniform vec2 uCenter;
         uniform int uBodyCount;
         uniform int uMyId;
-        uniform vec4 uBodies[$maxBodies]; // x,y,r,playerId
+        uniform vec4 uBodies[MAX_BODIES]; // x,y,r,playerId
 
         vec2 wrap2(vec2 p, vec2 size) {
             vec2 q = mod(p, size);
@@ -49,11 +54,12 @@ object Gl330ShaderSources {
             vec2 uv = gl_FragCoord.xy / uResolution;
             vec2 cover = uCenter + (uv - 0.5) * vec2(uView.x*aspect, -uView.y);
             vec2 p = wrap2(cover, uWorld);
-
-            vec3 col = vec3(0f);
+            
+            vec3 col = vec3(0.0);
             float best = 1e30;
             vec2 guv = cover;
 
+            bool occluded = false;
             for (int i = 0; i < uBodyCount; i++) {
                 vec4 b = uBodies[i];
                 float dx = wrapDelta(p.x - b.x, uWorld.x);
@@ -63,14 +69,15 @@ object Gl330ShaderSources {
                 if (d2 <= r2 && d2 < best) {
                     best = d2;
                     float w = b.w+3.0;
-                    float a = (1f-d2*100f);
+                    float a = (1.0 - d2/(r2*1.5));
                     col = mod(vec3(w/1.9, w/2.9, w/4.9),1.0)*a;
+                    occluded = true;
                 }
-                guv -= vec2(dx, dy)/(d2*d2*20000.0);
+                guv -= vec2(dx, dy)/(d2*d2*2000000.0);
             }
             guv = wrap2(guv, uWorld);
             
-            if (best == 1e30) {
+            if (!occluded) {
                 float freq_maj = 1.0;
                 float freq_min = 8.0;
                 
@@ -79,14 +86,18 @@ object Gl330ShaderSources {
                 vec2 uv_min = abs(mod(guv/uWorld*freq_min,1.0)-0.5);
                 float grid_min = max(uv_min.x, uv_min.y)*2.0;
                 
-                float scale_maj = freq_maj/32.0;
-                float scale_min = freq_min/64.0;
+                float zoom = uView.y;
+                float scale_maj = zoom*freq_maj/64.0;
+                float scale_min = zoom*freq_min/64.0;
                 
-                float grid = max((grid_maj-(1.0-1.0*scale_maj))/scale_maj, (grid_min-(1.0-1.0*scale_min))/(scale_min*2.0));
+                float col_maj = (grid_maj-(1.0-1.0*scale_maj))/(scale_maj*max(zoom, 0.5));
+                float col_min = (grid_min-(1.0-1.0*scale_min))/(scale_min*max(zoom, 0.25)*4.0);
+                
+                float grid = max(col_maj, col_min);
                 
                 col = vec3(grid);
             }
-            FragColor = vec4(col, 1.0);
+            gl_FragColor = vec4(col, 1.0);
         }
         """.trimIndent()
 }

@@ -9,19 +9,12 @@ data class CircleBody(
     val radius: Int,
 )
 
+data class PhysicsConfig(
+    val accelPerTick: Int = 1024*1024,
+)
+
 data class PhysicsState(
-    val halfWidth: Int,
-    val halfHeight: Int,
     val bodies: Map<PlayerId, CircleBody>,
 )
 
-/**
- * Player input is an acceleration direction in \[-1, 0, 1] on each axis.
- */
-data class PhysicsInput(val ax: Int, val ay: Int) {
-    init {
-        require(ax in -1..1) { "ax must be -1..1" }
-        require(ay in -1..1) { "ay must be -1..1" }
-    }
-}
-
+data class PhysicsInput(val ax: Int, val ay: Int);

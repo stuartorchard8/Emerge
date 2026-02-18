@@ -20,7 +20,7 @@ class PhysicsAuthoritativeJoinController(
 
     private val remote = DelegatingPipe()
     private val client = AuthoritativeClient(
-        initialState = createDefaultInitialState(PhysicsConfig()),
+        initialState = createDefaultInitialState(),
         pipe = remote,
         inputCodec = inputCodec,
         stateCodec = stateCodec,

@@ -14,18 +14,16 @@ import kotlin.math.roundToInt
  * - true torus topology (wrap-around in X/Y)
  * - naive circle-circle separation + velocity swap-ish
  */
-class PhysicsReducer(
-    private val accelPerTick: Int = 1024*1024,
-) : SimReducer<PhysicsState, PhysicsInput> {
+class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
 
-    override fun reduce(state: PhysicsState, inputs: Map<PlayerId, PhysicsInput>): PhysicsState {
+    override fun reduce(cfg: PhysicsConfig, state: PhysicsState, inputs: Map<PlayerId, PhysicsInput>): PhysicsState {
         val next = LinkedHashMap<PlayerId, CircleBody>(state.bodies.size)
 
         // Integrate
         for ((pid, body) in state.bodies) {
             val inp = inputs[pid] ?: PhysicsInput(0, 0)
-            val ax = inp.ax * accelPerTick
-            val ay = inp.ay * accelPerTick
+            val ax = inp.ax * cfg.accelPerTick
+            val ay = inp.ay * cfg.accelPerTick
             val acc = Vec2Fx(ax, ay)
 
             val vel = (body.vel + acc)//maxDamping*damping

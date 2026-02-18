@@ -4,6 +4,7 @@ import kotlin.concurrent.thread
 import org.emerge.net.tcp.Tcp
 import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsReducer
 import org.emerge.sim.core.physics.PhysicsState
@@ -13,21 +14,22 @@ import org.emerge.sim.sync.auth.StateCodec
 
 class PhysicsAuthoritativeHostController(
     private val port: Int,
-    cfg: PhysicsConfig = PhysicsConfig(),
+    private val cfg: PhysicsConfig = PhysicsConfig(),
     acceptRemoteClients: Boolean = true,
 ) : PhysicsAuthoritativeController() {
     private val reducer = PhysicsReducer()
     private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
     private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
 
-    private val initial: PhysicsState = createDefaultInitialState(cfg)
+    private val initial: PhysicsState = createDefaultInitialState()
 
     private val host = AuthoritativeHost(
+        cfg = cfg,
         initialState = initial,
-        reducer = { s, inputs -> reducer.reduce(s, inputs) },
+        reducer = { c, s, inputs -> reducer.reduce(c, s, inputs) },
         inputCodec = inputCodec,
         stateCodec = stateCodec,
-        joinPolicy = defaultJoinPolicy(cfg),
+        joinPolicy = defaultJoinPolicy(),
     )
 
     @Volatile private var netStatus: String =
@@ -56,7 +58,7 @@ class PhysicsAuthoritativeHostController(
 
     override fun tick(localInput: PhysicsInput): PhysicsFrame {
         host.pollNetwork()
-        host.setLocalInput(PlayerId(0), localInput)
+        host.setLocalInput(PlayerId(0), PhysicsInput(localInput.ax, localInput.ay))
         host.step()
         return PhysicsFrame(
             state = host.state,

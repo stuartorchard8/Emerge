@@ -5,7 +5,7 @@ package org.emerge.sim.core
  *
  * Keep this side-effect-free so it can be reused across platforms and supports rollback/replay later.
  */
-fun interface SimReducer<S, I> {
-    fun reduce(state: S, inputs: Map<PlayerId, I>): S
+fun interface SimReducer<C, S, I> {
+    fun reduce(cfg: C, state: S, inputs: Map<PlayerId, I>): S
 }
 

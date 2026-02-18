@@ -13,12 +13,12 @@ import org.emerge.demo.physics.LaunchSettings
 import org.emerge.demo.physics.PhysicsAuthoritativeController
 import org.emerge.demo.physics.PhysicsAuthoritativeHostController
 import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
-import org.emerge.demo.physics.PhysicsConfig
 import org.emerge.demo.physics.PhysicsFrame
 import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.render.torus.TorusGlProgramFactory
 import org.emerge.render.torus.TorusViewComputer
 import org.emerge.render.torus.packBodiesToFloatArray
+import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 
@@ -32,7 +32,7 @@ internal class TorusGlSurfaceView(
     settings: LaunchSettings,
 ) : GLSurfaceView(activity) {
     private val cfg = PhysicsConfig()
-    private val initial: PhysicsState = createDefaultInitialState(cfg)
+    private val initial: PhysicsState = createDefaultInitialState()
 
     private val controller: PhysicsAuthoritativeController =
         when (settings.mode) {

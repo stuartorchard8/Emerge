@@ -31,14 +31,14 @@ class TorusViewComputer {
         val viewH = worldH / zoom
 
         val focusWrapped: Vec2Fx =
-            if (myId != null) state.bodies[myId]?.pos ?: Vec2Fx(state.halfWidth, state.halfHeight)
-            else Vec2Fx(state.halfWidth, state.halfHeight)
+            if (myId != null) state.bodies[myId]?.pos ?: Vec2Fx(0, 0)
+            else Vec2Fx(0, 0)
 
         val tr = (tracker ?: TorusCoverTracker(focusWrapped)).also { tracker = it }
         val focusCover = tr.update(focusWrapped)
 
-        val topLeftCoverX = focusCover.x.toFloat()/state.halfWidth
-        val topLeftCoverY = focusCover.y.toFloat()/state.halfWidth
+        val topLeftCoverX = focusCover.x.toFloat()/Int.MAX_VALUE
+        val topLeftCoverY = focusCover.y.toFloat()/Int.MAX_VALUE
 
         return TorusViewParams(
             worldW = worldW,

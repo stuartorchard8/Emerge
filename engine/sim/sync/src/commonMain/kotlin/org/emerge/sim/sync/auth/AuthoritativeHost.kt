@@ -14,15 +14,16 @@ import org.emerge.sim.sync.platform.sleepMillis
  * - Clients can join at any time. On join, host assigns a PlayerId and can mutate state (spawn body).
  * - Host broadcasts periodic snapshots.
  */
-class AuthoritativeHost<S, I>(
+class AuthoritativeHost<C, S, I>(
+    cfg: C,
     initialState: S,
-    reducer: (S, Map<PlayerId, I>) -> S,
+    reducer: (C, S, Map<PlayerId, I>) -> S,
     private val inputCodec: Codec<I>,
     private val stateCodec: StateCodec<S>,
     private val joinPolicy: (S, PlayerId) -> S,
     private val snapshotEveryTicks: Int = 1,
 ) {
-    private val stepper = TickStepper(initialState = initialState, reducer = { s, inputs -> reducer(s, inputs) })
+    private val stepper = TickStepper(cfg = cfg, initialState = initialState, reducer = { c, s, inputs -> reducer(c, s, inputs) })
 
     private val clientsById = LinkedHashMap<PlayerId, Pipe>()
     private val lastInputById = LinkedHashMap<PlayerId, I>()

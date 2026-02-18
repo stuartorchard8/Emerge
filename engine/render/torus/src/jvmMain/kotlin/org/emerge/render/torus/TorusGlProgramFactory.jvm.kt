@@ -23,8 +23,8 @@ actual object TorusGlProgramFactory {
     }
 
     actual fun createProgramGl330(maxBodies: Int): Int {
-        val vs = Gl330ShaderSources.vertexGl330()
-        val fs = Gl330ShaderSources.fragmentGl330(maxBodies)
+        val vs = ShaderSources.vertexGl330()
+        val fs = ShaderSources.fragmentGles2(maxBodies)
         return buildProgram(vs, fs)
     }
 

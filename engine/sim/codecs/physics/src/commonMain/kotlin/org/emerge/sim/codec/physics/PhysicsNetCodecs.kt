@@ -31,8 +31,6 @@ object PhysicsNetCodecs {
         object : StateCodec<PhysicsState> {
             override fun encode(state: PhysicsState): ByteArray {
                 val w = ByteWriter()
-                w.writeInt(state.halfWidth)
-                w.writeInt(state.halfHeight)
                 w.writeInt(state.bodies.size)
                 for ((pid, body) in state.bodies) {
                     w.writeInt(pid.value)
@@ -47,8 +45,6 @@ object PhysicsNetCodecs {
 
             override fun decode(bytes: ByteArray): PhysicsState {
                 val c = ByteCursor(bytes)
-                val halfWidth = c.readInt()
-                val halfHeight = c.readInt()
                 val n = c.readInt()
                 val bodies = LinkedHashMap<PlayerId, CircleBody>(n)
                 repeat(n) {
@@ -60,7 +56,7 @@ object PhysicsNetCodecs {
                     val r = c.readInt()
                     bodies[pid] = CircleBody(pid, Vec2Fx(px, py), Vec2Fx(vx, vy), r)
                 }
-                return PhysicsState(halfWidth = halfWidth, halfHeight = halfHeight, bodies = bodies)
+                return PhysicsState(bodies = bodies)
             }
         }
 }

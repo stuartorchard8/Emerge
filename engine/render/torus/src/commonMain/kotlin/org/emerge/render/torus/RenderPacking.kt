@@ -20,9 +20,9 @@ fun packBodiesToFloatArray(
         if (i < n) {
             val b = bodies[i]
             // Scale everything by the world size
-            out[base + 0] = b.pos.x.toFloat()/state.halfWidth
-            out[base + 1] = b.pos.y.toFloat()/state.halfWidth
-            out[base + 2] = b.radius.toFloat()/state.halfWidth
+            out[base + 0] = b.pos.x.toFloat()/Int.MAX_VALUE
+            out[base + 1] = b.pos.y.toFloat()/Int.MAX_VALUE
+            out[base + 2] = b.radius.toFloat()/Int.MAX_VALUE
             out[base + 3] = b.playerId.value.toFloat()
         } else {
             out[base + 0] = 0f
