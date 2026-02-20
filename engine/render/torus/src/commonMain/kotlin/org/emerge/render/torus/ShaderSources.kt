@@ -73,7 +73,7 @@ object ShaderSources {
                     col = mod(vec3(w/1.9, w/2.9, w/4.9),1.0)*a;
                     occluded = true;
                 }
-                guv -= vec2(dx, dy)/(d2*d2*2000000.0);
+                guv -= vec2(dx, dy)*r2*b.z/(10.0*d2*d2);
             }
             guv = wrap2(guv, uWorld);
             

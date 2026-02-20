@@ -11,7 +11,7 @@ fun createDefaultInitialState(): PhysicsState = PhysicsState(
                 playerId = PlayerId(it),
                 pos = Vec2Fx(it, it*15),
                 vel = Vec2Fx(0, 0),
-                radius = Int.MAX_VALUE/32,
+                radius = Int.MAX_VALUE/(it/2+8),
             )
         }.toTypedArray()),
     )
