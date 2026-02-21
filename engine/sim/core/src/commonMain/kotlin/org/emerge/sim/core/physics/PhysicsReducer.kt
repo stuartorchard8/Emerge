@@ -22,8 +22,8 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         // Integrate
         for ((pid, body) in state.bodies) {
             val inp = inputs[pid] ?: PhysicsInput(0, 0)
-            val ax = inp.ax * cfg.accelPerTick
-            val ay = inp.ay * cfg.accelPerTick
+            val ax = inp.ax / cfg.accelFactorInv
+            val ay = inp.ay / cfg.accelFactorInv
             val acc = Vec2Fx(ax, ay)
 
             val vel = (body.vel + acc)//maxDamping*damping

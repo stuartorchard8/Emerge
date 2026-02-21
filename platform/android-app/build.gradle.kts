@@ -8,12 +8,12 @@ buildDir = file("$rootDir/.build/android-app")
 
 android {
     namespace = "org.emerge.androidapp"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "org.emerge.androidapp"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 28
         versionName = "0.1"
     }

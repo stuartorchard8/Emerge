@@ -18,12 +18,18 @@ import org.emerge.sim.sync.auth.StateCodec
 object PhysicsNetCodecs {
     val inputCodec: Codec<PhysicsInput> =
         object : Codec<PhysicsInput> {
-            override fun encode(value: PhysicsInput): ByteArray =
-                byteArrayOf(value.ax.toByte(), value.ay.toByte())
+            override fun encode(value: PhysicsInput): ByteArray {
+                val w = ByteWriter()
+                w.writeInt(value.ax)
+                w.writeInt(value.ay)
+                return w.toByteArray()
+            }
 
             override fun decode(bytes: ByteArray): PhysicsInput {
-                require(bytes.size == 2) { "Expected 2 bytes, got ${bytes.size}" }
-                return PhysicsInput(bytes[0].toInt(), bytes[1].toInt())
+                val c = ByteCursor(bytes)
+                val ax = c.readInt()
+                val ay = c.readInt()
+                return PhysicsInput(ax, ay)
             }
         }
 

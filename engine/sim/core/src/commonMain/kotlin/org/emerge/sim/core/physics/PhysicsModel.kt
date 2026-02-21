@@ -10,7 +10,7 @@ data class CircleBody(
 )
 
 data class PhysicsConfig(
-    val accelPerTick: Int = 1024*1024,
+    val accelFactorInv: Int = Int.MAX_VALUE/(1024*1024),
 )
 
 data class PhysicsState(
