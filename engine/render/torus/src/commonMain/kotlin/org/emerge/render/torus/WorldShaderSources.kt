@@ -1,6 +1,6 @@
 package org.emerge.render.torus
 
-object ShaderSources {
+object WorldShaderSources {
     fun vertexGles2(): String =
         """
         attribute vec2 aPos;

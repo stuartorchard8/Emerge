@@ -8,8 +8,8 @@ package org.emerge.render.torus
  *
  * Both return an integer program id.
  */
-expect object TorusGlProgramFactory {
-    fun createProgramGles2(maxBodies: Int): Int
-    fun createProgramGl330(maxBodies: Int): Int
+expect object ShaderFactory {
+    fun createProgramGles2(vSrc: String, fSrc: String): Int
+    fun createProgramGl330(vSrc: String, fSrc: String): Int
 }
 

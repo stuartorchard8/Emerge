@@ -2,25 +2,21 @@ package org.emerge.render.torus
 
 import android.opengl.GLES20
 
-actual object TorusGlProgramFactory {
-    actual fun createProgramGles2(maxBodies: Int): Int {
-        val vs = ShaderSources.vertexGles2()
-        val fs = ShaderSources.fragmentGles2(maxBodies)
+actual object ShaderFactory {
+    actual fun createProgramGles2(vSrc: String, fSrc: String): Int {
         return linkProgram(
-            vType = GLES20.GL_VERTEX_SHADER,
-            vSrc = vs,
-            fType = GLES20.GL_FRAGMENT_SHADER,
-            fSrc = fs,
+            vSrc = vSrc,
+            fSrc = fSrc,
         )
     }
 
-    actual fun createProgramGl330(maxBodies: Int): Int {
+    actual fun createProgramGl330(vSrc: String, fSrc: String): Int {
         error("GL330 is not supported on Android (use GLES2)")
     }
 
-    private fun linkProgram(vType: Int, vSrc: String, fType: Int, fSrc: String): Int {
-        val v = compileShader(vType, vSrc)
-        val f = compileShader(fType, fSrc)
+    private fun linkProgram(vSrc: String, fSrc: String): Int {
+        val v = compileShader(GLES20.GL_VERTEX_SHADER, vSrc)
+        val f = compileShader(GLES20.GL_FRAGMENT_SHADER, fSrc)
         val p = GLES20.glCreateProgram()
         GLES20.glAttachShader(p, v)
         GLES20.glAttachShader(p, f)

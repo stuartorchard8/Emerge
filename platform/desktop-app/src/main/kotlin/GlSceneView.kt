@@ -64,7 +64,9 @@ object GlSceneView {
         glfwShowWindow(window)
         GL.createCapabilities()
 
-        val program = TorusGlProgramFactory.createProgramGl330(MAX_BODIES)
+        val vSrc = WorldShaderSources.vertexGl330()
+        val fSrc = WorldShaderSources.fragmentGles2(MAX_BODIES)
+        val program = ShaderFactory.createProgramGl330(vSrc, fSrc)
         glUseProgram(program)
 
         // Fullscreen triangle (no VBO needed), but some drivers want a VAO bound in core profile.

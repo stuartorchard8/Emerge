@@ -17,15 +17,13 @@ import org.lwjgl.opengl.GL33C.glGetShaderi
 import org.lwjgl.opengl.GL33C.glLinkProgram
 import org.lwjgl.opengl.GL33C.glShaderSource
 
-actual object TorusGlProgramFactory {
-    actual fun createProgramGles2(maxBodies: Int): Int {
+actual object ShaderFactory {
+    actual fun createProgramGles2(vSrc: String, fSrc: String): Int {
         error("GLES2 is not supported on desktop JVM (use GL330)")
     }
 
-    actual fun createProgramGl330(maxBodies: Int): Int {
-        val vs = ShaderSources.vertexGl330()
-        val fs = ShaderSources.fragmentGles2(maxBodies)
-        return buildProgram(vs, fs)
+    actual fun createProgramGl330(vSrc: String, fSrc: String): Int {
+        return buildProgram(vSrc, fSrc)
     }
 
     private fun buildProgram(vs: String, fs: String): Int {
