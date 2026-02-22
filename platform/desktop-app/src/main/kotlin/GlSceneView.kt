@@ -4,9 +4,6 @@ import org.emerge.demo.physics.*
 import org.emerge.render.torus.*
 import org.emerge.sim.core.physics.*
 import org.lwjgl.glfw.GLFW.*
-import org.lwjgl.opengl.GL
-import org.lwjgl.opengl.GL11.*
-import org.lwjgl.opengl.GL20.*
 import org.lwjgl.opengl.GL30.*
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
@@ -45,6 +42,7 @@ object GlSceneView {
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3)
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3)
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE)
+        glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE)
 
         val window = glfwCreateWindow(960, 600, title, NULL, NULL)
         if (window == NULL) error("Failed to create GLFW window")
@@ -62,7 +60,7 @@ object GlSceneView {
         glfwMakeContextCurrent(window)
         glfwSwapInterval(1)
         glfwShowWindow(window)
-        GL.createCapabilities()
+        org.lwjgl.opengl.GL.createCapabilities()
 
         val vSrc = WorldShaderSources.vertexGl330()
         val fSrc = WorldShaderSources.fragmentGles2(MAX_BODIES)
@@ -73,10 +71,19 @@ object GlSceneView {
         val vao = glGenVertexArrays()
         glBindVertexArray(vao)
 
+        val vbo = glGenBuffers()
+        glBindBuffer(GL_ARRAY_BUFFER, vbo)
+
+        val aPos = 0 // layout(location = 0) in vec2 aPos;
+        glEnableVertexAttribArray(aPos)
+        // Capture the VBO binding into the VAO's attrib state.
+        glVertexAttribPointer(aPos, 2, GL_FLOAT, false, 2 * 4, 0L)
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+
         // Uniform locations
         val uResolution = glGetUniformLocation(program, "uResolution")
         val uWorld = glGetUniformLocation(program, "uWorld")
-        val uView = glGetUniformLocation(program, "uView")
+        val uZoom = glGetUniformLocation(program, "uZoom")
         val uCenter = glGetUniformLocation(program, "uCenter")
         val uBodyCount = glGetUniformLocation(program, "uBodyCount")
         val uMyId = glGetUniformLocation(program, "uMyId")
@@ -107,16 +114,40 @@ object GlSceneView {
                 val fbW = max(1, pw[0])
                 val fbH = max(1, ph[0])
                 glViewport(0, 0, fbW, fbH)
+                val aspectRatio = (fbW.toFloat() / fbH.toFloat())
+
+                val worldViewportMinY = if (aspectRatio < 1f) -0.0f else -1f
+                val worldViewportMaxY =  1f
+                val worldViewportMinX = -1f
+                val worldViewportMaxX =  if (aspectRatio < 1f) 1f else 0.0f
+                val worldViewportCenterX =  (worldViewportMinX+worldViewportMaxX)/2f
+                val worldViewportCenterY = (worldViewportMinY+worldViewportMaxY)/2f
+                val verts = floatArrayOf(
+                    worldViewportMinX, worldViewportMinY,
+                    worldViewportMaxX, worldViewportMinY,
+                    worldViewportMinX, worldViewportMaxY,
+                    worldViewportMaxX, worldViewportMaxY,
+                )
+                val vertexFloatBuffer = st.mallocFloat(verts.size)
+                vertexFloatBuffer.put(verts).flip()
+                glBindBuffer(GL_ARRAY_BUFFER, vbo)
+                glBufferData(GL_ARRAY_BUFFER, vertexFloatBuffer, GL_STATIC_DRAW)
+                glBindBuffer(GL_ARRAY_BUFFER, 0)
 
                 glClearColor(0.07f, 0.07f, 0.07f, 1f)
                 glClear(GL_COLOR_BUFFER_BIT)
 
+                val params = view.compute(state = state, myId = myId, zoom = zoom)
+
                 glUniform2f(uResolution, fbW.toFloat(), fbH.toFloat())
 
-                val params = view.compute(state = state, myId = myId, zoom = zoom)
-                glUniform2f(uWorld, params.worldW, params.worldH)
-                glUniform2f(uView, params.viewW, params.viewH)
-                glUniform2f(uCenter, params.topLeftCoverX, params.topLeftCoverY)
+                glUniform2f(uWorld, params.worldSizeX, params.worldSizeY)
+                glUniform1f(uZoom, params.zoom)
+                glUniform2f(
+                    uCenter,
+                    params.viewFocusX-worldViewportCenterX*params.zoom*min(aspectRatio, 1f),
+                    params.viewFocusY+worldViewportCenterY*params.zoom/max(aspectRatio, 1f),
+                )
 
                 glUniform1i(uMyId, myId?.value ?: -1)
                 val bodies = state.bodies.values.toList()
@@ -130,12 +161,15 @@ object GlSceneView {
                 glUniform4fv(uBodies, fb)
 
                 glDrawArrays(GL_TRIANGLES, 0, 3)
+                glDrawArrays(GL_TRIANGLES, 1, 3)
             }
 
             glfwSwapBuffers(window)
         }
 
         glDeleteProgram(program)
+        glDeleteBuffers(vbo)
+        glDeleteVertexArrays(vao)
         glfwDestroyWindow(window)
         glfwTerminate()
     }

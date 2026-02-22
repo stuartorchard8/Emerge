@@ -19,7 +19,7 @@ class TorusGlRenderer(
 
     private var uResolution: Int = -1
     private var uWorld: Int = -1
-    private var uView: Int = -1
+    private var uZoom: Int = -1
     private var uCenter: Int = -1
     private var uBodyCount: Int = -1
     private var uMyId: Int = -1
@@ -79,9 +79,9 @@ class TorusGlRenderer(
         val vp = IntArray(4)
         GLES20.glGetIntegerv(GLES20.GL_VIEWPORT, vp, 0)
         GLES20.glUniform2f(uResolution, vp[2].toFloat(), vp[3].toFloat())
-        GLES20.glUniform2f(uWorld, params.worldW, params.worldH)
-        GLES20.glUniform2f(uView, params.viewW, params.viewH)
-        GLES20.glUniform2f(uCenter, params.topLeftCoverX, params.topLeftCoverY)
+        GLES20.glUniform2f(uWorld, params.worldSizeX, params.worldSizeY)
+        GLES20.glUniform1f(uZoom, params.zoom)
+        GLES20.glUniform2f(uCenter, params.viewFocusX, params.viewFocusY)
         GLES20.glUniform1i(uMyId, myId?.value ?: -1)
 
         val n = minOf(maxBodies, st.bodies.size)
@@ -101,7 +101,7 @@ class TorusGlRenderer(
 
         uResolution = GLES20.glGetUniformLocation(worldShaderProgram, "uResolution")
         uWorld = GLES20.glGetUniformLocation(worldShaderProgram, "uWorld")
-        uView = GLES20.glGetUniformLocation(worldShaderProgram, "uView")
+        uZoom = GLES20.glGetUniformLocation(worldShaderProgram, "uZoom")
         uCenter = GLES20.glGetUniformLocation(worldShaderProgram, "uCenter")
         uBodyCount = GLES20.glGetUniformLocation(worldShaderProgram, "uBodyCount")
         uMyId = GLES20.glGetUniformLocation(worldShaderProgram, "uMyId")

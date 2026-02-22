@@ -12,13 +12,9 @@ object WorldShaderSources {
     fun vertexGl330(): String =
         """
         #version 330 core
+        layout(location = 0) in vec2 aPos;
         void main() {
-            // fullscreen triangle
-            vec2 p;
-            if (gl_VertexID == 0) p = vec2(-1.0, -1.0);
-            else if (gl_VertexID == 1) p = vec2(3.0, -1.0);
-            else p = vec2(-1.0, 3.0);
-            gl_Position = vec4(p, 0.0, 1.0);
+            gl_Position = vec4(aPos, 0.0, 1.0);
         }
         """.trimIndent()
 
@@ -30,7 +26,7 @@ object WorldShaderSources {
 
         uniform vec2 uResolution;
         uniform vec2 uWorld;
-        uniform vec2 uView;
+        uniform float uZoom;
         uniform vec2 uCenter;
         uniform int uBodyCount;
         uniform int uMyId;
@@ -52,7 +48,7 @@ object WorldShaderSources {
         void main() {
             float aspect = uResolution.x / uResolution.y;
             vec2 uv = gl_FragCoord.xy / uResolution;
-            vec2 cover = uCenter + (uv - 0.5) * vec2(uView.x*aspect, -uView.y);
+            vec2 cover = uCenter + (uv - 0.5) * vec2(uWorld.x*min(aspect, 1.0), -uWorld.y/max(aspect, 1.0)) * uZoom;
             vec2 p = wrap2(cover, uWorld);
             
             vec3 col = vec3(0.0);
@@ -86,12 +82,11 @@ object WorldShaderSources {
                 vec2 uv_min = abs(mod(guv/uWorld*freq_min,1.0)-0.5);
                 float grid_min = max(uv_min.x, uv_min.y)*2.0;
                 
-                float zoom = uView.y;
-                float scale_maj = zoom*freq_maj/64.0;
-                float scale_min = zoom*freq_min/64.0;
+                float scale_maj = uZoom*freq_maj/64.0;
+                float scale_min = uZoom*freq_min/64.0;
                 
-                float col_maj = (grid_maj-(1.0-1.0*scale_maj))/(scale_maj*max(zoom, 0.5));
-                float col_min = (grid_min-(1.0-1.0*scale_min))/(scale_min*max(zoom, 0.25)*4.0);
+                float col_maj = (grid_maj-(1.0-1.0*scale_maj))/(scale_maj*max(uZoom, 0.5));
+                float col_min = (grid_min-(1.0-1.0*scale_min))/(scale_min*max(uZoom, 0.25)*4.0);
                 
                 float grid = max(col_maj, col_min);
                 
