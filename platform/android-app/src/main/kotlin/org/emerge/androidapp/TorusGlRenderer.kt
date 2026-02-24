@@ -10,6 +10,8 @@ import org.emerge.render.torus.TorusViewComputer
 import org.emerge.render.torus.packBodiesToFloatArray
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlin.math.max
+import kotlin.math.min
 
 class TorusGlRenderer(
     private val getState: () -> PhysicsFrame,
@@ -60,13 +62,25 @@ class TorusGlRenderer(
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         GLES20.glUseProgram(worldShaderProgram)
 
-        // Full-screen triangle in clip space
-        // (x,y): (-1,-1), (3,-1), (-1,3)
+        // resolution comes from viewport; GLES doesn't expose it, but we can query it
+        val vp = IntArray(4)
+        GLES20.glGetIntegerv(GLES20.GL_VIEWPORT, vp, 0)
+        val fbW = max(1, vp[2])
+        val fbH = max(1, vp[3])
+        val aspectRatio = (fbW.toFloat() / fbH.toFloat())
+        val worldViewportMinY = if (aspectRatio < 1f) -0.9f else -1f
+        val worldViewportMaxY =  1f
+        val worldViewportMinX = -1f
+        val worldViewportMaxX =  if (aspectRatio < 1f) 1f else 0.9f
+        val worldViewportCenterX =  (worldViewportMinX+worldViewportMaxX)/2f
+        val worldViewportCenterY = (worldViewportMinY+worldViewportMaxY)/2f
         val verts = floatArrayOf(
-            -1f, -1f,
-            3f, -1f,
-            -1f, 3f,
+            worldViewportMinX, worldViewportMinY,
+            worldViewportMaxX, worldViewportMinY,
+            worldViewportMinX, worldViewportMaxY,
+            worldViewportMaxX, worldViewportMaxY,
         )
+
         val vb = java.nio.ByteBuffer.allocateDirect(verts.size * 4)
             .order(java.nio.ByteOrder.nativeOrder())
             .asFloatBuffer()
@@ -75,13 +89,14 @@ class TorusGlRenderer(
         GLES20.glVertexAttribPointer(aPos, 2, GLES20.GL_FLOAT, false, 0, vb)
 
         // uniforms
-        // resolution comes from viewport; GLES doesn't expose it, but we can query it
-        val vp = IntArray(4)
-        GLES20.glGetIntegerv(GLES20.GL_VIEWPORT, vp, 0)
         GLES20.glUniform2f(uResolution, vp[2].toFloat(), vp[3].toFloat())
         GLES20.glUniform2f(uWorld, params.worldSizeX, params.worldSizeY)
         GLES20.glUniform1f(uZoom, params.zoom)
-        GLES20.glUniform2f(uCenter, params.viewFocusX, params.viewFocusY)
+        GLES20.glUniform2f(
+            uCenter,
+            params.viewFocusX-worldViewportCenterX*params.zoom*min(aspectRatio, 1f),
+            params.viewFocusY+worldViewportCenterY*params.zoom/max(aspectRatio, 1f),
+            )
         GLES20.glUniform1i(uMyId, myId?.value ?: -1)
 
         val n = minOf(maxBodies, st.bodies.size)
@@ -90,13 +105,14 @@ class TorusGlRenderer(
         GLES20.glUniform4fv(uBodies0, maxBodies, bodiesFloats, 0)
 
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 3)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 1, 3)
         GLES20.glDisableVertexAttribArray(aPos)
     }
 
     fun prepareWorldShader() {
         val vSrc = WorldShaderSources.vertexGles2()
         val fSrc = WorldShaderSources.fragmentGles2(maxBodies)
-        worldShaderProgram = ShaderFactory.createProgramGles2(vSrc, fSrc)
+        worldShaderProgram = ShaderFactory.createProgram(vSrc, fSrc)
         aPos = GLES20.glGetAttribLocation(worldShaderProgram, "aPos")
 
         uResolution = GLES20.glGetUniformLocation(worldShaderProgram, "uResolution")
@@ -111,7 +127,7 @@ class TorusGlRenderer(
     fun prepareGuiShader() {
         val vSrc = GuiShaderSources.vertexGles2()
         val fSrc = GuiShaderSources.fragmentGles2()
-        guiShaderProgram = ShaderFactory.createProgramGles2(vSrc, fSrc)
+        guiShaderProgram = ShaderFactory.createProgram(vSrc, fSrc)
         aGuiVerts = GLES20.glGetAttribLocation(guiShaderProgram, "aPos")
 
         uGuiResolution = GLES20.glGetUniformLocation(guiShaderProgram, "uResolution")

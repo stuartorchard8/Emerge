@@ -64,7 +64,7 @@ object GlSceneView {
 
         val vSrc = WorldShaderSources.vertexGl330()
         val fSrc = WorldShaderSources.fragmentGles2(MAX_BODIES)
-        val program = ShaderFactory.createProgramGl330(vSrc, fSrc)
+        val program = ShaderFactory.createProgram(vSrc, fSrc)
         glUseProgram(program)
 
         // Fullscreen triangle (no VBO needed), but some drivers want a VAO bound in core profile.
@@ -116,10 +116,10 @@ object GlSceneView {
                 glViewport(0, 0, fbW, fbH)
                 val aspectRatio = (fbW.toFloat() / fbH.toFloat())
 
-                val worldViewportMinY = if (aspectRatio < 1f) -0.0f else -1f
+                val worldViewportMinY = if (aspectRatio < 1f) -0.9f else -1f
                 val worldViewportMaxY =  1f
                 val worldViewportMinX = -1f
-                val worldViewportMaxX =  if (aspectRatio < 1f) 1f else 0.0f
+                val worldViewportMaxX =  if (aspectRatio < 1f) 1f else 0.9f
                 val worldViewportCenterX =  (worldViewportMinX+worldViewportMaxX)/2f
                 val worldViewportCenterY = (worldViewportMinY+worldViewportMaxY)/2f
                 val verts = floatArrayOf(
