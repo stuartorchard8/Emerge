@@ -2,9 +2,10 @@ package org.emerge.desktop
 
 import org.emerge.demo.physics.*
 import org.emerge.render.torus.*
+import org.emerge.render.torus.shader.WorldShader
 import org.emerge.sim.core.physics.*
 import org.lwjgl.glfw.GLFW.*
-import org.lwjgl.opengl.GL30.*
+import org.lwjgl.opengl.GL33C
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
 import kotlin.math.*
@@ -62,36 +63,24 @@ object GlSceneView {
         glfwShowWindow(window)
         org.lwjgl.opengl.GL.createCapabilities()
 
-        val vSrc = WorldShaderSources.vertexGl330()
-        val fSrc = WorldShaderSources.fragmentGles2(MAX_BODIES)
-        val program = ShaderFactory.createProgram(vSrc, fSrc)
-        glUseProgram(program)
+        GL33C.glClearColor(0.07f, 0.07f, 0.07f, 1f)
+
+        val worldShader = WorldShader(MAX_BODIES)
 
         // Fullscreen triangle (no VBO needed), but some drivers want a VAO bound in core profile.
-        val vao = glGenVertexArrays()
-        glBindVertexArray(vao)
+        val vao = GL33C.glGenVertexArrays()
+        GL33C.glBindVertexArray(vao)
 
-        val vbo = glGenBuffers()
-        glBindBuffer(GL_ARRAY_BUFFER, vbo)
-
-        val aPos = 0 // layout(location = 0) in vec2 aPos;
-        glEnableVertexAttribArray(aPos)
+        val vbo = GL33C.glGenBuffers()
+        GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, vbo)
+        GL33C.glEnableVertexAttribArray(worldShader.aPos)
         // Capture the VBO binding into the VAO's attrib state.
-        glVertexAttribPointer(aPos, 2, GL_FLOAT, false, 2 * 4, 0L)
-        glBindBuffer(GL_ARRAY_BUFFER, 0)
+        GL33C.glVertexAttribPointer(worldShader.aPos, 2, GL33C.GL_FLOAT, false, 2 * 4, 0L)
+        GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, 0)
 
-        // Uniform locations
-        val uResolution = glGetUniformLocation(program, "uResolution")
-        val uWorld = glGetUniformLocation(program, "uWorld")
-        val uZoom = glGetUniformLocation(program, "uZoom")
-        val uCenter = glGetUniformLocation(program, "uCenter")
-        val uBodyCount = glGetUniformLocation(program, "uBodyCount")
-        val uMyId = glGetUniformLocation(program, "uMyId")
-        val uBodies = glGetUniformLocation(program, "uBodies")
 
         var zoom = 0.75f // <1 => zoom out (see multiple tiles)
         val view = TorusViewComputer()
-        val bodiesFloats = FloatArray(4 * MAX_BODIES)
 
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents()
@@ -113,7 +102,7 @@ object GlSceneView {
                 glfwGetFramebufferSize(window, pw, ph)
                 val fbW = max(1, pw[0])
                 val fbH = max(1, ph[0])
-                glViewport(0, 0, fbW, fbH)
+                GL33C.glViewport(0, 0, fbW, fbH)
                 val aspectRatio = (fbW.toFloat() / fbH.toFloat())
 
                 val worldViewportMinY = if (aspectRatio < 1f) -0.9f else -1f
@@ -130,46 +119,34 @@ object GlSceneView {
                 )
                 val vertexFloatBuffer = st.mallocFloat(verts.size)
                 vertexFloatBuffer.put(verts).flip()
-                glBindBuffer(GL_ARRAY_BUFFER, vbo)
-                glBufferData(GL_ARRAY_BUFFER, vertexFloatBuffer, GL_STATIC_DRAW)
-                glBindBuffer(GL_ARRAY_BUFFER, 0)
+                GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, vbo)
+                GL33C.glBufferData(GL33C.GL_ARRAY_BUFFER, vertexFloatBuffer, GL33C.GL_STATIC_DRAW)
+                GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, 0)
 
-                glClearColor(0.07f, 0.07f, 0.07f, 1f)
-                glClear(GL_COLOR_BUFFER_BIT)
+                GL33C.glClear(GL33C.GL_COLOR_BUFFER_BIT)
 
                 val params = view.compute(state = state, myId = myId, zoom = zoom)
 
-                glUniform2f(uResolution, fbW.toFloat(), fbH.toFloat())
-
-                glUniform2f(uWorld, params.worldSizeX, params.worldSizeY)
-                glUniform1f(uZoom, params.zoom)
-                glUniform2f(
-                    uCenter,
+                // uniforms
+                worldShader.setResolution(fbW.toFloat(), fbH.toFloat())
+                worldShader.setWorld(params.worldSizeX, params.worldSizeY)
+                worldShader.setZoom(params.zoom)
+                worldShader.setCenter(
                     params.viewFocusX-worldViewportCenterX*params.zoom*min(aspectRatio, 1f),
                     params.viewFocusY+worldViewportCenterY*params.zoom/max(aspectRatio, 1f),
                 )
+                worldShader.setMyId(myId?.value ?: -1)
+                worldShader.setBodies(state.bodies.values.toList())
 
-                glUniform1i(uMyId, myId?.value ?: -1)
-                val bodies = state.bodies.values.toList()
-                val n = min(MAX_BODIES, bodies.size)
-                glUniform1i(uBodyCount, n)
-
-                val fb = st.mallocFloat(4 * MAX_BODIES)
-                packBodiesToFloatArray(state = state, maxBodies = MAX_BODIES, out = bodiesFloats)
-                fb.put(bodiesFloats, 0, 4 * MAX_BODIES)
-                fb.flip()
-                glUniform4fv(uBodies, fb)
-
-                glDrawArrays(GL_TRIANGLES, 0, 3)
-                glDrawArrays(GL_TRIANGLES, 1, 3)
+                worldShader.draw()
             }
 
             glfwSwapBuffers(window)
         }
 
-        glDeleteProgram(program)
-        glDeleteBuffers(vbo)
-        glDeleteVertexArrays(vao)
+        worldShader.deleteProgram()
+        GL33C.glDeleteBuffers(vbo)
+        GL33C.glDeleteVertexArrays(vao)
         glfwDestroyWindow(window)
         glfwTerminate()
     }

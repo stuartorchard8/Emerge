@@ -1,4 +1,6 @@
-package org.emerge.render.torus
+package org.emerge.render.torus.shader
+
+import org.emerge.render.torus.Renderer
 
 /**
  * Platform-specific OpenGL program compilation/linking for the torus shader renderer.
@@ -42,4 +44,3 @@ object ShaderFactory {
         return s
     }
 }
-

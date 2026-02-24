@@ -1,4 +1,4 @@
-package org.emerge.render.torus
+package org.emerge.render.torus.shader
 
 object GuiShaderSources {
     fun vertexGles2(): String =

@@ -26,4 +26,15 @@ actual object Renderer {
     }
     actual fun getProgramInfoLog(program: Int): String = GLES20.glGetProgramInfoLog(program)
     actual fun deleteProgram(program: Int) = GLES20.glDeleteProgram(program)
+
+    actual fun getUniformLocation(program: Int, name: String) = GLES20.glGetUniformLocation(program, name)
+    actual fun getAttribLocation(program: Int, name: String) = GLES20.glGetAttribLocation(program, name)
+
+    actual fun putUniform1i(location: Int, v0: Int) = GLES20.glUniform1i(location, v0)
+    actual fun putUniform1f(location: Int, v0: Float) = GLES20.glUniform1f(location, v0)
+    actual fun putUniform2f(location: Int, v0: Float, v1: Float) = GLES20.glUniform2f(location, v0, v1)
+    actual fun putUniform4fv(location: Int, v: FloatArray, count: Int) = GLES20.glUniform4fv(location, count, v, 0)
+
+    actual fun useProgram(program: Int) = GLES20.glUseProgram(program)
+    actual fun drawTriangles(first: Int, count: Int) = GLES20.glDrawArrays(GLES20.GL_TRIANGLES, first, count)
 }

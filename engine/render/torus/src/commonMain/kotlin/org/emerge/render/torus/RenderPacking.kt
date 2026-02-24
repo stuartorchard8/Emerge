@@ -1,6 +1,6 @@
 package org.emerge.render.torus
 
-import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.CircleBody
 
 /**
  * Packs bodies into an array usable by GPU shaders:
@@ -8,12 +8,11 @@ import org.emerge.sim.core.physics.PhysicsState
  * - output is always exactly 4*maxBodies floats; unused entries are zeroed
  */
 fun packBodiesToFloatArray(
-    state: PhysicsState,
+    bodies: List<CircleBody>,
     maxBodies: Int,
     out: FloatArray,
 ) {
     require(out.size >= 4 * maxBodies) { "out must be at least 4*maxBodies floats" }
-    val bodies = state.bodies.values.toList()
     val n = minOf(maxBodies, bodies.size)
     for (i in 0 until maxBodies) {
         val base = i * 4
