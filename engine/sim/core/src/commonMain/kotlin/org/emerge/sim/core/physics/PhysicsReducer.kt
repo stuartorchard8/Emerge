@@ -24,7 +24,7 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
             val inp = inputs[pid] ?: PhysicsInput(0, 0)
             val ax = inp.ax / cfg.accelFactorInv
             val ay = inp.ay / cfg.accelFactorInv
-            val acc = Vec2Fx(ax, ay)
+            val acc = Vec2i(ax, ay)
 
             val vel = (body.vel + acc)//maxDamping*damping
             val pos = body.pos + vel
@@ -58,12 +58,12 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
 
                 val pen = minDist-dist
                 val pushF = norm*pen
-                val push = Vec2Fx(pushF.x.roundToInt(), pushF.y.roundToInt())
+                val push = Vec2i(pushF.x.roundToInt(), pushF.y.roundToInt())
 
                 val velDelta = b.vel-a.vel
                 val velAlongNorm = max(0f, velDelta.dot(norm))*0.999f
                 val pushVel = norm*velAlongNorm
-                val pushVelI = Vec2Fx(pushVel.x.roundToInt(), pushVel.y.roundToInt())
+                val pushVelI = Vec2i(pushVel.x.roundToInt(), pushVel.y.roundToInt())
 
                 next[aId] = a.copy(vel = a.vel+pushVelI, pos = a.pos+push/2)
                 next[bId] = b.copy(vel = b.vel-pushVelI, pos = b.pos-push/2)

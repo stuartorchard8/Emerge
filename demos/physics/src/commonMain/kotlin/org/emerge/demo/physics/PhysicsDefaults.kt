@@ -3,14 +3,14 @@ package org.emerge.demo.physics
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.CircleBody
 import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.Vec2Fx
+import org.emerge.sim.core.physics.Vec2i
 
 fun createDefaultInitialState(): PhysicsState = PhysicsState(
         bodies = mapOf(*((0..<128).map {
             PlayerId(it) to CircleBody(
                 playerId = PlayerId(it),
-                pos = Vec2Fx(it, it*15),
-                vel = Vec2Fx(0, 0),
+                pos = Vec2i(it, it*15),
+                vel = Vec2i(0, 0),
                 radius = Int.MAX_VALUE/(it/2+8),
             )
         }.toTypedArray()),
@@ -29,8 +29,8 @@ fun defaultJoinPolicy(): (PhysicsState, PlayerId) -> PhysicsState =
         val y = 250
         bodies[pid] = CircleBody(
             playerId = pid,
-            pos = Vec2Fx(x, y),
-            vel = Vec2Fx(0, 0),
+            pos = Vec2i(x, y),
+            vel = Vec2i(0, 0),
             radius = radius,
         )
         s.copy(bodies = bodies)

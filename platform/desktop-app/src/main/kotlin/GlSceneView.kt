@@ -1,8 +1,9 @@
 package org.emerge.desktop
 
 import org.emerge.demo.physics.*
-import org.emerge.render.torus.*
+import org.emerge.render.torus.ScreenLayout
 import org.emerge.render.torus.shader.WorldShader
+import org.emerge.render.torus.shader.WorldShaderParams
 import org.emerge.sim.core.physics.*
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.opengl.GL33C
@@ -80,7 +81,6 @@ object GlSceneView {
 
 
         var zoom = 0.75f // <1 => zoom out (see multiple tiles)
-        val view = TorusViewComputer()
 
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents()
@@ -88,55 +88,34 @@ object GlSceneView {
             // zoom controls: '-' zoom out, '=' zoom in
             if (pressed[GLFW_KEY_MINUS]) zoom = max(0.05f, zoom * 0.98f)
             if (pressed[GLFW_KEY_EQUAL]) zoom = min(20f, zoom * 1.02f)
-
             // WASD input
             val ax = axis(pressed[GLFW_KEY_A], pressed[GLFW_KEY_D])
             val ay = axis(pressed[GLFW_KEY_W], pressed[GLFW_KEY_S])
+
             val frame = controller.tick(PhysicsInput(ax, ay))
-            val state: PhysicsState = frame.state
-            val myId = frame.myId
 
             MemoryStack.stackPush().use { st ->
                 val pw = st.mallocInt(1)
                 val ph = st.mallocInt(1)
                 glfwGetFramebufferSize(window, pw, ph)
-                val fbW = max(1, pw[0])
-                val fbH = max(1, ph[0])
-                GL33C.glViewport(0, 0, fbW, fbH)
-                val aspectRatio = (fbW.toFloat() / fbH.toFloat())
-
-                val worldViewportMinY = if (aspectRatio < 1f) -0.9f else -1f
-                val worldViewportMaxY =  1f
-                val worldViewportMinX = -1f
-                val worldViewportMaxX =  if (aspectRatio < 1f) 1f else 0.9f
-                val worldViewportCenterX =  (worldViewportMinX+worldViewportMaxX)/2f
-                val worldViewportCenterY = (worldViewportMinY+worldViewportMaxY)/2f
-                val verts = floatArrayOf(
-                    worldViewportMinX, worldViewportMinY,
-                    worldViewportMaxX, worldViewportMinY,
-                    worldViewportMinX, worldViewportMaxY,
-                    worldViewportMaxX, worldViewportMaxY,
+                val resolution = Vec2i(
+                    max(1, pw[0]),
+                    max(1, ph[0]),
                 )
+                GL33C.glViewport(0, 0, resolution.x, resolution.y)
+
+                GL33C.glClear(GL33C.GL_COLOR_BUFFER_BIT)
+
+                val layout = ScreenLayout.compute(resolution)
+                val params = WorldShaderParams.compute(frame.state, frame.myId, zoom, layout)
+                worldShader.setParameters(params)
+
+                val verts = layout.getWorldVerts()
                 val vertexFloatBuffer = st.mallocFloat(verts.size)
                 vertexFloatBuffer.put(verts).flip()
                 GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, vbo)
                 GL33C.glBufferData(GL33C.GL_ARRAY_BUFFER, vertexFloatBuffer, GL33C.GL_STATIC_DRAW)
                 GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, 0)
-
-                GL33C.glClear(GL33C.GL_COLOR_BUFFER_BIT)
-
-                val params = view.compute(state = state, myId = myId, zoom = zoom)
-
-                // uniforms
-                worldShader.setResolution(fbW.toFloat(), fbH.toFloat())
-                worldShader.setWorld(params.worldSizeX, params.worldSizeY)
-                worldShader.setZoom(params.zoom)
-                worldShader.setCenter(
-                    params.viewFocusX-worldViewportCenterX*params.zoom*min(aspectRatio, 1f),
-                    params.viewFocusY+worldViewportCenterY*params.zoom/max(aspectRatio, 1f),
-                )
-                worldShader.setMyId(myId?.value ?: -1)
-                worldShader.setBodies(state.bodies.values.toList())
 
                 worldShader.draw()
             }

@@ -6,7 +6,7 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.CircleBody
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.Vec2Fx
+import org.emerge.sim.core.physics.Vec2i
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.auth.StateCodec
 
@@ -60,7 +60,7 @@ object PhysicsNetCodecs {
                     val vx = c.readInt()
                     val vy = c.readInt()
                     val r = c.readInt()
-                    bodies[pid] = CircleBody(pid, Vec2Fx(px, py), Vec2Fx(vx, vy), r)
+                    bodies[pid] = CircleBody(pid, Vec2i(px, py), Vec2i(vx, vy), r)
                 }
                 return PhysicsState(bodies = bodies)
             }

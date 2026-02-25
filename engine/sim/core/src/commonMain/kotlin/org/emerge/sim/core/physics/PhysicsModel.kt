@@ -4,8 +4,8 @@ import org.emerge.sim.core.PlayerId
 
 data class CircleBody(
     val playerId: PlayerId,
-    val pos: Vec2Fx,
-    val vel: Vec2Fx,
+    val pos: Vec2i,
+    val vel: Vec2i,
     val radius: Int,
 )
 
