@@ -8,6 +8,10 @@ data class ScreenLayout(
     val worldMaxX: Float,
     val worldMinY: Float,
     val worldMaxY: Float,
+    val guiMinX: Float,
+    val guiMaxX: Float,
+    val guiMinY: Float,
+    val guiMaxY: Float,
     val resolution: Vec2i,
     val aspectRatio: Float,
 ) {
@@ -16,6 +20,12 @@ data class ScreenLayout(
         worldMaxX, worldMinY,
         worldMinX, worldMaxY,
         worldMaxX, worldMaxY,
+    )
+    fun getGuiVerts(): FloatArray = floatArrayOf(
+        guiMinX, guiMinY,
+        guiMaxX, guiMinY,
+        guiMinX, guiMaxY,
+        guiMaxX, guiMaxY,
     )
     fun getWorldCenter(): Vec2 = Vec2(
         (worldMinX+worldMaxX)/2f,
@@ -30,6 +40,10 @@ data class ScreenLayout(
                 worldMaxX = if (aspectRatio < 1f) 1f else 0.9f,
                 worldMinY = if (aspectRatio < 1f) -0.9f else -1f,
                 worldMaxY = 1f,
+                guiMinX = if (aspectRatio < 1f) -1f else 0.9f,
+                guiMaxX = 1f,
+                guiMinY = -1f,
+                guiMaxY = if (aspectRatio < 1f) -0.9f else 1f,
                 resolution,
                 aspectRatio,
             )

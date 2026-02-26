@@ -73,6 +73,8 @@ object GlSceneView {
 
         val vao = Renderer.genAndBindVertexArrays()
         val vbo = Renderer.genBuffers()
+        val guiShader = GuiShader()
+        guiShader.initVertexBuffer(vbo)
         val worldShader = WorldShader(MAX_BODIES)
         worldShader.initVertexBuffer(vbo)
 
@@ -91,6 +93,7 @@ object GlSceneView {
             val frame = controller.tick(PhysicsInput(ax, ay))
 
             MemoryStack.stackPush().use { st ->
+                // Respond to window size changes
                 val pw = st.mallocInt(1)
                 val ph = st.mallocInt(1)
                 glfwGetFramebufferSize(window, pw, ph)
@@ -99,21 +102,24 @@ object GlSceneView {
                     max(1, ph[0]),
                 )
                 GL33C.glViewport(0, 0, resolution.x, resolution.y)
-
-                GL33C.glClear(GL33C.GL_COLOR_BUFFER_BIT)
-
                 val layout = ScreenLayout.compute(resolution)
 
-                worldShader.useLayout(layout)
+                // Draw
+                GL33C.glClear(GL33C.GL_COLOR_BUFFER_BIT)
+
                 val params = WorldShaderParams.compute(frame.state, frame.myId, zoom)
-                worldShader.setParameters(params)
-                worldShader.draw()
+                worldShader.useLayout(layout)
+                worldShader.draw(params)
+
+                guiShader.useLayout(layout)
+                guiShader.draw()
             }
 
             glfwSwapBuffers(window)
         }
 
         worldShader.deleteProgram()
+        guiShader.deleteProgram()
         Renderer.deleteBuffers(vbo)
         if (vao != null) {
             GL33C.glDeleteVertexArrays(vao)

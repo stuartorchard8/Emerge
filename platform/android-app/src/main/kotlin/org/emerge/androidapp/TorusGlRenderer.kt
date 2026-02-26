@@ -5,6 +5,7 @@ import android.opengl.GLSurfaceView
 import org.emerge.demo.physics.PhysicsFrame
 import org.emerge.render.torus.Renderer
 import org.emerge.render.torus.ScreenLayout
+import org.emerge.render.torus.shader.GuiShader
 import org.emerge.render.torus.shader.GuiShaderSources
 import org.emerge.render.torus.shader.ShaderFactory
 import org.emerge.render.torus.shader.WorldShader
@@ -20,12 +21,10 @@ class TorusGlRenderer(
     private val getState: () -> PhysicsFrame,
 ) : GLSurfaceView.Renderer {
     private lateinit var worldShader: WorldShader
+    private lateinit var guiShader: GuiShader
 
     private val maxBodies = 128
 
-    private var guiShaderProgram: Int = 0
-    private var uGuiResolution: Int = -1
-    private var aGuiVerts: Int = -1
     private var layout: ScreenLayout = ScreenLayout.compute(Vec2i(1,1))
 
     // zoom < 1 => zoom out (view larger than world)
@@ -39,12 +38,16 @@ class TorusGlRenderer(
         val vbo = Renderer.genBuffers()
         worldShader = WorldShader(maxBodies)
         worldShader.initVertexBuffer(vbo)
+        guiShader = GuiShader()
+        guiShader.initVertexBuffer(vbo)
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES20.glViewport(0, 0, width, height)
         layout = ScreenLayout.compute(Vec2i(width, height))
-        worldShader.useLayout(layout)
+        // TODO adjust vertex management to store vertices for both shaders in the same buffer
+//        worldShader.useLayout(layout)
+//        guiShader.useLayout(layout)
     }
 
     override fun onDrawFrame(gl: GL10?) {
@@ -53,8 +56,10 @@ class TorusGlRenderer(
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
 
         val params = WorldShaderParams.compute(frame.state, frame.myId, zoom)
-        worldShader.setParameters(params)
+        worldShader.useLayout(layout)
+        worldShader.draw(params)
 
-        worldShader.draw()
+        guiShader.useLayout(layout)
+        guiShader.draw()
     }
 }
