@@ -2,11 +2,16 @@ package org.emerge.render.torus
 
 import org.lwjgl.opengl.GL33C
 import org.lwjgl.system.MemoryStack
+import java.nio.FloatBuffer
 import kotlin.use
 
 actual object Renderer {
     actual val VERTEX_SHADER: Int = GL33C.GL_VERTEX_SHADER
     actual val FRAGMENT_SHADER: Int = GL33C.GL_FRAGMENT_SHADER
+    actual val FLOAT: Int = GL33C.GL_FLOAT
+    actual val ARRAY_BUFFER: Int = GL33C.GL_ARRAY_BUFFER
+    actual val STATIC_DRAW: Int = GL33C.GL_STATIC_DRAW
+    actual val DYNAMIC_DRAW: Int = GL33C.GL_DYNAMIC_DRAW
     actual fun createShader(type: Int) : Int = GL33C.glCreateShader(type)
     actual fun shaderSource(shader: Int, string: String) = GL33C.glShaderSource(shader, string)
     actual fun compileShader(type: Int) = GL33C.glCompileShader(type)
@@ -37,6 +42,22 @@ actual object Renderer {
         }
     }
 
+    actual fun putVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, offset: Int) = GL33C.glVertexAttribPointer(index, size, type, normalized, stride, offset.toLong())
+
+    actual fun genAndBindVertexArrays(): Int? {
+        val vao = GL33C.glGenVertexArrays()
+        GL33C.glBindVertexArray(vao)
+        return vao
+    }
+
+    actual fun genBuffers(): Int = GL33C.glGenBuffers()
+    actual fun deleteBuffers(buffer: Int) = GL33C.glDeleteBuffers(buffer)
+
+    actual fun bindBuffer(target: Int, buffer: Int) = GL33C.glBindBuffer(target, buffer)
+    actual fun bufferData(target: Int, count: Int, data: FloatBuffer, usage: Int) = GL33C.glBufferData(target, data, usage)
+
     actual fun useProgram(program: Int) = GL33C.glUseProgram(program)
+    actual fun enableVertexAttribArray(v: Int) = GL33C.glEnableVertexAttribArray(v)
+    actual fun disableVertexAttribArray(v: Int) = GL33C.glDisableVertexAttribArray(v)
     actual fun drawTriangles(first: Int, count: Int) = GL33C.glDrawArrays(GL33C.GL_TRIANGLES, first, count)
 }

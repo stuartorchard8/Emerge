@@ -1,8 +1,14 @@
 package org.emerge.render.torus
 
+import java.nio.FloatBuffer
+
 expect object Renderer {
     val VERTEX_SHADER: Int
     val FRAGMENT_SHADER: Int
+    val FLOAT: Int
+    val ARRAY_BUFFER: Int
+    val STATIC_DRAW: Int
+    val DYNAMIC_DRAW: Int
     fun createShader(type: Int) : Int
     fun shaderSource(shader: Int, string: String)
     fun compileShader(type: Int)
@@ -25,6 +31,18 @@ expect object Renderer {
     fun putUniform2f(location: Int, v0: Float, v1: Float)
     fun putUniform4fv(location: Int, v: FloatArray, count: Int)
 
+    fun putVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, offset: Int)
+
+    fun genAndBindVertexArrays(): Int?
+
+    fun genBuffers(): Int
+    fun deleteBuffers(buffer: Int)
+
+    fun bindBuffer(target: Int, buffer: Int)
+    fun bufferData(target: Int, count: Int, data: FloatBuffer, usage: Int)
+
     fun useProgram(program: Int)
+    fun enableVertexAttribArray(v: Int)
+    fun disableVertexAttribArray(v: Int)
     fun drawTriangles(first: Int, count: Int)
 }

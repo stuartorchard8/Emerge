@@ -1,7 +1,9 @@
 package org.emerge.desktop
 
 import org.emerge.demo.physics.*
+import org.emerge.render.torus.Renderer
 import org.emerge.render.torus.ScreenLayout
+import org.emerge.render.torus.shader.GuiShader
 import org.emerge.render.torus.shader.WorldShader
 import org.emerge.render.torus.shader.WorldShaderParams
 import org.emerge.sim.core.physics.*
@@ -9,6 +11,9 @@ import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.opengl.GL33C
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.FloatBuffer
 import kotlin.math.*
 import kotlin.use
 
@@ -66,19 +71,10 @@ object GlSceneView {
 
         GL33C.glClearColor(0.07f, 0.07f, 0.07f, 1f)
 
+        val vao = Renderer.genAndBindVertexArrays()
+        val vbo = Renderer.genBuffers()
         val worldShader = WorldShader(MAX_BODIES)
-
-        // Fullscreen triangle (no VBO needed), but some drivers want a VAO bound in core profile.
-        val vao = GL33C.glGenVertexArrays()
-        GL33C.glBindVertexArray(vao)
-
-        val vbo = GL33C.glGenBuffers()
-        GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, vbo)
-        GL33C.glEnableVertexAttribArray(worldShader.aPos)
-        // Capture the VBO binding into the VAO's attrib state.
-        GL33C.glVertexAttribPointer(worldShader.aPos, 2, GL33C.GL_FLOAT, false, 2 * 4, 0L)
-        GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, 0)
-
+        worldShader.initVertexBuffer(vbo)
 
         var zoom = 0.75f // <1 => zoom out (see multiple tiles)
 
@@ -107,16 +103,10 @@ object GlSceneView {
                 GL33C.glClear(GL33C.GL_COLOR_BUFFER_BIT)
 
                 val layout = ScreenLayout.compute(resolution)
-                val params = WorldShaderParams.compute(frame.state, frame.myId, zoom, layout)
+
+                worldShader.useLayout(layout)
+                val params = WorldShaderParams.compute(frame.state, frame.myId, zoom)
                 worldShader.setParameters(params)
-
-                val verts = layout.getWorldVerts()
-                val vertexFloatBuffer = st.mallocFloat(verts.size)
-                vertexFloatBuffer.put(verts).flip()
-                GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, vbo)
-                GL33C.glBufferData(GL33C.GL_ARRAY_BUFFER, vertexFloatBuffer, GL33C.GL_STATIC_DRAW)
-                GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, 0)
-
                 worldShader.draw()
             }
 
@@ -124,8 +114,10 @@ object GlSceneView {
         }
 
         worldShader.deleteProgram()
-        GL33C.glDeleteBuffers(vbo)
-        GL33C.glDeleteVertexArrays(vao)
+        Renderer.deleteBuffers(vbo)
+        if (vao != null) {
+            GL33C.glDeleteVertexArrays(vao)
+        }
         glfwDestroyWindow(window)
         glfwTerminate()
     }

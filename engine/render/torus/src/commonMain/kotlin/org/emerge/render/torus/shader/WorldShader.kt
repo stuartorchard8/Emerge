@@ -1,10 +1,14 @@
 package org.emerge.render.torus.shader
 
 import org.emerge.render.torus.Renderer
+import org.emerge.render.torus.ScreenLayout
 import org.emerge.render.torus.packBodiesToFloatArray
 import org.emerge.sim.core.physics.CircleBody
 import org.emerge.sim.core.physics.Vec2
 import org.emerge.sim.core.physics.Vec2i
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.FloatBuffer
 import kotlin.math.max
 import kotlin.math.min
 
@@ -12,7 +16,7 @@ class WorldShader(val maxBodies: Int) {
     private val vSrc = WorldShaderSources.vertexGles2()
     private val fSrc = WorldShaderSources.fragmentGles2(maxBodies)
     private val program: Int = ShaderFactory.createProgram(vSrc, fSrc)
-    val aPos: Int = Renderer.getAttribLocation(program, "aPos")
+    val viewportVertices: Int = Renderer.getAttribLocation(program, "aPos")
 
     private val uResolution: Int = Renderer.getUniformLocation(program, "uResolution")
     private val uWorld: Int = Renderer.getUniformLocation(program, "uWorld")
@@ -24,11 +28,45 @@ class WorldShader(val maxBodies: Int) {
 
     private val bodiesFloats = FloatArray(4 * maxBodies)
 
+    private var localResolution = Vec2i(1,1)
+    private var focusOffset = Vec2(0f,0f)
+
+    private var vertexBufferHandle: Int = -1
+    private var vertexFloatBuffer: FloatBuffer = ByteBuffer.allocateDirect(8 * 4)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer()
+
+    fun initVertexBuffer(vbo: Int) {
+        vertexBufferHandle = vbo
+        Renderer.bindBuffer(Renderer.ARRAY_BUFFER, vertexBufferHandle)
+        Renderer.enableVertexAttribArray(viewportVertices)
+        // Capture the VBO binding into the VAO's attrib state.
+        Renderer.putVertexAttribPointer(viewportVertices, 2, Renderer.FLOAT, false, 2 * 4, 0)
+        Renderer.bindBuffer(Renderer.ARRAY_BUFFER, 0)
+    }
+
+    fun useLayout(layout: ScreenLayout) {
+        localResolution = layout.resolution
+        setResolution(layout.resolution)
+        // Offset focus based on viewport center
+        val worldViewportCenter = layout.getWorldCenter()
+        focusOffset = Vec2(
+            -worldViewportCenter.x * min(layout.aspectRatio, 1f),
+            worldViewportCenter.y / max(layout.aspectRatio, 1f),
+        )
+
+        val verts = layout.getWorldVerts()
+        vertexFloatBuffer.put(verts).flip()
+        Renderer.bindBuffer(Renderer.ARRAY_BUFFER, vertexBufferHandle)
+        Renderer.bufferData(Renderer.ARRAY_BUFFER, verts.size, vertexFloatBuffer, Renderer.STATIC_DRAW)
+        Renderer.bindBuffer(Renderer.ARRAY_BUFFER, 0)
+    }
+
     fun setParameters(params: WorldShaderParams) {
-        setResolution(params.resolution)
+        setResolution(localResolution)
         setWorld(params.worldSize)
         setZoom(params.zoom)
-        setCenter(params.viewFocus)
+        setCenter(params.viewFocus + focusOffset/params.zoom)
         setMyId(params.myId?.value ?: -1)
         setBodies(params.bodies)
     }
@@ -50,8 +88,10 @@ class WorldShader(val maxBodies: Int) {
 
     fun draw() {
         Renderer.useProgram(program)
+        Renderer.enableVertexAttribArray(viewportVertices)
         Renderer.drawTriangles(0,3)
         Renderer.drawTriangles(1,3)
+        Renderer.disableVertexAttribArray(viewportVertices)
     }
 
     fun deleteProgram() {
