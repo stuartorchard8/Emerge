@@ -1,47 +1,63 @@
 package org.emerge.desktop
 
 import org.emerge.demo.physics.*
-import org.emerge.render.torus.Renderer
-import org.emerge.render.torus.ScreenLayout
-import org.emerge.render.torus.shader.GuiShader
-import org.emerge.render.torus.shader.WorldShader
-import org.emerge.render.torus.shader.WorldShaderParams
+import org.emerge.render.torus.ScreenRenderer
 import org.emerge.sim.core.physics.*
 import org.lwjgl.glfw.GLFW.*
-import org.lwjgl.opengl.GL33C
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.nio.FloatBuffer
 import kotlin.math.*
 import kotlin.use
 
 object GlSceneView {
-    fun start(settings: LaunchSettings) {
-        when (settings.mode) {
-            LaunchMode.LOCAL -> Thread { runLocalGl(settings.port) }.start()
-            LaunchMode.HOST -> Thread { runHostGl(settings.port) }.start()
-            LaunchMode.JOIN -> Thread { runJoinGl(hostIp = settings.hostIp, port = settings.port) }.start()
-        }
-    }
-
-    private fun runLocalGl(port: Int) {
-        val controller = PhysicsAuthoritativeHostController(port = port, cfg = PhysicsConfig(), acceptRemoteClients = false)
-        runGl("Emerge local-gl", controller)
-    }
-
-    private fun runHostGl(port: Int) {
-        val controller = PhysicsAuthoritativeHostController(port = port, cfg = PhysicsConfig(), acceptRemoteClients = true)
-        runGl("Emerge host-gl (:$port)", controller)
-    }
-
-    private fun runJoinGl(hostIp: String, port: Int) {
-        val controller = PhysicsAuthoritativeJoinController(hostIp = hostIp, port = port)
-        runGl("Emerge join-gl ($hostIp:$port)", controller)
+    fun start(settings: LaunchSettings) = when (settings.mode) {
+        LaunchMode.LOCAL -> Thread {
+            val controller = PhysicsAuthoritativeHostController(
+                port = settings.port,
+                cfg = PhysicsConfig(),
+                acceptRemoteClients = false,
+            )
+            runGl("Emerge local", controller)
+        }.start()
+        LaunchMode.HOST -> Thread {
+            val controller = PhysicsAuthoritativeHostController(
+                port = settings.port,
+                cfg = PhysicsConfig(),
+                acceptRemoteClients = true,
+            )
+            runGl("Emerge host (:${settings.port})", controller)
+        }.start()
+        LaunchMode.JOIN -> Thread {
+            val controller = PhysicsAuthoritativeJoinController(
+                hostIp = settings.hostIp,
+                port = settings.port,
+            )
+            runGl("Emerge join (${settings.hostIp}:${settings.port})", controller)
+        }.start()
     }
 
     private fun runGl(title: String, controller: PhysicsAuthoritativeController) {
+        val pressedKeys = BooleanArray(512)
+
+        val window = initWindow(title, pressedKeys)
+        val screenRenderer = ScreenRenderer()
+
+        while (!glfwWindowShouldClose(window)) {
+            glfwPollEvents()
+            updateResolution(window, screenRenderer)
+
+            val frame = processInput(controller, pressedKeys, screenRenderer)
+            screenRenderer.draw(frame.state, frame.myId)
+
+            glfwSwapBuffers(window)
+        }
+
+        screenRenderer.cleanup()
+        glfwDestroyWindow(window)
+        glfwTerminate()
+    }
+
+    private fun initWindow(title: String, pressedKeys: BooleanArray): Long {
         if (!glfwInit()) error("GLFW init failed")
         glfwDefaultWindowHints()
         glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE)
@@ -54,10 +70,9 @@ object GlSceneView {
         val window = glfwCreateWindow(960, 600, title, NULL, NULL)
         if (window == NULL) error("Failed to create GLFW window")
 
-        val pressed = BooleanArray(512)
         glfwSetKeyCallback(window) { win, key, _, action, _ ->
-            if (key in 0 until pressed.size) {
-                pressed[key] = (action != GLFW_RELEASE)
+            if (key in 0 until pressedKeys.size) {
+                pressedKeys[key] = (action != GLFW_RELEASE)
             }
             if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
                 glfwSetWindowShouldClose(win, true)
@@ -68,63 +83,36 @@ object GlSceneView {
         glfwSwapInterval(1)
         glfwShowWindow(window)
         org.lwjgl.opengl.GL.createCapabilities()
+        return window
+    }
 
-        GL33C.glClearColor(0.07f, 0.07f, 0.07f, 1f)
+    private fun updateResolution(window: Long, screenRenderer: ScreenRenderer) {
+        // Respond to window size changes
+        MemoryStack.stackPush().use { st ->
+            val sizeX = st.mallocInt(1)
+            val sizeY = st.mallocInt(1)
+            glfwGetFramebufferSize(window, sizeX, sizeY)
 
-        val vao = Renderer.genAndBindVertexArrays()
-        val vbo = Renderer.genBuffers()
-        val guiShader = GuiShader()
-        guiShader.initVertexBuffer(vbo)
-        val worldShader = WorldShader(MAX_BODIES)
-        worldShader.initVertexBuffer(vbo)
-
-        var zoom = 0.75f // <1 => zoom out (see multiple tiles)
-
-        while (!glfwWindowShouldClose(window)) {
-            glfwPollEvents()
-
-            // zoom controls: '-' zoom out, '=' zoom in
-            if (pressed[GLFW_KEY_MINUS]) zoom = max(0.05f, zoom * 0.98f)
-            if (pressed[GLFW_KEY_EQUAL]) zoom = min(20f, zoom * 1.02f)
-            // WASD input
-            val ax = axis(pressed[GLFW_KEY_A], pressed[GLFW_KEY_D])
-            val ay = axis(pressed[GLFW_KEY_W], pressed[GLFW_KEY_S])
-
-            val frame = controller.tick(PhysicsInput(ax, ay))
-
-            MemoryStack.stackPush().use { st ->
-                // Respond to window size changes
-                val pw = st.mallocInt(1)
-                val ph = st.mallocInt(1)
-                glfwGetFramebufferSize(window, pw, ph)
-                val resolution = Vec2i(
-                    max(1, pw[0]),
-                    max(1, ph[0]),
-                )
-                GL33C.glViewport(0, 0, resolution.x, resolution.y)
-                val layout = ScreenLayout.compute(resolution)
-
-                // Draw
-                GL33C.glClear(GL33C.GL_COLOR_BUFFER_BIT)
-
-                val params = WorldShaderParams.compute(frame.state, frame.myId, zoom)
-                worldShader.useLayout(layout)
-                worldShader.draw(params)
-
-                guiShader.useLayout(layout)
-                guiShader.draw()
-            }
-
-            glfwSwapBuffers(window)
+            screenRenderer.setResolution(Vec2i(
+                max(1, sizeX[0]),
+                max(1, sizeY[0]),
+            ))
         }
+    }
 
-        worldShader.deleteProgram()
-        guiShader.deleteProgram()
-        Renderer.deleteBuffers(vbo)
-        if (vao != null) {
-            GL33C.glDeleteVertexArrays(vao)
-        }
-        glfwDestroyWindow(window)
-        glfwTerminate()
+    private fun processInput(
+        controller: PhysicsAuthoritativeController,
+        pressed: BooleanArray,
+        screenRenderer: ScreenRenderer,
+    ): PhysicsFrame {
+        // zoom controls: '-' zoom out, '=' zoom in
+        if (pressed[GLFW_KEY_MINUS]) screenRenderer.zoomOut()
+        if (pressed[GLFW_KEY_EQUAL]) screenRenderer.zoomIn()
+
+        // WASD input
+        val ax = axis(pressed[GLFW_KEY_A], pressed[GLFW_KEY_D])
+        val ay = axis(pressed[GLFW_KEY_W], pressed[GLFW_KEY_S])
+
+        return controller.tick(PhysicsInput(ax, ay))
     }
 }

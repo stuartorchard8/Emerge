@@ -2,9 +2,8 @@ package org.emerge.render.torus
 
 import android.opengl.GLES20
 import java.nio.FloatBuffer
-import java.nio.IntBuffer
 
-actual object Renderer {
+actual object GPU {
     actual val VERTEX_SHADER: Int = GLES20.GL_VERTEX_SHADER
     actual val FRAGMENT_SHADER: Int = GLES20.GL_FRAGMENT_SHADER
     actual val FLOAT: Int = GLES20.GL_FLOAT
@@ -44,6 +43,7 @@ actual object Renderer {
     actual fun putVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, offset: Int) = GLES20.glVertexAttribPointer(index, size, type, normalized, stride, offset)
 
     actual fun genAndBindVertexArrays(): Int? = null
+    actual fun deleteVertexArrays(vao: Int) {}
 
     actual fun genBuffers(): Int {
         val buffers = IntArray(1)
@@ -59,8 +59,10 @@ actual object Renderer {
     actual fun bindBuffer(target: Int, buffer: Int) = GLES20.glBindBuffer(target, buffer)
     actual fun bufferData(target: Int, count: Int, data: FloatBuffer, usage: Int) = GLES20.glBufferData(target, count*4, data, usage)
 
+    actual fun setViewport(minX: Int, minY: Int, maxX: Int, maxY: Int) = GLES20.glViewport(minX, minY, maxX, maxY)
+
     actual fun useProgram(program: Int) = GLES20.glUseProgram(program)
     actual fun enableVertexAttribArray(v: Int) = GLES20.glEnableVertexAttribArray(v)
     actual fun disableVertexAttribArray(v: Int) = GLES20.glDisableVertexAttribArray(v)
-    actual fun drawTriangles(first: Int, count: Int) = GLES20.glDrawArrays(GLES20.GL_TRIANGLES, first, count)
+    actual fun drawTriangles(first: Int, count: Int) = GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, first, count)
 }

@@ -5,7 +5,7 @@ import org.lwjgl.system.MemoryStack
 import java.nio.FloatBuffer
 import kotlin.use
 
-actual object Renderer {
+actual object GPU {
     actual val VERTEX_SHADER: Int = GL33C.GL_VERTEX_SHADER
     actual val FRAGMENT_SHADER: Int = GL33C.GL_FRAGMENT_SHADER
     actual val FLOAT: Int = GL33C.GL_FLOAT
@@ -49,6 +49,7 @@ actual object Renderer {
         GL33C.glBindVertexArray(vao)
         return vao
     }
+    actual fun deleteVertexArrays(vao: Int) = GL33C.glDeleteVertexArrays(vao)
 
     actual fun genBuffers(): Int = GL33C.glGenBuffers()
     actual fun deleteBuffers(buffer: Int) = GL33C.glDeleteBuffers(buffer)
@@ -56,8 +57,10 @@ actual object Renderer {
     actual fun bindBuffer(target: Int, buffer: Int) = GL33C.glBindBuffer(target, buffer)
     actual fun bufferData(target: Int, count: Int, data: FloatBuffer, usage: Int) = GL33C.glBufferData(target, data, usage)
 
+    actual fun setViewport(minX: Int, minY: Int, maxX: Int, maxY: Int) = GL33C.glViewport(minX, minY, maxX, maxY)
+
     actual fun useProgram(program: Int) = GL33C.glUseProgram(program)
     actual fun enableVertexAttribArray(v: Int) = GL33C.glEnableVertexAttribArray(v)
     actual fun disableVertexAttribArray(v: Int) = GL33C.glDisableVertexAttribArray(v)
-    actual fun drawTriangles(first: Int, count: Int) = GL33C.glDrawArrays(GL33C.GL_TRIANGLES, first, count)
+    actual fun drawTriangles(first: Int, count: Int) = GL33C.glDrawArrays(GL33C.GL_TRIANGLE_STRIP, first, count)
 }

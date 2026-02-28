@@ -1,6 +1,6 @@
 package org.emerge.render.torus.shader
 
-import org.emerge.render.torus.Renderer
+import org.emerge.render.torus.GPU
 
 /**
  * Platform-specific OpenGL program compilation/linking for the torus shader renderer.
@@ -12,33 +12,33 @@ import org.emerge.render.torus.Renderer
  */
 object ShaderFactory {
     fun createProgram(vSrc: String, fSrc: String): Int {
-        val v = compileShader(Renderer.VERTEX_SHADER, vSrc)
-        val f = compileShader(Renderer.FRAGMENT_SHADER, fSrc)
-        val p = Renderer.createProgram()
-        Renderer.attachShader(p, v)
-        Renderer.attachShader(p, f)
-        Renderer.linkProgram(p)
-        val ok = Renderer.getProgramLinkStatus(p)
+        val v = compileShader(GPU.VERTEX_SHADER, vSrc)
+        val f = compileShader(GPU.FRAGMENT_SHADER, fSrc)
+        val p = GPU.createProgram()
+        GPU.attachShader(p, v)
+        GPU.attachShader(p, f)
+        GPU.linkProgram(p)
+        val ok = GPU.getProgramLinkStatus(p)
         if (ok == 0) {
-            val log = Renderer.getProgramInfoLog(p)
-            Renderer.deleteShader(v)
-            Renderer.deleteShader(f)
-            Renderer.deleteProgram(p)
+            val log = GPU.getProgramInfoLog(p)
+            GPU.deleteShader(v)
+            GPU.deleteShader(f)
+            GPU.deleteProgram(p)
             error("GL program link failed: $log")
         }
-        Renderer.deleteShader(v)
-        Renderer.deleteShader(f)
+        GPU.deleteShader(v)
+        GPU.deleteShader(f)
         return p
     }
 
     private fun compileShader(type: Int, src: String): Int {
-        val s = Renderer.createShader(type)
-        Renderer.shaderSource(s, src)
-        Renderer.compileShader(s)
-        val ok = Renderer.getCompileStatus(s)
+        val s = GPU.createShader(type)
+        GPU.shaderSource(s, src)
+        GPU.compileShader(s)
+        val ok = GPU.getCompileStatus(s)
         if (ok == 0) {
-            val log = Renderer.getShaderInfoLog(s)
-            Renderer.deleteShader(s)
+            val log = GPU.getShaderInfoLog(s)
+            GPU.deleteShader(s)
             error("Shader compile failed:\n$log\n\nSource:\n$src")
         }
         return s

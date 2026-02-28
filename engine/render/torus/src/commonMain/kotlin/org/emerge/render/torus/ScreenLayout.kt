@@ -2,6 +2,9 @@ package org.emerge.render.torus
 
 import org.emerge.sim.core.physics.Vec2
 import org.emerge.sim.core.physics.Vec2i
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.FloatBuffer
 
 data class ScreenLayout(
     val worldMinX: Float,
@@ -15,22 +18,47 @@ data class ScreenLayout(
     val resolution: Vec2i,
     val aspectRatio: Float,
 ) {
-    fun getWorldVerts(): FloatArray = floatArrayOf(
+    private var vertexFloatBuffer: FloatBuffer = ByteBuffer.allocateDirect(12 * 4)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer()
+
+    fun vertices(): FloatArray = if (aspectRatio < 1f) {
+        verticesForLayoutX()
+    } else {
+        verticesForLayoutY()
+    }
+    private fun verticesForLayoutY(): FloatArray = floatArrayOf(
         worldMinX, worldMinY,
-        worldMaxX, worldMinY,
         worldMinX, worldMaxY,
+        worldMaxX, worldMinY,
         worldMaxX, worldMaxY,
-    )
-    fun getGuiVerts(): FloatArray = floatArrayOf(
-        guiMinX, guiMinY,
         guiMaxX, guiMinY,
-        guiMinX, guiMaxY,
         guiMaxX, guiMaxY,
     )
+    private fun verticesForLayoutX(): FloatArray = floatArrayOf(
+        worldMinX, worldMaxY,
+        worldMaxX, worldMaxY,
+        worldMinX, worldMinY,
+        worldMaxX, worldMinY,
+        guiMinX, guiMinY,
+        guiMaxX, guiMinY,
+    )
+
     fun getWorldCenter(): Vec2 = Vec2(
         (worldMinX+worldMaxX)/2f,
         (worldMinY+worldMaxY)/2f,
     )
+
+    fun putVerts(vbo: Int) {
+        val verts = vertices()
+        vertexFloatBuffer.put(verts).flip()
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, vbo)
+        GPU.enableVertexAttribArray(0)
+        // Capture the VBO binding into the VAO's attrib state.
+        GPU.putVertexAttribPointer(0, 2, GPU.FLOAT, false, 2 * 4, 0)
+        GPU.bufferData(GPU.ARRAY_BUFFER, verts.size, vertexFloatBuffer, GPU.STATIC_DRAW)
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
+    }
 
     companion object {
         fun compute(resolution: Vec2i): ScreenLayout {

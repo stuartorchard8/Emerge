@@ -4,8 +4,6 @@ import java.awt.*
 import javax.swing.*
 import org.emerge.demo.physics.*
 
-internal const val MAX_BODIES = 128
-
 fun main() {
     // Single launch path: always start with an in-app launcher UI.
     SwingUtilities.invokeLater { DesktopLauncher().show() }

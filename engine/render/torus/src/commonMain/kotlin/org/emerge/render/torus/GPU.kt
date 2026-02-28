@@ -2,7 +2,7 @@ package org.emerge.render.torus
 
 import java.nio.FloatBuffer
 
-expect object Renderer {
+expect object GPU {
     val VERTEX_SHADER: Int
     val FRAGMENT_SHADER: Int
     val FLOAT: Int
@@ -34,12 +34,15 @@ expect object Renderer {
     fun putVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, offset: Int)
 
     fun genAndBindVertexArrays(): Int?
+    fun deleteVertexArrays(vao: Int)
 
     fun genBuffers(): Int
     fun deleteBuffers(buffer: Int)
 
     fun bindBuffer(target: Int, buffer: Int)
     fun bufferData(target: Int, count: Int, data: FloatBuffer, usage: Int)
+
+    fun setViewport(minX: Int, minY: Int, maxX: Int, maxY: Int)
 
     fun useProgram(program: Int)
     fun enableVertexAttribArray(v: Int)
