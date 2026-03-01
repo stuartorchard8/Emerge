@@ -53,29 +53,38 @@ object WorldShaderSources {
             vec2 cover = uCenter + (uv - 0.5) * vec2(uWorld.x*min(aspect, 1.0), -uWorld.y/max(aspect, 1.0)) * uZoom;
             vec2 p = wrap2(cover, uWorld);
             
-            vec3 col = vec3(0.0);
+            bool occluded = false;
+            float bestId = 0.0;
+            float bestR2 = 0.0;
+            float bestD2 = 0.0;
+            
             float best = 1e30;
             vec2 guv = cover;
 
-            bool occluded = false;
             for (int i = 0; i < uBodyCount; i++) {
                 vec4 b = uBodies[i];
                 float dx = wrapDelta(p.x - b.x, uWorld.x);
                 float dy = wrapDelta(p.y - b.y, uWorld.y);
                 float d2 = dx*dx + dy*dy;
                 float r2 = b.z*b.z;
-                if (d2 <= r2 && d2 < best) {
-                    best = d2;
-                    float w = b.w+3.0;
-                    float a = (1.0 - d2/(r2*1.5));
-                    col = mod(vec3(w/1.9, w/2.9, w/4.9),1.0)*a;
-                    occluded = true;
+                bool isBest = d2 <= r2 && d2 < best;
+                occluded = occluded || isBest;
+                if (isBest) {
+                    bestId = b.w;
+                    bestR2 = r2;
+                    bestD2 = d2;
                 }
+                
                 guv -= vec2(dx, dy)*r2*b.z/(10.0*d2*d2);
             }
             guv = wrap2(guv, uWorld);
             
-            if (!occluded) {
+            vec3 col;
+            if (occluded) {
+                float a = (1.0 - bestD2/(bestR2*1.5));
+                float c = bestId+3.0;
+                col = mod(vec3(c/1.9, c/2.9, c/4.9),1.0)*a;
+            } else {
                 float freq_maj = 1.0;
                 float freq_min = 8.0;
                 
