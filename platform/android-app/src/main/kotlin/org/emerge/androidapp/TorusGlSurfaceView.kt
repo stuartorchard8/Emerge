@@ -15,6 +15,7 @@ import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.Vec2
 
 /**
  * Android GPU shader renderer (OpenGL ES 2.0):
@@ -61,12 +62,14 @@ internal class TorusGlSurfaceView(
 
     init {
         setEGLContextClientVersion(2)
+        val density = activity.resources.displayMetrics.density
         val renderer = TorusGlRenderer(
             getState = {
                 synchronized(stateLock) {
                     latestFrame
                 }
-            }
+            },
+            contentScale = Vec2(density, density),
         )
         setRenderer(renderer)
         // Must be set *after* setRenderer() (GLThread created), otherwise GLSurfaceView crashes.

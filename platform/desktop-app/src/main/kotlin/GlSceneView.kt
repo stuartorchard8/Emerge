@@ -40,7 +40,10 @@ object GlSceneView {
         val pressedKeys = BooleanArray(512)
 
         val window = initWindow(title, pressedKeys)
-        val screenRenderer = ScreenRenderer()
+        val dpiX = FloatArray(1)
+        val dpiY = FloatArray(1)
+        glfwGetWindowContentScale(window, dpiX, dpiY)
+        val screenRenderer = ScreenRenderer(Vec2(dpiX[0], dpiY[0]))
 
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents()

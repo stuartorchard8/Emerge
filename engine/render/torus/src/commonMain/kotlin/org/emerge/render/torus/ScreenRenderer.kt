@@ -5,12 +5,13 @@ import org.emerge.render.torus.shader.WorldShader
 import org.emerge.render.torus.shader.WorldShaderParams
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.Vec2
 import org.emerge.sim.core.physics.Vec2i
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.times
 
-class ScreenRenderer {
+class ScreenRenderer(val contentScale: Vec2) {
     val maxBodies: Int = 128
     private var zoom: Float = 0.75f // <1 => zoom out (see multiple tiles)
 
@@ -19,11 +20,11 @@ class ScreenRenderer {
 
     private val worldShader = WorldShader(maxBodies)
     private val guiShader = GuiShader()
-    private var layout: ScreenLayout = ScreenLayout.compute(Vec2i(1,1))
+    private var layout: ScreenLayout = ScreenLayout.compute(Vec2i(1,1), contentScale)
 
     fun setResolution(resolution: Vec2i) {
         GPU.setViewport(0, 0, resolution.x, resolution.y)
-        layout = ScreenLayout.compute(resolution)
+        layout = ScreenLayout.compute(resolution, contentScale)
         layout.putVerts(vbo)
         worldShader.useLayout(layout)
         guiShader.useLayout(layout)

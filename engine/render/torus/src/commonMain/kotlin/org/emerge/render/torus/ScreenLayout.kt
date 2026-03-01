@@ -23,11 +23,11 @@ data class ScreenLayout(
         .asFloatBuffer()
 
     fun vertices(): FloatArray = if (aspectRatio < 1f) {
-        verticesForLayoutX()
-    } else {
         verticesForLayoutY()
+    } else {
+        verticesForLayoutX()
     }
-    private fun verticesForLayoutY(): FloatArray = floatArrayOf(
+    private fun verticesForLayoutX(): FloatArray = floatArrayOf(
         worldMinX, worldMinY,
         worldMinX, worldMaxY,
         worldMaxX, worldMinY,
@@ -35,7 +35,7 @@ data class ScreenLayout(
         guiMaxX, guiMinY,
         guiMaxX, guiMaxY,
     )
-    private fun verticesForLayoutX(): FloatArray = floatArrayOf(
+    private fun verticesForLayoutY(): FloatArray = floatArrayOf(
         worldMinX, worldMaxY,
         worldMaxX, worldMaxY,
         worldMinX, worldMinY,
@@ -61,17 +61,20 @@ data class ScreenLayout(
     }
 
     companion object {
-        fun compute(resolution: Vec2i): ScreenLayout {
+        fun compute(resolution: Vec2i, contentScale: Vec2): ScreenLayout {
+            val guiSizeDp = 80f
             val aspectRatio = (resolution.x.toFloat() / resolution.y.toFloat())
+            val guiSizePx = if (aspectRatio < 1f) guiSizeDp*contentScale.y else guiSizeDp*contentScale.x
+            val guiSizeUv = if (aspectRatio < 1f) 2f*guiSizePx/resolution.y else 2f*guiSizePx/resolution.x
             return ScreenLayout(
                 worldMinX = -1f,
-                worldMaxX = if (aspectRatio < 1f) 1f else 0.9f,
-                worldMinY = if (aspectRatio < 1f) -0.9f else -1f,
+                worldMaxX = if (aspectRatio < 1f) 1f else 1f - guiSizeUv,
+                worldMinY = if (aspectRatio < 1f) -1f + guiSizeUv else -1f,
                 worldMaxY = 1f,
-                guiMinX = if (aspectRatio < 1f) -1f else 0.9f,
+                guiMinX = if (aspectRatio < 1f) -1f else 1f - guiSizeUv,
                 guiMaxX = 1f,
                 guiMinY = -1f,
-                guiMaxY = if (aspectRatio < 1f) -0.9f else 1f,
+                guiMaxY = if (aspectRatio < 1f) -1f + guiSizeUv else 1f,
                 resolution,
                 aspectRatio,
             )
