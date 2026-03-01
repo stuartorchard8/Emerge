@@ -7,46 +7,36 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 
 data class ScreenLayout(
-    val worldMinX: Float,
-    val worldMaxX: Float,
-    val worldMinY: Float,
-    val worldMaxY: Float,
-    val guiMinX: Float,
-    val guiMaxX: Float,
-    val guiMinY: Float,
-    val guiMaxY: Float,
-    val resolution: Vec2i,
-    val aspectRatio: Float,
+    val worldPxMin: Vec2,
+    val worldPxMax: Vec2,
+    val guiPxMin: Vec2,
+    val guiPxMax: Vec2,
+    private val resolution: Vec2i,
 ) {
     private var vertexFloatBuffer: FloatBuffer = ByteBuffer.allocateDirect(12 * 4)
         .order(ByteOrder.nativeOrder())
         .asFloatBuffer()
 
-    fun vertices(): FloatArray = if (aspectRatio < 1f) {
+    fun vertices(): FloatArray = if (resolution.x < resolution.y) {
         verticesForLayoutY()
     } else {
         verticesForLayoutX()
     }
     private fun verticesForLayoutX(): FloatArray = floatArrayOf(
-        worldMinX, worldMinY,
-        worldMinX, worldMaxY,
-        worldMaxX, worldMinY,
-        worldMaxX, worldMaxY,
-        guiMaxX, guiMinY,
-        guiMaxX, guiMaxY,
+        worldPxMin.x*2f/resolution.x - 1f, worldPxMin.y*2f/resolution.y - 1f,
+        worldPxMin.x*2f/resolution.x - 1f, worldPxMax.y*2f/resolution.y - 1f,
+        worldPxMax.x*2f/resolution.x - 1f, worldPxMin.y*2f/resolution.y - 1f,
+        worldPxMax.x*2f/resolution.x - 1f, worldPxMax.y*2f/resolution.y - 1f,
+        guiPxMax.x*2f/resolution.x - 1f, guiPxMin.y*2f/resolution.y - 1f,
+        guiPxMax.x*2f/resolution.x - 1f, guiPxMax.y*2f/resolution.y - 1f,
     )
     private fun verticesForLayoutY(): FloatArray = floatArrayOf(
-        worldMinX, worldMaxY,
-        worldMaxX, worldMaxY,
-        worldMinX, worldMinY,
-        worldMaxX, worldMinY,
-        guiMinX, guiMinY,
-        guiMaxX, guiMinY,
-    )
-
-    fun getWorldCenter(): Vec2 = Vec2(
-        (worldMinX+worldMaxX)/2f,
-        (worldMinY+worldMaxY)/2f,
+        worldPxMin.x*2f/resolution.x - 1f, worldPxMax.y*2f/resolution.y - 1f,
+        worldPxMax.x*2f/resolution.x - 1f, worldPxMax.y*2f/resolution.y - 1f,
+        worldPxMin.x*2f/resolution.x - 1f, worldPxMin.y*2f/resolution.y - 1f,
+        worldPxMax.x*2f/resolution.x - 1f, worldPxMin.y*2f/resolution.y - 1f,
+        guiPxMin.x*2f/resolution.x - 1f, guiPxMin.y*2f/resolution.y - 1f,
+        guiPxMax.x*2f/resolution.x - 1f, guiPxMin.y*2f/resolution.y - 1f,
     )
 
     fun putVerts(vbo: Int) {
@@ -63,20 +53,26 @@ data class ScreenLayout(
     companion object {
         fun compute(resolution: Vec2i, contentScale: Vec2): ScreenLayout {
             val guiSizeDp = 80f
-            val aspectRatio = (resolution.x.toFloat() / resolution.y.toFloat())
-            val guiSizePx = if (aspectRatio < 1f) guiSizeDp*contentScale.y else guiSizeDp*contentScale.x
-            val guiSizeUv = if (aspectRatio < 1f) 2f*guiSizePx/resolution.y else 2f*guiSizePx/resolution.x
+            val useYLayout = (resolution.x < resolution.y)
+            val guiSizePx = if (useYLayout) guiSizeDp*contentScale.y else guiSizeDp*contentScale.x
             return ScreenLayout(
-                worldMinX = -1f,
-                worldMaxX = if (aspectRatio < 1f) 1f else 1f - guiSizeUv,
-                worldMinY = if (aspectRatio < 1f) -1f + guiSizeUv else -1f,
-                worldMaxY = 1f,
-                guiMinX = if (aspectRatio < 1f) -1f else 1f - guiSizeUv,
-                guiMaxX = 1f,
-                guiMinY = -1f,
-                guiMaxY = if (aspectRatio < 1f) -1f + guiSizeUv else 1f,
+                worldPxMin = Vec2(
+                    0f,
+                    if (useYLayout) guiSizePx else 0f,
+                ),
+                worldPxMax = Vec2(
+                    if (useYLayout) resolution.x.toFloat() else resolution.x - guiSizePx,
+                    resolution.y.toFloat(),
+                ),
+                guiPxMin = Vec2(
+                    if (useYLayout) 0f else resolution.x - guiSizePx,
+                    0f,
+                ),
+                guiPxMax = Vec2(
+                    resolution.x.toFloat(),
+                    if (useYLayout) guiSizePx else resolution.y.toFloat(),
+                ),
                 resolution,
-                aspectRatio,
             )
         }
     }

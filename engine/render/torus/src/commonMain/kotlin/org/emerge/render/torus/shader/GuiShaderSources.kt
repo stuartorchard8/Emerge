@@ -14,13 +14,14 @@ object GuiShaderSources {
         precision mediump float;
         precision mediump int;
 
-        uniform vec2 uResolution;
+        uniform vec2 uVpMin;
+        uniform vec2 uVpMax;
 
         void main() {
-            float aspect = uResolution.x / uResolution.y;
-            vec2 uv = gl_FragCoord.xy / uResolution;
+            vec2 resolution = uVpMax-uVpMin;
+            vec2 uv = (gl_FragCoord.xy-uVpMin) / min(resolution.x, resolution.y);
             
-            gl_FragColor = vec4(uv, 0.0, 1.0);
+            gl_FragColor = vec4(mod(uv, 1.0), 0.0, 1.0);
         }
         """.trimIndent()
 }

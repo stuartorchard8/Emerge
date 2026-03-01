@@ -24,7 +24,8 @@ object WorldShaderSources {
         precision mediump int;
         #define MAX_BODIES $maxBodies
 
-        uniform vec2 uResolution;
+        uniform vec2 uVpMin;
+        uniform vec2 uVpMax;
         uniform vec2 uWorld;
         uniform float uZoom;
         uniform vec2 uCenter;
@@ -46,8 +47,9 @@ object WorldShaderSources {
         }
 
         void main() {
-            float aspect = uResolution.x / uResolution.y;
-            vec2 uv = gl_FragCoord.xy / uResolution;
+            vec2 resolution = uVpMax - uVpMin;
+            float aspect = resolution.x / resolution.y;
+            vec2 uv = (gl_FragCoord.xy- uVpMin) / resolution;
             vec2 cover = uCenter + (uv - 0.5) * vec2(uWorld.x*min(aspect, 1.0), -uWorld.y/max(aspect, 1.0)) * uZoom;
             vec2 p = wrap2(cover, uWorld);
             

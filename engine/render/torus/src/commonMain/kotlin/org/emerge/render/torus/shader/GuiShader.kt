@@ -2,6 +2,7 @@ package org.emerge.render.torus.shader
 
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ScreenLayout
+import org.emerge.sim.core.physics.Vec2
 import org.emerge.sim.core.physics.Vec2i
 
 class GuiShader() {
@@ -9,23 +10,33 @@ class GuiShader() {
     private val fSrc = GuiShaderSources.fragmentGles2()
     private val program: Int = ShaderFactory.createProgram(vSrc, fSrc)
 
-    private val uResolution: Int = GPU.getUniformLocation(program, "uResolution")
+    private val uVpMin: Int = GPU.getUniformLocation(program, "uVpMin")
+    private val uVpMax: Int = GPU.getUniformLocation(program, "uVpMax")
 
-    private var localResolution = Vec2i(1,1)
+    private var vpMin = Vec2(0f,0f)
+    private var vpMax = Vec2(1f, 1f)
 
     fun useLayout(layout: ScreenLayout) {
-        localResolution = layout.resolution
+        vpMin = layout.guiPxMin
+        vpMax = layout.guiPxMax
     }
 
     private fun setUniforms() {
-        setResolution(localResolution)
+        setViewport()
     }
 
-    private fun setResolution(resolution: Vec2i) = GPU.putUniform2f(
-        uResolution,
-        resolution.x.toFloat(),
-        resolution.y.toFloat(),
-    )
+    private fun setViewport() {
+        GPU.putUniform2f(
+            uVpMin,
+            vpMin.x,
+            vpMin.y,
+        )
+        GPU.putUniform2f(
+            uVpMax,
+            vpMax.x,
+            vpMax.y,
+        )
+    }
 
     fun draw(vOffset: Int = 0) {
         GPU.useProgram(program)

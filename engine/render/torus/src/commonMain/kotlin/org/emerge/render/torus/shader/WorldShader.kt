@@ -14,7 +14,11 @@ class WorldShader(val maxBodies: Int) {
     private val fSrc = WorldShaderSources.fragmentGles2(maxBodies)
     private val program: Int = ShaderFactory.createProgram(vSrc, fSrc)
 
-    private val uResolution: Int = GPU.getUniformLocation(program, "uResolution")
+    private val uVpMin: Int = GPU.getUniformLocation(program, "uVpMin")
+    private val uVpMax: Int = GPU.getUniformLocation(program, "uVpMax")
+    private var vpMin = Vec2(0f,0f)
+    private var vpMax = Vec2(1f, 1f)
+
     private val uWorld: Int = GPU.getUniformLocation(program, "uWorld")
     private val uZoom: Int = GPU.getUniformLocation(program, "uZoom")
     private val uCenter: Int = GPU.getUniformLocation(program, "uCenter")
@@ -24,32 +28,31 @@ class WorldShader(val maxBodies: Int) {
 
     private val bodiesFloats = FloatArray(4 * maxBodies)
 
-    private var localResolution = Vec2i(1,1)
-    private var focusOffset = Vec2(0f,0f)
-
     fun useLayout(layout: ScreenLayout) {
-        localResolution = layout.resolution
-        // Offset focus based on viewport center
-        val worldViewportCenter = layout.getWorldCenter()
-        focusOffset = Vec2(
-            -worldViewportCenter.x * min(layout.aspectRatio, 1f),
-            worldViewportCenter.y / max(layout.aspectRatio, 1f),
-        )
+        vpMin = layout.worldPxMin
+        vpMax = layout.worldPxMax
     }
 
     private fun setUniforms(params: WorldShaderParams) {
-        setResolution(localResolution)
+        setViewport()
         setWorld(params.worldSize)
         setZoom(params.zoom)
-        setCenter(params.viewFocus + focusOffset/params.zoom)
+        setCenter(params.viewFocus)
         setMyId(params.myId?.value ?: -1)
         setBodies(params.bodies)
     }
-    private fun setResolution(resolution: Vec2i) = GPU.putUniform2f(
-        uResolution,
-        resolution.x.toFloat(),
-        resolution.y.toFloat(),
-    )
+    private fun setViewport() {
+        GPU.putUniform2f(
+            uVpMin,
+            vpMin.x,
+            vpMin.y,
+        )
+        GPU.putUniform2f(
+            uVpMax,
+            vpMax.x,
+            vpMax.y,
+        )
+    }
     private fun setWorld(size: Vec2) = GPU.putUniform2f(uWorld, size.x, size.y)
     private fun setZoom(value: Float) = GPU.putUniform1f(uZoom, value)
     private fun setCenter(center: Vec2) = GPU.putUniform2f(uCenter, center.x, center.y)

@@ -24,8 +24,8 @@ data class WorldShaderParams(
                 else Vec2i(0, 0)
 
             val focus = Vec2(
-            focusWrapped.x.toFloat()/Int.MAX_VALUE,
-            focusWrapped.y.toFloat()/Int.MAX_VALUE,
+                focusWrapped.x.toFloat()/Int.MAX_VALUE,
+                focusWrapped.y.toFloat()/Int.MAX_VALUE,
             )
 
             return WorldShaderParams(
