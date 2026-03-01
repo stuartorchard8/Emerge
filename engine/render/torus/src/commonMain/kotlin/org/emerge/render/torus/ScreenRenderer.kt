@@ -12,13 +12,12 @@ import kotlin.math.min
 import kotlin.times
 
 class ScreenRenderer(val contentScale: Vec2) {
-    val maxBodies: Int = 128
-    private var zoom: Float = 0.75f // <1 => zoom out (see multiple tiles)
+    private var zoom: Float = 1.0f // <1 => zoom out (see multiple tiles)
 
     private val vao = GPU.genAndBindVertexArrays()
     private var vbo: Int = GPU.genBuffers()
 
-    private val worldShader = WorldShader(maxBodies)
+    private val worldShader = WorldShader(MAX_BODIES)
     private val guiShader = GuiShader()
     private var layout: ScreenLayout = ScreenLayout.compute(Vec2i(1,1), contentScale)
 
@@ -31,7 +30,7 @@ class ScreenRenderer(val contentScale: Vec2) {
     }
 
     fun zoomOut() {
-        zoom = max(0.05f, zoom * 0.98f)
+        zoom = max(1.0f, zoom * 0.98f)
     }
     fun zoomIn() {
         zoom = min(20f, zoom * 1.02f)
@@ -39,8 +38,8 @@ class ScreenRenderer(val contentScale: Vec2) {
 
     fun draw(state: PhysicsState, myId: PlayerId?) {
         val params = WorldShaderParams.compute(state, myId, zoom)
-        worldShader.draw(params)
-        guiShader.draw(vOffset = 2)
+        worldShader.draw(params, segmentation=layout.worldSegmentation)
+        guiShader.draw(vOffset=layout.guiVertexOffset)
     }
 
     fun cleanup() {
@@ -50,5 +49,8 @@ class ScreenRenderer(val contentScale: Vec2) {
         if (vao != null) {
             GPU.deleteVertexArrays(vao)
         }
+    }
+    companion object {
+        const val MAX_BODIES: Int = 128
     }
 }

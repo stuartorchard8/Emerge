@@ -5,8 +5,6 @@ import org.emerge.render.torus.ScreenLayout
 import org.emerge.render.torus.packBodiesToFloatArray
 import org.emerge.sim.core.physics.CircleBody
 import org.emerge.sim.core.physics.Vec2
-import org.emerge.sim.core.physics.Vec2i
-import kotlin.math.max
 import kotlin.math.min
 
 class WorldShader(val maxBodies: Int) {
@@ -64,10 +62,12 @@ class WorldShader(val maxBodies: Int) {
         GPU.putUniform4fv(uBodies, bodiesFloats, maxBodies)
     }
 
-    fun draw(params: WorldShaderParams, vOffset: Int = 0) {
+    fun draw(params: WorldShaderParams, vOffset: Int = 0, segmentation: Int = 0) {
         GPU.useProgram(program)
         setUniforms(params)
-        GPU.drawTriangles(vOffset,4)
+        for (x in 0..segmentation*segmentation/2) {
+            GPU.drawTriangles(vOffset+x*2*4,4)
+        }
     }
 
     fun deleteProgram() {

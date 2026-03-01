@@ -21,7 +21,8 @@ class MainActivity : Activity() {
             hostIp = intent.getStringExtra(EXTRA_HOST_IP) ?: defaultLaunchSettings.hostIp,
             port = intent.getIntExtra(EXTRA_PORT, defaultLaunchSettings.port),
         )
-        setContentView(LauncherView(activity = this, initial = initial))
+//        setContentView(LauncherView(activity = this, initial = initial))
+        setContentView(TorusGlSurfaceView(activity = this, initial))
     }
 
     companion object {

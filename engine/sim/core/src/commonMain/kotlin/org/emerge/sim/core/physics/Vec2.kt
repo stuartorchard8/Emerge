@@ -4,9 +4,13 @@ import kotlin.math.*
 
 data class Vec2(val x: Float, val y: Float) {
     operator fun plus(o: Vec2): Vec2 = Vec2(x + o.x, y + o.y)
+    operator fun plus(s: Float): Vec2 = Vec2(x + s, y + s)
     operator fun minus(o: Vec2): Vec2 = Vec2(x - o.x, y - o.y)
+    operator fun minus(s: Float): Vec2 = Vec2(x - s, y - s)
     operator fun times(s: Float): Vec2 = Vec2(x * s, y * s)
     operator fun div(s: Float): Vec2 = Vec2(x / s, y / s)
+    operator fun div(o: Vec2): Vec2 = Vec2(x / o.x, y / o.y)
+    operator fun div(o: Vec2i): Vec2 = Vec2(x / o.x, y / o.y)
     fun distSq(): Float = x * x + y * y
     fun octDist(): Float = (2*(abs(x) + abs(y))+3*max(abs(x), abs(y)))/5
     fun octNorm(): Vec2 = this/octDist()

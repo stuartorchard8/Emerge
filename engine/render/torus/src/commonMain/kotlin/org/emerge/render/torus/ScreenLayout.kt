@@ -13,31 +13,53 @@ data class ScreenLayout(
     val guiPxMax: Vec2,
     private val resolution: Vec2i,
 ) {
-    private var vertexFloatBuffer: FloatBuffer = ByteBuffer.allocateDirect(12 * 4)
+    val worldSegmentation: Int = 1
+    val worldSliceSizeUv: Float = 1f/worldSegmentation
+    val worldVertexCount: Int = 4*worldSegmentation*worldSegmentation
+    val guiVertexCount: Int = 4
+    val guiVertexOffset: Int = worldVertexCount
+
+    private var vertexFloatBuffer: FloatBuffer = ByteBuffer.allocateDirect((worldVertexCount+guiVertexCount) * VERTEX_DIM * FLOAT_SIZE)
         .order(ByteOrder.nativeOrder())
         .asFloatBuffer()
 
-    fun vertices(): FloatArray = if (resolution.x < resolution.y) {
-        verticesForLayoutY()
-    } else {
-        verticesForLayoutX()
+    fun vertices(): FloatArray {
+        val worldVertices = buildList {
+            for (x in 0..<worldSegmentation) {
+                for (y in 0..<worldSegmentation) {
+                    addAll(getWorldVertices(x, y))
+                }
+            }
+        }
+        return floatArrayOf(
+            *worldVertices.toFloatArray(),
+
+            xPxToUv(guiPxMin.x), yPxToUv(guiPxMin.y),
+            xPxToUv(guiPxMin.x), yPxToUv(guiPxMax.y),
+            xPxToUv(guiPxMax.x), yPxToUv(guiPxMin.y),
+            xPxToUv(guiPxMax.x), yPxToUv(guiPxMax.y),
+        )
     }
-    private fun verticesForLayoutX(): FloatArray = floatArrayOf(
-        worldPxMin.x*2f/resolution.x - 1f, worldPxMin.y*2f/resolution.y - 1f,
-        worldPxMin.x*2f/resolution.x - 1f, worldPxMax.y*2f/resolution.y - 1f,
-        worldPxMax.x*2f/resolution.x - 1f, worldPxMin.y*2f/resolution.y - 1f,
-        worldPxMax.x*2f/resolution.x - 1f, worldPxMax.y*2f/resolution.y - 1f,
-        guiPxMax.x*2f/resolution.x - 1f, guiPxMin.y*2f/resolution.y - 1f,
-        guiPxMax.x*2f/resolution.x - 1f, guiPxMax.y*2f/resolution.y - 1f,
-    )
-    private fun verticesForLayoutY(): FloatArray = floatArrayOf(
-        worldPxMin.x*2f/resolution.x - 1f, worldPxMax.y*2f/resolution.y - 1f,
-        worldPxMax.x*2f/resolution.x - 1f, worldPxMax.y*2f/resolution.y - 1f,
-        worldPxMin.x*2f/resolution.x - 1f, worldPxMin.y*2f/resolution.y - 1f,
-        worldPxMax.x*2f/resolution.x - 1f, worldPxMin.y*2f/resolution.y - 1f,
-        guiPxMin.x*2f/resolution.x - 1f, guiPxMin.y*2f/resolution.y - 1f,
-        guiPxMax.x*2f/resolution.x - 1f, guiPxMin.y*2f/resolution.y - 1f,
-    )
+
+    fun getWorldVertices(xSeg: Int, ySeg: Int): Array<Float> {
+        val worldUvMin = pxToUv(worldPxMin)
+        val worldUvMax = pxToUv(worldPxMax)
+        val worldUvSize = worldUvMax - worldUvMin
+        val segMinX =  xSeg   *worldSliceSizeUv*worldUvSize.x
+        val segMaxX = (xSeg+1)*worldSliceSizeUv*worldUvSize.x
+        val segMinY =  ySeg   *worldSliceSizeUv*worldUvSize.y
+        val segMaxY = (ySeg+1)*worldSliceSizeUv*worldUvSize.y
+        return arrayOf(
+            worldUvMin.x+segMinX, worldUvMin.y+segMinY,
+            worldUvMin.x+segMinX, worldUvMin.y+segMaxY,
+            worldUvMin.x+segMaxX, worldUvMin.y+segMinY,
+            worldUvMin.x+segMaxX, worldUvMin.y+segMaxY,
+        )
+    }
+
+    private fun xPxToUv(px: Float): Float = px*2f/resolution.x - 1f
+    private fun yPxToUv(px: Float): Float = px*2f/resolution.y - 1f
+    private fun pxToUv(px: Vec2): Vec2 = px*2f/resolution - 1f
 
     fun putVerts(vbo: Int) {
         val verts = vertices()
@@ -75,5 +97,8 @@ data class ScreenLayout(
                 resolution,
             )
         }
+
+        private const val VERTEX_DIM = 2
+        private const val FLOAT_SIZE = 4
     }
 }
