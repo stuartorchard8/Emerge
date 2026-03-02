@@ -13,13 +13,15 @@ data class ScreenLayout(
     val guiPxMax: Vec2,
     private val resolution: Vec2i,
 ) {
-    val worldSegmentation: Int = 1
+    val worldSegmentation: Int = 2
     val worldSliceSizeUv: Float = 1f/worldSegmentation
     val worldVertexCount: Int = 4*worldSegmentation*worldSegmentation
-    val guiVertexCount: Int = 4
+    val circleVertexCount: Int = 4
+    val triVertexCount: Int = 3
     val guiVertexOffset: Int = worldVertexCount
+    val circleVertexOffset: Int = worldVertexCount+circleVertexCount
 
-    private var vertexFloatBuffer: FloatBuffer = ByteBuffer.allocateDirect((worldVertexCount+guiVertexCount) * VERTEX_DIM * FLOAT_SIZE)
+    private var vertexFloatBuffer: FloatBuffer = ByteBuffer.allocateDirect((worldVertexCount+circleVertexCount+triVertexCount) * VERTEX_DIM * FLOAT_SIZE)
         .order(ByteOrder.nativeOrder())
         .asFloatBuffer()
 
@@ -32,12 +34,17 @@ data class ScreenLayout(
             }
         }
         return floatArrayOf(
+            // world
             *worldVertices.toFloatArray(),
-
+            // gui
             xPxToUv(guiPxMin.x), yPxToUv(guiPxMin.y),
             xPxToUv(guiPxMin.x), yPxToUv(guiPxMax.y),
             xPxToUv(guiPxMax.x), yPxToUv(guiPxMin.y),
             xPxToUv(guiPxMax.x), yPxToUv(guiPxMax.y),
+            // circle
+            -1.7320508f, -1f,
+            0f, 2f,
+            1.7320508f, -1f,
         )
     }
 
