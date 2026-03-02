@@ -6,6 +6,7 @@ import java.nio.FloatBuffer
 import kotlin.use
 
 actual object GPU {
+    actual val shaderVersion: String = "330 core"
     actual val VERTEX_SHADER: Int = GL33C.GL_VERTEX_SHADER
     actual val FRAGMENT_SHADER: Int = GL33C.GL_FRAGMENT_SHADER
     actual val FLOAT: Int = GL33C.GL_FLOAT

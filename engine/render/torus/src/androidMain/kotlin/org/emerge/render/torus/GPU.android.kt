@@ -4,6 +4,7 @@ import android.opengl.GLES20
 import java.nio.FloatBuffer
 
 actual object GPU {
+    actual val shaderVersion: String = "320 es"
     actual val VERTEX_SHADER: Int = GLES20.GL_VERTEX_SHADER
     actual val FRAGMENT_SHADER: Int = GLES20.GL_FRAGMENT_SHADER
     actual val FLOAT: Int = GLES20.GL_FLOAT

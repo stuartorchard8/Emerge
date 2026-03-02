@@ -6,8 +6,8 @@ import org.emerge.sim.core.physics.Vec2
 import org.emerge.sim.core.physics.Vec2i
 
 class GuiShader() {
-    private val vSrc = GuiShaderSources.vertexGles2()
-    private val fSrc = GuiShaderSources.fragmentGles2()
+    private val vSrc = GuiShaderSources.vertex()
+    private val fSrc = GuiShaderSources.fragment()
     private val program: Int = ShaderFactory.createProgram(vSrc, fSrc)
 
     private val uVpMin: Int = GPU.getUniformLocation(program, "uVpMin")

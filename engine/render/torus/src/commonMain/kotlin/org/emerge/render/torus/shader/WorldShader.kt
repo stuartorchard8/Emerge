@@ -8,8 +8,8 @@ import org.emerge.sim.core.physics.Vec2
 import kotlin.math.min
 
 class WorldShader(val maxBodies: Int) {
-    private val vSrc = WorldShaderSources.vertexGles2()
-    private val fSrc = WorldShaderSources.fragmentGles2(maxBodies)
+    private val vSrc = WorldShaderSources.vertex()
+    private val fSrc = WorldShaderSources.fragment(maxBodies)
     private val program: Int = ShaderFactory.createProgram(vSrc, fSrc)
 
     private val uVpMin: Int = GPU.getUniformLocation(program, "uVpMin")
@@ -65,8 +65,8 @@ class WorldShader(val maxBodies: Int) {
     fun draw(params: WorldShaderParams, vOffset: Int = 0, segmentation: Int = 0) {
         GPU.useProgram(program)
         setUniforms(params)
-        for (x in 0..segmentation*segmentation/2) {
-            GPU.drawTriangles(vOffset+x*2*4,4)
+        for (x in 0..segmentation*segmentation) {
+            GPU.drawTriangles(vOffset+x*4,4)
         }
     }
 

@@ -3,6 +3,7 @@ package org.emerge.render.torus
 import java.nio.FloatBuffer
 
 expect object GPU {
+    val shaderVersion: String
     val VERTEX_SHADER: Int
     val FRAGMENT_SHADER: Int
     val FLOAT: Int

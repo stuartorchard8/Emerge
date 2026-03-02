@@ -1,25 +1,22 @@
 package org.emerge.render.torus.shader
 
-object WorldShaderSources {
-    fun vertexGles2(): String =
-        """
-        attribute vec2 aPos;
-        void main() {
-            gl_Position = vec4(aPos, 0.0, 1.0);
-        }
-        """.trimIndent()
+import org.emerge.render.torus.GPU
 
-    fun vertexGl330(): String =
+object WorldShaderSources {
+    fun vertex(): String = vertex(GPU.shaderVersion)
+    private fun vertex(version: String): String =
         """
-        #version 330 core
+        #version $version
         layout(location = 0) in vec2 aPos;
         void main() {
             gl_Position = vec4(aPos, 0.0, 1.0);
         }
         """.trimIndent()
 
-    fun fragmentGles2(maxBodies: Int): String =
+    fun fragment(maxBodies: Int): String = fragment(maxBodies, GPU.shaderVersion)
+    private fun fragment(maxBodies: Int, version: String): String =
         """
+        #version $version
         precision mediump float;
         precision mediump int;
         #define MAX_BODIES $maxBodies
@@ -32,6 +29,8 @@ object WorldShaderSources {
         uniform int uBodyCount;
         uniform int uMyId;
         uniform vec4 uBodies[MAX_BODIES]; // x,y,r,playerId
+        
+        out vec4 fragColor;
 
         vec2 wrap2(vec2 p, vec2 size) {
             vec2 q = mod(p, size);
@@ -79,11 +78,10 @@ object WorldShaderSources {
             }
             guv = wrap2(guv, uWorld);
             
-            vec3 col;
             if (occluded) {
                 float a = (1.0 - bestD2/(bestR2*1.5));
                 float c = bestId+3.0;
-                col = mod(vec3(c/1.9, c/2.9, c/4.9),1.0)*a;
+                fragColor = vec4(mod(vec3(c/1.9, c/2.9, c/4.9),1.0)*a, 1.0);
             } else {
                 float freq_maj = 1.0;
                 float freq_min = 8.0;
@@ -101,9 +99,8 @@ object WorldShaderSources {
                 
                 float grid = max(col_maj, col_min);
                 
-                col = vec3(grid);
+                fragColor = vec4(vec3(grid), 1.0);
             }
-            gl_FragColor = vec4(col, 1.0);
         }
         """.trimIndent()
 }
