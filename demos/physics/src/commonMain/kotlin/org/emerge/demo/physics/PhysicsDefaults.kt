@@ -10,9 +10,9 @@ fun createDefaultInitialState(): PhysicsState = PhysicsState(
         bodies = mapOf(*((0..<ScreenRenderer.MAX_BODIES).map {
             PlayerId(it) to CircleBody(
                 playerId = PlayerId(it),
-                pos = Vec2i(it, it*15),
+                pos = Vec2i(it, it*2)*(Int.MAX_VALUE/(ScreenRenderer.MAX_BODIES)),
                 vel = Vec2i(0, 0),
-                radius = Int.MAX_VALUE/(it/2+8),
+                radius = Int.MAX_VALUE/(ScreenRenderer.MAX_BODIES)*16,
             )
         }.toTypedArray()),
     )

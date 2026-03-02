@@ -17,8 +17,7 @@ object GuiShaderSources {
     private fun fragment(version: String): String =
         """
         #version $version
-        precision mediump float;
-        precision mediump int;
+        ${precisionBlock(version)}
 
         uniform vec2 uVpMin;
         uniform vec2 uVpMax;
@@ -32,4 +31,14 @@ object GuiShaderSources {
             fragColor = vec4(mod(uv, 1.0), 0.0, 1.0);
         }
         """.trimIndent()
+
+    private fun precisionBlock(version: String): String =
+        if (version.contains("es")) {
+            """
+            precision mediump float;
+            precision mediump int;
+            """.trimIndent()
+        } else {
+            ""
+        }
 }

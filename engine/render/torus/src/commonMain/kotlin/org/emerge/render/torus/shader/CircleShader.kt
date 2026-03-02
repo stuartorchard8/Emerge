@@ -1,21 +1,64 @@
 package org.emerge.render.torus.shader
 
 import org.emerge.render.torus.GPU
-import org.emerge.render.torus.ScreenLayout
-import org.emerge.sim.core.physics.Vec2
-import org.emerge.sim.core.physics.Vec2i
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.FloatBuffer
 
 class CircleShader {
     private val vSrc = CircleShaderSources.vertex()
     private val fSrc = CircleShaderSources.fragment()
     private val program: Int = ShaderFactory.createProgram(vSrc, fSrc)
 
-    fun draw(vOffset: Int = 0) {
+    private val instanceVbo: Int = GPU.genBuffers()
+    private val instanceMatrices: FloatBuffer =
+        ByteBuffer.allocateDirect(MAX_INSTANCES * MAT4_FLOATS * 4)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+
+    init {
+        // Instance matrix as 4 vec4 attributes (one per column), divisor = 1
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceVbo)
+        val strideBytes = MAT4_FLOATS * 4
+        for (col in 0 until 4) {
+            val loc = INSTANCE_ATTR_BASE + col
+            GPU.enableVertexAttribArray(loc)
+            GPU.putVertexAttribPointer(
+                loc,
+                4,
+                GPU.FLOAT,
+                false,
+                strideBytes,
+                col * 4 * 4,
+            )
+            GPU.vertexAttribDivisor(loc, 1)
+        }
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
+    }
+
+    fun drawInstanced(vOffset: Int, instanceCount: Int, matricesColMajor: FloatArray) {
         GPU.useProgram(program)
-        GPU.drawTriangles(vOffset,3)
+
+        val n = instanceCount.coerceIn(0, MAX_INSTANCES)
+        instanceMatrices.clear()
+        instanceMatrices.put(matricesColMajor, 0, n * MAT4_FLOATS)
+        instanceMatrices.flip()
+
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceVbo)
+        GPU.bufferData(GPU.ARRAY_BUFFER, n * MAT4_FLOATS, instanceMatrices, GPU.DYNAMIC_DRAW)
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
+
+        GPU.drawTrianglesInstanced(vOffset, 3, n)
     }
 
     fun deleteProgram() {
         GPU.deleteProgram(program)
+        GPU.deleteBuffers(instanceVbo)
+    }
+
+    companion object {
+        private const val INSTANCE_ATTR_BASE = 1
+        private const val MAT4_FLOATS = 16
+        private const val MAX_INSTANCES = 1000
     }
 }

@@ -1,7 +1,0 @@
----
-alwaysApply: true
----
-# Overview
-
-Android version code must be incremented for subsequent installs to overwrite the existing version of the installed app.
-versionCode should be incremented in android build file prior to user handoff.

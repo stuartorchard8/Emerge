@@ -18,7 +18,7 @@ import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2
 
 /**
- * Android GPU shader renderer (OpenGL ES 2.0):
+ * Android GPU shader renderer (OpenGL ES 3.0):
  * - Full-screen fragment shader samples torus space per pixel (infinite tiling when zoomed out).
  * - Simulation/networking stays on CPU and feeds uniforms each frame.
  */
@@ -61,7 +61,7 @@ internal class TorusGlSurfaceView(
     }
 
     init {
-        setEGLContextClientVersion(2)
+        setEGLContextClientVersion(3)
         val density = activity.resources.displayMetrics.density
         val renderer = TorusGlRenderer(
             getState = {

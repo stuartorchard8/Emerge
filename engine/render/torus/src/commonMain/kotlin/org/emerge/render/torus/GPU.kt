@@ -33,6 +33,7 @@ expect object GPU {
     fun putUniform4fv(location: Int, v: FloatArray, count: Int)
 
     fun putVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, offset: Int)
+    fun vertexAttribDivisor(index: Int, divisor: Int)
 
     fun genAndBindVertexArrays(): Int?
     fun deleteVertexArrays(vao: Int)
@@ -49,4 +50,5 @@ expect object GPU {
     fun enableVertexAttribArray(v: Int)
     fun disableVertexAttribArray(v: Int)
     fun drawTriangles(first: Int, count: Int)
+    fun drawTrianglesInstanced(first: Int, count: Int, instanceCount: Int)
 }

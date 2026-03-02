@@ -1,8 +1,0 @@
----
-alwaysApply: true
----
-# Overview
-
-Test changes on all connected devices prior to handoff to user.
-List of connected android devices can be seen via adb devices.
-Randomly choose one device to be the host. If hosting on desktop, then also join via another desktop instance.

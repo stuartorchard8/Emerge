@@ -44,6 +44,7 @@ actual object GPU {
     }
 
     actual fun putVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, offset: Int) = GL33C.glVertexAttribPointer(index, size, type, normalized, stride, offset.toLong())
+    actual fun vertexAttribDivisor(index: Int, divisor: Int) = GL33C.glVertexAttribDivisor(index, divisor)
 
     actual fun genAndBindVertexArrays(): Int? {
         val vao = GL33C.glGenVertexArrays()
@@ -64,4 +65,6 @@ actual object GPU {
     actual fun enableVertexAttribArray(v: Int) = GL33C.glEnableVertexAttribArray(v)
     actual fun disableVertexAttribArray(v: Int) = GL33C.glDisableVertexAttribArray(v)
     actual fun drawTriangles(first: Int, count: Int) = GL33C.glDrawArrays(GL33C.GL_TRIANGLE_STRIP, first, count)
+    actual fun drawTrianglesInstanced(first: Int, count: Int, instanceCount: Int) =
+        GL33C.glDrawArraysInstanced(GL33C.GL_TRIANGLE_STRIP, first, count, instanceCount)
 }
