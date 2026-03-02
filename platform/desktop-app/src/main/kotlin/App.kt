@@ -5,8 +5,9 @@ import javax.swing.*
 import org.emerge.demo.physics.*
 
 fun main() {
+    GlSceneView.start(LaunchSettings())
     // Single launch path: always start with an in-app launcher UI.
-    SwingUtilities.invokeLater { DesktopLauncher().show() }
+//    SwingUtilities.invokeLater { DesktopLauncher().show() }
 }
 
 private class DesktopLauncher {

@@ -16,7 +16,7 @@ class MainActivity : Activity() {
                 MODE_HOST -> LaunchMode.HOST
                 MODE_JOIN -> LaunchMode.JOIN
                 MODE_LOOPBACK -> LaunchMode.LOCAL
-                else -> defaultLaunchSettings.mode
+                else -> LaunchMode.JOIN // defaultLaunchSettings.mode
             },
             hostIp = intent.getStringExtra(EXTRA_HOST_IP) ?: defaultLaunchSettings.hostIp,
             port = intent.getIntExtra(EXTRA_PORT, defaultLaunchSettings.port),
