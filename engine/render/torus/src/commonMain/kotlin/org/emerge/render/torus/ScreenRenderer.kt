@@ -24,6 +24,7 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val circleShader = CircleShader()
     private var layout: ScreenLayout = ScreenLayout.compute(Vec2i(1,1), contentScale)
     private val bodyInstanceMatrices = FloatArray(MAX_BODIES * MAT4_FLOATS)
+    private val bodyInstanceIds = FloatArray(MAX_BODIES)
 
     fun setResolution(resolution: Vec2i) {
         GPU.setViewport(0, 0, resolution.x, resolution.y)
@@ -44,8 +45,19 @@ class ScreenRenderer(val contentScale: Vec2) {
         val params = WorldShaderParams.compute(state, myId, zoom)
         worldShader.draw(params, segmentation=layout.worldSegmentation)
         guiShader.draw(vOffset=layout.guiVertexOffset)
-        val n = packBodyInstanceMatrices(params, layout, outColMajor = bodyInstanceMatrices)
-        circleShader.drawInstanced(vOffset = layout.circleVertexOffset, instanceCount = n, matricesColMajor = bodyInstanceMatrices)
+        val n =
+            packBodyInstances(
+                params = params,
+                layout = layout,
+                outMatricesColMajor = bodyInstanceMatrices,
+                outIds = bodyInstanceIds,
+            )
+        circleShader.drawInstanced(
+            vOffset = layout.circleVertexOffset,
+            instanceCount = n,
+            matricesColMajor = bodyInstanceMatrices,
+            ids = bodyInstanceIds,
+        )
     }
 
     fun cleanup() {
@@ -62,10 +74,11 @@ class ScreenRenderer(val contentScale: Vec2) {
         private const val MAT4_FLOATS: Int = 16
     }
 
-    private fun packBodyInstanceMatrices(
+    private fun packBodyInstances(
         params: WorldShaderParams,
         layout: ScreenLayout,
-        outColMajor: FloatArray,
+        outMatricesColMajor: FloatArray,
+        outIds: FloatArray,
     ): Int {
         val bodies = params.bodies
         val n = min(MAX_BODIES, bodies.size)
@@ -96,25 +109,27 @@ class ScreenRenderer(val contentScale: Vec2) {
 
             val base = i * MAT4_FLOATS
             // Column 0
-            outColMajor[base + 0] = sx
-            outColMajor[base + 1] = 0f
-            outColMajor[base + 2] = 0f
-            outColMajor[base + 3] = 0f
+            outMatricesColMajor[base + 0] = sx
+            outMatricesColMajor[base + 1] = 0f
+            outMatricesColMajor[base + 2] = 0f
+            outMatricesColMajor[base + 3] = 0f
             // Column 1
-            outColMajor[base + 4] = 0f
-            outColMajor[base + 5] = sy
-            outColMajor[base + 6] = 0f
-            outColMajor[base + 7] = 0f
+            outMatricesColMajor[base + 4] = 0f
+            outMatricesColMajor[base + 5] = sy
+            outMatricesColMajor[base + 6] = 0f
+            outMatricesColMajor[base + 7] = 0f
             // Column 2
-            outColMajor[base + 8] = 0f
-            outColMajor[base + 9] = 0f
-            outColMajor[base + 10] = 1f
-            outColMajor[base + 11] = 0f
+            outMatricesColMajor[base + 8] = 0f
+            outMatricesColMajor[base + 9] = 0f
+            outMatricesColMajor[base + 10] = 1f
+            outMatricesColMajor[base + 11] = 0f
             // Column 3 (translation)
-            outColMajor[base + 12] = tx
-            outColMajor[base + 13] = ty
-            outColMajor[base + 14] = 0f
-            outColMajor[base + 15] = 1f
+            outMatricesColMajor[base + 12] = tx
+            outMatricesColMajor[base + 13] = ty
+            outMatricesColMajor[base + 14] = 0f
+            outMatricesColMajor[base + 15] = 1f
+
+            outIds[i] = b.playerId.value.toFloat()
         }
         return n
     }
