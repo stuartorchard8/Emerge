@@ -138,63 +138,56 @@ class ScreenRenderer(val contentScale: Vec2) {
         val bodies = params.bodies
         val n = min(MAX_BODIES, bodies.size)
 
-        // Work in "world viewport local clip space" first ([-1,1] in each axis),
-        // then map into the world-viewport sub-rectangle inside full-screen NDC.
-        val worldPxSize = layout.worldPxMax - layout.worldPxMin
-        val aspect = worldPxSize.x / worldPxSize.y
-        val minAspect = min(aspect, 1f)
-        val maxAspect = max(aspect, 1f)
-
-        val worldNdcMin = layout.pxToNdc(layout.worldPxMin)
-        val worldNdcMax = layout.pxToNdc(layout.worldPxMax)
-        val viewScaleX = (worldNdcMax.x - worldNdcMin.x) * 0.5f
-        val viewScaleY = (worldNdcMax.y - worldNdcMin.y) * 0.5f
-        val viewCenterX = (worldNdcMax.x + worldNdcMin.x) * 0.5f
-        val viewCenterY = (worldNdcMax.y + worldNdcMin.y) * 0.5f
-
-        val scaleVecX = params.worldSize.x * minAspect * params.zoom
-        val scaleVecY = -params.worldSize.y / maxAspect * params.zoom
+        // Calculate view matrix once
+        val matTmp = FloatArray(MAT4_FLOATS)
         val matT = FloatArray(MAT4_FLOATS)
         val matR = FloatArray(MAT4_FLOATS)
         val matS = FloatArray(MAT4_FLOATS)
-        val matTmp = FloatArray(MAT4_FLOATS)
-        val matModel = FloatArray(MAT4_FLOATS)
+        val matView = FloatArray(MAT4_FLOATS)
 
+        // Rotate then Scale
+        setRotationZ(matR, params.viewRotationRad)
+        val worldPxSize = Vec2(layout.resolution.x.toFloat(), layout.resolution.y.toFloat())
+        val aspect = worldPxSize.x / worldPxSize.y
+        val minAspect = min(aspect, 1f)
+        val maxAspect = max(aspect, 1f)
+        val scaleVecX = params.worldSize.x * 0.5f / minAspect / params.zoom
+        val scaleVecY = -params.worldSize.y * 0.5f * maxAspect / params.zoom
+        setScale(matS, scaleVecX, scaleVecY)
+        multiply4x4(out = matTmp, a = matS, b = matR)
+
+        // Translate
+        val worldNdcMin = layout.pxToNdc(layout.worldPxMin)
+        val worldNdcMax = layout.pxToNdc(layout.worldPxMax)
+        val viewCenterX = (worldNdcMax.x + worldNdcMin.x) * 0.5f
+        val viewCenterY = (worldNdcMax.y + worldNdcMin.y) * 0.5f
+        setTranslation(matT, viewCenterX, viewCenterY)
+        multiply4x4(out = matView, a = matT, b = matTmp)
+
+        val matModel = FloatArray(MAT4_FLOATS)
         for (i in 0 until n) {
             val b = bodies[i]
             val bx = b.pos.x.toFloat() / Int.MAX_VALUE
             val by = b.pos.y.toFloat() / Int.MAX_VALUE
 
+            // Scale then Rotate
+            val bodyScale = b.radius.toFloat() / Int.MAX_VALUE
+            setScale(matS, bodyScale, bodyScale)
+            val bodyRotRad = -(b.ang.toFloat() / Int.MIN_VALUE.toFloat()) * PI.toFloat()
+            setRotationZ(matR, bodyRotRad)
+            multiply4x4(out = matTmp, a = matR, b = matS)
+
+            // Translate
             val dx = wrapDelta(bx - params.viewFocus.x, params.worldSize.x)
             val dy = wrapDelta(by - params.viewFocus.y, params.worldSize.y)
-
-            val rot = params.viewRotationRad
-            val c = cos(rot)
-            val s = sin(rot)
-            val dxRot = dx * c - dy * s
-            val dyRot = dx * s + dy * c
-
-            val txLocal = 2f * dxRot / scaleVecX
-            val tyLocal = 2f * dyRot / scaleVecY
-
-            val r = b.radius.toFloat() / Int.MAX_VALUE
-            val sxLocal = 2f * r / scaleVecX
-            val syLocal = 2f * r / scaleVecY
-
-            val tx = viewScaleX * txLocal + viewCenterX
-            val ty = viewScaleY * tyLocal + viewCenterY
-            val sx = viewScaleX * sxLocal
-            val sy = viewScaleY * syLocal
-            val bodyRotRad = -(b.ang.toFloat() / Int.MIN_VALUE.toFloat()) * PI.toFloat()
-            val totalRotRad = bodyRotRad + rot
-            setTranslation(matT, tx, ty)
-            setRotationZ(matR, totalRotRad)
-            setScale(matS, sx, sy)
-            multiply4x4(out = matTmp, a = matS, b = matR)
+            setTranslation(matT, dx, dy)
             multiply4x4(out = matModel, a = matT, b = matTmp)
 
+            // Apply view
+            multiply4x4(out = matTmp, a = matView, b = matModel)
+
             val base = i * MAT4_FLOATS
-            copyMatrix(out = outMatricesColMajor, outOffset = base, src = matModel)
+            copyMatrix(out = outMatricesColMajor, outOffset = base, src = matTmp)
 
             outIds[i] = b.playerId.value.toFloat()
         }
