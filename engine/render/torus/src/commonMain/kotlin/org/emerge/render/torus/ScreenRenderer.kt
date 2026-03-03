@@ -5,6 +5,7 @@ import org.emerge.render.torus.shader.GuiShader
 import org.emerge.render.torus.shader.WorldShader
 import org.emerge.render.torus.shader.WorldShaderParams
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2
 import org.emerge.sim.core.physics.Vec2i
@@ -14,11 +15,12 @@ import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToLong
 import kotlin.math.sin
 
 class ScreenRenderer(val contentScale: Vec2) {
     private var zoom: Float = 1.0f // <1 => zoom out (see multiple tiles)
-    private var worldRotationRad: Float = 0f
+    @Volatile private var worldRotationRad: Float = 0f
 
     private val vao = GPU.genAndBindVertexArrays()
     private var vbo: Int = GPU.genBuffers()
@@ -50,6 +52,22 @@ class ScreenRenderer(val contentScale: Vec2) {
     }
     fun rotateRight() {
         worldRotationRad += ROTATION_STEP_RAD
+    }
+
+    fun rotateInputToWorld(input: PhysicsInput): PhysicsInput {
+        val rot = worldRotationRad
+        if (rot == 0f) {
+            return input
+        }
+
+        val c = cos(-rot).toDouble()
+        val s = sin(-rot).toDouble()
+        val ax = input.ax.toDouble()
+        val ay = input.ay.toDouble()
+
+        val worldAx = clampToInt(ax * c - ay * s)
+        val worldAy = clampToInt(ax * s + ay * c)
+        return PhysicsInput(worldAx, worldAy)
     }
 
     fun draw(state: PhysicsState, myId: PlayerId?) {
@@ -186,5 +204,11 @@ class ScreenRenderer(val contentScale: Vec2) {
         val a = d + half
         val m = a - floor(a / size) * size
         return m - half
+    }
+
+    private fun clampToInt(value: Double): Int {
+        if (value <= Int.MIN_VALUE.toDouble()) return Int.MIN_VALUE
+        if (value >= Int.MAX_VALUE.toDouble()) return Int.MAX_VALUE
+        return value.roundToLong().toInt()
     }
 }

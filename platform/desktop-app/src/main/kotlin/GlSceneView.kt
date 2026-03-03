@@ -118,7 +118,8 @@ object GlSceneView {
         // WASD input
         val ax = axis(pressed[GLFW_KEY_A], pressed[GLFW_KEY_D])
         val ay = axis(pressed[GLFW_KEY_W], pressed[GLFW_KEY_S])
+        val movementInput = screenRenderer.rotateInputToWorld(PhysicsInput(ax, ay))
 
-        return controller.tick(PhysicsInput(ax, ay))
+        return controller.tick(movementInput)
     }
 }

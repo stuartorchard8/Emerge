@@ -3,6 +3,7 @@ package org.emerge.androidapp
 import android.opengl.GLSurfaceView
 import org.emerge.demo.physics.PhysicsFrame
 import org.emerge.render.torus.ScreenRenderer
+import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.Vec2
 import org.emerge.sim.core.physics.Vec2i
 import javax.microedition.khronos.egl.EGLConfig
@@ -25,5 +26,12 @@ class TorusGlRenderer(
     override fun onDrawFrame(gl: GL10?) {
         val frame = getState()
         screenRenderer.draw(frame.state, frame.myId)
+    }
+
+    fun rotateInputToWorld(input: PhysicsInput): PhysicsInput {
+        if (!::screenRenderer.isInitialized) {
+            return input
+        }
+        return screenRenderer.rotateInputToWorld(input)
     }
 }

@@ -28,6 +28,7 @@ internal class TorusGlSurfaceView(
 ) : GLSurfaceView(activity) {
     private val cfg = PhysicsConfig()
     private val initial: PhysicsState = createDefaultInitialState()
+    private val renderer: TorusGlRenderer
 
     private val controller: PhysicsAuthoritativeController =
         when (settings.mode) {
@@ -63,7 +64,7 @@ internal class TorusGlSurfaceView(
     init {
         setEGLContextClientVersion(3)
         val density = activity.resources.displayMetrics.density
-        val renderer = TorusGlRenderer(
+        renderer = TorusGlRenderer(
             getState = {
                 synchronized(stateLock) {
                     latestFrame
@@ -87,13 +88,14 @@ internal class TorusGlSurfaceView(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        currentTouchInput = TouchInputMapper.toPhysicsInput(
+        val rawInput = TouchInputMapper.toPhysicsInput(
             widthPx = width,
             heightPx = height,
             x = event.x,
             y = event.y,
             actionMasked = event.actionMasked,
         )
+        currentTouchInput = renderer.rotateInputToWorld(rawInput)
         return true
     }
 }
