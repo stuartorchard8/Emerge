@@ -166,10 +166,8 @@ class ScreenRenderer(val contentScale: Vec2) {
             val rot = params.viewRotationRad
             val c = cos(rot)
             val s = sin(rot)
-            val dxRotLocal = dx * c - dy * s
-            val dyRotLocal = dx * s + dy * c
-            var dxRot = dxRotLocal
-            var dyRot = dyRotLocal
+            val dxRot = dx * c - dy * s
+            val dyRot = dx * s + dy * c
 
             val txLocal = 2f * dxRot / scaleVecX
             val tyLocal = 2f * dyRot / scaleVecY
