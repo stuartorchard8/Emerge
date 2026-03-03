@@ -9,6 +9,7 @@ import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2
 import org.emerge.sim.core.physics.Vec2i
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
@@ -52,12 +53,22 @@ class ScreenRenderer(val contentScale: Vec2) {
                 outMatricesColMajor = bodyInstanceMatrices,
                 outIds = bodyInstanceIds,
             )
+
+        val x0 = floor(layout.worldPxMin.x).toInt()
+        val y0 = floor(layout.worldPxMin.y).toInt()
+        val x1 = ceil(layout.worldPxMax.x).toInt()
+        val y1 = ceil(layout.worldPxMax.y).toInt()
+        val w = max(0, x1 - x0)
+        val h = max(0, y1 - y0)
+        GPU.enableScissorTest()
+        GPU.setScissor(x0, y0, w, h)
         circleShader.drawInstanced(
             vOffset = layout.circleVertexOffset,
             instanceCount = n,
             matricesColMajor = bodyInstanceMatrices,
             ids = bodyInstanceIds,
         )
+        GPU.disableScissorTest()
     }
 
     fun cleanup() {

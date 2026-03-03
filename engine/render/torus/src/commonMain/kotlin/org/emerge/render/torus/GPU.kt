@@ -51,4 +51,8 @@ expect object GPU {
     fun disableVertexAttribArray(v: Int)
     fun drawTriangles(first: Int, count: Int)
     fun drawTrianglesInstanced(first: Int, count: Int, instanceCount: Int)
+
+    fun enableScissorTest()
+    fun disableScissorTest()
+    fun setScissor(x: Int, y: Int, width: Int, height: Int)
 }

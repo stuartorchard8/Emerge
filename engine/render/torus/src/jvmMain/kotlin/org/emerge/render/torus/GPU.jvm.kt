@@ -67,4 +67,8 @@ actual object GPU {
     actual fun drawTriangles(first: Int, count: Int) = GL33C.glDrawArrays(GL33C.GL_TRIANGLE_STRIP, first, count)
     actual fun drawTrianglesInstanced(first: Int, count: Int, instanceCount: Int) =
         GL33C.glDrawArraysInstanced(GL33C.GL_TRIANGLE_STRIP, first, count, instanceCount)
+
+    actual fun enableScissorTest() = GL33C.glEnable(GL33C.GL_SCISSOR_TEST)
+    actual fun disableScissorTest() = GL33C.glDisable(GL33C.GL_SCISSOR_TEST)
+    actual fun setScissor(x: Int, y: Int, width: Int, height: Int) = GL33C.glScissor(x, y, width, height)
 }
