@@ -34,4 +34,12 @@ class TorusGlRenderer(
         }
         return screenRenderer.rotateInputToWorld(input)
     }
+
+    fun applyCameraGesture(zoomFactor: Float, rotationDeltaRad: Float) {
+        if (!::screenRenderer.isInitialized) {
+            return
+        }
+        screenRenderer.zoomByFactor(zoomFactor)
+        screenRenderer.rotateBy(rotationDeltaRad)
+    }
 }

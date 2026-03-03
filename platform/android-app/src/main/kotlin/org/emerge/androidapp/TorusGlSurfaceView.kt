@@ -16,6 +16,9 @@ import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2
+import kotlin.math.PI
+import kotlin.math.atan2
+import kotlin.math.hypot
 
 /**
  * Android GPU shader renderer (OpenGL ES 3.0):
@@ -38,6 +41,9 @@ internal class TorusGlSurfaceView(
         }
 
     @Volatile private var currentTouchInput: PhysicsInput = PhysicsInput(0, 0)
+    private var isTransformGestureActive: Boolean = false
+    private var transformPrevSpanPx: Float = 0f
+    private var transformPrevAngleRad: Float = 0f
 
     // Data shared to GL thread
     private val stateLock = Any()
@@ -88,6 +94,13 @@ internal class TorusGlSurfaceView(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.pointerCount >= 2) {
+            handleTransformTouch(event)
+            currentTouchInput = PhysicsInput(0, 0)
+            return true
+        }
+
+        resetTransformGesture()
         val rawInput = TouchInputMapper.toPhysicsInput(
             widthPx = width,
             heightPx = height,
@@ -97,5 +110,76 @@ internal class TorusGlSurfaceView(
         )
         currentTouchInput = renderer.rotateInputToWorld(rawInput)
         return true
+    }
+
+    private fun handleTransformTouch(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_POINTER_DOWN,
+            MotionEvent.ACTION_DOWN,
+            -> {
+                beginTransformGesture(event)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!isTransformGestureActive) {
+                    beginTransformGesture(event)
+                    return
+                }
+                val currSpanPx = twoPointerSpanPx(event)
+                val currAngleRad = twoPointerAngleRad(event)
+                if (transformPrevSpanPx <= 0f || currSpanPx <= 0f) {
+                    transformPrevSpanPx = currSpanPx
+                    transformPrevAngleRad = currAngleRad
+                    return
+                }
+
+                val zoomFactor = currSpanPx / transformPrevSpanPx
+                val rotationDeltaRad = normalizeAngleRad(currAngleRad - transformPrevAngleRad)
+                transformPrevSpanPx = currSpanPx
+                transformPrevAngleRad = currAngleRad
+
+                queueEvent {
+                    renderer.applyCameraGesture(zoomFactor, rotationDeltaRad)
+                }
+            }
+            MotionEvent.ACTION_POINTER_UP,
+            MotionEvent.ACTION_UP,
+            MotionEvent.ACTION_CANCEL,
+            -> {
+                resetTransformGesture()
+            }
+        }
+    }
+
+    private fun beginTransformGesture(event: MotionEvent) {
+        isTransformGestureActive = true
+        transformPrevSpanPx = twoPointerSpanPx(event)
+        transformPrevAngleRad = twoPointerAngleRad(event)
+    }
+
+    private fun resetTransformGesture() {
+        isTransformGestureActive = false
+        transformPrevSpanPx = 0f
+        transformPrevAngleRad = 0f
+    }
+
+    private fun twoPointerSpanPx(event: MotionEvent): Float {
+        val dx = event.getX(1) - event.getX(0)
+        val dy = event.getY(1) - event.getY(0)
+        return hypot(dx, dy)
+    }
+
+    private fun twoPointerAngleRad(event: MotionEvent): Float {
+        val dx = event.getX(1) - event.getX(0)
+        val dy = event.getY(1) - event.getY(0)
+        return atan2(dy, dx)
+    }
+
+    private fun normalizeAngleRad(angle: Float): Float {
+        var out = angle
+        val pi = PI.toFloat()
+        val twoPi = (2.0 * PI).toFloat()
+        while (out > pi) out -= twoPi
+        while (out < -pi) out += twoPi
+        return out
     }
 }

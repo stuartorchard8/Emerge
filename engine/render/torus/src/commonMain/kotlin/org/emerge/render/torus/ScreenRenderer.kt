@@ -19,7 +19,7 @@ import kotlin.math.roundToLong
 import kotlin.math.sin
 
 class ScreenRenderer(val contentScale: Vec2) {
-    private var zoom: Float = 1.0f // <1 => zoom out (see multiple tiles)
+    private var zoom: Float = 10f
     @Volatile private var worldRotationRad: Float = 0f
 
     private val vao = GPU.genAndBindVertexArrays()
@@ -41,17 +41,31 @@ class ScreenRenderer(val contentScale: Vec2) {
     }
 
     fun zoomOut() {
-        zoom = max(1.0f, zoom * 0.98f)
+        zoomByFactor(0.98f)
     }
     fun zoomIn() {
-        zoom = min(20f, zoom * 1.02f)
+        zoomByFactor(1.02f)
+    }
+
+    fun zoomByFactor(factor: Float) {
+        if (!factor.isFinite() || factor <= 0f) {
+            return
+        }
+        zoom = (zoom * factor).coerceIn(1.5f, 20f)
     }
 
     fun rotateLeft() {
-        worldRotationRad -= ROTATION_STEP_RAD
+        rotateBy(ROTATION_STEP_RAD)
     }
     fun rotateRight() {
-        worldRotationRad += ROTATION_STEP_RAD
+        rotateBy(-ROTATION_STEP_RAD)
+    }
+
+    fun rotateBy(deltaRad: Float) {
+        if (!deltaRad.isFinite()) {
+            return
+        }
+        worldRotationRad += deltaRad
     }
 
     fun rotateInputToWorld(input: PhysicsInput): PhysicsInput {
@@ -149,17 +163,14 @@ class ScreenRenderer(val contentScale: Vec2) {
             val dx = wrapDelta(bx - params.viewFocus.x, params.worldSize.x)
             val dy = wrapDelta(by - params.viewFocus.y, params.worldSize.y)
 
-            var dxRot = dx
-            var dyRot = dy
             val rot = params.viewRotationRad
-            if (rot != 0f) {
-                val c = cos(rot)
-                val s = sin(rot)
-                val dxRotLocal = dx * c - dy * s
-                val dyRotLocal = dx * s + dy * c
-                dxRot = dxRotLocal
-                dyRot = dyRotLocal
-            }
+            val c = cos(rot)
+            val s = sin(rot)
+            val dxRotLocal = dx * c - dy * s
+            val dyRotLocal = dx * s + dy * c
+            var dxRot = dxRotLocal
+            var dyRot = dyRotLocal
+
             val txLocal = 2f * dxRot / scaleVecX
             val tyLocal = 2f * dyRot / scaleVecY
 
@@ -173,6 +184,11 @@ class ScreenRenderer(val contentScale: Vec2) {
             val sy = viewScaleY * syLocal
 
             val base = i * MAT4_FLOATS
+            // [ sx, 0,  0, tx]
+            // [ 0, sy,  0, ty]
+            // [ 0,  0,  1,  0]
+            // [ 0,  0,  0,  1]
+
             // Column 0
             outMatricesColMajor[base + 0] = sx
             outMatricesColMajor[base + 1] = 0f
