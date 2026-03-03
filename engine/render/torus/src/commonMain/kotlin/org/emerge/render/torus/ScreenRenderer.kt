@@ -10,12 +10,15 @@ import org.emerge.sim.core.physics.Vec2
 import org.emerge.sim.core.physics.Vec2i
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
 
 class ScreenRenderer(val contentScale: Vec2) {
     private var zoom: Float = 1.0f // <1 => zoom out (see multiple tiles)
+    private var worldRotationRad: Float = 0f
 
     private val vao = GPU.genAndBindVertexArrays()
     private var vbo: Int = GPU.genBuffers()
@@ -42,8 +45,15 @@ class ScreenRenderer(val contentScale: Vec2) {
         zoom = min(20f, zoom * 1.02f)
     }
 
+    fun rotateLeft() {
+        worldRotationRad -= ROTATION_STEP_RAD
+    }
+    fun rotateRight() {
+        worldRotationRad += ROTATION_STEP_RAD
+    }
+
     fun draw(state: PhysicsState, myId: PlayerId?) {
-        val params = WorldShaderParams.compute(state, myId, zoom)
+        val params = WorldShaderParams.compute(state, myId, zoom, worldRotationRad)
         worldShader.draw(params, segmentation=layout.worldSegmentation)
         guiShader.draw(vOffset=layout.guiVertexOffset)
         val n =
@@ -83,6 +93,7 @@ class ScreenRenderer(val contentScale: Vec2) {
     companion object {
         const val MAX_BODIES: Int = 1000
         private const val MAT4_FLOATS: Int = 16
+        private const val ROTATION_STEP_RAD: Float = 0.03f
     }
 
     private fun packBodyInstances(
@@ -120,8 +131,19 @@ class ScreenRenderer(val contentScale: Vec2) {
             val dx = wrapDelta(bx - params.viewFocus.x, params.worldSize.x)
             val dy = wrapDelta(by - params.viewFocus.y, params.worldSize.y)
 
-            val txLocal = 2f * dx / scaleVecX
-            val tyLocal = 2f * dy / scaleVecY
+            var dxRot = dx
+            var dyRot = dy
+            val rot = params.viewRotationRad
+            if (rot != 0f) {
+                val c = cos(rot)
+                val s = sin(rot)
+                val dxRotLocal = dx * c - dy * s
+                val dyRotLocal = dx * s + dy * c
+                dxRot = dxRotLocal
+                dyRot = dyRotLocal
+            }
+            val txLocal = 2f * dxRot / scaleVecX
+            val tyLocal = 2f * dyRot / scaleVecY
 
             val r = b.radius.toFloat() / Int.MAX_VALUE
             val sxLocal = 2f * r / scaleVecX

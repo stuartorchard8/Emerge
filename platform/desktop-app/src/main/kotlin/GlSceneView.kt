@@ -111,6 +111,9 @@ object GlSceneView {
         // zoom controls: '-' zoom out, '=' zoom in
         if (pressed[GLFW_KEY_MINUS]) screenRenderer.zoomOut()
         if (pressed[GLFW_KEY_EQUAL]) screenRenderer.zoomIn()
+        // camera rotation: Q left, E right
+        if (pressed[GLFW_KEY_Q]) screenRenderer.rotateLeft()
+        if (pressed[GLFW_KEY_E]) screenRenderer.rotateRight()
 
         // WASD input
         val ax = axis(pressed[GLFW_KEY_A], pressed[GLFW_KEY_D])

@@ -14,11 +14,12 @@ data class WorldShaderParams(
     val worldSize: Vec2,
     val zoom: Float,
     val viewFocus: Vec2,
+    val viewRotationRad: Float,
     val myId: PlayerId?,
     val bodies: List<CircleBody>,
 ) {
     companion object {
-        fun compute(state: PhysicsState, myId: PlayerId?, zoom: Float): WorldShaderParams {
+        fun compute(state: PhysicsState, myId: PlayerId?, zoom: Float, viewRotationRad: Float = 0f): WorldShaderParams {
             val focusWrapped: Vec2i =
                 if (myId != null) state.bodies[myId]?.pos ?: Vec2i(0, 0)
                 else Vec2i(0, 0)
@@ -33,6 +34,7 @@ data class WorldShaderParams(
                 // zoom < 1 => zoom out
                 1f/zoom,
                 viewFocus = focus,
+                viewRotationRad = viewRotationRad,
                 myId,
                 bodies = state.bodies.values.toList(),
             )

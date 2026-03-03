@@ -24,6 +24,7 @@ object WorldShaderSources {
         uniform vec2 uWorld;
         uniform float uZoom;
         uniform vec2 uCenter;
+        uniform float uRotation;
         
         out vec4 fragColor;
 
@@ -44,7 +45,11 @@ object WorldShaderSources {
             vec2 resolution = uVpMax - uVpMin;
             float aspect = resolution.x / resolution.y;
             vec2 uv = (gl_FragCoord.xy- uVpMin) / resolution;
-            vec2 cover = uCenter + (uv - 0.5) * vec2(uWorld.x*min(aspect, 1.0), -uWorld.y/max(aspect, 1.0)) * uZoom;
+            vec2 d = (uv - 0.5);
+            vec2 dWorld = d * vec2(uWorld.x*min(aspect, 1.0), -uWorld.y/max(aspect, 1.0)) * uZoom;
+            float c = cos(-uRotation), s = sin(-uRotation);
+            vec2 dWorldRot = vec2(dWorld.x*c - dWorld.y*s, dWorld.x*s + dWorld.y*c);
+            vec2 cover = uCenter + dWorldRot;
             vec2 guv = wrap2(cover, uWorld);
 
             float freq_maj = 1.0;
