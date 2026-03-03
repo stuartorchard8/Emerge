@@ -11,7 +11,7 @@ data class ScreenLayout(
     val worldPxMax: Vec2,
     val guiPxMin: Vec2,
     val guiPxMax: Vec2,
-    private val resolution: Vec2i,
+    val resolution: Vec2i,
 ) {
     val worldSegmentation: Int = 2
     val worldSliceSizeUv: Float = 1f/worldSegmentation
@@ -63,6 +63,8 @@ data class ScreenLayout(
             worldUvMin.x+segMaxX, worldUvMin.y+segMaxY,
         )
     }
+
+    fun pxToNdc(px: Vec2): Vec2 = pxToUv(px)
 
     private fun xPxToUv(px: Float): Float = px*2f/resolution.x - 1f
     private fun yPxToUv(px: Float): Float = px*2f/resolution.y - 1f

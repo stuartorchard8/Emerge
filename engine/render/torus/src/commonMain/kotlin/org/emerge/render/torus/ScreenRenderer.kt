@@ -83,10 +83,19 @@ class ScreenRenderer(val contentScale: Vec2) {
         val bodies = params.bodies
         val n = min(MAX_BODIES, bodies.size)
 
-        val res = layout.worldPxMax - layout.worldPxMin
-        val aspect = res.x / res.y
+        // Work in "world viewport local clip space" first ([-1,1] in each axis),
+        // then map into the world-viewport sub-rectangle inside full-screen NDC.
+        val worldPxSize = layout.worldPxMax - layout.worldPxMin
+        val aspect = worldPxSize.x / worldPxSize.y
         val minAspect = min(aspect, 1f)
         val maxAspect = max(aspect, 1f)
+
+        val worldNdcMin = layout.pxToNdc(layout.worldPxMin)
+        val worldNdcMax = layout.pxToNdc(layout.worldPxMax)
+        val viewScaleX = (worldNdcMax.x - worldNdcMin.x) * 0.5f
+        val viewScaleY = (worldNdcMax.y - worldNdcMin.y) * 0.5f
+        val viewCenterX = (worldNdcMax.x + worldNdcMin.x) * 0.5f
+        val viewCenterY = (worldNdcMax.y + worldNdcMin.y) * 0.5f
 
         val scaleVecX = params.worldSize.x * minAspect * params.zoom
         val scaleVecY = -params.worldSize.y / maxAspect * params.zoom
@@ -100,12 +109,17 @@ class ScreenRenderer(val contentScale: Vec2) {
             val dx = wrapDelta(bx - params.viewFocus.x, params.worldSize.x)
             val dy = wrapDelta(by - params.viewFocus.y, params.worldSize.y)
 
-            val tx = 2f * dx / scaleVecX
-            val ty = 2f * dy / scaleVecY
+            val txLocal = 2f * dx / scaleVecX
+            val tyLocal = 2f * dy / scaleVecY
 
             val r = b.radius.toFloat() / Int.MAX_VALUE
-            val sx = 2f * r / scaleVecX
-            val sy = 2f * r * invAbsScaleVecY
+            val sxLocal = 2f * r / scaleVecX
+            val syLocal = 2f * r * invAbsScaleVecY
+
+            val tx = viewScaleX * txLocal + viewCenterX
+            val ty = viewScaleY * tyLocal + viewCenterY
+            val sx = viewScaleX * sxLocal
+            val sy = viewScaleY * syLocal
 
             val base = i * MAT4_FLOATS
             // Column 0
