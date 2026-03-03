@@ -12,6 +12,8 @@ fun createDefaultInitialState(): PhysicsState = PhysicsState(
                 playerId = PlayerId(it),
                 pos = Vec2i(it, it*2)*(Int.MAX_VALUE/(ScreenRenderer.MAX_BODIES)),
                 vel = Vec2i(0, 0),
+                ang = 0,
+                angVel = it*2048,
                 radius = Int.MAX_VALUE/(ScreenRenderer.MAX_BODIES+it)*32,
             )
         }.toTypedArray()),
@@ -23,17 +25,7 @@ fun createDefaultInitialState(): PhysicsState = PhysicsState(
  * - deterministic spawn positions based on player id
  */
 fun defaultJoinPolicy(): (PhysicsState, PlayerId) -> PhysicsState =
-    { s, pid ->
-        val bodies = LinkedHashMap(s.bodies)
-        val radius = Int.MAX_VALUE/32
-        val x = 100 + (pid.value * radius)
-        val y = 250
-        bodies[pid] = CircleBody(
-            playerId = pid,
-            pos = Vec2i(x, y),
-            vel = Vec2i(0, 0),
-            radius = radius,
-        )
-        s.copy(bodies = bodies)
+    { s, _ ->
+        s   // No change to state on join
     }
 

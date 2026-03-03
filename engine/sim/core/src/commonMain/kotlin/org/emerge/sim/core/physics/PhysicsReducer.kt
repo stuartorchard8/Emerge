@@ -29,7 +29,9 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
             val vel = (body.vel + acc)//maxDamping*damping
             val pos = body.pos + vel
 
-            next[pid] = body.copy(pos = pos, vel = vel)
+            val ang = body.ang + body.angVel
+
+            next[pid] = body.copy(pos = pos, vel = vel, ang = ang)
         }
 
         // Very simple circle-circle collision resolution (pairwise)

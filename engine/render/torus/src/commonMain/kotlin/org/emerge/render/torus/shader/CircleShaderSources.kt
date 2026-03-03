@@ -39,7 +39,7 @@ object CircleShaderSources {
             if (dot(vLocal, vLocal) <= 1.0) {
                 float a = (1.0 - dot(vLocal, vLocal)/(1.5));
                 if (vLocal.x*vLocal.y >= 0.0) {
-                    fragColor = vec4(vColor, 1.0);
+                    fragColor = vec4(vColor*a*2.0, 1.0);
                 } else {
                     fragColor = vec4(vColor*a, 1.0);
                 }

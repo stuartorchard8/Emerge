@@ -44,6 +44,8 @@ object PhysicsNetCodecs {
                     w.writeInt(body.pos.y)
                     w.writeInt(body.vel.x)
                     w.writeInt(body.vel.y)
+                    w.writeInt(body.ang)
+                    w.writeInt(body.angVel)
                     w.writeInt(body.radius)
                 }
                 return w.toByteArray()
@@ -59,8 +61,17 @@ object PhysicsNetCodecs {
                     val py = c.readInt()
                     val vx = c.readInt()
                     val vy = c.readInt()
+                    val a = c.readInt()
+                    val av = c.readInt()
                     val r = c.readInt()
-                    bodies[pid] = CircleBody(pid, Vec2i(px, py), Vec2i(vx, vy), r)
+                    bodies[pid] = CircleBody(
+                        pid,
+                        Vec2i(px, py),
+                        Vec2i(vx, vy),
+                        a,
+                        av,
+                        r,
+                    )
                 }
                 return PhysicsState(bodies = bodies)
             }

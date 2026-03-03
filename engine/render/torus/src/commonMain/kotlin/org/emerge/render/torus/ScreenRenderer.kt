@@ -15,6 +15,7 @@ import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.PI
 import kotlin.math.roundToLong
 import kotlin.math.sin
 
@@ -153,7 +154,11 @@ class ScreenRenderer(val contentScale: Vec2) {
 
         val scaleVecX = params.worldSize.x * minAspect * params.zoom
         val scaleVecY = -params.worldSize.y / maxAspect * params.zoom
-        val invAbsScaleVecY = 1f / abs(scaleVecY)
+        val matT = FloatArray(MAT4_FLOATS)
+        val matR = FloatArray(MAT4_FLOATS)
+        val matS = FloatArray(MAT4_FLOATS)
+        val matTmp = FloatArray(MAT4_FLOATS)
+        val matModel = FloatArray(MAT4_FLOATS)
 
         for (i in 0 until n) {
             val b = bodies[i]
@@ -174,39 +179,22 @@ class ScreenRenderer(val contentScale: Vec2) {
 
             val r = b.radius.toFloat() / Int.MAX_VALUE
             val sxLocal = 2f * r / scaleVecX
-            val syLocal = 2f * r * invAbsScaleVecY
+            val syLocal = 2f * r / scaleVecY
 
             val tx = viewScaleX * txLocal + viewCenterX
             val ty = viewScaleY * tyLocal + viewCenterY
             val sx = viewScaleX * sxLocal
             val sy = viewScaleY * syLocal
+            val bodyRotRad = -(b.ang.toFloat() / Int.MIN_VALUE.toFloat()) * PI.toFloat()
+            val totalRotRad = bodyRotRad + rot
+            setTranslation(matT, tx, ty)
+            setRotationZ(matR, totalRotRad)
+            setScale(matS, sx, sy)
+            multiply4x4(out = matTmp, a = matS, b = matR)
+            multiply4x4(out = matModel, a = matT, b = matTmp)
 
             val base = i * MAT4_FLOATS
-            // [ sx, 0,  0, tx]
-            // [ 0, sy,  0, ty]
-            // [ 0,  0,  1,  0]
-            // [ 0,  0,  0,  1]
-
-            // Column 0
-            outMatricesColMajor[base + 0] = sx
-            outMatricesColMajor[base + 1] = 0f
-            outMatricesColMajor[base + 2] = 0f
-            outMatricesColMajor[base + 3] = 0f
-            // Column 1
-            outMatricesColMajor[base + 4] = 0f
-            outMatricesColMajor[base + 5] = sy
-            outMatricesColMajor[base + 6] = 0f
-            outMatricesColMajor[base + 7] = 0f
-            // Column 2
-            outMatricesColMajor[base + 8] = 0f
-            outMatricesColMajor[base + 9] = 0f
-            outMatricesColMajor[base + 10] = 1f
-            outMatricesColMajor[base + 11] = 0f
-            // Column 3 (translation)
-            outMatricesColMajor[base + 12] = tx
-            outMatricesColMajor[base + 13] = ty
-            outMatricesColMajor[base + 14] = 0f
-            outMatricesColMajor[base + 15] = 1f
+            copyMatrix(out = outMatricesColMajor, outOffset = base, src = matModel)
 
             outIds[i] = b.playerId.value.toFloat()
         }
@@ -224,5 +212,53 @@ class ScreenRenderer(val contentScale: Vec2) {
         if (value <= Int.MIN_VALUE.toDouble()) return Int.MIN_VALUE
         if (value >= Int.MAX_VALUE.toDouble()) return Int.MAX_VALUE
         return value.roundToLong().toInt()
+    }
+
+    private fun setTranslation(out: FloatArray, tx: Float, ty: Float) {
+        setIdentity(out)
+        out[12] = tx
+        out[13] = ty
+    }
+
+    private fun setScale(out: FloatArray, sx: Float, sy: Float) {
+        setIdentity(out)
+        out[0] = sx
+        out[5] = sy
+    }
+
+    private fun setRotationZ(out: FloatArray, rad: Float) {
+        setIdentity(out)
+        val c = cos(rad)
+        val s = sin(rad)
+        out[0] = c
+        out[1] = s
+        out[4] = -s
+        out[5] = c
+    }
+
+    private fun setIdentity(out: FloatArray) {
+        for (i in 0 until MAT4_FLOATS) out[i] = 0f
+        out[0] = 1f
+        out[5] = 1f
+        out[10] = 1f
+        out[15] = 1f
+    }
+
+    // Column-major 4x4 multiplication: out = a * b.
+    private fun multiply4x4(out: FloatArray, a: FloatArray, b: FloatArray) {
+        for (col in 0..3) {
+            val b0 = b[col * 4 + 0]
+            val b1 = b[col * 4 + 1]
+            val b2 = b[col * 4 + 2]
+            val b3 = b[col * 4 + 3]
+            out[col * 4 + 0] = a[0] * b0 + a[4] * b1 + a[8] * b2 + a[12] * b3
+            out[col * 4 + 1] = a[1] * b0 + a[5] * b1 + a[9] * b2 + a[13] * b3
+            out[col * 4 + 2] = a[2] * b0 + a[6] * b1 + a[10] * b2 + a[14] * b3
+            out[col * 4 + 3] = a[3] * b0 + a[7] * b1 + a[11] * b2 + a[15] * b3
+        }
+    }
+
+    private fun copyMatrix(out: FloatArray, outOffset: Int, src: FloatArray) {
+        src.copyInto(out, destinationOffset = outOffset, startIndex = 0, endIndex = MAT4_FLOATS)
     }
 }
