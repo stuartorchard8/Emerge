@@ -7,6 +7,7 @@ data class Vec2i(val x: Int, val y: Int) {
     operator fun minus(o: Vec2i): Vec2i = Vec2i(x - o.x, y - o.y)
     operator fun times(s: Int): Vec2i = Vec2i(x * s, y * s)
     operator fun div(s: Int): Vec2i = Vec2i(x / s, y / s)
+    operator fun div(s: Float): Vec2 = Vec2(x / s, y / s)
     fun dot(other: Vec2): Float = x*other.x + y*other.y
     fun distSq(): Long = x.toLong() * x.toLong() + y.toLong() * y.toLong()
     fun octDist(): Int = ((12L*(abs(x) + abs(y))+17L*max(abs(x), abs(y)))/29L).toInt()

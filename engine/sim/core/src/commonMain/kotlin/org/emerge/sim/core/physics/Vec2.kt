@@ -8,6 +8,7 @@ data class Vec2(val x: Float, val y: Float) {
     operator fun minus(o: Vec2): Vec2 = Vec2(x - o.x, y - o.y)
     operator fun minus(s: Float): Vec2 = Vec2(x - s, y - s)
     operator fun times(s: Float): Vec2 = Vec2(x * s, y * s)
+    operator fun times(s: Int): Vec2i = Vec2i((x * s).roundToInt(), (y * s).roundToInt())
     operator fun div(s: Float): Vec2 = Vec2(x / s, y / s)
     operator fun div(o: Vec2): Vec2 = Vec2(x / o.x, y / o.y)
     operator fun div(o: Vec2i): Vec2 = Vec2(x / o.x, y / o.y)

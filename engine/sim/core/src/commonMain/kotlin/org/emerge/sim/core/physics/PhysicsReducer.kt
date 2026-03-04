@@ -30,8 +30,9 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
             val pos = body.pos + vel
 
             val ang = body.ang + body.angVel
+            val angVel = body.angVel
 
-            next[pid] = body.copy(pos = pos, vel = vel, ang = ang)
+            next[pid] = body.copy(pos = pos, vel = vel, ang = ang, angVel = angVel)
         }
 
         // Very simple circle-circle collision resolution (pairwise)
@@ -54,21 +55,26 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val minDistSq = minDist.toLong() * minDist.toLong()
                 if (distSq >= minDistSq) continue
 
-                val norm = delta.estNorm()
-                val dist = delta.dot(norm)
-                if (dist == 0f) continue
+                val dist = longISqrt(distSq).toInt()
+                if (dist == 0) continue
+                val norm = delta/dist.toFloat()
+
+                val perp = Vec2(norm.y, -norm.x)
 
                 val pen = minDist-dist
-                val pushF = norm*pen
-                val push = Vec2i(pushF.x.roundToInt(), pushF.y.roundToInt())
+                val push = norm*pen
 
                 val velDelta = b.vel-a.vel
-                val velAlongNorm = max(0f, velDelta.dot(norm))*0.999f
+                val velAlongNorm = max(0f, velDelta.dot(norm))*0.9f
                 val pushVel = norm*velAlongNorm
                 val pushVelI = Vec2i(pushVel.x.roundToInt(), pushVel.y.roundToInt())
 
-                next[aId] = a.copy(vel = a.vel+pushVelI, pos = a.pos+push/2)
-                next[bId] = b.copy(vel = b.vel-pushVelI, pos = b.pos-push/2)
+                val angVelDiff = (a.angVel+b.angVel)
+                val velAlongPerp = velDelta.dot(perp)*0.9f
+                val pushAngVel = velAlongPerp.roundToInt()-angVelDiff/100
+
+                next[aId] = a.copy(vel = a.vel+pushVelI, pos = a.pos+push/2, angVel = a.angVel+pushAngVel)
+                next[bId] = b.copy(vel = b.vel-pushVelI, pos = b.pos-push/2, angVel = b.angVel+pushAngVel)
             }
         }
 
