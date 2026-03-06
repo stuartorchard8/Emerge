@@ -8,8 +8,7 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2
-import org.emerge.sim.core.physics.Vec2i
-import kotlin.math.abs
+import org.emerge.sim.core.physics.Frac2
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.floor
@@ -29,11 +28,11 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val worldShader = WorldShader()
     private val guiShader = GuiShader()
     private val circleShader = CircleShader()
-    private var layout: ScreenLayout = ScreenLayout.compute(Vec2i(1,1), contentScale)
+    private var layout: ScreenLayout = ScreenLayout.compute(Frac2(1,1), contentScale)
     private val bodyInstanceMatrices = FloatArray(MAX_BODIES * MAT4_FLOATS)
     private val bodyInstanceIds = FloatArray(MAX_BODIES)
 
-    fun setResolution(resolution: Vec2i) {
+    fun setResolution(resolution: Frac2) {
         GPU.setViewport(0, 0, resolution.x, resolution.y)
         layout = ScreenLayout.compute(resolution, contentScale)
         layout.putVerts(vbo)

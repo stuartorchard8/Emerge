@@ -5,7 +5,7 @@ import org.emerge.demo.physics.PhysicsFrame
 import org.emerge.render.torus.ScreenRenderer
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.Vec2
-import org.emerge.sim.core.physics.Vec2i
+import org.emerge.sim.core.physics.Frac2
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
@@ -20,7 +20,7 @@ class TorusGlRenderer(
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
-        screenRenderer.setResolution(Vec2i(width, height))
+        screenRenderer.setResolution(Frac2(width, height))
     }
 
     override fun onDrawFrame(gl: GL10?) {

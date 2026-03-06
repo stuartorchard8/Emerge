@@ -1,7 +1,7 @@
 package org.emerge.render.torus
 
 import org.emerge.sim.core.physics.Vec2
-import org.emerge.sim.core.physics.Vec2i
+import org.emerge.sim.core.physics.Frac2
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -11,7 +11,7 @@ data class ScreenLayout(
     val worldPxMax: Vec2,
     val guiPxMin: Vec2,
     val guiPxMax: Vec2,
-    val resolution: Vec2i,
+    val resolution: Frac2,
 ) {
     val worldSegmentation: Int = 2
     val worldSliceSizeUv: Float = 1f/worldSegmentation
@@ -82,7 +82,7 @@ data class ScreenLayout(
     }
 
     companion object {
-        fun compute(resolution: Vec2i, contentScale: Vec2): ScreenLayout {
+        fun compute(resolution: Frac2, contentScale: Vec2): ScreenLayout {
             val guiSizeDp = 80f
             val useYLayout = (resolution.x < resolution.y)
             val guiSizePx = if (useYLayout) guiSizeDp*contentScale.y else guiSizeDp*contentScale.x

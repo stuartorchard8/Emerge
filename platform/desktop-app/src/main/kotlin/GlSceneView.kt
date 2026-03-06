@@ -96,7 +96,7 @@ object GlSceneView {
             val sizeY = st.mallocInt(1)
             glfwGetFramebufferSize(window, sizeX, sizeY)
 
-            screenRenderer.setResolution(Vec2i(
+            screenRenderer.setResolution(Frac2(
                 max(1, sizeX[0]),
                 max(1, sizeY[0]),
             ))

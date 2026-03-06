@@ -4,8 +4,8 @@ import org.emerge.sim.core.PlayerId
 
 data class CircleBody(
     val playerId: PlayerId,
-    val pos: Vec2i,
-    val vel: Vec2i,
+    val pos: Frac2,
+    val vel: Frac2,
     val ang: Int,   // -MAX_INT = -180 degrees, MAX_INT = 179.999* degrees
     val angVel: Int,
     val radius: Int,

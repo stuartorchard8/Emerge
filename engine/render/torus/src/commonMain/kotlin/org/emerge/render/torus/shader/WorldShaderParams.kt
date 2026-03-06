@@ -1,14 +1,10 @@
 package org.emerge.render.torus.shader
 
-import org.emerge.render.torus.ScreenLayout
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.CircleBody
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2
-import org.emerge.sim.core.physics.Vec2i
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.times
+import org.emerge.sim.core.physics.Frac2
 
 data class WorldShaderParams(
     val worldSize: Vec2,
@@ -20,9 +16,9 @@ data class WorldShaderParams(
 ) {
     companion object {
         fun compute(state: PhysicsState, myId: PlayerId?, zoom: Float, viewRotationRad: Float = 0f): WorldShaderParams {
-            val focusWrapped: Vec2i =
-                if (myId != null) state.bodies[myId]?.pos ?: Vec2i(0, 0)
-                else Vec2i(0, 0)
+            val focusWrapped: Frac2 =
+                if (myId != null) state.bodies[myId]?.pos ?: Frac2(0, 0)
+                else Frac2(0, 0)
 
             val focus = Vec2(
                 focusWrapped.x.toFloat()/Int.MAX_VALUE,

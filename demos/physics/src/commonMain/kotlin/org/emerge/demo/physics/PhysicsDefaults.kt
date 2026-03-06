@@ -4,14 +4,14 @@ import org.emerge.render.torus.ScreenRenderer
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.CircleBody
 import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.Vec2i
+import org.emerge.sim.core.physics.Frac2
 
 fun createDefaultInitialState(): PhysicsState = PhysicsState(
         bodies = mapOf(*((0..<ScreenRenderer.MAX_BODIES).map {
             PlayerId(it) to CircleBody(
                 playerId = PlayerId(it),
-                pos = Vec2i(it, it*2)*(Int.MAX_VALUE/(ScreenRenderer.MAX_BODIES)),
-                vel = Vec2i(0, 0),
+                pos = Frac2(it, it*2)*(Int.MAX_VALUE/(ScreenRenderer.MAX_BODIES)),
+                vel = Frac2(0, 0),
                 ang = 0,
                 angVel = 0,
                 radius = Int.MAX_VALUE/(ScreenRenderer.MAX_BODIES)*16,
