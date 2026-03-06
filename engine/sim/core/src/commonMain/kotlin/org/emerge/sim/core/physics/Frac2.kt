@@ -9,10 +9,17 @@ data class Frac2(val x: Int, val y: Int) {
     operator fun div(s: Int): Frac2 = Frac2(x / s, y / s)
     operator fun div(s: Float): Vec2 = Vec2(x / s, y / s)
     fun dot(other: Vec2): Float = x*other.x + y*other.y
+    fun dot(other: Norm): Int = ((
+        x.toLong()*other.x.toLong() +
+        y.toLong()*other.y.toLong()
+    )/Int.MAX_VALUE.toLong()).toInt()
     val distSq by lazy { x.toLong() * x.toLong() + y.toLong() * y.toLong() }
     val len by lazy { longISqrt(distSq).toInt() }
-    val norm by lazy { Vec2(x.toFloat()/len, y.toFloat()/len) }
-    val perp by lazy { Vec2(norm.y, -norm.x) }
+    val norm by lazy { Norm(
+        (x.toLong()*Int.MAX_VALUE.toLong()/len.toLong()).toInt(),
+        (y.toLong()*Int.MAX_VALUE.toLong()/len.toLong()).toInt()
+    ) }
+    val perp by lazy { Norm(norm.y, -norm.x) }
     fun octDist(): Int = ((12L*(abs(x) + abs(y))+17L*max(abs(x), abs(y)))/29L).toInt()
     fun octNorm(): Vec2 = Vec2(
         x.toFloat(),
@@ -48,4 +55,11 @@ data class Frac2(val x: Int, val y: Int) {
             return result
         }
     }
+}
+
+data class Norm(val x: Int, val y: Int) {
+    operator fun times(s: Int): Frac2 = Frac2(
+        ((x.toLong() * s.toLong())/Int.MAX_VALUE.toLong()).toInt(),
+        ((y.toLong() * s.toLong())/Int.MAX_VALUE.toLong()).toInt(),
+    )
 }
