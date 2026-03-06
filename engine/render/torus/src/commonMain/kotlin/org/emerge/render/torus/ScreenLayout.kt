@@ -11,7 +11,7 @@ data class ScreenLayout(
     val worldPxMax: Vec2,
     val guiPxMin: Vec2,
     val guiPxMax: Vec2,
-    val resolution: Frac2,
+    val resolution: Vec2,
 ) {
     val worldSegmentation: Int = 2
     val worldSliceSizeUv: Float = 1f/worldSegmentation
@@ -82,7 +82,7 @@ data class ScreenLayout(
     }
 
     companion object {
-        fun compute(resolution: Frac2, contentScale: Vec2): ScreenLayout {
+        fun compute(resolution: Vec2, contentScale: Vec2): ScreenLayout {
             val guiSizeDp = 80f
             val useYLayout = (resolution.x < resolution.y)
             val guiSizePx = if (useYLayout) guiSizeDp*contentScale.y else guiSizeDp*contentScale.x
@@ -92,16 +92,16 @@ data class ScreenLayout(
                     if (useYLayout) guiSizePx else 0f,
                 ),
                 worldPxMax = Vec2(
-                    if (useYLayout) resolution.x.toFloat() else resolution.x - guiSizePx,
-                    resolution.y.toFloat(),
+                    if (useYLayout) resolution.x else resolution.x - guiSizePx,
+                    resolution.y,
                 ),
                 guiPxMin = Vec2(
                     if (useYLayout) 0f else resolution.x - guiSizePx,
                     0f,
                 ),
                 guiPxMax = Vec2(
-                    resolution.x.toFloat(),
-                    if (useYLayout) guiSizePx else resolution.y.toFloat(),
+                    resolution.x,
+                    if (useYLayout) guiSizePx else resolution.y,
                 ),
                 resolution,
             )

@@ -28,12 +28,12 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val worldShader = WorldShader()
     private val guiShader = GuiShader()
     private val circleShader = CircleShader()
-    private var layout: ScreenLayout = ScreenLayout.compute(Frac2(1,1), contentScale)
+    private var layout: ScreenLayout = ScreenLayout.compute(Vec2(1f,1f), contentScale)
     private val bodyInstanceMatrices = FloatArray(MAX_BODIES * MAT4_FLOATS)
     private val bodyInstanceIds = FloatArray(MAX_BODIES)
 
-    fun setResolution(resolution: Frac2) {
-        GPU.setViewport(0, 0, resolution.x, resolution.y)
+    fun setResolution(resolution: Vec2) {
+        GPU.setViewport(0, 0, resolution.x.toInt(), resolution.y.toInt())
         layout = ScreenLayout.compute(resolution, contentScale)
         layout.putVerts(vbo)
         worldShader.useLayout(layout)

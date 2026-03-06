@@ -20,7 +20,7 @@ class TorusGlRenderer(
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
-        screenRenderer.setResolution(Frac2(width, height))
+        screenRenderer.setResolution(Vec2(width.toFloat(), height.toFloat()))
     }
 
     override fun onDrawFrame(gl: GL10?) {
