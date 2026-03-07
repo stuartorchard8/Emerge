@@ -5,10 +5,6 @@ import kotlin.math.*
 data class Frac2(val x: Int, val y: Int) {
     operator fun plus(o: Frac2): Frac2 = Frac2(x + o.x, y + o.y)
     operator fun minus(o: Frac2): Frac2 = Frac2(x - o.x, y - o.y)
-    operator fun times(s: Int): Frac2 = Frac2(x * s, y * s)
-    operator fun div(s: Int): Frac2 = Frac2(x / s, y / s)
-    operator fun div(s: Float): Vec2 = Vec2(x / s, y / s)
-    fun dot(other: Vec2): Float = x*other.x + y*other.y
     fun dot(other: Norm): Int = ((
         x.toLong()*other.x.toLong() +
         y.toLong()*other.y.toLong()
@@ -19,7 +15,6 @@ data class Frac2(val x: Int, val y: Int) {
         (x.toLong()*Int.MAX_VALUE.toLong()/len.toLong()).toInt(),
         (y.toLong()*Int.MAX_VALUE.toLong()/len.toLong()).toInt()
     ) }
-    val perp by lazy { Norm(norm.y, -norm.x) }
     fun octDist(): Int = ((12L*(abs(x) + abs(y))+17L*max(abs(x), abs(y)))/29L).toInt()
     fun octNorm(): Vec2 = Vec2(
         x.toFloat(),
@@ -35,7 +30,8 @@ data class Frac2(val x: Int, val y: Int) {
         return oct
     }
 
-    fun smallerThan(minDist: Int): Boolean = distSq < minDist.toLong()*minDist.toLong()
+    operator fun compareTo(o: Int): Int = (distSq - o.toLong()*o.toLong()).sign
+    operator fun compareTo(o: Frac2): Int = (distSq - o.distSq).sign
 
     companion object {
         private fun longISqrt(n: Long): Long {
@@ -62,4 +58,15 @@ data class Norm(val x: Int, val y: Int) {
         ((x.toLong() * s.toLong())/Int.MAX_VALUE.toLong()).toInt(),
         ((y.toLong() * s.toLong())/Int.MAX_VALUE.toLong()).toInt(),
     )
+    val perp by lazy { Norm(y, -x) }
+
+    companion object {
+        fun fromAngle(angle: Frac): Norm {
+            val rad: Float = (angle.raw.toFloat() / UInt.MAX_VALUE.toFloat()) * 2f * PI.toFloat()
+            return Norm(
+                (cos(rad)*Int.MAX_VALUE.toFloat()).roundToInt(),
+                (sin(rad)*Int.MAX_VALUE.toFloat()).roundToInt(),
+            )
+        }
+    }
 }

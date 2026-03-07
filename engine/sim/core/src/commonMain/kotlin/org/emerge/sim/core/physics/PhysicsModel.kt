@@ -6,8 +6,8 @@ data class CircleBody(
     val playerId: PlayerId,
     val pos: Frac2,
     val vel: Frac2,
-    val ang: Int,   // -MAX_INT = -180 degrees, MAX_INT = 179.999* degrees
-    val angVel: Int,
+    val ang: Frac,
+    val angVel: Frac,
     val radius: Int,
 )
 

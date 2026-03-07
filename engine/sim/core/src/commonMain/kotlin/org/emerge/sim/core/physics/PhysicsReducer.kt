@@ -29,7 +29,7 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
             val vel = (body.vel + acc)//maxDamping*damping
             val pos = body.pos + vel
 
-            val ang = body.ang + body.angVel
+            val ang = Frac(body.ang.raw + body.angVel.raw)
             val angVel = body.angVel
 
             next[pid] = body.copy(pos = pos, vel = vel, ang = ang, angVel = angVel)
@@ -51,7 +51,7 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val yPen = minDist-abs(delta.y)
                 if (xPen <= 0 || yPen <= 0) continue
 
-                if (!delta.smallerThan(minDist)) continue
+                if (delta >= minDist) continue
 
                 if (delta.len == 0) continue
 
@@ -60,15 +60,15 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
 
                 val velDelta = b.vel-a.vel
                 val velAlongNorm = max(0, velDelta.dot(delta.norm))
-                val pushVel = delta.norm*velAlongNorm
+                val pushVel = delta.norm*(velAlongNorm/2)
                 val pushVelI = Frac2(pushVel.x, pushVel.y)
 
                 val angVelDiff = (a.angVel+b.angVel)
-                val velAlongPerp = velDelta.dot(delta.perp)
-                val pushAngVel = velAlongPerp-angVelDiff/100
+                val velAlongPerp = velDelta.dot(delta.norm.perp)
+                val pushAngVel = Frac(velAlongPerp-angVelDiff.raw/32)
 
-                next[aId] = a.copy(vel = a.vel+pushVelI, pos = a.pos+push/2, angVel = a.angVel+pushAngVel)
-                next[bId] = b.copy(vel = b.vel-pushVelI, pos = b.pos-push/2, angVel = b.angVel+pushAngVel)
+                next[aId] = a.copy(vel = a.vel+pushVelI, pos = a.pos+push, angVel = a.angVel+pushAngVel)
+                next[bId] = b.copy(vel = b.vel-pushVelI, pos = b.pos-push, angVel = b.angVel+pushAngVel)
             }
         }
 

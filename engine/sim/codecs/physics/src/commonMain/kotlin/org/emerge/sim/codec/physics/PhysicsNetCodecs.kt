@@ -4,6 +4,7 @@ import org.emerge.net.codec.ByteCursor
 import org.emerge.net.codec.ByteWriter
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.CircleBody
+import org.emerge.sim.core.physics.Frac
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Frac2
@@ -44,8 +45,8 @@ object PhysicsNetCodecs {
                     w.writeInt(body.pos.y)
                     w.writeInt(body.vel.x)
                     w.writeInt(body.vel.y)
-                    w.writeInt(body.ang)
-                    w.writeInt(body.angVel)
+                    w.writeInt(body.ang.raw)
+                    w.writeInt(body.angVel.raw)
                     w.writeInt(body.radius)
                 }
                 return w.toByteArray()
@@ -68,8 +69,8 @@ object PhysicsNetCodecs {
                         pid,
                         Frac2(px, py),
                         Frac2(vx, vy),
-                        a,
-                        av,
+                        Frac(a),
+                        Frac(av),
                         r,
                     )
                 }

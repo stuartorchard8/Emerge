@@ -8,7 +8,6 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2
-import org.emerge.sim.core.physics.Frac2
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.floor
@@ -19,7 +18,7 @@ import kotlin.math.roundToLong
 import kotlin.math.sin
 
 class ScreenRenderer(val contentScale: Vec2) {
-    private var zoom: Float = 10f
+    private var zoom: Float = 1.5f
     @Volatile private var worldRotationRad: Float = 0f
 
     private val vao = GPU.genAndBindVertexArrays()
@@ -172,7 +171,7 @@ class ScreenRenderer(val contentScale: Vec2) {
             // Scale then Rotate
             val bodyScale = b.radius.toFloat() / Int.MAX_VALUE
             setScale(matS, bodyScale, bodyScale)
-            val bodyRotRad = -(b.ang.toFloat() / Int.MIN_VALUE.toFloat()) * PI.toFloat()
+            val bodyRotRad = -b.ang.toFloat() * 2f * PI.toFloat()
             setRotationZ(matR, bodyRotRad)
             multiply4x4(out = matTmp, a = matR, b = matS)
 
