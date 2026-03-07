@@ -1,19 +1,8 @@
 package org.emerge.sim.core.physics
 
-import kotlin.math.abs
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
-import kotlin.math.max
-import kotlin.math.roundToInt
 
-/**
- * Simple deterministic "arcade physics":
- * - fixed timestep = 1 tick
- * - acceleration from input
- * - damping
- * - true torus topology (wrap-around in X/Y)
- * - naive circle-circle separation + velocity swap-ish
- */
 class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
 
     override fun reduce(cfg: PhysicsConfig, state: PhysicsState, inputs: Map<PlayerId, PhysicsInput>): PhysicsState {
@@ -24,7 +13,7 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
             val inp = inputs[pid] ?: PhysicsInput(0, 0)
             val ax = inp.ax / cfg.accelFactorInv
             val ay = inp.ay / cfg.accelFactorInv
-            val acc = Frac2(ax, ay)
+            val acc = Frac2(Frac(ax), Frac(ay))
 
             val vel = (body.vel + acc)//maxDamping*damping
             val pos = body.pos + vel
@@ -35,7 +24,7 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
             next[pid] = body.copy(pos = pos, vel = vel, ang = ang, angVel = angVel)
         }
 
-        // Very simple circle-circle collision resolution (pairwise)
+        // Circle-circle collision resolution (pairwise)
         val ids = next.keys.toList()
         for (i in 0 until ids.size) {
             for (j in i + 1 until ids.size) {
@@ -49,26 +38,26 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val minDist = a.radius + b.radius
                 val xPen = minDist-abs(delta.x)
                 val yPen = minDist-abs(delta.y)
-                if (xPen <= 0 || yPen <= 0) continue
+                if (xPen.sign <= 0 || yPen.sign <= 0) continue
 
                 if (delta >= minDist) continue
 
-                if (delta.len == 0) continue
+                if (delta.lenSq.raw == 0) continue
+                delta.capMax(minDist)
 
                 val pen = minDist-delta.len
-                val push = delta.norm*pen
+                val push = delta.norm*(pen/2)
 
                 val velDelta = b.vel-a.vel
-                val velAlongNorm = max(0, velDelta.dot(delta.norm))
-                val pushVel = delta.norm*(velAlongNorm/2)
-                val pushVelI = Frac2(pushVel.x, pushVel.y)
+                val velAlongNorm = velDelta.dot(delta.norm)
+                val pushVel = if (velAlongNorm.sign > 0) delta.norm*(velAlongNorm) else Frac2.zero
 
                 val angVelDiff = (a.angVel+b.angVel)
-                val velAlongPerp = velDelta.dot(delta.norm.perp)
-                val pushAngVel = Frac(velAlongPerp-angVelDiff.raw/32)
+                val velAlongPerp = -velDelta.dot(delta.norm.perp)
+                val pushAngVel = velAlongPerp-angVelDiff/32
 
-                next[aId] = a.copy(vel = a.vel+pushVelI, pos = a.pos+push, angVel = a.angVel+pushAngVel)
-                next[bId] = b.copy(vel = b.vel-pushVelI, pos = b.pos-push, angVel = b.angVel+pushAngVel)
+                next[aId] = a.copy(vel = a.vel+pushVel, pos = a.pos+push, angVel = a.angVel+pushAngVel)
+                next[bId] = b.copy(vel = b.vel-pushVel, pos = b.pos-push, angVel = b.angVel+pushAngVel)
             }
         }
 

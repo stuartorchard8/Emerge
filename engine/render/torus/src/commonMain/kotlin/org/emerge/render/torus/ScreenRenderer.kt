@@ -31,6 +31,12 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val bodyInstanceMatrices = FloatArray(MAX_BODIES * MAT4_FLOATS)
     private val bodyInstanceIds = FloatArray(MAX_BODIES)
 
+    companion object {
+        const val MAX_BODIES: Int = 50
+        private const val MAT4_FLOATS: Int = 16
+        private const val ROTATION_STEP_RAD: Float = 0.03f
+    }
+
     fun setResolution(resolution: Vec2) {
         GPU.setViewport(0, 0, resolution.x.toInt(), resolution.y.toInt())
         layout = ScreenLayout.compute(resolution, contentScale)
@@ -121,11 +127,6 @@ class ScreenRenderer(val contentScale: Vec2) {
             GPU.deleteVertexArrays(vao)
         }
     }
-    companion object {
-        const val MAX_BODIES: Int = 1000
-        private const val MAT4_FLOATS: Int = 16
-        private const val ROTATION_STEP_RAD: Float = 0.03f
-    }
 
     private fun packBodyInstances(
         params: WorldShaderParams,
@@ -145,7 +146,7 @@ class ScreenRenderer(val contentScale: Vec2) {
 
         // Rotate then Scale
         setRotationZ(matR, params.viewRotationRad)
-        val worldPxSize = Vec2(layout.resolution.x.toFloat(), layout.resolution.y.toFloat())
+        val worldPxSize = Vec2(layout.resolution.x, layout.resolution.y)
         val aspect = worldPxSize.x / worldPxSize.y
         val minAspect = min(aspect, 1f)
         val maxAspect = max(aspect, 1f)
@@ -165,11 +166,11 @@ class ScreenRenderer(val contentScale: Vec2) {
         val matModel = FloatArray(MAT4_FLOATS)
         for (i in 0 until n) {
             val b = bodies[i]
-            val bx = b.pos.x.toFloat() / Int.MAX_VALUE
-            val by = b.pos.y.toFloat() / Int.MAX_VALUE
+            val bx = b.pos.x.toFloat()
+            val by = b.pos.y.toFloat()
 
             // Scale then Rotate
-            val bodyScale = b.radius.toFloat() / Int.MAX_VALUE
+            val bodyScale = b.radius.toFloat()
             setScale(matS, bodyScale, bodyScale)
             val bodyRotRad = -b.ang.toFloat() * 2f * PI.toFloat()
             setRotationZ(matR, bodyRotRad)

@@ -9,17 +9,18 @@ import org.emerge.sim.core.physics.Frac2
 import org.emerge.sim.core.physics.Norm
 
 fun createDefaultInitialState(): PhysicsState = PhysicsState(
-        bodies = mapOf(*((0..<ScreenRenderer.MAX_BODIES).map {
+    bodies = mapOf(
+        *((0..<ScreenRenderer.MAX_BODIES).map {
             PlayerId(it) to CircleBody(
                 playerId = PlayerId(it),
-                pos = Norm.fromAngle(Frac(it, ScreenRenderer.MAX_BODIES.toUInt())) * (Int.MAX_VALUE/2),
-                vel = Frac2(0, 0),
+                pos = Norm.fromAngle(Frac(it, ScreenRenderer.MAX_BODIES.toUInt())) * Frac(3, 8u),
+                vel = Frac2.zero,
                 ang = Frac(0),
                 angVel = Frac(0),
-                radius = Int.MAX_VALUE/(ScreenRenderer.MAX_BODIES)*16,
+                radius = Frac(1, 32u),
             )
         }.toTypedArray()),
-    )
+    ),
 )
 
 /**

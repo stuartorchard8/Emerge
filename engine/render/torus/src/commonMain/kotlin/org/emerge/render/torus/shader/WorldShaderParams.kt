@@ -17,12 +17,12 @@ data class WorldShaderParams(
     companion object {
         fun compute(state: PhysicsState, myId: PlayerId?, zoom: Float, viewRotationRad: Float = 0f): WorldShaderParams {
             val focusWrapped: Frac2 =
-                if (myId != null) state.bodies[myId]?.pos ?: Frac2(0, 0)
-                else Frac2(0, 0)
+                if (myId != null) state.bodies[myId]?.pos ?: Frac2.zero
+                else Frac2.zero
 
             val focus = Vec2(
-                focusWrapped.x.toFloat()/Int.MAX_VALUE,
-                focusWrapped.y.toFloat()/Int.MAX_VALUE,
+                focusWrapped.x.toFloat(),
+                focusWrapped.y.toFloat(),
             )
 
             return WorldShaderParams(

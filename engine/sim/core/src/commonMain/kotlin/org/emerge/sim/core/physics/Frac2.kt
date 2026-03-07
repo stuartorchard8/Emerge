@@ -2,43 +2,35 @@ package org.emerge.sim.core.physics
 
 import kotlin.math.*
 
-data class Frac2(val x: Int, val y: Int) {
+data class Frac2(val x: Frac, val y: Frac) {
     operator fun plus(o: Frac2): Frac2 = Frac2(x + o.x, y + o.y)
     operator fun minus(o: Frac2): Frac2 = Frac2(x - o.x, y - o.y)
-    fun dot(other: Norm): Int = ((
-        x.toLong()*other.x.toLong() +
-        y.toLong()*other.y.toLong()
-    )/Int.MAX_VALUE.toLong()).toInt()
-    val distSq by lazy { x.toLong() * x.toLong() + y.toLong() * y.toLong() }
-    val len by lazy { longISqrt(distSq).toInt() }
-    val norm by lazy { Norm(
-        (x.toLong()*Int.MAX_VALUE.toLong()/len.toLong()).toInt(),
-        (y.toLong()*Int.MAX_VALUE.toLong()/len.toLong()).toInt()
-    ) }
-    fun octDist(): Int = ((12L*(abs(x) + abs(y))+17L*max(abs(x), abs(y)))/29L).toInt()
-    fun octNorm(): Vec2 = Vec2(
-        x.toFloat(),
-        y.toFloat(),
-    )/octDist().toFloat()
-
-    fun estNorm(): Vec2 {
-        val distSq = distSq
-        if (distSq == 0L) return Vec2(0f, 0f)
-        val neg = 1-distSq
-        val flower = neg/2/distSq
-        val oct = octNorm()*(1f+flower)
-        return oct
+    fun dot(other: Norm): Frac = (
+        x*other.x +
+        y*other.y
+    )
+    val lenSq by lazy { x*x + y*y }
+    val len by lazy {
+        if (x.raw == 0) abs(y)
+        else if (y.raw == 0) abs(x)
+        else fracSqrt(lenSq, lenMax.toLong())
     }
+    private var lenMax = abs(x)+abs(y)
+    fun capMax(v: Frac) { lenMax.coerceAtLeast(v) }
+    val norm by lazy { Norm(
+        x/len,
+        y/len,
+    ) }
 
-    operator fun compareTo(o: Int): Int = (distSq - o.toLong()*o.toLong()).sign
-    operator fun compareTo(o: Frac2): Int = (distSq - o.distSq).sign
+    operator fun compareTo(o: Frac): Int = (lenSq - o*o).sign
+    operator fun compareTo(o: Frac2): Int = (lenSq - o.lenSq).sign
 
     companion object {
-        private fun longISqrt(n: Long): Long {
+        private fun longISqrt(n: Long, min: Long = 2L, max: Long = Int.MAX_VALUE.toLong()): Long {
             if (n < 2) return n
-            var low = 1L
-            var high = n / 2
-            var result = 1L
+            var low = min
+            var high = max
+            var result = min
             while (low <= high) {
                 val mid = low + (high - low) / 2
                 if (mid <= n / mid) {
@@ -50,13 +42,27 @@ data class Frac2(val x: Int, val y: Int) {
             }
             return result
         }
+        val sqrtMaxInt = longISqrt(Int.MAX_VALUE.toLong())
+        private fun fracSqrt(f: Frac, max: Long): Frac {
+            val n = f.toLong()*Int.MAX_VALUE.toLong()
+            val x = longISqrt(n, sqrtMaxInt, max)
+
+            return Frac(x.toInt())
+        }
+
+        val zero get() = Frac2(
+            Frac(0),
+            Frac(0),
+        )
+
+        fun raw(x: Int, y: Int) = Frac2(Frac(x), Frac(y))
     }
 }
 
-data class Norm(val x: Int, val y: Int) {
-    operator fun times(s: Int): Frac2 = Frac2(
-        ((x.toLong() * s.toLong())/Int.MAX_VALUE.toLong()).toInt(),
-        ((y.toLong() * s.toLong())/Int.MAX_VALUE.toLong()).toInt(),
+data class Norm(val x: Frac, val y: Frac) {
+    operator fun times(s: Frac): Frac2 = Frac2(
+        x*s,
+        y*s,
     )
     val perp by lazy { Norm(y, -x) }
 
@@ -64,8 +70,8 @@ data class Norm(val x: Int, val y: Int) {
         fun fromAngle(angle: Frac): Norm {
             val rad: Float = (angle.raw.toFloat() / UInt.MAX_VALUE.toFloat()) * 2f * PI.toFloat()
             return Norm(
-                (cos(rad)*Int.MAX_VALUE.toFloat()).roundToInt(),
-                (sin(rad)*Int.MAX_VALUE.toFloat()).roundToInt(),
+                Frac((cos(rad)*Int.MAX_VALUE.toFloat()).roundToInt()),
+                Frac((sin(rad)*Int.MAX_VALUE.toFloat()).roundToInt()),
             )
         }
     }
