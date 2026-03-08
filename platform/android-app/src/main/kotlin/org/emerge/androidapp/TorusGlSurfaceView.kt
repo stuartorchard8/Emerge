@@ -41,6 +41,10 @@ internal class TorusGlSurfaceView(
         }
 
     @Volatile private var currentTouchInput: PhysicsInput = PhysicsInput.ZERO
+    @Volatile private var singleTouchActive: Boolean = false
+    @Volatile private var singleTouchX: Float = 0f
+    @Volatile private var singleTouchY: Float = 0f
+    @Volatile private var singleTouchActionMasked: Int = MotionEvent.ACTION_CANCEL
     private var isTransformGestureActive: Boolean = false
     private var transformPrevSpanPx: Float = 0f
     private var transformPrevAngleRad: Float = 0f
@@ -57,6 +61,7 @@ internal class TorusGlSurfaceView(
     private val handler = Handler(Looper.getMainLooper())
     private val tickRunnable = object : Runnable {
         override fun run() {
+            currentTouchInput = computeTouchInputForCurrentOrientation()
             val f: PhysicsFrame = controller.tick(currentTouchInput)
             synchronized(stateLock) {
                 latestFrame = f
@@ -96,19 +101,13 @@ internal class TorusGlSurfaceView(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.pointerCount >= 2) {
             handleTransformTouch(event)
+            clearSingleTouchState()
             currentTouchInput = PhysicsInput.ZERO
             return true
         }
 
         resetTransformGesture()
-        val rawInput = TouchInputMapper.toPhysicsInput(
-            widthPx = width,
-            heightPx = height,
-            x = event.x,
-            y = event.y,
-            actionMasked = event.actionMasked,
-        )
-        currentTouchInput = rawInput
+        updateSingleTouchState(event)
         return true
     }
 
@@ -181,5 +180,46 @@ internal class TorusGlSurfaceView(
         while (out > pi) out -= twoPi
         while (out < -pi) out += twoPi
         return out
+    }
+
+    private fun currentPlayerAngleTurns(): Float =
+        synchronized(stateLock) {
+            val pid = latestFrame.myId ?: return@synchronized 0f
+            latestFrame.state.bodies[pid]?.ang?.toFloat() ?: 0f
+        }
+
+    private fun clearSingleTouchState() {
+        singleTouchActive = false
+        singleTouchX = 0f
+        singleTouchY = 0f
+        singleTouchActionMasked = MotionEvent.ACTION_CANCEL
+    }
+
+    private fun updateSingleTouchState(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_UP,
+            MotionEvent.ACTION_CANCEL,
+            -> clearSingleTouchState()
+
+            else -> {
+                singleTouchActive = true
+                singleTouchX = event.x
+                singleTouchY = event.y
+                singleTouchActionMasked = event.actionMasked
+            }
+        }
+    }
+
+    private fun computeTouchInputForCurrentOrientation(): PhysicsInput {
+        if (!singleTouchActive) return PhysicsInput.ZERO
+        if (width <= 0 || height <= 0) return PhysicsInput.ZERO
+        return TouchInputMapper.toPhysicsInput(
+            widthPx = width,
+            heightPx = height,
+            x = singleTouchX,
+            y = singleTouchY,
+            actionMasked = singleTouchActionMasked,
+            rocketAngleTurns = currentPlayerAngleTurns(),
+        )
     }
 }
