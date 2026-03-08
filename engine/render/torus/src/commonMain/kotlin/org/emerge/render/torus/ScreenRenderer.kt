@@ -18,7 +18,7 @@ import kotlin.math.PI
 import kotlin.math.sin
 
 class ScreenRenderer(val contentScale: Vec2) {
-    private var zoom: Float = 1.5f
+    private var zoom: Float = 10f
     @Volatile private var worldRotationRad: Float = 0f
 
     private val vao = GPU.genAndBindVertexArrays()
@@ -33,7 +33,7 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val bodyInstanceShapes = FloatArray(MAX_BODIES)
 
     companion object {
-        const val MAX_BODIES: Int = 50
+        const val MAX_BODIES: Int = 100
         private const val MAT4_FLOATS: Int = 16
         private const val ROTATION_STEP_RAD: Float = 0.03f
     }
