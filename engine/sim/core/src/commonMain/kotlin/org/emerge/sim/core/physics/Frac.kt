@@ -2,8 +2,8 @@ package org.emerge.sim.core.physics
 
 import kotlin.math.sign
 
-class Frac(n: Int, d: UInt = UInt.MAX_VALUE) {
-    val raw: Int = (n.toULong() * UInt.MAX_VALUE / d).toInt()
+class Frac(n: Int, d: Int = Int.MAX_VALUE) {
+    val raw: Int = (n.toULong() * Int.MAX_VALUE.toULong() / d.toULong()).toInt()
     operator fun plus(o: Frac): Frac = Frac(raw+o.raw)
     operator fun minus(o: Frac): Frac = Frac(raw-o.raw)
     operator fun div(o: Int): Frac = Frac(raw/o)

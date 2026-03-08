@@ -50,11 +50,13 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
 
                 val velDelta = b.vel-a.vel
                 val velAlongNorm = velDelta.dot(delta.norm)
-                val pushVel = if (velAlongNorm.sign > 0) delta.norm*(velAlongNorm) else Frac2.zero
+                val bounce = a.bounce.coerceAtMost(b.bounce)
+                val pushVel = if (velAlongNorm.sign > 0) delta.norm*(velAlongNorm*bounce) else Frac2.zero
 
                 val angVelDiff = (a.angVel+b.angVel)
+                val rough = a.rough.coerceAtMost(b.rough)
                 val velAlongPerp = -velDelta.dot(delta.norm.perp)
-                val pushAngVel = velAlongPerp-angVelDiff/32
+                val pushAngVel = (velAlongPerp-angVelDiff)*rough
 
                 next[aId] = a.copy(vel = a.vel+pushVel, pos = a.pos+push, angVel = a.angVel+pushAngVel)
                 next[bId] = b.copy(vel = b.vel-pushVel, pos = b.pos-push, angVel = b.angVel+pushAngVel)

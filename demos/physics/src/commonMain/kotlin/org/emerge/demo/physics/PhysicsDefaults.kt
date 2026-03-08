@@ -13,11 +13,13 @@ fun createDefaultInitialState(): PhysicsState = PhysicsState(
         *((0..<ScreenRenderer.MAX_BODIES).map {
             PlayerId(it) to CircleBody(
                 playerId = PlayerId(it),
-                pos = Norm.fromAngle(Frac(it, ScreenRenderer.MAX_BODIES.toUInt())) * Frac(3, 8u),
+                pos = Norm.fromAngle(Frac(it, ScreenRenderer.MAX_BODIES/2)) * Frac(3, 8),
                 vel = Frac2.zero,
                 ang = Frac(0),
                 angVel = Frac(0),
-                radius = Frac(1, 32u),
+                radius = Frac(1, 32),
+                bounce = Frac(3, 4),
+                rough = Frac(it%10+1, 10),
             )
         }.toTypedArray()),
     ),

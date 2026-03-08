@@ -48,6 +48,8 @@ object PhysicsNetCodecs {
                     w.writeInt(body.ang.raw)
                     w.writeInt(body.angVel.raw)
                     w.writeInt(body.radius.raw)
+                    w.writeInt(body.bounce.raw)
+                    w.writeInt(body.rough.raw)
                 }
                 return w.toByteArray()
             }
@@ -64,6 +66,8 @@ object PhysicsNetCodecs {
                     val vy = c.readInt()
                     val a = c.readInt()
                     val av = c.readInt()
+                    val rad = c.readInt()
+                    val b = c.readInt()
                     val r = c.readInt()
                     bodies[pid] = CircleBody(
                         pid,
@@ -71,6 +75,8 @@ object PhysicsNetCodecs {
                         Frac2.raw(vx, vy),
                         Frac(a),
                         Frac(av),
+                        Frac(rad),
+                        Frac(b),
                         Frac(r),
                     )
                 }
