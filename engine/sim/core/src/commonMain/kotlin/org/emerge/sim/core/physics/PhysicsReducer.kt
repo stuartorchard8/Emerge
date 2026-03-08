@@ -48,18 +48,25 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val pen = minDist-delta.len
                 val push = delta.norm*(pen/2)
 
+                val normal = delta.norm
+                val tangent = normal.perp
                 val velDelta = b.vel-a.vel
-                val velAlongNorm = velDelta.dot(delta.norm)
-                val bounce = a.bounce.coerceAtMost(b.bounce)
-                val pushVel = if (velAlongNorm.sign > 0) delta.norm*(velAlongNorm*bounce) else Frac2.zero
+                val velAlongNorm = velDelta.dot(normal)
+                val bounciness = a.bounce.coerceAtMost(b.bounce)
+                val pushNormVel = if (velAlongNorm.sign > 0) normal*(velAlongNorm*bounciness) else Frac2.zero
 
-                val angVelDiff = (a.angVel+b.angVel)
-                val rough = a.rough.coerceAtMost(b.rough)
-                val velAlongPerp = -velDelta.dot(delta.norm.perp)
-                val pushAngVel = (velAlongPerp-angVelDiff)*rough
+                val roughness = a.rough.coerceAtMost(b.rough)
+                // Contact tangential speed includes translational slip and surface speed from spin.
+                val spinAlongTangent = (a.angVel*a.radius) + (b.angVel*b.radius)
+                val velAlongTangent = velDelta.dot(tangent) - spinAlongTangent
+                // Equal-mass circles with simple inertia approximation: partial tangential impulse.
+                val pushTangent = (velAlongTangent*roughness)/4
+                val pushTangentialVel = tangent*pushTangent
+                val pushAngVelA = if (a.radius.raw != 0) pushTangent/a.radius else Frac(0)
+                val pushAngVelB = if (b.radius.raw != 0) pushTangent/b.radius else Frac(0)
 
-                next[aId] = a.copy(vel = a.vel+pushVel, pos = a.pos+push, angVel = a.angVel+pushAngVel)
-                next[bId] = b.copy(vel = b.vel-pushVel, pos = b.pos-push, angVel = b.angVel+pushAngVel)
+                next[aId] = a.copy(vel = a.vel+pushNormVel+pushTangentialVel, pos = a.pos+push, angVel = a.angVel+pushAngVelA)
+                next[bId] = b.copy(vel = b.vel-pushNormVel-pushTangentialVel, pos = b.pos-push, angVel = b.angVel+pushAngVelB)
             }
         }
 

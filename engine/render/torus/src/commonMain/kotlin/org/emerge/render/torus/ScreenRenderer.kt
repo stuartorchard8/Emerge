@@ -172,7 +172,7 @@ class ScreenRenderer(val contentScale: Vec2) {
             // Scale then Rotate
             val bodyScale = b.radius.toFloat()
             setScale(matS, bodyScale, bodyScale)
-            val bodyRotRad = -b.ang.toFloat() * 2f * PI.toFloat()
+            val bodyRotRad = b.ang.toFloat() * 2f * PI.toFloat()
             setRotationZ(matR, bodyRotRad)
             multiply4x4(out = matTmp, a = matR, b = matS)
 
