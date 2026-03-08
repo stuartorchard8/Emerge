@@ -8,6 +8,7 @@ data class CircleBody(
     val vel: Frac2,
     val ang: Frac,
     val angVel: Frac,
+    val mass: UInt,
     val radius: Frac,
     val bounce: Frac,
     val rough: Frac,

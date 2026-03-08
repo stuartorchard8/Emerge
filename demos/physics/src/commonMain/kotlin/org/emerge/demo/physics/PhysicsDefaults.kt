@@ -17,9 +17,10 @@ fun createDefaultInitialState(): PhysicsState = PhysicsState(
                 vel = Frac2.zero,
                 ang = Frac(0),
                 angVel = Frac(0),
-                radius = Frac(1, 32),
+                mass = (it.toUInt()+10u)*100u,
+                radius = Frac(it+10, 400),
                 bounce = Frac(3, 4),
-                rough = Frac(it%10+1, 10),
+                rough = Frac(1, 2),
             )
         }.toTypedArray()),
     ),

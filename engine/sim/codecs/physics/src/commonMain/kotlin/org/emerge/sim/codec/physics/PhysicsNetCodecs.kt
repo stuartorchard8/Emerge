@@ -47,6 +47,7 @@ object PhysicsNetCodecs {
                     w.writeInt(body.vel.y.raw)
                     w.writeInt(body.ang.raw)
                     w.writeInt(body.angVel.raw)
+                    w.writeInt(body.mass.toInt())
                     w.writeInt(body.radius.raw)
                     w.writeInt(body.bounce.raw)
                     w.writeInt(body.rough.raw)
@@ -66,6 +67,7 @@ object PhysicsNetCodecs {
                     val vy = c.readInt()
                     val a = c.readInt()
                     val av = c.readInt()
+                    val m = c.readInt()
                     val rad = c.readInt()
                     val b = c.readInt()
                     val r = c.readInt()
@@ -75,6 +77,7 @@ object PhysicsNetCodecs {
                         Frac2.raw(vx, vy),
                         Frac(a),
                         Frac(av),
+                        m.toUInt(),
                         Frac(rad),
                         Frac(b),
                         Frac(r),

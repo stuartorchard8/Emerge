@@ -45,28 +45,48 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
                 if (delta.lenSq.raw == 0) continue
                 delta.capMax(minDist)
 
-                val pen = minDist-delta.len
-                val push = delta.norm*(pen/2)
-
                 val normal = delta.norm
                 val tangent = normal.perp
+                val pen = minDist-delta.len
+
+                val massA = a.mass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
+                val massB = b.mass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
+                val totalMass = (massA + massB).coerceAtMost(Int.MAX_VALUE)
+                val invMassWeightA = Frac(massB, totalMass) // mB/(mA+mB)
+                val invMassWeightB = Frac(massA, totalMass) // mA/(mA+mB)
+
+                val pushA = normal*(pen*invMassWeightA)
+                val pushB = normal*(pen*invMassWeightB)
+
                 val velDelta = b.vel-a.vel
                 val velAlongNorm = velDelta.dot(normal)
                 val bounciness = a.bounce.coerceAtMost(b.bounce)
-                val pushNormVel = if (velAlongNorm.sign > 0) normal*(velAlongNorm*bounciness) else Frac2.zero
+                val normResponse = if (velAlongNorm.sign > 0) velAlongNorm*bounciness else Frac(0)
 
                 val roughness = a.rough.coerceAtMost(b.rough)
                 // Contact tangential speed includes translational slip and surface speed from spin.
                 val spinAlongTangent = (a.angVel*a.radius) + (b.angVel*b.radius)
                 val velAlongTangent = velDelta.dot(tangent) - spinAlongTangent
-                // Equal-mass circles with simple inertia approximation: partial tangential impulse.
-                val pushTangent = (velAlongTangent*roughness)/4
-                val pushTangentialVel = tangent*pushTangent
-                val pushAngVelA = if (a.radius.raw != 0) pushTangent/a.radius else Frac(0)
-                val pushAngVelB = if (b.radius.raw != 0) pushTangent/b.radius else Frac(0)
+                // Thin-hoop inertia gives tangential response split by inverse-mass weights, then halved.
+                val tangentResponse = velAlongTangent*roughness
 
-                next[aId] = a.copy(vel = a.vel+pushNormVel+pushTangentialVel, pos = a.pos+push, angVel = a.angVel+pushAngVelA)
-                next[bId] = b.copy(vel = b.vel-pushNormVel-pushTangentialVel, pos = b.pos-push, angVel = b.angVel+pushAngVelB)
+                val pushNormVelA = normal*(normResponse*invMassWeightA)
+                val pushNormVelB = normal*(normResponse*invMassWeightB)
+                val pushTangentialVelA = tangent*((tangentResponse*invMassWeightA)/2)
+                val pushTangentialVelB = tangent*((tangentResponse*invMassWeightB)/2)
+                val pushAngVelA = if (a.radius.raw != 0) ((tangentResponse*invMassWeightA)/2)/a.radius else Frac(0)
+                val pushAngVelB = if (b.radius.raw != 0) ((tangentResponse*invMassWeightB)/2)/b.radius else Frac(0)
+
+                next[aId] = a.copy(
+                    vel = a.vel+pushNormVelA+pushTangentialVelA,
+                    pos = a.pos+pushA,
+                    angVel = a.angVel+pushAngVelA,
+                )
+                next[bId] = b.copy(
+                    vel = b.vel-pushNormVelB-pushTangentialVelB,
+                    pos = b.pos-pushB,
+                    angVel = b.angVel+pushAngVelB,
+                )
             }
         }
 
