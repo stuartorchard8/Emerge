@@ -65,17 +65,21 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
 
                 val roughness = a.rough.coerceAtMost(b.rough)
                 // Contact tangential speed includes translational slip and surface speed from spin.
-                val spinAlongTangent = (a.angVel*a.radius) + (b.angVel*b.radius)
+                val circumferenceA = a.radius.toCircumference()
+                val circumferenceB = b.radius.toCircumference()
+                val spinAlongTangent = a.angVel*circumferenceA + b.angVel*circumferenceB
                 val velAlongTangent = velDelta.dot(tangent) - spinAlongTangent
                 // Thin-hoop inertia gives tangential response split by inverse-mass weights, then halved.
                 val tangentResponse = velAlongTangent*roughness
 
                 val pushNormVelA = normal*(normResponse*invMassWeightA)
                 val pushNormVelB = normal*(normResponse*invMassWeightB)
-                val pushTangentialVelA = tangent*((tangentResponse*invMassWeightA)/2)
-                val pushTangentialVelB = tangent*((tangentResponse*invMassWeightB)/2)
-                val pushAngVelA = if (a.radius.raw != 0) ((tangentResponse*invMassWeightA)/2)/a.radius else Frac(0)
-                val pushAngVelB = if (b.radius.raw != 0) ((tangentResponse*invMassWeightB)/2)/b.radius else Frac(0)
+                val tangentResponseA = (tangentResponse*invMassWeightA)/2
+                val tangentResponseB = (tangentResponse*invMassWeightB)/2
+                val pushTangentialVelA = tangent*tangentResponseA
+                val pushTangentialVelB = tangent*tangentResponseB
+                val pushAngVelA = tangentResponseA/circumferenceA
+                val pushAngVelB = tangentResponseB/circumferenceB
 
                 next[aId] = a.copy(
                     vel = a.vel+pushNormVelA+pushTangentialVelA,
