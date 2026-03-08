@@ -1,7 +1,7 @@
 package org.emerge.render.torus.shader
 
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.CircleBody
+import org.emerge.sim.core.physics.Body
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2
 import org.emerge.sim.core.physics.Frac2
@@ -12,7 +12,7 @@ data class WorldShaderParams(
     val viewFocus: Vec2,
     val viewRotationRad: Float,
     val myId: PlayerId?,
-    val bodies: List<CircleBody>,
+    val bodies: List<Body>,
 ) {
     companion object {
         fun compute(state: PhysicsState, myId: PlayerId?, zoom: Float, viewRotationRad: Float = 0f): WorldShaderParams {

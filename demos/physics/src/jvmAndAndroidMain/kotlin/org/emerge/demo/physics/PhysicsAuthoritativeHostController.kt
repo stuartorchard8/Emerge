@@ -58,7 +58,7 @@ class PhysicsAuthoritativeHostController(
 
     override fun tick(localInput: PhysicsInput): PhysicsFrame {
         host.pollNetwork()
-        host.setLocalInput(PlayerId(0), PhysicsInput(localInput.ax, localInput.ay))
+        host.setLocalInput(PlayerId(0), PhysicsInput(localInput.thrust, localInput.turn))
         host.step()
         return PhysicsFrame(
             state = host.state,

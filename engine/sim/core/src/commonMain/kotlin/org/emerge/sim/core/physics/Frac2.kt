@@ -68,7 +68,7 @@ data class Norm(val x: Frac, val y: Frac) {
 
     companion object {
         fun fromAngle(angle: Frac): Norm {
-            val rad: Float = (angle.raw.toFloat() / UInt.MAX_VALUE.toFloat()) * 2f * PI.toFloat()
+            val rad: Float = (angle.raw.toFloat() / Int.MAX_VALUE.toFloat()) * 2f * PI.toFloat()
             return Norm(
                 Frac((cos(rad)*Int.MAX_VALUE.toFloat()).roundToInt()),
                 Frac((sin(rad)*Int.MAX_VALUE.toFloat()).roundToInt()),

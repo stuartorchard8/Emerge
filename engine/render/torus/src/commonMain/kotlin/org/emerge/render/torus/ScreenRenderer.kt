@@ -4,6 +4,7 @@ import org.emerge.render.torus.shader.CircleShader
 import org.emerge.render.torus.shader.GuiShader
 import org.emerge.render.torus.shader.WorldShader
 import org.emerge.render.torus.shader.WorldShaderParams
+import org.emerge.sim.core.physics.BodyShape
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
@@ -14,7 +15,6 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.PI
-import kotlin.math.roundToLong
 import kotlin.math.sin
 
 class ScreenRenderer(val contentScale: Vec2) {
@@ -30,6 +30,7 @@ class ScreenRenderer(val contentScale: Vec2) {
     private var layout: ScreenLayout = ScreenLayout.compute(Vec2(1f,1f), contentScale)
     private val bodyInstanceMatrices = FloatArray(MAX_BODIES * MAT4_FLOATS)
     private val bodyInstanceIds = FloatArray(MAX_BODIES)
+    private val bodyInstanceShapes = FloatArray(MAX_BODIES)
 
     companion object {
         const val MAX_BODIES: Int = 50
@@ -74,19 +75,7 @@ class ScreenRenderer(val contentScale: Vec2) {
     }
 
     fun rotateInputToWorld(input: PhysicsInput): PhysicsInput {
-        val rot = worldRotationRad
-        if (rot == 0f) {
-            return input
-        }
-
-        val c = cos(-rot).toDouble()
-        val s = sin(-rot).toDouble()
-        val ax = input.ax.toDouble()
-        val ay = input.ay.toDouble()
-
-        val worldAx = clampToInt(ax * c - ay * s)
-        val worldAy = clampToInt(ax * s + ay * c)
-        return PhysicsInput(worldAx, worldAy)
+        return input
     }
 
     fun draw(state: PhysicsState, myId: PlayerId?) {
@@ -99,6 +88,7 @@ class ScreenRenderer(val contentScale: Vec2) {
                 layout = layout,
                 outMatricesColMajor = bodyInstanceMatrices,
                 outIds = bodyInstanceIds,
+                outShapes = bodyInstanceShapes,
             )
 
         val x0 = floor(layout.worldPxMin.x).toInt()
@@ -114,6 +104,7 @@ class ScreenRenderer(val contentScale: Vec2) {
             instanceCount = n,
             matricesColMajor = bodyInstanceMatrices,
             ids = bodyInstanceIds,
+            shapes = bodyInstanceShapes,
         )
         GPU.disableScissorTest()
     }
@@ -133,6 +124,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         layout: ScreenLayout,
         outMatricesColMajor: FloatArray,
         outIds: FloatArray,
+        outShapes: FloatArray,
     ): Int {
         val bodies = params.bodies
         val n = min(MAX_BODIES, bodies.size)
@@ -189,6 +181,7 @@ class ScreenRenderer(val contentScale: Vec2) {
             copyMatrix(out = outMatricesColMajor, outOffset = base, src = matTmp)
 
             outIds[i] = b.playerId.value.toFloat()
+            outShapes[i] = if (b.shape == BodyShape.TRIANGLE) 1f else 0f
         }
         return n
     }
@@ -198,12 +191,6 @@ class ScreenRenderer(val contentScale: Vec2) {
         val a = d + half
         val m = a - floor(a / size) * size
         return m - half
-    }
-
-    private fun clampToInt(value: Double): Int {
-        if (value <= Int.MIN_VALUE.toDouble()) return Int.MIN_VALUE
-        if (value >= Int.MAX_VALUE.toDouble()) return Int.MAX_VALUE
-        return value.roundToLong().toInt()
     }
 
     private fun setTranslation(out: FloatArray, tx: Float, ty: Float) {

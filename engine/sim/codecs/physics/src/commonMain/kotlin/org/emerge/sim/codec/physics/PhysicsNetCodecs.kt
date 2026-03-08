@@ -3,8 +3,9 @@ package org.emerge.sim.codec.physics
 import org.emerge.net.codec.ByteCursor
 import org.emerge.net.codec.ByteWriter
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.CircleBody
+import org.emerge.sim.core.physics.Body
 import org.emerge.sim.core.physics.Frac
+import org.emerge.sim.core.physics.BodyShape
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Frac2
@@ -21,16 +22,16 @@ object PhysicsNetCodecs {
         object : Codec<PhysicsInput> {
             override fun encode(value: PhysicsInput): ByteArray {
                 val w = ByteWriter()
-                w.writeInt(value.ax)
-                w.writeInt(value.ay)
+                w.writeInt(value.thrust)
+                w.writeInt(value.turn)
                 return w.toByteArray()
             }
 
             override fun decode(bytes: ByteArray): PhysicsInput {
                 val c = ByteCursor(bytes)
-                val ax = c.readInt()
-                val ay = c.readInt()
-                return PhysicsInput(ax, ay)
+                val thrust = c.readInt()
+                val turn = c.readInt()
+                return PhysicsInput(thrust, turn)
             }
         }
 
@@ -51,6 +52,7 @@ object PhysicsNetCodecs {
                     w.writeInt(body.radius.raw)
                     w.writeInt(body.bounce.raw)
                     w.writeInt(body.rough.raw)
+                    w.writeInt(body.shape.wireValue)
                 }
                 return w.toByteArray()
             }
@@ -58,7 +60,7 @@ object PhysicsNetCodecs {
             override fun decode(bytes: ByteArray): PhysicsState {
                 val c = ByteCursor(bytes)
                 val n = c.readInt()
-                val bodies = LinkedHashMap<PlayerId, CircleBody>(n)
+                val bodies = LinkedHashMap<PlayerId, Body>(n)
                 repeat(n) {
                     val pid = PlayerId(c.readInt())
                     val px = c.readInt()
@@ -71,7 +73,8 @@ object PhysicsNetCodecs {
                     val rad = c.readInt()
                     val b = c.readInt()
                     val r = c.readInt()
-                    bodies[pid] = CircleBody(
+                    val shape = BodyShape.fromWireValue(c.readInt())
+                    bodies[pid] = Body(
                         pid,
                         Frac2.raw(px, py),
                         Frac2.raw(vx, vy),
@@ -81,6 +84,7 @@ object PhysicsNetCodecs {
                         Frac(rad),
                         Frac(b),
                         Frac(r),
+                        shape,
                     )
                 }
                 return PhysicsState(bodies = bodies)

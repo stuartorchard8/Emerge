@@ -115,10 +115,13 @@ object GlSceneView {
         if (pressed[GLFW_KEY_Q]) screenRenderer.rotateLeft()
         if (pressed[GLFW_KEY_E]) screenRenderer.rotateRight()
 
-        // WASD input
-        val ax = axis(pressed[GLFW_KEY_A], pressed[GLFW_KEY_D])
-        val ay = axis(pressed[GLFW_KEY_W], pressed[GLFW_KEY_S])
-        val movementInput = screenRenderer.rotateInputToWorld(PhysicsInput(ax, ay))
+        // Rocket controls: W/Up thrust forward, A/D or Left/Right rotate.
+        val thrust = if (pressed[GLFW_KEY_W] || pressed[GLFW_KEY_UP]) Int.MAX_VALUE else 0
+        val turn = axis(
+            pressed[GLFW_KEY_A] || pressed[GLFW_KEY_LEFT],
+            pressed[GLFW_KEY_D] || pressed[GLFW_KEY_RIGHT],
+        )
+        val movementInput = PhysicsInput(thrust = thrust, turn = turn)
 
         return controller.tick(movementInput)
     }

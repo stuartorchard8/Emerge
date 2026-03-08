@@ -41,10 +41,10 @@ data class ScreenLayout(
             xPxToUv(guiPxMin.x), yPxToUv(guiPxMax.y),
             xPxToUv(guiPxMax.x), yPxToUv(guiPxMin.y),
             xPxToUv(guiPxMax.x), yPxToUv(guiPxMax.y),
-            // circle
-            -1.7320508f, -1f,
-            0f, 2f,
-            1.7320508f, -1f,
+            // triangle
+            -1f, 1.7320508f,
+            2f, 0f,
+            -1f, -1.7320508f,
         )
     }
 

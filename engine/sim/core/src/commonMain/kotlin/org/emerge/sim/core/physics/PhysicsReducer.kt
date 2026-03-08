@@ -6,20 +6,26 @@ import org.emerge.sim.core.SimReducer
 class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
 
     override fun reduce(cfg: PhysicsConfig, state: PhysicsState, inputs: Map<PlayerId, PhysicsInput>): PhysicsState {
-        val next = LinkedHashMap<PlayerId, CircleBody>(state.bodies.size)
+        val next = LinkedHashMap<PlayerId, Body>(state.bodies.size)
 
         // Integrate
         for ((pid, body) in state.bodies) {
-            val inp = inputs[pid] ?: PhysicsInput(0, 0)
-            val ax = inp.ax / cfg.accelFactorInv
-            val ay = inp.ay / cfg.accelFactorInv
-            val acc = Frac2(Frac(ax), Frac(ay))
+            val inp = inputs[pid] ?: PhysicsInput.ZERO
+            val thrust = inp.thrust / cfg.thrustFactorInv
+            val turn = inp.turn / cfg.turnFactorInv
+            val acc = when (body.shape) {
+                BodyShape.TRIANGLE -> Norm.fromAngle(body.ang) * Frac(thrust)
+                BodyShape.CIRCLE -> Frac2.zero
+            }
 
-            val vel = (body.vel + acc)//maxDamping*damping
+            val vel = body.vel + acc
             val pos = body.pos + vel
 
-            val ang = Frac(body.ang.raw + body.angVel.raw)
-            val angVel = body.angVel
+            val angVel = when (body.shape) {
+                BodyShape.TRIANGLE -> body.angVel + Frac(turn)
+                BodyShape.CIRCLE -> body.angVel
+            }
+            val ang = Frac(body.ang.raw + angVel.raw)
 
             next[pid] = body.copy(pos = pos, vel = vel, ang = ang, angVel = angVel)
         }

@@ -13,15 +13,18 @@ object CircleShaderSources {
         layout(location = 3) in vec4 iCol2;
         layout(location = 4) in vec4 iCol3;
         layout(location = 5) in float iBodyId;
+        layout(location = 6) in float iBodyShape;
 
         out vec2 vLocal;
         out vec3 vColor;
+        out float vBodyShape;
         void main() {
             mat4 m = mat4(iCol0, iCol1, iCol2, iCol3);
             gl_Position = m * vec4(aPos, 0.0, 1.0);
             float c = float(iBodyId)+3.0;
             vColor = mod(vec3(c/1.9, c/2.9, c/4.9),1.0);
             vLocal = aPos;
+            vBodyShape = iBodyShape;
         }
         """.trimIndent()
 
@@ -33,18 +36,45 @@ object CircleShaderSources {
 
         in vec2 vLocal; // local [-1,1] coords for circle test
         in vec3 vColor;
+        in float vBodyShape;
         out vec4 fragColor;
 
         void main() {
-            if (dot(vLocal, vLocal) <= 1.0) {
-                float a = (1.0 - dot(vLocal, vLocal)/(1.5));
-                if (vLocal.x*vLocal.y >= 0.0) {
-                    fragColor = vec4(vColor*a*2.0, 1.0);
-                } else {
-                    fragColor = vec4(vColor*a, 1.0);
+            if (vBodyShape > 0.5) {
+//                if (abs(vLocal.y)+vLocal.x < 0.0) {
+//                    discard;
+//                }
+//                if (abs(vLocal.y)+vLocal.x/4.0 > 1.0) {
+//                    discard;
+//                }
+//                vec2 cone = vLocal-vec2(1.5, 0.0);
+//                if (vLocal.x > 1.67 && dot(cone, cone) > 0.06125) {
+//                    discard;
+//                }
+                vec2 cone = vec2(vLocal.x/3.0+0.5, vLocal.y/1.25);
+                if (dot(cone, cone) > 1.0) {
+                    discard;
                 }
+                vec2 bell = vec2((vLocal.x+1.0)*1.5, vLocal.y*1.25);
+                if (dot(bell, bell) < 1.0) {
+                    discard;
+                }
+                vec2 window = vec2(vLocal.x*1.33-0.8, vLocal.y*2.25);
+//                float nose = 2.0-max(0.0, min(1.0, dot(window, window)));
+                float nose = max(1.0, dot(window, window));
+                vec3 rocketColor = vColor * nose;
+                fragColor = vec4(rocketColor, 1.0);
             } else {
-                discard;
+                if (dot(vLocal, vLocal) <= 1.0) {
+                    float a = (1.0 - dot(vLocal, vLocal)/(1.5));
+                    if (vLocal.x*vLocal.y >= 0.0) {
+                        fragColor = vec4(vColor*a*2.0, 1.0);
+                    } else {
+                        fragColor = vec4(vColor*a, 1.0);
+                    }
+                } else {
+                    discard;
+                }
             }
         }
         """.trimIndent()

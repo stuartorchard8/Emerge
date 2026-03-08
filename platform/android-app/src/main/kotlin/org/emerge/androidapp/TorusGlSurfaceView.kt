@@ -40,7 +40,7 @@ internal class TorusGlSurfaceView(
             LaunchMode.JOIN -> PhysicsAuthoritativeJoinController(hostIp = settings.hostIp, port = settings.port)
         }
 
-    @Volatile private var currentTouchInput: PhysicsInput = PhysicsInput(0, 0)
+    @Volatile private var currentTouchInput: PhysicsInput = PhysicsInput.ZERO
     private var isTransformGestureActive: Boolean = false
     private var transformPrevSpanPx: Float = 0f
     private var transformPrevAngleRad: Float = 0f
@@ -96,7 +96,7 @@ internal class TorusGlSurfaceView(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.pointerCount >= 2) {
             handleTransformTouch(event)
-            currentTouchInput = PhysicsInput(0, 0)
+            currentTouchInput = PhysicsInput.ZERO
             return true
         }
 
@@ -108,7 +108,7 @@ internal class TorusGlSurfaceView(
             y = event.y,
             actionMasked = event.actionMasked,
         )
-        currentTouchInput = renderer.rotateInputToWorld(rawInput)
+        currentTouchInput = rawInput
         return true
     }
 
