@@ -16,6 +16,7 @@ internal object TouchInputMapper {
         y: Float,
         actionMasked: Int,
         rocketAngleTurns: Float,
+        cameraRotationRad: Float,
     ): PhysicsInput {
         if (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_CANCEL) {
             return PhysicsInput.ZERO
@@ -27,15 +28,23 @@ internal object TouchInputMapper {
         val dx = (x.toInt() - cx).toFloat()
         val dy = (y.toInt() - cy).toFloat()
 
-        // Convert from screen to "up-positive" coordinates, then rotate into rocket-local space.
+        // Convert from screen to "up-positive" coordinates.
         // NOTE: rocketAngleTurns is in turns [-1, 1], not radians.
-        val inputX = dy
-        val inputY = -dx
-        val angleRad = rocketAngleTurns * 2f * (PI).toFloat()
+        val screenX = dy
+        val screenY = -dx
+
+        // Undo camera rotation so touch intent is interpreted in world-space axes.
+        val camC = cos(-cameraRotationRad)
+        val camS = sin(-cameraRotationRad)
+        val worldX = screenX * camC - screenY * camS
+        val worldY = screenX * camS + screenY * camC
+
+        // Rotate world vector into rocket-local space.
+        val angleRad = rocketAngleTurns * 2f * PI.toFloat()
         val c = cos(angleRad)
         val s = sin(angleRad)
-        val localX = inputX * c + inputY * s
-        val localY = -inputX * s + inputY * c
+        val localX = worldX * c + worldY * s
+        val localY = -worldX * s + worldY * c
 
         val maxX = cx - deadzone
         val maxY = cy - deadzone

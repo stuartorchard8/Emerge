@@ -45,6 +45,7 @@ internal class TorusGlSurfaceView(
     @Volatile private var singleTouchX: Float = 0f
     @Volatile private var singleTouchY: Float = 0f
     @Volatile private var singleTouchActionMasked: Int = MotionEvent.ACTION_CANCEL
+    @Volatile private var cameraRotationRad: Float = 0f
     private var isTransformGestureActive: Boolean = false
     private var transformPrevSpanPx: Float = 0f
     private var transformPrevAngleRad: Float = 0f
@@ -135,6 +136,7 @@ internal class TorusGlSurfaceView(
                 val rotationDeltaRad = normalizeAngleRad(currAngleRad - transformPrevAngleRad)
                 transformPrevSpanPx = currSpanPx
                 transformPrevAngleRad = currAngleRad
+                cameraRotationRad = normalizeAngleRad(cameraRotationRad + rotationDeltaRad)
 
                 queueEvent {
                     renderer.applyCameraGesture(zoomFactor, rotationDeltaRad)
@@ -214,12 +216,13 @@ internal class TorusGlSurfaceView(
         if (!singleTouchActive) return PhysicsInput.ZERO
         if (width <= 0 || height <= 0) return PhysicsInput.ZERO
         return TouchInputMapper.toPhysicsInput(
-            widthPx = width,
-            heightPx = height,
-            x = singleTouchX,
-            y = singleTouchY,
-            actionMasked = singleTouchActionMasked,
-            rocketAngleTurns = currentPlayerAngleTurns(),
+            width,
+            height,
+            singleTouchX,
+            singleTouchY,
+            singleTouchActionMasked,
+            currentPlayerAngleTurns(),
+            cameraRotationRad,
         )
     }
 }
