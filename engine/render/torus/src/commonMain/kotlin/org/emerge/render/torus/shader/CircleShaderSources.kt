@@ -41,16 +41,6 @@ object CircleShaderSources {
 
         void main() {
             if (vBodyShape > 0.5) {
-//                if (abs(vLocal.y)+vLocal.x < 0.0) {
-//                    discard;
-//                }
-//                if (abs(vLocal.y)+vLocal.x/4.0 > 1.0) {
-//                    discard;
-//                }
-//                vec2 cone = vLocal-vec2(1.5, 0.0);
-//                if (vLocal.x > 1.67 && dot(cone, cone) > 0.06125) {
-//                    discard;
-//                }
                 vec2 cone = vec2(vLocal.x/3.0+0.5, vLocal.y/1.25);
                 if (dot(cone, cone) > 1.0) {
                     discard;
@@ -60,7 +50,6 @@ object CircleShaderSources {
                     discard;
                 }
                 vec2 window = vec2(vLocal.x*1.33-0.8, vLocal.y*2.25);
-//                float nose = 2.0-max(0.0, min(1.0, dot(window, window)));
                 float nose = max(1.0, dot(window, window));
                 vec3 rocketColor = vColor * nose;
                 fragColor = vec4(rocketColor, 1.0);

@@ -50,6 +50,7 @@ object PhysicsNetCodecs {
                     val material = state.materials[entityId] ?: continue
                     val renderShape = state.renderShapes[entityId] ?: continue
                     val playerId = state.playerOwned[entityId]?.playerId
+                    val landing = state.landings[entityId]
                     w.writeInt(entityId.value)
                     w.writeInt(playerId?.value ?: -1)
                     w.writeInt(transform.pos.x.raw)
@@ -63,6 +64,10 @@ object PhysicsNetCodecs {
                     w.writeInt(material.bounce.raw)
                     w.writeInt(material.rough.raw)
                     w.writeInt(renderShape.shape.wireValue)
+                    w.writeInt(landing?.parentEntityId?.value ?: -1)
+                    w.writeInt(landing?.relativePos?.x?.raw ?: 0)
+                    w.writeInt(landing?.relativePos?.y?.raw ?: 0)
+                    w.writeInt(landing?.relativeAng?.raw ?: 0)
                 }
                 return w.toByteArray()
             }
@@ -80,6 +85,7 @@ object PhysicsNetCodecs {
                 var controls = ComponentTable.empty<org.emerge.sim.core.physics.ControlIntentComponent>()
                 var renderShapes = ComponentTable.empty<org.emerge.sim.core.physics.RenderShapeComponent>()
                 var playerOwned = ComponentTable.empty<org.emerge.sim.core.physics.PlayerOwnedComponent>()
+                var landings = ComponentTable.empty<org.emerge.sim.core.physics.LandingAttachmentComponent>()
                 repeat(n) {
                     val entityId = EntityId(c.readInt())
                     val playerIdRaw = c.readInt()
@@ -94,6 +100,10 @@ object PhysicsNetCodecs {
                     val b = c.readInt()
                     val r = c.readInt()
                     val shape = BodyShape.fromWireValue(c.readInt())
+                    val landingParentIdRaw = c.readInt()
+                    val landingDx = c.readInt()
+                    val landingDy = c.readInt()
+                    val landingAng = c.readInt()
                     val playerId = if (playerIdRaw >= 0) PlayerId(playerIdRaw) else null
                     world = world.ensureEntity(entityId)
                     transforms = transforms.put(
@@ -137,6 +147,16 @@ object PhysicsNetCodecs {
                             org.emerge.sim.core.physics.ControlIntentComponent.ZERO,
                         )
                     }
+                    if (landingParentIdRaw >= 0) {
+                        landings = landings.put(
+                            entityId,
+                            org.emerge.sim.core.physics.LandingAttachmentComponent(
+                                parentEntityId = EntityId(landingParentIdRaw),
+                                relativePos = Frac2.raw(landingDx, landingDy),
+                                relativeAng = Frac(landingAng),
+                            ),
+                        )
+                    }
                 }
                 return PhysicsState(
                     world = world,
@@ -148,6 +168,7 @@ object PhysicsNetCodecs {
                     controls = controls,
                     renderShapes = renderShapes,
                     playerOwned = playerOwned,
+                    landings = landings,
                 )
             }
         }

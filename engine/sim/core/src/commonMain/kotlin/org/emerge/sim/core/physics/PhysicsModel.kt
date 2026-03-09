@@ -20,6 +20,7 @@ data class PhysicsState(
     val controls: ComponentTable<ControlIntentComponent> = ComponentTable.empty(),
     val renderShapes: ComponentTable<RenderShapeComponent> = ComponentTable.empty(),
     val playerOwned: ComponentTable<PlayerOwnedComponent> = ComponentTable.empty(),
+    val landings: ComponentTable<LandingAttachmentComponent> = ComponentTable.empty(),
 ) {
     fun spawnBody(
         playerId: PlayerId?,
@@ -92,6 +93,7 @@ data class PhysicsState(
             controls = nextControls,
             renderShapes = renderShapes.put(entityId, RenderShapeComponent(shape = shape)),
             playerOwned = nextPlayerOwned,
+            landings = landings.remove(entityId),
         )
     }
 

@@ -43,6 +43,12 @@ data class PlayerOwnedComponent(
     val playerId: PlayerId,
 )
 
+data class LandingAttachmentComponent(
+    val parentEntityId: EntityId,
+    val relativePos: Frac2,
+    val relativeAng: Frac,
+)
+
 data class PhysicsRenderBody(
     val entityId: EntityId,
     val playerId: PlayerId?,
