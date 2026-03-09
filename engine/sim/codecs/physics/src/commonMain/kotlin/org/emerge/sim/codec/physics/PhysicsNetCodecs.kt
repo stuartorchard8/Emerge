@@ -75,7 +75,7 @@ object PhysicsNetCodecs {
                     w.writeInt(material.rough.raw)
                     w.writeInt(renderShape.shape.wireValue)
                     w.writeInt(planet?.seed ?: -1)
-                    w.writeInt(homePlanet?.playerId?.value ?: -1)
+                    w.writeInt(homePlanet?.teamId?.value ?: -1)
                     w.writeInt(team?.teamId?.value ?: -1)
                     w.writeInt(forceField?.depth?.raw ?: 0)
                     w.writeInt(forceField?.strength?.raw ?: 0)
@@ -127,7 +127,7 @@ object PhysicsNetCodecs {
                     val r = c.readInt()
                     val shape = BodyShape.fromWireValue(c.readInt())
                     val planetSeed = c.readInt()
-                    val homePlanetPlayerIdRaw = c.readInt()
+                    val homePlanetTeamIdRaw = c.readInt()
                     val teamIdRaw = c.readInt()
                     val forceFieldRadiusScaleRaw = c.readInt()
                     val forceFieldStrengthRaw = c.readInt()
@@ -162,10 +162,10 @@ object PhysicsNetCodecs {
                         planets[entityId] =
                             org.emerge.sim.core.physics.PlanetComponent(seed = planetSeed)
                     }
-                    if (homePlanetPlayerIdRaw >= 0) {
+                    if (homePlanetTeamIdRaw >= 0) {
                         homePlanets[entityId] =
                             org.emerge.sim.core.physics.HomePlanetComponent(
-                                playerId = PlayerId(homePlanetPlayerIdRaw),
+                                teamId = TeamId(homePlanetTeamIdRaw),
                             )
                     }
                     if (teamIdRaw >= 0) {

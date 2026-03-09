@@ -53,7 +53,7 @@ data class PlanetComponent(
 )
 
 data class HomePlanetComponent(
-    val playerId: PlayerId,
+    val teamId: TeamId,
 )
 
 data class ForceFieldComponent(

@@ -111,15 +111,15 @@ data class PhysicsState(
 
     fun assignHomePlanet(
         entityId: EntityId,
-        playerId: PlayerId,
+        teamId: TeamId,
     ): PhysicsState {
         var nextHomePlanets = homePlanets
         for ((existingEntityId, homePlanet) in homePlanets.entries()) {
-            if (homePlanet.playerId == playerId && existingEntityId != entityId) {
+            if (homePlanet.teamId == teamId && existingEntityId != entityId) {
                 nextHomePlanets = nextHomePlanets.remove(existingEntityId)
             }
         }
-        return copy(homePlanets = nextHomePlanets.put(entityId, HomePlanetComponent(playerId)))
+        return copy(homePlanets = nextHomePlanets.put(entityId, HomePlanetComponent(teamId)))
     }
 
     fun setForceField(
@@ -155,8 +155,8 @@ data class PhysicsState(
 
     fun playerAngle(playerId: PlayerId): Frac? = playerTransform(playerId)?.ang
 
-    fun homePlanetEntity(playerId: PlayerId): EntityId? =
-        homePlanets.entries().firstOrNull { it.value.playerId == playerId }?.key
+    fun homePlanetEntity(teamId: TeamId): EntityId? =
+        homePlanets.entries().firstOrNull { it.value.teamId == teamId }?.key
 
     fun planetEntities(): List<EntityId> =
         world.entities.filter { planets.contains(it) }

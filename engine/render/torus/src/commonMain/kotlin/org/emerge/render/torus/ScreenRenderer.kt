@@ -29,7 +29,8 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val circleShader = CircleShader()
     private var layout: ScreenLayout = ScreenLayout.compute(Vec2(1f,1f), contentScale)
     private val bodyInstanceMatrices = FloatArray(MAX_RENDER_BODIES * MAT4_FLOATS)
-    private val bodyInstanceIds = FloatArray(MAX_RENDER_BODIES)
+    private val bodyInstancePrimaryIds = FloatArray(MAX_RENDER_BODIES)
+    private val bodyInstanceSecondaryIds = FloatArray(MAX_RENDER_BODIES)
     private val bodyInstanceShapes = FloatArray(MAX_RENDER_BODIES)
     private val bodyInstanceAlphas = FloatArray(MAX_RENDER_BODIES)
     private val matTmp = FloatArray(MAT4_FLOATS)
@@ -96,7 +97,8 @@ class ScreenRenderer(val contentScale: Vec2) {
                 params = params,
                 layout = layout,
                 outMatricesColMajor = bodyInstanceMatrices,
-                outIds = bodyInstanceIds,
+                outPrimaryIds = bodyInstancePrimaryIds,
+                outSecondaryIds = bodyInstanceSecondaryIds,
                 outShapes = bodyInstanceShapes,
                 outAlphas = bodyInstanceAlphas,
             )
@@ -115,7 +117,8 @@ class ScreenRenderer(val contentScale: Vec2) {
             vOffset = layout.circleVertexOffset,
             instanceCount = n,
             matricesColMajor = bodyInstanceMatrices,
-            ids = bodyInstanceIds,
+            primaryIds = bodyInstancePrimaryIds,
+            secondaryIds = bodyInstanceSecondaryIds,
             shapes = bodyInstanceShapes,
             alphas = bodyInstanceAlphas,
         )
@@ -138,7 +141,8 @@ class ScreenRenderer(val contentScale: Vec2) {
         params: WorldShaderParams,
         layout: ScreenLayout,
         outMatricesColMajor: FloatArray,
-        outIds: FloatArray,
+        outPrimaryIds: FloatArray,
+        outSecondaryIds: FloatArray,
         outShapes: FloatArray,
         outAlphas: FloatArray,
     ): Int {
@@ -167,10 +171,12 @@ class ScreenRenderer(val contentScale: Vec2) {
             val transform = state.transforms[entityId] ?: continue
             val collider = state.colliders[entityId] ?: continue
             val renderShape = state.renderShapes[entityId] ?: continue
-            val ownerId = (state.playerOwned[entityId]?.playerId?.value ?: entityId.value).toFloat()
+            val primaryId = shaderId(state.teams[entityId]?.teamId?.value)
+            val secondaryId = shaderId(state.playerOwned[entityId]?.playerId?.value)
             n = packBodyInstance(
                 index = n,
-                entityIdValue = ownerId,
+                primaryId = primaryId,
+                secondaryId = secondaryId,
                 posX = transform.pos.x.toFloat(),
                 posY = transform.pos.y.toFloat(),
                 angleTurns = transform.ang.toFloat(),
@@ -179,7 +185,8 @@ class ScreenRenderer(val contentScale: Vec2) {
                 alpha = 1f,
                 params = params,
                 outMatricesColMajor = outMatricesColMajor,
-                outIds = outIds,
+                outPrimaryIds = outPrimaryIds,
+                outSecondaryIds = outSecondaryIds,
                 outShapes = outShapes,
                 outAlphas = outAlphas,
             )
@@ -190,7 +197,8 @@ class ScreenRenderer(val contentScale: Vec2) {
             if (forceField != null && renderShape.shape == BodyShape.CIRCLE) {
                 n = packBodyInstance(
                     index = n,
-                    entityIdValue = ownerId,
+                    primaryId = primaryId,
+                    secondaryId = secondaryId,
                     posX = transform.pos.x.toFloat(),
                     posY = transform.pos.y.toFloat(),
                     angleTurns = transform.ang.toFloat(),
@@ -199,7 +207,8 @@ class ScreenRenderer(val contentScale: Vec2) {
                     alpha = forceField.alpha.toFloat(),
                     params = params,
                     outMatricesColMajor = outMatricesColMajor,
-                    outIds = outIds,
+                    outPrimaryIds = outPrimaryIds,
+                    outSecondaryIds = outSecondaryIds,
                     outShapes = outShapes,
                     outAlphas = outAlphas,
                 )
@@ -213,7 +222,8 @@ class ScreenRenderer(val contentScale: Vec2) {
 
     private fun packBodyInstance(
         index: Int,
-        entityIdValue: Float,
+        primaryId: Float,
+        secondaryId: Float,
         posX: Float,
         posY: Float,
         angleTurns: Float,
@@ -222,7 +232,8 @@ class ScreenRenderer(val contentScale: Vec2) {
         alpha: Float,
         params: WorldShaderParams,
         outMatricesColMajor: FloatArray,
-        outIds: FloatArray,
+        outPrimaryIds: FloatArray,
+        outSecondaryIds: FloatArray,
         outShapes: FloatArray,
         outAlphas: FloatArray,
     ): Int {
@@ -244,11 +255,14 @@ class ScreenRenderer(val contentScale: Vec2) {
 
         val base = index * MAT4_FLOATS
         copyMatrix(out = outMatricesColMajor, outOffset = base, src = matTmp)
-        outIds[index] = entityIdValue
+        outPrimaryIds[index] = primaryId
+        outSecondaryIds[index] = secondaryId
         outShapes[index] = if (shape == BodyShape.TRIANGLE) 1f else 0f
         outAlphas[index] = alpha
         return index + 1
     }
+
+    private fun shaderId(rawId: Int?): Float = if (rawId == null) 0f else (rawId + 1).toFloat()
 
     private fun wrapDelta(d: Float, size: Float): Float {
         val half = 0.5f * size
