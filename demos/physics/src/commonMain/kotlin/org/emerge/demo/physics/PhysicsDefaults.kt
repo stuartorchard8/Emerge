@@ -160,7 +160,7 @@ private fun rotateByAngle(v: Frac2, angle: Frac): Frac2 {
 
 private const val DEFAULT_PLANET_COUNT: Int = ScreenRenderer.MAX_BODIES - 1
 private val HOME_PLANET_FORCE_FIELD_DEPTH = Frac(1, 24)
-private val HOME_PLANET_FORCE_FIELD_STRENGTH = Frac(1, 1024*64)
+private val HOME_PLANET_FORCE_FIELD_STRENGTH = Frac(1, 16)
 private val HOME_PLANET_FORCE_FIELD_ALPHA = Frac(1, 4)
 private val ROCKET_RADIUS = Frac(1, 160)
 

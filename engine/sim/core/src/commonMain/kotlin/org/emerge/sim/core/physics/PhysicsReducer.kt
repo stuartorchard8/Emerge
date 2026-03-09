@@ -259,6 +259,8 @@ private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
                 val bTransform = state.transforms[bId] ?: continue
                 val aCollider = state.colliders[aId] ?: continue
                 val bCollider = state.colliders[bId] ?: continue
+                val aMaterial = state.materials[aId] ?: continue
+                val bMaterial = state.materials[bId] ?: continue
                 val aField = state.forceFields[aId]
                 val bField = state.forceFields[bId]
 
@@ -270,13 +272,18 @@ private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
                         bRadius = bCollider.radius,
                     )
                     if (contact != null) {
+                        val sourceMotion = motions[aId] ?: state.motions[aId] ?: continue
                         val targetMotion = motions[bId] ?: state.motions[bId] ?: continue
-                        motions[aId] = targetMotion.copy(
-                            vel = targetMotion.vel + contact.normal * aField.strength,
+                        val updated = applyForceFieldImpulse(
+                            sourceMotion = sourceMotion,
+                            sourceMass = aMaterial.mass,
+                            targetMotion = targetMotion,
+                            targetMass = bMaterial.mass,
+                            outwardNormal = inverted(contact.normal),
+                            impulse = aField.strength,
                         )
-                        motions[bId] = targetMotion.copy(
-                            vel = targetMotion.vel - contact.normal * aField.strength,
-                        )
+                        motions[aId] = updated.first
+                        motions[bId] = updated.second
                     }
                 }
                 if (bField != null) {
@@ -288,12 +295,17 @@ private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
                     )
                     if (contact != null) {
                         val targetMotion = motions[aId] ?: state.motions[aId] ?: continue
-                        motions[aId] = targetMotion.copy(
-                            vel = targetMotion.vel + contact.normal * bField.strength,
+                        val sourceMotion = motions[bId] ?: state.motions[bId] ?: continue
+                        val updated = applyForceFieldImpulse(
+                            sourceMotion = sourceMotion,
+                            sourceMass = bMaterial.mass,
+                            targetMotion = targetMotion,
+                            targetMass = aMaterial.mass,
+                            outwardNormal = contact.normal,
+                            impulse = bField.strength,
                         )
-                        motions[bId] = targetMotion.copy(
-                            vel = targetMotion.vel - contact.normal * bField.strength,
-                        )
+                        motions[bId] = updated.first
+                        motions[aId] = updated.second
                     }
                 }
             }
@@ -439,3 +451,22 @@ private fun surfaceVelocityAtAttachment(
 }
 
 private fun ccwPerp(n: Norm): Norm = Norm(-n.y, n.x)
+
+private fun applyForceFieldImpulse(
+    sourceMotion: MotionComponent,
+    sourceMass: UInt,
+    targetMotion: MotionComponent,
+    targetMass: UInt,
+    outwardNormal: Norm,
+    impulse: Frac,
+): Pair<MotionComponent, MotionComponent> {
+    val safeSourceMass = sourceMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
+    val safeTargetMass = targetMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
+    val sourceDelta = outwardNormal * (impulse / safeSourceMass)
+    val targetDelta = outwardNormal * (impulse / safeTargetMass)
+    return sourceMotion.copy(
+        vel = sourceMotion.vel - sourceDelta,
+    ) to targetMotion.copy(
+        vel = targetMotion.vel + targetDelta,
+    )
+}
