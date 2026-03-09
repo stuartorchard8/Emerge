@@ -6,6 +6,7 @@ import org.emerge.render.torus.shader.WorldShader
 import org.emerge.render.torus.shader.WorldShaderParams
 import org.emerge.sim.core.physics.BodyShape
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.physics.PhysicsRenderBody
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2
@@ -126,8 +127,8 @@ class ScreenRenderer(val contentScale: Vec2) {
         outIds: FloatArray,
         outShapes: FloatArray,
     ): Int {
-        val bodies = params.bodies
-        val n = min(MAX_BODIES, bodies.size)
+        val renderBodies = params.bodies
+        val n = min(MAX_BODIES, renderBodies.size)
 
         // Calculate view matrix once
         val matTmp = FloatArray(MAT4_FLOATS)
@@ -157,14 +158,14 @@ class ScreenRenderer(val contentScale: Vec2) {
 
         val matModel = FloatArray(MAT4_FLOATS)
         for (i in 0 until n) {
-            val b = bodies[i]
-            val bx = b.pos.x.toFloat()
-            val by = b.pos.y.toFloat()
+            val body = renderBodies[i]
+            val bx = body.pos.x.toFloat()
+            val by = body.pos.y.toFloat()
 
             // Scale then Rotate
-            val bodyScale = b.radius.toFloat()
+            val bodyScale = body.radius.toFloat()
             setScale(matS, bodyScale, bodyScale)
-            val bodyRotRad = b.ang.toFloat() * 2f * PI.toFloat()
+            val bodyRotRad = body.ang.toFloat() * 2f * PI.toFloat()
             setRotationZ(matR, bodyRotRad)
             multiply4x4(out = matTmp, a = matR, b = matS)
 
@@ -180,8 +181,8 @@ class ScreenRenderer(val contentScale: Vec2) {
             val base = i * MAT4_FLOATS
             copyMatrix(out = outMatricesColMajor, outOffset = base, src = matTmp)
 
-            outIds[i] = b.playerId.value.toFloat()
-            outShapes[i] = if (b.shape == BodyShape.TRIANGLE) 1f else 0f
+            outIds[i] = (body.playerId?.value ?: body.entityId.value).toFloat()
+            outShapes[i] = if (body.shape == BodyShape.TRIANGLE) 1f else 0f
         }
         return n
     }

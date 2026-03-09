@@ -1,10 +1,10 @@
 package org.emerge.render.torus.shader
 
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.Body
-import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2
 import org.emerge.sim.core.physics.Frac2
+import org.emerge.sim.core.physics.PhysicsRenderBody
+import org.emerge.sim.core.physics.PhysicsState
 
 data class WorldShaderParams(
     val worldSize: Vec2,
@@ -12,12 +12,12 @@ data class WorldShaderParams(
     val viewFocus: Vec2,
     val viewRotationRad: Float,
     val myId: PlayerId?,
-    val bodies: List<Body>,
+    val bodies: List<PhysicsRenderBody>,
 ) {
     companion object {
         fun compute(state: PhysicsState, myId: PlayerId?, zoom: Float, viewRotationRad: Float = 0f): WorldShaderParams {
             val focusWrapped: Frac2 =
-                if (myId != null) state.bodies[myId]?.pos ?: Frac2.zero
+                if (myId != null) state.playerTransform(myId)?.pos ?: Frac2.zero
                 else Frac2.zero
 
             val focus = Vec2(
@@ -32,7 +32,7 @@ data class WorldShaderParams(
                 viewFocus = focus,
                 viewRotationRad = viewRotationRad,
                 myId,
-                bodies = state.bodies.values.toList(),
+                bodies = state.renderBodies(),
             )
         }
     }

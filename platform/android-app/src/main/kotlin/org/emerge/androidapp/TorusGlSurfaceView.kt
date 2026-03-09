@@ -187,7 +187,7 @@ internal class TorusGlSurfaceView(
     private fun currentPlayerAngleTurns(): Float =
         synchronized(stateLock) {
             val pid = latestFrame.myId ?: return@synchronized 0f
-            latestFrame.state.bodies[pid]?.ang?.toFloat() ?: 0f
+            latestFrame.state.playerAngle(pid)?.toFloat() ?: 0f
         }
 
     private fun clearSingleTouchState() {

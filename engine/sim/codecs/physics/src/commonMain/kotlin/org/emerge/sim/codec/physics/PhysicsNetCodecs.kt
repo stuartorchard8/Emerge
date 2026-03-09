@@ -2,13 +2,15 @@ package org.emerge.sim.codec.physics
 
 import org.emerge.net.codec.ByteCursor
 import org.emerge.net.codec.ByteWriter
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.Body
 import org.emerge.sim.core.physics.Frac
 import org.emerge.sim.core.physics.BodyShape
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Frac2
+import org.emerge.sim.core.ecs.ComponentTable
+import org.emerge.sim.core.ecs.EcsWorld
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.auth.StateCodec
 
@@ -39,30 +41,48 @@ object PhysicsNetCodecs {
         object : StateCodec<PhysicsState> {
             override fun encode(state: PhysicsState): ByteArray {
                 val w = ByteWriter()
-                w.writeInt(state.bodies.size)
-                for ((pid, body) in state.bodies) {
-                    w.writeInt(pid.value)
-                    w.writeInt(body.pos.x.raw)
-                    w.writeInt(body.pos.y.raw)
-                    w.writeInt(body.vel.x.raw)
-                    w.writeInt(body.vel.y.raw)
-                    w.writeInt(body.ang.raw)
-                    w.writeInt(body.angVel.raw)
-                    w.writeInt(body.mass.toInt())
-                    w.writeInt(body.radius.raw)
-                    w.writeInt(body.bounce.raw)
-                    w.writeInt(body.rough.raw)
-                    w.writeInt(body.shape.wireValue)
+                w.writeInt(state.world.nextEntityValue)
+                w.writeInt(state.world.entities.size)
+                for (entityId in state.world.entities) {
+                    val transform = state.transforms[entityId] ?: continue
+                    val motion = state.motions[entityId] ?: continue
+                    val collider = state.colliders[entityId] ?: continue
+                    val material = state.materials[entityId] ?: continue
+                    val renderShape = state.renderShapes[entityId] ?: continue
+                    val playerId = state.playerOwned[entityId]?.playerId
+                    w.writeInt(entityId.value)
+                    w.writeInt(playerId?.value ?: -1)
+                    w.writeInt(transform.pos.x.raw)
+                    w.writeInt(transform.pos.y.raw)
+                    w.writeInt(motion.vel.x.raw)
+                    w.writeInt(motion.vel.y.raw)
+                    w.writeInt(transform.ang.raw)
+                    w.writeInt(motion.angVel.raw)
+                    w.writeInt(material.mass.toInt())
+                    w.writeInt(collider.radius.raw)
+                    w.writeInt(material.bounce.raw)
+                    w.writeInt(material.rough.raw)
+                    w.writeInt(renderShape.shape.wireValue)
                 }
                 return w.toByteArray()
             }
 
             override fun decode(bytes: ByteArray): PhysicsState {
                 val c = ByteCursor(bytes)
+                val nextEntityValue = c.readInt()
                 val n = c.readInt()
-                val bodies = LinkedHashMap<PlayerId, Body>(n)
+                var world = EcsWorld(nextEntityValue = nextEntityValue)
+                var playerEntities = LinkedHashMap<PlayerId, EntityId>()
+                var transforms = ComponentTable.empty<org.emerge.sim.core.physics.TransformComponent>()
+                var motions = ComponentTable.empty<org.emerge.sim.core.physics.MotionComponent>()
+                var colliders = ComponentTable.empty<org.emerge.sim.core.physics.ColliderComponent>()
+                var materials = ComponentTable.empty<org.emerge.sim.core.physics.MaterialComponent>()
+                var controls = ComponentTable.empty<org.emerge.sim.core.physics.ControlIntentComponent>()
+                var renderShapes = ComponentTable.empty<org.emerge.sim.core.physics.RenderShapeComponent>()
+                var playerOwned = ComponentTable.empty<org.emerge.sim.core.physics.PlayerOwnedComponent>()
                 repeat(n) {
-                    val pid = PlayerId(c.readInt())
+                    val entityId = EntityId(c.readInt())
+                    val playerIdRaw = c.readInt()
                     val px = c.readInt()
                     val py = c.readInt()
                     val vx = c.readInt()
@@ -74,20 +94,61 @@ object PhysicsNetCodecs {
                     val b = c.readInt()
                     val r = c.readInt()
                     val shape = BodyShape.fromWireValue(c.readInt())
-                    bodies[pid] = Body(
-                        pid,
-                        Frac2.raw(px, py),
-                        Frac2.raw(vx, vy),
-                        Frac(a),
-                        Frac(av),
-                        m.toUInt(),
-                        Frac(rad),
-                        Frac(b),
-                        Frac(r),
-                        shape,
+                    val playerId = if (playerIdRaw >= 0) PlayerId(playerIdRaw) else null
+                    world = world.ensureEntity(entityId)
+                    transforms = transforms.put(
+                        entityId,
+                        org.emerge.sim.core.physics.TransformComponent(
+                            pos = Frac2.raw(px, py),
+                            ang = Frac(a),
+                        ),
                     )
+                    motions = motions.put(
+                        entityId,
+                        org.emerge.sim.core.physics.MotionComponent(
+                            vel = Frac2.raw(vx, vy),
+                            angVel = Frac(av),
+                        ),
+                    )
+                    colliders = colliders.put(
+                        entityId,
+                        org.emerge.sim.core.physics.ColliderComponent(radius = Frac(rad)),
+                    )
+                    materials = materials.put(
+                        entityId,
+                        org.emerge.sim.core.physics.MaterialComponent(
+                            mass = m.toUInt(),
+                            bounce = Frac(b),
+                            rough = Frac(r),
+                        ),
+                    )
+                    renderShapes = renderShapes.put(
+                        entityId,
+                        org.emerge.sim.core.physics.RenderShapeComponent(shape = shape),
+                    )
+                    if (playerId != null) {
+                        playerEntities[playerId] = entityId
+                        playerOwned = playerOwned.put(
+                            entityId,
+                            org.emerge.sim.core.physics.PlayerOwnedComponent(playerId),
+                        )
+                        controls = controls.put(
+                            entityId,
+                            org.emerge.sim.core.physics.ControlIntentComponent.ZERO,
+                        )
+                    }
                 }
-                return PhysicsState(bodies = bodies)
+                return PhysicsState(
+                    world = world,
+                    playerEntities = playerEntities,
+                    transforms = transforms,
+                    motions = motions,
+                    colliders = colliders,
+                    materials = materials,
+                    controls = controls,
+                    renderShapes = renderShapes,
+                    playerOwned = playerOwned,
+                )
             }
         }
 }

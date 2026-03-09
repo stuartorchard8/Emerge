@@ -1,37 +1,56 @@
 package org.emerge.sim.core.physics
 
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 
-data class Body(
-    val playerId: PlayerId,
+data class TransformComponent(
     val pos: Frac2,
-    val vel: Frac2,
     val ang: Frac,
+)
+
+data class MotionComponent(
+    val vel: Frac2,
     val angVel: Frac,
-    val mass: UInt,
+)
+
+data class ColliderComponent(
     val radius: Frac,
+)
+
+data class MaterialComponent(
+    val mass: UInt,
     val bounce: Frac,
     val rough: Frac,
-    val shape: BodyShape,
+)
+
+data class ControlIntentComponent(
+    val thrust: Int,
+    val turn: Int,
 ) {
     companion object {
-        fun rocket(
-            playerId: PlayerId,
-            pos: Frac2,
-        ) = Body(
-            playerId,
-            pos,
-            vel = Frac2.zero,
-            ang = Frac(0),
-            angVel = Frac(0),
-            mass = 1000u,
-            radius = Frac(1,160),
-            bounce = Frac(3, 4),
-            rough = Frac(1, 16),
-            shape = BodyShape.TRIANGLE,
+        val ZERO = ControlIntentComponent(
+            thrust = 0,
+            turn = 0,
         )
     }
 }
+
+data class RenderShapeComponent(
+    val shape: BodyShape,
+)
+
+data class PlayerOwnedComponent(
+    val playerId: PlayerId,
+)
+
+data class PhysicsRenderBody(
+    val entityId: EntityId,
+    val playerId: PlayerId?,
+    val pos: Frac2,
+    val ang: Frac,
+    val radius: Frac,
+    val shape: BodyShape,
+)
 
 enum class BodyShape(val wireValue: Int) {
     CIRCLE(0),

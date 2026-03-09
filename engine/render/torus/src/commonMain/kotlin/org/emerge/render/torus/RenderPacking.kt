@@ -1,6 +1,6 @@
 package org.emerge.render.torus
 
-import org.emerge.sim.core.physics.Body
+import org.emerge.sim.core.physics.PhysicsRenderBody
 
 /**
  * Packs bodies into an array usable by GPU shaders:
@@ -8,7 +8,7 @@ import org.emerge.sim.core.physics.Body
  * - output is always exactly 4*maxBodies floats; unused entries are zeroed
  */
 fun packBodiesToFloatArray(
-    bodies: List<Body>,
+    bodies: List<PhysicsRenderBody>,
     maxBodies: Int,
     out: FloatArray,
 ) {
@@ -22,7 +22,7 @@ fun packBodiesToFloatArray(
             out[base + 0] = b.pos.x.toFloat()/Int.MAX_VALUE
             out[base + 1] = b.pos.y.toFloat()/Int.MAX_VALUE
             out[base + 2] = b.radius.toFloat()/Int.MAX_VALUE
-            out[base + 3] = b.playerId.value.toFloat()
+            out[base + 3] = (b.playerId?.value ?: b.entityId.value).toFloat()
         } else {
             out[base + 0] = 0f
             out[base + 1] = 0f
