@@ -15,6 +15,7 @@ class CircleShader {
     private val instanceSecondaryIdVbo: Int = GPU.genBuffers()
     private val instanceShapeVbo: Int = GPU.genBuffers()
     private val instanceAlphaVbo: Int = GPU.genBuffers()
+    private val instanceRadiusVbo: Int = GPU.genBuffers()
     private val instanceMatrices: FloatBuffer =
         ByteBuffer.allocateDirect(MAX_INSTANCES * MAT4_FLOATS * 4)
             .order(ByteOrder.nativeOrder())
@@ -32,6 +33,10 @@ class CircleShader {
             .order(ByteOrder.nativeOrder())
             .asFloatBuffer()
     private val instanceAlphas: FloatBuffer =
+        ByteBuffer.allocateDirect(MAX_INSTANCES * 4)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+    private val instanceRadii: FloatBuffer =
         ByteBuffer.allocateDirect(MAX_INSTANCES * 4)
             .order(ByteOrder.nativeOrder())
             .asFloatBuffer()
@@ -110,6 +115,20 @@ class CircleShader {
         )
         GPU.vertexAttribDivisor(INSTANCE_ALPHA_ATTR, 1)
         GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
+
+        // Instance radius as float attribute, divisor = 1
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceRadiusVbo)
+        GPU.enableVertexAttribArray(INSTANCE_RADIUS_ATTR)
+        GPU.putVertexAttribPointer(
+            INSTANCE_RADIUS_ATTR,
+            1,
+            GPU.FLOAT,
+            false,
+            4,
+            0,
+        )
+        GPU.vertexAttribDivisor(INSTANCE_RADIUS_ATTR, 1)
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
     }
 
     fun drawInstanced(
@@ -120,6 +139,7 @@ class CircleShader {
         secondaryIds: FloatArray,
         shapes: FloatArray,
         alphas: FloatArray,
+        radii: FloatArray,
     ) {
         GPU.useProgram(program)
 
@@ -164,6 +184,14 @@ class CircleShader {
         GPU.bufferData(GPU.ARRAY_BUFFER, n, instanceAlphas, GPU.DYNAMIC_DRAW)
         GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
 
+        instanceRadii.clear()
+        instanceRadii.put(radii, 0, n)
+        instanceRadii.flip()
+
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceRadiusVbo)
+        GPU.bufferData(GPU.ARRAY_BUFFER, n, instanceRadii, GPU.DYNAMIC_DRAW)
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
+
         GPU.drawTrianglesInstanced(vOffset, 3, n)
     }
 
@@ -174,6 +202,7 @@ class CircleShader {
         GPU.deleteBuffers(instanceSecondaryIdVbo)
         GPU.deleteBuffers(instanceShapeVbo)
         GPU.deleteBuffers(instanceAlphaVbo)
+        GPU.deleteBuffers(instanceRadiusVbo)
     }
 
     companion object {
@@ -182,6 +211,7 @@ class CircleShader {
         private const val INSTANCE_SECONDARY_ID_ATTR = 6
         private const val INSTANCE_SHAPE_ATTR = 7
         private const val INSTANCE_ALPHA_ATTR = 8
+        private const val INSTANCE_RADIUS_ATTR = 9
         private const val MAT4_FLOATS = 16
         private const val MAX_INSTANCES = 1000
     }

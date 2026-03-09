@@ -16,12 +16,14 @@ object CircleShaderSources {
         layout(location = 6) in float iSecondaryId;
         layout(location = 7) in float iBodyShape;
         layout(location = 8) in float iBodyAlpha;
+        layout(location = 9) in float iBodyRadius;
 
         out vec2 vLocal;
         out float vPrimaryId;
         out float vSecondaryId;
         out float vBodyShape;
         out float vBodyAlpha;
+        out float vBodyRadius;
         out float vInstanceId;
         void main() {
             mat4 m = mat4(iCol0, iCol1, iCol2, iCol3);
@@ -31,7 +33,8 @@ object CircleShaderSources {
             vSecondaryId = iSecondaryId;
             vBodyShape = iBodyShape;
             vBodyAlpha = iBodyAlpha;
-            vInstanceId = gl_InstanceID;
+            vBodyRadius = iBodyRadius;
+            vInstanceId = float(gl_InstanceID);
         }
         """.trimIndent()
 
@@ -46,6 +49,7 @@ object CircleShaderSources {
         in float vSecondaryId;
         in float vBodyShape;
         in float vBodyAlpha;
+        in float vBodyRadius;
         in float vInstanceId;
         out vec4 fragColor;
         
@@ -160,7 +164,7 @@ object CircleShaderSources {
                         discard;
                     }
                 } else {
-                    float n = (snoise((vLocal + vInstanceId)) + snoise((vLocal + vInstanceId)*4.0)+3.0)*a;
+                    float n = (snoise((vLocal + vInstanceId)*40.0*vBodyRadius) + snoise((vLocal + vInstanceId + 10301.0)*160.0*vBodyRadius)*0.5+3.0)*a;
                     if (n < 1.0) {
                         discard;
                     }

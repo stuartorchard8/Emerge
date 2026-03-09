@@ -33,6 +33,7 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val bodyInstanceSecondaryIds = FloatArray(MAX_RENDER_BODIES)
     private val bodyInstanceShapes = FloatArray(MAX_RENDER_BODIES)
     private val bodyInstanceAlphas = FloatArray(MAX_RENDER_BODIES)
+    private val bodyInstanceRadii = FloatArray(MAX_RENDER_BODIES)
     private val matTmp = FloatArray(MAT4_FLOATS)
     private val matT = FloatArray(MAT4_FLOATS)
     private val matR = FloatArray(MAT4_FLOATS)
@@ -101,6 +102,7 @@ class ScreenRenderer(val contentScale: Vec2) {
                 outSecondaryIds = bodyInstanceSecondaryIds,
                 outShapes = bodyInstanceShapes,
                 outAlphas = bodyInstanceAlphas,
+                outRadii = bodyInstanceRadii,
             )
 
         val x0 = floor(layout.worldPxMin.x).toInt()
@@ -121,6 +123,7 @@ class ScreenRenderer(val contentScale: Vec2) {
             secondaryIds = bodyInstanceSecondaryIds,
             shapes = bodyInstanceShapes,
             alphas = bodyInstanceAlphas,
+            radii = bodyInstanceRadii,
         )
         GPU.disableBlend()
         GPU.disableScissorTest()
@@ -145,6 +148,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         outSecondaryIds: FloatArray,
         outShapes: FloatArray,
         outAlphas: FloatArray,
+        outRadii: FloatArray,
     ): Int {
         // Calculate view matrix once
         // Rotate then Scale
@@ -189,6 +193,7 @@ class ScreenRenderer(val contentScale: Vec2) {
                 outSecondaryIds = outSecondaryIds,
                 outShapes = outShapes,
                 outAlphas = outAlphas,
+                outRadii = outRadii,
             )
             if (n >= MAX_RENDER_BODIES) {
                 break
@@ -211,6 +216,7 @@ class ScreenRenderer(val contentScale: Vec2) {
                     outSecondaryIds = outSecondaryIds,
                     outShapes = outShapes,
                     outAlphas = outAlphas,
+                    outRadii = outRadii,
                 )
                 if (n >= MAX_RENDER_BODIES) {
                     break
@@ -236,6 +242,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         outSecondaryIds: FloatArray,
         outShapes: FloatArray,
         outAlphas: FloatArray,
+        outRadii: FloatArray,
     ): Int {
         if (index >= MAX_RENDER_BODIES) {
             return index
@@ -259,6 +266,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         outSecondaryIds[index] = secondaryId
         outShapes[index] = if (shape == BodyShape.TRIANGLE) 1f else 0f
         outAlphas[index] = alpha
+        outRadii[index] = radius
         return index + 1
     }
 
