@@ -52,5 +52,11 @@ data class ComponentTable<T>(
 
     companion object {
         fun <T> empty(): ComponentTable<T> = ComponentTable()
+
+        /**
+         * Wrap a map that is already fully built, avoiding repeated copy-on-write churn while decoding
+         * or batch-building tables. Callers must not mutate the map after handing it over.
+         */
+        fun <T> fromMap(values: Map<EntityId, T>): ComponentTable<T> = ComponentTable(values)
     }
 }

@@ -58,38 +58,52 @@ class AuthoritativeClient<S, I>(
     }
 
     fun poll() {
+        var latestWelcome: AuthProtocol.Welcome? = null
+        var latestSnapshot: AuthProtocol.Snapshot? = null
         while (true) {
             val pkt = pipe.receive() ?: break
             lastPacketAt = timeSource.markNow()
             val welcome = AuthProtocol.decodeWelcome(pkt)
             if (welcome != null) {
-                playerId = welcome.playerId
-                tick = welcome.tick
-                val decodedState =
-                    try {
-                        stateCodec.decode(welcome.stateBytes)
-                    } catch (t: Throwable) {
-                        disconnect("invalid welcome state: ${t.javaClass.simpleName}")
-                        continue
-                    }
-                state = decodedState
-                connectionState = ConnectionState.CONNECTED
+                latestWelcome = welcome
                 continue
             }
             val snap = AuthProtocol.decodeSnapshot(pkt)
             if (snap != null) {
-                tick = snap.tick
-                val decodedState =
-                    try {
-                        stateCodec.decode(snap.stateBytes)
-                    } catch (t: Throwable) {
-                        disconnect("invalid snapshot: ${t.javaClass.simpleName}")
-                        continue
-                    }
-                state = decodedState
-                if (playerId != null) connectionState = ConnectionState.CONNECTED
+                latestSnapshot = snap
                 continue
             }
+        }
+
+        if (latestWelcome != null) {
+            val welcome = latestWelcome
+            playerId = welcome.playerId
+            tick = welcome.tick
+            val decodedState =
+                try {
+                    stateCodec.decode(welcome.stateBytes)
+                } catch (t: Throwable) {
+                    disconnect("invalid welcome state: ${t.javaClass.simpleName}")
+                    checkTimeouts()
+                    return
+                }
+            state = decodedState
+            connectionState = ConnectionState.CONNECTED
+        }
+
+        if (latestSnapshot != null) {
+            val snapshot = latestSnapshot
+            tick = snapshot.tick
+            val decodedState =
+                try {
+                    stateCodec.decode(snapshot.stateBytes)
+                } catch (t: Throwable) {
+                    disconnect("invalid snapshot: ${t.javaClass.simpleName}")
+                    checkTimeouts()
+                    return
+                }
+            state = decodedState
+            if (playerId != null) connectionState = ConnectionState.CONNECTED
         }
 
         checkTimeouts()

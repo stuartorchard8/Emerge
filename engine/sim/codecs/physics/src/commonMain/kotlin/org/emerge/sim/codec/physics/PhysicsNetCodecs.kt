@@ -98,20 +98,20 @@ object PhysicsNetCodecs {
                 require(bytes.size == expectedSize) {
                     "Invalid state payload size: expected $expectedSize bytes for $n entities, got ${bytes.size}"
                 }
-                var world = EcsWorld(nextEntityValue = nextEntityValue)
-                var playerEntities = LinkedHashMap<PlayerId, EntityId>()
-                var transforms = ComponentTable.empty<org.emerge.sim.core.physics.TransformComponent>()
-                var motions = ComponentTable.empty<org.emerge.sim.core.physics.MotionComponent>()
-                var colliders = ComponentTable.empty<org.emerge.sim.core.physics.ColliderComponent>()
-                var materials = ComponentTable.empty<org.emerge.sim.core.physics.MaterialComponent>()
-                var controls = ComponentTable.empty<org.emerge.sim.core.physics.ControlIntentComponent>()
-                var renderShapes = ComponentTable.empty<org.emerge.sim.core.physics.RenderShapeComponent>()
-                var playerOwned = ComponentTable.empty<org.emerge.sim.core.physics.PlayerOwnedComponent>()
-                var teams = ComponentTable.empty<org.emerge.sim.core.physics.TeamComponent>()
-                var planets = ComponentTable.empty<org.emerge.sim.core.physics.PlanetComponent>()
-                var homePlanets = ComponentTable.empty<org.emerge.sim.core.physics.HomePlanetComponent>()
-                var forceFields = ComponentTable.empty<org.emerge.sim.core.physics.ForceFieldComponent>()
-                var landings = ComponentTable.empty<org.emerge.sim.core.physics.LandingAttachmentComponent>()
+                val entities = ArrayList<EntityId>(n)
+                val playerEntities = LinkedHashMap<PlayerId, EntityId>()
+                val transforms = LinkedHashMap<EntityId, org.emerge.sim.core.physics.TransformComponent>(n)
+                val motions = LinkedHashMap<EntityId, org.emerge.sim.core.physics.MotionComponent>(n)
+                val colliders = LinkedHashMap<EntityId, org.emerge.sim.core.physics.ColliderComponent>(n)
+                val materials = LinkedHashMap<EntityId, org.emerge.sim.core.physics.MaterialComponent>(n)
+                val controls = LinkedHashMap<EntityId, org.emerge.sim.core.physics.ControlIntentComponent>()
+                val renderShapes = LinkedHashMap<EntityId, org.emerge.sim.core.physics.RenderShapeComponent>(n)
+                val playerOwned = LinkedHashMap<EntityId, org.emerge.sim.core.physics.PlayerOwnedComponent>()
+                val teams = LinkedHashMap<EntityId, org.emerge.sim.core.physics.TeamComponent>()
+                val planets = LinkedHashMap<EntityId, org.emerge.sim.core.physics.PlanetComponent>()
+                val homePlanets = LinkedHashMap<EntityId, org.emerge.sim.core.physics.HomePlanetComponent>()
+                val forceFields = LinkedHashMap<EntityId, org.emerge.sim.core.physics.ForceFieldComponent>()
+                val landings = LinkedHashMap<EntityId, org.emerge.sim.core.physics.LandingAttachmentComponent>()
                 repeat(n) {
                     val entityId = EntityId(c.readInt())
                     val playerIdRaw = c.readInt()
@@ -137,106 +137,84 @@ object PhysicsNetCodecs {
                     val landingDy = c.readInt()
                     val landingAng = c.readInt()
                     val playerId = if (playerIdRaw >= 0) PlayerId(playerIdRaw) else null
-                    world = world.ensureEntity(entityId)
-                    transforms = transforms.put(
-                        entityId,
+                    entities += entityId
+                    transforms[entityId] =
                         org.emerge.sim.core.physics.TransformComponent(
                             pos = Frac2.raw(px, py),
                             ang = Frac(a),
-                        ),
-                    )
-                    motions = motions.put(
-                        entityId,
+                        )
+                    motions[entityId] =
                         org.emerge.sim.core.physics.MotionComponent(
                             vel = Frac2.raw(vx, vy),
                             angVel = Frac(av),
-                        ),
-                    )
-                    colliders = colliders.put(
-                        entityId,
-                        org.emerge.sim.core.physics.ColliderComponent(radius = Frac(rad)),
-                    )
-                    materials = materials.put(
-                        entityId,
+                        )
+                    colliders[entityId] =
+                        org.emerge.sim.core.physics.ColliderComponent(radius = Frac(rad))
+                    materials[entityId] =
                         org.emerge.sim.core.physics.MaterialComponent(
                             mass = m.toUInt(),
                             bounce = Frac(b),
                             rough = Frac(r),
-                        ),
-                    )
-                    renderShapes = renderShapes.put(
-                        entityId,
-                        org.emerge.sim.core.physics.RenderShapeComponent(shape = shape),
-                    )
-                    if (planetSeed >= 0) {
-                        planets = planets.put(
-                            entityId,
-                            org.emerge.sim.core.physics.PlanetComponent(seed = planetSeed),
                         )
+                    renderShapes[entityId] =
+                        org.emerge.sim.core.physics.RenderShapeComponent(shape = shape)
+                    if (planetSeed >= 0) {
+                        planets[entityId] =
+                            org.emerge.sim.core.physics.PlanetComponent(seed = planetSeed)
                     }
                     if (homePlanetPlayerIdRaw >= 0) {
-                        homePlanets = homePlanets.put(
-                            entityId,
+                        homePlanets[entityId] =
                             org.emerge.sim.core.physics.HomePlanetComponent(
                                 playerId = PlayerId(homePlanetPlayerIdRaw),
-                            ),
-                        )
+                            )
                     }
                     if (teamIdRaw >= 0) {
-                        teams = teams.put(
-                            entityId,
+                        teams[entityId] =
                             org.emerge.sim.core.physics.TeamComponent(
                                 teamId = TeamId(teamIdRaw),
-                            ),
-                        )
+                            )
                     }
                     if (forceFieldRadiusScaleRaw > 0) {
-                        forceFields = forceFields.put(
-                            entityId,
+                        forceFields[entityId] =
                             org.emerge.sim.core.physics.ForceFieldComponent(
                                 depth = Frac(forceFieldRadiusScaleRaw),
                                 strength = Frac(forceFieldStrengthRaw),
                                 alpha = Frac(forceFieldAlphaRaw),
-                            ),
-                        )
+                            )
                     }
                     if (playerId != null) {
                         playerEntities[playerId] = entityId
-                        playerOwned = playerOwned.put(
-                            entityId,
-                            org.emerge.sim.core.physics.PlayerOwnedComponent(playerId),
-                        )
-                        controls = controls.put(
-                            entityId,
-                            org.emerge.sim.core.physics.ControlIntentComponent.ZERO,
-                        )
+                        playerOwned[entityId] =
+                            org.emerge.sim.core.physics.PlayerOwnedComponent(playerId)
+                        controls[entityId] = org.emerge.sim.core.physics.ControlIntentComponent.ZERO
                     }
                     if (landingParentIdRaw >= 0) {
-                        landings = landings.put(
-                            entityId,
+                        landings[entityId] =
                             org.emerge.sim.core.physics.LandingAttachmentComponent(
                                 parentEntityId = EntityId(landingParentIdRaw),
                                 relativePos = Frac2.raw(landingDx, landingDy),
                                 relativeAng = Frac(landingAng),
-                            ),
-                        )
+                            )
                     }
                 }
                 return PhysicsState(
-                    world = world,
+                    world = EcsWorld(
+                        entities = entities,
+                        nextEntityValue = nextEntityValue,
+                    ),
                     playerEntities = playerEntities,
-                    transforms = transforms,
-                    motions = motions,
-                    colliders = colliders,
-                    materials = materials,
-                    controls = controls,
-                    renderShapes = renderShapes,
-                    playerOwned = playerOwned,
-                    teams = teams,
-                    planets = planets,
-                    homePlanets = homePlanets,
-                    forceFields = forceFields,
-                    landings = landings,
+                    transforms = ComponentTable.fromMap(transforms),
+                    motions = ComponentTable.fromMap(motions),
+                    colliders = ComponentTable.fromMap(colliders),
+                    materials = ComponentTable.fromMap(materials),
+                    controls = ComponentTable.fromMap(controls),
+                    renderShapes = ComponentTable.fromMap(renderShapes),
+                    playerOwned = ComponentTable.fromMap(playerOwned),
+                    teams = ComponentTable.fromMap(teams),
+                    planets = ComponentTable.fromMap(planets),
+                    homePlanets = ComponentTable.fromMap(homePlanets),
+                    forceFields = ComponentTable.fromMap(forceFields),
+                    landings = ComponentTable.fromMap(landings),
                 )
             }
         }
