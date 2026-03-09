@@ -6,7 +6,6 @@ import org.emerge.render.torus.shader.WorldShader
 import org.emerge.render.torus.shader.WorldShaderParams
 import org.emerge.sim.core.physics.BodyShape
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.PhysicsRenderBody
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2
@@ -33,6 +32,12 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val bodyInstanceIds = FloatArray(MAX_RENDER_BODIES)
     private val bodyInstanceShapes = FloatArray(MAX_RENDER_BODIES)
     private val bodyInstanceAlphas = FloatArray(MAX_RENDER_BODIES)
+    private val matTmp = FloatArray(MAT4_FLOATS)
+    private val matT = FloatArray(MAT4_FLOATS)
+    private val matR = FloatArray(MAT4_FLOATS)
+    private val matS = FloatArray(MAT4_FLOATS)
+    private val matView = FloatArray(MAT4_FLOATS)
+    private val matModel = FloatArray(MAT4_FLOATS)
 
     companion object {
         const val MAX_BODIES: Int = 100
@@ -87,6 +92,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         guiShader.draw(vOffset=layout.guiVertexOffset)
         val n =
             packBodyInstances(
+                state = state,
                 params = params,
                 layout = layout,
                 outMatricesColMajor = bodyInstanceMatrices,
@@ -128,6 +134,7 @@ class ScreenRenderer(val contentScale: Vec2) {
     }
 
     private fun packBodyInstances(
+        state: PhysicsState,
         params: WorldShaderParams,
         layout: ScreenLayout,
         outMatricesColMajor: FloatArray,
@@ -135,16 +142,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         outShapes: FloatArray,
         outAlphas: FloatArray,
     ): Int {
-        val renderBodies = params.bodies
-        val n = min(MAX_RENDER_BODIES, renderBodies.size)
-
         // Calculate view matrix once
-        val matTmp = FloatArray(MAT4_FLOATS)
-        val matT = FloatArray(MAT4_FLOATS)
-        val matR = FloatArray(MAT4_FLOATS)
-        val matS = FloatArray(MAT4_FLOATS)
-        val matView = FloatArray(MAT4_FLOATS)
-
         // Rotate then Scale
         setRotationZ(matR, params.viewRotationRad)
         val worldPxSize = Vec2(layout.resolution.x, layout.resolution.y)
@@ -164,36 +162,92 @@ class ScreenRenderer(val contentScale: Vec2) {
         setTranslation(matT, viewCenterX, viewCenterY)
         multiply4x4(out = matView, a = matT, b = matTmp)
 
-        val matModel = FloatArray(MAT4_FLOATS)
-        for (i in 0 until n) {
-            val body = renderBodies[i]
-            val bx = body.pos.x.toFloat()
-            val by = body.pos.y.toFloat()
-
-            // Scale then Rotate
-            val bodyScale = body.radius.toFloat()
-            setScale(matS, bodyScale, bodyScale)
-            val bodyRotRad = body.ang.toFloat() * 2f * PI.toFloat()
-            setRotationZ(matR, bodyRotRad)
-            multiply4x4(out = matTmp, a = matR, b = matS)
-
-            // Translate
-            val dx = wrapDelta(bx - params.viewFocus.x, params.worldSize.x)
-            val dy = wrapDelta(by - params.viewFocus.y, params.worldSize.y)
-            setTranslation(matT, dx, dy)
-            multiply4x4(out = matModel, a = matT, b = matTmp)
-
-            // Apply view
-            multiply4x4(out = matTmp, a = matView, b = matModel)
-
-            val base = i * MAT4_FLOATS
-            copyMatrix(out = outMatricesColMajor, outOffset = base, src = matTmp)
-
-            outIds[i] = (body.playerId?.value ?: body.entityId.value).toFloat()
-            outShapes[i] = if (body.shape == BodyShape.TRIANGLE) 1f else 0f
-            outAlphas[i] = body.alpha
+        var n = 0
+        for (entityId in state.world.entities) {
+            val transform = state.transforms[entityId] ?: continue
+            val collider = state.colliders[entityId] ?: continue
+            val renderShape = state.renderShapes[entityId] ?: continue
+            val ownerId = (state.playerOwned[entityId]?.playerId?.value ?: entityId.value).toFloat()
+            n = packBodyInstance(
+                index = n,
+                entityIdValue = ownerId,
+                posX = transform.pos.x.toFloat(),
+                posY = transform.pos.y.toFloat(),
+                angleTurns = transform.ang.toFloat(),
+                radius = collider.radius.toFloat(),
+                shape = renderShape.shape,
+                alpha = 1f,
+                params = params,
+                outMatricesColMajor = outMatricesColMajor,
+                outIds = outIds,
+                outShapes = outShapes,
+                outAlphas = outAlphas,
+            )
+            if (n >= MAX_RENDER_BODIES) {
+                break
+            }
+            val forceField = state.forceFields[entityId]
+            if (forceField != null && renderShape.shape == BodyShape.CIRCLE) {
+                n = packBodyInstance(
+                    index = n,
+                    entityIdValue = ownerId,
+                    posX = transform.pos.x.toFloat(),
+                    posY = transform.pos.y.toFloat(),
+                    angleTurns = transform.ang.toFloat(),
+                    radius = (collider.radius + forceField.depth).toFloat(),
+                    shape = renderShape.shape,
+                    alpha = forceField.alpha.toFloat(),
+                    params = params,
+                    outMatricesColMajor = outMatricesColMajor,
+                    outIds = outIds,
+                    outShapes = outShapes,
+                    outAlphas = outAlphas,
+                )
+                if (n >= MAX_RENDER_BODIES) {
+                    break
+                }
+            }
         }
         return n
+    }
+
+    private fun packBodyInstance(
+        index: Int,
+        entityIdValue: Float,
+        posX: Float,
+        posY: Float,
+        angleTurns: Float,
+        radius: Float,
+        shape: BodyShape,
+        alpha: Float,
+        params: WorldShaderParams,
+        outMatricesColMajor: FloatArray,
+        outIds: FloatArray,
+        outShapes: FloatArray,
+        outAlphas: FloatArray,
+    ): Int {
+        if (index >= MAX_RENDER_BODIES) {
+            return index
+        }
+
+        // Scale then rotate for this body.
+        setScale(matS, radius, radius)
+        setRotationZ(matR, angleTurns * 2f * PI.toFloat())
+        multiply4x4(out = matTmp, a = matR, b = matS)
+
+        // Translate into wrapped world space relative to the current focus.
+        val dx = wrapDelta(posX - params.viewFocus.x, params.worldSize.x)
+        val dy = wrapDelta(posY - params.viewFocus.y, params.worldSize.y)
+        setTranslation(matT, dx, dy)
+        multiply4x4(out = matModel, a = matT, b = matTmp)
+        multiply4x4(out = matTmp, a = matView, b = matModel)
+
+        val base = index * MAT4_FLOATS
+        copyMatrix(out = outMatricesColMajor, outOffset = base, src = matTmp)
+        outIds[index] = entityIdValue
+        outShapes[index] = if (shape == BodyShape.TRIANGLE) 1f else 0f
+        outAlphas[index] = alpha
+        return index + 1
     }
 
     private fun wrapDelta(d: Float, size: Float): Float {

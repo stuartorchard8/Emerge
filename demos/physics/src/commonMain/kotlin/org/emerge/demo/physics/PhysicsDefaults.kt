@@ -22,7 +22,7 @@ fun createDefaultInitialState(): PhysicsState {
             vel = Norm.fromAngle(Frac(it, DEFAULT_PLANET_COUNT)).perp * Frac(1, 1000),
             ang = Frac(0),
             angVel = Frac(0),
-            mass = (it.toUInt() + 10u) * 100u,
+            mass = (it.toUInt() + 100u) * 1000u,
             radius = Frac(it + 100, 4000),
             bounce = Frac(3, 4),
             rough = Frac(8, 16),
@@ -117,7 +117,7 @@ private fun spawnRocketOnPlanetSurface(
                 vel = planetMotion.vel,
                 ang = worldAng,
                 angVel = planetMotion.angVel,
-                mass = 1000u,
+                mass = 100u,
                 radius = ROCKET_RADIUS,
                 bounce = Frac(3, 4),
                 rough = Frac(1, 16),
@@ -130,7 +130,7 @@ private fun spawnRocketOnPlanetSurface(
                 vel = planetMotion.vel,
                 ang = worldAng,
                 angVel = planetMotion.angVel,
-                mass = 1000u,
+                mass = 100u,
                 radius = ROCKET_RADIUS,
                 bounce = Frac(3, 4),
                 rough = Frac(1, 16),
@@ -172,8 +172,7 @@ private fun rotateByAngle(v: Frac2, angle: Frac): Frac2 {
 
 private const val DEFAULT_PLANET_COUNT: Int = ScreenRenderer.MAX_BODIES - 1
 private val HOME_PLANET_FORCE_FIELD_DEPTH = Frac(1, 24)
-private val HOME_PLANET_FORCE_FIELD_STRENGTH = Frac(1, 16)
-private val HOME_PLANET_FORCE_FIELD_DAMPEN_STRENGTH = Frac(1, 64)
+private val HOME_PLANET_FORCE_FIELD_STRENGTH = Frac(1, 1024*32)
 private val HOME_PLANET_FORCE_FIELD_ALPHA = Frac(1, 4)
 private val ROCKET_RADIUS = Frac(1, 160)
 

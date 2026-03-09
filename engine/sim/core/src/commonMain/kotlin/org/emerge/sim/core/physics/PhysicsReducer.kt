@@ -1,6 +1,7 @@
 package org.emerge.sim.core.physics
 
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.ecs.EcsSystems
@@ -32,18 +33,16 @@ private object InputSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput
         state: PhysicsState,
         inputs: Map<PlayerId, PhysicsInput>,
     ): PhysicsState {
-        var controls = state.controls
+        val controls = LinkedHashMap(state.controls.asMap())
         for ((playerId, entityId) in state.playerEntities) {
             val input = inputs[playerId] ?: PhysicsInput.ZERO
-            controls = controls.put(
-                entityId,
+            controls[entityId] =
                 ControlIntentComponent(
                     thrust = input.thrust,
                     turn = input.turn,
-                ),
-            )
+                )
         }
-        return state.copy(controls = controls)
+        return state.copy(controls = ComponentTable.fromMap(controls))
     }
 }
 
@@ -53,28 +52,26 @@ private object LiftOffSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInp
         state: PhysicsState,
         inputs: Map<PlayerId, PhysicsInput>,
     ): PhysicsState {
-        var motions = state.motions
-        var landings = state.landings
+        val motions = LinkedHashMap(state.motions.asMap())
+        val landings = LinkedHashMap(state.landings.asMap())
         for ((entityId, control) in state.controls.entries()) {
             val landing = landings[entityId]
             if (control.thrust > 0 && landing != null) {
                 val parentTransform = state.transforms[landing.parentEntityId]
                 val parentMotion = state.motions[landing.parentEntityId]
                 if (parentTransform != null && parentMotion != null) {
-                    motions = motions.put(
-                        entityId,
+                    motions[entityId] =
                         MotionComponent(
                             vel = surfaceVelocityAtAttachment(parentTransform, parentMotion, landing),
                             angVel = parentMotion.angVel,
-                        ),
-                    )
+                        )
                 }
-                landings = landings.remove(entityId)
+                landings.remove(entityId)
             }
         }
         return state.copy(
-            motions = motions,
-            landings = landings,
+            motions = ComponentTable.fromMap(motions),
+            landings = ComponentTable.fromMap(landings),
         )
     }
 }
@@ -115,8 +112,8 @@ private object IntegrationSystem : EcsSystem<PhysicsConfig, PhysicsState, Physic
             motions[entityId] = motion.copy(vel = vel, angVel = angVel)
         }
         return state.copy(
-            transforms = state.transforms.putAll(transforms.map { it.key to it.value }),
-            motions = state.motions.putAll(motions.map { it.key to it.value }),
+            transforms = ComponentTable.fromMap(transforms),
+            motions = ComponentTable.fromMap(motions),
         )
     }
 }
@@ -236,9 +233,9 @@ private object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsI
             }
         }
         return state.copy(
-            transforms = state.transforms.putAll(transforms.map { it.key to it.value }),
-            motions = state.motions.putAll(motions.map { it.key to it.value }),
-            landings = state.landings.putAll(landings.map { it.key to it.value }),
+            transforms = ComponentTable.fromMap(transforms),
+            motions = ComponentTable.fromMap(motions),
+            landings = ComponentTable.fromMap(landings),
         )
     }
 }
@@ -292,13 +289,13 @@ private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
                                     linearDamping = FORCE_FIELD_TEAM_DAMPING,
                                 )
                             } else {
-                                applyForceFieldImpulse(
+                                applyForceFieldAcceleration(
                                     sourceMotion = sourceMotion,
                                     sourceMass = aMaterial.mass,
                                     targetMotion = targetMotion,
                                     targetMass = bMaterial.mass,
                                     outwardNormal = inverted(contact.normal),
-                                    impulse = aField.strength,
+                                    sourceAcc = aField.strength,
                                 )
                             }
                         motions[aId] = updated.first
@@ -330,13 +327,13 @@ private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
                                     linearDamping = FORCE_FIELD_TEAM_DAMPING,
                                 )
                             } else {
-                                applyForceFieldImpulse(
+                                applyForceFieldAcceleration(
                                     sourceMotion = sourceMotion,
                                     sourceMass = bMaterial.mass,
                                     targetMotion = targetMotion,
                                     targetMass = aMaterial.mass,
                                     outwardNormal = contact.normal,
-                                    impulse = bField.strength,
+                                    sourceAcc = bField.strength,
                                 )
                             }
                         motions[bId] = updated.first
@@ -345,7 +342,7 @@ private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
                 }
             }
         }
-        return state.copy(motions = state.motions.putAll(motions.map { it.key to it.value }))
+        return state.copy(motions = ComponentTable.fromMap(motions))
     }
 }
 
@@ -357,13 +354,13 @@ private object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
     ): PhysicsState {
         val transforms = LinkedHashMap(state.transforms.asMap())
         val motions = LinkedHashMap(state.motions.asMap())
-        var landings = state.landings
+        val landings = LinkedHashMap(state.landings.asMap())
         for ((entityId, landing) in state.landings.entries()) {
             val parentTransform = transforms[landing.parentEntityId]
             val parentMotion = motions[landing.parentEntityId]
             val transform = transforms[entityId]
             if (parentTransform == null || parentMotion == null || transform == null) {
-                landings = landings.remove(entityId)
+                landings.remove(entityId)
                 continue
             }
             transforms[entityId] = transform.copy(
@@ -373,9 +370,9 @@ private object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
             motions[entityId] = parentMotion
         }
         return state.copy(
-            transforms = state.transforms.putAll(transforms.map { it.key to it.value }),
-            motions = state.motions.putAll(motions.map { it.key to it.value }),
-            landings = landings,
+            transforms = ComponentTable.fromMap(transforms),
+            motions = ComponentTable.fromMap(motions),
+            landings = ComponentTable.fromMap(landings),
         )
     }
 }
@@ -497,18 +494,18 @@ private fun surfaceVelocityAtOffset(
     return sourceMotion.vel + tangent * spinSpeed
 }
 
-private fun applyForceFieldImpulse(
+private fun applyForceFieldAcceleration(
     sourceMotion: MotionComponent,
     sourceMass: UInt,
     targetMotion: MotionComponent,
     targetMass: UInt,
     outwardNormal: Norm,
-    impulse: Frac,
+    sourceAcc: Frac,
 ): Pair<MotionComponent, MotionComponent> {
     val safeSourceMass = sourceMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
     val safeTargetMass = targetMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
-    val sourceDelta = outwardNormal * (impulse / safeSourceMass)
-    val targetDelta = outwardNormal * (impulse / safeTargetMass)
+    val sourceDelta = outwardNormal * sourceAcc
+    val targetDelta = outwardNormal * Frac((sourceAcc.toLong() * safeSourceMass.toLong() / safeTargetMass.toLong()).toInt())
     return sourceMotion.copy(
         vel = sourceMotion.vel - sourceDelta,
     ) to targetMotion.copy(
