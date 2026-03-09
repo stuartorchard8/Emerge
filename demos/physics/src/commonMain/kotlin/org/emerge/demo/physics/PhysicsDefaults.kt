@@ -4,6 +4,7 @@ import kotlin.random.Random
 import org.emerge.render.torus.ScreenRenderer
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.physics.Frac
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Frac2
@@ -54,6 +55,7 @@ private fun assignHomePlanetAndSpawn(
     playerId: PlayerId,
     random: Random,
 ): PhysicsState {
+    val teamId = TeamId(playerId.value)
     val homePlanetId =
         state.homePlanetEntity(playerId)
             ?: chooseHomePlanet(state, random)
@@ -62,6 +64,10 @@ private fun assignHomePlanetAndSpawn(
         entityId = homePlanetId,
         playerId = playerId,
     )
+        .setTeam(
+            entityId = homePlanetId,
+            teamId = teamId,
+        )
         .setForceField(
             entityId = homePlanetId,
             depth = HOME_PLANET_FORCE_FIELD_DEPTH,
@@ -71,6 +77,7 @@ private fun assignHomePlanetAndSpawn(
     return spawnRocketOnPlanetSurface(
         state = withHome,
         playerId = playerId,
+        teamId = teamId,
         planetId = homePlanetId,
         random = random,
     )
@@ -88,6 +95,7 @@ private fun chooseHomePlanet(state: PhysicsState, random: Random): EntityId? {
 private fun spawnRocketOnPlanetSurface(
     state: PhysicsState,
     playerId: PlayerId,
+    teamId: TeamId,
     planetId: EntityId,
     random: Random,
 ): PhysicsState {
@@ -130,6 +138,10 @@ private fun spawnRocketOnPlanetSurface(
             )
         }
     return rocketState.first.copy(
+        teams = rocketState.first.teams.put(
+            rocketState.second,
+            org.emerge.sim.core.physics.TeamComponent(teamId),
+        ),
         motions = rocketState.first.motions.put(
             rocketState.second,
             MotionComponent(
@@ -161,6 +173,7 @@ private fun rotateByAngle(v: Frac2, angle: Frac): Frac2 {
 private const val DEFAULT_PLANET_COUNT: Int = ScreenRenderer.MAX_BODIES - 1
 private val HOME_PLANET_FORCE_FIELD_DEPTH = Frac(1, 24)
 private val HOME_PLANET_FORCE_FIELD_STRENGTH = Frac(1, 16)
+private val HOME_PLANET_FORCE_FIELD_DAMPEN_STRENGTH = Frac(1, 64)
 private val HOME_PLANET_FORCE_FIELD_ALPHA = Frac(1, 4)
 private val ROCKET_RADIUS = Frac(1, 160)
 

@@ -2,6 +2,7 @@ package org.emerge.sim.core.physics
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsWorld
 
@@ -20,6 +21,7 @@ data class PhysicsState(
     val controls: ComponentTable<ControlIntentComponent> = ComponentTable.empty(),
     val renderShapes: ComponentTable<RenderShapeComponent> = ComponentTable.empty(),
     val playerOwned: ComponentTable<PlayerOwnedComponent> = ComponentTable.empty(),
+    val teams: ComponentTable<TeamComponent> = ComponentTable.empty(),
     val planets: ComponentTable<PlanetComponent> = ComponentTable.empty(),
     val homePlanets: ComponentTable<HomePlanetComponent> = ComponentTable.empty(),
     val forceFields: ComponentTable<ForceFieldComponent> = ComponentTable.empty(),
@@ -96,6 +98,7 @@ data class PhysicsState(
             controls = nextControls,
             renderShapes = renderShapes.put(entityId, RenderShapeComponent(shape = shape)),
             playerOwned = nextPlayerOwned,
+            teams = teams.remove(entityId),
             planets = planets.remove(entityId),
             homePlanets = homePlanets.remove(entityId),
             forceFields = forceFields.remove(entityId),
@@ -138,6 +141,12 @@ data class PhysicsState(
 
     fun clearForceField(entityId: EntityId): PhysicsState =
         copy(forceFields = forceFields.remove(entityId))
+
+    fun setTeam(entityId: EntityId, teamId: TeamId): PhysicsState =
+        copy(teams = teams.put(entityId, TeamComponent(teamId)))
+
+    fun clearTeam(entityId: EntityId): PhysicsState =
+        copy(teams = teams.remove(entityId))
 
     fun playerTransform(playerId: PlayerId): TransformComponent? {
         val entityId = playerEntities[playerId] ?: return null

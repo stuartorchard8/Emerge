@@ -2,6 +2,7 @@ package org.emerge.sim.core.physics
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.TeamId
 
 data class TransformComponent(
     val pos: Frac2,
@@ -41,6 +42,10 @@ data class RenderShapeComponent(
 
 data class PlayerOwnedComponent(
     val playerId: PlayerId,
+)
+
+data class TeamComponent(
+    val teamId: TeamId,
 )
 
 data class PlanetComponent(

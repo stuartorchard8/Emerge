@@ -24,6 +24,8 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
 }
 
 private val LANDING_ALIGNMENT_THRESHOLD = Frac(1, 2)
+private val FORCE_FIELD_TEAM_DAMPING = Frac(1, 32)
+private val FORCE_FIELD_TEAM_ANGULAR_DAMPING = Frac(1, 64)
 
 private object InputSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     override fun update(
@@ -261,6 +263,8 @@ private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
                 val bCollider = state.colliders[bId] ?: continue
                 val aMaterial = state.materials[aId] ?: continue
                 val bMaterial = state.materials[bId] ?: continue
+                val aTeam = state.teams[aId]?.teamId
+                val bTeam = state.teams[bId]?.teamId
                 val aField = state.forceFields[aId]
                 val bField = state.forceFields[bId]
 
@@ -274,14 +278,30 @@ private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
                     if (contact != null) {
                         val sourceMotion = motions[aId] ?: state.motions[aId] ?: continue
                         val targetMotion = motions[bId] ?: state.motions[bId] ?: continue
-                        val updated = applyForceFieldImpulse(
-                            sourceMotion = sourceMotion,
-                            sourceMass = aMaterial.mass,
-                            targetMotion = targetMotion,
-                            targetMass = bMaterial.mass,
-                            outwardNormal = inverted(contact.normal),
-                            impulse = aField.strength,
-                        )
+                        val updated =
+                            if (aTeam != null && aTeam == bTeam) {
+                                applyVelocityMatchingDamping(
+                                    sourceMotion = sourceMotion,
+                                    sourceMass = aMaterial.mass,
+                                    targetMotion = targetMotion,
+                                    targetMass = bMaterial.mass,
+                                    desiredTargetVel = surfaceVelocityAtOffset(
+                                        sourceMotion = sourceMotion,
+                                        worldOffset = inverted(contact.normal) * (contact.minDist - contact.penetration),
+                                    ),
+                                    linearDamping = FORCE_FIELD_TEAM_DAMPING,
+                                    angularDamping = FORCE_FIELD_TEAM_ANGULAR_DAMPING,
+                                )
+                            } else {
+                                applyForceFieldImpulse(
+                                    sourceMotion = sourceMotion,
+                                    sourceMass = aMaterial.mass,
+                                    targetMotion = targetMotion,
+                                    targetMass = bMaterial.mass,
+                                    outwardNormal = inverted(contact.normal),
+                                    impulse = aField.strength,
+                                )
+                            }
                         motions[aId] = updated.first
                         motions[bId] = updated.second
                     }
@@ -296,14 +316,30 @@ private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
                     if (contact != null) {
                         val targetMotion = motions[aId] ?: state.motions[aId] ?: continue
                         val sourceMotion = motions[bId] ?: state.motions[bId] ?: continue
-                        val updated = applyForceFieldImpulse(
-                            sourceMotion = sourceMotion,
-                            sourceMass = bMaterial.mass,
-                            targetMotion = targetMotion,
-                            targetMass = aMaterial.mass,
-                            outwardNormal = contact.normal,
-                            impulse = bField.strength,
-                        )
+                        val updated =
+                            if (bTeam != null && bTeam == aTeam) {
+                                applyVelocityMatchingDamping(
+                                    sourceMotion = sourceMotion,
+                                    sourceMass = bMaterial.mass,
+                                    targetMotion = targetMotion,
+                                    targetMass = aMaterial.mass,
+                                    desiredTargetVel = surfaceVelocityAtOffset(
+                                        sourceMotion = sourceMotion,
+                                        worldOffset = contact.normal * (contact.minDist - contact.penetration),
+                                    ),
+                                    linearDamping = FORCE_FIELD_TEAM_DAMPING,
+                                    angularDamping = FORCE_FIELD_TEAM_ANGULAR_DAMPING,
+                                )
+                            } else {
+                                applyForceFieldImpulse(
+                                    sourceMotion = sourceMotion,
+                                    sourceMass = bMaterial.mass,
+                                    targetMotion = targetMotion,
+                                    targetMass = aMaterial.mass,
+                                    outwardNormal = contact.normal,
+                                    impulse = bField.strength,
+                                )
+                            }
                         motions[bId] = updated.first
                         motions[aId] = updated.second
                     }
@@ -442,15 +478,25 @@ private fun surfaceVelocityAtAttachment(
     landing: LandingAttachmentComponent,
 ): Frac2 {
     val worldOffset = rotateByAngle(landing.relativePos, parentTransform.ang)
-    if (worldOffset.lenSq.raw == 0) {
-        return parentMotion.vel
-    }
-    val tangent = ccwPerp(worldOffset.norm)
-    val spinSpeed = worldOffset.len.toCircumference() * parentMotion.angVel
-    return parentMotion.vel + tangent * spinSpeed
+    return surfaceVelocityAtOffset(
+        sourceMotion = parentMotion,
+        worldOffset = worldOffset,
+    )
 }
 
 private fun ccwPerp(n: Norm): Norm = Norm(-n.y, n.x)
+
+private fun surfaceVelocityAtOffset(
+    sourceMotion: MotionComponent,
+    worldOffset: Frac2,
+): Frac2 {
+    if (worldOffset.lenSq.raw == 0) {
+        return sourceMotion.vel
+    }
+    val tangent = ccwPerp(worldOffset.norm)
+    val spinSpeed = worldOffset.len.toCircumference() * sourceMotion.angVel
+    return sourceMotion.vel + tangent * spinSpeed
+}
 
 private fun applyForceFieldImpulse(
     sourceMotion: MotionComponent,
@@ -470,3 +516,35 @@ private fun applyForceFieldImpulse(
         vel = targetMotion.vel + targetDelta,
     )
 }
+
+private fun applyVelocityMatchingDamping(
+    sourceMotion: MotionComponent,
+    sourceMass: UInt,
+    targetMotion: MotionComponent,
+    targetMass: UInt,
+    desiredTargetVel: Frac2,
+    linearDamping: Frac,
+    angularDamping: Frac,
+): Pair<MotionComponent, MotionComponent> {
+    val safeSourceMass = sourceMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
+    val safeTargetMass = targetMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
+    val totalMass = (safeSourceMass + safeTargetMass).coerceAtMost(Int.MAX_VALUE)
+    val sourceWeight = Frac(safeTargetMass, totalMass)
+    val targetWeight = Frac(safeSourceMass, totalMass)
+
+    val velDelta = scale(desiredTargetVel - targetMotion.vel, linearDamping)
+    val angDelta = (sourceMotion.angVel - targetMotion.angVel) * angularDamping
+
+    return sourceMotion.copy(
+        vel = sourceMotion.vel - scale(velDelta, sourceWeight),
+        angVel = sourceMotion.angVel - (angDelta * sourceWeight),
+    ) to targetMotion.copy(
+        vel = targetMotion.vel + scale(velDelta, targetWeight),
+        angVel = targetMotion.angVel + (angDelta * targetWeight),
+    )
+}
+
+private fun scale(v: Frac2, s: Frac): Frac2 = Frac2(
+    x = v.x * s,
+    y = v.y * s,
+)
