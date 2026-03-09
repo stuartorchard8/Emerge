@@ -79,6 +79,10 @@ actual object GPU {
     actual fun drawTrianglesInstanced(first: Int, count: Int, instanceCount: Int) =
         GLES30.glDrawArraysInstanced(GLES30.GL_TRIANGLE_STRIP, first, count, instanceCount)
 
+    actual fun enableBlend() = GLES30.glEnable(GLES30.GL_BLEND)
+    actual fun disableBlend() = GLES30.glDisable(GLES30.GL_BLEND)
+    actual fun setBlendFuncSrcAlphaOneMinusSrcAlpha() = GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+
     actual fun enableScissorTest() = GLES30.glEnable(GLES30.GL_SCISSOR_TEST)
     actual fun disableScissorTest() = GLES30.glDisable(GLES30.GL_SCISSOR_TEST)
     actual fun setScissor(x: Int, y: Int, width: Int, height: Int) = GLES30.glScissor(x, y, width, height)

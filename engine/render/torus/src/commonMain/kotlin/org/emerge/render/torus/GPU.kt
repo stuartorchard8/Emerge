@@ -52,6 +52,10 @@ expect object GPU {
     fun drawTriangles(first: Int, count: Int)
     fun drawTrianglesInstanced(first: Int, count: Int, instanceCount: Int)
 
+    fun enableBlend()
+    fun disableBlend()
+    fun setBlendFuncSrcAlphaOneMinusSrcAlpha()
+
     fun enableScissorTest()
     fun disableScissorTest()
     fun setScissor(x: Int, y: Int, width: Int, height: Int)

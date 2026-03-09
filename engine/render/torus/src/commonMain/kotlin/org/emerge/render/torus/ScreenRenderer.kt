@@ -29,12 +29,14 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val guiShader = GuiShader()
     private val circleShader = CircleShader()
     private var layout: ScreenLayout = ScreenLayout.compute(Vec2(1f,1f), contentScale)
-    private val bodyInstanceMatrices = FloatArray(MAX_BODIES * MAT4_FLOATS)
-    private val bodyInstanceIds = FloatArray(MAX_BODIES)
-    private val bodyInstanceShapes = FloatArray(MAX_BODIES)
+    private val bodyInstanceMatrices = FloatArray(MAX_RENDER_BODIES * MAT4_FLOATS)
+    private val bodyInstanceIds = FloatArray(MAX_RENDER_BODIES)
+    private val bodyInstanceShapes = FloatArray(MAX_RENDER_BODIES)
+    private val bodyInstanceAlphas = FloatArray(MAX_RENDER_BODIES)
 
     companion object {
         const val MAX_BODIES: Int = 100
+        private const val MAX_RENDER_BODIES: Int = MAX_BODIES * 2
         private const val MAT4_FLOATS: Int = 16
         private const val ROTATION_STEP_RAD: Float = 0.03f
     }
@@ -90,6 +92,7 @@ class ScreenRenderer(val contentScale: Vec2) {
                 outMatricesColMajor = bodyInstanceMatrices,
                 outIds = bodyInstanceIds,
                 outShapes = bodyInstanceShapes,
+                outAlphas = bodyInstanceAlphas,
             )
 
         val x0 = floor(layout.worldPxMin.x).toInt()
@@ -99,6 +102,8 @@ class ScreenRenderer(val contentScale: Vec2) {
         val w = max(0, x1 - x0)
         val h = max(0, y1 - y0)
         GPU.enableScissorTest()
+        GPU.enableBlend()
+        GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
         GPU.setScissor(x0, y0, w, h)
         circleShader.drawInstanced(
             vOffset = layout.circleVertexOffset,
@@ -106,7 +111,9 @@ class ScreenRenderer(val contentScale: Vec2) {
             matricesColMajor = bodyInstanceMatrices,
             ids = bodyInstanceIds,
             shapes = bodyInstanceShapes,
+            alphas = bodyInstanceAlphas,
         )
+        GPU.disableBlend()
         GPU.disableScissorTest()
     }
 
@@ -126,9 +133,10 @@ class ScreenRenderer(val contentScale: Vec2) {
         outMatricesColMajor: FloatArray,
         outIds: FloatArray,
         outShapes: FloatArray,
+        outAlphas: FloatArray,
     ): Int {
         val renderBodies = params.bodies
-        val n = min(MAX_BODIES, renderBodies.size)
+        val n = min(MAX_RENDER_BODIES, renderBodies.size)
 
         // Calculate view matrix once
         val matTmp = FloatArray(MAT4_FLOATS)
@@ -183,6 +191,7 @@ class ScreenRenderer(val contentScale: Vec2) {
 
             outIds[i] = (body.playerId?.value ?: body.entityId.value).toFloat()
             outShapes[i] = if (body.shape == BodyShape.TRIANGLE) 1f else 0f
+            outAlphas[i] = body.alpha
         }
         return n
     }

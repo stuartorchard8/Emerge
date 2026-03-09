@@ -20,6 +20,9 @@ data class PhysicsState(
     val controls: ComponentTable<ControlIntentComponent> = ComponentTable.empty(),
     val renderShapes: ComponentTable<RenderShapeComponent> = ComponentTable.empty(),
     val playerOwned: ComponentTable<PlayerOwnedComponent> = ComponentTable.empty(),
+    val planets: ComponentTable<PlanetComponent> = ComponentTable.empty(),
+    val homePlanets: ComponentTable<HomePlanetComponent> = ComponentTable.empty(),
+    val forceFields: ComponentTable<ForceFieldComponent> = ComponentTable.empty(),
     val landings: ComponentTable<LandingAttachmentComponent> = ComponentTable.empty(),
 ) {
     fun spawnBody(
@@ -93,9 +96,48 @@ data class PhysicsState(
             controls = nextControls,
             renderShapes = renderShapes.put(entityId, RenderShapeComponent(shape = shape)),
             playerOwned = nextPlayerOwned,
+            planets = planets.remove(entityId),
+            homePlanets = homePlanets.remove(entityId),
+            forceFields = forceFields.remove(entityId),
             landings = landings.remove(entityId),
         )
     }
+
+    fun markPlanet(entityId: EntityId, seed: Int = entityId.value): PhysicsState =
+        copy(planets = planets.put(entityId, PlanetComponent(seed = seed)))
+
+    fun assignHomePlanet(
+        entityId: EntityId,
+        playerId: PlayerId,
+    ): PhysicsState {
+        var nextHomePlanets = homePlanets
+        for ((existingEntityId, homePlanet) in homePlanets.entries()) {
+            if (homePlanet.playerId == playerId && existingEntityId != entityId) {
+                nextHomePlanets = nextHomePlanets.remove(existingEntityId)
+            }
+        }
+        return copy(homePlanets = nextHomePlanets.put(entityId, HomePlanetComponent(playerId)))
+    }
+
+    fun setForceField(
+        entityId: EntityId,
+        depth: Frac,
+        strength: Frac,
+        alpha: Frac,
+    ): PhysicsState =
+        copy(
+            forceFields = forceFields.put(
+                entityId,
+                ForceFieldComponent(
+                    depth = depth,
+                    strength = strength,
+                    alpha = alpha,
+                ),
+            ),
+        )
+
+    fun clearForceField(entityId: EntityId): PhysicsState =
+        copy(forceFields = forceFields.remove(entityId))
 
     fun playerTransform(playerId: PlayerId): TransformComponent? {
         val entityId = playerEntities[playerId] ?: return null
@@ -104,8 +146,14 @@ data class PhysicsState(
 
     fun playerAngle(playerId: PlayerId): Frac? = playerTransform(playerId)?.ang
 
+    fun homePlanetEntity(playerId: PlayerId): EntityId? =
+        homePlanets.entries().firstOrNull { it.value.playerId == playerId }?.key
+
+    fun planetEntities(): List<EntityId> =
+        world.entities.filter { planets.contains(it) }
+
     fun renderBodies(): List<PhysicsRenderBody> {
-        val out = ArrayList<PhysicsRenderBody>(world.entities.size)
+        val out = ArrayList<PhysicsRenderBody>(world.entities.size * 2)
         for (entityId in world.entities) {
             val transform = transforms[entityId] ?: continue
             val collider = colliders[entityId] ?: continue
@@ -119,6 +167,18 @@ data class PhysicsState(
                 radius = collider.radius,
                 shape = renderShape.shape,
             )
+            val forceField = forceFields[entityId]
+            if (forceField != null && renderShape.shape == BodyShape.CIRCLE) {
+                out += PhysicsRenderBody(
+                    entityId = entityId,
+                    playerId = owned?.playerId,
+                    pos = transform.pos,
+                    ang = transform.ang,
+                    radius = collider.radius + forceField.depth,
+                    shape = renderShape.shape,
+                    alpha = forceField.alpha.toFloat(),
+                )
+            }
         }
         return out
     }

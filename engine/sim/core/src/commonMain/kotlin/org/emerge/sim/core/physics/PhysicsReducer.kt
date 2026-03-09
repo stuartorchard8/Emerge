@@ -13,6 +13,7 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         InputSystem,
         LiftOffSystem,
         IntegrationSystem,
+        ForceFieldSystem,
         CollisionSystem,
         AttachmentSystem,
     )
@@ -147,27 +148,24 @@ private object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsI
                 val aControl = state.controls[aId] ?: ControlIntentComponent.ZERO
                 val bControl = state.controls[bId] ?: ControlIntentComponent.ZERO
 
-                // Use shortest torus delta for distance checks + separation.
-                val delta = aTransform.pos - bTransform.pos
-                val minDist = aCollider.radius + bCollider.radius
-                val xPen = minDist - abs(delta.x)
-                val yPen = minDist - abs(delta.y)
-                if (xPen.sign <= 0 || yPen.sign <= 0) continue
-
-                if (delta >= minDist) continue
-
-                if (delta.lenSq.raw == 0) continue
-                delta.capMax(minDist)
-
-                val normal = delta.norm
-                val tangent = normal.perp
-                val pen = minDist - delta.len
+                val bodyContact = computeContact(
+                    aTransform = aTransform,
+                    bTransform = bTransform,
+                    aRadius = aCollider.radius,
+                    bRadius = bCollider.radius,
+                )
+                val contact = bodyContact ?: continue
+                val normal = contact.normal
+                val tangent = contact.tangent
+                val minDist = contact.minDist
+                val pen = contact.penetration
 
                 // Each collision pair can land in either direction: a-on-b or b-on-a.
                 val aLanding = tryLand(
                     supportId = bId,
                     rocketShape = aShape,
                     rocketControl = aControl,
+                    supportShape = bShape,
                     supportTransform = bTransform,
                     rocketTransform = aTransform,
                     landingNormal = normal,
@@ -182,6 +180,7 @@ private object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsI
                     supportId = aId,
                     rocketShape = bShape,
                     rocketControl = bControl,
+                    supportShape = aShape,
                     supportTransform = aTransform,
                     rocketTransform = bTransform,
                     landingNormal = inverted(normal),
@@ -243,6 +242,66 @@ private object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsI
     }
 }
 
+private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+    override fun update(
+        cfg: PhysicsConfig,
+        state: PhysicsState,
+        inputs: Map<PlayerId, PhysicsInput>,
+    ): PhysicsState {
+        val motions = LinkedHashMap(state.motions.asMap())
+        val ids = state.world.entities
+        for (i in 0 until ids.size) {
+            for (j in i + 1 until ids.size) {
+                val aId = ids[i]
+                val bId = ids[j]
+                if (state.landings.contains(aId) || state.landings.contains(bId)) continue
+                val aTransform = state.transforms[aId] ?: continue
+                val bTransform = state.transforms[bId] ?: continue
+                val aCollider = state.colliders[aId] ?: continue
+                val bCollider = state.colliders[bId] ?: continue
+                val aField = state.forceFields[aId]
+                val bField = state.forceFields[bId]
+
+                if (aField != null) {
+                    val contact = computeContact(
+                        aTransform = aTransform,
+                        bTransform = bTransform,
+                        aRadius = aCollider.radius + aField.depth,
+                        bRadius = bCollider.radius,
+                    )
+                    if (contact != null) {
+                        val targetMotion = motions[bId] ?: state.motions[bId] ?: continue
+                        motions[aId] = targetMotion.copy(
+                            vel = targetMotion.vel + contact.normal * aField.strength,
+                        )
+                        motions[bId] = targetMotion.copy(
+                            vel = targetMotion.vel - contact.normal * aField.strength,
+                        )
+                    }
+                }
+                if (bField != null) {
+                    val contact = computeContact(
+                        aTransform = aTransform,
+                        bTransform = bTransform,
+                        aRadius = aCollider.radius,
+                        bRadius = bCollider.radius + bField.depth,
+                    )
+                    if (contact != null) {
+                        val targetMotion = motions[aId] ?: state.motions[aId] ?: continue
+                        motions[aId] = targetMotion.copy(
+                            vel = targetMotion.vel + contact.normal * bField.strength,
+                        )
+                        motions[bId] = targetMotion.copy(
+                            vel = targetMotion.vel - contact.normal * bField.strength,
+                        )
+                    }
+                }
+            }
+        }
+        return state.copy(motions = state.motions.putAll(motions.map { it.key to it.value }))
+    }
+}
+
 private object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     override fun update(
         cfg: PhysicsConfig,
@@ -277,10 +336,12 @@ private object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
 private fun canLand(
     rocketShape: RenderShapeComponent,
     rocketControl: ControlIntentComponent,
+    supportShape: RenderShapeComponent,
     rocketTransform: TransformComponent,
     landingNormal: Norm,
 ): Boolean {
     if (rocketShape.shape != BodyShape.TRIANGLE) return false
+    if (supportShape.shape == BodyShape.TRIANGLE) return false
     if (rocketControl.thrust > 0) return false
     val forward = Norm.fromAngle(rocketTransform.ang)
     val alignment = dot(forward, landingNormal)
@@ -291,6 +352,7 @@ private fun tryLand(
     supportId: org.emerge.sim.core.EntityId,
     rocketShape: RenderShapeComponent,
     rocketControl: ControlIntentComponent,
+    supportShape: RenderShapeComponent,
     supportTransform: TransformComponent,
     rocketTransform: TransformComponent,
     landingNormal: Norm,
@@ -299,6 +361,7 @@ private fun tryLand(
     if (!canLand(
             rocketShape = rocketShape,
             rocketControl = rocketControl,
+            supportShape = supportShape,
             rocketTransform = rocketTransform,
             landingNormal = landingNormal,
         )
@@ -310,6 +373,37 @@ private fun tryLand(
         parentEntityId = supportId,
         relativePos = rotateByAngle(landingNormal * minDist, Frac(-supportTransform.ang.raw)),
         relativeAng = snappedRocketAng - supportTransform.ang,
+    )
+}
+
+private data class Contact(
+    val minDist: Frac,
+    val penetration: Frac,
+    val normal: Norm,
+    val tangent: Norm,
+)
+
+private fun computeContact(
+    aTransform: TransformComponent,
+    bTransform: TransformComponent,
+    aRadius: Frac,
+    bRadius: Frac,
+): Contact? {
+    // Use shortest torus delta for both rigid collision and shield overlap tests.
+    val delta = aTransform.pos - bTransform.pos
+    val minDist = aRadius + bRadius
+    val xPen = minDist - abs(delta.x)
+    val yPen = minDist - abs(delta.y)
+    if (xPen.sign <= 0 || yPen.sign <= 0) return null
+    if (delta >= minDist) return null
+    if (delta.lenSq.raw == 0) return null
+    delta.capMax(minDist)
+    val normal = delta.norm
+    return Contact(
+        minDist = minDist,
+        penetration = minDist - delta.len,
+        normal = normal,
+        tangent = normal.perp,
     )
 }
 

@@ -14,10 +14,12 @@ object CircleShaderSources {
         layout(location = 4) in vec4 iCol3;
         layout(location = 5) in float iBodyId;
         layout(location = 6) in float iBodyShape;
+        layout(location = 7) in float iBodyAlpha;
 
         out vec2 vLocal;
         out vec3 vColor;
         out float vBodyShape;
+        out float vBodyAlpha;
         void main() {
             mat4 m = mat4(iCol0, iCol1, iCol2, iCol3);
             gl_Position = m * vec4(aPos, 0.0, 1.0);
@@ -25,6 +27,7 @@ object CircleShaderSources {
             vColor = mod(vec3(c/1.9, c/2.9, c/4.9),1.0);
             vLocal = aPos;
             vBodyShape = iBodyShape;
+            vBodyAlpha = iBodyAlpha;
         }
         """.trimIndent()
 
@@ -37,6 +40,7 @@ object CircleShaderSources {
         in vec2 vLocal; // local [-1,1] coords for circle test
         in vec3 vColor;
         in float vBodyShape;
+        in float vBodyAlpha;
         out vec4 fragColor;
 
         void main() {
@@ -52,14 +56,14 @@ object CircleShaderSources {
                 vec2 window = vec2(vLocal.x*1.33-0.8, vLocal.y*2.25);
                 float nose = max(1.0, dot(window, window));
                 vec3 rocketColor = vColor * nose;
-                fragColor = vec4(rocketColor, 1.0);
+                fragColor = vec4(rocketColor, vBodyAlpha);
             } else {
                 if (dot(vLocal, vLocal) <= 1.0) {
                     float a = (1.0 - dot(vLocal, vLocal)/(1.5));
                     if (vLocal.x*vLocal.y >= 0.0) {
-                        fragColor = vec4(vColor*a*2.0, 1.0);
+                        fragColor = vec4(vColor*a*2.0, vBodyAlpha);
                     } else {
-                        fragColor = vec4(vColor*a, 1.0);
+                        fragColor = vec4(vColor*a, vBodyAlpha);
                     }
                 } else {
                     discard;

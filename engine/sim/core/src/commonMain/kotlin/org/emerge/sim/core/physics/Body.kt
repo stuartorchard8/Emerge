@@ -43,6 +43,20 @@ data class PlayerOwnedComponent(
     val playerId: PlayerId,
 )
 
+data class PlanetComponent(
+    val seed: Int = 0,
+)
+
+data class HomePlanetComponent(
+    val playerId: PlayerId,
+)
+
+data class ForceFieldComponent(
+    val depth: Frac,
+    val strength: Frac,
+    val alpha: Frac,
+)
+
 data class LandingAttachmentComponent(
     val parentEntityId: EntityId,
     val relativePos: Frac2,
@@ -56,6 +70,7 @@ data class PhysicsRenderBody(
     val ang: Frac,
     val radius: Frac,
     val shape: BodyShape,
+    val alpha: Float = 1f,
 )
 
 enum class BodyShape(val wireValue: Int) {

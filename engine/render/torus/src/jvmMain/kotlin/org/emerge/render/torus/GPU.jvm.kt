@@ -68,6 +68,10 @@ actual object GPU {
     actual fun drawTrianglesInstanced(first: Int, count: Int, instanceCount: Int) =
         GL33C.glDrawArraysInstanced(GL33C.GL_TRIANGLE_STRIP, first, count, instanceCount)
 
+    actual fun enableBlend() = GL33C.glEnable(GL33C.GL_BLEND)
+    actual fun disableBlend() = GL33C.glDisable(GL33C.GL_BLEND)
+    actual fun setBlendFuncSrcAlphaOneMinusSrcAlpha() = GL33C.glBlendFunc(GL33C.GL_SRC_ALPHA, GL33C.GL_ONE_MINUS_SRC_ALPHA)
+
     actual fun enableScissorTest() = GL33C.glEnable(GL33C.GL_SCISSOR_TEST)
     actual fun disableScissorTest() = GL33C.glDisable(GL33C.GL_SCISSOR_TEST)
     actual fun setScissor(x: Int, y: Int, width: Int, height: Int) = GL33C.glScissor(x, y, width, height)

@@ -49,6 +49,9 @@ object PhysicsNetCodecs {
                     val collider = state.colliders[entityId] ?: continue
                     val material = state.materials[entityId] ?: continue
                     val renderShape = state.renderShapes[entityId] ?: continue
+                    val planet = state.planets[entityId]
+                    val homePlanet = state.homePlanets[entityId]
+                    val forceField = state.forceFields[entityId]
                     val playerId = state.playerOwned[entityId]?.playerId
                     val landing = state.landings[entityId]
                     w.writeInt(entityId.value)
@@ -64,6 +67,11 @@ object PhysicsNetCodecs {
                     w.writeInt(material.bounce.raw)
                     w.writeInt(material.rough.raw)
                     w.writeInt(renderShape.shape.wireValue)
+                    w.writeInt(planet?.seed ?: -1)
+                    w.writeInt(homePlanet?.playerId?.value ?: -1)
+                    w.writeInt(forceField?.depth?.raw ?: 0)
+                    w.writeInt(forceField?.strength?.raw ?: 0)
+                    w.writeInt(forceField?.alpha?.raw ?: 0)
                     w.writeInt(landing?.parentEntityId?.value ?: -1)
                     w.writeInt(landing?.relativePos?.x?.raw ?: 0)
                     w.writeInt(landing?.relativePos?.y?.raw ?: 0)
@@ -85,6 +93,9 @@ object PhysicsNetCodecs {
                 var controls = ComponentTable.empty<org.emerge.sim.core.physics.ControlIntentComponent>()
                 var renderShapes = ComponentTable.empty<org.emerge.sim.core.physics.RenderShapeComponent>()
                 var playerOwned = ComponentTable.empty<org.emerge.sim.core.physics.PlayerOwnedComponent>()
+                var planets = ComponentTable.empty<org.emerge.sim.core.physics.PlanetComponent>()
+                var homePlanets = ComponentTable.empty<org.emerge.sim.core.physics.HomePlanetComponent>()
+                var forceFields = ComponentTable.empty<org.emerge.sim.core.physics.ForceFieldComponent>()
                 var landings = ComponentTable.empty<org.emerge.sim.core.physics.LandingAttachmentComponent>()
                 repeat(n) {
                     val entityId = EntityId(c.readInt())
@@ -100,6 +111,11 @@ object PhysicsNetCodecs {
                     val b = c.readInt()
                     val r = c.readInt()
                     val shape = BodyShape.fromWireValue(c.readInt())
+                    val planetSeed = c.readInt()
+                    val homePlanetPlayerIdRaw = c.readInt()
+                    val forceFieldRadiusScaleRaw = c.readInt()
+                    val forceFieldStrengthRaw = c.readInt()
+                    val forceFieldAlphaRaw = c.readInt()
                     val landingParentIdRaw = c.readInt()
                     val landingDx = c.readInt()
                     val landingDy = c.readInt()
@@ -136,6 +152,30 @@ object PhysicsNetCodecs {
                         entityId,
                         org.emerge.sim.core.physics.RenderShapeComponent(shape = shape),
                     )
+                    if (planetSeed >= 0) {
+                        planets = planets.put(
+                            entityId,
+                            org.emerge.sim.core.physics.PlanetComponent(seed = planetSeed),
+                        )
+                    }
+                    if (homePlanetPlayerIdRaw >= 0) {
+                        homePlanets = homePlanets.put(
+                            entityId,
+                            org.emerge.sim.core.physics.HomePlanetComponent(
+                                playerId = PlayerId(homePlanetPlayerIdRaw),
+                            ),
+                        )
+                    }
+                    if (forceFieldRadiusScaleRaw > 0) {
+                        forceFields = forceFields.put(
+                            entityId,
+                            org.emerge.sim.core.physics.ForceFieldComponent(
+                                depth = Frac(forceFieldRadiusScaleRaw),
+                                strength = Frac(forceFieldStrengthRaw),
+                                alpha = Frac(forceFieldAlphaRaw),
+                            ),
+                        )
+                    }
                     if (playerId != null) {
                         playerEntities[playerId] = entityId
                         playerOwned = playerOwned.put(
@@ -168,6 +208,9 @@ object PhysicsNetCodecs {
                     controls = controls,
                     renderShapes = renderShapes,
                     playerOwned = playerOwned,
+                    planets = planets,
+                    homePlanets = homePlanets,
+                    forceFields = forceFields,
                     landings = landings,
                 )
             }
