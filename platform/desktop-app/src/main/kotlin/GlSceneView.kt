@@ -15,6 +15,7 @@ object GlSceneView {
             val controller = PhysicsAuthoritativeHostController(
                 port = settings.port,
                 cfg = PhysicsConfig(),
+                gameMode = settings.gameMode,
                 acceptRemoteClients = false,
             )
             runGl("Emerge local", controller)
@@ -23,6 +24,7 @@ object GlSceneView {
             val controller = PhysicsAuthoritativeHostController(
                 port = settings.port,
                 cfg = PhysicsConfig(),
+                gameMode = settings.gameMode,
                 acceptRemoteClients = true,
             )
             runGl("Emerge host (:${settings.port})", controller)

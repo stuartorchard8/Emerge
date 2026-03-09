@@ -10,6 +10,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
+import org.emerge.demo.physics.GameMode
 import org.emerge.demo.physics.LaunchMode
 import org.emerge.demo.physics.LaunchSettings
 
@@ -18,6 +19,7 @@ class LauncherView(
     initial: LaunchSettings,
 ) : LinearLayout(activity) {
     private val modeSpinner: Spinner
+    private val gameModeSpinner: Spinner
     private val hostIpField: EditText
     private val portField: EditText
 
@@ -29,6 +31,8 @@ class LauncherView(
 
         modeSpinner = Spinner(context)
         modeSpinner.adapter = themedSpinnerAdapter(LaunchMode.entries.map(LaunchMode::name).toList())
+        gameModeSpinner = Spinner(context)
+        gameModeSpinner.adapter = themedSpinnerAdapter(GameMode.entries.map(GameMode::name).toList())
 
         hostIpField = EditText(context).apply {
             hint = "Host IP (for Join)"
@@ -56,12 +60,19 @@ class LauncherView(
             text = "Mode"
             setTextColor(Color.rgb(0xEE, 0xEE, 0xEE))
         }
+        val gameModeLabel = TextView(context).apply {
+            text = "Game Mode"
+            setTextColor(Color.rgb(0xEE, 0xEE, 0xEE))
+        }
 
         // Ensure spinners are visible on dark background regardless of theme defaults.
         modeSpinner.setBackgroundColor(Color.rgb(0x22, 0x22, 0x22))
+        gameModeSpinner.setBackgroundColor(Color.rgb(0x22, 0x22, 0x22))
 
         addView(modeLabel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(modeSpinner, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        addView(gameModeLabel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        addView(gameModeSpinner, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(hostIpField, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(portField, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(start, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
@@ -73,6 +84,9 @@ class LauncherView(
                 LaunchMode.HOST -> 1
                 LaunchMode.JOIN -> 2
             },
+        )
+        gameModeSpinner.setSelection(
+            GameMode.entries.indexOf(initial.gameMode).coerceAtLeast(0),
         )
         syncEnabledFields()
 
@@ -118,11 +132,15 @@ class LauncherView(
             else -> LaunchMode.LOCAL
         }
 
+    private fun selectedGameMode(): GameMode =
+        GameMode.entries.getOrElse(gameModeSpinner.selectedItemPosition) { GameMode.PVP }
+
     private fun readSettings(): LaunchSettings {
         val port = portField.text.toString().trim().toIntOrNull() ?: 7777
         val hostIp = hostIpField.text.toString().trim().ifBlank { "127.0.0.1" }
         return LaunchSettings(
             mode = selectedMode(),
+            gameMode = selectedGameMode(),
             hostIp = hostIp,
             port = port,
         )

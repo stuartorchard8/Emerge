@@ -5,13 +5,14 @@ import javax.swing.*
 import org.emerge.demo.physics.*
 
 fun main() {
-    GlSceneView.start(LaunchSettings())
     // Single launch path: always start with an in-app launcher UI.
-//    SwingUtilities.invokeLater { DesktopLauncher().show() }
+    SwingUtilities.invokeLater { DesktopLauncher().show() }
+//    GlSceneView.start(LaunchSettings())
 }
 
 private class DesktopLauncher {
     private val modeBox = JComboBox(LaunchMode.entries.map(LaunchMode::name).toTypedArray())
+    private val gameModeBox = JComboBox(GameMode.entries.map(GameMode::name).toTypedArray())
     private val hostIpField = JTextField("127.0.0.1", 16)
     private val portField = JTextField("7777", 6)
 
@@ -36,6 +37,7 @@ private class DesktopLauncher {
             }
 
             row(0, "Mode", modeBox)
+            row(1, "Game Mode", gameModeBox)
             row(2, "Host IP (Join)", hostIpField)
             row(3, "Port", portField)
 
@@ -64,6 +66,7 @@ private class DesktopLauncher {
     fun show() {
         val defaultLaunchSettings = LaunchSettings()
         modeBox.selectedItem = defaultLaunchSettings.mode.name
+        gameModeBox.selectedItem = defaultLaunchSettings.gameMode.name
         hostIpField.text = defaultLaunchSettings.hostIp
         portField.text = defaultLaunchSettings.port.toString()
         frame.isVisible = true
@@ -80,11 +83,15 @@ private class DesktopLauncher {
             else -> LaunchMode.LOCAL
         }
 
+    private fun selectedGameMode(): GameMode =
+        GameMode.entries.getOrElse(gameModeBox.selectedIndex) { GameMode.PVP }
+
     private fun readSettings(): LaunchSettings {
         val port = portField.text.trim().toIntOrNull() ?: 7777
         val hostIp = hostIpField.text.trim().ifBlank { "127.0.0.1" }
         return LaunchSettings(
             mode = selectedMode(),
+            gameMode = selectedGameMode(),
             hostIp = hostIp,
             port = port,
         )

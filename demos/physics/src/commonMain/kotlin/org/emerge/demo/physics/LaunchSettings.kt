@@ -8,6 +8,7 @@ package org.emerge.demo.physics
  */
 data class LaunchSettings(
     val mode: LaunchMode = LaunchMode.HOST,
+    val gameMode: GameMode = GameMode.PVP,
     val hostIp: String = "192.168.0.114",
     val port: Int = 7777,
 )
@@ -16,4 +17,9 @@ enum class LaunchMode {
     LOCAL,
     HOST,
     JOIN,
+}
+
+enum class GameMode {
+    PVP,
+    CO_OP,
 }

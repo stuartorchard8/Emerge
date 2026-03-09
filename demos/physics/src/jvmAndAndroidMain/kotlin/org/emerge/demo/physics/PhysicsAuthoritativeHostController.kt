@@ -15,13 +15,14 @@ import org.emerge.sim.sync.auth.StateCodec
 class PhysicsAuthoritativeHostController(
     private val port: Int,
     private val cfg: PhysicsConfig = PhysicsConfig(),
+    private val gameMode: GameMode = GameMode.PVP,
     acceptRemoteClients: Boolean = true,
 ) : PhysicsAuthoritativeController() {
     private val reducer = PhysicsReducer()
     private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
     private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
 
-    private val initial: PhysicsState = createDefaultInitialState()
+    private val initial: PhysicsState = createDefaultInitialState(gameMode)
 
     private val host = AuthoritativeHost(
         cfg = cfg,
@@ -29,7 +30,7 @@ class PhysicsAuthoritativeHostController(
         reducer = { c, s, inputs -> reducer.reduce(c, s, inputs) },
         inputCodec = inputCodec,
         stateCodec = stateCodec,
-        joinPolicy = defaultJoinPolicy(),
+        joinPolicy = defaultJoinPolicy(gameMode),
     )
 
     @Volatile private var netStatus: String =

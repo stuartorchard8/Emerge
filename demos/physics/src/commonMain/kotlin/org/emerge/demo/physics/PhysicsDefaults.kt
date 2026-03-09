@@ -13,7 +13,7 @@ import org.emerge.sim.core.physics.BodyShape
 import org.emerge.sim.core.physics.LandingAttachmentComponent
 import org.emerge.sim.core.physics.MotionComponent
 
-fun createDefaultInitialState(): PhysicsState {
+fun createDefaultInitialState(gameMode: GameMode = GameMode.PVP): PhysicsState {
     var state = PhysicsState()
     for (it in 0 until DEFAULT_PLANET_COUNT) {
         val spawn = state.spawnBody(
@@ -33,6 +33,7 @@ fun createDefaultInitialState(): PhysicsState {
     return assignHomePlanetAndSpawn(
         state = state,
         playerId = PlayerId(0),
+        gameMode = gameMode,
         random = Random.Default,
     )
 }
@@ -41,11 +42,12 @@ fun createDefaultInitialState(): PhysicsState {
  * Join policy used by both desktop and Android demos:
  * - deterministic spawn positions based on player id
  */
-fun defaultJoinPolicy(): (PhysicsState, PlayerId) -> PhysicsState =
+fun defaultJoinPolicy(gameMode: GameMode = GameMode.PVP): (PhysicsState, PlayerId) -> PhysicsState =
     { s, pid ->
         assignHomePlanetAndSpawn(
             state = s,
             playerId = pid,
+            gameMode = gameMode,
             random = Random.Default,
         )
     }
@@ -53,9 +55,10 @@ fun defaultJoinPolicy(): (PhysicsState, PlayerId) -> PhysicsState =
 private fun assignHomePlanetAndSpawn(
     state: PhysicsState,
     playerId: PlayerId,
+    gameMode: GameMode,
     random: Random,
 ): PhysicsState {
-    val teamId = TeamId(playerId.value)
+    val teamId = gameMode.teamIdForPlayer(playerId)
     val homePlanetId =
         state.homePlanetEntity(teamId)
             ?: chooseHomePlanet(state, random)
@@ -82,6 +85,14 @@ private fun assignHomePlanetAndSpawn(
         random = random,
     )
 }
+
+private fun GameMode.teamIdForPlayer(playerId: PlayerId): TeamId =
+    when (this) {
+        // PVP keeps the current one-player-per-team behavior.
+        GameMode.PVP -> TeamId(playerId.value)
+        // CO_OP collapses everyone onto the same team and home planet.
+        GameMode.CO_OP -> TeamId(0)
+    }
 
 private fun chooseHomePlanet(state: PhysicsState, random: Random): EntityId? {
     val planets = state.planetEntities()

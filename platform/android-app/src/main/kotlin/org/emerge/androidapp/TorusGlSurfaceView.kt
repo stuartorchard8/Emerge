@@ -272,8 +272,8 @@ internal class TorusGlSurfaceView(
 
     private fun createController(settings: LaunchSettings): PhysicsAuthoritativeController =
         when (settings.mode) {
-            LaunchMode.HOST -> PhysicsAuthoritativeHostController(port = settings.port, cfg = cfg, acceptRemoteClients = true)
-            LaunchMode.LOCAL -> PhysicsAuthoritativeHostController(port = settings.port, cfg = cfg, acceptRemoteClients = false)
+            LaunchMode.HOST -> PhysicsAuthoritativeHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = true)
+            LaunchMode.LOCAL -> PhysicsAuthoritativeHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = false)
             LaunchMode.JOIN -> PhysicsAuthoritativeJoinController(hostIp = settings.hostIp, port = settings.port)
         }
 
