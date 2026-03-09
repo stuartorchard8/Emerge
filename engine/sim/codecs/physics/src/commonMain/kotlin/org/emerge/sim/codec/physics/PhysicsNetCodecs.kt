@@ -21,6 +21,11 @@ import org.emerge.sim.sync.auth.StateCodec
  * This keeps Android + desktop using the exact same wire format without duplicating logic.
  */
 object PhysicsNetCodecs {
+    private const val STATE_HEADER_INT_COUNT = 2
+    private const val STATE_ENTITY_INT_COUNT = 23
+    private const val STATE_INT_BYTES = 4
+    private const val MAX_STATE_ENTITIES = 2048
+
     val inputCodec: Codec<PhysicsInput> =
         object : Codec<PhysicsInput> {
             override fun encode(value: PhysicsInput): ByteArray {
@@ -87,6 +92,12 @@ object PhysicsNetCodecs {
                 val c = ByteCursor(bytes)
                 val nextEntityValue = c.readInt()
                 val n = c.readInt()
+                require(nextEntityValue >= 0) { "Invalid nextEntityValue: $nextEntityValue" }
+                require(n in 0..MAX_STATE_ENTITIES) { "Invalid entity count: $n" }
+                val expectedSize = (STATE_HEADER_INT_COUNT + (n * STATE_ENTITY_INT_COUNT)) * STATE_INT_BYTES
+                require(bytes.size == expectedSize) {
+                    "Invalid state payload size: expected $expectedSize bytes for $n entities, got ${bytes.size}"
+                }
                 var world = EcsWorld(nextEntityValue = nextEntityValue)
                 var playerEntities = LinkedHashMap<PlayerId, EntityId>()
                 var transforms = ComponentTable.empty<org.emerge.sim.core.physics.TransformComponent>()

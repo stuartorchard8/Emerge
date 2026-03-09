@@ -65,14 +65,28 @@ class AuthoritativeClient<S, I>(
             if (welcome != null) {
                 playerId = welcome.playerId
                 tick = welcome.tick
-                state = stateCodec.decode(welcome.stateBytes)
+                val decodedState =
+                    try {
+                        stateCodec.decode(welcome.stateBytes)
+                    } catch (t: Throwable) {
+                        disconnect("invalid welcome state: ${t.javaClass.simpleName}")
+                        continue
+                    }
+                state = decodedState
                 connectionState = ConnectionState.CONNECTED
                 continue
             }
             val snap = AuthProtocol.decodeSnapshot(pkt)
             if (snap != null) {
                 tick = snap.tick
-                state = stateCodec.decode(snap.stateBytes)
+                val decodedState =
+                    try {
+                        stateCodec.decode(snap.stateBytes)
+                    } catch (t: Throwable) {
+                        disconnect("invalid snapshot: ${t.javaClass.simpleName}")
+                        continue
+                    }
+                state = decodedState
                 if (playerId != null) connectionState = ConnectionState.CONNECTED
                 continue
             }

@@ -3,7 +3,9 @@ package org.emerge.androidapp
 import android.app.Activity
 import android.opengl.GLSurfaceView
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
+import android.util.Log
 import android.view.MotionEvent
 import org.emerge.demo.physics.LaunchMode
 import org.emerge.demo.physics.LaunchSettings
@@ -12,6 +14,7 @@ import org.emerge.demo.physics.PhysicsAuthoritativeHostController
 import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
 import org.emerge.demo.physics.PhysicsFrame
 import org.emerge.demo.physics.createDefaultInitialState
+import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
@@ -27,18 +30,10 @@ import kotlin.math.hypot
  */
 internal class TorusGlSurfaceView(
     activity: Activity,
-    settings: LaunchSettings,
+    private val settings: LaunchSettings,
 ) : GLSurfaceView(activity) {
     private val cfg = PhysicsConfig()
-    private val initial: PhysicsState = createDefaultInitialState()
     private val renderer: TorusGlRenderer
-
-    private val controller: PhysicsAuthoritativeController =
-        when (settings.mode) {
-            LaunchMode.HOST -> PhysicsAuthoritativeHostController(port = settings.port, cfg = cfg, acceptRemoteClients = true)
-            LaunchMode.LOCAL -> PhysicsAuthoritativeHostController(port = settings.port, cfg = cfg, acceptRemoteClients = false)
-            LaunchMode.JOIN -> PhysicsAuthoritativeJoinController(hostIp = settings.hostIp, port = settings.port)
-        }
 
     @Volatile private var currentTouchInput: PhysicsInput = PhysicsInput.ZERO
     @Volatile private var singleTouchActive: Boolean = false
@@ -53,25 +48,16 @@ internal class TorusGlSurfaceView(
     // Data shared to GL thread
     private val stateLock = Any()
     private var latestFrame = PhysicsFrame(
-        initial,
+        PhysicsState(),
         null,
         0L,
-        "",
+        "sim: starting",
     )
-
-    private val handler = Handler(Looper.getMainLooper())
-    private val tickRunnable = object : Runnable {
-        override fun run() {
-            currentTouchInput = computeTouchInputForCurrentOrientation()
-            val f: PhysicsFrame = controller.tick(currentTouchInput)
-            synchronized(stateLock) {
-                latestFrame = f
-            }
-
-            requestRender()
-            handler.postDelayed(this, 16L)
-        }
-    }
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var simThread: HandlerThread? = null
+    private var simHandler: Handler? = null
+    private var simTickRunnable: Runnable? = null
+    private var controller: PhysicsAuthoritativeController? = null
 
     init {
         setEGLContextClientVersion(3)
@@ -91,12 +77,12 @@ internal class TorusGlSurfaceView(
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        handler.post(tickRunnable)
+        startSimulationLoop()
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
-        handler.removeCallbacks(tickRunnable)
+        stopSimulationLoop()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -224,5 +210,92 @@ internal class TorusGlSurfaceView(
             currentPlayerAngleTurns(),
             cameraRotationRad,
         )
+    }
+
+    private fun startSimulationLoop() {
+        if (simThread != null) {
+            return
+        }
+        val thread = HandlerThread("android-sim-loop")
+        thread.start()
+        val handler = Handler(thread.looper)
+        simThread = thread
+        simHandler = handler
+        val tickRunnable = object : Runnable {
+            override fun run() {
+                try {
+                    val simController =
+                        controller ?: run {
+                            publishFrame(
+                                PhysicsFrame(
+                                    state = createDefaultInitialState(),
+                                    myId = defaultPlayerIdFor(settings),
+                                    tick = 0L,
+                                    status = "sim: starting",
+                                ),
+                            )
+                            createController(settings).also { controller = it }
+                        }
+                    currentTouchInput = computeTouchInputForCurrentOrientation()
+                    publishFrame(simController.tick(currentTouchInput))
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Simulation loop failed", t)
+                    publishFrame(
+                        PhysicsFrame(
+                            state = PhysicsState(),
+                            myId = null,
+                            tick = 0L,
+                            status = "sim failed: ${t.javaClass.simpleName}",
+                        ),
+                    )
+                } finally {
+                    if (simHandler != null) {
+                        simHandler?.postDelayed(this, 16L)
+                    }
+                }
+            }
+        }
+        simTickRunnable = tickRunnable
+        handler.post(tickRunnable)
+    }
+
+    private fun stopSimulationLoop() {
+        simTickRunnable?.let { runnable ->
+            simHandler?.removeCallbacks(runnable)
+        }
+        simTickRunnable = null
+        simHandler = null
+        controller = null
+        simThread?.quitSafely()
+        simThread = null
+    }
+
+    private fun createController(settings: LaunchSettings): PhysicsAuthoritativeController =
+        when (settings.mode) {
+            LaunchMode.HOST -> PhysicsAuthoritativeHostController(port = settings.port, cfg = cfg, acceptRemoteClients = true)
+            LaunchMode.LOCAL -> PhysicsAuthoritativeHostController(port = settings.port, cfg = cfg, acceptRemoteClients = false)
+            LaunchMode.JOIN -> PhysicsAuthoritativeJoinController(hostIp = settings.hostIp, port = settings.port)
+        }
+
+    private fun publishFrame(frame: PhysicsFrame) {
+        synchronized(stateLock) {
+            latestFrame = frame
+        }
+        mainHandler.post {
+            requestRender()
+        }
+    }
+
+    private fun defaultPlayerIdFor(settings: LaunchSettings): PlayerId? =
+        when (settings.mode) {
+            LaunchMode.HOST,
+            LaunchMode.LOCAL,
+            -> PlayerId(0)
+
+            LaunchMode.JOIN -> null
+        }
+
+    companion object {
+        private const val TAG = "TorusGlSurfaceView"
     }
 }
