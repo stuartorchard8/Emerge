@@ -154,7 +154,14 @@ data class PhysicsState(
         return transforms[entityId]
     }
 
+    fun playerMotion(playerId: PlayerId): MotionComponent? {
+        val entityId = playerEntities[playerId] ?: return null
+        return motions[entityId]
+    }
+
     fun playerAngle(playerId: PlayerId): Frac? = playerTransform(playerId)?.ang
+
+    fun playerAngularVelocity(playerId: PlayerId): Frac? = playerMotion(playerId)?.angVel
 
     fun homePlanetEntity(teamId: TeamId): EntityId? =
         homePlanets.entries().firstOrNull { it.value.teamId == teamId }?.key

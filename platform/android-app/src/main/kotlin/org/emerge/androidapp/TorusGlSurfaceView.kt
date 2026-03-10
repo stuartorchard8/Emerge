@@ -37,6 +37,8 @@ internal class TorusGlSurfaceView(
 
     @Volatile private var currentTouchInput: PhysicsInput = PhysicsInput.ZERO
     @Volatile private var singleTouchActive: Boolean = false
+    @Volatile private var singleTouchStartX: Float = 0f
+    @Volatile private var singleTouchStartY: Float = 0f
     @Volatile private var singleTouchX: Float = 0f
     @Volatile private var singleTouchY: Float = 0f
     @Volatile private var singleTouchActionMasked: Int = MotionEvent.ACTION_CANCEL
@@ -176,8 +178,16 @@ internal class TorusGlSurfaceView(
             latestFrame.state.playerAngle(pid)?.toFloat() ?: 0f
         }
 
+    private fun currentPlayerAngularVelocityTurns(): Float =
+        synchronized(stateLock) {
+            val pid = latestFrame.myId ?: return@synchronized 0f
+            latestFrame.state.playerAngularVelocity(pid)?.toFloat() ?: 0f
+        }
+
     private fun clearSingleTouchState() {
         singleTouchActive = false
+        singleTouchStartX = 0f
+        singleTouchStartY = 0f
         singleTouchX = 0f
         singleTouchY = 0f
         singleTouchActionMasked = MotionEvent.ACTION_CANCEL
@@ -188,6 +198,15 @@ internal class TorusGlSurfaceView(
             MotionEvent.ACTION_UP,
             MotionEvent.ACTION_CANCEL,
             -> clearSingleTouchState()
+
+            MotionEvent.ACTION_DOWN -> {
+                singleTouchActive = true
+                singleTouchStartX = event.x
+                singleTouchStartY = event.y
+                singleTouchX = event.x
+                singleTouchY = event.y
+                singleTouchActionMasked = event.actionMasked
+            }
 
             else -> {
                 singleTouchActive = true
@@ -204,10 +223,15 @@ internal class TorusGlSurfaceView(
         return TouchInputMapper.toPhysicsInput(
             width,
             height,
+            singleTouchStartX,
+            singleTouchStartY,
+//            width/2.0f,
+//            height/2.0f,
             singleTouchX,
             singleTouchY,
             singleTouchActionMasked,
             currentPlayerAngleTurns(),
+            currentPlayerAngularVelocityTurns(),
             cameraRotationRad,
         )
     }
