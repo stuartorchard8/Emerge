@@ -9,6 +9,8 @@ class CircleShader {
     private val vSrc = CircleShaderSources.vertex()
     private val fSrc = CircleShaderSources.fragment()
     private val program: Int = ShaderFactory.createProgram(vSrc, fSrc)
+    private val uNoiseTexture: Int = GPU.getUniformLocation(program, "uNoiseTexture")
+    private val noiseTexture: Int = GPU.genTextures()
 
     private val instanceVbo: Int = GPU.genBuffers()
     private val instancePrimaryIdVbo: Int = GPU.genBuffers()
@@ -42,6 +44,8 @@ class CircleShader {
             .asFloatBuffer()
 
     init {
+        uploadNoiseTexture()
+
         // Instance matrix as 4 vec4 attributes (one per column), divisor = 1
         GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceVbo)
         val strideBytes = MAT4_FLOATS * 4
@@ -142,6 +146,8 @@ class CircleShader {
         radii: FloatArray,
     ) {
         GPU.useProgram(program)
+        GPU.activeTexture(NOISE_TEXTURE_UNIT)
+        GPU.bindTexture2D(noiseTexture)
 
         val n = instanceCount.coerceIn(0, MAX_INSTANCES)
         instanceMatrices.clear()
@@ -196,6 +202,7 @@ class CircleShader {
     }
 
     fun deleteProgram() {
+        GPU.deleteTextures(noiseTexture)
         GPU.deleteProgram(program)
         GPU.deleteBuffers(instanceVbo)
         GPU.deleteBuffers(instancePrimaryIdVbo)
@@ -203,6 +210,16 @@ class CircleShader {
         GPU.deleteBuffers(instanceShapeVbo)
         GPU.deleteBuffers(instanceAlphaVbo)
         GPU.deleteBuffers(instanceRadiusVbo)
+    }
+
+    private fun uploadNoiseTexture() {
+        GPU.useProgram(program)
+        GPU.activeTexture(NOISE_TEXTURE_UNIT)
+        GPU.bindTexture2D(noiseTexture)
+        GPU.configureTexture2DRepeatLinear()
+        GPU.uploadTextureR8(NOISE_TEXTURE_SIZE, NOISE_TEXTURE_SIZE, NoiseTexture.createTileable(NOISE_TEXTURE_SIZE))
+        GPU.putUniform1i(uNoiseTexture, NOISE_TEXTURE_UNIT)
+        GPU.bindTexture2D(0)
     }
 
     companion object {
@@ -214,5 +231,7 @@ class CircleShader {
         private const val INSTANCE_RADIUS_ATTR = 9
         private const val MAT4_FLOATS = 16
         private const val MAX_INSTANCES = 1000
+        private const val NOISE_TEXTURE_UNIT = 0
+        private const val NOISE_TEXTURE_SIZE = 128
     }
 }

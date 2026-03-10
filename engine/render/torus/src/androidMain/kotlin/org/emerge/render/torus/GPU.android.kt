@@ -1,6 +1,7 @@
 package org.emerge.render.torus
 
 import android.opengl.GLES30
+import java.nio.ByteBuffer
 import java.nio.FloatBuffer
 
 actual object GPU {
@@ -65,6 +66,40 @@ actual object GPU {
     actual fun deleteBuffers(buffer: Int) {
         val buffers = intArrayOf(buffer)
         GLES30.glDeleteBuffers(1, buffers, 0)
+    }
+
+    actual fun genTextures(): Int {
+        val textures = IntArray(1)
+        GLES30.glGenTextures(1, textures, 0)
+        return textures[0]
+    }
+    actual fun deleteTextures(texture: Int) {
+        val textures = intArrayOf(texture)
+        GLES30.glDeleteTextures(1, textures, 0)
+    }
+    actual fun activeTexture(unit: Int) = GLES30.glActiveTexture(GLES30.GL_TEXTURE0 + unit)
+    actual fun bindTexture2D(texture: Int) = GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texture)
+    actual fun configureTexture2DRepeatLinear() {
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_REPEAT)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_REPEAT)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+    }
+    actual fun uploadTextureR8(width: Int, height: Int, data: ByteArray) {
+        val buffer = ByteBuffer.allocateDirect(data.size)
+        buffer.put(data)
+        buffer.position(0)
+        GLES30.glTexImage2D(
+            GLES30.GL_TEXTURE_2D,
+            0,
+            GLES30.GL_R8,
+            width,
+            height,
+            0,
+            GLES30.GL_RED,
+            GLES30.GL_UNSIGNED_BYTE,
+            buffer,
+        )
     }
 
     actual fun bindBuffer(target: Int, buffer: Int) = GLES30.glBindBuffer(target, buffer)

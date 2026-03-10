@@ -56,6 +56,35 @@ actual object GPU {
     actual fun genBuffers(): Int = GL33C.glGenBuffers()
     actual fun deleteBuffers(buffer: Int) = GL33C.glDeleteBuffers(buffer)
 
+    actual fun genTextures(): Int = GL33C.glGenTextures()
+    actual fun deleteTextures(texture: Int) = GL33C.glDeleteTextures(texture)
+    actual fun activeTexture(unit: Int) = GL33C.glActiveTexture(GL33C.GL_TEXTURE0 + unit)
+    actual fun bindTexture2D(texture: Int) = GL33C.glBindTexture(GL33C.GL_TEXTURE_2D, texture)
+    actual fun configureTexture2DRepeatLinear() {
+        GL33C.glTexParameteri(GL33C.GL_TEXTURE_2D, GL33C.GL_TEXTURE_WRAP_S, GL33C.GL_REPEAT)
+        GL33C.glTexParameteri(GL33C.GL_TEXTURE_2D, GL33C.GL_TEXTURE_WRAP_T, GL33C.GL_REPEAT)
+        GL33C.glTexParameteri(GL33C.GL_TEXTURE_2D, GL33C.GL_TEXTURE_MIN_FILTER, GL33C.GL_LINEAR)
+        GL33C.glTexParameteri(GL33C.GL_TEXTURE_2D, GL33C.GL_TEXTURE_MAG_FILTER, GL33C.GL_LINEAR)
+    }
+    actual fun uploadTextureR8(width: Int, height: Int, data: ByteArray) {
+        MemoryStack.stackPush().use { st ->
+            val buffer = st.malloc(data.size)
+            buffer.put(data)
+            buffer.flip()
+            GL33C.glTexImage2D(
+                GL33C.GL_TEXTURE_2D,
+                0,
+                GL33C.GL_R8,
+                width,
+                height,
+                0,
+                GL33C.GL_RED,
+                GL33C.GL_UNSIGNED_BYTE,
+                buffer,
+            )
+        }
+    }
+
     actual fun bindBuffer(target: Int, buffer: Int) = GL33C.glBindBuffer(target, buffer)
     actual fun bufferData(target: Int, count: Int, data: FloatBuffer, usage: Int) = GL33C.glBufferData(target, data, usage)
 

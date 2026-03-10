@@ -41,6 +41,13 @@ expect object GPU {
     fun genBuffers(): Int
     fun deleteBuffers(buffer: Int)
 
+    fun genTextures(): Int
+    fun deleteTextures(texture: Int)
+    fun activeTexture(unit: Int)
+    fun bindTexture2D(texture: Int)
+    fun configureTexture2DRepeatLinear()
+    fun uploadTextureR8(width: Int, height: Int, data: ByteArray)
+
     fun bindBuffer(target: Int, buffer: Int)
     fun bufferData(target: Int, count: Int, data: FloatBuffer, usage: Int)
 
