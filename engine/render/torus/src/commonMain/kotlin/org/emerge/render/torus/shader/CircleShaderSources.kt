@@ -74,12 +74,12 @@ object CircleShaderSources {
                 }
                 vec2 window = vec2(vLocal.x*1.33-0.8, vLocal.y*2.25);
                 float window_scalar = dot(window, window);
-                float body_color = max(0.0, window_scalar);
+                float body_color = min(1.0, max(0.0, window_scalar));
                 float window_color = max(0.0, 1.0-window_scalar);
                 float wColorSeed = vSecondaryId;
                 float w = -wColorSeed - 1.0;
                 vec3 wColor = mod(vec3(w/1.9, w/2.9, w/4.9),1.0);
-                vec3 rocketColor = vColor * body_color + wColor * window_color;
+                vec3 rocketColor = vColor * window_color + wColor * body_color;
                 fragColor = vec4(rocketColor, vBodyAlpha);
             } else {
                 float a = min(0.75, (1.0 - dot(vLocal, vLocal)/(1.5)));
