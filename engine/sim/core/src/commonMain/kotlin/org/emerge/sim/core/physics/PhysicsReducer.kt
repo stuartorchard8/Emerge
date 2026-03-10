@@ -13,6 +13,7 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val systems: List<EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>> = listOf(
         InputSystem,
         LiftOffSystem,
+        GravitySystem,
         IntegrationSystem,
         ForceFieldSystem,
         CollisionSystem,
@@ -26,6 +27,67 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
 
 private val LANDING_ALIGNMENT_THRESHOLD = Frac(1, 2)
 private val FORCE_FIELD_TEAM_DAMPING = Frac(1, 32)
+
+private object GravitySystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+    override fun update(
+        cfg: PhysicsConfig,
+        state: PhysicsState,
+        inputs: Map<PlayerId, PhysicsInput>,
+    ): PhysicsState {
+        if (cfg.gravityNumerator <= 0) {
+            return state
+        }
+
+        val motions = LinkedHashMap(state.motions.asMap())
+        val ids = state.world.entities
+        for (i in 0 until ids.size) {
+            for (j in i + 1 until ids.size) {
+                val aId = ids[i]
+                val bId = ids[j]
+                if (state.landings.contains(aId) || state.landings.contains(bId)) continue
+
+                val aTransform = state.transforms[aId] ?: continue
+                val bTransform = state.transforms[bId] ?: continue
+                val aMotion = motions[aId] ?: continue
+                val bMotion = motions[bId] ?: continue
+                val aMaterial = state.materials[aId] ?: continue
+                val bMaterial = state.materials[bId] ?: continue
+                val aCollider = state.colliders[aId] ?: continue
+                val bCollider = state.colliders[bId] ?: continue
+                val aShape = state.renderShapes[aId]?.shape ?: continue
+                val bShape = state.renderShapes[bId]?.shape ?: continue
+                if (aShape != BodyShape.CIRCLE && bShape != BodyShape.CIRCLE) continue
+
+                val delta = aTransform.pos - bTransform.pos
+                if (delta.lenSq.raw == 0) continue
+                val normal = delta.norm
+                val minDist = aCollider.radius + bCollider.radius
+                val effectiveDistSq = if (delta < minDist) minDist*minDist else delta.lenSq
+
+                val accelTowardB = gravityAccelerationRaw(
+                    sourceMass = bMaterial.mass,
+                    effectiveDistSqRaw = effectiveDistSq.raw,
+                    gravityNumerator = cfg.gravityNumerator,
+                )
+                val accelTowardA = gravityAccelerationRaw(
+                    sourceMass = aMaterial.mass,
+                    effectiveDistSqRaw = effectiveDistSq.raw,
+                    gravityNumerator = cfg.gravityNumerator,
+                )
+                if (accelTowardB == 0 && accelTowardA == 0) continue
+
+                motions[aId] = aMotion.copy(
+                    vel = aMotion.vel - (normal * Frac(accelTowardB)),
+                )
+                motions[bId] = bMotion.copy(
+                    vel = bMotion.vel + (normal * Frac(accelTowardA)),
+                )
+            }
+        }
+
+        return state.copy(motions = ComponentTable.fromMap(motions))
+    }
+}
 
 private object InputSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     override fun update(
@@ -526,6 +588,21 @@ private fun applyNormalVelocityDamping(
     ) to targetMotion.copy(
         vel = targetMotion.vel - scale(normalDelta, targetWeight),
     )
+}
+
+private fun gravityAccelerationRaw(
+    sourceMass: UInt,
+    effectiveDistSqRaw: Int,
+    gravityNumerator: Int,
+): Int {
+    if (effectiveDistSqRaw <= 0 || gravityNumerator <= 0) {
+        return 0
+    }
+    val safeSourceMass = sourceMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toLong()
+    val raw =
+        (safeSourceMass * gravityNumerator.toLong() / effectiveDistSqRaw.toLong())
+            .coerceIn(0L, Int.MAX_VALUE.toLong())
+    return raw.toInt()
 }
 
 private fun scale(v: Frac2, s: Frac): Frac2 = Frac2(
