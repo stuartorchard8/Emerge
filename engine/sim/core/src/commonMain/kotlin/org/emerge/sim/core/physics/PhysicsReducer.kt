@@ -56,7 +56,9 @@ private object GravitySystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInp
                 val bCollider = state.colliders[bId] ?: continue
                 val aShape = state.renderShapes[aId]?.shape ?: continue
                 val bShape = state.renderShapes[bId]?.shape ?: continue
-                if (aShape != BodyShape.CIRCLE && bShape != BodyShape.CIRCLE) continue
+                val aIsAsteroid = aShape == BodyShape.CIRCLE
+                val bIsAsteroid = bShape == BodyShape.CIRCLE
+                if (aIsAsteroid == bIsAsteroid) continue
 
                 val delta = aTransform.pos - bTransform.pos
                 if (delta.lenSq.raw == 0) continue
