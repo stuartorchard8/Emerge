@@ -338,14 +338,19 @@ private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
                         val targetMotion = motions[bId] ?: state.motions[bId] ?: continue
                         val updated =
                             if (aTeam != null && aTeam == bTeam) {
-                                applyNormalVelocityDamping(
-                                    sourceMotion = sourceMotion,
-                                    sourceMass = aMaterial.mass,
-                                    targetMotion = targetMotion,
-                                    targetMass = bMaterial.mass,
-                                    outwardNormal = inverted(contact.normal),
-                                    damping = FORCE_FIELD_TEAM_DAMPING,
-                                )
+                                val relativeSpeed = (targetMotion.vel-sourceMotion.vel).dot(contact.normal)
+                                if (relativeSpeed.raw > 1024 * 512) {
+                                    applyForceFieldAcceleration(
+                                        sourceMotion = sourceMotion,
+                                        sourceMass = aMaterial.mass,
+                                        targetMotion = targetMotion,
+                                        targetMass = bMaterial.mass,
+                                        outwardNormal = inverted(contact.normal),
+                                        sourceAcc = aField.strength,
+                                    )
+                                } else {
+                                    sourceMotion to targetMotion
+                                }
                             } else {
                                 applyForceFieldAcceleration(
                                     sourceMotion = sourceMotion,
@@ -372,14 +377,19 @@ private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
                         val sourceMotion = motions[bId] ?: state.motions[bId] ?: continue
                         val updated =
                             if (bTeam != null && bTeam == aTeam) {
-                                applyNormalVelocityDamping(
-                                    sourceMotion = sourceMotion,
-                                    sourceMass = bMaterial.mass,
-                                    targetMotion = targetMotion,
-                                    targetMass = aMaterial.mass,
-                                    outwardNormal = contact.normal,
-                                    damping = FORCE_FIELD_TEAM_DAMPING,
-                                )
+                                val relativeSpeed = (sourceMotion.vel-targetMotion.vel).dot(contact.normal)
+                                if (relativeSpeed.raw > 1024 * 512) {
+                                    applyForceFieldAcceleration(
+                                        sourceMotion = sourceMotion,
+                                        sourceMass = bMaterial.mass,
+                                        targetMotion = targetMotion,
+                                        targetMass = aMaterial.mass,
+                                        outwardNormal = contact.normal,
+                                        sourceAcc = bField.strength,
+                                    )
+                                } else {
+                                    sourceMotion to targetMotion
+                                }
                             } else {
                                 applyForceFieldAcceleration(
                                     sourceMotion = sourceMotion,
@@ -564,29 +574,6 @@ private fun applyForceFieldAcceleration(
         vel = sourceMotion.vel - sourceDelta,
     ) to targetMotion.copy(
         vel = targetMotion.vel + targetDelta,
-    )
-}
-
-private fun applyNormalVelocityDamping(
-    sourceMotion: MotionComponent,
-    sourceMass: UInt,
-    targetMotion: MotionComponent,
-    targetMass: UInt,
-    outwardNormal: Norm,
-    damping: Frac,
-): Pair<MotionComponent, MotionComponent> {
-    val safeSourceMass = sourceMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
-    val safeTargetMass = targetMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
-    val totalMass = (safeSourceMass + safeTargetMass).coerceAtMost(Int.MAX_VALUE)
-    val sourceWeight = Frac(safeTargetMass, totalMass)
-    val targetWeight = Frac(safeSourceMass, totalMass)
-    val relativeNormalSpeed = (targetMotion.vel - sourceMotion.vel).dot(outwardNormal)
-    val normalDelta = outwardNormal * (relativeNormalSpeed * damping)
-
-    return sourceMotion.copy(
-        vel = sourceMotion.vel + scale(normalDelta, sourceWeight),
-    ) to targetMotion.copy(
-        vel = targetMotion.vel - scale(normalDelta, targetWeight),
     )
 }
 
