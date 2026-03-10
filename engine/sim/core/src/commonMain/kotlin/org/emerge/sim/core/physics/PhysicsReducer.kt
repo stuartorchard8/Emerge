@@ -276,17 +276,13 @@ private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
                         val targetMotion = motions[bId] ?: state.motions[bId] ?: continue
                         val updated =
                             if (aTeam != null && aTeam == bTeam) {
-                                applyVelocityMatchingDamping(
+                                applyNormalVelocityDamping(
                                     sourceMotion = sourceMotion,
                                     sourceMass = aMaterial.mass,
                                     targetMotion = targetMotion,
                                     targetMass = bMaterial.mass,
-                                    worldOffset = inverted(contact.normal) * (contact.minDist - contact.penetration),
-                                    desiredTargetVel = surfaceVelocityAtOffset(
-                                        sourceMotion = sourceMotion,
-                                        worldOffset = inverted(contact.normal) * (contact.minDist - contact.penetration),
-                                    ),
-                                    linearDamping = FORCE_FIELD_TEAM_DAMPING,
+                                    outwardNormal = inverted(contact.normal),
+                                    damping = FORCE_FIELD_TEAM_DAMPING,
                                 )
                             } else {
                                 applyForceFieldAcceleration(
@@ -314,17 +310,13 @@ private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
                         val sourceMotion = motions[bId] ?: state.motions[bId] ?: continue
                         val updated =
                             if (bTeam != null && bTeam == aTeam) {
-                                applyVelocityMatchingDamping(
+                                applyNormalVelocityDamping(
                                     sourceMotion = sourceMotion,
                                     sourceMass = bMaterial.mass,
                                     targetMotion = targetMotion,
                                     targetMass = aMaterial.mass,
-                                    worldOffset = contact.normal * (contact.minDist - contact.penetration),
-                                    desiredTargetVel = surfaceVelocityAtOffset(
-                                        sourceMotion = sourceMotion,
-                                        worldOffset = contact.normal * (contact.minDist - contact.penetration),
-                                    ),
-                                    linearDamping = FORCE_FIELD_TEAM_DAMPING,
+                                    outwardNormal = contact.normal,
+                                    damping = FORCE_FIELD_TEAM_DAMPING,
                                 )
                             } else {
                                 applyForceFieldAcceleration(
@@ -513,38 +505,26 @@ private fun applyForceFieldAcceleration(
     )
 }
 
-private fun applyVelocityMatchingDamping(
+private fun applyNormalVelocityDamping(
     sourceMotion: MotionComponent,
     sourceMass: UInt,
     targetMotion: MotionComponent,
     targetMass: UInt,
-    worldOffset: Frac2,
-    desiredTargetVel: Frac2,
-    linearDamping: Frac,
+    outwardNormal: Norm,
+    damping: Frac,
 ): Pair<MotionComponent, MotionComponent> {
     val safeSourceMass = sourceMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
     val safeTargetMass = targetMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
     val totalMass = (safeSourceMass + safeTargetMass).coerceAtMost(Int.MAX_VALUE)
     val sourceWeight = Frac(safeTargetMass, totalMass)
     val targetWeight = Frac(safeSourceMass, totalMass)
-
-    val velDelta = scale(desiredTargetVel - targetMotion.vel, linearDamping)
-    val targetTangentialDelta = if (worldOffset.lenSq.raw == 0) {
-        Frac(0)
-    } else {
-        velDelta.dot(ccwPerp(worldOffset.norm))
-    }
-    val sourceAngDelta = if (worldOffset.lenSq.raw == 0) {
-        Frac(0)
-    } else {
-        -(targetTangentialDelta * targetWeight) / worldOffset.len.toCircumference()
-    }
+    val relativeNormalSpeed = (targetMotion.vel - sourceMotion.vel).dot(outwardNormal)
+    val normalDelta = outwardNormal * (relativeNormalSpeed * damping)
 
     return sourceMotion.copy(
-        vel = sourceMotion.vel - scale(velDelta, sourceWeight),
-        angVel = sourceMotion.angVel + sourceAngDelta,
+        vel = sourceMotion.vel + scale(normalDelta, sourceWeight),
     ) to targetMotion.copy(
-        vel = targetMotion.vel + scale(velDelta, targetWeight),
+        vel = targetMotion.vel - scale(normalDelta, targetWeight),
     )
 }
 
