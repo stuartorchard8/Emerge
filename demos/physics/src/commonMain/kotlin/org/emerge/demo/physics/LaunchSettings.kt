@@ -7,8 +7,8 @@ package org.emerge.demo.physics
  * launch semantics (mode, networking target, and preferred render backend).
  */
 data class LaunchSettings(
-    val mode: LaunchMode = LaunchMode.HOST,
-    val gameMode: GameMode = GameMode.PVP,
+    val mode: LaunchMode = LaunchMode.JOIN,
+    val gameMode: GameMode = GameMode.CO_OP,
     val hostIp: String = "192.168.0.114",
     val port: Int = 7777,
 )

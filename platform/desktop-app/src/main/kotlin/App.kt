@@ -4,10 +4,15 @@ import java.awt.*
 import javax.swing.*
 import org.emerge.demo.physics.*
 
+const val SKIP_LAUNCHER = true
+
 fun main() {
     // Single launch path: always start with an in-app launcher UI.
-    SwingUtilities.invokeLater { DesktopLauncher().show() }
-//    GlSceneView.start(LaunchSettings())
+    if (SKIP_LAUNCHER) {
+        GlSceneView.start(LaunchSettings(mode = LaunchMode.HOST))
+    } else {
+        SwingUtilities.invokeLater { DesktopLauncher().show() }
+    }
 }
 
 private class DesktopLauncher {

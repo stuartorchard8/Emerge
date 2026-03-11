@@ -1,6 +1,7 @@
 package org.emerge.androidapp
 
 import android.app.Activity
+import android.opengl.GLSurfaceView
 import android.os.Bundle
 import org.emerge.demo.physics.GameMode
 import org.emerge.demo.physics.LaunchMode
@@ -12,6 +13,10 @@ class MainActivity : Activity() {
         // Single launch path: always start in-app with a launcher UI.
         // (We still read intent extras only to prefill the UI for convenience.)
         val defaultLaunchSettings = LaunchSettings()
+        if (SKIP_LAUNCHER) {
+            setContentView(TorusGlSurfaceView(activity = this, settings = defaultLaunchSettings))
+            return
+        }
         val initial = LaunchSettings(
             mode = when (intent.getStringExtra(EXTRA_MODE)) {
                 MODE_HOST -> LaunchMode.HOST
@@ -41,5 +46,7 @@ class MainActivity : Activity() {
         const val MODE_LOOPBACK = "loopback"
         const val GAME_MODE_PVP = "pvp"
         const val GAME_MODE_CO_OP = "coOp"
+
+        const val SKIP_LAUNCHER = true
     }
 }

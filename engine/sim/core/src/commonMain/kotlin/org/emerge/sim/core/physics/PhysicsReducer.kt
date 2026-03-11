@@ -275,8 +275,10 @@ private object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsI
                 val velAlongTangent = velDelta.dot(tangent) - spinAlongTangent
                 val tangentResponse = velAlongTangent * roughness
 
-                val pushNormVelA = normal * (normResponse * invMassWeightA)
-                val pushNormVelB = normal * (normResponse * invMassWeightB)
+                // Multiply by 2 so that bounciness of 1 results in full momentum transfer.
+                val pushNormVelA = normal * Frac((normResponse * invMassWeightA).raw*2)
+                val pushNormVelB = normal * Frac((normResponse * invMassWeightB).raw*2)
+
                 val tangentResponseA = (tangentResponse * invMassWeightA) / 2
                 val tangentResponseB = (tangentResponse * invMassWeightB) / 2
                 val pushTangentialVelA = tangent * tangentResponseA

@@ -9,7 +9,7 @@ import org.emerge.sim.core.ecs.EcsWorld
 data class PhysicsConfig(
     val thrustFactorInv: Int = Int.MAX_VALUE / (1024 * 128),
     val turnFactorInv: Int = Int.MAX_VALUE / (1024 * 512),
-    val gravityNumerator: Int = 1 shl 16,
+    val gravityNumerator: Int = 1 shl 17,
 )
 
 data class PhysicsState(

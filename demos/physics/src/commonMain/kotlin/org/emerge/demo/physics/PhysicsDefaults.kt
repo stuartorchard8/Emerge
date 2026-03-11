@@ -24,7 +24,7 @@ fun createDefaultInitialState(gameMode: GameMode = GameMode.PVP): PhysicsState {
             angVel = Frac(0),
             mass = (it.toUInt() + 100u) * 1000u,
             radius = Frac(it + 100, 4000),
-            bounce = Frac(3, 4),
+            bounce = Frac(1, 1),
             rough = Frac(8, 16),
             shape = BodyShape.CIRCLE,
         )
