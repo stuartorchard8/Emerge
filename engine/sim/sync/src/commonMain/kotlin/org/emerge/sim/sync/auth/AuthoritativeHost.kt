@@ -21,6 +21,7 @@ class AuthoritativeHost<C, S, I>(
     private val inputCodec: Codec<I>,
     private val stateCodec: StateCodec<S>,
     private val joinPolicy: (S, PlayerId) -> S,
+    private val leavePolicy: (S, PlayerId) -> S = { state, _ -> state },
     private val snapshotEveryTicks: Int = 1,
 ) {
     private val stepper = TickStepper(cfg = cfg, initialState = initialState, reducer = { c, s, inputs -> reducer(c, s, inputs) })
@@ -72,13 +73,26 @@ class AuthoritativeHost<C, S, I>(
      * Polls all client pipes for new inputs and updates last-known input per player.
      */
     fun pollNetwork() {
+        val disconnected = ArrayList<PlayerId>()
         for ((pid, pipe) in clientsById) {
+            if (!pipe.isOpen()) {
+                disconnected += pid
+                continue
+            }
             while (true) {
                 val pkt = pipe.receive() ?: break
                 val msg = AuthProtocol.decodeInput(pkt) ?: continue
                 if (msg.playerId != pid) continue
                 lastInputById[pid] = inputCodec.decode(msg.payload)
             }
+            if (!pipe.isOpen()) {
+                disconnected += pid
+            }
+        }
+        for (pid in disconnected) {
+            clientsById.remove(pid)
+            lastInputById.remove(pid)
+            stepper.replaceState(leavePolicy(stepper.state, pid))
         }
     }
 

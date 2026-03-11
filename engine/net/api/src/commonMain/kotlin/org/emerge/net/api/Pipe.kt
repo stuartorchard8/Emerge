@@ -9,5 +9,6 @@ package org.emerge.net.api
 interface Pipe {
     fun send(packet: ByteArray)
     fun receive(): ByteArray?
+    fun isOpen(): Boolean = true
 }
 

@@ -34,6 +34,8 @@ object Loopback {
         }
 
         override fun receive(): ByteArray? = incoming.pop()
+
+        override fun isOpen(): Boolean = true
     }
 }
 

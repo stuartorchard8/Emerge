@@ -16,5 +16,7 @@ class DelegatingPipe : Pipe {
     }
 
     override fun receive(): ByteArray? = delegate.get()?.receive()
+
+    override fun isOpen(): Boolean = delegate.get()?.isOpen() == true
 }
 

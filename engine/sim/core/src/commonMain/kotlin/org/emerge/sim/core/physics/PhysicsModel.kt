@@ -149,6 +149,33 @@ data class PhysicsState(
     fun clearTeam(entityId: EntityId): PhysicsState =
         copy(teams = teams.remove(entityId))
 
+    fun removePlayerRocket(playerId: PlayerId): PhysicsState {
+        val entityId = playerEntities[playerId] ?: return this
+        val nextPlayerEntities = LinkedHashMap(playerEntities).apply { remove(playerId) }
+        val nextLandings = LinkedHashMap(landings.asMap())
+        for ((attachedEntityId, landing) in landings.entries()) {
+            if (landing.parentEntityId == entityId) {
+                nextLandings.remove(attachedEntityId)
+            }
+        }
+        return copy(
+            world = world.removeEntity(entityId),
+            playerEntities = nextPlayerEntities,
+            transforms = transforms.remove(entityId),
+            motions = motions.remove(entityId),
+            colliders = colliders.remove(entityId),
+            materials = materials.remove(entityId),
+            controls = controls.remove(entityId),
+            renderShapes = renderShapes.remove(entityId),
+            playerOwned = playerOwned.remove(entityId),
+            teams = teams.remove(entityId),
+            planets = planets.remove(entityId),
+            homePlanets = homePlanets.remove(entityId),
+            forceFields = forceFields.remove(entityId),
+            landings = ComponentTable.fromMap(nextLandings).remove(entityId),
+        )
+    }
+
     fun playerTransform(playerId: PlayerId): TransformComponent? {
         val entityId = playerEntities[playerId] ?: return null
         return transforms[entityId]

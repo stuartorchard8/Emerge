@@ -31,6 +31,7 @@ class PhysicsAuthoritativeHostController(
         inputCodec = inputCodec,
         stateCodec = stateCodec,
         joinPolicy = defaultJoinPolicy(gameMode),
+        leavePolicy = { state, playerId -> state.removePlayerRocket(playerId) },
     )
 
     @Volatile private var netStatus: String =

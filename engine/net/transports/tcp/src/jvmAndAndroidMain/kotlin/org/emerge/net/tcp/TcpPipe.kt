@@ -69,6 +69,8 @@ class TcpPipe internal constructor(private val socket: Socket) : Pipe, AutoClose
 
     override fun receive(): ByteArray? = incoming.poll()
 
+    override fun isOpen(): Boolean = !closed
+
     override fun close() {
         closed = true
         // Unblock writer thread.
