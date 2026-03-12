@@ -28,12 +28,12 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val guiShader = GuiShader()
     private val circleShader = CircleShader()
     private var layout: ScreenLayout = ScreenLayout.compute(Vec2(1f,1f), contentScale)
-    private val bodyInstanceMatrices = FloatArray(MAX_RENDER_BODIES * MAT4_FLOATS)
-    private val bodyInstancePrimaryIds = FloatArray(MAX_RENDER_BODIES)
-    private val bodyInstanceSecondaryIds = FloatArray(MAX_RENDER_BODIES)
-    private val bodyInstanceShapes = FloatArray(MAX_RENDER_BODIES)
-    private val bodyInstanceAlphas = FloatArray(MAX_RENDER_BODIES)
-    private val bodyInstanceRadii = FloatArray(MAX_RENDER_BODIES)
+    private val bodyInstanceMatrices = FloatArray(CircleShader.MAX_INSTANCES * MAT4_FLOATS)
+    private val bodyInstancePrimaryIds = FloatArray(CircleShader.MAX_INSTANCES)
+    private val bodyInstanceSecondaryIds = FloatArray(CircleShader.MAX_INSTANCES)
+    private val bodyInstanceShapes = FloatArray(CircleShader.MAX_INSTANCES)
+    private val bodyInstanceAlphas = FloatArray(CircleShader.MAX_INSTANCES)
+    private val bodyInstanceRadii = FloatArray(CircleShader.MAX_INSTANCES)
     private val matTmp = FloatArray(MAT4_FLOATS)
     private val matT = FloatArray(MAT4_FLOATS)
     private val matR = FloatArray(MAT4_FLOATS)
@@ -42,8 +42,6 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val matModel = FloatArray(MAT4_FLOATS)
 
     companion object {
-        const val MAX_BODIES: Int = 100
-        private const val MAX_RENDER_BODIES: Int = MAX_BODIES * 2
         private const val MAT4_FLOATS: Int = 16
         private const val ROTATION_STEP_RAD: Float = 0.03f
     }
@@ -67,7 +65,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         if (!factor.isFinite() || factor <= 0f) {
             return
         }
-        zoom = (zoom * factor).coerceIn(1.5f, 20f)
+        zoom = (zoom * factor).coerceIn(0.5f, 20f)
     }
 
     fun rotateLeft() {
@@ -195,7 +193,7 @@ class ScreenRenderer(val contentScale: Vec2) {
                 outAlphas = outAlphas,
                 outRadii = outRadii,
             )
-            if (n >= MAX_RENDER_BODIES) {
+            if (n >= CircleShader.MAX_INSTANCES) {
                 break
             }
             val forceField = state.forceFields[entityId]
@@ -218,7 +216,7 @@ class ScreenRenderer(val contentScale: Vec2) {
                     outAlphas = outAlphas,
                     outRadii = outRadii,
                 )
-                if (n >= MAX_RENDER_BODIES) {
+                if (n >= CircleShader.MAX_INSTANCES) {
                     break
                 }
             }
@@ -244,7 +242,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         outAlphas: FloatArray,
         outRadii: FloatArray,
     ): Int {
-        if (index >= MAX_RENDER_BODIES) {
+        if (index >= CircleShader.MAX_INSTANCES) {
             return index
         }
 

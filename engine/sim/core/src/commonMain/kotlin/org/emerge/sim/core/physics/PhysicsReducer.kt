@@ -381,19 +381,7 @@ private object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, Physics
                         val sourceMotion = motions[bId] ?: state.motions[bId] ?: continue
                         val updated =
                             if (bTeam != null && bTeam == aTeam) {
-                                val relativeSpeed = (sourceMotion.vel-targetMotion.vel).dot(contact.normal)
-                                if (relativeSpeed.raw > 1024 * 512) {
-                                    applyForceFieldAcceleration(
-                                        sourceMotion = sourceMotion,
-                                        sourceMass = bMaterial.mass,
-                                        targetMotion = targetMotion,
-                                        targetMass = aMaterial.mass,
-                                        outwardNormal = contact.normal,
-                                        sourceAcc = bField.strength,
-                                    )
-                                } else {
-                                    sourceMotion to targetMotion
-                                }
+                                sourceMotion to targetMotion
                             } else {
                                 applyForceFieldAcceleration(
                                     sourceMotion = sourceMotion,
@@ -515,7 +503,7 @@ private fun computeContact(
         minDist = minDist,
         penetration = minDist - delta.len,
         normal = normal,
-        tangent = normal.perp,
+        tangent = normal.cw90,
     )
 }
 
@@ -548,8 +536,6 @@ private fun surfaceVelocityAtAttachment(
     )
 }
 
-private fun ccwPerp(n: Norm): Norm = Norm(-n.y, n.x)
-
 private fun surfaceVelocityAtOffset(
     sourceMotion: MotionComponent,
     worldOffset: Frac2,
@@ -557,9 +543,9 @@ private fun surfaceVelocityAtOffset(
     if (worldOffset.lenSq.raw == 0) {
         return sourceMotion.vel
     }
-    val tangent = ccwPerp(worldOffset.norm)
+    val tangent = worldOffset.norm.cw90
     val spinSpeed = worldOffset.len.toCircumference() * sourceMotion.angVel
-    return sourceMotion.vel + tangent * spinSpeed
+    return sourceMotion.vel - tangent * spinSpeed
 }
 
 private fun applyForceFieldAcceleration(
@@ -595,8 +581,3 @@ private fun gravityAccelerationRaw(
             .coerceIn(0L, Int.MAX_VALUE.toLong())
     return raw.toInt()
 }
-
-private fun scale(v: Frac2, s: Frac): Frac2 = Frac2(
-    x = v.x * s,
-    y = v.y * s,
-)

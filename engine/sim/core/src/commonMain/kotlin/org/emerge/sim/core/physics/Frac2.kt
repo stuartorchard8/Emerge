@@ -64,7 +64,7 @@ data class Norm(val x: Frac, val y: Frac) {
         x*s,
         y*s,
     )
-    val perp by lazy { Norm(y, -x) }
+    val cw90 by lazy { Norm(y, -x) }
 
     companion object {
         fun fromAngle(angle: Frac): Norm {

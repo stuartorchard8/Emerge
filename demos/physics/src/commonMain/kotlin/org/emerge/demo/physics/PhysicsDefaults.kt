@@ -19,7 +19,7 @@ fun createDefaultInitialState(gameMode: GameMode = GameMode.PVP): PhysicsState {
         val spawn = state.spawnBody(
             playerId = null,
             pos = Norm.fromAngle(Frac(it, DEFAULT_PLANET_COUNT)) * Frac(1, 3),
-            vel = Norm.fromAngle(Frac(it, DEFAULT_PLANET_COUNT)).perp * Frac(1, 1000),
+            vel = Norm.fromAngle(Frac(it, DEFAULT_PLANET_COUNT)).cw90 * Frac(1, 1000),
             ang = Frac(0),
             angVel = Frac(0),
             mass = (it.toUInt() + 100u) * 1000u,
@@ -88,7 +88,7 @@ private fun assignHomePlanetAndSpawn(
 
 private fun GameMode.teamIdForPlayer(playerId: PlayerId): TeamId =
     when (this) {
-        // PVP keeps the current one-player-per-team behavior.
+        // PVP creates one team per player.
         GameMode.PVP -> TeamId(playerId.value)
         // CO_OP collapses everyone onto the same team and home planet.
         GameMode.CO_OP -> TeamId(0)
@@ -99,7 +99,7 @@ private fun chooseHomePlanet(state: PhysicsState, random: Random): EntityId? {
     if (planets.isEmpty()) return null
     val claimed = state.homePlanets.entries().map { it.key }.toSet()
     val available = planets.filterNot { it in claimed }
-    val pool = if (available.isNotEmpty()) available else planets
+    val pool = available.ifEmpty { planets }
     return pool[random.nextInt(pool.size)]
 }
 
@@ -181,9 +181,9 @@ private fun rotateByAngle(v: Frac2, angle: Frac): Frac2 {
     )
 }
 
-private const val DEFAULT_PLANET_COUNT: Int = ScreenRenderer.MAX_BODIES - 1
+private const val DEFAULT_PLANET_COUNT: Int = 50
 private val HOME_PLANET_FORCE_FIELD_DEPTH = Frac(1, 24)
-private val HOME_PLANET_FORCE_FIELD_STRENGTH = Frac(1, 1024*32)
+private val HOME_PLANET_FORCE_FIELD_STRENGTH = Frac(1, 1024*64)
 private val HOME_PLANET_FORCE_FIELD_ALPHA = Frac(1, 3)
 private val ROCKET_RADIUS = Frac(1, 160)
 

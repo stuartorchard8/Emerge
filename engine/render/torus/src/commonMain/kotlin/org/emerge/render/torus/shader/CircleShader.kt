@@ -138,7 +138,7 @@ class CircleShader {
         private const val INSTANCE_ALPHA_ATTR = 8
         private const val INSTANCE_RADIUS_ATTR = 9
         private const val MAT4_FLOATS = 16
-        private const val MAX_INSTANCES = 1000
+        const val MAX_INSTANCES = 1000
         private const val NOISE_TEXTURE_UNIT = 0
         private const val NOISE_TEXTURE_SIZE = 128
     }
