@@ -5,11 +5,10 @@ import org.emerge.demo.physics.PhysicsFrame
 import org.emerge.render.torus.ScreenRenderer
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.Vec2
-import org.emerge.sim.core.physics.Frac2
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
-class TorusGlRenderer(
+class AndroidTorusGlRenderer(
     private val getState: () -> PhysicsFrame,
     private val contentScale: Vec2,
 ) : GLSurfaceView.Renderer {

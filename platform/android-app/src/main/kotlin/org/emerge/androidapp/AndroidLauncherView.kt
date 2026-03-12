@@ -14,7 +14,7 @@ import org.emerge.demo.physics.GameMode
 import org.emerge.demo.physics.LaunchMode
 import org.emerge.demo.physics.LaunchSettings
 
-class LauncherView(
+class AndroidLauncherView(
     private val activity: Activity,
     initial: LaunchSettings,
 ) : LinearLayout(activity) {
@@ -52,7 +52,7 @@ class LauncherView(
         val start = Button(context).apply {
             text = "Start"
             setOnClickListener {
-                activity.setContentView(TorusGlSurfaceView(activity, readSettings()))
+                activity.setContentView(AndroidTorusGlSurfaceView(activity, readSettings()))
             }
         }
 

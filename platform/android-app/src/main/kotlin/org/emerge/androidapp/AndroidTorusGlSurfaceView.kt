@@ -28,12 +28,12 @@ import kotlin.math.hypot
  * - Full-screen fragment shader samples torus space per pixel (infinite tiling when zoomed out).
  * - Simulation/networking stays on CPU and feeds uniforms each frame.
  */
-internal class TorusGlSurfaceView(
+internal class AndroidTorusGlSurfaceView(
     activity: Activity,
     private val settings: LaunchSettings,
 ) : GLSurfaceView(activity) {
     private val cfg = PhysicsConfig()
-    private val renderer: TorusGlRenderer
+    private val renderer: AndroidTorusGlRenderer
 
     @Volatile private var currentTouchInput: PhysicsInput = PhysicsInput.ZERO
     @Volatile private var singleTouchActive: Boolean = false
@@ -64,7 +64,7 @@ internal class TorusGlSurfaceView(
     init {
         setEGLContextClientVersion(3)
         val density = activity.resources.displayMetrics.density
-        renderer = TorusGlRenderer(
+        renderer = AndroidTorusGlRenderer(
             getState = {
                 synchronized(stateLock) {
                     latestFrame

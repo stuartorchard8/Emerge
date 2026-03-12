@@ -1,21 +1,21 @@
 package org.emerge.desktop
 
-import java.awt.*
-import javax.swing.*
-import org.emerge.demo.physics.*
+import org.emerge.demo.physics.GameMode
+import org.emerge.demo.physics.LaunchMode
+import org.emerge.demo.physics.LaunchSettings
+import java.awt.Color
+import java.awt.Component
+import java.awt.GridBagConstraints
+import java.awt.GridBagLayout
+import java.awt.Insets
+import javax.swing.JButton
+import javax.swing.JComboBox
+import javax.swing.JFrame
+import javax.swing.JLabel
+import javax.swing.JPanel
+import javax.swing.JTextField
 
-const val SKIP_LAUNCHER = true
-
-fun main() {
-    // Single launch path: always start with an in-app launcher UI.
-    if (SKIP_LAUNCHER) {
-        GlSceneView.start(LaunchSettings(mode = LaunchMode.HOST))
-    } else {
-        SwingUtilities.invokeLater { DesktopLauncher().show() }
-    }
-}
-
-private class DesktopLauncher {
+class DesktopLauncher {
     private val modeBox = JComboBox(LaunchMode.entries.map(LaunchMode::name).toTypedArray())
     private val gameModeBox = JComboBox(GameMode.entries.map(GameMode::name).toTypedArray())
     private val hostIpField = JTextField("127.0.0.1", 16)
@@ -50,7 +50,7 @@ private class DesktopLauncher {
                 addActionListener {
                     val settings = readSettings()
                     dispose()
-                    GlSceneView.start(settings)
+                    DesktopGlSceneView.start(settings)
                 }
             }
 

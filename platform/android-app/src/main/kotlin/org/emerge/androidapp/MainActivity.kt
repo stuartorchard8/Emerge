@@ -1,7 +1,6 @@
 package org.emerge.androidapp
 
 import android.app.Activity
-import android.opengl.GLSurfaceView
 import android.os.Bundle
 import org.emerge.demo.physics.GameMode
 import org.emerge.demo.physics.LaunchMode
@@ -14,7 +13,7 @@ class MainActivity : Activity() {
         // (We still read intent extras only to prefill the UI for convenience.)
         val defaultLaunchSettings = LaunchSettings()
         if (SKIP_LAUNCHER) {
-            setContentView(TorusGlSurfaceView(activity = this, settings = defaultLaunchSettings))
+            setContentView(AndroidTorusGlSurfaceView(activity = this, settings = defaultLaunchSettings))
             return
         }
         val initial = LaunchSettings(
@@ -32,7 +31,7 @@ class MainActivity : Activity() {
             hostIp = intent.getStringExtra(EXTRA_HOST_IP) ?: defaultLaunchSettings.hostIp,
             port = intent.getIntExtra(EXTRA_PORT, defaultLaunchSettings.port),
         )
-        setContentView(LauncherView(activity = this, initial = initial))
+        setContentView(AndroidLauncherView(activity = this, initial = initial))
     }
 
     companion object {

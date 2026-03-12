@@ -9,7 +9,7 @@ import org.lwjgl.system.MemoryUtil.NULL
 import kotlin.math.*
 import kotlin.use
 
-object GlSceneView {
+object DesktopGlSceneView {
     fun start(settings: LaunchSettings) = when (settings.mode) {
         LaunchMode.LOCAL -> Thread {
             val controller = PhysicsAuthoritativeHostController(

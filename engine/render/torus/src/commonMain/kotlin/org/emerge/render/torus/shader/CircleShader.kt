@@ -46,92 +46,31 @@ class CircleShader {
     init {
         uploadNoiseTexture()
 
-        // Instance matrix as 4 vec4 attributes (one per column), divisor = 1
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceVbo)
-        val strideBytes = MAT4_FLOATS * 4
-        for (col in 0 until 4) {
-            val loc = INSTANCE_ATTR_BASE + col
+        initFloatBuffer(instanceVbo, INSTANCE_ATTR_BASE, 4, 4)
+        initFloatBuffer(instancePrimaryIdVbo, INSTANCE_PRIMARY_ID_ATTR)
+        initFloatBuffer(instanceSecondaryIdVbo, INSTANCE_SECONDARY_ID_ATTR)
+        initFloatBuffer(instanceShapeVbo, INSTANCE_SHAPE_ATTR)
+        initFloatBuffer(instanceAlphaVbo, INSTANCE_ALPHA_ATTR)
+        initFloatBuffer(instanceRadiusVbo, INSTANCE_RADIUS_ATTR)
+    }
+
+    fun initFloatBuffer(vbo: Int, attribute: Int, sizeX: Int = 1, sizeY: Int = 1) {
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, vbo)
+        val floatSize = 4
+        val strideBytes = sizeX * sizeY * floatSize
+        for (col in 0 until sizeY) {
+            val loc = attribute + col
             GPU.enableVertexAttribArray(loc)
             GPU.putVertexAttribPointer(
                 loc,
-                4,
+                sizeX,
                 GPU.FLOAT,
                 false,
                 strideBytes,
-                col * 4 * 4,
+                col * sizeX * floatSize,
             )
             GPU.vertexAttribDivisor(loc, 1)
         }
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
-
-        // Instance primary id as float attribute, divisor = 1
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, instancePrimaryIdVbo)
-        GPU.enableVertexAttribArray(INSTANCE_PRIMARY_ID_ATTR)
-        GPU.putVertexAttribPointer(
-            INSTANCE_PRIMARY_ID_ATTR,
-            1,
-            GPU.FLOAT,
-            false,
-            4,
-            0,
-        )
-        GPU.vertexAttribDivisor(INSTANCE_PRIMARY_ID_ATTR, 1)
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
-
-        // Instance secondary id as float attribute, divisor = 1
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceSecondaryIdVbo)
-        GPU.enableVertexAttribArray(INSTANCE_SECONDARY_ID_ATTR)
-        GPU.putVertexAttribPointer(
-            INSTANCE_SECONDARY_ID_ATTR,
-            1,
-            GPU.FLOAT,
-            false,
-            4,
-            0,
-        )
-        GPU.vertexAttribDivisor(INSTANCE_SECONDARY_ID_ATTR, 1)
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
-
-        // Instance shape as float attribute, divisor = 1
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceShapeVbo)
-        GPU.enableVertexAttribArray(INSTANCE_SHAPE_ATTR)
-        GPU.putVertexAttribPointer(
-            INSTANCE_SHAPE_ATTR,
-            1,
-            GPU.FLOAT,
-            false,
-            4,
-            0,
-        )
-        GPU.vertexAttribDivisor(INSTANCE_SHAPE_ATTR, 1)
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
-
-        // Instance alpha as float attribute, divisor = 1
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceAlphaVbo)
-        GPU.enableVertexAttribArray(INSTANCE_ALPHA_ATTR)
-        GPU.putVertexAttribPointer(
-            INSTANCE_ALPHA_ATTR,
-            1,
-            GPU.FLOAT,
-            false,
-            4,
-            0,
-        )
-        GPU.vertexAttribDivisor(INSTANCE_ALPHA_ATTR, 1)
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
-
-        // Instance radius as float attribute, divisor = 1
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceRadiusVbo)
-        GPU.enableVertexAttribArray(INSTANCE_RADIUS_ATTR)
-        GPU.putVertexAttribPointer(
-            INSTANCE_RADIUS_ATTR,
-            1,
-            GPU.FLOAT,
-            false,
-            4,
-            0,
-        )
-        GPU.vertexAttribDivisor(INSTANCE_RADIUS_ATTR, 1)
         GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
     }
 
@@ -150,55 +89,24 @@ class CircleShader {
         GPU.bindTexture2D(noiseTexture)
 
         val n = instanceCount.coerceIn(0, MAX_INSTANCES)
-        instanceMatrices.clear()
-        instanceMatrices.put(matricesColMajor, 0, n * MAT4_FLOATS)
-        instanceMatrices.flip()
-
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceVbo)
-        GPU.bufferData(GPU.ARRAY_BUFFER, n * MAT4_FLOATS, instanceMatrices, GPU.DYNAMIC_DRAW)
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
-
-        instancePrimaryIds.clear()
-        instancePrimaryIds.put(primaryIds, 0, n)
-        instancePrimaryIds.flip()
-
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, instancePrimaryIdVbo)
-        GPU.bufferData(GPU.ARRAY_BUFFER, n, instancePrimaryIds, GPU.DYNAMIC_DRAW)
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
-
-        instanceSecondaryIds.clear()
-        instanceSecondaryIds.put(secondaryIds, 0, n)
-        instanceSecondaryIds.flip()
-
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceSecondaryIdVbo)
-        GPU.bufferData(GPU.ARRAY_BUFFER, n, instanceSecondaryIds, GPU.DYNAMIC_DRAW)
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
-
-        instanceShapes.clear()
-        instanceShapes.put(shapes, 0, n)
-        instanceShapes.flip()
-
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceShapeVbo)
-        GPU.bufferData(GPU.ARRAY_BUFFER, n, instanceShapes, GPU.DYNAMIC_DRAW)
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
-
-        instanceAlphas.clear()
-        instanceAlphas.put(alphas, 0, n)
-        instanceAlphas.flip()
-
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceAlphaVbo)
-        GPU.bufferData(GPU.ARRAY_BUFFER, n, instanceAlphas, GPU.DYNAMIC_DRAW)
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
-
-        instanceRadii.clear()
-        instanceRadii.put(radii, 0, n)
-        instanceRadii.flip()
-
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, instanceRadiusVbo)
-        GPU.bufferData(GPU.ARRAY_BUFFER, n, instanceRadii, GPU.DYNAMIC_DRAW)
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
+        bind(instanceVbo           , instanceMatrices    , matricesColMajor, n * MAT4_FLOATS)
+        bind(instancePrimaryIdVbo  , instancePrimaryIds  , primaryIds      , n)
+        bind(instanceSecondaryIdVbo, instanceSecondaryIds, secondaryIds    , n)
+        bind(instanceShapeVbo      , instanceShapes      , shapes          , n)
+        bind(instanceAlphaVbo      , instanceAlphas      , alphas          , n)
+        bind(instanceRadiusVbo     , instanceRadii       , radii           , n)
 
         GPU.drawTrianglesInstanced(vOffset, 3, n)
+    }
+
+    fun bind(vbo: Int, buffer: FloatBuffer, array: FloatArray, count: Int) {
+        buffer.clear()
+        buffer.put(array, 0, count)
+        buffer.flip()
+
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, vbo)
+        GPU.bufferData(GPU.ARRAY_BUFFER, count, buffer, GPU.DYNAMIC_DRAW)
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
     }
 
     fun deleteProgram() {
