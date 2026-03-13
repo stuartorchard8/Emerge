@@ -46,8 +46,8 @@ class ScreenRenderer(val contentScale: Vec2) {
     companion object {
         private const val MAT4_FLOATS: Int = 16
         private const val ROTATION_STEP_RAD: Float = 0.03f
-        private const val PLANET_INDICATOR_DISTANCE = 0.18f
         private const val PLANET_INDICATOR_SCALE = 0.0125f
+        private const val PLANET_INDICATOR_EDGE_INSET = 0.06f
         private const val PLANET_INDICATOR_ALPHA_MAX = 0.8f
     }
 
@@ -273,10 +273,12 @@ class ScreenRenderer(val contentScale: Vec2) {
         }
 
         var n = index
-        val indicatorDistancePx = worldPxMinDim * PLANET_INDICATOR_DISTANCE
         val indicatorScalePx = worldPxMinDim * PLANET_INDICATOR_SCALE
+        val indicatorInsetPx = worldPxMinDim * PLANET_INDICATOR_EDGE_INSET
         val indicatorScaleX = indicatorScalePx * 2f / worldPxWidth
         val indicatorScaleY = indicatorScalePx * 2f / worldPxHeight
+        val halfWidthPx = worldPxWidth * 0.5f - indicatorInsetPx
+        val halfHeightPx = worldPxHeight * 0.5f - indicatorInsetPx
         for (entityId in state.world.entities) {
             if (!state.planets.contains(entityId)) continue
             if (n >= CircleShader.MAX_INSTANCES) break
@@ -285,23 +287,28 @@ class ScreenRenderer(val contentScale: Vec2) {
             val dx = wrapDelta(transform.pos.x.toFloat() - params.viewFocus.x, params.worldSize.x)
             val dy = wrapDelta(transform.pos.y.toFloat() - params.viewFocus.y, params.worldSize.y)
             val lenWorld = hypot(dx, dy)
-            val viewDx = dx * cos(params.viewRotationRad) + dy * sin(params.viewRotationRad)
-            val viewDy = dy * cos(params.viewRotationRad) - dx * sin(params.viewRotationRad)
+            val viewDx = dx * cos(-params.viewRotationRad) + dy * sin(-params.viewRotationRad)
+            val viewDy = dy * cos(-params.viewRotationRad) - dx * sin(-params.viewRotationRad)
             val ndcDx = viewDx * scaleVecX
             val ndcDy = viewDy * scaleVecY
             val pxDx = ndcDx * worldPxWidth * 0.5f
             val pxDy = ndcDy * worldPxHeight * 0.5f
             val len = hypot(pxDx, pxDy)
             if (!len.isFinite() || len <= 0f) continue
+            if (kotlin.math.abs(pxDx) <= halfWidthPx && kotlin.math.abs(pxDy) <= halfHeightPx) continue
 
             val dirPxX = pxDx / len
             val dirPxY = pxDy / len
+            val edgeT = min(
+                if (kotlin.math.abs(dirPxX) > 1e-6f) halfWidthPx / kotlin.math.abs(dirPxX) else Float.POSITIVE_INFINITY,
+                if (kotlin.math.abs(dirPxY) > 1e-6f) halfHeightPx / kotlin.math.abs(dirPxY) else Float.POSITIVE_INFINITY,
+            )
             val primaryId = shaderId(state.teams[entityId]?.teamId?.value)
             n = packIndicatorInstance(
                 index = n,
                 primaryId = primaryId,
-                posX = viewCenterX + dirPxX * indicatorDistancePx * 2f / worldPxWidth,
-                posY = viewCenterY + dirPxY * indicatorDistancePx * 2f / worldPxHeight,
+                posX = viewCenterX + dirPxX * edgeT * 2f / worldPxWidth,
+                posY = viewCenterY + dirPxY * edgeT * 2f / worldPxHeight,
                 angleRad = atan2(dirPxY, dirPxX),
                 scaleX = indicatorScaleX,
                 scaleY = indicatorScaleY,
