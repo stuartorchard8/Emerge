@@ -17,6 +17,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.sin
 
 class ScreenRenderer(val contentScale: Vec2) {
@@ -286,7 +287,6 @@ class ScreenRenderer(val contentScale: Vec2) {
             val transform = state.transforms[entityId] ?: continue
             val dx = wrapDelta(transform.pos.x.toFloat() - params.viewFocus.x, params.worldSize.x)
             val dy = wrapDelta(transform.pos.y.toFloat() - params.viewFocus.y, params.worldSize.y)
-            val lenWorld = hypot(dx, dy)
             val viewDx = dx * cos(-params.viewRotationRad) + dy * sin(-params.viewRotationRad)
             val viewDy = dy * cos(-params.viewRotationRad) - dx * sin(-params.viewRotationRad)
             val ndcDx = viewDx * scaleVecX
@@ -295,20 +295,22 @@ class ScreenRenderer(val contentScale: Vec2) {
             val pxDy = ndcDy * worldPxHeight * 0.5f
             val len = hypot(pxDx, pxDy)
             if (!len.isFinite() || len <= 0f) continue
-            if (kotlin.math.abs(pxDx) <= halfWidthPx && kotlin.math.abs(pxDy) <= halfHeightPx) continue
+            // Don't show for planets that are mostly on screen
+            if (abs(pxDx) <= halfWidthPx && abs(pxDy) <= halfHeightPx) continue
 
+            val lenWorld = hypot(dx, dy)
             val dirPxX = pxDx / len
             val dirPxY = pxDy / len
             val edgeT = min(
-                if (kotlin.math.abs(dirPxX) > 1e-6f) halfWidthPx / kotlin.math.abs(dirPxX) else Float.POSITIVE_INFINITY,
-                if (kotlin.math.abs(dirPxY) > 1e-6f) halfHeightPx / kotlin.math.abs(dirPxY) else Float.POSITIVE_INFINITY,
+                if (abs(dirPxX) > 1e-6f) halfWidthPx / abs(dirPxX) else Float.POSITIVE_INFINITY,
+                if (abs(dirPxY) > 1e-6f) halfHeightPx / abs(dirPxY) else Float.POSITIVE_INFINITY,
             )
             val primaryId = shaderId(state.teams[entityId]?.teamId?.value)
             n = packIndicatorInstance(
                 index = n,
                 primaryId = primaryId,
-                posX = viewCenterX + dirPxX * edgeT * 2f / worldPxWidth,
-                posY = viewCenterY + dirPxY * edgeT * 2f / worldPxHeight,
+                posX = viewCenterX + (1f-abs(viewCenterX)) * dirPxX * edgeT * 2f / worldPxWidth,
+                posY = viewCenterY + (1f-abs(viewCenterY)) * dirPxY * edgeT * 2f / worldPxHeight,
                 angleRad = atan2(dirPxY, dirPxX),
                 scaleX = indicatorScaleX,
                 scaleY = indicatorScaleY,
