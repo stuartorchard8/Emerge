@@ -9,9 +9,11 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.Vec2
+import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.PI
@@ -44,6 +46,9 @@ class ScreenRenderer(val contentScale: Vec2) {
     companion object {
         private const val MAT4_FLOATS: Int = 16
         private const val ROTATION_STEP_RAD: Float = 0.03f
+        private const val PLANET_INDICATOR_DISTANCE = 0.18f
+        private const val PLANET_INDICATOR_SCALE = 0.0125f
+        private const val PLANET_INDICATOR_ALPHA_MAX = 0.8f
     }
 
     fun setResolution(resolution: Vec2) {
@@ -165,6 +170,9 @@ class ScreenRenderer(val contentScale: Vec2) {
         val worldNdcMax = layout.pxToNdc(layout.worldPxMax)
         val viewCenterX = (worldNdcMax.x + worldNdcMin.x) * 0.5f
         val viewCenterY = (worldNdcMax.y + worldNdcMin.y) * 0.5f
+        val worldPxWidth = layout.worldPxMax.x - layout.worldPxMin.x
+        val worldPxHeight = layout.worldPxMax.y - layout.worldPxMin.y
+        val worldPxMinDim = min(worldPxWidth, worldPxHeight)
         setTranslation(matT, viewCenterX, viewCenterY)
         multiply4x4(out = matView, a = matT, b = matTmp)
 
@@ -221,6 +229,91 @@ class ScreenRenderer(val contentScale: Vec2) {
                 }
             }
         }
+        n = packPlanetIndicators(
+            index = n,
+            state = state,
+            params = params,
+            scaleVecX = scaleVecX,
+            scaleVecY = scaleVecY,
+            viewCenterX = viewCenterX,
+            viewCenterY = viewCenterY,
+            worldPxWidth = worldPxWidth,
+            worldPxHeight = worldPxHeight,
+            worldPxMinDim = worldPxMinDim,
+            outMatricesColMajor = outMatricesColMajor,
+            outPrimaryIds = outPrimaryIds,
+            outSecondaryIds = outSecondaryIds,
+            outShapes = outShapes,
+            outAlphas = outAlphas,
+            outRadii = outRadii,
+        )
+        return n
+    }
+
+    private fun packPlanetIndicators(
+        index: Int,
+        state: PhysicsState,
+        params: WorldShaderParams,
+        scaleVecX: Float,
+        scaleVecY: Float,
+        viewCenterX: Float,
+        viewCenterY: Float,
+        worldPxWidth: Float,
+        worldPxHeight: Float,
+        worldPxMinDim: Float,
+        outMatricesColMajor: FloatArray,
+        outPrimaryIds: FloatArray,
+        outSecondaryIds: FloatArray,
+        outShapes: FloatArray,
+        outAlphas: FloatArray,
+        outRadii: FloatArray,
+    ): Int {
+        if (params.myId == null) {
+            return index
+        }
+
+        var n = index
+        val indicatorDistancePx = worldPxMinDim * PLANET_INDICATOR_DISTANCE
+        val indicatorScalePx = worldPxMinDim * PLANET_INDICATOR_SCALE
+        val indicatorScaleX = indicatorScalePx * 2f / worldPxWidth
+        val indicatorScaleY = indicatorScalePx * 2f / worldPxHeight
+        for (entityId in state.world.entities) {
+            if (!state.planets.contains(entityId)) continue
+            if (n >= CircleShader.MAX_INSTANCES) break
+
+            val transform = state.transforms[entityId] ?: continue
+            val dx = wrapDelta(transform.pos.x.toFloat() - params.viewFocus.x, params.worldSize.x)
+            val dy = wrapDelta(transform.pos.y.toFloat() - params.viewFocus.y, params.worldSize.y)
+            val lenWorld = hypot(dx, dy)
+            val viewDx = dx * cos(params.viewRotationRad) + dy * sin(params.viewRotationRad)
+            val viewDy = dy * cos(params.viewRotationRad) - dx * sin(params.viewRotationRad)
+            val ndcDx = viewDx * scaleVecX
+            val ndcDy = viewDy * scaleVecY
+            val pxDx = ndcDx * worldPxWidth * 0.5f
+            val pxDy = ndcDy * worldPxHeight * 0.5f
+            val len = hypot(pxDx, pxDy)
+            if (!len.isFinite() || len <= 0f) continue
+
+            val dirPxX = pxDx / len
+            val dirPxY = pxDy / len
+            val primaryId = shaderId(state.teams[entityId]?.teamId?.value)
+            n = packIndicatorInstance(
+                index = n,
+                primaryId = primaryId,
+                posX = viewCenterX + dirPxX * indicatorDistancePx * 2f / worldPxWidth,
+                posY = viewCenterY + dirPxY * indicatorDistancePx * 2f / worldPxHeight,
+                angleRad = atan2(dirPxY, dirPxX),
+                scaleX = indicatorScaleX,
+                scaleY = indicatorScaleY,
+                alpha = PLANET_INDICATOR_ALPHA_MAX*max(1f - lenWorld*2f, 0f),
+                outMatricesColMajor = outMatricesColMajor,
+                outPrimaryIds = outPrimaryIds,
+                outSecondaryIds = outSecondaryIds,
+                outShapes = outShapes,
+                outAlphas = outAlphas,
+                outRadii = outRadii,
+            )
+        }
         return n
     }
 
@@ -265,6 +358,44 @@ class ScreenRenderer(val contentScale: Vec2) {
         outShapes[index] = if (shape == BodyShape.TRIANGLE) 1f else 0f
         outAlphas[index] = alpha
         outRadii[index] = radius
+        return index + 1
+    }
+
+    private fun packIndicatorInstance(
+        index: Int,
+        primaryId: Float,
+        posX: Float,
+        posY: Float,
+        angleRad: Float,
+        scaleX: Float,
+        scaleY: Float,
+        alpha: Float,
+        outMatricesColMajor: FloatArray,
+        outPrimaryIds: FloatArray,
+        outSecondaryIds: FloatArray,
+        outShapes: FloatArray,
+        outAlphas: FloatArray,
+        outRadii: FloatArray,
+    ): Int {
+        if (index >= CircleShader.MAX_INSTANCES) {
+            return index
+        }
+
+        setScale(matS, scaleX, scaleY)
+        setRotationZ(matR, angleRad)
+        // Rotate in local space first, then convert to per-axis NDC scale so the arrow keeps
+        // a visually correct shape on non-square viewports.
+        multiply4x4(out = matTmp, a = matS, b = matR)
+        setTranslation(matT, posX, posY)
+        multiply4x4(out = matModel, a = matT, b = matTmp)
+
+        val base = index * MAT4_FLOATS
+        copyMatrix(out = outMatricesColMajor, outOffset = base, src = matModel)
+        outPrimaryIds[index] = primaryId
+        outSecondaryIds[index] = 0f
+        outShapes[index] = 1f
+        outAlphas[index] = alpha
+        outRadii[index] = max(scaleX, scaleY)
         return index + 1
     }
 

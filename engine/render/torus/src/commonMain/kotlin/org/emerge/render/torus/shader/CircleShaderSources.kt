@@ -64,23 +64,27 @@ object CircleShaderSources {
             float c = colorSeed + 1.0;
             vec3 vColor = mod(vec3(c/1.9, c/2.9, c/4.9),1.0);
             if (vBodyShape > 0.5) {
-                vec2 cone = vec2(vLocal.x/3.0+0.5, vLocal.y/1.25);
-                if (dot(cone, cone) > 1.0) {
-                    discard;
+                if (vBodyAlpha < 1.0) {
+                    fragColor = vec4(vColor, vBodyAlpha);
+                } else {
+                    vec2 cone = vec2(vLocal.x/3.0+0.5, vLocal.y/1.25);
+                    if (dot(cone, cone) > 1.0) {
+                        discard;
+                    }
+                    vec2 bell = vec2((vLocal.x+1.0)*1.5, vLocal.y*1.25);
+                    if (dot(bell, bell) < 1.0) {
+                        discard;
+                    }
+                    vec2 window = vec2(vLocal.x*1.33-0.8, vLocal.y*2.25);
+                    float window_scalar = dot(window, window);
+                    float body_color = min(1.0, max(0.0, window_scalar));
+                    float window_color = max(0.0, 1.0-window_scalar);
+                    float wColorSeed = vSecondaryId;
+                    float w = -wColorSeed - 1.0;
+                    vec3 wColor = mod(vec3(w/1.9, w/2.9, w/4.9),1.0);
+                    vec3 rocketColor = vColor * window_color + wColor * body_color;
+                    fragColor = vec4(rocketColor, 1.0);
                 }
-                vec2 bell = vec2((vLocal.x+1.0)*1.5, vLocal.y*1.25);
-                if (dot(bell, bell) < 1.0) {
-                    discard;
-                }
-                vec2 window = vec2(vLocal.x*1.33-0.8, vLocal.y*2.25);
-                float window_scalar = dot(window, window);
-                float body_color = min(1.0, max(0.0, window_scalar));
-                float window_color = max(0.0, 1.0-window_scalar);
-                float wColorSeed = vSecondaryId;
-                float w = -wColorSeed - 1.0;
-                vec3 wColor = mod(vec3(w/1.9, w/2.9, w/4.9),1.0);
-                vec3 rocketColor = vColor * window_color + wColor * body_color;
-                fragColor = vec4(rocketColor, vBodyAlpha);
             } else {
                 float a = min(0.75, (1.0 - dot(vLocal, vLocal)/(1.5)));
                 if (vBodyAlpha < 1.0) {
