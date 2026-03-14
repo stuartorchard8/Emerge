@@ -13,6 +13,7 @@ import org.emerge.sim.core.physics.components.HomePlanetComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.components.ParticleComponent
 import org.emerge.sim.core.physics.primitives.RenderShape
 import org.emerge.sim.core.physics.components.PlanetComponent
 import org.emerge.sim.core.physics.components.PlayerOwnedComponent
@@ -45,6 +46,7 @@ data class PhysicsState(
     val homePlanets: ComponentTable<HomePlanetComponent> = ComponentTable.empty(),
     val forceFields: ComponentTable<ForceFieldComponent> = ComponentTable.empty(),
     val landings: ComponentTable<LandingAttachmentComponent> = ComponentTable.empty(),
+    val particles: ComponentTable<ParticleComponent> = ComponentTable.empty(),
 ) {
     fun spawnBody(
         playerId: PlayerId?,
@@ -122,6 +124,7 @@ data class PhysicsState(
             homePlanets = homePlanets.remove(entityId),
             forceFields = forceFields.remove(entityId),
             landings = landings.remove(entityId),
+            particles = particles.remove(entityId),
         )
     }
 
@@ -169,7 +172,12 @@ data class PhysicsState(
 
     fun removePlayerRocket(playerId: PlayerId): PhysicsState {
         val entityId = playerEntities[playerId] ?: return this
-        val nextPlayerEntities = LinkedHashMap(playerEntities).apply { remove(playerId) }
+        return removeEntity(entityId)
+    }
+
+    fun removeEntity(entityId: EntityId): PhysicsState {
+        world.removeEntity(entityId)
+        val nextPlayerEntities = LinkedHashMap(playerEntities.filterValues { it != entityId })
         val nextLandings = LinkedHashMap(landings.asMap())
         for ((attachedEntityId, landing) in landings.entries()) {
             if (landing.parentEntityId == entityId) {
@@ -191,6 +199,7 @@ data class PhysicsState(
             homePlanets = homePlanets.remove(entityId),
             forceFields = forceFields.remove(entityId),
             landings = ComponentTable.fromMap(nextLandings).remove(entityId),
+            particles = particles.remove(entityId),
         )
     }
 

@@ -94,7 +94,7 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
                 val massA = aMaterial.mass.toLong()
                 val massB = bMaterial.mass.toLong()
-                val totalMass = (massA + massB).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                val totalMass = (massA + massB).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
                 val invMassWeightA = Frac(massB, totalMass)
                 val invMassWeightB = Frac(massA, totalMass)
 

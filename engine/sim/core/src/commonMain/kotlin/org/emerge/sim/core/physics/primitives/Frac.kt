@@ -9,6 +9,7 @@ class Frac(n: Long, d: Int = Int.MAX_VALUE) {
     operator fun div(o: Int): Frac = Frac(raw/o)
     operator fun div(o: Frac): Frac = Frac((toLong() * Int.MAX_VALUE.toLong() / o.toLong()))
     operator fun times(o: Frac): Frac = Frac((toLong() * o.toLong() / Int.MAX_VALUE.toLong()))
+    operator fun times(o: Int): Frac = Frac((toLong() * o.toLong() / Int.MAX_VALUE.toLong()))
     operator fun unaryMinus(): Frac = Frac(-raw)
 
     fun toFloat(): Float = raw.toFloat() / Int.MAX_VALUE.toFloat() // -1f..1f

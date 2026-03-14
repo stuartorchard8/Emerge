@@ -182,6 +182,7 @@ class ScreenRenderer(val contentScale: Vec2) {
             val transform = state.transforms[entityId] ?: continue
             val collider = state.colliders[entityId] ?: continue
             val renderShape = state.renderShapes[entityId] ?: continue
+            val particle = state.particles[entityId]
             val primaryId = shaderId(state.teams[entityId]?.teamId?.value)
             val secondaryId = shaderId(state.playerOwned[entityId]?.playerId?.value)
             n = packBodyInstance(
@@ -193,7 +194,7 @@ class ScreenRenderer(val contentScale: Vec2) {
                 angleTurns = transform.ang.toFloat(),
                 radius = collider.radius.toFloat(),
                 shape = renderShape.shape,
-                alpha = 1f,
+                alpha = 1f * ((particle?.life?.toFloat() ?: 1f) / (particle?.lifeTime?.toFloat() ?: 1f)),
                 params = params,
                 outMatricesColMajor = outMatricesColMajor,
                 outPrimaryIds = outPrimaryIds,

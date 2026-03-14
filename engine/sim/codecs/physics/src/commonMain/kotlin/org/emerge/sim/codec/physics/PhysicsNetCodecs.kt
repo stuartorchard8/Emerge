@@ -19,6 +19,7 @@ import org.emerge.sim.core.physics.components.HomePlanetComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.components.ParticleComponent
 import org.emerge.sim.core.physics.components.PlanetComponent
 import org.emerge.sim.core.physics.components.PlayerOwnedComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
@@ -36,7 +37,7 @@ import org.emerge.sim.sync.auth.StateCodec
  */
 object PhysicsNetCodecs {
     private const val STATE_HEADER_INT_COUNT = 2
-    private const val STATE_ENTITY_INT_COUNT = 23
+    private const val STATE_ENTITY_INT_COUNT = 25
     private const val STATE_INT_BYTES = 4
     private const val MAX_STATE_ENTITIES = 2048
 
@@ -75,6 +76,7 @@ object PhysicsNetCodecs {
                     val forceField = state.forceFields[entityId]
                     val playerId = state.playerOwned[entityId]?.playerId
                     val landing = state.landings[entityId]
+                    val particle = state.particles[entityId]
                     w.writeInt(entityId.value)
                     w.writeInt(playerId?.value ?: -1)
                     w.writeInt(transform.pos.x.raw)
@@ -98,6 +100,8 @@ object PhysicsNetCodecs {
                     w.writeInt(landing?.relativePos?.x?.raw?.toInt() ?: 0)
                     w.writeInt(landing?.relativePos?.y?.raw?.toInt() ?: 0)
                     w.writeInt(landing?.relativeAng?.raw?.toInt() ?: 0)
+                    w.writeInt(particle?.life ?: 0)
+                    w.writeInt(particle?.lifeTime ?: 1)
                 }
                 return w.toByteArray()
             }
@@ -126,6 +130,7 @@ object PhysicsNetCodecs {
                 val homePlanets = LinkedHashMap<EntityId, HomePlanetComponent>()
                 val forceFields = LinkedHashMap<EntityId, ForceFieldComponent>()
                 val landings = LinkedHashMap<EntityId, LandingAttachmentComponent>()
+                val particles = LinkedHashMap<EntityId, ParticleComponent>()
                 repeat(n) {
                     val entityId = EntityId(c.readInt())
                     val playerIdRaw = c.readInt()
@@ -150,6 +155,8 @@ object PhysicsNetCodecs {
                     val landingDx = c.readInt()
                     val landingDy = c.readInt()
                     val landingAng = c.readInt()
+                    val particleLife = c.readInt()
+                    val particleLifetime = c.readInt()
                     val playerId = if (playerIdRaw >= 0) PlayerId(playerIdRaw) else null
                     entities += entityId
                     transforms[entityId] =
@@ -210,6 +217,13 @@ object PhysicsNetCodecs {
                                 relativeAng = Frac(landingAng.toLong()),
                             )
                     }
+                    if (particleLife > 0) {
+                        particles[entityId] =
+                            ParticleComponent(
+                                life = particleLife,
+                                lifeTime = particleLifetime,
+                            )
+                    }
                 }
                 return PhysicsState(
                     world = EcsWorld(
@@ -229,6 +243,7 @@ object PhysicsNetCodecs {
                     homePlanets = ComponentTable.fromMap(homePlanets),
                     forceFields = ComponentTable.fromMap(forceFields),
                     landings = ComponentTable.fromMap(landings),
+                    particles = ComponentTable.fromMap(particles),
                 )
             }
         }

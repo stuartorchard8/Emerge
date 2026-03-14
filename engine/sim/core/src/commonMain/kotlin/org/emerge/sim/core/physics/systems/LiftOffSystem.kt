@@ -45,28 +45,28 @@ object LiftOffSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             landings = ComponentTable.fromMap(landings),
         )
     }
-}
 
-private fun surfaceVelocityAtAttachment(
-    parentTransform: TransformComponent,
-    parentMotion: MotionComponent,
-    landing: LandingAttachmentComponent,
-): Coord2 {
-    val worldOffset = landing.relativePos.rotateByAngle(parentTransform.ang)
-    return surfaceVelocityAtOffset(
-        sourceMotion = parentMotion,
-        worldOffset = worldOffset,
-    )
-}
-
-private fun surfaceVelocityAtOffset(
-    sourceMotion: MotionComponent,
-    worldOffset: Frac2,
-): Coord2 {
-    if (worldOffset.lenSq.raw == 0L) {
-        return sourceMotion.vel
+    private fun surfaceVelocityAtAttachment(
+        parentTransform: TransformComponent,
+        parentMotion: MotionComponent,
+        landing: LandingAttachmentComponent,
+    ): Coord2 {
+        val worldOffset = landing.relativePos.rotateByAngle(parentTransform.ang)
+        return surfaceVelocityAtOffset(
+            sourceMotion = parentMotion,
+            worldOffset = worldOffset,
+        )
     }
-    val tangent = worldOffset.norm.cw90
-    val spinSpeed = worldOffset.len.toCircumference() * Frac(sourceMotion.angVel.raw.toLong())
-    return sourceMotion.vel - tangent * spinSpeed
+
+    private fun surfaceVelocityAtOffset(
+        sourceMotion: MotionComponent,
+        worldOffset: Frac2,
+    ): Coord2 {
+        if (worldOffset.lenSq.raw == 0L) {
+            return sourceMotion.vel
+        }
+        val tangent = worldOffset.norm.cw90
+        val spinSpeed = worldOffset.len.toCircumference() * Frac(sourceMotion.angVel.raw.toLong())
+        return sourceMotion.vel - tangent * spinSpeed
+    }
 }
