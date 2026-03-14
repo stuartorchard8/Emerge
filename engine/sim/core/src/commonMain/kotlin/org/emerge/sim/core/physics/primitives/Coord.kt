@@ -13,6 +13,7 @@ data class Coord2(val x: Coord, val y: Coord) {
     operator fun plus(other: Frac2): Coord2 = Coord2(x + other.x, y + other.y)
     operator fun minus(other: Frac2): Coord2 = Coord2(x - other.x, y - other.y)
     operator fun minus(other: Coord2): Frac2 = Frac2(x - other.x, y - other.y)
+    fun asFrac2() = Frac2(Frac(x.raw.toLong()), Frac(y.raw.toLong()))
 
     companion object {
         val zero get() = Coord2(

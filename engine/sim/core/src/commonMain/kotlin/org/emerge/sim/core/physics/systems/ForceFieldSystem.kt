@@ -10,11 +10,13 @@ import org.emerge.sim.core.physics.primitives.Norm
 import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.primitives.Coord2
+import org.emerge.sim.core.physics.primitives.Frac2
 import kotlin.collections.set
 
 
 object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
-    private val FORCE_FIELD_TEAM_DAMPING = Frac(1, 32)
+    private val FORCE_FIELD_TEAM_DAMPING = Frac(1, 64)
 
     override fun update(
         cfg: PhysicsConfig,
@@ -51,19 +53,18 @@ object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                         val targetMotion = motions[bId] ?: state.motions[bId] ?: continue
                         val updated =
                             if (aTeam != null && aTeam == bTeam) {
-                                val relativeSpeed = (targetMotion.vel-sourceMotion.vel).dot(contact.normal)
-                                if (relativeSpeed.raw > 1024 * 512) {
-                                    applyForceFieldAcceleration(
+                                applyVelocityMatchingDamping(
+                                    sourceMotion = sourceMotion,
+                                    sourceMass = aMaterial.mass,
+                                    targetMotion = targetMotion,
+                                    targetMass = bMaterial.mass,
+                                    worldOffset = contact.normal * (contact.minDist - contact.penetration),
+                                    desiredTargetVel = surfaceVelocityAtOffset(
                                         sourceMotion = sourceMotion,
-                                        sourceMass = aMaterial.mass,
-                                        targetMotion = targetMotion,
-                                        targetMass = bMaterial.mass,
-                                        outwardNormal = -contact.normal,
-                                        sourceAcc = aField.strength,
-                                    )
-                                } else {
-                                    sourceMotion to targetMotion
-                                }
+                                        worldOffset = -contact.normal * (contact.minDist - contact.penetration),
+                                    ),
+                                    linearDamping = FORCE_FIELD_TEAM_DAMPING,
+                                )
                             } else {
                                 applyForceFieldAcceleration(
                                     sourceMotion = sourceMotion,
@@ -90,7 +91,18 @@ object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                         val sourceMotion = motions[bId] ?: state.motions[bId] ?: continue
                         val updated =
                             if (bTeam != null && bTeam == aTeam) {
-                                sourceMotion to targetMotion
+                                applyVelocityMatchingDamping(
+                                    sourceMotion = sourceMotion,
+                                    sourceMass = bMaterial.mass,
+                                    targetMotion = targetMotion,
+                                    targetMass = aMaterial.mass,
+                                    worldOffset = contact.normal * (contact.minDist - contact.penetration),
+                                    desiredTargetVel = surfaceVelocityAtOffset(
+                                        sourceMotion = sourceMotion,
+                                        worldOffset = contact.normal * (contact.minDist - contact.penetration),
+                                    ),
+                                    linearDamping = FORCE_FIELD_TEAM_DAMPING,
+                                )
                             } else {
                                 applyForceFieldAcceleration(
                                     sourceMotion = sourceMotion,
@@ -110,6 +122,18 @@ object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         return state.copy(motions = ComponentTable.fromMap(motions))
     }
 
+    private fun surfaceVelocityAtOffset(
+        sourceMotion: MotionComponent,
+        worldOffset: Frac2,
+    ): Coord2 {
+        if (worldOffset.lenSq.raw == 0L) {
+            return sourceMotion.vel
+        }
+        val tangent = worldOffset.norm.cw90
+        val spinSpeed = worldOffset.len.toCircumference() * Frac(sourceMotion.angVel.raw.toLong())
+        return sourceMotion.vel - tangent * spinSpeed
+    }
+
     private fun applyForceFieldAcceleration(
         sourceMotion: MotionComponent,
         sourceMass: UInt,
@@ -126,6 +150,41 @@ object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             vel = sourceMotion.vel - sourceDelta,
         ) to targetMotion.copy(
             vel = targetMotion.vel + targetDelta,
+        )
+    }
+
+    private fun applyVelocityMatchingDamping(
+        sourceMotion: MotionComponent,
+        sourceMass: UInt,
+        targetMotion: MotionComponent,
+        targetMass: UInt,
+        worldOffset: Frac2,
+        desiredTargetVel: Coord2,
+        linearDamping: Frac,
+    ): Pair<MotionComponent, MotionComponent> {
+        val safeSourceMass = sourceMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
+        val safeTargetMass = targetMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
+        val totalMass = (safeSourceMass + safeTargetMass).coerceAtMost(Int.MAX_VALUE)
+        val sourceWeight = Frac(targetMass.toLong(), totalMass)
+        val targetWeight = Frac(sourceMass.toLong(), totalMass)
+
+        val velDelta = (desiredTargetVel.asFrac2() - targetMotion.vel.asFrac2()) * linearDamping
+        val targetTangentialDelta = if (worldOffset.lenSq.raw == 0L) {
+            Frac(0)
+        } else {
+            velDelta.dot(worldOffset.norm.cw90)
+        }
+        val sourceAngDelta = if (worldOffset.lenSq.raw == 0L) {
+            Frac(0)
+        } else {
+            -(targetTangentialDelta * targetWeight) / worldOffset.len.toCircumference()
+        }
+
+        return sourceMotion.copy(
+            vel = sourceMotion.vel - velDelta*sourceWeight,
+            angVel = sourceMotion.angVel + sourceAngDelta*sourceWeight,
+        ) to targetMotion.copy(
+            vel = targetMotion.vel + velDelta*targetWeight,
         )
     }
 }
