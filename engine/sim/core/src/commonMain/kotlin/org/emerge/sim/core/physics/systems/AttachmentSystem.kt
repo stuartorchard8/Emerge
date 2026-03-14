@@ -7,6 +7,7 @@ import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.primitives.Coord
 import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.set
@@ -30,7 +31,7 @@ object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             }
             transforms[entityId] = transform.copy(
                 pos = parentTransform.pos + landing.relativePos.rotateByAngle(parentTransform.ang),
-                ang = Frac(parentTransform.ang.raw + landing.relativeAng.raw),
+                ang = parentTransform.ang + landing.relativeAng,
             )
             motions[entityId] = parentMotion
         }

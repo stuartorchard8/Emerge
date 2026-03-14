@@ -12,18 +12,20 @@ import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TeamComponent
+import org.emerge.sim.core.physics.primitives.Coord
+import org.emerge.sim.core.physics.primitives.Coord2
 
 fun createDefaultInitialState(gameMode: GameMode = GameMode.PVP): PhysicsState {
     var state = PhysicsState()
     for (it in 0 until DEFAULT_PLANET_COUNT) {
         val spawn = state.spawnBody(
             playerId = null,
-            pos = Norm.fromAngle(Frac(it, DEFAULT_PLANET_COUNT)) * Frac(1, 3),
-            vel = Norm.fromAngle(Frac(it, DEFAULT_PLANET_COUNT)).cw90 * Frac(1, 1000),
-            ang = Frac(0),
-            angVel = Frac(0),
+            pos = Coord2.zero + Norm.fromAngle(Coord(it, DEFAULT_PLANET_COUNT)) * Frac(1, 3),
+            vel = Coord2.zero + Norm.fromAngle(Coord(it, DEFAULT_PLANET_COUNT)).cw90 * Frac(1, 1000),
+            ang = Coord(0),
+            angVel = Coord(0),
             mass = (it.toUInt() + 100u) * 1000u,
-            radius = Frac(it + 100, 4000),
+            radius = Frac(it + 100L, 4000),
             bounce = Frac(1, 1),
             rough = Frac(8, 16),
             shape = BodyShape.CIRCLE,
@@ -118,7 +120,7 @@ private fun spawnRocketOnPlanetSurface(
     val localNormal = Norm.fromAngle(localAngle)
     val relativePos = localNormal * (planetCollider.radius + ROCKET_RADIUS)
     val worldPos = planetTransform.pos + rotateByAngle(relativePos, planetTransform.ang)
-    val worldAng = Frac(planetTransform.ang.raw + localAngle.raw)
+    val worldAng = Coord(planetTransform.ang.raw + localAngle.raw)
     val rocketState =
         if (existingEntity != null) {
             state.putBody(
@@ -165,15 +167,15 @@ private fun spawnRocketOnPlanetSurface(
             LandingAttachmentComponent(
                 parentEntityId = planetId,
                 relativePos = relativePos,
-                relativeAng = localAngle,
+                relativeAng = Frac(localAngle.raw.toLong()),
             ),
         ),
     )
 }
 
-private fun randomTurn(random: Random): Frac = Frac(random.nextInt(0, Int.MAX_VALUE))
+private fun randomTurn(random: Random): Coord = Coord(random.nextInt(0, Int.MAX_VALUE))
 
-private fun rotateByAngle(v: Frac2, angle: Frac): Frac2 {
+private fun rotateByAngle(v: Frac2, angle: Coord): Frac2 {
     val rotation = Norm.fromAngle(angle)
     return Frac2(
         x = v.x * rotation.x - v.y * rotation.y,
@@ -185,19 +187,19 @@ private const val DEFAULT_PLANET_COUNT: Int = 50
 private val HOME_PLANET_FORCE_FIELD_DEPTH = Frac(1, 24)
 private val HOME_PLANET_FORCE_FIELD_STRENGTH = Frac(1, 1024*64)
 private val HOME_PLANET_FORCE_FIELD_ALPHA = Frac(1, 3)
-private val ROCKET_RADIUS = Frac(1, 160)
+private val ROCKET_RADIUS = Frac(1, 1024)
 
 private fun spawnRocket(
     state: PhysicsState,
     playerId: PlayerId,
-    pos: Frac2,
+    pos: Coord2,
 ): PhysicsState =
     state.spawnBody(
         playerId = playerId,
         pos = pos,
-        vel = Frac2.zero,
-        ang = Frac(0),
-        angVel = Frac(0),
+        vel = Coord2.zero,
+        ang = Coord(0),
+        angVel = Coord(0),
         mass = 1000u,
         radius = Frac(1, 160),
         bounce = Frac(3, 4),

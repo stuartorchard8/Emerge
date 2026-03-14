@@ -24,6 +24,8 @@ import org.emerge.sim.core.physics.components.PlayerOwnedComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.primitives.Coord
+import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.auth.StateCodec
 
@@ -82,20 +84,20 @@ object PhysicsNetCodecs {
                     w.writeInt(transform.ang.raw)
                     w.writeInt(motion.angVel.raw)
                     w.writeInt(material.mass.toInt())
-                    w.writeInt(collider.radius.raw)
-                    w.writeInt(material.bounce.raw)
-                    w.writeInt(material.rough.raw)
+                    w.writeInt(collider.radius.raw.toInt())
+                    w.writeInt(material.bounce.raw.toInt())
+                    w.writeInt(material.rough.raw.toInt())
                     w.writeInt(renderShape.shape.wireValue)
                     w.writeInt(planet?.seed ?: -1)
                     w.writeInt(homePlanet?.teamId?.value ?: -1)
                     w.writeInt(team?.teamId?.value ?: -1)
-                    w.writeInt(forceField?.depth?.raw ?: 0)
-                    w.writeInt(forceField?.strength?.raw ?: 0)
-                    w.writeInt(forceField?.alpha?.raw ?: 0)
+                    w.writeInt(forceField?.depth?.raw?.toInt() ?: 0)
+                    w.writeInt(forceField?.strength?.raw?.toInt() ?: 0)
+                    w.writeInt(forceField?.alpha?.raw?.toInt() ?: 0)
                     w.writeInt(landing?.parentEntityId?.value ?: -1)
-                    w.writeInt(landing?.relativePos?.x?.raw ?: 0)
-                    w.writeInt(landing?.relativePos?.y?.raw ?: 0)
-                    w.writeInt(landing?.relativeAng?.raw ?: 0)
+                    w.writeInt(landing?.relativePos?.x?.raw?.toInt() ?: 0)
+                    w.writeInt(landing?.relativePos?.y?.raw?.toInt() ?: 0)
+                    w.writeInt(landing?.relativeAng?.raw?.toInt() ?: 0)
                 }
                 return w.toByteArray()
             }
@@ -152,21 +154,21 @@ object PhysicsNetCodecs {
                     entities += entityId
                     transforms[entityId] =
                         TransformComponent(
-                            pos = Frac2.raw(px, py),
-                            ang = Frac(a),
+                            pos = Coord2.raw(px, py),
+                            ang = Coord(a),
                         )
                     motions[entityId] =
                         MotionComponent(
-                            vel = Frac2.raw(vx, vy),
-                            angVel = Frac(av),
+                            vel = Coord2.raw(vx, vy),
+                            angVel = Coord(av),
                         )
                     colliders[entityId] =
-                        ColliderComponent(radius = Frac(rad))
+                        ColliderComponent(radius = Frac(rad.toLong()))
                     materials[entityId] =
                         MaterialComponent(
                             mass = m.toUInt(),
-                            bounce = Frac(b),
-                            rough = Frac(r),
+                            bounce = Frac(b.toLong()),
+                            rough = Frac(r.toLong()),
                         )
                     renderShapes[entityId] =
                         RenderShapeComponent(shape = shape)
@@ -189,9 +191,9 @@ object PhysicsNetCodecs {
                     if (forceFieldRadiusScaleRaw > 0) {
                         forceFields[entityId] =
                             ForceFieldComponent(
-                                depth = Frac(forceFieldRadiusScaleRaw),
-                                strength = Frac(forceFieldStrengthRaw),
-                                alpha = Frac(forceFieldAlphaRaw),
+                                depth = Frac(forceFieldRadiusScaleRaw.toLong()),
+                                strength = Frac(forceFieldStrengthRaw.toLong()),
+                                alpha = Frac(forceFieldAlphaRaw.toLong()),
                             )
                     }
                     if (playerId != null) {
@@ -205,7 +207,7 @@ object PhysicsNetCodecs {
                             LandingAttachmentComponent(
                                 parentEntityId = EntityId(landingParentIdRaw),
                                 relativePos = Frac2.raw(landingDx, landingDy),
-                                relativeAng = Frac(landingAng),
+                                relativeAng = Frac(landingAng.toLong()),
                             )
                     }
                 }

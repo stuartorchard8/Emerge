@@ -19,13 +19,15 @@ import org.emerge.sim.core.physics.components.PlayerOwnedComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.primitives.Coord
+import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 
 data class PhysicsConfig(
-    val thrustFactorInv: Int = Int.MAX_VALUE / (1024 * 128),
+    val thrustFactorInv: Int = Int.MAX_VALUE / (1024 * 16),
     val turnFactorInv: Int = Int.MAX_VALUE / (1024 * 512),
-    val gravityNumerator: Frac = Frac(1,2),
+    val gravityNumerator: Frac = Frac(1,16),
 )
 
 data class PhysicsState(
@@ -46,10 +48,10 @@ data class PhysicsState(
 ) {
     fun spawnBody(
         playerId: PlayerId?,
-        pos: Frac2,
-        vel: Frac2,
-        ang: Frac,
-        angVel: Frac,
+        pos: Coord2,
+        vel: Coord2,
+        ang: Coord,
+        angVel: Coord,
         mass: UInt,
         radius: Frac,
         bounce: Frac,
@@ -76,10 +78,10 @@ data class PhysicsState(
     fun putBody(
         entityId: EntityId,
         playerId: PlayerId?,
-        pos: Frac2,
-        vel: Frac2,
-        ang: Frac,
-        angVel: Frac,
+        pos: Coord2,
+        vel: Coord2,
+        ang: Coord,
+        angVel: Coord,
         mass: UInt,
         radius: Frac,
         bounce: Frac,
@@ -202,9 +204,9 @@ data class PhysicsState(
         return motions[entityId]
     }
 
-    fun playerAngle(playerId: PlayerId): Frac? = playerTransform(playerId)?.ang
+    fun playerAngle(playerId: PlayerId): Coord? = playerTransform(playerId)?.ang
 
-    fun playerAngularVelocity(playerId: PlayerId): Frac? = playerMotion(playerId)?.angVel
+    fun playerAngularVelocity(playerId: PlayerId): Coord? = playerMotion(playerId)?.angVel
 
     fun homePlanetEntity(teamId: TeamId): EntityId? =
         homePlanets.entries().firstOrNull { it.value.teamId == teamId }?.key

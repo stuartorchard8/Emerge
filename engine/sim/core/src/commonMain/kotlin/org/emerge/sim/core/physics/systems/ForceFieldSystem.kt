@@ -120,7 +120,7 @@ object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     ): Pair<MotionComponent, MotionComponent> {
         val safeSourceMass = sourceMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
         val safeTargetMass = targetMass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
-        val sourceDelta = outwardNormal * Frac((sourceAcc.toLong() * safeTargetMass.toLong() / safeSourceMass.toLong()).toInt())
+        val sourceDelta = outwardNormal * Frac(sourceAcc.toLong() * safeTargetMass.toLong() / safeSourceMass.toLong())
         val targetDelta = outwardNormal * sourceAcc
         return sourceMotion.copy(
             vel = sourceMotion.vel - sourceDelta,

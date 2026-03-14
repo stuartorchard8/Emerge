@@ -14,6 +14,7 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.primitives.Coord
 import kotlin.collections.set
 
 
@@ -91,9 +92,9 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                     continue
                 }
 
-                val massA = aMaterial.mass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
-                val massB = bMaterial.mass.coerceIn(1u, Int.MAX_VALUE.toUInt()).toInt()
-                val totalMass = (massA + massB).coerceAtMost(Int.MAX_VALUE)
+                val massA = aMaterial.mass.toLong()
+                val massB = bMaterial.mass.toLong()
+                val totalMass = (massA + massB).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                 val invMassWeightA = Frac(massB, totalMass)
                 val invMassWeightB = Frac(massA, totalMass)
 
@@ -108,7 +109,7 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val roughness = aMaterial.rough.coerceAtMost(bMaterial.rough)
                 val circumferenceA = aCollider.radius.toCircumference()
                 val circumferenceB = bCollider.radius.toCircumference()
-                val spinAlongTangent = aMotion.angVel * circumferenceA + bMotion.angVel * circumferenceB
+                val spinAlongTangent = Frac(aMotion.angVel.raw.toLong()) * circumferenceA + Frac(bMotion.angVel.raw.toLong()) * circumferenceB
                 val velAlongTangent = velDelta.dot(tangent) - spinAlongTangent
                 val tangentResponse = velAlongTangent * roughness
 
@@ -180,7 +181,7 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         val snappedRocketAng = landingNormal.asAngle
         return LandingAttachmentComponent(
             parentEntityId = supportId,
-            relativePos = (landingNormal * minDist).rotateByAngle(Frac(-supportTransform.ang.raw)),
+            relativePos = (landingNormal * minDist).rotateByAngle(Coord(-supportTransform.ang.raw)),
             relativeAng = snappedRocketAng - supportTransform.ang,
         )
     }

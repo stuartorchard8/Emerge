@@ -71,7 +71,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         if (!factor.isFinite() || factor <= 0f) {
             return
         }
-        zoom = (zoom * factor).coerceIn(0.5f, 20f)
+        zoom = (zoom * factor).coerceIn(1.5f, 20f)
     }
 
     fun rotateLeft() {
@@ -272,6 +272,8 @@ class ScreenRenderer(val contentScale: Vec2) {
         if (params.myId == null) {
             return index
         }
+        val playerEntityId = state.playerEntities[params.myId] ?: return index
+        val playerTeamId = state.teams[playerEntityId]?.teamId?.value
 
         var n = index
         val indicatorScalePx = worldPxMinDim * PLANET_INDICATOR_SCALE
@@ -283,6 +285,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         for (entityId in state.world.entities) {
             if (!state.planets.contains(entityId)) continue
             if (n >= CircleShader.MAX_INSTANCES) break
+            val planetTeamId = state.teams[entityId]?.teamId?.value
 
             val transform = state.transforms[entityId] ?: continue
             val dx = wrapDelta(transform.pos.x.toFloat() - params.viewFocus.x, params.worldSize.x)
@@ -298,14 +301,14 @@ class ScreenRenderer(val contentScale: Vec2) {
             // Don't show for planets that are mostly on screen
             if (abs(pxDx) <= halfWidthPx && abs(pxDy) <= halfHeightPx) continue
 
-            val lenWorld = hypot(dx, dy)
+            val lenWorld = if (playerTeamId == planetTeamId) 0f else hypot(dx, dy)
             val dirPxX = pxDx / len
             val dirPxY = pxDy / len
             val edgeT = min(
                 if (abs(dirPxX) > 1e-6f) halfWidthPx / abs(dirPxX) else Float.POSITIVE_INFINITY,
                 if (abs(dirPxY) > 1e-6f) halfHeightPx / abs(dirPxY) else Float.POSITIVE_INFINITY,
             )
-            val primaryId = shaderId(state.teams[entityId]?.teamId?.value)
+            val primaryId = shaderId(planetTeamId)
             n = packIndicatorInstance(
                 index = n,
                 primaryId = primaryId,

@@ -4,6 +4,8 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.primitives.Vec2
 import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.primitives.Coord
+import org.emerge.sim.core.physics.primitives.Coord2
 
 data class WorldShaderParams(
     val worldSize: Vec2,
@@ -14,9 +16,9 @@ data class WorldShaderParams(
 ) {
     companion object {
         fun compute(state: PhysicsState, myId: PlayerId?, zoom: Float, viewRotationRad: Float = 0f): WorldShaderParams {
-            val focusWrapped: Frac2 =
-                if (myId != null) state.playerTransform(myId)?.pos ?: Frac2.zero
-                else Frac2.zero
+            val focusWrapped: Coord2 =
+                if (myId != null) state.playerTransform(myId)?.pos ?: Coord2.zero
+                else Coord2.zero
 
             val focus = Vec2(
                 focusWrapped.x.toFloat(),

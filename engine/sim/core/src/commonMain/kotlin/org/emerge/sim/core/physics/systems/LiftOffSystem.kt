@@ -10,6 +10,8 @@ import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.primitives.Coord2
+import org.emerge.sim.core.physics.primitives.Frac
 import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.set
@@ -49,7 +51,7 @@ private fun surfaceVelocityAtAttachment(
     parentTransform: TransformComponent,
     parentMotion: MotionComponent,
     landing: LandingAttachmentComponent,
-): Frac2 {
+): Coord2 {
     val worldOffset = landing.relativePos.rotateByAngle(parentTransform.ang)
     return surfaceVelocityAtOffset(
         sourceMotion = parentMotion,
@@ -60,11 +62,11 @@ private fun surfaceVelocityAtAttachment(
 private fun surfaceVelocityAtOffset(
     sourceMotion: MotionComponent,
     worldOffset: Frac2,
-): Frac2 {
-    if (worldOffset.lenSq.raw == 0) {
+): Coord2 {
+    if (worldOffset.lenSq.raw == 0L) {
         return sourceMotion.vel
     }
     val tangent = worldOffset.norm.cw90
-    val spinSpeed = worldOffset.len.toCircumference() * sourceMotion.angVel
+    val spinSpeed = worldOffset.len.toCircumference() * Frac(sourceMotion.angVel.raw.toLong())
     return sourceMotion.vel - tangent * spinSpeed
 }

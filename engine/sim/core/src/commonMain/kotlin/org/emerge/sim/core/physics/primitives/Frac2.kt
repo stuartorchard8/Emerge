@@ -1,5 +1,7 @@
 package org.emerge.sim.core.physics.primitives
 
+import org.emerge.sim.core.physics.primitives.Frac.Companion.abs
+
 data class Frac2(val x: Frac, val y: Frac) {
     operator fun plus(o: Frac2): Frac2 = Frac2(x + o.x, y + o.y)
     operator fun minus(o: Frac2): Frac2 = Frac2(x - o.x, y - o.y)
@@ -7,7 +9,7 @@ data class Frac2(val x: Frac, val y: Frac) {
         x*other.x +
         y*other.y
     )
-    fun rotateByAngle(angle: Frac): Frac2 {
+    fun rotateByAngle(angle: Coord): Frac2 {
         val rotation = Norm.fromAngle(angle)
         return Frac2(
             x = x * rotation.x - y * rotation.y,
@@ -16,11 +18,11 @@ data class Frac2(val x: Frac, val y: Frac) {
     }
     val lenSq by lazy { x*x + y*y }
     val len by lazy {
-        if (x.raw == 0) Frac.Companion.abs(y)
-        else if (y.raw == 0) Frac.Companion.abs(x)
+        if (x.raw == 0L) abs(y)
+        else if (y.raw == 0L) abs(x)
         else fracSqrt(lenSq, lenMax.toLong())
     }
-    private var lenMax = Frac.Companion.abs(x) + Frac.Companion.abs(y)
+    private var lenMax = abs(x) + abs(y)
     fun capMax(v: Frac) { lenMax.coerceAtLeast(v) }
     val norm by lazy { Norm(
         x/len,
@@ -31,7 +33,7 @@ data class Frac2(val x: Frac, val y: Frac) {
     operator fun compareTo(o: Frac2): Int = (lenSq - o.lenSq).sign
 
     companion object {
-        private fun longISqrt(n: Long, min: Long = 2L, max: Long = Int.MAX_VALUE.toLong()): Long {
+        private fun longISqrt(n: Long, min: Long = 2L, max: Long = 2*Int.MAX_VALUE.toLong()): Long {
             if (n < 2) return n
             var low = min
             var high = max
@@ -49,10 +51,10 @@ data class Frac2(val x: Frac, val y: Frac) {
         }
         val sqrtMaxInt = longISqrt(Int.MAX_VALUE.toLong())
         private fun fracSqrt(f: Frac, max: Long): Frac {
-            val n = f.toLong()*Int.MAX_VALUE.toLong()
-            val x = longISqrt(n, sqrtMaxInt, max)
+            val n = f.toLong()
+            val x = longISqrt(n, 2L, max)*sqrtMaxInt
 
-            return Frac(x.toInt())
+            return Frac(x)
         }
 
         val zero get() = Frac2(
@@ -60,6 +62,6 @@ data class Frac2(val x: Frac, val y: Frac) {
             Frac(0),
         )
 
-        fun raw(x: Int, y: Int) = Frac2(Frac(x), Frac(y))
+        fun raw(x: Int, y: Int) = Frac2(Frac(x.toLong()), Frac(y.toLong()))
     }
 }

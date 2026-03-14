@@ -9,6 +9,7 @@ import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
 import kotlin.collections.set
+import kotlin.math.floor
 
 
 object GravitySystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
@@ -44,21 +45,18 @@ object GravitySystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 if (aIsAsteroid == bIsAsteroid) continue
 
                 val delta = aTransform.pos - bTransform.pos
-                if (delta.lenSq.raw == 0) continue
+                if (delta.lenSq.raw == 0L) continue
                 val minDist = aCollider.radius + bCollider.radius
+                val dist = if (delta > minDist) delta.len else minDist
 
                 val accelTowardB = gravityAcceleration(
                     sourceMass = bMaterial.mass,
-                    minDistSq = minDist*minDist,
-                    dist = delta.len,
-                    distSq = delta.lenSq,
+                    dist = dist,
                     gravityNumerator = cfg.gravityNumerator,
                 )
                 val accelTowardA = gravityAcceleration(
                     sourceMass = aMaterial.mass,
-                    minDistSq = minDist*minDist,
-                    dist = delta.len,
-                    distSq = delta.lenSq,
+                    dist = dist,
                     gravityNumerator = cfg.gravityNumerator,
                 )
 
@@ -75,24 +73,26 @@ object GravitySystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         return state.copy(motions = ComponentTable.fromMap(motions))
     }
 
+    private fun wrapDelta(d: Float, size: Float): Float {
+        val half = 0.5f * size
+        val a = d + half
+        val m = a - floor(a / size) * size
+        return m - half
+    }
+
     private fun gravityAcceleration(
         sourceMass: UInt,
-        minDistSq: Frac,
         dist: Frac,
-        distSq: Frac,
         gravityNumerator: Frac,
     ): Frac {
-        if (distSq.raw <= 0 || gravityNumerator.sign <= 0) {
+        if (dist.raw <= 0 || gravityNumerator.sign <= 0 || dist.raw >= Int.MAX_VALUE) {
             return Frac(0)
         }
         var n = (dist-Frac(1,1))
         n *= n
         n *= n
         n *= n
-        n *= n
-        n *= n
-        n *= n
 
-        return n * Frac(sourceMass.toInt()) * gravityNumerator
+        return n * Frac(sourceMass.toLong()) * gravityNumerator
     }
 }
