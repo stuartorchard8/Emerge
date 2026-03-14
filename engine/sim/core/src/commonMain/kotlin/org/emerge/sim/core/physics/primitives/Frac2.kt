@@ -1,6 +1,4 @@
-package org.emerge.sim.core.physics
-
-import kotlin.math.*
+package org.emerge.sim.core.physics.primitives
 
 data class Frac2(val x: Frac, val y: Frac) {
     operator fun plus(o: Frac2): Frac2 = Frac2(x + o.x, y + o.y)
@@ -9,13 +7,20 @@ data class Frac2(val x: Frac, val y: Frac) {
         x*other.x +
         y*other.y
     )
+    fun rotateByAngle(angle: Frac): Frac2 {
+        val rotation = Norm.fromAngle(angle)
+        return Frac2(
+            x = x * rotation.x - y * rotation.y,
+            y = x * rotation.y + y * rotation.x,
+        )
+    }
     val lenSq by lazy { x*x + y*y }
     val len by lazy {
-        if (x.raw == 0) abs(y)
-        else if (y.raw == 0) abs(x)
+        if (x.raw == 0) Frac.Companion.abs(y)
+        else if (y.raw == 0) Frac.Companion.abs(x)
         else fracSqrt(lenSq, lenMax.toLong())
     }
-    private var lenMax = abs(x)+abs(y)
+    private var lenMax = Frac.Companion.abs(x) + Frac.Companion.abs(y)
     fun capMax(v: Frac) { lenMax.coerceAtLeast(v) }
     val norm by lazy { Norm(
         x/len,
@@ -56,23 +61,5 @@ data class Frac2(val x: Frac, val y: Frac) {
         )
 
         fun raw(x: Int, y: Int) = Frac2(Frac(x), Frac(y))
-    }
-}
-
-data class Norm(val x: Frac, val y: Frac) {
-    operator fun times(s: Frac): Frac2 = Frac2(
-        x*s,
-        y*s,
-    )
-    val cw90 by lazy { Norm(y, -x) }
-
-    companion object {
-        fun fromAngle(angle: Frac): Norm {
-            val rad: Float = (angle.raw.toFloat() / Int.MAX_VALUE.toFloat()) * 2f * PI.toFloat()
-            return Norm(
-                Frac((cos(rad)*Int.MAX_VALUE.toFloat()).roundToInt()),
-                Frac((sin(rad)*Int.MAX_VALUE.toFloat()).roundToInt()),
-            )
-        }
     }
 }

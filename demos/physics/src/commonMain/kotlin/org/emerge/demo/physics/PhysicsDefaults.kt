@@ -1,17 +1,17 @@
 package org.emerge.demo.physics
 
 import kotlin.random.Random
-import org.emerge.render.torus.ScreenRenderer
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
-import org.emerge.sim.core.physics.Frac
+import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.Frac2
-import org.emerge.sim.core.physics.Norm
-import org.emerge.sim.core.physics.BodyShape
-import org.emerge.sim.core.physics.LandingAttachmentComponent
-import org.emerge.sim.core.physics.MotionComponent
+import org.emerge.sim.core.physics.primitives.Frac2
+import org.emerge.sim.core.physics.primitives.Norm
+import org.emerge.sim.core.physics.primitives.BodyShape
+import org.emerge.sim.core.physics.components.LandingAttachmentComponent
+import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.components.TeamComponent
 
 fun createDefaultInitialState(gameMode: GameMode = GameMode.PVP): PhysicsState {
     var state = PhysicsState()
@@ -151,7 +151,7 @@ private fun spawnRocketOnPlanetSurface(
     return rocketState.first.copy(
         teams = rocketState.first.teams.put(
             rocketState.second,
-            org.emerge.sim.core.physics.TeamComponent(teamId),
+            TeamComponent(teamId),
         ),
         motions = rocketState.first.motions.put(
             rocketState.second,

@@ -3,6 +3,8 @@ package org.emerge.desktop
 import org.emerge.demo.physics.*
 import org.emerge.render.torus.ScreenRenderer
 import org.emerge.sim.core.physics.*
+import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.sim.core.physics.primitives.Vec2
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
@@ -98,10 +100,12 @@ object DesktopGlSceneView {
             val sizeY = st.mallocInt(1)
             glfwGetFramebufferSize(window, sizeX, sizeY)
 
-            screenRenderer.setResolution(Vec2(
-                max(1f, sizeX[0].toFloat()),
-                max(1f, sizeY[0].toFloat()),
-            ))
+            screenRenderer.setResolution(
+                Vec2(
+                    max(1f, sizeX[0].toFloat()),
+                    max(1f, sizeY[0].toFloat()),
+                )
+            )
         }
     }
 

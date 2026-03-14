@@ -4,11 +4,11 @@ import org.emerge.render.torus.shader.CircleShader
 import org.emerge.render.torus.shader.GuiShader
 import org.emerge.render.torus.shader.WorldShader
 import org.emerge.render.torus.shader.WorldShaderParams
-import org.emerge.sim.core.physics.BodyShape
+import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.PhysicsInput
+import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.Vec2
+import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.cos

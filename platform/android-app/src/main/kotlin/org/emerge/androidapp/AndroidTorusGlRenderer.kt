@@ -3,8 +3,8 @@ package org.emerge.androidapp
 import android.opengl.GLSurfaceView
 import org.emerge.demo.physics.PhysicsFrame
 import org.emerge.render.torus.ScreenRenderer
-import org.emerge.sim.core.physics.PhysicsInput
-import org.emerge.sim.core.physics.Vec2
+import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.sim.core.physics.primitives.Vec2
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 

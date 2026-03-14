@@ -1,7 +1,7 @@
 package org.emerge.androidapp
 
 import android.view.MotionEvent
-import org.emerge.sim.core.physics.PhysicsInput
+import org.emerge.sim.core.physics.primitives.PhysicsInput
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos

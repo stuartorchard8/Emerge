@@ -16,9 +16,9 @@ import org.emerge.demo.physics.PhysicsFrame
 import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.PhysicsConfig
-import org.emerge.sim.core.physics.PhysicsInput
+import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.Vec2
+import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.hypot

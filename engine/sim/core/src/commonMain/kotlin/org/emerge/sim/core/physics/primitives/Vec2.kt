@@ -1,4 +1,4 @@
-package org.emerge.sim.core.physics
+package org.emerge.sim.core.physics.primitives
 
 import kotlin.math.*
 

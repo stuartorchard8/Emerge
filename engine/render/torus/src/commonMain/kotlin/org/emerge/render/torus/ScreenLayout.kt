@@ -1,7 +1,6 @@
 package org.emerge.render.torus
 
-import org.emerge.sim.core.physics.Vec2
-import org.emerge.sim.core.physics.Frac2
+import org.emerge.sim.core.physics.primitives.Vec2
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer

@@ -1,8 +1,8 @@
 package org.emerge.render.torus.shader
 
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.Vec2
-import org.emerge.sim.core.physics.Frac2
+import org.emerge.sim.core.physics.primitives.Vec2
+import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.physics.PhysicsState
 
 data class WorldShaderParams(

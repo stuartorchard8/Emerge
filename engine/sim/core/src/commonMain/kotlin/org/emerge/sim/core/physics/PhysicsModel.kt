@@ -5,11 +5,27 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsWorld
+import org.emerge.sim.core.physics.primitives.BodyShape
+import org.emerge.sim.core.physics.components.ColliderComponent
+import org.emerge.sim.core.physics.components.ControlIntentComponent
+import org.emerge.sim.core.physics.components.ForceFieldComponent
+import org.emerge.sim.core.physics.components.HomePlanetComponent
+import org.emerge.sim.core.physics.components.LandingAttachmentComponent
+import org.emerge.sim.core.physics.components.MaterialComponent
+import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.primitives.RenderShape
+import org.emerge.sim.core.physics.components.PlanetComponent
+import org.emerge.sim.core.physics.components.PlayerOwnedComponent
+import org.emerge.sim.core.physics.components.RenderShapeComponent
+import org.emerge.sim.core.physics.components.TeamComponent
+import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.physics.primitives.Frac2
 
 data class PhysicsConfig(
     val thrustFactorInv: Int = Int.MAX_VALUE / (1024 * 128),
     val turnFactorInv: Int = Int.MAX_VALUE / (1024 * 512),
-    val gravityNumerator: Int = 1 shl 17,
+    val gravityNumerator: Frac = Frac(1,2),
 )
 
 data class PhysicsState(
@@ -196,14 +212,14 @@ data class PhysicsState(
     fun planetEntities(): List<EntityId> =
         world.entities.filter { planets.contains(it) }
 
-    fun renderBodies(): List<PhysicsRenderBody> {
-        val out = ArrayList<PhysicsRenderBody>(world.entities.size * 2)
+    fun renderBodies(): List<RenderShape> {
+        val out = ArrayList<RenderShape>(world.entities.size * 2)
         for (entityId in world.entities) {
             val transform = transforms[entityId] ?: continue
             val collider = colliders[entityId] ?: continue
             val renderShape = renderShapes[entityId] ?: continue
             val owned = playerOwned[entityId]
-            out += PhysicsRenderBody(
+            out += RenderShape(
                 entityId = entityId,
                 playerId = owned?.playerId,
                 pos = transform.pos,
@@ -213,7 +229,7 @@ data class PhysicsState(
             )
             val forceField = forceFields[entityId]
             if (forceField != null && renderShape.shape == BodyShape.CIRCLE) {
-                out += PhysicsRenderBody(
+                out += RenderShape(
                     entityId = entityId,
                     playerId = owned?.playerId,
                     pos = transform.pos,
@@ -228,8 +244,3 @@ data class PhysicsState(
     }
 }
 
-data class PhysicsInput(val thrust: Int, val turn: Int) {
-    companion object {
-        val ZERO = PhysicsInput(0, 0)
-    }
-}

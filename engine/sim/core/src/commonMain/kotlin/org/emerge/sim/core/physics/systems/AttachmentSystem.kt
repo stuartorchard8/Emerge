@@ -1,0 +1,43 @@
+package org.emerge.sim.core.physics.systems
+
+import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.ecs.ComponentTable
+import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.physics.PhysicsConfig
+import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.sim.core.physics.PhysicsState
+import kotlin.collections.component1
+import kotlin.collections.component2
+import kotlin.collections.set
+
+object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+    override fun update(
+        cfg: PhysicsConfig,
+        state: PhysicsState,
+        inputs: Map<PlayerId, PhysicsInput>,
+    ): PhysicsState {
+        val transforms = LinkedHashMap(state.transforms.asMap())
+        val motions = LinkedHashMap(state.motions.asMap())
+        val landings = LinkedHashMap(state.landings.asMap())
+        for ((entityId, landing) in state.landings.entries()) {
+            val parentTransform = transforms[landing.parentEntityId]
+            val parentMotion = motions[landing.parentEntityId]
+            val transform = transforms[entityId]
+            if (parentTransform == null || parentMotion == null || transform == null) {
+                landings.remove(entityId)
+                continue
+            }
+            transforms[entityId] = transform.copy(
+                pos = parentTransform.pos + landing.relativePos.rotateByAngle(parentTransform.ang),
+                ang = Frac(parentTransform.ang.raw + landing.relativeAng.raw),
+            )
+            motions[entityId] = parentMotion
+        }
+        return state.copy(
+            transforms = ComponentTable.fromMap(transforms),
+            motions = ComponentTable.fromMap(motions),
+            landings = ComponentTable.fromMap(landings),
+        )
+    }
+}

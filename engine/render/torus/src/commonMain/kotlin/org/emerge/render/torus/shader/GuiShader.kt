@@ -2,7 +2,7 @@ package org.emerge.render.torus.shader
 
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ScreenLayout
-import org.emerge.sim.core.physics.Vec2
+import org.emerge.sim.core.physics.primitives.Vec2
 
 class GuiShader() {
     private val vSrc = GuiShaderSources.vertex()

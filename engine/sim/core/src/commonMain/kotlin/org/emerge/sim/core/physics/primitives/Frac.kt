@@ -1,9 +1,9 @@
-package org.emerge.sim.core.physics
+package org.emerge.sim.core.physics.primitives
 
 import kotlin.math.sign
 
 class Frac(n: Int, d: Int = Int.MAX_VALUE) {
-    val raw: Int = (n.toULong() * Int.MAX_VALUE.toULong() / d.toULong()).toInt()
+    val raw: Int = (n.toLong() * Int.MAX_VALUE.toLong() / d.toLong()).toInt()
     operator fun plus(o: Frac): Frac = Frac(raw+o.raw)
     operator fun minus(o: Frac): Frac = Frac(raw-o.raw)
     operator fun div(o: Int): Frac = Frac(raw/o)
@@ -21,7 +21,6 @@ class Frac(n: Int, d: Int = Int.MAX_VALUE) {
 
     companion object {
         val PIon4: Frac = Frac(1686629713)
+        fun abs(v : Frac) = Frac(kotlin.math.abs(v.raw))
     }
 }
-
-fun abs(v : Frac) = Frac(kotlin.math.abs(v.raw))
