@@ -24,7 +24,6 @@ object CircleShaderSources {
         out float vBodyShape;
         out float vBodyAlpha;
         out float vBodyRadius;
-        out float vInstanceId;
         void main() {
             mat4 m = mat4(iCol0, iCol1, iCol2, iCol3);
             gl_Position = m * vec4(aPos, 0.0, 1.0);
@@ -34,7 +33,6 @@ object CircleShaderSources {
             vBodyShape = iBodyShape;
             vBodyAlpha = iBodyAlpha;
             vBodyRadius = iBodyRadius;
-            vInstanceId = float(gl_InstanceID);
         }
         """.trimIndent()
 
@@ -94,7 +92,7 @@ object CircleShaderSources {
                         discard;
                     }
                 } else {
-                    vec2 noiseOffset = vec2(vInstanceId * 0.06711056, vInstanceId * 0.00583715);
+                    vec2 noiseOffset = vec2(vSecondaryId * 0.06711056, vSecondaryId * 0.00583715);
                     vec2 noiseUv = vLocal * vBodyRadius + noiseOffset;
                     float n =
                         (

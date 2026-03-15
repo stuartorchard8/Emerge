@@ -27,22 +27,15 @@ object IntegrationSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> 
             }
             val transform = state.transforms[entityId] ?: continue
             val motion = state.motions[entityId] ?: continue
-            val renderShape = state.renderShapes[entityId] ?: continue
             val control = state.controls[entityId] ?: ControlIntentComponent.ZERO
             val thrust = control.thrust / cfg.thrustFactorInv
             val turn = control.turn / cfg.turnFactorInv
-            val acc = when (renderShape.shape) {
-                BodyShape.TRIANGLE -> Norm.fromAngle(transform.ang) * Frac(thrust.toLong())
-                BodyShape.CIRCLE -> Frac2.zero
-            }
+            val acc = Norm.fromAngle(transform.ang) * Frac(thrust.toLong())
 
             val vel = motion.vel + acc
             val pos = transform.pos + Frac2.raw(vel.x.raw, vel.y.raw)
 
-            val angVel = when (renderShape.shape) {
-                BodyShape.TRIANGLE -> motion.angVel + Frac(turn.toLong())
-                BodyShape.CIRCLE -> motion.angVel
-            }
+            val angVel = motion.angVel + Frac(turn.toLong())
             val ang = transform.ang + Frac(angVel.raw.toLong())
 
             transforms[entityId] = transform.copy(pos = pos, ang = ang)

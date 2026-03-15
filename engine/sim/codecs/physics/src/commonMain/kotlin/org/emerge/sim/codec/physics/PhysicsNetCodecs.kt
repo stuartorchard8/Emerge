@@ -70,6 +70,7 @@ object PhysicsNetCodecs {
                     val collider = state.colliders[entityId] ?: continue
                     val material = state.materials[entityId] ?: continue
                     val renderShape = state.renderShapes[entityId] ?: continue
+                    val bgRenderShape = state.bgRenderShapes[entityId] ?: continue
                     val planet = state.planets[entityId]
                     val homePlanet = state.homePlanets[entityId]
                     val team = state.teams[entityId]
@@ -90,6 +91,7 @@ object PhysicsNetCodecs {
                     w.writeInt(material.bounce.raw.toInt())
                     w.writeInt(material.rough.raw.toInt())
                     w.writeInt(renderShape.shape.wireValue)
+                    w.writeInt(bgRenderShape.shape.wireValue)
                     w.writeInt(planet?.seed ?: -1)
                     w.writeInt(homePlanet?.teamId?.value ?: -1)
                     w.writeInt(team?.teamId?.value ?: -1)
@@ -124,6 +126,7 @@ object PhysicsNetCodecs {
                 val materials = LinkedHashMap<EntityId, MaterialComponent>(n)
                 val controls = LinkedHashMap<EntityId, ControlIntentComponent>()
                 val renderShapes = LinkedHashMap<EntityId, RenderShapeComponent>(n)
+                val bgRenderShapes = LinkedHashMap<EntityId, RenderShapeComponent>(n)
                 val playerOwned = LinkedHashMap<EntityId, PlayerOwnedComponent>()
                 val teams = LinkedHashMap<EntityId, TeamComponent>()
                 val planets = LinkedHashMap<EntityId, PlanetComponent>()
@@ -145,6 +148,7 @@ object PhysicsNetCodecs {
                     val b = c.readInt()
                     val r = c.readInt()
                     val shape = BodyShape.fromWireValue(c.readInt())
+                    val bgShape = BodyShape.fromWireValue(c.readInt())
                     val planetSeed = c.readInt()
                     val homePlanetTeamIdRaw = c.readInt()
                     val teamIdRaw = c.readInt()
@@ -179,6 +183,8 @@ object PhysicsNetCodecs {
                         )
                     renderShapes[entityId] =
                         RenderShapeComponent(shape = shape)
+                    bgRenderShapes[entityId] =
+                        RenderShapeComponent(shape = bgShape)
                     if (planetSeed >= 0) {
                         planets[entityId] =
                             PlanetComponent(seed = planetSeed)
@@ -237,6 +243,7 @@ object PhysicsNetCodecs {
                     materials = ComponentTable.fromMap(materials),
                     controls = ComponentTable.fromMap(controls),
                     renderShapes = ComponentTable.fromMap(renderShapes),
+                    bgRenderShapes = ComponentTable.fromMap(bgRenderShapes),
                     playerOwned = ComponentTable.fromMap(playerOwned),
                     teams = ComponentTable.fromMap(teams),
                     planets = ComponentTable.fromMap(planets),

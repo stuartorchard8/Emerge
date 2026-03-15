@@ -6,8 +6,11 @@ import org.emerge.render.torus.shader.WorldShader
 import org.emerge.render.torus.shader.WorldShaderParams
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.components.RenderShapeComponent
+import org.emerge.sim.core.physics.primitives.RenderShape
 import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.math.atan2
 import kotlin.math.ceil
@@ -96,18 +99,31 @@ class ScreenRenderer(val contentScale: Vec2) {
         val params = WorldShaderParams.compute(state, myId, zoom, worldRotationRad)
         worldShader.draw(params, segmentation=layout.worldSegmentation)
         guiShader.draw(vOffset=layout.guiVertexOffset)
-        val n =
-            packBodyInstances(
-                state = state,
-                params = params,
-                layout = layout,
-                outMatricesColMajor = bodyInstanceMatrices,
-                outPrimaryIds = bodyInstancePrimaryIds,
-                outSecondaryIds = bodyInstanceSecondaryIds,
-                outShapes = bodyInstanceShapes,
-                outAlphas = bodyInstanceAlphas,
-                outRadii = bodyInstanceRadii,
-            )
+        var n = packBodyInstances(
+            state = state,
+            shapes = state.bgRenderShapes,
+            params = params,
+            layout = layout,
+            outMatricesColMajor = bodyInstanceMatrices,
+            outPrimaryIds = bodyInstancePrimaryIds,
+            outSecondaryIds = bodyInstanceSecondaryIds,
+            outShapes = bodyInstanceShapes,
+            outAlphas = bodyInstanceAlphas,
+            outRadii = bodyInstanceRadii,
+        )
+        n = packBodyInstances(
+            state = state,
+            shapes = state.renderShapes,
+            params = params,
+            layout = layout,
+            outMatricesColMajor = bodyInstanceMatrices,
+            outPrimaryIds = bodyInstancePrimaryIds,
+            outSecondaryIds = bodyInstanceSecondaryIds,
+            outShapes = bodyInstanceShapes,
+            outAlphas = bodyInstanceAlphas,
+            outRadii = bodyInstanceRadii,
+            indexOffset = n,
+        )
 
         val x0 = floor(layout.worldPxMin.x).toInt()
         val y0 = floor(layout.worldPxMin.y).toInt()
@@ -145,6 +161,7 @@ class ScreenRenderer(val contentScale: Vec2) {
 
     private fun packBodyInstances(
         state: PhysicsState,
+        shapes: ComponentTable<RenderShapeComponent>,
         params: WorldShaderParams,
         layout: ScreenLayout,
         outMatricesColMajor: FloatArray,
@@ -153,6 +170,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         outShapes: FloatArray,
         outAlphas: FloatArray,
         outRadii: FloatArray,
+        indexOffset: Int = 0,
     ): Int {
         // Calculate view matrix once
         // Rotate then Scale
@@ -177,14 +195,13 @@ class ScreenRenderer(val contentScale: Vec2) {
         setTranslation(matT, viewCenterX, viewCenterY)
         multiply4x4(out = matView, a = matT, b = matTmp)
 
-        var n = 0
-        for (entityId in state.world.entities) {
+        var n = indexOffset
+        for ((entityId, renderShape) in shapes.entries()) {
             val transform = state.transforms[entityId] ?: continue
             val collider = state.colliders[entityId] ?: continue
-            val renderShape = state.renderShapes[entityId] ?: continue
             val particle = state.particles[entityId]
             val primaryId = shaderId(state.teams[entityId]?.teamId?.value)
-            val secondaryId = shaderId(state.playerOwned[entityId]?.playerId?.value)
+            val secondaryId = shaderId(entityId.value)
             n = packBodyInstance(
                 index = n,
                 primaryId = primaryId,

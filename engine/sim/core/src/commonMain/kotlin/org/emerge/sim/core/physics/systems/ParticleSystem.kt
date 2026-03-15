@@ -5,10 +5,7 @@ import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.components.ParticleComponent
-import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.primitives.BodyShape
-import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Norm
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -23,7 +20,6 @@ object ParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     ): PhysicsState {
         var newState = state
         val particles = LinkedHashMap(state.particles.asMap())
-        val teams = LinkedHashMap(state.teams.asMap())
         for ((entityId, particle) in state.particles.entries()) {
             val newLife = particle.life-1
             if (newLife > 0) {
@@ -33,35 +29,26 @@ object ParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 newState = state.removeEntity(entityId)
             }
         }
+        newState = newState.copy(
+            particles = ComponentTable.fromMap(particles),
+        )
         for ((entityId, control) in state.controls.entries()) {
             if (control.thrust > Random.nextInt(until = Int.MAX_VALUE)) {
                 val transform = state.transforms[entityId] ?: continue
                 val motion = state.motions[entityId] ?: continue
-                val teamId = teams[entityId]?.teamId
-                val norm = Norm.fromAngle(transform.ang+Frac(Random.nextInt(until = Int.MAX_VALUE/6).toLong()-Int.MAX_VALUE/12))
-                val particleState = newState.spawnBody(
-                    playerId = null,
-                    pos = transform.pos - (norm * Frac(1,1024)),
-                    vel = motion.vel - norm * Frac(1,2048),
-                    ang = Coord(0),
-                    angVel = Coord(0),
-                    mass = 0u,
+                val team = state.teams[entityId] ?: continue
+                val norm = Norm.fromAngle(transform.ang+Frac(Random.nextInt(until = Int.MAX_VALUE/8).toLong()-Int.MAX_VALUE/16))
+                val particleState = newState.spawnParticle(
+                    pos = transform.pos,
+                    vel = motion.vel - norm * Frac(1,1024)*Frac(Random.nextInt(until = Int.MAX_VALUE).toLong()),
                     radius = Frac(1, 2048),
-                    bounce = Frac(1, 1),
-                    rough = Frac(1, 1),
                     shape = BodyShape.CIRCLE,
+                    lifetime = 30,
+                    teamId = team.teamId,
                 )
                 newState = particleState.first
-                val particleId = particleState.second
-                particles[particleId] = ParticleComponent(60, 60)
-                if (teamId != null) {
-                    teams[particleId] = TeamComponent(teamId = teamId)
-                }
             }
         }
-        return newState.copy(
-            particles = ComponentTable.fromMap(particles),
-            teams = ComponentTable.fromMap(teams),
-        )
+        return newState
     }
 }

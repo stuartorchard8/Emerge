@@ -26,7 +26,7 @@ import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 
 data class PhysicsConfig(
-    val thrustFactorInv: Int = Int.MAX_VALUE / (1024 * 16),
+    val thrustFactorInv: Int = Int.MAX_VALUE / (1024 * 32),
     val turnFactorInv: Int = Int.MAX_VALUE / (1024 * 512),
     val gravityNumerator: Frac = Frac(1,16),
 )
@@ -40,6 +40,7 @@ data class PhysicsState(
     val materials: ComponentTable<MaterialComponent> = ComponentTable.empty(),
     val controls: ComponentTable<ControlIntentComponent> = ComponentTable.empty(),
     val renderShapes: ComponentTable<RenderShapeComponent> = ComponentTable.empty(),
+    val bgRenderShapes: ComponentTable<RenderShapeComponent> = ComponentTable.empty(),
     val playerOwned: ComponentTable<PlayerOwnedComponent> = ComponentTable.empty(),
     val teams: ComponentTable<TeamComponent> = ComponentTable.empty(),
     val planets: ComponentTable<PlanetComponent> = ComponentTable.empty(),
@@ -118,6 +119,7 @@ data class PhysicsState(
             materials = materials.put(entityId, MaterialComponent(mass = mass, bounce = bounce, rough = rough)),
             controls = nextControls,
             renderShapes = renderShapes.put(entityId, RenderShapeComponent(shape = shape)),
+            bgRenderShapes = bgRenderShapes.remove(entityId),
             playerOwned = nextPlayerOwned,
             teams = teams.remove(entityId),
             planets = planets.remove(entityId),
@@ -125,6 +127,57 @@ data class PhysicsState(
             forceFields = forceFields.remove(entityId),
             landings = landings.remove(entityId),
             particles = particles.remove(entityId),
+        )
+    }
+
+    fun spawnParticle(
+        pos: Coord2,
+        vel: Coord2,
+        radius: Frac,
+        shape: BodyShape,
+        lifetime: Int,
+        teamId: TeamId,
+    ): Pair<PhysicsState, EntityId> {
+        val (nextWorld, entityId) = world.createEntity()
+        return putParticle(
+            entityId = entityId,
+            pos = pos,
+            vel = vel,
+            radius = radius,
+            shape = shape,
+            lifetime = lifetime,
+            teamId = teamId,
+            worldOverride = nextWorld,
+        ) to entityId
+    }
+
+    fun putParticle(
+        entityId: EntityId,
+        pos: Coord2,
+        vel: Coord2,
+        radius: Frac,
+        shape: BodyShape,
+        lifetime: Int,
+        teamId: TeamId,
+        worldOverride: EcsWorld = world.ensureEntity(entityId),
+    ): PhysicsState {
+        return copy(
+            world = worldOverride,
+            playerEntities = playerEntities.filterValues { it != entityId },
+            transforms = transforms.put(entityId, TransformComponent(pos = pos, ang = Coord(0))),
+            motions = motions.put(entityId, MotionComponent(vel = vel, angVel = Coord(0))),
+            colliders = colliders.put(entityId, ColliderComponent(radius = radius)),
+            materials = materials.remove(entityId),
+            controls = controls.remove(entityId),
+            renderShapes = renderShapes.remove(entityId),
+            bgRenderShapes = bgRenderShapes.put(entityId, RenderShapeComponent(shape = shape)),
+            playerOwned = playerOwned.remove(entityId),
+            teams = teams.put(entityId, TeamComponent(teamId)),
+            planets = planets.remove(entityId),
+            homePlanets = homePlanets.remove(entityId),
+            forceFields = forceFields.remove(entityId),
+            landings = landings.remove(entityId),
+            particles = particles.put(entityId, ParticleComponent(lifetime, lifetime)),
         )
     }
 
@@ -193,6 +246,7 @@ data class PhysicsState(
             materials = materials.remove(entityId),
             controls = controls.remove(entityId),
             renderShapes = renderShapes.remove(entityId),
+            bgRenderShapes = bgRenderShapes.remove(entityId),
             playerOwned = playerOwned.remove(entityId),
             teams = teams.remove(entityId),
             planets = planets.remove(entityId),
@@ -222,36 +276,5 @@ data class PhysicsState(
 
     fun planetEntities(): List<EntityId> =
         world.entities.filter { planets.contains(it) }
-
-    fun renderBodies(): List<RenderShape> {
-        val out = ArrayList<RenderShape>(world.entities.size * 2)
-        for (entityId in world.entities) {
-            val transform = transforms[entityId] ?: continue
-            val collider = colliders[entityId] ?: continue
-            val renderShape = renderShapes[entityId] ?: continue
-            val owned = playerOwned[entityId]
-            out += RenderShape(
-                entityId = entityId,
-                playerId = owned?.playerId,
-                pos = transform.pos,
-                ang = transform.ang,
-                radius = collider.radius,
-                shape = renderShape.shape,
-            )
-            val forceField = forceFields[entityId]
-            if (forceField != null && renderShape.shape == BodyShape.CIRCLE) {
-                out += RenderShape(
-                    entityId = entityId,
-                    playerId = owned?.playerId,
-                    pos = transform.pos,
-                    ang = transform.ang,
-                    radius = collider.radius + forceField.depth,
-                    shape = renderShape.shape,
-                    alpha = forceField.alpha.toFloat(),
-                )
-            }
-        }
-        return out
-    }
 }
 
