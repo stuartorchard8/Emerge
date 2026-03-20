@@ -37,7 +37,9 @@ object ParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val transform = state.transforms[entityId] ?: continue
                 val motion = state.motions[entityId] ?: continue
                 val team = state.teams[entityId] ?: continue
-                val norm = Norm.fromAngle(transform.ang+Frac(Random.nextInt(until = Int.MAX_VALUE/8).toLong()-Int.MAX_VALUE/16))
+                val angleJitter = Frac(Random.nextInt(until = Int.MAX_VALUE/8).toLong()-Int.MAX_VALUE/16)
+                val angleVectoring = Frac(control.turn/-16L + motion.angVel.raw.toLong()*4) // Combined turning & dampening
+                val norm = Norm.fromAngle(transform.ang + angleVectoring + angleJitter)
                 val particleState = newState.spawnParticle(
                     pos = transform.pos,
                     vel = motion.vel - norm * Frac(1,1024)*Frac(Random.nextInt(until = Int.MAX_VALUE).toLong()),

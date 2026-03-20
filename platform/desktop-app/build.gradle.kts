@@ -32,9 +32,8 @@ dependencies {
 }
 
 application {
-    // Define the Fully Qualified Name for the application main class
-    // (Note that Kotlin compiles `App.kt` to a class with FQN `com.example.app.AppKt`.)
-    mainClass = "org.emerge.desktop.AppKt"
+    // `Main.jvm.kt` → JVM facade class `Main_jvmKt` (file-level `main()`).
+    mainClass = "org.emerge.desktop.Main_jvmKt"
 }
 
 // Avoid failing packaging when two dependencies contribute same-named jars

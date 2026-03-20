@@ -3,6 +3,11 @@ plugins {
     alias(libs.plugins.androidLibrary)
 }
 
+// Distinct from :engine:sim:codecs:physics (also named project "physics") so JVM jars are not both physics-jvm.jar.
+base {
+    archivesName.set("demo-physics")
+}
+
 // Stable build dir (expect AV exclusions instead of per-run build dirs).
 buildDir = file("$rootDir/.build/demo-physics")
 

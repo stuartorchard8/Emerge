@@ -82,7 +82,7 @@ data class ScreenLayout(
 
     companion object {
         fun compute(resolution: Vec2, contentScale: Vec2): ScreenLayout {
-            val guiSizeDp = 80f
+            val guiSizeDp = 0f//80f
             val useYLayout = (resolution.x < resolution.y)
             val guiSizePx = if (useYLayout) guiSizeDp*contentScale.y else guiSizeDp*contentScale.x
             return ScreenLayout(
