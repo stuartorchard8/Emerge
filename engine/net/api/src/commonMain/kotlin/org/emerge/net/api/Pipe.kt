@@ -10,5 +10,6 @@ interface Pipe {
     fun send(packet: ByteArray)
     fun receive(): ByteArray?
     fun isOpen(): Boolean = true
+    fun close() {}
 }
 

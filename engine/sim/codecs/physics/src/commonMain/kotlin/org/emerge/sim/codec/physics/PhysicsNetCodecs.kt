@@ -37,7 +37,7 @@ import org.emerge.sim.sync.auth.StateCodec
  */
 object PhysicsNetCodecs {
     private const val STATE_HEADER_INT_COUNT = 2
-    private const val STATE_ENTITY_INT_COUNT = 25
+    private const val STATE_ENTITY_INT_COUNT = 26
     private const val STATE_INT_BYTES = 4
     private const val MAX_STATE_ENTITIES = 2048
 
@@ -62,15 +62,23 @@ object PhysicsNetCodecs {
         object : StateCodec<PhysicsState> {
             override fun encode(state: PhysicsState): ByteArray {
                 val w = ByteWriter()
+                val serializableEntities =
+                    state.world.entities.filter { entityId ->
+                        state.transforms[entityId] != null &&
+                            state.motions[entityId] != null &&
+                            state.colliders[entityId] != null &&
+                            ((state.renderShapes[entityId] != null) || (state.bgRenderShapes[entityId] != null))
+                    }
                 w.writeInt(state.world.nextEntityValue)
-                w.writeInt(state.world.entities.size)
-                for (entityId in state.world.entities) {
+                // Keep header count aligned with what is actually serialized.
+                w.writeInt(serializableEntities.size)
+                for (entityId in serializableEntities) {
                     val transform = state.transforms[entityId] ?: continue
                     val motion = state.motions[entityId] ?: continue
                     val collider = state.colliders[entityId] ?: continue
-                    val material = state.materials[entityId] ?: continue
-                    val renderShape = state.renderShapes[entityId] ?: continue
-                    val bgRenderShape = state.bgRenderShapes[entityId] ?: continue
+                    val material = state.materials[entityId]
+                    val renderShape = state.renderShapes[entityId]
+                    val bgRenderShape = state.bgRenderShapes[entityId]
                     val planet = state.planets[entityId]
                     val homePlanet = state.homePlanets[entityId]
                     val team = state.teams[entityId]
@@ -86,12 +94,12 @@ object PhysicsNetCodecs {
                     w.writeInt(motion.vel.y.raw)
                     w.writeInt(transform.ang.raw)
                     w.writeInt(motion.angVel.raw)
-                    w.writeInt(material.mass.toInt())
+                    w.writeInt(material?.mass?.toInt() ?: -1)
                     w.writeInt(collider.radius.raw.toInt())
-                    w.writeInt(material.bounce.raw.toInt())
-                    w.writeInt(material.rough.raw.toInt())
-                    w.writeInt(renderShape.shape.wireValue)
-                    w.writeInt(bgRenderShape.shape.wireValue)
+                    w.writeInt(material?.bounce?.raw?.toInt() ?: -1)
+                    w.writeInt(material?.rough?.raw?.toInt() ?: -1)
+                    w.writeInt(renderShape?.shape?.wireValue ?: -1)
+                    w.writeInt(bgRenderShape?.shape?.wireValue ?: -1)
                     w.writeInt(planet?.seed ?: -1)
                     w.writeInt(homePlanet?.teamId?.value ?: -1)
                     w.writeInt(team?.teamId?.value ?: -1)
@@ -147,8 +155,8 @@ object PhysicsNetCodecs {
                     val rad = c.readInt()
                     val b = c.readInt()
                     val r = c.readInt()
-                    val shape = BodyShape.fromWireValue(c.readInt())
-                    val bgShape = BodyShape.fromWireValue(c.readInt())
+                    val shapeRaw = c.readInt()
+                    val bgShapeRaw = c.readInt()
                     val planetSeed = c.readInt()
                     val homePlanetTeamIdRaw = c.readInt()
                     val teamIdRaw = c.readInt()
@@ -175,16 +183,22 @@ object PhysicsNetCodecs {
                         )
                     colliders[entityId] =
                         ColliderComponent(radius = Frac(rad.toLong()))
-                    materials[entityId] =
-                        MaterialComponent(
-                            mass = m.toUInt(),
-                            bounce = Frac(b.toLong()),
-                            rough = Frac(r.toLong()),
-                        )
-                    renderShapes[entityId] =
-                        RenderShapeComponent(shape = shape)
-                    bgRenderShapes[entityId] =
-                        RenderShapeComponent(shape = bgShape)
+                    if (m > 0 && b > 0 && r > 0) {
+                        materials[entityId] =
+                            MaterialComponent(
+                                mass = m.toUInt(),
+                                bounce = Frac(b.toLong()),
+                                rough = Frac(r.toLong()),
+                            )
+                    }
+                    if (shapeRaw >= 0) {
+                        renderShapes[entityId] =
+                            RenderShapeComponent(shape = BodyShape.fromWireValue(shapeRaw))
+                    }
+                    if (bgShapeRaw >= 0) {
+                        bgRenderShapes[entityId] =
+                            RenderShapeComponent(shape = BodyShape.fromWireValue(bgShapeRaw))
+                    }
                     if (planetSeed >= 0) {
                         planets[entityId] =
                             PlanetComponent(seed = planetSeed)

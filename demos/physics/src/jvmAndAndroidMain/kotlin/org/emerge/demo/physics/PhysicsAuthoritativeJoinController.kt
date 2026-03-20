@@ -10,6 +10,7 @@ import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.auth.AuthoritativeClient
 import org.emerge.sim.sync.auth.StateCodec
+import kotlin.time.Duration.Companion.seconds
 
 class PhysicsAuthoritativeJoinController(
     private val hostIp: String,
@@ -24,6 +25,8 @@ class PhysicsAuthoritativeJoinController(
         pipe = remote,
         inputCodec = inputCodec,
         stateCodec = stateCodec,
+        handshakeTimeout = 15.seconds,
+        inactivityTimeout = 20.seconds,
         onDisconnected = { reason ->
             netStatus = "net: disconnected ($reason)"
         },

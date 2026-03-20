@@ -30,18 +30,23 @@ class AuthoritativeClient<S, I>(
         CONNECTED,
     }
 
+    @Volatile
     var playerId: PlayerId? = null
         private set
 
+    @Volatile
     var tick: Tick = Tick(0)
         private set
 
+    @Volatile
     var state: S = initialState
         private set
 
+    @Volatile
     var connectionState: ConnectionState = ConnectionState.DISCONNECTED
         private set
 
+    @Volatile
     var lastDisconnectReason: String? = null
         private set
 
