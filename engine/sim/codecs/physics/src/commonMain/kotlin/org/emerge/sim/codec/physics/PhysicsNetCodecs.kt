@@ -9,12 +9,15 @@ import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsSnapshot
+import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.PlayerRespawnState
+import org.emerge.sim.core.physics.RespawnRocketSpec
 import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsWorld
-import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.ControlIntentComponent
+import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.ForceFieldComponent
 import org.emerge.sim.core.physics.components.HomePlanetComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
@@ -30,6 +33,7 @@ import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.auth.StateCodec
+import kotlin.text.get
 
 /**
  * Shared demo codecs for the deterministic physics sample.
@@ -37,8 +41,9 @@ import org.emerge.sim.sync.auth.StateCodec
  * This keeps Android + desktop using the exact same wire format without duplicating logic.
  */
 object PhysicsNetCodecs {
-    private const val STATE_HEADER_INT_COUNT = 1
-    private const val STATE_ENTITY_INT_COUNT = 26
+    private const val STATE_HEADER_INT_COUNT = 2
+    private const val STATE_ENTITY_INT_COUNT = 27
+    private const val STATE_RESPAWN_INT_COUNT = 10
     private const val STATE_INT_BYTES = 4
     private const val MAX_STATE_ENTITIES = 2048
 
@@ -70,6 +75,7 @@ object PhysicsNetCodecs {
                         }
                     // Keep header count aligned with what is actually serialized.
                     w.writeInt(serializableEntities.size)
+                    w.writeInt(pendingRespawns.size)
                     for (entityId in serializableEntities) {
                         val transform = transforms[entityId] ?: continue
                         val motion = motions[entityId] ?: continue
@@ -84,6 +90,7 @@ object PhysicsNetCodecs {
                         val playerId = playerOwned[entityId]?.playerId
                         val landing = landings[entityId]
                         val particle = particles[entityId]
+                        val damage = damages[entityId]
                         w.writeInt(entityId.value)
                         w.writeInt(playerId?.value ?: -1)
                         w.writeInt(transform.pos.x.raw)
@@ -110,6 +117,19 @@ object PhysicsNetCodecs {
                         w.writeInt(landing?.relativeAng?.raw?.toInt() ?: 0)
                         w.writeInt(particle?.life ?: 0)
                         w.writeInt(particle?.lifeTime ?: 1)
+                        w.writeInt(damage?.damage?.raw?.toInt() ?: 0)
+                    }
+                    for ((playerId, respawn) in pendingRespawns) {
+                        w.writeInt(playerId.value)
+                        w.writeInt(respawn.ticksRemaining)
+                        w.writeInt(respawn.teamId.value)
+                        w.writeInt(respawn.deathPos.x.raw)
+                        w.writeInt(respawn.deathPos.y.raw)
+                        w.writeInt(respawn.rocket.mass.toInt())
+                        w.writeInt(respawn.rocket.radius.raw.toInt())
+                        w.writeInt(respawn.rocket.bounce.raw.toInt())
+                        w.writeInt(respawn.rocket.rough.raw.toInt())
+                        w.writeInt(respawn.rocket.shape.wireValue)
                     }
                 }
                 return w.toByteArray()
@@ -119,9 +139,12 @@ object PhysicsNetCodecs {
                 val c = ByteCursor(bytes)
                 val n = c.readInt()
                 require(n in 0..MAX_STATE_ENTITIES) { "Invalid entity count: $n" }
-                val expectedSize = (STATE_HEADER_INT_COUNT + (n * STATE_ENTITY_INT_COUNT)) * STATE_INT_BYTES
+                val respawnCount = c.readInt()
+                require(respawnCount >= 0) { "Invalid respawn count: $respawnCount" }
+                val expectedSize =
+                    (STATE_HEADER_INT_COUNT + (n * STATE_ENTITY_INT_COUNT) + (respawnCount * STATE_RESPAWN_INT_COUNT)) * STATE_INT_BYTES
                 require(bytes.size == expectedSize) {
-                    "Invalid state payload size: expected $expectedSize bytes for $n entities, got ${bytes.size}"
+                    "Invalid state payload size: expected $expectedSize bytes for $n entities + $respawnCount respawns, got ${bytes.size}"
                 }
                 val entities = mutableSetOf<Int>()
                 val playerEntities = LinkedHashMap<PlayerId, EntityId>()
@@ -139,6 +162,8 @@ object PhysicsNetCodecs {
                 val forceFields = LinkedHashMap<EntityId, ForceFieldComponent>()
                 val landings = LinkedHashMap<EntityId, LandingAttachmentComponent>()
                 val particles = LinkedHashMap<EntityId, ParticleComponent>()
+                val damages = LinkedHashMap<EntityId, DamageComponent>()
+                val pendingRespawns = LinkedHashMap<PlayerId, PlayerRespawnState>()
                 repeat(n) {
                     val entityId = EntityId(c.readInt())
                     val playerIdRaw = c.readInt()
@@ -166,6 +191,7 @@ object PhysicsNetCodecs {
                     val landingAng = c.readInt()
                     val particleLife = c.readInt()
                     val particleLifetime = c.readInt()
+                    val damageRaw = c.readInt()
                     val playerId = if (playerIdRaw >= 0) PlayerId(playerIdRaw) else null
                     entities += entityId.value
                     transforms[entityId] =
@@ -241,6 +267,34 @@ object PhysicsNetCodecs {
                                 lifeTime = particleLifetime,
                             )
                     }
+                    if (damageRaw > 0) {
+                        damages[entityId] = DamageComponent(damage = Frac(damageRaw.toLong()))
+                    }
+                }
+                repeat(respawnCount) {
+                    val playerId = PlayerId(c.readInt())
+                    val ticksRemaining = c.readInt()
+                    val teamIdRaw = c.readInt()
+                    val deathPosX = c.readInt()
+                    val deathPosY = c.readInt()
+                    val massRaw = c.readInt()
+                    val radiusRaw = c.readInt()
+                    val bounceRaw = c.readInt()
+                    val roughRaw = c.readInt()
+                    val shapeRaw = c.readInt()
+                    pendingRespawns[playerId] =
+                        PlayerRespawnState(
+                            ticksRemaining = ticksRemaining,
+                            deathPos = Coord2.raw(deathPosX, deathPosY),
+                            teamId = TeamId(teamIdRaw),
+                            rocket = RespawnRocketSpec(
+                                mass = massRaw.toUInt(),
+                                radius = Frac(radiusRaw.toLong()),
+                                bounce = Frac(bounceRaw.toLong()),
+                                rough = Frac(roughRaw.toLong()),
+                                shape = BodyShape.fromWireValue(shapeRaw),
+                            ),
+                        )
                 }
                 return PhysicsSnapshot(
                     world = EcsWorld(
@@ -261,6 +315,8 @@ object PhysicsNetCodecs {
                     forceFields = ComponentTable.fromMap(forceFields),
                     landings = ComponentTable.fromMap(landings),
                     particles = ComponentTable.fromMap(particles),
+                    damages = ComponentTable.fromMap(damages),
+                    pendingRespawns = pendingRespawns,
                 ).mutable
             }
         }

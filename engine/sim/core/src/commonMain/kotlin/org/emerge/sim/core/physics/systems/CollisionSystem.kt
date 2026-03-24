@@ -7,6 +7,7 @@ import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Contact
 import org.emerge.sim.core.physics.components.ControlIntentComponent
+import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.primitives.Norm
@@ -29,6 +30,8 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         val transforms = LinkedHashMap(state.raw.transforms.asMap())
         val motions = LinkedHashMap(state.raw.motions.asMap())
         val landings = LinkedHashMap(state.raw.landings.asMap())
+        val damages = LinkedHashMap(state.raw.damages.asMap())
+        val playersToRespawn = LinkedHashSet<PlayerId>()
         val ids = state.raw.materials.keys().toList()
         for (i in 0 until ids.size) {
             for (j in i + 1 until ids.size) {
@@ -59,6 +62,25 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val tangent = contact.tangent
                 val minDist = contact.minDist
                 val pen = contact.penetration
+                val impactSpeed = (bMotion.vel - aMotion.vel).len
+                accumulateShipCollisionDamage(
+                    state = state,
+                    damages = damages,
+                    playersToRespawn = playersToRespawn,
+                    entityId = aId,
+                    shape = aShape,
+                    impactSpeed = impactSpeed,
+                    cfg = cfg,
+                )
+                accumulateShipCollisionDamage(
+                    state = state,
+                    damages = damages,
+                    playersToRespawn = playersToRespawn,
+                    entityId = bId,
+                    shape = bShape,
+                    impactSpeed = impactSpeed,
+                    cfg = cfg,
+                )
 
                 // Each collision pair can land in either direction: a-on-b or b-on-a.
                 val aLanding = tryLand(
@@ -140,7 +162,35 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             transforms = ComponentTable.fromMap(transforms),
             motions = ComponentTable.fromMap(motions),
             landings = ComponentTable.fromMap(landings),
+            damages = ComponentTable.fromMap(damages),
         )
+        for (playerId in playersToRespawn) {
+            state.queuePlayerRespawn(playerId, cfg.shipRespawnTicks)
+        }
+    }
+
+    private fun accumulateShipCollisionDamage(
+        state: PhysicsState,
+        damages: MutableMap<org.emerge.sim.core.EntityId, DamageComponent>,
+        playersToRespawn: MutableSet<PlayerId>,
+        entityId: org.emerge.sim.core.EntityId,
+        shape: RenderShapeComponent,
+        impactSpeed: Frac,
+        cfg: PhysicsConfig,
+    ) {
+        if (shape.shape != BodyShape.TRIANGLE) return
+        val owner = state.raw.playerOwned[entityId]?.playerId ?: return
+        if (playersToRespawn.contains(owner)) return
+        val speedOverThreshold = impactSpeed - cfg.shipCollisionDamageThreshold
+        if (speedOverThreshold.sign <= 0) return
+        val currentDamage = damages[entityId]?.damage ?: Frac(0)
+        val nextDamage = currentDamage + speedOverThreshold * cfg.shipCollisionDamageScale
+        if (nextDamage.raw >= cfg.shipMaxDamage.raw) {
+            playersToRespawn += owner
+            damages.remove(entityId)
+        } else {
+            damages[entityId] = DamageComponent(damage = nextDamage)
+        }
     }
 
     private fun canLand(

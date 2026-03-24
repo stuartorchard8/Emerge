@@ -13,6 +13,7 @@ import org.emerge.sim.core.physics.systems.InputSystem
 import org.emerge.sim.core.physics.systems.IntegrationSystem
 import org.emerge.sim.core.physics.systems.LiftOffSystem
 import org.emerge.sim.core.physics.systems.ParticleSystem
+import org.emerge.sim.core.physics.systems.RespawnSystem
 
 class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val systems: List<EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>> = listOf(
@@ -24,6 +25,7 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         CollisionSystem,
         AttachmentSystem,
         ParticleSystem,
+        RespawnSystem,
     )
 
     override fun reduce(cfg: PhysicsConfig, state: PhysicsState, inputs: Map<PlayerId, PhysicsInput>) {

@@ -8,6 +8,7 @@ import org.emerge.sim.core.ecs.EcsWorld
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.ControlIntentComponent
+import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.ForceFieldComponent
 import org.emerge.sim.core.physics.components.HomePlanetComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
@@ -22,11 +23,34 @@ import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.physics.primitives.Frac2
+import org.emerge.sim.core.physics.primitives.Norm
+import kotlin.collections.get
+import kotlin.text.get
 
 data class PhysicsConfig(
     val thrustFactorInv: Int = Int.MAX_VALUE / (1024 * 32),
     val turnFactorInv: Int = Int.MAX_VALUE / (1024 * 512),
     val gravityNumerator: Frac = Frac(1,16),
+    val shipCollisionDamageThreshold: Frac = Frac(1),
+    val shipCollisionDamageScale: Frac = Frac(1, 1),
+    val shipMaxDamage: Frac = Frac(1, 1024),
+    val shipRespawnTicks: Int = 60 * 5,
+)
+
+data class RespawnRocketSpec(
+    val mass: UInt,
+    val radius: Frac,
+    val bounce: Frac,
+    val rough: Frac,
+    val shape: BodyShape,
+)
+
+data class PlayerRespawnState(
+    val ticksRemaining: Int,
+    val deathPos: Coord2,
+    val teamId: TeamId,
+    val rocket: RespawnRocketSpec,
 )
 
 data class PhysicsSnapshot(
@@ -46,6 +70,8 @@ data class PhysicsSnapshot(
     val forceFields: ComponentTable<ForceFieldComponent> = ComponentTable.empty(),
     val landings: ComponentTable<LandingAttachmentComponent> = ComponentTable.empty(),
     val particles: ComponentTable<ParticleComponent> = ComponentTable.empty(),
+    val damages: ComponentTable<DamageComponent> = ComponentTable.empty(),
+    val pendingRespawns: Map<PlayerId, PlayerRespawnState> = emptyMap(),
 ) {
     val mutable get() = PhysicsState(this)
 
@@ -62,6 +88,11 @@ data class PhysicsSnapshot(
     fun playerAngle(playerId: PlayerId): Coord? = playerTransform(playerId)?.ang
 
     fun playerAngularVelocity(playerId: PlayerId): Coord? = playerMotion(playerId)?.angVel
+
+    fun playerViewFocus(playerId: PlayerId): Coord2 =
+        playerTransform(playerId)?.pos
+            ?: pendingRespawns[playerId]?.deathPos
+            ?: Coord2.zero
 
     fun homePlanetEntity(teamId: TeamId): EntityId? =
         homePlanets.entries().firstOrNull { it.value.teamId == teamId }?.key
@@ -150,6 +181,8 @@ data class PhysicsState(
             forceFields = raw.forceFields.remove(entityId),
             landings = raw.landings.remove(entityId),
             particles = raw.particles.remove(entityId),
+            damages = raw.damages.remove(entityId),
+            pendingRespawns = if (playerId == null) raw.pendingRespawns else raw.pendingRespawns - playerId,
         )
     }
 
@@ -200,6 +233,7 @@ data class PhysicsState(
             forceFields = raw.forceFields.remove(entityId),
             landings = raw.landings.remove(entityId),
             particles = raw.particles.put(entityId, ParticleComponent(lifetime, lifetime)),
+            damages = raw.damages.remove(entityId),
         )
     }
 
@@ -251,6 +285,7 @@ data class PhysicsState(
     }
 
     fun removePlayerRocket(playerId: PlayerId) {
+        raw = raw.copy(pendingRespawns = raw.pendingRespawns - playerId)
         val entityId = raw.playerEntities[playerId] ?: return
         removeEntity(entityId)
     }
@@ -281,6 +316,107 @@ data class PhysicsState(
             forceFields = raw.forceFields.remove(entityId),
             landings = ComponentTable.fromMap(nextLandings).remove(entityId),
             particles = raw.particles.remove(entityId),
+            damages = raw.damages.remove(entityId),
+        )
+    }
+
+    fun queuePlayerRespawn(playerId: PlayerId, ticksRemaining: Int) {
+        val entityId = raw.playerEntities[playerId] ?: return
+        val transform = raw.transforms[entityId] ?: return removeEntity(entityId)
+        val material = raw.materials[entityId] ?: return removeEntity(entityId)
+        val collider = raw.colliders[entityId] ?: return removeEntity(entityId)
+        val renderShape = raw.renderShapes[entityId] ?: return removeEntity(entityId)
+        val teamId = raw.teams[entityId]?.teamId ?: return removeEntity(entityId)
+        removeEntity(entityId)
+        val nextRespawns = LinkedHashMap(raw.pendingRespawns)
+        nextRespawns[playerId] =
+            PlayerRespawnState(
+                ticksRemaining = ticksRemaining,
+                deathPos = transform.pos,
+                teamId = teamId,
+                rocket = RespawnRocketSpec(
+                    mass = material.mass,
+                    radius = collider.radius,
+                    bounce = material.bounce,
+                    rough = material.rough,
+                    shape = renderShape.shape,
+                ),
+            )
+        raw = raw.copy(pendingRespawns = nextRespawns)
+    }
+
+    fun advanceRespawns() {
+        if (raw.pendingRespawns.isEmpty()) return
+        val nextRespawns = LinkedHashMap(raw.pendingRespawns)
+        for ((playerId, respawn) in raw.pendingRespawns) {
+            val nextTicks = (respawn.ticksRemaining - 1).coerceAtLeast(0)
+            val updatedRespawn = respawn.copy(ticksRemaining = nextTicks)
+            if (nextTicks > 0) {
+                nextRespawns[playerId] = updatedRespawn
+                continue
+            }
+            val respawned = tryRespawnPlayer(playerId, updatedRespawn)
+            if (respawned) {
+                nextRespawns.remove(playerId)
+            } else {
+                nextRespawns[playerId] = updatedRespawn
+            }
+        }
+        raw = raw.copy(pendingRespawns = nextRespawns)
+    }
+
+    private fun tryRespawnPlayer(playerId: PlayerId, respawn: PlayerRespawnState): Boolean {
+        val teamId = respawn.teamId
+        val homePlanetId = raw.homePlanetEntity(teamId) ?: return false
+        val planetTransform = raw.transforms[homePlanetId] ?: return false
+        val planetMotion = raw.motions[homePlanetId] ?: return false
+        val planetCollider = raw.colliders[homePlanetId] ?: return false
+        val localAngle = Coord(playerId.value, Int.MAX_VALUE)
+        val localNormal = Norm.fromAngle(localAngle)
+        val relativePos = localNormal * (planetCollider.radius + respawn.rocket.radius)
+        val worldPos = planetTransform.pos + rotateByAngle(relativePos, planetTransform.ang)
+        val worldAng = Coord(planetTransform.ang.raw + localAngle.raw)
+        val entityId = spawnBody(
+            playerId = playerId,
+            pos = worldPos,
+            vel = planetMotion.vel,
+            ang = worldAng,
+            angVel = planetMotion.angVel,
+            mass = respawn.rocket.mass,
+            radius = respawn.rocket.radius,
+            bounce = respawn.rocket.bounce,
+            rough = respawn.rocket.rough,
+            shape = respawn.rocket.shape,
+        )
+        setTeam(
+            entityId = entityId,
+            teamId = teamId,
+        )
+        raw = raw.copy(
+            motions = raw.motions.put(
+                entityId,
+                MotionComponent(
+                    vel = planetMotion.vel,
+                    angVel = planetMotion.angVel,
+                ),
+            ),
+            landings = raw.landings.put(
+                entityId,
+                LandingAttachmentComponent(
+                    parentEntityId = homePlanetId,
+                    relativePos = relativePos,
+                    relativeAng = Frac(localAngle.raw.toLong()),
+                ),
+            ),
+        )
+        return true
+    }
+
+    private fun rotateByAngle(v: Frac2, angle: Coord): Frac2 {
+        val rotation = Norm.fromAngle(angle)
+        return Frac2(
+            x = v.x * rotation.x - v.y * rotation.y,
+            y = v.x * rotation.y + v.y * rotation.x,
         )
     }
 }
