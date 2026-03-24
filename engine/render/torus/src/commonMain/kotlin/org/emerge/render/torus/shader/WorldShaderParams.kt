@@ -1,10 +1,8 @@
 package org.emerge.render.torus.shader
 
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.primitives.Vec2
-import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.primitives.Coord
+import org.emerge.sim.core.physics.primitives.Vec2
 import org.emerge.sim.core.physics.primitives.Coord2
 
 data class WorldShaderParams(
@@ -17,7 +15,7 @@ data class WorldShaderParams(
     companion object {
         fun compute(state: PhysicsState, myId: PlayerId?, zoom: Float, viewRotationRad: Float = 0f): WorldShaderParams {
             val focusWrapped: Coord2 =
-                if (myId != null) state.playerTransform(myId)?.pos ?: Coord2.zero
+                if (myId != null) state.raw.playerTransform(myId)?.pos ?: Coord2.zero
                 else Coord2.zero
 
             val focus = Vec2(

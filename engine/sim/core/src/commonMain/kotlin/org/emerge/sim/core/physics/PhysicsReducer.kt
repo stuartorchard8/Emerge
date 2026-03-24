@@ -26,7 +26,7 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         ParticleSystem,
     )
 
-    override fun reduce(cfg: PhysicsConfig, state: PhysicsState, inputs: Map<PlayerId, PhysicsInput>): PhysicsState {
-        return EcsSystems.runAll(cfg, state, inputs, systems)
+    override fun reduce(cfg: PhysicsConfig, state: PhysicsState, inputs: Map<PlayerId, PhysicsInput>) {
+        EcsSystems.runAll(cfg, state, inputs, systems)
     }
 }

@@ -3,6 +3,7 @@ package org.emerge.sim.core.physics.systems
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Contact
 import org.emerge.sim.core.physics.components.ControlIntentComponent
@@ -11,7 +12,6 @@ import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.primitives.Norm
 import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Coord
@@ -25,11 +25,11 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         cfg: PhysicsConfig,
         state: PhysicsState,
         inputs: Map<PlayerId, PhysicsInput>,
-    ): PhysicsState {
-        val transforms = LinkedHashMap(state.transforms.asMap())
-        val motions = LinkedHashMap(state.motions.asMap())
-        val landings = LinkedHashMap(state.landings.asMap())
-        val ids = state.world.entities
+    ) {
+        val transforms = LinkedHashMap(state.raw.transforms.asMap())
+        val motions = LinkedHashMap(state.raw.motions.asMap())
+        val landings = LinkedHashMap(state.raw.landings.asMap())
+        val ids = state.raw.materials.keys().toList()
         for (i in 0 until ids.size) {
             for (j in i + 1 until ids.size) {
                 val aId = ids[i]
@@ -39,14 +39,14 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val bTransform = transforms[bId] ?: continue
                 val aMotion = motions[aId] ?: continue
                 val bMotion = motions[bId] ?: continue
-                val aCollider = state.colliders[aId] ?: continue
-                val bCollider = state.colliders[bId] ?: continue
-                val aMaterial = state.materials[aId] ?: continue
-                val bMaterial = state.materials[bId] ?: continue
-                val aShape = state.renderShapes[aId] ?: continue
-                val bShape = state.renderShapes[bId] ?: continue
-                val aControl = state.controls[aId] ?: ControlIntentComponent.ZERO
-                val bControl = state.controls[bId] ?: ControlIntentComponent.ZERO
+                val aCollider = state.raw.colliders[aId] ?: continue
+                val bCollider = state.raw.colliders[bId] ?: continue
+                val aMaterial = state.raw.materials[aId] ?: continue
+                val bMaterial = state.raw.materials[bId] ?: continue
+                val aShape = state.raw.renderShapes[aId] ?: continue
+                val bShape = state.raw.renderShapes[bId] ?: continue
+                val aControl = state.raw.controls[aId] ?: ControlIntentComponent.ZERO
+                val bControl = state.raw.controls[bId] ?: ControlIntentComponent.ZERO
 
                 val bodyContact = Contact.compute(
                     aTransform = aTransform,
@@ -136,7 +136,7 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 )
             }
         }
-        return state.copy(
+        state.raw = state.raw.copy(
             transforms = ComponentTable.fromMap(transforms),
             motions = ComponentTable.fromMap(motions),
             landings = ComponentTable.fromMap(landings),

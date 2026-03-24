@@ -3,12 +3,12 @@ package org.emerge.sim.core.physics.systems
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
@@ -22,14 +22,14 @@ object LiftOffSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         cfg: PhysicsConfig,
         state: PhysicsState,
         inputs: Map<PlayerId, PhysicsInput>,
-    ): PhysicsState {
-        val motions = LinkedHashMap(state.motions.asMap())
-        val landings = LinkedHashMap(state.landings.asMap())
-        for ((entityId, control) in state.controls.entries()) {
+    ) {
+        val motions = LinkedHashMap(state.raw.motions.asMap())
+        val landings = LinkedHashMap(state.raw.landings.asMap())
+        for ((entityId, control) in state.raw.controls.entries()) {
             val landing = landings[entityId]
             if (control.thrust > 0 && landing != null) {
-                val parentTransform = state.transforms[landing.parentEntityId]
-                val parentMotion = state.motions[landing.parentEntityId]
+                val parentTransform = state.raw.transforms[landing.parentEntityId]
+                val parentMotion = state.raw.motions[landing.parentEntityId]
                 if (parentTransform != null && parentMotion != null) {
                     motions[entityId] =
                         MotionComponent(
@@ -40,7 +40,7 @@ object LiftOffSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 landings.remove(entityId)
             }
         }
-        return state.copy(
+        state.raw = state.raw.copy(
             motions = ComponentTable.fromMap(motions),
             landings = ComponentTable.fromMap(landings),
         )

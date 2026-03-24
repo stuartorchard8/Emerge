@@ -1,10 +1,6 @@
 package org.emerge.sim.core
 
-data class EntityId(val value: Int) {
-    init {
-        require(value >= 0) { "EntityId must be >= 0, got $value" }
-    }
-}
+data class EntityId(val value: Int)
 
 data class PlayerId(val value: Int) {
     init {

@@ -7,10 +7,9 @@ import org.emerge.render.torus.shader.WorldShaderParams
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ComponentTable
-import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.components.RenderShapeComponent
-import org.emerge.sim.core.physics.primitives.RenderShape
 import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.math.atan2
 import kotlin.math.ceil
@@ -101,7 +100,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         guiShader.draw(vOffset=layout.guiVertexOffset)
         var n = packBodyInstances(
             state = state,
-            shapes = state.bgRenderShapes,
+            shapes = state.raw.bgRenderShapes,
             params = params,
             layout = layout,
             outMatricesColMajor = bodyInstanceMatrices,
@@ -113,7 +112,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         )
         n = packBodyInstances(
             state = state,
-            shapes = state.renderShapes,
+            shapes = state.raw.renderShapes,
             params = params,
             layout = layout,
             outMatricesColMajor = bodyInstanceMatrices,
@@ -197,10 +196,10 @@ class ScreenRenderer(val contentScale: Vec2) {
 
         var n = indexOffset
         for ((entityId, renderShape) in shapes.entries()) {
-            val transform = state.transforms[entityId] ?: continue
-            val collider = state.colliders[entityId] ?: continue
-            val particle = state.particles[entityId]
-            val primaryId = shaderId(state.teams[entityId]?.teamId?.value)
+            val transform = state.raw.transforms[entityId] ?: continue
+            val collider = state.raw.colliders[entityId] ?: continue
+            val particle = state.raw.particles[entityId]
+            val primaryId = shaderId(state.raw.teams[entityId]?.teamId?.value)
             val secondaryId = shaderId(entityId.value)
             n = packBodyInstance(
                 index = n,
@@ -223,7 +222,7 @@ class ScreenRenderer(val contentScale: Vec2) {
             if (n >= CircleShader.MAX_INSTANCES) {
                 break
             }
-            val forceField = state.forceFields[entityId]
+            val forceField = state.raw.forceFields[entityId]
             if (forceField != null && renderShape.shape == BodyShape.CIRCLE) {
                 n = packBodyInstance(
                     index = n,
@@ -290,8 +289,8 @@ class ScreenRenderer(val contentScale: Vec2) {
         if (params.myId == null) {
             return index
         }
-        val playerEntityId = state.playerEntities[params.myId] ?: return index
-        val playerTeamId = state.teams[playerEntityId]?.teamId?.value
+        val playerEntityId = state.raw.playerEntities[params.myId] ?: return index
+        val playerTeamId = state.raw.teams[playerEntityId]?.teamId?.value
 
         var n = index
         val indicatorScalePx = worldPxMinDim * PLANET_INDICATOR_SCALE
@@ -300,12 +299,11 @@ class ScreenRenderer(val contentScale: Vec2) {
         val indicatorScaleY = indicatorScalePx * 2f / worldPxHeight
         val halfWidthPx = worldPxWidth * 0.5f - indicatorInsetPx
         val halfHeightPx = worldPxHeight * 0.5f - indicatorInsetPx
-        for (entityId in state.world.entities) {
-            if (!state.planets.contains(entityId)) continue
+        for (entityId in state.raw.planets.keys()) {
             if (n >= CircleShader.MAX_INSTANCES) break
-            val planetTeamId = state.teams[entityId]?.teamId?.value
+            val planetTeamId = state.raw.teams[entityId]?.teamId?.value
 
-            val transform = state.transforms[entityId] ?: continue
+            val transform = state.raw.transforms[entityId] ?: continue
             val dx = wrapDelta(transform.pos.x.toFloat() - params.viewFocus.x, params.worldSize.x)
             val dy = wrapDelta(transform.pos.y.toFloat() - params.viewFocus.y, params.worldSize.y)
             val viewDx = dx * cos(-params.viewRotationRad) + dy * sin(-params.viewRotationRad)

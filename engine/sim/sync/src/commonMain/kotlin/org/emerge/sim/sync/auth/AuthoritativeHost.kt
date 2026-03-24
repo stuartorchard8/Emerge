@@ -17,11 +17,11 @@ import org.emerge.sim.sync.platform.sleepMillis
 class AuthoritativeHost<C, S, I>(
     cfg: C,
     initialState: S,
-    reducer: (C, S, Map<PlayerId, I>) -> S,
+    reducer: (C, S, Map<PlayerId, I>) -> Unit,
     private val inputCodec: Codec<I>,
     private val stateCodec: StateCodec<S>,
-    private val joinPolicy: (S, PlayerId) -> S,
-    private val leavePolicy: (S, PlayerId) -> S = { state, _ -> state },
+    private val joinPolicy: (S, PlayerId) -> Unit,
+    private val leavePolicy: (S, PlayerId) -> Unit = { state, _ -> state },
     private val snapshotEveryTicks: Int = 1,
 ) {
     private val stepper = TickStepper(cfg = cfg, initialState = initialState, reducer = { c, s, inputs -> reducer(c, s, inputs) })
@@ -55,7 +55,7 @@ class AuthoritativeHost<C, S, I>(
         val pid = PlayerId(nextPlayerId++)
 
         // mutate state to add player-controlled entity
-        stepper.replaceState(joinPolicy(stepper.state, pid))
+        joinPolicy(stepper.state, pid)
 
         clientsById[pid] = pipe
 
@@ -92,7 +92,7 @@ class AuthoritativeHost<C, S, I>(
         for (pid in disconnected) {
             clientsById.remove(pid)
             lastInputById.remove(pid)
-            stepper.replaceState(leavePolicy(stepper.state, pid))
+            leavePolicy(stepper.state, pid)
         }
     }
 

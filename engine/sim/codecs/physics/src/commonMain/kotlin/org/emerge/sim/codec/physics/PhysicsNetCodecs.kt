@@ -8,10 +8,11 @@ import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.PhysicsSnapshot
 import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsWorld
+import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.ControlIntentComponent
 import org.emerge.sim.core.physics.components.ForceFieldComponent
@@ -36,7 +37,7 @@ import org.emerge.sim.sync.auth.StateCodec
  * This keeps Android + desktop using the exact same wire format without duplicating logic.
  */
 object PhysicsNetCodecs {
-    private const val STATE_HEADER_INT_COUNT = 2
+    private const val STATE_HEADER_INT_COUNT = 1
     private const val STATE_ENTITY_INT_COUNT = 26
     private const val STATE_INT_BYTES = 4
     private const val MAX_STATE_ENTITIES = 2048
@@ -62,79 +63,75 @@ object PhysicsNetCodecs {
         object : StateCodec<PhysicsState> {
             override fun encode(state: PhysicsState): ByteArray {
                 val w = ByteWriter()
-                val serializableEntities =
-                    state.world.entities.filter { entityId ->
-                        state.transforms[entityId] != null &&
-                            state.motions[entityId] != null &&
-                            state.colliders[entityId] != null &&
-                            ((state.renderShapes[entityId] != null) || (state.bgRenderShapes[entityId] != null))
+                with (state.raw) {
+                    val serializableEntities =
+                        motions.keys().filter { entityId ->
+                            ((renderShapes[entityId] != null) || (bgRenderShapes[entityId] != null))
+                        }
+                    // Keep header count aligned with what is actually serialized.
+                    w.writeInt(serializableEntities.size)
+                    for (entityId in serializableEntities) {
+                        val transform = transforms[entityId] ?: continue
+                        val motion = motions[entityId] ?: continue
+                        val collider = colliders[entityId] ?: continue
+                        val material = materials[entityId]
+                        val renderShape = renderShapes[entityId]
+                        val bgRenderShape = bgRenderShapes[entityId]
+                        val planet = planets[entityId]
+                        val homePlanet = homePlanets[entityId]
+                        val team = teams[entityId]
+                        val forceField = forceFields[entityId]
+                        val playerId = playerOwned[entityId]?.playerId
+                        val landing = landings[entityId]
+                        val particle = particles[entityId]
+                        w.writeInt(entityId.value)
+                        w.writeInt(playerId?.value ?: -1)
+                        w.writeInt(transform.pos.x.raw)
+                        w.writeInt(transform.pos.y.raw)
+                        w.writeInt(motion.vel.x.raw)
+                        w.writeInt(motion.vel.y.raw)
+                        w.writeInt(transform.ang.raw)
+                        w.writeInt(motion.angVel.raw)
+                        w.writeInt(material?.mass?.toInt() ?: -1)
+                        w.writeInt(collider.radius.raw.toInt())
+                        w.writeInt(material?.bounce?.raw?.toInt() ?: -1)
+                        w.writeInt(material?.rough?.raw?.toInt() ?: -1)
+                        w.writeInt(renderShape?.shape?.wireValue ?: -1)
+                        w.writeInt(bgRenderShape?.shape?.wireValue ?: -1)
+                        w.writeInt(planet?.seed ?: -1)
+                        w.writeInt(homePlanet?.teamId?.value ?: -1)
+                        w.writeInt(team?.teamId?.value ?: -1)
+                        w.writeInt(forceField?.depth?.raw?.toInt() ?: 0)
+                        w.writeInt(forceField?.strength?.raw?.toInt() ?: 0)
+                        w.writeInt(forceField?.alpha?.raw?.toInt() ?: 0)
+                        w.writeInt(landing?.parentEntityId?.value ?: -1)
+                        w.writeInt(landing?.relativePos?.x?.raw?.toInt() ?: 0)
+                        w.writeInt(landing?.relativePos?.y?.raw?.toInt() ?: 0)
+                        w.writeInt(landing?.relativeAng?.raw?.toInt() ?: 0)
+                        w.writeInt(particle?.life ?: 0)
+                        w.writeInt(particle?.lifeTime ?: 1)
                     }
-                w.writeInt(state.world.nextEntityValue)
-                // Keep header count aligned with what is actually serialized.
-                w.writeInt(serializableEntities.size)
-                for (entityId in serializableEntities) {
-                    val transform = state.transforms[entityId] ?: continue
-                    val motion = state.motions[entityId] ?: continue
-                    val collider = state.colliders[entityId] ?: continue
-                    val material = state.materials[entityId]
-                    val renderShape = state.renderShapes[entityId]
-                    val bgRenderShape = state.bgRenderShapes[entityId]
-                    val planet = state.planets[entityId]
-                    val homePlanet = state.homePlanets[entityId]
-                    val team = state.teams[entityId]
-                    val forceField = state.forceFields[entityId]
-                    val playerId = state.playerOwned[entityId]?.playerId
-                    val landing = state.landings[entityId]
-                    val particle = state.particles[entityId]
-                    w.writeInt(entityId.value)
-                    w.writeInt(playerId?.value ?: -1)
-                    w.writeInt(transform.pos.x.raw)
-                    w.writeInt(transform.pos.y.raw)
-                    w.writeInt(motion.vel.x.raw)
-                    w.writeInt(motion.vel.y.raw)
-                    w.writeInt(transform.ang.raw)
-                    w.writeInt(motion.angVel.raw)
-                    w.writeInt(material?.mass?.toInt() ?: -1)
-                    w.writeInt(collider.radius.raw.toInt())
-                    w.writeInt(material?.bounce?.raw?.toInt() ?: -1)
-                    w.writeInt(material?.rough?.raw?.toInt() ?: -1)
-                    w.writeInt(renderShape?.shape?.wireValue ?: -1)
-                    w.writeInt(bgRenderShape?.shape?.wireValue ?: -1)
-                    w.writeInt(planet?.seed ?: -1)
-                    w.writeInt(homePlanet?.teamId?.value ?: -1)
-                    w.writeInt(team?.teamId?.value ?: -1)
-                    w.writeInt(forceField?.depth?.raw?.toInt() ?: 0)
-                    w.writeInt(forceField?.strength?.raw?.toInt() ?: 0)
-                    w.writeInt(forceField?.alpha?.raw?.toInt() ?: 0)
-                    w.writeInt(landing?.parentEntityId?.value ?: -1)
-                    w.writeInt(landing?.relativePos?.x?.raw?.toInt() ?: 0)
-                    w.writeInt(landing?.relativePos?.y?.raw?.toInt() ?: 0)
-                    w.writeInt(landing?.relativeAng?.raw?.toInt() ?: 0)
-                    w.writeInt(particle?.life ?: 0)
-                    w.writeInt(particle?.lifeTime ?: 1)
                 }
                 return w.toByteArray()
             }
 
             override fun decode(bytes: ByteArray): PhysicsState {
                 val c = ByteCursor(bytes)
-                val nextEntityValue = c.readInt()
                 val n = c.readInt()
-                require(nextEntityValue >= 0) { "Invalid nextEntityValue: $nextEntityValue" }
                 require(n in 0..MAX_STATE_ENTITIES) { "Invalid entity count: $n" }
                 val expectedSize = (STATE_HEADER_INT_COUNT + (n * STATE_ENTITY_INT_COUNT)) * STATE_INT_BYTES
                 require(bytes.size == expectedSize) {
                     "Invalid state payload size: expected $expectedSize bytes for $n entities, got ${bytes.size}"
                 }
-                val entities = ArrayList<EntityId>(n)
+                val entities = mutableSetOf<Int>()
                 val playerEntities = LinkedHashMap<PlayerId, EntityId>()
                 val transforms = LinkedHashMap<EntityId, TransformComponent>(n)
                 val motions = LinkedHashMap<EntityId, MotionComponent>(n)
                 val colliders = LinkedHashMap<EntityId, ColliderComponent>(n)
                 val materials = LinkedHashMap<EntityId, MaterialComponent>(n)
                 val controls = LinkedHashMap<EntityId, ControlIntentComponent>()
-                val renderShapes = LinkedHashMap<EntityId, RenderShapeComponent>(n)
-                val bgRenderShapes = LinkedHashMap<EntityId, RenderShapeComponent>(n)
+                val renderShapes = LinkedHashMap<EntityId, RenderShapeComponent>()
+                val bgRenderShapes = LinkedHashMap<EntityId, RenderShapeComponent>()
                 val playerOwned = LinkedHashMap<EntityId, PlayerOwnedComponent>()
                 val teams = LinkedHashMap<EntityId, TeamComponent>()
                 val planets = LinkedHashMap<EntityId, PlanetComponent>()
@@ -170,7 +167,7 @@ object PhysicsNetCodecs {
                     val particleLife = c.readInt()
                     val particleLifetime = c.readInt()
                     val playerId = if (playerIdRaw >= 0) PlayerId(playerIdRaw) else null
-                    entities += entityId
+                    entities += entityId.value
                     transforms[entityId] =
                         TransformComponent(
                             pos = Coord2.raw(px, py),
@@ -245,10 +242,9 @@ object PhysicsNetCodecs {
                             )
                     }
                 }
-                return PhysicsState(
+                return PhysicsSnapshot(
                     world = EcsWorld(
                         entities = entities,
-                        nextEntityValue = nextEntityValue,
                     ),
                     playerEntities = playerEntities,
                     transforms = ComponentTable.fromMap(transforms),
@@ -265,7 +261,7 @@ object PhysicsNetCodecs {
                     forceFields = ComponentTable.fromMap(forceFields),
                     landings = ComponentTable.fromMap(landings),
                     particles = ComponentTable.fromMap(particles),
-                )
+                ).mutable
             }
         }
 }

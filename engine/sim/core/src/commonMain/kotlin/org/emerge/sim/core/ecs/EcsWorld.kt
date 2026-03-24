@@ -4,33 +4,28 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 
 data class EcsWorld(
-    val entities: List<EntityId> = emptyList(),
-    val nextEntityValue: Int = 0,
+    private val entities: MutableSet<Int> = mutableSetOf(),
+    private var lastEntityValue: Int = 0,
 ) {
-    fun createEntity(): Pair<EcsWorld, EntityId> {
-        val entityId = EntityId(nextEntityValue)
-        return copy(
-            entities = entities + entityId,
-            nextEntityValue = nextEntityValue + 1,
-        ) to entityId
+    fun createEntity(): EntityId {
+        while (entities.contains(lastEntityValue)) {
+            lastEntityValue += 1
+        }
+
+        entities += lastEntityValue
+        return EntityId(lastEntityValue)
     }
 
-    fun ensureEntity(entityId: EntityId): EcsWorld {
-        if (entities.contains(entityId)) {
-            return this
+    fun ensureEntity(entityId: EntityId) {
+        if (!entities.contains(entityId.value)) {
+            entities += entityId.value
         }
-        val nextValue = maxOf(nextEntityValue, entityId.value + 1)
-        return copy(
-            entities = entities + entityId,
-            nextEntityValue = nextValue,
-        )
     }
 
-    fun removeEntity(entityId: EntityId): EcsWorld {
-        if (!entities.contains(entityId)) {
-            return this
+    fun removeEntity(entityId: EntityId) {
+        if (entities.contains(entityId.value)) {
+            entities -= entityId.value
         }
-        return copy(entities = entities.filterNot { it == entityId })
     }
 
     companion object {
@@ -39,20 +34,18 @@ data class EcsWorld(
 }
 
 fun interface EcsSystem<C, S, I> {
-    fun update(cfg: C, state: S, inputs: Map<PlayerId, I>): S
+    fun update(cfg: C, state: S, inputs: Map<PlayerId, I>)
 }
 
 object EcsSystems {
     fun <C, S, I> runAll(
         cfg: C,
-        initialState: S,
+        state: S,
         inputs: Map<PlayerId, I>,
         systems: List<EcsSystem<C, S, I>>,
-    ): S {
-        var state = initialState
+    ) {
         for (system in systems) {
-            state = system.update(cfg, state, inputs)
+            system.update(cfg, state, inputs)
         }
-        return state
     }
 }

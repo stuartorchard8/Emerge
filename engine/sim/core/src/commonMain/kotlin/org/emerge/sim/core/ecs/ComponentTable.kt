@@ -47,6 +47,7 @@ data class ComponentTable<T>(
     fun asMap(): Map<EntityId, T> = values
 
     fun entries(): Set<Map.Entry<EntityId, T>> = values.entries
+    fun keys(): Set<EntityId> = values.keys
 
     fun isEmpty(): Boolean = values.isEmpty()
 

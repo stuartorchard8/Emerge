@@ -3,11 +3,9 @@ package org.emerge.sim.core.physics.systems
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.primitives.Coord
 import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.set
@@ -17,11 +15,11 @@ object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         cfg: PhysicsConfig,
         state: PhysicsState,
         inputs: Map<PlayerId, PhysicsInput>,
-    ): PhysicsState {
-        val transforms = LinkedHashMap(state.transforms.asMap())
-        val motions = LinkedHashMap(state.motions.asMap())
-        val landings = LinkedHashMap(state.landings.asMap())
-        for ((entityId, landing) in state.landings.entries()) {
+    ) {
+        val transforms = LinkedHashMap(state.raw.transforms.asMap())
+        val motions = LinkedHashMap(state.raw.motions.asMap())
+        val landings = LinkedHashMap(state.raw.landings.asMap())
+        for ((entityId, landing) in state.raw.landings.entries()) {
             val parentTransform = transforms[landing.parentEntityId]
             val parentMotion = motions[landing.parentEntityId]
             val transform = transforms[entityId]
@@ -35,7 +33,7 @@ object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             )
             motions[entityId] = parentMotion
         }
-        return state.copy(
+        state.raw = state.raw.copy(
             transforms = ComponentTable.fromMap(transforms),
             motions = ComponentTable.fromMap(motions),
             landings = ComponentTable.fromMap(landings),

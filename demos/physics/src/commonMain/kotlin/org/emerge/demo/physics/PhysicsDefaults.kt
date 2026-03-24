@@ -4,8 +4,9 @@ import kotlin.random.Random
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
-import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.physics.PhysicsSnapshot
 import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.physics.primitives.Norm
 import org.emerge.sim.core.physics.primitives.BodyShape
@@ -16,7 +17,7 @@ import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
 
 fun createDefaultInitialState(gameMode: GameMode = GameMode.PVP): PhysicsState {
-    var state = PhysicsState()
+    val state = PhysicsSnapshot().mutable
     for (it in 0 until DEFAULT_PLANET_COUNT) {
         val spawn = state.spawnBody(
             playerId = null,
@@ -30,21 +31,22 @@ fun createDefaultInitialState(gameMode: GameMode = GameMode.PVP): PhysicsState {
             rough = Frac(8, 16),
             shape = BodyShape.CIRCLE,
         )
-        state = spawn.first.markPlanet(spawn.second, seed = it)
+        state.markPlanet(spawn, seed = it)
     }
-    return assignHomePlanetAndSpawn(
+    assignHomePlanetAndSpawn(
         state = state,
         playerId = PlayerId(0),
         gameMode = gameMode,
         random = Random.Default,
     )
+    return state;
 }
 
 /**
  * Join policy used by both desktop and Android demos:
  * - deterministic spawn positions based on player id
  */
-fun defaultJoinPolicy(gameMode: GameMode = GameMode.PVP): (PhysicsState, PlayerId) -> PhysicsState =
+fun defaultJoinPolicy(gameMode: GameMode = GameMode.PVP): (PhysicsState, PlayerId) -> Unit =
     { s, pid ->
         assignHomePlanetAndSpawn(
             state = s,
@@ -59,28 +61,30 @@ private fun assignHomePlanetAndSpawn(
     playerId: PlayerId,
     gameMode: GameMode,
     random: Random,
-): PhysicsState {
+) {
     val teamId = gameMode.teamIdForPlayer(playerId)
     val homePlanetId =
-        state.homePlanetEntity(teamId)
-            ?: chooseHomePlanet(state, random)
-            ?: return state
-    val withHome = state.assignHomePlanet(
-        entityId = homePlanetId,
-        teamId = teamId,
-    )
-        .setTeam(
+        state.raw.homePlanetEntity(teamId)
+            ?: chooseHomePlanet(state.raw, random)
+            ?: return
+    with(state) {
+        state.assignHomePlanet(
             entityId = homePlanetId,
             teamId = teamId,
         )
-        .setForceField(
+        state.setTeam(
+            entityId = homePlanetId,
+            teamId = teamId,
+        )
+        state.setForceField(
             entityId = homePlanetId,
             depth = HOME_PLANET_FORCE_FIELD_DEPTH,
             strength = HOME_PLANET_FORCE_FIELD_STRENGTH,
             alpha = HOME_PLANET_FORCE_FIELD_ALPHA,
         )
-    return spawnRocketOnPlanetSurface(
-        state = withHome,
+    }
+    spawnRocketOnPlanetSurface(
+        state = state,
         playerId = playerId,
         teamId = teamId,
         planetId = homePlanetId,
@@ -96,12 +100,12 @@ private fun GameMode.teamIdForPlayer(playerId: PlayerId): TeamId =
         GameMode.CO_OP -> TeamId(0)
     }
 
-private fun chooseHomePlanet(state: PhysicsState, random: Random): EntityId? {
+private fun chooseHomePlanet(state: PhysicsSnapshot, random: Random): EntityId? {
     val planets = state.planetEntities()
     if (planets.isEmpty()) return null
     val claimed = state.homePlanets.entries().map { it.key }.toSet()
     val available = planets.filterNot { it in claimed }
-    val pool = available.ifEmpty { planets }
+    val pool = available.ifEmpty { planets.toList() }
     return pool[random.nextInt(pool.size)]
 }
 
@@ -111,59 +115,60 @@ private fun spawnRocketOnPlanetSurface(
     teamId: TeamId,
     planetId: EntityId,
     random: Random,
-): PhysicsState {
-    val planetTransform = state.transforms[planetId] ?: return state
-    val planetMotion = state.motions[planetId] ?: return state
-    val planetCollider = state.colliders[planetId] ?: return state
-    val existingEntity = state.playerEntities[playerId]
+) {
+    val planetTransform = state.raw.transforms[planetId] ?: return
+    val planetMotion = state.raw.motions[planetId] ?: return
+    val planetCollider = state.raw.colliders[planetId] ?: return
+    val existingEntity = state.raw.playerEntities[playerId]
     val localAngle = randomTurn(random)
     val localNormal = Norm.fromAngle(localAngle)
     val relativePos = localNormal * (planetCollider.radius + ROCKET_RADIUS)
     val worldPos = planetTransform.pos + rotateByAngle(relativePos, planetTransform.ang)
     val worldAng = Coord(planetTransform.ang.raw + localAngle.raw)
-    val rocketState =
-        if (existingEntity != null) {
-            state.putBody(
-                entityId = existingEntity,
-                playerId = playerId,
-                pos = worldPos,
-                vel = planetMotion.vel,
-                ang = worldAng,
-                angVel = planetMotion.angVel,
-                mass = 10000u,
-                radius = ROCKET_RADIUS,
-                bounce = Frac(3, 4),
-                rough = Frac(1, 16),
-                shape = BodyShape.TRIANGLE,
-            ) to existingEntity
-        } else {
-            state.spawnBody(
-                playerId = playerId,
-                pos = worldPos,
-                vel = planetMotion.vel,
-                ang = worldAng,
-                angVel = planetMotion.angVel,
-                mass = 10000u,
-                radius = ROCKET_RADIUS,
-                bounce = Frac(3, 4),
-                rough = Frac(1, 16),
-                shape = BodyShape.TRIANGLE,
-            )
-        }
-    return rocketState.first.copy(
-        teams = rocketState.first.teams.put(
-            rocketState.second,
+    val rocketId: EntityId
+    if (existingEntity != null) {
+        rocketId = existingEntity
+        state.putBody(
+            entityId = existingEntity,
+            playerId = playerId,
+            pos = worldPos,
+            vel = planetMotion.vel,
+            ang = worldAng,
+            angVel = planetMotion.angVel,
+            mass = 10000u,
+            radius = ROCKET_RADIUS,
+            bounce = Frac(3, 4),
+            rough = Frac(1, 16),
+            shape = BodyShape.TRIANGLE,
+        )
+    } else {
+        rocketId = state.spawnBody(
+            playerId = playerId,
+            pos = worldPos,
+            vel = planetMotion.vel,
+            ang = worldAng,
+            angVel = planetMotion.angVel,
+            mass = 10000u,
+            radius = ROCKET_RADIUS,
+            bounce = Frac(3, 4),
+            rough = Frac(1, 16),
+            shape = BodyShape.TRIANGLE,
+        )
+    }
+    state.raw = state.raw.copy(
+        teams = state.raw.teams.put(
+            rocketId,
             TeamComponent(teamId),
         ),
-        motions = rocketState.first.motions.put(
-            rocketState.second,
+        motions = state.raw.motions.put(
+            rocketId,
             MotionComponent(
                 vel = planetMotion.vel,
                 angVel = planetMotion.angVel,
             ),
         ),
-        landings = rocketState.first.landings.put(
-            rocketState.second,
+        landings = state.raw.landings.put(
+            rocketId,
             LandingAttachmentComponent(
                 parentEntityId = planetId,
                 relativePos = relativePos,
@@ -193,17 +198,16 @@ private fun spawnRocket(
     state: PhysicsState,
     playerId: PlayerId,
     pos: Coord2,
-): PhysicsState =
-    state.spawnBody(
-        playerId = playerId,
-        pos = pos,
-        vel = Coord2.zero,
-        ang = Coord(0),
-        angVel = Coord(0),
-        mass = 1000u,
-        radius = Frac(1, 160),
-        bounce = Frac(3, 4),
-        rough = Frac(1, 16),
-        shape = BodyShape.TRIANGLE,
-    ).first
+): EntityId = state.spawnBody(
+    playerId = playerId,
+    pos = pos,
+    vel = Coord2.zero,
+    ang = Coord(0),
+    angVel = Coord(0),
+    mass = 1000u,
+    radius = Frac(1, 160),
+    bounce = Frac(3, 4),
+    rough = Frac(1, 16),
+    shape = BodyShape.TRIANGLE,
+)
 
