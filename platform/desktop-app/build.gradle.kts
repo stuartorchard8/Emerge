@@ -26,9 +26,13 @@ dependencies {
     implementation("org.lwjgl:lwjgl")
     implementation("org.lwjgl:lwjgl-glfw")
     implementation("org.lwjgl:lwjgl-opengl")
+    implementation("org.lwjgl:lwjgl-openal")
+    implementation("org.lwjgl:lwjgl-stb")
     runtimeOnly("org.lwjgl:lwjgl::natives-windows")
     runtimeOnly("org.lwjgl:lwjgl-glfw::natives-windows")
     runtimeOnly("org.lwjgl:lwjgl-opengl::natives-windows")
+    runtimeOnly("org.lwjgl:lwjgl-openal::natives-windows")
+    runtimeOnly("org.lwjgl:lwjgl-stb::natives-windows")
 }
 
 application {
@@ -43,4 +47,10 @@ tasks.withType<Tar>().configureEach {
 }
 tasks.withType<Zip>().configureEach {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.processResources {
+    from("$rootDir/assets") {
+        into("assets")
+    }
 }

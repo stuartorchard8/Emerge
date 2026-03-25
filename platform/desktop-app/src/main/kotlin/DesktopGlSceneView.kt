@@ -1,6 +1,7 @@
 package org.emerge.desktop
 
 import org.emerge.demo.physics.*
+import org.emerge.demo.physics.audio.CrashAudioSystem
 import org.emerge.render.torus.ScreenRenderer
 import org.emerge.sim.core.physics.*
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -48,17 +49,20 @@ object DesktopGlSceneView {
         val dpiY = FloatArray(1)
         glfwGetWindowContentScale(window, dpiX, dpiY)
         val screenRenderer = ScreenRenderer(Vec2(dpiX[0], dpiY[0]))
+        val crashAudio = CrashAudioSystem(DesktopOggCrashAudioEngine())
 
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents()
             updateResolution(window, screenRenderer)
 
             val frame = processInput(controller, pressedKeys, screenRenderer)
+            crashAudio.onFrame(frame)
             screenRenderer.draw(frame.state, frame.myId)
 
             glfwSwapBuffers(window)
         }
 
+        crashAudio.release()
         screenRenderer.cleanup()
         glfwDestroyWindow(window)
         glfwTerminate()

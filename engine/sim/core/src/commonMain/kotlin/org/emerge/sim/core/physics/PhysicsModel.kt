@@ -53,6 +53,13 @@ data class PlayerRespawnState(
     val rocket: RespawnRocketSpec,
 )
 
+data class CrashImpactAudioEvent(
+    val entityId: EntityId,
+    val pos: Coord2,
+    val damageRaw: Long,
+    val destroyed: Boolean,
+)
+
 data class PhysicsSnapshot(
     val world: EcsWorld = EcsWorld.EMPTY,
     val playerEntities: Map<PlayerId, EntityId> = emptyMap(),
@@ -72,6 +79,7 @@ data class PhysicsSnapshot(
     val particles: ComponentTable<ParticleComponent> = ComponentTable.empty(),
     val damages: ComponentTable<DamageComponent> = ComponentTable.empty(),
     val pendingRespawns: Map<PlayerId, PlayerRespawnState> = emptyMap(),
+    val crashImpactAudioEvents: List<CrashImpactAudioEvent> = emptyList(),
 ) {
     val mutable get() = PhysicsState(this)
 

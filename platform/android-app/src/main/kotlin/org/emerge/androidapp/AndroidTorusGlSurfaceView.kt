@@ -13,6 +13,7 @@ import org.emerge.demo.physics.PhysicsAuthoritativeController
 import org.emerge.demo.physics.PhysicsAuthoritativeHostController
 import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
 import org.emerge.demo.physics.PhysicsFrame
+import org.emerge.demo.physics.audio.CrashAudioSystem
 import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.PhysicsConfig
@@ -60,6 +61,7 @@ internal class AndroidTorusGlSurfaceView(
     private var simHandler: Handler? = null
     private var simTickRunnable: Runnable? = null
     private var controller: PhysicsAuthoritativeController? = null
+    private var crashAudioSystem: CrashAudioSystem? = null
 
     init {
         setEGLContextClientVersion(3)
@@ -79,12 +81,15 @@ internal class AndroidTorusGlSurfaceView(
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        crashAudioSystem = CrashAudioSystem(AndroidOggCrashAudioEngine(context.assets))
         startSimulationLoop()
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         stopSimulationLoop()
+        crashAudioSystem?.release()
+        crashAudioSystem = null
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -261,7 +266,9 @@ internal class AndroidTorusGlSurfaceView(
                             createController(settings).also { controller = it }
                         }
                     currentTouchInput = computeTouchInputForCurrentOrientation()
-                    publishFrame(simController.tick(currentTouchInput))
+                    val frame = simController.tick(currentTouchInput)
+                    crashAudioSystem?.onFrame(frame)
+                    publishFrame(frame)
                 } catch (t: Throwable) {
                     Log.e(TAG, "Simulation loop failed", t)
                     publishFrame(

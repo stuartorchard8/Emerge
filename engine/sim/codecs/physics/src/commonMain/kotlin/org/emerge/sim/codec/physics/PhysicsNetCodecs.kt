@@ -10,6 +10,7 @@ import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.PhysicsSnapshot
 import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.CrashImpactAudioEvent
 import org.emerge.sim.core.physics.PlayerRespawnState
 import org.emerge.sim.core.physics.RespawnRocketSpec
 import org.emerge.sim.core.physics.primitives.Frac2
@@ -41,11 +42,13 @@ import kotlin.text.get
  * This keeps Android + desktop using the exact same wire format without duplicating logic.
  */
 object PhysicsNetCodecs {
-    private const val STATE_HEADER_INT_COUNT = 2
+    private const val STATE_HEADER_INT_COUNT = 3
     private const val STATE_ENTITY_INT_COUNT = 27
     private const val STATE_RESPAWN_INT_COUNT = 10
+    private const val STATE_CRASH_AUDIO_EVENT_INT_COUNT = 5
     private const val STATE_INT_BYTES = 4
     private const val MAX_STATE_ENTITIES = 2048
+    private const val MAX_STATE_CRASH_AUDIO_EVENTS = 4096
 
     val inputCodec: Codec<PhysicsInput> =
         object : Codec<PhysicsInput> {
@@ -76,6 +79,7 @@ object PhysicsNetCodecs {
                     // Keep header count aligned with what is actually serialized.
                     w.writeInt(serializableEntities.size)
                     w.writeInt(pendingRespawns.size)
+                    w.writeInt(crashImpactAudioEvents.size)
                     for (entityId in serializableEntities) {
                         val transform = transforms[entityId] ?: continue
                         val motion = motions[entityId] ?: continue
@@ -131,6 +135,13 @@ object PhysicsNetCodecs {
                         w.writeInt(respawn.rocket.rough.raw.toInt())
                         w.writeInt(respawn.rocket.shape.wireValue)
                     }
+                    for (event in crashImpactAudioEvents) {
+                        w.writeInt(event.entityId.value)
+                        w.writeInt(event.pos.x.raw)
+                        w.writeInt(event.pos.y.raw)
+                        w.writeInt(event.damageRaw.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt())
+                        w.writeInt(if (event.destroyed) 1 else 0)
+                    }
                 }
                 return w.toByteArray()
             }
@@ -141,10 +152,19 @@ object PhysicsNetCodecs {
                 require(n in 0..MAX_STATE_ENTITIES) { "Invalid entity count: $n" }
                 val respawnCount = c.readInt()
                 require(respawnCount >= 0) { "Invalid respawn count: $respawnCount" }
+                val crashAudioEventCount = c.readInt()
+                require(crashAudioEventCount in 0..MAX_STATE_CRASH_AUDIO_EVENTS) {
+                    "Invalid crash audio event count: $crashAudioEventCount"
+                }
                 val expectedSize =
-                    (STATE_HEADER_INT_COUNT + (n * STATE_ENTITY_INT_COUNT) + (respawnCount * STATE_RESPAWN_INT_COUNT)) * STATE_INT_BYTES
+                    (
+                        STATE_HEADER_INT_COUNT +
+                            (n * STATE_ENTITY_INT_COUNT) +
+                            (respawnCount * STATE_RESPAWN_INT_COUNT) +
+                            (crashAudioEventCount * STATE_CRASH_AUDIO_EVENT_INT_COUNT)
+                        ) * STATE_INT_BYTES
                 require(bytes.size == expectedSize) {
-                    "Invalid state payload size: expected $expectedSize bytes for $n entities + $respawnCount respawns, got ${bytes.size}"
+                    "Invalid state payload size: expected $expectedSize bytes for $n entities + $respawnCount respawns + $crashAudioEventCount crash events, got ${bytes.size}"
                 }
                 val entities = mutableSetOf<Int>()
                 val playerEntities = LinkedHashMap<PlayerId, EntityId>()
@@ -164,6 +184,7 @@ object PhysicsNetCodecs {
                 val particles = LinkedHashMap<EntityId, ParticleComponent>()
                 val damages = LinkedHashMap<EntityId, DamageComponent>()
                 val pendingRespawns = LinkedHashMap<PlayerId, PlayerRespawnState>()
+                val crashImpactAudioEvents = ArrayList<CrashImpactAudioEvent>(crashAudioEventCount)
                 repeat(n) {
                     val entityId = EntityId(c.readInt())
                     val playerIdRaw = c.readInt()
@@ -296,6 +317,20 @@ object PhysicsNetCodecs {
                             ),
                         )
                 }
+                repeat(crashAudioEventCount) {
+                    val entityId = EntityId(c.readInt())
+                    val x = c.readInt()
+                    val y = c.readInt()
+                    val damageRaw = c.readInt()
+                    val destroyedRaw = c.readInt()
+                    crashImpactAudioEvents +=
+                        CrashImpactAudioEvent(
+                            entityId = entityId,
+                            pos = Coord2.raw(x, y),
+                            damageRaw = damageRaw.toLong(),
+                            destroyed = destroyedRaw != 0,
+                        )
+                }
                 return PhysicsSnapshot(
                     world = EcsWorld(
                         entities = entities,
@@ -317,6 +352,7 @@ object PhysicsNetCodecs {
                     particles = ComponentTable.fromMap(particles),
                     damages = ComponentTable.fromMap(damages),
                     pendingRespawns = pendingRespawns,
+                    crashImpactAudioEvents = crashImpactAudioEvents,
                 ).mutable
             }
         }

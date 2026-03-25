@@ -3,6 +3,7 @@ package org.emerge.sim.core.physics.systems
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.CrashImpactAudioEvent
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Contact
@@ -31,6 +32,7 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         val motions = LinkedHashMap(state.raw.motions.asMap())
         val landings = LinkedHashMap(state.raw.landings.asMap())
         val damages = LinkedHashMap(state.raw.damages.asMap())
+        val crashImpactAudioEvents = ArrayList<CrashImpactAudioEvent>()
         val playersToRespawn = LinkedHashSet<PlayerId>()
         val ids = state.raw.materials.keys().toList()
         for (i in 0 until ids.size) {
@@ -63,24 +65,32 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val minDist = contact.minDist
                 val pen = contact.penetration
                 val impactSpeed = (bMotion.vel - aMotion.vel).len
-                accumulateShipCollisionDamage(
+                val aCrashEvent = accumulateShipCollisionDamage(
                     state = state,
                     damages = damages,
                     playersToRespawn = playersToRespawn,
                     entityId = aId,
+                    entityPos = aTransform.pos,
                     shape = aShape,
                     impactSpeed = impactSpeed,
                     cfg = cfg,
                 )
-                accumulateShipCollisionDamage(
+                if (aCrashEvent != null) {
+                    crashImpactAudioEvents += aCrashEvent
+                }
+                val bCrashEvent = accumulateShipCollisionDamage(
                     state = state,
                     damages = damages,
                     playersToRespawn = playersToRespawn,
                     entityId = bId,
+                    entityPos = bTransform.pos,
                     shape = bShape,
                     impactSpeed = impactSpeed,
                     cfg = cfg,
                 )
+                if (bCrashEvent != null) {
+                    crashImpactAudioEvents += bCrashEvent
+                }
 
                 // Each collision pair can land in either direction: a-on-b or b-on-a.
                 val aLanding = tryLand(
@@ -163,6 +173,7 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             motions = ComponentTable.fromMap(motions),
             landings = ComponentTable.fromMap(landings),
             damages = ComponentTable.fromMap(damages),
+            crashImpactAudioEvents = crashImpactAudioEvents,
         )
         for (playerId in playersToRespawn) {
             state.queuePlayerRespawn(playerId, cfg.shipRespawnTicks)
@@ -174,22 +185,37 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         damages: MutableMap<org.emerge.sim.core.EntityId, DamageComponent>,
         playersToRespawn: MutableSet<PlayerId>,
         entityId: org.emerge.sim.core.EntityId,
+        entityPos: org.emerge.sim.core.physics.primitives.Coord2,
         shape: RenderShapeComponent,
         impactSpeed: Frac,
         cfg: PhysicsConfig,
-    ) {
-        if (shape.shape != BodyShape.TRIANGLE) return
-        val owner = state.raw.playerOwned[entityId]?.playerId ?: return
-        if (playersToRespawn.contains(owner)) return
+    ): CrashImpactAudioEvent? {
+        if (shape.shape != BodyShape.TRIANGLE) return null
+        val owner = state.raw.playerOwned[entityId]?.playerId ?: return null
+        if (playersToRespawn.contains(owner)) return null
         val speedOverThreshold = impactSpeed - cfg.shipCollisionDamageThreshold
-        if (speedOverThreshold.sign <= 0) return
+        if (speedOverThreshold.sign <= 0) return null
+        val impactDamageRaw = (speedOverThreshold * cfg.shipCollisionDamageScale).raw
+        if (impactDamageRaw <= 0L) return null
         val currentDamage = damages[entityId]?.damage ?: Frac(0)
-        val nextDamage = currentDamage + speedOverThreshold * cfg.shipCollisionDamageScale
+        val nextDamage = currentDamage + Frac(impactDamageRaw)
         if (nextDamage.raw >= cfg.shipMaxDamage.raw) {
             playersToRespawn += owner
             damages.remove(entityId)
+            return CrashImpactAudioEvent(
+                entityId = entityId,
+                pos = entityPos,
+                damageRaw = impactDamageRaw,
+                destroyed = true,
+            )
         } else {
             damages[entityId] = DamageComponent(damage = nextDamage)
+            return CrashImpactAudioEvent(
+                entityId = entityId,
+                pos = entityPos,
+                damageRaw = impactDamageRaw,
+                destroyed = false,
+            )
         }
     }
 
