@@ -32,9 +32,9 @@ data class PhysicsConfig(
     val thrustFactorInv: Int = Int.MAX_VALUE / (1024 * 32),
     val turnFactorInv: Int = Int.MAX_VALUE / (1024 * 512),
     val gravityNumerator: Frac = Frac(1,16),
-    val shipCollisionDamageThreshold: Frac = Frac(1),
+    val shipCollisionDamageThreshold: Frac = Frac(1, 1024 * 8),
     val shipCollisionDamageScale: Frac = Frac(1, 1),
-    val shipMaxDamage: Frac = Frac(1, 1024),
+    val shipMaxDamage: Frac = Frac(1, 256),
     val shipRespawnTicks: Int = 60 * 5,
 )
 
