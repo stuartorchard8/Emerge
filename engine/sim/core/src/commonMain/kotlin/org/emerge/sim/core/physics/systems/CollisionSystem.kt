@@ -46,7 +46,6 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             for (j in i + 1 until ids.size) {
                 val aId = ids[i]
                 val bId = ids[j]
-                if (landings.containsKey(aId) || landings.containsKey(bId)) continue
                 val aTransform = transforms[aId] ?: continue
                 val bTransform = transforms[bId] ?: continue
                 val aMotion = motions[aId] ?: continue
@@ -71,9 +70,50 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val tangent = contact.tangent
                 val minDist = contact.minDist
                 val pen = contact.penetration
+                val aLanding = landings[aId]
+                val bLanding = landings[bId]
+                if (aLanding != null || bLanding != null) {
+                    val aCrushEvent = crushLandedShipIfPinnedByPlanet(
+                        state = state,
+                        cfg = cfg,
+                        damages = damages,
+                        playersToRespawn = playersToRespawn,
+                        entityId = aId,
+                        entityTransform = aTransform,
+                        entityShape = aShape,
+                        landing = aLanding,
+                        otherEntityId = bId,
+                    )
+                    if (aCrushEvent != null) {
+                        crashImpactAudioEvents += aCrushEvent
+                        val teamId = state.raw.teams[aId]?.teamId
+                        if (teamId != null) {
+                            destructionBursts += DestructionBurstSpec(pos = aTransform.pos, vel = aMotion.vel, teamId = teamId)
+                        }
+                    }
+                    val bCrushEvent = crushLandedShipIfPinnedByPlanet(
+                        state = state,
+                        cfg = cfg,
+                        damages = damages,
+                        playersToRespawn = playersToRespawn,
+                        entityId = bId,
+                        entityTransform = bTransform,
+                        entityShape = bShape,
+                        landing = bLanding,
+                        otherEntityId = aId,
+                    )
+                    if (bCrushEvent != null) {
+                        crashImpactAudioEvents += bCrushEvent
+                        val teamId = state.raw.teams[bId]?.teamId
+                        if (teamId != null) {
+                            destructionBursts += DestructionBurstSpec(pos = bTransform.pos, vel = bMotion.vel, teamId = teamId)
+                        }
+                    }
+                    continue
+                }
 
                 // Each collision pair can land in either direction: a-on-b or b-on-a.
-                val aLanding = tryLand(
+                val aLandingAttempt = tryLand(
                     supportId = bId,
                     rocketShape = aShape,
                     rocketControl = aControl,
@@ -83,12 +123,12 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                     landingNormal = normal,
                     minDist = minDist,
                 )
-                if (aLanding != null) {
-                    landings[aId] = aLanding
+                if (aLandingAttempt != null) {
+                    landings[aId] = aLandingAttempt
                     motions[aId] = bMotion
                     continue
                 }
-                val bLanding = tryLand(
+                val bLandingAttempt = tryLand(
                     supportId = aId,
                     rocketShape = bShape,
                     rocketControl = bControl,
@@ -98,8 +138,8 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                     landingNormal = -normal,
                     minDist = minDist,
                 )
-                if (bLanding != null) {
-                    landings[bId] = bLanding
+                if (bLandingAttempt != null) {
+                    landings[bId] = bLandingAttempt
                     motions[bId] = aMotion
                     continue
                 }
@@ -299,6 +339,32 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 teamId = burst.teamId,
             )
         }
+    }
+
+    private fun crushLandedShipIfPinnedByPlanet(
+        state: PhysicsState,
+        cfg: PhysicsConfig,
+        damages: MutableMap<org.emerge.sim.core.EntityId, DamageComponent>,
+        playersToRespawn: MutableSet<PlayerId>,
+        entityId: org.emerge.sim.core.EntityId,
+        entityTransform: TransformComponent,
+        entityShape: RenderShapeComponent,
+        landing: LandingAttachmentComponent?,
+        otherEntityId: org.emerge.sim.core.EntityId,
+    ): CrashImpactAudioEvent? {
+        if (landing == null) return null
+        if (landing.parentEntityId == otherEntityId) return null
+        if (entityShape.shape != BodyShape.TRIANGLE) return null
+        if (state.raw.planets[otherEntityId] == null) return null
+        val owner = state.raw.playerOwned[entityId]?.playerId ?: return null
+        if (!playersToRespawn.add(owner)) return null
+        damages.remove(entityId)
+        return CrashImpactAudioEvent(
+            entityId = entityId,
+            pos = entityTransform.pos,
+            damageRaw = cfg.shipMaxDamage.raw,
+            destroyed = true,
+        )
     }
 
     private data class DestructionBurstSpec(
