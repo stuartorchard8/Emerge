@@ -9,19 +9,21 @@ import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
 
 /**
- * Deterministic lockstep host.
+ * Hybrid lockstep / authoritative host.
  *
- * Each tick the host collects all players' inputs, broadcasts the full input set to every client,
- * then advances its own simulation. Clients run the same reducer locally with the received inputs,
- * keeping all machines in sync without transmitting world-state snapshots every frame.
+ * Supports two client modes simultaneously:
  *
- * Full state is only sent on join (Welcome) and on player join/leave (Resync) so that all clients
- * incorporate the state mutation from the join/leave policy.
+ * - **Lockstep** clients run the simulation locally and only receive the per-tick input bundle
+ *   (~17 bytes per player). They are the cheapest to serve.
+ * - **Thin** clients defer simulation entirely to the host and receive periodic full-state
+ *   snapshots. This is heavier on bandwidth but allows low-end devices to participate.
+ *
+ * Full state is always sent on join (Welcome) and on player join/leave (Resync to all clients).
  *
  * Threading: [acceptClient], [pollNetwork], [setLocalInput], and [step] must all be called from
  * the same thread (the game-loop thread). Connection acceptance (blocking on TCP) should happen on
- * a separate thread; once the Hello handshake is complete, pass the pipe to [acceptClient] on the
- * main thread.
+ * a separate thread; once the Hello handshake is complete, pass the pipe and parsed [ClientMode] to
+ * [acceptClient] on the main thread.
  */
 class LockstepHost<C, S, I>(
     cfg: C,
@@ -31,10 +33,13 @@ class LockstepHost<C, S, I>(
     private val stateCodec: StateCodec<S>,
     private val joinPolicy: (S, PlayerId) -> Unit,
     private val leavePolicy: (S, PlayerId) -> Unit = { _, _ -> },
+    private val thinSnapshotEveryTicks: Int = 1,
 ) {
+    private data class ClientEntry(val pipe: Pipe, val mode: ClientMode)
+
     private val stepper = TickStepper(cfg = cfg, initialState = initialState, reducer = reducer)
 
-    private val clientsById = LinkedHashMap<PlayerId, Pipe>()
+    private val clientsById = LinkedHashMap<PlayerId, ClientEntry>()
     private val lastInputById = LinkedHashMap<PlayerId, I>()
 
     private var nextPlayerId: Int = 1
@@ -48,7 +53,7 @@ class LockstepHost<C, S, I>(
      * Applies the join policy, sends a Welcome (with full state) to the new client, and sends a
      * Resync to all existing clients so they pick up the state mutation.
      */
-    fun acceptClient(pipe: Pipe): PlayerId {
+    fun acceptClient(pipe: Pipe, mode: ClientMode = ClientMode.LOCKSTEP): PlayerId {
         val pid = PlayerId(nextPlayerId++)
         joinPolicy(stepper.state, pid)
 
@@ -62,24 +67,24 @@ class LockstepHost<C, S, I>(
 
         broadcastResync(stateBytes)
 
-        clientsById[pid] = pipe
+        clientsById[pid] = ClientEntry(pipe, mode)
         return pid
     }
 
     fun pollNetwork() {
         val disconnected = ArrayList<PlayerId>()
-        for ((pid, pipe) in clientsById) {
-            if (!pipe.isOpen()) {
+        for ((pid, entry) in clientsById) {
+            if (!entry.pipe.isOpen()) {
                 disconnected += pid
                 continue
             }
             while (true) {
-                val pkt = pipe.receive() ?: break
+                val pkt = entry.pipe.receive() ?: break
                 val msg = LockstepProtocol.decodeInput(pkt) ?: continue
                 if (msg.playerId != pid) continue
                 lastInputById[pid] = inputCodec.decode(msg.payload)
             }
-            if (!pipe.isOpen()) {
+            if (!entry.pipe.isOpen()) {
                 disconnected += pid
             }
         }
@@ -98,39 +103,67 @@ class LockstepHost<C, S, I>(
     }
 
     /**
-     * Broadcast all collected inputs to every client, then advance the local simulation by one tick.
+     * Broadcast to all connected clients, then advance the local simulation by one tick.
+     *
+     * - Lockstep clients receive a [LockstepProtocol.TickInputs] bundle.
+     * - Thin clients receive a [LockstepProtocol.Resync] snapshot every [thinSnapshotEveryTicks] ticks.
      */
     fun step() {
         val inputs = LinkedHashMap<PlayerId, I>(lastInputById)
 
-        val encodedInputs = LinkedHashMap<PlayerId, ByteArray>(inputs.size)
-        for ((pid, input) in inputs) {
-            encodedInputs[pid] = inputCodec.encode(input)
-        }
-        val tickInputs = LockstepProtocol.TickInputs(tick = tick, inputs = encodedInputs)
-        val encoded = LockstepProtocol.encodeTickInputs(tickInputs)
-        for ((_, pipe) in clientsById) {
-            pipe.send(encoded)
+        val hasLockstepClients = clientsById.values.any { it.mode == ClientMode.LOCKSTEP }
+        val hasThinClients = clientsById.values.any { it.mode == ClientMode.THIN }
+
+        if (hasLockstepClients) {
+            val encodedInputs = LinkedHashMap<PlayerId, ByteArray>(inputs.size)
+            for ((pid, input) in inputs) {
+                encodedInputs[pid] = inputCodec.encode(input)
+            }
+            val encoded = LockstepProtocol.encodeTickInputs(
+                LockstepProtocol.TickInputs(tick = tick, inputs = encodedInputs),
+            )
+            for ((_, entry) in clientsById) {
+                if (entry.mode == ClientMode.LOCKSTEP) {
+                    entry.pipe.send(encoded)
+                }
+            }
         }
 
         stepper.step(inputs)
+
+        if (hasThinClients && thinSnapshotEveryTicks > 0) {
+            if ((tick.value % thinSnapshotEveryTicks.toLong()) == 0L) {
+                val encoded = LockstepProtocol.encodeResync(
+                    LockstepProtocol.Resync(tick = tick, stateBytes = stateCodec.encode(stepper.state)),
+                )
+                for ((_, entry) in clientsById) {
+                    if (entry.mode == ClientMode.THIN) {
+                        entry.pipe.send(encoded)
+                    }
+                }
+            }
+        }
     }
 
     private fun broadcastResync(stateBytes: ByteArray) {
         if (clientsById.isEmpty()) return
         val resync = LockstepProtocol.Resync(tick = tick, stateBytes = stateBytes)
         val encoded = LockstepProtocol.encodeResync(resync)
-        for ((_, pipe) in clientsById) {
-            pipe.send(encoded)
+        for ((_, entry) in clientsById) {
+            entry.pipe.send(encoded)
         }
     }
 
     companion object {
         /**
          * Returns true if [packet] is a valid Hello handshake message.
-         * Useful for accept threads that need to complete the Hello exchange before handing
-         * the pipe to [acceptClient] on the main thread.
          */
-        fun isHello(packet: ByteArray): Boolean = LockstepProtocol.decodeHello(packet) != null
+        fun isHello(packet: ByteArray): Boolean = parseHello(packet) != null
+
+        /**
+         * Parses a Hello packet and returns the requested [ClientMode], or null if invalid.
+         */
+        fun parseHello(packet: ByteArray): ClientMode? =
+            LockstepProtocol.decodeHello(packet)?.clientMode
     }
 }

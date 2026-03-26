@@ -12,7 +12,7 @@ internal object LockstepProtocol {
     private const val TICK_INPUTS: Byte = 4
     private const val RESYNC: Byte = 5
 
-    data class Hello(val wantPlayerName: String? = null)
+    data class Hello(val clientMode: ClientMode = ClientMode.LOCKSTEP)
 
     data class Welcome(val playerId: PlayerId, val tick: Tick, val stateBytes: ByteArray)
 
@@ -27,18 +27,22 @@ internal object LockstepProtocol {
     fun encodeHello(msg: Hello): ByteArray {
         val w = ByteWriter()
         w.writeByte(HELLO)
-        w.writeInt(0)
+        w.writeInt(0) // nameLen, reserved
+        w.writeByte(msg.clientMode.ordinal.toByte())
         return w.toByteArray()
     }
 
     fun decodeHello(packet: ByteArray): Hello? {
         val c = ByteCursor(packet)
-        if (c.remaining() < 1 + 4) return null
+        if (c.remaining() < 1 + 4 + 1) return null
         if (c.readByte() != HELLO) return null
         val nameLen = c.readInt()
         if (nameLen != 0) return null
+        val modeByte = c.readByte().toInt()
+        val entries = ClientMode.entries
+        if (modeByte < 0 || modeByte >= entries.size) return null
         if (c.remaining() != 0) return null
-        return Hello()
+        return Hello(clientMode = entries[modeByte])
     }
 
     // ── Welcome ──

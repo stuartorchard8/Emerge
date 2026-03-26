@@ -79,11 +79,7 @@ class AndroidLauncherView(
 
         // Prefill selections
         modeSpinner.setSelection(
-            when (initial.mode) {
-                LaunchMode.LOCAL -> 0
-                LaunchMode.HOST -> 1
-                LaunchMode.JOIN -> 2
-            },
+            LaunchMode.entries.indexOf(initial.mode).coerceAtLeast(0),
         )
         gameModeSpinner.setSelection(
             GameMode.entries.indexOf(initial.gameMode).coerceAtLeast(0),
@@ -122,15 +118,12 @@ class AndroidLauncherView(
         }
 
     private fun syncEnabledFields() {
-        hostIpField.isEnabled = selectedMode() == LaunchMode.JOIN
+        val mode = selectedMode()
+        hostIpField.isEnabled = mode == LaunchMode.JOIN || mode == LaunchMode.JOIN_THIN
     }
 
     private fun selectedMode(): LaunchMode =
-        when (modeSpinner.selectedItemPosition) {
-            1 -> LaunchMode.HOST
-            2 -> LaunchMode.JOIN
-            else -> LaunchMode.LOCAL
-        }
+        LaunchMode.entries.getOrElse(modeSpinner.selectedItemPosition) { LaunchMode.LOCAL }
 
     private fun selectedGameMode(): GameMode =
         GameMode.entries.getOrElse(gameModeSpinner.selectedItemPosition) { GameMode.PVP }
@@ -138,11 +131,13 @@ class AndroidLauncherView(
     private fun readSettings(): LaunchSettings {
         val port = portField.text.toString().trim().toIntOrNull() ?: 7777
         val hostIp = hostIpField.text.toString().trim().ifBlank { "127.0.0.1" }
-        return LaunchSettings(
+        val settings = LaunchSettings(
             mode = selectedMode(),
             gameMode = selectedGameMode(),
             hostIp = hostIp,
             port = port,
         )
+        MainActivity.saveSettings(context, settings)
+        return settings
     }
 }

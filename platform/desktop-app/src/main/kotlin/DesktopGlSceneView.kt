@@ -39,6 +39,13 @@ object DesktopGlSceneView {
             )
             runGl("Emerge join (${settings.hostIp}:${settings.port})", controller)
         }.start()
+        LaunchMode.JOIN_THIN -> Thread {
+            val controller = PhysicsThinJoinController(
+                hostIp = settings.hostIp,
+                port = settings.port,
+            )
+            runGl("Emerge thin (${settings.hostIp}:${settings.port})", controller)
+        }.start()
     }
 
     private fun runGl(title: String, controller: PhysicsController) {

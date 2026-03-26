@@ -2,9 +2,7 @@ package org.emerge.sim.sync.lockstep
 
 import org.emerge.net.api.Pipe
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.Tick
-import org.emerge.sim.core.TickStepper
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
 import kotlin.time.Duration
@@ -13,16 +11,14 @@ import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
 /**
- * Deterministic lockstep client.
+ * Thin (server-authoritative) client.
  *
- * Connects to a [LockstepHost], sends its own input each tick, and advances the local simulation
- * whenever a TickInputs bundle arrives from the host. The simulation is never replaced wholesale
- * except on the initial Welcome or an explicit Resync (player join/leave).
+ * Defers the entire simulation to the host. The client sends its inputs and receives periodic
+ * full-state snapshots — no local physics stepping required. This allows low-end devices to
+ * participate at the cost of higher bandwidth and one extra round-trip of perceived latency.
  */
-class LockstepClient<C, S, I>(
-    cfg: C,
+class ThinClient<S, I>(
     initialState: S,
-    reducer: SimReducer<C, S, I>,
     private val pipe: Pipe,
     private val inputCodec: Codec<I>,
     private val stateCodec: StateCodec<S>,
@@ -36,14 +32,17 @@ class LockstepClient<C, S, I>(
         CONNECTED,
     }
 
-    private val stepper = TickStepper(cfg = cfg, initialState = initialState, reducer = reducer)
-
     @Volatile
     var playerId: PlayerId? = null
         private set
 
-    val tick: Tick get() = stepper.tick
-    val state: S get() = stepper.state
+    @Volatile
+    var tick: Tick = Tick(0)
+        private set
+
+    @Volatile
+    var state: S = initialState
+        private set
 
     @Volatile
     var connectionState: ConnectionState = ConnectionState.DISCONNECTED
@@ -60,7 +59,7 @@ class LockstepClient<C, S, I>(
 
     fun startHandshake(force: Boolean = false) {
         if (!force && connectionState != ConnectionState.DISCONNECTED) return
-        pipe.send(LockstepProtocol.encodeHello(LockstepProtocol.Hello(clientMode = ClientMode.LOCKSTEP)))
+        pipe.send(LockstepProtocol.encodeHello(LockstepProtocol.Hello(clientMode = ClientMode.THIN)))
         handshakeSentAt = timeSource.markNow()
         connectionState = ConnectionState.HANDSHAKING
     }
@@ -68,26 +67,54 @@ class LockstepClient<C, S, I>(
     /**
      * Drain all pending packets from the host.
      *
-     * - Welcome → reset simulation state to the host's state (initial join).
-     * - Resync  → reset simulation state (player join/leave caused a state mutation).
-     * - TickInputs → decode the input bundle and step the local simulation.
-     *
-     * Multiple TickInputs in a single poll call are each applied in order, allowing the client
-     * to catch up if it falls behind.
+     * - Welcome → replace state (initial join).
+     * - Resync  → replace state (periodic snapshot or player join/leave).
+     * - TickInputs are ignored — the thin client does not run the simulation.
      */
     fun poll() {
+        var latestWelcome: LockstepProtocol.Welcome? = null
+        var latestResync: LockstepProtocol.Resync? = null
         while (true) {
             val pkt = pipe.receive() ?: break
             lastPacketAt = timeSource.markNow()
 
             val msg = LockstepProtocol.decode(pkt) ?: continue
             when (msg) {
-                is LockstepProtocol.Welcome -> handleWelcome(msg)
-                is LockstepProtocol.Resync -> handleResync(msg)
-                is LockstepProtocol.TickInputs -> handleTickInputs(msg)
+                is LockstepProtocol.Welcome -> latestWelcome = msg
+                is LockstepProtocol.Resync -> latestResync = msg
                 else -> {}
             }
         }
+
+        if (latestWelcome != null) {
+            val welcome = latestWelcome
+            playerId = welcome.playerId
+            val decoded = try {
+                stateCodec.decode(welcome.stateBytes)
+            } catch (t: Throwable) {
+                disconnect("invalid welcome state: ${t.javaClass.simpleName}")
+                checkTimeouts()
+                return
+            }
+            tick = welcome.tick
+            state = decoded
+            connectionState = ConnectionState.CONNECTED
+        }
+
+        if (latestResync != null) {
+            val resync = latestResync
+            val decoded = try {
+                stateCodec.decode(resync.stateBytes)
+            } catch (t: Throwable) {
+                disconnect("invalid resync state: ${t.javaClass.simpleName}")
+                checkTimeouts()
+                return
+            }
+            tick = resync.tick
+            state = decoded
+            if (playerId != null) connectionState = ConnectionState.CONNECTED
+        }
+
         checkTimeouts()
     }
 
@@ -104,37 +131,6 @@ class LockstepClient<C, S, I>(
         lastDisconnectReason = reason
         handshakeSentAt = null
         lastPacketAt = null
-    }
-
-    private fun handleWelcome(msg: LockstepProtocol.Welcome) {
-        playerId = msg.playerId
-        val decoded = try {
-            stateCodec.decode(msg.stateBytes)
-        } catch (t: Throwable) {
-            disconnect("invalid welcome state: ${t.javaClass.simpleName}")
-            return
-        }
-        stepper.reset(decoded, msg.tick)
-        connectionState = ConnectionState.CONNECTED
-    }
-
-    private fun handleResync(msg: LockstepProtocol.Resync) {
-        val decoded = try {
-            stateCodec.decode(msg.stateBytes)
-        } catch (t: Throwable) {
-            disconnect("invalid resync state: ${t.javaClass.simpleName}")
-            return
-        }
-        stepper.reset(decoded, msg.tick)
-    }
-
-    private fun handleTickInputs(msg: LockstepProtocol.TickInputs) {
-        if (connectionState != ConnectionState.CONNECTED) return
-        val inputs = LinkedHashMap<PlayerId, I>(msg.inputs.size)
-        for ((pid, bytes) in msg.inputs) {
-            inputs[pid] = inputCodec.decode(bytes)
-        }
-        stepper.step(inputs)
     }
 
     private fun checkTimeouts() {

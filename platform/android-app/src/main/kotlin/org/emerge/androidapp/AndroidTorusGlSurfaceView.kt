@@ -12,6 +12,7 @@ import org.emerge.demo.physics.LaunchSettings
 import org.emerge.demo.physics.PhysicsController
 import org.emerge.demo.physics.PhysicsHostController
 import org.emerge.demo.physics.PhysicsJoinController
+import org.emerge.demo.physics.PhysicsThinJoinController
 import org.emerge.demo.physics.PhysicsFrame
 import org.emerge.demo.physics.audio.CrashAudioSystem
 import org.emerge.demo.physics.createDefaultInitialState
@@ -306,6 +307,7 @@ internal class AndroidTorusGlSurfaceView(
             LaunchMode.HOST -> PhysicsHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = true)
             LaunchMode.LOCAL -> PhysicsHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = false)
             LaunchMode.JOIN -> PhysicsJoinController(hostIp = settings.hostIp, port = settings.port)
+            LaunchMode.JOIN_THIN -> PhysicsThinJoinController(hostIp = settings.hostIp, port = settings.port)
         }
 
     private fun publishFrame(frame: PhysicsFrame) {
@@ -323,7 +325,9 @@ internal class AndroidTorusGlSurfaceView(
             LaunchMode.LOCAL,
             -> PlayerId(0)
 
-            LaunchMode.JOIN -> null
+            LaunchMode.JOIN,
+            LaunchMode.JOIN_THIN,
+            -> null
         }
 
     companion object {

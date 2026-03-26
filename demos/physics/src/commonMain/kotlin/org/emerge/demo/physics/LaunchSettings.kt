@@ -17,6 +17,7 @@ enum class LaunchMode {
     LOCAL,
     HOST,
     JOIN,
+    JOIN_THIN,
 }
 
 enum class GameMode {

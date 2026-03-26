@@ -10,6 +10,7 @@ import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
+import org.emerge.sim.sync.lockstep.ClientMode
 import org.emerge.sim.sync.lockstep.LockstepHost
 import org.emerge.net.api.Pipe
 
@@ -35,11 +36,9 @@ class PhysicsHostController(
         leavePolicy = { state, playerId -> state.removePlayerRocket(playerId) },
     )
 
-    /**
-     * Pipes that have completed the Hello handshake on the accept thread and are waiting to be
-     * processed on the main game-loop thread.
-     */
-    private val readyClients = ArrayList<Pipe>()
+    private data class ReadyClient(val pipe: Pipe, val mode: ClientMode)
+
+    private val readyClients = ArrayList<ReadyClient>()
     private val readyClientsLock = Any()
 
     @Volatile private var netStatus: String =
@@ -57,9 +56,10 @@ class PhysicsHostController(
                 val listener = Tcp.listen(port = port, backlog = 8)
                 while (true) {
                     val pipe = listener.accept()
-                    if (awaitHello(pipe)) {
+                    val mode = awaitHello(pipe)
+                    if (mode != null) {
                         synchronized(readyClientsLock) {
-                            readyClients.add(pipe)
+                            readyClients.add(ReadyClient(pipe, mode))
                         }
                     }
                 }
@@ -83,31 +83,28 @@ class PhysicsHostController(
     }
 
     private fun processReadyClients() {
-        val snapshot: List<Pipe>
+        val snapshot: List<ReadyClient>
         synchronized(readyClientsLock) {
             if (readyClients.isEmpty()) return
             snapshot = ArrayList(readyClients)
             readyClients.clear()
         }
-        for (pipe in snapshot) {
-            host.acceptClient(pipe)
-            netStatus = "net: client joined"
+        for ((pipe, mode) in snapshot) {
+            host.acceptClient(pipe, mode)
+            netStatus = "net: client joined (${mode.name.lowercase()})"
         }
     }
 
     companion object {
-        /**
-         * Block until the remote end sends a valid Hello, or the pipe closes.
-         */
-        private fun awaitHello(pipe: Pipe): Boolean {
+        private fun awaitHello(pipe: Pipe): ClientMode? {
             while (pipe.isOpen()) {
                 val pkt = pipe.receive()
                 if (pkt != null) {
-                    return LockstepHost.isHello(pkt)
+                    return LockstepHost.parseHello(pkt)
                 }
                 Thread.sleep(1L)
             }
-            return false
+            return null
         }
     }
 }

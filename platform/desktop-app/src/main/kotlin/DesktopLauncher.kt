@@ -14,6 +14,7 @@ import javax.swing.JFrame
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JTextField
+import java.util.prefs.Preferences
 
 class DesktopLauncher {
     private val modeBox = JComboBox(LaunchMode.entries.map(LaunchMode::name).toTypedArray())
@@ -69,24 +70,21 @@ class DesktopLauncher {
     }
 
     fun show() {
-        val defaultLaunchSettings = LaunchSettings()
-        modeBox.selectedItem = defaultLaunchSettings.mode.name
-        gameModeBox.selectedItem = defaultLaunchSettings.gameMode.name
-        hostIpField.text = defaultLaunchSettings.hostIp
-        portField.text = defaultLaunchSettings.port.toString()
+        val saved = loadSavedSettings()
+        modeBox.selectedItem = saved.mode.name
+        gameModeBox.selectedItem = saved.gameMode.name
+        hostIpField.text = saved.hostIp
+        portField.text = saved.port.toString()
         frame.isVisible = true
     }
 
     private fun syncEnabledFields() {
-        hostIpField.isEnabled = (selectedMode() == LaunchMode.JOIN)
+        val mode = selectedMode()
+        hostIpField.isEnabled = mode == LaunchMode.JOIN || mode == LaunchMode.JOIN_THIN
     }
 
     private fun selectedMode(): LaunchMode =
-        when (modeBox.selectedIndex) {
-            1 -> LaunchMode.HOST
-            2 -> LaunchMode.JOIN
-            else -> LaunchMode.LOCAL
-        }
+        LaunchMode.entries.getOrElse(modeBox.selectedIndex) { LaunchMode.LOCAL }
 
     private fun selectedGameMode(): GameMode =
         GameMode.entries.getOrElse(gameModeBox.selectedIndex) { GameMode.PVP }
@@ -94,11 +92,39 @@ class DesktopLauncher {
     private fun readSettings(): LaunchSettings {
         val port = portField.text.trim().toIntOrNull() ?: 7777
         val hostIp = hostIpField.text.trim().ifBlank { "127.0.0.1" }
-        return LaunchSettings(
+        val settings = LaunchSettings(
             mode = selectedMode(),
             gameMode = selectedGameMode(),
             hostIp = hostIp,
             port = port,
         )
+        saveSettings(settings)
+        return settings
+    }
+
+    companion object {
+        private val prefs: Preferences = Preferences.userNodeForPackage(DesktopLauncher::class.java)
+        private const val KEY_MODE = "mode"
+        private const val KEY_GAME_MODE = "gameMode"
+        private const val KEY_HOST_IP = "hostIp"
+        private const val KEY_PORT = "port"
+
+        fun loadSavedSettings(): LaunchSettings {
+            val defaults = LaunchSettings()
+            return LaunchSettings(
+                mode = runCatching { LaunchMode.valueOf(prefs.get(KEY_MODE, defaults.mode.name)) }.getOrDefault(defaults.mode),
+                gameMode = runCatching { GameMode.valueOf(prefs.get(KEY_GAME_MODE, defaults.gameMode.name)) }.getOrDefault(defaults.gameMode),
+                hostIp = prefs.get(KEY_HOST_IP, defaults.hostIp),
+                port = prefs.getInt(KEY_PORT, defaults.port),
+            )
+        }
+
+        private fun saveSettings(settings: LaunchSettings) {
+            prefs.put(KEY_MODE, settings.mode.name)
+            prefs.put(KEY_GAME_MODE, settings.gameMode.name)
+            prefs.put(KEY_HOST_IP, settings.hostIp)
+            prefs.putInt(KEY_PORT, settings.port)
+            prefs.flush()
+        }
     }
 }
