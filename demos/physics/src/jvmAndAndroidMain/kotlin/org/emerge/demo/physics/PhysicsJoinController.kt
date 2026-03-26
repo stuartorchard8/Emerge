@@ -5,23 +5,29 @@ import org.emerge.net.api.DelegatingPipe
 import org.emerge.net.tcp.Tcp
 import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.physics.PhysicsConfig
+import org.emerge.sim.core.physics.PhysicsReducer
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
-import org.emerge.sim.sync.auth.AuthoritativeClient
-import org.emerge.sim.sync.auth.StateCodec
+import org.emerge.sim.sync.StateCodec
+import org.emerge.sim.sync.lockstep.LockstepClient
 import kotlin.time.Duration.Companion.seconds
 
-class PhysicsAuthoritativeJoinController(
+class PhysicsJoinController(
     private val hostIp: String,
     private val port: Int,
-) : PhysicsAuthoritativeController() {
+) : PhysicsController() {
+    private val cfg = PhysicsConfig()
+    private val reducer = PhysicsReducer()
     private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
     private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
 
     private val remote = DelegatingPipe()
-    private val client = AuthoritativeClient(
+    private val client = LockstepClient(
+        cfg = cfg,
         initialState = createDefaultInitialState(),
+        reducer = reducer,
         pipe = remote,
         inputCodec = inputCodec,
         stateCodec = stateCodec,
@@ -42,9 +48,7 @@ class PhysicsAuthoritativeJoinController(
         thread(isDaemon = true, name = "net-connect") {
             var attempt = 0
             while (true) {
-                // Important: only attempt (re)connect when the client is fully disconnected.
-                // If we swap the underlying pipe while handshaking, we can miss the WELCOME packet.
-                if (client.connectionState != AuthoritativeClient.ConnectionState.DISCONNECTED) {
+                if (client.connectionState != LockstepClient.ConnectionState.DISCONNECTED) {
                     try {
                         Thread.sleep(50L)
                     } catch (_: InterruptedException) {
@@ -59,7 +63,7 @@ class PhysicsAuthoritativeJoinController(
                     remote.setDelegate(Tcp.connect(host = hostIp, port = port))
                     netStatus = "net: connected (handshake)"
                     client.resetConnection("connect")
-                    client.startHandshake(force = true) // sets HANDSHAKING
+                    client.startHandshake(force = true)
                 } catch (t: Throwable) {
                     val msg = t.message?.take(60) ?: ""
                     netStatus = "net: connect failed: ${t.javaClass.simpleName} $msg"
@@ -89,4 +93,3 @@ class PhysicsAuthoritativeJoinController(
         )
     }
 }
-

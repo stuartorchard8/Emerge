@@ -17,5 +17,10 @@ class TickStepper<C, S, I>(
         tick = Tick(tick.value + 1)
         return state
     }
+
+    fun reset(newState: S, newTick: Tick) {
+        state = newState
+        tick = newTick
+    }
 }
 

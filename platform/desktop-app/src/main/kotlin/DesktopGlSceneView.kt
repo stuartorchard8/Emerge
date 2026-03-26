@@ -15,7 +15,7 @@ import kotlin.use
 object DesktopGlSceneView {
     fun start(settings: LaunchSettings) = when (settings.mode) {
         LaunchMode.LOCAL -> Thread {
-            val controller = PhysicsAuthoritativeHostController(
+            val controller = PhysicsHostController(
                 port = settings.port,
                 cfg = PhysicsConfig(),
                 gameMode = settings.gameMode,
@@ -24,7 +24,7 @@ object DesktopGlSceneView {
             runGl("Emerge local", controller)
         }.start()
         LaunchMode.HOST -> Thread {
-            val controller = PhysicsAuthoritativeHostController(
+            val controller = PhysicsHostController(
                 port = settings.port,
                 cfg = PhysicsConfig(),
                 gameMode = settings.gameMode,
@@ -33,7 +33,7 @@ object DesktopGlSceneView {
             runGl("Emerge host (:${settings.port})", controller)
         }.start()
         LaunchMode.JOIN -> Thread {
-            val controller = PhysicsAuthoritativeJoinController(
+            val controller = PhysicsJoinController(
                 hostIp = settings.hostIp,
                 port = settings.port,
             )
@@ -41,7 +41,7 @@ object DesktopGlSceneView {
         }.start()
     }
 
-    private fun runGl(title: String, controller: PhysicsAuthoritativeController) {
+    private fun runGl(title: String, controller: PhysicsController) {
         val pressedKeys = BooleanArray(512)
 
         val window = initWindow(title, pressedKeys)
@@ -114,7 +114,7 @@ object DesktopGlSceneView {
     }
 
     private fun processInput(
-        controller: PhysicsAuthoritativeController,
+        controller: PhysicsController,
         pressed: BooleanArray,
         screenRenderer: ScreenRenderer,
     ): PhysicsFrame {

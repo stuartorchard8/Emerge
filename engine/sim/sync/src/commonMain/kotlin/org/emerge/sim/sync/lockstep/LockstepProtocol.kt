@@ -1,16 +1,16 @@
-package org.emerge.sim.sync.auth
+package org.emerge.sim.sync.lockstep
 
 import org.emerge.net.codec.ByteCursor
 import org.emerge.net.codec.ByteWriter
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.Tick
 
-internal object AuthProtocol {
-    // message tags
+internal object LockstepProtocol {
     private const val HELLO: Byte = 1
     private const val WELCOME: Byte = 2
     private const val INPUT: Byte = 3
-    private const val SNAPSHOT: Byte = 4
+    private const val TICK_INPUTS: Byte = 4
+    private const val RESYNC: Byte = 5
 
     data class Hello(val wantPlayerName: String? = null)
 
@@ -18,12 +18,15 @@ internal object AuthProtocol {
 
     data class InputMsg(val playerId: PlayerId, val payload: ByteArray)
 
-    data class Snapshot(val tick: Tick, val stateBytes: ByteArray)
+    data class TickInputs(val tick: Tick, val inputs: Map<PlayerId, ByteArray>)
+
+    data class Resync(val tick: Tick, val stateBytes: ByteArray)
+
+    // ── Hello ──
 
     fun encodeHello(msg: Hello): ByteArray {
         val w = ByteWriter()
         w.writeByte(HELLO)
-        // keep minimal: no name for now
         w.writeInt(0)
         return w.toByteArray()
     }
@@ -37,6 +40,8 @@ internal object AuthProtocol {
         if (c.remaining() != 0) return null
         return Hello()
     }
+
+    // ── Welcome ──
 
     fun encodeWelcome(msg: Welcome): ByteArray {
         val w = ByteWriter()
@@ -60,6 +65,8 @@ internal object AuthProtocol {
         return Welcome(pid, tick, bytes)
     }
 
+    // ── Input (client → host) ──
+
     fun encodeInput(msg: InputMsg): ByteArray {
         val w = ByteWriter()
         w.writeByte(INPUT)
@@ -80,24 +87,75 @@ internal object AuthProtocol {
         return InputMsg(pid, payload)
     }
 
-    fun encodeSnapshot(msg: Snapshot): ByteArray {
+    // ── TickInputs (host → all clients): all players' inputs for one tick ──
+
+    fun encodeTickInputs(msg: TickInputs): ByteArray {
         val w = ByteWriter()
-        w.writeByte(SNAPSHOT)
+        w.writeByte(TICK_INPUTS)
+        w.writeLong(msg.tick.value)
+        w.writeInt(msg.inputs.size)
+        for ((playerId, payload) in msg.inputs) {
+            w.writeInt(playerId.value)
+            w.writeInt(payload.size)
+            w.writeBytes(payload)
+        }
+        return w.toByteArray()
+    }
+
+    fun decodeTickInputs(packet: ByteArray): TickInputs? {
+        val c = ByteCursor(packet)
+        if (c.remaining() < 1 + 8 + 4) return null
+        if (c.readByte() != TICK_INPUTS) return null
+        val tick = Tick(c.readLong())
+        val count = c.readInt()
+        if (count < 0) return null
+        val inputs = LinkedHashMap<PlayerId, ByteArray>(count)
+        repeat(count) {
+            if (c.remaining() < 4 + 4) return null
+            val player = PlayerId(c.readInt())
+            val len = c.readInt()
+            if (len < 0 || c.remaining() < len) return null
+            inputs[player] = c.readBytes(len)
+        }
+        if (c.remaining() != 0) return null
+        return TickInputs(tick, inputs)
+    }
+
+    // ── Resync (host → clients): full state replacement on join/leave ──
+
+    fun encodeResync(msg: Resync): ByteArray {
+        val w = ByteWriter()
+        w.writeByte(RESYNC)
         w.writeLong(msg.tick.value)
         w.writeInt(msg.stateBytes.size)
         w.writeBytes(msg.stateBytes)
         return w.toByteArray()
     }
 
-    fun decodeSnapshot(packet: ByteArray): Snapshot? {
+    fun decodeResync(packet: ByteArray): Resync? {
         val c = ByteCursor(packet)
         if (c.remaining() < 1 + 8 + 4) return null
-        if (c.readByte() != SNAPSHOT) return null
+        if (c.readByte() != RESYNC) return null
         val tick = Tick(c.readLong())
         val len = c.readInt()
         if (len < 0 || c.remaining() != len) return null
         val bytes = c.readBytes(len)
-        return Snapshot(tick, bytes)
+        return Resync(tick, bytes)
+    }
+
+    /**
+     * Peek at the tag byte to determine the message type, then decode.
+     * Returns one of [Hello], [Welcome], [InputMsg], [TickInputs], [Resync], or null.
+     */
+    fun decode(packet: ByteArray): Any? {
+        if (packet.isEmpty()) return null
+        return when (packet[0]) {
+            HELLO -> decodeHello(packet)
+            WELCOME -> decodeWelcome(packet)
+            INPUT -> decodeInput(packet)
+            TICK_INPUTS -> decodeTickInputs(packet)
+            RESYNC -> decodeResync(packet)
+            else -> null
+        }
     }
 }
-

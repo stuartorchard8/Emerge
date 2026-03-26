@@ -33,7 +33,7 @@ import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.sync.Codec
-import org.emerge.sim.sync.auth.StateCodec
+import org.emerge.sim.sync.StateCodec
 import kotlin.text.get
 
 /**
@@ -42,7 +42,7 @@ import kotlin.text.get
  * This keeps Android + desktop using the exact same wire format without duplicating logic.
  */
 object PhysicsNetCodecs {
-    private const val STATE_HEADER_INT_COUNT = 3
+    private const val STATE_HEADER_INT_COUNT = 5
     private const val STATE_ENTITY_INT_COUNT = 27
     private const val STATE_RESPAWN_INT_COUNT = 10
     private const val STATE_CRASH_AUDIO_EVENT_INT_COUNT = 5
@@ -76,10 +76,10 @@ object PhysicsNetCodecs {
                         motions.keys().filter { entityId ->
                             ((renderShapes[entityId] != null) || (bgRenderShapes[entityId] != null))
                         }
-                    // Keep header count aligned with what is actually serialized.
                     w.writeInt(serializableEntities.size)
                     w.writeInt(pendingRespawns.size)
                     w.writeInt(crashImpactAudioEvents.size)
+                    w.writeLong(state.randomSeed)
                     for (entityId in serializableEntities) {
                         val transform = transforms[entityId] ?: continue
                         val motion = motions[entityId] ?: continue
@@ -156,6 +156,7 @@ object PhysicsNetCodecs {
                 require(crashAudioEventCount in 0..MAX_STATE_CRASH_AUDIO_EVENTS) {
                     "Invalid crash audio event count: $crashAudioEventCount"
                 }
+                val randomSeed = c.readLong()
                 val expectedSize =
                     (
                         STATE_HEADER_INT_COUNT +
@@ -331,7 +332,7 @@ object PhysicsNetCodecs {
                             destroyed = destroyedRaw != 0,
                         )
                 }
-                return PhysicsSnapshot(
+                val state = PhysicsSnapshot(
                     world = EcsWorld(
                         entities = entities,
                     ),
@@ -354,6 +355,8 @@ object PhysicsNetCodecs {
                     pendingRespawns = pendingRespawns,
                     crashImpactAudioEvents = crashImpactAudioEvents,
                 ).mutable
+                state.randomSeed = randomSeed
+                return state
             }
         }
 }

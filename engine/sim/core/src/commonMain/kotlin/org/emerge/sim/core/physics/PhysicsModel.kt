@@ -112,6 +112,23 @@ data class PhysicsSnapshot(
 data class PhysicsState(
     var raw: PhysicsSnapshot,
 ) {
+    /**
+     * Deterministic PRNG state carried across ticks.
+     * Must be kept in sync across all lockstep peers — never seed from platform Random.
+     * Serialized alongside the snapshot for Welcome/Resync.
+     */
+    var randomSeed: Long = 0
+
+    fun nextRandomInt(): Int {
+        randomSeed = randomSeed * 2862933555777941757L + 3037000493L
+        return (randomSeed ushr 32).toInt()
+    }
+
+    fun nextRandomInt(until: Int): Int {
+        require(until > 0)
+        return (nextRandomInt().toLong() and 0x7FFFFFFFL).toInt() % until
+    }
+
     fun spawnBody(
         playerId: PlayerId?,
         pos: Coord2,

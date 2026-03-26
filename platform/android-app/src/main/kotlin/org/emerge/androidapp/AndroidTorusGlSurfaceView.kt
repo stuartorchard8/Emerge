@@ -9,9 +9,9 @@ import android.util.Log
 import android.view.MotionEvent
 import org.emerge.demo.physics.LaunchMode
 import org.emerge.demo.physics.LaunchSettings
-import org.emerge.demo.physics.PhysicsAuthoritativeController
-import org.emerge.demo.physics.PhysicsAuthoritativeHostController
-import org.emerge.demo.physics.PhysicsAuthoritativeJoinController
+import org.emerge.demo.physics.PhysicsController
+import org.emerge.demo.physics.PhysicsHostController
+import org.emerge.demo.physics.PhysicsJoinController
 import org.emerge.demo.physics.PhysicsFrame
 import org.emerge.demo.physics.audio.CrashAudioSystem
 import org.emerge.demo.physics.createDefaultInitialState
@@ -60,7 +60,7 @@ internal class AndroidTorusGlSurfaceView(
     private var simThread: HandlerThread? = null
     private var simHandler: Handler? = null
     private var simTickRunnable: Runnable? = null
-    private var controller: PhysicsAuthoritativeController? = null
+    private var controller: PhysicsController? = null
     private var crashAudioSystem: CrashAudioSystem? = null
 
     init {
@@ -301,11 +301,11 @@ internal class AndroidTorusGlSurfaceView(
         simThread = null
     }
 
-    private fun createController(settings: LaunchSettings): PhysicsAuthoritativeController =
+    private fun createController(settings: LaunchSettings): PhysicsController =
         when (settings.mode) {
-            LaunchMode.HOST -> PhysicsAuthoritativeHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = true)
-            LaunchMode.LOCAL -> PhysicsAuthoritativeHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = false)
-            LaunchMode.JOIN -> PhysicsAuthoritativeJoinController(hostIp = settings.hostIp, port = settings.port)
+            LaunchMode.HOST -> PhysicsHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = true)
+            LaunchMode.LOCAL -> PhysicsHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = false)
+            LaunchMode.JOIN -> PhysicsJoinController(hostIp = settings.hostIp, port = settings.port)
         }
 
     private fun publishFrame(frame: PhysicsFrame) {

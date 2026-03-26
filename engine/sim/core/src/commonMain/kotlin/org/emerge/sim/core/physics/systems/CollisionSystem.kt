@@ -19,7 +19,6 @@ import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
 import kotlin.collections.set
-import kotlin.random.Random
 
 
 object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
@@ -328,8 +327,8 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
     private fun spawnDestructionBurst(state: PhysicsState, burst: DestructionBurstSpec) {
         repeat(DESTRUCTION_BURST_PARTICLE_COUNT) {
-            val direction = Norm.fromAngle(Coord(Random.nextInt()))
-            val speed = DESTRUCTION_BURST_BASE_SPEED * Frac(Random.nextInt(until = Int.MAX_VALUE).toLong())
+            val direction = Norm.fromAngle(Coord(state.nextRandomInt()))
+            val speed = DESTRUCTION_BURST_BASE_SPEED * Frac(state.nextRandomInt(until = Int.MAX_VALUE).toLong())
             state.spawnParticle(
                 pos = burst.pos,
                 vel = burst.vel + direction * speed,
