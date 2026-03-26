@@ -22,7 +22,7 @@ object GravitySystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         }
 
         val motions = LinkedHashMap(state.raw.motions.asMap())
-        val ids = state.raw.transforms.keys().toList()
+        val ids = state.raw.materials.keys().toList()
         for (i in 0 until ids.size) {
             for (j in i + 1 until ids.size) {
                 val aId = ids[i]
@@ -46,7 +46,7 @@ object GravitySystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val delta = aTransform.pos - bTransform.pos
                 if (delta.lenSq.raw == 0L) continue
                 val minDist = aCollider.radius + bCollider.radius
-                val dist = if (delta > minDist) delta.len else minDist
+                val dist = if (delta > minDist) delta.lenSq else minDist
 
                 val accelTowardB = gravityAcceleration(
                     sourceMass = bMaterial.mass,

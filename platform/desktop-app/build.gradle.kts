@@ -54,3 +54,22 @@ tasks.processResources {
         into("assets")
     }
 }
+
+tasks.register<JavaExec>("profileSim") {
+    group = "application"
+    description = "Run headless sim profiler with per-system timing breakdown"
+    mainClass = "org.emerge.desktop.ProfileMainKt"
+    classpath = sourceSets["main"].runtimeClasspath
+
+    val jfrFile = layout.buildDirectory.file("profile.jfr").get().asFile
+    jvmArgs(
+        "-XX:StartFlightRecording=duration=60s,filename=${jfrFile.absolutePath}",
+    )
+
+    doLast {
+        if (jfrFile.exists()) {
+            println("\nJFR recording saved to: ${jfrFile.absolutePath}")
+            println("Open in IntelliJ: Run > Open Profiler Snapshot")
+        }
+    }
+}

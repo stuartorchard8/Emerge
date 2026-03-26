@@ -1,11 +1,14 @@
 package org.emerge.sim.core.physics.primitives
 
 import org.emerge.sim.core.physics.primitives.Frac.Companion.abs
+import kotlin.math.abs
+import kotlin.math.max
 
 data class Frac2(val x: Frac, val y: Frac) {
     operator fun plus(o: Frac2): Frac2 = Frac2(x + o.x, y + o.y)
     operator fun minus(o: Frac2): Frac2 = Frac2(x - o.x, y - o.y)
     operator fun times(o: Frac): Frac2 = Frac2(x * o, y * o)
+    operator fun div(o: Frac): Frac2 = Frac2(x / o, y / o)
     fun dot(other: Norm): Frac = (
         x*other.x +
         y*other.y
@@ -29,6 +32,22 @@ data class Frac2(val x: Frac, val y: Frac) {
         x/len,
         y/len,
     ) }
+
+
+    // Potentially faster, but less accurate
+    fun octDist() = Frac((12L*(abs(x.toLong()) + abs(y.toLong()))+17L*max(abs(x.toLong()), abs(y.toLong())))/29L)
+    fun octNorm(): Frac2 = this/octDist()
+    val estNorm by lazy {
+        val distSq = lenSq.raw
+        if (distSq == 0L) zero
+        val neg = 1-distSq
+        val flower = neg/2/distSq
+        val oct = octNorm()*Frac(1+flower)
+        Norm(oct.x, oct.y)
+    }
+    val estDist by lazy {
+        dot(estNorm)
+    }
 
     operator fun compareTo(o: Frac): Int = (lenSq - o*o).sign
     operator fun compareTo(o: Frac2): Int = (lenSq - o.lenSq).sign
