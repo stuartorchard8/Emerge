@@ -52,7 +52,8 @@ class AndroidLauncherView(
         val start = Button(context).apply {
             text = "Start"
             setOnClickListener {
-                activity.setContentView(AndroidTorusGlSurfaceView(activity, readSettings()))
+                val settings = readSettings()
+                activity.setContentView((activity as MainActivity).createViewForMode(settings))
             }
         }
 

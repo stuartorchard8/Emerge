@@ -32,6 +32,14 @@ object DesktopGlSceneView {
             )
             runGl("Emerge host (:${settings.port})", controller)
         }.start()
+        LaunchMode.HEADLESS_HOST -> Thread {
+            val controller = PhysicsHeadlessHostController(
+                port = settings.port,
+                cfg = PhysicsConfig(),
+                gameMode = settings.gameMode,
+            )
+            runHeadless(controller)
+        }.start()
         LaunchMode.JOIN -> Thread {
             val controller = PhysicsJoinController(
                 hostIp = settings.hostIp,
@@ -46,6 +54,24 @@ object DesktopGlSceneView {
             )
             runGl("Emerge thin (${settings.hostIp}:${settings.port})", controller)
         }.start()
+    }
+
+    private fun runHeadless(controller: PhysicsHeadlessHostController) {
+        println("[headless] ${controller.netStatus}")
+        var lastStatus = controller.netStatus
+        val tickIntervalMs = 16L
+        while (true) {
+            val start = System.nanoTime()
+            controller.tick(PhysicsInput.ZERO)
+            val status = controller.netStatus
+            if (status != lastStatus) {
+                println("[headless] $status")
+                lastStatus = status
+            }
+            val elapsed = (System.nanoTime() - start) / 1_000_000
+            val sleep = tickIntervalMs - elapsed
+            if (sleep > 0) Thread.sleep(sleep)
+        }
     }
 
     private fun runGl(title: String, controller: PhysicsController) {

@@ -16,6 +16,7 @@ data class LaunchSettings(
 enum class LaunchMode {
     LOCAL,
     HOST,
+    HEADLESS_HOST,
     JOIN,
     JOIN_THIN,
 }

@@ -12,7 +12,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         val saved = loadSavedSettings(this)
         if (SKIP_LAUNCHER) {
-            setContentView(AndroidTorusGlSurfaceView(activity = this, settings = saved))
+            setContentView(createViewForMode(saved))
             return
         }
         val initial = LaunchSettings(
@@ -32,6 +32,12 @@ class MainActivity : Activity() {
         )
         setContentView(AndroidLauncherView(activity = this, initial = initial))
     }
+
+    fun createViewForMode(settings: LaunchSettings): android.view.View =
+        if (settings.mode == LaunchMode.HEADLESS_HOST)
+            AndroidHeadlessHostView(activity = this, settings = settings)
+        else
+            AndroidTorusGlSurfaceView(activity = this, settings = settings)
 
     companion object {
         const val EXTRA_MODE = "mode"

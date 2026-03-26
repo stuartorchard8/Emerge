@@ -3,7 +3,7 @@ package org.emerge.desktop
 import javax.swing.*
 import org.emerge.demo.physics.*
 
-const val SKIP_LAUNCHER = true
+const val SKIP_LAUNCHER = false
 
 fun main() {
     if (SKIP_LAUNCHER) {

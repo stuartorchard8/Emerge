@@ -306,6 +306,7 @@ internal class AndroidTorusGlSurfaceView(
         when (settings.mode) {
             LaunchMode.HOST -> PhysicsHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = true)
             LaunchMode.LOCAL -> PhysicsHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = false)
+            LaunchMode.HEADLESS_HOST -> throw IllegalStateException("HEADLESS_HOST should not use the GL view")
             LaunchMode.JOIN -> PhysicsJoinController(hostIp = settings.hostIp, port = settings.port)
             LaunchMode.JOIN_THIN -> PhysicsThinJoinController(hostIp = settings.hostIp, port = settings.port)
         }
@@ -325,6 +326,7 @@ internal class AndroidTorusGlSurfaceView(
             LaunchMode.LOCAL,
             -> PlayerId(0)
 
+            LaunchMode.HEADLESS_HOST,
             LaunchMode.JOIN,
             LaunchMode.JOIN_THIN,
             -> null

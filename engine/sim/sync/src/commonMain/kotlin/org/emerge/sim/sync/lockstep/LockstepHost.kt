@@ -46,6 +46,7 @@ class LockstepHost<C, S, I>(
 
     val tick: Tick get() = stepper.tick
     val state: S get() = stepper.state
+    val clientCount: Int get() = clientsById.size
 
     /**
      * Finalize a client that has already completed the Hello handshake.

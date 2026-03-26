@@ -16,7 +16,7 @@ import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
 
-fun createDefaultInitialState(gameMode: GameMode = GameMode.PVP): PhysicsState {
+fun createDefaultInitialState(gameMode: GameMode = GameMode.PVP, spawnHostPlayer: Boolean = true): PhysicsState {
     val state = PhysicsSnapshot().mutable
     for (it in 0 until DEFAULT_PLANET_COUNT) {
         val spawn = state.spawnBody(
@@ -33,12 +33,14 @@ fun createDefaultInitialState(gameMode: GameMode = GameMode.PVP): PhysicsState {
         )
         state.markPlanet(spawn, seed = it)
     }
-    assignHomePlanetAndSpawn(
-        state = state,
-        playerId = PlayerId(0),
-        gameMode = gameMode,
-        random = Random.Default,
-    )
+    if (spawnHostPlayer) {
+        assignHomePlanetAndSpawn(
+            state = state,
+            playerId = PlayerId(0),
+            gameMode = gameMode,
+            random = Random.Default,
+        )
+    }
     return state;
 }
 
