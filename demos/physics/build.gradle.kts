@@ -24,6 +24,7 @@ kotlin {
         }
     }
     jvm()
+    js(IR) { browser() }
 
     sourceSets {
         val commonMain by getting
@@ -35,6 +36,7 @@ kotlin {
             dependsOn(commonMain)
             dependencies {
                 implementation(project(":engine:net:transports:tcp"))
+                implementation(project(":engine:net:transports:websocket"))
             }
         }
 

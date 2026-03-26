@@ -36,6 +36,7 @@ plugins {
 // Learn more about structuring projects with Gradle - https://docs.gradle.org/8.7/userguide/multi_project_builds.html
 include(":platform:desktop-app")
 include(":platform:android-app")
+include(":platform:web-app")
 
 include(":engine:sim:core")
 include(":engine:sim:sync")
@@ -46,6 +47,7 @@ include(":engine:render:torus")
 include(":engine:net:api")
 include(":engine:net:transports:loopback")
 include(":engine:net:transports:tcp")
+include(":engine:net:transports:websocket")
 
 include(":demos:physics")
 

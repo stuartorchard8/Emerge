@@ -19,6 +19,7 @@ dependencies {
     implementation(project(":engine:sim:codecs:physics"))
     implementation(project(":engine:net:transports:loopback"))
     implementation(project(":engine:net:transports:tcp"))
+    implementation(project(":engine:net:transports:websocket"))
 
     // LWJGL (desktop GPU rendering)
     // Minimal set: glfw + opengl + core + natives (Windows).

@@ -2,6 +2,7 @@ package org.emerge.demo.physics
 
 import kotlin.concurrent.thread
 import org.emerge.net.tcp.Tcp
+import org.emerge.net.websocket.WsAcceptor
 import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.PhysicsConfig
@@ -42,30 +43,47 @@ class PhysicsHostController(
     private val readyClientsLock = Any()
 
     @Volatile private var netStatus: String =
-        if (acceptRemoteClients) "net: host listening :$port" else "net: host-only (no join)"
+        if (acceptRemoteClients) "net: host listening :$port (tcp) :${port + 1} (ws)" else "net: host-only (no join)"
 
     init {
         if (acceptRemoteClients) {
-            startAcceptLoop()
+            startTcpAcceptLoop()
+            startWsAcceptLoop()
         }
     }
 
-    private fun startAcceptLoop() {
-        thread(isDaemon = true, name = "net-accept-loop") {
+    private fun startTcpAcceptLoop() {
+        thread(isDaemon = true, name = "net-tcp-accept") {
             try {
                 val listener = Tcp.listen(port = port, backlog = 8)
                 while (true) {
                     val pipe = listener.accept()
-                    val mode = awaitHello(pipe)
-                    if (mode != null) {
-                        synchronized(readyClientsLock) {
-                            readyClients.add(ReadyClient(pipe, mode))
-                        }
-                    }
+                    enqueueAfterHello(pipe)
                 }
             } catch (t: Throwable) {
-                netStatus = "net: accept failed: ${t.javaClass.simpleName}"
+                netStatus = "net: tcp accept failed: ${t::class.simpleName}"
             }
+        }
+    }
+
+    private fun startWsAcceptLoop() {
+        thread(isDaemon = true, name = "net-ws-accept") {
+            try {
+                val ws = WsAcceptor(port + 1)
+                while (true) {
+                    val pipe = ws.accept()
+                    enqueueAfterHello(pipe)
+                }
+            } catch (t: Throwable) {
+                netStatus = "net: ws accept failed: ${t::class.simpleName}"
+            }
+        }
+    }
+
+    private fun enqueueAfterHello(pipe: Pipe) {
+        val mode = awaitHello(pipe) ?: return
+        synchronized(readyClientsLock) {
+            readyClients.add(ReadyClient(pipe, mode))
         }
     }
 
