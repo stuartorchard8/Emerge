@@ -23,6 +23,7 @@ kotlin {
                 implementation(project(":engine:net:transports:websocket"))
                 implementation(project(":demos:physics"))
             }
+            resources.srcDir("$rootDir/assets")
         }
     }
 }

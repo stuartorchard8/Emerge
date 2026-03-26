@@ -3,6 +3,8 @@ package org.emerge.web
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.emerge.demo.physics.GameMode
+import org.emerge.demo.physics.PhysicsFrame
+import org.emerge.demo.physics.audio.CrashAudioSystem
 import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.net.websocket.WebSocketPipe
 import org.emerge.render.torus.GPU
@@ -41,34 +43,39 @@ fun main() {
         renderer.setResolution(Vec2(canvas.width.toFloat(), canvas.height.toFloat()))
     })
 
+    val crashAudio = CrashAudioSystem(WebCrashAudioEngine())
+
     val params = URL(window.location.href).searchParams
     val mode = params.get("mode") ?: "local"
 
     when (mode) {
         "join" -> {
             val host = params.get("host") ?: "ws://localhost:7778"
-            startJoinMode(host, renderer, input)
+            startJoinMode(host, renderer, input, crashAudio)
         }
-        else -> startLocalMode(renderer, input)
+        else -> startLocalMode(renderer, input, crashAudio)
     }
 }
 
-private fun startLocalMode(renderer: ScreenRenderer, input: WebInputHandler) {
+private fun startLocalMode(renderer: ScreenRenderer, input: WebInputHandler, crashAudio: CrashAudioSystem) {
     val cfg = PhysicsConfig()
     val state = createDefaultInitialState(GameMode.PVP)
     val reducer = PhysicsReducer()
     val myId = PlayerId(0)
+    var tick = 0L
 
     fun frame(@Suppress("UNUSED_PARAMETER") ts: Double) {
         val physicsInput = input.poll(renderer)
         reducer.reduce(cfg, state, mapOf(myId to physicsInput))
+        tick++
+        crashAudio.onFrame(PhysicsFrame(state, myId, tick, ""))
         renderer.draw(state, myId)
         window.requestAnimationFrame(::frame)
     }
     window.requestAnimationFrame(::frame)
 }
 
-private fun startJoinMode(wsUrl: String, renderer: ScreenRenderer, input: WebInputHandler) {
+private fun startJoinMode(wsUrl: String, renderer: ScreenRenderer, input: WebInputHandler, crashAudio: CrashAudioSystem) {
     val initialState = createDefaultInitialState(GameMode.PVP)
 
     val pipe = org.emerge.net.api.DelegatingPipe()
@@ -99,6 +106,7 @@ private fun startJoinMode(wsUrl: String, renderer: ScreenRenderer, input: WebInp
         val physicsInput = input.poll(renderer)
         client.poll()
         client.sendInput(physicsInput)
+        crashAudio.onFrame(PhysicsFrame(client.state, client.playerId, client.tick.value, ""))
         renderer.draw(client.state, client.playerId)
 
         if (client.connectionState == ThinClient.ConnectionState.DISCONNECTED && !reconnectScheduled) {
