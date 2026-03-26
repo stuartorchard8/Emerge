@@ -1,9 +1,6 @@
 package org.emerge.render.torus
 
 import org.emerge.sim.core.physics.primitives.Vec2
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.nio.FloatBuffer
 
 data class ScreenLayout(
     val worldPxMin: Vec2,
@@ -20,9 +17,7 @@ data class ScreenLayout(
     val guiVertexOffset: Int = worldVertexCount
     val circleVertexOffset: Int = worldVertexCount+circleVertexCount
 
-    private var vertexFloatBuffer: FloatBuffer = ByteBuffer.allocateDirect((worldVertexCount+circleVertexCount+triVertexCount) * VERTEX_DIM * FLOAT_SIZE)
-        .order(ByteOrder.nativeOrder())
-        .asFloatBuffer()
+    private var vertexFloatBuffer = GpuFloatBuffer((worldVertexCount+circleVertexCount+triVertexCount) * VERTEX_DIM)
 
     fun vertices(): FloatArray {
         val worldVertices = buildList {

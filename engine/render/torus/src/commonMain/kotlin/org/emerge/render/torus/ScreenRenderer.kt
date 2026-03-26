@@ -24,7 +24,7 @@ import kotlin.math.sin
 
 class ScreenRenderer(val contentScale: Vec2) {
     private var zoom: Float = 10f
-    @Volatile private var worldRotationRad: Float = 0f
+    @kotlin.concurrent.Volatile private var worldRotationRad: Float = 0f
 
     private val vao = GPU.genAndBindVertexArrays()
     private var vbo: Int = GPU.genBuffers()

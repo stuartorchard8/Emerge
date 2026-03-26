@@ -2,7 +2,6 @@ package org.emerge.render.torus
 
 import android.opengl.GLES30
 import java.nio.ByteBuffer
-import java.nio.FloatBuffer
 
 actual object GPU {
     actual val shaderVersion: String = "300 es"
@@ -103,7 +102,7 @@ actual object GPU {
     }
 
     actual fun bindBuffer(target: Int, buffer: Int) = GLES30.glBindBuffer(target, buffer)
-    actual fun bufferData(target: Int, count: Int, data: FloatBuffer, usage: Int) = GLES30.glBufferData(target, count * 4, data, usage)
+    actual fun bufferData(target: Int, count: Int, data: GpuFloatBuffer, usage: Int) = GLES30.glBufferData(target, count * 4, data.nioBuffer, usage)
 
     actual fun setViewport(minX: Int, minY: Int, maxX: Int, maxY: Int) = GLES30.glViewport(minX, minY, maxX, maxY)
 

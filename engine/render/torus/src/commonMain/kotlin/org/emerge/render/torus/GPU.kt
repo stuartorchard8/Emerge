@@ -1,7 +1,5 @@
 package org.emerge.render.torus
 
-import java.nio.FloatBuffer
-
 expect object GPU {
     val shaderVersion: String
     val VERTEX_SHADER: Int
@@ -49,7 +47,7 @@ expect object GPU {
     fun uploadTextureR8(width: Int, height: Int, data: ByteArray)
 
     fun bindBuffer(target: Int, buffer: Int)
-    fun bufferData(target: Int, count: Int, data: FloatBuffer, usage: Int)
+    fun bufferData(target: Int, count: Int, data: GpuFloatBuffer, usage: Int)
 
     fun setViewport(minX: Int, minY: Int, maxX: Int, maxY: Int)
 

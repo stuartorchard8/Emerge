@@ -38,18 +38,18 @@ class LockstepClient<C, S, I>(
 
     private val stepper = TickStepper(cfg = cfg, initialState = initialState, reducer = reducer)
 
-    @Volatile
+    @kotlin.concurrent.Volatile
     var playerId: PlayerId? = null
         private set
 
     val tick: Tick get() = stepper.tick
     val state: S get() = stepper.state
 
-    @Volatile
+    @kotlin.concurrent.Volatile
     var connectionState: ConnectionState = ConnectionState.DISCONNECTED
         private set
 
-    @Volatile
+    @kotlin.concurrent.Volatile
     var lastDisconnectReason: String? = null
         private set
 
@@ -111,7 +111,7 @@ class LockstepClient<C, S, I>(
         val decoded = try {
             stateCodec.decode(msg.stateBytes)
         } catch (t: Throwable) {
-            disconnect("invalid welcome state: ${t.javaClass.simpleName}")
+            disconnect("invalid welcome state: ${t::class.simpleName}")
             return
         }
         stepper.reset(decoded, msg.tick)
@@ -122,7 +122,7 @@ class LockstepClient<C, S, I>(
         val decoded = try {
             stateCodec.decode(msg.stateBytes)
         } catch (t: Throwable) {
-            disconnect("invalid resync state: ${t.javaClass.simpleName}")
+            disconnect("invalid resync state: ${t::class.simpleName}")
             return
         }
         stepper.reset(decoded, msg.tick)

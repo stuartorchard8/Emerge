@@ -2,7 +2,6 @@ package org.emerge.render.torus
 
 import org.lwjgl.opengl.GL33C
 import org.lwjgl.system.MemoryStack
-import java.nio.FloatBuffer
 import kotlin.use
 
 actual object GPU {
@@ -86,7 +85,7 @@ actual object GPU {
     }
 
     actual fun bindBuffer(target: Int, buffer: Int) = GL33C.glBindBuffer(target, buffer)
-    actual fun bufferData(target: Int, count: Int, data: FloatBuffer, usage: Int) = GL33C.glBufferData(target, data, usage)
+    actual fun bufferData(target: Int, count: Int, data: GpuFloatBuffer, usage: Int) = GL33C.glBufferData(target, data.nioBuffer, usage)
 
     actual fun setViewport(minX: Int, minY: Int, maxX: Int, maxY: Int) = GL33C.glViewport(minX, minY, maxX, maxY)
 

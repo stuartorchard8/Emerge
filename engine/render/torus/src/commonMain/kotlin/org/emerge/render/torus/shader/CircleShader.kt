@@ -1,9 +1,7 @@
 package org.emerge.render.torus.shader
 
 import org.emerge.render.torus.GPU
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.nio.FloatBuffer
+import org.emerge.render.torus.GpuFloatBuffer
 
 class CircleShader {
     private val vSrc = CircleShaderSources.vertex()
@@ -18,30 +16,12 @@ class CircleShader {
     private val instanceShapeVbo: Int = GPU.genBuffers()
     private val instanceAlphaVbo: Int = GPU.genBuffers()
     private val instanceRadiusVbo: Int = GPU.genBuffers()
-    private val instanceMatrices: FloatBuffer =
-        ByteBuffer.allocateDirect(MAX_INSTANCES * MAT4_FLOATS * 4)
-            .order(ByteOrder.nativeOrder())
-            .asFloatBuffer()
-    private val instancePrimaryIds: FloatBuffer =
-        ByteBuffer.allocateDirect(MAX_INSTANCES * 4)
-            .order(ByteOrder.nativeOrder())
-            .asFloatBuffer()
-    private val instanceSecondaryIds: FloatBuffer =
-        ByteBuffer.allocateDirect(MAX_INSTANCES * 4)
-            .order(ByteOrder.nativeOrder())
-            .asFloatBuffer()
-    private val instanceShapes: FloatBuffer =
-        ByteBuffer.allocateDirect(MAX_INSTANCES * 4)
-            .order(ByteOrder.nativeOrder())
-            .asFloatBuffer()
-    private val instanceAlphas: FloatBuffer =
-        ByteBuffer.allocateDirect(MAX_INSTANCES * 4)
-            .order(ByteOrder.nativeOrder())
-            .asFloatBuffer()
-    private val instanceRadii: FloatBuffer =
-        ByteBuffer.allocateDirect(MAX_INSTANCES * 4)
-            .order(ByteOrder.nativeOrder())
-            .asFloatBuffer()
+    private val instanceMatrices = GpuFloatBuffer(MAX_INSTANCES * MAT4_FLOATS)
+    private val instancePrimaryIds = GpuFloatBuffer(MAX_INSTANCES)
+    private val instanceSecondaryIds = GpuFloatBuffer(MAX_INSTANCES)
+    private val instanceShapes = GpuFloatBuffer(MAX_INSTANCES)
+    private val instanceAlphas = GpuFloatBuffer(MAX_INSTANCES)
+    private val instanceRadii = GpuFloatBuffer(MAX_INSTANCES)
 
     init {
         uploadNoiseTexture()
@@ -99,11 +79,8 @@ class CircleShader {
         GPU.drawTrianglesInstanced(vOffset, 3, n)
     }
 
-    fun bind(vbo: Int, buffer: FloatBuffer, array: FloatArray, count: Int) {
-        buffer.clear()
-        buffer.put(array, 0, count)
-        buffer.flip()
-
+    fun bind(vbo: Int, buffer: GpuFloatBuffer, array: FloatArray, count: Int) {
+        buffer.clear().put(array, 0, count).flip()
         GPU.bindBuffer(GPU.ARRAY_BUFFER, vbo)
         GPU.bufferData(GPU.ARRAY_BUFFER, count, buffer, GPU.DYNAMIC_DRAW)
         GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)

@@ -32,23 +32,23 @@ class ThinClient<S, I>(
         CONNECTED,
     }
 
-    @Volatile
+    @kotlin.concurrent.Volatile
     var playerId: PlayerId? = null
         private set
 
-    @Volatile
+    @kotlin.concurrent.Volatile
     var tick: Tick = Tick(0)
         private set
 
-    @Volatile
+    @kotlin.concurrent.Volatile
     var state: S = initialState
         private set
 
-    @Volatile
+    @kotlin.concurrent.Volatile
     var connectionState: ConnectionState = ConnectionState.DISCONNECTED
         private set
 
-    @Volatile
+    @kotlin.concurrent.Volatile
     var lastDisconnectReason: String? = null
         private set
 
@@ -92,7 +92,7 @@ class ThinClient<S, I>(
             val decoded = try {
                 stateCodec.decode(welcome.stateBytes)
             } catch (t: Throwable) {
-                disconnect("invalid welcome state: ${t.javaClass.simpleName}")
+                disconnect("invalid welcome state: ${t::class.simpleName}")
                 checkTimeouts()
                 return
             }
@@ -106,7 +106,7 @@ class ThinClient<S, I>(
             val decoded = try {
                 stateCodec.decode(resync.stateBytes)
             } catch (t: Throwable) {
-                disconnect("invalid resync state: ${t.javaClass.simpleName}")
+                disconnect("invalid resync state: ${t::class.simpleName}")
                 checkTimeouts()
                 return
             }

@@ -17,6 +17,7 @@ kotlin {
         }
     }
     jvm()
+    js(IR) { browser() }
 
     sourceSets {
         commonMain {
