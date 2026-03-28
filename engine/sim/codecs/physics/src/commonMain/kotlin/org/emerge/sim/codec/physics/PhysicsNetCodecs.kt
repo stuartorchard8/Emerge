@@ -359,5 +359,49 @@ object PhysicsNetCodecs {
                 return state
             }
         }
+
+    val crashImpactAudioEventsCodec: Codec<List<CrashImpactAudioEvent>> =
+        object : Codec<List<CrashImpactAudioEvent>> {
+            override fun encode(value: List<CrashImpactAudioEvent>): ByteArray {
+                val w = ByteWriter()
+                w.writeInt(value.size)
+                for (event in value) {
+                    w.writeInt(event.entityId.value)
+                    w.writeInt(event.pos.x.raw)
+                    w.writeInt(event.pos.y.raw)
+                    w.writeInt(event.damageRaw.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt())
+                    w.writeInt(if (event.destroyed) 1 else 0)
+                }
+                return w.toByteArray()
+            }
+
+            override fun decode(bytes: ByteArray): List<CrashImpactAudioEvent> {
+                val c = ByteCursor(bytes)
+                val count = c.readInt()
+                require(count in 0..MAX_STATE_CRASH_AUDIO_EVENTS) {
+                    "Invalid crash audio event count: $count"
+                }
+                val expectedSize = (1 + count * STATE_CRASH_AUDIO_EVENT_INT_COUNT) * STATE_INT_BYTES
+                require(bytes.size == expectedSize) {
+                    "Invalid crash audio event payload size: expected $expectedSize bytes for $count events, got ${bytes.size}"
+                }
+                val out = ArrayList<CrashImpactAudioEvent>(count)
+                repeat(count) {
+                    val entityId = EntityId(c.readInt())
+                    val x = c.readInt()
+                    val y = c.readInt()
+                    val damageRaw = c.readInt()
+                    val destroyedRaw = c.readInt()
+                    out +=
+                        CrashImpactAudioEvent(
+                            entityId = entityId,
+                            pos = Coord2.raw(x, y),
+                            damageRaw = damageRaw.toLong(),
+                            destroyed = destroyedRaw != 0,
+                        )
+                }
+                return out
+            }
+        }
 }
 

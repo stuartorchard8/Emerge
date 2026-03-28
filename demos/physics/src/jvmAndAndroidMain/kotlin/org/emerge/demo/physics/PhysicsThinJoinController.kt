@@ -25,6 +25,11 @@ class PhysicsThinJoinController(
         pipe = remote,
         inputCodec = inputCodec,
         stateCodec = stateCodec,
+        thinEventsApplier = { state, payload ->
+            val events = PhysicsNetCodecs.crashImpactAudioEventsCodec.decode(payload)
+            state.raw = state.raw.copy(crashImpactAudioEvents = events)
+            state
+        },
         handshakeTimeout = 15.seconds,
         inactivityTimeout = 20.seconds,
         onDisconnected = { reason ->

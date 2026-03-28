@@ -11,6 +11,7 @@ internal object LockstepProtocol {
     private const val INPUT: Byte = 3
     private const val TICK_INPUTS: Byte = 4
     private const val RESYNC: Byte = 5
+    private const val THIN_EVENTS: Byte = 6
 
     data class Hello(val clientMode: ClientMode = ClientMode.LOCKSTEP)
 
@@ -21,6 +22,13 @@ internal object LockstepProtocol {
     data class TickInputs(val tick: Tick, val inputs: Map<PlayerId, ByteArray>)
 
     data class Resync(val tick: Tick, val stateBytes: ByteArray)
+
+    /**
+     * Thin-client event stream payload for one tick.
+     *
+     * The payload format is game-specific (opaque to sync layer).
+     */
+    data class ThinEvents(val tick: Tick, val payload: ByteArray)
 
     // ── Hello ──
 
@@ -147,9 +155,31 @@ internal object LockstepProtocol {
         return Resync(tick, bytes)
     }
 
+    // ── ThinEvents (host → thin clients): per-tick event stream ──
+
+    fun encodeThinEvents(msg: ThinEvents): ByteArray {
+        val w = ByteWriter()
+        w.writeByte(THIN_EVENTS)
+        w.writeLong(msg.tick.value)
+        w.writeInt(msg.payload.size)
+        w.writeBytes(msg.payload)
+        return w.toByteArray()
+    }
+
+    fun decodeThinEvents(packet: ByteArray): ThinEvents? {
+        val c = ByteCursor(packet)
+        if (c.remaining() < 1 + 8 + 4) return null
+        if (c.readByte() != THIN_EVENTS) return null
+        val tick = Tick(c.readLong())
+        val len = c.readInt()
+        if (len < 0 || c.remaining() != len) return null
+        val payload = c.readBytes(len)
+        return ThinEvents(tick, payload)
+    }
+
     /**
      * Peek at the tag byte to determine the message type, then decode.
-     * Returns one of [Hello], [Welcome], [InputMsg], [TickInputs], [Resync], or null.
+     * Returns one of [Hello], [Welcome], [InputMsg], [TickInputs], [Resync], [ThinEvents], or null.
      */
     fun decode(packet: ByteArray): Any? {
         if (packet.isEmpty()) return null
@@ -159,6 +189,7 @@ internal object LockstepProtocol {
             INPUT -> decodeInput(packet)
             TICK_INPUTS -> decodeTickInputs(packet)
             RESYNC -> decodeResync(packet)
+            THIN_EVENTS -> decodeThinEvents(packet)
             else -> null
         }
     }

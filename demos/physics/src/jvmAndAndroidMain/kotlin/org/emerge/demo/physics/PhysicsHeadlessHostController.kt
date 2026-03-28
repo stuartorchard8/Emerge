@@ -37,6 +37,7 @@ class PhysicsHeadlessHostController(
         stateCodec = stateCodec,
         joinPolicy = defaultJoinPolicy(gameMode),
         leavePolicy = { state, playerId -> state.removePlayerRocket(playerId) },
+        thinEventsEncoder = { state -> PhysicsNetCodecs.crashImpactAudioEventsCodec.encode(state.raw.crashImpactAudioEvents) },
     )
 
     private data class ReadyClient(val pipe: Pipe, val mode: ClientMode)
@@ -56,11 +57,15 @@ class PhysicsHeadlessHostController(
         thread(isDaemon = true, name = "net-tcp-accept") {
             try {
                 val listener = Tcp.listen(port = port, backlog = 8)
+                println("[headless-tcp] listening on :$port")
                 while (true) {
+                    println("[headless-tcp] waiting for connection ...")
                     val pipe = listener.accept()
+                    println("[headless-tcp] connection accepted, awaiting hello ...")
                     enqueueAfterHello(pipe)
                 }
             } catch (t: Throwable) {
+                println("[headless-tcp] accept loop failed: ${t::class.simpleName}: ${t.message}")
                 netStatus = "tcp accept failed: ${t::class.simpleName}"
             }
         }
@@ -81,7 +86,12 @@ class PhysicsHeadlessHostController(
     }
 
     private fun enqueueAfterHello(pipe: Pipe) {
-        val mode = awaitHello(pipe) ?: return
+        val mode = awaitHello(pipe)
+        if (mode == null) {
+            println("[headless] awaitHello returned null (pipe closed before hello)")
+            return
+        }
+        println("[headless] hello received, mode=$mode")
         synchronized(readyClientsLock) {
             readyClients.add(ReadyClient(pipe, mode))
         }
@@ -114,13 +124,20 @@ class PhysicsHeadlessHostController(
 
     companion object {
         private fun awaitHello(pipe: Pipe): ClientMode? {
+            var polls = 0
             while (pipe.isOpen()) {
                 val pkt = pipe.receive()
                 if (pkt != null) {
+                    println("[headless] received hello packet (${pkt.size} bytes) after $polls polls")
                     return LockstepHost.parseHello(pkt)
+                }
+                polls++
+                if (polls % 5000 == 0) {
+                    println("[headless] still waiting for hello ($polls polls, pipe.isOpen=${pipe.isOpen()})")
                 }
                 Thread.sleep(1L)
             }
+            println("[headless] pipe closed while awaiting hello (after $polls polls)")
             return null
         }
     }

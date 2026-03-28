@@ -39,6 +39,7 @@ class PhysicsJoinController(
     )
 
     @Volatile private var netStatus: String = "net: init"
+    private var lastLoggedStatus: String = ""
 
     init {
         startConnectLoop()
@@ -59,16 +60,27 @@ class PhysicsJoinController(
 
                 attempt += 1
                 netStatus = "net: connecting to $hostIp:$port (try $attempt)"
+                println("[join] resolving $hostIp ...")
                 try {
-                    remote.setDelegate(Tcp.connect(host = hostIp, port = port))
+                    val resolved = java.net.InetAddress.getByName(hostIp)
+                    println("[join] resolved to ${resolved.hostAddress}")
+                    println("[join] TCP connect to $hostIp:$port (timeout 10s) ...")
+                    val t0 = System.currentTimeMillis()
+                    val pipe = Tcp.connect(host = hostIp, port = port)
+                    println("[join] TCP connected in ${System.currentTimeMillis() - t0}ms")
+                    remote.setDelegate(pipe)
                     netStatus = "net: connected (handshake)"
+                    println("[join] sending handshake hello ...")
                     client.resetConnection("connect")
                     client.startHandshake(force = true)
+                    println("[join] handshake sent, state=${client.connectionState}")
                 } catch (t: Throwable) {
-                    val msg = t.message?.take(60) ?: ""
+                    val msg = t.message?.take(80) ?: ""
                     netStatus = "net: connect failed: ${t.javaClass.simpleName} $msg"
+                    println("[join] FAILED: ${t.javaClass.name}: $msg")
+                    t.printStackTrace()
                     try {
-                        Thread.sleep(500L)
+                        Thread.sleep(2000L)
                     } catch (_: InterruptedException) {
                         break
                     }
@@ -80,6 +92,12 @@ class PhysicsJoinController(
     override fun tick(localInput: PhysicsInput): PhysicsFrame {
         client.poll()
         client.sendInput(localInput)
+
+        val currentStatus = "conn=${client.connectionState} pid=${client.playerId} tick=${client.tick.value} net=$netStatus"
+        if (currentStatus != lastLoggedStatus) {
+            println("[join-tick] $currentStatus")
+            lastLoggedStatus = currentStatus
+        }
 
         val state: PhysicsState = client.state
         val myId: PlayerId? = client.playerId

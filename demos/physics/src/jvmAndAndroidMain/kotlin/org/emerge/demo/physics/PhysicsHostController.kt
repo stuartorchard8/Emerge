@@ -35,6 +35,7 @@ class PhysicsHostController(
         stateCodec = stateCodec,
         joinPolicy = defaultJoinPolicy(gameMode),
         leavePolicy = { state, playerId -> state.removePlayerRocket(playerId) },
+        thinEventsEncoder = { state -> PhysicsNetCodecs.crashImpactAudioEventsCodec.encode(state.raw.crashImpactAudioEvents) },
     )
 
     private data class ReadyClient(val pipe: Pipe, val mode: ClientMode)
@@ -56,11 +57,15 @@ class PhysicsHostController(
         thread(isDaemon = true, name = "net-tcp-accept") {
             try {
                 val listener = Tcp.listen(port = port, backlog = 8)
+                println("[host-tcp] listening on :$port")
                 while (true) {
+                    println("[host-tcp] waiting for connection ...")
                     val pipe = listener.accept()
+                    println("[host-tcp] connection accepted, awaiting hello ...")
                     enqueueAfterHello(pipe)
                 }
             } catch (t: Throwable) {
+                println("[host-tcp] accept loop failed: ${t::class.simpleName}: ${t.message}")
                 netStatus = "net: tcp accept failed: ${t::class.simpleName}"
             }
         }
@@ -81,7 +86,12 @@ class PhysicsHostController(
     }
 
     private fun enqueueAfterHello(pipe: Pipe) {
-        val mode = awaitHello(pipe) ?: return
+        val mode = awaitHello(pipe)
+        if (mode == null) {
+            println("[host] awaitHello returned null (pipe closed before hello)")
+            return
+        }
+        println("[host] hello received, mode=$mode")
         synchronized(readyClientsLock) {
             readyClients.add(ReadyClient(pipe, mode))
         }
@@ -115,13 +125,20 @@ class PhysicsHostController(
 
     companion object {
         private fun awaitHello(pipe: Pipe): ClientMode? {
+            var polls = 0
             while (pipe.isOpen()) {
                 val pkt = pipe.receive()
                 if (pkt != null) {
+                    println("[host] received hello packet (${pkt.size} bytes) after $polls polls")
                     return LockstepHost.parseHello(pkt)
+                }
+                polls++
+                if (polls % 5000 == 0) {
+                    println("[host] still waiting for hello (${polls} polls, pipe.isOpen=${pipe.isOpen()})")
                 }
                 Thread.sleep(1L)
             }
+            println("[host] pipe closed while awaiting hello (after $polls polls)")
             return null
         }
     }

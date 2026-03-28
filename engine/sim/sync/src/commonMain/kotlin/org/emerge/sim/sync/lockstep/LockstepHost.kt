@@ -33,7 +33,8 @@ class LockstepHost<C, S, I>(
     private val stateCodec: StateCodec<S>,
     private val joinPolicy: (S, PlayerId) -> Unit,
     private val leavePolicy: (S, PlayerId) -> Unit = { _, _ -> },
-    private val thinSnapshotEveryTicks: Int = 1,
+    private val thinSnapshotEveryTicks: Int = 3,
+    private val thinEventsEncoder: ((S) -> ByteArray)? = null,
 ) {
     private data class ClientEntry(val pipe: Pipe, val mode: ClientMode)
 
@@ -131,6 +132,20 @@ class LockstepHost<C, S, I>(
         }
 
         stepper.step(inputs)
+
+        if (hasThinClients && thinEventsEncoder != null) {
+            val encodedEvents = LockstepProtocol.encodeThinEvents(
+                LockstepProtocol.ThinEvents(
+                    tick = tick,
+                    payload = thinEventsEncoder.invoke(stepper.state),
+                ),
+            )
+            for ((_, entry) in clientsById) {
+                if (entry.mode == ClientMode.THIN) {
+                    entry.pipe.send(encodedEvents)
+                }
+            }
+        }
 
         if (hasThinClients && thinSnapshotEveryTicks > 0) {
             if ((tick.value % thinSnapshotEveryTicks.toLong()) == 0L) {

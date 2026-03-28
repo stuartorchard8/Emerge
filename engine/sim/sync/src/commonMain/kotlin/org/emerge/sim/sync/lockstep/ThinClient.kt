@@ -22,6 +22,7 @@ class ThinClient<S, I>(
     private val pipe: Pipe,
     private val inputCodec: Codec<I>,
     private val stateCodec: StateCodec<S>,
+    private val thinEventsApplier: ((S, ByteArray) -> S)? = null,
     private val handshakeTimeout: Duration = 5.seconds,
     private val inactivityTimeout: Duration = 5.seconds,
     private val onDisconnected: ((reason: String) -> Unit)? = null,
@@ -74,6 +75,7 @@ class ThinClient<S, I>(
     fun poll() {
         var latestWelcome: LockstepProtocol.Welcome? = null
         var latestResync: LockstepProtocol.Resync? = null
+        var latestThinEvents: LockstepProtocol.ThinEvents? = null
         while (true) {
             val pkt = pipe.receive() ?: break
             lastPacketAt = timeSource.markNow()
@@ -82,6 +84,7 @@ class ThinClient<S, I>(
             when (msg) {
                 is LockstepProtocol.Welcome -> latestWelcome = msg
                 is LockstepProtocol.Resync -> latestResync = msg
+                is LockstepProtocol.ThinEvents -> latestThinEvents = msg
                 else -> {}
             }
         }
@@ -112,6 +115,13 @@ class ThinClient<S, I>(
             }
             tick = resync.tick
             state = decoded
+            if (playerId != null) connectionState = ConnectionState.CONNECTED
+        }
+
+        if (latestThinEvents != null && thinEventsApplier != null) {
+            val thinEvents = latestThinEvents
+            tick = thinEvents.tick
+            state = thinEventsApplier.invoke(state, thinEvents.payload)
             if (playerId != null) connectionState = ConnectionState.CONNECTED
         }
 
