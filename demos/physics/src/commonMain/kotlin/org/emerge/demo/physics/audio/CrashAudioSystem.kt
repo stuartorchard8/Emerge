@@ -83,7 +83,7 @@ class CrashAudioSystem(
         return (tick - last) >= minTicksBetweenEntityCrashes
     }
 
-    private fun mapDamageToVolume(deltaRaw: Long): Float {
+    private fun mapDamageToVolume(deltaRaw: Int): Float {
         if (shipMaxDamageRaw <= 0L) return 0f
         val normalized = (deltaRaw.toDouble() / shipMaxDamageRaw.toDouble()).toFloat().coerceIn(0f, 1f)
         if (normalized <= 0f) return 0f

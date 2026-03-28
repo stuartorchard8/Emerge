@@ -257,18 +257,16 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         val owner = state.raw.playerOwned[entityId]?.playerId ?: return null
         if (playersToRespawn.contains(owner)) return null
         val speedOverThreshold = imactImpulse - cfg.shipCollisionDamageThreshold
-        if (speedOverThreshold.sign <= 0) return null
-        val impactDamageRaw = (speedOverThreshold * cfg.shipCollisionDamageScale).raw
-        if (impactDamageRaw <= 0L) return null
+        if (speedOverThreshold.raw <= 0L) return null
         val currentDamage = damages[entityId]?.damage ?: Frac(0)
-        val nextDamage = currentDamage + Frac(impactDamageRaw)
+        val nextDamage = currentDamage + speedOverThreshold
         if (nextDamage.raw >= cfg.shipMaxDamage.raw) {
             playersToRespawn += owner
             damages.remove(entityId)
             return CrashImpactAudioEvent(
                 entityId = entityId,
                 pos = entityPos,
-                damageRaw = impactDamageRaw,
+                damageRaw = speedOverThreshold.raw.toInt(),
                 destroyed = true,
             )
         } else {
@@ -276,7 +274,7 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             return CrashImpactAudioEvent(
                 entityId = entityId,
                 pos = entityPos,
-                damageRaw = impactDamageRaw,
+                damageRaw = speedOverThreshold.raw.toInt(),
                 destroyed = false,
             )
         }
@@ -361,7 +359,7 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         return CrashImpactAudioEvent(
             entityId = entityId,
             pos = entityTransform.pos,
-            damageRaw = cfg.shipMaxDamage.raw,
+            damageRaw = cfg.shipMaxDamage.raw.toInt(),
             destroyed = true,
         )
     }

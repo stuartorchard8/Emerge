@@ -33,8 +33,7 @@ data class PhysicsConfig(
     val turnFactorInv: Int = Int.MAX_VALUE / (1024 * 512),
     val gravityNumerator: Frac = Frac(1,16),
     val shipCollisionDamageThreshold: Frac = Frac(1, 1024 * 8),
-    val shipCollisionDamageScale: Frac = Frac(1, 1),
-    val shipMaxDamage: Frac = Frac(1, 256),
+    val shipMaxDamage: Frac = Frac(1, 512),
     val shipRespawnTicks: Int = 60 * 5,
 )
 
@@ -56,7 +55,7 @@ data class PlayerRespawnState(
 data class CrashImpactAudioEvent(
     val entityId: EntityId,
     val pos: Coord2,
-    val damageRaw: Long,
+    val damageRaw: Int,
     val destroyed: Boolean,
 )
 

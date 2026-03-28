@@ -139,7 +139,7 @@ object PhysicsNetCodecs {
                         w.writeInt(event.entityId.value)
                         w.writeInt(event.pos.x.raw)
                         w.writeInt(event.pos.y.raw)
-                        w.writeInt(event.damageRaw.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt())
+                        w.writeInt(event.damageRaw)
                         w.writeInt(if (event.destroyed) 1 else 0)
                     }
                 }
@@ -328,7 +328,7 @@ object PhysicsNetCodecs {
                         CrashImpactAudioEvent(
                             entityId = entityId,
                             pos = Coord2.raw(x, y),
-                            damageRaw = damageRaw.toLong(),
+                            damageRaw = damageRaw,
                             destroyed = destroyedRaw != 0,
                         )
                 }
@@ -369,7 +369,7 @@ object PhysicsNetCodecs {
                     w.writeInt(event.entityId.value)
                     w.writeInt(event.pos.x.raw)
                     w.writeInt(event.pos.y.raw)
-                    w.writeInt(event.damageRaw.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt())
+                    w.writeInt(event.damageRaw)
                     w.writeInt(if (event.destroyed) 1 else 0)
                 }
                 return w.toByteArray()
@@ -396,7 +396,7 @@ object PhysicsNetCodecs {
                         CrashImpactAudioEvent(
                             entityId = entityId,
                             pos = Coord2.raw(x, y),
-                            damageRaw = damageRaw.toLong(),
+                            damageRaw = damageRaw,
                             destroyed = destroyedRaw != 0,
                         )
                 }
