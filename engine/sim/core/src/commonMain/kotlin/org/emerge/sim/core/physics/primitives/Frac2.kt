@@ -9,6 +9,7 @@ data class Frac2(val x: Frac, val y: Frac) {
     operator fun minus(o: Frac2): Frac2 = Frac2(x - o.x, y - o.y)
     operator fun times(o: Frac): Frac2 = Frac2(x * o, y * o)
     operator fun div(o: Frac): Frac2 = Frac2(x / o, y / o)
+    operator fun div(o: Int): Frac2 = Frac2(x / o, y / o)
     fun dot(other: Norm): Frac = (
         x*other.x +
         y*other.y

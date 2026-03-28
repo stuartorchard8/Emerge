@@ -11,6 +11,7 @@ import org.emerge.sim.core.physics.components.ControlIntentComponent
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.ForceFieldComponent
 import org.emerge.sim.core.physics.components.HomePlanetComponent
+import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
@@ -25,8 +26,6 @@ import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.physics.primitives.Norm
-import kotlin.collections.get
-import kotlin.text.get
 
 data class PhysicsConfig(
     val thrustFactorInv: Int = Int.MAX_VALUE / (1024 * 32),
@@ -64,6 +63,7 @@ data class PhysicsSnapshot(
     val playerEntities: Map<PlayerId, EntityId> = emptyMap(),
     val transforms: ComponentTable<TransformComponent> = ComponentTable.empty(),
     val motions: ComponentTable<MotionComponent> = ComponentTable.empty(),
+    val impulses: ComponentTable<ImpulseComponent> = ComponentTable.empty(),
     val colliders: ComponentTable<ColliderComponent> = ComponentTable.empty(),
     val materials: ComponentTable<MaterialComponent> = ComponentTable.empty(),
     val controls: ComponentTable<ControlIntentComponent> = ComponentTable.empty(),
@@ -109,8 +109,35 @@ data class PhysicsSnapshot(
 }
 
 data class PhysicsState(
-    var raw: PhysicsSnapshot,
+    private val _initial: PhysicsSnapshot,
 ) {
+    var raw: PhysicsSnapshot = _initial
+//        private set
+
+    fun integrate(
+        transforms: ComponentTable<TransformComponent>,
+        motions: ComponentTable<MotionComponent>,
+    ) {
+        raw = raw.copy(
+            transforms = transforms,
+            motions = motions,
+            impulses = ComponentTable.empty(),
+        )
+    }
+
+    fun addImpulses(
+        impulses: LinkedHashMap<EntityId,ImpulseComponent>,
+    ) {
+        val sums = impulses.mapValues { (entityId, impulse) -> raw.impulses[entityId]?.plus(impulse) ?: impulse }
+        raw = raw.copy(impulses = ComponentTable.fromMap(sums))
+    }
+
+    fun setLandings(
+        landings: ComponentTable<LandingAttachmentComponent>,
+    ) {
+        raw = raw.copy(landings = landings)
+    }
+
     /**
      * Deterministic PRNG state carried across ticks.
      * Must be kept in sync across all lockstep peers — never seed from platform Random.

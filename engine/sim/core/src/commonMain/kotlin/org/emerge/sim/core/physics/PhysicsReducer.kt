@@ -20,12 +20,12 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         InputSystem,
         LiftOffSystem,
         GravitySystem,
-        IntegrationSystem,
         ForceFieldSystem,
         CollisionSystem,
         AttachmentSystem,
         ParticleSystem,
         RespawnSystem,
+        IntegrationSystem,
     )
 
     override fun reduce(cfg: PhysicsConfig, state: PhysicsState, inputs: Map<PlayerId, PhysicsInput>) {
