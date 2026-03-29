@@ -129,13 +129,23 @@ data class PhysicsState(
         impulses: LinkedHashMap<EntityId,ImpulseComponent>,
     ) {
         val sums = impulses.mapValues { (entityId, impulse) -> raw.impulses[entityId]?.plus(impulse) ?: impulse }
-        raw = raw.copy(impulses = ComponentTable.fromMap(sums))
+        raw = raw.copy(impulses = raw.impulses.putAll(sums.toList()))
     }
 
     fun setLandings(
         landings: ComponentTable<LandingAttachmentComponent>,
     ) {
         raw = raw.copy(landings = landings)
+    }
+
+    fun setDamages(
+        damages: ComponentTable<DamageComponent>,
+        crashImpactAudioEvents: ArrayList<CrashImpactAudioEvent>
+    ) {
+        raw = raw.copy(
+            damages = damages,
+            crashImpactAudioEvents = crashImpactAudioEvents,
+        )
     }
 
     /**

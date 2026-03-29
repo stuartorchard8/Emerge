@@ -26,7 +26,7 @@ object IntegrationSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> 
         val motions = LinkedHashMap(state.raw.motions.asMap())
         for ((entityId, motion) in motions.entries) {
             val transform = state.raw.transforms[entityId] ?: continue
-            val impulse = state.raw.impulses[entityId] ?: ImpulseComponent.ZERO
+            val impulse = state.raw.impulses[entityId] ?: ImpulseComponent()
 
             // TODO: send controls through impulse
             val control = state.raw.controls[entityId] ?: ControlIntentComponent.ZERO
@@ -40,8 +40,8 @@ object IntegrationSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> 
             val vel = motion.vel + thrustAcc + impulse.vel
 
             val angDamp = if (thrust == 0) Frac(1,1) else Frac(19,20)
-            val angVel = Frac(motion.angVel.raw.toLong()) * angDamp + Frac(turn.toLong())
-            val ang = transform.ang + Frac(angVel.raw) + impulse.ang
+            val angVel = Frac(motion.angVel.raw.toLong()) * angDamp + Frac(turn.toLong()) + impulse.angVel
+            val ang = transform.ang + Frac(angVel.raw) + impulse.ang + impulse.angVel/2
 
             transforms[entityId] = transform.copy(pos = pos, ang = ang)
             motions[entityId] = motion.copy(vel = vel, angVel = Coord(angVel.raw.toInt()))

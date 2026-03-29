@@ -44,7 +44,7 @@ object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             impulses[entityId] = delta
         }
 
-        state.addImpulses(impulses = impulses)
-        state.setLandings(landings = ComponentTable.fromMap(landings))
+        state.addImpulses(impulses)
+        state.setLandings(ComponentTable.fromMap(landings))
     }
 }

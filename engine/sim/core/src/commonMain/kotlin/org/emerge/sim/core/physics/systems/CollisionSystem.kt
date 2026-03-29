@@ -1,5 +1,6 @@
 package org.emerge.sim.core.physics.systems
 
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
@@ -13,6 +14,7 @@ import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.primitives.Norm
 import org.emerge.sim.core.physics.PhysicsConfig
+import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -33,8 +35,7 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         state: PhysicsState,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val transforms = LinkedHashMap(state.raw.transforms.asMap())
-        val motions = LinkedHashMap(state.raw.motions.asMap())
+        val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
         val landings = LinkedHashMap(state.raw.landings.asMap())
         val damages = LinkedHashMap(state.raw.damages.asMap())
         val crashImpactAudioEvents = ArrayList<CrashImpactAudioEvent>()
@@ -45,10 +46,10 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             for (j in i + 1 until ids.size) {
                 val aId = ids[i]
                 val bId = ids[j]
-                val aTransform = transforms[aId] ?: continue
-                val bTransform = transforms[bId] ?: continue
-                val aMotion = motions[aId] ?: continue
-                val bMotion = motions[bId] ?: continue
+                val aTransform = state.raw.transforms[aId] ?: continue
+                val bTransform = state.raw.transforms[bId] ?: continue
+                val aMotion = state.raw.motions[aId] ?: continue
+                val bMotion = state.raw.motions[bId] ?: continue
                 val aCollider = state.raw.colliders[aId] ?: continue
                 val bCollider = state.raw.colliders[bId] ?: continue
                 val aMaterial = state.raw.materials[aId] ?: continue
@@ -124,7 +125,6 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 )
                 if (aLandingAttempt != null) {
                     landings[aId] = aLandingAttempt
-                    motions[aId] = bMotion
                     continue
                 }
                 val bLandingAttempt = tryLand(
@@ -139,7 +139,6 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 )
                 if (bLandingAttempt != null) {
                     landings[bId] = bLandingAttempt
-                    motions[bId] = aMotion
                     continue
                 }
 
@@ -150,7 +149,7 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val invMassWeightB = Frac(massA, totalMass)
 
                 val pushA = normal * (pen * invMassWeightA)
-                val pushB = normal * (pen * invMassWeightB)
+                val pushB = -normal * (pen * invMassWeightB)
 
                 val velDelta = bMotion.vel - aMotion.vel
                 val velAlongNorm = velDelta.dot(normal)
@@ -168,25 +167,27 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val pushVelA = Frac((normResponse * invMassWeightA).raw*2)
                 val pushVelB = Frac((normResponse * invMassWeightB).raw*2)
                 val pushNormVelA = normal * pushVelA
-                val pushNormVelB = normal * pushVelB
+                val pushNormVelB = -normal * pushVelB
 
                 val tangentResponseA = (tangentResponse * invMassWeightA) / 2
                 val tangentResponseB = (tangentResponse * invMassWeightB) / 2
                 val pushTangentialVelA = tangent * tangentResponseA
-                val pushTangentialVelB = tangent * tangentResponseB
+                val pushTangentialVelB = -tangent * tangentResponseB
                 val pushAngVelA = tangentResponseA / circumferenceA
                 val pushAngVelB = tangentResponseB / circumferenceB
 
-                transforms[aId] = aTransform.copy(pos = aTransform.pos + pushA)
-                transforms[bId] = bTransform.copy(pos = bTransform.pos - pushB)
-                motions[aId] = aMotion.copy(
-                    vel = aMotion.vel + pushNormVelA + pushTangentialVelA,
-                    angVel = aMotion.angVel + pushAngVelA,
+                val impulseA = ImpulseComponent(
+                    pos = pushA,
+                    vel = pushNormVelA + pushTangentialVelA,
+                    angVel = pushAngVelA
                 )
-                motions[bId] = bMotion.copy(
-                    vel = bMotion.vel - pushNormVelB - pushTangentialVelB,
-                    angVel = bMotion.angVel + pushAngVelB,
+                val impulseB = ImpulseComponent(
+                    pos = pushB,
+                    vel = pushNormVelB + pushTangentialVelB,
+                    angVel = pushAngVelB
                 )
+                impulses[aId] = impulses[aId]?.plus(impulseA) ?: impulseA
+                impulses[bId] = impulses[bId]?.plus(impulseB) ?: impulseB
 
                 val aCrashEvent = accumulateShipCollisionDamage(
                     state = state,
@@ -203,7 +204,7 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                     if (aCrashEvent.destroyed) {
                         val teamId = state.raw.teams[aId]?.teamId
                         if (teamId != null) {
-                            destructionBursts += DestructionBurstSpec(pos = aTransform.pos, vel = motions[aId]!!.vel, teamId = teamId)
+                            destructionBursts += DestructionBurstSpec(pos = aTransform.pos, vel = state.raw.motions[aId]!!.vel+impulseA.vel, teamId = teamId)
                         }
                     }
                 }
@@ -222,16 +223,16 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                     if (bCrashEvent.destroyed) {
                         val teamId = state.raw.teams[bId]?.teamId
                         if (teamId != null) {
-                            destructionBursts += DestructionBurstSpec(pos = bTransform.pos, vel = motions[bId]!!.vel, teamId = teamId)
+                            destructionBursts += DestructionBurstSpec(pos = bTransform.pos, vel = state.raw.motions[bId]!!.vel+impulseB.vel, teamId = teamId)
                         }
                     }
                 }
             }
         }
-        state.raw = state.raw.copy(
-            transforms = ComponentTable.fromMap(transforms),
-            motions = ComponentTable.fromMap(motions),
-            landings = ComponentTable.fromMap(landings),
+
+        state.addImpulses(impulses)
+        state.setLandings(ComponentTable.fromMap(landings))
+        state.setDamages(
             damages = ComponentTable.fromMap(damages),
             crashImpactAudioEvents = crashImpactAudioEvents,
         )
@@ -245,9 +246,9 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
     private fun accumulateShipCollisionDamage(
         state: PhysicsState,
-        damages: MutableMap<org.emerge.sim.core.EntityId, DamageComponent>,
+        damages: MutableMap<EntityId, DamageComponent>,
         playersToRespawn: MutableSet<PlayerId>,
-        entityId: org.emerge.sim.core.EntityId,
+        entityId: EntityId,
         entityPos: Coord2,
         shape: RenderShapeComponent,
         imactImpulse: Frac,
@@ -296,7 +297,7 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     }
 
     private fun tryLand(
-        supportId: org.emerge.sim.core.EntityId,
+        supportId: EntityId,
         rocketShape: RenderShapeComponent,
         rocketControl: ControlIntentComponent,
         supportShape: RenderShapeComponent,
@@ -341,13 +342,13 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     private fun crushLandedShipIfPinnedByPlanet(
         state: PhysicsState,
         cfg: PhysicsConfig,
-        damages: MutableMap<org.emerge.sim.core.EntityId, DamageComponent>,
+        damages: MutableMap<EntityId, DamageComponent>,
         playersToRespawn: MutableSet<PlayerId>,
-        entityId: org.emerge.sim.core.EntityId,
+        entityId: EntityId,
         entityTransform: TransformComponent,
         entityShape: RenderShapeComponent,
         landing: LandingAttachmentComponent?,
-        otherEntityId: org.emerge.sim.core.EntityId,
+        otherEntityId: EntityId,
     ): CrashImpactAudioEvent? {
         if (landing == null) return null
         if (landing.parentEntityId == otherEntityId) return null
