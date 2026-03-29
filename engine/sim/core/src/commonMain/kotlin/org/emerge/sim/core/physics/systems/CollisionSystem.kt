@@ -8,7 +8,6 @@ import org.emerge.sim.core.physics.CrashImpactAudioEvent
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Contact
-import org.emerge.sim.core.physics.components.ControlIntentComponent
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
@@ -56,8 +55,6 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val bMaterial = state.raw.materials[bId] ?: continue
                 val aShape = state.raw.renderShapes[aId] ?: continue
                 val bShape = state.raw.renderShapes[bId] ?: continue
-                val aControl = state.raw.controls[aId] ?: ControlIntentComponent.ZERO
-                val bControl = state.raw.controls[bId] ?: ControlIntentComponent.ZERO
 
                 val bodyContact = Contact.compute(
                     aTransform = aTransform,
@@ -116,7 +113,6 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val aLandingAttempt = tryLand(
                     supportId = bId,
                     rocketShape = aShape,
-                    rocketControl = aControl,
                     supportShape = bShape,
                     supportTransform = bTransform,
                     rocketTransform = aTransform,
@@ -130,7 +126,6 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val bLandingAttempt = tryLand(
                     supportId = aId,
                     rocketShape = bShape,
-                    rocketControl = bControl,
                     supportShape = aShape,
                     supportTransform = aTransform,
                     rocketTransform = bTransform,
@@ -283,14 +278,12 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
     private fun canLand(
         rocketShape: RenderShapeComponent,
-        rocketControl: ControlIntentComponent,
         supportShape: RenderShapeComponent,
         rocketTransform: TransformComponent,
         landingNormal: Norm,
     ): Boolean {
         if (rocketShape.shape != BodyShape.TRIANGLE) return false
         if (supportShape.shape == BodyShape.TRIANGLE) return false
-        if (rocketControl.thrust > 0) return false
         val forward = Norm.fromAngle(rocketTransform.ang)
         val alignment = forward.dot(landingNormal)
         return alignment.raw > LANDING_ALIGNMENT_THRESHOLD.raw
@@ -299,7 +292,6 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     private fun tryLand(
         supportId: EntityId,
         rocketShape: RenderShapeComponent,
-        rocketControl: ControlIntentComponent,
         supportShape: RenderShapeComponent,
         supportTransform: TransformComponent,
         rocketTransform: TransformComponent,
@@ -308,7 +300,6 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     ): LandingAttachmentComponent? {
         if (!canLand(
                 rocketShape = rocketShape,
-                rocketControl = rocketControl,
                 supportShape = supportShape,
                 rocketTransform = rocketTransform,
                 landingNormal = landingNormal,

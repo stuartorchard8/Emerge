@@ -17,7 +17,6 @@ import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsWorld
 import org.emerge.sim.core.physics.components.ColliderComponent
-import org.emerge.sim.core.physics.components.ControlIntentComponent
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.ForceFieldComponent
 import org.emerge.sim.core.physics.components.HomePlanetComponent
@@ -173,7 +172,6 @@ object PhysicsNetCodecs {
                 val motions = LinkedHashMap<EntityId, MotionComponent>(n)
                 val colliders = LinkedHashMap<EntityId, ColliderComponent>(n)
                 val materials = LinkedHashMap<EntityId, MaterialComponent>(n)
-                val controls = LinkedHashMap<EntityId, ControlIntentComponent>()
                 val renderShapes = LinkedHashMap<EntityId, RenderShapeComponent>()
                 val bgRenderShapes = LinkedHashMap<EntityId, RenderShapeComponent>()
                 val playerOwned = LinkedHashMap<EntityId, PlayerOwnedComponent>()
@@ -272,7 +270,6 @@ object PhysicsNetCodecs {
                         playerEntities[playerId] = entityId
                         playerOwned[entityId] =
                             PlayerOwnedComponent(playerId)
-                        controls[entityId] = ControlIntentComponent.ZERO
                     }
                     if (landingParentIdRaw >= 0) {
                         landings[entityId] =
@@ -341,7 +338,6 @@ object PhysicsNetCodecs {
                     motions = ComponentTable.fromMap(motions),
                     colliders = ComponentTable.fromMap(colliders),
                     materials = ComponentTable.fromMap(materials),
-                    controls = ComponentTable.fromMap(controls),
                     renderShapes = ComponentTable.fromMap(renderShapes),
                     bgRenderShapes = ComponentTable.fromMap(bgRenderShapes),
                     playerOwned = ComponentTable.fromMap(playerOwned),

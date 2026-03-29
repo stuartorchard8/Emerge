@@ -1,5 +1,6 @@
 package org.emerge.sim.core.physics.systems
 
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
@@ -7,6 +8,7 @@ import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.PhysicsConfig
+import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import kotlin.collections.set
 
@@ -21,7 +23,7 @@ object GravitySystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             return
         }
 
-        val motions = LinkedHashMap(state.raw.motions.asMap())
+        val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
         val ids = state.raw.materials.keys().toList()
         for (i in 0 until ids.size) {
             for (j in i + 1 until ids.size) {
@@ -31,8 +33,8 @@ object GravitySystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
                 val aTransform = state.raw.transforms[aId] ?: continue
                 val bTransform = state.raw.transforms[bId] ?: continue
-                val aMotion = motions[aId] ?: continue
-                val bMotion = motions[bId] ?: continue
+                val aMotion = state.raw.motions[aId] ?: continue
+                val bMotion = state.raw.motions[bId] ?: continue
                 val aMaterial = state.raw.materials[aId] ?: continue
                 val bMaterial = state.raw.materials[bId] ?: continue
                 val aCollider = state.raw.colliders[aId] ?: continue
@@ -60,16 +62,14 @@ object GravitySystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 )
 
                 val normal = delta.norm
-                motions[aId] = aMotion.copy(
-                    vel = aMotion.vel - (normal * accelTowardB),
-                )
-                motions[bId] = bMotion.copy(
-                    vel = bMotion.vel + (normal * accelTowardA),
-                )
+                val aImpulse = ImpulseComponent(-(normal * accelTowardB))
+                val bImpulse = ImpulseComponent((normal * accelTowardA))
+                impulses[aId] = impulses[aId]?.plus(aImpulse) ?: aImpulse
+                impulses[bId] = impulses[bId]?.plus(bImpulse) ?: bImpulse
             }
         }
 
-        state.raw = state.raw.copy(motions = ComponentTable.fromMap(motions))
+        state.addImpulses(impulses)
     }
 
     private fun gravityAcceleration(

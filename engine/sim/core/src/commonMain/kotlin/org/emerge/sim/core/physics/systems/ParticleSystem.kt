@@ -30,23 +30,5 @@ object ParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         state.raw = state.raw.copy(
             particles = ComponentTable.fromMap(particles),
         )
-        for ((entityId, control) in state.raw.controls.entries()) {
-            if (control.thrust > state.nextRandomInt(until = Int.MAX_VALUE)) {
-                val transform = state.raw.transforms[entityId] ?: continue
-                val motion = state.raw.motions[entityId] ?: continue
-                val team = state.raw.teams[entityId] ?: continue
-                val angleJitter = Frac(state.nextRandomInt(until = Int.MAX_VALUE/8).toLong()-Int.MAX_VALUE/16)
-                val angleVectoring = Frac(control.turn/-16L + motion.angVel.raw.toLong()*4) // Combined turning & dampening
-                val norm = Norm.fromAngle(transform.ang + angleVectoring + angleJitter)
-                state.spawnParticle(
-                    pos = transform.pos,
-                    vel = motion.vel - norm * Frac(1,1024)*Frac(state.nextRandomInt(until = Int.MAX_VALUE).toLong()),
-                    radius = Frac(1, 2048),
-                    shape = BodyShape.CIRCLE,
-                    lifetime = 30,
-                    teamId = team.teamId,
-                )
-            }
-        }
     }
 }

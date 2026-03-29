@@ -9,7 +9,7 @@ import org.emerge.sim.core.physics.systems.AttachmentSystem
 import org.emerge.sim.core.physics.systems.CollisionSystem
 import org.emerge.sim.core.physics.systems.ForceFieldSystem
 import org.emerge.sim.core.physics.systems.GravitySystem
-import org.emerge.sim.core.physics.systems.InputSystem
+import org.emerge.sim.core.physics.systems.ShipThrustSystem
 import org.emerge.sim.core.physics.systems.IntegrationSystem
 import org.emerge.sim.core.physics.systems.LiftOffSystem
 import org.emerge.sim.core.physics.systems.ParticleSystem
@@ -17,7 +17,7 @@ import org.emerge.sim.core.physics.systems.RespawnSystem
 
 class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val systems: List<EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>> = listOf(
-        InputSystem,
+        ShipThrustSystem,
         LiftOffSystem,
         GravitySystem,
         ForceFieldSystem,

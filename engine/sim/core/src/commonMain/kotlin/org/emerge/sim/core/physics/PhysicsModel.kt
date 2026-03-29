@@ -7,7 +7,6 @@ import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsWorld
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.components.ColliderComponent
-import org.emerge.sim.core.physics.components.ControlIntentComponent
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.ForceFieldComponent
 import org.emerge.sim.core.physics.components.HomePlanetComponent
@@ -66,7 +65,6 @@ data class PhysicsSnapshot(
     val impulses: ComponentTable<ImpulseComponent> = ComponentTable.empty(),
     val colliders: ComponentTable<ColliderComponent> = ComponentTable.empty(),
     val materials: ComponentTable<MaterialComponent> = ComponentTable.empty(),
-    val controls: ComponentTable<ControlIntentComponent> = ComponentTable.empty(),
     val renderShapes: ComponentTable<RenderShapeComponent> = ComponentTable.empty(),
     val bgRenderShapes: ComponentTable<RenderShapeComponent> = ComponentTable.empty(),
     val playerOwned: ComponentTable<PlayerOwnedComponent> = ComponentTable.empty(),
@@ -220,19 +218,12 @@ data class PhysicsState(
             } else {
                 raw.playerOwned.put(entityId, PlayerOwnedComponent(playerId))
             }
-        val nextControls =
-            if (playerId == null) {
-                raw.controls.remove(entityId)
-            } else {
-                raw.controls.put(entityId, ControlIntentComponent.ZERO)
-            }
         raw = raw.copy(
             playerEntities = nextPlayerEntities,
             transforms = raw.transforms.put(entityId, TransformComponent(pos = pos, ang = ang)),
             motions = raw.motions.put(entityId, MotionComponent(vel = vel, angVel = angVel)),
             colliders = raw.colliders.put(entityId, ColliderComponent(radius = radius)),
             materials = raw.materials.put(entityId, MaterialComponent(mass = mass, bounce = bounce, rough = rough)),
-            controls = nextControls,
             renderShapes = raw.renderShapes.put(entityId, RenderShapeComponent(shape = shape)),
             bgRenderShapes = raw.bgRenderShapes.remove(entityId),
             playerOwned = nextPlayerOwned,
@@ -284,7 +275,6 @@ data class PhysicsState(
             motions = raw.motions.put(entityId, MotionComponent(vel = vel, angVel = Coord(0))),
             colliders = raw.colliders.put(entityId, ColliderComponent(radius = radius)),    // TODO don't store radius in collider
             materials = raw.materials.remove(entityId),
-            controls = raw.controls.remove(entityId),
             renderShapes = raw.renderShapes.remove(entityId),
             bgRenderShapes = raw.bgRenderShapes.put(entityId, RenderShapeComponent(shape = shape)),
             playerOwned = raw.playerOwned.remove(entityId),
@@ -367,7 +357,6 @@ data class PhysicsState(
             motions = raw.motions.remove(entityId),
             colliders = raw.colliders.remove(entityId),
             materials = raw.materials.remove(entityId),
-            controls = raw.controls.remove(entityId),
             renderShapes = raw.renderShapes.remove(entityId),
             bgRenderShapes = raw.bgRenderShapes.remove(entityId),
             playerOwned = raw.playerOwned.remove(entityId),

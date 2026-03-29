@@ -25,9 +25,10 @@ object LiftOffSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     ) {
         val motions = LinkedHashMap(state.raw.motions.asMap())
         val landings = LinkedHashMap(state.raw.landings.asMap())
-        for ((entityId, control) in state.raw.controls.entries()) {
+        for ((playerId, entityId) in state.raw.playerEntities) {
+            val input = inputs[playerId] ?: PhysicsInput.ZERO
             val landing = landings[entityId]
-            if (control.thrust > 0 && landing != null) {
+            if (input.thrust > 0 && landing != null) {
                 val parentTransform = state.raw.transforms[landing.parentEntityId]
                 val parentMotion = state.raw.motions[landing.parentEntityId]
                 if (parentTransform != null && parentMotion != null) {
