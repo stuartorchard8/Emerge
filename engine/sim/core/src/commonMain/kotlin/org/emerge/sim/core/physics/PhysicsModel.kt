@@ -110,7 +110,7 @@ data class PhysicsState(
     private val _initial: PhysicsSnapshot,
 ) {
     var raw: PhysicsSnapshot = _initial
-//        private set
+        private set
 
     fun integrate(
         transforms: ComponentTable<TransformComponent>,
@@ -138,11 +138,30 @@ data class PhysicsState(
 
     fun setDamages(
         damages: ComponentTable<DamageComponent>,
-        crashImpactAudioEvents: ArrayList<CrashImpactAudioEvent>
+        crashImpactAudioEvents: List<CrashImpactAudioEvent>
     ) {
         raw = raw.copy(
             damages = damages,
             crashImpactAudioEvents = crashImpactAudioEvents,
+        )
+    }
+
+    fun setParticles(particles: ComponentTable<ParticleComponent>) {
+        raw = raw.copy(
+            particles = particles,
+        )
+    }
+
+    fun addShip(
+        entityId: EntityId,
+        team: TeamComponent,
+        motion: MotionComponent,
+        landing: LandingAttachmentComponent,
+    ) {
+        raw = raw.copy(
+            teams = raw.teams.put(entityId,team),
+            motions = raw.motions.put(entityId,motion),
+            landings = raw.landings.put(entityId,landing),
         )
     }
 

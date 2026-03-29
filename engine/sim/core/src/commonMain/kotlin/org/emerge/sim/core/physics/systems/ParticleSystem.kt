@@ -27,8 +27,6 @@ object ParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 state.removeEntity(entityId)
             }
         }
-        state.raw = state.raw.copy(
-            particles = ComponentTable.fromMap(particles),
-        )
+        state.setParticles(ComponentTable.fromMap(particles))
     }
 }

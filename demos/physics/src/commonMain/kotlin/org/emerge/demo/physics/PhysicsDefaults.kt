@@ -157,25 +157,17 @@ private fun spawnRocketOnPlanetSurface(
             shape = BodyShape.TRIANGLE,
         )
     }
-    state.raw = state.raw.copy(
-        teams = state.raw.teams.put(
-            rocketId,
-            TeamComponent(teamId),
+    state.addShip(
+        entityId = rocketId,
+        team = TeamComponent(teamId),
+        motion = MotionComponent(
+            vel = planetMotion.vel,
+            angVel = planetMotion.angVel,
         ),
-        motions = state.raw.motions.put(
-            rocketId,
-            MotionComponent(
-                vel = planetMotion.vel,
-                angVel = planetMotion.angVel,
-            ),
-        ),
-        landings = state.raw.landings.put(
-            rocketId,
-            LandingAttachmentComponent(
-                parentEntityId = planetId,
-                relativePos = relativePos,
-                relativeAng = Frac(localAngle.raw.toLong()),
-            ),
+        landing = LandingAttachmentComponent(
+            parentEntityId = planetId,
+            relativePos = relativePos,
+            relativeAng = Frac(localAngle.raw.toLong()),
         ),
     )
 }

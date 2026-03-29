@@ -17,8 +17,7 @@ private const val WARMUP_TICKS = 120
 private const val PROFILE_TICKS = 1800 // ~30 seconds of game time at 60fps
 
 private val SYSTEMS: List<Pair<String, EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>>> = listOf(
-    "Input" to ShipThrustSystem,
-    "LiftOff" to LiftOffSystem,
+    "ShipThrust" to ShipThrustSystem,
     "Gravity" to GravitySystem,
     "Integration" to IntegrationSystem,
     "ForceField" to ForceFieldSystem,
