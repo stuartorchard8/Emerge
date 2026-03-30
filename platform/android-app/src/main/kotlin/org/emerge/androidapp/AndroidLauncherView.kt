@@ -120,7 +120,7 @@ class AndroidLauncherView(
 
     private fun syncEnabledFields() {
         val mode = selectedMode()
-        hostIpField.isEnabled = mode == LaunchMode.JOIN || mode == LaunchMode.JOIN_THIN
+        hostIpField.isEnabled = mode == LaunchMode.JOIN || mode == LaunchMode.JOIN_IMPULSE || mode == LaunchMode.JOIN_THIN
     }
 
     private fun selectedMode(): LaunchMode =

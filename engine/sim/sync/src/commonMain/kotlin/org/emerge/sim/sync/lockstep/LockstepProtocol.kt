@@ -4,14 +4,18 @@ import org.emerge.net.codec.ByteCursor
 import org.emerge.net.codec.ByteWriter
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.Tick
+import kotlin.collections.component1
+import kotlin.collections.component2
+import kotlin.collections.iterator
 
-internal object LockstepProtocol {
+object LockstepProtocol {
     private const val HELLO: Byte = 1
     private const val WELCOME: Byte = 2
     private const val INPUT: Byte = 3
     private const val TICK_INPUTS: Byte = 4
     private const val RESYNC: Byte = 5
     private const val THIN_EVENTS: Byte = 6
+    private const val SEMI_THIN_RESYNC: Byte = 7
 
     data class Hello(val clientMode: ClientMode = ClientMode.LOCKSTEP)
 
@@ -22,6 +26,7 @@ internal object LockstepProtocol {
     data class TickInputs(val tick: Tick, val inputs: Map<PlayerId, ByteArray>)
 
     data class Resync(val tick: Tick, val stateBytes: ByteArray)
+    data class SemiThinResync(val tick: Tick, val stateBytes: ByteArray)
 
     /**
      * Thin-client event stream payload for one tick.
@@ -155,6 +160,40 @@ internal object LockstepProtocol {
         return Resync(tick, bytes)
     }
 
+    // ── Semi-Thin Resync (host → semi-thin clients): stream host-calculated impulses for clients to apply each tick ──
+
+    fun encodeSemiThinResync(msg: SemiThinResync, inputs: Map<PlayerId, ByteArray>): ByteArray {
+        val w = ByteWriter()
+        w.writeByte(SEMI_THIN_RESYNC)
+        w.writeLong(msg.tick.value)
+        w.writeInt(msg.stateBytes.size)
+        w.writeInt(inputs.size)
+        w.writeBytes(msg.stateBytes)
+        for ((playerId, payload) in inputs) {
+            w.writeInt(playerId.value)
+            w.writeInt(payload.size)
+            w.writeBytes(payload)
+        }
+        return w.toByteArray()
+    }
+
+    fun decodeSemiThinResync(packet: ByteArray): Pair<SemiThinResync, TickInputs>? {
+        val c = ByteCursor(packet)
+        if (c.remaining() < 1 + 8 + 4 + 4 ) return null
+        if (c.readByte() != SEMI_THIN_RESYNC) return null
+        val tick = Tick(c.readLong())
+        val stateLen = c.readInt()
+        val inputsLen = c.readInt()
+        val stateBytes = c.readBytes(stateLen)
+        val inputs = LinkedHashMap<PlayerId, ByteArray>(inputsLen)
+        repeat(inputsLen) {
+            val player = PlayerId(c.readInt())
+            val len = c.readInt()
+            inputs[player] = c.readBytes(len)
+        }
+        return SemiThinResync(tick, stateBytes) to TickInputs(tick, inputs)
+    }
+
     // ── ThinEvents (host → thin clients): per-tick event stream ──
 
     fun encodeThinEvents(msg: ThinEvents): ByteArray {
@@ -179,7 +218,7 @@ internal object LockstepProtocol {
 
     /**
      * Peek at the tag byte to determine the message type, then decode.
-     * Returns one of [Hello], [Welcome], [InputMsg], [TickInputs], [Resync], [ThinEvents], or null.
+     * Returns one of [Hello], [Welcome], [InputMsg], [TickInputs], [Resync], [ThinEvents], [SemiThinResync], or null.
      */
     fun decode(packet: ByteArray): Any? {
         if (packet.isEmpty()) return null
@@ -190,6 +229,7 @@ internal object LockstepProtocol {
             TICK_INPUTS -> decodeTickInputs(packet)
             RESYNC -> decodeResync(packet)
             THIN_EVENTS -> decodeThinEvents(packet)
+            SEMI_THIN_RESYNC -> decodeSemiThinResync(packet)
             else -> null
         }
     }

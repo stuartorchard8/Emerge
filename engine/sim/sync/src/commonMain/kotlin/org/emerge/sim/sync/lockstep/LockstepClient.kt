@@ -19,7 +19,7 @@ import kotlin.time.TimeSource
  * whenever a TickInputs bundle arrives from the host. The simulation is never replaced wholesale
  * except on the initial Welcome or an explicit Resync (player join/leave).
  */
-class LockstepClient<C, S, I>(
+open class LockstepClient<C, S, I>(
     cfg: C,
     initialState: S,
     reducer: SimReducer<C, S, I>,
@@ -36,7 +36,9 @@ class LockstepClient<C, S, I>(
         CONNECTED,
     }
 
-    private val stepper = TickStepper(cfg = cfg, initialState = initialState, reducer = reducer)
+    protected open val mode = ClientMode.LOCKSTEP
+
+    protected val stepper = TickStepper(cfg = cfg, initialState = initialState, reducer = reducer)
 
     @kotlin.concurrent.Volatile
     var playerId: PlayerId? = null
@@ -60,7 +62,7 @@ class LockstepClient<C, S, I>(
 
     fun startHandshake(force: Boolean = false) {
         if (!force && connectionState != ConnectionState.DISCONNECTED) return
-        pipe.send(LockstepProtocol.encodeHello(LockstepProtocol.Hello(clientMode = ClientMode.LOCKSTEP)))
+        pipe.send(LockstepProtocol.encodeHello(LockstepProtocol.Hello(clientMode = mode)))
         handshakeSentAt = timeSource.markNow()
         connectionState = ConnectionState.HANDSHAKING
     }
@@ -81,14 +83,18 @@ class LockstepClient<C, S, I>(
             lastPacketAt = timeSource.markNow()
 
             val msg = LockstepProtocol.decode(pkt) ?: continue
-            when (msg) {
-                is LockstepProtocol.Welcome -> handleWelcome(msg)
-                is LockstepProtocol.Resync -> handleResync(msg)
-                is LockstepProtocol.TickInputs -> handleTickInputs(msg)
-                else -> {}
-            }
+            processMessage(msg)
         }
         checkTimeouts()
+    }
+
+    protected open fun processMessage(msg: Any) {
+        when (msg) {
+            is LockstepProtocol.Welcome -> handleWelcome(msg)
+            is LockstepProtocol.Resync -> handleResync(msg)
+            is LockstepProtocol.TickInputs -> handleTickInputs(msg)
+            else -> {}
+        }
     }
 
     fun sendInput(input: I) {
@@ -128,7 +134,7 @@ class LockstepClient<C, S, I>(
         stepper.reset(decoded, msg.tick)
     }
 
-    private fun handleTickInputs(msg: LockstepProtocol.TickInputs) {
+    protected fun handleTickInputs(msg: LockstepProtocol.TickInputs) {
         if (connectionState != ConnectionState.CONNECTED) return
         val inputs = LinkedHashMap<PlayerId, I>(msg.inputs.size)
         for ((pid, bytes) in msg.inputs) {
@@ -155,7 +161,7 @@ class LockstepClient<C, S, I>(
         }
     }
 
-    private fun disconnect(reason: String) {
+    protected fun disconnect(reason: String) {
         playerId = null
         connectionState = ConnectionState.DISCONNECTED
         lastDisconnectReason = reason

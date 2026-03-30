@@ -31,6 +31,7 @@ class LockstepHost<C, S, I>(
     reducer: SimReducer<C, S, I>,
     private val inputCodec: Codec<I>,
     private val stateCodec: StateCodec<S>,
+    private val semiThinStateCodec: StateCodec<S>,
     private val joinPolicy: (S, PlayerId) -> Unit,
     private val leavePolicy: (S, PlayerId) -> Unit = { _, _ -> },
     private val thinSnapshotEveryTicks: Int = 3,
@@ -113,14 +114,13 @@ class LockstepHost<C, S, I>(
     fun step() {
         val inputs = LinkedHashMap<PlayerId, I>(lastInputById)
 
-        val hasLockstepClients = clientsById.values.any { it.mode == ClientMode.LOCKSTEP }
-        val hasThinClients = clientsById.values.any { it.mode == ClientMode.THIN }
+        val encodedInputs = LinkedHashMap<PlayerId, ByteArray>(inputs.size)
+        for ((pid, input) in inputs) {
+            encodedInputs[pid] = inputCodec.encode(input)
+        }
 
+        val hasLockstepClients = clientsById.values.any { it.mode == ClientMode.LOCKSTEP }
         if (hasLockstepClients) {
-            val encodedInputs = LinkedHashMap<PlayerId, ByteArray>(inputs.size)
-            for ((pid, input) in inputs) {
-                encodedInputs[pid] = inputCodec.encode(input)
-            }
             val encoded = LockstepProtocol.encodeTickInputs(
                 LockstepProtocol.TickInputs(tick = tick, inputs = encodedInputs),
             )
@@ -133,6 +133,20 @@ class LockstepHost<C, S, I>(
 
         stepper.step(inputs)
 
+        val hasSemiThinClients = clientsById.values.any { it.mode == ClientMode.SEMI_THIN }
+        if (hasSemiThinClients) {
+            val encoded = LockstepProtocol.encodeSemiThinResync(
+                LockstepProtocol.SemiThinResync(tick = tick, stateBytes = semiThinStateCodec.encode(stepper.state)),
+                encodedInputs,
+            )
+            for ((_, entry) in clientsById) {
+                if (entry.mode == ClientMode.SEMI_THIN) {
+                    entry.pipe.send(encoded)
+                }
+            }
+        }
+
+        val hasThinClients = clientsById.values.any { it.mode == ClientMode.THIN }
         if (hasThinClients && thinEventsEncoder != null) {
             val encodedEvents = LockstepProtocol.encodeThinEvents(
                 LockstepProtocol.ThinEvents(

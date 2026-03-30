@@ -16,13 +16,8 @@ import org.emerge.sim.core.physics.systems.ParticleSystem
 import org.emerge.sim.core.physics.systems.RespawnSystem
 import org.emerge.sim.core.physics.systems.ShipThrustParticleSystem
 
-class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
+class NoImpulsePhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val systems: List<EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>> = listOf(
-        ShipThrustSystem,
-        GravitySystem,
-        ForceFieldSystem,
-        CollisionSystem,
-        AttachmentSystem,
         DamageSystem,
         ShipThrustParticleSystem,
         ParticleSystem,

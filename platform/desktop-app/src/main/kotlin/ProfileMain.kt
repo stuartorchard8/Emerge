@@ -43,6 +43,10 @@ class ProfilingReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         tickCount++
     }
 
+    override fun patchState(state: PhysicsState, delta: PhysicsState) {
+        TODO()
+    }
+
     fun reset() {
         accumulatedNanos.fill(0)
         peakNanos.fill(0)

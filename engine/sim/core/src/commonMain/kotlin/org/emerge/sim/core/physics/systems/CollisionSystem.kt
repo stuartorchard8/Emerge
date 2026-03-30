@@ -4,7 +4,6 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.CrashImpactAudioEvent
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Contact
@@ -18,16 +17,11 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Coord
-import org.emerge.sim.core.physics.primitives.Coord2
 import kotlin.collections.set
 
 
 object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val LANDING_ALIGNMENT_THRESHOLD = Frac(7, 8)
-    private const val DESTRUCTION_BURST_PARTICLE_COUNT = 50
-    private val DESTRUCTION_BURST_PARTICLE_RADIUS = Frac(1, 1536)
-    private val DESTRUCTION_BURST_BASE_SPEED = Frac(1, 896)
-    private const val DESTRUCTION_BURST_LIFETIME = 42
 
     override fun update(
         cfg: PhysicsConfig,
@@ -36,10 +30,7 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     ) {
         val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
         val landings = LinkedHashMap(state.raw.landings.asMap())
-        val damages = LinkedHashMap(state.raw.damages.asMap())
-        val crashImpactAudioEvents = ArrayList<CrashImpactAudioEvent>()
-        val destructionBursts = ArrayList<DestructionBurstSpec>()
-        val playersToRespawn = LinkedHashSet<PlayerId>()
+        val damages = LinkedHashMap<EntityId, Frac>()
         val ids = state.raw.materials.keys().toList()
         for (i in 0 until ids.size) {
             for (j in i + 1 until ids.size) {
@@ -70,42 +61,24 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val aLanding = landings[aId]
                 val bLanding = landings[bId]
                 if (aLanding != null || bLanding != null) {
-                    val aCrushEvent = crushLandedShipIfPinnedByPlanet(
+                    crushLandedShipIfPinnedByPlanet(
                         state = state,
                         cfg = cfg,
                         damages = damages,
-                        playersToRespawn = playersToRespawn,
                         entityId = aId,
-                        entityTransform = aTransform,
                         entityShape = aShape,
                         landing = aLanding,
                         otherEntityId = bId,
                     )
-                    if (aCrushEvent != null) {
-                        crashImpactAudioEvents += aCrushEvent
-                        val teamId = state.raw.teams[aId]?.teamId
-                        if (teamId != null) {
-                            destructionBursts += DestructionBurstSpec(pos = aTransform.pos, vel = aMotion.vel, teamId = teamId)
-                        }
-                    }
-                    val bCrushEvent = crushLandedShipIfPinnedByPlanet(
+                    crushLandedShipIfPinnedByPlanet(
                         state = state,
                         cfg = cfg,
                         damages = damages,
-                        playersToRespawn = playersToRespawn,
                         entityId = bId,
-                        entityTransform = bTransform,
                         entityShape = bShape,
                         landing = bLanding,
                         otherEntityId = aId,
                     )
-                    if (bCrushEvent != null) {
-                        crashImpactAudioEvents += bCrushEvent
-                        val teamId = state.raw.teams[bId]?.teamId
-                        if (teamId != null) {
-                            destructionBursts += DestructionBurstSpec(pos = bTransform.pos, vel = bMotion.vel, teamId = teamId)
-                        }
-                    }
                     continue
                 }
 
@@ -184,96 +157,41 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 impulses[aId] = impulses[aId]?.plus(impulseA) ?: impulseA
                 impulses[bId] = impulses[bId]?.plus(impulseB) ?: impulseB
 
-                val aCrashEvent = accumulateShipCollisionDamage(
-                    state = state,
+                accumulateShipCollisionDamage(
                     damages = damages,
-                    playersToRespawn = playersToRespawn,
                     entityId = aId,
-                    entityPos = aTransform.pos,
                     shape = aShape,
-                    imactImpulse = pushVelA,
+                    impactImpulse = pushVelA,
                     cfg = cfg,
                 )
-                if (aCrashEvent != null) {
-                    crashImpactAudioEvents += aCrashEvent
-                    if (aCrashEvent.destroyed) {
-                        val teamId = state.raw.teams[aId]?.teamId
-                        if (teamId != null) {
-                            destructionBursts += DestructionBurstSpec(pos = aTransform.pos, vel = state.raw.motions[aId]!!.vel+impulseA.vel, teamId = teamId)
-                        }
-                    }
-                }
-                val bCrashEvent = accumulateShipCollisionDamage(
-                    state = state,
+
+                accumulateShipCollisionDamage(
                     damages = damages,
-                    playersToRespawn = playersToRespawn,
                     entityId = bId,
-                    entityPos = bTransform.pos,
                     shape = bShape,
-                    imactImpulse = pushVelB,
+                    impactImpulse = pushVelB,
                     cfg = cfg,
                 )
-                if (bCrashEvent != null) {
-                    crashImpactAudioEvents += bCrashEvent
-                    if (bCrashEvent.destroyed) {
-                        val teamId = state.raw.teams[bId]?.teamId
-                        if (teamId != null) {
-                            destructionBursts += DestructionBurstSpec(pos = bTransform.pos, vel = state.raw.motions[bId]!!.vel+impulseB.vel, teamId = teamId)
-                        }
-                    }
-                }
             }
         }
 
         state.addImpulses(impulses)
         state.setLandings(ComponentTable.fromMap(landings))
-        state.setDamages(
-            damages = ComponentTable.fromMap(damages),
-            crashImpactAudioEvents = crashImpactAudioEvents,
-        )
-        for (burst in destructionBursts) {
-            spawnDestructionBurst(state, burst)
-        }
-        for (playerId in playersToRespawn) {
-            state.queuePlayerRespawn(playerId, cfg.shipRespawnTicks)
-        }
+        state.addDamages(damages)
     }
 
     private fun accumulateShipCollisionDamage(
-        state: PhysicsState,
-        damages: MutableMap<EntityId, DamageComponent>,
-        playersToRespawn: MutableSet<PlayerId>,
+        damages: MutableMap<EntityId, Frac>,
         entityId: EntityId,
-        entityPos: Coord2,
         shape: RenderShapeComponent,
-        imactImpulse: Frac,
+        impactImpulse: Frac,
         cfg: PhysicsConfig,
-    ): CrashImpactAudioEvent? {
-        if (shape.shape != BodyShape.TRIANGLE) return null
-        val owner = state.raw.playerOwned[entityId]?.playerId ?: return null
-        if (playersToRespawn.contains(owner)) return null
-        val speedOverThreshold = imactImpulse - cfg.shipCollisionDamageThreshold
-        if (speedOverThreshold.raw <= 0L) return null
-        val currentDamage = damages[entityId]?.damage ?: Frac(0)
-        val nextDamage = currentDamage + speedOverThreshold
-        if (nextDamage.raw >= cfg.shipMaxDamage.raw) {
-            playersToRespawn += owner
-            damages.remove(entityId)
-            return CrashImpactAudioEvent(
-                entityId = entityId,
-                pos = entityPos,
-                damageRaw = speedOverThreshold.raw.toInt(),
-                destroyed = true,
-            )
-        } else {
-            damages[entityId] = DamageComponent(damage = nextDamage)
-            return CrashImpactAudioEvent(
-                entityId = entityId,
-                pos = entityPos,
-                damageRaw = speedOverThreshold.raw.toInt(),
-                destroyed = false,
-            )
-        }
+    ) {
+        if (shape.shape != BodyShape.TRIANGLE) return
+        val speedOverThreshold = impactImpulse - cfg.shipCollisionDamageThreshold
+        if (speedOverThreshold.raw <= 0L) return
+        val priorDamage = damages[entityId] ?: Frac(0)
+        damages[entityId] = priorDamage + speedOverThreshold
     }
 
     private fun canLand(
@@ -283,7 +201,8 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         landingNormal: Norm,
     ): Boolean {
         if (rocketShape.shape != BodyShape.TRIANGLE) return false
-        if (supportShape.shape == BodyShape.TRIANGLE) return false
+        // Allow landing rockets on one another for now lol
+        // if (supportShape.shape == BodyShape.TRIANGLE) return false
         val forward = Norm.fromAngle(rocketTransform.ang)
         val alignment = forward.dot(landingNormal)
         return alignment.raw > LANDING_ALIGNMENT_THRESHOLD.raw
@@ -315,50 +234,19 @@ object CollisionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         )
     }
 
-    private fun spawnDestructionBurst(state: PhysicsState, burst: DestructionBurstSpec) {
-        repeat(DESTRUCTION_BURST_PARTICLE_COUNT) {
-            val direction = Norm.fromAngle(Coord(state.nextRandomInt()))
-            val speed = DESTRUCTION_BURST_BASE_SPEED * Frac(state.nextRandomInt(until = Int.MAX_VALUE).toLong())
-            state.spawnParticle(
-                pos = burst.pos,
-                vel = burst.vel + direction * speed,
-                radius = DESTRUCTION_BURST_PARTICLE_RADIUS,
-                shape = BodyShape.CIRCLE,
-                lifetime = DESTRUCTION_BURST_LIFETIME,
-                teamId = burst.teamId,
-            )
-        }
-    }
-
     private fun crushLandedShipIfPinnedByPlanet(
         state: PhysicsState,
         cfg: PhysicsConfig,
-        damages: MutableMap<EntityId, DamageComponent>,
-        playersToRespawn: MutableSet<PlayerId>,
+        damages: MutableMap<EntityId, Frac>,
         entityId: EntityId,
-        entityTransform: TransformComponent,
         entityShape: RenderShapeComponent,
         landing: LandingAttachmentComponent?,
         otherEntityId: EntityId,
-    ): CrashImpactAudioEvent? {
-        if (landing == null) return null
-        if (landing.parentEntityId == otherEntityId) return null
-        if (entityShape.shape != BodyShape.TRIANGLE) return null
-        if (state.raw.planets[otherEntityId] == null) return null
-        val owner = state.raw.playerOwned[entityId]?.playerId ?: return null
-        if (!playersToRespawn.add(owner)) return null
-        damages.remove(entityId)
-        return CrashImpactAudioEvent(
-            entityId = entityId,
-            pos = entityTransform.pos,
-            damageRaw = cfg.shipMaxDamage.raw.toInt(),
-            destroyed = true,
-        )
+    ) {
+        if (landing == null) return
+        if (landing.parentEntityId == otherEntityId) return
+        if (entityShape.shape != BodyShape.TRIANGLE) return
+        if (state.raw.planets[otherEntityId] == null) return
+        damages[entityId] = cfg.shipMaxDamage
     }
-
-    private data class DestructionBurstSpec(
-        val pos: Coord2,
-        val vel: Coord2,
-        val teamId: org.emerge.sim.core.TeamId,
-    )
 }

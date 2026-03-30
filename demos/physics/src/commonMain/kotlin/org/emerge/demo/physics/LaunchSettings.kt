@@ -18,6 +18,7 @@ enum class LaunchMode {
     HOST,
     HEADLESS_HOST,
     JOIN,
+    JOIN_IMPULSE,
     JOIN_THIN,
 }
 

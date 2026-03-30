@@ -22,5 +22,9 @@ class TickStepper<C, S, I>(
         state = newState
         tick = newTick
     }
+
+    fun patch(delta: S) {
+        reducer.patchState(state, delta)
+    }
 }
 

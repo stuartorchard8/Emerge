@@ -21,11 +21,12 @@ import org.emerge.net.api.Pipe
 class PhysicsHeadlessHostController(
     private val port: Int,
     private val cfg: PhysicsConfig = PhysicsConfig(),
-    private val gameMode: GameMode = GameMode.PVP,
+    gameMode: GameMode = GameMode.PVP,
 ) : PhysicsController() {
     private val reducer = PhysicsReducer()
     private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
     private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
+    private val impulseCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.impulseCodec
 
     private val initial: PhysicsState = createDefaultInitialState(gameMode, spawnHostPlayer = false)
 
@@ -35,6 +36,7 @@ class PhysicsHeadlessHostController(
         reducer = reducer,
         inputCodec = inputCodec,
         stateCodec = stateCodec,
+        semiThinStateCodec = impulseCodec,
         joinPolicy = defaultJoinPolicy(gameMode),
         leavePolicy = { state, playerId -> state.removePlayerRocket(playerId) },
         thinEventsEncoder = { state -> PhysicsNetCodecs.crashImpactAudioEventsCodec.encode(state.raw.crashImpactAudioEvents) },

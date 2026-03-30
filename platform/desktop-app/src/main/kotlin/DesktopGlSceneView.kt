@@ -47,6 +47,13 @@ object DesktopGlSceneView {
             )
             runGl("Emerge join (${settings.hostIp}:${settings.port})", controller)
         }.start()
+        LaunchMode.JOIN_IMPULSE -> Thread {
+            val controller = PhysicsImpulseJoinController(
+                hostIp = settings.hostIp,
+                port = settings.port,
+            )
+            runGl("Emerge impulse (${settings.hostIp}:${settings.port})", controller)
+        }.start()
         LaunchMode.JOIN_THIN -> Thread {
             val controller = PhysicsThinJoinController(
                 hostIp = settings.hostIp,

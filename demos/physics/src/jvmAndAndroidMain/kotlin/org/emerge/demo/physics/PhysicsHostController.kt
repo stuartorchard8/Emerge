@@ -24,6 +24,7 @@ class PhysicsHostController(
     private val reducer = PhysicsReducer()
     private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
     private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
+    private val impulseCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.impulseCodec
 
     private val initial: PhysicsState = createDefaultInitialState(gameMode)
 
@@ -33,6 +34,7 @@ class PhysicsHostController(
         reducer = reducer,
         inputCodec = inputCodec,
         stateCodec = stateCodec,
+        semiThinStateCodec = impulseCodec,
         joinPolicy = defaultJoinPolicy(gameMode),
         leavePolicy = { state, playerId -> state.removePlayerRocket(playerId) },
         thinEventsEncoder = { state -> PhysicsNetCodecs.crashImpactAudioEventsCodec.encode(state.raw.crashImpactAudioEvents) },

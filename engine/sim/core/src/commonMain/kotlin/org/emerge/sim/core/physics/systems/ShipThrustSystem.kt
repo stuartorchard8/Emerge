@@ -51,21 +51,6 @@ object ShipThrustSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
             impulses[entityId] = impulses[entityId]?.plus(impulse) ?: impulse
 
-            if (input.thrust > state.nextRandomInt(until = Int.MAX_VALUE)) {
-                val team = state.raw.teams[entityId] ?: continue
-                val angleJitter = Frac(state.nextRandomInt(until = Int.MAX_VALUE/8).toLong()-Int.MAX_VALUE/16)
-                val angleVectoring = Frac(input.turn/-16L + motion.angVel.raw.toLong()*4) // Combined turning & dampening
-                val norm = Norm.fromAngle(transform.ang + angleVectoring + angleJitter)
-                state.spawnParticle(
-                    pos = transform.pos,
-                    vel = motion.vel - norm * Frac(1,1024)*Frac(state.nextRandomInt(until = Int.MAX_VALUE).toLong()),
-                    radius = Frac(1, 2048),
-                    shape = BodyShape.CIRCLE,
-                    lifetime = 30,
-                    teamId = team.teamId,
-                )
-            }
-
             val landing = landings[entityId]
             if (input.thrust > 0 && landing != null) {
                 val parentTransform = state.raw.transforms[landing.parentEntityId]

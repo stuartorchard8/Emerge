@@ -63,6 +63,7 @@ data class PhysicsSnapshot(
     val transforms: ComponentTable<TransformComponent> = ComponentTable.empty(),
     val motions: ComponentTable<MotionComponent> = ComponentTable.empty(),
     val impulses: ComponentTable<ImpulseComponent> = ComponentTable.empty(),
+    val discardImpulses: Boolean = false,
     val colliders: ComponentTable<ColliderComponent> = ComponentTable.empty(),
     val materials: ComponentTable<MaterialComponent> = ComponentTable.empty(),
     val renderShapes: ComponentTable<RenderShapeComponent> = ComponentTable.empty(),
@@ -119,15 +120,21 @@ data class PhysicsState(
         raw = raw.copy(
             transforms = transforms,
             motions = motions,
-            impulses = ComponentTable.empty(),
+            discardImpulses = true,
         )
     }
 
-    fun addImpulses(
-        impulses: LinkedHashMap<EntityId,ImpulseComponent>,
-    ) {
-        val sums = impulses.mapValues { (entityId, impulse) -> raw.impulses[entityId]?.plus(impulse) ?: impulse }
-        raw = raw.copy(impulses = raw.impulses.putAll(sums.toList()))
+    fun addImpulses(impulses: LinkedHashMap<EntityId, ImpulseComponent>) {
+        if (raw.discardImpulses) {
+            setImpulses(ComponentTable.fromMap(impulses))
+        } else {
+            val sums = impulses.mapValues { (entityId, impulse) -> raw.impulses[entityId]?.plus(impulse) ?: impulse }
+            setImpulses(raw.impulses.putAll(sums.toList()))
+        }
+    }
+
+    fun setImpulses(impulses: ComponentTable<ImpulseComponent>) {
+        raw = raw.copy(impulses = impulses, discardImpulses = false)
     }
 
     fun setLandings(
@@ -136,12 +143,27 @@ data class PhysicsState(
         raw = raw.copy(landings = landings)
     }
 
+    fun addDamages(
+        damages: Map<EntityId, Frac>,
+    ) {
+        if (damages.entries.isNotEmpty()) {
+            val sums = damages.mapValues { (entityId, damage) -> raw.damages[entityId]?.plus(damage) ?: DamageComponent(Frac(0), damage) }
+            setDamages(raw.damages.putAll(sums.toList()))
+        }
+    }
+
     fun setDamages(
         damages: ComponentTable<DamageComponent>,
-        crashImpactAudioEvents: List<CrashImpactAudioEvent>
     ) {
         raw = raw.copy(
             damages = damages,
+        )
+    }
+
+    fun setAudioEvents(
+        crashImpactAudioEvents: List<CrashImpactAudioEvent>
+    ) {
+        raw = raw.copy(
             crashImpactAudioEvents = crashImpactAudioEvents,
         )
     }

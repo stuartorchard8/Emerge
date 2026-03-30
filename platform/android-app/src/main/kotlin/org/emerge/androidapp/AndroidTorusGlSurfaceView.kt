@@ -14,6 +14,7 @@ import org.emerge.demo.physics.PhysicsHostController
 import org.emerge.demo.physics.PhysicsJoinController
 import org.emerge.demo.physics.PhysicsThinJoinController
 import org.emerge.demo.physics.PhysicsFrame
+import org.emerge.demo.physics.PhysicsImpulseJoinController
 import org.emerge.demo.physics.audio.CrashAudioSystem
 import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.sim.core.PlayerId
@@ -308,6 +309,7 @@ internal class AndroidTorusGlSurfaceView(
             LaunchMode.LOCAL -> PhysicsHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = false)
             LaunchMode.HEADLESS_HOST -> throw IllegalStateException("HEADLESS_HOST should not use the GL view")
             LaunchMode.JOIN -> PhysicsJoinController(hostIp = settings.hostIp, port = settings.port)
+            LaunchMode.JOIN_IMPULSE -> PhysicsImpulseJoinController(hostIp = settings.hostIp, port = settings.port)
             LaunchMode.JOIN_THIN -> PhysicsThinJoinController(hostIp = settings.hostIp, port = settings.port)
         }
 
@@ -328,6 +330,7 @@ internal class AndroidTorusGlSurfaceView(
 
             LaunchMode.HEADLESS_HOST,
             LaunchMode.JOIN,
+            LaunchMode.JOIN_IMPULSE,
             LaunchMode.JOIN_THIN,
             -> null
         }
