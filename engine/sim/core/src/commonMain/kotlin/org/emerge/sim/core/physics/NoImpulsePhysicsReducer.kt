@@ -5,12 +5,7 @@ import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.ecs.EcsSystems
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.systems.AttachmentSystem
-import org.emerge.sim.core.physics.systems.CollisionSystem
 import org.emerge.sim.core.physics.systems.DamageSystem
-import org.emerge.sim.core.physics.systems.ForceFieldSystem
-import org.emerge.sim.core.physics.systems.GravitySystem
-import org.emerge.sim.core.physics.systems.ShipThrustSystem
 import org.emerge.sim.core.physics.systems.IntegrationSystem
 import org.emerge.sim.core.physics.systems.ParticleSystem
 import org.emerge.sim.core.physics.systems.RespawnSystem
@@ -18,10 +13,10 @@ import org.emerge.sim.core.physics.systems.ShipThrustParticleSystem
 
 class NoImpulsePhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val systems: List<EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>> = listOf(
+        RespawnSystem,
         DamageSystem,
         ShipThrustParticleSystem,
         ParticleSystem,
-        RespawnSystem,
         IntegrationSystem,
     )
 
@@ -33,6 +28,6 @@ class NoImpulsePhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsI
         // Intentionally ignoring everything but impulses.
         // Impulses is all that ThinLockstepClient acquires.
         state.setImpulses(delta.raw.impulses)
-        state.addDamages(delta.raw.damages.asMap().mapValues { (_, component) -> component.new })
+        state.addDamages(delta.raw.damages.asMap().mapValues { (_, component) -> component.next })
     }
 }

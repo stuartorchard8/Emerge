@@ -34,7 +34,6 @@ import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
-import kotlin.text.get
 
 /**
  * Shared demo codecs for the deterministic physics sample.
@@ -42,12 +41,12 @@ import kotlin.text.get
  * This keeps Android + desktop using the exact same wire format without duplicating logic.
  */
 object PhysicsNetCodecs {
-    private const val STATE_HEADER_INT_COUNT = 5
+    private const val STATE_HEADER_INT_COUNT = 6
     private const val STATE_ENTITY_INT_COUNT = 28
-    private const val STATE_RESPAWN_INT_COUNT = 10
+    private const val STATE_RESPAWN_INT_COUNT = 11
     private const val STATE_CRASH_AUDIO_EVENT_INT_COUNT = 5
     private const val STATE_INT_BYTES = 4
-    private const val IMPULSE_STATE_HEADER_INT_COUNT = 4
+    private const val IMPULSE_STATE_HEADER_INT_COUNT = 2
     private const val IMPULSE_STATE_ENTITY_INT_COUNT = 7
     private const val IMPULSE_STATE_DAMAGE_INT_COUNT = 2
     private const val MAX_STATE_ENTITIES = 2048
@@ -83,6 +82,7 @@ object PhysicsNetCodecs {
                     w.writeInt(pendingRespawns.size)
                     w.writeInt(crashImpactAudioEvents.size)
                     w.writeLong(state.randomSeed)
+                    w.writeInt(world.lastEntityValue)
                     for (entityId in serializableEntities) {
                         val transform = transforms[entityId] ?: continue
                         val motion = motions[entityId] ?: continue
@@ -106,10 +106,12 @@ object PhysicsNetCodecs {
                         w.writeInt(motion.vel.y.raw)
                         w.writeInt(transform.ang.raw)
                         w.writeInt(motion.angVel.raw)
-                        w.writeInt(material?.mass?.toInt() ?: -1)
                         w.writeInt(collider.radius.raw.toInt())
+
+                        w.writeInt(material?.mass?.toInt() ?: -1)
                         w.writeInt(material?.bounce?.raw?.toInt() ?: -1)
                         w.writeInt(material?.rough?.raw?.toInt() ?: -1)
+
                         w.writeInt(renderShape?.shape?.wireValue ?: -1)
                         w.writeInt(bgRenderShape?.shape?.wireValue ?: -1)
                         w.writeInt(planet?.seed ?: -1)
@@ -124,13 +126,14 @@ object PhysicsNetCodecs {
                         w.writeInt(landing?.relativeAng?.raw?.toInt() ?: 0)
                         w.writeInt(particle?.life ?: 0)
                         w.writeInt(particle?.lifeTime ?: 1)
-                        w.writeInt(damage?.old?.raw?.toInt() ?: 0)
-                        w.writeInt(damage?.new?.raw?.toInt() ?: 0)
+                        w.writeInt(damage?.accumulated?.raw?.toInt() ?: 0)
+                        w.writeInt(damage?.next?.raw?.toInt() ?: 0)
                     }
                     for ((playerId, respawn) in pendingRespawns) {
                         w.writeInt(playerId.value)
                         w.writeInt(respawn.ticksRemaining)
                         w.writeInt(respawn.teamId.value)
+                        w.writeInt(respawn.entityId.value)
                         w.writeInt(respawn.deathPos.x.raw)
                         w.writeInt(respawn.deathPos.y.raw)
                         w.writeInt(respawn.rocket.mass.toInt())
@@ -161,6 +164,7 @@ object PhysicsNetCodecs {
                     "Invalid crash audio event count: $crashAudioEventCount"
                 }
                 val randomSeed = c.readLong()
+                val lastEntityValue = c.readInt()
                 val expectedSize =
                     (
                         STATE_HEADER_INT_COUNT +
@@ -198,8 +202,8 @@ object PhysicsNetCodecs {
                     val vy = c.readInt()
                     val a = c.readInt()
                     val av = c.readInt()
-                    val m = c.readInt()
                     val rad = c.readInt()
+                    val m = c.readInt()
                     val b = c.readInt()
                     val r = c.readInt()
                     val shapeRaw = c.readInt()
@@ -295,6 +299,7 @@ object PhysicsNetCodecs {
                     if (oldDamageRaw > 0 || newDamageRaw > 0) {
                         damages[entityId] = DamageComponent(
                             Frac(oldDamageRaw.toLong()),
+                            Frac(0),
                             Frac(newDamageRaw.toLong()),
                         )
                     }
@@ -303,6 +308,7 @@ object PhysicsNetCodecs {
                     val playerId = PlayerId(c.readInt())
                     val ticksRemaining = c.readInt()
                     val teamIdRaw = c.readInt()
+                    val entityIdRaw = c.readInt()
                     val deathPosX = c.readInt()
                     val deathPosY = c.readInt()
                     val massRaw = c.readInt()
@@ -315,6 +321,7 @@ object PhysicsNetCodecs {
                             ticksRemaining = ticksRemaining,
                             deathPos = Coord2.raw(deathPosX, deathPosY),
                             teamId = TeamId(teamIdRaw),
+                            entityId = EntityId(entityIdRaw),
                             rocket = RespawnRocketSpec(
                                 mass = massRaw.toUInt(),
                                 radius = Frac(radiusRaw.toLong()),
@@ -341,6 +348,7 @@ object PhysicsNetCodecs {
                 val state = PhysicsSnapshot(
                     world = EcsWorld(
                         entities = entities,
+                        lastEntityValue = lastEntityValue,
                     ),
                     playerEntities = playerEntities,
                     transforms = ComponentTable.fromMap(transforms),
@@ -361,6 +369,7 @@ object PhysicsNetCodecs {
                     crashImpactAudioEvents = crashImpactAudioEvents,
                 ).mutable
                 state.randomSeed = randomSeed
+                state.raw.world.lastEntityValue = lastEntityValue
                 return state
             }
         }
@@ -371,9 +380,8 @@ object PhysicsNetCodecs {
                 val w = ByteWriter()
                 with (state.raw) {
                     w.writeInt(impulses.keys().size)
-                    val curDamages = damages.entries().filter { it.value.cur.raw > 0 }
-                    w.writeInt(curDamages.size)
-                    w.writeLong(state.randomSeed)
+                    val recentDamages = damages.entries().filter { it.value.last.raw > 0 }
+                    w.writeInt(recentDamages.size)
                     for ((entityId, impulse) in impulses.entries()) {
                         val impulse = impulses[entityId] ?: continue
                         w.writeInt(entityId.value)
@@ -384,9 +392,9 @@ object PhysicsNetCodecs {
                         w.writeInt(impulse.ang.raw.toInt())
                         w.writeInt(impulse.angVel.raw.toInt())
                     }
-                    for ((entityId, damage) in curDamages) {
+                    for ((entityId, damage) in recentDamages) {
                         w.writeInt(entityId.value)
-                        w.writeInt(damage.cur.raw.toInt())
+                        w.writeInt(damage.last.raw.toInt())
                     }
                 }
                 return w.toByteArray()
@@ -398,7 +406,6 @@ object PhysicsNetCodecs {
                 require(n in 0..MAX_STATE_ENTITIES) { "Invalid entity count: $n" }
                 val d = c.readInt()
                 require(d in 0..MAX_STATE_ENTITIES) { "Invalid damage count: $d" }
-                val randomSeed = c.readLong()
                 val expectedSize =
                     (
                         IMPULSE_STATE_HEADER_INT_COUNT +
@@ -435,7 +442,6 @@ object PhysicsNetCodecs {
                     impulses = ComponentTable.fromMap(impulses),
                     damages = ComponentTable.fromMap(damages),
                 ).mutable
-                state.randomSeed = randomSeed
                 return state
             }
         }

@@ -23,10 +23,10 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         ForceFieldSystem,
         CollisionSystem,
         AttachmentSystem,
+        RespawnSystem,
         DamageSystem,
         ShipThrustParticleSystem,
         ParticleSystem,
-        RespawnSystem,
         IntegrationSystem,
     )
 
@@ -38,6 +38,6 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         // Intentionally ignoring everything but impulses.
         // Impulses is all that ThinLockstepClient acquires.
         state.setImpulses(delta.raw.impulses)
-        state.addDamages(delta.raw.damages.asMap().mapValues { (_, component) -> component.new })
+        state.addDamages(delta.raw.damages.asMap().mapValues { (_, component) -> component.next })
     }
 }

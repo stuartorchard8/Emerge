@@ -5,7 +5,7 @@ import org.emerge.sim.core.PlayerId
 
 data class EcsWorld(
     private val entities: MutableSet<Int> = mutableSetOf(),
-    private var lastEntityValue: Int = 0,
+    var lastEntityValue: Int = 0,
 ) {
     fun createEntity(): EntityId {
         while (entities.contains(lastEntityValue)) {

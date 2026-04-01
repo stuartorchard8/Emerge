@@ -33,8 +33,6 @@ object GravitySystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
                 val aTransform = state.raw.transforms[aId] ?: continue
                 val bTransform = state.raw.transforms[bId] ?: continue
-                val aMotion = state.raw.motions[aId] ?: continue
-                val bMotion = state.raw.motions[bId] ?: continue
                 val aMaterial = state.raw.materials[aId] ?: continue
                 val bMaterial = state.raw.materials[bId] ?: continue
                 val aCollider = state.raw.colliders[aId] ?: continue

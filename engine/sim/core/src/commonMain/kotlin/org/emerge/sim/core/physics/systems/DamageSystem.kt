@@ -35,7 +35,7 @@ object DamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         val playersToRespawn = LinkedHashSet<PlayerId>()
 
         for ((entityId, damage) in damages) {
-            if (damage.old.raw >= cfg.shipMaxDamage.raw) {
+            if (damage.accumulated.raw >= cfg.shipMaxDamage.raw) {
                 // Cleanup on second pass
                 damages.remove(entityId)
                 continue
@@ -45,7 +45,7 @@ object DamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             val motion = state.raw.motions[entityId] ?: continue
             val impulse = state.raw.impulses[entityId] ?: ImpulseComponent()
 
-            val total = damage.old + damage.new
+            val total = damage.accumulated + damage.next
             if (total.raw >= cfg.shipMaxDamage.raw) {
                 val teamId = state.raw.teams[entityId]?.teamId
                 if (teamId != null) {
@@ -60,18 +60,18 @@ object DamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 crashImpactAudioEvents += CrashImpactAudioEvent(
                     entityId = entityId,
                     pos = transform.pos,
-                    damageRaw = damage.new.raw.toInt(),
+                    damageRaw = damage.next.raw.toInt(),
                     destroyed = true,
                 )
             } else {
                 crashImpactAudioEvents += CrashImpactAudioEvent(
                     entityId = entityId,
                     pos = transform.pos,
-                    damageRaw = damage.new.raw.toInt(),
+                    damageRaw = damage.next.raw.toInt(),
                     destroyed = false,
                 )
             }
-            damages[entityId] = DamageComponent(total, damage.new)
+            damages[entityId] = DamageComponent(total, damage.next)
         }
 
         state.setDamages(ComponentTable.fromMap(damages))

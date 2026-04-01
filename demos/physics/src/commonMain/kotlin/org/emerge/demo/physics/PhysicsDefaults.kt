@@ -70,15 +70,15 @@ private fun assignHomePlanetAndSpawn(
             ?: chooseHomePlanet(state.raw, random)
             ?: return
     with(state) {
-        state.assignHomePlanet(
+        assignHomePlanet(
             entityId = homePlanetId,
             teamId = teamId,
         )
-        state.setTeam(
+        setTeam(
             entityId = homePlanetId,
             teamId = teamId,
         )
-        state.setForceField(
+        setForceField(
             entityId = homePlanetId,
             depth = HOME_PLANET_FORCE_FIELD_DEPTH,
             strength = HOME_PLANET_FORCE_FIELD_STRENGTH,

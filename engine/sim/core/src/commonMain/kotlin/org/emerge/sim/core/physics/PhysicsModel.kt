@@ -47,6 +47,7 @@ data class PlayerRespawnState(
     val ticksRemaining: Int,
     val deathPos: Coord2,
     val teamId: TeamId,
+    val entityId: EntityId,
     val rocket: RespawnRocketSpec,
 )
 
@@ -147,7 +148,7 @@ data class PhysicsState(
         damages: Map<EntityId, Frac>,
     ) {
         if (damages.entries.isNotEmpty()) {
-            val sums = damages.mapValues { (entityId, damage) -> raw.damages[entityId]?.plus(damage) ?: DamageComponent(Frac(0), damage) }
+            val sums = damages.mapValues { (entityId, damage) -> raw.damages[entityId]?.plus(damage) ?: DamageComponent(Frac(0), Frac(0), damage) }
             setDamages(raw.damages.putAll(sums.toList()))
         }
     }
@@ -418,13 +419,13 @@ data class PhysicsState(
         val collider = raw.colliders[entityId] ?: return removeEntity(entityId)
         val renderShape = raw.renderShapes[entityId] ?: return removeEntity(entityId)
         val teamId = raw.teams[entityId]?.teamId ?: return removeEntity(entityId)
-        removeEntity(entityId)
         val nextRespawns = LinkedHashMap(raw.pendingRespawns)
         nextRespawns[playerId] =
             PlayerRespawnState(
                 ticksRemaining = ticksRemaining,
                 deathPos = transform.pos,
                 teamId = teamId,
+                entityId = entityId,
                 rocket = RespawnRocketSpec(
                     mass = material.mass,
                     radius = collider.radius,
@@ -440,6 +441,9 @@ data class PhysicsState(
         if (raw.pendingRespawns.isEmpty()) return
         val nextRespawns = LinkedHashMap(raw.pendingRespawns)
         for ((playerId, respawn) in raw.pendingRespawns) {
+            if (raw.damages[respawn.entityId] != null) {
+                removeEntity(respawn.entityId)
+            }
             val nextTicks = (respawn.ticksRemaining - 1).coerceAtLeast(0)
             val updatedRespawn = respawn.copy(ticksRemaining = nextTicks)
             if (nextTicks > 0) {
