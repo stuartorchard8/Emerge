@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="torus-js">
+    <output-path>$PROJECT_DIR$/.build/render-torus/libs</output-path>
+    <root id="archive" name="torus-js.jar">
+      <element id="module-output" name="Emerge.engine.render.torus.jsMain" />
+    </root>
+  </artifact>
+</component>

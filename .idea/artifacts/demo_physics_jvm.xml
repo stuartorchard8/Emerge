@@ -1,8 +1,6 @@
 <component name="ArtifactManager">
   <artifact type="jar" name="demo-physics-jvm">
     <output-path>$PROJECT_DIR$/.build/demo-physics/libs</output-path>
-    <root id="archive" name="demo-physics-jvm.jar">
-      <element id="module-output" name="Emerge.demos.physics.jvmMain" />
-    </root>
+    <root id="archive" name="demo-physics-jvm.jar" />
   </artifact>
 </component>

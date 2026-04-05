@@ -30,6 +30,7 @@
             <option value="$PROJECT_DIR$/engine/net/transports" />
             <option value="$PROJECT_DIR$/engine/net/transports/loopback" />
             <option value="$PROJECT_DIR$/engine/net/transports/tcp" />
+            <option value="$PROJECT_DIR$/engine/net/transports/websocket" />
             <option value="$PROJECT_DIR$/engine/render" />
             <option value="$PROJECT_DIR$/engine/render/torus" />
             <option value="$PROJECT_DIR$/engine/sim" />
@@ -40,9 +41,9 @@
             <option value="$PROJECT_DIR$/platform" />
             <option value="$PROJECT_DIR$/platform/android-app" />
             <option value="$PROJECT_DIR$/platform/desktop-app" />
+            <option value="$PROJECT_DIR$/platform/web-app" />
           </set>
         </option>
-        <option name="resolveExternalAnnotations" value="false" />
       </GradleProjectSettings>
     </option>
   </component>

@@ -1,8 +1,6 @@
 <component name="ArtifactManager">
   <artifact type="jar" name="tcp-jvm">
     <output-path>$PROJECT_DIR$/.build/net-tcp/libs</output-path>
-    <root id="archive" name="tcp-jvm.jar">
-      <element id="module-output" name="Emerge.engine.net.transports.tcp.jvmMain" />
-    </root>
+    <root id="archive" name="tcp-jvm.jar" />
   </artifact>
 </component>
