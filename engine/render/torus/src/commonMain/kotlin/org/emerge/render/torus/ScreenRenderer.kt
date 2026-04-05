@@ -369,7 +369,7 @@ class ScreenRenderer(val contentScale: Vec2) {
 
         // Scale then rotate for this body.
         setScale(matS, radius, radius)
-        setRotationZ(matR, angleTurns * 2f * PI.toFloat())
+        setRotationZ(matR, angleTurns * PI.toFloat())
         multiply4x4(out = matTmp, a = matR, b = matS)
 
         // Translate into wrapped world space relative to the current focus.

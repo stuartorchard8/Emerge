@@ -60,8 +60,8 @@ object GravitySystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 )
 
                 val normal = delta.norm
-                val aImpulse = ImpulseComponent(-(normal * accelTowardB))
-                val bImpulse = ImpulseComponent((normal * accelTowardA))
+                val aImpulse = ImpulseComponent(vel=-(normal * accelTowardB))
+                val bImpulse = ImpulseComponent(vel=(normal * accelTowardA))
                 impulses[aId] = impulses[aId]?.plus(aImpulse) ?: aImpulse
                 impulses[bId] = impulses[bId]?.plus(bImpulse) ?: bImpulse
             }

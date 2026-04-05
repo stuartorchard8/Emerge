@@ -97,6 +97,13 @@ If you hit file locks, the intended fix is to **exclude the repo’s `.build/` d
 
 ### Roadmap
 
-#### Nice-to-have (engine direction)
+- [ ] Set up a remote server to host the backend and web frontend
+- [ ] Merge Drockets repo into Emerge
 
-- [ ] Consider extracting reusable rendering utilities from `:demos:physics` into `engine/render/*` if they’re meant to be engine features
+#### Experiments
+
+- [ ] Integer sine and cosine functions for converting angle+magnitude to a vector
+- [ ] Networking connection that transfers only transform positions per force-affected entity. 
+Client-side can infer velocity and possibly forces to apply when packets are sparse.
+- [ ] Merge Cyto repo into Emerge
+

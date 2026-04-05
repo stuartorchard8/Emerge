@@ -86,7 +86,7 @@ private fun startJoinMode(wsUrl: String, renderer: ScreenRenderer, input: WebInp
         stateCodec = PhysicsNetCodecs.stateCodec,
         thinEventsApplier = { state, payload ->
             val events = PhysicsNetCodecs.crashImpactAudioEventsCodec.decode(payload)
-            state.raw = state.raw.copy(crashImpactAudioEvents = events)
+            state.setAudioEvents(crashImpactAudioEvents = events)
             state
         },
         handshakeTimeout = 15.seconds,

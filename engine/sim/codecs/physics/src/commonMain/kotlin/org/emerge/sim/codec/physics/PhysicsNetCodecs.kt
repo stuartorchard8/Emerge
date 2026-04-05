@@ -20,7 +20,6 @@ import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.ForceFieldComponent
 import org.emerge.sim.core.physics.components.HomePlanetComponent
-import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
@@ -46,9 +45,6 @@ object PhysicsNetCodecs {
     private const val STATE_RESPAWN_INT_COUNT = 11
     private const val STATE_CRASH_AUDIO_EVENT_INT_COUNT = 5
     private const val STATE_INT_BYTES = 4
-    private const val IMPULSE_STATE_HEADER_INT_COUNT = 2
-    private const val IMPULSE_STATE_ENTITY_INT_COUNT = 7
-    private const val IMPULSE_STATE_DAMAGE_INT_COUNT = 2
     private const val MAX_STATE_ENTITIES = 2048
     private const val MAX_STATE_CRASH_AUDIO_EVENTS = 4096
 
@@ -370,78 +366,6 @@ object PhysicsNetCodecs {
                 ).mutable
                 state.randomSeed = randomSeed
                 state.raw.world.lastEntityValue = lastEntityValue
-                return state
-            }
-        }
-
-    val impulseCodec: StateCodec<PhysicsState> =
-        object : StateCodec<PhysicsState> {
-            override fun encode(state: PhysicsState): ByteArray {
-                val w = ByteWriter()
-                with (state.raw) {
-                    w.writeInt(impulses.keys().size)
-                    val recentDamages = damages.entries().filter { it.value.last.raw > 0 }
-                    w.writeInt(recentDamages.size)
-                    for ((entityId, impulse) in impulses.entries()) {
-                        val impulse = impulses[entityId] ?: continue
-                        w.writeInt(entityId.value)
-                        w.writeInt(impulse.pos.x.raw.toInt())
-                        w.writeInt(impulse.pos.y.raw.toInt())
-                        w.writeInt(impulse.vel.x.raw.toInt())
-                        w.writeInt(impulse.vel.y.raw.toInt())
-                        w.writeInt(impulse.ang.raw.toInt())
-                        w.writeInt(impulse.angVel.raw.toInt())
-                    }
-                    for ((entityId, damage) in recentDamages) {
-                        w.writeInt(entityId.value)
-                        w.writeInt(damage.last.raw.toInt())
-                    }
-                }
-                return w.toByteArray()
-            }
-
-            override fun decode(bytes: ByteArray): PhysicsState {
-                val c = ByteCursor(bytes)
-                val n = c.readInt()
-                require(n in 0..MAX_STATE_ENTITIES) { "Invalid entity count: $n" }
-                val d = c.readInt()
-                require(d in 0..MAX_STATE_ENTITIES) { "Invalid damage count: $d" }
-                val expectedSize =
-                    (
-                        IMPULSE_STATE_HEADER_INT_COUNT +
-                            (n * IMPULSE_STATE_ENTITY_INT_COUNT) +
-                            (d * IMPULSE_STATE_DAMAGE_INT_COUNT)
-                        ) * STATE_INT_BYTES
-                require(bytes.size == expectedSize) {
-                    "Invalid state payload size: expected $expectedSize bytes for $n entities + $d damages, got ${bytes.size}"
-                }
-                val impulses = LinkedHashMap<EntityId, ImpulseComponent>(n)
-                val damages = LinkedHashMap<EntityId, DamageComponent>(d)
-                repeat(n) {
-                    val entityId = EntityId(c.readInt())
-                    val px = c.readInt()
-                    val py = c.readInt()
-                    val vx = c.readInt()
-                    val vy = c.readInt()
-                    val pa = c.readInt()
-                    val va = c.readInt()
-                    impulses[entityId] = ImpulseComponent(
-                        pos = Frac2.raw(px, py),
-                        vel = Frac2.raw(vx, vy),
-                        ang = Frac(pa.toLong()),
-                        angVel = Frac(va.toLong()),
-                    )
-                }
-
-                repeat(d) {
-                    val entityId = EntityId(c.readInt())
-                    val damage = c.readInt()
-                    damages[entityId] = DamageComponent(Frac(0),Frac(0),Frac(damage.toLong()))
-                }
-                val state = PhysicsSnapshot(
-                    impulses = ComponentTable.fromMap(impulses),
-                    damages = ComponentTable.fromMap(damages),
-                ).mutable
                 return state
             }
         }

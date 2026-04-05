@@ -38,8 +38,10 @@ object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             )
             val delta = ImpulseComponent(
                 pos = outcome.pos - transform.pos,
-                ang = outcome.ang - transform.ang,
                 vel = parentMotion.vel - motion.vel,
+                angVel = parentMotion.angVel - motion.angVel
+                        // Trick to embed position change as velocity change.
+                        + (outcome.ang - transform.ang)/2,
             )
             impulses[entityId] = delta
         }

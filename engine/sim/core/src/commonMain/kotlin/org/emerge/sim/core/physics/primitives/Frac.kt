@@ -12,9 +12,11 @@ class Frac(n: Long, d: Int = Int.MAX_VALUE) {
     operator fun times(o: Int): Frac = Frac((toLong() * o.toLong() / Int.MAX_VALUE.toLong()))
     operator fun unaryMinus(): Frac = Frac(-raw)
 
+    fun wrap(): Frac = Frac(raw.toInt().toLong())
+
     fun toFloat(): Float = raw.toFloat() / Int.MAX_VALUE.toFloat() // -1f..1f
     fun toLong(): Long = raw
-    fun toCircumference() = Frac((this*PIon4).raw*8)
+    fun toCircumference() = Frac((this*PIon4).raw*4)
     val sign: Int get() = raw.sign
 
     fun coerceAtMost(o: Frac) = Frac(raw.coerceAtMost(o.raw))

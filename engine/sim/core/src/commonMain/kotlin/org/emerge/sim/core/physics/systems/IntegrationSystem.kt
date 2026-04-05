@@ -29,11 +29,11 @@ object IntegrationSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> 
             // v1 = v0 + at
             val vel = motion.vel + impulse.vel
 
-            val angVel = Frac(motion.angVel.raw.toLong()) + impulse.angVel
-            val ang = transform.ang + Frac(angVel.raw) + impulse.ang + impulse.angVel/2
+            val ang = transform.ang + Frac(motion.angVel.raw.toLong()) + impulse.angVel/2
+            val angVel = motion.angVel + impulse.angVel
 
             transforms[entityId] = transform.copy(pos = pos, ang = ang)
-            motions[entityId] = motion.copy(vel = vel, angVel = Coord(angVel.raw.toInt()))
+            motions[entityId] = motion.copy(vel = vel, angVel = angVel)
         }
         state.integrate(
             transforms = ComponentTable.fromMap(transforms),

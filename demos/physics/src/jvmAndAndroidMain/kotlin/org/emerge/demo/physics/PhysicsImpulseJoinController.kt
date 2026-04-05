@@ -3,6 +3,7 @@ package org.emerge.demo.physics
 import kotlin.concurrent.thread
 import org.emerge.net.api.DelegatingPipe
 import org.emerge.net.tcp.Tcp
+import org.emerge.sim.codec.physics.ImpulseCodec
 import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.NoImpulsePhysicsReducer
@@ -25,7 +26,7 @@ class PhysicsImpulseJoinController(
     private val reducer = NoImpulsePhysicsReducer()
     private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
     private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
-    private val impulseCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.impulseCodec
+    private val impulseCodec: StateCodec<PhysicsState> = ImpulseCodec
 
     private val remote = DelegatingPipe()
     private val client = ThinLockstepClient(

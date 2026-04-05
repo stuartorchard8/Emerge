@@ -14,6 +14,7 @@ import org.emerge.sim.sync.StateCodec
 import org.emerge.sim.sync.lockstep.ClientMode
 import org.emerge.sim.sync.lockstep.LockstepHost
 import org.emerge.net.api.Pipe
+import org.emerge.sim.codec.physics.ImpulseCodec
 
 class PhysicsHostController(
     private val port: Int,
@@ -24,7 +25,7 @@ class PhysicsHostController(
     private val reducer = PhysicsReducer()
     private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
     private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
-    private val impulseCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.impulseCodec
+    private val impulseCodec: StateCodec<PhysicsState> = ImpulseCodec
 
     private val initial: PhysicsState = createDefaultInitialState(gameMode)
 

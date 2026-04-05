@@ -22,14 +22,14 @@ data class Norm(val x: Frac, val y: Frac) {
 
     val asAngle by lazy {
         // TODO: integer atan2?
-        val angleTurns = atan2(y.toFloat(), x.toFloat()) / (2f * PI.toFloat())
+        val angleTurns = atan2(y.toFloat(), x.toFloat()) / PI.toFloat()
         Coord((angleTurns * Int.MAX_VALUE.toFloat()).roundToInt())
     }
 
     companion object {
         fun fromAngle(angle: Coord): Norm {
             // TODO: integer cos & sin?
-            val rad: Float = (angle.raw.toFloat() / Int.MAX_VALUE.toFloat()) * 2f * PI.toFloat()
+            val rad: Float = (angle.raw.toFloat() / Int.MAX_VALUE.toFloat()) * PI.toFloat()
             return Norm(
                 Frac((cos(rad)*Int.MAX_VALUE.toFloat()).roundToLong()),
                 Frac((sin(rad)*Int.MAX_VALUE.toFloat()).roundToLong()),
