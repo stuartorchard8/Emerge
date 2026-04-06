@@ -52,6 +52,9 @@ actual object GPU {
         GLES30.glBindVertexArray(vaos[0])
         return vaos[0]
     }
+    actual fun bindVertexArray(vao: Int?) {
+        GLES30.glBindVertexArray(vao ?: 0)
+    }
     actual fun deleteVertexArrays(vao: Int) {
         val vaos = intArrayOf(vao)
         GLES30.glDeleteVertexArrays(1, vaos, 0)
@@ -99,6 +102,28 @@ actual object GPU {
             GLES30.GL_UNSIGNED_BYTE,
             buffer,
         )
+    }
+    actual fun uploadTextureRGBA8(width: Int, height: Int, data: ByteArray) {
+        val buffer = ByteBuffer.allocateDirect(data.size)
+        buffer.put(data)
+        buffer.position(0)
+        GLES30.glTexImage2D(
+            GLES30.GL_TEXTURE_2D,
+            0,
+            GLES30.GL_RGBA8,
+            width,
+            height,
+            0,
+            GLES30.GL_RGBA,
+            GLES30.GL_UNSIGNED_BYTE,
+            buffer,
+        )
+    }
+    actual fun configureTexture2DClampNearest() {
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_NEAREST)
     }
 
     actual fun bindBuffer(target: Int, buffer: Int) = GLES30.glBindBuffer(target, buffer)

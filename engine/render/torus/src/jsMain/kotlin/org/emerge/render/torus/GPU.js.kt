@@ -154,6 +154,13 @@ actual object GPU {
         return id
     }
 
+    actual fun bindVertexArray(vao: Int?) {
+        if (vao == null) {
+            gl.bindVertexArray(null)
+        } else {
+            gl.bindVertexArray(vaoObjs[vao])
+        }
+    }
     actual fun deleteVertexArrays(vao: Int) {
         val obj = vaoObjs.remove(vao)
         if (obj != null) gl.deleteVertexArray(obj)
@@ -216,6 +223,29 @@ actual object GPU {
             gl.UNSIGNED_BYTE,
             u8,
         )
+    }
+
+    actual fun uploadTextureRGBA8(width: Int, height: Int, data: ByteArray) {
+        val u8 = Uint8Array(data.toTypedArray())
+        gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA8,
+            width,
+            height,
+            0,
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            u8,
+        )
+    }
+
+    actual fun configureTexture2DClampNearest() {
+        val t2d = gl.TEXTURE_2D
+        gl.texParameteri(t2d, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+        gl.texParameteri(t2d, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+        gl.texParameteri(t2d, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+        gl.texParameteri(t2d, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
     }
 
     // -- Buffer data --

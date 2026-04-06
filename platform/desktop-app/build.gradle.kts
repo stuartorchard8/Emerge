@@ -13,6 +13,7 @@ plugins {
 
 dependencies {
     implementation(project(":demos:physics"))
+    implementation(project(":demos:drockets"))
     implementation(project(":engine:render:torus"))
     implementation(project(":engine:sim:core"))
     implementation(project(":engine:sim:sync"))
@@ -54,6 +55,14 @@ tasks.processResources {
     from("$rootDir/assets") {
         into("assets")
     }
+}
+
+tasks.register<JavaExec>("runDrockets") {
+    group = "application"
+    description = "Run the Drockets demo"
+    mainClass = "org.emerge.desktop.Main_jvmKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    jvmArgs("-Demerge.mode=drockets")
 }
 
 tasks.register<JavaExec>("profileSim") {

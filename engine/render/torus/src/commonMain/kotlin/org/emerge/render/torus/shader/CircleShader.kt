@@ -69,20 +69,36 @@ class CircleShader {
         GPU.bindTexture2D(noiseTexture)
 
         val n = instanceCount.coerceIn(0, MAX_INSTANCES)
-        bind(instanceVbo           , instanceMatrices    , matricesColMajor, n * MAT4_FLOATS)
-        bind(instancePrimaryIdVbo  , instancePrimaryIds  , primaryIds      , n)
-        bind(instanceSecondaryIdVbo, instanceSecondaryIds, secondaryIds    , n)
-        bind(instanceShapeVbo      , instanceShapes      , shapes          , n)
-        bind(instanceAlphaVbo      , instanceAlphas      , alphas          , n)
-        bind(instanceRadiusVbo     , instanceRadii       , radii           , n)
+        bindAndSetup(instanceVbo           , instanceMatrices    , matricesColMajor, n * MAT4_FLOATS, INSTANCE_ATTR_BASE, 4, 4)
+        bindAndSetup(instancePrimaryIdVbo  , instancePrimaryIds  , primaryIds      , n, INSTANCE_PRIMARY_ID_ATTR)
+        bindAndSetup(instanceSecondaryIdVbo, instanceSecondaryIds, secondaryIds    , n, INSTANCE_SECONDARY_ID_ATTR)
+        bindAndSetup(instanceShapeVbo      , instanceShapes      , shapes          , n, INSTANCE_SHAPE_ATTR)
+        bindAndSetup(instanceAlphaVbo      , instanceAlphas      , alphas          , n, INSTANCE_ALPHA_ATTR)
+        bindAndSetup(instanceRadiusVbo     , instanceRadii       , radii           , n, INSTANCE_RADIUS_ATTR)
 
         GPU.drawTrianglesInstanced(vOffset, 3, n)
     }
 
-    fun bind(vbo: Int, buffer: GpuFloatBuffer, array: FloatArray, count: Int) {
+    private fun bindAndSetup(
+        vbo: Int,
+        buffer: GpuFloatBuffer,
+        array: FloatArray,
+        count: Int,
+        attribute: Int,
+        sizeX: Int = 1,
+        sizeY: Int = 1,
+    ) {
         buffer.clear().put(array, 0, count).flip()
         GPU.bindBuffer(GPU.ARRAY_BUFFER, vbo)
         GPU.bufferData(GPU.ARRAY_BUFFER, count, buffer, GPU.DYNAMIC_DRAW)
+        val floatSize = 4
+        val strideBytes = sizeX * sizeY * floatSize
+        for (col in 0 until sizeY) {
+            val loc = attribute + col
+            GPU.enableVertexAttribArray(loc)
+            GPU.putVertexAttribPointer(loc, sizeX, GPU.FLOAT, false, strideBytes, col * sizeX * floatSize)
+            GPU.vertexAttribDivisor(loc, 1)
+        }
         GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
     }
 

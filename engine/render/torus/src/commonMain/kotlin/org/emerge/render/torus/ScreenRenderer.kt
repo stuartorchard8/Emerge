@@ -26,6 +26,12 @@ class ScreenRenderer(val contentScale: Vec2) {
     private var zoom: Float = 10f
     @kotlin.concurrent.Volatile private var worldRotationRad: Float = 0f
 
+    /**
+     * When set, overrides the automatic player-based view focus.
+     * Useful for demos without a player entity (e.g. Drockets).
+     */
+    var viewFocusOverride: Vec2? = null
+
     private val vao = GPU.genAndBindVertexArrays()
     private var vbo: Int = GPU.genBuffers()
 
@@ -95,7 +101,18 @@ class ScreenRenderer(val contentScale: Vec2) {
     }
 
     fun draw(state: PhysicsState, myId: PlayerId?) {
-        val params = WorldShaderParams.compute(state, myId, zoom, worldRotationRad)
+        val focusOverride = viewFocusOverride
+        val params = if (focusOverride != null) {
+            WorldShaderParams(
+                worldSize = Vec2(2f, 2f),
+                zoom = 1f / zoom,
+                viewFocus = focusOverride,
+                viewRotationRad = worldRotationRad,
+                myId = myId,
+            )
+        } else {
+            WorldShaderParams.compute(state, myId, zoom, worldRotationRad)
+        }
         worldShader.draw(params, segmentation=layout.worldSegmentation)
         guiShader.draw(vOffset=layout.guiVertexOffset)
         var n = packBodyInstances(

@@ -50,5 +50,6 @@ include(":engine:net:transports:tcp")
 include(":engine:net:transports:websocket")
 
 include(":demos:physics")
+include(":demos:drockets")
 
 rootProject.name = "Emerge"

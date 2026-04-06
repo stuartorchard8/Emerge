@@ -1,0 +1,6 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="demo-drockets-jvm">
+    <output-path>$PROJECT_DIR$/.build/demo-drockets/libs</output-path>
+    <root id="archive" name="demo-drockets-jvm.jar" />
+  </artifact>
+</component>

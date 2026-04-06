@@ -34,6 +34,7 @@ expect object GPU {
     fun vertexAttribDivisor(index: Int, divisor: Int)
 
     fun genAndBindVertexArrays(): Int?
+    fun bindVertexArray(vao: Int?)
     fun deleteVertexArrays(vao: Int)
 
     fun genBuffers(): Int
@@ -45,6 +46,8 @@ expect object GPU {
     fun bindTexture2D(texture: Int)
     fun configureTexture2DRepeatLinear()
     fun uploadTextureR8(width: Int, height: Int, data: ByteArray)
+    fun uploadTextureRGBA8(width: Int, height: Int, data: ByteArray)
+    fun configureTexture2DClampNearest()
 
     fun bindBuffer(target: Int, buffer: Int)
     fun bufferData(target: Int, count: Int, data: GpuFloatBuffer, usage: Int)

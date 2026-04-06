@@ -50,6 +50,9 @@ actual object GPU {
         GL33C.glBindVertexArray(vao)
         return vao
     }
+    actual fun bindVertexArray(vao: Int?) {
+        GL33C.glBindVertexArray(vao ?: 0)
+    }
     actual fun deleteVertexArrays(vao: Int) = GL33C.glDeleteVertexArrays(vao)
 
     actual fun genBuffers(): Int = GL33C.glGenBuffers()
@@ -82,6 +85,30 @@ actual object GPU {
                 buffer,
             )
         }
+    }
+    actual fun uploadTextureRGBA8(width: Int, height: Int, data: ByteArray) {
+        MemoryStack.stackPush().use { st ->
+            val buffer = st.malloc(data.size)
+            buffer.put(data)
+            buffer.flip()
+            GL33C.glTexImage2D(
+                GL33C.GL_TEXTURE_2D,
+                0,
+                GL33C.GL_RGBA8,
+                width,
+                height,
+                0,
+                GL33C.GL_RGBA,
+                GL33C.GL_UNSIGNED_BYTE,
+                buffer,
+            )
+        }
+    }
+    actual fun configureTexture2DClampNearest() {
+        GL33C.glTexParameteri(GL33C.GL_TEXTURE_2D, GL33C.GL_TEXTURE_WRAP_S, GL33C.GL_CLAMP_TO_EDGE)
+        GL33C.glTexParameteri(GL33C.GL_TEXTURE_2D, GL33C.GL_TEXTURE_WRAP_T, GL33C.GL_CLAMP_TO_EDGE)
+        GL33C.glTexParameteri(GL33C.GL_TEXTURE_2D, GL33C.GL_TEXTURE_MIN_FILTER, GL33C.GL_NEAREST)
+        GL33C.glTexParameteri(GL33C.GL_TEXTURE_2D, GL33C.GL_TEXTURE_MAG_FILTER, GL33C.GL_NEAREST)
     }
 
     actual fun bindBuffer(target: Int, buffer: Int) = GL33C.glBindBuffer(target, buffer)
