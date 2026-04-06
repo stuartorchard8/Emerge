@@ -20,6 +20,7 @@ import org.emerge.sim.core.physics.components.PlayerOwnedComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.primitives.Contact
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
@@ -63,6 +64,7 @@ data class PhysicsSnapshot(
     val playerEntities: Map<PlayerId, EntityId> = emptyMap(),
     val transforms: ComponentTable<TransformComponent> = ComponentTable.empty(),
     val motions: ComponentTable<MotionComponent> = ComponentTable.empty(),
+    val contacts: List<Contact> = emptyList(),
     val impulses: ComponentTable<ImpulseComponent> = ComponentTable.empty(),
     val discardImpulses: Boolean = false,
     val colliders: ComponentTable<ColliderComponent> = ComponentTable.empty(),
@@ -123,6 +125,10 @@ data class PhysicsState(
             motions = motions,
             discardImpulses = true,
         )
+    }
+
+    fun setContacts(contacts: List<Contact>) {
+        raw = raw.copy(contacts = contacts);
     }
 
     fun addImpulses(impulses: LinkedHashMap<EntityId, ImpulseComponent>) {

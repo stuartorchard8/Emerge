@@ -45,9 +45,9 @@ object StarscapeShaderSources {
             // Aspect ratio correction
             float aspectRatio = uResolution.y / uResolution.x;
             if (aspectRatio > 1.0) {
-                uv.y /= aspectRatio;
+                uv.y *= aspectRatio;
             } else {
-                uv.x *= aspectRatio;
+                uv.x /= aspectRatio;
             }
 
             // Apply camera rotation

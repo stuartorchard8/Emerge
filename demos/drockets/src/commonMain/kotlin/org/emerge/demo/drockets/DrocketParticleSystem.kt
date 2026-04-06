@@ -32,7 +32,10 @@ object DrocketParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInp
             val angleJitter = Frac(
                 state.nextRandomInt(until = Int.MAX_VALUE / 8).toLong() - Int.MAX_VALUE / 16,
             )
-            val norm = Norm.fromAngle(transform.ang + angleJitter)
+            var norm = Norm.fromAngle(transform.ang + angleJitter).cw90
+            if (ds.walkDirection < 0) {
+                norm = -norm
+            }
             state.spawnParticle(
                 pos = transform.pos,
                 vel = motion.vel - norm * Frac(1, 1024) *

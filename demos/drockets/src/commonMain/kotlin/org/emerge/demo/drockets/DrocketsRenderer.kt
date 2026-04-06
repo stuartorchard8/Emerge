@@ -35,7 +35,9 @@ class DrocketsRenderer(
 ) {
     private var zoom: Float = 10f
     @kotlin.concurrent.Volatile private var rotationRad: Float = 0f
-    var viewFocus: Vec2 = Vec2(0f, 0f)
+
+    // Updated each frame from the first planet's position + surface offset
+    private var viewFocus: Vec2 = Vec2(0f, 0f)
 
     private val vao = GPU.genAndBindVertexArrays()
     private val vbo: Int = GPU.genBuffers()
@@ -103,6 +105,9 @@ class DrocketsRenderer(
     }
 
     fun draw(state: PhysicsState) {
+        // Place the camera on the planet surface, orbiting with rotation
+        updateViewFocusFromPlanet(state)
+
         val zoomInv = 1f / zoom
         computeViewMatrix(zoomInv)
 
@@ -111,7 +116,7 @@ class DrocketsRenderer(
         // ── Layer 0: starscape background (fullscreen quad, no blending) ──
         starscapeShader.draw(
             vOffset = QUAD_VERTEX_OFFSET,
-            bearing = rotationRad,
+            bearing = -rotationRad,
             resolutionX = resolution.x,
             resolutionY = resolution.y,
         )
@@ -161,11 +166,9 @@ class DrocketsRenderer(
             )
         }
 
-        // ── Layer 2: particles via CircleShader (circles only from renderShapes) ──
+        // ── Layer 2: particles via CircleShader (from bgRenderShapes where particles live) ──
         var circleCount = 0
-        for ((entityId, renderShape) in state.raw.renderShapes.entries()) {
-            if (renderShape.shape != BodyShape.CIRCLE) continue
-            if (state.raw.planets.contains(entityId)) continue
+        for ((entityId, renderShape) in state.raw.bgRenderShapes.entries()) {
             if (circleCount >= CircleShader.MAX_INSTANCES) break
             val transform = state.raw.transforms[entityId] ?: continue
             val collider = state.raw.colliders[entityId] ?: continue
@@ -212,6 +215,7 @@ class DrocketsRenderer(
             if (spriteCount >= SpriteShader.MAX_INSTANCES) break
             val transform = state.raw.transforms[entityId] ?: continue
             val collider = state.raw.colliders[entityId] ?: continue
+            val facing = DrocketsRegistry.drocketStates[entityId]?.walkDirection ?: 1
             val teamId = state.raw.teams[entityId]?.teamId?.value
             val (uvX, uvY) = spriteUvForEntity(entityId)
 
@@ -220,7 +224,8 @@ class DrocketsRenderer(
                 posX = transform.pos.x.toFloat(),
                 posY = transform.pos.y.toFloat(),
                 angleTurns = transform.ang.toFloat(),
-                radius = collider.radius.toFloat() * SPRITE_SCALE_FACTOR,
+                scaleX = collider.radius.toFloat() * SPRITE_SCALE_FACTOR,
+                scaleY = collider.radius.toFloat() * SPRITE_SCALE_FACTOR * facing,
                 primaryId = if (teamId != null) (teamId + 1).toFloat() else 0f,
                 uvX = uvX,
                 uvY = uvY,
@@ -278,6 +283,26 @@ class DrocketsRenderer(
         GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
     }
 
+    // ── Camera focus ─────────────────────────────────────────
+
+    private fun updateViewFocusFromPlanet(state: PhysicsState) {
+        val planetId = state.raw.planets.keys().firstOrNull() ?: return
+        val transform = state.raw.transforms[planetId] ?: return
+        val collider = state.raw.colliders[planetId] ?: return
+
+        val planetX = transform.pos.x.toFloat()
+        val planetY = transform.pos.y.toFloat()
+        val surfaceRadius = collider.radius.toFloat()
+
+        // Place focus on the planet surface at the current rotation angle.
+        // rotationRad=0 means focus is directly above the planet center (+Y).
+        // The view rotation then orients "up" away from the planet.
+        viewFocus = Vec2(
+            planetX - sin(rotationRad) * surfaceRadius,
+            planetY - cos(rotationRad) * surfaceRadius,
+        )
+    }
+
     // ── View matrix ──────────────────────────────────────────
 
     private fun computeViewMatrix(zoomInv: Float) {
@@ -300,7 +325,8 @@ class DrocketsRenderer(
         posX: Float,
         posY: Float,
         angleTurns: Float,
-        radius: Float,
+        scaleX: Float,
+        scaleY: Float,
         primaryId: Float,
         uvX: Float,
         uvY: Float,
@@ -308,7 +334,7 @@ class DrocketsRenderer(
     ): Int {
         if (index >= SpriteShader.MAX_INSTANCES) return index
 
-        setScale(matS, radius, radius)
+        setScale(matS, scaleX, scaleY)
         setRotationZ(matR, angleTurns * PI.toFloat())
         multiply4x4(out = matTmp, a = matR, b = matS)
 
@@ -374,7 +400,7 @@ class DrocketsRenderer(
         private const val M4 = 16
         private const val TRIANGLE_VERTEX_OFFSET = 0
         private const val QUAD_VERTEX_OFFSET = 3
-        private const val SPRITE_SCALE_FACTOR = 3f
+        private const val SPRITE_SCALE_FACTOR = 1f
         private const val PLANET_ATMOSPHERE_SCALE = 1.15f
     }
 }

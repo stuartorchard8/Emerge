@@ -27,7 +27,7 @@ fun createDrocketsInitialState(): PhysicsState {
         mass = PLANET_MASS,
         radius = PLANET_RADIUS,
         bounce = Frac(1, 2),
-        rough = Frac(8, 16),
+        rough = Frac(1, 2),
         shape = BodyShape.CIRCLE,
     )
     state.markPlanet(planetId, seed = 42)
@@ -64,7 +64,7 @@ private fun spawnDrocketOnPlanet(
         angVel = Coord(0),
         mass = DROCKET_MASS,
         radius = DROCKET_RADIUS,
-        bounce = Frac(1, 5),
+        bounce = Frac(1, 2),
         rough = Frac(1, 2),
         shape = BodyShape.TRIANGLE,
     )
@@ -90,7 +90,7 @@ private fun spawnDrocketOnPlanet(
 }
 
 private val PLANET_RADIUS = Frac(1, 8)
-private val PLANET_MASS = 500_000u
+val PLANET_MASS = 500_000u
 private val DROCKET_RADIUS = Frac(1, 512)
 private val DROCKET_MASS = 5000u
 private const val DROCKET_COUNT = 3

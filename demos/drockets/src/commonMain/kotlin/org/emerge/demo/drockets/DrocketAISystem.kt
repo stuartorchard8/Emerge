@@ -38,7 +38,6 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
         for ((entityId, ds) in drocketStates) {
             val transform = state.raw.transforms[entityId] ?: continue
-            val motion = state.raw.motions[entityId] ?: continue
 
             when (ds.phase) {
                 DrocketPhase.WALKING -> {
@@ -50,10 +49,11 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                             phase = DrocketPhase.CHARGING,
                             ticksRemaining = CHARGE_TICKS,
                         )
-                        // Apply spin angular velocity during charge
-                        val spinDir = Frac(ds.walkDirection.toLong() * CHARGE_SPIN_SPEED)
+                        // Detatch from planet and roll forwards
+                        landings.remove(entityId)
+                        val spinDir = CHARGE_SPIN_SPEED*ds.walkDirection
                         impulses[entityId] = ImpulseComponent(
-                            angVel = spinDir - Frac(motion.angVel.raw.toLong()),
+                            angVel = spinDir,
                         )
                     } else {
                         nextStates[entityId] = ds.copy(ticksRemaining = remaining)
@@ -63,8 +63,7 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 DrocketPhase.CHARGING -> {
                     val remaining = ds.ticksRemaining - 1
                     if (remaining <= 0) {
-                        // Detach from planet surface and start thrusting
-                        landings.remove(entityId)
+                        // Start thrusting
                         nextStates[entityId] = ds.copy(
                             phase = DrocketPhase.THRUSTING,
                             fuel = FUEL_TICKS,
@@ -78,7 +77,10 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 DrocketPhase.THRUSTING -> {
                     val fuelLeft = ds.fuel - 1
                     // Apply thrust in the entity's forward direction
-                    val forward = Norm.fromAngle(transform.ang)
+                    var forward = Norm.fromAngle(transform.ang).cw90
+                    if (ds.walkDirection < 0) {
+                        forward = -forward
+                    }
                     val thrustImpulse = forward * THRUST_STRENGTH
                     impulses[entityId] = ImpulseComponent(vel = thrustImpulse)
 
@@ -136,17 +138,13 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         state.setLandings(ComponentTable.fromMap(landings))
     }
 
-    // 18 ticks ≈ 0.3 seconds at 60 tps
     private const val CHARGE_TICKS = 18
     // 84 ticks ≈ 1.4 seconds at 60 tps
     private const val FUEL_TICKS = 84
     // Walk 2–10 seconds → 120–600 ticks
     private const val MIN_WALK_TICKS = 120
     private const val MAX_WALK_TICKS = 600
-    // Godot: angular_velocity = walkDirection * 5.5 (rad/s)
-    // In Emerge Coord space: 5.5 rad/s ÷ π ≈ 1.75 turns/s ÷ 60 tps ≈ 0.029 turns/tick
-    // 0.029 * Int.MAX_VALUE ≈ 62,500,000
-    private const val CHARGE_SPIN_SPEED = 62_500_000L
+    private val CHARGE_SPIN_SPEED = Frac(1,32)
     // Thrust tuned relative to the engine's gravity to achieve orbital velocity
-    private val THRUST_STRENGTH = Frac(1, 1024 * 16)
+    private val THRUST_STRENGTH = Frac(1, 1024 * 32)
 }

@@ -8,8 +8,8 @@ import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.systems.AttachmentSystem
-import org.emerge.sim.core.physics.systems.CollisionSystem
-import org.emerge.sim.core.physics.systems.DamageSystem
+import org.emerge.sim.core.physics.systems.BounceSystem
+import org.emerge.sim.core.physics.systems.ContactSystem
 import org.emerge.sim.core.physics.systems.GravitySystem
 import org.emerge.sim.core.physics.systems.IntegrationSystem
 import org.emerge.sim.core.physics.systems.ParticleSystem
@@ -21,7 +21,7 @@ import org.emerge.sim.core.physics.systems.ParticleSystem
  * System ordering:
  * 1. DrocketAISystem  – state machine transitions, detach on launch, apply thrust
  * 2. WalkSystem       – move walking drockets along planet surface
- * 3. GravitySystem    – inverse-square gravity
+ * 3. GravitySystem    – inverse-square gravityP
  * 4. AtmosphereDragSystem – velocity-squared drag in atmosphere
  * 5. CollisionSystem  – collision response + landing detection
  * 6. AttachmentSystem – rigid surface attachment
@@ -35,7 +35,9 @@ class DrocketsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         WalkSystem,
         GravitySystem,
         AtmosphereDragSystem,
-        CollisionSystem,
+        ContactSystem,
+        DrocketLandingSystem,
+        BounceSystem,
         AttachmentSystem,
         DrocketParticleSystem,
         ParticleSystem,

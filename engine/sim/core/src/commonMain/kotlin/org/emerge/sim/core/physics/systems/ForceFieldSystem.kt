@@ -45,6 +45,8 @@ object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val bTeam = state.raw.teams[bId]?.teamId
 
                 val contact = Contact.compute(
+                    aId = aId,
+                    bId = bId,
                     aTransform = aTransform,
                     bTransform = bTransform,
                     aRadius = aCollider.radius + (aField?.depth ?: Frac(0)),

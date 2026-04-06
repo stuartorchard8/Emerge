@@ -1,9 +1,12 @@
 package org.emerge.sim.core.physics.primitives
 
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Frac.Companion.abs
 
 data class Contact(
+    val aId: EntityId,
+    val bId: EntityId,
     val minDist: Frac,
     val penetration: Frac,
     val normal: Norm,
@@ -11,6 +14,8 @@ data class Contact(
 ) {
     companion object {
         fun compute(
+            aId: EntityId,
+            bId: EntityId,
             aTransform: TransformComponent,
             bTransform: TransformComponent,
             aRadius: Frac,
@@ -27,6 +32,8 @@ data class Contact(
             delta.capMax(minDist)
             val normal = delta.norm
             return Contact(
+                aId = aId,
+                bId = bId,
                 minDist = minDist,
                 penetration = minDist - delta.len,
                 normal = normal,

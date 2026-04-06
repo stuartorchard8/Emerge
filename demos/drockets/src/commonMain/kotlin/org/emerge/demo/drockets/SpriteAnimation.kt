@@ -6,15 +6,13 @@ import org.emerge.sim.core.EntityId
  * Defines a sprite animation as a sequence of frames in a texture atlas grid.
  *
  * @param name Human-readable name for debugging
- * @param startFrame Index of the first frame in the atlas (left-to-right, top-to-bottom)
- * @param frameCount Number of frames in this animation
+ * @param frames Indexes of the frames in the atlas (left-to-right, top-to-bottom)
  * @param ticksPerFrame How many simulation ticks each frame is displayed
  * @param loop Whether the animation loops or stops on the last frame
  */
 data class SpriteAnimationDef(
     val name: String,
-    val startFrame: Int,
-    val frameCount: Int,
+    val frames: Array<Int>,
     val ticksPerFrame: Int,
     val loop: Boolean = true,
 )
@@ -64,11 +62,11 @@ object SpriteAnimationSystem {
             val nextTick = state.tickCounter + 1
             if (nextTick >= anim.ticksPerFrame) {
                 val nextFrame = state.currentFrame + 1
-                if (nextFrame >= anim.frameCount) {
+                if (nextFrame >= anim.frames.size) {
                     animStates[entityId] = if (anim.loop) {
                         state.copy(currentFrame = 0, tickCounter = 0)
                     } else {
-                        state.copy(currentFrame = anim.frameCount - 1, tickCounter = 0)
+                        state.copy(currentFrame = anim.frames.size - 1, tickCounter = 0)
                     }
                 } else {
                     animStates[entityId] = state.copy(currentFrame = nextFrame, tickCounter = 0)
@@ -99,7 +97,7 @@ object SpriteAnimationSystem {
         sheet: SpriteSheet,
     ): Int {
         val anim = sheet.animations.getOrNull(state.animationIndex) ?: return 0
-        return anim.startFrame + state.currentFrame
+        return anim.frames[state.currentFrame]
     }
 }
 
@@ -113,20 +111,17 @@ object SpriteAnimationSystem {
  * - idle: frame 0
  * - walk: frames 1,0 (walk pose then idle pose), looping at 4 fps → 15 ticks/frame
  * - fire: frame 2
- * - rawr: frames 0,2,0 (idle, fire, idle), looping at 4 fps → 15 ticks/frame
  */
 val DROCKET_SPRITE_SHEET = SpriteSheet(
     columnsPerRow = 3,
     totalRows = 1,
     animations = listOf(
-        SpriteAnimationDef("idle", startFrame = 0, frameCount = 1, ticksPerFrame = 1),
-        SpriteAnimationDef("walk", startFrame = 1, frameCount = 2, ticksPerFrame = 15, loop = true),
-        SpriteAnimationDef("fire", startFrame = 2, frameCount = 1, ticksPerFrame = 1),
-        SpriteAnimationDef("rawr", startFrame = 0, frameCount = 3, ticksPerFrame = 15, loop = true),
+        SpriteAnimationDef("idle", frames = arrayOf(ANIM_IDLE), ticksPerFrame = 1),
+        SpriteAnimationDef("walk", frames = arrayOf(ANIM_WALK, ANIM_IDLE), ticksPerFrame = 15, loop = true),
+        SpriteAnimationDef("fire", frames = arrayOf(ANIM_FIRE), ticksPerFrame = 1),
     ),
 )
 
 const val ANIM_IDLE = 0
 const val ANIM_WALK = 1
 const val ANIM_FIRE = 2
-const val ANIM_RAWR = 3

@@ -6,12 +6,15 @@ import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.ecs.EcsSystems
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.systems.AttachmentSystem
-import org.emerge.sim.core.physics.systems.CollisionSystem
+import org.emerge.sim.core.physics.systems.BounceSystem
+import org.emerge.sim.core.physics.systems.ContactSystem
+import org.emerge.sim.core.physics.systems.CrashSystem
 import org.emerge.sim.core.physics.systems.DamageSystem
 import org.emerge.sim.core.physics.systems.ForceFieldSystem
 import org.emerge.sim.core.physics.systems.GravitySystem
 import org.emerge.sim.core.physics.systems.ShipThrustSystem
 import org.emerge.sim.core.physics.systems.IntegrationSystem
+import org.emerge.sim.core.physics.systems.LandingSystem
 import org.emerge.sim.core.physics.systems.ParticleSystem
 import org.emerge.sim.core.physics.systems.RespawnSystem
 import org.emerge.sim.core.physics.systems.ShipThrustParticleSystem
@@ -21,7 +24,10 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         ShipThrustSystem,
         GravitySystem,
         ForceFieldSystem,
-        CollisionSystem,
+        ContactSystem,
+        BounceSystem,
+        CrashSystem,
+        LandingSystem,
         AttachmentSystem,
         RespawnSystem,
         DamageSystem,

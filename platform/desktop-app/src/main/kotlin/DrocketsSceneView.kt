@@ -31,7 +31,6 @@ object DrocketsSceneView {
             spriteAtlasColumns = 3,
             spriteAtlasRows = 1,
         )
-        renderer.viewFocus = Vec2(0f, 0f)
         repeat(120) { renderer.zoomOut() }
 
         val controller = DrocketsController()

@@ -7,7 +7,9 @@ import org.emerge.sim.core.physics.PhysicsConfig
 import org.emerge.sim.core.physics.PhysicsState
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.primitives.BodyShape
+import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
 /**
@@ -58,7 +60,7 @@ object AtmosphereDragSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInpu
                 val vy = Frac(motion.vel.y.raw.toLong())
                 val dragX = vx * Frac.abs(vx) * depth2 * DRAG_COEFFICIENT
                 val dragY = vy * Frac.abs(vy) * depth2 * DRAG_COEFFICIENT
-                val drag = ImpulseComponent(vel = org.emerge.sim.core.physics.primitives.Frac2(-dragX, -dragY))
+                val drag = ImpulseComponent(vel = Frac2(-dragX, -dragY))
                 impulses[entityId] = impulses[entityId]?.plus(drag) ?: drag
             }
         }
@@ -71,5 +73,5 @@ object AtmosphereDragSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInpu
     // Atmosphere extends this far above the planet surface (in Frac units)
     private val ATMOSPHERE_DEPTH = Frac(1, 64)
     // Drag coefficient -- tuned so orbiting drockets slow noticeably in atmosphere
-    private val DRAG_COEFFICIENT = Frac(1, 8)
+    private val DRAG_COEFFICIENT = Frac(128, 1)
 }

@@ -39,7 +39,7 @@ object WalkSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
             // Scale walk speed inversely with planet radius for consistent visual speed
             val walkStep = walkStepForRadius(parentCollider.radius)
-            val angularDelta = Frac(ds.walkDirection.toLong() * walkStep)
+            val angularDelta = walkStep * ds.walkDirection
 
             val rotatedPos = landing.relativePos.rotateByAngle(Coord(angularDelta.raw.toInt()))
             val newRelativeAng = landing.relativeAng + angularDelta
@@ -61,12 +61,10 @@ object WalkSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
      * At 60 tps: step = 300 / (60 * radius_in_godot_units)
      * We scale the angular step inversely with the planet's collision radius.
      */
-    private fun walkStepForRadius(planetRadius: Frac): Long {
+    private fun walkStepForRadius(planetRadius: Frac): Frac {
         // Base step for the default planet radius (~Frac(100,4000) = Frac(1,40))
         // Walk speed is tuned so drockets visibly walk along the surface
-        val baseStep = 400_000L
-        val defaultRadiusRaw = Frac(1, 40).raw
-        if (planetRadius.raw <= 0) return baseStep
-        return baseStep * defaultRadiusRaw / planetRadius.raw
+        val baseStep = Frac(1,1024 * 16)
+        return baseStep / planetRadius.toCircumference()
     }
 }
