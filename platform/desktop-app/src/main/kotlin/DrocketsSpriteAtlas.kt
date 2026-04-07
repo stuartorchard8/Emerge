@@ -14,11 +14,12 @@ import javax.imageio.ImageIO
  * Frame 2 = fire (drocket_fire.png)
  */
 object DrocketsSpriteAtlas {
-    const val FRAME_SIZE = 16
+    const val FRAME_SIZE_X = 16
+    const val FRAME_SIZE_Y = 16
     const val COLUMNS = 3
     const val ROWS = 1
-    const val ATLAS_WIDTH = FRAME_SIZE * COLUMNS  // 48
-    const val ATLAS_HEIGHT = FRAME_SIZE * ROWS     // 16
+    const val ATLAS_WIDTH = FRAME_SIZE_X * COLUMNS // 48
+    const val ATLAS_HEIGHT = FRAME_SIZE_Y * ROWS   // 16
     const val FRAME_SIZE_U = 1f / COLUMNS          // 0.333...
     const val FRAME_SIZE_V = 1f / ROWS             // 1.0
 
@@ -37,9 +38,9 @@ object DrocketsSpriteAtlas {
             val img: BufferedImage = ImageIO.read(stream)
             stream.close()
 
-            val colOffset = index * FRAME_SIZE
-            for (y in 0 until FRAME_SIZE.coerceAtMost(img.height)) {
-                for (x in 0 until FRAME_SIZE.coerceAtMost(img.width)) {
+            val colOffset = index * FRAME_SIZE_X
+            for (y in 0 until FRAME_SIZE_Y.coerceAtMost(img.height)) {
+                for (x in 0 until FRAME_SIZE_X.coerceAtMost(img.width)) {
                     val pixel = img.getRGB(x, y)
                     val a = (pixel shr 24) and 0xFF
                     val r = (pixel shr 16) and 0xFF

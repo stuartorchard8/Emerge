@@ -15,7 +15,10 @@ object SpriteShaderSources {
         layout(location = 5) in float iPrimaryId;
         layout(location = 6) in float iUvX;
         layout(location = 7) in float iUvY;
-        layout(location = 8) in float iBodyAlpha;
+        layout(location = 8) in float iUvW;
+        layout(location = 9) in float iUvH;
+        layout(location = 10) in float iBodyAlpha;
+        layout(location = 11) in float iSquash;
 
         out vec2 vUv;
         out float vPrimaryId;
@@ -25,7 +28,11 @@ object SpriteShaderSources {
 
         void main() {
             mat4 m = mat4(iCol0, iCol1, iCol2, iCol3);
-            gl_Position = m * vec4(aPos, 0.0, 1.0);
+            vec2 phasedPos = aPos;
+            if (phasedPos.x > 0) {
+                phasedPos.x -= 2f*iSquash;
+            }
+            gl_Position = m * vec4(phasedPos*vec2(iUvW, iUvH), 0.0, 1.0);
             // Map local [-1,1] quad to UV space for the current animation frame
             vec2 localUv = aPos * 0.5 + 0.5;
             vUv = vec2(iUvX, iUvY) + localUv * uFrameSize;
@@ -53,12 +60,13 @@ object SpriteShaderSources {
             vec4 texel = texture(uSpriteTexture, vUv);
             if (texel.a < 0.01) discard;
             
-            // Optional team-based tinting: replace green channel with tint color
-            if (uUseTint > 0.5) {
-                float greenAmount = texel.g - max(texel.r, texel.b);
-                if (greenAmount > 0.1) {
-                    texel.rgb = mix(texel.rgb, uTintColor * texel.g, greenAmount);
-                }
+            // Primary id tinting: replace green channel with tint color
+            float colorSeed = vPrimaryId;
+            float c = colorSeed + 1.0;
+            vec3 vColor = mod(vec3(c/1.9, c/2.9, c/4.9),1.0);
+            float greenAmount = texel.g - max(texel.r, texel.b);
+            if (greenAmount > 0.1) {
+                texel.rgb = vColor;
             }
             
             fragColor = vec4(texel.rgb, texel.a * vAlpha);

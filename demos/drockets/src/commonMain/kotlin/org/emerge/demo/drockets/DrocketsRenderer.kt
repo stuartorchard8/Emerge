@@ -65,7 +65,10 @@ class DrocketsRenderer(
     private val spritePrimaryIds = FloatArray(SpriteShader.MAX_INSTANCES)
     private val spriteUvXs = FloatArray(SpriteShader.MAX_INSTANCES)
     private val spriteUvYs = FloatArray(SpriteShader.MAX_INSTANCES)
+    private val spriteUvWs = FloatArray(SpriteShader.MAX_INSTANCES)
+    private val spriteUvHs = FloatArray(SpriteShader.MAX_INSTANCES)
     private val spriteAlphas = FloatArray(SpriteShader.MAX_INSTANCES)
+    private val spriteSquashs = FloatArray(SpriteShader.MAX_INSTANCES)
 
     private val matTmp = FloatArray(M4)
     private val matT = FloatArray(M4)
@@ -74,8 +77,8 @@ class DrocketsRenderer(
     private val matView = FloatArray(M4)
     private val matModel = FloatArray(M4)
 
-    private val frameSizeU = 1f / spriteAtlasColumns
-    private val frameSizeV = 1f / spriteAtlasRows
+    private val frameSizeX = 1f / spriteAtlasColumns
+    private val frameSizeY = 1f / spriteAtlasRows
 
     private val worldSize = Vec2(2f, 2f)
 
@@ -95,7 +98,7 @@ class DrocketsRenderer(
     fun zoomIn() { zoomByFactor(1.02f) }
     fun zoomByFactor(factor: Float) {
         if (!factor.isFinite() || factor <= 0f) return
-        zoom = (zoom * factor).coerceIn(1.5f, 20f)
+        zoom = (zoom * factor)//.coerceIn(1.5f, 20f)
     }
     fun rotateLeft() { rotateBy(0.03f) }
     fun rotateRight() { rotateBy(-0.03f) }
@@ -106,7 +109,7 @@ class DrocketsRenderer(
 
     fun draw(state: PhysicsState) {
         // Place the camera on the planet surface, orbiting with rotation
-        updateViewFocusFromPlanet(state)
+        updateViewFocus(state)
 
         val zoomInv = 1f / zoom
         computeViewMatrix(zoomInv)
@@ -166,7 +169,57 @@ class DrocketsRenderer(
             )
         }
 
-        // ── Layer 2: particles via CircleShader (from bgRenderShapes where particles live) ──
+        // ── Layer 2: sprites (drockets) ──
+        var spriteCount = 0
+        for ((entityId, renderShape) in state.raw.renderShapes.entries()) {
+            if (renderShape.shape != BodyShape.TRIANGLE) continue
+            if (spriteCount >= SpriteShader.MAX_INSTANCES) break
+            val transform = state.raw.transforms[entityId] ?: continue
+            val collider = state.raw.colliders[entityId] ?: continue
+            val drocketState = DrocketsRegistry.drocketStates[entityId] ?: continue
+            val facing = drocketState.walkDirection
+            val squash = 0.06125-cos(drocketState.ticksRemaining*2*PI/60f)*0.06125
+            val teamId = state.raw.teams[entityId]?.teamId?.value
+            val (uvX, uvY) = spriteUvForEntity(entityId)
+            val (uvW, uvH) = spriteSizeForEntity(entityId)
+
+            spriteCount = packSpriteInstance(
+                index = spriteCount,
+                posX = transform.pos.x.toFloat(),
+                posY = transform.pos.y.toFloat(),
+                angleTurns = transform.ang.toFloat(),
+                scaleX = collider.radius.toFloat() * SPRITE_SCALE_FACTOR,
+                scaleY = collider.radius.toFloat() * SPRITE_SCALE_FACTOR * facing,
+                primaryId = if (teamId != null) (teamId + 1).toFloat() else 0f,
+                uvX = uvX,
+                uvY = uvY,
+                uvW = uvW,
+                uvH = uvH,
+                alpha = 1f,
+                squash = squash.toFloat(),
+            )
+        }
+        if (spriteCount > 0) {
+            spriteShader.drawInstanced(
+                instanceCount = spriteCount,
+                matricesColMajor = spriteMatrices,
+                primaryIds = spritePrimaryIds,
+                uvXs = spriteUvXs,
+                uvYs = spriteUvYs,
+                uvWs = spriteUvWs,
+                uvHs = spriteUvHs,
+                alphas = spriteAlphas,
+                squashs = spriteSquashs,
+                textureId = spriteAtlasTextureId,
+                frameSizeX = frameSizeX*13f/16f,
+                frameSizeY = frameSizeY,
+            )
+        }
+
+        // Restore main VAO
+        GPU.bindVertexArray(vao)
+
+        // ── Layer 3: particles via CircleShader (from bgRenderShapes where particles live) ──
         var circleCount = 0
         for ((entityId, renderShape) in state.raw.bgRenderShapes.entries()) {
             if (circleCount >= CircleShader.MAX_INSTANCES) break
@@ -207,47 +260,6 @@ class DrocketsRenderer(
                 radii = circleRadii,
             )
         }
-
-        // ── Layer 3: sprites (drockets) ──
-        var spriteCount = 0
-        for ((entityId, renderShape) in state.raw.renderShapes.entries()) {
-            if (renderShape.shape != BodyShape.TRIANGLE) continue
-            if (spriteCount >= SpriteShader.MAX_INSTANCES) break
-            val transform = state.raw.transforms[entityId] ?: continue
-            val collider = state.raw.colliders[entityId] ?: continue
-            val facing = DrocketsRegistry.drocketStates[entityId]?.walkDirection ?: 1
-            val teamId = state.raw.teams[entityId]?.teamId?.value
-            val (uvX, uvY) = spriteUvForEntity(entityId)
-
-            spriteCount = packSpriteInstance(
-                index = spriteCount,
-                posX = transform.pos.x.toFloat(),
-                posY = transform.pos.y.toFloat(),
-                angleTurns = transform.ang.toFloat(),
-                scaleX = collider.radius.toFloat() * SPRITE_SCALE_FACTOR,
-                scaleY = collider.radius.toFloat() * SPRITE_SCALE_FACTOR * facing,
-                primaryId = if (teamId != null) (teamId + 1).toFloat() else 0f,
-                uvX = uvX,
-                uvY = uvY,
-                alpha = 1f,
-            )
-        }
-        if (spriteCount > 0) {
-            spriteShader.drawInstanced(
-                instanceCount = spriteCount,
-                matricesColMajor = spriteMatrices,
-                primaryIds = spritePrimaryIds,
-                uvXs = spriteUvXs,
-                uvYs = spriteUvYs,
-                alphas = spriteAlphas,
-                textureId = spriteAtlasTextureId,
-                frameSizeX = frameSizeU,
-                frameSizeY = frameSizeV,
-            )
-        }
-
-        // Restore main VAO
-        GPU.bindVertexArray(vao)
         GPU.disableBlend()
     }
 
@@ -285,21 +297,22 @@ class DrocketsRenderer(
 
     // ── Camera focus ─────────────────────────────────────────
 
-    private fun updateViewFocusFromPlanet(state: PhysicsState) {
-        val planetId = state.raw.planets.keys().firstOrNull() ?: return
-        val transform = state.raw.transforms[planetId] ?: return
-        val collider = state.raw.colliders[planetId] ?: return
+    private fun updateViewFocus(state: PhysicsState) {
+        val drocketId = DrocketsRegistry.drocketStates.keys.firstOrNull() ?: return
+//        val planetId = state.raw.planets.keys().firstOrNull() ?: return
+        val transform = state.raw.transforms[drocketId] ?: return
+        val collider = state.raw.colliders[drocketId] ?: return
 
-        val planetX = transform.pos.x.toFloat()
-        val planetY = transform.pos.y.toFloat()
+        val focusX = transform.pos.x.toFloat()
+        val focusY = transform.pos.y.toFloat()
         val surfaceRadius = collider.radius.toFloat()
 
         // Place focus on the planet surface at the current rotation angle.
         // rotationRad=0 means focus is directly above the planet center (+Y).
         // The view rotation then orients "up" away from the planet.
         viewFocus = Vec2(
-            planetX - sin(rotationRad) * surfaceRadius,
-            planetY - cos(rotationRad) * surfaceRadius,
+            focusX - sin(rotationRad) * surfaceRadius,
+            focusY - cos(rotationRad) * surfaceRadius,
         )
     }
 
@@ -330,7 +343,10 @@ class DrocketsRenderer(
         primaryId: Float,
         uvX: Float,
         uvY: Float,
+        uvW: Float,
+        uvH: Float,
         alpha: Float,
+        squash: Float,
     ): Int {
         if (index >= SpriteShader.MAX_INSTANCES) return index
 
@@ -349,7 +365,10 @@ class DrocketsRenderer(
         spritePrimaryIds[index] = primaryId
         spriteUvXs[index] = uvX
         spriteUvYs[index] = uvY
+        spriteUvWs[index] = uvW
+        spriteUvHs[index] = uvH
         spriteAlphas[index] = alpha
+        spriteSquashs[index] = squash
         return index + 1
     }
 
@@ -358,6 +377,15 @@ class DrocketsRenderer(
         if (animState != null) {
             val atlasFrame = SpriteAnimationSystem.currentAtlasFrame(animState, DROCKET_SPRITE_SHEET)
             return DROCKET_SPRITE_SHEET.frameUV(atlasFrame)
+        }
+        return Pair(0f, 0f)
+    }
+
+    private fun spriteSizeForEntity(entityId: EntityId): Pair<Float, Float> {
+        val animState = DrocketsRegistry.animationStates[entityId]
+        if (animState != null) {
+            val atlasFrame = SpriteAnimationSystem.currentAtlasFrame(animState, DROCKET_SPRITE_SHEET)
+            return DROCKET_SPRITE_SHEET.frameWH(atlasFrame)
         }
         return Pair(0f, 0f)
     }

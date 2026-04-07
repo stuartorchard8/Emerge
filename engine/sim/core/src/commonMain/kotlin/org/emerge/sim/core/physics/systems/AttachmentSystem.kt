@@ -41,7 +41,7 @@ object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 vel = parentMotion.vel - motion.vel,
                 angVel = parentMotion.angVel - motion.angVel
                         // Trick to embed position change as velocity change.
-                        + (outcome.ang - transform.ang)/2,
+                        + (outcome.ang - transform.ang)/4,
             )
             impulses[entityId] = delta
         }

@@ -36,7 +36,9 @@ data class SpriteAnimationState(
 data class SpriteSheet(
     val columnsPerRow: Int,
     val totalRows: Int,
-    val animations: List<SpriteAnimationDef>,
+    val frameWidths: Array<Int>,
+    val frameHeights: Array<Int>,
+    val animations: Array<SpriteAnimationDef>,
 ) {
     val frameSizeU: Float = 1f / columnsPerRow
     val frameSizeV: Float = 1f / totalRows
@@ -45,6 +47,12 @@ data class SpriteSheet(
         val col = frameIndex % columnsPerRow
         val row = frameIndex / columnsPerRow
         return Pair(col * frameSizeU, row * frameSizeV)
+    }
+
+    fun frameWH(frameIndex: Int): Pair<Float, Float> {
+        val w = frameWidths[frameIndex]
+        val h = frameHeights[frameIndex]
+        return Pair(w/16f, h/16f)
     }
 }
 
@@ -115,7 +123,9 @@ object SpriteAnimationSystem {
 val DROCKET_SPRITE_SHEET = SpriteSheet(
     columnsPerRow = 3,
     totalRows = 1,
-    animations = listOf(
+    frameWidths = arrayOf(13,13,13),
+    frameHeights = arrayOf(16,16,16),
+    animations = arrayOf(
         SpriteAnimationDef("idle", frames = arrayOf(ANIM_IDLE), ticksPerFrame = 1),
         SpriteAnimationDef("walk", frames = arrayOf(ANIM_WALK, ANIM_IDLE), ticksPerFrame = 15, loop = true),
         SpriteAnimationDef("fire", frames = arrayOf(ANIM_FIRE), ticksPerFrame = 1),

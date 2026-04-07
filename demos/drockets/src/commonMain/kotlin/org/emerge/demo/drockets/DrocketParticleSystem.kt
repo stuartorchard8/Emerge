@@ -32,13 +32,15 @@ object DrocketParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInp
             val angleJitter = Frac(
                 state.nextRandomInt(until = Int.MAX_VALUE / 8).toLong() - Int.MAX_VALUE / 16,
             )
-            var norm = Norm.fromAngle(transform.ang + angleJitter).cw90
-            if (ds.walkDirection < 0) {
-                norm = -norm
+
+            val up = Norm.fromAngle(transform.ang + angleJitter)
+            var forward = up.cw90
+            if (ds.walkDirection > 0) {
+                forward = -forward
             }
             state.spawnParticle(
-                pos = transform.pos,
-                vel = motion.vel - norm * Frac(1, 1024) *
+                pos = transform.pos + forward * Frac(1, 1024) - up * Frac(1, 2048),
+                vel = motion.vel + forward * Frac(1, 1024) *
                     Frac(state.nextRandomInt(until = Int.MAX_VALUE).toLong()),
                 radius = Frac(1, 2048),
                 shape = BodyShape.CIRCLE,

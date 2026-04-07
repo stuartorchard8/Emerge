@@ -30,13 +30,19 @@ class SpriteShader {
     private val instancePrimaryIdVbo: Int = GPU.genBuffers()
     private val instanceUvXVbo: Int = GPU.genBuffers()
     private val instanceUvYVbo: Int = GPU.genBuffers()
+    private val instanceUvWVbo: Int = GPU.genBuffers()
+    private val instanceUvHVbo: Int = GPU.genBuffers()
     private val instanceAlphaVbo: Int = GPU.genBuffers()
+    private val instanceSquashVbo: Int = GPU.genBuffers()
 
     private val instanceMatrices = GpuFloatBuffer(MAX_INSTANCES * MAT4_FLOATS)
     private val instancePrimaryIds = GpuFloatBuffer(MAX_INSTANCES)
     private val instanceUvXs = GpuFloatBuffer(MAX_INSTANCES)
     private val instanceUvYs = GpuFloatBuffer(MAX_INSTANCES)
+    private val instanceUvWs = GpuFloatBuffer(MAX_INSTANCES)
+    private val instanceUvHs = GpuFloatBuffer(MAX_INSTANCES)
     private val instanceAlphas = GpuFloatBuffer(MAX_INSTANCES)
+    private val instanceSquashs = GpuFloatBuffer(MAX_INSTANCES)
 
     init {
         uploadQuad()
@@ -44,7 +50,10 @@ class SpriteShader {
         initFloatBuffer(instancePrimaryIdVbo, INSTANCE_PRIMARY_ID_ATTR)
         initFloatBuffer(instanceUvXVbo, INSTANCE_UV_X_ATTR)
         initFloatBuffer(instanceUvYVbo, INSTANCE_UV_Y_ATTR)
+        initFloatBuffer(instanceUvWVbo, INSTANCE_UV_W_ATTR)
+        initFloatBuffer(instanceUvHVbo, INSTANCE_UV_H_ATTR)
         initFloatBuffer(instanceAlphaVbo, INSTANCE_ALPHA_ATTR)
+        initFloatBuffer(instanceSquashVbo, INSTANCE_SQUASH_ATTR)
     }
 
     private fun uploadQuad() {
@@ -83,14 +92,13 @@ class SpriteShader {
         primaryIds: FloatArray,
         uvXs: FloatArray,
         uvYs: FloatArray,
+        uvWs: FloatArray,
+        uvHs: FloatArray,
         alphas: FloatArray,
+        squashs: FloatArray,
         textureId: Int,
         frameSizeX: Float,
         frameSizeY: Float,
-        tintR: Float = 0f,
-        tintG: Float = 0f,
-        tintB: Float = 0f,
-        useTint: Boolean = false,
     ) {
         GPU.bindVertexArray(vao)
         GPU.useProgram(program)
@@ -98,18 +106,16 @@ class SpriteShader {
         GPU.bindTexture2D(textureId)
         GPU.putUniform1i(uSpriteTexture, SPRITE_TEXTURE_UNIT)
         GPU.putUniform2f(uFrameSize, frameSizeX, frameSizeY)
-        GPU.putUniform1f(uUseTint, if (useTint) 1f else 0f)
-        if (useTint) {
-            val colorArray = floatArrayOf(tintR, tintG, tintB, 1f)
-            GPU.putUniform4fv(uTintColor, colorArray, 1)
-        }
 
         val n = instanceCount.coerceIn(0, MAX_INSTANCES)
         bind(instanceVbo, instanceMatrices, matricesColMajor, n * MAT4_FLOATS)
         bind(instancePrimaryIdVbo, instancePrimaryIds, primaryIds, n)
         bind(instanceUvXVbo, instanceUvXs, uvXs, n)
         bind(instanceUvYVbo, instanceUvYs, uvYs, n)
+        bind(instanceUvWVbo, instanceUvWs, uvWs, n)
+        bind(instanceUvHVbo, instanceUvHs, uvHs, n)
         bind(instanceAlphaVbo, instanceAlphas, alphas, n)
+        bind(instanceSquashVbo, instanceSquashs, squashs, n)
 
         GPU.drawTrianglesInstanced(0, QUAD_VERTEX_COUNT, n)
     }
@@ -128,6 +134,8 @@ class SpriteShader {
         GPU.deleteBuffers(instancePrimaryIdVbo)
         GPU.deleteBuffers(instanceUvXVbo)
         GPU.deleteBuffers(instanceUvYVbo)
+        GPU.deleteBuffers(instanceUvWVbo)
+        GPU.deleteBuffers(instanceUvHVbo)
         GPU.deleteBuffers(instanceAlphaVbo)
         if (vao != null) GPU.deleteVertexArrays(vao)
     }
@@ -137,7 +145,10 @@ class SpriteShader {
         private const val INSTANCE_PRIMARY_ID_ATTR = 5
         private const val INSTANCE_UV_X_ATTR = 6
         private const val INSTANCE_UV_Y_ATTR = 7
-        private const val INSTANCE_ALPHA_ATTR = 8
+        private const val INSTANCE_UV_W_ATTR = 8
+        private const val INSTANCE_UV_H_ATTR = 9
+        private const val INSTANCE_ALPHA_ATTR = 10
+        private const val INSTANCE_SQUASH_ATTR = 11
         private const val MAT4_FLOATS = 16
         const val MAX_INSTANCES = 256
         private const val SPRITE_TEXTURE_UNIT = 1
