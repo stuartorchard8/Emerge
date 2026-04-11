@@ -7,19 +7,7 @@ import org.emerge.sim.core.ecs.EcsSystems
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.systems.AttachmentSystem
-import org.emerge.sim.core.physics.systems.BounceSystem
-import org.emerge.sim.core.physics.systems.ContactSystem
-import org.emerge.sim.core.physics.systems.CrashSystem
-import org.emerge.sim.core.physics.systems.DamageSystem
-import org.emerge.sim.core.physics.systems.ForceFieldSystem
-import org.emerge.sim.core.physics.systems.GravitySystem
-import org.emerge.sim.core.physics.systems.ShipThrustSystem
-import org.emerge.sim.core.physics.systems.IntegrationSystem
-import org.emerge.sim.core.physics.systems.LandingSystem
-import org.emerge.sim.core.physics.systems.ParticleSystem
-import org.emerge.sim.core.physics.systems.RespawnSystem
-import org.emerge.sim.core.physics.systems.ShipThrustParticleSystem
+import org.emerge.sim.core.physics.systems.*
 
 class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val systems: List<EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>> = listOf(
@@ -27,8 +15,8 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         GravitySystem,
         ForceFieldSystem,
         ContactSystem,
-        BounceSystem,
         CrashSystem,
+        BounceSystem,
         LandingSystem,
         AttachmentSystem,
         RespawnSystem,
