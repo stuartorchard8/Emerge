@@ -11,6 +11,7 @@ import org.emerge.sim.core.physics.systems.*
 
 class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val systems: List<EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>> = listOf(
+        ImpulseResetSystem,
         ShipThrustSystem,
         GravitySystem,
         ForceFieldSystem,

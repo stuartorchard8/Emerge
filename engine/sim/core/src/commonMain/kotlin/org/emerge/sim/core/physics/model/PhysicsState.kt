@@ -4,28 +4,8 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.ComponentTable
-import org.emerge.sim.core.physics.primitives.BodyShape
-import org.emerge.sim.core.physics.components.ColliderComponent
-import org.emerge.sim.core.physics.components.DamageComponent
-import org.emerge.sim.core.physics.components.ForceFieldComponent
-import org.emerge.sim.core.physics.components.HomePlanetComponent
-import org.emerge.sim.core.physics.components.ImpulseComponent
-import org.emerge.sim.core.physics.components.LandingAttachmentComponent
-import org.emerge.sim.core.physics.components.MaterialComponent
-import org.emerge.sim.core.physics.components.MotionComponent
-import org.emerge.sim.core.physics.components.ParticleComponent
-import org.emerge.sim.core.physics.components.PlanetComponent
-import org.emerge.sim.core.physics.components.PlayerOwnedComponent
-import org.emerge.sim.core.physics.components.RenderShapeComponent
-import org.emerge.sim.core.physics.components.TeamComponent
-import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.primitives.Contact
-import org.emerge.sim.core.physics.primitives.Coord
-import org.emerge.sim.core.physics.primitives.Coord2
-import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.Frac2
-import org.emerge.sim.core.physics.primitives.Norm
-import kotlin.collections.iterator
+import org.emerge.sim.core.physics.components.*
+import org.emerge.sim.core.physics.primitives.*
 
 data class PhysicsState(
     private val _initial: PhysicsSnapshot,
@@ -40,7 +20,6 @@ data class PhysicsState(
         raw = raw.copy(
             transforms = transforms,
             motions = motions,
-            discardImpulses = true,
         )
     }
 
@@ -49,16 +28,12 @@ data class PhysicsState(
     }
 
     fun addImpulses(impulses: LinkedHashMap<EntityId, ImpulseComponent>) {
-        if (raw.discardImpulses) {
-            setImpulses(ComponentTable.fromMap(impulses))
-        } else {
-            val sums = impulses.mapValues { (entityId, impulse) -> raw.impulses[entityId]?.plus(impulse) ?: impulse }
-            setImpulses(raw.impulses.putAll(sums.toList()))
-        }
+        val sums = impulses.mapValues { (entityId, impulse) -> raw.impulses[entityId]?.plus(impulse) ?: impulse }
+        setImpulses(raw.impulses.putAll(sums.toList()))
     }
 
     fun setImpulses(impulses: ComponentTable<ImpulseComponent>) {
-        raw = raw.copy(impulses = impulses, discardImpulses = false)
+        raw = raw.copy(impulses = impulses)
     }
 
     fun setLandings(

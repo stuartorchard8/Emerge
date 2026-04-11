@@ -12,25 +12,29 @@ import org.emerge.sim.core.physics.primitives.Coord2
 
 data class PhysicsSnapshot(
     val world: EcsWorld = EcsWorld.EMPTY,
+    
+    // Player-keyed
     val playerEntities: Map<PlayerId, EntityId> = emptyMap(),
-    val transforms: ComponentTable<TransformComponent> = ComponentTable.Companion.empty(),
-    val motions: ComponentTable<MotionComponent> = ComponentTable.Companion.empty(),
-    val contacts: List<Contact> = emptyList(),
-    val impulses: ComponentTable<ImpulseComponent> = ComponentTable.Companion.empty(),
-    val discardImpulses: Boolean = false,
-    val colliders: ComponentTable<ColliderComponent> = ComponentTable.Companion.empty(),
-    val materials: ComponentTable<MaterialComponent> = ComponentTable.Companion.empty(),
-
-    val renderShapes: ComponentTable<RenderShapeComponent> = ComponentTable.Companion.empty(),
-    val playerOwned: ComponentTable<PlayerOwnedComponent> = ComponentTable.Companion.empty(),
-    val teams: ComponentTable<TeamComponent> = ComponentTable.Companion.empty(),
-    val planets: ComponentTable<PlanetComponent> = ComponentTable.Companion.empty(),
-    val homePlanets: ComponentTable<HomePlanetComponent> = ComponentTable.Companion.empty(),
-    val forceFields: ComponentTable<ForceFieldComponent> = ComponentTable.Companion.empty(),
-    val landings: ComponentTable<LandingAttachmentComponent> = ComponentTable.Companion.empty(),
-    val particles: ComponentTable<ParticleComponent> = ComponentTable.Companion.empty(),
-    val damages: ComponentTable<DamageComponent> = ComponentTable.Companion.empty(),
     val pendingRespawns: Map<PlayerId, PlayerRespawnState> = emptyMap(),
+
+    // Entity-keyed
+    val transforms: ComponentTable<TransformComponent> = ComponentTable.empty(),
+    val motions: ComponentTable<MotionComponent> = ComponentTable.empty(),
+    val impulses: ComponentTable<ImpulseComponent> = ComponentTable.empty(),
+    val colliders: ComponentTable<ColliderComponent> = ComponentTable.empty(),
+    val materials: ComponentTable<MaterialComponent> = ComponentTable.empty(),
+    val renderShapes: ComponentTable<RenderShapeComponent> = ComponentTable.empty(),
+    val playerOwned: ComponentTable<PlayerOwnedComponent> = ComponentTable.empty(),
+    val teams: ComponentTable<TeamComponent> = ComponentTable.empty(),
+    val planets: ComponentTable<PlanetComponent> = ComponentTable.empty(),
+    val homePlanets: ComponentTable<HomePlanetComponent> = ComponentTable.empty(),
+    val forceFields: ComponentTable<ForceFieldComponent> = ComponentTable.empty(),
+    val landings: ComponentTable<LandingAttachmentComponent> = ComponentTable.empty(),
+    val particles: ComponentTable<ParticleComponent> = ComponentTable.empty(),
+    val damages: ComponentTable<DamageComponent> = ComponentTable.empty(),
+
+    // Events
+    val contacts: List<Contact> = emptyList(),
     val crashImpactAudioEvents: List<CrashImpactAudioEvent> = emptyList(),
 ) {
     val mutable get() = PhysicsState(this)
@@ -52,7 +56,7 @@ data class PhysicsSnapshot(
     fun playerViewFocus(playerId: PlayerId): Coord2 =
         playerTransform(playerId)?.pos
             ?: pendingRespawns[playerId]?.deathPos
-            ?: Coord2.Companion.zero
+            ?: Coord2.zero
 
     fun homePlanetEntity(teamId: TeamId): EntityId? =
         homePlanets.entries().firstOrNull { it.value.teamId == teamId }?.key

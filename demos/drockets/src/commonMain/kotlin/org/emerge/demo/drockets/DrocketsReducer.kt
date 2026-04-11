@@ -7,12 +7,7 @@ import org.emerge.sim.core.ecs.EcsSystems
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.systems.AttachmentSystem
-import org.emerge.sim.core.physics.systems.BounceSystem
-import org.emerge.sim.core.physics.systems.ContactSystem
-import org.emerge.sim.core.physics.systems.GravitySystem
-import org.emerge.sim.core.physics.systems.IntegrationSystem
-import org.emerge.sim.core.physics.systems.ParticleSystem
+import org.emerge.sim.core.physics.systems.*
 
 /**
  * Reducer for the Drockets demo. Composes engine physics systems with
@@ -31,6 +26,7 @@ import org.emerge.sim.core.physics.systems.ParticleSystem
  */
 class DrocketsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val systems: List<EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>> = listOf(
+        ImpulseResetSystem,
         DrocketAISystem,
         WalkSystem,
         GravitySystem,
