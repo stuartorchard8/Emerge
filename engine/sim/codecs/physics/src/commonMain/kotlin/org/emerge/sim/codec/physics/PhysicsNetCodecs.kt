@@ -5,14 +5,15 @@ import org.emerge.net.codec.ByteWriter
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
-import org.emerge.sim.core.ecs.ComponentStore
-import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsWorld
-import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.model.*
-import org.emerge.sim.core.physics.primitives.*
+import org.emerge.sim.core.physics.primitives.BodyShape
+import org.emerge.sim.core.physics.primitives.Coord2
+import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
+import org.emerge.sim.sync.ecs.registry
 
 /**
  * Shared demo codecs for the deterministic physics sample.
@@ -58,48 +59,10 @@ object PhysicsNetCodecs {
                     w.writeLong(state.randomSeed)
                     w.writeInt(world.lastEntityValue)
                     for (entityId in serializableEntities) {
-                        val transform = transforms[entityId] ?: continue
-                        val motion = motions[entityId] ?: continue
-                        val collider = colliders[entityId] ?: continue
-                        val material = materials[entityId]
-                        val renderShape = renderShapes[entityId]
-                        val planet = planets[entityId]
-                        val homePlanet = homePlanets[entityId]
-                        val team = teams[entityId]
-                        val forceField = forceFields[entityId]
-                        val playerId = playerOwned[entityId]?.playerId
-                        val landing = landings[entityId]
-                        val particle = particles[entityId]
-                        val damage = damages[entityId]
                         w.writeInt(entityId.value)
-                        w.writeInt(playerId?.value ?: -1)
-                        w.writeInt(transform.pos.x.raw)
-                        w.writeInt(transform.pos.y.raw)
-                        w.writeInt(motion.vel.x.raw)
-                        w.writeInt(motion.vel.y.raw)
-                        w.writeInt(transform.ang.raw)
-                        w.writeInt(motion.angVel.raw)
-                        w.writeInt(collider.radius.raw.toInt())
-
-                        w.writeInt(material?.mass?.toInt() ?: -1)
-                        w.writeInt(material?.bounce?.raw?.toInt() ?: -1)
-                        w.writeInt(material?.rough?.raw?.toInt() ?: -1)
-
-                        w.writeInt(renderShape?.shape?.wireValue ?: -1)
-                        w.writeInt(planet?.seed ?: -1)
-                        w.writeInt(homePlanet?.teamId?.value ?: -1)
-                        w.writeInt(team?.teamId?.value ?: -1)
-                        w.writeInt(forceField?.depth?.raw?.toInt() ?: 0)
-                        w.writeInt(forceField?.strength?.raw?.toInt() ?: 0)
-                        w.writeInt(forceField?.alpha?.raw?.toInt() ?: 0)
-                        w.writeInt(landing?.parentEntityId?.value ?: -1)
-                        w.writeInt(landing?.relativePos?.x?.raw?.toInt() ?: 0)
-                        w.writeInt(landing?.relativePos?.y?.raw?.toInt() ?: 0)
-                        w.writeInt(landing?.relativeAng?.raw?.toInt() ?: 0)
-                        w.writeInt(particle?.life ?: 0)
-                        w.writeInt(particle?.lifeTime ?: 1)
-                        w.writeInt(damage?.accumulated?.raw?.toInt() ?: 0)
-                        w.writeInt(damage?.next?.raw?.toInt() ?: 0)
+                        for (encoder in registry) {
+                            encoder.encode(w, components, entityId)
+                        }
                     }
                     for ((playerId, respawn) in pendingRespawns) {
                         w.writeInt(playerId.value)
@@ -148,127 +111,24 @@ object PhysicsNetCodecs {
                     "Invalid state payload size: expected $expectedSize bytes for $n entities + $respawnCount respawns + $crashAudioEventCount crash events, got ${bytes.size}"
                 }
                 val entities = mutableSetOf<Int>()
-                val playerEntities = LinkedHashMap<PlayerId, EntityId>()
-                val transforms = LinkedHashMap<EntityId, TransformComponent>(n)
-                val motions = LinkedHashMap<EntityId, MotionComponent>(n)
-                val colliders = LinkedHashMap<EntityId, ColliderComponent>(n)
-                val materials = LinkedHashMap<EntityId, MaterialComponent>(n)
-                val renderShapes = LinkedHashMap<EntityId, RenderShapeComponent>()
-                val playerOwned = LinkedHashMap<EntityId, PlayerOwnedComponent>()
-                val teams = LinkedHashMap<EntityId, TeamComponent>()
-                val planets = LinkedHashMap<EntityId, PlanetComponent>()
-                val homePlanets = LinkedHashMap<EntityId, HomePlanetComponent>()
-                val forceFields = LinkedHashMap<EntityId, ForceFieldComponent>()
-                val landings = LinkedHashMap<EntityId, LandingAttachmentComponent>()
-                val particles = LinkedHashMap<EntityId, ParticleComponent>()
-                val damages = LinkedHashMap<EntityId, DamageComponent>()
                 val pendingRespawns = LinkedHashMap<PlayerId, PlayerRespawnState>()
                 val crashImpactAudioEvents = ArrayList<CrashImpactAudioEvent>(crashAudioEventCount)
+
+                var state = PhysicsSnapshot()
+
                 repeat(n) {
                     val entityId = EntityId(c.readInt())
-                    val playerIdRaw = c.readInt()
-                    val px = c.readInt()
-                    val py = c.readInt()
-                    val vx = c.readInt()
-                    val vy = c.readInt()
-                    val a = c.readInt()
-                    val av = c.readInt()
-                    val rad = c.readInt()
-                    val m = c.readInt()
-                    val b = c.readInt()
-                    val r = c.readInt()
-                    val shapeRaw = c.readInt()
-                    val planetSeed = c.readInt()
-                    val homePlanetTeamIdRaw = c.readInt()
-                    val teamIdRaw = c.readInt()
-                    val forceFieldRadiusScaleRaw = c.readInt()
-                    val forceFieldStrengthRaw = c.readInt()
-                    val forceFieldAlphaRaw = c.readInt()
-                    val landingParentIdRaw = c.readInt()
-                    val landingDx = c.readInt()
-                    val landingDy = c.readInt()
-                    val landingAng = c.readInt()
-                    val particleLife = c.readInt()
-                    val particleLifetime = c.readInt()
-                    val oldDamageRaw = c.readInt()
-                    val newDamageRaw = c.readInt()
-                    val playerId = if (playerIdRaw >= 0) PlayerId(playerIdRaw) else null
                     entities += entityId.value
-                    transforms[entityId] =
-                        TransformComponent(
-                            pos = Coord2.raw(px, py),
-                            ang = Coord(a),
-                        )
-                    motions[entityId] =
-                        MotionComponent(
-                            vel = Coord2.raw(vx, vy),
-                            angVel = Coord(av),
-                        )
-                    colliders[entityId] =
-                        ColliderComponent(radius = Frac(rad.toLong()))
-                    if (m > 0 && b > 0 && r > 0) {
-                        materials[entityId] =
-                            MaterialComponent(
-                                mass = m.toUInt(),
-                                bounce = Frac(b.toLong()),
-                                rough = Frac(r.toLong()),
-                            )
-                    }
-                    if (shapeRaw >= 0) {
-                        renderShapes[entityId] =
-                            RenderShapeComponent(shape = BodyShape.fromWireValue(shapeRaw))
-                    }
-                    if (planetSeed >= 0) {
-                        planets[entityId] =
-                            PlanetComponent(seed = planetSeed)
-                    }
-                    if (homePlanetTeamIdRaw >= 0) {
-                        homePlanets[entityId] =
-                            HomePlanetComponent(
-                                teamId = TeamId(homePlanetTeamIdRaw),
-                            )
-                    }
-                    if (teamIdRaw >= 0) {
-                        teams[entityId] =
-                            TeamComponent(
-                                teamId = TeamId(teamIdRaw),
-                            )
-                    }
-                    if (forceFieldRadiusScaleRaw > 0) {
-                        forceFields[entityId] =
-                            ForceFieldComponent(
-                                depth = Frac(forceFieldRadiusScaleRaw.toLong()),
-                                strength = Frac(forceFieldStrengthRaw.toLong()),
-                                alpha = Frac(forceFieldAlphaRaw.toLong()),
-                            )
-                    }
-                    if (playerId != null) {
-                        playerEntities[playerId] = entityId
-                        playerOwned[entityId] =
-                            PlayerOwnedComponent(playerId)
-                    }
-                    if (landingParentIdRaw >= 0) {
-                        landings[entityId] =
-                            LandingAttachmentComponent(
-                                parentEntityId = EntityId(landingParentIdRaw),
-                                relativePos = Frac2.raw(landingDx, landingDy),
-                                relativeAng = Frac(landingAng.toLong()),
-                            )
-                    }
-                    if (particleLife > 0) {
-                        particles[entityId] =
-                            ParticleComponent(
-                                life = particleLife,
-                                lifeTime = particleLifetime,
-                            )
-                    }
-                    if (oldDamageRaw > 0 || newDamageRaw > 0) {
-                        damages[entityId] = DamageComponent(
-                            Frac(oldDamageRaw.toLong()),
-                            Frac(0),
-                            Frac(newDamageRaw.toLong()),
-                        )
-                    }
+                    state = state.copy(
+                        components = state.components.update {
+                            for (codec in registry) {
+                                val component = codec.decode(c)
+                                if (component != null) {
+                                    setRaw(entityId, component)
+                                }
+                            }
+                        }
+                    )
                 }
                 repeat(respawnCount) {
                     val playerId = PlayerId(c.readInt())
@@ -311,33 +171,17 @@ object PhysicsNetCodecs {
                             destroyed = destroyedRaw != 0,
                         )
                 }
-                val state = PhysicsSnapshot(
+                val mutableState = state.copy(
                     world = EcsWorld(
                         entities = entities,
                         lastEntityValue = lastEntityValue,
                     ),
-                    playerEntities = playerEntities,
-                    components = ComponentStore().update {
-                        set(ComponentTable.fromMap(transforms))
-                        set(ComponentTable.fromMap(motions))
-                        set(ComponentTable.fromMap(colliders))
-                        set(ComponentTable.fromMap(materials))
-                        set(ComponentTable.fromMap(renderShapes))
-                        set(ComponentTable.fromMap(playerOwned))
-                        set(ComponentTable.fromMap(teams))
-                        set(ComponentTable.fromMap(planets))
-                        set(ComponentTable.fromMap(homePlanets))
-                        set(ComponentTable.fromMap(forceFields))
-                        set(ComponentTable.fromMap(landings))
-                        set(ComponentTable.fromMap(particles))
-                        set(ComponentTable.fromMap(damages))
-                    },
                     pendingRespawns = pendingRespawns,
                     crashImpactAudioEvents = crashImpactAudioEvents,
-                ).mutable
-                state.randomSeed = randomSeed
-                state.raw.world.lastEntityValue = lastEntityValue
-                return state
+                ).rebuildIndexes().mutable
+                mutableState.randomSeed = randomSeed
+                mutableState.raw.world.lastEntityValue = lastEntityValue
+                return mutableState
             }
         }
 

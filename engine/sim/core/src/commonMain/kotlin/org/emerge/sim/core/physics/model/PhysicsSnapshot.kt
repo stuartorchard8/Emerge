@@ -64,4 +64,15 @@ data class PhysicsSnapshot(
 
     fun planetEntities(): Set<EntityId> =
         planets.keys()
+
+    fun rebuildIndexes(): PhysicsSnapshot {
+        val playerOwnedTable = components.getTable<PlayerOwnedComponent>()
+
+        // Use the power of the map to build the reverse index in one pass
+        val newPlayerEntities = playerOwnedTable.entries().associate { (id, comp) ->
+            comp.playerId to id
+        }
+
+        return copy(playerEntities = newPlayerEntities)
+    }
 }

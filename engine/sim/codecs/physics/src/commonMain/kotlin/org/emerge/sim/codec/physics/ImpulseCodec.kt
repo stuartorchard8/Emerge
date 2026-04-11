@@ -17,7 +17,7 @@ object ImpulseCodec: StateCodec<PhysicsState> {
     private const val INT_SIZE_BYTES = 4
     private const val MAX_STATE_ENTITIES = 2048
     private const val IMPULSE_STATE_HEADER_INT_COUNT = 2
-    private const val IMPULSE_STATE_ENTITY_INT_COUNT = 7
+    private const val IMPULSE_STATE_ENTITY_INT_COUNT = 6
     private const val IMPULSE_STATE_DAMAGE_INT_COUNT = 2
 
 

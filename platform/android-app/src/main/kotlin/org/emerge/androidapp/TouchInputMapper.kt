@@ -2,14 +2,7 @@ package org.emerge.androidapp
 
 import android.view.MotionEvent
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import kotlin.math.PI
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.hypot
-import kotlin.math.min
-import kotlin.math.roundToInt
-import kotlin.math.roundToLong
-import kotlin.math.sin
+import kotlin.math.*
 
 internal object TouchInputMapper {
     fun toPhysicsInput(
@@ -49,7 +42,7 @@ internal object TouchInputMapper {
         val worldY = headingScreenX * camS + headingScreenY * camC
 
         val targetHeadingRad = atan2(worldY, worldX)
-        val rocketHeadingRad = rocketAngleTurns * 2f * PI.toFloat()
+        val rocketHeadingRad = rocketAngleTurns * PI.toFloat()
         val rocketAngularVelocityRad = rocketAngularVelocityTurns * 2f * PI.toFloat()
         val angleErrorRad = normalizeAngleRad(targetHeadingRad - rocketHeadingRad)
         val turnControl =
