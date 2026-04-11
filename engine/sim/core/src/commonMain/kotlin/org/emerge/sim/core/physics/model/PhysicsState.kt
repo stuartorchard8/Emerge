@@ -18,8 +18,10 @@ data class PhysicsState(
         motions: ComponentTable<MotionComponent>,
     ) {
         raw = raw.copy(
-            transforms = transforms,
-            motions = motions,
+            components = raw.components.update {
+                set(transforms)
+                set(motions)
+            },
         )
     }
 
@@ -33,13 +35,21 @@ data class PhysicsState(
     }
 
     fun setImpulses(impulses: ComponentTable<ImpulseComponent>) {
-        raw = raw.copy(impulses = impulses)
+        raw = raw.copy(
+            components = raw.components.update {
+                set(impulses)
+            },
+        )
     }
 
     fun setLandings(
         landings: ComponentTable<LandingAttachmentComponent>,
     ) {
-        raw = raw.copy(landings = landings)
+        raw = raw.copy(
+            components = raw.components.update {
+                set(landings)
+            },
+        )
     }
 
     fun addDamages(
@@ -55,7 +65,9 @@ data class PhysicsState(
         damages: ComponentTable<DamageComponent>,
     ) {
         raw = raw.copy(
-            damages = damages,
+            components = raw.components.update {
+                set(damages)
+            },
         )
     }
 
@@ -69,7 +81,9 @@ data class PhysicsState(
 
     fun setParticles(particles: ComponentTable<ParticleComponent>) {
         raw = raw.copy(
-            particles = particles,
+            components = raw.components.update {
+                set(particles)
+            },
         )
     }
 
@@ -80,9 +94,11 @@ data class PhysicsState(
         landing: LandingAttachmentComponent,
     ) {
         raw = raw.copy(
-            teams = raw.teams.put(entityId,team),
-            motions = raw.motions.put(entityId,motion),
-            landings = raw.landings.put(entityId,landing),
+            components = raw.components.update {
+                set(raw.teams.put(entityId,team))
+                set(raw.motions.put(entityId,motion))
+                set(raw.landings.put(entityId,landing))
+            },
         )
     }
 
@@ -160,20 +176,23 @@ data class PhysicsState(
             }
         raw = raw.copy(
             playerEntities = nextPlayerEntities,
-            transforms = raw.transforms.put(entityId, TransformComponent(pos = pos, ang = ang)),
-            motions = raw.motions.put(entityId, MotionComponent(vel = vel, angVel = angVel)),
-            colliders = raw.colliders.put(entityId, ColliderComponent(radius = radius)),
-            materials = raw.materials.put(entityId, MaterialComponent(mass = mass, bounce = bounce, rough = rough)),
-            renderShapes = raw.renderShapes.put(entityId, RenderShapeComponent(shape = shape)),
-            playerOwned = nextPlayerOwned,
-            teams = raw.teams.remove(entityId),
-            planets = raw.planets.remove(entityId),
-            homePlanets = raw.homePlanets.remove(entityId),
-            forceFields = raw.forceFields.remove(entityId),
-            landings = raw.landings.remove(entityId),
-            particles = raw.particles.remove(entityId),
-            damages = raw.damages.remove(entityId),
             pendingRespawns = if (playerId == null) raw.pendingRespawns else raw.pendingRespawns - playerId,
+
+            components = raw.components.update {
+                set(raw.transforms.put(entityId, TransformComponent(pos = pos, ang = ang)))
+                set(raw.motions.put(entityId, MotionComponent(vel = vel, angVel = angVel)))
+                set(raw.colliders.put(entityId, ColliderComponent(radius = radius)))
+                set(raw.materials.put(entityId, MaterialComponent(mass = mass, bounce = bounce, rough = rough)))
+                set(raw.renderShapes.put(entityId, RenderShapeComponent(shape = shape)))
+                set(nextPlayerOwned,)
+                set(raw.teams.remove(entityId))
+                set(raw.planets.remove(entityId))
+                set(raw.homePlanets.remove(entityId))
+                set(raw.forceFields.remove(entityId))
+                set(raw.landings.remove(entityId))
+                set(raw.particles.remove(entityId))
+                set(raw.damages.remove(entityId))
+            },
         )
     }
 
@@ -210,24 +229,30 @@ data class PhysicsState(
         raw.world.ensureEntity(entityId)
         raw = raw.copy(
             playerEntities = raw.playerEntities.filterValues { it != entityId },
-            transforms = raw.transforms.put(entityId, TransformComponent(pos = pos, ang = Coord(0))),
-            motions = raw.motions.put(entityId, MotionComponent(vel = vel, angVel = Coord(0))),
-            colliders = raw.colliders.put(entityId, ColliderComponent(radius = radius)),    // TODO don't store radius in collider
-            materials = raw.materials.remove(entityId),
-            renderShapes = raw.renderShapes.put(entityId, RenderShapeComponent(shape = shape)),
-            playerOwned = raw.playerOwned.remove(entityId),
-            teams = raw.teams.put(entityId, TeamComponent(teamId)),
-            planets = raw.planets.remove(entityId),
-            homePlanets = raw.homePlanets.remove(entityId),
-            forceFields = raw.forceFields.remove(entityId),
-            landings = raw.landings.remove(entityId),
-            particles = raw.particles.put(entityId, ParticleComponent(lifetime, lifetime)),
-            damages = raw.damages.remove(entityId),
+            components = raw.components.update {
+                set(raw.transforms.put(entityId, TransformComponent(pos = pos, ang = Coord(0))))
+                set(raw.motions.put(entityId, MotionComponent(vel = vel, angVel = Coord(0))))
+                set(raw.colliders.put(entityId, ColliderComponent(radius = radius)))    // TODO don't store radius in collider)
+                set(raw.materials.remove(entityId))
+                set(raw.renderShapes.put(entityId, RenderShapeComponent(shape = shape)))
+                set(raw.playerOwned.remove(entityId))
+                set(raw.teams.put(entityId, TeamComponent(teamId)))
+                set(raw.planets.remove(entityId))
+                set(raw.homePlanets.remove(entityId))
+                set(raw.forceFields.remove(entityId))
+                set(raw.landings.remove(entityId))
+                set(raw.particles.put(entityId, ParticleComponent(lifetime, lifetime)))
+                set(raw.damages.remove(entityId))
+            }
         )
     }
 
     fun markPlanet(entityId: EntityId, seed: Int = entityId.value) {
-        raw = raw.copy(planets = raw.planets.put(entityId, PlanetComponent(seed = seed)))
+        raw = raw.copy(
+            components = raw.components.update {
+                set(raw.planets.put(entityId, PlanetComponent(seed = seed)))
+            }
+        )
     }
 
     fun assignHomePlanet(
@@ -240,7 +265,11 @@ data class PhysicsState(
                 nextHomePlanets = nextHomePlanets.remove(existingEntityId)
             }
         }
-        raw = raw.copy(homePlanets = nextHomePlanets.put(entityId, HomePlanetComponent(teamId)))
+        raw = raw.copy(
+            components = raw.components.update {
+                set(nextHomePlanets.put(entityId, HomePlanetComponent(teamId)))
+            }
+        )
     }
 
     fun setForceField(
@@ -250,27 +279,25 @@ data class PhysicsState(
         alpha: Frac,
     ) {
         raw = raw.copy(
-            forceFields = raw.forceFields.put(
-                entityId,
-                ForceFieldComponent(
-                    depth = depth,
-                    strength = strength,
-                    alpha = alpha,
-                ),
-            ),
+            components = raw.components.update {
+                set(raw.forceFields.put(
+                    entityId,
+                    ForceFieldComponent(
+                        depth = depth,
+                        strength = strength,
+                        alpha = alpha,
+                    ),
+                ))
+            }
         )
     }
 
-    fun clearForceField(entityId: EntityId) {
-        raw = raw.copy(forceFields = raw.forceFields.remove(entityId))
-    }
-
     fun setTeam(entityId: EntityId, teamId: TeamId) {
-        raw = raw.copy(teams = raw.teams.put(entityId, TeamComponent(teamId)))
-    }
-
-    fun clearTeam(entityId: EntityId) {
-        raw = raw.copy(teams = raw.teams.remove(entityId))
+        raw = raw.copy(
+            components = raw.components.update {
+                set(raw.teams.put(entityId, TeamComponent(teamId)))
+            }
+        )
     }
 
     fun removePlayerRocket(playerId: PlayerId) {
@@ -291,19 +318,21 @@ data class PhysicsState(
         raw.world.removeEntity(entityId)
         raw = raw.copy(
             playerEntities = nextPlayerEntities,
-            transforms = raw.transforms.remove(entityId),
-            motions = raw.motions.remove(entityId),
-            colliders = raw.colliders.remove(entityId),
-            materials = raw.materials.remove(entityId),
-            renderShapes = raw.renderShapes.remove(entityId),
-            playerOwned = raw.playerOwned.remove(entityId),
-            teams = raw.teams.remove(entityId),
-            planets = raw.planets.remove(entityId),
-            homePlanets = raw.homePlanets.remove(entityId),
-            forceFields = raw.forceFields.remove(entityId),
-            landings = ComponentTable.fromMap(nextLandings).remove(entityId),
-            particles = raw.particles.remove(entityId),
-            damages = raw.damages.remove(entityId),
+            components = raw.components.update {
+                set(raw.transforms.remove(entityId))
+                set(raw.motions.remove(entityId))
+                set(raw.colliders.remove(entityId))
+                set(raw.materials.remove(entityId))
+                set(raw.renderShapes.remove(entityId))
+                set(raw.playerOwned.remove(entityId))
+                set(raw.teams.remove(entityId))
+                set(raw.planets.remove(entityId))
+                set(raw.homePlanets.remove(entityId))
+                set(raw.forceFields.remove(entityId))
+                set(ComponentTable.fromMap(nextLandings).remove(entityId))
+                set(raw.particles.remove(entityId))
+                set(raw.damages.remove(entityId))
+            }
         )
     }
 
@@ -383,21 +412,23 @@ data class PhysicsState(
             teamId = teamId,
         )
         raw = raw.copy(
-            motions = raw.motions.put(
-                entityId,
-                MotionComponent(
-                    vel = planetMotion.vel,
-                    angVel = planetMotion.angVel,
-                ),
-            ),
-            landings = raw.landings.put(
-                entityId,
-                LandingAttachmentComponent(
-                    parentEntityId = homePlanetId,
-                    relativePos = relativePos,
-                    relativeAng = Frac(localAngle.raw.toLong()),
-                ),
-            ),
+            components = raw.components.update {
+                set(raw.motions.put(
+                    entityId,
+                    MotionComponent(
+                        vel = planetMotion.vel,
+                        angVel = planetMotion.angVel,
+                    ),
+                ))
+                set(raw.landings.put(
+                    entityId,
+                    LandingAttachmentComponent(
+                        parentEntityId = homePlanetId,
+                        relativePos = relativePos,
+                        relativeAng = Frac(localAngle.raw.toLong()),
+                    ),
+                ))
+            }
         )
         return true
     }

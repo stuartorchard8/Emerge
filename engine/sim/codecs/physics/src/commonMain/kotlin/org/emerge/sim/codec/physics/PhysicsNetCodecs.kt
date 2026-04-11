@@ -5,32 +5,12 @@ import org.emerge.net.codec.ByteWriter
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
-import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.BodyShape
-import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.model.PhysicsSnapshot
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.CrashImpactAudioEvent
-import org.emerge.sim.core.physics.model.PlayerRespawnState
-import org.emerge.sim.core.physics.model.RespawnRocketSpec
-import org.emerge.sim.core.physics.primitives.Frac2
+import org.emerge.sim.core.ecs.ComponentStore
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsWorld
-import org.emerge.sim.core.physics.components.ColliderComponent
-import org.emerge.sim.core.physics.components.DamageComponent
-import org.emerge.sim.core.physics.components.ForceFieldComponent
-import org.emerge.sim.core.physics.components.HomePlanetComponent
-import org.emerge.sim.core.physics.components.LandingAttachmentComponent
-import org.emerge.sim.core.physics.components.MaterialComponent
-import org.emerge.sim.core.physics.components.MotionComponent
-import org.emerge.sim.core.physics.components.ParticleComponent
-import org.emerge.sim.core.physics.components.PlanetComponent
-import org.emerge.sim.core.physics.components.PlayerOwnedComponent
-import org.emerge.sim.core.physics.components.RenderShapeComponent
-import org.emerge.sim.core.physics.components.TeamComponent
-import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.primitives.Coord
-import org.emerge.sim.core.physics.primitives.Coord2
+import org.emerge.sim.core.physics.components.*
+import org.emerge.sim.core.physics.model.*
+import org.emerge.sim.core.physics.primitives.*
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
 
@@ -337,19 +317,21 @@ object PhysicsNetCodecs {
                         lastEntityValue = lastEntityValue,
                     ),
                     playerEntities = playerEntities,
-                    transforms = ComponentTable.fromMap(transforms),
-                    motions = ComponentTable.fromMap(motions),
-                    colliders = ComponentTable.fromMap(colliders),
-                    materials = ComponentTable.fromMap(materials),
-                    renderShapes = ComponentTable.fromMap(renderShapes),
-                    playerOwned = ComponentTable.fromMap(playerOwned),
-                    teams = ComponentTable.fromMap(teams),
-                    planets = ComponentTable.fromMap(planets),
-                    homePlanets = ComponentTable.fromMap(homePlanets),
-                    forceFields = ComponentTable.fromMap(forceFields),
-                    landings = ComponentTable.fromMap(landings),
-                    particles = ComponentTable.fromMap(particles),
-                    damages = ComponentTable.fromMap(damages),
+                    components = ComponentStore().update {
+                        set(ComponentTable.fromMap(transforms))
+                        set(ComponentTable.fromMap(motions))
+                        set(ComponentTable.fromMap(colliders))
+                        set(ComponentTable.fromMap(materials))
+                        set(ComponentTable.fromMap(renderShapes))
+                        set(ComponentTable.fromMap(playerOwned))
+                        set(ComponentTable.fromMap(teams))
+                        set(ComponentTable.fromMap(planets))
+                        set(ComponentTable.fromMap(homePlanets))
+                        set(ComponentTable.fromMap(forceFields))
+                        set(ComponentTable.fromMap(landings))
+                        set(ComponentTable.fromMap(particles))
+                        set(ComponentTable.fromMap(damages))
+                    },
                     pendingRespawns = pendingRespawns,
                     crashImpactAudioEvents = crashImpactAudioEvents,
                 ).mutable

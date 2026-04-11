@@ -3,7 +3,7 @@ package org.emerge.sim.core.physics.model
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
-import org.emerge.sim.core.ecs.ComponentTable
+import org.emerge.sim.core.ecs.ComponentStore
 import org.emerge.sim.core.ecs.EcsWorld
 import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.primitives.Contact
@@ -15,29 +15,30 @@ data class PhysicsSnapshot(
     
     // Player-keyed
     val playerEntities: Map<PlayerId, EntityId> = emptyMap(),
-    val pendingRespawns: Map<PlayerId, PlayerRespawnState> = emptyMap(),
+    val pendingRespawns: Map<PlayerId, PlayerRespawnState> = emptyMap(),    // Replace with ComponentTable<SpawnQueuedComponent>
 
-    // Entity-keyed
-    val transforms: ComponentTable<TransformComponent> = ComponentTable.empty(),
-    val motions: ComponentTable<MotionComponent> = ComponentTable.empty(),
-    val impulses: ComponentTable<ImpulseComponent> = ComponentTable.empty(),
-    val colliders: ComponentTable<ColliderComponent> = ComponentTable.empty(),
-    val materials: ComponentTable<MaterialComponent> = ComponentTable.empty(),
-    val renderShapes: ComponentTable<RenderShapeComponent> = ComponentTable.empty(),
-    val playerOwned: ComponentTable<PlayerOwnedComponent> = ComponentTable.empty(),
-    val teams: ComponentTable<TeamComponent> = ComponentTable.empty(),
-    val planets: ComponentTable<PlanetComponent> = ComponentTable.empty(),
-    val homePlanets: ComponentTable<HomePlanetComponent> = ComponentTable.empty(),
-    val forceFields: ComponentTable<ForceFieldComponent> = ComponentTable.empty(),
-    val landings: ComponentTable<LandingAttachmentComponent> = ComponentTable.empty(),
-    val particles: ComponentTable<ParticleComponent> = ComponentTable.empty(),
-    val damages: ComponentTable<DamageComponent> = ComponentTable.empty(),
+    val components: ComponentStore = ComponentStore(),
 
     // Events
     val contacts: List<Contact> = emptyList(),
     val crashImpactAudioEvents: List<CrashImpactAudioEvent> = emptyList(),
 ) {
     val mutable get() = PhysicsState(this)
+
+    val transforms get() = components.getTable<TransformComponent>()
+    val motions get() = components.getTable<MotionComponent>()
+    val impulses get() = components.getTable<ImpulseComponent>()
+    val colliders get() = components.getTable<ColliderComponent>()
+    val materials get() = components.getTable<MaterialComponent>()
+    val renderShapes get() = components.getTable<RenderShapeComponent>()
+    val playerOwned get() = components.getTable<PlayerOwnedComponent>()
+    val teams get() = components.getTable<TeamComponent>()
+    val planets get() = components.getTable<PlanetComponent>()
+    val homePlanets get() = components.getTable<HomePlanetComponent>()
+    val forceFields get() = components.getTable<ForceFieldComponent>()
+    val landings get() = components.getTable<LandingAttachmentComponent>()
+    val particles get() = components.getTable<ParticleComponent>()
+    val damages get() = components.getTable<DamageComponent>()
 
     fun playerTransform(playerId: PlayerId): TransformComponent? {
         val entityId = playerEntities[playerId] ?: return null

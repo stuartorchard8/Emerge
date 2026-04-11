@@ -13,6 +13,6 @@ object ImpulseResetSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
         state: PhysicsState,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        state.setImpulses(ComponentTable())
+        state.setImpulses(ComponentTable.empty())
     }
 }

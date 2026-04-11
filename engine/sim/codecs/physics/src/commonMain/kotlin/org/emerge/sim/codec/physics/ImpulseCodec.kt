@@ -3,17 +3,15 @@ package org.emerge.sim.codec.physics
 import org.emerge.net.codec.ByteCursor
 import org.emerge.net.codec.ByteWriter
 import org.emerge.sim.core.EntityId
+import org.emerge.sim.core.ecs.ComponentStore
 import org.emerge.sim.core.ecs.ComponentTable
-import org.emerge.sim.core.physics.model.PhysicsSnapshot
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
+import org.emerge.sim.core.physics.model.PhysicsSnapshot
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.sync.StateCodec
-import kotlin.collections.component1
-import kotlin.collections.component2
-import kotlin.collections.set
 
 object ImpulseCodec: StateCodec<PhysicsState> {
     private const val INT_SIZE_BYTES = 4
@@ -81,8 +79,10 @@ object ImpulseCodec: StateCodec<PhysicsState> {
             damages[entityId] = DamageComponent(Frac(0),Frac(0),Frac(damage.toLong()))
         }
         val state = PhysicsSnapshot(
-            impulses = ComponentTable.fromMap(impulses),
-            damages = ComponentTable.fromMap(damages),
+            components = ComponentStore().update {
+                set(ComponentTable.fromMap(impulses))
+                set(ComponentTable.fromMap(damages))
+            },
         ).mutable
         return state
     }
