@@ -2,8 +2,8 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.TeamId
-import org.emerge.sim.core.physics.PhysicsSnapshot
-import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.model.PhysicsSnapshot
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TeamComponent

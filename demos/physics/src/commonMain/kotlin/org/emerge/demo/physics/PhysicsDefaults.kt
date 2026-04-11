@@ -4,9 +4,9 @@ import kotlin.random.Random
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
-import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.PhysicsSnapshot
+import org.emerge.sim.core.physics.model.PhysicsSnapshot
 import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.physics.primitives.Norm
 import org.emerge.sim.core.physics.primitives.BodyShape

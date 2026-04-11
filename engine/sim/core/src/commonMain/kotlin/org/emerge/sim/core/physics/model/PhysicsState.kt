@@ -1,10 +1,9 @@
-package org.emerge.sim.core.physics
+package org.emerge.sim.core.physics.model
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.ComponentTable
-import org.emerge.sim.core.ecs.EcsWorld
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.DamageComponent
@@ -26,89 +25,7 @@ import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.physics.primitives.Norm
-
-data class PhysicsConfig(
-    val thrustFactorInv: Int = Int.MAX_VALUE / (1024 * 32),
-    val turnFactorInv: Int = Int.MAX_VALUE / (1024 * 512),
-    val gravityNumerator: Frac = Frac(1,16),
-    val shipCollisionDamageThreshold: Frac = Frac(1, 1024 * 8),
-    val shipMaxDamage: Frac = Frac(1, 512),
-    val shipRespawnTicks: Int = 60 * 5,
-)
-
-data class RespawnRocketSpec(
-    val mass: UInt,
-    val radius: Frac,
-    val bounce: Frac,
-    val rough: Frac,
-    val shape: BodyShape,
-)
-
-data class PlayerRespawnState(
-    val ticksRemaining: Int,
-    val deathPos: Coord2,
-    val teamId: TeamId,
-    val entityId: EntityId,
-    val rocket: RespawnRocketSpec,
-)
-
-data class CrashImpactAudioEvent(
-    val entityId: EntityId,
-    val pos: Coord2,
-    val damageRaw: Int,
-    val destroyed: Boolean,
-)
-
-data class PhysicsSnapshot(
-    val world: EcsWorld = EcsWorld.EMPTY,
-    val playerEntities: Map<PlayerId, EntityId> = emptyMap(),
-    val transforms: ComponentTable<TransformComponent> = ComponentTable.empty(),
-    val motions: ComponentTable<MotionComponent> = ComponentTable.empty(),
-    val contacts: List<Contact> = emptyList(),
-    val impulses: ComponentTable<ImpulseComponent> = ComponentTable.empty(),
-    val discardImpulses: Boolean = false,
-    val colliders: ComponentTable<ColliderComponent> = ComponentTable.empty(),
-    val materials: ComponentTable<MaterialComponent> = ComponentTable.empty(),
-    val renderShapes: ComponentTable<RenderShapeComponent> = ComponentTable.empty(),
-    val bgRenderShapes: ComponentTable<RenderShapeComponent> = ComponentTable.empty(),
-    val playerOwned: ComponentTable<PlayerOwnedComponent> = ComponentTable.empty(),
-    val teams: ComponentTable<TeamComponent> = ComponentTable.empty(),
-    val planets: ComponentTable<PlanetComponent> = ComponentTable.empty(),
-    val homePlanets: ComponentTable<HomePlanetComponent> = ComponentTable.empty(),
-    val forceFields: ComponentTable<ForceFieldComponent> = ComponentTable.empty(),
-    val landings: ComponentTable<LandingAttachmentComponent> = ComponentTable.empty(),
-    val particles: ComponentTable<ParticleComponent> = ComponentTable.empty(),
-    val damages: ComponentTable<DamageComponent> = ComponentTable.empty(),
-    val pendingRespawns: Map<PlayerId, PlayerRespawnState> = emptyMap(),
-    val crashImpactAudioEvents: List<CrashImpactAudioEvent> = emptyList(),
-) {
-    val mutable get() = PhysicsState(this)
-
-    fun playerTransform(playerId: PlayerId): TransformComponent? {
-        val entityId = playerEntities[playerId] ?: return null
-        return transforms[entityId]
-    }
-
-    fun playerMotion(playerId: PlayerId): MotionComponent? {
-        val entityId = playerEntities[playerId] ?: return null
-        return motions[entityId]
-    }
-
-    fun playerAngle(playerId: PlayerId): Coord? = playerTransform(playerId)?.ang
-
-    fun playerAngularVelocity(playerId: PlayerId): Coord? = playerMotion(playerId)?.angVel
-
-    fun playerViewFocus(playerId: PlayerId): Coord2 =
-        playerTransform(playerId)?.pos
-            ?: pendingRespawns[playerId]?.deathPos
-            ?: Coord2.zero
-
-    fun homePlanetEntity(teamId: TeamId): EntityId? =
-        homePlanets.entries().firstOrNull { it.value.teamId == teamId }?.key
-
-    fun planetEntities(): Set<EntityId> =
-        planets.keys()
-}
+import kotlin.collections.iterator
 
 data class PhysicsState(
     private val _initial: PhysicsSnapshot,
@@ -273,7 +190,6 @@ data class PhysicsState(
             colliders = raw.colliders.put(entityId, ColliderComponent(radius = radius)),
             materials = raw.materials.put(entityId, MaterialComponent(mass = mass, bounce = bounce, rough = rough)),
             renderShapes = raw.renderShapes.put(entityId, RenderShapeComponent(shape = shape)),
-            bgRenderShapes = raw.bgRenderShapes.remove(entityId),
             playerOwned = nextPlayerOwned,
             teams = raw.teams.remove(entityId),
             planets = raw.planets.remove(entityId),
@@ -323,8 +239,7 @@ data class PhysicsState(
             motions = raw.motions.put(entityId, MotionComponent(vel = vel, angVel = Coord(0))),
             colliders = raw.colliders.put(entityId, ColliderComponent(radius = radius)),    // TODO don't store radius in collider
             materials = raw.materials.remove(entityId),
-            renderShapes = raw.renderShapes.remove(entityId),
-            bgRenderShapes = raw.bgRenderShapes.put(entityId, RenderShapeComponent(shape = shape)),
+            renderShapes = raw.renderShapes.put(entityId, RenderShapeComponent(shape = shape)),
             playerOwned = raw.playerOwned.remove(entityId),
             teams = raw.teams.put(entityId, TeamComponent(teamId)),
             planets = raw.planets.remove(entityId),
@@ -406,7 +321,6 @@ data class PhysicsState(
             colliders = raw.colliders.remove(entityId),
             materials = raw.materials.remove(entityId),
             renderShapes = raw.renderShapes.remove(entityId),
-            bgRenderShapes = raw.bgRenderShapes.remove(entityId),
             playerOwned = raw.playerOwned.remove(entityId),
             teams = raw.teams.remove(entityId),
             planets = raw.planets.remove(entityId),

@@ -7,9 +7,8 @@ import org.emerge.sim.codec.physics.ImpulseCodec
 import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.NoImpulsePhysicsReducer
-import org.emerge.sim.core.physics.PhysicsConfig
-import org.emerge.sim.core.physics.PhysicsReducer
-import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec

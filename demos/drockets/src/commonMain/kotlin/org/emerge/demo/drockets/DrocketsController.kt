@@ -1,10 +1,8 @@
 package org.emerge.demo.drockets
 
-import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TickStepper
-import org.emerge.sim.core.physics.PhysicsConfig
-import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.primitives.Frac
 
 /**
  * Local-only controller for the Drockets demo. No networking --
@@ -37,8 +35,5 @@ class DrocketsController(
             shipMaxDamage = Frac(1, 256),
             shipRespawnTicks = 0,
         )
-
-        private fun Frac(n: Long, d: Int): org.emerge.sim.core.physics.primitives.Frac =
-            org.emerge.sim.core.physics.primitives.Frac(n, d)
     }
 }

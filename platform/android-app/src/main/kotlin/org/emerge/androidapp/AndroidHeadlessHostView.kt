@@ -9,10 +9,9 @@ import android.os.Looper
 import android.util.Log
 import android.widget.LinearLayout
 import android.widget.TextView
-import org.emerge.demo.physics.GameMode
 import org.emerge.demo.physics.LaunchSettings
 import org.emerge.demo.physics.PhysicsHeadlessHostController
-import org.emerge.sim.core.physics.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
 /**

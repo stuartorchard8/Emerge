@@ -4,27 +4,20 @@ import org.emerge.render.torus.shader.CircleShader
 import org.emerge.render.torus.shader.GuiShader
 import org.emerge.render.torus.shader.WorldShader
 import org.emerge.render.torus.shader.WorldShaderParams
-import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ComponentTable
-import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.components.RenderShapeComponent
+import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.physics.primitives.BodyShape
+import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.primitives.Vec2
-import kotlin.math.atan2
-import kotlin.math.ceil
-import kotlin.math.cos
-import kotlin.math.floor
-import kotlin.math.hypot
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.PI
-import kotlin.math.abs
-import kotlin.math.sin
+import kotlin.math.*
 
 class ScreenRenderer(val contentScale: Vec2) {
     private var zoom: Float = 10f
-    @kotlin.concurrent.Volatile private var worldRotationRad: Float = 0f
+
+    @kotlin.concurrent.Volatile
+    private var worldRotationRad: Float = 0f
 
     /**
      * When set, overrides the automatic player-based view focus.
@@ -38,7 +31,7 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val worldShader = WorldShader()
     private val guiShader = GuiShader()
     private val circleShader = CircleShader()
-    private var layout: ScreenLayout = ScreenLayout.compute(Vec2(1f,1f), contentScale)
+    private var layout: ScreenLayout = ScreenLayout.compute(Vec2(1f, 1f), contentScale)
     private val bodyInstanceMatrices = FloatArray(CircleShader.MAX_INSTANCES * MAT4_FLOATS)
     private val bodyInstancePrimaryIds = FloatArray(CircleShader.MAX_INSTANCES)
     private val bodyInstanceSecondaryIds = FloatArray(CircleShader.MAX_INSTANCES)
@@ -71,6 +64,7 @@ class ScreenRenderer(val contentScale: Vec2) {
     fun zoomOut() {
         zoomByFactor(0.98f)
     }
+
     fun zoomIn() {
         zoomByFactor(1.02f)
     }
@@ -85,6 +79,7 @@ class ScreenRenderer(val contentScale: Vec2) {
     fun rotateLeft() {
         rotateBy(ROTATION_STEP_RAD)
     }
+
     fun rotateRight() {
         rotateBy(-ROTATION_STEP_RAD)
     }
@@ -113,21 +108,9 @@ class ScreenRenderer(val contentScale: Vec2) {
         } else {
             WorldShaderParams.compute(state, myId, zoom, worldRotationRad)
         }
-        worldShader.draw(params, segmentation=layout.worldSegmentation)
-        guiShader.draw(vOffset=layout.guiVertexOffset)
-        var n = packBodyInstances(
-            state = state,
-            shapes = state.raw.bgRenderShapes,
-            params = params,
-            layout = layout,
-            outMatricesColMajor = bodyInstanceMatrices,
-            outPrimaryIds = bodyInstancePrimaryIds,
-            outSecondaryIds = bodyInstanceSecondaryIds,
-            outShapes = bodyInstanceShapes,
-            outAlphas = bodyInstanceAlphas,
-            outRadii = bodyInstanceRadii,
-        )
-        n = packBodyInstances(
+        worldShader.draw(params, segmentation = layout.worldSegmentation)
+        guiShader.draw(vOffset = layout.guiVertexOffset)
+        val n = packBodyInstances(
             state = state,
             shapes = state.raw.renderShapes,
             params = params,
@@ -138,7 +121,6 @@ class ScreenRenderer(val contentScale: Vec2) {
             outShapes = bodyInstanceShapes,
             outAlphas = bodyInstanceAlphas,
             outRadii = bodyInstanceRadii,
-            indexOffset = n,
         )
 
         val x0 = floor(layout.worldPxMin.x).toInt()
@@ -345,12 +327,12 @@ class ScreenRenderer(val contentScale: Vec2) {
             n = packIndicatorInstance(
                 index = n,
                 primaryId = primaryId,
-                posX = viewCenterX + (1f-abs(viewCenterX)) * dirPxX * edgeT * 2f / worldPxWidth,
-                posY = viewCenterY + (1f-abs(viewCenterY)) * dirPxY * edgeT * 2f / worldPxHeight,
+                posX = viewCenterX + (1f - abs(viewCenterX)) * dirPxX * edgeT * 2f / worldPxWidth,
+                posY = viewCenterY + (1f - abs(viewCenterY)) * dirPxY * edgeT * 2f / worldPxHeight,
                 angleRad = atan2(dirPxY, dirPxX),
                 scaleX = indicatorScaleX,
                 scaleY = indicatorScaleY,
-                alpha = PLANET_INDICATOR_ALPHA_MAX*max(1f - lenWorld*2f, 0f),
+                alpha = PLANET_INDICATOR_ALPHA_MAX * max(1f - lenWorld * 2f, 0f),
                 outMatricesColMajor = outMatricesColMajor,
                 outPrimaryIds = outPrimaryIds,
                 outSecondaryIds = outSecondaryIds,

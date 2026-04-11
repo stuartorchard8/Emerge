@@ -4,6 +4,8 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.ecs.EcsSystems
+import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.systems.DamageSystem
 import org.emerge.sim.core.physics.systems.IntegrationSystem

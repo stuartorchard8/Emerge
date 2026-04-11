@@ -8,15 +8,9 @@ import org.emerge.render.torus.put
 import org.emerge.render.torus.shader.CircleShader
 import org.emerge.render.torus.shader.SpriteShader
 import org.emerge.sim.core.EntityId
-import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.primitives.BodyShape
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Vec2
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.floor
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.sin
+import kotlin.math.*
 
 /**
  * Dedicated renderer for the Drockets demo.
@@ -34,7 +28,9 @@ class DrocketsRenderer(
     private val spriteAtlasRows: Int,
 ) {
     private var zoom: Float = 10f
-    @kotlin.concurrent.Volatile private var rotationRad: Float = 0f
+
+    @kotlin.concurrent.Volatile
+    private var rotationRad: Float = 0f
 
     // Updated each frame from the first planet's position + surface offset
     private var viewFocus: Vec2 = Vec2(0f, 0f)
@@ -94,14 +90,27 @@ class DrocketsRenderer(
         GPU.setViewport(0, 0, res.x.toInt(), res.y.toInt())
     }
 
-    fun zoomOut() { zoomByFactor(0.98f) }
-    fun zoomIn() { zoomByFactor(1.02f) }
+    fun zoomOut() {
+        zoomByFactor(0.98f)
+    }
+
+    fun zoomIn() {
+        zoomByFactor(1.02f)
+    }
+
     fun zoomByFactor(factor: Float) {
         if (!factor.isFinite() || factor <= 0f) return
         zoom = (zoom * factor)//.coerceIn(1.5f, 20f)
     }
-    fun rotateLeft() { rotateBy(0.03f) }
-    fun rotateRight() { rotateBy(-0.03f) }
+
+    fun rotateLeft() {
+        rotateBy(0.03f)
+    }
+
+    fun rotateRight() {
+        rotateBy(-0.03f)
+    }
+
     fun rotateBy(deltaRad: Float) {
         if (!deltaRad.isFinite()) return
         rotationRad += deltaRad
@@ -171,14 +180,12 @@ class DrocketsRenderer(
 
         // ── Layer 2: sprites (drockets) ──
         var spriteCount = 0
-        for ((entityId, renderShape) in state.raw.renderShapes.entries()) {
-            if (renderShape.shape != BodyShape.TRIANGLE) continue
+        for ((entityId, drocketState) in DrocketsRegistry.drocketStates) {
             if (spriteCount >= SpriteShader.MAX_INSTANCES) break
             val transform = state.raw.transforms[entityId] ?: continue
             val collider = state.raw.colliders[entityId] ?: continue
-            val drocketState = DrocketsRegistry.drocketStates[entityId] ?: continue
             val facing = drocketState.walkDirection
-            val squash = 0.06125-cos(drocketState.ticksRemaining*2*PI/60f)*0.06125
+            val squash = 0.06125 - cos((drocketState.ticksRemaining) * 2 * PI / 60f) * 0.06125
             val teamId = state.raw.teams[entityId]?.teamId?.value
             val (uvX, uvY) = spriteUvForEntity(entityId)
             val (uvW, uvH) = spriteSizeForEntity(entityId)
@@ -211,7 +218,7 @@ class DrocketsRenderer(
                 alphas = spriteAlphas,
                 squashs = spriteSquashs,
                 textureId = spriteAtlasTextureId,
-                frameSizeX = frameSizeX*13f/16f,
+                frameSizeX = frameSizeX * 13f / 16f,
                 frameSizeY = frameSizeY,
             )
         }
@@ -221,11 +228,10 @@ class DrocketsRenderer(
 
         // ── Layer 3: particles via CircleShader (from bgRenderShapes where particles live) ──
         var circleCount = 0
-        for ((entityId, renderShape) in state.raw.bgRenderShapes.entries()) {
+        for ((entityId, particle) in state.raw.particles.entries()) {
             if (circleCount >= CircleShader.MAX_INSTANCES) break
             val transform = state.raw.transforms[entityId] ?: continue
             val collider = state.raw.colliders[entityId] ?: continue
-            val particle = state.raw.particles[entityId]
             val teamId = state.raw.teams[entityId]?.teamId?.value
 
             val radius = collider.radius.toFloat()
@@ -244,7 +250,7 @@ class DrocketsRenderer(
             circlePrimaryIds[circleCount] = if (teamId != null) (teamId + 1).toFloat() else 0f
             circleSecondaryIds[circleCount] = (entityId.value + 1).toFloat()
             circleShapes[circleCount] = 0f
-            circleAlphas[circleCount] = if (particle != null) particle.life.toFloat() / particle.lifeTime.toFloat() else 1f
+            circleAlphas[circleCount] = particle.life.toFloat() / particle.lifeTime.toFloat()
             circleRadii[circleCount] = radius
             circleCount++
         }
@@ -277,14 +283,14 @@ class DrocketsRenderer(
     private fun uploadVerts() {
         val verts = floatArrayOf(
             // [0..2] Triangle strip for CircleShader / PlanetShader (3 verts)
-            -1f,  1.7320508f,
-             2f,  0f,
+            -1f, 1.7320508f,
+            2f, 0f,
             -1f, -1.7320508f,
             // [3..6] Fullscreen quad for StarscapeShader (4 verts, triangle strip)
-            -1f,  1f,
+            -1f, 1f,
             -1f, -1f,
-             1f,  1f,
-             1f, -1f,
+            1f, 1f,
+            1f, -1f,
         )
         val buf = GpuFloatBuffer(verts.size)
         buf.put(verts).flip()
@@ -387,7 +393,7 @@ class DrocketsRenderer(
             val atlasFrame = SpriteAnimationSystem.currentAtlasFrame(animState, DROCKET_SPRITE_SHEET)
             return DROCKET_SPRITE_SHEET.frameWH(atlasFrame)
         }
-        return Pair(0f, 0f)
+        return Pair(1f, 1f)
     }
 
     // ── Matrix helpers ───────────────────────────────────────
@@ -403,20 +409,28 @@ class DrocketsRenderer(
         for (i in 0 until M4) out[i] = 0f
         out[0] = 1f; out[5] = 1f; out[10] = 1f; out[15] = 1f
     }
+
     private fun setTranslation(out: FloatArray, tx: Float, ty: Float) {
         setIdentity(out); out[12] = tx; out[13] = ty
     }
+
     private fun setScale(out: FloatArray, sx: Float, sy: Float) {
         setIdentity(out); out[0] = sx; out[5] = sy
     }
+
     private fun setRotationZ(out: FloatArray, rad: Float) {
         setIdentity(out)
-        val c = cos(rad); val s = sin(rad)
+        val c = cos(rad)
+        val s = sin(rad)
         out[0] = c; out[1] = s; out[4] = -s; out[5] = c
     }
+
     private fun multiply4x4(out: FloatArray, a: FloatArray, b: FloatArray) {
         for (col in 0..3) {
-            val b0 = b[col * 4]; val b1 = b[col * 4 + 1]; val b2 = b[col * 4 + 2]; val b3 = b[col * 4 + 3]
+            val b0 = b[col * 4]
+            val b1 = b[col * 4 + 1]
+            val b2 = b[col * 4 + 2]
+            val b3 = b[col * 4 + 3]
             out[col * 4 + 0] = a[0] * b0 + a[4] * b1 + a[8] * b2 + a[12] * b3
             out[col * 4 + 1] = a[1] * b0 + a[5] * b1 + a[9] * b2 + a[13] * b3
             out[col * 4 + 2] = a[2] * b0 + a[6] * b1 + a[10] * b2 + a[14] * b3

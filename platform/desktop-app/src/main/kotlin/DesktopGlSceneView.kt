@@ -3,7 +3,7 @@ package org.emerge.desktop
 import org.emerge.demo.physics.*
 import org.emerge.demo.physics.audio.CrashAudioSystem
 import org.emerge.render.torus.ScreenRenderer
-import org.emerge.sim.core.physics.*
+import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.primitives.Vec2
 import org.lwjgl.glfw.GLFW.*

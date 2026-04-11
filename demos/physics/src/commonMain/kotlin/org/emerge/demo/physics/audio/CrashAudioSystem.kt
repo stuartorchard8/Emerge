@@ -5,7 +5,7 @@ import kotlin.math.hypot
 import kotlin.random.Random
 import org.emerge.demo.physics.PhysicsFrame
 import org.emerge.sim.core.EntityId
-import org.emerge.sim.core.physics.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.Coord2
 
 data class CrashSfxRequest(

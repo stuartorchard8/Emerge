@@ -1,7 +1,7 @@
 package org.emerge.render.torus.shader
 
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Vec2
 import org.emerge.sim.core.physics.primitives.Coord2
 

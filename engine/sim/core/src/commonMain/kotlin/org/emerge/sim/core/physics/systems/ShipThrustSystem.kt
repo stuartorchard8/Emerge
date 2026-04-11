@@ -4,13 +4,12 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2

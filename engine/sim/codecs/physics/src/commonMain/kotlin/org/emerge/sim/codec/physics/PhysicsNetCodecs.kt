@@ -8,11 +8,11 @@ import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.PhysicsSnapshot
-import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.CrashImpactAudioEvent
-import org.emerge.sim.core.physics.PlayerRespawnState
-import org.emerge.sim.core.physics.RespawnRocketSpec
+import org.emerge.sim.core.physics.model.PhysicsSnapshot
+import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.physics.model.CrashImpactAudioEvent
+import org.emerge.sim.core.physics.model.PlayerRespawnState
+import org.emerge.sim.core.physics.model.RespawnRocketSpec
 import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsWorld
@@ -41,7 +41,7 @@ import org.emerge.sim.sync.StateCodec
  */
 object PhysicsNetCodecs {
     private const val STATE_HEADER_INT_COUNT = 6
-    private const val STATE_ENTITY_INT_COUNT = 28
+    private const val STATE_ENTITY_INT_COUNT = 27
     private const val STATE_RESPAWN_INT_COUNT = 11
     private const val STATE_CRASH_AUDIO_EVENT_INT_COUNT = 5
     private const val STATE_INT_BYTES = 4
@@ -69,11 +69,9 @@ object PhysicsNetCodecs {
         object : StateCodec<PhysicsState> {
             override fun encode(state: PhysicsState): ByteArray {
                 val w = ByteWriter()
-                with (state.raw) {
+                with(state.raw) {
                     val serializableEntities =
-                        motions.keys().filter { entityId ->
-                            ((renderShapes[entityId] != null) || (bgRenderShapes[entityId] != null))
-                        }
+                        motions.keys().filter { entityId -> renderShapes[entityId] != null }
                     w.writeInt(serializableEntities.size)
                     w.writeInt(pendingRespawns.size)
                     w.writeInt(crashImpactAudioEvents.size)
@@ -85,7 +83,6 @@ object PhysicsNetCodecs {
                         val collider = colliders[entityId] ?: continue
                         val material = materials[entityId]
                         val renderShape = renderShapes[entityId]
-                        val bgRenderShape = bgRenderShapes[entityId]
                         val planet = planets[entityId]
                         val homePlanet = homePlanets[entityId]
                         val team = teams[entityId]
@@ -109,7 +106,6 @@ object PhysicsNetCodecs {
                         w.writeInt(material?.rough?.raw?.toInt() ?: -1)
 
                         w.writeInt(renderShape?.shape?.wireValue ?: -1)
-                        w.writeInt(bgRenderShape?.shape?.wireValue ?: -1)
                         w.writeInt(planet?.seed ?: -1)
                         w.writeInt(homePlanet?.teamId?.value ?: -1)
                         w.writeInt(team?.teamId?.value ?: -1)
@@ -163,11 +159,11 @@ object PhysicsNetCodecs {
                 val lastEntityValue = c.readInt()
                 val expectedSize =
                     (
-                        STATE_HEADER_INT_COUNT +
-                            (n * STATE_ENTITY_INT_COUNT) +
-                            (respawnCount * STATE_RESPAWN_INT_COUNT) +
-                            (crashAudioEventCount * STATE_CRASH_AUDIO_EVENT_INT_COUNT)
-                        ) * STATE_INT_BYTES
+                            STATE_HEADER_INT_COUNT +
+                                    (n * STATE_ENTITY_INT_COUNT) +
+                                    (respawnCount * STATE_RESPAWN_INT_COUNT) +
+                                    (crashAudioEventCount * STATE_CRASH_AUDIO_EVENT_INT_COUNT)
+                            ) * STATE_INT_BYTES
                 require(bytes.size == expectedSize) {
                     "Invalid state payload size: expected $expectedSize bytes for $n entities + $respawnCount respawns + $crashAudioEventCount crash events, got ${bytes.size}"
                 }
@@ -178,7 +174,6 @@ object PhysicsNetCodecs {
                 val colliders = LinkedHashMap<EntityId, ColliderComponent>(n)
                 val materials = LinkedHashMap<EntityId, MaterialComponent>(n)
                 val renderShapes = LinkedHashMap<EntityId, RenderShapeComponent>()
-                val bgRenderShapes = LinkedHashMap<EntityId, RenderShapeComponent>()
                 val playerOwned = LinkedHashMap<EntityId, PlayerOwnedComponent>()
                 val teams = LinkedHashMap<EntityId, TeamComponent>()
                 val planets = LinkedHashMap<EntityId, PlanetComponent>()
@@ -203,7 +198,6 @@ object PhysicsNetCodecs {
                     val b = c.readInt()
                     val r = c.readInt()
                     val shapeRaw = c.readInt()
-                    val bgShapeRaw = c.readInt()
                     val planetSeed = c.readInt()
                     val homePlanetTeamIdRaw = c.readInt()
                     val teamIdRaw = c.readInt()
@@ -243,10 +237,6 @@ object PhysicsNetCodecs {
                     if (shapeRaw >= 0) {
                         renderShapes[entityId] =
                             RenderShapeComponent(shape = BodyShape.fromWireValue(shapeRaw))
-                    }
-                    if (bgShapeRaw >= 0) {
-                        bgRenderShapes[entityId] =
-                            RenderShapeComponent(shape = BodyShape.fromWireValue(bgShapeRaw))
                     }
                     if (planetSeed >= 0) {
                         planets[entityId] =
@@ -352,7 +342,6 @@ object PhysicsNetCodecs {
                     colliders = ComponentTable.fromMap(colliders),
                     materials = ComponentTable.fromMap(materials),
                     renderShapes = ComponentTable.fromMap(renderShapes),
-                    bgRenderShapes = ComponentTable.fromMap(bgRenderShapes),
                     playerOwned = ComponentTable.fromMap(playerOwned),
                     teams = ComponentTable.fromMap(teams),
                     planets = ComponentTable.fromMap(planets),

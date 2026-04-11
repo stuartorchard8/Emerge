@@ -4,8 +4,8 @@ import org.emerge.net.codec.ByteCursor
 import org.emerge.net.codec.ByteWriter
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.ecs.ComponentTable
-import org.emerge.sim.core.physics.PhysicsSnapshot
-import org.emerge.sim.core.physics.PhysicsState
+import org.emerge.sim.core.physics.model.PhysicsSnapshot
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.primitives.Frac

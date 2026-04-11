@@ -11,10 +11,8 @@ import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ScreenRenderer
 import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.PhysicsReducer
-import org.emerge.sim.core.physics.PhysicsState
-import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.primitives.Vec2
 import org.emerge.sim.sync.lockstep.ThinClient
 import org.w3c.dom.HTMLCanvasElement
@@ -64,7 +62,7 @@ private fun startLocalMode(renderer: ScreenRenderer, input: WebInputHandler, cra
     val myId = PlayerId(0)
     var tick = 0L
 
-    fun frame(@Suppress("UNUSED_PARAMETER") ts: Double) {
+    fun frame(ts: Double) {
         val physicsInput = input.poll(renderer)
         reducer.reduce(cfg, state, mapOf(myId to physicsInput))
         tick++
@@ -107,7 +105,7 @@ private fun startJoinMode(wsUrl: String, renderer: ScreenRenderer, input: WebInp
 
     var reconnectScheduled = false
 
-    fun frame(@Suppress("UNUSED_PARAMETER") ts: Double) {
+    fun frame(ts: Double) {
         val physicsInput = input.poll(renderer)
         client.poll()
         client.sendInput(physicsInput)

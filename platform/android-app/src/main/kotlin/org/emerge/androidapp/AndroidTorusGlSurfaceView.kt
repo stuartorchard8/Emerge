@@ -18,9 +18,9 @@ import org.emerge.demo.physics.PhysicsImpulseJoinController
 import org.emerge.demo.physics.audio.CrashAudioSystem
 import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.PhysicsSnapshot
+import org.emerge.sim.core.physics.model.PhysicsSnapshot
 import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.math.PI
 import kotlin.math.atan2
