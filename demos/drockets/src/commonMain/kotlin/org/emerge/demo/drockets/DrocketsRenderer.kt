@@ -180,15 +180,16 @@ class DrocketsRenderer(
 
         // ── Layer 2: sprites (drockets) ──
         var spriteCount = 0
-        for ((entityId, drocketState) in DrocketsRegistry.drocketStates) {
+        val drocketStates = state.raw.components.getTable<DrocketStateComponent>().entries()
+        for ((entityId, drocketState) in drocketStates) {
             if (spriteCount >= SpriteShader.MAX_INSTANCES) break
             val transform = state.raw.transforms[entityId] ?: continue
             val collider = state.raw.colliders[entityId] ?: continue
             val facing = drocketState.walkDirection
             val squash = 0.06125 - cos((drocketState.ticksRemaining) * 2 * PI / 60f) * 0.06125
             val teamId = state.raw.teams[entityId]?.teamId?.value
-            val (uvX, uvY) = spriteUvForEntity(entityId)
-            val (uvW, uvH) = spriteSizeForEntity(entityId)
+            val (uvX, uvY) = spriteUvForEntity(state, entityId)
+            val (uvW, uvH) = spriteSizeForEntity(state, entityId)
 
             spriteCount = packSpriteInstance(
                 index = spriteCount,
@@ -304,7 +305,8 @@ class DrocketsRenderer(
     // ── Camera focus ─────────────────────────────────────────
 
     private fun updateViewFocus(state: PhysicsState) {
-        val drocketId = DrocketsRegistry.drocketStates.keys.firstOrNull() ?: return
+        val drocketStates = state.raw.components.getTable<DrocketStateComponent>()
+        val drocketId = drocketStates.keys().firstOrNull() ?: return
 //        val planetId = state.raw.planets.keys().firstOrNull() ?: return
         val transform = state.raw.transforms[drocketId] ?: return
         val collider = state.raw.colliders[drocketId] ?: return
@@ -378,8 +380,9 @@ class DrocketsRenderer(
         return index + 1
     }
 
-    private fun spriteUvForEntity(entityId: EntityId): Pair<Float, Float> {
-        val animState = DrocketsRegistry.animationStates[entityId]
+    private fun spriteUvForEntity(state: PhysicsState, entityId: EntityId): Pair<Float, Float> {
+        val animationStates = state.raw.components.getTable<SpriteAnimationState>()
+        val animState = animationStates[entityId]
         if (animState != null) {
             val atlasFrame = SpriteAnimationSystem.currentAtlasFrame(animState, DROCKET_SPRITE_SHEET)
             return DROCKET_SPRITE_SHEET.frameUV(atlasFrame)
@@ -387,8 +390,9 @@ class DrocketsRenderer(
         return Pair(0f, 0f)
     }
 
-    private fun spriteSizeForEntity(entityId: EntityId): Pair<Float, Float> {
-        val animState = DrocketsRegistry.animationStates[entityId]
+    private fun spriteSizeForEntity(state: PhysicsState, entityId: EntityId): Pair<Float, Float> {
+        val animationStates = state.raw.components.getTable<SpriteAnimationState>()
+        val animState = animationStates[entityId]
         if (animState != null) {
             val atlasFrame = SpriteAnimationSystem.currentAtlasFrame(animState, DROCKET_SPRITE_SHEET)
             return DROCKET_SPRITE_SHEET.frameWH(atlasFrame)

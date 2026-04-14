@@ -4,9 +4,9 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Norm
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -27,8 +27,9 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         state: PhysicsState,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val drocketStates = DrocketsRegistry.drocketStates
+        val drocketStates = LinkedHashMap(state.raw.components.getTable<DrocketStateComponent>().asMap())
         if (drocketStates.isEmpty()) return
+        val animationStates = LinkedHashMap(state.raw.components.getTable<SpriteAnimationState>().asMap())
 
         val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
         val nextStates = LinkedHashMap<EntityId, DrocketStateComponent>()
@@ -113,8 +114,8 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         }
 
         for ((entityId, newState) in nextStates) {
-            val oldState = DrocketsRegistry.drocketStates[entityId]
-            DrocketsRegistry.drocketStates[entityId] = newState
+            val oldState = drocketStates[entityId]
+            drocketStates[entityId] = newState
             if (oldState == null || oldState.phase != newState.phase) {
                 val animIndex = when (newState.phase) {
                     DrocketPhase.WALKING -> ANIM_WALK
@@ -123,17 +124,23 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                     DrocketPhase.FLYING -> ANIM_IDLE
                 }
                 SpriteAnimationSystem.setAnimation(
-                    DrocketsRegistry.animationStates, entityId, animIndex,
+                    animationStates, entityId, animIndex,
                 )
             }
         }
 
-        SpriteAnimationSystem.tick(DrocketsRegistry.animationStates, DROCKET_SPRITE_SHEET)
+        SpriteAnimationSystem.tick(animationStates, DROCKET_SPRITE_SHEET)
 
         if (impulses.isNotEmpty()) {
             state.addImpulses(impulses)
         }
         state.setLandings(ComponentTable.fromMap(landings))
+        state.setComponents(
+            state.raw.components.update {
+                set(ComponentTable.fromMap(drocketStates))
+                set(ComponentTable.fromMap(animationStates))
+            }
+        )
     }
 
     private const val CHARGE_TICKS = 18

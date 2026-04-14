@@ -54,11 +54,11 @@ internal object TouchInputMapper {
 
         val magnitudeNorm = ((magnitudePx - thrustDeadzonePx) / (maxRadiusPx - thrustDeadzonePx)).coerceIn(0f, 1f)
         val aligned =
-            kotlin.math.abs(angleErrorRad) <= THRUST_ALIGNMENT_RAD &&
-                kotlin.math.abs(rocketAngularVelocityRad) <= THRUST_ANGULAR_VELOCITY_RAD
+            abs(angleErrorRad) <= THRUST_ALIGNMENT_RAD &&
+                abs(rocketAngularVelocityRad) <= THRUST_ANGULAR_VELOCITY_RAD
         val thrust =
             if (aligned && magnitudeNorm > 0f) {
-                val alignmentFactor = 1f - (kotlin.math.abs(angleErrorRad) / THRUST_ALIGNMENT_RAD).coerceIn(0f, 1f)
+                val alignmentFactor = 1f - (abs(angleErrorRad) / THRUST_ALIGNMENT_RAD).coerceIn(0f, 1f)
                 (magnitudeNorm * alignmentFactor * Int.MAX_VALUE).roundToLong().toInt()
             } else {
                 0

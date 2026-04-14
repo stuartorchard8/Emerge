@@ -2,20 +2,16 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.TeamId
-import org.emerge.sim.core.physics.model.PhysicsSnapshot
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TeamComponent
-import org.emerge.sim.core.physics.primitives.BodyShape
-import org.emerge.sim.core.physics.primitives.Coord
-import org.emerge.sim.core.physics.primitives.Coord2
-import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.Norm
+import org.emerge.sim.core.physics.model.PhysicsSnapshot
+import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.physics.primitives.*
 
 fun createDrocketsInitialState(): PhysicsState {
     val state = PhysicsSnapshot().mutable
-    DrocketsRegistry.clear()
 
     // Spawn a single large planet at the world center
     val planetId = state.spawnBody(
@@ -81,11 +77,18 @@ private fun spawnDrocketOnPlanet(
     )
 
     val walkTicks = 120 + (teamId.value * 137) % 480
-    DrocketsRegistry.drocketStates[rocketId] = DrocketStateComponent(
+    val drocketStates = LinkedHashMap(state.raw.components.getTable<DrocketStateComponent>().asMap())
+    drocketStates[rocketId] = DrocketStateComponent(
         phase = DrocketPhase.WALKING,
         planetId = planetId,
         walkDirection = if (teamId.value % 2 == 0) 1 else -1,
         ticksRemaining = walkTicks,
+    )
+
+    state.setComponents(
+        state.raw.components.update {
+            set(ComponentTable.fromMap(drocketStates))
+        }
     )
 }
 

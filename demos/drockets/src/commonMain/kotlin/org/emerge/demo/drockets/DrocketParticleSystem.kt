@@ -20,7 +20,8 @@ object DrocketParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInp
         state: PhysicsState,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        for ((entityId, ds) in DrocketsRegistry.drocketStates) {
+        val drocketStates = state.raw.components.getTable<DrocketStateComponent>().entries()
+        for ((entityId, ds) in drocketStates) {
             if (ds.phase != DrocketPhase.THRUSTING) continue
             val transform = state.raw.transforms[entityId] ?: continue
             val motion = state.raw.motions[entityId] ?: continue

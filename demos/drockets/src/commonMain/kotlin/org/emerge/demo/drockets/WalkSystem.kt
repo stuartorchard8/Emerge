@@ -3,9 +3,9 @@ package org.emerge.demo.drockets
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -25,7 +25,7 @@ object WalkSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         state: PhysicsState,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val drocketStates = DrocketsRegistry.drocketStates
+        val drocketStates = state.raw.components.getTable<DrocketStateComponent>().entries()
         if (drocketStates.isEmpty()) return
 
         val landings = LinkedHashMap(state.raw.landings.asMap())

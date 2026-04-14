@@ -3,6 +3,7 @@ package org.emerge.sim.core.physics.model
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
+import org.emerge.sim.core.ecs.ComponentStore
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.primitives.*
@@ -100,6 +101,10 @@ data class PhysicsState(
                 set(raw.landings.put(entityId,landing))
             },
         )
+    }
+    
+    fun setComponents(components: ComponentStore) {
+        raw = raw.copy(components = components)
     }
 
     /**

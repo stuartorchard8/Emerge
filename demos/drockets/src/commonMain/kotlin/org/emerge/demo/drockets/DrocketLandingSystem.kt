@@ -3,9 +3,9 @@ package org.emerge.demo.drockets
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -16,8 +16,9 @@ object DrocketLandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInpu
         state: PhysicsState,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
+        val drocketStates = state.raw.components.getTable<DrocketStateComponent>().entries()
         val landings = LinkedHashMap(state.raw.landings.asMap())
-        for ((entityId, ds) in DrocketsRegistry.drocketStates) {
+        for ((entityId, ds) in drocketStates) {
             if (ds.phase != DrocketPhase.FLYING) continue
             val motion = state.raw.motions[entityId] ?: continue
             val contacts = state.raw.contacts.filter { it.aId == entityId || it.bId == entityId }
