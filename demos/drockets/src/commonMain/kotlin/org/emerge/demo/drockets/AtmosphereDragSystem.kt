@@ -3,9 +3,12 @@ package org.emerge.demo.drockets
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.ImpulseComponent
+import org.emerge.sim.core.physics.components.LandingAttachmentComponent
+import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
@@ -21,27 +24,27 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  *
  * The atmosphere extends [ATMOSPHERE_FACTOR] beyond the planet collider radius.
  */
-object AtmosphereDragSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object AtmosphereDragSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
 
     override fun update(
         cfg: PhysicsConfig,
-        state: PhysicsState,
+        builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
         val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
 
-        val planetIds = state.raw.planets.keys().toList()
+        val planetIds = builder.initial.raw.planets.keys().toList()
         if (planetIds.isEmpty()) return
 
-        for ((entityId, renderShape) in state.raw.renderShapes.entries()) {
+        for ((entityId, renderShape) in builder.initial.raw.renderShapes.entries()) {
             if (renderShape.shape != BodyShape.TRIANGLE) continue
-            if (state.raw.landings.contains(entityId)) continue
-            val transform = state.raw.transforms[entityId] ?: continue
-            val motion = state.raw.motions[entityId] ?: continue
+            if (builder.getComponent<LandingAttachmentComponent>(entityId) != null) continue
+            val transform = builder.getComponent<TransformComponent>(entityId) ?: continue
+            val motion = builder.getComponent<MotionComponent>(entityId) ?: continue
 
             for (planetId in planetIds) {
-                val planetTransform = state.raw.transforms[planetId] ?: continue
-                val planetCollider = state.raw.colliders[planetId] ?: continue
+                val planetTransform = builder.getComponent<TransformComponent>(planetId) ?: continue
+                val planetCollider = builder.initial.raw.colliders[planetId] ?: continue
 
                 val delta = transform.pos - planetTransform.pos
                 val dist = delta.len
@@ -64,8 +67,8 @@ object AtmosphereDragSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInpu
             }
         }
 
-        if (impulses.isNotEmpty()) {
-            state.addImpulses(impulses)
+        for ((entityId, impulse) in impulses) {
+            builder.update<ImpulseComponent>(entityId) { impulse + it }
         }
     }
 

@@ -16,7 +16,6 @@ object ContactSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val contacts = builder.initial.raw.contacts.toMutableList()
         val ids = builder.initial.raw.materials.keys().toList()
         for (i in 0 until ids.size) {
             for (j in i + 1 until ids.size) {
@@ -36,11 +35,9 @@ object ContactSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
                     bRadius = bCollider.radius,
                 )
                 if (contact != null) {
-                    contacts.add(contact)
+                    builder.addContact(contact)
                 }
             }
         }
-
-        builder.initial.setContacts(contacts)
     }
 }

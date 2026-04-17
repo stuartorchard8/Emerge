@@ -77,7 +77,7 @@ object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
         contact: Contact,
         aFieldStrength: Frac,
         bFieldStrength: Frac,
-    ) : Pair<ImpulseComponent, ImpulseComponent> {1
+    ) : Pair<ImpulseComponent, ImpulseComponent> {
         if (aTeam != null && aTeam == bTeam) {
             return applyVelocityMatchingDamping(
                 aMass = aMass,

@@ -7,7 +7,6 @@ import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.model.CrashImpactAudioEvent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.*
 
 
@@ -22,11 +21,10 @@ object DamageSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val crashImpactAudioEvents = ArrayList<CrashImpactAudioEvent>()
         val destructionBursts = ArrayList<DestructionBurstSpec>()
         val playersToRespawn = LinkedHashSet<PlayerId>()
 
-        for ((entityId, damage) in builder.initial.raw.damages.entries()) {
+        for ((entityId, damage) in builder.entries<DamageComponent>()) {
             if (damage.accumulated.raw >= cfg.shipMaxDamage.raw) {
                 // Cleanup on second pass
                 builder.remove<DamageComponent>(entityId)
@@ -49,39 +47,37 @@ object DamageSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
                     playersToRespawn += owner
                 }
 
-                crashImpactAudioEvents += CrashImpactAudioEvent(
+                builder.addAudioEvent(CrashImpactAudioEvent(
                     entityId = entityId,
                     pos = transform.pos,
                     damageRaw = damage.next.raw.toInt(),
                     destroyed = true,
-                )
+                ))
             } else {
-                crashImpactAudioEvents += CrashImpactAudioEvent(
+                builder.addAudioEvent(CrashImpactAudioEvent(
                     entityId = entityId,
                     pos = transform.pos,
                     damageRaw = damage.next.raw.toInt(),
                     destroyed = false,
-                )
+                ))
             }
 
             builder.update<DamageComponent>(entityId) { DamageComponent(total, damage.next) }
         }
 
-        state.setAudioEvents(crashImpactAudioEvents)
-
         for (burst in destructionBursts) {
-            spawnDestructionBurst(state, burst)
+            spawnDestructionBurst(builder, burst)
         }
         for (playerId in playersToRespawn) {
-            state.queuePlayerRespawn(playerId, cfg.shipRespawnTicks)
+            builder.queueRespawn(playerId, cfg.shipRespawnTicks)
         }
     }
 
-    private fun spawnDestructionBurst(state: PhysicsState, burst: DestructionBurstSpec) {
+    private fun spawnDestructionBurst(builder: PhysicsBuilder, burst: DestructionBurstSpec) {
         repeat(DESTRUCTION_BURST_PARTICLE_COUNT) {
-            val direction = Norm.fromAngle(Coord(state.nextRandomInt()))
-            val speed = DESTRUCTION_BURST_BASE_SPEED * Frac(state.nextRandomInt(until = Int.MAX_VALUE).toLong())
-            state.spawnParticle(
+            val direction = Norm.fromAngle(Coord(builder.nextRandomInt()))
+            val speed = DESTRUCTION_BURST_BASE_SPEED * Frac(builder.nextRandomInt(until = Int.MAX_VALUE).toLong())
+            builder.spawnParticle(
                 pos = burst.pos,
                 vel = burst.vel + direction * speed,
                 radius = DESTRUCTION_BURST_PARTICLE_RADIUS,

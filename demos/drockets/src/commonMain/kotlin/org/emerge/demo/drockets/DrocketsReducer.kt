@@ -4,6 +4,7 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.ecs.EcsSystems
+import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -25,7 +26,7 @@ import org.emerge.sim.core.physics.systems.*
  * 9. IntegrationSystem – Euler integration
  */
 class DrocketsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
-    private val systems: List<EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>> = listOf(
+    private val systems: List<EcsSystem<PhysicsConfig, PhysicsInput>> = listOf(
         ImpulseResetSystem,
         DrocketAISystem,
         WalkSystem,
@@ -45,7 +46,9 @@ class DrocketsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         state: PhysicsState,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        EcsSystems.runAll(cfg, state, inputs, systems)
+        val builder = PhysicsBuilder(state)
+        EcsSystems.runAll(cfg, builder, inputs, systems)
+        state.raw = builder.build().raw
     }
 
     override fun patchState(state: PhysicsState, delta: PhysicsState) {

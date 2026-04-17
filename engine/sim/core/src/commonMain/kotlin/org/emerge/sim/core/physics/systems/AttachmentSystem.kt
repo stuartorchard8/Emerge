@@ -16,7 +16,7 @@ object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        for ((entityId, landing) in builder.initial.raw.landings.entries()) {
+        for ((entityId, landing) in builder.entries<LandingAttachmentComponent>()) {
             val parentTransform = builder.getComponent<TransformComponent>(landing.parentEntityId)
             val parentMotion = builder.getComponent<MotionComponent>(landing.parentEntityId)
             val transform = builder.getComponent<TransformComponent>(entityId)

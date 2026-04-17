@@ -1,29 +1,30 @@
 package org.emerge.sim.core.physics.systems
 
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.physics.components.ParticleComponent
+import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import kotlin.collections.set
 
-object ParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object ParticleSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
     override fun update(
         cfg: PhysicsConfig,
-        state: PhysicsState,
+        builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val particles = LinkedHashMap(state.raw.particles.asMap())
-        for ((entityId, particle) in state.raw.particles.entries()) {
+        val particles = LinkedHashMap<EntityId, ParticleComponent>(builder.initial.raw.particles.asMap())
+        for ((entityId, particle) in builder.initial.raw.particles.entries()) {
             val newLife = particle.life-1
             if (newLife > 0) {
                 particles[entityId] = particle.copy(life = newLife)
             } else {
                 particles.remove(entityId)
-                state.removeEntity(entityId)
+                builder.removeEntity(entityId)
             }
         }
-        state.setParticles(ComponentTable.fromMap(particles))
+        builder.setTable<ParticleComponent>(particles)
     }
 }

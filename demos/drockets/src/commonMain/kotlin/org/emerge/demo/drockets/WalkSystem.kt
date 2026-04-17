@@ -1,11 +1,11 @@
 package org.emerge.demo.drockets
 
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
+import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -18,23 +18,20 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * At 60 tps with maxSpeed=300, planet.radius=10000: ≈ 0.0005 rad/tick
  * In Emerge Coord space: 0.0005/π * Int.MAX_VALUE ≈ 341,782
  */
-object WalkSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object WalkSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
 
     override fun update(
         cfg: PhysicsConfig,
-        state: PhysicsState,
+        builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val drocketStates = state.raw.components.getTable<DrocketStateComponent>().entries()
+        val drocketStates = builder.entries<DrocketStateComponent>()
         if (drocketStates.isEmpty()) return
-
-        val landings = LinkedHashMap(state.raw.landings.asMap())
-        var changed = false
 
         for ((entityId, ds) in drocketStates) {
             if (ds.phase != DrocketPhase.WALKING) continue
-            val landing = landings[entityId] ?: continue
-            val parentCollider = state.raw.colliders[landing.parentEntityId] ?: continue
+            val landing = builder.getComponent<LandingAttachmentComponent>(entityId) ?: continue
+            val parentCollider = builder.getComponent<ColliderComponent>(landing.parentEntityId) ?: continue
 
             // Scale walk speed inversely with planet radius for consistent visual speed
             val walkStep = walkStepForRadius(parentCollider.radius)
@@ -43,15 +40,11 @@ object WalkSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             val rotatedPos = landing.relativePos.rotateByAngle(Coord(angularDelta.raw.toInt()))
             val newRelativeAng = landing.relativeAng + angularDelta
 
-            landings[entityId] = landing.copy(
+            val updated = landing.copy(
                 relativePos = rotatedPos,
                 relativeAng = newRelativeAng,
             )
-            changed = true
-        }
-
-        if (changed) {
-            state.setLandings(ComponentTable.fromMap(landings))
+            builder.update<LandingAttachmentComponent>(entityId) { updated }
         }
     }
 

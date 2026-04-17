@@ -7,6 +7,7 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.TickStepper
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -16,7 +17,7 @@ private const val PLAYER_COUNT = 8
 private const val WARMUP_TICKS = 120
 private const val PROFILE_TICKS = 1800 // ~30 seconds of game time at 60fps
 
-private val SYSTEMS: List<Pair<String, EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>>> = listOf(
+private val SYSTEMS: List<Pair<String, EcsSystem<PhysicsConfig, PhysicsInput>>> = listOf(
     "ShipThrust" to ShipThrustSystem,
     "Gravity" to GravitySystem,
     "Integration" to IntegrationSystem,
@@ -33,13 +34,15 @@ class ProfilingReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private var tickCount = 0
 
     override fun reduce(cfg: PhysicsConfig, state: PhysicsState, inputs: Map<PlayerId, PhysicsInput>) {
+        val builder = PhysicsBuilder(state)
         for (i in SYSTEMS.indices) {
             val start = System.nanoTime()
-            SYSTEMS[i].second.update(cfg, state, inputs)
+            SYSTEMS[i].second.update(cfg, builder, inputs)
             val elapsed = System.nanoTime() - start
             accumulatedNanos[i] += elapsed
             if (elapsed > peakNanos[i]) peakNanos[i] = elapsed
         }
+        state.raw = builder.build().raw
         tickCount++
     }
 

@@ -2,11 +2,12 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.ImpulseComponent
+import org.emerge.sim.core.physics.components.LandingAttachmentComponent
+import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Norm
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -20,23 +21,23 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * - Fuel: 1.4 seconds (84 ticks)
  * - Thrust force: 12000 * impulse / delta (mapped to fixed-point impulse per tick)
  */
-object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsInput> {
 
     override fun update(
         cfg: PhysicsConfig,
-        state: PhysicsState,
+        builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val drocketStates = LinkedHashMap(state.raw.components.getTable<DrocketStateComponent>().asMap())
+        val drocketStates = LinkedHashMap(builder.initial.raw.components.getTable<DrocketStateComponent>().asMap())
         if (drocketStates.isEmpty()) return
-        val animationStates = LinkedHashMap(state.raw.components.getTable<SpriteAnimationState>().asMap())
+        val animationStates = LinkedHashMap(builder.initial.raw.components.getTable<SpriteAnimationState>().asMap())
 
         val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
         val nextStates = LinkedHashMap<EntityId, DrocketStateComponent>()
-        val landings = LinkedHashMap(state.raw.landings.asMap())
+        val landings = LinkedHashMap(builder.initial.raw.landings.asMap())
 
         for ((entityId, ds) in drocketStates) {
-            val transform = state.raw.transforms[entityId] ?: continue
+            val transform = builder.getComponent<TransformComponent>(entityId) ?: continue
 
             when (ds.phase) {
                 DrocketPhase.WALKING -> {
@@ -95,11 +96,11 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
                 DrocketPhase.FLYING -> {
                     // Check if the entity has landed (collision system attached it)
-                    val landing = state.raw.landings[entityId]
+                    val landing = builder.getComponent<LandingAttachmentComponent>(entityId)
                     if (landing != null) {
                         // Determine new walk direction (reverse from previous)
                         val newDirection = -ds.walkDirection
-                        val walkTicks = MIN_WALK_TICKS + state.nextRandomInt(until = MAX_WALK_TICKS - MIN_WALK_TICKS)
+                        val walkTicks = MIN_WALK_TICKS + builder.nextRandomInt(until = MAX_WALK_TICKS - MIN_WALK_TICKS)
                         nextStates[entityId] = ds.copy(
                             phase = DrocketPhase.WALKING,
                             planetId = landing.parentEntityId,
@@ -131,16 +132,12 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
         SpriteAnimationSystem.tick(animationStates, DROCKET_SPRITE_SHEET)
 
-        if (impulses.isNotEmpty()) {
-            state.addImpulses(impulses)
+        for ((entityId, impulse) in impulses) {
+            builder.update<ImpulseComponent>(entityId) { impulse + it }
         }
-        state.setLandings(ComponentTable.fromMap(landings))
-        state.setComponents(
-            state.raw.components.update {
-                set(ComponentTable.fromMap(drocketStates))
-                set(ComponentTable.fromMap(animationStates))
-            }
-        )
+        builder.setTable<LandingAttachmentComponent>(landings)
+        builder.setTable<DrocketStateComponent>(drocketStates)
+        builder.setTable<SpriteAnimationState>(animationStates)
     }
 
     private const val CHARGE_TICKS = 18

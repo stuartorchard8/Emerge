@@ -20,7 +20,7 @@ object CrashSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        for (contact in builder.initial.raw.contacts) {
+        for (contact in builder.contacts) {
             val aId = contact.aId
             val bId = contact.bId
             val aShape = builder.getComponent<RenderShapeComponent>(aId) ?: continue
@@ -74,6 +74,6 @@ object CrashSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
         if (shape.shape != BodyShape.TRIANGLE) return
         val speedOverThreshold = impactImpulse - cfg.shipCollisionDamageThreshold
         if (speedOverThreshold.raw <= 0L) return
-        builder.update<DamageComponent>(entityId) { DamageComponent(speedOverThreshold) + it }
+        builder.update<DamageComponent>(entityId) { DamageComponent(next = speedOverThreshold) + it }
     }
 }

@@ -55,7 +55,11 @@ data class PhysicsState(
         damages: Map<EntityId, Frac>,
     ) {
         if (damages.entries.isNotEmpty()) {
-            val sums = damages.mapValues { (entityId, damage) -> raw.damages[entityId]?.plus(damage) ?: DamageComponent(Frac(0), Frac(0), damage) }
+            val sums = damages.mapValues { (entityId, damage) ->
+                val existing = raw.damages[entityId]
+                if (existing == null) DamageComponent(Frac(0), Frac(0), damage)
+                else existing.copy(next = existing.next + damage)
+            }
             setDamages(raw.damages.putAll(sums.toList()))
         }
     }

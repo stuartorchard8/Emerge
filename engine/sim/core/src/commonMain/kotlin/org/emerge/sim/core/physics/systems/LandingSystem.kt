@@ -17,7 +17,7 @@ object LandingSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        for (contact in builder.initial.raw.contacts) {
+        for (contact in builder.contacts) {
             val aId = contact.aId
             val bId = contact.bId
             val aShape = builder.getComponent<RenderShapeComponent>(aId) ?: continue
@@ -123,7 +123,7 @@ object LandingSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
         if (shape.shape != BodyShape.TRIANGLE) return
         val speedOverThreshold = impactImpulse - cfg.shipCollisionDamageThreshold
         if (speedOverThreshold.raw <= 0L) return
-        builder.update<DamageComponent>(entityId) { DamageComponent(speedOverThreshold) + it }
+        builder.update<DamageComponent>(entityId) { DamageComponent(next = speedOverThreshold) + it }
     }
 
     private fun canLand(
@@ -178,6 +178,6 @@ object LandingSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
         if (landing.parentEntityId == otherEntityId) return
         if (entityShape.shape != BodyShape.TRIANGLE) return
         if (builder.getComponent<PlanetComponent>(otherEntityId) == null) return
-        builder.update<DamageComponent>(entityId) { DamageComponent(cfg.shipMaxDamage) }
+        builder.update<DamageComponent>(entityId) { DamageComponent(next = cfg.shipMaxDamage) }
     }
 }

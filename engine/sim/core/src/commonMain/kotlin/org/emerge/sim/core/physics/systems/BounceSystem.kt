@@ -19,7 +19,7 @@ object BounceSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        for (contact in builder.initial.raw.contacts) {
+        for (contact in builder.contacts) {
             val aId = contact.aId
             val bId = contact.bId
             val aMaterial = builder.getComponent<MaterialComponent>(aId) ?: continue
