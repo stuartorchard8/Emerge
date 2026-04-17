@@ -1,43 +1,41 @@
 package org.emerge.sim.core.physics.systems
 
-import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.physics.components.*
+import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import kotlin.collections.set
 
 
-object GravitySystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object GravitySystem : EcsSystem<PhysicsConfig, PhysicsInput> {
     override fun update(
         cfg: PhysicsConfig,
-        state: PhysicsState,
+        builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
         if (cfg.gravityNumerator.sign <= 0) {
             return
         }
 
-        val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
-        val ids = state.raw.materials.keys().toList()
+        val ids = builder.initial.raw.materials.keys().toList()
         for (i in 0 until ids.size) {
             for (j in i + 1 until ids.size) {
                 val aId = ids[i]
                 val bId = ids[j]
-                if (state.raw.landings.contains(aId) || state.raw.landings.contains(bId)) continue
+                if (builder.getComponent<LandingAttachmentComponent>(aId) != null
+                    || builder.getComponent<LandingAttachmentComponent>(bId) != null ) continue
 
-                val aTransform = state.raw.transforms[aId] ?: continue
-                val bTransform = state.raw.transforms[bId] ?: continue
-                val aMaterial = state.raw.materials[aId] ?: continue
-                val bMaterial = state.raw.materials[bId] ?: continue
-                val aCollider = state.raw.colliders[aId] ?: continue
-                val bCollider = state.raw.colliders[bId] ?: continue
-                val aShape = state.raw.renderShapes[aId]?.shape ?: continue
-                val bShape = state.raw.renderShapes[bId]?.shape ?: continue
+                val aTransform = builder.getComponent<TransformComponent>(aId) ?: continue
+                val bTransform = builder.getComponent<TransformComponent>(bId) ?: continue
+                val aMaterial = builder.getComponent<MaterialComponent>(aId) ?: continue
+                val bMaterial = builder.getComponent<MaterialComponent>(bId) ?: continue
+                val aCollider = builder.getComponent<ColliderComponent>(aId) ?: continue
+                val bCollider = builder.getComponent<ColliderComponent>(bId) ?: continue
+                val aShape = builder.getComponent<RenderShapeComponent>(aId)?.shape ?: continue
+                val bShape = builder.getComponent<RenderShapeComponent>(bId)?.shape ?: continue
                 val aIsAsteroid = aShape == BodyShape.CIRCLE
                 val bIsAsteroid = bShape == BodyShape.CIRCLE
                 if (aIsAsteroid == bIsAsteroid) continue
@@ -61,12 +59,10 @@ object GravitySystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val normal = delta.norm
                 val aImpulse = ImpulseComponent(vel=-(normal * accelTowardB))
                 val bImpulse = ImpulseComponent(vel=(normal * accelTowardA))
-                impulses[aId] = impulses[aId]?.plus(aImpulse) ?: aImpulse
-                impulses[bId] = impulses[bId]?.plus(bImpulse) ?: bImpulse
+                builder.update<ImpulseComponent>(aId) { aImpulse + it }
+                builder.update<ImpulseComponent>(bId) { bImpulse + it }
             }
         }
-
-        state.addImpulses(impulses)
     }
 
     private fun gravityAcceleration(

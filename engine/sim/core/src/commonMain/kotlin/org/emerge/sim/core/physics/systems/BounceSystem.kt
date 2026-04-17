@@ -1,33 +1,33 @@
 package org.emerge.sim.core.physics.systems
 
-import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
+import org.emerge.sim.core.physics.components.MaterialComponent
+import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import kotlin.collections.set
 
 
-object BounceSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object BounceSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
 
     override fun update(
         cfg: PhysicsConfig,
-        state: PhysicsState,
+        builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
-        for (contact in state.raw.contacts) {
+        for (contact in builder.initial.raw.contacts) {
             val aId = contact.aId
             val bId = contact.bId
-            val aMaterial = state.raw.materials[aId] ?: continue
-            val bMaterial = state.raw.materials[bId] ?: continue
-            val aMotion = state.raw.motions[aId] ?: continue
-            val bMotion = state.raw.motions[bId] ?: continue
-            val aCollider = state.raw.colliders[aId] ?: continue
-            val bCollider = state.raw.colliders[bId] ?: continue
+            val aMaterial = builder.getComponent<MaterialComponent>(aId) ?: continue
+            val bMaterial = builder.getComponent<MaterialComponent>(bId) ?: continue
+            val aMotion = builder.getComponent<MotionComponent>(aId) ?: continue
+            val bMotion = builder.getComponent<MotionComponent>(bId) ?: continue
+            val aCollider = builder.getComponent<ColliderComponent>(aId) ?: continue
+            val bCollider = builder.getComponent<ColliderComponent>(bId) ?: continue
             val normal = contact.normal
             val tangent = contact.tangent
             val pen = contact.penetration
@@ -76,11 +76,8 @@ object BounceSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 vel = pushNormVelB + pushTangentialVelB,
                 angVel = pushAngVelB
             )
-            impulses[aId] = impulses[aId]?.plus(impulseA) ?: impulseA
-            impulses[bId] = impulses[bId]?.plus(impulseB) ?: impulseB
+            builder.update<ImpulseComponent>(aId) { impulseA + it }
+            builder.update<ImpulseComponent>(bId) { impulseB + it }
         }
-
-        state.addImpulses(impulses)
-        state.setContacts(listOf())
     }
 }

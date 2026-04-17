@@ -2,34 +2,33 @@ package org.emerge.sim.core.physics.systems
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.physics.components.DamageComponent
+import org.emerge.sim.core.physics.components.MaterialComponent
+import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.components.RenderShapeComponent
+import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.components.RenderShapeComponent
-import kotlin.collections.set
 
 
-object CrashSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object CrashSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
     override fun update(
         cfg: PhysicsConfig,
-        state: PhysicsState,
+        builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val landings = LinkedHashMap(state.raw.landings.asMap())
-        val damages = LinkedHashMap<EntityId, Frac>()
-        for (contact in state.raw.contacts) {
+        for (contact in builder.initial.raw.contacts) {
             val aId = contact.aId
             val bId = contact.bId
-            val aShape = state.raw.renderShapes[aId] ?: continue
-            val bShape = state.raw.renderShapes[bId] ?: continue
-            val aMaterial = state.raw.materials[aId] ?: continue
-            val bMaterial = state.raw.materials[bId] ?: continue
-            val aMotion = state.raw.motions[aId] ?: continue
-            val bMotion = state.raw.motions[bId] ?: continue
+            val aShape = builder.getComponent<RenderShapeComponent>(aId) ?: continue
+            val bShape = builder.getComponent<RenderShapeComponent>(bId) ?: continue
+            val aMaterial = builder.getComponent<MaterialComponent>(aId) ?: continue
+            val bMaterial = builder.getComponent<MaterialComponent>(bId) ?: continue
+            val aMotion = builder.getComponent<MotionComponent>(aId) ?: continue
+            val bMotion = builder.getComponent<MotionComponent>(bId) ?: continue
             val normal = contact.normal
 
             val massA = aMaterial.mass.toLong()
@@ -48,7 +47,7 @@ object CrashSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             val pushVelB = Frac((normResponse * invMassWeightB).raw*2)
 
             accumulateShipCollisionDamage(
-                damages = damages,
+                builder = builder,
                 entityId = aId,
                 shape = aShape,
                 impactImpulse = pushVelA,
@@ -56,20 +55,17 @@ object CrashSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             )
 
             accumulateShipCollisionDamage(
-                damages = damages,
+                builder = builder,
                 entityId = bId,
                 shape = bShape,
                 impactImpulse = pushVelB,
                 cfg = cfg,
             )
         }
-
-        state.setLandings(ComponentTable.fromMap(landings))
-        state.addDamages(damages)
     }
 
     private fun accumulateShipCollisionDamage(
-        damages: MutableMap<EntityId, Frac>,
+        builder: PhysicsBuilder,
         entityId: EntityId,
         shape: RenderShapeComponent,
         impactImpulse: Frac,
@@ -78,7 +74,6 @@ object CrashSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         if (shape.shape != BodyShape.TRIANGLE) return
         val speedOverThreshold = impactImpulse - cfg.shipCollisionDamageThreshold
         if (speedOverThreshold.raw <= 0L) return
-        val priorDamage = damages[entityId] ?: Frac(0)
-        damages[entityId] = priorDamage + speedOverThreshold
+        builder.update<DamageComponent>(entityId) { DamageComponent(speedOverThreshold) + it }
     }
 }

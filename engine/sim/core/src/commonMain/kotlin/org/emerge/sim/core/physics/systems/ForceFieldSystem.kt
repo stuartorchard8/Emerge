@@ -1,47 +1,41 @@
 package org.emerge.sim.core.physics.systems
 
-import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.primitives.Contact
-import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.components.MotionComponent
-import org.emerge.sim.core.physics.primitives.Norm
+import org.emerge.sim.core.physics.components.*
+import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.components.ImpulseComponent
-import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.primitives.Frac2
-import kotlin.collections.set
+import org.emerge.sim.core.physics.primitives.*
 
 
-object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
     private val FORCE_FIELD_TEAM_DAMPING = Frac(1, 64)
 
     override fun update(
         cfg: PhysicsConfig,
-        state: PhysicsState,
+        builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
-        val ids = state.raw.materials.keys().toList()
+        val ids = builder.initial.raw.materials.keys().toList()
         for (i in 0 until ids.size) {
             for (j in i + 1 until ids.size) {
                 val aId = ids[i]
                 val bId = ids[j]
-                if (state.raw.landings.contains(aId) || state.raw.landings.contains(bId)) continue
-                val aTransform = state.raw.transforms[aId] ?: continue
-                val bTransform = state.raw.transforms[bId] ?: continue
-                val aCollider = state.raw.colliders[aId] ?: continue
-                val bCollider = state.raw.colliders[bId] ?: continue
-                val aMaterial = state.raw.materials[aId] ?: continue
-                val bMaterial = state.raw.materials[bId] ?: continue
-                val aField = state.raw.forceFields[aId]
-                val bField = state.raw.forceFields[bId]
+                if (builder.getComponent<LandingAttachmentComponent>(aId) != null
+                    || builder.getComponent<LandingAttachmentComponent>(bId) != null ) continue
+
+                val aTransform = builder.getComponent<TransformComponent>(aId) ?: continue
+                val bTransform = builder.getComponent<TransformComponent>(bId) ?: continue
+                val aMaterial = builder.getComponent<MaterialComponent>(aId) ?: continue
+                val bMaterial = builder.getComponent<MaterialComponent>(bId) ?: continue
+                val aCollider = builder.getComponent<ColliderComponent>(aId) ?: continue
+                val bCollider = builder.getComponent<ColliderComponent>(bId) ?: continue
+                val aField = builder.getComponent<ForceFieldComponent>(aId)
+                val bField = builder.getComponent<ForceFieldComponent>(bId)
                 if (aField == null && bField == null) continue
-                val aTeam = state.raw.teams[aId]?.teamId
-                val bTeam = state.raw.teams[bId]?.teamId
+                val aTeam = builder.getComponent<TeamComponent>(aId)?.teamId
+                val bTeam = builder.getComponent<TeamComponent>(bId)?.teamId
 
                 val contact = Contact.compute(
                     aId = aId,
@@ -52,9 +46,9 @@ object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                     bRadius = bCollider.radius + (bField?.depth ?: Frac(0)),
                 )
                 if (contact != null) {
-                    val aMotion = state.raw.motions[aId] ?: continue
-                    val bMotion = state.raw.motions[bId] ?: continue
-                    val (impulseA, impulseB) = getFieldImpulse(
+                    val aMotion = builder.getComponent<MotionComponent>(aId) ?: continue
+                    val bMotion = builder.getComponent<MotionComponent>(bId) ?: continue
+                    val (aImpulse, bImpulse) = getFieldImpulse(
                         aTeam = aTeam,
                         bTeam = bTeam,
                         aMass = aMaterial.mass,
@@ -66,12 +60,11 @@ object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                         bFieldStrength = bField?.strength ?: Frac(0),
                     )
 
-                    impulses[aId] = impulses[aId]?.plus(impulseA) ?: impulseA
-                    impulses[bId] = impulses[bId]?.plus(impulseB) ?: impulseB
+                    builder.update<ImpulseComponent>(aId) { aImpulse + it }
+                    builder.update<ImpulseComponent>(bId) { bImpulse + it }
                 }
             }
         }
-        state.addImpulses(impulses)
     }
 
     private fun getFieldImpulse(

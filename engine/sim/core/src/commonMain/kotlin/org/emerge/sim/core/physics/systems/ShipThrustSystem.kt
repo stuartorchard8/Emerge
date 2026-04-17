@@ -1,39 +1,27 @@
 package org.emerge.sim.core.physics.systems
 
-import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.primitives.Coord2
-import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.Frac2
-import org.emerge.sim.core.physics.primitives.Norm
-import org.emerge.sim.core.physics.primitives.PhysicsInput
-import kotlin.collections.component1
-import kotlin.collections.component2
-import kotlin.collections.iterator
-import kotlin.collections.set
+import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.primitives.*
 import kotlin.math.absoluteValue
 import kotlin.math.sign
 
 
-object ShipThrustSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object ShipThrustSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
     override fun update(
         cfg: PhysicsConfig,
-        state: PhysicsState,
+        builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
-        val landings = LinkedHashMap(state.raw.landings.asMap())
-        for ((playerId, entityId) in state.raw.playerEntities) {
-            val transform = state.raw.transforms[entityId] ?: continue
-            val motion = state.raw.motions[entityId] ?: continue
+        for ((playerId, entityId) in builder.initial.raw.playerEntities) {
+            val transform = builder.getComponent<TransformComponent>(entityId) ?: continue
+            val motion = builder.getComponent<MotionComponent>(entityId) ?: continue
             val input = inputs[playerId] ?: PhysicsInput.ZERO
 
             val thrust = input.thrust / cfg.thrustFactorInv
@@ -48,25 +36,22 @@ object ShipThrustSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 angVel = Frac(turn.toLong()) + sasOutput,
             )
 
-            impulses[entityId] = impulses[entityId]?.plus(impulse) ?: impulse
+            builder.update<ImpulseComponent>(entityId) { impulse + it }
 
-            val landing = landings[entityId]
+            val landing = builder.getComponent<LandingAttachmentComponent>(entityId)
             if (input.thrust > 0 && landing != null) {
-                val parentTransform = state.raw.transforms[landing.parentEntityId]
-                val parentMotion = state.raw.motions[landing.parentEntityId]
+                val parentTransform = builder.getComponent<TransformComponent>(landing.parentEntityId)
+                val parentMotion = builder.getComponent<MotionComponent>(landing.parentEntityId)
                 if (parentTransform != null && parentMotion != null) {
                     val impulse = ImpulseComponent(
                         vel = surfaceVelocityAtAttachment(parentTransform, parentMotion, landing) - motion.vel,
                         angVel = parentMotion.angVel - motion.angVel,
                     )
-                    impulses[entityId] = impulses[entityId]?.plus(impulse) ?: impulse
+                    builder.update<ImpulseComponent>(entityId) { impulse + it }
                 }
-                landings.remove(entityId)
+                builder.remove<LandingAttachmentComponent>(entityId)
             }
         }
-
-        state.setLandings(ComponentTable.fromMap(landings))
-        state.addImpulses(impulses)
     }
 
     private fun surfaceVelocityAtAttachment(

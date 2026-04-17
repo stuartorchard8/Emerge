@@ -4,8 +4,8 @@ import kotlin.math.sign
 
 class Frac(n: Long, d: Int = Int.MAX_VALUE) {
     val raw: Long = n * Int.MAX_VALUE.toLong() / d.toLong()
-    operator fun plus(o: Frac): Frac = Frac(raw+o.raw)
-    operator fun minus(o: Frac): Frac = Frac(raw-o.raw)
+    operator fun plus(o: Frac?): Frac = if (o == null) this else Frac(raw+o.raw)
+    operator fun minus(o: Frac?): Frac = if (o == null) this else Frac(raw-o.raw)
     operator fun div(o: Int): Frac = Frac(raw/o)
     operator fun div(o: Frac): Frac = Frac((toLong() * Int.MAX_VALUE.toLong() / o.toLong()))
     operator fun times(o: Frac): Frac = Frac((toLong() * o.toLong() / Int.MAX_VALUE.toLong()))

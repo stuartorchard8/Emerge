@@ -7,11 +7,11 @@ data class DamageComponent(
     val last: Frac = Frac(0),
     val next: Frac = Frac(0),
 ) {
-    operator fun plus(other: Frac): DamageComponent {
+    operator fun plus(other: DamageComponent?): DamageComponent {
         return DamageComponent(
-            accumulated,
-            last,
-            next + other,
+            accumulated + other?.accumulated,
+            last + other?.last,
+            next + other?.next,
         )
     }
 }

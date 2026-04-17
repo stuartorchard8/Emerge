@@ -2,6 +2,7 @@ package org.emerge.sim.core.ecs
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.physics.model.PhysicsBuilder
 
 data class EcsWorld(
     private val entities: MutableSet<Int> = mutableSetOf(),
@@ -33,19 +34,19 @@ data class EcsWorld(
     }
 }
 
-fun interface EcsSystem<C, S, I> {
-    fun update(cfg: C, state: S, inputs: Map<PlayerId, I>)
+fun interface EcsSystem<C, I> {
+    fun update(cfg: C, builder: PhysicsBuilder, inputs: Map<PlayerId, I>)
 }
 
 object EcsSystems {
-    fun <C, S, I> runAll(
+    fun <C, I> runAll(
         cfg: C,
-        state: S,
+        builder: PhysicsBuilder,
         inputs: Map<PlayerId, I>,
-        systems: List<EcsSystem<C, S, I>>,
+        systems: List<EcsSystem<C, I>>,
     ) {
         for (system in systems) {
-            system.update(cfg, state, inputs)
+            system.update(cfg, builder, inputs)
         }
     }
 }

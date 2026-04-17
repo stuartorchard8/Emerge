@@ -1,33 +1,28 @@
 package org.emerge.sim.core.physics.systems
 
-import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.components.ImpulseComponent
+import org.emerge.sim.core.physics.components.LandingAttachmentComponent
+import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import kotlin.collections.component1
-import kotlin.collections.component2
-import kotlin.collections.set
 
-object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
     override fun update(
         cfg: PhysicsConfig,
-        state: PhysicsState,
+        builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
-        val landings = LinkedHashMap(state.raw.landings.asMap())
-        for ((entityId, landing) in state.raw.landings.entries()) {
-            val parentTransform = state.raw.transforms[landing.parentEntityId]
-            val parentMotion = state.raw.motions[landing.parentEntityId]
-            val transform = state.raw.transforms[entityId]
-            val motion = state.raw.motions[entityId]
+        for ((entityId, landing) in builder.initial.raw.landings.entries()) {
+            val parentTransform = builder.getComponent<TransformComponent>(landing.parentEntityId)
+            val parentMotion = builder.getComponent<MotionComponent>(landing.parentEntityId)
+            val transform = builder.getComponent<TransformComponent>(entityId)
+            val motion = builder.getComponent<MotionComponent>(entityId)
             if (parentTransform == null || parentMotion == null || transform == null || motion == null) {
-                landings.remove(entityId)
+                builder.remove<LandingAttachmentComponent>(entityId)
                 continue
             }
             val outcome = TransformComponent(
@@ -41,10 +36,7 @@ object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                         // Trick to embed position change as velocity change.
                         + (outcome.ang - transform.ang)/4,
             )
-            impulses[entityId] = delta
+            builder.update<ImpulseComponent>(entityId) { delta }
         }
-
-        state.addImpulses(impulses)
-        state.setLandings(ComponentTable.fromMap(landings))
     }
 }

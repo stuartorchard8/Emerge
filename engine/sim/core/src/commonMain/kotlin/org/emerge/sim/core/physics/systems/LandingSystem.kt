@@ -2,60 +2,48 @@ package org.emerge.sim.core.physics.systems
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.primitives.BodyShape
-import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.components.LandingAttachmentComponent
-import org.emerge.sim.core.physics.primitives.Norm
+import org.emerge.sim.core.physics.components.*
+import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.components.RenderShapeComponent
-import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.primitives.Coord
-import kotlin.collections.set
+import org.emerge.sim.core.physics.primitives.*
 
 
-object LandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object LandingSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
     private val LANDING_ALIGNMENT_THRESHOLD = Frac(7, 8)
 
     override fun update(
         cfg: PhysicsConfig,
-        state: PhysicsState,
+        builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val landings = LinkedHashMap(state.raw.landings.asMap())
-        val damages = LinkedHashMap<EntityId, Frac>()
-        for (contact in state.raw.contacts) {
+        for (contact in builder.initial.raw.contacts) {
             val aId = contact.aId
             val bId = contact.bId
-            val aShape = state.raw.renderShapes[aId] ?: continue
-            val bShape = state.raw.renderShapes[bId] ?: continue
-            val aTransform = state.raw.transforms[aId] ?: continue
-            val bTransform = state.raw.transforms[bId] ?: continue
-            val aMaterial = state.raw.materials[aId] ?: continue
-            val bMaterial = state.raw.materials[bId] ?: continue
-            val aMotion = state.raw.motions[aId] ?: continue
-            val bMotion = state.raw.motions[bId] ?: continue
+            val aShape = builder.getComponent<RenderShapeComponent>(aId) ?: continue
+            val bShape = builder.getComponent<RenderShapeComponent>(bId) ?: continue
+            val aTransform = builder.getComponent<TransformComponent>(aId) ?: continue
+            val bTransform = builder.getComponent<TransformComponent>(bId) ?: continue
+            val aMaterial = builder.getComponent<MaterialComponent>(aId) ?: continue
+            val bMaterial = builder.getComponent<MaterialComponent>(bId) ?: continue
+            val aMotion = builder.getComponent<MotionComponent>(aId) ?: continue
+            val bMotion = builder.getComponent<MotionComponent>(bId) ?: continue
+            val aLanding = builder.getComponent<LandingAttachmentComponent>(aId)
+            val bLanding = builder.getComponent<LandingAttachmentComponent>(bId)
             val normal = contact.normal
             val minDist = contact.minDist
-            val aLanding = landings[aId]
-            val bLanding = landings[bId]
             if (aLanding != null || bLanding != null) {
                 crushLandedShipIfPinnedByPlanet(
-                    state = state,
+                    builder = builder,
                     cfg = cfg,
-                    damages = damages,
                     entityId = aId,
                     entityShape = aShape,
                     landing = aLanding,
                     otherEntityId = bId,
                 )
                 crushLandedShipIfPinnedByPlanet(
-                    state = state,
+                    builder = builder,
                     cfg = cfg,
-                    damages = damages,
                     entityId = bId,
                     entityShape = bShape,
                     landing = bLanding,
@@ -75,7 +63,7 @@ object LandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 minDist = minDist,
             )
             if (aLandingAttempt != null) {
-                landings[aId] = aLandingAttempt
+                builder.update<LandingAttachmentComponent>(aId) { aLandingAttempt }
                 continue
             }
             val bLandingAttempt = tryLand(
@@ -88,7 +76,7 @@ object LandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 minDist = minDist,
             )
             if (bLandingAttempt != null) {
-                landings[bId] = bLandingAttempt
+                builder.update<LandingAttachmentComponent>(bId) { bLandingAttempt }
                 continue
             }
 
@@ -108,7 +96,7 @@ object LandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             val pushVelB = Frac((normResponse * invMassWeightB).raw*2)
 
             accumulateShipCollisionDamage(
-                damages = damages,
+                builder = builder,
                 entityId = aId,
                 shape = aShape,
                 impactImpulse = pushVelA,
@@ -116,20 +104,17 @@ object LandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             )
 
             accumulateShipCollisionDamage(
-                damages = damages,
+                builder = builder,
                 entityId = bId,
                 shape = bShape,
                 impactImpulse = pushVelB,
                 cfg = cfg,
             )
         }
-
-        state.setLandings(ComponentTable.fromMap(landings))
-        state.addDamages(damages)
     }
 
     private fun accumulateShipCollisionDamage(
-        damages: MutableMap<EntityId, Frac>,
+        builder: PhysicsBuilder,
         entityId: EntityId,
         shape: RenderShapeComponent,
         impactImpulse: Frac,
@@ -138,8 +123,7 @@ object LandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         if (shape.shape != BodyShape.TRIANGLE) return
         val speedOverThreshold = impactImpulse - cfg.shipCollisionDamageThreshold
         if (speedOverThreshold.raw <= 0L) return
-        val priorDamage = damages[entityId] ?: Frac(0)
-        damages[entityId] = priorDamage + speedOverThreshold
+        builder.update<DamageComponent>(entityId) { DamageComponent(speedOverThreshold) + it }
     }
 
     private fun canLand(
@@ -183,9 +167,8 @@ object LandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     }
 
     private fun crushLandedShipIfPinnedByPlanet(
-        state: PhysicsState,
+        builder: PhysicsBuilder,
         cfg: PhysicsConfig,
-        damages: MutableMap<EntityId, Frac>,
         entityId: EntityId,
         entityShape: RenderShapeComponent,
         landing: LandingAttachmentComponent?,
@@ -194,7 +177,7 @@ object LandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         if (landing == null) return
         if (landing.parentEntityId == otherEntityId) return
         if (entityShape.shape != BodyShape.TRIANGLE) return
-        if (state.raw.planets[otherEntityId] == null) return
-        damages[entityId] = cfg.shipMaxDamage
+        if (builder.getComponent<PlanetComponent>(otherEntityId) == null) return
+        builder.update<DamageComponent>(entityId) { DamageComponent(cfg.shipMaxDamage) }
     }
 }

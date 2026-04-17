@@ -5,8 +5,8 @@ import kotlin.math.abs
 import kotlin.math.max
 
 data class Frac2(val x: Frac, val y: Frac) {
-    operator fun plus(o: Frac2): Frac2 = Frac2(x + o.x, y + o.y)
-    operator fun minus(o: Frac2): Frac2 = Frac2(x - o.x, y - o.y)
+    operator fun plus(o: Frac2?): Frac2 = if (o == null) this else Frac2(x + o.x, y + o.y)
+    operator fun minus(o: Frac2?): Frac2 = if (o == null) this else Frac2(x - o.x, y - o.y)
     operator fun times(o: Frac): Frac2 = Frac2(x * o, y * o)
     operator fun times(o: Int): Frac2 = Frac2(x * o, y * o)
     operator fun div(o: Frac): Frac2 = Frac2(x / o, y / o)

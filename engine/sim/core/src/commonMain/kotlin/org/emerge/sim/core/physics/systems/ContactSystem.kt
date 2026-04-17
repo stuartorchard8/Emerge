@@ -2,28 +2,30 @@ package org.emerge.sim.core.physics.systems
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.primitives.Contact
+import org.emerge.sim.core.physics.components.ColliderComponent
+import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.primitives.Contact
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
 
-object ContactSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object ContactSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
     override fun update(
         cfg: PhysicsConfig,
-        state: PhysicsState,
+        builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val contacts = state.raw.contacts.toMutableList()
-        val ids = state.raw.materials.keys().toList()
+        val contacts = builder.initial.raw.contacts.toMutableList()
+        val ids = builder.initial.raw.materials.keys().toList()
         for (i in 0 until ids.size) {
             for (j in i + 1 until ids.size) {
                 val aId = ids[i]
                 val bId = ids[j]
-                val aTransform = state.raw.transforms[aId] ?: continue
-                val bTransform = state.raw.transforms[bId] ?: continue
-                val aCollider = state.raw.colliders[aId] ?: continue
-                val bCollider = state.raw.colliders[bId] ?: continue
+                val aTransform = builder.getComponent<TransformComponent>(aId) ?: continue
+                val bTransform = builder.getComponent<TransformComponent>(bId) ?: continue
+                val aCollider = builder.getComponent<ColliderComponent>(aId) ?: continue
+                val bCollider = builder.getComponent<ColliderComponent>(bId) ?: continue
 
                 val contact = Contact.compute(
                     aId = aId,
@@ -39,6 +41,6 @@ object ContactSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             }
         }
 
-        state.setContacts(contacts)
+        builder.initial.setContacts(contacts)
     }
 }

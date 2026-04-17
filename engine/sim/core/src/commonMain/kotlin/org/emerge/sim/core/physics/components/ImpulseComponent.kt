@@ -8,11 +8,11 @@ data class ImpulseComponent(
     val vel: Frac2 = Frac2.zero,
     val angVel: Frac = Frac(0),
 ) {
-    operator fun plus(impulse: ImpulseComponent): ImpulseComponent {
+    operator fun plus(impulse: ImpulseComponent?): ImpulseComponent {
         return ImpulseComponent(
-            pos + impulse.pos,
-            vel + impulse.vel,
-            angVel + impulse.angVel,
+            pos + impulse?.pos,
+            vel + impulse?.vel,
+            angVel + impulse?.angVel,
         )
     }
 }

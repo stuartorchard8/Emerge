@@ -9,10 +9,8 @@ import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.primitives.*
 
 data class PhysicsState(
-    private val _initial: PhysicsSnapshot,
+    var raw: PhysicsSnapshot,
 ) {
-    var raw: PhysicsSnapshot = _initial
-        private set
 
     fun integrate(
         transforms: ComponentTable<TransformComponent>,
@@ -102,7 +100,7 @@ data class PhysicsState(
             },
         )
     }
-    
+
     fun setComponents(components: ComponentStore) {
         raw = raw.copy(components = components)
     }
