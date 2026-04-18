@@ -21,7 +21,7 @@ import org.emerge.sim.core.physics.systems.*
  * where state produced by one group of systems is consumed by the next (e.g. contacts are
  * produced in `contactDetect` and consumed in `contactResponse`).
  *
- * Two phases are marked [isolated][org.emerge.sim.core.ecs.isolated]:
+ * Four phases are marked [isolated][org.emerge.sim.core.ecs.isolated]:
  *
  *  - `forceGather` — `ShipThrustSystem`, `GravitySystem`, and `ForceFieldSystem` only
  *    add to `ImpulseComponent` (commutative) and read disjoint mixes of transforms,
@@ -31,10 +31,19 @@ import org.emerge.sim.core.physics.systems.*
  *    takes off, only applying external force from the next tick onward. This one-tick
  *    delay is intentional: the old intra-phase sequential order let external force
  *    apply immediately on detach, which we consider a quirk of that order rather than
- *    required behaviour, and locking that quirk in would block the phase from running
- *    all three systems in parallel.
+ *    required behaviour, and locking that quirk in would block parallel execution.
  *  - `contactResponse` — each system reads the committed `contacts` list produced by
  *    `contactDetect` and writes its own disjoint subset of components.
+ *  - `lifecycle` — `RespawnSystem` drains `pendingRespawns` and `DamageSystem` enqueues
+ *    into it; both go through shared-scratch delegation so fork writes land on the
+ *    root builder's scratch. Under sequential fork execution the reads/writes
+ *    interleave exactly like the old phase. Entity creates/removes share the world
+ *    via the same delegation pattern we already use for the entity id counter.
+ *  - `effects` — `ParticleSystem` is registered FIRST so its authoritative
+ *    `setTable<ParticleComponent>` replays before `ShipThrustParticleSystem`'s new-
+ *    particle updates, which would otherwise be wiped by the setTable. Under this
+ *    ordering newly spawned particles skip their first lifetime tick (gain +1 frame
+ *    of life) — same kind of sub-tick artefact as the forceGather trade-off.
  *
  * Today every phase still runs on a single thread via [runSequential]; the isolated
  * phases just execute their forks sequentially. Moving to a worker-pool dispatcher
@@ -47,8 +56,8 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         Phase("contactDetect", ContactSystem),
         Phase("contactResponse", CrashSystem, BounceSystem, LandingSystem).isolated(),
         Phase("attachment", AttachmentSystem),
-        Phase("lifecycle", RespawnSystem, DamageSystem),
-        Phase("effects", ShipThrustParticleSystem, ParticleSystem),
+        Phase("lifecycle", RespawnSystem, DamageSystem).isolated(),
+        Phase("effects", ParticleSystem, ShipThrustParticleSystem).isolated(),
         Phase("integrate", IntegrationSystem),
     )
 

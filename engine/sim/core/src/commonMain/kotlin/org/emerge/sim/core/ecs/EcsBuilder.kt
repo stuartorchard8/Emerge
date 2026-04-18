@@ -92,6 +92,23 @@ class EcsBuilder<S>(
      */
     @PublishedApi internal var writeLog: MutableList<(EcsBuilder<S>) -> Unit>? = null
 
+    // --- Fork parent pointer -------------------------------------------
+
+    /**
+     * Non-null on forks; points at the builder this fork was forked from. Used by
+     * domain helpers that want to delegate "shared-resource" scratch operations
+     * (e.g. a PRNG counter, a respawn queue) directly at the parent instead of
+     * mutating a fork-local copy that would be lost on merge.
+     *
+     * Delegation is the right pattern for shared mutable *domain* state that doesn't
+     * live in the component tables and can't be expressed as additive write-log
+     * replay closures. Under sequential fork execution it's bit-identical to the
+     * pre-fork behaviour because only one fork runs at a time. Under a future
+     * multi-threaded dispatcher, delegated accessors will need synchronisation at
+     * the domain layer.
+     */
+    @PublishedApi internal var parent: EcsBuilder<S>? = null
+
     /**
      * Returns (creating lazily on first access) a scratch object of type [T].
      *

@@ -31,8 +31,19 @@ import org.emerge.sim.core.physics.systems.*
  *  - `contactResponse`  – landing detection and bounce impulses, both reading contacts,
  *                         also isolated.
  *  - `attachment`       – rigid surface attachment snap.
- *  - `effects`          – exhaust particle spawns + particle lifetime ticks.
+ *  - `effects`          – particle lifetime ticks + new exhaust spawns, isolated.
+ *                         `ParticleSystem` is registered first so its authoritative
+ *                         `setTable<ParticleComponent>` replays before
+ *                         `DrocketParticleSystem`'s per-entity new-particle updates;
+ *                         otherwise the setTable would wipe the new spawns. PRNG
+ *                         draws go through [sharedScratch] so both forks share a
+ *                         single linear seed sequence.
  *  - `integrate`        – Euler integration of position and velocity.
+ *
+ * `aiAndMotion` stays sequential: `DrocketAISystem` authoritatively rewrites the
+ * `LandingAttachmentComponent` table each tick, and `WalkSystem` then does per-entity
+ * `update<LandingAttachmentComponent>` calls — under isolation the fork-replayed
+ * updates would re-attach drockets that DrocketAISystem just detached for a launch.
  */
 class DrocketsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
@@ -42,7 +53,7 @@ class DrocketsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         Phase("contactDetect", ContactSystem),
         Phase("contactResponse", DrocketLandingSystem, BounceSystem).isolated(),
         Phase("attachment", AttachmentSystem),
-        Phase("effects", DrocketParticleSystem, ParticleSystem),
+        Phase("effects", ParticleSystem, DrocketParticleSystem).isolated(),
         Phase("integrate", IntegrationSystem),
     )
 

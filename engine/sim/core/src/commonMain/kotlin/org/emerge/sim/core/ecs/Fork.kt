@@ -32,11 +32,13 @@ package org.emerge.sim.core.ecs
  * will need a fork-local id reservation scheme before they can be parallelised.
  *
  * **Scratch note.** Mutations to domain scratches (registered via [EcsBuilder.scratch])
- * happen on the fork's own scratch instance and are NOT propagated to the parent. Any
- * scratch field a fork system writes to is effectively scoped to that fork. If a phase
- * needs to publish scratch data upstream, the producer should be in a plain sequential
- * phase, or the scratch field should be converted to a typed phase output written via
- * a component-update path.
+ * happen on the fork's own scratch instance by default and are NOT propagated to the
+ * parent at merge time — if a scratch field a fork system writes to needs to be visible
+ * upstream, the domain layer must route the access through [EcsBuilder.parent] so the
+ * mutation lands on the parent's scratch instead. See the PRNG and respawn-queue
+ * helpers in `PhysicsBuilder.kt` for the canonical pattern. Under sequential fork
+ * execution this is bit-identical to the old in-place behaviour; under future threading
+ * those delegated accessors will need a lock at the domain layer.
  *
  * Building the fork's initial is O(parent component tables). Callers creating multiple
  * forks with the same frozen view (e.g. the N systems of a phase) should build one
@@ -57,6 +59,7 @@ fun <S> EcsBuilder<S>.forkFrom(forkInitial: S): EcsBuilder<S> {
         applyComponents = applyComponents,
     )
     fork.writeLog = mutableListOf()
+    fork.parent = this
     return fork
 }
 
@@ -80,4 +83,5 @@ fun <S> EcsBuilder<S>.mergeFork(fork: EcsBuilder<S>) {
     )
     for (replay in log) replay(this)
     fork.writeLog = null
+    fork.parent = null
 }
