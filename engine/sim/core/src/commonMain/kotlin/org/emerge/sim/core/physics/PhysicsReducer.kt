@@ -5,6 +5,7 @@ import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.Phase
 import org.emerge.sim.core.ecs.Pipeline
+import org.emerge.sim.core.ecs.PipelineProfiler
 import org.emerge.sim.core.ecs.isolated
 import org.emerge.sim.core.ecs.runParallel
 import org.emerge.sim.core.ecs.runSequential
@@ -51,9 +52,12 @@ import org.emerge.sim.core.physics.systems.*
  * [runParallel]; omit it (default `null`) to run the whole pipeline on the calling
  * thread via [runSequential]. Both dispatch modes produce identical state modulo
  * the PRNG-ordering note on `PhysicsBuilder.nextRandomInt`.
+ *
+ * Pass a [profiler] to collect per-phase wall-time samples every tick.
  */
 class PhysicsReducer(
     private val executor: ParallelExecutor? = null,
+    private val profiler: PipelineProfiler? = null,
 ) : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
         Phase("reset", ImpulseResetSystem),
@@ -73,9 +77,9 @@ class PhysicsReducer(
     ): PhysicsState {
         val builder = PhysicsBuilder(state)
         if (executor != null) {
-            runParallel(cfg, builder, inputs, pipeline, executor)
+            runParallel(cfg, builder, inputs, pipeline, executor, profiler)
         } else {
-            runSequential(cfg, builder, inputs, pipeline)
+            runSequential(cfg, builder, inputs, pipeline, profiler)
         }
         return builder.build()
     }

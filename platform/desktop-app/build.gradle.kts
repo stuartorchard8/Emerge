@@ -83,3 +83,32 @@ tasks.register<JavaExec>("profileSim") {
         }
     }
 }
+
+tasks.register<JavaExec>("benchDrockets") {
+    group = "verification"
+    description = "Headless Drockets simulation benchmark (sequential vs parallel, per-phase timings). " +
+        "Pass --args=\"<drocketCount> [warmupTicks] [measureTicks]\""
+    mainClass = "org.emerge.desktop.DrocketsBenchmarkKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    standardInput = System.`in`
+}
+
+tasks.register<JavaExec>("benchDrocketsJfr") {
+    group = "verification"
+    description = "Headless Drockets benchmark with a JFR recording (for IntelliJ / JMC inspection)"
+    mainClass = "org.emerge.desktop.DrocketsBenchmarkKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    standardInput = System.`in`
+
+    val jfrFile = layout.buildDirectory.file("drockets-bench.jfr").get().asFile
+    jvmArgs(
+        "-XX:StartFlightRecording=duration=60s,filename=${jfrFile.absolutePath}",
+    )
+
+    doLast {
+        if (jfrFile.exists()) {
+            println("\nJFR recording saved to: ${jfrFile.absolutePath}")
+            println("Open in IntelliJ: Run > Open Profiler Snapshot")
+        }
+    }
+}

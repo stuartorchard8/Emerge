@@ -1,5 +1,6 @@
 package org.emerge.sim.core.ecs
 
+import kotlin.time.TimeSource
 import org.emerge.sim.core.PlayerId
 
 /**
@@ -67,17 +68,22 @@ typealias Pipeline<C, S, I> = List<Phase<C, S, I>>
  * Single-threaded regardless of concurrency mode — isolated phases dispatch their
  * forks sequentially. Use this as the reference implementation. [runParallel] produces
  * bit-identical output while dispatching isolated phases across worker threads.
+ *
+ * Pass a [profiler] to accumulate per-phase wall-time samples.
  */
 fun <C, S, I> runSequential(
     cfg: C,
     builder: EcsBuilder<S>,
     inputs: Map<PlayerId, I>,
     pipeline: Pipeline<C, S, I>,
+    profiler: PipelineProfiler? = null,
 ) {
     for (phase in pipeline) {
-        when (phase.concurrency) {
-            PhaseConcurrency.Sequential -> runPhaseSequential(cfg, builder, inputs, phase)
-            PhaseConcurrency.Isolated -> runPhaseIsolatedSequential(cfg, builder, inputs, phase)
+        profiler.timePhase(phase.name) {
+            when (phase.concurrency) {
+                PhaseConcurrency.Sequential -> runPhaseSequential(cfg, builder, inputs, phase)
+                PhaseConcurrency.Isolated -> runPhaseIsolatedSequential(cfg, builder, inputs, phase)
+            }
         }
     }
 }
@@ -108,13 +114,26 @@ fun <C, S, I> runParallel(
     inputs: Map<PlayerId, I>,
     pipeline: Pipeline<C, S, I>,
     executor: ParallelExecutor,
+    profiler: PipelineProfiler? = null,
 ) {
     for (phase in pipeline) {
-        when (phase.concurrency) {
-            PhaseConcurrency.Sequential -> runPhaseSequential(cfg, builder, inputs, phase)
-            PhaseConcurrency.Isolated -> runPhaseIsolatedParallel(cfg, builder, inputs, phase, executor)
+        profiler.timePhase(phase.name) {
+            when (phase.concurrency) {
+                PhaseConcurrency.Sequential -> runPhaseSequential(cfg, builder, inputs, phase)
+                PhaseConcurrency.Isolated -> runPhaseIsolatedParallel(cfg, builder, inputs, phase, executor)
+            }
         }
     }
+}
+
+private inline fun PipelineProfiler?.timePhase(name: String, block: () -> Unit) {
+    if (this == null) {
+        block()
+        return
+    }
+    val start = TimeSource.Monotonic.markNow()
+    block()
+    recordPhase(name, start.elapsedNow().inWholeNanoseconds)
 }
 
 private fun <C, S, I> runPhaseSequential(

@@ -54,7 +54,7 @@ object PlanetShaderSources {
             float lenSquared = dot(vLocal, vLocal);
 
             // Atmosphere occupies the outer ring from planetFrac to 1.0
-            float planetFrac = 0.873;
+            float planetFrac = 0.871;
             float planetFracSq = planetFrac * planetFrac;
             float surfaceDepthFrac = 0.04;
 

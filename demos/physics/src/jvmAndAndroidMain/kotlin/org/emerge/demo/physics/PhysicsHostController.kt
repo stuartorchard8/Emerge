@@ -5,6 +5,7 @@ import org.emerge.net.tcp.Tcp
 import org.emerge.net.websocket.WsAcceptor
 import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.PhysicsReducer
 import org.emerge.sim.core.physics.model.PhysicsState
@@ -23,7 +24,8 @@ class PhysicsHostController(
     private val gameMode: GameMode = GameMode.PVP,
     acceptRemoteClients: Boolean = true,
 ) : PhysicsController() {
-    private val reducer = PhysicsReducer()
+    private val executor = ParallelExecutor()
+    private val reducer = PhysicsReducer(executor)
     private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
     private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
     private val impulseCodec: StateCodec<PhysicsState> = ImpulseCodec

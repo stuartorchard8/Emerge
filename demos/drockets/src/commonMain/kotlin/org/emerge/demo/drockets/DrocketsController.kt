@@ -1,17 +1,23 @@
 package org.emerge.demo.drockets
 
 import org.emerge.sim.core.TickStepper
+import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.Frac
 
 /**
  * Local-only controller for the Drockets demo. No networking --
  * just steps the simulation each frame with empty player inputs.
+ *
+ * Isolated pipeline phases are dispatched across [executor]. On JVM/Android this is
+ * a work-stealing [ParallelExecutor] (daemon threads, no shutdown required); on JS
+ * it's a no-op that runs tasks inline.
  */
 class DrocketsController(
     cfg: PhysicsConfig = DROCKETS_CONFIG,
 ) {
-    private val reducer = DrocketsReducer()
+    private val executor = ParallelExecutor()
+    private val reducer = DrocketsReducer(executor)
     private val stepper = TickStepper(
         cfg = cfg,
         initialState = createDrocketsInitialState(),

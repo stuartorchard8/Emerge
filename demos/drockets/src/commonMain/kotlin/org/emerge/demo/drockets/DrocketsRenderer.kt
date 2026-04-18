@@ -306,7 +306,7 @@ class DrocketsRenderer(
 
     private fun updateViewFocus(state: PhysicsState) {
         val drocketStates = state.components.getTable<DrocketStateComponent>()
-        val drocketId = drocketStates.keys().firstOrNull() ?: return
+        val drocketId = drocketStates.keys().elementAtOrNull(1) ?: return
 //        val planetId = state.planets.keys().firstOrNull() ?: return
         val transform = state.transforms[drocketId] ?: return
         val collider = state.colliders[drocketId] ?: return

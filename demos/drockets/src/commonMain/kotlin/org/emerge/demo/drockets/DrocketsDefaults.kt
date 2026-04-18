@@ -2,18 +2,13 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.TeamId
-import org.emerge.sim.core.physics.components.ColliderComponent
-import org.emerge.sim.core.physics.components.LandingAttachmentComponent
-import org.emerge.sim.core.physics.components.MotionComponent
-import org.emerge.sim.core.physics.components.PlanetComponent
-import org.emerge.sim.core.physics.components.TeamComponent
-import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.spawnBody
 import org.emerge.sim.core.physics.primitives.*
 
-fun createDrocketsInitialState(): PhysicsState {
+fun createDrocketsInitialState(drocketCount: Int = DROCKET_COUNT): PhysicsState {
     val builder = PhysicsBuilder(PhysicsState())
 
     val planetId = builder.spawnBody(
@@ -30,9 +25,9 @@ fun createDrocketsInitialState(): PhysicsState {
     )
     builder.update<PlanetComponent>(planetId) { PlanetComponent(seed = 42) }
 
-    for (i in 0 until DROCKET_COUNT) {
+    for (i in 0 until drocketCount) {
         val teamId = TeamId(i)
-        val angle = Coord(i, DROCKET_COUNT)
+        val angle = Coord(i, drocketCount)
         spawnDrocketOnPlanet(builder, planetId, angle, teamId)
     }
 
@@ -89,6 +84,6 @@ private fun spawnDrocketOnPlanet(
 
 private val PLANET_RADIUS = Frac(1, 8)
 val PLANET_MASS = 500_000u
-private val DROCKET_RADIUS = Frac(1, 512)
+val DROCKET_RADIUS = Frac(1, 2048)
 private val DROCKET_MASS = 5000u
-private const val DROCKET_COUNT = 3
+private const val DROCKET_COUNT = 20

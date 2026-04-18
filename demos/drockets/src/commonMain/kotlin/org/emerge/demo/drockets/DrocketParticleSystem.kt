@@ -2,14 +2,10 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.model.nextRandomInt
-import org.emerge.sim.core.physics.model.spawnParticle
+import org.emerge.sim.core.physics.model.*
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Norm
@@ -44,10 +40,10 @@ object DrocketParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInp
                 forward = -forward
             }
             builder.spawnParticle(
-                pos = transform.pos + forward * Frac(1, 1024) - up * Frac(1, 2048),
-                vel = motion.vel + forward * Frac(1, 1024) *
+                pos = transform.pos + forward * DROCKET_RADIUS/2 - up * DROCKET_RADIUS/4,
+                vel = motion.vel + forward * DROCKET_RADIUS/2 *
                     Frac(builder.nextRandomInt(until = Int.MAX_VALUE).toLong()),
-                radius = Frac(1, 2048),
+                radius = DROCKET_RADIUS/4,
                 shape = BodyShape.CIRCLE,
                 lifetime = 30,
                 teamId = team.teamId,
