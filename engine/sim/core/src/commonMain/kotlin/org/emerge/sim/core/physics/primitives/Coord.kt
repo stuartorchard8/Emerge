@@ -1,9 +1,26 @@
 package org.emerge.sim.core.physics.primitives
 
-class Coord(n: Int, d: Int = Int.MAX_VALUE) {
-    val raw: Int = (n.toLong() * Int.MAX_VALUE.toLong() / d.toLong()).toInt()
-    operator fun plus(other: Frac): Coord = Coord((raw.toLong() + other.raw).toInt())   // TODO confirm negative wrapping
-    operator fun minus(other: Frac): Coord = Coord((raw.toLong() - other.raw).toInt())  // TODO confirm negative wrapping
+import kotlin.jvm.JvmInline
+
+/**
+ * Fixed-point coordinate on a 1-dimensional torus. `raw / Int.MAX_VALUE` gives
+ * the value's position; two's-complement `Int` overflow in [minus] gives the
+ * shortest torus delta between two `Coord`s automatically.
+ *
+ * Storage note: same value-class rationale as [Frac]. See its KDoc for
+ * boxing caveats. The underlying value here is a 32-bit `Int` rather than
+ * `Long`, so the torus wrap is free (native two's-complement).
+ */
+@JvmInline
+value class Coord(val raw: Int) {
+    constructor(n: Int, d: Int) : this((n.toLong() * Int.MAX_VALUE.toLong() / d.toLong()).toInt())
+
+    // TODO confirm negative wrapping
+    operator fun plus(other: Frac): Coord = Coord((raw.toLong() + other.raw).toInt())
+
+    // TODO confirm negative wrapping
+    operator fun minus(other: Frac): Coord = Coord((raw.toLong() - other.raw).toInt())
+
     operator fun minus(other: Coord): Frac = Frac((raw - other.raw).toLong())
 
     fun toFloat(): Float = raw.toFloat() / Int.MAX_VALUE.toFloat() // -1f..1f
@@ -28,6 +45,6 @@ data class Coord2(val x: Coord, val y: Coord) {
             Coord(0),
         )
         fun raw(x: Int, y: Int) = Coord2(Coord(x), Coord(y))
-        fun lerp(a: Coord2, b: Coord2, v: Coord) = Coord2(Coord.lerp(a.x,b.x,v), Coord.lerp(a.y,b.y,v))
+        fun lerp(a: Coord2, b: Coord2, v: Coord) = Coord2(Coord.lerp(a.x, b.x, v), Coord.lerp(a.y, b.y, v))
     }
 }
