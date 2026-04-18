@@ -25,6 +25,7 @@ import kotlin.reflect.KClass
 class EcsBuilder<S>(
     val initial: S,
     @PublishedApi internal val getComponents: (S) -> ComponentStore,
+    @PublishedApi internal val getWorld: (S) -> EcsWorld,
     @PublishedApi internal val applyComponents: (S, ComponentStore) -> S,
 ) {
     // --- Component scratchpad -------------------------------------------
@@ -155,6 +156,35 @@ class EcsBuilder<S>(
         workingData[T::class] = table as MutableMap<EntityId, Any>
         authoritativeTypes.add(T::class)
         tombstones.remove(T::class)
+    }
+
+    // --- Entity lifecycle ----------------------------------------------
+
+    /**
+     * Allocates a fresh [EntityId] from the initial world. The world is mutated in place;
+     * subsequent [createEntity] / [removeEntity] calls see the updated entity set.
+     *
+     * Component writes for the new entity should go through [update] / [setTable].
+     */
+    fun createEntity(): EntityId = getWorld(initial).createEntity()
+
+    /**
+     * Removes an entity from the world and tombstones all of its components across every
+     * known type — both types present in [initial] and types touched this frame via
+     * [update] / [remove] / [setTable]. After this call, [getComponent] returns null
+     * for [id] for every component type.
+     *
+     * Domain-specific cascades (e.g. dependent entities, non-component indexes) are the
+     * caller's responsibility; this method only touches the world and component tables.
+     */
+    fun removeEntity(id: EntityId) {
+        getWorld(initial).removeEntity(id)
+        val types =
+            getComponents(initial).tables.keys + workingData.keys + tombstones.keys + authoritativeTypes
+        for (type in types) {
+            workingData[type]?.remove(id)
+            tombstones.getOrPut(type) { mutableSetOf() }.add(id)
+        }
     }
 
     // --- Finalize -------------------------------------------------------

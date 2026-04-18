@@ -5,7 +5,6 @@ import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.ParticleComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.model.removeEntity
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import kotlin.collections.set
 

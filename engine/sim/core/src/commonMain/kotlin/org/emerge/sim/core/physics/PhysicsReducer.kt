@@ -29,9 +29,9 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     )
 
     override fun reduce(cfg: PhysicsConfig, state: PhysicsState, inputs: Map<PlayerId, PhysicsInput>) {
-        val builder = PhysicsBuilder(state)
+        val builder = PhysicsBuilder(state.raw)
         EcsSystems.runAll(cfg, builder, inputs, systems)
-        state.raw = builder.build().raw
+        state.raw = builder.build()
     }
 
     override fun patchState(state: PhysicsState, delta: PhysicsState) {

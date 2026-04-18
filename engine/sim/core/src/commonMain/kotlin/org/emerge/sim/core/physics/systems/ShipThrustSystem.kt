@@ -19,7 +19,7 @@ object ShipThrustSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        for ((playerId, entityId) in builder.initial.raw.playerEntities) {
+        for ((playerId, entityId) in builder.initial.playerEntities) {
             val transform = builder.getComponent<TransformComponent>(entityId) ?: continue
             val motion = builder.getComponent<MotionComponent>(entityId) ?: continue
             val input = inputs[playerId] ?: PhysicsInput.ZERO

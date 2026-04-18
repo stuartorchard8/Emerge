@@ -34,7 +34,7 @@ class ProfilingReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private var tickCount = 0
 
     override fun reduce(cfg: PhysicsConfig, state: PhysicsState, inputs: Map<PlayerId, PhysicsInput>) {
-        val builder = PhysicsBuilder(state)
+        val builder = PhysicsBuilder(state.raw)
         for (i in SYSTEMS.indices) {
             val start = System.nanoTime()
             SYSTEMS[i].second.update(cfg, builder, inputs)
@@ -42,7 +42,7 @@ class ProfilingReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
             accumulatedNanos[i] += elapsed
             if (elapsed > peakNanos[i]) peakNanos[i] = elapsed
         }
-        state.raw = builder.build().raw
+        state.raw = builder.build()
         tickCount++
     }
 

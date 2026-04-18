@@ -22,6 +22,13 @@ data class PhysicsSnapshot(
     // Events
     val contacts: List<Contact> = emptyList(),
     val crashImpactAudioEvents: List<CrashImpactAudioEvent> = emptyList(),
+
+    /**
+     * Deterministic PRNG state carried across ticks.
+     * Must be kept in sync across all lockstep peers — never seed from platform Random.
+     * Serialized alongside the snapshot for Welcome/Resync.
+     */
+    val randomSeed: Long = 0,
 ) {
     val mutable get() = PhysicsState(this)
 

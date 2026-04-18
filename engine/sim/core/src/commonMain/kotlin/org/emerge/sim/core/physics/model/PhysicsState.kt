@@ -6,7 +6,10 @@ import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.ComponentStore
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.physics.components.*
-import org.emerge.sim.core.physics.primitives.*
+import org.emerge.sim.core.physics.primitives.BodyShape
+import org.emerge.sim.core.physics.primitives.Coord
+import org.emerge.sim.core.physics.primitives.Coord2
+import org.emerge.sim.core.physics.primitives.Frac
 
 data class PhysicsState(
     var raw: PhysicsSnapshot,
@@ -68,23 +71,6 @@ data class PhysicsState(
 
     fun setComponents(components: ComponentStore) {
         raw = raw.copy(components = components)
-    }
-
-    /**
-     * Deterministic PRNG state carried across ticks.
-     * Must be kept in sync across all lockstep peers — never seed from platform Random.
-     * Serialized alongside the snapshot for Welcome/Resync.
-     */
-    var randomSeed: Long = 0
-
-    fun nextRandomInt(): Int {
-        randomSeed = randomSeed * 2862933555777941757L + 3037000493L
-        return (randomSeed ushr 32).toInt()
-    }
-
-    fun nextRandomInt(until: Int): Int {
-        require(until > 0)
-        return (nextRandomInt().toLong() and 0x7FFFFFFFL).toInt() % until
     }
 
     fun spawnBody(
@@ -161,57 +147,6 @@ data class PhysicsState(
                 set(raw.particles.remove(entityId))
                 set(raw.damages.remove(entityId))
             },
-        )
-    }
-
-    fun spawnParticle(
-        pos: Coord2,
-        vel: Coord2,
-        radius: Frac,
-        shape: BodyShape,
-        lifetime: Int,
-        teamId: TeamId,
-    ): EntityId {
-        val entityId = raw.world.createEntity()
-        putParticle(
-            entityId = entityId,
-            pos = pos,
-            vel = vel,
-            radius = radius,
-            shape = shape,
-            lifetime = lifetime,
-            teamId = teamId,
-        )
-        return entityId
-    }
-
-    fun putParticle(
-        entityId: EntityId,
-        pos: Coord2,
-        vel: Coord2,
-        radius: Frac,
-        shape: BodyShape,
-        lifetime: Int,
-        teamId: TeamId,
-    ) {
-        raw.world.ensureEntity(entityId)
-        raw = raw.copy(
-            playerEntities = raw.playerEntities.filterValues { it != entityId },
-            components = raw.components.update {
-                set(raw.transforms.put(entityId, TransformComponent(pos = pos, ang = Coord(0))))
-                set(raw.motions.put(entityId, MotionComponent(vel = vel, angVel = Coord(0))))
-                set(raw.colliders.put(entityId, ColliderComponent(radius = radius)))    // TODO don't store radius in collider)
-                set(raw.materials.remove(entityId))
-                set(raw.renderShapes.put(entityId, RenderShapeComponent(shape = shape)))
-                set(raw.playerOwned.remove(entityId))
-                set(raw.teams.put(entityId, TeamComponent(teamId)))
-                set(raw.planets.remove(entityId))
-                set(raw.homePlanets.remove(entityId))
-                set(raw.forceFields.remove(entityId))
-                set(raw.landings.remove(entityId))
-                set(raw.particles.put(entityId, ParticleComponent(lifetime, lifetime)))
-                set(raw.damages.remove(entityId))
-            }
         )
     }
 
@@ -303,110 +238,4 @@ data class PhysicsState(
             }
         )
     }
-
-    fun queuePlayerRespawn(playerId: PlayerId, ticksRemaining: Int) {
-        val entityId = raw.playerEntities[playerId] ?: return
-        val transform = raw.transforms[entityId] ?: return removeEntity(entityId)
-        val material = raw.materials[entityId] ?: return removeEntity(entityId)
-        val collider = raw.colliders[entityId] ?: return removeEntity(entityId)
-        val renderShape = raw.renderShapes[entityId] ?: return removeEntity(entityId)
-        val teamId = raw.teams[entityId]?.teamId ?: return removeEntity(entityId)
-        val nextRespawns = LinkedHashMap(raw.pendingRespawns)
-        nextRespawns[playerId] =
-            PlayerRespawnState(
-                ticksRemaining = ticksRemaining,
-                deathPos = transform.pos,
-                teamId = teamId,
-                entityId = entityId,
-                rocket = RespawnRocketSpec(
-                    mass = material.mass,
-                    radius = collider.radius,
-                    bounce = material.bounce,
-                    rough = material.rough,
-                    shape = renderShape.shape,
-                ),
-            )
-        raw = raw.copy(pendingRespawns = nextRespawns)
-    }
-
-    fun advanceRespawns() {
-        if (raw.pendingRespawns.isEmpty()) return
-        val nextRespawns = LinkedHashMap(raw.pendingRespawns)
-        for ((playerId, respawn) in raw.pendingRespawns) {
-            if (raw.damages[respawn.entityId] != null) {
-                removeEntity(respawn.entityId)
-            }
-            val nextTicks = (respawn.ticksRemaining - 1).coerceAtLeast(0)
-            val updatedRespawn = respawn.copy(ticksRemaining = nextTicks)
-            if (nextTicks > 0) {
-                nextRespawns[playerId] = updatedRespawn
-                continue
-            }
-            val respawned = tryRespawnPlayer(playerId, updatedRespawn)
-            if (respawned) {
-                nextRespawns.remove(playerId)
-            } else {
-                nextRespawns[playerId] = updatedRespawn
-            }
-        }
-        raw = raw.copy(pendingRespawns = nextRespawns)
-    }
-
-    private fun tryRespawnPlayer(playerId: PlayerId, respawn: PlayerRespawnState): Boolean {
-        val teamId = respawn.teamId
-        val homePlanetId = raw.homePlanetEntity(teamId) ?: return false
-        val planetTransform = raw.transforms[homePlanetId] ?: return false
-        val planetMotion = raw.motions[homePlanetId] ?: return false
-        val planetCollider = raw.colliders[homePlanetId] ?: return false
-        val localAngle = Coord(playerId.value, Int.MAX_VALUE)
-        val localNormal = Norm.fromAngle(localAngle)
-        val relativePos = localNormal * (planetCollider.radius + respawn.rocket.radius)
-        val worldPos = planetTransform.pos + rotateByAngle(relativePos, planetTransform.ang)
-        val worldAng = Coord(planetTransform.ang.raw + localAngle.raw)
-        val entityId = spawnBody(
-            playerId = playerId,
-            pos = worldPos,
-            vel = planetMotion.vel,
-            ang = worldAng,
-            angVel = planetMotion.angVel,
-            mass = respawn.rocket.mass,
-            radius = respawn.rocket.radius,
-            bounce = respawn.rocket.bounce,
-            rough = respawn.rocket.rough,
-            shape = respawn.rocket.shape,
-        )
-        setTeam(
-            entityId = entityId,
-            teamId = teamId,
-        )
-        raw = raw.copy(
-            components = raw.components.update {
-                set(raw.motions.put(
-                    entityId,
-                    MotionComponent(
-                        vel = planetMotion.vel,
-                        angVel = planetMotion.angVel,
-                    ),
-                ))
-                set(raw.landings.put(
-                    entityId,
-                    LandingAttachmentComponent(
-                        parentEntityId = homePlanetId,
-                        relativePos = relativePos,
-                        relativeAng = Frac(localAngle.raw.toLong()),
-                    ),
-                ))
-            }
-        )
-        return true
-    }
-
-    private fun rotateByAngle(v: Frac2, angle: Coord): Frac2 {
-        val rotation = Norm.fromAngle(angle)
-        return Frac2(
-            x = v.x * rotation.x - v.y * rotation.y,
-            y = v.x * rotation.y + v.y * rotation.x,
-        )
-    }
 }
-

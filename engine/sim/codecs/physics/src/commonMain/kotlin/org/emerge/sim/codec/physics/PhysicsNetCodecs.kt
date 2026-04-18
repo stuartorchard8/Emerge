@@ -56,7 +56,7 @@ object PhysicsNetCodecs {
                     w.writeInt(serializableEntities.size)
                     w.writeInt(pendingRespawns.size)
                     w.writeInt(crashImpactAudioEvents.size)
-                    w.writeLong(state.randomSeed)
+                    w.writeLong(randomSeed)
                     w.writeInt(world.lastEntityValue)
                     for (entityId in serializableEntities) {
                         w.writeInt(entityId.value)
@@ -178,8 +178,8 @@ object PhysicsNetCodecs {
                     ),
                     pendingRespawns = pendingRespawns,
                     crashImpactAudioEvents = crashImpactAudioEvents,
+                    randomSeed = randomSeed,
                 ).rebuildIndexes().mutable
-                mutableState.randomSeed = randomSeed
                 mutableState.raw.world.lastEntityValue = lastEntityValue
                 return mutableState
             }
