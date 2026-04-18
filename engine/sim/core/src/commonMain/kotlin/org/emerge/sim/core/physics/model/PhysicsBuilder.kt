@@ -50,19 +50,32 @@ fun PhysicsBuilder(initial: PhysicsState): PhysicsBuilder {
 }
 
 /**
- * Per-frame physics state carried through the builder. Fields come in two flavours:
+ * Per-frame physics state carried through the builder. Fields come in three flavours:
  *
- *  - **Frame-scoped:** [contacts] and [audioEvents] start empty each frame and are published
- *    wholesale into the snapshot on [EcsBuilder.build].
+ *  - **Typed phase outputs:** [contacts] is written once by its producing phase (currently
+ *    [org.emerge.sim.core.physics.systems.ContactSystem] in `contactDetect`) via
+ *    [setContacts], and read as an immutable [List] by subsequent phases. Because the
+ *    handoff is read-only from the producer's perspective as soon as the phase ends,
+ *    downstream systems are safe to share it across threads.
  *
- *  - **Persistent:** [pendingRespawns] and [randomSeed] are seeded from the initial snapshot,
- *    mutated in place by systems, and written back into the new snapshot.
+ *  - **Frame-scoped accumulators:** [audioEvents] is a mutable list appended to by a
+ *    single writer within a phase, and published wholesale into the snapshot on
+ *    [EcsBuilder.build]. Will become a typed phase output once we split out the
+ *    producer (currently [org.emerge.sim.core.physics.systems.CrashSystem]).
+ *
+ *  - **Persistent:** [pendingRespawns] and [randomSeed] are seeded from the initial
+ *    snapshot, mutated in place by systems, and written back into the new snapshot.
  *
  * Finalizer also calls [PhysicsState.rebuildIndexes] so the derived `playerEntities` map
  * always reflects the authoritative [PlayerOwnedComponent] table.
  */
 class PhysicsFrameScratch(initial: PhysicsState) {
-    val contacts: MutableList<Contact> = mutableListOf()
+    /**
+     * Contacts detected this frame. Set by the contactDetect phase's producer and
+     * read by contactResponse. Starts empty each frame; replaced wholesale — never
+     * appended to after first write — which keeps downstream readers race-free.
+     */
+    var contacts: List<Contact> = emptyList()
     val audioEvents: MutableList<CrashImpactAudioEvent> = mutableListOf()
     val pendingRespawns: MutableMap<PlayerId, PlayerRespawnState> =
         LinkedHashMap(initial.pendingRespawns)
@@ -77,7 +90,7 @@ internal fun PhysicsBuilder.physicsScratch(): PhysicsFrameScratch = scratch(
     factory = { init -> PhysicsFrameScratch(init) },
     finalize = { scratch ->
         copy(
-            contacts = scratch.contacts.toList(),
+            contacts = scratch.contacts,
             crashImpactAudioEvents = scratch.audioEvents.toList(),
             pendingRespawns = scratch.pendingRespawns.toMap(),
             randomSeed = scratch.randomSeed,
@@ -85,17 +98,28 @@ internal fun PhysicsBuilder.physicsScratch(): PhysicsFrameScratch = scratch(
     },
 )
 
-// --- Frame-scoped accessors ----------------------------------------------
+// --- Typed phase outputs -------------------------------------------------
 
-val PhysicsBuilder.contacts: MutableList<Contact>
+/**
+ * Contacts detected this frame. Empty before the `contactDetect` phase runs; populated
+ * by that phase's producer via [setContacts]; read as an immutable list by all phases
+ * that follow. Treat it as a read-only phase input outside `contactDetect`.
+ */
+val PhysicsBuilder.contacts: List<Contact>
     get() = physicsScratch().contacts
+
+/**
+ * Publishes the full contact list for this frame, replacing any prior value. Only the
+ * `contactDetect` phase's producer should call this.
+ */
+fun PhysicsBuilder.setContacts(contacts: List<Contact>) {
+    physicsScratch().contacts = contacts
+}
+
+// --- Frame-scoped accumulators -------------------------------------------
 
 val PhysicsBuilder.audioEvents: MutableList<CrashImpactAudioEvent>
     get() = physicsScratch().audioEvents
-
-fun PhysicsBuilder.addContact(contact: Contact) {
-    physicsScratch().contacts.add(contact)
-}
 
 fun PhysicsBuilder.addAudioEvent(event: CrashImpactAudioEvent) {
     physicsScratch().audioEvents.add(event)

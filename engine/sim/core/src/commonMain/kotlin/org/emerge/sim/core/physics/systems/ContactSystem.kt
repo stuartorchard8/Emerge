@@ -8,11 +8,17 @@ import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.model.addContact
+import org.emerge.sim.core.physics.model.setContacts
 import org.emerge.sim.core.physics.primitives.Contact
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
-
+/**
+ * Producer of the `contactDetect` phase. Scans all pairs of material-bearing entities,
+ * computes contacts, and publishes the full list as a typed phase output via
+ * [setContacts]. Downstream phases ([BounceSystem], [CrashSystem], [LandingSystem],
+ * [DrocketLandingSystem][org.emerge.demo.drockets.DrocketLandingSystem]) read it as
+ * an immutable `List<Contact>` and never mutate it.
+ */
 object ContactSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     override fun update(
         cfg: PhysicsConfig,
@@ -20,6 +26,7 @@ object ContactSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
         val ids = builder.entries<MaterialComponent>().keys.toList()
+        val contacts = mutableListOf<Contact>()
         for (i in 0 until ids.size) {
             for (j in i + 1 until ids.size) {
                 val aId = ids[i]
@@ -38,9 +45,10 @@ object ContactSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                     bRadius = bCollider.radius,
                 )
                 if (contact != null) {
-                    builder.addContact(contact)
+                    contacts.add(contact)
                 }
             }
         }
+        builder.setContacts(contacts)
     }
 }
