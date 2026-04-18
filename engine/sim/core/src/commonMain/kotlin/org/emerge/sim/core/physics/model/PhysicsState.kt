@@ -12,41 +12,10 @@ data class PhysicsState(
     var raw: PhysicsSnapshot,
 ) {
 
-    fun integrate(
-        transforms: ComponentTable<TransformComponent>,
-        motions: ComponentTable<MotionComponent>,
-    ) {
-        raw = raw.copy(
-            components = raw.components.update {
-                set(transforms)
-                set(motions)
-            },
-        )
-    }
-
-    fun setContacts(contacts: List<Contact>) {
-        raw = raw.copy(contacts = contacts);
-    }
-
-    fun addImpulses(impulses: LinkedHashMap<EntityId, ImpulseComponent>) {
-        val sums = impulses.mapValues { (entityId, impulse) -> raw.impulses[entityId]?.plus(impulse) ?: impulse }
-        setImpulses(raw.impulses.putAll(sums.toList()))
-    }
-
     fun setImpulses(impulses: ComponentTable<ImpulseComponent>) {
         raw = raw.copy(
             components = raw.components.update {
                 set(impulses)
-            },
-        )
-    }
-
-    fun setLandings(
-        landings: ComponentTable<LandingAttachmentComponent>,
-    ) {
-        raw = raw.copy(
-            components = raw.components.update {
-                set(landings)
             },
         )
     }
@@ -79,14 +48,6 @@ data class PhysicsState(
     ) {
         raw = raw.copy(
             crashImpactAudioEvents = crashImpactAudioEvents,
-        )
-    }
-
-    fun setParticles(particles: ComponentTable<ParticleComponent>) {
-        raw = raw.copy(
-            components = raw.components.update {
-                set(particles)
-            },
         )
     }
 

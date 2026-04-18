@@ -17,7 +17,7 @@ object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val ids = builder.initial.raw.materials.keys().toList()
+        val ids = builder.entries<MaterialComponent>().keys.toList()
         for (i in 0 until ids.size) {
             for (j in i + 1 until ids.size) {
                 val aId = ids[i]

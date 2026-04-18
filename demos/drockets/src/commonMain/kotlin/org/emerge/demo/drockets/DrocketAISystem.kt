@@ -8,6 +8,7 @@ import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.nextRandomInt
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Norm
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -28,13 +29,13 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsInput> {
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val drocketStates = LinkedHashMap(builder.initial.raw.components.getTable<DrocketStateComponent>().asMap())
+        val drocketStates = LinkedHashMap(builder.entries<DrocketStateComponent>())
         if (drocketStates.isEmpty()) return
-        val animationStates = LinkedHashMap(builder.initial.raw.components.getTable<SpriteAnimationState>().asMap())
+        val animationStates = LinkedHashMap(builder.entries<SpriteAnimationState>())
 
         val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
         val nextStates = LinkedHashMap<EntityId, DrocketStateComponent>()
-        val landings = LinkedHashMap(builder.initial.raw.landings.asMap())
+        val landings = LinkedHashMap(builder.entries<LandingAttachmentComponent>())
 
         for ((entityId, ds) in drocketStates) {
             val transform = builder.getComponent<TransformComponent>(entityId) ?: continue

@@ -3,9 +3,12 @@ package org.emerge.demo.drockets
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.components.PlanetComponent
+import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
@@ -33,10 +36,10 @@ object AtmosphereDragSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
     ) {
         val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
 
-        val planetIds = builder.initial.raw.planets.keys().toList()
+        val planetIds = builder.entries<PlanetComponent>().keys.toList()
         if (planetIds.isEmpty()) return
 
-        for ((entityId, renderShape) in builder.initial.raw.renderShapes.entries()) {
+        for ((entityId, renderShape) in builder.entries<RenderShapeComponent>()) {
             if (renderShape.shape != BodyShape.TRIANGLE) continue
             if (builder.getComponent<LandingAttachmentComponent>(entityId) != null) continue
             val transform = builder.getComponent<TransformComponent>(entityId) ?: continue
@@ -44,7 +47,7 @@ object AtmosphereDragSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
 
             for (planetId in planetIds) {
                 val planetTransform = builder.getComponent<TransformComponent>(planetId) ?: continue
-                val planetCollider = builder.initial.raw.colliders[planetId] ?: continue
+                val planetCollider = builder.getComponent<ColliderComponent>(planetId) ?: continue
 
                 val delta = transform.pos - planetTransform.pos
                 val dist = delta.len

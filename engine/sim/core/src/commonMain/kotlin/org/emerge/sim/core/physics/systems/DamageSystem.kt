@@ -7,6 +7,10 @@ import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.model.CrashImpactAudioEvent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.addAudioEvent
+import org.emerge.sim.core.physics.model.nextRandomInt
+import org.emerge.sim.core.physics.model.queueRespawn
+import org.emerge.sim.core.physics.model.spawnParticle
 import org.emerge.sim.core.physics.primitives.*
 
 
@@ -42,7 +46,7 @@ object DamageSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
                     destructionBursts += DestructionBurstSpec(pos = transform.pos+impulse.pos, vel = motion.vel+impulse.vel, teamId = teamId)
                 }
 
-                val owner = builder.initial.raw.playerOwned[entityId]?.playerId
+                val owner = builder.getComponent<PlayerOwnedComponent>(entityId)?.playerId
                 if (owner != null && !playersToRespawn.contains(owner)) {
                     playersToRespawn += owner
                 }

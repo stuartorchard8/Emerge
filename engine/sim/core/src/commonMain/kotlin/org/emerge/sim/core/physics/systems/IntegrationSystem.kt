@@ -18,8 +18,8 @@ object IntegrationSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
-        val transforms = LinkedHashMap(builder.initial.raw.transforms.asMap())
-        val motions = LinkedHashMap(builder.initial.raw.motions.asMap())
+        val transforms = LinkedHashMap(builder.entries<TransformComponent>())
+        val motions = LinkedHashMap(builder.entries<MotionComponent>())
         for ((entityId, motion) in motions.entries) {
             val transform = builder.getComponent<TransformComponent>(entityId) ?: continue
             val impulse = builder.getComponent<ImpulseComponent>(entityId) ?: ImpulseComponent()
