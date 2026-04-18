@@ -7,6 +7,7 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.BypassesStagedView
 import org.emerge.sim.core.ecs.EcsBuilder
+import org.emerge.sim.core.ecs.withLock
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
@@ -153,14 +154,14 @@ fun PhysicsBuilder.setContacts(contacts: List<Contact>) {
 // --- Deterministic PRNG --------------------------------------------------
 //
 // Draws advance the ROOT builder's seed so forks in an isolated phase produce a
-// single linear sequence matching sequential execution. Under multi-threaded fork
-// dispatch this will need a lock on the root seed; today forks run sequentially so
-// there's no race.
+// single linear sequence matching sequential execution. The root lock serialises
+// concurrent draws from parallel forks so the sequence stays well-defined; under
+// sequential fork dispatch the lock is uncontended and ~free on JVM (no-op on JS).
 
-fun PhysicsBuilder.nextRandomInt(): Int {
+fun PhysicsBuilder.nextRandomInt(): Int = rootLock.withLock {
     val scratch = sharedScratch()
     scratch.randomSeed = scratch.randomSeed * 2862933555777941757L + 3037000493L
-    return (scratch.randomSeed ushr 32).toInt()
+    (scratch.randomSeed ushr 32).toInt()
 }
 
 fun PhysicsBuilder.nextRandomInt(until: Int): Int {
@@ -177,12 +178,14 @@ fun PhysicsBuilder.nextRandomInt(until: Int): Int {
 // need a lock at this layer.
 
 /**
- * Snapshot view of the current pending respawns map as last written this frame.
- * Safe to iterate while the builder is in flight; mutations must go through
- * [queueRespawn] / [clearRespawn].
+ * Snapshot view of the current pending respawns as last written this frame. The
+ * returned map is an immutable copy taken while holding [rootLock], so callers
+ * can safely iterate it even if other forks are mutating the underlying queue
+ * concurrently. Mutations must go through [queueRespawn] / [clearRespawn] /
+ * [updateRespawn] which also acquire [rootLock].
  */
 val PhysicsBuilder.pendingRespawns: Map<PlayerId, PlayerRespawnState>
-    get() = sharedScratch().pendingRespawns
+    get() = rootLock.withLock { sharedScratch().pendingRespawns.toMap() }
 
 /**
  * Captures the entity's current transform/material/collider/renderShape/team into a
@@ -211,7 +214,7 @@ fun PhysicsBuilder.queueRespawn(playerId: PlayerId, ticksRemaining: Int) {
         removeEntity(entityId)
         return
     }
-    sharedScratch().pendingRespawns[playerId] = PlayerRespawnState(
+    val entry = PlayerRespawnState(
         ticksRemaining = ticksRemaining,
         deathPos = transform.pos,
         teamId = teamId,
@@ -224,26 +227,31 @@ fun PhysicsBuilder.queueRespawn(playerId: PlayerId, ticksRemaining: Int) {
             shape = renderShape.shape,
         ),
     )
+    rootLock.withLock { sharedScratch().pendingRespawns[playerId] = entry }
 }
 
 /** Removes [playerId] from the pending respawn queue, if present. */
 fun PhysicsBuilder.clearRespawn(playerId: PlayerId) {
-    sharedScratch().pendingRespawns.remove(playerId)
+    rootLock.withLock { sharedScratch().pendingRespawns.remove(playerId) }
 }
 
 /**
  * Applies [block] to the existing respawn entry for [playerId], if any. A null return
- * from [block] removes the entry; a non-null return replaces it. No-op if no entry exists.
+ * from [block] removes the entry; a non-null return replaces it. No-op if no entry
+ * exists. Read/compute/write happens under [rootLock], so concurrent forks can't
+ * lose each other's updates.
  */
 fun PhysicsBuilder.updateRespawn(
     playerId: PlayerId,
     block: (PlayerRespawnState) -> PlayerRespawnState?,
 ) {
-    val scratch = sharedScratch()
-    val current = scratch.pendingRespawns[playerId] ?: return
-    val next = block(current)
-    if (next == null) scratch.pendingRespawns.remove(playerId)
-    else scratch.pendingRespawns[playerId] = next
+    rootLock.withLock {
+        val scratch = sharedScratch()
+        val current = scratch.pendingRespawns[playerId] ?: return@withLock
+        val next = block(current)
+        if (next == null) scratch.pendingRespawns.remove(playerId)
+        else scratch.pendingRespawns[playerId] = next
+    }
 }
 
 // --- Composite spawns ----------------------------------------------------
@@ -275,7 +283,7 @@ fun PhysicsBuilder.spawnBody(
     update<RenderShapeComponent>(entityId) { RenderShapeComponent(shape = shape) }
     if (playerId != null) {
         update<PlayerOwnedComponent>(entityId) { PlayerOwnedComponent(playerId) }
-        sharedScratch().pendingRespawns.remove(playerId)
+        rootLock.withLock { sharedScratch().pendingRespawns.remove(playerId) }
     }
     return entityId
 }

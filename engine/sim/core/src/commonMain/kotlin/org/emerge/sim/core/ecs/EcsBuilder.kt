@@ -103,11 +103,39 @@ class EcsBuilder<S>(
      * Delegation is the right pattern for shared mutable *domain* state that doesn't
      * live in the component tables and can't be expressed as additive write-log
      * replay closures. Under sequential fork execution it's bit-identical to the
-     * pre-fork behaviour because only one fork runs at a time. Under a future
-     * multi-threaded dispatcher, delegated accessors will need synchronisation at
-     * the domain layer.
+     * pre-fork behaviour because only one fork runs at a time. Under multi-threaded
+     * fork dispatch, delegated accessors must acquire [rootLock] before touching the
+     * delegated state.
      */
     @PublishedApi internal var parent: EcsBuilder<S>? = null
+
+    // --- Concurrency lock ----------------------------------------------
+
+    /**
+     * Lock owned by this builder locally. Only the root builder's [localLock] is
+     * ever acquired — forks return their parent's root lock from [rootLock], so
+     * every builder in a fork tree serialises against a single root lock.
+     */
+    @PublishedApi internal val localLock = ReentrantLock()
+
+    /**
+     * The lock that guards root-builder shared-resource access (entity world,
+     * domain-owned scratch fields that forks delegate onto via [parent]). Walk up
+     * the parent chain so every fork hits the same lock instance.
+     *
+     * Systems should NOT acquire this lock for component reads/writes — those go
+     * through fork-local [workingData] / [writeLog] and never contend. This lock
+     * is only needed around [createEntity], [removeEntity], and domain-specific
+     * shared-scratch accessors (see `PhysicsBuilder.kt`'s `sharedScratch` helpers).
+     */
+    @PublishedApi internal val rootLock: ReentrantLock
+        get() {
+            var b: EcsBuilder<S> = this
+            while (true) {
+                val p = b.parent ?: return b.localLock
+                b = p
+            }
+        }
 
     /**
      * Returns (creating lazily on first access) a scratch object of type [T].
@@ -304,11 +332,11 @@ class EcsBuilder<S>(
      * [mergeFork], so the new entity ends up alive in the world AND carrying its
      * components on the parent.
      *
-     * **Not thread-safe.** Multiple forks running concurrently would race on the shared
-     * world's id counter. Isolated phases that call [createEntity] must therefore stay
-     * on a single thread until a proper fork-local id allocator lands.
+     * Thread-safe: acquires [rootLock] around the world mutation so concurrent forks
+     * get distinct ids. The lock is uncontended in the single-threaded sequential
+     * path (cheap on JVM, no-op on JS).
      */
-    fun createEntity(): EntityId = getWorld(initial).createEntity()
+    fun createEntity(): EntityId = rootLock.withLock { getWorld(initial).createEntity() }
 
     /**
      * Removes an entity from the world and tombstones all of its components across every
@@ -329,7 +357,7 @@ class EcsBuilder<S>(
 
     @PublishedApi
     internal fun applyRemoveEntityRaw(id: EntityId) {
-        getWorld(initial).removeEntity(id)
+        rootLock.withLock { getWorld(initial).removeEntity(id) }
         val types =
             getComponents(initial).tables.keys + workingData.keys + tombstones.keys + authoritativeTypes
         for (type in types) {
