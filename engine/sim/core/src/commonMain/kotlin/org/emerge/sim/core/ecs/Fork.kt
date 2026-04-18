@@ -19,11 +19,17 @@ package org.emerge.sim.core.ecs
  * [EcsBuilder.setTable]) into a write-log keyed by replay closures. Feed the fork to
  * exactly one system, then call [mergeFork] on the parent to replay the log.
  *
- * **Entity lifecycle note.** [EcsBuilder.createEntity] and [EcsBuilder.removeEntity] are
- * NOT currently write-logged. They mutate the shared entity world directly, which is
- * fine for sequential forked execution (replay is deterministic) but not safe for
- * multi-threaded dispatch. Phases that rely on entity lifecycle should stay in plain
- * sequential mode until we add a command-buffer path.
+ * **Entity lifecycle note.** [EcsBuilder.removeEntity] IS write-logged: a fork's removal
+ * replays on the parent during [mergeFork], tombstoning the entity across every type the
+ * parent knows about. [EcsBuilder.createEntity] is NOT write-logged; instead it mutates
+ * the shared entity world directly and returns the allocated id, which the fork then
+ * uses for ordinary component writes. Because component writes ARE write-logged, the
+ * new entity and its components propagate to the parent through the usual replay path.
+ *
+ * Under sequential forked execution this is fully safe and deterministic. Under a
+ * future multi-threaded dispatcher, concurrent [EcsBuilder.createEntity] calls would
+ * race on the shared world's id counter, so isolated phases that allocate entities
+ * will need a fork-local id reservation scheme before they can be parallelised.
  *
  * **Scratch note.** Mutations to domain scratches (registered via [EcsBuilder.scratch])
  * happen on the fork's own scratch instance and are NOT propagated to the parent. Any

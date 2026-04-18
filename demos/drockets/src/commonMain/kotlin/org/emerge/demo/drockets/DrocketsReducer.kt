@@ -23,9 +23,13 @@ import org.emerge.sim.core.physics.systems.*
  *  - `aiAndMotion`      – drocket state machine transitions + surface walking. Applies
  *                         thrust via [DrocketAISystem].
  *  - `forceGather`      – gravity + atmospheric drag. All additive writes to
- *                         `ImpulseComponent`.
+ *                         `ImpulseComponent`, no scratch or lifecycle access; runs
+ *                         [isolated][org.emerge.sim.core.ecs.isolated] so each system
+ *                         sees only the phase's starting state and their write-logs are
+ *                         replayed in registration order at the phase barrier.
  *  - `contactDetect`    – broadphase + narrowphase contacts.
- *  - `contactResponse`  – landing detection and bounce impulses, both reading contacts.
+ *  - `contactResponse`  – landing detection and bounce impulses, both reading contacts,
+ *                         also isolated.
  *  - `attachment`       – rigid surface attachment snap.
  *  - `effects`          – exhaust particle spawns + particle lifetime ticks.
  *  - `integrate`        – Euler integration of position and velocity.
@@ -34,7 +38,7 @@ class DrocketsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
         Phase("reset", ImpulseResetSystem),
         Phase("aiAndMotion", DrocketAISystem, WalkSystem),
-        Phase("forceGather", GravitySystem, AtmosphereDragSystem),
+        Phase("forceGather", GravitySystem, AtmosphereDragSystem).isolated(),
         Phase("contactDetect", ContactSystem),
         Phase("contactResponse", DrocketLandingSystem, BounceSystem).isolated(),
         Phase("attachment", AttachmentSystem),

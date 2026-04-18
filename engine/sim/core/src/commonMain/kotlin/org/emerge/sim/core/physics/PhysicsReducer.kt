@@ -19,17 +19,31 @@ import org.emerge.sim.core.physics.systems.*
  *
  * The pipeline is declared as an ordered list of named phases. Phase boundaries document
  * where state produced by one group of systems is consumed by the next (e.g. contacts are
- * produced in `contactDetect` and consumed in `contactResponse`). `contactResponse` is
- * marked [isolated][org.emerge.sim.core.ecs.isolated]: each system sees only the
- * contactDetect-committed state, never other contactResponse systems' intra-phase
- * writes, and their write-logs are replayed on the parent in registration order at the
- * phase barrier — the execution model a parallel dispatcher will use. Today every phase
- * still runs on a single thread via [runSequential].
+ * produced in `contactDetect` and consumed in `contactResponse`).
+ *
+ * Two phases are marked [isolated][org.emerge.sim.core.ecs.isolated]:
+ *
+ *  - `forceGather` — `ShipThrustSystem`, `GravitySystem`, and `ForceFieldSystem` only
+ *    add to `ImpulseComponent` (commutative) and read disjoint mixes of transforms,
+ *    motion, masses, colliders, and field/team components. Thrust additionally removes
+ *    `LandingAttachmentComponent` for lift-off; gravity/forcefield read landing
+ *    attachments from the frozen fork view and therefore skip a ship on the tick it
+ *    takes off, only applying external force from the next tick onward. This one-tick
+ *    delay is intentional: the old intra-phase sequential order let external force
+ *    apply immediately on detach, which we consider a quirk of that order rather than
+ *    required behaviour, and locking that quirk in would block the phase from running
+ *    all three systems in parallel.
+ *  - `contactResponse` — each system reads the committed `contacts` list produced by
+ *    `contactDetect` and writes its own disjoint subset of components.
+ *
+ * Today every phase still runs on a single thread via [runSequential]; the isolated
+ * phases just execute their forks sequentially. Moving to a worker-pool dispatcher
+ * later should be a drop-in replacement.
  */
 class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
         Phase("reset", ImpulseResetSystem),
-        Phase("forceGather", ShipThrustSystem, GravitySystem, ForceFieldSystem),
+        Phase("forceGather", ShipThrustSystem, GravitySystem, ForceFieldSystem).isolated(),
         Phase("contactDetect", ContactSystem),
         Phase("contactResponse", CrashSystem, BounceSystem, LandingSystem).isolated(),
         Phase("attachment", AttachmentSystem),

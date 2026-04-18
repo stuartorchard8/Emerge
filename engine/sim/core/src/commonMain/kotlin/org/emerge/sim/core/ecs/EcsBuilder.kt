@@ -278,23 +278,40 @@ class EcsBuilder<S>(
     // --- Entity lifecycle ----------------------------------------------
 
     /**
-     * Allocates a fresh [EntityId] from the initial world. The world is mutated in place;
-     * subsequent [createEntity] / [removeEntity] calls see the updated entity set.
+     * Allocates a fresh [EntityId] from the shared world and returns it. The world is
+     * mutated in place; subsequent [createEntity] / [removeEntity] calls on this builder
+     * or any fork/parent sharing the world see the updated entity set.
      *
-     * Component writes for the new entity should go through [update] / [setTable].
+     * Component writes for the new entity should go through [update] / [setTable]; those
+     * writes are captured in [writeLog] as normal and replayed on the parent during
+     * [mergeFork], so the new entity ends up alive in the world AND carrying its
+     * components on the parent.
+     *
+     * **Not thread-safe.** Multiple forks running concurrently would race on the shared
+     * world's id counter. Isolated phases that call [createEntity] must therefore stay
+     * on a single thread until a proper fork-local id allocator lands.
      */
     fun createEntity(): EntityId = getWorld(initial).createEntity()
 
     /**
      * Removes an entity from the world and tombstones all of its components across every
-     * known type — both types present in [initial] and types touched this frame via
-     * [update] / [remove] / [setTable]. After this call, [getComponent] returns null
-     * for [id] for every component type.
+     * type this builder knows about — both types present in [initial] and types touched
+     * this frame via [update] / [remove] / [setTable]. After this call, [getComponent]
+     * returns null for [id] for every component type.
+     *
+     * The removal is recorded in [writeLog] so a fork's [removeEntity] is replayed on
+     * the parent during [mergeFork], where the parent re-runs the same tombstoning
+     * against its own (potentially richer) set of known types.
      *
      * Domain-specific cascades (e.g. dependent entities, non-component indexes) are the
      * caller's responsibility; this method only touches the world and component tables.
      */
     fun removeEntity(id: EntityId) {
+        applyRemoveEntityRaw(id)
+    }
+
+    @PublishedApi
+    internal fun applyRemoveEntityRaw(id: EntityId) {
         getWorld(initial).removeEntity(id)
         val types =
             getComponents(initial).tables.keys + workingData.keys + tombstones.keys + authoritativeTypes
@@ -302,6 +319,7 @@ class EcsBuilder<S>(
             workingData[type]?.remove(id)
             tombstones.getOrPut(type) { mutableSetOf() }.add(id)
         }
+        writeLog?.add { parent -> parent.applyRemoveEntityRaw(id) }
     }
 
     // --- Finalize -------------------------------------------------------
