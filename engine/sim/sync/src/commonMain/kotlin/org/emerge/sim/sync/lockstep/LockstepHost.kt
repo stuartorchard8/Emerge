@@ -32,8 +32,8 @@ class LockstepHost<C, S, I>(
     private val inputCodec: Codec<I>,
     private val stateCodec: StateCodec<S>,
     private val semiThinStateCodec: StateCodec<S>,
-    private val joinPolicy: (S, PlayerId) -> Unit,
-    private val leavePolicy: (S, PlayerId) -> Unit = { _, _ -> },
+    private val joinPolicy: (S, PlayerId) -> S,
+    private val leavePolicy: (S, PlayerId) -> S = { s, _ -> s },
     private val thinSnapshotEveryTicks: Int = 3,
     private val thinEventsEncoder: ((S) -> ByteArray)? = null,
 ) {
@@ -58,7 +58,7 @@ class LockstepHost<C, S, I>(
      */
     fun acceptClient(pipe: Pipe, mode: ClientMode = ClientMode.LOCKSTEP): PlayerId {
         val pid = PlayerId(nextPlayerId++)
-        joinPolicy(stepper.state, pid)
+        stepper.replaceState(joinPolicy(stepper.state, pid))
 
         val stateBytes = stateCodec.encode(stepper.state)
 
@@ -95,7 +95,7 @@ class LockstepHost<C, S, I>(
             for (pid in disconnected) {
                 clientsById.remove(pid)
                 lastInputById.remove(pid)
-                leavePolicy(stepper.state, pid)
+                stepper.replaceState(leavePolicy(stepper.state, pid))
             }
             broadcastResync(stateCodec.encode(stepper.state))
         }

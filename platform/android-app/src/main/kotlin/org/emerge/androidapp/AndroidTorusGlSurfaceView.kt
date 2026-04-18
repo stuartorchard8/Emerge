@@ -20,7 +20,7 @@ import org.emerge.demo.physics.createDefaultInitialState
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.model.PhysicsSnapshot
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.math.PI
 import kotlin.math.atan2
@@ -53,7 +53,7 @@ internal class AndroidTorusGlSurfaceView(
     // Data shared to GL thread
     private val stateLock = Any()
     private var latestFrame = PhysicsFrame(
-        PhysicsSnapshot().mutable,
+        PhysicsState(),
         null,
         0L,
         "sim: starting",
@@ -182,13 +182,13 @@ internal class AndroidTorusGlSurfaceView(
     private fun currentPlayerAngleTurns(): Float =
         synchronized(stateLock) {
             val pid = latestFrame.myId ?: return@synchronized 0f
-            latestFrame.state.raw.playerAngle(pid)?.toFloat() ?: 0f
+            latestFrame.state.playerAngle(pid)?.toFloat() ?: 0f
         }
 
     private fun currentPlayerAngularVelocityTurns(): Float =
         synchronized(stateLock) {
             val pid = latestFrame.myId ?: return@synchronized 0f
-            latestFrame.state.raw.playerAngularVelocity(pid)?.toFloat() ?: 0f
+            latestFrame.state.playerAngularVelocity(pid)?.toFloat() ?: 0f
         }
 
     private fun clearSingleTouchState() {
@@ -275,7 +275,7 @@ internal class AndroidTorusGlSurfaceView(
                     Log.e(TAG, "Simulation loop failed", t)
                     publishFrame(
                         PhysicsFrame(
-                            state = PhysicsSnapshot().mutable,
+                            state = PhysicsState(),
                             myId = null,
                             tick = 0L,
                             status = "sim failed: ${t.javaClass.simpleName}",

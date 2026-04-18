@@ -7,6 +7,7 @@ import org.emerge.sim.core.ecs.EcsSystems
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.physics.model.setImpulses
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.systems.*
 
@@ -45,13 +46,12 @@ class DrocketsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         cfg: PhysicsConfig,
         state: PhysicsState,
         inputs: Map<PlayerId, PhysicsInput>,
-    ) {
-        val builder = PhysicsBuilder(state.raw)
+    ): PhysicsState {
+        val builder = PhysicsBuilder(state)
         EcsSystems.runAll(cfg, builder, inputs, systems)
-        state.raw = builder.build()
+        return builder.build()
     }
 
-    override fun patchState(state: PhysicsState, delta: PhysicsState) {
-        state.setImpulses(delta.raw.impulses)
-    }
+    override fun patchState(state: PhysicsState, delta: PhysicsState): PhysicsState =
+        state.setImpulses(delta.impulses)
 }

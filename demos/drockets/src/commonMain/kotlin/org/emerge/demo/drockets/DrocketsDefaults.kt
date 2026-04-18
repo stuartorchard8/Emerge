@@ -2,19 +2,21 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.TeamId
-import org.emerge.sim.core.ecs.ComponentTable
+import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.components.PlanetComponent
 import org.emerge.sim.core.physics.components.TeamComponent
-import org.emerge.sim.core.physics.model.PhysicsSnapshot
+import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.physics.model.spawnBody
 import org.emerge.sim.core.physics.primitives.*
 
 fun createDrocketsInitialState(): PhysicsState {
-    val state = PhysicsSnapshot().mutable
+    val builder = PhysicsBuilder(PhysicsState())
 
-    // Spawn a single large planet at the world center
-    val planetId = state.spawnBody(
+    val planetId = builder.spawnBody(
         playerId = null,
         pos = Coord2.zero,
         vel = Coord2.zero,
@@ -26,33 +28,32 @@ fun createDrocketsInitialState(): PhysicsState {
         rough = Frac(1, 2),
         shape = BodyShape.CIRCLE,
     )
-    state.markPlanet(planetId, seed = 42)
+    builder.update<PlanetComponent>(planetId) { PlanetComponent(seed = 42) }
 
-    // Spawn 3 drockets on the planet surface at different bearings
     for (i in 0 until DROCKET_COUNT) {
         val teamId = TeamId(i)
         val angle = Coord(i, DROCKET_COUNT)
-        spawnDrocketOnPlanet(state, planetId, angle, teamId)
+        spawnDrocketOnPlanet(builder, planetId, angle, teamId)
     }
 
-    return state
+    return builder.build()
 }
 
 private fun spawnDrocketOnPlanet(
-    state: PhysicsState,
+    builder: PhysicsBuilder,
     planetId: EntityId,
     angle: Coord,
     teamId: TeamId,
 ) {
-    val planetTransform = state.raw.transforms[planetId] ?: return
-    val planetCollider = state.raw.colliders[planetId] ?: return
+    val planetTransform = builder.getComponent<TransformComponent>(planetId) ?: return
+    val planetCollider = builder.getComponent<ColliderComponent>(planetId) ?: return
 
     val localNormal = Norm.fromAngle(angle)
     val relativePos = localNormal * (planetCollider.radius + DROCKET_RADIUS)
     val worldPos = planetTransform.pos + relativePos.rotateByAngle(planetTransform.ang)
     val worldAng = Coord(planetTransform.ang.raw + angle.raw)
 
-    val rocketId = state.spawnBody(
+    val rocketId = builder.spawnBody(
         playerId = null,
         pos = worldPos,
         vel = Coord2.zero,
@@ -65,31 +66,25 @@ private fun spawnDrocketOnPlanet(
         shape = BodyShape.TRIANGLE,
     )
 
-    state.addShip(
-        entityId = rocketId,
-        team = TeamComponent(teamId),
-        motion = MotionComponent(vel = Coord2.zero, angVel = Coord(0)),
-        landing = LandingAttachmentComponent(
+    builder.update<TeamComponent>(rocketId) { TeamComponent(teamId) }
+    builder.update<MotionComponent>(rocketId) { MotionComponent(vel = Coord2.zero, angVel = Coord(0)) }
+    builder.update<LandingAttachmentComponent>(rocketId) {
+        LandingAttachmentComponent(
             parentEntityId = planetId,
             relativePos = relativePos,
             relativeAng = Frac(angle.raw.toLong()),
-        ),
-    )
+        )
+    }
 
     val walkTicks = 120 + (teamId.value * 137) % 480
-    val drocketStates = LinkedHashMap(state.raw.components.getTable<DrocketStateComponent>().asMap())
-    drocketStates[rocketId] = DrocketStateComponent(
-        phase = DrocketPhase.WALKING,
-        planetId = planetId,
-        walkDirection = if (teamId.value % 2 == 0) 1 else -1,
-        ticksRemaining = walkTicks,
-    )
-
-    state.setComponents(
-        state.raw.components.update {
-            set(ComponentTable.fromMap(drocketStates))
-        }
-    )
+    builder.update<DrocketStateComponent>(rocketId) {
+        DrocketStateComponent(
+            phase = DrocketPhase.WALKING,
+            planetId = planetId,
+            walkDirection = if (teamId.value % 2 == 0) 1 else -1,
+            ticksRemaining = walkTicks,
+        )
+    }
 }
 
 private val PLANET_RADIUS = Frac(1, 8)

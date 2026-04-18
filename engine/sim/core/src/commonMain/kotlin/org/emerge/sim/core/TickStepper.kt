@@ -13,7 +13,7 @@ class TickStepper<C, S, I>(
         private set
 
     fun step(inputs: Map<PlayerId, I>): S {
-        reducer.reduce(cfg, state, inputs)
+        state = reducer.reduce(cfg, state, inputs)
         tick = Tick(tick.value + 1)
         return state
     }
@@ -23,8 +23,15 @@ class TickStepper<C, S, I>(
         tick = newTick
     }
 
+    /**
+     * Replaces the current state without advancing the tick. Used by the host when a policy
+     * (join/leave) produces a new snapshot mid-session.
+     */
+    fun replaceState(newState: S) {
+        state = newState
+    }
+
     fun patch(delta: S) {
-        reducer.patchState(state, delta)
+        state = reducer.patchState(state, delta)
     }
 }
-

@@ -50,7 +50,7 @@ object PhysicsNetCodecs {
         object : StateCodec<PhysicsState> {
             override fun encode(state: PhysicsState): ByteArray {
                 val w = ByteWriter()
-                with(state.raw) {
+                with(state) {
                     val serializableEntities =
                         motions.keys().filter { entityId -> renderShapes[entityId] != null }
                     w.writeInt(serializableEntities.size)
@@ -114,7 +114,7 @@ object PhysicsNetCodecs {
                 val pendingRespawns = LinkedHashMap<PlayerId, PlayerRespawnState>()
                 val crashImpactAudioEvents = ArrayList<CrashImpactAudioEvent>(crashAudioEventCount)
 
-                var state = PhysicsSnapshot()
+                var state = PhysicsState()
 
                 repeat(n) {
                     val entityId = EntityId(c.readInt())
@@ -171,7 +171,7 @@ object PhysicsNetCodecs {
                             destroyed = destroyedRaw != 0,
                         )
                 }
-                val mutableState = state.copy(
+                val decoded = state.copy(
                     world = EcsWorld(
                         entities = entities,
                         lastEntityValue = lastEntityValue,
@@ -179,9 +179,9 @@ object PhysicsNetCodecs {
                     pendingRespawns = pendingRespawns,
                     crashImpactAudioEvents = crashImpactAudioEvents,
                     randomSeed = randomSeed,
-                ).rebuildIndexes().mutable
-                mutableState.raw.world.lastEntityValue = lastEntityValue
-                return mutableState
+                ).rebuildIndexes()
+                decoded.world.lastEntityValue = lastEntityValue
+                return decoded
             }
         }
 

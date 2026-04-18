@@ -7,7 +7,6 @@ import org.emerge.sim.core.ecs.ComponentStore
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
-import org.emerge.sim.core.physics.model.PhysicsSnapshot
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
@@ -23,7 +22,7 @@ object ImpulseCodec: StateCodec<PhysicsState> {
 
     override fun encode(state: PhysicsState): ByteArray {
         val w = ByteWriter()
-        with (state.raw) {
+        with (state) {
             w.writeInt(impulses.keys().size)
             val recentDamages = damages.entries().filter { it.value.last.raw > 0 }
             w.writeInt(recentDamages.size)
@@ -78,12 +77,11 @@ object ImpulseCodec: StateCodec<PhysicsState> {
             val damage = c.readInt()
             damages[entityId] = DamageComponent(Frac(0),Frac(0),Frac(damage.toLong()))
         }
-        val state = PhysicsSnapshot(
+        return PhysicsState(
             components = ComponentStore().update {
                 set(ComponentTable.fromMap(impulses))
                 set(ComponentTable.fromMap(damages))
             },
-        ).mutable
-        return state
+        )
     }
 }

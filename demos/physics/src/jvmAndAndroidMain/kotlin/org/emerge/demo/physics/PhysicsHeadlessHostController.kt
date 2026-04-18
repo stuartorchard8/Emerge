@@ -7,6 +7,7 @@ import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.PhysicsReducer
 import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.physics.model.removePlayerRocket
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
@@ -40,7 +41,7 @@ class PhysicsHeadlessHostController(
         semiThinStateCodec = impulseCodec,
         joinPolicy = defaultJoinPolicy(gameMode),
         leavePolicy = { state, playerId -> state.removePlayerRocket(playerId) },
-        thinEventsEncoder = { state -> PhysicsNetCodecs.crashImpactAudioEventsCodec.encode(state.raw.crashImpactAudioEvents) },
+        thinEventsEncoder = { state -> PhysicsNetCodecs.crashImpactAudioEventsCodec.encode(state.crashImpactAudioEvents) },
     )
 
     private data class ReadyClient(val pipe: Pipe, val mode: ClientMode)

@@ -15,7 +15,7 @@ data class WorldShaderParams(
     companion object {
         fun compute(state: PhysicsState, myId: PlayerId?, zoom: Float, viewRotationRad: Float = 0f): WorldShaderParams {
             val focusWrapped: Coord2 =
-                if (myId != null) state.raw.playerViewFocus(myId)
+                if (myId != null) state.playerViewFocus(myId)
                 else Coord2.zero
 
             val focus = Vec2(

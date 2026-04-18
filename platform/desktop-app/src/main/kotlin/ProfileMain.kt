@@ -33,8 +33,12 @@ class ProfilingReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val peakNanos = LongArray(SYSTEMS.size)
     private var tickCount = 0
 
-    override fun reduce(cfg: PhysicsConfig, state: PhysicsState, inputs: Map<PlayerId, PhysicsInput>) {
-        val builder = PhysicsBuilder(state.raw)
+    override fun reduce(
+        cfg: PhysicsConfig,
+        state: PhysicsState,
+        inputs: Map<PlayerId, PhysicsInput>,
+    ): PhysicsState {
+        val builder = PhysicsBuilder(state)
         for (i in SYSTEMS.indices) {
             val start = System.nanoTime()
             SYSTEMS[i].second.update(cfg, builder, inputs)
@@ -42,11 +46,11 @@ class ProfilingReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
             accumulatedNanos[i] += elapsed
             if (elapsed > peakNanos[i]) peakNanos[i] = elapsed
         }
-        state.raw = builder.build()
         tickCount++
+        return builder.build()
     }
 
-    override fun patchState(state: PhysicsState, delta: PhysicsState) {
+    override fun patchState(state: PhysicsState, delta: PhysicsState): PhysicsState {
         TODO()
     }
 
@@ -85,11 +89,11 @@ class ProfilingReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
 fun main() {
     val gameMode = GameMode.CO_OP
     val cfg = PhysicsConfig()
-    val state = createDefaultInitialState(gameMode, spawnHostPlayer = true)
+    var state = createDefaultInitialState(gameMode, spawnHostPlayer = true)
 
     val joinPolicy = defaultJoinPolicy(gameMode)
     for (i in 1 until PLAYER_COUNT) {
-        joinPolicy(state, PlayerId(i))
+        state = joinPolicy(state, PlayerId(i))
     }
 
     val reducer = ProfilingReducer()
@@ -103,7 +107,7 @@ fun main() {
     }
     reducer.reset()
 
-    val entityCount = stepper.state.raw.transforms.keys().size
+    val entityCount = stepper.state.transforms.keys().size
     println("Profiling ($PROFILE_TICKS ticks, $entityCount entities)...")
 
     val wallStart = System.nanoTime()
@@ -112,7 +116,7 @@ fun main() {
     }
     val wallNanos = System.nanoTime() - wallStart
 
-    val finalEntityCount = stepper.state.raw.transforms.keys().size
+    val finalEntityCount = stepper.state.transforms.keys().size
     reducer.printSummary(wallNanos)
     println("  Entity count: $entityCount -> $finalEntityCount")
     println()

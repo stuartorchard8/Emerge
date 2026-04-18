@@ -36,10 +36,10 @@ class CrashAudioSystem(
 
     fun onFrame(frame: PhysicsFrame) {
         if (engine.clangClipCount <= 0 && engine.crushClipCount <= 0) return
-        val focus = frame.myId?.let { frame.state.raw.playerViewFocus(it) } ?: Coord2.zero
-        val liveEntityIds = HashSet<EntityId>(frame.state.raw.transforms.keys().size)
-        liveEntityIds.addAll(frame.state.raw.transforms.keys())
-        for (event in frame.state.raw.crashImpactAudioEvents) {
+        val focus = frame.myId?.let { frame.state.playerViewFocus(it) } ?: Coord2.zero
+        val liveEntityIds = HashSet<EntityId>(frame.state.transforms.keys().size)
+        liveEntityIds.addAll(frame.state.transforms.keys())
+        for (event in frame.state.crashImpactAudioEvents) {
             liveEntityIds += event.entityId
             val entityId = event.entityId
             if (!isEntityReadyForPlayback(entityId, frame.tick)) continue

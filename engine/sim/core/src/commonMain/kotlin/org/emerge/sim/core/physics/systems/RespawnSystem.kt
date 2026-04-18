@@ -1,6 +1,9 @@
+@file:OptIn(BypassesStagedView::class)
+
 package org.emerge.sim.core.physics.systems
 
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.ecs.BypassesStagedView
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.DamageComponent

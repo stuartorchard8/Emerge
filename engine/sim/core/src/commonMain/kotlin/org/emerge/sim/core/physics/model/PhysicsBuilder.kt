@@ -1,8 +1,11 @@
+@file:OptIn(BypassesStagedView::class)
+
 package org.emerge.sim.core.physics.model
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
+import org.emerge.sim.core.ecs.BypassesStagedView
 import org.emerge.sim.core.ecs.EcsBuilder
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
@@ -24,18 +27,18 @@ import org.emerge.sim.core.physics.primitives.Frac
  * physics-specific — all physics-domain frame state is carried via [PhysicsFrameScratch]
  * and the extension functions below.
  *
- * The builder operates on [PhysicsSnapshot] directly. Reducers construct a builder from
- * `state.raw`, run systems, and assign the built snapshot back.
+ * The builder operates on [PhysicsState] directly. Reducers construct a builder from the
+ * current snapshot, run systems, and return the built snapshot.
  */
-typealias PhysicsBuilder = EcsBuilder<PhysicsSnapshot>
+typealias PhysicsBuilder = EcsBuilder<PhysicsState>
 
 /**
- * Constructs a [PhysicsBuilder] wired up with lenses over [PhysicsSnapshot], and eagerly
+ * Constructs a [PhysicsBuilder] wired up with lenses over [PhysicsState], and eagerly
  * registers [PhysicsFrameScratch] so that frame-scoped collections like [contacts] and
  * [audioEvents] are reset every frame even if no system reads or writes them.
  */
 @Suppress("FunctionName")
-fun PhysicsBuilder(initial: PhysicsSnapshot): PhysicsBuilder {
+fun PhysicsBuilder(initial: PhysicsState): PhysicsBuilder {
     val builder = EcsBuilder(
         initial = initial,
         getComponents = { it.components },
@@ -55,10 +58,10 @@ fun PhysicsBuilder(initial: PhysicsSnapshot): PhysicsBuilder {
  *  - **Persistent:** [pendingRespawns] and [randomSeed] are seeded from the initial snapshot,
  *    mutated in place by systems, and written back into the new snapshot.
  *
- * Finalizer also calls [PhysicsSnapshot.rebuildIndexes] so the derived `playerEntities` map
+ * Finalizer also calls [PhysicsState.rebuildIndexes] so the derived `playerEntities` map
  * always reflects the authoritative [PlayerOwnedComponent] table.
  */
-class PhysicsFrameScratch(initial: PhysicsSnapshot) {
+class PhysicsFrameScratch(initial: PhysicsState) {
     val contacts: MutableList<Contact> = mutableListOf()
     val audioEvents: MutableList<CrashImpactAudioEvent> = mutableListOf()
     val pendingRespawns: MutableMap<PlayerId, PlayerRespawnState> =
@@ -71,7 +74,7 @@ class PhysicsFrameScratch(initial: PhysicsSnapshot) {
  * with the builder at the same time. Internal: public surface is the extensions below.
  */
 internal fun PhysicsBuilder.physicsScratch(): PhysicsFrameScratch = scratch(
-    factory = { PhysicsFrameScratch(initial) },
+    factory = { init -> PhysicsFrameScratch(init) },
     finalize = { scratch ->
         copy(
             contacts = scratch.contacts.toList(),
@@ -125,6 +128,12 @@ val PhysicsBuilder.pendingRespawns: Map<PlayerId, PlayerRespawnState>
  * Captures the entity's current transform/material/collider/renderShape/team into a
  * [PlayerRespawnState] and enqueues it under [playerId]. If any required component is
  * missing the entity is instead removed outright — matching the legacy behaviour.
+ *
+ * Deliberately uses the frozen [EcsBuilder.initial] view so we can still resolve the
+ * player's entity even if it has been tombstoned earlier this frame (e.g. by
+ * [org.emerge.sim.core.physics.systems.DamageSystem]). Per-component reads go through
+ * [EcsBuilder.getComponent] which honours the staged overlay, so if damage wiped a
+ * required component mid-frame we fall through to the "just remove the entity" path.
  *
  * Does NOT remove the entity itself; callers are expected to destroy the rocket separately
  * (typically via [EcsBuilder.removeEntity]) after queuing.

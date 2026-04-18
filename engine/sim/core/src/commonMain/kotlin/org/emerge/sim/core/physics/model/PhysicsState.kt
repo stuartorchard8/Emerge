@@ -4,238 +4,80 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.ComponentStore
-import org.emerge.sim.core.ecs.ComponentTable
+import org.emerge.sim.core.ecs.EcsWorld
 import org.emerge.sim.core.physics.components.*
-import org.emerge.sim.core.physics.primitives.BodyShape
+import org.emerge.sim.core.physics.primitives.Contact
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
-import org.emerge.sim.core.physics.primitives.Frac
 
 data class PhysicsState(
-    var raw: PhysicsSnapshot,
+    val world: EcsWorld = EcsWorld.EMPTY,
+    
+    // Player-keyed
+    val playerEntities: Map<PlayerId, EntityId> = emptyMap(),
+    val pendingRespawns: Map<PlayerId, PlayerRespawnState> = emptyMap(),    // Replace with ComponentTable<SpawnQueuedComponent>
+
+    val components: ComponentStore = ComponentStore(),
+
+    // Events
+    val contacts: List<Contact> = emptyList(),
+    val crashImpactAudioEvents: List<CrashImpactAudioEvent> = emptyList(),
+
+    /**
+     * Deterministic PRNG state carried across ticks.
+     * Must be kept in sync across all lockstep peers — never seed from platform Random.
+     * Serialized alongside the snapshot for Welcome/Resync.
+     */
+    val randomSeed: Long = 0,
 ) {
+    val transforms get() = components.getTable<TransformComponent>()
+    val motions get() = components.getTable<MotionComponent>()
+    val impulses get() = components.getTable<ImpulseComponent>()
+    val colliders get() = components.getTable<ColliderComponent>()
+    val materials get() = components.getTable<MaterialComponent>()
+    val renderShapes get() = components.getTable<RenderShapeComponent>()
+    val playerOwned get() = components.getTable<PlayerOwnedComponent>()
+    val teams get() = components.getTable<TeamComponent>()
+    val planets get() = components.getTable<PlanetComponent>()
+    val homePlanets get() = components.getTable<HomePlanetComponent>()
+    val forceFields get() = components.getTable<ForceFieldComponent>()
+    val landings get() = components.getTable<LandingAttachmentComponent>()
+    val particles get() = components.getTable<ParticleComponent>()
+    val damages get() = components.getTable<DamageComponent>()
 
-    fun setImpulses(impulses: ComponentTable<ImpulseComponent>) {
-        raw = raw.copy(
-            components = raw.components.update {
-                set(impulses)
-            },
-        )
+    fun playerTransform(playerId: PlayerId): TransformComponent? {
+        val entityId = playerEntities[playerId] ?: return null
+        return transforms[entityId]
     }
 
-    fun addDamages(
-        damages: Map<EntityId, Frac>,
-    ) {
-        if (damages.entries.isNotEmpty()) {
-            val sums = damages.mapValues { (entityId, damage) ->
-                val existing = raw.damages[entityId]
-                if (existing == null) DamageComponent(Frac(0), Frac(0), damage)
-                else existing.copy(next = existing.next + damage)
-            }
-            setDamages(raw.damages.putAll(sums.toList()))
+    fun playerMotion(playerId: PlayerId): MotionComponent? {
+        val entityId = playerEntities[playerId] ?: return null
+        return motions[entityId]
+    }
+
+    fun playerAngle(playerId: PlayerId): Coord? = playerTransform(playerId)?.ang
+
+    fun playerAngularVelocity(playerId: PlayerId): Coord? = playerMotion(playerId)?.angVel
+
+    fun playerViewFocus(playerId: PlayerId): Coord2 =
+        playerTransform(playerId)?.pos
+            ?: pendingRespawns[playerId]?.deathPos
+            ?: Coord2.zero
+
+    fun homePlanetEntity(teamId: TeamId): EntityId? =
+        homePlanets.entries().firstOrNull { it.value.teamId == teamId }?.key
+
+    fun planetEntities(): Set<EntityId> =
+        planets.keys()
+
+    fun rebuildIndexes(): PhysicsState {
+        val playerOwnedTable = components.getTable<PlayerOwnedComponent>()
+
+        // Use the power of the map to build the reverse index in one pass
+        val newPlayerEntities = playerOwnedTable.entries().associate { (id, comp) ->
+            comp.playerId to id
         }
-    }
 
-    fun setDamages(
-        damages: ComponentTable<DamageComponent>,
-    ) {
-        raw = raw.copy(
-            components = raw.components.update {
-                set(damages)
-            },
-        )
-    }
-
-    fun setAudioEvents(
-        crashImpactAudioEvents: List<CrashImpactAudioEvent>
-    ) {
-        raw = raw.copy(
-            crashImpactAudioEvents = crashImpactAudioEvents,
-        )
-    }
-
-    fun addShip(
-        entityId: EntityId,
-        team: TeamComponent,
-        motion: MotionComponent,
-        landing: LandingAttachmentComponent,
-    ) {
-        raw = raw.copy(
-            components = raw.components.update {
-                set(raw.teams.put(entityId,team))
-                set(raw.motions.put(entityId,motion))
-                set(raw.landings.put(entityId,landing))
-            },
-        )
-    }
-
-    fun setComponents(components: ComponentStore) {
-        raw = raw.copy(components = components)
-    }
-
-    fun spawnBody(
-        playerId: PlayerId?,
-        pos: Coord2,
-        vel: Coord2,
-        ang: Coord,
-        angVel: Coord,
-        mass: UInt,
-        radius: Frac,
-        bounce: Frac,
-        rough: Frac,
-        shape: BodyShape,
-    ): EntityId {
-        val entityId = raw.world.createEntity()
-        putBody(
-            entityId = entityId,
-            playerId = playerId,
-            pos = pos,
-            vel = vel,
-            ang = ang,
-            angVel = angVel,
-            mass = mass,
-            radius = radius,
-            bounce = bounce,
-            rough = rough,
-            shape = shape,
-        )
-        return entityId
-    }
-
-    fun putBody(
-        entityId: EntityId,
-        playerId: PlayerId?,
-        pos: Coord2,
-        vel: Coord2,
-        ang: Coord,
-        angVel: Coord,
-        mass: UInt,
-        radius: Frac,
-        bounce: Frac,
-        rough: Frac,
-        shape: BodyShape,
-    ) {
-        raw.world.ensureEntity(entityId)
-        val nextPlayerEntities =
-            if (playerId == null) {
-                raw.playerEntities.filterValues { it != entityId }
-            } else {
-                LinkedHashMap(raw.playerEntities).apply { put(playerId, entityId) }
-            }
-        val nextPlayerOwned =
-            if (playerId == null) {
-                raw.playerOwned.remove(entityId)
-            } else {
-                raw.playerOwned.put(entityId, PlayerOwnedComponent(playerId))
-            }
-        raw = raw.copy(
-            playerEntities = nextPlayerEntities,
-            pendingRespawns = if (playerId == null) raw.pendingRespawns else raw.pendingRespawns - playerId,
-
-            components = raw.components.update {
-                set(raw.transforms.put(entityId, TransformComponent(pos = pos, ang = ang)))
-                set(raw.motions.put(entityId, MotionComponent(vel = vel, angVel = angVel)))
-                set(raw.colliders.put(entityId, ColliderComponent(radius = radius)))
-                set(raw.materials.put(entityId, MaterialComponent(mass = mass, bounce = bounce, rough = rough)))
-                set(raw.renderShapes.put(entityId, RenderShapeComponent(shape = shape)))
-                set(nextPlayerOwned,)
-                set(raw.teams.remove(entityId))
-                set(raw.planets.remove(entityId))
-                set(raw.homePlanets.remove(entityId))
-                set(raw.forceFields.remove(entityId))
-                set(raw.landings.remove(entityId))
-                set(raw.particles.remove(entityId))
-                set(raw.damages.remove(entityId))
-            },
-        )
-    }
-
-    fun markPlanet(entityId: EntityId, seed: Int = entityId.value) {
-        raw = raw.copy(
-            components = raw.components.update {
-                set(raw.planets.put(entityId, PlanetComponent(seed = seed)))
-            }
-        )
-    }
-
-    fun assignHomePlanet(
-        entityId: EntityId,
-        teamId: TeamId,
-    ) {
-        var nextHomePlanets = raw.homePlanets
-        for ((existingEntityId, homePlanet) in raw.homePlanets.entries()) {
-            if (homePlanet.teamId == teamId && existingEntityId != entityId) {
-                nextHomePlanets = nextHomePlanets.remove(existingEntityId)
-            }
-        }
-        raw = raw.copy(
-            components = raw.components.update {
-                set(nextHomePlanets.put(entityId, HomePlanetComponent(teamId)))
-            }
-        )
-    }
-
-    fun setForceField(
-        entityId: EntityId,
-        depth: Frac,
-        strength: Frac,
-        alpha: Frac,
-    ) {
-        raw = raw.copy(
-            components = raw.components.update {
-                set(raw.forceFields.put(
-                    entityId,
-                    ForceFieldComponent(
-                        depth = depth,
-                        strength = strength,
-                        alpha = alpha,
-                    ),
-                ))
-            }
-        )
-    }
-
-    fun setTeam(entityId: EntityId, teamId: TeamId) {
-        raw = raw.copy(
-            components = raw.components.update {
-                set(raw.teams.put(entityId, TeamComponent(teamId)))
-            }
-        )
-    }
-
-    fun removePlayerRocket(playerId: PlayerId) {
-        raw = raw.copy(pendingRespawns = raw.pendingRespawns - playerId)
-        val entityId = raw.playerEntities[playerId] ?: return
-        removeEntity(entityId)
-    }
-
-    fun removeEntity(entityId: EntityId) {
-        raw.world.removeEntity(entityId)
-        val nextPlayerEntities = LinkedHashMap(raw.playerEntities.filterValues { it != entityId })
-        val nextLandings = LinkedHashMap(raw.landings.asMap())
-        for ((attachedEntityId, landing) in raw.landings.entries()) {
-            if (landing.parentEntityId == entityId) {
-                nextLandings.remove(attachedEntityId)
-            }
-        }
-        raw.world.removeEntity(entityId)
-        raw = raw.copy(
-            playerEntities = nextPlayerEntities,
-            components = raw.components.update {
-                set(raw.transforms.remove(entityId))
-                set(raw.motions.remove(entityId))
-                set(raw.colliders.remove(entityId))
-                set(raw.materials.remove(entityId))
-                set(raw.renderShapes.remove(entityId))
-                set(raw.playerOwned.remove(entityId))
-                set(raw.teams.remove(entityId))
-                set(raw.planets.remove(entityId))
-                set(raw.homePlanets.remove(entityId))
-                set(raw.forceFields.remove(entityId))
-                set(ComponentTable.fromMap(nextLandings).remove(entityId))
-                set(raw.particles.remove(entityId))
-                set(raw.damages.remove(entityId))
-            }
-        )
+        return copy(playerEntities = newPlayerEntities)
     }
 }

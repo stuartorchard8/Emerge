@@ -9,4 +9,3 @@ data class PhysicsFrame(
     val tick: Long,
     val status: String,
 )
-

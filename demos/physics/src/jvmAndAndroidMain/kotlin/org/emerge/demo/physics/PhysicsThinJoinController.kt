@@ -27,8 +27,7 @@ class PhysicsThinJoinController(
         stateCodec = stateCodec,
         thinEventsApplier = { state, payload ->
             val events = PhysicsNetCodecs.crashImpactAudioEventsCodec.decode(payload)
-            state.setAudioEvents(events)
-            state
+            state.copy(crashImpactAudioEvents = events)
         },
         handshakeTimeout = 15.seconds,
         inactivityTimeout = 20.seconds,

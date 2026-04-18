@@ -1,3 +1,5 @@
+@file:OptIn(BypassesStagedView::class)
+
 package org.emerge.sim.core.ecs
 
 import org.emerge.sim.core.EntityId
@@ -23,6 +25,14 @@ import kotlin.reflect.KClass
  * finalizers.
  */
 class EcsBuilder<S>(
+    /**
+     * The frozen start-of-frame state. Reading fields off this property bypasses the
+     * staged overlay of writes made in the current frame — see [BypassesStagedView].
+     *
+     * Prefer [entries] / [getComponent] for normal reads. Opt in to this property only
+     * when you specifically want the parallel-safe, order-independent, last-frame view.
+     */
+    @property:BypassesStagedView
     val initial: S,
     @PublishedApi internal val getComponents: (S) -> ComponentStore,
     @PublishedApi internal val getWorld: (S) -> EcsWorld,
@@ -58,29 +68,32 @@ class EcsBuilder<S>(
     /**
      * Returns (creating lazily on first access) a scratch object of type [T].
      *
-     * The first call constructs the scratch via [factory] and registers [finalize]
-     * to run in [build], giving the scratch a chance to fold its accumulated data
-     * into the final [S]. Later calls return the same instance without re-registering.
+     * The first call constructs the scratch via [factory] — passing the frozen
+     * [initial] state so domain scratches can seed themselves from last-frame
+     * persistent data without having to reach for the opt-in [initial] property —
+     * and registers [finalize] to run in [build], giving the scratch a chance to
+     * fold its accumulated data into the final [S]. Later calls return the same
+     * instance without re-registering.
      *
      * Use this to carry domain-specific frame-scoped state (e.g. contact lists,
      * audio events) without the builder needing to know about those types.
      */
     inline fun <reified T : Any> scratch(
-        noinline factory: () -> T,
+        noinline factory: (S) -> T,
         noinline finalize: S.(T) -> S,
     ): T = registerScratch(T::class, factory, finalize)
 
     @PublishedApi
     internal fun <T : Any> registerScratch(
         type: KClass<T>,
-        factory: () -> T,
+        factory: (S) -> T,
         finalize: S.(T) -> S,
     ): T {
         scratches[type]?.let {
             @Suppress("UNCHECKED_CAST")
             return it as T
         }
-        val created = factory()
+        val created = factory(initial)
         scratches[type] = created
         finalizers.add { state -> state.finalize(created) }
         return created

@@ -7,6 +7,8 @@ import org.emerge.sim.core.ecs.EcsSystems
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.physics.model.addDamages
+import org.emerge.sim.core.physics.model.setImpulses
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.systems.*
 
@@ -28,16 +30,20 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         IntegrationSystem,
     )
 
-    override fun reduce(cfg: PhysicsConfig, state: PhysicsState, inputs: Map<PlayerId, PhysicsInput>) {
-        val builder = PhysicsBuilder(state.raw)
+    override fun reduce(
+        cfg: PhysicsConfig,
+        state: PhysicsState,
+        inputs: Map<PlayerId, PhysicsInput>,
+    ): PhysicsState {
+        val builder = PhysicsBuilder(state)
         EcsSystems.runAll(cfg, builder, inputs, systems)
-        state.raw = builder.build()
+        return builder.build()
     }
 
-    override fun patchState(state: PhysicsState, delta: PhysicsState) {
-        // Intentionally ignoring everything but impulses.
-        // Impulses is all that ThinLockstepClient acquires.
-        state.setImpulses(delta.raw.impulses)
-        state.addDamages(delta.raw.damages.asMap().mapValues { (_, component) -> component.next })
-    }
+    override fun patchState(state: PhysicsState, delta: PhysicsState): PhysicsState =
+        // Intentionally ignoring everything but impulses + damages.
+        // That's all ThinLockstepClient acquires.
+        state
+            .setImpulses(delta.impulses)
+            .addDamages(delta.damages.asMap().mapValues { (_, component) -> component.next })
 }

@@ -57,14 +57,14 @@ fun main() {
 
 private fun startLocalMode(renderer: ScreenRenderer, input: WebInputHandler, crashAudio: CrashAudioSystem) {
     val cfg = PhysicsConfig()
-    val state = createDefaultInitialState(GameMode.PVP)
+    var state = createDefaultInitialState(GameMode.PVP)
     val reducer = PhysicsReducer()
     val myId = PlayerId(0)
     var tick = 0L
 
     fun frame(ts: Double) {
         val physicsInput = input.poll(renderer)
-        reducer.reduce(cfg, state, mapOf(myId to physicsInput))
+        state = reducer.reduce(cfg, state, mapOf(myId to physicsInput))
         tick++
         crashAudio.onFrame(PhysicsFrame(state, myId, tick, ""))
         renderer.draw(state, myId)
@@ -84,8 +84,7 @@ private fun startJoinMode(wsUrl: String, renderer: ScreenRenderer, input: WebInp
         stateCodec = PhysicsNetCodecs.stateCodec,
         thinEventsApplier = { state, payload ->
             val events = PhysicsNetCodecs.crashImpactAudioEventsCodec.decode(payload)
-            state.setAudioEvents(crashImpactAudioEvents = events)
-            state
+            state.copy(crashImpactAudioEvents = events)
         },
         handshakeTimeout = 15.seconds,
         inactivityTimeout = 30.seconds,
