@@ -7,6 +7,8 @@ package org.emerge.sim.core.ecs
  * an isolated phase.
  */
 actual class ParallelExecutor actual constructor() {
+    actual val parallelism: Int = 1
+
     actual fun invokeAll(tasks: List<() -> Unit>) {
         for (task in tasks) task()
     }

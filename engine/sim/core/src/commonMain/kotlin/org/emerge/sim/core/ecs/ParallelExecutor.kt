@@ -18,6 +18,14 @@ package org.emerge.sim.core.ecs
  */
 expect class ParallelExecutor() {
     /**
+     * Number of worker threads the pool is willing to run concurrently. Used by
+     * data-parallel helpers (e.g. partitioning an inner loop over entity pairs)
+     * to size their chunking. On JVM/Android this is the pool's parallelism
+     * (defaults to `Runtime.getRuntime().availableProcessors()`); on JS it's 1.
+     */
+    val parallelism: Int
+
+    /**
      * Submits every task to the pool, blocks the calling thread until all tasks
      * complete, and rethrows the first exception encountered (if any).
      *

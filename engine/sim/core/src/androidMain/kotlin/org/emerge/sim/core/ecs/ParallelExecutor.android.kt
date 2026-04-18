@@ -7,6 +7,8 @@ import java.util.concurrent.Executors
 actual class ParallelExecutor actual constructor() {
     private val pool: ExecutorService = Executors.newWorkStealingPool()
 
+    actual val parallelism: Int = Runtime.getRuntime().availableProcessors()
+
     actual fun invokeAll(tasks: List<() -> Unit>) {
         if (tasks.isEmpty()) return
         if (tasks.size == 1) {

@@ -62,7 +62,7 @@ class PhysicsReducer(
     private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
         Phase("reset", ImpulseResetSystem),
         Phase("forceGather", ShipThrustSystem, GravitySystem, ForceFieldSystem).isolated(),
-        Phase("contactDetect", ContactSystem),
+        Phase("contactDetect", ContactSystem(executor)),
         Phase("contactResponse", CrashSystem, BounceSystem, LandingSystem).isolated(),
         Phase("attachment", AttachmentSystem),
         Phase("lifecycle", RespawnSystem, DamageSystem).isolated(),

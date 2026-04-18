@@ -22,7 +22,7 @@ private val SYSTEMS: List<Pair<String, EcsSystem<PhysicsConfig, PhysicsState, Ph
     "Gravity" to GravitySystem,
     "Integration" to IntegrationSystem,
     "ForceField" to ForceFieldSystem,
-    "Collision" to ContactSystem,
+    "Collision" to ContactSystem(),
     "Attachment" to AttachmentSystem,
     "Particle" to ParticleSystem,
     "Respawn" to RespawnSystem,
