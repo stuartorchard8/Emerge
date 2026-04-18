@@ -2,9 +2,11 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
+import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.Phase
 import org.emerge.sim.core.ecs.Pipeline
 import org.emerge.sim.core.ecs.isolated
+import org.emerge.sim.core.ecs.runParallel
 import org.emerge.sim.core.ecs.runSequential
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
@@ -44,8 +46,14 @@ import org.emerge.sim.core.physics.systems.*
  * `LandingAttachmentComponent` table each tick, and `WalkSystem` then does per-entity
  * `update<LandingAttachmentComponent>` calls — under isolation the fork-replayed
  * updates would re-attach drockets that DrocketAISystem just detached for a launch.
+ *
+ * Pass an [executor] to dispatch isolated phases' forks across worker threads via
+ * [runParallel]; omit it (default `null`) to run the whole pipeline on the calling
+ * thread via [runSequential].
  */
-class DrocketsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
+class DrocketsReducer(
+    private val executor: ParallelExecutor? = null,
+) : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
         Phase("reset", ImpulseResetSystem),
         Phase("aiAndMotion", DrocketAISystem, WalkSystem),
@@ -63,7 +71,11 @@ class DrocketsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         inputs: Map<PlayerId, PhysicsInput>,
     ): PhysicsState {
         val builder = PhysicsBuilder(state)
-        runSequential(cfg, builder, inputs, pipeline)
+        if (executor != null) {
+            runParallel(cfg, builder, inputs, pipeline, executor)
+        } else {
+            runSequential(cfg, builder, inputs, pipeline)
+        }
         return builder.build()
     }
 

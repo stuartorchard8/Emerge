@@ -59,14 +59,14 @@ fun <C, S, I> Phase<C, S, I>.isolated(): Phase<C, S, I> =
 typealias Pipeline<C, S, I> = List<Phase<C, S, I>>
 
 /**
- * Runs every phase of [pipeline] in registration order. Within each phase, the
- * [Phase.concurrency] mode decides whether systems share the builder ([PhaseConcurrency.Sequential])
- * or each run on their own fork with writes merged at the barrier ([PhaseConcurrency.Isolated]).
+ * Runs every phase of [pipeline] in registration order on the calling thread.
+ * Within each phase, the [Phase.concurrency] mode decides whether systems share the
+ * builder ([PhaseConcurrency.Sequential]) or each run on their own fork with writes
+ * merged at the barrier ([PhaseConcurrency.Isolated]).
  *
- * Today this is single-threaded regardless of concurrency mode; isolated phases still
- * dispatch forks sequentially. A future `runParallel` will keep the same pipeline but
- * dispatch isolated phases across worker threads, producing bit-identical output to
- * this reference implementation.
+ * Single-threaded regardless of concurrency mode — isolated phases dispatch their
+ * forks sequentially. Use this as the reference implementation. [runParallel] produces
+ * bit-identical output while dispatching isolated phases across worker threads.
  */
 fun <C, S, I> runSequential(
     cfg: C,
@@ -77,7 +77,42 @@ fun <C, S, I> runSequential(
     for (phase in pipeline) {
         when (phase.concurrency) {
             PhaseConcurrency.Sequential -> runPhaseSequential(cfg, builder, inputs, phase)
-            PhaseConcurrency.Isolated -> runPhaseIsolated(cfg, builder, inputs, phase)
+            PhaseConcurrency.Isolated -> runPhaseIsolatedSequential(cfg, builder, inputs, phase)
+        }
+    }
+}
+
+/**
+ * Like [runSequential], but dispatches the systems of each [PhaseConcurrency.Isolated]
+ * phase across [executor]. [PhaseConcurrency.Sequential] phases always run on the
+ * calling thread because they depend on intra-phase write visibility.
+ *
+ * Isolated phases remain deterministic:
+ *  - Every fork is built from a single frozen snapshot captured *before* dispatch.
+ *  - Forks mutate only their own write-log and tombstones; shared-resource access
+ *    (entity world, PRNG seed, domain scratch delegated via [EcsBuilder.parent])
+ *    is serialised by the per-root-builder lock on [EcsBuilder.rootLock].
+ *  - At the phase barrier every fork's write-log is replayed on the parent in
+ *    system-registration order, exactly like the sequential runner.
+ *
+ * That means `runParallel` and [runSequential] produce the same final state given
+ * the same inputs, modulo domain-level PRNG ordering inside a phase (draws from
+ * different forks interleave under the root lock in the order they hit it; this is
+ * by design — see the PRNG kdoc on `PhysicsBuilder.kt`).
+ *
+ * Caller owns [executor] and is responsible for its [ParallelExecutor.close].
+ */
+fun <C, S, I> runParallel(
+    cfg: C,
+    builder: EcsBuilder<S>,
+    inputs: Map<PlayerId, I>,
+    pipeline: Pipeline<C, S, I>,
+    executor: ParallelExecutor,
+) {
+    for (phase in pipeline) {
+        when (phase.concurrency) {
+            PhaseConcurrency.Sequential -> runPhaseSequential(cfg, builder, inputs, phase)
+            PhaseConcurrency.Isolated -> runPhaseIsolatedParallel(cfg, builder, inputs, phase, executor)
         }
     }
 }
@@ -93,15 +128,12 @@ private fun <C, S, I> runPhaseSequential(
     }
 }
 
-private fun <C, S, I> runPhaseIsolated(
+private fun <C, S, I> runPhaseIsolatedSequential(
     cfg: C,
     builder: EcsBuilder<S>,
     inputs: Map<PlayerId, I>,
     phase: Phase<C, S, I>,
 ) {
-    // Materialise the parent's current state once, up front — every fork in the phase
-    // shares this as its frozen read view. A future parallel dispatcher can build this
-    // once and hand the same reference to each worker thread.
     val forkInitial = builder.build()
     val forks = ArrayList<EcsBuilder<S>>(phase.systems.size)
     for (system in phase.systems) {
@@ -112,4 +144,34 @@ private fun <C, S, I> runPhaseIsolated(
     for (fork in forks) {
         builder.mergeFork(fork)
     }
+}
+
+private fun <C, S, I> runPhaseIsolatedParallel(
+    cfg: C,
+    builder: EcsBuilder<S>,
+    inputs: Map<PlayerId, I>,
+    phase: Phase<C, S, I>,
+    executor: ParallelExecutor,
+) {
+    val systems = phase.systems
+    // Degenerate case: one system in an isolated phase is equivalent to sequential
+    // (no forks needed, no parallelism possible). Skip the fork/merge dance.
+    if (systems.size <= 1) {
+        for (system in systems) system.update(cfg, builder, inputs)
+        return
+    }
+    // One frozen view shared by every fork in this phase. Built before dispatch on
+    // the calling thread so workers see a stable, read-only snapshot.
+    val forkInitial = builder.build()
+    val forks = ArrayList<EcsBuilder<S>>(systems.size)
+    for (i in systems.indices) forks += builder.forkFrom(forkInitial)
+    val tasks = ArrayList<() -> Unit>(systems.size)
+    for (i in systems.indices) {
+        val system = systems[i]
+        val fork = forks[i]
+        tasks += { system.update(cfg, fork, inputs) }
+    }
+    executor.invokeAll(tasks)
+    // Merge in registration order so non-commutative replays stay deterministic.
+    for (fork in forks) builder.mergeFork(fork)
 }

@@ -2,9 +2,11 @@ package org.emerge.sim.core.physics
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
+import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.Phase
 import org.emerge.sim.core.ecs.Pipeline
 import org.emerge.sim.core.ecs.isolated
+import org.emerge.sim.core.ecs.runParallel
 import org.emerge.sim.core.ecs.runSequential
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
@@ -45,11 +47,14 @@ import org.emerge.sim.core.physics.systems.*
  *    ordering newly spawned particles skip their first lifetime tick (gain +1 frame
  *    of life) — same kind of sub-tick artefact as the forceGather trade-off.
  *
- * Today every phase still runs on a single thread via [runSequential]; the isolated
- * phases just execute their forks sequentially. Moving to a worker-pool dispatcher
- * later should be a drop-in replacement.
+ * Pass an [executor] to dispatch isolated phases' forks across worker threads via
+ * [runParallel]; omit it (default `null`) to run the whole pipeline on the calling
+ * thread via [runSequential]. Both dispatch modes produce identical state modulo
+ * the PRNG-ordering note on `PhysicsBuilder.nextRandomInt`.
  */
-class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
+class PhysicsReducer(
+    private val executor: ParallelExecutor? = null,
+) : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
         Phase("reset", ImpulseResetSystem),
         Phase("forceGather", ShipThrustSystem, GravitySystem, ForceFieldSystem).isolated(),
@@ -67,7 +72,11 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         inputs: Map<PlayerId, PhysicsInput>,
     ): PhysicsState {
         val builder = PhysicsBuilder(state)
-        runSequential(cfg, builder, inputs, pipeline)
+        if (executor != null) {
+            runParallel(cfg, builder, inputs, pipeline, executor)
+        } else {
+            runSequential(cfg, builder, inputs, pipeline)
+        }
         return builder.build()
     }
 
