@@ -93,6 +93,16 @@ tasks.register<JavaExec>("benchDrockets") {
     standardInput = System.`in`
 }
 
+tasks.register<JavaExec>("benchDrocketsZgc") {
+    group = "verification"
+    description = "Headless Drockets benchmark running under ZGC (low-pause collector) for tail-latency comparison"
+    mainClass = "org.emerge.desktop.DrocketsBenchmarkKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    standardInput = System.`in`
+
+    jvmArgs("-XX:+UseZGC", "-XX:+ZGenerational")
+}
+
 tasks.register<JavaExec>("benchDrocketsJfr") {
     group = "verification"
     description = "Headless Drockets benchmark with a JFR recording (for IntelliJ / JMC inspection)"
@@ -102,7 +112,7 @@ tasks.register<JavaExec>("benchDrocketsJfr") {
 
     val jfrFile = layout.buildDirectory.file("drockets-bench.jfr").get().asFile
     jvmArgs(
-        "-XX:StartFlightRecording=duration=60s,filename=${jfrFile.absolutePath}",
+        "-XX:StartFlightRecording=duration=300s,filename=${jfrFile.absolutePath},settings=profile",
     )
 
     doLast {
@@ -111,4 +121,14 @@ tasks.register<JavaExec>("benchDrocketsJfr") {
             println("Open in IntelliJ: Run > Open Profiler Snapshot")
         }
     }
+}
+
+tasks.register<JavaExec>("benchDrocketsGcLog") {
+    group = "verification"
+    description = "Headless Drockets benchmark with GC logging to stdout (fast GC sanity check)"
+    mainClass = "org.emerge.desktop.DrocketsBenchmarkKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    standardInput = System.`in`
+
+    jvmArgs("-Xlog:gc*:stdout:time,uptime,level,tags")
 }

@@ -4,6 +4,7 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.ecs.ParallelExecutor
+import org.emerge.sim.core.ecs.triangularChunkBounds
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
@@ -73,13 +74,13 @@ class GravitySystem(
         executor: ParallelExecutor,
     ) {
         val n = ids.size
-        val chunkCount = (executor.parallelism * 8).coerceAtMost(n).coerceAtLeast(1)
-        val chunkSize = (n + chunkCount - 1) / chunkCount
+        val chunkCount = (executor.parallelism * 4).coerceAtMost(n).coerceAtLeast(1)
+        val bounds = triangularChunkBounds(n, chunkCount)
         val buckets = arrayOfNulls<LinkedHashMap<EntityId, ImpulseComponent>>(chunkCount)
         val tasks = ArrayList<() -> Unit>(chunkCount)
         for (c in 0 until chunkCount) {
-            val iStart = c * chunkSize
-            val iEnd = minOf(iStart + chunkSize, n)
+            val iStart = bounds[c]
+            val iEnd = bounds[c + 1]
             if (iStart >= iEnd) continue
             tasks += {
                 val local = LinkedHashMap<EntityId, ImpulseComponent>()
