@@ -4,6 +4,7 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.ecs.Phase
 import org.emerge.sim.core.ecs.Pipeline
+import org.emerge.sim.core.ecs.isolated
 import org.emerge.sim.core.ecs.runSequential
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
@@ -35,7 +36,7 @@ class DrocketsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         Phase("aiAndMotion", DrocketAISystem, WalkSystem),
         Phase("forceGather", GravitySystem, AtmosphereDragSystem),
         Phase("contactDetect", ContactSystem),
-        Phase("contactResponse", DrocketLandingSystem, BounceSystem),
+        Phase("contactResponse", DrocketLandingSystem, BounceSystem).isolated(),
         Phase("attachment", AttachmentSystem),
         Phase("effects", DrocketParticleSystem, ParticleSystem),
         Phase("integrate", IntegrationSystem),

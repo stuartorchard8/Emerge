@@ -65,6 +65,33 @@ class EcsBuilder<S>(
     @PublishedApi internal val scratches = mutableMapOf<KClass<*>, Any>()
     @PublishedApi internal val finalizers = mutableListOf<(S) -> S>()
 
+    // --- Events --------------------------------------------------------
+
+    /**
+     * Per-type append-only event streams emitted by systems during the frame. Populated
+     * by [emit], read by [events], and folded into the final [S] by whatever domain
+     * code wants to publish them (typically from a [scratch] finalizer that pulls the
+     * list out at build time).
+     *
+     * Events are frame-scoped — a fresh builder starts with empty streams. They are
+     * the natural fit for "fire and forget" cross-system messages like audio cues,
+     * damage notifications, or debug markers where multiple systems may contribute and
+     * no reader cares about the relative order of emissions across systems beyond phase
+     * barriers.
+     */
+    @PublishedApi internal val eventLists: MutableMap<KClass<*>, MutableList<Any>> =
+        mutableMapOf()
+
+    // --- Write log (fork replay) ---------------------------------------
+
+    /**
+     * When non-null, every mutation performed on this builder appends a replay closure
+     * to this list. A [fork] sets this to an empty list so the fork's writes can be
+     * replayed on the parent during [mergeFork]. Non-null outside fork contexts also
+     * works (it just collects the log) but allocates unnecessarily, so default is null.
+     */
+    @PublishedApi internal var writeLog: MutableList<(EcsBuilder<S>) -> Unit>? = null
+
     /**
      * Returns (creating lazily on first access) a scratch object of type [T].
      *
@@ -144,10 +171,8 @@ class EcsBuilder<S>(
      * Usage: builder.update<ImpulseComponent>(id) { it + thrust }
      */
     inline fun <reified T : Any> update(id: EntityId, crossinline block: (T?) -> T) {
-        val current = getComponent<T>(id)
-        val table = workingData.getOrPut(T::class) { mutableMapOf() }
-        table[id] = block(current)
-        tombstones[T::class]?.remove(id)
+        @Suppress("UNCHECKED_CAST")
+        applyUpdateRaw(T::class, id) { current -> block(current as T?) as Any }
     }
 
     /**
@@ -155,8 +180,7 @@ class EcsBuilder<S>(
      * entity regardless of whether the value lived in the initial snapshot.
      */
     inline fun <reified T : Any> remove(id: EntityId) {
-        workingData[T::class]?.remove(id)
-        tombstones.getOrPut(T::class) { mutableSetOf() }.add(id)
+        applyRemoveRaw(T::class, id)
     }
 
     /**
@@ -166,9 +190,89 @@ class EcsBuilder<S>(
      */
     inline fun <reified T : Any> setTable(table: MutableMap<EntityId, T>) {
         @Suppress("UNCHECKED_CAST")
-        workingData[T::class] = table as MutableMap<EntityId, Any>
-        authoritativeTypes.add(T::class)
-        tombstones.remove(T::class)
+        applySetTableRaw(T::class, table as MutableMap<EntityId, Any>)
+    }
+
+    // --- Events API ----------------------------------------------------
+
+    /**
+     * Appends [event] to the frame's event stream for type [T]. Any system may emit;
+     * within a phase, the relative order of emits from a single system is preserved,
+     * and across systems events interleave by the phase's execution order.
+     *
+     * Under isolated phases, each fork collects emits in its own stream and the
+     * write-log replays them on the parent at the phase barrier in system-registration
+     * order — so the final combined order is deterministic regardless of which fork
+     * a thread happened to run on.
+     *
+     * Events do not participate in the component store. Domain code is responsible for
+     * folding them into the final state (e.g. via a [scratch] finalizer that reads
+     * [events] at build time).
+     */
+    inline fun <reified T : Any> emit(event: T) {
+        applyEmitRaw(T::class, event)
+    }
+
+    /**
+     * Returns a read-only view of all [T]-typed events emitted so far this frame.
+     * The returned list is owned by the builder; callers must treat it as read-only.
+     * Empty if nothing has been emitted for [T] yet.
+     */
+    inline fun <reified T : Any> events(): List<T> {
+        @Suppress("UNCHECKED_CAST")
+        return (eventLists[T::class] as List<T>?) ?: emptyList()
+    }
+
+    // --- Non-inline write pathway (write-log replay reuses this) ---------
+
+    /**
+     * Type-erased update that the inline [update] delegates to. Also used by [writeLog]
+     * replay: a fork's recorded block captures the reified type as a [KClass] and the
+     * block as `(Any?) -> Any`, and replays via this method.
+     */
+    @PublishedApi
+    internal fun applyUpdateRaw(type: KClass<*>, id: EntityId, block: (Any?) -> Any) {
+        val current = rawGetComponent(type, id)
+        val table = workingData.getOrPut(type) { mutableMapOf() }
+        table[id] = block(current)
+        tombstones[type]?.remove(id)
+        writeLog?.add { parent -> parent.applyUpdateRaw(type, id, block) }
+    }
+
+    @PublishedApi
+    internal fun applyRemoveRaw(type: KClass<*>, id: EntityId) {
+        workingData[type]?.remove(id)
+        tombstones.getOrPut(type) { mutableSetOf() }.add(id)
+        writeLog?.add { parent -> parent.applyRemoveRaw(type, id) }
+    }
+
+    @PublishedApi
+    internal fun applySetTableRaw(type: KClass<*>, table: MutableMap<EntityId, Any>) {
+        workingData[type] = table
+        authoritativeTypes.add(type)
+        tombstones.remove(type)
+        writeLog?.add { parent -> parent.applySetTableRaw(type, table) }
+    }
+
+    @PublishedApi
+    internal fun applyEmitRaw(type: KClass<*>, event: Any) {
+        eventLists.getOrPut(type) { mutableListOf() }.add(event)
+        writeLog?.add { parent -> parent.applyEmitRaw(type, event) }
+    }
+
+    /**
+     * Type-erased read that honours tombstones, the working overlay, and authoritative
+     * flags — matching the inline [getComponent] but without a reified type parameter.
+     * Used by [applyUpdateRaw] so write-log replay sees the same read semantics as a
+     * direct `update { it + delta }` call.
+     */
+    @PublishedApi
+    internal fun rawGetComponent(type: KClass<*>, id: EntityId): Any? {
+        if (tombstones[type]?.contains(id) == true) return null
+        val frameWork = workingData[type]?.get(id)
+        if (frameWork != null) return frameWork
+        if (type in authoritativeTypes) return null
+        return getComponents(initial).tables[type]?.asMap()?.get(id)
     }
 
     // --- Entity lifecycle ----------------------------------------------

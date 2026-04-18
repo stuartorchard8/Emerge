@@ -1,0 +1,77 @@
+package org.emerge.sim.core.ecs
+
+/**
+ * Forks this builder for running one parallel-capable system against a frozen snapshot
+ * of the parent's current state.
+ *
+ * The fork is a freshly constructed [EcsBuilder] whose [EcsBuilder.initial] is the
+ * materialised output of [EcsBuilder.build] on this (parent) builder at fork time.
+ * That means:
+ *
+ *  - Parent's committed writes this frame (workingData / tombstones / authoritative
+ *    tables) are baked into the fork's [EcsBuilder.initial].
+ *  - Parent's scratch finalizers run into the fork's initial too, so domain scratches
+ *    on the fork re-seed from the parent's current scratch contents (e.g. the physics
+ *    scratch inherits live `contacts`, `pendingRespawns`, `randomSeed`).
+ *  - The fork's own workingData / tombstones / authoritativeTypes start empty.
+ *
+ * The fork also records every mutation (calls to [EcsBuilder.update], [EcsBuilder.remove],
+ * [EcsBuilder.setTable]) into a write-log keyed by replay closures. Feed the fork to
+ * exactly one system, then call [mergeFork] on the parent to replay the log.
+ *
+ * **Entity lifecycle note.** [EcsBuilder.createEntity] and [EcsBuilder.removeEntity] are
+ * NOT currently write-logged. They mutate the shared entity world directly, which is
+ * fine for sequential forked execution (replay is deterministic) but not safe for
+ * multi-threaded dispatch. Phases that rely on entity lifecycle should stay in plain
+ * sequential mode until we add a command-buffer path.
+ *
+ * **Scratch note.** Mutations to domain scratches (registered via [EcsBuilder.scratch])
+ * happen on the fork's own scratch instance and are NOT propagated to the parent. Any
+ * scratch field a fork system writes to is effectively scoped to that fork. If a phase
+ * needs to publish scratch data upstream, the producer should be in a plain sequential
+ * phase, or the scratch field should be converted to a typed phase output written via
+ * a component-update path.
+ *
+ * Building the fork's initial is O(parent component tables). Callers creating multiple
+ * forks with the same frozen view (e.g. the N systems of a phase) should build one
+ * [forkInitial] with [EcsBuilder.build] and feed it to [forkFrom] N times.
+ */
+fun <S> EcsBuilder<S>.fork(): EcsBuilder<S> = forkFrom(this.build())
+
+/**
+ * Like [fork], but uses [forkInitial] directly as the fork's [EcsBuilder.initial]
+ * rather than building from this builder's state. Useful when several forks in the
+ * same phase should share a single frozen snapshot.
+ */
+fun <S> EcsBuilder<S>.forkFrom(forkInitial: S): EcsBuilder<S> {
+    val fork = EcsBuilder(
+        initial = forkInitial,
+        getComponents = getComponents,
+        getWorld = getWorld,
+        applyComponents = applyComponents,
+    )
+    fork.writeLog = mutableListOf()
+    return fork
+}
+
+/**
+ * Replays [fork]'s write-log against this builder in recording order, then discards the
+ * log. After this call, all of the fork's component writes are visible on this builder.
+ *
+ * Merging multiple forks back into a parent is done by calling [mergeFork] once per
+ * fork, in the order the forks' systems are declared in the phase. Because the replay
+ * is a straight re-application of each recorded block against the parent, and because
+ * blocks for additive components like `ImpulseComponent` / `DamageComponent` commute,
+ * the resulting parent state is bit-identical to the equivalent sequential execution
+ * provided systems in the phase only *write* disjoint types and non-commutative writes
+ * (e.g. bare replaces) happen in their registration order — which is exactly what
+ * [runIsolated] guarantees.
+ */
+fun <S> EcsBuilder<S>.mergeFork(fork: EcsBuilder<S>) {
+    val log = fork.writeLog ?: error(
+        "mergeFork called on a non-forked builder (writeLog is null). " +
+            "Only builders created via EcsBuilder.fork() can be merged."
+    )
+    for (replay in log) replay(this)
+    fork.writeLog = null
+}

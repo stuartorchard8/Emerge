@@ -8,7 +8,6 @@ import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.model.CrashImpactAudioEvent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.model.addAudioEvent
 import org.emerge.sim.core.physics.model.nextRandomInt
 import org.emerge.sim.core.physics.model.queueRespawn
 import org.emerge.sim.core.physics.model.spawnParticle
@@ -41,7 +40,8 @@ object DamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             val impulse = builder.getComponent<ImpulseComponent>(entityId) ?: ImpulseComponent()
 
             val total = damage.accumulated + damage.next
-            if (total.raw >= cfg.shipMaxDamage.raw) {
+            val destroyed = total.raw >= cfg.shipMaxDamage.raw
+            if (destroyed) {
                 val teamId = builder.getComponent<TeamComponent>(entityId)?.teamId
                 if (teamId != null) {
                     destructionBursts += DestructionBurstSpec(pos = transform.pos+impulse.pos, vel = motion.vel+impulse.vel, teamId = teamId)
@@ -51,21 +51,14 @@ object DamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 if (owner != null && !playersToRespawn.contains(owner)) {
                     playersToRespawn += owner
                 }
-
-                builder.addAudioEvent(CrashImpactAudioEvent(
-                    entityId = entityId,
-                    pos = transform.pos,
-                    damageRaw = damage.next.raw.toInt(),
-                    destroyed = true,
-                ))
-            } else {
-                builder.addAudioEvent(CrashImpactAudioEvent(
-                    entityId = entityId,
-                    pos = transform.pos,
-                    damageRaw = damage.next.raw.toInt(),
-                    destroyed = false,
-                ))
             }
+
+            builder.emit(CrashImpactAudioEvent(
+                entityId = entityId,
+                pos = transform.pos,
+                damageRaw = damage.next.raw.toInt(),
+                destroyed = destroyed,
+            ))
 
             builder.update<DamageComponent>(entityId) { DamageComponent(total, damage.next) }
         }

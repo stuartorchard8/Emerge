@@ -34,8 +34,11 @@ typealias PhysicsBuilder = EcsBuilder<PhysicsState>
 
 /**
  * Constructs a [PhysicsBuilder] wired up with lenses over [PhysicsState], and eagerly
- * registers [PhysicsFrameScratch] so that frame-scoped collections like [contacts] and
- * [audioEvents] are reset every frame even if no system reads or writes them.
+ * registers [PhysicsFrameScratch] so that frame-scoped collections like [contacts] are
+ * reset every frame even if no system reads or writes them. Audio events live in the
+ * generic [EcsBuilder] event stream and are folded into the snapshot by the scratch
+ * finalizer, so any system may [EcsBuilder.emit] a [CrashImpactAudioEvent] without
+ * needing to coordinate with a designated "audio producer".
  */
 @Suppress("FunctionName")
 fun PhysicsBuilder(initial: PhysicsState): PhysicsBuilder {
@@ -50,33 +53,34 @@ fun PhysicsBuilder(initial: PhysicsState): PhysicsBuilder {
 }
 
 /**
- * Per-frame physics state carried through the builder. Fields come in three flavours:
+ * Per-frame physics state carried through the builder. Fields come in two flavours:
  *
- *  - **Typed phase outputs:** [contacts] is written once by its producing phase (currently
- *    [org.emerge.sim.core.physics.systems.ContactSystem] in `contactDetect`) via
- *    [setContacts], and read as an immutable [List] by subsequent phases. Because the
- *    handoff is read-only from the producer's perspective as soon as the phase ends,
- *    downstream systems are safe to share it across threads.
- *
- *  - **Frame-scoped accumulators:** [audioEvents] is a mutable list appended to by a
- *    single writer within a phase, and published wholesale into the snapshot on
- *    [EcsBuilder.build]. Will become a typed phase output once we split out the
- *    producer (currently [org.emerge.sim.core.physics.systems.CrashSystem]).
+ *  - **Typed phase outputs:** [contacts] is written once by its producing phase via
+ *    [setContacts] and read as an immutable [List] by subsequent phases. The handoff
+ *    is read-only once the producing phase ends, so downstream systems are safe to
+ *    share it across threads in a parallel executor.
  *
  *  - **Persistent:** [pendingRespawns] and [randomSeed] are seeded from the initial
  *    snapshot, mutated in place by systems, and written back into the new snapshot.
+ *
+ * Audio events are NOT on this scratch — they are emitted via [EcsBuilder.emit] on the
+ * generic event stream and folded into [PhysicsState.crashImpactAudioEvents] by the
+ * [physicsScratch] finalizer. Any system may emit events without coordinating with a
+ * single producer.
  *
  * Finalizer also calls [PhysicsState.rebuildIndexes] so the derived `playerEntities` map
  * always reflects the authoritative [PlayerOwnedComponent] table.
  */
 class PhysicsFrameScratch(initial: PhysicsState) {
     /**
-     * Contacts detected this frame. Set by the contactDetect phase's producer and
-     * read by contactResponse. Starts empty each frame; replaced wholesale — never
-     * appended to after first write — which keeps downstream readers race-free.
+     * Contacts detected this frame. Seeded from [initial] so that a builder forked
+     * mid-frame (via [EcsBuilder.fork][org.emerge.sim.core.ecs.fork]) inherits the
+     * parent's current contact list automatically; for a normal start-of-frame
+     * builder this is just last-frame's published contacts, which the contactDetect
+     * producer overwrites wholesale before any downstream system reads them.
      */
-    var contacts: List<Contact> = emptyList()
-    val audioEvents: MutableList<CrashImpactAudioEvent> = mutableListOf()
+    var contacts: List<Contact> = initial.contacts
+
     val pendingRespawns: MutableMap<PlayerId, PlayerRespawnState> =
         LinkedHashMap(initial.pendingRespawns)
     var randomSeed: Long = initial.randomSeed
@@ -86,17 +90,20 @@ class PhysicsFrameScratch(initial: PhysicsState) {
  * Returns (creating on first call) the physics frame scratch, registering its finalizer
  * with the builder at the same time. Internal: public surface is the extensions below.
  */
-internal fun PhysicsBuilder.physicsScratch(): PhysicsFrameScratch = scratch(
-    factory = { init -> PhysicsFrameScratch(init) },
-    finalize = { scratch ->
-        copy(
-            contacts = scratch.contacts,
-            crashImpactAudioEvents = scratch.audioEvents.toList(),
-            pendingRespawns = scratch.pendingRespawns.toMap(),
-            randomSeed = scratch.randomSeed,
-        ).rebuildIndexes()
-    },
-)
+internal fun PhysicsBuilder.physicsScratch(): PhysicsFrameScratch {
+    val builder = this
+    return scratch(
+        factory = { init -> PhysicsFrameScratch(init) },
+        finalize = { scratch ->
+            copy(
+                contacts = scratch.contacts,
+                crashImpactAudioEvents = builder.events<CrashImpactAudioEvent>(),
+                pendingRespawns = scratch.pendingRespawns.toMap(),
+                randomSeed = scratch.randomSeed,
+            ).rebuildIndexes()
+        },
+    )
+}
 
 // --- Typed phase outputs -------------------------------------------------
 
@@ -116,14 +123,11 @@ fun PhysicsBuilder.setContacts(contacts: List<Contact>) {
     physicsScratch().contacts = contacts
 }
 
-// --- Frame-scoped accumulators -------------------------------------------
-
-val PhysicsBuilder.audioEvents: MutableList<CrashImpactAudioEvent>
-    get() = physicsScratch().audioEvents
-
-fun PhysicsBuilder.addAudioEvent(event: CrashImpactAudioEvent) {
-    physicsScratch().audioEvents.add(event)
-}
+// --- Audio events --------------------------------------------------------
+//
+// Emitted via [EcsBuilder.emit] on the generic event stream and read via
+// [EcsBuilder.events]. The [physicsScratch] finalizer folds the accumulated stream
+// into [PhysicsState.crashImpactAudioEvents] at build time.
 
 // --- Deterministic PRNG --------------------------------------------------
 
