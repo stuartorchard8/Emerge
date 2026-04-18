@@ -5,6 +5,7 @@ package org.emerge.sim.core.physics.systems
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.BypassesStagedView
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
@@ -32,7 +33,7 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * [org.emerge.sim.core.physics.model.queueRespawn]); this system is only responsible
  * for draining the queue.
  */
-object RespawnSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
+object RespawnSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     override fun update(
         cfg: PhysicsConfig,
         builder: PhysicsBuilder,

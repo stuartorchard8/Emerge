@@ -5,6 +5,7 @@ package org.emerge.sim.core.physics.systems
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.BypassesStagedView
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -18,7 +19,7 @@ import org.emerge.sim.core.physics.primitives.Norm
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
 
-object ShipThrustParticleSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
+object ShipThrustParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     override fun update(
         cfg: PhysicsConfig,
         builder: PhysicsBuilder,

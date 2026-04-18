@@ -2,6 +2,7 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -18,7 +19,7 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * Spawns exhaust particles behind thrusting drockets, mirroring
  * the engine's ShipThrustParticleSystem but driven by DrocketStateComponent.
  */
-object DrocketParticleSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
+object DrocketParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
     override fun update(
         cfg: PhysicsConfig,

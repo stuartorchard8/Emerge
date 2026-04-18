@@ -2,6 +2,7 @@ package org.emerge.sim.core.physics.systems
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -12,7 +13,7 @@ import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import kotlin.collections.set
 
-object IntegrationSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
+object IntegrationSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     override fun update(
         cfg: PhysicsConfig,
         builder: PhysicsBuilder,

@@ -2,8 +2,9 @@ package org.emerge.sim.core.physics
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
-import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.ecs.EcsSystems
+import org.emerge.sim.core.ecs.Phase
+import org.emerge.sim.core.ecs.Pipeline
+import org.emerge.sim.core.ecs.runSequential
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
@@ -13,13 +14,16 @@ import org.emerge.sim.core.physics.model.setImpulses
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.systems.*
 
+/**
+ * Reducer used by thin clients that receive impulses over the wire rather than computing
+ * them locally. The force-gather, contact and attachment phases are skipped entirely;
+ * only lifecycle, effects, and integration run locally.
+ */
 class NoImpulsePhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
-    private val systems: List<EcsSystem<PhysicsConfig, PhysicsInput>> = listOf(
-        RespawnSystem,
-        DamageSystem,
-        ShipThrustParticleSystem,
-        ParticleSystem,
-        IntegrationSystem,
+    private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
+        Phase("lifecycle", RespawnSystem, DamageSystem),
+        Phase("effects", ShipThrustParticleSystem, ParticleSystem),
+        Phase("integrate", IntegrationSystem),
     )
 
     override fun reduce(
@@ -28,7 +32,7 @@ class NoImpulsePhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsI
         inputs: Map<PlayerId, PhysicsInput>,
     ): PhysicsState {
         val builder = PhysicsBuilder(state)
-        EcsSystems.runAll(cfg, builder, inputs, systems)
+        runSequential(cfg, builder, inputs, pipeline)
         return builder.build()
     }
 

@@ -2,13 +2,14 @@ package org.emerge.sim.core.physics.systems
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.ParticleComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import kotlin.collections.set
 
-object ParticleSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
+object ParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     override fun update(
         cfg: PhysicsConfig,
         builder: PhysicsBuilder,

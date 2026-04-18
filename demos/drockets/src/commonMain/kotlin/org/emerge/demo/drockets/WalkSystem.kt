@@ -2,6 +2,7 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
@@ -18,7 +19,7 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * At 60 tps with maxSpeed=300, planet.radius=10000: ≈ 0.0005 rad/tick
  * In Emerge Coord space: 0.0005/π * Int.MAX_VALUE ≈ 341,782
  */
-object WalkSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
+object WalkSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
     override fun update(
         cfg: PhysicsConfig,

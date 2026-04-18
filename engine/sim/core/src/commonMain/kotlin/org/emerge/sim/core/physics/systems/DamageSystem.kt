@@ -3,6 +3,7 @@ package org.emerge.sim.core.physics.systems
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.model.CrashImpactAudioEvent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
@@ -14,7 +15,7 @@ import org.emerge.sim.core.physics.model.spawnParticle
 import org.emerge.sim.core.physics.primitives.*
 
 
-object DamageSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
+object DamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     private const val DESTRUCTION_BURST_PARTICLE_COUNT = 50
     private val DESTRUCTION_BURST_PARTICLE_RADIUS = Frac(1, 1536)
     private val DESTRUCTION_BURST_BASE_SPEED = Frac(1, 896)

@@ -2,6 +2,7 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
@@ -14,7 +15,7 @@ import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
-object DrocketLandingSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
+object DrocketLandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     override fun update(
         cfg: PhysicsConfig,
         builder: PhysicsBuilder,

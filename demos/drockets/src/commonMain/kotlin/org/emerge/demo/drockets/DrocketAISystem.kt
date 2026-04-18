@@ -3,6 +3,7 @@ package org.emerge.demo.drockets
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -22,7 +23,7 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * - Fuel: 1.4 seconds (84 ticks)
  * - Thrust force: 12000 * impulse / delta (mapped to fixed-point impulse per tick)
  */
-object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsInput> {
+object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
     override fun update(
         cfg: PhysicsConfig,

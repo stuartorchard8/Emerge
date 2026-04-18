@@ -2,8 +2,9 @@ package org.emerge.sim.core.physics
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
-import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.ecs.EcsSystems
+import org.emerge.sim.core.ecs.Phase
+import org.emerge.sim.core.ecs.Pipeline
+import org.emerge.sim.core.ecs.runSequential
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
@@ -12,22 +13,26 @@ import org.emerge.sim.core.physics.model.setImpulses
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.systems.*
 
+/**
+ * Reducer for the main physics demo.
+ *
+ * The pipeline is declared as an ordered list of named phases. Phase boundaries document
+ * where state produced by one group of systems is consumed by the next (e.g. contacts are
+ * produced in `contactDetect` and consumed in `contactResponse`). A future parallel
+ * executor will dispatch systems within a phase concurrently; today everything runs
+ * sequentially via [runSequential] and system ordering within each phase matches the
+ * pre-refactor pipeline exactly.
+ */
 class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
-    private val systems: List<EcsSystem<PhysicsConfig, PhysicsInput>> = listOf(
-        ImpulseResetSystem,
-        ShipThrustSystem,
-        GravitySystem,
-        ForceFieldSystem,
-        ContactSystem,
-        CrashSystem,
-        BounceSystem,
-        LandingSystem,
-        AttachmentSystem,
-        RespawnSystem,
-        DamageSystem,
-        ShipThrustParticleSystem,
-        ParticleSystem,
-        IntegrationSystem,
+    private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
+        Phase("reset", ImpulseResetSystem),
+        Phase("forceGather", ShipThrustSystem, GravitySystem, ForceFieldSystem),
+        Phase("contactDetect", ContactSystem),
+        Phase("contactResponse", CrashSystem, BounceSystem, LandingSystem),
+        Phase("attachment", AttachmentSystem),
+        Phase("lifecycle", RespawnSystem, DamageSystem),
+        Phase("effects", ShipThrustParticleSystem, ParticleSystem),
+        Phase("integrate", IntegrationSystem),
     )
 
     override fun reduce(
@@ -36,7 +41,7 @@ class PhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
         inputs: Map<PlayerId, PhysicsInput>,
     ): PhysicsState {
         val builder = PhysicsBuilder(state)
-        EcsSystems.runAll(cfg, builder, inputs, systems)
+        runSequential(cfg, builder, inputs, pipeline)
         return builder.build()
     }
 

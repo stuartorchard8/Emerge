@@ -2,6 +2,7 @@ package org.emerge.sim.core.physics.systems
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -12,7 +13,7 @@ import org.emerge.sim.core.physics.primitives.Contact
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
 
-object ContactSystem : EcsSystem<PhysicsConfig, PhysicsInput> {
+object ContactSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     override fun update(
         cfg: PhysicsConfig,
         builder: PhysicsBuilder,
