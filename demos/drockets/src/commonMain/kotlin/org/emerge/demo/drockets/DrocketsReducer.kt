@@ -60,7 +60,7 @@ class DrocketsReducer(
     private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
         Phase("reset", ImpulseResetSystem),
         Phase("aiAndMotion", DrocketAISystem, WalkSystem),
-        Phase("forceGather", GravitySystem, AtmosphereDragSystem).isolated(),
+        Phase("forceGather", GravitySystem(executor), AtmosphereDragSystem).isolated(),
         Phase("contactDetect", ContactSystem(executor)),
         Phase("contactResponse", DrocketLandingSystem, BounceSystem).isolated(),
         Phase("attachment", AttachmentSystem),

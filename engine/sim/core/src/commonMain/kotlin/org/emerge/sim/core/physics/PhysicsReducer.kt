@@ -61,7 +61,7 @@ class PhysicsReducer(
 ) : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
         Phase("reset", ImpulseResetSystem),
-        Phase("forceGather", ShipThrustSystem, GravitySystem, ForceFieldSystem).isolated(),
+        Phase("forceGather", ShipThrustSystem, GravitySystem(executor), ForceFieldSystem).isolated(),
         Phase("contactDetect", ContactSystem(executor)),
         Phase("contactResponse", CrashSystem, BounceSystem, LandingSystem).isolated(),
         Phase("attachment", AttachmentSystem),
