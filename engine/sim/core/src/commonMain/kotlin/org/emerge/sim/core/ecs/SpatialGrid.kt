@@ -1,65 +1,86 @@
 package org.emerge.sim.core.ecs
 
 /**
- * Uniform 2D spatial hash keyed by raw `Long` world coordinates. Used to replace
- * O(n²) all-pairs sweeps with O(n·k) neighbour queries, where `k` is the average
- * occupancy of a 3×3 cell window around any body.
+ * Uniform 2D spatial hash over the full signed-Int coordinate torus. Used to
+ * replace O(n²) all-pairs sweeps with O(n·k) neighbour queries, where `k` is
+ * the average occupancy of a 3×3 cell window around any body.
  *
- * Usage pattern per tick:
- * ```
- * val grid = SpatialGrid(cellSize)
- * for (i in 0 until n) grid.insert(i, xRaw[i], yRaw[i])
- * for (i in 0 until n) grid.forEachNeighbour(xRaw[i], yRaw[i]) { j -> ... }
- * ```
+ * **Torus wrap.** The raw coordinate space is `Int` (2³²-periodic, matching
+ * `Coord.minus` which relies on two's-complement Int overflow for shortest-
+ * torus deltas). The grid tiles that full range with `2^numCellsLog2` cells
+ * per axis, each of width `2^cellSizeLog2`, with `cellSizeLog2 + numCellsLog2
+ * = 32` so cell indices wrap via simple bitmask AND. A pair of bodies whose
+ * centres are within `cellSize` of each other along the torus-shortest path
+ * always lands within each other's 3×3 cell window — including pairs that
+ * straddle the seam, which are looked up via the same `(cx + dx) and mask`
+ * wrap that `Int + Int` overflow would give for signed coordinates.
  *
- * **Cell size.** Must be `>= 2 * maxBodyRadius` in whatever units `xRaw`/`yRaw`
- * use, so that any contact pair's centres fall within the 3×3 cell window of
- * either body. Undersized cells silently miss pairs; oversized cells just cost
- * extra neighbour lookups.
+ * **Pick a cell size.** `cellSize` must be `>= 2 * maxBodyRadius` so every
+ * overlapping pair falls in a 3×3 window. Undersized cells silently miss
+ * pairs; oversized cells just cost extra neighbour lookups. Use
+ * [forMinCellSize] to round up to the nearest power of 2 automatically.
  *
- * **No torus wrap.** The current physics code subtracts raw `Long` positions
- * without wrapping, so pairs that would only touch across the torus seam are
- * not considered contacts under either the O(n²) sweep or this grid. Consistent
- * with existing behaviour; changing it is out of scope for broadphase.
+ * **Thread safety.** Build on one thread; then reads via [forEachNeighbour]
+ * are safe from multiple threads so long as no one mutates the grid
+ * concurrently. ContactSystem builds single-threaded before dispatching
+ * workers, satisfying this.
  *
- * **Thread safety.** Build on one thread; then reads from [forEachNeighbour]
- * are safe from multiple threads as long as no one mutates the grid concurrently.
- * ContactSystem builds the grid single-threaded before dispatching workers, so
- * this is already true there.
- *
- * **Determinism.** [insert] order is preserved per cell: entries within a cell
- * are returned in insertion order by [forEachNeighbour]. Neighbour cells are
- * visited in a fixed `(dy, dx)` raster order, so two runs with identical input
- * produce identical visit sequences.
+ * **Determinism.** Entries within a cell are stored and returned in insertion
+ * order. Neighbour cells are visited in a fixed `(dy, dx)` raster order, so
+ * two runs with identical input produce identical visit sequences.
  */
-class SpatialGrid(private val cellSize: Long) {
+class SpatialGrid @PublishedApi internal constructor(
+    @PublishedApi internal val cellSizeLog2: Int,
+    @PublishedApi internal val numCellsLog2: Int,
+) {
     init {
-        require(cellSize > 0) { "cellSize must be positive, was $cellSize" }
+        require(numCellsLog2 in MIN_NUM_CELLS_LOG2..MAX_NUM_CELLS_LOG2) {
+            "numCellsLog2=$numCellsLog2 outside [$MIN_NUM_CELLS_LOG2, $MAX_NUM_CELLS_LOG2]"
+        }
+        require(cellSizeLog2 in 0..31) {
+            "cellSizeLog2=$cellSizeLog2 outside [0, 31]"
+        }
     }
 
-    private val cells = HashMap<Long, IntList>()
+    @PublishedApi internal val mask: Int = (1 shl numCellsLog2) - 1
 
-    fun insert(index: Int, xRaw: Long, yRaw: Long) {
-        val cx = cellIndex(xRaw)
-        val cy = cellIndex(yRaw)
-        val key = packKey(cx, cy)
-        cells.getOrPut(key) { IntList() }.add(index)
+    /**
+     * Flat backing store, indexed by `(cy shl numCellsLog2) or cx` where
+     * `cx`, `cy` are already `and`-masked into `[0, 2^numCellsLog2)`.
+     * A flat array beats a `HashMap<Long, _>` here because the cell-index
+     * space is bounded and small (capped at 1M total cells), so every
+     * insert/query is a pair of bit ops plus one indexed array access.
+     */
+    @PublishedApi internal val cells: Array<IntList?> =
+        arrayOfNulls(1 shl (numCellsLog2 * 2))
+
+    fun insert(index: Int, xRaw: Int, yRaw: Int) {
+        val cx = (xRaw shr cellSizeLog2) and mask
+        val cy = (yRaw shr cellSizeLog2) and mask
+        val key = (cy shl numCellsLog2) or cx
+        val list = cells[key]
+        if (list == null) {
+            cells[key] = IntList().also { it.add(index) }
+        } else {
+            list.add(index)
+        }
     }
 
     /**
      * Calls [visit] once for every entity index previously inserted whose cell
-     * is within the 3×3 window around `(xRaw, yRaw)`'s cell. The invoking index
-     * itself is NOT filtered — callers typically skip self-pairs with an `idx > i`
-     * or `idx != i` test.
+     * is within the 3×3 window around `(xRaw, yRaw)`'s cell, with neighbour
+     * cell indices wrapped into the torus. The invoking index itself is NOT
+     * filtered — callers typically skip self-pairs with an `idx > i` or
+     * `idx != i` test.
      */
-    inline fun forEachNeighbour(xRaw: Long, yRaw: Long, visit: (idx: Int) -> Unit) {
-        val cx = cellIndex(xRaw)
-        val cy = cellIndex(yRaw)
+    inline fun forEachNeighbour(xRaw: Int, yRaw: Int, visit: (idx: Int) -> Unit) {
+        val cx = (xRaw shr cellSizeLog2) and mask
+        val cy = (yRaw shr cellSizeLog2) and mask
         for (dy in -1..1) {
-            val ny = cy + dy
+            val ny = (cy + dy) and mask
             for (dx in -1..1) {
-                val nx = cx + dx
-                val list = cellAt(nx, ny) ?: continue
+                val nx = (cx + dx) and mask
+                val list = cells[(ny shl numCellsLog2) or nx] ?: continue
                 val size = list.size
                 var k = 0
                 while (k < size) {
@@ -70,16 +91,45 @@ class SpatialGrid(private val cellSize: Long) {
         }
     }
 
-    @PublishedApi
-    internal fun cellAt(cx: Int, cy: Int): IntList? = cells[packKey(cx, cy)]
+    companion object {
+        /**
+         * Minimum cells-per-axis of 4 (`2^2`). Any fewer and the 3×3 neighbour
+         * window wraps onto the same cell twice (e.g. cell 0 with 2 cells per
+         * axis has neighbours `{-1 and 1, 0, 1 and 1} = {1, 0, 1}`), which
+         * would double-visit pairs. 4 per axis gives `{3, 0, 1}` — distinct.
+         */
+        private const val MIN_NUM_CELLS_LOG2 = 2
 
-    @PublishedApi
-    internal fun cellIndex(raw: Long): Int {
-        // floorDiv keeps cell indexing contiguous across negative coordinates.
-        return raw.floorDiv(cellSize).toInt()
+        /**
+         * Cap cells-per-axis at `2^10 = 1024` (1M cells total, ~8MB on JVM
+         * for the reference array). Sims with `maxRadius` below `2^22` raw
+         * units end up with coarser cells than strictly optimal, but stay
+         * correct. No realistic physics scenario in this project hits the cap
+         * — drockets' planets force `maxRadius ≈ 2^28`, giving 8 per axis.
+         */
+        private const val MAX_NUM_CELLS_LOG2 = 10
+
+        /**
+         * Build a grid whose cell size is the smallest power-of-2 at least
+         * [minCellSize], and whose axis-cell count tiles the full 2³²
+         * coordinate range exactly. Cells-per-axis is clamped to
+         * `[2^MIN_NUM_CELLS_LOG2, 2^MAX_NUM_CELLS_LOG2]`; when
+         * [minCellSize] is so large that fewer than 4 cells would fit, returns
+         * `null` and the caller must fall back to an O(n²) sweep.
+         */
+        fun forMinCellSize(minCellSize: Long): SpatialGrid? {
+            require(minCellSize > 0) { "minCellSize must be positive, was $minCellSize" }
+            var cellSizeLog2 = 0
+            while (cellSizeLog2 < 32 && (1L shl cellSizeLog2) < minCellSize) {
+                cellSizeLog2 += 1
+            }
+            var numCellsLog2 = 32 - cellSizeLog2
+            if (numCellsLog2 < MIN_NUM_CELLS_LOG2) return null
+            if (numCellsLog2 > MAX_NUM_CELLS_LOG2) {
+                numCellsLog2 = MAX_NUM_CELLS_LOG2
+                cellSizeLog2 = 32 - numCellsLog2
+            }
+            return SpatialGrid(cellSizeLog2, numCellsLog2)
+        }
     }
-
-    @PublishedApi
-    internal fun packKey(cx: Int, cy: Int): Long =
-        (cx.toLong() and 0xFFFFFFFFL) or (cy.toLong() shl 32)
 }
