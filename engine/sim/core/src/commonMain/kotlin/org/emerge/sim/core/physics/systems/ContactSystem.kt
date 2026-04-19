@@ -7,6 +7,7 @@ import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.SpatialGrid
 import org.emerge.sim.core.ecs.triangularChunkBounds
 import org.emerge.sim.core.physics.components.ColliderComponent
+import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
@@ -51,6 +52,16 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * realistic physics scenario hits this — a body whose radius exceeds 25 %
  * of the entire world is already pathological.
  *
+ * **Attached bodies skip contact.** Entities carrying a
+ * [LandingAttachmentComponent] are held rigidly to their parent by
+ * [LandingSystem][org.emerge.sim.core.physics.systems.LandingSystem] /
+ * [DrocketLandingSystem][org.emerge.demo.drockets.DrocketLandingSystem];
+ * any collision impulse produced for them is overwritten before render.
+ * Excluding them up front saves the contact compute and the downstream
+ * bounce/crash passes, and also fixes the visual bug where piles of
+ * airborne drockets bounce on top of already-landed ones with no way to
+ * reach the surface themselves.
+ *
  * **Parallelism.** With [executor] present and `n >= [PARALLEL_THRESHOLD]`, the
  * `i`-loop is partitioned across worker threads. Reads go through frozen parent
  * state / arrays populated on the main thread; writes into bucket-local lists.
@@ -83,6 +94,10 @@ class ContactSystem(
         var validCount = 0
         for (i in 0 until n) {
             val id = ids[i]
+            // Attached bodies are rigidly bound to a parent; their collision
+            // impulse is overridden by the attachment system anyway, and
+            // letting airborne bodies pass through them is desirable.
+            if (builder.getComponent<LandingAttachmentComponent>(id) != null) continue
             val t = builder.getComponent<TransformComponent>(id) ?: continue
             val c = builder.getComponent<ColliderComponent>(id) ?: continue
             transforms[i] = t

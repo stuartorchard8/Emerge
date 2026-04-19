@@ -4,7 +4,6 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.ecs.ParallelExecutor
-import org.emerge.sim.core.ecs.triangularChunkBounds
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
@@ -19,22 +18,32 @@ import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
 /**
- * Pairwise inverse-law gravity between asteroid/planet bodies and ship bodies.
+ * Inverse-law gravity between asteroid/planet bodies (shape == CIRCLE) and
+ * ship bodies (shape != CIRCLE). Ship↔ship and asteroid↔asteroid pairs do
+ * not gravitate; [LandingAttachmentComponent]-bearing entities are also
+ * excluded (an attached drocket is effectively rigid with its parent and
+ * must not induce or receive impulses).
  *
- * This is an O(n²) all-pairs sweep — at entity counts in the hundreds it's the
- * single largest slice of [forceGather][org.emerge.sim.core.physics.PhysicsReducer]
- * wall time. Pass an [executor] to partition the outer i-loop across worker threads;
- * each worker accumulates per-entity impulse deltas in a local map and the main
- * thread drains them via [PhysicsBuilder.update] at the end.
+ * **Why not all-pairs.** The previous implementation iterated O(n²) pairs
+ * and filtered out same-shape and attached pairs after fetching five
+ * components per side; at n=500 that's ~125k wasted component lookups per
+ * tick. Partitioning up front into `sources` (asteroids) and `ships`
+ * collapses the outer/inner loops to `sources × ships`, which at drockets'
+ * typical density (1 planet, a few hundred ships) is two orders of
+ * magnitude less work. All component reads for each entity happen exactly
+ * once per tick, cached into the partition arrays.
  *
- * Bit-identical output to the sequential path:
- *  - [ImpulseComponent.plus] is commutative and associative on its three additive
- *    fields, so summing a pair's contribution in any order yields the same result.
- *  - Bucket merge iterates chunks in registration order and each chunk's map in
- *    insertion order, so the final `update` sequence is deterministic.
+ * **Determinism.** [ImpulseComponent.plus] is commutative and associative,
+ * so accumulating a ship's impulses from its sources (or a source's
+ * impulses from its ships) in any order produces identical totals. The
+ * [applyDeltas] step iterates the merged delta map in insertion order so
+ * write-log sequences are stable tick-to-tick.
  *
- * Write-logging still sees one `update` per (entity, frame) rather than one per
- * (pair, frame), which is a minor but harmless change to replay length.
+ * **Parallelism.** With [executor] present and `ships.size >=
+ * [PARALLEL_THRESHOLD]`, the ship list is sliced into contiguous chunks;
+ * each worker accumulates ship-local impulses and its slice's contribution
+ * to every source impulse into a local map. Main thread merges maps in
+ * chunk order.
  */
 class GravitySystem(
     private val executor: ParallelExecutor? = null,
@@ -50,41 +59,42 @@ class GravitySystem(
         val n = ids.size
         if (n < 2) return
 
-        if (executor != null && n >= PARALLEL_THRESHOLD) {
-            updateParallel(cfg, builder, ids, executor)
-        } else {
-            updateSequential(cfg, builder, ids)
-        }
-    }
+        val partition = partition(builder, ids) ?: return
 
-    private fun updateSequential(
-        cfg: PhysicsConfig,
-        builder: PhysicsBuilder,
-        ids: List<EntityId>,
-    ) {
-        val deltas = LinkedHashMap<EntityId, ImpulseComponent>()
-        collectDeltas(cfg, builder, ids, iStart = 0, iEnd = ids.size, out = deltas)
+        val deltas = if (executor != null && partition.ships.size >= PARALLEL_THRESHOLD) {
+            computeParallel(cfg, partition, executor)
+        } else {
+            computeSequential(cfg, partition)
+        }
         applyDeltas(builder, deltas)
     }
 
-    private fun updateParallel(
+    private fun computeSequential(cfg: PhysicsConfig, p: Partition): Map<EntityId, ImpulseComponent> {
+        val out = LinkedHashMap<EntityId, ImpulseComponent>()
+        collectDeltas(cfg, p, shipStart = 0, shipEnd = p.ships.size, out)
+        return out
+    }
+
+    private fun computeParallel(
         cfg: PhysicsConfig,
-        builder: PhysicsBuilder,
-        ids: List<EntityId>,
+        p: Partition,
         executor: ParallelExecutor,
-    ) {
-        val n = ids.size
-        val chunkCount = (executor.parallelism * 4).coerceAtMost(n).coerceAtLeast(1)
-        val bounds = triangularChunkBounds(n, chunkCount)
+    ): Map<EntityId, ImpulseComponent> {
+        val shipCount = p.ships.size
+        val chunkCount = executor.parallelism.coerceAtMost(shipCount).coerceAtLeast(1)
+        // Uniform ship slices: each ship does the same work (one loop over
+        // sources), so load balancing is trivial — no triangular weighting
+        // needed.
+        val step = (shipCount + chunkCount - 1) / chunkCount
         val buckets = arrayOfNulls<LinkedHashMap<EntityId, ImpulseComponent>>(chunkCount)
         val tasks = ArrayList<() -> Unit>(chunkCount)
         for (c in 0 until chunkCount) {
-            val iStart = bounds[c]
-            val iEnd = bounds[c + 1]
-            if (iStart >= iEnd) continue
+            val shipStart = c * step
+            val shipEnd = ((c + 1) * step).coerceAtMost(shipCount)
+            if (shipStart >= shipEnd) continue
             tasks += {
                 val local = LinkedHashMap<EntityId, ImpulseComponent>()
-                collectDeltas(cfg, builder, ids, iStart, iEnd, local)
+                collectDeltas(cfg, p, shipStart, shipEnd, local)
                 buckets[c] = local
             }
         }
@@ -96,7 +106,7 @@ class GravitySystem(
                 merged[id] = delta + merged[id]
             }
         }
-        applyDeltas(builder, merged)
+        return merged
     }
 
     private fun applyDeltas(
@@ -108,61 +118,46 @@ class GravitySystem(
         }
     }
 
-    /**
-     * Accumulates gravitational impulse contributions from all pairs (i, j) with
-     * `iStart <= i < iEnd` and `i < j < ids.size`. Reads go through the builder's
-     * frozen view; no writes happen here — callers drain [out] via [applyDeltas].
-     */
     private fun collectDeltas(
         cfg: PhysicsConfig,
-        builder: PhysicsBuilder,
-        ids: List<EntityId>,
-        iStart: Int,
-        iEnd: Int,
+        p: Partition,
+        shipStart: Int,
+        shipEnd: Int,
         out: MutableMap<EntityId, ImpulseComponent>,
     ) {
-        val n = ids.size
-        for (i in iStart until iEnd) {
-            val aId = ids[i]
-            if (builder.getComponent<LandingAttachmentComponent>(aId) != null) continue
-            val aTransform = builder.getComponent<TransformComponent>(aId) ?: continue
-            val aMaterial = builder.getComponent<MaterialComponent>(aId) ?: continue
-            val aCollider = builder.getComponent<ColliderComponent>(aId) ?: continue
-            val aShape = builder.getComponent<RenderShapeComponent>(aId)?.shape ?: continue
-            val aIsAsteroid = aShape == BodyShape.CIRCLE
+        val sourceCount = p.sources.size
+        for (s in shipStart until shipEnd) {
+            val shipId = p.ships[s]
+            val shipTransform = p.shipTransforms[s]
+            val shipMaterial = p.shipMaterials[s]
+            val shipRadius = p.shipRadii[s]
+            for (k in 0 until sourceCount) {
+                val sourceId = p.sources[k]
+                val sourceTransform = p.sourceTransforms[k]
+                val sourceMaterial = p.sourceMaterials[k]
+                val sourceRadius = p.sourceRadii[k]
 
-            for (j in i + 1 until n) {
-                val bId = ids[j]
-                if (builder.getComponent<LandingAttachmentComponent>(bId) != null) continue
-
-                val bTransform = builder.getComponent<TransformComponent>(bId) ?: continue
-                val bMaterial = builder.getComponent<MaterialComponent>(bId) ?: continue
-                val bCollider = builder.getComponent<ColliderComponent>(bId) ?: continue
-                val bShape = builder.getComponent<RenderShapeComponent>(bId)?.shape ?: continue
-                val bIsAsteroid = bShape == BodyShape.CIRCLE
-                if (aIsAsteroid == bIsAsteroid) continue
-
-                val delta = aTransform.pos - bTransform.pos
+                val delta = shipTransform.pos - sourceTransform.pos
                 if (delta.lenSq.raw == 0L) continue
-                val minDist = aCollider.radius + bCollider.radius
+                val minDist = shipRadius + sourceRadius
                 val dist = if (delta > minDist) delta.lenSq else minDist
 
-                val accelTowardB = gravityAcceleration(
-                    sourceMass = bMaterial.mass,
+                val accelTowardSource = gravityAcceleration(
+                    sourceMass = sourceMaterial.mass,
                     dist = dist,
                     gravityNumerator = cfg.gravityNumerator,
                 )
-                val accelTowardA = gravityAcceleration(
-                    sourceMass = aMaterial.mass,
+                val accelTowardShip = gravityAcceleration(
+                    sourceMass = shipMaterial.mass,
                     dist = dist,
                     gravityNumerator = cfg.gravityNumerator,
                 )
 
                 val normal = delta.norm
-                val aImpulse = ImpulseComponent(vel = -(normal * accelTowardB))
-                val bImpulse = ImpulseComponent(vel = (normal * accelTowardA))
-                out[aId] = aImpulse + out[aId]
-                out[bId] = bImpulse + out[bId]
+                val shipImpulse = ImpulseComponent(vel = -(normal * accelTowardSource))
+                val sourceImpulse = ImpulseComponent(vel = (normal * accelTowardShip))
+                out[shipId] = shipImpulse + out[shipId]
+                out[sourceId] = sourceImpulse + out[sourceId]
             }
         }
     }
@@ -183,8 +178,72 @@ class GravitySystem(
         return n * Frac(sourceMass.toLong()) * gravityNumerator
     }
 
+    /**
+     * Snapshot of the gravity-relevant entities for one tick. `sources` are
+     * asteroids/planets (CIRCLE); `ships` are everything else. Each list is
+     * parallel with its component arrays so we never re-hit the component
+     * HashMap during the main compute.
+     */
+    private class Partition(
+        val sources: List<EntityId>,
+        val sourceTransforms: Array<TransformComponent>,
+        val sourceMaterials: Array<MaterialComponent>,
+        val sourceRadii: Array<Frac>,
+        val ships: List<EntityId>,
+        val shipTransforms: Array<TransformComponent>,
+        val shipMaterials: Array<MaterialComponent>,
+        val shipRadii: Array<Frac>,
+    )
+
+    private fun partition(builder: PhysicsBuilder, ids: List<EntityId>): Partition? {
+        val sources = ArrayList<EntityId>()
+        val sourceTransforms = ArrayList<TransformComponent>()
+        val sourceMaterials = ArrayList<MaterialComponent>()
+        val sourceRadii = ArrayList<Frac>()
+        val ships = ArrayList<EntityId>()
+        val shipTransforms = ArrayList<TransformComponent>()
+        val shipMaterials = ArrayList<MaterialComponent>()
+        val shipRadii = ArrayList<Frac>()
+
+        for (id in ids) {
+            if (builder.getComponent<LandingAttachmentComponent>(id) != null) continue
+            val transform = builder.getComponent<TransformComponent>(id) ?: continue
+            val material = builder.getComponent<MaterialComponent>(id) ?: continue
+            val collider = builder.getComponent<ColliderComponent>(id) ?: continue
+            val shape = builder.getComponent<RenderShapeComponent>(id)?.shape ?: continue
+
+            if (shape == BodyShape.CIRCLE) {
+                sources.add(id)
+                sourceTransforms.add(transform)
+                sourceMaterials.add(material)
+                sourceRadii.add(collider.radius)
+            } else {
+                ships.add(id)
+                shipTransforms.add(transform)
+                shipMaterials.add(material)
+                shipRadii.add(collider.radius)
+            }
+        }
+
+        if (sources.isEmpty() || ships.isEmpty()) return null
+        return Partition(
+            sources = sources,
+            sourceTransforms = sourceTransforms.toTypedArray(),
+            sourceMaterials = sourceMaterials.toTypedArray(),
+            sourceRadii = sourceRadii.toTypedArray(),
+            ships = ships,
+            shipTransforms = shipTransforms.toTypedArray(),
+            shipMaterials = shipMaterials.toTypedArray(),
+            shipRadii = shipRadii.toTypedArray(),
+        )
+    }
+
     companion object {
-        /** Below this entity count the dispatch overhead dominates; stay sequential. */
+        /**
+         * Below this ship count the fork-join dispatch overhead dominates the
+         * actual pair math (the work per ship is tiny: one iteration per
+         * source).
+         */
         private const val PARALLEL_THRESHOLD = 64
     }
 }
