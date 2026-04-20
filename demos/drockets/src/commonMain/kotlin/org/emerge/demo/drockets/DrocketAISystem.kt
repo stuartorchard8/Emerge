@@ -3,12 +3,12 @@ package org.emerge.demo.drockets
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.nextRandomInt
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Norm
@@ -121,18 +121,19 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             drocketStates[entityId] = newState
             if (oldState == null || oldState.phase != newState.phase) {
                 val animIndex = when (newState.phase) {
-                    DrocketPhase.WALKING -> ANIM_WALK
-                    DrocketPhase.CHARGING -> ANIM_IDLE
+                    DrocketPhase.WALKING -> ANIM_WALK_RIGHT
+                    DrocketPhase.CHARGING -> ANIM_IDLE_RIGHT
                     DrocketPhase.THRUSTING -> ANIM_FIRE
-                    DrocketPhase.FLYING -> ANIM_IDLE
+                    DrocketPhase.FLYING -> ANIM_IDLE_RIGHT
                 }
                 SpriteAnimationSystem.setAnimation(
-                    animationStates, entityId, animIndex,
+                    animStates = animationStates,
+                    entityId = entityId,
+                    sheet = SpriteSheet.DROCKET,
+                    animationIndex = animIndex,
                 )
             }
         }
-
-        SpriteAnimationSystem.tick(animationStates, DROCKET_SPRITE_SHEET)
 
         for ((entityId, impulse) in impulses) {
             builder.update<ImpulseComponent>(entityId) { impulse + it }

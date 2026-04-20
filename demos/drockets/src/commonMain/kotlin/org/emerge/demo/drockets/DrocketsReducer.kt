@@ -2,13 +2,7 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
-import org.emerge.sim.core.ecs.ParallelExecutor
-import org.emerge.sim.core.ecs.Phase
-import org.emerge.sim.core.ecs.Pipeline
-import org.emerge.sim.core.ecs.PipelineProfiler
-import org.emerge.sim.core.ecs.isolated
-import org.emerge.sim.core.ecs.runParallel
-import org.emerge.sim.core.ecs.runSequential
+import org.emerge.sim.core.ecs.*
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
@@ -59,7 +53,7 @@ class DrocketsReducer(
 ) : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
         Phase("reset", ImpulseResetSystem),
-        Phase("aiAndMotion", DrocketAISystem, WalkSystem),
+        Phase("aiAndMotion", DrocketAISystem, DrocketWalkSystem, KnightAISystem, KnightWalkSystem, SpriteAnimationSystem),
         Phase("forceGather", GravitySystem(executor), AtmosphereDragSystem).isolated(),
         Phase("contactDetect", ContactSystem(executor)),
         Phase("contactResponse", DrocketLandingSystem, BounceSystem).isolated(),

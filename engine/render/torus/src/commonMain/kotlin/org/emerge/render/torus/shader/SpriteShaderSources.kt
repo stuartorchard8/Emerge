@@ -34,7 +34,9 @@ object SpriteShaderSources {
             }
             gl_Position = m * vec4(phasedPos*vec2(iUvW, iUvH), 0.0, 1.0);
             // Map local [-1,1] quad to UV space for the current animation frame
-            vec2 localUv = aPos * 0.5 + 0.5;
+            // Rotate aPos 90 degrees cw for up-as-forward
+            vec2 aPos90 = vec2(aPos.y, -aPos.x);
+            vec2 localUv = aPos90 * 0.5 + 0.5;
             vUv = vec2(iUvX, iUvY) + localUv * uFrameSize;
             vPrimaryId = iPrimaryId;
             vAlpha = iBodyAlpha;

@@ -2,11 +2,11 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -19,7 +19,7 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * At 60 tps with maxSpeed=300, planet.radius=10000: ≈ 0.0005 rad/tick
  * In Emerge Coord space: 0.0005/π * Int.MAX_VALUE ≈ 341,782
  */
-object WalkSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object DrocketWalkSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
     override fun update(
         cfg: PhysicsConfig,
@@ -57,7 +57,7 @@ object WalkSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     private fun walkStepForRadius(planetRadius: Frac): Frac {
         // Base step for the default planet radius (~Frac(100,4000) = Frac(1,40))
         // Walk speed is tuned so drockets visibly walk along the surface
-        val baseStep = Frac(1,1024 * 16)
+        val baseStep = DROCKET_RADIUS/16
         return baseStep / planetRadius.toCircumference()
     }
 }

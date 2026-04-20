@@ -5,12 +5,14 @@ import org.emerge.demo.drockets.DrocketsRenderer
 import org.emerge.render.torus.GPU
 import org.emerge.sim.core.physics.primitives.Vec2
 import org.lwjgl.glfw.GLFW.*
+import org.lwjgl.system.Configuration
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
 import kotlin.math.max
 
 object DrocketsSceneView {
     fun start() {
+        Configuration.STACK_SIZE.set(512); // Size in KB
         Thread {
             runGl()
         }.start()
@@ -23,13 +25,13 @@ object DrocketsSceneView {
         val dpiY = FloatArray(1)
         glfwGetWindowContentScale(window, dpiX, dpiY)
 
-        val spriteAtlasTextureId = DrocketsSpriteAtlas.load()
+        val drocketSpriteAtlasTextureId = DrocketsSpriteAtlas.load()
+        val knightSpriteAtlasTextureId = KnightSpriteAtlas.load()
 
         val renderer = DrocketsRenderer(
             contentScale = Vec2(dpiX[0], dpiY[0]),
-            spriteAtlasTextureId = spriteAtlasTextureId,
-            spriteAtlasColumns = 3,
-            spriteAtlasRows = 1,
+            drocketSpriteAtlasTextureId = drocketSpriteAtlasTextureId,
+            knightSpriteAtlasTextureId = knightSpriteAtlasTextureId,
         )
 
         val controller = DrocketsController()
@@ -45,7 +47,8 @@ object DrocketsSceneView {
             glfwSwapBuffers(window)
         }
 
-        GPU.deleteTextures(spriteAtlasTextureId)
+        GPU.deleteTextures(drocketSpriteAtlasTextureId)
+        GPU.deleteTextures(knightSpriteAtlasTextureId)
         renderer.cleanup()
         glfwDestroyWindow(window)
         glfwTerminate()

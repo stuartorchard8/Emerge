@@ -8,7 +8,7 @@ import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.spawnBody
 import org.emerge.sim.core.physics.primitives.*
 
-fun createDrocketsInitialState(drocketCount: Int = DROCKET_COUNT): PhysicsState {
+fun createDrocketsInitialState(drocketCount: Int = DROCKET_COUNT, knightCount: Int = KNIGHT_COUNT): PhysicsState {
     val builder = PhysicsBuilder(PhysicsState())
 
     val planetId = builder.spawnBody(
@@ -25,9 +25,14 @@ fun createDrocketsInitialState(drocketCount: Int = DROCKET_COUNT): PhysicsState 
     )
     builder.update<PlanetComponent>(planetId) { PlanetComponent(seed = 42) }
 
+    for (i in 0 until knightCount) {
+        val teamId = TeamId(i)
+        val angle = Coord(i*2, drocketCount)
+        spawnKnightOnPlanet(builder, planetId, angle, teamId)
+    }
     for (i in 0 until drocketCount) {
         val teamId = TeamId(i)
-        val angle = Coord(i, drocketCount)
+        val angle = Coord(i*2, drocketCount)
         spawnDrocketOnPlanet(builder, planetId, angle, teamId)
     }
 
@@ -63,7 +68,46 @@ private fun spawnDrocketOnPlanet(
 
     builder.update<TeamComponent>(rocketId) { TeamComponent(teamId) }
     builder.update<MotionComponent>(rocketId) { MotionComponent(vel = Coord2.zero, angVel = Coord(0)) }
-    builder.update<LandingAttachmentComponent>(rocketId) {
+
+    builder.update<DrocketStateComponent>(rocketId) {
+        DrocketStateComponent(
+            phase = DrocketPhase.FLYING,
+            planetId = planetId,
+            walkDirection = if (teamId.value % 2 == 0) 1 else -1,
+        )
+    }
+}
+
+private fun spawnKnightOnPlanet(
+    builder: PhysicsBuilder,
+    planetId: EntityId,
+    angle: Coord,
+    teamId: TeamId,
+) {
+    val planetTransform = builder.getComponent<TransformComponent>(planetId) ?: return
+    val planetCollider = builder.getComponent<ColliderComponent>(planetId) ?: return
+
+    val localNormal = Norm.fromAngle(angle)
+    val relativePos = localNormal * (planetCollider.radius + KNIGHT_RADIUS)
+    val worldPos = planetTransform.pos + relativePos.rotateByAngle(planetTransform.ang)
+    val worldAng = Coord(planetTransform.ang.raw + angle.raw)
+
+    val entityId = builder.spawnBody(
+        playerId = null,
+        pos = worldPos,
+        vel = Coord2.zero,
+        ang = worldAng,
+        angVel = Coord(0),
+        mass = DROCKET_MASS,
+        radius = KNIGHT_RADIUS,
+        bounce = Frac(1, 2),
+        rough = Frac(1, 2),
+        shape = BodyShape.TRIANGLE,
+    )
+
+    builder.update<TeamComponent>(entityId) { TeamComponent(teamId) }
+    builder.update<MotionComponent>(entityId) { MotionComponent(vel = Coord2.zero, angVel = Coord(0)) }
+    builder.update<LandingAttachmentComponent>(entityId) {
         LandingAttachmentComponent(
             parentEntityId = planetId,
             relativePos = relativePos,
@@ -71,13 +115,11 @@ private fun spawnDrocketOnPlanet(
         )
     }
 
-    val walkTicks = 120 + (teamId.value * 137) % 480
-    builder.update<DrocketStateComponent>(rocketId) {
-        DrocketStateComponent(
-            phase = DrocketPhase.WALKING,
+    builder.update<KnightStateComponent>(entityId) {
+        KnightStateComponent(
+            phase = KnightPhase.IDLE,
             planetId = planetId,
             walkDirection = if (teamId.value % 2 == 0) 1 else -1,
-            ticksRemaining = walkTicks,
         )
     }
 }
@@ -85,5 +127,7 @@ private fun spawnDrocketOnPlanet(
 private val PLANET_RADIUS = Frac(1, 8)
 val PLANET_MASS = 500_000u
 val DROCKET_RADIUS = Frac(1, 2048)
+val KNIGHT_RADIUS = Frac(1, 2048)
 private val DROCKET_MASS = 5000u
-private const val DROCKET_COUNT = 20
+private const val DROCKET_COUNT = 300
+private const val KNIGHT_COUNT = 10

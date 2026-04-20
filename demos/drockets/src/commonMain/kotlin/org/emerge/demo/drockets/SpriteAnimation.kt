@@ -1,7 +1,5 @@
 package org.emerge.demo.drockets
 
-import org.emerge.sim.core.EntityId
-
 /**
  * Defines a sprite animation as a sequence of frames in a texture atlas grid.
  *
@@ -21,6 +19,7 @@ data class SpriteAnimationDef(
  * Per-entity animation state tracked alongside the simulation.
  */
 data class SpriteAnimationState(
+    val sheet: SpriteSheet,
     val animationIndex: Int = 0,
     val currentFrame: Int = 0,
     val tickCounter: Int = 0,
@@ -33,13 +32,40 @@ data class SpriteAnimationState(
  * @param totalRows Number of rows in the atlas
  * @param animations Available animations defined on this sheet
  */
-data class SpriteSheet(
+enum class SpriteSheet(
     val columnsPerRow: Int,
     val totalRows: Int,
     val frameWidths: Array<Int>,
     val frameHeights: Array<Int>,
     val animations: Array<SpriteAnimationDef>,
 ) {
+    DROCKET(
+        columnsPerRow = 3,
+        totalRows = 1,
+        frameWidths = arrayOf(16,16,16),
+        frameHeights = arrayOf(16,16,16),
+        animations = arrayOf(
+            SpriteAnimationDef("idle", frames = arrayOf(0), ticksPerFrame = 1),
+            SpriteAnimationDef("idle", frames = arrayOf(0), ticksPerFrame = 1),
+            SpriteAnimationDef("walk", frames = arrayOf(1, 0), ticksPerFrame = 15, loop = true),
+            SpriteAnimationDef("walk", frames = arrayOf(1, 0), ticksPerFrame = 15, loop = true),
+            SpriteAnimationDef("fire", frames = arrayOf(2), ticksPerFrame = 1),
+        ),
+    ),
+    KNIGHT(
+        columnsPerRow = 8,
+        totalRows = 11,
+        frameWidths = Array(8*11) { 32 },
+        frameHeights = Array(8*11) { 32 },
+        animations = arrayOf(
+            SpriteAnimationDef("idle_right", frames = arrayOf(0,1), ticksPerFrame = 24, loop = true),
+            SpriteAnimationDef("idle_left", frames = arrayOf(2,3), ticksPerFrame = 24, loop = true),
+            SpriteAnimationDef("walk_right", frames = arrayOf(8,9,10,11,12,13,14,15), ticksPerFrame = 8, loop = true),
+            SpriteAnimationDef("walk_left", frames = arrayOf(24,25,26,27,28,29,30,31), ticksPerFrame = 8, loop = true),
+        ),
+    ),
+    ;
+
     val frameSizeU: Float = 1f / columnsPerRow
     val frameSizeV: Float = 1f / totalRows
 
@@ -56,82 +82,9 @@ data class SpriteSheet(
     }
 }
 
-/**
- * Advances animation state by one tick, cycling frames according to the
- * active animation definition.
- */
-object SpriteAnimationSystem {
-    fun tick(
-        animStates: MutableMap<EntityId, SpriteAnimationState>,
-        sheet: SpriteSheet,
-    ) {
-        for ((entityId, state) in animStates) {
-            val anim = sheet.animations.getOrNull(state.animationIndex) ?: continue
-            val nextTick = state.tickCounter + 1
-            if (nextTick >= anim.ticksPerFrame) {
-                val nextFrame = state.currentFrame + 1
-                if (nextFrame >= anim.frames.size) {
-                    animStates[entityId] = if (anim.loop) {
-                        state.copy(currentFrame = 0, tickCounter = 0)
-                    } else {
-                        state.copy(currentFrame = anim.frames.size - 1, tickCounter = 0)
-                    }
-                } else {
-                    animStates[entityId] = state.copy(currentFrame = nextFrame, tickCounter = 0)
-                }
-            } else {
-                animStates[entityId] = state.copy(tickCounter = nextTick)
-            }
-        }
-    }
 
-    fun setAnimation(
-        animStates: MutableMap<EntityId, SpriteAnimationState>,
-        entityId: EntityId,
-        animationIndex: Int,
-    ) {
-        val current = animStates[entityId]
-        if (current == null || current.animationIndex != animationIndex) {
-            animStates[entityId] = SpriteAnimationState(
-                animationIndex = animationIndex,
-                currentFrame = 0,
-                tickCounter = 0,
-            )
-        }
-    }
-
-    fun currentAtlasFrame(
-        state: SpriteAnimationState,
-        sheet: SpriteSheet,
-    ): Int {
-        val anim = sheet.animations.getOrNull(state.animationIndex) ?: return 0
-        return anim.frames[state.currentFrame]
-    }
-}
-
-/**
- * Drocket sprite sheet definition matching the 3-frame atlas packed from the Godot PNGs:
- * Column 0 = idle (drocket.png)
- * Column 1 = walk (drocket_walk.png)
- * Column 2 = fire (drocket_fire.png)
- *
- * Animations cycle between these atlas frames to reproduce the Godot SpriteFrames behavior:
- * - idle: frame 0
- * - walk: frames 1,0 (walk pose then idle pose), looping at 4 fps → 15 ticks/frame
- * - fire: frame 2
- */
-val DROCKET_SPRITE_SHEET = SpriteSheet(
-    columnsPerRow = 3,
-    totalRows = 1,
-    frameWidths = arrayOf(13,13,13),
-    frameHeights = arrayOf(16,16,16),
-    animations = arrayOf(
-        SpriteAnimationDef("idle", frames = arrayOf(ANIM_IDLE), ticksPerFrame = 1),
-        SpriteAnimationDef("walk", frames = arrayOf(ANIM_WALK, ANIM_IDLE), ticksPerFrame = 15, loop = true),
-        SpriteAnimationDef("fire", frames = arrayOf(ANIM_FIRE), ticksPerFrame = 1),
-    ),
-)
-
-const val ANIM_IDLE = 0
-const val ANIM_WALK = 1
-const val ANIM_FIRE = 2
+const val ANIM_IDLE_RIGHT = 0
+const val ANIM_IDLE_LEFT = 1
+const val ANIM_WALK_RIGHT = 2
+const val ANIM_WALK_LEFT = 3
+const val ANIM_FIRE = 4

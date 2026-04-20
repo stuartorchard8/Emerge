@@ -20,8 +20,6 @@ object DrocketsSpriteAtlas {
     const val ROWS = 1
     const val ATLAS_WIDTH = FRAME_SIZE_X * COLUMNS // 48
     const val ATLAS_HEIGHT = FRAME_SIZE_Y * ROWS   // 16
-    const val FRAME_SIZE_U = 1f / COLUMNS          // 0.333...
-    const val FRAME_SIZE_V = 1f / ROWS             // 1.0
 
     private val frameFiles = listOf(
         "assets/drockets/drocket_idle.png",
@@ -64,18 +62,5 @@ object DrocketsSpriteAtlas {
         GPU.uploadTextureRGBA8(ATLAS_WIDTH, ATLAS_HEIGHT, atlasData)
         GPU.bindTexture2D(0)
         return textureId
-    }
-
-    /** Atlas frame index for idle pose */
-    const val FRAME_IDLE = 0
-    /** Atlas frame index for walk pose */
-    const val FRAME_WALK = 1
-    /** Atlas frame index for fire/thrust pose */
-    const val FRAME_FIRE = 2
-
-    fun frameUV(frameIndex: Int): Pair<Float, Float> {
-        val col = frameIndex % COLUMNS
-        val row = frameIndex / COLUMNS
-        return Pair(col * FRAME_SIZE_U, row * FRAME_SIZE_V)
     }
 }
