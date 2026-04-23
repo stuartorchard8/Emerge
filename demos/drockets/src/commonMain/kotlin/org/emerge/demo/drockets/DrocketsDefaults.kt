@@ -16,11 +16,11 @@ fun createDrocketsInitialState(drocketCount: Int = DROCKET_COUNT, knightCount: I
         pos = Coord2.zero,
         vel = Coord2.zero,
         ang = Coord(0),
-        angVel = Coord(1,1024),
+        angVel = Coord(1,1 shl 12),
         mass = PLANET_MASS,
         radius = PLANET_RADIUS,
-        bounce = Frac(1, 2),
-        rough = Frac(1, 2),
+        bounce = Frac(1, 5),
+        rough = Frac(3, 4),
         shape = BodyShape.CIRCLE,
     )
     builder.update<PlanetComponent>(planetId) { PlanetComponent(seed = 42) }
@@ -46,6 +46,7 @@ private fun spawnDrocketOnPlanet(
     teamId: TeamId,
 ) {
     val planetTransform = builder.getComponent<TransformComponent>(planetId) ?: return
+    val planetMotion = builder.getComponent<MotionComponent>(planetId) ?: return
     val planetCollider = builder.getComponent<ColliderComponent>(planetId) ?: return
 
     val localNormal = Norm.fromAngle(angle)
@@ -56,13 +57,13 @@ private fun spawnDrocketOnPlanet(
     val rocketId = builder.spawnBody(
         playerId = null,
         pos = worldPos,
-        vel = Coord2.zero,
+        vel = planetMotion.surfaceVelocityAtOffset(localNormal, planetCollider.radius+DROCKET_RADIUS),
         ang = worldAng,
         angVel = Coord(0),
         mass = DROCKET_MASS,
         radius = DROCKET_RADIUS,
-        bounce = Frac(1, 2),
-        rough = Frac(1, 2),
+        bounce = Frac(1, 4),
+        rough = Frac(1, 1),
         shape = BodyShape.TRIANGLE,
     )
 
@@ -125,9 +126,9 @@ private fun spawnKnightOnPlanet(
 }
 
 private val PLANET_RADIUS = Frac(1, 8)
-val PLANET_MASS = 500_000u
-val DROCKET_RADIUS = Frac(1, 2048)
-val KNIGHT_RADIUS = Frac(1, 2048)
-private val DROCKET_MASS = 5000u
+val PLANET_MASS = 5_000_000u
+val DROCKET_RADIUS = Frac(1, 1 shl 13)
+val KNIGHT_RADIUS = Frac(1, 1 shl 13)
+private val DROCKET_MASS = 500u
 private const val DROCKET_COUNT = 300
 private const val KNIGHT_COUNT = 10

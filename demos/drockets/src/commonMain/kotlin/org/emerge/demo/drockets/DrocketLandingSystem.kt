@@ -2,14 +2,10 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.components.ColliderComponent
-import org.emerge.sim.core.physics.components.LandingAttachmentComponent
-import org.emerge.sim.core.physics.components.MaterialComponent
-import org.emerge.sim.core.physics.components.MotionComponent
-import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.contacts
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
@@ -34,8 +30,9 @@ object DrocketLandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInpu
                 val otherMotion = builder.getComponent<MotionComponent>(otherId) ?: continue
 
                 // Must be colliding with a planet - now are we slow enough to land?
-                val relativeVelocity = motion.vel - otherMotion.vel
-                if (relativeVelocity < Frac(1, 1024*8)) {
+                val surfaceVelocity = otherMotion.surfaceVelocityAtOffset(-contact.normal, contact.minDist)
+                val relativeVelocity = motion.vel - surfaceVelocity
+                if (relativeVelocity < Frac(1, 1024*24)) {
                     val landingNormal = if (entityId == contact.aId) contact.normal else -contact.normal
                     val globalAngle = landingNormal.asAngle
                     val otherTransform = builder.getComponent<TransformComponent>(otherId) ?: continue

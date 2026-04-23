@@ -3,16 +3,10 @@ package org.emerge.demo.drockets
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.components.ColliderComponent
-import org.emerge.sim.core.physics.components.ImpulseComponent
-import org.emerge.sim.core.physics.components.LandingAttachmentComponent
-import org.emerge.sim.core.physics.components.MotionComponent
-import org.emerge.sim.core.physics.components.PlanetComponent
-import org.emerge.sim.core.physics.components.RenderShapeComponent
-import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
@@ -49,6 +43,7 @@ object AtmosphereDragSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInpu
             for (planetId in planetIds) {
                 val planetTransform = builder.getComponent<TransformComponent>(planetId) ?: continue
                 val planetCollider = builder.getComponent<ColliderComponent>(planetId) ?: continue
+                val planetMotion = builder.getComponent<MotionComponent>(planetId) ?: continue
 
                 val delta = transform.pos - planetTransform.pos
                 val dist = delta.len
@@ -60,12 +55,12 @@ object AtmosphereDragSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInpu
                 val depthFrac = Frac(1, 1) - elevation / ATMOSPHERE_DEPTH
                 if (depthFrac.raw <= 0) continue
 
+                val airspeed = motion.vel - planetMotion.surfaceVelocityAtOffset(delta.norm, dist)
+
                 // drag = -vel * |vel| * depth² * DRAG_COEFFICIENT
                 val depth2 = depthFrac * depthFrac
-                val vx = Frac(motion.vel.x.raw.toLong())
-                val vy = Frac(motion.vel.y.raw.toLong())
-                val dragX = vx * Frac.abs(vx) * depth2 * DRAG_COEFFICIENT
-                val dragY = vy * Frac.abs(vy) * depth2 * DRAG_COEFFICIENT
+                val dragX = airspeed.x * Frac.abs(airspeed.x) * depth2 * DRAG_COEFFICIENT
+                val dragY = airspeed.y * Frac.abs(airspeed.y) * depth2 * DRAG_COEFFICIENT
                 val drag = ImpulseComponent(vel = Frac2(-dragX, -dragY))
                 impulses[entityId] = impulses[entityId]?.plus(drag) ?: drag
             }

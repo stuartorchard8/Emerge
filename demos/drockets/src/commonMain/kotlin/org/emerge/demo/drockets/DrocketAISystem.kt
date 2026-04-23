@@ -5,14 +5,14 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
+import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.nextRandomInt
-import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.Norm
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.sim.core.physics.primitives.*
+import kotlin.math.abs
 
 /**
  * Drives autonomous drocket entities through a walk → charge → thrust → fly → land cycle.
@@ -51,11 +51,24 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                             phase = DrocketPhase.CHARGING,
                             ticksRemaining = CHARGE_TICKS,
                         )
+
+                        val motion = builder.getComponent<MotionComponent>(entityId) ?: continue
+                        val landing = landings[entityId] ?: continue
+                        val parentId = landing.parentEntityId
+                        val parentMotion = builder.getComponent<MotionComponent>(parentId) ?: continue
+                        val parentTransform = builder.getComponent<TransformComponent>(parentId) ?: continue
+
                         // Detatch from planet and roll forwards
+                        val surfaceVelocity = surfaceVelocityAtAttachment(
+                            parentTransform,
+                            parentMotion,
+                            landing,
+                        )
                         landings.remove(entityId)
                         val spinDir = CHARGE_SPIN_SPEED*ds.walkDirection
                         impulses[entityId] = ImpulseComponent(
-                            angVel = spinDir,
+                            vel = surfaceVelocity-motion.vel,
+                            angVel = parentMotion.angVel-motion.angVel + spinDir,
                         )
                     } else {
                         nextStates[entityId] = ds.copy(ticksRemaining = remaining)
@@ -77,6 +90,14 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 }
 
                 DrocketPhase.THRUSTING -> {
+                    val motion = builder.getComponent<MotionComponent>(entityId) ?: continue
+                    if (abs(motion.angVel.raw) > Coord(1,16).raw) {
+                        nextStates[entityId] = ds.copy(
+                            phase = DrocketPhase.FLYING,
+                            fuel = 0,
+                        )
+                        continue
+                    }
                     val fuelLeft = ds.fuel - 1
                     // Apply thrust in the entity's forward direction
                     var forward = Norm.fromAngle(transform.ang).cw90
@@ -145,11 +166,24 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
     private const val CHARGE_TICKS = 18
     // 84 ticks ≈ 1.4 seconds at 60 tps
-    private const val FUEL_TICKS = 84
+    private const val FUEL_TICKS = 220
     // Walk 2–10 seconds → 120–600 ticks
     private const val MIN_WALK_TICKS = 120
     private const val MAX_WALK_TICKS = 600
-    private val CHARGE_SPIN_SPEED = Frac(1,32)
+    private val CHARGE_SPIN_SPEED = Frac(1,120)
     // Thrust tuned relative to the engine's gravity to achieve orbital velocity
-    private val THRUST_STRENGTH = Frac(1, 1024 * 32)
+    private val THRUST_STRENGTH = Frac(1, 1024 * 256)
+
+
+    private fun surfaceVelocityAtAttachment(
+        parentTransform: TransformComponent,
+        parentMotion: MotionComponent,
+        landing: LandingAttachmentComponent,
+    ): Coord2 {
+        val worldOffset = landing.relativePos.rotateByAngle(parentTransform.ang)
+        return parentMotion.surfaceVelocityAtOffset(
+            worldOffset.norm,
+            worldOffset.len,
+        )
+    }
 }

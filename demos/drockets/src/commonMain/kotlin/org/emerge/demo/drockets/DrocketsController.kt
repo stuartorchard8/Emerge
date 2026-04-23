@@ -36,7 +36,7 @@ class DrocketsController(
         val DROCKETS_CONFIG = PhysicsConfig(
             thrustFactorInv = Int.MAX_VALUE / (1024 * 16),
             turnFactorInv = Int.MAX_VALUE / (1024 * 512),
-            gravityNumerator = Frac(1, 16),
+            gravityNumerator = Frac(1, 2 shl 10),
             shipCollisionDamageThreshold = Frac(1, 1024 * 8),
             shipMaxDamage = Frac(1, 256),
             shipRespawnTicks = 0,

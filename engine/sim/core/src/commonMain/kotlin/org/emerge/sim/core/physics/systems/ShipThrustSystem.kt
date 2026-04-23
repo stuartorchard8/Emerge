@@ -5,14 +5,17 @@ package org.emerge.sim.core.physics.systems
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.BypassesStagedView
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.primitives.*
+import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.physics.primitives.Coord2
+import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.physics.primitives.Norm
+import org.emerge.sim.core.physics.primitives.PhysicsInput
 import kotlin.math.absoluteValue
 import kotlin.math.sign
 
@@ -64,21 +67,9 @@ object ShipThrustSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         landing: LandingAttachmentComponent,
     ): Coord2 {
         val worldOffset = landing.relativePos.rotateByAngle(parentTransform.ang)
-        return surfaceVelocityAtOffset(
-            sourceMotion = parentMotion,
-            worldOffset = worldOffset,
+        return parentMotion.surfaceVelocityAtOffset(
+            worldOffset.norm,
+            worldOffset.len,
         )
-    }
-
-    private fun surfaceVelocityAtOffset(
-        sourceMotion: MotionComponent,
-        worldOffset: Frac2,
-    ): Coord2 {
-        if (worldOffset.lenSq.raw == 0L) {
-            return sourceMotion.vel
-        }
-        val tangent = worldOffset.norm.cw90
-        val spinSpeed = worldOffset.len.toCircumference() * Frac(sourceMotion.angVel.raw.toLong())
-        return sourceMotion.vel - tangent * spinSpeed
     }
 }
