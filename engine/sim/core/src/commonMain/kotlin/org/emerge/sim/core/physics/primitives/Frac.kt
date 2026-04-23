@@ -34,7 +34,7 @@ value class Frac(val raw: Long) {
     operator fun times(o: Int): Frac = Frac(raw * o.toLong())
     operator fun unaryMinus(): Frac = Frac(-raw)
 
-    fun wrap(): Frac = Frac(raw.toInt().toLong())
+    fun wrap(): Coord = Coord(raw.toInt())
 
     fun toFloat(): Float = raw.toFloat() / Int.MAX_VALUE.toFloat() // -1f..1f
     fun toLong(): Long = raw

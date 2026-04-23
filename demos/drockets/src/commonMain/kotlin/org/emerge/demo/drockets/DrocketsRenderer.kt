@@ -9,6 +9,9 @@ import org.emerge.render.torus.shader.CircleShader
 import org.emerge.render.torus.shader.SpriteShader
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.physics.primitives.Coord
+import org.emerge.sim.core.physics.primitives.Coord2
+import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.math.*
 
@@ -28,11 +31,11 @@ class DrocketsRenderer(
 ) {
     private var zoom: Float = 100f
 
+    var focusIndex = 0f
     @kotlin.concurrent.Volatile
-    private var rotationRad: Float = 0f
-
-    // Updated each frame from the first planet's position + surface offset
-    private var viewFocus: Vec2 = Vec2(0f, 0f)
+    private var focusRotationOffset = Coord(0)
+    private var viewRotation = Coord(0)
+    private var viewFocus = Coord2.zero
 
     private val vao = GPU.genAndBindVertexArrays()
     private val vbo: Int = GPU.genBuffers()
@@ -100,31 +103,32 @@ class DrocketsRenderer(
     }
 
     fun rotateLeft() {
-        rotateBy(0.03f)
+        rotateBy(Frac(1,1024))
     }
 
     fun rotateRight() {
-        rotateBy(-0.03f)
+        rotateBy(Frac(-1,1024))
     }
 
-    fun rotateBy(deltaRad: Float) {
-        if (!deltaRad.isFinite()) return
-        rotationRad += deltaRad
+    fun rotateBy(turns: Frac) {
+        focusRotationOffset += turns
     }
 
     fun draw(state: PhysicsState) {
         // Place the camera on the planet surface, orbiting with rotation
         updateViewFocus(state)
 
+        val viewRotationRad = viewRotation.toFloat()*PI.toFloat()
+
         val zoomInv = 1f / zoom
-        computeViewMatrix(zoomInv)
+        computeViewMatrix(zoomInv, viewRotationRad)
 
         GPU.bindVertexArray(vao)
 
         // ── Layer 0: starscape background (fullscreen quad, no blending) ──
         starscapeShader.draw(
             vOffset = QUAD_VERTEX_OFFSET,
-            bearing = -rotationRad,
+            bearing = -viewRotationRad,
             resolutionX = resolution.x,
             resolutionY = resolution.y,
         )
@@ -152,8 +156,8 @@ class DrocketsRenderer(
             setRotationZ(matR, transform.ang.toFloat() * PI.toFloat())
             multiply4x4(out = matTmp, a = matR, b = matS)
 
-            val dx = wrapDelta(transform.pos.x.toFloat() - viewFocus.x, worldSize.x)
-            val dy = wrapDelta(transform.pos.y.toFloat() - viewFocus.y, worldSize.y)
+            val dx = wrapDelta(transform.pos.x.toFloat() - viewFocus.x.toFloat(), worldSize.x)
+            val dy = wrapDelta(transform.pos.y.toFloat() - viewFocus.y.toFloat(), worldSize.y)
             setTranslation(matT, dx, dy)
             multiply4x4(out = matModel, a = matT, b = matTmp)
             multiply4x4(out = matTmp, a = matView, b = matModel)
@@ -189,8 +193,8 @@ class DrocketsRenderer(
 
             spriteCount = packSpriteInstance(
                 index = spriteCount,
-                posX = transform.pos.x.toFloat(),
-                posY = transform.pos.y.toFloat(),
+                posX = transform.pos.x.toFloat() - viewFocus.x.toFloat(),
+                posY = transform.pos.y.toFloat() - viewFocus.y.toFloat(),
                 angleTurns = transform.ang.toFloat(),
                 scaleX = collider.radius.toFloat() * SPRITE_SCALE_FACTOR,
                 scaleY = collider.radius.toFloat() * SPRITE_SCALE_FACTOR * facing,
@@ -232,8 +236,8 @@ class DrocketsRenderer(
 
             spriteCount = packSpriteInstance(
                 index = spriteCount,
-                posX = transform.pos.x.toFloat(),
-                posY = transform.pos.y.toFloat(),
+                posX = transform.pos.x.toFloat() - viewFocus.x.toFloat(),
+                posY = transform.pos.y.toFloat() - viewFocus.y.toFloat(),
                 angleTurns = transform.ang.toFloat(),
                 scaleX = collider.radius.toFloat() * SPRITE_SCALE_FACTOR,
                 scaleY = collider.radius.toFloat() * SPRITE_SCALE_FACTOR,
@@ -279,8 +283,8 @@ class DrocketsRenderer(
             setRotationZ(matR, transform.ang.toFloat() * PI.toFloat())
             multiply4x4(out = matTmp, a = matR, b = matS)
 
-            val dx = wrapDelta(transform.pos.x.toFloat() - viewFocus.x, worldSize.x)
-            val dy = wrapDelta(transform.pos.y.toFloat() - viewFocus.y, worldSize.y)
+            val dx = wrapDelta(transform.pos.x.toFloat() - viewFocus.x.toFloat(), worldSize.x)
+            val dy = wrapDelta(transform.pos.y.toFloat() - viewFocus.y.toFloat(), worldSize.y)
             setTranslation(matT, dx, dy)
             multiply4x4(out = matModel, a = matT, b = matTmp)
             multiply4x4(out = matTmp, a = matView, b = matModel)
@@ -344,29 +348,50 @@ class DrocketsRenderer(
     // ── Camera focus ─────────────────────────────────────────
 
     private fun updateViewFocus(state: PhysicsState) {
-        val drocketStates = state.components.getTable<KnightStateComponent>()
-        val drocketId = drocketStates.keys().elementAtOrNull(0) ?: return
-//        val planetId = state.planets.keys().firstOrNull() ?: return
-        val transform = state.transforms[drocketId] ?: return
-        val collider = state.colliders[drocketId] ?: return
+        val drocketStates = state.components.getTable<DrocketStateComponent>()
+
+        val planetId = state.planets.keys().firstOrNull() ?: return
+        val focusId =
+            if (focusIndex == 0f) planetId else
+            drocketStates.keys().elementAtOrNull((focusIndex.toInt()+drocketStates.keys().size)%drocketStates.keys().size) ?: return
+
+        val planetTransform = state.transforms[planetId] ?: return
+        val transform = state.transforms[focusId] ?: return
+        val collider = state.colliders[focusId] ?: return
 
         val focusX = transform.pos.x.toFloat()
         val focusY = transform.pos.y.toFloat()
         val surfaceRadius = collider.radius.toFloat()
 
+        val viewRotationRad = Coord(focusRotationOffset.raw-transform.ang.raw).toFloat()*PI.toFloat()
+
         // Place focus on the planet surface at the current rotation angle.
         // rotationRad=0 means focus is directly above the planet center (+Y).
         // The view rotation then orients "up" away from the planet.
-        viewFocus = Vec2(
-            focusX - sin(rotationRad) * surfaceRadius,
-            focusY - cos(rotationRad) * surfaceRadius,
-        )
+        var offsetFocus = Vec2(focusX, focusY)
+        if (focusId == planetId) {
+            offsetFocus -= Vec2(
+                sin(viewRotationRad) * surfaceRadius,
+                cos(viewRotationRad) * surfaceRadius,
+            )
+        }
+
+        val offsetDelta = Coord2.raw((offsetFocus.x*Int.MAX_VALUE).toInt(), (offsetFocus.y*Int.MAX_VALUE).toInt()) - viewFocus
+        viewFocus += offsetDelta/2
+
+        val planetOffset = viewFocus - planetTransform.pos
+        val rotationOffset = Coord((
+            (
+                (atan2(planetOffset.x.toFloat(), -planetOffset.y.toFloat()))/-PI
+            )*Int.MAX_VALUE
+        ).toInt()) - viewRotation
+        viewRotation += rotationOffset/2
     }
 
     // ── View matrix ──────────────────────────────────────────
 
-    private fun computeViewMatrix(zoomInv: Float) {
-        setRotationZ(matR, rotationRad)
+    private fun computeViewMatrix(zoomInv: Float, viewRotation: Float) {
+        setRotationZ(matR, viewRotation)
         val aspect = resolution.x / resolution.y
         val minAspect = min(aspect, 1f)
         val maxAspect = max(aspect, 1f)
@@ -401,8 +426,8 @@ class DrocketsRenderer(
         setRotationZ(matR, angleTurns * PI.toFloat())
         multiply4x4(out = matTmp, a = matR, b = matS)
 
-        val dx = wrapDelta(posX - viewFocus.x, worldSize.x)
-        val dy = wrapDelta(posY - viewFocus.y, worldSize.y)
+        val dx = wrapDelta(posX, worldSize.x)
+        val dy = wrapDelta(posY, worldSize.y)
         setTranslation(matT, dx, dy)
         multiply4x4(out = matModel, a = matT, b = matTmp)
         multiply4x4(out = matTmp, a = matView, b = matModel)

@@ -102,5 +102,8 @@ object DrocketsSceneView {
         if (pressed[GLFW_KEY_EQUAL]) renderer.zoomIn()
         if (pressed[GLFW_KEY_Q]) renderer.rotateLeft()
         if (pressed[GLFW_KEY_E]) renderer.rotateRight()
+        if (pressed[GLFW_KEY_0]) renderer.focusIndex = 0f
+        if (pressed[GLFW_KEY_Z]) renderer.focusIndex -= 1/20f
+        if (pressed[GLFW_KEY_X]) renderer.focusIndex += 1/20f
     }
 }
