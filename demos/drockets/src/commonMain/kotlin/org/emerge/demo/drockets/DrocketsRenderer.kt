@@ -33,6 +33,11 @@ class DrocketsRenderer(
     private var zoom: Float = 100f
 
     var focusIndex = 0f
+        set(value) {
+            field = value
+            focusedDrocketId = null
+        }
+    private var focusedDrocketId: EntityId? = null
     @kotlin.concurrent.Volatile
     private var focusRotationOffset = Coord(0)
     private var viewRotation = Coord(0)
@@ -113,6 +118,29 @@ class DrocketsRenderer(
 
     fun rotateBy(turns: Frac) {
         focusRotationOffset += turns
+    }
+
+    fun focusDrocketAt(state: PhysicsState, pixel: Vec2): Boolean {
+        val world = screenToWorld(pixel) ?: return false
+        val drocketStates = state.components.getTable<DrocketStateComponent>()
+
+        var bestId: EntityId? = null
+        var bestDistSq = Float.POSITIVE_INFINITY
+        for ((entityId, _) in drocketStates.entries()) {
+            val transform = state.transforms[entityId] ?: continue
+            val collider = state.colliders[entityId] ?: continue
+            val dx = wrapDelta(transform.pos.x.toFloat() - world.x, worldSize.x)
+            val dy = wrapDelta(transform.pos.y.toFloat() - world.y, worldSize.y)
+            val distSq = dx * dx + dy * dy
+            val pickRadius = collider.radius.toFloat() * PICK_RADIUS_SCALE
+            if (distSq <= pickRadius * pickRadius && distSq < bestDistSq) {
+                bestId = entityId
+                bestDistSq = distSq
+            }
+        }
+
+        focusedDrocketId = bestId ?: return false
+        return true
     }
 
     fun draw(state: PhysicsState) {
@@ -356,9 +384,20 @@ class DrocketsRenderer(
         val drocketStates = state.components.getTable<DrocketStateComponent>()
 
         val planetId = state.planets.keys().firstOrNull() ?: return
-        val focusId =
-            if (focusIndex == 0f) planetId else
-            drocketStates.keys().elementAtOrNull((focusIndex.toInt()+drocketStates.keys().size)%drocketStates.keys().size) ?: return
+        val selectedDrocketId = focusedDrocketId
+            ?.takeIf { drocketStates[it] != null && state.transforms[it] != null }
+            ?: run {
+                focusedDrocketId = null
+                null
+            }
+        val focusId = selectedDrocketId
+            ?: if (focusIndex == 0f) {
+                planetId
+            } else {
+                drocketStates.keys().elementAtOrNull(
+                    (focusIndex.toInt() + drocketStates.keys().size) % drocketStates.keys().size
+                ) ?: return
+            }
 
         val planetTransform = state.transforms[planetId] ?: return
         val transform = state.transforms[focusId] ?: return
@@ -394,6 +433,31 @@ class DrocketsRenderer(
     }
 
     // ── View matrix ──────────────────────────────────────────
+
+    private fun screenToWorld(pixel: Vec2): Vec2? {
+        if (resolution.x <= 0f || resolution.y <= 0f || zoom <= 0f) return null
+
+        val ndcX = pixel.x / resolution.x * 2f - 1f
+        val ndcY = 1f - pixel.y / resolution.y * 2f
+        val viewRotationRad = viewRotation.toFloat() * PI.toFloat()
+
+        val zoomInv = 1f / zoom
+        val aspect = resolution.x / resolution.y
+        val minAspect = min(aspect, 1f)
+        val maxAspect = max(aspect, 1f)
+        val sx = worldSize.x * 0.5f / minAspect / zoomInv
+        val sy = -worldSize.y * 0.5f * maxAspect / zoomInv
+        if (sx == 0f || sy == 0f) return null
+
+        val rx = ndcX / sx
+        val ry = ndcY / sy
+        val c = cos(viewRotationRad)
+        val s = sin(viewRotationRad)
+        return Vec2(
+            viewFocus.x.toFloat() + c * rx + s * ry,
+            viewFocus.y.toFloat() - s * rx + c * ry,
+        )
+    }
 
     private fun computeViewMatrix(zoomInv: Float, viewRotation: Float) {
         setRotationZ(matR, viewRotation)
@@ -516,6 +580,7 @@ class DrocketsRenderer(
         private const val TRIANGLE_VERTEX_OFFSET = 0
         private const val QUAD_VERTEX_OFFSET = 3
         private const val SPRITE_SCALE_FACTOR = 1f
+        private const val PICK_RADIUS_SCALE = 2.5f
         private const val PLANET_ATMOSPHERE_SCALE = 1.15f
     }
 }

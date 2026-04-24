@@ -1,6 +1,7 @@
 package org.emerge.desktop
 
 import org.emerge.demo.drockets.DrocketsController
+import org.emerge.demo.drockets.DrocketsFrame
 import org.emerge.demo.drockets.DrocketsRenderer
 import org.emerge.render.torus.GPU
 import org.emerge.sim.core.physics.primitives.Vec2
@@ -9,6 +10,7 @@ import org.lwjgl.system.Configuration
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
 import kotlin.math.max
+import kotlin.math.pow
 
 object DrocketsSceneView {
     fun start() {
@@ -35,6 +37,8 @@ object DrocketsSceneView {
         )
 
         val controller = DrocketsController()
+        var latestFrame: DrocketsFrame? = null
+        installMouseHandlers(window, renderer) { latestFrame }
 
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents()
@@ -42,6 +46,7 @@ object DrocketsSceneView {
             processCamera(pressedKeys, renderer)
 
             val frame = controller.tick()
+            latestFrame = frame
             renderer.draw(frame.state)
 
             glfwSwapBuffers(window)
@@ -83,6 +88,44 @@ object DrocketsSceneView {
         return window
     }
 
+    private fun installMouseHandlers(
+        window: Long,
+        renderer: DrocketsRenderer,
+        latestFrame: () -> DrocketsFrame?,
+    ) {
+        glfwSetMouseButtonCallback(window) { win, button, action, _ ->
+            if (button != GLFW_MOUSE_BUTTON_LEFT || action != GLFW_PRESS) return@glfwSetMouseButtonCallback
+            val frame = latestFrame() ?: return@glfwSetMouseButtonCallback
+
+            val cursorX = DoubleArray(1)
+            val cursorY = DoubleArray(1)
+            glfwGetCursorPos(win, cursorX, cursorY)
+
+            val windowW = IntArray(1)
+            val windowH = IntArray(1)
+            val framebufferW = IntArray(1)
+            val framebufferH = IntArray(1)
+            glfwGetWindowSize(win, windowW, windowH)
+            glfwGetFramebufferSize(win, framebufferW, framebufferH)
+            if (windowW[0] <= 0 || windowH[0] <= 0) return@glfwSetMouseButtonCallback
+
+            renderer.focusDrocketAt(
+                state = frame.state,
+                pixel = Vec2(
+                    cursorX[0].toFloat() * framebufferW[0].toFloat() / windowW[0].toFloat(),
+                    cursorY[0].toFloat() * framebufferH[0].toFloat() / windowH[0].toFloat(),
+                ),
+            )
+        }
+
+        // Scroll up (positive y) zooms in
+        glfwSetScrollCallback(window) { _, _, yoffset ->
+            if (yoffset == 0.0) return@glfwSetScrollCallback
+            val steps = yoffset.coerceIn(-24.0, 24.0)
+            renderer.zoomByFactor(1.1.pow(steps).toFloat())
+        }
+    }
+
     private fun updateResolution(window: Long, renderer: DrocketsRenderer) {
         MemoryStack.stackPush().use { st ->
             val sizeX = st.mallocInt(1)
@@ -98,8 +141,6 @@ object DrocketsSceneView {
     }
 
     private fun processCamera(pressed: BooleanArray, renderer: DrocketsRenderer) {
-        if (pressed[GLFW_KEY_MINUS]) renderer.zoomOut()
-        if (pressed[GLFW_KEY_EQUAL]) renderer.zoomIn()
         if (pressed[GLFW_KEY_Q]) renderer.rotateLeft()
         if (pressed[GLFW_KEY_E]) renderer.rotateRight()
         if (pressed[GLFW_KEY_0]) renderer.focusIndex = 0f
