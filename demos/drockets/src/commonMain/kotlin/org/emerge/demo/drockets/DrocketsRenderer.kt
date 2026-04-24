@@ -1,5 +1,6 @@
 package org.emerge.demo.drockets
 
+import kotlinx.datetime.Clock
 import org.emerge.demo.drockets.shader.PlanetShader
 import org.emerge.demo.drockets.shader.StarscapeShader
 import org.emerge.render.torus.GPU
@@ -181,23 +182,27 @@ class DrocketsRenderer(
         // ── Layer 2: sprites (drockets) ──
         var spriteCount = 0
         val drocketStates = state.components.getTable<DrocketStateComponent>().entries()
+        val reproducers = state.components.getTable<ReproducerComponent>()
+        val nowMs = Clock.System.now().toEpochMilliseconds()
         for ((entityId, drocketState) in drocketStates) {
             if (spriteCount >= SpriteShader.MAX_INSTANCES) break
             val transform = state.transforms[entityId] ?: continue
             val collider = state.colliders[entityId] ?: continue
+            val reproducer = reproducers[entityId] ?: continue
             val facing = drocketState.walkDirection
             val squash = 0.06125 - cos((drocketState.ticksRemaining) * 2 * PI / 60f) * 0.06125
             val teamId = state.teams[entityId]?.teamId?.value
             val (uvX, uvY) = spriteUvForEntity(state, entityId)
             val (uvW, uvH) = spriteSizeForEntity(state, entityId)
+            val maturity = reproducer.getMaturityRatio(nowMs)
 
             spriteCount = packSpriteInstance(
                 index = spriteCount,
                 posX = transform.pos.x.toFloat() - viewFocus.x.toFloat(),
                 posY = transform.pos.y.toFloat() - viewFocus.y.toFloat(),
                 angleTurns = transform.ang.toFloat(),
-                scaleX = collider.radius.toFloat() * SPRITE_SCALE_FACTOR,
-                scaleY = collider.radius.toFloat() * SPRITE_SCALE_FACTOR * facing,
+                scaleX = collider.radius.toFloat() * SPRITE_SCALE_FACTOR * maturity,
+                scaleY = collider.radius.toFloat() * SPRITE_SCALE_FACTOR * facing * maturity,
                 primaryId = if (teamId != null) (teamId + 1).toFloat() else 0f,
                 uvX = uvX,
                 uvY = uvY,

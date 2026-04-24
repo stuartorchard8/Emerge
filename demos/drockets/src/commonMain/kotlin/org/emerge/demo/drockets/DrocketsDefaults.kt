@@ -1,5 +1,6 @@
 package org.emerge.demo.drockets
 
+import kotlinx.datetime.Clock
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.physics.components.*
@@ -54,11 +55,27 @@ private fun spawnDrocketOnPlanet(
     val worldPos = planetTransform.pos + relativePos.rotateByAngle(planetTransform.ang)
     val worldAng = Coord(planetTransform.ang.raw + angle.raw)
 
+    spawnDrocket(
+        builder = builder,
+        position = worldPos,
+        velocity = planetMotion.surfaceVelocityAtOffset(localNormal, planetCollider.radius+DROCKET_RADIUS),
+        angle = worldAng,
+        teamId = teamId,
+    )
+}
+
+fun spawnDrocket(
+    builder: PhysicsBuilder,
+    position: Coord2,
+    velocity: Coord2,
+    angle: Coord,
+    teamId: TeamId,
+) {
     val rocketId = builder.spawnBody(
         playerId = null,
-        pos = worldPos,
-        vel = planetMotion.surfaceVelocityAtOffset(localNormal, planetCollider.radius+DROCKET_RADIUS),
-        ang = worldAng,
+        pos = position,
+        vel = velocity,
+        ang = angle,
         angVel = Coord(0),
         mass = DROCKET_MASS,
         radius = DROCKET_RADIUS,
@@ -68,13 +85,17 @@ private fun spawnDrocketOnPlanet(
     )
 
     builder.update<TeamComponent>(rocketId) { TeamComponent(teamId) }
-    builder.update<MotionComponent>(rocketId) { MotionComponent(vel = Coord2.zero, angVel = Coord(0)) }
 
     builder.update<DrocketStateComponent>(rocketId) {
         DrocketStateComponent(
             phase = DrocketPhase.FLYING,
-            planetId = planetId,
             walkDirection = if (teamId.value % 2 == 0) 1 else -1,
+        )
+    }
+    builder.update<ReproducerComponent>(rocketId) {
+        ReproducerComponent(
+            birthdayMs = Clock.System.now().toEpochMilliseconds(),
+            sex = if (teamId.value%2==0) Sex.FEMALE else Sex.MALE,
         )
     }
 }
@@ -130,5 +151,5 @@ val PLANET_MASS = 5_000_000u
 val DROCKET_RADIUS = Frac(1, 1 shl 13)
 val KNIGHT_RADIUS = Frac(1, 1 shl 13)
 private val DROCKET_MASS = 500u
-private const val DROCKET_COUNT = 300
-private const val KNIGHT_COUNT = 10
+private const val DROCKET_COUNT = 100
+private const val KNIGHT_COUNT = 0

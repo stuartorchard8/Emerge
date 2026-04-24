@@ -126,7 +126,6 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                         val walkTicks = MIN_WALK_TICKS + builder.nextRandomInt(until = MAX_WALK_TICKS - MIN_WALK_TICKS)
                         nextStates[entityId] = ds.copy(
                             phase = DrocketPhase.WALKING,
-                            planetId = landing.parentEntityId,
                             walkDirection = newDirection,
                             ticksRemaining = walkTicks,
                         )
@@ -166,7 +165,7 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
     private const val CHARGE_TICKS = 18
     // 84 ticks ≈ 1.4 seconds at 60 tps
-    private const val FUEL_TICKS = 220
+    private const val FUEL_TICKS = 200
     // Walk 2–10 seconds → 120–600 ticks
     private const val MIN_WALK_TICKS = 120
     private const val MAX_WALK_TICKS = 600

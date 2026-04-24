@@ -29,6 +29,7 @@ kotlin {
 
         commonMain {
             dependencies {
+                implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.0")
                 api(project(":engine:sim:core"))
                 api(project(":engine:sim:sync"))
                 api(project(":engine:sim:codecs:physics"))
