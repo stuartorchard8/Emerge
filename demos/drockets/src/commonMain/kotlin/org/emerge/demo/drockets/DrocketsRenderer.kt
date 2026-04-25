@@ -10,10 +10,7 @@ import org.emerge.render.torus.shader.CircleShader
 import org.emerge.render.torus.shader.SpriteShader
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.primitives.Coord
-import org.emerge.sim.core.physics.primitives.Coord2
-import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.Vec2
+import org.emerge.sim.core.physics.primitives.*
 import kotlin.math.*
 
 /**
@@ -32,16 +29,14 @@ class DrocketsRenderer(
 ) {
     private var zoom: Float = 100f
 
-    var focusIndex = 0f
-        set(value) {
-            field = value
-            focusedDrocketId = null
-        }
-    private var focusedDrocketId: EntityId? = null
+    private var focusedId: EntityId? = null
     @kotlin.concurrent.Volatile
     private var focusRotationOffset = Coord(0)
     private var viewRotation = Coord(0)
     private var viewFocus = Coord2.zero
+    private var priorFocusId: EntityId? = null
+    private var focusSwitchFrameCounter = 60L
+    private val focusSwitchFrames = 60
 
     private val vao = GPU.genAndBindVertexArrays()
     private val vbo: Int = GPU.genBuffers()
@@ -116,11 +111,19 @@ class DrocketsRenderer(
         rotateBy(Frac(-1,1024))
     }
 
+    fun focusPlanet() {
+        if (focusedId != null) {
+            priorFocusId = focusedId
+            focusedId = null
+            focusSwitchFrameCounter = 0
+        }
+    }
+
     fun rotateBy(turns: Frac) {
         focusRotationOffset += turns
     }
 
-    fun focusDrocketAt(state: PhysicsState, pixel: Vec2): Boolean {
+    fun tryFocusDrocketAt(state: PhysicsState, pixel: Vec2): Boolean {
         val world = screenToWorld(pixel) ?: return false
         val drocketStates = state.components.getTable<DrocketStateComponent>()
 
@@ -139,8 +142,13 @@ class DrocketsRenderer(
             }
         }
 
-        focusedDrocketId = bestId ?: return false
-        return true
+        if (bestId != null) {
+            priorFocusId = focusedId
+            focusedId = bestId
+            focusSwitchFrameCounter = 0
+            return true
+        }
+        return false
     }
 
     fun draw(state: PhysicsState) {
@@ -384,52 +392,55 @@ class DrocketsRenderer(
         val drocketStates = state.components.getTable<DrocketStateComponent>()
 
         val planetId = state.planets.keys().firstOrNull() ?: return
-        val selectedDrocketId = focusedDrocketId
+        val focusId = focusedId
             ?.takeIf { drocketStates[it] != null && state.transforms[it] != null }
             ?: run {
-                focusedDrocketId = null
-                null
-            }
-        val focusId = selectedDrocketId
-            ?: if (focusIndex == 0f) {
                 planetId
-            } else {
-                drocketStates.keys().elementAtOrNull(
-                    (focusIndex.toInt() + drocketStates.keys().size) % drocketStates.keys().size
-                ) ?: return
             }
 
         val planetTransform = state.transforms[planetId] ?: return
-        val transform = state.transforms[focusId] ?: return
-        val collider = state.colliders[focusId] ?: return
 
-        val focusX = transform.pos.x.toFloat()
-        val focusY = transform.pos.y.toFloat()
-        val surfaceRadius = collider.radius.toFloat()
-
-        val viewRotationRad = Coord(focusRotationOffset.raw-transform.ang.raw).toFloat()*PI.toFloat()
-
-        // Place focus on the planet surface at the current rotation angle.
-        // rotationRad=0 means focus is directly above the planet center (+Y).
-        // The view rotation then orients "up" away from the planet.
-        var offsetFocus = Vec2(focusX, focusY)
-        if (focusId == planetId) {
-            offsetFocus -= Vec2(
-                sin(viewRotationRad) * surfaceRadius,
-                cos(viewRotationRad) * surfaceRadius,
-            )
+        val focusPos = getFocusPos(state, focusId) ?: return
+        val priorFocusId = this.priorFocusId ?: planetId
+        if (focusSwitchFrameCounter < focusSwitchFrames) {
+            val priorFocus = getFocusPos(state, priorFocusId)
+            if (priorFocus == null) {
+                viewFocus = focusPos
+            } else {
+                val newFocusRatio = Frac.parametric(Frac(focusSwitchFrameCounter, focusSwitchFrames))
+                val oldFocusRatio = Frac(1,1) - newFocusRatio
+                val focusLerp = focusPos.asFrac2()*newFocusRatio + priorFocus.asFrac2()*oldFocusRatio
+                viewFocus = focusLerp.wrap()
+                focusSwitchFrameCounter += 1
+            }
+        } else {
+            viewFocus = focusPos
         }
 
-        val offsetDelta = Coord2.raw((offsetFocus.x*Int.MAX_VALUE).toInt(), (offsetFocus.y*Int.MAX_VALUE).toInt()) - viewFocus
-        viewFocus += offsetDelta/2
-
         val planetOffset = viewFocus - planetTransform.pos
-        val rotationOffset = Coord((
+        viewRotation = Coord((
             (
                 (atan2(planetOffset.x.toFloat(), -planetOffset.y.toFloat()))/-PI
             )*Int.MAX_VALUE
-        ).toInt()) - viewRotation
-        viewRotation += rotationOffset/2
+        ).toInt())
+    }
+
+    private fun getFocusPos(state: PhysicsState, entityId: EntityId): Coord2? {
+        val transform = state.transforms[entityId] ?: return null
+        val surfaceRadius = state.colliders[entityId]?.radius
+
+        var focusPos = transform.pos
+        // Place focus on the planet surface at the current rotation angle.
+        // rotationRad=0 means focus is directly above the planet center (+Y).
+        // The view rotation then orients "up" away from the planet.
+        if (surfaceRadius == PLANET_RADIUS) {
+            val viewRotationRad = Coord(focusRotationOffset.raw-transform.ang.raw).toFloat()*PI.toFloat()
+            focusPos -= Frac2.raw(
+                ((sin(viewRotationRad) * surfaceRadius.toFloat()) * Int.MAX_VALUE).toInt(),
+                ((cos(viewRotationRad) * surfaceRadius.toFloat()) * Int.MAX_VALUE).toInt(),
+            )
+        }
+        return focusPos
     }
 
     // ── View matrix ──────────────────────────────────────────

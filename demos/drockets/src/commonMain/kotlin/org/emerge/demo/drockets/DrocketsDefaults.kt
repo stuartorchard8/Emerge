@@ -146,7 +146,7 @@ private fun spawnKnightOnPlanet(
     }
 }
 
-private val PLANET_RADIUS = Frac(1, 8)
+val PLANET_RADIUS = Frac(1, 8)
 val PLANET_MASS = 5_000_000u
 val DROCKET_RADIUS = Frac(1, 1 shl 13)
 val KNIGHT_RADIUS = Frac(1, 1 shl 13)

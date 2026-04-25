@@ -47,5 +47,15 @@ value class Frac(val raw: Long) {
     companion object {
         val PIon4: Frac = Frac(1686629713L)
         fun abs(v: Frac): Frac = Frac(kotlin.math.abs(v.raw))
+
+
+        fun beizer(x: Frac): Frac {
+            return x*(x*3-x*x*2)
+        }
+
+        fun parametric(x: Frac): Frac {
+            val sqr = x*x
+            return sqr/(Frac(1L,1) - (x-sqr)*2)
+        }
     }
 }

@@ -58,7 +58,6 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
                                 ),
                             )
                             builder.update<ReproducerComponent>(entityId) { updated }
-                            println("Knocked up")
                             return
                         }
                     }

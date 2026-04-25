@@ -109,7 +109,7 @@ object DrocketsSceneView {
             glfwGetFramebufferSize(win, framebufferW, framebufferH)
             if (windowW[0] <= 0 || windowH[0] <= 0) return@glfwSetMouseButtonCallback
 
-            renderer.focusDrocketAt(
+            renderer.tryFocusDrocketAt(
                 state = frame.state,
                 pixel = Vec2(
                     cursorX[0].toFloat() * framebufferW[0].toFloat() / windowW[0].toFloat(),
@@ -143,8 +143,6 @@ object DrocketsSceneView {
     private fun processCamera(pressed: BooleanArray, renderer: DrocketsRenderer) {
         if (pressed[GLFW_KEY_Q]) renderer.rotateLeft()
         if (pressed[GLFW_KEY_E]) renderer.rotateRight()
-        if (pressed[GLFW_KEY_0]) renderer.focusIndex = 0f
-        if (pressed[GLFW_KEY_Z]) renderer.focusIndex -= 1/20f
-        if (pressed[GLFW_KEY_X]) renderer.focusIndex += 1/20f
+        if (pressed[GLFW_KEY_0]) renderer.focusPlanet()
     }
 }
