@@ -2,16 +2,14 @@ package org.emerge.sim.core.physics.systems
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import kotlin.collections.set
 
 object IntegrationSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     override fun update(
@@ -25,10 +23,10 @@ object IntegrationSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> 
             val transform = builder.getComponent<TransformComponent>(entityId) ?: continue
             val impulse = builder.getComponent<ImpulseComponent>(entityId) ?: ImpulseComponent()
 
-            // x1 = x0 + vt + half(at^2) where t=1
-            val pos = transform.pos + Frac2.raw(motion.vel.x.raw, motion.vel.y.raw) + impulse.pos + impulse.vel/2
             // v1 = v0 + at
             val vel = motion.vel + impulse.vel
+            // p1 = p0 + v1 (v1 for better gravitational stability than v0t + 0.5at²)
+            val pos = transform.pos + impulse.pos + vel.asFrac2()
 
             val ang = transform.ang + Frac(motion.angVel.raw.toLong()) + impulse.angVel/2
             val angVel = motion.angVel + impulse.angVel
