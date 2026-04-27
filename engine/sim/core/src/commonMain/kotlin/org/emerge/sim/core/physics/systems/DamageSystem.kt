@@ -10,8 +10,8 @@ import org.emerge.sim.core.physics.primitives.*
 
 object DamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     private const val DESTRUCTION_BURST_PARTICLE_COUNT = 50
-    private val DESTRUCTION_BURST_PARTICLE_RADIUS_FACTOR = Frac(2, 3)
-    private val DESTRUCTION_BURST_SPEED_FACTOR = Frac(1, 1)
+    private val DESTRUCTION_BURST_PARTICLE_RADIUS_FACTOR = Frac(1, 3)
+    private val DESTRUCTION_BURST_SPEED_FACTOR = Frac(1, 12)
     private const val DESTRUCTION_BURST_LIFETIME = 42
 
     override fun update(
@@ -44,8 +44,9 @@ object DamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 val baseRadius = builder.getComponent<ColliderComponent>(entityId)?.radius
                 if (teamId != null && baseRadius != null) {
                     destructionBursts += DestructionBurstSpec(
-                        pos = transform.pos+impulse.pos,
-                        vel = motion.vel+impulse.vel,
+                        pos = transform.pos,
+                        vel = motion.vel,
+                        recentImpulse = impulse,
                         teamId = teamId,
                         baseRadius = baseRadius,
                     )
@@ -80,10 +81,10 @@ object DamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     private fun spawnDestructionBurst(builder: PhysicsBuilder, burst: DestructionBurstSpec) {
         repeat(DESTRUCTION_BURST_PARTICLE_COUNT) {
             val direction = Norm.fromAngle(Coord(builder.nextRandomInt()))
-            val speed = DESTRUCTION_BURST_SPEED_FACTOR * burst.baseRadius * Frac(builder.nextRandomInt(until = Int.MAX_VALUE).toLong())
+            val speed = DESTRUCTION_BURST_SPEED_FACTOR*(burst.baseRadius + burst.recentImpulse.vel.len) * Frac(builder.nextRandomInt(until = Int.MAX_VALUE).toLong())
             builder.spawnParticle(
-                pos = burst.pos,
-                vel = burst.vel + direction * speed,
+                pos = burst.pos + burst.recentImpulse.pos,
+                vel = burst.vel + burst.recentImpulse.vel + direction * speed,
                 radius = DESTRUCTION_BURST_PARTICLE_RADIUS_FACTOR*burst.baseRadius,
                 shape = BodyShape.CIRCLE,
                 lifetime = DESTRUCTION_BURST_LIFETIME,
@@ -95,6 +96,7 @@ object DamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     private data class DestructionBurstSpec(
         val pos: Coord2,
         val vel: Coord2,
+        val recentImpulse: ImpulseComponent,
         val teamId: TeamId,
         val baseRadius: Frac,
     )

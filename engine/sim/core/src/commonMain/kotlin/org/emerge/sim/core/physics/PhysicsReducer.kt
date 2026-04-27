@@ -63,7 +63,7 @@ class PhysicsReducer(
         Phase("reset", ImpulseResetSystem),
         Phase("forceGather", ShipThrustSystem, GravitySystem(executor), ForceFieldSystem).isolated(),
         Phase("contactDetect", ContactSystem(executor)),
-        Phase("contactResponse", CrashSystem, BounceSystem, LandingSystem).isolated(),
+        Phase("contactResponse", CrashSystem, BounceSystem, RollingResistanceSystem, LandingSystem).isolated(),
         Phase("attachment", AttachmentSystem),
         Phase("lifecycle", RespawnSystem, DamageSystem).isolated(),
         Phase("effects", ParticleSystem, ShipThrustParticleSystem).isolated(),

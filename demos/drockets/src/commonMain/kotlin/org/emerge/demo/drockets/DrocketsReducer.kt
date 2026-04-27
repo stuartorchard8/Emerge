@@ -56,7 +56,7 @@ class DrocketsReducer(
         Phase("aiAndMotion", DrocketAISystem, DrocketWalkSystem, KnightAISystem, KnightWalkSystem, SpriteAnimationSystem),
         Phase("forceGather", GravitySystem(executor), AtmosphereDragSystem).isolated(),
         Phase("contactDetect", ContactSystem(executor)),
-        Phase("contactResponse", DrocketLandingSystem, ReproductionSystem, CrashSystem, BounceSystem).isolated(),
+        Phase("contactResponse", DrocketLandingSystem, ReproductionSystem, CrashSystem, BounceSystem, RollingResistanceSystem).isolated(),
         Phase("lifecycle", DamageSystem),
         Phase("attachment", AttachmentSystem),
         Phase("effects", ParticleSystem, DrocketParticleSystem).isolated(),

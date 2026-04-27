@@ -32,7 +32,7 @@ object DrocketLandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInpu
                 // Must be colliding with a planet - now are we slow enough to land?
                 val surfaceVelocity = otherMotion.surfaceVelocityAtOffset(-contact.normal, contact.minDist)
                 val relativeVelocity = motion.vel - surfaceVelocity
-                if (relativeVelocity < Frac(1, 1024*24)) {
+                if (relativeVelocity < Frac(1, 1 shl 15)) {
                     val landingNormal = if (entityId == contact.aId) contact.normal else -contact.normal
                     val globalAngle = landingNormal.asAngle
                     val otherTransform = builder.getComponent<TransformComponent>(otherId) ?: continue
