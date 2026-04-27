@@ -3,13 +3,13 @@ package org.emerge.sim.core.physics.systems
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.contacts
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
@@ -33,40 +33,35 @@ object CrashSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             val bMotion = builder.getComponent<MotionComponent>(bId) ?: continue
             val normal = contact.normal
 
-            val massA = aMaterial.mass.toLong()
-            val massB = bMaterial.mass.toLong()
-            val totalMass = (massA + massB).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
-            val invMassWeightA = Frac(massB, totalMass)
-            val invMassWeightB = Frac(massA, totalMass)
-
             val velDelta = bMotion.vel - aMotion.vel
             val velAlongNorm = velDelta.dot(normal)
             val bounciness = aMaterial.bounce.coerceAtMost(bMaterial.bounce)
-            val normResponse = if (velAlongNorm.sign > 0) velAlongNorm * bounciness else Frac(0)
+            val normalResponse = solveNormalCollisionResponse(
+                massA = aMaterial.mass,
+                massB = bMaterial.mass,
+                closingSpeedAlongNormal = velAlongNorm,
+                restitution = bounciness,
+            )
 
-            // Multiply by 2 so that bounciness of 1 results in full momentum transfer.
-            val pushVelA = Frac((normResponse * invMassWeightA).raw*2)
-            val pushVelB = Frac((normResponse * invMassWeightB).raw*2)
-
-            accumulateShipCollisionDamage(
+            applyCollisionDamage(
                 builder = builder,
                 entityId = aId,
                 shape = aShape,
-                impactImpulse = pushVelA,
+                impactImpulse = normalResponse.deltaVelA,
                 cfg = cfg,
             )
 
-            accumulateShipCollisionDamage(
+            applyCollisionDamage(
                 builder = builder,
                 entityId = bId,
                 shape = bShape,
-                impactImpulse = pushVelB,
+                impactImpulse = normalResponse.deltaVelB,
                 cfg = cfg,
             )
         }
     }
 
-    private fun accumulateShipCollisionDamage(
+    private fun applyCollisionDamage(
         builder: PhysicsBuilder,
         entityId: EntityId,
         shape: RenderShapeComponent,
@@ -74,7 +69,7 @@ object CrashSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         cfg: PhysicsConfig,
     ) {
         if (shape.shape != BodyShape.TRIANGLE) return
-        val speedOverThreshold = impactImpulse - cfg.shipCollisionDamageThreshold
+        val speedOverThreshold = impactImpulse - cfg.collisionSpeedDamageThreshold
         if (speedOverThreshold.raw <= 0L) return
         builder.update<DamageComponent>(entityId) { DamageComponent(next = speedOverThreshold) + it }
     }

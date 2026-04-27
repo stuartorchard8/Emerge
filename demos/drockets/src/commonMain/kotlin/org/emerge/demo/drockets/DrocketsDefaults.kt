@@ -9,7 +9,7 @@ import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.spawnBody
 import org.emerge.sim.core.physics.primitives.*
 
-fun createDrocketsInitialState(drocketCount: Int = DROCKET_COUNT, knightCount: Int = KNIGHT_COUNT): PhysicsState {
+fun createDrocketsInitialState(drocketCount: Int = INITIAL_DROCKET_COUNT, knightCount: Int = INITIAL_KNIGHT_COUNT): PhysicsState {
     val builder = PhysicsBuilder(PhysicsState())
 
     val planetId = builder.spawnBody(
@@ -151,5 +151,6 @@ val PLANET_MASS = 5_000_000u
 val DROCKET_RADIUS = Frac(1, 1 shl 13)
 val KNIGHT_RADIUS = Frac(1, 1 shl 13)
 private val DROCKET_MASS = 500u
-private const val DROCKET_COUNT = 100
-private const val KNIGHT_COUNT = 0
+private const val INITIAL_DROCKET_COUNT = 200
+const val MAX_DROCKET_COUNT = 400
+private const val INITIAL_KNIGHT_COUNT = 0

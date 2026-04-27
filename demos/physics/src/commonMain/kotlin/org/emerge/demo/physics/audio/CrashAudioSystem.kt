@@ -1,12 +1,12 @@
 package org.emerge.demo.physics.audio
 
-import kotlin.math.floor
-import kotlin.math.hypot
-import kotlin.random.Random
 import org.emerge.demo.physics.PhysicsFrame
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.Coord2
+import kotlin.math.floor
+import kotlin.math.hypot
+import kotlin.random.Random
 
 data class CrashSfxRequest(
     val clipIndex: Int,
@@ -27,7 +27,7 @@ interface CrashAudioEngine {
 class CrashAudioSystem(
     private val engine: CrashAudioEngine,
     private val random: Random = Random.Default,
-    private val shipMaxDamageRaw: Long = PhysicsConfig().shipMaxDamage.raw,
+    private val shipMaxDamageRaw: Long = PhysicsConfig().maxDamage.raw,
     private val worldSize: Float = 2f,
     private val maxAudibleDistance: Float = 0.5f,
     private val minTicksBetweenEntityCrashes: Long = 2L,

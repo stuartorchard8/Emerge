@@ -591,7 +591,7 @@ class DrocketsRenderer(
         private const val TRIANGLE_VERTEX_OFFSET = 0
         private const val QUAD_VERTEX_OFFSET = 3
         private const val SPRITE_SCALE_FACTOR = 1f
-        private const val PICK_RADIUS_SCALE = 2.5f
+        private const val PICK_RADIUS_SCALE = 5f
         private const val PLANET_ATMOSPHERE_SCALE = 1.15f
     }
 }

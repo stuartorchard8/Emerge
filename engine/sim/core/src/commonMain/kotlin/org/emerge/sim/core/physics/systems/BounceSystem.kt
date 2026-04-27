@@ -34,11 +34,13 @@ object BounceSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             val tangent = contact.tangent
             val pen = contact.penetration
 
-            val massA = aMaterial.mass.toLong()
-            val massB = bMaterial.mass.toLong()
-            val totalMass = (massA + massB).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
-            val invMassWeightA = Frac(massB, totalMass)
-            val invMassWeightB = Frac(massA, totalMass)
+            val massA = aMaterial.mass
+            val massB = bMaterial.mass
+            val massALong = massA.toLong()
+            val massBLong = massB.toLong()
+            val totalMass = (massALong + massBLong).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
+            val invMassWeightA = Frac(massBLong, totalMass)
+            val invMassWeightB = Frac(massALong, totalMass)
 
             val pushA = normal * (pen * invMassWeightA)
             val pushB = -normal * (pen * invMassWeightB)
@@ -46,7 +48,12 @@ object BounceSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             val velDelta = bMotion.vel - aMotion.vel
             val velAlongNorm = velDelta.dot(normal)
             val bounciness = aMaterial.bounce.coerceAtMost(bMaterial.bounce)
-            val normResponse = if (velAlongNorm.sign > 0) velAlongNorm * bounciness else Frac(0)
+            val normalResponse = solveNormalCollisionResponse(
+                massA = massA,
+                massB = massB,
+                closingSpeedAlongNormal = velAlongNorm,
+                restitution = bounciness,
+            )
 
             val roughness = aMaterial.rough.coerceAtMost(bMaterial.rough)
             val circumferenceA = aCollider.radius.toCircumference()
@@ -55,9 +62,8 @@ object BounceSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             val velAlongTangent = velDelta.dot(tangent) - spinAlongTangent
             val tangentResponse = velAlongTangent * roughness
 
-            // Multiply by 2 so that bounciness of 1 results in full momentum transfer.
-            val pushVelA = Frac((normResponse * invMassWeightA).raw*2)
-            val pushVelB = Frac((normResponse * invMassWeightB).raw*2)
+            val pushVelA = normalResponse.deltaVelA
+            val pushVelB = normalResponse.deltaVelB
             val pushNormVelA = normal * pushVelA
             val pushNormVelB = -normal * pushVelB
 
