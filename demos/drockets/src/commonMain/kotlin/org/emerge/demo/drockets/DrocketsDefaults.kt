@@ -8,6 +8,7 @@ import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.spawnBody
 import org.emerge.sim.core.physics.primitives.*
+import kotlin.math.roundToLong
 
 fun createDrocketsInitialState(drocketCount: Int = INITIAL_DROCKET_COUNT, knightCount: Int = INITIAL_KNIGHT_COUNT): PhysicsState {
     val builder = PhysicsBuilder(PhysicsState())
@@ -101,12 +102,18 @@ fun spawnDrocket(
     builder.update<GenomeComponent>(rocketId) {
         GenomeComponent(
             genes = mapOf(
-                "thrust" to 100,
-                "turn" to 100,
-                "fertility" to 100,
-                "longevity" to 100,
-                "size" to 100,
-                "teamBias" to teamId.value,
+                "ai_walk_min_ticks" to encodeRangedGene(120, 1, 20_000),
+                "ai_walk_max_ticks" to encodeRangedGene(600, 1, 20_000),
+                "ai_charge_ticks" to encodeRangedGene(18, 1, 20_000),
+                "ai_fuel_ticks" to encodeRangedGene(200, 1, 20_000),
+                "ai_spin_raw" to encodeRangedGene(Frac(1, 120).raw.toInt(), -Int.MAX_VALUE / 64, Int.MAX_VALUE / 64),
+                "ai_thrust_raw" to encodeRangedGene(Frac(1, 1024 * 256).raw.toInt(), 0, Int.MAX_VALUE / 4096),
+                "color_h" to encodeRangedGene(((teamId.value * 137) % 360 + 360) % 360, 0, 360),
+                "color_s" to encodeRangedGene(550 + (((teamId.value + 1) * 71) % 380), 0, 1000),
+                "color_v" to encodeRangedGene(620 + (((teamId.value + 1) * 59) % 320), 0, 1000),
+                "fire_color_h" to encodeRangedGene((((teamId.value * 137) + 24) % 360 + 360) % 360, 0, 360),
+                "fire_color_s" to encodeRangedGene(820 + (((teamId.value + 1) * 43) % 180), 0, 1000),
+                "fire_color_v" to encodeRangedGene(860 + (((teamId.value + 1) * 37) % 140), 0, 1000),
             )
         )
     }
@@ -167,3 +174,11 @@ private val DROCKET_MASS = 500u
 private const val INITIAL_DROCKET_COUNT = 200
 const val MAX_DROCKET_COUNT = 400
 private const val INITIAL_KNIGHT_COUNT = 0
+
+private fun encodeRangedGene(value: Int, min: Int, max: Int): Int {
+    val clamped = value.coerceIn(min, max)
+    val span = (max - min).coerceAtLeast(1)
+    val norm = (clamped - min).toDouble() / span.toDouble()
+    val raw = Int.MIN_VALUE.toLong() + (norm * 4294967295.0).roundToLong()
+    return raw.toInt()
+}

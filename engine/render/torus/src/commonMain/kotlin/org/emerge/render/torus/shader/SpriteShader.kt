@@ -34,6 +34,7 @@ class SpriteShader {
     private val instanceUvHVbo: Int = GPU.genBuffers()
     private val instanceAlphaVbo: Int = GPU.genBuffers()
     private val instanceSquashVbo: Int = GPU.genBuffers()
+    private val instanceTintColorVbo: Int = GPU.genBuffers()
 
     private val instanceMatrices = GpuFloatBuffer(MAX_INSTANCES * MAT4_FLOATS)
     private val instancePrimaryIds = GpuFloatBuffer(MAX_INSTANCES)
@@ -43,6 +44,7 @@ class SpriteShader {
     private val instanceUvHs = GpuFloatBuffer(MAX_INSTANCES)
     private val instanceAlphas = GpuFloatBuffer(MAX_INSTANCES)
     private val instanceSquashs = GpuFloatBuffer(MAX_INSTANCES)
+    private val instanceTintColors = GpuFloatBuffer(MAX_INSTANCES * 3)
 
     init {
         uploadQuad()
@@ -54,6 +56,7 @@ class SpriteShader {
         initFloatBuffer(instanceUvHVbo, INSTANCE_UV_H_ATTR)
         initFloatBuffer(instanceAlphaVbo, INSTANCE_ALPHA_ATTR)
         initFloatBuffer(instanceSquashVbo, INSTANCE_SQUASH_ATTR)
+        initFloatBuffer(instanceTintColorVbo, INSTANCE_TINT_COLOR_ATTR, sizeX = 3)
     }
 
     private fun uploadQuad() {
@@ -96,6 +99,7 @@ class SpriteShader {
         uvHs: FloatArray,
         alphas: FloatArray,
         squashs: FloatArray,
+        tintColorsRgb: FloatArray,
         textureId: Int,
         frameSizeX: Float,
         frameSizeY: Float,
@@ -116,6 +120,7 @@ class SpriteShader {
         bind(instanceUvHVbo, instanceUvHs, uvHs, n)
         bind(instanceAlphaVbo, instanceAlphas, alphas, n)
         bind(instanceSquashVbo, instanceSquashs, squashs, n)
+        bind(instanceTintColorVbo, instanceTintColors, tintColorsRgb, n * 3)
 
         GPU.drawTrianglesInstanced(0, QUAD_VERTEX_COUNT, n)
     }
@@ -137,6 +142,7 @@ class SpriteShader {
         GPU.deleteBuffers(instanceUvWVbo)
         GPU.deleteBuffers(instanceUvHVbo)
         GPU.deleteBuffers(instanceAlphaVbo)
+        GPU.deleteBuffers(instanceTintColorVbo)
         if (vao != null) GPU.deleteVertexArrays(vao)
     }
 
@@ -149,6 +155,7 @@ class SpriteShader {
         private const val INSTANCE_UV_H_ATTR = 9
         private const val INSTANCE_ALPHA_ATTR = 10
         private const val INSTANCE_SQUASH_ATTR = 11
+        private const val INSTANCE_TINT_COLOR_ATTR = 12
         private const val MAT4_FLOATS = 16
         const val MAX_INSTANCES = 2000
         private const val SPRITE_TEXTURE_UNIT = 1

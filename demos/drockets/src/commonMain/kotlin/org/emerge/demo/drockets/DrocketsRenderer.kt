@@ -34,6 +34,8 @@ class DrocketsRenderer(
 
     @Volatile
     private var overlayStatus: OverlayStatus? = null
+    @Volatile
+    private var showPhenotypeDebugHud: Boolean = true
 
     private var zoom: Float = 100f
 
@@ -55,6 +57,7 @@ class DrocketsRenderer(
     private val hudGlyphShader = HudGlyphShader()
     private var resolution: Vec2 = Vec2(1f, 1f)
     private val hudFontTextureId: Int
+    private var lastDrawnState: PhysicsState? = null
 
     // Instance buffers for planet shader
     private val planetMatrices = FloatArray(PlanetShader.MAX_INSTANCES * M4)
@@ -68,6 +71,7 @@ class DrocketsRenderer(
     private val circleShapes = FloatArray(CircleShader.MAX_INSTANCES)
     private val circleAlphas = FloatArray(CircleShader.MAX_INSTANCES)
     private val circleRadii = FloatArray(CircleShader.MAX_INSTANCES)
+    private val circleTintColors = FloatArray(CircleShader.MAX_INSTANCES * 3)
 
     // Instance buffers for sprite shader (drockets)
     private val spriteMatrices = FloatArray(SpriteShader.MAX_INSTANCES * M4)
@@ -78,6 +82,7 @@ class DrocketsRenderer(
     private val spriteUvHs = FloatArray(SpriteShader.MAX_INSTANCES)
     private val spriteAlphas = FloatArray(SpriteShader.MAX_INSTANCES)
     private val spriteSquashs = FloatArray(SpriteShader.MAX_INSTANCES)
+    private val spriteTintColors = FloatArray(SpriteShader.MAX_INSTANCES * 3)
     private val hudCenters = FloatArray(HudGlyphShader.MAX_GLYPHS * 2)
     private val hudHalfSizes = FloatArray(HudGlyphShader.MAX_GLYPHS * 2)
     private val hudUvRects = FloatArray(HudGlyphShader.MAX_GLYPHS * 4)
@@ -167,6 +172,7 @@ class DrocketsRenderer(
     }
 
     fun draw(state: PhysicsState) {
+        lastDrawnState = state
         // Place the camera on the planet surface, orbiting with rotation
         updateViewFocus(state)
 
@@ -234,6 +240,7 @@ class DrocketsRenderer(
         var spriteCount = 0
         val drocketStates = state.components.getTable<DrocketStateComponent>().entries()
         val reproducers = state.components.getTable<ReproducerComponent>()
+        val genomes = state.components.getTable<GenomeComponent>()
         val nowMs = Clock.System.now().toEpochMilliseconds()
         for ((entityId, drocketState) in drocketStates) {
             if (spriteCount >= SpriteShader.MAX_INSTANCES) break
@@ -243,6 +250,7 @@ class DrocketsRenderer(
             val facing = drocketState.walkDirection
             val squash = 0.06125 - cos((drocketState.ticksRemaining) * 2 * PI / 60f) * 0.06125
             val teamId = state.teams[entityId]?.teamId?.value
+            val genome = genomes[entityId]
             val (uvX, uvY) = spriteUvForEntity(state, entityId)
             val (uvW, uvH) = spriteSizeForEntity(state, entityId)
             val maturity = reproducer.getMaturityRatio(nowMs)
@@ -262,6 +270,33 @@ class DrocketsRenderer(
                 alpha = 1f,
                 squash = squash.toFloat(),
             )
+            val tintBase = (spriteCount - 1) * 3
+            val tintPrefix = "color_"
+            val tintH = genome?.genes?.get("${tintPrefix}h")
+            val tintS = genome?.genes?.get("${tintPrefix}s")
+            val tintV = genome?.genes?.get("${tintPrefix}v")
+            if (tintH != null && tintS != null && tintV != null) {
+                val hue = decodeRangedGene(tintH, 0, 360, 0).toFloat()
+                val sat = decodeRangedGene(tintS, 0, 1000, 1000).toFloat() / 1000f
+                val value = decodeRangedGene(tintV, 0, 1000, 1000).toFloat() / 1000f
+                val rgb = hsvToRgb(hue, sat, value)
+                spriteTintColors[tintBase] = rgb.first
+                spriteTintColors[tintBase + 1] = rgb.second
+                spriteTintColors[tintBase + 2] = rgb.third
+            } else if (
+                genome?.genes?.containsKey("${tintPrefix}r") == true &&
+                genome.genes.containsKey("${tintPrefix}g") &&
+                genome.genes.containsKey("${tintPrefix}b")
+            ) {
+                // Backwards-compat for pre-HSV genomes.
+                spriteTintColors[tintBase] = decodeGeneToUnit(genome.genes["${tintPrefix}r"] ?: 0)
+                spriteTintColors[tintBase + 1] = decodeGeneToUnit(genome.genes["${tintPrefix}g"] ?: 0)
+                spriteTintColors[tintBase + 2] = decodeGeneToUnit(genome.genes["${tintPrefix}b"] ?: 0)
+            } else {
+                spriteTintColors[tintBase] = 0f
+                spriteTintColors[tintBase + 1] = 0f
+                spriteTintColors[tintBase + 2] = 0f
+            }
         }
         if (spriteCount > 0) {
             spriteShader.drawInstanced(
@@ -274,6 +309,7 @@ class DrocketsRenderer(
                 uvHs = spriteUvHs,
                 alphas = spriteAlphas,
                 squashs = spriteSquashs,
+                tintColorsRgb = spriteTintColors,
                 textureId = drocketSpriteAtlasTextureId,
                 frameSizeX = SpriteSheet.DROCKET.frameSizeU,
                 frameSizeY = SpriteSheet.DROCKET.frameSizeV,
@@ -305,6 +341,10 @@ class DrocketsRenderer(
                 alpha = 1f,
                 squash = 0f,
             )
+            val tintBase = (spriteCount - 1) * 3
+            spriteTintColors[tintBase] = 0f
+            spriteTintColors[tintBase + 1] = 0f
+            spriteTintColors[tintBase + 2] = 0f
         }
         if (spriteCount > 0) {
             spriteShader.drawInstanced(
@@ -317,6 +357,7 @@ class DrocketsRenderer(
                 uvHs = spriteUvHs,
                 alphas = spriteAlphas,
                 squashs = spriteSquashs,
+                tintColorsRgb = spriteTintColors,
                 textureId = knightSpriteAtlasTextureId,
                 frameSizeX = SpriteSheet.KNIGHT.frameSizeU,
                 frameSizeY = SpriteSheet.KNIGHT.frameSizeV,
@@ -328,6 +369,7 @@ class DrocketsRenderer(
 
         // ── Layer 3: particles via CircleShader (from bgRenderShapes where particles live) ──
         var circleCount = 0
+        val fireTintByTeam = buildFireTintByTeam(state)
         for ((entityId, particle) in state.particles.entries()) {
             if (circleCount >= CircleShader.MAX_INSTANCES) break
             val transform = state.transforms[entityId] ?: continue
@@ -352,6 +394,17 @@ class DrocketsRenderer(
             circleShapes[circleCount] = 0f
             circleAlphas[circleCount] = particle.life.toFloat() / particle.lifeTime.toFloat()
             circleRadii[circleCount] = radius
+            val tintBase = circleCount * 3
+            val teamTint = if (teamId != null) fireTintByTeam[teamId] else null
+            if (teamTint != null) {
+                circleTintColors[tintBase] = teamTint.first
+                circleTintColors[tintBase + 1] = teamTint.second
+                circleTintColors[tintBase + 2] = teamTint.third
+            } else {
+                circleTintColors[tintBase] = 0f
+                circleTintColors[tintBase + 1] = 0f
+                circleTintColors[tintBase + 2] = 0f
+            }
             circleCount++
         }
         if (circleCount > 0) {
@@ -364,6 +417,7 @@ class DrocketsRenderer(
                 shapes = circleShapes,
                 alphas = circleAlphas,
                 radii = circleRadii,
+                tintColorsRgb = circleTintColors,
             )
         }
         drawOverlayHud()
@@ -384,6 +438,15 @@ class DrocketsRenderer(
         return status.message
     }
 
+    fun togglePhenotypeDebugHud() {
+        showPhenotypeDebugHud = !showPhenotypeDebugHud
+        setOverlayStatus(
+            if (showPhenotypeDebugHud) "Phenotype HUD ON (F3)"
+            else "Phenotype HUD OFF (F3)",
+            durationMs = 2_000,
+        )
+    }
+
     fun cleanup() {
         starscapeShader.deleteProgram()
         planetShader.deleteProgram()
@@ -396,21 +459,51 @@ class DrocketsRenderer(
     }
 
     private fun drawOverlayHud() {
-        val status = currentOverlayStatus() ?: return
-        val message = sanitizeHudText(status.uppercase())
-        if (message.isEmpty()) return
-
         val glyphPixelHeight = (16f * resolution.y / 600f).coerceIn(12f, 28f)
-        val glyphPixelWidth = glyphPixelHeight * 0.75f
         val marginX = 12f
         val marginY = 12f
-        val baselineY = marginY + glyphPixelHeight
-        var cursorX = marginX
+        val lineGap = glyphPixelHeight * 0.35f
+
+        val lines = ArrayList<String>(8)
+        val status = currentOverlayStatus()
+        if (status != null) {
+            lines += sanitizeHudText(status.uppercase())
+        }
+        if (showPhenotypeDebugHud) {
+            val debugLines = focusedGenomeDebugLines()
+            if (debugLines.isNotEmpty()) {
+                for (line in debugLines) {
+                    lines += sanitizeHudText(line.uppercase())
+                }
+            }
+        }
+        if (lines.isEmpty()) return
+
+        var baselineY = marginY + glyphPixelHeight
+        for (line in lines) {
+            drawHudTextLine(
+                message = line,
+                startX = marginX,
+                baselineY = baselineY,
+                glyphPixelHeight = glyphPixelHeight,
+            )
+            baselineY += glyphPixelHeight + lineGap
+        }
+    }
+
+    private fun drawHudTextLine(
+        message: String,
+        startX: Float,
+        baselineY: Float,
+        glyphPixelHeight: Float,
+    ) {
+        if (message.isEmpty()) return
+        val glyphPixelWidth = glyphPixelHeight * 0.75f
+        var cursorX = startX
 
         val atlasCols = HUD_FONT_COLS.toFloat()
-        val atlasRows = HUD_FONT_ROWS.toFloat()
         val uvW = 1f / atlasCols
-        val uvH = 1f / atlasRows
+        val uvH = 1f / HUD_FONT_ROWS.toFloat()
 
         var count = 0
         for (ch in message) {
@@ -489,6 +582,62 @@ class DrocketsRenderer(
                 alphaScale = 1f,
             )
         }
+    }
+
+    private fun focusedGenomeDebugLines(): List<String> {
+        val state = lastDrawnState ?: return emptyList()
+        val entityId = focusedId ?: return emptyList()
+        val ds = state.components.getTable<DrocketStateComponent>()[entityId] ?: return emptyList()
+        val genome = state.components.getTable<GenomeComponent>()[entityId] ?: return emptyList()
+        val reproducer = state.components.getTable<ReproducerComponent>()[entityId]
+
+        val minWalk = decodeRangedGene(genome.genes["ai_walk_min_ticks"], 1, 20_000, 120)
+        val maxWalk = decodeRangedGene(genome.genes["ai_walk_max_ticks"], 1, 20_000, 600)
+        val charge = decodeRangedGene(genome.genes["ai_charge_ticks"], 1, 20_000, 18)
+        val fuel = decodeRangedGene(genome.genes["ai_fuel_ticks"], 1, 20_000, 200)
+        val thrust = decodeRangedGene(genome.genes["ai_thrust_raw"], 0, Int.MAX_VALUE / 4096, Frac(1, 1024 * 256).raw.toInt())
+        val bodyH = decodeRangedGene(genome.genes["color_h"], 0, 360, 0)
+        val bodyS = decodeRangedGene(genome.genes["color_s"], 0, 1000, 0)
+        val bodyV = decodeRangedGene(genome.genes["color_v"], 0, 1000, 0)
+        val fireH = decodeRangedGene(genome.genes["fire_color_h"], 0, 360, 0)
+        val fireS = decodeRangedGene(genome.genes["fire_color_s"], 0, 1000, 0)
+        val fireV = decodeRangedGene(genome.genes["fire_color_v"], 0, 1000, 0)
+        val sex = reproducer?.sex?.name ?: "NA"
+        val nowMs = Clock.System.now().toEpochMilliseconds()
+        val pregnancy = when {
+            reproducer?.spawn == null -> "NO"
+            reproducer.spawn.birthdayMs > nowMs -> "YES DUE ${reproducer.spawn.birthdayMs - nowMs}MS"
+            else -> "READY"
+        }
+
+        return listOf(
+            "ID ${entityId.value} ${ds.phase}",
+            "SEX ${sex} PREG ${pregnancy}",
+            "WALK ${minWalk}-${maxWalk}",
+            "CHARGE ${charge}  FUEL ${fuel}",
+            "THRUST ${thrust}",
+            "BODY HSV ${bodyH} ${bodyS} ${bodyV}",
+            "FIRE HSV ${fireH} ${fireS} ${fireV}",
+        )
+    }
+
+    private fun buildFireTintByTeam(state: PhysicsState): Map<Int, Triple<Float, Float, Float>> {
+        val out = LinkedHashMap<Int, Triple<Float, Float, Float>>()
+        val drockets = state.components.getTable<DrocketStateComponent>().entries()
+        val genomes = state.components.getTable<GenomeComponent>()
+        for ((entityId, _) in drockets) {
+            val teamId = state.teams[entityId]?.teamId?.value ?: continue
+            if (out.containsKey(teamId)) continue
+            val genome = genomes[entityId] ?: continue
+            val h = genome.genes["fire_color_h"] ?: continue
+            val s = genome.genes["fire_color_s"] ?: continue
+            val v = genome.genes["fire_color_v"] ?: continue
+            val hue = decodeRangedGene(h, 0, 360, 0).toFloat()
+            val sat = decodeRangedGene(s, 0, 1000, 1000).toFloat() / 1000f
+            val value = decodeRangedGene(v, 0, 1000, 1000).toFloat() / 1000f
+            out[teamId] = hsvToRgb(hue, sat, value)
+        }
+        return out
     }
 
     private fun drawHudGlyphBatch(
@@ -749,6 +898,34 @@ class DrocketsRenderer(
             out[col * 4 + 2] = a[2] * b0 + a[6] * b1 + a[10] * b2 + a[14] * b3
             out[col * 4 + 3] = a[3] * b0 + a[7] * b1 + a[11] * b2 + a[15] * b3
         }
+    }
+
+    private fun decodeGeneToUnit(gene: Int): Float {
+        val norm = ((gene.toLong() - Int.MIN_VALUE.toLong()) / 4294967295.0).coerceIn(0.0, 1.0)
+        return norm.toFloat()
+    }
+
+    private fun decodeRangedGene(raw: Int?, min: Int, max: Int, fallback: Int): Int {
+        if (raw == null) return fallback
+        val norm = ((raw.toLong() - Int.MIN_VALUE.toLong()) / 4294967295.0).coerceIn(0.0, 1.0)
+        return (min + ((max - min) * norm)).toInt().coerceIn(min, max)
+    }
+
+    private fun hsvToRgb(h: Float, s: Float, v: Float): Triple<Float, Float, Float> {
+        if (s <= 0f) return Triple(v, v, v)
+        val hh = ((h % 360f) + 360f) % 360f
+        val c = v * s
+        val x = c * (1f - abs(((hh / 60f) % 2f) - 1f))
+        val m = v - c
+        val (r1, g1, b1) = when {
+            hh < 60f -> Triple(c, x, 0f)
+            hh < 120f -> Triple(x, c, 0f)
+            hh < 180f -> Triple(0f, c, x)
+            hh < 240f -> Triple(0f, x, c)
+            hh < 300f -> Triple(x, 0f, c)
+            else -> Triple(c, 0f, x)
+        }
+        return Triple(r1 + m, g1 + m, b1 + m)
     }
 
     companion object {

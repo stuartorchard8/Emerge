@@ -50,7 +50,7 @@ class DrocketsController(
             thrustFactorInv = Int.MAX_VALUE / (1024 * 16),
             turnFactorInv = Int.MAX_VALUE / (1024 * 512),
             gravityNumerator = Frac(1, 2 shl 10),
-            collisionSpeedDamageThreshold = Frac(1, 1 shl 12),
+            collisionSpeedDamageThreshold = Frac(1, 1 shl 11),
             maxDamage = Frac(1),
             respawnTicks = -1, // Respawn is disabled
         )

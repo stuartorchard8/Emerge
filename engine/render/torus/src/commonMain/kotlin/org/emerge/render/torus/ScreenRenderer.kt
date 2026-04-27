@@ -38,6 +38,7 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val bodyInstanceShapes = FloatArray(CircleShader.MAX_INSTANCES)
     private val bodyInstanceAlphas = FloatArray(CircleShader.MAX_INSTANCES)
     private val bodyInstanceRadii = FloatArray(CircleShader.MAX_INSTANCES)
+    private val bodyInstanceTintColors = FloatArray(CircleShader.MAX_INSTANCES * 3)
     private val matTmp = FloatArray(MAT4_FLOATS)
     private val matT = FloatArray(MAT4_FLOATS)
     private val matR = FloatArray(MAT4_FLOATS)
@@ -142,6 +143,7 @@ class ScreenRenderer(val contentScale: Vec2) {
             shapes = bodyInstanceShapes,
             alphas = bodyInstanceAlphas,
             radii = bodyInstanceRadii,
+            tintColorsRgb = bodyInstanceTintColors,
         )
         GPU.disableBlend()
         GPU.disableScissorTest()

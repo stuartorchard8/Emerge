@@ -24,6 +24,10 @@ import kotlin.math.abs
  * - Thrust force: 12000 * impulse / delta (mapped to fixed-point impulse per tick)
  */
 object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+    private const val GENE_UINT_RANGE = 4294967295.0
+    private val MAX_SPIN_RAW = Int.MAX_VALUE / 64
+    private val MIN_THRUST_RAW = 0
+    private val MAX_THRUST_RAW = Int.MAX_VALUE / 4096
 
     override fun update(
         cfg: PhysicsConfig,
@@ -40,6 +44,7 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
 
         for ((entityId, ds) in drocketStates) {
             val transform = builder.getComponent<TransformComponent>(entityId) ?: continue
+            val tuning = tuningFor(builder.getComponent<GenomeComponent>(entityId))
 
             when (ds.phase) {
                 DrocketPhase.WALKING -> {
@@ -49,7 +54,7 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                         // Transition to CHARGING: spin up before launch
                         nextStates[entityId] = ds.copy(
                             phase = DrocketPhase.CHARGING,
-                            ticksRemaining = CHARGE_TICKS,
+                            ticksRemaining = tuning.chargeTicks,
                         )
 
                         val motion = builder.getComponent<MotionComponent>(entityId) ?: continue
@@ -65,7 +70,7 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                             landing,
                         )
                         landings.remove(entityId)
-                        val spinDir = CHARGE_SPIN_SPEED*ds.walkDirection
+                        val spinDir = tuning.chargeSpinSpeed * ds.walkDirection
                         impulses[entityId] = ImpulseComponent(
                             vel = surfaceVelocity-motion.vel,
                             angVel = parentMotion.angVel-motion.angVel + spinDir,
@@ -81,7 +86,7 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                         // Start thrusting
                         nextStates[entityId] = ds.copy(
                             phase = DrocketPhase.THRUSTING,
-                            fuel = FUEL_TICKS,
+                            fuel = tuning.fuelTicks,
                             ticksRemaining = 0,
                         )
                     } else {
@@ -104,7 +109,7 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                     if (ds.walkDirection < 0) {
                         forward = -forward
                     }
-                    val thrustImpulse = forward * THRUST_STRENGTH
+                    val thrustImpulse = forward * tuning.thrustStrength
                     impulses[entityId] = ImpulseComponent(vel = thrustImpulse)
 
                     if (fuelLeft <= 0) {
@@ -123,7 +128,8 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                     if (landing != null) {
                         // Determine new walk direction (reverse from previous)
                         val newDirection = -ds.walkDirection
-                        val walkTicks = MIN_WALK_TICKS + builder.nextRandomInt(until = MAX_WALK_TICKS - MIN_WALK_TICKS)
+                        val walkRange = (tuning.maxWalkTicks - tuning.minWalkTicks).coerceAtLeast(1)
+                        val walkTicks = tuning.minWalkTicks + builder.nextRandomInt(until = walkRange)
                         nextStates[entityId] = ds.copy(
                             phase = DrocketPhase.WALKING,
                             walkDirection = newDirection,
@@ -169,9 +175,50 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     // Walk 2–10 seconds → 120–600 ticks
     private const val MIN_WALK_TICKS = 120
     private const val MAX_WALK_TICKS = 600
-    private val CHARGE_SPIN_SPEED = Frac(1,120)
+    private const val CHARGE_SPIN_NUMERATOR = 1
+    private const val CHARGE_SPIN_DENOMINATOR = 120
+    private val CHARGE_SPIN_SPEED = Frac(CHARGE_SPIN_NUMERATOR.toLong(), CHARGE_SPIN_DENOMINATOR)
     // Thrust tuned relative to the engine's gravity to achieve orbital velocity
-    private val THRUST_STRENGTH = Frac(1, 1024 * 256)
+    private const val THRUST_NUMERATOR = 1
+    private const val THRUST_DENOMINATOR = 1024 * 256
+    private val THRUST_STRENGTH = Frac(THRUST_NUMERATOR.toLong(), THRUST_DENOMINATOR)
+
+    private data class AiTuning(
+        val chargeTicks: Int,
+        val fuelTicks: Int,
+        val minWalkTicks: Int,
+        val maxWalkTicks: Int,
+        val chargeSpinSpeed: Frac,
+        val thrustStrength: Frac,
+    )
+
+    private fun tuningFor(genome: GenomeComponent?): AiTuning {
+        val genes = genome?.genes ?: emptyMap()
+        val minWalk = genes.rangedGene("ai_walk_min_ticks", MIN_WALK_TICKS, 1, 20_000)
+        val maxWalkRaw = genes.rangedGene("ai_walk_max_ticks", MAX_WALK_TICKS, 1, 20_000)
+        val maxWalk = maxWalkRaw.coerceAtLeast(minWalk + 1)
+        val spinRaw = genes.rangedGene("ai_spin_raw", CHARGE_SPIN_SPEED.raw.toInt(), -MAX_SPIN_RAW, MAX_SPIN_RAW)
+        val thrustRaw = genes.rangedGene("ai_thrust_raw", THRUST_STRENGTH.raw.toInt(), MIN_THRUST_RAW, MAX_THRUST_RAW)
+        return AiTuning(
+            chargeTicks = genes.rangedGene("ai_charge_ticks", CHARGE_TICKS, 1, 20_000),
+            fuelTicks = genes.rangedGene("ai_fuel_ticks", FUEL_TICKS, 1, 20_000),
+            minWalkTicks = minWalk,
+            maxWalkTicks = maxWalk,
+            chargeSpinSpeed = Frac(spinRaw.toLong()),
+            thrustStrength = Frac(thrustRaw.toLong()),
+        )
+    }
+
+    private fun Map<String, Int>.rangedGene(
+        key: String,
+        fallback: Int,
+        min: Int,
+        max: Int,
+    ): Int {
+        val raw = this[key] ?: return fallback
+        val norm = ((raw.toLong() - Int.MIN_VALUE.toLong()) / GENE_UINT_RANGE).coerceIn(0.0, 1.0)
+        return (min + ((max - min) * norm)).toInt().coerceIn(min, max)
+    }
 
 
     private fun surfaceVelocityAtAttachment(
@@ -185,4 +232,5 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             worldOffset.len,
         )
     }
+
 }

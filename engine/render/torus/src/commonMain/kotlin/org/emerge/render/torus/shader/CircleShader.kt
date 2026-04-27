@@ -16,12 +16,14 @@ class CircleShader {
     private val instanceShapeVbo: Int = GPU.genBuffers()
     private val instanceAlphaVbo: Int = GPU.genBuffers()
     private val instanceRadiusVbo: Int = GPU.genBuffers()
+    private val instanceTintColorVbo: Int = GPU.genBuffers()
     private val instanceMatrices = GpuFloatBuffer(MAX_INSTANCES * MAT4_FLOATS)
     private val instancePrimaryIds = GpuFloatBuffer(MAX_INSTANCES)
     private val instanceSecondaryIds = GpuFloatBuffer(MAX_INSTANCES)
     private val instanceShapes = GpuFloatBuffer(MAX_INSTANCES)
     private val instanceAlphas = GpuFloatBuffer(MAX_INSTANCES)
     private val instanceRadii = GpuFloatBuffer(MAX_INSTANCES)
+    private val instanceTintColors = GpuFloatBuffer(MAX_INSTANCES * 3)
 
     init {
         uploadNoiseTexture()
@@ -32,6 +34,7 @@ class CircleShader {
         initFloatBuffer(instanceShapeVbo, INSTANCE_SHAPE_ATTR)
         initFloatBuffer(instanceAlphaVbo, INSTANCE_ALPHA_ATTR)
         initFloatBuffer(instanceRadiusVbo, INSTANCE_RADIUS_ATTR)
+        initFloatBuffer(instanceTintColorVbo, INSTANCE_TINT_COLOR_ATTR, sizeX = 3)
     }
 
     fun initFloatBuffer(vbo: Int, attribute: Int, sizeX: Int = 1, sizeY: Int = 1) {
@@ -63,6 +66,7 @@ class CircleShader {
         shapes: FloatArray,
         alphas: FloatArray,
         radii: FloatArray,
+        tintColorsRgb: FloatArray,
     ) {
         GPU.useProgram(program)
         GPU.activeTexture(NOISE_TEXTURE_UNIT)
@@ -75,6 +79,7 @@ class CircleShader {
         bindAndSetup(instanceShapeVbo      , instanceShapes      , shapes          , n, INSTANCE_SHAPE_ATTR)
         bindAndSetup(instanceAlphaVbo      , instanceAlphas      , alphas          , n, INSTANCE_ALPHA_ATTR)
         bindAndSetup(instanceRadiusVbo     , instanceRadii       , radii           , n, INSTANCE_RADIUS_ATTR)
+        bindAndSetup(instanceTintColorVbo  , instanceTintColors  , tintColorsRgb   , n * 3, INSTANCE_TINT_COLOR_ATTR, 3)
 
         GPU.drawTrianglesInstanced(vOffset, 3, n)
     }
@@ -111,6 +116,7 @@ class CircleShader {
         GPU.deleteBuffers(instanceShapeVbo)
         GPU.deleteBuffers(instanceAlphaVbo)
         GPU.deleteBuffers(instanceRadiusVbo)
+        GPU.deleteBuffers(instanceTintColorVbo)
     }
 
     private fun uploadNoiseTexture() {
@@ -130,6 +136,7 @@ class CircleShader {
         private const val INSTANCE_SHAPE_ATTR = 7
         private const val INSTANCE_ALPHA_ATTR = 8
         private const val INSTANCE_RADIUS_ATTR = 9
+        private const val INSTANCE_TINT_COLOR_ATTR = 10
         private const val MAT4_FLOATS = 16
         const val MAX_INSTANCES = 10000
         private const val NOISE_TEXTURE_UNIT = 0

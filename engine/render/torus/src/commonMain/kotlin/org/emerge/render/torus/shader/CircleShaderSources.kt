@@ -17,6 +17,7 @@ object CircleShaderSources {
         layout(location = 7) in float iBodyShape;
         layout(location = 8) in float iBodyAlpha;
         layout(location = 9) in float iBodyRadius;
+        layout(location = 10) in vec3 iTintColor;
 
         out vec2 vLocal;
         out float vPrimaryId;
@@ -24,6 +25,7 @@ object CircleShaderSources {
         out float vBodyShape;
         out float vBodyAlpha;
         out float vBodyRadius;
+        out vec3 vTintColor;
         void main() {
             mat4 m = mat4(iCol0, iCol1, iCol2, iCol3);
             gl_Position = m * vec4(aPos, 0.0, 1.0);
@@ -33,6 +35,7 @@ object CircleShaderSources {
             vBodyShape = iBodyShape;
             vBodyAlpha = iBodyAlpha;
             vBodyRadius = iBodyRadius;
+            vTintColor = iTintColor;
         }
         """.trimIndent()
 
@@ -48,6 +51,7 @@ object CircleShaderSources {
         in float vBodyShape;
         in float vBodyAlpha;
         in float vBodyRadius;
+        in vec3 vTintColor;
         in float vInstanceId;
         out vec4 fragColor;
 
@@ -60,7 +64,9 @@ object CircleShaderSources {
         void main() {
             float colorSeed = vPrimaryId;
             float c = colorSeed + 1.0;
-            vec3 vColor = mod(vec3(c/1.9, c/2.9, c/4.9),1.0);
+            vec3 seededColor = mod(vec3(c/1.9, c/2.9, c/4.9),1.0);
+            bool hasCustomTint = max(vTintColor.r, max(vTintColor.g, vTintColor.b)) > 0.0;
+            vec3 vColor = hasCustomTint ? vTintColor : seededColor;
             if (vBodyShape > 0.5) {
                 if (vBodyAlpha < 1.0) {
                     fragColor = vec4(vColor, vBodyAlpha);

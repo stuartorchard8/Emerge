@@ -97,6 +97,9 @@ object DrocketsSceneView {
             if (action == GLFW_PRESS && key == GLFW_KEY_F9) {
                 loadSnapshot(controller)
             }
+            if (action == GLFW_PRESS && key == GLFW_KEY_F3) {
+                activeRenderer?.togglePhenotypeDebugHud()
+            }
         }
 
         glfwMakeContextCurrent(window)

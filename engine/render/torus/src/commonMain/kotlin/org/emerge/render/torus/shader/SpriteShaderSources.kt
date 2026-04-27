@@ -19,10 +19,12 @@ object SpriteShaderSources {
         layout(location = 9) in float iUvH;
         layout(location = 10) in float iBodyAlpha;
         layout(location = 11) in float iSquash;
+        layout(location = 12) in vec3 iTintColor;
 
         out vec2 vUv;
         out float vPrimaryId;
         out float vAlpha;
+        out vec3 vTintColor;
         
         uniform vec2 uFrameSize;
 
@@ -40,6 +42,7 @@ object SpriteShaderSources {
             vUv = vec2(iUvX, iUvY) + localUv * uFrameSize;
             vPrimaryId = iPrimaryId;
             vAlpha = iBodyAlpha;
+            vTintColor = iTintColor;
         }
         """.trimIndent()
 
@@ -52,6 +55,7 @@ object SpriteShaderSources {
         in vec2 vUv;
         in float vPrimaryId;
         in float vAlpha;
+        in vec3 vTintColor;
         out vec4 fragColor;
         
         uniform sampler2D uSpriteTexture;
@@ -68,7 +72,8 @@ object SpriteShaderSources {
             vec3 vColor = mod(vec3(c/1.9, c/2.9, c/4.9),1.0);
             float greenAmount = texel.g - max(texel.r, texel.b);
             if (greenAmount > 0.1) {
-                texel.rgb = vColor;
+                bool hasCustomTint = max(vTintColor.r, max(vTintColor.g, vTintColor.b)) > 0.0;
+                texel.rgb = hasCustomTint ? vTintColor : vColor;
             }
             
             fragColor = vec4(texel.rgb, texel.a * vAlpha);

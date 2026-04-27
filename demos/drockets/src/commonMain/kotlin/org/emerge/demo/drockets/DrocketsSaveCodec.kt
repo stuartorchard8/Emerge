@@ -137,6 +137,7 @@ object DrocketsSaveCodec {
         if (hasSpawn) {
             encodeReproducerComponent(w, component.spawn!!)
         }
+        encodeGeneMap(w, component.spawnGenome)
     }
 
     private fun decodeReproducerComponent(c: ByteCursor): ReproducerComponent {
@@ -147,12 +148,14 @@ object DrocketsSaveCodec {
         val gestationDuration = c.readLong()
         val hasSpawn = c.readInt() != 0
         val spawn = if (hasSpawn) decodeReproducerComponent(c) else null
+        val spawnGenome = decodeGeneMap(c)
         return ReproducerComponent(
             birthdayMs = birthdayMs,
             sex = sex,
             maturityAgeMs = maturityAgeMs,
             gestationDuration = gestationDuration,
             spawn = spawn,
+            spawnGenome = spawnGenome,
         )
     }
 
@@ -281,6 +284,36 @@ object DrocketsSaveCodec {
         }
         w.writeInt(bytes.size)
         w.writeBytes(bytes)
+    }
+
+    private fun encodeGeneMap(w: ByteWriter, genes: Map<String, Int>?) {
+        if (genes == null) {
+            w.writeInt(-1)
+            return
+        }
+        require(genes.size <= MAX_GENE_COUNT_PER_ENTITY) {
+            "Too many spawn genes: ${genes.size}"
+        }
+        w.writeInt(genes.size)
+        for ((key, value) in genes) {
+            writeAsciiString(w, key)
+            w.writeInt(value)
+        }
+    }
+
+    private fun decodeGeneMap(c: ByteCursor): Map<String, Int>? {
+        val count = c.readInt()
+        if (count < 0) return null
+        require(count <= MAX_GENE_COUNT_PER_ENTITY) {
+            "Invalid spawn gene count: $count"
+        }
+        val genes = LinkedHashMap<String, Int>(count)
+        repeat(count) {
+            val key = readAsciiString(c)
+            val value = c.readInt()
+            genes[key] = value
+        }
+        return genes
     }
 
     private fun readAsciiString(c: ByteCursor): String {
