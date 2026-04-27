@@ -122,6 +122,7 @@ actual object GPU {
     actual fun drawTriangles(first: Int, count: Int) = GL33C.glDrawArrays(GL33C.GL_TRIANGLE_STRIP, first, count)
     actual fun drawTrianglesInstanced(first: Int, count: Int, instanceCount: Int) =
         GL33C.glDrawArraysInstanced(GL33C.GL_TRIANGLE_STRIP, first, count, instanceCount)
+    actual fun drawLines(first: Int, count: Int) = GL33C.glDrawArrays(GL33C.GL_LINES, first, count)
 
     actual fun enableBlend() = GL33C.glEnable(GL33C.GL_BLEND)
     actual fun disableBlend() = GL33C.glDisable(GL33C.GL_BLEND)

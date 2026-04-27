@@ -51,10 +51,11 @@ object DrocketsSceneView {
             glfwPollEvents()
             updateResolution(window, renderer)
             processCamera(pressedKeys, renderer)
+            processCladogramPanKeys(pressedKeys, renderer)
 
             val frame = controller.tick()
             latestFrame = frame
-            renderer.draw(frame.state)
+            renderer.draw(frame)
 
             glfwSwapBuffers(window)
         }
@@ -99,6 +100,12 @@ object DrocketsSceneView {
             }
             if (action == GLFW_PRESS && key == GLFW_KEY_F3) {
                 activeRenderer?.togglePhenotypeDebugHud()
+            }
+            if (action == GLFW_PRESS && key == GLFW_KEY_F2) {
+                activeRenderer?.toggleCladogramPanel()
+            }
+            if (action == GLFW_PRESS && key == GLFW_KEY_F6) {
+                activeRenderer?.toggleCladogramLivingOnly()
             }
         }
 
@@ -159,8 +166,8 @@ object DrocketsSceneView {
             glfwGetFramebufferSize(win, framebufferW, framebufferH)
             if (windowW[0] <= 0 || windowH[0] <= 0) return@glfwSetMouseButtonCallback
 
-            renderer.tryFocusDrocketAt(
-                state = frame.state,
+            renderer.handlePrimaryClick(
+                frame = frame,
                 pixel = Vec2(
                     cursorX[0].toFloat() * framebufferW[0].toFloat() / windowW[0].toFloat(),
                     cursorY[0].toFloat() * framebufferH[0].toFloat() / windowH[0].toFloat(),
@@ -169,10 +176,24 @@ object DrocketsSceneView {
         }
 
         // Scroll up (positive y) zooms in
-        glfwSetScrollCallback(window) { _, _, yoffset ->
+        glfwSetScrollCallback(window) { win, _, yoffset ->
             if (yoffset == 0.0) return@glfwSetScrollCallback
             val steps = yoffset.coerceIn(-24.0, 24.0)
-            renderer.zoomByFactor(1.1.pow(steps).toFloat())
+            val factor = 1.1.pow(steps).toFloat()
+            val cursorX = DoubleArray(1)
+            val cursorY = DoubleArray(1)
+            glfwGetCursorPos(win, cursorX, cursorY)
+            val windowW = IntArray(1)
+            val windowH = IntArray(1)
+            val framebufferW = IntArray(1)
+            glfwGetWindowSize(win, windowW, windowH)
+            glfwGetFramebufferSize(win, framebufferW, IntArray(1))
+            if (windowW[0] <= 0 || windowH[0] <= 0) return@glfwSetScrollCallback
+            val px = cursorX[0].toFloat() * framebufferW[0].toFloat() / windowW[0].toFloat()
+            if (renderer.handleCladogramWheel(px, framebufferW[0].toFloat(), factor)) {
+                return@glfwSetScrollCallback
+            }
+            renderer.zoomByFactor(factor)
         }
     }
 
@@ -194,5 +215,12 @@ object DrocketsSceneView {
         if (pressed[GLFW_KEY_Q]) renderer.rotateLeft()
         if (pressed[GLFW_KEY_E]) renderer.rotateRight()
         if (pressed[GLFW_KEY_0]) renderer.focusPlanet()
+    }
+
+    private fun processCladogramPanKeys(pressed: BooleanArray, renderer: DrocketsRenderer) {
+        if (pressed[GLFW_KEY_UP]) renderer.panCladogram(0f, 0.02f)
+        if (pressed[GLFW_KEY_DOWN]) renderer.panCladogram(0f, -0.02f)
+        if (pressed[GLFW_KEY_LEFT]) renderer.panCladogram(-0.02f, 0f)
+        if (pressed[GLFW_KEY_RIGHT]) renderer.panCladogram(0.02f, 0f)
     }
 }

@@ -32,6 +32,7 @@ class DrocketsController(
         return DrocketsFrame(
             state = stepper.state,
             lineage = lineageState,
+            cladogramLayout = CladogramLayout.build(lineageState),
             tick = stepper.tick.value,
         )
     }
@@ -56,7 +57,7 @@ class DrocketsController(
             thrustFactorInv = Int.MAX_VALUE / (1024 * 16),
             turnFactorInv = Int.MAX_VALUE / (1024 * 512),
             gravityNumerator = Frac(1, 1 shl 11),
-            collisionSpeedDamageThreshold = Frac(1, 3 shl 10),
+            collisionSpeedDamageThreshold = Frac(1, 1 shl 11),
             maxDamage = Frac(1),
             respawnTicks = -1, // Respawn is disabled
         )

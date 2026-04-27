@@ -89,6 +89,19 @@ class DrocketsRenderer(
     private val hudUvRects = FloatArray(HudGlyphShader.MAX_GLYPHS * 4)
     private val hudAlphas = FloatArray(HudGlyphShader.MAX_GLYPHS)
 
+    private val cladogramLineShader = CladogramLineShader()
+    private val cladoLineScratch = FloatArray(CladogramLineShader.CLADO_MAX_FLOATS)
+
+    @Volatile
+    private var showCladogramPanel: Boolean = false
+
+    @Volatile
+    private var cladogramLivingOnly: Boolean = false
+    private var selectedLineageId: Long? = null
+    private var cladeZoom: Float = 1f
+    private var cladePanX: Float = 0f
+    private var cladePanY: Float = 0f
+
     private val matTmp = FloatArray(M4)
     private val matT = FloatArray(M4)
     private val matR = FloatArray(M4)
@@ -172,8 +185,12 @@ class DrocketsRenderer(
         return false
     }
 
-    fun draw(state: PhysicsState) {
+    fun draw(frame: DrocketsFrame) {
+        val state = frame.state
         lastDrawnState = state
+        if (selectedLineageId != null && frame.lineage.nodes[selectedLineageId!!] == null) {
+            selectedLineageId = null
+        }
         // Place the camera on the planet surface, orbiting with rotation
         updateViewFocus(state)
 
@@ -421,8 +438,67 @@ class DrocketsRenderer(
                 tintColorsRgb = circleTintColors,
             )
         }
-        drawOverlayHud()
+        drawCladogramPanel(frame)
+        drawOverlayHud(frame)
         GPU.disableBlend()
+    }
+
+    fun toggleCladogramPanel() {
+        showCladogramPanel = !showCladogramPanel
+        if (!showCladogramPanel) {
+            selectedLineageId = null
+        } else {
+            cladeZoom = 1f
+            cladePanX = 0f
+            cladePanY = 0f
+        }
+        setOverlayStatus(
+            if (showCladogramPanel) "Cladogram ON (F2)  living-only F6"
+            else "Cladogram OFF (F2)",
+            durationMs = 2_000,
+        )
+    }
+
+    fun toggleCladogramLivingOnly() {
+        cladogramLivingOnly = !cladogramLivingOnly
+        setOverlayStatus(
+            if (cladogramLivingOnly) "Cladogram: living only ON (F6)"
+            else "Cladogram: living only OFF (F6)",
+            durationMs = 1_800,
+        )
+    }
+
+    fun panCladogram(dxLayout: Float, dyLayout: Float) {
+        if (!showCladogramPanel) return
+        cladePanX += dxLayout
+        cladePanY += dyLayout
+    }
+
+    /**
+     * @return true if the wheel was applied to the cladogram (right panel).
+     */
+    fun handleCladogramWheel(
+        pixelX: Float,
+        framebufferW: Float,
+        factor: Float,
+    ): Boolean {
+        if (!showCladogramPanel || framebufferW <= 0f) return false
+        if (pixelX < framebufferW * 0.5f) return false
+        cladeZoom = (cladeZoom * factor).coerceIn(0.22f, 4.5f)
+        return true
+    }
+
+    /**
+     * Left click: right half opens cladogram picking when the panel is on; otherwise world pick.
+     * @return true if the click was consumed (cladogram side).
+     */
+    fun handlePrimaryClick(frame: DrocketsFrame, pixel: Vec2): Boolean {
+        val fbW = resolution.x
+        if (showCladogramPanel && fbW > 0f && pixel.x >= fbW * 0.5f) {
+            tryPickCladogram(frame, pixel)
+            return true
+        }
+        return tryFocusDrocketAt(frame.state, pixel)
     }
 
     fun setOverlayStatus(message: String, durationMs: Long = 2_500) {
@@ -453,22 +529,41 @@ class DrocketsRenderer(
         planetShader.deleteProgram()
         circleShader.deleteProgram()
         spriteShader.deleteProgram()
+        cladogramLineShader.delete()
         hudGlyphShader.deleteProgram()
         GPU.deleteTextures(hudFontTextureId)
         GPU.deleteBuffers(vbo)
         if (vao != null) GPU.deleteVertexArrays(vao)
     }
 
-    private fun drawOverlayHud() {
+    private fun drawOverlayHud(frame: DrocketsFrame) {
         val glyphPixelHeight = (16f * resolution.y / 600f).coerceIn(12f, 28f)
         val marginX = 12f
         val marginY = 12f
         val lineGap = glyphPixelHeight * 0.35f
 
-        val lines = ArrayList<String>(8)
+        val lines = ArrayList<String>(12)
         val status = currentOverlayStatus()
         if (status != null) {
             lines += sanitizeHudText(status.uppercase())
+        }
+        if (showCladogramPanel) {
+            lines += sanitizeHudText(frame.cladogramLayout.summaryLine().uppercase())
+            if (cladogramLivingOnly) {
+                lines += sanitizeHudText("FILTER LIVING ONLY (F6)".uppercase())
+            }
+            val sel = selectedLineageId
+            if (sel != null) {
+                val node = frame.lineage.nodes[sel]
+                val alive = frame.lineage.livingLineageIds.contains(sel)
+                val label = if (node != null) {
+                    val d = frame.cladogramLayout.depthById[sel] ?: 0
+                    "LIN $sel ${node.sex} ${if (alive) "LIVE" else "DEAD"} D$d"
+                } else {
+                    "LIN $sel"
+                }
+                lines += sanitizeHudText(label.uppercase())
+            }
         }
         if (showPhenotypeDebugHud) {
             val debugLines = focusedGenomeDebugLines()
@@ -490,6 +585,176 @@ class DrocketsRenderer(
             )
             baselineY += glyphPixelHeight + lineGap
         }
+    }
+
+    private fun drawCladogramPanel(frame: DrocketsFrame) {
+        if (!showCladogramPanel) return
+        val layout = frame.cladogramLayout
+        if (layout.positions.isEmpty()) {
+            GPU.bindVertexArray(vao)
+            return
+        }
+
+        val fbW = resolution.x.toInt().coerceAtLeast(1)
+        val fbH = resolution.y.toInt().coerceAtLeast(1)
+        val halfW = fbW / 2
+
+        GPU.enableScissorTest()
+        GPU.setScissor(halfW, 0, fbW - halfW, fbH)
+
+        fun mapLayoutToDisplay(lx: Float, ly: Float): Pair<Float, Float> {
+            val dx = (lx - 0.5f) * cladeZoom + 0.5f + cladePanX
+            val dy = (ly - 0.5f) * cladeZoom + 0.5f + cladePanY
+            return Pair(dx, dy)
+        }
+
+        fun toNdcPanel(dx: Float, dy: Float): Pair<Float, Float> {
+            val ndcX = dx.coerceIn(0f, 1f)
+            val ndcY = -1f + 2f * dy.coerceIn(0f, 1f)
+            return Pair(ndcX, ndcY)
+        }
+
+        val lineage = frame.lineage
+        val living = lineage.livingLineageIds
+        val filter = cladogramLivingOnly
+        fun includeNode(id: Long): Boolean = !filter || living.contains(id)
+
+        val simplifyNodes = layout.stats.nodeCount > 280
+
+        var nv = 0
+        fun flushRgba(r: Float, g: Float, b: Float, a: Float) {
+            if (nv < 2) return
+            cladogramLineShader.drawLinesRgba(cladoLineScratch, nv, r, g, b, a)
+            nv = 0
+        }
+
+        fun pushSeg(ax: Float, ay: Float, bx: Float, by: Float) {
+            if (nv + 4 > cladoLineScratch.size) return
+            cladoLineScratch[nv++] = ax
+            cladoLineScratch[nv++] = ay
+            cladoLineScratch[nv++] = bx
+            cladoLineScratch[nv++] = by
+        }
+
+        var eIndex = 0
+        for ((from, to) in layout.edges) {
+            if (!includeNode(from) || !includeNode(to)) continue
+            if (layout.edges.size > 520 && eIndex % 2 == 1) {
+                eIndex++
+                continue
+            }
+            eIndex++
+            val pf = layout.positions[from] ?: continue
+            val pt = layout.positions[to] ?: continue
+            val (fx, fy) = mapLayoutToDisplay(pf.first, pf.second)
+            val (tx, ty) = mapLayoutToDisplay(pt.first, pt.second)
+            val (aX, aY) = toNdcPanel(fx, fy)
+            val (bX, bY) = toNdcPanel(tx, ty)
+            pushSeg(aX, aY, bX, bY)
+        }
+        flushRgba(0.42f, 0.5f, 0.62f, 0.48f)
+
+        val nodeR = if (layout.stats.nodeCount > 420) 0.012f else 0.018f
+
+        fun appendDiamond(px: Float, py: Float, r: Float) {
+            val (cx, cy) = mapLayoutToDisplay(px, py)
+            fun corner(dx: Float, dy: Float): Pair<Float, Float> =
+                toNdcPanel((cx + dx).coerceIn(0f, 1f), (cy + dy).coerceIn(0f, 1f))
+            val (x0, y0) = corner(-r, -r)
+            val (x1, y1) = corner(r, -r)
+            val (x2, y2) = corner(r, r)
+            val (x3, y3) = corner(-r, r)
+            pushSeg(x0, y0, x1, y1)
+            pushSeg(x1, y1, x2, y2)
+            pushSeg(x2, y2, x3, y3)
+            pushSeg(x3, y3, x0, y0)
+        }
+
+        if (!simplifyNodes) {
+            for ((id, pos) in layout.positions) {
+                if (!includeNode(id)) continue
+                if (living.contains(id)) continue
+                appendDiamond(pos.first, pos.second, nodeR)
+            }
+            flushRgba(0.38f, 0.39f, 0.44f, 0.62f)
+
+            for ((id, pos) in layout.positions) {
+                if (!includeNode(id)) continue
+                if (!living.contains(id)) continue
+                nv = 0
+                appendDiamond(pos.first, pos.second, nodeR)
+                val rgb = bodyRgbFromGenome(lineage.nodes[id]?.genome.orEmpty())
+                flushRgba(rgb.first, rgb.second, rgb.third, 0.95f)
+            }
+        }
+
+        val sel = selectedLineageId
+        if (sel != null && layout.positions.containsKey(sel) && includeNode(sel)) {
+            nv = 0
+            val p = layout.positions[sel]!!
+            appendDiamond(p.first, p.second, nodeR * 1.55f)
+            flushRgba(1f, 0.92f, 0.25f, 0.95f)
+        }
+
+        GPU.disableScissorTest()
+        GPU.bindVertexArray(vao)
+    }
+
+    private fun tryPickCladogram(frame: DrocketsFrame, pixel: Vec2) {
+        val layout = frame.cladogramLayout
+        if (layout.positions.isEmpty()) {
+            selectedLineageId = null
+            return
+        }
+        val fbW = resolution.x
+        val fbH = resolution.y
+        if (fbW <= 0f || fbH <= 0f) return
+
+        val mx = ((pixel.x - fbW * 0.5f) / (fbW * 0.5f)).coerceIn(0f, 1f)
+        val my = (1f - pixel.y / fbH).coerceIn(0f, 1f)
+
+        fun inv(px: Float, py: Float): Pair<Float, Float> {
+            val lx = (px - 0.5f - cladePanX) / cladeZoom + 0.5f
+            val ly = (py - 0.5f - cladePanY) / cladeZoom + 0.5f
+            return Pair(lx, ly)
+        }
+
+        val (lx, ly) = inv(mx, my)
+        val hitR = 0.055f / cladeZoom.coerceAtLeast(0.22f)
+
+        var best: Long? = null
+        var bestD = Float.POSITIVE_INFINITY
+        val lineage = frame.lineage
+        val filter = cladogramLivingOnly
+
+        for ((id, pos) in layout.positions) {
+            if (filter && !lineage.livingLineageIds.contains(id)) continue
+            val dx = pos.first - lx
+            val dy = pos.second - ly
+            val d = dx * dx + dy * dy
+            if (d < bestD && d <= hitR * hitR) {
+                bestD = d
+                best = id
+            }
+        }
+
+        selectedLineageId = best
+        if (best != null && lineage.livingLineageIds.contains(best)) {
+            val entityValue = lineage.entityToLineageId.entries.firstOrNull { it.value == best }?.key
+            if (entityValue != null) {
+                priorFocusId = focusedId
+                focusedId = EntityId(entityValue)
+                focusSwitchFrameCounter = 0
+            }
+        }
+    }
+
+    private fun bodyRgbFromGenome(genes: Map<String, Int>): Triple<Float, Float, Float> {
+        if (genes.isEmpty()) return Triple(0.85f, 0.88f, 0.92f)
+        val hue = decodeRangedGene(genes["color_h"], 0, 360, 0).toFloat()
+        val sat = decodeRangedGene(genes["color_s"], 0, 1000, 1000).toFloat() / 1000f
+        val value = decodeRangedGene(genes["color_v"], 0, 1000, 1000).toFloat() / 1000f
+        return hsvToRgb(hue, sat, value)
     }
 
     private fun drawHudTextLine(

@@ -59,6 +59,8 @@ expect object GPU {
     fun disableVertexAttribArray(v: Int)
     fun drawTriangles(first: Int, count: Int)
     fun drawTrianglesInstanced(first: Int, count: Int, instanceCount: Int)
+    /** [count] is the number of vertices (must be even for independent line segments). */
+    fun drawLines(first: Int, count: Int)
 
     fun enableBlend()
     fun disableBlend()
