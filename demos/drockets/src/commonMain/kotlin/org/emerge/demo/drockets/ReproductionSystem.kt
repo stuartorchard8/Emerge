@@ -49,9 +49,17 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
                         val childGenome = mutateGenome(parentGenome.genes, builder.nextRandomInt())
                         builder.update<GenomeComponent>(childEntityId) { GenomeComponent(childGenome) }
                     }
+                    builder.update<LineageSeedComponent>(childEntityId) {
+                        LineageSeedComponent(
+                            motherEntityId = reproducer.spawnMotherEntityId,
+                            fatherEntityId = reproducer.spawnFatherEntityId,
+                        )
+                    }
                     val updated = reproducer.copy(
                         spawn = null,
                         spawnGenome = null,
+                        spawnMotherEntityId = null,
+                        spawnFatherEntityId = null,
                     )
                     builder.update<ReproducerComponent>(entityId) { updated }
                     println("Spawned: ${builder.entries<DrocketStateComponent>().size}")
@@ -76,7 +84,9 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
                                     birthdayMs = nowMs + reproducer.gestationDuration,
                                     sex = childSex
                                 ),
-                                spawnGenome = childGenome
+                                spawnGenome = childGenome,
+                                spawnMotherEntityId = entityId.value,
+                                spawnFatherEntityId = otherId.value,
                             )
                             builder.update<ReproducerComponent>(entityId) { updated }
                             return

@@ -117,6 +117,7 @@ fun spawnDrocket(
             )
         )
     }
+    builder.update<LineageSeedComponent>(rocketId) { LineageSeedComponent() }
     return rocketId
 }
 

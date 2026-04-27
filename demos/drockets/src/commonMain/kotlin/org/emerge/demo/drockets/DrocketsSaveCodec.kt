@@ -12,10 +12,11 @@ import org.emerge.sim.core.physics.model.PhysicsState
 data class DrocketsSnapshot(
     val tick: Tick,
     val state: PhysicsState,
+    val lineage: DrocketLineageState,
 )
 
 object DrocketsSaveCodec {
-    private const val FORMAT_VERSION = 1
+    private const val FORMAT_VERSION = 2
     private const val MAX_GENE_COUNT_PER_ENTITY = 4096
     private const val MAX_TOTAL_GENES = 200_000
     private const val MAX_KEY_LENGTH = 256
@@ -28,6 +29,7 @@ object DrocketsSaveCodec {
         w.writeInt(stateBytes.size)
         w.writeBytes(stateBytes)
         encodeDrocketsComponents(w, snapshot.state.components)
+        encodeLineageState(w, snapshot.lineage)
         return w.toByteArray()
     }
 
@@ -51,6 +53,7 @@ object DrocketsSaveCodec {
         return DrocketsSnapshot(
             tick = tick,
             state = physicsState.copy(components = mergedComponents),
+            lineage = decodeLineageState(c),
         )
     }
 
@@ -60,6 +63,7 @@ object DrocketsSaveCodec {
         encodeKnightStateTable(w, store.getTable<KnightStateComponent>().asMap())
         encodeSpriteAnimationStateTable(w, store.getTable<SpriteAnimationState>().asMap())
         encodeGenomeTable(w, store.getTable<GenomeComponent>().asMap())
+        encodeLineageSeedTable(w, store.getTable<LineageSeedComponent>().asMap())
     }
 
     private fun decodeDrocketsComponents(c: ByteCursor, store: ComponentStore): ComponentStore {
@@ -69,6 +73,7 @@ object DrocketsSaveCodec {
         updated = updated.update { set(ComponentTable.fromMap(decodeKnightStateTable(c))) }
         updated = updated.update { set(ComponentTable.fromMap(decodeSpriteAnimationStateTable(c))) }
         updated = updated.update { set(ComponentTable.fromMap(decodeGenomeTable(c))) }
+        updated = updated.update { set(ComponentTable.fromMap(decodeLineageSeedTable(c))) }
         return updated
     }
 
@@ -138,6 +143,8 @@ object DrocketsSaveCodec {
             encodeReproducerComponent(w, component.spawn!!)
         }
         encodeGeneMap(w, component.spawnGenome)
+        w.writeInt(component.spawnMotherEntityId ?: Int.MIN_VALUE)
+        w.writeInt(component.spawnFatherEntityId ?: Int.MIN_VALUE)
     }
 
     private fun decodeReproducerComponent(c: ByteCursor): ReproducerComponent {
@@ -149,6 +156,8 @@ object DrocketsSaveCodec {
         val hasSpawn = c.readInt() != 0
         val spawn = if (hasSpawn) decodeReproducerComponent(c) else null
         val spawnGenome = decodeGeneMap(c)
+        val spawnMotherEntityIdRaw = c.readInt()
+        val spawnFatherEntityIdRaw = c.readInt()
         return ReproducerComponent(
             birthdayMs = birthdayMs,
             sex = sex,
@@ -156,7 +165,37 @@ object DrocketsSaveCodec {
             gestationDuration = gestationDuration,
             spawn = spawn,
             spawnGenome = spawnGenome,
+            spawnMotherEntityId = if (spawnMotherEntityIdRaw == Int.MIN_VALUE) null else spawnMotherEntityIdRaw,
+            spawnFatherEntityId = if (spawnFatherEntityIdRaw == Int.MIN_VALUE) null else spawnFatherEntityIdRaw,
         )
+    }
+
+    private fun encodeLineageSeedTable(
+        w: ByteWriter,
+        entries: Map<EntityId, LineageSeedComponent>,
+    ) {
+        w.writeInt(entries.size)
+        for ((entityId, component) in entries) {
+            w.writeInt(entityId.value)
+            w.writeInt(component.motherEntityId ?: Int.MIN_VALUE)
+            w.writeInt(component.fatherEntityId ?: Int.MIN_VALUE)
+        }
+    }
+
+    private fun decodeLineageSeedTable(c: ByteCursor): Map<EntityId, LineageSeedComponent> {
+        val count = c.readInt()
+        require(count >= 0) { "Invalid LineageSeedComponent count: $count" }
+        val out = LinkedHashMap<EntityId, LineageSeedComponent>(count)
+        repeat(count) {
+            val entityId = EntityId(c.readInt())
+            val motherRaw = c.readInt()
+            val fatherRaw = c.readInt()
+            out[entityId] = LineageSeedComponent(
+                motherEntityId = if (motherRaw == Int.MIN_VALUE) null else motherRaw,
+                fatherEntityId = if (fatherRaw == Int.MIN_VALUE) null else fatherRaw,
+            )
+        }
+        return out
     }
 
     private fun encodeKnightStateTable(
@@ -307,6 +346,96 @@ object DrocketsSaveCodec {
         require(count <= MAX_GENE_COUNT_PER_ENTITY) {
             "Invalid spawn gene count: $count"
         }
+        val genes = LinkedHashMap<String, Int>(count)
+        repeat(count) {
+            val key = readAsciiString(c)
+            val value = c.readInt()
+            genes[key] = value
+        }
+        return genes
+    }
+
+    private fun encodeLineageState(w: ByteWriter, lineage: DrocketLineageState) {
+        w.writeLong(lineage.nextLineageId)
+        w.writeInt(lineage.nodes.size)
+        for ((id, node) in lineage.nodes) {
+            w.writeLong(id)
+            w.writeLong(node.motherLineageId ?: Long.MIN_VALUE)
+            w.writeLong(node.fatherLineageId ?: Long.MIN_VALUE)
+            w.writeLong(node.birthTick)
+            w.writeLong(node.deathTick ?: Long.MIN_VALUE)
+            w.writeInt(node.sex.ordinal)
+            encodeGeneMapRequired(w, node.genome)
+        }
+        w.writeInt(lineage.livingLineageIds.size)
+        for (id in lineage.livingLineageIds) {
+            w.writeLong(id)
+        }
+        w.writeInt(lineage.entityToLineageId.size)
+        for ((entityId, lineageId) in lineage.entityToLineageId) {
+            w.writeInt(entityId)
+            w.writeLong(lineageId)
+        }
+    }
+
+    private fun decodeLineageState(c: ByteCursor): DrocketLineageState {
+        val nextLineageId = c.readLong()
+        val nodeCount = c.readInt()
+        require(nodeCount >= 0) { "Invalid lineage node count: $nodeCount" }
+        val nodes = LinkedHashMap<Long, DrocketLineageNode>(nodeCount)
+        repeat(nodeCount) {
+            val id = c.readLong()
+            val motherRaw = c.readLong()
+            val fatherRaw = c.readLong()
+            val birthTick = c.readLong()
+            val deathRaw = c.readLong()
+            val sexOrdinal = c.readInt()
+            val sex = Sex.entries.getOrNull(sexOrdinal) ?: error("Invalid Sex ordinal in lineage node: $sexOrdinal")
+            val genome = decodeGeneMapRequired(c)
+            nodes[id] = DrocketLineageNode(
+                lineageId = id,
+                motherLineageId = if (motherRaw == Long.MIN_VALUE) null else motherRaw,
+                fatherLineageId = if (fatherRaw == Long.MIN_VALUE) null else fatherRaw,
+                birthTick = birthTick,
+                deathTick = if (deathRaw == Long.MIN_VALUE) null else deathRaw,
+                sex = sex,
+                genome = genome,
+            )
+        }
+        val livingCount = c.readInt()
+        require(livingCount >= 0) { "Invalid living lineage count: $livingCount" }
+        val living = LinkedHashSet<Long>(livingCount)
+        repeat(livingCount) { living += c.readLong() }
+        val mappingCount = c.readInt()
+        require(mappingCount >= 0) { "Invalid entity-to-lineage mapping count: $mappingCount" }
+        val entityToLineage = LinkedHashMap<Int, Long>(mappingCount)
+        repeat(mappingCount) {
+            val entityId = c.readInt()
+            val lineageId = c.readLong()
+            entityToLineage[entityId] = lineageId
+        }
+        return DrocketLineageState(
+            nextLineageId = nextLineageId,
+            nodes = nodes,
+            livingLineageIds = living,
+            entityToLineageId = entityToLineage,
+        )
+    }
+
+    private fun encodeGeneMapRequired(w: ByteWriter, genes: Map<String, Int>) {
+        require(genes.size <= MAX_GENE_COUNT_PER_ENTITY) {
+            "Too many genes: ${genes.size}"
+        }
+        w.writeInt(genes.size)
+        for ((key, value) in genes) {
+            writeAsciiString(w, key)
+            w.writeInt(value)
+        }
+    }
+
+    private fun decodeGeneMapRequired(c: ByteCursor): Map<String, Int> {
+        val count = c.readInt()
+        require(count in 0..MAX_GENE_COUNT_PER_ENTITY) { "Invalid required gene map count: $count" }
         val genes = LinkedHashMap<String, Int>(count)
         repeat(count) {
             val key = readAsciiString(c)

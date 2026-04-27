@@ -23,11 +23,15 @@ class DrocketsController(
         initialState = createDrocketsInitialState(),
         reducer = reducer,
     )
+    private var lineageState = DrocketLineageState.EMPTY
+        .advanceFromPhysics(stepper.state, stepper.tick.value)
 
     fun tick(): DrocketsFrame {
         stepper.step(emptyMap())
+        lineageState = lineageState.advanceFromPhysics(stepper.state, stepper.tick.value)
         return DrocketsFrame(
             state = stepper.state,
+            lineage = lineageState,
             tick = stepper.tick.value,
         )
     }
@@ -37,12 +41,14 @@ class DrocketsController(
             DrocketsSnapshot(
                 tick = stepper.tick,
                 state = stepper.state,
+                lineage = lineageState,
             )
         )
 
     fun restoreSnapshot(bytes: ByteArray) {
         val snapshot = DrocketsSaveCodec.decode(bytes)
         stepper.reset(snapshot.state, snapshot.tick)
+        lineageState = snapshot.lineage
     }
 
     companion object {

@@ -14,6 +14,8 @@ data class ReproducerComponent(
     val gestationDuration: Long = 10_000,
     val spawn: ReproducerComponent? = null,
     val spawnGenome: Map<String, Int>? = null,
+    val spawnMotherEntityId: Int? = null,
+    val spawnFatherEntityId: Int? = null,
 ) {
     fun isMature(nowMs: Long): Boolean {
         return birthdayMs + maturityAgeMs <= nowMs
