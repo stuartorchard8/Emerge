@@ -9,10 +9,16 @@ import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.system.Configuration
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.math.max
 import kotlin.math.pow
 
 object DrocketsSceneView {
+    private val SAVE_PATH: Path = Path.of("drockets-save.bin")
+    @Volatile
+    private var activeRenderer: DrocketsRenderer? = null
+
     fun start() {
         Configuration.STACK_SIZE.set(512); // Size in KB
         Thread {
@@ -22,7 +28,8 @@ object DrocketsSceneView {
 
     private fun runGl() {
         val pressedKeys = BooleanArray(512)
-        val window = initWindow("Drockets", pressedKeys)
+        val controller = DrocketsController()
+        val window = initWindow("Drockets", pressedKeys, controller)
         val dpiX = FloatArray(1)
         val dpiY = FloatArray(1)
         glfwGetWindowContentScale(window, dpiX, dpiY)
@@ -35,8 +42,8 @@ object DrocketsSceneView {
             drocketSpriteAtlasTextureId = drocketSpriteAtlasTextureId,
             knightSpriteAtlasTextureId = knightSpriteAtlasTextureId,
         )
+        activeRenderer = renderer
 
-        val controller = DrocketsController()
         var latestFrame: DrocketsFrame? = null
         installMouseHandlers(window, renderer) { latestFrame }
 
@@ -55,11 +62,16 @@ object DrocketsSceneView {
         GPU.deleteTextures(drocketSpriteAtlasTextureId)
         GPU.deleteTextures(knightSpriteAtlasTextureId)
         renderer.cleanup()
+        activeRenderer = null
         glfwDestroyWindow(window)
         glfwTerminate()
     }
 
-    private fun initWindow(title: String, pressedKeys: BooleanArray): Long {
+    private fun initWindow(
+        title: String,
+        pressedKeys: BooleanArray,
+        controller: DrocketsController,
+    ): Long {
         if (!glfwInit()) error("GLFW init failed")
         glfwDefaultWindowHints()
         glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE)
@@ -79,6 +91,12 @@ object DrocketsSceneView {
             if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
                 glfwSetWindowShouldClose(win, true)
             }
+            if (action == GLFW_PRESS && key == GLFW_KEY_F5) {
+                saveSnapshot(controller)
+            }
+            if (action == GLFW_PRESS && key == GLFW_KEY_F9) {
+                loadSnapshot(controller)
+            }
         }
 
         glfwMakeContextCurrent(window)
@@ -86,6 +104,35 @@ object DrocketsSceneView {
         glfwShowWindow(window)
         org.lwjgl.opengl.GL.createCapabilities()
         return window
+    }
+
+    private fun saveSnapshot(controller: DrocketsController) {
+        try {
+            val bytes = controller.snapshotBytes()
+            Files.write(SAVE_PATH, bytes)
+            activeRenderer?.setOverlayStatus("Saved (${bytes.size} bytes)")
+            println("Saved Drockets snapshot (${bytes.size} bytes) to ${SAVE_PATH.toAbsolutePath()}")
+        } catch (t: Throwable) {
+            activeRenderer?.setOverlayStatus("Save failed: ${t.message ?: "unknown error"}", durationMs = 4_000)
+            println("Failed saving Drockets snapshot: ${t.message}")
+        }
+    }
+
+    private fun loadSnapshot(controller: DrocketsController) {
+        try {
+            if (!Files.exists(SAVE_PATH)) {
+                activeRenderer?.setOverlayStatus("No save file found", durationMs = 3_000)
+                println("No Drockets snapshot found at ${SAVE_PATH.toAbsolutePath()}")
+                return
+            }
+            val bytes = Files.readAllBytes(SAVE_PATH)
+            controller.restoreSnapshot(bytes)
+            activeRenderer?.setOverlayStatus("Loaded (${bytes.size} bytes)")
+            println("Loaded Drockets snapshot (${bytes.size} bytes) from ${SAVE_PATH.toAbsolutePath()}")
+        } catch (t: Throwable) {
+            activeRenderer?.setOverlayStatus("Load failed: ${t.message ?: "unknown error"}", durationMs = 4_000)
+            println("Failed loading Drockets snapshot: ${t.message}")
+        }
     }
 
     private fun installMouseHandlers(

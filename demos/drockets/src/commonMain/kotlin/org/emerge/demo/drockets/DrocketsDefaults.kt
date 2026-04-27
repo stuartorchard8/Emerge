@@ -70,7 +70,7 @@ fun spawnDrocket(
     velocity: Coord2,
     angle: Coord,
     teamId: TeamId,
-) {
+): EntityId {
     val rocketId = builder.spawnBody(
         playerId = null,
         pos = position,
@@ -98,6 +98,19 @@ fun spawnDrocket(
             sex = if (teamId.value%2==0) Sex.FEMALE else Sex.MALE,
         )
     }
+    builder.update<GenomeComponent>(rocketId) {
+        GenomeComponent(
+            genes = mapOf(
+                "thrust" to 100,
+                "turn" to 100,
+                "fertility" to 100,
+                "longevity" to 100,
+                "size" to 100,
+                "teamBias" to teamId.value,
+            )
+        )
+    }
+    return rocketId
 }
 
 private fun spawnKnightOnPlanet(

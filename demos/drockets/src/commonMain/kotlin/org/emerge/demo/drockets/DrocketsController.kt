@@ -32,6 +32,19 @@ class DrocketsController(
         )
     }
 
+    fun snapshotBytes(): ByteArray =
+        DrocketsSaveCodec.encode(
+            DrocketsSnapshot(
+                tick = stepper.tick,
+                state = stepper.state,
+            )
+        )
+
+    fun restoreSnapshot(bytes: ByteArray) {
+        val snapshot = DrocketsSaveCodec.decode(bytes)
+        stepper.reset(snapshot.state, snapshot.tick)
+    }
+
     companion object {
         val DROCKETS_CONFIG = PhysicsConfig(
             thrustFactorInv = Int.MAX_VALUE / (1024 * 16),

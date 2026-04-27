@@ -29,16 +29,21 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
                     val planetTransform = builder.getComponent<TransformComponent>(landingComponent.parentEntityId) ?: continue
                     val transformComponent = builder.getComponent<TransformComponent>(entityId) ?: continue
                     val teamComponent = builder.getComponent<TeamComponent>(entityId) ?: continue
+                    val parentGenome = builder.getComponent<GenomeComponent>(entityId)
                     val planetOffset = transformComponent.pos - planetTransform.pos
                     val planetNorm = planetOffset.norm
                     val planetDist = planetOffset.len
-                    spawnDrocket(
+                    val childEntityId = spawnDrocket(
                         builder,
                         transformComponent.pos,
                         planetMotion.surfaceVelocityAtOffset(planetNorm, planetDist),
                         transformComponent.ang,
                         teamComponent.teamId,
                     )
+                    if (parentGenome != null) {
+                        val childGenome = mutateGenome(parentGenome, builder.nextRandomInt())
+                        builder.update<GenomeComponent>(childEntityId) { childGenome }
+                    }
                     val updated = reproducer.copy(
                         spawn = null,
                     )
@@ -64,5 +69,17 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
                 }
             }
         }
+    }
+
+    private fun mutateGenome(parent: GenomeComponent, random: Int): GenomeComponent {
+        if (parent.genes.isEmpty()) return parent
+        val updated = LinkedHashMap(parent.genes)
+        val keys = updated.keys.toList()
+        val idx = (random and Int.MAX_VALUE) % keys.size
+        val key = keys[idx]
+        val base = updated[key] ?: 0
+        val delta = ((random ushr 8) % 11) - 5
+        updated[key] = (base + delta).coerceIn(0, 10_000)
+        return GenomeComponent(genes = updated)
     }
 }
