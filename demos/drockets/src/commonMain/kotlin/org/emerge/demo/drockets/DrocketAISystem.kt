@@ -1,5 +1,6 @@
 package org.emerge.demo.drockets
 
+import kotlinx.datetime.Clock
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
@@ -51,6 +52,17 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                     // Walking is handled by WalkSystem; here we only manage the timer.
                     val remaining = ds.ticksRemaining - 1
                     if (remaining <= 0) {
+                        val reproducer = builder.getComponent<ReproducerComponent>(entityId) ?: continue
+                        if (!reproducer.isMature(Clock.System.now().toEpochMilliseconds())) {
+                            val newDirection = builder.nextRandomInt(until = 2)*2 - 1
+                            val walkRange = (tuning.maxWalkTicks - tuning.minWalkTicks).coerceAtLeast(1)
+                            val walkTicks = tuning.minWalkTicks + builder.nextRandomInt(until = walkRange)
+                            nextStates[entityId] = ds.copy(
+                                walkDirection = newDirection,
+                                ticksRemaining = walkTicks,
+                            )
+                            continue
+                        }
                         // Transition to CHARGING: spin up before launch
                         nextStates[entityId] = ds.copy(
                             phase = DrocketPhase.CHARGING,

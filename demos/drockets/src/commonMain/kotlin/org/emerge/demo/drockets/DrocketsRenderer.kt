@@ -11,6 +11,7 @@ import org.emerge.render.torus.shader.SpriteShader
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.*
+import kotlin.concurrent.Volatile
 import kotlin.math.*
 
 /**

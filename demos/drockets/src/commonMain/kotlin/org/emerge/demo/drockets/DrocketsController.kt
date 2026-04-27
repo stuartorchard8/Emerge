@@ -49,8 +49,8 @@ class DrocketsController(
         val DROCKETS_CONFIG = PhysicsConfig(
             thrustFactorInv = Int.MAX_VALUE / (1024 * 16),
             turnFactorInv = Int.MAX_VALUE / (1024 * 512),
-            gravityNumerator = Frac(1, 2 shl 10),
-            collisionSpeedDamageThreshold = Frac(1, 1 shl 11),
+            gravityNumerator = Frac(1, 1 shl 11),
+            collisionSpeedDamageThreshold = Frac(1, 3 shl 10),
             maxDamage = Frac(1),
             respawnTicks = -1, // Respawn is disabled
         )
