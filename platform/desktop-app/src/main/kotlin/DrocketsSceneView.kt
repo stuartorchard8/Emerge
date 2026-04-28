@@ -43,6 +43,7 @@ object DrocketsSceneView {
             knightSpriteAtlasTextureId = knightSpriteAtlasTextureId,
         )
         activeRenderer = renderer
+        autoLoadSnapshotAtStartup(controller)
 
         var latestFrame: DrocketsFrame? = null
         installMouseHandlers(window, renderer) { latestFrame }
@@ -142,6 +143,19 @@ object DrocketsSceneView {
         } catch (t: Throwable) {
             activeRenderer?.setOverlayStatus("Load failed: ${t.message ?: "unknown error"}", durationMs = 4_000)
             println("Failed loading Drockets snapshot: ${t.message}")
+        }
+    }
+
+    private fun autoLoadSnapshotAtStartup(controller: DrocketsController) {
+        if (!Files.exists(SAVE_PATH)) return
+        try {
+            val bytes = Files.readAllBytes(SAVE_PATH)
+            controller.restoreSnapshot(bytes)
+            activeRenderer?.setOverlayStatus("Auto-loaded save (${bytes.size} bytes)", durationMs = 3_500)
+            println("Auto-loaded Drockets snapshot (${bytes.size} bytes) from ${SAVE_PATH.toAbsolutePath()}")
+        } catch (t: Throwable) {
+            activeRenderer?.setOverlayStatus("Auto-load failed: ${t.message ?: "unknown error"}", durationMs = 4_000)
+            println("Failed auto-loading Drockets snapshot: ${t.message}")
         }
     }
 

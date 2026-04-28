@@ -63,7 +63,6 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
                         spawnFatherEntityId = null,
                     )
                     builder.update<ReproducerComponent>(entityId) { updated }
-                    println("Spawned: ${builder.entries<DrocketStateComponent>().size}")
                 } else if (builder.entries<DrocketStateComponent>().size < POPULATION_CAP) {
                     // Go through contacts to determine whether contact with a male reproducer has occurred
                     val contacts = builder.contacts.filter { it.aId == entityId || it.bId == entityId }

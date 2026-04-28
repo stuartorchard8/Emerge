@@ -628,14 +628,19 @@ class DrocketsRenderer(
         val maxRBySpacing = min(CLADO_NODE_X_SPACING, CLADO_GENERATION_Y_SPACING) * zoomScale * 0.40f
         val nodeR = (nodeBaseR * zoomScale).coerceIn(0.004f, maxRBySpacing.coerceAtLeast(0.004f))
 
-        var eIndex = 0
+        var visibleEdgeCount = 0
         for ((from, to) in layout.edges) {
             if (!includeNode(from) || !includeNode(to)) continue
-            if (layout.edges.size > 520 && eIndex % 2 == 1) {
-                eIndex++
-                continue
+            if (!panelPositions.containsKey(from) || !panelPositions.containsKey(to)) continue
+            visibleEdgeCount++
+        }
+        val edgeStride = if (visibleEdgeCount > 5_200) 2 else 1
+        for ((from, to) in layout.edges) {
+            if (!includeNode(from) || !includeNode(to)) continue
+            if (edgeStride > 1) {
+                val key = (((from * 1315423911L) xor (to * 2654435761L)) and Long.MAX_VALUE).toInt()
+                if (key % edgeStride != 0) continue
             }
-            eIndex++
             val pf = panelPositions[from] ?: continue
             val pt = panelPositions[to] ?: continue
             val (fx, fy) = pf
