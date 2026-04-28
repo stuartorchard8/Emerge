@@ -8,7 +8,6 @@ import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.spawnBody
 import org.emerge.sim.core.physics.primitives.*
-import kotlin.math.roundToLong
 
 fun createDrocketsInitialState(drocketCount: Int = INITIAL_DROCKET_COUNT, knightCount: Int = INITIAL_KNIGHT_COUNT): PhysicsState {
     val builder = PhysicsBuilder(PhysicsState())
@@ -72,7 +71,7 @@ fun spawnDrocket(
     angle: Coord,
     teamId: TeamId,
 ): EntityId {
-    val rocketId = builder.spawnBody(
+    val entityId = builder.spawnBody(
         playerId = null,
         pos = position,
         vel = velocity,
@@ -85,40 +84,40 @@ fun spawnDrocket(
         shape = BodyShape.TRIANGLE,
     )
 
-    builder.update<TeamComponent>(rocketId) { TeamComponent(teamId) }
+    builder.update<TeamComponent>(entityId) { TeamComponent(teamId) }
 
-    builder.update<DrocketStateComponent>(rocketId) {
+    builder.update<DrocketStateComponent>(entityId) {
         DrocketStateComponent(
             phase = DrocketPhase.FLYING,
             walkDirection = if (teamId.value % 2 == 0) 1 else -1,
         )
     }
-    builder.update<ReproducerComponent>(rocketId) {
+    builder.update<ReproducerComponent>(entityId) {
         ReproducerComponent(
             birthdayMs = Clock.System.now().toEpochMilliseconds(),
             sex = if (teamId.value%2==0) Sex.FEMALE else Sex.MALE,
         )
     }
-    builder.update<GenomeComponent>(rocketId) {
+    builder.update<GenomeComponent>(entityId) {
         GenomeComponent(
-            genes = mapOf(
-                "ai_walk_min_ticks" to encodeRangedGene(120, 1, 20_000),
-                "ai_walk_max_ticks" to encodeRangedGene(600, 1, 20_000),
-                "ai_charge_ticks" to encodeRangedGene(18, 1, 20_000),
-                "ai_fuel_ticks" to encodeRangedGene(200, 1, 20_000),
-                "ai_spin_raw" to encodeRangedGene(Frac(1, 120).raw.toInt(), -Int.MAX_VALUE / 64, Int.MAX_VALUE / 64),
-                "ai_thrust_raw" to encodeRangedGene(Frac(1, 1024 * 256).raw.toInt(), 0, Int.MAX_VALUE / 4096),
-                "color_h" to encodeRangedGene(((teamId.value * 137) % 360 + 360) % 360, 0, 360),
-                "color_s" to encodeRangedGene(550 + (((teamId.value + 1) * 71) % 380), 0, 1000),
-                "color_v" to encodeRangedGene(620 + (((teamId.value + 1) * 59) % 320), 0, 1000),
-                "fire_color_h" to encodeRangedGene((((teamId.value * 137) + 24) % 360 + 360) % 360, 0, 360),
-                "fire_color_s" to encodeRangedGene(820 + (((teamId.value + 1) * 43) % 180), 0, 1000),
-                "fire_color_v" to encodeRangedGene(860 + (((teamId.value + 1) * 37) % 140), 0, 1000),
+            encodedGenes = mapOf(
+                GenomeComponent.GenomeKey.AI_WALK_MIN_TICKS.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.AI_WALK_MIN_TICKS, 120),
+                GenomeComponent.GenomeKey.AI_WALK_MAX_TICKS.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.AI_WALK_MAX_TICKS, 600),
+                GenomeComponent.GenomeKey.AI_CHARGE_TICKS.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.AI_CHARGE_TICKS, 18),
+                GenomeComponent.GenomeKey.AI_FUEL_TICKS.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.AI_FUEL_TICKS, 200),
+                GenomeComponent.GenomeKey.AI_SPIN_RAW.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.AI_SPIN_RAW, Frac(1, 120).raw.toInt()),
+                GenomeComponent.GenomeKey.AI_THRUST_RAW.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.AI_THRUST_RAW, Frac(1, 1024 * 256).raw.toInt()),
+                GenomeComponent.GenomeKey.COLOR_H.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.COLOR_H, ((teamId.value * 137) % 360 + 360) % 360),
+                GenomeComponent.GenomeKey.COLOR_S.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.COLOR_S, 550 + (((teamId.value + 1) * 71) % 380)),
+                GenomeComponent.GenomeKey.COLOR_V.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.COLOR_V, 620 + (((teamId.value + 1) * 59) % 320)),
+                GenomeComponent.GenomeKey.FIRE_COLOR_H.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.FIRE_COLOR_H, (((teamId.value * 137) + 24) % 360 + 360) % 360),
+                GenomeComponent.GenomeKey.FIRE_COLOR_S.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.FIRE_COLOR_S, 820 + (((teamId.value + 1) * 43) % 180)),
+                GenomeComponent.GenomeKey.FIRE_COLOR_V.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.FIRE_COLOR_V, 860 + (((teamId.value + 1) * 37) % 140)),
             )
         )
     }
-    builder.update<LineageSeedComponent>(rocketId) { LineageSeedComponent() }
-    return rocketId
+    builder.update<LineageSeedComponent>(entityId) { LineageSeedComponent() }
+    return entityId
 }
 
 private fun spawnKnightOnPlanet(
@@ -173,13 +172,5 @@ val DROCKET_RADIUS = Frac(1, 1 shl 13)
 val KNIGHT_RADIUS = Frac(1, 1 shl 13)
 private val DROCKET_MASS = 500u
 private const val INITIAL_DROCKET_COUNT = 200
-const val MAX_DROCKET_COUNT = 400
 private const val INITIAL_KNIGHT_COUNT = 0
 
-private fun encodeRangedGene(value: Int, min: Int, max: Int): Int {
-    val clamped = value.coerceIn(min, max)
-    val span = (max - min).coerceAtLeast(1)
-    val norm = (clamped - min).toDouble() / span.toDouble()
-    val raw = Int.MIN_VALUE.toLong() + (norm * 4294967295.0).roundToLong()
-    return raw.toInt()
-}

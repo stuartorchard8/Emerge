@@ -25,10 +25,6 @@ import kotlin.math.abs
  * - Thrust force: 12000 * impulse / delta (mapped to fixed-point impulse per tick)
  */
 object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
-    private const val GENE_UINT_RANGE = 4294967295.0
-    private val MAX_SPIN_RAW = Int.MAX_VALUE / 64
-    private val MIN_THRUST_RAW = 0
-    private val MAX_THRUST_RAW = Int.MAX_VALUE / 4096
 
     override fun update(
         cfg: PhysicsConfig,
@@ -205,31 +201,19 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     )
 
     private fun tuningFor(genome: GenomeComponent?): AiTuning {
-        val genes = genome?.genes ?: emptyMap()
-        val minWalk = genes.rangedGene("ai_walk_min_ticks", MIN_WALK_TICKS, 1, 20_000)
-        val maxWalkRaw = genes.rangedGene("ai_walk_max_ticks", MAX_WALK_TICKS, 1, 20_000)
+        val minWalk = genome?.decodedOrDefault(GenomeComponent.GenomeKey.AI_WALK_MIN_TICKS) ?: MIN_WALK_TICKS
+        val maxWalkRaw = genome?.decodedOrDefault(GenomeComponent.GenomeKey.AI_WALK_MAX_TICKS) ?: MAX_WALK_TICKS
         val maxWalk = maxWalkRaw.coerceAtLeast(minWalk + 1)
-        val spinRaw = genes.rangedGene("ai_spin_raw", CHARGE_SPIN_SPEED.raw.toInt(), -MAX_SPIN_RAW, MAX_SPIN_RAW)
-        val thrustRaw = genes.rangedGene("ai_thrust_raw", THRUST_STRENGTH.raw.toInt(), MIN_THRUST_RAW, MAX_THRUST_RAW)
+        val spinRaw = genome?.decodedOrDefault(GenomeComponent.GenomeKey.AI_SPIN_RAW) ?: CHARGE_SPIN_SPEED.raw.toInt()
+        val thrustRaw = genome?.decodedOrDefault(GenomeComponent.GenomeKey.AI_THRUST_RAW) ?: THRUST_STRENGTH.raw.toInt()
         return AiTuning(
-            chargeTicks = genes.rangedGene("ai_charge_ticks", CHARGE_TICKS, 1, 20_000),
-            fuelTicks = genes.rangedGene("ai_fuel_ticks", FUEL_TICKS, 1, 20_000),
+            chargeTicks = genome?.decodedOrDefault(GenomeComponent.GenomeKey.AI_CHARGE_TICKS) ?: CHARGE_TICKS,
+            fuelTicks = genome?.decodedOrDefault(GenomeComponent.GenomeKey.AI_FUEL_TICKS) ?: FUEL_TICKS,
             minWalkTicks = minWalk,
             maxWalkTicks = maxWalk,
             chargeSpinSpeed = Frac(spinRaw.toLong()),
             thrustStrength = Frac(thrustRaw.toLong()),
         )
-    }
-
-    private fun Map<String, Int>.rangedGene(
-        key: String,
-        fallback: Int,
-        min: Int,
-        max: Int,
-    ): Int {
-        val raw = this[key] ?: return fallback
-        val norm = ((raw.toLong() - Int.MIN_VALUE.toLong()) / GENE_UINT_RANGE).coerceIn(0.0, 1.0)
-        return (min + ((max - min) * norm)).toInt().coerceIn(min, max)
     }
 
 

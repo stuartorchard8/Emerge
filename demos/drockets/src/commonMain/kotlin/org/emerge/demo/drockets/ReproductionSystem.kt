@@ -11,6 +11,7 @@ import org.emerge.sim.core.physics.model.*
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
 object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+    const val POPULATION_CAP = 800
 
     override fun update(
         cfg: PhysicsConfig,
@@ -42,11 +43,11 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
                     )
                     val storedSpawnGenome = reproducer.spawnGenome
                     if (storedSpawnGenome != null) {
-                        val childGenome = GenomeComponent(genes = storedSpawnGenome)
+                        val childGenome = GenomeComponent(encodedGenes = storedSpawnGenome)
                         builder.update<GenomeComponent>(childEntityId) { childGenome }
                     } else if (parentGenome != null) {
                         // Backward-compatible fallback for already-pregnant entities without stored spawn genome.
-                        val childGenome = mutateGenome(parentGenome.genes, builder.nextRandomInt())
+                        val childGenome = mutateGenome(parentGenome.encodedGenesForReproduction(), builder.nextRandomInt())
                         builder.update<GenomeComponent>(childEntityId) { GenomeComponent(childGenome) }
                     }
                     builder.update<LineageSeedComponent>(childEntityId) {
@@ -63,7 +64,7 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
                     )
                     builder.update<ReproducerComponent>(entityId) { updated }
                     println("Spawned: ${builder.entries<DrocketStateComponent>().size}")
-                } else if (builder.entries<DrocketStateComponent>().size < MAX_DROCKET_COUNT) {
+                } else if (builder.entries<DrocketStateComponent>().size < POPULATION_CAP) {
                     // Go through contacts to determine whether contact with a male reproducer has occurred
                     val contacts = builder.contacts.filter { it.aId == entityId || it.bId == entityId }
                     for (contact in contacts) {
@@ -101,17 +102,17 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
         if (parentGenes.isEmpty()) return parentGenes
         val updated = LinkedHashMap(parentGenes)
         val keys = updated.keys.toList()
-        val idx = (random and Int.MAX_VALUE) % keys.size
-        val key = keys[idx]
-        val delta = ((random ushr 8) % 11) - 5
+        for (key in keys) {
+            val delta = (random ushr 8) - (1 shl 7)
 
-        if (key in BODY_COLOR_KEYS) {
-            mutateColorGroup(updated, BODY_COLOR_KEYS, delta)
-        } else if (key in FIRE_COLOR_KEYS) {
-            mutateColorGroup(updated, FIRE_COLOR_KEYS, delta)
-        } else {
-            val base = updated[key] ?: 0
-            updated[key] = base + delta
+            if (key in BODY_COLOR_KEYS) {
+                mutateColorGroup(updated, BODY_COLOR_KEYS, delta)
+            } else if (key in FIRE_COLOR_KEYS) {
+                mutateColorGroup(updated, FIRE_COLOR_KEYS, delta)
+            } else {
+                val base = updated[key] ?: 0
+                updated[key] = base + delta
+            }
         }
         return updated
     }
@@ -122,8 +123,8 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
         childSex: Sex,
         randomSeed: Int,
     ): Map<String, Int>? {
-        val motherGenes = mother?.genes ?: emptyMap()
-        val fatherGenes = father?.genes ?: emptyMap()
+        val motherGenes = mother?.encodedGenesForReproduction() ?: emptyMap()
+        val fatherGenes = father?.encodedGenesForReproduction() ?: emptyMap()
         if (motherGenes.isEmpty() && fatherGenes.isEmpty()) return null
 
         val keys = LinkedHashSet<String>()
@@ -133,9 +134,10 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
         var step = randomSeed
 
         // Body color lineage: male follows father line, female follows mother line.
-        val bodySource = when (childSex) {
-            Sex.MALE -> fatherGenes.ifEmpty { motherGenes }
-            Sex.FEMALE -> motherGenes.ifEmpty { fatherGenes }
+        val bodySource = if (childSex == Sex.MALE) {
+            fatherGenes.ifEmpty { motherGenes }
+        } else {
+            motherGenes.ifEmpty { fatherGenes }
         }
         copyColorTriplet(bodySource, mixed, BODY_COLOR_KEYS)
 
@@ -190,6 +192,14 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
         }
     }
 
-    private val BODY_COLOR_KEYS = listOf("color_h", "color_s", "color_v")
-    private val FIRE_COLOR_KEYS = listOf("fire_color_h", "fire_color_s", "fire_color_v")
+    private val BODY_COLOR_KEYS = listOf(
+        GenomeComponent.GenomeKey.COLOR_H.wireName,
+        GenomeComponent.GenomeKey.COLOR_S.wireName,
+        GenomeComponent.GenomeKey.COLOR_V.wireName,
+    )
+    private val FIRE_COLOR_KEYS = listOf(
+        GenomeComponent.GenomeKey.FIRE_COLOR_H.wireName,
+        GenomeComponent.GenomeKey.FIRE_COLOR_S.wireName,
+        GenomeComponent.GenomeKey.FIRE_COLOR_V.wireName,
+    )
 }

@@ -72,7 +72,7 @@ object AtmosphereDragSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInpu
     }
 
     // Atmosphere extends this far above the planet surface (in Frac units)
-    private val ATMOSPHERE_DEPTH = Frac(1, 64)
+    private val ATMOSPHERE_DEPTH = Frac(1, 32)
     // Drag coefficient -- tuned so orbiting drockets slow noticeably in atmosphere
-    private val DRAG_COEFFICIENT = Frac(128, 1)
+    private val DRAG_COEFFICIENT = Frac(64, 1)
 }

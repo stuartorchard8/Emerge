@@ -1,6 +1,5 @@
 package org.emerge.demo.drockets
 
-import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.model.PhysicsState
 
 data class DrocketLineageNode(
@@ -41,7 +40,7 @@ fun DrocketLineageState.advanceFromPhysics(
     for ((entityId, seed) in seeds) {
         if (entityToLineage.containsKey(entityId.value)) continue
         val reproducer = reproducers[entityId] ?: continue
-        val genome = genomes[entityId]?.genes ?: emptyMap()
+        val genome = genomes[entityId]?.encodedGenesForPersistence() ?: emptyMap()
         val motherLineage = seed.motherEntityId?.let(entityToLineage::get)
         val fatherLineage = seed.fatherEntityId?.let(entityToLineage::get)
         val lineageId = nextId

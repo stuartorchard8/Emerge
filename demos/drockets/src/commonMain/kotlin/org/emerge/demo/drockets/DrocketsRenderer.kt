@@ -289,27 +289,17 @@ class DrocketsRenderer(
                 squash = squash.toFloat(),
             )
             val tintBase = (spriteCount - 1) * 3
-            val tintPrefix = "color_"
-            val tintH = genome?.genes?.get("${tintPrefix}h")
-            val tintS = genome?.genes?.get("${tintPrefix}s")
-            val tintV = genome?.genes?.get("${tintPrefix}v")
+            val tintH = genome?.decodedOrNull(GenomeComponent.GenomeKey.COLOR_H)
+            val tintS = genome?.decodedOrNull(GenomeComponent.GenomeKey.COLOR_S)
+            val tintV = genome?.decodedOrNull(GenomeComponent.GenomeKey.COLOR_V)
             if (tintH != null && tintS != null && tintV != null) {
-                val hue = decodeRangedGene(tintH, 0, 360, 0).toFloat()
-                val sat = decodeRangedGene(tintS, 0, 1000, 1000).toFloat() / 1000f
-                val value = decodeRangedGene(tintV, 0, 1000, 1000).toFloat() / 1000f
+                val hue = tintH.toFloat()
+                val sat = tintS.toFloat() / 1000f
+                val value = tintV.toFloat() / 1000f
                 val rgb = hsvToRgb(hue, sat, value)
                 spriteTintColors[tintBase] = rgb.first
                 spriteTintColors[tintBase + 1] = rgb.second
                 spriteTintColors[tintBase + 2] = rgb.third
-            } else if (
-                genome?.genes?.containsKey("${tintPrefix}r") == true &&
-                genome.genes.containsKey("${tintPrefix}g") &&
-                genome.genes.containsKey("${tintPrefix}b")
-            ) {
-                // Backwards-compat for pre-HSV genomes.
-                spriteTintColors[tintBase] = decodeGeneToUnit(genome.genes["${tintPrefix}r"] ?: 0)
-                spriteTintColors[tintBase + 1] = decodeGeneToUnit(genome.genes["${tintPrefix}g"] ?: 0)
-                spriteTintColors[tintBase + 2] = decodeGeneToUnit(genome.genes["${tintPrefix}b"] ?: 0)
             } else {
                 spriteTintColors[tintBase] = 0f
                 spriteTintColors[tintBase + 1] = 0f
@@ -601,12 +591,7 @@ class DrocketsRenderer(
 
         GPU.enableScissorTest()
         GPU.setScissor(halfW, 0, fbW - halfW, fbH)
-
-        fun mapLayoutToDisplay(lx: Float, ly: Float): Pair<Float, Float> {
-            val dx = (lx - 0.5f) * cladeZoom + 0.5f + cladePanX
-            val dy = (ly - 0.5f) * cladeZoom + 0.5f + cladePanY
-            return Pair(dx, dy)
-        }
+        val panelPositions = buildCladogramPanelPositions(frame)
 
         fun toNdcPanel(dx: Float, dy: Float): Pair<Float, Float> {
             val ndcX = dx.coerceIn(0f, 1f)
@@ -619,22 +604,29 @@ class DrocketsRenderer(
         val filter = cladogramLivingOnly
         fun includeNode(id: Long): Boolean = !filter || living.contains(id)
 
-        val simplifyNodes = layout.stats.nodeCount > 280
+        val simplifyNodes = layout.stats.nodeCount > 900
 
-        var nv = 0
+        // Number of floats currently written to [cladoLineScratch] (x,y per vertex).
+        var nFloat = 0
         fun flushRgba(r: Float, g: Float, b: Float, a: Float) {
-            if (nv < 2) return
-            cladogramLineShader.drawLinesRgba(cladoLineScratch, nv, r, g, b, a)
-            nv = 0
+            if (nFloat < 4) return
+            val vertexCount = nFloat / 2
+            cladogramLineShader.drawLinesRgba(cladoLineScratch, vertexCount, r, g, b, a)
+            nFloat = 0
         }
 
         fun pushSeg(ax: Float, ay: Float, bx: Float, by: Float) {
-            if (nv + 4 > cladoLineScratch.size) return
-            cladoLineScratch[nv++] = ax
-            cladoLineScratch[nv++] = ay
-            cladoLineScratch[nv++] = bx
-            cladoLineScratch[nv++] = by
+            if (nFloat + 4 > cladoLineScratch.size) return
+            cladoLineScratch[nFloat++] = ax
+            cladoLineScratch[nFloat++] = ay
+            cladoLineScratch[nFloat++] = bx
+            cladoLineScratch[nFloat++] = by
         }
+
+        val nodeBaseR = if (layout.stats.nodeCount > 420) 0.012f else 0.018f
+        val zoomScale = cladeZoom.coerceIn(0.22f, 4.5f)
+        val maxRBySpacing = min(CLADO_NODE_X_SPACING, CLADO_GENERATION_Y_SPACING) * zoomScale * 0.40f
+        val nodeR = (nodeBaseR * zoomScale).coerceIn(0.004f, maxRBySpacing.coerceAtLeast(0.004f))
 
         var eIndex = 0
         for ((from, to) in layout.edges) {
@@ -644,22 +636,21 @@ class DrocketsRenderer(
                 continue
             }
             eIndex++
-            val pf = layout.positions[from] ?: continue
-            val pt = layout.positions[to] ?: continue
-            val (fx, fy) = mapLayoutToDisplay(pf.first, pf.second)
-            val (tx, ty) = mapLayoutToDisplay(pt.first, pt.second)
-            val (aX, aY) = toNdcPanel(fx, fy)
-            val (bX, bY) = toNdcPanel(tx, ty)
+            val pf = panelPositions[from] ?: continue
+            val pt = panelPositions[to] ?: continue
+            val (fx, fy) = pf
+            val (tx, ty) = pt
+            // Connect parent-bottom to child-top so edges visually attach to box faces.
+            val (aX, aY) = toNdcPanel(fx, fy - nodeR)
+            val (bX, bY) = toNdcPanel(tx, ty + nodeR)
+            nFloat = 0
             pushSeg(aX, aY, bX, bY)
+            val rgb = bodyRgbFromGenome(lineage.nodes[from]?.genome.orEmpty())
+            flushRgba(rgb.first, rgb.second, rgb.third, 0.38f)
         }
-        flushRgba(0.42f, 0.5f, 0.62f, 0.48f)
-
-        val nodeR = if (layout.stats.nodeCount > 420) 0.012f else 0.018f
 
         fun appendDiamond(px: Float, py: Float, r: Float) {
-            val (cx, cy) = mapLayoutToDisplay(px, py)
-            fun corner(dx: Float, dy: Float): Pair<Float, Float> =
-                toNdcPanel((cx + dx).coerceIn(0f, 1f), (cy + dy).coerceIn(0f, 1f))
+            fun corner(dx: Float, dy: Float): Pair<Float, Float> = toNdcPanel(px + dx, py + dy)
             val (x0, y0) = corner(-r, -r)
             val (x1, y1) = corner(r, -r)
             val (x2, y2) = corner(r, r)
@@ -671,27 +662,38 @@ class DrocketsRenderer(
         }
 
         if (!simplifyNodes) {
-            for ((id, pos) in layout.positions) {
+            for ((id, pos) in panelPositions) {
                 if (!includeNode(id)) continue
                 if (living.contains(id)) continue
+                if (nFloat + 16 > cladoLineScratch.size) {
+                    flushRgba(0.38f, 0.39f, 0.44f, 0.62f)
+                }
                 appendDiamond(pos.first, pos.second, nodeR)
             }
             flushRgba(0.38f, 0.39f, 0.44f, 0.62f)
+        }
 
-            for ((id, pos) in layout.positions) {
-                if (!includeNode(id)) continue
-                if (!living.contains(id)) continue
-                nv = 0
-                appendDiamond(pos.first, pos.second, nodeR)
-                val rgb = bodyRgbFromGenome(lineage.nodes[id]?.genome.orEmpty())
-                flushRgba(rgb.first, rgb.second, rgb.third, 0.95f)
-            }
+        val livingStride = when {
+            layout.stats.livingCount > 1400 -> 4
+            layout.stats.livingCount > 900 -> 3
+            layout.stats.livingCount > 500 -> 2
+            else -> 1
+        }
+        var livingIndex = 0
+        for ((id, pos) in panelPositions) {
+            if (!includeNode(id)) continue
+            if (!living.contains(id)) continue
+            if (livingStride > 1 && (livingIndex++ % livingStride != 0)) continue
+            nFloat = 0
+            appendDiamond(pos.first, pos.second, nodeR)
+            val rgb = bodyRgbFromGenome(lineage.nodes[id]?.genome.orEmpty())
+            flushRgba(rgb.first, rgb.second, rgb.third, 0.95f)
         }
 
         val sel = selectedLineageId
-        if (sel != null && layout.positions.containsKey(sel) && includeNode(sel)) {
-            nv = 0
-            val p = layout.positions[sel]!!
+        if (sel != null && panelPositions.containsKey(sel) && includeNode(sel)) {
+            nFloat = 0
+            val p = panelPositions[sel]!!
             appendDiamond(p.first, p.second, nodeR * 1.55f)
             flushRgba(1f, 0.92f, 0.25f, 0.95f)
         }
@@ -701,8 +703,8 @@ class DrocketsRenderer(
     }
 
     private fun tryPickCladogram(frame: DrocketsFrame, pixel: Vec2) {
-        val layout = frame.cladogramLayout
-        if (layout.positions.isEmpty()) {
+        val panelPositions = buildCladogramPanelPositions(frame)
+        if (panelPositions.isEmpty()) {
             selectedLineageId = null
             return
         }
@@ -712,25 +714,15 @@ class DrocketsRenderer(
 
         val mx = ((pixel.x - fbW * 0.5f) / (fbW * 0.5f)).coerceIn(0f, 1f)
         val my = (1f - pixel.y / fbH).coerceIn(0f, 1f)
-
-        fun inv(px: Float, py: Float): Pair<Float, Float> {
-            val lx = (px - 0.5f - cladePanX) / cladeZoom + 0.5f
-            val ly = (py - 0.5f - cladePanY) / cladeZoom + 0.5f
-            return Pair(lx, ly)
-        }
-
-        val (lx, ly) = inv(mx, my)
-        val hitR = 0.055f / cladeZoom.coerceAtLeast(0.22f)
+        val hitR = (0.030f / cladeZoom.coerceAtLeast(0.22f)).coerceIn(0.010f, 0.090f)
 
         var best: Long? = null
         var bestD = Float.POSITIVE_INFINITY
         val lineage = frame.lineage
-        val filter = cladogramLivingOnly
 
-        for ((id, pos) in layout.positions) {
-            if (filter && !lineage.livingLineageIds.contains(id)) continue
-            val dx = pos.first - lx
-            val dy = pos.second - ly
+        for ((id, pos) in panelPositions) {
+            val dx = pos.first - mx
+            val dy = pos.second - my
             val d = dx * dx + dy * dy
             if (d < bestD && d <= hitR * hitR) {
                 bestD = d
@@ -749,11 +741,51 @@ class DrocketsRenderer(
         }
     }
 
+    /**
+     * Computes panel-space positions (x,y in [0,1] before clipping) with fixed spacing:
+     * - each generation is a horizontal row;
+     * - older generations are above younger ones;
+     * - only currently visible individuals are packed (no dead-node gaps in living-only mode).
+     */
+    private fun buildCladogramPanelPositions(frame: DrocketsFrame): Map<Long, Pair<Float, Float>> {
+        val layout = frame.cladogramLayout
+        val lineage = frame.lineage
+        if (layout.depthById.isEmpty()) return emptyMap()
+
+        val visibleByDepth = LinkedHashMap<Int, MutableList<Long>>()
+        for ((id, depth) in layout.depthById) {
+            if (cladogramLivingOnly && !lineage.livingLineageIds.contains(id)) continue
+            visibleByDepth.getOrPut(depth) { mutableListOf() }.add(id)
+        }
+        if (visibleByDepth.isEmpty()) return emptyMap()
+        for (ids in visibleByDepth.values) {
+            ids.sortWith(
+                compareBy<Long> { lineage.nodes[it]?.birthTick ?: Long.MAX_VALUE }
+                    .thenBy { it }
+            )
+        }
+
+        val out = LinkedHashMap<Long, Pair<Float, Float>>(visibleByDepth.values.sumOf { it.size })
+        for ((depth, ids) in visibleByDepth.toSortedMap()) {
+            val n = ids.size
+            if (n <= 0) continue
+            val halfSpan = (n - 1) * 0.5f
+            for ((index, id) in ids.withIndex()) {
+                val logicalX = (index - halfSpan) * CLADO_NODE_X_SPACING
+                val logicalY = -depth * CLADO_GENERATION_Y_SPACING
+                val px = 0.5f + (logicalX * cladeZoom) + cladePanX
+                val py = 0.88f + (logicalY * cladeZoom) + cladePanY
+                out[id] = Pair(px, py)
+            }
+        }
+        return out
+    }
+
     private fun bodyRgbFromGenome(genes: Map<String, Int>): Triple<Float, Float, Float> {
         if (genes.isEmpty()) return Triple(0.85f, 0.88f, 0.92f)
-        val hue = decodeRangedGene(genes["color_h"], 0, 360, 0).toFloat()
-        val sat = decodeRangedGene(genes["color_s"], 0, 1000, 1000).toFloat() / 1000f
-        val value = decodeRangedGene(genes["color_v"], 0, 1000, 1000).toFloat() / 1000f
+        val hue = GenomeComponent.decodeRanged(GenomeComponent.GenomeKey.COLOR_H, genes)?.toFloat() ?: 0f
+        val sat = (GenomeComponent.decodeRanged(GenomeComponent.GenomeKey.COLOR_S, genes)?.toFloat() ?: 1000f) / 1000f
+        val value = (GenomeComponent.decodeRanged(GenomeComponent.GenomeKey.COLOR_V, genes)?.toFloat() ?: 1000f) / 1000f
         return hsvToRgb(hue, sat, value)
     }
 
@@ -857,17 +889,17 @@ class DrocketsRenderer(
         val genome = state.components.getTable<GenomeComponent>()[entityId] ?: return emptyList()
         val reproducer = state.components.getTable<ReproducerComponent>()[entityId]
 
-        val minWalk = decodeRangedGene(genome.genes["ai_walk_min_ticks"], 1, 20_000, 120)
-        val maxWalk = decodeRangedGene(genome.genes["ai_walk_max_ticks"], 1, 20_000, 600)
-        val charge = decodeRangedGene(genome.genes["ai_charge_ticks"], 1, 20_000, 18)
-        val fuel = decodeRangedGene(genome.genes["ai_fuel_ticks"], 1, 20_000, 200)
-        val thrust = decodeRangedGene(genome.genes["ai_thrust_raw"], 0, Int.MAX_VALUE / 4096, Frac(1, 1024 * 256).raw.toInt())
-        val bodyH = decodeRangedGene(genome.genes["color_h"], 0, 360, 0)
-        val bodyS = decodeRangedGene(genome.genes["color_s"], 0, 1000, 0)
-        val bodyV = decodeRangedGene(genome.genes["color_v"], 0, 1000, 0)
-        val fireH = decodeRangedGene(genome.genes["fire_color_h"], 0, 360, 0)
-        val fireS = decodeRangedGene(genome.genes["fire_color_s"], 0, 1000, 0)
-        val fireV = decodeRangedGene(genome.genes["fire_color_v"], 0, 1000, 0)
+        val minWalk = genome.decodedOrDefault(GenomeComponent.GenomeKey.AI_WALK_MIN_TICKS)
+        val maxWalk = genome.decodedOrDefault(GenomeComponent.GenomeKey.AI_WALK_MAX_TICKS)
+        val charge = genome.decodedOrDefault(GenomeComponent.GenomeKey.AI_CHARGE_TICKS)
+        val fuel = genome.decodedOrDefault(GenomeComponent.GenomeKey.AI_FUEL_TICKS)
+        val thrust = genome.decodedOrDefault(GenomeComponent.GenomeKey.AI_THRUST_RAW)
+        val bodyH = genome.decodedOrDefault(GenomeComponent.GenomeKey.COLOR_H)
+        val bodyS = genome.decodedOrDefault(GenomeComponent.GenomeKey.COLOR_S)
+        val bodyV = genome.decodedOrDefault(GenomeComponent.GenomeKey.COLOR_V)
+        val fireH = genome.decodedOrDefault(GenomeComponent.GenomeKey.FIRE_COLOR_H)
+        val fireS = genome.decodedOrDefault(GenomeComponent.GenomeKey.FIRE_COLOR_S)
+        val fireV = genome.decodedOrDefault(GenomeComponent.GenomeKey.FIRE_COLOR_V)
         val sex = reproducer?.sex?.name ?: "NA"
         val nowMs = Clock.System.now().toEpochMilliseconds()
         val pregnancy = when {
@@ -895,12 +927,12 @@ class DrocketsRenderer(
             val teamId = state.teams[entityId]?.teamId?.value ?: continue
             if (out.containsKey(teamId)) continue
             val genome = genomes[entityId] ?: continue
-            val h = genome.genes["fire_color_h"] ?: continue
-            val s = genome.genes["fire_color_s"] ?: continue
-            val v = genome.genes["fire_color_v"] ?: continue
-            val hue = decodeRangedGene(h, 0, 360, 0).toFloat()
-            val sat = decodeRangedGene(s, 0, 1000, 1000).toFloat() / 1000f
-            val value = decodeRangedGene(v, 0, 1000, 1000).toFloat() / 1000f
+            val h = genome.decodedOrNull(GenomeComponent.GenomeKey.FIRE_COLOR_H) ?: continue
+            val s = genome.decodedOrNull(GenomeComponent.GenomeKey.FIRE_COLOR_S) ?: continue
+            val v = genome.decodedOrNull(GenomeComponent.GenomeKey.FIRE_COLOR_V) ?: continue
+            val hue = h.toFloat()
+            val sat = s.toFloat() / 1000f
+            val value = v.toFloat() / 1000f
             out[teamId] = hsvToRgb(hue, sat, value)
         }
         return out
@@ -1171,12 +1203,6 @@ class DrocketsRenderer(
         return norm.toFloat()
     }
 
-    private fun decodeRangedGene(raw: Int?, min: Int, max: Int, fallback: Int): Int {
-        if (raw == null) return fallback
-        val norm = ((raw.toLong() - Int.MIN_VALUE.toLong()) / 4294967295.0).coerceIn(0.0, 1.0)
-        return (min + ((max - min) * norm)).toInt().coerceIn(min, max)
-    }
-
     private fun hsvToRgb(h: Float, s: Float, v: Float): Triple<Float, Float, Float> {
         if (s <= 0f) return Triple(v, v, v)
         val hh = ((h % 360f) + 360f) % 360f
@@ -1201,6 +1227,8 @@ class DrocketsRenderer(
         private const val SPRITE_SCALE_FACTOR = 1f
         private const val PICK_RADIUS_SCALE = 5f
         private const val PLANET_ATMOSPHERE_SCALE = 1.15f
+        private const val CLADO_NODE_X_SPACING = 0.060f
+        private const val CLADO_GENERATION_Y_SPACING = 0.100f
         private const val HUD_FONT_COLS = 8
         private const val HUD_FONT_ROWS = 8
         private val HUD_GLYPHS = listOf(

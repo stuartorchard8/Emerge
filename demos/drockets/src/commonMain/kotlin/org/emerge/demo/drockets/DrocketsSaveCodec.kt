@@ -47,13 +47,14 @@ object DrocketsSaveCodec {
         val stateBytes = c.readBytes(stateBytesSize)
         val physicsState = PhysicsNetCodecs.stateCodec.decode(stateBytes)
         val mergedComponents = decodeDrocketsComponents(c, physicsState.components)
+        val lineage = decodeLineageState(c)
         require(c.remaining() == 0) {
             "Unexpected trailing bytes in Drockets snapshot: ${c.remaining()}"
         }
         return DrocketsSnapshot(
             tick = tick,
             state = physicsState.copy(components = mergedComponents),
-            lineage = decodeLineageState(c),
+            lineage = lineage,
         )
     }
 
@@ -271,16 +272,17 @@ object DrocketsSaveCodec {
         w.writeInt(entries.size)
         var totalGeneCount = 0
         for ((entityId, component) in entries) {
+            val genes = component.encodedGenesForPersistence()
             w.writeInt(entityId.value)
-            w.writeInt(component.genes.size)
-            require(component.genes.size <= MAX_GENE_COUNT_PER_ENTITY) {
-                "Too many genes for entity ${entityId.value}: ${component.genes.size}"
+            w.writeInt(genes.size)
+            require(genes.size <= MAX_GENE_COUNT_PER_ENTITY) {
+                "Too many genes for entity ${entityId.value}: ${genes.size}"
             }
-            totalGeneCount += component.genes.size
+            totalGeneCount += genes.size
             require(totalGeneCount <= MAX_TOTAL_GENES) {
                 "Too many total genes in snapshot: $totalGeneCount"
             }
-            for ((key, value) in component.genes) {
+            for ((key, value) in genes) {
                 writeAsciiString(w, key)
                 w.writeInt(value)
             }
@@ -308,7 +310,7 @@ object DrocketsSaveCodec {
                 val value = c.readInt()
                 genes[key] = value
             }
-            out[entityId] = GenomeComponent(genes = genes)
+            out[entityId] = GenomeComponent(encodedGenes = genes)
         }
         return out
     }
