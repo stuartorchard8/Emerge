@@ -40,6 +40,7 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
                         planetMotion.surfaceVelocityAtOffset(planetNorm, planetDist),
                         transformComponent.ang,
                         teamComponent.teamId,
+                        spawn.sex,
                     )
                     val storedSpawnGenome = reproducer.spawnGenome
                     if (storedSpawnGenome != null) {

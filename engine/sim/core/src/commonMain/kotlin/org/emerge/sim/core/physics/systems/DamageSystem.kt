@@ -23,7 +23,7 @@ object DamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         val playersToRespawn = LinkedHashSet<PlayerId>()
 
         for ((entityId, damage) in builder.entries<DamageComponent>()) {
-            if (damage.accumulated.raw >= cfg.maxDamage.raw) {
+            if (damage.accumulated.raw >= cfg.maxHealth.raw) {
                 // Cleanup on second pass
                 if (cfg.respawnTicks >= 0) {
                     builder.remove<DamageComponent>(entityId)
@@ -38,7 +38,7 @@ object DamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
             val impulse = builder.getComponent<ImpulseComponent>(entityId) ?: ImpulseComponent()
 
             val total = damage.accumulated + damage.next
-            val destroyed = total.raw >= cfg.maxDamage.raw
+            val destroyed = total.raw >= cfg.maxHealth.raw
             if (destroyed) {
                 val teamId = builder.getComponent<TeamComponent>(entityId)?.teamId
                 val baseRadius = builder.getComponent<ColliderComponent>(entityId)?.radius

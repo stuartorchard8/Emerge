@@ -34,7 +34,13 @@ fun createDrocketsInitialState(drocketCount: Int = INITIAL_DROCKET_COUNT, knight
     for (i in 0 until drocketCount) {
         val teamId = TeamId(i)
         val angle = Coord(i*2, drocketCount)
-        spawnDrocketOnPlanet(builder, planetId, angle, teamId)
+        spawnDrocketOnPlanet(
+            builder,
+            planetId,
+            angle,
+            teamId,
+            if (teamId.value%2==0) Sex.FEMALE else Sex.MALE,
+        )
     }
 
     return builder.build()
@@ -45,6 +51,7 @@ private fun spawnDrocketOnPlanet(
     planetId: EntityId,
     angle: Coord,
     teamId: TeamId,
+    sex: Sex,
 ) {
     val planetTransform = builder.getComponent<TransformComponent>(planetId) ?: return
     val planetMotion = builder.getComponent<MotionComponent>(planetId) ?: return
@@ -61,6 +68,7 @@ private fun spawnDrocketOnPlanet(
         velocity = planetMotion.surfaceVelocityAtOffset(localNormal, planetCollider.radius+DROCKET_RADIUS),
         angle = worldAng,
         teamId = teamId,
+        sex = sex,
     )
 }
 
@@ -70,6 +78,7 @@ fun spawnDrocket(
     velocity: Coord2,
     angle: Coord,
     teamId: TeamId,
+    sex: Sex,
 ): EntityId {
     val entityId = builder.spawnBody(
         playerId = null,
@@ -95,7 +104,7 @@ fun spawnDrocket(
     builder.update<ReproducerComponent>(entityId) {
         ReproducerComponent(
             birthdayMs = Clock.System.now().toEpochMilliseconds(),
-            sex = if (teamId.value%2==0) Sex.FEMALE else Sex.MALE,
+            sex = sex,
         )
     }
     builder.update<GenomeComponent>(entityId) {

@@ -7,6 +7,7 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.Tick
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.ComponentStore
+import org.emerge.sim.core.physics.components.ParticleComponent
 import org.emerge.sim.core.physics.model.PhysicsState
 
 data class DrocketsSnapshot(
@@ -23,7 +24,12 @@ object DrocketsSaveCodec {
 
     fun encode(snapshot: DrocketsSnapshot): ByteArray {
         val w = ByteWriter()
-        val stateBytes = PhysicsNetCodecs.stateCodec.encode(snapshot.state)
+        val stateWithoutParticles = snapshot.state.copy(
+            components = snapshot.state.components.update {
+                set(ComponentTable.fromMap(emptyMap<EntityId, ParticleComponent>()))
+            }
+        )
+        val stateBytes = PhysicsNetCodecs.stateCodec.encode(stateWithoutParticles)
         w.writeInt(FORMAT_VERSION)
         w.writeLong(snapshot.tick.value)
         w.writeInt(stateBytes.size)

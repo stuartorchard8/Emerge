@@ -108,6 +108,9 @@ object DrocketsSceneView {
             if (action == GLFW_PRESS && key == GLFW_KEY_F6) {
                 activeRenderer?.toggleCladogramLivingOnly()
             }
+            if (action == GLFW_PRESS && key == GLFW_KEY_F7) {
+                activeRenderer?.toggleCladogramProfiling()
+            }
         }
 
         glfwMakeContextCurrent(window)

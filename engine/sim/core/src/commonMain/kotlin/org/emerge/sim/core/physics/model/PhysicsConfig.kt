@@ -8,6 +8,6 @@ data class PhysicsConfig(
     val gravityNumerator: Frac = Frac(1, 16),
     val rollingResistance: Frac = Frac(1, 16),
     val collisionSpeedDamageThreshold: Frac = Frac(1, 1024 * 8),
-    val maxDamage: Frac = Frac(1, 512),
+    val maxHealth: Frac = Frac(1, 512),
     val respawnTicks: Int = 60 * 5,
 )

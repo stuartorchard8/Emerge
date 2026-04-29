@@ -27,7 +27,7 @@ interface CrashAudioEngine {
 class CrashAudioSystem(
     private val engine: CrashAudioEngine,
     private val random: Random = Random.Default,
-    private val shipMaxDamageRaw: Long = PhysicsConfig().maxDamage.raw,
+    private val shipMaxDamageRaw: Long = PhysicsConfig().maxHealth.raw,
     private val worldSize: Float = 2f,
     private val maxAudibleDistance: Float = 0.5f,
     private val minTicksBetweenEntityCrashes: Long = 2L,

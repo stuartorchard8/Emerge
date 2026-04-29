@@ -26,7 +26,9 @@ object PhysicsNetCodecs {
     private const val STATE_RESPAWN_INT_COUNT = 11
     private const val STATE_CRASH_AUDIO_EVENT_INT_COUNT = 5
     private const val STATE_INT_BYTES = 4
-    private const val MAX_STATE_ENTITIES = 2048
+    // Drockets saves (especially older ones that serialized particles) can exceed 2k entities.
+    // Keep this as a sanity bound, but high enough to support legitimate snapshots.
+    private const val MAX_STATE_ENTITIES = 10_000
     private const val MAX_STATE_CRASH_AUDIO_EVENTS = 4096
 
     val inputCodec: Codec<PhysicsInput> =

@@ -13,6 +13,7 @@ import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.*
 import kotlin.concurrent.Volatile
 import kotlin.math.*
+import kotlin.time.TimeSource
 
 /**
  * Dedicated renderer for the Drockets demo.
@@ -96,11 +97,22 @@ class DrocketsRenderer(
     private var showCladogramPanel: Boolean = false
 
     @Volatile
-    private var cladogramLivingOnly: Boolean = false
+    private var cladogramFilterMode: CladogramFilterMode = CladogramFilterMode.ALL
+    @Volatile
+    private var showCladogramProfiling: Boolean = true
+    private var cladogramLastKeyMs: Float = 0f
+    private var cladogramLastFilterMs: Float = 0f
+    private var cladogramLastSolveMs: Float = 0f
+    private var cladogramLastLayoutMs: Float = 0f
+    private var cladogramLastEdgesMs: Float = 0f
+    private var cladogramLastNodesMs: Float = 0f
+    private var cladogramLastHighlightMs: Float = 0f
+    private var cladogramLastTotalMs: Float = 0f
     private var selectedLineageId: Long? = null
     private var cladeZoom: Float = 1f
     private var cladePanX: Float = 0f
     private var cladePanY: Float = 0f
+    private var cladogramSolveCache: CladogramSolveCache? = null
 
     private val matTmp = FloatArray(M4)
     private val matT = FloatArray(M4)
@@ -442,6 +454,7 @@ class DrocketsRenderer(
             cladePanX = 0f
             cladePanY = 0f
         }
+        invalidateCladogramLayoutCache()
         setOverlayStatus(
             if (showCladogramPanel) "Cladogram ON (F2)  living-only F6"
             else "Cladogram OFF (F2)",
@@ -450,11 +463,30 @@ class DrocketsRenderer(
     }
 
     fun toggleCladogramLivingOnly() {
-        cladogramLivingOnly = !cladogramLivingOnly
+        cladogramFilterMode = when (cladogramFilterMode) {
+            CladogramFilterMode.ALL -> CladogramFilterMode.LIVING_ONLY
+            CladogramFilterMode.LIVING_ONLY -> CladogramFilterMode.LIVING_AND_PARENTS
+            CladogramFilterMode.LIVING_AND_PARENTS -> CladogramFilterMode.LIVING_AND_CONNECTORS
+            CladogramFilterMode.LIVING_AND_CONNECTORS -> CladogramFilterMode.ALL
+        }
+        invalidateCladogramLayoutCache()
         setOverlayStatus(
-            if (cladogramLivingOnly) "Cladogram: living only ON (F6)"
-            else "Cladogram: living only OFF (F6)",
+            when (cladogramFilterMode) {
+                CladogramFilterMode.ALL -> "Cladogram filter: ALL (F6)"
+                CladogramFilterMode.LIVING_ONLY -> "Cladogram filter: LIVING ONLY (F6)"
+                CladogramFilterMode.LIVING_AND_PARENTS -> "Cladogram filter: LIVING+PARENTS (F6)"
+                CladogramFilterMode.LIVING_AND_CONNECTORS -> "Cladogram filter: LIVING+CONNECTORS (F6)"
+            },
             durationMs = 1_800,
+        )
+    }
+
+    fun toggleCladogramProfiling() {
+        showCladogramProfiling = !showCladogramProfiling
+        setOverlayStatus(
+            if (showCladogramProfiling) "Cladogram profiling ON (F7)"
+            else "Cladogram profiling OFF (F7)",
+            durationMs = 1_500,
         )
     }
 
@@ -539,8 +571,17 @@ class DrocketsRenderer(
         }
         if (showCladogramPanel) {
             lines += sanitizeHudText(frame.cladogramLayout.summaryLine().uppercase())
-            if (cladogramLivingOnly) {
-                lines += sanitizeHudText("FILTER LIVING ONLY (F6)".uppercase())
+            val filterLabel = when (cladogramFilterMode) {
+                CladogramFilterMode.ALL -> "FILTER ALL"
+                CladogramFilterMode.LIVING_ONLY -> "FILTER LIVING ONLY"
+                CladogramFilterMode.LIVING_AND_PARENTS -> "FILTER LIVING + PARENTS"
+                CladogramFilterMode.LIVING_AND_CONNECTORS -> "FILTER LIVING + CONNECTORS"
+            }
+            lines += sanitizeHudText("$filterLabel (F6)".uppercase())
+            if (showCladogramProfiling) {
+                lines += sanitizeHudText(
+                    "CLADO MS K${"%.2f".format(cladogramLastKeyMs)} F${"%.2f".format(cladogramLastFilterMs)} S${"%.2f".format(cladogramLastSolveMs)} T${"%.2f".format(cladogramLastTotalMs)}"
+                )
             }
             val sel = selectedLineageId
             if (sel != null) {
@@ -591,7 +632,11 @@ class DrocketsRenderer(
 
         GPU.enableScissorTest()
         GPU.setScissor(halfW, 0, fbW - halfW, fbH)
-        val panelPositions = buildCladogramPanelPositions(frame)
+        val totalStart = TimeSource.Monotonic.markNow()
+        val layoutStart = TimeSource.Monotonic.markNow()
+        val layoutResult = getCladogramPanelLayout(frame)
+        val panelPositions = layoutResult.positions
+        val layoutMs = layoutStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
 
         fun toNdcPanel(dx: Float, dy: Float): Pair<Float, Float> {
             val ndcX = dx.coerceIn(0f, 1f)
@@ -601,10 +646,6 @@ class DrocketsRenderer(
 
         val lineage = frame.lineage
         val living = lineage.livingLineageIds
-        val filter = cladogramLivingOnly
-        fun includeNode(id: Long): Boolean = !filter || living.contains(id)
-
-        val simplifyNodes = layout.stats.nodeCount > 900
 
         // Number of floats currently written to [cladoLineScratch] (x,y per vertex).
         var nFloat = 0
@@ -628,19 +669,61 @@ class DrocketsRenderer(
         val maxRBySpacing = min(CLADO_NODE_X_SPACING, CLADO_GENERATION_Y_SPACING) * zoomScale * 0.40f
         val nodeR = (nodeBaseR * zoomScale).coerceIn(0.004f, maxRBySpacing.coerceAtLeast(0.004f))
 
-        var visibleEdgeCount = 0
+        val childrenById = HashMap<Long, MutableList<Long>>()
+        val parentsById = HashMap<Long, MutableList<Long>>()
+        val edgesStart = TimeSource.Monotonic.markNow()
         for ((from, to) in layout.edges) {
-            if (!includeNode(from) || !includeNode(to)) continue
             if (!panelPositions.containsKey(from) || !panelPositions.containsKey(to)) continue
-            visibleEdgeCount++
+            childrenById.getOrPut(from) { mutableListOf() }.add(to)
+            parentsById.getOrPut(to) { mutableListOf() }.add(from)
         }
-        val edgeStride = if (visibleEdgeCount > 5_200) 2 else 1
-        for ((from, to) in layout.edges) {
-            if (!includeNode(from) || !includeNode(to)) continue
-            if (edgeStride > 1) {
-                val key = (((from * 1315423911L) xor (to * 2654435761L)) and Long.MAX_VALUE).toInt()
-                if (key % edgeStride != 0) continue
+
+        fun bfsDistances(seed: Long, adjacency: Map<Long, List<Long>>): Map<Long, Int> {
+            val out = LinkedHashMap<Long, Int>()
+            val queue = ArrayDeque<Long>()
+            queue.addLast(seed)
+            out[seed] = 0
+            while (queue.isNotEmpty()) {
+                val cur = queue.removeFirst()
+                val curDist = out[cur] ?: continue
+                for (next in adjacency[cur].orEmpty()) {
+                    if (out.containsKey(next)) continue
+                    out[next] = curDist + 1
+                    queue.addLast(next)
+                }
             }
+            out.remove(seed)
+            return out
+        }
+
+        fun ancestorColor(distance: Int): Triple<Float, Float, Float> {
+            val t = ((distance - 1).toFloat() / 6f).coerceIn(0f, 1f)
+            val near = Triple(1.0f, 0.78f, 0.24f)
+            val far = Triple(1.0f, 0.16f, 0.16f)
+            return Triple(
+                near.first + (far.first - near.first) * t,
+                near.second + (far.second - near.second) * t,
+                near.third + (far.third - near.third) * t,
+            )
+        }
+
+        fun descendantColor(distance: Int): Triple<Float, Float, Float> {
+            val t = ((distance - 1).toFloat() / 6f).coerceIn(0f, 1f)
+            val near = Triple(0.28f, 0.92f, 1.0f)
+            val far = Triple(0.14f, 0.34f, 1.0f)
+            return Triple(
+                near.first + (far.first - near.first) * t,
+                near.second + (far.second - near.second) * t,
+                near.third + (far.third - near.third) * t,
+            )
+        }
+
+        val sel = selectedLineageId
+        val ancestors = if (sel != null && panelPositions.containsKey(sel)) bfsDistances(sel, parentsById) else emptyMap()
+        val descendants = if (sel != null && panelPositions.containsKey(sel)) bfsDistances(sel, childrenById) else emptyMap()
+
+        for ((from, to) in layout.edges) {
+            if (!panelPositions.containsKey(from) || !panelPositions.containsKey(to)) continue
             val pf = panelPositions[from] ?: continue
             val pt = panelPositions[to] ?: continue
             val (fx, fy) = pf
@@ -650,9 +733,30 @@ class DrocketsRenderer(
             val (bX, bY) = toNdcPanel(tx, ty + nodeR)
             nFloat = 0
             pushSeg(aX, aY, bX, bY)
-            val rgb = bodyRgbFromGenome(lineage.nodes[from]?.genome.orEmpty())
-            flushRgba(rgb.first, rgb.second, rgb.third, 0.38f)
+            val ancFrom = ancestors[from]
+            val ancTo = ancestors[to]
+            val descFrom = descendants[from]
+            val descTo = descendants[to]
+            when {
+                ancFrom != null && ((ancTo != null && ancFrom == ancTo + 1) || (sel == to && ancFrom == 1)) -> {
+                    val rgb = ancestorColor(ancFrom)
+                    flushRgba(rgb.first, rgb.second, rgb.third, 0.92f)
+                }
+                descTo != null && ((descFrom != null && descTo == descFrom + 1) || (sel == from && descTo == 1)) -> {
+                    val rgb = descendantColor(descTo)
+                    flushRgba(rgb.first, rgb.second, rgb.third, 0.92f)
+                }
+                else -> {
+                    if (living.contains(from) && living.contains(to)) {
+                        val rgb = bodyRgbFromGenome(lineage.nodes[from]?.genome.orEmpty())
+                        flushRgba(rgb.first, rgb.second, rgb.third, 0.40f)
+                    } else {
+                        flushRgba(0.52f, 0.56f, 0.62f, 0.40f)
+                    }
+                }
+            }
         }
+        val edgesMs = edgesStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
 
         fun appendDiamond(px: Float, py: Float, r: Float) {
             fun corner(dx: Float, dy: Float): Pair<Float, Float> = toNdcPanel(px + dx, py + dy)
@@ -666,49 +770,74 @@ class DrocketsRenderer(
             pushSeg(x3, y3, x0, y0)
         }
 
-        if (!simplifyNodes) {
-            for ((id, pos) in panelPositions) {
-                if (!includeNode(id)) continue
-                if (living.contains(id)) continue
-                if (nFloat + 16 > cladoLineScratch.size) {
-                    flushRgba(0.38f, 0.39f, 0.44f, 0.62f)
-                }
-                appendDiamond(pos.first, pos.second, nodeR)
-            }
-            flushRgba(0.38f, 0.39f, 0.44f, 0.62f)
-        }
-
-        val livingStride = when {
-            layout.stats.livingCount > 1400 -> 4
-            layout.stats.livingCount > 900 -> 3
-            layout.stats.livingCount > 500 -> 2
-            else -> 1
-        }
-        var livingIndex = 0
+        val nodesStart = TimeSource.Monotonic.markNow()
         for ((id, pos) in panelPositions) {
-            if (!includeNode(id)) continue
+            if (living.contains(id)) continue
+            if (nFloat + 16 > cladoLineScratch.size) {
+                flushRgba(0.38f, 0.39f, 0.44f, 0.62f)
+            }
+            appendDiamond(pos.first, pos.second, nodeR)
+        }
+        flushRgba(0.38f, 0.39f, 0.44f, 0.62f)
+
+        for ((id, pos) in panelPositions) {
             if (!living.contains(id)) continue
-            if (livingStride > 1 && (livingIndex++ % livingStride != 0)) continue
             nFloat = 0
             appendDiamond(pos.first, pos.second, nodeR)
             val rgb = bodyRgbFromGenome(lineage.nodes[id]?.genome.orEmpty())
             flushRgba(rgb.first, rgb.second, rgb.third, 0.95f)
         }
+        val nodesMs = nodesStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
 
-        val sel = selectedLineageId
-        if (sel != null && panelPositions.containsKey(sel) && includeNode(sel)) {
+        val highlightStart = TimeSource.Monotonic.markNow()
+        if (sel != null && panelPositions.containsKey(sel)) {
+            val highlightR = nodeR * 1.28f
+            fun drawFilledCircle(center: Pair<Float, Float>, r: Float, color: Triple<Float, Float, Float>) {
+                val steps = 6
+                for (i in -steps..steps) {
+                    val yy = r * (i.toFloat() / steps.toFloat())
+                    val xx = sqrt((r * r - yy * yy).coerceAtLeast(0f))
+                    nFloat = 0
+                    val (x0, y0) = toNdcPanel(center.first - xx, center.second + yy)
+                    val (x1, y1) = toNdcPanel(center.first + xx, center.second + yy)
+                    pushSeg(x0, y0, x1, y1)
+                    flushRgba(color.first, color.second, color.third, 0.95f)
+                }
+            }
+
+            for ((id, distance) in ancestors) {
+                val p = panelPositions[id] ?: continue
+                val rgb = ancestorColor(distance)
+                drawFilledCircle(p, highlightR * 0.62f, rgb)
+            }
+            for ((id, distance) in descendants) {
+                val p = panelPositions[id] ?: continue
+                val rgb = descendantColor(distance)
+                drawFilledCircle(p, highlightR * 0.62f, rgb)
+            }
+
             nFloat = 0
             val p = panelPositions[sel]!!
             appendDiamond(p.first, p.second, nodeR * 1.55f)
             flushRgba(1f, 0.92f, 0.25f, 0.95f)
+            drawFilledCircle(p, nodeR * 0.58f, Triple(1f, 1f, 1f))
         }
+        val highlightMs = highlightStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
+        val totalMs = totalStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
+        cladogramLastFilterMs = layoutResult.filterMs
+        cladogramLastSolveMs = layoutResult.solveMs
+        cladogramLastLayoutMs = layoutMs
+        cladogramLastEdgesMs = edgesMs
+        cladogramLastNodesMs = nodesMs
+        cladogramLastHighlightMs = highlightMs
+        cladogramLastTotalMs = totalMs
 
         GPU.disableScissorTest()
         GPU.bindVertexArray(vao)
     }
 
     private fun tryPickCladogram(frame: DrocketsFrame, pixel: Vec2) {
-        val panelPositions = buildCladogramPanelPositions(frame)
+        val panelPositions = getCladogramPanelLayout(frame).positions
         if (panelPositions.isEmpty()) {
             selectedLineageId = null
             return
@@ -752,38 +881,359 @@ class DrocketsRenderer(
      * - older generations are above younger ones;
      * - only currently visible individuals are packed (no dead-node gaps in living-only mode).
      */
-    private fun buildCladogramPanelPositions(frame: DrocketsFrame): Map<Long, Pair<Float, Float>> {
+    private data class CladogramPanelLayoutResult(
+        val positions: Map<Long, Pair<Float, Float>>,
+        val filterMs: Float,
+        val solveMs: Float,
+    )
+
+    private data class CladogramSolveCacheKey(
+        val nodeCount: Int,
+        val edgeCount: Int,
+        val edgeHash: Int,
+        val maxDepth: Int,
+        val depthHash: Int,
+        val livingCount: Int,
+        val livingHash: Int,
+        val filterMode: CladogramFilterMode,
+    )
+
+    private data class CladogramSolveCache(
+        val key: CladogramSolveCacheKey,
+        val logicalPositions: Map<Long, Pair<Float, Float>>,
+        val filterMs: Float,
+        val solveMs: Float,
+    )
+
+    private fun buildCladogramSolveCacheKey(frame: DrocketsFrame): CladogramSolveCacheKey {
         val layout = frame.cladogramLayout
-        val lineage = frame.lineage
-        if (layout.depthById.isEmpty()) return emptyMap()
-
-        val visibleByDepth = LinkedHashMap<Int, MutableList<Long>>()
+        val living = frame.lineage.livingLineageIds
+        var livingHash = 1
+        for (id in living) {
+            livingHash = (31 * livingHash) + id.hashCode()
+        }
+        var edgeHash = 1
+        for ((from, to) in layout.edges) {
+            edgeHash = (31 * edgeHash) + from.hashCode()
+            edgeHash = (31 * edgeHash) + to.hashCode()
+        }
+        var depthHash = 1
         for ((id, depth) in layout.depthById) {
-            if (cladogramLivingOnly && !lineage.livingLineageIds.contains(id)) continue
-            visibleByDepth.getOrPut(depth) { mutableListOf() }.add(id)
+            depthHash = (31 * depthHash) + id.hashCode()
+            depthHash = (31 * depthHash) + depth.hashCode()
         }
-        if (visibleByDepth.isEmpty()) return emptyMap()
-        for (ids in visibleByDepth.values) {
-            ids.sortWith(
-                compareBy<Long> { lineage.nodes[it]?.birthTick ?: Long.MAX_VALUE }
-                    .thenBy { it }
-            )
-        }
+        return CladogramSolveCacheKey(
+            nodeCount = layout.stats.nodeCount,
+            edgeCount = layout.edges.size,
+            edgeHash = edgeHash,
+            maxDepth = layout.stats.maxDepth,
+            depthHash = depthHash,
+            livingCount = living.size,
+            livingHash = livingHash,
+            filterMode = cladogramFilterMode,
+        )
+    }
 
-        val out = LinkedHashMap<Long, Pair<Float, Float>>(visibleByDepth.values.sumOf { it.size })
-        for ((depth, ids) in visibleByDepth.toSortedMap()) {
-            val n = ids.size
-            if (n <= 0) continue
-            val halfSpan = (n - 1) * 0.5f
-            for ((index, id) in ids.withIndex()) {
-                val logicalX = (index - halfSpan) * CLADO_NODE_X_SPACING
-                val logicalY = -depth * CLADO_GENERATION_Y_SPACING
-                val px = 0.5f + (logicalX * cladeZoom) + cladePanX
-                val py = 0.88f + (logicalY * cladeZoom) + cladePanY
-                out[id] = Pair(px, py)
-            }
+    private fun getCladogramPanelLayout(frame: DrocketsFrame): CladogramPanelLayoutResult {
+        val keyStart = TimeSource.Monotonic.markNow()
+        val key = buildCladogramSolveCacheKey(frame)
+        cladogramLastKeyMs = keyStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
+        val cached = cladogramSolveCache
+        val logical = if (cached != null && cached.key == key) {
+            cladogramLastFilterMs = cached.filterMs
+            cladogramLastSolveMs = cached.solveMs
+            cached.logicalPositions
+        } else {
+            val solved = solveCladogramLogicalLayout(frame, cached?.logicalPositions)
+            cladogramSolveCache = CladogramSolveCache(
+                key = key,
+                logicalPositions = solved.positions,
+                filterMs = solved.filterMs,
+                solveMs = solved.solveMs,
+            )
+            cladogramLastFilterMs = solved.filterMs
+            cladogramLastSolveMs = solved.solveMs
+            solved.positions
+        }
+        val projected = projectCladogramLogicalToPanel(logical)
+        return CladogramPanelLayoutResult(
+            positions = projected,
+            filterMs = cladogramLastFilterMs,
+            solveMs = cladogramLastSolveMs,
+        )
+    }
+
+    private fun projectCladogramLogicalToPanel(
+        logicalPositions: Map<Long, Pair<Float, Float>>,
+    ): Map<Long, Pair<Float, Float>> {
+        if (logicalPositions.isEmpty()) return emptyMap()
+        val out = LinkedHashMap<Long, Pair<Float, Float>>(logicalPositions.size)
+        for ((id, logical) in logicalPositions) {
+            val px = 0.5f + (logical.first * cladeZoom) + cladePanX
+            val py = 0.88f + (logical.second * cladeZoom) + cladePanY
+            out[id] = Pair(px, py)
         }
         return out
+    }
+
+    private fun invalidateCladogramLayoutCache() {
+        cladogramSolveCache = null
+    }
+
+    private fun solveCladogramLogicalLayout(
+        frame: DrocketsFrame,
+        seedLogicalPositions: Map<Long, Pair<Float, Float>>?,
+    ): CladogramPanelLayoutResult {
+        val layout = frame.cladogramLayout
+        val lineage = frame.lineage
+        if (layout.depthById.isEmpty()) return CladogramPanelLayoutResult(emptyMap(), 0f, 0f)
+
+        val filterStart = TimeSource.Monotonic.markNow()
+        val visibleIds = computeVisibleLineageIds(lineage, layout, cladogramFilterMode)
+        val filterMs = filterStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
+        if (visibleIds.isEmpty()) return CladogramPanelLayoutResult(emptyMap(), filterMs, 0f)
+
+        val solveStart = TimeSource.Monotonic.markNow()
+        val visibleByDepth = LinkedHashMap<Int, MutableList<Long>>()
+        for (id in visibleIds) {
+            val depth = layout.depthById[id] ?: continue
+            visibleByDepth.getOrPut(depth) { mutableListOf() }.add(id)
+        }
+        if (visibleByDepth.isEmpty()) return CladogramPanelLayoutResult(emptyMap(), filterMs, 0f)
+
+        // Reindex visible generations so dead-only gaps collapse out in living-only view.
+        val visibleDepths = visibleByDepth.keys.sorted()
+        val compactDepthByOriginal = HashMap<Int, Int>(visibleDepths.size)
+        for ((idx, depth) in visibleDepths.withIndex()) {
+            compactDepthByOriginal[depth] = idx
+        }
+
+        val compactDepthToIds = LinkedHashMap<Int, MutableList<Long>>(visibleDepths.size)
+        for ((originalDepth, ids) in visibleByDepth) {
+            val compactDepth = compactDepthByOriginal[originalDepth] ?: continue
+            compactDepthToIds.getOrPut(compactDepth) { mutableListOf() }.addAll(ids)
+        }
+        for (ids in compactDepthToIds.values) {
+            // Stable seed order before sweeps.
+            ids.sortWith(compareBy<Long> { lineage.nodes[it]?.birthTick ?: Long.MAX_VALUE }.thenBy { it })
+        }
+
+        val visibleIdsSet = compactDepthToIds.values.flatten().toHashSet()
+        val parentById = HashMap<Long, List<Long>>(visibleIds.size)
+        val childrenById = HashMap<Long, MutableList<Long>>(visibleIds.size)
+        for (id in visibleIdsSet) {
+            val node = lineage.nodes[id] ?: continue
+            val parents = buildList<Long>(2) {
+                val m = node.motherLineageId
+                val f = node.fatherLineageId
+                if (m != null && visibleIdsSet.contains(m)) add(m)
+                if (f != null && visibleIdsSet.contains(f)) add(f)
+            }
+            parentById[id] = parents
+            for (p in parents) {
+                childrenById.getOrPut(p) { mutableListOf() }.add(id)
+            }
+        }
+
+        // Stage 1: identify disconnected trees/components.
+        val undirected = HashMap<Long, MutableList<Long>>(visibleIdsSet.size)
+        for (id in visibleIdsSet) {
+            undirected.putIfAbsent(id, mutableListOf())
+        }
+        for ((from, to) in layout.edges) {
+            if (!visibleIdsSet.contains(from) || !visibleIdsSet.contains(to)) continue
+            undirected[from]?.add(to)
+            undirected[to]?.add(from)
+        }
+        val components = ArrayList<List<Long>>()
+        val seen = HashSet<Long>()
+        for (id in visibleIdsSet) {
+            if (!seen.add(id)) continue
+            val queue = ArrayDeque<Long>()
+            val comp = ArrayList<Long>()
+            queue.addLast(id)
+            while (queue.isNotEmpty()) {
+                val cur = queue.removeFirst()
+                comp += cur
+                for (n in undirected[cur].orEmpty()) {
+                    if (seen.add(n)) queue.addLast(n)
+                }
+            }
+            components += comp
+        }
+        val orderedComponents = components.sortedBy { comp ->
+            comp.minOfOrNull { layout.depthById[it] ?: Int.MAX_VALUE } ?: Int.MAX_VALUE
+        }
+
+        val xById = HashMap<Long, Float>(visibleIdsSet.size)
+        for (ids in compactDepthToIds.values) {
+            for ((idx, id) in ids.withIndex()) {
+                val seededX = seedLogicalPositions?.get(id)?.first
+                xById[id] = seededX ?: (idx.toFloat() * CLADO_NODE_X_SPACING)
+            }
+        }
+
+        fun applyNonOverlapInLayer(ids: List<Long>, targetX: Map<Long, Float>) {
+            if (ids.isEmpty()) return
+            val leftToRight = FloatArray(ids.size)
+            for (i in ids.indices) {
+                val id = ids[i]
+                val t = targetX[id] ?: xById[id] ?: 0f
+                leftToRight[i] = if (i == 0) t else maxOf(t, leftToRight[i - 1] + CLADO_NODE_X_SPACING)
+            }
+            val rightToLeft = FloatArray(ids.size)
+            for (i in ids.lastIndex downTo 0) {
+                val id = ids[i]
+                val t = targetX[id] ?: xById[id] ?: 0f
+                rightToLeft[i] = if (i == ids.lastIndex) t else minOf(t, rightToLeft[i + 1] - CLADO_NODE_X_SPACING)
+            }
+            for (i in ids.indices) {
+                val id = ids[i]
+                xById[id] = (leftToRight[i] + rightToLeft[i]) * 0.5f
+            }
+        }
+
+        // Stage 2: organize internals of each tree independently with one down pass.
+        for (comp in orderedComponents) {
+            val allowed = comp.toHashSet()
+            val depthToIds = LinkedHashMap<Int, MutableList<Long>>()
+            for ((depth, ids) in compactDepthToIds) {
+                val subset = ids.filterTo(mutableListOf()) { allowed.contains(it) }
+                if (subset.isNotEmpty()) depthToIds[depth] = subset
+            }
+            val maxDepth = depthToIds.keys.maxOrNull() ?: 0
+            val tieEps = 1e-6f
+            fun computeDescendantBias(): Map<Long, Float> {
+                val bias = HashMap<Long, Float>(allowed.size)
+                for (depth in maxDepth downTo 0) {
+                    for (id in depthToIds[depth].orEmpty()) {
+                        var sum = 0f
+                        var count = 0
+                        for (child in childrenById[id].orEmpty()) {
+                            if (!allowed.contains(child)) continue
+                            val cx = bias[child] ?: xById[child] ?: continue
+                            sum += cx
+                            count++
+                        }
+                        bias[id] = if (count > 0) {
+                            sum / count.toFloat()
+                        } else {
+                            xById[id] ?: 0f
+                        }
+                    }
+                }
+                return bias
+            }
+
+            fun applyTieBiasOrdering(
+                ids: MutableList<Long>,
+                primary: Map<Long, Float>,
+                bias: Map<Long, Float>,
+            ) {
+                ids.sortWith(compareBy<Long> { primary[it] ?: Float.POSITIVE_INFINITY }.thenBy { it })
+                var start = 0
+                while (start < ids.size) {
+                    val base = primary[ids[start]] ?: Float.POSITIVE_INFINITY
+                    var end = start + 1
+                    while (end < ids.size) {
+                        val v = primary[ids[end]] ?: Float.POSITIVE_INFINITY
+                        if (kotlin.math.abs(v - base) > tieEps) break
+                        end++
+                    }
+                    if (end - start > 1) {
+                        ids.subList(start, end).sortWith(
+                            compareBy<Long> { bias[it] ?: Float.POSITIVE_INFINITY }.thenBy { it }
+                        )
+                    }
+                    start = end
+                }
+            }
+
+            fun doDownPass() {
+                val descendantBias = computeDescendantBias()
+                for (depth in 1..maxDepth) {
+                    val ids = depthToIds[depth] ?: continue
+                    val target = HashMap<Long, Float>(ids.size)
+                    for (id in ids) {
+                        var sum = 0f
+                        var count = 0
+                        for (parent in parentById[id].orEmpty()) {
+                            if (!allowed.contains(parent)) continue
+                            val px = xById[parent] ?: continue
+                            sum += px
+                            count++
+                        }
+                        target[id] = if (count > 0) {
+                            sum / count.toFloat()
+                        } else {
+                            xById[id] ?: 0f
+                        }
+                    }
+                    applyTieBiasOrdering(ids, target, descendantBias)
+                    applyNonOverlapInLayer(ids, target)
+                }
+            }
+
+            fun doUpPass() {
+                val descendantBias = computeDescendantBias()
+                for (depth in (maxDepth - 1) downTo 0) {
+                    val ids = depthToIds[depth] ?: continue
+                    val current = HashMap<Long, Float>(ids.size)
+                    for (id in ids) current[id] = xById[id] ?: 0f
+                    applyTieBiasOrdering(ids, current, descendantBias)
+                    applyNonOverlapInLayer(ids, current)
+                }
+            }
+
+            val seededIds = seedLogicalPositions?.keys ?: emptySet()
+            val removedCount = seededIds.count { !allowed.contains(it) }
+            val addedCount = allowed.count { !seededIds.contains(it) }
+            val churnRatio = if (allowed.isEmpty()) 1f else (addedCount + removedCount).toFloat() / allowed.size.toFloat()
+            val useIncrementalPassBudget = seedLogicalPositions != null && churnRatio <= 0.10f
+
+            var downRemaining = if (useIncrementalPassBudget) 1 else maxDepth
+            var upRemaining = if (useIncrementalPassBudget) 1 else (maxDepth - 1).coerceAtLeast(0)
+            if (downRemaining > 0) {
+                doDownPass()
+                downRemaining--
+            }
+            while (downRemaining > 0 || upRemaining > 0) {
+                if (upRemaining > 0) {
+                    doUpPass()
+                    upRemaining--
+                }
+                if (downRemaining > 0) {
+                    doDownPass()
+                    downRemaining--
+                }
+            }
+        }
+        // Stage 3: position trees side-by-side with a 1-node gap.
+        var cursorX = 0f
+        for (comp in orderedComponents) {
+            val minX = comp.minOfOrNull { xById[it] ?: 0f } ?: 0f
+            val maxX = comp.maxOfOrNull { xById[it] ?: 0f } ?: 0f
+            val shift = cursorX - minX
+            for (id in comp) {
+                xById[id] = (xById[id] ?: 0f) + shift
+            }
+            val shiftedMaxX = maxX + shift
+            cursorX = shiftedMaxX + 2f * CLADO_NODE_X_SPACING
+        }
+
+        // Keep overall graph centered after side-by-side placement.
+        val xMean = if (xById.isNotEmpty()) xById.values.sum() / xById.size.toFloat() else 0f
+        val out = LinkedHashMap<Long, Pair<Float, Float>>(visibleByDepth.values.sumOf { it.size })
+        for ((depth, ids) in compactDepthToIds.toSortedMap()) {
+            if (ids.isEmpty()) continue
+            for (id in ids) {
+                val logicalX = (xById[id] ?: 0f) - xMean
+                val logicalY = -depth * CLADO_GENERATION_Y_SPACING
+                out[id] = Pair(logicalX, logicalY)
+            }
+        }
+        val solveMs = solveStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
+        return CladogramPanelLayoutResult(out, filterMs, solveMs)
     }
 
     private fun bodyRgbFromGenome(genes: Map<String, Int>): Triple<Float, Float, Float> {

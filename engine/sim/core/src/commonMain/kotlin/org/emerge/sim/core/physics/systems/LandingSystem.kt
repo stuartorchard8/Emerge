@@ -175,6 +175,6 @@ object LandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         if (landing.parentEntityId == otherEntityId) return
         if (entityShape.shape != BodyShape.TRIANGLE) return
         if (builder.getComponent<PlanetComponent>(otherEntityId) == null) return
-        builder.update<DamageComponent>(entityId) { DamageComponent(next = cfg.maxDamage) }
+        builder.update<DamageComponent>(entityId) { DamageComponent(next = cfg.maxHealth) }
     }
 }

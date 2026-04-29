@@ -11,7 +11,7 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
 /**
  * Drockets-only damage policy:
  * - Dynamic destruction threshold for drockets based on current population.
- * - Non-drocket entities keep using [PhysicsConfig.maxDamage].
+ * - Non-drocket entities keep using [PhysicsConfig.maxHealth].
  */
 object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     private const val DESTRUCTION_BURST_PARTICLE_COUNT = 50
@@ -20,8 +20,9 @@ object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, Phys
     private const val DESTRUCTION_BURST_LIFETIME = 42
 
     private const val POPULATION_FLOOR = 100
-    private val MIN_MAX_DAMAGE = Frac(1, Int.MAX_VALUE) // at cap
-    private val MAX_MAX_DAMAGE = Frac(1, 1) // at/below floor
+    private const val POPULATION_CAP = 600
+    private val MIN_MAX_HEALTH = Frac(1, 1 shl 18) // at cap
+    private val MAX_MAX_HEALTH = Frac(1, 1) // at/below floor
 
     override fun update(
         cfg: PhysicsConfig,
@@ -32,13 +33,22 @@ object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, Phys
         val playersToRespawn = LinkedHashSet<PlayerId>()
 
         val drocketCount = builder.entries<DrocketStateComponent>().size
-        val drocketMaxDamage = effectiveDrocketMaxDamage(drocketCount)
+        val reproducers = builder.entries<ReproducerComponent>()
+        val maleDrocketCount = reproducers.count { it.value.sex == Sex.MALE }
+        val femaleDrocketCount = drocketCount - maleDrocketCount
+        val maleDrocketMaxHealth = effectiveDrocketMaxHealth(drocketCount)
+        val femaleDrocketMaxHealth = effectiveDrocketMaxHealth(drocketCount)
 
         for ((entityId, damage) in builder.entries<DamageComponent>()) {
-            val threshold = if (builder.getComponent<DrocketStateComponent>(entityId) != null) {
-                drocketMaxDamage
+            val reproducer = builder.getComponent<ReproducerComponent>(entityId)
+            val threshold = if (reproducer != null) {
+                if (reproducer.sex == Sex.MALE) {
+                    maleDrocketMaxHealth
+                } else {
+                    femaleDrocketMaxHealth
+                }
             } else {
-                cfg.maxDamage
+                cfg.maxHealth
             }
 
             if (damage.accumulated.raw >= threshold.raw) {
@@ -95,15 +105,17 @@ object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, Phys
         }
     }
 
-    private fun effectiveDrocketMaxDamage(population: Int): Frac {
-        val cap = ReproductionSystem.POPULATION_CAP.coerceAtLeast(POPULATION_FLOOR + 1)
-        if (population <= POPULATION_FLOOR) return MAX_MAX_DAMAGE
-        if (population >= cap) return MIN_MAX_DAMAGE
+    private fun effectiveDrocketMaxHealth(population: Int): Frac {
+        val cap = POPULATION_CAP.coerceAtLeast(POPULATION_FLOOR + 1)
 
-        val span = (cap - POPULATION_FLOOR).toDouble()
-        val t = ((population - POPULATION_FLOOR).toDouble() / span).coerceIn(0.0, 1.0)
-        val raw = MAX_MAX_DAMAGE.raw + ((MIN_MAX_DAMAGE.raw - MAX_MAX_DAMAGE.raw) * t).toLong()
-        return Frac(raw.coerceIn(MIN_MAX_DAMAGE.raw, MAX_MAX_DAMAGE.raw))
+        if (population <= POPULATION_FLOOR) return MAX_MAX_HEALTH // Start high
+        if (population >= cap) return MIN_MAX_HEALTH              // End low
+
+        val span = cap - POPULATION_FLOOR
+        val t = Frac(1,1) - Frac(population - POPULATION_FLOOR.toLong(), span)
+
+        val diff = MAX_MAX_HEALTH - MIN_MAX_HEALTH
+        return MIN_MAX_HEALTH + (diff * t)
     }
 
     private fun spawnDestructionBurst(builder: PhysicsBuilder, burst: DestructionBurstSpec) {

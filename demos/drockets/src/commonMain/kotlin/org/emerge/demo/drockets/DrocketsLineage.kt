@@ -33,6 +33,8 @@ fun DrocketLineageState.advanceFromPhysics(
 
     var nextId = nextLineageId
     val nodes = LinkedHashMap(this.nodes)
+    // Keep historical entity->lineage mappings even after death so offspring can still
+    // resolve parent lineage IDs when the parent entity no longer exists in physics tables.
     val entityToLineage = LinkedHashMap(this.entityToLineageId)
     val living = LinkedHashSet(this.livingLineageIds)
 
@@ -62,7 +64,7 @@ fun DrocketLineageState.advanceFromPhysics(
     val knownEntityIds = entityToLineage.keys.toList()
     for (entityId in knownEntityIds) {
         if (currentEntityIds.contains(entityId)) continue
-        val lineageId = entityToLineage.remove(entityId) ?: continue
+        val lineageId = entityToLineage[entityId] ?: continue
         val existing = nodes[lineageId] ?: continue
         if (existing.deathTick == null) {
             nodes[lineageId] = existing.copy(deathTick = tick)

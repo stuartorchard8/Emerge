@@ -49,7 +49,7 @@ data class GenomeComponent(
             GenomeKey.AI_WALK_MIN_TICKS to GeneSpec(min = 1, max = 6_000, fallback = 120),
             GenomeKey.AI_WALK_MAX_TICKS to GeneSpec(min = 1, max = 6_000, fallback = 600),
             GenomeKey.AI_CHARGE_TICKS to GeneSpec(min = 1, max = 6_000, fallback = 18),
-            GenomeKey.AI_FUEL_TICKS to GeneSpec(min = 1, max = 6_000, fallback = 200),
+            GenomeKey.AI_FUEL_TICKS to GeneSpec(min = 1, max = 400, fallback = 200),
             GenomeKey.AI_SPIN_RAW to GeneSpec(
                 min = -Int.MAX_VALUE / 64,
                 max = Int.MAX_VALUE / 64,
