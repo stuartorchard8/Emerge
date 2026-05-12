@@ -5,8 +5,8 @@ import org.emerge.net.codec.ByteWriter
 import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.Tick
-import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.ComponentStore
+import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.physics.components.ParticleComponent
 import org.emerge.sim.core.physics.model.PhysicsState
 
@@ -16,6 +16,21 @@ data class DrocketsSnapshot(
     val lineage: DrocketLineageState,
 )
 
+/**
+ * Binary save format for a Drockets simulation snapshot.
+ *
+ * Layout:
+ *   header  : FORMAT_VERSION (Int), tick (Long), physicsBytesSize (Int), physicsBytes
+ *   demo    : drockets-specific component tables, in fixed order
+ *   lineage : DrocketLineageState
+ *
+ * Particle entities are stripped at encode time (transient by nature, would
+ * bloat saves without contributing to reproducible state).
+ *
+ * Compatibility: any change to wire layout must bump [FORMAT_VERSION]; the
+ * decoder rejects older versions outright (a solo project doesn't need legacy
+ * load support — start a fresh sim instead).
+ */
 object DrocketsSaveCodec {
     private const val FORMAT_VERSION = 3
 
@@ -36,13 +51,11 @@ object DrocketsSaveCodec {
         val c = ByteCursor(bytes)
         val version = c.readInt()
         require(version == FORMAT_VERSION) {
-            "Unsupported Drockets save format version: $version"
+            "Unsupported Drockets save format version: $version (expected $FORMAT_VERSION)"
         }
         val tick = Tick(c.readLong())
         val stateBytesSize = c.readInt()
-        require(stateBytesSize >= 0) {
-            "Invalid physics state payload size: $stateBytesSize"
-        }
+        require(stateBytesSize >= 0) { "Invalid physics state payload size: $stateBytesSize" }
         val stateBytes = c.readBytes(stateBytesSize)
         val physicsState = PhysicsNetCodecs.stateCodec.decode(stateBytes)
         val mergedComponents = decodeDrocketsComponents(c, physicsState.components)
@@ -69,112 +82,129 @@ object DrocketsSaveCodec {
         )
     }
 
+    // ── Component-table boilerplate, abstracted away ────────────────────────────
+
+    private inline fun <reified T : Any> encodeTable(
+        w: ByteWriter,
+        store: ComponentStore,
+        encode: ByteWriter.(T) -> Unit,
+    ) {
+        val entries = store.getTable<T>().asMap()
+        w.writeInt(entries.size)
+        for ((entityId, component) in entries) {
+            w.writeInt(entityId.value)
+            w.encode(component)
+        }
+    }
+
+    private inline fun <reified T : Any> decodeTable(
+        c: ByteCursor,
+        store: ComponentStore,
+        decode: ByteCursor.() -> T,
+    ): ComponentStore {
+        val count = c.readInt()
+        require(count >= 0) { "Invalid ${T::class.simpleName} count: $count" }
+        val out = LinkedHashMap<EntityId, T>(count)
+        repeat(count) {
+            val entityId = EntityId(c.readInt())
+            out[entityId] = c.decode()
+        }
+        return store.update { set(ComponentTable.fromMap(out)) }
+    }
+
+    // ── Per-component encode/decode pairs ───────────────────────────────────────
+    //
+    // The ordering of encodeTable / decodeTable calls below must match between
+    // encode and decode; the wire format relies on positional reads.
+
     private fun encodeDrocketsComponents(w: ByteWriter, store: ComponentStore) {
-        encodeDrocketStateTable(w, store.getTable<DrocketStateComponent>().asMap())
-        encodeReproducerTable(w, store.getTable<ReproducerComponent>().asMap())
-        encodeKnightStateTable(w, store.getTable<KnightStateComponent>().asMap())
-        encodeSpriteAnimationStateTable(w, store.getTable<SpriteAnimationState>().asMap())
-        encodeGenomeTable(w, store.getTable<GenomeComponent>().asMap())
-        encodeLineageSeedTable(w, store.getTable<LineageSeedComponent>().asMap())
+        encodeTable<DrocketStateComponent>(w, store) {
+            writeInt(it.phase.ordinal)
+            writeInt(it.walkDirection)
+            writeInt(it.ticksRemaining)
+            writeInt(it.fuel)
+        }
+        encodeTable<ReproducerComponent>(w, store) { writeReproducer(it) }
+        encodeTable<KnightStateComponent>(w, store) {
+            writeInt(it.phase.ordinal)
+            writeInt(it.planetId.value)
+            writeInt(it.walkDirection)
+            writeInt(it.ticksRemaining)
+        }
+        encodeTable<SpriteAnimationState>(w, store) {
+            writeInt(it.sheet.ordinal)
+            writeInt(it.animationIndex)
+            writeInt(it.currentFrame)
+            writeInt(it.tickCounter)
+        }
+        encodeTable<GenomeComponent>(w, store) { writeGenome(it.genome) }
+        encodeTable<LineageSeedComponent>(w, store) {
+            writeNullableInt(it.motherEntityId)
+            writeNullableInt(it.fatherEntityId)
+        }
     }
 
     private fun decodeDrocketsComponents(c: ByteCursor, store: ComponentStore): ComponentStore {
-        var updated = store
-        updated = updated.update { set(ComponentTable.fromMap(decodeDrocketStateTable(c))) }
-        updated = updated.update { set(ComponentTable.fromMap(decodeReproducerTable(c))) }
-        updated = updated.update { set(ComponentTable.fromMap(decodeKnightStateTable(c))) }
-        updated = updated.update { set(ComponentTable.fromMap(decodeSpriteAnimationStateTable(c))) }
-        updated = updated.update { set(ComponentTable.fromMap(decodeGenomeTable(c))) }
-        updated = updated.update { set(ComponentTable.fromMap(decodeLineageSeedTable(c))) }
-        return updated
-    }
-
-    private fun encodeDrocketStateTable(
-        w: ByteWriter,
-        entries: Map<EntityId, DrocketStateComponent>,
-    ) {
-        w.writeInt(entries.size)
-        for ((entityId, component) in entries) {
-            w.writeInt(entityId.value)
-            w.writeInt(component.phase.ordinal)
-            w.writeInt(component.walkDirection)
-            w.writeInt(component.ticksRemaining)
-            w.writeInt(component.fuel)
-        }
-    }
-
-    private fun decodeDrocketStateTable(c: ByteCursor): Map<EntityId, DrocketStateComponent> {
-        val count = c.readInt()
-        require(count >= 0) { "Invalid DrocketStateComponent count: $count" }
-        val out = LinkedHashMap<EntityId, DrocketStateComponent>(count)
-        repeat(count) {
-            val entityId = EntityId(c.readInt())
-            val phaseOrdinal = c.readInt()
-            val phase = DrocketPhase.entries.getOrNull(phaseOrdinal)
-                ?: error("Invalid DrocketPhase ordinal: $phaseOrdinal")
-            out[entityId] = DrocketStateComponent(
-                phase = phase,
-                walkDirection = c.readInt(),
-                ticksRemaining = c.readInt(),
-                fuel = c.readInt(),
+        var s = store
+        s = decodeTable<DrocketStateComponent>(c, s) {
+            DrocketStateComponent(
+                phase = enumByOrdinal(readInt(), DrocketPhase.entries),
+                walkDirection = readInt(),
+                ticksRemaining = readInt(),
+                fuel = readInt(),
             )
         }
-        return out
+        s = decodeTable<ReproducerComponent>(c, s) { readReproducer() }
+        s = decodeTable<KnightStateComponent>(c, s) {
+            KnightStateComponent(
+                phase = enumByOrdinal(readInt(), KnightPhase.entries),
+                planetId = EntityId(readInt()),
+                walkDirection = readInt(),
+                ticksRemaining = readInt(),
+            )
+        }
+        s = decodeTable<SpriteAnimationState>(c, s) {
+            SpriteAnimationState(
+                sheet = enumByOrdinal(readInt(), SpriteSheet.entries),
+                animationIndex = readInt(),
+                currentFrame = readInt(),
+                tickCounter = readInt(),
+            )
+        }
+        s = decodeTable<GenomeComponent>(c, s) { GenomeComponent(readGenome()) }
+        s = decodeTable<LineageSeedComponent>(c, s) {
+            LineageSeedComponent(
+                motherEntityId = readNullableInt(),
+                fatherEntityId = readNullableInt(),
+            )
+        }
+        return s
     }
 
-    private fun encodeReproducerTable(
-        w: ByteWriter,
-        entries: Map<EntityId, ReproducerComponent>,
-    ) {
-        w.writeInt(entries.size)
-        for ((entityId, component) in entries) {
-            w.writeInt(entityId.value)
-            encodeReproducerComponent(w, component)
-        }
+    // ── ReproducerComponent (recursive: spawn may itself be a ReproducerComponent) ──
+
+    private fun ByteWriter.writeReproducer(r: ReproducerComponent) {
+        writeLong(r.birthdayMs)
+        writeInt(r.sex.ordinal)
+        writeLong(r.maturityAgeMs)
+        writeLong(r.gestationDuration)
+        writeBoolean(r.spawn != null)
+        r.spawn?.let { writeReproducer(it) }
+        writeBoolean(r.spawnGenome != null)
+        r.spawnGenome?.let { writeGenome(it) }
+        writeNullableInt(r.spawnMotherEntityId)
+        writeNullableInt(r.spawnFatherEntityId)
     }
 
-    private fun decodeReproducerTable(c: ByteCursor): Map<EntityId, ReproducerComponent> {
-        val count = c.readInt()
-        require(count >= 0) { "Invalid ReproducerComponent count: $count" }
-        val out = LinkedHashMap<EntityId, ReproducerComponent>(count)
-        repeat(count) {
-            val entityId = EntityId(c.readInt())
-            out[entityId] = decodeReproducerComponent(c)
-        }
-        return out
-    }
-
-    private fun encodeReproducerComponent(w: ByteWriter, component: ReproducerComponent) {
-        w.writeLong(component.birthdayMs)
-        w.writeInt(component.sex.ordinal)
-        w.writeLong(component.maturityAgeMs)
-        w.writeLong(component.gestationDuration)
-        val hasSpawn = component.spawn != null
-        w.writeInt(if (hasSpawn) 1 else 0)
-        if (hasSpawn) {
-            encodeReproducerComponent(w, component.spawn!!)
-        }
-        val hasSpawnGenome = component.spawnGenome != null
-        w.writeInt(if (hasSpawnGenome) 1 else 0)
-        if (hasSpawnGenome) {
-            encodeGenome(w, component.spawnGenome!!)
-        }
-        w.writeInt(component.spawnMotherEntityId ?: Int.MIN_VALUE)
-        w.writeInt(component.spawnFatherEntityId ?: Int.MIN_VALUE)
-    }
-
-    private fun decodeReproducerComponent(c: ByteCursor): ReproducerComponent {
-        val birthdayMs = c.readLong()
-        val sexOrdinal = c.readInt()
-        val sex = Sex.entries.getOrNull(sexOrdinal) ?: error("Invalid Sex ordinal: $sexOrdinal")
-        val maturityAgeMs = c.readLong()
-        val gestationDuration = c.readLong()
-        val hasSpawn = c.readInt() != 0
-        val spawn = if (hasSpawn) decodeReproducerComponent(c) else null
-        val hasSpawnGenome = c.readInt() != 0
-        val spawnGenome = if (hasSpawnGenome) decodeGenome(c) else null
-        val spawnMotherEntityIdRaw = c.readInt()
-        val spawnFatherEntityIdRaw = c.readInt()
+    private fun ByteCursor.readReproducer(): ReproducerComponent {
+        val birthdayMs = readLong()
+        val sex = enumByOrdinal(readInt(), Sex.entries)
+        val maturityAgeMs = readLong()
+        val gestationDuration = readLong()
+        val spawn = if (readBoolean()) readReproducer() else null
+        val spawnGenome = if (readBoolean()) readGenome() else null
+        val spawnMotherEntityId = readNullableInt()
+        val spawnFatherEntityId = readNullableInt()
         return ReproducerComponent(
             birthdayMs = birthdayMs,
             sex = sex,
@@ -182,220 +212,84 @@ object DrocketsSaveCodec {
             gestationDuration = gestationDuration,
             spawn = spawn,
             spawnGenome = spawnGenome,
-            spawnMotherEntityId = if (spawnMotherEntityIdRaw == Int.MIN_VALUE) null else spawnMotherEntityIdRaw,
-            spawnFatherEntityId = if (spawnFatherEntityIdRaw == Int.MIN_VALUE) null else spawnFatherEntityIdRaw,
+            spawnMotherEntityId = spawnMotherEntityId,
+            spawnFatherEntityId = spawnFatherEntityId,
         )
     }
 
-    private fun encodeLineageSeedTable(
-        w: ByteWriter,
-        entries: Map<EntityId, LineageSeedComponent>,
-    ) {
-        w.writeInt(entries.size)
-        for ((entityId, component) in entries) {
-            w.writeInt(entityId.value)
-            w.writeInt(component.motherEntityId ?: Int.MIN_VALUE)
-            w.writeInt(component.fatherEntityId ?: Int.MIN_VALUE)
-        }
+    // ── Genome (fixed shape: 8 Ints + 2 HsvColorGene triples = 48 bytes) ────────
+
+    private fun ByteWriter.writeGenome(g: Genome) {
+        writeInt(g.aiWalkMinTicks)
+        writeInt(g.aiWalkMaxTicks)
+        writeInt(g.aiChargeTicks)
+        writeInt(g.aiFuelTicks)
+        writeInt(g.aiSpin)
+        writeInt(g.aiThrust)
+        writeHsvColorGene(g.bodyColor)
+        writeHsvColorGene(g.fireColor)
     }
 
-    private fun decodeLineageSeedTable(c: ByteCursor): Map<EntityId, LineageSeedComponent> {
-        val count = c.readInt()
-        require(count >= 0) { "Invalid LineageSeedComponent count: $count" }
-        val out = LinkedHashMap<EntityId, LineageSeedComponent>(count)
-        repeat(count) {
-            val entityId = EntityId(c.readInt())
-            val motherRaw = c.readInt()
-            val fatherRaw = c.readInt()
-            out[entityId] = LineageSeedComponent(
-                motherEntityId = if (motherRaw == Int.MIN_VALUE) null else motherRaw,
-                fatherEntityId = if (fatherRaw == Int.MIN_VALUE) null else fatherRaw,
-            )
-        }
-        return out
-    }
-
-    private fun encodeKnightStateTable(
-        w: ByteWriter,
-        entries: Map<EntityId, KnightStateComponent>,
-    ) {
-        w.writeInt(entries.size)
-        for ((entityId, component) in entries) {
-            w.writeInt(entityId.value)
-            w.writeInt(component.phase.ordinal)
-            w.writeInt(component.planetId.value)
-            w.writeInt(component.walkDirection)
-            w.writeInt(component.ticksRemaining)
-        }
-    }
-
-    private fun decodeKnightStateTable(c: ByteCursor): Map<EntityId, KnightStateComponent> {
-        val count = c.readInt()
-        require(count >= 0) { "Invalid KnightStateComponent count: $count" }
-        val out = LinkedHashMap<EntityId, KnightStateComponent>(count)
-        repeat(count) {
-            val entityId = EntityId(c.readInt())
-            val phaseOrdinal = c.readInt()
-            val phase = KnightPhase.entries.getOrNull(phaseOrdinal)
-                ?: error("Invalid KnightPhase ordinal: $phaseOrdinal")
-            out[entityId] = KnightStateComponent(
-                phase = phase,
-                planetId = EntityId(c.readInt()),
-                walkDirection = c.readInt(),
-                ticksRemaining = c.readInt(),
-            )
-        }
-        return out
-    }
-
-    private fun encodeSpriteAnimationStateTable(
-        w: ByteWriter,
-        entries: Map<EntityId, SpriteAnimationState>,
-    ) {
-        w.writeInt(entries.size)
-        for ((entityId, component) in entries) {
-            w.writeInt(entityId.value)
-            w.writeInt(component.sheet.ordinal)
-            w.writeInt(component.animationIndex)
-            w.writeInt(component.currentFrame)
-            w.writeInt(component.tickCounter)
-        }
-    }
-
-    private fun decodeSpriteAnimationStateTable(c: ByteCursor): Map<EntityId, SpriteAnimationState> {
-        val count = c.readInt()
-        require(count >= 0) { "Invalid SpriteAnimationState count: $count" }
-        val out = LinkedHashMap<EntityId, SpriteAnimationState>(count)
-        repeat(count) {
-            val entityId = EntityId(c.readInt())
-            val sheetOrdinal = c.readInt()
-            val sheet = SpriteSheet.entries.getOrNull(sheetOrdinal)
-                ?: error("Invalid SpriteSheet ordinal: $sheetOrdinal")
-            out[entityId] = SpriteAnimationState(
-                sheet = sheet,
-                animationIndex = c.readInt(),
-                currentFrame = c.readInt(),
-                tickCounter = c.readInt(),
-            )
-        }
-        return out
-    }
-
-    private fun encodeGenomeTable(
-        w: ByteWriter,
-        entries: Map<EntityId, GenomeComponent>,
-    ) {
-        w.writeInt(entries.size)
-        for ((entityId, component) in entries) {
-            w.writeInt(entityId.value)
-            encodeGenome(w, component.genome)
-        }
-    }
-
-    private fun decodeGenomeTable(c: ByteCursor): Map<EntityId, GenomeComponent> {
-        val count = c.readInt()
-        require(count >= 0) { "Invalid GenomeComponent count: $count" }
-        val out = LinkedHashMap<EntityId, GenomeComponent>(count)
-        repeat(count) {
-            val entityId = EntityId(c.readInt())
-            out[entityId] = GenomeComponent(decodeGenome(c))
-        }
-        return out
-    }
-
-    private fun encodeGenome(w: ByteWriter, g: Genome) {
-        w.writeInt(g.aiWalkMinTicks)
-        w.writeInt(g.aiWalkMaxTicks)
-        w.writeInt(g.aiChargeTicks)
-        w.writeInt(g.aiFuelTicks)
-        w.writeInt(g.aiSpin)
-        w.writeInt(g.aiThrust)
-        encodeHsvColorGene(w, g.bodyColor)
-        encodeHsvColorGene(w, g.fireColor)
-    }
-
-    private fun decodeGenome(c: ByteCursor): Genome = Genome(
-        aiWalkMinTicks = c.readInt(),
-        aiWalkMaxTicks = c.readInt(),
-        aiChargeTicks = c.readInt(),
-        aiFuelTicks = c.readInt(),
-        aiSpin = c.readInt(),
-        aiThrust = c.readInt(),
-        bodyColor = decodeHsvColorGene(c),
-        fireColor = decodeHsvColorGene(c),
+    private fun ByteCursor.readGenome() = Genome(
+        aiWalkMinTicks = readInt(),
+        aiWalkMaxTicks = readInt(),
+        aiChargeTicks = readInt(),
+        aiFuelTicks = readInt(),
+        aiSpin = readInt(),
+        aiThrust = readInt(),
+        bodyColor = readHsvColorGene(),
+        fireColor = readHsvColorGene(),
     )
 
-    private fun encodeHsvColorGene(w: ByteWriter, gene: HsvColorGene) {
-        w.writeInt(gene.rawH)
-        w.writeInt(gene.rawS)
-        w.writeInt(gene.rawV)
+    private fun ByteWriter.writeHsvColorGene(gene: HsvColorGene) {
+        writeInt(gene.rawH)
+        writeInt(gene.rawS)
+        writeInt(gene.rawV)
     }
 
-    private fun decodeHsvColorGene(c: ByteCursor): HsvColorGene = HsvColorGene(
-        rawH = c.readInt(),
-        rawS = c.readInt(),
-        rawV = c.readInt(),
+    private fun ByteCursor.readHsvColorGene() = HsvColorGene(
+        rawH = readInt(),
+        rawS = readInt(),
+        rawV = readInt(),
     )
+
+    // ── Lineage state ───────────────────────────────────────────────────────────
 
     private fun encodeLineageState(w: ByteWriter, lineage: DrocketLineageState) {
         w.writeLong(lineage.nextLineageId)
-        w.writeInt(lineage.nodes.size)
-        for ((id, node) in lineage.nodes) {
-            w.writeLong(id)
-            w.writeLong(node.motherLineageId ?: Long.MIN_VALUE)
-            w.writeLong(node.fatherLineageId ?: Long.MIN_VALUE)
-            w.writeLong(node.birthTick)
-            w.writeLong(node.deathTick ?: Long.MIN_VALUE)
-            w.writeInt(node.sex.ordinal)
-            encodeGenome(w, node.genome)
+        w.writeMap(lineage.nodes) { id, node ->
+            writeLong(id)
+            writeNullableLong(node.motherLineageId)
+            writeNullableLong(node.fatherLineageId)
+            writeLong(node.birthTick)
+            writeNullableLong(node.deathTick)
+            writeInt(node.sex.ordinal)
+            writeGenome(node.genome)
         }
-        w.writeInt(lineage.livingLineageIds.size)
-        for (id in lineage.livingLineageIds) {
-            w.writeLong(id)
-        }
-        w.writeInt(lineage.entityToLineageId.size)
-        for ((entityId, lineageId) in lineage.entityToLineageId) {
-            w.writeInt(entityId)
-            w.writeLong(lineageId)
+        w.writeCollection(lineage.livingLineageIds) { writeLong(it) }
+        w.writeMap(lineage.entityToLineageId) { entityId, lineageId ->
+            writeInt(entityId)
+            writeLong(lineageId)
         }
     }
 
     private fun decodeLineageState(c: ByteCursor): DrocketLineageState {
         val nextLineageId = c.readLong()
-        val nodeCount = c.readInt()
-        require(nodeCount >= 0) { "Invalid lineage node count: $nodeCount" }
-        val nodes = LinkedHashMap<Long, DrocketLineageNode>(nodeCount)
-        repeat(nodeCount) {
-            val id = c.readLong()
-            val motherRaw = c.readLong()
-            val fatherRaw = c.readLong()
-            val birthTick = c.readLong()
-            val deathRaw = c.readLong()
-            val sexOrdinal = c.readInt()
-            val sex = Sex.entries.getOrNull(sexOrdinal) ?: error("Invalid Sex ordinal in lineage node: $sexOrdinal")
-            val genome = decodeGenome(c)
-            nodes[id] = DrocketLineageNode(
+        val nodes = c.readMap<Long, DrocketLineageNode> {
+            val id = readLong()
+            val node = DrocketLineageNode(
                 lineageId = id,
-                motherLineageId = if (motherRaw == Long.MIN_VALUE) null else motherRaw,
-                fatherLineageId = if (fatherRaw == Long.MIN_VALUE) null else fatherRaw,
-                birthTick = birthTick,
-                deathTick = if (deathRaw == Long.MIN_VALUE) null else deathRaw,
-                sex = sex,
-                genome = genome,
+                motherLineageId = readNullableLong(),
+                fatherLineageId = readNullableLong(),
+                birthTick = readLong(),
+                deathTick = readNullableLong(),
+                sex = enumByOrdinal(readInt(), Sex.entries),
+                genome = readGenome(),
             )
+            id to node
         }
-        val livingCount = c.readInt()
-        require(livingCount >= 0) { "Invalid living lineage count: $livingCount" }
-        val living = LinkedHashSet<Long>(livingCount)
-        repeat(livingCount) { living += c.readLong() }
-        val mappingCount = c.readInt()
-        require(mappingCount >= 0) { "Invalid entity-to-lineage mapping count: $mappingCount" }
-        val entityToLineage = LinkedHashMap<Int, Long>(mappingCount)
-        repeat(mappingCount) {
-            val entityId = c.readInt()
-            val lineageId = c.readLong()
-            entityToLineage[entityId] = lineageId
-        }
+        val living = c.readCollection(::LinkedHashSet) { readLong() }
+        val entityToLineage = c.readMap<Int, Long> { readInt() to readLong() }
         return DrocketLineageState(
             nextLineageId = nextLineageId,
             nodes = nodes,
@@ -404,4 +298,59 @@ object DrocketsSaveCodec {
         )
     }
 
+    // ── Generic helpers ─────────────────────────────────────────────────────────
+
+    private fun ByteWriter.writeBoolean(v: Boolean) = writeInt(if (v) 1 else 0)
+    private fun ByteCursor.readBoolean(): Boolean = readInt() != 0
+
+    /** Stores null as [Int.MIN_VALUE]. Callers must not use that sentinel as a valid value. */
+    private fun ByteWriter.writeNullableInt(v: Int?) = writeInt(v ?: Int.MIN_VALUE)
+    private fun ByteCursor.readNullableInt(): Int? = readInt().takeUnless { it == Int.MIN_VALUE }
+
+    /** Stores null as [Long.MIN_VALUE]. Callers must not use that sentinel as a valid value. */
+    private fun ByteWriter.writeNullableLong(v: Long?) = writeLong(v ?: Long.MIN_VALUE)
+    private fun ByteCursor.readNullableLong(): Long? = readLong().takeUnless { it == Long.MIN_VALUE }
+
+    private inline fun <T> ByteWriter.writeCollection(
+        items: Collection<T>,
+        write: ByteWriter.(T) -> Unit,
+    ) {
+        writeInt(items.size)
+        for (item in items) write(item)
+    }
+
+    private inline fun <C : MutableCollection<T>, T> ByteCursor.readCollection(
+        factory: (Int) -> C,
+        read: ByteCursor.() -> T,
+    ): C {
+        val count = readInt()
+        require(count >= 0) { "Invalid collection count: $count" }
+        val out = factory(count)
+        repeat(count) { out += read() }
+        return out
+    }
+
+    private inline fun <K, V> ByteWriter.writeMap(
+        map: Map<K, V>,
+        writeEntry: ByteWriter.(K, V) -> Unit,
+    ) {
+        writeInt(map.size)
+        for ((k, v) in map) writeEntry(k, v)
+    }
+
+    private inline fun <K, V> ByteCursor.readMap(
+        readEntry: ByteCursor.() -> Pair<K, V>,
+    ): LinkedHashMap<K, V> {
+        val count = readInt()
+        require(count >= 0) { "Invalid map count: $count" }
+        val out = LinkedHashMap<K, V>(count)
+        repeat(count) {
+            val (k, v) = readEntry()
+            out[k] = v
+        }
+        return out
+    }
+
+    private fun <E : Enum<E>> enumByOrdinal(ordinal: Int, entries: List<E>): E =
+        entries.getOrNull(ordinal) ?: error("Invalid ordinal $ordinal (max ${entries.size - 1})")
 }

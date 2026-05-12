@@ -133,11 +133,3 @@ tasks.register<JavaExec>("benchDrocketsGcLog") {
 
     jvmArgs("-Xlog:gc*:stdout:time,uptime,level,tags")
 }
-
-tasks.register<JavaExec>("repairDrocketsSave") {
-    group = "application"
-    description = "Repair a bloated drockets-save.bin by removing stale particle-shell entities"
-    mainClass = "org.emerge.desktop.DrocketsSaveRepairKt"
-    classpath = sourceSets["main"].runtimeClasspath
-    standardInput = System.`in`
-}
