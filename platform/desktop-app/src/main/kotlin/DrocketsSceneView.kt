@@ -105,11 +105,17 @@ object DrocketsSceneView {
             if (action == GLFW_PRESS && key == GLFW_KEY_F2) {
                 activeRenderer?.toggleCladogramPanel()
             }
+            if (action == GLFW_PRESS && key == GLFW_KEY_F4) {
+                activeRenderer?.toggleLineageOverlay()
+            }
             if (action == GLFW_PRESS && key == GLFW_KEY_F6) {
                 activeRenderer?.toggleCladogramLivingOnly()
             }
             if (action == GLFW_PRESS && key == GLFW_KEY_F7) {
                 activeRenderer?.toggleCladogramProfiling()
+            }
+            if (action == GLFW_PRESS && key == GLFW_KEY_F8) {
+                activeRenderer?.cycleLineageOverlayFilter()
             }
         }
 
@@ -167,29 +173,69 @@ object DrocketsSceneView {
         renderer: DrocketsRenderer,
         latestFrame: () -> DrocketsFrame?,
     ) {
+        val state = MouseState()
+
         glfwSetMouseButtonCallback(window) { win, button, action, _ ->
-            if (button != GLFW_MOUSE_BUTTON_LEFT || action != GLFW_PRESS) return@glfwSetMouseButtonCallback
-            val frame = latestFrame() ?: return@glfwSetMouseButtonCallback
+            if (button != GLFW_MOUSE_BUTTON_LEFT) return@glfwSetMouseButtonCallback
+            val px = cursorPixel(win)
+            when (action) {
+                GLFW_PRESS -> {
+                    state.primaryDown = true
+                    state.dragged = false
+                    state.dragStartX = px.x
+                    state.dragStartY = px.y
+                    state.lastCursorX = px.x
+                    state.lastCursorY = px.y
+                }
+                GLFW_RELEASE -> {
+                    state.primaryDown = false
+                    if (!state.dragged) {
+                        val frame = latestFrame() ?: return@glfwSetMouseButtonCallback
+                        val now = System.currentTimeMillis()
+                        val withinTime = (now - state.lastClickTimeMs) < DOUBLE_CLICK_MS
+                        val withinSpace =
+                            kotlin.math.abs(px.x - state.lastClickPxX) < DOUBLE_CLICK_PX &&
+                                kotlin.math.abs(px.y - state.lastClickPxY) < DOUBLE_CLICK_PX
+                        val isDoubleClick = withinTime && withinSpace
+                        if (isDoubleClick && renderer.isLineageOverlayActive) {
+                            renderer.handleLineageOverlayDoubleClick(frame, px)
+                            // Reset so a third quick click doesn't chain.
+                            state.lastClickTimeMs = 0L
+                        } else {
+                            renderer.handlePrimaryClick(frame, px)
+                            state.lastClickTimeMs = now
+                            state.lastClickPxX = px.x
+                            state.lastClickPxY = px.y
+                        }
+                    }
+                    state.dragged = false
+                }
+            }
+        }
 
-            val cursorX = DoubleArray(1)
-            val cursorY = DoubleArray(1)
-            glfwGetCursorPos(win, cursorX, cursorY)
-
-            val windowW = IntArray(1)
-            val windowH = IntArray(1)
-            val framebufferW = IntArray(1)
-            val framebufferH = IntArray(1)
-            glfwGetWindowSize(win, windowW, windowH)
-            glfwGetFramebufferSize(win, framebufferW, framebufferH)
-            if (windowW[0] <= 0 || windowH[0] <= 0) return@glfwSetMouseButtonCallback
-
-            renderer.handlePrimaryClick(
-                frame = frame,
-                pixel = Vec2(
-                    cursorX[0].toFloat() * framebufferW[0].toFloat() / windowW[0].toFloat(),
-                    cursorY[0].toFloat() * framebufferH[0].toFloat() / windowH[0].toFloat(),
-                ),
-            )
+        glfwSetCursorPosCallback(window) { win, _, _ ->
+            val px = cursorPixel(win)
+            val frame = latestFrame()
+            if (state.primaryDown && renderer.isLineageOverlayActive) {
+                val dx = px.x - state.lastCursorX
+                val dy = px.y - state.lastCursorY
+                if (!state.dragged) {
+                    val totalDx = px.x - state.dragStartX
+                    val totalDy = px.y - state.dragStartY
+                    if (kotlin.math.abs(totalDx) > DRAG_THRESHOLD_PX ||
+                        kotlin.math.abs(totalDy) > DRAG_THRESHOLD_PX
+                    ) {
+                        state.dragged = true
+                    }
+                }
+                if (state.dragged) {
+                    renderer.panLineageOverlayByPixels(dx, dy)
+                }
+            } else if (renderer.isLineageOverlayActive && frame != null) {
+                renderer.hoverLineageOverlay(px, frame)
+            }
+            state.lastCursorX = px.x
+            state.lastCursorY = px.y
         }
 
         // Scroll up (positive y) zooms in
@@ -197,17 +243,15 @@ object DrocketsSceneView {
             if (yoffset == 0.0) return@glfwSetScrollCallback
             val steps = yoffset.coerceIn(-24.0, 24.0)
             val factor = 1.1.pow(steps).toFloat()
-            val cursorX = DoubleArray(1)
-            val cursorY = DoubleArray(1)
-            glfwGetCursorPos(win, cursorX, cursorY)
-            val windowW = IntArray(1)
-            val windowH = IntArray(1)
+            val px = cursorPixel(win)
+            // Overlay takes scroll priority when active; otherwise check old cladogram panel; else world.
+            if (renderer.isLineageOverlayActive) {
+                renderer.zoomLineageOverlayAtCursor(px, factor)
+                return@glfwSetScrollCallback
+            }
             val framebufferW = IntArray(1)
-            glfwGetWindowSize(win, windowW, windowH)
             glfwGetFramebufferSize(win, framebufferW, IntArray(1))
-            if (windowW[0] <= 0 || windowH[0] <= 0) return@glfwSetScrollCallback
-            val px = cursorX[0].toFloat() * framebufferW[0].toFloat() / windowW[0].toFloat()
-            if (renderer.handleCladogramWheel(px, framebufferW[0].toFloat(), factor)) {
+            if (renderer.handleCladogramWheel(px.x, framebufferW[0].toFloat(), factor)) {
                 return@glfwSetScrollCallback
             }
             renderer.zoomByFactor(factor)
@@ -240,4 +284,44 @@ object DrocketsSceneView {
         if (pressed[GLFW_KEY_LEFT]) renderer.panCladogram(-0.02f, 0f)
         if (pressed[GLFW_KEY_RIGHT]) renderer.panCladogram(0.02f, 0f)
     }
+
+    /**
+     * Reads the cursor position in framebuffer-pixel space. GLFW reports cursor coords
+     * in window units, which may differ from framebuffer units on high-DPI displays;
+     * rescaling by the framebuffer-to-window ratio keeps coordinates consistent with the
+     * renderer's resolution.
+     */
+    private fun cursorPixel(win: Long): Vec2 {
+        val cursorX = DoubleArray(1)
+        val cursorY = DoubleArray(1)
+        glfwGetCursorPos(win, cursorX, cursorY)
+        val windowW = IntArray(1)
+        val windowH = IntArray(1)
+        val framebufferW = IntArray(1)
+        val framebufferH = IntArray(1)
+        glfwGetWindowSize(win, windowW, windowH)
+        glfwGetFramebufferSize(win, framebufferW, framebufferH)
+        val w = windowW[0].coerceAtLeast(1)
+        val h = windowH[0].coerceAtLeast(1)
+        return Vec2(
+            cursorX[0].toFloat() * framebufferW[0].toFloat() / w.toFloat(),
+            cursorY[0].toFloat() * framebufferH[0].toFloat() / h.toFloat(),
+        )
+    }
+
+    private class MouseState {
+        var primaryDown: Boolean = false
+        var dragged: Boolean = false
+        var dragStartX: Float = 0f
+        var dragStartY: Float = 0f
+        var lastCursorX: Float = 0f
+        var lastCursorY: Float = 0f
+        var lastClickTimeMs: Long = 0L
+        var lastClickPxX: Float = 0f
+        var lastClickPxY: Float = 0f
+    }
+
+    private const val DOUBLE_CLICK_MS = 400L
+    private const val DOUBLE_CLICK_PX = 6f
+    private const val DRAG_THRESHOLD_PX = 4f
 }
