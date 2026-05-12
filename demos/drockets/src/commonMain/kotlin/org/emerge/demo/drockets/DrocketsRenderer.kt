@@ -105,11 +105,14 @@ class DrocketsRenderer(
      * Routes a primary (left) click. Priority order: lineage overlay (if active) → cladogram
      * panel (if active and click on right half) → world picking.
      *
+     * `shift` enables pair-wise MRCA selection in the new overlay; the older panel and
+     * world picking ignore it.
+     *
      * @return true if a click was consumed by an overlay; false means the world handled it.
      */
-    fun handlePrimaryClick(frame: DrocketsFrame, pixel: Vec2): Boolean {
+    fun handlePrimaryClick(frame: DrocketsFrame, pixel: Vec2, shift: Boolean = false): Boolean {
         if (lineageOverlay.active) {
-            lineageOverlay.pickAt(pixel, frame)
+            lineageOverlay.handleSelectClick(pixel, frame, shift)
             return true
         }
         if (cladogram.panelOn && resolution.x > 0f && pixel.x >= resolution.x * 0.5f) {

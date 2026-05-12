@@ -175,9 +175,10 @@ object DrocketsSceneView {
     ) {
         val state = MouseState()
 
-        glfwSetMouseButtonCallback(window) { win, button, action, _ ->
+        glfwSetMouseButtonCallback(window) { win, button, action, mods ->
             if (button != GLFW_MOUSE_BUTTON_LEFT) return@glfwSetMouseButtonCallback
             val px = cursorPixel(win)
+            val shift = (mods and GLFW_MOD_SHIFT) != 0
             when (action) {
                 GLFW_PRESS -> {
                     state.primaryDown = true
@@ -202,7 +203,7 @@ object DrocketsSceneView {
                             // Reset so a third quick click doesn't chain.
                             state.lastClickTimeMs = 0L
                         } else {
-                            renderer.handlePrimaryClick(frame, px)
+                            renderer.handlePrimaryClick(frame, px, shift = shift)
                             state.lastClickTimeMs = now
                             state.lastClickPxX = px.x
                             state.lastClickPxY = px.y

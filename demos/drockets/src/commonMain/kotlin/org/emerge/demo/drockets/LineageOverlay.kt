@@ -51,6 +51,7 @@ class LineageOverlay {
         private set
 
     private var selectedLineageId: Long? = null
+    private var secondarySelectedLineageId: Long? = null
     private var hoveredLineageId: Long? = null
 
     // View state — `pan` is in NDC; `zoom` is a unitless multiplier on logical x/y.
@@ -60,6 +61,7 @@ class LineageOverlay {
     private var resolution: Vec2 = Vec2(1f, 1f)
     private var lastTotalMs: Float = 0f
     private var solveCache: SolveCache? = null
+    private var lastHighlight: HighlightState = HighlightState.INACTIVE
 
     fun setResolution(res: Vec2) { resolution = res }
 
@@ -69,6 +71,7 @@ class LineageOverlay {
         active = !active
         if (!active) {
             selectedLineageId = null
+            secondarySelectedLineageId = null
             hoveredLineageId = null
         }
         return active
@@ -115,13 +118,35 @@ class LineageOverlay {
         )
     }
 
-    /** Single-click selection. Doesn't disturb the world camera. */
-    fun pickAt(pixel: Vec2, frame: DrocketsFrame): Long? {
+    /**
+     * Handles a primary-button click. Without `shift`, sets the primary selection and
+     * clears any pair-wise secondary. With `shift`, sets / clears the secondary
+     * selection, leaving the primary alone — which enables pair-wise MRCA highlighting
+     * when both selections are populated.
+     */
+    fun handleSelectClick(pixel: Vec2, frame: DrocketsFrame, shift: Boolean): Long? {
         if (!active) return null
         val hit = hitTest(pixel, frame)
-        selectedLineageId = hit
+        if (shift) {
+            // Shift+click on the existing secondary toggles it off; shift+click on the
+            // primary is a no-op (it's already the primary); shift+click on empty space
+            // also clears secondary so you can de-select without missing-clicks moving
+            // the primary.
+            secondarySelectedLineageId = when {
+                hit == null -> null
+                hit == selectedLineageId -> secondarySelectedLineageId
+                hit == secondarySelectedLineageId -> null
+                else -> hit
+            }
+        } else {
+            selectedLineageId = hit
+            secondarySelectedLineageId = null
+        }
         return hit
     }
+
+    /** Back-compat alias for tests / older callers that just want a non-shift click. */
+    fun pickAt(pixel: Vec2, frame: DrocketsFrame): Long? = handleSelectClick(pixel, frame, shift = false)
 
     /** Double-click: if the clicked node is a living drocket, return its [EntityId]
      *  so the composite can focus the world camera. */
@@ -157,11 +182,22 @@ class LineageOverlay {
         // ephemeral channel — but both are shown when distinct.
         val hover = hoveredLineageId?.let { frame.lineage.nodes[it]?.let { _ -> it } }
         val sel = selectedLineageId?.let { frame.lineage.nodes[it]?.let { _ -> it } }
-        if (hover != null && hover != sel) {
+        val sec = secondarySelectedLineageId?.let { frame.lineage.nodes[it]?.let { _ -> it } }
+        if (hover != null && hover != sel && hover != sec) {
             out += hudLineFor(hover, frame, prefix = "HOVER ")
         }
         if (sel != null) {
             out += hudLineFor(sel, frame, prefix = "SEL ")
+        }
+        if (sec != null && sel != null && sec != sel) {
+            out += hudLineFor(sec, frame, prefix = "SEL-B ")
+            val h = lastHighlight
+            if (h.pairwiseActive && h.mrca != null) {
+                out += hudLineFor(h.mrca, frame, prefix = "MRCA ")
+                out += "PAIRWISE PATH ${h.pairwisePath.size} nodes"
+            } else {
+                out += "PAIRWISE: no common ancestor in current view"
+            }
         }
         if (lastTotalMs > 0f) {
             val n = (lastTotalMs * 100f).toLong()
@@ -202,6 +238,7 @@ class LineageOverlay {
         }
 
         val highlight = computeHighlight(frame, positions)
+        lastHighlight = highlight
         drawEdges(frame, positions, highlight, ::toNdc)
         drawNodes(frame, positions, highlight, ::toNdc)
 
@@ -256,8 +293,11 @@ class LineageOverlay {
                 ((ancTo != null && ancFrom == ancTo + 1) || (highlight.selected == to && ancFrom == 1))
             val onDescendantPath = descTo != null &&
                 ((descFrom != null && descTo == descFrom + 1) || (highlight.selected == from && descTo == 1))
+            val onPairwisePath = highlight.pairwiseActive &&
+                from in highlight.pairwisePath && to in highlight.pairwisePath
 
             val (r, g, b, a) = when {
+                onPairwisePath -> floatArrayOf(1.0f, 0.78f, 0.24f, 0.95f)
                 onAncestorPath -> {
                     val rgb = ancestorColor(ancFrom!!)
                     floatArrayOf(rgb.first, rgb.second, rgb.third, 0.92f)
@@ -302,16 +342,28 @@ class LineageOverlay {
         for ((id, logical) in positions) {
             val (nx, ny) = toNdc(logical)
             val isAlive = id in living
-            val isSelected = id == highlight.selected
+            val isPrimary = id == highlight.selected
+            val isSecondary = id == highlight.secondary
+            val isMrca = id == highlight.mrca
+            val isOnPairwisePath = highlight.pairwiseActive && id in highlight.pairwisePath
             val isHovered = id == hoveredLineageId
             val ancDist = highlight.ancestors[id]
             val descDist = highlight.descendants[id]
-            val isRelated = isSelected || ancDist != null || descDist != null
 
-            // Colour priority: selected → ancestor gradient → descendant gradient → muted
-            // gray for unrelated-when-highlighting → body colour (dimmed if dead).
+            val isRelated = if (highlight.pairwiseActive) {
+                isPrimary || isSecondary || isMrca || isOnPairwisePath
+            } else {
+                isPrimary || ancDist != null || descDist != null
+            }
+
+            // Colour priority. Pair-wise mode uses three distinct beacons (primary yellow,
+            // secondary orange, MRCA cyan) over a gold "intermediate on-path" base; single-
+            // select mode uses the gradient.
             val rgb = when {
-                isSelected -> Triple(1.0f, 0.95f, 0.40f)
+                isPrimary -> Triple(1.0f, 0.95f, 0.40f)
+                highlight.pairwiseActive && isSecondary -> Triple(1.0f, 0.55f, 0.10f)
+                highlight.pairwiseActive && isMrca -> Triple(0.32f, 0.92f, 1.0f)
+                highlight.pairwiseActive && isOnPairwisePath -> Triple(1.0f, 0.78f, 0.24f)
                 ancDist != null -> ancestorColor(ancDist)
                 descDist != null -> descendantColor(descDist)
                 highlight.active -> Triple(0.42f, 0.45f, 0.50f)
@@ -321,14 +373,14 @@ class LineageOverlay {
             }
 
             val alpha = when {
-                isSelected -> 1.0f
+                isPrimary || isSecondary || isMrca -> 1.0f
                 highlight.active && !isRelated -> 0.16f
                 isAlive -> 0.95f
                 else -> 0.78f
             }
 
             val ringFrac = when {
-                isSelected -> 0.30f
+                isPrimary || isSecondary || isMrca -> 0.30f
                 isHovered -> 0.20f
                 else -> 0f
             }
@@ -337,7 +389,8 @@ class LineageOverlay {
             var radius = baseR * if (isAlive) 1.0f else 0.78f
             if (isRelated) radius = maxOf(radius, baseR * 1.15f)
             if (isHovered) radius = maxOf(radius, baseR * 1.25f)
-            if (isSelected) radius = maxOf(radius, baseR * 1.55f)
+            if (isMrca) radius = maxOf(radius, baseR * 1.40f)
+            if (isPrimary || isSecondary) radius = maxOf(radius, baseR * 1.55f)
 
             val base2 = n * 2
             nodeCenters[base2] = nx
@@ -367,8 +420,8 @@ class LineageOverlay {
         frame: DrocketsFrame,
         positions: Map<Long, Pair<Float, Float>>,
     ): HighlightState {
-        val sel = selectedLineageId ?: return HighlightState.INACTIVE
-        if (sel !in positions) return HighlightState.INACTIVE
+        val primary = selectedLineageId ?: return HighlightState.INACTIVE
+        if (primary !in positions) return HighlightState.INACTIVE
         val children = HashMap<Long, MutableList<Long>>()
         val parents = HashMap<Long, MutableList<Long>>()
         for ((from, to) in frame.cladogramLayout.edges) {
@@ -376,11 +429,28 @@ class LineageOverlay {
             children.getOrPut(from) { mutableListOf() }.add(to)
             parents.getOrPut(to) { mutableListOf() }.add(from)
         }
+
+        val secondary = secondarySelectedLineageId?.takeIf { it in positions && it != primary }
+        if (secondary != null) {
+            val pairwise = computePairwiseMrca(primary, secondary, parents)
+            if (pairwise != null) {
+                return HighlightState(
+                    active = true,
+                    ancestors = emptyMap(),
+                    descendants = emptyMap(),
+                    selected = primary,
+                    secondary = secondary,
+                    mrca = pairwise.mrca,
+                    pairwisePath = pairwise.path,
+                )
+            }
+        }
+
         return HighlightState(
             active = true,
-            ancestors = bfsDistances(sel, parents),
-            descendants = bfsDistances(sel, children),
-            selected = sel,
+            ancestors = bfsDistances(primary, parents),
+            descendants = bfsDistances(primary, children),
+            selected = primary,
         )
     }
 
@@ -402,6 +472,86 @@ class LineageOverlay {
         return out
     }
 
+    /**
+     * BFS up from [seed] over [parents], returning per-ancestor distance (including seed at 0)
+     * plus the predecessor map for shortest-path reconstruction back to seed.
+     */
+    private fun bfsAncestorTreeFrom(
+        seed: Long,
+        parents: Map<Long, List<Long>>,
+    ): Pair<Map<Long, Int>, Map<Long, Long>> {
+        val dist = LinkedHashMap<Long, Int>()
+        val pred = HashMap<Long, Long>()
+        val queue = ArrayDeque<Long>()
+        queue.addLast(seed)
+        dist[seed] = 0
+        while (queue.isNotEmpty()) {
+            val cur = queue.removeFirst()
+            val d = dist[cur] ?: continue
+            for (next in parents[cur].orEmpty()) {
+                if (dist.containsKey(next)) continue
+                dist[next] = d + 1
+                pred[next] = cur
+                queue.addLast(next)
+            }
+        }
+        return dist to pred
+    }
+
+    private data class PairwiseMrca(val mrca: Long, val path: Set<Long>)
+
+    /**
+     * Finds the most-recent common ancestor of two living-or-dead lineage nodes and the
+     * set of nodes on the shortest path between them (primary → ... → MRCA → ... → secondary).
+     *
+     * Approach:
+     *   1. BFS up from each side through the parent edges, recording distance + predecessor.
+     *   2. Intersect the reachable-ancestor sets; among common ancestors, pick the one that
+     *      minimises (dist-from-primary + dist-from-secondary). For a strict tree this is
+     *      *the* MRCA; for a 2-parent DAG with crossovers, this picks the shortest connecting
+     *      ancestor.
+     *   3. Reconstruct the two path halves via the predecessor maps and union them.
+     *
+     * Returns null if there's no common ancestor reachable through visible edges (e.g. the
+     * two are in separate forest components).
+     */
+    private fun computePairwiseMrca(
+        primary: Long,
+        secondary: Long,
+        parents: Map<Long, List<Long>>,
+    ): PairwiseMrca? {
+        if (primary == secondary) return null
+        val (primaryDist, primaryPred) = bfsAncestorTreeFrom(primary, parents)
+        val (secondaryDist, secondaryPred) = bfsAncestorTreeFrom(secondary, parents)
+
+        var bestMrca: Long? = null
+        var bestCost = Int.MAX_VALUE
+        for ((id, pd) in primaryDist) {
+            val sd = secondaryDist[id] ?: continue
+            val cost = pd + sd
+            if (cost < bestCost) {
+                bestCost = cost
+                bestMrca = id
+            }
+        }
+        val mrca = bestMrca ?: return null
+
+        val path = LinkedHashSet<Long>()
+        var cur: Long? = primary
+        while (cur != null) {
+            path += cur
+            if (cur == mrca) break
+            cur = primaryPred[cur]
+        }
+        cur = secondary
+        while (cur != null) {
+            path += cur
+            if (cur == mrca) break
+            cur = secondaryPred[cur]
+        }
+        return PairwiseMrca(mrca, path)
+    }
+
     private fun ancestorColor(distance: Int): Triple<Float, Float, Float> {
         val t = ((distance - 1).toFloat() / 6f).coerceIn(0f, 1f)
         // gold (1.0, 0.78, 0.24) -> red (1.0, 0.16, 0.16)
@@ -419,7 +569,15 @@ class LineageOverlay {
         val ancestors: Map<Long, Int>,
         val descendants: Map<Long, Int>,
         val selected: Long?,
+        /** Set when a pair-wise MRCA visualisation is active (both a primary AND a secondary
+         *  selection exist and the BFS found a common ancestor). The ancestor / descendant
+         *  maps above are ignored in that case; [pairwisePath] + [mrca] drive the colouring. */
+        val secondary: Long? = null,
+        val mrca: Long? = null,
+        val pairwisePath: Set<Long> = emptySet(),
     ) {
+        val pairwiseActive: Boolean get() = secondary != null && mrca != null && pairwisePath.isNotEmpty()
+
         companion object {
             val INACTIVE = HighlightState(false, emptyMap(), emptyMap(), null)
         }
