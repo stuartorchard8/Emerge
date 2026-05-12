@@ -11,12 +11,12 @@ import kotlin.time.TimeSource
  * filled coloured discs (real geometry, not line-segment fakes), with mouse-driven
  * pan + zoom-around-cursor and click-select decoupled from world-camera focus.
  *
- * Sits alongside [CladogramPanelRenderer] — the two are mutually exclusive in
- * [DrocketsRenderer]; toggling one off when the other comes on lives at the
- * composite layer.
+ * The sole cladogram view in [DrocketsRenderer]. (An earlier half-screen panel
+ * design lived alongside it for comparison; that one was removed once this version
+ * stood on its own — see git history for the side-by-side era.)
  *
  * Inputs the composite calls into:
- *   - [toggleActive] — F4 in the default binding.
+ *   - [toggleActive] — F2 in the default binding.
  *   - [cycleFilter] — ALL <-> LIVING_ONLY only; the connector heuristics from
  *     the older view aren't included.
  *   - [panByPixels] — call this every frame while a primary-button drag is held.
@@ -29,7 +29,7 @@ import kotlin.time.TimeSource
  *   - [updateHover] — mouse move while overlay is active.
  *
  * Layout reuses the shared [CladogramLayoutSolver] (the same one
- * [CladogramPanelRenderer] uses); the difference is purely in how the laid-out
+ * other consumers used); the difference is purely in how the laid-out
  * positions are projected to screen and drawn.
  */
 class LineageOverlay {
@@ -71,8 +71,7 @@ class LineageOverlay {
 
     fun setResolution(res: Vec2) { resolution = res }
 
-    /** Returns the new active state. The composite is responsible for deactivating
-     *  any peer view (eg the older cladogram panel) when this is turned on. */
+    /** Returns the new active state. */
     fun toggleActive(): Boolean {
         active = !active
         if (!active) {
@@ -180,11 +179,11 @@ class LineageOverlay {
         val out = mutableListOf<String>()
         out += "LINEAGE OVERLAY  ${frame.cladogramLayout.summaryLine()}"
         out += when (filter) {
-            CladogramFilterMode.ALL -> "FILTER ALL (F8)"
-            CladogramFilterMode.LIVING_ONLY -> "FILTER LIVING ONLY (F8)"
-            CladogramFilterMode.LIVING_AND_CONNECTORS -> "FILTER MRCA-WALK (F8)"
-            CladogramFilterMode.LIVING_PAIRWISE_MRCA -> "FILTER ALL-PAIRS MRCA (F8)"
-            else -> "FILTER $filter (F8)"
+            CladogramFilterMode.ALL -> "FILTER ALL (F6)"
+            CladogramFilterMode.LIVING_ONLY -> "FILTER LIVING ONLY (F6)"
+            CladogramFilterMode.LIVING_AND_CONNECTORS -> "FILTER MRCA-WALK (F6)"
+            CladogramFilterMode.LIVING_PAIRWISE_MRCA -> "FILTER ALL-PAIRS MRCA (F6)"
+            else -> "FILTER $filter (F6)"
         }
         // Hover takes priority over selection for the active read-out — it's the more
         // ephemeral channel — but both are shown when distinct.

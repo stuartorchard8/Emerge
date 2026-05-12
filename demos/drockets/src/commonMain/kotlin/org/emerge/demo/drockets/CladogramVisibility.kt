@@ -3,15 +3,15 @@ package org.emerge.demo.drockets
 enum class CladogramFilterMode {
     ALL,
     LIVING_ONLY,
-    LIVING_AND_PARENTS,
 
     /**
      * Per-living BFS-up approach: for each living individual, walk up to its closest
      * branching ancestor (one with ≥2 living-line child branches), include the path back,
      * then sweep down from each branching ancestor to gather all living-line descendants.
-     * Approximates MRCA-style relatedness; tends to include slightly more nodes than the
-     * strict Steiner subtree (see [LIVING_STEINER]) because the per-individual walks can
-     * cover sibling branches that aren't on a path between two living.
+     * Approximates MRCA-style relatedness; doesn't guarantee that *all* living pairs share
+     * a visible ancestor (each living's walk stops at its nearest LCA, which may differ
+     * across the population — disjoint clades can end up disconnected in the view). Use
+     * [LIVING_PAIRWISE_MRCA] when full pair-wise connectivity matters.
      */
     LIVING_AND_CONNECTORS,
 
@@ -49,19 +49,6 @@ fun computeVisibleLineageIds(
         CladogramFilterMode.LIVING_PAIRWISE_MRCA -> computePairwiseMrcaUnionVisibleIds(lineage, layout)
         CladogramFilterMode.ALL -> allIds.toSet()
         CladogramFilterMode.LIVING_ONLY -> allIds.filterTo(LinkedHashSet()) { lineage.livingLineageIds.contains(it) }
-        CladogramFilterMode.LIVING_AND_PARENTS -> {
-            val out = LinkedHashSet<Long>()
-            for (id in lineage.livingLineageIds) {
-                if (!allIds.contains(id)) continue
-                out.add(id)
-                val node = lineage.nodes[id] ?: continue
-                val m = node.motherLineageId
-                val f = node.fatherLineageId
-                if (m != null && allIds.contains(m)) out.add(m)
-                if (f != null && allIds.contains(f)) out.add(f)
-            }
-            out
-        }
         CladogramFilterMode.LIVING_AND_CONNECTORS -> {
             val living = lineage.livingLineageIds.filterTo(LinkedHashSet()) { allIds.contains(it) }
             if (living.isEmpty()) return emptySet()

@@ -6,13 +6,14 @@ import org.emerge.sim.core.physics.primitives.Vec2
 /**
  * Composite Drockets renderer. Owns three sub-renderers:
  *
- *  - [WorldRenderer] — starscape, planets, drockets, knights, particles + camera state
- *  - [CladogramPanelRenderer] — right-half scissor-clipped lineage tree + selection state
- *  - [OverlayHud] — top-left text overlay with status messages + per-entity phenotype debug
+ *  - [WorldRenderer] — starscape, planets, drockets, knights, particles + camera state.
+ *  - [LineageOverlay] — full-screen translucent cladogram with drag-pan, wheel-zoom,
+ *    click-to-select, shift+click pair-wise MRCA, and double-click world-focus.
+ *  - [OverlayHud] — top-left text overlay with status messages + per-entity phenotype debug.
  *
  * Forwards external calls (input handlers, draw, lifecycle) to the appropriate sub-renderer;
  * the only orchestration that lives here is the per-frame [draw] sequence and the
- * cladogram→world focus hop on a panel click.
+ * cladogram→world focus hop on a double-click.
  *
  * `contentScale` is accepted for API stability with earlier versions; the sub-renderers
  * derive their own scaling from the framebuffer resolution passed via [setResolution].
@@ -23,7 +24,6 @@ class DrocketsRenderer(
     knightSpriteAtlasTextureId: Int,
 ) {
     private val world = WorldRenderer(drocketSpriteAtlasTextureId, knightSpriteAtlasTextureId)
-    private val cladogram = CladogramPanelRenderer()
     private val lineageOverlay = LineageOverlay()
     private val hud = OverlayHud()
 
@@ -32,18 +32,15 @@ class DrocketsRenderer(
     fun setResolution(res: Vec2) {
         resolution = res
         world.setResolution(res)
-        cladogram.setResolution(res)
         lineageOverlay.setResolution(res)
         hud.setResolution(res)
     }
 
     fun draw(frame: DrocketsFrame) {
         world.draw(frame.state)
-        cladogram.draw(frame)
         lineageOverlay.draw(frame)
 
         val extraLines = mutableListOf<String>()
-        extraLines += cladogram.hudSummaryLines(frame)
         extraLines += lineageOverlay.hudLines(frame)
         if (hud.showPhenotypeDebug) {
             extraLines += world.focusedDrocketDebugLines()
@@ -53,7 +50,6 @@ class DrocketsRenderer(
 
     fun cleanup() {
         world.cleanup()
-        cladogram.cleanup()
         lineageOverlay.cleanup()
         hud.cleanup()
     }
@@ -65,76 +61,15 @@ class DrocketsRenderer(
     fun rotateRight() = world.rotateBy(Frac(-1, 1024))
     fun focusPlanet() = world.focusPlanet()
 
-    // ── Cladogram input ────────────────────────────────────────────────────────
-
-    fun toggleCladogramPanel() {
-        val on = cladogram.togglePanel()
-        hud.setOverlayStatus(
-            if (on) "Cladogram ON (F2)  living-only F6" else "Cladogram OFF (F2)",
-            durationMs = 2_000,
-        )
-    }
-
-    fun toggleCladogramLivingOnly() {
-        val mode = cladogram.cycleFilter()
-        hud.setOverlayStatus(
-            when (mode) {
-                CladogramFilterMode.ALL -> "Cladogram filter: ALL (F6)"
-                CladogramFilterMode.LIVING_ONLY -> "Cladogram filter: LIVING ONLY (F6)"
-                CladogramFilterMode.LIVING_AND_PARENTS -> "Cladogram filter: LIVING+PARENTS (F6)"
-                CladogramFilterMode.LIVING_AND_CONNECTORS -> "Cladogram filter: MRCA-WALK (F6)"
-                CladogramFilterMode.LIVING_PAIRWISE_MRCA -> "Cladogram filter: ALL-PAIRS MRCA (F6)"
-            },
-            durationMs = 1_800,
-        )
-    }
-
-    fun toggleCladogramProfiling() {
-        val on = cladogram.toggleProfiling()
-        hud.setOverlayStatus(
-            if (on) "Cladogram profiling ON (F7)" else "Cladogram profiling OFF (F7)",
-            durationMs = 1_500,
-        )
-    }
-
-    fun panCladogram(dxLayout: Float, dyLayout: Float) = cladogram.panBy(dxLayout, dyLayout)
-
-    fun handleCladogramWheel(pixelX: Float, framebufferW: Float, factor: Float): Boolean =
-        cladogram.handleWheel(pixelX, framebufferW, factor)
-
-    /**
-     * Routes a primary (left) click. Priority order: lineage overlay (if active) → cladogram
-     * panel (if active and click on right half) → world picking.
-     *
-     * `shift` enables pair-wise MRCA selection in the new overlay; the older panel and
-     * world picking ignore it.
-     *
-     * @return true if a click was consumed by an overlay; false means the world handled it.
-     */
-    fun handlePrimaryClick(frame: DrocketsFrame, pixel: Vec2, shift: Boolean = false): Boolean {
-        if (lineageOverlay.active) {
-            lineageOverlay.handleSelectClick(pixel, frame, shift)
-            return true
-        }
-        if (cladogram.panelOn && resolution.x > 0f && pixel.x >= resolution.x * 0.5f) {
-            cladogram.tryPick(frame, pixel)?.let { world.focusOn(it) }
-            return true
-        }
-        return world.tryFocusDrocketAt(frame.state, pixel)
-    }
-
-    // ── Lineage overlay (F4 alternative view) ─────────────────────────────────
+    // ── Lineage overlay (F2 to toggle, F6 to cycle filter) ────────────────────
 
     val isLineageOverlayActive: Boolean get() = lineageOverlay.active
 
     fun toggleLineageOverlay() {
-        // Mutually exclusive with the old cladogram panel — turning on one always turns
-        // off the other so the two competing views never composite at once.
         val on = lineageOverlay.toggleActive()
-        if (on && cladogram.panelOn) cladogram.togglePanel()
         hud.setOverlayStatus(
-            if (on) "Lineage overlay ON (F4)  drag pan, wheel zoom, F8 filter, dbl-click focus"
-            else "Lineage overlay OFF (F4)",
+            if (on) "Lineage overlay ON (F2)  drag pan, wheel zoom, F6 filter, dbl-click focus"
+            else "Lineage overlay OFF (F2)",
             durationMs = 2_500,
         )
     }
@@ -143,11 +78,10 @@ class DrocketsRenderer(
         val mode = lineageOverlay.cycleFilter()
         hud.setOverlayStatus(
             when (mode) {
-                CladogramFilterMode.ALL -> "Lineage filter: ALL (F8)"
-                CladogramFilterMode.LIVING_ONLY -> "Lineage filter: LIVING ONLY (F8)"
-                CladogramFilterMode.LIVING_AND_CONNECTORS -> "Lineage filter: MRCA-WALK (F8)"
-                CladogramFilterMode.LIVING_PAIRWISE_MRCA -> "Lineage filter: ALL-PAIRS MRCA (F8)"
-                else -> "Lineage filter: $mode (F8)"
+                CladogramFilterMode.ALL -> "Lineage filter: ALL (F6)"
+                CladogramFilterMode.LIVING_ONLY -> "Lineage filter: LIVING ONLY (F6)"
+                CladogramFilterMode.LIVING_AND_CONNECTORS -> "Lineage filter: MRCA-WALK (F6)"
+                CladogramFilterMode.LIVING_PAIRWISE_MRCA -> "Lineage filter: ALL-PAIRS MRCA (F6)"
             },
             durationMs = 1_800,
         )
@@ -165,6 +99,21 @@ class DrocketsRenderer(
         if (!lineageOverlay.active) return false
         lineageOverlay.focusLivingDrocketAt(pixel, frame)?.let { world.focusOn(it) }
         return true
+    }
+
+    /**
+     * Routes a primary (left) click. If the lineage overlay is active, the click goes to
+     * its hit-test (shift modifies it for pair-wise MRCA selection). Otherwise the world
+     * handles it for drocket focusing.
+     *
+     * @return true if the overlay consumed the click; false if the world handled it.
+     */
+    fun handlePrimaryClick(frame: DrocketsFrame, pixel: Vec2, shift: Boolean = false): Boolean {
+        if (lineageOverlay.active) {
+            lineageOverlay.handleSelectClick(pixel, frame, shift)
+            return true
+        }
+        return world.tryFocusDrocketAt(frame.state, pixel)
     }
 
     // ── HUD input ──────────────────────────────────────────────────────────────

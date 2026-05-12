@@ -8,7 +8,7 @@ internal const val QUAD_VERTEX_OFFSET = 3
 
 /**
  * Maps an HSV triplet to linear RGB. `h` is in degrees [0, 360], `s` and `v` in [0, 1].
- * Used by both [WorldRenderer] (body and fire tints from genome) and [CladogramPanelRenderer]
+ * Used by both [WorldRenderer] (body and fire tints from genome) and [LineageOverlay]
  * (lineage-node colors).
  */
 internal fun hsvToRgb(h: Float, s: Float, v: Float): Triple<Float, Float, Float> {

@@ -52,7 +52,6 @@ object DrocketsSceneView {
             glfwPollEvents()
             updateResolution(window, renderer)
             processCamera(pressedKeys, renderer)
-            processCladogramPanKeys(pressedKeys, renderer)
 
             val frame = controller.tick()
             latestFrame = frame
@@ -103,18 +102,9 @@ object DrocketsSceneView {
                 activeRenderer?.togglePhenotypeDebugHud()
             }
             if (action == GLFW_PRESS && key == GLFW_KEY_F2) {
-                activeRenderer?.toggleCladogramPanel()
-            }
-            if (action == GLFW_PRESS && key == GLFW_KEY_F4) {
                 activeRenderer?.toggleLineageOverlay()
             }
             if (action == GLFW_PRESS && key == GLFW_KEY_F6) {
-                activeRenderer?.toggleCladogramLivingOnly()
-            }
-            if (action == GLFW_PRESS && key == GLFW_KEY_F7) {
-                activeRenderer?.toggleCladogramProfiling()
-            }
-            if (action == GLFW_PRESS && key == GLFW_KEY_F8) {
                 activeRenderer?.cycleLineageOverlayFilter()
             }
         }
@@ -239,20 +229,15 @@ object DrocketsSceneView {
             state.lastCursorY = px.y
         }
 
-        // Scroll up (positive y) zooms in
+        // Scroll up (positive y) zooms in. Lineage overlay takes priority when active so
+        // wheel-zoom navigates the tree; otherwise wheel zooms the world camera.
         glfwSetScrollCallback(window) { win, _, yoffset ->
             if (yoffset == 0.0) return@glfwSetScrollCallback
             val steps = yoffset.coerceIn(-24.0, 24.0)
             val factor = 1.1.pow(steps).toFloat()
             val px = cursorPixel(win)
-            // Overlay takes scroll priority when active; otherwise check old cladogram panel; else world.
             if (renderer.isLineageOverlayActive) {
                 renderer.zoomLineageOverlayAtCursor(px, factor)
-                return@glfwSetScrollCallback
-            }
-            val framebufferW = IntArray(1)
-            glfwGetFramebufferSize(win, framebufferW, IntArray(1))
-            if (renderer.handleCladogramWheel(px.x, framebufferW[0].toFloat(), factor)) {
                 return@glfwSetScrollCallback
             }
             renderer.zoomByFactor(factor)
@@ -277,13 +262,6 @@ object DrocketsSceneView {
         if (pressed[GLFW_KEY_Q]) renderer.rotateLeft()
         if (pressed[GLFW_KEY_E]) renderer.rotateRight()
         if (pressed[GLFW_KEY_0]) renderer.focusPlanet()
-    }
-
-    private fun processCladogramPanKeys(pressed: BooleanArray, renderer: DrocketsRenderer) {
-        if (pressed[GLFW_KEY_UP]) renderer.panCladogram(0f, 0.02f)
-        if (pressed[GLFW_KEY_DOWN]) renderer.panCladogram(0f, -0.02f)
-        if (pressed[GLFW_KEY_LEFT]) renderer.panCladogram(-0.02f, 0f)
-        if (pressed[GLFW_KEY_RIGHT]) renderer.panCladogram(0.02f, 0f)
     }
 
     /**

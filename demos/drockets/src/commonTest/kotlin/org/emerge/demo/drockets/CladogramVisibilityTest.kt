@@ -15,15 +15,6 @@ class CladogramVisibilityTest {
     }
 
     @Test
-    fun livingAndParents_adds_exactly_one_hop_parents() {
-        val (lineage, layout) = sampleState()
-
-        val visible = computeVisibleLineageIds(lineage, layout, CladogramFilterMode.LIVING_AND_PARENTS)
-
-        assertEquals(setOf(2L, 3L, 4L, 5L, 6L), visible)
-    }
-
-    @Test
     fun livingAndConnectors_keeps_minimal_connectors_plus_isolated_living() {
         val (lineage, layout) = sampleState()
 
