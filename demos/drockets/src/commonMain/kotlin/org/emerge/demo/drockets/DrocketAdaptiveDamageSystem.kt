@@ -22,8 +22,14 @@ object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, Phys
 
     private const val POPULATION_FLOOR = 100
     private const val POPULATION_CAP = 600
-    private val MIN_MAX_HEALTH = Frac(1, 1 shl 15) // at cap
     private val MAX_MAX_HEALTH = Frac(1, 1) // at/below floor
+
+    /**
+     * Bit-spread between the at-floor threshold ([MAX_MAX_HEALTH]) and the at-cap threshold:
+     * at-cap raw = `MAX_MAX_HEALTH.raw shr MIN_MAX_HEALTH_BITS`. 15 → at-cap ≈ 65 535 raw.
+     * Drives the log-shaped curve in [effectiveDrocketMaxHealth].
+     */
+    private const val MIN_MAX_HEALTH_BITS = 15
 
     override fun update(
         cfg: PhysicsConfig,
@@ -110,14 +116,30 @@ object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, Phys
     }
 
     /**
-     * Linearly interpolates max health from [MAX_MAX_HEALTH] at [POPULATION_FLOOR]
-     * down to [MIN_MAX_HEALTH] at [POPULATION_CAP], clamping at both ends.
+     * Threshold below which a drocket survives. As population rises from
+     * [POPULATION_FLOOR] to [POPULATION_CAP], threshold drops along a piecewise-linear
+     * approximation of `MAX_MAX_HEALTH × 2^(-MIN_MAX_HEALTH_BITS × t)`, where
+     * `t = (pop − floor) / (cap − floor)`.
+     *
+     * The fractional bit shift is computed in fixed-point and resolved as a linear
+     * interp between adjacent integer shifts (between `MAX >> n` and `MAX >> (n+1)`).
+     * That keeps everything in Long arithmetic — no `exp`/`pow`, identical across
+     * JVM and JS — while preserving the log shape so the "death pressure" zone
+     * spans the whole pop range rather than concentrating in the last few slots
+     * near cap. Zero error at every integer-shift pop (every `span/MIN_MAX_HEALTH_BITS`
+     * slots); ~6% deviation from true exponential at octave midpoints.
      */
     private fun effectiveDrocketMaxHealth(population: Int): Frac {
         val cap = POPULATION_CAP.coerceAtLeast(POPULATION_FLOOR + 1)
         val clamped = population.coerceIn(POPULATION_FLOOR, cap)
-        val t = Frac((cap - clamped).toLong(), cap - POPULATION_FLOOR)
-        return MIN_MAX_HEALTH + (MAX_MAX_HEALTH - MIN_MAX_HEALTH) * t
+        val span = cap - POPULATION_FLOOR
+        val shiftNum = MIN_MAX_HEALTH_BITS * (clamped - POPULATION_FLOOR)
+        val intShift = shiftNum / span                  // which octave (0..MIN_MAX_HEALTH_BITS)
+        val frac = shiftNum % span                      // where inside the octave (0..span-1)
+        val a = MAX_MAX_HEALTH.raw shr intShift         // top of current octave
+        val b = a shr 1                                 // bottom of current octave
+        val raw = a - (a - b) * frac / span             // linear interp within octave
+        return Frac(raw)
     }
 
     private fun spawnDestructionBurst(builder: PhysicsBuilder, burst: DestructionBurstSpec) {
