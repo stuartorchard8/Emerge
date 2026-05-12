@@ -75,13 +75,17 @@ class CladogramPanelRenderer {
         return panelOn
     }
 
-    /** Advances filter mode through ALL → LIVING_ONLY → LIVING_AND_PARENTS → LIVING_AND_CONNECTORS → ALL. */
+    /**
+     * Advances filter mode through
+     * ALL → LIVING_ONLY → LIVING_AND_PARENTS → LIVING_AND_CONNECTORS → LIVING_STEINER → ALL.
+     */
     fun cycleFilter(): CladogramFilterMode {
         filterMode = when (filterMode) {
             CladogramFilterMode.ALL -> CladogramFilterMode.LIVING_ONLY
             CladogramFilterMode.LIVING_ONLY -> CladogramFilterMode.LIVING_AND_PARENTS
             CladogramFilterMode.LIVING_AND_PARENTS -> CladogramFilterMode.LIVING_AND_CONNECTORS
-            CladogramFilterMode.LIVING_AND_CONNECTORS -> CladogramFilterMode.ALL
+            CladogramFilterMode.LIVING_AND_CONNECTORS -> CladogramFilterMode.LIVING_STEINER
+            CladogramFilterMode.LIVING_STEINER -> CladogramFilterMode.ALL
         }
         invalidateLayoutCache()
         return filterMode
@@ -160,7 +164,8 @@ class CladogramPanelRenderer {
             CladogramFilterMode.ALL -> "FILTER ALL (F6)"
             CladogramFilterMode.LIVING_ONLY -> "FILTER LIVING ONLY (F6)"
             CladogramFilterMode.LIVING_AND_PARENTS -> "FILTER LIVING + PARENTS (F6)"
-            CladogramFilterMode.LIVING_AND_CONNECTORS -> "FILTER LIVING + CONNECTORS (F6)"
+            CladogramFilterMode.LIVING_AND_CONNECTORS -> "FILTER MRCA-WALK (F6)"
+            CladogramFilterMode.LIVING_STEINER -> "FILTER STEINER (F6)"
         }
         if (profilingOn) {
             val p = lastProfile
