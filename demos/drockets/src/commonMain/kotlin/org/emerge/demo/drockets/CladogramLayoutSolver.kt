@@ -41,17 +41,37 @@ object CladogramLayoutSolver {
     /** Vertical spacing between generation rows, in logical units. */
     const val GENERATION_Y_SPACING: Float = 0.100f
 
+    /**
+     * Filters via [computeVisibleLineageIds] then solves layout. The simple entry point
+     * used by callers that don't need to plug in an incremental visibility cache.
+     */
     fun solve(
         layout: CladogramLayout,
         lineage: DrocketLineageState,
         filterMode: CladogramFilterMode,
         seedLogicalPositions: Map<Long, Pair<Float, Float>>? = null,
     ): CladogramLayoutSolution {
-        if (layout.depthById.isEmpty()) return CladogramLayoutSolution(emptyMap(), 0f, 0f)
-
         val filterStart = TimeSource.Monotonic.markNow()
         val visibleIds = computeVisibleLineageIds(lineage, layout, filterMode)
         val filterMs = filterStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
+        return solveWithVisibleIds(layout, lineage, visibleIds, seedLogicalPositions, filterMs)
+    }
+
+    /**
+     * Solves layout given a pre-computed visible-id set. Lets callers swap the
+     * visibility computation for an incremental cache
+     * (eg [PairwiseMrcaUnionCache]) while reusing the rest of the layout algorithm.
+     *
+     * [filterMs] is reported back in the result for HUD profiling.
+     */
+    fun solveWithVisibleIds(
+        layout: CladogramLayout,
+        lineage: DrocketLineageState,
+        visibleIds: Set<Long>,
+        seedLogicalPositions: Map<Long, Pair<Float, Float>>? = null,
+        filterMs: Float = 0f,
+    ): CladogramLayoutSolution {
+        if (layout.depthById.isEmpty()) return CladogramLayoutSolution(emptyMap(), 0f, 0f)
         if (visibleIds.isEmpty()) return CladogramLayoutSolution(emptyMap(), filterMs, 0f)
 
         val solveStart = TimeSource.Monotonic.markNow()

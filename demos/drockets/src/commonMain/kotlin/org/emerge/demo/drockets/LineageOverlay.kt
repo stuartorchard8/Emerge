@@ -62,6 +62,12 @@ class LineageOverlay {
     private var lastTotalMs: Float = 0f
     private var solveCache: SolveCache? = null
     private var lastHighlight: HighlightState = HighlightState.INACTIVE
+    /**
+     * Incremental cache for [CladogramFilterMode.LIVING_PAIRWISE_MRCA]. The stateless
+     * computation is O(L²) and was the source of the per-frame stall when reproduction
+     * is busy. Initialised lazily on first use of the filter mode.
+     */
+    private val pairwiseMrcaCache = PairwiseMrcaUnionCache()
 
     fun setResolution(res: Vec2) { resolution = res }
 
@@ -587,11 +593,23 @@ class LineageOverlay {
         if (cached != null && cached.versionStamp == stamp && cached.filter == filter) {
             return cached.solution
         }
-        val solved = CladogramLayoutSolver.solve(
+        // Visibility step. For PAIRWISE-MRCA the stateless function is O(L²) and was the
+        // source of the per-frame stall under active reproduction; the incremental cache
+        // gets the same result by applying only the births / deaths since the last frame.
+        // All other filter modes use the stateless path (their cost is already low).
+        val filterStart = kotlin.time.TimeSource.Monotonic.markNow()
+        val visibleIds = if (filter == CladogramFilterMode.LIVING_PAIRWISE_MRCA) {
+            pairwiseMrcaCache.visibleFor(frame.lineage, frame.cladogramLayout)
+        } else {
+            computeVisibleLineageIds(frame.lineage, frame.cladogramLayout, filter)
+        }
+        val filterMs = filterStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
+        val solved = CladogramLayoutSolver.solveWithVisibleIds(
             layout = frame.cladogramLayout,
             lineage = frame.lineage,
-            filterMode = filter,
+            visibleIds = visibleIds,
             seedLogicalPositions = cached?.solution?.positions,
+            filterMs = filterMs,
         )
         solveCache = SolveCache(stamp, filter, solved)
         return solved
@@ -655,18 +673,9 @@ internal fun pairwiseMrca(
     if (primary == secondary) return null
     val (primaryDist, primaryPred) = bfsAncestorTree(primary, parents)
     val (secondaryDist, secondaryPred) = bfsAncestorTree(secondary, parents)
-
-    var bestMrca: Long? = null
-    var bestCost = Int.MAX_VALUE
-    for ((id, pd) in primaryDist) {
-        val sd = secondaryDist[id] ?: continue
-        val cost = pd + sd
-        if (cost < bestCost) {
-            bestCost = cost
-            bestMrca = id
-        }
-    }
-    val mrca = bestMrca ?: return null
+    // Shared tie-break with the LIVING_PAIRWISE_MRCA filter and its cache so that the
+    // shift-click MRCA picked here matches what the filter shows for the same pair.
+    val mrca = findPairwiseMrca(primaryDist, secondaryDist) ?: return null
 
     val path = LinkedHashSet<Long>()
     walkPredChainInto(mrca, primaryPred, path)

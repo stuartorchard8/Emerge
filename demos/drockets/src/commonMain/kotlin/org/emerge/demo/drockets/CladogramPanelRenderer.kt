@@ -55,6 +55,7 @@ class CladogramPanelRenderer {
     private var panelPanX: Float = 0f
     private var panelPanY: Float = 0f
     private var solveCache: SolveCache? = null
+    private val pairwiseMrcaCache = PairwiseMrcaUnionCache()
 
     private var resolution: Vec2 = Vec2(1f, 1f)
     private var lastProfile: CladogramProfile = CladogramProfile()
@@ -521,11 +522,21 @@ class CladogramPanelRenderer {
         val (logical, filterMs, solveMs) = if (cached != null && cached.key == key) {
             Triple(cached.logicalPositions, cached.filterMs, cached.solveMs)
         } else {
-            val solved = CladogramLayoutSolver.solve(
+            // Visibility step. PAIRWISE-MRCA goes through the incremental cache to
+            // avoid the O(L²) per-frame stall; other modes use the stateless function.
+            val filterStart = TimeSource.Monotonic.markNow()
+            val visibleIds = if (filterMode == CladogramFilterMode.LIVING_PAIRWISE_MRCA) {
+                pairwiseMrcaCache.visibleFor(frame.lineage, frame.cladogramLayout)
+            } else {
+                computeVisibleLineageIds(frame.lineage, frame.cladogramLayout, filterMode)
+            }
+            val filterMsLocal = filterStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
+            val solved = CladogramLayoutSolver.solveWithVisibleIds(
                 layout = frame.cladogramLayout,
                 lineage = frame.lineage,
-                filterMode = filterMode,
+                visibleIds = visibleIds,
                 seedLogicalPositions = cached?.logicalPositions,
+                filterMs = filterMsLocal,
             )
             solveCache = SolveCache(
                 key = key,
