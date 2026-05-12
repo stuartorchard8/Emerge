@@ -139,31 +139,50 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
         ).mutated(nextRandom)
     }
 
-    /**
-     * Adds an independent small delta (approximately [-128, 127]) to every gene's raw value.
-     * Because raw values cover the full Int range, small deltas correspond to small phenotype
-     * shifts; this keeps mutation behaviour roughly uniform across genes regardless of their
-     * decoded range.
-     */
-    private fun Genome.mutated(nextRandom: () -> Int): Genome {
-        fun delta(): Int = (nextRandom() ushr 8) - (1 shl 7)
-        return copy(
-            aiWalkMinTicks = aiWalkMinTicks + delta(),
-            aiWalkMaxTicks = aiWalkMaxTicks + delta(),
-            aiChargeTicks = aiChargeTicks + delta(),
-            aiFuelTicks = aiFuelTicks + delta(),
-            aiSpin = aiSpin + delta(),
-            aiThrust = aiThrust + delta(),
-            bodyColor = bodyColor.copy(
-                rawH = bodyColor.rawH + delta(),
-                rawS = bodyColor.rawS + delta(),
-                rawV = bodyColor.rawV + delta(),
-            ),
-            fireColor = fireColor.copy(
-                rawH = fireColor.rawH + delta(),
-                rawS = fireColor.rawS + delta(),
-                rawV = fireColor.rawV + delta(),
-            ),
-        )
+}
+
+/**
+ * Adds an independent small symmetric delta in `[-128, 127]` to every gene's raw value,
+ * saturating at [Int.MIN_VALUE] / [Int.MAX_VALUE] so a mutation at the extremes cannot
+ * wrap around to the opposite end of the decoded range.
+ *
+ * Because raw values span the full Int range, a ±128 delta corresponds to a tiny shift
+ * in decoded phenotype (~6e-8 of the gene's [min,max] span).
+ *
+ * Top-level + `internal` so tests can assert saturation + distribution properties.
+ */
+internal fun Genome.mutated(nextRandom: () -> Int): Genome {
+    fun mutateField(rawValue: Int): Int {
+        // Low byte of the random Int, biased so 0..255 -> -128..127 (symmetric around zero).
+        val delta = (nextRandom() and 0xFF) - 128
+        return saturatingAdd(rawValue, delta)
+    }
+    return copy(
+        aiWalkMinTicks = mutateField(aiWalkMinTicks),
+        aiWalkMaxTicks = mutateField(aiWalkMaxTicks),
+        aiChargeTicks = mutateField(aiChargeTicks),
+        aiFuelTicks = mutateField(aiFuelTicks),
+        aiSpin = mutateField(aiSpin),
+        aiThrust = mutateField(aiThrust),
+        bodyColor = bodyColor.copy(
+            rawH = mutateField(bodyColor.rawH),
+            rawS = mutateField(bodyColor.rawS),
+            rawV = mutateField(bodyColor.rawV),
+        ),
+        fireColor = fireColor.copy(
+            rawH = mutateField(fireColor.rawH),
+            rawS = mutateField(fireColor.rawS),
+            rawV = mutateField(fireColor.rawV),
+        ),
+    )
+}
+
+/** Adds `a + b` clamping at the Int range. Avoids wraparound for values near the boundary. */
+internal fun saturatingAdd(a: Int, b: Int): Int {
+    val r = a.toLong() + b.toLong()
+    return when {
+        r > Int.MAX_VALUE -> Int.MAX_VALUE
+        r < Int.MIN_VALUE -> Int.MIN_VALUE
+        else -> r.toInt()
     }
 }
