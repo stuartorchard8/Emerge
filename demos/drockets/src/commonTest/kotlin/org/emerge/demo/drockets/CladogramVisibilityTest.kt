@@ -31,6 +31,29 @@ class CladogramVisibilityTest {
         assertEquals(setOf(2L, 3L, 4L, 5L, 6L), visible)
     }
 
+    @Test
+    fun livingAndConnectors_excludes_singleChild_dead_ancestors_above_branching_mrca() {
+        val nodes = linkedMapOf<Long, DrocketLineageNode>(
+            10L to node(id = 10L, tick = 1L),
+            11L to node(id = 11L, mother = 10L, tick = 2L),
+            12L to node(id = 12L, mother = 11L, tick = 3L),
+            13L to node(id = 13L, mother = 12L, tick = 4L),
+            14L to node(id = 14L, mother = 12L, tick = 5L),
+        )
+        val lineage = DrocketLineageState(
+            nextLineageId = 15L,
+            nodes = nodes,
+            livingLineageIds = linkedSetOf(13L, 14L),
+            entityToLineageId = emptyMap(),
+        )
+        val layout = CladogramLayout.build(lineage)
+
+        val visible = computeVisibleLineageIds(lineage, layout, CladogramFilterMode.LIVING_AND_CONNECTORS)
+
+        // 12 is the true branching MRCA; 10 and 11 are single-child dead ancestors above it.
+        assertEquals(setOf(12L, 13L, 14L), visible)
+    }
+
     private fun sampleState(): Pair<DrocketLineageState, CladogramLayout> {
         val nodes = linkedMapOf<Long, DrocketLineageNode>(
             1L to node(id = 1L, tick = 1L),

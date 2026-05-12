@@ -289,6 +289,10 @@ actual object GPU {
         gl.drawArrays(gl.LINES, first, count)
     }
 
+    actual fun drawLinesInstanced(first: Int, count: Int, instanceCount: Int) {
+        gl.drawArraysInstanced(gl.LINES, first, count, instanceCount)
+    }
+
     // -- Blending --
 
     actual fun enableBlend() {

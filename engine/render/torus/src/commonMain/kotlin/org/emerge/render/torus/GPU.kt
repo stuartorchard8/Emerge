@@ -62,6 +62,9 @@ expect object GPU {
     /** [count] is the number of vertices (must be even for independent line segments). */
     fun drawLines(first: Int, count: Int)
 
+    /** GL_LINES instanced draw; base mesh uses [count] vertices per instance (typically 2). */
+    fun drawLinesInstanced(first: Int, count: Int, instanceCount: Int)
+
     fun enableBlend()
     fun disableBlend()
     fun setBlendFuncSrcAlphaOneMinusSrcAlpha()

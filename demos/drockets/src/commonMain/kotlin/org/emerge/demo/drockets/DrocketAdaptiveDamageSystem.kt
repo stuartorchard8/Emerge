@@ -21,7 +21,7 @@ object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, Phys
 
     private const val POPULATION_FLOOR = 100
     private const val POPULATION_CAP = 600
-    private val MIN_MAX_HEALTH = Frac(1, 1 shl 18) // at cap
+    private val MIN_MAX_HEALTH = Frac(1, 1 shl 15) // at cap
     private val MAX_MAX_HEALTH = Frac(1, 1) // at/below floor
 
     override fun update(

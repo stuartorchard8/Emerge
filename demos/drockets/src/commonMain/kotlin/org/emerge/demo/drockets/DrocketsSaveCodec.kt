@@ -24,11 +24,7 @@ object DrocketsSaveCodec {
 
     fun encode(snapshot: DrocketsSnapshot): ByteArray {
         val w = ByteWriter()
-        val stateWithoutParticles = snapshot.state.copy(
-            components = snapshot.state.components.update {
-                set(ComponentTable.fromMap(emptyMap<EntityId, ParticleComponent>()))
-            }
-        )
+        val stateWithoutParticles = snapshot.state.withoutParticleEntitiesForPersistence()
         val stateBytes = PhysicsNetCodecs.stateCodec.encode(stateWithoutParticles)
         w.writeInt(FORMAT_VERSION)
         w.writeLong(snapshot.tick.value)
@@ -61,6 +57,18 @@ object DrocketsSaveCodec {
             tick = tick,
             state = physicsState.copy(components = mergedComponents),
             lineage = lineage,
+        )
+    }
+
+    private fun PhysicsState.withoutParticleEntitiesForPersistence(): PhysicsState {
+        val particleEntityIds = components.getTable<ParticleComponent>().keys()
+        if (particleEntityIds.isEmpty()) return this
+        return copy(
+            components = ComponentStore(
+                tables = components.tables.mapValues { (_, table) ->
+                    table.removeAll(particleEntityIds)
+                }
+            )
         )
     }
 

@@ -138,6 +138,8 @@ actual object GPU {
     actual fun drawTrianglesInstanced(first: Int, count: Int, instanceCount: Int) =
         GLES30.glDrawArraysInstanced(GLES30.GL_TRIANGLE_STRIP, first, count, instanceCount)
     actual fun drawLines(first: Int, count: Int) = GLES30.glDrawArrays(GLES30.GL_LINES, first, count)
+    actual fun drawLinesInstanced(first: Int, count: Int, instanceCount: Int) =
+        GLES30.glDrawArraysInstanced(GLES30.GL_LINES, first, count, instanceCount)
 
     actual fun enableBlend() = GLES30.glEnable(GLES30.GL_BLEND)
     actual fun disableBlend() = GLES30.glDisable(GLES30.GL_BLEND)

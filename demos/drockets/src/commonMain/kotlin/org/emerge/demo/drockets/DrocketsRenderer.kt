@@ -92,6 +92,16 @@ class DrocketsRenderer(
 
     private val cladogramLineShader = CladogramLineShader()
     private val cladoLineScratch = FloatArray(CladogramLineShader.CLADO_MAX_FLOATS)
+    private var cladoEdgeEnds = FloatArray(CladogramLineShader.MAX_LINE_INSTANCES * 4)
+    private var cladoEdgeCols = FloatArray(CladogramLineShader.MAX_LINE_INSTANCES * 4)
+
+    private fun ensureCladoEdgeArrays(minSegments: Int) {
+        val need = minSegments * 4
+        if (cladoEdgeEnds.size >= need) return
+        val cap = maxOf(need, cladoEdgeEnds.size * 2)
+        cladoEdgeEnds = FloatArray(cap)
+        cladoEdgeCols = FloatArray(cap)
+    }
 
     @Volatile
     private var showCladogramPanel: Boolean = false
@@ -103,7 +113,9 @@ class DrocketsRenderer(
     private var cladogramLastKeyMs: Float = 0f
     private var cladogramLastFilterMs: Float = 0f
     private var cladogramLastSolveMs: Float = 0f
+    private var cladogramLastProjectMs: Float = 0f
     private var cladogramLastLayoutMs: Float = 0f
+    private var cladogramLastAdjMs: Float = 0f
     private var cladogramLastEdgesMs: Float = 0f
     private var cladogramLastNodesMs: Float = 0f
     private var cladogramLastHighlightMs: Float = 0f
@@ -580,7 +592,7 @@ class DrocketsRenderer(
             lines += sanitizeHudText("$filterLabel (F6)".uppercase())
             if (showCladogramProfiling) {
                 lines += sanitizeHudText(
-                    "CLADO MS K${"%.2f".format(cladogramLastKeyMs)} F${"%.2f".format(cladogramLastFilterMs)} S${"%.2f".format(cladogramLastSolveMs)} T${"%.2f".format(cladogramLastTotalMs)}"
+                    "CLADO MS K${"%.2f".format(cladogramLastKeyMs)} F${"%.2f".format(cladogramLastFilterMs)} S${"%.2f".format(cladogramLastSolveMs)} P${"%.2f".format(cladogramLastProjectMs)} L${"%.2f".format(cladogramLastLayoutMs)} A${"%.2f".format(cladogramLastAdjMs)} E${"%.2f".format(cladogramLastEdgesMs)} N${"%.2f".format(cladogramLastNodesMs)} H${"%.2f".format(cladogramLastHighlightMs)} T${"%.2f".format(cladogramLastTotalMs)}"
                 )
             }
             val sel = selectedLineageId
@@ -671,7 +683,7 @@ class DrocketsRenderer(
 
         val childrenById = HashMap<Long, MutableList<Long>>()
         val parentsById = HashMap<Long, MutableList<Long>>()
-        val edgesStart = TimeSource.Monotonic.markNow()
+        val adjStart = TimeSource.Monotonic.markNow()
         for ((from, to) in layout.edges) {
             if (!panelPositions.containsKey(from) || !panelPositions.containsKey(to)) continue
             childrenById.getOrPut(from) { mutableListOf() }.add(to)
@@ -721,7 +733,11 @@ class DrocketsRenderer(
         val sel = selectedLineageId
         val ancestors = if (sel != null && panelPositions.containsKey(sel)) bfsDistances(sel, parentsById) else emptyMap()
         val descendants = if (sel != null && panelPositions.containsKey(sel)) bfsDistances(sel, childrenById) else emptyMap()
+        val adjMs = adjStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
 
+        ensureCladoEdgeArrays(layout.edges.size)
+        val edgesDrawStart = TimeSource.Monotonic.markNow()
+        var edgeInst = 0
         for ((from, to) in layout.edges) {
             if (!panelPositions.containsKey(from) || !panelPositions.containsKey(to)) continue
             val pf = panelPositions[from] ?: continue
@@ -731,32 +747,50 @@ class DrocketsRenderer(
             // Connect parent-bottom to child-top so edges visually attach to box faces.
             val (aX, aY) = toNdcPanel(fx, fy - nodeR)
             val (bX, bY) = toNdcPanel(tx, ty + nodeR)
-            nFloat = 0
-            pushSeg(aX, aY, bX, bY)
             val ancFrom = ancestors[from]
             val ancTo = ancestors[to]
             val descFrom = descendants[from]
             val descTo = descendants[to]
+            val bi = edgeInst * 4
+            cladoEdgeEnds[bi] = aX
+            cladoEdgeEnds[bi + 1] = aY
+            cladoEdgeEnds[bi + 2] = bX
+            cladoEdgeEnds[bi + 3] = bY
             when {
                 ancFrom != null && ((ancTo != null && ancFrom == ancTo + 1) || (sel == to && ancFrom == 1)) -> {
                     val rgb = ancestorColor(ancFrom)
-                    flushRgba(rgb.first, rgb.second, rgb.third, 0.92f)
+                    cladoEdgeCols[bi] = rgb.first
+                    cladoEdgeCols[bi + 1] = rgb.second
+                    cladoEdgeCols[bi + 2] = rgb.third
+                    cladoEdgeCols[bi + 3] = 0.92f
                 }
                 descTo != null && ((descFrom != null && descTo == descFrom + 1) || (sel == from && descTo == 1)) -> {
                     val rgb = descendantColor(descTo)
-                    flushRgba(rgb.first, rgb.second, rgb.third, 0.92f)
+                    cladoEdgeCols[bi] = rgb.first
+                    cladoEdgeCols[bi + 1] = rgb.second
+                    cladoEdgeCols[bi + 2] = rgb.third
+                    cladoEdgeCols[bi + 3] = 0.92f
+                }
+                living.contains(from) && living.contains(to) -> {
+                    val rgb = bodyRgbFromGenome(lineage.nodes[from]?.genome.orEmpty())
+                    cladoEdgeCols[bi] = rgb.first
+                    cladoEdgeCols[bi + 1] = rgb.second
+                    cladoEdgeCols[bi + 2] = rgb.third
+                    cladoEdgeCols[bi + 3] = 0.40f
                 }
                 else -> {
-                    if (living.contains(from) && living.contains(to)) {
-                        val rgb = bodyRgbFromGenome(lineage.nodes[from]?.genome.orEmpty())
-                        flushRgba(rgb.first, rgb.second, rgb.third, 0.40f)
-                    } else {
-                        flushRgba(0.52f, 0.56f, 0.62f, 0.40f)
-                    }
+                    cladoEdgeCols[bi] = 0.52f
+                    cladoEdgeCols[bi + 1] = 0.56f
+                    cladoEdgeCols[bi + 2] = 0.62f
+                    cladoEdgeCols[bi + 3] = 0.40f
                 }
             }
+            edgeInst++
         }
-        val edgesMs = edgesStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
+        if (edgeInst > 0) {
+            cladogramLineShader.drawLineSegmentsInstanced(cladoEdgeEnds, cladoEdgeCols, edgeInst)
+        }
+        val edgesMs = edgesDrawStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
 
         fun appendDiamond(px: Float, py: Float, r: Float) {
             fun corner(dx: Float, dy: Float): Pair<Float, Float> = toNdcPanel(px + dx, py + dy)
@@ -827,6 +861,7 @@ class DrocketsRenderer(
         cladogramLastFilterMs = layoutResult.filterMs
         cladogramLastSolveMs = layoutResult.solveMs
         cladogramLastLayoutMs = layoutMs
+        cladogramLastAdjMs = adjMs
         cladogramLastEdgesMs = edgesMs
         cladogramLastNodesMs = nodesMs
         cladogramLastHighlightMs = highlightMs
@@ -955,7 +990,9 @@ class DrocketsRenderer(
             cladogramLastSolveMs = solved.solveMs
             solved.positions
         }
+        val projectStart = TimeSource.Monotonic.markNow()
         val projected = projectCladogramLogicalToPanel(logical)
+        cladogramLastProjectMs = projectStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
         return CladogramPanelLayoutResult(
             positions = projected,
             filterMs = cladogramLastFilterMs,
