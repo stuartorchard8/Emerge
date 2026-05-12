@@ -81,6 +81,6 @@ class CladogramVisibilityTest {
             birthTick = tick,
             deathTick = null,
             sex = Sex.FEMALE,
-            genome = emptyMap(),
+            genome = Genome(),
         )
 }

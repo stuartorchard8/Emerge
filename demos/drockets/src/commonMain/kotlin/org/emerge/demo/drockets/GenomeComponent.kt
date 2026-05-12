@@ -2,89 +2,116 @@ package org.emerge.demo.drockets
 
 import kotlin.math.roundToLong
 
-data class GenomeComponent(
-    private val encodedGenes: Map<String, Int> = emptyMap(),
+/**
+ * A drocket's chromosome — a fixed shape of typed integer-encoded genes.
+ *
+ * Each field is a raw uint-mapped Int in the full Int range. Gameplay code reads
+ * the decoded form via [phenotype]; mutation operates on raw values (small int
+ * deltas) so repeated mutation keeps the distribution approximately uniform.
+ *
+ * Stored in the ECS as [GenomeComponent].
+ */
+data class Genome(
+    val aiWalkMinTicks: Int = AI_WALK_MIN_TICKS.encode(120),
+    val aiWalkMaxTicks: Int = AI_WALK_MAX_TICKS.encode(600),
+    val aiChargeTicks: Int = AI_CHARGE_TICKS.encode(18),
+    val aiFuelTicks: Int = AI_FUEL_TICKS.encode(200),
+    val aiSpin: Int = AI_SPIN.encode(Int.MAX_VALUE / 120),
+    val aiThrust: Int = AI_THRUST.encode(Int.MAX_VALUE / (1 shl 18)),
+    val bodyColor: HsvColorGene = HsvColorGene(
+        rawH = BODY_COLOR_H.encode(0),
+        rawS = BODY_COLOR_S.encode(1000),
+        rawV = BODY_COLOR_V.encode(1000),
+    ),
+    val fireColor: HsvColorGene = HsvColorGene(
+        rawH = FIRE_COLOR_H.encode(0),
+        rawS = FIRE_COLOR_S.encode(1000),
+        rawV = FIRE_COLOR_V.encode(1000),
+    ),
 ) {
-    enum class GenomeKey(val wireName: String) {
-        AI_WALK_MIN_TICKS("ai_walk_min_ticks"),
-        AI_WALK_MAX_TICKS("ai_walk_max_ticks"),
-        AI_CHARGE_TICKS("ai_charge_ticks"),
-        AI_FUEL_TICKS("ai_fuel_ticks"),
-        AI_SPIN_RAW("ai_spin_raw"),
-        AI_THRUST_RAW("ai_thrust_raw"),
-        COLOR_H("color_h"),
-        COLOR_S("color_s"),
-        COLOR_V("color_v"),
-        FIRE_COLOR_H("fire_color_h"),
-        FIRE_COLOR_S("fire_color_s"),
-        FIRE_COLOR_V("fire_color_v"),
-    }
-
-    fun decodedOrDefault(key: GenomeKey): Int {
-        val spec = GENE_SPECS[key] ?: return 0
-        return decodeRanged(key, encodedGenes[key.wireName]) ?: spec.fallback
-    }
-
-    fun decodedOrNull(key: GenomeKey): Int? = decodeRanged(key, encodedGenes[key.wireName])
-
-    fun hasEncoded(key: GenomeKey): Boolean = encodedGenes.containsKey(key.wireName)
-    fun hasEncodedRawKey(rawKey: String): Boolean = encodedGenes.containsKey(rawKey)
-
-    /** Encoded gene payload intended for reproduction/mutation logic. */
-    fun encodedGenesForReproduction(): Map<String, Int> = encodedGenes
-
-    /** Encoded gene payload intended for persistence/snapshotting. */
-    fun encodedGenesForPersistence(): Map<String, Int> = encodedGenes
+    fun phenotype(): Phenotype = Phenotype(
+        aiWalkMinTicks = AI_WALK_MIN_TICKS.decode(aiWalkMinTicks),
+        aiWalkMaxTicks = AI_WALK_MAX_TICKS.decode(aiWalkMaxTicks),
+        aiChargeTicks = AI_CHARGE_TICKS.decode(aiChargeTicks),
+        aiFuelTicks = AI_FUEL_TICKS.decode(aiFuelTicks),
+        aiSpin = AI_SPIN.decode(aiSpin),
+        aiThrust = AI_THRUST.decode(aiThrust),
+        bodyColor = HsvColor(
+            h = BODY_COLOR_H.decode(bodyColor.rawH),
+            s = BODY_COLOR_S.decode(bodyColor.rawS),
+            v = BODY_COLOR_V.decode(bodyColor.rawV),
+        ),
+        fireColor = HsvColor(
+            h = FIRE_COLOR_H.decode(fireColor.rawH),
+            s = FIRE_COLOR_S.decode(fireColor.rawS),
+            v = FIRE_COLOR_V.decode(fireColor.rawV),
+        ),
+    )
 
     companion object {
-        private const val GENE_UINT_RANGE = 4294967295.0
-
-        data class GeneSpec(
-            val min: Int,
-            val max: Int,
-            val fallback: Int,
-        )
-
-        val GENE_SPECS: Map<GenomeKey, GeneSpec> = linkedMapOf(
-            GenomeKey.AI_WALK_MIN_TICKS to GeneSpec(min = 1, max = 6_000, fallback = 120),
-            GenomeKey.AI_WALK_MAX_TICKS to GeneSpec(min = 1, max = 6_000, fallback = 600),
-            GenomeKey.AI_CHARGE_TICKS to GeneSpec(min = 1, max = 6_000, fallback = 18),
-            GenomeKey.AI_FUEL_TICKS to GeneSpec(min = 1, max = 400, fallback = 200),
-            GenomeKey.AI_SPIN_RAW to GeneSpec(
-                min = -Int.MAX_VALUE / 64,
-                max = Int.MAX_VALUE / 64,
-                fallback = Int.MAX_VALUE / 120,
-            ),
-            GenomeKey.AI_THRUST_RAW to GeneSpec(
-                min = Int.MAX_VALUE / (1 shl 19),
-                max = Int.MAX_VALUE / (1 shl 17),
-                fallback = Int.MAX_VALUE / (1 shl 18),
-            ),
-            GenomeKey.COLOR_H to GeneSpec(min = 0, max = 360, fallback = 0),
-            GenomeKey.COLOR_S to GeneSpec(min = 0, max = 1000, fallback = 1000),
-            GenomeKey.COLOR_V to GeneSpec(min = 200, max = 1000, fallback = 1000),
-            GenomeKey.FIRE_COLOR_H to GeneSpec(min = 0, max = 360, fallback = 0),
-            GenomeKey.FIRE_COLOR_S to GeneSpec(min = 0, max = 1000, fallback = 1000),
-            GenomeKey.FIRE_COLOR_V to GeneSpec(min = 0, max = 1000, fallback = 1000),
-        )
-
-        fun encodeRanged(key: GenomeKey, decodedValue: Int): Int {
-            val spec = GENE_SPECS[key] ?: error("Unsupported gene key for ranged encoding: $key")
-            val clamped = decodedValue.coerceIn(spec.min, spec.max)
-            val span = (spec.max - spec.min).coerceAtLeast(1)
-            val norm = (clamped - spec.min).toDouble() / span.toDouble()
-            val raw = Int.MIN_VALUE.toLong() + (norm * GENE_UINT_RANGE).roundToLong()
-            return raw.toInt()
-        }
-
-        fun decodeRanged(key: GenomeKey, raw: Int?): Int? {
-            val spec = GENE_SPECS[key] ?: return null
-            raw ?: return null
-            val norm = ((raw.toLong() - Int.MIN_VALUE.toLong()) / GENE_UINT_RANGE).coerceIn(0.0, 1.0)
-            return (spec.min + ((spec.max - spec.min) * norm)).toInt().coerceIn(spec.min, spec.max)
-        }
-
-        fun decodeRanged(key: GenomeKey, encodedGenes: Map<String, Int>): Int? =
-            decodeRanged(key, encodedGenes[key.wireName])
+        val AI_WALK_MIN_TICKS = GeneRange(min = 1, max = 6_000)
+        val AI_WALK_MAX_TICKS = GeneRange(min = 1, max = 6_000)
+        val AI_CHARGE_TICKS = GeneRange(min = 1, max = 6_000)
+        val AI_FUEL_TICKS = GeneRange(min = 1, max = 400)
+        val AI_SPIN = GeneRange(min = -Int.MAX_VALUE / 64, max = Int.MAX_VALUE / 64)
+        val AI_THRUST = GeneRange(min = Int.MAX_VALUE / (1 shl 19), max = Int.MAX_VALUE / (1 shl 17))
+        val BODY_COLOR_H = GeneRange(min = 0, max = 360)
+        val BODY_COLOR_S = GeneRange(min = 0, max = 1000)
+        val BODY_COLOR_V = GeneRange(min = 200, max = 1000)
+        val FIRE_COLOR_H = GeneRange(min = 0, max = 360)
+        val FIRE_COLOR_S = GeneRange(min = 0, max = 1000)
+        val FIRE_COLOR_V = GeneRange(min = 0, max = 1000)
     }
 }
+
+/** Decoded view of a [Genome] — values usable directly by gameplay code. */
+data class Phenotype(
+    val aiWalkMinTicks: Int,
+    val aiWalkMaxTicks: Int,
+    val aiChargeTicks: Int,
+    val aiFuelTicks: Int,
+    val aiSpin: Int,
+    val aiThrust: Int,
+    val bodyColor: HsvColor,
+    val fireColor: HsvColor,
+)
+
+/** Three coupled HSV genes — H, S, V stored as raw uint-mapped Ints. */
+data class HsvColorGene(
+    val rawH: Int,
+    val rawS: Int,
+    val rawV: Int,
+)
+
+/** Decoded HSV with hue in [0, 360] and S, V in [0, 1000]. */
+data class HsvColor(
+    val h: Int,
+    val s: Int,
+    val v: Int,
+)
+
+/**
+ * Maps a raw uint-style Int uniformly to a decoded value in `[min, max]`.
+ *
+ * Mutation adds small integer deltas to raw values; because the raw space is
+ * the full Int range, small deltas correspond to small phenotype shifts.
+ */
+data class GeneRange(val min: Int, val max: Int) {
+    fun encode(decoded: Int): Int {
+        val clamped = decoded.coerceIn(min, max)
+        val span = (max - min).coerceAtLeast(1)
+        val norm = (clamped - min).toDouble() / span.toDouble()
+        return (Int.MIN_VALUE.toLong() + (norm * UINT_RANGE).roundToLong()).toInt()
+    }
+
+    fun decode(raw: Int): Int {
+        val norm = ((raw.toLong() - Int.MIN_VALUE.toLong()) / UINT_RANGE).coerceIn(0.0, 1.0)
+        return (min + ((max - min) * norm)).toInt().coerceIn(min, max)
+    }
+
+    companion object {
+        private const val UINT_RANGE = 4294967295.0
+    }
+}
+
+data class GenomeComponent(val genome: Genome = Genome())

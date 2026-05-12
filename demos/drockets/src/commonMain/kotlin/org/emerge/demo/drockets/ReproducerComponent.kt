@@ -13,7 +13,7 @@ data class ReproducerComponent(
     val maturityAgeMs: Long = 10_000,
     val gestationDuration: Long = 10_000,
     val spawn: ReproducerComponent? = null,
-    val spawnGenome: Map<String, Int>? = null,
+    val spawnGenome: Genome? = null,
     val spawnMotherEntityId: Int? = null,
     val spawnFatherEntityId: Int? = null,
 ) {

@@ -108,22 +108,7 @@ fun spawnDrocket(
         )
     }
     builder.update<GenomeComponent>(entityId) {
-        GenomeComponent(
-            encodedGenes = mapOf(
-                GenomeComponent.GenomeKey.AI_WALK_MIN_TICKS.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.AI_WALK_MIN_TICKS, 120),
-                GenomeComponent.GenomeKey.AI_WALK_MAX_TICKS.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.AI_WALK_MAX_TICKS, 600),
-                GenomeComponent.GenomeKey.AI_CHARGE_TICKS.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.AI_CHARGE_TICKS, 18),
-                GenomeComponent.GenomeKey.AI_FUEL_TICKS.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.AI_FUEL_TICKS, 200),
-                GenomeComponent.GenomeKey.AI_SPIN_RAW.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.AI_SPIN_RAW, Frac(1, 120).raw.toInt()),
-                GenomeComponent.GenomeKey.AI_THRUST_RAW.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.AI_THRUST_RAW, Frac(1, 1024 * 256).raw.toInt()),
-                GenomeComponent.GenomeKey.COLOR_H.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.COLOR_H, ((teamId.value * 137) % 360 + 360) % 360),
-                GenomeComponent.GenomeKey.COLOR_S.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.COLOR_S, 550 + (((teamId.value + 1) * 71) % 380)),
-                GenomeComponent.GenomeKey.COLOR_V.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.COLOR_V, 620 + (((teamId.value + 1) * 59) % 320)),
-                GenomeComponent.GenomeKey.FIRE_COLOR_H.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.FIRE_COLOR_H, (((teamId.value * 137) + 24) % 360 + 360) % 360),
-                GenomeComponent.GenomeKey.FIRE_COLOR_S.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.FIRE_COLOR_S, 820 + (((teamId.value + 1) * 43) % 180)),
-                GenomeComponent.GenomeKey.FIRE_COLOR_V.wireName to GenomeComponent.encodeRanged(GenomeComponent.GenomeKey.FIRE_COLOR_V, 860 + (((teamId.value + 1) * 37) % 140)),
-            )
-        )
+        GenomeComponent(initialGenome(teamId))
     }
     builder.update<LineageSeedComponent>(entityId) { LineageSeedComponent() }
     return entityId
@@ -174,6 +159,23 @@ private fun spawnKnightOnPlanet(
         )
     }
 }
+
+/**
+ * Default-AI-knob genome with team-distinct body and fire colors so different teams
+ * are visually distinguishable from the first tick.
+ */
+private fun initialGenome(teamId: TeamId): Genome = Genome(
+    bodyColor = HsvColorGene(
+        rawH = Genome.BODY_COLOR_H.encode(((teamId.value * 137) % 360 + 360) % 360),
+        rawS = Genome.BODY_COLOR_S.encode(550 + (((teamId.value + 1) * 71) % 380)),
+        rawV = Genome.BODY_COLOR_V.encode(620 + (((teamId.value + 1) * 59) % 320)),
+    ),
+    fireColor = HsvColorGene(
+        rawH = Genome.FIRE_COLOR_H.encode((((teamId.value * 137) + 24) % 360 + 360) % 360),
+        rawS = Genome.FIRE_COLOR_S.encode(820 + (((teamId.value + 1) * 43) % 180)),
+        rawV = Genome.FIRE_COLOR_V.encode(860 + (((teamId.value + 1) * 37) % 140)),
+    ),
+)
 
 val PLANET_RADIUS = Frac(1, 8)
 val PLANET_MASS = 5_000_000u

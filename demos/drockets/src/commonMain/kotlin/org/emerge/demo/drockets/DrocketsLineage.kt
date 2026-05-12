@@ -9,7 +9,7 @@ data class DrocketLineageNode(
     val birthTick: Long,
     val deathTick: Long? = null,
     val sex: Sex,
-    val genome: Map<String, Int>,
+    val genome: Genome,
 )
 
 data class DrocketLineageState(
@@ -42,7 +42,7 @@ fun DrocketLineageState.advanceFromPhysics(
     for ((entityId, seed) in seeds) {
         if (entityToLineage.containsKey(entityId.value)) continue
         val reproducer = reproducers[entityId] ?: continue
-        val genome = genomes[entityId]?.encodedGenesForPersistence() ?: emptyMap()
+        val genome = genomes[entityId]?.genome ?: Genome()
         val motherLineage = seed.motherEntityId?.let(entityToLineage::get)
         val fatherLineage = seed.fatherEntityId?.let(entityToLineage::get)
         val lineageId = nextId
@@ -53,7 +53,7 @@ fun DrocketLineageState.advanceFromPhysics(
             fatherLineageId = fatherLineage,
             birthTick = tick,
             sex = reproducer.sex,
-            genome = LinkedHashMap(genome),
+            genome = genome,
         )
         entityToLineage[entityId.value] = lineageId
         living += lineageId

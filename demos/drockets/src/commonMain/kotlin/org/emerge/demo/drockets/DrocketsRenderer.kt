@@ -313,14 +313,9 @@ class DrocketsRenderer(
                 squash = squash.toFloat(),
             )
             val tintBase = (spriteCount - 1) * 3
-            val tintH = genome?.decodedOrNull(GenomeComponent.GenomeKey.COLOR_H)
-            val tintS = genome?.decodedOrNull(GenomeComponent.GenomeKey.COLOR_S)
-            val tintV = genome?.decodedOrNull(GenomeComponent.GenomeKey.COLOR_V)
-            if (tintH != null && tintS != null && tintV != null) {
-                val hue = tintH.toFloat()
-                val sat = tintS.toFloat() / 1000f
-                val value = tintV.toFloat() / 1000f
-                val rgb = hsvToRgb(hue, sat, value)
+            val bodyColor = genome?.genome?.phenotype()?.bodyColor
+            if (bodyColor != null) {
+                val rgb = hsvToRgb(bodyColor.h.toFloat(), bodyColor.s.toFloat() / 1000f, bodyColor.v.toFloat() / 1000f)
                 spriteTintColors[tintBase] = rgb.first
                 spriteTintColors[tintBase + 1] = rgb.second
                 spriteTintColors[tintBase + 2] = rgb.third
@@ -772,7 +767,7 @@ class DrocketsRenderer(
                     cladoEdgeCols[bi + 3] = 0.92f
                 }
                 living.contains(from) && living.contains(to) -> {
-                    val rgb = bodyRgbFromGenome(lineage.nodes[from]?.genome.orEmpty())
+                    val rgb = bodyRgbFromGenome(lineage.nodes[from]?.genome)
                     cladoEdgeCols[bi] = rgb.first
                     cladoEdgeCols[bi + 1] = rgb.second
                     cladoEdgeCols[bi + 2] = rgb.third
@@ -818,7 +813,7 @@ class DrocketsRenderer(
             if (!living.contains(id)) continue
             nFloat = 0
             appendDiamond(pos.first, pos.second, nodeR)
-            val rgb = bodyRgbFromGenome(lineage.nodes[id]?.genome.orEmpty())
+            val rgb = bodyRgbFromGenome(lineage.nodes[id]?.genome)
             flushRgba(rgb.first, rgb.second, rgb.third, 0.95f)
         }
         val nodesMs = nodesStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
@@ -1273,12 +1268,10 @@ class DrocketsRenderer(
         return CladogramPanelLayoutResult(out, filterMs, solveMs)
     }
 
-    private fun bodyRgbFromGenome(genes: Map<String, Int>): Triple<Float, Float, Float> {
-        if (genes.isEmpty()) return Triple(0.85f, 0.88f, 0.92f)
-        val hue = GenomeComponent.decodeRanged(GenomeComponent.GenomeKey.COLOR_H, genes)?.toFloat() ?: 0f
-        val sat = (GenomeComponent.decodeRanged(GenomeComponent.GenomeKey.COLOR_S, genes)?.toFloat() ?: 1000f) / 1000f
-        val value = (GenomeComponent.decodeRanged(GenomeComponent.GenomeKey.COLOR_V, genes)?.toFloat() ?: 1000f) / 1000f
-        return hsvToRgb(hue, sat, value)
+    private fun bodyRgbFromGenome(genome: Genome?): Triple<Float, Float, Float> {
+        if (genome == null) return Triple(0.85f, 0.88f, 0.92f)
+        val color = genome.phenotype().bodyColor
+        return hsvToRgb(color.h.toFloat(), color.s.toFloat() / 1000f, color.v.toFloat() / 1000f)
     }
 
     private fun drawHudTextLine(
@@ -1381,17 +1374,7 @@ class DrocketsRenderer(
         val genome = state.components.getTable<GenomeComponent>()[entityId] ?: return emptyList()
         val reproducer = state.components.getTable<ReproducerComponent>()[entityId]
 
-        val minWalk = genome.decodedOrDefault(GenomeComponent.GenomeKey.AI_WALK_MIN_TICKS)
-        val maxWalk = genome.decodedOrDefault(GenomeComponent.GenomeKey.AI_WALK_MAX_TICKS)
-        val charge = genome.decodedOrDefault(GenomeComponent.GenomeKey.AI_CHARGE_TICKS)
-        val fuel = genome.decodedOrDefault(GenomeComponent.GenomeKey.AI_FUEL_TICKS)
-        val thrust = genome.decodedOrDefault(GenomeComponent.GenomeKey.AI_THRUST_RAW)
-        val bodyH = genome.decodedOrDefault(GenomeComponent.GenomeKey.COLOR_H)
-        val bodyS = genome.decodedOrDefault(GenomeComponent.GenomeKey.COLOR_S)
-        val bodyV = genome.decodedOrDefault(GenomeComponent.GenomeKey.COLOR_V)
-        val fireH = genome.decodedOrDefault(GenomeComponent.GenomeKey.FIRE_COLOR_H)
-        val fireS = genome.decodedOrDefault(GenomeComponent.GenomeKey.FIRE_COLOR_S)
-        val fireV = genome.decodedOrDefault(GenomeComponent.GenomeKey.FIRE_COLOR_V)
+        val p = genome.genome.phenotype()
         val sex = reproducer?.sex?.name ?: "NA"
         val nowMs = Clock.System.now().toEpochMilliseconds()
         val pregnancy = when {
@@ -1403,11 +1386,11 @@ class DrocketsRenderer(
         return listOf(
             "ID ${entityId.value} ${ds.phase}",
             "SEX ${sex} PREG ${pregnancy}",
-            "WALK ${minWalk}-${maxWalk}",
-            "CHARGE ${charge}  FUEL ${fuel}",
-            "THRUST ${thrust}",
-            "BODY HSV ${bodyH} ${bodyS} ${bodyV}",
-            "FIRE HSV ${fireH} ${fireS} ${fireV}",
+            "WALK ${p.aiWalkMinTicks}-${p.aiWalkMaxTicks}",
+            "CHARGE ${p.aiChargeTicks}  FUEL ${p.aiFuelTicks}",
+            "THRUST ${p.aiThrust}",
+            "BODY HSV ${p.bodyColor.h} ${p.bodyColor.s} ${p.bodyColor.v}",
+            "FIRE HSV ${p.fireColor.h} ${p.fireColor.s} ${p.fireColor.v}",
         )
     }
 
@@ -1419,13 +1402,8 @@ class DrocketsRenderer(
             val teamId = state.teams[entityId]?.teamId?.value ?: continue
             if (out.containsKey(teamId)) continue
             val genome = genomes[entityId] ?: continue
-            val h = genome.decodedOrNull(GenomeComponent.GenomeKey.FIRE_COLOR_H) ?: continue
-            val s = genome.decodedOrNull(GenomeComponent.GenomeKey.FIRE_COLOR_S) ?: continue
-            val v = genome.decodedOrNull(GenomeComponent.GenomeKey.FIRE_COLOR_V) ?: continue
-            val hue = h.toFloat()
-            val sat = s.toFloat() / 1000f
-            val value = v.toFloat() / 1000f
-            out[teamId] = hsvToRgb(hue, sat, value)
+            val fire = genome.genome.phenotype().fireColor
+            out[teamId] = hsvToRgb(fire.h.toFloat(), fire.s.toFloat() / 1000f, fire.v.toFloat() / 1000f)
         }
         return out
     }

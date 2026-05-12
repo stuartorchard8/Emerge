@@ -201,18 +201,17 @@ object DrocketAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     )
 
     private fun tuningFor(genome: GenomeComponent?): AiTuning {
-        val minWalk = genome?.decodedOrDefault(GenomeComponent.GenomeKey.AI_WALK_MIN_TICKS) ?: MIN_WALK_TICKS
-        val maxWalkRaw = genome?.decodedOrDefault(GenomeComponent.GenomeKey.AI_WALK_MAX_TICKS) ?: MAX_WALK_TICKS
-        val maxWalk = maxWalkRaw.coerceAtLeast(minWalk + 1)
-        val spinRaw = genome?.decodedOrDefault(GenomeComponent.GenomeKey.AI_SPIN_RAW) ?: CHARGE_SPIN_SPEED.raw.toInt()
-        val thrustRaw = genome?.decodedOrDefault(GenomeComponent.GenomeKey.AI_THRUST_RAW) ?: THRUST_STRENGTH.raw.toInt()
+        val p = genome?.genome?.phenotype()
+        val minWalk = p?.aiWalkMinTicks ?: MIN_WALK_TICKS
+        // maxWalk must exceed minWalk so the AI's walk-duration RNG range is non-empty.
+        val maxWalk = (p?.aiWalkMaxTicks ?: MAX_WALK_TICKS).coerceAtLeast(minWalk + 1)
         return AiTuning(
-            chargeTicks = genome?.decodedOrDefault(GenomeComponent.GenomeKey.AI_CHARGE_TICKS) ?: CHARGE_TICKS,
-            fuelTicks = genome?.decodedOrDefault(GenomeComponent.GenomeKey.AI_FUEL_TICKS) ?: FUEL_TICKS,
+            chargeTicks = p?.aiChargeTicks ?: CHARGE_TICKS,
+            fuelTicks = p?.aiFuelTicks ?: FUEL_TICKS,
             minWalkTicks = minWalk,
             maxWalkTicks = maxWalk,
-            chargeSpinSpeed = Frac(spinRaw.toLong()),
-            thrustStrength = Frac(thrustRaw.toLong()),
+            chargeSpinSpeed = Frac((p?.aiSpin ?: CHARGE_SPIN_SPEED.raw.toInt()).toLong()),
+            thrustStrength = Frac((p?.aiThrust ?: THRUST_STRENGTH.raw.toInt()).toLong()),
         )
     }
 

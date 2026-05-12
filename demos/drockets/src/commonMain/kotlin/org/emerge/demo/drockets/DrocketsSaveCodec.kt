@@ -17,10 +17,7 @@ data class DrocketsSnapshot(
 )
 
 object DrocketsSaveCodec {
-    private const val FORMAT_VERSION = 2
-    private const val MAX_GENE_COUNT_PER_ENTITY = 4096
-    private const val MAX_TOTAL_GENES = 200_000
-    private const val MAX_KEY_LENGTH = 256
+    private const val FORMAT_VERSION = 3
 
     fun encode(snapshot: DrocketsSnapshot): ByteArray {
         val w = ByteWriter()
@@ -157,7 +154,11 @@ object DrocketsSaveCodec {
         if (hasSpawn) {
             encodeReproducerComponent(w, component.spawn!!)
         }
-        encodeGeneMap(w, component.spawnGenome)
+        val hasSpawnGenome = component.spawnGenome != null
+        w.writeInt(if (hasSpawnGenome) 1 else 0)
+        if (hasSpawnGenome) {
+            encodeGenome(w, component.spawnGenome!!)
+        }
         w.writeInt(component.spawnMotherEntityId ?: Int.MIN_VALUE)
         w.writeInt(component.spawnFatherEntityId ?: Int.MIN_VALUE)
     }
@@ -170,7 +171,8 @@ object DrocketsSaveCodec {
         val gestationDuration = c.readLong()
         val hasSpawn = c.readInt() != 0
         val spawn = if (hasSpawn) decodeReproducerComponent(c) else null
-        val spawnGenome = decodeGeneMap(c)
+        val hasSpawnGenome = c.readInt() != 0
+        val spawnGenome = if (hasSpawnGenome) decodeGenome(c) else null
         val spawnMotherEntityIdRaw = c.readInt()
         val spawnFatherEntityIdRaw = c.readInt()
         return ReproducerComponent(
@@ -284,22 +286,9 @@ object DrocketsSaveCodec {
         entries: Map<EntityId, GenomeComponent>,
     ) {
         w.writeInt(entries.size)
-        var totalGeneCount = 0
         for ((entityId, component) in entries) {
-            val genes = component.encodedGenesForPersistence()
             w.writeInt(entityId.value)
-            w.writeInt(genes.size)
-            require(genes.size <= MAX_GENE_COUNT_PER_ENTITY) {
-                "Too many genes for entity ${entityId.value}: ${genes.size}"
-            }
-            totalGeneCount += genes.size
-            require(totalGeneCount <= MAX_TOTAL_GENES) {
-                "Too many total genes in snapshot: $totalGeneCount"
-            }
-            for ((key, value) in genes) {
-                writeAsciiString(w, key)
-                w.writeInt(value)
-            }
+            encodeGenome(w, component.genome)
         }
     }
 
@@ -307,69 +296,46 @@ object DrocketsSaveCodec {
         val count = c.readInt()
         require(count >= 0) { "Invalid GenomeComponent count: $count" }
         val out = LinkedHashMap<EntityId, GenomeComponent>(count)
-        var totalGeneCount = 0
         repeat(count) {
             val entityId = EntityId(c.readInt())
-            val geneCount = c.readInt()
-            require(geneCount in 0..MAX_GENE_COUNT_PER_ENTITY) {
-                "Invalid gene count for entity ${entityId.value}: $geneCount"
-            }
-            totalGeneCount += geneCount
-            require(totalGeneCount <= MAX_TOTAL_GENES) {
-                "Too many total genes in snapshot: $totalGeneCount"
-            }
-            val genes = LinkedHashMap<String, Int>(geneCount)
-            repeat(geneCount) {
-                val key = readAsciiString(c)
-                val value = c.readInt()
-                genes[key] = value
-            }
-            out[entityId] = GenomeComponent(encodedGenes = genes)
+            out[entityId] = GenomeComponent(decodeGenome(c))
         }
         return out
     }
 
-    private fun writeAsciiString(w: ByteWriter, value: String) {
-        require(value.length <= MAX_KEY_LENGTH) {
-            "Gene key too long: ${value.length} > $MAX_KEY_LENGTH"
-        }
-        val bytes = value.encodeToByteArray()
-        require(bytes.all { it >= 0 }) {
-            "Gene key must be ASCII-safe: $value"
-        }
-        w.writeInt(bytes.size)
-        w.writeBytes(bytes)
+    private fun encodeGenome(w: ByteWriter, g: Genome) {
+        w.writeInt(g.aiWalkMinTicks)
+        w.writeInt(g.aiWalkMaxTicks)
+        w.writeInt(g.aiChargeTicks)
+        w.writeInt(g.aiFuelTicks)
+        w.writeInt(g.aiSpin)
+        w.writeInt(g.aiThrust)
+        encodeHsvColorGene(w, g.bodyColor)
+        encodeHsvColorGene(w, g.fireColor)
     }
 
-    private fun encodeGeneMap(w: ByteWriter, genes: Map<String, Int>?) {
-        if (genes == null) {
-            w.writeInt(-1)
-            return
-        }
-        require(genes.size <= MAX_GENE_COUNT_PER_ENTITY) {
-            "Too many spawn genes: ${genes.size}"
-        }
-        w.writeInt(genes.size)
-        for ((key, value) in genes) {
-            writeAsciiString(w, key)
-            w.writeInt(value)
-        }
+    private fun decodeGenome(c: ByteCursor): Genome = Genome(
+        aiWalkMinTicks = c.readInt(),
+        aiWalkMaxTicks = c.readInt(),
+        aiChargeTicks = c.readInt(),
+        aiFuelTicks = c.readInt(),
+        aiSpin = c.readInt(),
+        aiThrust = c.readInt(),
+        bodyColor = decodeHsvColorGene(c),
+        fireColor = decodeHsvColorGene(c),
+    )
+
+    private fun encodeHsvColorGene(w: ByteWriter, gene: HsvColorGene) {
+        w.writeInt(gene.rawH)
+        w.writeInt(gene.rawS)
+        w.writeInt(gene.rawV)
     }
 
-    private fun decodeGeneMap(c: ByteCursor): Map<String, Int>? {
-        val count = c.readInt()
-        if (count < 0) return null
-        require(count <= MAX_GENE_COUNT_PER_ENTITY) {
-            "Invalid spawn gene count: $count"
-        }
-        val genes = LinkedHashMap<String, Int>(count)
-        repeat(count) {
-            val key = readAsciiString(c)
-            val value = c.readInt()
-            genes[key] = value
-        }
-        return genes
-    }
+    private fun decodeHsvColorGene(c: ByteCursor): HsvColorGene = HsvColorGene(
+        rawH = c.readInt(),
+        rawS = c.readInt(),
+        rawV = c.readInt(),
+    )
 
     private fun encodeLineageState(w: ByteWriter, lineage: DrocketLineageState) {
         w.writeLong(lineage.nextLineageId)
@@ -381,7 +347,7 @@ object DrocketsSaveCodec {
             w.writeLong(node.birthTick)
             w.writeLong(node.deathTick ?: Long.MIN_VALUE)
             w.writeInt(node.sex.ordinal)
-            encodeGeneMapRequired(w, node.genome)
+            encodeGenome(w, node.genome)
         }
         w.writeInt(lineage.livingLineageIds.size)
         for (id in lineage.livingLineageIds) {
@@ -407,7 +373,7 @@ object DrocketsSaveCodec {
             val deathRaw = c.readLong()
             val sexOrdinal = c.readInt()
             val sex = Sex.entries.getOrNull(sexOrdinal) ?: error("Invalid Sex ordinal in lineage node: $sexOrdinal")
-            val genome = decodeGeneMapRequired(c)
+            val genome = decodeGenome(c)
             nodes[id] = DrocketLineageNode(
                 lineageId = id,
                 motherLineageId = if (motherRaw == Long.MIN_VALUE) null else motherRaw,
@@ -438,36 +404,4 @@ object DrocketsSaveCodec {
         )
     }
 
-    private fun encodeGeneMapRequired(w: ByteWriter, genes: Map<String, Int>) {
-        require(genes.size <= MAX_GENE_COUNT_PER_ENTITY) {
-            "Too many genes: ${genes.size}"
-        }
-        w.writeInt(genes.size)
-        for ((key, value) in genes) {
-            writeAsciiString(w, key)
-            w.writeInt(value)
-        }
-    }
-
-    private fun decodeGeneMapRequired(c: ByteCursor): Map<String, Int> {
-        val count = c.readInt()
-        require(count in 0..MAX_GENE_COUNT_PER_ENTITY) { "Invalid required gene map count: $count" }
-        val genes = LinkedHashMap<String, Int>(count)
-        repeat(count) {
-            val key = readAsciiString(c)
-            val value = c.readInt()
-            genes[key] = value
-        }
-        return genes
-    }
-
-    private fun readAsciiString(c: ByteCursor): String {
-        val len = c.readInt()
-        require(len in 0..MAX_KEY_LENGTH) { "Invalid string length: $len" }
-        val bytes = c.readBytes(len)
-        require(bytes.all { it >= 0 }) {
-            "Non-ASCII string payload encountered"
-        }
-        return bytes.decodeToString()
-    }
 }

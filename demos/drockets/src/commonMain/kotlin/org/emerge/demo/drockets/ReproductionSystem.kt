@@ -21,185 +21,149 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
         val reproducers = builder.entries<ReproducerComponent>()
         val nowMs = Clock.System.now().toEpochMilliseconds()
         for ((entityId, reproducer) in reproducers) {
-            if (reproducer.sex == Sex.FEMALE && reproducer.isMature(nowMs)) {
-                val spawn = reproducer.spawn
-                if (spawn != null && spawn.birthdayMs <= nowMs) {
-                    // If landed, eject spawn
-                    val landingComponent = builder.getComponent<LandingAttachmentComponent>(entityId) ?: continue
-                    val planetMotion = builder.getComponent<MotionComponent>(landingComponent.parentEntityId) ?: continue
-                    val planetTransform = builder.getComponent<TransformComponent>(landingComponent.parentEntityId) ?: continue
-                    val transformComponent = builder.getComponent<TransformComponent>(entityId) ?: continue
-                    val teamComponent = builder.getComponent<TeamComponent>(entityId) ?: continue
-                    val parentGenome = builder.getComponent<GenomeComponent>(entityId)
-                    val planetOffset = transformComponent.pos - planetTransform.pos
-                    val planetNorm = planetOffset.norm
-                    val planetDist = planetOffset.len
-                    val childEntityId = spawnDrocket(
-                        builder,
-                        transformComponent.pos,
-                        planetMotion.surfaceVelocityAtOffset(planetNorm, planetDist),
-                        transformComponent.ang,
-                        teamComponent.teamId,
-                        spawn.sex,
-                    )
-                    val storedSpawnGenome = reproducer.spawnGenome
-                    if (storedSpawnGenome != null) {
-                        val childGenome = GenomeComponent(encodedGenes = storedSpawnGenome)
-                        builder.update<GenomeComponent>(childEntityId) { childGenome }
-                    } else if (parentGenome != null) {
-                        // Backward-compatible fallback for already-pregnant entities without stored spawn genome.
-                        val childGenome = mutateGenome(parentGenome.encodedGenesForReproduction(), builder.nextRandomInt())
-                        builder.update<GenomeComponent>(childEntityId) { GenomeComponent(childGenome) }
-                    }
-                    builder.update<LineageSeedComponent>(childEntityId) {
-                        LineageSeedComponent(
-                            motherEntityId = reproducer.spawnMotherEntityId,
-                            fatherEntityId = reproducer.spawnFatherEntityId,
-                        )
-                    }
-                    val updated = reproducer.copy(
-                        spawn = null,
-                        spawnGenome = null,
-                        spawnMotherEntityId = null,
-                        spawnFatherEntityId = null,
-                    )
-                    builder.update<ReproducerComponent>(entityId) { updated }
-                } else if (builder.entries<DrocketStateComponent>().size < POPULATION_CAP) {
-                    // Go through contacts to determine whether contact with a male reproducer has occurred
-                    val contacts = builder.contacts.filter { it.aId == entityId || it.bId == entityId }
-                    for (contact in contacts) {
-                        val otherId = if (contact.aId != entityId) contact.aId else contact.bId
-                        val otherReproducer = reproducers[otherId] ?: continue
-                        if (otherReproducer.sex == Sex.MALE && otherReproducer.isMature(nowMs)) {
-                            val motherGenome = builder.getComponent<GenomeComponent>(entityId)
-                            val fatherGenome = builder.getComponent<GenomeComponent>(otherId)
-                            val childSex = if (builder.nextRandomInt()%2 == 0) Sex.FEMALE else Sex.MALE
-                            val childGenome = mixParentGenomes(
-                                mother = motherGenome,
-                                father = fatherGenome,
-                                childSex = childSex,
-                                randomSeed = builder.nextRandomInt(),
-                            )
-                            val updated = reproducer.copy(
-                                spawn = ReproducerComponent(
-                                    birthdayMs = nowMs + reproducer.gestationDuration,
-                                    sex = childSex
-                                ),
-                                spawnGenome = childGenome,
-                                spawnMotherEntityId = entityId.value,
-                                spawnFatherEntityId = otherId.value,
-                            )
-                            builder.update<ReproducerComponent>(entityId) { updated }
-                            return
-                        }
-                    }
-                }
+            if (reproducer.sex != Sex.FEMALE || !reproducer.isMature(nowMs)) continue
+            val spawn = reproducer.spawn
+            if (spawn != null && spawn.birthdayMs <= nowMs) {
+                birthSpawn(builder, entityId, reproducer, spawn)
+            } else if (spawn == null && builder.entries<DrocketStateComponent>().size < POPULATION_CAP) {
+                tryConceiveOnContact(builder, entityId, reproducer, nowMs)
             }
         }
     }
 
-    private fun mutateGenome(parentGenes: Map<String, Int>, random: Int): Map<String, Int> {
-        if (parentGenes.isEmpty()) return parentGenes
-        val updated = LinkedHashMap(parentGenes)
-        val keys = updated.keys.toList()
-        for (key in keys) {
-            val delta = (random ushr 8) - (1 shl 7)
+    private fun birthSpawn(
+        builder: PhysicsBuilder,
+        motherEntityId: org.emerge.sim.core.EntityId,
+        reproducer: ReproducerComponent,
+        spawn: ReproducerComponent,
+    ) {
+        val landingComponent = builder.getComponent<LandingAttachmentComponent>(motherEntityId) ?: return
+        val planetMotion = builder.getComponent<MotionComponent>(landingComponent.parentEntityId) ?: return
+        val planetTransform = builder.getComponent<TransformComponent>(landingComponent.parentEntityId) ?: return
+        val motherTransform = builder.getComponent<TransformComponent>(motherEntityId) ?: return
+        val teamComponent = builder.getComponent<TeamComponent>(motherEntityId) ?: return
 
-            if (key in BODY_COLOR_KEYS) {
-                mutateColorGroup(updated, BODY_COLOR_KEYS, delta)
-            } else if (key in FIRE_COLOR_KEYS) {
-                mutateColorGroup(updated, FIRE_COLOR_KEYS, delta)
-            } else {
-                val base = updated[key] ?: 0
-                updated[key] = base + delta
-            }
+        val planetOffset = motherTransform.pos - planetTransform.pos
+        val childEntityId = spawnDrocket(
+            builder,
+            motherTransform.pos,
+            planetMotion.surfaceVelocityAtOffset(planetOffset.norm, planetOffset.len),
+            motherTransform.ang,
+            teamComponent.teamId,
+            spawn.sex,
+        )
+        reproducer.spawnGenome?.let { childGenome ->
+            builder.update<GenomeComponent>(childEntityId) { GenomeComponent(childGenome) }
         }
-        return updated
+        builder.update<LineageSeedComponent>(childEntityId) {
+            LineageSeedComponent(
+                motherEntityId = reproducer.spawnMotherEntityId,
+                fatherEntityId = reproducer.spawnFatherEntityId,
+            )
+        }
+        builder.update<ReproducerComponent>(motherEntityId) {
+            reproducer.copy(
+                spawn = null,
+                spawnGenome = null,
+                spawnMotherEntityId = null,
+                spawnFatherEntityId = null,
+            )
+        }
     }
 
+    private fun tryConceiveOnContact(
+        builder: PhysicsBuilder,
+        motherEntityId: org.emerge.sim.core.EntityId,
+        reproducer: ReproducerComponent,
+        nowMs: Long,
+    ) {
+        val reproducers = builder.entries<ReproducerComponent>()
+        for (contact in builder.contacts) {
+            if (contact.aId != motherEntityId && contact.bId != motherEntityId) continue
+            val fatherId = if (contact.aId != motherEntityId) contact.aId else contact.bId
+            val fatherReproducer = reproducers[fatherId] ?: continue
+            if (fatherReproducer.sex != Sex.MALE || !fatherReproducer.isMature(nowMs)) continue
+
+            val motherGenome = builder.getComponent<GenomeComponent>(motherEntityId)?.genome
+            val fatherGenome = builder.getComponent<GenomeComponent>(fatherId)?.genome
+            val childSex = if (builder.nextRandomInt() % 2 == 0) Sex.FEMALE else Sex.MALE
+            val childGenome = mixParentGenomes(
+                mother = motherGenome,
+                father = fatherGenome,
+                childSex = childSex,
+                nextRandom = { builder.nextRandomInt() },
+            )
+            builder.update<ReproducerComponent>(motherEntityId) {
+                reproducer.copy(
+                    spawn = ReproducerComponent(
+                        birthdayMs = nowMs + reproducer.gestationDuration,
+                        sex = childSex,
+                    ),
+                    spawnGenome = childGenome,
+                    spawnMotherEntityId = motherEntityId.value,
+                    spawnFatherEntityId = fatherId.value,
+                )
+            }
+            return
+        }
+    }
+
+    /**
+     * Per-gene crossover with sex-linked body color (males inherit father's, females mother's)
+     * and coin-flip fire color. Single-parent case copies that parent's genes unchanged before
+     * mutation. Final step mutates each gene independently.
+     */
     private fun mixParentGenomes(
-        mother: GenomeComponent?,
-        father: GenomeComponent?,
+        mother: Genome?,
+        father: Genome?,
         childSex: Sex,
-        randomSeed: Int,
-    ): Map<String, Int>? {
-        val motherGenes = mother?.encodedGenesForReproduction() ?: emptyMap()
-        val fatherGenes = father?.encodedGenesForReproduction() ?: emptyMap()
-        if (motherGenes.isEmpty() && fatherGenes.isEmpty()) return null
+        nextRandom: () -> Int,
+    ): Genome? {
+        if (mother == null && father == null) return null
+        val m = mother ?: father!!
+        val f = father ?: mother!!
+        fun coin(): Boolean = (nextRandom() and 1) == 0
 
-        val keys = LinkedHashSet<String>()
-        keys.addAll(motherGenes.keys)
-        keys.addAll(fatherGenes.keys)
-        val mixed = LinkedHashMap<String, Int>(keys.size)
-        var step = randomSeed
+        val bodyParent = if (childSex == Sex.MALE) f else m
+        val fireParent = if (coin()) m else f
 
-        // Body color lineage: male follows father line, female follows mother line.
-        val bodySource = if (childSex == Sex.MALE) {
-            fatherGenes.ifEmpty { motherGenes }
-        } else {
-            motherGenes.ifEmpty { fatherGenes }
-        }
-        copyColorTriplet(bodySource, mixed, BODY_COLOR_KEYS)
-
-        // Fire color lineage: can come from either parent, but as one coupled RGB triplet.
-        step = step * 1664525 + 1013904223
-        val fireSource = if ((step and 1) == 0) {
-            if (motherGenes.isNotEmpty()) motherGenes else fatherGenes
-        } else {
-            if (fatherGenes.isNotEmpty()) fatherGenes else motherGenes
-        }
-        copyColorTriplet(fireSource, mixed, FIRE_COLOR_KEYS)
-
-        for (key in keys) {
-            if (key in BODY_COLOR_KEYS || key in FIRE_COLOR_KEYS) continue
-            step = step * 1664525 + 1013904223
-            val takeMother = (step and 1) == 0
-            val motherValue = motherGenes[key]
-            val fatherValue = fatherGenes[key]
-            val value = when {
-                motherValue != null && fatherValue != null -> if (takeMother) motherValue else fatherValue
-                motherValue != null -> motherValue
-                fatherValue != null -> fatherValue
-                else -> continue
-            }
-            mixed[key] = value
-        }
-
-        if (mixed.isEmpty()) return null
-        return mutateGenome(mixed, step)
+        return Genome(
+            aiWalkMinTicks = if (coin()) m.aiWalkMinTicks else f.aiWalkMinTicks,
+            aiWalkMaxTicks = if (coin()) m.aiWalkMaxTicks else f.aiWalkMaxTicks,
+            aiChargeTicks = if (coin()) m.aiChargeTicks else f.aiChargeTicks,
+            aiFuelTicks = if (coin()) m.aiFuelTicks else f.aiFuelTicks,
+            aiSpin = if (coin()) m.aiSpin else f.aiSpin,
+            aiThrust = if (coin()) m.aiThrust else f.aiThrust,
+            bodyColor = bodyParent.bodyColor,
+            fireColor = fireParent.fireColor,
+        ).mutated(nextRandom)
     }
 
-    private fun mutateColorGroup(
-        genes: MutableMap<String, Int>,
-        keys: List<String>,
-        delta: Int,
-    ) {
-        for (k in keys) {
-            val base = genes[k] ?: continue
-            genes[k] = base + delta
-        }
+    /**
+     * Adds an independent small delta (approximately [-128, 127]) to every gene's raw value.
+     * Because raw values cover the full Int range, small deltas correspond to small phenotype
+     * shifts; this keeps mutation behaviour roughly uniform across genes regardless of their
+     * decoded range.
+     */
+    private fun Genome.mutated(nextRandom: () -> Int): Genome {
+        fun delta(): Int = (nextRandom() ushr 8) - (1 shl 7)
+        return copy(
+            aiWalkMinTicks = aiWalkMinTicks + delta(),
+            aiWalkMaxTicks = aiWalkMaxTicks + delta(),
+            aiChargeTicks = aiChargeTicks + delta(),
+            aiFuelTicks = aiFuelTicks + delta(),
+            aiSpin = aiSpin + delta(),
+            aiThrust = aiThrust + delta(),
+            bodyColor = bodyColor.copy(
+                rawH = bodyColor.rawH + delta(),
+                rawS = bodyColor.rawS + delta(),
+                rawV = bodyColor.rawV + delta(),
+            ),
+            fireColor = fireColor.copy(
+                rawH = fireColor.rawH + delta(),
+                rawS = fireColor.rawS + delta(),
+                rawV = fireColor.rawV + delta(),
+            ),
+        )
     }
-
-    private fun copyColorTriplet(
-        source: Map<String, Int>,
-        target: MutableMap<String, Int>,
-        keys: List<String>,
-    ) {
-        if (keys.all { source.containsKey(it) }) {
-            for (k in keys) {
-                target[k] = source[k] ?: 0
-            }
-        }
-    }
-
-    private val BODY_COLOR_KEYS = listOf(
-        GenomeComponent.GenomeKey.COLOR_H.wireName,
-        GenomeComponent.GenomeKey.COLOR_S.wireName,
-        GenomeComponent.GenomeKey.COLOR_V.wireName,
-    )
-    private val FIRE_COLOR_KEYS = listOf(
-        GenomeComponent.GenomeKey.FIRE_COLOR_H.wireName,
-        GenomeComponent.GenomeKey.FIRE_COLOR_S.wireName,
-        GenomeComponent.GenomeKey.FIRE_COLOR_V.wireName,
-    )
 }
