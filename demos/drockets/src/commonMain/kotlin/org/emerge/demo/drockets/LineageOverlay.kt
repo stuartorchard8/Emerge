@@ -90,7 +90,7 @@ class LineageOverlay {
         filter = when (filter) {
             CladogramFilterMode.ALL -> CladogramFilterMode.LIVING_ONLY
             CladogramFilterMode.LIVING_ONLY -> CladogramFilterMode.LIVING_AND_CONNECTORS
-            CladogramFilterMode.LIVING_AND_CONNECTORS -> CladogramFilterMode.LIVING_STEINER
+            CladogramFilterMode.LIVING_AND_CONNECTORS -> CladogramFilterMode.LIVING_PAIRWISE_MRCA
             else -> CladogramFilterMode.ALL
         }
         invalidateLayoutCache()
@@ -177,7 +177,7 @@ class LineageOverlay {
             CladogramFilterMode.ALL -> "FILTER ALL (F8)"
             CladogramFilterMode.LIVING_ONLY -> "FILTER LIVING ONLY (F8)"
             CladogramFilterMode.LIVING_AND_CONNECTORS -> "FILTER MRCA-WALK (F8)"
-            CladogramFilterMode.LIVING_STEINER -> "FILTER STEINER (F8)"
+            CladogramFilterMode.LIVING_PAIRWISE_MRCA -> "FILTER ALL-PAIRS MRCA (F8)"
             else -> "FILTER $filter (F8)"
         }
         // Hover takes priority over selection for the active read-out — it's the more

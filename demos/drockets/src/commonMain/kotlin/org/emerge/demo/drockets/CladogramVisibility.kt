@@ -16,20 +16,27 @@ enum class CladogramFilterMode {
     LIVING_AND_CONNECTORS,
 
     /**
-     * Strict Steiner-subtree of the living set. A node is included iff:
-     *   - it is itself living, OR
-     *   - removing it would disconnect some pair of living individuals.
+     * Union of pair-wise MRCA paths over the living set. For every pair of living
+     * individuals (L_i, L_j), finds their MRCA and the shortest path between them through
+     * the visible parent edges; the visible subgraph is the union of all such paths plus
+     * every living node.
      *
-     * Equivalently (for our 2-parent DAG): it is living, OR it has ≥2 child-branches each
-     * containing a living descendant (a branching ancestor / LCA), OR it has at least one
-     * living descendant in its subtree AND at least one living elsewhere in the same
-     * weakly-connected component (it's on a path between in-subtree and out-of-subtree
-     * living).
+     * Properties:
+     *   - **Guarantees connectivity within each weakly-connected component.** Every pair
+     *     of living in the same component has a path between them in the result.
+     *   - **Tighter than strict Steiner on a multi-parent DAG.** When a child has two
+     *     parents that both lead to common ancestors, only one parent's path is included
+     *     (whichever the BFS reached the MRCA through first); the redundant parent isn't
+     *     pulled in. On a strict tree (single parent everywhere) this is equivalent to
+     *     the Steiner subtree.
+     *   - **Bounded above by the per-component all-living-MRCA.** Nothing above the
+     *     deepest common ancestor of all component-living is included.
      *
-     * Tends to be a tighter view than [LIVING_AND_CONNECTORS]: long sibling branches with
-     * only one living descendant don't pull in their ancestors past the closest LCA.
+     * Cost: O(L × (V+E)) for per-living BFS-up + O(L²) for pairwise intersections, where
+     * L is the living count, V/E are the visible-node and visible-edge counts. For L≈200
+     * this is well under a frame budget, and the consuming renderer caches the result.
      */
-    LIVING_STEINER,
+    LIVING_PAIRWISE_MRCA,
 }
 
 fun computeVisibleLineageIds(
@@ -39,7 +46,7 @@ fun computeVisibleLineageIds(
 ): Set<Long> {
     val allIds = layout.depthById.keys
     return when (filterMode) {
-        CladogramFilterMode.LIVING_STEINER -> computeSteinerVisibleIds(lineage, layout)
+        CladogramFilterMode.LIVING_PAIRWISE_MRCA -> computePairwiseMrcaUnionVisibleIds(lineage, layout)
         CladogramFilterMode.ALL -> allIds.toSet()
         CladogramFilterMode.LIVING_ONLY -> allIds.filterTo(LinkedHashSet()) { lineage.livingLineageIds.contains(it) }
         CladogramFilterMode.LIVING_AND_PARENTS -> {
@@ -177,116 +184,79 @@ fun computeVisibleLineageIds(
 }
 
 /**
- * Strict Steiner-subtree of the living set on the lineage DAG. See [CladogramFilterMode.LIVING_STEINER]
- * for the inclusion rule.
+ * Union of pair-wise MRCA paths over the living set. See [CladogramFilterMode.LIVING_PAIRWISE_MRCA]
+ * for the user-facing description.
  *
  * Implementation:
- *   1. BFS up from each living individual through parent edges, recording per-ancestor the
- *      *set* of living individuals that reach it. Set-based propagation handles the 2-parent
- *      DAG case where one living can be a descendant of two unrelated ancestors without
- *      double-counting.
- *   2. Build a children adjacency over visible edges (any edge whose endpoints exist in
- *      [layout]).
- *   3. Walk the weakly-connected components over the undirected edge graph to get a
- *      `component-id -> total-living-in-that-component` map; nodes inherit a component-id
- *      from this walk.
- *   4. For each node N, evaluate the three inclusion rules:
- *      (a) N is living.
- *      (b) `livingBranches(N)` >= 2 where `livingBranches` counts children of N whose
- *          `livingBelow` set is non-empty.  (Captures LCAs / branching ancestors.)
- *      (c) `livingBelow(N).size >= 1` AND `componentTotalLiving(N) - livingBelow(N).size >= 1`.
- *          (Captures "on a path between living inside and living outside N's subtree".)
+ *   1. Build the parents adjacency restricted to visible nodes.
+ *   2. BFS up from each living individual through parent edges, caching the per-ancestor
+ *      (distance, predecessor) maps. The predecessor map points toward the seed, so a
+ *      walk from any ancestor terminates at the seed.
+ *   3. For every pair of living (i, j): intersect the reachable-ancestor sets; pick the
+ *      common ancestor with minimum (dist-from-i + dist-from-j) as the pair's MRCA. Walk
+ *      from the MRCA back to each seed via that seed's pred chain and add every visited
+ *      node to the visible set.
  *
- * Cost is O(L × (V+E)) for the BFS-up phase (each living BFS visits each of its ancestors
- * once) + O(V+E) for the component walk + O(V + Σchildren) for the per-node inclusion test.
- * For a few hundred living drockets on a few-thousand-node lineage that's well under a
- * millisecond and the result is cached by [CladogramPanelRenderer] / [LineageOverlay].
+ * Why this is tighter than strict Steiner on a multi-parent DAG: when a child has two
+ * parents and only one is needed to reach the common ancestor, the BFS picks one and
+ * the other is never on the reconstructed path. Strict Steiner's "either parent has
+ * subtree-living plus complement-living" inclusion rule would pull both in.
+ *
+ * Why connectivity is guaranteed: every pair (i, j) in the same weakly-connected
+ * component shares at least one ancestor (the component's structure forces it). The
+ * union of all pair-wise paths therefore forms a connected subgraph spanning all living
+ * in that component. Pairs in different components contribute no path; each component's
+ * living are visible on their own.
  */
-private fun computeSteinerVisibleIds(
+private fun computePairwiseMrcaUnionVisibleIds(
     lineage: DrocketLineageState,
     layout: CladogramLayout,
 ): Set<Long> {
     val allIds = layout.depthById.keys
     if (allIds.isEmpty()) return emptySet()
-    val nodesById = lineage.nodes
-    val living = lineage.livingLineageIds.filterTo(LinkedHashSet()) { it in allIds }
+    val living = lineage.livingLineageIds.filter { it in allIds }
     if (living.isEmpty()) return emptySet()
 
-    // Visible parents / children adjacency.
+    // Parents adjacency restricted to currently-visible nodes.
     val parents = HashMap<Long, MutableList<Long>>(allIds.size)
-    val children = HashMap<Long, MutableList<Long>>(allIds.size)
-    val undirected = HashMap<Long, MutableList<Long>>(allIds.size)
     for (id in allIds) {
-        val node = nodesById[id] ?: continue
-        node.motherLineageId?.let { m -> if (m in allIds) { parents.getOrPut(id) { mutableListOf() }.add(m); children.getOrPut(m) { mutableListOf() }.add(id) } }
-        node.fatherLineageId?.let { f -> if (f in allIds) { parents.getOrPut(id) { mutableListOf() }.add(f); children.getOrPut(f) { mutableListOf() }.add(id) } }
-    }
-    for ((c, ps) in parents) for (p in ps) {
-        undirected.getOrPut(c) { mutableListOf() }.add(p)
-        undirected.getOrPut(p) { mutableListOf() }.add(c)
+        val node = lineage.nodes[id] ?: continue
+        node.motherLineageId?.let { m -> if (m in allIds) parents.getOrPut(id) { mutableListOf() }.add(m) }
+        node.fatherLineageId?.let { f -> if (f in allIds) parents.getOrPut(id) { mutableListOf() }.add(f) }
     }
 
-    // BFS-up from each living: union L into livingBelow[N] for every N reachable.
-    val livingBelow = HashMap<Long, MutableSet<Long>>(allIds.size)
-    for (l in living) {
-        val seen = HashSet<Long>()
-        val q = ArrayDeque<Long>()
-        q.addLast(l)
-        seen.add(l)
-        while (q.isNotEmpty()) {
-            val cur = q.removeFirst()
-            livingBelow.getOrPut(cur) { mutableSetOf() }.add(l)
-            for (p in parents[cur].orEmpty()) {
-                if (seen.add(p)) q.addLast(p)
-            }
-        }
-    }
+    // BFS-up cache: one per living individual.
+    val trees = HashMap<Long, Pair<Map<Long, Int>, Map<Long, Long>>>(living.size)
+    for (l in living) trees[l] = bfsAncestorTree(l, parents)
 
-    // Weakly-connected components → per-component living total.
-    val componentOf = HashMap<Long, Int>(allIds.size)
-    val componentLiving = HashMap<Int, Int>()
-    var nextComp = 0
-    for (id in allIds) {
-        if (componentOf.containsKey(id)) continue
-        val compId = nextComp++
-        var compLiving = 0
-        val q = ArrayDeque<Long>()
-        q.addLast(id)
-        componentOf[id] = compId
-        while (q.isNotEmpty()) {
-            val cur = q.removeFirst()
-            if (cur in living) compLiving++
-            for (n in undirected[cur].orEmpty()) {
-                if (!componentOf.containsKey(n)) {
-                    componentOf[n] = compId
-                    q.addLast(n)
+    val visible = LinkedHashSet<Long>()
+    visible.addAll(living)
+
+    for (i in living.indices) {
+        val (distI, predI) = trees[living[i]] ?: continue
+        for (j in (i + 1) until living.size) {
+            val (distJ, predJ) = trees[living[j]] ?: continue
+
+            // Intersect ancestor sets; pick the meeting node minimising combined distance.
+            var bestMrca: Long? = null
+            var bestCost = Int.MAX_VALUE
+            for ((id, dI) in distI) {
+                val dJ = distJ[id] ?: continue
+                val cost = dI + dJ
+                if (cost < bestCost) {
+                    bestCost = cost
+                    bestMrca = id
                 }
             }
+            val mrca = bestMrca ?: continue
+
+            // Walk MRCA -> living[i] via predI, and MRCA -> living[j] via predJ.
+            // Predecessors point toward each seed, so these chains terminate at the seed.
+            var cur: Long? = mrca
+            while (cur != null) { visible += cur; cur = predI[cur] }
+            cur = mrca
+            while (cur != null) { visible += cur; cur = predJ[cur] }
         }
-        componentLiving[compId] = compLiving
     }
-
-    // Inclusion test.
-    val out = LinkedHashSet<Long>()
-    for (id in allIds) {
-        if (id in living) { out += id; continue }
-        val below = livingBelow[id]?.size ?: 0
-        if (below == 0) continue
-
-        // Rule (b): N is a branching ancestor (≥2 child-branches with living below).
-        var livingBranches = 0
-        for (child in children[id].orEmpty()) {
-            if ((livingBelow[child]?.size ?: 0) > 0) {
-                livingBranches++
-                if (livingBranches >= 2) break
-            }
-        }
-        if (livingBranches >= 2) { out += id; continue }
-
-        // Rule (c): some living below N, some living elsewhere in the same component.
-        val compId = componentOf[id] ?: continue
-        val total = componentLiving[compId] ?: 0
-        if (total - below >= 1) { out += id; continue }
-    }
-    return out
+    return visible
 }

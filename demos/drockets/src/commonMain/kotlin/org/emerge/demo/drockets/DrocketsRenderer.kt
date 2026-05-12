@@ -83,7 +83,7 @@ class DrocketsRenderer(
                 CladogramFilterMode.LIVING_ONLY -> "Cladogram filter: LIVING ONLY (F6)"
                 CladogramFilterMode.LIVING_AND_PARENTS -> "Cladogram filter: LIVING+PARENTS (F6)"
                 CladogramFilterMode.LIVING_AND_CONNECTORS -> "Cladogram filter: MRCA-WALK (F6)"
-                CladogramFilterMode.LIVING_STEINER -> "Cladogram filter: STEINER (F6)"
+                CladogramFilterMode.LIVING_PAIRWISE_MRCA -> "Cladogram filter: ALL-PAIRS MRCA (F6)"
             },
             durationMs = 1_800,
         )
@@ -146,7 +146,7 @@ class DrocketsRenderer(
                 CladogramFilterMode.ALL -> "Lineage filter: ALL (F8)"
                 CladogramFilterMode.LIVING_ONLY -> "Lineage filter: LIVING ONLY (F8)"
                 CladogramFilterMode.LIVING_AND_CONNECTORS -> "Lineage filter: MRCA-WALK (F8)"
-                CladogramFilterMode.LIVING_STEINER -> "Lineage filter: STEINER (F8)"
+                CladogramFilterMode.LIVING_PAIRWISE_MRCA -> "Lineage filter: ALL-PAIRS MRCA (F8)"
                 else -> "Lineage filter: $mode (F8)"
             },
             durationMs = 1_800,

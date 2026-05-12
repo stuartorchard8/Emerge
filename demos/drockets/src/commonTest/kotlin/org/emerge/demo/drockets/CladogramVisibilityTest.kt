@@ -2,6 +2,7 @@ package org.emerge.demo.drockets
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class CladogramVisibilityTest {
     @Test
@@ -84,17 +85,17 @@ class CladogramVisibilityTest {
             genome = Genome(),
         )
 
-    // ── LIVING_STEINER ─────────────────────────────────────────────────────────
+    // ── LIVING_PAIRWISE_MRCA ───────────────────────────────────────────────────
 
     @Test
-    fun steiner_empty_lineage_returns_empty() {
+    fun pairwiseMrca_empty_lineage_returns_empty() {
         val empty = DrocketLineageState.EMPTY
-        val visible = computeVisibleLineageIds(empty, CladogramLayout.build(empty), CladogramFilterMode.LIVING_STEINER)
+        val visible = computeVisibleLineageIds(empty, CladogramLayout.build(empty), CladogramFilterMode.LIVING_PAIRWISE_MRCA)
         assertEquals(emptySet(), visible)
     }
 
     @Test
-    fun steiner_single_living_returns_just_that_node() {
+    fun pairwiseMrca_single_living_returns_just_that_node() {
         // A → B → C, only C is living. Nothing to connect, so Steiner = {C}.
         val lineage = DrocketLineageState(
             nodes = linkedMapOf(
@@ -104,12 +105,12 @@ class CladogramVisibilityTest {
             ),
             livingLineageIds = setOf(3L),
         )
-        val visible = computeVisibleLineageIds(lineage, CladogramLayout.build(lineage), CladogramFilterMode.LIVING_STEINER)
+        val visible = computeVisibleLineageIds(lineage, CladogramLayout.build(lineage), CladogramFilterMode.LIVING_PAIRWISE_MRCA)
         assertEquals(setOf(3L), visible)
     }
 
     @Test
-    fun steiner_includes_lca_of_two_living_via_chain() {
+    fun pairwiseMrca_includes_lca_of_two_living_via_chain() {
         // The case my first formulation missed: A → B → C → D → L1, C → E → L2.
         //   - C is the LCA of L1 and L2; removing it disconnects the pair.
         //   - D and E are each on a path between one of the living and the other.
@@ -128,7 +129,7 @@ class CladogramVisibilityTest {
             ),
             livingLineageIds = setOf(15L, 16L),
         )
-        val visible = computeVisibleLineageIds(lineage, CladogramLayout.build(lineage), CladogramFilterMode.LIVING_STEINER)
+        val visible = computeVisibleLineageIds(lineage, CladogramLayout.build(lineage), CladogramFilterMode.LIVING_PAIRWISE_MRCA)
         assertEquals(
             setOf(12L, 13L, 14L, 15L, 16L),
             visible,
@@ -137,7 +138,7 @@ class CladogramVisibilityTest {
     }
 
     @Test
-    fun steiner_three_way_lca_includes_long_sibling_branch_only_as_needed() {
+    fun pairwiseMrca_three_way_lca_includes_long_sibling_branch_only_as_needed() {
         // Three living scattered under one LCA, with one of them on a long chain past the LCA.
         //   C → D → L1, C → E → L2, C → F → G → H → L3
         // Steiner should include C, D, L1, E, L2, F, G, H, L3 — every node on a path between
@@ -157,12 +158,49 @@ class CladogramVisibilityTest {
             ),
             livingLineageIds = setOf(15L, 16L, 23L),
         )
-        val visible = computeVisibleLineageIds(lineage, CladogramLayout.build(lineage), CladogramFilterMode.LIVING_STEINER)
+        val visible = computeVisibleLineageIds(lineage, CladogramLayout.build(lineage), CladogramFilterMode.LIVING_PAIRWISE_MRCA)
         assertEquals(setOf(12L, 13L, 14L, 15L, 16L, 20L, 21L, 22L, 23L), visible)
     }
 
     @Test
-    fun steiner_separate_components_dont_pull_each_other_in() {
+    fun pairwiseMrca_picks_one_parent_path_in_dag_with_redundant_parents() {
+        // The DAG-tightness property: L1 has two parents (P1a, P1b), both descended from G.
+        // G is also L2's parent.  Pairwise MRCA between L1 and L2 picks ONE of the two
+        // routes through P1a or P1b — the other parent isn't needed and isn't included.
+        // Strict Steiner would have pulled in both P1a and P1b (each has subtree-living
+        // and component-complement-living), bloating the view.
+        //
+        //         G  (id 1)
+        //        /|\
+        //      P1a P1b L2  (ids 2, 3, 5)
+        //        \ /
+        //         L1   (id 4)
+        val lineage = DrocketLineageState(
+            nodes = linkedMapOf(
+                1L to DrocketLineageNode(1L, null, null, 0L, null, Sex.FEMALE, Genome()),  // G
+                2L to DrocketLineageNode(2L, 1L, null, 100L, null, Sex.FEMALE, Genome()),  // P1a
+                3L to DrocketLineageNode(3L, 1L, null, 100L, null, Sex.MALE, Genome()),    // P1b
+                4L to DrocketLineageNode(4L, 2L, 3L, 200L, null, Sex.FEMALE, Genome()),    // L1
+                5L to DrocketLineageNode(5L, 1L, null, 100L, null, Sex.FEMALE, Genome()),  // L2
+            ),
+            livingLineageIds = setOf(4L, 5L),
+        )
+        val visible = computeVisibleLineageIds(lineage, CladogramLayout.build(lineage), CladogramFilterMode.LIVING_PAIRWISE_MRCA)
+        assertTrue(1L in visible, "G (the MRCA) must be visible")
+        assertTrue(4L in visible, "L1 must be visible")
+        assertTrue(5L in visible, "L2 must be visible")
+        // Crucial assertion: exactly one of {P1a, P1b} is visible — the BFS reconstructs the
+        // path through whichever parent it reached G via first.
+        val parentsIncluded = listOf(2L, 3L).count { it in visible }
+        assertEquals(
+            1,
+            parentsIncluded,
+            "expected exactly one of P1a/P1b on the reconstructed path; got $parentsIncluded",
+        )
+    }
+
+    @Test
+    fun pairwiseMrca_separate_components_dont_pull_each_other_in() {
         // Two disconnected family trees, one living in each. Neither LCA depends on the
         // other — each component contributes only its living node.
         val lineage = DrocketLineageState(
@@ -174,7 +212,7 @@ class CladogramVisibilityTest {
             ),
             livingLineageIds = setOf(2L, 11L),
         )
-        val visible = computeVisibleLineageIds(lineage, CladogramLayout.build(lineage), CladogramFilterMode.LIVING_STEINER)
+        val visible = computeVisibleLineageIds(lineage, CladogramLayout.build(lineage), CladogramFilterMode.LIVING_PAIRWISE_MRCA)
         assertEquals(setOf(2L, 11L), visible)
     }
 }
