@@ -11,6 +11,24 @@ plugins {
     application
 }
 
+/** LWJGL native classifier for the host this build is running on. */
+val lwjglNatives: String = run {
+    val osName = System.getProperty("os.name").lowercase()
+    val osArch = System.getProperty("os.arch").lowercase()
+    when {
+        osName.contains("windows") ->
+            if (osArch == "aarch64") "natives-windows-arm64" else "natives-windows"
+        osName.contains("mac") || osName.contains("darwin") ->
+            if (osArch == "aarch64") "natives-macos-arm64" else "natives-macos"
+        osName.contains("linux") || osName.contains("freebsd") -> when {
+            osArch == "aarch64" -> "natives-linux-arm64"
+            osArch.startsWith("arm") -> "natives-linux-arm32"
+            else -> "natives-linux"
+        }
+        else -> error("Unsupported OS for LWJGL natives: '$osName' / '$osArch'")
+    }
+}
+
 dependencies {
     implementation(project(":demos:physics"))
     implementation(project(":demos:drockets"))
@@ -23,19 +41,20 @@ dependencies {
     implementation(project(":engine:net:transports:tcp"))
     implementation(project(":engine:net:transports:websocket"))
 
-    // LWJGL (desktop GPU rendering)
-    // Minimal set: glfw + opengl + core + natives (Windows).
+    // LWJGL (desktop GPU rendering).
+    // Native libraries are platform-specific; classifier picked from the build host
+    // so a Linux build pulls liblwjgl.so, a macOS build pulls liblwjgl.dylib, etc.
     implementation(platform("org.lwjgl:lwjgl-bom:3.3.3"))
     implementation("org.lwjgl:lwjgl")
     implementation("org.lwjgl:lwjgl-glfw")
     implementation("org.lwjgl:lwjgl-opengl")
     implementation("org.lwjgl:lwjgl-openal")
     implementation("org.lwjgl:lwjgl-stb")
-    runtimeOnly("org.lwjgl:lwjgl::natives-windows")
-    runtimeOnly("org.lwjgl:lwjgl-glfw::natives-windows")
-    runtimeOnly("org.lwjgl:lwjgl-opengl::natives-windows")
-    runtimeOnly("org.lwjgl:lwjgl-openal::natives-windows")
-    runtimeOnly("org.lwjgl:lwjgl-stb::natives-windows")
+    runtimeOnly("org.lwjgl:lwjgl::$lwjglNatives")
+    runtimeOnly("org.lwjgl:lwjgl-glfw::$lwjglNatives")
+    runtimeOnly("org.lwjgl:lwjgl-opengl::$lwjglNatives")
+    runtimeOnly("org.lwjgl:lwjgl-openal::$lwjglNatives")
+    runtimeOnly("org.lwjgl:lwjgl-stb::$lwjglNatives")
 }
 
 application {
