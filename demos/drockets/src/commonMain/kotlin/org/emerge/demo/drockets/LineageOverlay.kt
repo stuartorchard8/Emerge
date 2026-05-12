@@ -434,7 +434,7 @@ class LineageOverlay {
 
         val secondary = secondarySelectedLineageId?.takeIf { it in positions && it != primary }
         if (secondary != null) {
-            val pairwise = computePairwiseMrca(primary, secondary, parents)
+            val pairwise = pairwiseMrca(primary, secondary, parents)
             if (pairwise != null) {
                 return HighlightState(
                     active = true,
@@ -474,85 +474,6 @@ class LineageOverlay {
         return out
     }
 
-    /**
-     * BFS up from [seed] over [parents], returning per-ancestor distance (including seed at 0)
-     * plus the predecessor map for shortest-path reconstruction back to seed.
-     */
-    private fun bfsAncestorTreeFrom(
-        seed: Long,
-        parents: Map<Long, List<Long>>,
-    ): Pair<Map<Long, Int>, Map<Long, Long>> {
-        val dist = LinkedHashMap<Long, Int>()
-        val pred = HashMap<Long, Long>()
-        val queue = ArrayDeque<Long>()
-        queue.addLast(seed)
-        dist[seed] = 0
-        while (queue.isNotEmpty()) {
-            val cur = queue.removeFirst()
-            val d = dist[cur] ?: continue
-            for (next in parents[cur].orEmpty()) {
-                if (dist.containsKey(next)) continue
-                dist[next] = d + 1
-                pred[next] = cur
-                queue.addLast(next)
-            }
-        }
-        return dist to pred
-    }
-
-    private data class PairwiseMrca(val mrca: Long, val path: Set<Long>)
-
-    /**
-     * Finds the most-recent common ancestor of two living-or-dead lineage nodes and the
-     * set of nodes on the shortest path between them (primary → ... → MRCA → ... → secondary).
-     *
-     * Approach:
-     *   1. BFS up from each side through the parent edges, recording distance + predecessor.
-     *   2. Intersect the reachable-ancestor sets; among common ancestors, pick the one that
-     *      minimises (dist-from-primary + dist-from-secondary). For a strict tree this is
-     *      *the* MRCA; for a 2-parent DAG with crossovers, this picks the shortest connecting
-     *      ancestor.
-     *   3. Reconstruct the two path halves via the predecessor maps and union them.
-     *
-     * Returns null if there's no common ancestor reachable through visible edges (e.g. the
-     * two are in separate forest components).
-     */
-    private fun computePairwiseMrca(
-        primary: Long,
-        secondary: Long,
-        parents: Map<Long, List<Long>>,
-    ): PairwiseMrca? {
-        if (primary == secondary) return null
-        val (primaryDist, primaryPred) = bfsAncestorTreeFrom(primary, parents)
-        val (secondaryDist, secondaryPred) = bfsAncestorTreeFrom(secondary, parents)
-
-        var bestMrca: Long? = null
-        var bestCost = Int.MAX_VALUE
-        for ((id, pd) in primaryDist) {
-            val sd = secondaryDist[id] ?: continue
-            val cost = pd + sd
-            if (cost < bestCost) {
-                bestCost = cost
-                bestMrca = id
-            }
-        }
-        val mrca = bestMrca ?: return null
-
-        val path = LinkedHashSet<Long>()
-        var cur: Long? = primary
-        while (cur != null) {
-            path += cur
-            if (cur == mrca) break
-            cur = primaryPred[cur]
-        }
-        cur = secondary
-        while (cur != null) {
-            path += cur
-            if (cur == mrca) break
-            cur = secondaryPred[cur]
-        }
-        return PairwiseMrca(mrca, path)
-    }
 
     private fun ancestorColor(distance: Int): Triple<Float, Float, Float> {
         val t = ((distance - 1).toFloat() / 6f).coerceIn(0f, 1f)
@@ -694,5 +615,95 @@ class LineageOverlay {
     companion object {
         private const val MIN_ZOOM = 0.25f
         private const val MAX_ZOOM = 8f
+    }
+}
+
+/**
+ * Pair-wise MRCA result: the most-recent common ancestor and the set of nodes on the
+ * shortest path between two lineages (primary → ... → MRCA → ... → secondary).
+ */
+internal data class PairwiseMrca(val mrca: Long, val path: Set<Long>)
+
+/**
+ * Finds the most-recent common ancestor of two lineage nodes via the directed [parents]
+ * adjacency, plus the set of nodes on the shortest path between them. Returns null if
+ * no common ancestor exists (e.g. the two are in different forest components) or if
+ * the two are the same node.
+ *
+ * Top-level `internal` so the path-reconstruction can be unit-tested independently of
+ * any GL state. (A previous in-class version had a path-walk bug that only manifested
+ * at render time as missing edge highlights; a test against this entry point would
+ * have caught it.)
+ *
+ * Algorithm:
+ *   1. BFS up from each side through the parent edges, recording (distance, predecessor)
+ *      for every reachable ancestor.
+ *   2. Among nodes reached from both, pick the one minimising `pDist + sDist`. For a
+ *      strict tree this is *the* MRCA; for a 2-parent DAG with crossovers it picks the
+ *      shortest connecting ancestor (a reasonable visual analogue).
+ *   3. Reconstruct each path half by walking *from the MRCA back to the seed* via the
+ *      seed's predecessor chain. Predecessors point toward the seed, so this terminates
+ *      naturally when we hit the seed (whose predecessor entry is absent).
+ *      Note: walking from `seed` via the same pred map is wrong — `pred[seed]` is null
+ *      and the walk stops after one step. That was the original bug.
+ */
+internal fun pairwiseMrca(
+    primary: Long,
+    secondary: Long,
+    parents: Map<Long, List<Long>>,
+): PairwiseMrca? {
+    if (primary == secondary) return null
+    val (primaryDist, primaryPred) = bfsAncestorTree(primary, parents)
+    val (secondaryDist, secondaryPred) = bfsAncestorTree(secondary, parents)
+
+    var bestMrca: Long? = null
+    var bestCost = Int.MAX_VALUE
+    for ((id, pd) in primaryDist) {
+        val sd = secondaryDist[id] ?: continue
+        val cost = pd + sd
+        if (cost < bestCost) {
+            bestCost = cost
+            bestMrca = id
+        }
+    }
+    val mrca = bestMrca ?: return null
+
+    val path = LinkedHashSet<Long>()
+    walkPredChainInto(mrca, primaryPred, path)
+    walkPredChainInto(mrca, secondaryPred, path)
+    return PairwiseMrca(mrca, path)
+}
+
+/**
+ * BFS up from [seed] over [parents]. Returns `(distancesByNode, predecessorByNode)`.
+ * Predecessor map omits the seed itself and points one step toward the seed.
+ */
+internal fun bfsAncestorTree(
+    seed: Long,
+    parents: Map<Long, List<Long>>,
+): Pair<Map<Long, Int>, Map<Long, Long>> {
+    val dist = LinkedHashMap<Long, Int>()
+    val pred = HashMap<Long, Long>()
+    val queue = ArrayDeque<Long>()
+    queue.addLast(seed)
+    dist[seed] = 0
+    while (queue.isNotEmpty()) {
+        val cur = queue.removeFirst()
+        val d = dist[cur] ?: continue
+        for (next in parents[cur].orEmpty()) {
+            if (dist.containsKey(next)) continue
+            dist[next] = d + 1
+            pred[next] = cur
+            queue.addLast(next)
+        }
+    }
+    return dist to pred
+}
+
+private fun walkPredChainInto(from: Long, pred: Map<Long, Long>, out: MutableSet<Long>) {
+    var cur: Long? = from
+    while (cur != null) {
+        out += cur
+        cur = pred[cur]
     }
 }
