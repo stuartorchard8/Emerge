@@ -60,7 +60,7 @@ data class CladogramLayout(
 
             val positions = LinkedHashMap<Long, Pair<Float, Float>>()
             val denom = maxOf(maxDepth, 1)
-            for ((depth, ids) in depthGroups.toSortedMap()) {
+            for ((depth, ids) in depthGroups.entries.sortedBy { it.key }) {
                 val n = ids.size.coerceAtLeast(1)
                 ids.forEachIndexed { index, id ->
                     val x = 0.08f + (depth.toFloat() / denom) * 0.84f
