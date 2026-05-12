@@ -32,7 +32,7 @@ object SpriteShaderSources {
             mat4 m = mat4(iCol0, iCol1, iCol2, iCol3);
             vec2 phasedPos = aPos;
             if (phasedPos.x > 0) {
-                phasedPos.x -= 2f*iSquash;
+                phasedPos.x -= 2.0*iSquash;
             }
             gl_Position = m * vec4(phasedPos*vec2(iUvW, iUvH), 0.0, 1.0);
             // Map local [-1,1] quad to UV space for the current animation frame
