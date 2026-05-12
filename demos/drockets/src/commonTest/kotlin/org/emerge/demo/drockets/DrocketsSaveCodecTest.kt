@@ -54,4 +54,125 @@ class DrocketsSaveCodecTest {
         assertFalse(decoded.state.teams.contains(particleId))
         assertEquals(1, decoded.state.motions.keys().size)
     }
+
+    @Test
+    fun encodeDecode_roundtrips_typed_genome_on_genome_component() {
+        // Use non-default raw values across every field to confirm each slot survives the wire.
+        val genome = Genome(
+            aiWalkMinTicks = -1_500_000_000,
+            aiWalkMaxTicks = 1_500_000_000,
+            aiChargeTicks = 42,
+            aiFuelTicks = -42,
+            aiSpin = Int.MIN_VALUE + 17,
+            aiThrust = Int.MAX_VALUE - 17,
+            bodyColor = HsvColorGene(rawH = 100, rawS = -200, rawV = 300),
+            fireColor = HsvColorGene(rawH = -400, rawS = 500, rawV = -600),
+        )
+        val builder = PhysicsBuilder(PhysicsState())
+        val bodyId = builder.spawnBody(
+            playerId = null,
+            pos = Coord2.zero,
+            vel = Coord2.zero,
+            ang = Coord(0),
+            angVel = Coord(0),
+            mass = 100u,
+            radius = Frac(1, 256),
+            bounce = Frac(1, 4),
+            rough = Frac(1, 2),
+            shape = BodyShape.CIRCLE,
+        )
+        builder.update<GenomeComponent>(bodyId) { GenomeComponent(genome) }
+        val snapshot = DrocketsSnapshot(
+            tick = Tick(0),
+            state = builder.build(),
+            lineage = DrocketLineageState.EMPTY,
+        )
+
+        val decoded = DrocketsSaveCodec.decode(DrocketsSaveCodec.encode(snapshot))
+
+        val decodedGenome = decoded.state.components.getTable<GenomeComponent>()[bodyId]?.genome
+        assertEquals(genome, decodedGenome)
+    }
+
+    @Test
+    fun encodeDecode_roundtrips_reproducer_with_spawn_and_spawn_genome() {
+        val spawnGenome = Genome(aiChargeTicks = 999_999, aiFuelTicks = -999_999)
+        val reproducer = ReproducerComponent(
+            birthdayMs = 1_234_567L,
+            sex = Sex.FEMALE,
+            maturityAgeMs = 9_999L,
+            gestationDuration = 8_888L,
+            spawn = ReproducerComponent(
+                birthdayMs = 9_999_999L,
+                sex = Sex.MALE,
+            ),
+            spawnGenome = spawnGenome,
+            spawnMotherEntityId = 17,
+            spawnFatherEntityId = 23,
+        )
+        val builder = PhysicsBuilder(PhysicsState())
+        val bodyId = builder.spawnBody(
+            playerId = null,
+            pos = Coord2.zero,
+            vel = Coord2.zero,
+            ang = Coord(0),
+            angVel = Coord(0),
+            mass = 100u,
+            radius = Frac(1, 256),
+            bounce = Frac(1, 4),
+            rough = Frac(1, 2),
+            shape = BodyShape.CIRCLE,
+        )
+        builder.update<ReproducerComponent>(bodyId) { reproducer }
+        val snapshot = DrocketsSnapshot(
+            tick = Tick(0),
+            state = builder.build(),
+            lineage = DrocketLineageState.EMPTY,
+        )
+
+        val decoded = DrocketsSaveCodec.decode(DrocketsSaveCodec.encode(snapshot))
+
+        val decodedReproducer = decoded.state.components.getTable<ReproducerComponent>()[bodyId]
+        assertEquals(reproducer, decodedReproducer)
+    }
+
+    @Test
+    fun encodeDecode_roundtrips_lineage_state_with_parents_and_living_set() {
+        val rootGenome = Genome(aiWalkMinTicks = 111)
+        val daughterGenome = Genome(aiWalkMinTicks = 222, bodyColor = HsvColorGene(1, 2, 3))
+        val lineage = DrocketLineageState(
+            nextLineageId = 99L,
+            nodes = linkedMapOf(
+                1L to DrocketLineageNode(
+                    lineageId = 1L,
+                    motherLineageId = null,
+                    fatherLineageId = null,
+                    birthTick = 0L,
+                    deathTick = null,
+                    sex = Sex.FEMALE,
+                    genome = rootGenome,
+                ),
+                2L to DrocketLineageNode(
+                    lineageId = 2L,
+                    motherLineageId = 1L,
+                    fatherLineageId = null,
+                    birthTick = 100L,
+                    deathTick = 500L,
+                    sex = Sex.MALE,
+                    genome = daughterGenome,
+                ),
+            ),
+            livingLineageIds = linkedSetOf(1L),
+            entityToLineageId = linkedMapOf(42 to 1L, 43 to 2L),
+        )
+        val snapshot = DrocketsSnapshot(
+            tick = Tick(777),
+            state = PhysicsBuilder(PhysicsState()).build(),
+            lineage = lineage,
+        )
+
+        val decoded = DrocketsSaveCodec.decode(DrocketsSaveCodec.encode(snapshot))
+
+        assertEquals(lineage, decoded.lineage)
+    }
 }
