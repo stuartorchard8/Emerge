@@ -55,7 +55,8 @@ class ReproductionSystemMutationTest {
 
     @Test
     fun mutated_saturates_at_int_min_under_negative_deltas() {
-        // Random low byte = 0 -> delta = -128. Without saturation, Int.MIN_VALUE - 128 wraps positive.
+        // Random low byte = 0 -> raw = -128 -> delta = -127 (after the +1 zero-mean nudge).
+        // Without saturation, Int.MIN_VALUE - 127 wraps to a large positive value.
         val minOut = Genome(
             aiWalkMinTicks = Int.MIN_VALUE,
             aiWalkMaxTicks = Int.MIN_VALUE,
@@ -74,10 +75,12 @@ class ReproductionSystemMutationTest {
     }
 
     @Test
-    fun mutated_delta_distribution_is_symmetric_around_zero() {
-        // Over many mutation samples on a mid-range gene, the average delta should be close
-        // to zero. The pre-fix formula `(rand ushr 8) - 128` was skewed positive with mean
-        // around +8 million (24-bit unsigned magnitude). This regresses that bug.
+    fun mutated_delta_distribution_has_mean_zero() {
+        // Over many mutation samples on a mid-range gene, the mean delta should be very
+        // close to zero. The pre-fix formula `(rand ushr 8) - 128` had mean ≈ +8 million
+        // (24-bit unsigned magnitude); even the corrected `(rand and 0xFF) - 128` had
+        // mean -0.5 over 256 outcomes. The current "add 1 to negatives" form yields
+        // mean exactly 0 in the limit.
         val rng = Random(42)
         val genome = Genome(
             aiWalkMinTicks = 0,
@@ -100,15 +103,39 @@ class ReproductionSystemMutationTest {
             sum += m.aiWalkMinTicks
         }
         val mean = sum.toDouble() / samples.toDouble()
-        // With deltas uniform in [-128, 127], expected mean is -0.5; |observed mean| should
-        // be well under |10| at 10k samples, far below the +8e6 the old formula produced.
-        assertTrue(kotlin.math.abs(mean) < 10.0, "mean delta $mean is not centred near zero")
+        // Tight bound: 10k samples × max-delta-magnitude 127 caps single-trial drift at
+        // ~127/sqrt(10000) = 1.27, so a |mean| under 5 is comfortable headroom.
+        assertTrue(kotlin.math.abs(mean) < 5.0, "mean delta $mean is not centred at zero")
+    }
+
+    @Test
+    fun mutated_exhaustive_byte_sweep_sums_to_zero() {
+        // Stronger property than the statistical mean test: feed all 256 possible
+        // low-byte values to the per-field mutator and assert their deltas sum to exactly
+        // zero (so mean over a full byte-sweep is exactly 0).
+        val genome = Genome(
+            aiWalkMinTicks = 0, aiWalkMaxTicks = 0, aiChargeTicks = 0, aiFuelTicks = 0,
+            aiSpin = 0, aiThrust = 0,
+            bodyColor = HsvColorGene(0, 0, 0),
+            fireColor = HsvColorGene(0, 0, 0),
+        )
+        var sum = 0
+        var zeroCount = 0
+        for (b in 0..255) {
+            // Only the aiWalkMinTicks slot consumes the next-random byte; subsequent slots
+            // would consume more randoms in real use. Use a one-shot RNG that yields b.
+            val once = intArrayOf(b)
+            val mutated = genome.mutated { val v = once[0]; once[0] = 0; v }
+            sum += mutated.aiWalkMinTicks
+            if (mutated.aiWalkMinTicks == 0) zeroCount++
+        }
+        assertEquals(0, sum, "byte-sweep delta sum")
+        assertEquals(2, zeroCount, "0 should appear twice in a full byte sweep (once from raw=0, once from raw=-1->0)")
     }
 
     @Test
     fun mutated_delta_stays_in_byte_range() {
-        // Each per-field delta must be in [-128, 127] inclusive. Verify by feeding a known
-        // RNG sequence and checking the gene-by-gene change.
+        // Each per-field delta must land in [-127, 127] after the zero-mean nudge.
         val genome = Genome(
             aiWalkMinTicks = 0, aiWalkMaxTicks = 0, aiChargeTicks = 0, aiFuelTicks = 0,
             aiSpin = 0, aiThrust = 0,
@@ -124,7 +151,7 @@ class ReproductionSystemMutationTest {
             mutated.fireColor.rawH, mutated.fireColor.rawS, mutated.fireColor.rawV,
         )
         for (d in deltas) {
-            assertTrue(d in -128..127, "delta $d out of [-128, 127]")
+            assertTrue(d in -127..127, "delta $d out of [-127, 127]")
         }
     }
 }

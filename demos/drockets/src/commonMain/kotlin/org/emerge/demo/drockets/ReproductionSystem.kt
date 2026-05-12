@@ -142,19 +142,25 @@ object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>
 }
 
 /**
- * Adds an independent small symmetric delta in `[-128, 127]` to every gene's raw value,
+ * Adds an independent small zero-mean delta in `[-127, 127]` to every gene's raw value,
  * saturating at [Int.MIN_VALUE] / [Int.MAX_VALUE] so a mutation at the extremes cannot
  * wrap around to the opposite end of the decoded range.
  *
- * Because raw values span the full Int range, a ±128 delta corresponds to a tiny shift
+ * The delta distribution: take the random byte's natural `[-128, 127]` signed-byte
+ * range and shift every negative value up by 1, mapping `[-128, -1]` to `[-127, 0]`.
+ * Result spans `[-127, 127]` with `0` appearing twice as often as any other value
+ * (256 outcomes over 255 distinct deltas). Mean = 0 exactly — no positive or negative
+ * drift over generations; the slight "stay near zero" bias is intentional.
+ *
+ * Because raw values span the full Int range, a ±127 delta corresponds to a tiny shift
  * in decoded phenotype (~6e-8 of the gene's [min,max] span).
  *
  * Top-level + `internal` so tests can assert saturation + distribution properties.
  */
 internal fun Genome.mutated(nextRandom: () -> Int): Genome {
     fun mutateField(rawValue: Int): Int {
-        // Low byte of the random Int, biased so 0..255 -> -128..127 (symmetric around zero).
-        val delta = (nextRandom() and 0xFF) - 128
+        val raw = (nextRandom() and 0xFF) - 128 // [-128, 127], mean -0.5
+        val delta = if (raw < 0) raw + 1 else raw // [-127, 127], 0 appears twice, mean 0
         return saturatingAdd(rawValue, delta)
     }
     return copy(
