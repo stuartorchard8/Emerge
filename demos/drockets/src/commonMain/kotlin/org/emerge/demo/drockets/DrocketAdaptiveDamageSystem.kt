@@ -33,23 +33,11 @@ object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, Phys
         val playersToRespawn = LinkedHashSet<PlayerId>()
 
         val drocketCount = builder.entries<DrocketStateComponent>().size
-        val reproducers = builder.entries<ReproducerComponent>()
-        val maleDrocketCount = reproducers.count { it.value.sex == Sex.MALE }
-        val femaleDrocketCount = drocketCount - maleDrocketCount
-        val maleDrocketMaxHealth = effectiveDrocketMaxHealth(drocketCount)
-        val femaleDrocketMaxHealth = effectiveDrocketMaxHealth(drocketCount)
+        val drocketMaxHealth = effectiveDrocketMaxHealth(drocketCount)
 
         for ((entityId, damage) in builder.entries<DamageComponent>()) {
-            val reproducer = builder.getComponent<ReproducerComponent>(entityId)
-            val threshold = if (reproducer != null) {
-                if (reproducer.sex == Sex.MALE) {
-                    maleDrocketMaxHealth
-                } else {
-                    femaleDrocketMaxHealth
-                }
-            } else {
-                cfg.maxHealth
-            }
+            val isDrocket = builder.getComponent<ReproducerComponent>(entityId) != null
+            val threshold = if (isDrocket) drocketMaxHealth else cfg.maxHealth
 
             if (damage.accumulated.raw >= threshold.raw) {
                 if (cfg.respawnTicks >= 0) {
@@ -105,17 +93,15 @@ object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, Phys
         }
     }
 
+    /**
+     * Linearly interpolates max health from [MAX_MAX_HEALTH] at [POPULATION_FLOOR]
+     * down to [MIN_MAX_HEALTH] at [POPULATION_CAP], clamping at both ends.
+     */
     private fun effectiveDrocketMaxHealth(population: Int): Frac {
         val cap = POPULATION_CAP.coerceAtLeast(POPULATION_FLOOR + 1)
-
-        if (population <= POPULATION_FLOOR) return MAX_MAX_HEALTH // Start high
-        if (population >= cap) return MIN_MAX_HEALTH              // End low
-
-        val span = cap - POPULATION_FLOOR
-        val t = Frac(1,1) - Frac(population - POPULATION_FLOOR.toLong(), span)
-
-        val diff = MAX_MAX_HEALTH - MIN_MAX_HEALTH
-        return MIN_MAX_HEALTH + (diff * t)
+        val clamped = population.coerceIn(POPULATION_FLOOR, cap)
+        val t = Frac((cap - clamped).toLong(), cap - POPULATION_FLOOR)
+        return MIN_MAX_HEALTH + (MAX_MAX_HEALTH - MIN_MAX_HEALTH) * t
     }
 
     private fun spawnDestructionBurst(builder: PhysicsBuilder, burst: DestructionBurstSpec) {

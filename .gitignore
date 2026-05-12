@@ -49,4 +49,4 @@ bin/
 
 ### Mac OS ###
 .DS_Store
-drockets-save.bin
+drockets-save*
