@@ -56,3 +56,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
+
+// Generates *ShaderSources.kt from .vert / .frag files under src/commonMain/shaders/.
+registerShaderCodegen(packageName = "org.emerge.demo.drockets.shader")

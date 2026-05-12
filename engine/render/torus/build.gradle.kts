@@ -52,3 +52,6 @@ android {
     }
 }
 
+// Generates *ShaderSources.kt from .vert / .frag files under src/commonMain/shaders/.
+registerShaderCodegen(packageName = "org.emerge.render.torus.shader")
+

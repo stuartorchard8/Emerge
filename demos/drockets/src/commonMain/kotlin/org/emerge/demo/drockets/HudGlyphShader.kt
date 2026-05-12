@@ -1,12 +1,16 @@
 package org.emerge.demo.drockets
 
+import org.emerge.demo.drockets.shader.HudGlyphShaderSources
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.GpuFloatBuffer
 import org.emerge.render.torus.put
 import org.emerge.render.torus.shader.ShaderFactory
 
 class HudGlyphShader {
-    private val program = ShaderFactory.createProgram(vertexSource(), fragmentSource())
+    private val program = ShaderFactory.createProgram(
+        HudGlyphShaderSources.vertex(),
+        HudGlyphShaderSources.fragment(),
+    )
     private val uTexture = GPU.getUniformLocation(program, "uHudTexture")
     private val uColor = GPU.getUniformLocation(program, "uColor")
 
@@ -104,50 +108,5 @@ class HudGlyphShader {
         const val MAX_GLYPHS = 256
         private const val HUD_TEXTURE_UNIT = 2
         private const val QUAD_VERTEX_COUNT = 4
-
-        private fun vertexSource(): String = """
-            #version ${GPU.shaderVersion}
-            layout(location = 0) in vec2 aPos;
-            layout(location = 1) in vec2 iCenter;
-            layout(location = 2) in vec2 iHalfSize;
-            layout(location = 3) in vec4 iUvRect;
-            layout(location = 4) in float iAlpha;
-
-            out vec2 vUv;
-            out float vAlpha;
-
-            void main() {
-                vec2 localUv = vec2(
-                    aPos.x * 0.5 + 0.5,
-                    1.0 - (aPos.y * 0.5 + 0.5)
-                );
-                vUv = iUvRect.xy + localUv * iUvRect.zw;
-                vAlpha = iAlpha;
-                gl_Position = vec4(iCenter + aPos * iHalfSize, 0.0, 1.0);
-            }
-        """.trimIndent()
-
-        private fun fragmentSource(): String {
-            val precision = if (GPU.shaderVersion.contains("es")) {
-                "precision highp float;\nprecision highp int;"
-            } else ""
-            return """
-                #version ${GPU.shaderVersion}
-                $precision
-
-                in vec2 vUv;
-                in float vAlpha;
-                out vec4 fragColor;
-
-                uniform sampler2D uHudTexture;
-                uniform vec4 uColor;
-
-                void main() {
-                    vec4 texel = texture(uHudTexture, vUv);
-                    if (texel.a < 0.01) discard;
-                    fragColor = vec4(uColor.rgb, texel.a * vAlpha);
-                }
-            """.trimIndent()
-        }
     }
 }

@@ -1,5 +1,6 @@
 package org.emerge.demo.drockets
 
+import org.emerge.demo.drockets.shader.CladogramLineShaderSources
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.GpuFloatBuffer
 import org.emerge.render.torus.put
@@ -11,7 +12,10 @@ import org.emerge.render.torus.shader.ShaderFactory
  * Each instance supplies endpoints (x0,y0,x1,y1) and RGBA in clip space for the right panel.
  */
 class CladogramLineShader {
-    private val program: Int = ShaderFactory.createProgram(vertexSource(), fragmentSource())
+    private val program: Int = ShaderFactory.createProgram(
+        CladogramLineShaderSources.vertex(),
+        CladogramLineShaderSources.fragment(),
+    )
     private val vao: Int? = GPU.genAndBindVertexArrays()
 
     /** Per-vertex: 0 / 1 selects segment endpoint from [iEndpoints]. */
@@ -123,37 +127,4 @@ class CladogramLineShader {
         private const val ATTR_COLOR = 2
     }
 
-    private fun vertexSource(): String {
-        val v = GPU.shaderVersion
-        return """
-        #version $v
-        layout(location = $ATTR_WHICH) in float aWhich;
-        layout(location = $ATTR_ENDPOINTS) in vec4 iEndpoints;
-        layout(location = $ATTR_COLOR) in vec4 iColor;
-        flat out vec4 vColor;
-        void main() {
-          vColor = iColor;
-          vec2 p = aWhich < 0.5 ? iEndpoints.xy : iEndpoints.zw;
-          gl_Position = vec4(p, 0.0, 1.0);
-        }
-        """.trimIndent()
-    }
-
-    private fun fragmentSource(): String {
-        val v = GPU.shaderVersion
-        val prec = if (v.contains("es")) {
-            "precision highp float;\nprecision highp int;"
-        } else {
-            ""
-        }
-        return """
-        #version $v
-        $prec
-        flat in vec4 vColor;
-        out vec4 fragColor;
-        void main() {
-          fragColor = vColor;
-        }
-        """.trimIndent()
-    }
 }
