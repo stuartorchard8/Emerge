@@ -74,14 +74,20 @@ class LineageOverlay {
         return active
     }
 
-    /** Cycles between [CladogramFilterMode.ALL] and [CladogramFilterMode.LIVING_ONLY]
-     *  only — the LIVING_AND_PARENTS / LIVING_AND_CONNECTORS modes from the older
-     *  panel aren't part of this view's vocabulary. Returns the new mode. */
+    /**
+     * Cycles between three modes: ALL → LIVING_ONLY → MRCA (LIVING_AND_CONNECTORS) → ALL.
+     *
+     * MRCA is the minimal connecting subgraph of all currently-living lineages — every
+     * living drocket plus the smallest set of ancestors needed to wire them together,
+     * with sibling lines that contain no living descendants pruned out. It's the
+     * sharpest baseline view for assessing relatedness: anything visible is on a path
+     * between two living drockets (or is itself living).
+     */
     fun cycleFilter(): CladogramFilterMode {
-        filter = if (filter == CladogramFilterMode.ALL) {
-            CladogramFilterMode.LIVING_ONLY
-        } else {
-            CladogramFilterMode.ALL
+        filter = when (filter) {
+            CladogramFilterMode.ALL -> CladogramFilterMode.LIVING_ONLY
+            CladogramFilterMode.LIVING_ONLY -> CladogramFilterMode.LIVING_AND_CONNECTORS
+            else -> CladogramFilterMode.ALL
         }
         invalidateLayoutCache()
         return filter
@@ -142,9 +148,10 @@ class LineageOverlay {
         val out = mutableListOf<String>()
         out += "LINEAGE OVERLAY  ${frame.cladogramLayout.summaryLine()}"
         out += when (filter) {
-            CladogramFilterMode.ALL -> "FILTER ALL (F6)"
-            CladogramFilterMode.LIVING_ONLY -> "FILTER LIVING ONLY (F6)"
-            else -> "FILTER (other)"
+            CladogramFilterMode.ALL -> "FILTER ALL (F8)"
+            CladogramFilterMode.LIVING_ONLY -> "FILTER LIVING ONLY (F8)"
+            CladogramFilterMode.LIVING_AND_CONNECTORS -> "FILTER MRCA (F8)"
+            else -> "FILTER $filter (F8)"
         }
         // Hover takes priority over selection for the active read-out — it's the more
         // ephemeral channel — but both are shown when distinct.
@@ -194,8 +201,9 @@ class LineageOverlay {
             return px to py
         }
 
-        drawEdges(frame, positions, ::toNdc)
-        drawNodes(frame, positions, ::toNdc)
+        val highlight = computeHighlight(frame, positions)
+        drawEdges(frame, positions, highlight, ::toNdc)
+        drawNodes(frame, positions, highlight, ::toNdc)
 
         GPU.disableBlend()
         lastTotalMs = totalStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
@@ -222,6 +230,7 @@ class LineageOverlay {
     private fun drawEdges(
         frame: DrocketsFrame,
         positions: Map<Long, Pair<Float, Float>>,
+        highlight: HighlightState,
         toNdc: (Pair<Float, Float>) -> Pair<Float, Float>,
     ) {
         val edges = frame.cladogramLayout.edges
@@ -238,11 +247,32 @@ class LineageOverlay {
             edgeEnds[base + 1] = fy
             edgeEnds[base + 2] = tx
             edgeEnds[base + 3] = ty
-            val bothLiving = from in living && to in living
-            // Edge tint: blend toward parent body colour at moderate alpha when both ends
-            // are living (to show the living "trunk"), otherwise a muted gray.
+
+            val ancFrom = highlight.ancestors[from]
+            val ancTo = highlight.ancestors[to]
+            val descFrom = highlight.descendants[from]
+            val descTo = highlight.descendants[to]
+            val onAncestorPath = ancFrom != null &&
+                ((ancTo != null && ancFrom == ancTo + 1) || (highlight.selected == to && ancFrom == 1))
+            val onDescendantPath = descTo != null &&
+                ((descFrom != null && descTo == descFrom + 1) || (highlight.selected == from && descTo == 1))
+
             val (r, g, b, a) = when {
-                bothLiving -> {
+                onAncestorPath -> {
+                    val rgb = ancestorColor(ancFrom!!)
+                    floatArrayOf(rgb.first, rgb.second, rgb.third, 0.92f)
+                }
+                onDescendantPath -> {
+                    val rgb = descendantColor(descTo!!)
+                    floatArrayOf(rgb.first, rgb.second, rgb.third, 0.92f)
+                }
+                highlight.active -> {
+                    // Edge is in a highlight-active frame but not on the selected lineage's
+                    // path — fade it to a very low-alpha gray so unrelated structure recedes.
+                    floatArrayOf(0.40f, 0.42f, 0.46f, 0.12f)
+                }
+                from in living && to in living -> {
+                    // Living "trunk" line — tinted by the parent's body colour at moderate alpha.
                     val rgb = bodyRgb(frame.lineage.nodes[from]?.genome)
                     floatArrayOf(rgb.first, rgb.second, rgb.third, 0.55f)
                 }
@@ -262,6 +292,7 @@ class LineageOverlay {
     private fun drawNodes(
         frame: DrocketsFrame,
         positions: Map<Long, Pair<Float, Float>>,
+        highlight: HighlightState,
         toNdc: (Pair<Float, Float>) -> Pair<Float, Float>,
     ) {
         val living = frame.lineage.livingLineageIds
@@ -271,16 +302,29 @@ class LineageOverlay {
         for ((id, logical) in positions) {
             val (nx, ny) = toNdc(logical)
             val isAlive = id in living
-            val isSelected = id == selectedLineageId
+            val isSelected = id == highlight.selected
             val isHovered = id == hoveredLineageId
+            val ancDist = highlight.ancestors[id]
+            val descDist = highlight.descendants[id]
+            val isRelated = isSelected || ancDist != null || descDist != null
 
-            val rgb = bodyRgb(frame.lineage.nodes[id]?.genome)
-            val (r, g, b) = if (isAlive) {
-                Triple(rgb.first, rgb.second, rgb.third)
-            } else {
-                // Dim dead nodes to ~35% of body colour so colour identity survives but
-                // they read clearly as background.
-                Triple(rgb.first * 0.35f, rgb.second * 0.35f, rgb.third * 0.35f)
+            // Colour priority: selected → ancestor gradient → descendant gradient → muted
+            // gray for unrelated-when-highlighting → body colour (dimmed if dead).
+            val rgb = when {
+                isSelected -> Triple(1.0f, 0.95f, 0.40f)
+                ancDist != null -> ancestorColor(ancDist)
+                descDist != null -> descendantColor(descDist)
+                highlight.active -> Triple(0.42f, 0.45f, 0.50f)
+                else -> bodyRgb(frame.lineage.nodes[id]?.genome).let {
+                    if (isAlive) it else Triple(it.first * 0.35f, it.second * 0.35f, it.third * 0.35f)
+                }
+            }
+
+            val alpha = when {
+                isSelected -> 1.0f
+                highlight.active && !isRelated -> 0.16f
+                isAlive -> 0.95f
+                else -> 0.78f
             }
 
             val ringFrac = when {
@@ -288,27 +332,96 @@ class LineageOverlay {
                 isHovered -> 0.20f
                 else -> 0f
             }
-            val radius = baseR * when {
-                isSelected -> 1.55f
-                isHovered -> 1.25f
-                isAlive -> 1.0f
-                else -> 0.78f
-            }
+            // Use absolute (not multiplicative) priority so hovering an ancestor still
+            // visibly bumps the radius even though "ancestor" already scales it.
+            var radius = baseR * if (isAlive) 1.0f else 0.78f
+            if (isRelated) radius = maxOf(radius, baseR * 1.15f)
+            if (isHovered) radius = maxOf(radius, baseR * 1.25f)
+            if (isSelected) radius = maxOf(radius, baseR * 1.55f)
 
             val base2 = n * 2
             nodeCenters[base2] = nx
             nodeCenters[base2 + 1] = ny
             nodeRadii[n] = radius
             val base4 = n * 4
-            nodeColors[base4] = r
-            nodeColors[base4 + 1] = g
-            nodeColors[base4 + 2] = b
-            nodeColors[base4 + 3] = if (isAlive) 0.95f else 0.78f
+            nodeColors[base4] = rgb.first
+            nodeColors[base4 + 1] = rgb.second
+            nodeColors[base4 + 2] = rgb.third
+            nodeColors[base4 + 3] = alpha
             nodeRings[n] = ringFrac
             n++
         }
         if (n > 0) {
             nodeShader.drawInstanced(n, nodeCenters, nodeRadii, nodeColors, nodeRings)
+        }
+    }
+
+    /**
+     * Selection-driven highlight state. When a node is selected and laid out, computes
+     * the per-ancestor and per-descendant graph distance via BFS over the *currently
+     * visible* edge set so the highlight respects the active filter. When no selection,
+     * or the selected lineage was filtered out, returns an inactive state and the rest
+     * of the renderer falls back to its normal colouring.
+     */
+    private fun computeHighlight(
+        frame: DrocketsFrame,
+        positions: Map<Long, Pair<Float, Float>>,
+    ): HighlightState {
+        val sel = selectedLineageId ?: return HighlightState.INACTIVE
+        if (sel !in positions) return HighlightState.INACTIVE
+        val children = HashMap<Long, MutableList<Long>>()
+        val parents = HashMap<Long, MutableList<Long>>()
+        for ((from, to) in frame.cladogramLayout.edges) {
+            if (!positions.containsKey(from) || !positions.containsKey(to)) continue
+            children.getOrPut(from) { mutableListOf() }.add(to)
+            parents.getOrPut(to) { mutableListOf() }.add(from)
+        }
+        return HighlightState(
+            active = true,
+            ancestors = bfsDistances(sel, parents),
+            descendants = bfsDistances(sel, children),
+            selected = sel,
+        )
+    }
+
+    private fun bfsDistances(seed: Long, adjacency: Map<Long, List<Long>>): Map<Long, Int> {
+        val out = LinkedHashMap<Long, Int>()
+        val queue = ArrayDeque<Long>()
+        queue.addLast(seed)
+        out[seed] = 0
+        while (queue.isNotEmpty()) {
+            val cur = queue.removeFirst()
+            val curDist = out[cur] ?: continue
+            for (next in adjacency[cur].orEmpty()) {
+                if (out.containsKey(next)) continue
+                out[next] = curDist + 1
+                queue.addLast(next)
+            }
+        }
+        out.remove(seed)
+        return out
+    }
+
+    private fun ancestorColor(distance: Int): Triple<Float, Float, Float> {
+        val t = ((distance - 1).toFloat() / 6f).coerceIn(0f, 1f)
+        // gold (1.0, 0.78, 0.24) -> red (1.0, 0.16, 0.16)
+        return Triple(1.0f, 0.78f + (0.16f - 0.78f) * t, 0.24f + (0.16f - 0.24f) * t)
+    }
+
+    private fun descendantColor(distance: Int): Triple<Float, Float, Float> {
+        val t = ((distance - 1).toFloat() / 6f).coerceIn(0f, 1f)
+        // cyan (0.28, 0.92, 1.0) -> blue (0.14, 0.34, 1.0)
+        return Triple(0.28f + (0.14f - 0.28f) * t, 0.92f + (0.34f - 0.92f) * t, 1.0f)
+    }
+
+    private data class HighlightState(
+        val active: Boolean,
+        val ancestors: Map<Long, Int>,
+        val descendants: Map<Long, Int>,
+        val selected: Long?,
+    ) {
+        companion object {
+            val INACTIVE = HighlightState(false, emptyMap(), emptyMap(), null)
         }
     }
 

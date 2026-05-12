@@ -141,6 +141,7 @@ class DrocketsRenderer(
             when (mode) {
                 CladogramFilterMode.ALL -> "Lineage filter: ALL (F8)"
                 CladogramFilterMode.LIVING_ONLY -> "Lineage filter: LIVING ONLY (F8)"
+                CladogramFilterMode.LIVING_AND_CONNECTORS -> "Lineage filter: MRCA (F8)"
                 else -> "Lineage filter: $mode (F8)"
             },
             durationMs = 1_800,
