@@ -1,5 +1,6 @@
 package org.emerge.demo.drockets
 
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.*
@@ -32,18 +33,33 @@ object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, Phys
         val destructionBursts = ArrayList<DestructionBurstSpec>()
         val playersToRespawn = LinkedHashSet<PlayerId>()
 
-        val drocketCount = builder.entries<DrocketStateComponent>().size
-        val drocketMaxHealth = effectiveDrocketMaxHealth(drocketCount)
+        var drocketCount = builder.entries<DrocketStateComponent>().size
 
-        for ((entityId, damage) in builder.entries<DamageComponent>()) {
+        // Sort candidates by accumulated DESC, then entityId ASC for stable tie-break.
+        // Each drocket removed in the loop below decrements [drocketCount] and the
+        // drocket threshold is recomputed inside the loop, turning the cliff at high
+        // pop into a slope: we kill the most-damaged drockets first until the
+        // rising threshold meets the surviving cohort's damage levels. Without this,
+        // a batch of births in [ReproductionSystem] (which runs earlier this tick)
+        // can push [drocketCount] high enough that [MIN_MAX_HEALTH] falls below
+        // every existing drocket's accumulated damage, wiping the whole population
+        // in a single iteration.
+        val candidates = builder.entries<DamageComponent>().entries
+            .sortedWith(
+                compareByDescending<Map.Entry<EntityId, DamageComponent>> { it.value.accumulated.raw }
+                    .thenBy { it.key.value }
+            )
+
+        for ((entityId, damage) in candidates) {
             val isDrocket = builder.getComponent<ReproducerComponent>(entityId) != null
-            val threshold = if (isDrocket) drocketMaxHealth else cfg.maxHealth
+            val threshold = if (isDrocket) effectiveDrocketMaxHealth(drocketCount) else cfg.maxHealth
 
             if (damage.accumulated.raw >= threshold.raw) {
                 if (cfg.respawnTicks >= 0) {
                     builder.remove<DamageComponent>(entityId)
                 } else {
                     builder.removeEntity(entityId)
+                    if (isDrocket) drocketCount--
                 }
                 continue
             }
