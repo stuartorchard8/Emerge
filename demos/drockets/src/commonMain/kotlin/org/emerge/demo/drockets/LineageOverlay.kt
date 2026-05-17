@@ -124,7 +124,8 @@ class LineageOverlay {
         setFilter(when (filter) {
             CladogramFilterMode.ALL -> CladogramFilterMode.LIVING_ONLY
             CladogramFilterMode.LIVING_ONLY -> CladogramFilterMode.LIVING_AND_CONNECTORS
-            CladogramFilterMode.LIVING_AND_CONNECTORS -> CladogramFilterMode.LIVING_STEINER
+            CladogramFilterMode.LIVING_AND_CONNECTORS -> CladogramFilterMode.LIVING_FOCUSED
+            CladogramFilterMode.LIVING_FOCUSED -> CladogramFilterMode.LIVING_STEINER
             CladogramFilterMode.LIVING_STEINER -> CladogramFilterMode.LIVING_ANCESTRY
             else -> CladogramFilterMode.ALL
         })
@@ -260,6 +261,7 @@ class LineageOverlay {
             CladogramFilterMode.ALL -> "FILTER ALL (F6)"
             CladogramFilterMode.LIVING_ONLY -> "FILTER LIVING ONLY (F6)"
             CladogramFilterMode.LIVING_AND_CONNECTORS -> "FILTER MRCA-WALK (F6)"
+            CladogramFilterMode.LIVING_FOCUSED -> "FILTER LIVING FOCUSED (F6)"
             CladogramFilterMode.LIVING_STEINER -> "FILTER LIVING STEINER (F6)"
             CladogramFilterMode.LIVING_ANCESTRY -> "FILTER LIVING ANCESTRY (F6)"
             else -> "FILTER $filter (F6)"
@@ -776,6 +778,8 @@ class LineageOverlay {
                 livingAncestryCache.ancestryVisibleFor(frame.lineage, frame.cladogramLayout)
             CladogramFilterMode.LIVING_STEINER ->
                 livingAncestryCache.steinerVisibleFor(frame.lineage, frame.cladogramLayout)
+            CladogramFilterMode.LIVING_FOCUSED ->
+                livingAncestryCache.lucaFocusedVisibleFor(frame.lineage, frame.cladogramLayout)
             else -> computeVisibleLineageIds(frame.lineage, frame.cladogramLayout, filter)
         }
         val filterMs = filterStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f

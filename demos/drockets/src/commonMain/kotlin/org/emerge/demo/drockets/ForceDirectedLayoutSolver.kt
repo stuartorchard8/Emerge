@@ -1,7 +1,6 @@
 package org.emerge.demo.drockets
 
 import kotlin.math.cos
-import kotlin.math.floor
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.time.TimeSource
@@ -22,8 +21,8 @@ enum class CladogramLayoutMode {
 
     /**
      * Force-directed graph layout with persistent per-node state. Every frame applies
-     * spring forces along visible edges, repulsion between nearby visible nodes, and
-     * velocity damping; the system relaxes incrementally toward equilibrium. New nodes
+     * spring forces along visible edges, all-pairs isotropic repulsion between visible
+     * nodes, and velocity damping; the system relaxes incrementally toward equilibrium. New nodes
      * are seeded next to their first visible parent, so a birth perturbs only the local
      * neighbourhood rather than the entire generation row. Positions persist across
      * filter changes and node deaths, making it much easier to track and click an
@@ -46,14 +45,12 @@ enum class CladogramLayoutMode {
  * Forces per step (all in the same logical units as [CladogramLayoutSolver]):
  *  - **Edge spring** pulls connected nodes toward [REST_LENGTH] with stiffness
  *    [SPRING_K]. Springs both pull apart-too-close and pull together-too-far.
- *  - **Horizontal-only pairwise repulsion** pushes nearby nodes apart along x
- *    with full magnitude `F = REPULSION_K / d²`. Magnitude scales with the 2D
- *    separation (so distant pairs feel weaker force) but the direction is purely
- *    horizontal — not cosine-attenuated by the bond angle. A vertically-stacked
- *    pair (same x, different y) feels full horizontal force pushing it sideways,
- *    so visual overlap doesn't persist. The y-component is dropped entirely, so
- *    nodes can still slide past each other vertically without resistance. Cell-
- *    based spatial hashing keeps the step near-linear in node count.
+ *  - **All-pairs isotropic repulsion** pushes every visible pair apart along
+ *    the 2D line between them with magnitude `F = REPULSION_K / d²` (Coulomb-
+ *    like, force vector = `REPULSION_K · Δ / d³`). Acts equally in x and y, so
+ *    siblings spread sideways and ancestor chains stretch vertically from
+ *    mutual push as well as from gravity/buoyancy. No spatial hash — O(n²),
+ *    comfortable at visible-cladogram sizes (well under 1k nodes).
  *  - **Hookean buoyancy on visible roots** ([BUOYANCY_K] · (anchor − currentY)):
  *    a node with no parent currently in the visible set is pulled back toward
  *    [BUOYANCY_ANCHOR_Y] by a spring whose magnitude scales with divergence from
@@ -61,9 +58,12 @@ enum class CladogramLayoutMode {
  *    this spring until tension balances it, so the root reaches a finite
  *    equilibrium below the anchor instead of drifting forever like a constant
  *    upward force would.
- *  - **Gravity on everything else** ([GRAVITY_K], downward): nodes that do have a
- *    visible parent gently fall away from their ancestors, so each generation
- *    settles below the previous one.
+ *  - **Gravity on visible leaves** ([GRAVITY_K], downward): a node with no
+ *    visible children gets a constant downward pull. Combined with buoyancy on
+ *    the visible-roots, this stretches the tree vertically from both ends —
+ *    middle nodes (those with both a visible parent AND a visible child) feel
+ *    no direct vertical force and find their y-position purely through spring
+ *    tension transmitted along the chain.
  *  - **Damping** multiplies the previous velocity by [DAMPING] before adding the
  *    integrated force, so the system reaches equilibrium without oscillation.
  *  - **Per-step displacement clamp** ([MAX_DISPLACEMENT]) keeps a single frame from
@@ -191,21 +191,33 @@ class ForceDirectedLayoutSolver {
         val fxs = FloatArray(n)
         val fys = FloatArray(n)
 
-        // Per-node vertical bias. Visible roots (no visible parent) get a Hookean
-        // buoyancy spring pulling them back toward BUOYANCY_ANCHOR_Y; every other
-        // visible node gets a constant downward gravity. The visible-parent check
-        // uses `indexById` rather than the node's lineage parents directly so
-        // filter modes that hide ancestors (eg LIVING_ONLY) still let their
-        // visible-roots float toward the anchor.
+        // Pre-pass: identify which visible nodes have at least one visible child.
+        // We can't ask the lineage directly — children aren't indexed — so we walk
+        // each node's parent pointers and mark its visible parents as having a
+        // visible child (this node).
+        val hasVisibleChild = BooleanArray(n)
+        for (i in 0 until n) {
+            val node = lineage.nodes[ids[i]] ?: continue
+            node.motherLineageId?.let { indexById[it] }?.let { hasVisibleChild[it] = true }
+            node.fatherLineageId?.let { indexById[it] }?.let { hasVisibleChild[it] = true }
+        }
+
+        // Per-node vertical bias. The tree is hung from both ends:
+        //   - Visible-root (no visible parent): Hookean buoyancy toward BUOYANCY_ANCHOR_Y.
+        //   - Visible-leaf (no visible child):  constant downward gravity.
+        //   - Middle node (has both):           NO direct vertical force; its y-position
+        //                                       emerges from spring tension transmitted
+        //                                       up the chain from leaves and down from roots.
+        // A node that is both a root and a leaf (eg an isolated single living) feels
+        // both forces — buoyancy spring pulling toward the anchor, gravity pulling down.
         for (i in 0 until n) {
             val node = lineage.nodes[ids[i]]
             val motherVisible = node?.motherLineageId?.let { indexById.containsKey(it) } ?: false
             val fatherVisible = node?.fatherLineageId?.let { indexById.containsKey(it) } ?: false
-            fys[i] += if (!motherVisible && !fatherVisible) {
-                BUOYANCY_K * (BUOYANCY_ANCHOR_Y - ys[i])
-            } else {
-                -GRAVITY_K
-            }
+            val isVisibleRoot = !motherVisible && !fatherVisible
+            val isVisibleLeaf = !hasVisibleChild[i]
+            if (isVisibleRoot) fys[i] += BUOYANCY_K * (BUOYANCY_ANCHOR_Y - ys[i])
+            if (isVisibleLeaf) fys[i] -= GRAVITY_K
         }
 
         // Spring forces along every edge whose endpoints are both visible.
@@ -230,46 +242,31 @@ class ForceDirectedLayoutSolver {
             fys[j] -= k * dy
         }
 
-        // Repulsion via uniform-grid spatial hash. Each cell is wider than the
-        // attraction's rest length so two springs' worth of nodes can sit in one
-        // cell without missing their mutual repulsion via the 3×3 neighbourhood.
-        val cellBuckets = HashMap<Long, ArrayList<Int>>(n)
+        // All-pairs isotropic repulsion. Coulomb-like: magnitude REPULSION_K / d²
+        // along the 2D line between the pair, so the force vector is
+        // REPULSION_K · Δ / d³. Acts equally in x and y — siblings spread
+        // sideways and ancestor chains feel mutual vertical push on top of the
+        // gravity/buoyancy stretch. Coincident pairs are nudged along +x by the
+        // MIN_DIST clamp so the singularity has a deterministic tiebreaker.
         for (i in 0 until n) {
-            val key = cellKey(xs[i], ys[i])
-            cellBuckets.getOrPut(key) { ArrayList(4) }.add(i)
-        }
-        for (i in 0 until n) {
-            val cx = floor(xs[i] / CELL_SIZE).toLong()
-            val cy = floor(ys[i] / CELL_SIZE).toLong()
-            for (ox in -1L..1L) {
-                for (oy in -1L..1L) {
-                    val key = packCell(cx + ox, cy + oy)
-                    val bucket = cellBuckets[key] ?: continue
-                    for (j in bucket) {
-                        if (j <= i) continue   // count each pair once
-                        var dx = xs[j] - xs[i]
-                        var dy = ys[j] - ys[i]
-                        var d2 = dx * dx + dy * dy
-                        if (d2 > REPULSION_CUTOFF2) continue
-                        if (d2 < MIN_DIST2) {
-                            dx = MIN_DIST
-                            dy = 0f
-                            d2 = MIN_DIST2
-                        }
-                        // Horizontal-only repulsion. Magnitude scales with 2D
-                        // separation (REPULSION_K / d²), but the entire force is
-                        // applied along the x-axis — *not* cosine-attenuated by the
-                        // bond angle. A vertically-stacked pair (dx≈0, dy>0) feels
-                        // full horizontal force in opposite x directions, so they
-                        // separate sideways instead of overlapping. The y-component
-                        // is discarded entirely, so the pair feels no resistance to
-                        // sliding past each other vertically.
-                        val mag = REPULSION_K / d2
-                        val rx = if (dx >= 0f) mag else -mag
-                        fxs[i] -= rx
-                        fxs[j] += rx
-                    }
+            val xi = xs[i]
+            val yi = ys[i]
+            for (j in i + 1 until n) {
+                var dx = xs[j] - xi
+                var dy = ys[j] - yi
+                var d2 = dx * dx + dy * dy
+                if (d2 < MIN_DIST2) {
+                    dx = MIN_DIST
+                    dy = 0f
+                    d2 = MIN_DIST2
                 }
+                val invD3 = REPULSION_K / (d2 * sqrt(d2))
+                val fx = dx * invD3
+                val fy = dy * invD3
+                fxs[i] -= fx
+                fys[i] -= fy
+                fxs[j] += fx
+                fys[j] += fy
             }
         }
 
@@ -354,12 +351,6 @@ class ForceDirectedLayoutSolver {
     private fun goldenAngle(id: Long): Float =
         ((id and 0xFFFFL).toInt() * GOLDEN_ANGLE_RAD)
 
-    private fun cellKey(x: Float, y: Float): Long =
-        packCell(floor(x / CELL_SIZE).toLong(), floor(y / CELL_SIZE).toLong())
-
-    private fun packCell(cx: Long, cy: Long): Long =
-        (cx * CELL_HASH_X) xor (cy * CELL_HASH_Y)
-
     companion object {
         /** Natural spring length between connected nodes, in logical units. Other
          *  spatial constants are expressed as multiples of this where it makes sense. */
@@ -368,30 +359,26 @@ class ForceDirectedLayoutSolver {
         // the equilibrium shape (root depth, chain stretch, sibling spread); the
         // absolute scale sets how fast the system relaxes toward that shape.
         private const val SPRING_K: Float = 0.001f
-        // Pairwise horizontal repulsion strength. Higher values spread siblings
-        // further apart horizontally but also widen the zig-zag of connected
-        // pairs past REST_LENGTH.
+        // Pairwise isotropic repulsion strength. Applied all-pairs as a 2D
+        // Coulomb-like force (magnitude REPULSION_K / d², along the line
+        // between the pair). Higher values spread the layout further apart
+        // overall but also widen the zig-zag of connected pairs past REST_LENGTH.
         private const val REPULSION_K: Float = 0.000001f
         // Vertical bias:
         //   - Visible roots (no visible parent) feel a Hookean buoyancy spring
         //     pulling them back toward BUOYANCY_ANCHOR_Y. Equilibrium root
         //     displacement from the anchor is chain_weight/BUOYANCY_K, where the
-        //     chain weight is the sum of GRAVITY_K over the root's visible
-        //     descendants.
-        //   - Every other visible node feels a constant downward gravity. The top
-        //     spring of an N-non-root chain carries N·GRAVITY_K of accumulated
-        //     weight; its y-stretch past REST_LENGTH is N·GRAVITY_K/SPRING_K, so
-        //     bumping GRAVITY_K stretches deep trees more, and bumping SPRING_K
-        //     keeps them tighter. The bottom spring of any chain stays close to
-        //     REST_LENGTH.
+        //     chain weight is the sum of GRAVITY_K over the root's visible LEAF
+        //     descendants (intermediate nodes contribute nothing on their own).
+        //   - Only visible leaves (no visible child) feel a constant downward
+        //     gravity. Each spring's tension is the sum of GRAVITY_K over the
+        //     leaves below it: a spring connecting to a single leaf carries
+        //     GRAVITY_K; a top-of-tree spring carries the full leaf count of its
+        //     subtree. Stretch past REST_LENGTH is tension/SPRING_K. Bumping
+        //     GRAVITY_K stretches the tree more; bumping SPRING_K keeps it tighter.
         private const val BUOYANCY_K: Float = 0.01f
         private const val BUOYANCY_ANCHOR_Y: Float = 0f
         private const val GRAVITY_K: Float = 0.0002f
-        // Effective repulsion cutoff: pairs farther apart than CELL_SIZE in 2D
-        // are skipped. Should be larger than REST_LENGTH so connected pairs still
-        // see each other for the horizontal repulsion.
-        private const val CELL_SIZE: Float = 0.20f
-        private const val REPULSION_CUTOFF2: Float = CELL_SIZE * CELL_SIZE
         private const val DAMPING: Float = 0.01f
         // Safety clamp on per-step displacement. Catches degenerate force spikes
         // (eg perfectly coincident seed positions) without affecting normal motion.
@@ -407,10 +394,5 @@ class ForceDirectedLayoutSolver {
          *  makes relaxation imperceptibly slow. */
         const val MIN_FORCE_SCALE: Float = 1f/32f
         const val MAX_FORCE_SCALE: Float = 1024f
-
-        // Large odd primes for spatial-hash mixing — same approach as other uniform-grid
-        // hashes in the codebase, kept here as local consts to avoid a cross-package dep.
-        private const val CELL_HASH_X: Long = 73856093L
-        private const val CELL_HASH_Y: Long = 19349663L
     }
 }

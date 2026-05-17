@@ -115,6 +115,7 @@ class DrocketsRenderer(
                 CladogramFilterMode.ALL -> "Lineage filter: ALL (F6)"
                 CladogramFilterMode.LIVING_ONLY -> "Lineage filter: LIVING ONLY (F6)"
                 CladogramFilterMode.LIVING_AND_CONNECTORS -> "Lineage filter: MRCA-WALK (F6)"
+                CladogramFilterMode.LIVING_FOCUSED -> "Lineage filter: LIVING FOCUSED (F6)"
                 CladogramFilterMode.LIVING_STEINER -> "Lineage filter: LIVING STEINER (F6)"
                 CladogramFilterMode.LIVING_ANCESTRY -> "Lineage filter: LIVING ANCESTRY (F6)"
             },

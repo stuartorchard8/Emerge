@@ -17,6 +17,19 @@ enum class CladogramFilterMode {
     LIVING_AND_CONNECTORS,
 
     /**
+     * Single-LUCA Steiner subgraph: like [LIVING_STEINER] but when multiple LUCAs
+     * coexist (typical in a sexually-reproducing DAG with multiple founder mates),
+     * picks just one — the LUCA whose descendant subgraph has the fewest nodes,
+     * with ties broken by smallest lineage id. Shows only that LUCA's descendants.
+     *
+     * For visualisation, this is the "narrowest" view: a single anchor at the top,
+     * a tight tree below. Edges from descendants whose other parent lives in a
+     * non-chosen LUCA's chain get clipped (dangling), which is the trade-off for
+     * the visual simplification.
+     */
+    LIVING_FOCUSED,
+
+    /**
      * Steiner subgraph: the minimal subgraph connecting every living individual, with
      * LUCA (the deepest universal common ancestor) sitting at the top. Nodes above LUCA
      * and parallel/redundant DAG branches are excluded.
@@ -66,6 +79,7 @@ fun computeVisibleLineageIds(
     return when (filterMode) {
         CladogramFilterMode.LIVING_ANCESTRY -> computeLivingAncestryVisibleIds(lineage, layout)
         CladogramFilterMode.LIVING_STEINER -> computeLivingSteinerVisibleIds(lineage, layout)
+        CladogramFilterMode.LIVING_FOCUSED -> computeLivingFocusedVisibleIds(lineage, layout)
         CladogramFilterMode.ALL -> allIds.toSet()
         CladogramFilterMode.LIVING_ONLY -> allIds.filterTo(LinkedHashSet()) { lineage.livingLineageIds.contains(it) }
         CladogramFilterMode.LIVING_AND_CONNECTORS -> {
@@ -309,9 +323,115 @@ private fun computeLivingSteinerVisibleIds(
 }
 
 /**
+ * Single-LUCA focused Steiner subgraph. See [CladogramFilterMode.LIVING_FOCUSED]
+ * for the user-facing description.
+ *
+ * Implementation: same setup as [computeLivingSteinerVisibleIds] (BFS-up to derive
+ * lDC + children adjacency, find LUCAs). With multiple LUCAs, compute each LUCA's
+ * descendant subgraph and pick the one with the fewest nodes; ties broken by
+ * smallest lineage id for determinism. With zero or one LUCAs, behave like Steiner.
+ */
+private fun computeLivingFocusedVisibleIds(
+    lineage: DrocketLineageState,
+    layout: CladogramLayout,
+): Set<Long> {
+    val visibleIds = layout.depthById.keys
+    if (visibleIds.isEmpty()) return emptySet()
+    val livingList = lineage.livingLineageIds.filter { it in visibleIds }
+    if (livingList.isEmpty()) return emptySet()
+    val livingSet = livingList.toHashSet()
+    val t = livingList.size
+
+    val ancestors = LinkedHashSet<Long>()
+    val lDC = HashMap<Long, Int>()
+    val children = HashMap<Long, MutableList<Long>>()
+    for (l in livingList) {
+        val seen = HashSet<Long>()
+        val queue = ArrayDeque<Long>()
+        seen.add(l)
+        queue.addLast(l)
+        ancestors.add(l)
+        lDC[l] = (lDC[l] ?: 0) + 1
+        while (queue.isNotEmpty()) {
+            val v = queue.removeFirst()
+            val node = lineage.nodes[v] ?: continue
+            for (p in listOfNotNull(node.motherLineageId, node.fatherLineageId)) {
+                if (p !in visibleIds) continue
+                children.getOrPut(p) { mutableListOf() }.let {
+                    if (v !in it) it.add(v)
+                }
+                if (seen.add(p)) {
+                    ancestors.add(p)
+                    lDC[p] = (lDC[p] ?: 0) + 1
+                    queue.addLast(p)
+                }
+            }
+        }
+    }
+
+    val lucas = ArrayList<Long>()
+    for (v in ancestors) {
+        if ((lDC[v] ?: 0) != t) continue
+        val kids = children[v]
+        val hasAtMaxChild = kids?.any { (lDC[it] ?: 0) == t } ?: false
+        if (!hasAtMaxChild) lucas.add(v)
+    }
+    if (lucas.isEmpty()) return ancestors
+
+    return pickSmallestLucaDescendants(lucas, children, lDC, livingSet)
+}
+
+/**
+ * For each LUCA, BFS down its descendants (restricted to nodes with lDC > 0 or
+ * living) and pick the LUCA with the smallest resulting set. Tie-break by smallest
+ * LUCA id. Returns the chosen LUCA's descendant set.
+ */
+private fun pickSmallestLucaDescendants(
+    lucas: List<Long>,
+    children: Map<Long, List<Long>>,
+    lDC: Map<Long, Int>,
+    livingSet: Set<Long>,
+): Set<Long> {
+    var bestLuca: Long = lucas[0]
+    var bestSet: LinkedHashSet<Long> = bfsDescendantsFrom(bestLuca, children, lDC, livingSet)
+    for (i in 1 until lucas.size) {
+        val candidate = lucas[i]
+        val candidateSet = bfsDescendantsFrom(candidate, children, lDC, livingSet)
+        val takeCandidate = candidateSet.size < bestSet.size ||
+            (candidateSet.size == bestSet.size && candidate < bestLuca)
+        if (takeCandidate) {
+            bestLuca = candidate
+            bestSet = candidateSet
+        }
+    }
+    return bestSet
+}
+
+private fun bfsDescendantsFrom(
+    luca: Long,
+    children: Map<Long, List<Long>>,
+    lDC: Map<Long, Int>,
+    livingSet: Set<Long>,
+): LinkedHashSet<Long> {
+    val out = LinkedHashSet<Long>()
+    val queue = ArrayDeque<Long>()
+    out.add(luca)
+    queue.addLast(luca)
+    while (queue.isNotEmpty()) {
+        val v = queue.removeFirst()
+        for (c in children[v] ?: emptyList()) {
+            if ((lDC[c] ?: 0) <= 0 && c !in livingSet) continue
+            if (out.add(c)) queue.addLast(c)
+        }
+    }
+    return out
+}
+
+/**
  * Incremental cache for [CladogramFilterMode.LIVING_ANCESTRY] AND
- * [CladogramFilterMode.LIVING_STEINER]. Both filters share the same underlying
- * per-node state — only the visibility predicate differs.
+ * [CladogramFilterMode.LIVING_STEINER] AND [CladogramFilterMode.LIVING_FOCUSED].
+ * All three filters share the same underlying per-node state — they differ only
+ * in how the visible set is derived from it.
  *
  * State maintained:
  *
@@ -379,6 +499,13 @@ internal class LivingAncestryCache {
     fun steinerVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
         ensureCurrent(lineage, layout)
         return computeSteinerFromMaintainedState()
+    }
+
+    /** Returns the single-LUCA focused Steiner subgraph. When multiple LUCAs exist,
+     *  picks the one with the smallest descendant subgraph (ties: smallest id). */
+    fun lucaFocusedVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
+        ensureCurrent(lineage, layout)
+        return computeLucaFocusedFromMaintainedState()
     }
 
     /** Resets the cache to empty. Called automatically on stale-cache detection
@@ -525,23 +652,64 @@ internal class LivingAncestryCache {
 
     /** Compute the Steiner visible set from `lDC` + `universalChildCount`. */
     private fun computeSteinerFromMaintainedState(): Set<Long> {
-        val t = livingMembers.size
-        if (t == 0) return emptySet()
+        val lucas = findLucasOrNull() ?: return ancestryVisibleSet
+        if (lucas.isEmpty()) return ancestryVisibleSet
 
-        // LUCAs = at-max nodes with no at-max children.
-        val atMax = nodesByLDC[t] ?: return ancestryVisibleSet  // no universal ancestor → fallback
-        val lucas = ArrayList<Long>()
-        for (v in atMax) {
-            if ((universalChildCount[v] ?: 0) == 0) lucas.add(v)
-        }
-        if (lucas.isEmpty()) return ancestryVisibleSet  // shouldn't happen if atMax non-empty, but guard
-
-        // Forward-BFS from LUCAs through child edges, only via nodes with lDC > 0 or living.
         val out = LinkedHashSet<Long>()
         val queue = ArrayDeque<Long>()
         for (l in lucas) {
             if (out.add(l)) queue.addLast(l)
         }
+        while (queue.isNotEmpty()) {
+            val v = queue.removeFirst()
+            for (c in children[v] ?: emptyList()) {
+                if ((livingDescCount[c] ?: 0) <= 0 && c !in livingMembers) continue
+                if (out.add(c)) queue.addLast(c)
+            }
+        }
+        return out
+    }
+
+    /** Compute the LUCA-focused visible set: pick the single LUCA whose descendant
+     *  subgraph is smallest (ties: smallest id), return its descendants. */
+    private fun computeLucaFocusedFromMaintainedState(): Set<Long> {
+        val lucas = findLucasOrNull() ?: return ancestryVisibleSet
+        if (lucas.isEmpty()) return ancestryVisibleSet
+
+        var bestLuca = lucas[0]
+        var bestSet = descendantsFromMaintained(bestLuca)
+        for (i in 1 until lucas.size) {
+            val candidate = lucas[i]
+            val candidateSet = descendantsFromMaintained(candidate)
+            val takeCandidate = candidateSet.size < bestSet.size ||
+                (candidateSet.size == bestSet.size && candidate < bestLuca)
+            if (takeCandidate) {
+                bestLuca = candidate
+                bestSet = candidateSet
+            }
+        }
+        return bestSet
+    }
+
+    /** LUCAs from the maintained state, or null if T = 0 or no node has `lDC = T`
+     *  (fallback condition for callers — they typically degrade to full ancestry). */
+    private fun findLucasOrNull(): List<Long>? {
+        val t = livingMembers.size
+        if (t == 0) return null
+        val atMax = nodesByLDC[t] ?: return null
+        val lucas = ArrayList<Long>()
+        for (v in atMax) {
+            if ((universalChildCount[v] ?: 0) == 0) lucas.add(v)
+        }
+        return lucas
+    }
+
+    /** Forward-BFS from a single LUCA via maintained children adjacency. */
+    private fun descendantsFromMaintained(luca: Long): LinkedHashSet<Long> {
+        val out = LinkedHashSet<Long>()
+        val queue = ArrayDeque<Long>()
+        out.add(luca)
+        queue.addLast(luca)
         while (queue.isNotEmpty()) {
             val v = queue.removeFirst()
             for (c in children[v] ?: emptyList()) {

@@ -365,6 +365,119 @@ class LivingAncestryCacheTest {
         assertEquals(false, 5L in steiner, "D1 is parent of LUCA, above LUCA, excluded")
     }
 
+    // ── LIVING_FOCUSED mode ─────────────────────────────────────────────────────
+
+    @Test
+    fun focused_picks_smaller_luca_subgraph_when_two_cofounders_exist() {
+        // Two unrelated founders A and B both cross-bred into all current livings,
+        // so both are LUCAs. A's descendant subgraph is larger (A has an extra
+        // dead-end chain through X) than B's. LIVING_FOCUSED should pick B and
+        // show only B's descendants.
+        //
+        //   A           B
+        //   ├─ X        ├─ L1
+        //   │  └─ L1    └─ L2
+        //   └─ L2
+        //
+        // A reaches L1 via X; B reaches L1 directly. Both reach L2 directly.
+        // A's descendant set: {A, X, L1, L2} (size 4).
+        // B's descendant set: {B, L1, L2}    (size 3).
+        // Focused picks B.
+        val lineage = DrocketLineageState(
+            nodes = linkedMapOf(
+                1L to node(1L),                              // A
+                2L to node(2L),                              // B
+                3L to node(3L, mother = 1L),                 // X (A's intermediate)
+                4L to node(4L, mother = 3L, father = 2L),    // L1
+                5L to node(5L, mother = 1L, father = 2L),    // L2
+            ),
+            livingLineageIds = setOf(4L, 5L),
+        )
+        val layout = CladogramLayout.build(lineage)
+        val cache = LivingAncestryCache()
+        val focused = cache.lucaFocusedVisibleFor(lineage, layout)
+        val stateless = computeVisibleLineageIds(lineage, layout, CladogramFilterMode.LIVING_FOCUSED)
+        assertEquals(stateless, focused, "cache vs stateless")
+        assertEquals(setOf(2L, 4L, 5L), focused, "picks B's subgraph (smaller than A's)")
+    }
+
+    @Test
+    fun focused_matches_steiner_when_single_luca() {
+        // A → B → C → {D → L1, E → L2}. Single LUCA = C. Focused == Steiner.
+        val lineage = DrocketLineageState(
+            nodes = linkedMapOf(
+                1L to node(1L),
+                2L to node(2L, mother = 1L),
+                3L to node(3L, mother = 2L),
+                4L to node(4L, mother = 3L),
+                5L to node(5L, mother = 3L),
+                6L to node(6L, mother = 4L),
+                7L to node(7L, mother = 5L),
+            ),
+            livingLineageIds = setOf(6L, 7L),
+        )
+        val layout = CladogramLayout.build(lineage)
+        val cache = LivingAncestryCache()
+        val focused = cache.lucaFocusedVisibleFor(lineage, layout)
+        val steiner = cache.steinerVisibleFor(lineage, layout)
+        assertEquals(steiner, focused, "single-LUCA case: focused identical to steiner")
+    }
+
+    @Test
+    fun focused_tie_broken_by_smallest_id() {
+        // Two co-LUCAs with identical descendant sets. Deterministic tie-break
+        // picks the one with smaller id.
+        val lineage = DrocketLineageState(
+            nodes = linkedMapOf(
+                1L to node(1L),
+                2L to node(2L),
+                3L to node(3L, mother = 1L, father = 2L),
+                4L to node(4L, mother = 1L, father = 2L),
+            ),
+            livingLineageIds = setOf(3L, 4L),
+        )
+        val layout = CladogramLayout.build(lineage)
+        val cache = LivingAncestryCache()
+        val focused = cache.lucaFocusedVisibleFor(lineage, layout)
+        assertEquals(setOf(1L, 3L, 4L), focused, "tie: pick smallest id (1L over 2L)")
+    }
+
+    @Test
+    fun focused_matches_stateless_through_a_long_birth_death_sequence() {
+        var lineage = DrocketLineageState(
+            nodes = linkedMapOf(
+                1L to node(1L),
+                2L to node(2L, mother = 1L),
+                3L to node(3L, mother = 1L),
+            ),
+            livingLineageIds = setOf(2L, 3L),
+        )
+        val cache = LivingAncestryCache()
+        cache.lucaFocusedVisibleFor(lineage, CladogramLayout.build(lineage))
+
+        var nextId = 4L
+        val rng = kotlin.random.Random(11)
+        for (step in 0 until 50) {
+            val living = lineage.livingLineageIds.toList()
+            if (rng.nextFloat() < 0.6f || living.size < 2) {
+                val mother = living.random(rng)
+                val father = living.takeIf { it.size > 1 }?.filter { it != mother }?.randomOrNull(rng)
+                val newId = nextId++
+                lineage = lineage.copy(
+                    nodes = lineage.nodes + (newId to node(newId, mother = mother, father = father)),
+                    livingLineageIds = lineage.livingLineageIds + newId,
+                )
+            } else {
+                val dying = living.random(rng)
+                lineage = lineage.copy(livingLineageIds = lineage.livingLineageIds - dying)
+            }
+            val layout = CladogramLayout.build(lineage)
+            val cached = cache.lucaFocusedVisibleFor(lineage, layout)
+            val stateless = computeVisibleLineageIds(lineage, layout, CladogramFilterMode.LIVING_FOCUSED)
+            assertEquals(stateless, cached, "step $step focused diverged: cache=$cached, stateless=$stateless")
+        }
+    }
+
     @Test
     fun steiner_matches_stateless_through_a_long_birth_death_sequence() {
         // Same random fuzz as the ancestry case, but on the Steiner predicate to

@@ -111,13 +111,16 @@ class ForceDirectedLayoutSolverTest {
         val dTop = sqrt((pp.first - gpp.first).let { it * it } + (pp.second - gpp.second).let { it * it })
         val dBot = sqrt((cp.first - pp.first).let { it * it } + (cp.second - pp.second).let { it * it })
         // Physical invariants only — generous absolute bounds so tuning experiments
-        // (eg different SPRING_K, GRAVITY_K) don't break this test. The top spring
-        // always carries more accumulated weight than the bottom, so it stretches at
-        // least as much. Both stay finite and non-collapsed.
+        // (eg different SPRING_K, GRAVITY_K) don't break this test. Under the
+        // "hung from both ends" model both springs in this 3-node chain carry the
+        // same single-leaf weight, so their stretches are roughly equal; the
+        // assertion just checks they stay finite and bounded.
         assertTrue(dBot.isFinite() && dBot > 0f, "bottom spring collapsed/NaN: dBot=$dBot")
         assertTrue(dTop.isFinite() && dTop > 0f, "top spring collapsed/NaN: dTop=$dTop")
-        assertTrue(dTop >= dBot * 0.99f,
-            "top spring should stretch at least as much as bottom (carries more weight): dTop=$dTop, dBot=$dBot")
+        assertTrue(dBot < ForceDirectedLayoutSolver.REST_LENGTH * 10f,
+            "bottom spring exploded: dBot=$dBot")
+        assertTrue(dTop < ForceDirectedLayoutSolver.REST_LENGTH * 10f,
+            "top spring exploded: dTop=$dTop")
     }
 
     @Test
@@ -154,11 +157,11 @@ class ForceDirectedLayoutSolverTest {
     }
 
     @Test
-    fun vertically_stacked_nodes_repel_apart_horizontally() {
-        // Two unconnected nodes at the same x but different y. With cosine-attenuated
-        // repulsion they would feel zero horizontal force; with full-magnitude
-        // horizontal repulsion they should be pushed apart in x while still being free
-        // to slide past each other vertically.
+    fun vertically_offset_nodes_repel_along_the_line_between_them() {
+        // Two unconnected nodes at the same x but different y. Under isotropic
+        // 1/r² repulsion the force vector lies along the line between them — for
+        // a pure-y offset that means the force is pure-y, with no horizontal
+        // component, and the pair drifts further apart vertically.
         val a = lineageNode(1L, null, null, Sex.FEMALE, 0L)
         val b = lineageNode(2L, null, null, Sex.FEMALE, 0L)
         val lineage = DrocketLineageState(
@@ -172,23 +175,17 @@ class ForceDirectedLayoutSolverTest {
             stats = CladogramStats(2, 2, 0, 0, 0, 2),
         )
         val solver = ForceDirectedLayoutSolver()
-        // Same x, different y; both within repulsion cutoff.
         solver.seedFrom(mapOf(1L to (0.0f to 0.0f), 2L to (0.0f to 0.05f)))
 
-        // The horizontal repulsion is weak by design (REPULSION_K is small) so the
-        // pair separates over many frames rather than snapping apart. The key check
-        // is that they separate at all — under the previous cosine-attenuated model
-        // dx would stay exactly 0.
         repeat(300) {
             solver.step(layout, lineage, visibleIds = setOf(1L, 2L))
         }
         val pa = solver.positionOf(1L) ?: error("missing 1L")
         val pb = solver.positionOf(2L) ?: error("missing 2L")
         val dx = abs(pa.first - pb.first)
-        assertTrue(
-            dx > 0.03f,
-            "vertically-stacked pair didn't separate horizontally: pa=$pa, pb=$pb, |dx|=$dx",
-        )
+        val dy = abs(pa.second - pb.second)
+        assertTrue(dy > 0.05f, "vertically-offset pair didn't separate further in y: |dy|=$dy")
+        assertTrue(dx < 1e-4f, "pure-y offset shouldn't produce horizontal drift: |dx|=$dx")
     }
 
     @Test
