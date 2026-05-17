@@ -1,5 +1,7 @@
 package org.emerge.desktop
 
+import org.emerge.demo.drockets.CladogramFilterMode
+import org.emerge.demo.drockets.CladogramLayoutMode
 import org.emerge.demo.drockets.DrocketsController
 import org.emerge.demo.drockets.DrocketsFrame
 import org.emerge.demo.drockets.DrocketsRenderer
@@ -16,6 +18,12 @@ import kotlin.math.pow
 
 object DrocketsSceneView {
     private val SAVE_PATH: Path = Path.of("drockets-save.bin")
+    /**
+     * Lineage overlay UI prefs persistence. Kept separate from the sim snapshot so
+     * tweaking layout settings doesn't require resaving the world, and so the prefs
+     * can be diffed / hand-edited as plain text.
+     */
+    private val PREFS_PATH: Path = Path.of("drockets-prefs.txt")
     @Volatile
     private var activeRenderer: DrocketsRenderer? = null
 
@@ -44,6 +52,7 @@ object DrocketsSceneView {
         )
         activeRenderer = renderer
         autoLoadSnapshotAtStartup(controller)
+        autoLoadOverlayPrefsAtStartup(renderer)
 
         var latestFrame: DrocketsFrame? = null
         installMouseHandlers(window, renderer) { latestFrame }
@@ -85,7 +94,7 @@ object DrocketsSceneView {
         val window = glfwCreateWindow(960, 600, title, NULL, NULL)
         if (window == NULL) error("Failed to create GLFW window")
 
-        glfwSetKeyCallback(window) { win, key, _, action, _ ->
+        glfwSetKeyCallback(window) { win, key, _, action, mods ->
             if (key in 0 until pressedKeys.size) {
                 pressedKeys[key] = (action != GLFW_RELEASE)
             }
@@ -103,9 +112,28 @@ object DrocketsSceneView {
             }
             if (action == GLFW_PRESS && key == GLFW_KEY_F2) {
                 activeRenderer?.toggleLineageOverlay()
+                saveOverlayPrefs(activeRenderer)
             }
             if (action == GLFW_PRESS && key == GLFW_KEY_F6) {
                 activeRenderer?.cycleLineageOverlayFilter()
+                saveOverlayPrefs(activeRenderer)
+            }
+            if (action == GLFW_PRESS && key == GLFW_KEY_F7) {
+                activeRenderer?.cycleLineageOverlayLayoutMode()
+                saveOverlayPrefs(activeRenderer)
+            }
+            // Ctrl+Up / Ctrl+Down step the force-directed solver's relaxation rate
+            // by ×2 / ÷2. Press+repeat both fire so holding the chord ramps quickly;
+            // the solver clamps to a finite range so a held key won't blow up.
+            val ctrl = (mods and GLFW_MOD_CONTROL) != 0
+            val pressOrRepeat = action == GLFW_PRESS || action == GLFW_REPEAT
+            if (ctrl && pressOrRepeat && key == GLFW_KEY_UP) {
+                activeRenderer?.nudgeLineageOverlayForceScale(2f)
+                saveOverlayPrefs(activeRenderer)
+            }
+            if (ctrl && pressOrRepeat && key == GLFW_KEY_DOWN) {
+                activeRenderer?.nudgeLineageOverlayForceScale(0.5f)
+                saveOverlayPrefs(activeRenderer)
             }
         }
 
@@ -155,6 +183,65 @@ object DrocketsSceneView {
         } catch (t: Throwable) {
             activeRenderer?.setOverlayStatus("Auto-load failed: ${t.message ?: "unknown error"}", durationMs = 4_000)
             println("Failed auto-loading Drockets snapshot: ${t.message}")
+        }
+    }
+
+    /**
+     * Persists the lineage-overlay UI state to [PREFS_PATH]. Called after any F2/F6/F7
+     * toggle or Ctrl+Up/Down nudge so the user's settings survive between runs without
+     * needing an explicit save. Failures are logged but don't surface in the UI — losing
+     * a prefs write isn't worth interrupting the user for.
+     */
+    private fun saveOverlayPrefs(renderer: DrocketsRenderer?) {
+        if (renderer == null) return
+        try {
+            val text = buildString {
+                appendLine("# drockets-prefs — written by DrocketsSceneView on every overlay toggle.")
+                appendLine("overlay.active=${renderer.isLineageOverlayActive}")
+                appendLine("overlay.filter=${renderer.lineageOverlayFilter.name}")
+                appendLine("overlay.layoutMode=${renderer.lineageOverlayLayoutMode.name}")
+                appendLine("overlay.forceScale=${renderer.lineageOverlayForceScale}")
+            }
+            Files.write(PREFS_PATH, text.toByteArray(Charsets.UTF_8))
+        } catch (t: Throwable) {
+            println("Failed saving Drockets overlay prefs: ${t.message}")
+        }
+    }
+
+    /**
+     * Reads [PREFS_PATH] and applies it to [renderer]. Missing keys, unparseable values,
+     * and missing-file all silently fall through to current defaults — prefs are a
+     * nice-to-have, not a hard dependency.
+     */
+    private fun autoLoadOverlayPrefsAtStartup(renderer: DrocketsRenderer) {
+        if (!Files.exists(PREFS_PATH)) return
+        try {
+            val text = Files.readAllBytes(PREFS_PATH).toString(Charsets.UTF_8)
+            val kv = text.lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && !it.startsWith("#") }
+                .mapNotNull { line ->
+                    val eq = line.indexOf('=')
+                    if (eq < 0) null else line.substring(0, eq).trim() to line.substring(eq + 1).trim()
+                }
+                .toMap()
+            val active = kv["overlay.active"]?.toBooleanStrictOrNull()
+                ?: renderer.isLineageOverlayActive
+            val filter = kv["overlay.filter"]?.let { runCatching { CladogramFilterMode.valueOf(it) }.getOrNull() }
+                ?: renderer.lineageOverlayFilter
+            val layoutMode = kv["overlay.layoutMode"]?.let { runCatching { CladogramLayoutMode.valueOf(it) }.getOrNull() }
+                ?: renderer.lineageOverlayLayoutMode
+            val forceScale = kv["overlay.forceScale"]?.toFloatOrNull()
+                ?: renderer.lineageOverlayForceScale
+            renderer.applyLineageOverlayPrefs(
+                active = active,
+                filter = filter,
+                layoutMode = layoutMode,
+                forceScale = forceScale,
+            )
+            println("Auto-loaded Drockets overlay prefs from ${PREFS_PATH.toAbsolutePath()}")
+        } catch (t: Throwable) {
+            println("Failed auto-loading Drockets overlay prefs: ${t.message}")
         }
     }
 
@@ -262,6 +349,23 @@ object DrocketsSceneView {
         if (pressed[GLFW_KEY_Q]) renderer.rotateLeft()
         if (pressed[GLFW_KEY_E]) renderer.rotateRight()
         if (pressed[GLFW_KEY_0]) renderer.focusPlanet()
+
+        // Arrow keys pan the lineage overlay while it's active. Signs follow the
+        // "look in this direction" convention (pressing Right shifts the camera
+        // right, so content scrolls left); the deltas are passed in the same
+        // screen-pixel convention as the mouse-drag handler, so positive dx pushes
+        // content right and positive dy pushes content down. Skipped while Ctrl is
+        // held so Ctrl+Up/Down still nudges force scale instead of panning.
+        val ctrl = pressed[GLFW_KEY_LEFT_CONTROL] || pressed[GLFW_KEY_RIGHT_CONTROL]
+        if (renderer.isLineageOverlayActive && !ctrl) {
+            var dx = 0f
+            var dy = 0f
+            if (pressed[GLFW_KEY_LEFT]) dx += OVERLAY_PAN_SPEED_PX
+            if (pressed[GLFW_KEY_RIGHT]) dx -= OVERLAY_PAN_SPEED_PX
+            if (pressed[GLFW_KEY_UP]) dy += OVERLAY_PAN_SPEED_PX
+            if (pressed[GLFW_KEY_DOWN]) dy -= OVERLAY_PAN_SPEED_PX
+            if (dx != 0f || dy != 0f) renderer.panLineageOverlayByPixels(dx, dy)
+        }
     }
 
     /**
@@ -303,4 +407,6 @@ object DrocketsSceneView {
     private const val DOUBLE_CLICK_MS = 400L
     private const val DOUBLE_CLICK_PX = 6f
     private const val DRAG_THRESHOLD_PX = 4f
+    /** Per-frame pan delta (in screen pixels) applied while an arrow key is held. */
+    private const val OVERLAY_PAN_SPEED_PX = 10f
 }

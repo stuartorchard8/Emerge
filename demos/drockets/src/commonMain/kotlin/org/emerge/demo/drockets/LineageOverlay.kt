@@ -28,9 +28,10 @@ import kotlin.time.TimeSource
  *     [WorldRenderer.focusOn]. Selection inspect and world focus are independent.
  *   - [updateHover] — mouse move while overlay is active.
  *
- * Layout reuses the shared [CladogramLayoutSolver] (the same one
- * other consumers used); the difference is purely in how the laid-out
- * positions are projected to screen and drawn.
+ * Layout has two interchangeable modes (see [CladogramLayoutMode]): the shared
+ * [CladogramLayoutSolver] for hierarchical (depth-banded) output, and the local
+ * [ForceDirectedLayoutSolver] for an iteratively-relaxed graph layout that retains
+ * per-node positions across frames. F7 cycles between them.
  */
 class LineageOverlay {
     private val nodeShader = LineageNodeShader()
@@ -49,6 +50,8 @@ class LineageOverlay {
         private set
     @Volatile var filter: CladogramFilterMode = CladogramFilterMode.ALL
         private set
+    @Volatile var layoutMode: CladogramLayoutMode = CladogramLayoutMode.HIERARCHICAL
+        private set
 
     private var selectedLineageId: Long? = null
     private var secondarySelectedLineageId: Long? = null
@@ -61,25 +64,51 @@ class LineageOverlay {
     private var resolution: Vec2 = Vec2(1f, 1f)
     private var lastTotalMs: Float = 0f
     private var solveCache: SolveCache? = null
+    private var visibleCache: VisibleCache? = null
     private var lastHighlight: HighlightState = HighlightState.INACTIVE
     /**
-     * Incremental cache for [CladogramFilterMode.LIVING_PAIRWISE_MRCA]. The stateless
-     * computation is O(L²) and was the source of the per-frame stall when reproduction
-     * is busy. Initialised lazily on first use of the filter mode.
+     * Incremental cache for [CladogramFilterMode.LIVING_ANCESTRY]. Births/deaths
+     * cost O(D × fan-in) instead of the O(L × D) the prior pair-wise MRCA cache
+     * paid. Initialised lazily on first use of the filter mode.
      */
-    private val pairwiseMrcaCache = PairwiseMrcaUnionCache()
+    private val livingAncestryCache = LivingAncestryCache()
+
+    /**
+     * Persistent positions for [CladogramLayoutMode.FORCE_DIRECTED]. Survives filter
+     * changes (so a node hidden by `LIVING_ONLY` returns to the same spot when the
+     * filter cycles back to `ALL`) and the hierarchical↔force toggle. The first time
+     * force mode is entered, [getForceDirectedSolveResult] seeds it from a one-shot
+     * hierarchical solve so we start untangled instead of from a random scatter.
+     */
+    private val forceSolver = ForceDirectedLayoutSolver()
+
+    /**
+     * Tracks whether the force solver has already been stepped during the current
+     * draw cycle. Reset at the start of [draw]; set after a force step; consulted by
+     * [getForceDirectedSolveResult] so non-draw callers (hit-test, hover) reuse the
+     * just-computed positions instead of running another integration step. Without
+     * this guard the sim speed scaled with mouse-event frequency — every hover update
+     * triggers a hit-test, every hit-test re-ran the force step.
+     */
+    private var forceStepDoneThisDraw: Boolean = false
+    private var lastForceSolution: CladogramLayoutSolution? = null
 
     fun setResolution(res: Vec2) { resolution = res }
 
     /** Returns the new active state. */
     fun toggleActive(): Boolean {
-        active = !active
+        setActive(!active)
+        return active
+    }
+
+    /** Explicit set without toggling — used by prefs restoration on startup. */
+    fun setActive(on: Boolean) {
+        active = on
         if (!active) {
             selectedLineageId = null
             secondarySelectedLineageId = null
             hoveredLineageId = null
         }
-        return active
     }
 
     /**
@@ -92,14 +121,43 @@ class LineageOverlay {
      * between two living drockets (or is itself living).
      */
     fun cycleFilter(): CladogramFilterMode {
-        filter = when (filter) {
+        setFilter(when (filter) {
             CladogramFilterMode.ALL -> CladogramFilterMode.LIVING_ONLY
             CladogramFilterMode.LIVING_ONLY -> CladogramFilterMode.LIVING_AND_CONNECTORS
-            CladogramFilterMode.LIVING_AND_CONNECTORS -> CladogramFilterMode.LIVING_PAIRWISE_MRCA
+            CladogramFilterMode.LIVING_AND_CONNECTORS -> CladogramFilterMode.LIVING_ANCESTRY
             else -> CladogramFilterMode.ALL
-        }
-        invalidateLayoutCache()
+        })
         return filter
+    }
+
+    /** Explicit set without cycling — used by prefs restoration on startup. */
+    fun setFilter(filter: CladogramFilterMode) {
+        this.filter = filter
+        invalidateLayoutCache()
+    }
+
+    /**
+     * Cycles HIERARCHICAL ↔ FORCE_DIRECTED. The force solver's stored positions persist
+     * across cycles, so toggling back and forth doesn't scramble the layout — only the
+     * first entry into force mode triggers a hierarchical-seed initialisation.
+     */
+    fun cycleLayoutMode(): CladogramLayoutMode {
+        setLayoutMode(when (layoutMode) {
+            CladogramLayoutMode.HIERARCHICAL -> CladogramLayoutMode.FORCE_DIRECTED
+            CladogramLayoutMode.FORCE_DIRECTED -> CladogramLayoutMode.HIERARCHICAL
+        })
+        return layoutMode
+    }
+
+    /** Explicit set without cycling — used by prefs restoration on startup. */
+    fun setLayoutMode(mode: CladogramLayoutMode) {
+        layoutMode = mode
+        // Hierarchical solve is keyed by (stamp, filter) only — switching layout mode
+        // doesn't invalidate either cache. The force solver's state is independent;
+        // we clear the per-draw step flag so the next force-mode frame integrates
+        // immediately rather than returning a stale cached solution from before the
+        // toggle.
+        forceStepDoneThisDraw = false
     }
 
     fun panByPixels(dxPx: Float, dyPx: Float) {
@@ -154,6 +212,25 @@ class LineageOverlay {
     /** Back-compat alias for tests / older callers that just want a non-shift click. */
     fun pickAt(pixel: Vec2, frame: DrocketsFrame): Long? = handleSelectClick(pixel, frame, shift = false)
 
+    /**
+     * Multiplies the force-directed solver's runtime force-scale by [factor]. The
+     * solver clamps the result to its supported range. Used by the Ctrl+Up/Down
+     * binding to step the relaxation rate up/down by a constant ratio. No effect
+     * in [CladogramLayoutMode.HIERARCHICAL] mode; the scale persists across mode
+     * toggles regardless.
+     */
+    fun nudgeForceScale(factor: Float) {
+        forceSolver.forceScale = forceSolver.forceScale * factor
+    }
+
+    /** Absolute set, clamped to the solver's supported range. Used by prefs restoration. */
+    fun setForceScale(scale: Float) {
+        forceSolver.forceScale = scale
+    }
+
+    /** Current force-scale multiplier on the force-directed solver. */
+    val forceScale: Float get() = forceSolver.forceScale
+
     /** Double-click: if the clicked node is a living drocket, return its [EntityId]
      *  so the composite can focus the world camera. */
     fun focusLivingDrocketAt(pixel: Vec2, frame: DrocketsFrame): EntityId? {
@@ -182,8 +259,15 @@ class LineageOverlay {
             CladogramFilterMode.ALL -> "FILTER ALL (F6)"
             CladogramFilterMode.LIVING_ONLY -> "FILTER LIVING ONLY (F6)"
             CladogramFilterMode.LIVING_AND_CONNECTORS -> "FILTER MRCA-WALK (F6)"
-            CladogramFilterMode.LIVING_PAIRWISE_MRCA -> "FILTER ALL-PAIRS MRCA (F6)"
+            CladogramFilterMode.LIVING_ANCESTRY -> "FILTER LIVING ANCESTRY (F6)"
             else -> "FILTER $filter (F6)"
+        }
+        out += when (layoutMode) {
+            CladogramLayoutMode.HIERARCHICAL -> "LAYOUT HIERARCHICAL (F7)"
+            CladogramLayoutMode.FORCE_DIRECTED -> "LAYOUT FORCE-DIRECTED (F7)"
+        }
+        if (layoutMode == CladogramLayoutMode.FORCE_DIRECTED && forceSolver.forceScale != 1f) {
+            out += "FORCE SCALE x${forceSolver.forceScale} (Ctrl+Up/Down)"
         }
         // Hover takes priority over selection for the active read-out — it's the more
         // ephemeral channel — but both are shown when distinct.
@@ -223,6 +307,10 @@ class LineageOverlay {
     fun draw(frame: DrocketsFrame) {
         if (!active) return
         val totalStart = TimeSource.Monotonic.markNow()
+        // Reset before the solve so this frame's force-step happens exactly once;
+        // hit-test/hover callers later in the frame will reuse the result instead of
+        // re-stepping the integrator on every mouse-move event.
+        forceStepDoneThisDraw = false
         val solution = getSolveResult(frame)
         val positions = solution.positions
         if (positions.isEmpty()) {
@@ -584,25 +672,35 @@ class LineageOverlay {
         val solution: CladogramLayoutSolution,
     )
 
-    private fun invalidateLayoutCache() { solveCache = null }
+    /**
+     * Visible-id cache for force-directed mode. Hierarchical mode bundles the visible
+     * set into its [solveCache.solution], so the cache only matters for the per-frame
+     * force path where the solution itself changes every step but the filter result
+     * doesn't.
+     */
+    private data class VisibleCache(
+        val versionStamp: Long,
+        val filter: CladogramFilterMode,
+        val visibleIds: Set<Long>,
+    )
 
-    private fun getSolveResult(frame: DrocketsFrame): CladogramLayoutSolution {
+    private fun invalidateLayoutCache() {
+        solveCache = null
+        visibleCache = null
+    }
+
+    private fun getSolveResult(frame: DrocketsFrame): CladogramLayoutSolution = when (layoutMode) {
+        CladogramLayoutMode.HIERARCHICAL -> getHierarchicalSolveResult(frame)
+        CladogramLayoutMode.FORCE_DIRECTED -> getForceDirectedSolveResult(frame)
+    }
+
+    private fun getHierarchicalSolveResult(frame: DrocketsFrame): CladogramLayoutSolution {
         val stamp = lineageVersionStamp(frame.lineage)
         val cached = solveCache
         if (cached != null && cached.versionStamp == stamp && cached.filter == filter) {
             return cached.solution
         }
-        // Visibility step. For PAIRWISE-MRCA the stateless function is O(L²) and was the
-        // source of the per-frame stall under active reproduction; the incremental cache
-        // gets the same result by applying only the births / deaths since the last frame.
-        // All other filter modes use the stateless path (their cost is already low).
-        val filterStart = kotlin.time.TimeSource.Monotonic.markNow()
-        val visibleIds = if (filter == CladogramFilterMode.LIVING_PAIRWISE_MRCA) {
-            pairwiseMrcaCache.visibleFor(frame.lineage, frame.cladogramLayout)
-        } else {
-            computeVisibleLineageIds(frame.lineage, frame.cladogramLayout, filter)
-        }
-        val filterMs = filterStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
+        val (visibleIds, filterMs) = computeVisibleIdsAndCache(frame, stamp)
         val solved = CladogramLayoutSolver.solveWithVisibleIds(
             layout = frame.cladogramLayout,
             lineage = frame.lineage,
@@ -612,6 +710,73 @@ class LineageOverlay {
         )
         solveCache = SolveCache(stamp, filter, solved)
         return solved
+    }
+
+    /**
+     * Force-directed solve path. The visible-id set is cached by (stamp, filter) so the
+     * filter cost doesn't repeat every frame, but the force step itself runs every
+     * frame — that's the whole point of an iterative relaxation. On first entry into
+     * this mode we seed the solver from a one-shot hierarchical solve so we start in
+     * an untangled state instead of a random scatter.
+     *
+     * Hit-test and hover callers reach this method via [getSolveResult] too, but the
+     * [forceStepDoneThisDraw] guard prevents them from triggering extra steps within
+     * the same draw cycle — without it, sim speed would scale with mouse-event
+     * frequency.
+     */
+    private fun getForceDirectedSolveResult(frame: DrocketsFrame): CladogramLayoutSolution {
+        val cached = lastForceSolution
+        if (forceStepDoneThisDraw && cached != null) return cached
+
+        val stamp = lineageVersionStamp(frame.lineage)
+        val (visibleIds, filterMs) = computeVisibleIdsAndCache(frame, stamp)
+
+        if (forceSolver.isEmpty && visibleIds.isNotEmpty()) {
+            val seed = CladogramLayoutSolver.solveWithVisibleIds(
+                layout = frame.cladogramLayout,
+                lineage = frame.lineage,
+                visibleIds = visibleIds,
+            )
+            forceSolver.seedFrom(seed.positions)
+        }
+
+        val positions = forceSolver.step(
+            layout = frame.cladogramLayout,
+            lineage = frame.lineage,
+            visibleIds = visibleIds,
+        )
+        val solution = CladogramLayoutSolution(
+            positions = positions,
+            filterMs = filterMs,
+            solveMs = forceSolver.lastStepMs,
+        )
+        lastForceSolution = solution
+        forceStepDoneThisDraw = true
+        return solution
+    }
+
+    /**
+     * Either returns the cached (visibleIds, filterMs=0) pair when (stamp, filter) is
+     * unchanged, or recomputes — using [livingAncestryCache] for the LIVING_ANCESTRY
+     * filter mode so per-frame work stays bounded — and updates the cache.
+     */
+    private fun computeVisibleIdsAndCache(
+        frame: DrocketsFrame,
+        stamp: Long,
+    ): Pair<Set<Long>, Float> {
+        val cached = visibleCache
+        if (cached != null && cached.versionStamp == stamp && cached.filter == filter) {
+            return cached.visibleIds to 0f
+        }
+        val filterStart = kotlin.time.TimeSource.Monotonic.markNow()
+        val visibleIds = if (filter == CladogramFilterMode.LIVING_ANCESTRY) {
+            livingAncestryCache.visibleFor(frame.lineage, frame.cladogramLayout)
+        } else {
+            computeVisibleLineageIds(frame.lineage, frame.cladogramLayout, filter)
+        }
+        val filterMs = filterStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
+        visibleCache = VisibleCache(stamp, filter, visibleIds)
+        return visibleIds to filterMs
     }
 
     /**
@@ -672,8 +837,9 @@ internal fun pairwiseMrca(
     if (primary == secondary) return null
     val (primaryDist, primaryPred) = bfsAncestorTree(primary, parents)
     val (secondaryDist, secondaryPred) = bfsAncestorTree(secondary, parents)
-    // Shared tie-break with the LIVING_PAIRWISE_MRCA filter and its cache so that the
-    // shift-click MRCA picked here matches what the filter shows for the same pair.
+    // Tie-break rules used by [findPairwiseMrca] are documented at its definition;
+    // shift-click highlight cares about a deterministic MRCA choice for the path
+    // reconstruction below.
     val mrca = findPairwiseMrca(primaryDist, secondaryDist) ?: return null
 
     val path = LinkedHashSet<Long>()

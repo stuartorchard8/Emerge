@@ -61,16 +61,50 @@ class DrocketsRenderer(
     fun rotateRight() = world.rotateBy(Frac(-1, 1024))
     fun focusPlanet() = world.focusPlanet()
 
-    // ── Lineage overlay (F2 to toggle, F6 to cycle filter) ────────────────────
+    // ── Lineage overlay (F2 toggle, F6 cycle filter, F7 cycle layout) ─────────
 
     val isLineageOverlayActive: Boolean get() = lineageOverlay.active
+    val lineageOverlayFilter: CladogramFilterMode get() = lineageOverlay.filter
+    val lineageOverlayLayoutMode: CladogramLayoutMode get() = lineageOverlay.layoutMode
+    val lineageOverlayForceScale: Float get() = lineageOverlay.forceScale
+
+    /**
+     * Silent absolute setters used by the prefs restoration at startup. Unlike the
+     * `toggle…` / `cycle…` methods these do not surface a HUD status message —
+     * they're applying pre-existing state, not reacting to user input.
+     */
+    fun applyLineageOverlayPrefs(
+        active: Boolean,
+        filter: CladogramFilterMode,
+        layoutMode: CladogramLayoutMode,
+        forceScale: Float,
+    ) {
+        lineageOverlay.setFilter(filter)
+        lineageOverlay.setLayoutMode(layoutMode)
+        lineageOverlay.setForceScale(forceScale)
+        lineageOverlay.setActive(active)
+    }
 
     fun toggleLineageOverlay() {
         val on = lineageOverlay.toggleActive()
         hud.setOverlayStatus(
-            if (on) "Lineage overlay ON (F2)  drag pan, wheel zoom, F6 filter, dbl-click focus"
+            if (on) "Lineage overlay ON (F2)  drag/arrows pan, wheel zoom, F6 filter, F7 layout, Ctrl+Up/Down force scale, dbl-click focus"
             else "Lineage overlay OFF (F2)",
             durationMs = 2_500,
+        )
+    }
+
+    /**
+     * Multiplies the force-directed solver's force-scale by [factor] (eg 2f to
+     * speed up relaxation, 0.5f to slow it down) and surfaces the new value as a
+     * transient HUD status. Solver clamps to its supported range, so repeated
+     * presses past the cap are no-ops.
+     */
+    fun nudgeLineageOverlayForceScale(factor: Float) {
+        lineageOverlay.nudgeForceScale(factor)
+        hud.setOverlayStatus(
+            "Lineage force scale: x${lineageOverlay.forceScale} (Ctrl+Up/Down)",
+            durationMs = 1_500,
         )
     }
 
@@ -81,7 +115,18 @@ class DrocketsRenderer(
                 CladogramFilterMode.ALL -> "Lineage filter: ALL (F6)"
                 CladogramFilterMode.LIVING_ONLY -> "Lineage filter: LIVING ONLY (F6)"
                 CladogramFilterMode.LIVING_AND_CONNECTORS -> "Lineage filter: MRCA-WALK (F6)"
-                CladogramFilterMode.LIVING_PAIRWISE_MRCA -> "Lineage filter: ALL-PAIRS MRCA (F6)"
+                CladogramFilterMode.LIVING_ANCESTRY -> "Lineage filter: LIVING ANCESTRY (F6)"
+            },
+            durationMs = 1_800,
+        )
+    }
+
+    fun cycleLineageOverlayLayoutMode() {
+        val mode = lineageOverlay.cycleLayoutMode()
+        hud.setOverlayStatus(
+            when (mode) {
+                CladogramLayoutMode.HIERARCHICAL -> "Lineage layout: HIERARCHICAL (F7)"
+                CladogramLayoutMode.FORCE_DIRECTED -> "Lineage layout: FORCE-DIRECTED (F7)"
             },
             durationMs = 1_800,
         )

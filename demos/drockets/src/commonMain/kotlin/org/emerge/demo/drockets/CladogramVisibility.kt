@@ -11,32 +11,33 @@ enum class CladogramFilterMode {
      * Approximates MRCA-style relatedness; doesn't guarantee that *all* living pairs share
      * a visible ancestor (each living's walk stops at its nearest LCA, which may differ
      * across the population — disjoint clades can end up disconnected in the view). Use
-     * [LIVING_PAIRWISE_MRCA] when full pair-wise connectivity matters.
+     * [LIVING_ANCESTRY] when full pair-wise connectivity matters.
      */
     LIVING_AND_CONNECTORS,
 
     /**
-     * Union of pair-wise MRCA paths over the living set. For every pair of living
-     * individuals (L_i, L_j), finds their MRCA and the shortest path between them through
-     * the visible parent edges; the visible subgraph is the union of all such paths plus
-     * every living node.
+     * Full ancestry of every living individual. A node is visible iff it is itself
+     * living OR it has at least one living descendant via the parent edges.
      *
      * Properties:
-     *   - **Guarantees connectivity within each weakly-connected component.** Every pair
-     *     of living in the same component has a path between them in the result.
-     *   - **Tighter than strict Steiner on a multi-parent DAG.** When a child has two
-     *     parents that both lead to common ancestors, only one parent's path is included
-     *     (whichever the BFS reached the MRCA through first); the redundant parent isn't
-     *     pulled in. On a strict tree (single parent everywhere) this is equivalent to
-     *     the Steiner subtree.
-     *   - **Bounded above by the per-component all-living-MRCA.** Nothing above the
-     *     deepest common ancestor of all component-living is included.
+     *   - **Connectivity within each weakly-connected component is automatic.** Every
+     *     living's ancestor chain is included; two livings that share an ancestor are
+     *     connected through it.
+     *   - **Both parents' lineages are visible in DAG cases.** Where a node has two
+     *     parents (sexual reproduction), both ancestor chains are walked — unlike a
+     *     BFS-chosen-path scheme that would arbitrarily pick one.
+     *   - **Births are essentially free.** Conception adds the newborn (and, in the
+     *     rare case where N has ancestors with no other living descendants, that chain
+     *     too). For drockets-style births where both parents are themselves living,
+     *     the visible-set gain is just `{N}`.
+     *   - **Death prunes branches that lose their last living.** Any ancestor of D
+     *     whose only living descendant was D drops out.
      *
-     * Cost: O(L × (V+E)) for per-living BFS-up + O(L²) for pairwise intersections, where
-     * L is the living count, V/E are the visible-node and visible-edge counts. For L≈200
-     * this is well under a frame budget, and the consuming renderer caches the result.
+     * Cost: per node V, a count of "livings descended from V (incl. V itself if
+     * living)". Per birth/death is O(D × fan-in) — walk N's ancestor DAG, update
+     * counts. No per-pair state, so no L factor in the update cost.
      */
-    LIVING_PAIRWISE_MRCA,
+    LIVING_ANCESTRY,
 }
 
 fun computeVisibleLineageIds(
@@ -46,7 +47,7 @@ fun computeVisibleLineageIds(
 ): Set<Long> {
     val allIds = layout.depthById.keys
     return when (filterMode) {
-        CladogramFilterMode.LIVING_PAIRWISE_MRCA -> computePairwiseMrcaUnionVisibleIds(lineage, layout)
+        CladogramFilterMode.LIVING_ANCESTRY -> computeLivingAncestryVisibleIds(lineage, layout)
         CladogramFilterMode.ALL -> allIds.toSet()
         CladogramFilterMode.LIVING_ONLY -> allIds.filterTo(LinkedHashSet()) { lineage.livingLineageIds.contains(it) }
         CladogramFilterMode.LIVING_AND_CONNECTORS -> {
@@ -171,144 +172,105 @@ fun computeVisibleLineageIds(
 }
 
 /**
- * Union of pair-wise MRCA paths over the living set. See [CladogramFilterMode.LIVING_PAIRWISE_MRCA]
+ * Full ancestry of every living individual. See [CladogramFilterMode.LIVING_ANCESTRY]
  * for the user-facing description.
  *
- * Implementation:
- *   1. Build the parents adjacency restricted to visible nodes.
- *   2. BFS up from each living individual through parent edges, caching the per-ancestor
- *      (distance, predecessor) maps. The predecessor map points toward the seed, so a
- *      walk from any ancestor terminates at the seed.
- *   3. For every pair of living (i, j): intersect the reachable-ancestor sets; pick the
- *      common ancestor with minimum (dist-from-i + dist-from-j) as the pair's MRCA. Walk
- *      from the MRCA back to each seed via that seed's pred chain and add every visited
- *      node to the visible set.
- *
- * Why this is tighter than strict Steiner on a multi-parent DAG: when a child has two
- * parents and only one is needed to reach the common ancestor, the BFS picks one and
- * the other is never on the reconstructed path. Strict Steiner's "either parent has
- * subtree-living plus complement-living" inclusion rule would pull both in.
- *
- * Why connectivity is guaranteed: every pair (i, j) in the same weakly-connected
- * component shares at least one ancestor (the component's structure forces it). The
- * union of all pair-wise paths therefore forms a connected subgraph spanning all living
- * in that component. Pairs in different components contribute no path; each component's
- * living are visible on their own.
+ * Implementation: BFS-up from every living, accumulating every visited node. A node
+ * appears in the result iff it's living or some living is reachable via parent edges
+ * starting at it (i.e., the node is an ancestor in the DAG sense).
  */
-private fun computePairwiseMrcaUnionVisibleIds(
+private fun computeLivingAncestryVisibleIds(
     lineage: DrocketLineageState,
     layout: CladogramLayout,
 ): Set<Long> {
-    val allIds = layout.depthById.keys
-    if (allIds.isEmpty()) return emptySet()
-    val living = lineage.livingLineageIds.filter { it in allIds }
+    val visibleIds = layout.depthById.keys
+    if (visibleIds.isEmpty()) return emptySet()
+    val living = lineage.livingLineageIds.filter { it in visibleIds }
     if (living.isEmpty()) return emptySet()
 
-    // Parents adjacency restricted to currently-visible nodes.
-    val parents = HashMap<Long, MutableList<Long>>(allIds.size)
-    for (id in allIds) {
-        val node = lineage.nodes[id] ?: continue
-        node.motherLineageId?.let { m -> if (m in allIds) parents.getOrPut(id) { mutableListOf() }.add(m) }
-        node.fatherLineageId?.let { f -> if (f in allIds) parents.getOrPut(id) { mutableListOf() }.add(f) }
+    val out = LinkedHashSet<Long>()
+    val queue = ArrayDeque<Long>()
+    for (l in living) {
+        if (out.add(l)) queue.addLast(l)
     }
-
-    // BFS-up cache: one per living individual.
-    val trees = HashMap<Long, Pair<Map<Long, Int>, Map<Long, Long>>>(living.size)
-    for (l in living) trees[l] = bfsAncestorTree(l, parents)
-
-    val visible = LinkedHashSet<Long>()
-    visible.addAll(living)
-
-    for (i in living.indices) {
-        val (distI, predI) = trees[living[i]] ?: continue
-        for (j in (i + 1) until living.size) {
-            val (distJ, predJ) = trees[living[j]] ?: continue
-
-            val mrca = findPairwiseMrca(distI, distJ) ?: continue
-
-            // Walk MRCA -> living[i] via predI, and MRCA -> living[j] via predJ.
-            // Predecessors point toward each seed, so these chains terminate at the seed.
-            var cur: Long? = mrca
-            while (cur != null) { visible += cur; cur = predI[cur] }
-            cur = mrca
-            while (cur != null) { visible += cur; cur = predJ[cur] }
-        }
+    while (queue.isNotEmpty()) {
+        val v = queue.removeFirst()
+        val node = lineage.nodes[v] ?: continue
+        val m = node.motherLineageId
+        val f = node.fatherLineageId
+        if (m != null && m in visibleIds && out.add(m)) queue.addLast(m)
+        if (f != null && f in visibleIds && out.add(f)) queue.addLast(f)
     }
-    return visible
+    return out
 }
 
 /**
- * Incremental cache for [CladogramFilterMode.LIVING_PAIRWISE_MRCA].
+ * Incremental cache for [CladogramFilterMode.LIVING_ANCESTRY].
  *
- * The stateless [computeVisibleLineageIds] for this mode is O(L × (V+E) + L²) per call.
- * Re-running it every frame in a sim with active reproduction (cache invalidates on each
- * birth or death) is the source of the ~1s frame stalls.
+ * Maintains a per-node count `lDC[V]` = #livings whose ancestor chain reaches V
+ * (counting V itself if V is currently living). A node is visible iff `lDC[V] > 0`.
  *
- * This cache instead maintains the pair-wise structure across frames and updates it
- * incrementally:
+ * Updates are local to the affected node's ancestor DAG:
  *
- *   - [parents]:        adjacency from lineage edges, grows monotonically
- *   - [livingBfs]:      per-living `(distances, predecessors)` BFS-up; computed once
- *                       at birth, retained until death. Existing living individuals'
- *                       BFS results never change because new births only add children,
- *                       not new ancestors of anyone already alive.
- *   - [pairPaths]:      per-(living, living) unordered-pair → set-of-nodes-on-shortest-path
- *   - [nodeRefCount]:   per-node count of paths that reference it; node is visible iff
- *                       count > 0 (or the node is itself currently living)
- *   - [pairsByLiving]:  reverse index so death-cleanup is O(L × pathLength) instead of
- *                       O(L² × pathLength)
+ *   Birth of N:
+ *     BFS-up from N; `lDC[V]++` for every visited ancestor. Visibility flips
+ *     to "visible" for any V whose count transitioned 0 → 1 — an ancestor that
+ *     previously had no living descendants. For drockets-style births where both
+ *     parents are themselves living, every ancestor above N already has at least
+ *     one living descendant (the parent), so the visible-set gain is just `{N}`.
  *
- * Per delta cost:
+ *   Death of D:
+ *     BFS-up from D; `lDC[V]--` for every visited ancestor. Visibility flips to
+ *     "invisible" for any V whose count transitioned 1 → 0 — the "branch propped
+ *     up by D" case where D was its only living descendant.
  *
- *   Birth of new living N:
- *     - one BFS-up from N (O(|ancestors of N|))
- *     - L−1 new pair paths (each: O(|N's ancestors| + pathLength))
+ * Per-event cost: O(|ancestor DAG of N| × fan-in), where fan-in ≤ 2 for drockets.
+ * No L (livings count) factor, unlike the prior pair-wise MRCA cache that iterated
+ * every existing living on each birth and was the source of the per-frame stalls
+ * under active reproduction.
  *
- *   Death of living D:
- *     - look up D's L−1 pairs via [pairsByLiving]
- *     - for each, decrement [nodeRefCount] for path nodes
- *
- * First frame is still O(L²) — there's no shortcut for the initial build. Subsequent
- * frames pay only the delta.
- *
- * On snapshot load (or any lineage state that has nodes the cache thought existed but
- * no longer do), the cache detects via [parents] not matching [DrocketLineageState.nodes]
- * and resets to a full rebuild.
+ * On snapshot load (the lineage replaces ids the cache thought existed), the cache
+ * detects via [parents] not matching [DrocketLineageState.nodes] and resets to a
+ * full rebuild from scratch.
  */
-internal class PairwiseMrcaUnionCache {
+internal class LivingAncestryCache {
+    /** Adjacency from the visible-restricted lineage edges (child → parents). Grows
+     *  monotonically as new visible nodes appear. */
     private val parents = HashMap<Long, List<Long>>()
-    private val livingBfs = HashMap<Long, Pair<Map<Long, Int>, Map<Long, Long>>>()
-    private val pairPaths = HashMap<UnorderedPair, Set<Long>>()
-    private val pairsByLiving = HashMap<Long, MutableSet<UnorderedPair>>()
-    private val nodeRefCount = HashMap<Long, Int>()
+    /** lDC[V] = number of currently-living individuals descended from V (V itself
+     *  counted if V is living). Nodes whose count hits 0 are removed for memory
+     *  hygiene — they re-enter on the next birth that reaches them. */
+    private val livingDescCount = HashMap<Long, Int>()
+    /** Last-known living set; diffed against the current frame to derive births/deaths. */
     private val livingMembers = LinkedHashSet<Long>()
+    /** Materialised visible set, kept in sync with [livingDescCount] on every delta
+     *  so [visibleFor] is O(1) after [ensureCurrent] returns. */
     private val visibleSet = LinkedHashSet<Long>()
 
-    /** Returns the current pair-wise MRCA union, applying any deltas since the last call. */
+    /** Returns the current visible set, applying any deltas since the last call. */
     fun visibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
         ensureCurrent(lineage, layout)
         return visibleSet
     }
 
-    /**
-     * Resets the cache to empty. Called automatically when a stale-cache condition is
-     * detected (e.g. snapshot load); also useful in tests.
-     */
+    /** Resets the cache to empty. Called automatically on stale-cache detection
+     *  (e.g. snapshot load); also useful in tests. */
     fun reset() {
-        parents.clear(); livingBfs.clear(); pairPaths.clear()
-        pairsByLiving.clear(); nodeRefCount.clear()
-        livingMembers.clear(); visibleSet.clear()
+        parents.clear()
+        livingDescCount.clear()
+        livingMembers.clear()
+        visibleSet.clear()
     }
 
     private fun ensureCurrent(lineage: DrocketLineageState, layout: CladogramLayout) {
-        // Stale detection: if any cached node ID has disappeared (e.g. snapshot reload
-        // replaced the lineage with an earlier state), full reset.
+        // Stale detection: any cached id missing from the current lineage means the
+        // lineage went backwards (snapshot reload, typically). Full rebuild.
         if (parents.keys.any { it !in lineage.nodes }) reset()
 
         val visibleIds = layout.depthById.keys
 
-        // Step 1: catch up parents adjacency for any new visible nodes. Births never
-        // mutate existing parents entries, so this is purely additive.
+        // Catch up parents adjacency for any newly-visible nodes. Births never mutate
+        // existing entries, so this is purely additive.
         for ((id, node) in lineage.nodes) {
             if (id !in visibleIds || id in parents) continue
             val ps = buildList<Long>(2) {
@@ -318,85 +280,53 @@ internal class PairwiseMrcaUnionCache {
             parents[id] = ps
         }
 
-        // Step 2: diff the living set.
         val currentLiving = lineage.livingLineageIds.filterTo(LinkedHashSet()) { it in visibleIds }
         val deaths = livingMembers.filter { it !in currentLiving }
         val births = currentLiving.filter { it !in livingMembers }
 
-        // Step 3: remove pairs for deaths first (so newly-born pairs don't reference
-        // about-to-be-removed BFS results).
-        for (dead in deaths) {
-            removeAllPairsInvolving(dead)
-            livingBfs.remove(dead)
-            livingMembers.remove(dead)
-            if ((nodeRefCount[dead] ?: 0) == 0) visibleSet.remove(dead)
-        }
-
-        // Step 4: add new births. BFS-up once each, then compute pair paths with every
-        // already-known living. The order of `births` here matters only for the
-        // tie-break order of equal-distance pair paths; the resulting visible set is
-        // the same.
-        for (newLife in births) {
-            livingBfs[newLife] = bfsAncestorTree(newLife, parents)
-            visibleSet.add(newLife)
-            for (other in livingMembers) {
-                if (other == newLife) continue
-                addPair(newLife, other)
-            }
-            livingMembers.add(newLife)
-        }
+        // Process deaths first so the lDC bookkeeping is consistent if a birth and
+        // death involve overlapping ancestors in the same tick.
+        for (dead in deaths) processDeath(dead)
+        for (newLife in births) processBirth(newLife)
     }
 
-    private fun addPair(a: Long, b: Long) {
-        val (distA, predA) = livingBfs[a] ?: return
-        val (distB, predB) = livingBfs[b] ?: return
-
-        val mrca = findPairwiseMrca(distA, distB) ?: return
-
-        // Reconstruct the path by walking pred chains from MRCA back to each seed.
-        val path = LinkedHashSet<Long>()
-        var cur: Long? = mrca
-        while (cur != null) { path += cur; cur = predA[cur] }
-        cur = mrca
-        while (cur != null) { path += cur; cur = predB[cur] }
-
-        val key = UnorderedPair.of(a, b)
-        pairPaths[key] = path
-        pairsByLiving.getOrPut(a) { mutableSetOf() }.add(key)
-        pairsByLiving.getOrPut(b) { mutableSetOf() }.add(key)
-        for (n in path) {
-            nodeRefCount[n] = (nodeRefCount[n] ?: 0) + 1
-            visibleSet.add(n)
-        }
-    }
-
-    private fun removeAllPairsInvolving(dead: Long) {
-        val pairs = pairsByLiving.remove(dead) ?: return
-        for (key in pairs) {
-            val path = pairPaths.remove(key) ?: continue
-            // Also drop the pair from the OTHER endpoint's index so we don't leak.
-            val otherEndpoint = if (key.a == dead) key.b else key.a
-            pairsByLiving[otherEndpoint]?.remove(key)
-            for (n in path) {
-                val rc = (nodeRefCount[n] ?: 0) - 1
-                if (rc <= 0) {
-                    nodeRefCount.remove(n)
-                    // Keep n visible if it's currently a living member (it'll be removed
-                    // from visibleSet later when its own death is processed, if it is dead).
-                    if (n !in livingMembers) visibleSet.remove(n)
-                } else {
-                    nodeRefCount[n] = rc
-                }
+    private fun processBirth(n: Long) {
+        livingMembers.add(n)
+        val seen = HashSet<Long>()
+        val queue = ArrayDeque<Long>()
+        seen.add(n)
+        queue.addLast(n)
+        while (queue.isNotEmpty()) {
+            val v = queue.removeFirst()
+            val before = livingDescCount[v] ?: 0
+            livingDescCount[v] = before + 1
+            if (before == 0) visibleSet.add(v)
+            for (p in parents[v] ?: emptyList()) {
+                if (seen.add(p)) queue.addLast(p)
             }
         }
     }
-}
 
-/** Unordered pair of lineage IDs, normalised so `a < b`. */
-internal data class UnorderedPair(val a: Long, val b: Long) {
-    companion object {
-        fun of(x: Long, y: Long): UnorderedPair =
-            if (x < y) UnorderedPair(x, y) else UnorderedPair(y, x)
+    private fun processDeath(d: Long) {
+        livingMembers.remove(d)
+        val seen = HashSet<Long>()
+        val queue = ArrayDeque<Long>()
+        seen.add(d)
+        queue.addLast(d)
+        while (queue.isNotEmpty()) {
+            val v = queue.removeFirst()
+            val before = livingDescCount[v] ?: 0
+            val after = before - 1
+            if (after <= 0) {
+                livingDescCount.remove(v)
+                visibleSet.remove(v)
+            } else {
+                livingDescCount[v] = after
+            }
+            for (p in parents[v] ?: emptyList()) {
+                if (seen.add(p)) queue.addLast(p)
+            }
+        }
     }
 }
 
@@ -414,9 +344,9 @@ internal data class UnorderedPair(val a: Long, val b: Long) {
  *      ancestor of the other, the MRCA is the ancestor endpoint itself.
  *   3. Smallest id — final deterministic catch.
  *
- * Without rule 2 the cache and the stateless function can pick different MRCAs for the
- * same pair because they iterate `distA` from different sides; that disagreement was
- * the source of cache-drift caught by the long-sequence fuzz test.
+ * Used by the shift+click pair-wise MRCA highlight in [LineageOverlay], which is
+ * an interactive feature distinct from the [CladogramFilterMode.LIVING_ANCESTRY]
+ * visibility computation.
  */
 internal fun findPairwiseMrca(distA: Map<Long, Int>, distB: Map<Long, Int>): Long? {
     var bestMrca: Long? = null
