@@ -21,7 +21,7 @@ class LivingAncestryCacheTest {
         )
         val layout = CladogramLayout.build(lineage)
         val cache = LivingAncestryCache()
-        val cached = cache.visibleFor(lineage, layout)
+        val cached = cache.ancestryVisibleFor(lineage, layout)
         val stateless = computeVisibleLineageIds(lineage, layout, CladogramFilterMode.LIVING_ANCESTRY)
         assertEquals(stateless, cached, "cache result should match stateless on first call")
     }
@@ -40,14 +40,14 @@ class LivingAncestryCacheTest {
             livingLineageIds = setOf(4L, 5L),
         )
         val cache = LivingAncestryCache()
-        cache.visibleFor(initial, CladogramLayout.build(initial))
+        cache.ancestryVisibleFor(initial, CladogramLayout.build(initial))
 
         // New birth: 6 born to 3.
         val afterBirth = initial.copy(
             nodes = initial.nodes + (6L to node(6L, mother = 3L)),
             livingLineageIds = initial.livingLineageIds + 6L,
         )
-        val cachedAfterBirth = cache.visibleFor(afterBirth, CladogramLayout.build(afterBirth))
+        val cachedAfterBirth = cache.ancestryVisibleFor(afterBirth, CladogramLayout.build(afterBirth))
         val statelessAfterBirth =
             computeVisibleLineageIds(afterBirth, CladogramLayout.build(afterBirth), CladogramFilterMode.LIVING_ANCESTRY)
         assertEquals(statelessAfterBirth, cachedAfterBirth)
@@ -70,10 +70,10 @@ class LivingAncestryCacheTest {
             livingLineageIds = setOf(5L, 6L, 7L),
         )
         val cache = LivingAncestryCache()
-        cache.visibleFor(initial, CladogramLayout.build(initial))
+        cache.ancestryVisibleFor(initial, CladogramLayout.build(initial))
 
         val afterDeath = initial.copy(livingLineageIds = setOf(5L, 7L))
-        val cachedAfterDeath = cache.visibleFor(afterDeath, CladogramLayout.build(afterDeath))
+        val cachedAfterDeath = cache.ancestryVisibleFor(afterDeath, CladogramLayout.build(afterDeath))
         val statelessAfterDeath =
             computeVisibleLineageIds(afterDeath, CladogramLayout.build(afterDeath), CladogramFilterMode.LIVING_ANCESTRY)
         assertEquals(statelessAfterDeath, cachedAfterDeath)
@@ -95,10 +95,10 @@ class LivingAncestryCacheTest {
             livingLineageIds = setOf(4L, 5L, 6L),
         )
         val cache = LivingAncestryCache()
-        cache.visibleFor(initial, CladogramLayout.build(initial))
+        cache.ancestryVisibleFor(initial, CladogramLayout.build(initial))
 
         val afterDeath = initial.copy(livingLineageIds = setOf(5L, 6L))
-        val cachedAfterDeath = cache.visibleFor(afterDeath, CladogramLayout.build(afterDeath))
+        val cachedAfterDeath = cache.ancestryVisibleFor(afterDeath, CladogramLayout.build(afterDeath))
         val statelessAfterDeath =
             computeVisibleLineageIds(afterDeath, CladogramLayout.build(afterDeath), CladogramFilterMode.LIVING_ANCESTRY)
         assertEquals(statelessAfterDeath, cachedAfterDeath)
@@ -124,12 +124,12 @@ class LivingAncestryCacheTest {
             livingLineageIds = setOf(5L, 6L, 7L),
         )
         val cache = LivingAncestryCache()
-        val before = cache.visibleFor(initial, CladogramLayout.build(initial))
+        val before = cache.ancestryVisibleFor(initial, CladogramLayout.build(initial))
         assertEquals(true, 4L in before, "4 visible while 7 alive")
         assertEquals(true, 7L in before, "7 visible while alive")
 
         val afterDeath = initial.copy(livingLineageIds = setOf(5L, 6L))
-        val cachedAfterDeath = cache.visibleFor(afterDeath, CladogramLayout.build(afterDeath))
+        val cachedAfterDeath = cache.ancestryVisibleFor(afterDeath, CladogramLayout.build(afterDeath))
         val statelessAfterDeath =
             computeVisibleLineageIds(afterDeath, CladogramLayout.build(afterDeath), CladogramFilterMode.LIVING_ANCESTRY)
         assertEquals(statelessAfterDeath, cachedAfterDeath)
@@ -151,7 +151,7 @@ class LivingAncestryCacheTest {
             livingLineageIds = setOf(2L, 3L),
         )
         val cache = LivingAncestryCache()
-        cache.visibleFor(lineage, CladogramLayout.build(lineage))
+        cache.ancestryVisibleFor(lineage, CladogramLayout.build(lineage))
 
         var nextId = 4L
         val rng = kotlin.random.Random(1)
@@ -171,7 +171,7 @@ class LivingAncestryCacheTest {
                 lineage = lineage.copy(livingLineageIds = lineage.livingLineageIds - dying)
             }
             val layout = CladogramLayout.build(lineage)
-            val cached = cache.visibleFor(lineage, layout)
+            val cached = cache.ancestryVisibleFor(lineage, layout)
             val stateless = computeVisibleLineageIds(lineage, layout, CladogramFilterMode.LIVING_ANCESTRY)
             assertEquals(stateless, cached, "step $step diverged: cache=$cached, stateless=$stateless")
         }
@@ -193,7 +193,7 @@ class LivingAncestryCacheTest {
             livingLineageIds = setOf(4L, 5L),
         )
         val cache = LivingAncestryCache()
-        cache.visibleFor(full, CladogramLayout.build(full))
+        cache.ancestryVisibleFor(full, CladogramLayout.build(full))
 
         // "Load" an earlier state with fewer nodes.
         val earlier = DrocketLineageState(
@@ -204,13 +204,203 @@ class LivingAncestryCacheTest {
             ),
             livingLineageIds = setOf(2L, 3L),
         )
-        val cachedAfterLoad = cache.visibleFor(earlier, CladogramLayout.build(earlier))
+        val cachedAfterLoad = cache.ancestryVisibleFor(earlier, CladogramLayout.build(earlier))
         val statelessAfterLoad =
             computeVisibleLineageIds(earlier, CladogramLayout.build(earlier), CladogramFilterMode.LIVING_ANCESTRY)
         assertEquals(statelessAfterLoad, cachedAfterLoad)
         // Old nodes 4, 5 must not appear.
         assertEquals(false, 4L in cachedAfterLoad)
         assertEquals(false, 5L in cachedAfterLoad)
+    }
+
+    // ── LIVING_STEINER mode ─────────────────────────────────────────────────────
+
+    @Test
+    fun steiner_excludes_trunk_above_lca() {
+        // A → B → C → {D → L1, E → L2}. LUCA = C. Steiner = {C, D, L1, E, L2}.
+        // A and B are the "trunk above LUCA" — universal ancestors of all livings
+        // but with only one living-bearing branch, so they're excluded.
+        val lineage = DrocketLineageState(
+            nodes = linkedMapOf(
+                1L to node(1L),                       // A
+                2L to node(2L, mother = 1L),          // B
+                3L to node(3L, mother = 2L),          // C (LUCA)
+                4L to node(4L, mother = 3L),          // D
+                5L to node(5L, mother = 3L),          // E
+                6L to node(6L, mother = 4L),          // L1
+                7L to node(7L, mother = 5L),          // L2
+            ),
+            livingLineageIds = setOf(6L, 7L),
+        )
+        val layout = CladogramLayout.build(lineage)
+        val cache = LivingAncestryCache()
+        val steiner = cache.steinerVisibleFor(lineage, layout)
+        val stateless = computeVisibleLineageIds(lineage, layout, CladogramFilterMode.LIVING_STEINER)
+        assertEquals(stateless, steiner, "cache vs stateless Steiner")
+        assertEquals(setOf(3L, 4L, 5L, 6L, 7L), steiner, "LUCA at top, no trunk above")
+    }
+
+    @Test
+    fun steiner_single_living_shows_only_that_living() {
+        // T=1 case: no Steiner subgraph to construct, just the lone living.
+        val lineage = DrocketLineageState(
+            nodes = linkedMapOf(
+                1L to node(1L),
+                2L to node(2L, mother = 1L),
+                3L to node(3L, mother = 2L),
+            ),
+            livingLineageIds = setOf(3L),
+        )
+        val layout = CladogramLayout.build(lineage)
+        val cache = LivingAncestryCache()
+        val steiner = cache.steinerVisibleFor(lineage, layout)
+        assertEquals(setOf(3L), steiner)
+    }
+
+    @Test
+    fun steiner_includes_lca_with_dag_multi_parent_living() {
+        // L1 has two parents P1a, P1b, both descended from G. L2 is also G's
+        // descendant via a separate sibling. G is the LUCA. Both P1a and P1b
+        // are visible because both have lDC > 0 and lDC < T (they don't each
+        // cover both livings — only their child L1).
+        //
+        //         G  (id 1)
+        //        /|\
+        //      P1a P1b L2  (ids 2, 3, 5)
+        //        \ /
+        //         L1   (id 4)
+        val lineage = DrocketLineageState(
+            nodes = linkedMapOf(
+                1L to node(1L),                              // G
+                2L to node(2L, mother = 1L),                 // P1a
+                3L to node(3L, mother = 1L),                 // P1b
+                4L to node(4L, mother = 2L, father = 3L),    // L1
+                5L to node(5L, mother = 1L),                 // L2
+            ),
+            livingLineageIds = setOf(4L, 5L),
+        )
+        val layout = CladogramLayout.build(lineage)
+        val cache = LivingAncestryCache()
+        val steiner = cache.steinerVisibleFor(lineage, layout)
+        val stateless = computeVisibleLineageIds(lineage, layout, CladogramFilterMode.LIVING_STEINER)
+        assertEquals(stateless, steiner, "cache vs stateless Steiner")
+        assertEquals(setOf(1L, 2L, 3L, 4L, 5L), steiner, "both parents stay visible in the DAG")
+    }
+
+    @Test
+    fun steiner_trunk_flips_visibility_as_livings_diverge() {
+        // Initial: single living L1 under deep chain A → B → C → L1. Steiner = {L1}.
+        // Add L2 born under B (a sibling of C above L1). Now LUCA shifts to B,
+        // and C must flip to visible (it's on the path between L2's branch and L1).
+        // A stays excluded (still trunk above LUCA = B).
+        val initial = DrocketLineageState(
+            nodes = linkedMapOf(
+                1L to node(1L),                       // A
+                2L to node(2L, mother = 1L),          // B (will become LUCA)
+                3L to node(3L, mother = 2L),          // C
+                4L to node(4L, mother = 3L),          // L1
+            ),
+            livingLineageIds = setOf(4L),
+        )
+        val cache = LivingAncestryCache()
+        val first = cache.steinerVisibleFor(initial, CladogramLayout.build(initial))
+        assertEquals(setOf(4L), first, "T=1 → just the living")
+
+        // Add L2 under B.
+        val grown = initial.copy(
+            nodes = initial.nodes + (5L to node(5L, mother = 2L)),
+            livingLineageIds = setOf(4L, 5L),
+        )
+        val second = cache.steinerVisibleFor(grown, CladogramLayout.build(grown))
+        val stateless = computeVisibleLineageIds(grown, CladogramLayout.build(grown), CladogramFilterMode.LIVING_STEINER)
+        assertEquals(stateless, second, "cache vs stateless after LUCA shift")
+        assertEquals(setOf(2L, 3L, 4L, 5L), second, "LUCA = B, A excluded as trunk above")
+    }
+
+    @Test
+    fun steiner_excludes_trunk_above_lca_in_dag_with_multi_child_founders() {
+        // Reproduces the user-reported bug: founders A and B each have two children
+        // (C1/C2 from A, D1/D2 from B). All four cross-breed into a single LUCA at L,
+        // from which both livings descend. Under a naive "branchCount >= 2" predicate,
+        // A and B would stay visible because each has two living-bearing children —
+        // but they're trunk above LUCA in the DAG and should be excluded.
+        //
+        //   A           B          (founders)
+        //   ├─ C1       ├─ D1
+        //   └─ C2       └─ D2
+        //       \         /
+        //        \   ┌───┘
+        //         \  │
+        //          L              (LUCA: mother=C1, father=D1, the only converging child)
+        //          ├─ L1          (living)
+        //          └─ L2          (living)
+        //
+        // Both C1 and D1 should be visible (descendants of LUCA via parent edges — no
+        // wait, LUCA is L, and C1 and D1 are L's parents, so they're ANCESTORS of LUCA,
+        // not descendants). Under strict Steiner, only LUCA and below are visible.
+        val lineage = DrocketLineageState(
+            nodes = linkedMapOf(
+                1L to node(1L),                           // A
+                2L to node(2L),                           // B
+                3L to node(3L, mother = 1L),              // C1
+                4L to node(4L, mother = 1L),              // C2 (dead-end)
+                5L to node(5L, father = 2L),              // D1
+                6L to node(6L, father = 2L),              // D2 (dead-end)
+                7L to node(7L, mother = 3L, father = 5L), // L (LUCA)
+                8L to node(8L, mother = 7L),              // L1
+                9L to node(9L, mother = 7L),              // L2
+            ),
+            livingLineageIds = setOf(8L, 9L),
+        )
+        val layout = CladogramLayout.build(lineage)
+        val cache = LivingAncestryCache()
+        val steiner = cache.steinerVisibleFor(lineage, layout)
+        val stateless = computeVisibleLineageIds(lineage, layout, CladogramFilterMode.LIVING_STEINER)
+        assertEquals(stateless, steiner, "cache vs stateless")
+        // LUCA = 7 (L). Below: L1, L2. Nothing above L should be visible.
+        assertEquals(setOf(7L, 8L, 9L), steiner, "only LUCA and below")
+        assertEquals(false, 1L in steiner, "founder A excluded as trunk above LUCA")
+        assertEquals(false, 2L in steiner, "founder B excluded as trunk above LUCA")
+        assertEquals(false, 3L in steiner, "C1 is parent of LUCA, above LUCA, excluded")
+        assertEquals(false, 5L in steiner, "D1 is parent of LUCA, above LUCA, excluded")
+    }
+
+    @Test
+    fun steiner_matches_stateless_through_a_long_birth_death_sequence() {
+        // Same random fuzz as the ancestry case, but on the Steiner predicate to
+        // catch any branchCount / nodesByLDC bookkeeping drift.
+        var lineage = DrocketLineageState(
+            nodes = linkedMapOf(
+                1L to node(1L),
+                2L to node(2L, mother = 1L),
+                3L to node(3L, mother = 1L),
+            ),
+            livingLineageIds = setOf(2L, 3L),
+        )
+        val cache = LivingAncestryCache()
+        cache.steinerVisibleFor(lineage, CladogramLayout.build(lineage))
+
+        var nextId = 4L
+        val rng = kotlin.random.Random(7)
+        for (step in 0 until 50) {
+            val living = lineage.livingLineageIds.toList()
+            if (rng.nextFloat() < 0.6f || living.size < 2) {
+                val mother = living.random(rng)
+                val father = living.takeIf { it.size > 1 }?.filter { it != mother }?.randomOrNull(rng)
+                val newId = nextId++
+                lineage = lineage.copy(
+                    nodes = lineage.nodes + (newId to node(newId, mother = mother, father = father)),
+                    livingLineageIds = lineage.livingLineageIds + newId,
+                )
+            } else {
+                val dying = living.random(rng)
+                lineage = lineage.copy(livingLineageIds = lineage.livingLineageIds - dying)
+            }
+            val layout = CladogramLayout.build(lineage)
+            val cached = cache.steinerVisibleFor(lineage, layout)
+            val stateless = computeVisibleLineageIds(lineage, layout, CladogramFilterMode.LIVING_STEINER)
+            assertEquals(stateless, cached, "step $step Steiner diverged: cache=$cached, stateless=$stateless")
+        }
     }
 
     private fun node(id: Long, mother: Long? = null, father: Long? = null) =

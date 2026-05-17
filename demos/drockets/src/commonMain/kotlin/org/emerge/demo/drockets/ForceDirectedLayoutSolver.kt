@@ -283,13 +283,15 @@ class ForceDirectedLayoutSolver {
             }
         }
 
+	val scaledMaxDisplacement = MAX_DISPLACEMENT*forceScale
+	val scaledMaxDisplacement2 = scaledMaxDisplacement*scaledMaxDisplacement
         // Integrate: vel = damped(prev) + force; clamp displacement; advance position.
         for (i in 0 until n) {
             var vx = vxs[i] * DAMPING + fxs[i]
             var vy = vys[i] * DAMPING + fys[i]
             val vmag2 = vx * vx + vy * vy
-            if (vmag2 > MAX_DISPLACEMENT2) {
-                val s = MAX_DISPLACEMENT / sqrt(vmag2)
+            if (vmag2 > scaledMaxDisplacement2) {
+                val s = scaledMaxDisplacement / sqrt(vmag2)
                 vx *= s
                 vy *= s
             }

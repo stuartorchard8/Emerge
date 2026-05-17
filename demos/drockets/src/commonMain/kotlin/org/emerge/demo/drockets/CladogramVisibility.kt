@@ -11,9 +11,26 @@ enum class CladogramFilterMode {
      * Approximates MRCA-style relatedness; doesn't guarantee that *all* living pairs share
      * a visible ancestor (each living's walk stops at its nearest LCA, which may differ
      * across the population — disjoint clades can end up disconnected in the view). Use
-     * [LIVING_ANCESTRY] when full pair-wise connectivity matters.
+     * [LIVING_STEINER] for an exact connecting subgraph or [LIVING_ANCESTRY] for full
+     * ancestor chains.
      */
     LIVING_AND_CONNECTORS,
+
+    /**
+     * Steiner subgraph: the minimal subgraph connecting every living individual, with
+     * LUCA (the deepest universal common ancestor) sitting at the top. Nodes above LUCA
+     * and parallel/redundant DAG branches are excluded.
+     *
+     * Definition: V is visible iff V is living OR V is reachable from a LUCA by walking
+     * down the child edges through nodes with at least one living descendant. A LUCA is
+     * a node V with `lDC[V] = T` (universal) AND no child of V also has `lDC = T` (no
+     * deeper universal ancestor exists).
+     *
+     * For deep trees where most of the history sits above LUCA — the founder lineages
+     * that everyone descends from but that don't contribute to differentiation — this is
+     * a dramatic noise reduction over [LIVING_ANCESTRY].
+     */
+    LIVING_STEINER,
 
     /**
      * Full ancestry of every living individual. A node is visible iff it is itself
@@ -48,6 +65,7 @@ fun computeVisibleLineageIds(
     val allIds = layout.depthById.keys
     return when (filterMode) {
         CladogramFilterMode.LIVING_ANCESTRY -> computeLivingAncestryVisibleIds(lineage, layout)
+        CladogramFilterMode.LIVING_STEINER -> computeLivingSteinerVisibleIds(lineage, layout)
         CladogramFilterMode.ALL -> allIds.toSet()
         CladogramFilterMode.LIVING_ONLY -> allIds.filterTo(LinkedHashSet()) { lineage.livingLineageIds.contains(it) }
         CladogramFilterMode.LIVING_AND_CONNECTORS -> {
@@ -205,72 +223,181 @@ private fun computeLivingAncestryVisibleIds(
 }
 
 /**
- * Incremental cache for [CladogramFilterMode.LIVING_ANCESTRY].
+ * Steiner subgraph of every living. See [CladogramFilterMode.LIVING_STEINER] for
+ * the user-facing description.
  *
- * Maintains a per-node count `lDC[V]` = #livings whose ancestor chain reaches V
- * (counting V itself if V is currently living). A node is visible iff `lDC[V] > 0`.
+ * Implementation:
+ *   1. Walk up from every living to derive lDC[V] (livings descended, counting V
+ *      itself if living) and child adjacency restricted to the visible set.
+ *   2. Find LUCAs: nodes with `lDC[V] = T` whose children all have `lDC < T`. In a
+ *      DAG with sexual reproduction this is usually a single node, but multiple
+ *      LUCAs can coexist if the visible lineage is disconnected — each component
+ *      contributes its own.
+ *   3. Forward-BFS from each LUCA through child edges, including only children with
+ *      `lDC > 0`. The visited set is the Steiner subgraph.
+ *
+ * Fallback: if no LUCA exists (no node has `lDC = T`), the visible lineage is
+ * disconnected with no single universal ancestor of all livings. In that case we
+ * fall back to full ancestry rather than returning an empty set.
+ */
+private fun computeLivingSteinerVisibleIds(
+    lineage: DrocketLineageState,
+    layout: CladogramLayout,
+): Set<Long> {
+    val visibleIds = layout.depthById.keys
+    if (visibleIds.isEmpty()) return emptySet()
+    val livingList = lineage.livingLineageIds.filter { it in visibleIds }
+    if (livingList.isEmpty()) return emptySet()
+    val livingSet = livingList.toHashSet()
+    val t = livingList.size
+
+    // BFS up from every living to derive lDC and a visible-restricted children map.
+    val ancestors = LinkedHashSet<Long>()
+    val lDC = HashMap<Long, Int>()
+    val children = HashMap<Long, MutableList<Long>>()
+    for (l in livingList) {
+        val seen = HashSet<Long>()
+        val queue = ArrayDeque<Long>()
+        seen.add(l)
+        queue.addLast(l)
+        ancestors.add(l)
+        lDC[l] = (lDC[l] ?: 0) + 1
+        while (queue.isNotEmpty()) {
+            val v = queue.removeFirst()
+            val node = lineage.nodes[v] ?: continue
+            for (p in listOfNotNull(node.motherLineageId, node.fatherLineageId)) {
+                if (p !in visibleIds) continue
+                children.getOrPut(p) { mutableListOf() }.let {
+                    if (v !in it) it.add(v)
+                }
+                if (seen.add(p)) {
+                    ancestors.add(p)
+                    lDC[p] = (lDC[p] ?: 0) + 1
+                    queue.addLast(p)
+                }
+            }
+        }
+    }
+
+    // Find LUCAs: at-max nodes with no at-max children.
+    val lucas = ArrayList<Long>()
+    for (v in ancestors) {
+        if ((lDC[v] ?: 0) != t) continue
+        val kids = children[v]
+        val hasAtMaxChild = kids?.any { (lDC[it] ?: 0) == t } ?: false
+        if (!hasAtMaxChild) lucas.add(v)
+    }
+    if (lucas.isEmpty()) {
+        // Disconnected lineage with no universal ancestor — fall back to full ancestry.
+        return ancestors
+    }
+
+    // Forward-BFS from LUCAs, walking child edges through nodes with lDC > 0.
+    val out = LinkedHashSet<Long>()
+    val queue = ArrayDeque<Long>()
+    for (l in lucas) {
+        if (out.add(l)) queue.addLast(l)
+    }
+    while (queue.isNotEmpty()) {
+        val v = queue.removeFirst()
+        for (c in children[v] ?: emptyList()) {
+            if ((lDC[c] ?: 0) <= 0 && c !in livingSet) continue
+            if (out.add(c)) queue.addLast(c)
+        }
+    }
+    return out
+}
+
+/**
+ * Incremental cache for [CladogramFilterMode.LIVING_ANCESTRY] AND
+ * [CladogramFilterMode.LIVING_STEINER]. Both filters share the same underlying
+ * per-node state — only the visibility predicate differs.
+ *
+ * State maintained:
+ *
+ *   - `parents` + `children`: visible-restricted adjacency in both directions. The
+ *     children map is needed for forward-BFS from LUCAs in the Steiner computation.
+ *   - `lDC[V]`: number of currently-living individuals descended from V (V itself
+ *     counted if V is living).
+ *   - `universalChildCount[V]`: how many of V's children currently satisfy
+ *     `lDC = T`. V is a LUCA iff V is itself at `lDC = T` AND
+ *     `universalChildCount[V] == 0` (no deeper universal ancestor exists below V).
+ *   - `nodesByLDC[c]`: reverse index of `lDC` so we can find non-ancestor nodes
+ *     whose at-max status flips when T changes.
+ *   - `livingMembers`: last-known living set, diffed each frame.
+ *   - `ancestryVisibleSet`: materialised full-ancestry result (= every node with
+ *     `lDC > 0`), kept in sync with the underlying counts.
+ *
+ * The Steiner visible set is NOT materialised incrementally — instead it's computed
+ * on each call to [steinerVisibleFor] by forward-BFS from the LUCAs. With LineageOverlay's
+ * outer cache (per `versionStamp + filter`), this happens at most once per relevant
+ * change. The compute itself is bounded by the size of the Steiner subgraph, which
+ * is much smaller than the full lineage for a typical drockets sim.
  *
  * Updates are local to the affected node's ancestor DAG:
  *
  *   Birth of N:
  *     BFS-up from N; `lDC[V]++` for every visited ancestor. Visibility flips
- *     to "visible" for any V whose count transitioned 0 → 1 — an ancestor that
- *     previously had no living descendants. For drockets-style births where both
- *     parents are themselves living, every ancestor above N already has at least
- *     one living descendant (the parent), so the visible-set gain is just `{N}`.
+ *     to "visible (ancestry)" for any V whose count transitioned 0 → 1. Each
+ *     visited V that flipped INTO `lDC = T` bumps its parents' universalChildCount.
+ *     Each non-ancestor V with pre-birth `lDC = T_old` flips OUT of at-max (because
+ *     T grew), and its parents' universalChildCount decrements.
  *
  *   Death of D:
- *     BFS-up from D; `lDC[V]--` for every visited ancestor. Visibility flips to
- *     "invisible" for any V whose count transitioned 1 → 0 — the "branch propped
- *     up by D" case where D was its only living descendant.
+ *     BFS-up from D; `lDC[V]--` for every visited ancestor. 1 → 0 transitions
+ *     remove V from ancestry visible. Each visited V that flipped OUT of `lDC = T`
+ *     decrements its parents' universalChildCount. Each non-ancestor V with
+ *     pre-death `lDC = T_new` flips INTO at-max (T shrank), bumping its parents'
+ *     universalChildCount.
  *
- * Per-event cost: O(|ancestor DAG of N| × fan-in), where fan-in ≤ 2 for drockets.
- * No L (livings count) factor, unlike the prior pair-wise MRCA cache that iterated
- * every existing living on each birth and was the source of the per-frame stalls
- * under active reproduction.
+ * Per-event cost: O(|ancestor DAG of N| × fan-in) plus O(|nodesByLDC[critical T]|)
+ * for the universality flip check — bounded by the size of the "trunk above LUCA"
+ * which is small in practice.
  *
  * On snapshot load (the lineage replaces ids the cache thought existed), the cache
  * detects via [parents] not matching [DrocketLineageState.nodes] and resets to a
  * full rebuild from scratch.
  */
 internal class LivingAncestryCache {
-    /** Adjacency from the visible-restricted lineage edges (child → parents). Grows
-     *  monotonically as new visible nodes appear. */
     private val parents = HashMap<Long, List<Long>>()
-    /** lDC[V] = number of currently-living individuals descended from V (V itself
-     *  counted if V is living). Nodes whose count hits 0 are removed for memory
-     *  hygiene — they re-enter on the next birth that reaches them. */
+    private val children = HashMap<Long, MutableList<Long>>()
     private val livingDescCount = HashMap<Long, Int>()
-    /** Last-known living set; diffed against the current frame to derive births/deaths. */
+    private val universalChildCount = HashMap<Long, Int>()
+    private val nodesByLDC = HashMap<Int, MutableSet<Long>>()
     private val livingMembers = LinkedHashSet<Long>()
-    /** Materialised visible set, kept in sync with [livingDescCount] on every delta
-     *  so [visibleFor] is O(1) after [ensureCurrent] returns. */
-    private val visibleSet = LinkedHashSet<Long>()
+    private val ancestryVisibleSet = LinkedHashSet<Long>()
 
-    /** Returns the current visible set, applying any deltas since the last call. */
-    fun visibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
+    /** Returns the full-ancestry visible set (every ancestor of every living). */
+    fun ancestryVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
         ensureCurrent(lineage, layout)
-        return visibleSet
+        return ancestryVisibleSet
+    }
+
+    /** Returns the Steiner subgraph visible set (LUCA at top, no trunk above, no
+     *  parallel-only DAG branches). Computed on each call from the maintained
+     *  per-node state; expected to be invoked once per LineageOverlay cache miss. */
+    fun steinerVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
+        ensureCurrent(lineage, layout)
+        return computeSteinerFromMaintainedState()
     }
 
     /** Resets the cache to empty. Called automatically on stale-cache detection
      *  (e.g. snapshot load); also useful in tests. */
     fun reset() {
         parents.clear()
+        children.clear()
         livingDescCount.clear()
+        universalChildCount.clear()
+        nodesByLDC.clear()
         livingMembers.clear()
-        visibleSet.clear()
+        ancestryVisibleSet.clear()
     }
 
     private fun ensureCurrent(lineage: DrocketLineageState, layout: CladogramLayout) {
-        // Stale detection: any cached id missing from the current lineage means the
-        // lineage went backwards (snapshot reload, typically). Full rebuild.
         if (parents.keys.any { it !in lineage.nodes }) reset()
 
         val visibleIds = layout.depthById.keys
 
-        // Catch up parents adjacency for any newly-visible nodes. Births never mutate
-        // existing entries, so this is purely additive.
         for ((id, node) in lineage.nodes) {
             if (id !in visibleIds || id in parents) continue
             val ps = buildList<Long>(2) {
@@ -278,6 +405,9 @@ internal class LivingAncestryCache {
                 node.fatherLineageId?.let { if (it in visibleIds) add(it) }
             }
             parents[id] = ps
+            for (p in ps) {
+                children.getOrPut(p) { mutableListOf() }.add(id)
+            }
         }
 
         val currentLiving = lineage.livingLineageIds.filterTo(LinkedHashSet()) { it in visibleIds }
@@ -291,42 +421,135 @@ internal class LivingAncestryCache {
     }
 
     private fun processBirth(n: Long) {
+        val tOld = livingMembers.size
         livingMembers.add(n)
-        val seen = HashSet<Long>()
+        val tNew = livingMembers.size
+
+        // Pre-BFS snapshot of nodes at `lDC = tOld` — these flip OUT of at-max when T
+        // grows, unless they're ancestors of N (then they stay at-max under tNew).
+        val flipOutCandidates = nodesByLDC[tOld]?.toList() ?: emptyList()
+
+        val visited = HashSet<Long>()
+        val visitedFlippedToUniversal = mutableListOf<Long>()
         val queue = ArrayDeque<Long>()
-        seen.add(n)
+        visited.add(n)
         queue.addLast(n)
         while (queue.isNotEmpty()) {
             val v = queue.removeFirst()
-            val before = livingDescCount[v] ?: 0
-            livingDescCount[v] = before + 1
-            if (before == 0) visibleSet.add(v)
+            val cOld = livingDescCount[v] ?: 0
+            val cNew = cOld + 1
+            val wasAtMax = cOld >= 1 && cOld == tOld
+            val isAtMax = cNew == tNew
+            updateLDC(v, cNew)
+            if (cOld == 0) ancestryVisibleSet.add(v)
+            if (!wasAtMax && isAtMax) visitedFlippedToUniversal.add(v)
             for (p in parents[v] ?: emptyList()) {
-                if (seen.add(p)) queue.addLast(p)
+                if (visited.add(p)) queue.addLast(p)
+            }
+        }
+
+        // Visited flips IN to at-max (first-birth edge case where tOld = 0).
+        for (v in visitedFlippedToUniversal) {
+            for (p in parents[v] ?: emptyList()) {
+                universalChildCount[p] = (universalChildCount[p] ?: 0) + 1
+            }
+        }
+        // Non-ancestors with pre-birth lDC = tOld flip OUT (T grew past their count).
+        for (v in flipOutCandidates) {
+            if (v in visited) continue
+            for (p in parents[v] ?: emptyList()) {
+                val before = universalChildCount[p] ?: 0
+                if (before <= 1) universalChildCount.remove(p) else universalChildCount[p] = before - 1
             }
         }
     }
 
     private fun processDeath(d: Long) {
+        val tOld = livingMembers.size
         livingMembers.remove(d)
-        val seen = HashSet<Long>()
+        val tNew = livingMembers.size
+
+        // Pre-BFS snapshot of nodes at `lDC = tNew` (= tOld - 1) — these flip INTO
+        // at-max when T shrinks past their count.
+        val flipInCandidates = nodesByLDC[tNew]?.toList() ?: emptyList()
+
+        val visited = HashSet<Long>()
+        val visitedFlippedFromUniversal = mutableListOf<Long>()
         val queue = ArrayDeque<Long>()
-        seen.add(d)
+        visited.add(d)
         queue.addLast(d)
         while (queue.isNotEmpty()) {
             val v = queue.removeFirst()
-            val before = livingDescCount[v] ?: 0
-            val after = before - 1
-            if (after <= 0) {
-                livingDescCount.remove(v)
-                visibleSet.remove(v)
-            } else {
-                livingDescCount[v] = after
-            }
+            val cOld = livingDescCount[v] ?: 0
+            val cNew = cOld - 1
+            val wasAtMax = cOld >= 1 && cOld == tOld
+            val isAtMax = cNew >= 1 && cNew == tNew
+            updateLDC(v, cNew)
+            if (cNew <= 0) ancestryVisibleSet.remove(v)
+            if (wasAtMax && !isAtMax) visitedFlippedFromUniversal.add(v)
             for (p in parents[v] ?: emptyList()) {
-                if (seen.add(p)) queue.addLast(p)
+                if (visited.add(p)) queue.addLast(p)
             }
         }
+
+        // Visited flips OUT of at-max (last-death edge case where tNew = 0).
+        for (v in visitedFlippedFromUniversal) {
+            for (p in parents[v] ?: emptyList()) {
+                val before = universalChildCount[p] ?: 0
+                if (before <= 1) universalChildCount.remove(p) else universalChildCount[p] = before - 1
+            }
+        }
+        // Non-ancestors with pre-death lDC = tNew flip INTO at-max (T shrank to their count).
+        for (v in flipInCandidates) {
+            if (v in visited) continue
+            for (p in parents[v] ?: emptyList()) {
+                universalChildCount[p] = (universalChildCount[p] ?: 0) + 1
+            }
+        }
+    }
+
+    /** Move V between [nodesByLDC] buckets and update [livingDescCount]. */
+    private fun updateLDC(v: Long, newValue: Int) {
+        val old = livingDescCount[v] ?: 0
+        nodesByLDC[old]?.let { bucket ->
+            bucket.remove(v)
+            if (bucket.isEmpty()) nodesByLDC.remove(old)
+        }
+        if (newValue <= 0) {
+            livingDescCount.remove(v)
+        } else {
+            livingDescCount[v] = newValue
+            nodesByLDC.getOrPut(newValue) { mutableSetOf() }.add(v)
+        }
+    }
+
+    /** Compute the Steiner visible set from `lDC` + `universalChildCount`. */
+    private fun computeSteinerFromMaintainedState(): Set<Long> {
+        val t = livingMembers.size
+        if (t == 0) return emptySet()
+
+        // LUCAs = at-max nodes with no at-max children.
+        val atMax = nodesByLDC[t] ?: return ancestryVisibleSet  // no universal ancestor → fallback
+        val lucas = ArrayList<Long>()
+        for (v in atMax) {
+            if ((universalChildCount[v] ?: 0) == 0) lucas.add(v)
+        }
+        if (lucas.isEmpty()) return ancestryVisibleSet  // shouldn't happen if atMax non-empty, but guard
+
+        // Forward-BFS from LUCAs through child edges, only via nodes with lDC > 0 or living.
+        val out = LinkedHashSet<Long>()
+        val queue = ArrayDeque<Long>()
+        for (l in lucas) {
+            if (out.add(l)) queue.addLast(l)
+        }
+        while (queue.isNotEmpty()) {
+            val v = queue.removeFirst()
+            for (c in children[v] ?: emptyList()) {
+                if ((livingDescCount[c] ?: 0) <= 0 && c !in livingMembers) continue
+                if (out.add(c)) queue.addLast(c)
+            }
+        }
+        return out
     }
 }
 
