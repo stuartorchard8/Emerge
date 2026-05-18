@@ -487,6 +487,12 @@ internal class LivingAncestryCache {
     private val livingMembers = LinkedHashSet<Long>()
     private val ancestryVisibleSet = LinkedHashSet<Long>()
 
+    // Watermarks used to (a) detect snapshot replacement cheaply and (b) iterate
+    // only newly-born ids in `ensureCurrent`, so per-tick discovery cost scales
+    // with births rather than total ever-born node count.
+    private var lastNextLineageId: Long = 0L
+    private var lastNodeCount: Int = 0
+
     /** Returns the full-ancestry visible set (every ancestor of every living). */
     fun ancestryVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
         ensureCurrent(lineage, layout)
@@ -518,14 +524,25 @@ internal class LivingAncestryCache {
         nodesByLDC.clear()
         livingMembers.clear()
         ancestryVisibleSet.clear()
+        lastNextLineageId = 0L
+        lastNodeCount = 0
     }
 
     private fun ensureCurrent(lineage: DrocketLineageState, layout: CladogramLayout) {
-        if (parents.keys.any { it !in lineage.nodes }) reset()
+        // Detect wholesale replacement (snapshot load). `nextLineageId` only ever
+        // increases under normal play and `nodes` only ever grows (deaths flip
+        // `deathTick` but keep the node in the map). A regression on either is a
+        // signal that the lineage was replaced, not advanced.
+        if (lineage.nextLineageId < lastNextLineageId || lineage.nodes.size < lastNodeCount) {
+            reset()
+        }
 
         val visibleIds = layout.depthById.keys
 
-        for ((id, node) in lineage.nodes) {
+        // Discover only ids born since the last sync. In steady state this loop
+        // iterates a handful of new births per tick, not the full lineage.
+        for (id in lastNextLineageId until lineage.nextLineageId) {
+            val node = lineage.nodes[id] ?: continue
             if (id !in visibleIds || id in parents) continue
             val ps = buildList<Long>(2) {
                 node.motherLineageId?.let { if (it in visibleIds) add(it) }
@@ -536,6 +553,8 @@ internal class LivingAncestryCache {
                 children.getOrPut(p) { mutableListOf() }.add(id)
             }
         }
+        lastNextLineageId = lineage.nextLineageId
+        lastNodeCount = lineage.nodes.size
 
         val currentLiving = lineage.livingLineageIds.filterTo(LinkedHashSet()) { it in visibleIds }
         val deaths = livingMembers.filter { it !in currentLiving }

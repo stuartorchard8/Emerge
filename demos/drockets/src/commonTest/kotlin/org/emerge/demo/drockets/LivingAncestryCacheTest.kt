@@ -2,6 +2,8 @@ package org.emerge.demo.drockets
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.time.TimeSource
 
 class LivingAncestryCacheTest {
     @Test
@@ -9,7 +11,7 @@ class LivingAncestryCacheTest {
         // A small lineage with two living descended from a shared grandparent. Full
         // ancestry includes the grandparent, the parents (dead but on the chain), and
         // both livings.
-        val lineage = DrocketLineageState(
+        val lineage = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
                 2L to node(2L, mother = 1L),
@@ -17,7 +19,7 @@ class LivingAncestryCacheTest {
                 4L to node(4L, mother = 2L),
                 5L to node(5L, mother = 3L),
             ),
-            livingLineageIds = setOf(4L, 5L),
+            living = setOf(4L, 5L),
         )
         val layout = CladogramLayout.build(lineage)
         val cache = LivingAncestryCache()
@@ -29,7 +31,7 @@ class LivingAncestryCacheTest {
     @Test
     fun cache_handles_a_birth_incrementally_and_matches_stateless() {
         // Start with two living, then add a third living through an existing parent.
-        val initial = DrocketLineageState(
+        val initial = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
                 2L to node(2L, mother = 1L),
@@ -37,15 +39,15 @@ class LivingAncestryCacheTest {
                 4L to node(4L, mother = 2L),
                 5L to node(5L, mother = 3L),
             ),
-            livingLineageIds = setOf(4L, 5L),
+            living = setOf(4L, 5L),
         )
         val cache = LivingAncestryCache()
         cache.ancestryVisibleFor(initial, CladogramLayout.build(initial))
 
         // New birth: 6 born to 3.
-        val afterBirth = initial.copy(
+        val afterBirth = lineageOf(
             nodes = initial.nodes + (6L to node(6L, mother = 3L)),
-            livingLineageIds = initial.livingLineageIds + 6L,
+            living = initial.livingLineageIds + 6L,
         )
         val cachedAfterBirth = cache.ancestryVisibleFor(afterBirth, CladogramLayout.build(afterBirth))
         val statelessAfterBirth =
@@ -57,7 +59,7 @@ class LivingAncestryCacheTest {
     fun cache_handles_a_death_incrementally_and_matches_stateless() {
         // Three living with a shared ancestor. Kill the middle one and confirm the
         // cache drops it from visible while keeping the rest correct.
-        val initial = DrocketLineageState(
+        val initial = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
                 2L to node(2L, mother = 1L),
@@ -67,7 +69,7 @@ class LivingAncestryCacheTest {
                 6L to node(6L, mother = 3L),
                 7L to node(7L, mother = 4L),
             ),
-            livingLineageIds = setOf(5L, 6L, 7L),
+            living = setOf(5L, 6L, 7L),
         )
         val cache = LivingAncestryCache()
         cache.ancestryVisibleFor(initial, CladogramLayout.build(initial))
@@ -83,7 +85,7 @@ class LivingAncestryCacheTest {
     fun cache_keeps_dead_node_visible_if_on_living_ancestry() {
         // 4 is an ancestor of livings 5 and 6. When 4 then dies, it stays in the
         // visible set because both 5 and 6 still trace ancestry through it.
-        val initial = DrocketLineageState(
+        val initial = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
                 4L to node(4L, mother = 1L),
@@ -92,7 +94,7 @@ class LivingAncestryCacheTest {
                 5L to node(5L, mother = 2L),
                 6L to node(6L, mother = 3L),
             ),
-            livingLineageIds = setOf(4L, 5L, 6L),
+            living = setOf(4L, 5L, 6L),
         )
         val cache = LivingAncestryCache()
         cache.ancestryVisibleFor(initial, CladogramLayout.build(initial))
@@ -111,7 +113,7 @@ class LivingAncestryCacheTest {
         // Branch 7 is the lone living descendant of 4 (a sibling of the chain holding
         // 5 and 6). When 7 dies, both 7 and its dedicated ancestor 4 should drop out;
         // the rest of the tree stays visible because livings 5 and 6 still cover it.
-        val initial = DrocketLineageState(
+        val initial = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
                 2L to node(2L, mother = 1L),
@@ -121,7 +123,7 @@ class LivingAncestryCacheTest {
                 6L to node(6L, mother = 3L),
                 7L to node(7L, mother = 4L),
             ),
-            livingLineageIds = setOf(5L, 6L, 7L),
+            living = setOf(5L, 6L, 7L),
         )
         val cache = LivingAncestryCache()
         val before = cache.ancestryVisibleFor(initial, CladogramLayout.build(initial))
@@ -142,13 +144,13 @@ class LivingAncestryCacheTest {
         // Run 50 random-ish birth/death events. After each, the cache result must match
         // the stateless function recomputed from scratch. Catches any incremental
         // bookkeeping drift.
-        var lineage = DrocketLineageState(
+        var lineage = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
                 2L to node(2L, mother = 1L),
                 3L to node(3L, mother = 1L),
             ),
-            livingLineageIds = setOf(2L, 3L),
+            living = setOf(2L, 3L),
         )
         val cache = LivingAncestryCache()
         cache.ancestryVisibleFor(lineage, CladogramLayout.build(lineage))
@@ -162,9 +164,9 @@ class LivingAncestryCacheTest {
                 val mother = living.random(rng)
                 val father = living.takeIf { it.size > 1 }?.filter { it != mother }?.randomOrNull(rng)
                 val newId = nextId++
-                lineage = lineage.copy(
+                lineage = lineageOf(
                     nodes = lineage.nodes + (newId to node(newId, mother = mother, father = father)),
-                    livingLineageIds = lineage.livingLineageIds + newId,
+                    living = lineage.livingLineageIds + newId,
                 )
             } else {
                 val dying = living.random(rng)
@@ -182,7 +184,7 @@ class LivingAncestryCacheTest {
         // Simulate a snapshot-load that replaces the lineage with a smaller earlier state.
         // The cache should detect the missing nodes and fully rebuild rather than serve
         // stale data.
-        val full = DrocketLineageState(
+        val full = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
                 2L to node(2L, mother = 1L),
@@ -190,19 +192,19 @@ class LivingAncestryCacheTest {
                 4L to node(4L, mother = 2L),
                 5L to node(5L, mother = 3L),
             ),
-            livingLineageIds = setOf(4L, 5L),
+            living = setOf(4L, 5L),
         )
         val cache = LivingAncestryCache()
         cache.ancestryVisibleFor(full, CladogramLayout.build(full))
 
         // "Load" an earlier state with fewer nodes.
-        val earlier = DrocketLineageState(
+        val earlier = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
                 2L to node(2L, mother = 1L),
                 3L to node(3L, mother = 1L),
             ),
-            livingLineageIds = setOf(2L, 3L),
+            living = setOf(2L, 3L),
         )
         val cachedAfterLoad = cache.ancestryVisibleFor(earlier, CladogramLayout.build(earlier))
         val statelessAfterLoad =
@@ -220,7 +222,7 @@ class LivingAncestryCacheTest {
         // A → B → C → {D → L1, E → L2}. LUCA = C. Steiner = {C, D, L1, E, L2}.
         // A and B are the "trunk above LUCA" — universal ancestors of all livings
         // but with only one living-bearing branch, so they're excluded.
-        val lineage = DrocketLineageState(
+        val lineage = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),                       // A
                 2L to node(2L, mother = 1L),          // B
@@ -230,7 +232,7 @@ class LivingAncestryCacheTest {
                 6L to node(6L, mother = 4L),          // L1
                 7L to node(7L, mother = 5L),          // L2
             ),
-            livingLineageIds = setOf(6L, 7L),
+            living = setOf(6L, 7L),
         )
         val layout = CladogramLayout.build(lineage)
         val cache = LivingAncestryCache()
@@ -243,13 +245,13 @@ class LivingAncestryCacheTest {
     @Test
     fun steiner_single_living_shows_only_that_living() {
         // T=1 case: no Steiner subgraph to construct, just the lone living.
-        val lineage = DrocketLineageState(
+        val lineage = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
                 2L to node(2L, mother = 1L),
                 3L to node(3L, mother = 2L),
             ),
-            livingLineageIds = setOf(3L),
+            living = setOf(3L),
         )
         val layout = CladogramLayout.build(lineage)
         val cache = LivingAncestryCache()
@@ -269,7 +271,7 @@ class LivingAncestryCacheTest {
         //      P1a P1b L2  (ids 2, 3, 5)
         //        \ /
         //         L1   (id 4)
-        val lineage = DrocketLineageState(
+        val lineage = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),                              // G
                 2L to node(2L, mother = 1L),                 // P1a
@@ -277,7 +279,7 @@ class LivingAncestryCacheTest {
                 4L to node(4L, mother = 2L, father = 3L),    // L1
                 5L to node(5L, mother = 1L),                 // L2
             ),
-            livingLineageIds = setOf(4L, 5L),
+            living = setOf(4L, 5L),
         )
         val layout = CladogramLayout.build(lineage)
         val cache = LivingAncestryCache()
@@ -293,23 +295,23 @@ class LivingAncestryCacheTest {
         // Add L2 born under B (a sibling of C above L1). Now LUCA shifts to B,
         // and C must flip to visible (it's on the path between L2's branch and L1).
         // A stays excluded (still trunk above LUCA = B).
-        val initial = DrocketLineageState(
+        val initial = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),                       // A
                 2L to node(2L, mother = 1L),          // B (will become LUCA)
                 3L to node(3L, mother = 2L),          // C
                 4L to node(4L, mother = 3L),          // L1
             ),
-            livingLineageIds = setOf(4L),
+            living = setOf(4L),
         )
         val cache = LivingAncestryCache()
         val first = cache.steinerVisibleFor(initial, CladogramLayout.build(initial))
         assertEquals(setOf(4L), first, "T=1 → just the living")
 
         // Add L2 under B.
-        val grown = initial.copy(
+        val grown = lineageOf(
             nodes = initial.nodes + (5L to node(5L, mother = 2L)),
-            livingLineageIds = setOf(4L, 5L),
+            living = setOf(4L, 5L),
         )
         val second = cache.steinerVisibleFor(grown, CladogramLayout.build(grown))
         val stateless = computeVisibleLineageIds(grown, CladogramLayout.build(grown), CladogramFilterMode.LIVING_STEINER)
@@ -338,7 +340,7 @@ class LivingAncestryCacheTest {
         // Both C1 and D1 should be visible (descendants of LUCA via parent edges — no
         // wait, LUCA is L, and C1 and D1 are L's parents, so they're ANCESTORS of LUCA,
         // not descendants). Under strict Steiner, only LUCA and below are visible.
-        val lineage = DrocketLineageState(
+        val lineage = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),                           // A
                 2L to node(2L),                           // B
@@ -350,7 +352,7 @@ class LivingAncestryCacheTest {
                 8L to node(8L, mother = 7L),              // L1
                 9L to node(9L, mother = 7L),              // L2
             ),
-            livingLineageIds = setOf(8L, 9L),
+            living = setOf(8L, 9L),
         )
         val layout = CladogramLayout.build(lineage)
         val cache = LivingAncestryCache()
@@ -383,7 +385,7 @@ class LivingAncestryCacheTest {
         // A's descendant set: {A, X, L1, L2} (size 4).
         // B's descendant set: {B, L1, L2}    (size 3).
         // Focused picks B.
-        val lineage = DrocketLineageState(
+        val lineage = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),                              // A
                 2L to node(2L),                              // B
@@ -391,7 +393,7 @@ class LivingAncestryCacheTest {
                 4L to node(4L, mother = 3L, father = 2L),    // L1
                 5L to node(5L, mother = 1L, father = 2L),    // L2
             ),
-            livingLineageIds = setOf(4L, 5L),
+            living = setOf(4L, 5L),
         )
         val layout = CladogramLayout.build(lineage)
         val cache = LivingAncestryCache()
@@ -404,7 +406,7 @@ class LivingAncestryCacheTest {
     @Test
     fun focused_matches_steiner_when_single_luca() {
         // A → B → C → {D → L1, E → L2}. Single LUCA = C. Focused == Steiner.
-        val lineage = DrocketLineageState(
+        val lineage = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
                 2L to node(2L, mother = 1L),
@@ -414,7 +416,7 @@ class LivingAncestryCacheTest {
                 6L to node(6L, mother = 4L),
                 7L to node(7L, mother = 5L),
             ),
-            livingLineageIds = setOf(6L, 7L),
+            living = setOf(6L, 7L),
         )
         val layout = CladogramLayout.build(lineage)
         val cache = LivingAncestryCache()
@@ -427,14 +429,14 @@ class LivingAncestryCacheTest {
     fun focused_tie_broken_by_smallest_id() {
         // Two co-LUCAs with identical descendant sets. Deterministic tie-break
         // picks the one with smaller id.
-        val lineage = DrocketLineageState(
+        val lineage = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
                 2L to node(2L),
                 3L to node(3L, mother = 1L, father = 2L),
                 4L to node(4L, mother = 1L, father = 2L),
             ),
-            livingLineageIds = setOf(3L, 4L),
+            living = setOf(3L, 4L),
         )
         val layout = CladogramLayout.build(lineage)
         val cache = LivingAncestryCache()
@@ -444,13 +446,13 @@ class LivingAncestryCacheTest {
 
     @Test
     fun focused_matches_stateless_through_a_long_birth_death_sequence() {
-        var lineage = DrocketLineageState(
+        var lineage = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
                 2L to node(2L, mother = 1L),
                 3L to node(3L, mother = 1L),
             ),
-            livingLineageIds = setOf(2L, 3L),
+            living = setOf(2L, 3L),
         )
         val cache = LivingAncestryCache()
         cache.lucaFocusedVisibleFor(lineage, CladogramLayout.build(lineage))
@@ -463,9 +465,9 @@ class LivingAncestryCacheTest {
                 val mother = living.random(rng)
                 val father = living.takeIf { it.size > 1 }?.filter { it != mother }?.randomOrNull(rng)
                 val newId = nextId++
-                lineage = lineage.copy(
+                lineage = lineageOf(
                     nodes = lineage.nodes + (newId to node(newId, mother = mother, father = father)),
-                    livingLineageIds = lineage.livingLineageIds + newId,
+                    living = lineage.livingLineageIds + newId,
                 )
             } else {
                 val dying = living.random(rng)
@@ -482,13 +484,13 @@ class LivingAncestryCacheTest {
     fun steiner_matches_stateless_through_a_long_birth_death_sequence() {
         // Same random fuzz as the ancestry case, but on the Steiner predicate to
         // catch any branchCount / nodesByLDC bookkeeping drift.
-        var lineage = DrocketLineageState(
+        var lineage = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
                 2L to node(2L, mother = 1L),
                 3L to node(3L, mother = 1L),
             ),
-            livingLineageIds = setOf(2L, 3L),
+            living = setOf(2L, 3L),
         )
         val cache = LivingAncestryCache()
         cache.steinerVisibleFor(lineage, CladogramLayout.build(lineage))
@@ -501,9 +503,9 @@ class LivingAncestryCacheTest {
                 val mother = living.random(rng)
                 val father = living.takeIf { it.size > 1 }?.filter { it != mother }?.randomOrNull(rng)
                 val newId = nextId++
-                lineage = lineage.copy(
+                lineage = lineageOf(
                     nodes = lineage.nodes + (newId to node(newId, mother = mother, father = father)),
-                    livingLineageIds = lineage.livingLineageIds + newId,
+                    living = lineage.livingLineageIds + newId,
                 )
             } else {
                 val dying = living.random(rng)
@@ -516,6 +518,39 @@ class LivingAncestryCacheTest {
         }
     }
 
+    @Test
+    fun ancestry_cache_no_change_calls_do_not_scale_with_total_nodes() {
+        // Build a 100k-node lineage (star: one root, the rest are leaves of that root)
+        // with a single living leaf. After the initial warmup populates the cache,
+        // 100 follow-up calls with unchanged lineage state must not rescan the full
+        // node map — the discovery loop iterates the empty `[nextLineageId, next)`
+        // range and returns immediately.
+        //
+        // Pre-fix, `ensureCurrent` iterated every entry of `lineage.nodes` on every
+        // call, so this loop scaled with total ever-born nodes. The threshold here
+        // is generous to absorb cross-platform noise (JS, CI) — the regression case
+        // is hundreds of ms; the fixed case is sub-ms.
+        val n = 100_000
+        val nodes = LinkedHashMap<Long, DrocketLineageNode>(n + 1)
+        nodes[1L] = node(1L)
+        for (i in 2..n) {
+            nodes[i.toLong()] = node(i.toLong(), mother = 1L)
+        }
+        val lineage = lineageOf(nodes = nodes, living = setOf(n.toLong()))
+        val layout = CladogramLayout.build(lineage)
+        val cache = LivingAncestryCache()
+        cache.ancestryVisibleFor(lineage, layout) // warmup populates parents/children
+
+        val start = TimeSource.Monotonic.markNow()
+        repeat(100) { cache.ancestryVisibleFor(lineage, layout) }
+        val elapsedMs = start.elapsedNow().inWholeMilliseconds
+
+        assertTrue(
+            elapsedMs < 100,
+            "100 no-op cache calls over n=$n took ${elapsedMs}ms — likely scaling with total nodes",
+        )
+    }
+
     private fun node(id: Long, mother: Long? = null, father: Long? = null) =
         DrocketLineageNode(
             lineageId = id,
@@ -526,4 +561,16 @@ class LivingAncestryCacheTest {
             sex = Sex.FEMALE,
             genome = Genome(),
         )
+
+    /** Build a lineage state with [nextLineageId] consistent with the node map —
+     *  the production cache relies on `nextLineageId == max(id) + 1` as a
+     *  monotone watermark, so tests must maintain that invariant too. */
+    private fun lineageOf(
+        nodes: Map<Long, DrocketLineageNode>,
+        living: Set<Long>,
+    ) = DrocketLineageState(
+        nextLineageId = (nodes.keys.maxOrNull() ?: 0L) + 1L,
+        nodes = nodes,
+        livingLineageIds = living,
+    )
 }
