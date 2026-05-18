@@ -492,6 +492,14 @@ internal class LivingAncestryCache {
     // layout. Reset wholesale on snapshot replacement.
     private val allMembers = LinkedHashSet<Long>()
 
+    // Per-node count of v's visible children whose subtree contains ≥1 living
+    // (i.e. children c with `livingDescCount[c] > 0`). Powers the
+    // LIVING_AND_CONNECTORS filter: a node v is a "shared ancestor" stop point
+    // for BFS-up exactly when [branchLivingChildCount] [v] >= 2. Maintained
+    // alongside lDC bookkeeping during births/deaths; only the 0 → 1 / 1 → 0
+    // transitions of a node's lDC affect its parents' BLC.
+    private val branchLivingChildCount = HashMap<Long, Int>()
+
     // Watermarks used to (a) detect snapshot replacement cheaply and (b) iterate
     // only newly-born ids in `ensureCurrent`, so per-tick discovery cost scales
     // with births rather than total ever-born node count.
@@ -532,6 +540,15 @@ internal class LivingAncestryCache {
         return livingMembers
     }
 
+    /** Returns the LIVING_AND_CONNECTORS visible set: every living, plus the
+     *  shortest ancestor path from each living up to its nearest "shared"
+     *  ancestor (one whose subtree splits into ≥2 living-bearing child
+     *  branches), plus that ancestor's living-bearing descendants. */
+    fun connectorsVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
+        ensureCurrent(lineage, layout)
+        return computeConnectorsFromMaintainedState()
+    }
+
     /** Resets the cache to empty. Called automatically on stale-cache detection
      *  (e.g. snapshot load); also useful in tests. */
     fun reset() {
@@ -543,6 +560,7 @@ internal class LivingAncestryCache {
         livingMembers.clear()
         ancestryVisibleSet.clear()
         allMembers.clear()
+        branchLivingChildCount.clear()
         lastNextLineageId = 0L
         lastNodeCount = 0
     }
@@ -607,7 +625,14 @@ internal class LivingAncestryCache {
             val wasAtMax = cOld >= 1 && cOld == tOld
             val isAtMax = cNew == tNew
             updateLDC(v, cNew)
-            if (cOld == 0) ancestryVisibleSet.add(v)
+            if (cOld == 0) {
+                ancestryVisibleSet.add(v)
+                // v just became living-bearing — each parent now has one more
+                // child whose subtree contains a living.
+                for (p in parents[v] ?: emptyList()) {
+                    branchLivingChildCount[p] = (branchLivingChildCount[p] ?: 0) + 1
+                }
+            }
             if (!wasAtMax && isAtMax) visitedFlippedToUniversal.add(v)
             for (p in parents[v] ?: emptyList()) {
                 if (visited.add(p)) queue.addLast(p)
@@ -652,6 +677,15 @@ internal class LivingAncestryCache {
             val isAtMax = cNew >= 1 && cNew == tNew
             updateLDC(v, cNew)
             if (cNew <= 0) ancestryVisibleSet.remove(v)
+            if (cOld == 1) {
+                // v lost its last living descendant — each parent now has one
+                // fewer living-bearing child.
+                for (p in parents[v] ?: emptyList()) {
+                    val before = branchLivingChildCount[p] ?: 0
+                    if (before <= 1) branchLivingChildCount.remove(p)
+                    else branchLivingChildCount[p] = before - 1
+                }
+            }
             if (wasAtMax && !isAtMax) visitedFlippedFromUniversal.add(v)
             for (p in parents[v] ?: emptyList()) {
                 if (visited.add(p)) queue.addLast(p)
@@ -754,6 +788,71 @@ internal class LivingAncestryCache {
             for (c in children[v] ?: emptyList()) {
                 if ((livingDescCount[c] ?: 0) <= 0 && c !in livingMembers) continue
                 if (out.add(c)) queue.addLast(c)
+            }
+        }
+        return out
+    }
+
+    /** Compute the LIVING_AND_CONNECTORS visible set from the maintained state.
+     *
+     *  Mirrors the stateless algorithm in [computeVisibleLineageIds]: for each
+     *  living seed, BFS up via [parents] until we hit a node with ≥2
+     *  living-bearing child branches (the "shared ancestor"), add the path
+     *  back; then BFS down from each shared ancestor via [children], adding
+     *  every descendant whose subtree contains a living. [parents] / [children]
+     *  / [livingDescCount] / [branchLivingChildCount] are all maintained
+     *  incrementally, so this call is bounded by the size of the result, not
+     *  by total node count. */
+    private fun computeConnectorsFromMaintainedState(): Set<Long> {
+        if (livingMembers.isEmpty()) return emptySet()
+        val out = LinkedHashSet<Long>()
+        out.addAll(livingMembers)
+        val sharedHits = LinkedHashSet<Long>()
+
+        for (seed in livingMembers) {
+            val q = ArrayDeque<Long>()
+            val seen = HashSet<Long>()
+            val prevById = HashMap<Long, Long>()
+            for (p in parents[seed] ?: emptyList()) {
+                if (seen.add(p)) {
+                    prevById[p] = seed
+                    q.addLast(p)
+                }
+            }
+            var hitShared: Long? = null
+            while (q.isNotEmpty()) {
+                val cur = q.removeFirst()
+                if ((branchLivingChildCount[cur] ?: 0) >= 2) {
+                    hitShared = cur
+                    break
+                }
+                for (p in parents[cur] ?: emptyList()) {
+                    if (seen.add(p)) {
+                        prevById[p] = cur
+                        q.addLast(p)
+                    }
+                }
+            }
+            var cur: Long? = hitShared
+            while (cur != null && cur != seed) {
+                out.add(cur)
+                cur = prevById[cur]
+            }
+            if (hitShared != null) sharedHits.add(hitShared)
+        }
+
+        for (root in sharedHits) {
+            val q = ArrayDeque<Long>()
+            val seen = HashSet<Long>()
+            q.addLast(root)
+            seen.add(root)
+            while (q.isNotEmpty()) {
+                val cur = q.removeFirst()
+                for (c in children[cur] ?: emptyList()) {
+                    if ((livingDescCount[c] ?: 0) <= 0) continue
+                    out.add(c)
+                    if (seen.add(c)) q.addLast(c)
+                }
             }
         }
         return out

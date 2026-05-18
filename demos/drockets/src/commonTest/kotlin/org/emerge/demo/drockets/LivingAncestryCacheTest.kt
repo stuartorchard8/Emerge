@@ -592,6 +592,110 @@ class LivingAncestryCacheTest {
         }
     }
 
+    // ── LIVING_AND_CONNECTORS mode ──────────────────────────────────────────────
+
+    @Test
+    fun connectors_matches_stateless_through_a_long_birth_death_sequence() {
+        // Same random fuzz as the ancestry/Steiner cases, but on connectors —
+        // catches drift in `branchLivingChildCount` bookkeeping.
+        var lineage = lineageOf(
+            nodes = linkedMapOf(
+                1L to node(1L),
+                2L to node(2L, mother = 1L),
+                3L to node(3L, mother = 1L),
+            ),
+            living = setOf(2L, 3L),
+        )
+        val cache = LivingAncestryCache()
+        cache.connectorsVisibleFor(lineage, CladogramLayout.build(lineage))
+
+        var nextId = 4L
+        val rng = kotlin.random.Random(23)
+        for (step in 0 until 50) {
+            val living = lineage.livingLineageIds.toList()
+            if (rng.nextFloat() < 0.6f || living.size < 2) {
+                val mother = living.random(rng)
+                val father = living.takeIf { it.size > 1 }?.filter { it != mother }?.randomOrNull(rng)
+                val newId = nextId++
+                lineage = lineageOf(
+                    nodes = lineage.nodes + (newId to node(newId, mother = mother, father = father)),
+                    living = lineage.livingLineageIds + newId,
+                )
+            } else {
+                val dying = living.random(rng)
+                lineage = lineage.copy(livingLineageIds = lineage.livingLineageIds - dying)
+            }
+            val layout = CladogramLayout.build(lineage)
+            val cached = cache.connectorsVisibleFor(lineage, layout)
+            val stateless = computeVisibleLineageIds(lineage, layout, CladogramFilterMode.LIVING_AND_CONNECTORS)
+            assertEquals(stateless, cached, "step $step connectors diverged: cache=$cached, stateless=$stateless")
+        }
+    }
+
+    @Test
+    fun connectors_two_siblings_share_parent() {
+        // Smallest sanity: two livings under a shared parent — parent is the
+        // connector. branchLivingChildCount[parent] should be 2.
+        val lineage = lineageOf(
+            nodes = linkedMapOf(
+                1L to node(1L),
+                2L to node(2L, mother = 1L),
+                3L to node(3L, mother = 1L),
+            ),
+            living = setOf(2L, 3L),
+        )
+        val layout = CladogramLayout.build(lineage)
+        val cache = LivingAncestryCache()
+        val cached = cache.connectorsVisibleFor(lineage, layout)
+        val stateless = computeVisibleLineageIds(lineage, layout, CladogramFilterMode.LIVING_AND_CONNECTORS)
+        assertEquals(stateless, cached)
+        assertEquals(setOf(1L, 2L, 3L), cached)
+    }
+
+    @Test
+    fun connectors_single_living_is_isolated() {
+        // T=1: no shared ancestor exists; the result should be just the lone living.
+        val lineage = lineageOf(
+            nodes = linkedMapOf(
+                1L to node(1L),
+                2L to node(2L, mother = 1L),
+            ),
+            living = setOf(2L),
+        )
+        val layout = CladogramLayout.build(lineage)
+        val cache = LivingAncestryCache()
+        val cached = cache.connectorsVisibleFor(lineage, layout)
+        assertEquals(setOf(2L), cached)
+    }
+
+    @Test
+    fun connectors_handles_death_that_un_splits_an_ancestor() {
+        // 1 has children {2, 3}, both with descendants {4 alive, 5 alive}. After
+        // 4 dies, 1 is no longer "shared" (only one living-bearing branch left).
+        // branchLivingChildCount[1] should decrement from 2 to 1.
+        val initial = lineageOf(
+            nodes = linkedMapOf(
+                1L to node(1L),
+                2L to node(2L, mother = 1L),
+                3L to node(3L, mother = 1L),
+                4L to node(4L, mother = 2L),
+                5L to node(5L, mother = 3L),
+            ),
+            living = setOf(4L, 5L),
+        )
+        val cache = LivingAncestryCache()
+        val before = cache.connectorsVisibleFor(initial, CladogramLayout.build(initial))
+        // Shared ancestor 1 is present.
+        assertEquals(setOf(1L, 2L, 3L, 4L, 5L), before)
+
+        val afterDeath = initial.copy(livingLineageIds = setOf(5L))
+        val cached = cache.connectorsVisibleFor(afterDeath, CladogramLayout.build(afterDeath))
+        val stateless = computeVisibleLineageIds(afterDeath, CladogramLayout.build(afterDeath), CladogramFilterMode.LIVING_AND_CONNECTORS)
+        assertEquals(stateless, cached)
+        // Only 5 is living; no shared ancestor remains, so just {5}.
+        assertEquals(setOf(5L), cached)
+    }
+
     @Test
     fun all_visible_resets_on_snapshot_load() {
         // Same snapshot-load semantics as the ancestry case: a smaller-lineage

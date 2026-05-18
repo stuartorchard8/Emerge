@@ -815,7 +815,8 @@ class LineageOverlay {
                 livingAncestryCache.allVisibleFor(frame.lineage, frame.cladogramLayout)
             CladogramFilterMode.LIVING_ONLY ->
                 livingAncestryCache.livingOnlyVisibleFor(frame.lineage, frame.cladogramLayout)
-            else -> computeVisibleLineageIds(frame.lineage, frame.cladogramLayout, filter)
+            CladogramFilterMode.LIVING_AND_CONNECTORS ->
+                livingAncestryCache.connectorsVisibleFor(frame.lineage, frame.cladogramLayout)
         }
         val filterMs = filterStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
         visibleCache = VisibleCache(stamp, filter, visibleIds)
