@@ -28,15 +28,33 @@ class DrocketsController(
     private val cladogramLayoutMemo = CladogramLayoutMemo()
 
     fun tick(): DrocketsFrame {
-        stepper.step(emptyMap())
-        lineageState = lineageState.advanceFromPhysics(stepper.state, stepper.tick.value)
-        return DrocketsFrame(
-            state = stepper.state,
-            lineage = lineageState,
-            cladogramLayout = cladogramLayoutMemo.get(lineageState),
-            tick = stepper.tick.value,
-        )
+        stepPhysics()
+        advanceLineageFromPhysics()
+        return currentFrame()
     }
+
+    /** Step the physics simulation one tick. Exposed (alongside
+     *  [advanceLineageFromPhysics] / [currentFrame]) so benchmarks can time
+     *  the phases independently — they're internal-but-public for
+     *  cross-module benchmarking, not part of the gameplay API. */
+    fun stepPhysics() {
+        stepper.step(emptyMap())
+    }
+
+    /** Apply current physics state to the lineage. This is where the O(n)
+     *  `LinkedHashMap(this.nodes)` copy happens — scales with total nodes
+     *  ever born, not living drockets. */
+    fun advanceLineageFromPhysics() {
+        lineageState = lineageState.advanceFromPhysics(stepper.state, stepper.tick.value)
+    }
+
+    /** Build the frame from the current stepper + lineage state. */
+    fun currentFrame(): DrocketsFrame = DrocketsFrame(
+        state = stepper.state,
+        lineage = lineageState,
+        cladogramLayout = cladogramLayoutMemo.get(lineageState),
+        tick = stepper.tick.value,
+    )
 
     fun snapshotBytes(): ByteArray =
         DrocketsSaveCodec.encode(

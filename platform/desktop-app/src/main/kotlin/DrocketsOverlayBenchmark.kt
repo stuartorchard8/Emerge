@@ -71,7 +71,8 @@ private fun runForFilter(
     val layoutMemo = CladogramLayoutMemo()
     val forceSolver = ForceDirectedLayoutSolver()
 
-    val tickMs = DoubleArray(measure)
+    val physicsMs = DoubleArray(measure)
+    val advanceMs = DoubleArray(measure)
     val layoutMs = DoubleArray(measure)
     val monotoneMs = DoubleArray(measure)
     val solveMs = DoubleArray(measure)
@@ -80,11 +81,16 @@ private fun runForFilter(
     var lastFrame = controller.tick()
 
     fun runFrame(record: Boolean, idx: Int) {
-        val tickStart = TimeSource.Monotonic.markNow()
-        val frame = controller.tick()
-        val tickEnd = tickStart.elapsedNow().inWholeNanoseconds
+        val physicsStart = TimeSource.Monotonic.markNow()
+        controller.stepPhysics()
+        val physicsEnd = physicsStart.elapsedNow().inWholeNanoseconds
+
+        val advanceStart = TimeSource.Monotonic.markNow()
+        controller.advanceLineageFromPhysics()
+        val advanceEnd = advanceStart.elapsedNow().inWholeNanoseconds
 
         val layoutStart = TimeSource.Monotonic.markNow()
+        val frame = controller.currentFrame()
         val layout = layoutMemo.get(frame.lineage)
         val layoutEnd = layoutStart.elapsedNow().inWholeNanoseconds
 
@@ -97,7 +103,8 @@ private fun runForFilter(
         val solveEnd = solveStart.elapsedNow().inWholeNanoseconds
 
         if (record) {
-            tickMs[idx] = tickEnd / 1_000_000.0
+            physicsMs[idx] = physicsEnd / 1_000_000.0
+            advanceMs[idx] = advanceEnd / 1_000_000.0
             layoutMs[idx] = layoutEnd / 1_000_000.0
             monotoneMs[idx] = monotoneEnd / 1_000_000.0
             solveMs[idx] = solveEnd / 1_000_000.0
@@ -113,12 +120,13 @@ private fun runForFilter(
     println("visible size (over measurement window):")
     println("  min=${visibleN.min()}  avg=${visibleN.average().toInt()}  max=${visibleN.max()}")
     println()
-    printStats("tick    ", tickMs)
+    printStats("physics ", physicsMs)
+    printStats("advance ", advanceMs)
     printStats("layout  ", layoutMs)
     printStats("monotone", monotoneMs)
     printStats("solve   ", solveMs)
     val total = DoubleArray(measure) {
-        tickMs[it] + layoutMs[it] + monotoneMs[it] + solveMs[it]
+        physicsMs[it] + advanceMs[it] + layoutMs[it] + monotoneMs[it] + solveMs[it]
     }
     printStats("total   ", total)
 }
