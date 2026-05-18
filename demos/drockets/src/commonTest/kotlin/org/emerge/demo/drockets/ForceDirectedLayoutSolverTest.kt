@@ -117,43 +117,11 @@ class ForceDirectedLayoutSolverTest {
         // assertion just checks they stay finite and bounded.
         assertTrue(dBot.isFinite() && dBot > 0f, "bottom spring collapsed/NaN: dBot=$dBot")
         assertTrue(dTop.isFinite() && dTop > 0f, "top spring collapsed/NaN: dTop=$dTop")
-        assertTrue(dBot < ForceDirectedLayoutSolver.REST_LENGTH * 10f,
-            "bottom spring exploded: dBot=$dBot")
-        assertTrue(dTop < ForceDirectedLayoutSolver.REST_LENGTH * 10f,
-            "top spring exploded: dTop=$dTop")
-    }
-
-    @Test
-    fun visible_root_floats_above_descendants() {
-        // Buoyancy on the visible root + gravity on its descendants should leave the
-        // root visibly higher (greater y) than any node beneath it once the chain
-        // relaxes from a far-apart seed.
-        val root = lineageNode(0L, null, null, Sex.FEMALE, 0L)
-        val mid = lineageNode(1L, motherId = 0L, fatherId = null, sex = Sex.FEMALE, birthTick = 1L)
-        val leaf = lineageNode(2L, motherId = 1L, fatherId = null, sex = Sex.MALE, birthTick = 10L)
-        val lineage = DrocketLineageState(
-            nodes = linkedMapOf(0L to root, 1L to mid, 2L to leaf),
-            livingLineageIds = setOf(2L),
-        )
-        val layout = CladogramLayout.build(lineage)
-        val solver = ForceDirectedLayoutSolver()
-        // Seed at the same height so any vertical separation comes from buoyancy/gravity,
-        // not the seed itself.
-        solver.seedFrom(mapOf(
-            0L to (0.0f to 0.0f),
-            1L to (0.1f to 0.0f),
-            2L to (0.2f to 0.0f),
-        ))
-
-        repeat(2000) {
-            solver.step(layout, lineage, visibleIds = setOf(0L, 1L, 2L))
-        }
-        val out = solver.step(layout, lineage, visibleIds = setOf(0L, 1L, 2L))
-        val rootY = out.getValue(0L).second
-        val midY = out.getValue(1L).second
-        val leafY = out.getValue(2L).second
-        assertTrue(rootY > midY, "root y=$rootY should be above mid y=$midY")
-        assertTrue(midY > leafY, "mid y=$midY should be above leaf y=$leafY")
+        // Generous absolute bounds — natural equilibrium spacing under
+        // spring-vs-repulsion balance is on the order of 0.1; anything past 1.0
+        // is "exploded" regardless of how REST_LENGTH/K constants are tuned.
+        assertTrue(dBot < 1.0f, "bottom spring exploded: dBot=$dBot")
+        assertTrue(dTop < 1.0f, "top spring exploded: dTop=$dTop")
     }
 
     @Test

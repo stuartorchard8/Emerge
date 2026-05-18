@@ -46,11 +46,22 @@ enum class CladogramLayoutMode {
  *  - **Edge spring** pulls connected nodes toward [REST_LENGTH] with stiffness
  *    [SPRING_K]. Springs both pull apart-too-close and pull together-too-far.
  *  - **All-pairs isotropic repulsion** pushes every visible pair apart along
- *    the 2D line between them with magnitude `F = REPULSION_K / d²` (Coulomb-
- *    like, force vector = `REPULSION_K · Δ / d³`). Acts equally in x and y, so
- *    siblings spread sideways and ancestor chains stretch vertically from
- *    mutual push as well as from gravity/buoyancy. No spatial hash — O(n²),
- *    comfortable at visible-cladogram sizes (well under 1k nodes).
+ *    the 2D line between them with magnitude `F = k / d²` (Coulomb-like, force
+ *    vector = `k · Δ / d³`). Acts equally in x and y, so siblings spread
+ *    sideways and ancestor chains stretch vertically from mutual push as well
+ *    as from gravity/buoyancy. The constant `k` is [REPULSION_K], with an
+ *    optional `+ LIVING_REPULSION_K` bonus when both endpoints are currently
+ *    alive. No spatial hash — O(n²), comfortable at visible-cladogram sizes
+ *    (well under 1k nodes).
+ *  - **Radial-outward "gravity" on visible leaves** ([LEAF_REPULSION_K]): a
+ *    node with no visible children gets a constant-magnitude force pointing
+ *    away from the **leaf centroid** (mean position of just the visible
+ *    leaves) along the leaf's position vector relative to that centroid.
+ *    Centering on the leaves themselves — rather than the overall visible
+ *    centroid or a fixed origin — keeps `Σ(leaf_pos − leaf_centroid) = 0`
+ *    exactly, so the per-frame leaf forces sum to zero and the cluster only
+ *    expands radially, never drifts bodily. Skipped at the centroid (no
+ *    defined direction); other forces nudge the leaf off on the next step.
  *  - **Hookean buoyancy on visible roots** ([BUOYANCY_K] · (anchor − currentY)):
  *    a node with no parent currently in the visible set is pulled back toward
  *    [BUOYANCY_ANCHOR_Y] by a spring whose magnitude scales with divergence from
@@ -202,6 +213,14 @@ class ForceDirectedLayoutSolver {
             node.fatherLineageId?.let { indexById[it] }?.let { hasVisibleChild[it] = true }
         }
 
+        // Pre-pass: cache which dense indices correspond to currently-living nodes,
+        // so the repulsion inner loop can branch on liveness without doing a Set
+        // lookup per pair.
+        val isLiving = BooleanArray(n)
+        for (i in 0 until n) {
+            if (ids[i] in lineage.livingLineageIds) isLiving[i] = true
+        }
+
         // Per-node vertical bias. The tree is hung from both ends:
         //   - Visible-root (no visible parent): Hookean buoyancy toward BUOYANCY_ANCHOR_Y.
         //   - Visible-leaf (no visible child):  constant downward gravity.
@@ -210,6 +229,29 @@ class ForceDirectedLayoutSolver {
         //                                       up the chain from leaves and down from roots.
         // A node that is both a root and a leaf (eg an isolated single living) feels
         // both forces — buoyancy spring pulling toward the anchor, gravity pulling down.
+        // Leaf centroid: mean position of every visible leaf. Used as the
+        // origin for the radial-outward leaf force below. The centroid must be
+        // computed over exactly the force-receiving set (leaves) so that
+        // Σ(leaf_pos − leaf_centroid) = 0 holds by construction — that's what
+        // guarantees the per-frame leaf forces sum to zero and the cluster can
+        // only expand, never drift bodily. Using the overall visible centroid
+        // would re-introduce drift whenever the trunk's mass position differs
+        // from the leaves' centre.
+        var leafCx = 0f
+        var leafCy = 0f
+        var leafCount = 0
+        for (i in 0 until n) {
+            if (!hasVisibleChild[i]) {
+                leafCx += xs[i]
+                leafCy += ys[i]
+                leafCount++
+            }
+        }
+        if (leafCount > 0) {
+            leafCx /= leafCount
+            leafCy /= leafCount
+        }
+
         for (i in 0 until n) {
             val node = lineage.nodes[ids[i]]
             val motherVisible = node?.motherLineageId?.let { indexById.containsKey(it) } ?: false
@@ -217,7 +259,24 @@ class ForceDirectedLayoutSolver {
             val isVisibleRoot = !motherVisible && !fatherVisible
             val isVisibleLeaf = !hasVisibleChild[i]
             if (isVisibleRoot) fys[i] += BUOYANCY_K * (BUOYANCY_ANCHOR_Y - ys[i])
-            if (isVisibleLeaf) fys[i] -= GRAVITY_K
+            if (isVisibleLeaf) {
+                fys[i] -= GRAVITY_K
+                // Radial-outward "gravity" on leaves: constant magnitude
+                // LEAF_REPULSION_K, pointing away from the leaf centroid along
+                // the leaf's position vector relative to that centroid. Spreads
+                // the active fringe outward in every direction. Skipped at the
+                // centroid (no well-defined direction, and the sole-leaf case
+                // where r is necessarily 0); other forces nudge the leaf off
+                // on the next step.
+                val rx = xs[i] - leafCx
+                val ry = ys[i] - leafCy
+                val r2 = rx * rx + ry * ry
+                if (r2 > MIN_DIST2) {
+                    val invR = LEAF_REPULSION_K / sqrt(r2)
+                    fxs[i] += rx * invR
+                    fys[i] += ry * invR
+                }
+            }
         }
 
         // Spring forces along every edge whose endpoints are both visible.
@@ -242,15 +301,17 @@ class ForceDirectedLayoutSolver {
             fys[j] -= k * dy
         }
 
-        // All-pairs isotropic repulsion. Coulomb-like: magnitude REPULSION_K / d²
-        // along the 2D line between the pair, so the force vector is
-        // REPULSION_K · Δ / d³. Acts equally in x and y — siblings spread
-        // sideways and ancestor chains feel mutual vertical push on top of the
-        // gravity/buoyancy stretch. Coincident pairs are nudged along +x by the
-        // MIN_DIST clamp so the singularity has a deterministic tiebreaker.
+        // All-pairs isotropic repulsion. Coulomb-like: magnitude k / d² along
+        // the 2D line between the pair, so the force vector is k · Δ / d³.
+        // Acts equally in x and y — siblings spread sideways and ancestor chains
+        // feel mutual vertical push on top of the gravity/buoyancy stretch.
+        // Living-living pairs get [LIVING_REPULSION_K] on top of the base
+        // [REPULSION_K]. Coincident pairs are nudged along +x by the MIN_DIST
+        // clamp so the singularity has a deterministic tiebreaker.
         for (i in 0 until n) {
             val xi = xs[i]
             val yi = ys[i]
+            val li = isLiving[i]
             for (j in i + 1 until n) {
                 var dx = xs[j] - xi
                 var dy = ys[j] - yi
@@ -260,7 +321,8 @@ class ForceDirectedLayoutSolver {
                     dy = 0f
                     d2 = MIN_DIST2
                 }
-                val invD3 = REPULSION_K / (d2 * sqrt(d2))
+                val k = if (li && isLiving[j]) REPULSION_K + LIVING_REPULSION_K else REPULSION_K
+                val invD3 = k / (d2 * sqrt(d2))
                 val fx = dx * invD3
                 val fy = dy * invD3
                 fxs[i] -= fx
@@ -354,7 +416,7 @@ class ForceDirectedLayoutSolver {
     companion object {
         /** Natural spring length between connected nodes, in logical units. Other
          *  spatial constants are expressed as multiples of this where it makes sense. */
-        const val REST_LENGTH: Float = 0.10f
+        const val REST_LENGTH: Float = 0.0f
         // The ratios between SPRING_K, REPULSION_K, BUOYANCY_K, and GRAVITY_K set
         // the equilibrium shape (root depth, chain stretch, sibling spread); the
         // absolute scale sets how fast the system relaxes toward that shape.
@@ -364,6 +426,20 @@ class ForceDirectedLayoutSolver {
         // between the pair). Higher values spread the layout further apart
         // overall but also widen the zig-zag of connected pairs past REST_LENGTH.
         private const val REPULSION_K: Float = 0.000001f
+        // Bonus repulsion applied ONLY between pairs where both nodes are
+        // currently living, on top of the base REPULSION_K. Spreads alive
+        // individuals further apart than dead ancestors do, making them easier
+        // to track and click without disturbing the dead-skeleton structure.
+        private const val LIVING_REPULSION_K: Float = 0.00000f
+        // Constant radial-outward "gravity" applied to every visible leaf
+        // (node with no visible child). The force points away from the leaf
+        // centroid (mean position of just the visible leaves) with constant
+        // magnitude — a per-leaf version of GRAVITY_K but radial rather than
+        // downward, suited to a radial tree layout. Centering on the leaves
+        // themselves keeps Σ(leaf_pos − leaf_centroid) = 0, so the per-frame
+        // leaf forces sum to zero and the cluster can only expand radially,
+        // never drift bodily.
+        private const val LEAF_REPULSION_K: Float = 0.001f
         // Vertical bias:
         //   - Visible roots (no visible parent) feel a Hookean buoyancy spring
         //     pulling them back toward BUOYANCY_ANCHOR_Y. Equilibrium root
@@ -378,7 +454,7 @@ class ForceDirectedLayoutSolver {
         //     GRAVITY_K stretches the tree more; bumping SPRING_K keeps it tighter.
         private const val BUOYANCY_K: Float = 0.01f
         private const val BUOYANCY_ANCHOR_Y: Float = 0f
-        private const val GRAVITY_K: Float = 0.0002f
+        private const val GRAVITY_K: Float = 0.0000f
         private const val DAMPING: Float = 0.01f
         // Safety clamp on per-step displacement. Catches degenerate force spikes
         // (eg perfectly coincident seed positions) without affecting normal motion.
