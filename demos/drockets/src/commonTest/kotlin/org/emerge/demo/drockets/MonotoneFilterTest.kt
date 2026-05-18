@@ -18,18 +18,13 @@ class MonotoneFilterTest {
             living = setOf(2L, 3L),
         )
         val mf = MonotoneFilter()
-        val view = mf.apply(setOf(1L, 2L, 3L), CladogramFilterMode.LIVING_STEINER, lineage)
+        val ctx = Context(lineage, CladogramFilterMode.LIVING_STEINER)
+        val view = ctx.apply(mf, lineage, setOf(1L, 2L, 3L))
         assertEquals(setOf(1L, 2L, 3L), view, "seed call returns the seed verbatim")
     }
 
     @Test
     fun steiner_prunes_trunk_after_luca_shift() {
-        // F (1) → M (2) → A (3, alive)
-        //                → B (4, alive)
-        // Steiner of {A, B} on full lineage = {M, A, B}; F is trunk above LUCA.
-        // After A dies, livings in visible = {B}. On the sub-universe {M, A, B},
-        // Steiner of {B} = just {B} (LUCA is B itself, no connector needed).
-        // M and A get permanently pruned.
         val initial = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
@@ -40,19 +35,16 @@ class MonotoneFilterTest {
             living = setOf(3L, 4L),
         )
         val mf = MonotoneFilter()
-        mf.apply(setOf(2L, 3L, 4L), CladogramFilterMode.LIVING_STEINER, initial)
+        val ctx = Context(initial, CladogramFilterMode.LIVING_STEINER)
+        ctx.apply(mf, initial, setOf(2L, 3L, 4L))
+
         val afterDeath = initial.copy(livingLineageIds = setOf(4L))
-        val view = mf.apply(emptySet(), CladogramFilterMode.LIVING_STEINER, afterDeath)
+        val view = ctx.apply(mf, afterDeath)
         assertEquals(setOf(4L), view, "M and A permanently pruned; only B remains")
     }
 
     @Test
     fun pruned_nodes_dont_come_back_after_new_births() {
-        // Setup: prune M and A as in the previous test, then birth a new
-        // living C as child of B. C joins (parent B in visible). M and A
-        // stay pruned — even though, on full lineage, Steiner of {B, C}
-        // would never have excluded them in the first place, they're gone
-        // because they got pruned earlier.
         val initial = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
@@ -63,16 +55,18 @@ class MonotoneFilterTest {
             living = setOf(3L, 4L),
         )
         val mf = MonotoneFilter()
-        mf.apply(setOf(2L, 3L, 4L), CladogramFilterMode.LIVING_STEINER, initial)
+        val ctx = Context(initial, CladogramFilterMode.LIVING_STEINER)
+        ctx.apply(mf, initial, setOf(2L, 3L, 4L))
+
         val afterDeath = initial.copy(livingLineageIds = setOf(4L))
-        mf.apply(emptySet(), CladogramFilterMode.LIVING_STEINER, afterDeath)
+        ctx.apply(mf, afterDeath)
 
         val afterBirth = afterDeath.copy(
             nextLineageId = 6L,
             nodes = afterDeath.nodes + (5L to node(5L, mother = 4L)),
             livingLineageIds = setOf(4L, 5L),
         )
-        val view = mf.apply(emptySet(), CladogramFilterMode.LIVING_STEINER, afterBirth)
+        val view = ctx.apply(mf, afterBirth)
         assertEquals(setOf(4L, 5L), view, "C joins; M and A stay gone")
     }
 
@@ -86,22 +80,20 @@ class MonotoneFilterTest {
             living = setOf(2L),
         )
         val mf = MonotoneFilter()
-        mf.apply(setOf(1L, 2L), CladogramFilterMode.LIVING_STEINER, initial)
+        val ctx = Context(initial, CladogramFilterMode.LIVING_STEINER)
+        ctx.apply(mf, initial, setOf(1L, 2L))
+
         val afterBirth = initial.copy(
             nextLineageId = 4L,
             nodes = initial.nodes + (3L to node(3L, mother = 2L)),
             livingLineageIds = setOf(2L, 3L),
         )
-        val view = mf.apply(emptySet(), CladogramFilterMode.LIVING_STEINER, afterBirth)
+        val view = ctx.apply(mf, afterBirth)
         assertTrue(3L in view, "C's parent (2) is in visible → C joins")
     }
 
     @Test
     fun new_birth_does_not_join_when_no_parent_is_visible() {
-        // Two disconnected clades: F1 → A and F2 → B, both alive. We seed
-        // visible with only F1's clade. New birth C is child of B, which is
-        // not in visible. C must stay invisible — "everything invisible
-        // stays invisible".
         val initial = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),                  // F1
@@ -112,14 +104,16 @@ class MonotoneFilterTest {
             living = setOf(3L, 4L),
         )
         val mf = MonotoneFilter()
+        val ctx = Context(initial, CladogramFilterMode.LIVING_FOCUSED)
         // Seed visible as if Focused had picked F1's clade only.
-        mf.apply(setOf(1L, 3L), CladogramFilterMode.LIVING_FOCUSED, initial)
+        ctx.apply(mf, initial, setOf(1L, 3L))
+
         val afterBirth = initial.copy(
             nextLineageId = 6L,
             nodes = initial.nodes + (5L to node(5L, mother = 4L)),
             livingLineageIds = setOf(3L, 4L, 5L),
         )
-        val view = mf.apply(emptySet(), CladogramFilterMode.LIVING_FOCUSED, afterBirth)
+        val view = ctx.apply(mf, afterBirth)
         assertFalse(5L in view, "C's only parent (B=4) not in visible → C stays invisible")
         assertFalse(4L in view, "B was never in visible and stays out")
     }
@@ -134,10 +128,11 @@ class MonotoneFilterTest {
             living = setOf(2L),
         )
         val mf = MonotoneFilter()
-        mf.apply(setOf(1L, 2L), CladogramFilterMode.LIVING_STEINER, lineage)
-        // Switch mode. The new mode re-seeds from its own raw — visible from
-        // the old mode is wiped.
-        val view = mf.apply(setOf(2L), CladogramFilterMode.LIVING_FOCUSED, lineage)
+        val ctx1 = Context(lineage, CladogramFilterMode.LIVING_STEINER)
+        ctx1.apply(mf, lineage, setOf(1L, 2L))
+        // Switch mode. New mode re-seeds from its own raw — old visible wiped.
+        val ctx2 = Context(lineage, CladogramFilterMode.LIVING_FOCUSED)
+        val view = ctx2.apply(mf, lineage, setOf(2L))
         assertEquals(setOf(2L), view)
     }
 
@@ -148,13 +143,15 @@ class MonotoneFilterTest {
             living = setOf(1L),
         ).copy(nextLineageId = 100L)
         val mf = MonotoneFilter()
-        mf.apply(setOf(1L), CladogramFilterMode.LIVING_STEINER, firstLineage)
+        val ctx = Context(firstLineage, CladogramFilterMode.LIVING_STEINER)
+        ctx.apply(mf, firstLineage, setOf(1L))
         // Snapshot load: nextLineageId regresses below the watermark.
         val snapshotLineage = lineageOf(
             nodes = linkedMapOf(7L to node(7L)),
             living = setOf(7L),
         ).copy(nextLineageId = 8L)
-        val view = mf.apply(setOf(7L), CladogramFilterMode.LIVING_STEINER, snapshotLineage)
+        val ctx2 = Context(snapshotLineage, CladogramFilterMode.LIVING_STEINER)
+        val view = ctx2.apply(mf, snapshotLineage, setOf(7L))
         assertEquals(setOf(7L), view, "regression triggers a reset; fresh seed used")
     }
 
@@ -165,18 +162,17 @@ class MonotoneFilterTest {
             living = setOf(1L),
         )
         val mf = MonotoneFilter()
-        mf.apply(setOf(1L), CladogramFilterMode.LIVING_STEINER, lineage)
+        val ctx = Context(lineage, CladogramFilterMode.LIVING_STEINER)
+        ctx.apply(mf, lineage, setOf(1L))
         mf.reset()
-        val view = mf.apply(setOf(1L), CladogramFilterMode.LIVING_STEINER, lineage)
+        val view = ctx.apply(mf, lineage, setOf(1L))
         assertEquals(setOf(1L), view)
     }
 
     @Test
-    fun living_only_visible_shrinks_as_livings_die_but_doesnt_grow_for_new_births() {
-        // LIVING_ONLY on sub-universe: visible's livings. As they die, they
-        // get pruned. New births join (parent in visible), then on next
-        // prune they stay because they're living. Eventually if all livings
-        // die, visible empties.
+    fun living_only_visible_shrinks_as_livings_die() {
+        // LIVING_ONLY on sub-universe: visible's livings. As they die, they get
+        // pruned. Eventually if all livings die, visible empties.
         val initial = lineageOf(
             nodes = linkedMapOf(
                 1L to node(1L),
@@ -185,11 +181,42 @@ class MonotoneFilterTest {
             living = setOf(1L, 2L),
         )
         val mf = MonotoneFilter()
-        mf.apply(setOf(1L, 2L), CladogramFilterMode.LIVING_ONLY, initial)
-        // Kill 1.
+        val ctx = Context(initial, CladogramFilterMode.LIVING_ONLY)
+        ctx.apply(mf, initial, setOf(1L, 2L))
         val afterDeath = initial.copy(livingLineageIds = setOf(2L))
-        val view = mf.apply(emptySet(), CladogramFilterMode.LIVING_ONLY, afterDeath)
+        val view = ctx.apply(mf, afterDeath)
         assertEquals(setOf(2L), view, "dead 1 pruned by LIVING_ONLY")
+    }
+
+    /** Per-test helper that holds a [LivingAncestryCache] and primes it before
+     *  every `apply` so the cache state matches the lineage handed to
+     *  [MonotoneFilter.apply]. */
+    private class Context(
+        seedLineage: DrocketLineageState,
+        val filter: CladogramFilterMode,
+    ) {
+        val cache = LivingAncestryCache()
+        private var lastLineage: DrocketLineageState = seedLineage
+
+        fun apply(
+            mf: MonotoneFilter,
+            lineage: DrocketLineageState,
+            seedRawOverride: Set<Long>? = null,
+        ): Set<Long> {
+            lastLineage = lineage
+            val layout = CladogramLayout.build(lineage)
+            // Drive ensureCurrent so applySubUniverseFilter has fresh state.
+            val raw = when (filter) {
+                CladogramFilterMode.LIVING_ANCESTRY -> cache.ancestryVisibleFor(lineage, layout)
+                CladogramFilterMode.LIVING_STEINER -> cache.steinerVisibleFor(lineage, layout)
+                CladogramFilterMode.LIVING_FOCUSED -> cache.lucaFocusedVisibleFor(lineage, layout)
+                CladogramFilterMode.LIVING_AND_CONNECTORS -> cache.connectorsVisibleFor(lineage, layout)
+                CladogramFilterMode.ALL -> cache.allVisibleFor(lineage, layout)
+                CladogramFilterMode.LIVING_ONLY -> cache.livingOnlyVisibleFor(lineage, layout)
+            }
+            val seedRaw = seedRawOverride ?: raw
+            return mf.apply(seedRaw, filter, lineage, cache)
+        }
     }
 
     private fun node(id: Long, mother: Long? = null, father: Long? = null) =

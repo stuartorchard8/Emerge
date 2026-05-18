@@ -116,7 +116,7 @@ data class CladogramLayout(
  * lineage — there, a coincidental stamp collision with the pre-restore state
  * would otherwise serve a stale layout.
  */
-internal class CladogramLayoutMemo {
+class CladogramLayoutMemo {
     private var cached: CladogramLayout? = null
     private var cachedStamp: Long = INVALID_STAMP
 

@@ -478,7 +478,7 @@ private fun bfsDescendantsFrom(
  * detects via [parents] not matching [DrocketLineageState.nodes] and resets to a
  * full rebuild from scratch.
  */
-internal class LivingAncestryCache {
+class LivingAncestryCache {
     private val parents = HashMap<Long, List<Long>>()
     private val children = HashMap<Long, MutableList<Long>>()
     private val livingDescCount = HashMap<Long, Int>()
@@ -547,6 +547,206 @@ internal class LivingAncestryCache {
     fun connectorsVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
         ensureCurrent(lineage, layout)
         return computeConnectorsFromMaintainedState()
+    }
+
+    /** Restrict [visible] in-place to the [filter]'s result on the sub-universe
+     *  it defines. Reuses the cache's maintained adjacency and counts, so the
+     *  cost is O(|sub-universe LUCAs| + |result|) instead of a full per-tick
+     *  rebuild. Caller must have invoked one of the `*VisibleFor` methods on
+     *  the same [lineage]/[layout] first, so internal state is current. */
+    fun applySubUniverseFilter(
+        visible: MutableSet<Long>,
+        filter: CladogramFilterMode,
+    ) {
+        if (visible.isEmpty()) return
+        when (filter) {
+            CladogramFilterMode.ALL -> {} // sub-universe is already the result
+            CladogramFilterMode.LIVING_ONLY -> visible.retainAll(livingMembers)
+            CladogramFilterMode.LIVING_ANCESTRY -> visible.retainAll(ancestryVisibleSet)
+            CladogramFilterMode.LIVING_STEINER -> applySteinerSubUniverse(visible)
+            CladogramFilterMode.LIVING_FOCUSED -> applyFocusedSubUniverse(visible)
+            CladogramFilterMode.LIVING_AND_CONNECTORS -> applyConnectorsSubUniverse(visible)
+        }
+    }
+
+    /** Sub-universe Steiner: like [computeSteinerFromMaintainedState] but only
+     *  considers nodes/edges within [sub]. LUCAs are the at-max nodes in [sub]
+     *  with no child in [sub] also at-max; BFS-down stays within [sub]. */
+    private fun applySteinerSubUniverse(sub: MutableSet<Long>) {
+        val t = livingMembers.size
+        if (t == 0) { sub.clear(); return }
+        val atMax = nodesByLDC[t]
+        if (atMax == null) {
+            // No universal ancestor: keep only ancestry intersected with sub.
+            sub.retainAll(ancestryVisibleSet)
+            return
+        }
+        // Find sub-universe LUCAs.
+        val lucas = ArrayList<Long>()
+        for (v in atMax) {
+            if (v !in sub) continue
+            val kids = children[v]
+            var hasAtMaxKidInSub = false
+            if (kids != null) {
+                for (c in kids) {
+                    if (c in sub && (livingDescCount[c] ?: 0) == t) {
+                        hasAtMaxKidInSub = true
+                        break
+                    }
+                }
+            }
+            if (!hasAtMaxKidInSub) lucas.add(v)
+        }
+        if (lucas.isEmpty()) {
+            sub.retainAll(ancestryVisibleSet)
+            return
+        }
+        val keep = collectSteinerDescendants(lucas, sub)
+        sub.retainAll(keep)
+    }
+
+    /** Sub-universe Focused: pick the single sub-universe LUCA with the smallest
+     *  descendant subgraph (ties: smallest id), return its descendant set. */
+    private fun applyFocusedSubUniverse(sub: MutableSet<Long>) {
+        val t = livingMembers.size
+        if (t == 0) { sub.clear(); return }
+        val atMax = nodesByLDC[t]
+        if (atMax == null) {
+            sub.retainAll(ancestryVisibleSet)
+            return
+        }
+        val lucas = ArrayList<Long>()
+        for (v in atMax) {
+            if (v !in sub) continue
+            val kids = children[v]
+            var hasAtMaxKidInSub = false
+            if (kids != null) {
+                for (c in kids) {
+                    if (c in sub && (livingDescCount[c] ?: 0) == t) {
+                        hasAtMaxKidInSub = true
+                        break
+                    }
+                }
+            }
+            if (!hasAtMaxKidInSub) lucas.add(v)
+        }
+        if (lucas.isEmpty()) {
+            sub.retainAll(ancestryVisibleSet)
+            return
+        }
+        // Pick LUCA with smallest descendant subgraph in sub (ties: smallest id).
+        var bestLuca = lucas[0]
+        var bestDescendants = descendantsInSub(bestLuca, sub)
+        for (i in 1 until lucas.size) {
+            val cand = lucas[i]
+            val candDescendants = descendantsInSub(cand, sub)
+            val take = candDescendants.size < bestDescendants.size ||
+                (candDescendants.size == bestDescendants.size && cand < bestLuca)
+            if (take) {
+                bestLuca = cand
+                bestDescendants = candDescendants
+            }
+        }
+        sub.retainAll(bestDescendants)
+    }
+
+    /** Sub-universe Connectors: same shape as the full connector compute, but
+     *  the BFS-up only traverses [sub] and the stop predicate counts living-
+     *  bearing child branches within [sub] (not [branchLivingChildCount], which
+     *  counts the full lineage). */
+    private fun applyConnectorsSubUniverse(sub: MutableSet<Long>) {
+        if (livingMembers.isEmpty()) { sub.clear(); return }
+        val keep = LinkedHashSet<Long>()
+        for (l in livingMembers) {
+            if (l in sub) keep.add(l)
+        }
+        val sharedHits = LinkedHashSet<Long>()
+        for (seed in keep.toList()) {
+            val q = ArrayDeque<Long>()
+            val seen = HashSet<Long>()
+            val prevById = HashMap<Long, Long>()
+            for (p in parents[seed] ?: emptyList()) {
+                if (p !in sub) continue
+                if (seen.add(p)) {
+                    prevById[p] = seed
+                    q.addLast(p)
+                }
+            }
+            var hit: Long? = null
+            while (q.isNotEmpty()) {
+                val cur = q.removeFirst()
+                if (countLivingBearingChildrenInSub(cur, sub) >= 2) {
+                    hit = cur
+                    break
+                }
+                for (p in parents[cur] ?: emptyList()) {
+                    if (p !in sub) continue
+                    if (seen.add(p)) {
+                        prevById[p] = cur
+                        q.addLast(p)
+                    }
+                }
+            }
+            var cur: Long? = hit
+            while (cur != null && cur != seed) {
+                keep.add(cur)
+                cur = prevById[cur]
+            }
+            if (hit != null) sharedHits.add(hit)
+        }
+        for (root in sharedHits) {
+            val q = ArrayDeque<Long>()
+            val seen = HashSet<Long>()
+            q.addLast(root); seen.add(root)
+            while (q.isNotEmpty()) {
+                val cur = q.removeFirst()
+                for (c in children[cur] ?: emptyList()) {
+                    if (c !in sub) continue
+                    if ((livingDescCount[c] ?: 0) <= 0) continue
+                    keep.add(c)
+                    if (seen.add(c)) q.addLast(c)
+                }
+            }
+        }
+        sub.retainAll(keep)
+    }
+
+    private fun countLivingBearingChildrenInSub(v: Long, sub: Set<Long>): Int {
+        var count = 0
+        for (c in children[v] ?: return 0) {
+            if (c in sub && (livingDescCount[c] ?: 0) > 0) count++
+        }
+        return count
+    }
+
+    private fun collectSteinerDescendants(lucas: List<Long>, sub: Set<Long>): LinkedHashSet<Long> {
+        val out = LinkedHashSet<Long>()
+        val q = ArrayDeque<Long>()
+        for (l in lucas) { if (out.add(l)) q.addLast(l) }
+        while (q.isNotEmpty()) {
+            val v = q.removeFirst()
+            for (c in children[v] ?: emptyList()) {
+                if (c !in sub) continue
+                if ((livingDescCount[c] ?: 0) <= 0 && c !in livingMembers) continue
+                if (out.add(c)) q.addLast(c)
+            }
+        }
+        return out
+    }
+
+    private fun descendantsInSub(luca: Long, sub: Set<Long>): LinkedHashSet<Long> {
+        val out = LinkedHashSet<Long>()
+        val q = ArrayDeque<Long>()
+        out.add(luca); q.addLast(luca)
+        while (q.isNotEmpty()) {
+            val v = q.removeFirst()
+            for (c in children[v] ?: emptyList()) {
+                if (c !in sub) continue
+                if ((livingDescCount[c] ?: 0) <= 0 && c !in livingMembers) continue
+                if (out.add(c)) q.addLast(c)
+            }
+        }
+        return out
     }
 
     /** Resets the cache to empty. Called automatically on stale-cache detection
@@ -885,16 +1085,33 @@ internal class LivingAncestryCache {
  * State is cleared when the filter mode changes or when `nextLineageId`
  * regresses (snapshot load).
  */
-internal class MonotoneFilter {
+class MonotoneFilter {
     private val visible = LinkedHashSet<Long>()
     private var mode: CladogramFilterMode? = null
     private var nextLineageIdWatermark: Long = 0L
     private var initialized = false
 
+    /**
+     * Update the visible set and return it.
+     *
+     * On seed call (after activation / reset / mode change / nextLineageId
+     * regression), [raw] is copied into [visible].
+     *
+     * On subsequent calls:
+     *  1. Ids born since the last call join [visible] iff at least one parent
+     *     is already in [visible].
+     *  2. [cache.applySubUniverseFilter] reruns the filter against the
+     *     sub-universe and prunes [visible] in-place using the cache's
+     *     already-maintained adjacency / counts — no synthetic-lineage rebuild.
+     *
+     * The [cache] must have just had its `*VisibleFor` method invoked (which
+     * is how [raw] is produced); otherwise the cached state may be stale.
+     */
     fun apply(
         raw: Set<Long>,
         filter: CladogramFilterMode,
         lineage: DrocketLineageState,
+        cache: LivingAncestryCache,
     ): Set<Long> {
         if (mode != filter || lineage.nextLineageId < nextLineageIdWatermark) {
             visible.clear()
@@ -905,15 +1122,13 @@ internal class MonotoneFilter {
             visible.addAll(raw)
             initialized = true
         } else {
-            // Extend: only ids whose parent is already in visible.
             for (id in nextLineageIdWatermark until lineage.nextLineageId) {
                 val node = lineage.nodes[id] ?: continue
                 val motherIn = node.motherLineageId?.let { it in visible } ?: false
                 val fatherIn = node.fatherLineageId?.let { it in visible } ?: false
                 if (motherIn || fatherIn) visible.add(id)
             }
-            // Prune: re-run the filter restricted to the sub-universe.
-            pruneOnSubUniverse(filter, lineage)
+            cache.applySubUniverseFilter(visible, filter)
         }
         nextLineageIdWatermark = lineage.nextLineageId
         return visible
@@ -924,24 +1139,6 @@ internal class MonotoneFilter {
         nextLineageIdWatermark = 0L
         visible.clear()
         initialized = false
-    }
-
-    /** Build a synthetic lineage that includes only the ids in [visible], rerun
-     *  the stateless filter on it, and retain only the result in [visible]. */
-    private fun pruneOnSubUniverse(filter: CladogramFilterMode, lineage: DrocketLineageState) {
-        if (visible.isEmpty()) return
-        val syntheticNodes = LinkedHashMap<Long, DrocketLineageNode>(visible.size)
-        for (id in visible) {
-            lineage.nodes[id]?.let { syntheticNodes[id] = it }
-        }
-        val syntheticLivings = lineage.livingLineageIds.filterTo(LinkedHashSet()) { it in visible }
-        val syntheticLineage = lineage.copy(
-            nodes = syntheticNodes,
-            livingLineageIds = syntheticLivings,
-        )
-        val syntheticLayout = CladogramLayout.build(syntheticLineage)
-        val keep = computeVisibleLineageIds(syntheticLineage, syntheticLayout, filter)
-        visible.retainAll(keep)
     }
 }
 
