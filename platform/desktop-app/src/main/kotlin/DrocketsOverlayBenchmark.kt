@@ -77,8 +77,22 @@ private fun runForFilter(
     val monotoneMs = DoubleArray(measure)
     val solveMs = DoubleArray(measure)
     val visibleN = IntArray(measure)
+    val visibleBeforeN = IntArray(measure)
+    val livingN = IntArray(measure)
+    val nodesN = IntArray(measure)
+    val lucasN = IntArray(measure)
+    val descExpandedN = IntArray(measure)
+    val ensureMs = DoubleArray(measure)
+    val filterComputeMs = DoubleArray(measure)
+    val birthBfsN = IntArray(measure)
+    val deathBfsN = IntArray(measure)
+    val flipCandN = IntArray(measure)
+    val birthsN = IntArray(measure)
+    val deathsN = IntArray(measure)
 
     var lastFrame = controller.tick()
+    var lastLivings = lastFrame.lineage.livingLineageIds.size
+    val livingsDelta = IntArray(measure)
 
     fun runFrame(record: Boolean, idx: Int) {
         val physicsStart = TimeSource.Monotonic.markNow()
@@ -93,6 +107,9 @@ private fun runForFilter(
         val frame = controller.currentFrame()
         val layout = layoutMemo.get(frame.lineage)
         val layoutEnd = layoutStart.elapsedNow().inWholeNanoseconds
+
+        val visibleSizeBefore = monotone.visibleSize()
+        val livingsNow = frame.lineage.livingLineageIds.size
 
         val monotoneStart = TimeSource.Monotonic.markNow()
         val visible = monotone.apply(filter, frame.lineage, layout, cache)
@@ -109,7 +126,21 @@ private fun runForFilter(
             monotoneMs[idx] = monotoneEnd / 1_000_000.0
             solveMs[idx] = solveEnd / 1_000_000.0
             visibleN[idx] = visible.size
+            visibleBeforeN[idx] = visibleSizeBefore
+            livingN[idx] = livingsNow
+            nodesN[idx] = frame.lineage.nodes.size
+            livingsDelta[idx] = livingsNow - lastLivings
+            lucasN[idx] = monotone.subCache.lastFocusedLucaCount
+            descExpandedN[idx] = monotone.subCache.lastFocusedTotalDescendantsExpanded
+            ensureMs[idx] = monotone.subCache.lastEnsureCurrentNanos / 1_000_000.0
+            filterComputeMs[idx] = monotone.subCache.lastFilterComputeNanos / 1_000_000.0
+            birthBfsN[idx] = monotone.subCache.lastBirthBfsTotalVisited
+            deathBfsN[idx] = monotone.subCache.lastDeathBfsTotalVisited
+            flipCandN[idx] = monotone.subCache.lastFlipOutCandidateCount
+            birthsN[idx] = monotone.subCache.lastBirthsThisCall
+            deathsN[idx] = monotone.subCache.lastDeathsThisCall
         }
+        lastLivings = livingsNow
         lastFrame = frame
     }
 
@@ -124,11 +155,37 @@ private fun runForFilter(
     printStats("advance ", advanceMs)
     printStats("layout  ", layoutMs)
     printStats("monotone", monotoneMs)
+    printStats(" ensure ", ensureMs)
+    printStats(" compute", filterComputeMs)
     printStats("solve   ", solveMs)
     val total = DoubleArray(measure) {
         physicsMs[it] + advanceMs[it] + layoutMs[it] + monotoneMs[it] + solveMs[it]
     }
     printStats("total   ", total)
+
+    // Spike report: top-10 ticks by monotone time, with sim-state context.
+    val ranked = (0 until measure).sortedByDescending { monotoneMs[it] }.take(10)
+    println()
+    println("top-10 monotone spikes:")
+    println("  idx     ms  ensure  compute  births  deaths  birthBFS  deathBFS  flipCand")
+    for (idx in ranked) {
+        println(
+            "  %3d  %6.3f  %6.3f   %6.3f    %4d    %4d      %4d      %4d     %5d".format(
+                idx, monotoneMs[idx], ensureMs[idx], filterComputeMs[idx],
+                birthsN[idx], deathsN[idx],
+                birthBfsN[idx], deathBfsN[idx], flipCandN[idx],
+            )
+        )
+    }
+    println()
+    println("births/tick:  avg=%.2f  max=%d".format(birthsN.average(), birthsN.max()))
+    println("deaths/tick:  avg=%.2f  max=%d".format(deathsN.average(), deathsN.max()))
+    println("birth BFS visited/tick: avg=%d  max=%d".format(birthBfsN.average().toInt(), birthBfsN.max()))
+    println("death BFS visited/tick: avg=%d  max=%d".format(deathBfsN.average().toInt(), deathBfsN.max()))
+    println("flipOut candidates/tick: avg=%d  max=%d".format(flipCandN.average().toInt(), flipCandN.max()))
+    println()
+    println("LUCAs / call (Focused only):  avg=${lucasN.average()}  max=${lucasN.max()}")
+    println("Descendants expanded / call:  avg=${descExpandedN.average().toInt()}  max=${descExpandedN.max()}")
 }
 
 private fun printStats(label: String, samples: DoubleArray) {

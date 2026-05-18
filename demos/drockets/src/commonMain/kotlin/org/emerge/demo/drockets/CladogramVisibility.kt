@@ -506,37 +506,76 @@ class LivingAncestryCache {
     private var lastNextLineageId: Long = 0L
     private var lastNodeCount: Int = 0
 
+    // Scope of the cache: only ids in this set are tracked. Production
+    // callers pass either `lineage.nodes.keys` (full-lineage cache) or the
+    // [MonotoneFilter]'s `visible` set (sub-universe-scoped cache). Set at
+    // the start of every public method so `processBirth`/`processDeath`'s
+    // BFS-up can filter parents by current scope without threading the set
+    // through every call.
+    private var currentMembers: Set<Long> = emptySet()
+
+    // Pooled scratch buffers for the sub-universe filter compute paths. Lets
+    // them run allocation-free in the common case — at ~60Hz with a ~1200-node
+    // visible set this avoids ~3 MB/sec of LinkedHashSet/ArrayDeque garbage
+    // that was triggering periodic GC pauses (visible as monotone p99 spikes).
+    // Single-threaded controller loop, so sharing across compute paths is
+    // safe.
+    private val scratchLucas = ArrayList<Long>()
+    private val scratchKeep = LinkedHashSet<Long>()
+    private val scratchQueue = ArrayDeque<Long>()
+    private val scratchSeen = HashSet<Long>()
+
     /** Returns the full-ancestry visible set (every ancestor of every living). */
-    fun ancestryVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
-        ensureCurrent(lineage, layout)
+    fun ancestryVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> =
+        ancestryVisibleFor(lineage, layout.depthById.keys)
+
+    fun ancestryVisibleFor(lineage: DrocketLineageState, members: Set<Long>): Set<Long> {
+        currentMembers = members
+        ensureCurrent(lineage)
         return ancestryVisibleSet
     }
 
     /** Returns the Steiner subgraph visible set (LUCA at top, no trunk above, no
      *  parallel-only DAG branches). Computed on each call from the maintained
      *  per-node state; expected to be invoked once per LineageOverlay cache miss. */
-    fun steinerVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
-        ensureCurrent(lineage, layout)
+    fun steinerVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> =
+        steinerVisibleFor(lineage, layout.depthById.keys)
+
+    fun steinerVisibleFor(lineage: DrocketLineageState, members: Set<Long>): Set<Long> {
+        currentMembers = members
+        ensureCurrent(lineage)
         return computeSteinerFromMaintainedState()
     }
 
     /** Returns the single-LUCA focused Steiner subgraph. When multiple LUCAs exist,
      *  picks the one with the smallest descendant subgraph (ties: smallest id). */
-    fun lucaFocusedVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
-        ensureCurrent(lineage, layout)
+    fun lucaFocusedVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> =
+        lucaFocusedVisibleFor(lineage, layout.depthById.keys)
+
+    fun lucaFocusedVisibleFor(lineage: DrocketLineageState, members: Set<Long>): Set<Long> {
+        currentMembers = members
+        ensureCurrent(lineage)
         return computeLucaFocusedFromMaintainedState()
     }
 
     /** Every node currently in the visible layout (the `ALL` filter mode). */
-    fun allVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
-        ensureCurrent(lineage, layout)
+    fun allVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> =
+        allVisibleFor(lineage, layout.depthById.keys)
+
+    fun allVisibleFor(lineage: DrocketLineageState, members: Set<Long>): Set<Long> {
+        currentMembers = members
+        ensureCurrent(lineage)
         return allMembers
     }
 
     /** Every node that is both visible per the layout and currently living
      *  (the `LIVING_ONLY` filter mode). */
-    fun livingOnlyVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
-        ensureCurrent(lineage, layout)
+    fun livingOnlyVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> =
+        livingOnlyVisibleFor(lineage, layout.depthById.keys)
+
+    fun livingOnlyVisibleFor(lineage: DrocketLineageState, members: Set<Long>): Set<Long> {
+        currentMembers = members
+        ensureCurrent(lineage)
         return livingMembers
     }
 
@@ -544,8 +583,12 @@ class LivingAncestryCache {
      *  shortest ancestor path from each living up to its nearest "shared"
      *  ancestor (one whose subtree splits into ≥2 living-bearing child
      *  branches), plus that ancestor's living-bearing descendants. */
-    fun connectorsVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
-        ensureCurrent(lineage, layout)
+    fun connectorsVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> =
+        connectorsVisibleFor(lineage, layout.depthById.keys)
+
+    fun connectorsVisibleFor(lineage: DrocketLineageState, members: Set<Long>): Set<Long> {
+        currentMembers = members
+        ensureCurrent(lineage)
         return computeConnectorsFromMaintainedState()
     }
 
@@ -559,8 +602,24 @@ class LivingAncestryCache {
         lineage: DrocketLineageState,
         layout: CladogramLayout,
     ) {
-        ensureCurrent(lineage, layout)
-        if (visible.isEmpty()) return
+        applySubUniverseFilter(visible, filter, lineage, layout.depthById.keys)
+    }
+
+    fun applySubUniverseFilter(
+        visible: MutableSet<Long>,
+        filter: CladogramFilterMode,
+        lineage: DrocketLineageState,
+        members: Set<Long>,
+    ) {
+        currentMembers = members
+        val ensureStart = kotlin.time.TimeSource.Monotonic.markNow()
+        ensureCurrent(lineage)
+        lastEnsureCurrentNanos = ensureStart.elapsedNow().inWholeNanoseconds
+        if (visible.isEmpty()) {
+            lastFilterComputeNanos = 0L
+            return
+        }
+        val filterStart = kotlin.time.TimeSource.Monotonic.markNow()
         when (filter) {
             CladogramFilterMode.ALL -> {} // sub-universe is already the result
             CladogramFilterMode.LIVING_ONLY -> visible.retainAll(livingMembers)
@@ -569,6 +628,7 @@ class LivingAncestryCache {
             CladogramFilterMode.LIVING_FOCUSED -> applyFocusedSubUniverse(visible)
             CladogramFilterMode.LIVING_AND_CONNECTORS -> applyConnectorsSubUniverse(visible)
         }
+        lastFilterComputeNanos = filterStart.elapsedNow().inWholeNanoseconds
     }
 
     /** Sub-universe Steiner: like [computeSteinerFromMaintainedState] but only
@@ -579,33 +639,43 @@ class LivingAncestryCache {
         if (t == 0) { sub.clear(); return }
         val atMax = nodesByLDC[t]
         if (atMax == null) {
-            // No universal ancestor: keep only ancestry intersected with sub.
             sub.retainAll(ancestryVisibleSet)
             return
         }
-        // Find sub-universe LUCAs.
-        val lucas = ArrayList<Long>()
-        for (v in atMax) {
-            if (v !in sub) continue
-            val kids = children[v]
-            var hasAtMaxKidInSub = false
-            if (kids != null) {
-                for (c in kids) {
-                    if (c in sub && (livingDescCount[c] ?: 0) == t) {
-                        hasAtMaxKidInSub = true
-                        break
-                    }
-                }
-            }
-            if (!hasAtMaxKidInSub) lucas.add(v)
-        }
-        if (lucas.isEmpty()) {
+        scratchLucas.clear()
+        findSubUniverseLucasInto(atMax, sub, t, scratchLucas)
+        if (scratchLucas.isEmpty()) {
             sub.retainAll(ancestryVisibleSet)
             return
         }
-        val keep = collectSteinerDescendants(lucas, sub)
-        sub.retainAll(keep)
+        scratchKeep.clear()
+        scratchQueue.clear()
+        for (l in scratchLucas) {
+            if (scratchKeep.add(l)) scratchQueue.addLast(l)
+        }
+        bfsDownInSub(sub, scratchKeep, scratchQueue)
+        sub.retainAll(scratchKeep)
     }
+
+    /** Most-recent metrics from [applyFocusedSubUniverse], for diagnosis. */
+    var lastFocusedLucaCount: Int = 0
+        private set
+    var lastFocusedTotalDescendantsExpanded: Int = 0
+        private set
+    var lastEnsureCurrentNanos: Long = 0L
+        private set
+    var lastFilterComputeNanos: Long = 0L
+        private set
+    var lastBirthBfsTotalVisited: Int = 0
+        private set
+    var lastDeathBfsTotalVisited: Int = 0
+        private set
+    var lastBirthsThisCall: Int = 0
+        private set
+    var lastDeathsThisCall: Int = 0
+        private set
+    var lastFlipOutCandidateCount: Int = 0
+        private set
 
     /** Sub-universe Focused: pick the single sub-universe LUCA with the smallest
      *  descendant subgraph (ties: smallest id), return its descendant set. */
@@ -617,31 +687,35 @@ class LivingAncestryCache {
             sub.retainAll(ancestryVisibleSet)
             return
         }
-        val lucas = ArrayList<Long>()
-        for (v in atMax) {
-            if (v !in sub) continue
-            val kids = children[v]
-            var hasAtMaxKidInSub = false
-            if (kids != null) {
-                for (c in kids) {
-                    if (c in sub && (livingDescCount[c] ?: 0) == t) {
-                        hasAtMaxKidInSub = true
-                        break
-                    }
-                }
-            }
-            if (!hasAtMaxKidInSub) lucas.add(v)
-        }
-        if (lucas.isEmpty()) {
+        scratchLucas.clear()
+        findSubUniverseLucasInto(atMax, sub, t, scratchLucas)
+        if (scratchLucas.isEmpty()) {
             sub.retainAll(ancestryVisibleSet)
+            lastFocusedLucaCount = 0
             return
         }
-        // Pick LUCA with smallest descendant subgraph in sub (ties: smallest id).
-        var bestLuca = lucas[0]
+        // Common case (effectively always 1 in observed sims): one LUCA. Walk
+        // its descendants straight into the scratch keep-set and retainAll —
+        // zero allocations.
+        if (scratchLucas.size == 1) {
+            scratchKeep.clear()
+            scratchQueue.clear()
+            scratchKeep.add(scratchLucas[0]); scratchQueue.addLast(scratchLucas[0])
+            bfsDownInSub(sub, scratchKeep, scratchQueue)
+            sub.retainAll(scratchKeep)
+            lastFocusedLucaCount = 1
+            lastFocusedTotalDescendantsExpanded = scratchKeep.size
+            return
+        }
+        // Multi-LUCA path: each candidate gets its own materialised descendant
+        // set so we can compare sizes. Rare enough that we don't pool further.
+        var bestLuca = scratchLucas[0]
         var bestDescendants = descendantsInSub(bestLuca, sub)
-        for (i in 1 until lucas.size) {
-            val cand = lucas[i]
+        var totalDescendants = bestDescendants.size
+        for (i in 1 until scratchLucas.size) {
+            val cand = scratchLucas[i]
             val candDescendants = descendantsInSub(cand, sub)
+            totalDescendants += candDescendants.size
             val take = candDescendants.size < bestDescendants.size ||
                 (candDescendants.size == bestDescendants.size && cand < bestLuca)
             if (take) {
@@ -650,6 +724,8 @@ class LivingAncestryCache {
             }
         }
         sub.retainAll(bestDescendants)
+        lastFocusedLucaCount = scratchLucas.size
+        lastFocusedTotalDescendantsExpanded = totalDescendants
     }
 
     /** Sub-universe Connectors: same shape as the full connector compute, but
@@ -713,6 +789,49 @@ class LivingAncestryCache {
         sub.retainAll(keep)
     }
 
+    /** Collect sub-universe LUCAs into [out]: at-max nodes within [sub] with no
+     *  child in [sub] that is also at-max. Pulled out of the Steiner / Focused
+     *  paths so they share the LUCA-discovery loop without re-allocating. */
+    private fun findSubUniverseLucasInto(
+        atMaxNodes: Set<Long>,
+        sub: Set<Long>,
+        t: Int,
+        out: ArrayList<Long>,
+    ) {
+        for (v in atMaxNodes) {
+            if (v !in sub) continue
+            val kids = children[v]
+            var hasAtMaxKidInSub = false
+            if (kids != null) {
+                for (c in kids) {
+                    if (c in sub && (livingDescCount[c] ?: 0) == t) {
+                        hasAtMaxKidInSub = true
+                        break
+                    }
+                }
+            }
+            if (!hasAtMaxKidInSub) out.add(v)
+        }
+    }
+
+    /** BFS-down through `children` adjacency, restricted to [sub], pruning
+     *  edges where the child has no living descendant. Caller seeds [keep] +
+     *  [queue] with the starting LUCAs; result accumulates into [keep]. */
+    private fun bfsDownInSub(
+        sub: Set<Long>,
+        keep: LinkedHashSet<Long>,
+        queue: ArrayDeque<Long>,
+    ) {
+        while (queue.isNotEmpty()) {
+            val v = queue.removeFirst()
+            for (c in children[v] ?: emptyList()) {
+                if (c !in sub) continue
+                if ((livingDescCount[c] ?: 0) <= 0 && c !in livingMembers) continue
+                if (keep.add(c)) queue.addLast(c)
+            }
+        }
+    }
+
     private fun countLivingBearingChildrenInSub(v: Long, sub: Set<Long>): Int {
         var count = 0
         for (c in children[v] ?: return 0) {
@@ -767,7 +886,7 @@ class LivingAncestryCache {
         lastNodeCount = 0
     }
 
-    private fun ensureCurrent(lineage: DrocketLineageState, layout: CladogramLayout) {
+    private fun ensureCurrent(lineage: DrocketLineageState) {
         // Detect wholesale replacement (snapshot load). `nextLineageId` only ever
         // increases under normal play and `nodes` only ever grows (deaths flip
         // `deathTick` but keep the node in the map). A regression on either is a
@@ -776,32 +895,55 @@ class LivingAncestryCache {
             reset()
         }
 
-        val visibleIds = layout.depthById.keys
+        val members = currentMembers
 
-        // Discover only ids born since the last sync. In steady state this loop
-        // iterates a handful of new births per tick, not the full lineage.
-        for (id in lastNextLineageId until lineage.nextLineageId) {
-            val node = lineage.nodes[id] ?: continue
-            if (id !in visibleIds || id in parents) continue
-            val ps = buildList<Long>(2) {
-                node.motherLineageId?.let { if (it in visibleIds) add(it) }
-                node.fatherLineageId?.let { if (it in visibleIds) add(it) }
+        if (lastNextLineageId == 0L) {
+            // First call after reset / mode change. Discover by iterating
+            // [members] directly — at sub-universe scope this is O(|sub|)
+            // rather than O(total nodes ever born).
+            for (id in members) {
+                if (id in parents) continue
+                val node = lineage.nodes[id] ?: continue
+                val ps = buildList<Long>(2) {
+                    node.motherLineageId?.let { if (it in members) add(it) }
+                    node.fatherLineageId?.let { if (it in members) add(it) }
+                }
+                parents[id] = ps
+                allMembers.add(id)
+                for (p in ps) {
+                    children.getOrPut(p) { mutableListOf() }.add(id)
+                }
             }
-            parents[id] = ps
-            allMembers.add(id)
-            for (p in ps) {
-                children.getOrPut(p) { mutableListOf() }.add(id)
+        } else {
+            // Steady state: only ids born since the last sync need discovery.
+            for (id in lastNextLineageId until lineage.nextLineageId) {
+                val node = lineage.nodes[id] ?: continue
+                if (id !in members || id in parents) continue
+                val ps = buildList<Long>(2) {
+                    node.motherLineageId?.let { if (it in members) add(it) }
+                    node.fatherLineageId?.let { if (it in members) add(it) }
+                }
+                parents[id] = ps
+                allMembers.add(id)
+                for (p in ps) {
+                    children.getOrPut(p) { mutableListOf() }.add(id)
+                }
             }
         }
         lastNextLineageId = lineage.nextLineageId
         lastNodeCount = lineage.nodes.size
 
-        val currentLiving = lineage.livingLineageIds.filterTo(LinkedHashSet()) { it in visibleIds }
+        val currentLiving = lineage.livingLineageIds.filterTo(LinkedHashSet()) { it in members }
         val deaths = livingMembers.filter { it !in currentLiving }
         val births = currentLiving.filter { it !in livingMembers }
 
         // Process deaths first so the lDC bookkeeping is consistent if a birth and
         // death involve overlapping ancestors in the same tick.
+        lastBirthsThisCall = births.size
+        lastDeathsThisCall = deaths.size
+        lastBirthBfsTotalVisited = 0
+        lastDeathBfsTotalVisited = 0
+        lastFlipOutCandidateCount = 0
         for (dead in deaths) processDeath(dead)
         for (newLife in births) processBirth(newLife)
     }
@@ -810,10 +952,12 @@ class LivingAncestryCache {
         val tOld = livingMembers.size
         livingMembers.add(n)
         val tNew = livingMembers.size
+        val members = currentMembers
 
         // Pre-BFS snapshot of nodes at `lDC = tOld` — these flip OUT of at-max when T
         // grows, unless they're ancestors of N (then they stay at-max under tNew).
         val flipOutCandidates = nodesByLDC[tOld]?.toList() ?: emptyList()
+        lastFlipOutCandidateCount += flipOutCandidates.size
 
         val visited = HashSet<Long>()
         val visitedFlippedToUniversal = mutableListOf<Long>()
@@ -832,25 +976,31 @@ class LivingAncestryCache {
                 // v just became living-bearing — each parent now has one more
                 // child whose subtree contains a living.
                 for (p in parents[v] ?: emptyList()) {
+                    if (p !in members) continue
                     branchLivingChildCount[p] = (branchLivingChildCount[p] ?: 0) + 1
                 }
             }
             if (!wasAtMax && isAtMax) visitedFlippedToUniversal.add(v)
             for (p in parents[v] ?: emptyList()) {
+                if (p !in members) continue
                 if (visited.add(p)) queue.addLast(p)
             }
         }
+        lastBirthBfsTotalVisited += visited.size
 
         // Visited flips IN to at-max (first-birth edge case where tOld = 0).
         for (v in visitedFlippedToUniversal) {
             for (p in parents[v] ?: emptyList()) {
+                if (p !in members) continue
                 universalChildCount[p] = (universalChildCount[p] ?: 0) + 1
             }
         }
         // Non-ancestors with pre-birth lDC = tOld flip OUT (T grew past their count).
         for (v in flipOutCandidates) {
+            if (v !in members) continue
             if (v in visited) continue
             for (p in parents[v] ?: emptyList()) {
+                if (p !in members) continue
                 val before = universalChildCount[p] ?: 0
                 if (before <= 1) universalChildCount.remove(p) else universalChildCount[p] = before - 1
             }
@@ -861,10 +1011,12 @@ class LivingAncestryCache {
         val tOld = livingMembers.size
         livingMembers.remove(d)
         val tNew = livingMembers.size
+        val members = currentMembers
 
         // Pre-BFS snapshot of nodes at `lDC = tNew` (= tOld - 1) — these flip INTO
         // at-max when T shrinks past their count.
         val flipInCandidates = nodesByLDC[tNew]?.toList() ?: emptyList()
+        lastFlipOutCandidateCount += flipInCandidates.size
 
         val visited = HashSet<Long>()
         val visitedFlippedFromUniversal = mutableListOf<Long>()
@@ -883,6 +1035,7 @@ class LivingAncestryCache {
                 // v lost its last living descendant — each parent now has one
                 // fewer living-bearing child.
                 for (p in parents[v] ?: emptyList()) {
+                    if (p !in members) continue
                     val before = branchLivingChildCount[p] ?: 0
                     if (before <= 1) branchLivingChildCount.remove(p)
                     else branchLivingChildCount[p] = before - 1
@@ -890,21 +1043,26 @@ class LivingAncestryCache {
             }
             if (wasAtMax && !isAtMax) visitedFlippedFromUniversal.add(v)
             for (p in parents[v] ?: emptyList()) {
+                if (p !in members) continue
                 if (visited.add(p)) queue.addLast(p)
             }
         }
+        lastDeathBfsTotalVisited += visited.size
 
         // Visited flips OUT of at-max (last-death edge case where tNew = 0).
         for (v in visitedFlippedFromUniversal) {
             for (p in parents[v] ?: emptyList()) {
+                if (p !in members) continue
                 val before = universalChildCount[p] ?: 0
                 if (before <= 1) universalChildCount.remove(p) else universalChildCount[p] = before - 1
             }
         }
         // Non-ancestors with pre-death lDC = tNew flip INTO at-max (T shrank to their count).
         for (v in flipInCandidates) {
+            if (v !in members) continue
             if (v in visited) continue
             for (p in parents[v] ?: emptyList()) {
+                if (p !in members) continue
                 universalChildCount[p] = (universalChildCount[p] ?: 0) + 1
             }
         }
@@ -1094,43 +1252,53 @@ class MonotoneFilter {
     private var initialized = false
 
     /**
+     * Sub-universe-scoped cache. Tracks parents / children / livingDescCount
+     * etc. **only** for ids in [visible] — so per-tick BFS-up in
+     * `processBirth`/`processDeath` is bounded by the sub-universe size
+     * (~thousands) rather than the full lineage (~tens of thousands at long
+     * runs). The shared full-lineage cache is only consulted on the seed
+     * call to produce the initial filter result.
+     */
+    val subCache: LivingAncestryCache = LivingAncestryCache()
+
+    /**
      * Update the visible set and return it.
      *
-     * On seed call (after activation / reset / mode change / nextLineageId
-     * regression), the full-lineage filter result from [cache] seeds [visible].
+     * On seed (after activation / reset / mode change / nextLineageId
+     * regression), the full-lineage filter result from [sharedCache] seeds
+     * [visible], then [subCache] is primed by running the sub-universe
+     * filter against `members = visible`.
      *
      * On subsequent calls:
      *  1. Ids born since the last call join [visible] iff at least one parent
      *     is already in [visible].
-     *  2. [cache.applySubUniverseFilter] reruns the filter against the
-     *     sub-universe and prunes [visible] in-place using the cache's
-     *     already-maintained adjacency / counts.
-     *
-     * The post-init path never invokes the full-lineage filter on [cache], so
-     * the expensive per-tick recompute (especially for `LIVING_FOCUSED`, which
-     * BFS-down's from each LUCA candidate) is paid only on the seed call.
+     *  2. [subCache.applySubUniverseFilter] reruns the filter against the
+     *     sub-universe with `members = visible`, processing births / deaths
+     *     and pruning [visible] in-place. BFS scope is bounded by [visible].
      */
     fun apply(
         filter: CladogramFilterMode,
         lineage: DrocketLineageState,
         layout: CladogramLayout,
-        cache: LivingAncestryCache,
+        sharedCache: LivingAncestryCache,
     ): Set<Long> {
         if (mode != filter || lineage.nextLineageId < nextLineageIdWatermark) {
             visible.clear()
+            subCache.reset()
             mode = filter
             initialized = false
         }
         if (!initialized) {
             val seed = when (filter) {
-                CladogramFilterMode.LIVING_ANCESTRY -> cache.ancestryVisibleFor(lineage, layout)
-                CladogramFilterMode.LIVING_STEINER -> cache.steinerVisibleFor(lineage, layout)
-                CladogramFilterMode.LIVING_FOCUSED -> cache.lucaFocusedVisibleFor(lineage, layout)
-                CladogramFilterMode.LIVING_AND_CONNECTORS -> cache.connectorsVisibleFor(lineage, layout)
-                CladogramFilterMode.ALL -> cache.allVisibleFor(lineage, layout)
-                CladogramFilterMode.LIVING_ONLY -> cache.livingOnlyVisibleFor(lineage, layout)
+                CladogramFilterMode.LIVING_ANCESTRY -> sharedCache.ancestryVisibleFor(lineage, layout)
+                CladogramFilterMode.LIVING_STEINER -> sharedCache.steinerVisibleFor(lineage, layout)
+                CladogramFilterMode.LIVING_FOCUSED -> sharedCache.lucaFocusedVisibleFor(lineage, layout)
+                CladogramFilterMode.LIVING_AND_CONNECTORS -> sharedCache.connectorsVisibleFor(lineage, layout)
+                CladogramFilterMode.ALL -> sharedCache.allVisibleFor(lineage, layout)
+                CladogramFilterMode.LIVING_ONLY -> sharedCache.livingOnlyVisibleFor(lineage, layout)
             }
             visible.addAll(seed)
+            subCache.applySubUniverseFilter(visible, filter, lineage, visible)
             initialized = true
         } else {
             for (id in nextLineageIdWatermark until lineage.nextLineageId) {
@@ -1139,7 +1307,7 @@ class MonotoneFilter {
                 val fatherIn = node.fatherLineageId?.let { it in visible } ?: false
                 if (motherIn || fatherIn) visible.add(id)
             }
-            cache.applySubUniverseFilter(visible, filter, lineage, layout)
+            subCache.applySubUniverseFilter(visible, filter, lineage, visible)
         }
         nextLineageIdWatermark = lineage.nextLineageId
         return visible
@@ -1149,8 +1317,13 @@ class MonotoneFilter {
         mode = null
         nextLineageIdWatermark = 0L
         visible.clear()
+        subCache.reset()
         initialized = false
     }
+
+    /** Current visible-set size. Read-only access for instrumentation /
+     *  benchmarking; the set itself is internal mutable state. */
+    fun visibleSize(): Int = visible.size
 }
 
 /**
