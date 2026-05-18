@@ -25,6 +25,7 @@ class DrocketsController(
     )
     private var lineageState = DrocketLineageState.EMPTY
         .advanceFromPhysics(stepper.state, stepper.tick.value)
+    private val cladogramLayoutMemo = CladogramLayoutMemo()
 
     fun tick(): DrocketsFrame {
         stepper.step(emptyMap())
@@ -32,7 +33,7 @@ class DrocketsController(
         return DrocketsFrame(
             state = stepper.state,
             lineage = lineageState,
-            cladogramLayout = CladogramLayout.build(lineageState),
+            cladogramLayout = cladogramLayoutMemo.get(lineageState),
             tick = stepper.tick.value,
         )
     }
@@ -50,6 +51,7 @@ class DrocketsController(
         val snapshot = DrocketsSaveCodec.decode(bytes)
         stepper.reset(snapshot.state, snapshot.tick)
         lineageState = snapshot.lineage
+        cladogramLayoutMemo.reset()
     }
 
     companion object {

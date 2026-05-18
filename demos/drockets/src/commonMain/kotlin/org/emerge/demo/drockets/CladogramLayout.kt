@@ -100,3 +100,47 @@ data class CladogramLayout(
         }
     }
 }
+
+/**
+ * Across-tick memo for [CladogramLayout.build]. In steady state — population
+ * stable, no births or deaths in a given tick — `build` is a pure function of
+ * [DrocketLineageState] and gets called every frame, so a one-slot cache keyed
+ * on a cheap stamp turns ~all per-tick rebuilds into a single map lookup.
+ *
+ * Stamp formula matches `LineageOverlay::lineageVersionStamp`: `nextLineageId`
+ * catches births (only thing that moves it), `livingLineageIds.size` catches
+ * deaths, `nodes.size` catches snapshot replacement. Collisions are possible
+ * in principle but the same risk applies to the overlay cache already.
+ *
+ * [reset] is exposed for snapshot-restore paths that wholesale-replace the
+ * lineage — there, a coincidental stamp collision with the pre-restore state
+ * would otherwise serve a stale layout.
+ */
+internal class CladogramLayoutMemo {
+    private var cached: CladogramLayout? = null
+    private var cachedStamp: Long = INVALID_STAMP
+
+    fun get(lineage: DrocketLineageState): CladogramLayout {
+        val stamp = stampOf(lineage)
+        val current = cached
+        if (current != null && stamp == cachedStamp) return current
+        val fresh = CladogramLayout.build(lineage)
+        cached = fresh
+        cachedStamp = stamp
+        return fresh
+    }
+
+    fun reset() {
+        cached = null
+        cachedStamp = INVALID_STAMP
+    }
+
+    private fun stampOf(lineage: DrocketLineageState): Long =
+        lineage.nextLineageId * 1_000_003L +
+            lineage.livingLineageIds.size * 31L +
+            lineage.nodes.size
+
+    companion object {
+        private const val INVALID_STAMP = -1L
+    }
+}
