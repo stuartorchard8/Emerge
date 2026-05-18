@@ -74,6 +74,7 @@ class LineageOverlay {
      * paid. Initialised lazily on first use of the filter mode.
      */
     private val livingAncestryCache = LivingAncestryCache()
+    private val monotoneFilter = MonotoneFilter()
 
     /**
      * Persistent positions for [CladogramLayoutMode.FORCE_DIRECTED]. Survives filter
@@ -804,7 +805,7 @@ class LineageOverlay {
             return cached.visibleIds to 0f
         }
         val filterStart = kotlin.time.TimeSource.Monotonic.markNow()
-        val visibleIds = when (filter) {
+        val rawVisibleIds = when (filter) {
             CladogramFilterMode.LIVING_ANCESTRY ->
                 livingAncestryCache.ancestryVisibleFor(frame.lineage, frame.cladogramLayout)
             CladogramFilterMode.LIVING_STEINER ->
@@ -818,6 +819,7 @@ class LineageOverlay {
             CladogramFilterMode.LIVING_AND_CONNECTORS ->
                 livingAncestryCache.connectorsVisibleFor(frame.lineage, frame.cladogramLayout)
         }
+        val visibleIds = monotoneFilter.apply(rawVisibleIds, filter, frame.lineage)
         val filterMs = filterStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
         visibleCache = VisibleCache(stamp, filter, visibleIds)
         return visibleIds to filterMs

@@ -860,6 +860,92 @@ internal class LivingAncestryCache {
 }
 
 /**
+ * Destructive-monotone filter that treats the visible set as its own
+ * sub-universe.
+ *
+ * On the first call after activation (or after a reset / mode change /
+ * snapshot regression), [raw] seeds the visible set — the natural
+ * full-lineage filter result.
+ *
+ * On every subsequent call:
+ *  1. **Extend.** Any id born since the previous call joins [visible] iff at
+ *     least one of its parents is already in [visible]. Births in clades that
+ *     were never part of the sub-universe stay invisible forever.
+ *  2. **Prune.** The filter is re-run against a synthetic lineage restricted
+ *     to [visible]; anything the filter no longer keeps is removed from
+ *     [visible] permanently for the current mode session. Pruned ids cannot
+ *     reappear, even if natural full-lineage Steiner would include them again
+ *     after a later LUCA shift.
+ *
+ * The [raw] parameter is only consulted on the seed call; on subsequent calls
+ * the implementation works entirely off the sub-universe and the new-births
+ * range `[watermark, lineage.nextLineageId)`. Callers can pass any value
+ * (including [emptySet]) for `raw` once initialized.
+ *
+ * State is cleared when the filter mode changes or when `nextLineageId`
+ * regresses (snapshot load).
+ */
+internal class MonotoneFilter {
+    private val visible = LinkedHashSet<Long>()
+    private var mode: CladogramFilterMode? = null
+    private var nextLineageIdWatermark: Long = 0L
+    private var initialized = false
+
+    fun apply(
+        raw: Set<Long>,
+        filter: CladogramFilterMode,
+        lineage: DrocketLineageState,
+    ): Set<Long> {
+        if (mode != filter || lineage.nextLineageId < nextLineageIdWatermark) {
+            visible.clear()
+            mode = filter
+            initialized = false
+        }
+        if (!initialized) {
+            visible.addAll(raw)
+            initialized = true
+        } else {
+            // Extend: only ids whose parent is already in visible.
+            for (id in nextLineageIdWatermark until lineage.nextLineageId) {
+                val node = lineage.nodes[id] ?: continue
+                val motherIn = node.motherLineageId?.let { it in visible } ?: false
+                val fatherIn = node.fatherLineageId?.let { it in visible } ?: false
+                if (motherIn || fatherIn) visible.add(id)
+            }
+            // Prune: re-run the filter restricted to the sub-universe.
+            pruneOnSubUniverse(filter, lineage)
+        }
+        nextLineageIdWatermark = lineage.nextLineageId
+        return visible
+    }
+
+    fun reset() {
+        mode = null
+        nextLineageIdWatermark = 0L
+        visible.clear()
+        initialized = false
+    }
+
+    /** Build a synthetic lineage that includes only the ids in [visible], rerun
+     *  the stateless filter on it, and retain only the result in [visible]. */
+    private fun pruneOnSubUniverse(filter: CladogramFilterMode, lineage: DrocketLineageState) {
+        if (visible.isEmpty()) return
+        val syntheticNodes = LinkedHashMap<Long, DrocketLineageNode>(visible.size)
+        for (id in visible) {
+            lineage.nodes[id]?.let { syntheticNodes[id] = it }
+        }
+        val syntheticLivings = lineage.livingLineageIds.filterTo(LinkedHashSet()) { it in visible }
+        val syntheticLineage = lineage.copy(
+            nodes = syntheticNodes,
+            livingLineageIds = syntheticLivings,
+        )
+        val syntheticLayout = CladogramLayout.build(syntheticLineage)
+        val keep = computeVisibleLineageIds(syntheticLineage, syntheticLayout, filter)
+        visible.retainAll(keep)
+    }
+}
+
+/**
  * Finds the MRCA between two lineage nodes given their BFS-up distance maps.
  *
  * The intersection of `distA.keys` and `distB.keys` is the set of common ancestors.
