@@ -113,6 +113,16 @@ tasks.register<JavaExec>("benchDrockets") {
     standardInput = System.`in`
 }
 
+tasks.register<JavaExec>("benchDrocketsOverlay") {
+    group = "verification"
+    description = "Headless overlay-cost benchmark: loads a save and times the filter cache + monotone wrapper + force solver. " +
+        "Pass --args=\"<savePath> [warmup] [measure] [filter]\""
+    mainClass = "org.emerge.desktop.DrocketsOverlayBenchmarkKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    standardInput = System.`in`
+    workingDir = rootDir
+}
+
 tasks.register<JavaExec>("benchDrocketsZgc") {
     group = "verification"
     description = "Headless Drockets benchmark running under ZGC (low-pause collector) for tail-latency comparison"
