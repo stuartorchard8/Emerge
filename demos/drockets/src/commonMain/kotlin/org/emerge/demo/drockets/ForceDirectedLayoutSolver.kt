@@ -53,22 +53,21 @@ enum class CladogramLayoutMode {
  *    optional `+ LIVING_REPULSION_K` bonus when both endpoints are currently
  *    alive. No spatial hash — O(n²), comfortable at visible-cladogram sizes
  *    (well under 1k nodes).
- *  - **Radial-outward "gravity" on every visible node** ([OUTWARD_K]): a
- *    constant-magnitude force pointing away from the **cluster centroid**
- *    (mean position of all visible nodes) along the node's position vector
- *    relative to that centroid. Inflates the whole cluster from the inside.
- *    Centering on exactly the force-receiving set keeps `Σ(pos − centroid) =
- *    0`, so the per-frame outward forces sum to zero and the cluster only
- *    expands radially, never drifts bodily. Skipped at the centroid (no
- *    defined direction); other forces nudge the node off on the next step.
+ *  - **Radial-outward "gravity" on visible leaves** ([OUTWARD_K]): a node
+ *    with no visible children gets a constant-magnitude force pointing away
+ *    from the **leaf centroid** (mean of visible-leaf positions). Centering
+ *    on exactly the force-receiving set (leaves only) keeps
+ *    `Σ(leaf_pos − leaf_centroid) = 0`, so the leaves can only inflate
+ *    outward, not drift bodily. Skipped at the centroid (no defined
+ *    direction); other forces nudge the leaf off on the next step.
  *  - **Hookean buoyancy on visible roots** ([BUOYANCY_K] · (anchor − pos)):
- *    a node with no parent currently in the visible set is pulled back toward
- *    ([BUOYANCY_ANCHOR_X], [BUOYANCY_ANCHOR_Y]) by a 2D spring whose magnitude
- *    scales with divergence from the anchor. Springs through descendants
- *    transmit chain weight that stretches this spring until tension balances
- *    it. The 2D anchor (versus a y-only anchor) gives the tree a soft "centre"
- *    that the whole cluster drifts toward via spring coupling, so the centroid
- *    of the radial layout stays near the origin instead of wandering.
+ *    a node with no visible parents is pulled toward
+ *    ([BUOYANCY_ANCHOR_X], [BUOYANCY_ANCHOR_Y]) by a 2D Hookean spring.
+ *    Combined with the leaf-only outward force, this hangs the tree from
+ *    both ends: roots anchored inside, leaves pushed outside, middles
+ *    settled by spring tension along the chain. The depth gradient
+ *    ("inside is older, outside is younger") emerges from this topology
+ *    rather than from any depth-aware force scaling.
  *  - **Gravity on visible leaves** ([GRAVITY_K], downward): a node with no
  *    visible children gets a constant downward pull. Combined with buoyancy on
  *    the visible-roots, this stretches the tree vertically from both ends —
@@ -221,32 +220,41 @@ class ForceDirectedLayoutSolver {
             if (ids[i] in lineage.livingLineageIds) isLiving[i] = true
         }
 
-        // Per-node bias:
-        //   - Visible-root (no visible parent): 2D Hookean buoyancy toward
-        //     (BUOYANCY_ANCHOR_X, BUOYANCY_ANCHOR_Y). Pulls roots inward in
-        //     both axes and, via spring coupling, drags the rest of the tree
-        //     toward the anchor — soft-centring the layout on the origin.
-        //   - Visible-leaf (no visible child):  constant downward gravity.
-        //   - Middle node (has both):           no direct vertical bias; its
-        //                                       position emerges from spring
-        //                                       tension transmitted along the
-        //                                       chain.
-        // A node that is both a root and a leaf (e.g. an isolated single living)
-        // feels both — buoyancy pulling toward the anchor, gravity pulling down.
-        // Cluster centroid: mean position of every visible node. Used as the
-        // origin for the radial-outward force below, which applies to every
-        // visible node (not just leaves). The centroid must be computed over
-        // exactly the force-receiving set so that Σ(pos − centroid) = 0 holds
-        // by construction — that's what keeps the per-frame outward forces
-        // zero-sum and prevents the cluster from drifting bodily.
-        var cx = 0f
-        var cy = 0f
+        // "Hung from both ends" radial bias:
+        //   - Visible-root (no visible parent):  2D Hookean buoyancy toward
+        //                                        (BUOYANCY_ANCHOR_X,
+        //                                        BUOYANCY_ANCHOR_Y). Anchors
+        //                                        the inside of the layout.
+        //   - Visible-leaf (no visible child):   constant-magnitude radial
+        //                                        push away from the leaf
+        //                                        centroid (plus the existing
+        //                                        downward gravity).
+        //   - Middle node (has both):            no direct positional force;
+        //                                        spring tension from roots
+        //                                        (pulling inward) and leaves
+        //                                        (pushing outward) settles it.
+        // The depth gradient ("inside is older, outside is younger") emerges
+        // from this topology — there's no force scaling by depth, the layout
+        // does it itself through chain tension.
+        //
+        // Leaf centroid: mean of visible-leaf positions. Used as the origin
+        // for the leaf outward force so Σ(leaf_pos − leaf_centroid) = 0 holds
+        // exactly across the force-receiving set; the cluster can only inflate
+        // radially around the leaves, not drift bodily.
+        var leafCx = 0f
+        var leafCy = 0f
+        var leafCount = 0
         for (i in 0 until n) {
-            cx += xs[i]
-            cy += ys[i]
+            if (!hasVisibleChild[i]) {
+                leafCx += xs[i]
+                leafCy += ys[i]
+                leafCount++
+            }
         }
-        cx /= n
-        cy /= n
+        if (leafCount > 0) {
+            leafCx /= leafCount
+            leafCy /= leafCount
+        }
 
         for (i in 0 until n) {
             val node = lineage.nodes[ids[i]]
@@ -258,19 +266,16 @@ class ForceDirectedLayoutSolver {
                 fxs[i] += BUOYANCY_K * (BUOYANCY_ANCHOR_X - xs[i])
                 fys[i] += BUOYANCY_K * (BUOYANCY_ANCHOR_Y - ys[i])
             }
-            if (isVisibleLeaf) fys[i] -= GRAVITY_K
-            // Radial-outward "gravity" on every visible node: constant magnitude
-            // OUTWARD_K, pointing away from the cluster centroid along the
-            // node's position vector relative to that centroid. Inflates the
-            // whole cluster from the inside rather than just pushing the leaf
-            // fringe out. Skipped at the centroid (no well-defined direction).
-            val rx = xs[i] - cx
-            val ry = ys[i] - cy
-            val r2 = rx * rx + ry * ry
-            if (r2 > MIN_DIST2) {
-                val invR = OUTWARD_K / sqrt(r2)
-                fxs[i] += rx * invR
-                fys[i] += ry * invR
+            if (isVisibleLeaf) {
+                fys[i] -= GRAVITY_K
+                val rx = xs[i] - leafCx
+                val ry = ys[i] - leafCy
+                val r2 = rx * rx + ry * ry
+                if (r2 > MIN_DIST2) {
+                    val invR = OUTWARD_K / sqrt(r2)
+                    fxs[i] += rx * invR
+                    fys[i] += ry * invR
+                }
             }
         }
 
@@ -415,7 +420,7 @@ class ForceDirectedLayoutSolver {
         // The ratios between SPRING_K, REPULSION_K, BUOYANCY_K, and GRAVITY_K set
         // the equilibrium shape (root depth, chain stretch, sibling spread); the
         // absolute scale sets how fast the system relaxes toward that shape.
-        private const val SPRING_K: Float = 0.001f
+        private const val SPRING_K: Float = 0.01f
         // Pairwise isotropic repulsion strength. Applied all-pairs as a 2D
         // Coulomb-like force (magnitude REPULSION_K / d², along the line
         // between the pair). Higher values spread the layout further apart
@@ -426,28 +431,25 @@ class ForceDirectedLayoutSolver {
         // individuals further apart than dead ancestors do, making them easier
         // to track and click without disturbing the dead-skeleton structure.
         private const val LIVING_REPULSION_K: Float = 0.00000f
-        // Constant radial-outward "gravity" applied to every visible node.
-        // Each node feels a force of this magnitude pointing away from the
-        // cluster centroid (mean position of all visible nodes). Inflates the
-        // whole cluster from the inside; combined with springs holding the
-        // edges and repulsion separating siblings, this tends to lay out the
-        // tree radially with no preferred axis. Centering on all visible nodes
-        // keeps Σ(pos − centroid) = 0 so the cluster only expands, never
-        // drifts bodily.
-        private const val OUTWARD_K: Float = 0.0001f
-        // Vertical bias:
+        // Constant radial-outward "gravity" applied to visible LEAVES only
+        // (nodes with no visible child). Each leaf feels a force of this
+        // magnitude pointing away from the leaf centroid (mean of visible-
+        // leaf positions). Pulls the tips of the tree out into a ring;
+        // middles are dragged along via spring tension, roots stay anchored
+        // by buoyancy — giving the radial "inside is older, outside is
+        // younger" gradient from topology alone. Centering on leaves keeps
+        // Σ(leaf_pos − leaf_centroid) = 0 so the cluster doesn't drift.
+        private const val OUTWARD_K: Float = 0.01f
+        // Bias:
         //   - Visible roots (no visible parent) feel a 2D Hookean buoyancy
-        //     spring pulling them back toward (BUOYANCY_ANCHOR_X,
-        //     BUOYANCY_ANCHOR_Y). Equilibrium root displacement from the anchor
-        //     is roughly chain_weight/BUOYANCY_K per axis, where chain weight
-        //     accumulates GRAVITY_K and OUTWARD_K along visible descendants.
+        //     spring toward (BUOYANCY_ANCHOR_X, BUOYANCY_ANCHOR_Y). Anchors
+        //     the inside of the radial layout.
         //   - Only visible leaves (no visible child) feel a constant downward
-        //     gravity. Each spring's tension is the sum of GRAVITY_K over the
-        //     leaves below it: a spring connecting to a single leaf carries
-        //     GRAVITY_K; a top-of-tree spring carries the full leaf count of its
-        //     subtree. Stretch past REST_LENGTH is tension/SPRING_K. Bumping
-        //     GRAVITY_K stretches the tree more; bumping SPRING_K keeps it tighter.
-        private const val BUOYANCY_K: Float = 0.01f
+        //     gravity. (Currently 0 — kept around as a tunable.)
+        //   - Middles are settled by spring tension propagated along the
+        //     chain. Bumping GRAVITY_K stretches the tree more; bumping
+        //     SPRING_K keeps it tighter.
+        private const val BUOYANCY_K: Float = 0.001f
         private const val BUOYANCY_ANCHOR_X: Float = 0f
         private const val BUOYANCY_ANCHOR_Y: Float = 0f
         private const val GRAVITY_K: Float = 0.0000f
