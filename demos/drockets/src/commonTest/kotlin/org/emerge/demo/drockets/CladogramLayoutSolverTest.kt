@@ -190,7 +190,6 @@ class CladogramLayoutSolverTest {
     )
 
     private fun emptyLayout() = CladogramLayout(
-        positions = emptyMap(),
         edges = emptyList(),
         depthById = emptyMap(),
         stats = CladogramStats(

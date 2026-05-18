@@ -139,7 +139,6 @@ class ForceDirectedLayoutSolverTest {
             livingLineageIds = setOf(1L, 2L),
         )
         val layout = CladogramLayout(
-            positions = emptyMap(),
             edges = emptyList(),
             depthById = mapOf(1L to 0, 2L to 0),
             stats = CladogramStats(2, 2, 0, 0, 0, 2),
@@ -168,7 +167,6 @@ class ForceDirectedLayoutSolverTest {
         )
         // Build a layout that doesn't connect them with an edge so only repulsion acts.
         val layout = CladogramLayout(
-            positions = emptyMap(),
             edges = emptyList(),
             depthById = mapOf(1L to 0, 2L to 0),
             stats = CladogramStats(2, 2, 0, 0, 0, 2),
@@ -247,7 +245,6 @@ class ForceDirectedLayoutSolverTest {
     )
 
     private fun emptyLayout() = CladogramLayout(
-        positions = emptyMap(),
         edges = emptyList(),
         depthById = emptyMap(),
         stats = CladogramStats(0, 0, 0, 0, 0, 0),
