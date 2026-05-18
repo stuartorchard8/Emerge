@@ -805,21 +805,7 @@ class LineageOverlay {
             return cached.visibleIds to 0f
         }
         val filterStart = kotlin.time.TimeSource.Monotonic.markNow()
-        val rawVisibleIds = when (filter) {
-            CladogramFilterMode.LIVING_ANCESTRY ->
-                livingAncestryCache.ancestryVisibleFor(frame.lineage, frame.cladogramLayout)
-            CladogramFilterMode.LIVING_STEINER ->
-                livingAncestryCache.steinerVisibleFor(frame.lineage, frame.cladogramLayout)
-            CladogramFilterMode.LIVING_FOCUSED ->
-                livingAncestryCache.lucaFocusedVisibleFor(frame.lineage, frame.cladogramLayout)
-            CladogramFilterMode.ALL ->
-                livingAncestryCache.allVisibleFor(frame.lineage, frame.cladogramLayout)
-            CladogramFilterMode.LIVING_ONLY ->
-                livingAncestryCache.livingOnlyVisibleFor(frame.lineage, frame.cladogramLayout)
-            CladogramFilterMode.LIVING_AND_CONNECTORS ->
-                livingAncestryCache.connectorsVisibleFor(frame.lineage, frame.cladogramLayout)
-        }
-        val visibleIds = monotoneFilter.apply(rawVisibleIds, filter, frame.lineage, livingAncestryCache)
+        val visibleIds = monotoneFilter.apply(filter, frame.lineage, frame.cladogramLayout, livingAncestryCache)
         val filterMs = filterStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
         visibleCache = VisibleCache(stamp, filter, visibleIds)
         return visibleIds to filterMs

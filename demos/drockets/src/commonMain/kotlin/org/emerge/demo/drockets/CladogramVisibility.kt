@@ -550,14 +550,16 @@ class LivingAncestryCache {
     }
 
     /** Restrict [visible] in-place to the [filter]'s result on the sub-universe
-     *  it defines. Reuses the cache's maintained adjacency and counts, so the
-     *  cost is O(|sub-universe LUCAs| + |result|) instead of a full per-tick
-     *  rebuild. Caller must have invoked one of the `*VisibleFor` methods on
-     *  the same [lineage]/[layout] first, so internal state is current. */
+     *  it defines. Runs [ensureCurrent] internally and then reuses the cache's
+     *  maintained adjacency and counts — O(|sub-universe LUCAs| + |result|)
+     *  rather than a per-tick rebuild. */
     fun applySubUniverseFilter(
         visible: MutableSet<Long>,
         filter: CladogramFilterMode,
+        lineage: DrocketLineageState,
+        layout: CladogramLayout,
     ) {
+        ensureCurrent(lineage, layout)
         if (visible.isEmpty()) return
         when (filter) {
             CladogramFilterMode.ALL -> {} // sub-universe is already the result
@@ -1095,22 +1097,23 @@ class MonotoneFilter {
      * Update the visible set and return it.
      *
      * On seed call (after activation / reset / mode change / nextLineageId
-     * regression), [raw] is copied into [visible].
+     * regression), the full-lineage filter result from [cache] seeds [visible].
      *
      * On subsequent calls:
      *  1. Ids born since the last call join [visible] iff at least one parent
      *     is already in [visible].
      *  2. [cache.applySubUniverseFilter] reruns the filter against the
      *     sub-universe and prunes [visible] in-place using the cache's
-     *     already-maintained adjacency / counts — no synthetic-lineage rebuild.
+     *     already-maintained adjacency / counts.
      *
-     * The [cache] must have just had its `*VisibleFor` method invoked (which
-     * is how [raw] is produced); otherwise the cached state may be stale.
+     * The post-init path never invokes the full-lineage filter on [cache], so
+     * the expensive per-tick recompute (especially for `LIVING_FOCUSED`, which
+     * BFS-down's from each LUCA candidate) is paid only on the seed call.
      */
     fun apply(
-        raw: Set<Long>,
         filter: CladogramFilterMode,
         lineage: DrocketLineageState,
+        layout: CladogramLayout,
         cache: LivingAncestryCache,
     ): Set<Long> {
         if (mode != filter || lineage.nextLineageId < nextLineageIdWatermark) {
@@ -1119,7 +1122,15 @@ class MonotoneFilter {
             initialized = false
         }
         if (!initialized) {
-            visible.addAll(raw)
+            val seed = when (filter) {
+                CladogramFilterMode.LIVING_ANCESTRY -> cache.ancestryVisibleFor(lineage, layout)
+                CladogramFilterMode.LIVING_STEINER -> cache.steinerVisibleFor(lineage, layout)
+                CladogramFilterMode.LIVING_FOCUSED -> cache.lucaFocusedVisibleFor(lineage, layout)
+                CladogramFilterMode.LIVING_AND_CONNECTORS -> cache.connectorsVisibleFor(lineage, layout)
+                CladogramFilterMode.ALL -> cache.allVisibleFor(lineage, layout)
+                CladogramFilterMode.LIVING_ONLY -> cache.livingOnlyVisibleFor(lineage, layout)
+            }
+            visible.addAll(seed)
             initialized = true
         } else {
             for (id in nextLineageIdWatermark until lineage.nextLineageId) {
@@ -1128,7 +1139,7 @@ class MonotoneFilter {
                 val fatherIn = node.fatherLineageId?.let { it in visible } ?: false
                 if (motherIn || fatherIn) visible.add(id)
             }
-            cache.applySubUniverseFilter(visible, filter)
+            cache.applySubUniverseFilter(visible, filter, lineage, layout)
         }
         nextLineageIdWatermark = lineage.nextLineageId
         return visible

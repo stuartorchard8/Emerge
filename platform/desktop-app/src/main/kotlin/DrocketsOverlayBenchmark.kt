@@ -28,6 +28,7 @@ fun main(args: Array<String>) {
     val warmup = args.getOrNull(1)?.toIntOrNull() ?: 120
     val measure = args.getOrNull(2)?.toIntOrNull() ?: 600
     val filterArg = args.getOrNull(3)
+    val withSolver = args.getOrNull(4)?.lowercase() != "hierarchical"
 
     val saveFile = File(savePath)
     require(saveFile.exists()) { "Save file not found: ${saveFile.absolutePath}" }
@@ -40,6 +41,7 @@ fun main(args: Array<String>) {
     println("living:  ${snapshot.lineage.livingLineageIds.size}")
     println("warmup:  $warmup ticks")
     println("measure: $measure ticks")
+    println("mode:    ${if (withSolver) "FORCE_DIRECTED (solver enabled)" else "HIERARCHICAL (solver skipped)"}")
     println()
 
     val filters = if (filterArg != null) {
@@ -49,7 +51,7 @@ fun main(args: Array<String>) {
     }
 
     for (filter in filters) {
-        runForFilter(snapshot, filter, warmup, measure)
+        runForFilter(snapshot, filter, warmup, measure, withSolver)
         println()
     }
 }
@@ -59,6 +61,7 @@ private fun runForFilter(
     filter: CladogramFilterMode,
     warmup: Int,
     measure: Int,
+    withSolver: Boolean,
 ) {
     val controller = DrocketsController()
     controller.restoreSnapshot(DrocketsSaveCodec.encode(snapshot))
@@ -70,11 +73,9 @@ private fun runForFilter(
 
     val tickMs = DoubleArray(measure)
     val layoutMs = DoubleArray(measure)
-    val cacheMs = DoubleArray(measure)
     val monotoneMs = DoubleArray(measure)
     val solveMs = DoubleArray(measure)
     val visibleN = IntArray(measure)
-    val rawN = IntArray(measure)
 
     var lastFrame = controller.tick()
 
@@ -87,33 +88,20 @@ private fun runForFilter(
         val layout = layoutMemo.get(frame.lineage)
         val layoutEnd = layoutStart.elapsedNow().inWholeNanoseconds
 
-        val cacheStart = TimeSource.Monotonic.markNow()
-        val raw = when (filter) {
-            CladogramFilterMode.LIVING_ANCESTRY -> cache.ancestryVisibleFor(frame.lineage, layout)
-            CladogramFilterMode.LIVING_STEINER -> cache.steinerVisibleFor(frame.lineage, layout)
-            CladogramFilterMode.LIVING_FOCUSED -> cache.lucaFocusedVisibleFor(frame.lineage, layout)
-            CladogramFilterMode.LIVING_AND_CONNECTORS -> cache.connectorsVisibleFor(frame.lineage, layout)
-            CladogramFilterMode.ALL -> cache.allVisibleFor(frame.lineage, layout)
-            CladogramFilterMode.LIVING_ONLY -> cache.livingOnlyVisibleFor(frame.lineage, layout)
-        }
-        val cacheEnd = cacheStart.elapsedNow().inWholeNanoseconds
-
         val monotoneStart = TimeSource.Monotonic.markNow()
-        val visible = monotone.apply(raw, filter, frame.lineage, cache)
+        val visible = monotone.apply(filter, frame.lineage, layout, cache)
         val monotoneEnd = monotoneStart.elapsedNow().inWholeNanoseconds
 
         val solveStart = TimeSource.Monotonic.markNow()
-        forceSolver.step(layout, frame.lineage, visible)
+        if (withSolver) forceSolver.step(layout, frame.lineage, visible)
         val solveEnd = solveStart.elapsedNow().inWholeNanoseconds
 
         if (record) {
             tickMs[idx] = tickEnd / 1_000_000.0
             layoutMs[idx] = layoutEnd / 1_000_000.0
-            cacheMs[idx] = cacheEnd / 1_000_000.0
             monotoneMs[idx] = monotoneEnd / 1_000_000.0
             solveMs[idx] = solveEnd / 1_000_000.0
             visibleN[idx] = visible.size
-            rawN[idx] = raw.size
         }
         lastFrame = frame
     }
@@ -124,16 +112,13 @@ private fun runForFilter(
     println("--- $filter ---")
     println("visible size (over measurement window):")
     println("  min=${visibleN.min()}  avg=${visibleN.average().toInt()}  max=${visibleN.max()}")
-    println("raw size (pre-monotone):")
-    println("  min=${rawN.min()}  avg=${rawN.average().toInt()}  max=${rawN.max()}")
     println()
     printStats("tick    ", tickMs)
     printStats("layout  ", layoutMs)
-    printStats("cache   ", cacheMs)
     printStats("monotone", monotoneMs)
     printStats("solve   ", solveMs)
     val total = DoubleArray(measure) {
-        tickMs[it] + layoutMs[it] + cacheMs[it] + monotoneMs[it] + solveMs[it]
+        tickMs[it] + layoutMs[it] + monotoneMs[it] + solveMs[it]
     }
     printStats("total   ", total)
 }

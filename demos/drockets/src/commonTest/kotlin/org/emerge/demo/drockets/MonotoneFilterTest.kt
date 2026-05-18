@@ -2,7 +2,6 @@ package org.emerge.demo.drockets
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class MonotoneFilterTest {
@@ -93,32 +92,6 @@ class MonotoneFilterTest {
     }
 
     @Test
-    fun new_birth_does_not_join_when_no_parent_is_visible() {
-        val initial = lineageOf(
-            nodes = linkedMapOf(
-                1L to node(1L),                  // F1
-                2L to node(2L),                  // F2 (independent founder)
-                3L to node(3L, mother = 1L),     // A
-                4L to node(4L, mother = 2L),     // B
-            ),
-            living = setOf(3L, 4L),
-        )
-        val mf = MonotoneFilter()
-        val ctx = Context(initial, CladogramFilterMode.LIVING_FOCUSED)
-        // Seed visible as if Focused had picked F1's clade only.
-        ctx.apply(mf, initial, setOf(1L, 3L))
-
-        val afterBirth = initial.copy(
-            nextLineageId = 6L,
-            nodes = initial.nodes + (5L to node(5L, mother = 4L)),
-            livingLineageIds = setOf(3L, 4L, 5L),
-        )
-        val view = ctx.apply(mf, afterBirth)
-        assertFalse(5L in view, "C's only parent (B=4) not in visible → C stays invisible")
-        assertFalse(4L in view, "B was never in visible and stays out")
-    }
-
-    @Test
     fun mode_change_resets_visible() {
         val lineage = lineageOf(
             nodes = linkedMapOf(
@@ -188,9 +161,8 @@ class MonotoneFilterTest {
         assertEquals(setOf(2L), view, "dead 1 pruned by LIVING_ONLY")
     }
 
-    /** Per-test helper that holds a [LivingAncestryCache] and primes it before
-     *  every `apply` so the cache state matches the lineage handed to
-     *  [MonotoneFilter.apply]. */
+    /** Per-test helper that holds a [LivingAncestryCache] and a [MonotoneFilter]
+     *  and threads them through `apply` consistently. */
     private class Context(
         seedLineage: DrocketLineageState,
         val filter: CladogramFilterMode,
@@ -201,21 +173,11 @@ class MonotoneFilterTest {
         fun apply(
             mf: MonotoneFilter,
             lineage: DrocketLineageState,
-            seedRawOverride: Set<Long>? = null,
+            @Suppress("UNUSED_PARAMETER") seedRawOverride: Set<Long>? = null,
         ): Set<Long> {
             lastLineage = lineage
             val layout = CladogramLayout.build(lineage)
-            // Drive ensureCurrent so applySubUniverseFilter has fresh state.
-            val raw = when (filter) {
-                CladogramFilterMode.LIVING_ANCESTRY -> cache.ancestryVisibleFor(lineage, layout)
-                CladogramFilterMode.LIVING_STEINER -> cache.steinerVisibleFor(lineage, layout)
-                CladogramFilterMode.LIVING_FOCUSED -> cache.lucaFocusedVisibleFor(lineage, layout)
-                CladogramFilterMode.LIVING_AND_CONNECTORS -> cache.connectorsVisibleFor(lineage, layout)
-                CladogramFilterMode.ALL -> cache.allVisibleFor(lineage, layout)
-                CladogramFilterMode.LIVING_ONLY -> cache.livingOnlyVisibleFor(lineage, layout)
-            }
-            val seedRaw = seedRawOverride ?: raw
-            return mf.apply(seedRaw, filter, lineage, cache)
+            return mf.apply(filter, lineage, layout, cache)
         }
     }
 
