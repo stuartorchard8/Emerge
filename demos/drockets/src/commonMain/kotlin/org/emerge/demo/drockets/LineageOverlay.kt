@@ -811,6 +811,10 @@ class LineageOverlay {
                 livingAncestryCache.steinerVisibleFor(frame.lineage, frame.cladogramLayout)
             CladogramFilterMode.LIVING_FOCUSED ->
                 livingAncestryCache.lucaFocusedVisibleFor(frame.lineage, frame.cladogramLayout)
+            CladogramFilterMode.ALL ->
+                livingAncestryCache.allVisibleFor(frame.lineage, frame.cladogramLayout)
+            CladogramFilterMode.LIVING_ONLY ->
+                livingAncestryCache.livingOnlyVisibleFor(frame.lineage, frame.cladogramLayout)
             else -> computeVisibleLineageIds(frame.lineage, frame.cladogramLayout, filter)
         }
         val filterMs = filterStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f

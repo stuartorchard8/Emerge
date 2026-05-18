@@ -487,6 +487,11 @@ internal class LivingAncestryCache {
     private val livingMembers = LinkedHashSet<Long>()
     private val ancestryVisibleSet = LinkedHashSet<Long>()
 
+    // Every id we've discovered (added to [parents]). Insert-only — even dead
+    // nodes remain, mirroring `ALL` semantics that include the full visible
+    // layout. Reset wholesale on snapshot replacement.
+    private val allMembers = LinkedHashSet<Long>()
+
     // Watermarks used to (a) detect snapshot replacement cheaply and (b) iterate
     // only newly-born ids in `ensureCurrent`, so per-tick discovery cost scales
     // with births rather than total ever-born node count.
@@ -514,6 +519,19 @@ internal class LivingAncestryCache {
         return computeLucaFocusedFromMaintainedState()
     }
 
+    /** Every node currently in the visible layout (the `ALL` filter mode). */
+    fun allVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
+        ensureCurrent(lineage, layout)
+        return allMembers
+    }
+
+    /** Every node that is both visible per the layout and currently living
+     *  (the `LIVING_ONLY` filter mode). */
+    fun livingOnlyVisibleFor(lineage: DrocketLineageState, layout: CladogramLayout): Set<Long> {
+        ensureCurrent(lineage, layout)
+        return livingMembers
+    }
+
     /** Resets the cache to empty. Called automatically on stale-cache detection
      *  (e.g. snapshot load); also useful in tests. */
     fun reset() {
@@ -524,6 +542,7 @@ internal class LivingAncestryCache {
         nodesByLDC.clear()
         livingMembers.clear()
         ancestryVisibleSet.clear()
+        allMembers.clear()
         lastNextLineageId = 0L
         lastNodeCount = 0
     }
@@ -549,6 +568,7 @@ internal class LivingAncestryCache {
                 node.fatherLineageId?.let { if (it in visibleIds) add(it) }
             }
             parents[id] = ps
+            allMembers.add(id)
             for (p in ps) {
                 children.getOrPut(p) { mutableListOf() }.add(id)
             }

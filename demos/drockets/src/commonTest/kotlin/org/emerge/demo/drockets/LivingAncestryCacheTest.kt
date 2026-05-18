@@ -518,6 +518,109 @@ class LivingAncestryCacheTest {
         }
     }
 
+    // ── ALL / LIVING_ONLY modes ─────────────────────────────────────────────────
+
+    @Test
+    fun all_visible_matches_stateless_through_a_long_birth_death_sequence() {
+        var lineage = lineageOf(
+            nodes = linkedMapOf(
+                1L to node(1L),
+                2L to node(2L, mother = 1L),
+                3L to node(3L, mother = 1L),
+            ),
+            living = setOf(2L, 3L),
+        )
+        val cache = LivingAncestryCache()
+        cache.allVisibleFor(lineage, CladogramLayout.build(lineage))
+
+        var nextId = 4L
+        val rng = kotlin.random.Random(13)
+        for (step in 0 until 50) {
+            val living = lineage.livingLineageIds.toList()
+            if (rng.nextFloat() < 0.6f || living.size < 2) {
+                val mother = living.random(rng)
+                val father = living.takeIf { it.size > 1 }?.filter { it != mother }?.randomOrNull(rng)
+                val newId = nextId++
+                lineage = lineageOf(
+                    nodes = lineage.nodes + (newId to node(newId, mother = mother, father = father)),
+                    living = lineage.livingLineageIds + newId,
+                )
+            } else {
+                val dying = living.random(rng)
+                lineage = lineage.copy(livingLineageIds = lineage.livingLineageIds - dying)
+            }
+            val layout = CladogramLayout.build(lineage)
+            val cached = cache.allVisibleFor(lineage, layout)
+            val stateless = computeVisibleLineageIds(lineage, layout, CladogramFilterMode.ALL)
+            assertEquals(stateless, cached, "step $step ALL diverged: cache=$cached, stateless=$stateless")
+        }
+    }
+
+    @Test
+    fun living_only_matches_stateless_through_a_long_birth_death_sequence() {
+        var lineage = lineageOf(
+            nodes = linkedMapOf(
+                1L to node(1L),
+                2L to node(2L, mother = 1L),
+                3L to node(3L, mother = 1L),
+            ),
+            living = setOf(2L, 3L),
+        )
+        val cache = LivingAncestryCache()
+        cache.livingOnlyVisibleFor(lineage, CladogramLayout.build(lineage))
+
+        var nextId = 4L
+        val rng = kotlin.random.Random(17)
+        for (step in 0 until 50) {
+            val living = lineage.livingLineageIds.toList()
+            if (rng.nextFloat() < 0.6f || living.size < 2) {
+                val mother = living.random(rng)
+                val father = living.takeIf { it.size > 1 }?.filter { it != mother }?.randomOrNull(rng)
+                val newId = nextId++
+                lineage = lineageOf(
+                    nodes = lineage.nodes + (newId to node(newId, mother = mother, father = father)),
+                    living = lineage.livingLineageIds + newId,
+                )
+            } else {
+                val dying = living.random(rng)
+                lineage = lineage.copy(livingLineageIds = lineage.livingLineageIds - dying)
+            }
+            val layout = CladogramLayout.build(lineage)
+            val cached = cache.livingOnlyVisibleFor(lineage, layout)
+            val stateless = computeVisibleLineageIds(lineage, layout, CladogramFilterMode.LIVING_ONLY)
+            assertEquals(stateless, cached, "step $step LIVING_ONLY diverged: cache=$cached, stateless=$stateless")
+        }
+    }
+
+    @Test
+    fun all_visible_resets_on_snapshot_load() {
+        // Same snapshot-load semantics as the ancestry case: a smaller-lineage
+        // restore must trigger a reset rather than serve the pre-restore allMembers.
+        val full = lineageOf(
+            nodes = linkedMapOf(
+                1L to node(1L),
+                2L to node(2L, mother = 1L),
+                3L to node(3L, mother = 1L),
+                4L to node(4L, mother = 2L),
+                5L to node(5L, mother = 3L),
+            ),
+            living = setOf(4L, 5L),
+        )
+        val cache = LivingAncestryCache()
+        cache.allVisibleFor(full, CladogramLayout.build(full))
+
+        val earlier = lineageOf(
+            nodes = linkedMapOf(
+                1L to node(1L),
+                2L to node(2L, mother = 1L),
+                3L to node(3L, mother = 1L),
+            ),
+            living = setOf(2L, 3L),
+        )
+        val cached = cache.allVisibleFor(earlier, CladogramLayout.build(earlier))
+        assertEquals(setOf(1L, 2L, 3L), cached)
+    }
+
     @Test
     fun ancestry_cache_no_change_calls_do_not_scale_with_total_nodes() {
         // Build a 100k-node lineage (star: one root, the rest are leaves of that root)
