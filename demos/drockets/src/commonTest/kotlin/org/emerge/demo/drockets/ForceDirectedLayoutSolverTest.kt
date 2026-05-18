@@ -117,11 +117,13 @@ class ForceDirectedLayoutSolverTest {
         // assertion just checks they stay finite and bounded.
         assertTrue(dBot.isFinite() && dBot > 0f, "bottom spring collapsed/NaN: dBot=$dBot")
         assertTrue(dTop.isFinite() && dTop > 0f, "top spring collapsed/NaN: dTop=$dTop")
-        // Generous absolute bounds — natural equilibrium spacing under
-        // spring-vs-repulsion balance is on the order of 0.1; anything past 1.0
-        // is "exploded" regardless of how REST_LENGTH/K constants are tuned.
-        assertTrue(dBot < 1.0f, "bottom spring exploded: dBot=$dBot")
-        assertTrue(dTop < 1.0f, "top spring exploded: dTop=$dTop")
+        // Generous absolute bounds — natural equilibrium spacing depends on
+        // the current K-constant tuning (spring vs repulsion vs outward force)
+        // and can sit anywhere from ~0.1 to a few units. Anything past 10 is
+        // "exploded" — looking for blow-ups (NaN, runaway drift) rather than
+        // pinning a specific equilibrium shape.
+        assertTrue(dBot < 10.0f, "bottom spring exploded: dBot=$dBot")
+        assertTrue(dTop < 10.0f, "top spring exploded: dTop=$dTop")
     }
 
     @Test

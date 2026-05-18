@@ -57,7 +57,9 @@ class LineageOverlay {
     private var secondarySelectedLineageId: Long? = null
     private var hoveredLineageId: Long? = null
 
-    // View state — `pan` is in NDC; `zoom` is a unitless multiplier on logical x/y.
+    // View state — `pan` is in NDC; `zoom` is a unitless scalar applied to
+    // logical x/y, further multiplied by a per-axis aspect-scale in toNdc /
+    // ndcToLogical so the layout stays aspect-independent.
     private var pan: Vec2 = Vec2(0f, 0f)
     private var zoom: Float = 1f
 
@@ -177,10 +179,13 @@ class LineageOverlay {
         val cursorNdc = pixelToNdc(cursorPx)
         val logicalBefore = ndcToLogical(cursorNdc)
         zoom = (zoom * factor).coerceIn(MIN_ZOOM, MAX_ZOOM)
-        // Recompute pan so the same logical point lands at the same NDC.
+        // Recompute pan so the same logical point lands at the same NDC. Must
+        // mirror the aspect-scaled `toNdc` math (NDC = logical * zoom * aspect
+        // + pan) — otherwise the cursor-anchored point drifts on zoom.
+        val aspect = aspectScale()
         pan = Vec2(
-            cursorNdc.x - logicalBefore.x * zoom,
-            cursorNdc.y - logicalBefore.y * zoom,
+            cursorNdc.x - logicalBefore.x * zoom * aspect.x,
+            cursorNdc.y - logicalBefore.y * zoom * aspect.y,
         )
     }
 
@@ -327,12 +332,15 @@ class LineageOverlay {
         GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
         drawDimBackdrop()
 
-        // Logical -> NDC projection: x and y are in node-spacing units; we centre on
-        // origin (the solver returns positions centred around the centroid already)
-        // and apply the user's pan + zoom.
+        // Logical -> NDC projection: x and y are in node-spacing units; we centre
+        // on origin (the solver returns positions centred around the centroid
+        // already) and apply the user's pan + zoom. The aspect-scale squashes
+        // the longer screen axis so 1 logical unit covers the same number of
+        // pixels in x and y, keeping the layout aspect-independent.
+        val aspect = aspectScale()
         fun toNdc(logical: Pair<Float, Float>): Pair<Float, Float> {
-            val px = logical.first * zoom + pan.x
-            val py = logical.second * zoom + pan.y
+            val px = logical.first * zoom * aspect.x + pan.x
+            val py = logical.second * zoom * aspect.y + pan.y
             return px to py
         }
 
@@ -504,7 +512,12 @@ class LineageOverlay {
             n++
         }
         if (n > 0) {
-            nodeShader.drawInstanced(n, nodeCenters, nodeRadii, nodeColors, nodeRings)
+            val aspect = aspectScale()
+            nodeShader.drawInstanced(
+                n, nodeCenters, nodeRadii, nodeColors, nodeRings,
+                aspectScaleX = aspect.x,
+                aspectScaleY = aspect.y,
+            )
         }
     }
 
@@ -608,6 +621,7 @@ class LineageOverlay {
         val positions = getSolveResult(frame).positions
         if (positions.isEmpty()) return null
         val ndc = pixelToNdc(pixel)
+        val aspect = aspectScale()
         val baseR = nodeBaseRadius(positions.size)
         // Be a bit generous on the hit radius (1.5x) so single-pixel-precision isn't required.
         val hitR = baseR * 1.5f
@@ -616,10 +630,13 @@ class LineageOverlay {
         var best: Long? = null
         var bestD2 = Float.POSITIVE_INFINITY
         for ((id, logical) in positions) {
-            val nx = logical.first * zoom + pan.x
-            val ny = logical.second * zoom + pan.y
-            val dx = ndc.x - nx
-            val dy = ndc.y - ny
+            val nx = logical.first * zoom * aspect.x + pan.x
+            val ny = logical.second * zoom * aspect.y + pan.y
+            // Un-stretch the NDC delta so the test compares in the same coord
+            // space as `baseR` (which is a logical-units-times-zoom value before
+            // aspect scaling, the same units the shader scales the quad by).
+            val dx = (ndc.x - nx) / aspect.x
+            val dy = (ndc.y - ny) / aspect.y
             val d2 = dx * dx + dy * dy
             if (d2 <= hitR2 && d2 < bestD2) {
                 bestD2 = d2
@@ -635,8 +652,22 @@ class LineageOverlay {
         return Vec2(pixel.x / w * 2f - 1f, 1f - pixel.y / h * 2f)
     }
 
-    private fun ndcToLogical(ndc: Vec2): Vec2 =
-        Vec2((ndc.x - pan.x) / zoom, (ndc.y - pan.y) / zoom)
+    /**
+     * Per-axis NDC-stretch factor that makes one logical unit cover the same
+     * number of screen pixels in both x and y. Squashes the longer screen axis
+     * (`< 1` on that axis, `1f` on the shorter) so the layout doesn't get
+     * stretched by viewport aspect.
+     */
+    private fun aspectScale(): Vec2 {
+        val w = resolution.x.coerceAtLeast(1f)
+        val h = resolution.y.coerceAtLeast(1f)
+        return Vec2(minOf(1f, h / w), minOf(1f, w / h))
+    }
+
+    private fun ndcToLogical(ndc: Vec2): Vec2 {
+        val a = aspectScale()
+        return Vec2((ndc.x - pan.x) / (zoom * a.x), (ndc.y - pan.y) / (zoom * a.y))
+    }
 
     private fun nodeBaseRadius(nodeCount: Int): Float {
         // Scale the base radius gently with population so dense lineages don't visually
@@ -803,7 +834,7 @@ class LineageOverlay {
     }
 
     companion object {
-        private const val MIN_ZOOM = 0.25f
+        private const val MIN_ZOOM = 0.0025f
         private const val MAX_ZOOM = 8f
     }
 }

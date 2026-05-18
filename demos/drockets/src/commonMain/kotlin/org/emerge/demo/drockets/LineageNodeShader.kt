@@ -22,6 +22,7 @@ class LineageNodeShader {
         LineageNodeShaderSources.vertex(),
         LineageNodeShaderSources.fragment(),
     )
+    private val uAspectScale: Int = GPU.getUniformLocation(program, "uAspectScale")
     private val vao: Int? = GPU.genAndBindVertexArrays()
 
     private val quadVbo: Int = GPU.genBuffers()
@@ -82,9 +83,12 @@ class LineageNodeShader {
         radii: FloatArray,
         colorsRgba: FloatArray,
         ringFracs: FloatArray,
+        aspectScaleX: Float = 1f,
+        aspectScaleY: Float = 1f,
     ) {
         if (instanceCount <= 0) return
         GPU.useProgram(program)
+        GPU.putUniform2f(uAspectScale, aspectScaleX, aspectScaleY)
         GPU.bindVertexArray(vao)
 
         var offset = 0

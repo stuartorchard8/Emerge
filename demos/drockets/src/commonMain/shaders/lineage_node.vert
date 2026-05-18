@@ -7,16 +7,22 @@
 // when > 0 — used for selection / hover highlights without a separate draw call.
 layout(location = 0) in vec2 aPos;        // quad corner in [-1, 1]
 layout(location = 1) in vec2 iCenter;     // NDC center
-layout(location = 2) in float iRadius;    // NDC radius
+layout(location = 2) in float iRadius;    // logical radius (aspect-scaled in vertex shader)
 layout(location = 3) in vec4 iColor;      // RGBA fill
 layout(location = 4) in float iRingFrac;  // 0 = no ring; >0 = ring width as a fraction of radius
+
+// (h/w, 1) on wide screens, (1, w/h) on tall — squashes the longer screen axis
+// so a logical circle still renders as a circle. Both `iCenter` (computed in
+// LineageOverlay.toNdc) and `iRadius` (here) are aspect-scaled identically so
+// disc positions and shapes both stay aspect-independent.
+uniform vec2 uAspectScale;
 
 out vec2 vLocal;
 out vec4 vColor;
 out float vRingFrac;
 
 void main() {
-    gl_Position = vec4(iCenter + aPos * iRadius, 0.0, 1.0);
+    gl_Position = vec4(iCenter + aPos * iRadius * uAspectScale, 0.0, 1.0);
     vLocal = aPos;
     vColor = iColor;
     vRingFrac = iRingFrac;
