@@ -32,8 +32,8 @@ class ForceDirectedLayoutSolverTest {
         val layout = CladogramLayout.build(lineage)
         val solver = ForceDirectedLayoutSolver()
         solver.seedFrom(mapOf(
-            1L to (-1.0f to 2.0f),
-            2L to (3.0f to 5.0f),
+            1L to Triple(-1.0f, 2.0f, 0f),
+            2L to Triple(3.0f, 5.0f, 0f),
         ))
         // Use a fresh visible set including the child; the very first thing step does
         // is seed any visible id not in state. positionOf reports the seed before
@@ -64,7 +64,7 @@ class ForceDirectedLayoutSolverTest {
         val layout = CladogramLayout.build(lineage)
         val solver = ForceDirectedLayoutSolver()
         // Seed parent at a known position so we can assert the child seed is local to it.
-        solver.seedFrom(mapOf(1L to (3.0f to 7.0f)))
+        solver.seedFrom(mapOf(1L to Triple(3.0f, 7.0f, 0f)))
 
         val out = solver.step(layout, lineage, visibleIds = setOf(1L, 2L))
         val childPos = out[2L]
@@ -96,9 +96,9 @@ class ForceDirectedLayoutSolverTest {
         val layout = CladogramLayout.build(lineage)
         val solver = ForceDirectedLayoutSolver()
         solver.seedFrom(mapOf(
-            0L to (0.0f to 0.0f),
-            1L to (1.0f to 0.0f),
-            2L to (2.0f to 0.0f),
+            0L to Triple(0.0f, 0.0f, 0f),
+            1L to Triple(1.0f, 0.0f, 0f),
+            2L to Triple(2.0f, 0.0f, 0f),
         ))
 
         repeat(2000) {
@@ -144,7 +144,7 @@ class ForceDirectedLayoutSolverTest {
             stats = CladogramStats(2, 2, 0, 0, 0, 2),
         )
         val solver = ForceDirectedLayoutSolver()
-        solver.seedFrom(mapOf(1L to (0.0f to 0.0f), 2L to (0.0f to 0.05f)))
+        solver.seedFrom(mapOf(1L to Triple(0.0f, 0.0f, 0f), 2L to Triple(0.0f, 0.05f, 0f)))
 
         repeat(300) {
             solver.step(layout, lineage, visibleIds = setOf(1L, 2L))
@@ -172,7 +172,7 @@ class ForceDirectedLayoutSolverTest {
             stats = CladogramStats(2, 2, 0, 0, 0, 2),
         )
         val solver = ForceDirectedLayoutSolver()
-        solver.seedFrom(mapOf(1L to (0.0f to 0.0f), 2L to (0.0f to 0.0f)))
+        solver.seedFrom(mapOf(1L to Triple(0.0f, 0.0f, 0f), 2L to Triple(0.0f, 0.0f, 0f)))
 
         repeat(20) {
             solver.step(layout, lineage, visibleIds = setOf(1L, 2L))
@@ -194,7 +194,7 @@ class ForceDirectedLayoutSolverTest {
         )
         val layout = CladogramLayout.build(lineage)
         val solver = ForceDirectedLayoutSolver()
-        solver.seedFrom(mapOf(1L to (0.0f to 0.0f), 2L to (0.1f to -0.1f)))
+        solver.seedFrom(mapOf(1L to Triple(0.0f, 0.0f, 0f), 2L to Triple(0.1f, -0.1f, 0f)))
 
         // Pretend the filter has hidden the dead parent — only the child is "visible".
         repeat(5) {

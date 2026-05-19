@@ -35,45 +35,45 @@ enum class CladogramLayoutMode {
 }
 
 /**
- * Persistent force-directed layout for the drockets cladogram.
+ * Persistent force-directed layout for the drockets cladogram, in 3D.
  *
- * Unlike [CladogramLayoutSolver] (which produces an immutable result from scratch each
- * call), this solver retains a per-lineage `(x, y, vx, vy)` between [step] calls.
- * Births inject a new node next to a parent; deaths leave the node where it is; filter
- * changes hide nodes from the simulation but do not discard their saved positions.
+ * Unlike [CladogramLayoutSolver] (which produces an immutable 2D result from scratch
+ * each call), this solver retains a per-lineage `(x, y, z, vx, vy, vz)` between [step]
+ * calls. Births inject a new node next to a parent along a Fibonacci-sphere direction
+ * (so simultaneous siblings spread in 3D rather than landing coplanar); deaths leave
+ * the node where it is; filter changes hide nodes from the simulation but do not
+ * discard their saved positions. The renderer is responsible for projecting the 3D
+ * positions to NDC via a fixed tilt + simple perspective.
  *
  * Forces per step (all in the same logical units as [CladogramLayoutSolver]):
  *  - **Edge spring** pulls connected nodes toward [REST_LENGTH] with stiffness
  *    [SPRING_K]. Springs both pull apart-too-close and pull together-too-far.
  *  - **All-pairs isotropic repulsion** pushes every visible pair apart along
- *    the 2D line between them with magnitude `F = k / d²` (Coulomb-like, force
- *    vector = `k · Δ / d³`). Acts equally in x and y, so siblings spread
- *    sideways and ancestor chains stretch vertically from mutual push as well
- *    as from gravity/buoyancy. The constant `k` is [REPULSION_K], with an
- *    optional `+ LIVING_REPULSION_K` bonus when both endpoints are currently
- *    alive. No spatial hash — O(n²), comfortable at visible-cladogram sizes
- *    (well under 1k nodes).
+ *    the 3D line between them with magnitude `F = k / d²` (Coulomb-like, force
+ *    vector = `k · Δ / d³`). Acts equally in x, y, and z, so siblings spread in
+ *    every direction and ancestor chains feel mutual push along all axes. The
+ *    constant `k` is [REPULSION_K], with an optional `+ LIVING_REPULSION_K`
+ *    bonus when both endpoints are currently alive. No spatial hash — O(n²),
+ *    comfortable at visible-cladogram sizes (well under 1k nodes).
  *  - **Radial-outward "gravity" on visible leaves** ([OUTWARD_K]): a node
  *    with no visible children gets a constant-magnitude force pointing away
- *    from the **leaf centroid** (mean of visible-leaf positions). Centering
- *    on exactly the force-receiving set (leaves only) keeps
+ *    from the **leaf centroid** (mean of visible-leaf positions, in 3D).
+ *    Centering on exactly the force-receiving set (leaves only) keeps
  *    `Σ(leaf_pos − leaf_centroid) = 0`, so the leaves can only inflate
- *    outward, not drift bodily. Skipped at the centroid (no defined
- *    direction); other forces nudge the leaf off on the next step.
+ *    outward (now forming a 3D shell rather than a 2D ring), not drift
+ *    bodily. Skipped at the centroid (no defined direction); other forces
+ *    nudge the leaf off on the next step.
  *  - **Hookean buoyancy on visible roots** ([BUOYANCY_K] · (anchor − pos)):
  *    a node with no visible parents is pulled toward
- *    ([BUOYANCY_ANCHOR_X], [BUOYANCY_ANCHOR_Y]) by a 2D Hookean spring.
- *    Combined with the leaf-only outward force, this hangs the tree from
- *    both ends: roots anchored inside, leaves pushed outside, middles
- *    settled by spring tension along the chain. The depth gradient
- *    ("inside is older, outside is younger") emerges from this topology
- *    rather than from any depth-aware force scaling.
- *  - **Gravity on visible leaves** ([GRAVITY_K], downward): a node with no
- *    visible children gets a constant downward pull. Combined with buoyancy on
- *    the visible-roots, this stretches the tree vertically from both ends —
- *    middle nodes (those with both a visible parent AND a visible child) feel
- *    no direct vertical force and find their y-position purely through spring
- *    tension transmitted along the chain.
+ *    ([BUOYANCY_ANCHOR_X], [BUOYANCY_ANCHOR_Y], [BUOYANCY_ANCHOR_Z]) by a
+ *    3D Hookean spring. Combined with the leaf-only outward force, this
+ *    hangs the tree from both ends: roots anchored inside, leaves pushed
+ *    outside on a shell, middles settled by spring tension along the chain.
+ *    The depth gradient ("inside is older, outside is younger") emerges
+ *    from this topology rather than from any depth-aware force scaling.
+ *  - **Gravity on visible leaves** ([GRAVITY_K], downward in y): currently
+ *    0 — kept around as a tunable. Applies only to y, not z, so "down" still
+ *    means down on the screen after projection.
  *  - **Damping** multiplies the previous velocity by [DAMPING] before adding the
  *    integrated force, so the system reaches equilibrium without oscillation.
  *  - **Per-step displacement clamp** ([MAX_DISPLACEMENT]) keeps a single frame from
@@ -84,12 +84,12 @@ enum class CladogramLayoutMode {
  */
 class ForceDirectedLayoutSolver {
     /**
-     * Per-lineage state, packed as `[x, y, vx, vy]`. Retained across [step] calls so
-     * that hidden nodes can return to the same place when filter mode cycles back to a
-     * mode that includes them again. Entries are only dropped when [DrocketLineageState]
-     * itself forgets the id (which shouldn't normally happen in a running sim — nodes
-     * stay in `nodes` after death — but the cleanup keeps memory bounded under
-     * snapshot replacement and similar wholesale changes).
+     * Per-lineage state, packed as `[x, y, z, vx, vy, vz]` (6 floats). Retained across
+     * [step] calls so that hidden nodes can return to the same place when filter mode
+     * cycles back to a mode that includes them again. Entries are only dropped when
+     * [DrocketLineageState] itself forgets the id (which shouldn't normally happen in
+     * a running sim — nodes stay in `nodes` after death — but the cleanup keeps memory
+     * bounded under snapshot replacement and similar wholesale changes).
      */
     private val state = HashMap<Long, FloatArray>()
 
@@ -115,10 +115,10 @@ class ForceDirectedLayoutSolver {
      * force pass starts from a well-untangled configuration rather than a random scatter.
      * Existing positions are not overwritten — repeat calls are safe.
      */
-    fun seedFrom(positions: Map<Long, Pair<Float, Float>>) {
+    fun seedFrom(positions: Map<Long, Triple<Float, Float, Float>>) {
         for ((id, p) in positions) {
             if (state.containsKey(id)) continue
-            state[id] = floatArrayOf(p.first, p.second, 0f, 0f)
+            state[id] = floatArrayOf(p.first, p.second, p.third, 0f, 0f, 0f)
         }
     }
 
@@ -133,9 +133,9 @@ class ForceDirectedLayoutSolver {
      * solver hasn't seen. Useful for callers who want to inspect a hidden node's
      * position (it stays where it was last simulated until it becomes visible again).
      */
-    fun positionOf(id: Long): Pair<Float, Float>? {
+    fun positionOf(id: Long): Triple<Float, Float, Float>? {
         val s = state[id] ?: return null
-        return s[0] to s[1]
+        return Triple(s[0], s[1], s[2])
     }
 
     /**
@@ -150,7 +150,7 @@ class ForceDirectedLayoutSolver {
         layout: CladogramLayout,
         lineage: DrocketLineageState,
         visibleIds: Set<Long>,
-    ): Map<Long, Pair<Float, Float>> {
+    ): Map<Long, Triple<Float, Float, Float>> {
         val start = TimeSource.Monotonic.markNow()
 
         // Drop state for ids the lineage has forgotten entirely (snapshot replacement
@@ -181,8 +181,10 @@ class ForceDirectedLayoutSolver {
         val ids = LongArray(n)
         val xs = FloatArray(n)
         val ys = FloatArray(n)
+        val zs = FloatArray(n)
         val vxs = FloatArray(n)
         val vys = FloatArray(n)
+        val vzs = FloatArray(n)
         val indexById = HashMap<Long, Int>(n)
         run {
             var idx = 0
@@ -191,8 +193,10 @@ class ForceDirectedLayoutSolver {
                 ids[idx] = id
                 xs[idx] = s[0]
                 ys[idx] = s[1]
-                vxs[idx] = s[2]
-                vys[idx] = s[3]
+                zs[idx] = s[2]
+                vxs[idx] = s[3]
+                vys[idx] = s[4]
+                vzs[idx] = s[5]
                 indexById[id] = idx
                 idx++
             }
@@ -200,6 +204,7 @@ class ForceDirectedLayoutSolver {
 
         val fxs = FloatArray(n)
         val fys = FloatArray(n)
+        val fzs = FloatArray(n)
 
         // Pre-pass: identify which visible nodes have at least one visible child.
         // We can't ask the lineage directly — children aren't indexed — so we walk
@@ -243,17 +248,20 @@ class ForceDirectedLayoutSolver {
         // radially around the leaves, not drift bodily.
         var leafCx = 0f
         var leafCy = 0f
+        var leafCz = 0f
         var leafCount = 0
         for (i in 0 until n) {
             if (!hasVisibleChild[i]) {
                 leafCx += xs[i]
                 leafCy += ys[i]
+                leafCz += zs[i]
                 leafCount++
             }
         }
         if (leafCount > 0) {
             leafCx /= leafCount
             leafCy /= leafCount
+            leafCz /= leafCount
         }
 
         for (i in 0 until n) {
@@ -265,16 +273,19 @@ class ForceDirectedLayoutSolver {
             if (isVisibleRoot) {
                 fxs[i] += BUOYANCY_K * (BUOYANCY_ANCHOR_X - xs[i])
                 fys[i] += BUOYANCY_K * (BUOYANCY_ANCHOR_Y - ys[i])
+                fzs[i] += BUOYANCY_K * (BUOYANCY_ANCHOR_Z - zs[i])
             }
             if (isVisibleLeaf) {
                 fys[i] -= GRAVITY_K
                 val rx = xs[i] - leafCx
                 val ry = ys[i] - leafCy
-                val r2 = rx * rx + ry * ry
+                val rz = zs[i] - leafCz
+                val r2 = rx * rx + ry * ry + rz * rz
                 if (r2 > MIN_DIST2) {
                     val invR = OUTWARD_K / sqrt(r2)
                     fxs[i] += rx * invR
                     fys[i] += ry * invR
+                    fzs[i] += rz * invR
                 }
             }
         }
@@ -285,50 +296,59 @@ class ForceDirectedLayoutSolver {
             val j = indexById[to] ?: continue
             var dx = xs[j] - xs[i]
             var dy = ys[j] - ys[i]
-            var d2 = dx * dx + dy * dy
+            var dz = zs[j] - zs[i]
+            var d2 = dx * dx + dy * dy + dz * dz
             if (d2 < MIN_DIST2) {
                 // Coincident seed (eg twin birth from same parent). Pick an arbitrary
                 // axis so the spring resolves the degeneracy on the next step.
                 dx = MIN_DIST
                 dy = 0f
+                dz = 0f
                 d2 = MIN_DIST2
             }
             val d = sqrt(d2)
             val k = SPRING_K * (d - REST_LENGTH) / d
             fxs[i] += k * dx
             fys[i] += k * dy
+            fzs[i] += k * dz
             fxs[j] -= k * dx
             fys[j] -= k * dy
+            fzs[j] -= k * dz
         }
 
         // All-pairs isotropic repulsion. Coulomb-like: magnitude k / d² along
-        // the 2D line between the pair, so the force vector is k · Δ / d³.
-        // Acts equally in x and y — siblings spread sideways and ancestor chains
-        // feel mutual vertical push on top of the gravity/buoyancy stretch.
+        // the 3D line between the pair, so the force vector is k · Δ / d³.
+        // Acts equally in x, y, and z — siblings spread in every direction.
         // Living-living pairs get [LIVING_REPULSION_K] on top of the base
         // [REPULSION_K]. Coincident pairs are nudged along +x by the MIN_DIST
         // clamp so the singularity has a deterministic tiebreaker.
         for (i in 0 until n) {
             val xi = xs[i]
             val yi = ys[i]
+            val zi = zs[i]
             val li = isLiving[i]
             for (j in i + 1 until n) {
                 var dx = xs[j] - xi
                 var dy = ys[j] - yi
-                var d2 = dx * dx + dy * dy
+                var dz = zs[j] - zi
+                var d2 = dx * dx + dy * dy + dz * dz
                 if (d2 < MIN_DIST2) {
                     dx = MIN_DIST
                     dy = 0f
+                    dz = 0f
                     d2 = MIN_DIST2
                 }
                 val k = if (li && isLiving[j]) REPULSION_K + LIVING_REPULSION_K else REPULSION_K
                 val invD3 = k / (d2 * sqrt(d2))
                 val fx = dx * invD3
                 val fy = dy * invD3
+                val fz = dz * invD3
                 fxs[i] -= fx
                 fys[i] -= fy
+                fzs[i] -= fz
                 fxs[j] += fx
                 fys[j] += fy
+                fzs[j] += fz
             }
         }
 
@@ -339,33 +359,39 @@ class ForceDirectedLayoutSolver {
             for (i in 0 until n) {
                 fxs[i] *= forceScale
                 fys[i] *= forceScale
+                fzs[i] *= forceScale
             }
         }
 
-	val scaledMaxDisplacement = MAX_DISPLACEMENT*forceScale
-	val scaledMaxDisplacement2 = scaledMaxDisplacement*scaledMaxDisplacement
+        val scaledMaxDisplacement = MAX_DISPLACEMENT * forceScale
+        val scaledMaxDisplacement2 = scaledMaxDisplacement * scaledMaxDisplacement
         // Integrate: vel = damped(prev) + force; clamp displacement; advance position.
         for (i in 0 until n) {
             var vx = vxs[i] * DAMPING + fxs[i]
             var vy = vys[i] * DAMPING + fys[i]
-            val vmag2 = vx * vx + vy * vy
+            var vz = vzs[i] * DAMPING + fzs[i]
+            val vmag2 = vx * vx + vy * vy + vz * vz
             if (vmag2 > scaledMaxDisplacement2) {
                 val s = scaledMaxDisplacement / sqrt(vmag2)
                 vx *= s
                 vy *= s
+                vz *= s
             }
             xs[i] += vx
             ys[i] += vy
+            zs[i] += vz
             vxs[i] = vx
             vys[i] = vy
+            vzs[i] = vz
         }
 
         // Flush back into the persistent state and assemble the result map.
-        val out = LinkedHashMap<Long, Pair<Float, Float>>(n)
+        val out = LinkedHashMap<Long, Triple<Float, Float, Float>>(n)
         for (i in 0 until n) {
             val s = state[ids[i]] ?: continue
-            s[0] = xs[i]; s[1] = ys[i]; s[2] = vxs[i]; s[3] = vys[i]
-            out[ids[i]] = xs[i] to ys[i]
+            s[0] = xs[i]; s[1] = ys[i]; s[2] = zs[i]
+            s[3] = vxs[i]; s[4] = vys[i]; s[5] = vzs[i]
+            out[ids[i]] = Triple(xs[i], ys[i], zs[i])
         }
 
         lastStepMs = start.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
@@ -374,13 +400,13 @@ class ForceDirectedLayoutSolver {
 
     /**
      * Seed a fresh node's position based on its visible parents:
-     *  - Both parents visible: the exact midpoint between them. The repulsion and
-     *    spring forces nudge the child onto a stable position over the next few
+     *  - Both parents visible: the exact midpoint between them in 3D. The repulsion
+     *    and spring forces nudge the child onto a stable position over the next few
      *    steps — there's no reason to bias it toward one parent at birth.
      *  - One parent visible: offset from that parent by [SEED_OFFSET] along a
-     *    golden-angle direction (so simultaneous siblings don't seed on top of each
-     *    other).
-     *  - Neither visible (lineage root or filter-orphaned): deterministic spiral
+     *    Fibonacci-sphere direction keyed by id (so simultaneous siblings don't seed
+     *    on top of each other and spread in 3D rather than coplanar).
+     *  - Neither visible (lineage root or filter-orphaned): deterministic 3D spiral
      *    around the origin so concurrent roots also don't collide.
      */
     private fun seedNew(id: Long, lineage: DrocketLineageState, visibleIds: Set<Long>): FloatArray {
@@ -392,26 +418,42 @@ class ForceDirectedLayoutSolver {
                 return floatArrayOf(
                     (motherState[0] + fatherState[0]) * 0.5f,
                     (motherState[1] + fatherState[1]) * 0.5f,
-                    0f, 0f,
+                    (motherState[2] + fatherState[2]) * 0.5f,
+                    0f, 0f, 0f,
                 )
             }
             val soleParent = motherState ?: fatherState
             if (soleParent != null) {
-                val angle = goldenAngle(id)
+                val dir = fibonacciSphereDir(id)
                 return floatArrayOf(
-                    soleParent[0] + cos(angle) * SEED_OFFSET,
-                    soleParent[1] + sin(angle) * SEED_OFFSET,
-                    0f, 0f,
+                    soleParent[0] + dir[0] * SEED_OFFSET,
+                    soleParent[1] + dir[1] * SEED_OFFSET,
+                    soleParent[2] + dir[2] * SEED_OFFSET,
+                    0f, 0f, 0f,
                 )
             }
         }
-        val angle = goldenAngle(id)
+        val dir = fibonacciSphereDir(id)
         val r = SEED_OFFSET + ((id and 0xFFFFL).toInt() % 8) * SEED_OFFSET * 0.25f
-        return floatArrayOf(cos(angle) * r, sin(angle) * r, 0f, 0f)
+        return floatArrayOf(dir[0] * r, dir[1] * r, dir[2] * r, 0f, 0f, 0f)
     }
 
-    private fun goldenAngle(id: Long): Float =
-        ((id and 0xFFFFL).toInt() * GOLDEN_ANGLE_RAD)
+    /**
+     * Deterministic 3D unit vector keyed by [id], distributed on the sphere via a
+     * Fibonacci spiral. Adjacent ids end up well-separated in all three axes, which
+     * keeps the seed direction from collapsing onto a 2D plane when many births land
+     * on the same parent in the same step.
+     */
+    private fun fibonacciSphereDir(id: Long): FloatArray {
+        val i = (id and 0xFFFFL).toInt()
+        val phi = i * GOLDEN_ANGLE_RAD
+        // Use the fractional part of i * golden-ratio as a deterministic latitude
+        // fraction in [0, 1); map to z ∈ [-1, 1].
+        val frac = ((i * 0.61803398f) - kotlin.math.floor(i * 0.61803398f))
+        val zn = 2f * frac - 1f
+        val r = sqrt((1f - zn * zn).coerceAtLeast(0f))
+        return floatArrayOf(r * cos(phi), r * sin(phi), zn)
+    }
 
     companion object {
         /** Natural spring length between connected nodes, in logical units. Other
@@ -449,15 +491,15 @@ class ForceDirectedLayoutSolver {
         //   - Middles are settled by spring tension propagated along the
         //     chain. Bumping GRAVITY_K stretches the tree more; bumping
         //     SPRING_K keeps it tighter.
-        private const val BUOYANCY_K: Float = 0.001f
+        private const val BUOYANCY_K: Float = 0.002f
         private const val BUOYANCY_ANCHOR_X: Float = 0f
         private const val BUOYANCY_ANCHOR_Y: Float = 0f
+        private const val BUOYANCY_ANCHOR_Z: Float = 0f
         private const val GRAVITY_K: Float = 0.0000f
         private const val DAMPING: Float = 0.01f
         // Safety clamp on per-step displacement. Catches degenerate force spikes
         // (eg perfectly coincident seed positions) without affecting normal motion.
         private const val MAX_DISPLACEMENT: Float = 0.01f
-        private const val MAX_DISPLACEMENT2: Float = MAX_DISPLACEMENT * MAX_DISPLACEMENT
         private const val MIN_DIST: Float = 0.005f
         private const val MIN_DIST2: Float = MIN_DIST * MIN_DIST
         private const val SEED_OFFSET: Float = 0.04f

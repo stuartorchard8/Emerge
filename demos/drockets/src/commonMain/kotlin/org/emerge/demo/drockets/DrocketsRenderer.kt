@@ -7,8 +7,9 @@ import org.emerge.sim.core.physics.primitives.Vec2
  * Composite Drockets renderer. Owns three sub-renderers:
  *
  *  - [WorldRenderer] — starscape, planets, drockets, knights, particles + camera state.
- *  - [LineageOverlay] — full-screen translucent cladogram with drag-pan, wheel-zoom,
- *    click-to-select, shift+click pair-wise MRCA, and double-click world-focus.
+ *  - [LineageOverlay] — full-screen translucent cladogram with drag/arrow-keys orbit
+ *    around the centroid, wheel-zoom, click-to-select, shift+click pair-wise MRCA,
+ *    and double-click world-focus.
  *  - [OverlayHud] — top-left text overlay with status messages + per-entity phenotype debug.
  *
  * Forwards external calls (input handlers, draw, lifecycle) to the appropriate sub-renderer;
@@ -88,7 +89,7 @@ class DrocketsRenderer(
     fun toggleLineageOverlay() {
         val on = lineageOverlay.toggleActive()
         hud.setOverlayStatus(
-            if (on) "Lineage overlay ON (F2)  drag/arrows pan, wheel zoom, F6 filter, F7 layout, Ctrl+Up/Down force scale, dbl-click focus"
+            if (on) "Lineage overlay ON (F2)  drag/arrows rotate, wheel zoom, F6 filter, F7 layout, Ctrl+Up/Down force scale, dbl-click focus"
             else "Lineage overlay OFF (F2)",
             durationMs = 2_500,
         )
@@ -134,7 +135,7 @@ class DrocketsRenderer(
         )
     }
 
-    fun panLineageOverlayByPixels(dxPx: Float, dyPx: Float) = lineageOverlay.panByPixels(dxPx, dyPx)
+    fun rotateLineageOverlayByPixels(dxPx: Float, dyPx: Float) = lineageOverlay.rotateByPixels(dxPx, dyPx)
 
     fun zoomLineageOverlayAtCursor(cursorPx: Vec2, factor: Float) =
         lineageOverlay.zoomAtCursor(cursorPx, factor)

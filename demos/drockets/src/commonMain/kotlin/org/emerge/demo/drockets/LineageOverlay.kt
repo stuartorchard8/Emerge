@@ -4,24 +4,34 @@ import org.emerge.render.torus.GPU
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.concurrent.Volatile
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.time.TimeSource
 
 /**
  * Alternative lineage view: a full-screen translucent overlay rendering nodes as
  * filled coloured discs (real geometry, not line-segment fakes), with mouse-driven
- * pan + zoom-around-cursor and click-select decoupled from world-camera focus.
+ * orbit-around-centroid and zoom, and click-select decoupled from world-camera focus.
  *
  * The sole cladogram view in [DrocketsRenderer]. (An earlier half-screen panel
  * design lived alongside it for comparison; that one was removed once this version
  * stood on its own — see git history for the side-by-side era.)
  *
+ * The camera always frames the centroid of the currently-visible layout: every draw
+ * recomputes the mean position of the visible nodes and uses it as the origin for
+ * rotation and perspective projection. The user can orbit the camera around that
+ * point but cannot displace it; the layout stays centred even as the tree grows.
+ *
  * Inputs the composite calls into:
  *   - [toggleActive] — F2 in the default binding.
  *   - [cycleFilter] — ALL <-> LIVING_ONLY only; the connector heuristics from
  *     the older view aren't included.
- *   - [panByPixels] — call this every frame while a primary-button drag is held.
- *   - [zoomAtCursor] — call this on wheel; zooms around the cursor position
- *     (mathematically: the world point under the cursor stays under the cursor).
+ *   - [rotateByPixels] — call this every frame while a primary-button drag is
+ *     held; horizontal pixels yaw the view around the centroid (y-axis), vertical
+ *     pixels pitch it (x-axis).
+ *   - [zoomAtCursor] — call this on wheel; zooms around the centroid (the cursor
+ *     argument is retained for API compatibility but ignored — once the camera
+ *     orbits in 3D the cursor-anchored unprojection isn't well-defined).
  *   - [pickAt] — single click; selects a node without disturbing the world camera.
  *   - [focusLivingDrocketAt] — double click; returns the [EntityId] of a living
  *     drocket whose lineage node was clicked, so the composite can call
@@ -57,11 +67,22 @@ class LineageOverlay {
     private var secondarySelectedLineageId: Long? = null
     private var hoveredLineageId: Long? = null
 
-    // View state — `pan` is in NDC; `zoom` is a unitless scalar applied to
-    // logical x/y, further multiplied by a per-axis aspect-scale in toNdc /
-    // ndcToLogical so the layout stays aspect-independent.
-    private var pan: Vec2 = Vec2(0f, 0f)
-    private var zoom: Float = 1f
+    // View state — the camera orbits the layout centroid (no free translation).
+    // `viewYaw` rotates around the y-axis (left/right look), `viewPitch` around
+    // the x-axis (up/down look), and `cameraDistance` is the camera's distance
+    // from the centroid along its view axis: the wheel dollies the camera in or
+    // out rather than applying a flat 2D scale. Per-node screen scale comes out
+    // as `FOCAL_LENGTH / (cameraDistance + z')`, so closer cameras enlarge the
+    // whole scene AND deepen the perspective foreshortening — the projection is
+    // a real translation, not a uniform stretch.
+    private var viewYaw: Float = 0f
+    private var viewPitch: Float = INITIAL_PITCH_RAD
+    private var cameraDistance: Float = INITIAL_CAMERA_DISTANCE
+
+    /** Latest centroid of visible logical positions, updated each [draw]. The
+     *  projection subtracts this before rotation so the camera orbits the
+     *  layout's geometric centre rather than the logical origin. */
+    private var centroid: Triple<Float, Float, Float> = Triple(0f, 0f, 0f)
 
     private var resolution: Vec2 = Vec2(1f, 1f)
     private var lastTotalMs: Float = 0f
@@ -165,29 +186,33 @@ class LineageOverlay {
         forceStepDoneThisDraw = false
     }
 
-    fun panByPixels(dxPx: Float, dyPx: Float) {
+    /**
+     * Orbit the camera around the layout centroid. Horizontal pixels yaw the view
+     * around the y-axis (positive [dxPx], a rightward drag, rotates the camera
+     * right — content appears to slide left); vertical pixels pitch around the
+     * x-axis (positive [dyPx], a downward drag, lowers the camera so you look up
+     * at the layout). Pitch is clamped just shy of ±π/2 to avoid gimbal flips;
+     * yaw wraps freely.
+     */
+    fun rotateByPixels(dxPx: Float, dyPx: Float) {
         if (!active) return
-        val w = resolution.x.coerceAtLeast(1f)
-        val h = resolution.y.coerceAtLeast(1f)
-        // Pixel deltas → NDC. Negate y because screen Y grows downward but NDC y grows up.
-        pan = Vec2(pan.x + dxPx * 2f / w, pan.y - dyPx * 2f / h)
+        viewYaw += dxPx * ROTATE_RAD_PER_PX
+        viewPitch = (viewPitch - dyPx * ROTATE_RAD_PER_PX).coerceIn(-PITCH_LIMIT, PITCH_LIMIT)
     }
 
-    /** Zooms around the pixel under the cursor: the logical point currently displayed
-     *  at that pixel stays at that pixel after the zoom. */
+    /**
+     * Dollies the camera along its view axis. [factor] follows the wheel-zoom
+     * convention (factor > 1 from a wheel-up scroll), and we divide
+     * [cameraDistance] by it — so scrolling up moves the camera *closer* to the
+     * centroid, growing the scene under a true perspective change rather than a
+     * flat scale. [cursorPx] is accepted for API compatibility with the original
+     * pan+zoom binding but is ignored: with the camera in orbit mode and no
+     * free pan parameter, there is no cursor-anchored unprojection to solve for.
+     */
+    @Suppress("UNUSED_PARAMETER")
     fun zoomAtCursor(cursorPx: Vec2, factor: Float) {
         if (!active || !factor.isFinite() || factor <= 0f) return
-        val cursorNdc = pixelToNdc(cursorPx)
-        val logicalBefore = ndcToLogical(cursorNdc)
-        zoom = (zoom * factor).coerceIn(MIN_ZOOM, MAX_ZOOM)
-        // Recompute pan so the same logical point lands at the same NDC. Must
-        // mirror the aspect-scaled `toNdc` math (NDC = logical * zoom * aspect
-        // + pan) — otherwise the cursor-anchored point drifts on zoom.
-        val aspect = aspectScale()
-        pan = Vec2(
-            cursorNdc.x - logicalBefore.x * zoom * aspect.x,
-            cursorNdc.y - logicalBefore.y * zoom * aspect.y,
-        )
+        cameraDistance = (cameraDistance / factor).coerceIn(MIN_CAMERA_DISTANCE, MAX_CAMERA_DISTANCE)
     }
 
     /**
@@ -333,22 +358,54 @@ class LineageOverlay {
         GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
         drawDimBackdrop()
 
-        // Logical -> NDC projection: x and y are in node-spacing units; we centre
-        // on origin (the solver returns positions centred around the centroid
-        // already) and apply the user's pan + zoom. The aspect-scale squashes
-        // the longer screen axis so 1 logical unit covers the same number of
-        // pixels in x and y, keeping the layout aspect-independent.
+        // Recompute the centroid of the currently-visible layout so the camera
+        // orbits the geometric centre as the tree grows or filters change.
+        centroid = computeCentroid(positions)
+
+        // Logical -> NDC projection: orbit-around-centroid with simple perspective.
+        // 1. Translate so the centroid is at the origin.
+        // 2. Rotate by [viewYaw] around the y-axis (left/right look).
+        // 3. Rotate by [viewPitch] around the x-axis (up/down look).
+        // 4. Apply a simple perspective scale = FOCAL_LENGTH / (cameraDistance +
+        //    z'). The wheel moves [cameraDistance] in or out along the view axis,
+        //    so the scale at z'=0 changes too — a closer camera enlarges the
+        //    whole scene AND deepens the foreshortening, exactly the dolly
+        //    behaviour you'd get if the viewport were a physical hole and the
+        //    layout a physical object.
+        // 5. Apply the aspect compensation that keeps one logical unit the same
+        //    number of pixels in both x and y.
+        // The returned third float is the per-node perspective scale, used to
+        // size node radii and (via z-sorting) keep painter's-algorithm ordering.
         val aspect = aspectScale()
-        fun toNdc(logical: Pair<Float, Float>): Pair<Float, Float> {
-            val px = logical.first * zoom * aspect.x + pan.x
-            val py = logical.second * zoom * aspect.y + pan.y
-            return px to py
+        val cosY = cos(viewYaw)
+        val sinY = sin(viewYaw)
+        val cosP = cos(viewPitch)
+        val sinP = sin(viewPitch)
+        val cx = centroid.first
+        val cy = centroid.second
+        val cz = centroid.third
+        val d = cameraDistance
+        fun project(logical: Triple<Float, Float, Float>): Triple<Float, Float, Float> {
+            val lx = logical.first - cx
+            val ly = logical.second - cy
+            val lz = logical.third - cz
+            // Yaw around y-axis.
+            val x1 = lx * cosY - lz * sinY
+            val z1 = lx * sinY + lz * cosY
+            // Pitch around x-axis.
+            val y2 = ly * cosP - z1 * sinP
+            val z2 = ly * sinP + z1 * cosP
+            val depth = (d + z2).coerceAtLeast(MIN_DEPTH)
+            val s = FOCAL_LENGTH / depth
+            val px = x1 * s * aspect.x
+            val py = y2 * s * aspect.y
+            return Triple(px, py, s)
         }
 
         val highlight = computeHighlight(frame, positions)
         lastHighlight = highlight
-        drawEdges(frame, positions, highlight, ::toNdc)
-        drawNodes(frame, positions, highlight, ::toNdc)
+        drawEdges(frame, positions, highlight, ::project)
+        drawNodes(frame, positions, highlight, ::project)
 
         GPU.disableBlend()
         lastTotalMs = totalStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
@@ -374,9 +431,9 @@ class LineageOverlay {
 
     private fun drawEdges(
         frame: DrocketsFrame,
-        positions: Map<Long, Pair<Float, Float>>,
+        positions: Map<Long, Triple<Float, Float, Float>>,
         highlight: HighlightState,
-        toNdc: (Pair<Float, Float>) -> Pair<Float, Float>,
+        project: (Triple<Float, Float, Float>) -> Triple<Float, Float, Float>,
     ) {
         val edges = frame.cladogramLayout.edges
         ensureEdgeArrays(edges.size)
@@ -385,8 +442,10 @@ class LineageOverlay {
         for ((from, to) in edges) {
             val pf = positions[from] ?: continue
             val pt = positions[to] ?: continue
-            val (fx, fy) = toNdc(pf)
-            val (tx, ty) = toNdc(pt)
+            val pfp = project(pf)
+            val ptp = project(pt)
+            val fx = pfp.first; val fy = pfp.second
+            val tx = ptp.first; val ty = ptp.second
             val base = n * 4
             edgeEnds[base] = fx
             edgeEnds[base + 1] = fy
@@ -439,16 +498,24 @@ class LineageOverlay {
 
     private fun drawNodes(
         frame: DrocketsFrame,
-        positions: Map<Long, Pair<Float, Float>>,
+        positions: Map<Long, Triple<Float, Float, Float>>,
         highlight: HighlightState,
-        toNdc: (Pair<Float, Float>) -> Pair<Float, Float>,
+        project: (Triple<Float, Float, Float>) -> Triple<Float, Float, Float>,
     ) {
         val living = frame.lineage.livingLineageIds
         val baseR = nodeBaseRadius(positions.size)
         ensureNodeArrays(positions.size)
+        // Painter's-algorithm: draw farther nodes first so closer ones layer on top.
+        // Sort by the projected perspective scale ascending — smaller scale = farther
+        // = drawn first. Calling `project` here keeps the depth ordering in lockstep
+        // with the actual screen positions used below.
+        val drawOrder = positions.entries.sortedBy { (_, p) -> project(p).third }
         var n = 0
-        for ((id, logical) in positions) {
-            val (nx, ny) = toNdc(logical)
+        for ((id, logical) in drawOrder) {
+            val projected = project(logical)
+            val nx = projected.first
+            val ny = projected.second
+            val perspectiveScale = projected.third
             val isAlive = id in living
             val isPrimary = id == highlight.selected
             val isSecondary = id == highlight.secondary
@@ -499,6 +566,9 @@ class LineageOverlay {
             if (isHovered) radius = maxOf(radius, baseR * 1.25f)
             if (isMrca) radius = maxOf(radius, baseR * 1.40f)
             if (isPrimary || isSecondary) radius = maxOf(radius, baseR * 1.55f)
+            // Apply the per-node perspective scale so closer nodes appear larger
+            // and farther nodes shrink — matches the position projection above.
+            radius *= perspectiveScale
 
             val base2 = n * 2
             nodeCenters[base2] = nx
@@ -531,7 +601,7 @@ class LineageOverlay {
      */
     private fun computeHighlight(
         frame: DrocketsFrame,
-        positions: Map<Long, Pair<Float, Float>>,
+        positions: Map<Long, Triple<Float, Float, Float>>,
     ): HighlightState {
         val primary = selectedLineageId ?: return HighlightState.INACTIVE
         if (primary !in positions) return HighlightState.INACTIVE
@@ -617,34 +687,91 @@ class LineageOverlay {
         }
     }
 
-    /** Picks the topmost (smallest distance) node within hit radius at [pixel]. */
+    /** Picks the topmost (smallest distance, tie-broken by closest depth) node
+     *  within hit radius at [pixel]. Mirrors the draw projection — orbit around
+     *  the latest centroid + perspective — so picking agrees with what the user
+     *  sees. */
     private fun hitTest(pixel: Vec2, frame: DrocketsFrame): Long? {
         val positions = getSolveResult(frame).positions
         if (positions.isEmpty()) return null
         val ndc = pixelToNdc(pixel)
         val aspect = aspectScale()
         val baseR = nodeBaseRadius(positions.size)
-        // Be a bit generous on the hit radius (1.5x) so single-pixel-precision isn't required.
-        val hitR = baseR * 1.5f
-        val hitR2 = hitR * hitR
+        val cosY = cos(viewYaw); val sinY = sin(viewYaw)
+        val cosP = cos(viewPitch); val sinP = sin(viewPitch)
+        val cx = centroid.first; val cy = centroid.second; val cz = centroid.third
+        val d = cameraDistance
 
         var best: Long? = null
         var bestD2 = Float.POSITIVE_INFINITY
+        var bestScale = Float.NEGATIVE_INFINITY
         for ((id, logical) in positions) {
-            val nx = logical.first * zoom * aspect.x + pan.x
-            val ny = logical.second * zoom * aspect.y + pan.y
+            val lx = logical.first - cx
+            val ly = logical.second - cy
+            val lz = logical.third - cz
+            val x1 = lx * cosY - lz * sinY
+            val z1 = lx * sinY + lz * cosY
+            val y2 = ly * cosP - z1 * sinP
+            val z2 = ly * sinP + z1 * cosP
+            val depth = (d + z2).coerceAtLeast(MIN_DEPTH)
+            val s = FOCAL_LENGTH / depth
+            val nx = x1 * s * aspect.x
+            val ny = y2 * s * aspect.y
             // Un-stretch the NDC delta so the test compares in the same coord
-            // space as `baseR` (which is a logical-units-times-zoom value before
-            // aspect scaling, the same units the shader scales the quad by).
+            // space as `baseR` (logical-units-times-perspective, the same units
+            // the shader scales the quad by).
             val dx = (ndc.x - nx) / aspect.x
             val dy = (ndc.y - ny) / aspect.y
             val d2 = dx * dx + dy * dy
-            if (d2 <= hitR2 && d2 < bestD2) {
+            // Generous hit radius (1.5x), scaled by perspective so closer nodes
+            // are also easier to grab than distant ones.
+            val hitR = baseR * 1.5f * s
+            val hitR2 = hitR * hitR
+            if (d2 <= hitR2 && (d2 < bestD2 - 1e-8f || (kotlin.math.abs(d2 - bestD2) < 1e-8f && s > bestScale))) {
                 bestD2 = d2
+                bestScale = s
                 best = id
             }
         }
         return best
+    }
+
+    /**
+     * Mean of [positions] in each axis. Treats every visible node equally rather
+     * than weighting by edge degree or depth — the camera focuses on the
+     * "geometric middle" of what's on screen, which is the most stable choice as
+     * the tree grows and prunes.
+     */
+    private fun computeCentroid(
+        positions: Map<Long, Triple<Float, Float, Float>>,
+    ): Triple<Float, Float, Float> {
+        if (positions.isEmpty()) return Triple(0f, 0f, 0f)
+        var sx = 0f; var sy = 0f; var sz = 0f
+        for (p in positions.values) {
+            sx += p.first; sy += p.second; sz += p.third
+        }
+        val n = positions.size.toFloat()
+        return Triple(sx / n, sy / n, sz / n)
+    }
+
+    /**
+     * Deterministic per-id random unit vector, uniformly distributed on the
+     * sphere. Seeding [kotlin.random.Random] with the lineage id keeps the
+     * direction stable across frames and runs, so toggling force mode off and
+     * back on doesn't reshuffle the layout. Uses the standard
+     * azimuth-plus-uniform-cos-elevation construction:
+     *
+     *   azimuth   φ ∈ [0, 2π)            uniform in φ
+     *   cos(θ)    c ∈ [-1, 1)            uniform in cos(θ) → uniform on sphere
+     *   sin(θ)    s = √(1 − c²)
+     *   (x, y, z) = (s·cos(φ), s·sin(φ), c)
+     */
+    private fun randomUnitVector(id: Long): Triple<Float, Float, Float> {
+        val rng = kotlin.random.Random(id)
+        val phi = 2f * kotlin.math.PI.toFloat() * rng.nextFloat()
+        val cosTheta = 2f * rng.nextFloat() - 1f
+        val sinTheta = kotlin.math.sqrt((1f - cosTheta * cosTheta).coerceAtLeast(0f))
+        return Triple(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta)
     }
 
     private fun pixelToNdc(pixel: Vec2): Vec2 {
@@ -665,18 +792,16 @@ class LineageOverlay {
         return Vec2(minOf(1f, h / w), minOf(1f, w / h))
     }
 
-    private fun ndcToLogical(ndc: Vec2): Vec2 {
-        val a = aspectScale()
-        return Vec2((ndc.x - pan.x) / (zoom * a.x), (ndc.y - pan.y) / (zoom * a.y))
-    }
-
     private fun nodeBaseRadius(nodeCount: Int): Float {
         // Scale the base radius gently with population so dense lineages don't visually
         // overlap. The 0.012/0.018 thresholds match the older panel's behaviour roughly.
+        // The returned value is in pre-perspective logical units; the per-node
+        // perspective scale (applied separately in [drawNodes]) carries the
+        // camera-distance dependence, so radii grow as the camera dollies in.
         val populationFactor = if (nodeCount > 420) 0.012f else 0.018f
         // Also clamp to spacing-based limit so closely-packed siblings don't merge.
-        val spacingLimit = CladogramLayoutSolver.NODE_X_SPACING * zoom * 0.45f
-        return (populationFactor * zoom).coerceIn(0.004f, spacingLimit.coerceAtLeast(0.004f))
+        val spacingLimit = CladogramLayoutSolver.NODE_X_SPACING * 0.45f
+        return populationFactor.coerceIn(0.004f, spacingLimit.coerceAtLeast(0.004f))
     }
 
     private fun ensureNodeArrays(n: Int) {
@@ -768,12 +893,25 @@ class LineageOverlay {
         val (visibleIds, filterMs) = computeVisibleIdsAndCache(frame, stamp)
 
         if (forceSolver.isEmpty && visibleIds.isNotEmpty()) {
-            val seed = CladogramLayoutSolver.solveWithVisibleIds(
-                layout = frame.cladogramLayout,
-                lineage = frame.lineage,
-                visibleIds = visibleIds,
-            )
-            forceSolver.seedFrom(seed.positions)
+            // Seed every visible node on the surface of a sphere centred on the
+            // origin, with each node's direction drawn from a deterministic
+            // per-id random unit vector. This gives the force solver a
+            // genuinely 3D starting configuration regardless of the
+            // hierarchical layout's shape (which can collapse to a single
+            // column for chain lineages, or a plane in general). The relaxation
+            // unfolds the topology from this scattered initial state — slower
+            // than starting from a hierarchical seed for wide trees, but
+            // consistently 3D and free of axis-aligned bias.
+            val seed = HashMap<Long, Triple<Float, Float, Float>>(visibleIds.size)
+            for (id in visibleIds) {
+                val dir = randomUnitVector(id)
+                seed[id] = Triple(
+                    dir.first * INITIAL_SPHERE_RADIUS,
+                    dir.second * INITIAL_SPHERE_RADIUS,
+                    dir.third * INITIAL_SPHERE_RADIUS,
+                )
+            }
+            forceSolver.seedFrom(seed)
         }
 
         val positions = forceSolver.step(
@@ -827,8 +965,46 @@ class LineageOverlay {
     }
 
     companion object {
-        private const val MIN_ZOOM = 0.0025f
-        private const val MAX_ZOOM = 8f
+        /** Initial pitch for the orbit camera. Positive radians push the upper
+         *  end of the y-axis (the root, depth 0) away from the camera, so the
+         *  tree reads as receding into the screen from front (young) to back
+         *  (ancient). ~30° gives noticeable depth without harsh foreshortening;
+         *  the user can change it from here via mouse drag or arrow keys. */
+        private const val INITIAL_PITCH_RAD: Float = 0.5236f // π/6
+        /** Per-pixel rotation rate for [rotateByPixels]. Same constant for arrow
+         *  keys and mouse drag — keystroke step size is governed by the caller
+         *  (arrow keys tick every frame at a small synthetic pixel delta). */
+        private const val ROTATE_RAD_PER_PX: Float = 0.005f
+        /** Clamp on [viewPitch] so the camera never goes through gimbal lock. */
+        private const val PITCH_LIMIT: Float = 1.5533f // π/2 − ~2°
+        /** Effective focal length of the projection in logical units. Combined
+         *  with [cameraDistance], the per-node screen scale is
+         *  `FOCAL_LENGTH / (cameraDistance + z')`. Lowering it narrows the FOV
+         *  (more telephoto); raising it widens it. */
+        private const val FOCAL_LENGTH: Float = 1.0f
+        /** Initial camera distance from the centroid along the view axis. At
+         *  [INITIAL_CAMERA_DISTANCE] == [FOCAL_LENGTH] the centroid plane lands
+         *  at scale 1.0, matching the pre-dolly default view. */
+        private const val INITIAL_CAMERA_DISTANCE: Float = 1.0f
+        /** Closest the camera can dolly toward the centroid. Smaller values
+         *  make perspective foreshortening extreme; clamping prevents the
+         *  divisor in `FOCAL_LENGTH / depth` from collapsing. */
+        private const val MIN_CAMERA_DISTANCE: Float = 0.125f
+        /** Farthest the camera can dolly out. At large distances the projection
+         *  approaches orthographic — interesting nodes shrink to dots, so this
+         *  bounds how far "out" feels useful. */
+        private const val MAX_CAMERA_DISTANCE: Float = 400f
+        /** Minimum projection denominator. Clamps the per-node scale so a node
+         *  that drifts behind the camera (z' < -cameraDistance) doesn't blow up
+         *  to infinity. */
+        private const val MIN_DEPTH: Float = 0.1f
+        /** Radius of the sphere on which force-mode places every visible node
+         *  at first frame. Each node gets a deterministic per-id random unit
+         *  vector scaled by this constant, so the initial state is uniformly
+         *  scattered in 3D regardless of the cladogram's shape. Picked to
+         *  match the default camera distance — the whole sphere fits inside
+         *  the view at default zoom. */
+        private const val INITIAL_SPHERE_RADIUS: Float = 0.5f
     }
 }
 

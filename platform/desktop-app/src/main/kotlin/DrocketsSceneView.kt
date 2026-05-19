@@ -307,7 +307,7 @@ object DrocketsSceneView {
                     }
                 }
                 if (state.dragged) {
-                    renderer.panLineageOverlayByPixels(dx, dy)
+                    renderer.rotateLineageOverlayByPixels(dx, dy)
                 }
             } else if (renderer.isLineageOverlayActive && frame != null) {
                 renderer.hoverLineageOverlay(px, frame)
@@ -350,21 +350,22 @@ object DrocketsSceneView {
         if (pressed[GLFW_KEY_E]) renderer.rotateRight()
         if (pressed[GLFW_KEY_0]) renderer.focusPlanet()
 
-        // Arrow keys pan the lineage overlay while it's active. Signs follow the
-        // "look in this direction" convention (pressing Right shifts the camera
-        // right, so content scrolls left); the deltas are passed in the same
-        // screen-pixel convention as the mouse-drag handler, so positive dx pushes
-        // content right and positive dy pushes content down. Skipped while Ctrl is
-        // held so Ctrl+Up/Down still nudges force scale instead of panning.
+        // Arrow keys orbit the lineage overlay camera around the layout centroid
+        // while it's active. Pressing Right rotates the camera right (content
+        // appears to slide left); pressing Up tilts the camera up (looks down on
+        // the tree from a higher angle). Deltas are fed through the same
+        // synthetic-pixel pipeline as the mouse drag, so the per-pixel sensitivity
+        // lives in [LineageOverlay]. Skipped while Ctrl is held so Ctrl+Up/Down
+        // still nudges force scale instead of rotating.
         val ctrl = pressed[GLFW_KEY_LEFT_CONTROL] || pressed[GLFW_KEY_RIGHT_CONTROL]
         if (renderer.isLineageOverlayActive && !ctrl) {
             var dx = 0f
             var dy = 0f
-            if (pressed[GLFW_KEY_LEFT]) dx += OVERLAY_PAN_SPEED_PX
-            if (pressed[GLFW_KEY_RIGHT]) dx -= OVERLAY_PAN_SPEED_PX
-            if (pressed[GLFW_KEY_UP]) dy += OVERLAY_PAN_SPEED_PX
-            if (pressed[GLFW_KEY_DOWN]) dy -= OVERLAY_PAN_SPEED_PX
-            if (dx != 0f || dy != 0f) renderer.panLineageOverlayByPixels(dx, dy)
+            if (pressed[GLFW_KEY_LEFT]) dx -= OVERLAY_ROTATE_SPEED_PX
+            if (pressed[GLFW_KEY_RIGHT]) dx += OVERLAY_ROTATE_SPEED_PX
+            if (pressed[GLFW_KEY_UP]) dy -= OVERLAY_ROTATE_SPEED_PX
+            if (pressed[GLFW_KEY_DOWN]) dy += OVERLAY_ROTATE_SPEED_PX
+            if (dx != 0f || dy != 0f) renderer.rotateLineageOverlayByPixels(dx, dy)
         }
     }
 
@@ -407,6 +408,9 @@ object DrocketsSceneView {
     private const val DOUBLE_CLICK_MS = 400L
     private const val DOUBLE_CLICK_PX = 6f
     private const val DRAG_THRESHOLD_PX = 4f
-    /** Per-frame pan delta (in screen pixels) applied while an arrow key is held. */
-    private const val OVERLAY_PAN_SPEED_PX = 10f
+    /** Per-frame rotation delta (in synthetic screen pixels) fed to the lineage
+     *  overlay while an arrow key is held. The overlay converts pixels to radians
+     *  via its own per-pixel sensitivity, so this is just "how fast does each
+     *  arrow-key tick feel". 4 px/frame ≈ 240 px/sec at 60 fps. */
+    private const val OVERLAY_ROTATE_SPEED_PX = 4f
 }

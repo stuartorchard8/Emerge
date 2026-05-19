@@ -6,11 +6,14 @@ import kotlin.time.TimeSource
 /**
  * Result of one solver invocation. [positions] is in *logical* (pre-projection) space:
  * x is in node-spacing units (offsets relative to the centroid), y is `-depth *
- * GENERATION_Y_SPACING` so depth 0 is at y=0 and depth N is below. The panel renderer
- * multiplies by panel zoom and translates by panel pan to get NDC.
+ * GENERATION_Y_SPACING` so depth 0 is at y=0 and depth N is below, and z is a depth-into-
+ * the-screen coordinate filled in by the force-directed solver (the hierarchical solver
+ * leaves it at 0). The panel renderer multiplies by panel zoom and translates by panel
+ * pan to get NDC, applying a small x-axis tilt + perspective projection to map z onto
+ * screen y / per-node scale.
  */
 data class CladogramLayoutSolution(
-    val positions: Map<Long, Pair<Float, Float>>,
+    val positions: Map<Long, Triple<Float, Float, Float>>,
     val filterMs: Float,
     val solveMs: Float,
 )
@@ -49,7 +52,7 @@ object CladogramLayoutSolver {
         layout: CladogramLayout,
         lineage: DrocketLineageState,
         filterMode: CladogramFilterMode,
-        seedLogicalPositions: Map<Long, Pair<Float, Float>>? = null,
+        seedLogicalPositions: Map<Long, Triple<Float, Float, Float>>? = null,
     ): CladogramLayoutSolution {
         val filterStart = TimeSource.Monotonic.markNow()
         val visibleIds = computeVisibleLineageIds(lineage, layout, filterMode)
@@ -68,7 +71,7 @@ object CladogramLayoutSolver {
         layout: CladogramLayout,
         lineage: DrocketLineageState,
         visibleIds: Set<Long>,
-        seedLogicalPositions: Map<Long, Pair<Float, Float>>? = null,
+        seedLogicalPositions: Map<Long, Triple<Float, Float, Float>>? = null,
         filterMs: Float = 0f,
     ): CladogramLayoutSolution {
         if (layout.depthById.isEmpty()) return CladogramLayoutSolution(emptyMap(), 0f, 0f)
@@ -178,13 +181,15 @@ object CladogramLayoutSolver {
         }
 
         val xMean = if (xById.isNotEmpty()) xById.values.sum() / xById.size.toFloat() else 0f
-        val out = LinkedHashMap<Long, Pair<Float, Float>>(visibleByDepth.values.sumOf { it.size })
+        val out = LinkedHashMap<Long, Triple<Float, Float, Float>>(visibleByDepth.values.sumOf { it.size })
         for ((depth, ids) in compactDepthToIds.entries.sortedBy { it.key }) {
             if (ids.isEmpty()) continue
             for (id in ids) {
                 val logicalX = (xById[id] ?: 0f) - xMean
                 val logicalY = -depth * GENERATION_Y_SPACING
-                out[id] = Pair(logicalX, logicalY)
+                // Hierarchical layout is strictly 2D; z=0 keeps it on the
+                // central plane under the perspective projection.
+                out[id] = Triple(logicalX, logicalY, 0f)
             }
         }
         val solveMs = solveStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
@@ -201,7 +206,7 @@ object CladogramLayoutSolver {
         parentById: Map<Long, List<Long>>,
         childrenById: Map<Long, MutableList<Long>>,
         xById: HashMap<Long, Float>,
-        seedLogicalPositions: Map<Long, Pair<Float, Float>>?,
+        seedLogicalPositions: Map<Long, Triple<Float, Float, Float>>?,
     ) {
         val allowed = comp.toHashSet()
         val depthToIds = LinkedHashMap<Int, MutableList<Long>>()
