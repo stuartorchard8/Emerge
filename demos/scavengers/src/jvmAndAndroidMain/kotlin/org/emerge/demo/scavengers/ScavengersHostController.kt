@@ -3,7 +3,6 @@ package org.emerge.demo.scavengers
 import kotlin.concurrent.thread
 import org.emerge.net.tcp.Tcp
 import org.emerge.net.websocket.WsAcceptor
-import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.model.PhysicsConfig
@@ -24,8 +23,8 @@ class ScavengersHostController(
 ) : ScavengersController() {
     private val executor = ParallelExecutor()
     private val reducer = ScavengersReducer(executor)
-    private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
-    private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
+    private val inputCodec: Codec<PhysicsInput> = ScavengersCodecs.inputCodec
+    private val stateCodec: StateCodec<PhysicsState> = ScavengersCodecs.stateCodec
     private val impulseCodec: StateCodec<PhysicsState> = ImpulseCodec
 
     private val initial: PhysicsState = createDefaultInitialState(gameMode)
@@ -39,7 +38,7 @@ class ScavengersHostController(
         semiThinStateCodec = impulseCodec,
         joinPolicy = defaultJoinPolicy(gameMode),
         leavePolicy = { state, playerId -> state.removePlayerRocket(playerId) },
-        thinEventsEncoder = { state -> PhysicsNetCodecs.crashImpactAudioEventsCodec.encode(state.crashImpactAudioEvents) },
+        thinEventsEncoder = { state -> ScavengersCodecs.crashImpactAudioEventsCodec.encode(state.crashImpactAudioEvents) },
     )
 
     private data class ReadyClient(val pipe: Pipe, val mode: ClientMode)

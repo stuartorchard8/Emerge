@@ -3,6 +3,7 @@ package org.emerge.web
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.emerge.demo.scavengers.GameMode
+import org.emerge.demo.scavengers.ScavengersCodecs
 import org.emerge.demo.scavengers.ScavengersFrame
 import org.emerge.demo.scavengers.ScavengersReducer
 import org.emerge.demo.scavengers.audio.CrashAudioSystem
@@ -10,7 +11,6 @@ import org.emerge.demo.scavengers.createDefaultInitialState
 import org.emerge.net.websocket.WebSocketPipe
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ScreenRenderer
-import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.Vec2
@@ -80,10 +80,10 @@ private fun startJoinMode(wsUrl: String, renderer: ScreenRenderer, input: WebInp
     val client = ThinClient(
         initialState = initialState,
         pipe = pipe,
-        inputCodec = PhysicsNetCodecs.inputCodec,
-        stateCodec = PhysicsNetCodecs.stateCodec,
+        inputCodec = ScavengersCodecs.inputCodec,
+        stateCodec = ScavengersCodecs.stateCodec,
         thinEventsApplier = { state, payload ->
-            val events = PhysicsNetCodecs.crashImpactAudioEventsCodec.decode(payload)
+            val events = ScavengersCodecs.crashImpactAudioEventsCodec.decode(payload)
             state.copy(crashImpactAudioEvents = events)
         },
         handshakeTimeout = 15.seconds,

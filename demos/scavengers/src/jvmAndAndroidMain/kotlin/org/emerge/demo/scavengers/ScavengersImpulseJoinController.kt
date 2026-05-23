@@ -4,7 +4,6 @@ import kotlin.concurrent.thread
 import org.emerge.net.api.DelegatingPipe
 import org.emerge.net.tcp.Tcp
 import org.emerge.sim.codec.physics.ImpulseCodec
-import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
@@ -22,8 +21,8 @@ class ScavengersImpulseJoinController(
 ) : ScavengersController() {
     private val cfg = PhysicsConfig()
     private val reducer = ScavengersNoImpulseReducer()
-    private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
-    private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
+    private val inputCodec: Codec<PhysicsInput> = ScavengersCodecs.inputCodec
+    private val stateCodec: StateCodec<PhysicsState> = ScavengersCodecs.stateCodec
     private val impulseCodec: StateCodec<PhysicsState> = ImpulseCodec
 
     private val remote = DelegatingPipe()

@@ -2,7 +2,6 @@ package org.emerge.demo.drockets
 
 import org.emerge.net.codec.ByteCursor
 import org.emerge.net.codec.ByteWriter
-import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.Tick
 import org.emerge.sim.core.ecs.ComponentStore
@@ -37,7 +36,7 @@ object DrocketsSaveCodec {
     fun encode(snapshot: DrocketsSnapshot): ByteArray {
         val w = ByteWriter()
         val stateWithoutParticles = snapshot.state.withoutParticleEntitiesForPersistence()
-        val stateBytes = PhysicsNetCodecs.stateCodec.encode(stateWithoutParticles)
+        val stateBytes = DrocketsCodecs.stateCodec.encode(stateWithoutParticles)
         w.writeInt(FORMAT_VERSION)
         w.writeLong(snapshot.tick.value)
         w.writeInt(stateBytes.size)
@@ -57,7 +56,7 @@ object DrocketsSaveCodec {
         val stateBytesSize = c.readInt()
         require(stateBytesSize >= 0) { "Invalid physics state payload size: $stateBytesSize" }
         val stateBytes = c.readBytes(stateBytesSize)
-        val physicsState = PhysicsNetCodecs.stateCodec.decode(stateBytes)
+        val physicsState = DrocketsCodecs.stateCodec.decode(stateBytes)
         val mergedComponents = decodeDrocketsComponents(c, physicsState.components)
         val lineage = decodeLineageState(c)
         require(c.remaining() == 0) {

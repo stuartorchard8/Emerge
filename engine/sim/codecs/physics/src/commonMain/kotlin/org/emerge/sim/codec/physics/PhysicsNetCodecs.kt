@@ -13,40 +13,18 @@ import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
-import org.emerge.sim.sync.ecs.registry
+import org.emerge.sim.sync.ecs.ComponentCodec
 
 /**
  * Shared demo codecs for the deterministic physics sample.
  *
- * This keeps Android + desktop using the exact same wire format without duplicating logic.
+ * The set of [ComponentCodec]s is supplied by each demo — the engine no longer ships a closed
+ * registry. This keeps Android + desktop using the exact same wire format for a given demo
+ * without duplicating logic.
  */
-object PhysicsNetCodecs {
-    private const val STATE_HEADER_INT_COUNT = 6
-    private const val STATE_ENTITY_INT_COUNT = 26
-    private const val STATE_RESPAWN_INT_COUNT = 11
-    private const val STATE_CRASH_AUDIO_EVENT_INT_COUNT = 5
-    private const val STATE_INT_BYTES = 4
-    // Drockets saves (especially older ones that serialized particles) can exceed 2k entities.
-    // Keep this as a sanity bound, but high enough to support legitimate snapshots.
-    private const val MAX_STATE_ENTITIES = 10_000
-    private const val MAX_STATE_CRASH_AUDIO_EVENTS = 4096
-
-    val inputCodec: Codec<PhysicsInput> =
-        object : Codec<PhysicsInput> {
-            override fun encode(value: PhysicsInput): ByteArray {
-                val w = ByteWriter()
-                w.writeInt(value.thrust)
-                w.writeInt(value.turn)
-                return w.toByteArray()
-            }
-
-            override fun decode(bytes: ByteArray): PhysicsInput {
-                val c = ByteCursor(bytes)
-                val thrust = c.readInt()
-                val turn = c.readInt()
-                return PhysicsInput(thrust, turn)
-            }
-        }
+class PhysicsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
+    val inputCodec: Codec<PhysicsInput> = Companion.inputCodec
+    val crashImpactAudioEventsCodec: Codec<List<CrashImpactAudioEvent>> = Companion.crashImpactAudioEventsCodec
 
     val stateCodec: StateCodec<PhysicsState> =
         object : StateCodec<PhysicsState> {
@@ -62,7 +40,7 @@ object PhysicsNetCodecs {
                     w.writeInt(world.lastEntityValue)
                     for (entityId in serializableEntities) {
                         w.writeInt(entityId.value)
-                        for (encoder in registry) {
+                        for (encoder in componentCodecs) {
                             encoder.encode(w, components, entityId)
                         }
                     }
@@ -102,16 +80,6 @@ object PhysicsNetCodecs {
                 }
                 val randomSeed = c.readLong()
                 val lastEntityValue = c.readInt()
-                val expectedSize =
-                    (
-                            STATE_HEADER_INT_COUNT +
-                                    (n * STATE_ENTITY_INT_COUNT) +
-                                    (respawnCount * STATE_RESPAWN_INT_COUNT) +
-                                    (crashAudioEventCount * STATE_CRASH_AUDIO_EVENT_INT_COUNT)
-                            ) * STATE_INT_BYTES
-                require(bytes.size == expectedSize) {
-                    "Invalid state payload size: expected $expectedSize bytes for $n entities + $respawnCount respawns + $crashAudioEventCount crash events, got ${bytes.size}"
-                }
                 val entities = mutableSetOf<Int>()
                 val pendingRespawns = LinkedHashMap<PlayerId, PlayerRespawnState>()
                 val crashImpactAudioEvents = ArrayList<CrashImpactAudioEvent>(crashAudioEventCount)
@@ -123,7 +91,7 @@ object PhysicsNetCodecs {
                     entities += entityId.value
                     state = state.copy(
                         components = state.components.update {
-                            for (codec in registry) {
+                            for (codec in componentCodecs) {
                                 val component = codec.decode(c)
                                 if (component != null) {
                                     setRaw(entityId, component)
@@ -187,48 +155,71 @@ object PhysicsNetCodecs {
             }
         }
 
-    val crashImpactAudioEventsCodec: Codec<List<CrashImpactAudioEvent>> =
-        object : Codec<List<CrashImpactAudioEvent>> {
-            override fun encode(value: List<CrashImpactAudioEvent>): ByteArray {
-                val w = ByteWriter()
-                w.writeInt(value.size)
-                for (event in value) {
-                    w.writeInt(event.entityId.value)
-                    w.writeInt(event.pos.x.raw)
-                    w.writeInt(event.pos.y.raw)
-                    w.writeInt(event.damageRaw)
-                    w.writeInt(if (event.destroyed) 1 else 0)
+    companion object {
+        private const val STATE_CRASH_AUDIO_EVENT_INT_COUNT = 5
+        private const val STATE_INT_BYTES = 4
+        private const val MAX_STATE_ENTITIES = 10_000
+        private const val MAX_STATE_CRASH_AUDIO_EVENTS = 4096
+
+        val inputCodec: Codec<PhysicsInput> =
+            object : Codec<PhysicsInput> {
+                override fun encode(value: PhysicsInput): ByteArray {
+                    val w = ByteWriter()
+                    w.writeInt(value.thrust)
+                    w.writeInt(value.turn)
+                    return w.toByteArray()
                 }
-                return w.toByteArray()
+
+                override fun decode(bytes: ByteArray): PhysicsInput {
+                    val c = ByteCursor(bytes)
+                    val thrust = c.readInt()
+                    val turn = c.readInt()
+                    return PhysicsInput(thrust, turn)
+                }
             }
 
-            override fun decode(bytes: ByteArray): List<CrashImpactAudioEvent> {
-                val c = ByteCursor(bytes)
-                val count = c.readInt()
-                require(count in 0..MAX_STATE_CRASH_AUDIO_EVENTS) {
-                    "Invalid crash audio event count: $count"
+        val crashImpactAudioEventsCodec: Codec<List<CrashImpactAudioEvent>> =
+            object : Codec<List<CrashImpactAudioEvent>> {
+                override fun encode(value: List<CrashImpactAudioEvent>): ByteArray {
+                    val w = ByteWriter()
+                    w.writeInt(value.size)
+                    for (event in value) {
+                        w.writeInt(event.entityId.value)
+                        w.writeInt(event.pos.x.raw)
+                        w.writeInt(event.pos.y.raw)
+                        w.writeInt(event.damageRaw)
+                        w.writeInt(if (event.destroyed) 1 else 0)
+                    }
+                    return w.toByteArray()
                 }
-                val expectedSize = (1 + count * STATE_CRASH_AUDIO_EVENT_INT_COUNT) * STATE_INT_BYTES
-                require(bytes.size == expectedSize) {
-                    "Invalid crash audio event payload size: expected $expectedSize bytes for $count events, got ${bytes.size}"
+
+                override fun decode(bytes: ByteArray): List<CrashImpactAudioEvent> {
+                    val c = ByteCursor(bytes)
+                    val count = c.readInt()
+                    require(count in 0..MAX_STATE_CRASH_AUDIO_EVENTS) {
+                        "Invalid crash audio event count: $count"
+                    }
+                    val expectedSize = (1 + count * STATE_CRASH_AUDIO_EVENT_INT_COUNT) * STATE_INT_BYTES
+                    require(bytes.size == expectedSize) {
+                        "Invalid crash audio event payload size: expected $expectedSize bytes for $count events, got ${bytes.size}"
+                    }
+                    val out = ArrayList<CrashImpactAudioEvent>(count)
+                    repeat(count) {
+                        val entityId = EntityId(c.readInt())
+                        val x = c.readInt()
+                        val y = c.readInt()
+                        val damageRaw = c.readInt()
+                        val destroyedRaw = c.readInt()
+                        out +=
+                            CrashImpactAudioEvent(
+                                entityId = entityId,
+                                pos = Coord2.raw(x, y),
+                                damageRaw = damageRaw,
+                                destroyed = destroyedRaw != 0,
+                            )
+                    }
+                    return out
                 }
-                val out = ArrayList<CrashImpactAudioEvent>(count)
-                repeat(count) {
-                    val entityId = EntityId(c.readInt())
-                    val x = c.readInt()
-                    val y = c.readInt()
-                    val damageRaw = c.readInt()
-                    val destroyedRaw = c.readInt()
-                    out +=
-                        CrashImpactAudioEvent(
-                            entityId = entityId,
-                            pos = Coord2.raw(x, y),
-                            damageRaw = damageRaw,
-                            destroyed = destroyedRaw != 0,
-                        )
-                }
-                return out
             }
-        }
+    }
 }
-

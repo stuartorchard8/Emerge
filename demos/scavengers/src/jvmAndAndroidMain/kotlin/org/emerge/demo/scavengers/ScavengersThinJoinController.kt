@@ -3,7 +3,6 @@ package org.emerge.demo.scavengers
 import kotlin.concurrent.thread
 import org.emerge.net.api.DelegatingPipe
 import org.emerge.net.tcp.Tcp
-import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -16,8 +15,8 @@ class ScavengersThinJoinController(
     private val hostIp: String,
     private val port: Int,
 ) : ScavengersController() {
-    private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
-    private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
+    private val inputCodec: Codec<PhysicsInput> = ScavengersCodecs.inputCodec
+    private val stateCodec: StateCodec<PhysicsState> = ScavengersCodecs.stateCodec
 
     private val remote = DelegatingPipe()
     private val client = ThinClient(
@@ -26,7 +25,7 @@ class ScavengersThinJoinController(
         inputCodec = inputCodec,
         stateCodec = stateCodec,
         thinEventsApplier = { state, payload ->
-            val events = PhysicsNetCodecs.crashImpactAudioEventsCodec.decode(payload)
+            val events = ScavengersCodecs.crashImpactAudioEventsCodec.decode(payload)
             state.copy(crashImpactAudioEvents = events)
         },
         handshakeTimeout = 15.seconds,

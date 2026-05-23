@@ -3,7 +3,6 @@ package org.emerge.demo.scavengers
 import kotlin.concurrent.thread
 import org.emerge.net.api.DelegatingPipe
 import org.emerge.net.tcp.Tcp
-import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.model.PhysicsConfig
@@ -21,8 +20,8 @@ class ScavengersJoinController(
     private val cfg = PhysicsConfig()
     private val executor = ParallelExecutor()
     private val reducer = ScavengersReducer(executor)
-    private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
-    private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
+    private val inputCodec: Codec<PhysicsInput> = ScavengersCodecs.inputCodec
+    private val stateCodec: StateCodec<PhysicsState> = ScavengersCodecs.stateCodec
 
     private val remote = DelegatingPipe()
     private val client = LockstepClient(

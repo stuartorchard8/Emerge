@@ -9,18 +9,3 @@ interface ComponentCodec<T : Any> {
     fun encode(w: ByteWriter, s: ComponentStore, id: EntityId)
     fun decode(c: ByteCursor): T?
 }
-
-val registry = listOf(
-    TransformCodec,
-    MotionCodec,
-    ColliderCodec,
-    MaterialCodec,
-    RenderShapeCodec,
-    PlanetCodec,
-    TeamCodec,
-    ForceFieldCodec,
-    PlayerIdCodec,
-    LandingCodec,
-    ParticleCodec,
-    DamageCodec,
-)
