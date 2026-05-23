@@ -2,10 +2,10 @@ package org.emerge.web
 
 import kotlinx.browser.document
 import kotlinx.browser.window
-import org.emerge.demo.physics.GameMode
-import org.emerge.demo.physics.PhysicsFrame
-import org.emerge.demo.physics.audio.CrashAudioSystem
-import org.emerge.demo.physics.createDefaultInitialState
+import org.emerge.demo.scavengers.GameMode
+import org.emerge.demo.scavengers.ScavengersFrame
+import org.emerge.demo.scavengers.audio.CrashAudioSystem
+import org.emerge.demo.scavengers.createDefaultInitialState
 import org.emerge.net.websocket.WebSocketPipe
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ScreenRenderer
@@ -66,7 +66,7 @@ private fun startLocalMode(renderer: ScreenRenderer, input: WebInputHandler, cra
         val physicsInput = input.poll(renderer)
         state = reducer.reduce(cfg, state, mapOf(myId to physicsInput))
         tick++
-        crashAudio.onFrame(PhysicsFrame(state, myId, tick, ""))
+        crashAudio.onFrame(ScavengersFrame(state, myId, tick, ""))
         renderer.draw(state, myId)
         window.requestAnimationFrame(::frame)
     }
@@ -108,7 +108,7 @@ private fun startJoinMode(wsUrl: String, renderer: ScreenRenderer, input: WebInp
         val physicsInput = input.poll(renderer)
         client.poll()
         client.sendInput(physicsInput)
-        crashAudio.onFrame(PhysicsFrame(client.state, client.playerId, client.tick.value, ""))
+        crashAudio.onFrame(ScavengersFrame(client.state, client.playerId, client.tick.value, ""))
         renderer.draw(client.state, client.playerId)
 
         if (client.connectionState == ThinClient.ConnectionState.DISCONNECTED && !reconnectScheduled) {

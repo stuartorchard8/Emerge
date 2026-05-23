@@ -1,38 +1,41 @@
-package org.emerge.demo.physics
+package org.emerge.demo.scavengers
 
 import kotlin.concurrent.thread
 import org.emerge.net.api.DelegatingPipe
 import org.emerge.net.tcp.Tcp
+import org.emerge.sim.codec.physics.ImpulseCodec
 import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.ecs.ParallelExecutor
+import org.emerge.sim.core.physics.NoImpulsePhysicsReducer
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.PhysicsReducer
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
 import org.emerge.sim.sync.lockstep.LockstepClient
+import org.emerge.sim.sync.lockstep.ThinLockstepClient
+import java.net.InetAddress
 import kotlin.time.Duration.Companion.seconds
 
-class PhysicsJoinController(
+class ScavengersImpulseJoinController(
     private val hostIp: String,
     private val port: Int,
-) : PhysicsController() {
+) : ScavengersController() {
     private val cfg = PhysicsConfig()
-    private val executor = ParallelExecutor()
-    private val reducer = PhysicsReducer(executor)
+    private val reducer = NoImpulsePhysicsReducer()
     private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
     private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
+    private val impulseCodec: StateCodec<PhysicsState> = ImpulseCodec
 
     private val remote = DelegatingPipe()
-    private val client = LockstepClient(
+    private val client = ThinLockstepClient(
         cfg = cfg,
         initialState = createDefaultInitialState(),
         reducer = reducer,
         pipe = remote,
         inputCodec = inputCodec,
         stateCodec = stateCodec,
+        semiThinStateCodec = impulseCodec,
         handshakeTimeout = 15.seconds,
         inactivityTimeout = 20.seconds,
         onDisconnected = { reason ->
@@ -64,7 +67,7 @@ class PhysicsJoinController(
                 netStatus = "net: connecting to $hostIp:$port (try $attempt)"
                 println("[join] resolving $hostIp ...")
                 try {
-                    val resolved = java.net.InetAddress.getByName(hostIp)
+                    val resolved = InetAddress.getByName(hostIp)
                     println("[join] resolved to ${resolved.hostAddress}")
                     println("[join] TCP connect to $hostIp:$port (timeout 10s) ...")
                     val t0 = System.currentTimeMillis()
@@ -91,7 +94,7 @@ class PhysicsJoinController(
         }
     }
 
-    override fun tick(localInput: PhysicsInput): PhysicsFrame {
+    override fun tick(localInput: PhysicsInput): ScavengersFrame {
         client.poll()
         client.sendInput(localInput)
 
@@ -105,7 +108,7 @@ class PhysicsJoinController(
         val myId: PlayerId? = client.playerId
         val tick = client.tick.value
 
-        return PhysicsFrame(
+        return ScavengersFrame(
             state = state,
             myId = myId,
             tick = tick,

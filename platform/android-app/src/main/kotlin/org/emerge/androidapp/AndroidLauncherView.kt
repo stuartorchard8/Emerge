@@ -10,9 +10,9 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
-import org.emerge.demo.physics.GameMode
-import org.emerge.demo.physics.LaunchMode
-import org.emerge.demo.physics.LaunchSettings
+import org.emerge.demo.scavengers.GameMode
+import org.emerge.demo.scavengers.LaunchMode
+import org.emerge.demo.scavengers.LaunchSettings
 
 class AndroidLauncherView(
     private val activity: Activity,

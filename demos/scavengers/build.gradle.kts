@@ -3,13 +3,12 @@ plugins {
     alias(libs.plugins.androidLibrary)
 }
 
-// Distinct from :engine:sim:codecs:physics (also named project "physics") so JVM jars are not both physics-jvm.jar.
 base {
-    archivesName.set("demo-physics")
+    archivesName.set("demo-scavengers")
 }
 
 // Stable build dir (expect AV exclusions instead of per-run build dirs).
-buildDir = file("$rootDir/.build/demo-physics")
+buildDir = file("$rootDir/.build/demo-scavengers")
 
 kotlin {
     applyDefaultHierarchyTemplate()
@@ -61,7 +60,7 @@ kotlin {
 }
 
 android {
-    namespace = "org.emerge.demo.physics"
+    namespace = "org.emerge.demo.scavengers"
     compileSdk = 35
     defaultConfig {
         minSdk = 26

@@ -24,7 +24,7 @@
             <option value="$PROJECT_DIR$/buildSrc" />
             <option value="$PROJECT_DIR$/demos" />
             <option value="$PROJECT_DIR$/demos/drockets" />
-            <option value="$PROJECT_DIR$/demos/physics" />
+            <option value="$PROJECT_DIR$/demos/scavengers" />
             <option value="$PROJECT_DIR$/engine" />
             <option value="$PROJECT_DIR$/engine/net" />
             <option value="$PROJECT_DIR$/engine/net/api" />

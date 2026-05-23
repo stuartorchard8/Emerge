@@ -7,16 +7,16 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
 import android.view.MotionEvent
-import org.emerge.demo.physics.LaunchMode
-import org.emerge.demo.physics.LaunchSettings
-import org.emerge.demo.physics.PhysicsController
-import org.emerge.demo.physics.PhysicsHostController
-import org.emerge.demo.physics.PhysicsJoinController
-import org.emerge.demo.physics.PhysicsThinJoinController
-import org.emerge.demo.physics.PhysicsFrame
-import org.emerge.demo.physics.PhysicsImpulseJoinController
-import org.emerge.demo.physics.audio.CrashAudioSystem
-import org.emerge.demo.physics.createDefaultInitialState
+import org.emerge.demo.scavengers.LaunchMode
+import org.emerge.demo.scavengers.LaunchSettings
+import org.emerge.demo.scavengers.ScavengersController
+import org.emerge.demo.scavengers.ScavengersHostController
+import org.emerge.demo.scavengers.ScavengersJoinController
+import org.emerge.demo.scavengers.ScavengersThinJoinController
+import org.emerge.demo.scavengers.ScavengersFrame
+import org.emerge.demo.scavengers.ScavengersImpulseJoinController
+import org.emerge.demo.scavengers.audio.CrashAudioSystem
+import org.emerge.demo.scavengers.createDefaultInitialState
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -52,7 +52,7 @@ internal class AndroidTorusGlSurfaceView(
 
     // Data shared to GL thread
     private val stateLock = Any()
-    private var latestFrame = PhysicsFrame(
+    private var latestFrame = ScavengersFrame(
         PhysicsState(),
         null,
         0L,
@@ -62,7 +62,7 @@ internal class AndroidTorusGlSurfaceView(
     private var simThread: HandlerThread? = null
     private var simHandler: Handler? = null
     private var simTickRunnable: Runnable? = null
-    private var controller: PhysicsController? = null
+    private var controller: ScavengersController? = null
     private var crashAudioSystem: CrashAudioSystem? = null
 
     init {
@@ -258,7 +258,7 @@ internal class AndroidTorusGlSurfaceView(
                     val simController =
                         controller ?: run {
                             publishFrame(
-                                PhysicsFrame(
+                                ScavengersFrame(
                                     state = createDefaultInitialState(),
                                     myId = defaultPlayerIdFor(settings),
                                     tick = 0L,
@@ -274,7 +274,7 @@ internal class AndroidTorusGlSurfaceView(
                 } catch (t: Throwable) {
                     Log.e(TAG, "Simulation loop failed", t)
                     publishFrame(
-                        PhysicsFrame(
+                        ScavengersFrame(
                             state = PhysicsState(),
                             myId = null,
                             tick = 0L,
@@ -303,17 +303,17 @@ internal class AndroidTorusGlSurfaceView(
         simThread = null
     }
 
-    private fun createController(settings: LaunchSettings): PhysicsController =
+    private fun createController(settings: LaunchSettings): ScavengersController =
         when (settings.mode) {
-            LaunchMode.HOST -> PhysicsHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = true)
-            LaunchMode.LOCAL -> PhysicsHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = false)
+            LaunchMode.HOST -> ScavengersHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = true)
+            LaunchMode.LOCAL -> ScavengersHostController(port = settings.port, cfg = cfg, gameMode = settings.gameMode, acceptRemoteClients = false)
             LaunchMode.HEADLESS_HOST -> throw IllegalStateException("HEADLESS_HOST should not use the GL view")
-            LaunchMode.JOIN -> PhysicsJoinController(hostIp = settings.hostIp, port = settings.port)
-            LaunchMode.JOIN_IMPULSE -> PhysicsImpulseJoinController(hostIp = settings.hostIp, port = settings.port)
-            LaunchMode.JOIN_THIN -> PhysicsThinJoinController(hostIp = settings.hostIp, port = settings.port)
+            LaunchMode.JOIN -> ScavengersJoinController(hostIp = settings.hostIp, port = settings.port)
+            LaunchMode.JOIN_IMPULSE -> ScavengersImpulseJoinController(hostIp = settings.hostIp, port = settings.port)
+            LaunchMode.JOIN_THIN -> ScavengersThinJoinController(hostIp = settings.hostIp, port = settings.port)
         }
 
-    private fun publishFrame(frame: PhysicsFrame) {
+    private fun publishFrame(frame: ScavengersFrame) {
         synchronized(stateLock) {
             latestFrame = frame
         }

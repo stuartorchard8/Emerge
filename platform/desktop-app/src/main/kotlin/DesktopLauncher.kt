@@ -1,8 +1,8 @@
 package org.emerge.desktop
 
-import org.emerge.demo.physics.GameMode
-import org.emerge.demo.physics.LaunchMode
-import org.emerge.demo.physics.LaunchSettings
+import org.emerge.demo.scavengers.GameMode
+import org.emerge.demo.scavengers.LaunchMode
+import org.emerge.demo.scavengers.LaunchSettings
 import java.awt.Color
 import java.awt.Component
 import java.awt.GridBagConstraints

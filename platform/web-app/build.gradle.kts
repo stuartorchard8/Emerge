@@ -21,7 +21,7 @@ kotlin {
                 implementation(project(":engine:render:torus"))
                 implementation(project(":engine:net:api"))
                 implementation(project(":engine:net:transports:websocket"))
-                implementation(project(":demos:physics"))
+                implementation(project(":demos:scavengers"))
             }
             resources.srcDir("$rootDir/assets")
         }

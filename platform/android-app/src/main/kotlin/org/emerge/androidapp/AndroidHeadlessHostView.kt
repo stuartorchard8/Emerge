@@ -9,8 +9,8 @@ import android.os.Looper
 import android.util.Log
 import android.widget.LinearLayout
 import android.widget.TextView
-import org.emerge.demo.physics.LaunchSettings
-import org.emerge.demo.physics.PhysicsHeadlessHostController
+import org.emerge.demo.scavengers.LaunchSettings
+import org.emerge.demo.scavengers.ScavengersHeadlessHostController
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
@@ -27,7 +27,7 @@ internal class AndroidHeadlessHostView(
     private val mainHandler = Handler(Looper.getMainLooper())
     private var simThread: HandlerThread? = null
     private var simHandler: Handler? = null
-    private var controller: PhysicsHeadlessHostController? = null
+    private var controller: ScavengersHeadlessHostController? = null
 
     init {
         orientation = VERTICAL
@@ -74,7 +74,7 @@ internal class AndroidHeadlessHostView(
             private var lastStatus = ""
             override fun run() {
                 try {
-                    val ctrl = controller ?: PhysicsHeadlessHostController(
+                    val ctrl = controller ?: ScavengersHeadlessHostController(
                         port = settings.port,
                         cfg = PhysicsConfig(),
                         gameMode = settings.gameMode,

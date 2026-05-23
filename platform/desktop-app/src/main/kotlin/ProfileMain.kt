@@ -1,8 +1,8 @@
 package org.emerge.desktop
 
-import org.emerge.demo.physics.GameMode
-import org.emerge.demo.physics.createDefaultInitialState
-import org.emerge.demo.physics.defaultJoinPolicy
+import org.emerge.demo.scavengers.GameMode
+import org.emerge.demo.scavengers.createDefaultInitialState
+import org.emerge.demo.scavengers.defaultJoinPolicy
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.TickStepper

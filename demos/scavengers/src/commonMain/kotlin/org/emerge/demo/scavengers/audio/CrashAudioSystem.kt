@@ -1,6 +1,6 @@
-package org.emerge.demo.physics.audio
+package org.emerge.demo.scavengers.audio
 
-import org.emerge.demo.physics.PhysicsFrame
+import org.emerge.demo.scavengers.ScavengersFrame
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.Coord2
@@ -34,7 +34,7 @@ class CrashAudioSystem(
 ) {
     private val lastCrashTickByEntity = LinkedHashMap<EntityId, Long>()
 
-    fun onFrame(frame: PhysicsFrame) {
+    fun onFrame(frame: ScavengersFrame) {
         if (engine.clangClipCount <= 0 && engine.crushClipCount <= 0) return
         val focus = frame.myId?.let { frame.state.playerViewFocus(it) } ?: Coord2.zero
         val liveEntityIds = HashSet<EntityId>(frame.state.transforms.keys().size)

@@ -2,8 +2,8 @@ package org.emerge.web
 
 import kotlinx.browser.document
 import kotlinx.browser.window
-import org.emerge.demo.physics.audio.CrashAudioEngine
-import org.emerge.demo.physics.audio.CrashSfxRequest
+import org.emerge.demo.scavengers.audio.CrashAudioEngine
+import org.emerge.demo.scavengers.audio.CrashSfxRequest
 import org.khronos.webgl.ArrayBuffer
 import kotlin.js.Promise
 
@@ -11,7 +11,7 @@ import kotlin.js.Promise
  * Web Audio API implementation of [CrashAudioEngine].
  *
  * OGG clips are fetched and decoded asynchronously -- the engine reports 0 clips until loading
- * completes, so [CrashAudioSystem][org.emerge.demo.physics.audio.CrashAudioSystem] gracefully
+ * completes, so [CrashAudioSystem][org.emerge.demo.scavengers.audio.CrashAudioSystem] gracefully
  * skips crash events until ready.
  *
  * Handles the browser autoplay policy by resuming the [AudioContext] on the first user interaction.

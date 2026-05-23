@@ -3,9 +3,9 @@ package org.emerge.androidapp
 import android.app.Activity
 import android.content.Context
 import android.os.Bundle
-import org.emerge.demo.physics.GameMode
-import org.emerge.demo.physics.LaunchMode
-import org.emerge.demo.physics.LaunchSettings
+import org.emerge.demo.scavengers.GameMode
+import org.emerge.demo.scavengers.LaunchMode
+import org.emerge.demo.scavengers.LaunchSettings
 
 class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {

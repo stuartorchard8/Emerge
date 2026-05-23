@@ -1,4 +1,4 @@
-package org.emerge.demo.physics
+package org.emerge.demo.scavengers
 
 /**
  * Cross-platform "how should the demo start?" settings.

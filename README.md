@@ -5,7 +5,7 @@ This repo is a Kotlin Multiplatform foundation for a game engine (simulation + n
 ### Repo layout (how to navigate)
 
 - **`engine/`**: reusable engine modules (simulation + networking)
-- **`demos/`**: sample implementations that exercise engine modules (currently: physics)
+- **`demos/`**: sample implementations that exercise engine modules (currently: scavengers, drockets)
 - **`platform/`**: platform hosts / apps (desktop + Android)
 - **`buildSrc/`**: Gradle convention plugins
 - **`gradle/`**: version catalog + wrapper
@@ -25,11 +25,12 @@ This repo is a Kotlin Multiplatform foundation for a game engine (simulation + n
   - `:engine:sim:codecs:physics` → `:engine:sim:core`, `:engine:sim:sync`, `:engine:net:api`
 
 - **Demos**
-  - `:demos:physics` → `:engine:sim:*`, `:engine:net:api`, `:engine:net:transports:tcp`
+  - `:demos:scavengers` → `:engine:sim:*`, `:engine:net:api`, `:engine:net:transports:tcp`
+  - `:demos:drockets` → `:engine:sim:*`, `:engine:render:torus`
 
 - **Platform hosts**
-  - `:platform:desktop-app` → `:demos:physics` (+ LWJGL)
-  - `:platform:android-app` → `:demos:physics`
+  - `:platform:desktop-app` → `:demos:scavengers`, `:demos:drockets` (+ LWJGL)
+  - `:platform:android-app` → `:demos:scavengers`
 
 #### Visual map
 
@@ -45,7 +46,7 @@ graph TD
   end
 
   subgraph demos
-    demo_phys[demos:physics]
+    demo_scav[demos:scavengers]
   end
 
   subgraph platform
@@ -62,14 +63,14 @@ graph TD
   sim_codec_phys --> sim_sync
   sim_codec_phys --> net_api
 
-  demo_phys --> sim_core
-  demo_phys --> sim_sync
-  demo_phys --> sim_codec_phys
-  demo_phys --> net_api
-  demo_phys --> net_tcp
+  demo_scav --> sim_core
+  demo_scav --> sim_sync
+  demo_scav --> sim_codec_phys
+  demo_scav --> net_api
+  demo_scav --> net_tcp
 
-  desktop --> demo_phys
-  android --> demo_phys
+  desktop --> demo_scav
+  android --> demo_scav
 ```
 
 ### Build & run

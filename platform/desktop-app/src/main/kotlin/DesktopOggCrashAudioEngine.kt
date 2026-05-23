@@ -8,8 +8,8 @@ import java.nio.ByteBuffer
 import java.nio.IntBuffer
 import java.nio.ShortBuffer
 import java.util.jar.JarFile
-import org.emerge.demo.physics.audio.CrashAudioEngine
-import org.emerge.demo.physics.audio.CrashSfxRequest
+import org.emerge.demo.scavengers.audio.CrashAudioEngine
+import org.emerge.demo.scavengers.audio.CrashSfxRequest
 import org.lwjgl.openal.AL
 import org.lwjgl.openal.AL10.AL_BUFFER
 import org.lwjgl.openal.AL10.AL_FORMAT_MONO16

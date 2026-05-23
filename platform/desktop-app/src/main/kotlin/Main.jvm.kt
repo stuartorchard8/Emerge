@@ -1,7 +1,7 @@
 package org.emerge.desktop
 
 import javax.swing.*
-import org.emerge.demo.physics.*
+import org.emerge.demo.scavengers.*
 
 const val SKIP_LAUNCHER = false
 

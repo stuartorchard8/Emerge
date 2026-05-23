@@ -1,7 +1,7 @@
 package org.emerge.androidapp
 
 import android.opengl.GLSurfaceView
-import org.emerge.demo.physics.PhysicsFrame
+import org.emerge.demo.scavengers.ScavengersFrame
 import org.emerge.render.torus.ScreenRenderer
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.primitives.Vec2
@@ -9,7 +9,7 @@ import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
 class AndroidTorusGlRenderer(
-    private val getState: () -> PhysicsFrame,
+    private val getState: () -> ScavengersFrame,
     private val contentScale: Vec2,
 ) : GLSurfaceView.Renderer {
     private lateinit var screenRenderer: ScreenRenderer

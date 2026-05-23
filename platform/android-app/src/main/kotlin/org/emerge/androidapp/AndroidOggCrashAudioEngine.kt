@@ -3,8 +3,8 @@ package org.emerge.androidapp
 import android.content.res.AssetManager
 import android.media.AudioAttributes
 import android.media.SoundPool
-import org.emerge.demo.physics.audio.CrashAudioEngine
-import org.emerge.demo.physics.audio.CrashSfxRequest
+import org.emerge.demo.scavengers.audio.CrashAudioEngine
+import org.emerge.demo.scavengers.audio.CrashSfxRequest
 
 internal class AndroidOggCrashAudioEngine(
     assets: AssetManager,

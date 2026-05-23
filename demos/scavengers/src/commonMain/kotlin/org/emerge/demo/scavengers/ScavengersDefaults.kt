@@ -1,4 +1,4 @@
-package org.emerge.demo.physics
+package org.emerge.demo.scavengers
 
 import kotlin.random.Random
 import org.emerge.sim.core.EntityId

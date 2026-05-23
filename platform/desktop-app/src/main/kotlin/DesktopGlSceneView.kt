@@ -1,7 +1,7 @@
 package org.emerge.desktop
 
-import org.emerge.demo.physics.*
-import org.emerge.demo.physics.audio.CrashAudioSystem
+import org.emerge.demo.scavengers.*
+import org.emerge.demo.scavengers.audio.CrashAudioSystem
 import org.emerge.render.torus.ScreenRenderer
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -15,7 +15,7 @@ import kotlin.use
 object DesktopGlSceneView {
     fun start(settings: LaunchSettings) = when (settings.mode) {
         LaunchMode.LOCAL -> Thread {
-            val controller = PhysicsHostController(
+            val controller = ScavengersHostController(
                 port = settings.port,
                 cfg = PhysicsConfig(),
                 gameMode = settings.gameMode,
@@ -24,7 +24,7 @@ object DesktopGlSceneView {
             runGl("Emerge local", controller)
         }.start()
         LaunchMode.HOST -> Thread {
-            val controller = PhysicsHostController(
+            val controller = ScavengersHostController(
                 port = settings.port,
                 cfg = PhysicsConfig(),
                 gameMode = settings.gameMode,
@@ -33,7 +33,7 @@ object DesktopGlSceneView {
             runGl("Emerge host (:${settings.port})", controller)
         }.start()
         LaunchMode.HEADLESS_HOST -> Thread {
-            val controller = PhysicsHeadlessHostController(
+            val controller = ScavengersHeadlessHostController(
                 port = settings.port,
                 cfg = PhysicsConfig(),
                 gameMode = settings.gameMode,
@@ -41,21 +41,21 @@ object DesktopGlSceneView {
             runHeadless(controller)
         }.start()
         LaunchMode.JOIN -> Thread {
-            val controller = PhysicsJoinController(
+            val controller = ScavengersJoinController(
                 hostIp = settings.hostIp,
                 port = settings.port,
             )
             runGl("Emerge join (${settings.hostIp}:${settings.port})", controller)
         }.start()
         LaunchMode.JOIN_IMPULSE -> Thread {
-            val controller = PhysicsImpulseJoinController(
+            val controller = ScavengersImpulseJoinController(
                 hostIp = settings.hostIp,
                 port = settings.port,
             )
             runGl("Emerge impulse (${settings.hostIp}:${settings.port})", controller)
         }.start()
         LaunchMode.JOIN_THIN -> Thread {
-            val controller = PhysicsThinJoinController(
+            val controller = ScavengersThinJoinController(
                 hostIp = settings.hostIp,
                 port = settings.port,
             )
@@ -63,7 +63,7 @@ object DesktopGlSceneView {
         }.start()
     }
 
-    private fun runHeadless(controller: PhysicsHeadlessHostController) {
+    private fun runHeadless(controller: ScavengersHeadlessHostController) {
         println("[headless] ${controller.netStatus}")
         var lastStatus = controller.netStatus
         val tickIntervalMs = 16L
@@ -81,7 +81,7 @@ object DesktopGlSceneView {
         }
     }
 
-    private fun runGl(title: String, controller: PhysicsController) {
+    private fun runGl(title: String, controller: ScavengersController) {
         val pressedKeys = BooleanArray(512)
 
         val window = initWindow(title, pressedKeys)
@@ -154,10 +154,10 @@ object DesktopGlSceneView {
     }
 
     private fun processInput(
-        controller: PhysicsController,
+        controller: ScavengersController,
         pressed: BooleanArray,
         screenRenderer: ScreenRenderer,
-    ): PhysicsFrame {
+    ): ScavengersFrame {
         // zoom controls: '-' zoom out, '=' zoom in
         if (pressed[GLFW_KEY_MINUS]) screenRenderer.zoomOut()
         if (pressed[GLFW_KEY_EQUAL]) screenRenderer.zoomIn()

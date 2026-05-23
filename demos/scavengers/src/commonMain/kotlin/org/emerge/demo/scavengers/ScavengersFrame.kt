@@ -1,9 +1,9 @@
-package org.emerge.demo.physics
+package org.emerge.demo.scavengers
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.model.PhysicsState
 
-data class PhysicsFrame(
+data class ScavengersFrame(
     val state: PhysicsState,
     val myId: PlayerId?,
     val tick: Long,

@@ -49,7 +49,7 @@ include(":engine:net:transports:loopback")
 include(":engine:net:transports:tcp")
 include(":engine:net:transports:websocket")
 
-include(":demos:physics")
+include(":demos:scavengers")
 include(":demos:drockets")
 
 rootProject.name = "Emerge"

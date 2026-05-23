@@ -30,7 +30,7 @@ val lwjglNatives: String = run {
 }
 
 dependencies {
-    implementation(project(":demos:physics"))
+    implementation(project(":demos:scavengers"))
     implementation(project(":demos:drockets"))
     implementation(project(":engine:render:torus"))
     implementation(project(":engine:sim:core"))

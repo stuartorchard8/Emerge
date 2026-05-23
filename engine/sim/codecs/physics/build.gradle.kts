@@ -3,7 +3,6 @@ plugins {
     alias(libs.plugins.androidLibrary)
 }
 
-// Distinct from :demos:physics — both default to physics-jvm.jar and break desktop distributions.
 base {
     archivesName.set("sim-physics-codec")
 }

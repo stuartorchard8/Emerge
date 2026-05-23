@@ -1,9 +1,10 @@
-package org.emerge.demo.physics
+package org.emerge.demo.scavengers
 
 import kotlin.concurrent.thread
 import org.emerge.net.tcp.Tcp
 import org.emerge.net.websocket.WsAcceptor
 import org.emerge.sim.codec.physics.PhysicsNetCodecs
+import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.PhysicsReducer
@@ -17,22 +18,19 @@ import org.emerge.sim.sync.lockstep.LockstepHost
 import org.emerge.net.api.Pipe
 import org.emerge.sim.codec.physics.ImpulseCodec
 
-/**
- * Headless host: runs the simulation and accepts remote clients, but has no local player and
- * produces no rendering output. Useful as a dedicated server.
- */
-class PhysicsHeadlessHostController(
+class ScavengersHostController(
     private val port: Int,
     private val cfg: PhysicsConfig = PhysicsConfig(),
-    gameMode: GameMode = GameMode.PVP,
-) : PhysicsController() {
+    private val gameMode: GameMode = GameMode.PVP,
+    acceptRemoteClients: Boolean = true,
+) : ScavengersController() {
     private val executor = ParallelExecutor()
     private val reducer = PhysicsReducer(executor)
     private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
     private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
     private val impulseCodec: StateCodec<PhysicsState> = ImpulseCodec
 
-    private val initial: PhysicsState = createDefaultInitialState(gameMode, spawnHostPlayer = false)
+    private val initial: PhysicsState = createDefaultInitialState(gameMode)
 
     private val host = LockstepHost(
         cfg = cfg,
@@ -51,28 +49,30 @@ class PhysicsHeadlessHostController(
     private val readyClients = ArrayList<ReadyClient>()
     private val readyClientsLock = Any()
 
-    @Volatile var netStatus: String = "headless host listening :$port (tcp) :${port + 1} (ws)"
-        private set
+    @Volatile private var netStatus: String =
+        if (acceptRemoteClients) "net: host listening :$port (tcp) :${port + 1} (ws)" else "net: host-only (no join)"
 
     init {
-        startTcpAcceptLoop()
-        startWsAcceptLoop()
+        if (acceptRemoteClients) {
+            startTcpAcceptLoop()
+            startWsAcceptLoop()
+        }
     }
 
     private fun startTcpAcceptLoop() {
         thread(isDaemon = true, name = "net-tcp-accept") {
             try {
                 val listener = Tcp.listen(port = port, backlog = 8)
-                println("[headless-tcp] listening on :$port")
+                println("[host-tcp] listening on :$port")
                 while (true) {
-                    println("[headless-tcp] waiting for connection ...")
+                    println("[host-tcp] waiting for connection ...")
                     val pipe = listener.accept()
-                    println("[headless-tcp] connection accepted, awaiting hello ...")
+                    println("[host-tcp] connection accepted, awaiting hello ...")
                     enqueueAfterHello(pipe)
                 }
             } catch (t: Throwable) {
-                println("[headless-tcp] accept loop failed: ${t::class.simpleName}: ${t.message}")
-                netStatus = "tcp accept failed: ${t::class.simpleName}"
+                println("[host-tcp] accept loop failed: ${t::class.simpleName}: ${t.message}")
+                netStatus = "net: tcp accept failed: ${t::class.simpleName}"
             }
         }
     }
@@ -86,7 +86,7 @@ class PhysicsHeadlessHostController(
                     enqueueAfterHello(pipe)
                 }
             } catch (t: Throwable) {
-                netStatus = "ws accept failed: ${t::class.simpleName}"
+                netStatus = "net: ws accept failed: ${t::class.simpleName}"
             }
         }
     }
@@ -94,22 +94,23 @@ class PhysicsHeadlessHostController(
     private fun enqueueAfterHello(pipe: Pipe) {
         val mode = awaitHello(pipe)
         if (mode == null) {
-            println("[headless] awaitHello returned null (pipe closed before hello)")
+            println("[host] awaitHello returned null (pipe closed before hello)")
             return
         }
-        println("[headless] hello received, mode=$mode")
+        println("[host] hello received, mode=$mode")
         synchronized(readyClientsLock) {
             readyClients.add(ReadyClient(pipe, mode))
         }
     }
 
-    override fun tick(localInput: PhysicsInput): PhysicsFrame {
+    override fun tick(localInput: PhysicsInput): ScavengersFrame {
         processReadyClients()
         host.pollNetwork()
+        host.setLocalInput(PlayerId(0), PhysicsInput(localInput.thrust, localInput.turn))
         host.step()
-        return PhysicsFrame(
+        return ScavengersFrame(
             state = host.state,
-            myId = null,
+            myId = PlayerId(0),
             tick = host.tick.value,
             status = netStatus,
         )
@@ -124,7 +125,7 @@ class PhysicsHeadlessHostController(
         }
         for ((pipe, mode) in snapshot) {
             host.acceptClient(pipe, mode)
-            netStatus = "client joined (${mode.name.lowercase()}), clients: ${host.clientCount}"
+            netStatus = "net: client joined (${mode.name.lowercase()})"
         }
     }
 
@@ -134,16 +135,16 @@ class PhysicsHeadlessHostController(
             while (pipe.isOpen()) {
                 val pkt = pipe.receive()
                 if (pkt != null) {
-                    println("[headless] received hello packet (${pkt.size} bytes) after $polls polls")
+                    println("[host] received hello packet (${pkt.size} bytes) after $polls polls")
                     return LockstepHost.parseHello(pkt)
                 }
                 polls++
                 if (polls % 5000 == 0) {
-                    println("[headless] still waiting for hello ($polls polls, pipe.isOpen=${pipe.isOpen()})")
+                    println("[host] still waiting for hello (${polls} polls, pipe.isOpen=${pipe.isOpen()})")
                 }
                 Thread.sleep(1L)
             }
-            println("[headless] pipe closed while awaiting hello (after $polls polls)")
+            println("[host] pipe closed while awaiting hello (after $polls polls)")
             return null
         }
     }
