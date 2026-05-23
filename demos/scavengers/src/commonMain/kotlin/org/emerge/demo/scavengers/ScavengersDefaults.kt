@@ -6,7 +6,6 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.ForceFieldComponent
-import org.emerge.sim.core.physics.components.HomePlanetComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.PlanetComponent

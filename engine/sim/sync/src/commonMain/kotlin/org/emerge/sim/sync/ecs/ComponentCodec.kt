@@ -17,7 +17,6 @@ val registry = listOf(
     MaterialCodec,
     RenderShapeCodec,
     PlanetCodec,
-    HomePlanetCodec,
     TeamCodec,
     ForceFieldCodec,
     PlayerIdCodec,

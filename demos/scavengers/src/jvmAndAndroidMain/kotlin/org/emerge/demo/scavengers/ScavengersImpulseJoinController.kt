@@ -6,7 +6,6 @@ import org.emerge.net.tcp.Tcp
 import org.emerge.sim.codec.physics.ImpulseCodec
 import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.NoImpulsePhysicsReducer
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -22,7 +21,7 @@ class ScavengersImpulseJoinController(
     private val port: Int,
 ) : ScavengersController() {
     private val cfg = PhysicsConfig()
-    private val reducer = NoImpulsePhysicsReducer()
+    private val reducer = ScavengersNoImpulseReducer()
     private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
     private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
     private val impulseCodec: StateCodec<PhysicsState> = ImpulseCodec

@@ -2,12 +2,12 @@ package org.emerge.sim.core.physics.systems
 
 import org.emerge.sim.core.physics.primitives.Frac
 
-internal data class NormalCollisionResponse(
+data class NormalCollisionResponse(
     val deltaVelA: Frac,
     val deltaVelB: Frac,
 )
 
-internal fun solveNormalCollisionResponse(
+fun solveNormalCollisionResponse(
     massA: UInt,
     massB: UInt,
     closingSpeedAlongNormal: Frac,

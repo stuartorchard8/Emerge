@@ -7,7 +7,6 @@ import org.emerge.sim.codec.physics.PhysicsNetCodecs
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.PhysicsReducer
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
@@ -24,7 +23,7 @@ class ScavengersHostController(
     acceptRemoteClients: Boolean = true,
 ) : ScavengersController() {
     private val executor = ParallelExecutor()
-    private val reducer = PhysicsReducer(executor)
+    private val reducer = ScavengersReducer(executor)
     private val inputCodec: Codec<PhysicsInput> = PhysicsNetCodecs.inputCodec
     private val stateCodec: StateCodec<PhysicsState> = PhysicsNetCodecs.stateCodec
     private val impulseCodec: StateCodec<PhysicsState> = ImpulseCodec

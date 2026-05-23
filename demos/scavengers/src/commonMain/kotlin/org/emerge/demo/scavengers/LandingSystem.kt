@@ -1,4 +1,4 @@
-package org.emerge.sim.core.physics.systems
+package org.emerge.demo.scavengers
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
@@ -9,6 +9,7 @@ import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.contacts
 import org.emerge.sim.core.physics.primitives.*
+import org.emerge.sim.core.physics.systems.solveNormalCollisionResponse
 
 
 object LandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {

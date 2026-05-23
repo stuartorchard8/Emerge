@@ -1,4 +1,4 @@
-package org.emerge.sim.core.physics
+package org.emerge.demo.scavengers
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
@@ -15,10 +15,19 @@ import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.addDamages
 import org.emerge.sim.core.physics.model.setImpulses
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.systems.*
+import org.emerge.sim.core.physics.systems.AttachmentSystem
+import org.emerge.sim.core.physics.systems.BounceSystem
+import org.emerge.sim.core.physics.systems.ContactSystem
+import org.emerge.sim.core.physics.systems.CrashSystem
+import org.emerge.sim.core.physics.systems.GravitySystem
+import org.emerge.sim.core.physics.systems.ImpulseResetSystem
+import org.emerge.sim.core.physics.systems.IntegrationSystem
+import org.emerge.sim.core.physics.systems.ParticleSystem
+import org.emerge.sim.core.physics.systems.RollingResistanceSystem
+import org.emerge.sim.core.physics.systems.ShipThrustParticleSystem
 
 /**
- * Reducer for the main physics demo.
+ * Reducer for the Scavengers demo.
  *
  * The pipeline is declared as an ordered list of named phases. Phase boundaries document
  * where state produced by one group of systems is consumed by the next (e.g. contacts are
@@ -55,7 +64,7 @@ import org.emerge.sim.core.physics.systems.*
  *
  * Pass a [profiler] to collect per-phase wall-time samples every tick.
  */
-class PhysicsReducer(
+class ScavengersReducer(
     private val executor: ParallelExecutor? = null,
     private val profiler: PipelineProfiler? = null,
 ) : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {

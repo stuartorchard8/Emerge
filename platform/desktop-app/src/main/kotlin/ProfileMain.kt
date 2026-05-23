@@ -1,6 +1,9 @@
 package org.emerge.desktop
 
+import org.emerge.demo.scavengers.ForceFieldSystem
 import org.emerge.demo.scavengers.GameMode
+import org.emerge.demo.scavengers.RespawnSystem
+import org.emerge.demo.scavengers.ShipThrustSystem
 import org.emerge.demo.scavengers.createDefaultInitialState
 import org.emerge.demo.scavengers.defaultJoinPolicy
 import org.emerge.sim.core.PlayerId

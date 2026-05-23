@@ -1,4 +1,4 @@
-package org.emerge.sim.core.physics
+package org.emerge.demo.scavengers
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
@@ -12,14 +12,16 @@ import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.addDamages
 import org.emerge.sim.core.physics.model.setImpulses
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.systems.*
+import org.emerge.sim.core.physics.systems.IntegrationSystem
+import org.emerge.sim.core.physics.systems.ParticleSystem
+import org.emerge.sim.core.physics.systems.ShipThrustParticleSystem
 
 /**
  * Reducer used by thin clients that receive impulses over the wire rather than computing
  * them locally. The force-gather, contact and attachment phases are skipped entirely;
  * only lifecycle, effects, and integration run locally.
  */
-class NoImpulsePhysicsReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
+class ScavengersNoImpulseReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
     private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
         Phase("lifecycle", RespawnSystem, DamageSystem),
         Phase("effects", ShipThrustParticleSystem, ParticleSystem),

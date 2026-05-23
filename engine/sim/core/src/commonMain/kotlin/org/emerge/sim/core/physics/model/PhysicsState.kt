@@ -2,7 +2,6 @@ package org.emerge.sim.core.physics.model
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.ComponentStore
 import org.emerge.sim.core.ecs.EcsWorld
 import org.emerge.sim.core.physics.components.*
@@ -39,7 +38,6 @@ data class PhysicsState(
     val playerOwned get() = components.getTable<PlayerOwnedComponent>()
     val teams get() = components.getTable<TeamComponent>()
     val planets get() = components.getTable<PlanetComponent>()
-    val homePlanets get() = components.getTable<HomePlanetComponent>()
     val forceFields get() = components.getTable<ForceFieldComponent>()
     val landings get() = components.getTable<LandingAttachmentComponent>()
     val particles get() = components.getTable<ParticleComponent>()
@@ -63,9 +61,6 @@ data class PhysicsState(
         playerTransform(playerId)?.pos
             ?: pendingRespawns[playerId]?.deathPos
             ?: Coord2.zero
-
-    fun homePlanetEntity(teamId: TeamId): EntityId? =
-        homePlanets.entries().firstOrNull { it.value.teamId == teamId }?.key
 
     fun planetEntities(): Set<EntityId> =
         planets.keys()

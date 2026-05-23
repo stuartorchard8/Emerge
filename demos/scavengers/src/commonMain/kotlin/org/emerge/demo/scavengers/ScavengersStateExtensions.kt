@@ -1,6 +1,8 @@
 package org.emerge.demo.scavengers
 
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.clearRespawn
@@ -22,3 +24,11 @@ fun PhysicsState.removePlayerRocket(playerId: PlayerId): PhysicsState {
     }
     return builder.build()
 }
+
+/**
+ * Returns the entity id of the home planet assigned to [teamId], or null if none is
+ * currently assigned. Scavengers-only: home planets are a per-game concept.
+ */
+fun PhysicsState.homePlanetEntity(teamId: TeamId): EntityId? =
+    components.getTable<HomePlanetComponent>().entries()
+        .firstOrNull { it.value.teamId == teamId }?.key

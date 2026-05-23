@@ -21,8 +21,8 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * Producer of the `contactDetect` phase. Scans pairs of material-bearing
  * entities, computes contacts, and publishes the full list as a typed phase
  * output via [setContacts]. Downstream phases ([BounceSystem], [CrashSystem],
- * [LandingSystem], [DrocketLandingSystem][org.emerge.demo.drockets.DrocketLandingSystem])
- * read it as an immutable `List<Contact>` and never mutate it.
+ * and per-demo landing systems) read it as an immutable `List<Contact>`
+ * and never mutate it.
  *
  * **Broadphase.** Rather than sweeping every pair (O(n²)), the system builds a
  * uniform [SpatialGrid] sized to `>= 2 * maxRadius` per cell and, for each
@@ -53,10 +53,9 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * of the entire world is already pathological.
  *
  * **Attached bodies skip contact.** Entities carrying a
- * [LandingAttachmentComponent] are held rigidly to their parent by
- * [LandingSystem][org.emerge.sim.core.physics.systems.LandingSystem] /
- * [DrocketLandingSystem][org.emerge.demo.drockets.DrocketLandingSystem];
- * any collision impulse produced for them is overwritten before render.
+ * [LandingAttachmentComponent] are held rigidly to their parent by each
+ * demo's landing system; any collision impulse produced for them is
+ * overwritten before render.
  * Excluding them up front saves the contact compute and the downstream
  * bounce/crash passes, and also fixes the visual bug where piles of
  * airborne drockets bounce on top of already-landed ones with no way to

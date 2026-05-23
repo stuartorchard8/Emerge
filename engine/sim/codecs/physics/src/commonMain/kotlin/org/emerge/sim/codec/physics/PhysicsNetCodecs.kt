@@ -22,7 +22,7 @@ import org.emerge.sim.sync.ecs.registry
  */
 object PhysicsNetCodecs {
     private const val STATE_HEADER_INT_COUNT = 6
-    private const val STATE_ENTITY_INT_COUNT = 27
+    private const val STATE_ENTITY_INT_COUNT = 26
     private const val STATE_RESPAWN_INT_COUNT = 11
     private const val STATE_CRASH_AUDIO_EVENT_INT_COUNT = 5
     private const val STATE_INT_BYTES = 4

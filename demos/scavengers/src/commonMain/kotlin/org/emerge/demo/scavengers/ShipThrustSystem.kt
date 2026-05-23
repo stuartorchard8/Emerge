@@ -1,6 +1,6 @@
 @file:OptIn(BypassesStagedView::class)
 
-package org.emerge.sim.core.physics.systems
+package org.emerge.demo.scavengers
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.BypassesStagedView

@@ -65,8 +65,8 @@ fun PhysicsBuilder(initial: PhysicsState): PhysicsBuilder {
  *    seeded from the initial snapshot and mutated in place, but on a fork the
  *    accessors below (`pendingRespawns`, `nextRandomInt`, `queueRespawn`, etc.) walk
  *    up [EcsBuilder.parent] and operate on the root builder's scratch instead of the
- *    fork's own. That keeps DamageSystem's respawn enqueues and ShipThrust's PRNG
- *    draws deterministic and globally visible across forks in the same isolated
+ *    fork's own. That keeps respawn enqueues and PRNG draws deterministic and
+ *    globally visible across forks in the same isolated
  *    phase, at the cost of needing a lock at the domain layer once forks actually
  *    run on separate threads.
  *
@@ -172,8 +172,8 @@ fun PhysicsBuilder.nextRandomInt(until: Int): Int {
 // --- Respawn queue -------------------------------------------------------
 //
 // Like the PRNG, the respawn queue is shared across forks in an isolated phase:
-// reads and writes route through the ROOT builder's scratch so DamageSystem's
-// enqueues and RespawnSystem's drains are globally visible. Under sequential fork
+// reads and writes route through the ROOT builder's scratch so per-demo damage
+// enqueues and respawn drains are globally visible. Under sequential fork
 // execution this is bit-identical to the old in-place behaviour; threads will
 // need a lock at this layer.
 
@@ -193,8 +193,8 @@ val PhysicsBuilder.pendingRespawns: Map<PlayerId, PlayerRespawnState>
  * missing the entity is instead removed outright — matching the legacy behaviour.
  *
  * Deliberately uses the frozen [EcsBuilder.initial] view so we can still resolve the
- * player's entity even if it has been tombstoned earlier this frame (e.g. by
- * [org.emerge.sim.core.physics.systems.DamageSystem]). Per-component reads go through
+ * player's entity even if it has been tombstoned earlier this frame (e.g. by a
+ * per-demo damage system). Per-component reads go through
  * [EcsBuilder.getComponent] which honours the staged overlay, so if damage wiped a
  * required component mid-frame we fall through to the "just remove the entity" path.
  *
