@@ -31,7 +31,7 @@ data class DrocketsSnapshot(
  * load support — start a fresh sim instead).
  */
 object DrocketsSaveCodec {
-    private const val FORMAT_VERSION = 3
+    private const val FORMAT_VERSION = 4
 
     fun encode(snapshot: DrocketsSnapshot): ByteArray {
         val w = ByteWriter()
