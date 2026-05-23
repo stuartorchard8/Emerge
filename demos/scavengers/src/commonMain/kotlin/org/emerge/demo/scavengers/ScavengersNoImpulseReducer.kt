@@ -8,7 +8,7 @@ import org.emerge.sim.core.ecs.runSequential
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.addDamages
 import org.emerge.sim.core.physics.model.setImpulses
@@ -22,15 +22,15 @@ import org.emerge.sim.core.physics.systems.ShipThrustParticleSystem
  * them locally. The force-gather, contact and attachment phases are skipped entirely;
  * only lifecycle, effects, and integration run locally.
  */
-class ScavengersNoImpulseReducer : SimReducer<PhysicsConfig, ScavengersState, PhysicsInput> {
-    private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
+class ScavengersNoImpulseReducer : SimReducer<ScavengersConfig, ScavengersState, PhysicsInput> {
+    private val pipeline: Pipeline<ScavengersConfig, PhysicsState, PhysicsInput> = listOf(
         Phase("lifecycle", RespawnSystem, DamageSystem),
         Phase("effects", ShipThrustParticleSystem, ParticleSystem),
         Phase("integrate", IntegrationSystem),
     )
 
     override fun reduce(
-        cfg: PhysicsConfig,
+        cfg: ScavengersConfig,
         state: ScavengersState,
         inputs: Map<PlayerId, PhysicsInput>,
     ): ScavengersState {

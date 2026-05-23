@@ -4,16 +4,16 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.contacts
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
-object DrocketLandingSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object DrocketLandingSystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: DrocketsConfig,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

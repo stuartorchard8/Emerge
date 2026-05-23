@@ -37,12 +37,19 @@ enum class PhaseConcurrency { Sequential, Isolated }
  * alongside thread dispatch, and enforced as a precondition for flagging a phase as
  * [PhaseConcurrency.Isolated] in a stricter mode than today's voluntary contract.
  */
-data class Phase<C, S, I>(
+class Phase<in C, S, in I>(
     val name: String,
-    val systems: List<EcsSystem<C, S, I>>,
+    val systems: List<EcsSystem<@UnsafeVariance C, S, @UnsafeVariance I>>,
     val concurrency: PhaseConcurrency = PhaseConcurrency.Sequential,
 ) {
-    constructor(name: String, vararg systems: EcsSystem<C, S, I>) : this(name, systems.toList())
+    constructor(name: String, vararg systems: EcsSystem<@UnsafeVariance C, S, @UnsafeVariance I>) :
+        this(name, systems.toList())
+
+    fun copy(
+        name: String = this.name,
+        systems: List<EcsSystem<@UnsafeVariance C, S, @UnsafeVariance I>> = this.systems,
+        concurrency: PhaseConcurrency = this.concurrency,
+    ): Phase<C, S, I> = Phase(name, systems, concurrency)
 }
 
 /**

@@ -8,7 +8,7 @@ import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsTuning
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.contacts
 import org.emerge.sim.core.physics.primitives.BodyShape
@@ -16,9 +16,9 @@ import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
 
-object CrashSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object CrashSystem : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: PhysicsTuning,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
@@ -66,7 +66,7 @@ object CrashSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
         entityId: EntityId,
         shape: RenderShapeComponent,
         impactImpulse: Frac,
-        cfg: PhysicsConfig,
+        cfg: PhysicsTuning,
     ) {
         if (shape.shape != BodyShape.TRIANGLE) return
         val speedOverThreshold = impactImpulse - cfg.collisionSpeedDamageThreshold

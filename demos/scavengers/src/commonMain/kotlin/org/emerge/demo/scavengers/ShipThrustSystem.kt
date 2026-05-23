@@ -10,7 +10,7 @@ import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
@@ -20,9 +20,9 @@ import kotlin.math.absoluteValue
 import kotlin.math.sign
 
 
-object ShipThrustSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object ShipThrustSystem : EcsSystem<ScavengersConfig, PhysicsState, PhysicsInput> {
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: ScavengersConfig,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

@@ -4,6 +4,7 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import org.emerge.demo.scavengers.GameMode
 import org.emerge.demo.scavengers.ScavengersCodecs
+import org.emerge.demo.scavengers.ScavengersConfig
 import org.emerge.demo.scavengers.ScavengersFrame
 import org.emerge.demo.scavengers.ScavengersReducer
 import org.emerge.demo.scavengers.audio.CrashAudioSystem
@@ -12,7 +13,6 @@ import org.emerge.net.websocket.WebSocketPipe
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ScreenRenderer
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.Vec2
 import org.emerge.sim.sync.lockstep.ThinClient
 import org.w3c.dom.HTMLCanvasElement
@@ -56,7 +56,7 @@ fun main() {
 }
 
 private fun startLocalMode(renderer: ScreenRenderer, input: WebInputHandler, crashAudio: CrashAudioSystem) {
-    val cfg = PhysicsConfig()
+    val cfg = ScavengersConfig()
     var state = createDefaultInitialState(GameMode.PVP)
     val reducer = ScavengersReducer()
     val myId = PlayerId(0)

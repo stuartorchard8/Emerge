@@ -3,6 +3,7 @@ package org.emerge.desktop
 import org.emerge.demo.scavengers.ForceFieldSystem
 import org.emerge.demo.scavengers.GameMode
 import org.emerge.demo.scavengers.RespawnSystem
+import org.emerge.demo.scavengers.ScavengersConfig
 import org.emerge.demo.scavengers.ScavengersState
 import org.emerge.demo.scavengers.ShipThrustSystem
 import org.emerge.demo.scavengers.createDefaultInitialState
@@ -14,7 +15,6 @@ import org.emerge.sim.core.TickStepper
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.systems.*
@@ -23,7 +23,7 @@ private const val PLAYER_COUNT = 8
 private const val WARMUP_TICKS = 120
 private const val PROFILE_TICKS = 1800 // ~30 seconds of game time at 60fps
 
-private val SYSTEMS: List<Pair<String, EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>>> = listOf(
+private val SYSTEMS: List<Pair<String, EcsSystem<ScavengersConfig, PhysicsState, PhysicsInput>>> = listOf(
     "ShipThrust" to ShipThrustSystem,
     "Gravity" to GravitySystem(),
     "Integration" to IntegrationSystem,
@@ -34,13 +34,13 @@ private val SYSTEMS: List<Pair<String, EcsSystem<PhysicsConfig, PhysicsState, Ph
     "Respawn" to RespawnSystem,
 )
 
-class ProfilingReducer : SimReducer<PhysicsConfig, ScavengersState, PhysicsInput> {
+class ProfilingReducer : SimReducer<ScavengersConfig, ScavengersState, PhysicsInput> {
     private val accumulatedNanos = LongArray(SYSTEMS.size)
     private val peakNanos = LongArray(SYSTEMS.size)
     private var tickCount = 0
 
     override fun reduce(
-        cfg: PhysicsConfig,
+        cfg: ScavengersConfig,
         state: ScavengersState,
         inputs: Map<PlayerId, PhysicsInput>,
     ): ScavengersState {
@@ -99,7 +99,7 @@ class ProfilingReducer : SimReducer<PhysicsConfig, ScavengersState, PhysicsInput
 
 fun main() {
     val gameMode = GameMode.CO_OP
-    val cfg = PhysicsConfig()
+    val cfg = ScavengersConfig()
     var state = createDefaultInitialState(gameMode, spawnHostPlayer = true)
 
     val joinPolicy = defaultJoinPolicy(gameMode)

@@ -8,14 +8,14 @@ import org.emerge.sim.core.physics.model.*
 import org.emerge.sim.core.physics.primitives.*
 
 
-object DamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object DamageSystem : EcsSystem<ScavengersConfig, PhysicsState, PhysicsInput> {
     private const val DESTRUCTION_BURST_PARTICLE_COUNT = 50
     private val DESTRUCTION_BURST_PARTICLE_RADIUS_FACTOR = Frac(1, 3)
     private val DESTRUCTION_BURST_SPEED_FACTOR = Frac(1, 12)
     private const val DESTRUCTION_BURST_LIFETIME = 42
 
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: ScavengersConfig,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

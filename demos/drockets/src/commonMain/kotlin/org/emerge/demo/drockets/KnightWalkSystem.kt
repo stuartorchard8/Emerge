@@ -5,7 +5,7 @@ import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
@@ -19,10 +19,10 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * At 60 tps with maxSpeed=300, planet.radius=10000: ≈ 0.0005 rad/tick
  * In Emerge Coord space: 0.0005/π * Int.MAX_VALUE ≈ 341,782
  */
-object KnightWalkSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object KnightWalkSystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
 
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: DrocketsConfig,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

@@ -6,14 +6,14 @@ import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsTuning
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
-object IntegrationSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object IntegrationSystem : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: PhysicsTuning,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

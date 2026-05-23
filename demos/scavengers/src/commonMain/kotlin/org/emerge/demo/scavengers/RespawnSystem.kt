@@ -13,7 +13,7 @@ import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+
 import org.emerge.sim.core.physics.model.spawnBody
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
@@ -28,9 +28,9 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * Respawn entries are queued elsewhere (typically by [DamageSystem] via [queueRespawn]);
  * this system is only responsible for draining the queue.
  */
-object RespawnSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object RespawnSystem : EcsSystem<ScavengersConfig, PhysicsState, PhysicsInput> {
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: ScavengersConfig,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

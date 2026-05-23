@@ -7,8 +7,12 @@ import org.emerge.sim.core.PlayerId
  *
  * Systems are domain-agnostic: the state type [S] and config [C] are supplied by whoever
  * assembles the pipeline. A typical physics-domain system declares itself as
- * `EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput>`, receiving an
+ * `EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput>`, receiving an
  * `EcsBuilder<PhysicsState>` (a.k.a. `PhysicsBuilder`) on each update.
+ *
+ * [C] and [I] are declared `in` (contravariant): a system that only needs to read
+ * the engine-side [org.emerge.sim.core.physics.model.PhysicsTuning] contract can be
+ * dropped into a pipeline whose concrete config is a demo subtype.
  *
  * ### Parallel-safety contract (forward-looking)
  *
@@ -29,6 +33,6 @@ import org.emerge.sim.core.PlayerId
  * direct write" style; the phase grouping simply documents which systems will eventually
  * be candidates for parallel execution.
  */
-fun interface EcsSystem<C, S, I> {
+fun interface EcsSystem<in C, S, in I> {
     fun update(cfg: C, builder: EcsBuilder<S>, inputs: Map<PlayerId, I>)
 }

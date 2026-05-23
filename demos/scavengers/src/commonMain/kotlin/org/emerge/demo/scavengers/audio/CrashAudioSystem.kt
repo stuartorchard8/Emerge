@@ -1,10 +1,10 @@
 package org.emerge.demo.scavengers.audio
 
+import org.emerge.demo.scavengers.ScavengersConfig
 import org.emerge.demo.scavengers.ScavengersFrame
 import org.emerge.demo.scavengers.playerViewFocus
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.Coord2
 import kotlin.math.floor
 import kotlin.math.hypot
@@ -29,7 +29,7 @@ interface CrashAudioEngine {
 class CrashAudioSystem(
     private val engine: CrashAudioEngine,
     private val random: Random = Random.Default,
-    private val shipMaxDamageRaw: Long = PhysicsConfig().maxHealth.raw,
+    private val shipMaxDamageRaw: Long = ScavengersConfig().maxHealth.raw,
     private val worldSize: Float = 2f,
     private val maxAudibleDistance: Float = 0.5f,
     private val minTicksBetweenEntityCrashes: Long = 2L,

@@ -5,7 +5,7 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
@@ -22,10 +22,10 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  *
  * The atmosphere extends [ATMOSPHERE_FACTOR] beyond the planet collider radius.
  */
-object AtmosphereDragSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object AtmosphereDragSystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
 
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: DrocketsConfig,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

@@ -12,9 +12,9 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
 /**
  * Drockets-only damage policy:
  * - Dynamic destruction threshold for drockets based on current population.
- * - Non-drocket entities keep using [PhysicsConfig.maxHealth].
+ * - Non-drocket entities keep using [DrocketsConfig.maxHealth].
  */
-object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object DrocketAdaptiveDamageSystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
     private const val DESTRUCTION_BURST_PARTICLE_COUNT = 50
     private val DESTRUCTION_BURST_PARTICLE_RADIUS_FACTOR = Frac(1, 3)
     private val DESTRUCTION_BURST_SPEED_FACTOR = Frac(1, 12)
@@ -32,7 +32,7 @@ object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, Phys
     private const val MIN_MAX_HEALTH_BITS = 15
 
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: DrocketsConfig,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
@@ -85,8 +85,8 @@ object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, Phys
                 }
             }
 
-            // Audio event emission and respawn queueing are Scavengers-only concepts; the
-            // Drockets config sets respawnTicks=-1 so those branches were already dead.
+            // Audio event emission and respawn queueing are Scavengers-only concepts;
+            // Move 5 removed the dead respawn branch from this system entirely.
 
             builder.update<DamageComponent>(entityId) { DamageComponent(total, damage.next) }
         }

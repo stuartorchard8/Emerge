@@ -9,6 +9,7 @@ import android.util.Log
 import android.view.MotionEvent
 import org.emerge.demo.scavengers.LaunchMode
 import org.emerge.demo.scavengers.LaunchSettings
+import org.emerge.demo.scavengers.ScavengersConfig
 import org.emerge.demo.scavengers.ScavengersController
 import org.emerge.demo.scavengers.ScavengersHostController
 import org.emerge.demo.scavengers.ScavengersJoinController
@@ -21,7 +22,6 @@ import org.emerge.demo.scavengers.createDefaultInitialState
 import org.emerge.demo.scavengers.playerAngle
 import org.emerge.demo.scavengers.playerAngularVelocity
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.math.PI
@@ -37,7 +37,7 @@ internal class AndroidTorusGlSurfaceView(
     activity: Activity,
     private val settings: LaunchSettings,
 ) : GLSurfaceView(activity) {
-    private val cfg = PhysicsConfig()
+    private val cfg = ScavengersConfig()
     private val renderer: AndroidTorusGlRenderer
 
     @Volatile private var currentTouchInput: PhysicsInput = PhysicsInput.ZERO

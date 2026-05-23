@@ -8,12 +8,12 @@ import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsTuning
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
-object AttachmentSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object AttachmentSystem : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: PhysicsTuning,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

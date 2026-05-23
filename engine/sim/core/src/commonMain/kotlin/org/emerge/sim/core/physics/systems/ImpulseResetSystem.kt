@@ -5,12 +5,12 @@ import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsTuning
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
-object ImpulseResetSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object ImpulseResetSystem : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: PhysicsTuning,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

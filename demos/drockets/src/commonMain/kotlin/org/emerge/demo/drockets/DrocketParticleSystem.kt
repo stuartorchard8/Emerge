@@ -15,10 +15,10 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * Spawns exhaust particles behind thrusting drockets, mirroring
  * the engine's ShipThrustParticleSystem but driven by DrocketStateComponent.
  */
-object DrocketParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object DrocketParticleSystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
 
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: DrocketsConfig,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

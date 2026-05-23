@@ -4,7 +4,7 @@ import kotlin.concurrent.thread
 import org.emerge.net.api.DelegatingPipe
 import org.emerge.net.tcp.Tcp
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.model.PhysicsConfig
+
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
@@ -17,7 +17,7 @@ class ScavengersImpulseJoinController(
     private val hostIp: String,
     private val port: Int,
 ) : ScavengersController() {
-    private val cfg = PhysicsConfig()
+    private val cfg = ScavengersConfig()
     private val reducer = ScavengersNoImpulseReducer()
     private val inputCodec: Codec<PhysicsInput> = ScavengersCodecs.inputCodec
     private val stateCodec: StateCodec<ScavengersState> = ScavengersCodecs.stateCodec

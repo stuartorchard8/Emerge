@@ -12,7 +12,7 @@ import org.emerge.sim.core.ecs.runSequential
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.addDamages
 import org.emerge.sim.core.physics.model.setImpulses
@@ -70,8 +70,8 @@ import org.emerge.sim.core.physics.systems.ShipThrustParticleSystem
 class ScavengersReducer(
     private val executor: ParallelExecutor? = null,
     private val profiler: PipelineProfiler? = null,
-) : SimReducer<PhysicsConfig, ScavengersState, PhysicsInput> {
-    private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
+) : SimReducer<ScavengersConfig, ScavengersState, PhysicsInput> {
+    private val pipeline: Pipeline<ScavengersConfig, PhysicsState, PhysicsInput> = listOf(
         Phase("reset", ImpulseResetSystem),
         Phase("forceGather", ShipThrustSystem, GravitySystem(executor), ForceFieldSystem).isolated(),
         Phase("contactDetect", ContactSystem(executor)),
@@ -83,7 +83,7 @@ class ScavengersReducer(
     )
 
     override fun reduce(
-        cfg: PhysicsConfig,
+        cfg: ScavengersConfig,
         state: ScavengersState,
         inputs: Map<PlayerId, PhysicsInput>,
     ): ScavengersState {

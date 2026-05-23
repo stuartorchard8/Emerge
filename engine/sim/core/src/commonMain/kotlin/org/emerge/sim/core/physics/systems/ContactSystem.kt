@@ -11,7 +11,7 @@ import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsTuning
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.setContacts
 import org.emerge.sim.core.physics.primitives.Contact
@@ -68,9 +68,9 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  */
 class ContactSystem(
     private val executor: ParallelExecutor? = null,
-) : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+) : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: PhysicsTuning,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

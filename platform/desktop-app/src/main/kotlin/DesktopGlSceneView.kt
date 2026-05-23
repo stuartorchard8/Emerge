@@ -3,7 +3,6 @@ package org.emerge.desktop
 import org.emerge.demo.scavengers.*
 import org.emerge.demo.scavengers.audio.CrashAudioSystem
 import org.emerge.render.torus.ScreenRenderer
-import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.primitives.Vec2
 import org.lwjgl.glfw.GLFW.*
@@ -17,7 +16,7 @@ object DesktopGlSceneView {
         LaunchMode.LOCAL -> Thread {
             val controller = ScavengersHostController(
                 port = settings.port,
-                cfg = PhysicsConfig(),
+                cfg = ScavengersConfig(),
                 gameMode = settings.gameMode,
                 acceptRemoteClients = false,
             )
@@ -26,7 +25,7 @@ object DesktopGlSceneView {
         LaunchMode.HOST -> Thread {
             val controller = ScavengersHostController(
                 port = settings.port,
-                cfg = PhysicsConfig(),
+                cfg = ScavengersConfig(),
                 gameMode = settings.gameMode,
                 acceptRemoteClients = true,
             )
@@ -35,7 +34,7 @@ object DesktopGlSceneView {
         LaunchMode.HEADLESS_HOST -> Thread {
             val controller = ScavengersHeadlessHostController(
                 port = settings.port,
-                cfg = PhysicsConfig(),
+                cfg = ScavengersConfig(),
                 gameMode = settings.gameMode,
             )
             runHeadless(controller)

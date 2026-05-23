@@ -7,7 +7,7 @@ import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.nextRandomInt
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -19,10 +19,10 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * - Walk duration: 2–10 seconds (120–600 ticks at 60 tps)
  * - Pause: 1.4 seconds (84 ticks)
  */
-object KnightAISystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object KnightAISystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
 
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: DrocketsConfig,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

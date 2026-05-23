@@ -2,7 +2,6 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.TickStepper
 import org.emerge.sim.core.ecs.ParallelExecutor
-import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.Frac
 
 /**
@@ -14,7 +13,7 @@ import org.emerge.sim.core.physics.primitives.Frac
  * it's a no-op that runs tasks inline.
  */
 class DrocketsController(
-    cfg: PhysicsConfig = DROCKETS_CONFIG,
+    cfg: DrocketsConfig = DROCKETS_CONFIG,
 ) {
     private val executor = ParallelExecutor()
     private val reducer = DrocketsReducer(executor)
@@ -73,12 +72,9 @@ class DrocketsController(
     }
 
     companion object {
-        val DROCKETS_CONFIG = PhysicsConfig(
-            thrustFactorInv = Int.MAX_VALUE / (1024 * 16),
-            turnFactorInv = Int.MAX_VALUE / (1024 * 512),
+        val DROCKETS_CONFIG = DrocketsConfig(
             gravityNumerator = Frac(1, 1 shl 11),
             collisionSpeedDamageThreshold = Frac(1, 1 shl 20),
-            respawnTicks = -1, // Respawn is disabled
         )
     }
 }

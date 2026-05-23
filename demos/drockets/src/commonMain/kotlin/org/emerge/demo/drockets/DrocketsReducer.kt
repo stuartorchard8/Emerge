@@ -5,7 +5,6 @@ import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.ecs.*
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.setImpulses
 import org.emerge.sim.core.physics.primitives.PhysicsInput
@@ -51,8 +50,8 @@ import org.emerge.sim.core.physics.systems.*
 class DrocketsReducer(
     private val executor: ParallelExecutor? = null,
     private val profiler: PipelineProfiler? = null,
-) : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
-    private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
+) : SimReducer<DrocketsConfig, PhysicsState, PhysicsInput> {
+    private val pipeline: Pipeline<DrocketsConfig, PhysicsState, PhysicsInput> = listOf(
         Phase("reset", ImpulseResetSystem),
         Phase("aiAndMotion", DrocketAISystem, DrocketWalkSystem, KnightAISystem, KnightWalkSystem, SpriteAnimationSystem),
         Phase("forceGather", GravitySystem(executor), AtmosphereDragSystem).isolated(),
@@ -65,7 +64,7 @@ class DrocketsReducer(
     )
 
     override fun reduce(
-        cfg: PhysicsConfig,
+        cfg: DrocketsConfig,
         state: PhysicsState,
         inputs: Map<PlayerId, PhysicsInput>,
     ): PhysicsState {

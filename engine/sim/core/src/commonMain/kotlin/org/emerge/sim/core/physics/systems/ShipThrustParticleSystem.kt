@@ -10,7 +10,7 @@ import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsTuning
 import org.emerge.sim.core.physics.model.nextRandomInt
 import org.emerge.sim.core.physics.model.spawnParticle
 import org.emerge.sim.core.physics.primitives.BodyShape
@@ -19,9 +19,9 @@ import org.emerge.sim.core.physics.primitives.Norm
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
 
-object ShipThrustParticleSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object ShipThrustParticleSystem : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: PhysicsTuning,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

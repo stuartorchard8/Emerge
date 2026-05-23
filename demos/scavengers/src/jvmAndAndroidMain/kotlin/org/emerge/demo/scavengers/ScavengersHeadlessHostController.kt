@@ -4,7 +4,7 @@ import kotlin.concurrent.thread
 import org.emerge.net.tcp.Tcp
 import org.emerge.net.websocket.WsAcceptor
 import org.emerge.sim.core.ecs.ParallelExecutor
-import org.emerge.sim.core.physics.model.PhysicsConfig
+
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
@@ -18,7 +18,7 @@ import org.emerge.net.api.Pipe
  */
 class ScavengersHeadlessHostController(
     private val port: Int,
-    private val cfg: PhysicsConfig = PhysicsConfig(),
+    private val cfg: ScavengersConfig = ScavengersConfig(),
     gameMode: GameMode = GameMode.PVP,
 ) : ScavengersController() {
     private val executor = ParallelExecutor()

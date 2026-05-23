@@ -4,7 +4,7 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
@@ -12,10 +12,10 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * Advances animation state by one tick, cycling frames according to the
  * active animation definition.
  */
-object SpriteAnimationSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object SpriteAnimationSystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
 
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: DrocketsConfig,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

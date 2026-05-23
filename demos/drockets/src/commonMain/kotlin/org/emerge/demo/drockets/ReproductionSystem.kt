@@ -10,11 +10,11 @@ import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.*
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 
-object ReproductionSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object ReproductionSystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
     const val POPULATION_CAP = 800
 
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: DrocketsConfig,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

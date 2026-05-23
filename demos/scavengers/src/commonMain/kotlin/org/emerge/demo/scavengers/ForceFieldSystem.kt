@@ -6,15 +6,15 @@ import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+
 import org.emerge.sim.core.physics.primitives.*
 
 
-object ForceFieldSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+object ForceFieldSystem : EcsSystem<ScavengersConfig, PhysicsState, PhysicsInput> {
     private val FORCE_FIELD_TEAM_DAMPING = Frac(1, 64)
 
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: ScavengersConfig,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {

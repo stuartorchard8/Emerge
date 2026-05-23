@@ -11,7 +11,7 @@ import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsConfig
+import org.emerge.sim.core.physics.model.PhysicsTuning
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
@@ -47,9 +47,9 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  */
 class GravitySystem(
     private val executor: ParallelExecutor? = null,
-) : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
+) : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
     override fun update(
-        cfg: PhysicsConfig,
+        cfg: PhysicsTuning,
         builder: PhysicsBuilder,
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
@@ -69,14 +69,14 @@ class GravitySystem(
         applyDeltas(builder, deltas)
     }
 
-    private fun computeSequential(cfg: PhysicsConfig, p: Partition): Map<EntityId, ImpulseComponent> {
+    private fun computeSequential(cfg: PhysicsTuning, p: Partition): Map<EntityId, ImpulseComponent> {
         val out = LinkedHashMap<EntityId, ImpulseComponent>()
         collectDeltas(cfg, p, shipStart = 0, shipEnd = p.ships.size, out)
         return out
     }
 
     private fun computeParallel(
-        cfg: PhysicsConfig,
+        cfg: PhysicsTuning,
         p: Partition,
         executor: ParallelExecutor,
     ): Map<EntityId, ImpulseComponent> {
@@ -119,7 +119,7 @@ class GravitySystem(
     }
 
     private fun collectDeltas(
-        cfg: PhysicsConfig,
+        cfg: PhysicsTuning,
         p: Partition,
         shipStart: Int,
         shipEnd: Int,

@@ -5,7 +5,7 @@ import org.emerge.net.api.DelegatingPipe
 import org.emerge.net.tcp.Tcp
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ParallelExecutor
-import org.emerge.sim.core.physics.model.PhysicsConfig
+
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
@@ -16,7 +16,7 @@ class ScavengersJoinController(
     private val hostIp: String,
     private val port: Int,
 ) : ScavengersController() {
-    private val cfg = PhysicsConfig()
+    private val cfg = ScavengersConfig()
     private val executor = ParallelExecutor()
     private val reducer = ScavengersReducer(executor)
     private val inputCodec: Codec<PhysicsInput> = ScavengersCodecs.inputCodec
