@@ -3,13 +3,16 @@ package org.emerge.desktop
 import org.emerge.demo.scavengers.ForceFieldSystem
 import org.emerge.demo.scavengers.GameMode
 import org.emerge.demo.scavengers.RespawnSystem
+import org.emerge.demo.scavengers.ScavengersState
 import org.emerge.demo.scavengers.ShipThrustSystem
 import org.emerge.demo.scavengers.createDefaultInitialState
 import org.emerge.demo.scavengers.defaultJoinPolicy
+import org.emerge.demo.scavengers.seedScavengersScratch
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.TickStepper
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
@@ -31,17 +34,18 @@ private val SYSTEMS: List<Pair<String, EcsSystem<PhysicsConfig, PhysicsState, Ph
     "Respawn" to RespawnSystem,
 )
 
-class ProfilingReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
+class ProfilingReducer : SimReducer<PhysicsConfig, ScavengersState, PhysicsInput> {
     private val accumulatedNanos = LongArray(SYSTEMS.size)
     private val peakNanos = LongArray(SYSTEMS.size)
     private var tickCount = 0
 
     override fun reduce(
         cfg: PhysicsConfig,
-        state: PhysicsState,
+        state: ScavengersState,
         inputs: Map<PlayerId, PhysicsInput>,
-    ): PhysicsState {
-        val builder = PhysicsBuilder(state)
+    ): ScavengersState {
+        val builder = PhysicsBuilder(state.core)
+        val scratch = builder.seedScavengersScratch(state.pendingRespawns)
         for (i in SYSTEMS.indices) {
             val start = System.nanoTime()
             SYSTEMS[i].second.update(cfg, builder, inputs)
@@ -50,10 +54,14 @@ class ProfilingReducer : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
             if (elapsed > peakNanos[i]) peakNanos[i] = elapsed
         }
         tickCount++
-        return builder.build()
+        return ScavengersState(
+            core = builder.build(),
+            pendingRespawns = scratch.pendingRespawns.toMap(),
+            crashImpactAudioEvents = scratch.crashImpactAudioEvents.toList(),
+        )
     }
 
-    override fun patchState(state: PhysicsState, delta: PhysicsState): PhysicsState {
+    override fun patchState(state: ScavengersState, delta: ScavengersState): ScavengersState {
         TODO()
     }
 
@@ -110,7 +118,7 @@ fun main() {
     }
     reducer.reset()
 
-    val entityCount = stepper.state.transforms.keys().size
+    val entityCount = stepper.state.core.components.getTable<TransformComponent>().keys().size
     println("Profiling ($PROFILE_TICKS ticks, $entityCount entities)...")
 
     val wallStart = System.nanoTime()
@@ -119,7 +127,7 @@ fun main() {
     }
     val wallNanos = System.nanoTime() - wallStart
 
-    val finalEntityCount = stepper.state.transforms.keys().size
+    val finalEntityCount = stepper.state.core.components.getTable<TransformComponent>().keys().size
     reducer.printSummary(wallNanos)
     println("  Entity count: $entityCount -> $finalEntityCount")
     println()

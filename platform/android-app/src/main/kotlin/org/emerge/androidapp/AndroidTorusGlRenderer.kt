@@ -24,7 +24,7 @@ class AndroidTorusGlRenderer(
 
     override fun onDrawFrame(gl: GL10?) {
         val frame = getState()
-        screenRenderer.draw(frame.state, frame.myId)
+        screenRenderer.draw(frame.state.core, frame.myId)
     }
 
     fun rotateInputToWorld(input: PhysicsInput): PhysicsInput {

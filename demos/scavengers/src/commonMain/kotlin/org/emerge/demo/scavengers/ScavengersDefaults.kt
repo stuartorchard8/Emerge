@@ -24,7 +24,7 @@ import org.emerge.sim.core.physics.primitives.Norm
 fun createDefaultInitialState(
     gameMode: GameMode = GameMode.PVP,
     spawnHostPlayer: Boolean = true,
-): PhysicsState {
+): ScavengersState {
     val builder = PhysicsBuilder(PhysicsState())
     for (i in 0 until DEFAULT_PLANET_COUNT) {
         val spawn = builder.spawnBody(
@@ -49,23 +49,23 @@ fun createDefaultInitialState(
             random = Random.Default,
         )
     }
-    return builder.build()
+    return ScavengersState(core = builder.build())
 }
 
 /**
  * Join policy used by both desktop and Android demos:
  * - deterministic spawn positions based on player id
  */
-fun defaultJoinPolicy(gameMode: GameMode = GameMode.PVP): (PhysicsState, PlayerId) -> PhysicsState =
+fun defaultJoinPolicy(gameMode: GameMode = GameMode.PVP): (ScavengersState, PlayerId) -> ScavengersState =
     { snapshot, pid ->
-        val builder = PhysicsBuilder(snapshot)
+        val builder = PhysicsBuilder(snapshot.core)
         assignHomePlanetAndSpawn(
             builder = builder,
             playerId = pid,
             gameMode = gameMode,
             random = Random.Default,
         )
-        builder.build()
+        snapshot.copy(core = builder.build())
     }
 
 private fun assignHomePlanetAndSpawn(

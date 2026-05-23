@@ -36,10 +36,9 @@ typealias PhysicsBuilder = EcsBuilder<PhysicsState>
 /**
  * Constructs a [PhysicsBuilder] wired up with lenses over [PhysicsState], and eagerly
  * registers [PhysicsFrameScratch] so that frame-scoped collections like [contacts] are
- * reset every frame even if no system reads or writes them. Audio events live in the
- * generic [EcsBuilder] event stream and are folded into the snapshot by the scratch
- * finalizer, so any system may [EcsBuilder.emit] a [CrashImpactAudioEvent] without
- * needing to coordinate with a designated "audio producer".
+ * reset every frame even if no system reads or writes them. Demo-specific frame state
+ * (respawn queues, audio events, etc.) is layered on by demos via their own scratch
+ * objects registered through [EcsBuilder.scratch].
  */
 @Suppress("FunctionName")
 fun PhysicsBuilder(initial: PhysicsState): PhysicsBuilder {
@@ -61,19 +60,12 @@ fun PhysicsBuilder(initial: PhysicsState): PhysicsBuilder {
  *    is read-only once the producing phase ends, so downstream systems are safe to
  *    share it across threads in a parallel executor.
  *
- *  - **Parent-delegated shared resources:** [pendingRespawns] and [randomSeed] are
- *    seeded from the initial snapshot and mutated in place, but on a fork the
- *    accessors below (`pendingRespawns`, `nextRandomInt`, `queueRespawn`, etc.) walk
- *    up [EcsBuilder.parent] and operate on the root builder's scratch instead of the
- *    fork's own. That keeps respawn enqueues and PRNG draws deterministic and
- *    globally visible across forks in the same isolated
- *    phase, at the cost of needing a lock at the domain layer once forks actually
- *    run on separate threads.
- *
- * Audio events are NOT on this scratch — they are emitted via [EcsBuilder.emit] on the
- * generic event stream and folded into [PhysicsState.crashImpactAudioEvents] by the
- * [physicsScratch] finalizer. Any system may emit events without coordinating with a
- * single producer, and fork emits replay onto the parent via the write-log.
+ *  - **Parent-delegated shared resources:** [randomSeed] is seeded from the initial
+ *    snapshot and mutated in place, but on a fork the accessors below walk up
+ *    [EcsBuilder.parent] and operate on the root builder's scratch instead of the
+ *    fork's own. That keeps PRNG draws deterministic and globally visible across
+ *    forks in the same isolated phase, at the cost of needing a lock at the domain
+ *    layer once forks actually run on separate threads.
  *
  * Finalizer also calls [PhysicsState.rebuildIndexes] so the derived `playerEntities` map
  * always reflects the authoritative [PlayerOwnedComponent] table.
@@ -88,8 +80,6 @@ class PhysicsFrameScratch(initial: PhysicsState) {
      */
     var contacts: List<Contact> = initial.contacts
 
-    val pendingRespawns: MutableMap<PlayerId, PlayerRespawnState> =
-        LinkedHashMap(initial.pendingRespawns)
     var randomSeed: Long = initial.randomSeed
 }
 
@@ -113,14 +103,11 @@ private fun PhysicsBuilder.sharedScratch(): PhysicsFrameScratch = rootBuilder().
  * with the builder at the same time. Internal: public surface is the extensions below.
  */
 internal fun PhysicsBuilder.physicsScratch(): PhysicsFrameScratch {
-    val builder = this
     return scratch(
         factory = { init -> PhysicsFrameScratch(init) },
         finalize = { scratch ->
             copy(
                 contacts = scratch.contacts,
-                crashImpactAudioEvents = builder.events<CrashImpactAudioEvent>(),
-                pendingRespawns = scratch.pendingRespawns.toMap(),
                 randomSeed = scratch.randomSeed,
             ).rebuildIndexes()
         },
@@ -145,12 +132,6 @@ fun PhysicsBuilder.setContacts(contacts: List<Contact>) {
     physicsScratch().contacts = contacts
 }
 
-// --- Audio events --------------------------------------------------------
-//
-// Emitted via [EcsBuilder.emit] on the generic event stream and read via
-// [EcsBuilder.events]. The [physicsScratch] finalizer folds the accumulated stream
-// into [PhysicsState.crashImpactAudioEvents] at build time.
-
 // --- Deterministic PRNG --------------------------------------------------
 //
 // Draws advance the ROOT builder's seed so forks in an isolated phase produce a
@@ -167,91 +148,6 @@ fun PhysicsBuilder.nextRandomInt(): Int = rootLock.withLock {
 fun PhysicsBuilder.nextRandomInt(until: Int): Int {
     require(until > 0)
     return (nextRandomInt().toLong() and 0x7FFFFFFFL).toInt() % until
-}
-
-// --- Respawn queue -------------------------------------------------------
-//
-// Like the PRNG, the respawn queue is shared across forks in an isolated phase:
-// reads and writes route through the ROOT builder's scratch so per-demo damage
-// enqueues and respawn drains are globally visible. Under sequential fork
-// execution this is bit-identical to the old in-place behaviour; threads will
-// need a lock at this layer.
-
-/**
- * Snapshot view of the current pending respawns as last written this frame. The
- * returned map is an immutable copy taken while holding [rootLock], so callers
- * can safely iterate it even if other forks are mutating the underlying queue
- * concurrently. Mutations must go through [queueRespawn] / [clearRespawn] /
- * [updateRespawn] which also acquire [rootLock].
- */
-val PhysicsBuilder.pendingRespawns: Map<PlayerId, PlayerRespawnState>
-    get() = rootLock.withLock { sharedScratch().pendingRespawns.toMap() }
-
-/**
- * Captures the entity's current transform/material/collider/renderShape/team into a
- * [PlayerRespawnState] and enqueues it under [playerId]. If any required component is
- * missing the entity is instead removed outright — matching the legacy behaviour.
- *
- * Deliberately uses the frozen [EcsBuilder.initial] view so we can still resolve the
- * player's entity even if it has been tombstoned earlier this frame (e.g. by a
- * per-demo damage system). Per-component reads go through
- * [EcsBuilder.getComponent] which honours the staged overlay, so if damage wiped a
- * required component mid-frame we fall through to the "just remove the entity" path.
- *
- * Does NOT remove the entity itself; callers are expected to destroy the rocket separately
- * (typically via [EcsBuilder.removeEntity]) after queuing.
- */
-fun PhysicsBuilder.queueRespawn(playerId: PlayerId, ticksRemaining: Int) {
-    val entityId = initial.playerEntities[playerId] ?: return
-    val transform = getComponent<TransformComponent>(entityId)
-    val material = getComponent<MaterialComponent>(entityId)
-    val collider = getComponent<ColliderComponent>(entityId)
-    val renderShape = getComponent<RenderShapeComponent>(entityId)
-    val teamId = getComponent<TeamComponent>(entityId)?.teamId
-    if (transform == null || material == null || collider == null ||
-        renderShape == null || teamId == null
-    ) {
-        removeEntity(entityId)
-        return
-    }
-    val entry = PlayerRespawnState(
-        ticksRemaining = ticksRemaining,
-        deathPos = transform.pos,
-        teamId = teamId,
-        entityId = entityId,
-        rocket = RespawnRocketSpec(
-            mass = material.mass,
-            radius = collider.radius,
-            bounce = material.bounce,
-            rough = material.rough,
-            shape = renderShape.shape,
-        ),
-    )
-    rootLock.withLock { sharedScratch().pendingRespawns[playerId] = entry }
-}
-
-/** Removes [playerId] from the pending respawn queue, if present. */
-fun PhysicsBuilder.clearRespawn(playerId: PlayerId) {
-    rootLock.withLock { sharedScratch().pendingRespawns.remove(playerId) }
-}
-
-/**
- * Applies [block] to the existing respawn entry for [playerId], if any. A null return
- * from [block] removes the entry; a non-null return replaces it. No-op if no entry
- * exists. Read/compute/write happens under [rootLock], so concurrent forks can't
- * lose each other's updates.
- */
-fun PhysicsBuilder.updateRespawn(
-    playerId: PlayerId,
-    block: (PlayerRespawnState) -> PlayerRespawnState?,
-) {
-    rootLock.withLock {
-        val scratch = sharedScratch()
-        val current = scratch.pendingRespawns[playerId] ?: return@withLock
-        val next = block(current)
-        if (next == null) scratch.pendingRespawns.remove(playerId)
-        else scratch.pendingRespawns[playerId] = next
-    }
 }
 
 // --- Composite spawns ----------------------------------------------------
@@ -283,7 +179,6 @@ fun PhysicsBuilder.spawnBody(
     update<RenderShapeComponent>(entityId) { RenderShapeComponent(shape = shape) }
     if (playerId != null) {
         update<PlayerOwnedComponent>(entityId) { PlayerOwnedComponent(playerId) }
-        rootLock.withLock { sharedScratch().pendingRespawns.remove(playerId) }
     }
     return entityId
 }

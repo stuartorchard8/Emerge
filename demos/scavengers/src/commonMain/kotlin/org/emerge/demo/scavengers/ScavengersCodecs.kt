@@ -19,20 +19,31 @@ import org.emerge.sim.sync.ecs.TransformCodec
  * [HomePlanetCodec]. The order here defines the wire format — do not reorder without
  * bumping save/protocol compatibility.
  */
-val ScavengersCodecs: PhysicsNetCodecs = PhysicsNetCodecs(
-    componentCodecs = listOf(
-        TransformCodec,
-        MotionCodec,
-        ColliderCodec,
-        MaterialCodec,
-        RenderShapeCodec,
-        PlanetCodec,
-        TeamCodec,
-        ForceFieldCodec,
-        PlayerIdCodec,
-        LandingCodec,
-        ParticleCodec,
-        DamageCodec,
-        HomePlanetCodec,
-    ),
-)
+object ScavengersCodecs {
+    val physicsNetCodecs: PhysicsNetCodecs = PhysicsNetCodecs(
+        componentCodecs = listOf(
+            TransformCodec,
+            MotionCodec,
+            ColliderCodec,
+            MaterialCodec,
+            RenderShapeCodec,
+            PlanetCodec,
+            TeamCodec,
+            ForceFieldCodec,
+            PlayerIdCodec,
+            LandingCodec,
+            ParticleCodec,
+            DamageCodec,
+            HomePlanetCodec,
+        ),
+    )
+
+    /** Engine input wire codec (unchanged from [PhysicsNetCodecs]). */
+    val inputCodec = physicsNetCodecs.inputCodec
+
+    /** Wire codec for [ScavengersState] — wraps the engine state codec. */
+    val stateCodec = scavengersStateCodec(physicsNetCodecs)
+
+    /** Wire codec for the thin-client per-tick crash audio event payload. */
+    val crashImpactAudioEventsCodec = org.emerge.demo.scavengers.crashImpactAudioEventsCodec
+}

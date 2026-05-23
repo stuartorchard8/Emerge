@@ -22,22 +22,22 @@ object ImpulseCodec: StateCodec<PhysicsState> {
 
     override fun encode(state: PhysicsState): ByteArray {
         val w = ByteWriter()
-        with (state) {
-            w.writeInt(impulses.keys().size)
-            val recentDamages = damages.entries().filter { it.value.last.raw > 0 }
-            w.writeInt(recentDamages.size)
-            for ((entityId, impulse) in impulses.entries()) {
-                w.writeInt(entityId.value)
-                w.writeInt(impulse.pos.x.raw.toInt())
-                w.writeInt(impulse.pos.y.raw.toInt())
-                w.writeInt(impulse.vel.x.raw.toInt())
-                w.writeInt(impulse.vel.y.raw.toInt())
-                w.writeInt(impulse.angVel.raw.toInt())
-            }
-            for ((entityId, damage) in recentDamages) {
-                w.writeInt(entityId.value)
-                w.writeInt(damage.last.raw.toInt())
-            }
+        val impulses = state.components.getTable<ImpulseComponent>()
+        val damages = state.components.getTable<DamageComponent>()
+        w.writeInt(impulses.keys().size)
+        val recentDamages = damages.entries().filter { it.value.last.raw > 0 }
+        w.writeInt(recentDamages.size)
+        for ((entityId, impulse) in impulses.entries()) {
+            w.writeInt(entityId.value)
+            w.writeInt(impulse.pos.x.raw.toInt())
+            w.writeInt(impulse.pos.y.raw.toInt())
+            w.writeInt(impulse.vel.x.raw.toInt())
+            w.writeInt(impulse.vel.y.raw.toInt())
+            w.writeInt(impulse.angVel.raw.toInt())
+        }
+        for ((entityId, damage) in recentDamages) {
+            w.writeInt(entityId.value)
+            w.writeInt(damage.last.raw.toInt())
         }
         return w.toByteArray()
     }

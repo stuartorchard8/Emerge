@@ -60,7 +60,7 @@ object DamageSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
                 }
             }
 
-            builder.emit(CrashImpactAudioEvent(
+            builder.emitCrashAudio(CrashImpactAudioEvent(
                 entityId = entityId,
                 pos = transform.pos,
                 damageRaw = damage.next.raw.toInt(),

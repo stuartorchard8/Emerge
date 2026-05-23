@@ -4,7 +4,6 @@ import kotlin.concurrent.thread
 import org.emerge.net.api.DelegatingPipe
 import org.emerge.net.tcp.Tcp
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
@@ -16,7 +15,7 @@ class ScavengersThinJoinController(
     private val port: Int,
 ) : ScavengersController() {
     private val inputCodec: Codec<PhysicsInput> = ScavengersCodecs.inputCodec
-    private val stateCodec: StateCodec<PhysicsState> = ScavengersCodecs.stateCodec
+    private val stateCodec: StateCodec<ScavengersState> = ScavengersCodecs.stateCodec
 
     private val remote = DelegatingPipe()
     private val client = ThinClient(
@@ -78,7 +77,7 @@ class ScavengersThinJoinController(
         client.poll()
         client.sendInput(localInput)
 
-        val state: PhysicsState = client.state
+        val state: ScavengersState = client.state
         val myId: PlayerId? = client.playerId
         val tick = client.tick.value
 

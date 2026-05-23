@@ -6,14 +6,12 @@ import org.emerge.net.websocket.WsAcceptor
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
 import org.emerge.sim.sync.lockstep.ClientMode
 import org.emerge.sim.sync.lockstep.LockstepHost
 import org.emerge.net.api.Pipe
-import org.emerge.sim.codec.physics.ImpulseCodec
 
 class ScavengersHostController(
     private val port: Int,
@@ -24,10 +22,10 @@ class ScavengersHostController(
     private val executor = ParallelExecutor()
     private val reducer = ScavengersReducer(executor)
     private val inputCodec: Codec<PhysicsInput> = ScavengersCodecs.inputCodec
-    private val stateCodec: StateCodec<PhysicsState> = ScavengersCodecs.stateCodec
-    private val impulseCodec: StateCodec<PhysicsState> = ImpulseCodec
+    private val stateCodec: StateCodec<ScavengersState> = ScavengersCodecs.stateCodec
+    private val impulseCodec: StateCodec<ScavengersState> = scavengersImpulseCodec
 
-    private val initial: PhysicsState = createDefaultInitialState(gameMode)
+    private val initial: ScavengersState = createDefaultInitialState(gameMode)
 
     private val host = LockstepHost(
         cfg = cfg,

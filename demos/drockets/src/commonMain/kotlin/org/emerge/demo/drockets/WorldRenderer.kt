@@ -41,6 +41,7 @@ class WorldRenderer(
     private var viewFocus = Coord2.zero
     private var priorFocusId: EntityId? = null
     private var focusSwitchFrameCounter = FOCUS_SWITCH_FRAMES.toLong()
+    private var deadFocusPos: Coord2? = null
 
     private val vao = GPU.genAndBindVertexArrays()
     private val vbo: Int = GPU.genBuffers()
@@ -455,13 +456,26 @@ class WorldRenderer(
         val drocketStates = state.components.getTable<DrocketStateComponent>()
 
         val planetId = state.planets.keys().firstOrNull() ?: return
-        val focusId = focusedEntityId
-            ?.takeIf { drocketStates[it] != null && state.transforms[it] != null }
-            ?: planetId
-
         val planetTransform = state.transforms[planetId] ?: return
 
-        val focusPos = getFocusPos(state, focusId) ?: return
+        val focusedId = focusedEntityId
+        val focusedAlive = focusedId != null
+            && drocketStates[focusedId] != null
+            && state.transforms[focusedId] != null
+
+        val focusPos: Coord2 = if (focusedId != null && !focusedAlive) {
+            // Focused drocket died — pin the camera at its last on-screen position
+            // (snapshotted once at death) rather than falling back to the planet.
+            if (deadFocusPos == null) {
+                deadFocusPos = viewFocus
+                focusSwitchFrameCounter = FOCUS_SWITCH_FRAMES.toLong()
+            }
+            deadFocusPos!!
+        } else {
+            deadFocusPos = null
+            val focusId = if (focusedAlive) focusedId!! else planetId
+            getFocusPos(state, focusId) ?: return
+        }
         val priorFocus = priorFocusId ?: planetId
         if (focusSwitchFrameCounter < FOCUS_SWITCH_FRAMES) {
             val priorFocusPos = getFocusPos(state, priorFocus)

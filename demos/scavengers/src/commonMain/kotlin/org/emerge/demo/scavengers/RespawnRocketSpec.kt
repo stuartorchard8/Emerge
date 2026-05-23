@@ -1,4 +1,4 @@
-package org.emerge.sim.core.physics.model
+package org.emerge.demo.scavengers
 
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac

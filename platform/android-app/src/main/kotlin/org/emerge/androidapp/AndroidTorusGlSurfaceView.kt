@@ -15,12 +15,14 @@ import org.emerge.demo.scavengers.ScavengersJoinController
 import org.emerge.demo.scavengers.ScavengersThinJoinController
 import org.emerge.demo.scavengers.ScavengersFrame
 import org.emerge.demo.scavengers.ScavengersImpulseJoinController
+import org.emerge.demo.scavengers.ScavengersState
 import org.emerge.demo.scavengers.audio.CrashAudioSystem
 import org.emerge.demo.scavengers.createDefaultInitialState
+import org.emerge.demo.scavengers.playerAngle
+import org.emerge.demo.scavengers.playerAngularVelocity
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.math.PI
 import kotlin.math.atan2
@@ -53,7 +55,7 @@ internal class AndroidTorusGlSurfaceView(
     // Data shared to GL thread
     private val stateLock = Any()
     private var latestFrame = ScavengersFrame(
-        PhysicsState(),
+        ScavengersState(),
         null,
         0L,
         "sim: starting",
@@ -182,13 +184,13 @@ internal class AndroidTorusGlSurfaceView(
     private fun currentPlayerAngleTurns(): Float =
         synchronized(stateLock) {
             val pid = latestFrame.myId ?: return@synchronized 0f
-            latestFrame.state.playerAngle(pid)?.toFloat() ?: 0f
+            latestFrame.state.core.playerAngle(pid)?.toFloat() ?: 0f
         }
 
     private fun currentPlayerAngularVelocityTurns(): Float =
         synchronized(stateLock) {
             val pid = latestFrame.myId ?: return@synchronized 0f
-            latestFrame.state.playerAngularVelocity(pid)?.toFloat() ?: 0f
+            latestFrame.state.core.playerAngularVelocity(pid)?.toFloat() ?: 0f
         }
 
     private fun clearSingleTouchState() {
@@ -275,7 +277,7 @@ internal class AndroidTorusGlSurfaceView(
                     Log.e(TAG, "Simulation loop failed", t)
                     publishFrame(
                         ScavengersFrame(
-                            state = PhysicsState(),
+                            state = ScavengersState(),
                             myId = null,
                             tick = 0L,
                             status = "sim failed: ${t.javaClass.simpleName}",

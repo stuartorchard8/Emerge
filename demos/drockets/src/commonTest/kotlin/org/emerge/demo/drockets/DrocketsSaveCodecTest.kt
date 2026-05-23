@@ -2,6 +2,10 @@ package org.emerge.demo.drockets
 
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.Tick
+import org.emerge.sim.core.physics.components.ColliderComponent
+import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.components.RenderShapeComponent
+import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.spawnBody
@@ -47,12 +51,16 @@ class DrocketsSaveCodecTest {
 
         val decoded = DrocketsSaveCodec.decode(DrocketsSaveCodec.encode(snapshot))
 
-        assertTrue(decoded.state.motions.contains(bodyId))
-        assertFalse(decoded.state.motions.contains(particleId))
-        assertFalse(decoded.state.renderShapes.contains(particleId))
-        assertFalse(decoded.state.colliders.contains(particleId))
-        assertFalse(decoded.state.teams.contains(particleId))
-        assertEquals(1, decoded.state.motions.keys().size)
+        val motions = decoded.state.components.getTable<MotionComponent>()
+        val renderShapes = decoded.state.components.getTable<RenderShapeComponent>()
+        val colliders = decoded.state.components.getTable<ColliderComponent>()
+        val teams = decoded.state.components.getTable<TeamComponent>()
+        assertTrue(motions.contains(bodyId))
+        assertFalse(motions.contains(particleId))
+        assertFalse(renderShapes.contains(particleId))
+        assertFalse(colliders.contains(particleId))
+        assertFalse(teams.contains(particleId))
+        assertEquals(1, motions.keys().size)
     }
 
     @Test

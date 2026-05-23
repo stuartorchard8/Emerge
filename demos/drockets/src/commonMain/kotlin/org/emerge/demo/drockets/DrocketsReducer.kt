@@ -3,6 +3,7 @@ package org.emerge.demo.drockets
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.ecs.*
+import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
@@ -78,5 +79,5 @@ class DrocketsReducer(
     }
 
     override fun patchState(state: PhysicsState, delta: PhysicsState): PhysicsState =
-        state.setImpulses(delta.impulses)
+        state.setImpulses(delta.components.getTable<ImpulseComponent>())
 }

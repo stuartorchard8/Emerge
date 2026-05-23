@@ -5,14 +5,12 @@ import org.emerge.net.tcp.Tcp
 import org.emerge.net.websocket.WsAcceptor
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
 import org.emerge.sim.sync.lockstep.ClientMode
 import org.emerge.sim.sync.lockstep.LockstepHost
 import org.emerge.net.api.Pipe
-import org.emerge.sim.codec.physics.ImpulseCodec
 
 /**
  * Headless host: runs the simulation and accepts remote clients, but has no local player and
@@ -26,10 +24,10 @@ class ScavengersHeadlessHostController(
     private val executor = ParallelExecutor()
     private val reducer = ScavengersReducer(executor)
     private val inputCodec: Codec<PhysicsInput> = ScavengersCodecs.inputCodec
-    private val stateCodec: StateCodec<PhysicsState> = ScavengersCodecs.stateCodec
-    private val impulseCodec: StateCodec<PhysicsState> = ImpulseCodec
+    private val stateCodec: StateCodec<ScavengersState> = ScavengersCodecs.stateCodec
+    private val impulseCodec: StateCodec<ScavengersState> = scavengersImpulseCodec
 
-    private val initial: PhysicsState = createDefaultInitialState(gameMode, spawnHostPlayer = false)
+    private val initial: ScavengersState = createDefaultInitialState(gameMode, spawnHostPlayer = false)
 
     private val host = LockstepHost(
         cfg = cfg,

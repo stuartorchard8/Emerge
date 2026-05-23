@@ -9,6 +9,8 @@ import org.emerge.sim.core.ecs.PipelineProfiler
 import org.emerge.sim.core.ecs.isolated
 import org.emerge.sim.core.ecs.runParallel
 import org.emerge.sim.core.ecs.runSequential
+import org.emerge.sim.core.physics.components.DamageComponent
+import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
 import org.emerge.sim.core.physics.model.PhysicsState
@@ -29,6 +31,17 @@ import org.emerge.sim.core.physics.systems.ShipThrustParticleSystem
 /**
  * Reducer for the Scavengers demo.
  *
+ * Operates on [ScavengersState], which wraps the engine [PhysicsState] with the
+ * Scavengers-only respawn queue and crash audio event list. Each tick:
+ *
+ *   1. Build a [PhysicsBuilder] from `state.core`.
+ *   2. Seed a [ScavengersFrameScratch] on the builder from `state.pendingRespawns`.
+ *   3. Run the pipeline. Engine systems read/write only the engine state via the
+ *      builder; Scavengers systems also read/write the Scavengers scratch via the
+ *      extension API in `ScavengersBuilder.kt`.
+ *   4. Build the new [PhysicsState] from the builder and combine with the final
+ *      scratch contents to produce the new [ScavengersState].
+ *
  * The pipeline is declared as an ordered list of named phases. Phase boundaries document
  * where state produced by one group of systems is consumed by the next (e.g. contacts are
  * produced in `contactDetect` and consumed in `contactResponse`).
@@ -37,25 +50,15 @@ import org.emerge.sim.core.physics.systems.ShipThrustParticleSystem
  *
  *  - `forceGather` — `ShipThrustSystem`, `GravitySystem`, and `ForceFieldSystem` only
  *    add to `ImpulseComponent` (commutative) and read disjoint mixes of transforms,
- *    motion, masses, colliders, and field/team components. Thrust additionally removes
- *    `LandingAttachmentComponent` for lift-off; gravity/forcefield read landing
- *    attachments from the frozen fork view and therefore skip a ship on the tick it
- *    takes off, only applying external force from the next tick onward. This one-tick
- *    delay is intentional: the old intra-phase sequential order let external force
- *    apply immediately on detach, which we consider a quirk of that order rather than
- *    required behaviour, and locking that quirk in would block parallel execution.
+ *    motion, masses, colliders, and field/team components.
  *  - `contactResponse` — each system reads the committed `contacts` list produced by
  *    `contactDetect` and writes its own disjoint subset of components.
  *  - `lifecycle` — `RespawnSystem` drains `pendingRespawns` and `DamageSystem` enqueues
  *    into it; both go through shared-scratch delegation so fork writes land on the
- *    root builder's scratch. Under sequential fork execution the reads/writes
- *    interleave exactly like the old phase. Entity creates/removes share the world
- *    via the same delegation pattern we already use for the entity id counter.
+ *    root builder's scratch.
  *  - `effects` — `ParticleSystem` is registered FIRST so its authoritative
  *    `setTable<ParticleComponent>` replays before `ShipThrustParticleSystem`'s new-
- *    particle updates, which would otherwise be wiped by the setTable. Under this
- *    ordering newly spawned particles skip their first lifetime tick (gain +1 frame
- *    of life) — same kind of sub-tick artefact as the forceGather trade-off.
+ *    particle updates.
  *
  * Pass an [executor] to dispatch isolated phases' forks across worker threads via
  * [runParallel]; omit it (default `null`) to run the whole pipeline on the calling
@@ -67,7 +70,7 @@ import org.emerge.sim.core.physics.systems.ShipThrustParticleSystem
 class ScavengersReducer(
     private val executor: ParallelExecutor? = null,
     private val profiler: PipelineProfiler? = null,
-) : SimReducer<PhysicsConfig, PhysicsState, PhysicsInput> {
+) : SimReducer<PhysicsConfig, ScavengersState, PhysicsInput> {
     private val pipeline: Pipeline<PhysicsConfig, PhysicsState, PhysicsInput> = listOf(
         Phase("reset", ImpulseResetSystem),
         Phase("forceGather", ShipThrustSystem, GravitySystem(executor), ForceFieldSystem).isolated(),
@@ -81,22 +84,33 @@ class ScavengersReducer(
 
     override fun reduce(
         cfg: PhysicsConfig,
-        state: PhysicsState,
+        state: ScavengersState,
         inputs: Map<PlayerId, PhysicsInput>,
-    ): PhysicsState {
-        val builder = PhysicsBuilder(state)
+    ): ScavengersState {
+        val builder = PhysicsBuilder(state.core)
+        val scavengersScratch = builder.seedScavengersScratch(state.pendingRespawns)
         if (executor != null) {
             runParallel(cfg, builder, inputs, pipeline, executor, profiler)
         } else {
             runSequential(cfg, builder, inputs, pipeline, profiler)
         }
-        return builder.build()
+        val nextCore = builder.build()
+        return ScavengersState(
+            core = nextCore,
+            pendingRespawns = scavengersScratch.pendingRespawns.toMap(),
+            crashImpactAudioEvents = scavengersScratch.crashImpactAudioEvents.toList(),
+        )
     }
 
-    override fun patchState(state: PhysicsState, delta: PhysicsState): PhysicsState =
+    override fun patchState(state: ScavengersState, delta: ScavengersState): ScavengersState {
         // Intentionally ignoring everything but impulses + damages.
         // That's all ThinLockstepClient acquires.
-        state
-            .setImpulses(delta.impulses)
-            .addDamages(delta.damages.asMap().mapValues { (_, component) -> component.next })
+        val patchedCore = state.core
+            .setImpulses(delta.core.components.getTable<ImpulseComponent>())
+            .addDamages(
+                delta.core.components.getTable<DamageComponent>()
+                    .asMap().mapValues { (_, component) -> component.next },
+            )
+        return state.copy(core = patchedCore)
+    }
 }

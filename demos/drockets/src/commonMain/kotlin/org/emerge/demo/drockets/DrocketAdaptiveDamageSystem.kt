@@ -37,7 +37,6 @@ object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, Phys
         inputs: Map<PlayerId, PhysicsInput>,
     ) {
         val destructionBursts = ArrayList<DestructionBurstSpec>()
-        val playersToRespawn = LinkedHashSet<PlayerId>()
 
         var drocketCount = builder.entries<DrocketStateComponent>().size
 
@@ -61,12 +60,8 @@ object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, Phys
             val threshold = if (isDrocket) effectiveDrocketMaxHealth(drocketCount) else cfg.maxHealth
 
             if (damage.accumulated.raw >= threshold.raw) {
-                if (cfg.respawnTicks >= 0) {
-                    builder.remove<DamageComponent>(entityId)
-                } else {
-                    builder.removeEntity(entityId)
-                    if (isDrocket) drocketCount--
-                }
+                builder.removeEntity(entityId)
+                if (isDrocket) drocketCount--
                 continue
             }
 
@@ -88,30 +83,16 @@ object DrocketAdaptiveDamageSystem : EcsSystem<PhysicsConfig, PhysicsState, Phys
                         baseRadius = baseRadius,
                     )
                 }
-
-                if (cfg.respawnTicks >= 0) {
-                    val owner = builder.getComponent<PlayerOwnedComponent>(entityId)?.playerId
-                    if (owner != null && !playersToRespawn.contains(owner)) {
-                        playersToRespawn += owner
-                    }
-                }
             }
 
-            builder.emit(CrashImpactAudioEvent(
-                entityId = entityId,
-                pos = transform.pos,
-                damageRaw = damage.next.raw.toInt(),
-                destroyed = destroyed,
-            ))
+            // Audio event emission and respawn queueing are Scavengers-only concepts; the
+            // Drockets config sets respawnTicks=-1 so those branches were already dead.
 
             builder.update<DamageComponent>(entityId) { DamageComponent(total, damage.next) }
         }
 
         for (burst in destructionBursts) {
             spawnDestructionBurst(builder, burst)
-        }
-        for (playerId in playersToRespawn) {
-            builder.queueRespawn(playerId, cfg.respawnTicks)
         }
     }
 

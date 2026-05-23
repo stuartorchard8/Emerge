@@ -106,8 +106,12 @@ class EcsBuilder<S>(
      * pre-fork behaviour because only one fork runs at a time. Under multi-threaded
      * fork dispatch, delegated accessors must acquire [rootLock] before touching the
      * delegated state.
+     *
+     * Public so per-demo builder extensions in sibling modules can walk the parent
+     * chain to reach the root builder's scratch.
      */
-    @PublishedApi internal var parent: EcsBuilder<S>? = null
+    var parent: EcsBuilder<S>? = null
+        internal set
 
     // --- Concurrency lock ----------------------------------------------
 
@@ -128,7 +132,7 @@ class EcsBuilder<S>(
      * is only needed around [createEntity], [removeEntity], and domain-specific
      * shared-scratch accessors (see `PhysicsBuilder.kt`'s `sharedScratch` helpers).
      */
-    @PublishedApi internal val rootLock: ReentrantLock
+    val rootLock: ReentrantLock
         get() {
             var b: EcsBuilder<S> = this
             while (true) {

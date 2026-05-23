@@ -3,39 +3,34 @@ package org.emerge.sim.codec.physics
 import org.emerge.net.codec.ByteCursor
 import org.emerge.net.codec.ByteWriter
 import org.emerge.sim.core.EntityId
-import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.EcsWorld
-import org.emerge.sim.core.physics.model.*
-import org.emerge.sim.core.physics.primitives.BodyShape
-import org.emerge.sim.core.physics.primitives.Coord2
-import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.components.RenderShapeComponent
+import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
 import org.emerge.sim.sync.ecs.ComponentCodec
 
 /**
- * Shared demo codecs for the deterministic physics sample.
- *
- * The set of [ComponentCodec]s is supplied by each demo — the engine no longer ships a closed
- * registry. This keeps Android + desktop using the exact same wire format for a given demo
- * without duplicating logic.
+ * Generic ECS-state codec built from a per-demo list of [ComponentCodec]s. Encodes only
+ * engine-shape fields: the entity world, component tables, and the deterministic PRNG
+ * seed. Demos that need to carry additional per-frame state (e.g. respawn queues, audio
+ * events) wrap this codec inside their own state codec.
  */
 class PhysicsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
     val inputCodec: Codec<PhysicsInput> = Companion.inputCodec
-    val crashImpactAudioEventsCodec: Codec<List<CrashImpactAudioEvent>> = Companion.crashImpactAudioEventsCodec
 
     val stateCodec: StateCodec<PhysicsState> =
         object : StateCodec<PhysicsState> {
             override fun encode(state: PhysicsState): ByteArray {
                 val w = ByteWriter()
                 with(state) {
+                    val motions = components.getTable<MotionComponent>()
+                    val renderShapes = components.getTable<RenderShapeComponent>()
                     val serializableEntities =
                         motions.keys().filter { entityId -> renderShapes[entityId] != null }
                     w.writeInt(serializableEntities.size)
-                    w.writeInt(pendingRespawns.size)
-                    w.writeInt(crashImpactAudioEvents.size)
                     w.writeLong(randomSeed)
                     w.writeInt(world.lastEntityValue)
                     for (entityId in serializableEntities) {
@@ -43,26 +38,6 @@ class PhysicsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
                         for (encoder in componentCodecs) {
                             encoder.encode(w, components, entityId)
                         }
-                    }
-                    for ((playerId, respawn) in pendingRespawns) {
-                        w.writeInt(playerId.value)
-                        w.writeInt(respawn.ticksRemaining)
-                        w.writeInt(respawn.teamId.value)
-                        w.writeInt(respawn.entityId.value)
-                        w.writeInt(respawn.deathPos.x.raw)
-                        w.writeInt(respawn.deathPos.y.raw)
-                        w.writeInt(respawn.rocket.mass.toInt())
-                        w.writeInt(respawn.rocket.radius.raw.toInt())
-                        w.writeInt(respawn.rocket.bounce.raw.toInt())
-                        w.writeInt(respawn.rocket.rough.raw.toInt())
-                        w.writeInt(respawn.rocket.shape.wireValue)
-                    }
-                    for (event in crashImpactAudioEvents) {
-                        w.writeInt(event.entityId.value)
-                        w.writeInt(event.pos.x.raw)
-                        w.writeInt(event.pos.y.raw)
-                        w.writeInt(event.damageRaw)
-                        w.writeInt(if (event.destroyed) 1 else 0)
                     }
                 }
                 return w.toByteArray()
@@ -72,17 +47,9 @@ class PhysicsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
                 val c = ByteCursor(bytes)
                 val n = c.readInt()
                 require(n in 0..MAX_STATE_ENTITIES) { "Invalid entity count: $n" }
-                val respawnCount = c.readInt()
-                require(respawnCount >= 0) { "Invalid respawn count: $respawnCount" }
-                val crashAudioEventCount = c.readInt()
-                require(crashAudioEventCount in 0..MAX_STATE_CRASH_AUDIO_EVENTS) {
-                    "Invalid crash audio event count: $crashAudioEventCount"
-                }
                 val randomSeed = c.readLong()
                 val lastEntityValue = c.readInt()
                 val entities = mutableSetOf<Int>()
-                val pendingRespawns = LinkedHashMap<PlayerId, PlayerRespawnState>()
-                val crashImpactAudioEvents = ArrayList<CrashImpactAudioEvent>(crashAudioEventCount)
 
                 var state = PhysicsState()
 
@@ -100,54 +67,11 @@ class PhysicsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
                         }
                     )
                 }
-                repeat(respawnCount) {
-                    val playerId = PlayerId(c.readInt())
-                    val ticksRemaining = c.readInt()
-                    val teamIdRaw = c.readInt()
-                    val entityIdRaw = c.readInt()
-                    val deathPosX = c.readInt()
-                    val deathPosY = c.readInt()
-                    val massRaw = c.readInt()
-                    val radiusRaw = c.readInt()
-                    val bounceRaw = c.readInt()
-                    val roughRaw = c.readInt()
-                    val shapeRaw = c.readInt()
-                    pendingRespawns[playerId] =
-                        PlayerRespawnState(
-                            ticksRemaining = ticksRemaining,
-                            deathPos = Coord2.raw(deathPosX, deathPosY),
-                            teamId = TeamId(teamIdRaw),
-                            entityId = EntityId(entityIdRaw),
-                            rocket = RespawnRocketSpec(
-                                mass = massRaw.toUInt(),
-                                radius = Frac(radiusRaw.toLong()),
-                                bounce = Frac(bounceRaw.toLong()),
-                                rough = Frac(roughRaw.toLong()),
-                                shape = BodyShape.fromWireValue(shapeRaw),
-                            ),
-                        )
-                }
-                repeat(crashAudioEventCount) {
-                    val entityId = EntityId(c.readInt())
-                    val x = c.readInt()
-                    val y = c.readInt()
-                    val damageRaw = c.readInt()
-                    val destroyedRaw = c.readInt()
-                    crashImpactAudioEvents +=
-                        CrashImpactAudioEvent(
-                            entityId = entityId,
-                            pos = Coord2.raw(x, y),
-                            damageRaw = damageRaw,
-                            destroyed = destroyedRaw != 0,
-                        )
-                }
                 val decoded = state.copy(
                     world = EcsWorld(
                         entities = entities,
                         lastEntityValue = lastEntityValue,
                     ),
-                    pendingRespawns = pendingRespawns,
-                    crashImpactAudioEvents = crashImpactAudioEvents,
                     randomSeed = randomSeed,
                 ).rebuildIndexes()
                 decoded.world.lastEntityValue = lastEntityValue
@@ -156,10 +80,7 @@ class PhysicsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
         }
 
     companion object {
-        private const val STATE_CRASH_AUDIO_EVENT_INT_COUNT = 5
-        private const val STATE_INT_BYTES = 4
         private const val MAX_STATE_ENTITIES = 10_000
-        private const val MAX_STATE_CRASH_AUDIO_EVENTS = 4096
 
         val inputCodec: Codec<PhysicsInput> =
             object : Codec<PhysicsInput> {
@@ -175,50 +96,6 @@ class PhysicsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
                     val thrust = c.readInt()
                     val turn = c.readInt()
                     return PhysicsInput(thrust, turn)
-                }
-            }
-
-        val crashImpactAudioEventsCodec: Codec<List<CrashImpactAudioEvent>> =
-            object : Codec<List<CrashImpactAudioEvent>> {
-                override fun encode(value: List<CrashImpactAudioEvent>): ByteArray {
-                    val w = ByteWriter()
-                    w.writeInt(value.size)
-                    for (event in value) {
-                        w.writeInt(event.entityId.value)
-                        w.writeInt(event.pos.x.raw)
-                        w.writeInt(event.pos.y.raw)
-                        w.writeInt(event.damageRaw)
-                        w.writeInt(if (event.destroyed) 1 else 0)
-                    }
-                    return w.toByteArray()
-                }
-
-                override fun decode(bytes: ByteArray): List<CrashImpactAudioEvent> {
-                    val c = ByteCursor(bytes)
-                    val count = c.readInt()
-                    require(count in 0..MAX_STATE_CRASH_AUDIO_EVENTS) {
-                        "Invalid crash audio event count: $count"
-                    }
-                    val expectedSize = (1 + count * STATE_CRASH_AUDIO_EVENT_INT_COUNT) * STATE_INT_BYTES
-                    require(bytes.size == expectedSize) {
-                        "Invalid crash audio event payload size: expected $expectedSize bytes for $count events, got ${bytes.size}"
-                    }
-                    val out = ArrayList<CrashImpactAudioEvent>(count)
-                    repeat(count) {
-                        val entityId = EntityId(c.readInt())
-                        val x = c.readInt()
-                        val y = c.readInt()
-                        val damageRaw = c.readInt()
-                        val destroyedRaw = c.readInt()
-                        out +=
-                            CrashImpactAudioEvent(
-                                entityId = entityId,
-                                pos = Coord2.raw(x, y),
-                                damageRaw = damageRaw,
-                                destroyed = destroyedRaw != 0,
-                            )
-                    }
-                    return out
                 }
             }
     }

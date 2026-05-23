@@ -20,6 +20,7 @@ fun PhysicsState.setImpulses(impulses: ComponentTable<ImpulseComponent>): Physic
  */
 fun PhysicsState.addDamages(delta: Map<EntityId, Frac>): PhysicsState {
     if (delta.isEmpty()) return this
+    val damages = components.getTable<DamageComponent>()
     val sums = delta.mapValues { (entityId, damage) ->
         val existing = damages[entityId]
         if (existing == null) DamageComponent(Frac(0), Frac(0), damage)

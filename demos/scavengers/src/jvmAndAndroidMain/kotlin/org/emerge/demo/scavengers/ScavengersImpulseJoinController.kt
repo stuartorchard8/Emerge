@@ -3,10 +3,8 @@ package org.emerge.demo.scavengers
 import kotlin.concurrent.thread
 import org.emerge.net.api.DelegatingPipe
 import org.emerge.net.tcp.Tcp
-import org.emerge.sim.codec.physics.ImpulseCodec
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
@@ -22,8 +20,8 @@ class ScavengersImpulseJoinController(
     private val cfg = PhysicsConfig()
     private val reducer = ScavengersNoImpulseReducer()
     private val inputCodec: Codec<PhysicsInput> = ScavengersCodecs.inputCodec
-    private val stateCodec: StateCodec<PhysicsState> = ScavengersCodecs.stateCodec
-    private val impulseCodec: StateCodec<PhysicsState> = ImpulseCodec
+    private val stateCodec: StateCodec<ScavengersState> = ScavengersCodecs.stateCodec
+    private val impulseCodec: StateCodec<ScavengersState> = scavengersImpulseCodec
 
     private val remote = DelegatingPipe()
     private val client = ThinLockstepClient(
@@ -102,7 +100,7 @@ class ScavengersImpulseJoinController(
             lastLoggedStatus = currentStatus
         }
 
-        val state: PhysicsState = client.state
+        val state: ScavengersState = client.state
         val myId: PlayerId? = client.playerId
         val tick = client.tick.value
 

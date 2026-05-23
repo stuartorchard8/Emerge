@@ -14,11 +14,7 @@ import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsConfig
-import org.emerge.sim.core.physics.model.PlayerRespawnState
-import org.emerge.sim.core.physics.model.clearRespawn
-import org.emerge.sim.core.physics.model.pendingRespawns
 import org.emerge.sim.core.physics.model.spawnBody
-import org.emerge.sim.core.physics.model.updateRespawn
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Norm
@@ -29,9 +25,8 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * attempt to place a fresh rocket on the team's home planet; if no home planet is
  * available we hold the respawn at zero and retry next tick.
  *
- * Respawn entries are queued elsewhere (typically by [DamageSystem] via
- * [org.emerge.sim.core.physics.model.queueRespawn]); this system is only responsible
- * for draining the queue.
+ * Respawn entries are queued elsewhere (typically by [DamageSystem] via [queueRespawn]);
+ * this system is only responsible for draining the queue.
  */
 object RespawnSystem : EcsSystem<PhysicsConfig, PhysicsState, PhysicsInput> {
     override fun update(

@@ -12,7 +12,7 @@ package org.emerge.sim.core.ecs
  *    tables) are baked into the fork's [EcsBuilder.initial].
  *  - Parent's scratch finalizers run into the fork's initial too, so domain scratches
  *    on the fork re-seed from the parent's current scratch contents (e.g. the physics
- *    scratch inherits live `contacts`, `pendingRespawns`, `randomSeed`).
+ *    scratch inherits live `contacts`, `randomSeed`).
  *  - The fork's own workingData / tombstones / authoritativeTypes start empty.
  *
  * The fork also records every mutation (calls to [EcsBuilder.update], [EcsBuilder.remove],
