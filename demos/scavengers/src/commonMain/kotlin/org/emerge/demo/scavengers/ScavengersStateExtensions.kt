@@ -67,3 +67,15 @@ fun ScavengersState.playerViewFocus(playerId: PlayerId): Coord2 =
     core.playerTransform(playerId)?.pos
         ?: pendingRespawns[playerId]?.deathPos
         ?: Coord2.zero
+
+/**
+ * Camera-anchor position to pass to [org.emerge.render.torus.ScreenRenderer.draw]. Centred on
+ * the player's current position, holding the [PlayerRespawnState.deathPos] during respawn so
+ * the camera doesn't snap to origin. Returns the world origin when there's no local player
+ * (e.g. headless host).
+ */
+fun ScavengersState.rendererFocus(playerId: PlayerId?): org.emerge.sim.core.physics.primitives.Vec2 {
+    if (playerId == null) return org.emerge.sim.core.physics.primitives.Vec2(0f, 0f)
+    val c = playerViewFocus(playerId)
+    return org.emerge.sim.core.physics.primitives.Vec2(c.x.toFloat(), c.y.toFloat())
+}

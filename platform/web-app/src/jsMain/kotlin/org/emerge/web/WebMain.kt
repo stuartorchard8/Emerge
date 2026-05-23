@@ -9,6 +9,7 @@ import org.emerge.demo.scavengers.ScavengersFrame
 import org.emerge.demo.scavengers.ScavengersReducer
 import org.emerge.demo.scavengers.audio.CrashAudioSystem
 import org.emerge.demo.scavengers.createDefaultInitialState
+import org.emerge.demo.scavengers.rendererFocus
 import org.emerge.net.websocket.WebSocketPipe
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ScreenRenderer
@@ -67,7 +68,7 @@ private fun startLocalMode(renderer: ScreenRenderer, input: WebInputHandler, cra
         state = reducer.reduce(cfg, state, mapOf(myId to physicsInput))
         tick++
         crashAudio.onFrame(ScavengersFrame(state, myId, tick, ""))
-        renderer.draw(state.core, myId)
+        renderer.draw(state.core, myId, focus = state.rendererFocus(myId))
         window.requestAnimationFrame(::frame)
     }
     window.requestAnimationFrame(::frame)
@@ -109,7 +110,7 @@ private fun startJoinMode(wsUrl: String, renderer: ScreenRenderer, input: WebInp
         client.poll()
         client.sendInput(physicsInput)
         crashAudio.onFrame(ScavengersFrame(client.state, client.playerId, client.tick.value, ""))
-        renderer.draw(client.state.core, client.playerId)
+        renderer.draw(client.state.core, client.playerId, focus = client.state.rendererFocus(client.playerId))
 
         if (client.connectionState == ThinClient.ConnectionState.DISCONNECTED && !reconnectScheduled) {
             reconnectScheduled = true

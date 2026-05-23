@@ -18,12 +18,6 @@ class ScreenRenderer(val contentScale: Vec2) {
     @kotlin.concurrent.Volatile
     private var worldRotationRad: Float = 0f
 
-    /**
-     * When set, overrides the automatic player-based view focus.
-     * Useful for demos without a player entity (e.g. Drockets).
-     */
-    var viewFocusOverride: Vec2? = null
-
     private val vao = GPU.genAndBindVertexArrays()
     private var vbo: Int = GPU.genBuffers()
 
@@ -91,19 +85,15 @@ class ScreenRenderer(val contentScale: Vec2) {
         worldRotationRad += deltaRad
     }
 
-    fun draw(state: PhysicsState, myId: PlayerId?) {
-        val focusOverride = viewFocusOverride
-        val params = if (focusOverride != null) {
-            WorldShaderParams(
-                worldSize = Vec2(2f, 2f),
-                zoom = 1f / zoom,
-                viewFocus = focusOverride,
-                viewRotationRad = worldRotationRad,
-                myId = myId,
-            )
-        } else {
-            WorldShaderParams.compute(state, myId, zoom, worldRotationRad)
-        }
+    /**
+     * Draw a frame. [focus] is the world-space camera anchor (caller chooses it — for
+     * a player-centred view, pass the player entity's position; for a free camera,
+     * pass whatever the demo's controller dictates). The renderer never derives focus
+     * itself, so demos that need death-position camera holds or non-player anchors
+     * compose them on their side.
+     */
+    fun draw(state: PhysicsState, myId: PlayerId?, focus: Vec2) {
+        val params = WorldShaderParams.compute(focus, myId, zoom, worldRotationRad)
         worldShader.draw(params, segmentation = layout.worldSegmentation)
         guiShader.draw(vOffset = layout.guiVertexOffset)
         val n = packBodyInstances(

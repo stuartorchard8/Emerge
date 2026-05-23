@@ -96,7 +96,7 @@ object DesktopGlSceneView {
 
             val frame = processInput(controller, pressedKeys, screenRenderer)
             crashAudio.onFrame(frame)
-            screenRenderer.draw(frame.state.core, frame.myId)
+            screenRenderer.draw(frame.state.core, frame.myId, focus = frame.state.rendererFocus(frame.myId))
 
             glfwSwapBuffers(window)
         }
