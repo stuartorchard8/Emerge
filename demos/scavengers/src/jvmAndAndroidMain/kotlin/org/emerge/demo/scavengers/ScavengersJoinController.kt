@@ -6,7 +6,7 @@ import org.emerge.net.tcp.Tcp
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ParallelExecutor
 
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
 import org.emerge.sim.sync.lockstep.LockstepClient
@@ -19,7 +19,7 @@ class ScavengersJoinController(
     private val cfg = ScavengersConfig()
     private val executor = ParallelExecutor()
     private val reducer = ScavengersReducer(executor)
-    private val inputCodec: Codec<PhysicsInput> = ScavengersCodecs.inputCodec
+    private val inputCodec: Codec<ScavengersInput> = ScavengersCodecs.inputCodec
     private val stateCodec: StateCodec<ScavengersState> = ScavengersCodecs.stateCodec
 
     private val remote = DelegatingPipe()
@@ -88,7 +88,7 @@ class ScavengersJoinController(
         }
     }
 
-    override fun tick(localInput: PhysicsInput): ScavengersFrame {
+    override fun tick(localInput: ScavengersInput): ScavengersFrame {
         client.poll()
         client.sendInput(localInput)
 

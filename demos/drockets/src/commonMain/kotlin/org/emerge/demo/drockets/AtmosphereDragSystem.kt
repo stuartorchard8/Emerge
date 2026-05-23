@@ -10,7 +10,7 @@ import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+
 
 /**
  * Applies velocity-squared atmospheric drag to non-landed triangle entities
@@ -22,12 +22,12 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  *
  * The atmosphere extends [ATMOSPHERE_FACTOR] beyond the planet collider radius.
  */
-object AtmosphereDragSystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
+object AtmosphereDragSystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
 
     override fun update(
         cfg: DrocketsConfig,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
 

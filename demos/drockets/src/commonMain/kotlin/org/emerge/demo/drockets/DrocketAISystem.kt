@@ -24,12 +24,12 @@ import kotlin.math.abs
  * - Fuel: 1.4 seconds (84 ticks)
  * - Thrust force: 12000 * impulse / delta (mapped to fixed-point impulse per tick)
  */
-object DrocketAISystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
+object DrocketAISystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
 
     override fun update(
         cfg: DrocketsConfig,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val drocketStates = LinkedHashMap(builder.entries<DrocketStateComponent>())
         if (drocketStates.isEmpty()) return

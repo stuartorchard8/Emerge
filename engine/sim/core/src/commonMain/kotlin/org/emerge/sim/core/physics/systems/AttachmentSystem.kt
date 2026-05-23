@@ -9,13 +9,13 @@ import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsTuning
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.sim.core.SimInput
 
-object AttachmentSystem : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
+object AttachmentSystem : EcsSystem<PhysicsTuning, PhysicsState, SimInput> {
     override fun update(
         cfg: PhysicsTuning,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, SimInput>,
     ) {
         for ((entityId, landing) in builder.entries<LandingAttachmentComponent>()) {
             val parentTransform = builder.getComponent<TransformComponent>(landing.parentEntityId)

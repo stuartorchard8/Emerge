@@ -18,7 +18,7 @@ import org.emerge.sim.core.physics.model.spawnBody
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Norm
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+
 
 /**
  * Advances each pending player respawn by one tick. When the countdown hits zero we
@@ -28,11 +28,11 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * Respawn entries are queued elsewhere (typically by [DamageSystem] via [queueRespawn]);
  * this system is only responsible for draining the queue.
  */
-object RespawnSystem : EcsSystem<ScavengersConfig, PhysicsState, PhysicsInput> {
+object RespawnSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput> {
     override fun update(
         cfg: ScavengersConfig,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, ScavengersInput>,
     ) {
         if (builder.pendingRespawns.isEmpty()) return
         for ((playerId, respawn) in builder.pendingRespawns.toMap()) {

@@ -9,13 +9,13 @@ import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.contacts
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.PhysicsInput
 
-object DrocketLandingSystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
+
+object DrocketLandingSystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
     override fun update(
         cfg: DrocketsConfig,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val drocketStates = builder.entries<DrocketStateComponent>()
         for ((entityId, ds) in drocketStates) {

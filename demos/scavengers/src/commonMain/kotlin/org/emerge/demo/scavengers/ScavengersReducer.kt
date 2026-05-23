@@ -16,7 +16,7 @@ import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.addDamages
 import org.emerge.sim.core.physics.model.setImpulses
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+
 import org.emerge.sim.core.physics.systems.AttachmentSystem
 import org.emerge.sim.core.physics.systems.BounceSystem
 import org.emerge.sim.core.physics.systems.ContactSystem
@@ -26,7 +26,6 @@ import org.emerge.sim.core.physics.systems.ImpulseResetSystem
 import org.emerge.sim.core.physics.systems.IntegrationSystem
 import org.emerge.sim.core.physics.systems.ParticleSystem
 import org.emerge.sim.core.physics.systems.RollingResistanceSystem
-import org.emerge.sim.core.physics.systems.ShipThrustParticleSystem
 
 /**
  * Reducer for the Scavengers demo.
@@ -70,8 +69,8 @@ import org.emerge.sim.core.physics.systems.ShipThrustParticleSystem
 class ScavengersReducer(
     private val executor: ParallelExecutor? = null,
     private val profiler: PipelineProfiler? = null,
-) : SimReducer<ScavengersConfig, ScavengersState, PhysicsInput> {
-    private val pipeline: Pipeline<ScavengersConfig, PhysicsState, PhysicsInput> = listOf(
+) : SimReducer<ScavengersConfig, ScavengersState, ScavengersInput> {
+    private val pipeline: Pipeline<ScavengersConfig, PhysicsState, ScavengersInput> = listOf(
         Phase("reset", ImpulseResetSystem),
         Phase("forceGather", ShipThrustSystem, GravitySystem(executor), ForceFieldSystem).isolated(),
         Phase("contactDetect", ContactSystem(executor)),
@@ -85,7 +84,7 @@ class ScavengersReducer(
     override fun reduce(
         cfg: ScavengersConfig,
         state: ScavengersState,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, ScavengersInput>,
     ): ScavengersState {
         val builder = PhysicsBuilder(state.core)
         val scavengersScratch = builder.seedScavengersScratch(state.pendingRespawns)

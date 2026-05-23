@@ -15,21 +15,21 @@ import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Norm
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+
 import kotlin.math.absoluteValue
 import kotlin.math.sign
 
 
-object ShipThrustSystem : EcsSystem<ScavengersConfig, PhysicsState, PhysicsInput> {
+object ShipThrustSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput> {
     override fun update(
         cfg: ScavengersConfig,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, ScavengersInput>,
     ) {
         for ((playerId, entityId) in builder.initial.playerEntities) {
             val transform = builder.getComponent<TransformComponent>(entityId) ?: continue
             val motion = builder.getComponent<MotionComponent>(entityId) ?: continue
-            val input = inputs[playerId] ?: PhysicsInput.ZERO
+            val input = inputs[playerId] ?: ScavengersInput.ZERO
 
             val thrust = input.thrust / cfg.thrustFactorInv
             val turn = input.turn / cfg.turnFactorInv + input.thrust.absoluteValue*input.turn.sign / cfg.turnFactorInv

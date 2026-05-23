@@ -8,15 +8,15 @@ import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.*
-import org.emerge.sim.core.physics.primitives.PhysicsInput
 
-object ReproductionSystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
+
+object ReproductionSystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
     const val POPULATION_CAP = 800
 
     override fun update(
         cfg: DrocketsConfig,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val reproducers = builder.entries<ReproducerComponent>()
         val nowMs = Clock.System.now().toEpochMilliseconds()

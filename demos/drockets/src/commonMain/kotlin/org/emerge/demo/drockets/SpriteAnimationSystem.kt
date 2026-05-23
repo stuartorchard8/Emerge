@@ -6,18 +6,18 @@ import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 
 import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+
 
 /**
  * Advances animation state by one tick, cycling frames according to the
  * active animation definition.
  */
-object SpriteAnimationSystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
+object SpriteAnimationSystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
 
     override fun update(
         cfg: DrocketsConfig,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val animStates = LinkedHashMap(builder.entries<SpriteAnimationState>())
         if (animStates.isEmpty()) return

@@ -12,7 +12,7 @@ import android.widget.TextView
 import org.emerge.demo.scavengers.LaunchSettings
 import org.emerge.demo.scavengers.ScavengersConfig
 import org.emerge.demo.scavengers.ScavengersHeadlessHostController
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.demo.scavengers.ScavengersInput
 
 /**
  * Minimal Android view for running a headless host — no GL, just status text.
@@ -80,7 +80,7 @@ internal class AndroidHeadlessHostView(
                         gameMode = settings.gameMode,
                     ).also { controller = it }
 
-                    val frame = ctrl.tick(PhysicsInput.ZERO)
+                    val frame = ctrl.tick(ScavengersInput.ZERO)
                     val status = ctrl.netStatus
                     if (status != lastStatus || (frame.tick % 60) == 0L) {
                         lastStatus = status

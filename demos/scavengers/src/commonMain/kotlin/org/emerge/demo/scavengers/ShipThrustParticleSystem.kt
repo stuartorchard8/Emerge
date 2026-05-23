@@ -1,6 +1,6 @@
 @file:OptIn(BypassesStagedView::class)
 
-package org.emerge.sim.core.physics.systems
+package org.emerge.demo.scavengers
 
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.BypassesStagedView
@@ -10,25 +10,23 @@ import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsTuning
 import org.emerge.sim.core.physics.model.nextRandomInt
 import org.emerge.sim.core.physics.model.spawnParticle
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Norm
-import org.emerge.sim.core.physics.primitives.PhysicsInput
 
 
-object ShipThrustParticleSystem : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
+object ShipThrustParticleSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput> {
     override fun update(
-        cfg: PhysicsTuning,
+        cfg: ScavengersConfig,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, ScavengersInput>,
     ) {
         for ((playerId, entityId) in builder.initial.playerEntities) {
             val transform = builder.getComponent<TransformComponent>(entityId) ?: continue
             val motion = builder.getComponent<MotionComponent>(entityId) ?: continue
-            val input = inputs[playerId] ?: PhysicsInput.ZERO
+            val input = inputs[playerId] ?: ScavengersInput.ZERO
             if (input.thrust > builder.nextRandomInt(until = Int.MAX_VALUE)) {
                 val team = builder.getComponent<TeamComponent>(entityId) ?: continue
                 val angleJitter = Frac(builder.nextRandomInt(until = Int.MAX_VALUE/8).toLong()-Int.MAX_VALUE/16)

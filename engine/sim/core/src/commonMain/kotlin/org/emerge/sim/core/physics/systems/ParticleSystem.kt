@@ -6,14 +6,14 @@ import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.components.ParticleComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsTuning
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.sim.core.SimInput
 import kotlin.collections.set
 
-object ParticleSystem : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
+object ParticleSystem : EcsSystem<PhysicsTuning, PhysicsState, SimInput> {
     override fun update(
         cfg: PhysicsTuning,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, SimInput>,
     ) {
         val particles = LinkedHashMap(builder.entries<ParticleComponent>())
         for ((entityId, particle) in builder.entries<ParticleComponent>()) {

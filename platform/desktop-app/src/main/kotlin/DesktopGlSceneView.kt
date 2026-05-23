@@ -3,7 +3,7 @@ package org.emerge.desktop
 import org.emerge.demo.scavengers.*
 import org.emerge.demo.scavengers.audio.CrashAudioSystem
 import org.emerge.render.torus.ScreenRenderer
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.demo.scavengers.ScavengersInput
 import org.emerge.sim.core.physics.primitives.Vec2
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.system.MemoryStack
@@ -68,7 +68,7 @@ object DesktopGlSceneView {
         val tickIntervalMs = 16L
         while (true) {
             val start = System.nanoTime()
-            controller.tick(PhysicsInput.ZERO)
+            controller.tick(ScavengersInput.ZERO)
             val status = controller.netStatus
             if (status != lastStatus) {
                 println("[headless] $status")
@@ -170,7 +170,7 @@ object DesktopGlSceneView {
             pressed[GLFW_KEY_A] || pressed[GLFW_KEY_LEFT],
             pressed[GLFW_KEY_D] || pressed[GLFW_KEY_RIGHT],
         )
-        val movementInput = PhysicsInput(thrust = thrust, turn = turn)
+        val movementInput = ScavengersInput(thrust = thrust, turn = turn)
 
         return controller.tick(movementInput)
     }

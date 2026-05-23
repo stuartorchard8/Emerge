@@ -12,18 +12,17 @@ import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.addDamages
 import org.emerge.sim.core.physics.model.setImpulses
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+
 import org.emerge.sim.core.physics.systems.IntegrationSystem
 import org.emerge.sim.core.physics.systems.ParticleSystem
-import org.emerge.sim.core.physics.systems.ShipThrustParticleSystem
 
 /**
  * Reducer used by thin clients that receive impulses over the wire rather than computing
  * them locally. The force-gather, contact and attachment phases are skipped entirely;
  * only lifecycle, effects, and integration run locally.
  */
-class ScavengersNoImpulseReducer : SimReducer<ScavengersConfig, ScavengersState, PhysicsInput> {
-    private val pipeline: Pipeline<ScavengersConfig, PhysicsState, PhysicsInput> = listOf(
+class ScavengersNoImpulseReducer : SimReducer<ScavengersConfig, ScavengersState, ScavengersInput> {
+    private val pipeline: Pipeline<ScavengersConfig, PhysicsState, ScavengersInput> = listOf(
         Phase("lifecycle", RespawnSystem, DamageSystem),
         Phase("effects", ShipThrustParticleSystem, ParticleSystem),
         Phase("integrate", IntegrationSystem),
@@ -32,7 +31,7 @@ class ScavengersNoImpulseReducer : SimReducer<ScavengersConfig, ScavengersState,
     override fun reduce(
         cfg: ScavengersConfig,
         state: ScavengersState,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, ScavengersInput>,
     ): ScavengersState {
         val builder = PhysicsBuilder(state.core)
         val scavengersScratch = builder.seedScavengersScratch(state.pendingRespawns)

@@ -15,7 +15,7 @@ import org.emerge.sim.core.physics.model.PhysicsTuning
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.sim.core.SimInput
 
 /**
  * Inverse-law gravity between asteroid/planet bodies (shape == CIRCLE) and
@@ -47,11 +47,11 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  */
 class GravitySystem(
     private val executor: ParallelExecutor? = null,
-) : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
+) : EcsSystem<PhysicsTuning, PhysicsState, SimInput> {
     override fun update(
         cfg: PhysicsTuning,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, SimInput>,
     ) {
         if (cfg.gravityNumerator.sign <= 0) return
 

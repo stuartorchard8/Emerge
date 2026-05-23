@@ -7,14 +7,14 @@ import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.physics.model.*
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+
 
 /**
  * Drockets-only damage policy:
  * - Dynamic destruction threshold for drockets based on current population.
  * - Non-drocket entities keep using [DrocketsConfig.maxHealth].
  */
-object DrocketAdaptiveDamageSystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
+object DrocketAdaptiveDamageSystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
     private const val DESTRUCTION_BURST_PARTICLE_COUNT = 50
     private val DESTRUCTION_BURST_PARTICLE_RADIUS_FACTOR = Frac(1, 3)
     private val DESTRUCTION_BURST_SPEED_FACTOR = Frac(1, 12)
@@ -34,7 +34,7 @@ object DrocketAdaptiveDamageSystem : EcsSystem<DrocketsConfig, PhysicsState, Phy
     override fun update(
         cfg: DrocketsConfig,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val destructionBursts = ArrayList<DestructionBurstSpec>()
 

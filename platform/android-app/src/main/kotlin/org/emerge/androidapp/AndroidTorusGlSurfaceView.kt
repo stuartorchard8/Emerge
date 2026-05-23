@@ -22,7 +22,7 @@ import org.emerge.demo.scavengers.createDefaultInitialState
 import org.emerge.demo.scavengers.playerAngle
 import org.emerge.demo.scavengers.playerAngularVelocity
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.demo.scavengers.ScavengersInput
 import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.math.PI
 import kotlin.math.atan2
@@ -40,7 +40,7 @@ internal class AndroidTorusGlSurfaceView(
     private val cfg = ScavengersConfig()
     private val renderer: AndroidTorusGlRenderer
 
-    @Volatile private var currentTouchInput: PhysicsInput = PhysicsInput.ZERO
+    @Volatile private var currentTouchInput: ScavengersInput = ScavengersInput.ZERO
     @Volatile private var singleTouchActive: Boolean = false
     @Volatile private var singleTouchStartX: Float = 0f
     @Volatile private var singleTouchStartY: Float = 0f
@@ -100,7 +100,7 @@ internal class AndroidTorusGlSurfaceView(
         if (event.pointerCount >= 2) {
             handleTransformTouch(event)
             clearSingleTouchState()
-            currentTouchInput = PhysicsInput.ZERO
+            currentTouchInput = ScavengersInput.ZERO
             return true
         }
 
@@ -226,9 +226,9 @@ internal class AndroidTorusGlSurfaceView(
         }
     }
 
-    private fun computeTouchInputForCurrentOrientation(): PhysicsInput {
-        if (!singleTouchActive) return PhysicsInput.ZERO
-        if (width <= 0 || height <= 0) return PhysicsInput.ZERO
+    private fun computeTouchInputForCurrentOrientation(): ScavengersInput {
+        if (!singleTouchActive) return ScavengersInput.ZERO
+        if (width <= 0 || height <= 0) return ScavengersInput.ZERO
         return TouchInputMapper.toPhysicsInput(
             width,
             height,

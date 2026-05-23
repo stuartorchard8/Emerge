@@ -1,7 +1,7 @@
 package org.emerge.androidapp
 
 import android.view.MotionEvent
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.demo.scavengers.ScavengersInput
 import kotlin.math.*
 
 internal object TouchInputMapper {
@@ -16,9 +16,9 @@ internal object TouchInputMapper {
         rocketAngleTurns: Float,
         rocketAngularVelocityTurns: Float,
         cameraRotationRad: Float,
-    ): PhysicsInput {
+    ): ScavengersInput {
         if (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_CANCEL) {
-            return PhysicsInput.ZERO
+            return ScavengersInput.ZERO
         }
         val deadzonePx = min(widthPx, heightPx) / 24f
         val thrustDeadzonePx = deadzonePx * 2f
@@ -28,7 +28,7 @@ internal object TouchInputMapper {
         val dy = currentY - startY
         val magnitudePx = hypot(dx, dy)
         if (magnitudePx <= deadzonePx) {
-            return PhysicsInput.ZERO
+            return ScavengersInput.ZERO
         }
 
         // Convert from screen drag space to world heading space where +Y is up.
@@ -63,7 +63,7 @@ internal object TouchInputMapper {
             } else {
                 0
             }
-        return PhysicsInput(thrust = thrust, turn = turn)
+        return ScavengersInput(thrust = thrust, turn = turn)
     }
 
     private fun normalizeAngleRad(angle: Float): Float {

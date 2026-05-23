@@ -12,13 +12,13 @@ import org.emerge.sim.core.physics.primitives.*
 import org.emerge.sim.core.physics.systems.solveNormalCollisionResponse
 
 
-object LandingSystem : EcsSystem<ScavengersConfig, PhysicsState, PhysicsInput> {
+object LandingSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput> {
     private val LANDING_ALIGNMENT_THRESHOLD = Frac(7, 8)
 
     override fun update(
         cfg: ScavengersConfig,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, ScavengersInput>,
     ) {
         for (contact in builder.contacts) {
             val aId = contact.aId

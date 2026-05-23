@@ -9,13 +9,13 @@ import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsTuning
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.sim.core.SimInput
 
-object IntegrationSystem : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
+object IntegrationSystem : EcsSystem<PhysicsTuning, PhysicsState, SimInput> {
     override fun update(
         cfg: PhysicsTuning,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, SimInput>,
     ) {
         val transforms = LinkedHashMap(builder.entries<TransformComponent>())
         val motions = LinkedHashMap(builder.entries<MotionComponent>())

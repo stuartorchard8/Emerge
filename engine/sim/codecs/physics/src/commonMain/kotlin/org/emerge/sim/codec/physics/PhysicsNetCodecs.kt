@@ -7,8 +7,6 @@ import org.emerge.sim.core.ecs.EcsWorld
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.primitives.PhysicsInput
-import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
 import org.emerge.sim.sync.ecs.ComponentCodec
 
@@ -19,8 +17,6 @@ import org.emerge.sim.sync.ecs.ComponentCodec
  * events) wrap this codec inside their own state codec.
  */
 class PhysicsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
-    val inputCodec: Codec<PhysicsInput> = Companion.inputCodec
-
     val stateCodec: StateCodec<PhysicsState> =
         object : StateCodec<PhysicsState> {
             override fun encode(state: PhysicsState): ByteArray {
@@ -81,22 +77,5 @@ class PhysicsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
 
     companion object {
         private const val MAX_STATE_ENTITIES = 10_000
-
-        val inputCodec: Codec<PhysicsInput> =
-            object : Codec<PhysicsInput> {
-                override fun encode(value: PhysicsInput): ByteArray {
-                    val w = ByteWriter()
-                    w.writeInt(value.thrust)
-                    w.writeInt(value.turn)
-                    return w.toByteArray()
-                }
-
-                override fun decode(bytes: ByteArray): PhysicsInput {
-                    val c = ByteCursor(bytes)
-                    val thrust = c.readInt()
-                    val turn = c.readInt()
-                    return PhysicsInput(thrust, turn)
-                }
-            }
     }
 }

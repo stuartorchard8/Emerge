@@ -16,14 +16,14 @@ import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.demo.scavengers.ScavengersInput
 import org.emerge.sim.core.physics.systems.*
 
 private const val PLAYER_COUNT = 8
 private const val WARMUP_TICKS = 120
 private const val PROFILE_TICKS = 1800 // ~30 seconds of game time at 60fps
 
-private val SYSTEMS: List<Pair<String, EcsSystem<ScavengersConfig, PhysicsState, PhysicsInput>>> = listOf(
+private val SYSTEMS: List<Pair<String, EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput>>> = listOf(
     "ShipThrust" to ShipThrustSystem,
     "Gravity" to GravitySystem(),
     "Integration" to IntegrationSystem,
@@ -34,7 +34,7 @@ private val SYSTEMS: List<Pair<String, EcsSystem<ScavengersConfig, PhysicsState,
     "Respawn" to RespawnSystem,
 )
 
-class ProfilingReducer : SimReducer<ScavengersConfig, ScavengersState, PhysicsInput> {
+class ProfilingReducer : SimReducer<ScavengersConfig, ScavengersState, ScavengersInput> {
     private val accumulatedNanos = LongArray(SYSTEMS.size)
     private val peakNanos = LongArray(SYSTEMS.size)
     private var tickCount = 0
@@ -42,7 +42,7 @@ class ProfilingReducer : SimReducer<ScavengersConfig, ScavengersState, PhysicsIn
     override fun reduce(
         cfg: ScavengersConfig,
         state: ScavengersState,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, ScavengersInput>,
     ): ScavengersState {
         val builder = PhysicsBuilder(state.core)
         val scratch = builder.seedScavengersScratch(state.pendingRespawns)
@@ -110,7 +110,7 @@ fun main() {
     val reducer = ProfilingReducer()
     val stepper = TickStepper(cfg = cfg, initialState = state, reducer = reducer)
 
-    val inputs = (0 until PLAYER_COUNT).associate { PlayerId(it) to PhysicsInput(thrust = Int.MAX_VALUE, turn = 1000) }
+    val inputs = (0 until PLAYER_COUNT).associate { PlayerId(it) to ScavengersInput(thrust = Int.MAX_VALUE, turn = 1000) }
 
     println("Warming up ($WARMUP_TICKS ticks)...")
     for (i in 0 until WARMUP_TICKS) {

@@ -13,14 +13,14 @@ import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.contacts
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.sim.core.SimInput
 
 
-object CrashSystem : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
+object CrashSystem : EcsSystem<PhysicsTuning, PhysicsState, SimInput> {
     override fun update(
         cfg: PhysicsTuning,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, SimInput>,
     ) {
         for (contact in builder.contacts) {
             val aId = contact.aId

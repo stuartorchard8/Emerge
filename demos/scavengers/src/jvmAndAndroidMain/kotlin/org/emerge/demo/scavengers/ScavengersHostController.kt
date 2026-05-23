@@ -6,7 +6,7 @@ import org.emerge.net.websocket.WsAcceptor
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ParallelExecutor
 
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+
 import org.emerge.sim.sync.Codec
 import org.emerge.sim.sync.StateCodec
 import org.emerge.sim.sync.lockstep.ClientMode
@@ -21,7 +21,7 @@ class ScavengersHostController(
 ) : ScavengersController() {
     private val executor = ParallelExecutor()
     private val reducer = ScavengersReducer(executor)
-    private val inputCodec: Codec<PhysicsInput> = ScavengersCodecs.inputCodec
+    private val inputCodec: Codec<ScavengersInput> = ScavengersCodecs.inputCodec
     private val stateCodec: StateCodec<ScavengersState> = ScavengersCodecs.stateCodec
     private val impulseCodec: StateCodec<ScavengersState> = scavengersImpulseCodec
 
@@ -98,10 +98,10 @@ class ScavengersHostController(
         }
     }
 
-    override fun tick(localInput: PhysicsInput): ScavengersFrame {
+    override fun tick(localInput: ScavengersInput): ScavengersFrame {
         processReadyClients()
         host.pollNetwork()
-        host.setLocalInput(PlayerId(0), PhysicsInput(localInput.thrust, localInput.turn))
+        host.setLocalInput(PlayerId(0), ScavengersInput(localInput.thrust, localInput.turn))
         host.step()
         return ScavengersFrame(
             state = host.state,

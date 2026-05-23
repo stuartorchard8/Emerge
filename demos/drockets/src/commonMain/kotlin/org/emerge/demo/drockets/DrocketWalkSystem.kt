@@ -8,7 +8,7 @@ import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+
 
 /**
  * Moves walking drockets along the planet surface by rotating their
@@ -18,12 +18,12 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * At 60 tps with maxSpeed=300, planet.radius=10000: ≈ 0.0005 rad/tick
  * In Emerge Coord space: 0.0005/π * Int.MAX_VALUE ≈ 341,782
  */
-object DrocketWalkSystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
+object DrocketWalkSystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
 
     override fun update(
         cfg: DrocketsConfig,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val drocketStates = builder.entries<DrocketStateComponent>()
         if (drocketStates.isEmpty()) return

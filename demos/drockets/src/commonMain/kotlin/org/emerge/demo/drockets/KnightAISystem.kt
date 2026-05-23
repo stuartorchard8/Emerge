@@ -10,7 +10,7 @@ import org.emerge.sim.core.physics.model.PhysicsBuilder
 
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.nextRandomInt
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+
 
 /**
  * Drives autonomous drocket entities through a walk → charge → thrust → fly → land cycle.
@@ -19,12 +19,12 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * - Walk duration: 2–10 seconds (120–600 ticks at 60 tps)
  * - Pause: 1.4 seconds (84 ticks)
  */
-object KnightAISystem : EcsSystem<DrocketsConfig, PhysicsState, PhysicsInput> {
+object KnightAISystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
 
     override fun update(
         cfg: DrocketsConfig,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val states = LinkedHashMap(builder.entries<KnightStateComponent>())
         if (states.isEmpty()) return

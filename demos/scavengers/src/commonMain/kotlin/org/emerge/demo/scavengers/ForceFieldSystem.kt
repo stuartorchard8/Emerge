@@ -10,13 +10,13 @@ import org.emerge.sim.core.physics.model.PhysicsBuilder
 import org.emerge.sim.core.physics.primitives.*
 
 
-object ForceFieldSystem : EcsSystem<ScavengersConfig, PhysicsState, PhysicsInput> {
+object ForceFieldSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput> {
     private val FORCE_FIELD_TEAM_DAMPING = Frac(1, 64)
 
     override fun update(
         cfg: ScavengersConfig,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, ScavengersInput>,
     ) {
         val ids = builder.entries<MaterialComponent>().keys.toList()
         for (i in 0 until ids.size) {

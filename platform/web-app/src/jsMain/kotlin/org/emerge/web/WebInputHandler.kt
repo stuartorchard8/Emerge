@@ -2,7 +2,7 @@ package org.emerge.web
 
 import kotlinx.browser.document
 import org.emerge.render.torus.ScreenRenderer
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.demo.scavengers.ScavengersInput
 
 class WebInputHandler {
     private val pressed = mutableSetOf<String>()
@@ -16,7 +16,7 @@ class WebInputHandler {
         })
     }
 
-    fun poll(renderer: ScreenRenderer): PhysicsInput {
+    fun poll(renderer: ScreenRenderer): ScavengersInput {
         if ("Minus" in pressed) renderer.zoomOut()
         if ("Equal" in pressed) renderer.zoomIn()
         if ("KeyQ" in pressed) renderer.rotateLeft()
@@ -30,6 +30,6 @@ class WebInputHandler {
             posTurn && !negTurn -> Int.MAX_VALUE
             else -> 0
         }
-        return PhysicsInput(thrust = thrust, turn = turn)
+        return ScavengersInput(thrust = thrust, turn = turn)
     }
 }

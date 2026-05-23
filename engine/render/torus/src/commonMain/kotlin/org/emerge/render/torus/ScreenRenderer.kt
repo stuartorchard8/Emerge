@@ -9,7 +9,6 @@ import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.primitives.BodyShape
-import org.emerge.sim.core.physics.primitives.PhysicsInput
 import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.math.*
 
@@ -90,10 +89,6 @@ class ScreenRenderer(val contentScale: Vec2) {
             return
         }
         worldRotationRad += deltaRad
-    }
-
-    fun rotateInputToWorld(input: PhysicsInput): PhysicsInput {
-        return input
     }
 
     fun draw(state: PhysicsState, myId: PlayerId?) {

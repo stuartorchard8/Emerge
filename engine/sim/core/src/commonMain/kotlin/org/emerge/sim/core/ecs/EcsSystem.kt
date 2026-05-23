@@ -7,7 +7,7 @@ import org.emerge.sim.core.PlayerId
  *
  * Systems are domain-agnostic: the state type [S] and config [C] are supplied by whoever
  * assembles the pipeline. A typical physics-domain system declares itself as
- * `EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput>`, receiving an
+ * `EcsSystem<PhysicsTuning, PhysicsState, SimInput>`, receiving an
  * `EcsBuilder<PhysicsState>` (a.k.a. `PhysicsBuilder`) on each update.
  *
  * [C] and [I] are declared `in` (contravariant): a system that only needs to read

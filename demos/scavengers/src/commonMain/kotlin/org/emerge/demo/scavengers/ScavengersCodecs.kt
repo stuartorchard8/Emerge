@@ -38,8 +38,8 @@ object ScavengersCodecs {
         ),
     )
 
-    /** Engine input wire codec (unchanged from [PhysicsNetCodecs]). */
-    val inputCodec = physicsNetCodecs.inputCodec
+    /** Scavengers-specific input wire codec (thrust + turn ints). */
+    val inputCodec = scavengersInputCodec
 
     /** Wire codec for [ScavengersState] — wraps the engine state codec. */
     val stateCodec = scavengersStateCodec(physicsNetCodecs)

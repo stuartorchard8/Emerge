@@ -15,7 +15,7 @@ import org.emerge.sim.core.physics.model.PhysicsTuning
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.setContacts
 import org.emerge.sim.core.physics.primitives.Contact
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.sim.core.SimInput
 
 /**
  * Producer of the `contactDetect` phase. Scans pairs of material-bearing
@@ -68,11 +68,11 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  */
 class ContactSystem(
     private val executor: ParallelExecutor? = null,
-) : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
+) : EcsSystem<PhysicsTuning, PhysicsState, SimInput> {
     override fun update(
         cfg: PhysicsTuning,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, SimInput>,
     ) {
         val ids = builder.entries<MaterialComponent>().keys.toList()
         val n = ids.size

@@ -10,7 +10,7 @@ import org.emerge.sim.core.physics.model.PhysicsTuning
 import org.emerge.sim.core.physics.model.PhysicsState
 import org.emerge.sim.core.physics.model.contacts
 import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.PhysicsInput
+import org.emerge.sim.core.SimInput
 
 /**
  * Applies angular damping while bodies are in contact to model rolling resistance.
@@ -19,11 +19,11 @@ import org.emerge.sim.core.physics.primitives.PhysicsInput
  * - roughness controls tangential velocity equalization during impact
  * - rolling resistance bleeds rotational energy during sustained contact
  */
-object RollingResistanceSystem : EcsSystem<PhysicsTuning, PhysicsState, PhysicsInput> {
+object RollingResistanceSystem : EcsSystem<PhysicsTuning, PhysicsState, SimInput> {
     override fun update(
         cfg: PhysicsTuning,
         builder: PhysicsBuilder,
-        inputs: Map<PlayerId, PhysicsInput>,
+        inputs: Map<PlayerId, SimInput>,
     ) {
         if (cfg.rollingResistance.raw <= 0L) return
         for (contact in builder.contacts) {
