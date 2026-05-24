@@ -123,6 +123,16 @@ tasks.register<JavaExec>("benchDrocketsOverlay") {
     workingDir = rootDir
 }
 
+tasks.register<JavaExec>("benchDrocketsOverlayGcLog") {
+    group = "verification"
+    description = "Overlay benchmark with GC logging to stdout — diagnose whether spikes are GC pauses."
+    mainClass = "org.emerge.desktop.DrocketsOverlayBenchmarkKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    standardInput = System.`in`
+    workingDir = rootDir
+    jvmArgs("-Xlog:gc*:stdout:time,uptime,level,tags")
+}
+
 tasks.register<JavaExec>("benchDrocketsZgc") {
     group = "verification"
     description = "Headless Drockets benchmark running under ZGC (low-pause collector) for tail-latency comparison"
