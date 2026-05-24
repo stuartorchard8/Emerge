@@ -3,6 +3,8 @@ package org.emerge.androidapp
 import android.opengl.GLSurfaceView
 import org.emerge.demo.scavengers.ScavengersFrame
 import org.emerge.demo.scavengers.rendererFocus
+import org.emerge.demo.scavengers.scavengersBodyTint
+import org.emerge.demo.scavengers.scavengersEdgeIndicators
 import org.emerge.render.torus.ScreenRenderer
 import org.emerge.sim.core.physics.primitives.Vec2
 import javax.microedition.khronos.egl.EGLConfig
@@ -25,9 +27,10 @@ class AndroidTorusGlRenderer(
     override fun onDrawFrame(gl: GL10?) {
         val frame = getState()
         screenRenderer.draw(
-            frame.state.core,
-            frame.myId?.let { frame.state.playerEntities[it] },
+            state = frame.state.core,
             focus = frame.state.rendererFocus(frame.myId),
+            primaryColorOf = { entityId -> frame.state.scavengersBodyTint(entityId) },
+            edgeIndicators = frame.state.scavengersEdgeIndicators(frame.myId),
         )
     }
 

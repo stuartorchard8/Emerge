@@ -97,9 +97,10 @@ object DesktopGlSceneView {
             val frame = processInput(controller, pressedKeys, screenRenderer)
             crashAudio.onFrame(frame)
             screenRenderer.draw(
-                frame.state.core,
-                frame.myId?.let { frame.state.playerEntities[it] },
+                state = frame.state.core,
                 focus = frame.state.rendererFocus(frame.myId),
+                primaryColorOf = { entityId -> frame.state.scavengersBodyTint(entityId) },
+                edgeIndicators = frame.state.scavengersEdgeIndicators(frame.myId),
             )
 
             glfwSwapBuffers(window)

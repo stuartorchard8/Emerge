@@ -10,6 +10,8 @@ import org.emerge.demo.scavengers.ScavengersReducer
 import org.emerge.demo.scavengers.audio.CrashAudioSystem
 import org.emerge.demo.scavengers.createDefaultInitialState
 import org.emerge.demo.scavengers.rendererFocus
+import org.emerge.demo.scavengers.scavengersBodyTint
+import org.emerge.demo.scavengers.scavengersEdgeIndicators
 import org.emerge.net.websocket.WebSocketPipe
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ScreenRenderer
@@ -68,7 +70,12 @@ private fun startLocalMode(renderer: ScreenRenderer, input: WebInputHandler, cra
         state = reducer.reduce(cfg, state, mapOf(myId to physicsInput))
         tick++
         crashAudio.onFrame(ScavengersFrame(state, myId, tick, ""))
-        renderer.draw(state.core, state.playerEntities[myId], focus = state.rendererFocus(myId))
+        renderer.draw(
+            state = state.core,
+            focus = state.rendererFocus(myId),
+            primaryColorOf = { entityId -> state.scavengersBodyTint(entityId) },
+            edgeIndicators = state.scavengersEdgeIndicators(myId),
+        )
         window.requestAnimationFrame(::frame)
     }
     window.requestAnimationFrame(::frame)
@@ -111,9 +118,10 @@ private fun startJoinMode(wsUrl: String, renderer: ScreenRenderer, input: WebInp
         client.sendInput(physicsInput)
         crashAudio.onFrame(ScavengersFrame(client.state, client.playerId, client.tick.value, ""))
         renderer.draw(
-            client.state.core,
-            client.playerId?.let { client.state.playerEntities[it] },
+            state = client.state.core,
             focus = client.state.rendererFocus(client.playerId),
+            primaryColorOf = { entityId -> client.state.scavengersBodyTint(entityId) },
+            edgeIndicators = client.state.scavengersEdgeIndicators(client.playerId),
         )
 
         if (client.connectionState == ThinClient.ConnectionState.DISCONNECTED && !reconnectScheduled) {
