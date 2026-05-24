@@ -10,9 +10,9 @@ import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.physics.model.PhysicsTuning
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.SimInput
@@ -47,10 +47,10 @@ import org.emerge.sim.core.SimInput
  */
 class GravitySystem(
     private val executor: ParallelExecutor? = null,
-) : EcsSystem<PhysicsTuning, PhysicsState, SimInput> {
+) : EcsSystem<PhysicsTuning, SimState, SimInput> {
     override fun update(
         cfg: PhysicsTuning,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, SimInput>,
     ) {
         if (cfg.gravityNumerator.sign <= 0) return
@@ -110,7 +110,7 @@ class GravitySystem(
     }
 
     private fun applyDeltas(
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         deltas: Map<EntityId, ImpulseComponent>,
     ) {
         for ((id, delta) in deltas) {
@@ -195,7 +195,7 @@ class GravitySystem(
         val shipRadii: Array<Frac>,
     )
 
-    private fun partition(builder: PhysicsBuilder, ids: List<EntityId>): Partition? {
+    private fun partition(builder: SimBuilder, ids: List<EntityId>): Partition? {
         val sources = ArrayList<EntityId>()
         val sourceTransforms = ArrayList<TransformComponent>()
         val sourceMaterials = ArrayList<MaterialComponent>()

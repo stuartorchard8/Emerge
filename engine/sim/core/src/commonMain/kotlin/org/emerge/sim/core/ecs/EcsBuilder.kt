@@ -130,7 +130,7 @@ class EcsBuilder<S>(
      * Systems should NOT acquire this lock for component reads/writes — those go
      * through fork-local [workingData] / [writeLog] and never contend. This lock
      * is only needed around [createEntity], [removeEntity], and domain-specific
-     * shared-scratch accessors (see `PhysicsBuilder.kt`'s `sharedScratch` helpers).
+     * shared-scratch accessors (see `SimBuilder.kt`'s `sharedScratch` helpers).
      */
     val rootLock: ReentrantLock
         get() {

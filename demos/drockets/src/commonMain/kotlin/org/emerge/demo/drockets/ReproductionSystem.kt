@@ -7,15 +7,15 @@ import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.model.*
+import org.emerge.sim.core.sim.*
 
 
-object ReproductionSystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
+object ReproductionSystem : EcsSystem<DrocketsConfig, SimState, DrocketsInput> {
     const val POPULATION_CAP = 800
 
     override fun update(
         cfg: DrocketsConfig,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val reproducers = builder.entries<ReproducerComponent>()
@@ -32,7 +32,7 @@ object ReproductionSystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInpu
     }
 
     private fun birthSpawn(
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         motherEntityId: org.emerge.sim.core.EntityId,
         reproducer: ReproducerComponent,
         spawn: ReproducerComponent,
@@ -72,7 +72,7 @@ object ReproductionSystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInpu
     }
 
     private fun tryConceiveOnContact(
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         motherEntityId: org.emerge.sim.core.EntityId,
         reproducer: ReproducerComponent,
         nowMs: Long,

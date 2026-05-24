@@ -11,11 +11,11 @@ import org.emerge.sim.core.ecs.runParallel
 import org.emerge.sim.core.ecs.runSequential
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.sim.SimBuilder
 
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.addDamages
-import org.emerge.sim.core.physics.model.setImpulses
+import org.emerge.sim.core.sim.SimState
+import org.emerge.sim.core.sim.addDamages
+import org.emerge.sim.core.sim.setImpulses
 
 import org.emerge.sim.core.physics.systems.AttachmentSystem
 import org.emerge.sim.core.physics.systems.BounceSystem
@@ -30,15 +30,15 @@ import org.emerge.sim.core.physics.systems.RollingResistanceSystem
 /**
  * Reducer for the Scavengers demo.
  *
- * Operates on [ScavengersState], which wraps the engine [PhysicsState] with the
+ * Operates on [ScavengersState], which wraps the engine [SimState] with the
  * Scavengers-only respawn queue and crash audio event list. Each tick:
  *
- *   1. Build a [PhysicsBuilder] from `state.core`.
+ *   1. Build a [SimBuilder] from `state.core`.
  *   2. Seed a [ScavengersFrameScratch] on the builder from `state.pendingRespawns`.
  *   3. Run the pipeline. Engine systems read/write only the engine state via the
  *      builder; Scavengers systems also read/write the Scavengers scratch via the
  *      extension API in `ScavengersBuilder.kt`.
- *   4. Build the new [PhysicsState] from the builder and combine with the final
+ *   4. Build the new [SimState] from the builder and combine with the final
  *      scratch contents to produce the new [ScavengersState].
  *
  * The pipeline is declared as an ordered list of named phases. Phase boundaries document
@@ -62,7 +62,7 @@ import org.emerge.sim.core.physics.systems.RollingResistanceSystem
  * Pass an [executor] to dispatch isolated phases' forks across worker threads via
  * [runParallel]; omit it (default `null`) to run the whole pipeline on the calling
  * thread via [runSequential]. Both dispatch modes produce identical state modulo
- * the PRNG-ordering note on `PhysicsBuilder.nextRandomInt`.
+ * the PRNG-ordering note on `SimBuilder.nextRandomInt`.
  *
  * Pass a [profiler] to collect per-phase wall-time samples every tick.
  */
@@ -70,7 +70,7 @@ class ScavengersReducer(
     private val executor: ParallelExecutor? = null,
     private val profiler: PipelineProfiler? = null,
 ) : SimReducer<ScavengersConfig, ScavengersState, ScavengersInput> {
-    private val pipeline: Pipeline<ScavengersConfig, PhysicsState, ScavengersInput> = listOf(
+    private val pipeline: Pipeline<ScavengersConfig, SimState, ScavengersInput> = listOf(
         Phase("reset", ImpulseResetSystem),
         Phase("forceGather", ShipThrustSystem, GravitySystem(executor), ForceFieldSystem).isolated(),
         Phase("contactDetect", ContactSystem(executor)),
@@ -86,7 +86,7 @@ class ScavengersReducer(
         state: ScavengersState,
         inputs: Map<PlayerId, ScavengersInput>,
     ): ScavengersState {
-        val builder = PhysicsBuilder(state.core)
+        val builder = SimBuilder(state.core)
         val scavengersScratch = builder.seedScavengersScratch(
             initialPendingRespawns = state.pendingRespawns,
             playerEntities = state.playerEntities,

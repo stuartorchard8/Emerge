@@ -7,19 +7,19 @@ import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.physics.model.PhysicsTuning
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.contacts
+import org.emerge.sim.core.sim.SimState
+import org.emerge.sim.core.sim.contacts
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.SimInput
 
 
-object CrashSystem : EcsSystem<PhysicsTuning, PhysicsState, SimInput> {
+object CrashSystem : EcsSystem<PhysicsTuning, SimState, SimInput> {
     override fun update(
         cfg: PhysicsTuning,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, SimInput>,
     ) {
         for (contact in builder.contacts) {
@@ -62,7 +62,7 @@ object CrashSystem : EcsSystem<PhysicsTuning, PhysicsState, SimInput> {
     }
 
     private fun applyCollisionDamage(
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         entityId: EntityId,
         shape: RenderShapeComponent,
         impactImpulse: Frac,

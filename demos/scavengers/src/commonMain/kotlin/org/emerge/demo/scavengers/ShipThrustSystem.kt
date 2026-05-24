@@ -9,9 +9,9 @@ import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.sim.SimBuilder
 
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Norm
@@ -20,10 +20,10 @@ import kotlin.math.absoluteValue
 import kotlin.math.sign
 
 
-object ShipThrustSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput> {
+object ShipThrustSystem : EcsSystem<ScavengersConfig, SimState, ScavengersInput> {
     override fun update(
         cfg: ScavengersConfig,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, ScavengersInput>,
     ) {
         for ((playerId, entityId) in builder.playerEntities) {

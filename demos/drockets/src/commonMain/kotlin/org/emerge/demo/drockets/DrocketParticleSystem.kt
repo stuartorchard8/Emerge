@@ -5,7 +5,7 @@ import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.model.*
+import org.emerge.sim.core.sim.*
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Norm
@@ -15,11 +15,11 @@ import org.emerge.sim.core.physics.primitives.Norm
  * Spawns exhaust particles behind thrusting drockets, mirroring
  * the engine's ShipThrustParticleSystem but driven by DrocketStateComponent.
  */
-object DrocketParticleSystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
+object DrocketParticleSystem : EcsSystem<DrocketsConfig, SimState, DrocketsInput> {
 
     override fun update(
         cfg: DrocketsConfig,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val drocketStates = builder.entries<DrocketStateComponent>()

@@ -5,10 +5,10 @@ import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.physics.model.PhysicsTuning
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.contacts
+import org.emerge.sim.core.sim.SimState
+import org.emerge.sim.core.sim.contacts
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.SimInput
 
@@ -19,10 +19,10 @@ import org.emerge.sim.core.SimInput
  * - roughness controls tangential velocity equalization during impact
  * - rolling resistance bleeds rotational energy during sustained contact
  */
-object RollingResistanceSystem : EcsSystem<PhysicsTuning, PhysicsState, SimInput> {
+object RollingResistanceSystem : EcsSystem<PhysicsTuning, SimState, SimInput> {
     override fun update(
         cfg: PhysicsTuning,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, SimInput>,
     ) {
         if (cfg.rollingResistance.raw <= 0L) return

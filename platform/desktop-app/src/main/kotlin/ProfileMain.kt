@@ -15,8 +15,8 @@ import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.TickStepper
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimBuilder
+import org.emerge.sim.core.sim.SimState
 import org.emerge.demo.scavengers.ScavengersInput
 import org.emerge.sim.core.physics.systems.*
 
@@ -24,7 +24,7 @@ private const val PLAYER_COUNT = 8
 private const val WARMUP_TICKS = 120
 private const val PROFILE_TICKS = 1800 // ~30 seconds of game time at 60fps
 
-private val SYSTEMS: List<Pair<String, EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput>>> = listOf(
+private val SYSTEMS: List<Pair<String, EcsSystem<ScavengersConfig, SimState, ScavengersInput>>> = listOf(
     "ShipThrust" to ShipThrustSystem,
     "Gravity" to GravitySystem(),
     "Integration" to IntegrationSystem,
@@ -45,7 +45,7 @@ class ProfilingReducer : SimReducer<ScavengersConfig, ScavengersState, Scavenger
         state: ScavengersState,
         inputs: Map<PlayerId, ScavengersInput>,
     ): ScavengersState {
-        val builder = PhysicsBuilder(state.core)
+        val builder = SimBuilder(state.core)
         val scratch = builder.seedScavengersScratch(
             initialPendingRespawns = state.pendingRespawns,
             playerEntities = state.playerEntities,

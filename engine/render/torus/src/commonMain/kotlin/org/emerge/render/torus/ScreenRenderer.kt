@@ -7,7 +7,7 @@ import org.emerge.render.torus.shader.WorldShaderParams
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.physics.components.RenderShapeComponent
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.math.*
@@ -93,7 +93,7 @@ class ScreenRenderer(val contentScale: Vec2) {
      * never derives focus or player-entity itself, so demos that need death-position
      * camera holds or non-player anchors compose them on their side.
      */
-    fun draw(state: PhysicsState, playerEntityId: EntityId?, focus: Vec2) {
+    fun draw(state: SimState, playerEntityId: EntityId?, focus: Vec2) {
         val params = WorldShaderParams.compute(focus, playerEntityId, zoom, worldRotationRad)
         worldShader.draw(params, segmentation = layout.worldSegmentation)
         guiShader.draw(vOffset = layout.guiVertexOffset)
@@ -146,7 +146,7 @@ class ScreenRenderer(val contentScale: Vec2) {
     }
 
     private fun packBodyInstances(
-        state: PhysicsState,
+        state: SimState,
         shapes: ComponentTable<RenderShapeComponent>,
         params: WorldShaderParams,
         layout: ScreenLayout,
@@ -257,7 +257,7 @@ class ScreenRenderer(val contentScale: Vec2) {
 
     private fun packPlanetIndicators(
         index: Int,
-        state: PhysicsState,
+        state: SimState,
         params: WorldShaderParams,
         scaleVecX: Float,
         scaleVecY: Float,

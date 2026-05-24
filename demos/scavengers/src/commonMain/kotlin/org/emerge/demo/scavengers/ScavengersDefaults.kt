@@ -11,9 +11,9 @@ import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.PlanetComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.spawnBody
+import org.emerge.sim.core.sim.SimBuilder
+import org.emerge.sim.core.sim.SimState
+import org.emerge.sim.core.sim.spawnBody
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
@@ -24,7 +24,7 @@ fun createDefaultInitialState(
     gameMode: GameMode = GameMode.PVP,
     spawnHostPlayer: Boolean = true,
 ): ScavengersState {
-    val builder = PhysicsBuilder(PhysicsState())
+    val builder = SimBuilder(SimState())
     for (i in 0 until DEFAULT_PLANET_COUNT) {
         val spawn = builder.spawnBody(
             pos = Coord2.zero + Norm.fromAngle(Coord(i, DEFAULT_PLANET_COUNT)) * Frac(1, 3),
@@ -60,7 +60,7 @@ fun createDefaultInitialState(
  */
 fun defaultJoinPolicy(gameMode: GameMode = GameMode.PVP): (ScavengersState, PlayerId) -> ScavengersState =
     { snapshot, pid ->
-        val builder = PhysicsBuilder(snapshot.core)
+        val builder = SimBuilder(snapshot.core)
         assignHomePlanetAndSpawn(
             builder = builder,
             playerId = pid,
@@ -75,7 +75,7 @@ fun defaultJoinPolicy(gameMode: GameMode = GameMode.PVP): (ScavengersState, Play
     }
 
 private fun assignHomePlanetAndSpawn(
-    builder: PhysicsBuilder,
+    builder: SimBuilder,
     playerId: PlayerId,
     gameMode: GameMode,
     random: Random,
@@ -121,7 +121,7 @@ private fun GameMode.teamIdForPlayer(playerId: PlayerId): TeamId =
     }
 
 private fun chooseHomePlanet(
-    builder: PhysicsBuilder,
+    builder: SimBuilder,
     homePlanets: Map<EntityId, HomePlanetComponent>,
     random: Random,
 ): EntityId? {
@@ -134,7 +134,7 @@ private fun chooseHomePlanet(
 }
 
 private fun spawnRocketOnPlanetSurface(
-    builder: PhysicsBuilder,
+    builder: SimBuilder,
     playerId: PlayerId,
     teamId: TeamId,
     planetId: EntityId,

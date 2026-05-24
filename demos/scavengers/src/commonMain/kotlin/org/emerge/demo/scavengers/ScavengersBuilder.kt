@@ -11,11 +11,11 @@ import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.sim.SimBuilder
 
 /**
  * Per-frame Scavengers state carried alongside the engine
- * [org.emerge.sim.core.physics.model.PhysicsFrameScratch] on the same [PhysicsBuilder].
+ * [org.emerge.sim.core.sim.SimFrameScratch] on the same [SimBuilder].
  * Holds the respawn queue, audio event accumulator, and start-of-frame player→entity
  * index that the engine state no longer carries.
  *
@@ -45,7 +45,7 @@ class ScavengersFrameScratch(
  * player→entity index so the scratch can be seeded even though the underlying engine
  * state no longer carries them.
  */
-fun PhysicsBuilder.seedScavengersScratch(
+fun SimBuilder.seedScavengersScratch(
     initialPendingRespawns: Map<PlayerId, PlayerRespawnState>,
     playerEntities: Map<PlayerId, EntityId>,
 ): ScavengersFrameScratch =
@@ -58,11 +58,11 @@ fun PhysicsBuilder.seedScavengersScratch(
 
 /**
  * Start-of-frame player→entity index. Read by Scavengers systems via the builder rather
- * than by reaching back into the engine [org.emerge.sim.core.physics.model.PhysicsState],
+ * than by reaching back into the engine [org.emerge.sim.core.sim.SimState],
  * which no longer carries this map. Routes through the root builder's scratch so forks
  * see the same map.
  */
-val PhysicsBuilder.playerEntities: Map<PlayerId, EntityId>
+val SimBuilder.playerEntities: Map<PlayerId, EntityId>
     get() = scavengersScratch().playerEntities
 
 /**
@@ -70,8 +70,8 @@ val PhysicsBuilder.playerEntities: Map<PlayerId, EntityId>
  * reducer forgot to call [seedScavengersScratch] first, the factory throws so we get
  * an early, loud failure rather than a silent reset of the respawn queue.
  */
-fun PhysicsBuilder.scavengersScratch(): ScavengersFrameScratch {
-    var b: PhysicsBuilder = this
+fun SimBuilder.scavengersScratch(): ScavengersFrameScratch {
+    var b: SimBuilder = this
     while (true) {
         val p = b.parent ?: return b.scratch(
             factory = { _ ->
@@ -95,7 +95,7 @@ fun PhysicsBuilder.scavengersScratch(): ScavengersFrameScratch {
  * concurrently. Mutations must go through [queueRespawn] / [clearRespawn] /
  * [updateRespawn] which also acquire [rootLock].
  */
-val PhysicsBuilder.pendingRespawns: Map<PlayerId, PlayerRespawnState>
+val SimBuilder.pendingRespawns: Map<PlayerId, PlayerRespawnState>
     get() = rootLock.withLock { scavengersScratch().pendingRespawns.toMap() }
 
 /**
@@ -103,7 +103,7 @@ val PhysicsBuilder.pendingRespawns: Map<PlayerId, PlayerRespawnState>
  * [PlayerRespawnState] and enqueues it under [playerId]. If any required component is
  * missing the entity is instead removed outright — matching the legacy behaviour.
  */
-fun PhysicsBuilder.queueRespawn(playerId: PlayerId, ticksRemaining: Int) {
+fun SimBuilder.queueRespawn(playerId: PlayerId, ticksRemaining: Int) {
     val entityId = playerEntities[playerId] ?: return
     val transform = getComponent<TransformComponent>(entityId)
     val material = getComponent<MaterialComponent>(entityId)
@@ -133,7 +133,7 @@ fun PhysicsBuilder.queueRespawn(playerId: PlayerId, ticksRemaining: Int) {
 }
 
 /** Removes [playerId] from the pending respawn queue, if present. */
-fun PhysicsBuilder.clearRespawn(playerId: PlayerId) {
+fun SimBuilder.clearRespawn(playerId: PlayerId) {
     rootLock.withLock { scavengersScratch().pendingRespawns.remove(playerId) }
 }
 
@@ -143,7 +143,7 @@ fun PhysicsBuilder.clearRespawn(playerId: PlayerId) {
  * exists. Read/compute/write happens under [rootLock], so concurrent forks can't
  * lose each other's updates.
  */
-fun PhysicsBuilder.updateRespawn(
+fun SimBuilder.updateRespawn(
     playerId: PlayerId,
     block: (PlayerRespawnState) -> PlayerRespawnState?,
 ) {
@@ -167,6 +167,6 @@ fun PhysicsBuilder.updateRespawn(
  * list deterministically (write-log replay handles fork merge ordering at phase
  * barriers).
  */
-fun PhysicsBuilder.emitCrashAudio(event: CrashImpactAudioEvent) {
+fun SimBuilder.emitCrashAudio(event: CrashImpactAudioEvent) {
     rootLock.withLock { scavengersScratch().crashImpactAudioEvents.add(event) }
 }

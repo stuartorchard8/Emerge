@@ -7,11 +7,11 @@ import org.emerge.sim.core.Tick
 import org.emerge.sim.core.ecs.ComponentStore
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.physics.components.ParticleComponent
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 
 data class DrocketsSnapshot(
     val tick: Tick,
-    val state: PhysicsState,
+    val state: SimState,
     val lineage: DrocketLineageState,
 )
 
@@ -69,7 +69,7 @@ object DrocketsSaveCodec {
         )
     }
 
-    private fun PhysicsState.withoutParticleEntitiesForPersistence(): PhysicsState {
+    private fun SimState.withoutParticleEntitiesForPersistence(): SimState {
         val particleEntityIds = components.getTable<ParticleComponent>().keys()
         if (particleEntityIds.isEmpty()) return this
         return copy(

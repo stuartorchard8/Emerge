@@ -5,9 +5,9 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.removeEntityWithLandingCascade
+import org.emerge.sim.core.sim.SimBuilder
+import org.emerge.sim.core.sim.SimState
+import org.emerge.sim.core.sim.removeEntityWithLandingCascade
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
 
@@ -15,11 +15,11 @@ import org.emerge.sim.core.physics.primitives.Coord2
  * Removes a player's rocket (if any) and clears any pending respawn for that player.
  * Used by the lockstep host's leave policy.
  *
- * Implemented as a one-shot [PhysicsBuilder] pass so the landing cascade and cross-table
+ * Implemented as a one-shot [SimBuilder] pass so the landing cascade and cross-table
  * tombstoning stay consistent with per-tick removals.
  */
 fun ScavengersState.removePlayerRocket(playerId: PlayerId): ScavengersState {
-    val builder = PhysicsBuilder(core)
+    val builder = SimBuilder(core)
     val entityId = playerEntities[playerId]
     if (entityId != null) {
         builder.removeEntityWithLandingCascade(entityId)
@@ -36,13 +36,13 @@ fun ScavengersState.removePlayerRocket(playerId: PlayerId): ScavengersState {
  * Returns the entity id of the home planet assigned to [teamId], or null if none is
  * currently assigned. Scavengers-only: home planets are a per-game concept.
  */
-fun PhysicsState.homePlanetEntity(teamId: TeamId): EntityId? =
+fun SimState.homePlanetEntity(teamId: TeamId): EntityId? =
     components.getTable<HomePlanetComponent>().entries()
         .firstOrNull { it.value.teamId == teamId }?.key
 
 // --- Player-keyed query helpers ------------------------------------------
 //
-// Replace the typed convenience methods removed from PhysicsState in Move 5.
+// Replace the typed convenience methods removed from SimState in Move 5.
 // These stay in Scavengers because they're how Scavengers reads player state for
 // rendering/input handling; engine code never needed them.
 

@@ -4,7 +4,7 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.*
-import org.emerge.sim.core.physics.model.*
+import org.emerge.sim.core.sim.*
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
 
@@ -14,7 +14,7 @@ import org.emerge.sim.core.physics.primitives.Frac
  * - Dynamic destruction threshold for drockets based on current population.
  * - Non-drocket entities keep using [DrocketsConfig.maxHealth].
  */
-object DrocketAdaptiveDamageSystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
+object DrocketAdaptiveDamageSystem : EcsSystem<DrocketsConfig, SimState, DrocketsInput> {
     private const val DESTRUCTION_BURST_PARTICLE_COUNT = 50
     private val DESTRUCTION_BURST_PARTICLE_RADIUS_FACTOR = Frac(1, 3)
     private val DESTRUCTION_BURST_SPEED_FACTOR = Frac(1, 12)
@@ -33,7 +33,7 @@ object DrocketAdaptiveDamageSystem : EcsSystem<DrocketsConfig, PhysicsState, Dro
 
     override fun update(
         cfg: DrocketsConfig,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val destructionBursts = ArrayList<DestructionBurstSpec>()
@@ -123,7 +123,7 @@ object DrocketAdaptiveDamageSystem : EcsSystem<DrocketsConfig, PhysicsState, Dro
         return Frac(raw)
     }
 
-    private fun spawnDestructionBurst(builder: PhysicsBuilder, burst: DestructionBurstSpec) {
+    private fun spawnDestructionBurst(builder: SimBuilder, burst: DestructionBurstSpec) {
         repeat(DESTRUCTION_BURST_PARTICLE_COUNT) {
             val direction = org.emerge.sim.core.physics.primitives.Norm.fromAngle(
                 org.emerge.sim.core.physics.primitives.Coord(builder.nextRandomInt())

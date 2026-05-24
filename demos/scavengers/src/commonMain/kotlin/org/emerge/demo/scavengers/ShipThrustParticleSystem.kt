@@ -5,22 +5,22 @@ package org.emerge.demo.scavengers
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.BypassesStagedView
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.nextRandomInt
-import org.emerge.sim.core.physics.model.spawnParticle
+import org.emerge.sim.core.sim.SimBuilder
+import org.emerge.sim.core.sim.nextRandomInt
+import org.emerge.sim.core.sim.spawnParticle
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Norm
 
 
-object ShipThrustParticleSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput> {
+object ShipThrustParticleSystem : EcsSystem<ScavengersConfig, SimState, ScavengersInput> {
     override fun update(
         cfg: ScavengersConfig,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, ScavengersInput>,
     ) {
         for ((playerId, entityId) in builder.playerEntities) {

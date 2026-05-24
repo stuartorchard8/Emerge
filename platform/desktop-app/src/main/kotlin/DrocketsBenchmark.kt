@@ -5,7 +5,7 @@ import org.emerge.demo.drockets.DrocketsReducer
 import org.emerge.demo.drockets.createDrocketsInitialState
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.PipelineProfiler
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 
 /**
  * Headless benchmark harness for the Drockets demo.
@@ -59,7 +59,7 @@ private fun runVariant(
     val profiler = PipelineProfiler()
     val reducer = DrocketsReducer(executor = executor, profiler = profiler)
 
-    var state: PhysicsState = createDrocketsInitialState(drocketCount)
+    var state: SimState = createDrocketsInitialState(drocketCount)
 
     // Warmup: tick until the JIT has seen hot paths and steady-state allocation/GC
     // behaviour has settled. The profiler is active throughout warmup but we reset
@@ -71,7 +71,7 @@ private fun runVariant(
 
     // Measure: per-tick wall time via System.nanoTime around reducer.reduce, so the
     // tick sample includes the builder build() cost too (which the phase timers
-    // don't cover). That gap is the PhysicsBuilder overhead — typically tiny but
+    // don't cover). That gap is the SimBuilder overhead — typically tiny but
     // useful to see if it ever isn't.
     for (i in 0 until measureTicks) {
         val t0 = System.nanoTime()

@@ -4,9 +4,9 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.*
-import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.sim.SimBuilder
 
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
@@ -22,11 +22,11 @@ import org.emerge.sim.core.physics.primitives.Frac2
  *
  * The atmosphere extends [ATMOSPHERE_FACTOR] beyond the planet collider radius.
  */
-object AtmosphereDragSystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
+object AtmosphereDragSystem : EcsSystem<DrocketsConfig, SimState, DrocketsInput> {
 
     override fun update(
         cfg: DrocketsConfig,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val impulses = LinkedHashMap<EntityId, ImpulseComponent>()

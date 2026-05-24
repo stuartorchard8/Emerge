@@ -7,12 +7,12 @@ import org.emerge.sim.core.ecs.ComponentStore
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.sync.StateCodec
 
-object ImpulseCodec: StateCodec<PhysicsState> {
+object ImpulseCodec: StateCodec<SimState> {
     private const val INT_SIZE_BYTES = 4
     private const val MAX_STATE_ENTITIES = 2048
     private const val IMPULSE_STATE_HEADER_INT_COUNT = 2
@@ -20,7 +20,7 @@ object ImpulseCodec: StateCodec<PhysicsState> {
     private const val IMPULSE_STATE_DAMAGE_INT_COUNT = 2
 
 
-    override fun encode(state: PhysicsState): ByteArray {
+    override fun encode(state: SimState): ByteArray {
         val w = ByteWriter()
         val impulses = state.components.getTable<ImpulseComponent>()
         val damages = state.components.getTable<DamageComponent>()
@@ -42,7 +42,7 @@ object ImpulseCodec: StateCodec<PhysicsState> {
         return w.toByteArray()
     }
 
-    override fun decode(bytes: ByteArray): PhysicsState {
+    override fun decode(bytes: ByteArray): SimState {
         val c = ByteCursor(bytes)
         val n = c.readInt()
         require(n in 0..MAX_STATE_ENTITIES) { "Invalid entity count: $n" }
@@ -77,7 +77,7 @@ object ImpulseCodec: StateCodec<PhysicsState> {
             val damage = c.readInt()
             damages[entityId] = DamageComponent(Frac(0),Frac(0),Frac(damage.toLong()))
         }
-        return PhysicsState(
+        return SimState(
             components = ComponentStore().update {
                 set(ComponentTable.fromMap(impulses))
                 set(ComponentTable.fromMap(damages))

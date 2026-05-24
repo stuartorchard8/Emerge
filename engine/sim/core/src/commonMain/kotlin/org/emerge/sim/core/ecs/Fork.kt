@@ -36,7 +36,7 @@ package org.emerge.sim.core.ecs
  * parent at merge time — if a scratch field a fork system writes to needs to be visible
  * upstream, the domain layer must route the access through [EcsBuilder.parent] so the
  * mutation lands on the parent's scratch instead. See the PRNG and respawn-queue
- * helpers in `PhysicsBuilder.kt` for the canonical pattern. Under sequential fork
+ * helpers in `SimBuilder.kt` for the canonical pattern. Under sequential fork
  * execution this is bit-identical to the old in-place behaviour; under future threading
  * those delegated accessors will need a lock at the domain layer.
  *

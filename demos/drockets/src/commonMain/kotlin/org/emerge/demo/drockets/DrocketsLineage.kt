@@ -1,6 +1,6 @@
 package org.emerge.demo.drockets
 
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 
 data class DrocketLineageNode(
     val lineageId: Long,
@@ -24,7 +24,7 @@ data class DrocketLineageState(
 }
 
 fun DrocketLineageState.advanceFromPhysics(
-    physics: PhysicsState,
+    physics: SimState,
     tick: Long,
 ): DrocketLineageState {
     val seeds = physics.components.getTable<LineageSeedComponent>().asMap()

@@ -10,10 +10,10 @@ import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.physics.model.PhysicsTuning
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.setContacts
+import org.emerge.sim.core.sim.SimState
+import org.emerge.sim.core.sim.setContacts
 import org.emerge.sim.core.physics.primitives.Contact
 import org.emerge.sim.core.SimInput
 
@@ -68,10 +68,10 @@ import org.emerge.sim.core.SimInput
  */
 class ContactSystem(
     private val executor: ParallelExecutor? = null,
-) : EcsSystem<PhysicsTuning, PhysicsState, SimInput> {
+) : EcsSystem<PhysicsTuning, SimState, SimInput> {
     override fun update(
         cfg: PhysicsTuning,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, SimInput>,
     ) {
         val ids = builder.entries<MaterialComponent>().keys.toList()

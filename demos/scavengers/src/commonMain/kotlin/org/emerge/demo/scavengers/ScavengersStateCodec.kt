@@ -131,7 +131,7 @@ fun scavengersStateCodec(physicsNetCodecs: EcsNetCodecs): StateCodec<ScavengersS
  * Semi-thin state codec for [ScavengersState]. Encodes only the impulse+damage tables
  * (via the engine-side [ImpulseCodec]) so semi-thin clients can replay deltas through
  * [ScavengersReducer.patchState]. Wrapper state (respawns, audio events) is empty in
- * the decoded delta; `patchState` only consumes the inner [PhysicsState] fields anyway.
+ * the decoded delta; `patchState` only consumes the inner [SimState] fields anyway.
  */
 val scavengersImpulseCodec: StateCodec<ScavengersState> = object : StateCodec<ScavengersState> {
     override fun encode(state: ScavengersState): ByteArray = ImpulseCodec.encode(state.core)

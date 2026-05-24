@@ -6,10 +6,10 @@ import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TeamComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.spawnBody
-import org.emerge.sim.core.physics.model.spawnParticle
+import org.emerge.sim.core.sim.SimBuilder
+import org.emerge.sim.core.sim.SimState
+import org.emerge.sim.core.sim.spawnBody
+import org.emerge.sim.core.sim.spawnParticle
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
 class DrocketsSaveCodecTest {
     @Test
     fun encodeDecode_strips_particle_entities_from_physics_state() {
-        val builder = PhysicsBuilder(PhysicsState())
+        val builder = SimBuilder(SimState())
         val bodyId = builder.spawnBody(
             pos = Coord2.zero,
             vel = Coord2.zero,
@@ -75,7 +75,7 @@ class DrocketsSaveCodecTest {
             bodyColor = HsvColorGene(rawH = 100, rawS = -200, rawV = 300),
             fireColor = HsvColorGene(rawH = -400, rawS = 500, rawV = -600),
         )
-        val builder = PhysicsBuilder(PhysicsState())
+        val builder = SimBuilder(SimState())
         val bodyId = builder.spawnBody(
             pos = Coord2.zero,
             vel = Coord2.zero,
@@ -116,7 +116,7 @@ class DrocketsSaveCodecTest {
             spawnMotherEntityId = 17,
             spawnFatherEntityId = 23,
         )
-        val builder = PhysicsBuilder(PhysicsState())
+        val builder = SimBuilder(SimState())
         val bodyId = builder.spawnBody(
             pos = Coord2.zero,
             vel = Coord2.zero,
@@ -172,7 +172,7 @@ class DrocketsSaveCodecTest {
         )
         val snapshot = DrocketsSnapshot(
             tick = Tick(777),
-            state = PhysicsBuilder(PhysicsState()).build(),
+            state = SimBuilder(SimState()).build(),
             lineage = lineage,
         )
 

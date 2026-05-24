@@ -4,13 +4,13 @@ import kotlinx.datetime.Clock
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.physics.components.*
-import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.spawnBody
+import org.emerge.sim.core.sim.SimBuilder
+import org.emerge.sim.core.sim.SimState
+import org.emerge.sim.core.sim.spawnBody
 import org.emerge.sim.core.physics.primitives.*
 
-fun createDrocketsInitialState(drocketCount: Int = INITIAL_DROCKET_COUNT, knightCount: Int = INITIAL_KNIGHT_COUNT): PhysicsState {
-    val builder = PhysicsBuilder(PhysicsState())
+fun createDrocketsInitialState(drocketCount: Int = INITIAL_DROCKET_COUNT, knightCount: Int = INITIAL_KNIGHT_COUNT): SimState {
+    val builder = SimBuilder(SimState())
 
     val planetId = builder.spawnBody(
         pos = Coord2.zero,
@@ -46,7 +46,7 @@ fun createDrocketsInitialState(drocketCount: Int = INITIAL_DROCKET_COUNT, knight
 }
 
 private fun spawnDrocketOnPlanet(
-    builder: PhysicsBuilder,
+    builder: SimBuilder,
     planetId: EntityId,
     angle: Coord,
     teamId: TeamId,
@@ -72,7 +72,7 @@ private fun spawnDrocketOnPlanet(
 }
 
 fun spawnDrocket(
-    builder: PhysicsBuilder,
+    builder: SimBuilder,
     position: Coord2,
     velocity: Coord2,
     angle: Coord,
@@ -113,7 +113,7 @@ fun spawnDrocket(
 }
 
 private fun spawnKnightOnPlanet(
-    builder: PhysicsBuilder,
+    builder: SimBuilder,
     planetId: EntityId,
     angle: Coord,
     teamId: TeamId,

@@ -1,4 +1,4 @@
-package org.emerge.demo.drockets
+package org.emerge.render.torus
 
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.ForceFieldComponent
@@ -10,9 +10,9 @@ import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.sim.SimState
 
 /**
- * Typed-getter extensions used by Drockets's demo-side rendering and pick code. Engine
- * [SimState] dropped these convenience getters in Move 5; demos define their own
- * over whatever component types they actually read.
+ * Renderer-internal typed accessors for the engine component tables that
+ * [ScreenRenderer] consumes each frame. `internal` to the render module so the engine
+ * `SimState` doesn't have to expose game-domain convenience getters.
  */
 internal val SimState.transforms get() = components.getTable<TransformComponent>()
 internal val SimState.colliders get() = components.getTable<ColliderComponent>()

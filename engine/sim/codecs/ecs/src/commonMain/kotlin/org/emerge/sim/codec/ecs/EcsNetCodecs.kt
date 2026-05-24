@@ -6,7 +6,7 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.ecs.EcsWorld
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 import org.emerge.sim.sync.StateCodec
 import org.emerge.sim.sync.ecs.ComponentCodec
 
@@ -17,9 +17,9 @@ import org.emerge.sim.sync.ecs.ComponentCodec
  * events) wrap this codec inside their own state codec.
  */
 class EcsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
-    val stateCodec: StateCodec<PhysicsState> =
-        object : StateCodec<PhysicsState> {
-            override fun encode(state: PhysicsState): ByteArray {
+    val stateCodec: StateCodec<SimState> =
+        object : StateCodec<SimState> {
+            override fun encode(state: SimState): ByteArray {
                 val w = ByteWriter()
                 with(state) {
                     val motions = components.getTable<MotionComponent>()
@@ -39,7 +39,7 @@ class EcsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
                 return w.toByteArray()
             }
 
-            override fun decode(bytes: ByteArray): PhysicsState {
+            override fun decode(bytes: ByteArray): SimState {
                 val c = ByteCursor(bytes)
                 val n = c.readInt()
                 require(n in 0..MAX_STATE_ENTITIES) { "Invalid entity count: $n" }
@@ -47,7 +47,7 @@ class EcsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
                 val lastEntityValue = c.readInt()
                 val entities = mutableSetOf<Int>()
 
-                var state = PhysicsState()
+                var state = SimState()
 
                 repeat(n) {
                     val entityId = EntityId(c.readInt())

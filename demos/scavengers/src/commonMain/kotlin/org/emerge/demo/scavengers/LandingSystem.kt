@@ -4,20 +4,20 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.*
-import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.sim.SimBuilder
 
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.contacts
+import org.emerge.sim.core.sim.SimState
+import org.emerge.sim.core.sim.contacts
 import org.emerge.sim.core.physics.primitives.*
 import org.emerge.sim.core.physics.systems.solveNormalCollisionResponse
 
 
-object LandingSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput> {
+object LandingSystem : EcsSystem<ScavengersConfig, SimState, ScavengersInput> {
     private val LANDING_ALIGNMENT_THRESHOLD = Frac(7, 8)
 
     override fun update(
         cfg: ScavengersConfig,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, ScavengersInput>,
     ) {
         for (contact in builder.contacts) {
@@ -112,7 +112,7 @@ object LandingSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput
     }
 
     private fun accumulateShipCollisionDamage(
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         entityId: EntityId,
         shape: RenderShapeComponent,
         impactImpulse: Frac,
@@ -165,7 +165,7 @@ object LandingSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput
     }
 
     private fun crushLandedShipIfPinnedByPlanet(
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         cfg: ScavengersConfig,
         entityId: EntityId,
         entityShape: RenderShapeComponent,

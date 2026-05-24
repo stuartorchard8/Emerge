@@ -8,10 +8,10 @@ import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.sim.SimBuilder
 
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.nextRandomInt
+import org.emerge.sim.core.sim.SimState
+import org.emerge.sim.core.sim.nextRandomInt
 import org.emerge.sim.core.physics.primitives.*
 import kotlin.math.abs
 
@@ -24,11 +24,11 @@ import kotlin.math.abs
  * - Fuel: 1.4 seconds (84 ticks)
  * - Thrust force: 12000 * impulse / delta (mapped to fixed-point impulse per tick)
  */
-object DrocketAISystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
+object DrocketAISystem : EcsSystem<DrocketsConfig, SimState, DrocketsInput> {
 
     override fun update(
         cfg: DrocketsConfig,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val drocketStates = LinkedHashMap(builder.entries<DrocketStateComponent>())

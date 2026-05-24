@@ -4,11 +4,11 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.*
-import org.emerge.sim.core.physics.model.*
+import org.emerge.sim.core.sim.*
 import org.emerge.sim.core.physics.primitives.*
 
 
-object DamageSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput> {
+object DamageSystem : EcsSystem<ScavengersConfig, SimState, ScavengersInput> {
     private const val DESTRUCTION_BURST_PARTICLE_COUNT = 50
     private val DESTRUCTION_BURST_PARTICLE_RADIUS_FACTOR = Frac(1, 3)
     private val DESTRUCTION_BURST_SPEED_FACTOR = Frac(1, 12)
@@ -16,7 +16,7 @@ object DamageSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput>
 
     override fun update(
         cfg: ScavengersConfig,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, ScavengersInput>,
     ) {
         val destructionBursts = ArrayList<DestructionBurstSpec>()
@@ -78,7 +78,7 @@ object DamageSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput>
         }
     }
 
-    private fun spawnDestructionBurst(builder: PhysicsBuilder, burst: DestructionBurstSpec) {
+    private fun spawnDestructionBurst(builder: SimBuilder, burst: DestructionBurstSpec) {
         repeat(DESTRUCTION_BURST_PARTICLE_COUNT) {
             val direction = Norm.fromAngle(Coord(builder.nextRandomInt()))
             val speed = DESTRUCTION_BURST_SPEED_FACTOR*(burst.baseRadius + burst.recentImpulse.vel.len) * Frac(builder.nextRandomInt(until = Int.MAX_VALUE).toLong())

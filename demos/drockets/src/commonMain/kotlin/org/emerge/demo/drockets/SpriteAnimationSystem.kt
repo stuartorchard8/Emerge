@@ -3,20 +3,20 @@ package org.emerge.demo.drockets
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.sim.SimBuilder
 
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 
 
 /**
  * Advances animation state by one tick, cycling frames according to the
  * active animation definition.
  */
-object SpriteAnimationSystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
+object SpriteAnimationSystem : EcsSystem<DrocketsConfig, SimState, DrocketsInput> {
 
     override fun update(
         cfg: DrocketsConfig,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val animStates = LinkedHashMap(builder.entries<SpriteAnimationState>())

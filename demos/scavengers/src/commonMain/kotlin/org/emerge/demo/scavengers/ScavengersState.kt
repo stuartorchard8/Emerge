@@ -2,10 +2,10 @@ package org.emerge.demo.scavengers
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 
 /**
- * Scavengers-specific game state. Wraps the engine [PhysicsState] with the
+ * Scavengers-specific game state. Wraps the engine [SimState] with the
  * game-specific lifecycle accumulators (respawn queue, audio events) and the
  * player→entity index that the engine no longer carries.
  *
@@ -14,7 +14,7 @@ import org.emerge.sim.core.physics.model.PhysicsState
  * [pendingRespawns], and [crashImpactAudioEvents].
  */
 data class ScavengersState(
-    val core: PhysicsState = PhysicsState(),
+    val core: SimState = SimState(),
     val playerEntities: Map<PlayerId, EntityId> = emptyMap(),
     val pendingRespawns: Map<PlayerId, PlayerRespawnState> = emptyMap(),
     val crashImpactAudioEvents: List<CrashImpactAudioEvent> = emptyList(),
@@ -22,10 +22,10 @@ data class ScavengersState(
 
 /**
  * Rebuilds the player→entity index from the authoritative [PlayerOwnedComponent] table.
- * Called by the reducer and codec after producing a fresh [PhysicsState] so callers can
+ * Called by the reducer and codec after producing a fresh [SimState] so callers can
  * resolve the player's rocket entity without scanning components.
  */
-fun PhysicsState.computePlayerEntities(): Map<PlayerId, EntityId> =
+fun SimState.computePlayerEntities(): Map<PlayerId, EntityId> =
     components.getTable<PlayerOwnedComponent>()
         .entries()
         .associate { (id, comp) -> comp.playerId to id }

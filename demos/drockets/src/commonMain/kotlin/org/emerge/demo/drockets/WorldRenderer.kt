@@ -9,7 +9,7 @@ import org.emerge.render.torus.put
 import org.emerge.render.torus.shader.CircleShader
 import org.emerge.render.torus.shader.SpriteShader
 import org.emerge.sim.core.EntityId
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 import org.emerge.sim.core.physics.primitives.*
 import kotlin.concurrent.Volatile
 import kotlin.math.PI
@@ -51,7 +51,7 @@ class WorldRenderer(
     private val spriteShader = SpriteShader()
 
     private var resolution: Vec2 = Vec2(1f, 1f)
-    private var lastDrawnState: PhysicsState? = null
+    private var lastDrawnState: SimState? = null
 
     // Instance buffers for planet shader
     private val planetMatrices = FloatArray(PlanetShader.MAX_INSTANCES * M4)
@@ -127,7 +127,7 @@ class WorldRenderer(
      * World-space pick at screen pixel. Returns true if a drocket was found and focused on.
      * Hit radius is [PICK_RADIUS_SCALE] times the entity's collider radius.
      */
-    fun tryFocusDrocketAt(state: PhysicsState, pixel: Vec2): Boolean {
+    fun tryFocusDrocketAt(state: SimState, pixel: Vec2): Boolean {
         val world = screenToWorld(pixel) ?: return false
         val drocketStates = state.components.getTable<DrocketStateComponent>()
 
@@ -155,7 +155,7 @@ class WorldRenderer(
         return false
     }
 
-    fun draw(state: PhysicsState) {
+    fun draw(state: SimState) {
         lastDrawnState = state
         updateViewFocus(state)
 
@@ -224,7 +224,7 @@ class WorldRenderer(
 
     // ── Layer drawing ──────────────────────────────────────────────────────────
 
-    private fun drawPlanets(state: PhysicsState) {
+    private fun drawPlanets(state: SimState) {
         var planetCount = 0
         for (entityId in state.planets.keys()) {
             if (planetCount >= PlanetShader.MAX_INSTANCES) break
@@ -266,7 +266,7 @@ class WorldRenderer(
         }
     }
 
-    private fun drawDrocketSprites(state: PhysicsState) {
+    private fun drawDrocketSprites(state: SimState) {
         var spriteCount = 0
         val drocketStates = state.components.getTable<DrocketStateComponent>().entries()
         val reproducers = state.components.getTable<ReproducerComponent>()
@@ -332,7 +332,7 @@ class WorldRenderer(
         }
     }
 
-    private fun drawKnightSprites(state: PhysicsState) {
+    private fun drawKnightSprites(state: SimState) {
         var spriteCount = 0
         val knightStates = state.components.getTable<KnightStateComponent>().entries()
         for ((entityId, _) in knightStates) {
@@ -382,7 +382,7 @@ class WorldRenderer(
         }
     }
 
-    private fun drawParticles(state: PhysicsState) {
+    private fun drawParticles(state: SimState) {
         var circleCount = 0
         val fireTintByTeam = buildFireTintByTeam(state)
         for ((entityId, particle) in state.particles.entries()) {
@@ -437,7 +437,7 @@ class WorldRenderer(
         }
     }
 
-    private fun buildFireTintByTeam(state: PhysicsState): Map<Int, Triple<Float, Float, Float>> {
+    private fun buildFireTintByTeam(state: SimState): Map<Int, Triple<Float, Float, Float>> {
         val out = LinkedHashMap<Int, Triple<Float, Float, Float>>()
         val drockets = state.components.getTable<DrocketStateComponent>().entries()
         val genomes = state.components.getTable<GenomeComponent>()
@@ -452,7 +452,7 @@ class WorldRenderer(
 
     // ── Camera focus ───────────────────────────────────────────────────────────
 
-    private fun updateViewFocus(state: PhysicsState) {
+    private fun updateViewFocus(state: SimState) {
         val drocketStates = state.components.getTable<DrocketStateComponent>()
 
         val planetId = state.planets.keys().firstOrNull() ?: return
@@ -501,7 +501,7 @@ class WorldRenderer(
         )
     }
 
-    private fun getFocusPos(state: PhysicsState, entityId: EntityId): Coord2? {
+    private fun getFocusPos(state: SimState, entityId: EntityId): Coord2? {
         val transform = state.transforms[entityId] ?: return null
         val surfaceRadius = state.colliders[entityId]?.radius
 
@@ -594,13 +594,13 @@ class WorldRenderer(
         return index + 1
     }
 
-    private fun spriteUvForEntity(state: PhysicsState, entityId: EntityId): Pair<Float, Float> {
+    private fun spriteUvForEntity(state: SimState, entityId: EntityId): Pair<Float, Float> {
         val animState = state.components.getTable<SpriteAnimationState>()[entityId] ?: return Pair(0f, 0f)
         val atlasFrame = SpriteAnimationSystem.currentAtlasFrame(animState)
         return animState.sheet.frameUV(atlasFrame)
     }
 
-    private fun spriteSizeForEntity(state: PhysicsState, entityId: EntityId): Pair<Float, Float> {
+    private fun spriteSizeForEntity(state: SimState, entityId: EntityId): Pair<Float, Float> {
         val animState = state.components.getTable<SpriteAnimationState>()[entityId] ?: return Pair(1f, 1f)
         val atlasFrame = SpriteAnimationSystem.currentAtlasFrame(animState)
         return animState.sheet.frameWH(atlasFrame)

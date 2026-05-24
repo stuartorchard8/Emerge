@@ -1,6 +1,6 @@
 @file:OptIn(BypassesStagedView::class)
 
-package org.emerge.sim.core.physics.model
+package org.emerge.sim.core.sim
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.TeamId
@@ -23,30 +23,30 @@ import org.emerge.sim.core.physics.primitives.Frac
 
 /**
  * Physics-domain view of the generic [EcsBuilder]. Nothing about the builder itself is
- * physics-specific — all physics-domain frame state is carried via [PhysicsFrameScratch]
+ * physics-specific — all physics-domain frame state is carried via [SimFrameScratch]
  * and the extension functions below.
  *
- * The builder operates on [PhysicsState] directly. Reducers construct a builder from the
+ * The builder operates on [SimState] directly. Reducers construct a builder from the
  * current snapshot, run systems, and return the built snapshot.
  */
-typealias PhysicsBuilder = EcsBuilder<PhysicsState>
+typealias SimBuilder = EcsBuilder<SimState>
 
 /**
- * Constructs a [PhysicsBuilder] wired up with lenses over [PhysicsState], and eagerly
- * registers [PhysicsFrameScratch] so that frame-scoped collections like [contacts] are
+ * Constructs a [SimBuilder] wired up with lenses over [SimState], and eagerly
+ * registers [SimFrameScratch] so that frame-scoped collections like [contacts] are
  * reset every frame even if no system reads or writes them. Demo-specific frame state
  * (respawn queues, audio events, etc.) is layered on by demos via their own scratch
  * objects registered through [EcsBuilder.scratch].
  */
 @Suppress("FunctionName")
-fun PhysicsBuilder(initial: PhysicsState): PhysicsBuilder {
+fun SimBuilder(initial: SimState): SimBuilder {
     val builder = EcsBuilder(
         initial = initial,
         getComponents = { it.components },
         getWorld = { it.world },
         applyComponents = { snap, components -> snap.copy(components = components) },
     )
-    builder.physicsScratch()
+    builder.simScratch()
     return builder
 }
 
@@ -65,7 +65,7 @@ fun PhysicsBuilder(initial: PhysicsState): PhysicsBuilder {
  *    forks in the same isolated phase, at the cost of needing a lock at the domain
  *    layer once forks actually run on separate threads.
  */
-class PhysicsFrameScratch(initial: PhysicsState) {
+class SimFrameScratch(initial: SimState) {
     /**
      * Contacts detected this frame. Seeded from [initial] so that a builder forked
      * mid-frame (via [EcsBuilder.fork][org.emerge.sim.core.ecs.fork]) inherits the
@@ -83,23 +83,23 @@ class PhysicsFrameScratch(initial: PhysicsState) {
  * accessors funnel through this so a fork's writes land on the root's scratch where
  * they're globally visible within the isolated phase and survive beyond merge.
  */
-private fun PhysicsBuilder.rootBuilder(): PhysicsBuilder {
-    var b: PhysicsBuilder = this
+private fun SimBuilder.rootBuilder(): SimBuilder {
+    var b: SimBuilder = this
     while (true) {
         val p = b.parent ?: return b
         b = p
     }
 }
 
-private fun PhysicsBuilder.sharedScratch(): PhysicsFrameScratch = rootBuilder().physicsScratch()
+private fun SimBuilder.sharedScratch(): SimFrameScratch = rootBuilder().simScratch()
 
 /**
  * Returns (creating on first call) the physics frame scratch, registering its finalizer
  * with the builder at the same time. Internal: public surface is the extensions below.
  */
-internal fun PhysicsBuilder.physicsScratch(): PhysicsFrameScratch {
+internal fun SimBuilder.simScratch(): SimFrameScratch {
     return scratch(
-        factory = { init -> PhysicsFrameScratch(init) },
+        factory = { init -> SimFrameScratch(init) },
         finalize = { scratch ->
             copy(
                 contacts = scratch.contacts,
@@ -116,15 +116,15 @@ internal fun PhysicsBuilder.physicsScratch(): PhysicsFrameScratch {
  * by that phase's producer via [setContacts]; read as an immutable list by all phases
  * that follow. Treat it as a read-only phase input outside `contactDetect`.
  */
-val PhysicsBuilder.contacts: List<Contact>
-    get() = physicsScratch().contacts
+val SimBuilder.contacts: List<Contact>
+    get() = simScratch().contacts
 
 /**
  * Publishes the full contact list for this frame, replacing any prior value. Only the
  * `contactDetect` phase's producer should call this.
  */
-fun PhysicsBuilder.setContacts(contacts: List<Contact>) {
-    physicsScratch().contacts = contacts
+fun SimBuilder.setContacts(contacts: List<Contact>) {
+    simScratch().contacts = contacts
 }
 
 // --- Deterministic PRNG --------------------------------------------------
@@ -134,13 +134,13 @@ fun PhysicsBuilder.setContacts(contacts: List<Contact>) {
 // concurrent draws from parallel forks so the sequence stays well-defined; under
 // sequential fork dispatch the lock is uncontended and ~free on JVM (no-op on JS).
 
-fun PhysicsBuilder.nextRandomInt(): Int = rootLock.withLock {
+fun SimBuilder.nextRandomInt(): Int = rootLock.withLock {
     val scratch = sharedScratch()
     scratch.randomSeed = scratch.randomSeed * 2862933555777941757L + 3037000493L
     (scratch.randomSeed ushr 32).toInt()
 }
 
-fun PhysicsBuilder.nextRandomInt(until: Int): Int {
+fun SimBuilder.nextRandomInt(until: Int): Int {
     require(until > 0)
     return (nextRandomInt().toLong() and 0x7FFFFFFFL).toInt() % until
 }
@@ -153,7 +153,7 @@ fun PhysicsBuilder.nextRandomInt(until: Int): Int {
  * components set here. Demos that need to mark the body as player-owned attach their own
  * ownership component on top of the returned entity id.
  */
-fun PhysicsBuilder.spawnBody(
+fun SimBuilder.spawnBody(
     pos: Coord2,
     vel: Coord2,
     ang: Coord,
@@ -178,7 +178,7 @@ fun PhysicsBuilder.spawnBody(
 /**
  * Spawns a particle entity via [EcsBuilder.createEntity] + per-component writes.
  */
-fun PhysicsBuilder.spawnParticle(
+fun SimBuilder.spawnParticle(
     pos: Coord2,
     vel: Coord2,
     radius: Frac,
@@ -200,7 +200,7 @@ fun PhysicsBuilder.spawnParticle(
  * Like [EcsBuilder.removeEntity] but also cascades any [LandingAttachmentComponent] whose
  * parent was [id], so orphaned surface attachments don't outlive their planet/ship.
  */
-fun PhysicsBuilder.removeEntityWithLandingCascade(id: EntityId) {
+fun SimBuilder.removeEntityWithLandingCascade(id: EntityId) {
     for ((landerId, landing) in entries<LandingAttachmentComponent>()) {
         if (landing.parentEntityId == id && landerId != id) {
             remove<LandingAttachmentComponent>(landerId)

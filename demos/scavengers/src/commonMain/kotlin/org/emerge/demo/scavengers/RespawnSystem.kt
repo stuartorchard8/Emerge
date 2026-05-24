@@ -5,16 +5,16 @@ package org.emerge.demo.scavengers
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.BypassesStagedView
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.DamageComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.sim.SimBuilder
 
-import org.emerge.sim.core.physics.model.spawnBody
+import org.emerge.sim.core.sim.spawnBody
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Norm
@@ -28,10 +28,10 @@ import org.emerge.sim.core.physics.primitives.Norm
  * Respawn entries are queued elsewhere (typically by [DamageSystem] via [queueRespawn]);
  * this system is only responsible for draining the queue.
  */
-object RespawnSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput> {
+object RespawnSystem : EcsSystem<ScavengersConfig, SimState, ScavengersInput> {
     override fun update(
         cfg: ScavengersConfig,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, ScavengersInput>,
     ) {
         if (builder.pendingRespawns.isEmpty()) return
@@ -54,7 +54,7 @@ object RespawnSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput
     }
 
     private fun tryRespawnPlayer(
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         playerId: PlayerId,
         respawn: PlayerRespawnState,
     ): Boolean {

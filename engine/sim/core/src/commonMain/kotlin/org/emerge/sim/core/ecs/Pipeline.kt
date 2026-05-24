@@ -111,7 +111,7 @@ fun <C, S, I> runSequential(
  * That means `runParallel` and [runSequential] produce the same final state given
  * the same inputs, modulo domain-level PRNG ordering inside a phase (draws from
  * different forks interleave under the root lock in the order they hit it; this is
- * by design — see the PRNG kdoc on `PhysicsBuilder.kt`).
+ * by design — see the PRNG kdoc on `SimBuilder.kt`).
  *
  * Caller owns [executor] and is responsible for its [ParallelExecutor.close].
  */

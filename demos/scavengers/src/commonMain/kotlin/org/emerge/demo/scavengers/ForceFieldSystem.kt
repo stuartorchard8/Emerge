@@ -3,19 +3,19 @@ package org.emerge.demo.scavengers
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.EcsSystem
-import org.emerge.sim.core.physics.model.PhysicsState
+import org.emerge.sim.core.sim.SimState
 import org.emerge.sim.core.physics.components.*
-import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.sim.SimBuilder
 
 import org.emerge.sim.core.physics.primitives.*
 
 
-object ForceFieldSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput> {
+object ForceFieldSystem : EcsSystem<ScavengersConfig, SimState, ScavengersInput> {
     private val FORCE_FIELD_TEAM_DAMPING = Frac(1, 64)
 
     override fun update(
         cfg: ScavengersConfig,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, ScavengersInput>,
     ) {
         val ids = builder.entries<MaterialComponent>().keys.toList()

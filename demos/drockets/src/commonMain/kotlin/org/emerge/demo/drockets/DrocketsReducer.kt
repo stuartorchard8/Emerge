@@ -4,9 +4,9 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.ecs.*
 import org.emerge.sim.core.physics.components.ImpulseComponent
-import org.emerge.sim.core.physics.model.PhysicsBuilder
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.setImpulses
+import org.emerge.sim.core.sim.SimBuilder
+import org.emerge.sim.core.sim.SimState
+import org.emerge.sim.core.sim.setImpulses
 
 import org.emerge.sim.core.physics.systems.*
 
@@ -50,8 +50,8 @@ import org.emerge.sim.core.physics.systems.*
 class DrocketsReducer(
     private val executor: ParallelExecutor? = null,
     private val profiler: PipelineProfiler? = null,
-) : SimReducer<DrocketsConfig, PhysicsState, DrocketsInput> {
-    private val pipeline: Pipeline<DrocketsConfig, PhysicsState, DrocketsInput> = listOf(
+) : SimReducer<DrocketsConfig, SimState, DrocketsInput> {
+    private val pipeline: Pipeline<DrocketsConfig, SimState, DrocketsInput> = listOf(
         Phase("reset", ImpulseResetSystem),
         Phase("aiAndMotion", DrocketAISystem, DrocketWalkSystem, KnightAISystem, KnightWalkSystem, SpriteAnimationSystem),
         Phase("forceGather", GravitySystem(executor), AtmosphereDragSystem).isolated(),
@@ -65,10 +65,10 @@ class DrocketsReducer(
 
     override fun reduce(
         cfg: DrocketsConfig,
-        state: PhysicsState,
+        state: SimState,
         inputs: Map<PlayerId, DrocketsInput>,
-    ): PhysicsState {
-        val builder = PhysicsBuilder(state)
+    ): SimState {
+        val builder = SimBuilder(state)
         if (executor != null) {
             runParallel(cfg, builder, inputs, pipeline, executor, profiler)
         } else {
@@ -77,6 +77,6 @@ class DrocketsReducer(
         return builder.build()
     }
 
-    override fun patchState(state: PhysicsState, delta: PhysicsState): PhysicsState =
+    override fun patchState(state: SimState, delta: SimState): SimState =
         state.setImpulses(delta.components.getTable<ImpulseComponent>())
 }

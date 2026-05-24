@@ -3,18 +3,18 @@ package org.emerge.demo.drockets
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.*
-import org.emerge.sim.core.physics.model.PhysicsBuilder
+import org.emerge.sim.core.sim.SimBuilder
 
-import org.emerge.sim.core.physics.model.PhysicsState
-import org.emerge.sim.core.physics.model.contacts
+import org.emerge.sim.core.sim.SimState
+import org.emerge.sim.core.sim.contacts
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 
 
-object DrocketLandingSystem : EcsSystem<DrocketsConfig, PhysicsState, DrocketsInput> {
+object DrocketLandingSystem : EcsSystem<DrocketsConfig, SimState, DrocketsInput> {
     override fun update(
         cfg: DrocketsConfig,
-        builder: PhysicsBuilder,
+        builder: SimBuilder,
         inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val drocketStates = builder.entries<DrocketStateComponent>()

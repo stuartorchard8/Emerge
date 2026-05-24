@@ -1,4 +1,4 @@
-package org.emerge.sim.core.physics.model
+package org.emerge.sim.core.sim
 
 import org.emerge.sim.core.ecs.ComponentStore
 import org.emerge.sim.core.ecs.EcsWorld
@@ -10,7 +10,7 @@ import org.emerge.sim.core.physics.primitives.Contact
  * state (respawn queues, audio events, player-entity indexes, etc.) lives in demo-side
  * wrapper states.
  */
-data class PhysicsState(
+data class SimState(
     val world: EcsWorld = EcsWorld.EMPTY,
     val components: ComponentStore = ComponentStore(),
     val contacts: List<Contact> = emptyList(),
