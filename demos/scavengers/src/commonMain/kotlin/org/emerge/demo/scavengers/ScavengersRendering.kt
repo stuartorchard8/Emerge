@@ -4,7 +4,6 @@ import org.emerge.render.torus.EdgeIndicator
 import org.emerge.render.torus.RgbColor
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.components.PlanetComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.math.floor
@@ -24,16 +23,16 @@ fun ScavengersState.scavengersBodyTint(entityId: EntityId): RgbColor =
     teamColor(core.components.getTable<TeamComponent>()[entityId]?.teamId?.value)
 
 /**
- * Off-screen edge indicators, one per [PlanetComponent]. Bright for the local
- * player's team's home planet, fading with world-space distance for others.
- * Returns empty if [myId] is null (no local player → no anchor for "my team").
+ * Off-screen edge indicators, one per [LandingSurfaceComponent]. Bright for the local
+ * player's team's home planet, fading with world-space distance for others. Returns
+ * empty if [myId] is null (no local player → no anchor for "my team").
  */
 fun ScavengersState.scavengersEdgeIndicators(myId: PlayerId?): List<EdgeIndicator> {
     if (myId == null) return emptyList()
     val playerEntityId = playerEntities[myId] ?: return emptyList()
     val teams = core.components.getTable<TeamComponent>()
     val transforms = core.components.getTable<TransformComponent>()
-    val planets = core.components.getTable<PlanetComponent>()
+    val planets = core.components.getTable<LandingSurfaceComponent>()
     val playerTeamId = teams[playerEntityId]?.teamId?.value
     val focusPos = transforms[playerEntityId]?.pos
 

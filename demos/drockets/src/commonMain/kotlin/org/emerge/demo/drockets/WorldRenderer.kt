@@ -226,7 +226,7 @@ class WorldRenderer(
 
     private fun drawPlanets(state: SimState) {
         var planetCount = 0
-        for (entityId in state.planets.keys()) {
+        for (entityId in state.atmosphereSources.keys()) {
             if (planetCount >= PlanetShader.MAX_INSTANCES) break
             val transform = state.transforms[entityId] ?: continue
             val collider = state.colliders[entityId] ?: continue
@@ -430,7 +430,7 @@ class WorldRenderer(
     private fun updateViewFocus(state: SimState) {
         val drocketStates = state.components.getTable<DrocketStateComponent>()
 
-        val planetId = state.planets.keys().firstOrNull() ?: return
+        val planetId = state.atmosphereSources.keys().firstOrNull() ?: return
         val planetTransform = state.transforms[planetId] ?: return
 
         val focusedId = focusedEntityId

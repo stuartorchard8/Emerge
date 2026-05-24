@@ -8,7 +8,6 @@ import org.emerge.sim.sync.ecs.LandingCodec
 import org.emerge.sim.sync.ecs.MaterialCodec
 import org.emerge.sim.sync.ecs.MotionCodec
 import org.emerge.sim.sync.ecs.ParticleCodec
-import org.emerge.sim.sync.ecs.PlanetCodec
 import org.emerge.sim.sync.ecs.RenderShapeCodec
 import org.emerge.sim.sync.ecs.TransformCodec
 
@@ -25,7 +24,7 @@ object ScavengersCodecs {
             ColliderCodec,
             MaterialCodec,
             RenderShapeCodec,
-            PlanetCodec,
+            LandingSurfaceCodec,
             TeamCodec,
             ForceFieldCodec,
             PlayerIdCodec,

@@ -175,7 +175,7 @@ object LandingSystem : EcsSystem<ScavengersConfig, SimState, ScavengersInput> {
         if (landing == null) return
         if (landing.parentEntityId == otherEntityId) return
         if (entityShape.shape != BodyShape.TRIANGLE) return
-        if (builder.getComponent<PlanetComponent>(otherEntityId) == null) return
+        if (builder.getComponent<LandingSurfaceComponent>(otherEntityId) == null) return
         builder.update<DamageComponent>(entityId) { DamageComponent(next = cfg.maxHealth) }
     }
 }

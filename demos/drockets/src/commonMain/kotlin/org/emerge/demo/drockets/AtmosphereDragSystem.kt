@@ -31,7 +31,7 @@ object AtmosphereDragSystem : EcsSystem<DrocketsConfig, SimState, DrocketsInput>
     ) {
         val impulses = LinkedHashMap<EntityId, ImpulseComponent>()
 
-        val planetIds = builder.entries<PlanetComponent>().keys.toList()
+        val planetIds = builder.entries<AtmosphereSourceComponent>().keys.toList()
         if (planetIds.isEmpty()) return
 
         for ((entityId, renderShape) in builder.entries<RenderShapeComponent>()) {

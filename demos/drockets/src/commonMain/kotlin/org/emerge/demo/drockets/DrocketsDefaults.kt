@@ -22,7 +22,7 @@ fun createDrocketsInitialState(drocketCount: Int = INITIAL_DROCKET_COUNT, knight
         rough = Frac(3, 4),
         shape = BodyShape.CIRCLE,
     )
-    builder.update<PlanetComponent>(planetId) { PlanetComponent(seed = 42) }
+    builder.update<AtmosphereSourceComponent>(planetId) { AtmosphereSourceComponent }
 
     for (i in 0 until knightCount) {
         val angle = Coord(i*2, drocketCount)

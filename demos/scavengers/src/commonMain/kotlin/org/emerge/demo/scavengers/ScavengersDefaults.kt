@@ -8,7 +8,6 @@ import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.ForceFieldComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
-import org.emerge.sim.core.physics.components.PlanetComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
@@ -36,7 +35,7 @@ fun createDefaultInitialState(
             rough = Frac(8, 16),
             shape = BodyShape.CIRCLE,
         )
-        builder.update<PlanetComponent>(spawn) { PlanetComponent(seed = i) }
+        builder.update<LandingSurfaceComponent>(spawn) { LandingSurfaceComponent }
     }
     if (spawnHostPlayer) {
         assignHomePlanetAndSpawn(
@@ -124,7 +123,7 @@ private fun chooseHomePlanet(
     homePlanets: Map<EntityId, HomePlanetComponent>,
     random: Random,
 ): EntityId? {
-    val planets = builder.entries<PlanetComponent>().keys
+    val planets = builder.entries<LandingSurfaceComponent>().keys
     if (planets.isEmpty()) return null
     val claimed = homePlanets.keys
     val available = planets.filterNot { it in claimed }
