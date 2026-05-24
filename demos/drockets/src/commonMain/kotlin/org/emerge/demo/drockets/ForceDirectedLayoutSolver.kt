@@ -467,7 +467,7 @@ class ForceDirectedLayoutSolver {
         // Coulomb-like force (magnitude REPULSION_K / d², along the line
         // between the pair). Higher values spread the layout further apart
         // overall but also widen the zig-zag of connected pairs past REST_LENGTH.
-        private const val REPULSION_K: Float = 0.000001f
+        private const val REPULSION_K: Float = 0.0001f
         // Bonus repulsion applied ONLY between pairs where both nodes are
         // currently living, on top of the base REPULSION_K. Spreads alive
         // individuals further apart than dead ancestors do, making them easier
