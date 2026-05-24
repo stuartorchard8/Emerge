@@ -231,7 +231,6 @@ class WorldRenderer(
             val transform = state.transforms[entityId] ?: continue
             val collider = state.colliders[entityId] ?: continue
             val forceField = state.forceFields[entityId]
-            val teamId = state.teams[entityId]?.teamId?.value
 
             val renderRadius = if (forceField != null) {
                 (collider.radius + forceField.depth).toFloat()
@@ -251,7 +250,7 @@ class WorldRenderer(
 
             val base = planetCount * M4
             matTmp.copyInto(planetMatrices, destinationOffset = base, startIndex = 0, endIndex = M4)
-            planetPrimaryIds[planetCount] = if (teamId != null) (teamId + 1).toFloat() else 0f
+            planetPrimaryIds[planetCount] = (entityId.value + 1).toFloat()
             planetAlphas[planetCount] = 1f
             planetCount++
         }
@@ -279,7 +278,6 @@ class WorldRenderer(
             val reproducer = reproducers[entityId] ?: continue
             val facing = drocketState.walkDirection
             val squash = 0.06125 - cos((drocketState.ticksRemaining) * 2 * PI / 60f) * 0.06125
-            val teamId = state.teams[entityId]?.teamId?.value
             val genome = genomes[entityId]
             val (uvX, uvY) = spriteUvForEntity(state, entityId)
             val (uvW, uvH) = spriteSizeForEntity(state, entityId)
@@ -292,7 +290,7 @@ class WorldRenderer(
                 angleTurns = transform.ang.toFloat(),
                 scaleX = collider.radius.toFloat() * SPRITE_SCALE_FACTOR * maturity,
                 scaleY = collider.radius.toFloat() * SPRITE_SCALE_FACTOR * facing * maturity,
-                primaryId = if (teamId != null) (teamId + 1).toFloat() else 0f,
+                primaryId = (entityId.value + 1).toFloat(),
                 uvX = uvX,
                 uvY = uvY,
                 uvW = uvW,
@@ -339,7 +337,6 @@ class WorldRenderer(
             if (spriteCount >= SpriteShader.MAX_INSTANCES) break
             val transform = state.transforms[entityId] ?: continue
             val collider = state.colliders[entityId] ?: continue
-            val teamId = state.teams[entityId]?.teamId?.value
             val (uvX, uvY) = spriteUvForEntity(state, entityId)
             val (uvW, uvH) = spriteSizeForEntity(state, entityId)
 
@@ -350,7 +347,7 @@ class WorldRenderer(
                 angleTurns = transform.ang.toFloat(),
                 scaleX = collider.radius.toFloat() * SPRITE_SCALE_FACTOR,
                 scaleY = collider.radius.toFloat() * SPRITE_SCALE_FACTOR,
-                primaryId = if (teamId != null) (teamId + 1).toFloat() else 0f,
+                primaryId = (entityId.value + 1).toFloat(),
                 uvX = uvX,
                 uvY = uvY,
                 uvW = uvW,
@@ -384,12 +381,10 @@ class WorldRenderer(
 
     private fun drawParticles(state: SimState) {
         var circleCount = 0
-        val fireTintByTeam = buildFireTintByTeam(state)
         for ((entityId, particle) in state.particles.entries()) {
             if (circleCount >= CircleShader.MAX_INSTANCES) break
             val transform = state.transforms[entityId] ?: continue
             val collider = state.colliders[entityId] ?: continue
-            val teamId = state.teams[entityId]?.teamId?.value
 
             val radius = collider.radius.toFloat()
             setScale(matS, radius, radius)
@@ -404,22 +399,15 @@ class WorldRenderer(
 
             val base = circleCount * M4
             matTmp.copyInto(circleMatrices, destinationOffset = base, startIndex = 0, endIndex = M4)
-            circlePrimaryIds[circleCount] = if (teamId != null) (teamId + 1).toFloat() else 0f
+            circlePrimaryIds[circleCount] = (entityId.value + 1).toFloat()
             circleSecondaryIds[circleCount] = (entityId.value + 1).toFloat()
             circleShapes[circleCount] = 0f
             circleAlphas[circleCount] = particle.life.toFloat() / particle.lifeTime.toFloat()
             circleRadii[circleCount] = radius
             val tintBase = circleCount * 3
-            val teamTint = if (teamId != null) fireTintByTeam[teamId] else null
-            if (teamTint != null) {
-                circleTintColors[tintBase] = teamTint.first
-                circleTintColors[tintBase + 1] = teamTint.second
-                circleTintColors[tintBase + 2] = teamTint.third
-            } else {
-                circleTintColors[tintBase] = 0f
-                circleTintColors[tintBase + 1] = 0f
-                circleTintColors[tintBase + 2] = 0f
-            }
+            circleTintColors[tintBase] = 0f
+            circleTintColors[tintBase + 1] = 0f
+            circleTintColors[tintBase + 2] = 0f
             circleCount++
         }
         if (circleCount > 0) {
@@ -435,19 +423,6 @@ class WorldRenderer(
                 tintColorsRgb = circleTintColors,
             )
         }
-    }
-
-    private fun buildFireTintByTeam(state: SimState): Map<Int, Triple<Float, Float, Float>> {
-        val out = LinkedHashMap<Int, Triple<Float, Float, Float>>()
-        val drockets = state.components.getTable<DrocketStateComponent>().entries()
-        val genomes = state.components.getTable<GenomeComponent>()
-        for ((entityId, _) in drockets) {
-            val teamId = state.teams[entityId]?.teamId?.value ?: continue
-            if (out.containsKey(teamId)) continue
-            val genome = genomes[entityId] ?: continue
-            out[teamId] = genome.genome.phenotype().fireColor.toRgb()
-        }
-        return out
     }
 
     // ── Camera focus ───────────────────────────────────────────────────────────

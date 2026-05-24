@@ -3,7 +3,6 @@
 package org.emerge.sim.core.sim
 
 import org.emerge.sim.core.EntityId
-import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.BypassesStagedView
 import org.emerge.sim.core.ecs.EcsBuilder
 import org.emerge.sim.core.ecs.withLock
@@ -13,7 +12,6 @@ import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.ParticleComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
-import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Contact
@@ -176,7 +174,8 @@ fun SimBuilder.spawnBody(
 }
 
 /**
- * Spawns a particle entity via [EcsBuilder.createEntity] + per-component writes.
+ * Spawns a particle entity via [EcsBuilder.createEntity] + per-component writes. Demos
+ * can layer additional components (team membership, tint, …) onto the returned id.
  */
 fun SimBuilder.spawnParticle(
     pos: Coord2,
@@ -184,14 +183,12 @@ fun SimBuilder.spawnParticle(
     radius: Frac,
     shape: BodyShape,
     lifetime: Int,
-    teamId: TeamId,
 ): EntityId {
     val entityId = createEntity()
     update<TransformComponent>(entityId) { TransformComponent(pos = pos, ang = Coord(0)) }
     update<MotionComponent>(entityId) { MotionComponent(vel = vel, angVel = Coord(0)) }
     update<ColliderComponent>(entityId) { ColliderComponent(radius = radius) }
     update<RenderShapeComponent>(entityId) { RenderShapeComponent(shape = shape) }
-    update<TeamComponent>(entityId) { TeamComponent(teamId) }
     update<ParticleComponent>(entityId) { ParticleComponent(lifetime, lifetime) }
     return entityId
 }

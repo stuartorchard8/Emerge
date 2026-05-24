@@ -5,7 +5,6 @@ import org.emerge.render.torus.RgbColor
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.components.PlanetComponent
-import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Vec2
 import kotlin.math.floor

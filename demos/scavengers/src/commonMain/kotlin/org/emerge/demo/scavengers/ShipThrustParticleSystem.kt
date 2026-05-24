@@ -7,7 +7,6 @@ import org.emerge.sim.core.ecs.BypassesStagedView
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.sim.SimState
 import org.emerge.sim.core.physics.components.MotionComponent
-import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.nextRandomInt
@@ -32,14 +31,14 @@ object ShipThrustParticleSystem : EcsSystem<ScavengersConfig, SimState, Scavenge
                 val angleJitter = Frac(builder.nextRandomInt(until = Int.MAX_VALUE/8).toLong()-Int.MAX_VALUE/16)
                 val angleVectoring = Frac(input.turn/-16L + motion.angVel.raw.toLong()*4) // Combined turning & dampening
                 val norm = Norm.fromAngle(transform.ang + angleVectoring + angleJitter)
-                builder.spawnParticle(
+                val particleId = builder.spawnParticle(
                     pos = transform.pos,
                     vel = motion.vel - norm * Frac(1,1024)*Frac(builder.nextRandomInt(until = Int.MAX_VALUE).toLong()),
                     radius = Frac(1, 2048),
                     shape = BodyShape.CIRCLE,
                     lifetime = 30,
-                    teamId = team.teamId,
                 )
+                builder.update<TeamComponent>(particleId) { TeamComponent(team.teamId) }
             }
         }
     }

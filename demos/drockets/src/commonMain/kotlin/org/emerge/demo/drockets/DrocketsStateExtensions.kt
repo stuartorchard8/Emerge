@@ -5,7 +5,6 @@ import org.emerge.sim.core.physics.components.ForceFieldComponent
 import org.emerge.sim.core.physics.components.ParticleComponent
 import org.emerge.sim.core.physics.components.PlanetComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
-import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.sim.SimState
 
@@ -18,6 +17,5 @@ internal val SimState.transforms get() = components.getTable<TransformComponent>
 internal val SimState.colliders get() = components.getTable<ColliderComponent>()
 internal val SimState.renderShapes get() = components.getTable<RenderShapeComponent>()
 internal val SimState.particles get() = components.getTable<ParticleComponent>()
-internal val SimState.teams get() = components.getTable<TeamComponent>()
 internal val SimState.planets get() = components.getTable<PlanetComponent>()
 internal val SimState.forceFields get() = components.getTable<ForceFieldComponent>()

@@ -3,7 +3,6 @@ package org.emerge.demo.drockets
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.MotionComponent
-import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.sim.*
 import org.emerge.sim.core.physics.primitives.BodyShape
@@ -27,7 +26,6 @@ object DrocketParticleSystem : EcsSystem<DrocketsConfig, SimState, DrocketsInput
             if (ds.phase != DrocketPhase.THRUSTING) continue
             val transform = builder.getComponent<TransformComponent>(entityId) ?: continue
             val motion = builder.getComponent<MotionComponent>(entityId) ?: continue
-            val team = builder.getComponent<TeamComponent>(entityId) ?: continue
 
             // Emit 1 particle per tick with some random jitter
             val angleJitter = Frac(
@@ -46,7 +44,6 @@ object DrocketParticleSystem : EcsSystem<DrocketsConfig, SimState, DrocketsInput
                 radius = DROCKET_RADIUS/4,
                 shape = BodyShape.CIRCLE,
                 lifetime = 30,
-                teamId = team.teamId,
             )
         }
     }

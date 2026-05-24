@@ -1,4 +1,4 @@
-package org.emerge.sim.core.physics.components
+package org.emerge.demo.scavengers
 
 import org.emerge.sim.core.TeamId
 

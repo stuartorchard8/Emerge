@@ -72,14 +72,12 @@ object DrocketAdaptiveDamageSystem : EcsSystem<DrocketsConfig, SimState, Drocket
             val total = damage.accumulated + damage.next
             val destroyed = total.raw >= threshold.raw
             if (destroyed) {
-                val teamId = builder.getComponent<TeamComponent>(entityId)?.teamId
                 val baseRadius = builder.getComponent<ColliderComponent>(entityId)?.radius
-                if (teamId != null && baseRadius != null) {
+                if (baseRadius != null) {
                     destructionBursts += DestructionBurstSpec(
                         pos = transform.pos,
                         vel = motion.vel,
                         recentImpulse = impulse,
-                        teamId = teamId,
                         baseRadius = baseRadius,
                     )
                 }
@@ -136,7 +134,6 @@ object DrocketAdaptiveDamageSystem : EcsSystem<DrocketsConfig, SimState, Drocket
                 radius = DESTRUCTION_BURST_PARTICLE_RADIUS_FACTOR * burst.baseRadius,
                 shape = org.emerge.sim.core.physics.primitives.BodyShape.CIRCLE,
                 lifetime = DESTRUCTION_BURST_LIFETIME,
-                teamId = burst.teamId,
             )
         }
     }
@@ -145,7 +142,6 @@ object DrocketAdaptiveDamageSystem : EcsSystem<DrocketsConfig, SimState, Drocket
         val pos: Coord2,
         val vel: Coord2,
         val recentImpulse: ImpulseComponent,
-        val teamId: org.emerge.sim.core.TeamId,
         val baseRadius: Frac,
     )
 }

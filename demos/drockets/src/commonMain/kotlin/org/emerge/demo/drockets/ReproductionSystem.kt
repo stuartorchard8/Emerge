@@ -5,7 +5,6 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
-import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.sim.*
 
@@ -41,16 +40,15 @@ object ReproductionSystem : EcsSystem<DrocketsConfig, SimState, DrocketsInput> {
         val planetMotion = builder.getComponent<MotionComponent>(landingComponent.parentEntityId) ?: return
         val planetTransform = builder.getComponent<TransformComponent>(landingComponent.parentEntityId) ?: return
         val motherTransform = builder.getComponent<TransformComponent>(motherEntityId) ?: return
-        val teamComponent = builder.getComponent<TeamComponent>(motherEntityId) ?: return
 
         val planetOffset = motherTransform.pos - planetTransform.pos
         val childEntityId = spawnDrocket(
-            builder,
-            motherTransform.pos,
-            planetMotion.surfaceVelocityAtOffset(planetOffset.norm, planetOffset.len),
-            motherTransform.ang,
-            teamComponent.teamId,
-            spawn.sex,
+            builder = builder,
+            position = motherTransform.pos,
+            velocity = planetMotion.surfaceVelocityAtOffset(planetOffset.norm, planetOffset.len),
+            angle = motherTransform.ang,
+            sex = spawn.sex,
+            seed = motherEntityId.value,
         )
         reproducer.spawnGenome?.let { childGenome ->
             builder.update<GenomeComponent>(childEntityId) { GenomeComponent(childGenome) }

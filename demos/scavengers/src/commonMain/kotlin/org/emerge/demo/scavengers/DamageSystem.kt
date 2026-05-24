@@ -82,14 +82,14 @@ object DamageSystem : EcsSystem<ScavengersConfig, SimState, ScavengersInput> {
         repeat(DESTRUCTION_BURST_PARTICLE_COUNT) {
             val direction = Norm.fromAngle(Coord(builder.nextRandomInt()))
             val speed = DESTRUCTION_BURST_SPEED_FACTOR*(burst.baseRadius + burst.recentImpulse.vel.len) * Frac(builder.nextRandomInt(until = Int.MAX_VALUE).toLong())
-            builder.spawnParticle(
+            val particleId = builder.spawnParticle(
                 pos = burst.pos + burst.recentImpulse.pos,
                 vel = burst.vel + burst.recentImpulse.vel + direction * speed,
                 radius = DESTRUCTION_BURST_PARTICLE_RADIUS_FACTOR*burst.baseRadius,
                 shape = BodyShape.CIRCLE,
                 lifetime = DESTRUCTION_BURST_LIFETIME,
-                teamId = burst.teamId,
             )
+            builder.update<TeamComponent>(particleId) { TeamComponent(burst.teamId) }
         }
     }
 

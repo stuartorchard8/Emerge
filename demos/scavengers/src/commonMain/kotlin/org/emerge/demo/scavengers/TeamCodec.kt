@@ -1,11 +1,11 @@
-package org.emerge.sim.sync.ecs
+package org.emerge.demo.scavengers
 
 import org.emerge.net.codec.ByteCursor
 import org.emerge.net.codec.ByteWriter
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.ComponentStore
-import org.emerge.sim.core.physics.components.TeamComponent
+import org.emerge.sim.sync.ecs.ComponentCodec
 
 object TeamCodec : ComponentCodec<TeamComponent> {
     override fun encode(w: ByteWriter, s: ComponentStore, id: EntityId) {
