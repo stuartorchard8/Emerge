@@ -1,8 +1,0 @@
-<component name="ArtifactManager">
-  <artifact type="jar" name="loopback-js">
-    <output-path>$PROJECT_DIR$/.build/net-loopback/libs</output-path>
-    <root id="archive" name="loopback-js.jar">
-      <element id="module-output" name="Emerge.engine.net.transports.loopback.jsMain" />
-    </root>
-  </artifact>
-</component>

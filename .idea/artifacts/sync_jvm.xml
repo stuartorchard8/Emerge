@@ -1,8 +1,0 @@
-<component name="ArtifactManager">
-  <artifact type="jar" name="sync-jvm">
-    <output-path>$PROJECT_DIR$/.build/sim-sync/libs</output-path>
-    <root id="archive" name="sync-jvm.jar">
-      <element id="module-output" name="Emerge.engine.sim.sync.jvmMain" />
-    </root>
-  </artifact>
-</component>

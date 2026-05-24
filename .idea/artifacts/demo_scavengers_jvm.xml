@@ -1,6 +1,0 @@
-<component name="ArtifactManager">
-  <artifact type="jar" name="demo-scavengers-jvm">
-    <output-path>$PROJECT_DIR$/.build/demo-scavengers/libs</output-path>
-    <root id="archive" name="demo-scavengers-jvm.jar" />
-  </artifact>
-</component>

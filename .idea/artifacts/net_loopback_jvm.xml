@@ -1,6 +1,0 @@
-<component name="ArtifactManager">
-  <artifact type="jar" name="net-loopback-jvm">
-    <output-path>$PROJECT_DIR$/.build/net-loopback-1768733675720/libs</output-path>
-    <root id="archive" name="net-loopback-jvm.jar" />
-  </artifact>
-</component>

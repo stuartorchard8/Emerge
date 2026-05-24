@@ -1,8 +1,0 @@
-<component name="ArtifactManager">
-  <artifact type="jar" name="websocket-js">
-    <output-path>$PROJECT_DIR$/engine/net/transports/websocket/build/libs</output-path>
-    <root id="archive" name="websocket-js.jar">
-      <element id="module-output" name="Emerge.engine.net.transports.websocket.jsMain" />
-    </root>
-  </artifact>
-</component>

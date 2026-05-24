@@ -1,6 +1,0 @@
-<component name="ArtifactManager">
-  <artifact type="jar" name="net-api-jvm">
-    <output-path>$PROJECT_DIR$/.build/net-api-1768733674862/libs</output-path>
-    <root id="archive" name="net-api-jvm.jar" />
-  </artifact>
-</component>
