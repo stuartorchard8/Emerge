@@ -20,12 +20,14 @@ import org.emerge.sim.core.physics.primitives.Coord2
  */
 fun ScavengersState.removePlayerRocket(playerId: PlayerId): ScavengersState {
     val builder = PhysicsBuilder(core)
-    val entityId = core.playerEntities[playerId]
+    val entityId = playerEntities[playerId]
     if (entityId != null) {
         builder.removeEntityWithLandingCascade(entityId)
     }
+    val nextCore = builder.build()
     return copy(
-        core = builder.build(),
+        core = nextCore,
+        playerEntities = nextCore.computePlayerEntities(),
         pendingRespawns = pendingRespawns - playerId,
     )
 }
@@ -44,19 +46,19 @@ fun PhysicsState.homePlanetEntity(teamId: TeamId): EntityId? =
 // These stay in Scavengers because they're how Scavengers reads player state for
 // rendering/input handling; engine code never needed them.
 
-fun PhysicsState.playerTransform(playerId: PlayerId): TransformComponent? {
+fun ScavengersState.playerTransform(playerId: PlayerId): TransformComponent? {
     val entityId = playerEntities[playerId] ?: return null
-    return components.getTable<TransformComponent>()[entityId]
+    return core.components.getTable<TransformComponent>()[entityId]
 }
 
-fun PhysicsState.playerMotion(playerId: PlayerId): MotionComponent? {
+fun ScavengersState.playerMotion(playerId: PlayerId): MotionComponent? {
     val entityId = playerEntities[playerId] ?: return null
-    return components.getTable<MotionComponent>()[entityId]
+    return core.components.getTable<MotionComponent>()[entityId]
 }
 
-fun PhysicsState.playerAngle(playerId: PlayerId): Coord? = playerTransform(playerId)?.ang
+fun ScavengersState.playerAngle(playerId: PlayerId): Coord? = playerTransform(playerId)?.ang
 
-fun PhysicsState.playerAngularVelocity(playerId: PlayerId): Coord? = playerMotion(playerId)?.angVel
+fun ScavengersState.playerAngularVelocity(playerId: PlayerId): Coord? = playerMotion(playerId)?.angVel
 
 /**
  * View focus position for a player. Falls back to the recorded [PlayerRespawnState.deathPos]
@@ -64,7 +66,7 @@ fun PhysicsState.playerAngularVelocity(playerId: PlayerId): Coord? = playerMotio
  * the rocket reappearing on a planet).
  */
 fun ScavengersState.playerViewFocus(playerId: PlayerId): Coord2 =
-    core.playerTransform(playerId)?.pos
+    playerTransform(playerId)?.pos
         ?: pendingRespawns[playerId]?.deathPos
         ?: Coord2.zero
 

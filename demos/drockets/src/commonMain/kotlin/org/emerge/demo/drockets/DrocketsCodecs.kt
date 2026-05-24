@@ -9,7 +9,6 @@ import org.emerge.sim.sync.ecs.MaterialCodec
 import org.emerge.sim.sync.ecs.MotionCodec
 import org.emerge.sim.sync.ecs.ParticleCodec
 import org.emerge.sim.sync.ecs.PlanetCodec
-import org.emerge.sim.sync.ecs.PlayerIdCodec
 import org.emerge.sim.sync.ecs.RenderShapeCodec
 import org.emerge.sim.sync.ecs.TeamCodec
 import org.emerge.sim.sync.ecs.TransformCodec
@@ -30,7 +29,6 @@ val DrocketsCodecs: PhysicsNetCodecs = PhysicsNetCodecs(
         PlanetCodec,
         TeamCodec,
         ForceFieldCodec,
-        PlayerIdCodec,
         LandingCodec,
         ParticleCodec,
         DamageCodec,

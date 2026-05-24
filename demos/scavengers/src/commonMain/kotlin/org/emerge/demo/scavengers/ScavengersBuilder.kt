@@ -2,6 +2,7 @@
 
 package org.emerge.demo.scavengers
 
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.BypassesStagedView
 import org.emerge.sim.core.ecs.withLock
@@ -15,8 +16,8 @@ import org.emerge.sim.core.physics.model.PhysicsBuilder
 /**
  * Per-frame Scavengers state carried alongside the engine
  * [org.emerge.sim.core.physics.model.PhysicsFrameScratch] on the same [PhysicsBuilder].
- * Holds the respawn queue and audio event accumulator that the engine state no longer
- * carries after Move 5.
+ * Holds the respawn queue, audio event accumulator, and start-of-frame player→entity
+ * index that the engine state no longer carries.
  *
  * Seeded by [seedScavengersScratch] from the start-of-frame [ScavengersState]; mutated in
  * place during the tick. The reducer reads the final values via [scavengersScratch] after
@@ -29,6 +30,7 @@ import org.emerge.sim.core.physics.model.PhysicsBuilder
  */
 class ScavengersFrameScratch(
     initialPendingRespawns: Map<PlayerId, PlayerRespawnState>,
+    val playerEntities: Map<PlayerId, EntityId>,
 ) {
     val pendingRespawns: MutableMap<PlayerId, PlayerRespawnState> =
         LinkedHashMap(initialPendingRespawns)
@@ -39,18 +41,29 @@ class ScavengersFrameScratch(
 /**
  * Seeds (idempotently) a [ScavengersFrameScratch] on this builder. Called by the reducer
  * before the pipeline runs so Scavengers systems can find a fully-initialised scratch
- * via [scavengersScratch]. The closure captures the start-of-frame respawn queue so the
- * scratch can be seeded even though the underlying engine state no longer carries it.
+ * via [scavengersScratch]. The closure captures the start-of-frame respawn queue and
+ * player→entity index so the scratch can be seeded even though the underlying engine
+ * state no longer carries them.
  */
 fun PhysicsBuilder.seedScavengersScratch(
     initialPendingRespawns: Map<PlayerId, PlayerRespawnState>,
+    playerEntities: Map<PlayerId, EntityId>,
 ): ScavengersFrameScratch =
     scratch(
-        factory = { _ -> ScavengersFrameScratch(initialPendingRespawns) },
+        factory = { _ -> ScavengersFrameScratch(initialPendingRespawns, playerEntities) },
         // Finalizer is a no-op: the reducer pulls accumulator state out directly and
         // folds it into the new ScavengersState, bypassing the engine state.
         finalize = { _ -> this },
     )
+
+/**
+ * Start-of-frame player→entity index. Read by Scavengers systems via the builder rather
+ * than by reaching back into the engine [org.emerge.sim.core.physics.model.PhysicsState],
+ * which no longer carries this map. Routes through the root builder's scratch so forks
+ * see the same map.
+ */
+val PhysicsBuilder.playerEntities: Map<PlayerId, EntityId>
+    get() = scavengersScratch().playerEntities
 
 /**
  * Returns the Scavengers scratch registered on this builder (or its root). If the
@@ -91,7 +104,7 @@ val PhysicsBuilder.pendingRespawns: Map<PlayerId, PlayerRespawnState>
  * missing the entity is instead removed outright — matching the legacy behaviour.
  */
 fun PhysicsBuilder.queueRespawn(playerId: PlayerId, ticksRemaining: Int) {
-    val entityId = initial.playerEntities[playerId] ?: return
+    val entityId = playerEntities[playerId] ?: return
     val transform = getComponent<TransformComponent>(entityId)
     val material = getComponent<MaterialComponent>(entityId)
     val collider = getComponent<ColliderComponent>(entityId)

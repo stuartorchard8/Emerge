@@ -3,7 +3,6 @@
 package org.emerge.sim.core.physics.model
 
 import org.emerge.sim.core.EntityId
-import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
 import org.emerge.sim.core.ecs.BypassesStagedView
 import org.emerge.sim.core.ecs.EcsBuilder
@@ -13,7 +12,6 @@ import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.ParticleComponent
-import org.emerge.sim.core.physics.components.PlayerOwnedComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -66,9 +64,6 @@ fun PhysicsBuilder(initial: PhysicsState): PhysicsBuilder {
  *    fork's own. That keeps PRNG draws deterministic and globally visible across
  *    forks in the same isolated phase, at the cost of needing a lock at the domain
  *    layer once forks actually run on separate threads.
- *
- * Finalizer also calls [PhysicsState.rebuildIndexes] so the derived `playerEntities` map
- * always reflects the authoritative [PlayerOwnedComponent] table.
  */
 class PhysicsFrameScratch(initial: PhysicsState) {
     /**
@@ -109,7 +104,7 @@ internal fun PhysicsBuilder.physicsScratch(): PhysicsFrameScratch {
             copy(
                 contacts = scratch.contacts,
                 randomSeed = scratch.randomSeed,
-            ).rebuildIndexes()
+            )
         },
     )
 }
@@ -153,12 +148,12 @@ fun PhysicsBuilder.nextRandomInt(until: Int): Int {
 // --- Composite spawns ----------------------------------------------------
 
 /**
- * Spawns a fresh body (player-owned if [playerId] is non-null) via [EcsBuilder.createEntity]
- * plus per-component [EcsBuilder.update] calls. No reads of the initial snapshot; the new
- * entity starts with exactly the components set here.
+ * Spawns a fresh body via [EcsBuilder.createEntity] plus per-component [EcsBuilder.update]
+ * calls. No reads of the initial snapshot; the new entity starts with exactly the
+ * components set here. Demos that need to mark the body as player-owned attach their own
+ * ownership component on top of the returned entity id.
  */
 fun PhysicsBuilder.spawnBody(
-    playerId: PlayerId?,
     pos: Coord2,
     vel: Coord2,
     ang: Coord,
@@ -177,9 +172,6 @@ fun PhysicsBuilder.spawnBody(
         MaterialComponent(mass = mass, bounce = bounce, rough = rough)
     }
     update<RenderShapeComponent>(entityId) { RenderShapeComponent(shape = shape) }
-    if (playerId != null) {
-        update<PlayerOwnedComponent>(entityId) { PlayerOwnedComponent(playerId) }
-    }
     return entityId
 }
 

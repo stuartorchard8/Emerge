@@ -87,7 +87,10 @@ class ScavengersReducer(
         inputs: Map<PlayerId, ScavengersInput>,
     ): ScavengersState {
         val builder = PhysicsBuilder(state.core)
-        val scavengersScratch = builder.seedScavengersScratch(state.pendingRespawns)
+        val scavengersScratch = builder.seedScavengersScratch(
+            initialPendingRespawns = state.pendingRespawns,
+            playerEntities = state.playerEntities,
+        )
         if (executor != null) {
             runParallel(cfg, builder, inputs, pipeline, executor, profiler)
         } else {
@@ -96,6 +99,7 @@ class ScavengersReducer(
         val nextCore = builder.build()
         return ScavengersState(
             core = nextCore,
+            playerEntities = nextCore.computePlayerEntities(),
             pendingRespawns = scavengersScratch.pendingRespawns.toMap(),
             crashImpactAudioEvents = scavengersScratch.crashImpactAudioEvents.toList(),
         )

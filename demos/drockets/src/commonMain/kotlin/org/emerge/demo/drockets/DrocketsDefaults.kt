@@ -13,7 +13,6 @@ fun createDrocketsInitialState(drocketCount: Int = INITIAL_DROCKET_COUNT, knight
     val builder = PhysicsBuilder(PhysicsState())
 
     val planetId = builder.spawnBody(
-        playerId = null,
         pos = Coord2.zero,
         vel = Coord2.zero,
         ang = Coord(0),
@@ -81,7 +80,6 @@ fun spawnDrocket(
     sex: Sex,
 ): EntityId {
     val entityId = builder.spawnBody(
-        playerId = null,
         pos = position,
         vel = velocity,
         ang = angle,
@@ -129,7 +127,6 @@ private fun spawnKnightOnPlanet(
     val worldAng = Coord(planetTransform.ang.raw + angle.raw)
 
     val entityId = builder.spawnBody(
-        playerId = null,
         pos = worldPos,
         vel = Coord2.zero,
         ang = worldAng,

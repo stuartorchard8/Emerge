@@ -68,7 +68,6 @@ object RespawnSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput
         val worldPos = planetTransform.pos + relativePos.rotateByAngle(planetTransform.ang)
         val worldAng = Coord(planetTransform.ang.raw + localAngle.raw)
         val entityId = builder.spawnBody(
-            playerId = playerId,
             pos = worldPos,
             vel = planetMotion.vel,
             ang = worldAng,
@@ -79,6 +78,7 @@ object RespawnSystem : EcsSystem<ScavengersConfig, PhysicsState, ScavengersInput
             rough = respawn.rocket.rough,
             shape = respawn.rocket.shape,
         )
+        builder.update<PlayerOwnedComponent>(entityId) { PlayerOwnedComponent(playerId) }
         builder.update<TeamComponent>(entityId) { TeamComponent(respawn.teamId) }
         builder.update<LandingAttachmentComponent>(entityId) {
             LandingAttachmentComponent(

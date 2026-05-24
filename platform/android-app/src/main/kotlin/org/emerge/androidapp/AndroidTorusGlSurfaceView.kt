@@ -184,13 +184,13 @@ internal class AndroidTorusGlSurfaceView(
     private fun currentPlayerAngleTurns(): Float =
         synchronized(stateLock) {
             val pid = latestFrame.myId ?: return@synchronized 0f
-            latestFrame.state.core.playerAngle(pid)?.toFloat() ?: 0f
+            latestFrame.state.playerAngle(pid)?.toFloat() ?: 0f
         }
 
     private fun currentPlayerAngularVelocityTurns(): Float =
         synchronized(stateLock) {
             val pid = latestFrame.myId ?: return@synchronized 0f
-            latestFrame.state.core.playerAngularVelocity(pid)?.toFloat() ?: 0f
+            latestFrame.state.playerAngularVelocity(pid)?.toFloat() ?: 0f
         }
 
     private fun clearSingleTouchState() {

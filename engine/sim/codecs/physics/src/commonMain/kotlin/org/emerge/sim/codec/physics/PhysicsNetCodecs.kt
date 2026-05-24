@@ -69,7 +69,7 @@ class PhysicsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
                         lastEntityValue = lastEntityValue,
                     ),
                     randomSeed = randomSeed,
-                ).rebuildIndexes()
+                )
                 decoded.world.lastEntityValue = lastEntityValue
                 return decoded
             }

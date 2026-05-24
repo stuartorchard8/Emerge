@@ -6,6 +6,7 @@ import org.emerge.demo.scavengers.RespawnSystem
 import org.emerge.demo.scavengers.ScavengersConfig
 import org.emerge.demo.scavengers.ScavengersState
 import org.emerge.demo.scavengers.ShipThrustSystem
+import org.emerge.demo.scavengers.computePlayerEntities
 import org.emerge.demo.scavengers.createDefaultInitialState
 import org.emerge.demo.scavengers.defaultJoinPolicy
 import org.emerge.demo.scavengers.seedScavengersScratch
@@ -45,7 +46,10 @@ class ProfilingReducer : SimReducer<ScavengersConfig, ScavengersState, Scavenger
         inputs: Map<PlayerId, ScavengersInput>,
     ): ScavengersState {
         val builder = PhysicsBuilder(state.core)
-        val scratch = builder.seedScavengersScratch(state.pendingRespawns)
+        val scratch = builder.seedScavengersScratch(
+            initialPendingRespawns = state.pendingRespawns,
+            playerEntities = state.playerEntities,
+        )
         for (i in SYSTEMS.indices) {
             val start = System.nanoTime()
             SYSTEMS[i].second.update(cfg, builder, inputs)
@@ -54,8 +58,10 @@ class ProfilingReducer : SimReducer<ScavengersConfig, ScavengersState, Scavenger
             if (elapsed > peakNanos[i]) peakNanos[i] = elapsed
         }
         tickCount++
+        val nextCore = builder.build()
         return ScavengersState(
-            core = builder.build(),
+            core = nextCore,
+            playerEntities = nextCore.computePlayerEntities(),
             pendingRespawns = scratch.pendingRespawns.toMap(),
             crashImpactAudioEvents = scratch.crashImpactAudioEvents.toList(),
         )

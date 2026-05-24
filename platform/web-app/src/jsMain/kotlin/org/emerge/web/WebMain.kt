@@ -68,7 +68,7 @@ private fun startLocalMode(renderer: ScreenRenderer, input: WebInputHandler, cra
         state = reducer.reduce(cfg, state, mapOf(myId to physicsInput))
         tick++
         crashAudio.onFrame(ScavengersFrame(state, myId, tick, ""))
-        renderer.draw(state.core, myId, focus = state.rendererFocus(myId))
+        renderer.draw(state.core, state.playerEntities[myId], focus = state.rendererFocus(myId))
         window.requestAnimationFrame(::frame)
     }
     window.requestAnimationFrame(::frame)
@@ -110,7 +110,11 @@ private fun startJoinMode(wsUrl: String, renderer: ScreenRenderer, input: WebInp
         client.poll()
         client.sendInput(physicsInput)
         crashAudio.onFrame(ScavengersFrame(client.state, client.playerId, client.tick.value, ""))
-        renderer.draw(client.state.core, client.playerId, focus = client.state.rendererFocus(client.playerId))
+        renderer.draw(
+            client.state.core,
+            client.playerId?.let { client.state.playerEntities[it] },
+            focus = client.state.rendererFocus(client.playerId),
+        )
 
         if (client.connectionState == ThinClient.ConnectionState.DISCONNECTED && !reconnectScheduled) {
             reconnectScheduled = true

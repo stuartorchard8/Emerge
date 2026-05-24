@@ -9,7 +9,6 @@ import org.emerge.sim.core.physics.components.ForceFieldComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.PlanetComponent
-import org.emerge.sim.core.physics.components.PlayerOwnedComponent
 import org.emerge.sim.core.physics.components.TeamComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsBuilder
@@ -28,7 +27,6 @@ fun createDefaultInitialState(
     val builder = PhysicsBuilder(PhysicsState())
     for (i in 0 until DEFAULT_PLANET_COUNT) {
         val spawn = builder.spawnBody(
-            playerId = null,
             pos = Coord2.zero + Norm.fromAngle(Coord(i, DEFAULT_PLANET_COUNT)) * Frac(1, 3),
             vel = Coord2.zero + Norm.fromAngle(Coord(i, DEFAULT_PLANET_COUNT)).cw90 * Frac(1, 1000),
             ang = Coord(0),
@@ -49,7 +47,11 @@ fun createDefaultInitialState(
             random = Random.Default,
         )
     }
-    return ScavengersState(core = builder.build())
+    val core = builder.build()
+    return ScavengersState(
+        core = core,
+        playerEntities = core.computePlayerEntities(),
+    )
 }
 
 /**
@@ -65,7 +67,11 @@ fun defaultJoinPolicy(gameMode: GameMode = GameMode.PVP): (ScavengersState, Play
             gameMode = gameMode,
             random = Random.Default,
         )
-        snapshot.copy(core = builder.build())
+        val core = builder.build()
+        snapshot.copy(
+            core = core,
+            playerEntities = core.computePlayerEntities(),
+        )
     }
 
 private fun assignHomePlanetAndSpawn(
@@ -150,7 +156,6 @@ private fun spawnRocketOnPlanetSurface(
         ?.let { builder.removeEntity(it) }
 
     val rocketId = builder.spawnBody(
-        playerId = playerId,
         pos = worldPos,
         vel = planetMotion.vel,
         ang = worldAng,
@@ -161,6 +166,7 @@ private fun spawnRocketOnPlanetSurface(
         rough = Frac(1, 16),
         shape = BodyShape.TRIANGLE,
     )
+    builder.update<PlayerOwnedComponent>(rocketId) { PlayerOwnedComponent(playerId) }
     builder.update<TeamComponent>(rocketId) { TeamComponent(teamId) }
     builder.update<MotionComponent>(rocketId) {
         MotionComponent(vel = planetMotion.vel, angVel = planetMotion.angVel)

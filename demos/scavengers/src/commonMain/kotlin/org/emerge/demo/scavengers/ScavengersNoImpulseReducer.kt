@@ -34,11 +34,15 @@ class ScavengersNoImpulseReducer : SimReducer<ScavengersConfig, ScavengersState,
         inputs: Map<PlayerId, ScavengersInput>,
     ): ScavengersState {
         val builder = PhysicsBuilder(state.core)
-        val scavengersScratch = builder.seedScavengersScratch(state.pendingRespawns)
+        val scavengersScratch = builder.seedScavengersScratch(
+            initialPendingRespawns = state.pendingRespawns,
+            playerEntities = state.playerEntities,
+        )
         runSequential(cfg, builder, inputs, pipeline)
         val nextCore = builder.build()
         return ScavengersState(
             core = nextCore,
+            playerEntities = nextCore.computePlayerEntities(),
             pendingRespawns = scavengersScratch.pendingRespawns.toMap(),
             crashImpactAudioEvents = scavengersScratch.crashImpactAudioEvents.toList(),
         )

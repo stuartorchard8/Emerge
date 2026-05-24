@@ -24,7 +24,6 @@ class DrocketsSaveCodecTest {
     fun encodeDecode_strips_particle_entities_from_physics_state() {
         val builder = PhysicsBuilder(PhysicsState())
         val bodyId = builder.spawnBody(
-            playerId = null,
             pos = Coord2.zero,
             vel = Coord2.zero,
             ang = Coord(0),
@@ -78,7 +77,6 @@ class DrocketsSaveCodecTest {
         )
         val builder = PhysicsBuilder(PhysicsState())
         val bodyId = builder.spawnBody(
-            playerId = null,
             pos = Coord2.zero,
             vel = Coord2.zero,
             ang = Coord(0),
@@ -120,7 +118,6 @@ class DrocketsSaveCodecTest {
         )
         val builder = PhysicsBuilder(PhysicsState())
         val bodyId = builder.spawnBody(
-            playerId = null,
             pos = Coord2.zero,
             vel = Coord2.zero,
             ang = Coord(0),

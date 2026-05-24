@@ -120,6 +120,7 @@ fun scavengersStateCodec(physicsNetCodecs: PhysicsNetCodecs): StateCodec<Scaveng
 
             return ScavengersState(
                 core = core,
+                playerEntities = core.computePlayerEntities(),
                 pendingRespawns = pendingRespawns,
                 crashImpactAudioEvents = crashImpactAudioEvents,
             )

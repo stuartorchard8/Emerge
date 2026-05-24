@@ -4,7 +4,7 @@ import org.emerge.render.torus.shader.CircleShader
 import org.emerge.render.torus.shader.GuiShader
 import org.emerge.render.torus.shader.WorldShader
 import org.emerge.render.torus.shader.WorldShaderParams
-import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.model.PhysicsState
@@ -88,12 +88,13 @@ class ScreenRenderer(val contentScale: Vec2) {
     /**
      * Draw a frame. [focus] is the world-space camera anchor (caller chooses it — for
      * a player-centred view, pass the player entity's position; for a free camera,
-     * pass whatever the demo's controller dictates). The renderer never derives focus
-     * itself, so demos that need death-position camera holds or non-player anchors
-     * compose them on their side.
+     * pass whatever the demo's controller dictates). [playerEntityId] is the local
+     * player's entity (if any) — used to tint planet edge indicators. The renderer
+     * never derives focus or player-entity itself, so demos that need death-position
+     * camera holds or non-player anchors compose them on their side.
      */
-    fun draw(state: PhysicsState, myId: PlayerId?, focus: Vec2) {
-        val params = WorldShaderParams.compute(focus, myId, zoom, worldRotationRad)
+    fun draw(state: PhysicsState, playerEntityId: EntityId?, focus: Vec2) {
+        val params = WorldShaderParams.compute(focus, playerEntityId, zoom, worldRotationRad)
         worldShader.draw(params, segmentation = layout.worldSegmentation)
         guiShader.draw(vOffset = layout.guiVertexOffset)
         val n = packBodyInstances(
@@ -272,10 +273,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         outAlphas: FloatArray,
         outRadii: FloatArray,
     ): Int {
-        if (params.myId == null) {
-            return index
-        }
-        val playerEntityId = state.playerEntities[params.myId] ?: return index
+        val playerEntityId = params.playerEntityId ?: return index
         val playerTeamId = state.teams[playerEntityId]?.teamId?.value
 
         var n = index
