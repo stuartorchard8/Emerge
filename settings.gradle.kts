@@ -40,7 +40,7 @@ include(":platform:web-app")
 
 include(":engine:sim:core")
 include(":engine:sim:sync")
-include(":engine:sim:codecs:physics")
+include(":engine:sim:codecs:ecs")
 
 include(":engine:render:torus")
 

@@ -2,8 +2,8 @@ package org.emerge.demo.scavengers
 
 import org.emerge.net.codec.ByteCursor
 import org.emerge.net.codec.ByteWriter
-import org.emerge.sim.codec.physics.ImpulseCodec
-import org.emerge.sim.codec.physics.PhysicsNetCodecs
+import org.emerge.sim.codec.ecs.EcsNetCodecs
+import org.emerge.sim.codec.ecs.ImpulseCodec
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.TeamId
@@ -19,16 +19,16 @@ private const val MAX_STATE_CRASH_AUDIO_EVENTS = 4096
  * Wire codec for [ScavengersState]. Layout:
  *
  *   coreBytesSize (Int)
- *   coreBytes     ([PhysicsNetCodecs.stateCodec] payload)
+ *   coreBytes     ([EcsNetCodecs.stateCodec] payload)
  *   respawnCount  (Int)
  *   respawn entries
  *   crashEventCount (Int)
  *   crash event entries
  *
- * Built on top of the demo's [PhysicsNetCodecs.stateCodec] so the engine codec stays
+ * Built on top of the demo's [EcsNetCodecs.stateCodec] so the engine codec stays
  * agnostic about respawn/audio events (which are Scavengers-only concepts).
  */
-fun scavengersStateCodec(physicsNetCodecs: PhysicsNetCodecs): StateCodec<ScavengersState> =
+fun scavengersStateCodec(physicsNetCodecs: EcsNetCodecs): StateCodec<ScavengersState> =
     object : StateCodec<ScavengersState> {
         override fun encode(state: ScavengersState): ByteArray {
             val w = ByteWriter()

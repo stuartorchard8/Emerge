@@ -17,7 +17,7 @@ kotlin {
             dependencies {
                 implementation(project(":engine:sim:core"))
                 implementation(project(":engine:sim:sync"))
-                implementation(project(":engine:sim:codecs:physics"))
+                implementation(project(":engine:sim:codecs:ecs"))
                 implementation(project(":engine:render:torus"))
                 implementation(project(":engine:net:api"))
                 implementation(project(":engine:net:transports:websocket"))

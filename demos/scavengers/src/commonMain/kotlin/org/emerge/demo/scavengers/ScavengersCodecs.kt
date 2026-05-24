@@ -1,6 +1,6 @@
 package org.emerge.demo.scavengers
 
-import org.emerge.sim.codec.physics.PhysicsNetCodecs
+import org.emerge.sim.codec.ecs.EcsNetCodecs
 import org.emerge.sim.sync.ecs.ColliderCodec
 import org.emerge.sim.sync.ecs.DamageCodec
 import org.emerge.sim.sync.ecs.ForceFieldCodec
@@ -19,7 +19,7 @@ import org.emerge.sim.sync.ecs.TransformCodec
  * bumping save/protocol compatibility.
  */
 object ScavengersCodecs {
-    val physicsNetCodecs: PhysicsNetCodecs = PhysicsNetCodecs(
+    val physicsNetCodecs: EcsNetCodecs = EcsNetCodecs(
         componentCodecs = listOf(
             TransformCodec,
             MotionCodec,

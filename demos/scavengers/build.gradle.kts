@@ -46,7 +46,7 @@ kotlin {
             dependencies {
                 api(project(":engine:sim:core"))
                 api(project(":engine:sim:sync"))
-                api(project(":engine:sim:codecs:physics"))
+                api(project(":engine:sim:codecs:ecs"))
                 api(project(":engine:render:torus"))
                 api(project(":engine:net:api"))
             }

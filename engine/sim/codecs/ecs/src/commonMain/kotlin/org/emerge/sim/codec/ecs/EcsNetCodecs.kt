@@ -1,4 +1,4 @@
-package org.emerge.sim.codec.physics
+package org.emerge.sim.codec.ecs
 
 import org.emerge.net.codec.ByteCursor
 import org.emerge.net.codec.ByteWriter
@@ -16,7 +16,7 @@ import org.emerge.sim.sync.ecs.ComponentCodec
  * seed. Demos that need to carry additional per-frame state (e.g. respawn queues, audio
  * events) wrap this codec inside their own state codec.
  */
-class PhysicsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
+class EcsNetCodecs(val componentCodecs: List<ComponentCodec<*>>) {
     val stateCodec: StateCodec<PhysicsState> =
         object : StateCodec<PhysicsState> {
             override fun encode(state: PhysicsState): ByteArray {

@@ -4,11 +4,11 @@ plugins {
 }
 
 base {
-    archivesName.set("sim-physics-codec")
+    archivesName.set("sim-ecs-codec")
 }
 
 // Stable build dir (expect AV exclusions instead of per-run build dirs).
-buildDir = file("$rootDir/.build/sim-physics-codec")
+buildDir = file("$rootDir/.build/sim-ecs-codec")
 
 kotlin {
     androidTarget {
@@ -40,7 +40,7 @@ kotlin {
 }
 
 android {
-    namespace = "org.emerge.sim.codec.physics"
+    namespace = "org.emerge.sim.codec.ecs"
     compileSdk = 35
     defaultConfig {
         minSdk = 26

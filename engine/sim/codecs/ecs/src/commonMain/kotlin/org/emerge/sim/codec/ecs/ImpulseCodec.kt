@@ -1,4 +1,4 @@
-package org.emerge.sim.codec.physics
+package org.emerge.sim.codec.ecs
 
 import org.emerge.net.codec.ByteCursor
 import org.emerge.net.codec.ByteWriter
