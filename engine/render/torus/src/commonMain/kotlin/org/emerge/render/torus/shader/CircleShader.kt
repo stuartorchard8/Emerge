@@ -2,6 +2,7 @@ package org.emerge.render.torus.shader
 
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.GpuFloatBuffer
+import org.emerge.render.torus.Mat4
 
 class CircleShader {
     private val vSrc = CircleShaderSources.vertex()
@@ -17,7 +18,7 @@ class CircleShader {
     private val instanceAlphaVbo: Int = GPU.genBuffers()
     private val instanceRadiusVbo: Int = GPU.genBuffers()
     private val instanceTintColorVbo: Int = GPU.genBuffers()
-    private val instanceMatrices = GpuFloatBuffer(MAX_INSTANCES * MAT4_FLOATS)
+    private val instanceMatrices = GpuFloatBuffer(MAX_INSTANCES * Mat4.FLOATS)
     private val instancePrimaryIds = GpuFloatBuffer(MAX_INSTANCES)
     private val instanceSecondaryIds = GpuFloatBuffer(MAX_INSTANCES)
     private val instanceShapes = GpuFloatBuffer(MAX_INSTANCES)
@@ -73,7 +74,7 @@ class CircleShader {
         GPU.bindTexture2D(noiseTexture)
 
         val n = instanceCount.coerceIn(0, MAX_INSTANCES)
-        bindAndSetup(instanceVbo           , instanceMatrices    , matricesColMajor, n * MAT4_FLOATS, INSTANCE_ATTR_BASE, 4, 4)
+        bindAndSetup(instanceVbo           , instanceMatrices    , matricesColMajor, n * Mat4.FLOATS, INSTANCE_ATTR_BASE, 4, 4)
         bindAndSetup(instancePrimaryIdVbo  , instancePrimaryIds  , primaryIds      , n, INSTANCE_PRIMARY_ID_ATTR)
         bindAndSetup(instanceSecondaryIdVbo, instanceSecondaryIds, secondaryIds    , n, INSTANCE_SECONDARY_ID_ATTR)
         bindAndSetup(instanceShapeVbo      , instanceShapes      , shapes          , n, INSTANCE_SHAPE_ATTR)
@@ -137,7 +138,6 @@ class CircleShader {
         private const val INSTANCE_ALPHA_ATTR = 8
         private const val INSTANCE_RADIUS_ATTR = 9
         private const val INSTANCE_TINT_COLOR_ATTR = 10
-        private const val MAT4_FLOATS = 16
         const val MAX_INSTANCES = 10000
         private const val NOISE_TEXTURE_UNIT = 0
         private const val NOISE_TEXTURE_SIZE = 128

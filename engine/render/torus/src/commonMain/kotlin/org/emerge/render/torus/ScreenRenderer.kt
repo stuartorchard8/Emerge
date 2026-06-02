@@ -25,22 +25,21 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val guiShader = GuiShader()
     private val circleShader = CircleShader()
     private var layout: ScreenLayout = ScreenLayout.compute(Vec2(1f, 1f), contentScale)
-    private val bodyInstanceMatrices = FloatArray(CircleShader.MAX_INSTANCES * MAT4_FLOATS)
+    private val bodyInstanceMatrices = FloatArray(CircleShader.MAX_INSTANCES * Mat4.FLOATS)
     private val bodyInstancePrimaryIds = FloatArray(CircleShader.MAX_INSTANCES)
     private val bodyInstanceSecondaryIds = FloatArray(CircleShader.MAX_INSTANCES)
     private val bodyInstanceShapes = FloatArray(CircleShader.MAX_INSTANCES)
     private val bodyInstanceAlphas = FloatArray(CircleShader.MAX_INSTANCES)
     private val bodyInstanceRadii = FloatArray(CircleShader.MAX_INSTANCES)
     private val bodyInstanceTintColors = FloatArray(CircleShader.MAX_INSTANCES * 3)
-    private val matTmp = FloatArray(MAT4_FLOATS)
-    private val matT = FloatArray(MAT4_FLOATS)
-    private val matR = FloatArray(MAT4_FLOATS)
-    private val matS = FloatArray(MAT4_FLOATS)
-    private val matView = FloatArray(MAT4_FLOATS)
-    private val matModel = FloatArray(MAT4_FLOATS)
+    private val matTmp = Mat4.scratch()
+    private val matT = Mat4.scratch()
+    private val matR = Mat4.scratch()
+    private val matS = Mat4.scratch()
+    private val matView = Mat4.scratch()
+    private val matModel = Mat4.scratch()
 
     companion object {
-        private const val MAT4_FLOATS: Int = 16
         private const val ROTATION_STEP_RAD: Float = 0.03f
         private const val INDICATOR_SCALE = 0.0125f
         private const val INDICATOR_EDGE_INSET = 0.06f
@@ -161,15 +160,15 @@ class ScreenRenderer(val contentScale: Vec2) {
     ): Int {
         // Calculate view matrix once
         // Rotate then Scale
-        setRotationZ(matR, params.viewRotationRad)
+        matR.setRotationZ(params.viewRotationRad)
         val worldPxSize = Vec2(layout.resolution.x, layout.resolution.y)
         val aspect = worldPxSize.x / worldPxSize.y
         val minAspect = min(aspect, 1f)
         val maxAspect = max(aspect, 1f)
         val scaleVecX = params.worldSize.x * 0.5f / minAspect / params.zoom
         val scaleVecY = -params.worldSize.y * 0.5f * maxAspect / params.zoom
-        setScale(matS, scaleVecX, scaleVecY)
-        multiply4x4(out = matTmp, a = matS, b = matR)
+        matS.setScale(scaleVecX, scaleVecY)
+        matTmp.setProduct(matS, matR)
 
         // Translate
         val worldNdcMin = layout.pxToNdc(layout.worldPxMin)
@@ -179,8 +178,8 @@ class ScreenRenderer(val contentScale: Vec2) {
         val worldPxWidth = layout.worldPxMax.x - layout.worldPxMin.x
         val worldPxHeight = layout.worldPxMax.y - layout.worldPxMin.y
         val worldPxMinDim = min(worldPxWidth, worldPxHeight)
-        setTranslation(matT, viewCenterX, viewCenterY)
-        multiply4x4(out = matView, a = matT, b = matTmp)
+        matT.setTranslation(viewCenterX, viewCenterY)
+        matView.setProduct(matT, matTmp)
 
         var n = indexOffset
         for ((entityId, renderShape) in shapes.entries()) {
@@ -314,19 +313,19 @@ class ScreenRenderer(val contentScale: Vec2) {
         }
 
         // Scale then rotate for this body.
-        setScale(matS, radius, radius)
-        setRotationZ(matR, angleTurns * PI.toFloat())
-        multiply4x4(out = matTmp, a = matR, b = matS)
+        matS.setScale(radius, radius)
+        matR.setRotationZ(angleTurns * PI.toFloat())
+        matTmp.setProduct(matR, matS)
 
         // Translate into wrapped world space relative to the current focus.
         val dx = wrapDelta(posX - params.viewFocus.x, params.worldSize.x)
         val dy = wrapDelta(posY - params.viewFocus.y, params.worldSize.y)
-        setTranslation(matT, dx, dy)
-        multiply4x4(out = matModel, a = matT, b = matTmp)
-        multiply4x4(out = matTmp, a = matView, b = matModel)
+        matT.setTranslation(dx, dy)
+        matModel.setProduct(matT, matTmp)
+        matTmp.setProduct(matView, matModel)
 
-        val base = index * MAT4_FLOATS
-        copyMatrix(out = bodyInstanceMatrices, outOffset = base, src = matTmp)
+        val base = index * Mat4.FLOATS
+        matTmp.copyInto(bodyInstanceMatrices, base)
         bodyInstancePrimaryIds[index] = primaryId
         bodyInstanceSecondaryIds[index] = secondaryId
         bodyInstanceShapes[index] = if (shape == BodyShape.TRIANGLE) 1f else 0f
@@ -353,16 +352,16 @@ class ScreenRenderer(val contentScale: Vec2) {
             return index
         }
 
-        setScale(matS, scaleX, scaleY)
-        setRotationZ(matR, angleRad)
+        matS.setScale(scaleX, scaleY)
+        matR.setRotationZ(angleRad)
         // Rotate in local space first, then convert to per-axis NDC scale so the arrow keeps
         // a visually correct shape on non-square viewports.
-        multiply4x4(out = matTmp, a = matS, b = matR)
-        setTranslation(matT, posX, posY)
-        multiply4x4(out = matModel, a = matT, b = matTmp)
+        matTmp.setProduct(matS, matR)
+        matT.setTranslation(posX, posY)
+        matModel.setProduct(matT, matTmp)
 
-        val base = index * MAT4_FLOATS
-        copyMatrix(out = bodyInstanceMatrices, outOffset = base, src = matModel)
+        val base = index * Mat4.FLOATS
+        matModel.copyInto(bodyInstanceMatrices, base)
         bodyInstancePrimaryIds[index] = 0f
         bodyInstanceSecondaryIds[index] = 0f
         bodyInstanceShapes[index] = 1f
@@ -382,53 +381,5 @@ class ScreenRenderer(val contentScale: Vec2) {
         val a = d + half
         val m = a - floor(a / size) * size
         return m - half
-    }
-
-    private fun setTranslation(out: FloatArray, tx: Float, ty: Float) {
-        setIdentity(out)
-        out[12] = tx
-        out[13] = ty
-    }
-
-    private fun setScale(out: FloatArray, sx: Float, sy: Float) {
-        setIdentity(out)
-        out[0] = sx
-        out[5] = sy
-    }
-
-    private fun setRotationZ(out: FloatArray, rad: Float) {
-        setIdentity(out)
-        val c = cos(rad)
-        val s = sin(rad)
-        out[0] = c
-        out[1] = s
-        out[4] = -s
-        out[5] = c
-    }
-
-    private fun setIdentity(out: FloatArray) {
-        for (i in 0 until MAT4_FLOATS) out[i] = 0f
-        out[0] = 1f
-        out[5] = 1f
-        out[10] = 1f
-        out[15] = 1f
-    }
-
-    // Column-major 4x4 multiplication: out = a * b.
-    private fun multiply4x4(out: FloatArray, a: FloatArray, b: FloatArray) {
-        for (col in 0..3) {
-            val b0 = b[col * 4 + 0]
-            val b1 = b[col * 4 + 1]
-            val b2 = b[col * 4 + 2]
-            val b3 = b[col * 4 + 3]
-            out[col * 4 + 0] = a[0] * b0 + a[4] * b1 + a[8] * b2 + a[12] * b3
-            out[col * 4 + 1] = a[1] * b0 + a[5] * b1 + a[9] * b2 + a[13] * b3
-            out[col * 4 + 2] = a[2] * b0 + a[6] * b1 + a[10] * b2 + a[14] * b3
-            out[col * 4 + 3] = a[3] * b0 + a[7] * b1 + a[11] * b2 + a[15] * b3
-        }
-    }
-
-    private fun copyMatrix(out: FloatArray, outOffset: Int, src: FloatArray) {
-        src.copyInto(out, destinationOffset = outOffset, startIndex = 0, endIndex = MAT4_FLOATS)
     }
 }

@@ -2,7 +2,6 @@ package org.emerge.demo.drockets
 
 import kotlin.math.abs
 
-internal const val M4 = 16
 internal const val TRIANGLE_VERTEX_OFFSET = 0
 internal const val QUAD_VERTEX_OFFSET = 3
 
@@ -31,40 +30,6 @@ internal fun hsvToRgb(h: Float, s: Float, v: Float): Triple<Float, Float, Float>
 /** Decoded view's [HsvColor] (h in [0,360], s/v in [0,1000]) to linear RGB. */
 internal fun HsvColor.toRgb(): Triple<Float, Float, Float> =
     hsvToRgb(h.toFloat(), s.toFloat() / 1000f, v.toFloat() / 1000f)
-
-internal fun setIdentity(out: FloatArray) {
-    for (i in 0 until M4) out[i] = 0f
-    out[0] = 1f; out[5] = 1f; out[10] = 1f; out[15] = 1f
-}
-
-internal fun setTranslation(out: FloatArray, tx: Float, ty: Float) {
-    setIdentity(out)
-    out[12] = tx; out[13] = ty
-}
-
-internal fun setScale(out: FloatArray, sx: Float, sy: Float) {
-    setIdentity(out)
-    out[0] = sx; out[5] = sy
-}
-
-internal fun setRotationZ(out: FloatArray, rad: Float) {
-    setIdentity(out)
-    val c = kotlin.math.cos(rad); val s = kotlin.math.sin(rad)
-    out[0] = c; out[1] = s; out[4] = -s; out[5] = c
-}
-
-internal fun multiply4x4(out: FloatArray, a: FloatArray, b: FloatArray) {
-    for (col in 0..3) {
-        val b0 = b[col * 4]
-        val b1 = b[col * 4 + 1]
-        val b2 = b[col * 4 + 2]
-        val b3 = b[col * 4 + 3]
-        out[col * 4 + 0] = a[0] * b0 + a[4] * b1 + a[8] * b2 + a[12] * b3
-        out[col * 4 + 1] = a[1] * b0 + a[5] * b1 + a[9] * b2 + a[13] * b3
-        out[col * 4 + 2] = a[2] * b0 + a[6] * b1 + a[10] * b2 + a[14] * b3
-        out[col * 4 + 3] = a[3] * b0 + a[7] * b1 + a[11] * b2 + a[15] * b3
-    }
-}
 
 /**
  * Wraps a signed delta into the half-open interval `(-size/2, size/2]`.

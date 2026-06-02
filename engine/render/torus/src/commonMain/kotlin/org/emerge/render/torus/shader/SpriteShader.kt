@@ -2,6 +2,7 @@ package org.emerge.render.torus.shader
 
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.GpuFloatBuffer
+import org.emerge.render.torus.Mat4
 import org.emerge.render.torus.put
 
 /**
@@ -36,7 +37,7 @@ class SpriteShader {
     private val instanceSquashVbo: Int = GPU.genBuffers()
     private val instanceTintColorVbo: Int = GPU.genBuffers()
 
-    private val instanceMatrices = GpuFloatBuffer(MAX_INSTANCES * MAT4_FLOATS)
+    private val instanceMatrices = GpuFloatBuffer(MAX_INSTANCES * Mat4.FLOATS)
     private val instancePrimaryIds = GpuFloatBuffer(MAX_INSTANCES)
     private val instanceUvXs = GpuFloatBuffer(MAX_INSTANCES)
     private val instanceUvYs = GpuFloatBuffer(MAX_INSTANCES)
@@ -112,7 +113,7 @@ class SpriteShader {
         GPU.putUniform2f(uFrameSize, frameSizeX, frameSizeY)
 
         val n = instanceCount.coerceIn(0, MAX_INSTANCES)
-        bind(instanceVbo, instanceMatrices, matricesColMajor, n * MAT4_FLOATS)
+        bind(instanceVbo, instanceMatrices, matricesColMajor, n * Mat4.FLOATS)
         bind(instancePrimaryIdVbo, instancePrimaryIds, primaryIds, n)
         bind(instanceUvXVbo, instanceUvXs, uvXs, n)
         bind(instanceUvYVbo, instanceUvYs, uvYs, n)
@@ -156,7 +157,6 @@ class SpriteShader {
         private const val INSTANCE_ALPHA_ATTR = 10
         private const val INSTANCE_SQUASH_ATTR = 11
         private const val INSTANCE_TINT_COLOR_ATTR = 12
-        private const val MAT4_FLOATS = 16
         const val MAX_INSTANCES = 2000
         private const val SPRITE_TEXTURE_UNIT = 1
         private const val QUAD_VERTEX_COUNT = 4

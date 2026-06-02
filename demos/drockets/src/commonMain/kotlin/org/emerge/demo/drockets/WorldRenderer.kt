@@ -5,6 +5,7 @@ import org.emerge.demo.drockets.shader.PlanetShader
 import org.emerge.demo.drockets.shader.StarscapeShader
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.GpuFloatBuffer
+import org.emerge.render.torus.Mat4
 import org.emerge.render.torus.put
 import org.emerge.render.torus.shader.CircleShader
 import org.emerge.render.torus.shader.SpriteShader
@@ -54,12 +55,12 @@ class WorldRenderer(
     private var lastDrawnState: SimState? = null
 
     // Instance buffers for planet shader
-    private val planetMatrices = FloatArray(PlanetShader.MAX_INSTANCES * M4)
+    private val planetMatrices = FloatArray(PlanetShader.MAX_INSTANCES * Mat4.FLOATS)
     private val planetPrimaryIds = FloatArray(PlanetShader.MAX_INSTANCES)
     private val planetAlphas = FloatArray(PlanetShader.MAX_INSTANCES)
 
     // Instance buffers for circle shader (particles only)
-    private val circleMatrices = FloatArray(CircleShader.MAX_INSTANCES * M4)
+    private val circleMatrices = FloatArray(CircleShader.MAX_INSTANCES * Mat4.FLOATS)
     private val circlePrimaryIds = FloatArray(CircleShader.MAX_INSTANCES)
     private val circleSecondaryIds = FloatArray(CircleShader.MAX_INSTANCES)
     private val circleShapes = FloatArray(CircleShader.MAX_INSTANCES)
@@ -68,7 +69,7 @@ class WorldRenderer(
     private val circleTintColors = FloatArray(CircleShader.MAX_INSTANCES * 3)
 
     // Instance buffers for sprite shader (drockets + knights)
-    private val spriteMatrices = FloatArray(SpriteShader.MAX_INSTANCES * M4)
+    private val spriteMatrices = FloatArray(SpriteShader.MAX_INSTANCES * Mat4.FLOATS)
     private val spritePrimaryIds = FloatArray(SpriteShader.MAX_INSTANCES)
     private val spriteUvXs = FloatArray(SpriteShader.MAX_INSTANCES)
     private val spriteUvYs = FloatArray(SpriteShader.MAX_INSTANCES)
@@ -78,12 +79,12 @@ class WorldRenderer(
     private val spriteSquashs = FloatArray(SpriteShader.MAX_INSTANCES)
     private val spriteTintColors = FloatArray(SpriteShader.MAX_INSTANCES * 3)
 
-    private val matTmp = FloatArray(M4)
-    private val matT = FloatArray(M4)
-    private val matR = FloatArray(M4)
-    private val matS = FloatArray(M4)
-    private val matView = FloatArray(M4)
-    private val matModel = FloatArray(M4)
+    private val matTmp = Mat4.scratch()
+    private val matT = Mat4.scratch()
+    private val matR = Mat4.scratch()
+    private val matS = Mat4.scratch()
+    private val matView = Mat4.scratch()
+    private val matModel = Mat4.scratch()
 
     private val worldSize = Vec2(2f, 2f)
 
@@ -238,18 +239,18 @@ class WorldRenderer(
                 collider.radius.toFloat() * PLANET_ATMOSPHERE_SCALE
             }
 
-            setScale(matS, renderRadius, renderRadius)
-            setRotationZ(matR, transform.ang.toFloat() * PI.toFloat())
-            multiply4x4(out = matTmp, a = matR, b = matS)
+            matS.setScale(renderRadius, renderRadius)
+            matR.setRotationZ(transform.ang.toFloat() * PI.toFloat())
+            matTmp.setProduct(matR, matS)
 
             val dx = wrapDelta(transform.pos.x.toFloat() - viewFocus.x.toFloat(), worldSize.x)
             val dy = wrapDelta(transform.pos.y.toFloat() - viewFocus.y.toFloat(), worldSize.y)
-            setTranslation(matT, dx, dy)
-            multiply4x4(out = matModel, a = matT, b = matTmp)
-            multiply4x4(out = matTmp, a = matView, b = matModel)
+            matT.setTranslation(dx, dy)
+            matModel.setProduct(matT, matTmp)
+            matTmp.setProduct(matView, matModel)
 
-            val base = planetCount * M4
-            matTmp.copyInto(planetMatrices, destinationOffset = base, startIndex = 0, endIndex = M4)
+            val base = planetCount * Mat4.FLOATS
+            matTmp.copyInto(planetMatrices, base)
             planetPrimaryIds[planetCount] = (entityId.value + 1).toFloat()
             planetAlphas[planetCount] = 1f
             planetCount++
@@ -387,18 +388,18 @@ class WorldRenderer(
             val collider = state.colliders[entityId] ?: continue
 
             val radius = collider.radius.toFloat()
-            setScale(matS, radius, radius)
-            setRotationZ(matR, transform.ang.toFloat() * PI.toFloat())
-            multiply4x4(out = matTmp, a = matR, b = matS)
+            matS.setScale(radius, radius)
+            matR.setRotationZ(transform.ang.toFloat() * PI.toFloat())
+            matTmp.setProduct(matR, matS)
 
             val dx = wrapDelta(transform.pos.x.toFloat() - viewFocus.x.toFloat(), worldSize.x)
             val dy = wrapDelta(transform.pos.y.toFloat() - viewFocus.y.toFloat(), worldSize.y)
-            setTranslation(matT, dx, dy)
-            multiply4x4(out = matModel, a = matT, b = matTmp)
-            multiply4x4(out = matTmp, a = matView, b = matModel)
+            matT.setTranslation(dx, dy)
+            matModel.setProduct(matT, matTmp)
+            matTmp.setProduct(matView, matModel)
 
-            val base = circleCount * M4
-            matTmp.copyInto(circleMatrices, destinationOffset = base, startIndex = 0, endIndex = M4)
+            val base = circleCount * Mat4.FLOATS
+            matTmp.copyInto(circleMatrices, base)
             circlePrimaryIds[circleCount] = (entityId.value + 1).toFloat()
             circleSecondaryIds[circleCount] = (entityId.value + 1).toFloat()
             circleShapes[circleCount] = 0f
@@ -518,16 +519,16 @@ class WorldRenderer(
     }
 
     private fun computeViewMatrix(zoomInv: Float, viewRotation: Float) {
-        setRotationZ(matR, viewRotation)
+        matR.setRotationZ(viewRotation)
         val aspect = resolution.x / resolution.y
         val minAspect = min(aspect, 1f)
         val maxAspect = max(aspect, 1f)
         val sx = worldSize.x * 0.5f / minAspect / zoomInv
         val sy = -worldSize.y * 0.5f * maxAspect / zoomInv
-        setScale(matS, sx, sy)
-        multiply4x4(out = matTmp, a = matS, b = matR)
-        setTranslation(matT, 0f, 0f)
-        multiply4x4(out = matView, a = matT, b = matTmp)
+        matS.setScale(sx, sy)
+        matTmp.setProduct(matS, matR)
+        matT.setTranslation(0f, 0f)
+        matView.setProduct(matT, matTmp)
     }
 
     private fun packSpriteInstance(
@@ -547,18 +548,18 @@ class WorldRenderer(
     ): Int {
         if (index >= SpriteShader.MAX_INSTANCES) return index
 
-        setScale(matS, scaleX, scaleY)
-        setRotationZ(matR, angleTurns * PI.toFloat())
-        multiply4x4(out = matTmp, a = matR, b = matS)
+        matS.setScale(scaleX, scaleY)
+        matR.setRotationZ(angleTurns * PI.toFloat())
+        matTmp.setProduct(matR, matS)
 
         val dx = wrapDelta(posX, worldSize.x)
         val dy = wrapDelta(posY, worldSize.y)
-        setTranslation(matT, dx, dy)
-        multiply4x4(out = matModel, a = matT, b = matTmp)
-        multiply4x4(out = matTmp, a = matView, b = matModel)
+        matT.setTranslation(dx, dy)
+        matModel.setProduct(matT, matTmp)
+        matTmp.setProduct(matView, matModel)
 
-        val base = index * M4
-        matTmp.copyInto(spriteMatrices, destinationOffset = base, startIndex = 0, endIndex = M4)
+        val base = index * Mat4.FLOATS
+        matTmp.copyInto(spriteMatrices, base)
         spritePrimaryIds[index] = primaryId
         spriteUvXs[index] = uvX
         spriteUvYs[index] = uvY

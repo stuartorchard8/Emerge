@@ -2,6 +2,7 @@ package org.emerge.demo.drockets.shader
 
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.GpuFloatBuffer
+import org.emerge.render.torus.Mat4
 
 /**
  * Procedural planet renderer using instanced draw calls.
@@ -20,7 +21,7 @@ class PlanetShader {
     private val instancePrimaryIdVbo: Int = GPU.genBuffers()
     private val instanceAlphaVbo: Int = GPU.genBuffers()
 
-    private val instanceMatrices = GpuFloatBuffer(MAX_INSTANCES * MAT4_FLOATS)
+    private val instanceMatrices = GpuFloatBuffer(MAX_INSTANCES * Mat4.FLOATS)
     private val instancePrimaryIds = GpuFloatBuffer(MAX_INSTANCES)
     private val instanceAlphas = GpuFloatBuffer(MAX_INSTANCES)
 
@@ -34,7 +35,7 @@ class PlanetShader {
         GPU.useProgram(program)
         val n = instanceCount.coerceIn(0, MAX_INSTANCES)
 
-        bindAndSetup(instanceVbo, instanceMatrices, matricesColMajor, n * MAT4_FLOATS, INSTANCE_ATTR_BASE, 4, 4)
+        bindAndSetup(instanceVbo, instanceMatrices, matricesColMajor, n * Mat4.FLOATS, INSTANCE_ATTR_BASE, 4, 4)
         bindAndSetup(instancePrimaryIdVbo, instancePrimaryIds, primaryIds, n, INSTANCE_PRIMARY_ID_ATTR)
         bindAndSetup(instanceAlphaVbo, instanceAlphas, alphas, n, INSTANCE_ALPHA_ATTR)
 
@@ -75,7 +76,6 @@ class PlanetShader {
         private const val INSTANCE_ATTR_BASE = 1
         private const val INSTANCE_PRIMARY_ID_ATTR = 5
         private const val INSTANCE_ALPHA_ATTR = 8
-        private const val MAT4_FLOATS = 16
         const val MAX_INSTANCES = 16
     }
 }
