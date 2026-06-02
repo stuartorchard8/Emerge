@@ -2,7 +2,6 @@ package org.emerge.desktop
 
 import org.emerge.demo.scavengers.*
 import org.emerge.demo.scavengers.audio.CrashAudioSystem
-import org.emerge.render.torus.ScreenRenderer
 import org.emerge.demo.scavengers.ScavengersInput
 import org.emerge.sim.core.physics.primitives.Vec2
 import org.lwjgl.glfw.GLFW.*
@@ -87,7 +86,7 @@ object DesktopGlSceneView {
         val dpiX = FloatArray(1)
         val dpiY = FloatArray(1)
         glfwGetWindowContentScale(window, dpiX, dpiY)
-        val screenRenderer = ScreenRenderer(Vec2(dpiX[0], dpiY[0]))
+        val screenRenderer = ScavengersRenderer(Vec2(dpiX[0], dpiY[0]))
         val crashAudio = CrashAudioSystem(DesktopOggCrashAudioEngine())
 
         while (!glfwWindowShouldClose(window)) {
@@ -141,7 +140,7 @@ object DesktopGlSceneView {
         return window
     }
 
-    private fun updateResolution(window: Long, screenRenderer: ScreenRenderer) {
+    private fun updateResolution(window: Long, screenRenderer: ScavengersRenderer) {
         // Respond to window size changes
         MemoryStack.stackPush().use { st ->
             val sizeX = st.mallocInt(1)
@@ -160,7 +159,7 @@ object DesktopGlSceneView {
     private fun processInput(
         controller: ScavengersController,
         pressed: BooleanArray,
-        screenRenderer: ScreenRenderer,
+        screenRenderer: ScavengersRenderer,
     ): ScavengersFrame {
         // zoom controls: '-' zoom out, '=' zoom in
         if (pressed[GLFW_KEY_MINUS]) screenRenderer.zoomOut()

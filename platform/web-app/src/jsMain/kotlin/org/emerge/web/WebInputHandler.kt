@@ -1,7 +1,7 @@
 package org.emerge.web
 
 import kotlinx.browser.document
-import org.emerge.render.torus.ScreenRenderer
+import org.emerge.demo.scavengers.ScavengersRenderer
 import org.emerge.demo.scavengers.ScavengersInput
 
 class WebInputHandler {
@@ -16,7 +16,7 @@ class WebInputHandler {
         })
     }
 
-    fun poll(renderer: ScreenRenderer): ScavengersInput {
+    fun poll(renderer: ScavengersRenderer): ScavengersInput {
         if ("Minus" in pressed) renderer.zoomOut()
         if ("Equal" in pressed) renderer.zoomIn()
         if ("KeyQ" in pressed) renderer.rotateLeft()

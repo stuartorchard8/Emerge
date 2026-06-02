@@ -13,8 +13,8 @@ import org.emerge.demo.scavengers.rendererFocus
 import org.emerge.demo.scavengers.scavengersBodyTint
 import org.emerge.demo.scavengers.scavengersEdgeIndicators
 import org.emerge.net.websocket.WebSocketPipe
+import org.emerge.demo.scavengers.ScavengersRenderer
 import org.emerge.render.torus.GPU
-import org.emerge.render.torus.ScreenRenderer
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.primitives.Vec2
 import org.emerge.sim.sync.lockstep.ThinClient
@@ -35,7 +35,7 @@ fun main() {
 
     syncCanvasSize()
 
-    val renderer = ScreenRenderer(Vec2(1f, 1f))
+    val renderer = ScavengersRenderer(Vec2(1f, 1f))
     renderer.setResolution(Vec2(canvas.width.toFloat(), canvas.height.toFloat()))
     val input = WebInputHandler()
 
@@ -58,7 +58,7 @@ fun main() {
     }
 }
 
-private fun startLocalMode(renderer: ScreenRenderer, input: WebInputHandler, crashAudio: CrashAudioSystem) {
+private fun startLocalMode(renderer: ScavengersRenderer, input: WebInputHandler, crashAudio: CrashAudioSystem) {
     val cfg = ScavengersConfig()
     var state = createDefaultInitialState(GameMode.PVP)
     val reducer = ScavengersReducer()
@@ -81,7 +81,7 @@ private fun startLocalMode(renderer: ScreenRenderer, input: WebInputHandler, cra
     window.requestAnimationFrame(::frame)
 }
 
-private fun startJoinMode(wsUrl: String, renderer: ScreenRenderer, input: WebInputHandler, crashAudio: CrashAudioSystem) {
+private fun startJoinMode(wsUrl: String, renderer: ScavengersRenderer, input: WebInputHandler, crashAudio: CrashAudioSystem) {
     val initialState = createDefaultInitialState(GameMode.PVP)
 
     val pipe = org.emerge.net.api.DelegatingPipe()
