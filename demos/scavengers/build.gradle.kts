@@ -59,6 +59,9 @@ kotlin {
     }
 }
 
+// Generates *ShaderSources.kt from .vert / .frag files under src/commonMain/shaders/.
+registerShaderCodegen(packageName = "org.emerge.demo.scavengers.shader")
+
 android {
     namespace = "org.emerge.demo.scavengers"
     compileSdk = 35

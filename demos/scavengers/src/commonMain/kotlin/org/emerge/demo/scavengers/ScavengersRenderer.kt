@@ -1,18 +1,38 @@
-package org.emerge.render.torus
+package org.emerge.demo.scavengers
 
+import org.emerge.demo.scavengers.shader.NoisePlanetShader
+import org.emerge.demo.scavengers.shader.RocketShader
+import org.emerge.render.torus.EdgeIndicator
+import org.emerge.render.torus.GPU
+import org.emerge.render.torus.Mat4
+import org.emerge.render.torus.RgbColor
+import org.emerge.render.torus.ScreenLayout
 import org.emerge.render.torus.shader.CircleShader
 import org.emerge.render.torus.shader.GuiShader
 import org.emerge.render.torus.shader.WorldShader
 import org.emerge.render.torus.shader.WorldShaderParams
 import org.emerge.sim.core.EntityId
-import org.emerge.sim.core.ecs.ComponentTable
+import org.emerge.sim.core.physics.components.ColliderComponent
+import org.emerge.sim.core.physics.components.ForceFieldComponent
+import org.emerge.sim.core.physics.components.ParticleComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
+import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Vec2
 import org.emerge.sim.core.sim.SimState
 import kotlin.math.*
 
-class ScreenRenderer(val contentScale: Vec2) {
+/**
+ * Scavengers' world renderer. Drives the engine's generic building blocks (torus
+ * background, GUI, and the generic [CircleShader] for translucent discs / edge-indicator
+ * arrows) and adds scavengers' own looks: [RocketShader] for triangle bodies and
+ * [NoisePlanetShader] for full-alpha circular bodies.
+ *
+ * Camera/instance-packing math is shared with the (former engine) renderer; only the
+ * per-shape *appearance* is scavengers-owned. Like the demo's sibling shaders, the
+ * extra programs reuse the engine VAO and shared triangle.
+ */
+class ScavengersRenderer(val contentScale: Vec2) {
     private var zoom: Float = 10f
 
     @kotlin.concurrent.Volatile
@@ -24,14 +44,33 @@ class ScreenRenderer(val contentScale: Vec2) {
     private val worldShader = WorldShader()
     private val guiShader = GuiShader()
     private val circleShader = CircleShader()
+    private val rocketShader = RocketShader()
+    private val noisePlanetShader = NoisePlanetShader()
     private var layout: ScreenLayout = ScreenLayout.compute(Vec2(1f, 1f), contentScale)
-    private val bodyInstanceMatrices = FloatArray(CircleShader.MAX_INSTANCES * Mat4.FLOATS)
-    private val bodyInstancePrimaryIds = FloatArray(CircleShader.MAX_INSTANCES)
-    private val bodyInstanceSecondaryIds = FloatArray(CircleShader.MAX_INSTANCES)
-    private val bodyInstanceShapes = FloatArray(CircleShader.MAX_INSTANCES)
-    private val bodyInstanceAlphas = FloatArray(CircleShader.MAX_INSTANCES)
-    private val bodyInstanceRadii = FloatArray(CircleShader.MAX_INSTANCES)
-    private val bodyInstanceTintColors = FloatArray(CircleShader.MAX_INSTANCES * 3)
+
+    // Generic discs / flat triangles (particles, force fields, edge indicators).
+    private val circleMatrices = FloatArray(CircleShader.MAX_INSTANCES * Mat4.FLOATS)
+    private val circlePrimaryIds = FloatArray(CircleShader.MAX_INSTANCES)
+    private val circleShapes = FloatArray(CircleShader.MAX_INSTANCES)
+    private val circleAlphas = FloatArray(CircleShader.MAX_INSTANCES)
+    private val circleTintColors = FloatArray(CircleShader.MAX_INSTANCES * 3)
+    private var circleN = 0
+
+    // Rocket bodies (triangle shape, full alpha).
+    private val rocketMatrices = FloatArray(RocketShader.MAX_INSTANCES * Mat4.FLOATS)
+    private val rocketPrimaryIds = FloatArray(RocketShader.MAX_INSTANCES)
+    private val rocketSecondaryIds = FloatArray(RocketShader.MAX_INSTANCES)
+    private val rocketTintColors = FloatArray(RocketShader.MAX_INSTANCES * 3)
+    private var rocketN = 0
+
+    // Procedural planets (circle shape, full alpha).
+    private val planetMatrices = FloatArray(NoisePlanetShader.MAX_INSTANCES * Mat4.FLOATS)
+    private val planetPrimaryIds = FloatArray(NoisePlanetShader.MAX_INSTANCES)
+    private val planetSecondaryIds = FloatArray(NoisePlanetShader.MAX_INSTANCES)
+    private val planetRadii = FloatArray(NoisePlanetShader.MAX_INSTANCES)
+    private val planetTintColors = FloatArray(NoisePlanetShader.MAX_INSTANCES * 3)
+    private var planetN = 0
+
     private val matTmp = Mat4.scratch()
     private val matT = Mat4.scratch()
     private val matR = Mat4.scratch()
@@ -53,48 +92,32 @@ class ScreenRenderer(val contentScale: Vec2) {
         guiShader.useLayout(layout)
     }
 
-    fun zoomOut() {
-        zoomByFactor(0.98f)
-    }
+    fun zoomOut() = zoomByFactor(0.98f)
 
-    fun zoomIn() {
-        zoomByFactor(1.02f)
-    }
+    fun zoomIn() = zoomByFactor(1.02f)
 
     fun zoomByFactor(factor: Float) {
-        if (!factor.isFinite() || factor <= 0f) {
-            return
-        }
+        if (!factor.isFinite() || factor <= 0f) return
         zoom = (zoom * factor).coerceIn(1.5f, 20f)
     }
 
-    fun rotateLeft() {
-        rotateBy(ROTATION_STEP_RAD)
-    }
+    fun rotateLeft() = rotateBy(ROTATION_STEP_RAD)
 
-    fun rotateRight() {
-        rotateBy(-ROTATION_STEP_RAD)
-    }
+    fun rotateRight() = rotateBy(-ROTATION_STEP_RAD)
 
     fun rotateBy(deltaRad: Float) {
-        if (!deltaRad.isFinite()) {
-            return
-        }
+        if (!deltaRad.isFinite()) return
         worldRotationRad += deltaRad
     }
 
     /**
-     * Draw a frame.
-     *
-     * The renderer is purely data-driven: it iterates the engine component tables
-     * for shapes/transforms/colliders/particles/force-fields, but everything
+     * Draw a frame. Data-driven over the engine component tables; everything
      * domain-flavoured comes from the caller:
      *
-     *  - [focus] is the world-space camera anchor (player-centred, free, …).
-     *  - [primaryColorOf] supplies an optional tint per entity; the body shader
-     *    overrides its hash-derived fallback when the returned color is non-zero.
-     *  - [edgeIndicators] is the explicit list of off-screen markers to draw, each
-     *    already coloured and alpha-faded by the demo's own rules.
+     *  - [focus] is the world-space camera anchor.
+     *  - [primaryColorOf] supplies an optional tint per entity; the shaders override
+     *    their hash-derived fallback when the returned color is non-zero.
+     *  - [edgeIndicators] is the explicit list of off-screen markers to draw.
      */
     fun draw(
         state: SimState,
@@ -105,9 +128,8 @@ class ScreenRenderer(val contentScale: Vec2) {
         val params = WorldShaderParams.compute(focus, zoom, worldRotationRad)
         worldShader.draw(params, segmentation = layout.worldSegmentation)
         guiShader.draw(vOffset = layout.guiVertexOffset)
-        val n = packBodyInstances(
+        packBodyInstances(
             state = state,
-            shapes = state.renderShapes,
             params = params,
             layout = layout,
             primaryColorOf = primaryColorOf,
@@ -124,17 +146,27 @@ class ScreenRenderer(val contentScale: Vec2) {
         GPU.enableBlend()
         GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
         GPU.setScissor(x0, y0, w, h)
-        circleShader.drawInstanced(
-            vOffset = layout.circleVertexOffset,
-            instanceCount = n,
-            matricesColMajor = bodyInstanceMatrices,
-            primaryIds = bodyInstancePrimaryIds,
-            secondaryIds = bodyInstanceSecondaryIds,
-            shapes = bodyInstanceShapes,
-            alphas = bodyInstanceAlphas,
-            radii = bodyInstanceRadii,
-            tintColorsRgb = bodyInstanceTintColors,
-        )
+
+        // Opaque-ish bodies first, then the translucent generic pass (discs + indicators).
+        val vOffset = layout.circleVertexOffset
+        if (planetN > 0) {
+            noisePlanetShader.drawInstanced(
+                vOffset, planetN, planetMatrices, planetPrimaryIds,
+                planetSecondaryIds, planetRadii, planetTintColors,
+            )
+        }
+        if (rocketN > 0) {
+            rocketShader.drawInstanced(
+                vOffset, rocketN, rocketMatrices, rocketPrimaryIds,
+                rocketSecondaryIds, rocketTintColors,
+            )
+        }
+        if (circleN > 0) {
+            circleShader.drawInstanced(
+                vOffset, circleN, circleMatrices, circlePrimaryIds,
+                circleShapes, circleAlphas, circleTintColors,
+            )
+        }
         GPU.disableBlend()
         GPU.disableScissorTest()
     }
@@ -143,6 +175,8 @@ class ScreenRenderer(val contentScale: Vec2) {
         worldShader.deleteProgram()
         guiShader.deleteProgram()
         circleShader.deleteProgram()
+        rocketShader.deleteProgram()
+        noisePlanetShader.deleteProgram()
         GPU.deleteBuffers(vbo)
         if (vao != null) {
             GPU.deleteVertexArrays(vao)
@@ -151,18 +185,18 @@ class ScreenRenderer(val contentScale: Vec2) {
 
     private fun packBodyInstances(
         state: SimState,
-        shapes: ComponentTable<RenderShapeComponent>,
         params: WorldShaderParams,
         layout: ScreenLayout,
         primaryColorOf: (EntityId) -> RgbColor,
         edgeIndicators: List<EdgeIndicator>,
-        indexOffset: Int = 0,
-    ): Int {
-        // Calculate view matrix once
-        // Rotate then Scale
+    ) {
+        circleN = 0
+        rocketN = 0
+        planetN = 0
+
+        // View matrix (rotate, scale, translate) — computed once per frame.
         matR.setRotationZ(params.viewRotationRad)
-        val worldPxSize = Vec2(layout.resolution.x, layout.resolution.y)
-        val aspect = worldPxSize.x / worldPxSize.y
+        val aspect = layout.resolution.x / layout.resolution.y
         val minAspect = min(aspect, 1f)
         val maxAspect = max(aspect, 1f)
         val scaleVecX = params.worldSize.x * 0.5f / minAspect / params.zoom
@@ -170,7 +204,6 @@ class ScreenRenderer(val contentScale: Vec2) {
         matS.setScale(scaleVecX, scaleVecY)
         matTmp.setProduct(matS, matR)
 
-        // Translate
         val worldNdcMin = layout.pxToNdc(layout.worldPxMin)
         val worldNdcMax = layout.pxToNdc(layout.worldPxMax)
         val viewCenterX = (worldNdcMax.x + worldNdcMin.x) * 0.5f
@@ -181,35 +214,33 @@ class ScreenRenderer(val contentScale: Vec2) {
         matT.setTranslation(viewCenterX, viewCenterY)
         matView.setProduct(matT, matTmp)
 
-        var n = indexOffset
-        for ((entityId, renderShape) in shapes.entries()) {
-            val transform = state.transforms[entityId] ?: continue
-            val collider = state.colliders[entityId] ?: continue
-            val particle = state.particles[entityId]
-            val secondaryId = shaderId(entityId.value)
+        val transforms = state.components.getTable<TransformComponent>()
+        val colliders = state.components.getTable<ColliderComponent>()
+        val particles = state.components.getTable<ParticleComponent>()
+        val forceFields = state.components.getTable<ForceFieldComponent>()
+        for ((entityId, renderShape) in state.components.getTable<RenderShapeComponent>().entries()) {
+            val transform = transforms[entityId] ?: continue
+            val collider = colliders[entityId] ?: continue
+            val particle = particles[entityId]
+            val id = shaderId(entityId.value)
             val tint = primaryColorOf(entityId)
-            n = packBodyInstance(
-                index = n,
-                primaryId = secondaryId,
-                secondaryId = secondaryId,
+            packBodyInstance(
+                primaryId = id,
+                secondaryId = id,
                 tint = tint,
                 posX = transform.pos.x.toFloat(),
                 posY = transform.pos.y.toFloat(),
                 angleTurns = transform.ang.toFloat(),
                 radius = collider.radius.toFloat(),
                 shape = renderShape.shape,
-                alpha = 1f * ((particle?.life?.toFloat() ?: 1f) / (particle?.lifeTime?.toFloat() ?: 1f)),
+                alpha = (particle?.life?.toFloat() ?: 1f) / (particle?.lifeTime?.toFloat() ?: 1f),
                 params = params,
             )
-            if (n >= CircleShader.MAX_INSTANCES) {
-                break
-            }
-            val forceField = state.forceFields[entityId]
+            val forceField = forceFields[entityId]
             if (forceField != null && renderShape.shape == BodyShape.CIRCLE) {
-                n = packBodyInstance(
-                    index = n,
-                    primaryId = secondaryId,
-                    secondaryId = secondaryId,
+                packBodyInstance(
+                    primaryId = id,
+                    secondaryId = id,
                     tint = tint,
                     posX = transform.pos.x.toFloat(),
                     posY = transform.pos.y.toFloat(),
@@ -219,13 +250,9 @@ class ScreenRenderer(val contentScale: Vec2) {
                     alpha = forceField.alpha.toFloat(),
                     params = params,
                 )
-                if (n >= CircleShader.MAX_INSTANCES) {
-                    break
-                }
             }
         }
-        n = packEdgeIndicators(
-            index = n,
+        packEdgeIndicators(
             indicators = edgeIndicators,
             params = params,
             scaleVecX = scaleVecX,
@@ -236,11 +263,9 @@ class ScreenRenderer(val contentScale: Vec2) {
             worldPxHeight = worldPxHeight,
             worldPxMinDim = worldPxMinDim,
         )
-        return n
     }
 
     private fun packEdgeIndicators(
-        index: Int,
         indicators: List<EdgeIndicator>,
         params: WorldShaderParams,
         scaleVecX: Float,
@@ -250,10 +275,9 @@ class ScreenRenderer(val contentScale: Vec2) {
         worldPxWidth: Float,
         worldPxHeight: Float,
         worldPxMinDim: Float,
-    ): Int {
-        if (indicators.isEmpty()) return index
+    ) {
+        if (indicators.isEmpty()) return
 
-        var n = index
         val indicatorScalePx = worldPxMinDim * INDICATOR_SCALE
         val indicatorInsetPx = worldPxMinDim * INDICATOR_EDGE_INSET
         val indicatorScaleX = indicatorScalePx * 2f / worldPxWidth
@@ -261,7 +285,7 @@ class ScreenRenderer(val contentScale: Vec2) {
         val halfWidthPx = worldPxWidth * 0.5f - indicatorInsetPx
         val halfHeightPx = worldPxHeight * 0.5f - indicatorInsetPx
         for (indicator in indicators) {
-            if (n >= CircleShader.MAX_INSTANCES) break
+            if (circleN >= CircleShader.MAX_INSTANCES) break
             val dx = wrapDelta(indicator.worldPos.x.toFloat() - params.viewFocus.x, params.worldSize.x)
             val dy = wrapDelta(indicator.worldPos.y.toFloat() - params.viewFocus.y, params.worldSize.y)
             val viewDx = dx * cos(-params.viewRotationRad) + dy * sin(-params.viewRotationRad)
@@ -281,22 +305,19 @@ class ScreenRenderer(val contentScale: Vec2) {
                 if (abs(dirPxX) > 1e-6f) halfWidthPx / abs(dirPxX) else Float.POSITIVE_INFINITY,
                 if (abs(dirPxY) > 1e-6f) halfHeightPx / abs(dirPxY) else Float.POSITIVE_INFINITY,
             )
-            n = packIndicatorInstance(
-                index = n,
-                tint = indicator.color,
-                posX = viewCenterX + (1f - abs(viewCenterX)) * dirPxX * edgeT * 2f / worldPxWidth,
-                posY = viewCenterY + (1f - abs(viewCenterY)) * dirPxY * edgeT * 2f / worldPxHeight,
-                angleRad = atan2(dirPxY, dirPxX),
-                scaleX = indicatorScaleX,
-                scaleY = indicatorScaleY,
-                alpha = indicator.alpha,
+            matS.setScale(indicatorScaleX, indicatorScaleY)
+            matR.setRotationZ(atan2(dirPxY, dirPxX))
+            matTmp.setProduct(matS, matR)
+            matT.setTranslation(
+                viewCenterX + (1f - abs(viewCenterX)) * dirPxX * edgeT * 2f / worldPxWidth,
+                viewCenterY + (1f - abs(viewCenterY)) * dirPxY * edgeT * 2f / worldPxHeight,
             )
+            matModel.setProduct(matT, matTmp)
+            appendCircle(matModel, primaryId = 0f, shape = 1f, alpha = indicator.alpha, tint = indicator.color)
         }
-        return n
     }
 
     private fun packBodyInstance(
-        index: Int,
         primaryId: Float,
         secondaryId: Float,
         tint: RgbColor,
@@ -307,71 +328,62 @@ class ScreenRenderer(val contentScale: Vec2) {
         shape: BodyShape,
         alpha: Float,
         params: WorldShaderParams,
-    ): Int {
-        if (index >= CircleShader.MAX_INSTANCES) {
-            return index
-        }
-
-        // Scale then rotate for this body.
+    ) {
+        // Scale then rotate, then translate into wrapped world space relative to focus.
         matS.setScale(radius, radius)
         matR.setRotationZ(angleTurns * PI.toFloat())
         matTmp.setProduct(matR, matS)
-
-        // Translate into wrapped world space relative to the current focus.
         val dx = wrapDelta(posX - params.viewFocus.x, params.worldSize.x)
         val dy = wrapDelta(posY - params.viewFocus.y, params.worldSize.y)
         matT.setTranslation(dx, dy)
         matModel.setProduct(matT, matTmp)
         matTmp.setProduct(matView, matModel)
 
-        val base = index * Mat4.FLOATS
-        matTmp.copyInto(bodyInstanceMatrices, base)
-        bodyInstancePrimaryIds[index] = primaryId
-        bodyInstanceSecondaryIds[index] = secondaryId
-        bodyInstanceShapes[index] = if (shape == BodyShape.TRIANGLE) 1f else 0f
-        bodyInstanceAlphas[index] = alpha
-        bodyInstanceRadii[index] = radius
-        val tintBase = index * 3
-        bodyInstanceTintColors[tintBase] = tint.r
-        bodyInstanceTintColors[tintBase + 1] = tint.g
-        bodyInstanceTintColors[tintBase + 2] = tint.b
-        return index + 1
+        // Route by appearance: full-alpha triangle = rocket, full-alpha circle = planet,
+        // anything translucent = generic disc. (Mirrors the old uber-shader's selector.)
+        when {
+            shape == BodyShape.TRIANGLE && alpha >= 1f -> appendRocket(matTmp, primaryId, secondaryId, tint)
+            shape == BodyShape.CIRCLE && alpha >= 1f -> appendPlanet(matTmp, primaryId, secondaryId, radius, tint)
+            else -> appendCircle(matTmp, primaryId, shape = if (shape == BodyShape.TRIANGLE) 1f else 0f, alpha = alpha, tint = tint)
+        }
     }
 
-    private fun packIndicatorInstance(
-        index: Int,
-        tint: RgbColor,
-        posX: Float,
-        posY: Float,
-        angleRad: Float,
-        scaleX: Float,
-        scaleY: Float,
-        alpha: Float,
-    ): Int {
-        if (index >= CircleShader.MAX_INSTANCES) {
-            return index
-        }
+    private fun appendCircle(m: Mat4, primaryId: Float, shape: Float, alpha: Float, tint: RgbColor) {
+        if (circleN >= CircleShader.MAX_INSTANCES) return
+        m.copyInto(circleMatrices, circleN * Mat4.FLOATS)
+        circlePrimaryIds[circleN] = primaryId
+        circleShapes[circleN] = shape
+        circleAlphas[circleN] = alpha
+        val t = circleN * 3
+        circleTintColors[t] = tint.r
+        circleTintColors[t + 1] = tint.g
+        circleTintColors[t + 2] = tint.b
+        circleN++
+    }
 
-        matS.setScale(scaleX, scaleY)
-        matR.setRotationZ(angleRad)
-        // Rotate in local space first, then convert to per-axis NDC scale so the arrow keeps
-        // a visually correct shape on non-square viewports.
-        matTmp.setProduct(matS, matR)
-        matT.setTranslation(posX, posY)
-        matModel.setProduct(matT, matTmp)
+    private fun appendRocket(m: Mat4, primaryId: Float, secondaryId: Float, tint: RgbColor) {
+        if (rocketN >= RocketShader.MAX_INSTANCES) return
+        m.copyInto(rocketMatrices, rocketN * Mat4.FLOATS)
+        rocketPrimaryIds[rocketN] = primaryId
+        rocketSecondaryIds[rocketN] = secondaryId
+        val t = rocketN * 3
+        rocketTintColors[t] = tint.r
+        rocketTintColors[t + 1] = tint.g
+        rocketTintColors[t + 2] = tint.b
+        rocketN++
+    }
 
-        val base = index * Mat4.FLOATS
-        matModel.copyInto(bodyInstanceMatrices, base)
-        bodyInstancePrimaryIds[index] = 0f
-        bodyInstanceSecondaryIds[index] = 0f
-        bodyInstanceShapes[index] = 1f
-        bodyInstanceAlphas[index] = alpha
-        bodyInstanceRadii[index] = max(scaleX, scaleY)
-        val tintBase = index * 3
-        bodyInstanceTintColors[tintBase] = tint.r
-        bodyInstanceTintColors[tintBase + 1] = tint.g
-        bodyInstanceTintColors[tintBase + 2] = tint.b
-        return index + 1
+    private fun appendPlanet(m: Mat4, primaryId: Float, secondaryId: Float, radius: Float, tint: RgbColor) {
+        if (planetN >= NoisePlanetShader.MAX_INSTANCES) return
+        m.copyInto(planetMatrices, planetN * Mat4.FLOATS)
+        planetPrimaryIds[planetN] = primaryId
+        planetSecondaryIds[planetN] = secondaryId
+        planetRadii[planetN] = radius
+        val t = planetN * 3
+        planetTintColors[t] = tint.r
+        planetTintColors[t + 1] = tint.g
+        planetTintColors[t + 2] = tint.b
+        planetN++
     }
 
     private fun shaderId(rawId: Int?): Float = if (rawId == null) 0f else (rawId + 1).toFloat()

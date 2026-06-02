@@ -62,10 +62,8 @@ class WorldRenderer(
     // Instance buffers for circle shader (particles only)
     private val circleMatrices = FloatArray(CircleShader.MAX_INSTANCES * Mat4.FLOATS)
     private val circlePrimaryIds = FloatArray(CircleShader.MAX_INSTANCES)
-    private val circleSecondaryIds = FloatArray(CircleShader.MAX_INSTANCES)
     private val circleShapes = FloatArray(CircleShader.MAX_INSTANCES)
     private val circleAlphas = FloatArray(CircleShader.MAX_INSTANCES)
-    private val circleRadii = FloatArray(CircleShader.MAX_INSTANCES)
     private val circleTintColors = FloatArray(CircleShader.MAX_INSTANCES * 3)
 
     // Instance buffers for sprite shader (drockets + knights)
@@ -401,10 +399,8 @@ class WorldRenderer(
             val base = circleCount * Mat4.FLOATS
             matTmp.copyInto(circleMatrices, base)
             circlePrimaryIds[circleCount] = (entityId.value + 1).toFloat()
-            circleSecondaryIds[circleCount] = (entityId.value + 1).toFloat()
             circleShapes[circleCount] = 0f
             circleAlphas[circleCount] = particle.life.toFloat() / particle.lifeTime.toFloat()
-            circleRadii[circleCount] = radius
             val tintBase = circleCount * 3
             circleTintColors[tintBase] = 0f
             circleTintColors[tintBase + 1] = 0f
@@ -417,10 +413,8 @@ class WorldRenderer(
                 instanceCount = circleCount,
                 matricesColMajor = circleMatrices,
                 primaryIds = circlePrimaryIds,
-                secondaryIds = circleSecondaryIds,
                 shapes = circleShapes,
                 alphas = circleAlphas,
-                radii = circleRadii,
                 tintColorsRgb = circleTintColors,
             )
         }
