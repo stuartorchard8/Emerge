@@ -21,12 +21,12 @@ class RocketShader {
 
     private val instanceVbo: Int = GPU.genBuffers()
     private val instancePrimaryIdVbo: Int = GPU.genBuffers()
-    private val instanceSecondaryIdVbo: Int = GPU.genBuffers()
+    private val instanceSecondaryColorVbo: Int = GPU.genBuffers()
     private val instanceTintColorVbo: Int = GPU.genBuffers()
 
     private val instanceMatrices = GpuFloatBuffer(MAX_INSTANCES * Mat4.FLOATS)
     private val instancePrimaryIds = GpuFloatBuffer(MAX_INSTANCES)
-    private val instanceSecondaryIds = GpuFloatBuffer(MAX_INSTANCES)
+    private val instanceSecondaryColors = GpuFloatBuffer(MAX_INSTANCES * 3)
     private val instanceTintColors = GpuFloatBuffer(MAX_INSTANCES * 3)
 
     fun drawInstanced(
@@ -34,7 +34,7 @@ class RocketShader {
         instanceCount: Int,
         matricesColMajor: FloatArray,
         primaryIds: FloatArray,
-        secondaryIds: FloatArray,
+        secondaryColorsRgb: FloatArray,
         tintColorsRgb: FloatArray,
     ) {
         GPU.useProgram(program)
@@ -42,7 +42,7 @@ class RocketShader {
 
         bindAndSetup(instanceVbo         , instanceMatrices  , matricesColMajor, n * Mat4.FLOATS, INSTANCE_ATTR_BASE, 4, 4)
         bindAndSetup(instancePrimaryIdVbo, instancePrimaryIds, primaryIds      , n, INSTANCE_PRIMARY_ID_ATTR)
-        bindAndSetup(instanceSecondaryIdVbo, instanceSecondaryIds, secondaryIds , n, INSTANCE_SECONDARY_ID_ATTR)
+        bindAndSetup(instanceSecondaryColorVbo, instanceSecondaryColors, secondaryColorsRgb, n * 3, INSTANCE_SECONDARY_COLOR_ATTR, 3)
         bindAndSetup(instanceTintColorVbo, instanceTintColors, tintColorsRgb   , n * 3, INSTANCE_TINT_COLOR_ATTR, 3)
 
         GPU.drawTrianglesInstanced(vOffset, 3, n)
@@ -75,14 +75,14 @@ class RocketShader {
         GPU.deleteProgram(program)
         GPU.deleteBuffers(instanceVbo)
         GPU.deleteBuffers(instancePrimaryIdVbo)
-        GPU.deleteBuffers(instanceSecondaryIdVbo)
+        GPU.deleteBuffers(instanceSecondaryColorVbo)
         GPU.deleteBuffers(instanceTintColorVbo)
     }
 
     companion object {
         private const val INSTANCE_ATTR_BASE = 1
         private const val INSTANCE_PRIMARY_ID_ATTR = 5
-        private const val INSTANCE_SECONDARY_ID_ATTR = 6
+        private const val INSTANCE_SECONDARY_COLOR_ATTR = 6
         private const val INSTANCE_TINT_COLOR_ATTR = 7
         const val MAX_INSTANCES = 4096
     }

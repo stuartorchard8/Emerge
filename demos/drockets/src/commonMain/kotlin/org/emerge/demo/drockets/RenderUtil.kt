@@ -32,6 +32,17 @@ internal fun HsvColor.toRgb(): Triple<Float, Float, Float> =
     hsvToRgb(h.toFloat(), s.toFloat() / 1000f, v.toFloat() / 1000f)
 
 /**
+ * Stable per-id color hash, reproducing the `mod(vec3(c/1.9, c/2.9, c/4.9), 1.0)` the sprite
+ * shader used to compute from `primaryId`. Kept in Kotlin so the shader stays a pure tint
+ * consumer; used for entities (e.g. knights) that have no genome-derived color of their own.
+ */
+internal fun idHashColor(primaryId: Float): Triple<Float, Float, Float> {
+    val c = primaryId + 1f
+    fun frac(x: Float) = x - kotlin.math.floor(x)
+    return Triple(frac(c / 1.9f), frac(c / 2.9f), frac(c / 4.9f))
+}
+
+/**
  * Wraps a signed delta into the half-open interval `(-size/2, size/2]`.
  * The world is a torus of side [size]; entities on the far side may project closer
  * across the wrap than directly.

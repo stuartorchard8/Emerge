@@ -79,6 +79,7 @@ object DrocketAdaptiveDamageSystem : EcsSystem<DrocketsConfig, SimState, Drocket
                         vel = motion.vel,
                         recentImpulse = impulse,
                         baseRadius = baseRadius,
+                        fireColor = builder.getComponent<GenomeComponent>(entityId)?.genome?.phenotype()?.fireColor,
                     )
                 }
             }
@@ -128,13 +129,16 @@ object DrocketAdaptiveDamageSystem : EcsSystem<DrocketsConfig, SimState, Drocket
             )
             val speed = DESTRUCTION_BURST_SPEED_FACTOR * (burst.baseRadius + burst.recentImpulse.vel.len) *
                 Frac(builder.nextRandomInt(until = Int.MAX_VALUE).toLong())
-            builder.spawnParticle(
+            val particleId = builder.spawnParticle(
                 pos = burst.pos + burst.recentImpulse.pos,
                 vel = burst.vel + burst.recentImpulse.vel + direction * speed,
                 radius = DESTRUCTION_BURST_PARTICLE_RADIUS_FACTOR * burst.baseRadius,
                 shape = org.emerge.sim.core.physics.primitives.BodyShape.CIRCLE,
                 lifetime = DESTRUCTION_BURST_LIFETIME,
             )
+            if (burst.fireColor != null) {
+                builder.update<ParticleTintComponent>(particleId) { ParticleTintComponent(burst.fireColor) }
+            }
         }
     }
 
@@ -143,5 +147,6 @@ object DrocketAdaptiveDamageSystem : EcsSystem<DrocketsConfig, SimState, Drocket
         val vel: Coord2,
         val recentImpulse: ImpulseComponent,
         val baseRadius: Frac,
+        val fireColor: HsvColor?,
     )
 }

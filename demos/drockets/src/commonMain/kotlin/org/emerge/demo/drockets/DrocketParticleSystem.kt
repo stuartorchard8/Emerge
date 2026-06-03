@@ -37,7 +37,7 @@ object DrocketParticleSystem : EcsSystem<DrocketsConfig, SimState, DrocketsInput
             if (ds.walkDirection > 0) {
                 forward = -forward
             }
-            builder.spawnParticle(
+            val particleId = builder.spawnParticle(
                 pos = transform.pos + forward * DROCKET_RADIUS/2 - up * DROCKET_RADIUS/4,
                 vel = motion.vel + forward * DROCKET_RADIUS/2 *
                     Frac(builder.nextRandomInt(until = Int.MAX_VALUE).toLong()),
@@ -45,6 +45,11 @@ object DrocketParticleSystem : EcsSystem<DrocketsConfig, SimState, DrocketsInput
                 shape = BodyShape.CIRCLE,
                 lifetime = 30,
             )
+            // Tint the exhaust by the emitting drocket's evolved fire color.
+            val fireColor = builder.getComponent<GenomeComponent>(entityId)?.genome?.phenotype()?.fireColor
+            if (fireColor != null) {
+                builder.update<ParticleTintComponent>(particleId) { ParticleTintComponent(fireColor) }
+            }
         }
     }
 }

@@ -59,7 +59,7 @@ class ScavengersRenderer(val contentScale: Vec2) {
     // Rocket bodies (triangle shape, full alpha).
     private val rocketMatrices = FloatArray(RocketShader.MAX_INSTANCES * Mat4.FLOATS)
     private val rocketPrimaryIds = FloatArray(RocketShader.MAX_INSTANCES)
-    private val rocketSecondaryIds = FloatArray(RocketShader.MAX_INSTANCES)
+    private val rocketSecondaryColors = FloatArray(RocketShader.MAX_INSTANCES * 3)
     private val rocketTintColors = FloatArray(RocketShader.MAX_INSTANCES * 3)
     private var rocketN = 0
 
@@ -158,7 +158,7 @@ class ScavengersRenderer(val contentScale: Vec2) {
         if (rocketN > 0) {
             rocketShader.drawInstanced(
                 vOffset, rocketN, rocketMatrices, rocketPrimaryIds,
-                rocketSecondaryIds, rocketTintColors,
+                rocketSecondaryColors, rocketTintColors,
             )
         }
         if (circleN > 0) {
@@ -352,7 +352,7 @@ class ScavengersRenderer(val contentScale: Vec2) {
         matTmp.setProduct(matView, matModel)
 
         when (kind) {
-            BodyKind.ROCKET -> appendRocket(matTmp, primaryId, secondaryId, tint)
+            BodyKind.ROCKET -> appendRocket(matTmp, primaryId, bodyToneColor(secondaryId), tint)
             BodyKind.PLANET -> appendPlanet(matTmp, primaryId, secondaryId, radius, tint)
             BodyKind.DISC -> appendCircle(matTmp, primaryId, shape = 0f, alpha = alpha, tint = tint)
         }
@@ -371,17 +371,36 @@ class ScavengersRenderer(val contentScale: Vec2) {
         circleN++
     }
 
-    private fun appendRocket(m: Mat4, primaryId: Float, secondaryId: Float, tint: RgbColor) {
+    private fun appendRocket(m: Mat4, primaryId: Float, bodyTone: RgbColor, tint: RgbColor) {
         if (rocketN >= RocketShader.MAX_INSTANCES) return
         m.copyInto(rocketMatrices, rocketN * Mat4.FLOATS)
         rocketPrimaryIds[rocketN] = primaryId
-        rocketSecondaryIds[rocketN] = secondaryId
+        val s = rocketN * 3
+        rocketSecondaryColors[s] = bodyTone.r
+        rocketSecondaryColors[s + 1] = bodyTone.g
+        rocketSecondaryColors[s + 2] = bodyTone.b
         val t = rocketN * 3
         rocketTintColors[t] = tint.r
         rocketTintColors[t + 1] = tint.g
         rocketTintColors[t + 2] = tint.b
         rocketN++
     }
+
+    /**
+     * Body tone for a rocket: the per-entity hue the rocket shader used to derive from
+     * `secondaryId` itself. The hash now lives here — the shader is a pure color consumer —
+     * reproducing the old `mod(vec3(w/1.9, w/2.9, w/4.9), 1.0)` with `w = -secondaryId - 1`.
+     */
+    private fun bodyToneColor(secondaryId: Float): RgbColor {
+        val w = -secondaryId - 1f
+        return RgbColor(
+            positiveFractional(w / 1.9f),
+            positiveFractional(w / 2.9f),
+            positiveFractional(w / 4.9f),
+        )
+    }
+
+    private fun positiveFractional(x: Float): Float = x - floor(x)
 
     private fun appendPlanet(m: Mat4, primaryId: Float, secondaryId: Float, radius: Float, tint: RgbColor) {
         if (planetN >= NoisePlanetShader.MAX_INSTANCES) return

@@ -14,14 +14,13 @@ void main() {
     vec4 texel = texture(uSpriteTexture, vUv);
     if (texel.a < 0.01) discard;
 
-    // Primary id tinting: replace green channel with tint color
-    float colorSeed = vPrimaryId;
-    float c = colorSeed + 1.0;
-    vec3 vColor = mod(vec3(c/1.9, c/2.9, c/4.9),1.0);
+    // Recolor the green-keyed mask with the caller-supplied tint. Any id-based
+    // color choice happens in Kotlin now, not here; an unset (zero) tint leaves
+    // the texture untouched.
     float greenAmount = texel.g - max(texel.r, texel.b);
-    if (greenAmount > 0.1) {
-        bool hasCustomTint = max(vTintColor.r, max(vTintColor.g, vTintColor.b)) > 0.0;
-        texel.rgb = hasCustomTint ? vTintColor : vColor;
+    bool hasTint = max(vTintColor.r, max(vTintColor.g, vTintColor.b)) > 0.0;
+    if (greenAmount > 0.1 && hasTint) {
+        texel.rgb = vTintColor;
     }
 
     fragColor = vec4(texel.rgb, texel.a * vAlpha);

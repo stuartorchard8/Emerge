@@ -14,11 +14,8 @@ float sampleNoise(vec2 uv) {
 }
 
 void main() {
-    // Surface color: caller-supplied tint, else a stable hash of the primary id.
-    float c = vPrimaryId + 1.0;
-    vec3 seededColor = mod(vec3(c/1.9, c/2.9, c/4.9), 1.0);
-    bool hasCustomTint = max(vTintColor.r, max(vTintColor.g, vTintColor.b)) > 0.0;
-    vec3 vColor = hasCustomTint ? vTintColor : seededColor;
+    // Surface color comes from the caller-supplied tint.
+    vec3 vColor = vTintColor;
 
     float a = min(0.75, (1.0 - dot(vLocal, vLocal)/(1.5)));
     vec2 noiseOffset = vec2(vSecondaryId * 0.06711056, vSecondaryId * 0.00583715);

@@ -8,11 +8,8 @@ in vec3 vTintColor;
 out vec4 fragColor;
 
 void main() {
-    // Fallback color when no tint is supplied: hash the primary id into a stable hue.
-    float c = vPrimaryId + 1.0;
-    vec3 seededColor = mod(vec3(c/1.9, c/2.9, c/4.9), 1.0);
-    bool hasCustomTint = max(vTintColor.r, max(vTintColor.g, vTintColor.b)) > 0.0;
-    vec3 vColor = hasCustomTint ? vTintColor : seededColor;
+    // Color is supplied by the caller; the shader no longer hashes ids into hues.
+    vec3 vColor = vTintColor;
 
     if (vShape > 0.5) {
         // Flat tinted triangle (e.g. off-screen edge-indicator arrows).

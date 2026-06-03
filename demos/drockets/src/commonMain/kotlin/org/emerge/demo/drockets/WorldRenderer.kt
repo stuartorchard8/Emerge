@@ -354,10 +354,13 @@ class WorldRenderer(
                 alpha = 1f,
                 squash = 0f,
             )
+            // Preserve the knights' per-entity coloring, but compute the id hash here
+            // rather than in the sprite shader (which is now a pure tint consumer).
             val tintBase = (spriteCount - 1) * 3
-            spriteTintColors[tintBase] = 0f
-            spriteTintColors[tintBase + 1] = 0f
-            spriteTintColors[tintBase + 2] = 0f
+            val (r, g, b) = idHashColor((entityId.value + 1).toFloat())
+            spriteTintColors[tintBase] = r
+            spriteTintColors[tintBase + 1] = g
+            spriteTintColors[tintBase + 2] = b
         }
         if (spriteCount > 0) {
             spriteShader.drawInstanced(
@@ -380,6 +383,7 @@ class WorldRenderer(
 
     private fun drawParticles(state: SimState) {
         var circleCount = 0
+        val particleTints = state.components.getTable<ParticleTintComponent>()
         for ((entityId, particle) in state.particles.entries()) {
             if (circleCount >= CircleShader.MAX_INSTANCES) break
             val transform = state.transforms[entityId] ?: continue
@@ -402,9 +406,19 @@ class WorldRenderer(
             circleShapes[circleCount] = 0f
             circleAlphas[circleCount] = particle.life.toFloat() / particle.lifeTime.toFloat()
             val tintBase = circleCount * 3
-            circleTintColors[tintBase] = 0f
-            circleTintColors[tintBase + 1] = 0f
-            circleTintColors[tintBase + 2] = 0f
+            // Fire-color tint from the emitting drocket; white if a particle has none
+            // (the circle shader no longer hashes the entity id into a fallback hue).
+            val tint = particleTints[entityId]?.color
+            if (tint != null) {
+                val (r, g, b) = tint.toRgb()
+                circleTintColors[tintBase] = r
+                circleTintColors[tintBase + 1] = g
+                circleTintColors[tintBase + 2] = b
+            } else {
+                circleTintColors[tintBase] = 1f
+                circleTintColors[tintBase + 1] = 1f
+                circleTintColors[tintBase + 2] = 1f
+            }
             circleCount++
         }
         if (circleCount > 0) {
