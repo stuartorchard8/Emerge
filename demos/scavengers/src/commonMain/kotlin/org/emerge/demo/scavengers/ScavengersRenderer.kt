@@ -218,12 +218,20 @@ class ScavengersRenderer(val contentScale: Vec2) {
         val colliders = state.components.getTable<ColliderComponent>()
         val particles = state.components.getTable<ParticleComponent>()
         val forceFields = state.components.getTable<ForceFieldComponent>()
+        val landingSurfaces = state.components.getTable<LandingSurfaceComponent>()
         for ((entityId, renderShape) in state.components.getTable<RenderShapeComponent>().entries()) {
             val transform = transforms[entityId] ?: continue
             val collider = colliders[entityId] ?: continue
             val particle = particles[entityId]
             val id = shaderId(entityId.value)
             val tint = primaryColorOf(entityId)
+            // A triangle body is a rocket; a circle that's a landing surface is a planet;
+            // anything else is a plain disc. Appearance follows intent, not the alpha value.
+            val kind = when {
+                renderShape.shape == BodyShape.TRIANGLE -> BodyKind.ROCKET
+                landingSurfaces[entityId] != null -> BodyKind.PLANET
+                else -> BodyKind.DISC
+            }
             packBodyInstance(
                 primaryId = id,
                 secondaryId = id,
@@ -232,12 +240,13 @@ class ScavengersRenderer(val contentScale: Vec2) {
                 posY = transform.pos.y.toFloat(),
                 angleTurns = transform.ang.toFloat(),
                 radius = collider.radius.toFloat(),
-                shape = renderShape.shape,
+                kind = kind,
                 alpha = (particle?.life?.toFloat() ?: 1f) / (particle?.lifeTime?.toFloat() ?: 1f),
                 params = params,
             )
             val forceField = forceFields[entityId]
             if (forceField != null && renderShape.shape == BodyShape.CIRCLE) {
+                // The field overlay is always a translucent disc, even over a planet.
                 packBodyInstance(
                     primaryId = id,
                     secondaryId = id,
@@ -246,7 +255,7 @@ class ScavengersRenderer(val contentScale: Vec2) {
                     posY = transform.pos.y.toFloat(),
                     angleTurns = transform.ang.toFloat(),
                     radius = (collider.radius + forceField.depth).toFloat(),
-                    shape = renderShape.shape,
+                    kind = BodyKind.DISC,
                     alpha = forceField.alpha.toFloat(),
                     params = params,
                 )
@@ -317,6 +326,9 @@ class ScavengersRenderer(val contentScale: Vec2) {
         }
     }
 
+    /** What look a body is drawn with — chosen by the caller from the entity's components. */
+    private enum class BodyKind { ROCKET, PLANET, DISC }
+
     private fun packBodyInstance(
         primaryId: Float,
         secondaryId: Float,
@@ -325,7 +337,7 @@ class ScavengersRenderer(val contentScale: Vec2) {
         posY: Float,
         angleTurns: Float,
         radius: Float,
-        shape: BodyShape,
+        kind: BodyKind,
         alpha: Float,
         params: WorldShaderParams,
     ) {
@@ -339,12 +351,10 @@ class ScavengersRenderer(val contentScale: Vec2) {
         matModel.setProduct(matT, matTmp)
         matTmp.setProduct(matView, matModel)
 
-        // Route by appearance: full-alpha triangle = rocket, full-alpha circle = planet,
-        // anything translucent = generic disc. (Mirrors the old uber-shader's selector.)
-        when {
-            shape == BodyShape.TRIANGLE && alpha >= 1f -> appendRocket(matTmp, primaryId, secondaryId, tint)
-            shape == BodyShape.CIRCLE && alpha >= 1f -> appendPlanet(matTmp, primaryId, secondaryId, radius, tint)
-            else -> appendCircle(matTmp, primaryId, shape = if (shape == BodyShape.TRIANGLE) 1f else 0f, alpha = alpha, tint = tint)
+        when (kind) {
+            BodyKind.ROCKET -> appendRocket(matTmp, primaryId, secondaryId, tint)
+            BodyKind.PLANET -> appendPlanet(matTmp, primaryId, secondaryId, radius, tint)
+            BodyKind.DISC -> appendCircle(matTmp, primaryId, shape = 0f, alpha = alpha, tint = tint)
         }
     }
 
