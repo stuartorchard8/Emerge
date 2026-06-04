@@ -27,6 +27,7 @@ This repo is a Kotlin Multiplatform foundation for a game engine (simulation + n
 - **Demos**
   - `:demos:scavengers` → `:engine:sim:*`, `:engine:net:api`, `:engine:net:transports:tcp`
   - `:demos:drockets` → `:engine:sim:*`, `:engine:render:torus`
+  - `:demos:cyto` → `:engine:render:torus`, `:engine:net:api` (JVM-only; Phase A vendors gdx-box2d for the cell sim — see roadmap)
 
 - **Platform hosts**
   - `:platform:desktop-app` → `:demos:scavengers`, `:demos:drockets` (+ LWJGL)
@@ -106,5 +107,9 @@ If you hit file locks, the intended fix is to **exclude the repo’s `.build/` d
 - [ ] Integer sine and cosine functions for converting angle+magnitude to a vector
 - [ ] Networking connection that transfers only transform positions per force-affected entity. 
 Client-side can infer velocity and possibly forces to apply when packets are sparse.
-- [ ] Merge Cyto repo into Emerge
+- [x] Merge Cyto repo into Emerge — Phase A done: `:demos:cyto` runs on the desktop host
+  (`./gradlew :platform:desktop-app:runCyto`), with the cell sim ported near-verbatim on a
+  vendored gdx-box2d backend. Phase B (next): replace Box2D with a native Emerge
+  spring/distance-constraint system, fold Cyto into the ECS reducer shape, and re-add the
+  Android/Web targets.
 
