@@ -32,6 +32,7 @@ val lwjglNatives: String = run {
 dependencies {
     implementation(project(":demos:scavengers"))
     implementation(project(":demos:drockets"))
+    implementation(project(":demos:cyto"))
     implementation(project(":engine:render:torus"))
     implementation(project(":engine:sim:core"))
     implementation(project(":engine:sim:sync"))
@@ -83,6 +84,14 @@ tasks.register<JavaExec>("runDrockets") {
     mainClass = "org.emerge.desktop.Main_jvmKt"
     classpath = sourceSets["main"].runtimeClasspath
     jvmArgs("-Demerge.mode=drockets")
+}
+
+tasks.register<JavaExec>("runCyto") {
+    group = "application"
+    description = "Run the Cyto demo"
+    mainClass = "org.emerge.desktop.Main_jvmKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    jvmArgs("-Demerge.mode=cyto")
 }
 
 tasks.register<JavaExec>("profileSim") {

@@ -13,6 +13,11 @@ fun main() {
             DrocketsSceneView.start()
             return
         }
+        if (emergeMode == "cyto") {
+            println("[main] emerge.mode=cyto")
+            CytoSceneView.start()
+            return
+        }
         val settings = when (emergeMode) {
             "headless-host" -> LaunchSettings(mode = LaunchMode.HEADLESS_HOST, gameMode = GameMode.CO_OP, port = 7777)
             "join-local" -> LaunchSettings(mode = LaunchMode.JOIN, gameMode = GameMode.CO_OP, hostIp = "127.0.0.1", port = 7777)
