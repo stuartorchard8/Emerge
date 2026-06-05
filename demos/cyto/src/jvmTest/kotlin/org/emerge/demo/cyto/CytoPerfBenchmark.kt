@@ -10,6 +10,7 @@ import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.demo.cyto.sim.systems.addSpring
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.PipelineProfiler
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.primitives.Coord2
@@ -43,15 +44,27 @@ class CytoPerfBenchmark {
         // Heavy (~30s); off in normal runs. Enable with CYTO_BENCH=1 ./gradlew :demos:cyto:jvmTest -i
         if (System.getenv("CYTO_BENCH") == null) return
         val sizes = intArrayOf(250, 500, 1000, 2000, 4000)
+        val executor = ParallelExecutor()
         println()
-        println("Cyto pipeline profile — 60fps budget = 16.667 ms/tick (sequential, single thread)")
-        for (n in sizes) profileAt(n)
+        println("Cyto pipeline profile — 60fps budget = 16.667 ms/tick (cores=${executor.parallelism})")
+        try {
+            // Two sweeps so thermal/JIT drift between seq and par is visible rather than hidden.
+            for (pass in 1..2) {
+                println("\n========== pass $pass ==========")
+                for (n in sizes) {
+                    profileAt(n, null, "seq")
+                    profileAt(n, executor, "par")
+                }
+            }
+        } finally {
+            executor.close()
+        }
         println()
     }
 
-    private fun profileAt(targetCells: Int) {
+    private fun profileAt(targetCells: Int, executor: ParallelExecutor?, label: String) {
         val profiler = PipelineProfiler()
-        val reducer = CytoReducer(profiler)
+        val reducer = CytoReducer(profiler, executor)
         var state = buildColony(targetCells)
         val input = mapOf(PlayerId(0) to CytoInput())
 
@@ -70,14 +83,15 @@ class CytoPerfBenchmark {
 
         val tickMs = report.tickAvgNanos / 1e6
         val p95Ms = report.tickP95Nanos / 1e6
-        val verdict = if (p95Ms <= 16.667) "OK (<60fps budget)" else "OVER BUDGET"
-        println()
-        println("── cells=$cells  springs=${connectionEnds / 2}  (target $targetCells) ─────────────────")
-        println("   tick: avg ${ms(report.tickAvgNanos)}  p95 ${ms(report.tickP95Nanos)}  max ${ms(report.tickMaxNanos)}   → $verdict")
-        println("   phase                 avg ms     share")
-        for (p in report.phases.sortedByDescending { it.avgNanos }) {
-            println("   ${p.name.padEnd(20)} ${ms(p.avgNanos).padStart(8)}   ${pct(p.sharePercent)}")
+        val verdict = if (p95Ms <= 16.667) "OK" else "OVER"
+        if (label == "seq") {
+            println("── cells=$cells  springs=${connectionEnds / 2} ──")
         }
+        print("   [$label] tick avg ${ms(report.tickAvgNanos)}  p95 ${ms(report.tickP95Nanos)}  $verdict  |")
+        for (p in report.phases.sortedByDescending { it.avgNanos }.take(3)) {
+            print(" ${p.name}=${ms(p.avgNanos)}")
+        }
+        println()
         // touch tickMs/p95Ms so they read as used even if asserts are added later
         check(tickMs >= 0 && p95Ms >= 0)
     }

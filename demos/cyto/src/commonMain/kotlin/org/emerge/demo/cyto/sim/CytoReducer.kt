@@ -8,6 +8,7 @@ import org.emerge.demo.cyto.sim.systems.CytoInteractionSystem
 import org.emerge.demo.cyto.sim.systems.CytoLifecycleSystem
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
+import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.Phase
 import org.emerge.sim.core.ecs.Pipeline
 import org.emerge.sim.core.ecs.PipelineProfiler
@@ -29,10 +30,20 @@ import org.emerge.sim.core.sim.SimState
  * Order matters: contacts feed touch into biology this tick; biology grows radii before
  * connection maintenance refreshes spring rest lengths; the spring solver runs after; and
  * structural changes (weld/divide/destroy) apply last, taking effect next tick.
+ *
+ * The spring solver — the heaviest CPU-bound phase at scale — takes the optional [executor]
+ * and fans its own entity loop across worker threads (intra-system data parallelism). Phases
+ * stay [runSequential]: the pipeline is a hard dependency chain (contacts→biology→
+ * connections→forces), so there's nothing to overlap *between* phases. Contacts stays
+ * sequential here — cyto's broadphase is cheap, so a parallel split doesn't pay. NB: the
+ * parallel speedup needs real CPU headroom; on a power-throttled CPU (laptop on battery)
+ * the worker fan-out can be a net loss, and on JS the executor is a no-op (sequential).
  */
 class CytoReducer(
     /** Opt-in per-phase timing. Null in production (zero overhead); set by benchmarks. */
     private val profiler: PipelineProfiler? = null,
+    /** Worker pool for the parallel contact/spring systems. Null → fully sequential. */
+    private val executor: ParallelExecutor? = null,
 ) : SimReducer<CytoConfig, SimState, CytoInput> {
     private val pipeline: Pipeline<CytoConfig, SimState, CytoInput> = listOf(
         Phase("interact", CytoInteractionSystem),
@@ -40,7 +51,7 @@ class CytoReducer(
         Phase("contacts", ContactSystem(), CytoContactSystem),
         Phase("biology", CytoBiologySystem),
         Phase("connections", CytoConnectionMaintenanceSystem),
-        Phase("forces", SpringConstraintSystem, CytoGrabSystem),
+        Phase("forces", SpringConstraintSystem(executor), CytoGrabSystem),
         Phase("lifecycle", CytoLifecycleSystem),
         Phase("integrate", IntegrationSystem),
     )

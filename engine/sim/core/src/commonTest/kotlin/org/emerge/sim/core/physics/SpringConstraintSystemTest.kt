@@ -55,7 +55,7 @@ class SpringConstraintSystemTest {
         repeat(ticks) {
             val step = SimBuilder(state)
             ImpulseResetSystem.update(NoTuning, step, emptyMap())
-            SpringConstraintSystem.update(NoTuning, step, emptyMap())
+            SpringConstraintSystem().update(NoTuning, step, emptyMap())
             IntegrationSystem.update(NoTuning, step, emptyMap())
             state = step.build()
         }

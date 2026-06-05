@@ -12,6 +12,7 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.Tick
 import org.emerge.sim.core.TickStepper
+import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.sim.SimState
@@ -25,7 +26,10 @@ import org.emerge.sim.core.sim.SimState
 class CytoController(
     private val cfg: CytoConfig = CytoConfig(),
 ) {
-    private val reducer = CytoReducer()
+    // Work-stealing pool for the parallel spring solver (daemon threads on JVM/Android, no
+    // shutdown needed; a no-op inline runner on JS).
+    private val executor = ParallelExecutor()
+    private val reducer = CytoReducer(executor = executor)
     private val stepper = TickStepper(cfg, createCytoInitialState(), reducer)
     private var accumulator = 0f
 
