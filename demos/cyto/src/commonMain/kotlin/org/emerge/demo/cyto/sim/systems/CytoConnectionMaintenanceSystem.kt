@@ -13,6 +13,7 @@ import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.SpringConstraint
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
 import kotlin.math.max
@@ -34,6 +35,34 @@ object CytoConnectionMaintenanceSystem : EcsSystem<CytoConfig, SimState, CytoInp
     ) {
         val springs = builder.entries<SpringConstraintComponent>()
         if (springs.isEmpty()) return
+        val n = springs.size
+
+        // Cache each spring-bearing cell's components into flat arrays under a dense index,
+        // so the per-spring inner loops below read transform/radius/motion/damage by array
+        // index instead of hitting the component tables (same approach as the spring solver
+        // and ContactSystem). Springs are symmetric in cyto, so every neighbour is in the
+        // index; a neighbour that isn't (a removed cell) is treated as gone — exactly what
+        // the prior null-component check did. The reads are valid for the whole phase:
+        // biology (the only prior writer of radius) has already run, and nothing writes
+        // transform/motion until integration in a later phase.
+        val ids = arrayOfNulls<EntityId>(n)
+        val index = HashMap<EntityId, Int>(n)
+        val transforms = arrayOfNulls<TransformComponent>(n)
+        val radii = arrayOfNulls<Frac>(n)
+        val motions = arrayOfNulls<MotionComponent>(n)
+        val damages = arrayOfNulls<Map<EntityId, Float>>(n)
+        run {
+            var i = 0
+            for ((id, comp) in springs) {
+                ids[i] = id
+                index[id] = i
+                transforms[i] = builder.getComponent<TransformComponent>(id)
+                radii[i] = builder.getComponent<ColliderComponent>(id)?.radius
+                motions[i] = builder.getComponent<MotionComponent>(id)
+                damages[i] = builder.getComponent<ConnectionStateComponent>(id)?.damage
+                i++
+            }
+        }
 
         // 1. refresh rest lengths, accumulate damage, collect breaks.
         //
@@ -44,19 +73,22 @@ object CytoConnectionMaintenanceSystem : EcsSystem<CytoConfig, SimState, CytoInp
         // This keeps the output bit-identical to an unconditional rebuild while skipping the
         // ArrayList / SpringConstraint.copy / component / HashMap churn for the steady bulk.
         val broken = HashMap<EntityId, MutableSet<EntityId>>()
+        var ai = 0
         for ((id, comp) in springs) {
+            val aIdx = ai++
             if (comp.springs.isEmpty()) continue
-            val transformA = builder.getComponent<TransformComponent>(id) ?: continue
-            val radiusA = builder.getComponent<ColliderComponent>(id)?.radius ?: continue
-            val damageState = builder.getComponent<ConnectionStateComponent>(id)?.damage ?: emptyMap()
+            val transformA = transforms[aIdx] ?: continue
+            val radiusA = radii[aIdx] ?: continue
+            val damageState = damages[aIdx] ?: emptyMap()
 
             // Detection sweep — no allocation. (Arithmetic mirrors the rebuild below exactly.)
             var springsChanged = false
             var damageChanged = false
             for (spring in comp.springs) {
                 val other = spring.other
-                val transformB = builder.getComponent<TransformComponent>(other)
-                val radiusB = builder.getComponent<ColliderComponent>(other)?.radius
+                val bIdx = index[other]
+                val transformB = if (bIdx != null) transforms[bIdx] else null
+                val radiusB = if (bIdx != null) radii[bIdx] else null
                 if (transformB == null || radiusB == null) { springsChanged = true; continue }
                 val rest = radiusA + radiusB
                 if (rest != spring.restLength ||
@@ -78,8 +110,9 @@ object CytoConnectionMaintenanceSystem : EcsSystem<CytoConfig, SimState, CytoInp
             val newDamage = HashMap<EntityId, Float>()
             for (spring in comp.springs) {
                 val other = spring.other
-                val transformB = builder.getComponent<TransformComponent>(other)
-                val radiusB = builder.getComponent<ColliderComponent>(other)?.radius
+                val bIdx = index[other]
+                val transformB = if (bIdx != null) transforms[bIdx] else null
+                val radiusB = if (bIdx != null) radii[bIdx] else null
                 if (transformB == null || radiusB == null) continue // neighbour gone — drop
 
                 val rest = radiusA + radiusB
@@ -114,13 +147,16 @@ object CytoConnectionMaintenanceSystem : EcsSystem<CytoConfig, SimState, CytoInp
         // 3. connected-cell drag ("velocity shielding"): damp the part of a cell's velocity
         // that isn't moving toward a connected neighbour.
         val drag = -cfg.connectedDrag
+        var di = 0
         for ((id, comp) in springs) {
+            val aIdx = di++
             if (comp.springs.isEmpty()) continue
-            val transformA = builder.getComponent<TransformComponent>(id) ?: continue
-            val motion = builder.getComponent<MotionComponent>(id) ?: continue
+            val transformA = transforms[aIdx] ?: continue
+            val motion = motions[aIdx] ?: continue
             var unshielded = motion.vel.asFrac2()
             for (spring in comp.springs) {
-                val transformB = builder.getComponent<TransformComponent>(spring.other) ?: continue
+                val bIdx = index[spring.other] ?: continue
+                val transformB = transforms[bIdx] ?: continue
                 val normal = (transformB.pos - transformA.pos).norm // id -> other
                 val towardOther = unshielded.dot(normal)
                 if (towardOther.raw > 0L) {
