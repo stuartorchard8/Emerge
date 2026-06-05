@@ -47,6 +47,17 @@ class CytoWorld private constructor(
     val material: MaterialColumnStore,
     val cell: CytoCellColumnStore,
     val csr: SpringCsr,
+    /**
+     * Multi-species chemistry side-tables, keyed by EntityId.value. Energy — the dominant,
+     * always-present chemical — stays in the dense [CytoCellColumnStore] columns; only the
+     * *extra* (non-energy) chemicals / pending transfers / suppression live here, so the
+     * energy-only common case (benchmark + growing colony) carries no map at all. Empty unless
+     * a cell seeds extra chemicals or a gene mints a new species (the plan's object side-table
+     * fallback for unbounded chemistry). See [CytoBiologyCore].
+     */
+    val extraChem: HashMap<Int, LinkedHashMap<String, Float>>,
+    val extraPending: HashMap<Int, LinkedHashMap<String, Float>>,
+    val suppression: HashMap<Int, Map<String, Float>>,
 ) {
     val count: Int get() = cells.count
 
@@ -107,6 +118,9 @@ class CytoWorld private constructor(
             world.register(MaterialComponent::class, material)
             val cellCols = world.register(CytoCellComponent::class, cellStore)
 
+            val extraChem = HashMap<Int, LinkedHashMap<String, Float>>()
+            val extraPending = HashMap<Int, LinkedHashMap<String, Float>>()
+            val suppression = HashMap<Int, Map<String, Float>>()
             for (id in ids) {
                 world.add(id, TransformComponent::class, transforms[id]!!)
                 world.add(id, MotionComponent::class, motions[id]!!)
@@ -116,7 +130,12 @@ class CytoWorld private constructor(
                     id, MaterialComponent::class,
                     materials[id] ?: MaterialComponent(mass = 1u, bounce = Frac(0), rough = Frac(0)),
                 )
-                world.add(id, CytoCellComponent::class, cellsTable.getValue(id))
+                val cellComp = cellsTable.getValue(id)
+                world.add(id, CytoCellComponent::class, cellComp)
+                // Energy lives in the dense column; capture any extra species in the side-table.
+                extraOf(cellComp.chemicals)?.let { extraChem[id.value] = it }
+                extraOf(cellComp.pendingTransfers)?.let { extraPending[id.value] = it }
+                if (cellComp.suppression.isNotEmpty()) suppression[id.value] = cellComp.suppression
             }
             world.seedLastEntityValue(maxOf(state.world.lastEntityValue, ids.lastOrNull()?.value ?: 0))
 
@@ -129,8 +148,37 @@ class CytoWorld private constructor(
                 edgeAuxAt = { slot, other -> damageMap[cellCols.entityAt(slot)]?.damage?.get(other) ?: 0f },
             )
 
-            return CytoWorld(world, cellCols, transform, motion, impulse, collider, material, cellStore, csr)
+            return CytoWorld(
+                world, cellCols, transform, motion, impulse, collider, material, cellStore, csr,
+                extraChem, extraPending, suppression,
+            )
         }
+
+        /** Non-energy entries of [chem] as a fresh map, or null if there are none. */
+        private fun extraOf(chem: Map<String, Float>): LinkedHashMap<String, Float>? {
+            if (chem.size == 1 && chem.containsKey(CytoCellColumnStore.ENERGY)) return null
+            var out: LinkedHashMap<String, Float>? = null
+            for ((k, v) in chem) if (k != CytoCellColumnStore.ENERGY) {
+                (out ?: LinkedHashMap<String, Float>().also { out = it })[k] = v
+            }
+            return out
+        }
+    }
+
+    /** Full chemical map for a slot: energy column + side-table extras. */
+    fun chemicalsAt(slot: Int): LinkedHashMap<String, Float> {
+        val out = LinkedHashMap<String, Float>()
+        out[CytoCellColumnStore.ENERGY] = cell.energy[slot]
+        extraChem[entityId[slot]]?.let { out.putAll(it) }
+        return out
+    }
+
+    /** Full pending-transfer map for a slot: energy column + side-table extras. */
+    fun pendingAt(slot: Int): LinkedHashMap<String, Float> {
+        val out = LinkedHashMap<String, Float>()
+        out[CytoCellColumnStore.ENERGY] = cell.energyPending[slot]
+        extraPending[entityId[slot]]?.let { out.putAll(it) }
+        return out
     }
 
     /**
@@ -150,7 +198,7 @@ class CytoWorld private constructor(
                 posX = posX[slot], posY = posY[slot], ang = ang[slot],
                 velX = velX[slot], velY = velY[slot],
                 radiusRaw = radiusRaw[slot],
-                energy = energy[slot], energyPending = energyPending[slot],
+                chemicals = chemicalsAt(slot), pendingTransfers = pendingAt(slot),
                 logicalRadius = logicalRadius[slot], divideCooldown = divideCooldown[slot],
                 touch = touch[slot], type = type[slot],
                 sticky = sticky[slot], stickyTemp = stickyTemp[slot],
@@ -166,7 +214,7 @@ class ComparisonCell(
     val posX: Int, val posY: Int, val ang: Int,
     val velX: Int, val velY: Int,
     val radiusRaw: Long,
-    val energy: Float, val energyPending: Float,
+    val chemicals: Map<String, Float>, val pendingTransfers: Map<String, Float>,
     val logicalRadius: Float, val divideCooldown: Float,
     val touch: Float, val type: Int,
     val sticky: Boolean, val stickyTemp: Boolean,

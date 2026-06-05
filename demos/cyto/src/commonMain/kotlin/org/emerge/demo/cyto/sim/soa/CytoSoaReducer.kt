@@ -1,11 +1,16 @@
 package org.emerge.demo.cyto.sim.soa
 
 import org.emerge.demo.cyto.cells.CellType
+import org.emerge.demo.cyto.sim.CellWork
+import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.MAX_CHEM
 import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.RADIUS_ELASTICITY
+import org.emerge.demo.cyto.sim.genesForType
+import org.emerge.demo.cyto.sim.runGenes
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.PipelineProfiler
 import org.emerge.sim.core.ecs.SpatialGrid
@@ -43,6 +48,8 @@ class CytoSoaReducer(
 ) {
     private val dt = 1f / 64f
     private val lifecycleOps = CytoLifecycle(cfg)
+
+    private val ENERGY = CytoCellColumnStore.ENERGY
 
     // intent scratch, reused across ticks
     private val weldLo = ArrayList<Int>()   // entityId values, lo < hi
@@ -154,12 +161,90 @@ class CytoSoaReducer(
         w.touch[i] += touchAmount; w.touch[j] += touchAmount
     }
 
-    // ── biology (CytoBiologySystem, energy-only) ────────────────────────────────
+    // ── biology (CytoBiologySystem) ─────────────────────────────────────────────
+    // Energy-only ticks take the dense fast path; ticks with gene-bearing cells or extra
+    // chemicals fall back to the shared CytoBiologyCore (bit-identical to the AoS system).
     private fun biology(w: CytoWorld) {
         divideIds.clear(); destroyIds.clear()
+        if (needsChemistry(w)) biologySlow(w) else biologyFast(w)
+    }
+
+    /** Slow path is needed when any cell has genes (which can mint species) or extra chemicals. */
+    private fun needsChemistry(w: CytoWorld): Boolean {
+        if (w.extraChem.isNotEmpty() || w.extraPending.isNotEmpty() || w.suppression.isNotEmpty()) return true
+        for (i in 0 until w.count) if (genesForType(CellType.entries[w.type[i]]).isNotEmpty()) return true
+        return false
+    }
+
+    /** Multi-species biology via the shared core: build CellWorks from columns + side-table,
+     *  run genes/reactions/act, write results back. Identical to the AoS system by construction. */
+    private fun biologySlow(w: CytoWorld) {
+        val n = w.count
+        val works = LinkedHashMap<EntityId, CellWork>(n)
+        val neighbourCounts = HashMap<EntityId, Int>(n)
+        val orderedIds = ArrayList<EntityId>(n)
+        for (slot in 0 until n) {
+            val id = EntityId(w.entityId[slot])
+            orderedIds.add(id)
+            // Build as a HashMap (not the LinkedHashMap from chemicalsAt) so its iteration order
+            // matches the AoS `HashMap(cell.chemicals)` — bucket order is hash-determined and
+            // therefore identical for the same key set, which the enzyme-reaction float
+            // accumulation depends on (diffusion/genes are per-chemical-independent and unaffected).
+            val chem = HashMap(w.chemicalsAt(slot))
+            val pend = w.pendingAt(slot)
+            for ((k, v) in pend) chem[k] = ((chem[k] ?: 0f) + v).coerceIn(0f, MAX_CHEM)
+            works[id] = CellWork(
+                chemicals = chem,
+                transfers = HashMap(),
+                initialSuppression = w.suppression[id.value] ?: emptyMap(),
+                touch = w.touch[slot],
+                logicalRadius = w.logicalRadius[slot],
+                divideCooldown = w.divideCooldown[slot],
+                type = CellType.entries[w.type[slot]],
+            )
+            neighbourCounts[id] = w.csr.degreeOf(slot)
+        }
+        // pass 1: genes then enzyme reactions.
+        for ((_, work) in works) { runGenes(work, dt); work.touch = 0f; CytoBiologyCore.runReactions(work) }
+        // pass 2: act (diffusion / energy / growth / type behaviour / division-death decision).
+        val divide = ArrayList<EntityId>(); val destroy = ArrayList<EntityId>()
+        for (slot in 0 until n) {
+            val deg = w.csr.degreeOf(slot)
+            val base = w.csr.offset[slot]
+            val nbrs = ArrayList<EntityId>(deg)
+            for (k in 0 until deg) nbrs.add(EntityId(w.csr.otherId[base + k]))
+            CytoBiologyCore.act(orderedIds[slot], works.getValue(orderedIds[slot]), nbrs, works, neighbourCounts, dt, divide, destroy)
+        }
+        // write back columns + side-table.
+        for (slot in 0 until n) {
+            val idv = w.entityId[slot]
+            val work = works.getValue(orderedIds[slot])
+            w.energy[slot] = work.chemicals[ENERGY] ?: 0f
+            writeExtras(w.extraChem, idv, work.chemicals)
+            w.energyPending[slot] = work.transfers[ENERGY] ?: 0f
+            writeExtras(w.extraPending, idv, work.transfers)
+            if (work.suppression.isEmpty()) w.suppression.remove(idv) else w.suppression[idv] = work.suppression
+            w.logicalRadius[slot] = work.logicalRadius
+            w.divideCooldown[slot] = work.divideCooldown
+            w.touch[slot] = 0f
+            w.stickyTemp[slot] = work.isStickyTemp
+            w.radiusRaw[slot] = CytoUnits.len(work.logicalRadius).raw
+        }
+        for (id in destroy) destroyIds.add(id.value)
+        for (id in divide) divideIds.add(id.value)
+    }
+
+    private fun writeExtras(table: HashMap<Int, LinkedHashMap<String, Float>>, id: Int, map: Map<String, Float>) {
+        var out: LinkedHashMap<String, Float>? = null
+        for ((k, v) in map) if (k != ENERGY) (out ?: LinkedHashMap<String, Float>().also { out = it })[k] = v
+        val o = out
+        if (o == null) table.remove(id) else table[id] = o
+    }
+
+    private fun biologyFast(w: CytoWorld) {
         val n = w.count
         // step 1: fold last tick's pending transfers into energy, reset the accumulator.
-        // (Genes/reactions are skipped: the colony's cell types produce neither.)
+        // (Genes/reactions are skipped: no gene-bearing cells this tick.)
         for (i in 0 until n) {
             w.energy[i] = (w.energy[i] + w.energyPending[i]).coerceIn(0f, MAX_CHEM)
             w.energyPending[i] = 0f

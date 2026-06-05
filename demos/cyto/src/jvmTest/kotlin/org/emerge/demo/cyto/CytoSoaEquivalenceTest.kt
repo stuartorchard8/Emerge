@@ -88,6 +88,54 @@ class CytoSoaEquivalenceTest {
         }
     }
 
+    /**
+     * Multi-species chemistry: a line of cells carrying extra chemicals that diffuse, plus
+     * Contract-gene cells (Muscle/Jump). Drives the SoA biology slow path (CytoBiologyCore) and
+     * asserts byte-identity vs the AoS reducer every tick — chemical maps compared per species.
+     */
+    @Test
+    fun multiChemColonyIsBitIdentical() {
+        // Sanity: extra species must actually spread to a cell that started energy-only, else the
+        // multi-species path isn't really exercised.
+        run {
+            val r = CytoReducer()
+            val input = mapOf(PlayerId(0) to CytoInput())
+            var s = buildMultiChemColony()
+            repeat(8) { s = r.reduce(cfg, s, input) }
+            val jump = s.components.getTable<CytoCellComponent>().asMap().values.first { it.type == CellType.Jump }
+            assertTrue(jump.chemicals.size > 1, "expected diffusion to spread extra species to the Jump cell: ${jump.chemicals.keys}")
+        }
+
+        val dense = (1..64).toList().toIntArray()
+        runScenario(buildMultiChemColony(), "multichem-seq", null, dense)
+        val executor = ParallelExecutor()
+        try {
+            runScenario(buildMultiChemColony(), "multichem-par", executor, dense)
+        } finally {
+            executor.close()
+        }
+    }
+
+    /**
+     * Enzyme reactions: a Touch cell seeded with touch fires its Enzyme gene on tick 1, whose
+     * string-pattern reactions mint new chemical species. This is the order-sensitive path
+     * (reaction float accumulation over an intents list derived from chemical-map iteration), so
+     * it's the strongest check that the SoA HashMap-backed chemistry matches the AoS map.
+     */
+    @Test
+    fun reactionColonyIsBitIdentical() {
+        run {
+            val r = CytoReducer()
+            val input = mapOf(PlayerId(0) to CytoInput())
+            var s = buildReactionColony()
+            repeat(3) { s = r.reduce(cfg, s, input) }
+            val touch = s.components.getTable<CytoCellComponent>().asMap().values.first { it.type == CellType.Touch }
+            val minted = touch.chemicals.keys.any { it != "energy" && it != "e" && it != "n" }
+            assertTrue(minted, "expected the enzyme reaction to mint a new species: ${touch.chemicals.keys}")
+        }
+        runScenario(buildReactionColony(), "reaction-seq", null, (1..16).toList().toIntArray())
+    }
+
     private fun runScenario(
         initial: SimState,
         label: String,
@@ -123,8 +171,8 @@ class CytoSoaEquivalenceTest {
             if (r.velX != s.velX) bad("velX", r.velX, s.velX)
             if (r.velY != s.velY) bad("velY", r.velY, s.velY)
             if (r.radiusRaw != s.radiusRaw) bad("radiusRaw", r.radiusRaw, s.radiusRaw)
-            if (r.energy.toRawBits() != s.energy.toRawBits()) bad("energy", r.energy, s.energy)
-            if (r.energyPending.toRawBits() != s.energyPending.toRawBits()) bad("energyPending", r.energyPending, s.energyPending)
+            compareChem("chemicals", r.chemicals, s.chemicals, ::bad)
+            compareChem("pendingTransfers", r.pendingTransfers, s.pendingTransfers, ::bad)
             if (r.logicalRadius.toRawBits() != s.logicalRadius.toRawBits()) bad("logicalRadius", r.logicalRadius, s.logicalRadius)
             if (r.divideCooldown.toRawBits() != s.divideCooldown.toRawBits()) bad("divideCooldown", r.divideCooldown, s.divideCooldown)
             if (r.touch.toRawBits() != s.touch.toRawBits()) bad("touch", r.touch, s.touch)
@@ -135,6 +183,29 @@ class CytoSoaEquivalenceTest {
             for ((nb, dv) in r.damage) {
                 if (dv.toRawBits() != (s.damage[nb] ?: Float.NaN).toRawBits()) bad("damage[$nb]", dv, s.damage[nb])
             }
+        }
+    }
+
+    /**
+     * Compare two chemical maps by key set and per-species raw bits. Zero-valued entries are
+     * dropped first: a chemical/pending value of 0 is semantically identical to absence (every
+     * consumer reads `map[k] ?: 0f`), and the two storages disagree on whether to keep the key —
+     * the SoA energy column is always present (so a freshly-divided daughter reads `{energy:0}`)
+     * while the AoS map has no key. Filtering ±0 normalizes that without masking any nonzero
+     * difference (a real value mismatch survives the filter and is caught).
+     */
+    private fun compareChem(
+        field: String,
+        ref: Map<String, Float>,
+        soa: Map<String, Float>,
+        bad: (String, Any?, Any?) -> Unit,
+    ) {
+        val r = ref.filterValues { it != 0f }
+        val s = soa.filterValues { it != 0f }
+        if (r.keys != s.keys) bad("$field.keys", r.keys, s.keys)
+        for ((k, v) in r) {
+            val sv = s[k] ?: Float.NaN
+            if (v.toRawBits() != sv.toRawBits()) bad("$field[$k]", v, s[k])
         }
     }
 
@@ -160,8 +231,7 @@ class CytoSoaEquivalenceTest {
                 posX = t.pos.x.raw, posY = t.pos.y.raw, ang = t.ang.raw,
                 velX = m.vel.x.raw, velY = m.vel.y.raw,
                 radiusRaw = colliders[id]!!.radius.raw,
-                energy = cell.chemicals["energy"] ?: 0f,
-                energyPending = cell.pendingTransfers["energy"] ?: 0f,
+                chemicals = cell.chemicals, pendingTransfers = cell.pendingTransfers,
                 logicalRadius = cell.logicalRadius, divideCooldown = cell.divideCooldown,
                 touch = cell.touch, type = cell.type.ordinal,
                 sticky = cell.sticky, stickyTemp = cell.stickyTemp,
@@ -232,6 +302,30 @@ class CytoSoaEquivalenceTest {
             pos = CytoUnits.coord2(50f, 50f), vel = Coord2.zero,
             type = CellType.Blank, chemicals = mapOf("energy" to 0.0001f), logicalRadius = 1f,
         )
+        return builder.build()
+    }
+
+    /** A connected line carrying extra chemicals (x, e) plus Contract-gene cells. */
+    private fun buildMultiChemColony(): SimState {
+        val builder = SimBuilder(SimState())
+        val a = builder.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Blank, mapOf("energy" to 4f, "x" to 3f), 1f)
+        val b = builder.spawnCell(CytoUnits.coord2(2f, 0f), Coord2.zero, CellType.Blank, mapOf("energy" to 4f, "x" to 3f), 1f)
+        val c = builder.spawnCell(CytoUnits.coord2(4f, 0f), Coord2.zero, CellType.Muscle, mapOf("energy" to 3f, "e" to 2f), 1f)
+        val d = builder.spawnCell(CytoUnits.coord2(6f, 0f), Coord2.zero, CellType.Jump, mapOf("energy" to 4f), 1f)
+        addSpring(builder, a, b, cfg)
+        addSpring(builder, b, c, cfg)
+        addSpring(builder, c, d, cfg)
+        return builder.build()
+    }
+
+    /** A Touch cell seeded with touch + reactant chemicals; its enzyme reaction mints species. */
+    private fun buildReactionColony(): SimState {
+        val builder = SimBuilder(SimState())
+        val t = builder.spawnCell(
+            CytoUnits.coord2(0f, 0f), Coord2.zero,
+            CellType.Touch, mapOf("energy" to 2f, "e" to 2f, "n" to 2f), 1f,
+        )
+        builder.update<CytoCellComponent>(t) { (it!!).copy(touch = 1f) }
         return builder.build()
     }
 }

@@ -91,6 +91,8 @@ class CytoLifecycle(private val cfg: CytoConfig) {
             for (n in nbrs) removeSpringPair(adj, id, n)
             adj.remove(id)
             w.world.removeEntity(EntityId(id))
+            // drop any multi-species side-table entries so a later id reuse can't read them.
+            w.extraChem.remove(id); w.extraPending.remove(id); w.suppression.remove(id)
         }
 
         // Weld: spring-join contacting pairs (once each, skipping the just-destroyed).
