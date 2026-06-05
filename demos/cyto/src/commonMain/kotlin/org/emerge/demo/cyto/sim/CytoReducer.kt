@@ -31,13 +31,14 @@ import org.emerge.sim.core.sim.SimState
  * connection maintenance refreshes spring rest lengths; the spring solver runs after; and
  * structural changes (weld/divide/destroy) apply last, taking effect next tick.
  *
- * The spring solver — the heaviest CPU-bound phase at scale — takes the optional [executor]
- * and fans its own entity loop across worker threads (intra-system data parallelism). Phases
- * stay [runSequential]: the pipeline is a hard dependency chain (contacts→biology→
- * connections→forces), so there's nothing to overlap *between* phases. Contacts stays
- * sequential here — cyto's broadphase is cheap, so a parallel split doesn't pay. NB: the
- * parallel speedup needs real CPU headroom; on a power-throttled CPU (laptop on battery)
- * the worker fan-out can be a net loss, and on JS the executor is a no-op (sequential).
+ * Connection maintenance and the spring solver — the two heaviest phases at scale — take
+ * the optional [executor] and fan their own per-cell loops across worker threads
+ * (intra-system data parallelism). Phases stay [runSequential]: the pipeline is a hard
+ * dependency chain (contacts→biology→connections→forces), so there's nothing to overlap
+ * *between* phases. Contacts stays sequential — cyto's broadphase is cheap, so a parallel
+ * split doesn't pay. NB: the parallel speedup needs real CPU headroom; on a power-throttled
+ * CPU (laptop on battery) the worker fan-out can be a net loss, and on JS the executor is a
+ * no-op (sequential).
  */
 class CytoReducer(
     /** Opt-in per-phase timing. Null in production (zero overhead); set by benchmarks. */
@@ -50,7 +51,7 @@ class CytoReducer(
         Phase("reset", ImpulseResetSystem),
         Phase("contacts", ContactSystem(), CytoContactSystem),
         Phase("biology", CytoBiologySystem),
-        Phase("connections", CytoConnectionMaintenanceSystem),
+        Phase("connections", CytoConnectionMaintenanceSystem(executor)),
         Phase("forces", SpringConstraintSystem(executor), CytoGrabSystem),
         Phase("lifecycle", CytoLifecycleSystem),
         Phase("integrate", IntegrationSystem),
