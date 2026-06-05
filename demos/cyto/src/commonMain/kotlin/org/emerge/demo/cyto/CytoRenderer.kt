@@ -59,6 +59,16 @@ class CytoRenderer {
         viewHeight = (viewHeight / factor).coerceIn(0.5f, 100_000f)
     }
 
+    /** Zoom by [factor] while keeping the world point under screen pixel ([px], [py]) fixed. */
+    fun zoomAtScreen(px: Float, py: Float, factor: Float) {
+        if (!factor.isFinite() || factor <= 0f) return
+        val before = screenToWorld(px, py)
+        viewHeight = (viewHeight / factor).coerceIn(0.5f, 100_000f)
+        val after = screenToWorld(px, py)
+        centerX += before[0] - after[0]
+        centerY += before[1] - after[1]
+    }
+
     /** Framebuffer pixel -> logical world `[x, y]`. */
     fun screenToWorld(px: Float, py: Float): FloatArray {
         val aspect = resW / resH

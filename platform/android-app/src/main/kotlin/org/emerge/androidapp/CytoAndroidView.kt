@@ -144,12 +144,13 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         val dx = event.getX(1) - event.getX(0)
         val dy = event.getY(1) - event.getY(0)
         val span = hypot(dx, dy)
+        val midX = (event.getX(0) + event.getX(1)) * 0.5f
+        val midY = (event.getY(0) + event.getY(1)) * 0.5f
         when (event.actionMasked) {
             MotionEvent.ACTION_POINTER_DOWN -> queueEvent { pinchSpan = span; grabId = null; uiConsumed = true }
             MotionEvent.ACTION_MOVE -> queueEvent {
                 if (pinchSpan > 0f && span > 0f) {
-                    val factor = span / pinchSpan
-                    renderer?.zoomByFactor(factor)
+                    renderer?.zoomAtScreen(midX, midY, span / pinchSpan)
                 }
                 pinchSpan = span
             }

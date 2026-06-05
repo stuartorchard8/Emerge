@@ -173,10 +173,11 @@ object CytoSceneView {
             state.lastY = px.second
         }
 
-        glfwSetScrollCallback(window) { _, _, yoffset ->
+        glfwSetScrollCallback(window) { win, _, yoffset ->
             if (yoffset == 0.0) return@glfwSetScrollCallback
             val steps = yoffset.coerceIn(-24.0, 24.0)
-            renderer.zoomByFactor(1.1.pow(steps).toFloat())
+            val px = cursorPixel(win)
+            renderer.zoomAtScreen(px.first, px.second, 1.1.pow(steps).toFloat())
         }
     }
 
