@@ -13,6 +13,7 @@ import org.emerge.demo.cyto.sim.soa.CytoWorld
 import org.emerge.demo.cyto.sim.systems.addSpring
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
@@ -38,12 +39,22 @@ class CytoSoaEquivalenceTest {
 
     @Test
     fun settledColonyIsBitIdentical() {
-        for (n in intArrayOf(250, 1000, 4000)) runScenario(buildColony(n), "settled-$n")
+        for (n in intArrayOf(250, 1000, 4000)) runScenario(buildColony(n), "settled-seq-$n", null)
     }
 
-    private fun runScenario(initial: SimState, label: String) {
+    @Test
+    fun settledColonyParallelIsBitIdentical() {
+        val executor = ParallelExecutor()
+        try {
+            for (n in intArrayOf(1000, 4000)) runScenario(buildColony(n), "settled-par-$n", executor)
+        } finally {
+            executor.close()
+        }
+    }
+
+    private fun runScenario(initial: SimState, label: String, executor: ParallelExecutor?) {
         val reducer = CytoReducer()
-        val soa = CytoSoaReducer(cfg)
+        val soa = CytoSoaReducer(cfg, executor)
         val world = CytoWorld.fromSimState(initial)
         val input = mapOf(PlayerId(0) to CytoInput())
         var ref = initial

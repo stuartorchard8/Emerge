@@ -6,6 +6,7 @@ import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.MAX_CHEM
 import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.RADIUS_ELASTICITY
+import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.PipelineProfiler
 import org.emerge.sim.core.ecs.SpatialGrid
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -34,7 +35,14 @@ import kotlin.time.TimeSource
  * structural changes) are implemented for the growing-colony scenario but never fire in the
  * settled benchmark on which the go/no-go number is measured.
  */
-class CytoSoaReducer(private val cfg: CytoConfig) {
+class CytoSoaReducer(
+    private val cfg: CytoConfig,
+    /** Optional worker pool; null → fully sequential. Phases parallelise over the dense
+     *  columns: connections by disjoint per-cell ranges (no merge), forces into per-chunk
+     *  Long buffers merged on the main thread (Frac add is order-independent → bit-identical),
+     *  contacts by parallel detect into per-chunk lists handled sequentially in chunk order. */
+    private val executor: ParallelExecutor? = null,
+) {
 
     private val dt = 1f / 64f
 
@@ -43,6 +51,20 @@ class CytoSoaReducer(private val cfg: CytoConfig) {
     private val weldHi = ArrayList<Int>()
     private val divideIds = ArrayList<Int>()
     private val destroyIds = ArrayList<Int>()
+
+    // reused per-chunk force-impulse buffers (avoid per-tick allocation)
+    private var fbufX: Array<LongArray> = emptyArray()
+    private var fbufY: Array<LongArray> = emptyArray()
+
+    private fun parallel(): Boolean = executor != null
+
+    private fun chunkBounds(n: Int): IntArray {
+        val chunks = executor!!.parallelism.coerceAtMost(n).coerceAtLeast(1)
+        val step = (n + chunks - 1) / chunks
+        val bounds = IntArray(chunks + 1)
+        for (c in 0..chunks) bounds[c] = (c * step).coerceAtMost(n)
+        return bounds
+    }
 
     fun tick(w: CytoWorld, profiler: PipelineProfiler? = null) {
         phase(profiler, "reset") { reset(w) }
@@ -77,8 +99,33 @@ class CytoSoaReducer(private val cfg: CytoConfig) {
         val grid = SpatialGrid.forMinCellSize(minCellSize = maxRadius * 2L) ?: return
         for (i in 0 until n) grid.insert(i, w.posX[i], w.posY[i])
 
+        // Parallel detect into per-chunk lists; handle sequentially in chunk order so the
+        // weld/impulse/touch application order matches the sequential sweep (i-then-j).
+        if (parallel() && n >= PARALLEL_THRESHOLD) {
+            val bounds = chunkBounds(n)
+            val chunks = bounds.size - 1
+            val buckets = arrayOfNulls<MutableList<ContactRec>>(chunks)
+            val tasks = ArrayList<() -> Unit>(chunks)
+            for (c in 0 until chunks) {
+                val s = bounds[c]; val e = bounds[c + 1]; if (s >= e) continue
+                val cc = c
+                tasks.add { val local = ArrayList<ContactRec>(); detectRange(w, grid, s, e, local); buckets[cc] = local }
+            }
+            executor!!.invokeAll(tasks)
+            for (c in 0 until chunks) buckets[c]?.forEach { handleContact(w, it.i, it.j, it.contact) }
+        } else {
+            val out = ArrayList<ContactRec>()
+            detectRange(w, grid, 0, n, out)
+            out.forEach { handleContact(w, it.i, it.j, it.contact) }
+        }
+    }
+
+    private class ContactRec(val i: Int, val j: Int, val contact: Contact)
+
+    /** Collects (never mutates the world) contacts for owners in `[start, end)` — worker-safe. */
+    private fun detectRange(w: CytoWorld, grid: SpatialGrid, start: Int, end: Int, out: MutableList<ContactRec>) {
         var scratch = IntArray(16)
-        for (i in 0 until n) {
+        for (i in start until end) {
             val aX = w.posX[i]; val aY = w.posY[i]; val aR = w.radiusRaw[i]
             var cc = 0
             grid.forEachNeighbour(aX, aY) { j ->
@@ -99,7 +146,7 @@ class CytoSoaReducer(private val cfg: CytoConfig) {
                     aTransform = transformOf(w, i), bTransform = transformOf(w, j),
                     aRadius = Frac(aR), bRadius = Frac(w.radiusRaw[j]),
                 ) ?: continue
-                handleContact(w, i, j, contact)
+                out.add(ContactRec(i, j, contact))
             }
         }
     }
@@ -183,12 +230,27 @@ class CytoSoaReducer(private val cfg: CytoConfig) {
     }
 
     // ── connections (CytoConnectionMaintenanceSystem) ───────────────────────────
+    // Every write is per-cell-disjoint (a cell's own CSR entries + its own impulse), so this
+    // parallelises by cell range with no merge and is bit-identical to the sequential sweep.
     private fun connections(w: CytoWorld) {
         val n = w.count
-        // 1. refresh rest lengths / accumulate damage / break (in-place on the CSR).
-        // For a settled colony nothing changes; we still recompute to stay faithful.
-        // Breaks would require a CSR rebuild — deferred to the growing-colony path (none here).
-        for (i in 0 until n) {
+        if (parallel() && n >= PARALLEL_THRESHOLD) {
+            val bounds = chunkBounds(n)
+            val tasks = ArrayList<() -> Unit>(bounds.size - 1)
+            for (c in 0 until bounds.size - 1) {
+                val s = bounds[c]; val e = bounds[c + 1]; if (s < e) tasks.add { connectionsRange(w, s, e) }
+            }
+            executor!!.invokeAll(tasks)
+        } else {
+            connectionsRange(w, 0, n)
+        }
+    }
+
+    private fun connectionsRange(w: CytoWorld, start: Int, end: Int) {
+        val drag = -cfg.connectedDrag
+        for (i in start until end) {
+            // 1. refresh rest lengths / accumulate damage (in-place on this cell's CSR).
+            // Breaks would require a CSR rebuild — deferred to the growing-colony path (none here).
             val radiusA = w.radiusRaw[i]
             for (k in w.springOffset[i] until w.springOffset[i + 1]) {
                 val nSlot = w.springOther[k]
@@ -198,16 +260,12 @@ class CytoSoaReducer(private val cfg: CytoConfig) {
                 val stress = max(0f, stretch * cfg.connectionStressScale) - 0.25f
                 val prior = w.springDamage[k]
                 val damage = max(0f, prior + stress)
-                // (break path omitted in the spike — never triggered settled; assert if it would)
                 w.springRestRaw[k] = rest
                 w.springStiffRaw[k] = cfg.springStiffness.raw
                 w.springDampRaw[k] = cfg.springDamping.raw
                 w.springDamage[k] = damage
             }
-        }
-        // 3. connected-cell drag ("velocity shielding").
-        val drag = -cfg.connectedDrag
-        for (i in 0 until n) {
+            // 3. connected-cell drag ("velocity shielding").
             if (w.springOffset[i] == w.springOffset[i + 1]) continue
             var unshielded = Frac2(Frac(w.velX[i].toLong()), Frac(w.velY[i].toLong()))
             for (k in w.springOffset[i] until w.springOffset[i + 1]) {
@@ -222,9 +280,34 @@ class CytoSoaReducer(private val cfg: CytoConfig) {
     }
 
     // ── forces (SpringConstraintSystem) ─────────────────────────────────────────
+    // A spring writes BOTH endpoints' impulses, so a worker can't write w.imp directly
+    // (a neighbour may be in another chunk). Each worker accumulates into its own Long
+    // buffer; the main thread sums the buffers onto w.imp. Frac/Long add is order-independent
+    // → bit-identical to the sequential solve. grab is a no-op in the spike (empty input).
     private fun forces(w: CytoWorld) {
         val n = w.count
-        for (i in 0 until n) {
+        if (parallel() && n >= PARALLEL_THRESHOLD) {
+            val bounds = chunkBounds(n)
+            val chunks = bounds.size - 1
+            ensureForceBuffers(chunks, n)
+            val tasks = ArrayList<() -> Unit>(chunks)
+            for (c in 0 until chunks) {
+                val s = bounds[c]; val e = bounds[c + 1]; if (s >= e) continue
+                val cc = c
+                tasks.add { forcesRange(w, s, e, fbufX[cc], fbufY[cc]) }
+            }
+            executor!!.invokeAll(tasks)
+            for (c in 0 until chunks) {
+                val bx = fbufX[c]; val by = fbufY[c]
+                for (k in 0 until n) { w.impX[k] += bx[k]; w.impY[k] += by[k] }
+            }
+        } else {
+            forcesRange(w, 0, n, w.impX, w.impY)
+        }
+    }
+
+    private fun forcesRange(w: CytoWorld, start: Int, end: Int, outX: LongArray, outY: LongArray) {
+        for (i in start until end) {
             val idA = w.entityId[i]
             val countA = w.springOffset[i + 1] - w.springOffset[i]
             if (countA == 0) continue
@@ -250,11 +333,19 @@ class CytoSoaReducer(private val cfg: CytoConfig) {
                 val weightB = Frac(w.mass[i].toLong(), total.toInt())
                 val impA = normal * (closing * weightA)
                 val impB = -(normal * (closing * weightB))
-                w.impX[i] += impA.x.raw; w.impY[i] += impA.y.raw
-                w.impX[nSlot] += impB.x.raw; w.impY[nSlot] += impB.y.raw
+                outX[i] += impA.x.raw; outY[i] += impA.y.raw
+                outX[nSlot] += impB.x.raw; outY[nSlot] += impB.y.raw
             }
         }
-        // grab: empty input in the spike → no-op.
+    }
+
+    private fun ensureForceBuffers(chunks: Int, n: Int) {
+        if (fbufX.size != chunks || (fbufX.isNotEmpty() && fbufX[0].size < n)) {
+            fbufX = Array(chunks) { LongArray(n) }
+            fbufY = Array(chunks) { LongArray(n) }
+        } else {
+            for (c in 0 until chunks) { fbufX[c].fill(0L, 0, n); fbufY[c].fill(0L, 0, n) }
+        }
     }
 
     // ── lifecycle (CytoLifecycleSystem) ─────────────────────────────────────────
@@ -317,4 +408,9 @@ class CytoSoaReducer(private val cfg: CytoConfig) {
     }
 
     private fun longAbs(v: Long): Long = if (v < 0L) -v else v
+
+    companion object {
+        /** Below this cell count, fork/join dispatch overhead outweighs the parallel win. */
+        private const val PARALLEL_THRESHOLD = 256
+    }
 }

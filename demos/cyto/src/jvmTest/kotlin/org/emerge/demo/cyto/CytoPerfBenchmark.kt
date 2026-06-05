@@ -56,7 +56,8 @@ class CytoPerfBenchmark {
                 for (n in sizes) {
                     profileAt(n, null, "seq")
                     profileAt(n, executor, "par")
-                    profileSoaAt(n)
+                    profileSoaAt(n, null, "soa ")
+                    profileSoaAt(n, executor, "soaP")
                 }
             }
         } finally {
@@ -100,9 +101,9 @@ class CytoPerfBenchmark {
     }
 
     /** SoA prototype tick on a persistent CytoWorld — no SimState is built inside the loop. */
-    private fun profileSoaAt(targetCells: Int) {
+    private fun profileSoaAt(targetCells: Int, executor: ParallelExecutor?, label: String) {
         val profiler = PipelineProfiler()
-        val soa = CytoSoaReducer(cfg)
+        val soa = CytoSoaReducer(cfg, executor)
         val world = CytoWorld.fromSimState(buildColony(targetCells))
 
         repeat(WARMUP) { soa.tick(world) }
@@ -115,7 +116,7 @@ class CytoPerfBenchmark {
 
         val report = profiler.report()
         val verdict = if (report.tickP95Nanos / 1e6 <= 16.667) "OK" else "OVER"
-        print("   [soa] tick avg ${ms(report.tickAvgNanos)}  p95 ${ms(report.tickP95Nanos)}  $verdict  |")
+        print("   [$label] tick avg ${ms(report.tickAvgNanos)}  p95 ${ms(report.tickP95Nanos)}  $verdict  |")
         for (p in report.phases.sortedByDescending { it.avgNanos }.take(4)) {
             print(" ${p.name}=${ms(p.avgNanos)}")
         }
