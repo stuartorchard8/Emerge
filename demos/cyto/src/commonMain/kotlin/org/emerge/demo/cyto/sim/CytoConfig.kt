@@ -14,19 +14,22 @@ data class CytoConfig(
     override val rollingResistance: Frac = Frac(0),
     override val collisionSpeedDamageThreshold: Frac = Frac(0),
 
-    /** Soft-spring gains for cell connections (see SpringConstraintSystem). Tuned to match
-     *  the original Box2D DistanceJoint (frequencyHz=10, dampingRatio=4 at the 1/64 s step),
-     *  which is *heavily overdamped*: connections settle smoothly toward rest with no bounce.
+    /** Soft-spring gains for cell connections (see SpringConstraintSystem). Matched to the
+     *  original Box2D DistanceJoint (frequencyHz=10, dampingRatio=4 at the 1/64 s step).
      *
-     *  The solver is the discrete oscillator `vrel' = (1-d)·vrel - k·e`, `e' = e + vrel'`,
-     *  whose modes solve `λ² - (2-k-d)λ + (1-d) = 0`. The original's sampled continuous modes
-     *  are ≈{0.88, 0}; k=1/8, d=1 reproduces them as {0.875, 0} — slow-mode τ ≈ 7.5 ticks,
-     *  critically/over-damped (no oscillation). Lower stiffness = softer/slower membrane;
-     *  drop damping below 1 only if you want the connections to visibly bounce.
+     *  Discretising that joint gives stiffness k = ω²·dt² = (2π·10)²/64² ≈ 0.96 and damping
+     *  d = 2ζω·dt ≈ 7.85. Stiffness is what sets the *static* stretch under load (e ≈ Δv/k),
+     *  so k≈1 is what keeps the membrane firm rather than squishy. The explicit single-pass
+     *  solver can't take d ≫ 1 (it would over-correct and bounce); the solver's modes solve
+     *  `λ² - (2-k-d)λ + (1-d) = 0`, and at k=1 the *only* non-oscillating damping is d=1,
+     *  giving a deadbeat response {0, 0}: firm, no overshoot, fast settle. That trades away
+     *  the original's slow overdamped *approach* (which this integrator can't do at high k)
+     *  but keeps its firmness — the visible "squish under load", which matters most here.
      *
-     *  Connectivity relaxation scales both gains down together in dense clusters, so the
-     *  overdamped *ratio* is preserved regardless of neighbour count. */
-    val springStiffness: Frac = Frac(1, 8),
+     *  Connectivity relaxation scales both gains down together in dense clusters (Jacobi
+     *  stability), so interior cells of a large colony stay softer than a lone pair; that's
+     *  the main residual gap from Box2D's iterative (converged-stiff) solve. */
+    val springStiffness: Frac = Frac(1, 1),
     val springDamping: Frac = Frac(1, 1),
 
     /** Repulsion impulse fraction for overlapping, non-connected cells. */
