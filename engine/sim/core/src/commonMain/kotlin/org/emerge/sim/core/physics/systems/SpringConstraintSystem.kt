@@ -11,6 +11,7 @@ import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.model.PhysicsTuning
 import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
 
@@ -39,24 +40,74 @@ object SpringConstraintSystem : EcsSystem<PhysicsTuning, SimState, SimInput> {
         inputs: Map<PlayerId, SimInput>,
     ) {
         val springComps = builder.entries<SpringConstraintComponent>()
-        // Relaxation divides each correction by the larger endpoint's spring count. Read
-        // that count from a flat map built once, instead of a per-spring component lookup.
-        val springCounts = HashMap<EntityId, Int>(springComps.size)
-        for ((id, comp) in springComps) springCounts[id] = comp.springs.size
+        if (springComps.isEmpty()) return
+        val n = springComps.size
 
+        // Cache each spring-bearing entity's components into flat arrays under a dense index,
+        // so the inner loop reads positions/velocities/mass by array index instead of a
+        // per-spring component-table lookup. This is the same component-caching the
+        // ContactSystem uses. When springs are registered symmetrically (both endpoints
+        // carry the component — as cyto does), every `other` is in this index and the inner
+        // loop never touches the component tables; a one-sided spring whose `other` is absent
+        // falls back to a direct lookup. Reads are valid for the whole phase because nothing
+        // writes Transform/Motion/Material before the solver (integration and structural
+        // changes run in later phases).
+        val ids = arrayOfNulls<EntityId>(n)
+        val index = HashMap<EntityId, Int>(n)
+        val transforms = arrayOfNulls<TransformComponent>(n)
+        val motions = arrayOfNulls<MotionComponent>(n)
+        val masses = LongArray(n)
+        val springCounts = IntArray(n)
+        run {
+            var i = 0
+            for ((id, comp) in springComps) {
+                ids[i] = id
+                index[id] = i
+                transforms[i] = builder.getComponent<TransformComponent>(id)
+                motions[i] = builder.getComponent<MotionComponent>(id)
+                masses[i] = (builder.getComponent<MaterialComponent>(id)?.mass ?: 1u).toLong()
+                springCounts[i] = comp.springs.size
+                i++
+            }
+        }
+
+        // Accumulate each entity's total spring impulse, then apply it with a single
+        // ImpulseComponent write per entity (was two writes per spring). Frac2 addition is
+        // integer-exact and order-independent, so the accumulated sum is bit-identical to
+        // folding each spring's impulse in one at a time.
+        val impulse = arrayOfNulls<Frac2>(n)
+
+        var ai = 0
         for ((id, comp) in springComps) {
+            val aIdx = ai++
             if (comp.springs.isEmpty()) continue
-            val transformA = builder.getComponent<TransformComponent>(id) ?: continue
-            val motionA = builder.getComponent<MotionComponent>(id) ?: continue
-            val massA = builder.getComponent<MaterialComponent>(id)?.mass ?: 1u
+            val transformA = transforms[aIdx] ?: continue
+            val motionA = motions[aIdx] ?: continue
+            val massA = masses[aIdx]
+            val countA = comp.springs.size
 
             for (spring in comp.springs) {
                 val other = spring.other
                 // Solve each pair exactly once, from the smaller-id endpoint.
                 if (other.value <= id.value) continue
-                val transformB = builder.getComponent<TransformComponent>(other) ?: continue
-                val motionB = builder.getComponent<MotionComponent>(other) ?: continue
-                val massB = builder.getComponent<MaterialComponent>(other)?.mass ?: 1u
+                // Cached fast path when `other` carries the component; fall back to a direct
+                // lookup for a one-sided spring (`other` not in the index).
+                val bIdx = index[other]
+                val transformB: TransformComponent
+                val motionB: MotionComponent
+                val massB: Long
+                val otherCount: Int
+                if (bIdx != null) {
+                    transformB = transforms[bIdx] ?: continue
+                    motionB = motions[bIdx] ?: continue
+                    massB = masses[bIdx]
+                    otherCount = springCounts[bIdx]
+                } else {
+                    transformB = builder.getComponent<TransformComponent>(other) ?: continue
+                    motionB = builder.getComponent<MotionComponent>(other) ?: continue
+                    massB = (builder.getComponent<MaterialComponent>(other)?.mass ?: 1u).toLong()
+                    otherCount = builder.getComponent<SpringConstraintComponent>(other)?.springs?.size ?: 1
+                }
 
                 val delta = transformB.pos - transformA.pos // Frac2, A -> B
                 val dist = delta.len
@@ -73,23 +124,32 @@ object SpringConstraintSystem : EcsSystem<PhysicsTuning, SimState, SimInput> {
                 val rawClosingSpeed = lengthError * spring.stiffness + separationSpeed * spring.damping
                 // Under-relax by connectivity so a clustered body's many springs don't sum
                 // to an unstable over-correction (Jacobi stability). Lone springs: ÷1.
-                val otherCount = springCounts[other] ?: 1
-                val relaxation = maxOf(comp.springs.size, otherCount, 1)
+                val relaxation = maxOf(countA, otherCount, 1)
                 val closingSpeed = rawClosingSpeed / relaxation
 
-                val totalMass = (massA + massB).toLong()
+                val totalMass = massA + massB
                 if (totalMass <= 0L) continue
                 // Lighter body moves more: A's share is weighted by B's mass.
-                val weightA = Frac(massB.toLong(), totalMass.toInt())
-                val weightB = Frac(massA.toLong(), totalMass.toInt())
+                val weightA = Frac(massB, totalMass.toInt())
+                val weightB = Frac(massA, totalMass.toInt())
 
                 val speedA = closingSpeed * weightA
                 val speedB = closingSpeed * weightB
 
-                // A accelerates toward B (+normal); B toward A (-normal).
-                builder.update<ImpulseComponent>(id) { ImpulseComponent(vel = normal * speedA) + it }
-                builder.update<ImpulseComponent>(other) { ImpulseComponent(vel = -(normal * speedB)) + it }
+                // A accelerates toward B (+normal); B toward A (-normal). A is always cached
+                // (it owns the springs); B is batched when cached, else written through.
+                impulse[aIdx] = (normal * speedA) + impulse[aIdx]
+                if (bIdx != null) {
+                    impulse[bIdx] = -(normal * speedB) + impulse[bIdx]
+                } else {
+                    builder.update<ImpulseComponent>(other) { ImpulseComponent(vel = -(normal * speedB)) + it }
+                }
             }
+        }
+
+        for (k in 0 until n) {
+            val imp = impulse[k] ?: continue
+            builder.update<ImpulseComponent>(ids[k]!!) { ImpulseComponent(vel = imp) + it }
         }
     }
 }
