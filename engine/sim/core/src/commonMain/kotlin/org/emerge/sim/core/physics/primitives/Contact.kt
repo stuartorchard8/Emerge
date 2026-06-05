@@ -29,13 +29,13 @@ data class Contact(
             if (xPen.sign <= 0 || yPen.sign <= 0) return null
             if (delta >= minDist) return null
             if (delta.lenSq.raw == 0L) return null
-            delta.capMax(minDist)
-            val normal = delta.norm
+            val len = delta.len
+            val normal = delta.normFromLen(len)
             return Contact(
                 aId = aId,
                 bId = bId,
                 minDist = minDist,
-                penetration = minDist - delta.len,
+                penetration = minDist - len,
                 normal = normal,
                 tangent = normal.cw90,
             )

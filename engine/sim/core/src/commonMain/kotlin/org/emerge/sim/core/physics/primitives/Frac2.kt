@@ -1,8 +1,6 @@
 package org.emerge.sim.core.physics.primitives
 
 import org.emerge.sim.core.physics.primitives.Frac.Companion.abs
-import kotlin.math.abs
-import kotlin.math.max
 
 data class Frac2(val x: Frac, val y: Frac) {
     operator fun plus(o: Frac2?): Frac2 = if (o == null) this else Frac2(x + o.x, y + o.y)
@@ -24,37 +22,23 @@ data class Frac2(val x: Frac, val y: Frac) {
             y = x * rotation.y + y * rotation.x,
         )
     }
-    val lenSq by lazy { x*x + y*y }
-    val len by lazy {
+
+    // len/lenSq/norm are computed on demand rather than cached via `by lazy`: a per-instance
+    // lazy delegate (plus its capturing closure) is allocated eagerly in the constructor for
+    // every Frac2, accessed or not — and Frac2s are created in tight per-tick physics loops.
+    // Recomputing a cheap formula is far cheaper than that allocation; call sites that need
+    // both `len` and `norm` should compute `len` once and pass it to [normFromLen].
+    val lenSq: Frac get() = x*x + y*y
+    val len: Frac get() =
         if (x.raw == 0L) abs(y)
         else if (y.raw == 0L) abs(x)
-        else fracSqrt(lenSq, lenMax.toLong())
-    }
-    private var lenMax = abs(x) + abs(y)
-    fun capMax(v: Frac) { lenMax.coerceAtLeast(v) }
-    val norm by lazy {
-        if (len.raw==0L) Norm(Frac(1,1), Frac(0))
-        else Norm(
-            x/len,
-            y/len,
-        )
-    }
+        else fracSqrt(lenSq, (abs(x) + abs(y)).toLong())
+    val norm: Norm get() = normFromLen(len)
 
-
-    // Potentially faster, but less accurate
-    fun octDist() = Frac((12L*(abs(x.toLong()) + abs(y.toLong()))+17L*max(abs(x.toLong()), abs(y.toLong())))/29L)
-    fun octNorm(): Frac2 = this/octDist()
-    val estNorm by lazy {
-        val distSq = lenSq.raw
-        if (distSq == 0L) zero
-        val neg = 1-distSq
-        val flower = neg/2/distSq
-        val oct = octNorm()*Frac(1+flower)
-        Norm(oct.x, oct.y)
-    }
-    val estDist by lazy {
-        dot(estNorm)
-    }
+    /** Normalised direction, reusing an already-computed [len] to avoid a second sqrt. */
+    fun normFromLen(len: Frac): Norm =
+        if (len.raw == 0L) Norm(Frac(1, 1), Frac(0))
+        else Norm(x / len, y / len)
 
     operator fun compareTo(o: Frac): Int = (lenSq - o*o).sign
     operator fun compareTo(o: Frac2): Int = (lenSq - o.lenSq).sign
@@ -84,10 +68,7 @@ data class Frac2(val x: Frac, val y: Frac) {
             return Frac(x)
         }
 
-        val zero get() = Frac2(
-            Frac(0),
-            Frac(0),
-        )
+        val zero = Frac2(Frac(0), Frac(0))
 
         fun raw(x: Int, y: Int) = Frac2(Frac(x.toLong()), Frac(y.toLong()))
     }

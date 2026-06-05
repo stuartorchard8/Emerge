@@ -222,7 +222,7 @@ class SpringConstraintSystem(
         val delta = transformB.pos - transformA.pos // Frac2, A -> B
         val dist = delta.len
         if (dist.raw == 0L) return null
-        val normal = delta.norm
+        val normal = delta.normFromLen(dist)
 
         // +ve = stretched (too far apart).
         val lengthError = dist - spring.restLength
