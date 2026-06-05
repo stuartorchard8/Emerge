@@ -25,7 +25,7 @@ data class CytoConfig(
 
     /** Connection breaks when accumulated stress damage exceeds this (original: 3). Higher =
      *  less fragile connections. */
-    val connectionBreakDamage: Float = 8f,
+    val connectionBreakDamage: Float = 4f,
 
     /** Per-tick velocity drag on a connected cell's unshielded velocity (original: ×-10·dt). */
     val connectedDrag: Frac = Frac(10, 64),
