@@ -14,11 +14,20 @@ data class CytoConfig(
     override val rollingResistance: Frac = Frac(0),
     override val collisionSpeedDamageThreshold: Frac = Frac(0),
 
-    /** Soft-spring gains for cell connections (see SpringConstraintSystem). Connectivity
-     *  relaxation keeps clusters stable, so the effective per-cell stiffness ≈ this value
-     *  regardless of neighbour count — safe to push up for a snappier membrane. */
-    val springStiffness: Frac = Frac(1, 1),
-    val springDamping: Frac = Frac(3, 4),
+    /** Soft-spring gains for cell connections (see SpringConstraintSystem). Tuned to match
+     *  the original Box2D DistanceJoint (frequencyHz=10, dampingRatio=4 at the 1/64 s step),
+     *  which is *heavily overdamped*: connections settle smoothly toward rest with no bounce.
+     *
+     *  The solver is the discrete oscillator `vrel' = (1-d)·vrel - k·e`, `e' = e + vrel'`,
+     *  whose modes solve `λ² - (2-k-d)λ + (1-d) = 0`. The original's sampled continuous modes
+     *  are ≈{0.88, 0}; k=1/8, d=1 reproduces them as {0.875, 0} — slow-mode τ ≈ 7.5 ticks,
+     *  critically/over-damped (no oscillation). Lower stiffness = softer/slower membrane;
+     *  drop damping below 1 only if you want the connections to visibly bounce.
+     *
+     *  Connectivity relaxation scales both gains down together in dense clusters, so the
+     *  overdamped *ratio* is preserved regardless of neighbour count. */
+    val springStiffness: Frac = Frac(1, 8),
+    val springDamping: Frac = Frac(1, 1),
 
     /** Repulsion impulse fraction for overlapping, non-connected cells. */
     val repulsion: Frac = Frac(1, 2),
