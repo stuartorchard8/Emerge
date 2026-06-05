@@ -32,6 +32,14 @@ class ComponentColumns<T : Any>(val store: ColumnStore<T>) {
     fun gatherAt(slot: Int): T = store.gather(slot)
 
     /**
+     * Visits every live (non-tombstoned) slot in ascending-EntityId order — the raw-index path
+     * the cold-system compat shim uses for iteration without gathering an object per slot.
+     */
+    fun forEachAliveSlot(action: (slot: Int, id: EntityId) -> Unit) {
+        for (s in 0 until count) if (alive[s]) action(s, EntityId(denseEntityId[s]))
+    }
+
+    /**
      * Adds [value] for [id]. [id] must be larger than every existing id (true for freshly
      * spawned entities — monotonic ids) so the dense order stays ascending. If [id] already
      * present, overwrites in place.
