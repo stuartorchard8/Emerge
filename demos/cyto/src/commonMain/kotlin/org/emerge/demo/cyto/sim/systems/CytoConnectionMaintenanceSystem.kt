@@ -36,6 +36,13 @@ object CytoConnectionMaintenanceSystem : EcsSystem<CytoConfig, SimState, CytoInp
         if (springs.isEmpty()) return
 
         // 1. refresh rest lengths, accumulate damage, collect breaks.
+        //
+        // The written component would be byte-identical to the existing one unless a rest
+        // length, the configured gains, the damage, or the membership actually changed. In a
+        // settled colony none of those move tick-to-tick, so we first do an allocation-free
+        // detection sweep and only rebuild (the allocating path) the cells that changed.
+        // This keeps the output bit-identical to an unconditional rebuild while skipping the
+        // ArrayList / SpringConstraint.copy / component / HashMap churn for the steady bulk.
         val broken = HashMap<EntityId, MutableSet<EntityId>>()
         for ((id, comp) in springs) {
             if (comp.springs.isEmpty()) continue
@@ -43,6 +50,30 @@ object CytoConnectionMaintenanceSystem : EcsSystem<CytoConfig, SimState, CytoInp
             val radiusA = builder.getComponent<ColliderComponent>(id)?.radius ?: continue
             val damageState = builder.getComponent<ConnectionStateComponent>(id)?.damage ?: emptyMap()
 
+            // Detection sweep — no allocation. (Arithmetic mirrors the rebuild below exactly.)
+            var springsChanged = false
+            var damageChanged = false
+            for (spring in comp.springs) {
+                val other = spring.other
+                val transformB = builder.getComponent<TransformComponent>(other)
+                val radiusB = builder.getComponent<ColliderComponent>(other)?.radius
+                if (transformB == null || radiusB == null) { springsChanged = true; continue }
+                val rest = radiusA + radiusB
+                if (rest != spring.restLength ||
+                    spring.stiffness != cfg.springStiffness ||
+                    spring.damping != cfg.springDamping
+                ) springsChanged = true
+                val dist = (transformB.pos - transformA.pos).len
+                val stretch = CytoUnits.toLogical(dist) - CytoUnits.toLogical(rest)
+                val stress = max(0f, stretch * cfg.connectionStressScale) - 0.25f
+                val prior = damageState[other] ?: 0f
+                val damage = max(0f, prior + stress)
+                if (damage > cfg.connectionBreakDamage) springsChanged = true
+                else if (damage != prior) damageChanged = true
+            }
+            if (!springsChanged && !damageChanged) continue
+
+            // Rebuild — only reached when something genuinely changed.
             val newSprings = ArrayList<SpringConstraint>(comp.springs.size)
             val newDamage = HashMap<EntityId, Float>()
             for (spring in comp.springs) {
