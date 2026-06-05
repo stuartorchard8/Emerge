@@ -17,7 +17,7 @@ data class CytoConfig(
     /** Soft-spring gains for cell connections (see SpringConstraintSystem). Connectivity
      *  relaxation keeps clusters stable, so the effective per-cell stiffness ≈ this value
      *  regardless of neighbour count — safe to push up for a snappier membrane. */
-    val springStiffness: Frac = Frac(1, 2),
+    val springStiffness: Frac = Frac(1, 1),
     val springDamping: Frac = Frac(3, 4),
 
     /** Repulsion impulse fraction for overlapping, non-connected cells. */
