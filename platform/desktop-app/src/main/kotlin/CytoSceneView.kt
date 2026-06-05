@@ -3,6 +3,7 @@ package org.emerge.desktop
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.CytoRenderer
 import org.emerge.demo.cyto.cells.CellType
+import org.emerge.demo.cyto.sim.TouchMode
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.opengl.GL33C
 import org.lwjgl.system.Configuration
@@ -15,16 +16,16 @@ import kotlin.math.max
 import kotlin.math.pow
 
 /**
- * Desktop host for the Cyto demo, mirroring [DrocketsSceneView]: a GLFW/LWJGL GL 3.3
- * window driving a [CytoController] and [CytoRenderer]. Left-drag pans or drags a cell,
- * scroll zooms, a tap spawns/acts on cells, digits 1–6 pick the touch mode, and `[`/`]`
- * cycle the cell type. F5/F9 save/load a [org.emerge.demo.cyto.CytoSaveCodec] snapshot.
+ * Desktop host for the native (Box2D-free) Cyto demo, mirroring [DrocketsSceneView]: a
+ * GLFW/LWJGL GL 3.3 window driving a [CytoController] ([org.emerge.demo.cyto.sim.CytoReducer])
+ * and [CytoRenderer]. Left-drag pans, scroll zooms, a tap spawns/acts on cells, digits 1–6
+ * pick the touch mode, `[`/`]` cycle the cell type, and F5/F9 save/load a snapshot.
  *
- * The bespoke Cyto on-screen control UI is deferred (see the port plan); the current
- * mode + cell type are shown in the window title instead.
+ * Cell-drag (grab) is deferred; the bespoke Cyto control UI is shown in the window title.
  */
 object CytoSceneView {
     private val SAVE_PATH: Path = Path.of("cyto-save.bin")
+    private val TOUCH_MODES = TouchMode.entries
 
     fun start() {
         Configuration.STACK_SIZE.set(512)
@@ -33,7 +34,7 @@ object CytoSceneView {
 
     private fun runGl() {
         val controller = CytoController()
-        var mode = CytoController.TouchMode.Base
+        var mode = TouchMode.Base
         var cellType = CellType.Stem
 
         val window = initWindow(
@@ -117,7 +118,7 @@ object CytoSceneView {
         window: Long,
         controller: CytoController,
         renderer: CytoRenderer,
-        modeAndType: () -> Pair<CytoController.TouchMode, CellType>,
+        modeAndType: () -> Pair<TouchMode, CellType>,
     ) {
         val state = MouseState()
 
@@ -130,21 +131,14 @@ object CytoSceneView {
                     state.dragged = false
                     state.lastX = px.first
                     state.lastY = px.second
-                    val (mode, _) = modeAndType()
-                    val world = renderer.screenToWorld(px.first, px.second)
-                    state.grab = controller.grabAt(world[0], world[1], mode)
-                    state.panning = state.grab == null
                 }
                 GLFW_RELEASE -> {
                     state.primaryDown = false
                     if (!state.dragged) {
                         val (mode, type) = modeAndType()
                         val world = renderer.screenToWorld(px.first, px.second)
-                        controller.tapAt(world[0], world[1], mode, type)
+                        controller.tap(world[0], world[1], mode, type)
                     }
-                    state.grab?.release()
-                    state.grab = null
-                    state.panning = false
                     state.dragged = false
                 }
             }
@@ -156,14 +150,7 @@ object CytoSceneView {
             val dx = px.first - state.lastX
             val dy = px.second - state.lastY
             if (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX) state.dragged = true
-
-            val grab = state.grab
-            if (grab != null) {
-                val world = renderer.screenToWorld(px.first, px.second)
-                grab.moveTo(world[0], world[1])
-            } else if (state.panning) {
-                renderer.panByPixels(dx, dy)
-            }
+            renderer.panByPixels(dx, dy)
             state.lastX = px.first
             state.lastY = px.second
         }
@@ -202,7 +189,7 @@ object CytoSceneView {
         )
     }
 
-    private fun updateTitle(window: Long, mode: CytoController.TouchMode, type: CellType) {
+    private fun updateTitle(window: Long, mode: TouchMode, type: CellType) {
         glfwSetWindowTitle(window, "Cyto — mode=${mode.name}  type=${type.name}  ([ ] cycle type, 1-6 mode, F5/F9 save/load)")
     }
 
@@ -241,21 +228,17 @@ object CytoSceneView {
         try {
             val bytes = Files.readAllBytes(SAVE_PATH)
             controller.restoreSnapshot(bytes)
-            println("Auto-loaded Cyto snapshot (${bytes.size} bytes) from ${SAVE_PATH.toAbsolutePath()}")
+            println("Auto-loaded Cyto snapshot (${bytes.size} bytes)")
         } catch (t: Throwable) {
             println("Failed auto-loading Cyto snapshot: ${t.message}")
         }
     }
 
-    private val TOUCH_MODES = CytoController.TouchMode.entries
-
     private class MouseState {
         var primaryDown = false
         var dragged = false
-        var panning = false
         var lastX = 0f
         var lastY = 0f
-        var grab: CytoController.Grab? = null
     }
 
     private const val DRAG_THRESHOLD_PX = 4f
