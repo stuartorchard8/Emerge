@@ -14,8 +14,10 @@ data class CytoConfig(
     override val rollingResistance: Frac = Frac(0),
     override val collisionSpeedDamageThreshold: Frac = Frac(0),
 
-    /** Soft-spring gains for cell connections (see SpringConstraintSystem). */
-    val springStiffness: Frac = Frac(1, 4),
+    /** Soft-spring gains for cell connections (see SpringConstraintSystem). Connectivity
+     *  relaxation keeps clusters stable, so the effective per-cell stiffness ≈ this value
+     *  regardless of neighbour count — safe to push up for a snappier membrane. */
+    val springStiffness: Frac = Frac(1, 2),
     val springDamping: Frac = Frac(3, 4),
 
     /** Repulsion impulse fraction for overlapping, non-connected cells. */
