@@ -1,5 +1,6 @@
 package org.emerge.sim.core.physics.systems
 
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimInput
 import org.emerge.sim.core.ecs.EcsSystem
@@ -37,7 +38,13 @@ object SpringConstraintSystem : EcsSystem<PhysicsTuning, SimState, SimInput> {
         builder: SimBuilder,
         inputs: Map<PlayerId, SimInput>,
     ) {
-        for ((id, comp) in builder.entries<SpringConstraintComponent>()) {
+        val springComps = builder.entries<SpringConstraintComponent>()
+        // Relaxation divides each correction by the larger endpoint's spring count. Read
+        // that count from a flat map built once, instead of a per-spring component lookup.
+        val springCounts = HashMap<EntityId, Int>(springComps.size)
+        for ((id, comp) in springComps) springCounts[id] = comp.springs.size
+
+        for ((id, comp) in springComps) {
             if (comp.springs.isEmpty()) continue
             val transformA = builder.getComponent<TransformComponent>(id) ?: continue
             val motionA = builder.getComponent<MotionComponent>(id) ?: continue
@@ -66,7 +73,7 @@ object SpringConstraintSystem : EcsSystem<PhysicsTuning, SimState, SimInput> {
                 val rawClosingSpeed = lengthError * spring.stiffness + separationSpeed * spring.damping
                 // Under-relax by connectivity so a clustered body's many springs don't sum
                 // to an unstable over-correction (Jacobi stability). Lone springs: ÷1.
-                val otherCount = builder.getComponent<SpringConstraintComponent>(other)?.springs?.size ?: 1
+                val otherCount = springCounts[other] ?: 1
                 val relaxation = maxOf(comp.springs.size, otherCount, 1)
                 val closingSpeed = rawClosingSpeed / relaxation
 
