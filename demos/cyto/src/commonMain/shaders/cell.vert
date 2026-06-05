@@ -17,6 +17,8 @@ out vec2 v_texCoords;
 
 void main() {
     mat4 mvp = mat4(uMvp[0], uMvp[1], uMvp[2], uMvp[3]);
-    v_texCoords = vec2((aPos.x + 1.0) * 0.5, (aPos.y + 1.0) * 0.5);
+    // v flipped vs. world-y to match Cyto's original SpriteBatch UV orientation, so the
+    // fragment shader's membrane "necks" point toward the right neighbours.
+    v_texCoords = vec2((aPos.x + 1.0) * 0.5, (1.0 - aPos.y) * 0.5);
     gl_Position = mvp * vec4(aPos, 0.0, 1.0);
 }
