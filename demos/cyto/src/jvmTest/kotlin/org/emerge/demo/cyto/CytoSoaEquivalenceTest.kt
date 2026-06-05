@@ -24,6 +24,7 @@ import org.emerge.sim.core.sim.SimState
 import kotlin.math.ceil
 import kotlin.math.sqrt
 import kotlin.test.Test
+import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
@@ -52,7 +53,47 @@ class CytoSoaEquivalenceTest {
         }
     }
 
-    private fun runScenario(initial: SimState, label: String, executor: ParallelExecutor?) {
+    /**
+     * Growing colony: Stem cells that divide on tick 1 (cooldown 0, energy 4), plus an isolated
+     * low-energy cell that decays to death on tick 2. Exercises the SoA lifecycle — division
+     * (daughter append + id allocation + CSR rebuild), death (tombstone + compact), and any
+     * stress-breaks during settling — and asserts byte-identity vs the AoS reducer every tick.
+     */
+    @Test
+    fun growingColonyIsBitIdentical() {
+        // Sanity: the scenario must actually exercise the lifecycle, else the comparison is
+        // vacuous. Tick 1 divides the 9 Stem cells (10 -> 19); tick 2 kills the doomed cell.
+        run {
+            val r = CytoReducer()
+            val input = mapOf(PlayerId(0) to CytoInput())
+            var s = buildGrowingColony()
+            val before = s.components.getTable<CytoCellComponent>().asMap().size
+            s = r.reduce(cfg, s, input)
+            val afterT1 = s.components.getTable<CytoCellComponent>().asMap().size
+            s = r.reduce(cfg, s, input)
+            val afterT2 = s.components.getTable<CytoCellComponent>().asMap().size
+            assertTrue(afterT1 > before, "expected division growth: before=$before afterT1=$afterT1")
+            assertTrue(afterT2 < afterT1, "expected a death on tick 2: afterT1=$afterT1 afterT2=$afterT2")
+        }
+
+        // Compare EVERY tick (the structural path is the most fragile — catch drift the moment
+        // it appears) up to 250, both sequential and parallel.
+        val dense = (1..250).toList().toIntArray()
+        runScenario(buildGrowingColony(), "growing-seq", null, dense)
+        val executor = ParallelExecutor()
+        try {
+            runScenario(buildGrowingColony(), "growing-par", executor, dense)
+        } finally {
+            executor.close()
+        }
+    }
+
+    private fun runScenario(
+        initial: SimState,
+        label: String,
+        executor: ParallelExecutor?,
+        checkpoints: IntArray = this.checkpoints,
+    ) {
         val reducer = CytoReducer()
         val soa = CytoSoaReducer(cfg, executor)
         val world = CytoWorld.fromSimState(initial)
@@ -158,6 +199,39 @@ class CytoSoaEquivalenceTest {
                 if (row + 1 < side) grid[(row + 1) * side + col]?.let { addSpring(builder, id, it, cfg) }
             }
         }
+        return builder.build()
+    }
+
+    /** A 3×3 mesh of Stem cells primed to divide on tick 1, plus one doomed isolated cell. */
+    private fun buildGrowingColony(): SimState {
+        val builder = SimBuilder(SimState())
+        val side = 3
+        val spacing = 2.0f
+        val grid = arrayOfNulls<EntityId>(side * side)
+        for (row in 0 until side) {
+            for (col in 0 until side) {
+                val x = (col - side / 2) * spacing
+                val y = (row - side / 2) * spacing
+                val id = builder.spawnCell(
+                    pos = CytoUnits.coord2(x, y), vel = Coord2.zero,
+                    type = CellType.Stem, chemicals = mapOf("energy" to 4f), logicalRadius = 1f,
+                )
+                builder.update<CytoCellComponent>(id) { (it!!).copy(divideCooldown = 0f) }
+                grid[row * side + col] = id
+            }
+        }
+        for (row in 0 until side) {
+            for (col in 0 until side) {
+                val id = grid[row * side + col]!!
+                if (col + 1 < side) addSpring(builder, id, grid[row * side + col + 1]!!, cfg)
+                if (row + 1 < side) addSpring(builder, id, grid[(row + 1) * side + col]!!, cfg)
+            }
+        }
+        // An isolated low-energy cell whose decay drives it to 0 energy → death on tick 2.
+        builder.spawnCell(
+            pos = CytoUnits.coord2(50f, 50f), vel = Coord2.zero,
+            type = CellType.Blank, chemicals = mapOf("energy" to 0.0001f), logicalRadius = 1f,
+        )
         return builder.build()
     }
 }

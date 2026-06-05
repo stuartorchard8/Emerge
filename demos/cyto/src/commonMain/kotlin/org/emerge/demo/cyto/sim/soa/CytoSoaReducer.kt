@@ -42,13 +42,16 @@ class CytoSoaReducer(
     private val executor: ParallelExecutor? = null,
 ) {
     private val dt = 1f / 64f
-    private val lifecycle = CytoLifecycle(cfg)
+    private val lifecycleOps = CytoLifecycle(cfg)
 
     // intent scratch, reused across ticks
     private val weldLo = ArrayList<Int>()   // entityId values, lo < hi
     private val weldHi = ArrayList<Int>()
     private val divideIds = ArrayList<Int>()
     private val destroyIds = ArrayList<Int>()
+
+    // per-directed-CSR-end break flags, set in the connections phase, drained by applyBreaks
+    private var brokenEdge = BooleanArray(0)
 
     // reusable additive impulse partition for the spring solver (velX/velY channels)
     private val forcePartition = AdditivePartition(channels = 2)
@@ -208,7 +211,11 @@ class CytoSoaReducer(
     // Every write is per-cell-disjoint (a cell's own CSR entries + its own impulse), so this
     // parallelises by cell range with no merge and is bit-identical to the sequential sweep.
     private fun connections(w: CytoWorld) {
+        val ends = w.csr.ends
+        if (brokenEdge.size < ends) brokenEdge = BooleanArray(ends) else brokenEdge.fill(false, 0, ends)
         ColumnPartition.disjoint(w.count, executor) { s, e -> connectionsRange(w, s, e) }
+        // breaks take effect before the spring solver (matching the engine reducer's ordering)
+        lifecycleOps.applyBreaks(w, brokenEdge)
     }
 
     private fun connectionsRange(w: CytoWorld, start: Int, end: Int) {
@@ -229,6 +236,7 @@ class CytoSoaReducer(
                 w.csr.stiffRaw[k] = cfg.springStiffness.raw
                 w.csr.dampRaw[k] = cfg.springDamping.raw
                 w.csr.edgeAux[k] = damage
+                if (damage > cfg.connectionBreakDamage) brokenEdge[k] = true
             }
             // 3. connected-cell drag ("velocity shielding").
             if (w.csr.offset[i] == w.csr.offset[i + 1]) continue
@@ -289,7 +297,7 @@ class CytoSoaReducer(
 
     // ── lifecycle (CytoLifecycleSystem): weld / division / death ─────────────────
     private fun lifecycle(w: CytoWorld) {
-        lifecycle.apply(w, weldLo, weldHi, divideIds, destroyIds)
+        lifecycleOps.apply(w, weldLo, weldHi, divideIds, destroyIds)
     }
 
     // ── integrate (IntegrationSystem) ───────────────────────────────────────────
