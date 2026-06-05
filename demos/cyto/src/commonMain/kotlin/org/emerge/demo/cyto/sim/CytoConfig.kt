@@ -29,4 +29,8 @@ data class CytoConfig(
 
     /** Stretch (logical units) -> stress, for connection damage. */
     val connectionStressScale: Float = 1f,
+
+    /** Mouse-drag pull: how hard a grabbed cell is pulled toward the pointer, and its damping. */
+    val grabStiffness: Frac = Frac(1, 2),
+    val grabDamping: Frac = Frac(1, 1),
 ) : PhysicsTuning

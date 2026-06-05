@@ -3,6 +3,7 @@ package org.emerge.demo.cyto.sim
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
+import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
@@ -42,5 +43,19 @@ class CytoReducerTest {
         val cellCount = state.components.getTable<CytoCellComponent>().keys().size
         assertTrue(cellCount > 1, "stem cell should divide into a colony; got $cellCount")
         assertTrue(springCount(state) > 0, "divided cells should be spring-connected")
+    }
+
+    @Test
+    fun grabbedCellMovesTowardPointer() {
+        var state = run {
+            val b = SimBuilder(SimState())
+            b.spawnCell(Coord2.zero, Coord2.zero, CellType.Blank, mapOf("energy" to 1f), MIN_RADIUS)
+            b.build()
+        }
+        val id = state.components.getTable<CytoCellComponent>().keys().first()
+        val grabInput = mapOf(PlayerId(0) to CytoInput(grab = CytoInput.Grab(id, 5f, 0f)))
+        repeat(30) { state = reducer.reduce(cfg, state, grabInput) }
+        val pos = state.components.getTable<TransformComponent>()[id]!!.pos
+        assertTrue(CytoUnits.toLogical(pos.x) > 0.5f, "grabbed cell should move toward the +x pointer")
     }
 }

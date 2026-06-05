@@ -4,6 +4,7 @@ import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.CytoRenderer
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.TouchMode
+import org.emerge.sim.core.EntityId
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.opengl.GL33C
 import org.lwjgl.system.Configuration
@@ -131,14 +132,19 @@ object CytoSceneView {
                     state.dragged = false
                     state.lastX = px.first
                     state.lastY = px.second
+                    // Press on a cell -> grab it; on empty space -> arm camera pan.
+                    val world = renderer.screenToWorld(px.first, px.second)
+                    state.grabId = controller.cellAt(world[0], world[1])
                 }
                 GLFW_RELEASE -> {
                     state.primaryDown = false
+                    controller.releaseGrab()
                     if (!state.dragged) {
                         val (mode, type) = modeAndType()
                         val world = renderer.screenToWorld(px.first, px.second)
                         controller.tap(world[0], world[1], mode, type)
                     }
+                    state.grabId = null
                     state.dragged = false
                 }
             }
@@ -150,7 +156,14 @@ object CytoSceneView {
             val dx = px.first - state.lastX
             val dy = px.second - state.lastY
             if (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX) state.dragged = true
-            renderer.panByPixels(dx, dy)
+
+            val grabId = state.grabId
+            if (grabId != null) {
+                val world = renderer.screenToWorld(px.first, px.second)
+                controller.grab(grabId, world[0], world[1])
+            } else {
+                renderer.panByPixels(dx, dy)
+            }
             state.lastX = px.first
             state.lastY = px.second
         }
@@ -239,6 +252,7 @@ object CytoSceneView {
         var dragged = false
         var lastX = 0f
         var lastY = 0f
+        var grabId: EntityId? = null
     }
 
     private const val DRAG_THRESHOLD_PX = 4f

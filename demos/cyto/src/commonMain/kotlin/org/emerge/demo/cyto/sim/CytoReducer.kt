@@ -3,6 +3,7 @@ package org.emerge.demo.cyto.sim
 import org.emerge.demo.cyto.sim.systems.CytoBiologySystem
 import org.emerge.demo.cyto.sim.systems.CytoConnectionMaintenanceSystem
 import org.emerge.demo.cyto.sim.systems.CytoContactSystem
+import org.emerge.demo.cyto.sim.systems.CytoGrabSystem
 import org.emerge.demo.cyto.sim.systems.CytoInteractionSystem
 import org.emerge.demo.cyto.sim.systems.CytoLifecycleSystem
 import org.emerge.sim.core.PlayerId
@@ -35,7 +36,7 @@ class CytoReducer : SimReducer<CytoConfig, SimState, CytoInput> {
         Phase("contacts", ContactSystem(), CytoContactSystem),
         Phase("biology", CytoBiologySystem),
         Phase("connections", CytoConnectionMaintenanceSystem),
-        Phase("forces", SpringConstraintSystem),
+        Phase("forces", SpringConstraintSystem, CytoGrabSystem),
         Phase("lifecycle", CytoLifecycleSystem),
         Phase("integrate", IntegrationSystem),
     )
