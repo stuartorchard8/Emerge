@@ -32,10 +32,13 @@ data class Frac2(val x: Frac, val y: Frac) {
     }
     private var lenMax = abs(x) + abs(y)
     fun capMax(v: Frac) { lenMax.coerceAtLeast(v) }
-    val norm by lazy { Norm(
-        x/len,
-        y/len,
-    ) }
+    val norm by lazy {
+        if (len.raw==0L) Norm(Frac(1,1), Frac(0))
+        else Norm(
+            x/len,
+            y/len,
+        )
+    }
 
 
     // Potentially faster, but less accurate

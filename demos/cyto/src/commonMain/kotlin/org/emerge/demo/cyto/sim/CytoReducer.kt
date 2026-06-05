@@ -10,6 +10,7 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.ecs.Phase
 import org.emerge.sim.core.ecs.Pipeline
+import org.emerge.sim.core.ecs.PipelineProfiler
 import org.emerge.sim.core.ecs.runSequential
 import org.emerge.sim.core.physics.systems.ContactSystem
 import org.emerge.sim.core.physics.systems.ImpulseResetSystem
@@ -29,7 +30,10 @@ import org.emerge.sim.core.sim.SimState
  * connection maintenance refreshes spring rest lengths; the spring solver runs after; and
  * structural changes (weld/divide/destroy) apply last, taking effect next tick.
  */
-class CytoReducer : SimReducer<CytoConfig, SimState, CytoInput> {
+class CytoReducer(
+    /** Opt-in per-phase timing. Null in production (zero overhead); set by benchmarks. */
+    private val profiler: PipelineProfiler? = null,
+) : SimReducer<CytoConfig, SimState, CytoInput> {
     private val pipeline: Pipeline<CytoConfig, SimState, CytoInput> = listOf(
         Phase("interact", CytoInteractionSystem),
         Phase("reset", ImpulseResetSystem),
@@ -43,7 +47,7 @@ class CytoReducer : SimReducer<CytoConfig, SimState, CytoInput> {
 
     override fun reduce(cfg: CytoConfig, state: SimState, inputs: Map<PlayerId, CytoInput>): SimState {
         val builder = SimBuilder(state)
-        runSequential(cfg, builder, inputs, pipeline)
+        runSequential(cfg, builder, inputs, pipeline, profiler)
         return builder.build()
     }
 
