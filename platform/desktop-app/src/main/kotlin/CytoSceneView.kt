@@ -6,7 +6,6 @@ import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
 import org.emerge.sim.core.EntityId
 import org.lwjgl.glfw.GLFW.*
-import org.lwjgl.opengl.GL33C
 import org.lwjgl.system.Configuration
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
@@ -55,9 +54,7 @@ object CytoSceneView {
 
             val frame = controller.tick(delta)
 
-            GL33C.glClearColor(0f, 0f, 0f, 1f)
-            GL33C.glClear(GL33C.GL_COLOR_BUFFER_BIT)
-            renderer.draw(frame)
+            renderer.draw(frame) // renderer fills its own background
             drawReadouts(controller, renderer, controls, mouse.grabId)
             controls.draw()
 

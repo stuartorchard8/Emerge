@@ -1,7 +1,6 @@
 package org.emerge.androidapp
 
 import android.content.Context
-import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.view.MotionEvent
 import org.emerge.demo.cyto.CytoController
@@ -60,9 +59,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                 lastTimeNanos = now
 
                 val frame = controller.tick(delta)
-                GLES20.glClearColor(0f, 0f, 0f, 1f)
-                GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-                r.draw(frame)
+                r.draw(frame) // renderer fills its own background
                 for (readout in controller.readouts(grabId, c.showChemicals)) {
                     val screen = r.worldToScreen(readout.x, readout.y)
                     c.drawLabel(readout.text, screen[0], screen[1] - 28f, pixelHeight = 12f, color = 0x00FF22FF)

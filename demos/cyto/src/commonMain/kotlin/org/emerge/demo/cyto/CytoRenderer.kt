@@ -2,6 +2,7 @@ package org.emerge.demo.cyto
 
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.ui.CytoRectShader
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.Mat4
 import org.emerge.sim.core.physics.components.ColliderComponent
@@ -19,6 +20,11 @@ import kotlin.math.min
  */
 class CytoRenderer {
     private val shader = CytoCellShader()
+
+    // Full-screen background fill, drawn first each frame — clears the previous frame
+    // without a platform-specific glClear (the engine GPU doesn't expose one), so this
+    // works identically on desktop, Android, and web.
+    private val bgShader = CytoRectShader()
 
     // The cell shader does `min(u_color, texture)`, so a flat white texture yields the
     // cell's colour; the disc shape + shading come from the shader, not the texture. Built
@@ -41,6 +47,10 @@ class CytoRenderer {
     private val mvp = Mat4.scratch()
     private val colorTmp = FloatArray(4)
     private val neighbourTmp = FloatArray(CytoCellShader.MAX_NEIGHBOURS * 4)
+
+    private val BG_CENTER = floatArrayOf(0f, 0f)
+    private val BG_HALF_SIZE = floatArrayOf(1f, 1f)
+    private val BG_COLOR = floatArrayOf(0f, 0f, 0f, 1f)
 
     fun setResolution(widthPx: Float, heightPx: Float) {
         resW = max(1f, widthPx)
@@ -95,6 +105,11 @@ class CytoRenderer {
 
     fun draw(frame: CytoFrame) {
         computeProjection()
+
+        // Background fill (opaque) — clears the frame.
+        GPU.disableBlend()
+        bgShader.drawInstanced(1, BG_CENTER, BG_HALF_SIZE, BG_COLOR)
+
         GPU.enableBlend()
         GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
         shader.begin(cellTextureId)
@@ -151,6 +166,7 @@ class CytoRenderer {
 
     fun cleanup() {
         shader.deleteProgram()
+        bgShader.deleteProgram()
         GPU.deleteTextures(cellTextureId)
     }
 

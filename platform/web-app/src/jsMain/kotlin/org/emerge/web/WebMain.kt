@@ -35,6 +35,12 @@ fun main() {
 
     syncCanvasSize()
 
+    // Cyto demo: ?demo=cyto runs the native Cyto sim instead of Scavengers.
+    if (URL(window.location.href).searchParams.get("demo") == "cyto") {
+        startCyto(canvas)
+        return
+    }
+
     val renderer = ScavengersRenderer(Vec2(1f, 1f))
     renderer.setResolution(Vec2(canvas.width.toFloat(), canvas.height.toFloat()))
     val input = WebInputHandler()

@@ -22,6 +22,7 @@ kotlin {
                 implementation(project(":engine:net:api"))
                 implementation(project(":engine:net:transports:websocket"))
                 implementation(project(":demos:scavengers"))
+                implementation(project(":demos:cyto"))
             }
             resources.srcDir("$rootDir/assets")
         }
