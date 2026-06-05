@@ -17,10 +17,13 @@ import kotlin.math.min
  * fixed-point positions are converted back via [CytoUnits]); the membrane-blend neighbour
  * data is the torus-aware delta to each connected cell, with y flipped to match the shader.
  */
-class CytoRenderer(
-    private val cellTextureId: Int,
-) {
+class CytoRenderer {
     private val shader = CytoCellShader()
+
+    // The cell shader does `min(u_color, texture)`, so a flat white texture yields the
+    // cell's colour; the disc shape + shading come from the shader, not the texture. Built
+    // procedurally so no PNG asset is needed (works identically on desktop/Android/web).
+    private val cellTextureId = createWhiteTexture()
 
     private var resW = 1f
     private var resH = 1f
@@ -138,6 +141,18 @@ class CytoRenderer(
 
     fun cleanup() {
         shader.deleteProgram()
+        GPU.deleteTextures(cellTextureId)
+    }
+
+    private fun createWhiteTexture(): Int {
+        val data = ByteArray(2 * 2 * 4) { 0xFF.toByte() }
+        val id = GPU.genTextures()
+        GPU.activeTexture(0)
+        GPU.bindTexture2D(id)
+        GPU.configureTexture2DRepeatLinear()
+        GPU.uploadTextureRGBA8(2, 2, data)
+        GPU.bindTexture2D(0)
+        return id
     }
 
     private fun computeProjection() {

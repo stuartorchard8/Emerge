@@ -22,6 +22,17 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".CytoActivity"
+            android:exported="true"
+            android:label="Cyto"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
     </application>
 
 </manifest>

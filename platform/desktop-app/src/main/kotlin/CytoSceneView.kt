@@ -37,8 +37,7 @@ object CytoSceneView {
         // GL context must be current (initWindow) before any shader/texture is created.
         val window = initWindow(onSave = { saveSnapshot(controller) }, onLoad = { loadSnapshot(controller) })
 
-        val cellTextureId = CytoCellTexture.load()
-        val renderer = CytoRenderer(cellTextureId)
+        val renderer = CytoRenderer()
         val controls = CytoControls()
         autoLoadSnapshotAtStartup(controller)
 
@@ -65,14 +64,11 @@ object CytoSceneView {
             glfwSwapBuffers(window)
         }
 
-        GPU_deleteTexture(cellTextureId)
         renderer.cleanup()
         controls.cleanup()
         glfwDestroyWindow(window)
         glfwTerminate()
     }
-
-    private fun GPU_deleteTexture(id: Int) = org.emerge.render.torus.GPU.deleteTextures(id)
 
     private fun drawReadouts(
         controller: CytoController,

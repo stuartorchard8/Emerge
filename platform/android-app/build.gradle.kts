@@ -49,6 +49,7 @@ android {
 dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation(project(":demos:scavengers"))
+    implementation(project(":demos:cyto"))
     implementation(project(":engine:render:torus"))
     implementation(project(":engine:sim:core"))
     implementation(project(":engine:sim:sync"))
