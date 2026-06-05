@@ -100,6 +100,31 @@ class CytoController(
         pendingDetaches.add(entity)
     }
 
+    /** A cell's chemical readout: logical position + a multi-line "name:value" label. */
+    class Readout(val x: Float, val y: Float, val text: String)
+
+    /** Readouts for the [grabbed] cell, or for every cell when [all] (the Debug toggle). */
+    fun readouts(grabbed: EntityId?, all: Boolean): List<Readout> {
+        if (grabbed == null && !all) return emptyList()
+        val state = stepper.state
+        val cells = state.components.getTable<CytoCellComponent>().asMap()
+        val transforms = state.components.getTable<TransformComponent>()
+        val out = ArrayList<Readout>()
+        for ((id, cell) in cells) {
+            if (!all && id != grabbed) continue
+            val transform = transforms[id] ?: continue
+            val text = cell.chemicals.entries.joinToString("\n") { "${it.key}:${fmt(it.value)}" }
+            if (text.isEmpty()) continue
+            out.add(Readout(CytoUnits.toLogical(transform.pos.x), CytoUnits.toLogical(transform.pos.y), text))
+        }
+        return out
+    }
+
+    private fun fmt(v: Float): String {
+        val hundredths = (v * 100f).toInt()
+        return "${hundredths / 100}.${(kotlin.math.abs(hundredths) % 100).toString().padStart(2, '0')}"
+    }
+
     // ── Persistence ─────────────────────────────────────────────────────────────
 
     fun snapshotBytes(): ByteArray = CytoSaveCodec.encode(stepper.state)

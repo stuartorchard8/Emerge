@@ -2,8 +2,8 @@ package org.emerge.desktop
 
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.CytoRenderer
-import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.TouchMode
+import org.emerge.demo.cyto.ui.CytoControls
 import org.emerge.sim.core.EntityId
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.opengl.GL33C
@@ -17,16 +17,14 @@ import kotlin.math.max
 import kotlin.math.pow
 
 /**
- * Desktop host for the native (Box2D-free) Cyto demo, mirroring [DrocketsSceneView]: a
- * GLFW/LWJGL GL 3.3 window driving a [CytoController] ([org.emerge.demo.cyto.sim.CytoReducer])
- * and [CytoRenderer]. Left-drag pans, scroll zooms, a tap spawns/acts on cells, digits 1–6
- * pick the touch mode, `[`/`]` cycle the cell type, and F5/F9 save/load a snapshot.
- *
- * Cell-drag (grab) is deferred; the bespoke Cyto control UI is shown in the window title.
+ * Desktop host for the native Cyto demo. Drives a [CytoController] + [CytoRenderer] and
+ * draws the on-screen [CytoControls] overlay (the faithful Cyto control UI). Pointer-down
+ * goes to the UI first; if it misses, a press on a cell grabs it (Sticky/Detach hold-mode
+ * effects applied), a press on empty space pans, scroll zooms, and a click spawns/acts per
+ * the controls' current mode + cell type. F5/F9 save/load.
  */
 object CytoSceneView {
     private val SAVE_PATH: Path = Path.of("cyto-save.bin")
-    private val TOUCH_MODES = TouchMode.entries
 
     fun start() {
         Configuration.STACK_SIZE.set(512)
@@ -35,27 +33,22 @@ object CytoSceneView {
 
     private fun runGl() {
         val controller = CytoController()
-        var mode = TouchMode.Base
-        var cellType = CellType.Stem
 
-        val window = initWindow(
-            onSave = { saveSnapshot(controller) },
-            onLoad = { loadSnapshot(controller) },
-            onModeKey = { win, index -> mode = TOUCH_MODES.getOrElse(index) { mode }; updateTitle(win, mode, cellType) },
-            onCycleType = { win, dir -> cellType = cycleType(cellType, dir); updateTitle(win, mode, cellType) },
-        )
-        updateTitle(window, mode, cellType)
+        // GL context must be current (initWindow) before any shader/texture is created.
+        val window = initWindow(onSave = { saveSnapshot(controller) }, onLoad = { loadSnapshot(controller) })
 
         val cellTextureId = CytoCellTexture.load()
         val renderer = CytoRenderer(cellTextureId)
+        val controls = CytoControls()
         autoLoadSnapshotAtStartup(controller)
 
-        installMouseHandlers(window, controller, renderer) { mode to cellType }
+        val mouse = MouseState()
+        installMouseHandlers(window, controller, renderer, controls, mouse)
 
         var lastTime = glfwGetTime()
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents()
-            updateResolution(window, renderer)
+            updateResolution(window, renderer, controls)
 
             val now = glfwGetTime()
             val delta = (now - lastTime).toFloat().coerceIn(0f, 0.25f)
@@ -66,24 +59,36 @@ object CytoSceneView {
             GL33C.glClearColor(0f, 0f, 0f, 1f)
             GL33C.glClear(GL33C.GL_COLOR_BUFFER_BIT)
             renderer.draw(frame)
+            drawReadouts(controller, renderer, controls, mouse.grabId)
+            controls.draw()
 
             glfwSwapBuffers(window)
         }
 
         GPU_deleteTexture(cellTextureId)
         renderer.cleanup()
+        controls.cleanup()
         glfwDestroyWindow(window)
         glfwTerminate()
     }
 
     private fun GPU_deleteTexture(id: Int) = org.emerge.render.torus.GPU.deleteTextures(id)
 
-    private fun initWindow(
-        onSave: () -> Unit,
-        onLoad: () -> Unit,
-        onModeKey: (window: Long, index: Int) -> Unit,
-        onCycleType: (window: Long, dir: Int) -> Unit,
-    ): Long {
+    private fun drawReadouts(
+        controller: CytoController,
+        renderer: CytoRenderer,
+        controls: CytoControls,
+        grabId: EntityId?,
+    ) {
+        val readouts = controller.readouts(grabId, controls.showChemicals)
+        if (readouts.isEmpty()) return
+        for (r in readouts) {
+            val screen = renderer.worldToScreen(r.x, r.y)
+            controls.drawLabel(r.text, screen[0], screen[1] - 28f, pixelHeight = 12f, color = 0x00FF22FF)
+        }
+    }
+
+    private fun initWindow(onSave: () -> Unit, onLoad: () -> Unit): Long {
         if (!glfwInit()) error("GLFW init failed")
         glfwDefaultWindowHints()
         glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE)
@@ -102,9 +107,6 @@ object CytoSceneView {
                 GLFW_KEY_ESCAPE -> glfwSetWindowShouldClose(win, true)
                 GLFW_KEY_F5 -> onSave()
                 GLFW_KEY_F9 -> onLoad()
-                GLFW_KEY_LEFT_BRACKET -> onCycleType(win, -1)
-                GLFW_KEY_RIGHT_BRACKET -> onCycleType(win, 1)
-                in GLFW_KEY_1..GLFW_KEY_6 -> onModeKey(win, key - GLFW_KEY_1)
             }
         }
 
@@ -119,44 +121,46 @@ object CytoSceneView {
         window: Long,
         controller: CytoController,
         renderer: CytoRenderer,
-        modeAndType: () -> Pair<TouchMode, CellType>,
+        controls: CytoControls,
+        state: MouseState,
     ) {
-        val state = MouseState()
-
         glfwSetMouseButtonCallback(window) { win, button, action, _ ->
             if (button != GLFW_MOUSE_BUTTON_LEFT) return@glfwSetMouseButtonCallback
             val px = cursorPixel(win)
             when (action) {
                 GLFW_PRESS -> {
-                    state.primaryDown = true
                     state.dragged = false
                     state.lastX = px.first
                     state.lastY = px.second
-                    // Press on a cell -> grab it; on empty space -> arm camera pan.
+                    // UI first: a hit consumes the press.
+                    if (controls.hitTest(px.first, px.second)) {
+                        state.uiConsumed = true
+                        state.grabId = null
+                        return@glfwSetMouseButtonCallback
+                    }
+                    state.uiConsumed = false
                     val world = renderer.screenToWorld(px.first, px.second)
-                    val (mode, _) = modeAndType()
                     val hit = controller.cellAt(world[0], world[1])
                     state.grabId = hit
-                    state.grabSticky = mode == TouchMode.Sticky
-                    // Detach is a hold mode: cut the cell's connections on press.
-                    if (hit != null && mode == TouchMode.Detach) controller.detach(hit)
+                    if (hit != null && controls.touchMode == TouchMode.Detach) controller.detach(hit)
                 }
                 GLFW_RELEASE -> {
-                    state.primaryDown = false
-                    controller.releaseGrab()
-                    if (!state.dragged) {
-                        val (mode, type) = modeAndType()
+                    if (!state.uiConsumed && !state.dragged) {
                         val world = renderer.screenToWorld(px.first, px.second)
-                        controller.tap(world[0], world[1], mode, type)
+                        controller.tap(world[0], world[1], controls.touchMode, controls.cellType)
                     }
+                    controller.releaseGrab()
                     state.grabId = null
                     state.dragged = false
+                    state.uiConsumed = false
                 }
             }
         }
 
         glfwSetCursorPosCallback(window) { win, _, _ ->
-            if (!state.primaryDown) return@glfwSetCursorPosCallback
+            if (state.uiConsumed) return@glfwSetCursorPosCallback
+            // Only react while the primary button is held (grabId set on a cell, else pan).
+            if (!isPrimaryDown(win)) return@glfwSetCursorPosCallback
             val px = cursorPixel(win)
             val dx = px.first - state.lastX
             val dy = px.second - state.lastY
@@ -165,7 +169,7 @@ object CytoSceneView {
             val grabId = state.grabId
             if (grabId != null) {
                 val world = renderer.screenToWorld(px.first, px.second)
-                controller.grab(grabId, world[0], world[1], sticky = state.grabSticky)
+                controller.grab(grabId, world[0], world[1], sticky = controls.touchMode == TouchMode.Sticky)
             } else {
                 renderer.panByPixels(dx, dy)
             }
@@ -180,12 +184,18 @@ object CytoSceneView {
         }
     }
 
-    private fun updateResolution(window: Long, renderer: CytoRenderer) {
+    private fun isPrimaryDown(win: Long): Boolean =
+        glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS
+
+    private fun updateResolution(window: Long, renderer: CytoRenderer, controls: CytoControls) {
         MemoryStack.stackPush().use { st ->
             val sizeX = st.mallocInt(1)
             val sizeY = st.mallocInt(1)
             glfwGetFramebufferSize(window, sizeX, sizeY)
-            renderer.setResolution(max(1f, sizeX[0].toFloat()), max(1f, sizeY[0].toFloat()))
+            val w = max(1f, sizeX[0].toFloat())
+            val h = max(1f, sizeY[0].toFloat())
+            renderer.setResolution(w, h)
+            controls.setResolution(w, h)
         }
     }
 
@@ -207,16 +217,6 @@ object CytoSceneView {
         )
     }
 
-    private fun updateTitle(window: Long, mode: TouchMode, type: CellType) {
-        glfwSetWindowTitle(window, "Cyto — mode=${mode.name}  type=${type.name}  ([ ] cycle type, 1-6 mode, F5/F9 save/load)")
-    }
-
-    private fun cycleType(current: CellType, dir: Int): CellType {
-        val entries = CellType.entries
-        val next = (current.ordinal + dir + entries.size) % entries.size
-        return entries[next]
-    }
-
     private fun saveSnapshot(controller: CytoController) {
         try {
             val bytes = controller.snapshotBytes()
@@ -235,7 +235,7 @@ object CytoSceneView {
             }
             val bytes = Files.readAllBytes(SAVE_PATH)
             controller.restoreSnapshot(bytes)
-            println("Loaded Cyto snapshot (${bytes.size} bytes) from ${SAVE_PATH.toAbsolutePath()}")
+            println("Loaded Cyto snapshot (${bytes.size} bytes)")
         } catch (t: Throwable) {
             println("Failed loading Cyto snapshot: ${t.message}")
         }
@@ -244,21 +244,19 @@ object CytoSceneView {
     private fun autoLoadSnapshotAtStartup(controller: CytoController) {
         if (!Files.exists(SAVE_PATH)) return
         try {
-            val bytes = Files.readAllBytes(SAVE_PATH)
-            controller.restoreSnapshot(bytes)
-            println("Auto-loaded Cyto snapshot (${bytes.size} bytes)")
+            controller.restoreSnapshot(Files.readAllBytes(SAVE_PATH))
+            println("Auto-loaded Cyto snapshot")
         } catch (t: Throwable) {
             println("Failed auto-loading Cyto snapshot: ${t.message}")
         }
     }
 
     private class MouseState {
-        var primaryDown = false
         var dragged = false
+        var uiConsumed = false
         var lastX = 0f
         var lastY = 0f
         var grabId: EntityId? = null
-        var grabSticky = false
     }
 
     private const val DRAG_THRESHOLD_PX = 4f

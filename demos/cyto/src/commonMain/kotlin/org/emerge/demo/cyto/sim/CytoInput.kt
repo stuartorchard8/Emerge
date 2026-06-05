@@ -28,5 +28,15 @@ data class CytoInput(
     }
 }
 
-/** Pointer behaviour, ported from Cyto's TouchMode. */
-enum class TouchMode { Base, Sticky, Detach, Activate, Delete, Set }
+/** Whether a touch mode acts while held or on tap-release (ported from Cyto). */
+enum class TouchModeGroup { Hold, TapUp }
+
+/** Pointer behaviour, ported from Cyto's TouchMode (with its swatch colours + groups). */
+enum class TouchMode(val color: Long, val group: TouchModeGroup) {
+    Base(0xDDDDDDFF, TouchModeGroup.Hold),
+    Sticky(0x009900FF, TouchModeGroup.Hold),
+    Detach(0xEEAA22FF, TouchModeGroup.Hold),
+    Activate(0x0000FFFF, TouchModeGroup.TapUp),
+    Delete(0xFF0000FF, TouchModeGroup.TapUp),
+    Set(0xAA00AAFF, TouchModeGroup.TapUp),
+}

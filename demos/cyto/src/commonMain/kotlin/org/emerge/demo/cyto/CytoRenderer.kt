@@ -68,6 +68,18 @@ class CytoRenderer(
         )
     }
 
+    /** Logical world (x, y) -> framebuffer pixel `[px, py]` (inverse of [screenToWorld]). */
+    fun worldToScreen(worldX: Float, worldY: Float): FloatArray {
+        val aspect = resW / resH
+        val viewWidth = viewHeight * aspect
+        val ndcX = (worldX - centerX) / (viewWidth * 0.5f)
+        val ndcY = (worldY - centerY) / (viewHeight * 0.5f)
+        return floatArrayOf(
+            (ndcX + 1f) * 0.5f * resW,
+            (1f - ndcY) * 0.5f * resH,
+        )
+    }
+
     fun draw(frame: CytoFrame) {
         computeProjection()
         GPU.enableBlend()
