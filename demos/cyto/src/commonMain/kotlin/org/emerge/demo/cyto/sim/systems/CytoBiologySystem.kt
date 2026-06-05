@@ -55,7 +55,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
             works[id] = CellWork(
                 chemicals = chem,
                 transfers = HashMap(),
-                suppression = HashMap(cell.suppression),
+                initialSuppression = cell.suppression,
                 touch = cell.touch,
                 logicalRadius = cell.logicalRadius,
                 divideCooldown = cell.divideCooldown,

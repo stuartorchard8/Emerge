@@ -23,7 +23,7 @@ class Gene(val inputs: List<GeneInput>, val output: GeneOutput)
 class CellWork(
     val chemicals: MutableMap<String, Float>,
     val transfers: MutableMap<String, Float>,
-    val suppression: MutableMap<String, Float>,
+    initialSuppression: Map<String, Float>,
     var touch: Float,
     var logicalRadius: Float,
     var divideCooldown: Float,
@@ -33,6 +33,17 @@ class CellWork(
     val enzymes = mutableSetOf<Pair<String, String>>()
     var isStickyTemp = false
     var dividing = false
+
+    // Suppression is read every tick but written only by an Inhibit gene (currently none
+    // exist). Share the source map read-only and copy-on-write on the first [inhibit], so the
+    // common case allocates nothing instead of cloning an (almost always empty) map per cell.
+    private val initialSuppression: Map<String, Float> = initialSuppression
+    private var suppressionOverride: MutableMap<String, Float>? = null
+    val suppression: Map<String, Float> get() = suppressionOverride ?: initialSuppression
+    fun inhibit(chem: String, amount: Float) {
+        val m = suppressionOverride ?: HashMap(initialSuppression).also { suppressionOverride = it }
+        m[chem] = (m[chem] ?: 0f) + amount
+    }
 }
 
 private fun Gene.evaluate(cell: CellWork, delta: Float) {
@@ -48,7 +59,7 @@ private fun Gene.evaluate(cell: CellWork, delta: Float) {
     }
     when (output.type) {
         GeneOutputType.Contract -> cell.contraction += activation
-        GeneOutputType.Inhibit -> cell.suppression[output.chem1] = (cell.suppression[output.chem1] ?: 0f) + activation
+        GeneOutputType.Inhibit -> cell.inhibit(output.chem1, activation)
         GeneOutputType.Enzyme -> if (activation > 0f) cell.enzymes.add(Pair(output.chem1, output.chem2))
         GeneOutputType.Sticky -> cell.isStickyTemp = true
         GeneOutputType.Mitosis, GeneOutputType.Meiosis, GeneOutputType.Reinforce -> Unit
