@@ -111,6 +111,7 @@ Client-side can infer velocity and possibly forces to apply when packets are spa
   (`./gradlew :platform:desktop-app:runCyto`). The cell sim is a deterministic ECS
   reducer on the engine's fixed-point torus, using a generic `SpringConstraintSystem`
   (added to `:engine:sim:core`) in place of Box2D distance joints. The world wraps
-  (1024×1024 base cells). Module targets Android/JVM/JS. Remaining: cell-drag, web/android
-  host wiring, and visual tuning of the spring/contact feel.
+  (1024×1024 base cells). Module targets Android/JVM/JS, with cell-drag and on-screen
+  controls (faithful CellWorldControls) on both desktop and Android (`CytoActivity`).
+  Remaining: web host wiring.
 
