@@ -23,14 +23,16 @@ data class CytoConfig(
     /** Repulsion impulse fraction for overlapping, non-connected cells. */
     val repulsion: Frac = Frac(1, 2),
 
-    /** Connection breaks when accumulated stress damage exceeds this (original: 3). */
-    val connectionBreakDamage: Float = 3f,
+    /** Connection breaks when accumulated stress damage exceeds this (original: 3). Higher =
+     *  less fragile connections. */
+    val connectionBreakDamage: Float = 8f,
 
     /** Per-tick velocity drag on a connected cell's unshielded velocity (original: ×-10·dt). */
     val connectedDrag: Frac = Frac(10, 64),
 
-    /** Stretch (logical units) -> stress, for connection damage. */
-    val connectionStressScale: Float = 1f,
+    /** Stretch (logical units) -> stress, for connection damage. Lower = a given stretch
+     *  hurts less, so connections tolerate more deformation before they fray. */
+    val connectionStressScale: Float = 0.5f,
 
     /** Mouse-drag pull: how hard a grabbed cell is pulled toward the pointer, and its damping. */
     val grabStiffness: Frac = Frac(1, 2),
