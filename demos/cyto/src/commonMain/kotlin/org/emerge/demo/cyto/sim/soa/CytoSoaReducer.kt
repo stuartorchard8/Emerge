@@ -9,6 +9,8 @@ import org.emerge.demo.cyto.sim.RADIUS_ELASTICITY
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.PipelineProfiler
 import org.emerge.sim.core.ecs.SpatialGrid
+import org.emerge.sim.core.ecs.soa.AdditivePartition
+import org.emerge.sim.core.ecs.soa.ColumnPartition
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
@@ -16,35 +18,31 @@ import org.emerge.sim.core.physics.primitives.Contact
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.sqrt
 import kotlin.time.TimeSource
 
 /**
- * Struct-of-arrays cyto tick — the spike prototype. Runs the same 8-phase pipeline as
- * [org.emerge.demo.cyto.sim.CytoReducer] directly on a persistent [CytoWorld], mutating
- * columns in place (double-buffering pos/vel in integrate) with NO `SimState` rebuild.
+ * Struct-of-arrays cyto tick on the generic [SoaWorld][org.emerge.sim.core.ecs.soa.SoaWorld]
+ * framework. Runs the same 8-phase pipeline as [org.emerge.demo.cyto.sim.CytoReducer] directly
+ * on the persistent [CytoWorld] columns, mutating them in place with NO `SimState` rebuild.
  *
- * Math is done by reconstructing the engine value types (`Frac`/`Coord2`/`Norm`) from the
- * column raws and reusing the exact operators, so results are bit-identical to the engine
- * pipeline; the win is purely structural (column reads, CSR adjacency, no per-tick snapshot
- * rebuild, no per-cell maps/ArrayLists).
+ * Math reconstructs the engine value types (`Frac`/`Coord2`/`Norm`) from the column raws and
+ * reuses the exact operators, so results are bit-identical to the engine pipeline; the win is
+ * structural (column reads, CSR adjacency, no per-tick snapshot rebuild, no per-cell maps).
+ * Parallelism is delegated to the framework's column-partition helpers ([ColumnPartition] /
+ * [AdditivePartition]), each bit-identical to its sequential fallback.
  *
- * Spike scope: energy-only chemistry (no enzyme reactions — see [CytoWorld]); input/grab are
- * no-ops (the benchmark/equivalence harness drive empty input); division/weld/death (lifecycle
- * structural changes) are implemented for the growing-colony scenario but never fire in the
- * settled benchmark on which the go/no-go number is measured.
+ * Lifecycle (weld / division / death) is the growing-colony path implemented by
+ * [CytoLifecycle]; chemistry is energy-only on the dense fast path (no benchmark/colony cell
+ * type mints a second species).
  */
 class CytoSoaReducer(
     private val cfg: CytoConfig,
-    /** Optional worker pool; null → fully sequential. Phases parallelise over the dense
-     *  columns: connections by disjoint per-cell ranges (no merge), forces into per-chunk
-     *  Long buffers merged on the main thread (Frac add is order-independent → bit-identical),
-     *  contacts by parallel detect into per-chunk lists handled sequentially in chunk order. */
+    /** Optional worker pool; null → fully sequential. */
     private val executor: ParallelExecutor? = null,
 ) {
-
     private val dt = 1f / 64f
+    private val lifecycle = CytoLifecycle(cfg)
 
     // intent scratch, reused across ticks
     private val weldLo = ArrayList<Int>()   // entityId values, lo < hi
@@ -52,19 +50,8 @@ class CytoSoaReducer(
     private val divideIds = ArrayList<Int>()
     private val destroyIds = ArrayList<Int>()
 
-    // reused per-chunk force-impulse buffers (avoid per-tick allocation)
-    private var fbufX: Array<LongArray> = emptyArray()
-    private var fbufY: Array<LongArray> = emptyArray()
-
-    private fun parallel(): Boolean = executor != null
-
-    private fun chunkBounds(n: Int): IntArray {
-        val chunks = executor!!.parallelism.coerceAtMost(n).coerceAtLeast(1)
-        val step = (n + chunks - 1) / chunks
-        val bounds = IntArray(chunks + 1)
-        for (c in 0..chunks) bounds[c] = (c * step).coerceAtMost(n)
-        return bounds
-    }
+    // reusable additive impulse partition for the spring solver (velX/velY channels)
+    private val forcePartition = AdditivePartition(channels = 2)
 
     fun tick(w: CytoWorld, profiler: PipelineProfiler? = null) {
         phase(profiler, "reset") { reset(w) }
@@ -99,25 +86,13 @@ class CytoSoaReducer(
         val grid = SpatialGrid.forMinCellSize(minCellSize = maxRadius * 2L) ?: return
         for (i in 0 until n) grid.insert(i, w.posX[i], w.posY[i])
 
-        // Parallel detect into per-chunk lists; handle sequentially in chunk order so the
-        // weld/impulse/touch application order matches the sequential sweep (i-then-j).
-        if (parallel() && n >= PARALLEL_THRESHOLD) {
-            val bounds = chunkBounds(n)
-            val chunks = bounds.size - 1
-            val buckets = arrayOfNulls<MutableList<ContactRec>>(chunks)
-            val tasks = ArrayList<() -> Unit>(chunks)
-            for (c in 0 until chunks) {
-                val s = bounds[c]; val e = bounds[c + 1]; if (s >= e) continue
-                val cc = c
-                tasks.add { val local = ArrayList<ContactRec>(); detectRange(w, grid, s, e, local); buckets[cc] = local }
-            }
-            executor!!.invokeAll(tasks)
-            for (c in 0 until chunks) buckets[c]?.forEach { handleContact(w, it.i, it.j, it.contact) }
-        } else {
-            val out = ArrayList<ContactRec>()
-            detectRange(w, grid, 0, n, out)
-            out.forEach { handleContact(w, it.i, it.j, it.contact) }
-        }
+        // Parallel detect into per-chunk lists; apply sequentially in chunk-then-detection order
+        // so the weld/impulse/touch application order matches the sequential sweep (i-then-j).
+        ColumnPartition.detectThenApply(
+            n, executor,
+            detect = { s, e, out -> detectRange(w, grid, s, e, out) },
+            apply = { handleContact(w, it.i, it.j, it.contact) },
+        )
     }
 
     private class ContactRec(val i: Int, val j: Int, val contact: Contact)
@@ -181,7 +156,7 @@ class CytoSoaReducer(
         divideIds.clear(); destroyIds.clear()
         val n = w.count
         // step 1: fold last tick's pending transfers into energy, reset the accumulator.
-        // (Genes/reactions are skipped: the spike's cell types produce neither.)
+        // (Genes/reactions are skipped: the colony's cell types produce neither.)
         for (i in 0 until n) {
             w.energy[i] = (w.energy[i] + w.energyPending[i]).coerceIn(0f, MAX_CHEM)
             w.energyPending[i] = 0f
@@ -193,10 +168,10 @@ class CytoSoaReducer(
             val e = w.energy[i]
             if (e <= 0f) { destroyIds.add(w.entityId[i]); continue }
 
-            val selfConn = w.springOffset[i + 1] - w.springOffset[i]
-            for (k in w.springOffset[i] until w.springOffset[i + 1]) {
-                val nSlot = w.springOther[k]
-                val nConn = w.springOffset[nSlot + 1] - w.springOffset[nSlot]
+            val selfConn = w.csr.degreeOf(i)
+            for (k in w.csr.offset[i] until w.csr.offset[i + 1]) {
+                val nSlot = w.csr.otherSlot[k]
+                val nConn = w.csr.degreeOf(nSlot)
                 val maxConn = max(selfConn, nConn) + 1
                 val transfer = e / maxConn // single chemical "energy"; no suppression
                 if (transfer > 0f) {
@@ -233,43 +208,33 @@ class CytoSoaReducer(
     // Every write is per-cell-disjoint (a cell's own CSR entries + its own impulse), so this
     // parallelises by cell range with no merge and is bit-identical to the sequential sweep.
     private fun connections(w: CytoWorld) {
-        val n = w.count
-        if (parallel() && n >= PARALLEL_THRESHOLD) {
-            val bounds = chunkBounds(n)
-            val tasks = ArrayList<() -> Unit>(bounds.size - 1)
-            for (c in 0 until bounds.size - 1) {
-                val s = bounds[c]; val e = bounds[c + 1]; if (s < e) tasks.add { connectionsRange(w, s, e) }
-            }
-            executor!!.invokeAll(tasks)
-        } else {
-            connectionsRange(w, 0, n)
-        }
+        ColumnPartition.disjoint(w.count, executor) { s, e -> connectionsRange(w, s, e) }
     }
 
     private fun connectionsRange(w: CytoWorld, start: Int, end: Int) {
         val drag = -cfg.connectedDrag
         for (i in start until end) {
             // 1. refresh rest lengths / accumulate damage (in-place on this cell's CSR).
-            // Breaks would require a CSR rebuild — deferred to the growing-colony path (none here).
+            // Breaks are detected here and applied at the lifecycle barrier (CytoLifecycle).
             val radiusA = w.radiusRaw[i]
-            for (k in w.springOffset[i] until w.springOffset[i + 1]) {
-                val nSlot = w.springOther[k]
+            for (k in w.csr.offset[i] until w.csr.offset[i + 1]) {
+                val nSlot = w.csr.otherSlot[k]
                 val rest = radiusA + w.radiusRaw[nSlot]
                 val dist = deltaLen(w, i, nSlot)
                 val stretch = CytoUnits.toLogical(dist) - CytoUnits.toLogical(Frac(rest))
                 val stress = max(0f, stretch * cfg.connectionStressScale) - 0.25f
-                val prior = w.springDamage[k]
+                val prior = w.csr.edgeAux[k]
                 val damage = max(0f, prior + stress)
-                w.springRestRaw[k] = rest
-                w.springStiffRaw[k] = cfg.springStiffness.raw
-                w.springDampRaw[k] = cfg.springDamping.raw
-                w.springDamage[k] = damage
+                w.csr.restRaw[k] = rest
+                w.csr.stiffRaw[k] = cfg.springStiffness.raw
+                w.csr.dampRaw[k] = cfg.springDamping.raw
+                w.csr.edgeAux[k] = damage
             }
             // 3. connected-cell drag ("velocity shielding").
-            if (w.springOffset[i] == w.springOffset[i + 1]) continue
+            if (w.csr.offset[i] == w.csr.offset[i + 1]) continue
             var unshielded = Frac2(Frac(w.velX[i].toLong()), Frac(w.velY[i].toLong()))
-            for (k in w.springOffset[i] until w.springOffset[i + 1]) {
-                val nSlot = w.springOther[k]
+            for (k in w.csr.offset[i] until w.csr.offset[i + 1]) {
+                val nSlot = w.csr.otherSlot[k]
                 val normal = delta(w, i, nSlot).norm
                 val towardOther = unshielded.dot(normal)
                 if (towardOther.raw > 0L) unshielded -= normal * towardOther
@@ -280,51 +245,34 @@ class CytoSoaReducer(
     }
 
     // ── forces (SpringConstraintSystem) ─────────────────────────────────────────
-    // A spring writes BOTH endpoints' impulses, so a worker can't write w.imp directly
-    // (a neighbour may be in another chunk). Each worker accumulates into its own Long
-    // buffer; the main thread sums the buffers onto w.imp. Frac/Long add is order-independent
-    // → bit-identical to the sequential solve. grab is a no-op in the spike (empty input).
+    // A spring writes BOTH endpoints' impulses, so the additive partition accumulates each
+    // worker's writes into its own Long buffers and the main thread sums them onto w.imp
+    // (integer add is order-independent → bit-identical to the sequential solve).
     private fun forces(w: CytoWorld) {
-        val n = w.count
-        if (parallel() && n >= PARALLEL_THRESHOLD) {
-            val bounds = chunkBounds(n)
-            val chunks = bounds.size - 1
-            ensureForceBuffers(chunks, n)
-            val tasks = ArrayList<() -> Unit>(chunks)
-            for (c in 0 until chunks) {
-                val s = bounds[c]; val e = bounds[c + 1]; if (s >= e) continue
-                val cc = c
-                tasks.add { forcesRange(w, s, e, fbufX[cc], fbufY[cc]) }
-            }
-            executor!!.invokeAll(tasks)
-            for (c in 0 until chunks) {
-                val bx = fbufX[c]; val by = fbufY[c]
-                for (k in 0 until n) { w.impX[k] += bx[k]; w.impY[k] += by[k] }
-            }
-        } else {
-            forcesRange(w, 0, n, w.impX, w.impY)
+        forcePartition.run(w.count, executor, arrayOf(w.impX, w.impY)) { s, e, out ->
+            forcesRange(w, s, e, out[0], out[1])
         }
     }
 
     private fun forcesRange(w: CytoWorld, start: Int, end: Int, outX: LongArray, outY: LongArray) {
         for (i in start until end) {
             val idA = w.entityId[i]
-            val countA = w.springOffset[i + 1] - w.springOffset[i]
+            val countA = w.csr.degreeOf(i)
             if (countA == 0) continue
-            for (k in w.springOffset[i] until w.springOffset[i + 1]) {
-                val idB = w.springOtherId[k]
+            for (k in w.csr.offset[i] until w.csr.offset[i + 1]) {
+                val idB = w.csr.otherId[k]
                 if (idB <= idA) continue // solve each pair once, from the lower id
-                val nSlot = w.springOther[k]
+                val nSlot = w.csr.otherSlot[k]
                 val delta = delta(w, i, nSlot) // A -> B
                 val dist = delta.len
                 if (dist.raw == 0L) continue
                 val normal = delta.normFromLen(dist)
-                val lengthError = dist - Frac(w.springRestRaw[k])
+                val lengthError = dist - Frac(w.csr.restRaw[k])
                 val velA = Frac2(Frac(w.velX[i].toLong()), Frac(w.velY[i].toLong()))
                 val velB = Frac2(Frac(w.velX[nSlot].toLong()), Frac(w.velY[nSlot].toLong()))
                 val separationSpeed = (velB - velA).dot(normal)
-                val rawClosing = lengthError * Frac(w.springStiffRaw[k]) + separationSpeed * Frac(w.springDampRaw[k])
-                val countB = w.springOffset[nSlot + 1] - w.springOffset[nSlot]
+                val rawClosing = lengthError * Frac(w.csr.stiffRaw[k]) + separationSpeed * Frac(w.csr.dampRaw[k])
+                val countB = w.csr.degreeOf(nSlot)
                 val relaxation = max(max(countA, countB), 1)
                 val closing = rawClosing / relaxation
                 val total = w.mass[i].toLong() + w.mass[nSlot].toLong()
@@ -339,29 +287,13 @@ class CytoSoaReducer(
         }
     }
 
-    private fun ensureForceBuffers(chunks: Int, n: Int) {
-        if (fbufX.size != chunks || (fbufX.isNotEmpty() && fbufX[0].size < n)) {
-            fbufX = Array(chunks) { LongArray(n) }
-            fbufY = Array(chunks) { LongArray(n) }
-        } else {
-            for (c in 0 until chunks) { fbufX[c].fill(0L, 0, n); fbufY[c].fill(0L, 0, n) }
-        }
-    }
-
-    // ── lifecycle (CytoLifecycleSystem) ─────────────────────────────────────────
+    // ── lifecycle (CytoLifecycleSystem): weld / division / death ─────────────────
     private fun lifecycle(w: CytoWorld) {
-        // Settled colony: no weld/divide/destroy intents → nothing to do.
-        // Growing-colony structural changes (append daughter + CSR rebuild, tombstone + compact)
-        // are the deferred Scenario-B path; assert we're not silently dropping work.
-        if (weldLo.isNotEmpty() || divideIds.isNotEmpty() || destroyIds.isNotEmpty()) {
-            throw NotImplementedError(
-                "SoA lifecycle (weld/divide/destroy) is the deferred growing-colony path; " +
-                    "welds=${weldLo.size} divides=${divideIds.size} destroys=${destroyIds.size}",
-            )
-        }
+        lifecycle.apply(w, weldLo, weldHi, divideIds, destroyIds)
     }
 
     // ── integrate (IntegrationSystem) ───────────────────────────────────────────
+    // Each cell touches only its own slot, so the update is correct in place (no double-buffer).
     private fun integrate(w: CytoWorld) {
         val n = w.count
         for (i in 0 until n) {
@@ -369,16 +301,11 @@ class CytoSoaReducer(
             val nvx = (w.velX[i].toLong() + w.impX[i]).toInt()
             val nvy = (w.velY[i].toLong() + w.impY[i]).toInt()
             // newPos = pos + newVel.asFrac2() (impulse.pos is always zero for cells)
-            w.posXNext[i] = (w.posX[i].toLong() + nvx.toLong()).toInt()
-            w.posYNext[i] = (w.posY[i].toLong() + nvy.toLong()).toInt()
-            w.velXNext[i] = nvx
-            w.velYNext[i] = nvy
+            w.posX[i] = (w.posX[i].toLong() + nvx.toLong()).toInt()
+            w.posY[i] = (w.posY[i].toLong() + nvy.toLong()).toInt()
+            w.velX[i] = nvx
+            w.velY[i] = nvy
         }
-        // swap double buffers
-        var t = w.posX; w.posX = w.posXNext; w.posXNext = t
-        t = w.posY; w.posY = w.posYNext; w.posYNext = t
-        t = w.velX; w.velX = w.velXNext; w.velXNext = t
-        t = w.velY; w.velY = w.velYNext; w.velYNext = t
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────────
@@ -386,7 +313,7 @@ class CytoSoaReducer(
     /** Spring exists from cell at slot [a] to the cell with EntityId at slot [b]. */
     private fun springExists(w: CytoWorld, a: Int, b: Int): Boolean {
         val bId = w.entityId[b]
-        for (k in w.springOffset[a] until w.springOffset[a + 1]) if (w.springOtherId[k] == bId) return true
+        for (k in w.csr.offset[a] until w.csr.offset[a + 1]) if (w.csr.otherId[k] == bId) return true
         return false
     }
 
@@ -408,9 +335,4 @@ class CytoSoaReducer(
     }
 
     private fun longAbs(v: Long): Long = if (v < 0L) -v else v
-
-    companion object {
-        /** Below this cell count, fork/join dispatch overhead outweighs the parallel win. */
-        private const val PARALLEL_THRESHOLD = 256
-    }
 }

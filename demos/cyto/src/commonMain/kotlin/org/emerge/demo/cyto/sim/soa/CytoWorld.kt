@@ -1,83 +1,89 @@
 package org.emerge.demo.cyto.sim.soa
 
-import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.ConnectionStateComponent
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.sim.core.EntityId
+import org.emerge.sim.core.ecs.soa.ColliderColumnStore
+import org.emerge.sim.core.ecs.soa.ComponentColumns
+import org.emerge.sim.core.ecs.soa.ImpulseColumnStore
+import org.emerge.sim.core.ecs.soa.MaterialColumnStore
+import org.emerge.sim.core.ecs.soa.MotionColumnStore
+import org.emerge.sim.core.ecs.soa.SoaWorld
+import org.emerge.sim.core.ecs.soa.SpringCsr
+import org.emerge.sim.core.ecs.soa.TransformColumnStore
 import org.emerge.sim.core.physics.components.ColliderComponent
+import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
-import org.emerge.sim.core.physics.components.SpringConstraint
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.physics.primitives.Coord
-import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.sim.SimState
 
 /**
- * Struct-of-arrays store for the cyto simulation — the spike prototype for an engine-wide
- * SoA rework (see /home/stu/.claude/plans/cozy-swimming-yao.md). Every per-cell field is a
- * dense column indexed by a slot `0 until count`; the spring topology is a CSR adjacency.
- * A [CytoSoaReducer] mutates this store in place each tick (double-buffering pos/vel) with
- * NO `SimState` rebuild — that's the structural win over the immutable-snapshot ECS.
+ * Cyto's struct-of-arrays world, now built on the **generic** [SoaWorld] framework rather than
+ * a bespoke flat store: engine physics components live in their stock column stores, per-cell
+ * biology in [CytoCellColumnStore], and the spring topology in a framework [SpringCsr]. The
+ * [CytoSoaReducer] mutates the column field arrays in place each tick (no `SimState` rebuild)
+ * — the structural win — reading them by a dense slot index.
  *
- * Scope of the spike (energy-only chemistry): every cell in the benchmark/equivalence
- * scenarios carries exactly one chemical, `"energy"`, because reactions only fire for
- * enzyme-bearing cells (none here). So energy is a dense column and the open-ended sparse
- * chemistry / species registry is deferred to the generalization. [fromSimState] asserts the
- * input is energy-only.
+ * Every cell carries all six component types, added together at spawn in ascending-EntityId
+ * order, so a given slot indexes the same entity across *all* columns and the CSR. That slot
+ * alignment is what lets the hot loops cross-reference columns by a single index, and it's
+ * preserved by append-spawn + tombstone + a single coherent [SoaWorld.compact] (identical
+ * membership ⇒ identical remap for every column).
  *
- * Slot order is kept ascending-by-EntityId (= the engine's LinkedHashMap insertion order),
- * which is what makes the per-tick float/fixed accumulation bit-identical to [CytoReducer].
+ * Field accessors below alias the underlying column arrays / CSR so the reducer (and the
+ * proven spike logic it carries) reads `posX[i]` etc. directly. Indices `0 until count` are
+ * live; backing arrays may be longer (capacity).
  */
 class CytoWorld private constructor(
-    var count: Int,
-    var capacity: Int,
-    // identity
-    var entityId: IntArray,
-    val idToSlot: HashMap<Int, Int>,
-    var nextEntityValue: Int,
-    // physics (raw fixed-point; Coord = Int raw, Frac = Long raw)
-    var posX: IntArray, var posY: IntArray, var ang: IntArray,
-    var velX: IntArray, var velY: IntArray,
-    var impX: LongArray, var impY: LongArray,
-    var radiusRaw: LongArray,
-    var mass: IntArray,
-    // biology (Float)
-    var energy: FloatArray,
-    var energyPending: FloatArray,
-    var logicalRadius: FloatArray,
-    var divideCooldown: FloatArray,
-    var touch: FloatArray,
-    var type: IntArray,
-    var sticky: BooleanArray,
-    var stickyTemp: BooleanArray,
-    // double-buffer scratch for integration (write here, then swap)
-    var posXNext: IntArray, var posYNext: IntArray,
-    var velXNext: IntArray, var velYNext: IntArray,
-    // spring CSR adjacency (springOffset has size count+1)
-    var springOffset: IntArray,
-    var springOther: IntArray,      // neighbour slot
-    var springOtherId: IntArray,    // neighbour EntityId.value (for lower-id solve order)
-    var springRestRaw: LongArray,
-    var springStiffRaw: LongArray,
-    var springDampRaw: LongArray,
-    var springDamage: FloatArray,
+    val world: SoaWorld,
+    val cells: ComponentColumns<CytoCellComponent>,
+    val transform: TransformColumnStore,
+    val motion: MotionColumnStore,
+    val impulse: ImpulseColumnStore,
+    val collider: ColliderColumnStore,
+    val material: MaterialColumnStore,
+    val cell: CytoCellColumnStore,
+    val csr: SpringCsr,
 ) {
-    /** Total directed spring ends across the whole world. */
-    val springEnds: Int get() = springOffset[count]
+    val count: Int get() = cells.count
+
+    // physics columns (raw fixed-point: Coord = Int raw, Frac = Long raw)
+    val posX: IntArray get() = transform.posX
+    val posY: IntArray get() = transform.posY
+    val ang: IntArray get() = transform.ang
+    val velX: IntArray get() = motion.velX
+    val velY: IntArray get() = motion.velY
+    /** Per-cell accumulated velocity impulse (the only impulse channels cyto uses). */
+    val impX: LongArray get() = impulse.velX
+    val impY: LongArray get() = impulse.velY
+    val radiusRaw: LongArray get() = collider.radius
+    val mass: IntArray get() = material.mass
+
+    // biology columns (Float / ordinal)
+    val energy: FloatArray get() = cell.energy
+    val energyPending: FloatArray get() = cell.energyPending
+    val logicalRadius: FloatArray get() = cell.logicalRadius
+    val divideCooldown: FloatArray get() = cell.divideCooldown
+    val touch: FloatArray get() = cell.touch
+    val type: IntArray get() = cell.type
+    val sticky: BooleanArray get() = cell.sticky
+    val stickyTemp: BooleanArray get() = cell.stickyTemp
+
+    /** Dense EntityId.value per slot (`0 until count`). */
+    val entityId: IntArray get() = cells.denseIds()
+
+    fun slotOf(idValue: Int): Int = cells.slotOfValue(idValue)
 
     companion object {
-        private const val ENERGY = "energy"
-
         /**
          * Builds a CytoWorld from an engine [SimState], preserving ascending-EntityId order so
          * iteration matches the engine's insertion order. Runs ONCE (loader), never per tick.
-         * Requires energy-only chemistry (the spike scope).
          */
         fun fromSimState(state: SimState): CytoWorld {
-            val cells = state.components.getTable<CytoCellComponent>().asMap()
+            val cellsTable = state.components.getTable<CytoCellComponent>().asMap()
             val transforms = state.components.getTable<TransformComponent>()
             val motions = state.components.getTable<MotionComponent>()
             val colliders = state.components.getTable<ColliderComponent>()
@@ -85,108 +91,62 @@ class CytoWorld private constructor(
             val springMap = state.components.getTable<SpringConstraintComponent>().asMap()
             val damageMap = state.components.getTable<ConnectionStateComponent>().asMap()
 
-            // Ascending-EntityId order = the engine's stable insertion order for cells that were
-            // never removed (ids are monotonic). Sort to be safe regardless of table order.
-            val ids = cells.keys.sortedBy { it.value }
-            val n = ids.size
-            val cap = maxOf(n, 16)
-            val slotOf = HashMap<Int, Int>(n * 2)
-            ids.forEachIndexed { slot, id -> slotOf[id.value] = slot }
+            val ids = cellsTable.keys.sortedBy { it.value }
 
-            val world = CytoWorld(
-                count = n, capacity = cap,
-                entityId = IntArray(cap), idToSlot = slotOf,
-                nextEntityValue = maxOf(state.world.lastEntityValue, ids.lastOrNull()?.value ?: 0),
-                posX = IntArray(cap), posY = IntArray(cap), ang = IntArray(cap),
-                velX = IntArray(cap), velY = IntArray(cap),
-                impX = LongArray(cap), impY = LongArray(cap),
-                radiusRaw = LongArray(cap), mass = IntArray(cap),
-                energy = FloatArray(cap), energyPending = FloatArray(cap),
-                logicalRadius = FloatArray(cap), divideCooldown = FloatArray(cap),
-                touch = FloatArray(cap), type = IntArray(cap),
-                sticky = BooleanArray(cap), stickyTemp = BooleanArray(cap),
-                posXNext = IntArray(cap), posYNext = IntArray(cap),
-                velXNext = IntArray(cap), velYNext = IntArray(cap),
-                springOffset = IntArray(cap + 1), springOther = IntArray(0),
-                springOtherId = IntArray(0), springRestRaw = LongArray(0),
-                springStiffRaw = LongArray(0), springDampRaw = LongArray(0),
-                springDamage = FloatArray(0),
+            val world = SoaWorld(randomSeed = state.randomSeed)
+            val transform = TransformColumnStore()
+            val motion = MotionColumnStore()
+            val impulse = ImpulseColumnStore()
+            val collider = ColliderColumnStore()
+            val material = MaterialColumnStore()
+            val cellStore = CytoCellColumnStore()
+            world.register(TransformComponent::class, transform)
+            world.register(MotionComponent::class, motion)
+            world.register(ImpulseComponent::class, impulse)
+            world.register(ColliderComponent::class, collider)
+            world.register(MaterialComponent::class, material)
+            val cellCols = world.register(CytoCellComponent::class, cellStore)
+
+            for (id in ids) {
+                world.add(id, TransformComponent::class, transforms[id]!!)
+                world.add(id, MotionComponent::class, motions[id]!!)
+                world.add(id, ImpulseComponent::class, ImpulseComponent())
+                world.add(id, ColliderComponent::class, colliders[id]!!)
+                world.add(
+                    id, MaterialComponent::class,
+                    materials[id] ?: MaterialComponent(mass = 1u, bounce = Frac(0), rough = Frac(0)),
+                )
+                world.add(id, CytoCellComponent::class, cellsTable.getValue(id))
+            }
+            world.seedLastEntityValue(maxOf(state.world.lastEntityValue, ids.lastOrNull()?.value ?: 0))
+
+            // Spring CSR over the cell ordering, preserving each cell's spring-list order.
+            val csr = SpringCsr.build(
+                count = ids.size,
+                entityIdAt = { cellCols.denseIds()[it] },
+                slotOf = { cellCols.slotOfValue(it) },
+                springsAt = { slot -> springMap[cellCols.entityAt(slot)]?.springs ?: emptyList() },
+                edgeAuxAt = { slot, other -> damageMap[cellCols.entityAt(slot)]?.damage?.get(other) ?: 0f },
             )
 
-            // Per-cell columns.
-            for (slot in 0 until n) {
-                val id = ids[slot]
-                val cell = cells.getValue(id)
-                val t = transforms[id]!!
-                val m = motions[id]!!
-                world.entityId[slot] = id.value
-                world.posX[slot] = t.pos.x.raw
-                world.posY[slot] = t.pos.y.raw
-                world.ang[slot] = t.ang.raw
-                world.velX[slot] = m.vel.x.raw
-                world.velY[slot] = m.vel.y.raw
-                world.radiusRaw[slot] = colliders[id]!!.radius.raw
-                world.mass[slot] = (materials[id]?.mass ?: 1u).toInt()
-                require(cell.chemicals.keys.all { it == ENERGY }) {
-                    "CytoWorld spike supports energy-only chemistry; got ${cell.chemicals.keys}"
-                }
-                require(cell.pendingTransfers.keys.all { it == ENERGY }) {
-                    "CytoWorld spike supports energy-only pendingTransfers; got ${cell.pendingTransfers.keys}"
-                }
-                world.energy[slot] = cell.chemicals[ENERGY] ?: 0f
-                world.energyPending[slot] = cell.pendingTransfers[ENERGY] ?: 0f
-                world.logicalRadius[slot] = cell.logicalRadius
-                world.divideCooldown[slot] = cell.divideCooldown
-                world.touch[slot] = cell.touch
-                world.type[slot] = cell.type.ordinal
-                world.sticky[slot] = cell.sticky
-                world.stickyTemp[slot] = cell.stickyTemp
-                require(cell.suppression.isEmpty()) { "CytoWorld spike assumes empty suppression" }
-            }
-
-            // Spring CSR: preserve each cell's spring list order exactly.
-            val totalEnds = ids.sumOf { springMap[it]?.springs?.size ?: 0 }
-            world.springOther = IntArray(totalEnds)
-            world.springOtherId = IntArray(totalEnds)
-            world.springRestRaw = LongArray(totalEnds)
-            world.springStiffRaw = LongArray(totalEnds)
-            world.springDampRaw = LongArray(totalEnds)
-            world.springDamage = FloatArray(totalEnds)
-            var cursor = 0
-            for (slot in 0 until n) {
-                world.springOffset[slot] = cursor
-                val id = ids[slot]
-                val springs = springMap[id]?.springs ?: emptyList()
-                val damage = damageMap[id]?.damage ?: emptyMap()
-                for (s in springs) {
-                    world.springOther[cursor] = slotOf.getValue(s.other.value)
-                    world.springOtherId[cursor] = s.other.value
-                    world.springRestRaw[cursor] = s.restLength.raw
-                    world.springStiffRaw[cursor] = s.stiffness.raw
-                    world.springDampRaw[cursor] = s.damping.raw
-                    world.springDamage[cursor] = damage[s.other] ?: 0f
-                    cursor++
-                }
-            }
-            world.springOffset[n] = cursor
-            return world
+            return CytoWorld(world, cellCols, transform, motion, impulse, collider, material, cellStore, csr)
         }
     }
 
     /**
-     * Exports the current store back to an engine [SimState] for equivalence comparison.
-     * Loader-only (never per tick). Produces components keyed by the same EntityIds.
+     * Exports the current store back to a storage-agnostic projection for the bit-identity
+     * comparison. Loader-only (never per tick).
      */
     fun toComparison(): SoaComparison {
-        val cells = HashMap<Int, ComparisonCell>(count * 2)
+        val out = HashMap<Int, ComparisonCell>(count * 2)
         for (slot in 0 until count) {
             val springs = HashMap<Int, SpringTriple>()
             val damage = HashMap<Int, Float>()
-            for (k in springOffset[slot] until springOffset[slot + 1]) {
-                springs[springOtherId[k]] = SpringTriple(springRestRaw[k], springStiffRaw[k], springDampRaw[k])
-                damage[springOtherId[k]] = springDamage[k]
+            for (k in csr.offset[slot] until csr.offset[slot + 1]) {
+                springs[csr.otherId[k]] = SpringTriple(csr.restRaw[k], csr.stiffRaw[k], csr.dampRaw[k])
+                damage[csr.otherId[k]] = csr.edgeAux[k]
             }
-            cells[entityId[slot]] = ComparisonCell(
+            out[entityId[slot]] = ComparisonCell(
                 posX = posX[slot], posY = posY[slot], ang = ang[slot],
                 velX = velX[slot], velY = velY[slot],
                 radiusRaw = radiusRaw[slot],
@@ -197,10 +157,8 @@ class CytoWorld private constructor(
                 springs = springs, damage = damage,
             )
         }
-        return SoaComparison(cells, nextEntityValue)
+        return SoaComparison(out, world.lastEntityValue)
     }
-
-    fun slotOf(idValue: Int): Int = idToSlot[idValue] ?: -1
 }
 
 /** Canonical, storage-agnostic projection of one cell for bit-identity comparison. */
@@ -219,7 +177,7 @@ class ComparisonCell(
 class SpringTriple(val restRaw: Long, val stiffRaw: Long, val dampRaw: Long) {
     override fun equals(other: Any?): Boolean =
         other is SpringTriple && restRaw == other.restRaw && stiffRaw == other.stiffRaw && dampRaw == other.dampRaw
-    override fun hashCode(): Int = (restRaw * 31 + stiffRaw) .hashCode() * 31 + dampRaw.hashCode()
+    override fun hashCode(): Int = (restRaw * 31 + stiffRaw).hashCode() * 31 + dampRaw.hashCode()
 }
 
 class SoaComparison(val cells: Map<Int, ComparisonCell>, val nextEntityValue: Int)

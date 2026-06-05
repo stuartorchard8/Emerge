@@ -24,9 +24,17 @@ class ComponentColumns<T : Any>(val store: ColumnStore<T>) {
 
     /** Dense slot of [id], or -1 if this component isn't present on [id]. */
     fun slotOf(id: EntityId): Int = slotByEntity[id.value] ?: -1
+    fun slotOfValue(idValue: Int): Int = slotByEntity[idValue] ?: -1
     fun has(id: EntityId): Boolean = slotByEntity.containsKey(id.value)
     fun entityAt(slot: Int): EntityId = EntityId(denseEntityId[slot])
     fun isAlive(slot: Int): Boolean = alive[slot]
+
+    /**
+     * The raw dense-EntityId backing array (valid for slots `0 until count`). Exposed for hot
+     * loops that need the integer id per slot without allocating an [EntityId] each call; do not
+     * mutate it.
+     */
+    fun denseIds(): IntArray = denseEntityId
 
     fun gather(id: EntityId): T? = slotOf(id).let { if (it < 0) null else store.gather(it) }
     fun gatherAt(slot: Int): T = store.gather(slot)
