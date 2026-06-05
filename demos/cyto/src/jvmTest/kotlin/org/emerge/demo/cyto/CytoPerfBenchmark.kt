@@ -10,6 +10,8 @@ import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.demo.cyto.sim.systems.addSpring
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
+import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
+import org.emerge.demo.cyto.sim.soa.CytoWorld
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.PipelineProfiler
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
@@ -54,6 +56,7 @@ class CytoPerfBenchmark {
                 for (n in sizes) {
                     profileAt(n, null, "seq")
                     profileAt(n, executor, "par")
+                    profileSoaAt(n)
                 }
             }
         } finally {
@@ -94,6 +97,29 @@ class CytoPerfBenchmark {
         println()
         // touch tickMs/p95Ms so they read as used even if asserts are added later
         check(tickMs >= 0 && p95Ms >= 0)
+    }
+
+    /** SoA prototype tick on a persistent CytoWorld — no SimState is built inside the loop. */
+    private fun profileSoaAt(targetCells: Int) {
+        val profiler = PipelineProfiler()
+        val soa = CytoSoaReducer(cfg)
+        val world = CytoWorld.fromSimState(buildColony(targetCells))
+
+        repeat(WARMUP) { soa.tick(world) }
+        profiler.reset()
+        repeat(WINDOW) {
+            val t0 = System.nanoTime()
+            soa.tick(world, profiler)
+            profiler.recordTick(System.nanoTime() - t0)
+        }
+
+        val report = profiler.report()
+        val verdict = if (report.tickP95Nanos / 1e6 <= 16.667) "OK" else "OVER"
+        print("   [soa] tick avg ${ms(report.tickAvgNanos)}  p95 ${ms(report.tickP95Nanos)}  $verdict  |")
+        for (p in report.phases.sortedByDescending { it.avgNanos }.take(4)) {
+            print(" ${p.name}=${ms(p.avgNanos)}")
+        }
+        println()
     }
 
     /** Square connected mesh of [targetCells] cells, ~1-in-20 Support, rest Blank. */
