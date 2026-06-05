@@ -13,6 +13,7 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.ColliderComponent
+import org.emerge.sim.core.physics.components.SpringConstraint
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
@@ -74,8 +75,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
         val divide = ArrayList<EntityId>()
         val destroy = ArrayList<EntityId>()
         for ((id, work) in works) {
-            val neighbours = springs[id]?.springs?.map { it.other } ?: emptyList()
-            act(id, work, neighbours, works, neighbourCounts, dt, divide, destroy)
+            act(id, work, springs[id]?.springs, works, neighbourCounts, dt, divide, destroy)
         }
 
         // Write back component + collider radius.
@@ -91,7 +91,14 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
                     stickyTemp = work.isStickyTemp,
                 )
             }
-            builder.update<ColliderComponent>(id) { ColliderComponent(CytoUnits.len(work.logicalRadius)) }
+            // The collider radius is a pure function of logicalRadius; only rewrite it when
+            // the radius actually moved (a settled cell holds its radius, so this skips an
+            // allocation + write for the steady bulk). len() is deterministic, so equal
+            // logicalRadius ⇒ identical ColliderComponent.
+            val original = cells[id]
+            if (original == null || work.logicalRadius != original.logicalRadius) {
+                builder.update<ColliderComponent>(id) { ColliderComponent(CytoUnits.len(work.logicalRadius)) }
+            }
         }
 
         for (id in destroy) builder.emit(CellDestroyIntent(id))
@@ -101,7 +108,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
     private fun act(
         id: EntityId,
         work: CellWork,
-        neighbours: List<EntityId>,
+        neighbours: List<SpringConstraint>?,
         works: Map<EntityId, CellWork>,
         neighbourCounts: Map<EntityId, Int>,
         dt: Float,
@@ -115,9 +122,11 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
             return
         }
 
-        // Diffuse chemicals to connected neighbours.
-        val selfConnections = neighbours.size
-        for (nId in neighbours) {
+        // Diffuse chemicals to connected neighbours. Iterate the spring list directly (same
+        // order as before) rather than mapping it to a fresh EntityId list per cell.
+        val selfConnections = neighbours?.size ?: 0
+        if (neighbours != null) for (spring in neighbours) {
+            val nId = spring.other
             val nWork = works[nId] ?: continue
             val maxConnections = max(selfConnections, neighbourCounts[nId] ?: 0) + 1
             for ((k, v) in work.chemicals) {

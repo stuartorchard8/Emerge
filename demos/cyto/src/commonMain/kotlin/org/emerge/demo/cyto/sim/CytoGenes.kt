@@ -56,33 +56,42 @@ private fun Gene.evaluate(cell: CellWork, delta: Float) {
 }
 
 fun runGenes(cell: CellWork, delta: Float) {
-    genesForType(cell.type).forEach { it.evaluate(cell, delta) }
+    val genes = genesForType(cell.type)
+    for (gene in genes) gene.evaluate(cell, delta)
 }
 
+// Gene sets are immutable and identical for every cell of a type — define them once rather
+// than rebuilding the list (and its Gene/GeneInput/GeneOutput objects) on every per-cell,
+// per-tick call.
+private val MUSCLE_GENES = listOf(
+    Gene(
+        inputs = listOf(GeneInput(GeneInputType.Chem, chem = "e", weight = 1f)),
+        output = GeneOutput(GeneOutputType.Contract, chem1 = "", chem2 = "", bias = 0f),
+    ),
+)
+private val NOT_GENES = listOf(
+    Gene(
+        inputs = listOf(GeneInput(GeneInputType.Chem, chem = "e", weight = -1f)),
+        output = GeneOutput(GeneOutputType.Contract, chem1 = "", chem2 = "", bias = 1f),
+    ),
+)
+private val JUMP_GENES = listOf(
+    Gene(
+        inputs = emptyList(),
+        output = GeneOutput(GeneOutputType.Contract, chem1 = "", chem2 = "", bias = 1f),
+    ),
+)
+private val TOUCH_GENES = listOf(
+    Gene(
+        inputs = listOf(GeneInput(GeneInputType.Touch, chem = "", weight = 1f)),
+        output = GeneOutput(GeneOutputType.Enzyme, chem1 = "e", chem2 = "n", bias = 0f),
+    ),
+)
+
 fun genesForType(type: CellType): List<Gene> = when (type) {
-    CellType.Muscle -> listOf(
-        Gene(
-            inputs = listOf(GeneInput(GeneInputType.Chem, chem = "e", weight = 1f)),
-            output = GeneOutput(GeneOutputType.Contract, chem1 = "", chem2 = "", bias = 0f),
-        ),
-    )
-    CellType.Not -> listOf(
-        Gene(
-            inputs = listOf(GeneInput(GeneInputType.Chem, chem = "e", weight = -1f)),
-            output = GeneOutput(GeneOutputType.Contract, chem1 = "", chem2 = "", bias = 1f),
-        ),
-    )
-    CellType.Jump -> listOf(
-        Gene(
-            inputs = emptyList(),
-            output = GeneOutput(GeneOutputType.Contract, chem1 = "", chem2 = "", bias = 1f),
-        ),
-    )
-    CellType.Touch -> listOf(
-        Gene(
-            inputs = listOf(GeneInput(GeneInputType.Touch, chem = "", weight = 1f)),
-            output = GeneOutput(GeneOutputType.Enzyme, chem1 = "e", chem2 = "n", bias = 0f),
-        ),
-    )
+    CellType.Muscle -> MUSCLE_GENES
+    CellType.Not -> NOT_GENES
+    CellType.Jump -> JUMP_GENES
+    CellType.Touch -> TOUCH_GENES
     else -> emptyList()
 }
