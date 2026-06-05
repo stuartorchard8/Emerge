@@ -1,10 +1,17 @@
 package org.emerge.sim.core.ecs.soa
 
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.components.ColliderComponent
+import org.emerge.sim.core.physics.components.DamageComponent
+import org.emerge.sim.core.physics.components.ForceFieldComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
+import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.components.ParticleComponent
+import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
@@ -97,4 +104,80 @@ class MaterialColumnStore : ColumnStore<MaterialComponent> {
     override fun gather(slot: Int): MaterialComponent =
         MaterialComponent(mass = mass[slot].toUInt(), bounce = Frac(bounce[slot]), rough = Frac(rough[slot]))
     override fun moveSlot(dst: Int, src: Int) { mass[dst] = mass[src]; bounce[dst] = bounce[src]; rough[dst] = rough[src] }
+}
+
+class RenderShapeColumnStore : ColumnStore<RenderShapeComponent> {
+    var shape = IntArray(0); private set     // BodyShape.ordinal
+    override fun ensureCapacity(capacity: Int) { if (shape.size < capacity) shape = shape.copyOf(capacity) }
+    override fun scatter(slot: Int, value: RenderShapeComponent) { shape[slot] = value.shape.ordinal }
+    override fun gather(slot: Int): RenderShapeComponent = RenderShapeComponent(BodyShape.entries[shape[slot]])
+    override fun moveSlot(dst: Int, src: Int) { shape[dst] = shape[src] }
+}
+
+class ParticleColumnStore : ColumnStore<ParticleComponent> {
+    var life = IntArray(0); private set
+    var lifeTime = IntArray(0); private set
+    override fun ensureCapacity(capacity: Int) {
+        if (life.size >= capacity) return
+        life = life.copyOf(capacity); lifeTime = lifeTime.copyOf(capacity)
+    }
+    override fun scatter(slot: Int, value: ParticleComponent) { life[slot] = value.life; lifeTime[slot] = value.lifeTime }
+    override fun gather(slot: Int): ParticleComponent = ParticleComponent(life = life[slot], lifeTime = lifeTime[slot])
+    override fun moveSlot(dst: Int, src: Int) { life[dst] = life[src]; lifeTime[dst] = lifeTime[src] }
+}
+
+class DamageColumnStore : ColumnStore<DamageComponent> {
+    var accumulated = LongArray(0); private set
+    var last = LongArray(0); private set
+    var next = LongArray(0); private set
+    override fun ensureCapacity(capacity: Int) {
+        if (accumulated.size >= capacity) return
+        accumulated = accumulated.copyOf(capacity); last = last.copyOf(capacity); next = next.copyOf(capacity)
+    }
+    override fun scatter(slot: Int, value: DamageComponent) {
+        accumulated[slot] = value.accumulated.raw; last[slot] = value.last.raw; next[slot] = value.next.raw
+    }
+    override fun gather(slot: Int): DamageComponent =
+        DamageComponent(Frac(accumulated[slot]), Frac(last[slot]), Frac(next[slot]))
+    override fun moveSlot(dst: Int, src: Int) { accumulated[dst] = accumulated[src]; last[dst] = last[src]; next[dst] = next[src] }
+}
+
+class ForceFieldColumnStore : ColumnStore<ForceFieldComponent> {
+    var depth = LongArray(0); private set
+    var strength = LongArray(0); private set
+    var alpha = LongArray(0); private set
+    override fun ensureCapacity(capacity: Int) {
+        if (depth.size >= capacity) return
+        depth = depth.copyOf(capacity); strength = strength.copyOf(capacity); alpha = alpha.copyOf(capacity)
+    }
+    override fun scatter(slot: Int, value: ForceFieldComponent) {
+        depth[slot] = value.depth.raw; strength[slot] = value.strength.raw; alpha[slot] = value.alpha.raw
+    }
+    override fun gather(slot: Int): ForceFieldComponent =
+        ForceFieldComponent(Frac(depth[slot]), Frac(strength[slot]), Frac(alpha[slot]))
+    override fun moveSlot(dst: Int, src: Int) { depth[dst] = depth[src]; strength[dst] = strength[src]; alpha[dst] = alpha[src] }
+}
+
+class LandingAttachmentColumnStore : ColumnStore<LandingAttachmentComponent> {
+    var parentId = IntArray(0); private set  // EntityId.value
+    var relX = LongArray(0); private set
+    var relY = LongArray(0); private set
+    var relAng = LongArray(0); private set
+    override fun ensureCapacity(capacity: Int) {
+        if (parentId.size >= capacity) return
+        parentId = parentId.copyOf(capacity); relX = relX.copyOf(capacity)
+        relY = relY.copyOf(capacity); relAng = relAng.copyOf(capacity)
+    }
+    override fun scatter(slot: Int, value: LandingAttachmentComponent) {
+        parentId[slot] = value.parentEntityId.value
+        relX[slot] = value.relativePos.x.raw; relY[slot] = value.relativePos.y.raw; relAng[slot] = value.relativeAng.raw
+    }
+    override fun gather(slot: Int): LandingAttachmentComponent = LandingAttachmentComponent(
+        parentEntityId = EntityId(parentId[slot]),
+        relativePos = Frac2(Frac(relX[slot]), Frac(relY[slot])),
+        relativeAng = Frac(relAng[slot]),
+    )
+    override fun moveSlot(dst: Int, src: Int) {
+        parentId[dst] = parentId[src]; relX[dst] = relX[src]; relY[dst] = relY[src]; relAng[dst] = relAng[src]
+    }
 }
