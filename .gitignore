@@ -53,3 +53,4 @@ bin/
 .DS_Store
 drockets-save*
 drockets-prefs*
+*-save.bin

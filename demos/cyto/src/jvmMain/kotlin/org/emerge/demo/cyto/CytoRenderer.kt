@@ -1,6 +1,5 @@
 package org.emerge.demo.cyto
 
-import com.badlogic.gdx.math.Vector2
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.Mat4
 import kotlin.math.max
@@ -56,13 +55,14 @@ class CytoRenderer(
     viewHeight = (viewHeight / factor).coerceIn(0.5f, 100_000f)
   }
 
-  /** Convert a framebuffer pixel to a world-space point. */
-  fun screenToWorld(px: Float, py: Float): Vector2 {
+  /** Convert a framebuffer pixel to a world-space point, as `[x, y]` (gdx-free, so the
+   *  host needn't see gdx types). */
+  fun screenToWorld(px: Float, py: Float): FloatArray {
     val aspect = resW / resH
     val viewWidth = viewHeight * aspect
     val ndcX = px / resW * 2f - 1f
     val ndcY = 1f - py / resH * 2f
-    return Vector2(
+    return floatArrayOf(
       centerX + ndcX * viewWidth * 0.5f,
       centerY + ndcY * viewHeight * 0.5f,
     )

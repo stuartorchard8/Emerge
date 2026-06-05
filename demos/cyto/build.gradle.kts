@@ -23,6 +23,10 @@ kotlin {
                 // (they reference org.emerge.render.torus.GPU) and by CytoRenderer.
                 api(project(":engine:render:torus"))
                 api(project(":engine:net:api"))
+                // Native ECS sim (Phase B): components, systems, the spring constraint,
+                // and the save/state codecs.
+                api(project(":engine:sim:core"))
+                api(project(":engine:sim:sync"))
             }
         }
 
