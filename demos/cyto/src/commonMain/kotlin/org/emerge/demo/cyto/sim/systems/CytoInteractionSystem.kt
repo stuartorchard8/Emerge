@@ -33,6 +33,9 @@ object CytoInteractionSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             builder.spawnCell(CytoUnits.coord2(spawn.x, spawn.y), Coord2.zero, spawn.type, mapOf("energy" to 2f), MIN_RADIUS)
         }
 
+        // Detach hold mode (acts on grab-start): cut all of the cell's connections.
+        for (id in input.detaches) builder.emit(DetachIntent(id))
+
         if (input.taps.isEmpty()) return
         val cells = builder.entries<CytoCellComponent>()
         for (tap in input.taps) {
@@ -43,11 +46,11 @@ object CytoInteractionSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             }
             for (id in hits) {
                 when (tap.mode) {
+                    // TapUp modes act on a click; Base/Sticky/Detach are hold modes (handled
+                    // on grab — see CytoGrabSystem / the detaches list), so a click is a no-op.
                     TouchMode.Delete -> builder.emit(CellDestroyIntent(id))
-                    TouchMode.Detach -> builder.emit(DetachIntent(id))
-                    TouchMode.Sticky -> builder.update<CytoCellComponent>(id) { c -> (c ?: cells.getValue(id)).copy(sticky = true) }
                     TouchMode.Set -> builder.update<CytoCellComponent>(id) { c -> (c ?: cells.getValue(id)).copy(type = tap.type) }
-                    TouchMode.Activate, TouchMode.Base -> Unit
+                    TouchMode.Activate, TouchMode.Base, TouchMode.Sticky, TouchMode.Detach -> Unit
                 }
             }
         }

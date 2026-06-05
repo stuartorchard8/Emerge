@@ -31,6 +31,7 @@ class CytoController(
 
     private val pendingSpawns = ArrayList<CytoInput.Spawn>()
     private val pendingTaps = ArrayList<CytoInput.Tap>()
+    private val pendingDetaches = ArrayList<EntityId>()
     private var currentGrab: CytoInput.Grab? = null
 
     val tick: Long get() = stepper.tick.value
@@ -44,10 +45,12 @@ class CytoController(
                 spawns = if (firstStep) pendingSpawns.toList() else emptyList(),
                 taps = if (firstStep) pendingTaps.toList() else emptyList(),
                 grab = currentGrab,
+                detaches = if (firstStep) pendingDetaches.toList() else emptyList(),
             )
             if (firstStep) {
                 pendingSpawns.clear()
                 pendingTaps.clear()
+                pendingDetaches.clear()
             }
             stepper.step(mapOf(PlayerId(0) to input))
             accumulator -= STEP
@@ -82,13 +85,19 @@ class CytoController(
         return null
     }
 
-    /** Start/continue pulling [entity] toward the logical point each tick. */
-    fun grab(entity: EntityId, x: Float, y: Float) {
-        currentGrab = CytoInput.Grab(entity, x, y)
+    /** Start/continue pulling [entity] toward the logical point each tick. [sticky] makes it
+     *  weld to whatever it touches while held (Sticky hold mode). */
+    fun grab(entity: EntityId, x: Float, y: Float, sticky: Boolean = false) {
+        currentGrab = CytoInput.Grab(entity, x, y, sticky)
     }
 
     fun releaseGrab() {
         currentGrab = null
+    }
+
+    /** Cut all of [entity]'s connections (Detach hold mode, on grab-start). */
+    fun detach(entity: EntityId) {
+        pendingDetaches.add(entity)
     }
 
     // ── Persistence ─────────────────────────────────────────────────────────────
@@ -100,6 +109,7 @@ class CytoController(
         accumulator = 0f
         pendingSpawns.clear()
         pendingTaps.clear()
+        pendingDetaches.clear()
         currentGrab = null
     }
 

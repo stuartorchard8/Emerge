@@ -1,5 +1,6 @@
 package org.emerge.demo.cyto.sim.systems
 
+import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoUnits
@@ -33,5 +34,15 @@ object CytoGrabSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         // Spring toward the pointer, damped by current velocity.
         val pull = toTarget * cfg.grabStiffness - vel * cfg.grabDamping
         builder.update<ImpulseComponent>(grab.entity) { ImpulseComponent(vel = pull) + it }
+
+        // Sticky hold mode: the dragged cell welds to whatever it touches. Set the transient
+        // stickyTemp (the biology system resets it each tick, so it clears on release); the
+        // contact system reads it next tick.
+        if (grab.sticky) {
+            val cell = builder.getComponent<CytoCellComponent>(grab.entity)
+            if (cell != null) {
+                builder.update<CytoCellComponent>(grab.entity) { c -> (c ?: cell).copy(stickyTemp = true) }
+            }
+        }
     }
 }

@@ -15,10 +15,13 @@ data class CytoInput(
     val taps: List<Tap> = emptyList(),
     /** Continuous drag: pull [Grab.entity] toward the pointer this tick (or null). */
     val grab: Grab? = null,
+    /** One-shot: cut all connections of these cells (Detach hold mode). */
+    val detaches: List<EntityId> = emptyList(),
 ) : SimInput {
     data class Spawn(val x: Float, val y: Float, val type: CellType)
     data class Tap(val x: Float, val y: Float, val mode: TouchMode, val type: CellType)
-    data class Grab(val entity: EntityId, val x: Float, val y: Float)
+    /** [sticky] makes the held cell weld to whatever it touches while dragged (Sticky mode). */
+    data class Grab(val entity: EntityId, val x: Float, val y: Float, val sticky: Boolean = false)
 
     companion object {
         val EMPTY = CytoInput()

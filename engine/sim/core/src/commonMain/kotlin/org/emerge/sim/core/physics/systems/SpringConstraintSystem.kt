@@ -23,6 +23,13 @@ import org.emerge.sim.core.sim.SimState
  * approximation: pick [SpringConstraint.stiffness]/[SpringConstraint.damping] to taste
  * rather than expecting frequency-hz/damping-ratio parity. Each pair is solved once, from
  * the lower-id endpoint, so springs must be registered on (at least) the smaller id.
+ *
+ * Because all of a body's springs are applied in one pass (Jacobi, not Gauss–Seidel),
+ * a body in a dense cluster would otherwise receive N independent corrections that sum to
+ * an over-relaxed, unstable kick. Each pair's correction is therefore under-relaxed by the
+ * larger of the two endpoints' spring counts, which keeps a body's total per-tick
+ * correction bounded (~one spring's worth) and the system stable at any connectivity. A
+ * lone spring (count 1) is unaffected.
  */
 object SpringConstraintSystem : EcsSystem<PhysicsTuning, SimState, SimInput> {
     override fun update(
@@ -56,7 +63,12 @@ object SpringConstraintSystem : EcsSystem<PhysicsTuning, SimState, SimInput> {
 
                 // Desired closing speed this tick: pull in proportional to the stretch,
                 // plus damp out the current separation velocity.
-                val closingSpeed = lengthError * spring.stiffness + separationSpeed * spring.damping
+                val rawClosingSpeed = lengthError * spring.stiffness + separationSpeed * spring.damping
+                // Under-relax by connectivity so a clustered body's many springs don't sum
+                // to an unstable over-correction (Jacobi stability). Lone springs: ÷1.
+                val otherCount = builder.getComponent<SpringConstraintComponent>(other)?.springs?.size ?: 1
+                val relaxation = maxOf(comp.springs.size, otherCount, 1)
+                val closingSpeed = rawClosingSpeed / relaxation
 
                 val totalMass = (massA + massB).toLong()
                 if (totalMass <= 0L) continue

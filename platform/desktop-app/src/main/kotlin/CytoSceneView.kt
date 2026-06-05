@@ -134,7 +134,12 @@ object CytoSceneView {
                     state.lastY = px.second
                     // Press on a cell -> grab it; on empty space -> arm camera pan.
                     val world = renderer.screenToWorld(px.first, px.second)
-                    state.grabId = controller.cellAt(world[0], world[1])
+                    val (mode, _) = modeAndType()
+                    val hit = controller.cellAt(world[0], world[1])
+                    state.grabId = hit
+                    state.grabSticky = mode == TouchMode.Sticky
+                    // Detach is a hold mode: cut the cell's connections on press.
+                    if (hit != null && mode == TouchMode.Detach) controller.detach(hit)
                 }
                 GLFW_RELEASE -> {
                     state.primaryDown = false
@@ -160,7 +165,7 @@ object CytoSceneView {
             val grabId = state.grabId
             if (grabId != null) {
                 val world = renderer.screenToWorld(px.first, px.second)
-                controller.grab(grabId, world[0], world[1])
+                controller.grab(grabId, world[0], world[1], sticky = state.grabSticky)
             } else {
                 renderer.panByPixels(dx, dy)
             }
@@ -253,6 +258,7 @@ object CytoSceneView {
         var lastX = 0f
         var lastY = 0f
         var grabId: EntityId? = null
+        var grabSticky = false
     }
 
     private const val DRAG_THRESHOLD_PX = 4f

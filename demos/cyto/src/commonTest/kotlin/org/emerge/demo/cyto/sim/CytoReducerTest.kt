@@ -2,9 +2,11 @@ package org.emerge.demo.cyto.sim
 
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Coord2
+import kotlin.math.abs
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
 import kotlin.test.Test
@@ -57,5 +59,31 @@ class CytoReducerTest {
         repeat(30) { state = reducer.reduce(cfg, state, grabInput) }
         val pos = state.components.getTable<TransformComponent>()[id]!!.pos
         assertTrue(CytoUnits.toLogical(pos.x) > 0.5f, "grabbed cell should move toward the +x pointer")
+    }
+
+    @Test
+    fun weldedClusterStaysStable() {
+        // A tight 2x2 clump welds into a cluster; left alone it must settle, not explode.
+        // (Catches the Jacobi over-relaxation blow-up the spring relaxation fix addresses.)
+        var state = run {
+            val b = SimBuilder(SimState())
+            val coords = listOf(-0.15f to -0.15f, 0.15f to -0.15f, -0.15f to 0.15f, 0.15f to 0.15f)
+            for ((x, y) in coords) {
+                b.spawnCell(CytoUnits.coord2(x, y), Coord2.zero, CellType.Blank, mapOf("energy" to 5f), MIN_RADIUS)
+            }
+            b.build()
+        }
+        repeat(300) { state = reducer.reduce(cfg, state, noInput) }
+
+        val motions = state.components.getTable<MotionComponent>().asMap()
+        assertTrue(motions.isNotEmpty(), "cluster should still have living cells")
+        for ((_, motion) in motions) {
+            val vx = CytoUnits.toLogical(motion.vel.x)
+            val vy = CytoUnits.toLogical(motion.vel.y)
+            assertTrue(
+                vx.isFinite() && vy.isFinite() && abs(vx) < 50f && abs(vy) < 50f,
+                "cluster velocity blew up: ($vx, $vy)",
+            )
+        }
     }
 }
