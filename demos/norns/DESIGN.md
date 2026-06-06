@@ -45,9 +45,11 @@ dependency-ordered (later ones read earlier ones).
    `BiochemistryTest`: half-life decay, reaction stoichiometry + limiting reactant,
    emitter/receptor activation, clamping, determinism, and a closed hunger-regulation loop
    (starving→drive climbs, fed→loop holds it low).
-2. **Genome** — genes encoding biochemistry (emitter/receptor/reaction/half-life), brain
-   structure, biology, morphology; diploid-ish crossover + mutation (extends drockets' model).
-   Harness: crossover/mutation determinism; gene expression reconstructs a biochem network.
+2. **Genome** — ✅ **done.** A `Gene` sealed hierarchy (Emitter/Receptor/Reaction/HalfLife
+   variants now; brain/biology variants join later) → `expressBiochemistry()`; deterministic
+   per-locus `crossover` + bounded `mutate` (seeded `GeneRng`, same LCG as the engine). Gated by
+   `GenomeTest`: expression reproduces the subsystem-1 hunger regulation, half-life table build,
+   crossover/mutation determinism, both-parent inheritance, mutation bounds + immutability.
 3. **Brain (neural net)** — lobes of neurons, dendrites with weights, Hebbian-style learning;
    perception → decision lobe → action outputs, modulated by drive chemicals. Harness: signal
    propagation, learning changes weights, a stimulus→response association forms.
@@ -74,6 +76,12 @@ dependency-ordered (later ones read earlier ones).
 - **A4.** Reaction kinetics: each tick fires `rate × (limiting reactant / reactant amount)`
   reactions (limiting-reactant capped, rate-scaled). A reasonable mass-action-ish model; not
   confirmed against C1's exact formula.
+- **A5.** Gene activation: all genes are always active. C1 genes carry life-stage and sex
+  activation flags; that gating is deferred to the biology subsystem (4).
+- **A6.** Genome variation is numeric-only: `crossover` assumes positionally-aligned, same-shape
+  parents, and `mutate` perturbs numeric fields within bounds. Structural variation (differing
+  genome lengths, gene duplication/deletion, mutating a gene's chemical/locus *indices*) is
+  deferred — it's where a lot of Creatures' open-ended novelty comes from, so it's flagged.
 
 ## Verification gaps (need Stu / reference data — the tuning agenda)
 
@@ -89,4 +97,6 @@ dependency-ordered (later ones read earlier ones).
 ## Current status
 
 - Subsystem 1 (biochemistry): ✅ done, 9 tests green.
-- Subsystem 2 (genome): next.
+- Subsystem 2 (genome): ✅ done, 7 tests green.
+- Subsystem 3 (brain / neural net): next — the signature Creatures system, and the first with
+  no equivalent anywhere in the engine.
