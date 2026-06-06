@@ -1,6 +1,5 @@
 package org.emerge.demo.drockets
 
-import kotlinx.datetime.Clock
 import org.emerge.demo.drockets.shader.PlanetShader
 import org.emerge.demo.drockets.shader.StarscapeShader
 import org.emerge.render.torus.GPU
@@ -203,7 +202,7 @@ class WorldRenderer(
 
         val p = genome.genome.phenotype()
         val sex = reproducer?.sex?.name ?: "NA"
-        val nowMs = Clock.System.now().toEpochMilliseconds()
+        val nowMs = nowMsForTick(state.tick)
         val pregnancy = when {
             reproducer?.spawn == null -> "NO"
             reproducer.spawn.birthdayMs > nowMs -> "YES DUE ${reproducer.spawn.birthdayMs - nowMs}MS"
@@ -269,7 +268,7 @@ class WorldRenderer(
         val drocketStates = state.components.getTable<DrocketStateComponent>().entries()
         val reproducers = state.components.getTable<ReproducerComponent>()
         val genomes = state.components.getTable<GenomeComponent>()
-        val nowMs = Clock.System.now().toEpochMilliseconds()
+        val nowMs = nowMsForTick(state.tick)
         for ((entityId, drocketState) in drocketStates) {
             if (spriteCount >= SpriteShader.MAX_INSTANCES) break
             val transform = state.transforms[entityId] ?: continue

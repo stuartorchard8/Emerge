@@ -74,7 +74,8 @@ class DrocketsReducer(
         } else {
             runSequential(cfg, builder, inputs, pipeline, profiler)
         }
-        return builder.build()
+        // Advance the deterministic sim clock (the lockstep-safe replacement for wall-clock).
+        return builder.build().copy(tick = state.tick + 1)
     }
 
     override fun patchState(state: SimState, delta: SimState): SimState =

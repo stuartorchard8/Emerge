@@ -64,7 +64,9 @@ object DrocketsSaveCodec {
         }
         return DrocketsSnapshot(
             tick = tick,
-            state = physicsState.copy(components = mergedComponents),
+            // Restore the deterministic sim clock from the saved tick (the component codec
+            // carries only components, not SimState scalars).
+            state = physicsState.copy(components = mergedComponents, tick = tick.value),
             lineage = lineage,
         )
     }

@@ -1,6 +1,5 @@
 package org.emerge.demo.drockets
 
-import kotlinx.datetime.Clock
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
@@ -18,7 +17,7 @@ object ReproductionSystem : EcsSystem<DrocketsConfig, SimState, DrocketsInput> {
         inputs: Map<PlayerId, DrocketsInput>,
     ) {
         val reproducers = builder.entries<ReproducerComponent>()
-        val nowMs = Clock.System.now().toEpochMilliseconds()
+        val nowMs = builder.nowMs
         for ((entityId, reproducer) in reproducers) {
             if (reproducer.sex != Sex.FEMALE || !reproducer.isMature(nowMs)) continue
             val spawn = reproducer.spawn

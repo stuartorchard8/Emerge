@@ -20,4 +20,12 @@ data class SimState(
      * Serialized alongside the snapshot for Welcome/Resync.
      */
     val randomSeed: Long = 0,
+    /**
+     * Deterministic monotonic tick counter — the simulation's own clock, advanced by the
+     * reducer once per [reduce][org.emerge.sim.core.SimReducer.reduce]. Demos that need a
+     * deterministic in-sim time source read it instead of wall-clock (which would desync
+     * lockstep peers). Like [randomSeed], it must be kept in sync across peers and serialized
+     * for Welcome/Resync. Default 0; left at 0 by reducers that don't need it.
+     */
+    val tick: Long = 0,
 )

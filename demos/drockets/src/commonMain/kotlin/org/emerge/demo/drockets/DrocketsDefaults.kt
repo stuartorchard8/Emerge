@@ -1,7 +1,7 @@
 package org.emerge.demo.drockets
 
-import kotlinx.datetime.Clock
 import org.emerge.sim.core.EntityId
+import org.emerge.sim.core.ecs.EcsWorld
 import org.emerge.sim.core.physics.components.*
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
@@ -9,7 +9,10 @@ import org.emerge.sim.core.sim.spawnBody
 import org.emerge.sim.core.physics.primitives.*
 
 fun createDrocketsInitialState(drocketCount: Int = INITIAL_DROCKET_COUNT, knightCount: Int = INITIAL_KNIGHT_COUNT): SimState {
-    val builder = SimBuilder(SimState())
+    // Fresh EcsWorld per call: SimState()'s default world is the shared mutable EcsWorld.EMPTY
+    // singleton, and createEntity mutates the world in place — so two initial states built from
+    // the default would share (and corrupt) one entity-id allocator. Each sim must own its world.
+    val builder = SimBuilder(SimState(world = EcsWorld()))
 
     val planetId = builder.spawnBody(
         pos = Coord2.zero,
@@ -102,7 +105,7 @@ fun spawnDrocket(
     }
     builder.update<ReproducerComponent>(entityId) {
         ReproducerComponent(
-            birthdayMs = Clock.System.now().toEpochMilliseconds(),
+            birthdayMs = builder.nowMs,
             sex = sex,
         )
     }
