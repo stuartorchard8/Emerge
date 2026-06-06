@@ -36,6 +36,8 @@ object DrocketsSaveCodec {
     fun encode(snapshot: DrocketsSnapshot): ByteArray {
         val w = ByteWriter()
         val stateWithoutParticles = snapshot.state.withoutParticleEntitiesForPersistence()
+        // The embedded state bytes already carry randomSeed + world.lastEntityValue (see
+        // EcsNetCodecs); only the sim clock (tick) rides outside, alongside the format header.
         val stateBytes = DrocketsCodecs.stateCodec.encode(stateWithoutParticles)
         w.writeInt(FORMAT_VERSION)
         w.writeLong(snapshot.tick.value)
@@ -64,8 +66,8 @@ object DrocketsSaveCodec {
         }
         return DrocketsSnapshot(
             tick = tick,
-            // Restore the deterministic sim clock from the saved tick (the component codec
-            // carries only components, not SimState scalars).
+            // randomSeed + world.lastEntityValue come back via the embedded state bytes; only the
+            // sim clock (tick) is restored here from the snapshot header.
             state = physicsState.copy(components = mergedComponents, tick = tick.value),
             lineage = lineage,
         )
