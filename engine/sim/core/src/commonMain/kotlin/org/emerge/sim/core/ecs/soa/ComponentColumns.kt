@@ -4,15 +4,19 @@ import org.emerge.sim.core.EntityId
 
 /**
  * Sparse-set membership for one component type over a [ColumnStore]. Holds a dense prefix
- * `0 until count` of slots kept **ascending by EntityId** — the same order the engine's
- * LinkedHashMap-backed `ComponentTable` iterates (ids are monotonic and never reused), which
- * is the invariant the SoA bit-identity / cross-peer determinism depends on.
+ * `0 until count` of slots kept in **insertion order** — exactly mirroring the engine's
+ * LinkedHashMap-backed `ComponentTable` (a new id appends at the end; an existing id keeps its
+ * slot; a removed-then-reinserted id moves to the end). That ordering parity is the invariant
+ * the SoA bit-identity / cross-peer determinism depends on. When ids are only ever added
+ * monotonically — the spawn-time common case, where a fresh id is always the largest —
+ * insertion order is also ascending-by-EntityId.
  *
- * Membership changes are deferred-friendly: [append] adds at the end (a freshly spawned
- * entity always has the largest id, so ascending order is preserved automatically), [remove]
- * tombstones (no reorder), and [compact] stably partitions live slots to the front. Slot
- * indices are therefore stable within a tick and only shift at a [compact] barrier — which is
- * when slot-referencing side-tables (CSR adjacency) rebuild.
+ * Membership changes are deferred-friendly: [put] appends a new id at the end (and so supports
+ * adding a component to a *pre-existing, non-maximal* entity mid-tick — it still appends, which
+ * is what the AoS table does), [remove] tombstones (no reorder), and [compact] stably partitions
+ * live slots to the front (preserving order). Slot indices are therefore stable within a tick
+ * and only shift at a [compact] barrier — which is when slot-referencing side-tables (CSR
+ * adjacency) rebuild.
  */
 class ComponentColumns<T : Any>(val store: ColumnStore<T>) {
     var count: Int = 0
@@ -40,24 +44,25 @@ class ComponentColumns<T : Any>(val store: ColumnStore<T>) {
     fun gatherAt(slot: Int): T = store.gather(slot)
 
     /**
-     * Visits every live (non-tombstoned) slot in ascending-EntityId order — the raw-index path
-     * the cold-system compat shim uses for iteration without gathering an object per slot.
+     * Visits every live (non-tombstoned) slot in insertion order (the [ComponentTable] order) —
+     * the raw-index path the cold-system compat shim uses for iteration without gathering an
+     * object per slot.
      */
     fun forEachAliveSlot(action: (slot: Int, id: EntityId) -> Unit) {
         for (s in 0 until count) if (alive[s]) action(s, EntityId(denseEntityId[s]))
     }
 
     /**
-     * Adds [value] for [id]. [id] must be larger than every existing id (true for freshly
-     * spawned entities — monotonic ids) so the dense order stays ascending. If [id] already
-     * present, overwrites in place.
+     * Adds [value] for [id], or overwrites in place if [id] is already present. A new id is
+     * appended at the end of the dense prefix — **insertion order**, exactly mirroring the AoS
+     * `ComponentTable` (new key appended, existing key keeps its slot). When ids arrive
+     * monotonically (the spawn-time common case) this is also ascending; adding a component to a
+     * pre-existing, non-maximal entity mid-tick is supported and stays bit-identical to the AoS
+     * table's iteration order.
      */
     fun put(id: EntityId, value: T) {
         val existing = slotByEntity[id.value]
         if (existing != null) { store.scatter(existing, value); alive[existing] = true; return }
-        require(count == 0 || id.value > denseEntityId[count - 1]) {
-            "ComponentColumns.put requires ascending ids (got ${id.value} after ${denseEntityId[count - 1]})"
-        }
         ensureCapacity(count + 1)
         val slot = count
         denseEntityId[slot] = id.value
@@ -83,7 +88,7 @@ class ComponentColumns<T : Any>(val store: ColumnStore<T>) {
     fun needsCompaction(): Boolean = tombstones > 0
 
     /**
-     * Stable-partitions live slots to `0 until count`, preserving ascending order, and rebuilds
+     * Stable-partitions live slots to `0 until count`, preserving insertion order, and rebuilds
      * the sparse map. Returns a remap `oldSlot -> newSlot` (newSlot = -1 for removed) so
      * slot-referencing side-tables (CSR) can be rebuilt by the caller. No-op (returns null) if
      * there are no tombstones.

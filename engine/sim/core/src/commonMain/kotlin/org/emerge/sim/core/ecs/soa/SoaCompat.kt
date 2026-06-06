@@ -15,12 +15,11 @@ import kotlin.reflect.KClass
  * [forEachSlot] is the allocation-free iteration path: it hands the system a raw slot index so
  * it can read columns directly instead of materialising a `Map<EntityId, T>` via [entries].
  *
- * **Ordering note.** Writes maintain the dense ascending-by-EntityId invariant: an existing
- * component is overwritten in place, and a freshly spawned entity (always the largest id)
- * appends. Adding a component type to a *pre-existing* non-maximal entity mid-tick — which the
- * array-of-structs builder appends at the end of its iteration order — would diverge from that
- * invariant; it throws here (via [ComponentColumns.put]) and is the deferred Phase-2 cold-path,
- * flagged loudly rather than silently reordered. No current cyto path hits it.
+ * **Ordering note.** Writes mirror the AoS `ComponentTable` iteration order: an existing
+ * component is overwritten in place, and a new entity is appended at the end. Adding a component
+ * type to a *pre-existing* non-maximal entity mid-tick — which the array-of-structs builder
+ * appends at the end of its iteration order — is appended here too (via [ComponentColumns.put]),
+ * so it stays bit-identical to the builder rather than reordering by id.
  */
 class SoaCompat(val world: SoaWorld) {
 
@@ -42,9 +41,9 @@ class SoaCompat(val world: SoaWorld) {
     inline fun <reified T : Any> remove(id: EntityId) = remove(id, T::class)
 
     /**
-     * Gathers all live entries for [type] into a fresh ascending-ordered map — the compat
-     * equivalent of the builder's `entries<T>()`. Prefer [forEachSlot] where the per-entry
-     * object isn't actually needed.
+     * Gathers all live entries for [type] into a fresh insertion-ordered map — the compat
+     * equivalent of the builder's `entries<T>()` (same iteration order as the AoS table). Prefer
+     * [forEachSlot] where the per-entry object isn't actually needed.
      */
     fun <T : Any> entries(type: KClass<T>): Map<EntityId, T> {
         val cols = world.columns(type)
@@ -55,7 +54,7 @@ class SoaCompat(val world: SoaWorld) {
 
     inline fun <reified T : Any> entries(): Map<EntityId, T> = entries(T::class)
 
-    /** Allocation-free iteration: visits each live slot of [type] in ascending-EntityId order. */
+    /** Allocation-free iteration: visits each live slot of [type] in insertion order (AoS-table order). */
     fun <T : Any> forEachSlot(type: KClass<T>, action: (slot: Int, id: EntityId) -> Unit) =
         world.columns(type).forEachAliveSlot(action)
 

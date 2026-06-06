@@ -17,8 +17,10 @@ import org.emerge.sim.core.physics.components.SpringConstraint
  * the flat arrays at a lifecycle barrier via [rebuildFrom]; in-place per-tick field updates
  * never reallocate.
  *
- * Slot order must stay ascending-by-EntityId (the [ComponentColumns] invariant) so the
- * lower-id pair-solve and accumulation are bit-identical to the array-of-structs solver.
+ * The lower-id pair-solve keys off [otherId] (the real EntityId), and the impulse accumulation
+ * is additive, so bit-identity does not depend on the dense slots being ascending-by-EntityId —
+ * only on [slotOf] resolving each neighbour to its current dense slot. (In practice the cyto
+ * cells that use this are all spawned monotonically, so their slots are ascending anyway.)
  */
 class SpringCsr private constructor(
     var count: Int,

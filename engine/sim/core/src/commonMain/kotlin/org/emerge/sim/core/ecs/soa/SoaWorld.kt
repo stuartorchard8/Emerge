@@ -16,10 +16,12 @@ import kotlin.reflect.KClass
  * recent id is removed) so a reducer ported onto this world allocates the *same* id sequence
  * as its array-of-structs original — which the cross-tick bit-identity gate depends on.
  *
- * **Ordering.** Each [ComponentColumns] keeps its dense slots ascending-by-EntityId; spawns
- * append (a fresh id is always the largest) and removals tombstone, so slot indices are
- * stable within a tick and only shift at a [compact] barrier. Slot-referencing side-tables
- * (CSR adjacency) rebuild there using the returned remap.
+ * **Ordering.** Each [ComponentColumns] keeps its dense slots in insertion order (mirroring
+ * the AoS `ComponentTable`); spawns append (a fresh id is the largest, so this is also
+ * ascending) and removals tombstone, so slot indices are stable within a tick and only shift at
+ * a [compact] barrier. A component added mid-tick to a pre-existing, non-maximal entity is
+ * appended too (still matching the AoS table). Slot-referencing side-tables (CSR adjacency)
+ * rebuild at the barrier using the returned remap.
  */
 class SoaWorld(
     var randomSeed: Long = 0L,
@@ -94,9 +96,9 @@ class SoaWorld(
     }
 
     /**
-     * Adds [value] for [id] in [type]'s columns (and marks [id] live). [id] must be larger
-     * than every id already present in that column — true for freshly spawned entities and for
-     * an ascending-order loader. Overwrites in place if [id] is already present.
+     * Adds [value] for [id] in [type]'s columns (and marks [id] live). A new id is appended in
+     * insertion order (mirroring the AoS `ComponentTable`); overwrites in place if [id] is
+     * already present. Adding a component to a pre-existing, non-maximal entity is supported.
      */
     fun <T : Any> add(id: EntityId, type: KClass<T>, value: T) {
         columns(type).put(id, value)
