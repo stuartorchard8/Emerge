@@ -3,25 +3,30 @@ package org.emerge.demo.cyto
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
-import org.emerge.demo.cyto.sim.CytoReducer
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.sim.createCytoInitialState
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
+import org.emerge.demo.cyto.sim.soa.CytoWorld
 import org.emerge.sim.core.EntityId
-import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.Tick
-import org.emerge.sim.core.TickStepper
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.sim.SimState
 
 /**
- * Local-only controller for the native (Box2D-free) Cyto demo. Owns a [TickStepper] over
- * the [CytoReducer], steps it at a fixed 1/64 rate from the host's real frame delta, and
- * buffers pointer interactions into the next step's [CytoInput] so taps/spawns are never
- * dropped on a frame that runs zero steps.
+ * Local-only controller for the native (Box2D-free) Cyto demo. Drives the **struct-of-arrays**
+ * [CytoSoaReducer] over a persistent [CytoWorld] — the columns mutate in place each step with no
+ * per-tick `SimState` rebuild — at a fixed 1/64 rate from the host's real frame delta. Pointer
+ * interactions buffer into the next step's [CytoInput] so taps/spawns are never dropped on a
+ * frame that runs zero steps.
+ *
+ * The renderer, hit-testing, readouts, and save codec all consume an engine [SimState]; the world
+ * is materialized into one via [CytoWorld.toSimState] **once per frame** (only when a step ran),
+ * not per step — so multiple steps in a heavy frame share a single materialize and the per-step
+ * SoA win is preserved. The SoA tick is byte-identical to the former AoS `CytoReducer` (gated by
+ * `CytoSoaEquivalenceTest`), so behaviour — including save/load — is unchanged.
  */
 class CytoController(
     private val cfg: CytoConfig = CytoConfig(),
@@ -29,20 +34,25 @@ class CytoController(
     // Work-stealing pool for the parallel spring solver (daemon threads on JVM/Android, no
     // shutdown needed; a no-op inline runner on JS).
     private val executor = ParallelExecutor()
-    private val reducer = CytoReducer(executor = executor)
-    private val stepper = TickStepper(cfg, createCytoInitialState(), reducer)
+    private val reducer = CytoSoaReducer(cfg, executor)
+    private var world = CytoWorld.fromSimState(createCytoInitialState())
+    private var tickCount = 0L
     private var accumulator = 0f
+
+    /** Last materialized snapshot — what the renderer / hit-test / save read between steps. */
+    private var currentState: SimState = world.toSimState()
 
     private val pendingSpawns = ArrayList<CytoInput.Spawn>()
     private val pendingTaps = ArrayList<CytoInput.Tap>()
     private val pendingDetaches = ArrayList<EntityId>()
     private var currentGrab: CytoInput.Grab? = null
 
-    val tick: Long get() = stepper.tick.value
+    val tick: Long get() = tickCount
 
     fun tick(deltaSeconds: Float): CytoFrame {
         accumulator += deltaSeconds.coerceIn(0f, 0.25f)
         var firstStep = true
+        var stepped = false
         while (accumulator >= STEP) {
             // Spawns/taps are one-shot (consumed on the first step); the grab is continuous.
             val input = CytoInput(
@@ -56,11 +66,15 @@ class CytoController(
                 pendingTaps.clear()
                 pendingDetaches.clear()
             }
-            stepper.step(mapOf(PlayerId(0) to input))
+            reducer.tick(world, input = input)
+            tickCount++
             accumulator -= STEP
             firstStep = false
+            stepped = true
         }
-        return CytoFrame(stepper.state, stepper.tick.value)
+        // Materialize for the renderer/save only when the world actually changed this frame.
+        if (stepped) currentState = world.toSimState()
+        return CytoFrame(currentState, tickCount)
     }
 
     // ── Pointer interaction (logical Cyto coordinates) ──────────────────────────
@@ -75,7 +89,7 @@ class CytoController(
 
     /** The cell whose disc contains the logical point ([x], [y]), or null. */
     fun cellAt(x: Float, y: Float): EntityId? {
-        val state = stepper.state
+        val state = currentState
         val transforms = state.components.getTable<TransformComponent>()
         val colliders = state.components.getTable<ColliderComponent>()
         for (id in state.components.getTable<CytoCellComponent>().keys()) {
@@ -110,7 +124,7 @@ class CytoController(
     /** Readouts for the [grabbed] cell, or for every cell when [all] (the Debug toggle). */
     fun readouts(grabbed: EntityId?, all: Boolean): List<Readout> {
         if (grabbed == null && !all) return emptyList()
-        val state = stepper.state
+        val state = currentState
         val cells = state.components.getTable<CytoCellComponent>().asMap()
         val transforms = state.components.getTable<TransformComponent>()
         val out = ArrayList<Readout>()
@@ -131,10 +145,12 @@ class CytoController(
 
     // ── Persistence ─────────────────────────────────────────────────────────────
 
-    fun snapshotBytes(): ByteArray = CytoSaveCodec.encode(stepper.state)
+    fun snapshotBytes(): ByteArray = CytoSaveCodec.encode(currentState)
 
     fun restoreSnapshot(bytes: ByteArray) {
-        stepper.reset(CytoSaveCodec.decode(bytes), Tick(0))
+        world = CytoWorld.fromSimState(CytoSaveCodec.decode(bytes))
+        currentState = world.toSimState()
+        tickCount = 0
         accumulator = 0f
         pendingSpawns.clear()
         pendingTaps.clear()
