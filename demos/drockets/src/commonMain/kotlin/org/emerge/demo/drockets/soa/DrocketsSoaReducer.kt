@@ -1,6 +1,13 @@
 package org.emerge.demo.drockets.soa
 
+import org.emerge.demo.drockets.DROCKET_RADIUS
+import org.emerge.demo.drockets.DrocketPhase
+import org.emerge.demo.drockets.DrocketStateComponent
 import org.emerge.demo.drockets.DrocketsConfig
+import org.emerge.demo.drockets.KNIGHT_RADIUS
+import org.emerge.demo.drockets.KnightPhase
+import org.emerge.demo.drockets.KnightStateComponent
+import org.emerge.demo.drockets.SpriteAnimationState
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.ecs.soa.ImpulseColumnStore
 import org.emerge.sim.core.physics.components.ColliderComponent
@@ -11,6 +18,7 @@ import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.BodyShape
+import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 
@@ -32,6 +40,90 @@ import org.emerge.sim.core.physics.primitives.Frac2
  * Ported so far: `reset`, `forceGather` (gravity + atmosphere drag), `integrate`.
  */
 class DrocketsSoaReducer(private val cfg: DrocketsConfig) {
+
+    // ── deterministic PRNG (mirrors SimBuilder.nextRandomInt over SimState.randomSeed) ──
+    private fun nextRandomInt(w: DrocketsWorld): Int {
+        w.world.randomSeed = w.world.randomSeed * 2862933555777941757L + 3037000493L
+        return (w.world.randomSeed ushr 32).toInt()
+    }
+
+    private fun nextRandomInt(w: DrocketsWorld, until: Int): Int {
+        require(until > 0)
+        return (nextRandomInt(w).toLong() and 0x7FFFFFFFL).toInt() % until
+    }
+
+    // ── spriteAnimation (engine-side SpriteAnimationSystem) ──────────────────────
+    /** Advances each entity's animation by one tick (per-entity, no RNG). */
+    fun spriteAnimation(w: DrocketsWorld) {
+        val animCols = w.world.columns(SpriteAnimationState::class)
+        for (slot in 0 until animCols.count) {
+            val state = animCols.gatherAt(slot)
+            val anim = state.sheet.animations.getOrNull(state.animationIndex) ?: continue
+            val nextTick = state.tickCounter + 1
+            val newState = if (nextTick >= anim.ticksPerFrame) {
+                val nextFrame = state.currentFrame + 1
+                if (nextFrame >= anim.frames.size) {
+                    if (anim.loop) state.copy(currentFrame = 0, tickCounter = 0)
+                    else state.copy(currentFrame = anim.frames.size - 1, tickCounter = 0)
+                } else {
+                    state.copy(currentFrame = nextFrame, tickCounter = 0)
+                }
+            } else {
+                state.copy(tickCounter = nextTick)
+            }
+            animCols.put(animCols.entityAt(slot), newState)
+        }
+    }
+
+    // ── drocketWalk / knightWalk ─────────────────────────────────────────────────
+    /** Rotates a WALKING entity's surface attachment around its planet (per-entity, no RNG). */
+    private fun surfaceWalk(
+        w: DrocketsWorld,
+        stateColType: kotlin.reflect.KClass<*>,
+        isWalking: (Int) -> Boolean,
+        walkDirectionAt: (Int) -> Int,
+        baseRadius: Frac,
+    ) {
+        val landingCols = w.world.columns(LandingAttachmentComponent::class)
+        val colliderCols = w.world.columns(ColliderComponent::class)
+        @Suppress("UNCHECKED_CAST")
+        val stateCols = w.world.columns(stateColType as kotlin.reflect.KClass<Any>)
+        for (slot in 0 until stateCols.count) {
+            if (!isWalking(slot)) continue
+            val id = stateCols.entityAt(slot)
+            val landing = landingCols.gather(id) ?: continue
+            val parentCollider = colliderCols.gather(landing.parentEntityId) ?: continue
+            val walkStep = baseRadius / parentCollider.radius.toCircumference()
+            val angularDelta = walkStep * walkDirectionAt(slot)
+            landingCols.put(
+                id,
+                landing.copy(
+                    relativePos = landing.relativePos.rotateByAngle(Coord(angularDelta.raw.toInt())),
+                    relativeAng = landing.relativeAng + angularDelta,
+                ),
+            )
+        }
+    }
+
+    fun drocketWalk(w: DrocketsWorld) {
+        val store = w.world.columns(DrocketStateComponent::class).store as DrocketStateColumnStore
+        surfaceWalk(
+            w, DrocketStateComponent::class,
+            isWalking = { store.phase[it] == DrocketPhase.WALKING.ordinal },
+            walkDirectionAt = { store.walkDirection[it] },
+            baseRadius = DROCKET_RADIUS / 16,
+        )
+    }
+
+    fun knightWalk(w: DrocketsWorld) {
+        val store = w.world.columns(KnightStateComponent::class).store as KnightStateColumnStore
+        surfaceWalk(
+            w, KnightStateComponent::class,
+            isWalking = { store.phase[it] == KnightPhase.WALKING.ordinal },
+            walkDirectionAt = { store.walkDirection[it] },
+            baseRadius = KNIGHT_RADIUS / 16,
+        )
+    }
 
     // ── reset (engine ImpulseResetSystem) ───────────────────────────────────────
     /** Rebuilds Impulse as a dense zero accumulator over Material entities (ascending id). */

@@ -1,9 +1,12 @@
 package org.emerge.demo.drockets.soa
 
 import org.emerge.demo.drockets.AtmosphereDragSystem
+import org.emerge.demo.drockets.DrocketWalkSystem
 import org.emerge.demo.drockets.DrocketsConfig
 import org.emerge.demo.drockets.DrocketsInput
 import org.emerge.demo.drockets.DrocketsReducer
+import org.emerge.demo.drockets.SpriteAnimationState
+import org.emerge.demo.drockets.SpriteAnimationSystem
 import org.emerge.demo.drockets.createDrocketsInitialState
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
@@ -98,6 +101,43 @@ class DrocketsSoaPhaseEquivalenceTest {
         assertTrue(
             state.components.getTable<LandingAttachmentComponent>().asMap().isNotEmpty(),
             "expected landed entities to exercise attachment",
+        )
+    }
+
+    @Test
+    fun spriteAnimationMatchesEngineSystem() {
+        val state = busyState()
+        val builder = SimBuilder(state)
+        SpriteAnimationSystem.update(cfg, builder, inputs)
+        val aos = builder.build()
+
+        val world = DrocketsWorld.fromSimState(state)
+        DrocketsSoaReducer(cfg).spriteAnimation(world)
+        val soa = world.toSimState()
+
+        assertEquals(
+            aos.components.getTable<SpriteAnimationState>().asMap(),
+            soa.components.getTable<SpriteAnimationState>().asMap(),
+            "SpriteAnimationState diverged",
+        )
+        assertTrue(state.components.getTable<SpriteAnimationState>().asMap().isNotEmpty(), "expected animated entities")
+    }
+
+    @Test
+    fun drocketWalkMatchesEngineSystem() {
+        val state = busyState()
+        val builder = SimBuilder(state)
+        DrocketWalkSystem.update(cfg, builder, inputs)
+        val aos = builder.build()
+
+        val world = DrocketsWorld.fromSimState(state)
+        DrocketsSoaReducer(cfg).drocketWalk(world)
+        val soa = world.toSimState()
+
+        assertEquals(
+            aos.components.getTable<LandingAttachmentComponent>().asMap(),
+            soa.components.getTable<LandingAttachmentComponent>().asMap(),
+            "LandingAttachment diverged after drocketWalk",
         )
     }
 
