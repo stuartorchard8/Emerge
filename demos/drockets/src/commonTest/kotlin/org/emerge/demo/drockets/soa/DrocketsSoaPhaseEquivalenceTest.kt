@@ -1,6 +1,8 @@
 package org.emerge.demo.drockets.soa
 
 import org.emerge.demo.drockets.AtmosphereDragSystem
+import org.emerge.demo.drockets.DrocketAISystem
+import org.emerge.demo.drockets.DrocketStateComponent
 import org.emerge.demo.drockets.DrocketWalkSystem
 import org.emerge.demo.drockets.DrocketsConfig
 import org.emerge.demo.drockets.DrocketsInput
@@ -101,6 +103,47 @@ class DrocketsSoaPhaseEquivalenceTest {
         assertTrue(
             state.components.getTable<LandingAttachmentComponent>().asMap().isNotEmpty(),
             "expected landed entities to exercise attachment",
+        )
+    }
+
+    @Test
+    fun drocketAiMatchesEngineSystem() {
+        val state = busyState()
+
+        // AoS: reset (so impulse additions start from empty, as in the real pipeline) then the
+        // DrocketAI state machine.
+        val builder = SimBuilder(state)
+        ImpulseResetSystem.update(cfg, builder, inputs)
+        DrocketAISystem.update(cfg, builder, inputs)
+        val aos = builder.build()
+
+        val world = DrocketsWorld.fromSimState(state)
+        val reducer = DrocketsSoaReducer(cfg)
+        reducer.reset(world)
+        reducer.drocketAi(world)
+        val soa = world.toSimState()
+
+        assertEquals(aos.randomSeed, soa.randomSeed, "PRNG advanced differently — RNG draw order diverged")
+        assertEquals(
+            aos.components.getTable<DrocketStateComponent>().asMap(),
+            soa.components.getTable<DrocketStateComponent>().asMap(),
+            "DrocketState diverged",
+        )
+        assertEquals(
+            aos.components.getTable<LandingAttachmentComponent>().asMap(),
+            soa.components.getTable<LandingAttachmentComponent>().asMap(),
+            "LandingAttachment diverged (launch detach)",
+        )
+        assertEquals(
+            aos.components.getTable<SpriteAnimationState>().asMap(),
+            soa.components.getTable<SpriteAnimationState>().asMap(),
+            "SpriteAnimationState diverged (phase-change animations)",
+        )
+        assertEquals(nonZeroImpulses(aos), nonZeroImpulses(soa), "impulses diverged (thrust/launch)")
+        // Non-vacuous: the AI advanced state (timers/phases) for the active drockets.
+        assertTrue(
+            aos.components.getTable<DrocketStateComponent>().asMap() != state.components.getTable<DrocketStateComponent>().asMap(),
+            "expected DrocketAI to advance drocket state",
         )
     }
 
