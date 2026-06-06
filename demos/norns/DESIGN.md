@@ -60,8 +60,12 @@ dependency-ordered (later ones read earlier ones).
    failure or old age. Publishes age + life stage to the locus bus. Gated by `BiologyTest`:
    stage progression, vital vs non-vital organ failure, repair offsetting injury, death of old
    age, dead-stays-dead, determinism.
-5. **Drives + sensorimotor** — drives as chemicals read by the brain; perception of world
-   objects; action verbs (eat/rest/move). Harness: hungry→seek→eat→hunger-drops loop.
+5. **Drives + sensorimotor** — ✅ **done.** Drives (discomforts in [0,1]) that rise over time and
+   fall on drive-satisfying actions; reward = total-discomfort reduction — the reinforcement
+   signal. Gated by `DrivesTest`: drive rise/clamp, action effects, drive-reduction reward, and
+   the **capstone integration** — a creature wiring drives→brain→action→reward **learns to
+   satisfy its own drives** (EAT when hungry, REST when tired) and holds lower average discomfort
+   than an untrained creature. This is the core Creatures loop, working end to end.
 6. **World + embodiment** — a simple world of objects (food, etc.) and the embodied creature;
    the reducer that runs all the above per tick on the ECS.
 7. **Reproduction** — mating → genome crossover → egg → hatch → new creature. Harness: a
@@ -108,6 +112,10 @@ dependency-ordered (later ones read earlier ones).
   stages are driven by an age clock. C1 damages organs independently (each runs its own
   chemistry) and advances stages via genome life-stage chemicals. Per-organ coupling + biology
   genes (organ definitions, life-stage gene activation) are deferred.
+- **G7. Drive/action model.** A fixed action→drive-effect table and a flat (unweighted)
+  discomfort sum. C1 derives action effects from world objects + biochemistry and weights drives.
+  Both are tuning surfaces; the action set is also a placeholder (EAT/REST), to be expanded with
+  the world.
 
 ## Current status
 
@@ -115,5 +123,6 @@ dependency-ordered (later ones read earlier ones).
 - Subsystem 2 (genome): ✅ done, 7 tests green.
 - Subsystem 3 (brain / neural net): ✅ done, 4 tests green.
 - Subsystem 4 (biology / physiology): ✅ done, 7 tests green.
-- Subsystem 5 (drives + sensorimotor): next — drives as chemicals read by the brain; perception
-  of world objects; action verbs (eat/rest/move).
+- Subsystem 5 (drives + sensorimotor): ✅ done, 4 tests green (incl. the integrated learning loop).
+- Subsystem 6 (world + embodiment): next — a Creature that wires biochem+brain+biology+drives,
+  embodied in a simple world of objects (food); survival as the harness.
