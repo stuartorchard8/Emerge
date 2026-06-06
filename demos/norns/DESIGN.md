@@ -50,9 +50,11 @@ dependency-ordered (later ones read earlier ones).
    per-locus `crossover` + bounded `mutate` (seeded `GeneRng`, same LCG as the engine). Gated by
    `GenomeTest`: expression reproduces the subsystem-1 hunger regulation, half-life table build,
    crossover/mutation determinism, both-parent inheritance, mutation bounds + immutability.
-3. **Brain (neural net)** — lobes of neurons, dendrites with weights, Hebbian-style learning;
-   perception → decision lobe → action outputs, modulated by drive chemicals. Harness: signal
-   propagation, learning changes weights, a stimulus→response association forms.
+3. **Brain (neural net)** — ✅ **done.** `Lobe`s of neurons wired by learnable dendrite
+   `Tract`s; reward-modulated Hebbian learning (`Δw = learnRate × reward × pre × post`).
+   Gated by `BrainTest`: weighted propagation, reward strengthen / punishment weaken / inactive
+   unchanged, determinism, and the capstone — the brain **learns a context→action association**
+   from reward (RED→EAT, BLUE→REST).
 4. **Biology / physiology** — organs, life stages (egg→baby→child→…→senile→death), an aging
    clock, metabolism linking biochemistry to energy/health, reproductive readiness. Harness:
    life-stage transitions, aging, death on vital-chemical depletion.
@@ -92,11 +94,18 @@ dependency-ordered (later ones read earlier ones).
   judgeable by watching it run, which needs the (deferred) render host. My harnesses prove
   loops *close*, not that they feel right.
 - **G3. Emitter/receptor modes.** C1 had analog/digital modes and per-emitter clocks; I start
-  with analog/per-tick only. (Logged when subsystem 1 lands.)
+  with analog/per-tick only.
+- **G4. Brain detail.** The learning rule is a single fixed reward-gated Hebbian law and tracts
+  are densely connected. C1 used per-tract **SVRule** bytecode (bespoke state/weight update
+  rules) and sparse, genome-specified connectivity. Both are deferred — they're where the
+  brain's richer dynamics (habituation, decay schedules, specialised lobes) live.
+- **G5. Brain genome encoding.** The brain is currently hand-wired, not gene-encoded. C1's genome
+  specifies lobes/tracts/SVRules; `LobeGene`/`TractGene` variants are a planned genome extension
+  (so brain structure is heritable + mutable like the biochemistry).
 
 ## Current status
 
 - Subsystem 1 (biochemistry): ✅ done, 9 tests green.
 - Subsystem 2 (genome): ✅ done, 7 tests green.
-- Subsystem 3 (brain / neural net): next — the signature Creatures system, and the first with
-  no equivalent anywhere in the engine.
+- Subsystem 3 (brain / neural net): ✅ done, 4 tests green.
+- Subsystem 4 (biology / physiology): next — organs, life stages, aging, metabolism, death.
