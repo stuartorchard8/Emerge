@@ -26,12 +26,18 @@ data class DrocketsSnapshot(
  * Particle entities are stripped at encode time (transient by nature, would
  * bloat saves without contributing to reproducible state).
  *
- * Compatibility: any change to wire layout must bump [FORMAT_VERSION]; the
- * decoder rejects older versions outright (a solo project doesn't need legacy
- * load support — start a fresh sim instead).
+ * Compatibility: any change to wire layout *or to the meaning of a persisted field* must bump
+ * [FORMAT_VERSION]; the decoder rejects older versions outright (a solo project doesn't need
+ * legacy load support — start a fresh sim instead).
+ *
+ * v9: the deterministic-clock fix changed `ReproducerComponent.birthdayMs` from wall-clock
+ * epoch milliseconds to sim-clock milliseconds (`tick * 1000 / 60`). The bytes are unchanged but
+ * the units are not — a v8 save's epoch-scale birthdays dwarf the new sim clock, so every cell
+ * reads as not-yet-born (maturity 0 → zero-scale, invisible sprites). Rejecting v8 forces a
+ * fresh sim under the new clock.
  */
 object DrocketsSaveCodec {
-    private const val FORMAT_VERSION = 8
+    private const val FORMAT_VERSION = 9
 
     fun encode(snapshot: DrocketsSnapshot): ByteArray {
         val w = ByteWriter()

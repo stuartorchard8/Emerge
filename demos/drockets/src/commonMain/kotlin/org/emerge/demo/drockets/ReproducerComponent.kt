@@ -1,5 +1,6 @@
 package org.emerge.demo.drockets
 
+import kotlin.math.max
 import kotlin.math.min
 
 enum class Sex {
@@ -22,6 +23,6 @@ data class ReproducerComponent(
     }
 
     fun getMaturityRatio(nowMs: Long): Float {
-        return min(1f, (nowMs - birthdayMs)/maturityAgeMs.toFloat())
+        return max(0f, min(1f, (nowMs - birthdayMs)/maturityAgeMs.toFloat()))
     }
 }
