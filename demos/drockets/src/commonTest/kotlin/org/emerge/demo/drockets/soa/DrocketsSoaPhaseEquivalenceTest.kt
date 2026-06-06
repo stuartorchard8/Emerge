@@ -11,8 +11,10 @@ import org.emerge.sim.core.ecs.Phase
 import org.emerge.sim.core.ecs.isolated
 import org.emerge.sim.core.ecs.runSequential
 import org.emerge.sim.core.physics.components.ImpulseComponent
+import org.emerge.sim.core.physics.components.LandingAttachmentComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.systems.AttachmentSystem
 import org.emerge.sim.core.physics.systems.GravitySystem
 import org.emerge.sim.core.physics.systems.ImpulseResetSystem
 import org.emerge.sim.core.physics.systems.IntegrationSystem
@@ -68,6 +70,35 @@ class DrocketsSoaPhaseEquivalenceTest {
 
         assertEquals(nonZeroImpulses(aos), nonZeroImpulses(soa), "impulses diverged after reset+forceGather")
         assertTrue(nonZeroImpulses(aos).isNotEmpty(), "expected gravity/drag to produce impulses")
+    }
+
+    @Test
+    fun attachmentMatchesEngineAttachmentSystem() {
+        val state = busyState()
+
+        // AoS: reset then attachment (attachment overwrites attached bodies' impulse, so the
+        // intervening force phases don't affect its result — reset+attachment isolates it).
+        val builder = SimBuilder(state)
+        ImpulseResetSystem.update(cfg, builder, inputs)
+        AttachmentSystem.update(cfg, builder, inputs)
+        val aos = builder.build()
+
+        val world = DrocketsWorld.fromSimState(state)
+        val reducer = DrocketsSoaReducer(cfg)
+        reducer.reset(world)
+        reducer.attachment(world)
+        val soa = world.toSimState()
+
+        assertEquals(nonZeroImpulses(aos), nonZeroImpulses(soa), "impulses diverged after reset+attachment")
+        assertEquals(
+            aos.components.getTable<LandingAttachmentComponent>().asMap(),
+            soa.components.getTable<LandingAttachmentComponent>().asMap(),
+            "LandingAttachment table diverged after attachment",
+        )
+        assertTrue(
+            state.components.getTable<LandingAttachmentComponent>().asMap().isNotEmpty(),
+            "expected landed entities to exercise attachment",
+        )
     }
 
     @Test

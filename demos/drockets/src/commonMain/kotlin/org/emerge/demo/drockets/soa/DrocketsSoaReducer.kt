@@ -164,6 +164,42 @@ class DrocketsSoaReducer(private val cfg: DrocketsConfig) {
         }
     }
 
+    // ── attachment (engine AttachmentSystem) ─────────────────────────────────────
+    // Snaps each landed entity rigidly to its parent by OVERWRITING its impulse with a
+    // position/velocity correction (drops stale attachments whose parent/self vanished).
+    // Per-entity independent → order-independent. Runs after the force phases; the overwrite
+    // discards any force impulse on attached bodies, exactly as AoS `update<Impulse>{ delta }`.
+    fun attachment(w: DrocketsWorld) {
+        val landingCols = w.world.columns(LandingAttachmentComponent::class)
+        val transformCols = w.world.columns(TransformComponent::class)
+        val motionCols = w.world.columns(MotionComponent::class)
+        val impulseCols = w.world.columns(ImpulseComponent::class)
+        val toRemove = ArrayList<EntityId>()
+        for (slot in 0 until landingCols.count) {
+            if (!landingCols.isAlive(slot)) continue
+            val id = landingCols.entityAt(slot)
+            val landing = landingCols.gatherAt(slot)
+            val parentTransform = transformCols.gather(landing.parentEntityId)
+            val parentMotion = motionCols.gather(landing.parentEntityId)
+            val transform = transformCols.gather(id)
+            val motion = motionCols.gather(id)
+            if (parentTransform == null || parentMotion == null || transform == null || motion == null) {
+                toRemove.add(id); continue
+            }
+            val outcome = TransformComponent(
+                pos = parentTransform.pos + landing.relativePos.rotateByAngle(parentTransform.ang),
+                ang = parentTransform.ang + landing.relativeAng,
+            )
+            val delta = ImpulseComponent(
+                pos = outcome.pos - transform.pos,
+                vel = parentMotion.vel - motion.vel,
+                angVel = parentMotion.angVel - motion.angVel + (outcome.ang - transform.ang) / 4,
+            )
+            impulseCols.put(id, delta) // overwrite in place (attached bodies are Material ⇒ present)
+        }
+        for (id in toRemove) landingCols.remove(id)
+    }
+
     // ── integrate (engine IntegrationSystem) ─────────────────────────────────────
     /** Semi-implicit Euler over every Motion-bearing entity (per-entity, order-independent). */
     fun integrate(w: DrocketsWorld) {
