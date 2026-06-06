@@ -23,6 +23,8 @@ import kotlin.reflect.KClass
  */
 class SoaWorld(
     var randomSeed: Long = 0L,
+    /** Deterministic monotonic tick clock, mirroring [org.emerge.sim.core.sim.SimState.tick]. */
+    var tick: Long = 0L,
 ) {
     private val columnsByType = LinkedHashMap<KClass<*>, ComponentColumns<*>>()
     private val liveEntities = HashSet<Int>()
@@ -33,6 +35,9 @@ class SoaWorld(
 
     /** Number of live entities (across all component types — an entity may carry several). */
     val entityCount: Int get() = liveEntities.size
+
+    /** Read-only view of the live entity-id values (for rebuilding an EcsWorld on export). */
+    val liveIds: Set<Int> get() = liveEntities
 
     // --- registration -------------------------------------------------------
 
