@@ -4,7 +4,9 @@ import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CellWork
 import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.CytoConfig
+import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.sim.MAX_CHEM
 import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.RADIUS_ELASTICITY
@@ -57,18 +59,25 @@ class CytoSoaReducer(
     private val divideIds = ArrayList<Int>()
     private val destroyIds = ArrayList<Int>()
 
+    // interaction scratch (interact phase), drained by the lifecycle phase
+    private val interactDetach = ArrayList<Int>()    // cells to cut all connections (Detach mode)
+    private val interactDestroy = ArrayList<Int>()   // cells deleted by a Delete tap
+
     // per-directed-CSR-end break flags, set in the connections phase, drained by applyBreaks
     private var brokenEdge = BooleanArray(0)
 
     // reusable additive impulse partition for the spring solver (velX/velY channels)
     private val forcePartition = AdditivePartition(channels = 2)
 
-    fun tick(w: CytoWorld, profiler: PipelineProfiler? = null) {
+    fun tick(w: CytoWorld, profiler: PipelineProfiler? = null, input: CytoInput = CytoInput.EMPTY) {
+        phase(profiler, "interact") { interact(w, input) }
         phase(profiler, "reset") { reset(w) }
         phase(profiler, "contacts") { contacts(w) }
         phase(profiler, "biology") { biology(w) }
         phase(profiler, "connections") { connections(w) }
-        phase(profiler, "forces") { forces(w) }
+        // The spring solver runs first, then the grab pull (matching the AoS forces phase:
+        // SpringConstraintSystem then CytoGrabSystem).
+        phase(profiler, "forces") { forces(w); grab(w, input.grab) }
         phase(profiler, "lifecycle") { lifecycle(w) }
         phase(profiler, "integrate") { integrate(w) }
     }
@@ -78,6 +87,89 @@ class CytoSoaReducer(
         val start = TimeSource.Monotonic.markNow()
         block()
         p.recordPhase(name, start.elapsedNow().inWholeNanoseconds)
+    }
+
+    // ── interact (CytoInteractionSystem) ─────────────────────────────────────────
+    // Pointer interactions for this tick. Spawns are appended to the columns NOW (so they
+    // participate in this tick's contacts/biology/forces, exactly as the AoS interact phase's
+    // freshly-spawned cells do); Delete/Detach are deferred to the lifecycle phase. The CSR is
+    // rebuilt once at the end so every appended cell is present (degree-0) before `contacts`.
+    private fun interact(w: CytoWorld, input: CytoInput) {
+        interactDetach.clear()
+        interactDestroy.clear()
+        if (input.spawns.isEmpty() && input.taps.isEmpty() && input.detaches.isEmpty()) return
+
+        val needStructure = input.spawns.isNotEmpty() || input.taps.isNotEmpty()
+        // Materialize the adjacency BEFORE any append (the CSR still matches the old count); the
+        // single rebuild below extends it over the appended cells.
+        val adj = if (needStructure) lifecycleOps.materialize(w) else null
+
+        // Explicit spawns first — allocates ids in the same order as CytoInteractionSystem.
+        for (s in input.spawns) spawnCellAt(w, s.x, s.y, s.type)
+
+        // Detach hold mode (one-shot, on grab-start): deferred to the lifecycle phase.
+        for (id in input.detaches) interactDetach.add(id.value)
+
+        if (input.taps.isNotEmpty()) {
+            // Hit-test against the cell set as it stands AFTER explicit spawns, captured once —
+            // tap-spawned cells (below) are not re-tested by later taps, matching the AoS snapshot.
+            val hitCount = w.count
+            for (tap in input.taps) {
+                var hitAny = false
+                for (slot in 0 until hitCount) {
+                    if (!containsPoint(w, slot, tap.x, tap.y)) continue
+                    hitAny = true
+                    when (tap.mode) {
+                        // TapUp modes act on a click; Base/Sticky/Detach are hold modes handled
+                        // on grab, so a click is a no-op.
+                        TouchMode.Delete -> interactDestroy.add(w.entityId[slot])
+                        TouchMode.Set -> w.type[slot] = tap.type.ordinal
+                        TouchMode.Activate, TouchMode.Base, TouchMode.Sticky, TouchMode.Detach -> Unit
+                    }
+                }
+                if (!hitAny) spawnCellAt(w, tap.x, tap.y, tap.type)
+            }
+        }
+
+        if (adj != null) lifecycleOps.rebuild(w, adj)
+    }
+
+    /** Spawns a pointer-created cell (surplus energy, min radius), mirroring CytoInteractionSystem. */
+    private fun spawnCellAt(w: CytoWorld, x: Float, y: Float, type: CellType) {
+        val id = w.world.createEntity()
+        lifecycleOps.appendCell(
+            w, id,
+            pos = CytoUnits.coord2(x, y), vel = Coord2.zero,
+            type = type, logicalRadius = MIN_RADIUS, energy = 2f, sticky = false,
+        )
+    }
+
+    /** Whether the cell at [slot] contains the logical point (non-wrapping, matching the AoS hit-test). */
+    private fun containsPoint(w: CytoWorld, slot: Int, x: Float, y: Float): Boolean {
+        val dx = CytoUnits.toLogical(Coord(w.posX[slot])) - x
+        val dy = CytoUnits.toLogical(Coord(w.posY[slot])) - y
+        val r = CytoUnits.toLogical(Frac(w.radiusRaw[slot]))
+        return dx * dx + dy * dy < r * r
+    }
+
+    // ── grab (CytoGrabSystem) ────────────────────────────────────────────────────
+    // Mouse-joint pull toward the pointer, added after the spring solver. Sticky hold mode sets
+    // the transient stickyTemp so the held cell welds to contacts next tick (biology clears it).
+    private fun grab(w: CytoWorld, grab: CytoInput.Grab?) {
+        if (grab == null) return
+        val slot = w.slotOf(grab.entity.value)
+        if (slot < 0) return
+        val target = CytoUnits.coord2(grab.x, grab.y)
+        // Torus-aware delta (raw Int subtraction wraps), matching Coord2.minus.
+        val toTarget = Frac2(
+            Frac((target.x.raw - w.posX[slot]).toLong()),
+            Frac((target.y.raw - w.posY[slot]).toLong()),
+        )
+        val vel = Frac2(Frac(w.velX[slot].toLong()), Frac(w.velY[slot].toLong()))
+        val pull = toTarget * cfg.grabStiffness - vel * cfg.grabDamping
+        w.impX[slot] += pull.x.raw
+        w.impY[slot] += pull.y.raw
+        if (grab.sticky) w.stickyTemp[slot] = true
     }
 
     // ── reset (ImpulseResetSystem) ──────────────────────────────────────────────
@@ -249,6 +341,9 @@ class CytoSoaReducer(
             w.energy[i] = (w.energy[i] + w.energyPending[i]).coerceIn(0f, MAX_CHEM)
             w.energyPending[i] = 0f
             w.touch[i] = 0f // pass 1 clears touch after genes (no genes here)
+            // No Sticky gene on the fast path, so isStickyTemp is false: clear the transient set
+            // by the grab interaction last tick (the AoS biology rewrites stickyTemp every tick).
+            w.stickyTemp[i] = false
         }
         // pass 2: act (diffusion, energy update, growth, type behaviour, division/death).
         for (i in 0 until n) {
@@ -380,9 +475,13 @@ class CytoSoaReducer(
         }
     }
 
-    // ── lifecycle (CytoLifecycleSystem): weld / division / death ─────────────────
+    // ── lifecycle (CytoLifecycleSystem): detach / weld / division / death ────────
     private fun lifecycle(w: CytoWorld) {
-        lifecycleOps.apply(w, weldLo, weldHi, divideIds, destroyIds)
+        // Merge interaction-driven destroys (Delete taps) with biology deaths. Interaction
+        // intents are emitted before biology's in the AoS event stream, so they lead here (the
+        // destroy result is order-independent, but this keeps the ordering faithful).
+        val destroy = if (interactDestroy.isEmpty()) destroyIds else interactDestroy + destroyIds
+        lifecycleOps.apply(w, weldLo, weldHi, divideIds, destroy, interactDetach)
     }
 
     // ── integrate (IntegrationSystem) ───────────────────────────────────────────

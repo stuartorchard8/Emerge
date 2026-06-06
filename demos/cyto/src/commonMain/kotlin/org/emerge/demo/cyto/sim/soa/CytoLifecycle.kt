@@ -46,7 +46,7 @@ import kotlin.math.sqrt
 class CytoLifecycle(private val cfg: CytoConfig) {
 
     /** One directed spring end in the editable adjacency (CSR's mutable twin for structure). */
-    private class Edge(val otherId: Int, val restRaw: Long, val stiffRaw: Long, val dampRaw: Long, val damage: Float)
+    internal class Edge(val otherId: Int, val restRaw: Long, val stiffRaw: Long, val dampRaw: Long, val damage: Float)
 
     /**
      * Removes springs whose accumulated damage exceeded the break threshold this tick (flagged
@@ -72,16 +72,24 @@ class CytoLifecycle(private val cfg: CytoConfig) {
         return true
     }
 
-    /** Applies death, then weld, then division (the engine lifecycle order). */
+    /** Applies detach, then death, then weld, then division (the engine lifecycle order). */
     fun apply(
         w: CytoWorld,
         weldLo: List<Int>,
         weldHi: List<Int>,
         divideIds: List<Int>,
         destroyIds: List<Int>,
+        detachIds: List<Int> = emptyList(),
     ) {
-        if (weldLo.isEmpty() && divideIds.isEmpty() && destroyIds.isEmpty()) return
+        if (weldLo.isEmpty() && divideIds.isEmpty() && destroyIds.isEmpty() && detachIds.isEmpty()) return
         val adj = materialize(w)
+
+        // Detach (interaction Detach mode): cut every connection of the named cells. Runs first,
+        // matching CytoLifecycleSystem's intent order (detach -> destroy -> weld -> divide).
+        for (id in detachIds) {
+            val nbrs = adj[id]?.map { it.otherId } ?: emptyList()
+            for (n in nbrs) removeSpringPair(adj, id, n)
+        }
 
         // Destroy: drop springs to dead cells (both sides), then tombstone the entity.
         val destroyed = HashSet<Int>()
@@ -178,8 +186,27 @@ class CytoLifecycle(private val cfg: CytoConfig) {
         addSpring(w, adj, motherId, daughterId.value)
     }
 
-    /** Appends a daughter cell to every column (mirrors SimBuilder.spawnCell / spawnBody). */
-    private fun appendDaughter(w: CytoWorld, id: EntityId, pos: Coord2, vel: Coord2, radius: Float, energy: Float) {
+    /** Appends a daughter (Stem) cell to every column (mirrors SimBuilder.spawnCell / spawnBody). */
+    private fun appendDaughter(w: CytoWorld, id: EntityId, pos: Coord2, vel: Coord2, radius: Float, energy: Float) =
+        appendCell(w, id, pos, vel, CellType.Stem, logicalRadius = radius, energy = energy, sticky = false)
+
+    /**
+     * Appends a cell to every column (mirrors SimBuilder.spawnCell / spawnBody), clamping the
+     * logical radius to [MIN_RADIUS] exactly as `spawnCell` does. Public so the interact phase
+     * can spawn pointer-created cells that participate in this tick's pipeline. Does NOT touch
+     * the CSR — the caller rebuilds it once after appending (the new cell starts degree-0).
+     */
+    fun appendCell(
+        w: CytoWorld,
+        id: EntityId,
+        pos: Coord2,
+        vel: Coord2,
+        type: CellType,
+        logicalRadius: Float,
+        energy: Float,
+        sticky: Boolean,
+    ) {
+        val radius = max(logicalRadius, MIN_RADIUS)
         w.world.add(id, TransformComponent::class, TransformComponent(pos, Coord(0)))
         w.world.add(id, MotionComponent::class, MotionComponent(vel, Coord(0)))
         w.world.add(id, ImpulseComponent::class, ImpulseComponent())
@@ -191,16 +218,17 @@ class CytoLifecycle(private val cfg: CytoConfig) {
         w.world.add(
             id, CytoCellComponent::class,
             CytoCellComponent(
-                type = CellType.Stem,
+                type = type,
                 chemicals = mapOf(CytoCellColumnStore.ENERGY to energy),
                 logicalRadius = radius,
+                sticky = sticky,
             ),
         )
     }
 
     // ── adjacency helpers ───────────────────────────────────────────────────────
 
-    private fun materialize(w: CytoWorld): LinkedHashMap<Int, MutableList<Edge>> {
+    internal fun materialize(w: CytoWorld): LinkedHashMap<Int, MutableList<Edge>> {
         val adj = LinkedHashMap<Int, MutableList<Edge>>(w.count)
         for (slot in 0 until w.count) {
             val list = ArrayList<Edge>(w.csr.degreeOf(slot))
@@ -234,7 +262,7 @@ class CytoLifecycle(private val cfg: CytoConfig) {
     }
 
     /** Rebuilds the spring CSR in place from the editable adjacency over the current ordering. */
-    private fun rebuild(w: CytoWorld, adj: Map<Int, MutableList<Edge>>) {
+    internal fun rebuild(w: CytoWorld, adj: Map<Int, MutableList<Edge>>) {
         w.csr.rebuildFrom(
             count = w.count,
             entityIdAt = { w.entityId[it] },

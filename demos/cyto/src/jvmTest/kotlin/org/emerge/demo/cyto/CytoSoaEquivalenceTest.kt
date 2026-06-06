@@ -7,6 +7,7 @@ import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoReducer
 import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
 import org.emerge.demo.cyto.sim.soa.CytoWorld
@@ -172,6 +173,56 @@ class CytoSoaEquivalenceTest {
                 )
             }
         }
+    }
+
+    /**
+     * Pointer interaction (spawn / tap-Set / tap-Delete / multi-tick grab incl. sticky-weld /
+     * detach) must stay byte-identical between the SoA reducer and the AoS [CytoReducer]. Drives
+     * both from the same per-tick [CytoInput] and compares EVERY tick (the structural +
+     * interaction paths are the most fragile), through both `toComparison()` and the live
+     * `toSimState()` export boundary.
+     */
+    @Test
+    fun interactionIsBitIdentical() {
+        val reducer = CytoReducer()
+        val soa = CytoSoaReducer(cfg, null)
+        val initial = buildColony(25)            // 5×5 grid, ids 0..24; Blank/Support (no division)
+        val world = CytoWorld.fromSimState(initial)
+        val startCount = initial.components.getTable<CytoCellComponent>().asMap().size
+
+        var ref = initial
+        for (tick in 1..40) {
+            val input = interactionInputAt(tick)
+            ref = reducer.reduce(cfg, ref, mapOf(PlayerId(0) to input))
+            soa.tick(world, input = input)
+            compareCells(project(ref), world.toComparison().cells, "interaction", tick)
+            compareCells(project(ref), project(world.toSimState()), "interaction-export", tick)
+        }
+
+        // Non-vacuous: the schedule spawns (ticks 1, 3) and deletes (tick 12), so the net cell
+        // count must have moved — otherwise the comparison proves nothing.
+        val endCount = ref.components.getTable<CytoCellComponent>().asMap().size
+        assertTrue(endCount > startCount, "interaction should net-add cells (start=$startCount end=$endCount)")
+    }
+
+    /** Deterministic interaction schedule. The 5×5 grid spans logical (-4..4); (20+,20+) is empty. */
+    private fun interactionInputAt(tick: Int): CytoInput = when (tick) {
+        1 -> CytoInput(
+            spawns = listOf(
+                CytoInput.Spawn(20f, 20f, CellType.Blank),
+                CytoInput.Spawn(24f, 20f, CellType.Stem),
+            ),
+        )
+        3 -> CytoInput(
+            taps = listOf(
+                CytoInput.Tap(30f, 30f, TouchMode.Base, CellType.Blank),     // empty → spawn
+                CytoInput.Tap(-4f, -4f, TouchMode.Set, CellType.Support),    // hits cell 0 → set type
+            ),
+        )
+        in 5..10 -> CytoInput(grab = CytoInput.Grab(EntityId(0), 0f, 0f, sticky = tick % 2 == 0))
+        12 -> CytoInput(taps = listOf(CytoInput.Tap(4f, 4f, TouchMode.Delete, CellType.Blank)))  // delete cell 24
+        14 -> CytoInput(detaches = listOf(EntityId(12)))                      // cut centre cell's springs
+        else -> CytoInput.EMPTY
     }
 
     private fun runScenario(
