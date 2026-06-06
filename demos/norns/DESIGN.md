@@ -72,9 +72,23 @@ dependency-ordered (later ones read earlier ones).
    ages + kills. Gated by `CreatureTest`: a competent creature survives by eating, a never-eats
    creature starves and dies through the biology stack, a *learned* policy outlives an untrained
    one, and the tick is deterministic.
-7. **Reproduction** — mating → genome crossover → egg → hatch → new creature. Harness: a
-   population survives N generations without dying out or exploding.
-8. **Rendering + host** — DEFERRED. Visual layer, wired with Stu (JS/Android targets added here).
+7. **Reproduction / evolution** — ✅ **done.** A `Population` of genomes that breed by truncation
+   selection (genome crossover + mutate) and refill to size. Gated by `EvolutionTest`: a
+   heritable trait **adapts toward selection** (evolution), the population persists across 100
+   generations, and breeding is deterministic.
+8. **Rendering + host** — DEFERRED (the verification wall). Visual layer + a spatial world,
+   wired with Stu; JS/Android targets added here. This is where human judgment is the only
+   possible oracle (see G2), so the autonomous build stops before it.
+
+### Integration backlog (combines finished subsystems; surfaced during the build)
+
+- **G8 — drives as chemicals.** Fold drives/metabolism into the biochemistry (drives = chemicals
+  read via receptors; metabolism feeds biology) so the creature is one coupled chemical system,
+  not brain+drives+biology bolted together.
+- **G9 — implicit selection.** Replace the explicit-fitness GA with embodied selection: creatures
+  that survive + mate in the world pass genes. Needs the brain gene-encoded (G5).
+- **G5 — gene-encode the brain** (LobeGene/TractGene), so brain structure is heritable like the
+  biochemistry — the precondition for G9 and for evolving behaviour, not just biochemistry.
 
 ## Assumptions (things I chose without confirmation — revisit in tuning)
 
@@ -128,13 +142,27 @@ dependency-ordered (later ones read earlier ones).
   faithful C1 design) is the remaining integration step. Also: the world is abstract
   ("food present?") — spatial layout/movement belongs to the world+render phase.
 
-## Current status
+## Current status — mechanism baseline COMPLETE (stopped at the verification wall)
 
-- Subsystem 1 (biochemistry): ✅ done, 9 tests green.
-- Subsystem 2 (genome): ✅ done, 7 tests green.
-- Subsystem 3 (brain / neural net): ✅ done, 4 tests green.
-- Subsystem 4 (biology / physiology): ✅ done, 7 tests green.
-- Subsystem 5 (drives + sensorimotor): ✅ done, 4 tests green (incl. the integrated learning loop).
-- Subsystem 6 (world + embodiment): ✅ done, 4 tests green (embodied survival loop).
-- Subsystem 7 (reproduction): next — mating → genome crossover → offspring; a population that
-  persists across generations. The last mechanism subsystem before the (human-verified) visual phase.
+All seven mechanism subsystems are built and self-verified; **38 tests green**. The autonomous
+build stops here because everything remaining (subsystem 8 + fidelity) needs human judgment.
+
+- Subsystem 1 (biochemistry): ✅ 9 tests — homeostatic core; hunger-regulation loop closes.
+- Subsystem 2 (genome): ✅ 7 tests — genes express the biochemistry; deterministic crossover + mutation.
+- Subsystem 3 (brain / neural net): ✅ 4 tests — reward-modulated learning of a context→action association.
+- Subsystem 4 (biology / physiology): ✅ 7 tests — life stages, aging, organs, death.
+- Subsystem 5 (drives + sensorimotor): ✅ 4 tests — drive-reduction reward; a creature **learns to satisfy its drives**.
+- Subsystem 6 (world + embodiment): ✅ 4 tests — embodied **survival** loop (eat to live; starve to die).
+- Subsystem 7 (reproduction / evolution): ✅ 3 tests — a population **adapts under selection**.
+
+**The "alive" chain is demonstrated end to end:** chemistry regulates → the brain learns from
+reward → the creature acts to satisfy its drives → it survives or starves in a world → a
+population evolves. What it does NOT yet have: a body/world you can see (subsystem 8), tuned
+constants for *feel* (G1), and the deeper-fidelity items (G3–G9). Those are the tuning agenda.
+
+### What needs Stu next (the verification wall)
+1. **Watch it run** — only human eyes can judge "does this feel alive / like a Norn?" (G2). Needs
+   the render host (subsystem 8).
+2. **Tune the constants** (G1) — half-lives, rates, gains, drive weights — for the right dynamics.
+3. **Decide fidelity targets** — which gaps (G3–G9) to close, and whether to source C1 reference
+   data to raise fidelity beyond "mechanism-faithful".
