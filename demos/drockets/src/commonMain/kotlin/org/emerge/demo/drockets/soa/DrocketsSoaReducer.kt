@@ -16,8 +16,25 @@ import org.emerge.demo.drockets.KnightStateComponent
 import org.emerge.demo.drockets.ReproducerComponent
 import org.emerge.demo.drockets.SpriteAnimationState
 import org.emerge.demo.drockets.SpriteSheet
+import org.emerge.demo.drockets.DrocketAdaptiveDamageSystem
+import org.emerge.demo.drockets.DrocketLandingSystem
+import org.emerge.demo.drockets.DrocketParticleSystem
+import org.emerge.demo.drockets.DrocketsInput
+import org.emerge.demo.drockets.ReproductionSystem
 import org.emerge.demo.drockets.nowMsForTick
 import org.emerge.sim.core.EntityId
+import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.ecs.Phase
+import org.emerge.sim.core.ecs.Pipeline
+import org.emerge.sim.core.ecs.isolated
+import org.emerge.sim.core.ecs.runSequential
+import org.emerge.sim.core.physics.systems.BounceSystem
+import org.emerge.sim.core.physics.systems.ContactSystem
+import org.emerge.sim.core.physics.systems.CrashSystem
+import org.emerge.sim.core.physics.systems.ParticleSystem
+import org.emerge.sim.core.physics.systems.RollingResistanceSystem
+import org.emerge.sim.core.sim.SimBuilder
+import org.emerge.sim.core.sim.SimState
 import org.emerge.sim.core.ecs.soa.ComponentColumns
 import org.emerge.sim.core.ecs.soa.ImpulseColumnStore
 import org.emerge.sim.core.physics.components.ColliderComponent
@@ -53,6 +70,65 @@ import kotlin.math.abs
  * Ported so far: `reset`, `forceGather` (gravity + atmosphere drag), `integrate`.
  */
 class DrocketsSoaReducer(private val cfg: DrocketsConfig) {
+
+    // The hard phases (broadphase contacts, the isolated fork/merge contactResponse + effects,
+    // and the structural lifecycle) are run through the EXACT array-of-structs systems via a
+    // materialize→runSequential→reload bridge — guaranteed bit-identical, including the engine's
+    // fork/merge for isolated phases. The clean sequential phases run in place on the columns.
+    // (Future work: port the bridged phases in place too; for drockets the perf gain is marginal.)
+    private val contactAndLifecycle: Pipeline<DrocketsConfig, SimState, DrocketsInput> = listOf(
+        Phase("contactDetect", ContactSystem()),
+        Phase("contactResponse", DrocketLandingSystem, ReproductionSystem, CrashSystem, BounceSystem, RollingResistanceSystem).isolated(),
+        Phase("lifecycle", DrocketAdaptiveDamageSystem),
+    )
+    private val effectsPhase: Pipeline<DrocketsConfig, SimState, DrocketsInput> = listOf(
+        Phase("effects", ParticleSystem, DrocketParticleSystem).isolated(),
+    )
+
+    /**
+     * One full tick over a persistent [DrocketsWorld]. Sequential phases mutate columns in
+     * place; the two bridge points run the exact AoS phases and return a reloaded world.
+     */
+    fun tick(initial: DrocketsWorld, inputs: Map<PlayerId, DrocketsInput>): DrocketsWorld {
+        var w = initial
+        reset(w)
+        // aiAndMotion (sequential, in place).
+        drocketAi(w); drocketWalk(w); knightAi(w); knightWalk(w); spriteAnimation(w)
+        // forceGather (in place).
+        forceGather(w)
+        // contactDetect + contactResponse (isolated) + lifecycle (bridged).
+        w = bridge(w, contactAndLifecycle, inputs)
+        densifyImpulse(w) // restore the dense accumulator the bridge reload flattened to a sparse table
+        attachment(w)
+        // effects (isolated, bridged).
+        w = bridge(w, effectsPhase, inputs)
+        integrate(w)
+        w.world.tick = initial.world.tick + 1
+        return w
+    }
+
+    private fun bridge(
+        w: DrocketsWorld,
+        phases: Pipeline<DrocketsConfig, SimState, DrocketsInput>,
+        inputs: Map<PlayerId, DrocketsInput>,
+    ): DrocketsWorld {
+        val builder = SimBuilder(w.toSimState())
+        runSequential(cfg, builder, inputs, phases)
+        return DrocketsWorld.fromSimState(builder.build())
+    }
+
+    /** Rebuild Impulse dense over Material entities (ascending), preserving current values. */
+    private fun densifyImpulse(w: DrocketsWorld) {
+        val impulse = w.world.columns(ImpulseComponent::class)
+        val material = w.world.columns(MaterialComponent::class)
+        val current = HashMap<Int, ImpulseComponent>(impulse.count)
+        impulse.forEachAliveSlot { slot, id -> current[id.value] = impulse.gatherAt(slot) }
+        impulse.clear()
+        for (slot in 0 until material.count) {
+            val id = material.entityAt(slot)
+            impulse.put(id, current[id.value] ?: ImpulseComponent())
+        }
+    }
 
     // ── deterministic PRNG (mirrors SimBuilder.nextRandomInt over SimState.randomSeed) ──
     private fun nextRandomInt(w: DrocketsWorld): Int {
