@@ -55,9 +55,11 @@ dependency-ordered (later ones read earlier ones).
    Gated by `BrainTest`: weighted propagation, reward strengthen / punishment weaken / inactive
    unchanged, determinism, and the capstone — the brain **learns a context→action association**
    from reward (RED→EAT, BLUE→REST).
-4. **Biology / physiology** — organs, life stages (egg→baby→child→…→senile→death), an aging
-   clock, metabolism linking biochemistry to energy/health, reproductive readiness. Harness:
-   life-stage transitions, aging, death on vital-chemical depletion.
+4. **Biology / physiology** — ✅ **done.** An aging clock advancing `LifeStage`
+   (EMBRYO→…→SENILE), organs with health, injury/repair from loci, and death by vital-organ
+   failure or old age. Publishes age + life stage to the locus bus. Gated by `BiologyTest`:
+   stage progression, vital vs non-vital organ failure, repair offsetting injury, death of old
+   age, dead-stays-dead, determinism.
 5. **Drives + sensorimotor** — drives as chemicals read by the brain; perception of world
    objects; action verbs (eat/rest/move). Harness: hungry→seek→eat→hunger-drops loop.
 6. **World + embodiment** — a simple world of objects (food, etc.) and the embodied creature;
@@ -102,10 +104,16 @@ dependency-ordered (later ones read earlier ones).
 - **G5. Brain genome encoding.** The brain is currently hand-wired, not gene-encoded. C1's genome
   specifies lobes/tracts/SVRules; `LobeGene`/`TractGene` variants are a planned genome extension
   (so brain structure is heritable + mutable like the biochemistry).
+- **G6. Biology detail.** Injury/repair apply uniformly across organs from single loci, and life
+  stages are driven by an age clock. C1 damages organs independently (each runs its own
+  chemistry) and advances stages via genome life-stage chemicals. Per-organ coupling + biology
+  genes (organ definitions, life-stage gene activation) are deferred.
 
 ## Current status
 
 - Subsystem 1 (biochemistry): ✅ done, 9 tests green.
 - Subsystem 2 (genome): ✅ done, 7 tests green.
 - Subsystem 3 (brain / neural net): ✅ done, 4 tests green.
-- Subsystem 4 (biology / physiology): next — organs, life stages, aging, metabolism, death.
+- Subsystem 4 (biology / physiology): ✅ done, 7 tests green.
+- Subsystem 5 (drives + sensorimotor): next — drives as chemicals read by the brain; perception
+  of world objects; action verbs (eat/rest/move).
