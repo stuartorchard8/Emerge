@@ -66,8 +66,12 @@ dependency-ordered (later ones read earlier ones).
    the **capstone integration** — a creature wiring drives→brain→action→reward **learns to
    satisfy its own drives** (EAT when hungry, REST when tired) and holds lower average discomfort
    than an untrained creature. This is the core Creatures loop, working end to end.
-6. **World + embodiment** — a simple world of objects (food, etc.) and the embodied creature;
-   the reducer that runs all the above per tick on the ECS.
+6. **World + embodiment** — ✅ **done.** A `Creature` integrating brain + drives + biology over
+   one tick, coupled to a minimal `World` (regenerating food). Sense food + drives → decide →
+   act → drive-reduction reward trains the brain → sustained hunger injures organs → biology
+   ages + kills. Gated by `CreatureTest`: a competent creature survives by eating, a never-eats
+   creature starves and dies through the biology stack, a *learned* policy outlives an untrained
+   one, and the tick is deterministic.
 7. **Reproduction** — mating → genome crossover → egg → hatch → new creature. Harness: a
    population survives N generations without dying out or exploding.
 8. **Rendering + host** — DEFERRED. Visual layer, wired with Stu (JS/Android targets added here).
@@ -115,7 +119,14 @@ dependency-ordered (later ones read earlier ones).
 - **G7. Drive/action model.** A fixed action→drive-effect table and a flat (unweighted)
   discomfort sum. C1 derives action effects from world objects + biochemistry and weights drives.
   Both are tuning surfaces; the action set is also a placeholder (EAT/REST), to be expanded with
-  the world.
+  the world. *Observed during subsystem 6:* with a flat discomfort sum, multi-drive survival can
+  misalign with reward (the creature relieves a non-lethal drive as readily as a lethal one) —
+  drive weighting / lethality is real tuning needed for richer scenarios.
+- **G8. Biochemistry ↔ creature integration.** The embodied `Creature` wires brain + drives +
+  biology, but NOT biochemistry yet — drives are a separate float system rather than chemicals
+  read via receptors, and metabolism doesn't feed biology. Unifying drives-as-chemicals (the
+  faithful C1 design) is the remaining integration step. Also: the world is abstract
+  ("food present?") — spatial layout/movement belongs to the world+render phase.
 
 ## Current status
 
@@ -124,5 +135,6 @@ dependency-ordered (later ones read earlier ones).
 - Subsystem 3 (brain / neural net): ✅ done, 4 tests green.
 - Subsystem 4 (biology / physiology): ✅ done, 7 tests green.
 - Subsystem 5 (drives + sensorimotor): ✅ done, 4 tests green (incl. the integrated learning loop).
-- Subsystem 6 (world + embodiment): next — a Creature that wires biochem+brain+biology+drives,
-  embodied in a simple world of objects (food); survival as the harness.
+- Subsystem 6 (world + embodiment): ✅ done, 4 tests green (embodied survival loop).
+- Subsystem 7 (reproduction): next — mating → genome crossover → offspring; a population that
+  persists across generations. The last mechanism subsystem before the (human-verified) visual phase.
