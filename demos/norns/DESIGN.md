@@ -1,0 +1,92 @@
+# Norns — a spiritual successor to Creatures (1996)
+
+`:demos:norns` is an attempt to recreate the *mechanism* of the original Creatures (Albia /
+C1, 1996) artificial-life simulation on the Emerge engine: biochemistry, a genome, a
+neural-network brain, biology/physiology, drives, and reproduction — deterministic, on the
+engine's fixed-tick ECS.
+
+## Working agreement (how this gets built)
+
+Stu wants me to get as far as possible **autonomously**, then do **fidelity/styling tuning
+together** afterward (2026-06-07). The reasoning: I iterate far faster without a human in the
+loop, so I should max out what I can self-verify and defer what only human judgment can settle.
+
+This works *only* because every subsystem is built against a **self-verification harness** I can
+run headlessly:
+- **Internal-consistency tests** — determinism (same input → bit-identical), conservation,
+  boundary behaviour.
+- **Behavioural-proxy tests** — does the mechanism produce the *shape* of life? (a drive loop
+  closes; learning changes behaviour; a population persists across generations.)
+
+Where I **cannot** build such a harness — anything that needs the original's data or a human's
+eyes — I **stop and log it** below rather than guess. That log is the agenda for Stu's tuning
+passes.
+
+**Visuals are deferred.** The renderer/host is the last phase; Stu will guide styling as
+interactive passes. Until then the sim is verified purely through tests. The creatures will look
+nothing like Norns to start.
+
+## What "true recreation" means here (scope)
+
+Target: **C1 mechanism-faithful**, not a byte-exact replica. I have no original binary, genome
+files, or chemical/brain tables — only the simulation logic, reconstructed from public
+community reverse-engineering + my knowledge of the design. So the realistic bar is *"the same
+kinds of systems, wired the same way, producing life-like dynamics."* Numeric fidelity to the
+original's hand-tuned constants is a **known gap** (see below) — that's where Stu's tuning comes
+in, and possibly sourcing reference data.
+
+## Subsystem roadmap
+
+Each subsystem: build → gate on a harness → commit → update this doc. Sequence is
+dependency-ordered (later ones read earlier ones).
+
+1. **Biochemistry engine** — ✅ **done.** Chemical concentrations, half-life decay, reactions,
+   emitters (locus→chemical), receptors (chemical→locus). The homeostatic core. Gated by
+   `BiochemistryTest`: half-life decay, reaction stoichiometry + limiting reactant,
+   emitter/receptor activation, clamping, determinism, and a closed hunger-regulation loop
+   (starving→drive climbs, fed→loop holds it low).
+2. **Genome** — genes encoding biochemistry (emitter/receptor/reaction/half-life), brain
+   structure, biology, morphology; diploid-ish crossover + mutation (extends drockets' model).
+   Harness: crossover/mutation determinism; gene expression reconstructs a biochem network.
+3. **Brain (neural net)** — lobes of neurons, dendrites with weights, Hebbian-style learning;
+   perception → decision lobe → action outputs, modulated by drive chemicals. Harness: signal
+   propagation, learning changes weights, a stimulus→response association forms.
+4. **Biology / physiology** — organs, life stages (egg→baby→child→…→senile→death), an aging
+   clock, metabolism linking biochemistry to energy/health, reproductive readiness. Harness:
+   life-stage transitions, aging, death on vital-chemical depletion.
+5. **Drives + sensorimotor** — drives as chemicals read by the brain; perception of world
+   objects; action verbs (eat/rest/move). Harness: hungry→seek→eat→hunger-drops loop.
+6. **World + embodiment** — a simple world of objects (food, etc.) and the embodied creature;
+   the reducer that runs all the above per tick on the ECS.
+7. **Reproduction** — mating → genome crossover → egg → hatch → new creature. Harness: a
+   population survives N generations without dying out or exploding.
+8. **Rendering + host** — DEFERRED. Visual layer, wired with Stu (JS/Android targets added here).
+
+## Assumptions (things I chose without confirmation — revisit in tuning)
+
+- **A1.** Module working title is "Norns"/`:demos:norns`. Renameable; "Norn" is Creatures
+  terminology — a spiritual-successor may want an original name (Stu's call).
+- **A2.** Chemical concentrations are floats in `[0, 1]` (normalised). C1 used 0–255 integer
+  steps; a fidelity pass may rescale. Determinism is unaffected (IEEE float ops are
+  deterministic, as the cyto chemistry already relies on).
+- **A3.** Biochemistry tick order: emitters → reactions → decay → receptors. Chosen as a
+  plausible-faithful order; the original's exact intra-tick order is unverified.
+- **A4.** Reaction kinetics: each tick fires `rate × (limiting reactant / reactant amount)`
+  reactions (limiting-reactant capped, rate-scaled). A reasonable mass-action-ish model; not
+  confirmed against C1's exact formula.
+
+## Verification gaps (need Stu / reference data — the tuning agenda)
+
+- **G1. Numeric fidelity.** All constants (half-lives, reaction rates, emitter/receptor
+  gains/thresholds, drive weights, brain wiring) are invented placeholders. Matching the
+  original's *feel* needs human judgment or the original's data tables.
+- **G2. Behavioural fidelity.** "Does it behave like a Norn?" is subjective and emergent — only
+  judgeable by watching it run, which needs the (deferred) render host. My harnesses prove
+  loops *close*, not that they feel right.
+- **G3. Emitter/receptor modes.** C1 had analog/digital modes and per-emitter clocks; I start
+  with analog/per-tick only. (Logged when subsystem 1 lands.)
+
+## Current status
+
+- Subsystem 1 (biochemistry): ✅ done, 9 tests green.
+- Subsystem 2 (genome): next.
