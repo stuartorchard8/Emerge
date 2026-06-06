@@ -24,6 +24,7 @@ import org.emerge.sim.core.sim.SimState
 import kotlin.math.ceil
 import kotlin.math.sqrt
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -136,6 +137,43 @@ class CytoSoaEquivalenceTest {
         runScenario(buildReactionColony(), "reaction-seq", null, (1..16).toList().toIntArray())
     }
 
+    /**
+     * `CytoWorld.toSimState()` — the SoA→AoS boundary the live runtime renders/saves through —
+     * must materialize a [SimState] byte-identical to what the AoS [CytoReducer] would hold, and
+     * carry the engine registry (PRNG seed, allocator cursor) faithfully. Uses the growing
+     * colony so division (id allocation) and death (id removal) exercise the [org.emerge.sim.core.ecs.EcsWorld]
+     * round-trip, not just the cell fields. Compared via the same projection used for the AoS
+     * oracle, but routed through `toSimState()` instead of `toComparison()`.
+     */
+    @Test
+    fun exportedSimStateMatchesAos() {
+        val reducer = CytoReducer()
+        val soa = CytoSoaReducer(cfg, null)
+        val initial = buildGrowingColony()
+        val world = CytoWorld.fromSimState(initial)
+        val input = mapOf(PlayerId(0) to CytoInput())
+
+        // Pre-tick: a fresh import must export an identical projection (isolates toSimState from
+        // the reducer).
+        compareCells(project(initial), project(world.toSimState()), "toSimState", 0)
+
+        var ref = initial
+        for (tick in 1..250) {
+            ref = reducer.reduce(cfg, ref, input)
+            soa.tick(world)
+            if (tick == 1 || tick == 2 || tick == 64 || tick == 250) {
+                val exported = world.toSimState()
+                compareCells(project(ref), project(exported), "toSimState", tick)
+                assertEquals(ref.randomSeed, exported.randomSeed, "randomSeed tick=$tick")
+                assertEquals(ref.tick, exported.tick, "tick tick=$tick")
+                assertEquals(
+                    ref.world.lastEntityValue, exported.world.lastEntityValue,
+                    "lastEntityValue tick=$tick",
+                )
+            }
+        }
+    }
+
     private fun runScenario(
         initial: SimState,
         label: String,
@@ -155,9 +193,15 @@ class CytoSoaEquivalenceTest {
         }
     }
 
-    private fun compare(ref: SimState, world: CytoWorld, label: String, tick: Int) {
-        val refCells = project(ref)
-        val soaCells = world.toComparison().cells
+    private fun compare(ref: SimState, world: CytoWorld, label: String, tick: Int) =
+        compareCells(project(ref), world.toComparison().cells, label, tick)
+
+    private fun compareCells(
+        refCells: Map<Int, org.emerge.demo.cyto.sim.soa.ComparisonCell>,
+        soaCells: Map<Int, org.emerge.demo.cyto.sim.soa.ComparisonCell>,
+        label: String,
+        tick: Int,
+    ) {
         if (refCells.keys != soaCells.keys) {
             fail("$label tick=$tick: cell-id set differs (ref ${refCells.size}, soa ${soaCells.size})")
         }

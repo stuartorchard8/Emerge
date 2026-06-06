@@ -1,8 +1,12 @@
 package org.emerge.demo.cyto.sim.soa
 
+import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.ConnectionStateComponent
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.sim.core.EntityId
+import org.emerge.sim.core.ecs.ComponentStore
+import org.emerge.sim.core.ecs.ComponentTable
+import org.emerge.sim.core.ecs.EcsWorld
 import org.emerge.sim.core.ecs.soa.ColliderColumnStore
 import org.emerge.sim.core.ecs.soa.ComponentColumns
 import org.emerge.sim.core.ecs.soa.ImpulseColumnStore
@@ -15,6 +19,7 @@ import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.components.SpringConstraint
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Frac
@@ -207,6 +212,89 @@ class CytoWorld private constructor(
         }
         return SoaComparison(out, world.lastEntityValue)
     }
+
+    /**
+     * Materializes the live store back into an engine [SimState] — the inverse of
+     * [fromSimState], faithful for every component the world tracks. This is the SoA→AoS
+     * boundary the live runtime renders, saves, and inspects through: it runs **once per
+     * frame** (not per tick), so the per-tick win is untouched.
+     *
+     * Engine physics components round-trip via their column stores' `gather`; the cell is
+     * rebuilt from the dense biology columns plus the multi-species side-tables; springs and
+     * their accumulated damage come from the CSR (in ascending-EntityId, then spring-list
+     * order — matching [fromSimState]'s import order). [RenderShapeComponent] is not
+     * reconstructed: the world never stores it and the cyto renderer doesn't read it (all
+     * cells are circles). The [EcsWorld] is rebuilt with the exact live id set + allocator
+     * cursor so a save's id sequence continues correctly.
+     */
+    fun toSimState(): SimState {
+        val n = count
+        val transforms = LinkedHashMap<EntityId, TransformComponent>(n)
+        val motions = LinkedHashMap<EntityId, MotionComponent>(n)
+        val impulses = LinkedHashMap<EntityId, ImpulseComponent>(n)
+        val colliders = LinkedHashMap<EntityId, ColliderComponent>(n)
+        val materials = LinkedHashMap<EntityId, MaterialComponent>(n)
+        val cellsOut = LinkedHashMap<EntityId, CytoCellComponent>(n)
+        val springsOut = LinkedHashMap<EntityId, SpringConstraintComponent>(n)
+        val damagesOut = LinkedHashMap<EntityId, ConnectionStateComponent>(n)
+
+        for (slot in 0 until n) {
+            val id = EntityId(entityId[slot])
+            transforms[id] = transform.gather(slot)
+            motions[id] = motion.gather(slot)
+            impulses[id] = impulse.gather(slot)
+            colliders[id] = collider.gather(slot)
+            materials[id] = material.gather(slot)
+            cellsOut[id] = gatherCell(slot)
+
+            val lo = csr.offset[slot]
+            val hi = csr.offset[slot + 1]
+            if (hi > lo) {
+                val springList = ArrayList<SpringConstraint>(hi - lo)
+                val damageMap = LinkedHashMap<EntityId, Float>(hi - lo)
+                for (k in lo until hi) {
+                    val other = EntityId(csr.otherId[k])
+                    springList.add(SpringConstraint(other, Frac(csr.restRaw[k]), Frac(csr.stiffRaw[k]), Frac(csr.dampRaw[k])))
+                    damageMap[other] = csr.edgeAux[k]
+                }
+                springsOut[id] = SpringConstraintComponent(springList)
+                damagesOut[id] = ConnectionStateComponent(damageMap)
+            }
+        }
+
+        val components = ComponentStore(
+            mapOf(
+                TransformComponent::class to ComponentTable.fromMap(transforms),
+                MotionComponent::class to ComponentTable.fromMap(motions),
+                ImpulseComponent::class to ComponentTable.fromMap(impulses),
+                ColliderComponent::class to ComponentTable.fromMap(colliders),
+                MaterialComponent::class to ComponentTable.fromMap(materials),
+                CytoCellComponent::class to ComponentTable.fromMap(cellsOut),
+                SpringConstraintComponent::class to ComponentTable.fromMap(springsOut),
+                ConnectionStateComponent::class to ComponentTable.fromMap(damagesOut),
+            )
+        )
+        return SimState(
+            world = EcsWorld(world.liveIds.toMutableSet(), world.lastEntityValue),
+            components = components,
+            contacts = emptyList(),
+            randomSeed = world.randomSeed,
+            tick = world.tick,
+        )
+    }
+
+    /** The full [CytoCellComponent] for a slot: dense biology columns + side-table extras. */
+    private fun gatherCell(slot: Int): CytoCellComponent = CytoCellComponent(
+        type = CellType.entries[type[slot]],
+        chemicals = chemicalsAt(slot),
+        logicalRadius = logicalRadius[slot],
+        divideCooldown = divideCooldown[slot],
+        sticky = sticky[slot],
+        pendingTransfers = pendingAt(slot),
+        suppression = suppression[entityId[slot]] ?: emptyMap(),
+        touch = touch[slot],
+        stickyTemp = stickyTemp[slot],
+    )
 }
 
 /** Canonical, storage-agnostic projection of one cell for bit-identity comparison. */
