@@ -67,6 +67,13 @@ class ComponentColumns<T : Any>(val store: ColumnStore<T>) {
         count++
     }
 
+    /** Drops every entry (count → 0). Field arrays keep their capacity for reuse. */
+    fun clear() {
+        slotByEntity.clear()
+        count = 0
+        tombstones = 0
+    }
+
     /** Tombstones [id] (no reorder). A later [compact] reclaims the slot. */
     fun remove(id: EntityId) {
         val slot = slotByEntity.remove(id.value) ?: return
