@@ -14,7 +14,7 @@ class NornsWorldTest {
     @Test
     fun colonyStaysViable() {
         val w = NornsWorld(NornsConfig(), seed = 7)
-        repeat(2500) {
+        repeat(12000) { // the sim runs ~4x slower now, so give it proportionally more ticks
             w.step()
             assertTrue(w.population in 1..w.cfg.maxPopulation,
                 "population should stay alive and bounded (pop=${w.population} at tick=${w.ticks})")
@@ -119,7 +119,7 @@ class NornsWorldTest {
 
         var rode = false
         var arrivedTick = -1
-        for (t in 1..200) {
+        for (t in 1..1500) { // lift + movement are ~4x slower now
             w.step()
             if (c.onLift) rode = true
             if (c.floor == 1) { arrivedTick = t; break }

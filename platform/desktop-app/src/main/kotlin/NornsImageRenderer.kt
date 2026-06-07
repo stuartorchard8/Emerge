@@ -173,6 +173,8 @@ object NornsImageRenderer {
             ActivityType.RESTING, ActivityType.IDLE -> CreatureAction.REST
             ActivityType.MOVING -> CreatureAction.WALK
         }
+        // an egg incubating on the ground (the EMBRYO stage hatches into a baby)
+        if (c.biology.lifeStage.name == "EMBRYO") { drawEgg(g, px(worldX), py(worldY - groundOffset), sx); return }
         val scale = 1.15f
         val phase = c.ticksLived * 0.35f
         // warm, earthy fur, gene-tinted: efficient = mossy/green, inefficient = rusty/red,
@@ -290,6 +292,28 @@ object NornsImageRenderer {
         }
         if (c.carryingFood) blob(worldX + c.facing * 0.5f * scale, worldY + 0.05f * scale, 0.2f, Color(212, 84, 60))
         if (followed) blob(worldX, worldY + 1.7f * scale, 0.13f, Color(255, 255, 255)) // subtle follow marker
+    }
+
+    /** A speckled egg sitting on the ground (the EMBRYO/incubation stage). */
+    private fun drawEgg(g: java.awt.Graphics2D, cx: Float, groundY: Float, sx: Float) {
+        val ew = 0.34f * sx; val eh = 0.5f * sx
+        val left = cx - ew; val top = groundY - 2 * eh
+        g.color = Color(0, 0, 0, 60)
+        g.fillOval((cx - ew * 0.95f).roundToInt(), (groundY - eh * 0.22f).roundToInt(), (ew * 1.9f).roundToInt(), (eh * 0.4f).roundToInt())
+        g.paint = java.awt.GradientPaint(0f, top, Color(244, 236, 214), 0f, groundY, Color(206, 190, 156))
+        g.fillOval(left.roundToInt(), top.roundToInt(), (2 * ew).roundToInt(), (2 * eh).roundToInt())
+        g.color = Color(120, 100, 72)
+        g.stroke = BasicStroke(max(1.4f, 0.04f * sx))
+        g.drawOval(left.roundToInt(), top.roundToInt(), (2 * ew).roundToInt(), (2 * eh).roundToInt())
+        // speckles
+        g.color = Color(150, 120, 84)
+        for (k in 0 until 5) {
+            val a = k * 1.3f + 0.6f
+            val sxp = cx + cos(a) * ew * 0.5f; val syp = groundY - eh + sin(a) * eh * 0.7f
+            fillCircle(g, sxp, syp, 0.045f * sx)
+        }
+        g.color = Color(255, 255, 250, 150)
+        softBlob(g, cx - ew * 0.4f, top + eh * 0.55f, ew * 0.5f, Color(255, 255, 250, 150))
     }
 
     private fun isFaceDetail(part: BodyPart) = when (part) {

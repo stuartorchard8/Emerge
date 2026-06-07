@@ -38,9 +38,9 @@ class CreatureChemistryTest {
     @Test
     fun fatigueRisesWhileExertingAndRecoversWhenResting() {
         val chem = CreatureChemistry(metabolism = 0.01f, cfg = cfg)
-        repeat(20) { chem.tick(fertileActive = false, exerting = true) }
+        repeat(80) { chem.tick(fertileActive = false, exerting = true) } // fatigueRate is ~4x slower now
         val f = chem.fatigue
-        assertTrue(f > 0.1f, "fatigue builds while exerting: $f") // ~20 * 0.01
+        assertTrue(f > 0.1f, "fatigue builds while exerting: $f")
         repeat(20) { chem.recover(0.06f); chem.tick(fertileActive = false, exerting = false) }
         assertTrue(chem.fatigue < f, "resting recovers fatigue (${chem.fatigue} < $f)")
     }

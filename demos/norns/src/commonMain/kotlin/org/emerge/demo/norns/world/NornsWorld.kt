@@ -72,6 +72,14 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     }
 
     private fun stepCreature(c: WorldCreature) {
+        // An EMBRYO is an egg: it just incubates (ages) where it was laid — no drives, no behaviour
+        // — until it hatches into a BABY and starts living.
+        if (c.biology.lifeStage == LifeStage.EMBRYO) {
+            c.loci[c.biology.cfg.injuryLocus] = 0f
+            c.loci[c.biology.cfg.repairLocus] = cfg.baseRepair
+            c.biology.tick(c.loci)
+            return
+        }
         // Drives rise/decay/react via the creature's biochemistry (G8). Being busy builds fatigue.
         val exerting = c.activity == ActivityType.MOVING || c.activity == ActivityType.EATING ||
             c.activity == ActivityType.COURTING || c.activity == ActivityType.PICKING_UP
@@ -406,42 +414,46 @@ class NornsConfig(
     val worldWidth: Int = 120,
     val floors: Int = 3,
     val liftSpacing: Int = 30,
-    val initialPopulation: Int = 16,
-    val maxPopulation: Int = 70,
-    val foodSeed: Int = 60,
-    val foodSpawnPerTick: Int = 3,
-    val maxFood: Int = 95,
+    // a small, slow colony that sits around ~20 (start small and let it grow)
+    val initialPopulation: Int = 8,
+    val maxPopulation: Int = 24,
+    // ~quarter the food
+    val foodSeed: Int = 15,
+    val foodSpawnPerTick: Int = 1,
+    val maxFood: Int = 24,
     val eatAmount: Float = 0.85f,
     val starvationThreshold: Float = 0.85f,
-    val starvationDamage: Float = 0.10f,
-    val baseRepair: Float = 0.05f,
-    val maxAge: Int = 1300,
-    val stageStartAge: IntArray = intArrayOf(0, 30, 90, 150, 280, 430, 900, 1100),
+    // time-dilation ÷4: rates that damage per tick are slowed so starvation tracks the longer life
+    val starvationDamage: Float = 0.025f,
+    val baseRepair: Float = 0.0125f,
+    // time-dilation ×4: lifespan + life-stage ages stretched so the colony lives ~4x slower
+    val maxAge: Int = 5200,
+    val stageStartAge: IntArray = intArrayOf(0, 120, 360, 600, 1120, 1720, 3600, 4400),
     val fertileFrom: LifeStage = LifeStage.ADOLESCENT,
     val fertileTo: LifeStage = LifeStage.OLD,
     val fertileMaxHunger: Float = 0.6f,
-    val reproduceCooldown: Int = 70,
+    val reproduceCooldown: Int = 280,
     val mateRange: Float = 1.5f,
     val senseRange: Float = 30f,
-    val matingRate: Float = 0.015f,
+    val matingRate: Float = 0.00375f,   // urge rise per tick (÷4)
     val brainLearnRate: Float = 0.05f,
     val brainExplore: Float = 0.05f,
     val mutationRate: Float = 0.6f,
-    val minMetabolism: Float = 0.003f,
-    val maxMetabolism: Float = 0.012f,
-    // durative action costs
-    val moveSpeed: Float = 0.35f,
+    val minMetabolism: Float = 0.00075f, // hunger rise per tick (÷4)
+    val maxMetabolism: Float = 0.003f,
+    // durative action costs (×4 ticks, ÷4 speed → 4x slower, smooth)
+    val moveSpeed: Float = 0.09f,
     val arriveEps: Float = 0.5f,
-    val pickupTicks: Int = 5,
-    val eatTicks: Int = 14,
-    val courtTicks: Int = 14,
-    val restTicks: Int = 14,
+    val pickupTicks: Int = 20,
+    val eatTicks: Int = 56,
+    val courtTicks: Int = 56,
+    val restTicks: Int = 56,
     // physical lifts
-    val liftSpeed: Float = 0.05f,     // floors per tick
+    val liftSpeed: Float = 0.0125f,   // floors per tick (÷4)
     val liftBoardEps: Float = 0.25f,  // how close the car must be to board / disembark
     // fatigue (G7: makes REST a real, learned behaviour)
-    val fatigueRate: Float = 0.01f,   // fatigue built per tick of exertion
-    val restRecovery: Float = 0.06f,  // fatigue recovered per tick of resting
+    val fatigueRate: Float = 0.0025f, // fatigue built per tick of exertion (÷4)
+    val restRecovery: Float = 0.015f, // fatigue recovered per tick of resting (÷4)
 ) {
     fun metabolismOf(genome: Genome): Float {
         val gain = genome.genes.filterIsInstance<EmitterGene>().firstOrNull()?.gain?.coerceIn(0f, 1f) ?: 0.5f

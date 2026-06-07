@@ -75,7 +75,7 @@ object NornRig {
         val stage = c.biology.lifeStage.name
         val pa = byAge[ageOf(stage)] ?: byAge[3] ?: byAge.values.firstOrNull() ?: return
         val body = pa["body"] ?: return
-        val phase = c.ticksLived * 0.32f
+        val phase = c.ticksLived * 0.085f   // ÷4 to match the slowed (quarter-speed) movement
         val s = sin(phase)
         val walk = action == CreatureAction.WALK
         val court = action == CreatureAction.COURT
