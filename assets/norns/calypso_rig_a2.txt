@@ -5,7 +5,7 @@ shinL parts/calypso/a2/shinL.png 16 23 start:10,4 end:8,22
 footL parts/calypso/a2/footL.png 28 10 start:7,3 end:26,9
 thighR parts/calypso/a2/thighR.png 21 26 start:6,6 end:17,23
 shinR parts/calypso/a2/shinR.png 15 25 start:10,6 end:8,23
-footR parts/calypso/a2/footR.png 27 10 start:7,4 end:26,9
+footR parts/calypso/a2/footR.png 28 10 start:7,4 end:26,9
 uarmL parts/calypso/a2/uarmL.png 18 17 start:4,5 end:14,13
 farmL parts/calypso/a2/farmL.png 30 15 start:3,3 end:21,8
 uarmR parts/calypso/a2/uarmR.png 18 17 start:4,5 end:14,13

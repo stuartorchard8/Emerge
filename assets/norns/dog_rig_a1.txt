@@ -1,0 +1,12 @@
+body parts/dog/a1/body.png 48 32 head:54,6 hipL:13,17 hipR:13,17 shL:30,15 shR:30,15
+head parts/dog/a1/head.png 41 47 neck:15,23
+thighL parts/dog/a1/thighL.png 21 26 start:14,6 end:4,22
+shinL parts/dog/a1/shinL.png 24 15 start:19,7 end:2,8
+footL parts/dog/a1/footL.png 21 20 start:8,4 end:20,18
+thighR parts/dog/a1/thighR.png 23 28 start:15,6 end:5,22
+shinR parts/dog/a1/shinR.png 25 15 start:19,7 end:2,8
+footR parts/dog/a1/footR.png 21 20 start:8,4 end:20,18
+uarmL parts/dog/a1/uarmL.png 17 19 start:12,4 end:4,14
+farmL parts/dog/a1/farmL.png 15 31 start:12,3 end:8,21
+uarmR parts/dog/a1/uarmR.png 16 19 start:8,4 end:0,14
+farmR parts/dog/a1/farmR.png 16 31 start:12,3 end:8,21

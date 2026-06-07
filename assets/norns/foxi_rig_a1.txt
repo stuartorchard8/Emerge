@@ -1,0 +1,12 @@
+body parts/foxi/a1/body.png 56 34 head:57,4 hipL:16,15 hipR:16,15 shL:33,13 shR:33,13
+head parts/foxi/a1/head.png 55 48 neck:29,26
+thighL parts/foxi/a1/thighL.png 24 27 start:15,6 end:5,22
+shinL parts/foxi/a1/shinL.png 25 17 start:18,8 end:1,9
+footL parts/foxi/a1/footL.png 21 19 start:7,4 end:19,18
+thighR parts/foxi/a1/thighR.png 23 27 start:15,6 end:5,22
+shinR parts/foxi/a1/shinR.png 27 19 start:19,9 end:2,10
+footR parts/foxi/a1/footR.png 21 19 start:7,4 end:19,18
+uarmL parts/foxi/a1/uarmL.png 18 20 start:12,5 end:4,15
+farmL parts/foxi/a1/farmL.png 15 30 start:11,3 end:7,21
+uarmR parts/foxi/a1/uarmR.png 18 20 start:12,5 end:4,15
+farmR parts/foxi/a1/farmR.png 15 31 start:11,3 end:7,21

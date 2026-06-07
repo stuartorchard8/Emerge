@@ -31,7 +31,7 @@ object NornRig {
     // The breed roster: each creature's heritable breed indexes this. Genuinely different ripped
     // species (no recolours): denali (blonde), bavaria (mint/silver crest), bilba (green/purple),
     // calypso (orange/green), cloud (soft blue). Add more by ripping + baking and extending this.
-    private val TABLE = arrayOf("denali", "bavaria", "bilba", "calypso", "cloud")
+    private val TABLE = arrayOf("denali", "bavaria", "bilba", "calypso", "cloud", "foxi", "dog", "duck", "daffodil")
     val BREEDS = TABLE.size
 
     fun ensure() { if (loaded) return; loaded = true; try { for (b in TABLE) loadBreed(b) } catch (e: Exception) { System.err.println("[NornRig] ${e.message}") } }

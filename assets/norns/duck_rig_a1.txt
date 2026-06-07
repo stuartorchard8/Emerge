@@ -1,0 +1,12 @@
+body parts/duck/a1/body.png 40 27 head:46,1 hipL:12,11 hipR:12,11 shL:26,9 shR:26,9
+head parts/duck/a1/head.png 39 42 neck:21,21
+thighL parts/duck/a1/thighL.png 18 21 start:12,5 end:3,19
+shinL parts/duck/a1/shinL.png 21 13 start:16,6 end:1,7
+footL parts/duck/a1/footL.png 18 17 start:6,4 end:16,16
+thighR parts/duck/a1/thighR.png 18 22 start:12,5 end:3,19
+shinR parts/duck/a1/shinR.png 21 13 start:15,6 end:0,7
+footR parts/duck/a1/footR.png 18 17 start:9,4 end:19,16
+uarmL parts/duck/a1/uarmL.png 20 19 start:16,9 end:8,11
+farmL parts/duck/a1/farmL.png 22 42 start:17,6 end:14,17
+uarmR parts/duck/a1/uarmR.png 20 19 start:16,9 end:8,11
+farmR parts/duck/a1/farmR.png 22 42 start:18,5 end:15,16

@@ -1,12 +1,12 @@
 body parts/bavaria/a1/body.png 40 27 head:46,1 hipL:12,11 hipR:12,11 shL:26,9 shR:26,9
-head parts/bavaria/a1/head.png 43 41 neck:21,20
+head parts/bavaria/a1/head.png 45 41 neck:20,20
 thighL parts/bavaria/a1/thighL.png 18 22 start:12,5 end:3,19
-shinL parts/bavaria/a1/shinL.png 21 13 start:16,6 end:1,7
+shinL parts/bavaria/a1/shinL.png 20 13 start:15,6 end:0,7
 footL parts/bavaria/a1/footL.png 18 17 start:6,4 end:16,16
 thighR parts/bavaria/a1/thighR.png 18 22 start:12,5 end:3,19
-shinR parts/bavaria/a1/shinR.png 22 13 start:16,6 end:1,7
+shinR parts/bavaria/a1/shinR.png 21 13 start:15,6 end:0,7
 footR parts/bavaria/a1/footR.png 18 17 start:6,4 end:16,16
-uarmL parts/bavaria/a1/uarmL.png 16 16 start:10,4 end:3,12
-farmL parts/bavaria/a1/farmL.png 13 25 start:9,2 end:5,17
-uarmR parts/bavaria/a1/uarmR.png 14 15 start:9,3 end:3,12
+uarmL parts/bavaria/a1/uarmL.png 15 16 start:10,4 end:3,12
+farmL parts/bavaria/a1/farmL.png 13 26 start:9,2 end:5,17
+uarmR parts/bavaria/a1/uarmR.png 13 15 start:9,3 end:3,12
 farmR parts/bavaria/a1/farmR.png 14 26 start:10,2 end:6,18

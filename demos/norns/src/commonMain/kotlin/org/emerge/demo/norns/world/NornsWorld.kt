@@ -462,7 +462,7 @@ class NornsConfig(
     val fatigueRate: Float = 0.0025f, // fatigue built per tick of exertion (÷4)
     val restRecovery: Float = 0.015f, // fatigue recovered per tick of resting (÷4)
     // heritable visual breeds (sprite palettes); offspring inherit a parent's, rarely mutate
-    val breedCount: Int = 5,
+    val breedCount: Int = 9,
     val breedMutationPct: Int = 4,
 ) {
     fun metabolismOf(genome: Genome): Float {

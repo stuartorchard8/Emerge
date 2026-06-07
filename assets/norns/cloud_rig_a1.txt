@@ -1,5 +1,5 @@
 body parts/cloud/a1/body.png 48 26 head:43,1 hipL:9,11 hipR:9,11 shL:23,9 shR:23,9
-head parts/cloud/a1/head.png 50 43 neck:22,23
+head parts/cloud/a1/head.png 51 43 neck:22,23
 thighL parts/cloud/a1/thighL.png 18 22 start:12,5 end:3,19
 shinL parts/cloud/a1/shinL.png 20 14 start:15,6 end:0,7
 footL parts/cloud/a1/footL.png 18 17 start:6,4 end:16,16
