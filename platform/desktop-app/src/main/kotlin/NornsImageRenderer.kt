@@ -71,6 +71,22 @@ object NornsImageRenderer {
             g.color = Color(70, 46, 30); g.fillRect(0, gy + slab - 2, w, 2)         // soil shadow line
             g.color = Color(104, 140, 66); g.fillRect(0, gy, w, grass)             // grass top
             g.color = Color(124, 162, 80); g.fillRect(0, gy, w, 2)                  // grass highlight
+            // irregular grass blades along the edge (scroll with the world)
+            val step = 0.28f
+            var wx = floor(left / step) * step
+            while (wx < left + horiz + step) {
+                val hb = fhash((wx * 100).roundToInt(), f * 7 + 3)
+                val bx = px(wx)
+                val bw = 0.10f * sx
+                val bhh = (0.30f + (hb % 5) * 0.06f) * sx
+                val lean = ((hb % 7) - 3) * 0.02f * sx
+                g.color = Color(92 + hb % 30, 134 + hb % 26, 58 + hb % 20)
+                g.fillPolygon(
+                    intArrayOf((bx - bw).roundToInt(), (bx + bw).roundToInt(), (bx + lean).roundToInt()),
+                    intArrayOf(gy + 2, gy + 2, (gy - bhh).roundToInt()), 3,
+                )
+                wx += step
+            }
         }
         // soft depth: ambient shadow rising from each ground line + a shadow under each ceiling,
         // so the rooms read as enclosed spaces rather than flat colour bands
