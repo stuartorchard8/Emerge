@@ -286,6 +286,10 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
         creatureById(id)?.let { it.hunger = (it.hunger - cfg.eatAmount).coerceAtLeast(0f) }
     }
 
+    /** The living creature nearest to (floor, x) within [radius], for click-to-pick. */
+    fun creatureNear(floor: Int, x: Float, radius: Float): WorldCreature? =
+        creatures.filter { it.alive && it.floor == floor && abs(it.x - x) <= radius }.minByOrNull { abs(it.x - x) }
+
     fun pickUp(id: Int) { creatureById(id)?.held = true }
 
     fun place(id: Int, floor: Int, x: Int) {

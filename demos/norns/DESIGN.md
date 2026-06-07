@@ -195,8 +195,11 @@ build stops here because everything remaining (subsystem 8 + fidelity) needs hum
   drawing animated blobs (engine `CircleShader`). World is now **continuous-position** (smooth
   glide, no grid hops) with **durative animated actions** (a state machine: move → pick up → carry
   → eat, and pursue → mutual-court → breed, each taking ticks) and **food-holding** (eat only while
-  carrying). Colony retuned + viable; behaviour is legible (action dots + the panel's `doing:`
-  line). GL still unverified by me (no display) — needs Stu's run. 54 tests green.
+  carrying). Colony retuned + viable; behaviour is legible (action dots). Added a **text HUD**
+  (reusing cyto's procedural-font `CytoTextRenderer`: world stats + followed creature's
+  stage/age/drives/action) and **mouse interaction** (left-click follow, right-click drop food) —
+  screen↔world picking is the tested `NornsView`. GL still unverified by me (no display) — needs
+  Stu's run. 58 tests green.
 - Deeper-fidelity gaps remaining: G3, G6–G9, brain topology evolution, and the GPU look/interaction.
 
 **The "alive" chain is demonstrated end to end:** chemistry regulates → the brain learns from
