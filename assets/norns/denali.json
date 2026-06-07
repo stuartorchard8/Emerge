@@ -1,0 +1,12 @@
+{
+  "breed": "denali",
+  "cellW": 71,
+  "cellH": 92,
+  "anchorX": 35,
+  "anchorY": 89,
+  "frames": [
+    "stand",
+    "walk0",
+    "walk1"
+  ]
+}
