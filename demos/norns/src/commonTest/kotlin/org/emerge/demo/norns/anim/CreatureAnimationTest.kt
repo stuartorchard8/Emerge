@@ -20,7 +20,8 @@ class CreatureAnimationTest {
     fun everyBodyPartIsPosedEachFrame() {
         val parts = CreatureAnimation.pose(CreatureAction.WALK, phase = 0.5f, facing = 1, r = 1f, g = 1f, b = 1f)
         assertEquals(BodyPart.entries.toSet(), parts.map { it.part }.toSet(), "all body parts posed")
-        assertEquals(BodyPart.entries.size, parts.size)
+        // every part appears at least once; some (e.g. the hair crest) are drawn as several blobs
+        assertTrue(parts.size >= BodyPart.entries.size)
     }
 
     @Test
