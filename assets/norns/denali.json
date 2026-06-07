@@ -1,0 +1,39 @@
+{
+ "breed": "denali",
+ "poses": [
+  "p0",
+  "p1",
+  "p2",
+  "p3"
+ ],
+ "ages": {
+  "0": {
+   "sheet": "denali_a0.png",
+   "cellW": 73,
+   "cellH": 73,
+   "anchorX": 36,
+   "anchorY": 70
+  },
+  "1": {
+   "sheet": "denali_a1.png",
+   "cellW": 86,
+   "cellH": 85,
+   "anchorX": 43,
+   "anchorY": 82
+  },
+  "2": {
+   "sheet": "denali_a2.png",
+   "cellW": 86,
+   "cellH": 70,
+   "anchorX": 43,
+   "anchorY": 67
+  },
+  "3": {
+   "sheet": "denali_a3.png",
+   "cellW": 111,
+   "cellH": 110,
+   "anchorX": 55,
+   "anchorY": 107
+  }
+ }
+}
