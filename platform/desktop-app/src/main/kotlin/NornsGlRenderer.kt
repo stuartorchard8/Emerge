@@ -46,34 +46,43 @@ class NornsGlRenderer(private val cfg: NornsRenderConfig = NornsRenderConfig()) 
     /** World→view scale: each grid cell is 1 unit; floors stack [FLOOR_SPACING] units apart. */
     private fun floorY(floor: Int) = floor * FLOOR_SPACING + 1.2f
 
-    /** Draws one frame: the camera window is [cameraX, cameraX+viewWidth] across, all floors tall. */
-    fun draw(world: NornsWorld, cameraX: Float, followId: Int?) {
+    /**
+     * Draws one frame. Vertical extent shows all floors; the horizontal extent is derived from the
+     * window [aspect] (fbWidth/fbHeight) so a world unit is the same size in pixels on both axes —
+     * blobs stay round and the world doesn't stretch with the window. Camera centres on
+     * [cameraCenterX].
+     */
+    fun draw(world: NornsWorld, cameraCenterX: Float, aspect: Float, followId: Int?) {
         count = 0
-        val left = cameraX.coerceIn(0f, maxOf(0f, world.cfg.worldWidth - cfg.viewWidth))
         val worldTop = world.cfg.floors * FLOOR_SPACING
-        // ortho map: (wx,wy) -> clip [-1,1]
-        val sx = 2f / cfg.viewWidth
-        val sy = 2f / worldTop
+        val verticalUnits = worldTop + 1.5f                 // a little headroom above the top floor
+        val sy = 2f / verticalUnits
+        val sx = sy / aspect.coerceAtLeast(0.01f)           // square units → undistorted
+        val horizontalUnits = 2f / sx
+        val left = (cameraCenterX - horizontalUnits / 2f)
+            .coerceIn(0f, maxOf(0f, world.cfg.worldWidth - horizontalUnits))
+
         matView.setIdentity()
         matView.m[0] = sx
         matView.m[5] = sy
         matView.m[12] = -left * sx - 1f
         matView.m[13] = -1f
 
+        val right = left + horizontalUnits
         // floor bars (dim, wide flat blobs)
-        for (f in 0 until world.cfg.floors) addBlob(left + cfg.viewWidth / 2f, floorY(f) - 1.2f, cfg.viewWidth, 0.12f, 0.30f, 0.30f, 0.36f, 1f)
-
+        for (f in 0 until world.cfg.floors) {
+            addBlob(left + horizontalUnits / 2f, floorY(f) - 1.2f, horizontalUnits, 0.12f, 0.30f, 0.30f, 0.36f, 1f)
+        }
         // food
         for (foodCell in world.food) {
             val fx = world.foodX(foodCell)
-            if (fx < left - 1 || fx > left + cfg.viewWidth + 1) continue
+            if (fx < left - 1 || fx > right + 1) continue
             addBlob(fx.toFloat(), floorY(world.foodFloor(foodCell)) - 0.7f, 0.35f, 0.35f, 0.95f, 0.85f, 0.25f, 1f)
         }
-
         // creatures as posed blob clusters
         for (c in world.creatures) {
             val cx = c.x.toFloat()
-            if (cx < left - 2 || cx > left + cfg.viewWidth + 2) continue
+            if (cx < left - 2 || cx > right + 2) continue
             drawCreature(c, cx, floorY(c.floor), c.id == followId)
         }
 
@@ -94,7 +103,7 @@ class NornsGlRenderer(private val cfg: NornsRenderConfig = NornsRenderConfig()) 
         val frac = ((c.metabolism - cfg.metabMin) / (cfg.metabMax - cfg.metabMin)).coerceIn(0f, 1f)
         val r = 0.25f + 0.6f * frac
         val g = 0.25f + 0.6f * (1f - frac)
-        val b = if (followed) 0.9f else 0.35f // highlight the followed creature in blue
+        val b = 0.35f
 
         for (p in CreatureAnimation.pose(action, phase, c.facing, r, g, b)) {
             addBlob(
@@ -104,6 +113,18 @@ class NornsGlRenderer(private val cfg: NornsRenderConfig = NornsRenderConfig()) 
                 p.r, p.g, p.b, 1f,
             )
         }
+
+        // No-text state cue: a coloured dot above the head shows what the creature is doing.
+        val top = worldY + 1.3f * cfg.creatureScale
+        val (ar, ag, ab) = when (action) {
+            CreatureAction.WALK -> Triple(0.35f, 0.9f, 0.4f)   // seeking food (green)
+            CreatureAction.EAT -> Triple(0.95f, 0.9f, 0.3f)    // eating (yellow)
+            CreatureAction.COURT -> Triple(0.95f, 0.45f, 0.75f) // courting (pink)
+            CreatureAction.REST -> Triple(0.6f, 0.6f, 0.6f)    // resting (grey)
+        }
+        addBlob(worldX, top, 0.22f, 0.22f, ar, ag, ab, 1f)
+        // a white marker above the followed creature
+        if (followed) addBlob(worldX, top + 0.5f, 0.18f, 0.18f, 1f, 1f, 1f, 1f)
     }
 
     private fun addBlob(wx: Float, wy: Float, rx: Float, ry: Float, r: Float, g: Float, b: Float, alpha: Float) {
