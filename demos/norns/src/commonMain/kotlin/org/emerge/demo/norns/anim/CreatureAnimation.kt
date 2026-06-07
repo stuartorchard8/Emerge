@@ -123,8 +123,8 @@ object CreatureAnimation {
         // two big forward-facing eyes (near eye a touch larger for the 3/4 turn)
         add(BodyPart.EYE_LEFT, turn - 0.18f, 0.74f + headY, 0.165f, 1f, 1f, 1f, halfW = 0.155f, halfH = 0.175f)
         add(BodyPart.EYE_RIGHT, turn + 0.20f, 0.74f + headY, 0.18f, 1f, 1f, 1f, halfW = 0.17f, halfH = 0.19f)
-        add(BodyPart.PUPIL_LEFT, turn - 0.16f + 0.02f * face, 0.72f + headY, 0.08f, 0.12f, 0.12f, 0.16f)
-        add(BodyPart.PUPIL_RIGHT, turn + 0.22f + 0.02f * face, 0.72f + headY, 0.085f, 0.12f, 0.12f, 0.16f)
+        add(BodyPart.PUPIL_LEFT, turn - 0.16f + 0.02f * face, 0.72f + headY, 0.10f, 0.12f, 0.12f, 0.16f)
+        add(BodyPart.PUPIL_RIGHT, turn + 0.22f + 0.02f * face, 0.72f + headY, 0.105f, 0.12f, 0.12f, 0.16f)
         return parts
     }
 }

@@ -255,9 +255,10 @@ object NornsImageRenderer {
         // iris + pupil + glint
         for (p in posed) if (p.part == BodyPart.PUPIL_LEFT || p.part == BodyPart.PUPIL_RIGHT) {
             val cx = ecx(p); val cy = ecy(p); val rr = ehw(p)
-            g.color = eye; fillCircle(g, cx, cy, rr * 1.7f)
-            g.color = Color(22, 18, 26); fillCircle(g, cx, cy, rr)
-            g.color = Color(255, 255, 255, 235); fillCircle(g, cx - rr * 0.5f, cy - rr * 0.6f, rr * 0.5f)
+            g.color = eye; fillCircle(g, cx, cy, rr * 1.5f)                                   // big cute iris
+            g.color = Color(22, 18, 26); fillCircle(g, cx, cy, rr)                            // pupil
+            g.color = Color(255, 255, 255, 240); fillCircle(g, cx - rr * 0.45f, cy - rr * 0.55f, rr * 0.5f) // main catchlight
+            g.color = Color(255, 255, 255, 170); fillCircle(g, cx + rr * 0.4f, cy + rr * 0.35f, rr * 0.24f) // tiny sparkle
         }
         // nose
         firstOf(BodyPart.NOSE)?.let { g.color = rgb(it.r, it.g, it.b); g.fill(shapeOf(it)) }
@@ -266,7 +267,7 @@ object NornsImageRenderer {
             val cx = ecx(it); val cy = ecy(it); val mw = ehw(it); val mh = ehh(it)
             g.stroke = BasicStroke(max(1.6f, 0.045f * sx), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
             g.color = Color(60, 34, 28)
-            g.draw(QuadCurve2D.Float(cx - mw, cy, cx, cy + mh * 2.4f, cx + mw, cy))
+            g.draw(QuadCurve2D.Float(cx - mw, cy, cx, cy + mh * 2.9f, cx + mw, cy))
         }
         // sleepy half-lids when resting (fur lid + dark crease) — a visible doze
         if (action == CreatureAction.REST) {
