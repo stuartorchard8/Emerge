@@ -71,8 +71,10 @@ object NornRig {
         val perAge = bases[name] ?: bases["denali"] ?: bases.values.firstOrNull() ?: return null
         return perAge[age] ?: perAge[3] ?: perAge.values.firstOrNull()
     }
+    // a clear size progression — babies ~5x smaller than adults so they read as babies, not
+    // shrunken adults — growing up through childhood
     private fun targetHeight(stage: String) = when (stage) {
-        "BABY" -> 1.7f; "CHILD" -> 2.1f; "ADOLESCENT" -> 2.5f; "OLD" -> 2.85f; else -> 2.95f
+        "BABY" -> 0.6f; "CHILD" -> 1.3f; "ADOLESCENT" -> 2.2f; "OLD" -> 2.85f; else -> 2.95f
     }
 
     /** Place [part] so its `start` pivot sits at (jx,jy), rotated by [rot] about that pivot (rot=0
