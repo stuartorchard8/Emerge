@@ -1,5 +1,6 @@
 package org.emerge.desktop
 
+import org.emerge.demo.norns.anim.BodyPart
 import org.emerge.demo.norns.anim.CreatureAnimation
 import org.emerge.demo.norns.anim.CreatureAction
 import org.emerge.demo.norns.world.ActivityType
@@ -10,7 +11,12 @@ import org.emerge.demo.norns.world.WorldCreature
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Font
+import java.awt.MultipleGradientPaint
+import java.awt.RadialGradientPaint
 import java.awt.RenderingHints
+import java.awt.geom.Area
+import java.awt.geom.Ellipse2D
+import java.awt.geom.Point2D
 import java.awt.image.BufferedImage
 import java.io.File
 import javax.imageio.ImageIO
@@ -137,24 +143,91 @@ object NornsImageRenderer {
         // warm, earthy fur, gene-tinted: efficient = mossy/green, inefficient = rusty/red
         val frac = ((c.metabolism - 0.003f) / (0.012f - 0.003f)).coerceIn(0f, 1f)
         val r = 0.55f + 0.30f * frac; val gr = 0.62f - 0.16f * frac; val b = 0.40f - 0.06f * frac
+
         // ground shadow (grounds the creature + separates it from neighbours/background)
         val shW = (0.95f * scale * sx).roundToInt(); val shH = (0.22f * scale * sx).roundToInt()
         g.color = Color(0, 0, 0, 70)
         g.fillOval((px(worldX) - shW / 2).roundToInt(), (py(worldY - 0.82f * scale) - shH / 2).roundToInt(), shW, shH)
 
         val posed = CreatureAnimation.pose(action, phase, c.facing, r, gr, b)
-        // pass 1: soft dark silhouette outline (fur parts enlarged) so the creature pops
-        val outline = Color(46, 32, 22)
-        for (p in posed) if (isFur(p.part)) blob(worldX + p.x * scale, worldY + p.y * scale, p.radius * scale * 1.15f + 0.03f, outline)
-        // pass 2: the parts themselves
-        for (p in posed) blob(worldX + p.x * scale, worldY + p.y * scale, p.radius * scale, col(p.r, p.g, p.b))
-        // eye glints — a little life
-        for (p in posed) if (p.part == org.emerge.demo.norns.anim.BodyPart.PUPIL_BACK || p.part == org.emerge.demo.norns.anim.BodyPart.PUPIL_FRONT) {
-            blob(worldX + (p.x + 0.02f) * scale, worldY + (p.y + 0.05f) * scale, 0.032f * scale, Color(255, 255, 255))
+        fun ecx(p: org.emerge.demo.norns.anim.PosedPart) = px(worldX + p.x * scale)
+        fun ecy(p: org.emerge.demo.norns.anim.PosedPart) = py(worldY + p.y * scale)
+        fun erad(p: org.emerge.demo.norns.anim.PosedPart) = p.radius * scale * sx
+
+        // one unified silhouette (union of the fur lobes) → a single clean outline, not bumpy per-blob
+        val body = Area()
+        for (p in posed) if (isFur(p.part)) {
+            val rr = erad(p)
+            body.add(Area(Ellipse2D.Float(ecx(p) - rr, ecy(p) - rr, 2 * rr, 2 * rr)))
+        }
+        val ow = (0.15f * scale * sx).coerceIn(3.5f, 12f)
+        g.stroke = BasicStroke(ow, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
+        g.color = Color(44, 30, 20); g.draw(body)          // outline (outer half survives the fill)
+        g.color = rgb(r, gr, b); g.fill(body)              // base coat (kills antialias seams)
+
+        // volumetric shading: each lobe gets a radial gradient lit from upper-left, clipped to body
+        val oldClip = g.clip
+        g.clip(body)
+        for (p in posed) if (!isFaceDetail(p.part)) shadeLobe(g, ecx(p), ecy(p), erad(p), p.r, p.g, p.b)
+        g.clip = oldClip
+
+        // face: white eyes, breed-coloured iris, pupil + glint, nose, mouth (on top, unclipped)
+        val eye = eyeColor(c.id)
+        for (p in posed) {
+            val cx = ecx(p); val cy = ecy(p); val rr = erad(p)
+            when (p.part) {
+                BodyPart.EYE_BACK, BodyPart.EYE_FRONT -> {
+                    g.color = Color(248, 247, 242); fillCircle(g, cx, cy, rr)
+                    g.color = Color(206, 200, 188); fillCircle(g, cx, cy + rr * 0.42f, rr * 0.55f) // lower shadow
+                    g.color = Color(248, 247, 242); fillCircle(g, cx, cy - rr * 0.12f, rr * 0.86f) // re-light top
+                }
+                BodyPart.PUPIL_BACK, BodyPart.PUPIL_FRONT -> {
+                    g.color = eye; fillCircle(g, cx, cy, rr * 1.7f)                 // iris
+                    g.color = Color(24, 20, 28); fillCircle(g, cx, cy, rr)          // pupil
+                    g.color = Color(255, 255, 255, 235); fillCircle(g, cx - rr * 0.5f, cy - rr * 0.6f, rr * 0.5f) // glint
+                }
+                BodyPart.NOSE, BodyPart.MOUTH -> { g.color = rgb(p.r, p.g, p.b); fillCircle(g, cx, cy, rr) }
+                else -> {}
+            }
         }
 
         if (c.carryingFood) blob(worldX + c.facing * 0.5f * scale, worldY + 0.05f * scale, 0.2f, Color(212, 84, 60))
         if (followed) blob(worldX, worldY + 1.7f * scale, 0.13f, Color(255, 255, 255)) // subtle follow marker
+    }
+
+    private fun isFaceDetail(part: BodyPart) = when (part) {
+        BodyPart.EYE_BACK, BodyPart.EYE_FRONT, BodyPart.PUPIL_BACK, BodyPart.PUPIL_FRONT,
+        BodyPart.NOSE, BodyPart.MOUTH -> true
+        else -> false
+    }
+
+    private fun c255(v: Float) = (v * 255f).roundToInt().coerceIn(0, 255)
+    private fun rgb(r: Float, g: Float, b: Float) = Color(c255(r), c255(g), c255(b))
+
+    private fun fillCircle(g: java.awt.Graphics2D, cx: Float, cy: Float, rad: Float) =
+        g.fillOval((cx - rad).roundToInt(), (cy - rad).roundToInt(), (2 * rad).roundToInt(), (2 * rad).roundToInt())
+
+    /** A single soft body lobe: radial gradient from a highlight (upper-left) through the base
+     *  tint to a darker rim, giving the flat circle volume. */
+    private fun shadeLobe(g: java.awt.Graphics2D, cx: Float, cy: Float, rad: Float, r: Float, gr: Float, b: Float) {
+        if (rad < 1f) { g.color = rgb(r, gr, b); fillCircle(g, cx, cy, rad); return }
+        val hi = rgb(r + (1f - r) * 0.34f, gr + (1f - gr) * 0.34f, b + (1f - b) * 0.34f)
+        val base = rgb(r, gr, b)
+        val lo = rgb(r * 0.7f, gr * 0.7f, b * 0.7f)
+        val paint = RadialGradientPaint(
+            Point2D.Float(cx, cy), rad, Point2D.Float(cx - 0.34f * rad, cy - 0.34f * rad),
+            floatArrayOf(0f, 0.55f, 1f), arrayOf(hi, base, lo), MultipleGradientPaint.CycleMethod.NO_CYCLE,
+        )
+        g.paint = paint
+        fillCircle(g, cx, cy, rad)
+    }
+
+    /** Breed eye colour (researched: Norns have blue or brown eyes; amber/green add variety). */
+    private fun eyeColor(id: Int) = when (id % 4) {
+        0 -> Color(96, 148, 206)  // blue
+        1 -> Color(120, 78, 46)   // brown
+        2 -> Color(196, 150, 60)  // amber
+        else -> Color(96, 150, 96) // green
     }
 
     private fun isFur(part: org.emerge.demo.norns.anim.BodyPart): Boolean = when (part) {
