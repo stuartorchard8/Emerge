@@ -1,0 +1,12 @@
+body parts/a1/body.png 20 35 head:9,0 hipL:1,25 hipR:17,25 shL:2,16 shR:16,16
+head parts/a1/head.png 46 43 neck:23,42
+thighL parts/a1/thighL.png 11 20 start:2,3 end:5,15
+shinL parts/a1/shinL.png 13 14 start:6,0 end:5,10
+footL parts/a1/footL.png 15 6 start:6,1 end:5,3
+thighR parts/a1/thighR.png 11 20 start:7,3 end:2,16
+shinR parts/a1/shinR.png 12 16 start:4,1 end:4,11
+footR parts/a1/footR.png 15 6 start:6,2 end:8,4
+uarmL parts/a1/uarmL.png 9 12 start:7,2 end:0,10
+farmL parts/a1/farmL.png 11 20 start:4,1 end:2,13
+uarmR parts/a1/uarmR.png 10 13 start:2,2 end:8,10
+farmR parts/a1/farmR.png 10 19 start:5,1 end:5,13
