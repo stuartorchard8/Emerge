@@ -348,6 +348,13 @@ object NornsImageRenderer {
                     val dark = ((hh ushr (k + 4)) and 1) == 0
                     softBlob(g, bx, ty, rr, if (dark) Color(28, 18, 10, 40) else Color(168, 140, 96, 30))
                 }
+                // occasional ground pebble
+                if (hh % 5 == 1) {
+                    val pbx = px(wx + ((hh ushr 11) % 100) / 100f)
+                    val pr = (0.16f + (hh % 3) * 0.06f) * sx
+                    g.color = Color(108, 100, 92); fillCircle(g, pbx, groundY - pr * 0.4f, pr)
+                    g.color = Color(134, 126, 118); fillCircle(g, pbx - pr * 0.25f, groundY - pr * 0.62f, pr * 0.5f)
+                }
             }
         }
     }
@@ -360,14 +367,19 @@ object NornsImageRenderer {
         val x1 = ceil(left + horiz).toInt() + 1
         for (f in 0 until world.cfg.floors) {
             val groundY = py(view.floorY(f) - view.groundOffset) + 2f
-            // hanging vines from this room's ceiling (furthest back)
-            for (wx in x0..x1) {
-                val hv = fhash(wx, f * 911 + 401)
-                if (hv % 7 == 0) {
-                    val vx = px(wx + (hv % 50) / 100f)
-                    val topY = if (f == world.cfg.floors - 1) 50f
-                    else py(view.floorYf(f + 1f) - view.groundOffset) + 0.5f * sx
-                    drawVine(g, vx, topY, sx, hv)
+            // hanging growth from the cavern ceiling: woody roots + green creeper vines.
+            // (the open-sky top room has nothing to hang from.)
+            if (f != world.cfg.floors - 1) {
+                val ceil = py(view.floorYf(f + 1f) - view.groundOffset) + 0.5f * sx
+                for (wx in x0..x1) {
+                    val hv = fhash(wx, f * 911 + 401)
+                    if (hv % 6 == 0) drawVine(g, px(wx + (hv % 50) / 100f), ceil, sx, hv, isRoot = hv % 2 == 0)
+                }
+            } else {
+                // surface trees on the open top room (drawn behind the foreground flora + creatures)
+                for (wx in x0..x1) {
+                    val ht = fhash(wx, 9173)
+                    if (ht % 9 == 0) drawTree(g, px(wx + (ht % 40) / 100f), groundY, sx, ht)
                 }
             }
             // distant, hazy foliage masses for depth (behind the sharp foreground flora)
@@ -394,23 +406,43 @@ object NornsImageRenderer {
         }
     }
 
-    private fun drawVine(g: java.awt.Graphics2D, x: Float, topY: Float, sx: Float, h: Int) {
-        val len = (1.4f + (h % 4) * 0.3f) * sx
+    /** A strand hanging from the cavern ceiling — a woody [isRoot] root (brown, tapering, rootlets)
+     *  or a green creeper vine (with leaves). */
+    private fun drawVine(g: java.awt.Graphics2D, x: Float, topY: Float, sx: Float, h: Int, isRoot: Boolean) {
+        val len = (1.4f + (h % 4) * 0.3f) * sx * (if (isRoot) 1.2f else 1f)
         val segs = 10
-        g.stroke = BasicStroke(max(1f, 0.045f * sx), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
+        val strand = if (isRoot) Color(116, 86, 54) else Color(86, 120, 58)
         var prevx = x; var prevy = topY
         for (i in 1..segs) {
             val t = i / segs.toFloat()
             val yy = topY + len * t
-            val xx = x + sin(t * 6f + (h % 10)) * 0.12f * sx
-            g.color = Color(86, 120, 58)
+            val xx = x + sin(t * 6f + (h % 10)) * (if (isRoot) 0.07f else 0.12f) * sx
+            g.stroke = BasicStroke(max(1f, (if (isRoot) 0.07f else 0.045f) * sx * (1f - t * 0.6f)), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
+            g.color = strand
             g.drawLine(prevx.roundToInt(), prevy.roundToInt(), xx.roundToInt(), yy.roundToInt())
-            if (i % 3 == 0) {
+            if (!isRoot && i % 3 == 0) {
                 g.color = Color(104, 150, 66)
                 g.fillOval((xx - 0.09f * sx).roundToInt(), (yy - 0.05f * sx).roundToInt(), (0.18f * sx).roundToInt(), (0.12f * sx).roundToInt())
             }
             prevx = xx; prevy = yy
         }
+    }
+
+    /** A surface tree: a tapered trunk and a soft layered leafy canopy reaching into the sky. */
+    private fun drawTree(g: java.awt.Graphics2D, bx: Float, groundY: Float, sx: Float, h: Int) {
+        val trunkH = (2.3f + (h % 3) * 0.5f) * sx
+        val trunkW = 0.34f * sx
+        val topY = groundY - trunkH
+        g.color = Color(92, 64, 42)
+        g.fillRoundRect((bx - trunkW / 2).roundToInt(), topY.roundToInt(), trunkW.roundToInt(), trunkH.roundToInt(), (trunkW * 0.5f).roundToInt(), (trunkW * 0.5f).roundToInt())
+        g.color = Color(74, 50, 32)
+        g.fillRoundRect((bx - trunkW / 2).roundToInt(), topY.roundToInt(), (trunkW * 0.35f).roundToInt(), trunkH.roundToInt(), (trunkW * 0.4f).roundToInt(), (trunkW * 0.4f).roundToInt())
+        val cr = (1.6f + (h % 3) * 0.3f) * sx
+        softBlob(g, bx, topY, cr, Color(72, 110, 56, 240))
+        softBlob(g, bx - cr * 0.62f, topY + cr * 0.26f, cr * 0.72f, Color(82, 122, 62, 235))
+        softBlob(g, bx + cr * 0.62f, topY + cr * 0.2f, cr * 0.78f, Color(88, 130, 66, 235))
+        softBlob(g, bx, topY - cr * 0.42f, cr * 0.72f, Color(100, 144, 76, 230))
+        softBlob(g, bx - cr * 0.34f, topY - cr * 0.32f, cr * 0.5f, Color(150, 186, 110, 150)) // sun-side highlight
     }
 
     private fun drawTuft(g: java.awt.Graphics2D, bx: Float, by: Float, sx: Float, h: Int, tall: Boolean) {
@@ -495,6 +527,17 @@ fun main(args: Array<String>) {
                 zg.drawImage(img.getSubimage(x0, y0, cw, ch), 0, 0, cw * 2, ch * 2, null)
                 zg.dispose()
                 ImageIO.write(zoom, "png", File(outDir, "norns_t${t}_zoom.png"))
+
+                // surface crop: the sky / top room (to inspect trees, clouds, hills)
+                val topGrass = 620f - (view.floorY(world.cfg.floors - 1) / view.verticalUnits) * 620f
+                val sw = 460; val sh = 300
+                val sy0 = (topGrass.roundToInt() - sh + 70).coerceIn(0, 620 - sh)
+                val surf = BufferedImage(sw * 2, sh * 2, BufferedImage.TYPE_INT_RGB)
+                val sg = surf.createGraphics()
+                sg.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+                sg.drawImage(img.getSubimage(270, sy0, sw, sh), 0, 0, sw * 2, sh * 2, null)
+                sg.dispose()
+                ImageIO.write(surf, "png", File(outDir, "norns_t${t}_surface.png"))
             }
         }
     }
