@@ -185,8 +185,8 @@ object NornsImageRenderer {
         val gr = (0.62f - 0.16f * frac + jg).coerceIn(0.18f, 0.95f)
         val b = (0.40f - 0.06f * frac + jb).coerceIn(0.14f, 0.9f)
 
-        NornSprites.ensure()
-        if (!NornSprites.ready) {
+        NornRig.ensure()
+        if (!NornRig.ready) {
         val posed = CreatureAnimation.pose(action, phase, c.facing, r, gr, b)
         fun ecx(p: PosedPart) = px(worldX + p.x * scale)
         fun ecy(p: PosedPart) = py(worldY + p.y * scale)
@@ -284,7 +284,7 @@ object NornsImageRenderer {
         }
 
         } else {
-            NornSprites.draw(g, c, action, worldX, worldY, px, py, sx)
+            NornRig.draw(g, c, action, worldX, worldY, px, py, sx)
         }
         if (c.carryingFood) blob(worldX + c.facing * 0.5f * scale, worldY + 0.05f * scale, 0.2f, Color(212, 84, 60))
         if (followed) blob(worldX, worldY + 1.7f * scale, 0.13f, Color(255, 255, 255)) // subtle follow marker
