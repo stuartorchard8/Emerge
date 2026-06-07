@@ -58,6 +58,8 @@ object NornsImageRenderer {
             (r * 255).roundToInt().coerceIn(0, 255), (gr * 255).roundToInt().coerceIn(0, 255), (b * 255).roundToInt().coerceIn(0, 255),
         )
 
+        // the top room is the open surface of Albia: sky, sun, clouds, distant hills
+        drawSky(g, world, view, w, sx, ::py)
         // mottled earthy back wall for depth (scrolls with the world)
         drawBackdrop(g, world, view, left, horiz, sx, ::px, ::py)
         // floors as grassy soil slabs (the surfaces creatures stand on)
@@ -78,7 +80,8 @@ object NornsImageRenderer {
             val aoTop = (gy - aoH).coerceAtLeast(0)
             g.paint = java.awt.GradientPaint(0f, aoTop.toFloat(), Color(34, 22, 14, 0), 0f, gy.toFloat(), Color(34, 22, 14, 78))
             g.fillRect(0, aoTop, w, gy - aoTop)
-            val ceilY = if (f == world.cfg.floors - 1) 50 else (py(view.floorY(f + 1) - view.groundOffset).roundToInt() + slab)
+            if (f == world.cfg.floors - 1) continue // top room is open sky — no ceiling shadow
+            val ceilY = py(view.floorY(f + 1) - view.groundOffset).roundToInt() + slab
             val csH = (0.8f * sx).roundToInt().coerceAtLeast(8)
             g.paint = java.awt.GradientPaint(0f, ceilY.toFloat(), Color(26, 16, 10, 90), 0f, (ceilY + csH).toFloat(), Color(26, 16, 10, 0))
             g.fillRect(0, ceilY, w, csH)
@@ -300,6 +303,31 @@ object NornsImageRenderer {
         fillCircle(g, cx, cy, rad)
     }
 
+    /** The top room is Albia's open surface: a sky gradient with a soft sun, clouds, and distant
+     *  hazy hills sitting on the horizon (the top floor's grass line). */
+    private fun drawSky(g: java.awt.Graphics2D, world: NornsWorld, view: NornsView, w: Int, sx: Float, py: (Float) -> Float) {
+        val horizon = py(view.floorY(world.cfg.floors - 1) - view.groundOffset)
+        val hy = horizon.roundToInt().coerceIn(1, 100000)
+        g.paint = java.awt.GradientPaint(0f, 0f, Color(138, 184, 214), 0f, horizon, Color(216, 226, 205))
+        g.fillRect(0, 0, w, hy)
+        // sun glow
+        softBlob(g, w * 0.80f, horizon * 0.42f, 2.0f * sx, Color(255, 238, 198, 120))
+        softBlob(g, w * 0.80f, horizon * 0.42f, 0.85f * sx, Color(255, 250, 224, 210))
+        // soft clouds (fixed to screen — they're far away)
+        for ((cxF, cyF, rF) in listOf(Triple(0.16f, 0.30f, 1.1f), Triple(0.45f, 0.17f, 0.8f), Triple(0.64f, 0.40f, 0.95f))) {
+            val cx = w * cxF; val cyy = horizon * cyF; val rr = rF * sx
+            softBlob(g, cx, cyy, rr, Color(255, 255, 255, 150))
+            softBlob(g, cx + rr * 0.7f, cyy + rr * 0.15f, rr * 0.8f, Color(255, 255, 255, 130))
+            softBlob(g, cx - rr * 0.7f, cyy + rr * 0.1f, rr * 0.7f, Color(255, 255, 255, 130))
+        }
+        // distant hazy hills sitting on the horizon (bottoms covered by the floor slab)
+        val hh = 1.9f * sx
+        g.color = Color(150, 178, 150, 170)
+        g.fillOval((w * 0.02f).roundToInt(), (horizon - hh * 0.5f).roundToInt(), (w * 0.52f).roundToInt(), hh.roundToInt())
+        g.color = Color(126, 158, 132, 200)
+        g.fillOval((w * 0.44f).roundToInt(), (horizon - hh * 0.42f).roundToInt(), (w * 0.62f).roundToInt(), hh.roundToInt())
+    }
+
     /** Mottled earthy wall texture (soft dark + warm patches) so rooms aren't flat colour bands. */
     private fun drawBackdrop(
         g: java.awt.Graphics2D, world: NornsWorld, view: NornsView,
@@ -307,10 +335,9 @@ object NornsImageRenderer {
     ) {
         val x0 = floor(left).toInt() - 1
         val x1 = ceil(left + horiz).toInt() + 1
-        for (f in 0 until world.cfg.floors) {
+        for (f in 0 until world.cfg.floors - 1) { // top room is open sky, not earthy wall
             val groundY = py(view.floorY(f) - view.groundOffset)
-            val ceilY = if (f == world.cfg.floors - 1) 0f
-            else py(view.floorYf(f + 1f) - view.groundOffset) + 0.5f * sx
+            val ceilY = py(view.floorYf(f + 1f) - view.groundOffset) + 0.5f * sx
             for (wx in x0..x1) {
                 val hh = fhash(wx, f * 53 + 17)
                 val n = 1 + hh % 2
