@@ -225,3 +225,36 @@ constants for *feel* (G1), and the deeper-fidelity items (G3–G9). Those are th
 2. **Tune the constants** (G1) — half-lives, rates, gains, drive weights — for the right dynamics.
 3. **Decide fidelity targets** — which gaps (G3–G9) to close, and whether to source C1 reference
    data to raise fidelity beyond "mechanism-faithful".
+
+---
+
+## Status update (2026-06-07): the body, world, and visuals are built
+
+The "verification wall" above is largely crossed — there is now a **visible, watchable world** and a
+real art pipeline. Current state:
+
+### Rendering & art (the canonical host)
+- **One renderer, Java2D**: `NornsImageRenderer` (in `:platform:desktop-app`). Two entry points
+  share it: **`runNornsSwing`** (live window — ←/→ or A/D pan, F follow, left-click a Norn to
+  follow, right-click drop food, P pause, `[`/`]` speed) and **`renderNorns`** (headless PNG frames
+  + 2× zoom / surface crops, used to iterate the look). `runNorns` is still the lightweight ASCII
+  host. (The old GPU host was removed — it predated the sprite rig.)
+- **Real Creatures-2 sprites.** A pipeline (`tools/norns-sprites/`) rips a breed, decodes its S16
+  sprites, and bakes per-age parts + a rig manifest. `NornRig` assembles them as an articulated
+  skeleton (real ATT attachment points) with **continuous joint swing** for smooth walk/crawl — not
+  a primitive blob. `CreatureAnimation` (the procedural poser) remains only as a fallback.
+- **9 heritable breeds/species** (denali, bavaria, bilba, calypso, cloud, foxi, dog, duck, daffodil),
+  picked per creature and inherited; **life-stage scaling** (tiny crawling babies → upright adults);
+  **eggs** (the EMBRYO stage is inert + drawn as an egg, hatches into a baby); a painted Albia-style
+  world (sky surface, caverns, flora). Placeholder art until Stu draws his own.
+
+### Tuning done
+- Colony is small + slow (sits ~12–20), food quartered, sim time-dilated to ~¼ for watchability;
+  baby/child stages stretched so young are commonly visible.
+
+### Still parked / open
+- **G13 plant/fruit ecology** — still god-spawned food; the producer layer is not built.
+- **Deeper biochem fidelity** (G3/G6–G9), **brain-topology evolution**, **G4 SVRule VM** — untouched.
+- **Baby vs adult proportions** — babies use their own age-0 sprite but read similar to adults
+  beyond scale (Stu parked this); **foxi** has no age-0 art so its babies use an older sprite.
+- **Feel tuning** (G1) — joint swing amounts, pace, etc. are eyeballed, open to refinement.
