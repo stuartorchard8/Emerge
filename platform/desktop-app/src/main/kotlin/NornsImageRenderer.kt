@@ -27,7 +27,9 @@ object NornsImageRenderer {
         val img = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
         val g = img.createGraphics()
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-        g.color = Color(18, 20, 30); g.fillRect(0, 0, w, h)
+        // warm Albia-ish daylight gradient: soft cream sky → earthy soil
+        g.paint = java.awt.GradientPaint(0f, 0f, Color(232, 220, 188), 0f, h.toFloat(), Color(74, 58, 44))
+        g.fillRect(0, 0, w, h)
 
         val view = NornsView(world.cfg.worldWidth, world.cfg.floors)
         val aspect = w.toFloat() / h
@@ -45,25 +47,32 @@ object NornsImageRenderer {
             (r * 255).roundToInt().coerceIn(0, 255), (gr * 255).roundToInt().coerceIn(0, 255), (b * 255).roundToInt().coerceIn(0, 255),
         )
 
-        // floors
-        g.color = Color(55, 58, 72)
+        // floors as grassy soil slabs (the surfaces creatures stand on)
+        val slab = (0.5f * sx).roundToInt().coerceAtLeast(6)
+        val grass = (0.14f * sx).roundToInt().coerceAtLeast(3)
         for (f in 0 until world.cfg.floors) {
-            val y = py(view.floorY(f) - view.groundOffset).roundToInt()
-            g.fillRect(0, y, w, 3)
+            val gy = py(view.floorY(f) - view.groundOffset).roundToInt()
+            g.color = Color(86, 62, 42); g.fillRect(0, gy, w, slab)               // soil
+            g.color = Color(70, 46, 30); g.fillRect(0, gy + slab - 2, w, 2)         // soil shadow line
+            g.color = Color(104, 140, 66); g.fillRect(0, gy, w, grass)             // grass top
+            g.color = Color(124, 162, 80); g.fillRect(0, gy, w, 2)                  // grass highlight
         }
-        // lift shafts + platform cars
+        // lift shafts (subtle vertical guide) + wooden platform cars
         for (lift in world.lifts) {
             val cx = px(lift.column.toFloat())
-            g.color = Color(38, 40, 54); g.fillRect((cx - 3).roundToInt(), 0, 6, h)
+            g.color = Color(58, 44, 32, 90); g.fillRect((cx - 2).roundToInt(), 0, 4, h)
             val cy = py(view.floorYf(lift.carPos))
             val pw = (1.7f * sx).roundToInt(); val ph = (0.42f * sx).roundToInt()
             val x0 = (cx - pw / 2).roundToInt(); val y0 = (cy - ph / 2).roundToInt()
-            g.color = Color(104, 108, 134); g.fillRoundRect(x0, y0, pw, ph, 8, 8)
-            g.color = Color(150, 154, 182); g.fillRect(x0, y0, pw, 2) // lit top edge
+            g.color = Color(122, 86, 52); g.fillRoundRect(x0, y0, pw, ph, 8, 8)        // wood
+            g.color = Color(150, 112, 70); g.fillRect(x0, y0, pw, 3)                    // lit top edge
         }
-        // food
+        // food as little fruit (berry + leaf)
         for (cell in world.food) {
-            blob(world.foodX(cell).toFloat(), view.floorY(world.foodFloor(cell)) - 0.7f, 0.32f, Color(240, 210, 70))
+            val fx = world.foodX(cell).toFloat(); val fy = view.floorY(world.foodFloor(cell)) - 0.5f
+            blob(fx, fy, 0.27f, Color(212, 84, 60))                  // berry
+            blob(fx - 0.08f, fy + 0.07f, 0.09f, Color(240, 150, 132)) // highlight
+            blob(fx + 0.13f, fy + 0.28f, 0.10f, Color(110, 150, 64))  // leaf
         }
         // creatures
         for (c in world.creatures) {
@@ -71,8 +80,9 @@ object NornsImageRenderer {
             drawCreature(g, c, c.x, cy, c.id == followId, ::px, ::py, sx, ::blob, ::col)
         }
 
-        // HUD
-        g.color = Color(220, 224, 235)
+        // HUD (dark header bar for legibility over the bright sky)
+        g.color = Color(26, 20, 14, 175); g.fillRect(0, 0, w, 50)
+        g.color = Color(238, 233, 220)
         g.font = Font("SansSerif", Font.PLAIN, 14)
         g.drawString(
             "pop ${world.population}   food ${world.food.size}   born ${world.births}   died ${world.deaths}   " +
@@ -111,16 +121,26 @@ object NornsImageRenderer {
         val shW = (0.95f * scale * sx).roundToInt(); val shH = (0.22f * scale * sx).roundToInt()
         g.color = Color(0, 0, 0, 70)
         g.fillOval((px(worldX) - shW / 2).roundToInt(), (py(worldY - 0.82f * scale) - shH / 2).roundToInt(), shW, shH)
-        for (p in CreatureAnimation.pose(action, phase, c.facing, r, gr, b)) {
-            blob(worldX + p.x * scale, worldY + p.y * scale, p.radius * scale, col(p.r, p.g, p.b))
+
+        val posed = CreatureAnimation.pose(action, phase, c.facing, r, gr, b)
+        // pass 1: soft dark silhouette outline (fur parts enlarged) so the creature pops
+        val outline = Color(46, 32, 22)
+        for (p in posed) if (isFur(p.part)) blob(worldX + p.x * scale, worldY + p.y * scale, p.radius * scale * 1.15f + 0.03f, outline)
+        // pass 2: the parts themselves
+        for (p in posed) blob(worldX + p.x * scale, worldY + p.y * scale, p.radius * scale, col(p.r, p.g, p.b))
+        // eye glints — a little life
+        for (p in posed) if (p.part == org.emerge.demo.norns.anim.BodyPart.PUPIL_BACK || p.part == org.emerge.demo.norns.anim.BodyPart.PUPIL_FRONT) {
+            blob(worldX + (p.x + 0.02f) * scale, worldY + (p.y + 0.05f) * scale, 0.032f * scale, Color(255, 255, 255))
         }
-        if (c.carryingFood) blob(worldX + c.facing * 0.5f * scale, worldY + 0.05f * scale, 0.22f, Color(240, 210, 70))
-        val (ar, ag, ab) = when (action) {
-            CreatureAction.WALK -> Triple(90, 230, 100); CreatureAction.EAT -> Triple(240, 225, 80)
-            CreatureAction.COURT -> Triple(240, 115, 190); CreatureAction.REST -> Triple(150, 150, 150)
-        }
-        blob(worldX, worldY + 1.3f * scale, 0.2f, Color(ar, ag, ab))
-        if (followed) blob(worldX, worldY + 1.85f * scale, 0.16f, Color.WHITE)
+
+        if (c.carryingFood) blob(worldX + c.facing * 0.5f * scale, worldY + 0.05f * scale, 0.2f, Color(212, 84, 60))
+        if (followed) blob(worldX, worldY + 1.7f * scale, 0.13f, Color(255, 255, 255)) // subtle follow marker
+    }
+
+    private fun isFur(part: org.emerge.demo.norns.anim.BodyPart): Boolean = when (part) {
+        org.emerge.demo.norns.anim.BodyPart.EYE_BACK, org.emerge.demo.norns.anim.BodyPart.EYE_FRONT,
+        org.emerge.demo.norns.anim.BodyPart.PUPIL_BACK, org.emerge.demo.norns.anim.BodyPart.PUPIL_FRONT -> false
+        else -> true
     }
 
     private fun doing(a: ActivityType) = when (a) {
