@@ -5,7 +5,9 @@ import org.emerge.demo.norns.world.WorldCreature
 import java.io.File
 import javax.imageio.ImageIO
 import java.awt.image.BufferedImage
+import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * Real Creatures-2 Norn renderer. Each life-stage age (0=baby .. 3=adult) has a sheet of side-
@@ -51,7 +53,7 @@ object NornRig {
      *  crawl using the low poses; older Norns stand/walk upright. Walk cycles two poses for stride. */
     private fun poseFor(stage: String, action: CreatureAction, ticks: Int): Int {
         val crawler = stage == "BABY" || stage == "CHILD"
-        val step = (ticks / 6) % 2
+        val step = (ticks / 8) % 2
         return when (action) {
             CreatureAction.WALK -> if (crawler) intArrayOf(0, 1)[step] else intArrayOf(1, 2)[step]
             CreatureAction.EAT -> if (crawler) 0 else 1
@@ -70,8 +72,12 @@ object NornRig {
         val scale = (targetHeight(stage) * sx) / a.cellH
         val flip = c.facing < 0
         val w = a.cellW * scale; val h = a.cellH * scale
+        // gentle bob for life: a small step-bounce while walking, slow breathing otherwise
+        val phase = c.ticksLived * 0.35f
+        val bobAmp = if (action == CreatureAction.WALK) 0.028f else 0.012f
+        val bob = -abs(sin(phase)) * bobAmp * h
         val ax = if (flip) a.cellW - a.anchorX else a.anchorX
-        val dx1 = (px(worldX) - ax * scale).roundToInt(); val dy1 = (py(worldY) - a.anchorY * scale).roundToInt()
+        val dx1 = (px(worldX) - ax * scale).roundToInt(); val dy1 = (py(worldY) + bob - a.anchorY * scale).roundToInt()
         val dx2 = dx1 + w.roundToInt(); val dy2 = dy1 + h.roundToInt()
         val srcX = pose * a.cellW
         if (!flip) g.drawImage(a.sheet, dx1, dy1, dx2, dy2, srcX, 0, srcX + a.cellW, a.cellH, null)

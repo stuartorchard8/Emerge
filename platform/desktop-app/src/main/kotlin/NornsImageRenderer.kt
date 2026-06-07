@@ -129,7 +129,7 @@ object NornsImageRenderer {
         // creatures
         for (c in world.creatures) {
             val cy = if (c.ridingY >= 0f) view.floorYf(c.ridingY) else view.floorY(c.floor)
-            drawCreature(g, c, c.x, cy, c.id == followId, ::px, ::py, sx, ::blob, ::col)
+            drawCreature(g, c, c.x, cy, c.id == followId, ::px, ::py, sx, ::blob, ::col, view.groundOffset)
         }
 
         // soft vignette to focus the eye toward the centre
@@ -165,6 +165,7 @@ object NornsImageRenderer {
         g: java.awt.Graphics2D, c: WorldCreature, worldX: Float, worldY: Float, followed: Boolean,
         px: (Float) -> Float, py: (Float) -> Float, sx: Float,
         blob: (Float, Float, Float, Color) -> Unit, col: (Float, Float, Float) -> Color,
+        groundOffset: Float,
     ) {
         val action = when (c.activity) {
             ActivityType.EATING, ActivityType.PICKING_UP -> CreatureAction.EAT
@@ -284,7 +285,8 @@ object NornsImageRenderer {
         }
 
         } else {
-            NornRig.draw(g, c, action, worldX, worldY, px, py, sx)
+            // feet rest on the grass line, which the world draws at floorY - groundOffset
+            NornRig.draw(g, c, action, worldX, worldY - groundOffset, px, py, sx)
         }
         if (c.carryingFood) blob(worldX + c.facing * 0.5f * scale, worldY + 0.05f * scale, 0.2f, Color(212, 84, 60))
         if (followed) blob(worldX, worldY + 1.7f * scale, 0.13f, Color(255, 255, 255)) // subtle follow marker
