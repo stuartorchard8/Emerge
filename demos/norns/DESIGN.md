@@ -76,12 +76,16 @@ dependency-ordered (later ones read earlier ones).
    selection (genome crossover + mutate) and refill to size. Gated by `EvolutionTest`: a
    heritable trait **adapts toward selection** (evolution), the population persists across 100
    generations, and breeding is deterministic.
-8. **Rendering + host** — 🟡 **first host done (ASCII), GPU host deferred.** A spatial `NornsWorld`
-   (creatures forage on a grid, eat, age, starve / die of old age, breed) + an `AsciiView`, run
-   live in the terminal via `./gradlew :platform:desktop-app:runNorns`. Gated by `NornsWorldTest`:
-   viable + bounded colony, determinism, births + deaths, well-formed frame. The **GPU/styling
-   host** (the real visual layer) is the deferred part — human judgment is the only oracle there
-   (G2), so it's the first collaborative pass with Stu.
+8. **Rendering + host** — 🟡 **interactive side-scroll ASCII host done; GPU host deferred.** A
+   **side-scrolling, multi-floor** `NornsWorld` (creatures walk floors connected by lifts, forage,
+   eat, age, starve / die of old age, and seek mates to breed) with a scrolling **follow-camera**,
+   a **creature detail panel**, slower pacing + speed/pause controls, and **player interaction**
+   (drop food, hand-feed, pick-up-and-place). Run live: `./gradlew :platform:desktop-app:runNorns
+   -q --console=plain`. Gated by `NornsWorldTest`: viable + bounded multi-floor colony,
+   in-bounds, determinism, the interaction commands, held-creature behaviour, and a well-formed
+   camera frame. Under food scarcity the colony now **visibly evolves** (mean metabolism drifts
+   down). The **GPU/styling sprite host** (the real visual layer) remains the deferred,
+   human-judged collaborative pass (G2).
 
 ### Integration backlog (combines finished subsystems; surfaced during the build)
 
@@ -92,11 +96,14 @@ dependency-ordered (later ones read earlier ones).
   that survive + mate in the world pass genes. Needs the brain gene-encoded (G5).
 - **G5 — gene-encode the brain** (LobeGene/TractGene), so brain structure is heritable like the
   biochemistry — the precondition for G9 and for evolving behaviour, not just biochemistry.
-- **G10 — hardwired survival in the world view.** In `NornsWorld` the creatures seek-and-eat by
-  hardwired rule, NOT via the learned brain (which is proven separately). Wiring the brain into
-  spatial action + navigation (and what the brain should control) is a design decision best made
-  with a human watching. Until then the world demonstrates biology/heredity/population dynamics,
-  not learned behaviour.
+- **G10 — hardwired behaviour in the world view.** In `NornsWorld` creatures seek-food, ride
+  lifts, and seek-mates by hardwired rules, NOT via the learned brain (which is proven
+  separately). Wiring the brain into spatial action + navigation (and deciding what the brain
+  should control) is a design decision best made with a human watching. Until then the world
+  demonstrates biology/heredity/population dynamics + evolution, not learned behaviour.
+- **G11 — the real visual host.** The current host is interactive side-scroll *ASCII*. The
+  GPU/sprite host (and real-time single-key input vs the current line commands) is the deferred
+  visual pass — I can't see rendered output in this environment, so it's done with Stu.
 
 ## Assumptions (things I chose without confirmation — revisit in tuning)
 
@@ -162,8 +169,10 @@ build stops here because everything remaining (subsystem 8 + fidelity) needs hum
 - Subsystem 5 (drives + sensorimotor): ✅ 4 tests — drive-reduction reward; a creature **learns to satisfy its drives**.
 - Subsystem 6 (world + embodiment): ✅ 4 tests — embodied **survival** loop (eat to live; starve to die).
 - Subsystem 7 (reproduction / evolution): ✅ 3 tests — a population **adapts under selection**.
-- Subsystem 8 (render host): 🟡 ASCII console host done (3 tests, viable colony) — run
-  `./gradlew :platform:desktop-app:runNorns`. GPU/styling host deferred to the collaborative pass.
+- Subsystem 8 (render host): 🟡 interactive side-scroll ASCII host done (6 tests) — multi-floor,
+  follow-camera, detail panel, player interaction (food/feed/pick/place), pacing controls; colony
+  visibly evolves. Run `./gradlew :platform:desktop-app:runNorns -q --console=plain`. GPU sprite
+  host deferred to the collaborative visual pass (G11).
 
 **The "alive" chain is demonstrated end to end:** chemistry regulates → the brain learns from
 reward → the creature acts to satisfy its drives → it survives or starves in a world → a

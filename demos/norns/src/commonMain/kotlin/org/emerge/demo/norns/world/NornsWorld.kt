@@ -9,25 +9,24 @@ import org.emerge.demo.norns.gene.Genome
 import kotlin.math.abs
 
 /**
- * A spatial, watchable artificial-life world — the first thing you can actually run and observe.
- * Creatures forage for food on a grid, eat, age through [LifeStage]s, starve or die of old age
- * (the verified [Biology]), and breed when fertile (genome [crossover][Genome]+mutation), so a
- * colony lives, turns over, and **evolves** a heritable metabolism trait under implicit selection
- * (efficient creatures survive and breed more).
+ * A **side-scrolling** artificial-life world, in the spirit of Creatures' multi-floor house:
+ * creatures live on horizontal [floors] connected by lifts, walk left/right foraging for food,
+ * eat, age through [LifeStage]s (the verified [Biology]), starve or die of old age, and breed
+ * (genome [crossover][Genome] + mutation) — so a colony lives, turns over, and **evolves** a
+ * heritable metabolism trait under implicit selection. The world is wider than the screen; a
+ * camera scrolls.
  *
- * Honest scope for this first watch: **survival behaviour is hardwired** (seek nearest food, eat
- * when on it) rather than driven by the learned brain — wiring the neural-net brain into spatial
- * action/navigation is a design+tuning decision best made with a human watching (DESIGN.md G10).
- * The brain/biochemistry subsystems are proven separately; this view exists to make the
- * population dynamics — life, death, heredity, evolution — visible.
+ * Player [interaction] is first-class: drop food, hand-feed, or pick up and place a creature.
  *
- * Deterministic given the seed: creatures step in id order, food spawns on a fixed cadence,
- * all randomness flows through one [GeneRng].
+ * Honest scope (DESIGN.md G10): foraging is hardwired (seek nearest food, ride lifts between
+ * floors), NOT driven by the learned brain — wiring the neural-net brain into spatial behaviour
+ * is a design call for the visual/tuning pass. This view makes the population dynamics visible.
+ * Deterministic given the seed.
  */
 class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     private val rng = GeneRng(seed)
 
-    /** Occupied food cells, as `y * width + x`. */
+    /** Food positions encoded as `floor * worldWidth + x`. */
     val food = HashSet<Int>()
     val creatures = ArrayList<WorldCreature>()
 
@@ -40,17 +39,20 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
         repeat(cfg.foodSeed) { trySpawnFood() }
         repeat(cfg.initialPopulation) {
             val g = Genome(1, 1, listOf(EmitterGene(locus = 0, chemical = 0, gain = rng.nextFloat(), threshold = 0f)))
-            spawnCreature(rng.nextInt().mod(cfg.width), rng.nextInt().mod(cfg.height), g)
+            spawnCreature(rng.nextInt().mod(cfg.worldWidth), rng.nextInt().mod(cfg.floors), g)
         }
     }
 
     val population: Int get() = creatures.size
-    fun cellIndex(x: Int, y: Int) = y * cfg.width + x
+    fun cell(floor: Int, x: Int) = floor * cfg.worldWidth + x
+    fun foodFloor(cell: Int) = cell / cfg.worldWidth
+    fun foodX(cell: Int) = cell % cfg.worldWidth
+    fun creatureById(id: Int): WorldCreature? = creatures.firstOrNull { it.id == id }
 
     fun step() {
         ticks++
         repeat(cfg.foodSpawnPerTick) { if (food.size < cfg.maxFood) trySpawnFood() }
-        for (c in creatures) if (c.alive) stepCreature(c)
+        for (c in creatures) if (c.alive && !c.held) stepCreature(c)
         reproduce()
         val before = creatures.size
         creatures.removeAll { !it.alive }
@@ -60,21 +62,22 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     private fun stepCreature(c: WorldCreature) {
         c.hunger = (c.hunger + c.metabolism).coerceAtMost(1f)
 
-        // Hardwired foraging: step one cell toward the nearest food, else wander.
-        val target = nearestFood(c.x, c.y)
-        if (target != null) {
-            c.x += stepToward(c.x, target % cfg.width)
-            c.y += stepToward(c.y, target / cfg.width)
+        // A fed, fertile, ready creature seeks a mate (clustering them to breed); otherwise it
+        // forages for the nearest food. Survival takes priority — a hungry creature always eats.
+        val mate = if (c.isFertile(cfg) && c.reproCooldown <= 0) nearestMate(c) else null
+        if (mate != null) {
+            walkToward(c, mate.floor, mate.x)
         } else {
-            c.x = (c.x + rng.nextInt().mod(3) - 1).coerceIn(0, cfg.width - 1)
-            c.y = (c.y + rng.nextInt().mod(3) - 1).coerceIn(0, cfg.height - 1)
+            val target = nearestFood(c)
+            if (target != null) walkToward(c, foodFloor(target), foodX(target))
+            else { // wander
+                val dir = rng.nextInt().mod(3) - 1
+                if (dir != 0) { c.x = (c.x + dir).coerceIn(0, cfg.worldWidth - 1); c.facing = dir }
+            }
         }
 
-        // Eat what's underfoot.
-        val here = cellIndex(c.x, c.y)
-        if (food.remove(here)) c.hunger = (c.hunger - cfg.eatAmount).coerceAtLeast(0f)
+        if (food.remove(cell(c.floor, c.x))) c.hunger = (c.hunger - cfg.eatAmount).coerceAtLeast(0f)
 
-        // Sustained hunger injures organs; otherwise they slowly repair. Then age + apply death.
         val injury = if (c.hunger > cfg.starvationThreshold) (c.hunger - cfg.starvationThreshold) * cfg.starvationDamage else 0f
         c.loci[c.biology.cfg.injuryLocus] = injury
         c.loci[c.biology.cfg.repairLocus] = cfg.baseRepair
@@ -84,29 +87,40 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
         if (c.reproCooldown > 0) c.reproCooldown--
     }
 
+    /** Walk one step toward food on (targetFloor, targetX): change floor at a lift, else walk x. */
+    private fun walkToward(c: WorldCreature, targetFloor: Int, targetX: Int) {
+        if (targetFloor != c.floor) {
+            val lift = nearestLift(c.x)
+            if (c.x != lift) { val d = sign(lift - c.x); c.x += d; c.facing = d }
+            else c.floor += sign(targetFloor - c.floor) // ride the lift one floor
+        } else if (c.x != targetX) {
+            val d = sign(targetX - c.x); c.x += d; c.facing = d
+        }
+    }
+
     private fun reproduce() {
         if (creatures.size >= cfg.maxPopulation) return
-        val fertile = creatures.filter { it.alive && it.isFertile(cfg) }
+        val fertile = creatures.filter { it.alive && !it.held && it.isFertile(cfg) }
         for (i in fertile.indices) {
             val a = fertile[i]
             if (a.reproCooldown > 0) continue
             for (j in i + 1 until fertile.size) {
                 val b = fertile[j]
                 if (b.reproCooldown > 0) continue
-                if (abs(a.x - b.x) <= 1 && abs(a.y - b.y) <= 1) {
-                    val childGenome = a.genome.reproduceWith(b.genome, cfg.mutationRate, rng)
-                    spawnCreature(a.x, a.y, childGenome)
+                if (a.floor == b.floor && abs(a.x - b.x) <= cfg.mateRange) {
+                    val child = a.genome.reproduceWith(b.genome, cfg.mutationRate, rng)
+                    spawnCreature(a.x, a.floor, child)
                     a.reproCooldown = cfg.reproduceCooldown
                     b.reproCooldown = cfg.reproduceCooldown
                     births++
                     if (creatures.size >= cfg.maxPopulation) return
-                    break // a bred this tick
+                    break
                 }
             }
         }
     }
 
-    private fun spawnCreature(x: Int, y: Int, genome: Genome) {
+    private fun spawnCreature(x: Int, floor: Int, genome: Genome) {
         val biology = Biology(
             BiologyConfig(
                 stageStartAge = cfg.stageStartAge, maxAge = cfg.maxAge,
@@ -117,41 +131,83 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
         creatures.add(
             WorldCreature(
                 id = nextId++,
-                x = x.coerceIn(0, cfg.width - 1), y = y.coerceIn(0, cfg.height - 1),
-                genome = genome, biology = biology,
-                metabolism = cfg.metabolismOf(genome),
+                x = x.coerceIn(0, cfg.worldWidth - 1), floor = floor.coerceIn(0, cfg.floors - 1),
+                genome = genome, biology = biology, metabolism = cfg.metabolismOf(genome),
                 loci = FloatArray(4),
             ),
         )
     }
 
-    private fun nearestFood(x: Int, y: Int): Int? {
-        var best: Int? = null
-        var bestDist = Int.MAX_VALUE
-        for (cell in food) {
-            val fx = cell % cfg.width; val fy = cell / cfg.width
-            val dist = abs(fx - x) + abs(fy - y)
-            // tie-break on lowest cell index for determinism
-            if (dist < bestDist || (dist == bestDist && (best == null || cell < best!!))) {
-                bestDist = dist; best = cell
+    /** Nearest other fertile, ready creature — the mate a fertile creature walks toward. */
+    private fun nearestMate(self: WorldCreature): WorldCreature? {
+        var best: WorldCreature? = null
+        var bestCost = Int.MAX_VALUE
+        for (o in creatures) {
+            if (o.id == self.id || !o.alive || o.held || o.reproCooldown > 0 || !o.isFertile(cfg)) continue
+            val cost = foodCost(self, o.floor, o.x)
+            if (cost < bestCost || (cost == bestCost && (best == null || o.id < best!!.id))) {
+                bestCost = cost; best = o
             }
         }
         return best
     }
 
+    private fun nearestFood(c: WorldCreature): Int? {
+        var best: Int? = null
+        var bestCost = Int.MAX_VALUE
+        for (cellId in food) {
+            val cost = foodCost(c, foodFloor(cellId), foodX(cellId))
+            if (cost < bestCost || (cost == bestCost && (best == null || cellId < best!!))) {
+                bestCost = cost; best = cellId
+            }
+        }
+        return best
+    }
+
+    /** Travel cost to food: same floor → horizontal distance; else via the nearest lift. */
+    private fun foodCost(c: WorldCreature, floor: Int, x: Int): Int =
+        if (floor == c.floor) abs(c.x - x)
+        else { val lift = nearestLift(c.x); abs(c.x - lift) + abs(floor - c.floor) * cfg.liftSpacing + abs(lift - x) }
+
+    private fun nearestLift(x: Int): Int {
+        val snapped = ((x + cfg.liftSpacing / 2) / cfg.liftSpacing) * cfg.liftSpacing
+        return snapped.coerceIn(0, (cfg.worldWidth - 1) / cfg.liftSpacing * cfg.liftSpacing)
+    }
+
+    fun isLiftColumn(x: Int): Boolean = x % cfg.liftSpacing == 0
+
     private fun trySpawnFood() {
-        val x = rng.nextInt().mod(cfg.width)
-        val y = rng.nextInt().mod(cfg.height)
-        food.add(cellIndex(x, y))
+        food.add(cell(rng.nextInt().mod(cfg.floors), rng.nextInt().mod(cfg.worldWidth)))
     }
 
-    private fun stepToward(from: Int, to: Int): Int = when {
-        to > from -> 1
-        to < from -> -1
-        else -> 0
+    private fun sign(d: Int) = if (d > 0) 1 else if (d < 0) -1 else 0
+
+    // ── player interaction ───────────────────────────────────────────────────────
+
+    /** Drop food at a spot (clamped into the world). */
+    fun dropFood(floor: Int, x: Int) {
+        food.add(cell(floor.coerceIn(0, cfg.floors - 1), x.coerceIn(0, cfg.worldWidth - 1)))
     }
 
-    /** Mean metabolism across the living population (the trait selection acts on; lower = fitter). */
+    /** Hand-feed a creature: relieve its hunger directly. */
+    fun feed(id: Int) {
+        creatureById(id)?.let { it.hunger = (it.hunger - cfg.eatAmount).coerceAtLeast(0f) }
+    }
+
+    /** Pick a creature up (it pauses, foraging suspended) so it can be placed elsewhere. */
+    fun pickUp(id: Int) { creatureById(id)?.held = true }
+
+    /** Place a held (or any) creature at a new spot and release it. */
+    fun place(id: Int, floor: Int, x: Int) {
+        creatureById(id)?.let {
+            it.floor = floor.coerceIn(0, cfg.floors - 1)
+            it.x = x.coerceIn(0, cfg.worldWidth - 1)
+            it.held = false
+        }
+    }
+
+    // ── stats ─────────────────────────────────────────────────────────────────────
+
     fun meanMetabolism(): Float {
         if (creatures.isEmpty()) return 0f
         var s = 0f; for (c in creatures) s += c.metabolism; return s / creatures.size
@@ -163,11 +219,11 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     }
 }
 
-/** One creature living in the [NornsWorld]: position, heritable genome, biology, and hunger. */
+/** One creature in the side-scroll world: position (x, [floor]), heritable genome, biology, hunger. */
 class WorldCreature(
     val id: Int,
     var x: Int,
-    var y: Int,
+    var floor: Int,
     val genome: Genome,
     val biology: Biology,
     val metabolism: Float,
@@ -176,6 +232,8 @@ class WorldCreature(
     var hunger: Float = 0f
     var ticksLived: Int = 0
     var reproCooldown: Int = 0
+    var facing: Int = 1
+    var held: Boolean = false // picked up by the player
 
     val alive: Boolean get() = biology.alive
 
@@ -185,15 +243,16 @@ class WorldCreature(
     }
 }
 
-/** Tuning for the world. All placeholders (DESIGN.md G1) — the watch-and-tune surface. */
+/** Tuning for the side-scroll world. All placeholders (DESIGN.md G1) — the watch-and-tune surface. */
 class NornsConfig(
-    val width: Int = 56,
-    val height: Int = 22,
-    val initialPopulation: Int = 14,
+    val worldWidth: Int = 120,
+    val floors: Int = 3,
+    val liftSpacing: Int = 30,
+    val initialPopulation: Int = 16,
     val maxPopulation: Int = 70,
     val foodSeed: Int = 60,
     val foodSpawnPerTick: Int = 3,
-    val maxFood: Int = 90,
+    val maxFood: Int = 120,
     val eatAmount: Float = 0.6f,
     val starvationThreshold: Float = 0.85f,
     val starvationDamage: Float = 0.12f,
@@ -202,14 +261,13 @@ class NornsConfig(
     val stageStartAge: IntArray = intArrayOf(0, 40, 110, 220, 330, 460, 680, 820),
     val fertileFrom: LifeStage = LifeStage.ADOLESCENT,
     val fertileTo: LifeStage = LifeStage.ADULT,
-    val fertileMaxHunger: Float = 0.55f,
-    val reproduceCooldown: Int = 140,
+    val fertileMaxHunger: Float = 0.6f,
+    val reproduceCooldown: Int = 90,
+    val mateRange: Int = 2,
     val mutationRate: Float = 0.6f,
     val minMetabolism: Float = 0.004f,
     val maxMetabolism: Float = 0.016f,
 ) {
-    /** Maps a genome's trait gene (an [EmitterGene] gain in [0,1]) to a hunger-rise rate. Lower is
-     *  more efficient, so implicit selection drives the population's mean metabolism down. */
     fun metabolismOf(genome: Genome): Float {
         val gain = (genome.genes.firstOrNull() as? EmitterGene)?.gain?.coerceIn(0f, 1f) ?: 0.5f
         return minMetabolism + gain * (maxMetabolism - minMetabolism)

@@ -3,68 +3,114 @@ package org.emerge.demo.norns.world
 import org.emerge.demo.norns.biology.LifeStage
 
 /**
- * Renders a [NornsWorld] as a plain-text frame: a grid plus a HUD. Deliberately a placeholder —
- * the point of this first render host is to *watch the mechanism* (life, death, heredity,
- * evolution) reliably, not to look like Creatures. The GPU/styling host is a later pass done with
- * a human (DESIGN.md subsystem 8 / G2). ASCII-only so it renders in any terminal.
+ * Renders a [NornsWorld] as a side-on text frame: stacked [floors] (Creatures' multi-floor
+ * house), a camera window scrolling across the wider world, and a detail panel for the followed
+ * creature. A deliberate placeholder — the point is legible *watching* of the mechanism; the GPU
+ * sprite host is the collaborative visual pass (DESIGN.md G2). ASCII-only.
  */
 object AsciiView {
-    fun render(world: NornsWorld): String {
+    const val VIEW_WIDTH = 72
+
+    /** Render the world through a camera at [cameraX], highlighting + detailing creature [followId]. */
+    fun render(world: NornsWorld, cameraX: Int, followId: Int?): String {
         val cfg = world.cfg
-        val grid = CharArray(cfg.width * cfg.height) { '.' }
-        for (cell in world.food) grid[cell] = '#'
-        for (c in world.creatures) grid[world.cellIndex(c.x, c.y)] = glyph(c)
+        val vw = minOf(cfg.worldWidth, VIEW_WIDTH)
+        val camX = cameraX.coerceIn(0, maxOf(0, cfg.worldWidth - vw))
+
+        // Map (floor,x) -> creature in the window; the followed creature wins its cell.
+        val byCell = HashMap<Int, WorldCreature>()
+        for (c in world.creatures) if (c.x in camX until camX + vw) {
+            val key = c.floor * cfg.worldWidth + c.x
+            if (byCell[key] == null || c.id == followId) byCell[key] = c
+        }
 
         val sb = StringBuilder()
-        val border = "-".repeat(cfg.width)
-        sb.append('+').append(border).append("+\n")
-        for (y in 0 until cfg.height) {
+        val border = "-".repeat(vw)
+        sb.append('+').append(border).append("+  ")
+        sb.append("[x ").append(camX).append("..").append(camX + vw).append(" / ").append(cfg.worldWidth).append("]\n")
+
+        for (f in (cfg.floors - 1) downTo 0) {
+            // air row with creatures + food
             sb.append('|')
-            for (x in 0 until cfg.width) sb.append(grid[y * cfg.width + x])
+            for (x in camX until camX + vw) {
+                val c = byCell[f * cfg.worldWidth + x]
+                sb.append(
+                    when {
+                        c != null -> glyph(c, followId)
+                        world.food.contains(world.cell(f, x)) -> '*'
+                        else -> ' '
+                    },
+                )
+            }
+            sb.append("|\n")
+            // floor line with lift shafts
+            sb.append('|')
+            for (x in camX until camX + vw) sb.append(if (world.isLiftColumn(x)) 'H' else '=')
             sb.append("|\n")
         }
         sb.append('+').append(border).append("+\n")
+
         sb.append(hud(world))
+        sb.append(panel(world, followId))
         return sb.toString()
     }
 
-    /** Glyph by life stage: young 'o', fertile (adolescent–adult) 'O', elderly '@'. */
-    private fun glyph(c: WorldCreature): Char = when (c.biology.lifeStage) {
-        LifeStage.EMBRYO, LifeStage.BABY, LifeStage.CHILD -> 'o'
-        LifeStage.ADOLESCENT, LifeStage.YOUTH, LifeStage.ADULT -> 'O'
-        LifeStage.OLD, LifeStage.SENILE -> '@'
+    /** Followed creature 'Y'; otherwise young 'o', fertile 'A', elderly '@'. */
+    private fun glyph(c: WorldCreature, followId: Int?): Char {
+        if (c.id == followId) return 'Y'
+        return when (c.biology.lifeStage) {
+            LifeStage.EMBRYO, LifeStage.BABY, LifeStage.CHILD -> 'o'
+            LifeStage.ADOLESCENT, LifeStage.YOUTH, LifeStage.ADULT -> 'A'
+            LifeStage.OLD, LifeStage.SENILE -> '@'
+        }
     }
 
-    fun hud(world: NornsWorld): String {
+    private fun hud(world: NornsWorld): String {
         val stages = IntArray(LifeStage.entries.size)
         for (c in world.creatures) stages[c.biology.lifeStage.ordinal]++
-        val stageStr = buildString {
-            append("young="); append(stages[0] + stages[1] + stages[2])
-            append(" fertile="); append(stages[3] + stages[4] + stages[5])
-            append(" elderly="); append(stages[6] + stages[7])
-        }
         return buildString {
             append("tick="); append(world.ticks)
             append("  pop="); append(world.population)
             append("  food="); append(world.food.size)
             append("  births="); append(world.births)
             append("  deaths="); append(world.deaths)
+            append("  meanMetab="); append(fmt4(world.meanMetabolism()))
             append('\n')
-            append("meanAge="); append(fmt1(world.meanAge()))
-            append("  meanMetabolism="); append(fmt4(world.meanMetabolism()))
-            append("  ["); append(stageStr); append(']')
+            append("legend: o young  A fertile  @ elderly  * food  H lift   |   ")
+            append("young="); append(stages[0] + stages[1] + stages[2])
+            append(" fertile="); append(stages[3] + stages[4] + stages[5])
+            append(" elderly="); append(stages[6] + stages[7])
             append('\n')
         }
     }
 
-    private fun fmt1(v: Float): String {
-        val t = (v * 10f).toInt()
-        return "${t / 10}.${t % 10}"
+    /** Detail panel for the followed creature (the "what's going on" your watch was missing). */
+    private fun panel(world: NornsWorld, followId: Int?): String {
+        val c = followId?.let { world.creatureById(it) } ?: return "following: (none — use 'follow <id>')\n"
+        return buildString {
+            append("follow #"); append(c.id)
+            append("  stage="); append(c.biology.lifeStage.name.lowercase())
+            append("  age="); append(c.biology.age)
+            append("  floor="); append(c.floor)
+            append("  x="); append(c.x)
+            append("  facing="); append(if (c.facing >= 0) "right" else "left")
+            if (c.held) append("  [HELD]")
+            append('\n')
+            append("  hunger "); append(bar(c.hunger))
+            append("   health "); append(bar(c.biology.organHealth[0]))
+            append("   metab="); append(fmt4(c.metabolism))
+            append('\n')
+        }
+    }
+
+    private fun bar(v: Float): String {
+        val filled = (v.coerceIn(0f, 1f) * 10).toInt()
+        return "[" + "#".repeat(filled) + "-".repeat(10 - filled) + "]"
     }
 
     private fun fmt4(v: Float): String {
         val t = (v * 10000f).toInt()
         val s = t.toString().padStart(5, '0')
-        return "0.${s.substring(s.length - 4)}"
+        return "0." + s.substring(s.length - 4)
     }
 }
