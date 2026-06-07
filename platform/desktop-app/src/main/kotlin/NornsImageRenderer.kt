@@ -150,9 +150,17 @@ object NornsImageRenderer {
         }
         val scale = 1.1f
         val phase = c.ticksLived * 0.35f
-        // warm, earthy fur, gene-tinted: efficient = mossy/green, inefficient = rusty/red
+        // warm, earthy fur, gene-tinted: efficient = mossy/green, inefficient = rusty/red,
+        // plus a small per-creature jitter so individuals aren't identical clones of one hue.
         val frac = ((c.metabolism - 0.003f) / (0.012f - 0.003f)).coerceIn(0f, 1f)
-        val r = 0.55f + 0.30f * frac; val gr = 0.62f - 0.16f * frac; val b = 0.40f - 0.06f * frac
+        val jt = (c.id * -1640531527) ushr 8
+        val jr = ((jt and 0xFF) / 255f - 0.5f) * 0.11f
+        val jg = (((jt ushr 8) and 0xFF) / 255f - 0.5f) * 0.10f
+        val jb = (((jt ushr 16) and 0xFF) / 255f - 0.5f) * 0.08f
+        val r = (0.55f + 0.30f * frac + jr).coerceIn(0.18f, 0.95f)
+        val gr = (0.62f - 0.16f * frac + jg).coerceIn(0.18f, 0.95f)
+        val b = (0.40f - 0.06f * frac + jb).coerceIn(0.14f, 0.9f)
+        val hairCol = breedHair(c.id)
 
         // ground shadow (grounds the creature + separates it from neighbours/background)
         val shW = (0.95f * scale * sx).roundToInt(); val shH = (0.22f * scale * sx).roundToInt()
@@ -192,6 +200,9 @@ object NornsImageRenderer {
         // sheen highlights (upper-left) on head + body
         firstOf(BodyPart.HEAD)?.let { softBlob(g, ecx(it) - erad(it) * 0.38f, ecy(it) - erad(it) * 0.44f, erad(it) * 0.8f, Color(255, 255, 248, 72)) }
         firstOf(BodyPart.TORSO)?.let { softBlob(g, ecx(it) - erad(it) * 0.34f, ecy(it) - erad(it) * 0.4f, erad(it) * 0.72f, Color(255, 255, 248, 46)) }
+        // breed-coloured hair crest (drawn over the body gradient as soft tufts)
+        val hc = Color(hairCol.red, hairCol.green, hairCol.blue, 235)
+        for (p in posed) if (p.part == BodyPart.HAIR) softBlob(g, ecx(p), ecy(p), erad(p) * 1.18f, hc)
         // soft contact shadow where the head sits on the body
         firstOf(BodyPart.HEAD)?.let { softBlob(g, ecx(it), ecy(it) + erad(it) * 0.92f, erad(it) * 0.72f, Color(0, 0, 0, 58)) }
         g.clip = oldClip
@@ -213,6 +224,17 @@ object NornsImageRenderer {
                 }
                 BodyPart.NOSE, BodyPart.MOUTH -> { g.color = rgb(p.r, p.g, p.b); fillCircle(g, cx, cy, rr) }
                 else -> {}
+            }
+        }
+        // sleepy half-lids when resting (fur lid + dark crease) — a visible doze
+        if (action == CreatureAction.REST) {
+            for (p in posed) if (p.part == BodyPart.EYE_BACK || p.part == BodyPart.EYE_FRONT) {
+                val cx = ecx(p); val cy = ecy(p); val rr = erad(p)
+                g.color = rgb(r * 0.95f, gr * 0.95f, b * 0.95f)
+                fillCircle(g, cx, cy - rr * 0.5f, rr * 1.06f)
+                g.stroke = BasicStroke(max(1.5f, 0.03f * sx), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
+                g.color = Color(58, 40, 28)
+                g.drawLine((cx - rr * 0.85f).roundToInt(), (cy + rr * 0.46f).roundToInt(), (cx + rr * 0.85f).roundToInt(), (cy + rr * 0.46f).roundToInt())
             }
         }
 
@@ -239,6 +261,15 @@ object NornsImageRenderer {
         1 -> Color(120, 78, 46)   // brown
         2 -> Color(196, 150, 60)  // amber
         else -> Color(96, 150, 96) // green
+    }
+
+    /** Breed hair-crest colour (researched: hair varies by breed — e.g. the White Haired Pixie). */
+    private fun breedHair(id: Int) = when ((id / 4) % 5) {
+        0 -> Color(228, 222, 206)   // white / cream
+        1 -> Color(198, 116, 56)    // ginger
+        2 -> Color(92, 62, 42)      // dark brown
+        3 -> Color(58, 48, 48)      // near-black
+        else -> Color(150, 148, 138) // grey
     }
 
     private fun isFur(part: org.emerge.demo.norns.anim.BodyPart): Boolean = when (part) {
