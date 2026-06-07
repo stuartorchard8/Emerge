@@ -99,26 +99,51 @@ class NornsWorldTest {
     fun liftIdlesUntilCalledThenServesEachFloor() {
         val lift = Lift(column = 0)
         // an uncalled lift never moves on its own (unlike the old perpetual oscillator)
-        repeat(50) { lift.tick(speed = 0.05f) }
+        repeat(50) { lift.tick(speed = 0.05f, dwellTicks = 10) }
         assertEquals(0f, lift.carPos, "an uncalled car stays parked where it is")
         assertTrue(lift.idle)
 
-        // pressing a call button summons it to that floor, where it stops and idles again
+        // pressing a call button summons it to that floor, where it stops, pauses, then idles
         lift.call(2)
         var ticks = 0
-        while (!lift.idle && ticks < 1000) { lift.tick(0.05f); ticks++ }
+        while (!lift.idle && ticks < 2000) { lift.tick(0.05f, 10); ticks++ }
         assertEquals(2f, lift.carPos, "the car arrives at the called floor")
         assertTrue(ticks > 1, "travelling to the floor takes time, not an instant hop")
-        assertTrue(lift.idle, "after serving the call the car waits there")
+        assertTrue(lift.idle, "after serving the call (and pausing) the car waits there")
 
         // a later call brings it back, and it stays within the floor range throughout
         lift.call(0)
         ticks = 0
-        while (!lift.idle && ticks < 1000) {
-            lift.tick(0.05f); ticks++
+        while (!lift.idle && ticks < 2000) {
+            lift.tick(0.05f, 10); ticks++
             assertTrue(lift.carPos in 0f..2f, "car stays within the floor range: ${lift.carPos}")
         }
         assertEquals(0f, lift.carPos, "the car returns to the newly called floor")
+    }
+
+    @Test
+    fun liftFinishesItsTripBeforeAnsweringANewerCall() {
+        // car at floor 0, called up to floor 2; partway up, floor 0 is called again (the nearer
+        // button). It must NOT turn back — it finishes the trip to 2, pauses, THEN serves 0.
+        val lift = Lift(column = 0)
+        lift.call(2)
+        repeat(10) { lift.tick(0.05f, 8) }            // start climbing toward 2
+        val midway = lift.carPos
+        assertTrue(midway > 0f && midway < 2f, "car should be mid-shaft, was $midway")
+        lift.call(0)                                   // a nearer call arrives mid-trip
+
+        var ticks = 0
+        while (lift.carPos < 2f && ticks < 2000) {
+            val prev = lift.carPos
+            lift.tick(0.05f, 8); ticks++
+            assertTrue(lift.carPos >= prev - 1e-4f, "car must not reverse before reaching its target")
+        }
+        assertEquals(2f, lift.carPos, "it reaches its committed destination first")
+
+        // only now (after the stop + pause) does it answer the floor-0 call queued mid-trip
+        ticks = 0
+        while (!lift.idle && ticks < 3000) { lift.tick(0.05f, 8); ticks++ }
+        assertEquals(0f, lift.carPos, "then it goes to the floor that was called during the trip")
     }
 
     @Test

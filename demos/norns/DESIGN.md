@@ -203,11 +203,14 @@ build stops here because everything remaining (subsystem 8 + fidelity) needs hum
 - **G12 — called lifts (DONE, C2-style).** Lifts are real cars (`Lift`) that **idle at a floor
   until called** — exactly like Creatures 2. Changing floor means walking to the shaft, *pressing
   the call button* to summon the car, waiting for it, riding it, *pressing the destination button*,
-  and disembarking — durative travel, not an instant hop. The car serves the nearest pending call
-  and parks there. The render host draws the shaft rails, a per-floor call button (glows amber when
-  pressed), and a wooden platform the rider stands on. Gated by `NornsWorldTest` (an uncalled car
-  stays put; a called car travels to and parks at each requested floor; cross-floor travel takes
-  time + boards the car). Colony still viable (foraging is mostly same-floor).
+  and disembarking — durative travel, not an instant hop. The car **commits to its current
+  destination**: a button pressed mid-trip is queued (it does *not* yank the car back), and the car
+  finishes the trip, **pauses** (`liftDwell`, doors open), then serves the next pending call. The
+  render host draws the car as the C2 sprite: a planked wooden crate slung on ropes from a peaked
+  hoist frame (cable up the shaft), an **X-braced front gate** drawn over the rider, and a per-floor
+  **lamp-post call button** (glows amber when pressed). Gated by `NornsWorldTest` (an uncalled car
+  stays put; a called car travels to and parks at each floor; it finishes a trip before answering a
+  newer, nearer call; cross-floor travel takes time + boards the car). Colony stays viable.
 - **G13 — plant/fruit food ecology (NEXT, Stu-requested).** Replace the god-spawned food with
   *plants* that grow, fruit, and die of age; fruit is what creatures eat; un-eaten/spoiled fruit on
   the ground seeds new plants. A real producer layer → food becomes a dynamic, depletable resource

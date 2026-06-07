@@ -6,6 +6,7 @@ import org.emerge.demo.norns.anim.CreatureAction
 import org.emerge.demo.norns.anim.PartShape
 import org.emerge.demo.norns.anim.PosedPart
 import org.emerge.demo.norns.world.ActivityType
+import org.emerge.demo.norns.world.Lift
 import org.emerge.demo.norns.world.NornsConfig
 import org.emerge.demo.norns.world.NornsView
 import org.emerge.demo.norns.world.NornsWorld
@@ -109,38 +110,10 @@ object NornsImageRenderer {
         }
         // layered Albia flora (grass tufts, reeds, flowers, hanging vines) — behind the creatures
         drawFlora(g, world, view, left, horiz, sx, ::px, ::py)
-        // lift shafts + call buttons (Creatures-2 style): the car parks at a floor until a creature
-        // presses a call button to summon it; a pressed button glows amber. Drawn behind creatures
-        // so a rider stands on the platform.
-        for (lift in world.lifts) {
-            val cx = px(lift.column.toFloat())
-            // the shaft: two faint guide rails the car runs between
-            val rail = 0.55f * sx
-            g.color = Color(58, 44, 32, 80)
-            g.fillRect((cx - rail).roundToInt(), 0, 2, h)
-            g.fillRect((cx + rail - 2).roundToInt(), 0, 2, h)
-            // the wooden platform car at its current (continuous) floor, sitting on the feet/grass line
-            val cy = py(view.floorYf(lift.carPos) - view.groundOffset)
-            val pw = (1.6f * sx).roundToInt(); val ph = (0.26f * sx).roundToInt()
-            val x0 = (cx - pw / 2).roundToInt(); val y0 = (cy - ph + (0.05f * sx)).roundToInt()
-            g.color = Color(40, 30, 22, 140); g.fillRect((cx - 1).roundToInt(), 0, 2, y0)   // hoist cable
-            g.color = Color(122, 86, 52); g.fillRoundRect(x0, y0, pw, ph, 8, 8)             // wooden deck
-            g.color = Color(150, 112, 70); g.fillRect(x0, y0, pw, 3)                         // lit top edge
-            g.color = Color(86, 60, 36); g.fillRect(x0, y0 + ph - 2, pw, 2)                  // underside shadow
-            // a call button beside the shaft at every floor; it glows when that floor has been called
-            val br = (0.13f * sx).coerceAtLeast(3f)
-            val bx = cx + rail + br * 1.9f
-            for (f in 0 until world.cfg.floors) {
-                val by = py(view.floorYf(f.toFloat()) - view.groundOffset) - 0.6f * sx
-                g.color = Color(40, 30, 21)                                                 // mounting plate
-                g.fillRoundRect((bx - br * 1.5f).roundToInt(), (by - br * 1.5f).roundToInt(),
-                    (br * 3f).roundToInt(), (br * 3f).roundToInt(), br.roundToInt(), br.roundToInt())
-                val lit = f in lift.calls
-                g.color = if (lit) Color(255, 196, 90) else Color(150, 74, 56)
-                fillCircle(g, bx, by, br)
-                if (lit) { g.color = Color(255, 244, 206, 170); fillCircle(g, bx - br * 0.25f, by - br * 0.25f, br * 0.45f) }
-            }
-        }
+        // lift shafts, call buttons, and the body of each wooden lift car (Creatures-2 style). The
+        // car is a wooden box the norn rides inside; its FRONT GATE is drawn after the creatures
+        // (drawLiftGates) so the rider shows behind the bars. A call button glows amber when pressed.
+        for (lift in world.lifts) drawLiftBody(g, world, lift, view, h, sx, ::px, ::py)
         // food as little fruit (berry + leaf)
         for (cell in world.food) {
             val fx = world.foodX(cell).toFloat(); val fy = view.floorY(world.foodFloor(cell)) - 0.5f
@@ -153,6 +126,8 @@ object NornsImageRenderer {
             val cy = if (c.ridingY >= 0f) view.floorYf(c.ridingY) else view.floorY(c.floor)
             drawCreature(g, c, c.x, cy, c.id == followId, ::px, ::py, sx, ::blob, ::col, view.groundOffset)
         }
+        // the front gate of each lift car — drawn OVER the creatures so a rider sits behind the bars
+        for (lift in world.lifts) drawLiftGate(g, lift, view, sx, ::px, ::py)
 
         // soft vignette to focus the eye toward the centre
         g.paint = RadialGradientPaint(
@@ -314,6 +289,95 @@ object NornsImageRenderer {
         }
         if (c.carryingFood) blob(worldX + c.facing * 0.5f * scale, worldY + 0.05f * scale, 0.2f, Color(212, 84, 60))
         if (followed) blob(worldX, worldY + 1.7f * scale, 0.13f, Color(255, 255, 255)) // subtle follow marker
+    }
+
+    // ---- Creatures-2 lift car: a wooden crate slung on ropes, with an X-braced front gate ----
+    // (matches the in-game sprite: planked box, peaked hoist frame + ropes up the shaft, a separate
+    // call-button post with a round lamp, and a cross-braced front that the rider shows through.)
+    private const val LIFT_HALF_W = 0.85f   // half the car's width, in world units
+    private const val LIFT_H = 2.35f        // the car's height, in world units (tall enough to enclose an adult)
+
+    /** The shaft cable, per-floor call-button posts, and the wooden body of the car (back wall,
+     *  sides, deck, peaked hoist frame + ropes) — everything BEHIND the rider. Front gate: [drawLiftGate]. */
+    private fun drawLiftBody(
+        g: java.awt.Graphics2D, world: NornsWorld, lift: Lift, view: NornsView,
+        h: Int, sx: Float, px: (Float) -> Float, py: (Float) -> Float,
+    ) {
+        val cx = px(lift.column.toFloat())
+        val fy = py(view.floorYf(lift.carPos) - view.groundOffset)   // deck sits on the feet/grass line
+        val hw = LIFT_HALF_W * sx
+        val left = cx - hw; val right = cx + hw
+        val topY = fy - LIFT_H * sx
+        val boxW = (hw * 2).roundToInt()
+        val post = (0.13f * sx).coerceAtLeast(2f)
+
+        // hoist: a peaked frame above the box, two ropes to its top corners, and the cable up the shaft
+        val apexY = topY - 0.55f * sx
+        g.stroke = BasicStroke(max(2f, 0.05f * sx), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
+        g.color = Color(54, 40, 28)
+        g.drawLine(cx.roundToInt(), 0, cx.roundToInt(), apexY.roundToInt())                 // cable up the shaft
+        g.color = Color(120, 96, 66)
+        g.drawLine(cx.roundToInt(), apexY.roundToInt(), (left + post).roundToInt(), topY.roundToInt())  // rope L
+        g.drawLine(cx.roundToInt(), apexY.roundToInt(), (right - post).roundToInt(), topY.roundToInt()) // rope R
+
+        // back wall (planked wood) + plank seams
+        g.color = Color(96, 68, 42); g.fillRect(left.roundToInt(), topY.roundToInt(), boxW, (fy - topY).roundToInt())
+        g.color = Color(82, 58, 35)
+        var seam = topY + 0.34f * sx
+        while (seam < fy - 0.1f * sx) { g.drawLine(left.roundToInt(), seam.roundToInt(), right.roundToInt(), seam.roundToInt()); seam += 0.34f * sx }
+        // side posts + top beam
+        g.color = Color(74, 52, 32)
+        g.fillRect(left.roundToInt(), topY.roundToInt(), post.roundToInt(), (fy - topY).roundToInt())
+        g.fillRect((right - post).roundToInt(), topY.roundToInt(), post.roundToInt(), (fy - topY).roundToInt())
+        g.color = Color(112, 82, 50); g.fillRect(left.roundToInt(), topY.roundToInt(), boxW, (0.2f * sx).roundToInt())
+        g.color = Color(140, 104, 66); g.fillRect(left.roundToInt(), topY.roundToInt(), boxW, 2)
+        // deck (the plank floor the norn stands on)
+        val deckH = 0.28f * sx
+        g.color = Color(122, 86, 52); g.fillRoundRect(left.roundToInt(), (fy - deckH * 0.55f).roundToInt(), boxW, deckH.roundToInt(), 6, 6)
+        g.color = Color(150, 112, 70); g.fillRect(left.roundToInt(), (fy - deckH * 0.55f).roundToInt(), boxW, 3)
+        g.color = Color(78, 54, 33); g.fillRect(left.roundToInt(), (fy + deckH * 0.45f - 2).roundToInt(), boxW, 2)
+
+        // a call-button post beside the shaft at every floor: a round lamp that glows amber when called
+        val br = (0.14f * sx).coerceAtLeast(3f)
+        val bx = cx - (LIFT_HALF_W + 0.42f) * sx
+        for (f in 0 until world.cfg.floors) {
+            val fy2 = py(view.floorYf(f.toFloat()) - view.groundOffset)
+            val by = fy2 - 0.72f * sx                                   // lamp height
+            g.color = Color(70, 52, 36)                                 // wooden post + base
+            g.fillRect((bx - 0.04f * sx).roundToInt(), by.roundToInt(), (0.08f * sx).coerceAtLeast(2f).roundToInt(), (fy2 - by).roundToInt())
+            g.color = Color(40, 30, 21); fillCircle(g, bx, by, br * 1.35f)   // lamp housing
+            val lit = f in lift.calls
+            g.color = if (lit) Color(255, 196, 90) else Color(150, 74, 56)
+            fillCircle(g, bx, by, br)
+            if (lit) { g.color = Color(255, 244, 206, 170); fillCircle(g, bx - br * 0.25f, by - br * 0.25f, br * 0.45f) }
+        }
+    }
+
+    /** The wooden front of the car: a frame with an X cross-brace, drawn OVER the rider so the norn
+     *  shows through the crate (matching the C2 lift's braced gate). */
+    private fun drawLiftGate(
+        g: java.awt.Graphics2D, lift: Lift, view: NornsView, sx: Float,
+        px: (Float) -> Float, py: (Float) -> Float,
+    ) {
+        val cx = px(lift.column.toFloat())
+        val fy = py(view.floorYf(lift.carPos) - view.groundOffset)
+        val hw = LIFT_HALF_W * sx
+        val left = cx - hw; val right = cx + hw
+        val topY = fy - LIFT_H * sx
+        val gTop = topY + 0.24f * sx
+        val gBot = fy - 0.05f * sx
+        val beam = (0.13f * sx).coerceAtLeast(2f)
+        // X cross-brace across the opening (the crate's distinctive front)
+        g.stroke = BasicStroke(max(3f, 0.11f * sx), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
+        g.color = Color(116, 84, 52)
+        g.drawLine((left + beam).roundToInt(), gBot.roundToInt(), (right - beam).roundToInt(), gTop.roundToInt())
+        g.drawLine((left + beam).roundToInt(), gTop.roundToInt(), (right - beam).roundToInt(), gBot.roundToInt())
+        // frame: top + waist rails
+        g.color = Color(122, 86, 52)
+        g.fillRect(left.roundToInt(), gTop.roundToInt(), (hw * 2).roundToInt(), beam.roundToInt())
+        g.fillRect(left.roundToInt(), ((gTop + gBot) / 2f - beam / 2f).roundToInt(), (hw * 2).roundToInt(), beam.roundToInt())
+        g.color = Color(150, 112, 70)
+        g.fillRect(left.roundToInt(), gTop.roundToInt(), (hw * 2).roundToInt(), 2)            // lit top edge
     }
 
     /** A speckled egg sitting on the ground (the EMBRYO/incubation stage). */

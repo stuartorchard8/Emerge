@@ -61,7 +61,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
 
     fun step() {
         ticks++
-        for (lift in lifts) lift.tick(cfg.liftSpeed)
+        for (lift in lifts) lift.tick(cfg.liftSpeed, cfg.liftDwell)
         repeat(cfg.foodSpawnPerTick) { if (food.size < cfg.maxFood) trySpawnFood() }
         // Iterate a snapshot: courting can spawn a newborn into `creatures` mid-step (it's stepped
         // next tick), which would otherwise be a concurrent modification.
@@ -358,24 +358,40 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
  * serve each requested floor in turn, stopping there with its doors open. It never moves on its own.
  * [carPos] is the continuous floor it sits at (an integer when idle); a creature boards when the car
  * reaches its floor and rides until the car reaches the floor it asked for — so levels take time.
+ *
+ * The car **commits** to its current destination ([target]): once travelling, a newly-pressed button
+ * does not pull it back — it finishes the trip, **pauses** at the floor ([dwell], doors open), then
+ * picks the next pending call. So pressing a call while it's in transit queues that floor; it isn't
+ * served until the current trip + pause are done.
  */
 class Lift(val column: Int, var carPos: Float = 0f) {
     /** Floors with a pending call: a creature waiting at that floor, or a rider's chosen stop. */
     val calls = HashSet<Int>()
 
-    /** True when the car is parked at a floor with nothing requested. */
-    val idle: Boolean get() = calls.isEmpty()
+    /** The floor the car is currently committed to travelling to; -1 when it has none. */
+    var target: Int = -1; private set
+
+    /** Ticks left paused at a stop (doors open) before it picks its next destination. */
+    var dwell: Int = 0; private set
+
+    /** True when the car is parked at a floor with nothing to do (no trip, no pause, no calls). */
+    val idle: Boolean get() = target < 0 && dwell == 0 && calls.isEmpty()
 
     /** Press a call button (at a floor) or a movement button (inside the car): summon it to [floor]. */
     fun call(floor: Int) { calls.add(floor) }
 
-    /** Advance toward the nearest requested floor; on arrival, stop there and clear that call. */
-    fun tick(speed: Float) {
-        if (calls.isEmpty()) return                                    // idle — the car stays put
-        val target = calls.minWith(compareBy({ abs(it - carPos) }, { it }))!!
+    /** Advance the car: hold at a stop while pausing, then commit to the nearest pending call and
+     *  drive to it; on arrival clear that call and start the [dwellTicks] pause. */
+    fun tick(speed: Float, dwellTicks: Int) {
+        if (dwell > 0) { dwell--; return }                             // paused at a stop, doors open
+        if (target < 0) {                                              // pick the next destination
+            if (calls.isEmpty()) return                                // nothing called — stay parked
+            target = calls.minWith(compareBy({ abs(it - carPos) }, { it }))!!
+        }
         val d = target - carPos
-        if (abs(d) <= speed) { carPos = target.toFloat(); calls.remove(target) } // doors open here
-        else carPos += if (d > 0f) speed else -speed
+        if (abs(d) <= speed) {                                         // arrived: stop + pause here
+            carPos = target.toFloat(); calls.remove(target); target = -1; dwell = dwellTicks
+        } else carPos += if (d > 0f) speed else -speed                 // committed — keep heading there
     }
 }
 
@@ -474,6 +490,7 @@ class NornsConfig(
     // physical lifts
     val liftSpeed: Float = 0.0125f,   // floors per tick (÷4)
     val liftBoardEps: Float = 0.25f,  // how close the car must be to board / disembark
+    val liftDwell: Int = 24,          // ticks the car pauses (doors open) at each stop before moving on
     // fatigue (G7: makes REST a real, learned behaviour)
     val fatigueRate: Float = 0.0025f, // fatigue built per tick of exertion (÷4)
     val restRecovery: Float = 0.015f, // fatigue recovered per tick of resting (÷4)
