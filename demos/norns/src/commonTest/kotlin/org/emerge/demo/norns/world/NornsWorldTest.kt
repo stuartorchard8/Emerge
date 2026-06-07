@@ -63,7 +63,7 @@ class NornsWorldTest {
         assertTrue(w.food.contains(w.cell(2, 119)), "food command should place food")
 
         // hand-feed lowers hunger
-        victim.hunger = 0.9f
+        victim.chem.setHunger(0.9f)
         NornsCommands.apply(w, view, "feed ${victim.id}")
         assertTrue(victim.hunger < 0.9f, "feed should lower hunger (${victim.hunger})")
 
@@ -112,7 +112,7 @@ class NornsWorldTest {
         val w = NornsWorld(NornsConfig(), seed = 5)
         val c = w.creatures.first()
         w.place(c.id, 0, 0)          // floor 0, at a lift column
-        c.hunger = 0f
+        c.chem.setHunger(0f)
         c.activity = ActivityType.MOVING
         c.goalAction = CreatureMind.A_SEEK_FOOD
         c.targetX = 0f; c.targetFloor = 1; c.partnerId = -1

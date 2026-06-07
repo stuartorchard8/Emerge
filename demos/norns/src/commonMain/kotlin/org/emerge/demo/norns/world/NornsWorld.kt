@@ -72,10 +72,8 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     }
 
     private fun stepCreature(c: WorldCreature) {
-        c.hunger = (c.hunger + c.metabolism).coerceAtMost(1f)
-        if (c.biology.lifeStage.ordinal >= cfg.fertileFrom.ordinal) {
-            c.matingUrge = (c.matingUrge + cfg.matingRate).coerceAtMost(1f)
-        }
+        // Drives rise/decay/react via the creature's biochemistry (G8).
+        c.chem.tick(fertileActive = c.biology.lifeStage.ordinal >= cfg.fertileFrom.ordinal)
 
         when (c.activity) {
             ActivityType.IDLE -> decide(c)
@@ -166,7 +164,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     }
 
     private fun finishEating(c: WorldCreature) {
-        if (c.carryingFood) { c.hunger = (c.hunger - cfg.eatAmount).coerceAtLeast(0f); c.carryingFood = false }
+        if (c.carryingFood) { c.chem.eat(); c.carryingFood = false } // glucose pulse → hunger falls next tick
         completeGoal(c)
     }
 
@@ -176,11 +174,11 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
             val child = c.genome.reproduceWith(partner.genome, cfg.mutationRate, rng)
             spawnCreature(c.x, c.floor, child)
             partner.reproCooldown = cfg.reproduceCooldown
-            partner.matingUrge = 0f
+            partner.chem.resetUrge()
             births++
         }
         c.reproCooldown = cfg.reproduceCooldown
-        c.matingUrge = 0f
+        c.chem.resetUrge()
         completeGoal(c)
     }
 
@@ -286,12 +284,14 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
                 injuryLocus = 0, repairLocus = 1, ageLocus = 2, lifeStageLocus = 3,
             ),
         )
+        val metab = cfg.metabolismOf(genome)
         creatures.add(
             WorldCreature(
                 id = nextId++,
                 x = x.coerceIn(0f, (cfg.worldWidth - 1).toFloat()), floor = floor.coerceIn(0, cfg.floors - 1),
-                genome = genome, biology = biology, metabolism = cfg.metabolismOf(genome),
+                genome = genome, biology = biology, metabolism = metab,
                 brain = CreatureMind.build(genome, cfg.brainLearnRate),
+                chem = CreatureChemistry(metab, cfg),
                 loci = FloatArray(4),
             ),
         )
@@ -304,7 +304,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     }
 
     fun feed(id: Int) {
-        creatureById(id)?.let { it.hunger = (it.hunger - cfg.eatAmount).coerceAtLeast(0f) }
+        creatureById(id)?.let { it.chem.setHunger(it.hunger - cfg.eatAmount) }
     }
 
     /** The living creature nearest to (floor, x) within [radius], for click-to-pick. */
@@ -361,10 +361,12 @@ class WorldCreature(
     val biology: Biology,
     val metabolism: Float,
     val brain: Brain,
+    val chem: CreatureChemistry,
     val loci: FloatArray,
 ) {
-    var hunger: Float = 0f
-    var matingUrge: Float = 0f
+    // Drives are now biochemistry (G8): hunger/urge are chemical concentrations, not bare fields.
+    val hunger: Float get() = chem.hunger
+    val matingUrge: Float get() = chem.urge
     var ticksLived: Int = 0
     var reproCooldown: Int = 0
     var facing: Int = 1

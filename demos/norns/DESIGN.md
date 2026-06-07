@@ -165,7 +165,7 @@ dependency-ordered (later ones read earlier ones).
   the world. *Observed during subsystem 6:* with a flat discomfort sum, multi-drive survival can
   misalign with reward (the creature relieves a non-lethal drive as readily as a lethal one) —
   drive weighting / lethality is real tuning needed for richer scenarios.
-- **G8. Biochemistry ↔ creature integration.** The embodied `Creature` wires brain + drives +
+- **G8. ✅ RESOLVED — Biochemistry ↔ creature integration.** The embodied `Creature` wires brain + drives +
   biology, but NOT biochemistry yet — drives are a separate float system rather than chemicals
   read via receptors, and metabolism doesn't feed biology. Unifying drives-as-chemicals (the
   faithful C1 design) is the remaining integration step. Also: the world is abstract
