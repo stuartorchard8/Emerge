@@ -96,11 +96,14 @@ dependency-ordered (later ones read earlier ones).
   that survive + mate in the world pass genes. Needs the brain gene-encoded (G5).
 - **G5 — gene-encode the brain** (LobeGene/TractGene), so brain structure is heritable like the
   biochemistry — the precondition for G9 and for evolving behaviour, not just biochemistry.
-- **G10 — hardwired behaviour in the world view.** In `NornsWorld` creatures seek-food, ride
-  lifts, and seek-mates by hardwired rules, NOT via the learned brain (which is proven
-  separately). Wiring the brain into spatial action + navigation (and deciding what the brain
-  should control) is a design decision best made with a human watching. Until then the world
-  demonstrates biology/heredity/population dynamics + evolution, not learned behaviour.
+- **G10 — ✅ RESOLVED: brain now drives behaviour.** Each creature's neural-net brain
+  (`CreatureMind`) perceives its drives + senses (hunger, mating urge, food/mate proximity) and
+  **decides a goal verb** (seek food / seek mate / rest); reward-modulated learning (drive
+  reduction, two-phase tick so mating is credited) refines the choice. Newborns carry an
+  **instinct prior** (hunger→seek-food, urge→seek-mate) so they act sensibly, then learn.
+  *Remaining*: navigation to the chosen target is still mechanical (the brain picks the verb, not
+  the steps), and instinct is a fixed prior rather than gene-encoded (G5). Gated by
+  `CreatureMindTest` + the brain-driven colony staying viable.
 - **G11 — the real visual host.** The current host is interactive side-scroll *ASCII*. The
   GPU/sprite host (and real-time single-key input vs the current line commands) is the deferred
   visual pass — I can't see rendered output in this environment, so it's done with Stu.
@@ -169,10 +172,12 @@ build stops here because everything remaining (subsystem 8 + fidelity) needs hum
 - Subsystem 5 (drives + sensorimotor): ✅ 4 tests — drive-reduction reward; a creature **learns to satisfy its drives**.
 - Subsystem 6 (world + embodiment): ✅ 4 tests — embodied **survival** loop (eat to live; starve to die).
 - Subsystem 7 (reproduction / evolution): ✅ 3 tests — a population **adapts under selection**.
-- Subsystem 8 (render host): 🟡 interactive side-scroll ASCII host done (6 tests) — multi-floor,
-  follow-camera, detail panel, player interaction (food/feed/pick/place), pacing controls; colony
-  visibly evolves. Run `./gradlew :platform:desktop-app:runNorns -q --console=plain`. GPU sprite
-  host deferred to the collaborative visual pass (G11).
+- Subsystem 8 (render host): 🟡 interactive side-scroll ASCII host done — multi-floor,
+  follow-camera, detail panel (now showing the brain's current decision), player interaction
+  (food/feed/pick/place), pacing controls; colony visibly evolves. Run
+  `./gradlew :platform:desktop-app:runNorns -q --console=plain`. GPU sprite host deferred (G11).
+- **Brain wired into behaviour (G10 resolved):** creatures now act via their neural-net brain
+  (`CreatureMind`), instinct-primed + reward-refined. Gated by `CreatureMindTest`.
 
 **The "alive" chain is demonstrated end to end:** chemistry regulates → the brain learns from
 reward → the creature acts to satisfy its drives → it survives or starves in a world → a

@@ -97,10 +97,19 @@ object AsciiView {
             if (c.held) append("  [HELD]")
             append('\n')
             append("  hunger "); append(bar(c.hunger))
-            append("   health "); append(bar(c.biology.organHealth[0]))
-            append("   metab="); append(fmt4(c.metabolism))
+            append("  urge "); append(bar(c.matingUrge))
+            append("  health "); append(bar(c.biology.organHealth[0]))
+            append("  metab="); append(fmt4(c.metabolism))
+            append('\n')
+            append("  brain decided: "); append(goal(c.lastAction))
             append('\n')
         }
+    }
+
+    private fun goal(action: Int): String = when (action) {
+        CreatureMind.A_SEEK_FOOD -> "seek food"
+        CreatureMind.A_SEEK_MATE -> "seek a mate"
+        else -> "rest"
     }
 
     private fun bar(v: Float): String {
