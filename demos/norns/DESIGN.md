@@ -76,9 +76,12 @@ dependency-ordered (later ones read earlier ones).
    selection (genome crossover + mutate) and refill to size. Gated by `EvolutionTest`: a
    heritable trait **adapts toward selection** (evolution), the population persists across 100
    generations, and breeding is deterministic.
-8. **Rendering + host** — DEFERRED (the verification wall). Visual layer + a spatial world,
-   wired with Stu; JS/Android targets added here. This is where human judgment is the only
-   possible oracle (see G2), so the autonomous build stops before it.
+8. **Rendering + host** — 🟡 **first host done (ASCII), GPU host deferred.** A spatial `NornsWorld`
+   (creatures forage on a grid, eat, age, starve / die of old age, breed) + an `AsciiView`, run
+   live in the terminal via `./gradlew :platform:desktop-app:runNorns`. Gated by `NornsWorldTest`:
+   viable + bounded colony, determinism, births + deaths, well-formed frame. The **GPU/styling
+   host** (the real visual layer) is the deferred part — human judgment is the only oracle there
+   (G2), so it's the first collaborative pass with Stu.
 
 ### Integration backlog (combines finished subsystems; surfaced during the build)
 
@@ -89,6 +92,11 @@ dependency-ordered (later ones read earlier ones).
   that survive + mate in the world pass genes. Needs the brain gene-encoded (G5).
 - **G5 — gene-encode the brain** (LobeGene/TractGene), so brain structure is heritable like the
   biochemistry — the precondition for G9 and for evolving behaviour, not just biochemistry.
+- **G10 — hardwired survival in the world view.** In `NornsWorld` the creatures seek-and-eat by
+  hardwired rule, NOT via the learned brain (which is proven separately). Wiring the brain into
+  spatial action + navigation (and what the brain should control) is a design decision best made
+  with a human watching. Until then the world demonstrates biology/heredity/population dynamics,
+  not learned behaviour.
 
 ## Assumptions (things I chose without confirmation — revisit in tuning)
 
@@ -154,6 +162,8 @@ build stops here because everything remaining (subsystem 8 + fidelity) needs hum
 - Subsystem 5 (drives + sensorimotor): ✅ 4 tests — drive-reduction reward; a creature **learns to satisfy its drives**.
 - Subsystem 6 (world + embodiment): ✅ 4 tests — embodied **survival** loop (eat to live; starve to die).
 - Subsystem 7 (reproduction / evolution): ✅ 3 tests — a population **adapts under selection**.
+- Subsystem 8 (render host): 🟡 ASCII console host done (3 tests, viable colony) — run
+  `./gradlew :platform:desktop-app:runNorns`. GPU/styling host deferred to the collaborative pass.
 
 **The "alive" chain is demonstrated end to end:** chemistry regulates → the brain learns from
 reward → the creature acts to satisfy its drives → it survives or starves in a world → a

@@ -33,6 +33,7 @@ dependencies {
     implementation(project(":demos:scavengers"))
     implementation(project(":demos:drockets"))
     implementation(project(":demos:cyto"))
+    implementation(project(":demos:norns"))
     implementation(project(":engine:render:torus"))
     implementation(project(":engine:sim:core"))
     implementation(project(":engine:sim:sync"))
@@ -92,6 +93,15 @@ tasks.register<JavaExec>("runCyto") {
     mainClass = "org.emerge.desktop.Main_jvmKt"
     classpath = sourceSets["main"].runtimeClasspath
     jvmArgs("-Demerge.mode=cyto")
+}
+
+tasks.register<JavaExec>("runNorns") {
+    group = "application"
+    description = "Watch the Norns artificial-life colony live in the terminal (ASCII view). " +
+        "Optional --args=\"<steps> <delayMs> <seed>\" (defaults: run forever, 80ms, seed 1)."
+    mainClass = "org.emerge.desktop.NornsConsoleMainKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    standardInput = System.`in`
 }
 
 tasks.register<JavaExec>("profileSim") {
