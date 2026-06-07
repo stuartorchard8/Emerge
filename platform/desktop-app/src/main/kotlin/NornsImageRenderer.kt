@@ -109,15 +109,37 @@ object NornsImageRenderer {
         }
         // layered Albia flora (grass tufts, reeds, flowers, hanging vines) — behind the creatures
         drawFlora(g, world, view, left, horiz, sx, ::px, ::py)
-        // lift shafts (subtle vertical guide) + wooden platform cars
+        // lift shafts + call buttons (Creatures-2 style): the car parks at a floor until a creature
+        // presses a call button to summon it; a pressed button glows amber. Drawn behind creatures
+        // so a rider stands on the platform.
         for (lift in world.lifts) {
             val cx = px(lift.column.toFloat())
-            g.color = Color(58, 44, 32, 90); g.fillRect((cx - 2).roundToInt(), 0, 4, h)
-            val cy = py(view.floorYf(lift.carPos))
-            val pw = (1.7f * sx).roundToInt(); val ph = (0.42f * sx).roundToInt()
-            val x0 = (cx - pw / 2).roundToInt(); val y0 = (cy - ph / 2).roundToInt()
-            g.color = Color(122, 86, 52); g.fillRoundRect(x0, y0, pw, ph, 8, 8)        // wood
-            g.color = Color(150, 112, 70); g.fillRect(x0, y0, pw, 3)                    // lit top edge
+            // the shaft: two faint guide rails the car runs between
+            val rail = 0.55f * sx
+            g.color = Color(58, 44, 32, 80)
+            g.fillRect((cx - rail).roundToInt(), 0, 2, h)
+            g.fillRect((cx + rail - 2).roundToInt(), 0, 2, h)
+            // the wooden platform car at its current (continuous) floor, sitting on the feet/grass line
+            val cy = py(view.floorYf(lift.carPos) - view.groundOffset)
+            val pw = (1.6f * sx).roundToInt(); val ph = (0.26f * sx).roundToInt()
+            val x0 = (cx - pw / 2).roundToInt(); val y0 = (cy - ph + (0.05f * sx)).roundToInt()
+            g.color = Color(40, 30, 22, 140); g.fillRect((cx - 1).roundToInt(), 0, 2, y0)   // hoist cable
+            g.color = Color(122, 86, 52); g.fillRoundRect(x0, y0, pw, ph, 8, 8)             // wooden deck
+            g.color = Color(150, 112, 70); g.fillRect(x0, y0, pw, 3)                         // lit top edge
+            g.color = Color(86, 60, 36); g.fillRect(x0, y0 + ph - 2, pw, 2)                  // underside shadow
+            // a call button beside the shaft at every floor; it glows when that floor has been called
+            val br = (0.13f * sx).coerceAtLeast(3f)
+            val bx = cx + rail + br * 1.9f
+            for (f in 0 until world.cfg.floors) {
+                val by = py(view.floorYf(f.toFloat()) - view.groundOffset) - 0.6f * sx
+                g.color = Color(40, 30, 21)                                                 // mounting plate
+                g.fillRoundRect((bx - br * 1.5f).roundToInt(), (by - br * 1.5f).roundToInt(),
+                    (br * 3f).roundToInt(), (br * 3f).roundToInt(), br.roundToInt(), br.roundToInt())
+                val lit = f in lift.calls
+                g.color = if (lit) Color(255, 196, 90) else Color(150, 74, 56)
+                fillCircle(g, bx, by, br)
+                if (lit) { g.color = Color(255, 244, 206, 170); fillCircle(g, bx - br * 0.25f, by - br * 0.25f, br * 0.45f) }
+            }
         }
         // food as little fruit (berry + leaf)
         for (cell in world.food) {

@@ -200,11 +200,14 @@ build stops here because everything remaining (subsystem 8 + fidelity) needs hum
   stage/age/drives/action) and **mouse interaction** (left-click follow, right-click drop food) —
   screen↔world picking is the tested `NornsView`. GL still unverified by me (no display) — needs
   Stu's run. 58 tests green.
-- **G12 — physical lifts (DONE).** Lifts are now real oscillating cars (`Lift`); changing floor
-  means walking to the shaft, *waiting* for the car, riding it, and disembarking — durative travel,
-  not an instant hop. Gated by `NornsWorldTest` (lift sweeps the shaft; cross-floor travel takes
-  time + boards the car). Colony still viable (foraging is mostly same-floor). Assumption: lifts
-  auto-oscillate (no call buttons yet).
+- **G12 — called lifts (DONE, C2-style).** Lifts are real cars (`Lift`) that **idle at a floor
+  until called** — exactly like Creatures 2. Changing floor means walking to the shaft, *pressing
+  the call button* to summon the car, waiting for it, riding it, *pressing the destination button*,
+  and disembarking — durative travel, not an instant hop. The car serves the nearest pending call
+  and parks there. The render host draws the shaft rails, a per-floor call button (glows amber when
+  pressed), and a wooden platform the rider stands on. Gated by `NornsWorldTest` (an uncalled car
+  stays put; a called car travels to and parks at each requested floor; cross-floor travel takes
+  time + boards the car). Colony still viable (foraging is mostly same-floor).
 - **G13 — plant/fruit food ecology (NEXT, Stu-requested).** Replace the god-spawned food with
   *plants* that grow, fruit, and die of age; fruit is what creatures eat; un-eaten/spoiled fruit on
   the ground seeds new plants. A real producer layer → food becomes a dynamic, depletable resource

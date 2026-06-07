@@ -96,15 +96,29 @@ class NornsWorldTest {
     }
 
     @Test
-    fun liftOscillatesBetweenFloors() {
+    fun liftIdlesUntilCalledThenServesEachFloor() {
         val lift = Lift(column = 0)
-        var minP = 9f; var maxP = -9f
-        repeat(400) {
-            lift.tick(floors = 3, speed = 0.05f)
-            minP = minOf(minP, lift.carPos); maxP = maxOf(maxP, lift.carPos)
+        // an uncalled lift never moves on its own (unlike the old perpetual oscillator)
+        repeat(50) { lift.tick(speed = 0.05f) }
+        assertEquals(0f, lift.carPos, "an uncalled car stays parked where it is")
+        assertTrue(lift.idle)
+
+        // pressing a call button summons it to that floor, where it stops and idles again
+        lift.call(2)
+        var ticks = 0
+        while (!lift.idle && ticks < 1000) { lift.tick(0.05f); ticks++ }
+        assertEquals(2f, lift.carPos, "the car arrives at the called floor")
+        assertTrue(ticks > 1, "travelling to the floor takes time, not an instant hop")
+        assertTrue(lift.idle, "after serving the call the car waits there")
+
+        // a later call brings it back, and it stays within the floor range throughout
+        lift.call(0)
+        ticks = 0
+        while (!lift.idle && ticks < 1000) {
+            lift.tick(0.05f); ticks++
             assertTrue(lift.carPos in 0f..2f, "car stays within the floor range: ${lift.carPos}")
         }
-        assertTrue(minP <= 0.05f && maxP >= 1.95f, "the car should sweep the full shaft (min=$minP max=$maxP)")
+        assertEquals(0f, lift.carPos, "the car returns to the newly called floor")
     }
 
     @Test
