@@ -330,6 +330,13 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
 
     fun pickUp(id: Int) { creatureById(id)?.held = true }
 
+    /** Press a lift's call button at [floor] (summon the car there). */
+    fun callLift(lift: Lift, floor: Int) { lift.call(floor.coerceIn(0, cfg.floors - 1)) }
+
+    /** The car's up/down movement buttons: send it one floor up / down from where it rests. */
+    fun liftUp(lift: Lift) { lift.call((lift.restFloor() + 1).coerceAtMost(cfg.floors - 1)) }
+    fun liftDown(lift: Lift) { lift.call((lift.restFloor() - 1).coerceAtLeast(0)) }
+
     fun place(id: Int, floor: Int, x: Int) {
         creatureById(id)?.let {
             it.floor = floor.coerceIn(0, cfg.floors - 1)
@@ -379,6 +386,9 @@ class Lift(val column: Int, var carPos: Float = 0f) {
 
     /** Press a call button (at a floor) or a movement button (inside the car): summon it to [floor]. */
     fun call(floor: Int) { calls.add(floor) }
+
+    /** The floor the car is at, or committed to — the base the up/down movement buttons step from. */
+    fun restFloor(): Int = if (target >= 0) target else carPos.roundToInt()
 
     /** Advance the car: hold at a stop while pausing, then commit to the nearest pending call and
      *  drive to it; on arrival clear that call and start the [dwellTicks] pause. */

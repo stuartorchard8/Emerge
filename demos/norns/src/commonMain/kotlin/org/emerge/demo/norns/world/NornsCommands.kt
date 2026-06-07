@@ -15,7 +15,7 @@ class ViewState(
  */
 object NornsCommands {
     const val HELP = "commands: food <fl> <x> | feed <id> | pick <id> | place <id> <fl> <x> | " +
-        "follow <id> | speed <ms> | pause | go | quit"
+        "lift <n> up|down|<fl> | follow <id> | speed <ms> | pause | go | quit"
 
     fun apply(world: NornsWorld, view: ViewState, line: String): String {
         val p = line.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
@@ -32,6 +32,17 @@ object NornsCommands {
                 val id = int(1); val fl = int(2); val x = int(3)
                 if (id != null && fl != null && x != null) { world.place(id, fl, x); "placed #$id at floor $fl, x $x" }
                 else "usage: place <id> <floor> <x>"
+            }
+            "lift" -> {
+                val lift = int(1)?.let { world.lifts.getOrNull(it) }
+                val arg = p.getOrNull(2)?.lowercase()
+                if (lift == null) "usage: lift <n> up|down|<floor>"
+                else when (arg) {
+                    "up" -> { world.liftUp(lift); "lift ${int(1)} sent up" }
+                    "down" -> { world.liftDown(lift); "lift ${int(1)} sent down" }
+                    else -> arg?.toIntOrNull()?.let { world.callLift(lift, it); "lift ${int(1)} called to floor $it" }
+                        ?: "usage: lift <n> up|down|<floor>"
+                }
             }
             "follow" -> { view.followId = int(1); "following ${int(1)?.let { "#$it" } ?: "(cleared)"}" }
             "speed" -> int(1)?.let { view.delayMs = it.toLong().coerceIn(0, 2000); "speed ${view.delayMs}ms/tick" } ?: "usage: speed <ms>"

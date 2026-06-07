@@ -1,8 +1,10 @@
 package org.emerge.desktop
 
+import org.emerge.demo.norns.world.LiftLayout
 import org.emerge.demo.norns.world.NornsConfig
 import org.emerge.demo.norns.world.NornsView
 import org.emerge.demo.norns.world.NornsWorld
+import org.emerge.demo.norns.world.WorldPoint
 import java.awt.Dimension
 import java.awt.Graphics
 import java.awt.event.KeyAdapter
@@ -53,6 +55,8 @@ object NornsSwingView {
                 val aspect = panel.width.toFloat() / panel.height
                 val spot = view.screenToWorld(e.x.toFloat(), e.y.toFloat(), panel.width.toFloat(), panel.height.toFloat(), cameraCenterX, aspect)
                 if (SwingUtilities.isLeftMouseButton(e)) {
+                    val point = view.screenToWorldPoint(e.x.toFloat(), e.y.toFloat(), panel.width.toFloat(), panel.height.toFloat(), cameraCenterX, aspect)
+                    if (pressLiftButton(world, view, point)) return    // clicked a lift call / up / down button
                     val hit = world.creatureNear(spot.floor, spot.x, 1.8f)
                     if (hit != null) { lockedFollowId = hit.id; freeCam = false } // click a creature → follow it
                 } else {
@@ -86,7 +90,20 @@ object NornsSwingView {
         frame.setLocationRelativeTo(null)
         frame.isVisible = true
         panel.requestFocusInWindow()
-        println("Norns controls: ←/→ or A/D pan camera (free look) · F follow · left-click a Norn to follow · right-click drop food · P pause · [ / ] speed · Esc quit")
+        println("Norns controls: ←/→ or A/D pan camera (free look) · F follow · left-click a Norn to follow · click a lift's call lamp or its ▲/▼ buttons to drive it · right-click drop food · P pause · [ / ] speed · Esc quit")
+    }
+
+    /** Hit-test a click against every lift's buttons; press the first one hit. Returns true if any
+     *  button was pressed (so the caller swallows the click). Shared geometry: [LiftLayout]. */
+    private fun pressLiftButton(world: NornsWorld, view: NornsView, p: WorldPoint): Boolean {
+        for (lift in world.lifts) {
+            if (LiftLayout.hit(p, LiftLayout.upPos(view, lift), LiftLayout.MOVE_R)) { world.liftUp(lift); return true }
+            if (LiftLayout.hit(p, LiftLayout.downPos(view, lift), LiftLayout.MOVE_R)) { world.liftDown(lift); return true }
+            for (f in 0 until world.cfg.floors) {
+                if (LiftLayout.hit(p, LiftLayout.callPos(view, lift, f), LiftLayout.CALL_R)) { world.callLift(lift, f); return true }
+            }
+        }
+        return false
     }
 }
 

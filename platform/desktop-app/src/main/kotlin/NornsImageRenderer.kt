@@ -7,6 +7,7 @@ import org.emerge.demo.norns.anim.PartShape
 import org.emerge.demo.norns.anim.PosedPart
 import org.emerge.demo.norns.world.ActivityType
 import org.emerge.demo.norns.world.Lift
+import org.emerge.demo.norns.world.LiftLayout
 import org.emerge.demo.norns.world.NornsConfig
 import org.emerge.demo.norns.world.NornsView
 import org.emerge.demo.norns.world.NornsWorld
@@ -294,8 +295,7 @@ object NornsImageRenderer {
     // ---- Creatures-2 lift car: a wooden crate slung on ropes, with an X-braced front gate ----
     // (matches the in-game sprite: planked box, peaked hoist frame + ropes up the shaft, a separate
     // call-button post with a round lamp, and a cross-braced front that the rider shows through.)
-    private const val LIFT_HALF_W = 0.85f   // half the car's width, in world units
-    private const val LIFT_H = 2.35f        // the car's height, in world units (tall enough to enclose an adult)
+    // Button placement lives in the shared [LiftLayout] so what's drawn is exactly what's clickable.
 
     /** The shaft cable, per-floor call-button posts, and the wooden body of the car (back wall,
      *  sides, deck, peaked hoist frame + ropes) — everything BEHIND the rider. Front gate: [drawLiftGate]. */
@@ -305,9 +305,9 @@ object NornsImageRenderer {
     ) {
         val cx = px(lift.column.toFloat())
         val fy = py(view.floorYf(lift.carPos) - view.groundOffset)   // deck sits on the feet/grass line
-        val hw = LIFT_HALF_W * sx
+        val hw = LiftLayout.HALF_W * sx
         val left = cx - hw; val right = cx + hw
-        val topY = fy - LIFT_H * sx
+        val topY = fy - LiftLayout.HEIGHT * sx
         val boxW = (hw * 2).roundToInt()
         val post = (0.13f * sx).coerceAtLeast(2f)
 
@@ -339,10 +339,10 @@ object NornsImageRenderer {
 
         // a call-button post beside the shaft at every floor: a round lamp that glows amber when called
         val br = (0.14f * sx).coerceAtLeast(3f)
-        val bx = cx - (LIFT_HALF_W + 0.42f) * sx
         for (f in 0 until world.cfg.floors) {
-            val fy2 = py(view.floorYf(f.toFloat()) - view.groundOffset)
-            val by = fy2 - 0.72f * sx                                   // lamp height
+            val p = LiftLayout.callPos(view, lift, f)
+            val bx = px(p.x); val by = py(p.y)
+            val fy2 = py(LiftLayout.feetY(view, f.toFloat()))
             g.color = Color(70, 52, 36)                                 // wooden post + base
             g.fillRect((bx - 0.04f * sx).roundToInt(), by.roundToInt(), (0.08f * sx).coerceAtLeast(2f).roundToInt(), (fy2 - by).roundToInt())
             g.color = Color(40, 30, 21); fillCircle(g, bx, by, br * 1.35f)   // lamp housing
@@ -361,9 +361,9 @@ object NornsImageRenderer {
     ) {
         val cx = px(lift.column.toFloat())
         val fy = py(view.floorYf(lift.carPos) - view.groundOffset)
-        val hw = LIFT_HALF_W * sx
+        val hw = LiftLayout.HALF_W * sx
         val left = cx - hw; val right = cx + hw
-        val topY = fy - LIFT_H * sx
+        val topY = fy - LiftLayout.HEIGHT * sx
         val gTop = topY + 0.24f * sx
         val gBot = fy - 0.05f * sx
         val beam = (0.13f * sx).coerceAtLeast(2f)
@@ -378,6 +378,27 @@ object NornsImageRenderer {
         g.fillRect(left.roundToInt(), ((gTop + gBot) / 2f - beam / 2f).roundToInt(), (hw * 2).roundToInt(), beam.roundToInt())
         g.color = Color(150, 112, 70)
         g.fillRect(left.roundToInt(), gTop.roundToInt(), (hw * 2).roundToInt(), 2)            // lit top edge
+        // up/down movement buttons mounted on the carriage (the player drives the car with these)
+        val mr = (0.16f * sx).coerceAtLeast(4f)
+        val up = LiftLayout.upPos(view, lift); val dn = LiftLayout.downPos(view, lift)
+        drawMoveButton(g, px(up.x), py(up.y), mr, up = true)
+        drawMoveButton(g, px(dn.x), py(dn.y), mr, up = false)
+    }
+
+    /** A round wooden movement button with an up- or down-pointing arrow. */
+    private fun drawMoveButton(g: java.awt.Graphics2D, cx: Float, cy: Float, r: Float, up: Boolean) {
+        g.color = Color(40, 30, 21); fillCircle(g, cx, cy, r * 1.3f)                          // housing
+        g.color = Color(150, 112, 70); fillCircle(g, cx, cy, r)                               // brass-lit button
+        g.color = Color(190, 150, 96); fillCircle(g, cx - r * 0.3f, cy - r * 0.3f, r * 0.4f)  // highlight
+        val a = r * 0.6f                                                                       // arrow glyph
+        g.color = Color(36, 26, 16)
+        if (up) g.fillPolygon(
+            intArrayOf((cx - a).roundToInt(), (cx + a).roundToInt(), cx.roundToInt()),
+            intArrayOf((cy + a * 0.55f).roundToInt(), (cy + a * 0.55f).roundToInt(), (cy - a * 0.7f).roundToInt()), 3,
+        ) else g.fillPolygon(
+            intArrayOf((cx - a).roundToInt(), (cx + a).roundToInt(), cx.roundToInt()),
+            intArrayOf((cy - a * 0.55f).roundToInt(), (cy - a * 0.55f).roundToInt(), (cy + a * 0.7f).roundToInt()), 3,
+        )
     }
 
     /** A speckled egg sitting on the ground (the EMBRYO/incubation stage). */

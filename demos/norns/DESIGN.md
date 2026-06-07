@@ -208,9 +208,14 @@ build stops here because everything remaining (subsystem 8 + fidelity) needs hum
   finishes the trip, **pauses** (`liftDwell`, doors open), then serves the next pending call. The
   render host draws the car as the C2 sprite: a planked wooden crate slung on ropes from a peaked
   hoist frame (cable up the shaft), an **X-braced front gate** drawn over the rider, and a per-floor
-  **lamp-post call button** (glows amber when pressed). Gated by `NornsWorldTest` (an uncalled car
-  stays put; a called car travels to and parks at each floor; it finishes a trip before answering a
-  newer, nearer call; cross-floor travel takes time + boards the car). Colony stays viable.
+  **lamp-post call button** (glows amber when pressed), plus **▲/▼ movement buttons on the
+  carriage**. The player can **click** any of them — the call lamp summons the car to that floor,
+  the carriage buttons drive it up/down a floor (same as the C2 Hand pressing them). Button geometry
+  lives in the shared `LiftLayout` so what's drawn is exactly what's clickable; there's also a
+  `lift <n> up|down|<floor>` console command. Gated by `NornsWorldTest` (an uncalled car stays put;
+  a called car travels to and parks at each floor; it finishes a trip before answering a newer,
+  nearer call; the movement buttons step it one floor; cross-floor travel takes time + boards the
+  car). Colony stays viable.
 - **G13 — plant/fruit food ecology (NEXT, Stu-requested).** Replace the god-spawned food with
   *plants* that grow, fruit, and die of age; fruit is what creatures eat; un-eaten/spoiled fruit on
   the ground seeds new plants. A real producer layer → food becomes a dynamic, depletable resource

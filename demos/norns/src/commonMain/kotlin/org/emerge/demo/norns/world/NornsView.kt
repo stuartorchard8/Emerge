@@ -38,15 +38,24 @@ class NornsView(
         return (centerX - horiz / 2f).coerceIn(0f, maxOf(0f, worldWidth - horiz))
     }
 
+    /** Turns a screen pixel (top-left origin) into a continuous world point (no floor snapping) —
+     *  used for hit-testing world furniture like lift buttons. */
+    fun screenToWorldPoint(px: Float, py: Float, fbW: Float, fbH: Float, centerX: Float, aspect: Float): WorldPoint {
+        val left = cameraLeft(centerX, aspect)
+        return WorldPoint(left + (px / fbW) * horizontalUnits(aspect), (1f - py / fbH) * verticalUnits)
+    }
+
     /** Turns a screen pixel (top-left origin) into a world spot: (x, floor). */
     fun screenToWorld(px: Float, py: Float, fbW: Float, fbH: Float, centerX: Float, aspect: Float): WorldSpot {
-        val left = cameraLeft(centerX, aspect)
-        val wx = (left + (px / fbW) * horizontalUnits(aspect)).coerceIn(0f, (worldWidth - 1).toFloat())
-        val wy = (1f - py / fbH) * verticalUnits
-        val floor = ((wy - groundOffset) / floorSpacing).roundToInt().coerceIn(0, floors - 1)
+        val p = screenToWorldPoint(px, py, fbW, fbH, centerX, aspect)
+        val wx = p.x.coerceIn(0f, (worldWidth - 1).toFloat())
+        val floor = ((p.y - groundOffset) / floorSpacing).roundToInt().coerceIn(0, floors - 1)
         return WorldSpot(wx, floor)
     }
 }
 
 /** A world location: continuous x on a discrete [floor]. */
 data class WorldSpot(val x: Float, val floor: Int)
+
+/** A continuous world point (x, y), in world units. */
+data class WorldPoint(val x: Float, val y: Float)

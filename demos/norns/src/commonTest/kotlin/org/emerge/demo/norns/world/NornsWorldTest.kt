@@ -169,6 +169,34 @@ class NornsWorldTest {
     }
 
     @Test
+    fun movementButtonsStepTheCarOneFloor() {
+        val w = NornsWorld(NornsConfig(), seed = 2)
+        val lift = w.lifts.first()                       // parked at floor 0
+        assertEquals(0, lift.restFloor())
+
+        w.liftUp(lift)
+        assertTrue(1 in lift.calls, "the up button queues the floor above")
+        // drive the car with bare ticks (no creatures interfering) until it settles
+        var t = 0; while ((lift.target >= 0 || lift.calls.isNotEmpty()) && t < 5000) { lift.tick(0.05f, 5); t++ }
+        assertEquals(1f, lift.carPos, "up sends the car up one floor")
+
+        w.liftDown(lift)
+        assertTrue(0 in lift.calls, "the down button queues the floor below")
+        t = 0; while ((lift.target >= 0 || lift.calls.isNotEmpty()) && t < 5000) { lift.tick(0.05f, 5); t++ }
+        assertEquals(0f, lift.carPos, "down brings it back down a floor")
+    }
+
+    @Test
+    fun liftCommandPressesTheButtons() {
+        val w = NornsWorld(NornsConfig(), seed = 2)
+        val lift = w.lifts.first()
+        NornsCommands.apply(w, ViewState(), "lift 0 up")
+        assertTrue(1 in lift.calls, "`lift 0 up` presses the up button")
+        NornsCommands.apply(w, ViewState(), "lift 0 ${w.cfg.floors - 1}")
+        assertTrue((w.cfg.floors - 1) in lift.calls, "`lift 0 <floor>` presses that floor's call button")
+    }
+
+    @Test
     fun cameraFrameIsWellFormed() {
         val w = NornsWorld(NornsConfig(), seed = 3)
         repeat(50) { w.step() }
