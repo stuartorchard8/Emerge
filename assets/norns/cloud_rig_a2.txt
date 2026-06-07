@@ -1,0 +1,12 @@
+body parts/cloud/a2/body.png 37 55 head:32,0 hipL:13,38 hipR:13,38 shL:22,24 shR:22,24
+head parts/cloud/a2/head.png 54 52 neck:29,29
+thighL parts/cloud/a2/thighL.png 21 27 start:6,6 end:16,22
+shinL parts/cloud/a2/shinL.png 16 24 start:10,5 end:8,23
+footL parts/cloud/a2/footL.png 28 10 start:7,3 end:26,9
+thighR parts/cloud/a2/thighR.png 21 26 start:6,6 end:17,23
+shinR parts/cloud/a2/shinR.png 16 24 start:10,6 end:8,23
+footR parts/cloud/a2/footR.png 28 10 start:7,4 end:26,9
+uarmL parts/cloud/a2/uarmL.png 18 17 start:4,4 end:14,12
+farmL parts/cloud/a2/farmL.png 30 15 start:3,3 end:21,8
+uarmR parts/cloud/a2/uarmR.png 18 17 start:4,4 end:14,12
+farmR parts/cloud/a2/farmR.png 30 15 start:2,3 end:21,7

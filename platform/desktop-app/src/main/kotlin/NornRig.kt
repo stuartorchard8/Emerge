@@ -29,12 +29,12 @@ object NornRig {
     val ready: Boolean get() = bases.values.any { it.values.any { m -> m.containsKey("body") && m.containsKey("head") } }
 
     // The breed roster: each creature's heritable breed indexes this. Genuinely different ripped
-    // breeds only (no recolours) — Denali (blonde, tan, blue eyes) and Bavaria (mint skin, long
-    // silver+purple hair, purple eyes). Add more by ripping + baking and extending this list.
-    private val TABLE = arrayOf("denali", "bavaria")
+    // species (no recolours): denali (blonde), bavaria (mint/silver crest), bilba (green/purple),
+    // calypso (orange/green), cloud (soft blue). Add more by ripping + baking and extending this.
+    private val TABLE = arrayOf("denali", "bavaria", "bilba", "calypso", "cloud")
     val BREEDS = TABLE.size
 
-    fun ensure() { if (loaded) return; loaded = true; try { loadBreed("denali"); loadBreed("bavaria") } catch (e: Exception) { System.err.println("[NornRig] ${e.message}") } }
+    fun ensure() { if (loaded) return; loaded = true; try { for (b in TABLE) loadBreed(b) } catch (e: Exception) { System.err.println("[NornRig] ${e.message}") } }
 
     private fun loadBreed(name: String) {
         val perAge = HashMap<Int, HashMap<String, Part>>()

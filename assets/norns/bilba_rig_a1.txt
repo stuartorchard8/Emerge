@@ -1,0 +1,12 @@
+body parts/bilba/a1/body.png 47 27 head:46,1 hipL:12,11 hipR:12,11 shL:26,9 shR:26,9
+head parts/bilba/a1/head.png 43 42 neck:21,21
+thighL parts/bilba/a1/thighL.png 18 22 start:12,5 end:3,19
+shinL parts/bilba/a1/shinL.png 20 13 start:15,6 end:0,7
+footL parts/bilba/a1/footL.png 18 17 start:6,4 end:16,16
+thighR parts/bilba/a1/thighR.png 18 22 start:12,5 end:3,19
+shinR parts/bilba/a1/shinR.png 21 13 start:15,6 end:0,7
+footR parts/bilba/a1/footR.png 18 17 start:6,4 end:16,16
+uarmL parts/bilba/a1/uarmL.png 14 15 start:9,3 end:2,11
+farmL parts/bilba/a1/farmL.png 13 25 start:9,2 end:5,17
+uarmR parts/bilba/a1/uarmR.png 14 16 start:9,4 end:3,13
+farmR parts/bilba/a1/farmR.png 13 26 start:10,2 end:6,18

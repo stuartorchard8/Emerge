@@ -1,0 +1,12 @@
+body parts/calypso/a1/body.png 48 26 head:43,1 hipL:9,11 hipR:9,11 shL:23,9 shR:23,9
+head parts/calypso/a1/head.png 50 43 neck:22,23
+thighL parts/calypso/a1/thighL.png 18 22 start:12,5 end:3,19
+shinL parts/calypso/a1/shinL.png 20 13 start:15,6 end:0,7
+footL parts/calypso/a1/footL.png 18 17 start:6,4 end:16,16
+thighR parts/calypso/a1/thighR.png 18 22 start:12,5 end:3,19
+shinR parts/calypso/a1/shinR.png 21 13 start:15,6 end:0,7
+footR parts/calypso/a1/footR.png 18 17 start:6,4 end:16,16
+uarmL parts/calypso/a1/uarmL.png 14 15 start:9,3 end:2,11
+farmL parts/calypso/a1/farmL.png 13 25 start:9,2 end:5,17
+uarmR parts/calypso/a1/uarmR.png 14 16 start:9,4 end:2,12
+farmR parts/calypso/a1/farmR.png 13 26 start:10,2 end:6,18
