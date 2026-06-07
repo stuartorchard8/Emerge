@@ -54,6 +54,45 @@ object NornRig {
     // BABY/CHILD use their own (crawl) art; ADOLESCENT reuses the adult art scaled down (the age-2
     // sprites are drawn crouched/curled with no clean upright), ADULT/OLD use the adult art.
     private fun ageOf(stage: String) = when (stage) { "BABY" -> 0; "CHILD" -> 1; else -> 3 }
+
+    // Visual breeds: community Norn breeds are largely palette recolours of the same body, so we
+    // generate breeds by recolouring the (full, ripped) base parts — preserving the eyes — keyed
+    // off each creature's heritable breed. breed 0 is the original (Denali blonde).
+    const val BREEDS = 5
+    private val tinted = HashMap<Int, HashMap<String, Part>>()
+
+    private fun partsFor(breed: Int, age: Int): HashMap<String, Part>? {
+        val base = byAge[age] ?: byAge[3] ?: byAge.values.firstOrNull() ?: return null
+        if (breed == 0) return base
+        return tinted.getOrPut(breed * 16 + age) {
+            HashMap<String, Part>().apply { for ((k, p) in base) put(k, Part(tintImage(p.img, breed), p.pts)) }
+        }
+    }
+
+    private fun tintImage(src: BufferedImage, breed: Int): BufferedImage {
+        val out = BufferedImage(src.width, src.height, BufferedImage.TYPE_INT_ARGB)
+        for (y in 0 until src.height) for (x in 0 until src.width) out.setRGB(x, y, tintPixel(src.getRGB(x, y), breed))
+        return out
+    }
+
+    private fun tintPixel(argb: Int, breed: Int): Int {
+        val a = (argb ushr 24) and 0xff
+        if (a == 0) return argb
+        var r = (argb ushr 16) and 0xff; var g = (argb ushr 8) and 0xff; var b = argb and 0xff
+        val mn = minOf(r, g, b); val mx = maxOf(r, g, b)
+        val sclera = mn > 200 && (mx - mn) < 20       // neutral bright = eye white (keep)
+        val iris = b > r + 18 && b > g + 4            // blue iris (keep)
+        val dark = mx < 55                            // pupil / outline (keep)
+        if (!sclera && !iris && !dark) when (breed) {
+            1 -> { r = (r * 0.60f).toInt(); g = (g * 0.92f).toInt(); b = (b * 0.48f).toInt() }   // mossy green
+            2 -> { r = (r * 1.10f).toInt(); g = (g * 0.66f).toInt(); b = (b * 0.42f).toInt() }   // ginger
+            3 -> { val l = 0.32f * r + 0.56f * g + 0.12f * b
+                r = ((r + (l - r) * 0.7f) * 0.82f).toInt(); g = ((g + (l - g) * 0.7f) * 0.86f).toInt(); b = ((b + (l - b) * 0.7f) * 0.98f).toInt() } // slate grey
+            4 -> { r = (r * 0.62f).toInt(); g = (g * 0.46f).toInt(); b = (b * 0.33f).toInt() }   // chocolate brown
+        }
+        fun c(v: Int) = v.coerceIn(0, 255)
+        return (a shl 24) or (c(r) shl 16) or (c(g) shl 8) or c(b)
+    }
     private fun targetHeight(stage: String) = when (stage) {
         "BABY" -> 1.7f; "CHILD" -> 2.1f; "ADOLESCENT" -> 2.5f; "OLD" -> 2.85f; else -> 2.95f
     }
@@ -73,7 +112,7 @@ object NornRig {
         worldX: Float, worldY: Float, px: (Float) -> Float, py: (Float) -> Float, sx: Float,
     ) {
         val stage = c.biology.lifeStage.name
-        val pa = byAge[ageOf(stage)] ?: byAge[3] ?: byAge.values.firstOrNull() ?: return
+        val pa = partsFor(c.breed.mod(BREEDS), ageOf(stage)) ?: return
         val body = pa["body"] ?: return
         val phase = c.ticksLived * 0.085f   // ÷4 to match the slowed (quarter-speed) movement
         val s = sin(phase)

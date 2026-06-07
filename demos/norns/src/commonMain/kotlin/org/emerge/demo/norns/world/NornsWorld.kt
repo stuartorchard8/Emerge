@@ -48,7 +48,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
                 listOf(EmitterGene(locus = 0, chemical = 0, gain = rng.nextFloat(), threshold = 0f)) +
                     CreatureMind.defaultInstinctGenes(),
             )
-            spawnCreature(rng.nextInt().mod(cfg.worldWidth).toFloat(), rng.nextInt().mod(cfg.floors), g)
+            spawnCreature(rng.nextInt().mod(cfg.worldWidth).toFloat(), rng.nextInt().mod(cfg.floors), g, breed = rng.nextInt().mod(cfg.breedCount))
         }
     }
 
@@ -183,7 +183,11 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
         val partner = creatureById(c.partnerId)
         if (partner != null && canCourt(c, partner) && creatures.size < cfg.maxPopulation) {
             val child = c.genome.reproduceWith(partner.genome, cfg.mutationRate, rng)
-            spawnCreature(c.x, c.floor, child)
+            // breed is heritable: the child takes a parent's breed, with a small chance of mutating
+            val childBreed = if (rng.nextInt().mod(100) < (cfg.breedMutationPct))
+                rng.nextInt().mod(cfg.breedCount)
+            else if (rng.nextInt().mod(2) == 0) c.breed else partner.breed
+            spawnCreature(c.x, c.floor, child, childBreed)
             partner.reproCooldown = cfg.reproduceCooldown
             partner.chem.resetUrge()
             births++
@@ -287,7 +291,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
         food.add(cell(rng.nextInt().mod(cfg.floors), rng.nextInt().mod(cfg.worldWidth)))
     }
 
-    private fun spawnCreature(x: Float, floor: Int, genome: Genome) {
+    private fun spawnCreature(x: Float, floor: Int, genome: Genome, breed: Int = 0) {
         val biology = Biology(
             BiologyConfig(
                 stageStartAge = cfg.stageStartAge, maxAge = cfg.maxAge,
@@ -304,7 +308,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
                 brain = CreatureMind.build(genome, cfg.brainLearnRate),
                 chem = CreatureChemistry(metab, cfg),
                 loci = FloatArray(4),
-            ),
+            ).also { it.breed = breed.mod(cfg.breedCount) },
         )
     }
 
@@ -384,6 +388,7 @@ class WorldCreature(
     var ticksLived: Int = 0
     var reproCooldown: Int = 0
     var facing: Int = 1
+    var breed: Int = 0               // heritable visual breed (sprite palette); inherited from a parent
     var held: Boolean = false        // picked up by the player (frozen)
     var carryingFood: Boolean = false // holding a food item to eat
     var onLift: Boolean = false       // riding a lift car between floors
@@ -454,6 +459,9 @@ class NornsConfig(
     // fatigue (G7: makes REST a real, learned behaviour)
     val fatigueRate: Float = 0.0025f, // fatigue built per tick of exertion (÷4)
     val restRecovery: Float = 0.015f, // fatigue recovered per tick of resting (÷4)
+    // heritable visual breeds (sprite palettes); offspring inherit a parent's, rarely mutate
+    val breedCount: Int = 5,
+    val breedMutationPct: Int = 4,
 ) {
     fun metabolismOf(genome: Genome): Float {
         val gain = genome.genes.filterIsInstance<EmitterGene>().firstOrNull()?.gain?.coerceIn(0f, 1f) ?: 0.5f
