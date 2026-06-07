@@ -98,7 +98,8 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
             CreatureMind.A_SEEK_MATE -> if (mate != null) walkToward(c, mate.floor, mate.x) else wander(c)
             else -> wander(c)
         }
-        if (food.remove(cell(c.floor, c.x))) c.hunger = (c.hunger - cfg.eatAmount).coerceAtLeast(0f)
+        c.ateThisTick = food.remove(cell(c.floor, c.x))
+        if (c.ateThisTick) c.hunger = (c.hunger - cfg.eatAmount).coerceAtLeast(0f)
     }
 
     /** Phase 3: reinforce the chosen action by the discomfort it relieved, then age + apply death. */
@@ -278,6 +279,7 @@ class WorldCreature(
     var reproCooldown: Int = 0
     var facing: Int = 1
     var held: Boolean = false // picked up by the player
+    var ateThisTick: Boolean = false // for the eating animation
 
     // scratch for the two-phase brain tick (decide/act → reproduce → learn)
     var lastAction: Int = CreatureMind.A_REST

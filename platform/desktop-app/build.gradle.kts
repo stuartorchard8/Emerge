@@ -104,6 +104,14 @@ tasks.register<JavaExec>("runNorns") {
     standardInput = System.`in`
 }
 
+tasks.register<JavaExec>("runNornsGl") {
+    group = "application"
+    description = "Watch the Norns colony in a GPU window (side-scroll, animated blobs). " +
+        "ESC quit, P pause, [ / ] slower/faster. Optional --args=\"<seed>\"."
+    mainClass = "org.emerge.desktop.NornsGlViewKt"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
 tasks.register<JavaExec>("profileSim") {
     group = "application"
     description = "Run headless sim profiler with per-system timing breakdown"

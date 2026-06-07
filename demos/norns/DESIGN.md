@@ -111,9 +111,13 @@ dependency-ordered (later ones read earlier ones).
   *Remaining*: navigation to the chosen target is still mechanical (the brain picks the verb, not
   the steps), and instinct is a fixed prior rather than gene-encoded (G5). Gated by
   `CreatureMindTest` + the brain-driven colony staying viable.
-- **G11 — the real visual host.** The current host is interactive side-scroll *ASCII*. The
-  GPU/sprite host (and real-time single-key input vs the current line commands) is the deferred
-  visual pass — I can't see rendered output in this environment, so it's done with Stu.
+- **G11 — the GPU visual host (in progress).** Procedural body-part animation is built + verified
+  (`CreatureAnimation`: 6 blobs/creature, posed per action — `CreatureAnimationTest`). A GPU host
+  (`runNornsGl` → `NornsGlView` + `NornsGlRenderer`, reusing the engine `CircleShader`) draws the
+  animated blobs in a side-scroll window. **The GL drawing is UNVERIFIED by me** (no display in
+  the authoring env) — it compiles and the world/animation it drives are unit-tested, but pixels
+  need Stu's run. Iterating on the GL look + body-part tuning is the live collaborative loop.
+  Still ASCII-host-only for the verified watch; real-time mouse interaction in the GPU host TBD.
 
 ## Assumptions (things I chose without confirmation — revisit in tuning)
 
@@ -187,8 +191,10 @@ build stops here because everything remaining (subsystem 8 + fidelity) needs hum
   (`CreatureMind`), instinct-primed + reward-refined. Gated by `CreatureMindTest`.
 - **Brain instinct gene-encoded (G5 resolved):** instinct is heritable + mutable, so *behaviour
   evolves* (not just biochemistry). Gated by `BrainGenomeTest`. 48 tests green.
-- **Next: G11 — the GPU sprite host, done collaboratively with Stu** (the one piece I can't
-  verify headlessly). Deeper-fidelity gaps remaining: G3, G6–G9, and brain topology evolution.
+- **G11 in progress:** procedural body-part animation built + verified (`CreatureAnimation`);
+  GPU host (`runNornsGl`) drawing animated blobs reuses the engine `CircleShader` — compiles, but
+  the GL is unverified by me (no display) and needs Stu's run to confirm/tune pixels. 54 tests green.
+- Deeper-fidelity gaps remaining: G3, G6–G9, brain topology evolution, and the GPU look/interaction.
 
 **The "alive" chain is demonstrated end to end:** chemistry regulates → the brain learns from
 reward → the creature acts to satisfy its drives → it survives or starves in a world → a
