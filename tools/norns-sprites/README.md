@@ -12,17 +12,19 @@ the baked sheets (`assets/norns/<breed>_a<age>.png` + `<breed>.json`) are commit
    `[u32 nameLen][name][u32 fileSize][bytes]` records; pulls out the `.s16` + `.att` files.
 4. **`s16.py`** — decodes Creatures S16 (RGB555/565, 0x0000=transparent) → PNG (pure stdlib, no Pillow).
 
-## Bake (run whenever regenerating assets)
-**`bake_breed.py`** composites the parts into per-age pose sheets and writes them into `assets/norns/`.
+## Export (run whenever regenerating assets)
+**`export_rig.py`** exports, per life-stage age, the individual parts at that age's **base pose**
+(older = upright side / pose 2; baby + child = crawl / pose 0), trimmed, with bone pivots from the
+matching `.att` row → `assets/norns/parts/a<age>/*.png` + `assets/norns/denali_rig_a<age>.txt`.
 
-## The Creatures rig (what the bake encodes)
+## The Creatures rig (what the export encodes)
 - Parts: `a`=head `b`=body `c·d·e`/`f·g·h`=legs (thigh·shin·foot) `i·j`/`k·l`=arms (upper·fore) `m·n`=tail.
 - `.att` per part = one row per **pose** (C1/C2 = 10 poses): body row = 6 points (head, legL, legR,
   armL, armR, tail); head row = neck + mouth; limbs = start + end.
 - **Poses (the key insight):** 0–3 = facing RIGHT at four body pitches (**0 = crawl/head-down,
-  1 = walk-lean, 2 = upright stand, 3 = reach-up**); 4–7 = facing LEFT; 8 = front; 9 = back.
-- Assemble at a **single consistent pose index** for every part (head frame index == pose index,
-  head neck == head `.att` row), chaining limbs via their start/end points. No rotation/FK — Creatures
-  animates by cycling whole-body poses. The engine (`NornRig.kt`) flips horizontally for facing,
-  cycles poses for the walk/crawl stride, and scales by life stage. Babies/children use the low
-  (crawl) poses; older Norns stand upright.
+  1 = walk-lean, 2 = upright stand, 3 = reach-up**); 4–7 = facing LEFT; 8 = front; 9 = back. Head
+  frame index == pose index; head neck == head `.att` row for that pose.
+- The engine (`NornRig.kt`) treats the parts as a **skeleton**: at rest they assemble exactly as the
+  art intends (the head's neck on the body's neck via the real ATT points), and the joints get
+  **continuous** swing for the walk — so motion interpolates smoothly rather than cutting between
+  frames. Flips horizontally for facing, scales + picks the crawl/upright base by life stage.
