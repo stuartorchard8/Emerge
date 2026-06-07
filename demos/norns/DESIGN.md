@@ -200,7 +200,19 @@ build stops here because everything remaining (subsystem 8 + fidelity) needs hum
   stage/age/drives/action) and **mouse interaction** (left-click follow, right-click drop food) —
   screen↔world picking is the tested `NornsView`. GL still unverified by me (no display) — needs
   Stu's run. 58 tests green.
-- Deeper-fidelity gaps remaining: G3, G6–G9, brain topology evolution, and the GPU look/interaction.
+- **G12 — physical lifts (DONE).** Lifts are now real oscillating cars (`Lift`); changing floor
+  means walking to the shaft, *waiting* for the car, riding it, and disembarking — durative travel,
+  not an instant hop. Gated by `NornsWorldTest` (lift sweeps the shaft; cross-floor travel takes
+  time + boards the car). Colony still viable (foraging is mostly same-floor). Assumption: lifts
+  auto-oscillate (no call buttons yet).
+- **G13 — plant/fruit food ecology (NEXT, Stu-requested).** Replace the god-spawned food with
+  *plants* that grow, fruit, and die of age; fruit is what creatures eat; un-eaten/spoiled fruit on
+  the ground seeds new plants. A real producer layer → food becomes a dynamic, depletable resource
+  (overgrazing, food deserts, plant booms = emergence). Expected to add instability (wanted); will
+  ship with tunable stabilisers (carrying capacity, seed/spoil rates) and gate "doesn't permanently
+  collapse or explode", but allow boom/bust.
+- Deeper-fidelity gaps remaining: G3, G6–G9, brain topology evolution, GPU look/interaction tuning,
+  click-drag to pick up & move a creature.
 
 **The "alive" chain is demonstrated end to end:** chemistry regulates → the brain learns from
 reward → the creature acts to satisfy its drives → it survives or starves in a world → a

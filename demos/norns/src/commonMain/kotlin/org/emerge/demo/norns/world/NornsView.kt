@@ -19,6 +19,9 @@ class NornsView(
     /** World-y of a creature standing on [floor]. */
     fun floorY(floor: Int): Float = floor * floorSpacing + groundOffset
 
+    /** World-y for a continuous floor position (e.g. a creature riding a lift between floors). */
+    fun floorYf(floor: Float): Float = floor * floorSpacing + groundOffset
+
     /** World-units shown vertically (all floors + a little headroom). */
     val verticalUnits: Float get() = floors * floorSpacing + 1.5f
 

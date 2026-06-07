@@ -66,6 +66,14 @@ class NornsGlRenderer(private val cfg: NornsRenderConfig = NornsRenderConfig()) 
         for (f in 0 until world.cfg.floors) {
             addBlob(left + horiz / 2f, view.floorY(f) - view.groundOffset, horiz, 0.12f, 0.30f, 0.30f, 0.36f, 1f)
         }
+        // lift shafts (faint) + cars
+        val shaftMidY = (view.floorY(0) + view.floorY(world.cfg.floors - 1)) / 2f
+        val shaftHalfH = (view.floorY(world.cfg.floors - 1) - view.floorY(0)) / 2f + 0.5f
+        for (lift in world.lifts) {
+            if (lift.column < left - 1 || lift.column > right + 1) continue
+            addBlob(lift.column.toFloat(), shaftMidY, 0.12f, shaftHalfH, 0.22f, 0.22f, 0.28f, 1f) // shaft
+            addBlob(lift.column.toFloat(), view.floorYf(lift.carPos), 0.7f, 0.55f, 0.5f, 0.5f, 0.6f, 1f) // car
+        }
         for (foodCell in world.food) {
             val fx = world.foodX(foodCell)
             if (fx < left - 1 || fx > right + 1) continue
@@ -73,7 +81,8 @@ class NornsGlRenderer(private val cfg: NornsRenderConfig = NornsRenderConfig()) 
         }
         for (c in world.creatures) {
             if (c.x < left - 2 || c.x > right + 2) continue
-            drawCreature(c, c.x, view.floorY(c.floor), c.id == followId)
+            val cy = if (c.ridingY >= 0f) view.floorYf(c.ridingY) else view.floorY(c.floor)
+            drawCreature(c, c.x, cy, c.id == followId)
         }
         if (count > 0) circleShader.drawInstanced(0, count, matrices, primaryIds, shapes, alphas, tints)
 

@@ -31,6 +31,10 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     val food = HashSet<Int>()
     val creatures = ArrayList<WorldCreature>()
 
+    /** Physical lift cars, one per lift column, that oscillate between floors over time. */
+    val lifts: List<Lift> = (0 until cfg.worldWidth step cfg.liftSpacing).map { Lift(it) }
+    private val liftByColumn = lifts.associateBy { it.column }
+
     var ticks: Int = 0; private set
     var births: Int = 0; private set
     var deaths: Int = 0; private set
@@ -57,6 +61,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
 
     fun step() {
         ticks++
+        for (lift in lifts) lift.tick(cfg.floors, cfg.liftSpeed)
         repeat(cfg.foodSpawnPerTick) { if (food.size < cfg.maxFood) trySpawnFood() }
         // Iterate a snapshot: courting can spawn a newborn into `creatures` mid-step (it's stepped
         // next tick), which would otherwise be a concurrent modification.
@@ -198,17 +203,33 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
         p.alive && !p.held && p.isFertile(cfg) && p.reproCooldown <= 0 &&
             p.floor == c.floor && abs(p.x - c.x) <= cfg.mateRange
 
-    // ── continuous movement ──────────────────────────────────────────────────────
-    /** Glide one step toward (targetX, targetFloor); returns true once arrived. */
+    // ── continuous movement (with physical lifts) ───────────────────────────────
+    /** Glide one step toward (targetX, targetFloor); returns true once arrived. Changing floor
+     *  means walking to the lift shaft, waiting for the car, riding it, and disembarking. */
     private fun moveToward(c: WorldCreature, targetX: Float, targetFloor: Int): Boolean {
-        if (c.floor != targetFloor) {
-            val lift = nearestLiftF(c.x)
-            if (abs(c.x - lift) > cfg.moveSpeed) glide(c, lift)
-            else { c.x = lift; c.floor += if (targetFloor > c.floor) 1 else -1 } // ride the lift one floor
+        if (c.onLift || c.floor != targetFloor) {
+            val col = nearestLiftColumn(c.x)
+            val lift = liftByColumn[col]
+            if (lift == null) { c.onLift = false; c.ridingY = -1f; return true } // no lift; give up
+            if (!c.onLift) {
+                if (abs(c.x - col) > cfg.moveSpeed) { glide(c, col.toFloat()); return false }
+                c.x = col.toFloat() // standing in the shaft, waiting for the car
+                if (abs(lift.carPos - c.floor) <= cfg.liftBoardEps) { c.onLift = true; c.ridingY = lift.carPos }
+            } else {
+                c.ridingY = lift.carPos // ride the car
+                if (abs(lift.carPos - targetFloor) <= cfg.liftBoardEps) {
+                    c.floor = targetFloor; c.onLift = false; c.ridingY = -1f
+                }
+            }
             return false
         }
         if (abs(c.x - targetX) > cfg.arriveEps) { glide(c, targetX); return false }
         return true
+    }
+
+    private fun nearestLiftColumn(x: Float): Int {
+        val last = (cfg.worldWidth - 1) / cfg.liftSpacing * cfg.liftSpacing
+        return ((x / cfg.liftSpacing).roundToInt() * cfg.liftSpacing).coerceIn(0, last)
     }
 
     private fun glide(c: WorldCreature, targetX: Float) {
@@ -314,6 +335,19 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     }
 }
 
+/**
+ * A physical lift car at a fixed [column], oscillating between floor 0 and the top floor.
+ * [carPos] is the continuous floor it's at; a creature boards when the car reaches its floor and
+ * disembarks when the car reaches the creature's target floor — so changing levels takes time.
+ */
+class Lift(val column: Int, var carPos: Float = 0f, var dir: Int = 1) {
+    fun tick(floors: Int, speed: Float) {
+        carPos += dir * speed
+        val top = (floors - 1).toFloat()
+        if (carPos >= top) { carPos = top; dir = -1 } else if (carPos <= 0f) { carPos = 0f; dir = 1 }
+    }
+}
+
 /** A creature's current durative activity. */
 enum class ActivityType { IDLE, MOVING, PICKING_UP, EATING, COURTING, RESTING }
 
@@ -336,6 +370,8 @@ class WorldCreature(
     var facing: Int = 1
     var held: Boolean = false        // picked up by the player (frozen)
     var carryingFood: Boolean = false // holding a food item to eat
+    var onLift: Boolean = false       // riding a lift car between floors
+    var ridingY: Float = -1f          // continuous floor while riding (for rendering); -1 = not riding
 
     // durative activity state
     var activity: ActivityType = ActivityType.IDLE
@@ -392,6 +428,9 @@ class NornsConfig(
     val eatTicks: Int = 14,
     val courtTicks: Int = 14,
     val restTicks: Int = 14,
+    // physical lifts
+    val liftSpeed: Float = 0.05f,     // floors per tick
+    val liftBoardEps: Float = 0.25f,  // how close the car must be to board / disembark
 ) {
     fun metabolismOf(genome: Genome): Float {
         val gain = genome.genes.filterIsInstance<EmitterGene>().firstOrNull()?.gain?.coerceIn(0f, 1f) ?: 0.5f

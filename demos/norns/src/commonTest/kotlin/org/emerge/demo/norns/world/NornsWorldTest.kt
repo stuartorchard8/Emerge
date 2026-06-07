@@ -96,6 +96,40 @@ class NornsWorldTest {
     }
 
     @Test
+    fun liftOscillatesBetweenFloors() {
+        val lift = Lift(column = 0)
+        var minP = 9f; var maxP = -9f
+        repeat(400) {
+            lift.tick(floors = 3, speed = 0.05f)
+            minP = minOf(minP, lift.carPos); maxP = maxOf(maxP, lift.carPos)
+            assertTrue(lift.carPos in 0f..2f, "car stays within the floor range: ${lift.carPos}")
+        }
+        assertTrue(minP <= 0.05f && maxP >= 1.95f, "the car should sweep the full shaft (min=$minP max=$maxP)")
+    }
+
+    @Test
+    fun changingFloorTakesTimeViaTheLift() {
+        val w = NornsWorld(NornsConfig(), seed = 5)
+        val c = w.creatures.first()
+        w.place(c.id, 0, 0)          // floor 0, at a lift column
+        c.hunger = 0f
+        c.activity = ActivityType.MOVING
+        c.goalAction = CreatureMind.A_SEEK_FOOD
+        c.targetX = 0f; c.targetFloor = 1; c.partnerId = -1
+
+        var rode = false
+        var arrivedTick = -1
+        for (t in 1..200) {
+            w.step()
+            if (c.onLift) rode = true
+            if (c.floor == 1) { arrivedTick = t; break }
+        }
+        assertTrue(rode, "the creature should board the lift to change floor")
+        assertTrue(arrivedTick > 5, "changing floor should take time, not be instant (took $arrivedTick ticks)")
+        assertEquals(1, c.floor, "should arrive on the target floor")
+    }
+
+    @Test
     fun cameraFrameIsWellFormed() {
         val w = NornsWorld(NornsConfig(), seed = 3)
         repeat(50) { w.step() }
