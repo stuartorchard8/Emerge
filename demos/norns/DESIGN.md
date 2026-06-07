@@ -112,7 +112,12 @@ dependency-ordered (later ones read earlier ones).
   the steps), and instinct is a fixed prior rather than gene-encoded (G5). Gated by
   `CreatureMindTest` + the brain-driven colony staying viable.
 - **G11 — the GPU visual host (in progress).** Procedural body-part animation is built + verified
-  (`CreatureAnimation`: 6 blobs/creature, posed per action — `CreatureAnimationTest`). A GPU host
+  (`CreatureAnimation`, posed per action — `CreatureAnimationTest`). Each activity drives a distinct
+  `CreatureAction` (REST / WALK / EAT / PICK_UP / COURT): walking strides the legs, eating chews,
+  picking-up crouches to the ground, courting hops. In the live Java2D sprite rig (`NornRig`, the
+  primary host) the reliable cues are leg-swing and a **vertical squash/stretch about the planted
+  feet** (head/limb part-rotations barely read on the ripped art) — crouch to pick up, chew-squash
+  to eat, stretch on the courting hop. A GPU host
   (`runNornsGl` → `NornsGlView` + `NornsGlRenderer`, reusing the engine `CircleShader`) draws the
   animated blobs in a side-scroll window. **The GL drawing is UNVERIFIED by me** (no display in
   the authoring env) — it compiles and the world/animation it drives are unit-tested, but pixels

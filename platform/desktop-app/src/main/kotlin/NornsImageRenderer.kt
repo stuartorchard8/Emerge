@@ -166,7 +166,8 @@ object NornsImageRenderer {
         groundOffset: Float,
     ) {
         val action = when (c.activity) {
-            ActivityType.EATING, ActivityType.PICKING_UP -> CreatureAction.EAT
+            ActivityType.EATING -> CreatureAction.EAT
+            ActivityType.PICKING_UP -> CreatureAction.PICK_UP
             ActivityType.COURTING -> CreatureAction.COURT
             ActivityType.RESTING, ActivityType.IDLE -> CreatureAction.REST
             ActivityType.MOVING -> CreatureAction.WALK

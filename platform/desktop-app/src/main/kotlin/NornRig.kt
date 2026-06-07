@@ -98,8 +98,11 @@ object NornRig {
         val s = sin(phase)
         val walk = action == CreatureAction.WALK
         val court = action == CreatureAction.COURT
-        val hs = if (walk) 0.38f else if (court) 0.12f else 0f          // hip swing
-        val aw = if (walk) 0.42f else if (court) 0.32f else 0.05f       // shoulder swing
+        val eat = action == CreatureAction.EAT
+        val pick = action == CreatureAction.PICK_UP
+        val chew = if (eat) abs(sin(phase * 3f)) else 0f                // a quick repeated chewing peck
+        val hs = if (walk) 0.38f else 0f                               // only walking swings the legs
+        val aw = when { walk -> 0.42f; court -> 0.35f; else -> 0.06f }  // shoulder swing
         fun hip(k: String) = body.pt(k)
 
         val placed = ArrayList<Pair<Part, AffineTransform>>(12)
@@ -113,25 +116,36 @@ object NornRig {
             placed += pa[th]!! to t1; placed += pa[sh]!! to t2; placed += pa[ft]!! to t3
             feetY = maxOf(feetY, ty3, ty2)
         }
-        fun arm(shk: String, ua: String, fa: String, sgn: Float) {
-            val r0 = sgn * s * aw
+        fun arm(shk: String, ua: String, fa: String, sgn: Float, baseRot: Float = 0f, foreRot: Float = 0.08f) {
+            val r0 = baseRot + sgn * s * aw
             val (t1, tx1, ty1) = place(hip(shk)[0], hip(shk)[1], pa[ua]!!, r0)
-            val (t2, _, _) = place(tx1, ty1, pa[fa]!!, r0 + 0.08f)
+            val (t2, _, _) = place(tx1, ty1, pa[fa]!!, r0 + foreRot)
             placed += pa[ua]!! to t1; placed += pa[fa]!! to t2
         }
-        // upper body lifts a hair on the up-beat (feet stay planted → no float); courting bounces
-        val bob = -abs(s) * (if (court) 0.7f else if (walk) 0.4f else 0.15f)
+        // upper body lifts a hair on the up-beat (feet stay planted → no float). The courting hop is
+        // a real screen-space lift, done in g0 below.
+        val bob = -abs(s) * (if (walk) 0.4f else 0.15f)
+        // the near (front) arm gestures — modest so they read as a reach without breaking on
+        // longer-armed breeds (the squash/stretch below carries the main action read): hand toward
+        // the mouth to chew, or down toward the ground to pick up
+        val nearBase = when { eat -> -0.5f; pick -> 0.35f; else -> 0f }
+        val nearFore = when { eat -> -0.35f; pick -> 0.25f; else -> 0.08f }
         // far side (L) behind the body, near side (R) in front; legs counter-swing the arms
         leg("hipL", "thighL", "shinL", "footL", +1f)
         arm("shL", "uarmL", "farmL", -1f)
         val bodyT = AffineTransform(); bodyT.translate(0.0, bob.toDouble())
         placed += body to bodyT
         leg("hipR", "thighR", "shinR", "footR", -1f)
-        arm("shR", "uarmR", "farmR", +1f)
-        // head rides on the body's neck point (real ATT), rotating about the neck: dips to the
-        // ground to eat, lifts a touch to court
+        arm("shR", "uarmR", "farmR", +1f, baseRot = nearBase, foreRot = nearFore)
+        // head rides on the body's neck point (real ATT), rotating about the neck: pecks down to eat,
+        // bends right down to pick up off the ground, tips up when courting
         val head = pa["head"]!!; val hp = body.pt("head"); val neck = head.pt("neck")
-        val headLook = when (action) { CreatureAction.EAT -> 0.5f; CreatureAction.COURT -> -0.18f; else -> 0f }
+        val headLook = when {
+            eat -> 0.42f + chew * 0.22f
+            pick -> 0.72f
+            court -> -0.25f
+            else -> 0f
+        }
         val headT = AffineTransform()
         headT.translate(hp[0].toDouble(), (hp[1] + bob).toDouble())
         headT.rotate(headLook.toDouble())
@@ -143,9 +157,20 @@ object NornRig {
         val scale = (targetHeight(stage) * sx) / rigH
         val centerX = (hip("hipL")[0] + hip("hipR")[0]) / 2f
         val flip = c.facing < 0
+        // an excited little hop while courting — a real screen-space lift (feet leave the ground)
+        val hop = if (court) abs(sin(phase * 1.7f)) * 0.28f * sx else 0f
+        // vertical squash/stretch about the planted feet — the reliable, art-independent action cue
+        // (head/limb part rotations barely read on the ripped sprites): crouch low to pick up off the
+        // ground, a small rhythmic chew-squash to eat, a slight stretch on the courting hop.
+        val sym = when {
+            pick -> 0.8f
+            eat -> 1f - chew * 0.09f
+            court -> 1f + abs(sin(phase * 1.7f)) * 0.06f
+            else -> 1f
+        }
         val g0 = AffineTransform()
-        g0.translate(px(worldX).toDouble(), py(worldY).toDouble())
-        g0.scale((if (flip) -scale else scale).toDouble(), scale.toDouble())
+        g0.translate(px(worldX).toDouble(), (py(worldY) - hop).toDouble())
+        g0.scale((if (flip) -scale else scale).toDouble(), (scale * sym).toDouble())
         g0.translate(-centerX.toDouble(), -feetY.toDouble())
 
         val oldInterp = g.getRenderingHint(RenderingHints.KEY_INTERPOLATION)

@@ -20,8 +20,9 @@ enum class BodyPart {
 /** Drawn shape of a part. Most parts are ellipses; ears are pointed triangles. */
 enum class PartShape { ELLIPSE, TRIANGLE }
 
-/** What the creature is doing, which selects an animation. Mapped from the brain's decision. */
-enum class CreatureAction { REST, WALK, COURT, EAT }
+/** What the creature is doing, which selects an animation. Mapped from the brain's decision.
+ *  PICK_UP (reaching to the ground for food) is distinct from EAT (chewing it). */
+enum class CreatureAction { REST, WALK, COURT, EAT, PICK_UP }
 
 /**
  * One posed body part for a single frame, in *body units* (torso ≈ 1 across) relative to the
@@ -59,21 +60,31 @@ object CreatureAnimation {
     fun pose(action: CreatureAction, phase: Float, facing: Int, r: Float, g: Float, b: Float): List<PosedPart> {
         val face = if (facing < 0) -1f else 1f
         val s = sin(phase)
-        val walking = action != CreatureAction.REST
+        val moving = action == CreatureAction.WALK   // only walking strides; eat/court/pick stay put
 
-        val legSwing = if (walking) 0.14f else 0f
-        val armSwing = if (walking) 0.16f else 0.02f
+        val legSwing = if (moving) 0.14f else 0f
+        val armSwing = when (action) {
+            CreatureAction.WALK -> 0.16f
+            CreatureAction.COURT -> 0.14f
+            else -> 0.02f
+        }
         val torsoBob = when (action) {
             CreatureAction.REST -> sin(phase) * 0.022f
             CreatureAction.WALK -> abs(s) * 0.05f
             CreatureAction.EAT -> abs(s) * 0.03f
+            CreatureAction.PICK_UP -> -0.05f
             CreatureAction.COURT -> abs(sin(phase * 1.5f)) * 0.10f
         }
-        val headDip = if (action == CreatureAction.EAT) -abs(sin(phase * 2f)) * 0.18f else 0f
+        val headDip = when (action) {
+            CreatureAction.EAT -> -abs(sin(phase * 2f)) * 0.18f   // chewing pecks
+            CreatureAction.PICK_UP -> -0.30f                      // bent right down to the ground
+            CreatureAction.COURT -> 0.05f                         // chin up
+            else -> 0f
+        }
         val headY = torsoBob + headDip
         val turn = face * 0.06f       // head/face turned 3/4 toward the heading
-        val lean = if (walking) face * 0.04f else 0f
-        val tailWag = sin(phase * 1.3f) * (if (walking) 0.08f else 0.03f)
+        val lean = if (moving) face * 0.04f else if (action == CreatureAction.PICK_UP) face * 0.10f else 0f
+        val tailWag = sin(phase * 1.3f) * (if (moving) 0.08f else 0.03f)
         val earTwitch = sin(phase * 1.7f) * 0.04f
 
         // colour helpers
