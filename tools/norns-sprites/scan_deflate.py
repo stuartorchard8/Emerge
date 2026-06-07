@@ -11,7 +11,7 @@ while i < len(data)-2:
     if data[i:i+2] in heads:
         try:
             d = zlib.decompressobj()
-            out = d.decompress(data[i:], 8_000_000)
+            out = d.decompress(data[i:], 96_000_000)
             if len(out) >= 256:
                 found.append((i, len(out), out[:4]))
                 if n < 60:
