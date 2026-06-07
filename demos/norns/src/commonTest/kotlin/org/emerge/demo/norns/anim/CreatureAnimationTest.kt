@@ -41,8 +41,10 @@ class CreatureAnimationTest {
         val (_, restLegBaseY, _) = restY(BodyPart.LEG_LEFT)
         // legs don't swing at rest
         assertEquals(restLegBaseY, part(parts, BodyPart.LEG_LEFT).y, 1e-6f)
-        // torso only breathes a little
-        assertTrue(kotlin.math.abs(part(parts, BodyPart.TORSO).y) < 0.05f, "rest torso bob is small")
+        // torso only breathes a little: its bob across the phase cycle stays tiny
+        val torsoA = part(CreatureAnimation.pose(CreatureAction.REST, 0f, 1, 1f, 1f, 1f), BodyPart.TORSO).y
+        val torsoB = part(CreatureAnimation.pose(CreatureAction.REST, quarter, 1, 1f, 1f, 1f), BodyPart.TORSO).y
+        assertTrue(kotlin.math.abs(torsoA - torsoB) < 0.05f, "rest torso bob is small")
     }
 
     @Test

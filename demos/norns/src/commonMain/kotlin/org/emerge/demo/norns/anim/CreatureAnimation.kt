@@ -100,14 +100,14 @@ object CreatureAnimation {
         add(BodyPart.FOOT_LEFT, -0.20f + 0.10f, -0.86f + s * legSwing, 0.14f, shade(0.8f, r), shade(0.8f, g), shade(0.8f, b), halfW = 0.19f, halfH = 0.11f)
         add(BodyPart.FOOT_RIGHT, 0.20f + 0.10f, -0.86f - s * legSwing, 0.14f, shade(0.8f, r), shade(0.8f, g), shade(0.8f, b), halfW = 0.19f, halfH = 0.11f)
         // long ape arm on the far side (behind the torso), hanging low and counter-swinging
-        add(BodyPart.ARM_LEFT, -0.50f, 0.04f + s * armSwing, 0.14f, limbR, limbG, limbB, halfW = 0.135f, halfH = 0.36f, angle = -0.18f)
-        add(BodyPart.HAND_LEFT, -0.54f, -0.36f + s * armSwing, 0.13f, shade(0.86f, r), shade(0.86f, g), shade(0.86f, b))
-        // pot-bellied torso (slightly pear-shaped) + cream belly
-        add(BodyPart.TORSO, lean, -0.05f + torsoBob, 0.52f, r, g, b, halfW = 0.46f, halfH = 0.56f)
-        add(BodyPart.BELLY, lean + 0.02f * face, -0.16f + torsoBob, 0.36f, bellyR, bellyG, bellyB, halfW = 0.33f, halfH = 0.40f)
+        add(BodyPart.ARM_LEFT, -0.48f, 0.02f + s * armSwing, 0.14f, limbR, limbG, limbB, halfW = 0.13f, halfH = 0.42f, angle = -0.22f)
+        add(BodyPart.HAND_LEFT, -0.56f, -0.44f + s * armSwing, 0.14f, shade(0.86f, r), shade(0.86f, g), shade(0.86f, b))
+        // small hunched pot-bellied torso (the big head dominates) + cream belly
+        add(BodyPart.TORSO, lean, -0.12f + torsoBob, 0.50f, r, g, b, halfW = 0.42f, halfH = 0.50f)
+        add(BodyPart.BELLY, lean + 0.02f * face, -0.20f + torsoBob, 0.34f, bellyR, bellyG, bellyB, halfW = 0.31f, halfH = 0.36f)
         // long ape arm on the near side (in front of the torso)
-        add(BodyPart.ARM_RIGHT, 0.50f, 0.04f - s * armSwing, 0.14f, shade(0.96f, r), shade(0.96f, g), shade(0.96f, b), halfW = 0.135f, halfH = 0.36f, angle = 0.18f)
-        add(BodyPart.HAND_RIGHT, 0.54f, -0.36f - s * armSwing, 0.13f, shade(0.9f, r), shade(0.9f, g), shade(0.9f, b))
+        add(BodyPart.ARM_RIGHT, 0.48f, 0.02f - s * armSwing, 0.14f, shade(0.96f, r), shade(0.96f, g), shade(0.96f, b), halfW = 0.13f, halfH = 0.42f, angle = 0.22f)
+        add(BodyPart.HAND_RIGHT, 0.56f, -0.44f - s * armSwing, 0.14f, shade(0.9f, r), shade(0.9f, g), shade(0.9f, b))
         // pointed fox-like ears (triangles) at the top of the head, tilted outward + a tiny twitch
         add(BodyPart.EAR_LEFT, -0.34f, 1.02f + headY, 0.30f, earR, earG, earB, PartShape.TRIANGLE, halfW = 0.20f, halfH = 0.42f, angle = 0.34f + earTwitch)
         add(BodyPart.EAR_RIGHT, 0.34f, 1.02f + headY, 0.30f, earR, earG, earB, PartShape.TRIANGLE, halfW = 0.20f, halfH = 0.42f, angle = -0.34f - earTwitch)
