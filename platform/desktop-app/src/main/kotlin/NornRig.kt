@@ -51,7 +51,9 @@ object NornRig {
             ?: File("assets$path").takeIf { it.exists() }?.readBytes()
             ?: File(System.getProperty("user.dir")).parentFile?.parentFile?.resolve("assets$path")?.takeIf { it.exists() }?.readBytes()
 
-    private fun ageOf(stage: String) = when (stage) { "BABY" -> 0; "CHILD" -> 1; "ADOLESCENT" -> 2; else -> 3 }
+    // BABY/CHILD use their own (crawl) art; ADOLESCENT reuses the adult art scaled down (the age-2
+    // sprites are drawn crouched/curled with no clean upright), ADULT/OLD use the adult art.
+    private fun ageOf(stage: String) = when (stage) { "BABY" -> 0; "CHILD" -> 1; else -> 3 }
     private fun targetHeight(stage: String) = when (stage) {
         "BABY" -> 1.7f; "CHILD" -> 2.1f; "ADOLESCENT" -> 2.5f; "OLD" -> 2.85f; else -> 2.95f
     }
@@ -76,8 +78,9 @@ object NornRig {
         val phase = c.ticksLived * 0.32f
         val s = sin(phase)
         val walk = action == CreatureAction.WALK
-        val hs = if (walk) 0.38f else 0f          // hip swing
-        val aw = if (walk) 0.42f else 0.05f       // shoulder swing
+        val court = action == CreatureAction.COURT
+        val hs = if (walk) 0.38f else if (court) 0.12f else 0f          // hip swing
+        val aw = if (walk) 0.42f else if (court) 0.32f else 0.05f       // shoulder swing
         fun hip(k: String) = body.pt(k)
 
         val placed = ArrayList<Pair<Part, AffineTransform>>(12)
@@ -97,8 +100,8 @@ object NornRig {
             val (t2, _, _) = place(tx1, ty1, pa[fa]!!, r0 + 0.08f)
             placed += pa[ua]!! to t1; placed += pa[fa]!! to t2
         }
-        // upper body lifts a hair on the up-beat (feet stay planted → no float)
-        val bob = -abs(s) * (if (walk) 0.4f else 0.15f)
+        // upper body lifts a hair on the up-beat (feet stay planted → no float); courting bounces
+        val bob = -abs(s) * (if (court) 0.7f else if (walk) 0.4f else 0.15f)
         // far side (L) behind the body, near side (R) in front; legs counter-swing the arms
         leg("hipL", "thighL", "shinL", "footL", +1f)
         arm("shL", "uarmL", "farmL", -1f)
@@ -106,11 +109,13 @@ object NornRig {
         placed += body to bodyT
         leg("hipR", "thighR", "shinR", "footR", -1f)
         arm("shR", "uarmR", "farmR", +1f)
-        // head rides on the body's neck point (real ATT); dips a touch when eating
+        // head rides on the body's neck point (real ATT), rotating about the neck: dips to the
+        // ground to eat, lifts a touch to court
         val head = pa["head"]!!; val hp = body.pt("head"); val neck = head.pt("neck")
-        val headDip = if (action == CreatureAction.EAT) maxOf(0f, -s) * 4f else 0f
+        val headLook = when (action) { CreatureAction.EAT -> 0.5f; CreatureAction.COURT -> -0.18f; else -> 0f }
         val headT = AffineTransform()
-        headT.translate(hp[0].toDouble(), (hp[1] + bob + headDip).toDouble())
+        headT.translate(hp[0].toDouble(), (hp[1] + bob).toDouble())
+        headT.rotate(headLook.toDouble())
         headT.translate(-neck[0].toDouble(), -neck[1].toDouble())
         placed += head to headT
 
