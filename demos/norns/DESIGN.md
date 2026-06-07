@@ -114,10 +114,10 @@ dependency-ordered (later ones read earlier ones).
 - **G11 — the GPU visual host (in progress).** Procedural body-part animation is built + verified
   (`CreatureAnimation`, posed per action — `CreatureAnimationTest`). Each activity drives a distinct
   `CreatureAction` (REST / WALK / EAT / PICK_UP / COURT): walking strides the legs, eating chews,
-  picking-up crouches to the ground, courting hops. In the live Java2D sprite rig (`NornRig`, the
-  primary host) the reliable cues are leg-swing and a **vertical squash/stretch about the planted
-  feet** (head/limb part-rotations barely read on the ripped art) — crouch to pick up, chew-squash
-  to eat, stretch on the courting hop. A GPU host
+  picking-up bends to the ground, courting hops. In the live Java2D sprite rig (`NornRig`, the
+  primary host) the cues are leg-swing, a screen-space courting **hop**, and a forward **lean**
+  about the planted feet for eat/pick-up (a rotation — no squashing), plus head/arm gestures
+  (which read subtly on the ripped art). A GPU host
   (`runNornsGl` → `NornsGlView` + `NornsGlRenderer`, reusing the engine `CircleShader`) draws the
   animated blobs in a side-scroll window. **The GL drawing is UNVERIFIED by me** (no display in
   the authoring env) — it compiles and the world/animation it drives are unit-tested, but pixels

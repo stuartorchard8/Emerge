@@ -159,18 +159,13 @@ object NornRig {
         val flip = c.facing < 0
         // an excited little hop while courting — a real screen-space lift (feet leave the ground)
         val hop = if (court) abs(sin(phase * 1.7f)) * 0.28f * sx else 0f
-        // vertical squash/stretch about the planted feet — the reliable, art-independent action cue
-        // (head/limb part rotations barely read on the ripped sprites): crouch low to pick up off the
-        // ground, a small rhythmic chew-squash to eat, a slight stretch on the courting hop.
-        val sym = when {
-            pick -> 0.8f
-            eat -> 1f - chew * 0.09f
-            court -> 1f + abs(sin(phase * 1.7f)) * 0.06f
-            else -> 1f
-        }
+        // a forward lean about the planted feet (a rotation, not a squash) reads as bending toward
+        // the ground: low to pick food up, a little to eat. Combines with the head/arm gestures above.
+        val lean = when { pick -> 0.22f; eat -> 0.10f; else -> 0f }
         val g0 = AffineTransform()
         g0.translate(px(worldX).toDouble(), (py(worldY) - hop).toDouble())
-        g0.scale((if (flip) -scale else scale).toDouble(), (scale * sym).toDouble())
+        g0.scale((if (flip) -scale else scale).toDouble(), scale.toDouble())
+        if (lean != 0f) g0.rotate(lean.toDouble())
         g0.translate(-centerX.toDouble(), -feetY.toDouble())
 
         val oldInterp = g.getRenderingHint(RenderingHints.KEY_INTERPOLATION)
