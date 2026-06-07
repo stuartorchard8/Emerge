@@ -94,8 +94,15 @@ dependency-ordered (later ones read earlier ones).
   not brain+drives+biology bolted together.
 - **G9 — implicit selection.** Replace the explicit-fitness GA with embodied selection: creatures
   that survive + mate in the world pass genes. Needs the brain gene-encoded (G5).
-- **G5 — gene-encode the brain** (LobeGene/TractGene), so brain structure is heritable like the
-  biochemistry — the precondition for G9 and for evolving behaviour, not just biochemistry.
+- **G5 — ✅ RESOLVED: brain instinct is gene-encoded.** A `BrainGene` encodes one instinct
+  dendrite (action × sense × weight); a creature builds its starting brain from its genome's
+  `BrainGene`s (`CreatureMind.build(genome, …)`), so instinct is heritable + mutable like the
+  biochemistry. Gated by `BrainGenomeTest`: a brain obeys its genes, and a population's
+  **behaviour evolves under selection** (random instincts → good decisions; mean behavioural
+  fitness 1.0 → ~1.9). *Remaining*: only dendrite **weights** are gene-encoded — lobe/tract
+  **topology** is fixed (no LobeGene/structural connectivity yet); reinforcement-learned weights
+  aren't inherited (offspring inherit instinct, then learn). Structural brain evolution is the
+  deeper, deferred piece.
 - **G10 — ✅ RESOLVED: brain now drives behaviour.** Each creature's neural-net brain
   (`CreatureMind`) perceives its drives + senses (hunger, mating urge, food/mate proximity) and
   **decides a goal verb** (seek food / seek mate / rest); reward-modulated learning (drive
@@ -178,6 +185,10 @@ build stops here because everything remaining (subsystem 8 + fidelity) needs hum
   `./gradlew :platform:desktop-app:runNorns -q --console=plain`. GPU sprite host deferred (G11).
 - **Brain wired into behaviour (G10 resolved):** creatures now act via their neural-net brain
   (`CreatureMind`), instinct-primed + reward-refined. Gated by `CreatureMindTest`.
+- **Brain instinct gene-encoded (G5 resolved):** instinct is heritable + mutable, so *behaviour
+  evolves* (not just biochemistry). Gated by `BrainGenomeTest`. 48 tests green.
+- **Next: G11 — the GPU sprite host, done collaboratively with Stu** (the one piece I can't
+  verify headlessly). Deeper-fidelity gaps remaining: G3, G6–G9, and brain topology evolution.
 
 **The "alive" chain is demonstrated end to end:** chemistry regulates → the brain learns from
 reward → the creature acts to satisfy its drives → it survives or starves in a world → a

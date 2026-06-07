@@ -35,6 +35,7 @@ class Genome(
             is EmitterGene -> emitters.add(Emitter(g.locus, g.chemical, g.gain, g.threshold))
             is ReceptorGene -> receptors.add(Receptor(g.chemical, g.locus, g.gain, g.threshold, g.nominal))
             is ReactionGene -> reactions.add(Reaction(g.reactants, g.products, g.rate))
+            is BrainGene -> Unit // brain instinct genes are read by the brain, not the biochemistry
         }
         return Biochemistry(chemicalCount, halfLives, reactions, emitters, receptors)
     }
@@ -122,6 +123,21 @@ data class HalfLifeGene(
 }
 
 /**
+ * Encodes one innate brain dendrite: the instinct [weight] from perception neuron [sense] to
+ * decision neuron [action]. A creature builds its starting brain from these genes, so instinct
+ * is heritable + mutable — behaviour can *evolve*, not just biochemistry (DESIGN.md G5). The
+ * [action]/[sense] indices are interpreted by the demo's brain layout.
+ */
+data class BrainGene(
+    val action: Int,
+    val sense: Int,
+    val weight: Float,
+    override val header: GeneHeader = GeneHeader(),
+) : Gene {
+    override fun mutate(rng: GeneRng) = copy(weight = rng.perturbInstinct(weight))
+}
+
+/**
  * Deterministic PRNG for genetics, using the same LCG as the engine's `SimBuilder.nextRandomInt`
  * so genome operations replay bit-identically across runs/platforms. Also provides the bounded
  * field-perturbation helpers mutation uses, so mutated values can never escape sane ranges.
@@ -145,15 +161,18 @@ class GeneRng(seed: Long) {
     fun perturbRate(v: Float): Float = (v + signed() * RATE_STEP).coerceIn(RATE_MIN, 1f)
     fun perturbAmount(v: Float): Float = (v + signed() * AMOUNT_STEP).coerceIn(0f, MAX_AMOUNT)
     fun perturbHalfLife(v: Float): Float = (v + signed() * HALF_LIFE_STEP).coerceAtLeast(0f)
+    fun perturbInstinct(v: Float): Float = (v + signed() * INSTINCT_STEP).coerceIn(0f, MAX_INSTINCT)
 
     companion object {
         const val MAX_GAIN = 8f
         const val MAX_AMOUNT = 4f
+        const val MAX_INSTINCT = 4f
         const val RATE_MIN = 1e-3f
         private const val GAIN_STEP = 0.25f
         private const val UNIT_STEP = 0.1f
         private const val RATE_STEP = 0.1f
         private const val AMOUNT_STEP = 0.2f
         private const val HALF_LIFE_STEP = 2f
+        private const val INSTINCT_STEP = 0.4f
     }
 }

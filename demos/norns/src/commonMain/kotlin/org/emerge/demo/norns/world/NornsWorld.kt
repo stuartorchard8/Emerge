@@ -39,7 +39,12 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     init {
         repeat(cfg.foodSeed) { trySpawnFood() }
         repeat(cfg.initialPopulation) {
-            val g = Genome(1, 1, listOf(EmitterGene(locus = 0, chemical = 0, gain = rng.nextFloat(), threshold = 0f)))
+            // genome = a metabolism trait gene + the (heritable, evolvable) brain instinct genes
+            val g = Genome(
+                1, 1,
+                listOf(EmitterGene(locus = 0, chemical = 0, gain = rng.nextFloat(), threshold = 0f)) +
+                    CreatureMind.defaultInstinctGenes(),
+            )
             spawnCreature(rng.nextInt().mod(cfg.worldWidth), rng.nextInt().mod(cfg.floors), g)
         }
     }
@@ -169,7 +174,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
                 id = nextId++,
                 x = x.coerceIn(0, cfg.worldWidth - 1), floor = floor.coerceIn(0, cfg.floors - 1),
                 genome = genome, biology = biology, metabolism = cfg.metabolismOf(genome),
-                brain = CreatureMind.build(cfg.brainLearnRate),
+                brain = CreatureMind.build(genome, cfg.brainLearnRate),
                 loci = FloatArray(4),
             ),
         )
@@ -316,7 +321,7 @@ class NornsConfig(
     val maxMetabolism: Float = 0.016f,
 ) {
     fun metabolismOf(genome: Genome): Float {
-        val gain = (genome.genes.firstOrNull() as? EmitterGene)?.gain?.coerceIn(0f, 1f) ?: 0.5f
+        val gain = genome.genes.filterIsInstance<EmitterGene>().firstOrNull()?.gain?.coerceIn(0f, 1f) ?: 0.5f
         return minMetabolism + gain * (maxMetabolism - minMetabolism)
     }
 }
