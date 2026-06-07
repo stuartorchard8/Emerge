@@ -191,9 +191,12 @@ build stops here because everything remaining (subsystem 8 + fidelity) needs hum
   (`CreatureMind`), instinct-primed + reward-refined. Gated by `CreatureMindTest`.
 - **Brain instinct gene-encoded (G5 resolved):** instinct is heritable + mutable, so *behaviour
   evolves* (not just biochemistry). Gated by `BrainGenomeTest`. 48 tests green.
-- **G11 in progress:** procedural body-part animation built + verified (`CreatureAnimation`);
-  GPU host (`runNornsGl`) drawing animated blobs reuses the engine `CircleShader` — compiles, but
-  the GL is unverified by me (no display) and needs Stu's run to confirm/tune pixels. 54 tests green.
+- **G11 in progress:** procedural body-part animation (`CreatureAnimation`) + GPU host (`runNornsGl`)
+  drawing animated blobs (engine `CircleShader`). World is now **continuous-position** (smooth
+  glide, no grid hops) with **durative animated actions** (a state machine: move → pick up → carry
+  → eat, and pursue → mutual-court → breed, each taking ticks) and **food-holding** (eat only while
+  carrying). Colony retuned + viable; behaviour is legible (action dots + the panel's `doing:`
+  line). GL still unverified by me (no display) — needs Stu's run. 54 tests green.
 - Deeper-fidelity gaps remaining: G3, G6–G9, brain topology evolution, and the GPU look/interaction.
 
 **The "alive" chain is demonstrated end to end:** chemistry regulates → the brain learns from

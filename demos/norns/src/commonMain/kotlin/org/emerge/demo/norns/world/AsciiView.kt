@@ -1,6 +1,7 @@
 package org.emerge.demo.norns.world
 
 import org.emerge.demo.norns.biology.LifeStage
+import kotlin.math.roundToInt
 
 /**
  * Renders a [NornsWorld] as a side-on text frame: stacked [floors] (Creatures' multi-floor
@@ -19,9 +20,11 @@ object AsciiView {
 
         // Map (floor,x) -> creature in the window; the followed creature wins its cell.
         val byCell = HashMap<Int, WorldCreature>()
-        for (c in world.creatures) if (c.x in camX until camX + vw) {
-            val key = c.floor * cfg.worldWidth + c.x
-            if (byCell[key] == null || c.id == followId) byCell[key] = c
+        for (c in world.creatures) {
+            val cx = c.x.roundToInt()
+            if (cx in camX until camX + vw && (byCell[c.floor * cfg.worldWidth + cx] == null || c.id == followId)) {
+                byCell[c.floor * cfg.worldWidth + cx] = c
+            }
         }
 
         val sb = StringBuilder()
@@ -92,23 +95,33 @@ object AsciiView {
             append("  stage="); append(c.biology.lifeStage.name.lowercase())
             append("  age="); append(c.biology.age)
             append("  floor="); append(c.floor)
-            append("  x="); append(c.x)
+            append("  x="); append(c.x.roundToInt())
             append("  facing="); append(if (c.facing >= 0) "right" else "left")
             if (c.held) append("  [HELD]")
+            if (c.carryingFood) append("  [carrying food]")
             append('\n')
             append("  hunger "); append(bar(c.hunger))
             append("  urge "); append(bar(c.matingUrge))
             append("  health "); append(bar(c.biology.organHealth[0]))
             append("  metab="); append(fmt4(c.metabolism))
             append('\n')
-            append("  brain decided: "); append(goal(c.lastAction))
+            append("  doing: "); append(doing(c.activity)); append("  (goal: "); append(goal(c.goalAction)); append(')')
             append('\n')
         }
     }
 
+    private fun doing(a: ActivityType): String = when (a) {
+        ActivityType.IDLE -> "deciding"
+        ActivityType.MOVING -> "moving"
+        ActivityType.PICKING_UP -> "picking up food"
+        ActivityType.EATING -> "eating"
+        ActivityType.COURTING -> "courting"
+        ActivityType.RESTING -> "resting"
+    }
+
     private fun goal(action: Int): String = when (action) {
-        CreatureMind.A_SEEK_FOOD -> "seek food"
-        CreatureMind.A_SEEK_MATE -> "seek a mate"
+        CreatureMind.A_SEEK_FOOD -> "food"
+        CreatureMind.A_SEEK_MATE -> "mate"
         else -> "rest"
     }
 

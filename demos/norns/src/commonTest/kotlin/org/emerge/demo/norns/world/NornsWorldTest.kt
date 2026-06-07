@@ -29,7 +29,7 @@ class NornsWorldTest {
         repeat(1500) {
             w.step()
             for (c in w.creatures) {
-                assertTrue(c.x in 0 until w.cfg.worldWidth, "x in bounds: ${c.x}")
+                assertTrue(c.x >= 0f && c.x < w.cfg.worldWidth, "x in bounds: ${c.x}")
                 assertTrue(c.floor in 0 until w.cfg.floors, "floor in bounds: ${c.floor}")
             }
         }
@@ -46,7 +46,7 @@ class NornsWorldTest {
         assertEquals(a.meanMetabolism().toRawBits(), b.meanMetabolism().toRawBits())
         for (i in a.creatures.indices) {
             assertEquals(a.creatures[i].id, b.creatures[i].id, "creature $i id")
-            assertEquals(a.creatures[i].x, b.creatures[i].x, "creature $i x")
+            assertEquals(a.creatures[i].x.toRawBits(), b.creatures[i].x.toRawBits(), "creature $i x")
             assertEquals(a.creatures[i].floor, b.creatures[i].floor, "creature $i floor")
         }
     }
@@ -58,10 +58,9 @@ class NornsWorldTest {
         repeat(50) { w.step() }
         val victim = w.creatures.first()
 
-        // drop food
-        val foodBefore = w.food.size
-        NornsCommands.apply(w, view, "food ${victim.floor} ${victim.x}")
-        assertTrue(w.food.size > foodBefore, "food command should add food")
+        // drop food at a specific spot
+        NornsCommands.apply(w, view, "food 2 119")
+        assertTrue(w.food.contains(w.cell(2, 119)), "food command should place food")
 
         // hand-feed lowers hunger
         victim.hunger = 0.9f
@@ -72,7 +71,7 @@ class NornsWorldTest {
         NornsCommands.apply(w, view, "pick ${victim.id}")
         assertTrue(victim.held)
         NornsCommands.apply(w, view, "place ${victim.id} 1 5")
-        assertEquals(1, victim.floor); assertEquals(5, victim.x); assertTrue(!victim.held)
+        assertEquals(1, victim.floor); assertEquals(5f, victim.x); assertTrue(!victim.held)
 
         // playback controls
         NornsCommands.apply(w, view, "follow ${victim.id}")

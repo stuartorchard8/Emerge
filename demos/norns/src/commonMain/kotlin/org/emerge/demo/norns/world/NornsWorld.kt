@@ -8,26 +8,26 @@ import org.emerge.demo.norns.gene.EmitterGene
 import org.emerge.demo.norns.gene.GeneRng
 import org.emerge.demo.norns.gene.Genome
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
- * A **side-scrolling** artificial-life world, in the spirit of Creatures' multi-floor house:
- * creatures live on horizontal [floors] connected by lifts, walk left/right foraging for food,
- * eat, age through [LifeStage]s (the verified [Biology]), starve or die of old age, and breed
- * (genome [crossover][Genome] + mutation) — so a colony lives, turns over, and **evolves** a
- * heritable metabolism trait under implicit selection. The world is wider than the screen; a
- * camera scrolls.
+ * A **side-scrolling** artificial-life world (Creatures' multi-floor house): creatures glide along
+ * continuous-position floors connected by lifts, age through [LifeStage]s (the verified
+ * [Biology]), and breed (genome [crossover][Genome] + mutation) — so the colony lives, turns
+ * over, and **evolves** heritable traits.
  *
- * Player [interaction] is first-class: drop food, hand-feed, or pick up and place a creature.
+ * Behaviour is **durative**: the brain ([CreatureMind]) chooses a goal when idle, and the creature
+ * carries it out as a timed [ActivityType] sequence with a real cost — e.g. *move to food → pick
+ * it up → carry it → eat it*, each taking ticks and driving an animation. Movement is continuous
+ * (sub-cell glide), not grid hops. The brain learns on goal completion from the net drive
+ * reduction the goal achieved.
  *
- * Honest scope (DESIGN.md G10): foraging is hardwired (seek nearest food, ride lifts between
- * floors), NOT driven by the learned brain — wiring the neural-net brain into spatial behaviour
- * is a design call for the visual/tuning pass. This view makes the population dynamics visible.
- * Deterministic given the seed.
+ * Player [interaction]: drop food, hand-feed, pick up & place a creature. Deterministic per seed.
  */
 class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     private val rng = GeneRng(seed)
 
-    /** Food positions encoded as `floor * worldWidth + x`. */
+    /** Food positions encoded as `floor * worldWidth + x` (food sits on integer cells). */
     val food = HashSet<Int>()
     val creatures = ArrayList<WorldCreature>()
 
@@ -39,13 +39,12 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     init {
         repeat(cfg.foodSeed) { trySpawnFood() }
         repeat(cfg.initialPopulation) {
-            // genome = a metabolism trait gene + the (heritable, evolvable) brain instinct genes
             val g = Genome(
                 1, 1,
                 listOf(EmitterGene(locus = 0, chemical = 0, gain = rng.nextFloat(), threshold = 0f)) +
                     CreatureMind.defaultInstinctGenes(),
             )
-            spawnCreature(rng.nextInt().mod(cfg.worldWidth), rng.nextInt().mod(cfg.floors), g)
+            spawnCreature(rng.nextInt().mod(cfg.worldWidth).toFloat(), rng.nextInt().mod(cfg.floors), g)
         }
     }
 
@@ -54,115 +53,211 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     fun foodFloor(cell: Int) = cell / cfg.worldWidth
     fun foodX(cell: Int) = cell % cfg.worldWidth
     fun creatureById(id: Int): WorldCreature? = creatures.firstOrNull { it.id == id }
+    fun isLiftColumn(x: Int): Boolean = x % cfg.liftSpacing == 0
 
     fun step() {
         ticks++
         repeat(cfg.foodSpawnPerTick) { if (food.size < cfg.maxFood) trySpawnFood() }
-        // Two phases so a creature's reward reflects mating (resolved in reproduce, after movement)
-        // as well as the eating it did this tick.
-        for (c in creatures) if (c.alive && !c.held) decideAndAct(c)
-        reproduce()
-        for (c in creatures) if (c.alive && !c.held) learnAndAge(c)
+        // Iterate a snapshot: courting can spawn a newborn into `creatures` mid-step (it's stepped
+        // next tick), which would otherwise be a concurrent modification.
+        for (c in creatures.toList()) if (c.alive && !c.held) stepCreature(c)
         val before = creatures.size
         creatures.removeAll { !it.alive }
         deaths += before - creatures.size
     }
 
-    /** Phase 1: drives rise, the brain perceives + chooses a goal verb, the creature acts on it. */
-    private fun decideAndAct(c: WorldCreature) {
+    private fun stepCreature(c: WorldCreature) {
         c.hunger = (c.hunger + c.metabolism).coerceAtMost(1f)
         if (c.biology.lifeStage.ordinal >= cfg.fertileFrom.ordinal) {
             c.matingUrge = (c.matingUrge + cfg.matingRate).coerceAtMost(1f)
         }
 
+        when (c.activity) {
+            ActivityType.IDLE -> decide(c)
+            ActivityType.MOVING -> {
+                // Pursue a mate (it moves too); abandon if it's no longer an eligible partner.
+                val partner = if (c.goalAction == CreatureMind.A_SEEK_MATE) creatureById(c.partnerId) else null
+                if (c.goalAction == CreatureMind.A_SEEK_MATE &&
+                    (partner == null || !partner.alive || partner.held || partner.reproCooldown > 0 || !partner.isFertile(cfg))
+                ) {
+                    completeGoal(c)
+                } else {
+                    if (partner != null) { c.targetX = partner.x; c.targetFloor = partner.floor }
+                    if (moveToward(c, c.targetX, c.targetFloor)) onArrive(c)
+                }
+            }
+            ActivityType.PICKING_UP -> if (--c.activityTimer <= 0) finishPickup(c)
+            ActivityType.EATING -> if (--c.activityTimer <= 0) finishEating(c)
+            ActivityType.COURTING -> if (--c.activityTimer <= 0) finishCourting(c)
+            ActivityType.RESTING -> if (--c.activityTimer <= 0) completeGoal(c)
+        }
+
+        // Aging + death happen every tick regardless of activity.
+        val injury = if (c.hunger > cfg.starvationThreshold) (c.hunger - cfg.starvationThreshold) * cfg.starvationDamage else 0f
+        c.loci[c.biology.cfg.injuryLocus] = injury
+        c.loci[c.biology.cfg.repairLocus] = cfg.baseRepair
+        c.biology.tick(c.loci)
+        c.ticksLived++
+        if (c.reproCooldown > 0) c.reproCooldown--
+    }
+
+    // ── decision (brain picks a goal; snapshot for learning at completion) ───────
+    private fun decide(c: WorldCreature) {
         val foodCell = nearestFood(c)
         val mate = nearestMate(c)
 
         val percept = FloatArray(CreatureMind.PERCEPTION)
         percept[CreatureMind.P_HUNGER] = c.hunger
         percept[CreatureMind.P_URGE] = c.matingUrge
-        percept[CreatureMind.P_FOOD] = proximity(if (foodCell != null) foodCost(c, foodFloor(foodCell), foodX(foodCell)) else -1)
-        percept[CreatureMind.P_MATE] = proximity(if (mate != null) foodCost(c, mate.floor, mate.x) else -1)
+        percept[CreatureMind.P_FOOD] = proximity(if (foodCell != null) travelCost(c, foodFloor(foodCell), foodX(foodCell).toFloat()) else -1f)
+        percept[CreatureMind.P_MATE] = proximity(if (mate != null) travelCost(c, mate.floor, mate.x) else -1f)
         percept[CreatureMind.P_BIAS] = 1f
         c.brain.lobes[0].set(percept)
-
-        c.lastPrevDiscomfort = c.hunger + c.matingUrge
         c.brain.propagate()
+
         val greedy = c.brain.lobes[1].argmax()
-        c.lastAction =
+        c.goalAction =
             if (cfg.brainExplore > 0f && rng.nextFloat() < cfg.brainExplore) rng.nextInt().mod(CreatureMind.ACTIONS)
             else greedy
+        percept.copyInto(c.decisionPerception)
+        c.decisionDiscomfort = c.hunger + c.matingUrge
 
-        when (c.lastAction) {
-            CreatureMind.A_SEEK_FOOD -> if (foodCell != null) walkToward(c, foodFloor(foodCell), foodX(foodCell)) else wander(c)
-            CreatureMind.A_SEEK_MATE -> if (mate != null) walkToward(c, mate.floor, mate.x) else wander(c)
-            else -> wander(c)
+        when (c.goalAction) {
+            CreatureMind.A_SEEK_FOOD ->
+                if (c.carryingFood) startEating(c)
+                else if (foodCell != null) startMoving(c, foodX(foodCell).toFloat(), foodFloor(foodCell), -1)
+                else startResting(c, cfg.restTicks)
+            CreatureMind.A_SEEK_MATE ->
+                if (mate != null) startMoving(c, mate.x, mate.floor, mate.id)
+                else startResting(c, cfg.restTicks)
+            else -> startResting(c, cfg.restTicks)
         }
-        c.ateThisTick = food.remove(cell(c.floor, c.x))
-        if (c.ateThisTick) c.hunger = (c.hunger - cfg.eatAmount).coerceAtLeast(0f)
     }
 
-    /** Phase 3: reinforce the chosen action by the discomfort it relieved, then age + apply death. */
-    private fun learnAndAge(c: WorldCreature) {
-        val reward = c.lastPrevDiscomfort - (c.hunger + c.matingUrge)
-        c.brain.lobes[1].set(oneHot(c.lastAction, CreatureMind.ACTIONS))
+    private fun onArrive(c: WorldCreature) = when (c.goalAction) {
+        CreatureMind.A_SEEK_FOOD -> { c.activity = ActivityType.PICKING_UP; c.activityTimer = cfg.pickupTicks }
+        CreatureMind.A_SEEK_MATE -> {
+            val partner = creatureById(c.partnerId)
+            if (partner != null && canCourt(c, partner)) {
+                // Lock BOTH into courting so the pair stays put for the courtship, then breeds.
+                beginCourting(c, partner.id)
+                beginCourting(partner, c.id)
+            } else completeGoal(c)
+        }
+        else -> completeGoal(c)
+    }
+
+    private fun beginCourting(c: WorldCreature, partnerId: Int) {
+        c.activity = ActivityType.COURTING
+        c.activityTimer = cfg.courtTicks
+        c.partnerId = partnerId
+        c.goalAction = CreatureMind.A_SEEK_MATE
+        c.decisionDiscomfort = c.hunger + c.matingUrge // baseline for the courting reward
+    }
+
+    private fun finishPickup(c: WorldCreature) {
+        val here = cell(c.floor, c.x.roundToInt().coerceIn(0, cfg.worldWidth - 1))
+        if (food.remove(here)) { c.carryingFood = true; startEating(c) } else completeGoal(c) // food gone
+    }
+
+    private fun finishEating(c: WorldCreature) {
+        if (c.carryingFood) { c.hunger = (c.hunger - cfg.eatAmount).coerceAtLeast(0f); c.carryingFood = false }
+        completeGoal(c)
+    }
+
+    private fun finishCourting(c: WorldCreature) {
+        val partner = creatureById(c.partnerId)
+        if (partner != null && canCourt(c, partner) && creatures.size < cfg.maxPopulation) {
+            val child = c.genome.reproduceWith(partner.genome, cfg.mutationRate, rng)
+            spawnCreature(c.x, c.floor, child)
+            partner.reproCooldown = cfg.reproduceCooldown
+            partner.matingUrge = 0f
+            births++
+        }
+        c.reproCooldown = cfg.reproduceCooldown
+        c.matingUrge = 0f
+        completeGoal(c)
+    }
+
+    /** Ends the current goal: reinforce it by the net drive reduction it achieved, then go idle. */
+    private fun completeGoal(c: WorldCreature) {
+        val reward = c.decisionDiscomfort - (c.hunger + c.matingUrge)
+        c.brain.lobes[0].set(c.decisionPerception)
+        c.brain.lobes[1].set(oneHot(c.goalAction, CreatureMind.ACTIONS))
         c.brain.learn(reward)
-
-        val injury = if (c.hunger > cfg.starvationThreshold) (c.hunger - cfg.starvationThreshold) * cfg.starvationDamage else 0f
-        c.loci[c.biology.cfg.injuryLocus] = injury
-        c.loci[c.biology.cfg.repairLocus] = cfg.baseRepair
-        c.biology.tick(c.loci)
-
-        c.ticksLived++
-        if (c.reproCooldown > 0) c.reproCooldown--
+        c.activity = ActivityType.IDLE
     }
 
-    private fun proximity(cost: Int): Float =
-        if (cost < 0) 0f else (1f - cost.toFloat() / cfg.senseRange).coerceIn(0f, 1f)
-
-    private fun wander(c: WorldCreature) {
-        val dir = rng.nextInt().mod(3) - 1
-        if (dir != 0) { c.x = (c.x + dir).coerceIn(0, cfg.worldWidth - 1); c.facing = dir }
+    private fun startMoving(c: WorldCreature, targetX: Float, targetFloor: Int, partnerId: Int) {
+        c.activity = ActivityType.MOVING; c.targetX = targetX; c.targetFloor = targetFloor; c.partnerId = partnerId
     }
+    private fun startEating(c: WorldCreature) { c.activity = ActivityType.EATING; c.activityTimer = cfg.eatTicks }
+    private fun startResting(c: WorldCreature, ticks: Int) { c.activity = ActivityType.RESTING; c.activityTimer = ticks }
+
+    private fun canCourt(c: WorldCreature, p: WorldCreature): Boolean =
+        p.alive && !p.held && p.isFertile(cfg) && p.reproCooldown <= 0 &&
+            p.floor == c.floor && abs(p.x - c.x) <= cfg.mateRange
+
+    // ── continuous movement ──────────────────────────────────────────────────────
+    /** Glide one step toward (targetX, targetFloor); returns true once arrived. */
+    private fun moveToward(c: WorldCreature, targetX: Float, targetFloor: Int): Boolean {
+        if (c.floor != targetFloor) {
+            val lift = nearestLiftF(c.x)
+            if (abs(c.x - lift) > cfg.moveSpeed) glide(c, lift)
+            else { c.x = lift; c.floor += if (targetFloor > c.floor) 1 else -1 } // ride the lift one floor
+            return false
+        }
+        if (abs(c.x - targetX) > cfg.arriveEps) { glide(c, targetX); return false }
+        return true
+    }
+
+    private fun glide(c: WorldCreature, targetX: Float) {
+        val d = targetX - c.x
+        val step = d.coerceIn(-cfg.moveSpeed, cfg.moveSpeed)
+        c.x = (c.x + step).coerceIn(0f, (cfg.worldWidth - 1).toFloat())
+        c.facing = if (d >= 0f) 1 else -1
+    }
+
+    private fun nearestLiftF(x: Float): Float {
+        val snapped = (((x / cfg.liftSpacing).roundToInt()) * cfg.liftSpacing)
+        return snapped.toFloat().coerceIn(0f, ((cfg.worldWidth - 1) / cfg.liftSpacing * cfg.liftSpacing).toFloat())
+    }
+
+    private fun proximity(cost: Float): Float =
+        if (cost < 0f) 0f else (1f - cost / cfg.senseRange).coerceIn(0f, 1f)
 
     private fun oneHot(k: Int, n: Int) = FloatArray(n) { if (it == k) 1f else 0f }
 
-    /** Walk one step toward food on (targetFloor, targetX): change floor at a lift, else walk x. */
-    private fun walkToward(c: WorldCreature, targetFloor: Int, targetX: Int) {
-        if (targetFloor != c.floor) {
-            val lift = nearestLift(c.x)
-            if (c.x != lift) { val d = sign(lift - c.x); c.x += d; c.facing = d }
-            else c.floor += sign(targetFloor - c.floor) // ride the lift one floor
-        } else if (c.x != targetX) {
-            val d = sign(targetX - c.x); c.x += d; c.facing = d
+    private fun nearestMate(self: WorldCreature): WorldCreature? {
+        var best: WorldCreature? = null
+        var bestCost = Float.MAX_VALUE
+        for (o in creatures) {
+            if (o.id == self.id || !o.alive || o.held || o.reproCooldown > 0 || !o.isFertile(cfg)) continue
+            val cost = travelCost(self, o.floor, o.x)
+            if (cost < bestCost || (cost == bestCost && (best == null || o.id < best!!.id))) { bestCost = cost; best = o }
         }
+        return best
     }
 
-    private fun reproduce() {
-        if (creatures.size >= cfg.maxPopulation) return
-        val fertile = creatures.filter { it.alive && !it.held && it.isFertile(cfg) }
-        for (i in fertile.indices) {
-            val a = fertile[i]
-            if (a.reproCooldown > 0) continue
-            for (j in i + 1 until fertile.size) {
-                val b = fertile[j]
-                if (b.reproCooldown > 0) continue
-                if (a.floor == b.floor && abs(a.x - b.x) <= cfg.mateRange) {
-                    val child = a.genome.reproduceWith(b.genome, cfg.mutationRate, rng)
-                    spawnCreature(a.x, a.floor, child)
-                    a.reproCooldown = cfg.reproduceCooldown
-                    b.reproCooldown = cfg.reproduceCooldown
-                    a.matingUrge = 0f // satisfied — the drop rewards a SEEK_MATE decision in phase 3
-                    b.matingUrge = 0f
-                    births++
-                    if (creatures.size >= cfg.maxPopulation) return
-                    break
-                }
-            }
+    private fun nearestFood(c: WorldCreature): Int? {
+        var best: Int? = null
+        var bestCost = Float.MAX_VALUE
+        for (cellId in food) {
+            val cost = travelCost(c, foodFloor(cellId), foodX(cellId).toFloat())
+            if (cost < bestCost || (cost == bestCost && (best == null || cellId < best!!))) { bestCost = cost; best = cellId }
         }
+        return best
     }
 
-    private fun spawnCreature(x: Int, floor: Int, genome: Genome) {
+    private fun travelCost(c: WorldCreature, floor: Int, x: Float): Float =
+        if (floor == c.floor) abs(c.x - x)
+        else { val lift = nearestLiftF(c.x); abs(c.x - lift) + abs(floor - c.floor) * cfg.liftSpacing + abs(lift - x) }
+
+    private fun trySpawnFood() {
+        food.add(cell(rng.nextInt().mod(cfg.floors), rng.nextInt().mod(cfg.worldWidth)))
+    }
+
+    private fun spawnCreature(x: Float, floor: Int, genome: Genome) {
         val biology = Biology(
             BiologyConfig(
                 stageStartAge = cfg.stageStartAge, maxAge = cfg.maxAge,
@@ -173,7 +268,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
         creatures.add(
             WorldCreature(
                 id = nextId++,
-                x = x.coerceIn(0, cfg.worldWidth - 1), floor = floor.coerceIn(0, cfg.floors - 1),
+                x = x.coerceIn(0f, (cfg.worldWidth - 1).toFloat()), floor = floor.coerceIn(0, cfg.floors - 1),
                 genome = genome, biology = biology, metabolism = cfg.metabolismOf(genome),
                 brain = CreatureMind.build(genome, cfg.brainLearnRate),
                 loci = FloatArray(4),
@@ -181,71 +276,24 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
         )
     }
 
-    /** Nearest other fertile, ready creature — the mate a fertile creature walks toward. */
-    private fun nearestMate(self: WorldCreature): WorldCreature? {
-        var best: WorldCreature? = null
-        var bestCost = Int.MAX_VALUE
-        for (o in creatures) {
-            if (o.id == self.id || !o.alive || o.held || o.reproCooldown > 0 || !o.isFertile(cfg)) continue
-            val cost = foodCost(self, o.floor, o.x)
-            if (cost < bestCost || (cost == bestCost && (best == null || o.id < best!!.id))) {
-                bestCost = cost; best = o
-            }
-        }
-        return best
-    }
-
-    private fun nearestFood(c: WorldCreature): Int? {
-        var best: Int? = null
-        var bestCost = Int.MAX_VALUE
-        for (cellId in food) {
-            val cost = foodCost(c, foodFloor(cellId), foodX(cellId))
-            if (cost < bestCost || (cost == bestCost && (best == null || cellId < best!!))) {
-                bestCost = cost; best = cellId
-            }
-        }
-        return best
-    }
-
-    /** Travel cost to food: same floor → horizontal distance; else via the nearest lift. */
-    private fun foodCost(c: WorldCreature, floor: Int, x: Int): Int =
-        if (floor == c.floor) abs(c.x - x)
-        else { val lift = nearestLift(c.x); abs(c.x - lift) + abs(floor - c.floor) * cfg.liftSpacing + abs(lift - x) }
-
-    private fun nearestLift(x: Int): Int {
-        val snapped = ((x + cfg.liftSpacing / 2) / cfg.liftSpacing) * cfg.liftSpacing
-        return snapped.coerceIn(0, (cfg.worldWidth - 1) / cfg.liftSpacing * cfg.liftSpacing)
-    }
-
-    fun isLiftColumn(x: Int): Boolean = x % cfg.liftSpacing == 0
-
-    private fun trySpawnFood() {
-        food.add(cell(rng.nextInt().mod(cfg.floors), rng.nextInt().mod(cfg.worldWidth)))
-    }
-
-    private fun sign(d: Int) = if (d > 0) 1 else if (d < 0) -1 else 0
-
     // ── player interaction ───────────────────────────────────────────────────────
 
-    /** Drop food at a spot (clamped into the world). */
     fun dropFood(floor: Int, x: Int) {
         food.add(cell(floor.coerceIn(0, cfg.floors - 1), x.coerceIn(0, cfg.worldWidth - 1)))
     }
 
-    /** Hand-feed a creature: relieve its hunger directly. */
     fun feed(id: Int) {
         creatureById(id)?.let { it.hunger = (it.hunger - cfg.eatAmount).coerceAtLeast(0f) }
     }
 
-    /** Pick a creature up (it pauses, foraging suspended) so it can be placed elsewhere. */
     fun pickUp(id: Int) { creatureById(id)?.held = true }
 
-    /** Place a held (or any) creature at a new spot and release it. */
     fun place(id: Int, floor: Int, x: Int) {
         creatureById(id)?.let {
             it.floor = floor.coerceIn(0, cfg.floors - 1)
-            it.x = x.coerceIn(0, cfg.worldWidth - 1)
+            it.x = x.coerceIn(0, cfg.worldWidth - 1).toFloat()
             it.held = false
+            it.activity = ActivityType.IDLE // re-decide from the new spot
         }
     }
 
@@ -262,10 +310,14 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     }
 }
 
-/** One creature in the side-scroll world: position (x, [floor]), heritable genome, biology, hunger. */
+/** A creature's current durative activity. */
+enum class ActivityType { IDLE, MOVING, PICKING_UP, EATING, COURTING, RESTING }
+
+/** One creature: continuous position (x, [floor]), heritable genome, biology, drives, and the
+ *  durative activity it's carrying out. */
 class WorldCreature(
     val id: Int,
-    var x: Int,
+    var x: Float,
     var floor: Int,
     val genome: Genome,
     val biology: Biology,
@@ -278,12 +330,20 @@ class WorldCreature(
     var ticksLived: Int = 0
     var reproCooldown: Int = 0
     var facing: Int = 1
-    var held: Boolean = false // picked up by the player
-    var ateThisTick: Boolean = false // for the eating animation
+    var held: Boolean = false        // picked up by the player (frozen)
+    var carryingFood: Boolean = false // holding a food item to eat
 
-    // scratch for the two-phase brain tick (decide/act → reproduce → learn)
-    var lastAction: Int = CreatureMind.A_REST
-    var lastPrevDiscomfort: Float = 0f
+    // durative activity state
+    var activity: ActivityType = ActivityType.IDLE
+    var activityTimer: Int = 0
+    var targetX: Float = 0f
+    var targetFloor: Int = 0
+    var partnerId: Int = -1
+
+    // brain decision snapshot (for learning on goal completion)
+    var goalAction: Int = CreatureMind.A_REST
+    var decisionDiscomfort: Float = 0f
+    val decisionPerception: FloatArray = FloatArray(CreatureMind.PERCEPTION)
 
     val alive: Boolean get() = biology.alive
 
@@ -302,25 +362,32 @@ class NornsConfig(
     val maxPopulation: Int = 70,
     val foodSeed: Int = 60,
     val foodSpawnPerTick: Int = 3,
-    val maxFood: Int = 120,
-    val eatAmount: Float = 0.6f,
+    val maxFood: Int = 95,
+    val eatAmount: Float = 0.85f,
     val starvationThreshold: Float = 0.85f,
-    val starvationDamage: Float = 0.12f,
+    val starvationDamage: Float = 0.10f,
     val baseRepair: Float = 0.05f,
-    val maxAge: Int = 900,
-    val stageStartAge: IntArray = intArrayOf(0, 40, 110, 220, 330, 460, 680, 820),
+    val maxAge: Int = 1300,
+    val stageStartAge: IntArray = intArrayOf(0, 30, 90, 150, 280, 430, 900, 1100),
     val fertileFrom: LifeStage = LifeStage.ADOLESCENT,
-    val fertileTo: LifeStage = LifeStage.ADULT,
+    val fertileTo: LifeStage = LifeStage.OLD,
     val fertileMaxHunger: Float = 0.6f,
-    val reproduceCooldown: Int = 90,
-    val mateRange: Int = 2,
-    val senseRange: Int = 30,
-    val matingRate: Float = 0.01f,
+    val reproduceCooldown: Int = 70,
+    val mateRange: Float = 1.5f,
+    val senseRange: Float = 30f,
+    val matingRate: Float = 0.015f,
     val brainLearnRate: Float = 0.05f,
     val brainExplore: Float = 0.05f,
     val mutationRate: Float = 0.6f,
-    val minMetabolism: Float = 0.004f,
-    val maxMetabolism: Float = 0.016f,
+    val minMetabolism: Float = 0.003f,
+    val maxMetabolism: Float = 0.012f,
+    // durative action costs
+    val moveSpeed: Float = 0.35f,
+    val arriveEps: Float = 0.5f,
+    val pickupTicks: Int = 5,
+    val eatTicks: Int = 14,
+    val courtTicks: Int = 14,
+    val restTicks: Int = 14,
 ) {
     fun metabolismOf(genome: Genome): Float {
         val gain = genome.genes.filterIsInstance<EmitterGene>().firstOrNull()?.gain?.coerceIn(0f, 1f) ?: 0.5f

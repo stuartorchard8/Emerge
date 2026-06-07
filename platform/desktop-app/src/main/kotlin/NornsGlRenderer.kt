@@ -2,7 +2,7 @@ package org.emerge.desktop
 
 import org.emerge.demo.norns.anim.CreatureAnimation
 import org.emerge.demo.norns.anim.CreatureAction
-import org.emerge.demo.norns.world.CreatureMind
+import org.emerge.demo.norns.world.ActivityType
 import org.emerge.demo.norns.world.NornsWorld
 import org.emerge.demo.norns.world.WorldCreature
 import org.emerge.render.torus.GPU
@@ -81,9 +81,8 @@ class NornsGlRenderer(private val cfg: NornsRenderConfig = NornsRenderConfig()) 
         }
         // creatures as posed blob clusters
         for (c in world.creatures) {
-            val cx = c.x.toFloat()
-            if (cx < left - 2 || cx > right + 2) continue
-            drawCreature(c, cx, floorY(c.floor), c.id == followId)
+            if (c.x < left - 2 || c.x > right + 2) continue
+            drawCreature(c, c.x, floorY(c.floor), c.id == followId)
         }
 
         if (count > 0) {
@@ -92,11 +91,11 @@ class NornsGlRenderer(private val cfg: NornsRenderConfig = NornsRenderConfig()) 
     }
 
     private fun drawCreature(c: WorldCreature, worldX: Float, worldY: Float, followed: Boolean) {
-        val action = when {
-            c.ateThisTick -> CreatureAction.EAT
-            c.lastAction == CreatureMind.A_SEEK_MATE -> CreatureAction.COURT
-            c.lastAction == CreatureMind.A_REST -> CreatureAction.REST
-            else -> CreatureAction.WALK
+        val action = when (c.activity) {
+            ActivityType.EATING, ActivityType.PICKING_UP -> CreatureAction.EAT
+            ActivityType.COURTING -> CreatureAction.COURT
+            ActivityType.RESTING, ActivityType.IDLE -> CreatureAction.REST
+            ActivityType.MOVING -> CreatureAction.WALK
         }
         val phase = c.ticksLived * 0.35f
         // body colour from the metabolism trait: efficient = green, inefficient = red (watch evolution).
@@ -112,6 +111,11 @@ class NornsGlRenderer(private val cfg: NornsRenderConfig = NornsRenderConfig()) 
                 p.radius * cfg.creatureScale, p.radius * cfg.creatureScale,
                 p.r, p.g, p.b, 1f,
             )
+        }
+
+        // food being carried: a small yellow blob in front of the creature
+        if (c.carryingFood) {
+            addBlob(worldX + c.facing * 0.5f * cfg.creatureScale, worldY + 0.05f * cfg.creatureScale, 0.22f, 0.22f, 0.95f, 0.85f, 0.25f, 1f)
         }
 
         // No-text state cue: a coloured dot above the head shows what the creature is doing.

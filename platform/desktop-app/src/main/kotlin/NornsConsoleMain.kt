@@ -7,6 +7,7 @@ import org.emerge.demo.norns.world.NornsWorld
 import org.emerge.demo.norns.world.ViewState
 import org.emerge.demo.norns.world.WorldCreature
 import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.math.roundToInt
 
 /**
  * The Norns render host: a live, **interactive, side-scrolling** ASCII view of the artificial-life
@@ -42,7 +43,7 @@ fun main(args: Array<String>) {
 
         val follow = resolveFollow(world, view)
         val vw = minOf(world.cfg.worldWidth, AsciiView.VIEW_WIDTH)
-        val cameraX = (follow?.x ?: 0) - vw / 2
+        val cameraX = (follow?.x?.roundToInt() ?: 0) - vw / 2
 
         print(clearScreen)
         print(AsciiView.render(world, cameraX, view.followId))
