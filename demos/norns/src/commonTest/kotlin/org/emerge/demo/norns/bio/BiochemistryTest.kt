@@ -112,6 +112,33 @@ class BiochemistryTest {
     }
 
     @Test
+    fun digitalEmitterDosesAFixedAmountAboveThreshold() {
+        val bio = Biochemistry(
+            chemicalCount = 1, halfLives = floatArrayOf(0f),
+            emitters = listOf(Emitter(locus = 0, chemical = 0, gain = 0.2f, threshold = 0.1f, mode = EmitterMode.DIGITAL)),
+        )
+        // a fixed dose regardless of how far above threshold the locus is
+        val low = ChemistryState(1, 1).apply { locus[0] = 0.3f }; bio.tick(low)
+        val high = ChemistryState(1, 1).apply { locus[0] = 0.9f }; bio.tick(high)
+        eqf(low.concentration[0], 0.2f, msg = "digital dose:")
+        eqf(high.concentration[0], 0.2f, msg = "digital dose is flat, not proportional:")
+        // below threshold: nothing
+        val off = ChemistryState(1, 1).apply { locus[0] = 0.05f }; bio.tick(off)
+        eqf(off.concentration[0], 0f, msg = "below threshold:")
+    }
+
+    @Test
+    fun clockedEmitterFiresOnlyEveryNTicks() {
+        val bio = Biochemistry(
+            chemicalCount = 1, halfLives = floatArrayOf(0f),
+            emitters = listOf(Emitter(locus = 0, chemical = 0, gain = 0.1f, clock = 3)),
+        )
+        val s = ChemistryState(1, 1).apply { locus[0] = 1f }
+        repeat(6) { bio.tick(s) } // fires at ticks 3 and 6 only → 2 × 0.1
+        eqf(s.concentration[0], 0.2f, msg = "clocked emitter fires every 3rd tick:")
+    }
+
+    @Test
     fun concentrationsAreClampedToRange() {
         // A locus floods a chemical past the ceiling every tick; it must clamp, not run away.
         val bio = Biochemistry(

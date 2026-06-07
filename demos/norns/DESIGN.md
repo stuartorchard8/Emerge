@@ -146,7 +146,7 @@ dependency-ordered (later ones read earlier ones).
 - **G2. Behavioural fidelity.** "Does it behave like a Norn?" is subjective and emergent — only
   judgeable by watching it run, which needs the (deferred) render host. My harnesses prove
   loops *close*, not that they feel right.
-- **G3. Emitter/receptor modes.** C1 had analog/digital modes and per-emitter clocks; I start
+- **G3. ✅ RESOLVED — Emitter modes.** C1 had analog/digital modes and per-emitter clocks; I start
   with analog/per-tick only.
 - **G4. Brain detail.** The learning rule is a single fixed reward-gated Hebbian law and tracts
   are densely connected. C1 used per-tract **SVRule** bytecode (bespoke state/weight update

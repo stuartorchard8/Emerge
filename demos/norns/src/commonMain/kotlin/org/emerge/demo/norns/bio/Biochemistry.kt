@@ -38,6 +38,7 @@ class Biochemistry(
     }
 
     fun tick(state: ChemistryState) {
+        state.ticks++
         emit(state)
         react(state)
         decay(state)
@@ -48,8 +49,15 @@ class Biochemistry(
     // ── emitters: locus -> chemical ─────────────────────────────────────────────
     private fun emit(state: ChemistryState) {
         for (e in emitters) {
+            if (e.clock > 0 && state.ticks % e.clock != 0) continue // clocked: fire only every N ticks
             val drive = state.locus[e.locus] - e.threshold
-            if (drive > 0f) state.concentration[e.chemical] += e.gain * drive
+            if (drive > 0f) {
+                val amount = when (e.mode) {
+                    EmitterMode.ANALOG -> e.gain * drive   // proportional to how far above threshold
+                    EmitterMode.DIGITAL -> e.gain          // fixed dose once above threshold
+                }
+                state.concentration[e.chemical] += amount
+            }
         }
     }
 
@@ -106,12 +114,28 @@ class Reaction(
     val rate: Float,
 )
 
+/** How an [Emitter] doses its chemical once the locus is above threshold. */
+enum class EmitterMode {
+    /** Proportional: `gain × (locus − threshold)` per fire (the original behaviour). */
+    ANALOG,
+    /** Binary: a fixed `gain` dose whenever the locus is above threshold (C1's digital mode). */
+    DIGITAL,
+}
+
 /**
- * Adds [chemical] proportional to how far the [locus] exceeds [threshold]: `gain × (locus −
- * threshold)` per tick (only while positive). The path by which sensors/organs/drives inject
- * chemistry. (C1's digital mode + per-emitter clocks are deferred — DESIGN.md gap G3.)
+ * Injects [chemical] from a [locus] above [threshold] — the path by which sensors/organs/drives
+ * drive chemistry. [mode] selects analog (proportional) or digital (fixed-dose) emission; [clock]
+ * (0 = every tick) fires only every Nth tick, the way C1 emitters could (rhythmic / metered
+ * release). (DESIGN.md G3.)
  */
-class Emitter(val locus: Int, val chemical: Int, val gain: Float, val threshold: Float = 0f)
+class Emitter(
+    val locus: Int,
+    val chemical: Int,
+    val gain: Float,
+    val threshold: Float = 0f,
+    val mode: EmitterMode = EmitterMode.ANALOG,
+    val clock: Int = 0,
+)
 
 /**
  * Publishes a [locus] from a [chemical]'s concentration: `locus = nominal + gain × (conc −

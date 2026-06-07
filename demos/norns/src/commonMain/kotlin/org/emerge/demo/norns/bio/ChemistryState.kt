@@ -19,9 +19,13 @@ class ChemistryState(val chemicalCount: Int, val locusCount: Int) {
     val concentration = FloatArray(chemicalCount)
     val locus = FloatArray(locusCount)
 
+    /** Monotonic tick counter, advanced by [Biochemistry.tick]; drives per-emitter clocks. */
+    var ticks: Int = 0
+
     fun copy(): ChemistryState = ChemistryState(chemicalCount, locusCount).also {
         concentration.copyInto(it.concentration)
         locus.copyInto(it.locus)
+        it.ticks = ticks
     }
 
     companion object {
