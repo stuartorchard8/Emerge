@@ -58,6 +58,8 @@ object NornsImageRenderer {
             (r * 255).roundToInt().coerceIn(0, 255), (gr * 255).roundToInt().coerceIn(0, 255), (b * 255).roundToInt().coerceIn(0, 255),
         )
 
+        // mottled earthy back wall for depth (scrolls with the world)
+        drawBackdrop(g, world, view, left, horiz, sx, ::px, ::py)
         // floors as grassy soil slabs (the surfaces creatures stand on)
         val slab = (0.5f * sx).roundToInt().coerceAtLeast(6)
         val grass = (0.14f * sx).roundToInt().coerceAtLeast(3)
@@ -105,6 +107,14 @@ object NornsImageRenderer {
             val cy = if (c.ridingY >= 0f) view.floorYf(c.ridingY) else view.floorY(c.floor)
             drawCreature(g, c, c.x, cy, c.id == followId, ::px, ::py, sx, ::blob, ::col)
         }
+
+        // soft vignette to focus the eye toward the centre
+        g.paint = RadialGradientPaint(
+            Point2D.Float(w / 2f, h * 0.46f), w * 0.62f, floatArrayOf(0f, 0.6f, 1f),
+            arrayOf(Color(0, 0, 0, 0), Color(0, 0, 0, 0), Color(18, 10, 4, 120)),
+            MultipleGradientPaint.CycleMethod.NO_CYCLE,
+        )
+        g.fillRect(0, 0, w, h)
 
         // HUD (dark header bar for legibility over the bright sky)
         g.color = Color(26, 20, 14, 175); g.fillRect(0, 0, w, 50)
@@ -165,10 +175,25 @@ object NornsImageRenderer {
         g.color = Color(44, 30, 20); g.draw(body)          // outline (outer half survives the fill)
         g.color = rgb(r, gr, b); g.fill(body)              // base coat (kills antialias seams)
 
-        // volumetric shading: each lobe gets a radial gradient lit from upper-left, clipped to body
+        // volumetric shading: shade the WHOLE silhouette as one plush form (single top-down light),
+        // then soft accents — so it reads as one body, not a cluster of separate spheres.
+        fun firstOf(bp: BodyPart) = posed.firstOrNull { it.part == bp }
         val oldClip = g.clip
         g.clip(body)
-        for (p in posed) if (!isFaceDetail(p.part)) shadeLobe(g, ecx(p), ecy(p), erad(p), p.r, p.g, p.b)
+        val bnd = body.bounds2D
+        g.paint = java.awt.GradientPaint(
+            0f, bnd.minY.toFloat(), rgb(r + (1f - r) * 0.26f, gr + (1f - gr) * 0.26f, b + (1f - b) * 0.26f),
+            0f, bnd.maxY.toFloat(), rgb(r * 0.58f, gr * 0.58f, b * 0.58f),
+        )
+        g.fill(body)
+        // paler muzzle + cream belly, blended softly into the form
+        firstOf(BodyPart.SNOUT)?.let { softBlob(g, ecx(it), ecy(it), erad(it) * 1.15f, rgbA(it.r, it.g, it.b, 185)) }
+        firstOf(BodyPart.BELLY)?.let { softBlob(g, ecx(it), ecy(it) + erad(it) * 0.1f, erad(it) * 1.2f, rgbA(it.r, it.g, it.b, 205)) }
+        // sheen highlights (upper-left) on head + body
+        firstOf(BodyPart.HEAD)?.let { softBlob(g, ecx(it) - erad(it) * 0.38f, ecy(it) - erad(it) * 0.44f, erad(it) * 0.8f, Color(255, 255, 248, 72)) }
+        firstOf(BodyPart.TORSO)?.let { softBlob(g, ecx(it) - erad(it) * 0.34f, ecy(it) - erad(it) * 0.4f, erad(it) * 0.72f, Color(255, 255, 248, 46)) }
+        // soft contact shadow where the head sits on the body
+        firstOf(BodyPart.HEAD)?.let { softBlob(g, ecx(it), ecy(it) + erad(it) * 0.92f, erad(it) * 0.72f, Color(0, 0, 0, 58)) }
         g.clip = oldClip
 
         // face: white eyes, breed-coloured iris, pupil + glint, nose, mouth (on top, unclipped)
@@ -203,24 +228,10 @@ object NornsImageRenderer {
 
     private fun c255(v: Float) = (v * 255f).roundToInt().coerceIn(0, 255)
     private fun rgb(r: Float, g: Float, b: Float) = Color(c255(r), c255(g), c255(b))
+    private fun rgbA(r: Float, g: Float, b: Float, a: Int) = Color(c255(r), c255(g), c255(b), a)
 
     private fun fillCircle(g: java.awt.Graphics2D, cx: Float, cy: Float, rad: Float) =
         g.fillOval((cx - rad).roundToInt(), (cy - rad).roundToInt(), (2 * rad).roundToInt(), (2 * rad).roundToInt())
-
-    /** A single soft body lobe: radial gradient from a highlight (upper-left) through the base
-     *  tint to a darker rim, giving the flat circle volume. */
-    private fun shadeLobe(g: java.awt.Graphics2D, cx: Float, cy: Float, rad: Float, r: Float, gr: Float, b: Float) {
-        if (rad < 1f) { g.color = rgb(r, gr, b); fillCircle(g, cx, cy, rad); return }
-        val hi = rgb(r + (1f - r) * 0.34f, gr + (1f - gr) * 0.34f, b + (1f - b) * 0.34f)
-        val base = rgb(r, gr, b)
-        val lo = rgb(r * 0.7f, gr * 0.7f, b * 0.7f)
-        val paint = RadialGradientPaint(
-            Point2D.Float(cx, cy), rad, Point2D.Float(cx - 0.34f * rad, cy - 0.34f * rad),
-            floatArrayOf(0f, 0.55f, 1f), arrayOf(hi, base, lo), MultipleGradientPaint.CycleMethod.NO_CYCLE,
-        )
-        g.paint = paint
-        fillCircle(g, cx, cy, rad)
-    }
 
     /** Breed eye colour (researched: Norns have blue or brown eyes; amber/green add variety). */
     private fun eyeColor(id: Int) = when (id % 4) {
@@ -248,6 +259,41 @@ object NornsImageRenderer {
         return h and 0x7fffffff
     }
 
+    /** A soft-edged patch: radial gradient from [col] at the centre fading to fully transparent. */
+    private fun softBlob(g: java.awt.Graphics2D, cx: Float, cy: Float, rad: Float, col: Color) {
+        if (rad < 1f) return
+        val edge = Color(col.red, col.green, col.blue, 0)
+        g.paint = RadialGradientPaint(
+            Point2D.Float(cx, cy), rad, floatArrayOf(0f, 1f), arrayOf(col, edge),
+        )
+        fillCircle(g, cx, cy, rad)
+    }
+
+    /** Mottled earthy wall texture (soft dark + warm patches) so rooms aren't flat colour bands. */
+    private fun drawBackdrop(
+        g: java.awt.Graphics2D, world: NornsWorld, view: NornsView,
+        left: Float, horiz: Float, sx: Float, px: (Float) -> Float, py: (Float) -> Float,
+    ) {
+        val x0 = floor(left).toInt() - 1
+        val x1 = ceil(left + horiz).toInt() + 1
+        for (f in 0 until world.cfg.floors) {
+            val groundY = py(view.floorY(f) - view.groundOffset)
+            val ceilY = if (f == world.cfg.floors - 1) 0f
+            else py(view.floorYf(f + 1f) - view.groundOffset) + 0.5f * sx
+            for (wx in x0..x1) {
+                val hh = fhash(wx, f * 53 + 17)
+                val n = 1 + hh % 2
+                for (k in 0 until n) {
+                    val bx = px(wx + ((hh ushr (k * 5 + 8)) % 100) / 100f)
+                    val ty = ceilY + (groundY - ceilY) * (((hh ushr (k * 3 + 1)) % 100) / 100f)
+                    val rr = (0.7f + ((hh ushr k) % 3) * 0.5f) * sx
+                    val dark = ((hh ushr (k + 4)) and 1) == 0
+                    softBlob(g, bx, ty, rr, if (dark) Color(28, 18, 10, 40) else Color(168, 140, 96, 30))
+                }
+            }
+        }
+    }
+
     private fun drawFlora(
         g: java.awt.Graphics2D, world: NornsWorld, view: NornsView,
         left: Float, horiz: Float, sx: Float, px: (Float) -> Float, py: (Float) -> Float,
@@ -264,6 +310,15 @@ object NornsImageRenderer {
                     val topY = if (f == world.cfg.floors - 1) 50f
                     else py(view.floorYf(f + 1f) - view.groundOffset) + 0.5f * sx
                     drawVine(g, vx, topY, sx, hv)
+                }
+            }
+            // distant, hazy foliage masses for depth (behind the sharp foreground flora)
+            for (wx in x0..x1) {
+                val hb = fhash(wx, f * 271 + 59)
+                if (hb % 3 == 0) {
+                    val bx = px(wx + (hb % 100) / 100f)
+                    val rr = (0.6f + (hb % 3) * 0.32f) * sx
+                    softBlob(g, bx, groundY - rr * 0.45f, rr, Color(58, 86, 50, 120))
                 }
             }
             // ground flora: grass tufts, taller reeds, occasional flowers
@@ -369,6 +424,20 @@ fun main(args: Array<String>) {
             val file = File(outDir, "norns_t$t.png")
             ImageIO.write(img, "png", file)
             println("wrote ${file.absolutePath}")
+            // also write a 2× zoom crop centred on the followed creature, for close inspection
+            follow?.let { fc ->
+                val view = NornsView(world.cfg.worldWidth, world.cfg.floors)
+                val cyS = 620f - ((view.floorY(fc.floor) + 0.4f) / view.verticalUnits) * 620f
+                val cw = 320; val ch = 320
+                val x0 = ((1000 - cw) / 2).coerceIn(0, 1000 - cw)
+                val y0 = (cyS.roundToInt() - ch / 2).coerceIn(0, 620 - ch)
+                val zoom = BufferedImage(cw * 2, ch * 2, BufferedImage.TYPE_INT_RGB)
+                val zg = zoom.createGraphics()
+                zg.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+                zg.drawImage(img.getSubimage(x0, y0, cw, ch), 0, 0, cw * 2, ch * 2, null)
+                zg.dispose()
+                ImageIO.write(zoom, "png", File(outDir, "norns_t${t}_zoom.png"))
+            }
         }
     }
 }
