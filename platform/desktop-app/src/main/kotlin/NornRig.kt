@@ -23,27 +23,41 @@ object NornRig {
     private class Part(val img: BufferedImage, val pts: Map<String, FloatArray>) {
         fun pt(k: String) = pts[k] ?: floatArrayOf(0f, 0f)
     }
-    private val byAge = HashMap<Int, HashMap<String, Part>>()
+    // base breeds (genuinely different ripped sprite sets) keyed by name → age → parts
+    private val bases = HashMap<String, HashMap<Int, HashMap<String, Part>>>()
     private var loaded = false
-    val ready: Boolean get() = byAge.values.any { it.containsKey("body") && it.containsKey("head") }
+    val ready: Boolean get() = bases.values.any { it.values.any { m -> m.containsKey("body") && m.containsKey("head") } }
 
-    fun ensure() { if (loaded) return; loaded = true; try { for (a in 0..3) loadAge(a) } catch (e: Exception) { System.err.println("[NornRig] ${e.message}") } }
+    // The breed roster: each creature's heritable breed indexes this. Two genuinely different base
+    // breeds — Denali (blonde, tan, blue eyes) and Bavaria (mint skin, long silver+purple hair,
+    // purple eyes) — plus palette recolours of each for variety. (baseBreed to paletteTint)
+    private val TABLE = arrayOf(
+        "denali" to 0, "denali" to 1, "denali" to 2, "denali" to 3,
+        "bavaria" to 0, "bavaria" to 4,
+    )
+    val BREEDS = TABLE.size
 
-    private fun loadAge(age: Int) {
-        val txt = res("/assets/norns/denali_rig_a$age.txt")?.toString(Charsets.UTF_8) ?: return
-        val map = HashMap<String, Part>()
-        for (line in txt.lines()) {
-            val tok = line.trim().split(" ").filter { it.isNotEmpty() }
-            if (tok.size < 4) continue
-            val pts = HashMap<String, FloatArray>()
-            for (i in 4 until tok.size) {
-                val (k, xy) = tok[i].split(":"); val (x, y) = xy.split(",")
-                pts[k] = floatArrayOf(x.toFloat(), y.toFloat())
+    fun ensure() { if (loaded) return; loaded = true; try { loadBreed("denali"); loadBreed("bavaria") } catch (e: Exception) { System.err.println("[NornRig] ${e.message}") } }
+
+    private fun loadBreed(name: String) {
+        val perAge = HashMap<Int, HashMap<String, Part>>()
+        for (age in 0..3) {
+            val txt = res("/assets/norns/${name}_rig_a$age.txt")?.toString(Charsets.UTF_8) ?: continue
+            val map = HashMap<String, Part>()
+            for (line in txt.lines()) {
+                val tok = line.trim().split(" ").filter { it.isNotEmpty() }
+                if (tok.size < 4) continue
+                val pts = HashMap<String, FloatArray>()
+                for (i in 4 until tok.size) {
+                    val (k, xy) = tok[i].split(":"); val (x, y) = xy.split(",")
+                    pts[k] = floatArrayOf(x.toFloat(), y.toFloat())
+                }
+                val bytes = res("/assets/norns/" + tok[1]) ?: continue
+                map[tok[0]] = Part(bytes.inputStream().use { ImageIO.read(it) }, pts)
             }
-            val bytes = res("/assets/norns/" + tok[1]) ?: continue
-            map[tok[0]] = Part(bytes.inputStream().use { ImageIO.read(it) }, pts)
+            if (map.containsKey("body")) perAge[age] = map
         }
-        if (map.containsKey("body")) byAge[age] = map
+        if (perAge.isNotEmpty()) bases[name] = perAge
     }
 
     private fun res(path: String): ByteArray? =
@@ -55,23 +69,21 @@ object NornRig {
     // sprites are drawn crouched/curled with no clean upright), ADULT/OLD use the adult art.
     private fun ageOf(stage: String) = when (stage) { "BABY" -> 0; "CHILD" -> 1; else -> 3 }
 
-    // Visual breeds: community Norn breeds are largely palette recolours of the same body, so we
-    // generate breeds by recolouring the (full, ripped) base parts — preserving the eyes — keyed
-    // off each creature's heritable breed. breed 0 is the original (Denali blonde).
-    const val BREEDS = 5
-    private val tinted = HashMap<Int, HashMap<String, Part>>()
+    private val tinted = HashMap<String, HashMap<String, Part>>()
 
-    private fun partsFor(breed: Int, age: Int): HashMap<String, Part>? {
-        val base = byAge[age] ?: byAge[3] ?: byAge.values.firstOrNull() ?: return null
-        if (breed == 0) return base
-        return tinted.getOrPut(breed * 16 + age) {
-            HashMap<String, Part>().apply { for ((k, p) in base) put(k, Part(tintImage(p.img, breed), p.pts)) }
+    private fun partsFor(breedIdx: Int, age: Int): HashMap<String, Part>? {
+        val (name, tint) = TABLE[breedIdx % TABLE.size]
+        val perAge = bases[name] ?: bases["denali"] ?: bases.values.firstOrNull() ?: return null
+        val base = perAge[age] ?: perAge[3] ?: perAge.values.firstOrNull() ?: return null
+        if (tint == 0) return base
+        return tinted.getOrPut("$name:$tint:$age") {
+            HashMap<String, Part>().apply { for ((k, p) in base) put(k, Part(tintImage(p.img, tint), p.pts)) }
         }
     }
 
-    private fun tintImage(src: BufferedImage, breed: Int): BufferedImage {
+    private fun tintImage(src: BufferedImage, tint: Int): BufferedImage {
         val out = BufferedImage(src.width, src.height, BufferedImage.TYPE_INT_ARGB)
-        for (y in 0 until src.height) for (x in 0 until src.width) out.setRGB(x, y, tintPixel(src.getRGB(x, y), breed))
+        for (y in 0 until src.height) for (x in 0 until src.width) out.setRGB(x, y, tintPixel(src.getRGB(x, y), tint))
         return out
     }
 

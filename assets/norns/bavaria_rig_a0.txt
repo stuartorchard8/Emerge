@@ -1,0 +1,12 @@
+body parts/bavaria/a0/body.png 34 23 head:39,2 hipL:10,9 hipR:10,9 shL:22,8 shR:22,8
+head parts/bavaria/a0/head.png 39 38 neck:19,19
+thighL parts/bavaria/a0/thighL.png 15 18 start:9,4 end:2,15
+shinL parts/bavaria/a0/shinL.png 17 12 start:13,5 end:1,6
+footL parts/bavaria/a0/footL.png 15 15 start:5,4 end:14,14
+thighR parts/bavaria/a0/thighR.png 16 19 start:10,4 end:3,15
+shinR parts/bavaria/a0/shinR.png 18 11 start:13,5 end:1,6
+footR parts/bavaria/a0/footR.png 15 15 start:5,4 end:14,14
+uarmL parts/bavaria/a0/uarmL.png 13 14 start:9,4 end:3,10
+farmL parts/bavaria/a0/farmL.png 11 22 start:7,2 end:4,15
+uarmR parts/bavaria/a0/uarmR.png 12 13 start:8,3 end:2,10
+farmR parts/bavaria/a0/farmR.png 11 22 start:7,2 end:4,16
