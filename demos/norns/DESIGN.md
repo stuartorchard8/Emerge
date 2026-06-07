@@ -159,7 +159,7 @@ dependency-ordered (later ones read earlier ones).
   stages are driven by an age clock. C1 damages organs independently (each runs its own
   chemistry) and advances stages via genome life-stage chemicals. Per-organ coupling + biology
   genes (organ definitions, life-stage gene activation) are deferred.
-- **G7. Drive/action model.** A fixed action→drive-effect table and a flat (unweighted)
+- **G7. Drive/action model (PARTLY addressed — REST now meaningful via a fatigue drive; drive weighting + larger action set remain feel-tuning).** A fixed action→drive-effect table and a flat (unweighted)
   discomfort sum. C1 derives action effects from world objects + biochemistry and weights drives.
   Both are tuning surfaces; the action set is also a placeholder (EAT/REST), to be expanded with
   the world. *Observed during subsystem 6:* with a flat discomfort sum, multi-drive survival can

@@ -24,6 +24,7 @@
             <option value="$PROJECT_DIR$/demos" />
             <option value="$PROJECT_DIR$/demos/cyto" />
             <option value="$PROJECT_DIR$/demos/drockets" />
+            <option value="$PROJECT_DIR$/demos/norns" />
             <option value="$PROJECT_DIR$/demos/scavengers" />
             <option value="$PROJECT_DIR$/engine" />
             <option value="$PROJECT_DIR$/engine/net" />

@@ -72,8 +72,10 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
     }
 
     private fun stepCreature(c: WorldCreature) {
-        // Drives rise/decay/react via the creature's biochemistry (G8).
-        c.chem.tick(fertileActive = c.biology.lifeStage.ordinal >= cfg.fertileFrom.ordinal)
+        // Drives rise/decay/react via the creature's biochemistry (G8). Being busy builds fatigue.
+        val exerting = c.activity == ActivityType.MOVING || c.activity == ActivityType.EATING ||
+            c.activity == ActivityType.COURTING || c.activity == ActivityType.PICKING_UP
+        c.chem.tick(fertileActive = c.biology.lifeStage.ordinal >= cfg.fertileFrom.ordinal, exerting = exerting)
 
         when (c.activity) {
             ActivityType.IDLE -> decide(c)
@@ -92,7 +94,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
             ActivityType.PICKING_UP -> if (--c.activityTimer <= 0) finishPickup(c)
             ActivityType.EATING -> if (--c.activityTimer <= 0) finishEating(c)
             ActivityType.COURTING -> if (--c.activityTimer <= 0) finishCourting(c)
-            ActivityType.RESTING -> if (--c.activityTimer <= 0) completeGoal(c)
+            ActivityType.RESTING -> { c.chem.recover(cfg.restRecovery); if (--c.activityTimer <= 0) completeGoal(c) }
         }
 
         // Aging + death happen every tick regardless of activity.
@@ -114,6 +116,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
         percept[CreatureMind.P_URGE] = c.matingUrge
         percept[CreatureMind.P_FOOD] = proximity(if (foodCell != null) travelCost(c, foodFloor(foodCell), foodX(foodCell).toFloat()) else -1f)
         percept[CreatureMind.P_MATE] = proximity(if (mate != null) travelCost(c, mate.floor, mate.x) else -1f)
+        percept[CreatureMind.P_FATIGUE] = c.chem.fatigue
         percept[CreatureMind.P_BIAS] = 1f
         c.brain.lobes[0].set(percept)
         c.brain.propagate()
@@ -123,7 +126,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
             if (cfg.brainExplore > 0f && rng.nextFloat() < cfg.brainExplore) rng.nextInt().mod(CreatureMind.ACTIONS)
             else greedy
         percept.copyInto(c.decisionPerception)
-        c.decisionDiscomfort = c.hunger + c.matingUrge
+        c.decisionDiscomfort = c.discomfort()
 
         when (c.goalAction) {
             CreatureMind.A_SEEK_FOOD ->
@@ -155,7 +158,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
         c.activityTimer = cfg.courtTicks
         c.partnerId = partnerId
         c.goalAction = CreatureMind.A_SEEK_MATE
-        c.decisionDiscomfort = c.hunger + c.matingUrge // baseline for the courting reward
+        c.decisionDiscomfort = c.discomfort() // baseline for the courting reward
     }
 
     private fun finishPickup(c: WorldCreature) {
@@ -184,7 +187,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
 
     /** Ends the current goal: reinforce it by the net drive reduction it achieved, then go idle. */
     private fun completeGoal(c: WorldCreature) {
-        val reward = c.decisionDiscomfort - (c.hunger + c.matingUrge)
+        val reward = c.decisionDiscomfort - c.discomfort()
         c.brain.lobes[0].set(c.decisionPerception)
         c.brain.lobes[1].set(oneHot(c.goalAction, CreatureMind.ACTIONS))
         c.brain.learn(reward)
@@ -364,9 +367,12 @@ class WorldCreature(
     val chem: CreatureChemistry,
     val loci: FloatArray,
 ) {
-    // Drives are now biochemistry (G8): hunger/urge are chemical concentrations, not bare fields.
+    // Drives are now biochemistry (G8): hunger/urge/fatigue are chemical concentrations.
     val hunger: Float get() = chem.hunger
     val matingUrge: Float get() = chem.urge
+    val fatigue: Float get() = chem.fatigue
+    /** Total drive discomfort the creature is driven to minimise (the reinforcement signal). */
+    fun discomfort(): Float = hunger + matingUrge + fatigue
     var ticksLived: Int = 0
     var reproCooldown: Int = 0
     var facing: Int = 1
@@ -433,6 +439,9 @@ class NornsConfig(
     // physical lifts
     val liftSpeed: Float = 0.05f,     // floors per tick
     val liftBoardEps: Float = 0.25f,  // how close the car must be to board / disembark
+    // fatigue (G7: makes REST a real, learned behaviour)
+    val fatigueRate: Float = 0.01f,   // fatigue built per tick of exertion
+    val restRecovery: Float = 0.06f,  // fatigue recovered per tick of resting
 ) {
     fun metabolismOf(genome: Genome): Float {
         val gain = genome.genes.filterIsInstance<EmitterGene>().firstOrNull()?.gain?.coerceIn(0f, 1f) ?: 0.5f

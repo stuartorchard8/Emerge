@@ -25,8 +25,9 @@ object CreatureMind {
     const val P_URGE = 1     // mating urge (0..1)
     const val P_FOOD = 2     // food proximity sense (1 near, 0 far/none)
     const val P_MATE = 3     // mate proximity sense
-    const val P_BIAS = 4     // always 1 (lets REST be the default when nothing presses)
-    const val PERCEPTION = 5
+    const val P_FATIGUE = 4  // how tired (0..1)
+    const val P_BIAS = 5     // always 1 (lets REST be the default when nothing presses)
+    const val PERCEPTION = 6
 
     // decision neurons (goal verbs)
     const val A_SEEK_FOOD = 0
@@ -67,7 +68,7 @@ object CreatureMind {
     private fun instinct(action: Int, sense: Int): Float = when (action) {
         A_SEEK_FOOD -> when (sense) { P_HUNGER -> 2.5f; P_FOOD -> 1f; else -> 0f }
         A_SEEK_MATE -> when (sense) { P_URGE -> 2.5f; P_MATE -> 1f; else -> 0f }
-        A_REST -> if (sense == P_BIAS) 0.3f else 0f
+        A_REST -> when (sense) { P_FATIGUE -> 2.0f; P_BIAS -> 0.3f; else -> 0f } // rest when tired (or by default)
         else -> 0f
     }
 }

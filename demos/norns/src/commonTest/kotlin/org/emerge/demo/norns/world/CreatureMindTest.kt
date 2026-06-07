@@ -13,8 +13,8 @@ class CreatureMindTest {
 
     private fun brain(learnRate: Float = 0f) = CreatureMind.build(learnRate)
 
-    private fun decide(b: org.emerge.demo.norns.brain.Brain, hunger: Float, urge: Float, food: Float, mate: Float): Int {
-        b.lobes[0].set(floatArrayOf(hunger, urge, food, mate, 1f))
+    private fun decide(b: org.emerge.demo.norns.brain.Brain, hunger: Float, urge: Float, food: Float, mate: Float, fatigue: Float = 0f): Int {
+        b.lobes[0].set(floatArrayOf(hunger, urge, food, mate, fatigue, 1f))
         b.propagate()
         return b.lobes[1].argmax()
     }
@@ -28,6 +28,8 @@ class CreatureMindTest {
             "fed + urgent → seek mate")
         assertEquals(CreatureMind.A_REST, decide(b, hunger = 0f, urge = 0f, food = 0f, mate = 0f),
             "satisfied → rest")
+        assertEquals(CreatureMind.A_REST, decide(b, hunger = 0f, urge = 0f, food = 0f, mate = 0f, fatigue = 0.9f),
+            "tired → rest")
         // Survival takes priority when both press (tie → lower index = seek food).
         assertEquals(CreatureMind.A_SEEK_FOOD, decide(b, hunger = 0.9f, urge = 0.9f, food = 1f, mate = 1f),
             "hungry AND urgent → eat first")
@@ -40,7 +42,7 @@ class CreatureMindTest {
         val before = w[CreatureMind.A_SEEK_FOOD][CreatureMind.P_HUNGER]
         // Repeatedly: hungry context, chose SEEK_FOOD, got rewarded (drive fell from eating).
         repeat(20) {
-            b.lobes[0].set(floatArrayOf(1f, 0f, 1f, 0f, 1f))
+            b.lobes[0].set(floatArrayOf(1f, 0f, 1f, 0f, 0f, 1f)) // hunger, urge, food, mate, fatigue, bias
             b.propagate()
             b.lobes[1].set(floatArrayOf(1f, 0f, 0f)) // post = SEEK_FOOD
             b.learn(reward = 1f)

@@ -36,6 +36,16 @@ class CreatureChemistryTest {
     }
 
     @Test
+    fun fatigueRisesWhileExertingAndRecoversWhenResting() {
+        val chem = CreatureChemistry(metabolism = 0.01f, cfg = cfg)
+        repeat(20) { chem.tick(fertileActive = false, exerting = true) }
+        val f = chem.fatigue
+        assertTrue(f > 0.1f, "fatigue builds while exerting: $f") // ~20 * 0.01
+        repeat(20) { chem.recover(0.06f); chem.tick(fertileActive = false, exerting = false) }
+        assertTrue(chem.fatigue < f, "resting recovers fatigue (${chem.fatigue} < $f)")
+    }
+
+    @Test
     fun chemistryIsDeterministic() {
         fun run(): Float {
             val chem = CreatureChemistry(0.008f, cfg)

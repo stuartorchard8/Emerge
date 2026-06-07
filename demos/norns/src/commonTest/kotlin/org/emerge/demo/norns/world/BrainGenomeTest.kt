@@ -17,8 +17,8 @@ import kotlin.test.assertTrue
  */
 class BrainGenomeTest {
 
-    private fun decide(b: Brain, hunger: Float, urge: Float, food: Float, mate: Float): Int {
-        b.lobes[0].set(floatArrayOf(hunger, urge, food, mate, 1f))
+    private fun decide(b: Brain, hunger: Float, urge: Float, food: Float, mate: Float, fatigue: Float = 0f): Int {
+        b.lobes[0].set(floatArrayOf(hunger, urge, food, mate, fatigue, 1f))
         b.propagate()
         return b.lobes[1].argmax()
     }
