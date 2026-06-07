@@ -17,10 +17,10 @@ class CreatureAnimationTest {
     private val quarter = (PI / 2).toFloat() // phase where sin = 1
 
     @Test
-    fun allSixPartsPosedEachFrame() {
+    fun everyBodyPartIsPosedEachFrame() {
         val parts = CreatureAnimation.pose(CreatureAction.WALK, phase = 0.5f, facing = 1, r = 1f, g = 1f, b = 1f)
-        assertEquals(BodyPart.entries.toSet(), parts.map { it.part }.toSet())
-        assertEquals(6, parts.size)
+        assertEquals(BodyPart.entries.toSet(), parts.map { it.part }.toSet(), "all body parts posed")
+        assertEquals(BodyPart.entries.size, parts.size)
     }
 
     @Test

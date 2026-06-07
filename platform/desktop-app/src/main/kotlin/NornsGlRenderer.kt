@@ -72,7 +72,7 @@ class NornsGlRenderer(private val cfg: NornsRenderConfig = NornsRenderConfig()) 
         for (lift in world.lifts) {
             if (lift.column < left - 1 || lift.column > right + 1) continue
             addBlob(lift.column.toFloat(), shaftMidY, 0.12f, shaftHalfH, 0.22f, 0.22f, 0.28f, 1f) // shaft
-            addBlob(lift.column.toFloat(), view.floorYf(lift.carPos), 0.7f, 0.55f, 0.5f, 0.5f, 0.6f, 1f) // car
+            addBlob(lift.column.toFloat(), view.floorYf(lift.carPos), 0.95f, 0.16f, 0.42f, 0.43f, 0.55f, 1f) // platform car
         }
         for (foodCell in world.food) {
             val fx = world.foodX(foodCell)
@@ -92,11 +92,14 @@ class NornsGlRenderer(private val cfg: NornsRenderConfig = NornsRenderConfig()) 
     private fun drawCreature(c: WorldCreature, worldX: Float, worldY: Float, followed: Boolean) {
         val action = actionOf(c.activity)
         val phase = c.ticksLived * 0.35f
+        // warm, earthy fur, gene-tinted: efficient = mossy/green, inefficient = rusty/red
         val frac = ((c.metabolism - cfg.metabMin) / (cfg.metabMax - cfg.metabMin)).coerceIn(0f, 1f)
-        val r = 0.25f + 0.6f * frac   // inefficient (high metab) = red
-        val g = 0.25f + 0.6f * (1f - frac) // efficient = green
-        val b = 0.35f
+        val r = 0.55f + 0.30f * frac
+        val g = 0.62f - 0.16f * frac
+        val b = 0.40f - 0.06f * frac
 
+        // ground shadow (mirrors the verified PNG renderer)
+        addBlob(worldX, worldY - 0.82f * cfg.creatureScale, 0.5f * cfg.creatureScale, 0.12f * cfg.creatureScale, 0f, 0f, 0f, 0.45f)
         for (p in CreatureAnimation.pose(action, phase, c.facing, r, g, b)) {
             addBlob(worldX + p.x * cfg.creatureScale, worldY + p.y * cfg.creatureScale,
                 p.radius * cfg.creatureScale, p.radius * cfg.creatureScale, p.r, p.g, p.b, 1f)

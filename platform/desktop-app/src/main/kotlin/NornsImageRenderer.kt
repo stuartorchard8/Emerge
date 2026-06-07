@@ -51,11 +51,15 @@ object NornsImageRenderer {
             val y = py(view.floorY(f) - view.groundOffset).roundToInt()
             g.fillRect(0, y, w, 3)
         }
-        // lift shafts + cars
+        // lift shafts + platform cars
         for (lift in world.lifts) {
-            val lx = px(lift.column.toFloat()).roundToInt()
-            g.color = Color(38, 40, 54); g.fillRect(lx - 3, 0, 6, h)
-            blob(lift.column.toFloat(), view.floorYf(lift.carPos), 0.7f, Color(120, 122, 150))
+            val cx = px(lift.column.toFloat())
+            g.color = Color(38, 40, 54); g.fillRect((cx - 3).roundToInt(), 0, 6, h)
+            val cy = py(view.floorYf(lift.carPos))
+            val pw = (1.7f * sx).roundToInt(); val ph = (0.42f * sx).roundToInt()
+            val x0 = (cx - pw / 2).roundToInt(); val y0 = (cy - ph / 2).roundToInt()
+            g.color = Color(104, 108, 134); g.fillRoundRect(x0, y0, pw, ph, 8, 8)
+            g.color = Color(150, 154, 182); g.fillRect(x0, y0, pw, 2) // lit top edge
         }
         // food
         for (cell in world.food) {
@@ -100,9 +104,13 @@ object NornsImageRenderer {
         }
         val scale = 1.1f
         val phase = c.ticksLived * 0.35f
+        // warm, earthy fur, gene-tinted: efficient = mossy/green, inefficient = rusty/red
         val frac = ((c.metabolism - 0.003f) / (0.012f - 0.003f)).coerceIn(0f, 1f)
-        val r = 0.25f + 0.6f * frac; val gr = 0.25f + 0.6f * (1f - frac); val b = 0.35f
-        if (followed) blob(worldX, worldY + 0.6f, 1.0f, Color(255, 255, 255, 40)) // halo
+        val r = 0.55f + 0.30f * frac; val gr = 0.62f - 0.16f * frac; val b = 0.40f - 0.06f * frac
+        // ground shadow (grounds the creature + separates it from neighbours/background)
+        val shW = (0.95f * scale * sx).roundToInt(); val shH = (0.22f * scale * sx).roundToInt()
+        g.color = Color(0, 0, 0, 70)
+        g.fillOval((px(worldX) - shW / 2).roundToInt(), (py(worldY - 0.82f * scale) - shH / 2).roundToInt(), shW, shH)
         for (p in CreatureAnimation.pose(action, phase, c.facing, r, gr, b)) {
             blob(worldX + p.x * scale, worldY + p.y * scale, p.radius * scale, col(p.r, p.g, p.b))
         }
