@@ -18,9 +18,10 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * Live host for Norns using the **Java2D** [NornsImageRenderer] — the same renderer whose frames I
- * can inspect as PNGs. So the live window shows exactly the art I develop (the GPU host is the
- * legacy path). Left-click follows a creature, right-click drops food; P pauses, [ / ] change speed.
+ * Live host for Norns using the **Java2D** [NornsImageRenderer]. The camera either follows a
+ * creature (the oldest, or one you left-click) or you can roam freely: arrow keys / A–D pan the
+ * camera left/right (entering free mode); F re-attaches to follow. Right-click drops food; P pauses;
+ * [ / ] change speed.
  */
 object NornsSwingView {
     fun run(seed: Long = 7L) {
@@ -30,12 +31,17 @@ object NornsSwingView {
         var paused = false
         var stepsPerFrame = 1
         var cameraCenterX = 0f
+        var freeCam = false           // true = roaming freely (camX), false = following a creature
+        var camX = 0f
+        val maxX = (world.cfg.worldWidth - 1).toFloat()
+        val panStep = 3f
 
         val panel = object : JPanel() {
             override fun paintComponent(g: Graphics) {
-                val follow = lockedFollowId?.let { world.creatureById(it) }?.takeIf { it.alive }
-                    ?: world.creatures.maxByOrNull { it.biology.age }
-                cameraCenterX = follow?.x ?: 0f
+                val follow = if (freeCam) null else
+                    (lockedFollowId?.let { world.creatureById(it) }?.takeIf { it.alive }
+                        ?: world.creatures.maxByOrNull { it.biology.age })
+                cameraCenterX = if (freeCam) camX else (follow?.x ?: 0f).also { camX = it }
                 g.drawImage(NornsImageRenderer.renderFrame(world, cameraCenterX, follow?.id, width, height), 0, 0, null)
             }
         }
@@ -46,13 +52,20 @@ object NornsSwingView {
             override fun mousePressed(e: MouseEvent) {
                 val aspect = panel.width.toFloat() / panel.height
                 val spot = view.screenToWorld(e.x.toFloat(), e.y.toFloat(), panel.width.toFloat(), panel.height.toFloat(), cameraCenterX, aspect)
-                if (SwingUtilities.isLeftMouseButton(e)) lockedFollowId = world.creatureNear(spot.floor, spot.x, 1.8f)?.id
-                else world.dropFood(spot.floor, spot.x.roundToInt())
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    val hit = world.creatureNear(spot.floor, spot.x, 1.8f)
+                    if (hit != null) { lockedFollowId = hit.id; freeCam = false } // click a creature → follow it
+                } else {
+                    world.dropFood(spot.floor, spot.x.roundToInt())
+                }
             }
         })
         panel.addKeyListener(object : KeyAdapter() {
             override fun keyPressed(e: KeyEvent) {
                 when (e.keyCode) {
+                    KeyEvent.VK_LEFT, KeyEvent.VK_A -> { freeCam = true; camX = (camX - panStep).coerceIn(0f, maxX) }
+                    KeyEvent.VK_RIGHT, KeyEvent.VK_D -> { freeCam = true; camX = (camX + panStep).coerceIn(0f, maxX) }
+                    KeyEvent.VK_F -> freeCam = false                 // re-attach to follow
                     KeyEvent.VK_P -> paused = !paused
                     KeyEvent.VK_OPEN_BRACKET -> stepsPerFrame = max(1, stepsPerFrame - 1)
                     KeyEvent.VK_CLOSE_BRACKET -> stepsPerFrame += 1
@@ -73,6 +86,7 @@ object NornsSwingView {
         frame.setLocationRelativeTo(null)
         frame.isVisible = true
         panel.requestFocusInWindow()
+        println("Norns controls: ←/→ or A/D pan camera (free look) · F follow · left-click a Norn to follow · right-click drop food · P pause · [ / ] speed · Esc quit")
     }
 }
 
