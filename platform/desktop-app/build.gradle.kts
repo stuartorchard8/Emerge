@@ -104,6 +104,14 @@ tasks.register<JavaExec>("runNorns") {
     standardInput = System.`in`
 }
 
+tasks.register<JavaExec>("renderNorns") {
+    group = "application"
+    description = "Render PNG frames of the Norns world headlessly (CPU/Java2D). " +
+        "--args=\"<outDir> <seed> <tick1,tick2,...>\""
+    mainClass = "org.emerge.desktop.NornsImageRendererKt"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
 tasks.register<JavaExec>("runNornsGl") {
     group = "application"
     description = "Watch the Norns colony in a GPU window (side-scroll, animated blobs). " +
