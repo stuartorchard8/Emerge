@@ -28,13 +28,10 @@ object NornRig {
     private var loaded = false
     val ready: Boolean get() = bases.values.any { it.values.any { m -> m.containsKey("body") && m.containsKey("head") } }
 
-    // The breed roster: each creature's heritable breed indexes this. Two genuinely different base
-    // breeds — Denali (blonde, tan, blue eyes) and Bavaria (mint skin, long silver+purple hair,
-    // purple eyes) — plus palette recolours of each for variety. (baseBreed to paletteTint)
-    private val TABLE = arrayOf(
-        "denali" to 0, "denali" to 1, "denali" to 2, "denali" to 3,
-        "bavaria" to 0, "bavaria" to 4,
-    )
+    // The breed roster: each creature's heritable breed indexes this. Genuinely different ripped
+    // breeds only (no recolours) — Denali (blonde, tan, blue eyes) and Bavaria (mint skin, long
+    // silver+purple hair, purple eyes). Add more by ripping + baking and extending this list.
+    private val TABLE = arrayOf("denali", "bavaria")
     val BREEDS = TABLE.size
 
     fun ensure() { if (loaded) return; loaded = true; try { loadBreed("denali"); loadBreed("bavaria") } catch (e: Exception) { System.err.println("[NornRig] ${e.message}") } }
@@ -69,41 +66,10 @@ object NornRig {
     // sprites are drawn crouched/curled with no clean upright), ADULT/OLD use the adult art.
     private fun ageOf(stage: String) = when (stage) { "BABY" -> 0; "CHILD" -> 1; else -> 3 }
 
-    private val tinted = HashMap<String, HashMap<String, Part>>()
-
     private fun partsFor(breedIdx: Int, age: Int): HashMap<String, Part>? {
-        val (name, tint) = TABLE[breedIdx % TABLE.size]
+        val name = TABLE[breedIdx % TABLE.size]
         val perAge = bases[name] ?: bases["denali"] ?: bases.values.firstOrNull() ?: return null
-        val base = perAge[age] ?: perAge[3] ?: perAge.values.firstOrNull() ?: return null
-        if (tint == 0) return base
-        return tinted.getOrPut("$name:$tint:$age") {
-            HashMap<String, Part>().apply { for ((k, p) in base) put(k, Part(tintImage(p.img, tint), p.pts)) }
-        }
-    }
-
-    private fun tintImage(src: BufferedImage, tint: Int): BufferedImage {
-        val out = BufferedImage(src.width, src.height, BufferedImage.TYPE_INT_ARGB)
-        for (y in 0 until src.height) for (x in 0 until src.width) out.setRGB(x, y, tintPixel(src.getRGB(x, y), tint))
-        return out
-    }
-
-    private fun tintPixel(argb: Int, breed: Int): Int {
-        val a = (argb ushr 24) and 0xff
-        if (a == 0) return argb
-        var r = (argb ushr 16) and 0xff; var g = (argb ushr 8) and 0xff; var b = argb and 0xff
-        val mn = minOf(r, g, b); val mx = maxOf(r, g, b)
-        val sclera = mn > 200 && (mx - mn) < 20       // neutral bright = eye white (keep)
-        val iris = b > r + 18 && b > g + 4            // blue iris (keep)
-        val dark = mx < 55                            // pupil / outline (keep)
-        if (!sclera && !iris && !dark) when (breed) {
-            1 -> { r = (r * 0.60f).toInt(); g = (g * 0.92f).toInt(); b = (b * 0.48f).toInt() }   // mossy green
-            2 -> { r = (r * 1.10f).toInt(); g = (g * 0.66f).toInt(); b = (b * 0.42f).toInt() }   // ginger
-            3 -> { val l = 0.32f * r + 0.56f * g + 0.12f * b
-                r = ((r + (l - r) * 0.7f) * 0.82f).toInt(); g = ((g + (l - g) * 0.7f) * 0.86f).toInt(); b = ((b + (l - b) * 0.7f) * 0.98f).toInt() } // slate grey
-            4 -> { r = (r * 0.62f).toInt(); g = (g * 0.46f).toInt(); b = (b * 0.33f).toInt() }   // chocolate brown
-        }
-        fun c(v: Int) = v.coerceIn(0, 255)
-        return (a shl 24) or (c(r) shl 16) or (c(g) shl 8) or c(b)
+        return perAge[age] ?: perAge[3] ?: perAge.values.firstOrNull()
     }
     private fun targetHeight(stage: String) = when (stage) {
         "BABY" -> 1.7f; "CHILD" -> 2.1f; "ADOLESCENT" -> 2.5f; "OLD" -> 2.85f; else -> 2.95f

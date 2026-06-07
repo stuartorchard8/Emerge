@@ -433,7 +433,9 @@ class NornsConfig(
     val baseRepair: Float = 0.0125f,
     // time-dilation ×4: lifespan + life-stage ages stretched so the colony lives ~4x slower
     val maxAge: Int = 5200,
-    val stageStartAge: IntArray = intArrayOf(0, 120, 360, 600, 1120, 1720, 3600, 4400),
+    // EMBRYO(egg) BABY CHILD ADOLESCENT YOUTH ADULT OLD SENILE — baby+child stretched so the
+    // colony visibly has crawling young most of the time
+    val stageStartAge: IntArray = intArrayOf(0, 120, 500, 1100, 1600, 2200, 3800, 4600),
     val fertileFrom: LifeStage = LifeStage.ADOLESCENT,
     val fertileTo: LifeStage = LifeStage.OLD,
     val fertileMaxHunger: Float = 0.6f,
@@ -460,7 +462,7 @@ class NornsConfig(
     val fatigueRate: Float = 0.0025f, // fatigue built per tick of exertion (÷4)
     val restRecovery: Float = 0.015f, // fatigue recovered per tick of resting (÷4)
     // heritable visual breeds (sprite palettes); offspring inherit a parent's, rarely mutate
-    val breedCount: Int = 6,
+    val breedCount: Int = 2,
     val breedMutationPct: Int = 4,
 ) {
     fun metabolismOf(genome: Genome): Float {
