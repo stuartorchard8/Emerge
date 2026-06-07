@@ -3,6 +3,8 @@ package org.emerge.desktop
 import org.emerge.demo.norns.anim.BodyPart
 import org.emerge.demo.norns.anim.CreatureAnimation
 import org.emerge.demo.norns.anim.CreatureAction
+import org.emerge.demo.norns.anim.PartShape
+import org.emerge.demo.norns.anim.PosedPart
 import org.emerge.demo.norns.world.ActivityType
 import org.emerge.demo.norns.world.NornsConfig
 import org.emerge.demo.norns.world.NornsView
@@ -14,9 +16,12 @@ import java.awt.Font
 import java.awt.MultipleGradientPaint
 import java.awt.RadialGradientPaint
 import java.awt.RenderingHints
+import java.awt.geom.AffineTransform
 import java.awt.geom.Area
 import java.awt.geom.Ellipse2D
+import java.awt.geom.Path2D
 import java.awt.geom.Point2D
+import java.awt.geom.QuadCurve2D
 import java.awt.image.BufferedImage
 import java.io.File
 import javax.imageio.ImageIO
@@ -167,7 +172,7 @@ object NornsImageRenderer {
             ActivityType.RESTING, ActivityType.IDLE -> CreatureAction.REST
             ActivityType.MOVING -> CreatureAction.WALK
         }
-        val scale = 1.1f
+        val scale = 1.15f
         val phase = c.ticksLived * 0.35f
         // warm, earthy fur, gene-tinted: efficient = mossy/green, inefficient = rusty/red,
         // plus a small per-creature jitter so individuals aren't identical clones of one hue.
@@ -179,81 +184,99 @@ object NornsImageRenderer {
         val r = (0.55f + 0.30f * frac + jr).coerceIn(0.18f, 0.95f)
         val gr = (0.62f - 0.16f * frac + jg).coerceIn(0.18f, 0.95f)
         val b = (0.40f - 0.06f * frac + jb).coerceIn(0.14f, 0.9f)
-        val hairCol = breedHair(c.id)
+
+        val posed = CreatureAnimation.pose(action, phase, c.facing, r, gr, b)
+        fun ecx(p: PosedPart) = px(worldX + p.x * scale)
+        fun ecy(p: PosedPart) = py(worldY + p.y * scale)
+        fun ehw(p: PosedPart) = p.halfW * scale * sx
+        fun ehh(p: PosedPart) = p.halfH * scale * sx
+        // a part's drawn shape in screen space (rotated ellipse, or a pointed triangle for ears)
+        fun shapeOf(p: PosedPart): java.awt.Shape {
+            val cx = ecx(p).toDouble(); val cy = ecy(p).toDouble(); val hw = ehw(p).toDouble(); val hh = ehh(p).toDouble()
+            val base: java.awt.Shape = when (p.shape) {
+                PartShape.ELLIPSE -> Ellipse2D.Double(cx - hw, cy - hh, 2 * hw, 2 * hh)
+                PartShape.TRIANGLE -> Path2D.Double().apply {
+                    moveTo(cx, cy - hh); lineTo(cx - hw, cy + hh * 0.7); lineTo(cx + hw, cy + hh * 0.7); closePath()
+                }
+            }
+            return if (p.angle != 0f) AffineTransform.getRotateInstance(p.angle.toDouble(), cx, cy).createTransformedShape(base) else base
+        }
 
         // ground shadow (grounds the creature + separates it from neighbours/background)
         val shW = (0.95f * scale * sx).roundToInt(); val shH = (0.22f * scale * sx).roundToInt()
         g.color = Color(0, 0, 0, 70)
-        g.fillOval((px(worldX) - shW / 2).roundToInt(), (py(worldY - 0.82f * scale) - shH / 2).roundToInt(), shW, shH)
+        g.fillOval((px(worldX) - shW / 2).roundToInt(), (py(worldY - 0.86f * scale) - shH / 2).roundToInt(), shW, shH)
 
-        val posed = CreatureAnimation.pose(action, phase, c.facing, r, gr, b)
-        fun ecx(p: org.emerge.demo.norns.anim.PosedPart) = px(worldX + p.x * scale)
-        fun ecy(p: org.emerge.demo.norns.anim.PosedPart) = py(worldY + p.y * scale)
-        fun erad(p: org.emerge.demo.norns.anim.PosedPart) = p.radius * scale * sx
-
-        // one unified silhouette (union of the fur lobes) → a single clean outline, not bumpy per-blob
+        // one unified silhouette (union of the fur parts) → a single clean outline
         val body = Area()
-        for (p in posed) if (isFur(p.part)) {
-            val rr = erad(p)
-            body.add(Area(Ellipse2D.Float(ecx(p) - rr, ecy(p) - rr, 2 * rr, 2 * rr)))
-        }
-        val ow = (0.15f * scale * sx).coerceIn(3.5f, 12f)
+        for (p in posed) if (isFur(p.part)) body.add(Area(shapeOf(p)))
+        val ow = (0.14f * scale * sx).coerceIn(3.5f, 12f)
         g.stroke = BasicStroke(ow, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
-        g.color = Color(44, 30, 20); g.draw(body)          // outline (outer half survives the fill)
+        g.color = Color(42, 28, 18); g.draw(body)          // outline (outer half survives the fill)
         g.color = rgb(r, gr, b); g.fill(body)              // base coat (kills antialias seams)
 
-        // volumetric shading: shade the WHOLE silhouette as one plush form (single top-down light),
-        // then soft accents — so it reads as one body, not a cluster of separate spheres.
+        // shade the WHOLE silhouette as one form (top-down light), then soft accents — matte, not glossy
         fun firstOf(bp: BodyPart) = posed.firstOrNull { it.part == bp }
         val oldClip = g.clip
         g.clip(body)
         val bnd = body.bounds2D
         g.paint = java.awt.GradientPaint(
-            0f, bnd.minY.toFloat(), rgb(r + (1f - r) * 0.26f, gr + (1f - gr) * 0.26f, b + (1f - b) * 0.26f),
-            0f, bnd.maxY.toFloat(), rgb(r * 0.58f, gr * 0.58f, b * 0.58f),
+            0f, bnd.minY.toFloat(), rgb(r + (1f - r) * 0.22f, gr + (1f - gr) * 0.22f, b + (1f - b) * 0.22f),
+            0f, bnd.maxY.toFloat(), rgb(r * 0.56f, gr * 0.56f, b * 0.56f),
         )
         g.fill(body)
         // paler muzzle + cream belly, blended softly into the form
-        firstOf(BodyPart.SNOUT)?.let { softBlob(g, ecx(it), ecy(it), erad(it) * 1.15f, rgbA(it.r, it.g, it.b, 185)) }
-        firstOf(BodyPart.BELLY)?.let { softBlob(g, ecx(it), ecy(it) + erad(it) * 0.1f, erad(it) * 1.2f, rgbA(it.r, it.g, it.b, 205)) }
-        // sheen highlights (upper-left) on head + body
-        firstOf(BodyPart.HEAD)?.let { softBlob(g, ecx(it) - erad(it) * 0.38f, ecy(it) - erad(it) * 0.44f, erad(it) * 0.8f, Color(255, 255, 248, 72)) }
-        firstOf(BodyPart.TORSO)?.let { softBlob(g, ecx(it) - erad(it) * 0.34f, ecy(it) - erad(it) * 0.4f, erad(it) * 0.72f, Color(255, 255, 248, 46)) }
-        // breed-coloured hair crest (drawn over the body gradient as soft tufts)
-        val hc = Color(hairCol.red, hairCol.green, hairCol.blue, 235)
-        for (p in posed) if (p.part == BodyPart.HAIR) softBlob(g, ecx(p), ecy(p), erad(p) * 1.18f, hc)
-        // soft contact shadow where the head sits on the body
-        firstOf(BodyPart.HEAD)?.let { softBlob(g, ecx(it), ecy(it) + erad(it) * 0.92f, erad(it) * 0.72f, Color(0, 0, 0, 58)) }
+        firstOf(BodyPart.MUZZLE)?.let { softBlob(g, ecx(it), ecy(it), ehw(it) * 1.2f, rgbA(it.r, it.g, it.b, 200)) }
+        firstOf(BodyPart.BELLY)?.let { softBlob(g, ecx(it), ecy(it) + ehh(it) * 0.1f, ehh(it) * 1.15f, rgbA(it.r, it.g, it.b, 205)) }
+        // pale inner ears
+        for (p in posed) if (p.part == BodyPart.EAR_LEFT || p.part == BodyPart.EAR_RIGHT) {
+            softBlob(g, ecx(p), ecy(p) + ehh(p) * 0.18f, ehw(p) * 0.7f, Color(228, 188, 180, 200))
+        }
+        // a single soft matte sheen high on the head (no plastic gloss)
+        firstOf(BodyPart.HEAD)?.let { softBlob(g, ecx(it) - ehw(it) * 0.3f, ecy(it) - ehh(it) * 0.42f, ehw(it) * 0.66f, Color(255, 252, 240, 40)) }
+        // contact shadows: under the head, and a gap between the legs so they read as two
+        firstOf(BodyPart.HEAD)?.let { softBlob(g, ecx(it), ecy(it) + ehh(it) * 0.95f, ehw(it) * 0.68f, Color(0, 0, 0, 55)) }
+        val ll = firstOf(BodyPart.LEG_LEFT); val lr = firstOf(BodyPart.LEG_RIGHT)
+        if (ll != null && lr != null) softBlob(g, (ecx(ll) + ecx(lr)) / 2f, (ecy(ll) + ecy(lr)) / 2f - ehh(ll) * 0.2f, ehw(ll) * 0.7f, Color(0, 0, 0, 60))
         g.clip = oldClip
 
-        // face: white eyes, breed-coloured iris, pupil + glint, nose, mouth (on top, unclipped)
+        // ---- expressive forward-facing face (on top, unclipped) ----
         val eye = eyeColor(c.id)
-        for (p in posed) {
-            val cx = ecx(p); val cy = ecy(p); val rr = erad(p)
-            when (p.part) {
-                BodyPart.EYE_BACK, BodyPart.EYE_FRONT -> {
-                    g.color = Color(248, 247, 242); fillCircle(g, cx, cy, rr)
-                    g.color = Color(206, 200, 188); fillCircle(g, cx, cy + rr * 0.42f, rr * 0.55f) // lower shadow
-                    g.color = Color(248, 247, 242); fillCircle(g, cx, cy - rr * 0.12f, rr * 0.86f) // re-light top
-                }
-                BodyPart.PUPIL_BACK, BodyPart.PUPIL_FRONT -> {
-                    g.color = eye; fillCircle(g, cx, cy, rr * 1.7f)                 // iris
-                    g.color = Color(24, 20, 28); fillCircle(g, cx, cy, rr)          // pupil
-                    g.color = Color(255, 255, 255, 235); fillCircle(g, cx - rr * 0.5f, cy - rr * 0.6f, rr * 0.5f) // glint
-                }
-                BodyPart.NOSE, BodyPart.MOUTH -> { g.color = rgb(p.r, p.g, p.b); fillCircle(g, cx, cy, rr) }
-                else -> {}
-            }
+        // brows
+        for (p in posed) if (p.part == BodyPart.BROW_LEFT || p.part == BodyPart.BROW_RIGHT) {
+            g.color = rgb(p.r, p.g, p.b); g.fill(shapeOf(p))
+        }
+        // eye whites
+        for (p in posed) if (p.part == BodyPart.EYE_LEFT || p.part == BodyPart.EYE_RIGHT) {
+            g.color = Color(249, 248, 243); g.fill(shapeOf(p))
+            g.color = Color(208, 202, 190); fillCircle(g, ecx(p), ecy(p) + ehh(p) * 0.4f, ehw(p) * 0.6f) // lower shadow
+            g.color = Color(249, 248, 243); fillCircle(g, ecx(p), ecy(p) - ehh(p) * 0.1f, ehw(p) * 0.78f)
+        }
+        // iris + pupil + glint
+        for (p in posed) if (p.part == BodyPart.PUPIL_LEFT || p.part == BodyPart.PUPIL_RIGHT) {
+            val cx = ecx(p); val cy = ecy(p); val rr = ehw(p)
+            g.color = eye; fillCircle(g, cx, cy, rr * 1.7f)
+            g.color = Color(22, 18, 26); fillCircle(g, cx, cy, rr)
+            g.color = Color(255, 255, 255, 235); fillCircle(g, cx - rr * 0.5f, cy - rr * 0.6f, rr * 0.5f)
+        }
+        // nose
+        firstOf(BodyPart.NOSE)?.let { g.color = rgb(it.r, it.g, it.b); g.fill(shapeOf(it)) }
+        // mouth: a soft smile arc just under the muzzle
+        firstOf(BodyPart.MOUTH)?.let {
+            val cx = ecx(it); val cy = ecy(it); val mw = ehw(it); val mh = ehh(it)
+            g.stroke = BasicStroke(max(1.6f, 0.045f * sx), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
+            g.color = Color(60, 34, 28)
+            g.draw(QuadCurve2D.Float(cx - mw, cy, cx, cy + mh * 2.4f, cx + mw, cy))
         }
         // sleepy half-lids when resting (fur lid + dark crease) — a visible doze
         if (action == CreatureAction.REST) {
-            for (p in posed) if (p.part == BodyPart.EYE_BACK || p.part == BodyPart.EYE_FRONT) {
-                val cx = ecx(p); val cy = ecy(p); val rr = erad(p)
+            for (p in posed) if (p.part == BodyPart.EYE_LEFT || p.part == BodyPart.EYE_RIGHT) {
+                val cx = ecx(p); val cy = ecy(p); val rw = ehw(p); val rh = ehh(p)
                 g.color = rgb(r * 0.95f, gr * 0.95f, b * 0.95f)
-                fillCircle(g, cx, cy - rr * 0.5f, rr * 1.06f)
+                g.fillOval((cx - rw * 1.05f).roundToInt(), (cy - rh * 1.55f).roundToInt(), (rw * 2.1f).roundToInt(), (rh * 2.1f).roundToInt())
                 g.stroke = BasicStroke(max(1.5f, 0.03f * sx), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
                 g.color = Color(58, 40, 28)
-                g.drawLine((cx - rr * 0.85f).roundToInt(), (cy + rr * 0.46f).roundToInt(), (cx + rr * 0.85f).roundToInt(), (cy + rr * 0.46f).roundToInt())
+                g.drawLine((cx - rw * 0.85f).roundToInt(), (cy + rh * 0.42f).roundToInt(), (cx + rw * 0.85f).roundToInt(), (cy + rh * 0.42f).roundToInt())
             }
         }
 
@@ -262,8 +285,8 @@ object NornsImageRenderer {
     }
 
     private fun isFaceDetail(part: BodyPart) = when (part) {
-        BodyPart.EYE_BACK, BodyPart.EYE_FRONT, BodyPart.PUPIL_BACK, BodyPart.PUPIL_FRONT,
-        BodyPart.NOSE, BodyPart.MOUTH -> true
+        BodyPart.EYE_LEFT, BodyPart.EYE_RIGHT, BodyPart.PUPIL_LEFT, BodyPart.PUPIL_RIGHT,
+        BodyPart.NOSE, BodyPart.MOUTH, BodyPart.BROW_LEFT, BodyPart.BROW_RIGHT -> true
         else -> false
     }
 
@@ -282,23 +305,8 @@ object NornsImageRenderer {
         else -> Color(96, 150, 96) // green
     }
 
-    /** Breed hair-crest colour (researched: hair varies by breed — e.g. the White Haired Pixie). */
-    private fun breedHair(id: Int) = when ((id / 4) % 5) {
-        0 -> Color(228, 222, 206)   // white / cream
-        1 -> Color(198, 116, 56)    // ginger
-        2 -> Color(92, 62, 42)      // dark brown
-        3 -> Color(58, 48, 48)      // near-black
-        else -> Color(150, 148, 138) // grey
-    }
-
-    private fun isFur(part: org.emerge.demo.norns.anim.BodyPart): Boolean = when (part) {
-        // interior surface details sit ON the body, so they get no silhouette outline
-        org.emerge.demo.norns.anim.BodyPart.EYE_BACK, org.emerge.demo.norns.anim.BodyPart.EYE_FRONT,
-        org.emerge.demo.norns.anim.BodyPart.PUPIL_BACK, org.emerge.demo.norns.anim.BodyPart.PUPIL_FRONT,
-        org.emerge.demo.norns.anim.BodyPart.BELLY, org.emerge.demo.norns.anim.BodyPart.NOSE,
-        org.emerge.demo.norns.anim.BodyPart.MOUTH -> false
-        else -> true
-    }
+    // the silhouette parts (unioned into one outlined body). Face details + belly sit on top.
+    private fun isFur(part: BodyPart): Boolean = !isFaceDetail(part) && part != BodyPart.BELLY
 
     // ---- layered Albia flora: deterministic per (worldX, floor) so it's stable frame-to-frame ----
 
