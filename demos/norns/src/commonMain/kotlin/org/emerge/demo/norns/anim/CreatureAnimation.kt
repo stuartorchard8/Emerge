@@ -53,48 +53,66 @@ class PosedPart(
  * expressive (the classic Norn front-facing head sprite); [facing] turns the face slightly and sets
  * the limb swing so the side-scroll heading still reads. Legs alternate when walking, arms
  * counter-swing, the head dips when eating, courting bounces, resting breathes (+ blink handled by
- * the renderer). Hand-authored sine work, tuned via PNG (DESIGN.md G1/G11), not anatomy.
+ * the renderer). Hand-authored sine work, not anatomy. Every amplitude, frequency, proportion and
+ * shade is a dial in [AnimParams] (default = the hand-tuned baseline), tuned live in the Swing
+ * animation viewer (`runNornsAnim`) rather than by re-rendering PNGs (DESIGN.md G1/G11).
  */
 object CreatureAnimation {
 
-    fun pose(action: CreatureAction, phase: Float, facing: Int, r: Float, g: Float, b: Float): List<PosedPart> {
+    fun pose(
+        action: CreatureAction, phase: Float, facing: Int, r: Float, g: Float, b: Float,
+        p: AnimParams = AnimParams.DEFAULT,
+    ): List<PosedPart> {
         val face = if (facing < 0) -1f else 1f
         val s = sin(phase)
         val moving = action == CreatureAction.WALK   // only walking strides; eat/court/pick stay put
 
-        val legSwing = if (moving) 0.14f else 0f
+        val legSwing = if (moving) p["swing/legWalk"] else 0f
         val armSwing = when (action) {
-            CreatureAction.WALK -> 0.16f
-            CreatureAction.COURT -> 0.14f
-            else -> 0.02f
+            CreatureAction.WALK -> p["swing/armWalk"]
+            CreatureAction.COURT -> p["swing/armCourt"]
+            else -> p["swing/armIdle"]
         }
         val torsoBob = when (action) {
-            CreatureAction.REST -> sin(phase) * 0.022f
-            CreatureAction.WALK -> abs(s) * 0.05f
-            CreatureAction.EAT -> abs(s) * 0.03f
-            CreatureAction.PICK_UP -> -0.05f
-            CreatureAction.COURT -> abs(sin(phase * 1.5f)) * 0.10f
+            CreatureAction.REST -> sin(phase) * p["bob/rest"]
+            CreatureAction.WALK -> abs(s) * p["bob/walk"]
+            CreatureAction.EAT -> abs(s) * p["bob/eat"]
+            CreatureAction.PICK_UP -> p["bob/pickup"]
+            CreatureAction.COURT -> abs(sin(phase * p["freq/courtBob"])) * p["bob/court"]
         }
         val headDip = when (action) {
-            CreatureAction.EAT -> -abs(sin(phase * 2f)) * 0.18f   // chewing pecks
-            CreatureAction.PICK_UP -> -0.30f                      // bent right down to the ground
-            CreatureAction.COURT -> 0.05f                         // chin up
+            CreatureAction.EAT -> -abs(sin(phase * p["freq/eatHead"])) * p["head/eatDip"]   // chewing pecks
+            CreatureAction.PICK_UP -> p["head/pickupDip"]                                    // bent right down to the ground
+            CreatureAction.COURT -> p["head/courtLift"]                                      // chin up
             else -> 0f
         }
         val headY = torsoBob + headDip
-        val turn = face * 0.06f       // head/face turned 3/4 toward the heading
-        val lean = if (moving) face * 0.04f else if (action == CreatureAction.PICK_UP) face * 0.10f else 0f
-        val tailWag = sin(phase * 1.3f) * (if (moving) 0.08f else 0.03f)
-        val earTwitch = sin(phase * 1.7f) * 0.04f
+        val turn = face * p["head/turn"]       // head/face turned 3/4 toward the heading
+        val lean = if (moving) face * p["head/leanWalk"] else if (action == CreatureAction.PICK_UP) face * p["head/leanPickup"] else 0f
+        val tailWag = sin(phase * p["freq/tail"]) * (if (moving) p["swing/tailMove"] else p["swing/tailIdle"])
+        val earTwitch = sin(phase * p["freq/ear"]) * p["twitch/ear"]
+
+        // proportions (per-part half-extents)
+        val headW = p["size/headW"]; val headH = p["size/headH"]
+        val torsoW = p["size/torsoW"]; val torsoH = p["size/torsoH"]
+        val bellyW = p["size/bellyW"]; val bellyH = p["size/bellyH"]
+        val earW = p["size/earW"]; val earH = p["size/earH"]
+        val legW = p["size/legW"]; val legH = p["size/legH"]
+        val armW = p["size/armW"]; val armH = p["size/armH"]
+        val muzW = p["size/muzzleW"]; val muzH = p["size/muzzleH"]
+        val eyeK = p["size/eyeScale"]
 
         // colour helpers
         fun shade(k: Float, c: Float) = c * k
         fun bl(c: Float, t: Float, k: Float) = c + (t - c) * k
-        val muzR = bl(r, 1f, 0.42f); val muzG = bl(g, 0.9f, 0.42f); val muzB = bl(b, 0.82f, 0.42f)
-        val bellyR = bl(r, 0.96f, 0.5f); val bellyG = bl(g, 0.9f, 0.5f); val bellyB = bl(b, 0.78f, 0.5f)
-        val earR = shade(0.82f, r); val earG = shade(0.82f, g); val earB = shade(0.82f, b)
-        val limbR = shade(0.92f, r); val limbG = shade(0.92f, g); val limbB = shade(0.92f, b)
-        val browR = shade(0.42f, r); val browG = shade(0.42f, g); val browB = shade(0.42f, b)
+        val muzBlend = p["color/muzzleBlend"]; val bellyBlend = p["color/bellyBlend"]
+        val earK = p["color/earShade"]; val limbK = p["color/limbShade"]
+        val browK = p["color/browShade"]; val footK = p["color/footShade"]
+        val muzR = bl(r, 1f, muzBlend); val muzG = bl(g, 0.9f, muzBlend); val muzB = bl(b, 0.82f, muzBlend)
+        val bellyR = bl(r, 0.96f, bellyBlend); val bellyG = bl(g, 0.9f, bellyBlend); val bellyB = bl(b, 0.78f, bellyBlend)
+        val earR = shade(earK, r); val earG = shade(earK, g); val earB = shade(earK, b)
+        val limbR = shade(limbK, r); val limbG = shade(limbK, g); val limbB = shade(limbK, b)
+        val browR = shade(browK, r); val browG = shade(browK, g); val browB = shade(browK, b)
 
         val parts = ArrayList<PosedPart>(24)
         fun add(
@@ -106,36 +124,36 @@ object CreatureAnimation {
         // tail, peeking out behind the hip on the trailing side
         add(BodyPart.TAIL, -0.46f + tailWag, -0.30f, 0.17f, earR, earG, earB, halfW = 0.13f, halfH = 0.20f, angle = 0.4f)
         // legs + feet (anti-phase swing). legs rest at y = -0.62.
-        add(BodyPart.LEG_LEFT, -0.22f, -0.62f + s * legSwing, 0.20f, limbR, limbG, limbB, halfW = 0.16f, halfH = 0.26f)
-        add(BodyPart.LEG_RIGHT, 0.22f, -0.62f - s * legSwing, 0.20f, limbR, limbG, limbB, halfW = 0.16f, halfH = 0.26f)
-        add(BodyPart.FOOT_LEFT, -0.20f + 0.10f, -0.86f + s * legSwing, 0.14f, shade(0.8f, r), shade(0.8f, g), shade(0.8f, b), halfW = 0.19f, halfH = 0.11f)
-        add(BodyPart.FOOT_RIGHT, 0.20f + 0.10f, -0.86f - s * legSwing, 0.14f, shade(0.8f, r), shade(0.8f, g), shade(0.8f, b), halfW = 0.19f, halfH = 0.11f)
+        add(BodyPart.LEG_LEFT, -0.22f, -0.62f + s * legSwing, 0.20f, limbR, limbG, limbB, halfW = legW, halfH = legH)
+        add(BodyPart.LEG_RIGHT, 0.22f, -0.62f - s * legSwing, 0.20f, limbR, limbG, limbB, halfW = legW, halfH = legH)
+        add(BodyPart.FOOT_LEFT, -0.20f + 0.10f, -0.86f + s * legSwing, 0.14f, shade(footK, r), shade(footK, g), shade(footK, b), halfW = 0.19f, halfH = 0.11f)
+        add(BodyPart.FOOT_RIGHT, 0.20f + 0.10f, -0.86f - s * legSwing, 0.14f, shade(footK, r), shade(footK, g), shade(footK, b), halfW = 0.19f, halfH = 0.11f)
         // long ape arm on the far side (behind the torso), hanging low and counter-swinging
-        add(BodyPart.ARM_LEFT, -0.48f, 0.02f + s * armSwing, 0.14f, limbR, limbG, limbB, halfW = 0.13f, halfH = 0.42f, angle = -0.22f)
+        add(BodyPart.ARM_LEFT, -0.48f, 0.02f + s * armSwing, 0.14f, limbR, limbG, limbB, halfW = armW, halfH = armH, angle = -0.22f)
         add(BodyPart.HAND_LEFT, -0.56f, -0.44f + s * armSwing, 0.14f, shade(0.86f, r), shade(0.86f, g), shade(0.86f, b))
         // small hunched pot-bellied torso (the big head dominates) + cream belly
-        add(BodyPart.TORSO, lean, -0.12f + torsoBob, 0.50f, r, g, b, halfW = 0.42f, halfH = 0.50f)
-        add(BodyPart.BELLY, lean + 0.02f * face, -0.20f + torsoBob, 0.34f, bellyR, bellyG, bellyB, halfW = 0.31f, halfH = 0.36f)
+        add(BodyPart.TORSO, lean, -0.12f + torsoBob, 0.50f, r, g, b, halfW = torsoW, halfH = torsoH)
+        add(BodyPart.BELLY, lean + 0.02f * face, -0.20f + torsoBob, 0.34f, bellyR, bellyG, bellyB, halfW = bellyW, halfH = bellyH)
         // long ape arm on the near side (in front of the torso)
-        add(BodyPart.ARM_RIGHT, 0.48f, 0.02f - s * armSwing, 0.14f, shade(0.96f, r), shade(0.96f, g), shade(0.96f, b), halfW = 0.13f, halfH = 0.42f, angle = 0.22f)
+        add(BodyPart.ARM_RIGHT, 0.48f, 0.02f - s * armSwing, 0.14f, shade(0.96f, r), shade(0.96f, g), shade(0.96f, b), halfW = armW, halfH = armH, angle = 0.22f)
         add(BodyPart.HAND_RIGHT, 0.56f, -0.44f - s * armSwing, 0.14f, shade(0.9f, r), shade(0.9f, g), shade(0.9f, b))
         // pointed fox-like ears (triangles) at the top of the head, tilted outward + a tiny twitch
-        add(BodyPart.EAR_LEFT, -0.34f, 1.02f + headY, 0.30f, earR, earG, earB, PartShape.TRIANGLE, halfW = 0.20f, halfH = 0.42f, angle = 0.34f + earTwitch)
-        add(BodyPart.EAR_RIGHT, 0.34f, 1.02f + headY, 0.30f, earR, earG, earB, PartShape.TRIANGLE, halfW = 0.20f, halfH = 0.42f, angle = -0.34f - earTwitch)
+        add(BodyPart.EAR_LEFT, -0.34f, 1.02f + headY, 0.30f, earR, earG, earB, PartShape.TRIANGLE, halfW = earW, halfH = earH, angle = 0.34f + earTwitch)
+        add(BodyPart.EAR_RIGHT, 0.34f, 1.02f + headY, 0.30f, earR, earG, earB, PartShape.TRIANGLE, halfW = earW, halfH = earH, angle = -0.34f - earTwitch)
         // big head turned toward the viewer
-        add(BodyPart.HEAD, lean + turn, 0.66f + headY, 0.52f, r, g, b, halfW = 0.52f, halfH = 0.50f)
+        add(BodyPart.HEAD, lean + turn, 0.66f + headY, 0.52f, r, g, b, halfW = headW, halfH = headH)
         // muzzle pushed forward + down (toward the heading)
-        add(BodyPart.MUZZLE, turn + 0.10f * face, 0.44f + headY, 0.26f, muzR, muzG, muzB, halfW = 0.30f, halfH = 0.22f)
+        add(BodyPart.MUZZLE, turn + 0.10f * face, 0.44f + headY, 0.26f, muzR, muzG, muzB, halfW = muzW, halfH = muzH)
         add(BodyPart.NOSE, turn + 0.10f * face, 0.54f + headY, 0.075f, 0.20f, 0.13f, 0.12f, halfW = 0.10f, halfH = 0.07f)
         add(BodyPart.MOUTH, turn + 0.10f * face, 0.34f + headY, 0.10f, 0.28f, 0.13f, 0.12f, halfW = 0.13f, halfH = 0.06f)
         // brows over the eyes (expression)
         add(BodyPart.BROW_LEFT, turn - 0.18f, 0.92f + headY, 0.10f, browR, browG, browB, halfW = 0.14f, halfH = 0.05f, angle = 0.18f)
         add(BodyPart.BROW_RIGHT, turn + 0.20f, 0.92f + headY, 0.10f, browR, browG, browB, halfW = 0.14f, halfH = 0.05f, angle = -0.18f)
         // two big forward-facing eyes (near eye a touch larger for the 3/4 turn)
-        add(BodyPart.EYE_LEFT, turn - 0.18f, 0.74f + headY, 0.165f, 1f, 1f, 1f, halfW = 0.155f, halfH = 0.175f)
-        add(BodyPart.EYE_RIGHT, turn + 0.20f, 0.74f + headY, 0.18f, 1f, 1f, 1f, halfW = 0.17f, halfH = 0.19f)
-        add(BodyPart.PUPIL_LEFT, turn - 0.16f + 0.02f * face, 0.72f + headY, 0.10f, 0.12f, 0.12f, 0.16f)
-        add(BodyPart.PUPIL_RIGHT, turn + 0.22f + 0.02f * face, 0.72f + headY, 0.105f, 0.12f, 0.12f, 0.16f)
+        add(BodyPart.EYE_LEFT, turn - 0.18f, 0.74f + headY, 0.165f, 1f, 1f, 1f, halfW = 0.155f * eyeK, halfH = 0.175f * eyeK)
+        add(BodyPart.EYE_RIGHT, turn + 0.20f, 0.74f + headY, 0.18f, 1f, 1f, 1f, halfW = 0.17f * eyeK, halfH = 0.19f * eyeK)
+        add(BodyPart.PUPIL_LEFT, turn - 0.16f + 0.02f * face, 0.72f + headY, 0.10f * eyeK, 0.12f, 0.12f, 0.16f)
+        add(BodyPart.PUPIL_RIGHT, turn + 0.22f + 0.02f * face, 0.72f + headY, 0.105f * eyeK, 0.12f, 0.12f, 0.16f)
         return parts
     }
 }
