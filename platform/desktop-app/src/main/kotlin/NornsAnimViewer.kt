@@ -73,9 +73,10 @@ object NornsAnimViewer {
         var refImg: BufferedImage? = null
         var selected = def.parts.firstOrNull()?.id ?: ""
         var symmetry = false      // mirror edits to the paired (L↔R) part
-        var symPhase = 3.14f      // extra phase offset on the mirrored side (π → anti-phase walk)
+        var symPhase = PI.toFloat()   // extra phase offset on the mirrored side (0.5 turn → anti-phase walk)
         var suppress = false      // guard programmatic control updates
         var building = false      // guard combo rebuilds
+        val tau = (2 * PI).toFloat()   // angles are edited in TURNS (1 turn = 2π rad); model stays rad
 
         lateinit var canvas: JComponent
         val syncList = ArrayList<() -> Unit>()
@@ -114,7 +115,7 @@ object NornsAnimViewer {
                 NornCompositor.draw(g, def, sprites, action, phase, facing, originX, originY, sx, highlight = selected)
                 g.color = if (bgMode == 2) Color(60, 50, 40) else Color(245, 240, 228)
                 g.font = Font("SansSerif", Font.PLAIN, 13)
-                g.drawString("$breed a$age   ${action.name}   facing ${if (facing > 0) "▶" else "◀"}   sel:$selected   phase ${"%.2f".format(phase % (2 * PI))}", 12, 20)
+                g.drawString("$breed a$age   ${action.name}   facing ${if (facing > 0) "▶" else "◀"}   sel:$selected   phase ${"%.2f".format((phase / tau).rem(1f))} turns", 12, 20)
             }
         }
         canvas.preferredSize = Dimension(640, 720)
@@ -145,18 +146,23 @@ object NornsAnimViewer {
         }
 
         // ---- a float slider bound to dynamic getter/setter ----
-        fun fslider(name: String, lo: Float, hi: Float, get: () -> Float, set: (Float) -> Unit): JPanel {
+        fun fslider(name: String, lo: Float, hi: Float, get: () -> Float, set: (Float) -> Unit, snap: Float? = null): JPanel {
             val valLabel = JLabel().apply { preferredSize = Dimension(52, 18); minimumSize = preferredSize }
             val nameLabel = JLabel(name).apply { preferredSize = Dimension(92, 18); minimumSize = preferredSize }
             val slider = JSlider(0, 1000)
+            fun pos(v: Float) = (((v - lo) / (hi - lo)) * 1000f).roundToInt().coerceIn(0, 1000)
             slider.addChangeListener {
                 if (suppress) return@addChangeListener
-                val v = lo + (slider.value / 1000f) * (hi - lo)
+                var v = lo + (slider.value / 1000f) * (hi - lo)
+                if (snap != null) {                                  // round to increment + click the knob into place
+                    v = (lo + ((v - lo) / snap).roundToInt() * snap).coerceIn(lo, hi)
+                    suppress = true; slider.value = pos(v); suppress = false
+                }
                 set(v); applySymmetry(); valLabel.text = "%.2f".format(v); canvas.repaint()
             }
             syncList += {
                 val v = get()
-                slider.value = (((v - lo) / (hi - lo)) * 1000f).roundToInt().coerceIn(0, 1000)
+                slider.value = pos(v)
                 valLabel.text = "%.2f".format(v)
             }
             return JPanel().apply {
@@ -185,16 +191,16 @@ object NornsAnimViewer {
         val playBtn = JToggleButton("⏸ Pause", true).apply {
             addActionListener { playing = isSelected; text = if (playing) "⏸ Pause" else "▶ Play" }
         }
-        val phaseSlider = JSlider(0, 628, 0).apply { addChangeListener { if (!suppress) { phase = value / 100f; canvas.repaint() } } }
+        val phaseSlider = JSlider(0, 100, 0).apply { addChangeListener { if (!suppress) { phase = value / 100f * tau; canvas.repaint() } } }
         val speedSlider = JSlider(0, 100, 18).apply { addChangeListener { phaseSpeed = value / 100f } }
         val sizeSlider = JSlider(200, 1000, 560).apply { addChangeListener { heightPx = value.toFloat(); canvas.repaint() } }
         val bgBox = JComboBox(arrayOf("Albia sky", "Flat dark", "White")).apply { addActionListener { bgMode = selectedIndex; canvas.repaint() } }
         val onionChk = JCheckBox("Onion").apply { addActionListener { onion = isSelected; canvas.repaint() } }
         val refChk = JCheckBox("Reference").apply { addActionListener { showRef = isSelected; canvas.repaint() } }
         val symChk = JCheckBox("Symmetry").apply { addActionListener { symmetry = isSelected; applySymmetry(); canvas.repaint() } }
-        val symPhaseSlider = JSlider(0, 628, 314).apply {
-            toolTipText = "Phase offset on the mirrored side (π = anti-phase)"
-            addChangeListener { if (!suppress) { symPhase = value / 100f; applySymmetry(); canvas.repaint() } }
+        val symPhaseSlider = JSlider(0, 100, 50).apply {
+            toolTipText = "Phase offset on the mirrored side, in turns (0.5 = anti-phase)"
+            addChangeListener { if (!suppress) { symPhase = value / 100f * tau; applySymmetry(); canvas.repaint() } }
         }
 
         fun rebuildPartCombo() {
@@ -272,20 +278,20 @@ object NornsAnimViewer {
             add(fslider("pivot x", -60f, 80f, { sel()?.pivotX ?: 0f }, { sel()?.pivotX = it }))
             add(fslider("pivot y", -60f, 80f, { sel()?.pivotY ?: 0f }, { sel()?.pivotY = it }))
             add(header("PART"))
-            add(fslider("rest∠", -3.14f, 3.14f, { sel()?.restAngle ?: 0f }, { sel()?.restAngle = it }))
-            add(fslider("z-order", -8f, 8f, { (sel()?.z ?: 0).toFloat() }, { sel()?.z = it.roundToInt() }))
+            add(fslider("rest (turns)", -0.5f, 0.5f, { (sel()?.restAngle ?: 0f) / tau }, { sel()?.restAngle = it * tau }))
+            add(fslider("z-order", -8f, 8f, { (sel()?.z ?: 0).toFloat() }, { sel()?.z = it.roundToInt() }, snap = 1f))
             add(header("ANIM (this action)"))
-            add(fslider("bias∠", -1.5f, 1.5f, { selAnim()?.bias ?: 0f }, { selAnim()?.bias = it }))
-            add(fslider("amp", 0f, 1.2f, { selAnim()?.amp ?: 0f }, { selAnim()?.amp = it }))
-            add(fslider("freq", 0f, 6f, { selAnim()?.freq ?: 1f }, { selAnim()?.freq = it }))
-            add(fslider("phase", 0f, 6.28f, { selAnim()?.phase ?: 0f }, { selAnim()?.phase = it }))
-            add(fslider("sign", -1f, 1f, { selAnim()?.sign ?: 1f }, { selAnim()?.sign = if (it < 0f) -1f else 1f }))
+            add(fslider("bias (turns)", -0.3f, 0.3f, { (selAnim()?.bias ?: 0f) / tau }, { selAnim()?.bias = it * tau }))
+            add(fslider("amp (turns)", 0f, 0.3f, { (selAnim()?.amp ?: 0f) / tau }, { selAnim()?.amp = it * tau }))
+            add(fslider("freq", 0f, 6f, { selAnim()?.freq ?: 1f }, { selAnim()?.freq = it }, snap = 0.25f))
+            add(fslider("phase (turns)", 0f, 1f, { (selAnim()?.phase ?: 0f) / tau }, { selAnim()?.phase = it * tau }))
+            add(fslider("sign", -1f, 1f, { selAnim()?.sign ?: 1f }, { selAnim()?.sign = if (it < 0f) -1f else 1f }, snap = 2f))
             add(header("BODY (this action)"))
             add(fslider("bob", 0f, 1f, { glob().bobAmp }, { glob().bobAmp = it }))
-            add(fslider("bobFreq", 0f, 6f, { glob().bobFreq }, { glob().bobFreq = it }))
-            add(fslider("lean∠", -1f, 1f, { glob().lean }, { glob().lean = it }))
+            add(fslider("bobFreq", 0f, 6f, { glob().bobFreq }, { glob().bobFreq = it }, snap = 0.25f))
+            add(fslider("lean (turns)", -0.25f, 0.25f, { glob().lean / tau }, { glob().lean = it * tau }))
             add(fslider("hop", 0f, 1f, { glob().hopAmp }, { glob().hopAmp = it }))
-            add(fslider("hopFreq", 0f, 6f, { glob().hopFreq }, { glob().hopFreq = it }))
+            add(fslider("hopFreq", 0f, 6f, { glob().hopFreq }, { glob().hopFreq = it }, snap = 0.25f))
         }
 
         val east = JPanel(BorderLayout()).apply {
@@ -314,7 +320,7 @@ object NornsAnimViewer {
             if (playing) {
                 phase += phaseSpeed
                 suppress = true
-                phaseSlider.value = ((phase % (2 * PI).toFloat()) * 100).roundToInt().coerceIn(0, 628)
+                phaseSlider.value = ((phase / tau).rem(1f) * 100).roundToInt().coerceIn(0, 100)
                 suppress = false
                 canvas.repaint()
             }
