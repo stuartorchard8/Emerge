@@ -112,6 +112,15 @@ tasks.register<JavaExec>("runNornsSwing") {
     classpath = sourceSets["main"].runtimeClasspath
 }
 
+tasks.register<JavaExec>("runNornsAnim") {
+    group = "application"
+    description = "Norn animation viewer/tweaker: render one procedural Norn and tune every AnimParams " +
+        "dial live (proportions, shading, per-action motion), then Export the values as Kotlin. " +
+        "Space play/pause, ←/→ scrub, [ / ] speed."
+    mainClass = "org.emerge.desktop.NornsAnimViewerKt"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
 tasks.register<JavaExec>("renderNorns") {
     group = "application"
     description = "Render PNG frames of the Norns world headlessly (CPU/Java2D). " +
