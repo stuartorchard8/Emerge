@@ -343,14 +343,23 @@ with custom anchor points and author the animations. Hence the rig compositor.)
   renderer's fallback** (`NornsImageRenderer.drawCreature` uses it when `!NornRig.ready`) and stay
   unit-tested. Not the art direction, but kept working.
 
+### Live world renders from the authored rig (DONE)
+`NornsImageRenderer.drawCreature` now draws via `NornCompositor` + `NornRigDef`, not the old
+hardcoded `NornRig` (now unused). `NornRigStore` supplies each creature's rig by breed+age: a breed
+with its own `assets/norns/rig-<breed>.txt` is rendered from it fully; any other breed uses its own
+default anchors (breed-specific `.att` px) with the **reference** rig's breed-independent *motion*
+overlaid (`NornRigDef.parse(applyParts=false)`). First authored rig shipped:
+`assets/norns/rig-denali.txt` (Stu's tuned walk). `NornBodyRenderer` (ellipse) is the missing-art
+fallback. So the live colony shows exactly what's authored in `runNornsAnim`.
+
 ### Open / next
-- **Author the rig** in the editor toward the C2 reference — the actual visuals work now.
+- **Author the rig** for the remaining actions (rest/eat/court/pick) + more breeds — drop in
+  `rig-<breed>.txt` per breed to author each fully (else they borrow denali's motion).
 - **Drag handles on the canvas** — v1 selects a part from a dropdown + sliders; click-and-drag the
   anchor/pivot directly is the obvious next iteration.
-- **Adopt the rig in the live world** — make `NornsImageRenderer`/`NornRig` render from a saved
-  `NornRigDef` (currently the rig editor and the live `NornRig` are separate; unify once a rig is
-  dialed in), so the game shows exactly what's authored.
 - **Per-part swaps / mixing** — the rig already lets a slot point at any sprite; expose part-swapping
   in the UI to mix breeds / customise a creature's look.
+- **Retire `NornRig`** — the old hardcoded sprite skeleton is now dead code; remove once the
+  compositor path is settled across all breeds/ages.
 - **Depth track** (later): mine the Creatures-series learning/complexity video to push G4 (SVRule
   brain), brain-topology evolution, and the deeper biochem fidelity gaps.
