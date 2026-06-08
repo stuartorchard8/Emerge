@@ -23,11 +23,14 @@ to push the depth further — that's a later track. **What comes first is the vi
   invisible without a body you believe in.
 - It's the one thing only Stu's eyes can judge, so it gates everything downstream.
 
-**Therefore the renderer is now procedural-primary** (the `CreatureAnimation` skeleton +
-`NornBodyRenderer`), with the ripped Creatures-2 sprites demoted from canonical to an
-**art target / reference** to match by eye. The ripped sprites are exactly the baked-frame
-limitation we're rejecting; we keep them only to aim at. The immediate tool for this is the
-**animation viewer** (`runNornsAnim`) — see the 2026-06-09 status update below.
+**Therefore animation is procedural, but the art stays real.** The synthesis: composite the
+creature from the **ripped Creatures-2 sprite parts** (genuine art) and animate them with a
+*procedural, fully-editable rig* (no baked frames — the limitation we're rejecting). Every anchor,
+pivot, rotation and per-action motion is authored in a tool, so both look and animation are
+customisable. The immediate tool for this is the **rig compositor/editor** (`runNornsAnim`) — see
+the 2026-06-09 status update below. (A pure procedural-*ellipse* body, `CreatureAnimation` /
+`NornBodyRenderer`, also exists but reads as primitives, not C2 — kept only as the live renderer's
+fallback.)
 
 ## Working agreement (how this gets built)
 
@@ -301,40 +304,53 @@ real art pipeline. Current state:
 
 ---
 
-## Status update (2026-06-09): visuals-first pivot + the animation viewer
+## Status update (2026-06-09): visuals-first pivot → a sprite-part RIG COMPOSITOR
 
-Following the North-star revision above, the priority is now **nailing the procedural look**, and
-the first tool for it is built.
+Following the North-star revision above, the priority is **nailing the look**, and the authoring
+tool is built. The approach was refined live with Stu over the day and **landed on the synthesis of
+both worlds**: keep the genuine Creatures-2 *art* (the ripped sprite **parts**) but drive it with
+*procedural* animation — no baked frames. A creature is **composited** from its parts on a rig whose
+every anchor/pivot/rotation is editable, so both the look and the per-action animation are fully
+customisable.
 
-### The animation viewer (`runNornsAnim`)
-- `./gradlew :platform:desktop-app:runNornsAnim` opens a Swing window rendering one big procedural
-  Norn. Pick an action (REST/WALK/COURT/EAT/PICK_UP), play or scrub the phase, and tune **every**
-  animation dial live with sliders. **Export** writes the tuned values as Kotlin (clipboard +
-  `norns-anim-params.txt`) to paste back into `AnimParams`. Extras: onion-skin ghosts (read the
-  whole cycle at once), a **reference-image overlay** (drop a C2 screenshot behind the Norn to
-  match by eye), fur/eye colour, background, render scale. `--render <png>` writes a headless
-  contact sheet of all actions (display-less verification).
-- This replaces the old PNG-frame iteration loop (`renderNorns`) for body tuning: change a number,
-  see it instantly, instead of re-running the world and inspecting a frame.
+(The path there: first a procedural *ellipse* Norn with tunable `AnimParams`; Stu judged primitives
+can't read as C2 — confirmed earlier in this doc — so the tool renders the real sprite parts
+instead. Not NornRig's fixed baked skeleton either: he wants to *compose* the creature from parts
+with custom anchor points and author the animations. Hence the rig compositor.)
 
-### Code changes enabling it
-- **`AnimParams`** (`:demos:norns`, commonMain): every constant in `CreatureAnimation.pose()` —
-  swing/bob/dip amplitudes + frequencies, per-part proportions, fur shades — is now a named,
-  grouped, map-backed dial. `DEFAULT` reproduces the prior hand-tuned baseline exactly
-  (`CreatureAnimationTest` unchanged). Adding a new dial = one line in `AnimParams` + one read in
-  `pose()`; the viewer picks it up automatically.
-- **`NornBodyRenderer`** (`:platform:desktop-app`): the procedural body draw, lifted out of
-  `NornsImageRenderer.drawCreature` (where it had been the NornRig-sprite *fallback*) into a
-  camera-independent renderer shared by the live world and the viewer — so what you tune is what
-  the game draws.
+### The rig editor (`runNornsAnim`)
+`./gradlew :platform:desktop-app:runNornsAnim` opens a Swing editor:
+- Pick a **breed + age** and a **part**; tune that part's **anchor** (where it joins its parent),
+  **pivot**, **rest angle**, **z-order**, and its **per-action animation** (`bias` + sine
+  `amp`/`freq`/`phase`/`sign`) — plus the **global per-action body bob/lean/hop** — all live, with
+  the selected part highlighted on the canvas.
+- Pick an action (REST/WALK/COURT/EAT/PICK_UP), play or scrub the phase, onion-skin the cycle,
+  overlay a C2 **reference image** to match by eye.
+- **Save/Load/Export** the whole rig as a text file (`norn-rig*.txt`) — a look + its animations,
+  reloadable and iterable. `--render <png>` writes a headless contact sheet (display-less checks).
+
+### Code (all in `:platform:desktop-app`)
+- **`NornParts`** — loads a breed/age's individual sprite-part PNGs + their `.att` anchor points as
+  plain data (decoupled from the live `NornRig`).
+- **`NornRigDef`** — the editable rig model (parts → sprite/parent/anchor/pivot/rest/z + per-action
+  `JointAnim`; global per-action `GlobalAnim`). `default()` seeds it from the `.att` points + a
+  sensible motion seed; `toText()`/`parse()` serialise it.
+- **`NornCompositor`** — runs the rig FK and blits the parts (fit-to-height, feet-planted, facing
+  flip, lean/hop), with a selection overlay.
+
+### The other (now secondary) path
+- **`AnimParams` + `NornBodyRenderer`** (the procedural *ellipse* Norn) remain as the **live-world
+  renderer's fallback** (`NornsImageRenderer.drawCreature` uses it when `!NornRig.ready`) and stay
+  unit-tested. Not the art direction, but kept working.
 
 ### Open / next
-- **Tune the procedural Norn** in the viewer toward the C2 art target — the actual visuals work.
-- **Flip the live world to procedural-primary.** Currently `NornsImageRenderer.drawCreature` still
-  prefers `NornRig` sprites when present (procedural only when `!NornRig.ready`). Deliberately left
-  until the procedural look is dialed in; the switch is a one-liner there once it's ready.
-- **Dial coverage**: the viewer exposes motion + proportions + key shades. Fine facial *positions*
-  (exact eye/brow/nose offsets) and per-hand shades are still literals in `pose()` — promote any of
-  them to `AnimParams` on demand (trivial) if the look needs them.
+- **Author the rig** in the editor toward the C2 reference — the actual visuals work now.
+- **Drag handles on the canvas** — v1 selects a part from a dropdown + sliders; click-and-drag the
+  anchor/pivot directly is the obvious next iteration.
+- **Adopt the rig in the live world** — make `NornsImageRenderer`/`NornRig` render from a saved
+  `NornRigDef` (currently the rig editor and the live `NornRig` are separate; unify once a rig is
+  dialed in), so the game shows exactly what's authored.
+- **Per-part swaps / mixing** — the rig already lets a slot point at any sprite; expose part-swapping
+  in the UI to mix breeds / customise a creature's look.
 - **Depth track** (later): mine the Creatures-series learning/complexity video to push G4 (SVRule
   brain), brain-topology evolution, and the deeper biochem fidelity gaps.
