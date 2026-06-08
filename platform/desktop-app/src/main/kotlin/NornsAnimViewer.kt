@@ -72,6 +72,8 @@ object NornsAnimViewer {
         var showRef = false
         var refImg: BufferedImage? = null
         var selected = def.parts.firstOrNull()?.id ?: ""
+        var symmetry = false      // mirror edits to the paired (L↔R) part
+        var symPhase = 3.14f      // extra phase offset on the mirrored side (π → anti-phase walk)
         var suppress = false      // guard programmatic control updates
         var building = false      // guard combo rebuilds
 
@@ -118,6 +120,30 @@ object NornsAnimViewer {
         canvas.preferredSize = Dimension(640, 720)
         canvas.isFocusable = true
 
+        // selection-dependent accessors
+        fun sel() = def.part(selected)
+        fun selAnim() = sel()?.animFor(action)
+        fun glob() = def.globalFor(action)
+
+        // ---- symmetry: the L↔R body pairs (a side-view rig, so "same values", not x-mirrored) ----
+        val mirror = mapOf(
+            "thighL" to "thighR", "thighR" to "thighL", "shinL" to "shinR", "shinR" to "shinL",
+            "footL" to "footR", "footR" to "footL", "uarmL" to "uarmR", "uarmR" to "uarmL",
+            "farmL" to "farmR", "farmR" to "farmL",
+        )
+        // Copy the selected part's transform + this action's animation onto its mirror, with the
+        // mirrored side's oscillation offset by [symPhase] (e.g. π = anti-phase stride).
+        fun applySymmetry() {
+            if (!symmetry) return
+            val s = sel() ?: return
+            val m = mirror[s.id]?.let { def.part(it) } ?: return
+            m.anchorX = s.anchorX; m.anchorY = s.anchorY; m.pivotX = s.pivotX; m.pivotY = s.pivotY
+            m.restAngle = s.restAngle; m.z = s.z
+            val sa = s.animFor(action); val ma = m.animFor(action)
+            ma.bias = sa.bias; ma.amp = sa.amp; ma.freq = sa.freq; ma.sign = sa.sign
+            ma.phase = sa.phase + symPhase
+        }
+
         // ---- a float slider bound to dynamic getter/setter ----
         fun fslider(name: String, lo: Float, hi: Float, get: () -> Float, set: (Float) -> Unit): JPanel {
             val valLabel = JLabel().apply { preferredSize = Dimension(52, 18); minimumSize = preferredSize }
@@ -126,7 +152,7 @@ object NornsAnimViewer {
             slider.addChangeListener {
                 if (suppress) return@addChangeListener
                 val v = lo + (slider.value / 1000f) * (hi - lo)
-                set(v); valLabel.text = "%.2f".format(v); canvas.repaint()
+                set(v); applySymmetry(); valLabel.text = "%.2f".format(v); canvas.repaint()
             }
             syncList += {
                 val v = get()
@@ -148,11 +174,6 @@ object NornsAnimViewer {
             maximumSize = Dimension(Int.MAX_VALUE, 26)
         }
 
-        // selection-dependent accessors
-        fun sel() = def.part(selected)
-        fun selAnim() = sel()?.animFor(action)
-        fun glob() = def.globalFor(action)
-
         // ---- top controls ----
         val breedBox = JComboBox(NornParts.BREEDS.toTypedArray()).apply { selectedItem = breed }
         val ageBox = JComboBox(arrayOf(0, 1, 2, 3)).apply { selectedItem = age }
@@ -170,6 +191,11 @@ object NornsAnimViewer {
         val bgBox = JComboBox(arrayOf("Albia sky", "Flat dark", "White")).apply { addActionListener { bgMode = selectedIndex; canvas.repaint() } }
         val onionChk = JCheckBox("Onion").apply { addActionListener { onion = isSelected; canvas.repaint() } }
         val refChk = JCheckBox("Reference").apply { addActionListener { showRef = isSelected; canvas.repaint() } }
+        val symChk = JCheckBox("Symmetry").apply { addActionListener { symmetry = isSelected; applySymmetry(); canvas.repaint() } }
+        val symPhaseSlider = JSlider(0, 628, 314).apply {
+            toolTipText = "Phase offset on the mirrored side (π = anti-phase)"
+            addChangeListener { if (!suppress) { symPhase = value / 100f; applySymmetry(); canvas.repaint() } }
+        }
 
         fun rebuildPartCombo() {
             building = true
@@ -234,6 +260,7 @@ object NornsAnimViewer {
             add(row(saveBtn, loadBtn, exportBtn, resetBtn))
             add(Box.createVerticalStrut(6))
             add(row(JLabel("PART"), partBox))
+            add(row(symChk, JLabel("symΦ"), symPhaseSlider))
         }
 
         val dials = JPanel().apply {
