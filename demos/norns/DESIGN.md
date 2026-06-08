@@ -343,18 +343,34 @@ with custom anchor points and author the animations. Hence the rig compositor.)
   renderer's fallback** (`NornsImageRenderer.drawCreature` uses it when `!NornRig.ready`) and stay
   unit-tested. Not the art direction, but kept working.
 
-### Live world renders from the authored rig (DONE)
+### Live world renders from the authored rig (DONE), scoped per (breed, age)
 `NornsImageRenderer.drawCreature` now draws via `NornCompositor` + `NornRigDef`, not the old
-hardcoded `NornRig` (now unused). `NornRigStore` supplies each creature's rig by breed+age: a breed
-with its own `assets/norns/rig-<breed>.txt` is rendered from it fully; any other breed uses its own
-default anchors (breed-specific `.att` px) with the **reference** rig's breed-independent *motion*
-overlaid (`NornRigDef.parse(applyParts=false)`). First authored rig shipped:
-`assets/norns/rig-denali.txt` (Stu's tuned walk). `NornBodyRenderer` (ellipse) is the missing-art
-fallback. So the live colony shows exactly what's authored in `runNornsAnim`.
+hardcoded `NornRig` (now unused). Rigs are keyed per **(breed, age)** —
+`assets/norns/rig-<breed>-a<age>.txt` — because baby (crawl) and adult (upright) are fundamentally
+different layouts. `NornRigStore.rigFor(breed, age)`: a (breed,age) with its own file renders from it
+fully; any other breed at that age uses its own default `.att` anchors with the **reference** breed's
+*motion for that same age* overlaid (`NornRigDef.parse(applyParts=false)`) — motion is
+breed-independent within an age, not across ages. Shipped: `rig-denali-a3.txt` (adult walk) +
+`rig-denali-a0.txt` (baby crawl), both authored by Stu in `runNornsAnim`. The editor saves/loads
+these straight into `assets/norns/` (single source of truth shared with the game) and keeps a
+session cache so switching age/breed never resets edits. `NornBodyRenderer` (ellipse) is the
+missing-art fallback.
+
+### End state (Stu, 2026-06-09): the authored rig is a *baseline*, not the destination
+The hand-authored per-(breed,age) rigs are a **source-of-truth of "something that looks good."** The
+intended end state is a **brain-driven animation loop**: per-creature motion that is **tweakable via
+learning** and **evolvable via natural selection** (continuous with the existing brain/genome/
+selection stack — see subsystems 3/5/7 + G5). So `NornRigDef` should stay clean, decoupled data
+(per part / action / age) that a creature could eventually *own* and vary — the editor just lets Stu
+hand-build a good baseline to seed and sanity-check that. (Likely future step: move the rig pose
+math to engine-side pure data so the sim can drive/evolve it; AWT stays in the compositor.)
 
 ### Open / next
-- **Author the rig** for the remaining actions (rest/eat/court/pick) + more breeds — drop in
-  `rig-<breed>.txt` per breed to author each fully (else they borrow denali's motion).
+- **Author the rig** for the remaining actions (rest/eat/court/pick), the child age (a1), + more
+  breeds — drop in `rig-<breed>-a<age>.txt` to author each fully (else they borrow denali's motion
+  for that age; a1/non-denali currently fall back to the default seed).
+- **Brain-driven / evolvable animation** (the end state above) — the larger track once the baseline
+  rigs exist: let a creature's genome/brain own + vary its motion.
 - **Drag handles on the canvas** — v1 selects a part from a dropdown + sliders; click-and-drag the
   anchor/pivot directly is the obvious next iteration.
 - **Per-part swaps / mixing** — the rig already lets a slot point at any sprite; expose part-swapping
