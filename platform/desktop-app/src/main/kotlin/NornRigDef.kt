@@ -104,20 +104,22 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
         private fun kv(tokens: List<String>) = tokens.mapNotNull { t -> t.split("=").takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
         private fun xy(s: String?): Pair<Float, Float>? = s?.split(",")?.takeIf { it.size == 2 }?.let { it[0].toFloat() to it[1].toFloat() }
 
-        /** Topology of the Norn body plan: (id, parent, anchorKeyOnParent, ownPivotKey, z-order). */
+        /** Topology of the Norn body plan: (id, parent, anchorKeyOnParent, ownPivotKey, z-order).
+         *  z is **0-centred**: body = 0, the far (L) side is negative (behind), the near (R) side
+         *  positive (in front), paired parts as exact negatives so symmetry mirrors z by negation. */
         private val TOPO = listOf(
-            arrayOf("body", null, null, null, "5"),
-            arrayOf("thighL", "body", "hipL", "start", "3"),
-            arrayOf("shinL", "thighL", "end", "start", "3"),
-            arrayOf("footL", "shinL", "end", "start", "2"),
-            arrayOf("uarmL", "body", "shL", "start", "4"),
-            arrayOf("farmL", "uarmL", "end", "start", "4"),
-            arrayOf("thighR", "body", "hipR", "start", "7"),
-            arrayOf("shinR", "thighR", "end", "start", "7"),
-            arrayOf("footR", "shinR", "end", "start", "8"),
-            arrayOf("uarmR", "body", "shR", "start", "9"),
-            arrayOf("farmR", "uarmR", "end", "start", "9"),
-            arrayOf("head", "body", "head", "neck", "6"),
+            arrayOf("body", null, null, null, "0"),
+            arrayOf("uarmL", "body", "shL", "start", "-2"),
+            arrayOf("farmL", "uarmL", "end", "start", "-2"),
+            arrayOf("thighL", "body", "hipL", "start", "-4"),
+            arrayOf("shinL", "thighL", "end", "start", "-4"),
+            arrayOf("footL", "shinL", "end", "start", "-6"),
+            arrayOf("head", "body", "head", "neck", "1"),
+            arrayOf("uarmR", "body", "shR", "start", "2"),
+            arrayOf("farmR", "uarmR", "end", "start", "2"),
+            arrayOf("thighR", "body", "hipR", "start", "4"),
+            arrayOf("shinR", "thighR", "end", "start", "4"),
+            arrayOf("footR", "shinR", "end", "start", "6"),
         )
 
         /** Build the default rig for a loaded part-set: anchors/pivots from the `.att` points, plus a

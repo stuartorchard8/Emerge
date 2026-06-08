@@ -138,7 +138,7 @@ object NornsAnimViewer {
             val s = sel() ?: return
             val m = mirror[s.id]?.let { def.part(it) } ?: return
             m.anchorX = s.anchorX; m.anchorY = s.anchorY; m.pivotX = s.pivotX; m.pivotY = s.pivotY
-            m.restAngle = s.restAngle; m.z = s.z
+            m.restAngle = s.restAngle; m.z = -s.z   // 0-centred → negate to put the mirror on the far side
             val sa = s.animFor(action); val ma = m.animFor(action)
             ma.bias = sa.bias; ma.amp = sa.amp; ma.freq = sa.freq; ma.sign = sa.sign
             ma.phase = sa.phase + symPhase
@@ -273,7 +273,7 @@ object NornsAnimViewer {
             add(fslider("pivot y", -60f, 80f, { sel()?.pivotY ?: 0f }, { sel()?.pivotY = it }))
             add(header("PART"))
             add(fslider("rest∠", -3.14f, 3.14f, { sel()?.restAngle ?: 0f }, { sel()?.restAngle = it }))
-            add(fslider("z-order", 0f, 15f, { (sel()?.z ?: 0).toFloat() }, { sel()?.z = it.roundToInt() }))
+            add(fslider("z-order", -8f, 8f, { (sel()?.z ?: 0).toFloat() }, { sel()?.z = it.roundToInt() }))
             add(header("ANIM (this action)"))
             add(fslider("bias∠", -1.5f, 1.5f, { selAnim()?.bias ?: 0f }, { selAnim()?.bias = it }))
             add(fslider("amp", 0f, 1.2f, { selAnim()?.amp ?: 0f }, { selAnim()?.amp = it }))
