@@ -344,7 +344,7 @@ private fun renderContactSheet(out: File) {
     System.setProperty("java.awt.headless", "true")
     val first = NornParts.firstAvailable() ?: run { println("no Norn parts found"); return }
     val sprites = first.third
-    val def = NornRigDef.default(sprites)
+    val def = NornRigStore.rigFor(first.first, first.second) ?: NornRigDef.default(sprites)
     val actions = CreatureAction.entries
     val phases = listOf(0.6f, (PI / 2).toFloat() + 0.6f)
     val tileW = 300; val tileH = 360

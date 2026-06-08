@@ -164,7 +164,8 @@ object NornsImageRenderer {
             ActivityType.MOVING -> CreatureAction.WALK
         }
         // an egg incubating on the ground (the EMBRYO stage hatches into a baby)
-        if (c.biology.lifeStage.name == "EMBRYO") { drawEgg(g, px(worldX), py(worldY - groundOffset), sx); return }
+        val stage = c.biology.lifeStage.name
+        if (stage == "EMBRYO") { drawEgg(g, px(worldX), py(worldY - groundOffset), sx); return }
         val scale = 1.15f
         val phase = c.ticksLived * 0.35f
         // warm, earthy fur, gene-tinted: efficient = mossy/green, inefficient = rusty/red,
@@ -178,13 +179,20 @@ object NornsImageRenderer {
         val gr = (0.62f - 0.16f * frac + jg).coerceIn(0.18f, 0.95f)
         val b = (0.40f - 0.06f * frac + jb).coerceIn(0.14f, 0.9f)
 
-        NornRig.ensure()
-        if (!NornRig.ready) {
-            // the canonical procedural Norn (shared with the animation viewer); origin = world-y=0 centre
-            NornBodyRenderer.draw(g, action, phase, c.facing, r, gr, b, NornBodyRenderer.eyeColor(c.id), px(worldX), py(worldY), scale, sx)
+        // the procedurally-animated sprite-part rig (authored in runNornsAnim); feet on the grass
+        // line the world draws at floorY - groundOffset. Falls back to the procedural-ellipse body
+        // only if the sprite parts are missing.
+        val breedName = NornRigStore.breedName(c.breed)
+        val rigAge = NornRigStore.ageOf(stage)
+        val sprites = NornParts.load(breedName, rigAge)
+        val rig = if (sprites != null) NornRigStore.rigFor(breedName, rigAge) else null
+        if (rig != null && sprites != null) {
+            NornCompositor.draw(
+                g, rig, sprites, action, c.ticksLived * 0.085f, c.facing,
+                px(worldX), py(worldY - groundOffset), sx, targetHeightUnits = NornRigStore.targetHeight(stage),
+            )
         } else {
-            // feet rest on the grass line, which the world draws at floorY - groundOffset
-            NornRig.draw(g, c, action, worldX, worldY - groundOffset, px, py, sx)
+            NornBodyRenderer.draw(g, action, phase, c.facing, r, gr, b, NornBodyRenderer.eyeColor(c.id), px(worldX), py(worldY), scale, sx)
         }
         if (c.carryingFood) blob(worldX + c.facing * 0.5f * scale, worldY + 0.05f * scale, 0.2f, Color(212, 84, 60))
         if (followed) blob(worldX, worldY + 1.7f * scale, 0.13f, Color(255, 255, 255)) // subtle follow marker
