@@ -59,7 +59,19 @@ object NornsAnimViewer {
         var breed = first.first
         var age = first.second
         var sprites = first.third
-        var def = NornRigDef.default(sprites)
+
+        // rigs are per (breed, age); the file lives in assets/norns so it's the same source the game
+        // loads. A session cache keeps each (breed,age)'s edits so switching age/breed never resets.
+        fun assetsDir(): File? = listOf(File("assets/norns"), File("../../assets/norns")).firstOrNull { it.isDirectory }
+        fun rigFile(b: String, a: Int): File = assetsDir()?.resolve("rig-$b-a$a.txt") ?: File("rig-$b-a$a.txt")
+        fun rigKey(b: String, a: Int) = "$b:$a"
+        fun loadRig(b: String, a: Int, spr: Map<String, NornParts.Part>): NornRigDef {
+            val f = rigFile(b, a)
+            return if (f.isFile) runCatching { NornRigDef.parse(f.readText(), spr) }.getOrDefault(NornRigDef.default(spr))
+            else NornRigDef.default(spr)
+        }
+        val rigCache = HashMap<String, NornRigDef>()
+        var def = rigCache.getOrPut(rigKey(breed, age)) { loadRig(breed, age, sprites) }
 
         var action = CreatureAction.WALK
         var facing = 1
@@ -211,13 +223,16 @@ object NornsAnimViewer {
             partBox.selectedItem = selected
             building = false
         }
-        fun reloadBreed() {
-            NornParts.load(breed, age)?.let { sprites = it; def = NornRigDef.default(sprites); rebuildPartCombo(); syncAll(); canvas.repaint() }
-                ?: JOptionPane.showMessageDialog(canvas, "No art for $breed a$age.")
+        fun switchRig() {
+            NornParts.load(breed, age)?.let { sp ->
+                sprites = sp
+                def = rigCache.getOrPut(rigKey(breed, age)) { loadRig(breed, age, sp) }
+                rebuildPartCombo(); syncAll(); canvas.repaint()
+            } ?: JOptionPane.showMessageDialog(canvas, "No art for $breed a$age.")
         }
 
-        breedBox.addActionListener { if (!building) { breed = breedBox.selectedItem as String; reloadBreed() } }
-        ageBox.addActionListener { if (!building) { age = ageBox.selectedItem as Int; reloadBreed() } }
+        breedBox.addActionListener { if (!building) { breed = breedBox.selectedItem as String; switchRig() } }
+        ageBox.addActionListener { if (!building) { age = ageBox.selectedItem as Int; switchRig() } }
         actionBox.addActionListener { action = actionBox.selectedItem as CreatureAction; syncAll(); canvas.repaint() }
         partBox.addActionListener { if (!building) { (partBox.selectedItem as? String)?.let { selected = it }; syncAll(); canvas.repaint() } }
 
@@ -232,15 +247,16 @@ object NornsAnimViewer {
         }
         val saveBtn = JButton("Save rig…").apply {
             addActionListener {
-                val fc = JFileChooser(File(".")); fc.selectedFile = File("norn-rig-$breed.txt")
+                val fc = JFileChooser(assetsDir() ?: File(".")); fc.selectedFile = rigFile(breed, age)
                 if (fc.showSaveDialog(canvas) == JFileChooser.APPROVE_OPTION) runCatching { fc.selectedFile.writeText(def.toText()) }
             }
         }
         val loadBtn = JButton("Load rig…").apply {
             addActionListener {
-                val fc = JFileChooser(File("."))
+                val fc = JFileChooser(assetsDir() ?: File(".")); fc.selectedFile = rigFile(breed, age)
                 if (fc.showOpenDialog(canvas) == JFileChooser.APPROVE_OPTION) runCatching {
-                    def = NornRigDef.parse(fc.selectedFile.readText(), sprites); rebuildPartCombo(); syncAll(); canvas.repaint()
+                    def = NornRigDef.parse(fc.selectedFile.readText(), sprites); rigCache[rigKey(breed, age)] = def
+                    rebuildPartCombo(); syncAll(); canvas.repaint()
                 }
             }
         }
@@ -252,7 +268,7 @@ object NornsAnimViewer {
                 println("(rig copied to clipboard + written to norn-rig.txt)")
             }
         }
-        val resetBtn = JButton("Reset").apply { addActionListener { def = NornRigDef.default(sprites); rebuildPartCombo(); syncAll(); canvas.repaint() } }
+        val resetBtn = JButton("Reset").apply { addActionListener { def = NornRigDef.default(sprites); rigCache[rigKey(breed, age)] = def; rebuildPartCombo(); syncAll(); canvas.repaint() } }
 
         // ---- the editable-dial panels ----
         val controls = JPanel().apply {
@@ -340,11 +356,13 @@ object NornsAnimViewer {
 }
 
 /** Headless: render a contact sheet of every action at two phases to a PNG (no display needed). */
-private fun renderContactSheet(out: File) {
+private fun renderContactSheet(out: File, ageOverride: Int? = null) {
     System.setProperty("java.awt.headless", "true")
     val first = NornParts.firstAvailable() ?: run { println("no Norn parts found"); return }
-    val sprites = first.third
-    val def = NornRigStore.rigFor(first.first, first.second) ?: NornRigDef.default(sprites)
+    val breed = first.first
+    val age = ageOverride ?: first.second
+    val sprites = NornParts.load(breed, age) ?: first.third
+    val def = NornRigStore.rigFor(breed, age) ?: NornRigDef.default(sprites)
     val actions = CreatureAction.entries
     val phases = listOf(0.6f, (PI / 2).toFloat() + 0.6f)
     val tileW = 300; val tileH = 360
@@ -363,7 +381,7 @@ private fun renderContactSheet(out: File) {
 
 fun main(args: Array<String>) {
     if (args.isNotEmpty() && args[0] == "--render") {
-        renderContactSheet(File(args.getOrElse(1) { "build/norn-anim-sheet.png" }))
+        renderContactSheet(File(args.getOrElse(1) { "build/norn-anim-sheet.png" }), args.getOrNull(2)?.toIntOrNull())
         return
     }
     SwingUtilities.invokeLater { NornsAnimViewer.run() }

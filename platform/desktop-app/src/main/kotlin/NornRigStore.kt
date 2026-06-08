@@ -5,34 +5,33 @@ import java.io.File
 /**
  * Supplies the **authored rig** ([NornRigDef]) for the live world, per breed + life-stage age.
  *
- * A breed with its own `assets/norns/rig-<breed>.txt` (authored in [NornsAnimViewer]) is rendered
- * from it directly — structure *and* animation. Any other breed gets its **own** correct default
- * structure (anchors from its `.att` points) with the **reference** rig's *motion* (animation +
- * body bob/lean/hop) overlaid — because the swing/timing is breed-independent while anchors are
- * breed-specific pixels. Drop in more `rig-<breed>.txt` files to author each breed fully.
+ * Rigs are scoped per **(breed, age)** — `assets/norns/rig-<breed>-a<age>.txt` — because baby (crawl)
+ * and adult (upright) layouts are fundamentally different (different parts, anchors, and motion).
+ * A (breed,age) with its own file is rendered from it directly — structure *and* animation. Any
+ * other breed at that age gets its **own** correct default structure (anchors from its `.att`
+ * points) with the **reference** breed's *motion for that same age* overlaid — because swing/timing
+ * is breed-independent (within an age) while anchors are breed-specific pixels. Drop in more
+ * `rig-<breed>-a<age>.txt` files to author each breed/age fully.
  */
 object NornRigStore {
 
-    private const val REFERENCE_BREED = "denali"   // the breed the shared walk was authored on
+    private const val REFERENCE_BREED = "denali"   // the breed the shared motion is authored on
 
     private val cache = HashMap<String, NornRigDef?>()
-    private var refText: String? = null
-    private var refLoaded = false
+    private val refByAge = HashMap<Int, String?>()
 
-    private fun reference(): String? {
-        if (!refLoaded) { refLoaded = true; refText = res("/assets/norns/rig-$REFERENCE_BREED.txt") }
-        return refText
-    }
+    /** The reference breed's authored motion for [age] (null if not yet authored). */
+    private fun referenceFor(age: Int): String? = refByAge.getOrPut(age) { res("/assets/norns/rig-$REFERENCE_BREED-a$age.txt") }
 
     /** The rig for [breed] at life-stage [age] (0..3), or null if the breed's art is missing. */
     fun rigFor(breed: String, age: Int): NornRigDef? = cache.getOrPut("$breed:$age") {
         val sprites = NornParts.load(breed, age) ?: return@getOrPut null
-        val own = res("/assets/norns/rig-$breed.txt")
+        val own = res("/assets/norns/rig-$breed-a$age.txt")
         when {
-            own != null -> NornRigDef.parse(own, sprites)                       // authored for this breed: full
+            own != null -> NornRigDef.parse(own, sprites)                       // authored for this breed+age: full
             else -> {
                 val d = NornRigDef.default(sprites)                             // this breed's own anchors
-                reference()?.let { NornRigDef.parse(it, sprites, applyParts = false, into = d) }  // + shared motion
+                referenceFor(age)?.let { NornRigDef.parse(it, sprites, applyParts = false, into = d) }  // + shared motion (same age)
                 d
             }
         }
