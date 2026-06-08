@@ -5,6 +5,30 @@ C1, 1996) artificial-life simulation on the Emerge engine: biochemistry, a genom
 neural-network brain, biology/physiology, drives, and reproduction — deterministic, on the
 engine's fixed-tick ECS.
 
+## North star (revised 2026-06-09, after Stu played Creatures 2)
+
+Creatures 2 lands on two things: a **beautiful art style** and an **insane below-surface
+depth** (its biochemistry / genetics / neural learning). People forgave everything else —
+terrible performance, baked-frame animation, detached floating-window UI — to feel those two
+things. Our bet: **match the depth, beat everything else.** Same below-surface complexity, but
+*far more performant*, with animation that is **procedural, not baked frames** (era-bound,
+heavy, un-tweakable), and an integrated UI.
+
+The depth we already have the mechanism for (subsystems 1–7, mechanism-faithful and tested).
+There's a community video on the Creatures series' learning/complexity systems Stu wants to mine
+to push the depth further — that's a later track. **What comes first is the visuals**, because:
+
+- Nailing the **art style** is both the hardest part and the most important — it's what makes a
+  human brain fill the gaps and attribute *personality and story* to a Norn. Mechanism depth is
+  invisible without a body you believe in.
+- It's the one thing only Stu's eyes can judge, so it gates everything downstream.
+
+**Therefore the renderer is now procedural-primary** (the `CreatureAnimation` skeleton +
+`NornBodyRenderer`), with the ripped Creatures-2 sprites demoted from canonical to an
+**art target / reference** to match by eye. The ripped sprites are exactly the baked-frame
+limitation we're rejecting; we keep them only to aim at. The immediate tool for this is the
+**animation viewer** (`runNornsAnim`) — see the 2026-06-09 status update below.
+
 ## Working agreement (how this gets built)
 
 Stu wants me to get as far as possible **autonomously**, then do **fidelity/styling tuning
@@ -274,3 +298,43 @@ real art pipeline. Current state:
 - **Baby vs adult proportions** — babies use their own age-0 sprite but read similar to adults
   beyond scale (Stu parked this); **foxi** has no age-0 art so its babies use an older sprite.
 - **Feel tuning** (G1) — joint swing amounts, pace, etc. are eyeballed, open to refinement.
+
+---
+
+## Status update (2026-06-09): visuals-first pivot + the animation viewer
+
+Following the North-star revision above, the priority is now **nailing the procedural look**, and
+the first tool for it is built.
+
+### The animation viewer (`runNornsAnim`)
+- `./gradlew :platform:desktop-app:runNornsAnim` opens a Swing window rendering one big procedural
+  Norn. Pick an action (REST/WALK/COURT/EAT/PICK_UP), play or scrub the phase, and tune **every**
+  animation dial live with sliders. **Export** writes the tuned values as Kotlin (clipboard +
+  `norns-anim-params.txt`) to paste back into `AnimParams`. Extras: onion-skin ghosts (read the
+  whole cycle at once), a **reference-image overlay** (drop a C2 screenshot behind the Norn to
+  match by eye), fur/eye colour, background, render scale. `--render <png>` writes a headless
+  contact sheet of all actions (display-less verification).
+- This replaces the old PNG-frame iteration loop (`renderNorns`) for body tuning: change a number,
+  see it instantly, instead of re-running the world and inspecting a frame.
+
+### Code changes enabling it
+- **`AnimParams`** (`:demos:norns`, commonMain): every constant in `CreatureAnimation.pose()` —
+  swing/bob/dip amplitudes + frequencies, per-part proportions, fur shades — is now a named,
+  grouped, map-backed dial. `DEFAULT` reproduces the prior hand-tuned baseline exactly
+  (`CreatureAnimationTest` unchanged). Adding a new dial = one line in `AnimParams` + one read in
+  `pose()`; the viewer picks it up automatically.
+- **`NornBodyRenderer`** (`:platform:desktop-app`): the procedural body draw, lifted out of
+  `NornsImageRenderer.drawCreature` (where it had been the NornRig-sprite *fallback*) into a
+  camera-independent renderer shared by the live world and the viewer — so what you tune is what
+  the game draws.
+
+### Open / next
+- **Tune the procedural Norn** in the viewer toward the C2 art target — the actual visuals work.
+- **Flip the live world to procedural-primary.** Currently `NornsImageRenderer.drawCreature` still
+  prefers `NornRig` sprites when present (procedural only when `!NornRig.ready`). Deliberately left
+  until the procedural look is dialed in; the switch is a one-liner there once it's ready.
+- **Dial coverage**: the viewer exposes motion + proportions + key shades. Fine facial *positions*
+  (exact eye/brow/nose offsets) and per-hand shades are still literals in `pose()` — promote any of
+  them to `AnimParams` on demand (trivial) if the look needs them.
+- **Depth track** (later): mine the Creatures-series learning/complexity video to push G4 (SVRule
+  brain), brain-topology evolution, and the deeper biochem fidelity gaps.
