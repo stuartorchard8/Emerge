@@ -354,7 +354,13 @@ breed-independent within an age, not across ages. Shipped: `rig-denali-a3.txt` (
 `rig-denali-a0.txt` (baby crawl), both authored by Stu in `runNornsAnim`. The editor saves/loads
 these straight into `assets/norns/` (single source of truth shared with the game) and keeps a
 session cache so switching age/breed never resets edits. `NornBodyRenderer` (ellipse) is the
-missing-art fallback.
+missing-art fallback. Ages now map BABY→0, CHILD→1, ADOLESCENT→2, ADULT/OLD→3.
+
+Anchor/pivot coords are **resolution-independent**: stored as a fraction (U/V, 0..1) of the relevant
+sprite's w/h and denormalised with each sprite's actual pixel dims at pose time, so a rig transfers
+cleanly across sprite sizes/ages (e.g. denali a0→a1, a3→a2 copies just work). `parse()` auto-converts
+legacy pixel rigs on read. This keeps the rig clean, portable data — the right substrate for the
+evolvable end state below.
 
 ### End state (Stu, 2026-06-09): the authored rig is a *baseline*, not the destination
 The hand-authored per-(breed,age) rigs are a **source-of-truth of "something that looks good."** The
