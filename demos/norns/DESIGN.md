@@ -347,14 +347,15 @@ with custom anchor points and author the animations. Hence the rig compositor.)
 `NornsImageRenderer.drawCreature` now draws via `NornCompositor` + `NornRigDef`, not the old
 hardcoded `NornRig` (now unused). Rigs are keyed per **(breed, age)** —
 `assets/norns/rig-<breed>-a<age>.txt` — because baby (crawl) and adult (upright) are fundamentally
-different layouts. `NornRigStore.rigFor(breed, age)`: a (breed,age) with its own file renders from it
-fully; any other breed at that age uses its own default `.att` anchors with the **reference** breed's
-*motion for that same age* overlaid (`NornRigDef.parse(applyParts=false)`) — motion is
-breed-independent within an age, not across ages. Shipped: `rig-denali-a3.txt` (adult walk) +
-`rig-denali-a0.txt` (baby crawl), both authored by Stu in `runNornsAnim`. The editor saves/loads
-these straight into `assets/norns/` (single source of truth shared with the game) and keeps a
-session cache so switching age/breed never resets edits. `NornBodyRenderer` (ellipse) is the
-missing-art fallback. Ages now map BABY→0, CHILD→1, ADOLESCENT→2, ADULT/OLD→3.
+different layouts. **One rig per age, shared by every species** (Stu, 2026-06-09 — no per-species
+rigs): `NornRigStore.rigFor(breed, age)` applies the single authored **denali** rig for the age
+(`assets/norns/rig-denali-a<age>.txt`) to *that breed's own sprites* — normalized coords scale it to
+each breed's sprite dimensions. Shipped a0..a3 (crawl baby/child, upright adolescent/adult), authored
+by Stu in `runNornsAnim`. The editor saves/loads straight into `assets/norns/` (single source of
+truth shared with the game) and keeps a session cache so switching age/breed never resets edits.
+`NornBodyRenderer` (ellipse) is the missing-art fallback. Ages map BABY→0, CHILD→1, ADOLESCENT→2,
+ADULT/OLD→3. (A breed that looks off under the shared rig is an art fix in its sprites, not a reason
+for a separate rig.)
 
 Anchor/pivot coords are **resolution-independent**: stored as a fraction (U/V, 0..1) of the relevant
 sprite's w/h and denormalised with each sprite's actual pixel dims at pose time, so a rig transfers
@@ -372,9 +373,15 @@ hand-build a good baseline to seed and sanity-check that. (Likely future step: m
 math to engine-side pure data so the sim can drive/evolve it; AWT stays in the compositor.)
 
 ### Open / next
-- **Author the rig** for the remaining actions (rest/eat/court/pick), the child age (a1), + more
-  breeds — drop in `rig-<breed>-a<age>.txt` to author each fully (else they borrow denali's motion
-  for that age; a1/non-denali currently fall back to the default seed).
+- **Author the remaining actions** (rest/eat/court/pick) across the four denali ages in
+  `runNornsAnim` — finishing the baseline. Walks + a1 rest done so far. (One rig per age, denali
+  only — no per-species authoring.)
+- **Rest vs sleep is deferred (Stu, 2026-06-09).** The sim has a single `FATIGUE` drive → `REST`
+  action; there is **no sleep** (no sleepiness drive, no SLEEP action — `grep -i sleep` is empty).
+  C2 splits tiredness vs sleepiness into separate drives/behaviours; modelling that (a `SLEEPINESS`
+  chemical + `SLEEP` action + brain wiring, after which SLEEP auto-appears in the editor and wants
+  its own lying-down animation) is left for the **depth track** — not touching core mechanics until
+  the current actions are all animated.
 - **Brain-driven / evolvable animation** (the end state above) — the larger track once the baseline
   rigs exist: let a creature's genome/brain own + vary its motion.
 - **Drag handles on the canvas** — v1 selects a part from a dropdown + sliders; click-and-drag the
