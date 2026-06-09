@@ -155,6 +155,7 @@ class MorphLab {
         partBtns.add(JButton("add child").apply { addActionListener { addChild() } })
         partBtns.add(JButton("add parent").apply { addActionListener { addParent() } })
         partBtns.add(JButton("delete").apply { addActionListener { deleteSelected() } })
+        partBtns.add(JButton("delete subtree").apply { addActionListener { deleteSubtree() } })
         partBtns.add(JButton("reparent…").apply { addActionListener { reparentDialog() } })
         partBtns.maximumSize = Dimension(Int.MAX_VALUE, partBtns.preferredSize.height)
         panel.add(partBtns)
@@ -277,6 +278,15 @@ class MorphLab {
         val idx = parent.children.indexOf(target)
         parent.children.removeAt(idx)
         parent.children.addAll(idx, target.children)       // promote children to the parent
+        rebuildTree(); selectNode(parent); requestRender()
+    }
+
+    /** Delete the selected node and its entire subtree. */
+    private fun deleteSubtree() {
+        val target = selected ?: return
+        if (target === genome) { JOptionPane.showMessageDialog(canvas, "Can't delete the root body."); return }
+        val parent = parentOf(genome, target) ?: return
+        parent.children.remove(target)
         rebuildTree(); selectNode(parent); requestRender()
     }
 
