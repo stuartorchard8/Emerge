@@ -42,17 +42,18 @@ object NornCompositor {
                 minX = min(minX, pt.x); minY = min(minY, pt.y); maxX = max(maxX, pt.x); maxY = max(maxY, pt.y)
             }
         }
-        val rigH = (maxY - minY).coerceAtLeast(1f)
-        val bottom = maxY
-        // Horizontal anchor: normally the silhouette centre. For PICK_UP, pin the LEFT foot's
-        // ground point instead, so it stays put as the norn crouches (the bbox centre would drift
-        // with the lean and slide the feet). Vertical still uses bbox-bottom — seating handles height.
+        val rigH = (maxY - minY).coerceAtLeast(1f)   // full silhouette height drives the scale
+        // Plant reference: normally the silhouette centre-X + bbox-bottom. For PICK_UP, pin the LEFT
+        // foot's ground point in BOTH axes, so it stays put as the norn crouches (the bbox would
+        // drift with the lean → feet slide, and an arm reaching below the foot would float the foot).
+        // groundOffset still fine-tunes height on top.
         var centerX = (minX + maxX) / 2f
+        var bottom = maxY
         if (action == CreatureAction.PICK_UP) {
             placed.firstOrNull { it.id == "footL" }?.let { foot ->
                 val p = Point2D.Float()
                 foot.transform.transform(Point2D.Float(foot.img.width / 2f, foot.img.height.toFloat()), p)
-                centerX = p.x
+                centerX = p.x; bottom = p.y
             }
         }
         val scale = targetHeightUnits * sx / rigH
