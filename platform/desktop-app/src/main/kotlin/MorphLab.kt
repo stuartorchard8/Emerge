@@ -248,15 +248,12 @@ class MorphLab {
     }
 
     /** Insert a new node between the selected node and its parent (the selected node becomes its child).
-     *  The new segment takes over the placement (offset/scale/mirror/depth) so the subtree stays put;
-     *  the selected node resets to sit at the segment's origin. Works on the root too (makes a new root). */
+     *  The new segment sits at the local origin (identity transform) and the selected node is left
+     *  untouched — so the subtree is unchanged and the op is exactly reversed by deleting the segment.
+     *  Works on the root too (makes a new root). */
     private fun addParent() {
         val target = selected ?: return
-        val seg = MorphNode("seg${genome.treeSize()}")
-        // hand the placement to the new segment; the target collapses to the segment's origin
-        seg.ox = target.ox; seg.oy = target.oy; seg.scale = target.scale; seg.mirX = target.mirX; seg.mirY = target.mirY
-        target.extra.remove("z")?.let { seg.extra["z"] = it }
-        target.ox = 0f; target.oy = 0f; target.scale = 1f; target.mirX = 0f; target.mirY = 0f
+        val seg = MorphNode("seg${genome.treeSize()}")     // identity transform; target unchanged
         seg.children.add(target)
         if (target === genome) {
             genome = seg
@@ -267,11 +264,20 @@ class MorphLab {
         rebuildTree(); selectNode(seg); requestRender()
     }
 
+    /** Delete the selected node, splicing its children up into its parent at the same spot (the inverse
+     *  of add-parent — so deleting an identity segment restores the original exactly). */
     private fun deleteSelected() {
         val target = selected ?: return
-        if (target === genome) { JOptionPane.showMessageDialog(canvas, "Can't delete the root body."); return }
+        if (target === genome) {
+            if (target.children.size == 1) { genome = target.children[0]; rebuildTree(); selectNode(genome); requestRender() }
+            else JOptionPane.showMessageDialog(canvas, "Can't delete the root unless it has exactly one child.")
+            return
+        }
         val parent = parentOf(genome, target) ?: return
-        parent.children.remove(target); rebuildTree(); selectNode(parent); requestRender()
+        val idx = parent.children.indexOf(target)
+        parent.children.removeAt(idx)
+        parent.children.addAll(idx, target.children)       // promote children to the parent
+        rebuildTree(); selectNode(parent); requestRender()
     }
 
     /** Move the selected node under a different parent (chosen from a dialog). Excludes the node's own
