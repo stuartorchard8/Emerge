@@ -39,14 +39,16 @@ object CreatureRenderer {
         fun norm(): V { val l = len(); return if (l < 1e-9) V(0.0, 0.0, 0.0) else V(x / l, y / l, z / l) }
     }
 
-    /** A mood: valence (−1 sad … +1 happy) × arousal (−1 calm … +1 excited). Drives per-node response. */
-    class Mood(valence: Double, arousal: Double) {
-        val v = valence.coerceIn(-1.0, 1.0); val a = arousal.coerceIn(-1.0, 1.0)
+    /** A mood in the PAD space: valence (−1 sad … +1 happy) × arousal (−1 calm … +1 excited) ×
+     *  dominance (−1 submissive … +1 dominant). Dominance is what separates emotions that share a
+     *  valence/arousal cell — notably anger (dominant) vs fear (submissive). Drives per-node response. */
+    class Mood(valence: Double, arousal: Double, dominance: Double = 0.0) {
+        val v = valence.coerceIn(-1.0, 1.0); val a = arousal.coerceIn(-1.0, 1.0); val d = dominance.coerceIn(-1.0, 1.0)
         companion object {
             val PRESETS = listOf(
-                "neutral" to Mood(0.0, 0.0), "happy" to Mood(0.85, 0.4), "content" to Mood(0.6, -0.35),
-                "sad" to Mood(-0.7, -0.5), "angry" to Mood(-0.7, 0.6), "scared" to Mood(-0.5, 0.95),
-                "surprised" to Mood(0.1, 0.95), "sleepy" to Mood(0.0, -0.95),
+                "neutral" to Mood(0.0, 0.0, 0.0), "happy" to Mood(0.85, 0.4, 0.3), "content" to Mood(0.6, -0.35, 0.2),
+                "sad" to Mood(-0.7, -0.5, -0.5), "angry" to Mood(-0.7, 0.6, 0.7), "scared" to Mood(-0.5, 0.95, -0.7),
+                "surprised" to Mood(0.1, 0.95, -0.1), "sleepy" to Mood(0.0, -0.95, 0.0),
             )
         }
     }
@@ -93,7 +95,7 @@ object CreatureRenderer {
     class Baked(genome: MorphNode, mood: Mood) {
         private val fur = ArrayList<Bone>()
         private val features = ArrayList<Bone>()    // eyes/iris/pupil/nose/mouth (own materials, not fur)
-        val v = mood.v; val a = mood.a
+        val v = mood.v; val a = mood.a; val d = mood.d
 
         init { layout(genome, 0.0, 0.0, 0.0, 1.0, 0.0, null, 1.0) }
 
@@ -102,11 +104,11 @@ object CreatureRenderer {
             fun e(k: String) = n.extra[k] ?: 0f
             fun e1(k: String) = n.extra[k] ?: 1f
             val base = cumScale * GIRTH
-            val myRot = accRot + e("rot") + e("vrot") * v + e("arot") * a    // this node's joint rotation, compounded
+            val myRot = accRot + e("rot") + e("vrot") * v + e("arot") * a + e("drot") * d    // joint rotation, compounded
             // expression offset, applied in the node's (parent-rotated) frame
-            val (exRx, exRy) = rotate2(e("vdx") * v + e("adx") * a, e("vdy") * v + e("ady") * a, accRot)
-            val sxF = e1("sx") * (1 + e("vsx") * v + e("asx") * a)
-            val syF = e1("sy") * (1 + e("vsy") * v + e("asy") * a)
+            val (exRx, exRy) = rotate2(e("vdx") * v + e("adx") * a + e("ddx") * d, e("vdy") * v + e("ady") * a + e("ddy") * d, accRot)
+            val sxF = e1("sx") * (1 + e("vsx") * v + e("asx") * a + e("dsx") * d)
+            val syF = e1("sy") * (1 + e("vsy") * v + e("asy") * a + e("dsy") * d)
             val szF = e1("sz").toDouble()
             val center = V(px + exRx, py + exRy, z)                          // depth (incl. this node's z) set by the parent
             val mat = matFor(n.name)

@@ -83,6 +83,7 @@ class MorphLab {
     private var selected: MorphNode? = genome
     private var valence = 0.0
     private var arousal = 0.0
+    private var dominance = 0.0
     private var camYaw = 0.0
     private var camPitch = 0.0
     private var fur = Color(176, 142, 104)
@@ -134,9 +135,10 @@ class MorphLab {
         panel.add(heading("Mood"))
         panel.add(slider("valence (sad ↔ happy)", -1.0, 1.0, { valence }) { valence = it; requestRender() })
         panel.add(slider("arousal (calm ↔ excited)", -1.0, 1.0, { arousal }) { arousal = it; requestRender() })
+        panel.add(slider("dominance (submissive ↔ dominant)", -1.0, 1.0, { dominance }) { dominance = it; requestRender() })
         val presetRow = JPanel(java.awt.GridLayout(0, 4, 3, 3))
         for ((name, m) in CreatureRenderer.Mood.PRESETS) presetRow.add(JButton(name).apply {
-            margin = java.awt.Insets(1, 2, 1, 2); addActionListener { valence = m.v; arousal = m.a; refreshMoodSliders(); requestRender() }
+            margin = java.awt.Insets(1, 2, 1, 2); addActionListener { valence = m.v; arousal = m.a; dominance = m.d; refreshMoodSliders(); requestRender() }
         })
         presetRow.maximumSize = Dimension(Int.MAX_VALUE, presetRow.preferredSize.height)
         panel.add(presetRow)
@@ -230,6 +232,13 @@ class MorphLab {
         nodeEditor.add(extraSlider(n, "arot", "→ rotate (deg)", -60.0, 60.0, 0f))
         nodeEditor.add(extraSlider(n, "asx", "→ widen", -1.0, 1.0, 0f))
         nodeEditor.add(extraSlider(n, "asy", "→ heighten", -1.0, 1.0, 0f))
+
+        nodeEditor.add(subhead("Response × dominance (submissive ↔ dominant)"))
+        nodeEditor.add(extraSlider(n, "ddx", "→ move x", -1.0, 1.0, 0f))
+        nodeEditor.add(extraSlider(n, "ddy", "→ move y", -1.0, 1.0, 0f))
+        nodeEditor.add(extraSlider(n, "drot", "→ rotate (deg)", -60.0, 60.0, 0f))
+        nodeEditor.add(extraSlider(n, "dsx", "→ widen", -1.0, 1.0, 0f))
+        nodeEditor.add(extraSlider(n, "dsy", "→ heighten", -1.0, 1.0, 0f))
 
         nodeEditor.revalidate(); nodeEditor.repaint()
     }
@@ -365,7 +374,7 @@ class MorphLab {
     // ---- rendering (background; drop stale) ----
     private fun requestRender() {
         val myGen = gen.incrementAndGet()
-        val snap = genome.deepClone(); val mood = CreatureRenderer.Mood(valence, arousal); val furC = fur
+        val snap = genome.deepClone(); val mood = CreatureRenderer.Mood(valence, arousal, dominance); val furC = fur
         val yaw = camYaw; val pitch = camPitch
         exec.submit {
             if (myGen != gen.get()) return@submit
@@ -395,7 +404,7 @@ class MorphLab {
             alignmentX = JComponent.LEFT_ALIGNMENT; maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
         }
         s.addChangeListener { val v = min + (max - min) * s.value / 1000.0; lbl.text = "$label = ${"%.2f".format(v)}"; set(v) }
-        if (label.startsWith("valence") || label.startsWith("arousal")) moodSliders.add(s to get)
+        if (label.startsWith("valence") || label.startsWith("arousal") || label.startsWith("dominance")) moodSliders.add(s to get)
         box.add(lbl); box.add(s); box.maximumSize = Dimension(Int.MAX_VALUE, box.preferredSize.height)
         return box
     }
