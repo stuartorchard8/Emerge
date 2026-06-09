@@ -124,9 +124,18 @@ tasks.register<JavaExec>("runNornsAnim") {
 tasks.register<JavaExec>("renderNorns") {
     group = "application"
     description = "Render PNG frames of the Norns world headlessly (CPU/Java2D). " +
-        "--args=\"<outDir> <seed> <tick1,tick2,...>\""
+        "--args=\"<outDir> <seed> <tick1,tick2,...> [baked]\" (pass 'baked' for the SDF-baked creatures)"
     mainClass = "org.emerge.desktop.NornsImageRendererKt"
     classpath = sourceSets["main"].runtimeClasspath
+}
+
+tasks.register<JavaExec>("renderNornsBaked") {
+    group = "application"
+    description = "Render the Norns world headlessly with the SDF-baked side-profile creatures " +
+        "(genes→3D→2D sprite pipeline). --args=\"<outDir> <seed> <ticks>\" (baked is forced on)."
+    mainClass = "org.emerge.desktop.NornsImageRendererKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    args("build/norns-baked", "7", "250,700,1200", "baked")
 }
 
 

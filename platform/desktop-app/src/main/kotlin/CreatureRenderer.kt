@@ -206,15 +206,27 @@ object CreatureRenderer {
         }
     }
 
-    /** Render [baked] at [mood] into [img] at column offset [ox], side-profile, fitted to [tile] px. */
-    fun render(baked: Baked, mood: Mood, fur: Color, img: BufferedImage, ox: Int, tile: Int, bg: Int) {
+    /** The orthographic side-on framing of a [Baked] creature fitted into a square [tile]: lets callers
+     *  foot-align + scale a baked sprite into the world (the world renderer needs the feet, not the box). */
+    class Frame(val span: Double, val cX: Double, val cY: Double, val tile: Int) {
+        /** Screen-y (px from the tile top) of a world-y — e.g. the feet at the bounds' min-y. */
+        fun screenY(worldY: Double) = (0.5 - (worldY - cY) / span) * tile
+    }
+
+    fun frame(baked: Baked, tile: Int): Frame {
         val b = baked.bounds()
         val span = max(b[1] - b[0], b[3] - b[2]).coerceAtLeast(0.5) * 1.18
-        val cX = (b[0] + b[1]) / 2; val cY = (b[2] + b[3]) / 2
+        return Frame(span, (b[0] + b[1]) / 2, (b[2] + b[3]) / 2, tile)
+    }
+
+    /** Render [baked] at [mood] into [img] at column offset [ox], side-profile, fitted to [tile] px.
+     *  [transparent] (with an ARGB [img]) leaves the background fully transparent for compositing. */
+    fun render(baked: Baked, mood: Mood, fur: Color, img: BufferedImage, ox: Int, tile: Int, bg: Int, transparent: Boolean = false) {
+        val fr = frame(baked, tile)
         IntStream.range(0, tile).parallel().forEach { py ->
             for (px in 0 until tile) {
-                val wx = cX + (px.toDouble() / tile - 0.5) * span
-                val wy = cY - (py.toDouble() / tile - 0.5) * span
+                val wx = fr.cX + (px.toDouble() / tile - 0.5) * fr.span
+                val wy = fr.cY - (py.toDouble() / tile - 0.5) * fr.span
                 val ro = V(wx, wy, 6.0)
                 var t = 0.0; var hit: Hit? = null; var hp = ro; var steps = 0
                 while (steps < 110 && t < 13.0) {
@@ -222,7 +234,11 @@ object CreatureRenderer {
                     if (h.d < 0.001) { hit = h; break }
                     t += h.d * 0.85; steps++
                 }
-                img.setRGB(ox + px, py, if (hit != null) shade(baked, hp, baked.grad(hp, mood), hit, mood, fur) else bg)
+                val v = if (hit != null) {
+                    val rgb = shade(baked, hp, baked.grad(hp, mood), hit, mood, fur)
+                    if (transparent) (0xFF shl 24) or rgb else rgb
+                } else if (transparent) 0 else bg
+                img.setRGB(ox + px, py, v)
             }
         }
     }

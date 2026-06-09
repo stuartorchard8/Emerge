@@ -43,7 +43,7 @@ object NornsImageRenderer {
     private val animStates = HashMap<Int, AnimState>()
     private const val BLEND_TICKS = 4f
 
-    fun renderFrame(world: NornsWorld, cameraCenterX: Float, followId: Int?, w: Int, h: Int): BufferedImage {
+    fun renderFrame(world: NornsWorld, cameraCenterX: Float, followId: Int?, w: Int, h: Int, baked: Boolean = false): BufferedImage {
         val img = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
         val g = img.createGraphics()
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
@@ -127,7 +127,7 @@ object NornsImageRenderer {
         // creatures
         for (c in world.creatures) {
             val cy = if (c.ridingY >= 0f) view.floorYf(c.ridingY) else view.floorY(c.floor)
-            drawCreature(g, c, c.x, cy, c.id == followId, ::px, ::py, sx, ::blob, ::col, view.groundOffset, world.cfg)
+            drawCreature(g, c, c.x, cy, c.id == followId, ::px, ::py, sx, ::blob, ::col, view.groundOffset, world.cfg, baked)
         }
         animStates.keys.retainAll(world.creatures.mapTo(HashSet()) { it.id })   // evict dead creatures' anim state
         // the front gate of each lift car — drawn OVER the creatures so a rider sits behind the bars
@@ -166,7 +166,7 @@ object NornsImageRenderer {
         g: java.awt.Graphics2D, c: WorldCreature, worldX: Float, worldY: Float, followed: Boolean,
         px: (Float) -> Float, py: (Float) -> Float, sx: Float,
         blob: (Float, Float, Float, Color) -> Unit, col: (Float, Float, Float) -> Color,
-        floorOffset: Float, cfg: NornsConfig,
+        floorOffset: Float, cfg: NornsConfig, baked: Boolean = false,
     ) {
         val action = when (c.activity) {
             ActivityType.EATING -> CreatureAction.EAT
@@ -178,6 +178,26 @@ object NornsImageRenderer {
         // an egg incubating on the ground (the EMBRYO stage hatches into a baby)
         val stage = c.biology.lifeStage.name
         if (stage == "EMBRYO") { drawEgg(g, px(worldX), py(worldY - floorOffset), sx); return }
+
+        // baked path: a lit SDF side-profile sprite (genes→3D→2D), foot-aligned to the grass line,
+        // flipped by facing, scaled to the life-stage height. Mood (expression) comes from drives.
+        if (baked) {
+            val sprite = CreatureBaker.spriteFor(c)
+            val tilePx = sprite.img.height
+            val bScale = (NornRigStore.targetHeight(stage) * sx) / (sprite.heightFrac * tilePx)
+            val cxScreen = px(worldX); val groundScreenY = py(worldY - floorOffset)
+            val at = java.awt.geom.AffineTransform()
+            at.translate(cxScreen.toDouble(), (groundScreenY - bScale * sprite.footFracY * tilePx))
+            at.scale((if (c.facing < 0) -bScale else bScale).toDouble(), bScale.toDouble())
+            at.translate(-tilePx / 2.0, 0.0)
+            val oldHint = g.getRenderingHint(RenderingHints.KEY_INTERPOLATION)
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+            g.drawImage(sprite.img, at, null)
+            oldHint?.let { g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, it) }
+            if (c.carryingFood) blob(worldX + c.facing * 0.35f, worldY - floorOffset + 0.5f, 0.18f, Color(212, 84, 60))
+            if (followed) blob(worldX, worldY + 2.0f, 0.13f, Color(255, 255, 255))
+            return
+        }
         val scale = 1.15f
 
         // the procedurally-animated sprite-part rig (authored in runNornsAnim); feet on the grass
@@ -580,6 +600,7 @@ fun main(args: Array<String>) {
     val outDir = File(args.getOrNull(0) ?: "build/norns-frames").apply { mkdirs() }
     val seed = args.getOrNull(1)?.toLongOrNull() ?: 7L
     val ticksToCapture = (args.getOrNull(2)?.split(",")?.mapNotNull { it.trim().toIntOrNull() } ?: listOf(250, 700, 1200)).sorted()
+    val baked = args.getOrNull(3)?.lowercase() == "baked"
 
     val world = NornsWorld(NornsConfig(), seed)
     val maxTick = ticksToCapture.max()
@@ -587,7 +608,7 @@ fun main(args: Array<String>) {
         world.step()
         if (t in ticksToCapture) {
             val follow = world.creatures.maxByOrNull { it.biology.age }
-            val img = NornsImageRenderer.renderFrame(world, follow?.x ?: 0f, follow?.id, 1000, 620)
+            val img = NornsImageRenderer.renderFrame(world, follow?.x ?: 0f, follow?.id, 1000, 620, baked)
             val file = File(outDir, "norns_t$t.png")
             ImageIO.write(img, "png", file)
             println("wrote ${file.absolutePath}")
