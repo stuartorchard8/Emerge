@@ -71,9 +71,8 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
 
     /** Forward-kinematics: resolve every part to a body-local transform for [action] at [phaseT].
      *  Parts are ordered parents-first, so a child reads its parent's already-computed transform. */
-    fun pose(sprites: Map<String, NornParts.Part>, action: CreatureAction, phaseT: Float): List<Placed> {
-        val g = global[action] ?: GlobalAnim()
-        val bob = -abs(sin(phaseT * g.bobFreq)) * g.bobAmp
+    fun pose(sprites: Map<String, NornParts.Part>, frame: Frame): List<Placed> {
+        val bob = frame.bob
         val partOf = HashMap<String, NornParts.Part>()
         for (rp in parts) (sprites[rp.sprite] ?: sprites[rp.id])?.let { partOf[rp.id] = it }
         val worldBy = HashMap<String, AffineTransform>()
@@ -87,13 +86,31 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
                 val parent = partOf[rp.parent]                                  // denormalise U/V → px
                 world = AffineTransform(worldBy[rp.parent] ?: AffineTransform())
                 world.translate((rp.anchorU * (parent?.w ?: 1)).toDouble(), (rp.anchorV * (parent?.h ?: 1)).toDouble())
-                world.rotate((rp.restAngle + rp.animFor(action).rot(phaseT)).toDouble())
+                world.rotate((frame.rot[rp.id] ?: 0f).toDouble())
                 world.translate((-rp.pivotU * self.w).toDouble(), (-rp.pivotV * self.h).toDouble())
             }
             worldBy[rp.id] = world
             out += Placed(rp.id, self.img, world, rp.z)
         }
         return out
+    }
+
+    /** A resolved pose at an instant: per-part rotation (rest + anim) + global bob/lean/hop. Two
+     *  frames can be [blendFrames]'d to interpolate across an action transition. */
+    class Frame(val rot: Map<String, Float>, val bob: Float, val lean: Float, val hop: Float)
+
+    fun frameOf(action: CreatureAction, phaseT: Float): Frame {
+        val g = global[action] ?: GlobalAnim()
+        val rot = HashMap<String, Float>(parts.size)
+        for (rp in parts) if (rp.parent != null) rot[rp.id] = rp.restAngle + rp.animFor(action).rot(phaseT)
+        return Frame(rot, -abs(sin(phaseT * g.bobFreq)) * g.bobAmp, g.lean, abs(sin(phaseT * g.hopFreq)) * g.hopAmp)
+    }
+
+    fun blendFrames(a: Frame, b: Frame, t: Float): Frame {
+        fun lp(x: Float, y: Float) = x + (y - x) * t
+        val rot = HashMap<String, Float>(b.rot.size)
+        for ((k, v) in b.rot) rot[k] = lp(a.rot[k] ?: v, v)
+        return Frame(rot, lp(a.bob, b.bob), lp(a.lean, b.lean), lp(a.hop, b.hop))
     }
 
     fun toText(): String {

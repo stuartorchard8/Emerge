@@ -260,7 +260,7 @@ object NornsAnimViewer {
 
         breedBox.addActionListener { if (!building) { breed = breedBox.selectedItem as String; switchRig() } }
         ageBox.addActionListener { if (!building) { age = ageBox.selectedItem as Int; switchRig() } }
-        actionBox.addActionListener { action = actionBox.selectedItem as CreatureAction; syncAll(); canvas.repaint() }
+        actionBox.addActionListener { action = actionBox.selectedItem as CreatureAction; phase = 0f; syncAll(); canvas.repaint() }
         partBox.addActionListener { if (!building) { (partBox.selectedItem as? String)?.let { selected = it }; syncAll(); canvas.repaint() } }
 
         val loadRefBtn = JButton("Reference…").apply {

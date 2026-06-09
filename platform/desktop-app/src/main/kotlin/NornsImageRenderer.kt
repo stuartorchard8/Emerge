@@ -32,6 +32,16 @@ import kotlin.math.sin
  * live window.
  */
 object NornsImageRenderer {
+
+    /** Per-creature animation transition state: the current action's phase, plus the previous
+     *  action + its frozen phase to blend out of for [BLEND_TICKS] ticks after a switch. */
+    private class AnimState(var action: CreatureAction, var lastPhase: Float, var blendStartTick: Int) {
+        var prevAction: CreatureAction? = null
+        var prevPhase: Float = 0f
+    }
+    private val animStates = HashMap<Int, AnimState>()
+    private const val BLEND_TICKS = 4f
+
     fun renderFrame(world: NornsWorld, cameraCenterX: Float, followId: Int?, w: Int, h: Int): BufferedImage {
         val img = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
         val g = img.createGraphics()
@@ -116,7 +126,7 @@ object NornsImageRenderer {
         // creatures
         for (c in world.creatures) {
             val cy = if (c.ridingY >= 0f) view.floorYf(c.ridingY) else view.floorY(c.floor)
-            drawCreature(g, c, c.x, cy, c.id == followId, ::px, ::py, sx, ::blob, ::col, view.groundOffset, world.cfg.moveSpeed)
+            drawCreature(g, c, c.x, cy, c.id == followId, ::px, ::py, sx, ::blob, ::col, view.groundOffset, world.cfg)
         }
         // the front gate of each lift car — drawn OVER the creatures so a rider sits behind the bars
         for (lift in world.lifts) drawLiftGate(g, lift, view, sx, ::px, ::py)
@@ -154,7 +164,7 @@ object NornsImageRenderer {
         g: java.awt.Graphics2D, c: WorldCreature, worldX: Float, worldY: Float, followed: Boolean,
         px: (Float) -> Float, py: (Float) -> Float, sx: Float,
         blob: (Float, Float, Float, Color) -> Unit, col: (Float, Float, Float) -> Color,
-        groundOffset: Float, moveSpeed: Float,
+        groundOffset: Float, cfg: NornsConfig,
     ) {
         val action = when (c.activity) {
             ActivityType.EATING -> CreatureAction.EAT
@@ -187,16 +197,29 @@ object NornsImageRenderer {
         val sprites = NornParts.load(breedName, rigAge)
         val rig = if (sprites != null) NornRigStore.rigFor(breedName, rigAge) else null
         if (rig != null && sprites != null) {
-            // walk phase tracks movement: one calibrated stride per moveSpeed of ground covered, so
-            // feet grip the floor at the actual in-game speed. Other actions keep the steady cadence.
-            val rigPhase = if (action == CreatureAction.WALK && rig.walkStride > 0f)
-                c.ticksLived * ((2.0 * Math.PI).toFloat() * moveSpeed / rig.walkStride)
-            else c.ticksLived * 0.085f
+            val tau = (2.0 * Math.PI).toFloat()
+            // Per-action phase. WALK tracks distance (feet grip the floor at the real move speed);
+            // durative actions advance over their own duration (elapsed = duration - activityTimer),
+            // so each STARTS AT 0 when entered, and PICK_UP runs exactly one cycle over its duration
+            // (the grab attaches at the half-way point).
+            val rigPhase = when (action) {
+                CreatureAction.WALK -> if (rig.walkStride > 0f) c.ticksLived * (tau * cfg.moveSpeed / rig.walkStride) else c.ticksLived * 0.085f
+                CreatureAction.PICK_UP -> ((cfg.pickupTicks - c.activityTimer).coerceAtLeast(0).toFloat() / cfg.pickupTicks * tau).coerceIn(0f, tau)
+                CreatureAction.EAT -> (cfg.eatTicks - c.activityTimer).coerceAtLeast(0) * 0.085f
+                CreatureAction.COURT -> (cfg.courtTicks - c.activityTimer).coerceAtLeast(0) * 0.085f
+                CreatureAction.REST -> (cfg.restTicks - c.activityTimer).coerceAtLeast(0) * 0.085f
+            }
+            // transition blend: on a new action, freeze the old pose and ease into the new one.
+            val st = animStates.getOrPut(c.id) { AnimState(action, rigPhase, c.ticksLived) }
+            if (action != st.action) { st.prevAction = st.action; st.prevPhase = st.lastPhase; st.action = action; st.blendStartTick = c.ticksLived }
+            st.lastPhase = rigPhase
+            val blendT = ((c.ticksLived - st.blendStartTick) / BLEND_TICKS).coerceIn(0f, 1f)
             NornCompositor.draw(
                 g, rig, sprites, action, rigPhase, c.facing,
                 px(worldX), py(worldY - groundOffset), sx,
                 targetHeightUnits = NornRigStore.targetHeight(stage), groundOffset = rig.groundOffset,
                 food = if (c.carryingFood) NornCompositor.FoodMode.HAND else NornCompositor.FoodMode.NONE,
+                blendFrom = if (blendT < 1f) st.prevAction else null, blendFromPhase = st.prevPhase, blendT = blendT,
             )
         } else {
             NornBodyRenderer.draw(g, action, phase, c.facing, r, gr, b, NornBodyRenderer.eyeColor(c.id), px(worldX), py(worldY), scale, sx)

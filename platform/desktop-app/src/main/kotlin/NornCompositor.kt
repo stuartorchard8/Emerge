@@ -7,11 +7,9 @@ import java.awt.Graphics2D
 import java.awt.RenderingHints
 import java.awt.geom.AffineTransform
 import java.awt.geom.Point2D
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 /**
  * Draws a [NornRigDef] — the procedurally-animated, sprite-part Norn — to Java2D. Runs the rig's FK
@@ -33,8 +31,14 @@ object NornCompositor {
         action: CreatureAction, phase: Float, facing: Int,
         originX: Float, originY: Float, sx: Float, targetHeightUnits: Float = 2.95f,
         groundOffset: Float = 0f, food: FoodMode = FoodMode.NONE, highlight: String? = null,
+        blendFrom: CreatureAction? = null, blendFromPhase: Float = 0f, blendT: Float = 1f,
     ) {
-        val placed = def.pose(sprites, action, phase)
+        // resolve the pose for this action+phase; if mid-transition, blend from the previous action's
+        // frozen pose so the switch eases in over a few ticks instead of snapping.
+        val frame = if (blendFrom != null && blendT < 1f)
+            def.blendFrames(def.frameOf(blendFrom, blendFromPhase), def.frameOf(action, phase), blendT)
+        else def.frameOf(action, phase)
+        val placed = def.pose(sprites, frame)
         if (placed.isEmpty()) return
         val plantY = originY + groundOffset * sx   // seat the rig on the floor (+ = lower)
 
@@ -55,14 +59,20 @@ object NornCompositor {
         var bottom = maxY
         if (action == CreatureAction.PICK_UP) {
             placed.firstOrNull { it.id == "footL" }?.let { foot ->
-                val p = Point2D.Float()
-                foot.transform.transform(Point2D.Float(foot.img.width / 2f, foot.img.height.toFloat()), p)
-                centerX = p.x; bottom = p.y
+                // use the foot's transformed BOUNDING BOX (centre-x, lowest-y), not a fixed sprite
+                // point, so an unconventional pose (e.g. the baby's soles-up foot) still anchors at
+                // its true ground contact.
+                var fx0 = Float.MAX_VALUE; var fx1 = -Float.MAX_VALUE; var fy1 = -Float.MAX_VALUE
+                for (c in corners(foot.img.width, foot.img.height)) {
+                    val p = Point2D.Float(); foot.transform.transform(Point2D.Float(c.first, c.second), p)
+                    fx0 = min(fx0, p.x); fx1 = max(fx1, p.x); fy1 = max(fy1, p.y)
+                }
+                centerX = (fx0 + fx1) / 2f; bottom = fy1
             }
         }
         val scale = targetHeightUnits * sx / rigH
 
-        val g0 = global(def, action, phase, originX, plantY, scale, facing, sx, centerX, bottom)
+        val g0 = global(frame.lean, frame.hop, originX, plantY, scale, facing, sx, centerX, bottom)
 
         // food: held in the right hand, or — for a pick-up — on the ground for the first half of the
         // cycle, then "attached" to the hand from the half-way point on (the grab).
@@ -129,16 +139,14 @@ object NornCompositor {
 
     /** The screen transform: feet at (originX, originY−hop), scaled, flipped, leaned about the feet. */
     private fun global(
-        def: NornRigDef, action: CreatureAction, phase: Float,
+        lean: Float, hop: Float,
         originX: Float, originY: Float, scale: Float, facing: Int, sx: Float, centerX: Float, bottom: Float,
     ): AffineTransform {
-        val gA = def.global[action] ?: GlobalAnim()
-        val hop = abs(sin(phase * gA.hopFreq)) * gA.hopAmp * sx
         val flip = facing < 0
         val t = AffineTransform()
-        t.translate(originX.toDouble(), (originY - hop).toDouble())
+        t.translate(originX.toDouble(), (originY - hop * sx).toDouble())
         t.scale((if (flip) -scale else scale).toDouble(), scale.toDouble())
-        if (gA.lean != 0f) t.rotate(gA.lean.toDouble())
+        if (lean != 0f) t.rotate(lean.toDouble())
         t.translate(-centerX.toDouble(), -bottom.toDouble())
         return t
     }
