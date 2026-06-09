@@ -1,5 +1,5 @@
 # norn rig — sprite-part compositor; coords: normalized (fraction of sprite w/h)
-meta groundOffset=0.0840 walkStride=0.9840 pickupReachX=1.0040 heldFoodX=0.0300 heldFoodY=-0.1720
+meta groundOffset=0.0840 walkStride=0.9840 pickupReachX=0.9080 heldFoodX=0.0300 heldFoodY=-0.1720
 part body sprite=body parent=- anchor=0.0600,0.0600 pivot=0.0020,0.0040 rest=0.0000 z=0
 part uarmL sprite=uarmL parent=body anchor=0.5760,0.2820 pivot=0.7480,0.2620 rest=0.0000 z=-6
 part farmL sprite=farmL parent=uarmL anchor=0.3700,0.7640 pivot=0.8040,0.1120 rest=0.0000 z=-8
