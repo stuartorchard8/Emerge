@@ -22,13 +22,17 @@ import kotlin.math.sin
  */
 object NornCompositor {
 
+    /** How (if at all) to draw a food item: NONE; HAND (held in the right hand); or PICKUP (on the
+     *  ground for the first half of the cycle, then grabbed into the hand from the half-way point). */
+    enum class FoodMode { NONE, HAND, PICKUP }
+
     /** Draw the composited creature with feet centred at ([originX],[originY]); [sx] = world→px. If
      *  [highlight] names a part, outline it + mark its anchor (the editor's current selection). */
     fun draw(
         g: Graphics2D, def: NornRigDef, sprites: Map<String, NornParts.Part>,
         action: CreatureAction, phase: Float, facing: Int,
         originX: Float, originY: Float, sx: Float, targetHeightUnits: Float = 2.95f,
-        groundOffset: Float = 0f, holdFoodInHand: Boolean = false, highlight: String? = null,
+        groundOffset: Float = 0f, food: FoodMode = FoodMode.NONE, highlight: String? = null,
     ) {
         val placed = def.pose(sprites, action, phase)
         if (placed.isEmpty()) return
@@ -60,25 +64,33 @@ object NornCompositor {
 
         val g0 = global(def, action, phase, originX, plantY, scale, facing, sx, centerX, bottom)
 
+        // food: held in the right hand, or — for a pick-up — on the ground for the first half of the
+        // cycle, then "attached" to the hand from the half-way point on (the grab).
+        val tHalf = (phase / (2.0 * Math.PI).toFloat()).rem(1f)      // 0..1 within the cycle (phase > 0)
+        val inHand = food == FoodMode.HAND || (food == FoodMode.PICKUP && tHalf >= 0.5f)
+        val onGround = food == FoodMode.PICKUP && tHalf < 0.5f
+        val foodR = 0.2f * sx                                        // 1 world unit = sx px on screen
+        val handFoodZ = (def.part("farmR")?.z ?: 999) - 1            // just behind the near arm
+        // hand-held position: the farmR tip + an adjustable offset (world units, facing-relative)
+        val hand = placed.firstOrNull { it.id == "farmR" }
+        val handSprite = sprites["farmR"]
+        val handPos: Point2D.Float? = if (inHand && hand != null && handSprite != null) {
+            val end = handSprite.pt("end")
+            val tip = tp(AffineTransform(g0).apply { concatenate(hand.transform) }, end[0], end[1])
+            Point2D.Float(tip.x + facing * def.heldFoodX * sx, tip.y - def.heldFoodY * sx)
+        } else null
+
         val oldInterp = g.getRenderingHint(RenderingHints.KEY_INTERPOLATION)
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+        if (onGround) drawFood(g, originX + facing * def.pickupReachX * sx, plantY, foodR)  // on the ground, behind
+        var handFoodDrawn = false
         for (p in placed.sortedBy { it.z }) {
+            if (handPos != null && !handFoodDrawn && p.z > handFoodZ) { drawFood(g, handPos.x, handPos.y, foodR); handFoodDrawn = true }
             val at = AffineTransform(g0); at.concatenate(p.transform)
             g.drawImage(p.img, at, null)
         }
+        if (handPos != null && !handFoodDrawn) drawFood(g, handPos.x, handPos.y, foodR)
         if (oldInterp != null) g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, oldInterp)
-
-        // a held morsel in the right hand (the gesturing/near arm) — tracks the eat reach
-        if (holdFoodInHand) {
-            val hand = placed.firstOrNull { it.id == "farmR" }
-            val sprite = sprites["farmR"]
-            if (hand != null && sprite != null) {
-                val end = sprite.pt("end")
-                val at = AffineTransform(g0); at.concatenate(hand.transform)
-                val p = tp(at, end[0], end[1])
-                drawFood(g, p.x, p.y, 0.2f * sx)   // 1 world unit = sx px on screen
-            }
-        }
 
         // selection overlay: outline the part + a dot at its anchor (where it joins its parent)
         highlight?.let { hid ->

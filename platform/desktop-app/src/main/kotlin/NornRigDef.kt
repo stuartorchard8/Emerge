@@ -62,6 +62,9 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
     var walkStride: Float = 0f
     /** Where the reached-for object sits during PICK_UP: world-units ahead of the norn (facing-relative). */
     var pickupReachX: Float = 0.5f
+    /** Held-object offset from the right-hand tip (world-units; X facing-relative, +Y up). */
+    var heldFoodX: Float = 0f
+    var heldFoodY: Float = 0f
 
     fun part(id: String): RigPart? = parts.firstOrNull { it.id == id }
     fun globalFor(a: CreatureAction): GlobalAnim = global.getOrPut(a) { GlobalAnim() }
@@ -95,7 +98,7 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
 
     fun toText(): String {
         val sb = StringBuilder("# norn rig — sprite-part compositor; coords: normalized (fraction of sprite w/h)\n")
-        sb.append("meta groundOffset=${f(groundOffset)} walkStride=${f(walkStride)} pickupReachX=${f(pickupReachX)}\n")
+        sb.append("meta groundOffset=${f(groundOffset)} walkStride=${f(walkStride)} pickupReachX=${f(pickupReachX)} heldFoodX=${f(heldFoodX)} heldFoodY=${f(heldFoodY)}\n")
         for (p in parts) {
             sb.append("part ${p.id} sprite=${p.sprite} parent=${p.parent ?: "-"} ")
                 .append("anchor=${f(p.anchorU)},${f(p.anchorV)} pivot=${f(p.pivotU)},${f(p.pivotV)} ")
@@ -198,6 +201,8 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
                         m["groundOffset"]?.toFloatOrNull()?.let { def.groundOffset = it }
                         m["walkStride"]?.toFloatOrNull()?.let { def.walkStride = it }
                         m["pickupReachX"]?.toFloatOrNull()?.let { def.pickupReachX = it }
+                        m["heldFoodX"]?.toFloatOrNull()?.let { def.heldFoodX = it }
+                        m["heldFoodY"]?.toFloatOrNull()?.let { def.heldFoodY = it }
                     }
                     "part" -> {
                         val p = def.part(tok.getOrNull(1) ?: continue) ?: continue

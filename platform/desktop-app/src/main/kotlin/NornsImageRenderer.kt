@@ -196,7 +196,7 @@ object NornsImageRenderer {
                 g, rig, sprites, action, rigPhase, c.facing,
                 px(worldX), py(worldY - groundOffset), sx,
                 targetHeightUnits = NornRigStore.targetHeight(stage), groundOffset = rig.groundOffset,
-                holdFoodInHand = c.carryingFood,   // morsel rides the right hand (drawn at the rig's hand)
+                food = if (c.carryingFood) NornCompositor.FoodMode.HAND else NornCompositor.FoodMode.NONE,
             )
         } else {
             NornBodyRenderer.draw(g, action, phase, c.facing, r, gr, b, NornBodyRenderer.eyeColor(c.id), px(worldX), py(worldY), scale, sx)

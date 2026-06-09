@@ -137,10 +137,6 @@ object NornsAnimViewer {
                     g.color = Color(156, 124, 86); g.fillRect(0, oy, w, 3)                 // lit top edge
                     g.color = Color(150, 188, 92); g.fillRect(0, (oy - 2), w, 2)            // grassy line
                 }
-                // PICK_UP: a ground-food guide ahead of the norn, to line the reach up against
-                if (action == CreatureAction.PICK_UP) {
-                    NornCompositor.drawFood(g, originX + facing * def.pickupReachX * sx, originY, 0.2f * sx)
-                }
                 if (onion) {
                     val old = g.composite
                     g.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.22f)
@@ -149,7 +145,12 @@ object NornsAnimViewer {
                     }
                     g.composite = old
                 }
-                NornCompositor.draw(g, def, sprites, action, phase, facing, originX, originY, sx, hAge, def.groundOffset, holdFoodInHand = action == CreatureAction.EAT, highlight = selected)
+                val foodMode = when (action) {
+                    CreatureAction.EAT -> NornCompositor.FoodMode.HAND
+                    CreatureAction.PICK_UP -> NornCompositor.FoodMode.PICKUP
+                    else -> NornCompositor.FoodMode.NONE
+                }
+                NornCompositor.draw(g, def, sprites, action, phase, facing, originX, originY, sx, hAge, def.groundOffset, food = foodMode, highlight = selected)
                 g.color = if (bgMode == 2) Color(60, 50, 40) else Color(245, 240, 228)
                 g.font = Font("SansSerif", Font.PLAIN, 13)
                 g.drawString("$breed a$age   ${action.name}   facing ${if (facing > 0) "▶" else "◀"}   sel:$selected   stride ${"%.2f".format(def.walkStride)}", 12, 20)
@@ -338,6 +339,8 @@ object NornsAnimViewer {
             add(fslider("ground off", -1f, 1f, { def.groundOffset }, { def.groundOffset = it }))
             add(fslider("walk stride", 0f, 4f, { def.walkStride }, { def.walkStride = it }))
             add(fslider("pickup reach", -2f, 2f, { def.pickupReachX }, { def.pickupReachX = it }))
+            add(fslider("held food x", -0.5f, 0.5f, { def.heldFoodX }, { def.heldFoodX = it }))
+            add(fslider("held food y", -0.5f, 0.5f, { def.heldFoodY }, { def.heldFoodY = it }))
         }
 
         val east = JPanel(BorderLayout()).apply {
@@ -397,7 +400,7 @@ private fun renderContactSheet(out: File, ageOverride: Int? = null) {
     val sprites = NornParts.load(breed, age) ?: first.third
     val def = NornRigStore.rigFor(breed, age) ?: NornRigDef.default(sprites)
     val actions = CreatureAction.entries
-    val phases = listOf(0.6f, (PI / 2).toFloat() + 0.6f)
+    val phases = listOf(0.25f, 0.75f).map { it * (2.0 * PI).toFloat() }   // quarter + three-quarter cycle
     val tileW = 300; val tileH = 360
     val img = BufferedImage(tileW * actions.size, tileH * phases.size, BufferedImage.TYPE_INT_RGB)
     val g = img.createGraphics()
@@ -407,8 +410,8 @@ private fun renderContactSheet(out: File, ageOverride: Int? = null) {
         g.paint = GradientPaint(0f, oy.toFloat(), Color(232, 220, 188), 0f, (oy + tileH).toFloat(), Color(74, 58, 44))
         g.fillRect(ox, oy, tileW, tileH)
         val sxT = (tileH * 0.62f) / 2.95f; val cx = ox + tileW / 2f; val cy = oy + tileH * 0.86f
-        if (a == CreatureAction.PICK_UP) NornCompositor.drawFood(g, cx + def.pickupReachX * sxT, cy, 0.2f * sxT)
-        NornCompositor.draw(g, def, sprites, a, ph, 1, cx, cy, sxT, holdFoodInHand = a == CreatureAction.EAT)
+        val fm = when (a) { CreatureAction.EAT -> NornCompositor.FoodMode.HAND; CreatureAction.PICK_UP -> NornCompositor.FoodMode.PICKUP; else -> NornCompositor.FoodMode.NONE }
+        NornCompositor.draw(g, def, sprites, a, ph, 1, cx, cy, sxT, food = fm)
         g.color = Color(40, 30, 20); g.font = Font("SansSerif", Font.BOLD, 14); g.drawString(a.name, ox + 10, oy + 22)
     }
     g.dispose(); out.parentFile?.mkdirs(); ImageIO.write(img, "png", out); println("wrote ${out.absolutePath}")
