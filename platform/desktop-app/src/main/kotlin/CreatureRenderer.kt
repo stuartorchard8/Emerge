@@ -182,7 +182,9 @@ object CreatureRenderer {
         return (k - 1.0) * min(b.rx, min(b.ry, b.rz))
     }
     private fun capsule(p: V, a: V, b: V, r: Double): Double {
-        val pa = p - a; val ba = b - a; val h = (pa.dot(ba) / ba.dot(ba)).coerceIn(0.0, 1.0)
+        val ba = b - a; val bb = ba.dot(ba)
+        if (bb < 1e-9) return (p - a).len() - r            // coincident endpoints → a sphere (avoids 0/0 NaN)
+        val pa = p - a; val h = (pa.dot(ba) / bb).coerceIn(0.0, 1.0)
         return (pa - ba * h).len() - r
     }
     private fun smin(a: Double, b: Double, k: Double): Double {
