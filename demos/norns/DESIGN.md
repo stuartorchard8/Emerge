@@ -374,8 +374,15 @@ math to engine-side pure data so the sim can drive/evolve it; AWT stays in the c
 
 ### Open / next
 - **Author the remaining actions** (rest/eat/court/pick) across the four denali ages in
-  `runNornsAnim` — finishing the baseline. Walks + a1 rest done so far. (One rig per age, denali
-  only — no per-species authoring.)
+  `runNornsAnim` — finishing the baseline. Walks + rest done; non-walk actions seeded from rest.
+  (One rig per age, denali only — no per-species authoring.)
+- **Floor / calibration in the tool (DONE).** `runNornsAnim` has a scrolling floor: while WALK plays
+  it scrolls at the rate the per-age `walkStride` implies, so the planted foot's slip is visible and
+  `walkStride` can be tuned (world-units of ground per cycle). A `groundOffset` slider seats the rig
+  vertically. Both saved per age in the rig (`meta` line); `groundOffset` is applied by the
+  compositor + live game. **WIRE NEXT: walk-speed scaling** — make the live walk phase rate
+  `2π·moveSpeed / walkStride` (per age) instead of the fixed `ticksLived·0.085`, once Stu has
+  calibrated strides and we can verify motion live.
 - **Rest vs sleep is deferred (Stu, 2026-06-09).** The sim has a single `FATIGUE` drive → `REST`
   action; there is **no sleep** (no sleepiness drive, no SLEEP action — `grep -i sleep` is empty).
   C2 splits tiredness vs sleepiness into separate drives/behaviours; modelling that (a `SLEEPINESS`
