@@ -397,22 +397,33 @@ fun main(args: Array<String>) {
         return
     }
     if (args.isNotEmpty() && args[0] == "--copy-action") {
-        // Copy one action's animation (per-part JointAnim + global bob/lean/hop) from one age to
-        // another, leaving the target age's structure intact. args: <fromAge> <toAge> <ACTION> [breed]
+        // Copy one (age,action)'s animation (per-part JointAnim + global bob/lean/hop) onto one or
+        // more (age,action) targets, leaving the targets' structure intact.
+        // args: <srcAge> <srcAction> <dstAgesCSV> <dstActionsCSV> [breed]
+        // e.g. --copy-action 2 REST 2,3 COURT,EAT,PICK_UP  (seed those actions from a2's rest)
+        //      --copy-action 1 REST 0 REST                 (clone one action between ages)
         System.setProperty("java.awt.headless", "true")
         val dir = listOf(File("assets/norns"), File("../../assets/norns")).firstOrNull { it.isDirectory }
             ?: run { println("no assets/norns dir"); return }
-        val fromAge = args[1].toInt(); val toAge = args[2].toInt()
-        val action = CreatureAction.valueOf(args[3]); val breed = args.getOrElse(4) { "denali" }
-        val fromSprites = NornParts.load(breed, fromAge) ?: run { println("no art $breed a$fromAge"); return }
-        val toSprites = NornParts.load(breed, toAge) ?: run { println("no art $breed a$toAge"); return }
-        val toFile = dir.resolve("rig-$breed-a$toAge.txt")
-        val from = NornRigDef.parse(dir.resolve("rig-$breed-a$fromAge.txt").readText(), fromSprites)
-        val to = NornRigDef.parse(toFile.readText(), toSprites)
-        for (p in to.parts) from.part(p.id)?.anim?.get(action)?.let { p.anim[action] = it.copy() }
-        to.global[action] = from.globalFor(action).copy()
-        toFile.writeText(to.toText())
-        println("copied $action from a$fromAge to a$toAge ($breed)")
+        val breed = args.getOrElse(5) { "denali" }
+        val srcAge = args[1].toInt()
+        val srcAction = CreatureAction.valueOf(args[2])
+        val dstAges = args[3].split(",").map { it.toInt() }
+        val dstActions = args[4].split(",").map { CreatureAction.valueOf(it) }
+        val srcSprites = NornParts.load(breed, srcAge) ?: run { println("no art $breed a$srcAge"); return }
+        val src = NornRigDef.parse(dir.resolve("rig-$breed-a$srcAge.txt").readText(), srcSprites)
+        for (dstAge in dstAges) {
+            val dstSprites = NornParts.load(breed, dstAge)
+            if (dstSprites == null) { println("no art $breed a$dstAge"); continue }
+            val dstFile = dir.resolve("rig-$breed-a$dstAge.txt")
+            val dst = NornRigDef.parse(dstFile.readText(), dstSprites)
+            for (dstAction in dstActions) {
+                for (p in dst.parts) src.part(p.id)?.anim?.get(srcAction)?.let { p.anim[dstAction] = it.copy() }
+                dst.global[dstAction] = src.globalFor(srcAction).copy()
+            }
+            dstFile.writeText(dst.toText())
+            println("seeded a$dstAge ${dstActions.joinToString(",")} from a$srcAge $srcAction ($breed)")
+        }
         return
     }
     if (args.isNotEmpty() && args[0] == "--render") {
