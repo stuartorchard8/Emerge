@@ -189,7 +189,8 @@ object NornsImageRenderer {
         if (rig != null && sprites != null) {
             NornCompositor.draw(
                 g, rig, sprites, action, c.ticksLived * 0.085f, c.facing,
-                px(worldX), py(worldY - groundOffset), sx, targetHeightUnits = NornRigStore.targetHeight(stage),
+                px(worldX), py(worldY - groundOffset), sx,
+                targetHeightUnits = NornRigStore.targetHeight(stage), groundOffset = rig.groundOffset,
             )
         } else {
             NornBodyRenderer.draw(g, action, phase, c.facing, r, gr, b, NornBodyRenderer.eyeColor(c.id), px(worldX), py(worldY), scale, sx)

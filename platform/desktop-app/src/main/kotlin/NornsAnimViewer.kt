@@ -83,12 +83,15 @@ object NornsAnimViewer {
         var onion = false
         var showRef = false
         var refImg: BufferedImage? = null
+        var showFloor = true
+        var floorScroll = 0f      // px the ground has scrolled (advances during WALK at the stride rate)
         var selected = def.parts.firstOrNull()?.id ?: ""
         var symmetry = false      // mirror edits to the paired (L↔R) part
         var symPhase = PI.toFloat()   // extra phase offset on the mirrored side (0.5 turn → anti-phase walk)
         var suppress = false      // guard programmatic control updates
         var building = false      // guard combo rebuilds
         val tau = (2 * PI).toFloat()   // angles are edited in TURNS (1 turn = 2π rad); model stays rad
+        fun heightForAge(a: Int) = when (a) { 0 -> 0.6f; 1 -> 1.3f; 2 -> 2.2f; else -> 2.95f }  // world height per age
 
         lateinit var canvas: JComponent
         val syncList = ArrayList<() -> Unit>()
@@ -114,20 +117,31 @@ object NornsAnimViewer {
                     g.drawImage(img, (w - iw) / 2, (h - ih) / 2, iw, ih, null)
                     g.composite = old
                 }
-                val sx = heightPx / 2.95f
-                val originX = w / 2f; val originY = h * 0.86f
+                val hAge = heightForAge(age)
+                val sx = heightPx / hAge                       // px per world-unit (age's true world height)
+                val originX = w / 2f; val originY = h * 0.86f   // the floor line (where feet should sit)
+                // floor: a ground band + scrolling tick marks, so foot-plant + walk speed are visible
+                if (showFloor) {
+                    g.color = Color(70, 52, 36, 90); g.fillRect(0, originY.roundToInt(), w, h - originY.roundToInt())
+                    g.color = Color(150, 120, 84); g.fillRect(0, originY.roundToInt(), w, 2)
+                    val stepPx = (0.5f * sx).coerceAtLeast(8f)
+                    val off = ((floorScroll % stepPx) + stepPx) % stepPx
+                    g.color = Color(120, 96, 66)
+                    var x = -off
+                    while (x < w) { g.drawLine(x.roundToInt(), originY.roundToInt(), x.roundToInt(), (originY + 9).roundToInt()); x += stepPx }
+                }
                 if (onion) {
                     val old = g.composite
                     g.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.22f)
                     for (d in listOf(-2f * PI.toFloat() / 3f, 2f * PI.toFloat() / 3f)) {
-                        NornCompositor.draw(g, def, sprites, action, phase + d, facing, originX, originY, sx)
+                        NornCompositor.draw(g, def, sprites, action, phase + d, facing, originX, originY, sx, hAge, def.groundOffset)
                     }
                     g.composite = old
                 }
-                NornCompositor.draw(g, def, sprites, action, phase, facing, originX, originY, sx, highlight = selected)
+                NornCompositor.draw(g, def, sprites, action, phase, facing, originX, originY, sx, hAge, def.groundOffset, highlight = selected)
                 g.color = if (bgMode == 2) Color(60, 50, 40) else Color(245, 240, 228)
                 g.font = Font("SansSerif", Font.PLAIN, 13)
-                g.drawString("$breed a$age   ${action.name}   facing ${if (facing > 0) "▶" else "◀"}   sel:$selected   phase ${"%.2f".format((phase / tau).rem(1f))} turns", 12, 20)
+                g.drawString("$breed a$age   ${action.name}   facing ${if (facing > 0) "▶" else "◀"}   sel:$selected   stride ${"%.2f".format(def.walkStride)}", 12, 20)
             }
         }
         canvas.preferredSize = Dimension(640, 720)
@@ -209,6 +223,7 @@ object NornsAnimViewer {
         val bgBox = JComboBox(arrayOf("Albia sky", "Flat dark", "White")).apply { addActionListener { bgMode = selectedIndex; canvas.repaint() } }
         val onionChk = JCheckBox("Onion").apply { addActionListener { onion = isSelected; canvas.repaint() } }
         val refChk = JCheckBox("Reference").apply { addActionListener { showRef = isSelected; canvas.repaint() } }
+        val floorChk = JCheckBox("Floor", true).apply { addActionListener { showFloor = isSelected; canvas.repaint() } }
         val symChk = JCheckBox("Symmetry").apply { addActionListener { symmetry = isSelected; applySymmetry(); canvas.repaint() } }
         val symPhaseSlider = JSlider(0, 100, 50).apply {
             toolTipText = "Phase offset on the mirrored side, in turns (0.5 = anti-phase)"
@@ -278,7 +293,7 @@ object NornsAnimViewer {
             add(row(playBtn, JLabel("spd"), speedSlider))
             add(row(JLabel("phase"), phaseSlider))
             add(row(JLabel("size"), sizeSlider, JLabel("bg"), bgBox))
-            add(row(onionChk, refChk, loadRefBtn))
+            add(row(onionChk, refChk, floorChk, loadRefBtn))
             add(row(saveBtn, loadBtn, exportBtn, resetBtn))
             add(Box.createVerticalStrut(6))
             add(row(JLabel("PART"), partBox))
@@ -308,6 +323,9 @@ object NornsAnimViewer {
             add(fslider("lean (turns)", -0.25f, 0.25f, { glob().lean / tau }, { glob().lean = it * tau }))
             add(fslider("hop", 0f, 1f, { glob().hopAmp }, { glob().hopAmp = it }))
             add(fslider("hopFreq", 0f, 6f, { glob().hopFreq }, { glob().hopFreq = it }, snap = 0.25f))
+            add(header("ENVIRONMENT (this age's rig)"))
+            add(fslider("ground off", -1f, 1f, { def.groundOffset }, { def.groundOffset = it }))
+            add(fslider("walk stride", 0f, 4f, { def.walkStride }, { def.walkStride = it }))
         }
 
         val east = JPanel(BorderLayout()).apply {
@@ -335,6 +353,9 @@ object NornsAnimViewer {
         Timer(33) {
             if (playing) {
                 phase += phaseSpeed
+                // ground scrolls only while walking, at the rate the stride implies (so foot-slip shows):
+                // px/frame = (cycles/frame) · (worldUnits/cycle) · (px/worldUnit)
+                if (action == CreatureAction.WALK) floorScroll += (phaseSpeed / tau) * def.walkStride * (heightPx / heightForAge(age))
                 suppress = true
                 phaseSlider.value = ((phase / tau).rem(1f) * 100).roundToInt().coerceIn(0, 100)
                 suppress = false

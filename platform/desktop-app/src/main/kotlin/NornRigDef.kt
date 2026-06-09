@@ -55,6 +55,12 @@ class Placed(val id: String, val img: BufferedImage, val transform: AffineTransf
 
 class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<CreatureAction, GlobalAnim>) {
 
+    /** World-units to seat the rig vertically on the floor (+ = lower) — fixes levitation/clipping. */
+    var groundOffset: Float = 0f
+    /** World-units of ground travelled per WALK cycle (0 = uncalibrated). Lets the engine scale the
+     *  walk animation rate to the actual movement speed: phasePerTick = 2π·moveSpeed / walkStride. */
+    var walkStride: Float = 0f
+
     fun part(id: String): RigPart? = parts.firstOrNull { it.id == id }
     fun globalFor(a: CreatureAction): GlobalAnim = global.getOrPut(a) { GlobalAnim() }
 
@@ -87,6 +93,7 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
 
     fun toText(): String {
         val sb = StringBuilder("# norn rig — sprite-part compositor; coords: normalized (fraction of sprite w/h)\n")
+        sb.append("meta groundOffset=${f(groundOffset)} walkStride=${f(walkStride)}\n")
         for (p in parts) {
             sb.append("part ${p.id} sprite=${p.sprite} parent=${p.parent ?: "-"} ")
                 .append("anchor=${f(p.anchorU)},${f(p.anchorV)} pivot=${f(p.pivotU)},${f(p.pivotV)} ")
@@ -184,6 +191,11 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
                 val tok = line.trim().split(" ").filter { it.isNotEmpty() }
                 if (tok.isEmpty() || tok[0].startsWith("#")) continue
                 when (tok[0]) {
+                    "meta" -> {
+                        val m = kv(tok.drop(1))
+                        m["groundOffset"]?.toFloatOrNull()?.let { def.groundOffset = it }
+                        m["walkStride"]?.toFloatOrNull()?.let { def.walkStride = it }
+                    }
                     "part" -> {
                         val p = def.part(tok.getOrNull(1) ?: continue) ?: continue
                         val m = kv(tok.drop(2))

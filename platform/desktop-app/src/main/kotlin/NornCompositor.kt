@@ -28,10 +28,11 @@ object NornCompositor {
         g: Graphics2D, def: NornRigDef, sprites: Map<String, NornParts.Part>,
         action: CreatureAction, phase: Float, facing: Int,
         originX: Float, originY: Float, sx: Float, targetHeightUnits: Float = 2.95f,
-        highlight: String? = null,
+        groundOffset: Float = 0f, highlight: String? = null,
     ) {
         val placed = def.pose(sprites, action, phase)
         if (placed.isEmpty()) return
+        val plantY = originY + groundOffset * sx   // seat the rig on the floor (+ = lower)
 
         // overall bounds (transform each part image's corners into body-local space)
         var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
@@ -46,7 +47,7 @@ object NornCompositor {
         val bottom = maxY
         val scale = targetHeightUnits * sx / rigH
 
-        val g0 = global(def, action, phase, originX, originY, scale, facing, sx, centerX, bottom)
+        val g0 = global(def, action, phase, originX, plantY, scale, facing, sx, centerX, bottom)
 
         val oldInterp = g.getRenderingHint(RenderingHints.KEY_INTERPOLATION)
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
