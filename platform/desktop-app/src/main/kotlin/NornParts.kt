@@ -53,13 +53,16 @@ object NornParts {
         if (parts.containsKey("body")) parts else null
     }
 
-    /** First breed/age that actually loads (so the tool opens with something even if a breed is absent). */
+    /** First breed/age that actually loads (so the tool opens with something even if a breed is absent).
+     *  Prefer the adult set, then younger. */
     fun firstAvailable(): Triple<String, Int, LinkedHashMap<String, Part>>? {
-        for (b in BREEDS) for (age in intArrayOf(3, 1, 0, 2)) load(b, age)?.let { return Triple(b, age, it) }
+        for (b in BREEDS) for (age in intArrayOf(3, 2, 1, 0)) load(b, age)?.let { return Triple(b, age, it) }
         return null
     }
 
-    private fun res(path: String): ByteArray? =
+    /** Load a classpath/asset resource as bytes (shared by the rig store). Tries the jar resource,
+     *  then `assets/...`, then `../../assets/...` (the source tree when run from a module dir). */
+    fun res(path: String): ByteArray? =
         NornParts::class.java.getResourceAsStream(path)?.readBytes()
             ?: File("assets$path").takeIf { it.exists() }?.readBytes()
             ?: File(System.getProperty("user.dir")).parentFile?.parentFile?.resolve("assets$path")?.takeIf { it.exists() }?.readBytes()

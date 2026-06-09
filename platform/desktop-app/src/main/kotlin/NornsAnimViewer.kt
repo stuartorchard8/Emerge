@@ -62,7 +62,7 @@ object NornsAnimViewer {
 
         // rigs are per (breed, age); the file lives in assets/norns so it's the same source the game
         // loads. A session cache keeps each (breed,age)'s edits so switching age/breed never resets.
-        fun assetsDir(): File? = listOf(File("assets/norns"), File("../../assets/norns")).firstOrNull { it.isDirectory }
+        fun assetsDir(): File? = assetsNornsDir()
         fun rigFile(b: String, a: Int): File = assetsDir()?.resolve("rig-$b-a$a.txt") ?: File("rig-$b-a$a.txt")
         fun rigKey(b: String, a: Int) = "$b:$a"
         fun loadRig(b: String, a: Int, spr: Map<String, NornParts.Part>): NornRigDef {
@@ -91,7 +91,6 @@ object NornsAnimViewer {
         var suppress = false      // guard programmatic control updates
         var building = false      // guard combo rebuilds
         val tau = (2 * PI).toFloat()   // angles are edited in TURNS (1 turn = 2π rad); model stays rad
-        fun heightForAge(a: Int) = when (a) { 0 -> 1.2f; 1 -> 1.5867f; 2 -> 1.9733f; else -> 2.36f }  // world height per age
 
         lateinit var canvas: JComponent
         val syncList = ArrayList<() -> Unit>()
@@ -117,7 +116,7 @@ object NornsAnimViewer {
                     g.drawImage(img, (w - iw) / 2, (h - ih) / 2, iw, ih, null)
                     g.composite = old
                 }
-                val hAge = heightForAge(age)
+                val hAge = NornRigStore.heightForAge(age)
                 val sx = heightPx / hAge                       // px per world-unit (age's true world height)
                 val originX = w / 2f; val originY = h * 0.86f   // the floor line (where feet should sit)
                 // floor: a band of scrolling alternating TILES, so the ground speed reads clearly
@@ -370,7 +369,7 @@ object NornsAnimViewer {
                 phase += phaseSpeed
                 // ground scrolls only while walking, at the rate the stride implies (so foot-slip shows):
                 // px/frame = (cycles/frame) · (worldUnits/cycle) · (px/worldUnit)
-                if (action == CreatureAction.WALK) floorScroll += (phaseSpeed / tau) * def.walkStride * (heightPx / heightForAge(age))
+                if (action == CreatureAction.WALK) floorScroll += (phaseSpeed / tau) * def.walkStride * (heightPx / NornRigStore.heightForAge(age))
                 suppress = true
                 phaseSlider.value = ((phase / tau).rem(1f) * 100).roundToInt().coerceIn(0, 100)
                 suppress = false
@@ -417,91 +416,85 @@ private fun renderContactSheet(out: File, ageOverride: Int? = null) {
     g.dispose(); out.parentFile?.mkdirs(); ImageIO.write(img, "png", out); println("wrote ${out.absolutePath}")
 }
 
+private fun headless() = System.setProperty("java.awt.headless", "true")
+private fun assetsNornsDir(): File? = listOf(File("assets/norns"), File("../../assets/norns")).firstOrNull { it.isDirectory }
+
+/** Rewrite legacy pixel-coord rig files into the normalized format. args: [breed] [ages...] */
+private fun cmdNormalize(args: Array<String>) {
+    headless(); val dir = assetsNornsDir() ?: return println("no assets/norns dir")
+    val breed = args.getOrElse(1) { "denali" }
+    for (age in args.drop(2).mapNotNull { it.toIntOrNull() }.ifEmpty { listOf(0, 3) }) {
+        val sprites = NornParts.load(breed, age) ?: continue
+        val f = dir.resolve("rig-$breed-a$age.txt"); if (!f.isFile) continue
+        f.writeText(NornRigDef.parse(f.readText(), sprites).toText())
+        println("normalized ${f.path}")
+    }
+}
+
+/** Copy one (age,action)'s animation (per-part rotation + global bob/lean/hop) onto one or more
+ *  (age,action) targets, leaving their structure intact.
+ *  args: <srcAge> <srcAction> <dstAgesCSV> <dstActionsCSV> [breed]
+ *  e.g. `2 REST 2,3 COURT,EAT,PICK_UP` seeds those actions from a2's rest; `1 REST 0 REST` clones. */
+private fun cmdCopyAction(args: Array<String>) {
+    headless(); val dir = assetsNornsDir() ?: return println("no assets/norns dir")
+    val breed = args.getOrElse(5) { "denali" }
+    val srcAge = args[1].toInt(); val srcAction = CreatureAction.valueOf(args[2])
+    val dstAges = args[3].split(",").map { it.toInt() }
+    val dstActions = args[4].split(",").map { CreatureAction.valueOf(it) }
+    val srcSprites = NornParts.load(breed, srcAge) ?: return println("no art $breed a$srcAge")
+    val src = NornRigDef.parse(dir.resolve("rig-$breed-a$srcAge.txt").readText(), srcSprites)
+    for (dstAge in dstAges) {
+        val dstSprites = NornParts.load(breed, dstAge)
+        if (dstSprites == null) { println("no art $breed a$dstAge"); continue }
+        val dstFile = dir.resolve("rig-$breed-a$dstAge.txt")
+        val dst = NornRigDef.parse(dstFile.readText(), dstSprites)
+        for (dstAction in dstActions) {
+            for (p in dst.parts) src.part(p.id)?.anim?.get(srcAction)?.let { p.anim[dstAction] = it.copy() }
+            dst.global[dstAction] = src.globalFor(srcAction).copy()
+        }
+        dstFile.writeText(dst.toText())
+        println("seeded a$dstAge ${dstActions.joinToString(",")} from a$srcAge $srcAction ($breed)")
+    }
+}
+
+/** Scale a rig's world-unit calibrations by newH/oldH so they stay physically correct after a size
+ *  change (stride/seat/reach/held-food all scale with the creature). args: <age> <oldH> <newH> [breed] */
+private fun cmdRescale(args: Array<String>) {
+    headless(); val dir = assetsNornsDir() ?: return println("no assets/norns dir")
+    val age = args[1].toInt(); val f = args[3].toFloat() / args[2].toFloat(); val breed = args.getOrElse(4) { "denali" }
+    val sprites = NornParts.load(breed, age) ?: return println("no art $breed a$age")
+    val file = dir.resolve("rig-$breed-a$age.txt")
+    val def = NornRigDef.parse(file.readText(), sprites)
+    def.groundOffset *= f; def.walkStride *= f; def.pickupReachX *= f; def.heldFoodX *= f; def.heldFoodY *= f
+    file.writeText(def.toText())
+    println("rescaled a$age calibrations by ${"%.4f".format(f)}")
+}
+
+/** Render the four ages at their TRUE relative world heights (shared px-per-world-unit). args: [png] */
+private fun cmdSizes(args: Array<String>) {
+    headless()
+    val w = 920; val h = 420; val img = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
+    val g = img.createGraphics(); g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+    g.paint = GradientPaint(0f, 0f, Color(232, 220, 188), 0f, h.toFloat(), Color(74, 58, 44)); g.fillRect(0, 0, w, h)
+    val baseY = h * 0.86f; val unit = h * 0.30f      // shared px per world unit
+    g.color = Color(150, 120, 84); g.fillRect(0, baseY.roundToInt(), w, 2)
+    for (a in 0..3) {
+        val sprites = NornParts.load("denali", a) ?: continue
+        val def = NornRigStore.rigFor("denali", a) ?: continue
+        val cx = w * (0.18f + a * 0.215f); val hAge = NornRigStore.heightForAge(a)
+        NornCompositor.draw(g, def, sprites, CreatureAction.REST, 0.6f, 1, cx, baseY, unit, hAge, def.groundOffset)
+        g.color = Color(40, 30, 20); g.font = Font("SansSerif", Font.BOLD, 13); g.drawString("a$a ($hAge)", cx - 30, baseY + 20)
+    }
+    g.dispose(); val out = File(args.getOrElse(1) { "build/norn-sizes.png" }); out.parentFile?.mkdirs(); ImageIO.write(img, "png", out); println("wrote ${out.absolutePath}")
+}
+
 fun main(args: Array<String>) {
-    if (args.isNotEmpty() && args[0] == "--normalize") {
-        // Rewrite legacy pixel-coord rig files (the given breed+ages) into the normalized format.
-        System.setProperty("java.awt.headless", "true")
-        val dir = listOf(File("assets/norns"), File("../../assets/norns")).firstOrNull { it.isDirectory }
-            ?: run { println("no assets/norns dir"); return }
-        val breed = args.getOrElse(1) { "denali" }
-        val ages = args.drop(2).mapNotNull { it.toIntOrNull() }.ifEmpty { listOf(0, 3) }
-        for (age in ages) {
-            val sprites = NornParts.load(breed, age) ?: continue
-            val f = dir.resolve("rig-$breed-a$age.txt")
-            if (!f.isFile) continue
-            f.writeText(NornRigDef.parse(f.readText(), sprites).toText())   // legacy px → normalized
-            println("normalized ${f.path}")
-        }
-        return
+    when (args.getOrNull(0)) {
+        "--normalize" -> cmdNormalize(args)
+        "--copy-action" -> cmdCopyAction(args)
+        "--rescale" -> cmdRescale(args)
+        "--sizes" -> cmdSizes(args)
+        "--render" -> renderContactSheet(File(args.getOrElse(1) { "build/norn-anim-sheet.png" }), args.getOrNull(2)?.toIntOrNull())
+        else -> SwingUtilities.invokeLater { NornsAnimViewer.run() }
     }
-    if (args.isNotEmpty() && args[0] == "--copy-action") {
-        // Copy one (age,action)'s animation (per-part JointAnim + global bob/lean/hop) onto one or
-        // more (age,action) targets, leaving the targets' structure intact.
-        // args: <srcAge> <srcAction> <dstAgesCSV> <dstActionsCSV> [breed]
-        // e.g. --copy-action 2 REST 2,3 COURT,EAT,PICK_UP  (seed those actions from a2's rest)
-        //      --copy-action 1 REST 0 REST                 (clone one action between ages)
-        System.setProperty("java.awt.headless", "true")
-        val dir = listOf(File("assets/norns"), File("../../assets/norns")).firstOrNull { it.isDirectory }
-            ?: run { println("no assets/norns dir"); return }
-        val breed = args.getOrElse(5) { "denali" }
-        val srcAge = args[1].toInt()
-        val srcAction = CreatureAction.valueOf(args[2])
-        val dstAges = args[3].split(",").map { it.toInt() }
-        val dstActions = args[4].split(",").map { CreatureAction.valueOf(it) }
-        val srcSprites = NornParts.load(breed, srcAge) ?: run { println("no art $breed a$srcAge"); return }
-        val src = NornRigDef.parse(dir.resolve("rig-$breed-a$srcAge.txt").readText(), srcSprites)
-        for (dstAge in dstAges) {
-            val dstSprites = NornParts.load(breed, dstAge)
-            if (dstSprites == null) { println("no art $breed a$dstAge"); continue }
-            val dstFile = dir.resolve("rig-$breed-a$dstAge.txt")
-            val dst = NornRigDef.parse(dstFile.readText(), dstSprites)
-            for (dstAction in dstActions) {
-                for (p in dst.parts) src.part(p.id)?.anim?.get(srcAction)?.let { p.anim[dstAction] = it.copy() }
-                dst.global[dstAction] = src.globalFor(srcAction).copy()
-            }
-            dstFile.writeText(dst.toText())
-            println("seeded a$dstAge ${dstActions.joinToString(",")} from a$srcAge $srcAction ($breed)")
-        }
-        return
-    }
-    if (args.isNotEmpty() && args[0] == "--rescale") {
-        // Scale a rig's world-unit calibrations by newH/oldH so they stay physically correct after a
-        // size change (stride/seat/reach/held-food all scale with the creature). args: <age> <oldH> <newH> [breed]
-        System.setProperty("java.awt.headless", "true")
-        val dir = listOf(File("assets/norns"), File("../../assets/norns")).firstOrNull { it.isDirectory }
-            ?: run { println("no assets/norns dir"); return }
-        val age = args[1].toInt(); val f = args[3].toFloat() / args[2].toFloat(); val breed = args.getOrElse(4) { "denali" }
-        val sprites = NornParts.load(breed, age) ?: run { println("no art $breed a$age"); return }
-        val file = dir.resolve("rig-$breed-a$age.txt")
-        val def = NornRigDef.parse(file.readText(), sprites)
-        def.groundOffset *= f; def.walkStride *= f; def.pickupReachX *= f; def.heldFoodX *= f; def.heldFoodY *= f
-        file.writeText(def.toText())
-        println("rescaled a$age calibrations by ${"%.4f".format(f)}")
-        return
-    }
-    if (args.isNotEmpty() && args[0] == "--sizes") {
-        // Render the four ages at their TRUE relative world heights (shared px-per-world-unit), to
-        // eyeball the size progression. args: [pngPath]
-        System.setProperty("java.awt.headless", "true")
-        val heights = floatArrayOf(1.2f, 1.5867f, 1.9733f, 2.36f)
-        val w = 920; val h = 420; val img = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
-        val g = img.createGraphics(); g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-        g.paint = GradientPaint(0f, 0f, Color(232, 220, 188), 0f, h.toFloat(), Color(74, 58, 44)); g.fillRect(0, 0, w, h)
-        val baseY = h * 0.86f; val unit = h * 0.30f      // shared px per world unit
-        g.color = Color(150, 120, 84); g.fillRect(0, baseY.roundToInt(), w, 2)
-        for (a in 0..3) {
-            val sprites = NornParts.load("denali", a) ?: continue
-            val def = NornRigStore.rigFor("denali", a) ?: continue
-            val cx = w * (0.18f + a * 0.215f)
-            NornCompositor.draw(g, def, sprites, CreatureAction.REST, 0.6f, 1, cx, baseY, unit, heights[a], def.groundOffset)
-            g.color = Color(40, 30, 20); g.font = Font("SansSerif", Font.BOLD, 13); g.drawString("a$a (${heights[a]})", (cx - 30), (baseY + 20))
-        }
-        g.dispose(); val out = File(args.getOrElse(1) { "build/norn-sizes.png" }); out.parentFile?.mkdirs(); ImageIO.write(img, "png", out); println("wrote ${out.absolutePath}")
-        return
-    }
-    if (args.isNotEmpty() && args[0] == "--render") {
-        renderContactSheet(File(args.getOrElse(1) { "build/norn-anim-sheet.png" }), args.getOrNull(2)?.toIntOrNull())
-        return
-    }
-    SwingUtilities.invokeLater { NornsAnimViewer.run() }
 }

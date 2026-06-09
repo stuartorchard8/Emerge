@@ -1,7 +1,5 @@
 package org.emerge.desktop
 
-import java.io.File
-
 /**
  * Supplies the **authored rig** ([NornRigDef]) for the live world, per breed + life-stage age.
  *
@@ -19,7 +17,8 @@ object NornRigStore {
     private val rigTextByAge = HashMap<Int, String?>()
 
     /** The authored rig text for [age] (null if not yet authored). */
-    private fun rigText(age: Int): String? = rigTextByAge.getOrPut(age) { res("/assets/norns/rig-$RIG_BREED-a$age.txt") }
+    private fun rigText(age: Int): String? =
+        rigTextByAge.getOrPut(age) { NornParts.res("/assets/norns/rig-$RIG_BREED-a$age.txt")?.toString(Charsets.UTF_8) }
 
     /** The rig for [breed] at life-stage [age] (0..3), or null if the breed's art is missing. The
      *  single authored rig for the age is applied to this breed's own sprites (normalized → scaled). */
@@ -34,14 +33,11 @@ object NornRigStore {
     /** Sprite-part age set per life stage (matches the live rig: babies/children crawl, rest upright). */
     fun ageOf(stage: String): Int = when (stage) { "BABY" -> 0; "CHILD" -> 1; "ADOLESCENT" -> 2; else -> 3 }
 
-    /** Drawn height (world units) per life stage — babies tiny, growing up to adult. */
-    fun targetHeight(stage: String): Float = when (stage) {
-        "BABY" -> 1.2f; "CHILD" -> 1.5867f; "ADOLESCENT" -> 1.9733f; "OLD" -> 2.28f; else -> 2.36f
-    }
+    /** The canonical drawn height (world units) per part-age — the single source the game + editor +
+     *  size preview all read, so they stay in sync. Babies tiny, growing up to adult. */
+    val AGE_HEIGHTS = floatArrayOf(1.2f, 1.5867f, 1.9733f, 2.36f)
+    fun heightForAge(age: Int): Float = AGE_HEIGHTS[age.coerceIn(0, AGE_HEIGHTS.lastIndex)]
 
-    private fun res(path: String): String? =
-        (NornRigStore::class.java.getResourceAsStream(path)?.readBytes()
-            ?: File("assets$path").takeIf { it.exists() }?.readBytes()
-            ?: File(System.getProperty("user.dir")).parentFile?.parentFile?.resolve("assets$path")?.takeIf { it.exists() }?.readBytes())
-            ?.toString(Charsets.UTF_8)
+    /** Drawn height per life stage. OLD reuses adult art a touch smaller (stooped). */
+    fun targetHeight(stage: String): Float = if (stage == "OLD") heightForAge(3) * 0.966f else heightForAge(ageOf(stage))
 }

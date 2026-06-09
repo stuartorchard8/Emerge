@@ -128,6 +128,7 @@ object NornsImageRenderer {
             val cy = if (c.ridingY >= 0f) view.floorYf(c.ridingY) else view.floorY(c.floor)
             drawCreature(g, c, c.x, cy, c.id == followId, ::px, ::py, sx, ::blob, ::col, view.groundOffset, world.cfg)
         }
+        animStates.keys.retainAll(world.creatures.mapTo(HashSet()) { it.id })   // evict dead creatures' anim state
         // the front gate of each lift car — drawn OVER the creatures so a rider sits behind the bars
         for (lift in world.lifts) drawLiftGate(g, lift, view, sx, ::px, ::py)
 
@@ -164,7 +165,7 @@ object NornsImageRenderer {
         g: java.awt.Graphics2D, c: WorldCreature, worldX: Float, worldY: Float, followed: Boolean,
         px: (Float) -> Float, py: (Float) -> Float, sx: Float,
         blob: (Float, Float, Float, Color) -> Unit, col: (Float, Float, Float) -> Color,
-        groundOffset: Float, cfg: NornsConfig,
+        floorOffset: Float, cfg: NornsConfig,
     ) {
         val action = when (c.activity) {
             ActivityType.EATING -> CreatureAction.EAT
@@ -175,22 +176,11 @@ object NornsImageRenderer {
         }
         // an egg incubating on the ground (the EMBRYO stage hatches into a baby)
         val stage = c.biology.lifeStage.name
-        if (stage == "EMBRYO") { drawEgg(g, px(worldX), py(worldY - groundOffset), sx); return }
+        if (stage == "EMBRYO") { drawEgg(g, px(worldX), py(worldY - floorOffset), sx); return }
         val scale = 1.15f
-        val phase = c.ticksLived * 0.35f
-        // warm, earthy fur, gene-tinted: efficient = mossy/green, inefficient = rusty/red,
-        // plus a small per-creature jitter so individuals aren't identical clones of one hue.
-        val frac = ((c.metabolism - 0.003f) / (0.012f - 0.003f)).coerceIn(0f, 1f)
-        val jt = (c.id * -1640531527) ushr 8
-        val jr = ((jt and 0xFF) / 255f - 0.5f) * 0.11f
-        val jg = (((jt ushr 8) and 0xFF) / 255f - 0.5f) * 0.10f
-        val jb = (((jt ushr 16) and 0xFF) / 255f - 0.5f) * 0.08f
-        val r = (0.55f + 0.30f * frac + jr).coerceIn(0.18f, 0.95f)
-        val gr = (0.62f - 0.16f * frac + jg).coerceIn(0.18f, 0.95f)
-        val b = (0.40f - 0.06f * frac + jb).coerceIn(0.14f, 0.9f)
 
         // the procedurally-animated sprite-part rig (authored in runNornsAnim); feet on the grass
-        // line the world draws at floorY - groundOffset. Falls back to the procedural-ellipse body
+        // line the world draws at floorY - floorOffset. Falls back to the procedural-ellipse body
         // only if the sprite parts are missing.
         val breedName = NornRigStore.breedName(c.breed)
         val rigAge = NornRigStore.ageOf(stage)
@@ -216,12 +206,20 @@ object NornsImageRenderer {
             val blendT = ((c.ticksLived - st.blendStartTick) / BLEND_TICKS).coerceIn(0f, 1f)
             NornCompositor.draw(
                 g, rig, sprites, action, rigPhase, c.facing,
-                px(worldX), py(worldY - groundOffset), sx,
+                px(worldX), py(worldY - floorOffset), sx,
                 targetHeightUnits = NornRigStore.targetHeight(stage), groundOffset = rig.groundOffset,
                 food = if (c.carryingFood) NornCompositor.FoodMode.HAND else NornCompositor.FoodMode.NONE,
                 blendFrom = if (blendT < 1f) st.prevAction else null, blendFromPhase = st.prevPhase, blendT = blendT,
             )
         } else {
+            // procedural-ellipse fallback (only when a breed's sprite parts are missing): warm,
+            // gene-tinted fur (efficient = mossy, inefficient = rusty) + a per-creature hue jitter.
+            val phase = c.ticksLived * 0.35f
+            val frac = ((c.metabolism - 0.003f) / (0.012f - 0.003f)).coerceIn(0f, 1f)
+            val jt = (c.id * -1640531527) ushr 8
+            val r = (0.55f + 0.30f * frac + ((jt and 0xFF) / 255f - 0.5f) * 0.11f).coerceIn(0.18f, 0.95f)
+            val gr = (0.62f - 0.16f * frac + (((jt ushr 8) and 0xFF) / 255f - 0.5f) * 0.10f).coerceIn(0.18f, 0.95f)
+            val b = (0.40f - 0.06f * frac + (((jt ushr 16) and 0xFF) / 255f - 0.5f) * 0.08f).coerceIn(0.14f, 0.9f)
             NornBodyRenderer.draw(g, action, phase, c.facing, r, gr, b, NornBodyRenderer.eyeColor(c.id), px(worldX), py(worldY), scale, sx)
             if (c.carryingFood) blob(worldX + c.facing * 0.5f * scale, worldY + 0.05f * scale, 0.2f, Color(212, 84, 60))
         }
