@@ -151,10 +151,11 @@ class MorphLab {
         tree.addListSelectionListener { if (!it.valueIsAdjusting) { val i = tree.selectedIndex; if (i in rows.indices) selectNode(rows[i]) } }
         val treeScroll = JScrollPane(tree).apply { preferredSize = Dimension(260, 150); maximumSize = Dimension(Int.MAX_VALUE, 150) }
         panel.add(treeScroll)
-        val partBtns = JPanel(java.awt.GridLayout(1, 3, 3, 3))
+        val partBtns = JPanel(java.awt.GridLayout(0, 2, 3, 3))
         partBtns.add(JButton("add child").apply { addActionListener { addChild() } })
         partBtns.add(JButton("add parent").apply { addActionListener { addParent() } })
         partBtns.add(JButton("delete").apply { addActionListener { deleteSelected() } })
+        partBtns.add(JButton("reparent…").apply { addActionListener { reparentDialog() } })
         partBtns.maximumSize = Dimension(Int.MAX_VALUE, partBtns.preferredSize.height)
         panel.add(partBtns)
 
@@ -271,6 +272,32 @@ class MorphLab {
         if (target === genome) { JOptionPane.showMessageDialog(canvas, "Can't delete the root body."); return }
         val parent = parentOf(genome, target) ?: return
         parent.children.remove(target); rebuildTree(); selectNode(parent); requestRender()
+    }
+
+    /** Move the selected node under a different parent (chosen from a dialog). Excludes the node's own
+     *  subtree (no cycles) and its current parent. Keeps the node's raw offsets, so it may jump — adjust
+     *  placement after, now relative to the new parent. */
+    private fun reparentDialog() {
+        val target = selected ?: return
+        if (target === genome) { JOptionPane.showMessageDialog(canvas, "Can't reparent the root body."); return }
+        val sub = ArrayList<MorphNode>().also { fun rec(n: MorphNode) { it.add(n); n.children.forEach(::rec) }; rec(target) }
+        val cur = parentOf(genome, target)
+        val cands = rows.filter { c -> sub.none { it === c } && c !== cur }
+        if (cands.isEmpty()) { JOptionPane.showMessageDialog(canvas, "No other valid parent."); return }
+        val labels = cands.mapIndexed { i, n -> "$i  ${nodePath(n)}" }.toTypedArray()
+        val pick = JOptionPane.showInputDialog(canvas, "Move '${target.name}' under:", "Reparent",
+            JOptionPane.PLAIN_MESSAGE, null, labels, labels[0]) as String? ?: return
+        val newParent = cands[labels.indexOf(pick)]
+        cur?.children?.remove(target)
+        newParent.children.add(target)
+        rebuildTree(); selectNode(target); requestRender()
+    }
+
+    /** Slash-path from the root to [n] (for the reparent picker). */
+    private fun nodePath(n: MorphNode): String {
+        val parts = ArrayList<String>(); var cur: MorphNode? = n
+        while (cur != null) { parts.add(cur.name); cur = parentOf(genome, cur) }
+        return parts.asReversed().joinToString("/")
     }
 
     private fun parentOf(node: MorphNode, target: MorphNode): MorphNode? {
