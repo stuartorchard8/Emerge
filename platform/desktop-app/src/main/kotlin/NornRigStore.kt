@@ -36,7 +36,7 @@ object NornRigStore {
 
     /** Drawn height (world units) per life stage — babies tiny, growing up to adult. */
     fun targetHeight(stage: String): Float = when (stage) {
-        "BABY" -> 0.6f; "CHILD" -> 1.3f; "ADOLESCENT" -> 2.2f; "OLD" -> 2.85f; else -> 2.95f
+        "BABY" -> 1.2f; "CHILD" -> 1.5867f; "ADOLESCENT" -> 1.9733f; "OLD" -> 2.28f; else -> 2.36f
     }
 
     private fun res(path: String): String? =

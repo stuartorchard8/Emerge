@@ -91,7 +91,7 @@ object NornsAnimViewer {
         var suppress = false      // guard programmatic control updates
         var building = false      // guard combo rebuilds
         val tau = (2 * PI).toFloat()   // angles are edited in TURNS (1 turn = 2π rad); model stays rad
-        fun heightForAge(a: Int) = when (a) { 0 -> 0.6f; 1 -> 1.3f; 2 -> 2.2f; else -> 2.95f }  // world height per age
+        fun heightForAge(a: Int) = when (a) { 0 -> 1.2f; 1 -> 1.5867f; 2 -> 1.9733f; else -> 2.36f }  // world height per age
 
         lateinit var canvas: JComponent
         val syncList = ArrayList<() -> Unit>()
@@ -462,6 +462,41 @@ fun main(args: Array<String>) {
             dstFile.writeText(dst.toText())
             println("seeded a$dstAge ${dstActions.joinToString(",")} from a$srcAge $srcAction ($breed)")
         }
+        return
+    }
+    if (args.isNotEmpty() && args[0] == "--rescale") {
+        // Scale a rig's world-unit calibrations by newH/oldH so they stay physically correct after a
+        // size change (stride/seat/reach/held-food all scale with the creature). args: <age> <oldH> <newH> [breed]
+        System.setProperty("java.awt.headless", "true")
+        val dir = listOf(File("assets/norns"), File("../../assets/norns")).firstOrNull { it.isDirectory }
+            ?: run { println("no assets/norns dir"); return }
+        val age = args[1].toInt(); val f = args[3].toFloat() / args[2].toFloat(); val breed = args.getOrElse(4) { "denali" }
+        val sprites = NornParts.load(breed, age) ?: run { println("no art $breed a$age"); return }
+        val file = dir.resolve("rig-$breed-a$age.txt")
+        val def = NornRigDef.parse(file.readText(), sprites)
+        def.groundOffset *= f; def.walkStride *= f; def.pickupReachX *= f; def.heldFoodX *= f; def.heldFoodY *= f
+        file.writeText(def.toText())
+        println("rescaled a$age calibrations by ${"%.4f".format(f)}")
+        return
+    }
+    if (args.isNotEmpty() && args[0] == "--sizes") {
+        // Render the four ages at their TRUE relative world heights (shared px-per-world-unit), to
+        // eyeball the size progression. args: [pngPath]
+        System.setProperty("java.awt.headless", "true")
+        val heights = floatArrayOf(1.2f, 1.5867f, 1.9733f, 2.36f)
+        val w = 920; val h = 420; val img = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
+        val g = img.createGraphics(); g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        g.paint = GradientPaint(0f, 0f, Color(232, 220, 188), 0f, h.toFloat(), Color(74, 58, 44)); g.fillRect(0, 0, w, h)
+        val baseY = h * 0.86f; val unit = h * 0.30f      // shared px per world unit
+        g.color = Color(150, 120, 84); g.fillRect(0, baseY.roundToInt(), w, 2)
+        for (a in 0..3) {
+            val sprites = NornParts.load("denali", a) ?: continue
+            val def = NornRigStore.rigFor("denali", a) ?: continue
+            val cx = w * (0.18f + a * 0.215f)
+            NornCompositor.draw(g, def, sprites, CreatureAction.REST, 0.6f, 1, cx, baseY, unit, heights[a], def.groundOffset)
+            g.color = Color(40, 30, 20); g.font = Font("SansSerif", Font.BOLD, 13); g.drawString("a$a (${heights[a]})", (cx - 30), (baseY + 20))
+        }
+        g.dispose(); val out = File(args.getOrElse(1) { "build/norn-sizes.png" }); out.parentFile?.mkdirs(); ImageIO.write(img, "png", out); println("wrote ${out.absolutePath}")
         return
     }
     if (args.isNotEmpty() && args[0] == "--render") {
