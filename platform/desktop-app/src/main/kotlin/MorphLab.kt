@@ -164,7 +164,12 @@ class MorphLab {
         panel.add(fileBtns)
 
         panel.add(Box.createVerticalGlue())
-        return JScrollPane(panel).apply { preferredSize = Dimension(300, RES); horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER }
+        return JScrollPane(panel).apply {
+            preferredSize = Dimension(440, RES)
+            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_ALWAYS
+            verticalScrollBar.unitIncrement = 16
+        }
     }
 
     // ---- node editor (rebuilt per selection so sliders bind to the chosen node) ----
