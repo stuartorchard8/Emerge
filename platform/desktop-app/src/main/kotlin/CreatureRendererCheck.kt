@@ -1,5 +1,6 @@
 package org.emerge.desktop
 
+import org.emerge.demo.norns.morph.MorphCodec
 import java.awt.Color
 import java.awt.Font
 import java.awt.RenderingHints
@@ -14,7 +15,7 @@ fun main(args: Array<String>) {
     val out = File(args.getOrElse(0) { "build/creature-render.png" })
     val yaw = args.getOrNull(1)?.toDoubleOrNull() ?: 0.0
     val pitch = args.getOrNull(2)?.toDoubleOrNull() ?: 0.0
-    val genome = defaultNornGenome()
+    val genome = args.getOrNull(3)?.let { p -> File(p).takeIf { it.exists() }?.let { MorphCodec.parse(it.readText()) } } ?: defaultNornGenome()
     val fur = Color(176, 142, 104)
     val moods = CreatureRenderer.Mood.PRESETS
     val tile = 280; val bgC = Color(236, 232, 224); val bg = bgC.rgb and 0xFFFFFF
