@@ -60,6 +60,8 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
     /** World-units of ground travelled per WALK cycle (0 = uncalibrated). Lets the engine scale the
      *  walk animation rate to the actual movement speed: phasePerTick = 2π·moveSpeed / walkStride. */
     var walkStride: Float = 0f
+    /** Where the reached-for object sits during PICK_UP: world-units ahead of the norn (facing-relative). */
+    var pickupReachX: Float = 0.5f
 
     fun part(id: String): RigPart? = parts.firstOrNull { it.id == id }
     fun globalFor(a: CreatureAction): GlobalAnim = global.getOrPut(a) { GlobalAnim() }
@@ -93,7 +95,7 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
 
     fun toText(): String {
         val sb = StringBuilder("# norn rig — sprite-part compositor; coords: normalized (fraction of sprite w/h)\n")
-        sb.append("meta groundOffset=${f(groundOffset)} walkStride=${f(walkStride)}\n")
+        sb.append("meta groundOffset=${f(groundOffset)} walkStride=${f(walkStride)} pickupReachX=${f(pickupReachX)}\n")
         for (p in parts) {
             sb.append("part ${p.id} sprite=${p.sprite} parent=${p.parent ?: "-"} ")
                 .append("anchor=${f(p.anchorU)},${f(p.anchorV)} pivot=${f(p.pivotU)},${f(p.pivotV)} ")
@@ -195,6 +197,7 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
                         val m = kv(tok.drop(1))
                         m["groundOffset"]?.toFloatOrNull()?.let { def.groundOffset = it }
                         m["walkStride"]?.toFloatOrNull()?.let { def.walkStride = it }
+                        m["pickupReachX"]?.toFloatOrNull()?.let { def.pickupReachX = it }
                     }
                     "part" -> {
                         val p = def.part(tok.getOrNull(1) ?: continue) ?: continue

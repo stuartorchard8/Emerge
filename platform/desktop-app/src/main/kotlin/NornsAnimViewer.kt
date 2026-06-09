@@ -120,15 +120,26 @@ object NornsAnimViewer {
                 val hAge = heightForAge(age)
                 val sx = heightPx / hAge                       // px per world-unit (age's true world height)
                 val originX = w / 2f; val originY = h * 0.86f   // the floor line (where feet should sit)
-                // floor: a ground band + scrolling tick marks, so foot-plant + walk speed are visible
+                // floor: a band of scrolling alternating TILES, so the ground speed reads clearly
                 if (showFloor) {
-                    g.color = Color(70, 52, 36, 90); g.fillRect(0, originY.roundToInt(), w, h - originY.roundToInt())
-                    g.color = Color(150, 120, 84); g.fillRect(0, originY.roundToInt(), w, 2)
-                    val stepPx = (0.5f * sx).coerceAtLeast(8f)
-                    val off = ((floorScroll % stepPx) + stepPx) % stepPx
-                    g.color = Color(120, 96, 66)
-                    var x = -off
-                    while (x < w) { g.drawLine(x.roundToInt(), originY.roundToInt(), x.roundToInt(), (originY + 9).roundToInt()); x += stepPx }
+                    val oy = originY.roundToInt(); val bandH = h - oy
+                    val stepPx = (0.5f * sx).coerceAtLeast(28f)
+                    val shift = floorScroll / stepPx
+                    val startTile = shift.toInt(); val frac = shift - startTile
+                    var k = 0
+                    while (true) {
+                        val x = (k - frac) * stepPx
+                        if (x > w) break
+                        g.color = if (((startTile + k) and 1) == 0) Color(99, 72, 47) else Color(72, 52, 34)
+                        g.fillRect(x.roundToInt(), oy, stepPx.roundToInt() + 1, bandH)
+                        k++
+                    }
+                    g.color = Color(156, 124, 86); g.fillRect(0, oy, w, 3)                 // lit top edge
+                    g.color = Color(150, 188, 92); g.fillRect(0, (oy - 2), w, 2)            // grassy line
+                }
+                // PICK_UP: a ground-food guide ahead of the norn, to line the reach up against
+                if (action == CreatureAction.PICK_UP) {
+                    NornCompositor.drawFood(g, originX + facing * def.pickupReachX * sx, originY, 0.2f * sx)
                 }
                 if (onion) {
                     val old = g.composite
@@ -138,7 +149,7 @@ object NornsAnimViewer {
                     }
                     g.composite = old
                 }
-                NornCompositor.draw(g, def, sprites, action, phase, facing, originX, originY, sx, hAge, def.groundOffset, highlight = selected)
+                NornCompositor.draw(g, def, sprites, action, phase, facing, originX, originY, sx, hAge, def.groundOffset, holdFoodInHand = action == CreatureAction.EAT, highlight = selected)
                 g.color = if (bgMode == 2) Color(60, 50, 40) else Color(245, 240, 228)
                 g.font = Font("SansSerif", Font.PLAIN, 13)
                 g.drawString("$breed a$age   ${action.name}   facing ${if (facing > 0) "▶" else "◀"}   sel:$selected   stride ${"%.2f".format(def.walkStride)}", 12, 20)
@@ -326,6 +337,7 @@ object NornsAnimViewer {
             add(header("ENVIRONMENT (this age's rig)"))
             add(fslider("ground off", -1f, 1f, { def.groundOffset }, { def.groundOffset = it }))
             add(fslider("walk stride", 0f, 4f, { def.walkStride }, { def.walkStride = it }))
+            add(fslider("pickup reach", -2f, 2f, { def.pickupReachX }, { def.pickupReachX = it }))
         }
 
         val east = JPanel(BorderLayout()).apply {
@@ -394,7 +406,9 @@ private fun renderContactSheet(out: File, ageOverride: Int? = null) {
         val ox = coli * tileW; val oy = rowi * tileH
         g.paint = GradientPaint(0f, oy.toFloat(), Color(232, 220, 188), 0f, (oy + tileH).toFloat(), Color(74, 58, 44))
         g.fillRect(ox, oy, tileW, tileH)
-        NornCompositor.draw(g, def, sprites, a, ph, 1, ox + tileW / 2f, oy + tileH * 0.86f, (tileH * 0.62f) / 2.95f)
+        val sxT = (tileH * 0.62f) / 2.95f; val cx = ox + tileW / 2f; val cy = oy + tileH * 0.86f
+        if (a == CreatureAction.PICK_UP) NornCompositor.drawFood(g, cx + def.pickupReachX * sxT, cy, 0.2f * sxT)
+        NornCompositor.draw(g, def, sprites, a, ph, 1, cx, cy, sxT, holdFoodInHand = a == CreatureAction.EAT)
         g.color = Color(40, 30, 20); g.font = Font("SansSerif", Font.BOLD, 14); g.drawString(a.name, ox + 10, oy + 22)
     }
     g.dispose(); out.parentFile?.mkdirs(); ImageIO.write(img, "png", out); println("wrote ${out.absolutePath}")

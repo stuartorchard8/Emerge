@@ -28,7 +28,7 @@ object NornCompositor {
         g: Graphics2D, def: NornRigDef, sprites: Map<String, NornParts.Part>,
         action: CreatureAction, phase: Float, facing: Int,
         originX: Float, originY: Float, sx: Float, targetHeightUnits: Float = 2.95f,
-        groundOffset: Float = 0f, highlight: String? = null,
+        groundOffset: Float = 0f, holdFoodInHand: Boolean = false, highlight: String? = null,
     ) {
         val placed = def.pose(sprites, action, phase)
         if (placed.isEmpty()) return
@@ -57,6 +57,18 @@ object NornCompositor {
         }
         if (oldInterp != null) g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, oldInterp)
 
+        // a held morsel in the right hand (the gesturing/near arm) — tracks the eat reach
+        if (holdFoodInHand) {
+            val hand = placed.firstOrNull { it.id == "farmR" }
+            val sprite = sprites["farmR"]
+            if (hand != null && sprite != null) {
+                val end = sprite.pt("end")
+                val at = AffineTransform(g0); at.concatenate(hand.transform)
+                val p = tp(at, end[0], end[1])
+                drawFood(g, p.x, p.y, 0.2f * sx)   // 1 world unit = sx px on screen
+            }
+        }
+
         // selection overlay: outline the part + a dot at its anchor (where it joins its parent)
         highlight?.let { hid ->
             val sel = placed.firstOrNull { it.id == hid } ?: return@let
@@ -79,6 +91,16 @@ object NornCompositor {
     private fun tp(at: AffineTransform, x: Float, y: Float): Point2D.Float {
         val d = Point2D.Float(); at.transform(Point2D.Float(x, y), d); return d
     }
+
+    /** A little fruit (berry + highlight + leaf), radius [r] px — held food and ground-food guides. */
+    fun drawFood(g: Graphics2D, cx: Float, cy: Float, r: Float) {
+        g.color = Color(212, 84, 60); fillCircle(g, cx, cy, r)
+        g.color = Color(240, 150, 132); fillCircle(g, cx - r * 0.3f, cy - r * 0.3f, r * 0.42f)
+        g.color = Color(110, 150, 64); fillCircle(g, cx + r * 0.55f, cy - r * 0.6f, r * 0.45f)
+    }
+
+    private fun fillCircle(g: Graphics2D, cx: Float, cy: Float, r: Float) =
+        g.fillOval((cx - r).roundToInt(), (cy - r).roundToInt(), (2 * r).roundToInt(), (2 * r).roundToInt())
 
     /** The screen transform: feet at (originX, originY−hop), scaled, flipped, leaned about the feet. */
     private fun global(

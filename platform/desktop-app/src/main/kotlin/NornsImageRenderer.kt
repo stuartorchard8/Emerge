@@ -191,11 +191,12 @@ object NornsImageRenderer {
                 g, rig, sprites, action, c.ticksLived * 0.085f, c.facing,
                 px(worldX), py(worldY - groundOffset), sx,
                 targetHeightUnits = NornRigStore.targetHeight(stage), groundOffset = rig.groundOffset,
+                holdFoodInHand = c.carryingFood,   // morsel rides the right hand (drawn at the rig's hand)
             )
         } else {
             NornBodyRenderer.draw(g, action, phase, c.facing, r, gr, b, NornBodyRenderer.eyeColor(c.id), px(worldX), py(worldY), scale, sx)
+            if (c.carryingFood) blob(worldX + c.facing * 0.5f * scale, worldY + 0.05f * scale, 0.2f, Color(212, 84, 60))
         }
-        if (c.carryingFood) blob(worldX + c.facing * 0.5f * scale, worldY + 0.05f * scale, 0.2f, Color(212, 84, 60))
         if (followed) blob(worldX, worldY + 1.7f * scale, 0.13f, Color(255, 255, 255)) // subtle follow marker
     }
 
