@@ -11,30 +11,39 @@ part farmR sprite=farmR parent=uarmR anchor=0.3700,0.7633 pivot=0.8040,0.1122 re
 part thighR sprite=thighR parent=body anchor=0.1690,0.3222 pivot=0.7908,0.1518 rest=0.0000 z=4
 part shinR sprite=shinR parent=thighR anchor=0.0800,0.6459 pivot=0.5743,0.3980 rest=0.0000 z=4
 part footR sprite=footR parent=shinR anchor=-0.0157,0.3700 pivot=0.3600,0.3083 rest=0.0000 z=6
-anim uarmL COURT bias=0.0000 amp=0.3500 freq=1.0000 phase=0.0000 sign=-1.0000
+anim uarmL REST bias=-0.7238 amp=0.0377 freq=1.0000 phase=3.1416 sign=1.0000
 anim uarmL WALK bias=-0.8859 amp=0.6032 freq=1.0000 phase=7.7597 sign=-1.0000
-anim uarmL REST bias=0.0000 amp=0.0600 freq=1.0000 phase=0.0000 sign=-1.0000
+anim uarmL COURT bias=0.0000 amp=0.3500 freq=1.0000 phase=0.0000 sign=-1.0000
+anim farmL REST bias=-0.6937 amp=0.0452 freq=1.0000 phase=3.1416 sign=-1.0000
 anim farmL WALK bias=-0.7955 amp=0.5806 freq=1.0000 phase=4.2097 sign=-1.0000
+anim thighL REST bias=-1.3949 amp=0.0000 freq=1.0000 phase=3.1416 sign=1.0000
 anim thighL WALK bias=-1.1536 amp=0.7747 freq=1.0000 phase=6.2832 sign=1.0000
+anim shinL REST bias=1.6475 amp=0.0000 freq=1.0000 phase=3.1416 sign=1.0000
 anim shinL WALK bias=0.7691 amp=0.7823 freq=1.0000 phase=6.8173 sign=-1.0000
+anim footL REST bias=1.6475 amp=0.0377 freq=0.7500 phase=5.3784 sign=1.0000
 anim footL WALK bias=0.5278 amp=0.1942 freq=1.0000 phase=3.1416 sign=-1.0000
 anim head PICK_UP bias=0.7200 amp=0.0000 freq=1.0000 phase=0.0000 sign=1.0000
 anim head EAT bias=0.4200 amp=0.0000 freq=1.0000 phase=0.0000 sign=1.0000
-anim head COURT bias=-0.2500 amp=0.0000 freq=1.0000 phase=0.0000 sign=1.0000
+anim head REST bias=0.4712 amp=0.0000 freq=1.0000 phase=0.0000 sign=1.0000
 anim head WALK bias=-0.6635 amp=0.0754 freq=2.0000 phase=3.4243 sign=1.0000
+anim head COURT bias=-0.2500 amp=0.0000 freq=1.0000 phase=0.0000 sign=1.0000
 anim uarmR PICK_UP bias=0.3500 amp=0.0000 freq=1.0000 phase=0.0000 sign=1.0000
+anim uarmR REST bias=-0.7238 amp=0.0377 freq=1.0000 phase=0.0000 sign=1.0000
 anim uarmR EAT bias=-0.5000 amp=0.0000 freq=1.0000 phase=0.0000 sign=1.0000
-anim uarmR COURT bias=0.0000 amp=0.3500 freq=1.0000 phase=0.0000 sign=1.0000
 anim uarmR WALK bias=-0.8859 amp=0.6032 freq=1.0000 phase=4.6181 sign=-1.0000
-anim uarmR REST bias=0.0000 amp=0.0600 freq=1.0000 phase=0.0000 sign=1.0000
+anim uarmR COURT bias=0.0000 amp=0.3500 freq=1.0000 phase=0.0000 sign=1.0000
 anim farmR PICK_UP bias=0.2500 amp=0.0000 freq=1.0000 phase=0.0000 sign=1.0000
 anim farmR EAT bias=-0.3500 amp=0.0000 freq=1.0000 phase=0.0000 sign=1.0000
+anim farmR REST bias=-0.6937 amp=0.0452 freq=1.0000 phase=0.0000 sign=-1.0000
 anim farmR WALK bias=-0.7955 amp=0.5806 freq=1.0000 phase=1.0681 sign=-1.0000
+anim thighR REST bias=-1.3949 amp=0.0000 freq=1.0000 phase=0.0000 sign=1.0000
 anim thighR WALK bias=-1.1536 amp=0.7747 freq=1.0000 phase=3.1416 sign=1.0000
+anim shinR REST bias=1.6475 amp=0.0000 freq=1.0000 phase=0.0000 sign=1.0000
 anim shinR WALK bias=0.7691 amp=0.7823 freq=1.0000 phase=3.6757 sign=-1.0000
+anim footR REST bias=1.6475 amp=0.0377 freq=0.7500 phase=2.2368 sign=1.0000
 anim footR WALK bias=0.5278 amp=0.1942 freq=1.0000 phase=0.0000 sign=-1.0000
 global PICK_UP bob=0.0000 bobFreq=1.0000 lean=0.2200 hop=0.0000 hopFreq=1.7000
+global REST bob=0.1500 bobFreq=1.0000 lean=0.0000 hop=0.0000 hopFreq=1.7500
 global EAT bob=0.1500 bobFreq=1.0000 lean=0.1000 hop=0.0000 hopFreq=1.7000
-global COURT bob=0.1500 bobFreq=1.0000 lean=0.0000 hop=0.2800 hopFreq=1.7000
 global WALK bob=0.4000 bobFreq=1.0000 lean=0.2922 hop=0.0000 hopFreq=1.7500
-global REST bob=0.1500 bobFreq=1.0000 lean=0.0000 hop=0.0000 hopFreq=1.7000
+global COURT bob=0.1500 bobFreq=1.0000 lean=0.0000 hop=0.2800 hopFreq=1.7000
