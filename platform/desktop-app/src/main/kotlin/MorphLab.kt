@@ -178,16 +178,49 @@ class MorphLab {
             maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
             addActionListener { n.name = text.trim().ifEmpty { n.name }; rebuildTree(); requestRender() }
         }
-        nodeEditor.add(rowLabel("name (eye/nose drive material)")); nodeEditor.add(name)
-        nodeEditor.add(slider("offset forward (ox)", -2.5, 2.5, { n.ox.toDouble() }) { n.ox = it.toFloat(); requestRender() })
-        nodeEditor.add(slider("offset along parent (oy)", -2.5, 2.5, { n.oy.toDouble() }) { n.oy = it.toFloat(); requestRender() })
-        nodeEditor.add(slider("size (scale)", 0.05, 3.0, { n.scale.toDouble() }) { n.scale = it.toFloat(); requestRender() })
+        nodeEditor.add(rowLabel("name — role by prefix: eye/iris/pupil/nose/mouth/lip; else fur"))
+        nodeEditor.add(name)
+
+        nodeEditor.add(subhead("Placement (ox=forward, oy=up, z=toward viewer)"))
+        nodeEditor.add(slider("ox", -2.5, 2.5, { n.ox.toDouble() }) { n.ox = it.toFloat(); requestRender() })
+        nodeEditor.add(slider("oy", -2.5, 2.5, { n.oy.toDouble() }) { n.oy = it.toFloat(); requestRender() })
+        nodeEditor.add(extraSlider(n, "z", "z (depth)", -1.5, 1.5, 0f))
+        nodeEditor.add(slider("scale", 0.05, 3.0, { n.scale.toDouble() }) { n.scale = it.toFloat(); requestRender() })
+        nodeEditor.add(extraSlider(n, "rot", "rotation (deg)", -90.0, 90.0, 0f))
         nodeEditor.add(JCheckBox("bilateral pair (mirrored)", n.mirrored).apply {
             alignmentX = JComponent.LEFT_ALIGNMENT
             addActionListener { n.mirX = if (isSelected) 1f else 0f; requestRender() }
         })
+
+        nodeEditor.add(subhead("Shape (per-axis radius)"))
+        nodeEditor.add(extraSlider(n, "sx", "sx (width)", 0.1, 3.0, 1f))
+        nodeEditor.add(extraSlider(n, "sy", "sy (height)", 0.1, 3.0, 1f))
+        nodeEditor.add(extraSlider(n, "sz", "sz (depth)", 0.1, 3.0, 1f))
+
+        nodeEditor.add(subhead("Response × valence (sad ↔ happy)"))
+        nodeEditor.add(extraSlider(n, "vdx", "→ move x", -1.0, 1.0, 0f))
+        nodeEditor.add(extraSlider(n, "vdy", "→ move y", -1.0, 1.0, 0f))
+        nodeEditor.add(extraSlider(n, "vrot", "→ rotate (deg)", -60.0, 60.0, 0f))
+        nodeEditor.add(extraSlider(n, "vsx", "→ widen", -1.0, 1.0, 0f))
+        nodeEditor.add(extraSlider(n, "vsy", "→ heighten", -1.0, 1.0, 0f))
+
+        nodeEditor.add(subhead("Response × arousal (calm ↔ excited)"))
+        nodeEditor.add(extraSlider(n, "adx", "→ move x", -1.0, 1.0, 0f))
+        nodeEditor.add(extraSlider(n, "ady", "→ move y", -1.0, 1.0, 0f))
+        nodeEditor.add(extraSlider(n, "arot", "→ rotate (deg)", -60.0, 60.0, 0f))
+        nodeEditor.add(extraSlider(n, "asx", "→ widen", -1.0, 1.0, 0f))
+        nodeEditor.add(extraSlider(n, "asy", "→ heighten", -1.0, 1.0, 0f))
+
         nodeEditor.revalidate(); nodeEditor.repaint()
     }
+
+    /** A slider bound to a node's [MorphNode.extra] entry, falling back to [default] (and removed when
+     *  set back to default, so the genome serialises minimally). */
+    private fun extraSlider(n: MorphNode, key: String, label: String, min: Double, max: Double, default: Float): JComponent =
+        slider(label, min, max, { (n.extra[key] ?: default).toDouble() }) { v ->
+            if (kotlin.math.abs(v - default) < 1e-4) n.extra.remove(key) else n.extra[key] = v.toFloat()
+            requestRender()
+        }
 
     private fun addChild() {
         val parent = selected ?: genome
@@ -267,6 +300,10 @@ class MorphLab {
         border = BorderFactory.createEmptyBorder(10, 0, 2, 0)
     }
     private fun rowLabel(t: String) = JLabel(t).apply { alignmentX = JComponent.LEFT_ALIGNMENT }
+    private fun subhead(t: String) = JLabel(t).apply {
+        alignmentX = JComponent.LEFT_ALIGNMENT; font = font.deriveFont(Font.BOLD, font.size - 1f)
+        foreground = Color(70, 70, 90); border = BorderFactory.createEmptyBorder(8, 0, 1, 0)
+    }
     private fun sliderRaw(v: Double, min: Double, max: Double) = (((v - min) / (max - min)) * 1000).toInt().coerceIn(0, 1000)
 
     private fun slider(label: String, min: Double, max: Double, get: () -> Double, set: (Double) -> Unit): JComponent {
