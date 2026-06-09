@@ -84,15 +84,20 @@ object CreatureRenderer {
     /** A genome flattened to mood-posed ellipsoid bones (expression already applied). Placement is in
      *  plain world axes (ox = forward/+x, oy = up/+y); a node's **rotation** (base `rot` + expression)
      *  is a real joint — it rotates the node *and* the frame its children attach to (so a tilted head
-     *  carries its face). A mirrored node becomes a near/far depth pair (±z). */
+     *  carries its face).
+     *
+     *  Symmetry follows Evolutionism: a **mirrored** node bilaterally duplicates its whole subtree as a
+     *  true reflection across the sagittal (depth) plane — `zMul` is the running depth-sign, flipped for
+     *  the mirrored branch, so every descendant's depth (the `z` offset, the spread) reflects, not just
+     *  this node. **`sym`** (≥2) makes that many radial copies, each rotated 360/sym about the view axis. */
     class Baked(genome: MorphNode, mood: Mood) {
         private val fur = ArrayList<Bone>()
         private val features = ArrayList<Bone>()    // eyes/iris/pupil/nose/mouth (own materials, not fur)
         val v = mood.v; val a = mood.a
 
-        init { layout(genome, 0.0, 0.0, 0.0, 1.0, 0.0, null) }
+        init { layout(genome, 0.0, 0.0, 0.0, 1.0, 0.0, null, 1.0) }
 
-        private fun layout(n: MorphNode, px: Double, py: Double, accRot: Double, cumScale: Double, z: Double, parent: V?) {
+        private fun layout(n: MorphNode, px: Double, py: Double, accRot: Double, cumScale: Double, z: Double, parent: V?, zMul: Double) {
             if (fur.size + features.size > 280) return
             fun e(k: String) = n.extra[k] ?: 0f
             fun e1(k: String) = n.extra[k] ?: 1f
@@ -103,18 +108,25 @@ object CreatureRenderer {
             val sxF = e1("sx") * (1 + e("vsx") * v + e("asx") * a)
             val syF = e1("sy") * (1 + e("vsy") * v + e("asy") * a)
             val szF = e1("sz").toDouble()
-            val center = V(px + exRx, py + exRy, z + e("z"))
+            val nodeZ = z + zMul * e("z")                                    // own depth, reflected in a mirrored branch
+            val center = V(px + exRx, py + exRy, nodeZ)
             val mat = matFor(n.name)
             val bone = Bone(n.name, parent, center, base * sxF, base * syF, base * szF, myRot, mat, connects(n.name, mat))
             if (mat == FUR) fur.add(bone) else features.add(bone)
             for (c in n.children) {
-                val (lx, ly) = rotate2(c.ox * cumScale, c.oy * cumScale, myRot)   // child offset in this node's rotated frame
-                val cx = center.x + lx; val cy = center.y + ly
                 val cs = (cumScale * c.scale).coerceAtMost(3.0)
-                if (c.mirrored) {
-                    val zd = cs * Z_SPREAD
-                    layout(c, cx, cy, myRot, cs, z + zd, center); layout(c, cx, cy, myRot, cs, z - zd, center)
-                } else layout(c, cx, cy, myRot, cs, z, center)
+                val sym = c.sym.coerceAtLeast(1)
+                for (i in 0 until sym) {
+                    val r = myRot + if (sym > 1) i * 360.0 / sym else 0.0     // radial-symmetry rotation about the view axis
+                    val (lx, ly) = rotate2(c.ox * cumScale, c.oy * cumScale, r)
+                    val cx = center.x + lx; val cy = center.y + ly
+                    if (c.mirrored) {                                        // bilateral pair: each side reflects its subtree
+                        for (side in intArrayOf(1, -1)) {
+                            val childZMul = zMul * side
+                            layout(c, cx, cy, r, cs, nodeZ + childZMul * Z_SPREAD * cs, center, childZMul)
+                        }
+                    } else layout(c, cx, cy, r, cs, nodeZ, center, zMul)
+                }
             }
         }
 
