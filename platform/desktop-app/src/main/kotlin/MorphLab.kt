@@ -151,8 +151,9 @@ class MorphLab {
         tree.addListSelectionListener { if (!it.valueIsAdjusting) { val i = tree.selectedIndex; if (i in rows.indices) selectNode(rows[i]) } }
         val treeScroll = JScrollPane(tree).apply { preferredSize = Dimension(260, 150); maximumSize = Dimension(Int.MAX_VALUE, 150) }
         panel.add(treeScroll)
-        val partBtns = JPanel(java.awt.GridLayout(1, 2, 3, 3))
+        val partBtns = JPanel(java.awt.GridLayout(1, 3, 3, 3))
         partBtns.add(JButton("add child").apply { addActionListener { addChild() } })
+        partBtns.add(JButton("add parent").apply { addActionListener { addParent() } })
         partBtns.add(JButton("delete").apply { addActionListener { deleteSelected() } })
         partBtns.maximumSize = Dimension(Int.MAX_VALUE, partBtns.preferredSize.height)
         panel.add(partBtns)
@@ -243,6 +244,26 @@ class MorphLab {
         val parent = selected ?: genome
         val child = MorphNode("part${parent.treeSize()}", ox = 0.4f, oy = 0.4f, scale = 0.5f)
         parent.children.add(child); rebuildTree(); selectNode(child); requestRender()
+    }
+
+    /** Insert a new node between the selected node and its parent (the selected node becomes its child).
+     *  The new segment takes over the placement (offset/scale/mirror/depth) so the subtree stays put;
+     *  the selected node resets to sit at the segment's origin. Works on the root too (makes a new root). */
+    private fun addParent() {
+        val target = selected ?: return
+        val seg = MorphNode("seg${genome.treeSize()}")
+        // hand the placement to the new segment; the target collapses to the segment's origin
+        seg.ox = target.ox; seg.oy = target.oy; seg.scale = target.scale; seg.mirX = target.mirX; seg.mirY = target.mirY
+        target.extra.remove("z")?.let { seg.extra["z"] = it }
+        target.ox = 0f; target.oy = 0f; target.scale = 1f; target.mirX = 0f; target.mirY = 0f
+        seg.children.add(target)
+        if (target === genome) {
+            genome = seg
+        } else {
+            val p = parentOf(genome, target) ?: return
+            p.children[p.children.indexOf(target)] = seg
+        }
+        rebuildTree(); selectNode(seg); requestRender()
     }
 
     private fun deleteSelected() {
