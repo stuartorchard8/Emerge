@@ -29,7 +29,7 @@ object NornCompositor {
     fun draw(
         g: Graphics2D, def: NornRigDef, sprites: Map<String, NornParts.Part>,
         action: CreatureAction, phase: Float, facing: Int,
-        originX: Float, originY: Float, sx: Float, targetHeightUnits: Float = 2.95f,
+        originX: Float, originY: Float, sx: Float, targetHeightUnits: Float,
         groundOffset: Float = 0f, food: FoodMode = FoodMode.NONE, highlight: String? = null,
         blendFrom: CreatureAction? = null, blendFromPhase: Float = 0f, blendT: Float = 1f,
     ) {

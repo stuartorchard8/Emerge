@@ -408,9 +408,9 @@ private fun renderContactSheet(out: File, ageOverride: Int? = null) {
         val ox = coli * tileW; val oy = rowi * tileH
         g.paint = GradientPaint(0f, oy.toFloat(), Color(232, 220, 188), 0f, (oy + tileH).toFloat(), Color(74, 58, 44))
         g.fillRect(ox, oy, tileW, tileH)
-        val sxT = (tileH * 0.62f) / 2.95f; val cx = ox + tileW / 2f; val cy = oy + tileH * 0.86f
+        val hAge = NornRigStore.heightForAge(age); val sxT = (tileH * 0.62f) / hAge; val cx = ox + tileW / 2f; val cy = oy + tileH * 0.86f
         val fm = when (a) { CreatureAction.EAT -> NornCompositor.FoodMode.HAND; CreatureAction.PICK_UP -> NornCompositor.FoodMode.PICKUP; else -> NornCompositor.FoodMode.NONE }
-        NornCompositor.draw(g, def, sprites, a, ph, 1, cx, cy, sxT, food = fm)
+        NornCompositor.draw(g, def, sprites, a, ph, 1, cx, cy, sxT, targetHeightUnits = hAge, food = fm)
         g.color = Color(40, 30, 20); g.font = Font("SansSerif", Font.BOLD, 14); g.drawString(a.name, ox + 10, oy + 22)
     }
     g.dispose(); out.parentFile?.mkdirs(); ImageIO.write(img, "png", out); println("wrote ${out.absolutePath}")
