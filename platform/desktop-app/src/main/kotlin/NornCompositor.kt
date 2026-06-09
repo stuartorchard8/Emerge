@@ -17,8 +17,8 @@ import kotlin.math.sin
  * Draws a [NornRigDef] — the procedurally-animated, sprite-part Norn — to Java2D. Runs the rig's FK
  * pose, fits the whole assembly to a target height, plants the feet at the given screen point, flips
  * by facing, and applies the global per-action lean (about the feet) + courting hop, then blits each
- * sprite part back-to-front by z-order. The geometry mirrors the live [NornRig] so the look carries
- * over; the difference is that here every anchor/pivot/rotation comes from editable rig data.
+ * sprite part back-to-front by z-order. Every anchor/pivot/rotation comes from editable rig data
+ * ([NornRigDef]); this is the sole creature renderer for the live world and the editor.
  */
 object NornCompositor {
 

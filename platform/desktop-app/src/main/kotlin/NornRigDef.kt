@@ -126,7 +126,7 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
         )
 
         /** Build the default rig for a loaded part-set: anchors/pivots from the `.att` points, plus a
-         *  sensible per-action animation seed (mirrors the look the hardcoded NornRig shipped). */
+         *  sensible per-action animation seed. */
         fun default(sprites: Map<String, NornParts.Part>): NornRigDef {
             val parts = ArrayList<RigPart>()
             for (row in TOPO) {

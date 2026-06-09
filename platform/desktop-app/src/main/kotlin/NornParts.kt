@@ -8,8 +8,8 @@ import javax.imageio.ImageIO
  * Loads the **individual ripped C2 sprite parts** for a breed/age (body, head, thigh/shin/foot ×2,
  * upper/forearm ×2) plus their named **anchor points** — the raw material the rig compositor
  * ([NornRigDef] / [NornCompositor]) assembles procedurally. Reads the same
- * `assets/norns/<breed>_rig_a<age>.txt` manifest the live [NornRig] uses, but exposes the parts as
- * plain data so a creature can be re-composited with fully custom anchors/animation.
+ * `assets/norns/<breed>_rig_a<age>.txt` manifest (part image + named `.att` anchor points), exposing
+ * the parts as plain data so a creature can be composited with fully custom anchors/animation.
  *
  * Manifest line: `<part> <imageFile> <w> <h> <key>:<x>,<y> ...` — e.g.
  * `body parts/denali/a3/body.png 33 53 head:28,0 hipL:11,35 hipR:11,35 shL:20,22 shR:20,22`.
