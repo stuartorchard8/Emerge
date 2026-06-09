@@ -190,16 +190,15 @@ object CreatureRenderer {
     }
 
     private val LIGHT = V(0.42, 0.62, 0.66).norm()
-    private val VIEW = V(0.0, 0.0, 1.0)
 
-    private fun shade(c: Baked, p: V, n: V, hit: Hit, fur: Color, include: ((Bone) -> Boolean)?): Int {
+    private fun shade(c: Baked, p: V, n: V, hit: Hit, fur: Color, include: ((Bone) -> Boolean)?, view: V): Int {
         val diff = max(0.0, n.dot(LIGHT)); val occ = c.ao(p, n, include)
-        val rim = (1.0 - max(0.0, n.dot(VIEW))).pow(2.6) * 0.7; val ambient = 0.32 * occ
+        val rim = (1.0 - max(0.0, n.dot(view))).pow(2.6) * 0.7; val ambient = 0.32 * occ   // rim follows the camera
         fun lit(base: V, spec: Double): Int {
             var r = base.x * (ambient + diff * 0.99) + rim * 0.55
             var g = base.y * (ambient + diff * 0.95) + rim * 0.55
             var b = base.z * (ambient + diff * 0.90) + rim * 0.62
-            if (spec > 0) { val sp = max(0.0, n.dot((LIGHT + VIEW).norm())).pow(48.0) * spec; r += sp; g += sp; b += sp }
+            if (spec > 0) { val sp = max(0.0, n.dot((LIGHT + view).norm())).pow(48.0) * spec; r += sp; g += sp; b += sp }
             return ((r * 255).roundToInt().coerceIn(0, 255) shl 16) or ((g * 255).roundToInt().coerceIn(0, 255) shl 8) or (b * 255).roundToInt().coerceIn(0, 255)
         }
         return when (hit.mat) {
@@ -236,6 +235,7 @@ object CreatureRenderer {
             return V(p.x * cyaw + z1 * syaw, y1, -p.x * syaw + z1 * cyaw)
         }
         val dir = toWorld(V(0.0, 0.0, -1.0))
+        val view = dir * -1.0     // toward the camera, for rim + specular
         IntStream.range(0, tile).parallel().forEach { py ->
             for (px in 0 until tile) {
                 val u = (px.toDouble() / tile - 0.5) * fr.span
@@ -248,7 +248,7 @@ object CreatureRenderer {
                     t += h.d * 0.85; steps++
                 }
                 val value = if (hit != null) {
-                    val rgb = shade(baked, hp, baked.grad(hp), hit, fur, null)
+                    val rgb = shade(baked, hp, baked.grad(hp), hit, fur, null, view)
                     if (transparent) (0xFF shl 24) or rgb else rgb
                 } else if (transparent) 0 else bg
                 img.setRGB(ox + px, py, value)
