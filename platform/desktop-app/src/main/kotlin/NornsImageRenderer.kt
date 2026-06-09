@@ -116,7 +116,7 @@ object NornsImageRenderer {
         // creatures
         for (c in world.creatures) {
             val cy = if (c.ridingY >= 0f) view.floorYf(c.ridingY) else view.floorY(c.floor)
-            drawCreature(g, c, c.x, cy, c.id == followId, ::px, ::py, sx, ::blob, ::col, view.groundOffset)
+            drawCreature(g, c, c.x, cy, c.id == followId, ::px, ::py, sx, ::blob, ::col, view.groundOffset, world.cfg.moveSpeed)
         }
         // the front gate of each lift car — drawn OVER the creatures so a rider sits behind the bars
         for (lift in world.lifts) drawLiftGate(g, lift, view, sx, ::px, ::py)
@@ -154,7 +154,7 @@ object NornsImageRenderer {
         g: java.awt.Graphics2D, c: WorldCreature, worldX: Float, worldY: Float, followed: Boolean,
         px: (Float) -> Float, py: (Float) -> Float, sx: Float,
         blob: (Float, Float, Float, Color) -> Unit, col: (Float, Float, Float) -> Color,
-        groundOffset: Float,
+        groundOffset: Float, moveSpeed: Float,
     ) {
         val action = when (c.activity) {
             ActivityType.EATING -> CreatureAction.EAT
@@ -187,8 +187,13 @@ object NornsImageRenderer {
         val sprites = NornParts.load(breedName, rigAge)
         val rig = if (sprites != null) NornRigStore.rigFor(breedName, rigAge) else null
         if (rig != null && sprites != null) {
+            // walk phase tracks movement: one calibrated stride per moveSpeed of ground covered, so
+            // feet grip the floor at the actual in-game speed. Other actions keep the steady cadence.
+            val rigPhase = if (action == CreatureAction.WALK && rig.walkStride > 0f)
+                c.ticksLived * ((2.0 * Math.PI).toFloat() * moveSpeed / rig.walkStride)
+            else c.ticksLived * 0.085f
             NornCompositor.draw(
-                g, rig, sprites, action, c.ticksLived * 0.085f, c.facing,
+                g, rig, sprites, action, rigPhase, c.facing,
                 px(worldX), py(worldY - groundOffset), sx,
                 targetHeightUnits = NornRigStore.targetHeight(stage), groundOffset = rig.groundOffset,
                 holdFoodInHand = c.carryingFood,   // morsel rides the right hand (drawn at the rig's hand)
