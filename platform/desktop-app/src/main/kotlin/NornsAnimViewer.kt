@@ -396,6 +396,25 @@ fun main(args: Array<String>) {
         }
         return
     }
+    if (args.isNotEmpty() && args[0] == "--copy-action") {
+        // Copy one action's animation (per-part JointAnim + global bob/lean/hop) from one age to
+        // another, leaving the target age's structure intact. args: <fromAge> <toAge> <ACTION> [breed]
+        System.setProperty("java.awt.headless", "true")
+        val dir = listOf(File("assets/norns"), File("../../assets/norns")).firstOrNull { it.isDirectory }
+            ?: run { println("no assets/norns dir"); return }
+        val fromAge = args[1].toInt(); val toAge = args[2].toInt()
+        val action = CreatureAction.valueOf(args[3]); val breed = args.getOrElse(4) { "denali" }
+        val fromSprites = NornParts.load(breed, fromAge) ?: run { println("no art $breed a$fromAge"); return }
+        val toSprites = NornParts.load(breed, toAge) ?: run { println("no art $breed a$toAge"); return }
+        val toFile = dir.resolve("rig-$breed-a$toAge.txt")
+        val from = NornRigDef.parse(dir.resolve("rig-$breed-a$fromAge.txt").readText(), fromSprites)
+        val to = NornRigDef.parse(toFile.readText(), toSprites)
+        for (p in to.parts) from.part(p.id)?.anim?.get(action)?.let { p.anim[action] = it.copy() }
+        to.global[action] = from.globalFor(action).copy()
+        toFile.writeText(to.toText())
+        println("copied $action from a$fromAge to a$toAge ($breed)")
+        return
+    }
     if (args.isNotEmpty() && args[0] == "--render") {
         renderContactSheet(File(args.getOrElse(1) { "build/norn-anim-sheet.png" }), args.getOrNull(2)?.toIntOrNull())
         return
