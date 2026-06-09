@@ -28,6 +28,7 @@ import javax.swing.JOptionPane
 import javax.swing.JPanel
 import javax.swing.JScrollPane
 import javax.swing.JSlider
+import javax.swing.JSplitPane
 import javax.swing.JTextField
 import javax.swing.ListSelectionModel
 import javax.swing.SwingUtilities
@@ -97,7 +98,7 @@ class MorphLab {
 
     private inner class Canvas : JPanel() {
         var img: BufferedImage? = null
-        init { preferredSize = Dimension(RES, RES); background = BG }
+        init { preferredSize = Dimension(RES, RES); minimumSize = Dimension(140, 140); background = BG }
         override fun paintComponent(g: Graphics) {
             super.paintComponent(g)
             g.color = BG; g.fillRect(0, 0, width, height)
@@ -113,9 +114,13 @@ class MorphLab {
         frame.defaultCloseOperation = JFrame.EXIT_ON_CLOSE
         frame.layout = BorderLayout()
         title.border = BorderFactory.createEmptyBorder(6, 8, 6, 8); title.font = title.font.deriveFont(Font.BOLD)
+        // canvas | controls in a draggable split pane, so the controls width is yours to size
+        val split = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, canvas, buildControls()).apply {
+            resizeWeight = 1.0           // window-resize grows the canvas, keeps the controls' width
+            isOneTouchExpandable = true
+        }
         frame.add(title, BorderLayout.NORTH)
-        frame.add(canvas, BorderLayout.CENTER)
-        frame.add(buildControls(), BorderLayout.EAST)
+        frame.add(split, BorderLayout.CENTER)
         rebuildTree(); selectNode(genome)
         frame.pack(); frame.setLocationRelativeTo(null); frame.isVisible = true
         requestRender()
@@ -165,7 +170,8 @@ class MorphLab {
 
         panel.add(Box.createVerticalGlue())
         return JScrollPane(panel).apply {
-            preferredSize = Dimension(440, RES)
+            preferredSize = Dimension(480, RES)
+            minimumSize = Dimension(300, 200)
             horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
             verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_ALWAYS
             verticalScrollBar.unitIncrement = 16
