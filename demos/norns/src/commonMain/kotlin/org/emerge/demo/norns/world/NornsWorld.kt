@@ -3,6 +3,7 @@ package org.emerge.demo.norns.world
 import org.emerge.demo.norns.biology.Biology
 import org.emerge.demo.norns.biology.BiologyConfig
 import org.emerge.demo.norns.biology.LifeStage
+import org.emerge.demo.norns.biology.walkSpeedFactor
 import org.emerge.demo.norns.brain.Brain
 import org.emerge.demo.norns.gene.EmitterGene
 import org.emerge.demo.norns.gene.GeneRng
@@ -226,7 +227,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
             val lift = liftByColumn[col]
             if (lift == null) { c.onLift = false; c.ridingY = -1f; return true } // no lift; give up
             if (!c.onLift) {
-                if (abs(c.x - col) > cfg.moveSpeed) { glide(c, col.toFloat()); return false }
+                if (abs(c.x - col) > walkSpeed(c)) { glide(c, col.toFloat()); return false }
                 c.x = col.toFloat() // standing in the shaft
                 if (abs(lift.carPos - c.floor) <= cfg.liftBoardEps) { c.onLift = true; c.ridingY = lift.carPos }
                 else lift.call(c.floor) // press the call button and wait for the car to arrive
@@ -247,9 +248,13 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
         return ((x / cfg.liftSpacing).roundToInt() * cfg.liftSpacing).coerceIn(0, last)
     }
 
+    /** Per-tick walk distance for [c], scaled by life stage (babies slowest). */
+    private fun walkSpeed(c: WorldCreature) = cfg.moveSpeed * walkSpeedFactor(c.biology.lifeStage, cfg.babyWalkFactor)
+
     private fun glide(c: WorldCreature, targetX: Float) {
         val d = targetX - c.x
-        val step = d.coerceIn(-cfg.moveSpeed, cfg.moveSpeed)
+        val s = walkSpeed(c)
+        val step = d.coerceIn(-s, s)
         c.x = (c.x + step).coerceIn(0f, (cfg.worldWidth - 1).toFloat())
         c.facing = if (d >= 0f) 1 else -1
     }
@@ -492,6 +497,7 @@ class NornsConfig(
     val maxMetabolism: Float = 0.003f,
     // durative action costs (×4 ticks, ÷4 speed → 4x slower, smooth)
     val moveSpeed: Float = 0.09f,
+    val babyWalkFactor: Float = 0.4f, // baby's walk speed as a fraction of adult; child/adolescent ramp linearly to 1.0
     val arriveEps: Float = 0.5f,
     val pickupTicks: Int = 20,
     val eatTicks: Int = 56,

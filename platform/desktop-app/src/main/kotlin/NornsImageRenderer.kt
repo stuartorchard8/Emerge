@@ -1,6 +1,7 @@
 package org.emerge.desktop
 
 import org.emerge.demo.norns.anim.CreatureAction
+import org.emerge.demo.norns.biology.walkSpeedFactor
 import org.emerge.demo.norns.world.ActivityType
 import org.emerge.demo.norns.world.Lift
 import org.emerge.demo.norns.world.LiftLayout
@@ -193,7 +194,7 @@ object NornsImageRenderer {
             // so each STARTS AT 0 when entered, and PICK_UP runs exactly one cycle over its duration
             // (the grab attaches at the half-way point).
             val rigPhase = when (action) {
-                CreatureAction.WALK -> if (rig.walkStride > 0f) c.ticksLived * (tau * cfg.moveSpeed / rig.walkStride) else c.ticksLived * 0.085f
+                CreatureAction.WALK -> if (rig.walkStride > 0f) c.ticksLived * (tau * cfg.moveSpeed * walkSpeedFactor(c.biology.lifeStage, cfg.babyWalkFactor) / rig.walkStride) else c.ticksLived * 0.085f
                 CreatureAction.PICK_UP -> ((cfg.pickupTicks - c.activityTimer).coerceAtLeast(0).toFloat() / cfg.pickupTicks * tau).coerceIn(0f, tau)
                 CreatureAction.EAT -> (cfg.eatTicks - c.activityTimer).coerceAtLeast(0) * 0.085f
                 CreatureAction.COURT -> (cfg.courtTicks - c.activityTimer).coerceAtLeast(0) * 0.085f

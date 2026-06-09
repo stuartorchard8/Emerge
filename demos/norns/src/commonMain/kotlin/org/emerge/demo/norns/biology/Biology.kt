@@ -64,6 +64,15 @@ class Biology(val cfg: BiologyConfig) {
 /** The Creatures life stages (death is the orthogonal [Biology.alive] flag, not a stage). */
 enum class LifeStage { EMBRYO, BABY, CHILD, ADOLESCENT, YOUTH, ADULT, OLD, SENILE }
 
+/** Walk-speed multiplier by life stage: babies are slowest, ramping **linearly** up to full speed
+ *  at adult. [babyFactor] is the baby's fraction of adult speed; child + adolescent interpolate
+ *  between it and 1.0 (youth and older walk at full speed). Used by both the sim (movement) and the
+ *  renderer (so the walk cadence still matches the scaled speed). */
+fun walkSpeedFactor(stage: LifeStage, babyFactor: Float): Float {
+    val age = when (stage) { LifeStage.BABY -> 0; LifeStage.CHILD -> 1; LifeStage.ADOLESCENT -> 2; else -> 3 }
+    return babyFactor + (1f - babyFactor) * (age / 3f)
+}
+
 /**
  * @param stageStartAge age (ticks) at which each [LifeStage] begins; ascending, `[0] == 0`,
  *   length == number of life stages.
