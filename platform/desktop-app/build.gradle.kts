@@ -217,3 +217,11 @@ tasks.register<JavaExec>("benchDrocketsGcLog") {
 
     jvmArgs("-Xlog:gc*:stdout:time,uptime,level,tags")
 }
+tasks.register<JavaExec>("runCreatureBake") {
+    group = "application"
+    description = "Throwaway spike: gene-driven creature as a lit SDF 3D form, baked to a C2-style side " +
+        "profile across moods (expression baked into the geometry). --args=\"<png>\""
+    mainClass = "org.emerge.desktop.CreatureBakeSpikeKt"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
