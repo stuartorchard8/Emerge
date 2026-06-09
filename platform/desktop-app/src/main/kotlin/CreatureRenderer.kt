@@ -94,7 +94,8 @@ object CreatureRenderer {
      *  pair coincides. **`sym`** (≥2) makes that many radial copies, each rotated 360/sym about the view axis. */
     class Baked(genome: MorphNode, mood: Mood) {
         private val fur = ArrayList<Bone>()
-        private val features = ArrayList<Bone>()    // eyes/iris/pupil/nose/mouth (own materials, not fur)
+        private val features = ArrayList<Bone>()    // eyes/iris/pupil/nose (own materials, not fur)
+        private val mouths = ArrayList<Bone>()      // mouth = a cut-away: subtract from fur + dark interior
         val v = mood.v; val a = mood.a; val d = mood.d
 
         init { layout(genome, 0.0, 0.0, 0.0, 1.0, 0.0, null, 1.0) }
@@ -113,7 +114,7 @@ object CreatureRenderer {
             val center = V(px + exRx, py + exRy, z)                          // depth (incl. this node's z) set by the parent
             val mat = matFor(n.name)
             val bone = Bone(n.name, parent, center, base * sxF, base * syF, base * szF, myRot, mat, connects(n.name, mat))
-            if (mat == FUR) fur.add(bone) else features.add(bone)
+            when (mat) { FUR -> fur.add(bone); MOUTH -> mouths.add(bone); else -> features.add(bone) }
             for (c in n.children) {
                 val cs = (cumScale * c.scale).coerceAtMost(3.0)
                 val oz = (c.extra["z"] ?: 0f).toDouble()                     // child's depth offset = the mirror separation
@@ -132,9 +133,9 @@ object CreatureRenderer {
             }
         }
 
-        internal fun bones(): List<Bone> = fur + features
+        internal fun bones(): List<Bone> = fur + features + mouths
 
-        internal fun bounds(bs: List<Bone> = fur + features): DoubleArray {
+        internal fun bounds(bs: List<Bone> = fur + features + mouths): DoubleArray {
             var minX = 1e9; var maxX = -1e9; var minY = 1e9; var maxY = -1e9
             for (b in bs) {
                 val rr = max(b.rx, b.ry)
@@ -151,10 +152,21 @@ object CreatureRenderer {
                 d = smin(d, ellipsoid(p, b), 0.36)
                 if (b.connect && b.parent != null) d = smin(d, capsule(p, b.parent, b.center, max(0.1, min(b.rx, b.ry) * 0.7)), 0.32)
             }
+            // mouth = a cut-away: carve the cavity out of the fur. On the convex muzzle this yields a
+            // curved opening (intrinsically a smile/frown depending on where/how the cut sits).
+            for (b in mouths) {
+                if (include != null && !include(b)) continue
+                d = smax(d, -ellipsoid(p, b), 0.05)
+            }
             var best = Hit(d, FUR)
             for (b in features) {
                 if (include != null && !include(b)) continue
                 val fd = ellipsoid(p, b); if (fd < best.d) best = Hit(fd, b.mat)
+            }
+            // dark interior, inset behind the opening so you see into the cut (not a flat patch)
+            for (b in mouths) {
+                if (include != null && !include(b)) continue
+                val md = ellipsoid(p, b, 0.8); if (md < best.d) best = Hit(md, MOUTH)
             }
             return best
         }
@@ -176,12 +188,13 @@ object CreatureRenderer {
 
     // ---- SDF ----
     /** Rotated (about the view/z axis) ellipsoid distance — the per-axis radii give shape, rot tilts it. */
-    private fun ellipsoid(p: V, b: Bone): Double {
+    private fun ellipsoid(p: V, b: Bone, scale: Double = 1.0): Double {
         var qx = p.x - b.center.x; var qy = p.y - b.center.y; val qz = p.z - b.center.z
         if (b.rot != 0.0) { val r = -b.rot * DEG; val c = cos(r); val s = sin(r); val nx = qx * c - qy * s; qy = qx * s + qy * c; qx = nx }
-        val ex = qx / b.rx; val ey = qy / b.ry; val ez = qz / b.rz
+        val rx = b.rx * scale; val ry = b.ry * scale; val rz = b.rz * scale
+        val ex = qx / rx; val ey = qy / ry; val ez = qz / rz
         val k = sqrt(ex * ex + ey * ey + ez * ez)
-        return (k - 1.0) * min(b.rx, min(b.ry, b.rz))
+        return (k - 1.0) * min(rx, min(ry, rz))
     }
     private fun capsule(p: V, a: V, b: V, r: Double): Double {
         val ba = b - a; val bb = ba.dot(ba)
@@ -192,6 +205,7 @@ object CreatureRenderer {
     private fun smin(a: Double, b: Double, k: Double): Double {
         val h = (0.5 + 0.5 * (b - a) / k).coerceIn(0.0, 1.0); return b * (1 - h) + a * h - k * h * (1.0 - h)
     }
+    private fun smax(a: Double, b: Double, k: Double) = -smin(-a, -b, k)
 
     private fun shade(c: Baked, p: V, n: V, hit: Hit, fur: Color, include: ((Bone) -> Boolean)?, view: V): Int {
         // No directional key. Form comes from SDF ambient occlusion (crevices darken, exposed surfaces
