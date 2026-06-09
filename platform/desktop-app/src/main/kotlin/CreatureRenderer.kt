@@ -54,7 +54,6 @@ object CreatureRenderer {
     private const val FUR = 0; private const val SCLERA = 1; private const val IRIS = 2
     private const val PUPIL = 3; private const val NOSE = 4; private const val MOUTH = 5
     private const val GIRTH = 0.62
-    private const val Z_SPREAD = 0.62
     private const val DEG = Math.PI / 180.0
 
     internal class Bone(
@@ -88,8 +87,9 @@ object CreatureRenderer {
      *
      *  Symmetry follows Evolutionism: a **mirrored** node bilaterally duplicates its whole subtree as a
      *  true reflection across the sagittal (depth) plane — `zMul` is the running depth-sign, flipped for
-     *  the mirrored branch, so every descendant's depth (the `z` offset, the spread) reflects, not just
-     *  this node. **`sym`** (≥2) makes that many radial copies, each rotated 360/sym about the view axis. */
+     *  the mirrored branch, so every descendant's depth reflects, not just this node. The pair's
+     *  separation is the node's own `z` offset (reflected), not any hardcoded spread — `z`=0 means the
+     *  pair coincides. **`sym`** (≥2) makes that many radial copies, each rotated 360/sym about the view axis. */
     class Baked(genome: MorphNode, mood: Mood) {
         private val fur = ArrayList<Bone>()
         private val features = ArrayList<Bone>()    // eyes/iris/pupil/nose/mouth (own materials, not fur)
@@ -108,24 +108,24 @@ object CreatureRenderer {
             val sxF = e1("sx") * (1 + e("vsx") * v + e("asx") * a)
             val syF = e1("sy") * (1 + e("vsy") * v + e("asy") * a)
             val szF = e1("sz").toDouble()
-            val nodeZ = z + zMul * e("z")                                    // own depth, reflected in a mirrored branch
-            val center = V(px + exRx, py + exRy, nodeZ)
+            val center = V(px + exRx, py + exRy, z)                          // depth (incl. this node's z) set by the parent
             val mat = matFor(n.name)
             val bone = Bone(n.name, parent, center, base * sxF, base * syF, base * szF, myRot, mat, connects(n.name, mat))
             if (mat == FUR) fur.add(bone) else features.add(bone)
             for (c in n.children) {
                 val cs = (cumScale * c.scale).coerceAtMost(3.0)
+                val oz = (c.extra["z"] ?: 0f).toDouble()                     // child's depth offset = the mirror separation
                 val sym = c.sym.coerceAtLeast(1)
                 for (i in 0 until sym) {
                     val r = myRot + if (sym > 1) i * 360.0 / sym else 0.0     // radial-symmetry rotation about the view axis
                     val (lx, ly) = rotate2(c.ox * cumScale, c.oy * cumScale, r)
                     val cx = center.x + lx; val cy = center.y + ly
-                    if (c.mirrored) {                                        // bilateral pair: each side reflects its subtree
+                    if (c.mirrored) {                                        // bilateral pair: ±z, each side reflects its subtree
                         for (side in intArrayOf(1, -1)) {
                             val childZMul = zMul * side
-                            layout(c, cx, cy, r, cs, nodeZ + childZMul * Z_SPREAD * cs, center, childZMul)
+                            layout(c, cx, cy, r, cs, z + childZMul * oz, center, childZMul)
                         }
-                    } else layout(c, cx, cy, r, cs, nodeZ, center, zMul)
+                    } else layout(c, cx, cy, r, cs, z + zMul * oz, center, zMul)
                 }
             }
         }
@@ -189,16 +189,19 @@ object CreatureRenderer {
         val h = (0.5 + 0.5 * (b - a) / k).coerceIn(0.0, 1.0); return b * (1 - h) + a * h - k * h * (1.0 - h)
     }
 
-    private val LIGHT = V(0.42, 0.62, 0.66).norm()
-
     private fun shade(c: Baked, p: V, n: V, hit: Hit, fur: Color, include: ((Bone) -> Boolean)?, view: V): Int {
-        val diff = max(0.0, n.dot(LIGHT)); val occ = c.ao(p, n, include)
-        val rim = (1.0 - max(0.0, n.dot(view))).pow(2.6) * 0.7; val ambient = 0.32 * occ   // rim follows the camera
-        fun lit(base: V, spec: Double): Int {
-            var r = base.x * (ambient + diff * 0.99) + rim * 0.55
-            var g = base.y * (ambient + diff * 0.95) + rim * 0.55
-            var b = base.z * (ambient + diff * 0.90) + rim * 0.62
-            if (spec > 0) { val sp = max(0.0, n.dot((LIGHT + view).norm())).pow(48.0) * spec; r += sp; g += sp; b += sp }
+        // No directional key. Form comes from SDF ambient occlusion (crevices darken, exposed surfaces
+        // brighten) plus a gentle vertical sky/ground term that — being about the world up-axis — is
+        // invariant as you orbit, so no side darkens. Camera-relative rim for the silhouette.
+        val occ = c.ao(p, n, include)
+        val up = n.y * 0.5 + 0.5
+        val fill = (0.45 + 0.55 * occ) * (0.72 + 0.28 * up)
+        val rim = (1.0 - max(0.0, n.dot(view))).pow(2.8) * 0.4
+        fun lit(base: V, glint: Double): Int {
+            var r = base.x * fill + rim
+            var g = base.y * fill + rim
+            var b = base.z * fill + rim * 1.06
+            if (glint > 0) { val gl = max(0.0, n.dot(view)).pow(36.0) * glint; r += gl; g += gl; b += gl }  // view-centred catchlight
             return ((r * 255).roundToInt().coerceIn(0, 255) shl 16) or ((g * 255).roundToInt().coerceIn(0, 255) shl 8) or (b * 255).roundToInt().coerceIn(0, 255)
         }
         return when (hit.mat) {

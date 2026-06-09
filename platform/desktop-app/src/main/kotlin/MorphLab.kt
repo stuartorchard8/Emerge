@@ -49,15 +49,15 @@ internal fun defaultNornGenome(): MorphNode {
     val body = mn("body", scale = 0.82f, extra = arrayOf("sx" to 1.15f))
     val head = mn("head", oy = 1.25f, scale = 1.85f)
     head.children.add(mn("crown", oy = 0.42f, scale = 0.82f))
-    head.children.add(mn("ear", ox = -0.34f, oy = 0.66f, scale = 0.5f, mir = 1f, extra = arrayOf("sy" to 1.1f)))
+    head.children.add(mn("ear", ox = -0.34f, oy = 0.66f, scale = 0.5f, mir = 1f, extra = arrayOf("sy" to 1.1f, "z" to 0.55f)))
     val muzzle = mn("muzzle", ox = 0.86f, oy = -0.22f, scale = 0.5f)
     muzzle.children.add(mn("nose", ox = 0.5f, oy = 0.02f, scale = 0.34f, extra = arrayOf("z" to 0.3f)))
     // mouth: a wide thin line on the muzzle; valence tilts it (smile/frown), arousal opens it
     muzzle.children.add(mn("mouth", ox = 0.35f, oy = -0.32f, scale = 0.5f,
         extra = arrayOf("sx" to 1.5f, "sy" to 0.32f, "z" to 0.3f, "vrot" to 22f, "asy" to 0.9f)))
     head.children.add(muzzle)
-    // eye: big, near side; squints a little with sadness, widens with arousal
-    val eye = mn("eye", ox = 0.48f, oy = 0.16f, scale = 0.46f, mir = 1f, extra = arrayOf("asy" to 0.12f, "vsy" to -0.08f))
+    // eye: big, near side; squints a little with sadness, widens with arousal. z = the bilateral half-separation.
+    val eye = mn("eye", ox = 0.48f, oy = 0.16f, scale = 0.46f, mir = 1f, extra = arrayOf("z" to 0.5f, "asy" to 0.12f, "vsy" to -0.08f))
     eye.children.add(mn("iris", ox = 0.04f, scale = 0.55f, extra = arrayOf("z" to 0.34f)))
     // upper lid: a fur cap over the eye; arousal raises it (wide), low arousal/sadness lowers it (closes)
     eye.children.add(mn("upperlid", oy = 0.30f, scale = 0.9f,
@@ -67,8 +67,8 @@ internal fun defaultNornGenome(): MorphNode {
         extra = arrayOf("sx" to 1.8f, "sy" to 0.35f, "z" to 0.1f, "vrot" to 16f, "arot" to 6f, "ady" to 0.18f)))
     head.children.add(eye)
     body.children.add(head)
-    body.children.add(mn("arm", ox = 0.62f, oy = -0.35f, scale = 0.4f, mir = 1f))
-    body.children.add(mn("leg", ox = 0.16f, oy = -0.95f, scale = 0.58f, mir = 1f))
+    body.children.add(mn("arm", ox = 0.62f, oy = -0.35f, scale = 0.4f, mir = 1f, extra = arrayOf("z" to 0.25f)))
+    body.children.add(mn("leg", ox = 0.16f, oy = -0.95f, scale = 0.58f, mir = 1f, extra = arrayOf("z" to 0.32f)))
     return body
 }
 
