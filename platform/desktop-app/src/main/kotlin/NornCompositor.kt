@@ -71,13 +71,15 @@ object NornCompositor {
         val onGround = food == FoodMode.PICKUP && tHalf < 0.5f
         val foodR = 0.2f * sx                                        // 1 world unit = sx px on screen
         val handFoodZ = (def.part("farmR")?.z ?: 999) - 1            // just behind the near arm
-        // hand-held position: the farmR tip + an adjustable offset (world units, facing-relative)
+        // hand-held position: the farmR tip + an offset applied in the ARM's local frame (so it
+        // rotates with the hand), then carried through the same transform. The chain scales arm-image
+        // px by `scale`, so 1 world unit = sx/scale arm-px; facing/flip is handled by g0.
         val hand = placed.firstOrNull { it.id == "farmR" }
         val handSprite = sprites["farmR"]
         val handPos: Point2D.Float? = if (inHand && hand != null && handSprite != null) {
             val end = handSprite.pt("end")
-            val tip = tp(AffineTransform(g0).apply { concatenate(hand.transform) }, end[0], end[1])
-            Point2D.Float(tip.x + facing * def.heldFoodX * sx, tip.y - def.heldFoodY * sx)
+            val k = sx / scale
+            tp(AffineTransform(g0).apply { concatenate(hand.transform) }, end[0] + def.heldFoodX * k, end[1] - def.heldFoodY * k)
         } else null
 
         val oldInterp = g.getRenderingHint(RenderingHints.KEY_INTERPOLATION)
