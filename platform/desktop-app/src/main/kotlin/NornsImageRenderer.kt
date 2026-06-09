@@ -186,9 +186,17 @@ object NornsImageRenderer {
             val tilePx = sprite.img.height
             val bScale = (NornRigStore.targetHeight(stage) * sx) / (sprite.heightFrac * tilePx)
             val cxScreen = px(worldX); val groundScreenY = py(worldY - floorOffset)
+            // cheap 2D secondary motion (no re-bake): a walk bob+rock when moving, a slow breathe at rest
+            val moving = c.activity == ActivityType.MOVING
+            val resting = c.activity == ActivityType.RESTING || c.activity == ActivityType.IDLE
+            val ph = c.ticksLived * 0.45f
+            val bob = if (moving) sin(ph) * 0.045f * NornRigStore.targetHeight(stage) * sx else 0f
+            val lean = if (moving) sin(ph) * 0.05f * c.facing else 0f                       // rock about the feet
+            val breatheY = if (resting) 1f + sin(c.ticksLived * 0.12f) * 0.02f else 1f
             val at = java.awt.geom.AffineTransform()
-            at.translate(cxScreen.toDouble(), (groundScreenY - bScale * sprite.footFracY * tilePx))
-            at.scale((if (c.facing < 0) -bScale else bScale).toDouble(), bScale.toDouble())
+            at.rotate(lean.toDouble(), cxScreen.toDouble(), groundScreenY.toDouble())
+            at.translate(cxScreen.toDouble(), (groundScreenY - bScale * sprite.footFracY * tilePx - bob))
+            at.scale((if (c.facing < 0) -bScale else bScale).toDouble(), (bScale * breatheY).toDouble())
             at.translate(-tilePx / 2.0, 0.0)
             val oldHint = g.getRenderingHint(RenderingHints.KEY_INTERPOLATION)
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
