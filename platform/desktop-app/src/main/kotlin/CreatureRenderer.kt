@@ -60,7 +60,7 @@ object CreatureRenderer {
     private const val GIRTH = 0.62
     private const val Z_SPREAD = 0.62
 
-    private class Bone(val parent: V?, val center: V, val r: Double, val mat: Int)
+    internal class Bone(val node: String, val parent: V?, val center: V, val r: Double, val mat: Int)
     internal class Hit(val d: Double, val mat: Int, val eye: V? = null)
     private class EyeAnchor(val c: V, val r: Double)
 
@@ -92,7 +92,7 @@ object CreatureRenderer {
             val r = cumScale * GIRTH
             val center = V(px, py, z)
             val mat = matFor(n.name)
-            val bone = Bone(parent, center, r, mat)
+            val bone = Bone(n.name, parent, center, r, mat)
             when (mat) { SCLERA -> eyes.add(bone); NOSE -> noses.add(bone); else -> fur.add(bone) }
             if (n.name.startsWith("muzzle") && z == 0.0) { muzzle = center; muzzleR = r }
             for (c in n.children) {
@@ -107,23 +107,29 @@ object CreatureRenderer {
             }
         }
 
-        fun bounds(): DoubleArray {
+        /** All renderable bones (fur + eyes + noses), each tagged with its genome node name — lets the
+         *  part baker pick out one part (e.g. the near leg, the head assembly) by name + depth. */
+        internal fun bones(): List<Bone> = fur + eyes + noses
+
+        /** Bounds of [bs] (or all bones) as [minX, maxX, minY, maxY]. */
+        internal fun bounds(bs: List<Bone> = fur + eyes + noses): DoubleArray {
             var minX = 1e9; var maxX = -1e9; var minY = 1e9; var maxY = -1e9
-            for (b in fur + eyes + noses) {
+            for (b in bs) {
                 minX = min(minX, b.center.x - b.r); maxX = max(maxX, b.center.x + b.r)
                 minY = min(minY, b.center.y - b.r); maxY = max(maxY, b.center.y + b.r)
             }
             return doubleArrayOf(minX, maxX, minY, maxY)
         }
 
-        internal fun scene(p: V, m: Mood): Hit {
+        internal fun scene(p: V, m: Mood, include: ((Bone) -> Boolean)? = null, expression: Boolean = true): Hit {
             var d = 1e9
             for (b in fur) {
+                if (include != null && !include(b)) continue
                 d = smin(d, sphere(p, b.center, b.r), 0.42)
                 if (b.parent != null) d = smin(d, capsule(p, b.parent, b.center, max(0.12, b.r * 0.72)), 0.34)
             }
             // expression on the geometry, per eye
-            for (e in eyeAnchors) {
+            if (expression) for (e in eyeAnchors) {
                 val u = e.r / 0.45
                 val lidY = e.c.y + e.r * (1.55 * m.eyeOpen - 0.32)
                 d = smin(d, sphere(p, V(e.c.x, lidY, e.c.z + 0.04), e.r * 1.04), 0.06)               // upper lid closes
@@ -136,29 +142,29 @@ object CreatureRenderer {
             // jaw drop: carve a real cavity into the muzzle front
             val mouthC = V(muzzle.x + muzzleR * 0.55, muzzle.y - muzzleR * 0.45 + m.mouthCurve * 0.08, 0.0)
             var mouthInner = 1e9
-            if (m.mouthOpen > 0.02) {
+            if (expression && m.mouthOpen > 0.02) {
                 val cav = sphere(p, mouthC + V(-muzzleR * 0.15, -0.06 * m.mouthOpen, 0.0), muzzleR * (0.22 + 0.55 * m.mouthOpen))
                 d = smax(d, -cav, 0.05)
                 mouthInner = sphere(p, mouthC + V(-muzzleR * 0.05, -0.04 * m.mouthOpen, 0.0), muzzleR * (0.1 + 0.45 * m.mouthOpen))
             }
             var best = Hit(d, FUR)
-            for (e in eyes) { val ed = sphere(p, e.center, e.r); if (ed < best.d) best = Hit(ed, SCLERA, e.center) }
-            for (nb in noses) { val nd = sphere(p, nb.center, nb.r); if (nd < best.d) best = Hit(nd, NOSE) }
+            for (e in eyes) { if (include != null && !include(e)) continue; val ed = sphere(p, e.center, e.r); if (ed < best.d) best = Hit(ed, SCLERA, e.center) }
+            for (nb in noses) { if (include != null && !include(nb)) continue; val nd = sphere(p, nb.center, nb.r); if (nd < best.d) best = Hit(nd, NOSE) }
             if (mouthInner < best.d) best = Hit(mouthInner, MOUTH)
             return best
         }
 
-        fun grad(p: V, m: Mood): V {
+        internal fun grad(p: V, m: Mood, include: ((Bone) -> Boolean)? = null, expression: Boolean = true): V {
             val h = 0.0018
-            fun s(dx: Double, dy: Double, dz: Double) = scene(V(p.x + dx, p.y + dy, p.z + dz), m).d
+            fun s(dx: Double, dy: Double, dz: Double) = scene(V(p.x + dx, p.y + dy, p.z + dz), m, include, expression).d
             val k1 = V(1.0, -1.0, -1.0); val k2 = V(-1.0, -1.0, 1.0); val k3 = V(-1.0, 1.0, -1.0); val k4 = V(1.0, 1.0, 1.0)
             return (k1 * s(k1.x * h, k1.y * h, k1.z * h) + k2 * s(k2.x * h, k2.y * h, k2.z * h) +
                 k3 * s(k3.x * h, k3.y * h, k3.z * h) + k4 * s(k4.x * h, k4.y * h, k4.z * h)).norm()
         }
 
-        fun ao(p: V, n: V, m: Mood): Double {
+        internal fun ao(p: V, n: V, m: Mood, include: ((Bone) -> Boolean)? = null, expression: Boolean = true): Double {
             var occ = 0.0; var sca = 1.0
-            for (i in 1..5) { val hr = 0.02 + 0.12 * i; occ += (hr - scene(p + n * hr, m).d) * sca; sca *= 0.78 }
+            for (i in 1..5) { val hr = 0.02 + 0.12 * i; occ += (hr - scene(p + n * hr, m, include, expression).d) * sca; sca *= 0.78 }
             return (1.0 - 3.0 * occ).coerceIn(0.0, 1.0)
         }
     }
@@ -177,8 +183,8 @@ object CreatureRenderer {
     private val LIGHT = V(0.42, 0.62, 0.66).norm()
     private val VIEW = V(0.0, 0.0, 1.0)
 
-    private fun shade(c: Baked, p: V, n: V, hit: Hit, m: Mood, fur: Color): Int {
-        val diff = max(0.0, n.dot(LIGHT)); val occ = c.ao(p, n, m)
+    private fun shade(c: Baked, p: V, n: V, hit: Hit, m: Mood, fur: Color, include: ((Bone) -> Boolean)? = null, expression: Boolean = true): Int {
+        val diff = max(0.0, n.dot(LIGHT)); val occ = c.ao(p, n, m, include, expression)
         val rim = (1.0 - max(0.0, n.dot(VIEW))).pow(2.6) * 0.7; val ambient = 0.32 * occ
         fun lit(base: V, spec: Double): Int {
             var r = base.x * (ambient + diff * 0.99) + rim * 0.55
