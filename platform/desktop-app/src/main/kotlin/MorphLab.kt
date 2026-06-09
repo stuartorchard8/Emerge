@@ -83,6 +83,8 @@ class MorphLab {
     private var selected: MorphNode? = genome
     private var valence = 0.0
     private var arousal = 0.0
+    private var camYaw = 0.0
+    private var camPitch = 0.0
     private var fur = Color(176, 142, 104)
     private var currentFile: File? = null
 
@@ -138,6 +140,10 @@ class MorphLab {
         })
         presetRow.maximumSize = Dimension(Int.MAX_VALUE, presetRow.preferredSize.height)
         panel.add(presetRow)
+
+        panel.add(heading("Camera (0° yaw = side profile)"))
+        panel.add(slider("yaw (orbit)", -180.0, 180.0, { camYaw }) { camYaw = it; requestRender() })
+        panel.add(slider("pitch (tilt)", -80.0, 80.0, { camPitch }) { camPitch = it; requestRender() })
 
         panel.add(heading("Body — parts"))
         tree.model = treeModel; tree.selectionMode = ListSelectionModel.SINGLE_SELECTION
@@ -277,14 +283,14 @@ class MorphLab {
     private fun exportSheet() {
         val f = chooser(true) ?: return
         val target = if (f.extension.isEmpty()) File(f.parentFile, f.name + ".png") else f
-        val snap = genome.deepClone(); val furC = fur
+        val snap = genome.deepClone(); val furC = fur; val yaw = camYaw; val pitch = camPitch
         exec.submit {
             val moods = CreatureRenderer.Mood.PRESETS; val tile = 280
             val img = BufferedImage(tile * moods.size, tile, BufferedImage.TYPE_INT_RGB)
             val g = img.createGraphics(); g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             g.color = BG; g.fillRect(0, 0, img.width, img.height)
             for ((i, nm) in moods.withIndex()) {
-                CreatureRenderer.render(CreatureRenderer.Baked(snap, nm.second), furC, img, i * tile, tile, BG.rgb and 0xFFFFFF)
+                CreatureRenderer.render(CreatureRenderer.Baked(snap, nm.second), furC, img, i * tile, tile, BG.rgb and 0xFFFFFF, yawDeg = yaw, pitchDeg = pitch)
                 g.color = Color(60, 50, 40); g.font = Font("SansSerif", Font.BOLD, 14); g.drawString(nm.first, i * tile + 10, 22)
             }
             g.dispose(); ImageIO.write(img, "png", target)
@@ -296,10 +302,11 @@ class MorphLab {
     private fun requestRender() {
         val myGen = gen.incrementAndGet()
         val snap = genome.deepClone(); val mood = CreatureRenderer.Mood(valence, arousal); val furC = fur
+        val yaw = camYaw; val pitch = camPitch
         exec.submit {
             if (myGen != gen.get()) return@submit
             val img = BufferedImage(RES, RES, BufferedImage.TYPE_INT_RGB)
-            CreatureRenderer.render(CreatureRenderer.Baked(snap, mood), furC, img, 0, RES, BG.rgb and 0xFFFFFF)
+            CreatureRenderer.render(CreatureRenderer.Baked(snap, mood), furC, img, 0, RES, BG.rgb and 0xFFFFFF, yawDeg = yaw, pitchDeg = pitch)
             if (myGen != gen.get()) return@submit
             SwingUtilities.invokeLater { if (myGen == gen.get()) { canvas.img = img; canvas.repaint() } }
         }

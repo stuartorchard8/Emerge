@@ -75,39 +75,46 @@ object CreatureRenderer {
     private fun connects(name: String, mat: Int) = mat == FUR &&
         !(name.startsWith("brow") || name.startsWith("lid") || name.startsWith("upperlid") || name.startsWith("lowerlid"))
 
+    /** Rotate (x,y) by [deg] about the origin (the profile plane is x–y). */
+    private fun rotate2(x: Double, y: Double, deg: Double): Pair<Double, Double> {
+        if (deg == 0.0) return x to y
+        val r = deg * DEG; val c = cos(r); val s = sin(r); return (x * c - y * s) to (x * s + y * c)
+    }
+
     /** A genome flattened to mood-posed ellipsoid bones (expression already applied). Placement is in
-     *  plain world axes (ox = forward/+x, oy = up/+y) — no frame-rotation, so authoring a face is
-     *  intuitive — and a mirrored node becomes a near/far depth pair (±z). */
+     *  plain world axes (ox = forward/+x, oy = up/+y); a node's **rotation** (base `rot` + expression)
+     *  is a real joint — it rotates the node *and* the frame its children attach to (so a tilted head
+     *  carries its face). A mirrored node becomes a near/far depth pair (±z). */
     class Baked(genome: MorphNode, mood: Mood) {
         private val fur = ArrayList<Bone>()
         private val features = ArrayList<Bone>()    // eyes/iris/pupil/nose/mouth (own materials, not fur)
         val v = mood.v; val a = mood.a
 
-        init { layout(genome, 0.0, 0.0, 1.0, 0.0, null) }
+        init { layout(genome, 0.0, 0.0, 0.0, 1.0, 0.0, null) }
 
-        private fun layout(n: MorphNode, px: Double, py: Double, cumScale: Double, z: Double, parent: V?) {
+        private fun layout(n: MorphNode, px: Double, py: Double, accRot: Double, cumScale: Double, z: Double, parent: V?) {
             if (fur.size + features.size > 280) return
             fun e(k: String) = n.extra[k] ?: 0f
             fun e1(k: String) = n.extra[k] ?: 1f
             val base = cumScale * GIRTH
-            val exDx = e("vdx") * v + e("adx") * a
-            val exDy = e("vdy") * v + e("ady") * a
-            val rotDeg = e("rot") + e("vrot") * v + e("arot") * a
+            val myRot = accRot + e("rot") + e("vrot") * v + e("arot") * a    // this node's joint rotation, compounded
+            // expression offset, applied in the node's (parent-rotated) frame
+            val (exRx, exRy) = rotate2(e("vdx") * v + e("adx") * a, e("vdy") * v + e("ady") * a, accRot)
             val sxF = e1("sx") * (1 + e("vsx") * v + e("asx") * a)
             val syF = e1("sy") * (1 + e("vsy") * v + e("asy") * a)
             val szF = e1("sz").toDouble()
-            val baseCenter = V(px, py, z + e("z"))
-            val center = V(px + exDx, py + exDy, z + e("z"))
+            val center = V(px + exRx, py + exRy, z + e("z"))
             val mat = matFor(n.name)
-            val bone = Bone(n.name, parent, center, base * sxF, base * syF, base * szF, rotDeg.toDouble(), mat, connects(n.name, mat))
+            val bone = Bone(n.name, parent, center, base * sxF, base * syF, base * szF, myRot, mat, connects(n.name, mat))
             if (mat == FUR) fur.add(bone) else features.add(bone)
             for (c in n.children) {
-                val cx = px + c.ox * cumScale; val cy = py + c.oy * cumScale
+                val (lx, ly) = rotate2(c.ox * cumScale, c.oy * cumScale, myRot)   // child offset in this node's rotated frame
+                val cx = center.x + lx; val cy = center.y + ly
                 val cs = (cumScale * c.scale).coerceAtMost(3.0)
                 if (c.mirrored) {
                     val zd = cs * Z_SPREAD
-                    layout(c, cx, cy, cs, z + zd, baseCenter); layout(c, cx, cy, cs, z - zd, baseCenter)
-                } else layout(c, cx, cy, cs, z, baseCenter)
+                    layout(c, cx, cy, myRot, cs, z + zd, center); layout(c, cx, cy, myRot, cs, z - zd, center)
+                } else layout(c, cx, cy, myRot, cs, z, center)
             }
         }
 
@@ -204,18 +211,27 @@ object CreatureRenderer {
         return Frame(span, (b[0] + b[1]) / 2, (b[2] + b[3]) / 2, tile)
     }
 
-    /** Render [baked] into [img] at column offset [ox], side-profile, fitted to [tile] px. [transparent]
-     *  (with an ARGB [img]) leaves the background clear for compositing. */
-    fun render(baked: Baked, fur: Color, img: BufferedImage, ox: Int, tile: Int, bg: Int, transparent: Boolean = false) {
+    /** Render [baked] into [img] at column offset [ox], fitted to [tile] px, viewed from camera [yawDeg]
+     *  (orbit around the vertical axis; 0 = the C2 side profile) / [pitchDeg] (tilt up/down). Orthographic.
+     *  [transparent] (with an ARGB [img]) leaves the background clear for compositing. */
+    fun render(baked: Baked, fur: Color, img: BufferedImage, ox: Int, tile: Int, bg: Int, transparent: Boolean = false, yawDeg: Double = 0.0, pitchDeg: Double = 0.0) {
         val fr = frame(baked, tile)
+        val center = V(fr.cX, fr.cY, 0.0)
+        val cyaw = cos(yawDeg * DEG); val syaw = sin(yawDeg * DEG); val cp = cos(pitchDeg * DEG); val sp = sin(pitchDeg * DEG)
+        // camera→world: pitch about X, then yaw about Y (orbits the creature, light stays world-fixed)
+        fun toWorld(p: V): V {
+            val y1 = p.y * cp - p.z * sp; val z1 = p.y * sp + p.z * cp
+            return V(p.x * cyaw + z1 * syaw, y1, -p.x * syaw + z1 * cyaw)
+        }
+        val dir = toWorld(V(0.0, 0.0, -1.0))
         IntStream.range(0, tile).parallel().forEach { py ->
             for (px in 0 until tile) {
-                val wx = fr.cX + (px.toDouble() / tile - 0.5) * fr.span
-                val wy = fr.cY - (py.toDouble() / tile - 0.5) * fr.span
-                val ro = V(wx, wy, 6.0)
+                val u = (px.toDouble() / tile - 0.5) * fr.span
+                val vv = -(py.toDouble() / tile - 0.5) * fr.span
+                val ro = center + toWorld(V(u, vv, 6.0))
                 var t = 0.0; var hit: Hit? = null; var hp = ro; var steps = 0
                 while (steps < 110 && t < 13.0) {
-                    hp = V(ro.x, ro.y, ro.z - t); val h = baked.scene(hp)
+                    hp = ro + dir * t; val h = baked.scene(hp)
                     if (h.d < 0.001) { hit = h; break }
                     t += h.d * 0.85; steps++
                 }
