@@ -30,14 +30,11 @@ object CreatureBaker {
     class Sprite(val img: BufferedImage, val footFracY: Double, val heightFrac: Double)
 
     private val genomes = HashMap<Int, MorphNode>()
-    private val baked = HashMap<Int, CreatureRenderer.Baked>()
     private val sprites = HashMap<Long, Sprite>()
 
     private fun genomeFor(breed: Int): MorphNode = genomes.getOrPut(breed) {
         defaultNornGenome().also { if (breed != 0) MorphGenome.mutate(it, GeneRng(breed.toLong() * 0x9E3779B1L + 1), 0.28f, 0.04f) }
     }
-
-    private fun bakedFor(breed: Int): CreatureRenderer.Baked = baked.getOrPut(breed) { CreatureRenderer.Baked(genomeFor(breed)) }
 
     /** Per-breed fur, so breeds read as distinct (placeholder palette until fur is a gene). */
     fun furFor(breed: Int): Color {
@@ -67,9 +64,9 @@ object CreatureBaker {
     }
 
     private fun bake(breed: Int, mood: CreatureRenderer.Mood): Sprite {
-        val b = bakedFor(breed)
+        val b = CreatureRenderer.Baked(genomeFor(breed), mood)
         val img = BufferedImage(TILE, TILE, BufferedImage.TYPE_INT_ARGB)
-        CreatureRenderer.render(b, mood, furFor(breed), img, 0, TILE, 0, transparent = true)
+        CreatureRenderer.render(b, furFor(breed), img, 0, TILE, 0, transparent = true)
         val fr = CreatureRenderer.frame(b, TILE)
         val bb = b.bounds()                                   // minX, maxX, minY, maxY
         val footFracY = fr.screenY(bb[2]) / TILE              // feet = lowest world-y

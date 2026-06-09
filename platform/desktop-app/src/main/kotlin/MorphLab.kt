@@ -32,20 +32,42 @@ import javax.swing.JTextField
 import javax.swing.ListSelectionModel
 import javax.swing.SwingUtilities
 
-/** The default cute baseline norn genome, shared by the editor and the headless render check. */
+/** Build a node with `extra` params set concisely. */
+private fun mn(name: String, ox: Float = 0f, oy: Float = 0f, scale: Float = 1f, mir: Float = 0f, vararg extra: Pair<String, Float>): MorphNode {
+    val n = MorphNode(name, ox, oy, scale, mirX = mir)
+    for ((k, v) in extra) n.extra[k] = v
+    return n
+}
+
+/**
+ * The cute, **expressive** baseline norn genome — the real facial features are nodes with authored
+ * valence/arousal response, so the baseline emotes out of the box and every channel is editable in
+ * MorphLab. A starting point to tune, not a fixed look. (`extra` keys: see [CreatureRenderer].)
+ */
 internal fun defaultNornGenome(): MorphNode {
-    val body = MorphNode("body", scale = 0.82f)
-    val head = MorphNode("head", ox = 0f, oy = 1.25f, scale = 1.85f).apply {
-        children.add(MorphNode("crown", ox = 0f, oy = 0.42f, scale = 0.82f))
-        children.add(MorphNode("muzzle", ox = 0.86f, oy = -0.22f, scale = 0.5f).apply {
-            children.add(MorphNode("nose", ox = 0.5f, oy = 0.02f, scale = 0.34f))
-        })
-        children.add(MorphNode("eye", ox = 0.55f, oy = 0.02f, scale = 0.66f, mirX = 1f))
-        children.add(MorphNode("ear", ox = -0.34f, oy = 0.66f, scale = 0.5f, mirX = 1f))
-    }
+    val body = mn("body", scale = 0.82f, extra = arrayOf("sx" to 1.15f))
+    val head = mn("head", oy = 1.25f, scale = 1.85f)
+    head.children.add(mn("crown", oy = 0.42f, scale = 0.82f))
+    head.children.add(mn("ear", ox = -0.34f, oy = 0.66f, scale = 0.5f, mir = 1f, extra = arrayOf("sy" to 1.1f)))
+    val muzzle = mn("muzzle", ox = 0.86f, oy = -0.22f, scale = 0.5f)
+    muzzle.children.add(mn("nose", ox = 0.5f, oy = 0.02f, scale = 0.34f, extra = arrayOf("z" to 0.3f)))
+    // mouth: a wide thin line on the muzzle; valence tilts it (smile/frown), arousal opens it
+    muzzle.children.add(mn("mouth", ox = 0.35f, oy = -0.32f, scale = 0.5f,
+        extra = arrayOf("sx" to 1.5f, "sy" to 0.32f, "z" to 0.3f, "vrot" to 22f, "asy" to 0.9f)))
+    head.children.add(muzzle)
+    // eye: big, near side; squints a little with sadness, widens with arousal
+    val eye = mn("eye", ox = 0.48f, oy = 0.16f, scale = 0.46f, mir = 1f, extra = arrayOf("asy" to 0.12f, "vsy" to -0.08f))
+    eye.children.add(mn("iris", ox = 0.04f, scale = 0.55f, extra = arrayOf("z" to 0.34f)))
+    // upper lid: a fur cap over the eye; arousal raises it (wide), low arousal/sadness lowers it (closes)
+    eye.children.add(mn("upperlid", oy = 0.30f, scale = 0.9f,
+        extra = arrayOf("sx" to 1.3f, "sy" to 0.55f, "z" to 0.15f, "ady" to 0.5f, "vdy" to 0.12f)))
+    // brow ridge above the eye: tilts for anger (inner-down) / sadness (inner-up), raises with surprise
+    eye.children.add(mn("brow", oy = 0.78f, scale = 0.55f,
+        extra = arrayOf("sx" to 1.8f, "sy" to 0.35f, "z" to 0.1f, "vrot" to 16f, "arot" to 6f, "ady" to 0.18f)))
+    head.children.add(eye)
     body.children.add(head)
-    body.children.add(MorphNode("arm", ox = 0.62f, oy = -0.35f, scale = 0.4f, mirX = 1f))
-    body.children.add(MorphNode("leg", ox = 0.16f, oy = -0.95f, scale = 0.58f, mirX = 1f))
+    body.children.add(mn("arm", ox = 0.62f, oy = -0.35f, scale = 0.4f, mir = 1f))
+    body.children.add(mn("leg", ox = 0.16f, oy = -0.95f, scale = 0.58f, mir = 1f))
     return body
 }
 
@@ -213,12 +235,12 @@ class MorphLab {
         val target = if (f.extension.isEmpty()) File(f.parentFile, f.name + ".png") else f
         val snap = genome.deepClone(); val furC = fur
         exec.submit {
-            val baked = CreatureRenderer.Baked(snap); val moods = CreatureRenderer.Mood.PRESETS; val tile = 280
+            val moods = CreatureRenderer.Mood.PRESETS; val tile = 280
             val img = BufferedImage(tile * moods.size, tile, BufferedImage.TYPE_INT_RGB)
             val g = img.createGraphics(); g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             g.color = BG; g.fillRect(0, 0, img.width, img.height)
             for ((i, nm) in moods.withIndex()) {
-                CreatureRenderer.render(baked, nm.second, furC, img, i * tile, tile, BG.rgb and 0xFFFFFF)
+                CreatureRenderer.render(CreatureRenderer.Baked(snap, nm.second), furC, img, i * tile, tile, BG.rgb and 0xFFFFFF)
                 g.color = Color(60, 50, 40); g.font = Font("SansSerif", Font.BOLD, 14); g.drawString(nm.first, i * tile + 10, 22)
             }
             g.dispose(); ImageIO.write(img, "png", target)
@@ -233,7 +255,7 @@ class MorphLab {
         exec.submit {
             if (myGen != gen.get()) return@submit
             val img = BufferedImage(RES, RES, BufferedImage.TYPE_INT_RGB)
-            CreatureRenderer.render(CreatureRenderer.Baked(snap), mood, furC, img, 0, RES, BG.rgb and 0xFFFFFF)
+            CreatureRenderer.render(CreatureRenderer.Baked(snap, mood), furC, img, 0, RES, BG.rgb and 0xFFFFFF)
             if (myGen != gen.get()) return@submit
             SwingUtilities.invokeLater { if (myGen == gen.get()) { canvas.img = img; canvas.repaint() } }
         }

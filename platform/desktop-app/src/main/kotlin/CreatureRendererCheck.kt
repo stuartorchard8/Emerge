@@ -12,7 +12,7 @@ import javax.imageio.ImageIO
 fun main(args: Array<String>) {
     System.setProperty("java.awt.headless", "true")
     val out = File(args.getOrElse(0) { "build/creature-render.png" })
-    val baked = CreatureRenderer.Baked(defaultNornGenome())
+    val genome = defaultNornGenome()
     val fur = Color(176, 142, 104)
     val moods = CreatureRenderer.Mood.PRESETS
     val tile = 280; val bgC = Color(236, 232, 224); val bg = bgC.rgb and 0xFFFFFF
@@ -20,7 +20,7 @@ fun main(args: Array<String>) {
     val g = img.createGraphics(); g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
     g.color = bgC; g.fillRect(0, 0, img.width, img.height)
     for ((i, nm) in moods.withIndex()) {
-        CreatureRenderer.render(baked, nm.second, fur, img, i * tile, tile, bg)
+        CreatureRenderer.render(CreatureRenderer.Baked(genome, nm.second), fur, img, i * tile, tile, bg)
         g.color = Color(60, 50, 40); g.font = Font("SansSerif", Font.BOLD, 14); g.drawString(nm.first, i * tile + 10, 22)
     }
     g.dispose(); out.parentFile?.mkdirs(); ImageIO.write(img, "png", out); println("wrote ${out.absolutePath}")
