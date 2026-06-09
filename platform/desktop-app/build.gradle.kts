@@ -217,6 +217,14 @@ tasks.register<JavaExec>("benchDrocketsGcLog") {
 
     jvmArgs("-Xlog:gc*:stdout:time,uptime,level,tags")
 }
+tasks.register<JavaExec>("runMorphLab") {
+    group = "application"
+    description = "MorphLab: live authoring tool for the creature baseline — sculpt the genome (parts, " +
+        "offsets, size, mirror), pick a mood to watch it emote, set fur, save/load .morph genomes."
+    mainClass = "org.emerge.desktop.MorphLabKt"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
 tasks.register<JavaExec>("checkCreatureRender") {
     group = "verification"
     description = "Verify the consolidated CreatureRenderer: bake the baseline genome across moods. --args=\"<png>\""
