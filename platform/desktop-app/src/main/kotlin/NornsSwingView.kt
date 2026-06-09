@@ -33,6 +33,7 @@ object NornsSwingView {
         var paused = false
         var stepsPerFrame = 1
         var cameraCenterX = 0f
+        var baked = false             // B toggles the SDF-baked side-profile creatures vs the puppet
         var freeCam = false           // true = roaming freely (camX), false = following a creature
         var camX = 0f
         val maxX = (world.cfg.worldWidth - 1).toFloat()
@@ -44,7 +45,7 @@ object NornsSwingView {
                     (lockedFollowId?.let { world.creatureById(it) }?.takeIf { it.alive }
                         ?: world.creatures.maxByOrNull { it.biology.age })
                 cameraCenterX = if (freeCam) camX else (follow?.x ?: 0f).also { camX = it }
-                g.drawImage(NornsImageRenderer.renderFrame(world, cameraCenterX, follow?.id, width, height), 0, 0, null)
+                g.drawImage(NornsImageRenderer.renderFrame(world, cameraCenterX, follow?.id, width, height, baked), 0, 0, null)
             }
         }
         panel.preferredSize = Dimension(1000, 620)
@@ -70,6 +71,7 @@ object NornsSwingView {
                     KeyEvent.VK_LEFT, KeyEvent.VK_A -> { freeCam = true; camX = (camX - panStep).coerceIn(0f, maxX) }
                     KeyEvent.VK_RIGHT, KeyEvent.VK_D -> { freeCam = true; camX = (camX + panStep).coerceIn(0f, maxX) }
                     KeyEvent.VK_F -> freeCam = false                 // re-attach to follow
+                    KeyEvent.VK_B -> baked = !baked                  // toggle SDF-baked creatures
                     KeyEvent.VK_P -> paused = !paused
                     KeyEvent.VK_OPEN_BRACKET -> stepsPerFrame = max(1, stepsPerFrame - 1)
                     KeyEvent.VK_CLOSE_BRACKET -> stepsPerFrame += 1
@@ -90,7 +92,7 @@ object NornsSwingView {
         frame.setLocationRelativeTo(null)
         frame.isVisible = true
         panel.requestFocusInWindow()
-        println("Norns controls: ←/→ or A/D pan camera (free look) · F follow · left-click a Norn to follow · click a lift's call lamp or its ▲/▼ buttons to drive it · right-click drop food · P pause · [ / ] speed · Esc quit")
+        println("Norns controls: ←/→ or A/D pan camera (free look) · F follow · B toggle baked SDF creatures · left-click a Norn to follow · click a lift's call lamp or its ▲/▼ buttons to drive it · right-click drop food · P pause · [ / ] speed · Esc quit")
     }
 
     /** Hit-test a click against every lift's buttons; press the first one hit. Returns true if any
