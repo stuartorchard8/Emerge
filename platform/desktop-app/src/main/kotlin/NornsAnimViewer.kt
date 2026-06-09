@@ -150,7 +150,7 @@ object NornsAnimViewer {
             if (!symmetry) return
             val s = sel() ?: return
             val m = mirror[s.id]?.let { def.part(it) } ?: return
-            m.anchorX = s.anchorX; m.anchorY = s.anchorY; m.pivotX = s.pivotX; m.pivotY = s.pivotY
+            m.anchorU = s.anchorU; m.anchorV = s.anchorV; m.pivotU = s.pivotU; m.pivotV = s.pivotV
             m.restAngle = s.restAngle; m.z = -s.z   // 0-centred → negate to put the mirror on the far side
             val sa = s.animFor(action); val ma = m.animFor(action)
             ma.bias = sa.bias; ma.amp = sa.amp; ma.freq = sa.freq; ma.sign = sa.sign
@@ -287,12 +287,12 @@ object NornsAnimViewer {
 
         val dials = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS); border = BorderFactory.createEmptyBorder(4, 8, 8, 8)
-            add(header("ANCHOR (on parent)"))
-            add(fslider("anchor x", -60f, 80f, { sel()?.anchorX ?: 0f }, { sel()?.anchorX = it }))
-            add(fslider("anchor y", -60f, 80f, { sel()?.anchorY ?: 0f }, { sel()?.anchorY = it }))
-            add(header("PIVOT (own)"))
-            add(fslider("pivot x", -60f, 80f, { sel()?.pivotX ?: 0f }, { sel()?.pivotX = it }))
-            add(fslider("pivot y", -60f, 80f, { sel()?.pivotY ?: 0f }, { sel()?.pivotY = it }))
+            add(header("ANCHOR (frac of parent)"))
+            add(fslider("anchor u", -0.5f, 1.5f, { sel()?.anchorU ?: 0f }, { sel()?.anchorU = it }))
+            add(fslider("anchor v", -0.5f, 1.5f, { sel()?.anchorV ?: 0f }, { sel()?.anchorV = it }))
+            add(header("PIVOT (frac of self)"))
+            add(fslider("pivot u", -0.5f, 1.5f, { sel()?.pivotU ?: 0f }, { sel()?.pivotU = it }))
+            add(fslider("pivot v", -0.5f, 1.5f, { sel()?.pivotV ?: 0f }, { sel()?.pivotV = it }))
             add(header("PART"))
             add(fslider("rest (turns)", -0.5f, 0.5f, { (sel()?.restAngle ?: 0f) / tau }, { sel()?.restAngle = it * tau }))
             add(fslider("z-order", -8f, 8f, { (sel()?.z ?: 0).toFloat() }, { sel()?.z = it.roundToInt() }, snap = 1f))
@@ -380,6 +380,22 @@ private fun renderContactSheet(out: File, ageOverride: Int? = null) {
 }
 
 fun main(args: Array<String>) {
+    if (args.isNotEmpty() && args[0] == "--normalize") {
+        // Rewrite legacy pixel-coord rig files (the given breed+ages) into the normalized format.
+        System.setProperty("java.awt.headless", "true")
+        val dir = listOf(File("assets/norns"), File("../../assets/norns")).firstOrNull { it.isDirectory }
+            ?: run { println("no assets/norns dir"); return }
+        val breed = args.getOrElse(1) { "denali" }
+        val ages = args.drop(2).mapNotNull { it.toIntOrNull() }.ifEmpty { listOf(0, 3) }
+        for (age in ages) {
+            val sprites = NornParts.load(breed, age) ?: continue
+            val f = dir.resolve("rig-$breed-a$age.txt")
+            if (!f.isFile) continue
+            f.writeText(NornRigDef.parse(f.readText(), sprites).toText())   // legacy px → normalized
+            println("normalized ${f.path}")
+        }
+        return
+    }
     if (args.isNotEmpty() && args[0] == "--render") {
         renderContactSheet(File(args.getOrElse(1) { "build/norn-anim-sheet.png" }), args.getOrNull(2)?.toIntOrNull())
         return

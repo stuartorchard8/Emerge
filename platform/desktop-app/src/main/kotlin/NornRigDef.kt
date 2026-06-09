@@ -42,8 +42,8 @@ class RigPart(
     val id: String,
     var sprite: String,
     val parent: String?,
-    var anchorX: Float, var anchorY: Float,   // attach point in PARENT-local (sprite-pixel) space
-    var pivotX: Float, var pivotY: Float,      // this part's own pivot (sits on the anchor)
+    var anchorU: Float, var anchorV: Float,    // attach point ON THE PARENT, as a FRACTION of the parent sprite's w/h
+    var pivotU: Float, var pivotV: Float,       // this part's own pivot, as a fraction of its own sprite's w/h
     var restAngle: Float = 0f,
     var z: Int = 0,
     val anim: MutableMap<CreatureAction, JointAnim> = HashMap(),
@@ -63,30 +63,33 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
     fun pose(sprites: Map<String, NornParts.Part>, action: CreatureAction, phaseT: Float): List<Placed> {
         val g = global[action] ?: GlobalAnim()
         val bob = -abs(sin(phaseT * g.bobFreq)) * g.bobAmp
+        val partOf = HashMap<String, NornParts.Part>()
+        for (rp in parts) (sprites[rp.sprite] ?: sprites[rp.id])?.let { partOf[rp.id] = it }
         val worldBy = HashMap<String, AffineTransform>()
         val out = ArrayList<Placed>(parts.size)
         for (rp in parts) {
-            val img = (sprites[rp.sprite] ?: sprites[rp.id])?.img ?: continue
+            val self = partOf[rp.id] ?: continue
             val world: AffineTransform
             if (rp.parent == null) {
                 world = AffineTransform().apply { translate(0.0, bob.toDouble()) }
             } else {
+                val parent = partOf[rp.parent]                                  // denormalise U/V → px
                 world = AffineTransform(worldBy[rp.parent] ?: AffineTransform())
-                world.translate(rp.anchorX.toDouble(), rp.anchorY.toDouble())
-                world.rotate(rp.animFor(action).let { (rp.restAngle + it.rot(phaseT)).toDouble() })
-                world.translate(-rp.pivotX.toDouble(), -rp.pivotY.toDouble())
+                world.translate((rp.anchorU * (parent?.w ?: 1)).toDouble(), (rp.anchorV * (parent?.h ?: 1)).toDouble())
+                world.rotate((rp.restAngle + rp.animFor(action).rot(phaseT)).toDouble())
+                world.translate((-rp.pivotU * self.w).toDouble(), (-rp.pivotV * self.h).toDouble())
             }
             worldBy[rp.id] = world
-            out += Placed(rp.id, img, world, rp.z)
+            out += Placed(rp.id, self.img, world, rp.z)
         }
         return out
     }
 
     fun toText(): String {
-        val sb = StringBuilder("# norn rig — editable sprite-part compositor\n")
+        val sb = StringBuilder("# norn rig — sprite-part compositor; coords: normalized (fraction of sprite w/h)\n")
         for (p in parts) {
             sb.append("part ${p.id} sprite=${p.sprite} parent=${p.parent ?: "-"} ")
-                .append("anchor=${f(p.anchorX)},${f(p.anchorY)} pivot=${f(p.pivotX)},${f(p.pivotY)} ")
+                .append("anchor=${f(p.anchorU)},${f(p.anchorV)} pivot=${f(p.pivotU)},${f(p.pivotV)} ")
                 .append("rest=${f(p.restAngle)} z=${p.z}\n")
         }
         for (p in parts) for ((a, j) in p.anim) {
@@ -133,9 +136,12 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
                 val pivotKey = row[3]
                 val z = row[4]!!.toInt()
                 val self = sprites[id] ?: continue
-                val anchor = if (parent != null && anchorKey != null) (sprites[parent]?.pt(anchorKey) ?: floatArrayOf(0f, 0f)) else floatArrayOf(0f, 0f)
+                val pp = parent?.let { sprites[it] }
+                val anchor = if (pp != null && anchorKey != null) pp.pt(anchorKey) else floatArrayOf(0f, 0f)
                 val pivot = if (pivotKey != null) self.pt(pivotKey) else floatArrayOf(0f, 0f)
-                parts += RigPart(id, id, parent, anchor[0], anchor[1], pivot[0], pivot[1], 0f, z)
+                val au = if (pp != null) anchor[0] / pp.w else 0f
+                val av = if (pp != null) anchor[1] / pp.h else 0f
+                parts += RigPart(id, id, parent, au, av, pivot[0] / self.w, pivot[1] / self.h, 0f, z)
             }
             val def = NornRigDef(parts, HashMap())
             seedAnimation(def)
@@ -179,6 +185,9 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
             applyParts: Boolean = true, into: NornRigDef? = null,
         ): NornRigDef {
             val def = into ?: default(sprites)
+            // Legacy rigs stored anchor/pivot in pixels; new ones are normalised (fraction of sprite
+            // w/h). Detect by the header marker and convert pixels → fractions on read.
+            val normalized = text.contains("coords: normalized")
             for (line in text.lines()) {
                 val tok = line.trim().split(" ").filter { it.isNotEmpty() }
                 if (tok.isEmpty() || tok[0].startsWith("#")) continue
@@ -187,8 +196,18 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
                         val p = def.part(tok.getOrNull(1) ?: continue) ?: continue
                         val m = kv(tok.drop(2))
                         m["sprite"]?.let { p.sprite = it }
-                        xy(m["anchor"])?.let { p.anchorX = it.first; p.anchorY = it.second }
-                        xy(m["pivot"])?.let { p.pivotX = it.first; p.pivotY = it.second }
+                        val parentW = (p.parent?.let { sprites[it] }?.w ?: 1).toFloat()
+                        val parentH = (p.parent?.let { sprites[it] }?.h ?: 1).toFloat()
+                        val selfW = ((sprites[p.sprite] ?: sprites[p.id])?.w ?: 1).toFloat()
+                        val selfH = ((sprites[p.sprite] ?: sprites[p.id])?.h ?: 1).toFloat()
+                        xy(m["anchor"])?.let {
+                            p.anchorU = if (normalized) it.first else it.first / parentW
+                            p.anchorV = if (normalized) it.second else it.second / parentH
+                        }
+                        xy(m["pivot"])?.let {
+                            p.pivotU = if (normalized) it.first else it.first / selfW
+                            p.pivotV = if (normalized) it.second else it.second / selfH
+                        }
                         m["rest"]?.toFloatOrNull()?.let { p.restAngle = it }
                         m["z"]?.toIntOrNull()?.let { p.z = it }
                     }

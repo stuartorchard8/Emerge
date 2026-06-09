@@ -68,7 +68,7 @@ object NornCompositor {
                 g.drawLine(a.x.roundToInt(), a.y.roundToInt(), b.x.roundToInt(), b.y.roundToInt())
             }
             def.part(hid)?.let { dp ->
-                val anchorPt = tp(at, dp.pivotX, dp.pivotY)  // pivot sits on the anchor
+                val anchorPt = tp(at, dp.pivotU * sel.img.width, dp.pivotV * sel.img.height)  // normalized pivot → image px
                 g.color = Color(255, 80, 80)
                 g.fillOval((anchorPt.x - 4).roundToInt(), (anchorPt.y - 4).roundToInt(), 8, 8)
             }

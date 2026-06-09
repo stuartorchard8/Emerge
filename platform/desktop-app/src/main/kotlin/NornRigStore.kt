@@ -41,7 +41,7 @@ object NornRigStore {
     fun breedName(breedIndex: Int): String = NornParts.BREEDS[breedIndex.mod(NornParts.BREEDS.size)]
 
     /** Sprite-part age set per life stage (matches the live rig: babies/children crawl, rest upright). */
-    fun ageOf(stage: String): Int = when (stage) { "BABY" -> 0; "CHILD" -> 1; else -> 3 }
+    fun ageOf(stage: String): Int = when (stage) { "BABY" -> 0; "CHILD" -> 1; "ADOLESCENT" -> 2; else -> 3 }
 
     /** Drawn height (world units) per life stage — babies tiny, growing up to adult. */
     fun targetHeight(stage: String): Float = when (stage) {
