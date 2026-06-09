@@ -173,18 +173,10 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
             def.global[CreatureAction.COURT] = GlobalAnim(bobAmp = 0.15f, hopAmp = 0.28f, hopFreq = 1.7f)
         }
 
-        /**
-         * Parse a rig previously written by [toText]. Starts from [into] (or a fresh [default]) and
-         * overlays the file's values. When [applyParts] is false, the per-part **structure**
-         * (sprite/anchor/pivot/rest/z) is skipped and only the **animation + global** motion is
-         * overlaid — used to apply a rig authored on one breed's *motion* to another breed's own
-         * correct anchors (anchors are breed-specific pixel points; motion is breed-independent).
-         */
-        fun parse(
-            text: String, sprites: Map<String, NornParts.Part>,
-            applyParts: Boolean = true, into: NornRigDef? = null,
-        ): NornRigDef {
-            val def = into ?: default(sprites)
+        /** Parse a rig previously written by [toText] onto a fresh [default] for [sprites]
+         *  (auto-converting legacy pixel-coord files to normalized on read). */
+        fun parse(text: String, sprites: Map<String, NornParts.Part>): NornRigDef {
+            val def = default(sprites)
             // Legacy rigs stored anchor/pivot in pixels; new ones are normalised (fraction of sprite
             // w/h). Detect by the header marker and convert pixels → fractions on read.
             val normalized = text.contains("coords: normalized")
@@ -192,7 +184,7 @@ class NornRigDef(val parts: MutableList<RigPart>, val global: MutableMap<Creatur
                 val tok = line.trim().split(" ").filter { it.isNotEmpty() }
                 if (tok.isEmpty() || tok[0].startsWith("#")) continue
                 when (tok[0]) {
-                    "part" -> if (applyParts) {
+                    "part" -> {
                         val p = def.part(tok.getOrNull(1) ?: continue) ?: continue
                         val m = kv(tok.drop(2))
                         m["sprite"]?.let { p.sprite = it }
