@@ -217,6 +217,14 @@ tasks.register<JavaExec>("benchDrocketsGcLog") {
 
     jvmArgs("-Xlog:gc*:stdout:time,uptime,level,tags")
 }
+tasks.register<JavaExec>("runMorphBake") {
+    group = "application"
+    description = "Throwaway spike: drive the lit SDF creature from a MorphNode genome and bake a base " +
+        "creature + mutants + a crossbreed, to confirm genetic variation/interpolation looks good. --args=\"<png>\""
+    mainClass = "org.emerge.desktop.MorphBakeSpikeKt"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
 tasks.register<JavaExec>("runCreatureBake") {
     group = "application"
     description = "Throwaway spike: gene-driven creature as a lit SDF 3D form, baked to a C2-style side " +
