@@ -87,6 +87,7 @@ class CytoWorld private constructor(
     val type: IntArray get() = cell.type
     val sticky: BooleanArray get() = cell.sticky
     val stickyTemp: BooleanArray get() = cell.stickyTemp
+    val genome: Array<List<org.emerge.demo.cyto.sim.Gene>?> get() = cell.genome
 
     /** Dense EntityId.value per slot (`0 until count`). */
     val entityId: IntArray get() = cells.denseIds()

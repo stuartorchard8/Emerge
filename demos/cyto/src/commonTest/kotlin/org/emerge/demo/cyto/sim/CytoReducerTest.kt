@@ -48,6 +48,33 @@ class CytoReducerTest {
     }
 
     @Test
+    fun divisionInheritsTheGenomeNotTheType() {
+        // Behaviour is now carried by a per-cell genome, not looked up from the cell type. Seed a
+        // Stem (so the type's division economy still fires) with a NON-default genome, then let it
+        // grow: every descendant must inherit that genome clonally — the heritability that makes the
+        // substrate evolvable. (A Touch→Sticky gene: non-empty, but no chemical I/O, so it doesn't
+        // perturb the energy economy that drives the split.)
+        val customGenome = listOf(
+            Gene(
+                inputs = listOf(GeneInput(GeneInputType.Touch, chem = "", weight = 1f)),
+                output = GeneOutput(GeneOutputType.Sticky, chem1 = "", chem2 = "", bias = 0f),
+            ),
+        )
+        var state = run {
+            val b = SimBuilder(SimState())
+            b.spawnCell(Coord2.zero, Coord2.zero, CellType.Stem, mapOf("energy" to 2f), MIN_RADIUS, genome = customGenome)
+            b.build()
+        }
+        repeat(700) { state = reducer.reduce(cfg, state, noInput) }
+        val cells = state.components.getTable<CytoCellComponent>().asMap().values
+        assertTrue(cells.size > 1, "stem with a custom genome should still divide; got ${cells.size}")
+        assertTrue(
+            cells.all { it.genome == customGenome },
+            "every descendant should inherit the seeded genome, not the (empty) Stem preset",
+        )
+    }
+
+    @Test
     fun grabbedCellMovesTowardPointer() {
         var state = run {
             val b = SimBuilder(SimState())

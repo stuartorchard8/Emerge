@@ -61,6 +61,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
                 logicalRadius = cell.logicalRadius,
                 divideCooldown = cell.divideCooldown,
                 type = cell.type,
+                genome = cell.genome,
             )
             neighbourCounts[id] = springs[id]?.springs?.size ?: 0
         }

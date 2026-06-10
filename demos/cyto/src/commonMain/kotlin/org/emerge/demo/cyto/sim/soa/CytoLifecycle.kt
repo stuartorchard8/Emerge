@@ -3,6 +3,8 @@ package org.emerge.demo.cyto.sim.soa
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
+import org.emerge.demo.cyto.sim.Gene
+import org.emerge.demo.cyto.sim.genomeForType
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.cellMass
@@ -128,6 +130,8 @@ class CytoLifecycle(private val cfg: CytoConfig) {
     private fun divide(w: CytoWorld, adj: LinkedHashMap<Int, MutableList<Edge>>, motherId: Int) {
         val ms = w.slotOf(motherId)
         if (ms < 0) return
+        val motherType = CellType.entries[w.type[ms]]
+        val motherGenome = w.genome[ms] ?: emptyList()
         val motherPos = Coord2(Coord(w.posX[ms]), Coord(w.posY[ms]))
         val motherAng = Coord(w.ang[ms])
         val motionVel = Coord2(Coord(w.velX[ms]), Coord(w.velY[ms]))
@@ -169,9 +173,10 @@ class CytoLifecycle(private val cfg: CytoConfig) {
         val daughterRadiusLogical = sqrt(min(1f, daughterEnergy))
         val radius = max(daughterRadiusLogical, MIN_RADIUS)
 
-        // Spawn the daughter (createEntity reproduces the EcsWorld id sequence).
+        // Spawn the daughter (createEntity reproduces the EcsWorld id sequence). Clonal: inherits
+        // the mother's type + genome (was hardcoded Stem), so genomes propagate down a lineage.
         val daughterId = w.world.createEntity()
-        appendDaughter(w, daughterId, motherPos + offset, motionVel, radius, daughterEnergy)
+        appendDaughter(w, daughterId, motherPos + offset, motionVel, radius, daughterEnergy, motherType, motherGenome)
 
         for (n in ahead) { addSpring(w, adj, daughterId.value, n); removeSpringPair(adj, motherId, n) }
         for (n in side) { addSpring(w, adj, daughterId.value, n) }
@@ -186,9 +191,12 @@ class CytoLifecycle(private val cfg: CytoConfig) {
         addSpring(w, adj, motherId, daughterId.value)
     }
 
-    /** Appends a daughter (Stem) cell to every column (mirrors SimBuilder.spawnCell / spawnBody). */
-    private fun appendDaughter(w: CytoWorld, id: EntityId, pos: Coord2, vel: Coord2, radius: Float, energy: Float) =
-        appendCell(w, id, pos, vel, CellType.Stem, logicalRadius = radius, energy = energy, sticky = false)
+    /** Appends a daughter cell to every column (mirrors SimBuilder.spawnCell / spawnBody), inheriting
+     *  the mother's [type] + [genome] clonally. */
+    private fun appendDaughter(
+        w: CytoWorld, id: EntityId, pos: Coord2, vel: Coord2, radius: Float, energy: Float,
+        type: CellType, genome: List<Gene>,
+    ) = appendCell(w, id, pos, vel, type, logicalRadius = radius, energy = energy, sticky = false, genome = genome)
 
     /**
      * Appends a cell to every column (mirrors SimBuilder.spawnCell / spawnBody), clamping the
@@ -205,6 +213,7 @@ class CytoLifecycle(private val cfg: CytoConfig) {
         logicalRadius: Float,
         energy: Float,
         sticky: Boolean,
+        genome: List<Gene> = genomeForType(type),
     ) {
         val radius = max(logicalRadius, MIN_RADIUS)
         w.world.add(id, TransformComponent::class, TransformComponent(pos, Coord(0)))
@@ -222,6 +231,7 @@ class CytoLifecycle(private val cfg: CytoConfig) {
                 chemicals = mapOf(CytoCellColumnStore.ENERGY to energy),
                 logicalRadius = radius,
                 sticky = sticky,
+                genome = genome,
             ),
         )
     }

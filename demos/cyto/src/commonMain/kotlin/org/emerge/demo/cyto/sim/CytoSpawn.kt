@@ -29,6 +29,7 @@ fun SimBuilder.spawnCell(
     chemicals: Map<String, Float>,
     logicalRadius: Float,
     sticky: Boolean = false,
+    genome: List<Gene> = genomeForType(type),
 ): EntityId {
     val radius = max(logicalRadius, MIN_RADIUS)
     val id = spawnBody(
@@ -48,6 +49,7 @@ fun SimBuilder.spawnCell(
             chemicals = chemicals,
             logicalRadius = radius,
             sticky = sticky,
+            genome = genome,
         )
     }
     return id

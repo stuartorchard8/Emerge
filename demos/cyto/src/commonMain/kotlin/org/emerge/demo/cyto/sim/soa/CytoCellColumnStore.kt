@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.sim.soa
 
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
+import org.emerge.demo.cyto.sim.Gene
 import org.emerge.sim.core.ecs.soa.ColumnStore
 
 /**
@@ -24,6 +25,9 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
     var type = IntArray(0); private set       // CellType.ordinal
     var sticky = BooleanArray(0); private set
     var stickyTemp = BooleanArray(0); private set
+    // The per-cell genome — a reference column (the one non-primitive). Preset genomes are shared
+    // immutable lists, so a cell holds a reference, not a copy; null is read as the empty genome.
+    var genome = arrayOfNulls<List<Gene>>(0); private set
 
     override fun ensureCapacity(capacity: Int) {
         if (energy.size >= capacity) return
@@ -31,6 +35,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         logicalRadius = logicalRadius.copyOf(capacity); divideCooldown = divideCooldown.copyOf(capacity)
         touch = touch.copyOf(capacity); type = type.copyOf(capacity)
         sticky = sticky.copyOf(capacity); stickyTemp = stickyTemp.copyOf(capacity)
+        genome = genome.copyOf(capacity)
     }
 
     override fun scatter(slot: Int, value: CytoCellComponent) {
@@ -42,6 +47,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         type[slot] = value.type.ordinal
         sticky[slot] = value.sticky
         stickyTemp[slot] = value.stickyTemp
+        genome[slot] = value.genome
     }
 
     override fun gather(slot: Int): CytoCellComponent = CytoCellComponent(
@@ -53,6 +59,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         pendingTransfers = mapOf(ENERGY to energyPending[slot]),
         touch = touch[slot],
         stickyTemp = stickyTemp[slot],
+        genome = genome[slot] ?: emptyList(),
     )
 
     override fun moveSlot(dst: Int, src: Int) {
@@ -60,6 +67,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         logicalRadius[dst] = logicalRadius[src]; divideCooldown[dst] = divideCooldown[src]
         touch[dst] = touch[src]; type[dst] = type[src]
         sticky[dst] = sticky[src]; stickyTemp[dst] = stickyTemp[src]
+        genome[dst] = genome[src]
     }
 
     companion object {

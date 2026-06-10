@@ -102,12 +102,15 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         val daughterEnergy = halfChemicals["energy"] ?: 0f
         val daughterRadius = sqrt(min(1f, daughterEnergy))
 
+        // Clonal division: the daughter inherits the mother's type AND genome (was hardcoded Stem;
+        // equivalent today since only Stem cells divide, but now genomes propagate down a lineage).
         val daughter = builder.spawnCell(
             pos = motherPos + offset,
             vel = motionVel,
-            type = CellType.Stem,
+            type = cell.type,
             chemicals = halfChemicals,
             logicalRadius = daughterRadius,
+            genome = cell.genome,
         )
 
         for (n in ahead) {

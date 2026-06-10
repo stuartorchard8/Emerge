@@ -10,7 +10,6 @@ import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.sim.MAX_CHEM
 import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.RADIUS_ELASTICITY
-import org.emerge.demo.cyto.sim.genesForType
 import org.emerge.demo.cyto.sim.runGenes
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.ecs.ParallelExecutor
@@ -264,7 +263,7 @@ class CytoSoaReducer(
     /** Slow path is needed when any cell has genes (which can mint species) or extra chemicals. */
     private fun needsChemistry(w: CytoWorld): Boolean {
         if (w.extraChem.isNotEmpty() || w.extraPending.isNotEmpty() || w.suppression.isNotEmpty()) return true
-        for (i in 0 until w.count) if (genesForType(CellType.entries[w.type[i]]).isNotEmpty()) return true
+        for (i in 0 until w.count) if (!w.genome[i].isNullOrEmpty()) return true
         return false
     }
 
@@ -293,6 +292,7 @@ class CytoSoaReducer(
                 logicalRadius = w.logicalRadius[slot],
                 divideCooldown = w.divideCooldown[slot],
                 type = CellType.entries[w.type[slot]],
+                genome = w.genome[slot] ?: emptyList(),
             )
             neighbourCounts[id] = w.csr.degreeOf(slot)
         }

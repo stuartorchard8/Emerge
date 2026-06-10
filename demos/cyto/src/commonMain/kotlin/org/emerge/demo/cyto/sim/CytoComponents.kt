@@ -29,6 +29,10 @@ data class CytoCellComponent(
     /** Transient: gene-driven stickiness for this tick (original `isStickyTemp`). Recomputed
      *  by the biology system each tick; OR-ed with [sticky] by the contact system. */
     val stickyTemp: Boolean = false,
+    /** This cell's heritable gene network (the [Gene] list driving its chemistry/behaviour).
+     *  Seeded from [genomeForType] at spawn, then carried + inherited clonally on division so it
+     *  can diverge under mutation — the data-driven replacement for type-keyed gene lookup. */
+    val genome: List<Gene> = emptyList(),
 )
 
 /**

@@ -7,6 +7,14 @@ import org.emerge.demo.cyto.cells.CellType
  * [evaluate] operating on a mutable [CellWork]). Genes read chemicals/touch and emit
  * outputs (contract, inhibit, enzyme, sticky). Mitosis/Meiosis/Reinforce were `TODO()` in
  * the original and remain no-ops.
+ *
+ * A cell's **genome** is its ordered list of [Gene]s — carried per-cell ([CellWork.genome],
+ * [CytoCellComponent.genome]) and inherited clonally on division, *not* looked up from the cell
+ * type. [genomeForType] supplies the authored preset for each legacy type at spawn, so the
+ * library of hand-built "types" still works, but the substrate is now data-driven and fertile
+ * for mutation/selection. (The energy/division **economy** — Support's surplus, Stem's split —
+ * stays keyed on cell type so empty-genome colonies keep the dense fast path; only the reactive
+ * gene network is genome-driven here.)
  */
 enum class GeneInputType { Chem, Touch }
 enum class GeneOutputType { Contract, Mitosis, Meiosis, Inhibit, Enzyme, Sticky, Reinforce }
@@ -28,6 +36,7 @@ class CellWork(
     var logicalRadius: Float,
     var divideCooldown: Float,
     val type: CellType,
+    val genome: List<Gene>,
 ) {
     var contraction = 0f
     val enzymes = mutableSetOf<Pair<String, String>>()
@@ -67,13 +76,11 @@ private fun Gene.evaluate(cell: CellWork, delta: Float) {
 }
 
 fun runGenes(cell: CellWork, delta: Float) {
-    val genes = genesForType(cell.type)
-    for (gene in genes) gene.evaluate(cell, delta)
+    for (gene in cell.genome) gene.evaluate(cell, delta)
 }
 
-// Gene sets are immutable and identical for every cell of a type — define them once rather
-// than rebuilding the list (and its Gene/GeneInput/GeneOutput objects) on every per-cell,
-// per-tick call.
+// Preset genomes are immutable and shared by every cell spawned as a given type — define them
+// once rather than rebuilding the list (and its Gene/GeneInput/GeneOutput objects) per spawn.
 private val MUSCLE_GENES = listOf(
     Gene(
         inputs = listOf(GeneInput(GeneInputType.Chem, chem = "e", weight = 1f)),
@@ -99,7 +106,9 @@ private val TOUCH_GENES = listOf(
     ),
 )
 
-fun genesForType(type: CellType): List<Gene> = when (type) {
+/** The authored preset genome for a legacy cell type — used to seed a freshly-spawned cell.
+ *  After spawn the genome lives on the cell and is inherited on division, so it can diverge. */
+fun genomeForType(type: CellType): List<Gene> = when (type) {
     CellType.Muscle -> MUSCLE_GENES
     CellType.Not -> NOT_GENES
     CellType.Jump -> JUMP_GENES
