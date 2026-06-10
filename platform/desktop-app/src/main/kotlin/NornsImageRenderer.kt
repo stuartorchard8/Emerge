@@ -193,6 +193,30 @@ object NornsImageRenderer {
         return img
     }
 
+    /** Per-action animation phase. WALK tracks distance (feet grip the floor at the real move speed);
+     *  durative actions advance over their own duration (elapsed = duration − activityTimer) so each
+     *  STARTS AT 0 when entered, and PICK_UP runs exactly one cycle (the grab attaches at the halfway). */
+    private fun rigPhaseFor(c: WorldCreature, action: CreatureAction, walkStride: Float, cfg: NornsConfig): Float {
+        val tau = (2.0 * Math.PI).toFloat()
+        return when (action) {
+            CreatureAction.WALK -> if (walkStride > 0f) c.ticksLived * (tau * cfg.moveSpeed * walkSpeedFactor(c.biology.lifeStage, cfg.babyWalkFactor) / walkStride) else c.ticksLived * 0.085f
+            CreatureAction.PICK_UP -> ((cfg.pickupTicks - c.activityTimer).coerceAtLeast(0).toFloat() / cfg.pickupTicks * tau).coerceIn(0f, tau)
+            CreatureAction.EAT -> (cfg.eatTicks - c.activityTimer).coerceAtLeast(0) * 0.085f
+            CreatureAction.COURT -> (cfg.courtTicks - c.activityTimer).coerceAtLeast(0) * 0.085f
+            CreatureAction.REST -> (cfg.restTicks - c.activityTimer).coerceAtLeast(0) * 0.085f
+        }
+    }
+
+    /** Advance [c]'s transition state for [action]: on a new action, freeze the old pose and ease into
+     *  the new one over [BLEND_TICKS]. Returns (blendFrom-or-null, blendFromPhase, blendT) for the compositor. */
+    private fun blendState(c: WorldCreature, action: CreatureAction, rigPhase: Float): Triple<CreatureAction?, Float, Float> {
+        val st = animStates.getOrPut(c.id) { AnimState(action, rigPhase, c.ticksLived) }
+        if (action != st.action) { st.prevAction = st.action; st.prevPhase = st.lastPhase; st.action = action; st.blendStartTick = c.ticksLived }
+        st.lastPhase = rigPhase
+        val blendT = ((c.ticksLived - st.blendStartTick) / BLEND_TICKS).coerceIn(0f, 1f)
+        return Triple(if (blendT < 1f) st.prevAction else null, st.prevPhase, blendT)
+    }
+
     private fun drawCreature(
         g: java.awt.Graphics2D, c: WorldCreature, worldX: Float, worldY: Float, followed: Boolean,
         px: (Float) -> Float, py: (Float) -> Float, sx: Float,
@@ -209,41 +233,37 @@ object NornsImageRenderer {
         // an egg incubating on the ground (the EMBRYO stage hatches into a baby)
         val stage = c.biology.lifeStage.name
         if (stage == "EMBRYO") {
-            // prefetch the bake during incubation (it'll be needed at hatch) so the newborn isn't a
+            // prefetch the rig bake during incubation (it'll be needed at hatch) so the newborn isn't a
             // placeholder blob on its first frame — uses otherwise-idle egg time. Async/live only.
-            if (baked && CreatureBaker.async) CreatureBaker.spriteFor(c)
+            if (baked && CreatureBaker.async) CreatureBaker.rigFor(c)
             drawEgg(g, px(worldX), py(worldY - floorOffset), sx); return
         }
 
-        // baked path: a lit SDF side-profile sprite (genes→3D→2D), foot-aligned to the grass line,
-        // flipped by facing, scaled to the life-stage height. Mood (expression) comes from drives.
+        // baked path: the creature's OWN inherited genome baked into the denali rig — body + limbs
+        // baked once (genes→3D→2D), an expressive head re-baked per mood-bucket from its drive
+        // chemistry — then procedurally animated + composited so it walks/eats/courts wearing its
+        // feelings. NornCompositor handles fit-to-height, foot-planting, facing flip + per-action lean.
         if (baked) {
-            val sprite = CreatureBaker.spriteFor(c)
-            if (sprite == null) {                       // bake in flight (async) — a soft fur blob stands in
+            val rb = CreatureBaker.rigFor(c)
+            if (rb == null) {                            // rig bake in flight (async) — a soft fur blob stands in
                 val r = NornRigStore.targetHeight(stage) * 0.45f
                 blob(worldX, worldY - floorOffset + r, r, CreatureBaker.furFor(c.breed))
                 return
             }
-            val tilePx = sprite.img.height
-            val bScale = (NornRigStore.targetHeight(stage) * sx) / (sprite.heightFrac * tilePx)
-            val cxScreen = px(worldX); val groundScreenY = py(worldY - floorOffset)
-            // cheap 2D secondary motion (no re-bake): a walk bob+rock when moving, a slow breathe at rest
-            val moving = c.activity == ActivityType.MOVING
-            val resting = c.activity == ActivityType.RESTING || c.activity == ActivityType.IDLE
-            val ph = c.ticksLived * 0.45f
-            val bob = if (moving) sin(ph) * 0.045f * NornRigStore.targetHeight(stage) * sx else 0f
-            val lean = if (moving) sin(ph) * 0.05f * c.facing else 0f                       // rock about the feet
-            val breatheY = if (resting) 1f + sin(c.ticksLived * 0.12f) * 0.02f else 1f
-            val at = java.awt.geom.AffineTransform()
-            at.rotate(lean.toDouble(), cxScreen.toDouble(), groundScreenY.toDouble())
-            at.translate(cxScreen.toDouble(), (groundScreenY - bScale * sprite.footFracY * tilePx - bob))
-            at.scale((if (c.facing < 0) -bScale else bScale).toDouble(), (bScale * breatheY).toDouble())
-            at.translate(-tilePx / 2.0, 0.0)
-            val oldHint = g.getRenderingHint(RenderingHints.KEY_INTERPOLATION)
-            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
-            g.drawImage(sprite.img, at, null)
-            oldHint?.let { g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, it) }
-            if (c.carryingFood) blob(worldX + c.facing * 0.35f, worldY - floorOffset + 0.5f, 0.18f, Color(212, 84, 60))
+            // swap in the expressive (mood) head; until its first bake lands, wear the rig's neutral head
+            val neutralHead = rb.parts["head"]
+            val head = CreatureBaker.headFor(c, rb.scale) ?: neutralHead
+            val parts = if (head != null && head !== neutralHead) HashMap(rb.parts).apply { put("head", head) } else rb.parts
+            head?.let { h -> rb.rig.part("head")?.let { it.pivotU = h.pt("neck")[0] / h.w; it.pivotV = h.pt("neck")[1] / h.h } }
+            val rigPhase = rigPhaseFor(c, action, rb.rig.walkStride, cfg)
+            val (blendFrom, blendFromPhase, blendT) = blendState(c, action, rigPhase)
+            NornCompositor.draw(
+                g, rb.rig, parts, action, rigPhase, c.facing,
+                px(worldX), py(worldY - floorOffset), sx,
+                targetHeightUnits = NornRigStore.targetHeight(stage), groundOffset = rb.rig.groundOffset,
+                food = if (c.carryingFood) NornCompositor.FoodMode.HAND else NornCompositor.FoodMode.NONE,
+                blendFrom = blendFrom, blendFromPhase = blendFromPhase, blendT = blendT,
+            )
             if (followed) blob(worldX, worldY + 2.0f, 0.13f, Color(255, 255, 255))
             return
         }
@@ -257,29 +277,14 @@ object NornsImageRenderer {
         val sprites = NornParts.load(breedName, rigAge)
         val rig = if (sprites != null) NornRigStore.rigFor(breedName, rigAge) else null
         if (rig != null && sprites != null) {
-            val tau = (2.0 * Math.PI).toFloat()
-            // Per-action phase. WALK tracks distance (feet grip the floor at the real move speed);
-            // durative actions advance over their own duration (elapsed = duration - activityTimer),
-            // so each STARTS AT 0 when entered, and PICK_UP runs exactly one cycle over its duration
-            // (the grab attaches at the half-way point).
-            val rigPhase = when (action) {
-                CreatureAction.WALK -> if (rig.walkStride > 0f) c.ticksLived * (tau * cfg.moveSpeed * walkSpeedFactor(c.biology.lifeStage, cfg.babyWalkFactor) / rig.walkStride) else c.ticksLived * 0.085f
-                CreatureAction.PICK_UP -> ((cfg.pickupTicks - c.activityTimer).coerceAtLeast(0).toFloat() / cfg.pickupTicks * tau).coerceIn(0f, tau)
-                CreatureAction.EAT -> (cfg.eatTicks - c.activityTimer).coerceAtLeast(0) * 0.085f
-                CreatureAction.COURT -> (cfg.courtTicks - c.activityTimer).coerceAtLeast(0) * 0.085f
-                CreatureAction.REST -> (cfg.restTicks - c.activityTimer).coerceAtLeast(0) * 0.085f
-            }
-            // transition blend: on a new action, freeze the old pose and ease into the new one.
-            val st = animStates.getOrPut(c.id) { AnimState(action, rigPhase, c.ticksLived) }
-            if (action != st.action) { st.prevAction = st.action; st.prevPhase = st.lastPhase; st.action = action; st.blendStartTick = c.ticksLived }
-            st.lastPhase = rigPhase
-            val blendT = ((c.ticksLived - st.blendStartTick) / BLEND_TICKS).coerceIn(0f, 1f)
+            val rigPhase = rigPhaseFor(c, action, rig.walkStride, cfg)
+            val (blendFrom, blendFromPhase, blendT) = blendState(c, action, rigPhase)
             NornCompositor.draw(
                 g, rig, sprites, action, rigPhase, c.facing,
                 px(worldX), py(worldY - floorOffset), sx,
                 targetHeightUnits = NornRigStore.targetHeight(stage), groundOffset = rig.groundOffset,
                 food = if (c.carryingFood) NornCompositor.FoodMode.HAND else NornCompositor.FoodMode.NONE,
-                blendFrom = if (blendT < 1f) st.prevAction else null, blendFromPhase = st.prevPhase, blendT = blendT,
+                blendFrom = blendFrom, blendFromPhase = blendFromPhase, blendT = blendT,
             )
         } else {
             // procedural-ellipse fallback (only when a breed's sprite parts are missing): warm,

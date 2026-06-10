@@ -85,21 +85,70 @@ object CreatureBaker {
     }
 
     /** Drop all cached sprites (e.g. after loading a different colony). */
-    fun clear() = synchronized(lock) { sprites.clear(); lastByCreature.clear(); inFlight.clear() }
+    fun clear() = synchronized(lock) {
+        sprites.clear(); lastByCreature.clear(); inFlight.clear()
+        rigCache.clear(); rigInFlight.clear(); headCache.clear(); headInFlight.clear(); lastHead.clear()
+    }
 
     /** Drop cached sprites for creatures no longer alive (called by the renderer each frame). */
     fun evictDead(aliveIds: Set<Int>) = synchronized(lock) {
         sprites.keys.retainAll { (it shr 16).toInt() in aliveIds }
         lastByCreature.keys.retainAll { it in aliveIds }
+        rigCache.keys.retainAll { it in aliveIds }
+        headCache.keys.retainAll { (it shr 16).toInt() in aliveIds }
+        lastHead.keys.retainAll { it in aliveIds }
     }
 
     /** A creature baked as the denali rig's part-set + a rig (anchors from the genome's joints, motion
-     *  from denali's seeded animation) — so it can be composited + animated by [NornCompositor]. */
-    class RigBake(val parts: Map<String, NornParts.Part>, val rig: NornRigDef)
+     *  from denali's seeded animation) — so it can be composited + animated by [NornCompositor].
+     *  [scale] is the world→px factor the parts were baked at, so a mood-specific head ([bakeRigHead])
+     *  can be re-baked to match and swapped in for expression. */
+    class RigBake(val parts: Map<String, NornParts.Part>, val rig: NornRigDef, val scale: Double)
 
     private const val RIG_TARGET_PX = 220.0    // whole-creature bake size; parts scale proportionally
     private const val PART_PAD = 4
     private val LIMBS = setOf("thigh", "shin", "foot", "uarm", "farm")
+    private fun isHead(node: String) = node !in LIMBS && node != "body"
+
+    // --- live world: the animated rig per creature (body+limbs once) + an expressive head per mood ---
+    private val rigCache = HashMap<Int, RigBake>()          // body+limbs+rig+neutral head, baked once per creature
+    private val rigInFlight = HashSet<Int>()
+    private val headCache = HashMap<Long, NornParts.Part>()  // (creature, mood-bucket) → expressive head sprite
+    private val headInFlight = HashSet<Long>()
+    private val lastHead = HashMap<Int, NornParts.Part>()    // most-recent baked head per creature (graceful fallback)
+
+    /** The animated rig (body + limbs + a rig) for [c], baked once from its inherited genome. Async: a
+     *  cache miss bakes on the worker and returns null until ready (caller draws a placeholder). */
+    fun rigFor(c: WorldCreature): RigBake? {
+        val morph = c.morph; val fur = furFor(c.breed)
+        if (!async) return synchronized(lock) { rigCache.getOrPut(c.id) { bakeRig(morph, fur) } }
+        synchronized(lock) {
+            rigCache[c.id]?.let { return it }
+            if (!rigInFlight.add(c.id)) return null
+        }
+        exec.submit { val rb = bakeRig(morph, fur); synchronized(lock) { rigCache[c.id] = rb; rigInFlight.remove(c.id) } }
+        return null
+    }
+
+    /** The expressive head sprite for [c] at its current (bucketed) mood, baked to match the rig's
+     *  [scale]. Async: returns the creature's last-good head while a new mood bakes (null only before
+     *  the first head is ready — caller then uses the rig's neutral head). */
+    fun headFor(c: WorldCreature, scale: Double): NornParts.Part? {
+        val mood = moodOf(c)
+        val vb = (mood.v / BUCKET).roundToInt(); val ab = (mood.a / BUCKET).roundToInt(); val db = (mood.d / BUCKET).roundToInt()
+        val key = (c.id.toLong() shl 16) or ((vb + 8).toLong() shl 10) or ((ab + 8).toLong() shl 5) or (db + 8).toLong()
+        val bm = CreatureRenderer.Mood(vb * BUCKET, ab * BUCKET, db * BUCKET); val morph = c.morph; val fur = furFor(c.breed)
+        if (!async) return synchronized(lock) { headCache.getOrPut(key) { bakeRigHead(morph, bm, fur, scale) ?: return null } }
+        synchronized(lock) {
+            headCache[key]?.let { lastHead[c.id] = it; return it }
+            if (!headInFlight.add(key)) return lastHead[c.id]
+        }
+        exec.submit {
+            val h = bakeRigHead(morph, bm, fur, scale)
+            synchronized(lock) { if (h != null) { headCache[key] = h; lastHead[c.id] = h }; headInFlight.remove(key) }
+        }
+        return synchronized(lock) { lastHead[c.id] }
+    }
 
     /** Bake [genome] into the denali rig's parts. Limbs are mirrored nodes → split near(+z)=R / far(−z)=L
      *  into the rig's L/R slots; the head is everything that isn't the body or a limb. Joints (hip/knee/
@@ -110,7 +159,7 @@ object CreatureBaker {
         fun bone(node: String, pos: Boolean?) = bones.firstOrNull { it.node == node && (pos == null || (it.center.z > 0.0) == pos) }
         val bb = baked.bounds()
         val s = RIG_TARGET_PX / maxOf(0.5, bb[3] - bb[2])
-        val body = bone("body", null) ?: return RigBake(emptyMap(), NornRigDef.default(emptyMap()))
+        val body = bone("body", null) ?: return RigBake(emptyMap(), NornRigDef.default(emptyMap()), s)
         val head = bone("head", null)
         fun top(c: CreatureRenderer.Bone, toward: CreatureRenderer.V) = c.center + (toward - c.center).norm() * maxOf(c.rx, c.ry)
         fun farEnd(c: CreatureRenderer.Bone, from: CreatureRenderer.V) = c.center + (c.center - from).norm() * maxOf(c.rx, c.ry)
@@ -149,9 +198,27 @@ object CreatureBaker {
                 if (farm != null) bakePart("farm$sfx", { it.node == "farm" && (it.center.z > 0) == pos }, mapOf("start" to elbow, "end" to farEnd(farm, uarm.center)))
             }
         }
-        if (head != null) bakePart("head", { it.node !in LIMBS && it.node != "body" }, mapOf("neck" to neck))
+        if (head != null) bakePart("head", { isHead(it.node) }, mapOf("neck" to neck))
         bakePart("body", { it.node == "body" }, bodyAtts)
-        return RigBake(parts, NornRigDef.default(parts))
+        return RigBake(parts, NornRigDef.default(parts), s)
+    }
+
+    /** Bake just the head subtree at [mood], to the rig's [s] (world→px), as a swappable head Part with
+     *  a "neck" anchor — so a live Norn keeps emoting (expression lives in the head) while its body and
+     *  limbs stay baked once. Mirrors the head branch of [bakeRig]; null if the head is empty. */
+    internal fun bakeRigHead(genome: MorphNode, mood: CreatureRenderer.Mood, fur: Color, s: Double): NornParts.Part? {
+        val baked = CreatureRenderer.Baked(genome, mood)
+        val bones = baked.bones()
+        val body = bones.firstOrNull { it.node == "body" } ?: return null
+        val head = bones.firstOrNull { it.node == "head" } ?: return null
+        val neck = head.center + (body.center - head.center).norm() * maxOf(head.rx, head.ry)
+        val include = { b: CreatureRenderer.Bone -> isHead(b.node) }
+        val pb = baked.partBounds(include); if (pb[1] < pb[0]) return null
+        val originX = pb[0] - PART_PAD / s; val originY = pb[3] + PART_PAD / s
+        val w = ((pb[1] - pb[0]) * s).toInt() + 2 * PART_PAD; val h = ((pb[3] - pb[2]) * s).toInt() + 2 * PART_PAD
+        val img = CreatureRenderer.renderPart(baked, include, fur, w, h, originX, originY, s)
+        val pts = mapOf("neck" to floatArrayOf(((neck.x - originX) * s).toFloat(), ((originY - neck.y) * s).toFloat()))
+        return NornParts.Part("head", img, w, h, pts)
     }
 
     private fun bake(genome: MorphNode, mood: CreatureRenderer.Mood, fur: Color): Sprite {
