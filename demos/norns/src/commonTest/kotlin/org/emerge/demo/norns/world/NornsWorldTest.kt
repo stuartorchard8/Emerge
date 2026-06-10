@@ -12,6 +12,21 @@ import kotlin.test.assertTrue
 class NornsWorldTest {
 
     @Test
+    fun saveLoadIsAFaithfulSnapshot() {
+        val w = NornsWorld(NornsConfig(), seed = 5)
+        repeat(400) { w.step() }
+        w.creatures.firstOrNull()?.let { w.tickle(it.id); w.slap(w.creatures.last().id) }   // learned state + feelings to capture
+        val text = w.save()
+        val w2 = NornsWorld.load(text, NornsConfig())
+        assertEquals(w.population, w2.population, "population restored")
+        assertEquals(w.ticks, w2.ticks, "ticks restored")
+        assertEquals(text, w2.save(), "save → load → save is byte-identical (state fully captured)")
+        // a loaded colony continues deterministically — proves no behaviour-affecting state was missed
+        repeat(200) { w.step(); w2.step() }
+        assertEquals(w.save(), w2.save(), "loaded world evolves identically to the original")
+    }
+
+    @Test
     fun colonyStaysViable() {
         val w = NornsWorld(NornsConfig(), seed = 7)
         repeat(12000) { // the sim runs ~4x slower now, so give it proportionally more ticks

@@ -47,6 +47,10 @@ class CreatureChemistry(val metabolism: Float, cfg: NornsConfig) {
     fun addPleasure(amount: Float) { state.concentration[PLEASURE] = (state.concentration[PLEASURE] + amount).coerceAtMost(ChemistryState.MAX_CONCENTRATION) }
     fun addPain(amount: Float) { state.concentration[PAIN] = (state.concentration[PAIN] + amount).coerceAtMost(ChemistryState.MAX_CONCENTRATION) }
 
+    /** Snapshot/restore the dynamic concentrations (the reaction network itself is rebuilt from genes). */
+    fun concentrations(): FloatArray = state.concentration.copyOf()
+    fun restoreConcentrations(v: FloatArray) { for (i in 0 until minOf(v.size, state.concentration.size)) state.concentration[i] = v[i] }
+
     /** One tick of metabolism. [exerting] = the creature is busy (not resting) → fatigue builds. */
     fun tick(fertileActive: Boolean, exerting: Boolean = false) {
         state.locus[L_METABOLISM] = 1f

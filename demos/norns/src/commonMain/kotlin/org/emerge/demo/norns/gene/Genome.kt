@@ -145,6 +145,11 @@ data class BrainGene(
 class GeneRng(seed: Long) {
     private var state = seed
 
+    /** The LCG's internal state — exposed for save/restore so a loaded world continues deterministically. */
+    var rngState: Long
+        get() = state
+        set(v) { state = v }
+
     fun nextInt(): Int {
         state = state * 2862933555777941757L + 3037000493L
         return (state ushr 32).toInt()

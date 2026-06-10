@@ -22,6 +22,11 @@ class Biology(val cfg: BiologyConfig) {
         private set
     val organHealth = FloatArray(cfg.organCount) { 1f }
 
+    /** Restore saved life state (for loading a snapshot). */
+    fun restore(age: Int, lifeStage: LifeStage, alive: Boolean) {
+        this.age = age; this.lifeStage = lifeStage; this.alive = alive
+    }
+
     /**
      * One tick of physiology. Reads `loci[injuryLocus]` / `loci[repairLocus]`, ages, updates
      * organ health, advances life stage, applies death conditions, then publishes

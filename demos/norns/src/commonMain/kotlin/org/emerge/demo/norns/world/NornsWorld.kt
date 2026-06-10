@@ -27,7 +27,7 @@ import kotlin.math.roundToInt
  *
  * Player [interaction]: drop food, hand-feed, pick up & place a creature. Deterministic per seed.
  */
-class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L, baseMorph: MorphNode? = null) {
+class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L, baseMorph: MorphNode? = null, populate: Boolean = true) {
     private val rng = GeneRng(seed)
 
     /** The baseline morphology genome new colonists start from (mutated per individual); offspring
@@ -48,6 +48,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L, baseMorp
     private var nextId = 0
 
     init {
+        if (populate) {
         repeat(cfg.foodSeed) { trySpawnFood() }
         repeat(cfg.initialPopulation) {
             val g = Genome(
@@ -57,6 +58,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L, baseMorp
             )
             val morph = this.baseMorph.deepClone().also { MorphGenome.mutate(it, rng, cfg.morphMutation) }
             spawnCreature(rng.nextInt().mod(cfg.worldWidth).toFloat(), rng.nextInt().mod(cfg.floors), g, morph, breed = rng.nextInt().mod(cfg.breedCount))
+        }
         }
     }
 
@@ -313,6 +315,13 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L, baseMorp
     }
 
     private fun spawnCreature(x: Float, floor: Int, genome: Genome, morph: MorphNode, breed: Int = 0) {
+        creatures.add(buildCreature(nextId++, x, floor, genome, morph, breed))
+    }
+
+    /** Construct a creature from its heritable bits (id/genome/morph/breed); biology, brain (topology
+     *  from the genome), and chemistry are built fresh. Shared by spawn and load (load then overwrites
+     *  the dynamic state — age, learned weights, drives, position). */
+    private fun buildCreature(id: Int, x: Float, floor: Int, genome: Genome, morph: MorphNode, breed: Int): WorldCreature {
         val biology = Biology(
             BiologyConfig(
                 stageStartAge = cfg.stageStartAge, maxAge = cfg.maxAge,
@@ -321,16 +330,64 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L, baseMorp
             ),
         )
         val metab = cfg.metabolismOf(genome)
-        creatures.add(
-            WorldCreature(
-                id = nextId++,
-                x = x.coerceIn(0f, (cfg.worldWidth - 1).toFloat()), floor = floor.coerceIn(0, cfg.floors - 1),
-                genome = genome, biology = biology, metabolism = metab,
-                brain = CreatureMind.build(genome, cfg.brainLearnRate),
-                chem = CreatureChemistry(metab, cfg),
-                loci = FloatArray(4), morph = morph,
-            ).also { it.breed = breed.mod(cfg.breedCount) },
+        return WorldCreature(
+            id = id,
+            x = x.coerceIn(0f, (cfg.worldWidth - 1).toFloat()), floor = floor.coerceIn(0, cfg.floors - 1),
+            genome = genome, biology = biology, metabolism = metab,
+            brain = CreatureMind.build(genome, cfg.brainLearnRate),
+            chem = CreatureChemistry(metab, cfg),
+            loci = FloatArray(4), morph = morph,
+        ).also { it.breed = breed.mod(cfg.breedCount) }
+    }
+
+    // ── save / load (full-state snapshot; see NornsSave) ───────────────────────────
+    fun save(): String =
+        NornsSave.write(
+            NornsSave.Header(
+                cfg.worldWidth, cfg.floors, ticks, births, deaths, nextId, rng.rngState, food.sorted(),
+                lifts.map { NornsSave.LiftRec(it.column, it.carPos, it.target, it.dwell, it.calls.sorted()) },
+            ),
+            creatures.map { toRecord(it) },
         )
+
+    private fun toRecord(c: WorldCreature) = NornsSave.Rec(
+        c.id, c.x, c.floor, c.breed, c.ticksLived, c.reproCooldown, c.facing, c.held, c.carryingFood, c.onLift, c.ridingY,
+        c.activity.ordinal, c.activityTimer, c.targetX, c.targetFloor, c.partnerId, c.goalAction, c.decisionDiscomfort,
+        c.loci.copyOf(), c.decisionPerception.copyOf(), c.chem.concentrations(),
+        c.biology.age, c.biology.lifeStage.ordinal, c.biology.alive, c.biology.organHealth.copyOf(),
+        c.genome, c.brain.tracts.map { t -> FloatArray(t.dst.size * t.src.size) { i -> t.weight[i / t.src.size][i % t.src.size] } }, c.morph,
+    )
+
+    private fun fromRecord(r: NornsSave.Rec): WorldCreature {
+        val c = buildCreature(r.id, r.x, r.floor, r.genome, r.morph, r.breed)
+        c.ticksLived = r.ticksLived; c.reproCooldown = r.reproCooldown; c.facing = r.facing
+        c.held = r.held; c.carryingFood = r.carryingFood; c.onLift = r.onLift; c.ridingY = r.ridingY
+        c.activity = ActivityType.entries[r.activity]; c.activityTimer = r.activityTimer
+        c.targetX = r.targetX; c.targetFloor = r.targetFloor; c.partnerId = r.partnerId
+        c.goalAction = r.goalAction; c.decisionDiscomfort = r.decisionDiscomfort
+        r.loci.copyInto(c.loci); r.perception.copyInto(c.decisionPerception); c.chem.restoreConcentrations(r.chem)
+        c.biology.restore(r.age, LifeStage.entries[r.stage], r.alive)
+        r.organHealth.copyInto(c.biology.organHealth)
+        for ((ti, t) in c.brain.tracts.withIndex()) {
+            val flat = r.brain.getOrNull(ti) ?: continue
+            val srcN = t.src.size
+            for (d in 0 until t.dst.size) for (s in 0 until srcN) t.weight[d][s] = flat[d * srcN + s]
+        }
+        return c
+    }
+
+    companion object {
+        /** Rebuild a colony from a [save] snapshot (config + optional baseline must match the save's world). */
+        fun load(text: String, cfg: NornsConfig = NornsConfig(), baseMorph: MorphNode? = null): NornsWorld {
+            val (h, recs) = NornsSave.read(text)
+            val w = NornsWorld(cfg, 0L, baseMorph, populate = false)
+            w.ticks = h.ticks; w.births = h.births; w.deaths = h.deaths; w.nextId = h.nextId
+            w.rng.rngState = h.rng
+            w.food.addAll(h.food)
+            for (lr in h.lifts) w.liftByColumn[lr.column]?.restore(lr.carPos, lr.target, lr.dwell, lr.calls)
+            for (r in recs) w.creatures.add(w.fromRecord(r))
+            return w
+        }
     }
 
     // ── player interaction ───────────────────────────────────────────────────────
@@ -412,6 +469,12 @@ class Lift(val column: Int, var carPos: Float = 0f) {
 
     /** Press a call button (at a floor) or a movement button (inside the car): summon it to [floor]. */
     fun call(floor: Int) { calls.add(floor) }
+
+    /** Restore saved car state (column is fixed by construction). */
+    fun restore(carPos: Float, target: Int, dwell: Int, calls: List<Int>) {
+        this.carPos = carPos; this.target = target; this.dwell = dwell
+        this.calls.clear(); this.calls.addAll(calls)
+    }
 
     /** The floor the car is at, or committed to — the base the up/down movement buttons step from. */
     fun restFloor(): Int = if (target >= 0) target else carPos.roundToInt()
