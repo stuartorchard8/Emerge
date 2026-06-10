@@ -162,12 +162,12 @@ object CreatureRenderer {
             return doubleArrayOf(minX, maxX, minY, maxY)
         }
 
-        internal fun scene(p: V, include: ((Bone) -> Boolean)? = null): Hit {
+        internal fun scene(p: V, include: ((Bone) -> Boolean)? = null, connectors: Boolean = true): Hit {
             var d = 1e9
             for (b in fur) {
                 if (include != null && !include(b)) continue
                 d = smin(d, ellipsoid(p, b), 0.36)
-                if (b.connect && b.parent != null) d = smin(d, capsule(p, b.parent, b.center, max(0.1, min(b.rx, b.ry) * 0.7)), 0.32)
+                if (connectors && b.connect && b.parent != null) d = smin(d, capsule(p, b.parent, b.center, max(0.1, min(b.rx, b.ry) * 0.7)), 0.32)
             }
             // mouth = a cut-away: carve the cavity out of the fur. On the convex muzzle this yields a
             // curved opening (intrinsically a smile/frown depending on where/how the cut sits).
@@ -188,19 +188,22 @@ object CreatureRenderer {
             return best
         }
 
-        internal fun grad(p: V, include: ((Bone) -> Boolean)? = null): V {
+        internal fun grad(p: V, include: ((Bone) -> Boolean)? = null, connectors: Boolean = true): V {
             val h = 0.0018
-            fun s(dx: Double, dy: Double, dz: Double) = scene(V(p.x + dx, p.y + dy, p.z + dz), include).d
+            fun s(dx: Double, dy: Double, dz: Double) = scene(V(p.x + dx, p.y + dy, p.z + dz), include, connectors).d
             val k1 = V(1.0, -1.0, -1.0); val k2 = V(-1.0, -1.0, 1.0); val k3 = V(-1.0, 1.0, -1.0); val k4 = V(1.0, 1.0, 1.0)
             return (k1 * s(k1.x * h, k1.y * h, k1.z * h) + k2 * s(k2.x * h, k2.y * h, k2.z * h) +
                 k3 * s(k3.x * h, k3.y * h, k3.z * h) + k4 * s(k4.x * h, k4.y * h, k4.z * h)).norm()
         }
 
-        internal fun ao(p: V, n: V, include: ((Bone) -> Boolean)? = null): Double {
+        internal fun ao(p: V, n: V, include: ((Bone) -> Boolean)? = null, connectors: Boolean = true): Double {
             var occ = 0.0; var sca = 1.0
-            for (i in 1..3) { val hr = 0.03 + 0.17 * i; occ += (hr - scene(p + n * hr, include).d) * sca; sca *= 0.7 }
+            for (i in 1..3) { val hr = 0.03 + 0.17 * i; occ += (hr - scene(p + n * hr, include, connectors).d) * sca; sca *= 0.7 }
             return (1.0 - 2.6 * occ).coerceIn(0.0, 1.0)
         }
+
+        /** World bounds [minX,maxX,minY,maxY] of the bones matching [include] (a part), for part baking. */
+        internal fun partBounds(include: (Bone) -> Boolean) = bounds((fur + features + mouths).filter(include))
     }
 
     // ---- SDF ----
@@ -223,11 +226,11 @@ object CreatureRenderer {
     }
     private fun smax(a: Double, b: Double, k: Double) = -smin(-a, -b, k)
 
-    private fun shade(c: Baked, p: V, n: V, hit: Hit, fur: Color, include: ((Bone) -> Boolean)?, view: V): Int {
+    private fun shade(c: Baked, p: V, n: V, hit: Hit, fur: Color, include: ((Bone) -> Boolean)?, view: V, connectors: Boolean = true): Int {
         // No directional key. Form comes from SDF ambient occlusion (crevices darken, exposed surfaces
         // brighten) plus a gentle vertical sky/ground term that — being about the world up-axis — is
         // invariant as you orbit, so no side darkens. Camera-relative rim for the silhouette.
-        val occ = c.ao(p, n, include)
+        val occ = c.ao(p, n, include, connectors)
         val up = n.y * 0.5 + 0.5
         val fill = (0.45 + 0.55 * occ) * (0.72 + 0.28 * up)
         val rim = (1.0 - max(0.0, n.dot(view))).pow(2.8) * 0.4
@@ -291,5 +294,32 @@ object CreatureRenderer {
                 img.setRGB(ox + px, py, value)
             }
         }
+    }
+
+    private val PART_VIEW = V(0.0, 0.0, 1.0)
+
+    /** Bake one **part** (the bones matching [include], no connectors) as a transparent side-on sprite of
+     *  size [w]×[h], where sprite pixel (0,0) is world ([originX], [originY]) and [scale] is px per world
+     *  unit (shared across a creature's parts so they compose). For the per-part → NornRig pipeline. */
+    internal fun renderPart(baked: Baked, include: (Bone) -> Boolean, fur: Color, w: Int, h: Int, originX: Double, originY: Double, scale: Double): BufferedImage {
+        val img = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+        IntStream.range(0, h).parallel().forEach { py ->
+            for (px in 0 until w) {
+                val wx = originX + (px + 0.5) / scale
+                val wy = originY - (py + 0.5) / scale
+                val ro = V(wx, wy, 6.0)
+                var t = 0.0; var hit: Hit? = null; var hp = ro; var steps = 0
+                while (steps < 80 && t < 13.0) {
+                    hp = V(wx, wy, 6.0 - t); val hh = baked.scene(hp, include, connectors = false)
+                    if (hh.d < 0.0012) { hit = hh; break }
+                    t += hh.d * 0.9; steps++
+                }
+                if (hit != null) {
+                    val rgb = shade(baked, hp, baked.grad(hp, include, false), hit, fur, include, PART_VIEW, connectors = false)
+                    img.setRGB(px, py, (0xFF shl 24) or rgb)
+                }
+            }
+        }
+        return img
     }
 }

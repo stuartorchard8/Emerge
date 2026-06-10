@@ -93,6 +93,67 @@ object CreatureBaker {
         lastByCreature.keys.retainAll { it in aliveIds }
     }
 
+    /** A creature baked as the denali rig's part-set + a rig (anchors from the genome's joints, motion
+     *  from denali's seeded animation) — so it can be composited + animated by [NornCompositor]. */
+    class RigBake(val parts: Map<String, NornParts.Part>, val rig: NornRigDef)
+
+    private const val RIG_TARGET_PX = 220.0    // whole-creature bake size; parts scale proportionally
+    private const val PART_PAD = 4
+    private val LIMBS = setOf("thigh", "shin", "foot", "uarm", "farm")
+
+    /** Bake [genome] into the denali rig's parts. Limbs are mirrored nodes → split near(+z)=R / far(−z)=L
+     *  into the rig's L/R slots; the head is everything that isn't the body or a limb. Joints (hip/knee/
+     *  ankle, shoulder/elbow/hand, neck) come from the genome geometry and become the rig's anchors. */
+    fun bakeRig(genome: MorphNode, fur: Color): RigBake {
+        val baked = CreatureRenderer.Baked(genome, CreatureRenderer.Mood(0.0, 0.0, 0.0))
+        val bones = baked.bones()
+        fun bone(node: String, pos: Boolean?) = bones.firstOrNull { it.node == node && (pos == null || (it.center.z > 0.0) == pos) }
+        val bb = baked.bounds()
+        val s = RIG_TARGET_PX / maxOf(0.5, bb[3] - bb[2])
+        val body = bone("body", null) ?: return RigBake(emptyMap(), NornRigDef.default(emptyMap()))
+        val head = bone("head", null)
+        fun top(c: CreatureRenderer.Bone, toward: CreatureRenderer.V) = c.center + (toward - c.center).norm() * maxOf(c.rx, c.ry)
+        fun farEnd(c: CreatureRenderer.Bone, from: CreatureRenderer.V) = c.center + (c.center - from).norm() * maxOf(c.rx, c.ry)
+
+        val parts = LinkedHashMap<String, NornParts.Part>()
+        fun bakePart(id: String, include: (CreatureRenderer.Bone) -> Boolean, atts: Map<String, CreatureRenderer.V>) {
+            val pb = baked.partBounds(include)
+            if (pb[1] < pb[0]) return
+            val originX = pb[0] - PART_PAD / s; val originY = pb[3] + PART_PAD / s
+            val w = ((pb[1] - pb[0]) * s).toInt() + 2 * PART_PAD; val h = ((pb[3] - pb[2]) * s).toInt() + 2 * PART_PAD
+            val img = CreatureRenderer.renderPart(baked, include, fur, w, h, originX, originY, s)
+            val pts = HashMap<String, FloatArray>()
+            for ((k, j) in atts) pts[k] = floatArrayOf(((j.x - originX) * s).toFloat(), ((originY - j.y) * s).toFloat())
+            parts[id] = NornParts.Part(id, img, w, h, pts)
+        }
+
+        val neck = if (head != null) top(head, body.center) else body.center
+        val bodyAtts = LinkedHashMap<String, CreatureRenderer.V>(); bodyAtts["head"] = neck
+        for ((sfx, pos) in listOf("R" to true, "L" to false)) {
+            bone("thigh", pos)?.let { thigh ->
+                val hip = top(thigh, body.center); bodyAtts["hip$sfx"] = hip
+                val shin = bone("shin", pos); val foot = bone("foot", pos)
+                val knee = if (shin != null) top(shin, thigh.center) else farEnd(thigh, body.center)
+                bakePart("thigh$sfx", { it.node == "thigh" && (it.center.z > 0) == pos }, mapOf("start" to hip, "end" to knee))
+                if (shin != null) {
+                    val ankle = if (foot != null) top(foot, shin.center) else farEnd(shin, thigh.center)
+                    bakePart("shin$sfx", { it.node == "shin" && (it.center.z > 0) == pos }, mapOf("start" to knee, "end" to ankle))
+                    if (foot != null) bakePart("foot$sfx", { it.node == "foot" && (it.center.z > 0) == pos }, mapOf("start" to ankle))
+                }
+            }
+            bone("uarm", pos)?.let { uarm ->
+                val sh = top(uarm, body.center); bodyAtts["sh$sfx"] = sh
+                val farm = bone("farm", pos)
+                val elbow = if (farm != null) top(farm, uarm.center) else farEnd(uarm, body.center)
+                bakePart("uarm$sfx", { it.node == "uarm" && (it.center.z > 0) == pos }, mapOf("start" to sh, "end" to elbow))
+                if (farm != null) bakePart("farm$sfx", { it.node == "farm" && (it.center.z > 0) == pos }, mapOf("start" to elbow, "end" to farEnd(farm, uarm.center)))
+            }
+        }
+        if (head != null) bakePart("head", { it.node !in LIMBS && it.node != "body" }, mapOf("neck" to neck))
+        bakePart("body", { it.node == "body" }, bodyAtts)
+        return RigBake(parts, NornRigDef.default(parts))
+    }
+
     private fun bake(genome: MorphNode, mood: CreatureRenderer.Mood, fur: Color): Sprite {
         val b = CreatureRenderer.Baked(genome, mood)
         val img = BufferedImage(TILE, TILE, BufferedImage.TYPE_INT_ARGB)

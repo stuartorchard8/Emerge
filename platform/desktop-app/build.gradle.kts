@@ -249,3 +249,9 @@ tasks.register<JavaExec>("checkCreatureRender") {
     classpath = sourceSets["main"].runtimeClasspath
 }
 
+tasks.register<JavaExec>("runRigCheck") {
+    group = "verification"
+    description = "Verify part-bake → NornRig: bake a genome's parts + composite a walk cycle. --args=\"<png> <morph>\""
+    mainClass = "org.emerge.desktop.RigCheckKt"
+    classpath = sourceSets["main"].runtimeClasspath
+}
