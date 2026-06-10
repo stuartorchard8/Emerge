@@ -10,7 +10,7 @@ import org.emerge.render.torus.shader.ShaderFactory
  * Instanced solid-colour rectangles in screen NDC — the fill for the on-screen control
  * buttons. Per-instance centre, half-size, and rgba colour.
  */
-class CytoRectShader {
+class CytoRectShader(private val maxRects: Int = DEFAULT_MAX_RECTS) {
     private val program = ShaderFactory.createProgram(
         UiRectShaderSources.vertex(),
         UiRectShaderSources.fragment(),
@@ -22,9 +22,9 @@ class CytoRectShader {
     private val halfSizeVbo = GPU.genBuffers()
     private val colorVbo = GPU.genBuffers()
 
-    private val centerBuffer = GpuFloatBuffer(MAX_RECTS * 2)
-    private val halfSizeBuffer = GpuFloatBuffer(MAX_RECTS * 2)
-    private val colorBuffer = GpuFloatBuffer(MAX_RECTS * 4)
+    private val centerBuffer = GpuFloatBuffer(maxRects * 2)
+    private val halfSizeBuffer = GpuFloatBuffer(maxRects * 2)
+    private val colorBuffer = GpuFloatBuffer(maxRects * 4)
 
     init {
         uploadQuad()
@@ -34,7 +34,7 @@ class CytoRectShader {
     }
 
     fun drawInstanced(count: Int, centers: FloatArray, halfSizes: FloatArray, colors: FloatArray) {
-        val n = count.coerceIn(0, MAX_RECTS)
+        val n = count.coerceIn(0, maxRects)
         if (n <= 0) return
         GPU.bindVertexArray(vao)
         GPU.useProgram(program)
@@ -80,7 +80,7 @@ class CytoRectShader {
     }
 
     companion object {
-        const val MAX_RECTS = 128
+        const val DEFAULT_MAX_RECTS = 128
         private const val QUAD_VERTEX_COUNT = 4
     }
 }

@@ -33,10 +33,16 @@ object CytoSceneView {
     private fun runGl() {
         val controller = CytoController()
 
-        // GL context must be current (initWindow) before any shader/texture is created.
-        val window = initWindow(onSave = { saveSnapshot(controller) }, onLoad = { loadSnapshot(controller) })
+        // GL context must be current (initWindow) before any shader/texture is created. The renderer
+        // doesn't exist yet, so the L-toggle is routed through a holder assigned just below.
+        var toggleLight: () -> Unit = {}
+        val window = initWindow(
+            onSave = { saveSnapshot(controller) }, onLoad = { loadSnapshot(controller) },
+            onToggleLight = { toggleLight() },
+        )
 
         val renderer = CytoRenderer()
+        toggleLight = { renderer.showLightField = !renderer.showLightField }
         val controls = CytoControls()
         autoLoadSnapshotAtStartup(controller)
 
@@ -81,7 +87,7 @@ object CytoSceneView {
         }
     }
 
-    private fun initWindow(onSave: () -> Unit, onLoad: () -> Unit): Long {
+    private fun initWindow(onSave: () -> Unit, onLoad: () -> Unit, onToggleLight: () -> Unit): Long {
         if (!glfwInit()) error("GLFW init failed")
         glfwDefaultWindowHints()
         glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE)
@@ -100,6 +106,7 @@ object CytoSceneView {
                 GLFW_KEY_ESCAPE -> glfwSetWindowShouldClose(win, true)
                 GLFW_KEY_F5 -> onSave()
                 GLFW_KEY_F9 -> onLoad()
+                GLFW_KEY_L -> onToggleLight()
             }
         }
 

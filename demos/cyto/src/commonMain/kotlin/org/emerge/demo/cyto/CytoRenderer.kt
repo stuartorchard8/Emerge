@@ -1,6 +1,7 @@
 package org.emerge.demo.cyto
 
 import org.emerge.demo.cyto.sim.CytoCellComponent
+import org.emerge.demo.cyto.sim.CytoLightField
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.ui.CytoRectShader
 import org.emerge.render.torus.GPU
@@ -51,6 +52,39 @@ class CytoRenderer {
     private val BG_CENTER = floatArrayOf(0f, 0f)
     private val BG_HALF_SIZE = floatArrayOf(1f, 1f)
     private val BG_COLOR = floatArrayOf(0f, 0f, 0f, 1f)
+
+    // ── light-field heatmap (the energy landscape, drawn as the background) ──────────────
+    // Reuses the proven instanced-rect shader: the static field grid (one torus tile) baked to
+    // heat colours once, projected to NDC + culled to the visible region each frame. Toggle with L.
+    var showLightField = true
+    private val fieldShader = CytoRectShader(maxRects = FIELD_CELLS)
+    private val fieldCx = FloatArray(FIELD_CELLS)
+    private val fieldCy = FloatArray(FIELD_CELLS)
+    private val fieldColor = FloatArray(FIELD_CELLS * 4)
+    private val fieldHalfLogical = CytoLightField.SPAN / FRES * 0.5f
+    private val fInstCenter = FloatArray(FIELD_CELLS * 2)
+    private val fInstHalf = FloatArray(FIELD_CELLS * 2)
+    private val fInstColor = FloatArray(FIELD_CELLS * 4)
+
+    init {
+        val field = CytoLightField.default()
+        val cell = CytoLightField.SPAN / FRES
+        var i = 0
+        for (gy in 0 until FRES) {
+            val wy = -CytoLightField.HALF + (gy + 0.5f) * cell
+            for (gx in 0 until FRES) {
+                val wx = -CytoLightField.HALF + (gx + 0.5f) * cell
+                fieldCx[i] = wx; fieldCy[i] = wy
+                val t = (field.sampleAt(wx, wy) / CytoLightField.STRENGTH).coerceIn(0f, 1f)
+                val b = i * 4
+                fieldColor[b] = 0.06f + t * 0.94f
+                fieldColor[b + 1] = 0.05f + t * 0.85f
+                fieldColor[b + 2] = 0.10f + t * 0.33f
+                fieldColor[b + 3] = 1f
+                i++
+            }
+        }
+    }
 
     fun setResolution(widthPx: Float, heightPx: Float) {
         resW = max(1f, widthPx)
@@ -109,6 +143,8 @@ class CytoRenderer {
         // Background fill (opaque) — clears the frame.
         GPU.disableBlend()
         bgShader.drawInstanced(1, BG_CENTER, BG_HALF_SIZE, BG_COLOR)
+        // Light-field heatmap over the world (opaque, on top of the clear, under the cells).
+        drawLightField()
 
         GPU.enableBlend()
         GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
@@ -164,9 +200,36 @@ class CytoRenderer {
         GPU.disableBlend()
     }
 
+    /** Draw the static light field as a heatmap: project each grid cell (one torus tile) to NDC,
+     *  cull off-screen, instance-draw the visible ones. Camera has no rotation, so world→NDC is a
+     *  pure scale+translate and the axis-aligned cells stay axis-aligned. */
+    private fun drawLightField() {
+        if (!showLightField) return
+        val aspect = resW / resH
+        val hwx = viewHeight * aspect * 0.5f
+        val hwy = viewHeight * 0.5f
+        if (hwx <= 0f || hwy <= 0f) return
+        val chx = fieldHalfLogical / hwx
+        val chy = fieldHalfLogical / hwy
+        var n = 0
+        for (i in 0 until FIELD_CELLS) {
+            val ndcX = (fieldCx[i] - centerX) / hwx
+            val ndcY = (fieldCy[i] - centerY) / hwy
+            if (ndcX < -1f - chx || ndcX > 1f + chx || ndcY < -1f - chy || ndcY > 1f + chy) continue
+            val c2 = n * 2; val c4 = n * 4; val s4 = i * 4
+            fInstCenter[c2] = ndcX; fInstCenter[c2 + 1] = ndcY
+            fInstHalf[c2] = chx; fInstHalf[c2 + 1] = chy
+            fInstColor[c4] = fieldColor[s4]; fInstColor[c4 + 1] = fieldColor[s4 + 1]
+            fInstColor[c4 + 2] = fieldColor[s4 + 2]; fInstColor[c4 + 3] = 1f
+            n++
+        }
+        if (n > 0) fieldShader.drawInstanced(n, fInstCenter, fInstHalf, fInstColor)
+    }
+
     fun cleanup() {
         shader.deleteProgram()
         bgShader.deleteProgram()
+        fieldShader.deleteProgram()
         GPU.deleteTextures(cellTextureId)
     }
 
@@ -194,5 +257,12 @@ class CytoRenderer {
         colorTmp[1] = ((rgba ushr 16) and 0xFF).toFloat() / 255f
         colorTmp[2] = ((rgba ushr 8) and 0xFF).toFloat() / 255f
         colorTmp[3] = (rgba and 0xFF).toFloat() / 255f
+    }
+
+    private companion object {
+        // Heatmap grid resolution per axis over one torus tile (the field is smooth, so coarse is
+        // fine — a near-uniform tint up close, the 4 sources visible when zoomed out).
+        const val FRES = 48
+        const val FIELD_CELLS = FRES * FRES
     }
 }
