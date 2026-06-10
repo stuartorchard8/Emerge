@@ -14,7 +14,7 @@ class ViewState(
  * testable; the render host just pipes stdin lines into [apply]. Returns a short status message.
  */
 object NornsCommands {
-    const val HELP = "commands: food <fl> <x> | feed <id> | pick <id> | place <id> <fl> <x> | " +
+    const val HELP = "commands: tickle <id> | slap <id> | feed <id> | pick <id> | place <id> <fl> <x> | " +
         "lift <n> up|down|<fl> | follow <id> | speed <ms> | pause | go | quit"
 
     fun apply(world: NornsWorld, view: ViewState, line: String): String {
@@ -22,10 +22,8 @@ object NornsCommands {
         if (p.isEmpty()) return ""
         fun int(i: Int) = p.getOrNull(i)?.toIntOrNull()
         return when (p[0].lowercase()) {
-            "food", "f" -> {
-                val fl = int(1) ?: 0; val x = int(2) ?: 0
-                world.dropFood(fl, x); "dropped food at floor $fl, x $x"
-            }
+            "tickle", "t" -> int(1)?.let { world.tickle(it); "tickled #$it" } ?: "usage: tickle <id>"
+            "slap", "s" -> int(1)?.let { world.slap(it); "slapped #$it" } ?: "usage: slap <id>"
             "feed" -> int(1)?.let { world.feed(it); "hand-fed #$it" } ?: "usage: feed <id>"
             "pick" -> int(1)?.let { world.pickUp(it); "picked up #$it" } ?: "usage: pick <id>"
             "place" -> {

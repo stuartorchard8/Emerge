@@ -57,12 +57,13 @@ object NornsSwingView {
                 val aspect = panel.width.toFloat() / panel.height
                 val spot = view.screenToWorld(e.x.toFloat(), e.y.toFloat(), panel.width.toFloat(), panel.height.toFloat(), cameraCenterX, aspect)
                 if (SwingUtilities.isLeftMouseButton(e)) {
+                    // left-click = interact (C2 Hand): lift buttons first, else tickle the Norn (Shift = slap)
                     val point = view.screenToWorldPoint(e.x.toFloat(), e.y.toFloat(), panel.width.toFloat(), panel.height.toFloat(), cameraCenterX, aspect)
-                    if (pressLiftButton(world, view, point)) return    // clicked a lift call / up / down button
-                    val hit = world.creatureNear(spot.floor, spot.x, 1.8f)
-                    if (hit != null) { lockedFollowId = hit.id; freeCam = false } // click a creature → follow it
-                } else {
-                    world.dropFood(spot.floor, spot.x.roundToInt())
+                    if (pressLiftButton(world, view, point)) return
+                    world.creatureNear(spot.floor, spot.x, 1.8f)?.let { if (e.isShiftDown) world.slap(it.id) else world.tickle(it.id) }
+                } else if (SwingUtilities.isRightMouseButton(e)) {
+                    // right-click = focus a creature (pick-up/put-down of objects is a later increment)
+                    world.creatureNear(spot.floor, spot.x, 1.8f)?.let { lockedFollowId = it.id; freeCam = false }
                 }
             }
         })
@@ -93,7 +94,7 @@ object NornsSwingView {
         frame.setLocationRelativeTo(null)
         frame.isVisible = true
         panel.requestFocusInWindow()
-        println("Norns controls: ←/→ or A/D pan camera (free look) · F follow · B toggle baked SDF creatures · left-click a Norn to follow · click a lift's call lamp or its ▲/▼ buttons to drive it · right-click drop food · P pause · [ / ] speed · Esc quit")
+        println("Norns controls: left-click a Norn to TICKLE (Shift = SLAP) · right-click a Norn to focus/follow · click a lift's call lamp or its ▲/▼ buttons · ←/→ or A/D pan · F follow · B baked · P pause · [ / ] speed · Esc quit")
     }
 
     /** Hit-test a click against every lift's buttons; press the first one hit. Returns true if any

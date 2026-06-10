@@ -46,19 +46,21 @@ object CreatureBaker {
         return Color((150 + (h and 0x3F)).coerceIn(60, 235), (116 + ((h ushr 7) and 0x3F)).coerceIn(60, 220), (92 + ((h ushr 14) and 0x3F)).coerceIn(50, 200))
     }
 
-    /** Drive chemistry + activity → a PAD mood (valence × arousal × dominance). */
+    /** Drive chemistry + activity + the player's Hand → a PAD mood (valence × arousal × dominance). */
     fun moodOf(c: WorldCreature): CreatureRenderer.Mood {
         val eating = c.activity == ActivityType.EATING
         val courting = c.activity == ActivityType.COURTING
-        val valence = (0.35 - c.hunger * 0.7 - c.fatigue * 0.35 + (if (eating) 0.5 else 0.0) + (if (courting) 0.55 else 0.0)).coerceIn(-1.0, 1.0)
+        // Hand feelings dominate while they last: a tickle floods pleasure (beams), a slap pain (cowers)
+        val pleasure = c.chem.pleasure.toDouble(); val pain = c.chem.pain.toDouble()
+        val valence = (0.35 - c.hunger * 0.7 - c.fatigue * 0.35 + (if (eating) 0.5 else 0.0) + (if (courting) 0.55 else 0.0) + pleasure * 0.9 - pain * 0.9).coerceIn(-1.0, 1.0)
         val base = when (c.activity) {
             ActivityType.MOVING -> 0.4; ActivityType.EATING -> 0.3; ActivityType.PICKING_UP -> 0.45
             ActivityType.COURTING -> 0.75; ActivityType.RESTING -> -0.7; ActivityType.IDLE -> -0.2
         }
-        val arousal = (base + c.matingUrge * 0.3 + c.hunger * 0.15).coerceIn(-1.0, 1.0)
-        // dominance: confident when grown + fed + rested (or courting); submissive when young, hungry, tired
+        val arousal = (base + c.matingUrge * 0.3 + c.hunger * 0.15 + pleasure * 0.25 + pain * 0.55).coerceIn(-1.0, 1.0)
+        // dominance: confident when grown + fed + rested + tickled; submissive when young, hungry, tired, hurt
         val maturity = when (c.biology.lifeStage.name) { "ADULT", "OLD" -> 0.25; "BABY", "CHILD" -> -0.25; else -> 0.0 }
-        val dominance = (0.05 + maturity - c.hunger * 0.55 - c.fatigue * 0.4 + (if (courting) 0.35 else 0.0)).coerceIn(-1.0, 1.0)
+        val dominance = (0.05 + maturity - c.hunger * 0.55 - c.fatigue * 0.4 + (if (courting) 0.35 else 0.0) + pleasure * 0.4 - pain * 0.7).coerceIn(-1.0, 1.0)
         return CreatureRenderer.Mood(valence, arousal, dominance)
     }
 

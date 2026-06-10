@@ -209,11 +209,16 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L, baseMorp
 
     /** Ends the current goal: reinforce it by the net drive reduction it achieved, then go idle. */
     private fun completeGoal(c: WorldCreature) {
-        val reward = c.decisionDiscomfort - c.discomfort()
+        reinforce(c, c.decisionDiscomfort - c.discomfort())
+        c.activity = ActivityType.IDLE
+    }
+
+    /** Teach: reinforce the creature's current decision (perception → action) by [reward] (+/−). Shared
+     *  by goal completion (drive-reduction reward) and the player Hand (tickle/slap). */
+    private fun reinforce(c: WorldCreature, reward: Float) {
         c.brain.lobes[0].set(c.decisionPerception)
         c.brain.lobes[1].set(oneHot(c.goalAction, CreatureMind.ACTIONS))
         c.brain.learn(reward)
-        c.activity = ActivityType.IDLE
     }
 
     private fun startMoving(c: WorldCreature, targetX: Float, targetFloor: Int, partnerId: Int) {
@@ -337,6 +342,13 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L, baseMorp
     fun feed(id: Int) {
         creatureById(id)?.let { it.chem.setHunger(it.hunger - cfg.eatAmount) }
     }
+
+    /** Player Hand — **tickle** (reward): reinforce what the norn is currently doing, and flood pleasure
+     *  so it visibly beams. Over time it learns to repeat what you reward. */
+    fun tickle(id: Int) = creatureById(id)?.let { c -> reinforce(c, cfg.handReward); c.chem.addPleasure(cfg.handFeeling) }
+
+    /** Player Hand — **slap** (punish): negatively reinforce, and flood pain so it visibly cowers. */
+    fun slap(id: Int) = creatureById(id)?.let { c -> reinforce(c, -cfg.handReward); c.chem.addPain(cfg.handFeeling) }
 
     /** The living creature nearest to (floor, x) within [radius], for click-to-pick. */
     fun creatureNear(floor: Int, x: Float, radius: Float): WorldCreature? =
@@ -526,6 +538,9 @@ class NornsConfig(
     // appearance: per-gene chance an individual's morphology drifts from the baseline / its parents
     // (subtle — each drift is ≤10% of the gene's magnitude; see MorphGenome.mutate)
     val morphMutation: Float = 0.03f,
+    // player Hand: reinforcement strength of a tickle/slap, and the pleasure/pain pulse it floods
+    val handReward: Float = 0.6f,
+    val handFeeling: Float = 0.85f,
 ) {
     fun metabolismOf(genome: Genome): Float {
         val gain = genome.genes.filterIsInstance<EmitterGene>().firstOrNull()?.gain?.coerceIn(0f, 1f) ?: 0.5f

@@ -58,9 +58,11 @@ class NornsWorldTest {
         repeat(50) { w.step() }
         val victim = w.creatures.first()
 
-        // drop food at a specific spot
-        NornsCommands.apply(w, view, "food 2 119")
-        assertTrue(w.food.contains(w.cell(2, 119)), "food command should place food")
+        // Hand: tickle floods pleasure, slap floods pain (the reward/punishment substrate)
+        NornsCommands.apply(w, view, "tickle ${victim.id}")
+        assertTrue(victim.chem.pleasure > 0f, "tickle should flood pleasure")
+        NornsCommands.apply(w, view, "slap ${victim.id}")
+        assertTrue(victim.chem.pain > 0f, "slap should flood pain")
 
         // hand-feed lowers hunger
         victim.chem.setHunger(0.9f)
