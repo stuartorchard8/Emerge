@@ -95,6 +95,14 @@ tasks.register<JavaExec>("runCyto") {
     jvmArgs("-Demerge.mode=cyto")
 }
 
+tasks.register<JavaExec>("renderCyto") {
+    group = "application"
+    description = "Render the Cyto world headlessly (light-field heatmap + cells) to a PNG. " +
+        "--args=\"<outPng> <ticks>\" (defaults: build/cyto-field.png, 400)."
+    mainClass = "org.emerge.desktop.CytoImageRendererKt"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
 tasks.register<JavaExec>("runNorns") {
     group = "application"
     description = "Watch the Norns artificial-life colony live in the terminal (ASCII view). " +
