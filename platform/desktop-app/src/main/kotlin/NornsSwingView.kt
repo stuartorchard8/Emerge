@@ -28,7 +28,8 @@ import kotlin.math.roundToInt
 object NornsSwingView {
     fun run(seed: Long = 7L) {
         CreatureBaker.async = true   // bake off the render thread so a cache miss never hitches the UI
-        val world = NornsWorld(NornsConfig(), seed, CreatureBaker.baselineGenome())
+        val saveFile = java.io.File("norns.save")
+        var world = NornsWorld(NornsConfig(), seed, CreatureBaker.baselineGenome())
         val view = NornsView(world.cfg.worldWidth, world.cfg.floors)
         var lockedFollowId: Int? = null
         var paused = false
@@ -77,6 +78,12 @@ object NornsSwingView {
                     KeyEvent.VK_P -> paused = !paused
                     KeyEvent.VK_OPEN_BRACKET -> stepsPerFrame = max(1, stepsPerFrame - 1)
                     KeyEvent.VK_CLOSE_BRACKET -> stepsPerFrame += 1
+                    KeyEvent.VK_S -> { saveFile.writeText(world.save()); println("saved ${world.population} norns → ${saveFile.absolutePath}") }
+                    KeyEvent.VK_L -> if (saveFile.exists()) {
+                        world = NornsWorld.load(saveFile.readText(), NornsConfig(), CreatureBaker.baselineGenome())
+                        CreatureBaker.clear(); lockedFollowId = null
+                        println("loaded ${world.population} norns from ${saveFile.absolutePath}")
+                    } else println("no save at ${saveFile.absolutePath}")
                     KeyEvent.VK_ESCAPE -> System.exit(0)
                 }
             }
@@ -94,7 +101,7 @@ object NornsSwingView {
         frame.setLocationRelativeTo(null)
         frame.isVisible = true
         panel.requestFocusInWindow()
-        println("Norns controls: left-click a Norn to TICKLE (Shift = SLAP) · right-click a Norn to focus/follow · click a lift's call lamp or its ▲/▼ buttons · ←/→ or A/D pan · F follow · B baked · P pause · [ / ] speed · Esc quit")
+        println("Norns controls: left-click a Norn to TICKLE (Shift = SLAP) · right-click a Norn to focus/follow · click a lift's call lamp or its ▲/▼ buttons · ←/→ or A/D pan · F follow · B baked · S save · L load · P pause · [ / ] speed · Esc quit")
     }
 
     /** Hit-test a click against every lift's buttons; press the first one hit. Returns true if any

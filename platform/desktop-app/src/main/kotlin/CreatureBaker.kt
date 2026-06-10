@@ -84,6 +84,9 @@ object CreatureBaker {
         return synchronized(lock) { lastByCreature[c.id] }                  // last good while the new mood bakes (null only pre-first-bake)
     }
 
+    /** Drop all cached sprites (e.g. after loading a different colony). */
+    fun clear() = synchronized(lock) { sprites.clear(); lastByCreature.clear(); inFlight.clear() }
+
     /** Drop cached sprites for creatures no longer alive (called by the renderer each frame). */
     fun evictDead(aliveIds: Set<Int>) = synchronized(lock) {
         sprites.keys.retainAll { (it shr 16).toInt() in aliveIds }
