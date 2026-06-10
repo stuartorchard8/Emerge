@@ -56,40 +56,39 @@ object MorphGenome {
 
     // ---- mutation ----
 
-    /** Mutate [root] in place: perturb every node's params, and occasionally apply a structural
-     *  operator (grow a limb / splice a segment / drop a node). [intensity] scales perturbation size,
-     *  [structuralOdds] the per-node chance of a structural change. */
-    fun mutate(root: MorphNode, rng: GeneRng, intensity: Float = 0.2f, structuralOdds: Float = 0.05f) {
-        perturb(root, rng, intensity)
-        mutateChildren(root, rng, intensity, structuralOdds)
+    /** Mutate [root] in place — **subtle and rare**. Each continuous gene (the offset `ox`/`oy`, `scale`,
+     *  and every [MorphNode.extra] shape/expression param) independently has a [rate] chance to drift, and
+     *  a drift is at most ±[maxFrac] of the gene's *current magnitude* — so a 0 stays 0, and a big value
+     *  moves proportionally more than a small one (max 10% by default). Structural changes (grow / splice /
+     *  drop a part) are separate and very rare ([structuralOdds]). Symmetry identity (`mir`, `sym`) is left
+     *  intact, so mutation never silently un-mirrors a feature. */
+    fun mutate(root: MorphNode, rng: GeneRng, rate: Float = 0.04f, maxFrac: Float = 0.1f, structuralOdds: Float = 0.008f) {
+        perturb(root, rng, rate, maxFrac)
+        mutateChildren(root, rng, rate, maxFrac, structuralOdds)
     }
 
-    private fun mutateChildren(parent: MorphNode, rng: GeneRng, intensity: Float, odds: Float) {
-        if (rng.nextFloat() < odds * intensity) addLimb(parent, rng)            // grow a new leaf
+    private fun mutateChildren(parent: MorphNode, rng: GeneRng, rate: Float, maxFrac: Float, odds: Float) {
+        if (rng.nextFloat() < odds) addLimb(parent, rng)                       // grow a new leaf (rare)
         for (child in parent.children.toList()) {
             val roll = rng.nextFloat()
             when {
-                roll < odds * intensity -> { removeNode(parent, child); continue }       // drop, splice children up
-                roll < 2 * odds * intensity -> insertSegment(parent, child, rng)         // splice a segment above
+                roll < odds -> { removeNode(parent, child); continue }                    // drop, splice children up
+                roll < 2 * odds -> insertSegment(parent, child, rng)                       // splice a segment above
             }
-            perturb(child, rng, intensity)
-            mutateChildren(child, rng, intensity, odds)
+            perturb(child, rng, rate, maxFrac)
+            mutateChildren(child, rng, rate, maxFrac, odds)
         }
     }
 
-    private fun perturb(n: MorphNode, rng: GeneRng, intensity: Float) {
-        val (rx, ry) = rotate(n.ox, n.oy, rng.signed() * intensity * 30f)       // rotate offset ±30°·intensity
-        val lenScale = 1f + rng.signed() * intensity * 0.5f
-        n.ox = rx * lenScale; n.oy = ry * lenScale
-        n.scale = (n.scale * (1f + rng.signed() * intensity)).coerceAtLeast(0.01f)
-        n.sym = (n.sym * (1f + rng.signed() * intensity)).roundToInt().coerceAtLeast(0)
-        if (n.mirX == 0f && n.mirY == 0f) {
-            if (rng.nextFloat() < 0.01f) { val (mx, my) = rotate(0.01f, 0f, rng.nextFloat() * 360f); n.mirX = mx; n.mirY = my }
-        } else {
-            val (mx, my) = rotate(n.mirX, n.mirY, rng.signed() * intensity * 30f)
-            val ms = 1f + rng.signed() * intensity
-            n.mirX = mx * ms; n.mirY = my * ms
-        }
+    /** A gene drifts only [rate] of the time, and then by at most ±[maxFrac] of its own magnitude. */
+    private fun drift(v: Float, rng: GeneRng, rate: Float, maxFrac: Float): Float =
+        if (rng.nextFloat() < rate) v * (1f + rng.signed() * maxFrac) else v
+
+    private fun perturb(n: MorphNode, rng: GeneRng, rate: Float, maxFrac: Float) {
+        n.ox = drift(n.ox, rng, rate, maxFrac)
+        n.oy = drift(n.oy, rng, rate, maxFrac)
+        n.scale = drift(n.scale, rng, rate, maxFrac).coerceAtLeast(0.01f)
+        for (k in n.extra.keys.toList()) n.extra[k] = drift(n.extra[k]!!, rng, rate, maxFrac)
     }
 
     /** Grow a new leaf off [parent], pointing further out by the parent's bone length. */

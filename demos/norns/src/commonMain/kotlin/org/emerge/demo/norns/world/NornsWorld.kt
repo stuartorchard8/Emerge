@@ -523,8 +523,9 @@ class NornsConfig(
     // heritable visual breeds (sprite palettes); offspring inherit a parent's, rarely mutate
     val breedCount: Int = 9,
     val breedMutationPct: Int = 4,
-    // appearance: how much each individual's morphology drifts from the baseline / its parents
-    val morphMutation: Float = 0.1f,
+    // appearance: per-gene chance an individual's morphology drifts from the baseline / its parents
+    // (subtle — each drift is ≤10% of the gene's magnitude; see MorphGenome.mutate)
+    val morphMutation: Float = 0.03f,
 ) {
     fun metabolismOf(genome: Genome): Float {
         val gain = genome.genes.filterIsInstance<EmitterGene>().firstOrNull()?.gain?.coerceIn(0f, 1f) ?: 0.5f

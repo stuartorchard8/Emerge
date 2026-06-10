@@ -40,8 +40,8 @@ class MorphGenomeTest {
 
     @Test
     fun mutationIsDeterministicGivenASeed() {
-        val a = sample(); MorphGenome.mutate(a, GeneRng(7), intensity = 0.3f)
-        val b = sample(); MorphGenome.mutate(b, GeneRng(7), intensity = 0.3f)
+        val a = sample(); MorphGenome.mutate(a, GeneRng(7), rate = 0.3f)
+        val b = sample(); MorphGenome.mutate(b, GeneRng(7), rate = 0.3f)
         assertTrue(sameTree(a, b), "same seed → bit-identical mutation")
     }
 
@@ -49,7 +49,7 @@ class MorphGenomeTest {
     fun mutationStaysFiniteAndUsuallyChangesTheGenome() {
         var changed = 0
         for (seed in 1L..40L) {
-            val g = sample(); MorphGenome.mutate(g, GeneRng(seed), intensity = 0.4f, structuralOdds = 0.2f)
+            val g = sample(); MorphGenome.mutate(g, GeneRng(seed), rate = 0.4f, structuralOdds = 0.05f)
             assertTrue(allFinite(g), "no NaN/Inf after mutation (seed $seed)")
             assertTrue(g.children.size >= 1, "body keeps at least one child")
             if (!sameTree(g, sample())) changed++
