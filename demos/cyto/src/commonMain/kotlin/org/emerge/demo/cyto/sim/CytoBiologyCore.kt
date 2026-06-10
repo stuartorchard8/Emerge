@@ -70,17 +70,16 @@ internal object CytoBiologyCore {
             work.contraction = 0f
         }
 
-        when (work.type) {
-            CellType.Support -> work.transfers["energy"] = (work.transfers["energy"] ?: 0f) + 5f
-            CellType.Stem -> {
-                if (work.divideCooldown > 0f) {
-                    work.divideCooldown -= dt
-                } else if (energy > 0.5f) {
-                    divide.add(id)
-                }
-            }
-            else -> Unit
-        }
+        // Division is now gene-driven: a Mitosis gene accrued `divideCharge` in the gene pass; once it
+        // reaches the warm-up threshold the cell splits (the lifecycle resets the charge to 0). Clamp
+        // ≥0 so a starved cell that read a negative activation just stalls rather than banking debt.
+        if (work.divideCharge < 0f) work.divideCharge = 0f
+        if (work.divideCharge >= DIVIDE_THRESHOLD) divide.add(id)
+
+        // PLACEHOLDER: Support still mints energy from nothing, keyed on type. This is the one
+        // remaining hardcoded type-economy; it goes away when Collector cells absorb energy from the
+        // environment (a gene-driven `light(distance) → energy`). See MORPHOGENESIS.md.
+        if (work.type == CellType.Support) work.transfers["energy"] = (work.transfers["energy"] ?: 0f) + 5f
 
         work.logicalRadius =
             (work.logicalRadius * RADIUS_ELASTICITY + max(targetRadius, MIN_RADIUS)) / (RADIUS_ELASTICITY + 1f)

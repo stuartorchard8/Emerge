@@ -181,12 +181,12 @@ class CytoLifecycle(private val cfg: CytoConfig) {
         for (n in ahead) { addSpring(w, adj, daughterId.value, n); removeSpringPair(adj, motherId, n) }
         for (n in side) { addSpring(w, adj, daughterId.value, n) }
 
-        // Mother: step back along the split, rotate a quarter turn, halve energy, reset cooldown.
+        // Mother: step back along the split, rotate a quarter turn, halve energy, reset division charge.
         w.posX[ms] = (motherPos.x - offset.x).raw
         w.posY[ms] = (motherPos.y - offset.y).raw
         w.ang[ms] = (motherAng + Frac(1, 2)).raw
         w.energy[ms] = motherEnergy / 2f
-        w.divideCooldown[ms] = 5f
+        w.divideCharge[ms] = 0f
 
         addSpring(w, adj, motherId, daughterId.value)
     }

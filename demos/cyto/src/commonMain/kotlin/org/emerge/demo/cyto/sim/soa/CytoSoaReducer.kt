@@ -253,21 +253,17 @@ class CytoSoaReducer(
     }
 
     // ── biology (CytoBiologySystem) ─────────────────────────────────────────────
-    // Energy-only ticks take the dense fast path; ticks with gene-bearing cells or extra
-    // chemicals fall back to the shared CytoBiologyCore (bit-identical to the AoS system).
+    // One path through the shared CytoBiologyCore (bit-identical to the AoS system). The old dense
+    // "fast path" (skip genes for gene-less cells) is gone: in the data-driven model every cell is
+    // gene-driven, so it would be dead code. The non-cheaty optimization, if a profile ever demands
+    // it, is to avoid the per-cell chemical map for energy-only genomes *inside* this path — not a
+    // forked path. See MORPHOGENESIS.md.
     private fun biology(w: CytoWorld) {
         divideIds.clear(); destroyIds.clear()
-        if (needsChemistry(w)) biologySlow(w) else biologyFast(w)
+        biologySlow(w)
     }
 
-    /** Slow path is needed when any cell has genes (which can mint species) or extra chemicals. */
-    private fun needsChemistry(w: CytoWorld): Boolean {
-        if (w.extraChem.isNotEmpty() || w.extraPending.isNotEmpty() || w.suppression.isNotEmpty()) return true
-        for (i in 0 until w.count) if (!w.genome[i].isNullOrEmpty()) return true
-        return false
-    }
-
-    /** Multi-species biology via the shared core: build CellWorks from columns + side-table,
+    /** Biology via the shared core: build CellWorks from columns + side-table,
      *  run genes/reactions/act, write results back. Identical to the AoS system by construction. */
     private fun biologySlow(w: CytoWorld) {
         val n = w.count
@@ -290,7 +286,7 @@ class CytoSoaReducer(
                 initialSuppression = w.suppression[id.value] ?: emptyMap(),
                 touch = w.touch[slot],
                 logicalRadius = w.logicalRadius[slot],
-                divideCooldown = w.divideCooldown[slot],
+                divideCharge = w.divideCharge[slot],
                 type = CellType.entries[w.type[slot]],
                 genome = w.genome[slot] ?: emptyList(),
             )
@@ -317,7 +313,7 @@ class CytoSoaReducer(
             writeExtras(w.extraPending, idv, work.transfers)
             if (work.suppression.isEmpty()) w.suppression.remove(idv) else w.suppression[idv] = work.suppression
             w.logicalRadius[slot] = work.logicalRadius
-            w.divideCooldown[slot] = work.divideCooldown
+            w.divideCharge[slot] = work.divideCharge
             w.touch[slot] = 0f
             w.stickyTemp[slot] = work.isStickyTemp
             w.radiusRaw[slot] = CytoUnits.len(work.logicalRadius).raw
@@ -331,60 +327,6 @@ class CytoSoaReducer(
         for ((k, v) in map) if (k != ENERGY) (out ?: LinkedHashMap<String, Float>().also { out = it })[k] = v
         val o = out
         if (o == null) table.remove(id) else table[id] = o
-    }
-
-    private fun biologyFast(w: CytoWorld) {
-        val n = w.count
-        // step 1: fold last tick's pending transfers into energy, reset the accumulator.
-        // (Genes/reactions are skipped: no gene-bearing cells this tick.)
-        for (i in 0 until n) {
-            w.energy[i] = (w.energy[i] + w.energyPending[i]).coerceIn(0f, MAX_CHEM)
-            w.energyPending[i] = 0f
-            w.touch[i] = 0f // pass 1 clears touch after genes (no genes here)
-            // No Sticky gene on the fast path, so isStickyTemp is false: clear the transient set
-            // by the grab interaction last tick (the AoS biology rewrites stickyTemp every tick).
-            w.stickyTemp[i] = false
-        }
-        // pass 2: act (diffusion, energy update, growth, type behaviour, division/death).
-        for (i in 0 until n) {
-            if (dt <= 0f) break
-            val e = w.energy[i]
-            if (e <= 0f) { destroyIds.add(w.entityId[i]); continue }
-
-            val selfConn = w.csr.degreeOf(i)
-            for (k in w.csr.offset[i] until w.csr.offset[i + 1]) {
-                val nSlot = w.csr.otherSlot[k]
-                val nConn = w.csr.degreeOf(nSlot)
-                val maxConn = max(selfConn, nConn) + 1
-                val transfer = e / maxConn // single chemical "energy"; no suppression
-                if (transfer > 0f) {
-                    w.energyPending[i] -= transfer
-                    w.energyPending[nSlot] += transfer
-                }
-            }
-
-            var targetRadius = 1f
-            if (e >= 1f) {
-                w.energyPending[i] -= dt
-            } else {
-                val decay = e * 0.125f + 0.125f
-                w.energyPending[i] -= dt * decay * decay
-                targetRadius = sqrt(e)
-            }
-            // contraction is always 0 here (no Contract gene) → no radius scaling.
-            when (CellType.entries[w.type[i]]) {
-                CellType.Support -> w.energyPending[i] += 5f
-                CellType.Stem -> {
-                    if (w.divideCooldown[i] > 0f) w.divideCooldown[i] -= dt
-                    else if (e > 0.5f) divideIds.add(w.entityId[i])
-                }
-                else -> Unit
-            }
-            w.logicalRadius[i] =
-                (w.logicalRadius[i] * RADIUS_ELASTICITY + max(targetRadius, MIN_RADIUS)) / (RADIUS_ELASTICITY + 1f)
-            // collider radius is a pure function of logicalRadius; recompute (cheap long store).
-            w.radiusRaw[i] = CytoUnits.len(w.logicalRadius[i]).raw
-        }
     }
 
     // ── connections (CytoConnectionMaintenanceSystem) ───────────────────────────

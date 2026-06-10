@@ -21,7 +21,9 @@ data class CytoCellComponent(
     val type: CellType,
     val chemicals: Map<String, Float>,
     val logicalRadius: Float,
-    val divideCooldown: Float = 5f,
+    /** Accumulated division (mitosis) warm-up; a Mitosis gene grows it, the cell splits + resets to 0
+     *  at [DIVIDE_THRESHOLD]. A fresh cell starts at 0 (replaces the old count-down cooldown). */
+    val divideCharge: Float = 0f,
     val sticky: Boolean = false,
     val pendingTransfers: Map<String, Float> = emptyMap(),
     val suppression: Map<String, Float> = emptyMap(),

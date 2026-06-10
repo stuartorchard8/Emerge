@@ -63,19 +63,20 @@ class CytoSoaEquivalenceTest {
      */
     @Test
     fun growingColonyIsBitIdentical() {
-        // Sanity: the scenario must actually exercise the lifecycle, else the comparison is
-        // vacuous. Tick 1 divides the 9 Stem cells (10 -> 19); tick 2 kills the doomed cell.
+        // Sanity: the scenario must actually exercise the lifecycle, else the comparison is vacuous.
+        // The doomed cell dies within a couple of ticks; the 9 Stem cells warm up (gene-driven
+        // mitosis) and divide within ~60 ticks. Both the death and division structural paths run.
         run {
             val r = CytoReducer()
             val input = mapOf(PlayerId(0) to CytoInput())
             var s = buildGrowingColony()
             val before = s.components.getTable<CytoCellComponent>().asMap().size
-            s = r.reduce(cfg, s, input)
-            val afterT1 = s.components.getTable<CytoCellComponent>().asMap().size
-            s = r.reduce(cfg, s, input)
-            val afterT2 = s.components.getTable<CytoCellComponent>().asMap().size
-            assertTrue(afterT1 > before, "expected division growth: before=$before afterT1=$afterT1")
-            assertTrue(afterT2 < afterT1, "expected a death on tick 2: afterT1=$afterT1 afterT2=$afterT2")
+            repeat(3) { s = r.reduce(cfg, s, input) }
+            val afterDeath = s.components.getTable<CytoCellComponent>().asMap().size
+            repeat(120) { s = r.reduce(cfg, s, input) }
+            val grown = s.components.getTable<CytoCellComponent>().asMap().size
+            assertTrue(afterDeath < before, "expected the doomed cell to die: before=$before afterDeath=$afterDeath")
+            assertTrue(grown > afterDeath, "expected division growth: afterDeath=$afterDeath grown=$grown")
         }
 
         // Compare EVERY tick (the structural path is the most fragile — catch drift the moment
@@ -269,7 +270,7 @@ class CytoSoaEquivalenceTest {
             compareChem("chemicals", r.chemicals, s.chemicals, ::bad)
             compareChem("pendingTransfers", r.pendingTransfers, s.pendingTransfers, ::bad)
             if (r.logicalRadius.toRawBits() != s.logicalRadius.toRawBits()) bad("logicalRadius", r.logicalRadius, s.logicalRadius)
-            if (r.divideCooldown.toRawBits() != s.divideCooldown.toRawBits()) bad("divideCooldown", r.divideCooldown, s.divideCooldown)
+            if (r.divideCharge.toRawBits() != s.divideCharge.toRawBits()) bad("divideCharge", r.divideCharge, s.divideCharge)
             if (r.touch.toRawBits() != s.touch.toRawBits()) bad("touch", r.touch, s.touch)
             if (r.type != s.type) bad("type", r.type, s.type)
             if (r.springs != s.springs) bad("springs", r.springs, s.springs)
@@ -327,7 +328,7 @@ class CytoSoaEquivalenceTest {
                 velX = m.vel.x.raw, velY = m.vel.y.raw,
                 radiusRaw = colliders[id]!!.radius.raw,
                 chemicals = cell.chemicals, pendingTransfers = cell.pendingTransfers,
-                logicalRadius = cell.logicalRadius, divideCooldown = cell.divideCooldown,
+                logicalRadius = cell.logicalRadius, divideCharge = cell.divideCharge,
                 touch = cell.touch, type = cell.type.ordinal,
                 sticky = cell.sticky, stickyTemp = cell.stickyTemp,
                 springs = springMap, damage = damageMap,
@@ -379,9 +380,11 @@ class CytoSoaEquivalenceTest {
                 val y = (row - side / 2) * spacing
                 val id = builder.spawnCell(
                     pos = CytoUnits.coord2(x, y), vel = Coord2.zero,
-                    type = CellType.Stem, chemicals = mapOf("energy" to 4f), logicalRadius = 1f,
+                    // Energy above the Stem mitosis gate (5) so the gene-driven warm-up reaches the
+                    // divide threshold within the comparison window (≈ DIVIDE_THRESHOLD / (energy−gate) ticks).
+                    type = CellType.Stem, chemicals = mapOf("energy" to 9f), logicalRadius = 1f,
                 )
-                builder.update<CytoCellComponent>(id) { (it!!).copy(divideCooldown = 0f) }
+                builder.update<CytoCellComponent>(id) { (it!!).copy(divideCharge = 0f) }
                 grid[row * side + col] = id
             }
         }

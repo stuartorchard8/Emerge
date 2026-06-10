@@ -20,7 +20,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
     var energy = FloatArray(0); private set
     var energyPending = FloatArray(0); private set
     var logicalRadius = FloatArray(0); private set
-    var divideCooldown = FloatArray(0); private set
+    var divideCharge = FloatArray(0); private set
     var touch = FloatArray(0); private set
     var type = IntArray(0); private set       // CellType.ordinal
     var sticky = BooleanArray(0); private set
@@ -32,7 +32,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
     override fun ensureCapacity(capacity: Int) {
         if (energy.size >= capacity) return
         energy = energy.copyOf(capacity); energyPending = energyPending.copyOf(capacity)
-        logicalRadius = logicalRadius.copyOf(capacity); divideCooldown = divideCooldown.copyOf(capacity)
+        logicalRadius = logicalRadius.copyOf(capacity); divideCharge = divideCharge.copyOf(capacity)
         touch = touch.copyOf(capacity); type = type.copyOf(capacity)
         sticky = sticky.copyOf(capacity); stickyTemp = stickyTemp.copyOf(capacity)
         genome = genome.copyOf(capacity)
@@ -42,7 +42,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         energy[slot] = value.chemicals[ENERGY] ?: 0f
         energyPending[slot] = value.pendingTransfers[ENERGY] ?: 0f
         logicalRadius[slot] = value.logicalRadius
-        divideCooldown[slot] = value.divideCooldown
+        divideCharge[slot] = value.divideCharge
         touch[slot] = value.touch
         type[slot] = value.type.ordinal
         sticky[slot] = value.sticky
@@ -54,7 +54,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         type = CellType.entries[type[slot]],
         chemicals = mapOf(ENERGY to energy[slot]),
         logicalRadius = logicalRadius[slot],
-        divideCooldown = divideCooldown[slot],
+        divideCharge = divideCharge[slot],
         sticky = sticky[slot],
         pendingTransfers = mapOf(ENERGY to energyPending[slot]),
         touch = touch[slot],
@@ -64,7 +64,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
 
     override fun moveSlot(dst: Int, src: Int) {
         energy[dst] = energy[src]; energyPending[dst] = energyPending[src]
-        logicalRadius[dst] = logicalRadius[src]; divideCooldown[dst] = divideCooldown[src]
+        logicalRadius[dst] = logicalRadius[src]; divideCharge[dst] = divideCharge[src]
         touch[dst] = touch[src]; type[dst] = type[src]
         sticky[dst] = sticky[src]; stickyTemp[dst] = stickyTemp[src]
         genome[dst] = genome[src]

@@ -82,7 +82,7 @@ class CytoWorld private constructor(
     val energy: FloatArray get() = cell.energy
     val energyPending: FloatArray get() = cell.energyPending
     val logicalRadius: FloatArray get() = cell.logicalRadius
-    val divideCooldown: FloatArray get() = cell.divideCooldown
+    val divideCharge: FloatArray get() = cell.divideCharge
     val touch: FloatArray get() = cell.touch
     val type: IntArray get() = cell.type
     val sticky: BooleanArray get() = cell.sticky
@@ -205,7 +205,7 @@ class CytoWorld private constructor(
                 velX = velX[slot], velY = velY[slot],
                 radiusRaw = radiusRaw[slot],
                 chemicals = chemicalsAt(slot), pendingTransfers = pendingAt(slot),
-                logicalRadius = logicalRadius[slot], divideCooldown = divideCooldown[slot],
+                logicalRadius = logicalRadius[slot], divideCharge = divideCharge[slot],
                 touch = touch[slot], type = type[slot],
                 sticky = sticky[slot], stickyTemp = stickyTemp[slot],
                 springs = springs, damage = damage,
@@ -289,7 +289,7 @@ class CytoWorld private constructor(
         type = CellType.entries[type[slot]],
         chemicals = chemicalsAt(slot),
         logicalRadius = logicalRadius[slot],
-        divideCooldown = divideCooldown[slot],
+        divideCharge = divideCharge[slot],
         sticky = sticky[slot],
         pendingTransfers = pendingAt(slot),
         suppression = suppression[entityId[slot]] ?: emptyMap(),
@@ -304,7 +304,7 @@ class ComparisonCell(
     val velX: Int, val velY: Int,
     val radiusRaw: Long,
     val chemicals: Map<String, Float>, val pendingTransfers: Map<String, Float>,
-    val logicalRadius: Float, val divideCooldown: Float,
+    val logicalRadius: Float, val divideCharge: Float,
     val touch: Float, val type: Int,
     val sticky: Boolean, val stickyTemp: Boolean,
     val springs: Map<Int, SpringTriple>,

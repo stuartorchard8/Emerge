@@ -34,7 +34,7 @@ class CellWork(
     initialSuppression: Map<String, Float>,
     var touch: Float,
     var logicalRadius: Float,
-    var divideCooldown: Float,
+    var divideCharge: Float,
     val type: CellType,
     val genome: List<Gene>,
 ) {
@@ -71,9 +71,22 @@ private fun Gene.evaluate(cell: CellWork, delta: Float) {
         GeneOutputType.Inhibit -> cell.inhibit(output.chem1, activation)
         GeneOutputType.Enzyme -> if (activation > 0f) cell.enzymes.add(Pair(output.chem1, output.chem2))
         GeneOutputType.Sticky -> cell.isStickyTemp = true
-        GeneOutputType.Mitosis, GeneOutputType.Meiosis, GeneOutputType.Reinforce -> Unit
+        // Mitosis is a charge-accumulating EVENT (not a per-tick effect): the activation is a rate of
+        // division progress. [CytoBiologyCore.act] fires the split + resets the charge at threshold.
+        // The input chemical is consumed during warm-up (above), so a finite substrate bounds division.
+        GeneOutputType.Mitosis -> cell.divideCharge += activation
+        GeneOutputType.Meiosis, GeneOutputType.Reinforce -> Unit
     }
 }
+
+/** Division progress needed for a [GeneOutputType.Mitosis] gene to trigger one split (the warm-up
+ *  threshold; charge resets to 0 after dividing). */
+const val DIVIDE_THRESHOLD = 200f
+
+/** The Stem preset's mitosis gate: it only accrues division charge while energy exceeds this, so a
+ *  Stem divides only with an energy surplus (a developmental genome gates Mitosis on a morphogen
+ *  instead). */
+const val STEM_MITOSIS_ENERGY_GATE = 5f
 
 fun runGenes(cell: CellWork, delta: Float) {
     for (gene in cell.genome) gene.evaluate(cell, delta)
@@ -105,6 +118,15 @@ private val TOUCH_GENES = listOf(
         output = GeneOutput(GeneOutputType.Enzyme, chem1 = "e", chem2 = "n", bias = 0f),
     ),
 )
+// Stem: divide on an energy surplus. activation = energy − gate, so charge only accrues while
+// energy > gate (and faster the larger the surplus); energy is consumed as it warms up, and the
+// split halves energy — so division is self-bounding by the energy economy.
+private val STEM_GENES = listOf(
+    Gene(
+        inputs = listOf(GeneInput(GeneInputType.Chem, chem = "energy", weight = 1f)),
+        output = GeneOutput(GeneOutputType.Mitosis, chem1 = "", chem2 = "", bias = -STEM_MITOSIS_ENERGY_GATE),
+    ),
+)
 
 /** The authored preset genome for a legacy cell type — used to seed a freshly-spawned cell.
  *  After spawn the genome lives on the cell and is inherited on division, so it can diverge. */
@@ -113,5 +135,6 @@ fun genomeForType(type: CellType): List<Gene> = when (type) {
     CellType.Not -> NOT_GENES
     CellType.Jump -> JUMP_GENES
     CellType.Touch -> TOUCH_GENES
+    CellType.Stem -> STEM_GENES
     else -> emptyList()
 }

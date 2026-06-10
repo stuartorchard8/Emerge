@@ -44,7 +44,7 @@ object CytoSaveCodec {
             w.writeInt(vel.x.raw); w.writeInt(vel.y.raw)
             w.writeLong(cell.type.dbIndex)
             w.writeFloat(cell.logicalRadius)
-            w.writeFloat(cell.divideCooldown)
+            w.writeFloat(cell.divideCharge)
             w.writeByte(if (cell.sticky) 1 else 0)
             w.writeInt(cell.chemicals.size)
             for ((k, v) in cell.chemicals) {
@@ -98,7 +98,7 @@ object CytoSaveCodec {
 
             val newId = builder.spawnCell(pos, vel, type, chemicals, radius, sticky)
             builder.update<CytoCellComponent>(newId) { current ->
-                (current ?: CytoCellComponent(type, chemicals, radius)).copy(divideCooldown = cooldown)
+                (current ?: CytoCellComponent(type, chemicals, radius)).copy(divideCharge = cooldown)
             }
             idMap[savedId] = newId
         }

@@ -59,7 +59,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
                 initialSuppression = cell.suppression,
                 touch = cell.touch,
                 logicalRadius = cell.logicalRadius,
-                divideCooldown = cell.divideCooldown,
+                divideCharge = cell.divideCharge,
                 type = cell.type,
                 genome = cell.genome,
             )
@@ -87,7 +87,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
                     chemicals = work.chemicals,
                     suppression = work.suppression,
                     logicalRadius = work.logicalRadius,
-                    divideCooldown = work.divideCooldown,
+                    divideCharge = work.divideCharge,
                     pendingTransfers = work.transfers,
                     touch = 0f,
                     stickyTemp = work.isStickyTemp,

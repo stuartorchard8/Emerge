@@ -126,7 +126,7 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             (current ?: transform).copy(pos = motherPos - offset, ang = transform.ang + Frac(1, 2))
         }
         builder.update<CytoCellComponent>(motherId) { current ->
-            (current ?: cell).copy(chemicals = halfChemicals, divideCooldown = 5f)
+            (current ?: cell).copy(chemicals = halfChemicals, divideCharge = 0f)
         }
 
         addSpring(builder, motherId, daughter, cfg)
