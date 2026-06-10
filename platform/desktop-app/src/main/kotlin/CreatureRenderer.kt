@@ -120,7 +120,7 @@ object CreatureRenderer {
             val base = cumScale * GIRTH
             val sxF = e1("sx") * (1 + e("vsx") * v + e("asx") * a + e("dsx") * d)
             val syF = e1("sy") * (1 + e("vsy") * v + e("asy") * a + e("dsy") * d)
-            val szF = e1("sz").toDouble()
+            val szF = e1("sz") * (1 + e("vsz") * v + e("asz") * a + e("dsz") * d)
             val mat = matFor(n.name)
             val bone = Bone(n.name, parent, center, base * sxF, base * syF, base * szF, orient, mat, connects(n.name, mat))
             when (mat) { FUR -> fur.add(bone); MOUTH -> mouths.add(bone); else -> features.add(bone) }
@@ -136,7 +136,8 @@ object CreatureRenderer {
                 // plus the per-mood positional shift (vdx/adx/ddx, …)
                 val offX = c.ox * cumScale + ce("vdx") * v + ce("adx") * a + ce("ddx") * d
                 val offY = c.oy * cumScale + ce("vdy") * v + ce("ady") * a + ce("ddy") * d
-                val offset = V(offX, offY, ce("z").toDouble())
+                val offZ = ce("z") + ce("vdz") * v + ce("adz") * a + ce("ddz") * d
+                val offset = V(offX, offY, offZ.toDouble())
                 val sym = c.sym.coerceAtLeast(1)
                 val sides = if (c.mirrored) doubleArrayOf(1.0, -1.0) else doubleArrayOf(1.0)
                 for (i in 0 until sym) {
