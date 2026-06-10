@@ -18,8 +18,10 @@ data class CytoInput(
     /** One-shot: cut all connections of these cells (Detach hold mode). */
     val detaches: List<EntityId> = emptyList(),
 ) : SimInput {
-    data class Spawn(val x: Float, val y: Float, val type: CellType)
-    data class Tap(val x: Float, val y: Float, val mode: TouchMode, val type: CellType)
+    /** [genome] (if non-null) is the authoring "brush" genome to give the cell instead of the type's
+     *  preset — how a loaded `.gene` file / the editor paints cells with a custom genome. */
+    data class Spawn(val x: Float, val y: Float, val type: CellType, val genome: List<Gene>? = null)
+    data class Tap(val x: Float, val y: Float, val mode: TouchMode, val type: CellType, val genome: List<Gene>? = null)
     /** [sticky] makes the held cell weld to whatever it touches while dragged (Sticky mode). */
     data class Grab(val entity: EntityId, val x: Float, val y: Float, val sticky: Boolean = false)
 

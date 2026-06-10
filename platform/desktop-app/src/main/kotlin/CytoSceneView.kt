@@ -38,7 +38,7 @@ object CytoSceneView {
         var toggleLight: () -> Unit = {}
         val window = initWindow(
             onSave = { saveSnapshot(controller) }, onLoad = { loadSnapshot(controller) },
-            onToggleLight = { toggleLight() },
+            onToggleLight = { toggleLight() }, onLoadBrush = { loadBrush(controller) },
         )
 
         val renderer = CytoRenderer()
@@ -87,7 +87,30 @@ object CytoSceneView {
         }
     }
 
-    private fun initWindow(onSave: () -> Unit, onLoad: () -> Unit, onToggleLight: () -> Unit): Long {
+    private val BRUSH_PATH: Path = Path.of("cyto-brush.gene")
+    private val STARTER_BRUSH = """
+        # cyto brush genome — one gene per line:  INPUTS  >  OUTPUT
+        #   input:  TYPE chem weight        (TYPE = Chem | Touch | Light;  _ = no chem name)
+        #   output: TYPE chem1 chem2 bias   (TYPE = Contract|Mitosis|Inhibit|Enzyme|Sticky|Secrete)
+        #   '-' = no inputs.  Edit, then press G in-game to reload. Paint with Spawn (empty space) / Set.
+        # This starter cell collects light into energy and divides on a surplus:
+        Light _ 1.0 > Secrete energy _ 0.0
+        Chem energy 1.0 > Mitosis _ _ -5.0
+    """.trimIndent() + "\n"
+
+    /** Load the authoring brush genome from [BRUSH_PATH] (GeneCodec text). Press G in-game to (re)load.
+     *  If the file is absent, write a documented starter so there's something to edit + a working brush. */
+    private fun loadBrush(controller: CytoController) {
+        if (!Files.exists(BRUSH_PATH)) {
+            runCatching { Files.writeString(BRUSH_PATH, STARTER_BRUSH) }
+            println("[cyto] wrote a starter ${BRUSH_PATH.toAbsolutePath()} — edit it and press G to reload.")
+        }
+        runCatching { org.emerge.demo.cyto.sim.GeneCodec.parse(Files.readString(BRUSH_PATH)) }
+            .onSuccess { controller.brushGenome = it; println("[cyto] brush genome: ${it.size} gene(s) — Spawn/Set now paint with it.") }
+            .onFailure { controller.brushGenome = null; println("[cyto] parse failed ($BRUSH_PATH): ${it.message} — using type presets") }
+    }
+
+    private fun initWindow(onSave: () -> Unit, onLoad: () -> Unit, onToggleLight: () -> Unit, onLoadBrush: () -> Unit): Long {
         if (!glfwInit()) error("GLFW init failed")
         glfwDefaultWindowHints()
         glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE)
@@ -107,6 +130,7 @@ object CytoSceneView {
                 GLFW_KEY_F5 -> onSave()
                 GLFW_KEY_F9 -> onLoad()
                 GLFW_KEY_L -> onToggleLight()
+                GLFW_KEY_G -> onLoadBrush()
             }
         }
 

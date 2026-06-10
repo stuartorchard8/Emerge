@@ -104,7 +104,7 @@ class CytoSoaReducer(
         val adj = if (needStructure) lifecycleOps.materialize(w) else null
 
         // Explicit spawns first — allocates ids in the same order as CytoInteractionSystem.
-        for (s in input.spawns) spawnCellAt(w, s.x, s.y, s.type)
+        for (s in input.spawns) spawnCellAt(w, s.x, s.y, s.type, s.genome)
 
         // Detach hold mode (one-shot, on grab-start): deferred to the lifecycle phase.
         for (id in input.detaches) interactDetach.add(id.value)
@@ -122,11 +122,15 @@ class CytoSoaReducer(
                         // TapUp modes act on a click; Base/Sticky/Detach are hold modes handled
                         // on grab, so a click is a no-op.
                         TouchMode.Delete -> interactDestroy.add(w.entityId[slot])
-                        TouchMode.Set -> w.type[slot] = tap.type.ordinal
+                        // Re-type AND re-genome the cell (brush, else the type preset) — match AoS.
+                        TouchMode.Set -> {
+                            w.type[slot] = tap.type.ordinal
+                            w.genome[slot] = tap.genome ?: org.emerge.demo.cyto.sim.genomeForType(tap.type)
+                        }
                         TouchMode.Activate, TouchMode.Base, TouchMode.Sticky, TouchMode.Detach -> Unit
                     }
                 }
-                if (!hitAny) spawnCellAt(w, tap.x, tap.y, tap.type)
+                if (!hitAny) spawnCellAt(w, tap.x, tap.y, tap.type, tap.genome)
             }
         }
 
@@ -134,12 +138,13 @@ class CytoSoaReducer(
     }
 
     /** Spawns a pointer-created cell (surplus energy, min radius), mirroring CytoInteractionSystem. */
-    private fun spawnCellAt(w: CytoWorld, x: Float, y: Float, type: CellType) {
+    private fun spawnCellAt(w: CytoWorld, x: Float, y: Float, type: CellType, genome: List<org.emerge.demo.cyto.sim.Gene>? = null) {
         val id = w.world.createEntity()
         lifecycleOps.appendCell(
             w, id,
             pos = CytoUnits.coord2(x, y), vel = Coord2.zero,
             type = type, logicalRadius = MIN_RADIUS, energy = 2f, sticky = false,
+            genome = genome ?: org.emerge.demo.cyto.sim.genomeForType(type),
         )
     }
 

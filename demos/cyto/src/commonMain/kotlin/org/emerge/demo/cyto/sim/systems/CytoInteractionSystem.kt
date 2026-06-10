@@ -6,6 +6,7 @@ import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.TouchMode
+import org.emerge.demo.cyto.sim.genomeForType
 import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
@@ -30,7 +31,10 @@ object CytoInteractionSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         val input = inputs.values.firstOrNull() ?: return
 
         for (spawn in input.spawns) {
-            builder.spawnCell(CytoUnits.coord2(spawn.x, spawn.y), Coord2.zero, spawn.type, mapOf("energy" to 2f), MIN_RADIUS)
+            builder.spawnCell(
+                CytoUnits.coord2(spawn.x, spawn.y), Coord2.zero, spawn.type, mapOf("energy" to 2f), MIN_RADIUS,
+                genome = spawn.genome ?: genomeForType(spawn.type),
+            )
         }
 
         // Detach hold mode (acts on grab-start): cut all of the cell's connections.
@@ -41,7 +45,10 @@ object CytoInteractionSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         for (tap in input.taps) {
             val hits = cells.keys.filter { id -> contains(builder, id, tap.x, tap.y) }
             if (hits.isEmpty()) {
-                builder.spawnCell(CytoUnits.coord2(tap.x, tap.y), Coord2.zero, tap.type, mapOf("energy" to 2f), MIN_RADIUS)
+                builder.spawnCell(
+                    CytoUnits.coord2(tap.x, tap.y), Coord2.zero, tap.type, mapOf("energy" to 2f), MIN_RADIUS,
+                    genome = tap.genome ?: genomeForType(tap.type),
+                )
                 continue
             }
             for (id in hits) {
@@ -49,7 +56,11 @@ object CytoInteractionSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
                     // TapUp modes act on a click; Base/Sticky/Detach are hold modes (handled
                     // on grab — see CytoGrabSystem / the detaches list), so a click is a no-op.
                     TouchMode.Delete -> builder.emit(CellDestroyIntent(id))
-                    TouchMode.Set -> builder.update<CytoCellComponent>(id) { c -> (c ?: cells.getValue(id)).copy(type = tap.type) }
+                    // Set re-types the cell AND re-genomes it (brush, else the type preset) — so a
+                    // cell's behaviour follows what you painted, not a stale genome.
+                    TouchMode.Set -> builder.update<CytoCellComponent>(id) { c ->
+                        (c ?: cells.getValue(id)).copy(type = tap.type, genome = tap.genome ?: genomeForType(tap.type))
+                    }
                     TouchMode.Activate, TouchMode.Base, TouchMode.Sticky, TouchMode.Detach -> Unit
                 }
             }

@@ -100,6 +100,29 @@ class CytoReducerTest {
     }
 
     @Test
+    fun spawnAndSetApplyTheBrushGenome() {
+        // The in-game editor paints with a "brush" genome carried on the spawn/tap input. A spawn
+        // should give the new cell that genome; a Set tap should overwrite an existing cell's genome
+        // (and re-type it) — proving the existing controls drive genome authoring.
+        val brush = GeneCodec.parse("Light _ 1.0 > Secrete energy _ 0.0")
+        var state = SimBuilder(SimState()).build()
+        state = reducer.reduce(cfg, state, mapOf(PlayerId(0) to CytoInput(
+            spawns = listOf(CytoInput.Spawn(0f, 0f, CellType.Blank, brush)),
+        )))
+        val spawned = state.components.getTable<CytoCellComponent>().asMap().values.single()
+        assertTrue(spawned.genome == brush, "spawn should apply the brush genome, not the type preset")
+
+        val id = state.components.getTable<CytoCellComponent>().keys().first()
+        val brush2 = GeneCodec.parse("- > Sticky _ _ 0.0")
+        state = reducer.reduce(cfg, state, mapOf(PlayerId(0) to CytoInput(
+            taps = listOf(CytoInput.Tap(0f, 0f, TouchMode.Set, CellType.Muscle, brush2)),
+        )))
+        val after = state.components.getTable<CytoCellComponent>()[id]!!
+        assertTrue(after.genome == brush2, "Set should overwrite the cell's genome with the brush")
+        assertTrue(after.type == CellType.Muscle, "Set should also re-type the cell")
+    }
+
+    @Test
     fun grabbedCellMovesTowardPointer() {
         var state = run {
             val b = SimBuilder(SimState())
