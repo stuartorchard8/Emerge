@@ -208,7 +208,12 @@ object NornsImageRenderer {
         }
         // an egg incubating on the ground (the EMBRYO stage hatches into a baby)
         val stage = c.biology.lifeStage.name
-        if (stage == "EMBRYO") { drawEgg(g, px(worldX), py(worldY - floorOffset), sx); return }
+        if (stage == "EMBRYO") {
+            // prefetch the bake during incubation (it'll be needed at hatch) so the newborn isn't a
+            // placeholder blob on its first frame — uses otherwise-idle egg time. Async/live only.
+            if (baked && CreatureBaker.async) CreatureBaker.spriteFor(c)
+            drawEgg(g, px(worldX), py(worldY - floorOffset), sx); return
+        }
 
         // baked path: a lit SDF side-profile sprite (genes→3D→2D), foot-aligned to the grass line,
         // flipped by facing, scaled to the life-stage height. Mood (expression) comes from drives.
