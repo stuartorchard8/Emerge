@@ -43,13 +43,25 @@ object NornsImageRenderer {
     private val animStates = HashMap<Int, AnimState>()
     private const val BLEND_TICKS = 4f
 
+    // Screen-static layers (sky + vignette) are independent of horizontal pan — render once per
+    // window/world size and blit, instead of re-rasterising gradients every frame.
+    private var skyKey = -1L; private var skyLayer: BufferedImage? = null
+    private var vigKey = -1L; private var vigLayer: BufferedImage? = null
+    private fun layerKey(w: Int, h: Int, world: NornsWorld) =
+        (w.toLong() shl 40) xor (h.toLong() shl 20) xor (world.cfg.floors.toLong() shl 10) xor world.cfg.worldWidth.toLong()
+
+    /** Per-section profiling (gated by -Dnorns.prof) — accumulates ns by section; [NornsBenchmark] prints. */
+    val profNs = LinkedHashMap<String, Long>()
+    private val prof = System.getProperty("norns.prof") != null
+    private inline fun <T> p(name: String, b: () -> T): T {
+        if (!prof) return b()
+        val s = System.nanoTime(); val r = b(); profNs[name] = (profNs[name] ?: 0L) + (System.nanoTime() - s); return r
+    }
+
     fun renderFrame(world: NornsWorld, cameraCenterX: Float, followId: Int?, w: Int, h: Int, baked: Boolean = false): BufferedImage {
         val img = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
         val g = img.createGraphics()
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-        // warm Albia-ish daylight gradient: soft cream sky → earthy soil
-        g.paint = java.awt.GradientPaint(0f, 0f, Color(232, 220, 188), 0f, h.toFloat(), Color(74, 58, 44))
-        g.fillRect(0, 0, w, h)
 
         val view = NornsView(world.cfg.worldWidth, world.cfg.floors)
         val aspect = w.toFloat() / h
@@ -58,6 +70,17 @@ object NornsImageRenderer {
         val sx = w / horiz
         fun px(wx: Float) = ((wx - left) / horiz) * w
         fun py(wy: Float) = h - (wy / view.verticalUnits) * h
+
+        // base daylight gradient + sky (screen-static under horizontal pan) — cached + blitted
+        val key = layerKey(w, h, world)
+        if (skyKey != key) {
+            val s = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
+            val sg = s.createGraphics(); sg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            sg.paint = java.awt.GradientPaint(0f, 0f, Color(232, 220, 188), 0f, h.toFloat(), Color(74, 58, 44)); sg.fillRect(0, 0, w, h)
+            drawSky(sg, world, view, w, sx) { wy -> h - (wy / view.verticalUnits) * h }
+            sg.dispose(); skyLayer = s; skyKey = key
+        }
+        g.drawImage(skyLayer, 0, 0, null)
         fun blob(wx: Float, wy: Float, rWorld: Float, c: Color) {
             val rp = rWorld * sx
             g.color = c
@@ -68,13 +91,12 @@ object NornsImageRenderer {
         )
 
         // the top room is the open surface of Albia: sky, sun, clouds, distant hills
-        drawSky(g, world, view, w, sx, ::py)
         // mottled earthy back wall for depth (scrolls with the world)
-        drawBackdrop(g, world, view, left, horiz, sx, ::px, ::py)
+        p("backdrop") { drawBackdrop(g, world, view, left, horiz, sx, ::px, ::py) }
         // floors as grassy soil slabs (the surfaces creatures stand on)
         val slab = (0.5f * sx).roundToInt().coerceAtLeast(6)
         val grass = (0.14f * sx).roundToInt().coerceAtLeast(3)
-        for (f in 0 until world.cfg.floors) {
+        p("floors") { for (f in 0 until world.cfg.floors) {
             val gy = py(view.floorY(f) - view.groundOffset).roundToInt()
             g.color = Color(86, 62, 42); g.fillRect(0, gy, w, slab)               // soil
             g.color = Color(70, 46, 30); g.fillRect(0, gy + slab - 2, w, 2)         // soil shadow line
@@ -96,10 +118,10 @@ object NornsImageRenderer {
                 )
                 wx += step
             }
-        }
+        } }
         // soft depth: ambient shadow rising from each ground line + a shadow under each ceiling,
         // so the rooms read as enclosed spaces rather than flat colour bands
-        for (f in 0 until world.cfg.floors) {
+        p("ao") { for (f in 0 until world.cfg.floors) {
             val gy = py(view.floorY(f) - view.groundOffset).roundToInt()
             val aoH = (1.3f * sx).roundToInt().coerceAtLeast(10)
             val aoTop = (gy - aoH).coerceAtLeast(0)
@@ -110,9 +132,9 @@ object NornsImageRenderer {
             val csH = (0.8f * sx).roundToInt().coerceAtLeast(8)
             g.paint = java.awt.GradientPaint(0f, ceilY.toFloat(), Color(26, 16, 10, 90), 0f, (ceilY + csH).toFloat(), Color(26, 16, 10, 0))
             g.fillRect(0, ceilY, w, csH)
-        }
+        } }
         // layered Albia flora (grass tufts, reeds, flowers, hanging vines) — behind the creatures
-        drawFlora(g, world, view, left, horiz, sx, ::px, ::py)
+        p("flora") { drawFlora(g, world, view, left, horiz, sx, ::px, ::py) }
         // lift shafts, call buttons, and the body of each wooden lift car (Creatures-2 style). The
         // car is a wooden box the norn rides inside; its FRONT GATE is drawn after the creatures
         // (drawLiftGates) so the rider shows behind the bars. A call button glows amber when pressed.
@@ -125,23 +147,30 @@ object NornsImageRenderer {
             blob(fx + 0.13f, fy + 0.28f, 0.10f, Color(110, 150, 64))  // leaf
         }
         // creatures
-        for (c in world.creatures) {
+        p("creatures") { for (c in world.creatures) {
             val cy = if (c.ridingY >= 0f) view.floorYf(c.ridingY) else view.floorY(c.floor)
             drawCreature(g, c, c.x, cy, c.id == followId, ::px, ::py, sx, ::blob, ::col, view.groundOffset, world.cfg, baked)
-        }
+        } }
         val aliveIds = world.creatures.mapTo(HashSet()) { it.id }
         animStates.keys.retainAll(aliveIds)   // evict dead creatures' anim state
         if (baked) CreatureBaker.evictDead(aliveIds)
         // the front gate of each lift car — drawn OVER the creatures so a rider sits behind the bars
         for (lift in world.lifts) drawLiftGate(g, lift, view, sx, ::px, ::py)
 
-        // soft vignette to focus the eye toward the centre
-        g.paint = RadialGradientPaint(
-            Point2D.Float(w / 2f, h * 0.46f), w * 0.62f, floatArrayOf(0f, 0.6f, 1f),
-            arrayOf(Color(0, 0, 0, 0), Color(0, 0, 0, 0), Color(18, 10, 4, 120)),
-            MultipleGradientPaint.CycleMethod.NO_CYCLE,
-        )
-        g.fillRect(0, 0, w, h)
+        // soft vignette (screen-static) — cached ARGB overlay, blitted
+        p("vignette") {
+            if (vigKey != key) {
+                val vle = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+                val vg = vle.createGraphics()
+                vg.paint = RadialGradientPaint(
+                    Point2D.Float(w / 2f, h * 0.46f), w * 0.62f, floatArrayOf(0f, 0.6f, 1f),
+                    arrayOf(Color(0, 0, 0, 0), Color(0, 0, 0, 0), Color(18, 10, 4, 120)),
+                    MultipleGradientPaint.CycleMethod.NO_CYCLE,
+                )
+                vg.fillRect(0, 0, w, h); vg.dispose(); vigLayer = vle; vigKey = key
+            }
+            g.drawImage(vigLayer, 0, 0, null)
+        }
 
         // HUD (dark header bar for legibility over the bright sky)
         g.color = Color(26, 20, 14, 175); g.fillRect(0, 0, w, 50)
@@ -453,7 +482,8 @@ object NornsImageRenderer {
                     val ty = ceilY + (groundY - ceilY) * (((hh ushr (k * 3 + 1)) % 100) / 100f)
                     val rr = (0.7f + ((hh ushr k) % 3) * 0.5f) * sx
                     val dark = ((hh ushr (k + 4)) and 1) == 0
-                    softBlob(g, bx, ty, rr, if (dark) Color(28, 18, 10, 40) else Color(168, 140, 96, 30))
+                    // flat translucent oval (not a radial-gradient blob) — the wall mottle is subtle; saves a per-patch gradient raster
+                    g.color = if (dark) Color(28, 18, 10, 40) else Color(168, 140, 96, 30); fillCircle(g, bx, ty, rr)
                 }
                 // occasional ground pebble
                 if (hh % 5 == 1) {

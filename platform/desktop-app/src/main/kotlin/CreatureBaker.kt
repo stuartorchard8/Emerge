@@ -18,7 +18,7 @@ import kotlin.math.roundToInt
  */
 object CreatureBaker {
 
-    private const val TILE = 200
+    internal const val TILE = 128            // bake resolution ≈ on-screen creature size; oversampling above this is wasted
     private const val BUCKET = 0.34            // mood quantisation, to bound the cache
 
     /** A baked sprite + where the feet sit and how tall the creature is, as fractions of the tile,

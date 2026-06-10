@@ -226,6 +226,14 @@ tasks.register<JavaExec>("benchDrocketsGcLog") {
 
     jvmArgs("-Xlog:gc*:stdout:time,uptime,level,tags")
 }
+tasks.register<JavaExec>("benchNorns") {
+    group = "verification"
+    description = "Headless Norns performance probe: sim tick, SDF bake, and frame (baked vs flat)."
+    mainClass = "org.emerge.desktop.NornsBenchmarkKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    jvmArgs("-Dnorns.prof")
+}
+
 tasks.register<JavaExec>("runMorphLab") {
     group = "application"
     description = "MorphLab: live authoring tool for the creature baseline — sculpt the genome (parts, " +

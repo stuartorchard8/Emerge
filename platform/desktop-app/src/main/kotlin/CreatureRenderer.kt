@@ -198,8 +198,8 @@ object CreatureRenderer {
 
         internal fun ao(p: V, n: V, include: ((Bone) -> Boolean)? = null): Double {
             var occ = 0.0; var sca = 1.0
-            for (i in 1..5) { val hr = 0.02 + 0.12 * i; occ += (hr - scene(p + n * hr, include).d) * sca; sca *= 0.78 }
-            return (1.0 - 3.0 * occ).coerceIn(0.0, 1.0)
+            for (i in 1..3) { val hr = 0.03 + 0.17 * i; occ += (hr - scene(p + n * hr, include).d) * sca; sca *= 0.7 }
+            return (1.0 - 2.6 * occ).coerceIn(0.0, 1.0)
         }
     }
 
@@ -279,10 +279,10 @@ object CreatureRenderer {
                 val vv = -(py.toDouble() / tile - 0.5) * fr.span
                 val ro = center + toWorld(V(u, vv, 6.0))
                 var t = 0.0; var hit: Hit? = null; var hp = ro; var steps = 0
-                while (steps < 110 && t < 13.0) {
+                while (steps < 80 && t < 13.0) {
                     hp = ro + dir * t; val h = baked.scene(hp)
-                    if (h.d < 0.001) { hit = h; break }
-                    t += h.d * 0.85; steps++
+                    if (h.d < 0.0012) { hit = h; break }
+                    t += h.d * 0.9; steps++
                 }
                 val value = if (hit != null) {
                     val rgb = shade(baked, hp, baked.grad(hp), hit, fur, null, view)
