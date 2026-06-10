@@ -68,6 +68,11 @@ enum class CellType(val dbIndex: Long, val color: Long, val group: CellTypeGroup
     0xFFFFFFFF,
     CellTypeGroup.Output,
   ),
+  Collector(
+    12,
+    0x44CC55FF,
+    CellTypeGroup.Input,
+  ),
   ;
 
   companion object {

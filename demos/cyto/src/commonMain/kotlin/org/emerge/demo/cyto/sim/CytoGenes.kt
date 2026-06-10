@@ -16,8 +16,8 @@ import org.emerge.demo.cyto.cells.CellType
  * stays keyed on cell type so empty-genome colonies keep the dense fast path; only the reactive
  * gene network is genome-driven here.)
  */
-enum class GeneInputType { Chem, Touch }
-enum class GeneOutputType { Contract, Mitosis, Meiosis, Inhibit, Enzyme, Sticky, Reinforce }
+enum class GeneInputType { Chem, Touch, Light }
+enum class GeneOutputType { Contract, Mitosis, Meiosis, Inhibit, Enzyme, Sticky, Reinforce, Secrete }
 
 data class GeneInput(val type: GeneInputType, val chem: String, val weight: Float)
 data class GeneOutput(val type: GeneOutputType, val chem1: String, val chem2: String, val bias: Float)
@@ -37,6 +37,9 @@ class CellWork(
     var divideCharge: Float,
     val type: CellType,
     val genome: List<Gene>,
+    /** Environmental light at this cell's position this tick (sampled from [CytoLightField] before
+     *  the gene pass). Read-only input — a Collector gene turns it into energy. */
+    val light: Float = 0f,
 ) {
     var contraction = 0f
     val enzymes = mutableSetOf<Pair<String, String>>()
@@ -64,6 +67,8 @@ private fun Gene.evaluate(cell: CellWork, delta: Float) {
                 (cell.chemicals[input.chem] ?: 0f) * input.weight
             }
             GeneInputType.Touch -> cell.touch * input.weight
+            // Environmental light — a free input (not a chemical the cell holds, so nothing consumed).
+            GeneInputType.Light -> cell.light * input.weight
         }
     }
     when (output.type) {
@@ -75,6 +80,9 @@ private fun Gene.evaluate(cell: CellWork, delta: Float) {
         // division progress. [CytoBiologyCore.act] fires the split + resets the charge at threshold.
         // The input chemical is consumed during warm-up (above), so a finite substrate bounds division.
         GeneOutputType.Mitosis -> cell.divideCharge += activation
+        // Secrete: produce chem1 at rate = activation (a Collector turns light → energy). Goes through
+        // transfers like any chemical change, applied next tick + clamped to MAX_CHEM.
+        GeneOutputType.Secrete -> cell.transfers[output.chem1] = (cell.transfers[output.chem1] ?: 0f) + activation
         GeneOutputType.Meiosis, GeneOutputType.Reinforce -> Unit
     }
 }
@@ -127,6 +135,15 @@ private val STEM_GENES = listOf(
         output = GeneOutput(GeneOutputType.Mitosis, chem1 = "", chem2 = "", bias = -STEM_MITOSIS_ENERGY_GATE),
     ),
 )
+// Collector: turn environmental light into energy (photosynthesis). No free lunch — output scales
+// with the light at the cell's position, so a Collector only feeds a colony while it sits in the
+// light. This is the gene-driven replacement for the hardcoded Support "+5 from nothing".
+private val COLLECTOR_GENES = listOf(
+    Gene(
+        inputs = listOf(GeneInput(GeneInputType.Light, chem = "", weight = 1f)),
+        output = GeneOutput(GeneOutputType.Secrete, chem1 = "energy", chem2 = "", bias = 0f),
+    ),
+)
 
 /** The authored preset genome for a legacy cell type — used to seed a freshly-spawned cell.
  *  After spawn the genome lives on the cell and is inherited on division, so it can diverge. */
@@ -136,5 +153,6 @@ fun genomeForType(type: CellType): List<Gene> = when (type) {
     CellType.Jump -> JUMP_GENES
     CellType.Touch -> TOUCH_GENES
     CellType.Stem -> STEM_GENES
+    CellType.Collector -> COLLECTOR_GENES
     else -> emptyList()
 }

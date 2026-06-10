@@ -43,6 +43,8 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
         val cells = builder.entries<CytoCellComponent>()
         if (cells.isEmpty()) return
         val springs = builder.entries<SpringConstraintComponent>()
+        val transforms = builder.entries<org.emerge.sim.core.physics.components.TransformComponent>()
+        val light = org.emerge.demo.cyto.sim.CytoLightField.default()
         val dt = TIME_STEP
 
         // Build per-cell working state, applying last tick's pending transfers.
@@ -62,6 +64,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
                 divideCharge = cell.divideCharge,
                 type = cell.type,
                 genome = cell.genome,
+                light = transforms[id]?.pos?.let { light.sampleAt(CytoUnits.toLogical(it.x), CytoUnits.toLogical(it.y)) } ?: 0f,
             )
             neighbourCounts[id] = springs[id]?.springs?.size ?: 0
         }

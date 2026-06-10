@@ -39,8 +39,11 @@ settled design we build toward; it is the contract, not a status log.
 
 - **No free lunch.** Energy must be *collected* from the environment, not minted. (Today's `Support`
   "+5 from nothing" is a known placeholder.)
-- **Collector cells** absorb energy from a **central light source**: a fixed point with **per-cell
-  intake `f(distance)`** — closer cells collect more. This:
+- **Collector cells** absorb energy from a **light field** (`CytoLightField`): a static scalar grid
+  over the torus, the sum of radial decay kernels from fixed **sources** at the torus quarter-points
+  (a 2×2 equidistant grid). Non-depletable for now → it's a fixed steady state, precomputed once and
+  sampled O(1) per cell (a `GeneInputType.Light` input feeding a `GeneOutputType.Secrete` energy
+  output: the `Collector` preset). This:
   - kills the exposure-only exploit (a 1-cell-thick filament can't farm free surface area, because
     intake is anchored to *place*, not surface/volume ratio);
   - rewards proximity, so **locomotion / positioning has a payoff**;
@@ -79,7 +82,10 @@ Per-cell sim is expensive — historically the reason this stalled. The discipli
 2. **▶ Mitosis as a charge-event gene output + drop the fast path** *(this change)* — Stem's division
    becomes a gene; `divideCooldown` → `divideCharge`; one biology path. Support energy stays a
    placeholder type-economy until Collectors land.
-3. Collector cells + the central-light environment (replaces the Support placeholder; no free lunch).
+3. ✅ **Collector cells + the light-field environment** — `CytoLightField` (4 sources, non-depletable),
+   `Light`→`Secrete` genes, `Collector` cell type, `renderCyto` headless heatmap. Support's "+5"
+   placeholder still exists (used by perf/equivalence fixtures); retire it in a focused follow-up.
+   Future: **depletable** + energy released to the field on cell death = a closed energy system.
 4. Genome **serialization** (the save file carries the actual genome once it can diverge).
 5. **Authoring UI**: design a genome in the running engine, save it, drop it into the world.
 6. Hand-built **hopeful monster** (morphogen-gated mitosis + asymmetric division + differentiation).

@@ -267,6 +267,7 @@ class CytoSoaReducer(
      *  run genes/reactions/act, write results back. Identical to the AoS system by construction. */
     private fun biologySlow(w: CytoWorld) {
         val n = w.count
+        val light = org.emerge.demo.cyto.sim.CytoLightField.default()
         val works = LinkedHashMap<EntityId, CellWork>(n)
         val neighbourCounts = HashMap<EntityId, Int>(n)
         val orderedIds = ArrayList<EntityId>(n)
@@ -289,6 +290,9 @@ class CytoSoaReducer(
                 divideCharge = w.divideCharge[slot],
                 type = CellType.entries[w.type[slot]],
                 genome = w.genome[slot] ?: emptyList(),
+                light = light.sampleAt(
+                    CytoUnits.toLogical(Coord(w.posX[slot])), CytoUnits.toLogical(Coord(w.posY[slot])),
+                ),
             )
             neighbourCounts[id] = w.csr.degreeOf(slot)
         }

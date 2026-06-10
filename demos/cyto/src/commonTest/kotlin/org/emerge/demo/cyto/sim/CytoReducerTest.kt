@@ -81,6 +81,25 @@ class CytoReducerTest {
     }
 
     @Test
+    fun collectorProducesEnergyOnlyInTheLight() {
+        // A Collector turns environmental light into energy — no free lunch. One sitting on a light
+        // source should fill up; an identical one parked at the dark torus centre (between all four
+        // sources) should not. Proves the energy economy is anchored to the field, not minted.
+        fun energyAfter(x: Float, y: Float): Float {
+            val b = SimBuilder(SimState())
+            val id = b.spawnCell(CytoUnits.coord2(x, y), Coord2.zero, CellType.Collector, mapOf("energy" to 1f), MIN_RADIUS)
+            var s = b.build()
+            repeat(40) { s = reducer.reduce(cfg, s, noInput) }
+            return s.components.getTable<CytoCellComponent>()[id]?.chemicals?.get("energy") ?: 0f
+        }
+        val (sx, sy) = CytoLightField.SOURCES.first()
+        val lit = energyAfter(sx, sy)
+        val dark = energyAfter(0f, 0f)
+        assertTrue(lit > 2f, "a Collector in the light should gain energy; got $lit")
+        assertTrue(dark < 1.5f && dark < lit, "a Collector in the dark should not gain energy: lit=$lit dark=$dark")
+    }
+
+    @Test
     fun grabbedCellMovesTowardPointer() {
         var state = run {
             val b = SimBuilder(SimState())
