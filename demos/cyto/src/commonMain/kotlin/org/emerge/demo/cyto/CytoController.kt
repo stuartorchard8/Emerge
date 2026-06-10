@@ -79,16 +79,21 @@ class CytoController(
 
     // ── Pointer interaction (logical Cyto coordinates) ──────────────────────────
 
-    /** Active authoring "brush" genome (loaded from a `.gene` file): when set, spawn + Set paint
-     *  cells with it instead of the selected type's preset. Null = use type presets (default). */
+    /** The authoring "brush" genome loaded from a `.gene` file (null until loaded). */
     var brushGenome: List<org.emerge.demo.cyto.sim.Gene>? = null
 
+    /** Whether painting uses the brush ([brushGenome]) rather than the selected type's preset — driven
+     *  by the "Brush" selection in the cell-type controls. Off = type presets (the default). */
+    var brushActive: Boolean = false
+
+    private fun activeBrush() = if (brushActive) brushGenome else null
+
     fun spawn(x: Float, y: Float, type: CellType) {
-        pendingSpawns.add(CytoInput.Spawn(x, y, type, brushGenome))
+        pendingSpawns.add(CytoInput.Spawn(x, y, type, activeBrush()))
     }
 
     fun tap(x: Float, y: Float, mode: TouchMode, type: CellType) {
-        pendingTaps.add(CytoInput.Tap(x, y, mode, type, brushGenome))
+        pendingTaps.add(CytoInput.Tap(x, y, mode, type, activeBrush()))
     }
 
     /** The cell whose disc contains the logical point ([x], [y]), or null. */

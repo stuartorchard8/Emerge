@@ -40,7 +40,7 @@ object CytoSceneView {
         val controls = CytoControls()
         // On-screen buttons drive these (no keyboard-only controls): the Light button owns its toggle
         // state (synced to the renderer each frame), the Load-Genome button loads the brush genome.
-        controls.onLoadBrush = { loadBrush(controller) }
+        controls.onLoadBrush = { if (loadBrush(controller)) controls.selectBrush() }
         autoLoadSnapshotAtStartup(controller)
 
         val mouse = MouseState()
@@ -56,6 +56,7 @@ object CytoSceneView {
             lastTime = now
 
             renderer.showLightField = controls.showLightField   // Light button → renderer
+            controller.brushActive = controls.brushSelected      // "Brush" type selection → painting
             val frame = controller.tick(delta)
 
             renderer.draw(frame) // renderer fills its own background
@@ -99,14 +100,14 @@ object CytoSceneView {
     /** Load the authoring brush genome from [BRUSH_PATH] (GeneCodec text), driven by the on-screen
      *  "Load Genome" button. If the file is absent, write a documented starter so there's something to
      *  edit + a working brush. */
-    private fun loadBrush(controller: CytoController) {
+    private fun loadBrush(controller: CytoController): Boolean {
         if (!Files.exists(BRUSH_PATH)) {
             runCatching { Files.writeString(BRUSH_PATH, STARTER_BRUSH) }
-            println("[cyto] wrote a starter ${BRUSH_PATH.toAbsolutePath()} — edit it and press G to reload.")
+            println("[cyto] wrote a starter ${BRUSH_PATH.toAbsolutePath()} — edit it and click Load Genome to reload.")
         }
-        runCatching { org.emerge.demo.cyto.sim.GeneCodec.parse(Files.readString(BRUSH_PATH)) }
-            .onSuccess { controller.brushGenome = it; println("[cyto] brush genome: ${it.size} gene(s) — Spawn/Set now paint with it.") }
-            .onFailure { controller.brushGenome = null; println("[cyto] parse failed ($BRUSH_PATH): ${it.message} — using type presets") }
+        return runCatching { org.emerge.demo.cyto.sim.GeneCodec.parse(Files.readString(BRUSH_PATH)) }
+            .map { controller.brushGenome = it; println("[cyto] brush genome: ${it.size} gene(s) — pick the 'Brush' type, then Spawn/Set to paint."); true }
+            .getOrElse { controller.brushGenome = null; println("[cyto] parse failed ($BRUSH_PATH): ${it.message} — using type presets"); false }
     }
 
     private fun initWindow(onSave: () -> Unit, onLoad: () -> Unit): Long {

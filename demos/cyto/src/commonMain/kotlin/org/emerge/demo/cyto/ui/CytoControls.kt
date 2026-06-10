@@ -24,6 +24,14 @@ class CytoControls {
         private set
     var cellType: CellType = CellType.Stem
         private set
+
+    /** When true, the cell-type column's selection is the loaded brush genome rather than [cellType] —
+     *  the host paints with the brush. Selected via the "Brush" swatch in the type column. */
+    var brushSelected: Boolean = false
+        private set
+
+    /** Make the brush the active type selection (e.g. right after a genome loads). */
+    fun selectBrush() { brushSelected = true; openGroup = null }
     var showChemicals: Boolean = false
         private set
 
@@ -125,17 +133,24 @@ class CytoControls {
         val pad = bs / 3f
         val bottomY = resH - pad - bs
 
-        // ── Cell Type column (bottom-left) ──
+        // ── Cell Type column (bottom-left) — the legacy type swatches plus a "Brush" swatch that
+        // paints with the loaded brush genome (see CytoController.brushGenome). ──
         val typeX = pad
+        val headerLabel = if (brushSelected) "Brush\nGenome" else "${cellType.name}\nCell"
+        val headerColor = if (brushSelected) GENE_COLOR else cellType.color
         if (openGroup == Group.CellType) {
-            buttons.add(Btn(typeX, bottomY, bs, bs, cellType.color, "${cellType.name}\nCell") { openGroup = null })
+            buttons.add(Btn(typeX, bottomY, bs, bs, headerColor, headerLabel) { openGroup = null })
+            val rows = CellType.entries.groupBy { it.group }.values.toList()
             addOptionRows(
-                groups = CellType.entries.groupBy { it.group }.values.toList(),
+                groups = rows,
                 baseY = bottomY, bs = bs, gap = gap, leftX = typeX,
                 color = { it.color }, label = { it.name },
-            ) { selected -> cellType = selected; openGroup = null }
+            ) { selected -> cellType = selected; brushSelected = false; openGroup = null }
+            // "Brush" swatch on the row past the type rows.
+            val brushY = bottomY - (rows.size + 1) * (bs + gap)
+            buttons.add(Btn(typeX, brushY, bs, bs, GENE_COLOR, "Brush\nGenome") { brushSelected = true; openGroup = null })
         } else {
-            buttons.add(Btn(typeX, bottomY, bs, bs, cellType.color, "${cellType.name}\nCell") { openGroup = Group.CellType })
+            buttons.add(Btn(typeX, bottomY, bs, bs, headerColor, headerLabel) { openGroup = Group.CellType })
         }
 
         // ── Touch Mode column (to the right of the type column) ──
