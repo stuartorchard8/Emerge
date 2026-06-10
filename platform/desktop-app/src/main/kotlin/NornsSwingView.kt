@@ -27,6 +27,7 @@ import kotlin.math.roundToInt
  */
 object NornsSwingView {
     fun run(seed: Long = 7L) {
+        CreatureBaker.async = true   // bake off the render thread so a cache miss never hitches the UI
         val world = NornsWorld(NornsConfig(), seed, CreatureBaker.baselineGenome())
         val view = NornsView(world.cfg.worldWidth, world.cfg.floors)
         var lockedFollowId: Int? = null

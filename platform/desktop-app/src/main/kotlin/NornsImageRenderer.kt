@@ -214,6 +214,11 @@ object NornsImageRenderer {
         // flipped by facing, scaled to the life-stage height. Mood (expression) comes from drives.
         if (baked) {
             val sprite = CreatureBaker.spriteFor(c)
+            if (sprite == null) {                       // bake in flight (async) — a soft fur blob stands in
+                val r = NornRigStore.targetHeight(stage) * 0.45f
+                blob(worldX, worldY - floorOffset + r, r, CreatureBaker.furFor(c.breed))
+                return
+            }
             val tilePx = sprite.img.height
             val bScale = (NornRigStore.targetHeight(stage) * sx) / (sprite.heightFrac * tilePx)
             val cxScreen = px(worldX); val groundScreenY = py(worldY - floorOffset)

@@ -27,6 +27,13 @@ object CreatureBaker {
 
     private val sprites = HashMap<Long, Sprite>()
 
+    /** When true (live view), a cache miss bakes on a worker thread and returns null until ready, so the
+     *  render thread never blocks on a 60-ms bake. Headless renderers leave it false (bake synchronously). */
+    var async = false
+    private val lock = Any()
+    private val inFlight = HashSet<Long>()
+    private val exec by lazy { java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "norn-bake").apply { isDaemon = true } } }
+
     /** The authored baseline genome, loaded from the shipped asset (null if absent). */
     fun baselineGenome(): MorphNode? = runCatching {
         NornParts.res("/assets/norns/norn.morph")?.let { MorphCodec.parse(it.toString(Charsets.UTF_8)) }
@@ -54,17 +61,25 @@ object CreatureBaker {
         return CreatureRenderer.Mood(valence, arousal, dominance)
     }
 
-    @Synchronized
-    fun spriteFor(c: WorldCreature): Sprite {
+    /** The baked sprite for [c] at its current (bucketed) mood, or **null** if it isn't ready yet
+     *  ([async] mode): the bake is enqueued on a worker and the caller should draw a placeholder; it lands
+     *  in the cache for a later frame. Synchronous (always returns a sprite) when [async] is false. */
+    fun spriteFor(c: WorldCreature): Sprite? {
         val mood = moodOf(c)
         val vb = (mood.v / BUCKET).roundToInt(); val ab = (mood.a / BUCKET).roundToInt(); val db = (mood.d / BUCKET).roundToInt()
         val key = (c.id.toLong() shl 16) or ((vb + 8).toLong() shl 10) or ((ab + 8).toLong() shl 5) or (db + 8).toLong()
-        return sprites.getOrPut(key) { bake(c.morph, CreatureRenderer.Mood(vb * BUCKET, ab * BUCKET, db * BUCKET), furFor(c.breed)) }
+        synchronized(lock) { sprites[key]?.let { return it } }
+        val bm = CreatureRenderer.Mood(vb * BUCKET, ab * BUCKET, db * BUCKET); val morph = c.morph; val fur = furFor(c.breed)
+        if (!async) {
+            val s = bake(morph, bm, fur); synchronized(lock) { sprites[key] = s }; return s
+        }
+        synchronized(lock) { if (!inFlight.add(key)) return null }      // already baking this key
+        exec.submit { val s = bake(morph, bm, fur); synchronized(lock) { sprites[key] = s; inFlight.remove(key) } }
+        return null
     }
 
     /** Drop cached sprites for creatures no longer alive (called by the renderer each frame). */
-    @Synchronized
-    fun evictDead(aliveIds: Set<Int>) = sprites.keys.retainAll { (it shr 16).toInt() in aliveIds }
+    fun evictDead(aliveIds: Set<Int>) = synchronized(lock) { sprites.keys.retainAll { (it shr 16).toInt() in aliveIds } }
 
     private fun bake(genome: MorphNode, mood: CreatureRenderer.Mood, fur: Color): Sprite {
         val b = CreatureRenderer.Baked(genome, mood)
