@@ -8,6 +8,8 @@ import org.emerge.demo.norns.brain.Brain
 import org.emerge.demo.norns.gene.EmitterGene
 import org.emerge.demo.norns.gene.GeneRng
 import org.emerge.demo.norns.gene.Genome
+import org.emerge.demo.norns.morph.MorphGenome
+import org.emerge.demo.norns.morph.MorphNode
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -25,8 +27,12 @@ import kotlin.math.roundToInt
  *
  * Player [interaction]: drop food, hand-feed, pick up & place a creature. Deterministic per seed.
  */
-class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
+class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L, baseMorph: MorphNode? = null) {
     private val rng = GeneRng(seed)
+
+    /** The baseline morphology genome new colonists start from (mutated per individual); offspring
+     *  crossbreed their parents'. A minimal stand-in if the host didn't supply an authored baseline. */
+    private val baseMorph: MorphNode = baseMorph ?: MorphNode("body")
 
     /** Food positions encoded as `floor * worldWidth + x` (food sits on integer cells). */
     val food = HashSet<Int>()
@@ -49,7 +55,8 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
                 listOf(EmitterGene(locus = 0, chemical = 0, gain = rng.nextFloat(), threshold = 0f)) +
                     CreatureMind.defaultInstinctGenes(),
             )
-            spawnCreature(rng.nextInt().mod(cfg.worldWidth).toFloat(), rng.nextInt().mod(cfg.floors), g, breed = rng.nextInt().mod(cfg.breedCount))
+            val morph = this.baseMorph.deepClone().also { MorphGenome.mutate(it, rng, cfg.morphMutation) }
+            spawnCreature(rng.nextInt().mod(cfg.worldWidth).toFloat(), rng.nextInt().mod(cfg.floors), g, morph, breed = rng.nextInt().mod(cfg.breedCount))
         }
     }
 
@@ -188,7 +195,9 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
             val childBreed = if (rng.nextInt().mod(100) < (cfg.breedMutationPct))
                 rng.nextInt().mod(cfg.breedCount)
             else if (rng.nextInt().mod(2) == 0) c.breed else partner.breed
-            spawnCreature(c.x, c.floor, child, childBreed)
+            // appearance: the child's morphology is a crossbreed of its parents', plus a little mutation
+            val childMorph = MorphGenome.crossbreed(c.morph, partner.morph).also { MorphGenome.mutate(it, rng, cfg.morphMutation) }
+            spawnCreature(c.x, c.floor, child, childMorph, childBreed)
             partner.reproCooldown = cfg.reproduceCooldown
             partner.chem.resetUrge()
             births++
@@ -298,7 +307,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
         food.add(cell(rng.nextInt().mod(cfg.floors), rng.nextInt().mod(cfg.worldWidth)))
     }
 
-    private fun spawnCreature(x: Float, floor: Int, genome: Genome, breed: Int = 0) {
+    private fun spawnCreature(x: Float, floor: Int, genome: Genome, morph: MorphNode, breed: Int = 0) {
         val biology = Biology(
             BiologyConfig(
                 stageStartAge = cfg.stageStartAge, maxAge = cfg.maxAge,
@@ -314,7 +323,7 @@ class NornsWorld(val cfg: NornsConfig = NornsConfig(), seed: Long = 1L) {
                 genome = genome, biology = biology, metabolism = metab,
                 brain = CreatureMind.build(genome, cfg.brainLearnRate),
                 chem = CreatureChemistry(metab, cfg),
-                loci = FloatArray(4),
+                loci = FloatArray(4), morph = morph,
             ).also { it.breed = breed.mod(cfg.breedCount) },
         )
     }
@@ -425,6 +434,7 @@ class WorldCreature(
     val brain: Brain,
     val chem: CreatureChemistry,
     val loci: FloatArray,
+    val morph: MorphNode,            // heritable appearance genome (baseline + mutation; crossbred on birth)
 ) {
     // Drives are now biochemistry (G8): hunger/urge/fatigue are chemical concentrations.
     val hunger: Float get() = chem.hunger
@@ -513,6 +523,8 @@ class NornsConfig(
     // heritable visual breeds (sprite palettes); offspring inherit a parent's, rarely mutate
     val breedCount: Int = 9,
     val breedMutationPct: Int = 4,
+    // appearance: how much each individual's morphology drifts from the baseline / its parents
+    val morphMutation: Float = 0.1f,
 ) {
     fun metabolismOf(genome: Genome): Float {
         val gain = genome.genes.filterIsInstance<EmitterGene>().firstOrNull()?.gain?.coerceIn(0f, 1f) ?: 0.5f
