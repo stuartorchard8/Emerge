@@ -129,7 +129,9 @@ object NornsImageRenderer {
             val cy = if (c.ridingY >= 0f) view.floorYf(c.ridingY) else view.floorY(c.floor)
             drawCreature(g, c, c.x, cy, c.id == followId, ::px, ::py, sx, ::blob, ::col, view.groundOffset, world.cfg, baked)
         }
-        animStates.keys.retainAll(world.creatures.mapTo(HashSet()) { it.id })   // evict dead creatures' anim state
+        val aliveIds = world.creatures.mapTo(HashSet()) { it.id }
+        animStates.keys.retainAll(aliveIds)   // evict dead creatures' anim state
+        if (baked) CreatureBaker.evictDead(aliveIds)
         // the front gate of each lift car — drawn OVER the creatures so a rider sits behind the bars
         for (lift in world.lifts) drawLiftGate(g, lift, view, sx, ::px, ::py)
 
@@ -610,7 +612,7 @@ fun main(args: Array<String>) {
     val ticksToCapture = (args.getOrNull(2)?.split(",")?.mapNotNull { it.trim().toIntOrNull() } ?: listOf(250, 700, 1200)).sorted()
     val baked = args.getOrNull(3)?.lowercase() == "baked"
 
-    val world = NornsWorld(NornsConfig(), seed)
+    val world = NornsWorld(NornsConfig(), seed, CreatureBaker.baselineGenome())
     val maxTick = ticksToCapture.max()
     for (t in 1..maxTick) {
         world.step()

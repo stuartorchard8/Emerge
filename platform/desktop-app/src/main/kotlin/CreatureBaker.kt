@@ -1,7 +1,6 @@
 package org.emerge.desktop
 
-import org.emerge.demo.norns.gene.GeneRng
-import org.emerge.demo.norns.morph.MorphGenome
+import org.emerge.demo.norns.morph.MorphCodec
 import org.emerge.demo.norns.morph.MorphNode
 import org.emerge.demo.norns.world.ActivityType
 import org.emerge.demo.norns.world.WorldCreature
@@ -11,38 +10,35 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * Bakes Norns into lit side-profile sprites for the live world — the "genes → 3D → 2D sprite" pipeline
- * applied to actual creatures, with **no real-time 3D in the engine**: each (breed, mood) is ray-marched
- * once by [CreatureRenderer] and cached as a transparent [BufferedImage] the world renderer composites.
- *
- * Two pieces are still stopgaps until the architecture track wires them properly:
- *  - **genome per creature** is synthesized from the heritable `breed` index (baseline + a seeded
- *    mutation) — placeholder until a morphology genome is a real, inherited gene on the creature;
- *  - **mood** is read from drive chemistry (hunger/fatigue/urge + current activity) → valence/arousal,
- *    a first taste of expression-from-internal-state.
+ * Bakes Norns into lit side-profile sprites for the live world — "genes → 3D → 2D sprite" applied to
+ * actual creatures, with **no real-time 3D in the engine**: each (creature, mood-bucket) is ray-marched
+ * once by [CreatureRenderer] from the creature's own inherited [WorldCreature.morph] and cached as a
+ * transparent [BufferedImage]. Mood is read from the creature's drive chemistry → a PAD point, so a Norn
+ * wears its actual feelings on the face the authored baseline gave it.
  */
 object CreatureBaker {
 
     private const val TILE = 200
+    private const val BUCKET = 0.34            // mood quantisation, to bound the cache
 
     /** A baked sprite + where the feet sit and how tall the creature is, as fractions of the tile,
      *  so the world renderer can foot-align and scale it to the creature's life-stage height. */
     class Sprite(val img: BufferedImage, val footFracY: Double, val heightFrac: Double)
 
-    private val genomes = HashMap<Int, MorphNode>()
     private val sprites = HashMap<Long, Sprite>()
 
-    private fun genomeFor(breed: Int): MorphNode = genomes.getOrPut(breed) {
-        defaultNornGenome().also { if (breed != 0) MorphGenome.mutate(it, GeneRng(breed.toLong() * 0x9E3779B1L + 1), 0.28f, 0.04f) }
-    }
+    /** The authored baseline genome, loaded from the shipped asset (null if absent). */
+    fun baselineGenome(): MorphNode? = runCatching {
+        NornParts.res("/assets/norns/norn.morph")?.let { MorphCodec.parse(it.toString(Charsets.UTF_8)) }
+    }.getOrNull()
 
-    /** Per-breed fur, so breeds read as distinct (placeholder palette until fur is a gene). */
+    /** Per-breed fur tint, so colonies read as varied (placeholder until colour is a gene). */
     fun furFor(breed: Int): Color {
         val h = breed * -0x61c88647
         return Color((150 + (h and 0x3F)).coerceIn(60, 235), (116 + ((h ushr 7) and 0x3F)).coerceIn(60, 220), (92 + ((h ushr 14) and 0x3F)).coerceIn(50, 200))
     }
 
-    /** Drive chemistry + activity → a (valence, arousal) mood. */
+    /** Drive chemistry + activity → a PAD mood (valence × arousal × dominance). */
     fun moodOf(c: WorldCreature): CreatureRenderer.Mood {
         val eating = c.activity == ActivityType.EATING
         val courting = c.activity == ActivityType.COURTING
@@ -52,21 +48,28 @@ object CreatureBaker {
             ActivityType.COURTING -> 0.75; ActivityType.RESTING -> -0.7; ActivityType.IDLE -> -0.2
         }
         val arousal = (base + c.matingUrge * 0.3 + c.hunger * 0.15).coerceIn(-1.0, 1.0)
-        return CreatureRenderer.Mood(valence, arousal)
+        // dominance: confident when grown + fed + rested (or courting); submissive when young, hungry, tired
+        val maturity = when (c.biology.lifeStage.name) { "ADULT", "OLD" -> 0.25; "BABY", "CHILD" -> -0.25; else -> 0.0 }
+        val dominance = (0.05 + maturity - c.hunger * 0.55 - c.fatigue * 0.4 + (if (courting) 0.35 else 0.0)).coerceIn(-1.0, 1.0)
+        return CreatureRenderer.Mood(valence, arousal, dominance)
     }
 
     @Synchronized
     fun spriteFor(c: WorldCreature): Sprite {
         val mood = moodOf(c)
-        val vb = (mood.v / 0.34).roundToInt(); val ab = (mood.a / 0.34).roundToInt()
-        val key = (c.breed.toLong() shl 40) or ((vb + 8).toLong() shl 20) or (ab + 8).toLong()
-        return sprites.getOrPut(key) { bake(c.breed, CreatureRenderer.Mood(vb * 0.34, ab * 0.34)) }
+        val vb = (mood.v / BUCKET).roundToInt(); val ab = (mood.a / BUCKET).roundToInt(); val db = (mood.d / BUCKET).roundToInt()
+        val key = (c.id.toLong() shl 16) or ((vb + 8).toLong() shl 10) or ((ab + 8).toLong() shl 5) or (db + 8).toLong()
+        return sprites.getOrPut(key) { bake(c.morph, CreatureRenderer.Mood(vb * BUCKET, ab * BUCKET, db * BUCKET), furFor(c.breed)) }
     }
 
-    private fun bake(breed: Int, mood: CreatureRenderer.Mood): Sprite {
-        val b = CreatureRenderer.Baked(genomeFor(breed), mood)
+    /** Drop cached sprites for creatures no longer alive (called by the renderer each frame). */
+    @Synchronized
+    fun evictDead(aliveIds: Set<Int>) = sprites.keys.retainAll { (it shr 16).toInt() in aliveIds }
+
+    private fun bake(genome: MorphNode, mood: CreatureRenderer.Mood, fur: Color): Sprite {
+        val b = CreatureRenderer.Baked(genome, mood)
         val img = BufferedImage(TILE, TILE, BufferedImage.TYPE_INT_ARGB)
-        CreatureRenderer.render(b, furFor(breed), img, 0, TILE, 0, transparent = true)
+        CreatureRenderer.render(b, fur, img, 0, TILE, 0, transparent = true)
         val fr = CreatureRenderer.frame(b, TILE)
         val bb = b.bounds()                                   // minX, maxX, minY, maxY
         val footFracY = fr.screenY(bb[2]) / TILE              // feet = lowest world-y

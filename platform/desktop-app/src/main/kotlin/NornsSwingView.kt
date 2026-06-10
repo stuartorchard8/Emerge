@@ -27,7 +27,7 @@ import kotlin.math.roundToInt
  */
 object NornsSwingView {
     fun run(seed: Long = 7L) {
-        val world = NornsWorld(NornsConfig(), seed)
+        val world = NornsWorld(NornsConfig(), seed, CreatureBaker.baselineGenome())
         val view = NornsView(world.cfg.worldWidth, world.cfg.floors)
         var lockedFollowId: Int? = null
         var paused = false
