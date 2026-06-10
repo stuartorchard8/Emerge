@@ -86,7 +86,11 @@ Per-cell sim is expensive — historically the reason this stalled. The discipli
    `Light`→`Secrete` genes, `Collector` cell type, `renderCyto` headless heatmap. Support's "+5"
    placeholder still exists (used by perf/equivalence fixtures); retire it in a focused follow-up.
    Future: **depletable** + energy released to the field on cell death = a closed energy system.
-4. Genome **serialization** (the save file carries the actual genome once it can diverge).
-5. **Authoring UI**: design a genome in the running engine, save it, drop it into the world.
+4. Genome **serialization** — `GeneCodec` (text) ✅; still TODO: the **save file** (`CytoSaveCodec`)
+   carries the actual genome once it can diverge from a type preset.
+5. **Authoring** — ▶ v1 done: write a genome as a `.gene` file (GeneCodec), click the on-screen **Load
+   Genome** button to (re)load it as the *brush*, paint with the existing **Spawn**/**Set** controls;
+   the **Light** button toggles the heatmap. (All on-screen buttons — no keyboard-only controls.)
+   Roadmap: a full **on-screen genome composer** (no leaving the game).
 6. Hand-built **hopeful monster** (morphogen-gated mitosis + asymmetric division + differentiation).
 7. **Mutation + selection** — the substrate evolves.

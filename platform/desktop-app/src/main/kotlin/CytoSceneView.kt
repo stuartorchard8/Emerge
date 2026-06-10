@@ -33,17 +33,14 @@ object CytoSceneView {
     private fun runGl() {
         val controller = CytoController()
 
-        // GL context must be current (initWindow) before any shader/texture is created. The renderer
-        // doesn't exist yet, so the L-toggle is routed through a holder assigned just below.
-        var toggleLight: () -> Unit = {}
-        val window = initWindow(
-            onSave = { saveSnapshot(controller) }, onLoad = { loadSnapshot(controller) },
-            onToggleLight = { toggleLight() }, onLoadBrush = { loadBrush(controller) },
-        )
+        // GL context must be current (initWindow) before any shader/texture is created.
+        val window = initWindow(onSave = { saveSnapshot(controller) }, onLoad = { loadSnapshot(controller) })
 
         val renderer = CytoRenderer()
-        toggleLight = { renderer.showLightField = !renderer.showLightField }
         val controls = CytoControls()
+        // On-screen buttons drive these (no keyboard-only controls): the Light button owns its toggle
+        // state (synced to the renderer each frame), the Load-Genome button loads the brush genome.
+        controls.onLoadBrush = { loadBrush(controller) }
         autoLoadSnapshotAtStartup(controller)
 
         val mouse = MouseState()
@@ -58,6 +55,7 @@ object CytoSceneView {
             val delta = (now - lastTime).toFloat().coerceIn(0f, 0.25f)
             lastTime = now
 
+            renderer.showLightField = controls.showLightField   // Light button → renderer
             val frame = controller.tick(delta)
 
             renderer.draw(frame) // renderer fills its own background
@@ -92,14 +90,15 @@ object CytoSceneView {
         # cyto brush genome — one gene per line:  INPUTS  >  OUTPUT
         #   input:  TYPE chem weight        (TYPE = Chem | Touch | Light;  _ = no chem name)
         #   output: TYPE chem1 chem2 bias   (TYPE = Contract|Mitosis|Inhibit|Enzyme|Sticky|Secrete)
-        #   '-' = no inputs.  Edit, then press G in-game to reload. Paint with Spawn (empty space) / Set.
+        #   '-' = no inputs.  Edit, then click "Load Genome" to reload. Paint with Spawn (empty space) / Set.
         # This starter cell collects light into energy and divides on a surplus:
         Light _ 1.0 > Secrete energy _ 0.0
         Chem energy 1.0 > Mitosis _ _ -5.0
     """.trimIndent() + "\n"
 
-    /** Load the authoring brush genome from [BRUSH_PATH] (GeneCodec text). Press G in-game to (re)load.
-     *  If the file is absent, write a documented starter so there's something to edit + a working brush. */
+    /** Load the authoring brush genome from [BRUSH_PATH] (GeneCodec text), driven by the on-screen
+     *  "Load Genome" button. If the file is absent, write a documented starter so there's something to
+     *  edit + a working brush. */
     private fun loadBrush(controller: CytoController) {
         if (!Files.exists(BRUSH_PATH)) {
             runCatching { Files.writeString(BRUSH_PATH, STARTER_BRUSH) }
@@ -110,7 +109,7 @@ object CytoSceneView {
             .onFailure { controller.brushGenome = null; println("[cyto] parse failed ($BRUSH_PATH): ${it.message} — using type presets") }
     }
 
-    private fun initWindow(onSave: () -> Unit, onLoad: () -> Unit, onToggleLight: () -> Unit, onLoadBrush: () -> Unit): Long {
+    private fun initWindow(onSave: () -> Unit, onLoad: () -> Unit): Long {
         if (!glfwInit()) error("GLFW init failed")
         glfwDefaultWindowHints()
         glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE)
@@ -129,8 +128,6 @@ object CytoSceneView {
                 GLFW_KEY_ESCAPE -> glfwSetWindowShouldClose(win, true)
                 GLFW_KEY_F5 -> onSave()
                 GLFW_KEY_F9 -> onLoad()
-                GLFW_KEY_L -> onToggleLight()
-                GLFW_KEY_G -> onLoadBrush()
             }
         }
 

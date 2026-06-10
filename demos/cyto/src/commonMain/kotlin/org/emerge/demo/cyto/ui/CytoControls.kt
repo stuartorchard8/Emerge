@@ -27,6 +27,14 @@ class CytoControls {
     var showChemicals: Boolean = false
         private set
 
+    /** Whether to draw the light-field heatmap (the host reads this and applies it to the renderer). */
+    var showLightField: Boolean = true
+        private set
+
+    /** Host action for the "Load Genome" button — (re)load the brush genome from its file. File IO
+     *  lives in the host (this class is cross-platform), so the host wires this up. */
+    var onLoadBrush: () -> Unit = {}
+
     private enum class Group { CellType, TouchMode }
     private var openGroup: Group? = null
 
@@ -143,11 +151,20 @@ class CytoControls {
             buttons.add(Btn(modeX, bottomY, bs, bs, touchMode.color, "${touchMode.name}\nMode") { openGroup = Group.TouchMode })
         }
 
-        // ── Debug toggle (bottom-right) ──
+        // ── Bottom-right cluster: Load Genome | Light toggle | Debug toggle ──
+        val rightX = resW - pad - bs
         buttons.add(
-            Btn(resW - pad - bs, bottomY, bs, bs, DEBUG_COLOR, "Debug\n${if (showChemicals) "ON" else "OFF"}") {
+            Btn(rightX, bottomY, bs, bs, DEBUG_COLOR, "Debug\n${if (showChemicals) "ON" else "OFF"}") {
                 showChemicals = !showChemicals
             }
+        )
+        buttons.add(
+            Btn(rightX - (bs + gap), bottomY, bs, bs, LIGHT_COLOR, "Light\n${if (showLightField) "ON" else "OFF"}") {
+                showLightField = !showLightField
+            }
+        )
+        buttons.add(
+            Btn(rightX - 2f * (bs + gap), bottomY, bs, bs, GENE_COLOR, "Load\nGenome") { onLoadBrush() }
         )
     }
 
@@ -190,5 +207,7 @@ class CytoControls {
 
     companion object {
         private const val DEBUG_COLOR = 0x606060FFL
+        private const val LIGHT_COLOR = 0xEFD040FFL   // warm — the light field
+        private const val GENE_COLOR = 0x44CC55FFL    // green — matches the Collector swatch
     }
 }
