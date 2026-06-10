@@ -208,7 +208,9 @@ class MorphLab {
         nodeEditor.add(slider("oy", -2.5, 2.5, { n.oy.toDouble() }) { n.oy = it.toFloat(); requestRender() })
         nodeEditor.add(extraSlider(n, "z", "z (depth)", -1.5, 1.5, 0f))
         nodeEditor.add(slider("scale", 0.05, 3.0, { n.scale.toDouble() }) { n.scale = it.toFloat(); requestRender() })
-        nodeEditor.add(extraSlider(n, "rot", "rotation (deg)", -90.0, 90.0, 0f))
+        nodeEditor.add(extraSlider(n, "rotX", "rotation X (pitch, deg)", -90.0, 90.0, 0f))
+        nodeEditor.add(extraSlider(n, "rotY", "rotation Y (yaw, deg)", -90.0, 90.0, 0f))
+        nodeEditor.add(extraSlider(n, "rot", "rotation Z (roll/view, deg)", -90.0, 90.0, 0f))
         nodeEditor.add(JCheckBox("bilateral pair (mirrored)", n.mirrored).apply {
             alignmentX = JComponent.LEFT_ALIGNMENT
             addActionListener { n.mirX = if (isSelected) 1f else 0f; requestRender() }
@@ -222,21 +224,27 @@ class MorphLab {
         nodeEditor.add(subhead("Response × valence (sad ↔ happy)"))
         nodeEditor.add(extraSlider(n, "vdx", "→ move x", -1.0, 1.0, 0f))
         nodeEditor.add(extraSlider(n, "vdy", "→ move y", -1.0, 1.0, 0f))
-        nodeEditor.add(extraSlider(n, "vrot", "→ rotate (deg)", -60.0, 60.0, 0f))
+        nodeEditor.add(extraSlider(n, "vrotX", "→ rotate X", -60.0, 60.0, 0f))
+        nodeEditor.add(extraSlider(n, "vrotY", "→ rotate Y", -60.0, 60.0, 0f))
+        nodeEditor.add(extraSlider(n, "vrot", "→ rotate Z", -60.0, 60.0, 0f))
         nodeEditor.add(extraSlider(n, "vsx", "→ widen", -1.0, 1.0, 0f))
         nodeEditor.add(extraSlider(n, "vsy", "→ heighten", -1.0, 1.0, 0f))
 
         nodeEditor.add(subhead("Response × arousal (calm ↔ excited)"))
         nodeEditor.add(extraSlider(n, "adx", "→ move x", -1.0, 1.0, 0f))
         nodeEditor.add(extraSlider(n, "ady", "→ move y", -1.0, 1.0, 0f))
-        nodeEditor.add(extraSlider(n, "arot", "→ rotate (deg)", -60.0, 60.0, 0f))
+        nodeEditor.add(extraSlider(n, "arotX", "→ rotate X", -60.0, 60.0, 0f))
+        nodeEditor.add(extraSlider(n, "arotY", "→ rotate Y", -60.0, 60.0, 0f))
+        nodeEditor.add(extraSlider(n, "arot", "→ rotate Z", -60.0, 60.0, 0f))
         nodeEditor.add(extraSlider(n, "asx", "→ widen", -1.0, 1.0, 0f))
         nodeEditor.add(extraSlider(n, "asy", "→ heighten", -1.0, 1.0, 0f))
 
         nodeEditor.add(subhead("Response × dominance (submissive ↔ dominant)"))
         nodeEditor.add(extraSlider(n, "ddx", "→ move x", -1.0, 1.0, 0f))
         nodeEditor.add(extraSlider(n, "ddy", "→ move y", -1.0, 1.0, 0f))
-        nodeEditor.add(extraSlider(n, "drot", "→ rotate (deg)", -60.0, 60.0, 0f))
+        nodeEditor.add(extraSlider(n, "drotX", "→ rotate X", -60.0, 60.0, 0f))
+        nodeEditor.add(extraSlider(n, "drotY", "→ rotate Y", -60.0, 60.0, 0f))
+        nodeEditor.add(extraSlider(n, "drot", "→ rotate Z", -60.0, 60.0, 0f))
         nodeEditor.add(extraSlider(n, "dsx", "→ widen", -1.0, 1.0, 0f))
         nodeEditor.add(extraSlider(n, "dsy", "→ heighten", -1.0, 1.0, 0f))
 
