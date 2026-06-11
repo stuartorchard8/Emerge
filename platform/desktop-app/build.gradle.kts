@@ -103,6 +103,14 @@ tasks.register<JavaExec>("renderCyto") {
     classpath = sourceSets["main"].runtimeClasspath
 }
 
+tasks.register<JavaExec>("probeCytoPopulation") {
+    group = "verification"
+    description = "Headless population probe: seed a self-sufficient (collect+divide) genome on a " +
+        "light source, print population over time (does exposure cap growth?). --args=\"<ticks> <every>\"."
+    mainClass = "org.emerge.desktop.CytoPopulationProbeKt"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
 tasks.register<JavaExec>("runNorns") {
     group = "application"
     description = "Watch the Norns artificial-life colony live in the terminal (ASCII view). " +
