@@ -118,5 +118,23 @@ Per-cell sim is expensive — historically the reason this stalled. The discipli
    Genome** button to (re)load it as the *brush*, paint with the existing **Spawn**/**Set** controls;
    the **Light** button toggles the heatmap. (All on-screen buttons — no keyboard-only controls.)
    Roadmap: a full **on-screen genome composer** (no leaving the game).
+5b. **Depletable closed energy economy** — ▶ in progress. `CytoEnergyGrid` (live, depletable Frac
+   reservoir; draw/deposit conserve to the unit — built + unit-tested) replaces the static
+   `CytoLightField` as the energy source. Design for the sim coupling:
+   - **Collection (grid→cell):** in each biology path's build, per cell *in cell order* (must match
+     across AoS/SoA), a Collector draws `draw = grid.at(idx) * DRAW_RATE * exposure` from its grid cell
+     (`grid.draw(idx, …)` debits), and `cell.light = draw`; the `Light → Secrete energy` gene credits the
+     cell. Sequential debit → natural sharing (later cells on a cell see less). Discrete cell (no
+     bilinear) → resolves tech-debt #3.
+   - **Returns (cell→grid):** accumulate per-cell `wasteOut` in `CytoBiologyCore.act` (keeps it
+     storage-agnostic) for the energy **decay** loss (respiration) and the **overflow** above 1.0
+     (waste — Stu: selection avoids full because of this), then `grid.deposit(idx, wasteOut)` post-act.
+     (Diffusion remainder stays in-cell for now — clean multi-neighbour remainder-waste is fuzzy; defer.)
+   - **Conservation:** `grid.total() + Σ cell energy` constant — a NEW test must assert this over N ticks.
+     No emission, no other loss → closed; gives a hard carrying capacity + kills the filament strategy.
+   - Live state: a singleton in `SimState` (AoS) + a `CytoWorld` field (SoA), updated identically, in
+     the AoS↔SoA equivalence + the save. No grid diffusion v1 (energy recycles locally near the colony).
+   - Knobs to tune after: `DRAW_RATE`, initial reservoir total, (later) grid diffusion + clonal/meiotic
+     reproduction returning energy on death.
 6. Hand-built **hopeful monster** (morphogen-gated mitosis + asymmetric division + differentiation).
 7. **Mutation + selection** — the substrate evolves.
