@@ -87,6 +87,21 @@ Per-cell sim is expensive — historically the reason this stalled. The discipli
 - The structural win: a resource-limited energy economy is a **carrying capacity** — the world refuses
   to feed unbounded biomass, so cell count (and compute) is bounded by the ecology, not by tricks.
 
+## Tech debt
+
+- **Float still in the sim (de-float to finish what `dc22be3` started).** The chemistry is fixed-point
+  `Frac`, but three things outside it are still `Float`/`Double` — i.e. not yet bulletproof
+  cross-platform deterministic:
+  1. **Spring stress-damage** — `ConnectionStateComponent.damage`, `connectionBreakDamage`,
+     `connectionStressScale`, the CSR `edgeAux`, and the connection-maintenance accumulation. Physics /
+     connection state, not chemistry.
+  2. **Division split geometry** — the "ahead vs side" neighbour classification (`dot(...).toFloat()`
+     compared to `0.75f`) in `CytoLifecycle.divide` / `CytoLifecycleSystem.divide`.
+  3. **Light-field bilinear *sample*** — `CytoLightField.sampleAt` interpolates in `Double`. **Becomes
+     conservation-critical the moment the field goes depletable** → Frac-ify it as part of that work.
+- The dense SoA fast path was dropped (one biology path); reclaim via energy-only dense execution if a
+  profile demands it (see Performance).
+
 ## Build order
 
 1. ✅ Heritable per-cell genome, inherited on division (not type-keyed). *(75690fb)*
