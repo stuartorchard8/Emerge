@@ -43,10 +43,36 @@ value class Frac(val raw: Long) {
 
     fun coerceAtMost(o: Frac): Frac = Frac(raw.coerceAtMost(o.raw))
     fun coerceAtLeast(o: Frac): Frac = Frac(raw.coerceAtLeast(o.raw))
+    fun coerceIn(lo: Frac, hi: Frac): Frac = Frac(raw.coerceIn(lo.raw, hi.raw))
+
+    operator fun compareTo(o: Frac): Int = raw.compareTo(o.raw)
+
+    /** Integer remainder of `raw % n` as a Frac — the part of a [div]`(n)` split that doesn't divide
+     *  evenly. In a closed system this must go somewhere (e.g. expelled to the environment as waste). */
+    fun remainder(n: Int): Frac = Frac(raw % n)
+
+    /** Fixed-point square root in value-space: `sqrt(raw / MAX)`. */
+    fun sqrt(): Frac = if (raw <= 0L) Frac(0) else Frac(isqrt(raw) * SQRT_MAX_INT)
 
     companion object {
         val PIon4: Frac = Frac(1686629713L)
         fun abs(v: Frac): Frac = Frac(kotlin.math.abs(v.raw))
+
+        /** Float → Frac boundary conversion — for the non-sim edges only (codec text, light-field
+         *  build from `exp`, rendering). Sim arithmetic stays in Frac. */
+        fun fromFloat(f: Float): Frac = Frac((f.toDouble() * Int.MAX_VALUE.toDouble()).toLong())
+
+        private fun isqrt(n: Long): Long {
+            if (n < 2) return n
+            var lo = 1L; var hi = 3_037_000_499L   // floor(sqrt(Long.MAX_VALUE))
+            var r = 1L
+            while (lo <= hi) {
+                val mid = lo + (hi - lo) / 2
+                if (mid <= n / mid) { r = mid; lo = mid + 1 } else hi = mid - 1
+            }
+            return r
+        }
+        private val SQRT_MAX_INT: Long = isqrt(Int.MAX_VALUE.toLong())
 
 
         fun beizer(x: Frac): Frac {
