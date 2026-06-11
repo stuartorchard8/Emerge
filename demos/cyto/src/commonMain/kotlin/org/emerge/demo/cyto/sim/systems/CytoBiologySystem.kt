@@ -16,12 +16,9 @@ import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.SpringConstraint
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
+import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.sqrt
 
 /** Emitted by [CytoBiologySystem]; consumed by [CytoLifecycleSystem] in a later phase. */
 data class CellDivisionIntent(val id: EntityId)
@@ -35,6 +32,8 @@ data class CellDestroyIntent(val id: EntityId)
  * structural [CytoLifecycleSystem] to apply.
  */
 object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.sim.CytoInput> {
+    private val ZERO = Frac(0, 1)
+
     override fun update(
         cfg: CytoConfig,
         builder: SimBuilder,
@@ -53,12 +52,12 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
         for ((id, cell) in cells) {
             val chem = HashMap(cell.chemicals)
             for ((k, v) in cell.pendingTransfers) {
-                chem[k] = ((chem[k] ?: 0f) + v).coerceIn(0f, MAX_CHEM)
+                chem[k] = ((chem[k] ?: ZERO) + v).coerceIn(ZERO, MAX_CHEM)
             }
             // Harvest = field × exposure: only surface cells reach the resource (income ∝ surface,
             // not volume), so a growing colony's per-capita income falls → density dependence.
             val pos = transforms[id]?.pos
-            var harvest = 0f
+            var harvest = ZERO
             if (pos != null) {
                 var k = 0
                 springs[id]?.springs?.let { sp ->
@@ -66,7 +65,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
                         if (k >= org.emerge.demo.cyto.sim.CytoExposure.MAX_NEIGHBOURS) break
                         val np = transforms[s.other]?.pos ?: continue
                         val d = np - pos
-                        expoScratch[k++] = org.emerge.demo.cyto.sim.CytoExposure.diamondAngle(d.x.toFloat(), d.y.toFloat())
+                        expoScratch[k++] = org.emerge.demo.cyto.sim.CytoExposure.diamondAngle(d.x, d.y).raw
                     }
                 }
                 harvest = lightField.sampleAt(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y)) *
@@ -89,7 +88,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
         // Pass 1 — chemistry: genes then enzyme reactions, for every cell.
         for ((_, work) in works) {
             runGenes(work, dt)
-            work.touch = 0f
+            work.touch = ZERO
             CytoBiologyCore.runReactions(work)
         }
 
@@ -109,7 +108,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
                     logicalRadius = work.logicalRadius,
                     divideCharge = work.divideCharge,
                     pendingTransfers = work.transfers,
-                    touch = 0f,
+                    touch = ZERO,
                     stickyTemp = work.isStickyTemp,
                 )
             }
@@ -119,7 +118,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
             // logicalRadius ⇒ identical ColliderComponent.
             val original = cells[id]
             if (original == null || work.logicalRadius != original.logicalRadius) {
-                builder.update<ColliderComponent>(id) { ColliderComponent(CytoUnits.len(work.logicalRadius)) }
+                builder.update<ColliderComponent>(id) { ColliderComponent(CytoUnits.len(work.logicalRadius.toFloat())) }
             }
         }
 
@@ -127,8 +126,8 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
         for (id in divide) builder.emit(CellDivisionIntent(id))
     }
 
-    const val TIME_STEP = 1f / 64f
+    val TIME_STEP = Frac(1, 64)
 
-    // Reused per-cell scratch for the exposure (neighbour diamond-angles). Single-threaded reducer.
-    private val expoScratch = FloatArray(org.emerge.demo.cyto.sim.CytoExposure.MAX_NEIGHBOURS)
+    // Reused per-cell scratch for the exposure (neighbour diamond-angle raws). Single-threaded reducer.
+    private val expoScratch = LongArray(org.emerge.demo.cyto.sim.CytoExposure.MAX_NEIGHBOURS)
 }

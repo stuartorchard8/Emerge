@@ -20,6 +20,7 @@ import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Coord2
+import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
 import kotlin.math.ceil
@@ -269,9 +270,9 @@ class CytoSoaEquivalenceTest {
             if (r.radiusRaw != s.radiusRaw) bad("radiusRaw", r.radiusRaw, s.radiusRaw)
             compareChem("chemicals", r.chemicals, s.chemicals, ::bad)
             compareChem("pendingTransfers", r.pendingTransfers, s.pendingTransfers, ::bad)
-            if (r.logicalRadius.toRawBits() != s.logicalRadius.toRawBits()) bad("logicalRadius", r.logicalRadius, s.logicalRadius)
-            if (r.divideCharge.toRawBits() != s.divideCharge.toRawBits()) bad("divideCharge", r.divideCharge, s.divideCharge)
-            if (r.touch.toRawBits() != s.touch.toRawBits()) bad("touch", r.touch, s.touch)
+            if (r.logicalRadius.raw != s.logicalRadius.raw) bad("logicalRadius", r.logicalRadius, s.logicalRadius)
+            if (r.divideCharge.raw != s.divideCharge.raw) bad("divideCharge", r.divideCharge, s.divideCharge)
+            if (r.touch.raw != s.touch.raw) bad("touch", r.touch, s.touch)
             if (r.type != s.type) bad("type", r.type, s.type)
             if (r.springs != s.springs) bad("springs", r.springs, s.springs)
             // damage compared via raw bits per entry
@@ -292,16 +293,16 @@ class CytoSoaEquivalenceTest {
      */
     private fun compareChem(
         field: String,
-        ref: Map<String, Float>,
-        soa: Map<String, Float>,
+        ref: Map<String, Frac>,
+        soa: Map<String, Frac>,
         bad: (String, Any?, Any?) -> Unit,
     ) {
-        val r = ref.filterValues { it != 0f }
-        val s = soa.filterValues { it != 0f }
+        val r = ref.filterValues { it.raw != 0L }
+        val s = soa.filterValues { it.raw != 0L }
         if (r.keys != s.keys) bad("$field.keys", r.keys, s.keys)
         for ((k, v) in r) {
-            val sv = s[k] ?: Float.NaN
-            if (v.toRawBits() != sv.toRawBits()) bad("$field[$k]", v, s[k])
+            val sv = s[k]
+            if (sv == null || v.raw != sv.raw) bad("$field[$k]", v, s[k])
         }
     }
 
@@ -353,7 +354,7 @@ class CytoSoaEquivalenceTest {
                 grid[row * side + col] = builder.spawnCell(
                     pos = CytoUnits.coord2(x, y), vel = Coord2.zero,
                     type = if (support) CellType.Support else CellType.Blank,
-                    chemicals = mapOf("energy" to 8f), logicalRadius = 1f,
+                    chemicals = mapOf("energy" to Frac(4, 5)), logicalRadius = Frac(1, 1),
                 )
                 placed++
             }
@@ -380,11 +381,11 @@ class CytoSoaEquivalenceTest {
                 val y = (row - side / 2) * spacing
                 val id = builder.spawnCell(
                     pos = CytoUnits.coord2(x, y), vel = Coord2.zero,
-                    // Energy above the Stem mitosis gate (5) so the gene-driven warm-up reaches the
+                    // Energy above the Stem mitosis gate (0.5) so the gene-driven warm-up reaches the
                     // divide threshold within the comparison window (≈ DIVIDE_THRESHOLD / (energy−gate) ticks).
-                    type = CellType.Stem, chemicals = mapOf("energy" to 9f), logicalRadius = 1f,
+                    type = CellType.Stem, chemicals = mapOf("energy" to Frac(9, 10)), logicalRadius = Frac(1, 1),
                 )
-                builder.update<CytoCellComponent>(id) { (it!!).copy(divideCharge = 0f) }
+                builder.update<CytoCellComponent>(id) { (it!!).copy(divideCharge = Frac(0, 1)) }
                 grid[row * side + col] = id
             }
         }
@@ -398,7 +399,7 @@ class CytoSoaEquivalenceTest {
         // An isolated low-energy cell whose decay drives it to 0 energy → death on tick 2.
         builder.spawnCell(
             pos = CytoUnits.coord2(50f, 50f), vel = Coord2.zero,
-            type = CellType.Blank, chemicals = mapOf("energy" to 0.0001f), logicalRadius = 1f,
+            type = CellType.Blank, chemicals = mapOf("energy" to Frac(1, 100000)), logicalRadius = Frac(1, 1),
         )
         return builder.build()
     }
@@ -406,10 +407,10 @@ class CytoSoaEquivalenceTest {
     /** A connected line carrying extra chemicals (x, e) plus Contract-gene cells. */
     private fun buildMultiChemColony(): SimState {
         val builder = SimBuilder(SimState())
-        val a = builder.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Blank, mapOf("energy" to 4f, "x" to 3f), 1f)
-        val b = builder.spawnCell(CytoUnits.coord2(2f, 0f), Coord2.zero, CellType.Blank, mapOf("energy" to 4f, "x" to 3f), 1f)
-        val c = builder.spawnCell(CytoUnits.coord2(4f, 0f), Coord2.zero, CellType.Muscle, mapOf("energy" to 3f, "e" to 2f), 1f)
-        val d = builder.spawnCell(CytoUnits.coord2(6f, 0f), Coord2.zero, CellType.Jump, mapOf("energy" to 4f), 1f)
+        val a = builder.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Blank, mapOf("energy" to Frac(2, 5), "x" to Frac(3, 10)), Frac(1, 1))
+        val b = builder.spawnCell(CytoUnits.coord2(2f, 0f), Coord2.zero, CellType.Blank, mapOf("energy" to Frac(2, 5), "x" to Frac(3, 10)), Frac(1, 1))
+        val c = builder.spawnCell(CytoUnits.coord2(4f, 0f), Coord2.zero, CellType.Muscle, mapOf("energy" to Frac(3, 10), "e" to Frac(1, 5)), Frac(1, 1))
+        val d = builder.spawnCell(CytoUnits.coord2(6f, 0f), Coord2.zero, CellType.Jump, mapOf("energy" to Frac(2, 5)), Frac(1, 1))
         addSpring(builder, a, b, cfg)
         addSpring(builder, b, c, cfg)
         addSpring(builder, c, d, cfg)
@@ -421,9 +422,9 @@ class CytoSoaEquivalenceTest {
         val builder = SimBuilder(SimState())
         val t = builder.spawnCell(
             CytoUnits.coord2(0f, 0f), Coord2.zero,
-            CellType.Touch, mapOf("energy" to 2f, "e" to 2f, "n" to 2f), 1f,
+            CellType.Touch, mapOf("energy" to Frac(1, 5), "e" to Frac(1, 5), "n" to Frac(1, 5)), Frac(1, 1),
         )
-        builder.update<CytoCellComponent>(t) { (it!!).copy(touch = 1f) }
+        builder.update<CytoCellComponent>(t) { (it!!).copy(touch = Frac(1, 1)) }
         return builder.build()
     }
 }

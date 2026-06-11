@@ -13,6 +13,7 @@ import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
+import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
 
@@ -43,12 +44,12 @@ object CytoSaveCodec {
             w.writeInt(pos.x.raw); w.writeInt(pos.y.raw)
             w.writeInt(vel.x.raw); w.writeInt(vel.y.raw)
             w.writeLong(cell.type.dbIndex)
-            w.writeFloat(cell.logicalRadius)
-            w.writeFloat(cell.divideCharge)
+            w.writeLong(cell.logicalRadius.raw)
+            w.writeLong(cell.divideCharge.raw)
             w.writeByte(if (cell.sticky) 1 else 0)
             w.writeInt(cell.chemicals.size)
             for ((k, v) in cell.chemicals) {
-                w.writeString(k); w.writeFloat(v)
+                w.writeString(k); w.writeLong(v.raw)
             }
         }
 
@@ -88,13 +89,13 @@ object CytoSaveCodec {
             val pos = Coord2(Coord(c.readInt()), Coord(c.readInt()))
             val vel = Coord2(Coord(c.readInt()), Coord(c.readInt()))
             val type = CellType.fromDbIndex(c.readLong())
-            val radius = c.readFloat()
-            val cooldown = c.readFloat()
+            val radius = Frac(c.readLong())
+            val cooldown = Frac(c.readLong())
             val sticky = c.readByte().toInt() != 0
             val chemCount = c.readInt()
             require(chemCount >= 0) { "Invalid chemical count: $chemCount" }
-            val chemicals = LinkedHashMap<String, Float>(chemCount)
-            repeat(chemCount) { chemicals[c.readString()] = c.readFloat() }
+            val chemicals = LinkedHashMap<String, Frac>(chemCount)
+            repeat(chemCount) { chemicals[c.readString()] = Frac(c.readLong()) }
 
             val newId = builder.spawnCell(pos, vel, type, chemicals, radius, sticky)
             builder.update<CytoCellComponent>(newId) { current ->
@@ -115,12 +116,10 @@ object CytoSaveCodec {
         return builder.build()
     }
 
-    private fun ByteWriter.writeFloat(v: Float) = writeInt(v.toRawBits())
     private fun ByteWriter.writeString(s: String) {
         val b = s.encodeToByteArray()
         writeInt(b.size); writeBytes(b)
     }
-    private fun ByteCursor.readFloat(): Float = Float.fromBits(readInt())
     private fun ByteCursor.readString(): String {
         val len = readInt()
         require(len >= 0) { "Invalid string length: $len" }

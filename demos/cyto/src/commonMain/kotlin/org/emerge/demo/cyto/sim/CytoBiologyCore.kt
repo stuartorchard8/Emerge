@@ -2,25 +2,27 @@ package org.emerge.demo.cyto.sim
 
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.sim.core.EntityId
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.sqrt
+import org.emerge.sim.core.physics.primitives.Frac
 
 /**
- * The pure, storage-agnostic core of Cyto's chemistry/growth biology — the per-cell `act`
- * (diffusion + energy + growth + type behaviour + division/death decision) and the enzyme
- * `runReactions`, operating only on [CellWork]s and neighbour ids. Both the array-of-structs
- * [org.emerge.demo.cyto.sim.systems.CytoBiologySystem] and the SoA biology slow-path call this
- * single implementation, so multi-species chemistry is **bit-identical by construction** rather
- * than by parallel reproduction.
+ * The pure, storage-agnostic core of Cyto's chemistry/growth biology — per-cell `act` (diffusion +
+ * energy + growth + division/death decision) and the enzyme `runReactions`, on [CellWork]s + neighbour
+ * ids. Both the AoS [org.emerge.demo.cyto.sim.systems.CytoBiologySystem] and the SoA biology path call
+ * this single implementation, so the result is **bit-identical by construction**.
  *
- * Note on determinism: a cell's per-neighbour float diffusion accumulates in neighbour order,
- * and each chemical accumulates independently of the others, so the *inner* chemical-map
- * iteration order is irrelevant to the result — only the (caller-controlled) neighbour order
- * and cell order matter.
+ * All chemistry is fixed-point [Frac] in `[0,1]` (1.0 = a full cell). The old `[0,10]` magnitudes were
+ * rescaled ÷10 (full-size threshold 1→0.1, decay constants adjusted) — same dynamics, Frac-safe range.
+ * Frac diffusion floors `v/n`; the cell keeps the undivided remainder (conservative — until the
+ * depletable grid gives waste somewhere else to go).
  */
 internal object CytoBiologyCore {
+
+    private val ZERO = Frac(0, 1)
+    private val ONE = Frac(1, 1)
+    private val FULL_SIZE_ENERGY = Frac(1, 10)   // old "energy ≥ 1" full-size / linear-decay threshold, ÷10
+    private val DECAY_SLOPE = Frac(5, 4)         // old 0.125 × (the ÷10 rescale) → 1.25·energy
+    private val DECAY_INTERCEPT = Frac(1, 8)     // old +0.125 (unchanged)
+    private val HALF = Frac(1, 2)
 
     fun act(
         id: EntityId,
@@ -28,70 +30,70 @@ internal object CytoBiologyCore {
         neighbourIds: List<EntityId>?,
         works: Map<EntityId, CellWork>,
         neighbourCounts: Map<EntityId, Int>,
-        dt: Float,
+        dt: Frac,
         divide: MutableList<EntityId>,
         destroy: MutableList<EntityId>,
     ) {
-        if (dt <= 0f) return
-        val energy = work.chemicals["energy"] ?: 1f
-        if (energy <= 0f) {
+        if (dt.sign <= 0) return
+        val energy = work.chemicals["energy"] ?: ONE
+        if (energy.sign <= 0) {
             destroy.add(id)
             return
         }
 
-        // Diffuse chemicals to connected neighbours.
+        // Diffuse chemicals to connected neighbours (floor split; the cell keeps the remainder).
         val selfConnections = neighbourIds?.size ?: 0
         if (neighbourIds != null) for (nId in neighbourIds) {
             val nWork = works[nId] ?: continue
-            val maxConnections = max(selfConnections, neighbourCounts[nId] ?: 0) + 1
+            val maxConnections = maxOf(selfConnections, neighbourCounts[nId] ?: 0) + 1
             for ((k, v) in work.chemicals) {
-                val totalInhibition = abs((work.suppression[k] ?: 0f) + (nWork.suppression[k] ?: 0f))
-                val transfer = v / maxConnections - totalInhibition
-                if (transfer > 0f) {
-                    work.transfers[k] = (work.transfers[k] ?: 0f) - transfer
-                    nWork.transfers[k] = (nWork.transfers[k] ?: 0f) + transfer
+                val totalInhibition = Frac.abs((work.suppression[k] ?: ZERO) + (nWork.suppression[k] ?: ZERO))
+                val transfer = v.div(maxConnections) - totalInhibition
+                if (transfer.sign > 0) {
+                    work.transfers[k] = (work.transfers[k] ?: ZERO) - transfer
+                    nWork.transfers[k] = (nWork.transfers[k] ?: ZERO) + transfer
                 }
             }
         }
 
-        var targetRadius = 1f
-        if (energy >= 1f) {
-            work.transfers["energy"] = (work.transfers["energy"] ?: 0f) - dt
+        // Energy upkeep + growth. Loss is ÷10 of the old per-tick loss (the units rescale).
+        val decayBase = dt.div(10)
+        var targetRadius = ONE
+        if (energy >= FULL_SIZE_ENERGY) {
+            work.transfers["energy"] = (work.transfers["energy"] ?: ZERO) - decayBase
         } else {
-            val decay = energy * 0.125f + 0.125f
-            work.transfers["energy"] = (work.transfers["energy"] ?: 0f) - dt * decay * decay
-            targetRadius = sqrt(energy)
+            val decay = energy * DECAY_SLOPE + DECAY_INTERCEPT
+            work.transfers["energy"] = (work.transfers["energy"] ?: ZERO) - decayBase * (decay * decay)
+            targetRadius = (energy / FULL_SIZE_ENERGY).sqrt()
         }
 
-        if (work.contraction > 0f) {
-            val chargeToUse = min(work.contraction, dt)
+        if (work.contraction.sign > 0) {
+            val chargeToUse = work.contraction.coerceAtMost(dt)
             val strength = chargeToUse / dt
-            targetRadius *= 1f - strength * 0.5f
-            work.contraction = 0f
+            targetRadius *= ONE - strength * HALF
+            work.contraction = ZERO
         }
 
-        // Division is now gene-driven: a Mitosis gene accrued `divideCharge` in the gene pass; once it
-        // reaches the warm-up threshold the cell splits (the lifecycle resets the charge to 0). Clamp
-        // ≥0 so a starved cell that read a negative activation just stalls rather than banking debt.
-        if (work.divideCharge < 0f) work.divideCharge = 0f
+        // Division is gene-driven: a Mitosis gene accrued `divideCharge`; at the threshold the cell
+        // splits (the lifecycle resets it). Clamp ≥0 so a starved cell stalls rather than banking debt.
+        if (work.divideCharge.sign < 0) work.divideCharge = ZERO
         if (work.divideCharge >= DIVIDE_THRESHOLD) divide.add(id)
 
-        // PLACEHOLDER: Support still mints energy from nothing, keyed on type. This is the one
-        // remaining hardcoded type-economy; it goes away when Collector cells absorb energy from the
-        // environment (a gene-driven `light(distance) → energy`). See MORPHOGENESIS.md.
-        if (work.type == CellType.Support) work.transfers["energy"] = (work.transfers["energy"] ?: 0f) + 5f
+        // PLACEHOLDER: Support mints energy from nothing, keyed on type — the one remaining hardcoded
+        // economy; retired when Collectors absorb from the environment. Rescaled ÷10 (was +5).
+        if (work.type == CellType.Support) work.transfers["energy"] = (work.transfers["energy"] ?: ZERO) + HALF
 
         work.logicalRadius =
-            (work.logicalRadius * RADIUS_ELASTICITY + max(targetRadius, MIN_RADIUS)) / (RADIUS_ELASTICITY + 1f)
+            (work.logicalRadius * RADIUS_ELASTICITY + targetRadius.coerceAtLeast(MIN_RADIUS)).div(RADIUS_ELASTICITY + 1)
     }
 
     private class ChemReaction(val catalyst: Pair<String, String>) {
-        var chemA = 0f
-        var chemB = 0f
-        var chemC = 0f
+        var chemA = Frac(0, 1)
+        var chemB = Frac(0, 1)
+        var chemC = Frac(0, 1)
     }
 
-    /** Enzyme-catalysed string-pattern reactions, ported verbatim from `Cell.chemistry`. */
+    /** Enzyme-catalysed string-pattern reactions, ported from `Cell.chemistry`. */
     fun runReactions(work: CellWork) {
         if (work.enzymes.isEmpty()) return
         val intents = mutableListOf<ChemReaction>()
@@ -121,7 +123,7 @@ internal object CytoBiologyCore {
             val bI = intents.filter { it.catalyst.second == key }
             val cI = intents.filter { "${it.catalyst.first}${it.catalyst.second}" == key }
             val total = aI.size + bI.size + cI.size
-            val allocation = value / (total + 1f)
+            val allocation = value.div(total + 1)
             aI.forEach { it.chemA = allocation }
             bI.forEach { it.chemB = allocation }
             cI.forEach { it.chemC = allocation }
@@ -131,12 +133,12 @@ internal object CytoBiologyCore {
             val chemA = r.catalyst.first
             val chemB = r.catalyst.second
             val chemC = "$chemA$chemB"
-            val minAB = min(r.chemA, r.chemB)
-            val diff = (minAB - r.chemC) / 2f
-            if (diff != 0f) {
-                work.chemicals[chemA] = (work.chemicals[chemA] ?: 0f) - diff
-                work.chemicals[chemB] = (work.chemicals[chemB] ?: 0f) - diff
-                work.chemicals[chemC] = (work.chemicals[chemC] ?: 0f) + diff
+            val minAB = r.chemA.coerceAtMost(r.chemB)
+            val diff = (minAB - r.chemC).div(2)
+            if (diff.sign != 0) {
+                work.chemicals[chemA] = (work.chemicals[chemA] ?: ZERO) - diff
+                work.chemicals[chemB] = (work.chemicals[chemB] ?: ZERO) - diff
+                work.chemicals[chemC] = (work.chemicals[chemC] ?: ZERO) + diff
             }
         }
     }

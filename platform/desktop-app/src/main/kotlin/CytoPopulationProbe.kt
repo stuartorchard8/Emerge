@@ -12,6 +12,7 @@ import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.primitives.Coord2
+import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
 
@@ -30,12 +31,12 @@ fun main(args: Array<String>) {
     val genome = GeneCodec.parse(
         """
         Light _ 1.0 > Secrete energy _ 0.0
-        Chem energy 1.0 > Mitosis _ _ -5.0
+        Chem energy 1.0 > Mitosis _ _ -0.5
         """.trimIndent(),
     )
     val (sx, sy) = CytoLightField.SOURCES.first()
     var state = SimBuilder(SimState()).run {
-        spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, mapOf("energy" to 2f), MIN_RADIUS, genome = genome)
+        spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, mapOf("energy" to Frac(1, 5)), MIN_RADIUS, genome = genome)
         build()
     }
     fun pop() = state.components.getTable<CytoCellComponent>().asMap().size

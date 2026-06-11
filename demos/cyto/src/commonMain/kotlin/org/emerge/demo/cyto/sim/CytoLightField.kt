@@ -1,5 +1,6 @@
 package org.emerge.demo.cyto.sim
 
+import org.emerge.sim.core.physics.primitives.Frac
 import kotlin.math.exp
 import kotlin.math.floor
 
@@ -23,24 +24,25 @@ import kotlin.math.floor
  * becomes live per-tick state and a closed energy system. The grid + sampling + rendering built here
  * carry straight over; only the "it updates each tick from the cells" part is added.)
  */
-class CytoLightField private constructor(private val grid: FloatArray) {
+class CytoLightField private constructor(private val grid: LongArray) {
 
-    /** Light at a logical world position (bilinear, torus-wrapped). */
-    fun sampleAt(logicalX: Float, logicalY: Float): Float {
+    /** Light at a logical world position (bilinear, torus-wrapped). Interpolation is on the raw
+     *  Frac longs; the lerp weights are the (geometric) sub-cell fractions. */
+    fun sampleAt(logicalX: Float, logicalY: Float): Frac {
         val u = (logicalX / SPAN + 0.5f) * RES
         val v = (logicalY / SPAN + 0.5f) * RES
         val x0 = wrapIndex(floor(u).toInt()); val x1 = wrapIndex(x0 + 1)
         val y0 = wrapIndex(floor(v).toInt()); val y1 = wrapIndex(y0 + 1)
-        val fx = u - floor(u); val fy = v - floor(v)
-        val a = grid[y0 * RES + x0]; val b = grid[y0 * RES + x1]
-        val c = grid[y1 * RES + x0]; val d = grid[y1 * RES + x1]
+        val fx = (u - floor(u)).toDouble(); val fy = (v - floor(v)).toDouble()
+        val a = grid[y0 * RES + x0].toDouble(); val b = grid[y0 * RES + x1].toDouble()
+        val c = grid[y1 * RES + x0].toDouble(); val d = grid[y1 * RES + x1].toDouble()
         val top = a + (b - a) * fx
         val bot = c + (d - c) * fx
-        return top + (bot - top) * fy
+        return Frac((top + (bot - top) * fy).toLong())
     }
 
-    /** The raw grid value at grid cell ([gx],[gy]) — for rendering the field as a heatmap. */
-    fun gridAt(gx: Int, gy: Int): Float = grid[wrapIndex(gy) * RES + wrapIndex(gx)]
+    /** The grid value at grid cell ([gx],[gy]) — for rendering the field as a heatmap. */
+    fun gridAt(gx: Int, gy: Int): Frac = Frac(grid[wrapIndex(gy) * RES + wrapIndex(gx)])
 
     companion object {
         /** Grid resolution per axis (the field is smooth, so a coarse grid is plenty). */
@@ -56,8 +58,9 @@ class CytoLightField private constructor(private val grid: FloatArray) {
             listOf(-q to -q, -q to q, q to -q, q to q)
         }
 
-        /** Peak light at a source (≈ energy/tick a Collector sitting on it produces). */
-        const val STRENGTH = 6f
+        /** Peak light at a source (≈ energy/tick a Collector sitting on it produces). Rescaled ÷10
+         *  from the old 0.05f into the Frac [0,1] range. */
+        val STRENGTH = Frac(1, 200)
 
         /** Gaussian falloff radius (logical units): light is strong within ~σ of a source and decays
          *  to ~0 well before the midpoint (HALF/2 away), leaving dark contested zones between sources. */
@@ -69,9 +72,10 @@ class CytoLightField private constructor(private val grid: FloatArray) {
         fun default(): CytoLightField = cached ?: build().also { cached = it }
 
         private fun build(): CytoLightField {
-            val grid = FloatArray(RES * RES)
+            val grid = LongArray(RES * RES)
             val cellSize = SPAN / RES
             val inv = 1f / (FALLOFF * FALLOFF)
+            val strength = STRENGTH.toFloat()
             for (gy in 0 until RES) {
                 val wy = -HALF + (gy + 0.5f) * cellSize
                 for (gx in 0 until RES) {
@@ -79,9 +83,9 @@ class CytoLightField private constructor(private val grid: FloatArray) {
                     var sum = 0f
                     for ((sx, sy) in SOURCES) {
                         val dx = wrapDelta(wx - sx); val dy = wrapDelta(wy - sy)
-                        sum += STRENGTH * exp(-(dx * dx + dy * dy) * inv)
+                        sum += strength * exp(-(dx * dx + dy * dy) * inv)
                     }
-                    grid[gy * RES + gx] = sum
+                    grid[gy * RES + gx] = Frac.fromFloat(sum).raw
                 }
             }
             return CytoLightField(grid)

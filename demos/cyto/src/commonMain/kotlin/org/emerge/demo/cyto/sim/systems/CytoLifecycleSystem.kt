@@ -31,6 +31,8 @@ import kotlin.math.sqrt
  * biology/connection phases.
  */
 object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
+    private val ZERO = Frac(0, 1)
+
     override fun update(
         cfg: CytoConfig,
         builder: SimBuilder,
@@ -82,7 +84,7 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             if (neighbourVector.x.raw == 0L && neighbourVector.y.raw == 0L) Norm.fromAngle(transform.ang)
             else neighbourVector.norm
 
-        val offset = neighbourNormal * CytoUnits.len(0.25f * cell.logicalRadius)
+        val offset = neighbourNormal * CytoUnits.len(0.25f * cell.logicalRadius.toFloat())
 
         // Group connections by how aligned they are with the split direction.
         val ahead = ArrayList<EntityId>()
@@ -98,9 +100,9 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             }
         }
 
-        val halfChemicals = cell.chemicals.mapValues { it.value / 2f }
-        val daughterEnergy = halfChemicals["energy"] ?: 0f
-        val daughterRadius = sqrt(min(1f, daughterEnergy))
+        val halfChemicals = cell.chemicals.mapValues { it.value.div(2) }
+        val daughterEnergy = (halfChemicals["energy"] ?: ZERO).toFloat()
+        val daughterRadius = Frac.fromFloat(sqrt(min(1f, daughterEnergy)))
 
         // Clonal division: the daughter inherits the mother's type AND genome (was hardcoded Stem;
         // equivalent today since only Stem cells divide, but now genomes propagate down a lineage).
@@ -126,7 +128,7 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             (current ?: transform).copy(pos = motherPos - offset, ang = transform.ang + Frac(1, 2))
         }
         builder.update<CytoCellComponent>(motherId) { current ->
-            (current ?: cell).copy(chemicals = halfChemicals, divideCharge = 0f)
+            (current ?: cell).copy(chemicals = halfChemicals, divideCharge = ZERO)
         }
 
         addSpring(builder, motherId, daughter, cfg)

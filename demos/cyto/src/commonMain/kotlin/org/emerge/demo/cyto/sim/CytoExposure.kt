@@ -1,5 +1,7 @@
 package org.emerge.demo.cyto.sim
 
+import org.emerge.sim.core.physics.primitives.Frac
+
 /**
  * How **exposed** a cell is — i.e. how much open space surrounds it, so that only surface cells of a
  * colony harvest the environment (buried cells are fed by inward diffusion). This makes a colony's
@@ -16,20 +18,20 @@ object CytoExposure {
 
     /** Monotonic pseudo-angle of (x, y) in [0, 4), increasing CCW — an `atan2`-free, trig-free,
      *  scale-invariant ordering key (the "diamond angle"). 1 unit ≈ 90°. */
-    fun diamondAngle(x: Float, y: Float): Float {
-        if (x == 0f && y == 0f) return 0f
-        return if (y >= 0f) {
-            if (x >= 0f) y / (x + y) else 1f - x / (-x + y)
+    fun diamondAngle(x: Frac, y: Frac): Frac {
+        if (x.raw == 0L && y.raw == 0L) return ZERO
+        return if (y.raw >= 0L) {
+            if (x.raw >= 0L) y / (x + y) else ONE - x / (-x + y)
         } else {
-            if (x < 0f) 2f - y / (-x - y) else 3f + x / (x - y)
+            if (x.raw < 0L) TWO - y / (-x - y) else THREE + x / (x - y)
         }
     }
 
     /** Exposure weight in [0,1] from the diamond-angles of a cell's neighbours, filled into
-     *  [angles] (only `[0, count)` is read; the array is sorted in place). 0 neighbours → 1 (a lone
-     *  cell is fully exposed); fully ringed → ~0. */
-    fun weight(angles: FloatArray, count: Int): Float {
-        if (count <= 0) return 1f
+     *  [angles] as raw Frac longs (only `[0, count)` is read; the array is sorted in place). 0
+     *  neighbours → 1 (a lone cell is fully exposed); fully ringed → ~0. */
+    fun weight(angles: LongArray, count: Int): Frac {
+        if (count <= 0) return ONE
         // insertion sort (count is tiny — a cell's neighbour degree)
         for (i in 1 until count) {
             val v = angles[i]
@@ -37,13 +39,19 @@ object CytoExposure {
             while (j >= 0 && angles[j] > v) { angles[j + 1] = angles[j]; j-- }
             angles[j + 1] = v
         }
-        var maxGap = angles[0] + 4f - angles[count - 1]   // the wrap-around gap
+        var maxGap = angles[0] + FULL_TURN_RAW - angles[count - 1]   // the wrap-around gap
         for (i in 1 until count) {
             val g = angles[i] - angles[i - 1]
             if (g > maxGap) maxGap = g
         }
-        return (maxGap * 0.25f).coerceIn(0f, 1f)
+        return Frac(maxGap).div(4).coerceIn(ZERO, ONE)
     }
+
+    private val ZERO = Frac(0, 1)
+    private val ONE = Frac(1, 1)
+    private val TWO = Frac(2, 1)
+    private val THREE = Frac(3, 1)
+    private val FULL_TURN_RAW = Frac(4, 1).raw
 
     /** Max neighbours considered (a cell with more is buried → tiny exposure regardless). */
     const val MAX_NEIGHBOURS = 32

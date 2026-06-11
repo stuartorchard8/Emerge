@@ -1,5 +1,7 @@
 package org.emerge.demo.cyto.sim
 
+import org.emerge.sim.core.physics.primitives.Frac
+
 /**
  * Human-writable text format for a genome (a `List<Gene>`) — the foundation the in-game editor and
  * the save file both build on, and a way to hand-author + test a cell genome without any UI.
@@ -18,9 +20,9 @@ object GeneCodec {
     fun serialize(genome: List<Gene>): String = genome.joinToString("\n") { gene ->
         val ins =
             if (gene.inputs.isEmpty()) "-"
-            else gene.inputs.joinToString(" | ") { "${it.type} ${tok(it.chem)} ${it.weight}" }
+            else gene.inputs.joinToString(" | ") { "${it.type} ${tok(it.chem)} ${it.weight.toFloat()}" }
         val o = gene.output
-        "$ins > ${o.type} ${tok(o.chem1)} ${tok(o.chem2)} ${o.bias}"
+        "$ins > ${o.type} ${tok(o.chem1)} ${tok(o.chem2)} ${o.bias.toFloat()}"
     }
 
     fun parse(text: String): List<Gene> = text.lines().mapNotNull { raw ->
@@ -33,12 +35,12 @@ object GeneCodec {
             else ins.split("|").map { field ->
                 val t = field.trim().split(WS)
                 require(t.size == 3) { "input must be 'TYPE chem weight': \"$field\"" }
-                GeneInput(GeneInputType.valueOf(t[0]), untok(t[1]), t[2].toFloat())
+                GeneInput(GeneInputType.valueOf(t[0]), untok(t[1]), Frac.fromFloat(t[2].toFloat()))
             }
         }
         val o = sides[1].trim().split(WS)
         require(o.size == 4) { "output must be 'TYPE chem1 chem2 bias': \"${sides[1]}\"" }
-        Gene(inputs, GeneOutput(GeneOutputType.valueOf(o[0]), untok(o[1]), untok(o[2]), o[3].toFloat()))
+        Gene(inputs, GeneOutput(GeneOutputType.valueOf(o[0]), untok(o[1]), untok(o[2]), Frac.fromFloat(o[3].toFloat())))
     }
 
     private val WS = Regex("\\s+")

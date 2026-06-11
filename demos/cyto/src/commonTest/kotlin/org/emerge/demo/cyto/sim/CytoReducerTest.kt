@@ -7,6 +7,7 @@ import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Coord2
 import kotlin.math.abs
+import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
 import kotlin.test.Test
@@ -30,8 +31,8 @@ class CytoReducerTest {
         // Two cells 0.2 apart (sum radii 0.5; weld threshold 0.375) — they should spring-join.
         var state = run {
             val b = SimBuilder(SimState())
-            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Blank, mapOf("energy" to 1f), MIN_RADIUS)
-            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Blank, mapOf("energy" to 1f), MIN_RADIUS)
+            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Blank, mapOf("energy" to Frac(1, 1)), MIN_RADIUS)
+            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Blank, mapOf("energy" to Frac(1, 1)), MIN_RADIUS)
             b.build()
         }
         repeat(5) { state = reducer.reduce(cfg, state, noInput) }
@@ -56,18 +57,18 @@ class CytoReducerTest {
         // lineage with an empty genome, must not) — the heritability that makes the substrate evolvable.
         val customGenome = listOf(
             Gene(
-                inputs = listOf(GeneInput(GeneInputType.Chem, chem = "energy", weight = 1f)),
+                inputs = listOf(GeneInput(GeneInputType.Chem, chem = "energy", weight = Frac(1, 1))),
                 output = GeneOutput(GeneOutputType.Mitosis, chem1 = "", chem2 = "", bias = -STEM_MITOSIS_ENERGY_GATE),
             ),
             Gene( // marker: non-empty + distinct from the preset, with no chemical I/O of its own
-                inputs = listOf(GeneInput(GeneInputType.Touch, chem = "", weight = 1f)),
-                output = GeneOutput(GeneOutputType.Sticky, chem1 = "", chem2 = "", bias = 0f),
+                inputs = listOf(GeneInput(GeneInputType.Touch, chem = "", weight = Frac(1, 1))),
+                output = GeneOutput(GeneOutputType.Sticky, chem1 = "", chem2 = "", bias = Frac(0, 1)),
             ),
         )
         var state = run {
             val b = SimBuilder(SimState())
-            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Support, mapOf("energy" to 2f), MIN_RADIUS)
-            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Stem, mapOf("energy" to 2f), MIN_RADIUS, genome = customGenome)
+            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Support, mapOf("energy" to Frac(1, 5)), MIN_RADIUS)
+            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Stem, mapOf("energy" to Frac(1, 5)), MIN_RADIUS, genome = customGenome)
             b.build()
         }
         repeat(700) { state = reducer.reduce(cfg, state, noInput) }
@@ -87,16 +88,18 @@ class CytoReducerTest {
         // sources) should not. Proves the energy economy is anchored to the field, not minted.
         fun energyAfter(x: Float, y: Float): Float {
             val b = SimBuilder(SimState())
-            val id = b.spawnCell(CytoUnits.coord2(x, y), Coord2.zero, CellType.Collector, mapOf("energy" to 1f), MIN_RADIUS)
+            val id = b.spawnCell(CytoUnits.coord2(x, y), Coord2.zero, CellType.Collector, mapOf("energy" to Frac(1, 10)), MIN_RADIUS)
             var s = b.build()
             repeat(40) { s = reducer.reduce(cfg, s, noInput) }
-            return s.components.getTable<CytoCellComponent>()[id]?.chemicals?.get("energy") ?: 0f
+            return (s.components.getTable<CytoCellComponent>()[id]?.chemicals?.get("energy") ?: Frac(0, 1)).toFloat()
         }
         val (sx, sy) = CytoLightField.SOURCES.first()
         val lit = energyAfter(sx, sy)
         val dark = energyAfter(0f, 0f)
-        assertTrue(lit > 2f, "a Collector in the light should gain energy; got $lit")
-        assertTrue(dark < 1.5f && dark < lit, "a Collector in the dark should not gain energy: lit=$lit dark=$dark")
+        // Chemistry now lives in [0,1] (rescaled ÷10): a lit Collector seeded at 0.1 should gain;
+        // an identical one in the dark should net-lose to upkeep and stay below it.
+        assertTrue(lit > 0.12f, "a Collector in the light should gain energy; got $lit")
+        assertTrue(dark < lit, "a Collector in the dark should not gain energy: lit=$lit dark=$dark")
     }
 
     @Test
@@ -126,7 +129,7 @@ class CytoReducerTest {
     fun grabbedCellMovesTowardPointer() {
         var state = run {
             val b = SimBuilder(SimState())
-            b.spawnCell(Coord2.zero, Coord2.zero, CellType.Blank, mapOf("energy" to 1f), MIN_RADIUS)
+            b.spawnCell(Coord2.zero, Coord2.zero, CellType.Blank, mapOf("energy" to Frac(1, 1)), MIN_RADIUS)
             b.build()
         }
         val id = state.components.getTable<CytoCellComponent>().keys().first()
@@ -144,7 +147,7 @@ class CytoReducerTest {
             val b = SimBuilder(SimState())
             val coords = listOf(-0.15f to -0.15f, 0.15f to -0.15f, -0.15f to 0.15f, 0.15f to 0.15f)
             for ((x, y) in coords) {
-                b.spawnCell(CytoUnits.coord2(x, y), Coord2.zero, CellType.Blank, mapOf("energy" to 5f), MIN_RADIUS)
+                b.spawnCell(CytoUnits.coord2(x, y), Coord2.zero, CellType.Blank, mapOf("energy" to Frac(1, 2)), MIN_RADIUS)
             }
             b.build()
         }

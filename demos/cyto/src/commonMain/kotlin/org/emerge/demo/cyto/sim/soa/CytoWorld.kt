@@ -60,9 +60,9 @@ class CytoWorld private constructor(
      * a cell seeds extra chemicals or a gene mints a new species (the plan's object side-table
      * fallback for unbounded chemistry). See [CytoBiologyCore].
      */
-    val extraChem: HashMap<Int, LinkedHashMap<String, Float>>,
-    val extraPending: HashMap<Int, LinkedHashMap<String, Float>>,
-    val suppression: HashMap<Int, Map<String, Float>>,
+    val extraChem: HashMap<Int, LinkedHashMap<String, Frac>>,
+    val extraPending: HashMap<Int, LinkedHashMap<String, Frac>>,
+    val suppression: HashMap<Int, Map<String, Frac>>,
 ) {
     val count: Int get() = cells.count
 
@@ -78,12 +78,12 @@ class CytoWorld private constructor(
     val radiusRaw: LongArray get() = collider.radius
     val mass: IntArray get() = material.mass
 
-    // biology columns (Float / ordinal)
-    val energy: FloatArray get() = cell.energy
-    val energyPending: FloatArray get() = cell.energyPending
-    val logicalRadius: FloatArray get() = cell.logicalRadius
-    val divideCharge: FloatArray get() = cell.divideCharge
-    val touch: FloatArray get() = cell.touch
+    // biology columns (Frac raw Long / ordinal)
+    val energy: LongArray get() = cell.energy
+    val energyPending: LongArray get() = cell.energyPending
+    val logicalRadius: LongArray get() = cell.logicalRadius
+    val divideCharge: LongArray get() = cell.divideCharge
+    val touch: LongArray get() = cell.touch
     val type: IntArray get() = cell.type
     val sticky: BooleanArray get() = cell.sticky
     val stickyTemp: BooleanArray get() = cell.stickyTemp
@@ -124,9 +124,9 @@ class CytoWorld private constructor(
             world.register(MaterialComponent::class, material)
             val cellCols = world.register(CytoCellComponent::class, cellStore)
 
-            val extraChem = HashMap<Int, LinkedHashMap<String, Float>>()
-            val extraPending = HashMap<Int, LinkedHashMap<String, Float>>()
-            val suppression = HashMap<Int, Map<String, Float>>()
+            val extraChem = HashMap<Int, LinkedHashMap<String, Frac>>()
+            val extraPending = HashMap<Int, LinkedHashMap<String, Frac>>()
+            val suppression = HashMap<Int, Map<String, Frac>>()
             for (id in ids) {
                 world.add(id, TransformComponent::class, transforms[id]!!)
                 world.add(id, MotionComponent::class, motions[id]!!)
@@ -161,28 +161,28 @@ class CytoWorld private constructor(
         }
 
         /** Non-energy entries of [chem] as a fresh map, or null if there are none. */
-        private fun extraOf(chem: Map<String, Float>): LinkedHashMap<String, Float>? {
+        private fun extraOf(chem: Map<String, Frac>): LinkedHashMap<String, Frac>? {
             if (chem.size == 1 && chem.containsKey(CytoCellColumnStore.ENERGY)) return null
-            var out: LinkedHashMap<String, Float>? = null
+            var out: LinkedHashMap<String, Frac>? = null
             for ((k, v) in chem) if (k != CytoCellColumnStore.ENERGY) {
-                (out ?: LinkedHashMap<String, Float>().also { out = it })[k] = v
+                (out ?: LinkedHashMap<String, Frac>().also { out = it })[k] = v
             }
             return out
         }
     }
 
     /** Full chemical map for a slot: energy column + side-table extras. */
-    fun chemicalsAt(slot: Int): LinkedHashMap<String, Float> {
-        val out = LinkedHashMap<String, Float>()
-        out[CytoCellColumnStore.ENERGY] = cell.energy[slot]
+    fun chemicalsAt(slot: Int): LinkedHashMap<String, Frac> {
+        val out = LinkedHashMap<String, Frac>()
+        out[CytoCellColumnStore.ENERGY] = Frac(cell.energy[slot])
         extraChem[entityId[slot]]?.let { out.putAll(it) }
         return out
     }
 
     /** Full pending-transfer map for a slot: energy column + side-table extras. */
-    fun pendingAt(slot: Int): LinkedHashMap<String, Float> {
-        val out = LinkedHashMap<String, Float>()
-        out[CytoCellColumnStore.ENERGY] = cell.energyPending[slot]
+    fun pendingAt(slot: Int): LinkedHashMap<String, Frac> {
+        val out = LinkedHashMap<String, Frac>()
+        out[CytoCellColumnStore.ENERGY] = Frac(cell.energyPending[slot])
         extraPending[entityId[slot]]?.let { out.putAll(it) }
         return out
     }
@@ -205,8 +205,8 @@ class CytoWorld private constructor(
                 velX = velX[slot], velY = velY[slot],
                 radiusRaw = radiusRaw[slot],
                 chemicals = chemicalsAt(slot), pendingTransfers = pendingAt(slot),
-                logicalRadius = logicalRadius[slot], divideCharge = divideCharge[slot],
-                touch = touch[slot], type = type[slot],
+                logicalRadius = Frac(logicalRadius[slot]), divideCharge = Frac(divideCharge[slot]),
+                touch = Frac(touch[slot]), type = type[slot],
                 sticky = sticky[slot], stickyTemp = stickyTemp[slot],
                 springs = springs, damage = damage,
             )
@@ -288,12 +288,12 @@ class CytoWorld private constructor(
     private fun gatherCell(slot: Int): CytoCellComponent = CytoCellComponent(
         type = CellType.entries[type[slot]],
         chemicals = chemicalsAt(slot),
-        logicalRadius = logicalRadius[slot],
-        divideCharge = divideCharge[slot],
+        logicalRadius = Frac(logicalRadius[slot]),
+        divideCharge = Frac(divideCharge[slot]),
         sticky = sticky[slot],
         pendingTransfers = pendingAt(slot),
         suppression = suppression[entityId[slot]] ?: emptyMap(),
-        touch = touch[slot],
+        touch = Frac(touch[slot]),
         stickyTemp = stickyTemp[slot],
     )
 }
@@ -303,9 +303,9 @@ class ComparisonCell(
     val posX: Int, val posY: Int, val ang: Int,
     val velX: Int, val velY: Int,
     val radiusRaw: Long,
-    val chemicals: Map<String, Float>, val pendingTransfers: Map<String, Float>,
-    val logicalRadius: Float, val divideCharge: Float,
-    val touch: Float, val type: Int,
+    val chemicals: Map<String, Frac>, val pendingTransfers: Map<String, Frac>,
+    val logicalRadius: Frac, val divideCharge: Frac,
+    val touch: Frac, val type: Int,
     val sticky: Boolean, val stickyTemp: Boolean,
     val springs: Map<Int, SpringTriple>,
     val damage: Map<Int, Float>,

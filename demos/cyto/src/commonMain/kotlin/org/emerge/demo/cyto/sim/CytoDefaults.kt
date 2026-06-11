@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.sim
 
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.sim.core.physics.primitives.Coord2
+import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
 
@@ -19,14 +20,14 @@ fun createCytoInitialState(): SimState {
         pos = CytoUnits.coord2(sx - 0.1f, sy),
         vel = Coord2.zero,
         type = CellType.Collector,
-        chemicals = mapOf("energy" to 2f),
+        chemicals = mapOf("energy" to Frac(1, 5)),
         logicalRadius = MIN_RADIUS,
     )
     builder.spawnCell(
         pos = CytoUnits.coord2(sx + 0.1f, sy),
         vel = Coord2.zero,
         type = CellType.Stem,
-        chemicals = mapOf("energy" to 2f),
+        chemicals = mapOf("energy" to Frac(1, 5)),
         logicalRadius = MIN_RADIUS,
     )
     return builder.build()

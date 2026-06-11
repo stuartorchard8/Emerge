@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.sim
 
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.sim.core.EntityId
+import org.emerge.sim.core.physics.primitives.Frac
 
 /**
  * Per-cell biological state, kept in Float/logical units (as the original Cyto `Cell`
@@ -19,15 +20,15 @@ import org.emerge.sim.core.EntityId
  */
 data class CytoCellComponent(
     val type: CellType,
-    val chemicals: Map<String, Float>,
-    val logicalRadius: Float,
+    val chemicals: Map<String, Frac>,
+    val logicalRadius: Frac,
     /** Accumulated division (mitosis) warm-up; a Mitosis gene grows it, the cell splits + resets to 0
      *  at [DIVIDE_THRESHOLD]. A fresh cell starts at 0 (replaces the old count-down cooldown). */
-    val divideCharge: Float = 0f,
+    val divideCharge: Frac = Frac(0, 1),
     val sticky: Boolean = false,
-    val pendingTransfers: Map<String, Float> = emptyMap(),
-    val suppression: Map<String, Float> = emptyMap(),
-    val touch: Float = 0f,
+    val pendingTransfers: Map<String, Frac> = emptyMap(),
+    val suppression: Map<String, Frac> = emptyMap(),
+    val touch: Frac = Frac(0, 1),
     /** Transient: gene-driven stickiness for this tick (original `isStickyTemp`). Recomputed
      *  by the biology system each tick; OR-ed with [sticky] by the contact system. */
     val stickyTemp: Boolean = false,

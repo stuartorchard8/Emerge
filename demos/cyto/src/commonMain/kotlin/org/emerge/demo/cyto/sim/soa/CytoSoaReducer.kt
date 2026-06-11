@@ -47,9 +47,10 @@ class CytoSoaReducer(
     /** Optional worker pool; null → fully sequential. */
     private val executor: ParallelExecutor? = null,
 ) {
-    private val dt = 1f / 64f
+    private val dt = Frac(1, 64)
     private val lifecycleOps = CytoLifecycle(cfg)
 
+    private val ZERO = Frac(0, 1)
     private val ENERGY = CytoCellColumnStore.ENERGY
 
     // intent scratch, reused across ticks
@@ -66,7 +67,7 @@ class CytoSoaReducer(
     private var brokenEdge = BooleanArray(0)
 
     // reused per-cell scratch for exposure (neighbour diamond-angles); biology is single-threaded.
-    private val expoScratch = FloatArray(org.emerge.demo.cyto.sim.CytoExposure.MAX_NEIGHBOURS)
+    private val expoScratch = LongArray(org.emerge.demo.cyto.sim.CytoExposure.MAX_NEIGHBOURS)
 
     // reusable additive impulse partition for the spring solver (velX/velY channels)
     private val forcePartition = AdditivePartition(channels = 2)
@@ -146,7 +147,7 @@ class CytoSoaReducer(
         lifecycleOps.appendCell(
             w, id,
             pos = CytoUnits.coord2(x, y), vel = Coord2.zero,
-            type = type, logicalRadius = MIN_RADIUS, energy = 2f, sticky = false,
+            type = type, logicalRadius = MIN_RADIUS, energy = Frac(1, 5), sticky = false,
             genome = genome ?: org.emerge.demo.cyto.sim.genomeForType(type),
         )
     }
@@ -256,7 +257,7 @@ class CytoSoaReducer(
         val impB = -(normal * (push * weightB))
         w.impX[i] += impA.x.raw; w.impY[i] += impA.y.raw
         w.impX[j] += impB.x.raw; w.impY[j] += impB.y.raw
-        val touchAmount = contact.penetration.toFloat()
+        val touchAmount = contact.penetration.raw
         w.touch[i] += touchAmount; w.touch[j] += touchAmount
     }
 
@@ -288,14 +289,14 @@ class CytoSoaReducer(
             // accumulation depends on (diffusion/genes are per-chemical-independent and unaffected).
             val chem = HashMap(w.chemicalsAt(slot))
             val pend = w.pendingAt(slot)
-            for ((k, v) in pend) chem[k] = ((chem[k] ?: 0f) + v).coerceIn(0f, MAX_CHEM)
+            for ((k, v) in pend) chem[k] = ((chem[k] ?: ZERO) + v).coerceIn(ZERO, MAX_CHEM)
             // Harvest = field × exposure (only surface cells reach the resource — matches the AoS path).
             var ek = 0
             val base = w.csr.offset[slot]; val deg = w.csr.degreeOf(slot)
             for (m in 0 until deg) {
                 if (ek >= org.emerge.demo.cyto.sim.CytoExposure.MAX_NEIGHBOURS) break
                 val d = delta(w, slot, w.csr.otherSlot[base + m])
-                expoScratch[ek++] = org.emerge.demo.cyto.sim.CytoExposure.diamondAngle(d.x.toFloat(), d.y.toFloat())
+                expoScratch[ek++] = org.emerge.demo.cyto.sim.CytoExposure.diamondAngle(d.x, d.y).raw
             }
             val harvest = lightField.sampleAt(
                 CytoUnits.toLogical(Coord(w.posX[slot])), CytoUnits.toLogical(Coord(w.posY[slot])),
@@ -304,9 +305,9 @@ class CytoSoaReducer(
                 chemicals = chem,
                 transfers = HashMap(),
                 initialSuppression = w.suppression[id.value] ?: emptyMap(),
-                touch = w.touch[slot],
-                logicalRadius = w.logicalRadius[slot],
-                divideCharge = w.divideCharge[slot],
+                touch = Frac(w.touch[slot]),
+                logicalRadius = Frac(w.logicalRadius[slot]),
+                divideCharge = Frac(w.divideCharge[slot]),
                 type = CellType.entries[w.type[slot]],
                 genome = w.genome[slot] ?: emptyList(),
                 light = harvest,
@@ -314,7 +315,7 @@ class CytoSoaReducer(
             neighbourCounts[id] = w.csr.degreeOf(slot)
         }
         // pass 1: genes then enzyme reactions.
-        for ((_, work) in works) { runGenes(work, dt); work.touch = 0f; CytoBiologyCore.runReactions(work) }
+        for ((_, work) in works) { runGenes(work, dt); work.touch = ZERO; CytoBiologyCore.runReactions(work) }
         // pass 2: act (diffusion / energy / growth / type behaviour / division-death decision).
         val divide = ArrayList<EntityId>(); val destroy = ArrayList<EntityId>()
         for (slot in 0 until n) {
@@ -328,24 +329,24 @@ class CytoSoaReducer(
         for (slot in 0 until n) {
             val idv = w.entityId[slot]
             val work = works.getValue(orderedIds[slot])
-            w.energy[slot] = work.chemicals[ENERGY] ?: 0f
+            w.energy[slot] = (work.chemicals[ENERGY] ?: ZERO).raw
             writeExtras(w.extraChem, idv, work.chemicals)
-            w.energyPending[slot] = work.transfers[ENERGY] ?: 0f
+            w.energyPending[slot] = (work.transfers[ENERGY] ?: ZERO).raw
             writeExtras(w.extraPending, idv, work.transfers)
             if (work.suppression.isEmpty()) w.suppression.remove(idv) else w.suppression[idv] = work.suppression
-            w.logicalRadius[slot] = work.logicalRadius
-            w.divideCharge[slot] = work.divideCharge
-            w.touch[slot] = 0f
+            w.logicalRadius[slot] = work.logicalRadius.raw
+            w.divideCharge[slot] = work.divideCharge.raw
+            w.touch[slot] = 0L
             w.stickyTemp[slot] = work.isStickyTemp
-            w.radiusRaw[slot] = CytoUnits.len(work.logicalRadius).raw
+            w.radiusRaw[slot] = CytoUnits.len(work.logicalRadius.toFloat()).raw
         }
         for (id in destroy) destroyIds.add(id.value)
         for (id in divide) divideIds.add(id.value)
     }
 
-    private fun writeExtras(table: HashMap<Int, LinkedHashMap<String, Float>>, id: Int, map: Map<String, Float>) {
-        var out: LinkedHashMap<String, Float>? = null
-        for ((k, v) in map) if (k != ENERGY) (out ?: LinkedHashMap<String, Float>().also { out = it })[k] = v
+    private fun writeExtras(table: HashMap<Int, LinkedHashMap<String, Frac>>, id: Int, map: Map<String, Frac>) {
+        var out: LinkedHashMap<String, Frac>? = null
+        for ((k, v) in map) if (k != ENERGY) (out ?: LinkedHashMap<String, Frac>().also { out = it })[k] = v
         val o = out
         if (o == null) table.remove(id) else table[id] = o
     }

@@ -1,6 +1,7 @@
 package org.emerge.demo.cyto.sim
 
 import org.emerge.demo.cyto.cells.CellType
+import org.emerge.sim.core.physics.primitives.Frac
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -33,9 +34,9 @@ class GeneCodecTest {
         """.trimIndent()
         val genome = GeneCodec.parse(text)
         assertEquals(3, genome.size)
-        assertEquals(GeneInput(GeneInputType.Light, "", 1.0f), genome[0].inputs.single())
-        assertEquals(GeneOutput(GeneOutputType.Secrete, "energy", "", 0.0f), genome[0].output)
-        assertEquals(GeneOutput(GeneOutputType.Mitosis, "", "", -5.0f), genome[1].output)
+        assertEquals(GeneInput(GeneInputType.Light, "", Frac.fromFloat(1.0f)), genome[0].inputs.single())
+        assertEquals(GeneOutput(GeneOutputType.Secrete, "energy", "", Frac.fromFloat(0.0f)), genome[0].output)
+        assertEquals(GeneOutput(GeneOutputType.Mitosis, "", "", Frac.fromFloat(-5.0f)), genome[1].output)
         assertTrue(genome[2].inputs.isEmpty(), "the Sticky gene has no inputs")
         assertEquals(GeneOutputType.Sticky, genome[2].output.type)
     }

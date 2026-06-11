@@ -140,8 +140,8 @@ class CytoPerfBenchmark {
                     pos = CytoUnits.coord2(x, y),
                     vel = Coord2.zero,
                     type = if (support) CellType.Support else CellType.Blank,
-                    chemicals = mapOf("energy" to 8f),
-                    logicalRadius = 1f,
+                    chemicals = mapOf("energy" to org.emerge.sim.core.physics.primitives.Frac(4, 5)),
+                    logicalRadius = org.emerge.sim.core.physics.primitives.Frac(1, 1),
                 )
                 placed++
             }

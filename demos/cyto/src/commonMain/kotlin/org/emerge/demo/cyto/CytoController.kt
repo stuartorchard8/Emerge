@@ -140,7 +140,7 @@ class CytoController(
         for ((id, cell) in cells) {
             if (!all && id != grabbed) continue
             val transform = transforms[id] ?: continue
-            val text = cell.chemicals.entries.joinToString("\n") { "${it.key}:${fmt(it.value)}" }
+            val text = cell.chemicals.entries.joinToString("\n") { "${it.key}:${fmt(it.value.toFloat())}" }
             if (text.isEmpty()) continue
             out.add(Readout(CytoUnits.toLogical(transform.pos.x), CytoUnits.toLogical(transform.pos.y), text))
         }

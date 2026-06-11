@@ -60,14 +60,14 @@ private fun drawView(
 ) {
     val field = CytoLightField.default()
     val span = 2f * halfWindow
-    val hi = CytoLightField.STRENGTH
+    val hi = CytoLightField.STRENGTH.toFloat()
     fun pxToLogical(p: Int) = (p.toFloat() / size) * span - halfWindow
     // Heatmap (sample per pixel; a one-off render, so cost is irrelevant).
     for (py in 0 until size) {
         val ly = centreY + pxToLogical(py)
         for (px in 0 until size) {
             val lx = centreX + pxToLogical(px)
-            val t = (field.sampleAt(lx, ly) / hi).coerceIn(0f, 1f)
+            val t = (field.sampleAt(lx, ly).toFloat() / hi).coerceIn(0f, 1f)
             img.setRGB(ox + px, py, heat(t).rgb)
         }
     }
@@ -80,7 +80,7 @@ private fun drawView(
         val sxp = ox + ((lx - centreX + halfWindow) * pxPerLogical)
         val syp = (ly - centreY + halfWindow) * pxPerLogical
         if (sxp < ox - 4 || sxp > ox + size + 4 || syp < -4 || syp > size + 4) continue
-        val r = (cell.logicalRadius * pxPerLogical).coerceAtLeast(2f)
+        val r = (cell.logicalRadius.toFloat() * pxPerLogical).coerceAtLeast(2f)
         g.color = awt(cell.type.color)
         g.fillOval((sxp - r).toInt(), (syp - r).toInt(), (2 * r).toInt(), (2 * r).toInt())
         g.color = Color(0, 0, 0, 90)

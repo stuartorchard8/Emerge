@@ -75,7 +75,7 @@ class CytoRenderer {
             for (gx in 0 until FRES) {
                 val wx = -CytoLightField.HALF + (gx + 0.5f) * cell
                 fieldCx[i] = wx; fieldCy[i] = wy
-                val t = (field.sampleAt(wx, wy) / CytoLightField.STRENGTH).coerceIn(0f, 1f)
+                val t = (field.sampleAt(wx, wy).toFloat() / CytoLightField.STRENGTH.toFloat()).coerceIn(0f, 1f)
                 val b = i * 4
                 fieldColor[b] = 0.06f + t * 0.94f
                 fieldColor[b + 1] = 0.05f + t * 0.85f

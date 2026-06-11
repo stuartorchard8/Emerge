@@ -4,6 +4,7 @@ import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.sim.core.ecs.soa.ColumnStore
+import org.emerge.sim.core.physics.primitives.Frac
 
 /**
  * Dense primitive columns for the per-cell biology that the engine physics schemas don't
@@ -17,11 +18,13 @@ import org.emerge.sim.core.ecs.soa.ColumnStore
  * reducer reads the public field arrays directly via a slot index.
  */
 class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
-    var energy = FloatArray(0); private set
-    var energyPending = FloatArray(0); private set
-    var logicalRadius = FloatArray(0); private set
-    var divideCharge = FloatArray(0); private set
-    var touch = FloatArray(0); private set
+    // Chemistry/biology columns store the Frac `.raw` Long (Frac boxes in arrays, so a primitive
+    // LongArray of raws is the unboxed storage; read back via Frac(raw)).
+    var energy = LongArray(0); private set
+    var energyPending = LongArray(0); private set
+    var logicalRadius = LongArray(0); private set
+    var divideCharge = LongArray(0); private set
+    var touch = LongArray(0); private set
     var type = IntArray(0); private set       // CellType.ordinal
     var sticky = BooleanArray(0); private set
     var stickyTemp = BooleanArray(0); private set
@@ -39,11 +42,11 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
     }
 
     override fun scatter(slot: Int, value: CytoCellComponent) {
-        energy[slot] = value.chemicals[ENERGY] ?: 0f
-        energyPending[slot] = value.pendingTransfers[ENERGY] ?: 0f
-        logicalRadius[slot] = value.logicalRadius
-        divideCharge[slot] = value.divideCharge
-        touch[slot] = value.touch
+        energy[slot] = value.chemicals[ENERGY]?.raw ?: 0L
+        energyPending[slot] = value.pendingTransfers[ENERGY]?.raw ?: 0L
+        logicalRadius[slot] = value.logicalRadius.raw
+        divideCharge[slot] = value.divideCharge.raw
+        touch[slot] = value.touch.raw
         type[slot] = value.type.ordinal
         sticky[slot] = value.sticky
         stickyTemp[slot] = value.stickyTemp
@@ -52,12 +55,12 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
 
     override fun gather(slot: Int): CytoCellComponent = CytoCellComponent(
         type = CellType.entries[type[slot]],
-        chemicals = mapOf(ENERGY to energy[slot]),
-        logicalRadius = logicalRadius[slot],
-        divideCharge = divideCharge[slot],
+        chemicals = mapOf(ENERGY to Frac(energy[slot])),
+        logicalRadius = Frac(logicalRadius[slot]),
+        divideCharge = Frac(divideCharge[slot]),
         sticky = sticky[slot],
-        pendingTransfers = mapOf(ENERGY to energyPending[slot]),
-        touch = touch[slot],
+        pendingTransfers = mapOf(ENERGY to Frac(energyPending[slot])),
+        touch = Frac(touch[slot]),
         stickyTemp = stickyTemp[slot],
         genome = genome[slot] ?: emptyList(),
     )

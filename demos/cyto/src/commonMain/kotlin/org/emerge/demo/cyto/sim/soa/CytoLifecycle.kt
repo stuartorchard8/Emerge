@@ -135,8 +135,8 @@ class CytoLifecycle(private val cfg: CytoConfig) {
         val motherPos = Coord2(Coord(w.posX[ms]), Coord(w.posY[ms]))
         val motherAng = Coord(w.ang[ms])
         val motionVel = Coord2(Coord(w.velX[ms]), Coord(w.velY[ms]))
-        val motherLogicalRadius = w.logicalRadius[ms]
-        val motherEnergy = w.energy[ms]
+        val motherLogicalRadius = Frac(w.logicalRadius[ms])
+        val motherEnergy = Frac(w.energy[ms])
 
         // Snapshot the neighbour order before we start editing the mother's adjacency.
         val neighbours = adj[motherId]?.map { it.otherId } ?: emptyList()
@@ -152,7 +152,7 @@ class CytoLifecycle(private val cfg: CytoConfig) {
         val neighbourNormal: Norm =
             if (neighbourVector.x.raw == 0L && neighbourVector.y.raw == 0L) Norm.fromAngle(motherAng)
             else neighbourVector.norm
-        val offset = neighbourNormal * CytoUnits.len(0.25f * motherLogicalRadius)
+        val offset = neighbourNormal * CytoUnits.len(0.25f * motherLogicalRadius.toFloat())
 
         // Group connections by how aligned they are with the split direction.
         val ahead = ArrayList<Int>()
@@ -169,14 +169,13 @@ class CytoLifecycle(private val cfg: CytoConfig) {
             }
         }
 
-        val daughterEnergy = motherEnergy / 2f
-        val daughterRadiusLogical = sqrt(min(1f, daughterEnergy))
-        val radius = max(daughterRadiusLogical, MIN_RADIUS)
+        val daughterEnergy = motherEnergy.div(2)
+        val daughterRadiusLogical = Frac.fromFloat(sqrt(min(1f, daughterEnergy.toFloat())))
 
         // Spawn the daughter (createEntity reproduces the EcsWorld id sequence). Clonal: inherits
         // the mother's type + genome (was hardcoded Stem), so genomes propagate down a lineage.
         val daughterId = w.world.createEntity()
-        appendDaughter(w, daughterId, motherPos + offset, motionVel, radius, daughterEnergy, motherType, motherGenome)
+        appendDaughter(w, daughterId, motherPos + offset, motionVel, daughterRadiusLogical, daughterEnergy, motherType, motherGenome)
 
         for (n in ahead) { addSpring(w, adj, daughterId.value, n); removeSpringPair(adj, motherId, n) }
         for (n in side) { addSpring(w, adj, daughterId.value, n) }
@@ -185,8 +184,8 @@ class CytoLifecycle(private val cfg: CytoConfig) {
         w.posX[ms] = (motherPos.x - offset.x).raw
         w.posY[ms] = (motherPos.y - offset.y).raw
         w.ang[ms] = (motherAng + Frac(1, 2)).raw
-        w.energy[ms] = motherEnergy / 2f
-        w.divideCharge[ms] = 0f
+        w.energy[ms] = motherEnergy.div(2).raw
+        w.divideCharge[ms] = 0L
 
         addSpring(w, adj, motherId, daughterId.value)
     }
@@ -194,7 +193,7 @@ class CytoLifecycle(private val cfg: CytoConfig) {
     /** Appends a daughter cell to every column (mirrors SimBuilder.spawnCell / spawnBody), inheriting
      *  the mother's [type] + [genome] clonally. */
     private fun appendDaughter(
-        w: CytoWorld, id: EntityId, pos: Coord2, vel: Coord2, radius: Float, energy: Float,
+        w: CytoWorld, id: EntityId, pos: Coord2, vel: Coord2, radius: Frac, energy: Frac,
         type: CellType, genome: List<Gene>,
     ) = appendCell(w, id, pos, vel, type, logicalRadius = radius, energy = energy, sticky = false, genome = genome)
 
@@ -210,16 +209,16 @@ class CytoLifecycle(private val cfg: CytoConfig) {
         pos: Coord2,
         vel: Coord2,
         type: CellType,
-        logicalRadius: Float,
-        energy: Float,
+        logicalRadius: Frac,
+        energy: Frac,
         sticky: Boolean,
         genome: List<Gene> = genomeForType(type),
     ) {
-        val radius = max(logicalRadius, MIN_RADIUS)
+        val radius = logicalRadius.coerceAtLeast(MIN_RADIUS)
         w.world.add(id, TransformComponent::class, TransformComponent(pos, Coord(0)))
         w.world.add(id, MotionComponent::class, MotionComponent(vel, Coord(0)))
         w.world.add(id, ImpulseComponent::class, ImpulseComponent())
-        w.world.add(id, ColliderComponent::class, ColliderComponent(CytoUnits.len(radius)))
+        w.world.add(id, ColliderComponent::class, ColliderComponent(CytoUnits.len(radius.toFloat())))
         w.world.add(
             id, MaterialComponent::class,
             MaterialComponent(mass = cellMass(radius), bounce = Frac(0), rough = Frac(0)),
