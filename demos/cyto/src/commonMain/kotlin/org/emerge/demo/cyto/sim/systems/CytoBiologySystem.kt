@@ -44,7 +44,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
         if (cells.isEmpty()) return
         val springs = builder.entries<SpringConstraintComponent>()
         val transforms = builder.entries<org.emerge.sim.core.physics.components.TransformComponent>()
-        val light = org.emerge.demo.cyto.sim.CytoLightField.default()
+        val lightField = org.emerge.demo.cyto.sim.CytoLightField.default()
         val dt = TIME_STEP
 
         // Build per-cell working state, applying last tick's pending transfers.
@@ -55,6 +55,23 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
             for ((k, v) in cell.pendingTransfers) {
                 chem[k] = ((chem[k] ?: 0f) + v).coerceIn(0f, MAX_CHEM)
             }
+            // Harvest = field × exposure: only surface cells reach the resource (income ∝ surface,
+            // not volume), so a growing colony's per-capita income falls → density dependence.
+            val pos = transforms[id]?.pos
+            var harvest = 0f
+            if (pos != null) {
+                var k = 0
+                springs[id]?.springs?.let { sp ->
+                    for (s in sp) {
+                        if (k >= org.emerge.demo.cyto.sim.CytoExposure.MAX_NEIGHBOURS) break
+                        val np = transforms[s.other]?.pos ?: continue
+                        val d = np - pos
+                        expoScratch[k++] = org.emerge.demo.cyto.sim.CytoExposure.diamondAngle(d.x.toFloat(), d.y.toFloat())
+                    }
+                }
+                harvest = lightField.sampleAt(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y)) *
+                    org.emerge.demo.cyto.sim.CytoExposure.weight(expoScratch, k)
+            }
             works[id] = CellWork(
                 chemicals = chem,
                 transfers = HashMap(),
@@ -64,7 +81,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
                 divideCharge = cell.divideCharge,
                 type = cell.type,
                 genome = cell.genome,
-                light = transforms[id]?.pos?.let { light.sampleAt(CytoUnits.toLogical(it.x), CytoUnits.toLogical(it.y)) } ?: 0f,
+                light = harvest,
             )
             neighbourCounts[id] = springs[id]?.springs?.size ?: 0
         }
@@ -111,4 +128,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
     }
 
     const val TIME_STEP = 1f / 64f
+
+    // Reused per-cell scratch for the exposure (neighbour diamond-angles). Single-threaded reducer.
+    private val expoScratch = FloatArray(org.emerge.demo.cyto.sim.CytoExposure.MAX_NEIGHBOURS)
 }

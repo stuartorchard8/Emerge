@@ -49,6 +49,17 @@ settled design we build toward; it is the contract, not a status log.
   - rewards proximity, so **locomotion / positioning has a payoff**;
   - makes the central niche small + contested → a resource gradient that *drives competition* (the
     intended dynamic — deliberately not a shared finite budget, which would flatten the gradient).
+- **Exposure-gated harvest = density dependence (the population brake).** Without it, a self-sufficient
+  cell (collect + divide) grows *exponentially* — each daughter also collects, so income scales with
+  population. The fix: a cell harvests `field × exposure`, where **exposure** is the largest angular gap
+  between its connected neighbours (`CytoExposure`, an `atan2`-free monotonic "diamond angle"). Only
+  surface cells harvest; the interior is fed by inward diffusion. So a colony's income scales with its
+  *surface* (∝ √N in 2D) while upkeep scales with its *volume* (∝ N) → per-capita income falls as it
+  grows → a real carrying capacity. **Verified** (`probeCytoPopulation`): the exploding genome now
+  plateaus (e.g. 9 cells, flat for 6000+ ticks at STRENGTH 0.05) instead of running away; the plateau
+  level scales with light, so you tune colony size with STRENGTH rather than starving the system to
+  cap it. Open hole: a 1-cell-thick *filament* is all-surface → not capped by exposure; **depletable**
+  resource closes that (a filament exhausts the finite energy along its length) — the next lever.
 - Extensions when wanted: multiple / moving sources (spatial niches), depth-graded light, true
   occlusion shading (cells shadow those behind them), or a depletable diffusing nutrient (foraging).
 

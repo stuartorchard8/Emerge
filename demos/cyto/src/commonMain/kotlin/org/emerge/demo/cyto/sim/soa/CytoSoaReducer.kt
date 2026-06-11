@@ -65,6 +65,9 @@ class CytoSoaReducer(
     // per-directed-CSR-end break flags, set in the connections phase, drained by applyBreaks
     private var brokenEdge = BooleanArray(0)
 
+    // reused per-cell scratch for exposure (neighbour diamond-angles); biology is single-threaded.
+    private val expoScratch = FloatArray(org.emerge.demo.cyto.sim.CytoExposure.MAX_NEIGHBOURS)
+
     // reusable additive impulse partition for the spring solver (velX/velY channels)
     private val forcePartition = AdditivePartition(channels = 2)
 
@@ -272,7 +275,7 @@ class CytoSoaReducer(
      *  run genes/reactions/act, write results back. Identical to the AoS system by construction. */
     private fun biologySlow(w: CytoWorld) {
         val n = w.count
-        val light = org.emerge.demo.cyto.sim.CytoLightField.default()
+        val lightField = org.emerge.demo.cyto.sim.CytoLightField.default()
         val works = LinkedHashMap<EntityId, CellWork>(n)
         val neighbourCounts = HashMap<EntityId, Int>(n)
         val orderedIds = ArrayList<EntityId>(n)
@@ -286,6 +289,17 @@ class CytoSoaReducer(
             val chem = HashMap(w.chemicalsAt(slot))
             val pend = w.pendingAt(slot)
             for ((k, v) in pend) chem[k] = ((chem[k] ?: 0f) + v).coerceIn(0f, MAX_CHEM)
+            // Harvest = field × exposure (only surface cells reach the resource — matches the AoS path).
+            var ek = 0
+            val base = w.csr.offset[slot]; val deg = w.csr.degreeOf(slot)
+            for (m in 0 until deg) {
+                if (ek >= org.emerge.demo.cyto.sim.CytoExposure.MAX_NEIGHBOURS) break
+                val d = delta(w, slot, w.csr.otherSlot[base + m])
+                expoScratch[ek++] = org.emerge.demo.cyto.sim.CytoExposure.diamondAngle(d.x.toFloat(), d.y.toFloat())
+            }
+            val harvest = lightField.sampleAt(
+                CytoUnits.toLogical(Coord(w.posX[slot])), CytoUnits.toLogical(Coord(w.posY[slot])),
+            ) * org.emerge.demo.cyto.sim.CytoExposure.weight(expoScratch, ek)
             works[id] = CellWork(
                 chemicals = chem,
                 transfers = HashMap(),
@@ -295,9 +309,7 @@ class CytoSoaReducer(
                 divideCharge = w.divideCharge[slot],
                 type = CellType.entries[w.type[slot]],
                 genome = w.genome[slot] ?: emptyList(),
-                light = light.sampleAt(
-                    CytoUnits.toLogical(Coord(w.posX[slot])), CytoUnits.toLogical(Coord(w.posY[slot])),
-                ),
+                light = harvest,
             )
             neighbourCounts[id] = w.csr.degreeOf(slot)
         }
