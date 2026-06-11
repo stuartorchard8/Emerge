@@ -1,0 +1,16 @@
+body scale=0.82 @sx=1.15
+  head oy=1.25 scale=1.85
+    crown ox=-0.035 oy=0.32 scale=1.18575
+    muzzle ox=0.5 oy=-0.29 scale=0.4866 @sy=1.0135
+      mouth ox=0.25 oy=-0.32 scale=0.64885 @sx=0.7873 @sy=0.32 @vrot=22 @asy=0.9 @sz=1.1411
+    face_sym mirX=1
+      eye ox=0.385 oy=0.175 scale=0.6636 @asy=0.12 @vsy=-0.08 @z=0.639 @rot=0.18
+        iris ox=0.14 scale=0.82585 @z=0.003
+          pupil ox=0.07 oy=0.005 scale=0.8996
+        upperlid ox=-0.075 oy=0.075 scale=1.0412 @sx=0.9961 @sy=0.9961 @z=0.003 @ady=0.002 @vdy=-0.002
+      brow ox=0.365 oy=0.405 scale=0.55 @sx=0.825 @sy=0.3465 @z=0.441 @vrot=16 @arot=6 @ady=0.18 @sz=0.8308 @rot=12.96
+      cheek ox=0.365 oy=-0.035 scale=0.54855 @sy=0.9961 @z=0.582
+      ear ox=-0.575 oy=0.375 scale=0.3627 mirX=1 @sy=1.2716 @z=1.056 @rot=-11.16 @sx=0.5611
+        ear_mid ox=-0.735 oy=0.185 scale=2.28905 @z=0.306 @sx=0.2769 @sy=0.4799 @sz=0.767
+          ear_tip ox=-0.075 oy=0.005 scale=0.1798 @z=0.528
+    bridge ox=0.775 oy=-0.025 scale=0.1798 @sy=1.9937 @rot=28.8 @sz=0.8714

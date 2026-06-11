@@ -1,0 +1,9 @@
+body oy=0.005 scale=0.9999
+  head oy=1.25 scale=0.9468
+    crown ox=0.15 oy=0.445 scale=1.11495
+    muzzle ox=0.565 oy=0.095 scale=0.87305
+      nose ox=-0.035 oy=0.455 scale=0.4099
+    eye ox=0.46 oy=0.34 scale=0.66 mirX=1
+    ear ox=-0.49 oy=0.72 scale=0.05 mirX=1
+  arm ox=0.61 oy=0.145 scale=0.23585 mirX=1
+  leg ox=-0.275 oy=-0.59 scale=0.52495 mirX=1
