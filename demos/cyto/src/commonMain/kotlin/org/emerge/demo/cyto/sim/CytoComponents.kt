@@ -39,6 +39,25 @@ data class CytoCellComponent(
 )
 
 /**
+ * The world's depletable energy reservoir ([CytoEnergyGrid]), carried as a **singleton** component.
+ *
+ * The grid is global, not per-cell, so it rides on one reserved entity ([GRID_SINGLETON]) rather than
+ * a real cell: this is how the otherwise-stateless AoS [org.emerge.demo.cyto.sim.CytoReducer] (which
+ * rebuilds [org.emerge.sim.core.sim.SimState] every tick) persists the reservoir across ticks. The
+ * live SoA path keeps the same grid as a [org.emerge.demo.cyto.sim.soa.CytoWorld] field instead and
+ * re-emits this component on its singleton id only at the once-per-frame materialize boundary, so the
+ * two paths stay byte-identical. The singleton is invisible to every cell/physics iteration (it carries
+ * no [CytoCellComponent] / transform / collider) and is never allocated through the entity counter, so
+ * it does not perturb id allocation or `lastEntityValue`.
+ */
+data class CytoEnergyGridComponent(val grid: CytoEnergyGrid)
+
+/** Reserved entity id the [CytoEnergyGridComponent] singleton lives on. Sits far above any allocated
+ *  cell id (allocation grows from 0) and is never added to the live-id set, so it collides with nothing
+ *  and never bumps `lastEntityValue`. */
+val GRID_SINGLETON = EntityId(Int.MAX_VALUE)
+
+/**
  * Per-cell connection bookkeeping that parallels the engine
  * [org.emerge.sim.core.physics.components.SpringConstraintComponent]: the accumulated
  * stress damage for each neighbour spring. When a neighbour's damage exceeds the break

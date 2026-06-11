@@ -30,5 +30,6 @@ fun createCytoInitialState(): SimState {
         chemicals = mapOf("energy" to Frac(1, 5)),
         logicalRadius = MIN_RADIUS,
     )
+    builder.update<CytoEnergyGridComponent>(GRID_SINGLETON) { CytoEnergyGridComponent(CytoEnergyGrid.seeded()) }
     return builder.build()
 }

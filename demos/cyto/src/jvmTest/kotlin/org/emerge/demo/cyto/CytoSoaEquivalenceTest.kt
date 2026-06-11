@@ -4,6 +4,9 @@ import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.ConnectionStateComponent
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
+import org.emerge.demo.cyto.sim.CytoEnergyGrid
+import org.emerge.demo.cyto.sim.CytoEnergyGridComponent
+import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoReducer
 import org.emerge.demo.cyto.sim.CytoUnits
@@ -167,6 +170,7 @@ class CytoSoaEquivalenceTest {
             if (tick == 1 || tick == 2 || tick == 64 || tick == 250) {
                 val exported = world.toSimState()
                 compareCells(project(ref), project(exported), "toSimState", tick)
+                compareGrid(gridColumn(ref), gridColumn(exported), "toSimState-grid", tick)
                 assertEquals(ref.randomSeed, exported.randomSeed, "randomSeed tick=$tick")
                 assertEquals(ref.tick, exported.tick, "tick tick=$tick")
                 assertEquals(
@@ -199,6 +203,7 @@ class CytoSoaEquivalenceTest {
             soa.tick(world, input = input)
             compareCells(project(ref), world.toComparison().cells, "interaction", tick)
             compareCells(project(ref), project(world.toSimState()), "interaction-export", tick)
+            compareGrid(gridColumn(ref), world.energyGrid.rawColumn(), "interaction", tick)
         }
 
         // Non-vacuous: the schedule spawns (ticks 1, 3) and deletes (tick 12), so the net cell
@@ -246,8 +251,25 @@ class CytoSoaEquivalenceTest {
         }
     }
 
-    private fun compare(ref: SimState, world: CytoWorld, label: String, tick: Int) =
+    private fun compare(ref: SimState, world: CytoWorld, label: String, tick: Int) {
         compareCells(project(ref), world.toComparison().cells, label, tick)
+        compareGrid(gridColumn(ref), world.energyGrid.rawColumn(), label, tick)
+    }
+
+    /** The depletable reservoir's raw column from a SimState (defaulting to a seeded grid for
+     *  states that predate it, exactly as both paths do). */
+    private fun gridColumn(state: SimState): LongArray =
+        (state.components.getTable<CytoEnergyGridComponent>()[GRID_SINGLETON]?.grid
+            ?: CytoEnergyGrid.seeded()).rawColumn()
+
+    /** The reservoir must evolve byte-identically between the two paths (collection debits +
+     *  respiration/overflow deposits are the same ops in the same cell order). */
+    private fun compareGrid(ref: LongArray, soa: LongArray, label: String, tick: Int) {
+        if (ref.size != soa.size) fail("$label tick=$tick: energy-grid size differs (ref ${ref.size}, soa ${soa.size})")
+        for (i in ref.indices) {
+            if (ref[i] != soa[i]) fail("$label tick=$tick energy-grid[$i]: ref=${ref[i]} soa=${soa[i]}")
+        }
+    }
 
     private fun compareCells(
         refCells: Map<Int, org.emerge.demo.cyto.sim.soa.ComparisonCell>,

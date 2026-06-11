@@ -3,6 +3,9 @@ package org.emerge.demo.cyto
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
+import org.emerge.demo.cyto.sim.CytoEnergyGrid
+import org.emerge.demo.cyto.sim.CytoEnergyGridComponent
+import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.demo.cyto.sim.systems.addSpring
 import org.emerge.sim.core.EntityId
@@ -25,7 +28,9 @@ import org.emerge.sim.core.sim.SimState
  * ids so connections are rebuilt correctly.
  */
 object CytoSaveCodec {
-    private const val FORMAT_VERSION = 2
+    // v3 adds the depletable energy reservoir (CytoEnergyGrid). v2 saves still load (the reservoir
+    // defaults to a fresh seeded grid) since cyto saves are regenerated runtime artifacts.
+    private const val FORMAT_VERSION = 3
     private val cfg = CytoConfig()
 
     fun encode(state: SimState): ByteArray {
@@ -70,14 +75,22 @@ object CytoSaveCodec {
             w.writeInt((packed ushr 32).toInt())
             w.writeInt(packed.toInt())
         }
+
+        // Depletable energy reservoir (singleton). Defaults to a fresh seeded grid if the state
+        // predates it, so an in-memory state without the component still encodes a valid v3 save.
+        val grid = state.components.getTable<CytoEnergyGridComponent>()[GRID_SINGLETON]?.grid
+            ?: CytoEnergyGrid.seeded()
+        val column = grid.rawColumn()
+        w.writeInt(column.size)
+        for (v in column) w.writeLong(v)
         return w.toByteArray()
     }
 
     fun decode(bytes: ByteArray): SimState {
         val c = ByteCursor(bytes)
         val version = c.readInt()
-        require(version == FORMAT_VERSION) {
-            "Unsupported Cyto save format version: $version (expected $FORMAT_VERSION)"
+        require(version == 2 || version == FORMAT_VERSION) {
+            "Unsupported Cyto save format version: $version (expected 2 or $FORMAT_VERSION)"
         }
         val builder = SimBuilder(SimState())
         val idMap = HashMap<Int, EntityId>()
@@ -111,6 +124,17 @@ object CytoSaveCodec {
             val b = idMap[c.readInt()]
             if (a != null && b != null) addSpring(builder, a, b, cfg)
         }
+
+        // Energy reservoir (v3+). v2 saves carry none → seed a fresh grid.
+        val grid = if (version >= 3) {
+            val size = c.readInt()
+            require(size >= 0) { "Invalid energy-grid size: $size" }
+            val column = LongArray(size) { c.readLong() }
+            CytoEnergyGrid.fromRaw(column)
+        } else {
+            CytoEnergyGrid.seeded()
+        }
+        builder.update<CytoEnergyGridComponent>(GRID_SINGLETON) { CytoEnergyGridComponent(grid) }
 
         require(c.remaining() == 0) { "Unexpected trailing bytes in Cyto snapshot: ${c.remaining()}" }
         return builder.build()

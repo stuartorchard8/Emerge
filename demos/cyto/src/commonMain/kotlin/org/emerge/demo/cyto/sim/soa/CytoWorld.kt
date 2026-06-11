@@ -63,6 +63,13 @@ class CytoWorld private constructor(
     val extraChem: HashMap<Int, LinkedHashMap<String, Frac>>,
     val extraPending: HashMap<Int, LinkedHashMap<String, Frac>>,
     val suppression: HashMap<Int, Map<String, Frac>>,
+    /**
+     * The world's depletable energy reservoir — the SoA home of the [CytoEnergyGridComponent]
+     * singleton. Mutated in place each tick by the biology path (Collectors draw, every cell
+     * deposits its respiration/overflow waste), so unlike the cell columns it is *not* rebuilt;
+     * [toSimState]/[toComparison] re-emit it on [GRID_SINGLETON] at the materialize boundary.
+     */
+    val energyGrid: org.emerge.demo.cyto.sim.CytoEnergyGrid,
 ) {
     val count: Int get() = cells.count
 
@@ -154,9 +161,16 @@ class CytoWorld private constructor(
                 edgeAuxAt = { slot, other -> damageMap[cellCols.entityAt(slot)]?.damage?.get(other) ?: 0f },
             )
 
+            // The depletable reservoir (singleton component); default to a fresh seeded grid for
+            // states that predate it (old saves / fixtures). Cloned so in-place tick mutation never
+            // reaches back into the source SimState's component.
+            val energyGrid = state.components.getTable<org.emerge.demo.cyto.sim.CytoEnergyGridComponent>()[org.emerge.demo.cyto.sim.GRID_SINGLETON]
+                ?.grid?.let { org.emerge.demo.cyto.sim.CytoEnergyGrid.fromRaw(it.rawColumn()) }
+                ?: org.emerge.demo.cyto.sim.CytoEnergyGrid.seeded()
+
             return CytoWorld(
                 world, cellCols, transform, motion, impulse, collider, material, cellStore, csr,
-                extraChem, extraPending, suppression,
+                extraChem, extraPending, suppression, energyGrid,
             )
         }
 
@@ -273,6 +287,11 @@ class CytoWorld private constructor(
                 CytoCellComponent::class to ComponentTable.fromMap(cellsOut),
                 SpringConstraintComponent::class to ComponentTable.fromMap(springsOut),
                 ConnectionStateComponent::class to ComponentTable.fromMap(damagesOut),
+                // The reservoir singleton: re-emit the live grid on its reserved id so the
+                // materialized snapshot the renderer/save/AoS-oracle read carries it.
+                org.emerge.demo.cyto.sim.CytoEnergyGridComponent::class to ComponentTable.fromMap(
+                    linkedMapOf(org.emerge.demo.cyto.sim.GRID_SINGLETON to org.emerge.demo.cyto.sim.CytoEnergyGridComponent(energyGrid)),
+                ),
             )
         )
         return SimState(
