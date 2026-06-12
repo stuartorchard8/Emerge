@@ -40,4 +40,12 @@ object Molecules {
      *  `"aba"` → `("a", "ba")`. Returns null if [m] has no bond (a lone atom). */
     fun splitLeftmost(m: String): Pair<String, String>? =
         if (m.length < 2) null else m.substring(0, 1) to m.substring(1)
+
+    /** Break [m] at the **first occurrence** of bond [bond] (a 2-atom pair), splitting into the two
+     *  fragments either side of it: `breakAt("cab", "ab")` → `("ca", "b")`. The deterministic break a
+     *  `BreakBond` energy-source gene uses to harvest a bond's quantum. Null if [m] lacks [bond]. */
+    fun breakAt(m: String, bond: String): Pair<String, String>? {
+        val idx = m.indexOf(bond)
+        return if (idx < 0) null else m.substring(0, idx + 1) to m.substring(idx + 1)
+    }
 }

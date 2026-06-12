@@ -49,7 +49,7 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         val destroyEvents = builder.events<CellDestroyIntent>()
         if (destroyEvents.isNotEmpty()) {
             val grid = builder.getComponent<CytoMatterGridComponent>(GRID_SINGLETON)?.grid?.copy()
-                ?: CytoMatterGrid.seeded()
+                ?: CytoMatterGrid.empty()
             for (intent in destroyEvents) {
                 if (!destroyed.add(intent.id)) continue
                 val cell = builder.getComponent<CytoCellComponent>(intent.id)

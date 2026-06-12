@@ -73,7 +73,7 @@ object CytoSaveCodec {
         }
 
         // Matter reservoir: every non-empty grid cell.
-        val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid ?: CytoMatterGrid.seeded()
+        val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid ?: CytoMatterGrid.empty()
         val nonEmpty = ArrayList<Int>()
         for (idx in 0 until CytoMatterGrid.RES * CytoMatterGrid.RES) {
             if (grid.cellAt(idx).isNotEmpty()) nonEmpty.add(idx)

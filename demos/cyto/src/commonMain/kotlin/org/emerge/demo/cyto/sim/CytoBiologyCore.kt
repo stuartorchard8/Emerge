@@ -28,25 +28,39 @@ object CytoBiologyCore {
     const val BONDS_PER_FULL = 16
     /** Cell dies when total biomass falls below this (1 ⇒ dies once biomass is empty). ⚙ */
     const val DEATH_BIOMASS = 1
+    /** Safety backstop on ops per gene per tick (Light is already capped by quanta; BreakBond is
+     *  bounded by available bonds — this caps a pathological store from being processed all at once). ⚙ */
+    const val MAX_OPS_PER_GENE = 4096
 
     /** Phase 1 — execute one cell's genome: each gated gene performs up to `work.quanta` ops of its
      *  action this tick (energy is per-gene, private, use-or-lose). Import draws from [grid] (so this
      *  must run in a fixed cell order across cells). */
     fun runGenes(work: CellWork, grid: CytoMatterGrid) {
-        for (gene in work.genome) {
-            if (!gate(gene.condition, work)) continue
-            val budget = work.quanta
-            if (budget <= 0) continue
-            when (gene.action.type) {
-                ActionType.Import -> {
-                    val sp = gene.action.a
-                    val taken = if (work.gridIndex >= 0) grid.draw(work.gridIndex, sp, budget) else 0
-                    if (taken > 0) inc(work.cytoplasm, sp, taken)
-                }
-                ActionType.FormBond -> formBonds(work, gene.action.a, gene.action.b, budget)
-                ActionType.Convert -> convert(work, gene.action.a, budget)
-                ActionType.Mitosis -> work.dividing = true   // one-shot; gate + a quantum is enough
+        for (gene in work.genome) runGene(gene, work, grid)
+    }
+
+    /** Execute one gated gene: repeatedly draw a quantum from its energy source and spend it on one
+     *  action op, until energy runs out or the action can't proceed. Light gives up to `work.quanta`
+     *  quanta; BreakBond gives one per bond it can break (so it's bounded by stored matter). */
+    private fun runGene(gene: Gene, work: CellWork, grid: CytoMatterGrid) {
+        val source = gene.source
+        var lightLeft = if (source is EnergySource.Light) work.quanta else 0
+        var ops = 0
+        while (ops < MAX_OPS_PER_GENE) {
+            if (!gate(gene.condition, work)) break  // re-checked each op: the gene acts only while its condition holds
+            val gotEnergy = when (source) {
+                is EnergySource.Light -> if (lightLeft > 0) { lightLeft--; true } else false
+                is EnergySource.BreakBond -> breakOne(work, source.bond)
             }
+            if (!gotEnergy) break
+            val acted = when (gene.action.type) {
+                ActionType.Import -> importOne(work, grid, gene.action.a)
+                ActionType.FormBond -> formBondOne(work, gene.action.a, gene.action.b)
+                ActionType.Convert -> convertOne(work, gene.action.a)
+                ActionType.Mitosis -> { work.dividing = true; return }  // one-shot: one quantum, then done
+            }
+            if (!acted) break
+            ops++
         }
     }
 
@@ -113,37 +127,56 @@ object CytoBiologyCore {
         }
     }
 
-    // ── actions ──────────────────────────────────────────────────────────────
-    /** Form up to [budget] `a–b` bonds: join a cytoplasm molecule ending in atom [a] with one starting
-     *  in atom [b] (lexicographically-smallest candidates), refused once the product would repeat a
-     *  bond (polymerisation). */
-    private fun formBonds(work: CellWork, a: String, b: String, budget: Int) {
-        if (a.isEmpty() || b.isEmpty()) return
-        val ac = a[0]; val bc = b[0]
-        var done = 0
-        while (done < budget) {
-            val endA = work.cytoplasm.entries
-                .filter { it.value > 0 && it.key.isNotEmpty() && it.key.last() == ac }
-                .minByOrNull { it.key }?.key ?: break
-            val startB = work.cytoplasm.entries
-                .filter { it.value > 0 && it.key.isNotEmpty() && it.key.first() == bc }
-                .minByOrNull { it.key }?.key ?: break
-            if (endA == startB && (work.cytoplasm[endA] ?: 0) < 2) break  // need two molecules
-            val product = Molecules.join(endA, startB) ?: break           // forbidden → stop
-            dec(work.cytoplasm, endA)
-            dec(work.cytoplasm, startB)
-            inc(work.cytoplasm, product, 1)
-            done++
-        }
+    // ── energy source ────────────────────────────────────────────────────────
+    /** Break one instance of [bond] in the lexicographically-smallest cytoplasm molecule containing it,
+     *  returning its two fragments to the cytoplasm and yielding one quantum. False if no molecule has
+     *  the bond (so a BreakBond gene is bounded by the matter it can break). */
+    private fun breakOne(work: CellWork, bond: String): Boolean {
+        val target = work.cytoplasm.entries
+            .filter { it.value > 0 && it.key.contains(bond) }
+            .minByOrNull { it.key }?.key ?: return false
+        val (l, r) = Molecules.breakAt(target, bond) ?: return false
+        dec(work.cytoplasm, target)
+        inc(work.cytoplasm, l, 1)
+        inc(work.cytoplasm, r, 1)
+        return true
     }
 
-    /** Lock up to [budget] molecules of [species] from cytoplasm into biomass (grows the cell). */
-    private fun convert(work: CellWork, species: String, budget: Int) {
-        val avail = work.cytoplasm[species] ?: 0
-        val n = if (budget < avail) budget else avail
-        if (n <= 0) return
-        addOrRemove(work.cytoplasm, species, -n)
-        inc(work.biomass, species, n)
+    // ── single-op actions (one per quantum) ────────────────────────────────────
+    /** Import one molecule of [species] from the reservoir into the cytoplasm. */
+    private fun importOne(work: CellWork, grid: CytoMatterGrid, species: String): Boolean {
+        if (work.gridIndex < 0) return false
+        if (grid.draw(work.gridIndex, species, 1) != 1) return false
+        inc(work.cytoplasm, species, 1)
+        return true
+    }
+
+    /** Form one `a–b` bond: join a cytoplasm molecule ending in atom [a] with one starting in atom [b]
+     *  (lexicographically-smallest candidates); fails if no pair exists or the product would repeat a
+     *  bond (polymerisation). */
+    private fun formBondOne(work: CellWork, a: String, b: String): Boolean {
+        if (a.isEmpty() || b.isEmpty()) return false
+        val ac = a[0]; val bc = b[0]
+        val endA = work.cytoplasm.entries
+            .filter { it.value > 0 && it.key.isNotEmpty() && it.key.last() == ac }
+            .minByOrNull { it.key }?.key ?: return false
+        val startB = work.cytoplasm.entries
+            .filter { it.value > 0 && it.key.isNotEmpty() && it.key.first() == bc }
+            .minByOrNull { it.key }?.key ?: return false
+        if (endA == startB && (work.cytoplasm[endA] ?: 0) < 2) return false  // need two molecules
+        val product = Molecules.join(endA, startB) ?: return false           // forbidden
+        dec(work.cytoplasm, endA)
+        dec(work.cytoplasm, startB)
+        inc(work.cytoplasm, product, 1)
+        return true
+    }
+
+    /** Lock one molecule of [species] from cytoplasm into biomass (grows the cell). */
+    private fun convertOne(work: CellWork, species: String): Boolean {
+        if ((work.cytoplasm[species] ?: 0) <= 0) return false
+        addOrRemove(work.cytoplasm, species, -1)
+        inc(work.biomass, species, 1)
+        return true
     }
 
     /** Spontaneous decay: break `wear / DEGRADE_PERIOD` bonds this tick (rate ∝ biomass size), each

@@ -18,7 +18,7 @@ package org.emerge.demo.cyto.sim
 object GeneCodec {
 
     fun serialize(genome: List<Gene>): String = genome.joinToString("\n") { gene ->
-        "${gene.source} : ${condition(gene.condition)} : ${action(gene.action)}"
+        "${source(gene.source)} : ${condition(gene.condition)} : ${action(gene.action)}"
     }
 
     fun parse(text: String): List<Gene> = text.lines().mapNotNull { raw ->
@@ -27,10 +27,24 @@ object GeneCodec {
         val parts = line.split(":")
         require(parts.size == 3) { "gene line must have three ':'-separated parts: \"$raw\"" }
         Gene(
-            source = EnergySource.valueOf(parts[0].trim()),
+            source = parseSource(parts[0].trim().split(WS)),
             condition = parseCondition(parts[1].trim().split(WS)),
             action = parseAction(parts[2].trim().split(WS)),
         )
+    }
+
+    private fun source(s: EnergySource): String = when (s) {
+        is EnergySource.Light -> "Light"
+        is EnergySource.BreakBond -> "Break ${s.bond}"
+    }
+
+    private fun parseSource(t: List<String>): EnergySource = when (t[0]) {
+        "Light" -> EnergySource.Light
+        "Break" -> {
+            require(t.size == 2) { "Break needs 'Break <bond>': ${t.joinToString(" ")}" }
+            EnergySource.BreakBond(t[1])
+        }
+        else -> throw IllegalArgumentException("unknown energy source: ${t[0]}")
     }
 
     private fun condition(c: GeneCondition): String = when (c.type) {

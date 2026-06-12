@@ -72,6 +72,28 @@ class CytoReducerTest {
     }
 
     @Test
+    fun heterotrophLivesOffStoredMatter() {
+        // A heterotroph (no light genes) at the dark torus centre, given a cytoplasm 'ab' reserve:
+        // it breaks 'ab' for energy to power converting 'ab' into biomass and dividing — proving the
+        // BreakBond energy source / food web works without light, with matter conserved.
+        var state = run {
+            val b = SimBuilder(SimState())
+            b.spawnCell(
+                CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle,
+                cytoplasm = mapOf("ab" to 40), biomass = mapOf("ab" to 8),
+            )
+            b.build()
+        }
+        val start = cellCount(state)
+        val total0 = totalAtoms(state)
+        repeat(60) {
+            state = reducer.reduce(cfg, state, noInput)
+            assertEquals(total0, totalAtoms(state), "atoms not conserved at step ${it + 1}")
+        }
+        assertTrue(cellCount(state) > start, "heterotroph should grow + divide off stored ab; got ${cellCount(state)}")
+    }
+
+    @Test
     fun divisionInheritsTheGenome() {
         // Clonal inheritance: every cell in the grown colony carries the autotroph genome (the
         // heritability that makes the substrate evolvable).

@@ -14,9 +14,18 @@ import org.emerge.sim.core.physics.primitives.Frac
  * [CytoBiologyCore].
  */
 
-/** Where a gene gets the energy that powers its action this tick. v1: [Light] only (heterotrophy via
- *  breaking a bond is a later addition). */
-enum class EnergySource { Light }
+/** Where a gene gets the energy that powers its action this tick — one quantum per op:
+ *  [Light] (autotrophy — free environmental flux scaled by surface exposure) or [BreakBond]
+ *  (heterotrophy — break a stored bond, releasing its quantum and splitting the molecule back to
+ *  fragments). */
+sealed class EnergySource {
+    /** Environmental light: up to `floor(field × exposure × scale)` quanta this tick. */
+    object Light : EnergySource()
+
+    /** Break one instance of [bond] (a 2-atom pair, e.g. `"ab"`) in a cytoplasm molecule per op,
+     *  releasing its quantum; the molecule splits into two fragments returned to the cytoplasm. */
+    data class BreakBond(val bond: String) : EnergySource()
+}
 
 /** A binary gate comparator. */
 enum class Comparison { Greater, Less }
@@ -100,10 +109,28 @@ val AUTOTROPH_GENES: List<Gene> = listOf(
     Gene(EnergySource.Light, GeneCondition(ConditionType.Biomass, "", Comparison.Greater, DIVIDE_BIOMASS), GeneAction(ActionType.Mitosis)),
 )
 
+// Heterotroph knobs.
+private const val HET_RESERVE = 2      // keep this much cytoplasm 'ab' as an energy reserve
+private const val HET_DIVIDE = 8       // divide once biomass reaches this many bonds
+
+/**
+ * A hand-authored **heterotroph**: it has no light genes — it lives on `ab` molecules already in its
+ * cytoplasm (received by diffusion from autotroph neighbours, or its starter reserve), breaking some
+ * for energy to power converting the rest into biomass and dividing. Closes the food web: autotroph
+ * light → `ab` → (diffusion / death) → heterotroph biomass. Starves (and recycles its matter) once the
+ * `ab` runs out.
+ */
+val HETEROTROPH_GENES: List<Gene> = listOf(
+    Gene(EnergySource.BreakBond("ab"), GeneCondition(ConditionType.ChemQty, "ab", Comparison.Greater, HET_RESERVE), GeneAction(ActionType.Convert, "ab")),
+    Gene(EnergySource.BreakBond("ab"), GeneCondition(ConditionType.Biomass, "", Comparison.Greater, HET_DIVIDE), GeneAction(ActionType.Mitosis)),
+)
+
 /** The authored preset genome for a cell type — seeds a freshly-spawned cell; afterwards the genome
- *  lives on the cell and is inherited on division, so it can diverge. Only the autotroph (Collector)
- *  carries a preset in v1; other legacy types start empty (inert) until authored. */
+ *  lives on the cell and is inherited on division, so it can diverge. v1 presets: [Collector] = the
+ *  autotroph, [Muscle] = the heterotroph (type names are vestigial labels now); other types start
+ *  empty (inert) until authored. */
 fun genomeForType(type: CellType): List<Gene> = when (type) {
     CellType.Collector -> AUTOTROPH_GENES
+    CellType.Muscle -> HETEROTROPH_GENES
     else -> emptyList()
 }

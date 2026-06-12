@@ -47,8 +47,10 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
         val transforms = builder.entries<TransformComponent>()
         val lightField = CytoLightField.default()
         // The reservoir, cloned so this tick's draws/deposits don't mutate the input snapshot in place.
+        // Default to an EMPTY reservoir when absent — seeding the world's matter is createCytoInitialState's
+        // job; auto-seeding here would mint atoms from nothing and break conservation.
         val grid = builder.getComponent<CytoMatterGridComponent>(GRID_SINGLETON)?.grid?.copy()
-            ?: CytoMatterGrid.seeded()
+            ?: CytoMatterGrid.empty()
 
         // Process cells in ascending-EntityId order (Import draws from the shared reservoir sequentially).
         val orderedIds = cells.keys.sortedBy { it.value }
