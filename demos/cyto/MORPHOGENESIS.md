@@ -32,6 +32,10 @@ build biomass from atoms that do not exist, and there is no way to mint them.
 - **A chemical is a molecule**: a string of **atoms** over a small alphabet (today's string-keyed
   species model carries straight over — `"ab"`, `"aba"`, …). The **bonds** are the adjacent pairs
   (`"aba"` has bonds `ab` and `ba`); a chain of length *L* has *L−1* bonds.
+- **Quantities are discrete integer counts** — a cell (and each environment grid-cell) holds an
+  integer number of molecules per species, not a continuous Frac concentration. Matter conservation is
+  then exact integer arithmetic, trivially lockstep-identical across AoS/SoA. **`Frac` leaves the
+  chemistry entirely** (it stays for physics: position, radius, springs).
 - **Polymerisation is forbidden.** A molecule may contain **at most one of each ordered bond type**.
   So `"aba"` cannot accept another `b` on either end (it would make a second `ab` or `ba`). This is
   the structural brake on complexity — it bounds molecule length to ≈ |alphabet|²+1 and bounds the
@@ -41,34 +45,40 @@ build biomass from atoms that do not exist, and there is no way to mint them.
   quantum; breaking it *releases* exactly one quantum. So a bond is a battery and the cycle
   `a + b ⇌ ab` is **energy-neutral** — no free-energy exploit, no sink. A molecule's **stored energy
   and its biomass value are the same axis: its bond count** (see Biomass).
-- **Energy is per-gene and private.** A gene draws energy *only* from its own declared source for its
-  own action, *this tick*, use-it-or-lose-it. Genes cannot pool, bank, or borrow energy; a gene that
-  cannot source its energy this tick simply does not act. There is **no energy state anywhere** — only
-  matter is stateful. (Consequence: the dominant `energy` chemical and its dense column disappear.)
+- **Energy is per-gene, private, and discrete.** A gene draws energy *only* from its own declared
+  source for its own action, *this tick*, use-it-or-lose-it. Energy is counted in **quanta (1 per
+  bond)**: a gene with *N* quanta available performs *N* bond-ops (integer); any sub-quantum remainder
+  is lost (dissipated). Genes cannot pool, bank, or borrow energy; a gene that cannot source a whole
+  quantum this tick simply does not act. There is **no energy state anywhere** — only matter is
+  stateful. (Consequence: the dominant `energy` chemical and its dense column disappear.)
 
 ## The gene — one energy source, one binary gate, one action
 
 A gene is exactly three parts (no multi-input weighted sums like the legacy model):
 
-1. **Energy source** — sets *how much* action the gene can do this tick:
+1. **Energy source** — sets *how many quanta* (hence how many bond-ops) the gene gets this tick:
    - **Light** — the static field at the cell's position, scaled by **surface exposure** (interior
-     cells are shaded; the existing `CytoExposure` weight carries over). Autotrophy.
-   - **Break bond X** — break a specified bond in a cytoplasmic molecule: releases its quantum to
+     cells are shaded; the existing `CytoExposure` weight carries over), floored to an integer quanta
+     count. Autotrophy.
+   - **Break bond X** — break a specified bond in a cytoplasmic molecule: releases its 1 quantum to
      power the action *and* splits the molecule into two fragments returned to cytoplasm (matter
      conserved). Heterotrophy / catabolism.
 2. **Binary condition** — flatly gates the gene on/off (extensible list; baseline):
    - quantity of a given chemical ≷ a threshold;
    - total biomass ≷ a threshold.
 3. **Action** — one of (extensible list; baseline):
-   - **Form bond** `a + b → ab` (synthesis; respects the no-repeat-bond rule);
+   - **Form bond** — join two **whole** molecules end-to-end (one ending in atom *a* + one starting
+     with atom *b* → `…ab…`); refused if the product would repeat a bond (the no-repeat rule);
    - **Contract / Expand** radius beyond baseline;
    - **Active import** a specific chemical (environment → cytoplasm);
    - **Active export** a specific chemical (cytoplasm → environment);
-   - **Insulate** — prevent a chemical diffusing between cell and environment *(only meaningful if
-     passive env-diffusion exists — see open question)*;
    - **Sticky** (adhere on contact) / **Separate** (disconnect);
    - **Mitosis** (divide);
    - **Convert** a chemical into biomass (lock it as structure).
+
+   *(There is no passive cell↔environment diffusion — all exchange is the Import/Export genes, so a
+   sealed cell is the default and no Insulate-vs-environment action is needed. Cell↔cell diffusion is a
+   separate question, TBD.)*
 
 Autotroph vs heterotroph, builder vs forager all fall out of which energy source + action a genome
 wires up — none of it is hardcoded.
@@ -78,9 +88,10 @@ wires up — none of it is hardcoded.
 - **Size is biomass.** A cell's base/target radius is a function of **total biomass**, replacing the
   old `energy → radius` map. Total biomass = Σ over the cell's **biomass molecules** of their **bond
   count** (so per-atom, long molecules are more valuable — but capped by the no-repeat rule).
-- **Two pools per species** *(tentative — see open question)*: each chemical exists either as **mobile
-  cytoplasm** (diffusible, transferable, the substrate genes act on) or as **locked biomass**
-  (structural, non-transferable). The **Convert** action moves a molecule cytoplasm → biomass.
+- **Two per-species count maps:** a cell holds `{cytoplasm: species → count}` (mobile, transferable,
+  the substrate genes act on) and `{biomass: species → count}` (locked structure, non-transferable).
+  Total biomass is *derived* (Σ count × bond-count). The **Convert** action moves one molecule
+  cytoplasm → biomass; degradation/death move biomass back.
 - **Biomass degrades** (homeostasis pressure): at a rate, a biomass molecule loses **one bond at a
   deterministic position** (e.g. an end bond — *not* PRNG-random, to keep the hot loop lockstep-clean;
   see Determinism), splitting into two fragments returned to **cytoplasm**. The bond's energy is
@@ -95,11 +106,12 @@ wires up — none of it is hardcoded.
 - **Static light field** (`CytoLightField`, already built): a fixed scalar field, the energy source.
   Non-depletable. Surface cells are exposed; interior cells shaded (via `CytoExposure`).
 - **Matter store** — a **finite, depletable, spatial chemical reservoir**: per grid-cell, a
-  multi-species quantity map. Seeded **once** with the world's whole atom budget. Cells **import** from
-  / **export** to the grid-cell they sit in; **death** deposits the cell's atoms there. This is the
-  closed matter loop and the carrying capacity. **It is the retarget of the parked `CytoEnergyGrid`**:
-  same discrete per-cell access, `draw`/`deposit` primitives, conservation invariant, AoS↔SoA
-  byte-identity, and save round-trip — but multi-species (matter) instead of a single energy scalar.
+  multi-species **integer count** map. Seeded **once** with the world's whole atom budget. Cells
+  **import** from / **export** to the grid-cell they sit in (active-only — no passive flux); **death**
+  deposits the cell's molecules there. This is the closed matter loop and the carrying capacity. **It
+  is the retarget of the parked `CytoEnergyGrid`**: same discrete per-cell access, draw/deposit
+  primitives, conservation invariant, AoS↔SoA byte-identity, and save round-trip — but a multi-species
+  integer-count store instead of a single energy scalar.
 
 ## Mitosis
 
@@ -166,23 +178,20 @@ it `Frac`-exact, as the parked grid already did).
   `DIVIDE_THRESHOLD`; energy→radius; the Secrete-energy Collector preset; all type presets and the
   `GeneCodec` text format; the closed-energy reservoir.
 
-## Open questions (Stu to confirm; my leanings noted)
+## Resolved (2026-06-12 y/n review) & still-open
 
-1. **Passive env-diffusion vs active-only.** The proposal has a passive cell↔environment chemical
-   diffusion that an **Insulate** gene suppresses. **My lean: drop passive; make all cell↔environment
-   exchange gene-mediated (active import/export only).** It's fully genetic (more evolvable), cheaper
-   (no per-species passive flux against the grid for every cell), makes a sealed cell a valid default,
-   and removes the need for the Insulate-vs-env action. Keep passive only if "hoard-vs-leak against the
-   environment" should be a strategy a cell pays to win — in which case passive baseline + Insulate
-   earns its place. (Passive cell↔*cell* diffusion is a separate question.)
-2. **Dual-pool representation.** Cytoplasm-vs-biomass as two tagged per-species quantities is simplest
-   and preserves molecule identity for degradation. A leaner variant: keep biomass **size** as a
-   derived scalar (Σ bonds) plus a multiset of the *locked molecules* (needed so degradation can return
-   the right fragments) — functionally the same, less per-species duplication. Confirm preferred shape.
-3. **Bond-formation semantics.** Exactly which molecules may join (end-to-end? which atoms bond?), the
-   atom alphabet size, and whether action magnitude = ⌊available-energy / quantum⌋ bonds per tick.
-4. **Tuning knobs** (after it runs): energy quantum vs action magnitudes, degradation rate, initial
-   matter total + spatial distribution, light strength.
+Resolved:
+1. **Active-only cell↔environment exchange** — no passive baseline, no Insulate-vs-env action.
+2. **Biomass = a second per-species integer-count map**; total biomass derived (Σ count × bonds).
+3. **Form bond joins two whole molecules end-to-end**, refused on a repeated bond.
+4. **Discrete integer matter; discrete energy quanta** (1 per bond); a gene does *N* = available-quanta
+   bond-ops, remainder dissipates. `Frac` leaves chemistry.
+
+Still open:
+- **Cell↔cell chemical diffusion** — does the existing neighbour-diffusion survive (now over integer
+  counts), and if so under what rule? (Distinct from the env exchange, which is active-only.)
+- **Tuning knobs** (after it runs): light → quanta mapping + exposure scaling, degradation rate, atom
+  alphabet size, initial matter total + spatial distribution.
 
 ## Build order
 
