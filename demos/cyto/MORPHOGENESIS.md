@@ -4,137 +4,199 @@ The goal: turn Cyto into a **hands-off "watch evolution" god-sim** — a substra
 and sustains a multicellular body, and natural selection can act on it given time. This doc is the
 settled design we build toward; it is the contract, not a status log.
 
-## Core model
+> **2026-06-12 — matter rework.** This supersedes the earlier *closed-energy* model (a depletable
+> energy reservoir). The conserved/limiting resource is now **matter**, not energy. The standalone
+> `CHEMISTRY.md` / `BIOMASS.md` proposals are folded in here. The depletable-energy coupling that was
+> in flight is parked (`git stash`: "5b closed-energy coupling …") — its grid / draw-deposit /
+> conservation-invariant / AoS↔SoA-parity / save patterns **retarget** to the matter store, so the
+> mechanism survives; only the currency changes.
 
-- **No hardcoded cell-type behaviour.** A `CellType` is a **UI label + an associated preset genome**,
-  nothing more. Every behaviour a legacy type had is expressed as genes in its preset.
-- **A cell carries a heritable `genome`** — an ordered list of `Gene`s — driving its chemistry and
-  behaviour. Seeded from `genomeForType` at spawn, carried per-cell, inherited clonally on division
-  (daughters get the mother's genome), and (later) mutable. *(Done — commit 75690fb.)*
-- **Genes** read chemicals / touch / (later) environment signals and emit outputs. Outputs come in two
-  flavours:
-  - **Continuous effects** — applied and forgotten each tick: `Contract` (shrink radius), `Inhibit`
-    (suppress a chemical's diffusion), `Enzyme` (catalyse a reaction), `Sticky` (adhere).
-  - **Charge-accumulating events** — the gene's activation each tick is a *rate of progress* that
-    accumulates in a per-cell charge; when it crosses a threshold the event fires once and the charge
-    resets to 0: `Mitosis` (divide), and later `Meiosis` (bud a propagule for cross-organism repro).
+## The central principle: matter is closed, energy is open
 
-## Division (Mitosis) — a charge-accumulating event
+Like a real ecosystem (sunlight pours in for free; nutrients are finite and recycled):
 
-- A `Mitosis` gene reads a substrate chemical; its activation accumulates `divideCharge`. At
-  `DIVIDE_THRESHOLD` the cell divides and `divideCharge` resets to 0. **No cooldown** — the warm-up
-  *is* the rate limit (`divideCooldown` was repurposed into `divideCharge`).
-- **Self-bounding, two ways:** (1) the gene's input chemical is consumed each tick during warm-up, so
-  a finite substrate pool yields finite divisions; (2) division halves the cell's energy, so both
-  daughters drop below the bar and must re-accumulate.
-- **Cascades are an emergent feature, not a bug:** because charge resets to 0, a daughter normally has
-  to warm up again — *unless* it sits on so much surplus that one tick refills the whole charge. So
-  back-to-back division only happens under extreme surplus. If a genome stumbles onto that and finds
-  it useful, fine.
-- **Stem preset** gates Mitosis on **energy** (`activation = energy − threshold`, charging only when
-  fed). A *developmental* genome instead gates Mitosis on a **morphogen**, which is how a hopeful
-  monster controls *where* growth happens — same machinery, different input chemical.
+- **Energy is an open throughput.** Light is a *static, unlimited* environmental flux (the existing
+  `CytoLightField`, non-depletable). Energy is pumped in by light, spent on gene actions, and
+  dissipated. It is **never stored as a free-floating pool** and is **not conserved**.
+- **Matter is a closed budget.** **Atoms** are the conserved quantity. They are seeded once into the
+  environment, cycle through cells (import → cytoplasm → biomass → death), and are returned on death.
+  Total atoms across {environment + every cell's cytoplasm + every cell's biomass} is **invariant**
+  (the one exception: the player may hand-place a cell, which injects matter — a deliberate external
+  event, accounted for explicitly; the autonomous sim conserves).
 
-## Energy economy & environment
+This is what gives the hard carrying capacity and kills the filament/runaway exploits: you cannot
+build biomass from atoms that do not exist, and there is no way to mint them.
 
-- **No free lunch.** Energy must be *collected* from the environment, not minted. (Today's `Support`
-  "+5 from nothing" is a known placeholder.)
-- **Collector cells** absorb energy from a **light field** (`CytoLightField`): a static scalar grid
-  over the torus, the sum of radial decay kernels from fixed **sources** at the torus quarter-points
-  (a 2×2 equidistant grid). Non-depletable for now → it's a fixed steady state, precomputed once and
-  sampled O(1) per cell (a `GeneInputType.Light` input feeding a `GeneOutputType.Secrete` energy
-  output: the `Collector` preset). This:
-  - kills the exposure-only exploit (a 1-cell-thick filament can't farm free surface area, because
-    intake is anchored to *place*, not surface/volume ratio);
-  - rewards proximity, so **locomotion / positioning has a payoff**;
-  - makes the central niche small + contested → a resource gradient that *drives competition* (the
-    intended dynamic — deliberately not a shared finite budget, which would flatten the gradient).
-- **Exposure-gated harvest = density dependence (the population brake).** Without it, a self-sufficient
-  cell (collect + divide) grows *exponentially* — each daughter also collects, so income scales with
-  population. The fix: a cell harvests `field × exposure`, where **exposure** is the largest angular gap
-  between its connected neighbours (`CytoExposure`, an `atan2`-free monotonic "diamond angle"). Only
-  surface cells harvest; the interior is fed by inward diffusion. So a colony's income scales with its
-  *surface* (∝ √N in 2D) while upkeep scales with its *volume* (∝ N) → per-capita income falls as it
-  grows → a real carrying capacity. **Verified** (`probeCytoPopulation`): the exploding genome now
-  plateaus (e.g. 9 cells, flat for 6000+ ticks at STRENGTH 0.05) instead of running away; the plateau
-  level scales with light, so you tune colony size with STRENGTH rather than starving the system to
-  cap it. Open hole: a 1-cell-thick *filament* is all-surface → not capped by exposure; **depletable**
-  resource closes that (a filament exhausts the finite energy along its length) — the next lever.
-- Extensions when wanted: multiple / moving sources (spatial niches), depth-graded light, true
-  occlusion shading (cells shadow those behind them), or a depletable diffusing nutrient (foraging).
+## Chemistry — chemicals, bonds, energy
 
-## Differentiation (same genome → different cells)
+- **A chemical is a molecule**: a string of **atoms** over a small alphabet (today's string-keyed
+  species model carries straight over — `"ab"`, `"aba"`, …). The **bonds** are the adjacent pairs
+  (`"aba"` has bonds `ab` and `ba`); a chain of length *L* has *L−1* bonds.
+- **Polymerisation is forbidden.** A molecule may contain **at most one of each ordered bond type**.
+  So `"aba"` cannot accept another `b` on either end (it would make a second `ab` or `ba`). This is
+  the structural brake on complexity — it bounds molecule length to ≈ |alphabet|²+1 and bounds the
+  whole species set to a finite set, with **no decay-rate hack needed**. (Replaces the old enzyme
+  trick of *breaking* a chemical that already had the bond — now we just refuse to form it.)
+- **Energy lives in bonds (one fixed quantum per bond).** Forming a bond *consumes* exactly one
+  quantum; breaking it *releases* exactly one quantum. So a bond is a battery and the cycle
+  `a + b ⇌ ab` is **energy-neutral** — no free-energy exploit, no sink. A molecule's **stored energy
+  and its biomass value are the same axis: its bond count** (see Biomass).
+- **Energy is per-gene and private.** A gene draws energy *only* from its own declared source for its
+  own action, *this tick*, use-it-or-lose-it. Genes cannot pool, bank, or borrow energy; a gene that
+  cannot source its energy this tick simply does not act. There is **no energy state anywhere** — only
+  matter is stateful. (Consequence: the dominant `energy` chemical and its dense column disappear.)
 
-Symmetry must break for one genome to make different cells. Sources, weakest→strongest:
-- **Positional information** — neighbour-topology diffusion gradients + contact pressure + distance to
-  the light source — gene-readable, no asymmetric division required, but emergent and noisy.
-- **Asymmetric division** — the keystone: an unequal split along the existing division polarity
-  establishes a morphogen gradient (and a body axis) from a single founder, *deterministically*.
-- **Fate memory** — genes read only chemicals (+touch) today, so persistent fate = a self-sustaining
-  chemical latch (produce F + `Inhibit` F's diffusion + read F). A first-class `Differentiate` output
-  (set the cell's fate/type from chemical context) is the clean long-term mechanism, and keeps the
-  type→economy mapping while letting the *genome decide fate*.
+## The gene — one energy source, one binary gate, one action
+
+A gene is exactly three parts (no multi-input weighted sums like the legacy model):
+
+1. **Energy source** — sets *how much* action the gene can do this tick:
+   - **Light** — the static field at the cell's position, scaled by **surface exposure** (interior
+     cells are shaded; the existing `CytoExposure` weight carries over). Autotrophy.
+   - **Break bond X** — break a specified bond in a cytoplasmic molecule: releases its quantum to
+     power the action *and* splits the molecule into two fragments returned to cytoplasm (matter
+     conserved). Heterotrophy / catabolism.
+2. **Binary condition** — flatly gates the gene on/off (extensible list; baseline):
+   - quantity of a given chemical ≷ a threshold;
+   - total biomass ≷ a threshold.
+3. **Action** — one of (extensible list; baseline):
+   - **Form bond** `a + b → ab` (synthesis; respects the no-repeat-bond rule);
+   - **Contract / Expand** radius beyond baseline;
+   - **Active import** a specific chemical (environment → cytoplasm);
+   - **Active export** a specific chemical (cytoplasm → environment);
+   - **Insulate** — prevent a chemical diffusing between cell and environment *(only meaningful if
+     passive env-diffusion exists — see open question)*;
+   - **Sticky** (adhere on contact) / **Separate** (disconnect);
+   - **Mitosis** (divide);
+   - **Convert** a chemical into biomass (lock it as structure).
+
+Autotroph vs heterotroph, builder vs forager all fall out of which energy source + action a genome
+wires up — none of it is hardcoded.
+
+## Biomass & cell size
+
+- **Size is biomass.** A cell's base/target radius is a function of **total biomass**, replacing the
+  old `energy → radius` map. Total biomass = Σ over the cell's **biomass molecules** of their **bond
+  count** (so per-atom, long molecules are more valuable — but capped by the no-repeat rule).
+- **Two pools per species** *(tentative — see open question)*: each chemical exists either as **mobile
+  cytoplasm** (diffusible, transferable, the substrate genes act on) or as **locked biomass**
+  (structural, non-transferable). The **Convert** action moves a molecule cytoplasm → biomass.
+- **Biomass degrades** (homeostasis pressure): at a rate, a biomass molecule loses **one bond at a
+  deterministic position** (e.g. an end bond — *not* PRNG-random, to keep the hot loop lockstep-clean;
+  see Determinism), splitting into two fragments returned to **cytoplasm**. The bond's energy is
+  **dissipated, not recovered** — so biomass is a net energy *sink* over its lifecycle unless a gene
+  *actively* breaks it to reclaim the energy. A cell must continually Convert to hold size.
+- **Death = biomass collapse.** When total biomass falls below a minimum the cell dies; death returns
+  **all** its atoms to the local environment — biomass molecules returned **whole** (no extra
+  breaking), cytoplasm as-is. Death is the matter-recycling event that closes the loop.
+
+## The environment — matter store + static light
+
+- **Static light field** (`CytoLightField`, already built): a fixed scalar field, the energy source.
+  Non-depletable. Surface cells are exposed; interior cells shaded (via `CytoExposure`).
+- **Matter store** — a **finite, depletable, spatial chemical reservoir**: per grid-cell, a
+  multi-species quantity map. Seeded **once** with the world's whole atom budget. Cells **import** from
+  / **export** to the grid-cell they sit in; **death** deposits the cell's atoms there. This is the
+  closed matter loop and the carrying capacity. **It is the retarget of the parked `CytoEnergyGrid`**:
+  same discrete per-cell access, `draw`/`deposit` primitives, conservation invariant, AoS↔SoA
+  byte-identity, and save round-trip — but multi-species (matter) instead of a single energy scalar.
+
+## Mitosis
+
+- **The gate is the whole control** — no charge accumulator / threshold (the old `divideCharge` /
+  `DIVIDE_THRESHOLD` go away). A Mitosis gene fires whenever its binary condition holds and its energy
+  source can power it. **The half-split is its own brake:** division halves biomass + cytoplasm, which
+  drops both daughters back below any biomass gate, so back-to-back division needs genuine surplus.
+- **Symmetric split now** (biomass and cytoplasm ~50/50 to the two daughters). **Asymmetric,
+  gene-driven split is the later keystone** — the deterministic morphogen/axis source for
+  differentiation (see below). Not now.
+
+## Differentiation (one genome → different cells)
+
+Unchanged in spirit; sources weakest→strongest:
+- **Positional information** — neighbour-topology gradients + contact + distance-to-light, gene-
+  readable, emergent/noisy.
+- **Asymmetric division** — the keystone: an unequal split establishes a morphogen gradient + body
+  axis deterministically from one founder.
+- **Fate memory** — a self-sustaining chemical latch (produce F + insulate F + read F), with a
+  first-class `Differentiate`-style action as the clean long-term mechanism.
+
+## Conservation invariant (the gate)
+
+`Σ atoms(environment) + Σ atoms(every cytoplasm) + Σ atoms(every biomass)` is **bit-constant** every
+tick, absent player injection. A test must assert this over N ticks (the matter analogue of the parked
+energy-conservation test). Energy is deliberately *not* conserved (open throughput) — there is no
+energy invariant.
+
+## Determinism
+
+Strict fixed-point lockstep with an AoS↔SoA **byte-identity** gate. Therefore:
+- **No PRNG in chemistry.** Biomass degradation breaks a **deterministic** bond (an end), not a random
+  one. (Stu's note: a deterministic break is a "free-ish lunch" a genome could come to depend on —
+  acceptable for now; revisit, possibly via seeded-PRNG in canonical cell-then-bond order, if it gets
+  gamed.)
+- Any cross-cell sequential step (e.g. import/export sharing one grid-cell) must run in **canonical
+  cell order** (ascending EntityId) in *both* paths — as the parked draw step already did.
 
 ## Performance
 
-Per-cell sim is expensive — historically the reason this stalled. The discipline:
-- **One biology path.** The old dense "fast path" (skip genes for gene-less cells) does not survive an
-  all-genes model; collapse to the single shared-core path now — correctness first, optimize from
-  profiles later. *(Accepts a near-term regression on big colonies; eyes open.)*
-- The non-cheaty lever to reclaim it later: avoid the per-cell chemical `HashMap` for cells that only
-  touch the dense `energy` column (operate on the column in-place) — a specialization *inside* the one
-  path, not a forked path.
-- The structural win: a resource-limited energy economy is a **carrying capacity** — the world refuses
-  to feed unbounded biomass, so cell count (and compute) is bounded by the ecology, not by tricks.
+Per-cell chemistry is the historical wall. The matter rework removes the dominant `energy` column (no
+energy state) but adds: multi-species environment grid, the cytoplasm/biomass split, and bond
+bookkeeping. Discipline stays: **one biology path** (`CytoBiologyCore`), correctness first via the
+equivalence gate, optimise from profiles. The bounded species set (no polymerisation) helps cap the
+per-cell map sizes.
 
-## Tech debt
+## Tech debt (carried forward)
 
-- **Float still in the sim (de-float to finish what `dc22be3` started).** The chemistry is fixed-point
-  `Frac`, but three things outside it are still `Float`/`Double` — i.e. not yet bulletproof
-  cross-platform deterministic:
-  1. **Spring stress-damage** — `ConnectionStateComponent.damage`, `connectionBreakDamage`,
-     `connectionStressScale`, the CSR `edgeAux`, and the connection-maintenance accumulation. Physics /
-     connection state, not chemistry.
-  2. **Division split geometry** — the "ahead vs side" neighbour classification (`dot(...).toFloat()`
-     compared to `0.75f`) in `CytoLifecycle.divide` / `CytoLifecycleSystem.divide`.
-  3. **Light-field bilinear *sample*** — `CytoLightField.sampleAt` interpolates in `Double`. **Becomes
-     conservation-critical the moment the field goes depletable** → Frac-ify it as part of that work.
-- The dense SoA fast path was dropped (one biology path); reclaim via energy-only dense execution if a
-  profile demands it (see Performance).
+De-float to finish what `dc22be3` started — still-`Float` spots that aren't yet bulletproof
+cross-platform deterministic: spring stress-damage; division split geometry; (the light-field bilinear
+*sample* matters again only if the matter store ever interpolates — the discrete per-cell access keeps
+it `Frac`-exact, as the parked grid already did).
+
+## What carries over vs. what's parked
+
+- **Carries over (live):** heritable per-cell genome + clonal inheritance (✅ `75690fb`); `CellType` =
+  label + preset; the SoA/AoS one-biology-path + byte-identity gate; `CytoLightField` (now *the*
+  energy source); `CytoExposure`; the SoA `CytoWorld` / save / equivalence scaffolding; the
+  `CytoEnergyGridComponent` plumbing commit (`1dfbc9c`) as the **substrate to retarget** to the
+  multi-species matter store.
+- **Parked (`stash@{0}`):** the closed-energy draw/deposit coupling, the energy-conservation test, and
+  the Collector-colony equivalence scenario — mined for their patterns when wiring the matter store.
+- **Replaced:** the `energy` chemical + dense column; the weighted-sum gene model; `divideCharge` /
+  `DIVIDE_THRESHOLD`; energy→radius; the Secrete-energy Collector preset; all type presets and the
+  `GeneCodec` text format; the closed-energy reservoir.
+
+## Open questions (Stu to confirm; my leanings noted)
+
+1. **Passive env-diffusion vs active-only.** The proposal has a passive cell↔environment chemical
+   diffusion that an **Insulate** gene suppresses. **My lean: drop passive; make all cell↔environment
+   exchange gene-mediated (active import/export only).** It's fully genetic (more evolvable), cheaper
+   (no per-species passive flux against the grid for every cell), makes a sealed cell a valid default,
+   and removes the need for the Insulate-vs-env action. Keep passive only if "hoard-vs-leak against the
+   environment" should be a strategy a cell pays to win — in which case passive baseline + Insulate
+   earns its place. (Passive cell↔*cell* diffusion is a separate question.)
+2. **Dual-pool representation.** Cytoplasm-vs-biomass as two tagged per-species quantities is simplest
+   and preserves molecule identity for degradation. A leaner variant: keep biomass **size** as a
+   derived scalar (Σ bonds) plus a multiset of the *locked molecules* (needed so degradation can return
+   the right fragments) — functionally the same, less per-species duplication. Confirm preferred shape.
+3. **Bond-formation semantics.** Exactly which molecules may join (end-to-end? which atoms bond?), the
+   atom alphabet size, and whether action magnitude = ⌊available-energy / quantum⌋ bonds per tick.
+4. **Tuning knobs** (after it runs): energy quantum vs action magnitudes, degradation rate, initial
+   matter total + spatial distribution, light strength.
 
 ## Build order
 
-1. ✅ Heritable per-cell genome, inherited on division (not type-keyed). *(75690fb)*
-2. **▶ Mitosis as a charge-event gene output + drop the fast path** *(this change)* — Stem's division
-   becomes a gene; `divideCooldown` → `divideCharge`; one biology path. Support energy stays a
-   placeholder type-economy until Collectors land.
-3. ✅ **Collector cells + the light-field environment** — `CytoLightField` (4 sources, non-depletable),
-   `Light`→`Secrete` genes, `Collector` cell type, `renderCyto` headless heatmap. Support's "+5"
-   placeholder still exists (used by perf/equivalence fixtures); retire it in a focused follow-up.
-   Future: **depletable** + energy released to the field on cell death = a closed energy system.
-4. Genome **serialization** — `GeneCodec` (text) ✅; still TODO: the **save file** (`CytoSaveCodec`)
-   carries the actual genome once it can diverge from a type preset.
-5. **Authoring** — ▶ v1 done: write a genome as a `.gene` file (GeneCodec), click the on-screen **Load
-   Genome** button to (re)load it as the *brush*, paint with the existing **Spawn**/**Set** controls;
-   the **Light** button toggles the heatmap. (All on-screen buttons — no keyboard-only controls.)
-   Roadmap: a full **on-screen genome composer** (no leaving the game).
-5b. **Depletable closed energy economy** — ▶ in progress. `CytoEnergyGrid` (live, depletable Frac
-   reservoir; draw/deposit conserve to the unit — built + unit-tested) replaces the static
-   `CytoLightField` as the energy source. Design for the sim coupling:
-   - **Collection (grid→cell):** in each biology path's build, per cell *in cell order* (must match
-     across AoS/SoA), a Collector draws `draw = grid.at(idx) * DRAW_RATE * exposure` from its grid cell
-     (`grid.draw(idx, …)` debits), and `cell.light = draw`; the `Light → Secrete energy` gene credits the
-     cell. Sequential debit → natural sharing (later cells on a cell see less). Discrete cell (no
-     bilinear) → resolves tech-debt #3.
-   - **Returns (cell→grid):** accumulate per-cell `wasteOut` in `CytoBiologyCore.act` (keeps it
-     storage-agnostic) for the energy **decay** loss (respiration) and the **overflow** above 1.0
-     (waste — Stu: selection avoids full because of this), then `grid.deposit(idx, wasteOut)` post-act.
-     (Diffusion remainder stays in-cell for now — clean multi-neighbour remainder-waste is fuzzy; defer.)
-   - **Conservation:** `grid.total() + Σ cell energy` constant — a NEW test must assert this over N ticks.
-     No emission, no other loss → closed; gives a hard carrying capacity + kills the filament strategy.
-   - Live state: a singleton in `SimState` (AoS) + a `CytoWorld` field (SoA), updated identically, in
-     the AoS↔SoA equivalence + the save. No grid diffusion v1 (energy recycles locally near the colony).
-   - Knobs to tune after: `DRAW_RATE`, initial reservoir total, (later) grid diffusion + clonal/meiotic
-     reproduction returning energy on death.
-6. Hand-built **hopeful monster** (morphogen-gated mitosis + asymmetric division + differentiation).
-7. **Mutation + selection** — the substrate evolves.
+1. ✅ Heritable per-cell genome, inherited on division (`75690fb`).
+2. **Gene model rewrite** — `energy-source + binary-gate + action`. New `Gene`/`runGenes`, rewrite the
+   presets and `GeneCodec`. Drop the weighted-sum activation, `divideCharge`/`DIVIDE_THRESHOLD`,
+   Secrete-energy.
+3. **Chemistry as bonded molecules** — bond model + the no-repeat-bond rule + the per-bond energy
+   quantum; Form/Break actions. Remove the `energy` chemical and its dense column.
+4. **Biomass** — cytoplasm/biomass split, size = Σ bond-count, Convert action, deterministic
+   degradation (energy dissipated), death = biomass-collapse.
+5. **Environment** — retarget the parked grid to a finite multi-species **matter store** + static light
+   as the energy source; Import/Export actions; death deposits matter; resolve open-question #1.
+6. **Conservation gate** — matter-conservation invariant test; AoS↔SoA equivalence + save updated to
+   the new state.
+7. **Hand-built organism** on the new substrate (autotroph core + builder + divider), then **mutation +
+   selection**.
