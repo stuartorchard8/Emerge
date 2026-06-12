@@ -187,11 +187,54 @@ Resolved:
 4. **Discrete integer matter; discrete energy quanta** (1 per bond); a gene does *N* = available-quanta
    bond-ops, remainder dissipates. `Frac` leaves chemistry.
 
-Still open:
-- **Cell↔cell chemical diffusion** — does the existing neighbour-diffusion survive (now over integer
-  counts), and if so under what rule? (Distinct from the env exchange, which is active-only.)
-- **Tuning knobs** (after it runs): light → quanta mapping + exposure scaling, degradation rate, atom
-  alphabet size, initial matter total + spatial distribution.
+5. **Cell↔cell diffusion stays**, as an integer port of the existing neighbour diffusion: **cytoplasm
+   only** (biomass is locked), **passive/free** (only cell↔env exchange is active), floor-split — send
+   ⌊count/(maxDegree+1)⌋ of each species to each connected neighbour, keep the remainder. (Caveat: a
+   species with count < degree sends 0, so abundant building blocks reach interior cells but scarce
+   signals don't — fine until the differentiation step.) `GeneOutputType.Inhibit` does not return in v1
+   (no per-species diffusion suppression).
+
+Still open — **tuning knobs only** (pick a value, tune later; v1 starting values in the spec below):
+light→quanta scale, degradation period, atom alphabet size, initial matter total + distribution,
+biomass→radius coefficient, death threshold.
+
+## v1 implementation spec (the concrete contract to build)
+
+The first end-to-end slice: a hand-written **light-only autotroph** that imports matter, builds a
+molecule, converts it to biomass (grows), divides, and plateaus on the finite matter — testable
+headless. Concrete decisions (knob magnitudes are starting values, tagged ⚙ tunable):
+
+- **Atoms / alphabet:** start with **{a, b}** ⚙. Molecules are strings over the alphabet with **no
+  repeated bond**; with 2 atoms the legal set is `a, b, ab, ba, aba, bab` (bond counts 0,0,1,1,2,2).
+- **State per cell:** `cytoplasm: Map<species, Int>` (mobile) + `biomass: Map<species, Int>` (locked).
+  No `energy`/Frac chemistry. Total biomass = Σ count × bondcount(species).
+- **Environment:** per grid-cell `Map<species, Int>`; seeded once with free monomers **a, b** in a
+  gaussian around the 4 light sources ⚙ (good real estate = light + matter), a finite global total ⚙.
+- **Energy this tick** for a gene = `quanta = ⌊ light.sampleAt(pos) × exposure × LIGHT_QUANTA_SCALE ⌋`
+  ⚙ for a Light-sourced gene (target: a surface cell on a source gets a few quanta/tick). 1 quantum =
+  1 op.
+- **Gene** = `{ energySource: Light, condition: (ChemQty(species, ≷, n) | Biomass(≷, n)), action }`.
+  v1 actions: **Import(species)** env→cytoplasm, N ops; **FormBond(a,b)** join a cytoplasm molecule
+  ending in `a` with one starting in `b` (canonical = lexicographically-smallest candidates), refused
+  on repeated bond, N ops; **Convert(species)** cytoplasm→biomass, N ops; **Mitosis** (1 op to trigger
+  when gated). Deferred: Break-bond energy source, Export, Contract/Expand, Sticky/Separate.
+- **Cell↔cell diffusion:** as resolved (#5) — cytoplasm only, passive, integer floor-split.
+- **Degradation:** per-cell integer wear accumulator gains `totalBiomassBonds` each tick; `broken =
+  accumulator / DEGRADE_PERIOD` ⚙, `accumulator %= DEGRADE_PERIOD`; each broken bond splits the
+  **lexicographically-smallest biomass molecule**'s leftmost bond → two fragments to cytoplasm; the
+  bond energy dissipates (not recovered). Degradation ∝ size.
+- **Size:** `targetRadius = sqrt(totalBiomassBonds) × RADIUS_PER_SQRT_BOND` ⚙, coerced ≥ `MIN_RADIUS`.
+- **Death:** `totalBiomassBonds < DEATH_BIOMASS` ⚙ → cell dies, deposit **all** its cytoplasm + biomass
+  molecules (whole) into its environment grid-cell.
+- **Mitosis split:** each species count C → daughter `⌊C/2⌋`, mother keeps `C−⌊C/2⌋`, for both
+  cytoplasm and biomass (deterministic). The biomass halving is the division brake.
+- **Determinism:** all of the above is integer + canonical-order; no PRNG. Cross-cell sequential steps
+  (env import/export sharing one grid-cell) run in ascending-EntityId order in both paths.
+- **The test genome (autotroph):** ① `Import a` gated `cytoplasm.a < Ta`; ② `Import b` gated
+  `cytoplasm.b < Tb`; ③ `FormBond a,b` gated `cytoplasm.a > 0`; ④ `Convert ab` gated `cytoplasm.ab >
+  Tc`; ⑤ `Mitosis` gated `biomass > Tm`. Expect: a founder grows, divides into a colony, and the
+  colony **plateaus** as the local environment's a/b is drawn down (matter carrying capacity) — and
+  matter is bit-conserved throughout.
 
 ## Build order
 
