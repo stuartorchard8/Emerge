@@ -58,10 +58,6 @@ object CytoContactSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             // Push apart: a moves along +normal (away from b), b along -normal.
             builder.update<ImpulseComponent>(a) { ImpulseComponent(vel = normal * (push * weightA)) + it }
             builder.update<ImpulseComponent>(b) { ImpulseComponent(vel = -(normal * (push * weightB))) + it }
-
-            val touchAmount = contact.penetration
-            builder.update<CytoCellComponent>(a) { c -> (c ?: cellA).let { it.copy(touch = it.touch + touchAmount) } }
-            builder.update<CytoCellComponent>(b) { c -> (c ?: cellB).let { it.copy(touch = it.touch + touchAmount) } }
         }
     }
 }

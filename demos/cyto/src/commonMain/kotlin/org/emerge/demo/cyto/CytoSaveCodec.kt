@@ -3,9 +3,10 @@ package org.emerge.demo.cyto
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
-import org.emerge.demo.cyto.sim.CytoEnergyGrid
-import org.emerge.demo.cyto.sim.CytoEnergyGridComponent
+import org.emerge.demo.cyto.sim.CytoMatterGrid
+import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
+import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.demo.cyto.sim.systems.addSpring
 import org.emerge.sim.core.EntityId
@@ -21,16 +22,14 @@ import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
 
 /**
- * Versioned byte snapshot of a native Cyto [SimState] — the Box2D-free replacement for the
- * Phase-A cell/connection codec. Serialises each cell's position/velocity (torus
- * fixed-point raw ints), type, radius, divide cooldown, stickiness, and chemicals, plus the
- * connection (spring) pairs. On decode, saved entity ids are remapped to freshly-spawned
- * ids so connections are rebuilt correctly.
+ * Versioned byte snapshot of a matter-model Cyto [SimState]: each cell's position/velocity, type,
+ * radius, wear, stickiness, its cytoplasm + biomass molecule counts, and its genome (GeneCodec text);
+ * the connection (spring) pairs; and the finite [CytoMatterGrid] reservoir. Saved ids are remapped to
+ * freshly-spawned ids on decode so connections rebuild correctly. (v4 = the matter rework; earlier
+ * energy-model saves don't load — cyto saves are regenerated runtime artifacts.)
  */
 object CytoSaveCodec {
-    // v3 adds the depletable energy reservoir (CytoEnergyGrid). v2 saves still load (the reservoir
-    // defaults to a fresh seeded grid) since cyto saves are regenerated runtime artifacts.
-    private const val FORMAT_VERSION = 3
+    private const val FORMAT_VERSION = 4
     private val cfg = CytoConfig()
 
     fun encode(state: SimState): ByteArray {
@@ -50,12 +49,11 @@ object CytoSaveCodec {
             w.writeInt(vel.x.raw); w.writeInt(vel.y.raw)
             w.writeLong(cell.type.dbIndex)
             w.writeLong(cell.logicalRadius.raw)
-            w.writeLong(cell.divideCharge.raw)
+            w.writeInt(cell.wear)
             w.writeByte(if (cell.sticky) 1 else 0)
-            w.writeInt(cell.chemicals.size)
-            for ((k, v) in cell.chemicals) {
-                w.writeString(k); w.writeLong(v.raw)
-            }
+            writeCounts(w, cell.cytoplasm)
+            writeCounts(w, cell.biomass)
+            w.writeString(GeneCodec.serialize(cell.genome))
         }
 
         // Unique connection pairs (a < b).
@@ -63,10 +61,8 @@ object CytoSaveCodec {
         val pairs = LinkedHashSet<Long>()
         for ((id, comp) in springTable) {
             for (spring in comp.springs) {
-                val a = id.value
-                val b = spring.other.value
-                val lo = minOf(a, b)
-                val hi = maxOf(a, b)
+                val lo = minOf(id.value, spring.other.value)
+                val hi = maxOf(id.value, spring.other.value)
                 pairs.add((lo.toLong() shl 32) or (hi.toLong() and 0xFFFFFFFFL))
             }
         }
@@ -76,21 +72,25 @@ object CytoSaveCodec {
             w.writeInt(packed.toInt())
         }
 
-        // Depletable energy reservoir (singleton). Defaults to a fresh seeded grid if the state
-        // predates it, so an in-memory state without the component still encodes a valid v3 save.
-        val grid = state.components.getTable<CytoEnergyGridComponent>()[GRID_SINGLETON]?.grid
-            ?: CytoEnergyGrid.seeded()
-        val column = grid.rawColumn()
-        w.writeInt(column.size)
-        for (v in column) w.writeLong(v)
+        // Matter reservoir: every non-empty grid cell.
+        val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid ?: CytoMatterGrid.seeded()
+        val nonEmpty = ArrayList<Int>()
+        for (idx in 0 until CytoMatterGrid.RES * CytoMatterGrid.RES) {
+            if (grid.cellAt(idx).isNotEmpty()) nonEmpty.add(idx)
+        }
+        w.writeInt(nonEmpty.size)
+        for (idx in nonEmpty) {
+            w.writeInt(idx)
+            writeCounts(w, grid.cellAt(idx))
+        }
         return w.toByteArray()
     }
 
     fun decode(bytes: ByteArray): SimState {
         val c = ByteCursor(bytes)
         val version = c.readInt()
-        require(version == 2 || version == FORMAT_VERSION) {
-            "Unsupported Cyto save format version: $version (expected 2 or $FORMAT_VERSION)"
+        require(version == FORMAT_VERSION) {
+            "Unsupported Cyto save format version: $version (expected $FORMAT_VERSION)"
         }
         val builder = SimBuilder(SimState())
         val idMap = HashMap<Int, EntityId>()
@@ -103,17 +103,14 @@ object CytoSaveCodec {
             val vel = Coord2(Coord(c.readInt()), Coord(c.readInt()))
             val type = CellType.fromDbIndex(c.readLong())
             val radius = Frac(c.readLong())
-            val cooldown = Frac(c.readLong())
+            val wear = c.readInt()
             val sticky = c.readByte().toInt() != 0
-            val chemCount = c.readInt()
-            require(chemCount >= 0) { "Invalid chemical count: $chemCount" }
-            val chemicals = LinkedHashMap<String, Frac>(chemCount)
-            repeat(chemCount) { chemicals[c.readString()] = Frac(c.readLong()) }
+            val cytoplasm = readCounts(c)
+            val biomass = readCounts(c)
+            val genome = GeneCodec.parse(c.readString())
 
-            val newId = builder.spawnCell(pos, vel, type, chemicals, radius, sticky)
-            builder.update<CytoCellComponent>(newId) { current ->
-                (current ?: CytoCellComponent(type, chemicals, radius)).copy(divideCharge = cooldown)
-            }
+            val newId = builder.spawnCell(pos, vel, type, cytoplasm, biomass, radius, sticky, genome)
+            builder.update<CytoCellComponent>(newId) { current -> (current ?: error("spawn")).copy(wear = wear) }
             idMap[savedId] = newId
         }
 
@@ -125,19 +122,30 @@ object CytoSaveCodec {
             if (a != null && b != null) addSpring(builder, a, b, cfg)
         }
 
-        // Energy reservoir (v3+). v2 saves carry none → seed a fresh grid.
-        val grid = if (version >= 3) {
-            val size = c.readInt()
-            require(size >= 0) { "Invalid energy-grid size: $size" }
-            val column = LongArray(size) { c.readLong() }
-            CytoEnergyGrid.fromRaw(column)
-        } else {
-            CytoEnergyGrid.seeded()
+        val grid = CytoMatterGrid.empty()
+        val gridCellCount = c.readInt()
+        require(gridCellCount >= 0) { "Invalid grid-cell count: $gridCellCount" }
+        repeat(gridCellCount) {
+            val idx = c.readInt()
+            for ((species, count) in readCounts(c)) grid.deposit(idx, species, count)
         }
-        builder.update<CytoEnergyGridComponent>(GRID_SINGLETON) { CytoEnergyGridComponent(grid) }
+        builder.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
 
         require(c.remaining() == 0) { "Unexpected trailing bytes in Cyto snapshot: ${c.remaining()}" }
         return builder.build()
+    }
+
+    private fun writeCounts(w: ByteWriter, counts: Map<String, Int>) {
+        w.writeInt(counts.size)
+        for ((species, count) in counts) { w.writeString(species); w.writeInt(count) }
+    }
+
+    private fun readCounts(c: ByteCursor): Map<String, Int> {
+        val n = c.readInt()
+        require(n >= 0) { "Invalid count map size: $n" }
+        val out = LinkedHashMap<String, Int>(n)
+        repeat(n) { out[c.readString()] = c.readInt() }
+        return out
     }
 
     private fun ByteWriter.writeString(s: String) {

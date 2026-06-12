@@ -6,10 +6,10 @@ import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.sim.createCytoInitialState
 import org.emerge.demo.cyto.sim.CytoCellComponent
+import org.emerge.demo.cyto.sim.CytoReducer
 import org.emerge.demo.cyto.sim.CytoUnits
-import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
-import org.emerge.demo.cyto.sim.soa.CytoWorld
 import org.emerge.sim.core.EntityId
+import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -34,13 +34,13 @@ class CytoController(
     // Work-stealing pool for the parallel spring solver (daemon threads on JVM/Android, no
     // shutdown needed; a no-op inline runner on JS).
     private val executor = ParallelExecutor()
-    private val reducer = CytoSoaReducer(cfg, executor)
-    private var world = CytoWorld.fromSimState(createCytoInitialState())
+    private val reducer = CytoReducer(executor = executor)
     private var tickCount = 0L
     private var accumulator = 0f
 
-    /** Last materialized snapshot — what the renderer / hit-test / save read between steps. */
-    private var currentState: SimState = world.toSimState()
+    /** The live snapshot — what the renderer / hit-test / save read. The AoS [CytoReducer] returns a
+     *  fresh [SimState] each tick (the SoA structural-win path was shelved for the matter rework). */
+    private var currentState: SimState = createCytoInitialState()
 
     private val pendingSpawns = ArrayList<CytoInput.Spawn>()
     private val pendingTaps = ArrayList<CytoInput.Tap>()
@@ -52,7 +52,6 @@ class CytoController(
     fun tick(deltaSeconds: Float): CytoFrame {
         accumulator += deltaSeconds.coerceIn(0f, 0.25f)
         var firstStep = true
-        var stepped = false
         while (accumulator >= STEP) {
             // Spawns/taps are one-shot (consumed on the first step); the grab is continuous.
             val input = CytoInput(
@@ -66,14 +65,11 @@ class CytoController(
                 pendingTaps.clear()
                 pendingDetaches.clear()
             }
-            reducer.tick(world, input = input)
+            currentState = reducer.reduce(cfg, currentState, mapOf(PlayerId(0) to input))
             tickCount++
             accumulator -= STEP
             firstStep = false
-            stepped = true
         }
-        // Materialize for the renderer/save only when the world actually changed this frame.
-        if (stepped) currentState = world.toSimState()
         return CytoFrame(currentState, tickCount)
     }
 
@@ -140,16 +136,14 @@ class CytoController(
         for ((id, cell) in cells) {
             if (!all && id != grabbed) continue
             val transform = transforms[id] ?: continue
-            val text = cell.chemicals.entries.joinToString("\n") { "${it.key}:${fmt(it.value.toFloat())}" }
+            // Matter readout: cytoplasm species (mobile) then biomass species (locked, prefixed *).
+            val cyto = cell.cytoplasm.entries.joinToString("\n") { "${it.key}:${it.value}" }
+            val bio = cell.biomass.entries.joinToString("\n") { "*${it.key}:${it.value}" }
+            val text = listOf(cyto, bio).filter { it.isNotEmpty() }.joinToString("\n")
             if (text.isEmpty()) continue
             out.add(Readout(CytoUnits.toLogical(transform.pos.x), CytoUnits.toLogical(transform.pos.y), text))
         }
         return out
-    }
-
-    private fun fmt(v: Float): String {
-        val hundredths = (v * 100f).toInt()
-        return "${hundredths / 100}.${(kotlin.math.abs(hundredths) % 100).toString().padStart(2, '0')}"
     }
 
     // ── Persistence ─────────────────────────────────────────────────────────────
@@ -157,8 +151,7 @@ class CytoController(
     fun snapshotBytes(): ByteArray = CytoSaveCodec.encode(currentState)
 
     fun restoreSnapshot(bytes: ByteArray) {
-        world = CytoWorld.fromSimState(CytoSaveCodec.decode(bytes))
-        currentState = world.toSimState()
+        currentState = CytoSaveCodec.decode(bytes)
         tickCount = 0
         accumulator = 0f
         pendingSpawns.clear()

@@ -1,145 +1,179 @@
 package org.emerge.demo.cyto.sim
 
-import org.emerge.demo.cyto.cells.CellType
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.primitives.Frac
 
 /**
- * The pure, storage-agnostic core of Cyto's chemistry/growth biology — per-cell `act` (diffusion +
- * energy + growth + division/death decision) and the enzyme `runReactions`, on [CellWork]s + neighbour
- * ids. Both the AoS [org.emerge.demo.cyto.sim.systems.CytoBiologySystem] and the SoA biology path call
- * this single implementation, so the result is **bit-identical by construction**.
+ * The per-cell biology of the matter model (MORPHOGENESIS.md), operating on [CellWork] + the
+ * environment [CytoMatterGrid]. Everything here is integer/`Frac` and PRNG-free, so it is deterministic
+ * and matter is conserved by construction (atoms are only moved between cytoplasm, biomass, and the
+ * reservoir — never minted).
  *
- * All chemistry is fixed-point [Frac] in `[0,1]` (1.0 = a full cell). The old `[0,10]` magnitudes were
- * rescaled ÷10 (full-size threshold 1→0.1, decay constants adjusted) — same dynamics, Frac-safe range.
- * Frac diffusion floors `v/n`; the cell keeps the undivided remainder (conservative — until the
- * depletable grid gives waste somewhere else to go).
+ * A tick runs in three phases over all cells: [runGenes] (each cell executes its genome — gated actions
+ * powered by light quanta; sequential in EntityId order because Import draws from the shared reservoir),
+ * then [diffuse] (cytoplasm spreads to connected neighbours, snapshot-based so it's order-independent),
+ * then [finish] per cell (degradation, size from biomass, death/division decision).
  */
-internal object CytoBiologyCore {
+object CytoBiologyCore {
 
-    private val ZERO = Frac(0, 1)
-    private val ONE = Frac(1, 1)
-    private val FULL_SIZE_ENERGY = Frac(1, 10)   // old "energy ≥ 1" full-size / linear-decay threshold, ÷10
-    private val DECAY_SLOPE = Frac(5, 4)         // old 0.125 × (the ÷10 rescale) → 1.25·energy
-    private val DECAY_INTERCEPT = Frac(1, 8)     // old +0.125 (unchanged)
-    private val HALF = Frac(1, 2)
+    // ── tunable knobs (MORPHOGENESIS §v1 spec) ──────────────────────────────────
+    /** light → quanta: `quanta = floor(field × exposure × SCALE)` (computed in integer `Frac` raws, no
+     *  float — see [CytoBiologySystem]). Field peaks at ~STRENGTH (0.005), so a fully-exposed cell on a
+     *  source gets ~`STRENGTH·SCALE` ops/tick. ⚙ */
+    const val LIGHT_QUANTA_SCALE = 2000
+    /** Degradation: a cell's wear accumulator gains its total biomass bonds each tick; every
+     *  DEGRADE_PERIOD of accumulated wear breaks one bond (so decay rate ∝ size). ⚙ */
+    const val DEGRADE_PERIOD = 4000
+    /** Biomass bonds for a full-size (radius 1.0) cell — `radius = sqrt(bonds / BONDS_PER_FULL)`. ⚙ */
+    const val BONDS_PER_FULL = 16
+    /** Cell dies when total biomass falls below this (1 ⇒ dies once biomass is empty). ⚙ */
+    const val DEATH_BIOMASS = 1
 
-    fun act(
-        id: EntityId,
-        work: CellWork,
-        neighbourIds: List<EntityId>?,
-        works: Map<EntityId, CellWork>,
-        neighbourCounts: Map<EntityId, Int>,
-        dt: Frac,
-        divide: MutableList<EntityId>,
-        destroy: MutableList<EntityId>,
-    ) {
-        if (dt.sign <= 0) return
-        val energy = work.chemicals["energy"] ?: ONE
-        if (energy.sign <= 0) {
+    /** Phase 1 — execute one cell's genome: each gated gene performs up to `work.quanta` ops of its
+     *  action this tick (energy is per-gene, private, use-or-lose). Import draws from [grid] (so this
+     *  must run in a fixed cell order across cells). */
+    fun runGenes(work: CellWork, grid: CytoMatterGrid) {
+        for (gene in work.genome) {
+            if (!gate(gene.condition, work)) continue
+            val budget = work.quanta
+            if (budget <= 0) continue
+            when (gene.action.type) {
+                ActionType.Import -> {
+                    val sp = gene.action.a
+                    val taken = if (work.gridIndex >= 0) grid.draw(work.gridIndex, sp, budget) else 0
+                    if (taken > 0) inc(work.cytoplasm, sp, taken)
+                }
+                ActionType.FormBond -> formBonds(work, gene.action.a, gene.action.b, budget)
+                ActionType.Convert -> convert(work, gene.action.a, budget)
+                ActionType.Mitosis -> work.dividing = true   // one-shot; gate + a quantum is enough
+            }
+        }
+    }
+
+    /** Phase 2 — cytoplasm diffuses to connected neighbours: each cell sends ⌊count/(degree+1)⌋ of each
+     *  species to **each** neighbour and keeps the remainder. Snapshot-based (reads pre-diffusion
+     *  counts, writes deltas, applies after) so it's order-independent and conservative; biomass does
+     *  not diffuse (it's locked). */
+    fun diffuse(works: Map<EntityId, CellWork>, neighbourIds: Map<EntityId, List<EntityId>>) {
+        val snapshot = HashMap<EntityId, Map<String, Int>>(works.size)
+        val delta = HashMap<EntityId, HashMap<String, Int>>(works.size)
+        for ((id, w) in works) {
+            snapshot[id] = HashMap(w.cytoplasm)
+            delta[id] = HashMap()
+        }
+        for ((id, _) in works) {
+            val nbrs = neighbourIds[id] ?: continue
+            val degree = nbrs.size
+            if (degree == 0) continue
+            val snap = snapshot.getValue(id)
+            val selfDelta = delta.getValue(id)
+            for ((species, v) in snap) {
+                val out = v / (degree + 1)
+                if (out <= 0) continue
+                selfDelta[species] = (selfDelta[species] ?: 0) - out * degree
+                for (nb in nbrs) {
+                    val nbDelta = delta[nb] ?: continue
+                    nbDelta[species] = (nbDelta[species] ?: 0) + out
+                }
+            }
+        }
+        for ((id, w) in works) {
+            for ((species, d) in delta.getValue(id)) {
+                if (d != 0) addOrRemove(w.cytoplasm, species, d)
+            }
+        }
+    }
+
+    /** Phase 3 — degradation (biomass loses bonds at a rate ∝ size, fragments return to cytoplasm),
+     *  size from biomass, and the death/division decision. */
+    fun finish(id: EntityId, work: CellWork, divide: MutableList<EntityId>, destroy: MutableList<EntityId>) {
+        degrade(work)
+        val bonds = totalBiomassBonds(work.biomass)
+        if (bonds < DEATH_BIOMASS) {
             destroy.add(id)
             return
         }
-
-        // Diffuse chemicals to connected neighbours (floor split; the cell keeps the remainder).
-        val selfConnections = neighbourIds?.size ?: 0
-        if (neighbourIds != null) for (nId in neighbourIds) {
-            val nWork = works[nId] ?: continue
-            val maxConnections = maxOf(selfConnections, neighbourCounts[nId] ?: 0) + 1
-            for ((k, v) in work.chemicals) {
-                val totalInhibition = Frac.abs((work.suppression[k] ?: ZERO) + (nWork.suppression[k] ?: ZERO))
-                val transfer = v.div(maxConnections) - totalInhibition
-                if (transfer.sign > 0) {
-                    work.transfers[k] = (work.transfers[k] ?: ZERO) - transfer
-                    nWork.transfers[k] = (nWork.transfers[k] ?: ZERO) + transfer
-                }
-            }
-        }
-
-        // Energy upkeep + growth. Loss is ÷10 of the old per-tick loss (the units rescale).
-        val decayBase = dt.div(10)
-        var targetRadius = ONE
-        if (energy >= FULL_SIZE_ENERGY) {
-            work.transfers["energy"] = (work.transfers["energy"] ?: ZERO) - decayBase
-        } else {
-            val decay = energy * DECAY_SLOPE + DECAY_INTERCEPT
-            work.transfers["energy"] = (work.transfers["energy"] ?: ZERO) - decayBase * (decay * decay)
-            targetRadius = (energy / FULL_SIZE_ENERGY).sqrt()
-        }
-
-        if (work.contraction.sign > 0) {
-            val chargeToUse = work.contraction.coerceAtMost(dt)
-            val strength = chargeToUse / dt
-            targetRadius *= ONE - strength * HALF
-            work.contraction = ZERO
-        }
-
-        // Division is gene-driven: a Mitosis gene accrued `divideCharge`; at the threshold the cell
-        // splits (the lifecycle resets it). Clamp ≥0 so a starved cell stalls rather than banking debt.
-        if (work.divideCharge.sign < 0) work.divideCharge = ZERO
-        if (work.divideCharge >= DIVIDE_THRESHOLD) divide.add(id)
-
-        // PLACEHOLDER: Support mints energy from nothing, keyed on type — the one remaining hardcoded
-        // economy; retired when Collectors absorb from the environment. Rescaled ÷10 (was +5).
-        if (work.type == CellType.Support) work.transfers["energy"] = (work.transfers["energy"] ?: ZERO) + HALF
-
+        // size = sqrt(bonds / BONDS_PER_FULL), elastically blended toward the target (matches the old
+        // growth feel); Frac.sqrt keeps it deterministic.
+        val target = Frac(bonds.toLong(), BONDS_PER_FULL).sqrt().coerceAtLeast(MIN_RADIUS)
         work.logicalRadius =
-            (work.logicalRadius * RADIUS_ELASTICITY + targetRadius.coerceAtLeast(MIN_RADIUS)).div(RADIUS_ELASTICITY + 1)
+            (work.logicalRadius * RADIUS_ELASTICITY + target).div(RADIUS_ELASTICITY + 1)
+        if (work.dividing) divide.add(id)
     }
 
-    private class ChemReaction(val catalyst: Pair<String, String>) {
-        var chemA = Frac(0, 1)
-        var chemB = Frac(0, 1)
-        var chemC = Frac(0, 1)
+    // ── gates ────────────────────────────────────────────────────────────────
+    private fun gate(c: GeneCondition, work: CellWork): Boolean {
+        val value = when (c.type) {
+            ConditionType.ChemQty -> work.cytoplasm[c.species] ?: 0
+            ConditionType.Biomass -> totalBiomassBonds(work.biomass)
+        }
+        return when (c.cmp) {
+            Comparison.Greater -> value > c.threshold
+            Comparison.Less -> value < c.threshold
+        }
     }
 
-    /** Enzyme-catalysed string-pattern reactions, ported from `Cell.chemistry`. */
-    fun runReactions(work: CellWork) {
-        if (work.enzymes.isEmpty()) return
-        val intents = mutableListOf<ChemReaction>()
-        for ((a, b) in work.enzymes) {
-            val aMatches = work.chemicals.filter { it.key.takeLast(a.length) == a }
-            val bMatches = work.chemicals.filter { it.key.take(b.length) == b }
-            for (am in aMatches) for (bm in bMatches) {
-                intents.add(ChemReaction(am.key to bm.key))
-            }
-            val ab = "$a$b"
-            val abMatches = work.chemicals.filter { it.key.contains(ab) }
-            for (abm in abMatches) {
-                val segments = abm.key.split(ab)
-                for (index in 1 until segments.size) {
-                    val prefix = segments.take(index).joinToString(ab)
-                    val chemA = "$prefix$a"
-                    val suffix = segments.takeLast(segments.size - index).joinToString(ab)
-                    val chemB = "$b$suffix"
-                    intents.add(ChemReaction(chemA to chemB))
-                }
-            }
+    // ── actions ──────────────────────────────────────────────────────────────
+    /** Form up to [budget] `a–b` bonds: join a cytoplasm molecule ending in atom [a] with one starting
+     *  in atom [b] (lexicographically-smallest candidates), refused once the product would repeat a
+     *  bond (polymerisation). */
+    private fun formBonds(work: CellWork, a: String, b: String, budget: Int) {
+        if (a.isEmpty() || b.isEmpty()) return
+        val ac = a[0]; val bc = b[0]
+        var done = 0
+        while (done < budget) {
+            val endA = work.cytoplasm.entries
+                .filter { it.value > 0 && it.key.isNotEmpty() && it.key.last() == ac }
+                .minByOrNull { it.key }?.key ?: break
+            val startB = work.cytoplasm.entries
+                .filter { it.value > 0 && it.key.isNotEmpty() && it.key.first() == bc }
+                .minByOrNull { it.key }?.key ?: break
+            if (endA == startB && (work.cytoplasm[endA] ?: 0) < 2) break  // need two molecules
+            val product = Molecules.join(endA, startB) ?: break           // forbidden → stop
+            dec(work.cytoplasm, endA)
+            dec(work.cytoplasm, startB)
+            inc(work.cytoplasm, product, 1)
+            done++
         }
-        work.enzymes.clear()
+    }
 
-        for ((key, value) in work.chemicals) {
-            val aI = intents.filter { it.catalyst.first == key }
-            val bI = intents.filter { it.catalyst.second == key }
-            val cI = intents.filter { "${it.catalyst.first}${it.catalyst.second}" == key }
-            val total = aI.size + bI.size + cI.size
-            val allocation = value.div(total + 1)
-            aI.forEach { it.chemA = allocation }
-            bI.forEach { it.chemB = allocation }
-            cI.forEach { it.chemC = allocation }
-        }
+    /** Lock up to [budget] molecules of [species] from cytoplasm into biomass (grows the cell). */
+    private fun convert(work: CellWork, species: String, budget: Int) {
+        val avail = work.cytoplasm[species] ?: 0
+        val n = if (budget < avail) budget else avail
+        if (n <= 0) return
+        addOrRemove(work.cytoplasm, species, -n)
+        inc(work.biomass, species, n)
+    }
 
-        for (r in intents) {
-            val chemA = r.catalyst.first
-            val chemB = r.catalyst.second
-            val chemC = "$chemA$chemB"
-            val minAB = r.chemA.coerceAtMost(r.chemB)
-            val diff = (minAB - r.chemC).div(2)
-            if (diff.sign != 0) {
-                work.chemicals[chemA] = (work.chemicals[chemA] ?: ZERO) - diff
-                work.chemicals[chemB] = (work.chemicals[chemB] ?: ZERO) - diff
-                work.chemicals[chemC] = (work.chemicals[chemC] ?: ZERO) + diff
-            }
+    /** Spontaneous decay: break `wear / DEGRADE_PERIOD` bonds this tick (rate ∝ biomass size), each
+     *  splitting the lexicographically-smallest biomass molecule's leftmost bond → two fragments back to
+     *  cytoplasm. The bond's energy is dissipated (not recovered). */
+    private fun degrade(work: CellWork) {
+        work.wear += totalBiomassBonds(work.biomass)
+        var broken = work.wear / DEGRADE_PERIOD
+        work.wear %= DEGRADE_PERIOD
+        while (broken > 0) {
+            val target = work.biomass.entries
+                .filter { it.value > 0 && it.key.length >= 2 }
+                .minByOrNull { it.key }?.key ?: break
+            val (f1, f2) = Molecules.splitLeftmost(target) ?: break
+            dec(work.biomass, target)
+            inc(work.cytoplasm, f1, 1)
+            inc(work.cytoplasm, f2, 1)
+            broken--
         }
+    }
+
+    // ── map helpers ────────────────────────────────────────────────────────────
+    private fun inc(m: MutableMap<String, Int>, k: String, n: Int) {
+        m[k] = (m[k] ?: 0) + n
+    }
+
+    private fun dec(m: MutableMap<String, Int>, k: String) = addOrRemove(m, k, -1)
+
+    private fun addOrRemove(m: MutableMap<String, Int>, k: String, delta: Int) {
+        val v = (m[k] ?: 0) + delta
+        if (v <= 0) m.remove(k) else m[k] = v
     }
 }

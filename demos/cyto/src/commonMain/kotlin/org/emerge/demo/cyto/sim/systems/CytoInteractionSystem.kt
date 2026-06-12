@@ -33,7 +33,7 @@ object CytoInteractionSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
 
         for (spawn in input.spawns) {
             builder.spawnCell(
-                CytoUnits.coord2(spawn.x, spawn.y), Coord2.zero, spawn.type, mapOf("energy" to Frac(1, 5)), MIN_RADIUS,
+                CytoUnits.coord2(spawn.x, spawn.y), Coord2.zero, spawn.type, logicalRadius = MIN_RADIUS,
                 genome = spawn.genome ?: genomeForType(spawn.type),
             )
         }
@@ -47,7 +47,7 @@ object CytoInteractionSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             val hits = cells.keys.filter { id -> contains(builder, id, tap.x, tap.y) }
             if (hits.isEmpty()) {
                 builder.spawnCell(
-                    CytoUnits.coord2(tap.x, tap.y), Coord2.zero, tap.type, mapOf("energy" to Frac(1, 5)), MIN_RADIUS,
+                    CytoUnits.coord2(tap.x, tap.y), Coord2.zero, tap.type, logicalRadius = MIN_RADIUS,
                     genome = tap.genome ?: genomeForType(tap.type),
                 )
                 continue

@@ -1,11 +1,16 @@
 package org.emerge.demo.cyto.sim.systems
 
-import org.emerge.demo.cyto.cells.CellType
+import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
+import org.emerge.demo.cyto.sim.CytoMatterGrid
+import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.GRID_SINGLETON
+import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.spawnCell
+import org.emerge.demo.cyto.sim.totalBiomassBonds
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
@@ -18,20 +23,15 @@ import org.emerge.sim.core.physics.primitives.Norm
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
 import kotlin.math.absoluteValue
-import kotlin.math.min
 import kotlin.math.sign
-import kotlin.math.sqrt
 
 /**
- * Applies the structural changes intents request: detach (cut all of a cell's
- * connections), destroy (remove a dead cell and its springs), weld (spring-join a
- * contacting pair), and divide (mitosis). Division is ported from
- * `CellWorld.fixedUpdate`: chemicals split in half, the daughter offset along the cell's
- * outward normal, and the mother's "ahead" connections rewired to the daughter. Runs after
- * biology/connection phases.
+ * Applies the structural changes the biology/interaction phases request: detach, destroy (a dead cell
+ * recycles **all its matter** to the reservoir, then is removed), weld, and divide (mitosis: an integer
+ * split of cytoplasm + biomass, daughter offset along the outward normal, mother's "ahead" springs
+ * rewired to it). Runs after biology/connection phases.
  */
 object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
-    private val ZERO = Frac(0, 1)
 
     override fun update(
         cfg: CytoConfig,
@@ -43,12 +43,26 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             for (n in neighboursOf(builder, intent.id)) removeSpringPair(builder, intent.id, n)
         }
 
-        // Destroy: drop springs to dead cells, then remove them.
+        // Destroy: a dying cell returns all its molecules to its reservoir grid-cell (closing the matter
+        // loop), drops its springs, then is removed.
         val destroyed = HashSet<EntityId>()
-        for (intent in builder.events<CellDestroyIntent>()) {
-            if (!destroyed.add(intent.id)) continue
-            for (n in neighboursOf(builder, intent.id)) removeSpringPair(builder, intent.id, n)
-            builder.removeEntity(intent.id)
+        val destroyEvents = builder.events<CellDestroyIntent>()
+        if (destroyEvents.isNotEmpty()) {
+            val grid = builder.getComponent<CytoMatterGridComponent>(GRID_SINGLETON)?.grid?.copy()
+                ?: CytoMatterGrid.seeded()
+            for (intent in destroyEvents) {
+                if (!destroyed.add(intent.id)) continue
+                val cell = builder.getComponent<CytoCellComponent>(intent.id)
+                val pos = builder.getComponent<TransformComponent>(intent.id)?.pos
+                if (cell != null && pos != null) {
+                    val idx = grid.indexOf(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y))
+                    for ((s, c) in cell.cytoplasm) grid.deposit(idx, s, c)
+                    for ((s, c) in cell.biomass) grid.deposit(idx, s, c)
+                }
+                for (n in neighboursOf(builder, intent.id)) removeSpringPair(builder, intent.id, n)
+                builder.removeEntity(intent.id)
+            }
+            builder.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
         }
 
         // Weld: spring-join contacting pairs (once each, skipping the just-destroyed).
@@ -100,17 +114,18 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             }
         }
 
-        val halfChemicals = cell.chemicals.mapValues { it.value.div(2) }
-        val daughterEnergy = (halfChemicals["energy"] ?: ZERO).toFloat()
-        val daughterRadius = Frac.fromFloat(sqrt(min(1f, daughterEnergy)))
+        // Integer split: daughter takes ⌊C/2⌋ of each species (cytoplasm + biomass), mother keeps ⌈C/2⌉.
+        val (motherCyto, daughterCyto) = halve(cell.cytoplasm)
+        val (motherBio, daughterBio) = halve(cell.biomass)
+        val daughterRadius = radiusForBiomass(daughterBio)
 
-        // Clonal division: the daughter inherits the mother's type AND genome (was hardcoded Stem;
-        // equivalent today since only Stem cells divide, but now genomes propagate down a lineage).
+        // Clonal division: the daughter inherits the mother's type AND genome.
         val daughter = builder.spawnCell(
             pos = motherPos + offset,
             vel = motionVel,
             type = cell.type,
-            chemicals = halfChemicals,
+            cytoplasm = daughterCyto,
+            biomass = daughterBio,
             logicalRadius = daughterRadius,
             genome = cell.genome,
         )
@@ -123,14 +138,30 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             addSpring(builder, daughter, n, cfg)
         }
 
-        // Mother: step back along the split, rotate a quarter turn, halve chemicals.
+        // Mother: step back along the split, rotate a quarter turn, keep its half of the matter.
         builder.update<TransformComponent>(motherId) { current ->
             (current ?: transform).copy(pos = motherPos - offset, ang = transform.ang + Frac(1, 2))
         }
         builder.update<CytoCellComponent>(motherId) { current ->
-            (current ?: cell).copy(chemicals = halfChemicals, divideCharge = ZERO)
+            (current ?: cell).copy(cytoplasm = motherCyto, biomass = motherBio, logicalRadius = radiusForBiomass(motherBio))
         }
 
         addSpring(builder, motherId, daughter, cfg)
     }
+
+    /** Split a per-species count map: daughter gets ⌊C/2⌋, mother keeps the rest (⌈C/2⌉). */
+    private fun halve(m: Map<String, Int>): Pair<Map<String, Int>, Map<String, Int>> {
+        val mother = HashMap<String, Int>()
+        val daughter = HashMap<String, Int>()
+        for ((species, count) in m) {
+            val d = count / 2
+            if (d > 0) daughter[species] = d
+            val keep = count - d
+            if (keep > 0) mother[species] = keep
+        }
+        return mother to daughter
+    }
+
+    private fun radiusForBiomass(biomass: Map<String, Int>): Frac =
+        Frac(totalBiomassBonds(biomass).toLong(), CytoBiologyCore.BONDS_PER_FULL).sqrt().coerceAtLeast(MIN_RADIUS)
 }

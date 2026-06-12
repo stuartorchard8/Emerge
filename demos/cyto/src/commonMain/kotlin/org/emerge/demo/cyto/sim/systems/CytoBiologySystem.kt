@@ -1,21 +1,21 @@
 package org.emerge.demo.cyto.sim.systems
 
-import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CellWork
 import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
+import org.emerge.demo.cyto.sim.CytoExposure
+import org.emerge.demo.cyto.sim.CytoLightField
+import org.emerge.demo.cyto.sim.CytoMatterGrid
+import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoUnits
-import org.emerge.demo.cyto.sim.MAX_CHEM
-import org.emerge.demo.cyto.sim.MIN_RADIUS
-import org.emerge.demo.cyto.sim.RADIUS_ELASTICITY
-import org.emerge.demo.cyto.sim.runGenes
+import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.ColliderComponent
-import org.emerge.sim.core.physics.components.SpringConstraint
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
+import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
@@ -25,14 +25,16 @@ data class CellDivisionIntent(val id: EntityId)
 data class CellDestroyIntent(val id: EntityId)
 
 /**
- * Cyto's chemistry + genes + growth, ported from `Cell.chemistry` / `Cell.act` and
- * `CellWorld.fixedUpdate`'s two-pass structure (all cells run chemistry, then all run
- * act). Cell biology stays in Float/logical units; the engine [ColliderComponent] radius
- * is derived from the grown logical radius. Division/death are emitted as intents for the
- * structural [CytoLifecycleSystem] to apply.
+ * The matter-model biology (MORPHOGENESIS.md): per cell, light → energy quanta (scaled by surface
+ * exposure), then the genome's gated actions (Import / FormBond / Convert / Mitosis), then cytoplasm
+ * diffusion to neighbours, degradation, growth (radius from biomass), and the death/division decision.
+ * Cells exchange matter with the finite [CytoMatterGrid] reservoir (the [CytoMatterGridComponent]
+ * singleton); division/death are emitted as intents for [CytoLifecycleSystem] to apply.
+ *
+ * Genes run in ascending-EntityId order because Import draws from the shared reservoir (a sequential,
+ * order-sensitive step); diffusion is snapshot-based and order-independent.
  */
 object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.sim.CytoInput> {
-    private val ZERO = Frac(0, 1)
 
     override fun update(
         cfg: CytoConfig,
@@ -42,85 +44,79 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
         val cells = builder.entries<CytoCellComponent>()
         if (cells.isEmpty()) return
         val springs = builder.entries<SpringConstraintComponent>()
-        val transforms = builder.entries<org.emerge.sim.core.physics.components.TransformComponent>()
-        val lightField = org.emerge.demo.cyto.sim.CytoLightField.default()
-        val dt = TIME_STEP
+        val transforms = builder.entries<TransformComponent>()
+        val lightField = CytoLightField.default()
+        // The reservoir, cloned so this tick's draws/deposits don't mutate the input snapshot in place.
+        val grid = builder.getComponent<CytoMatterGridComponent>(GRID_SINGLETON)?.grid?.copy()
+            ?: CytoMatterGrid.seeded()
 
-        // Build per-cell working state, applying last tick's pending transfers.
+        // Process cells in ascending-EntityId order (Import draws from the shared reservoir sequentially).
+        val orderedIds = cells.keys.sortedBy { it.value }
         val works = LinkedHashMap<EntityId, CellWork>(cells.size)
-        val neighbourCounts = HashMap<EntityId, Int>(cells.size)
-        for ((id, cell) in cells) {
-            val chem = HashMap(cell.chemicals)
-            for ((k, v) in cell.pendingTransfers) {
-                chem[k] = ((chem[k] ?: ZERO) + v).coerceIn(ZERO, MAX_CHEM)
-            }
-            // Harvest = field × exposure: only surface cells reach the resource (income ∝ surface,
-            // not volume), so a growing colony's per-capita income falls → density dependence.
+        val neighbourIds = HashMap<EntityId, List<EntityId>>(cells.size)
+        for (id in orderedIds) {
+            val cell = cells.getValue(id)
+            val nbrs = springs[id]?.springs?.map { it.other } ?: emptyList()
+            neighbourIds[id] = nbrs
+
             val pos = transforms[id]?.pos
-            var harvest = ZERO
+            var gridIndex = -1
+            var quanta = 0
             if (pos != null) {
                 var k = 0
-                springs[id]?.springs?.let { sp ->
-                    for (s in sp) {
-                        if (k >= org.emerge.demo.cyto.sim.CytoExposure.MAX_NEIGHBOURS) break
-                        val np = transforms[s.other]?.pos ?: continue
-                        val d = np - pos
-                        expoScratch[k++] = org.emerge.demo.cyto.sim.CytoExposure.diamondAngle(d.x, d.y).raw
-                    }
+                for (s in nbrs) {
+                    if (k >= CytoExposure.MAX_NEIGHBOURS) break
+                    val np = transforms[s]?.pos ?: continue
+                    val d = np - pos
+                    expoScratch[k++] = CytoExposure.diamondAngle(d.x, d.y).raw
                 }
-                harvest = lightField.sampleAt(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y)) *
-                    org.emerge.demo.cyto.sim.CytoExposure.weight(expoScratch, k)
+                val lx = CytoUnits.toLogical(pos.x); val ly = CytoUnits.toLogical(pos.y)
+                gridIndex = grid.indexOf(lx, ly)
+                val sample = lightField.sampleAt(lx, ly)               // Frac, environmental light
+                val exposure = CytoExposure.weight(expoScratch, k)     // Frac [0,1]
+                // quanta = floor(sample × exposure × SCALE), in integer Frac raws (no float).
+                quanta = (((sample * exposure) * CytoBiologyCore.LIGHT_QUANTA_SCALE).raw / Int.MAX_VALUE.toLong()).toInt()
             }
             works[id] = CellWork(
-                chemicals = chem,
-                transfers = HashMap(),
-                initialSuppression = cell.suppression,
-                touch = cell.touch,
+                cytoplasm = HashMap(cell.cytoplasm),
+                biomass = HashMap(cell.biomass),
                 logicalRadius = cell.logicalRadius,
-                divideCharge = cell.divideCharge,
                 type = cell.type,
                 genome = cell.genome,
-                light = harvest,
+                quanta = quanta,
+                wear = cell.wear,
+                gridIndex = gridIndex,
             )
-            neighbourCounts[id] = springs[id]?.springs?.size ?: 0
         }
 
-        // Pass 1 — chemistry: genes then enzyme reactions, for every cell.
-        for ((_, work) in works) {
-            runGenes(work, dt)
-            work.touch = ZERO
-            CytoBiologyCore.runReactions(work)
-        }
-
-        // Pass 2 — act: diffusion, energy, growth, type behaviour, division decision.
+        // Phase 1 — genes (sequential, drawing from the reservoir).
+        for (id in orderedIds) CytoBiologyCore.runGenes(works.getValue(id), grid)
+        // Phase 2 — cytoplasm diffusion (snapshot-based, order-independent).
+        CytoBiologyCore.diffuse(works, neighbourIds)
+        // Phase 3 — degradation / growth / death+division decision.
         val divide = ArrayList<EntityId>()
         val destroy = ArrayList<EntityId>()
-        for ((id, work) in works) {
-            CytoBiologyCore.act(id, work, springs[id]?.springs?.map { it.other }, works, neighbourCounts, dt, divide, destroy)
-        }
+        for (id in orderedIds) CytoBiologyCore.finish(id, works.getValue(id), divide, destroy)
 
-        // Write back component + collider radius.
-        for ((id, work) in works) {
-            builder.update<CytoCellComponent>(id) { current ->
-                (current ?: CytoCellComponent(work.type, work.chemicals, work.logicalRadius)).copy(
-                    chemicals = work.chemicals,
-                    suppression = work.suppression,
+        // Write cells back (+ collider radius only when the radius moved).
+        for (id in orderedIds) {
+            val work = works.getValue(id)
+            val cell = cells.getValue(id)
+            builder.update<CytoCellComponent>(id) {
+                cell.copy(
+                    cytoplasm = work.cytoplasm,
+                    biomass = work.biomass,
                     logicalRadius = work.logicalRadius,
-                    divideCharge = work.divideCharge,
-                    pendingTransfers = work.transfers,
-                    touch = ZERO,
-                    stickyTemp = work.isStickyTemp,
+                    wear = work.wear,
+                    stickyTemp = false,
                 )
             }
-            // The collider radius is a pure function of logicalRadius; only rewrite it when
-            // the radius actually moved (a settled cell holds its radius, so this skips an
-            // allocation + write for the steady bulk). len() is deterministic, so equal
-            // logicalRadius ⇒ identical ColliderComponent.
-            val original = cells[id]
-            if (original == null || work.logicalRadius != original.logicalRadius) {
+            if (work.logicalRadius != cell.logicalRadius) {
                 builder.update<ColliderComponent>(id) { ColliderComponent(CytoUnits.len(work.logicalRadius.toFloat())) }
             }
         }
+        // Persist the reservoir (draws debited it this tick).
+        builder.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
 
         for (id in destroy) builder.emit(CellDestroyIntent(id))
         for (id in divide) builder.emit(CellDivisionIntent(id))
@@ -129,5 +125,5 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
     val TIME_STEP = Frac(1, 64)
 
     // Reused per-cell scratch for the exposure (neighbour diamond-angle raws). Single-threaded reducer.
-    private val expoScratch = LongArray(org.emerge.demo.cyto.sim.CytoExposure.MAX_NEIGHBOURS)
+    private val expoScratch = LongArray(CytoExposure.MAX_NEIGHBOURS)
 }

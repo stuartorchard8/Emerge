@@ -4,125 +4,106 @@ import org.emerge.demo.cyto.cells.CellType
 import org.emerge.sim.core.physics.primitives.Frac
 
 /**
- * Gene model, ported from Cyto's `Gene.kt`. Genes read chemicals / touch / environmental light and
- * emit outputs. A cell's **genome** (its [Gene] list) is carried per-cell and inherited on division,
- * not looked up from the cell type; [genomeForType] supplies the authored preset at spawn.
+ * The matter-model gene (MORPHOGENESIS.md). A gene is exactly three parts — **one energy source** (how
+ * many discrete ops it can do this tick), **one binary condition** (flatly gates it on/off), and **one
+ * action** — with no weighted-sum activation. A cell's **genome** (its [Gene] list) is heritable: seeded
+ * from [genomeForType] at spawn, carried per-cell, and inherited clonally on division.
  *
- * Chemistry runs in fixed-point [Frac] (value 1.0 = a "full" cell, the old `MAX_CHEM`). Frac×Frac
- * overflows once the product of the two *values* exceeds ~2, so concentrations live in [0,1] and the
- * old `[0,10]` magnitudes were rescaled ÷10 (gate 5→0.5, etc.) — same dynamics, Frac-safe range.
+ * Chemistry is integer molecule counts; energy is discrete quanta (1 per bond); 1 quantum = 1 op. Genes
+ * read/write the cell's [CellWork]; the per-cell execution (gates, ops, env access) lives in
+ * [CytoBiologyCore].
  */
-enum class GeneInputType { Chem, Touch, Light }
-enum class GeneOutputType { Contract, Mitosis, Meiosis, Inhibit, Enzyme, Sticky, Reinforce, Secrete }
 
-data class GeneInput(val type: GeneInputType, val chem: String, val weight: Frac)
-data class GeneOutput(val type: GeneOutputType, val chem1: String, val chem2: String, val bias: Frac)
-class Gene(val inputs: List<GeneInput>, val output: GeneOutput)
+/** Where a gene gets the energy that powers its action this tick. v1: [Light] only (heterotrophy via
+ *  breaking a bond is a later addition). */
+enum class EnergySource { Light }
 
-private val ZERO = Frac(0, 1)
+/** A binary gate comparator. */
+enum class Comparison { Greater, Less }
+
+/** What a gene's binary condition tests. */
+enum class ConditionType {
+    /** Count of [GeneCondition.species] in the cytoplasm ≷ [GeneCondition.threshold]. */
+    ChemQty,
+    /** Total biomass (Σ count × bond-count) ≷ [GeneCondition.threshold]; [GeneCondition.species] ignored. */
+    Biomass,
+}
+
+/** The one binary gate that turns a gene on/off this tick. */
+data class GeneCondition(val type: ConditionType, val species: String, val cmp: Comparison, val threshold: Int)
+
+/** The single action a gene performs (v1 set). */
+enum class ActionType {
+    /** Move molecules of [GeneAction.a] from the local environment into the cytoplasm. */
+    Import,
+    /** Join a cytoplasm molecule ending in atom [GeneAction.a] with one starting in atom [GeneAction.b]. */
+    FormBond,
+    /** Lock molecules of [GeneAction.a] from cytoplasm into biomass (structure → size). */
+    Convert,
+    /** Divide (mitosis); [GeneAction.a]/[GeneAction.b] unused. */
+    Mitosis,
+}
+
+/** A gene's action plus its (action-dependent) operands — single atoms for [ActionType.FormBond],
+ *  a species for [ActionType.Import]/[ActionType.Convert], unused for [ActionType.Mitosis]. */
+data class GeneAction(val type: ActionType, val a: String = "", val b: String = "")
+
+data class Gene(val source: EnergySource, val condition: GeneCondition, val action: GeneAction)
 
 /**
- * Mutable per-tick working state for one cell. `transfers` accumulates this tick's outgoing chemical
- * changes (applied next tick); `suppression` accumulates across ticks as in the original.
+ * Mutable per-tick working state for one cell. Matter lives in two integer count maps: mobile
+ * [cytoplasm] (genes act on it; diffuses to neighbours) and locked [biomass] (structure; sets size).
+ * [quanta] is this tick's energy budget (from light × exposure); [wear] is the degradation accumulator
+ * carried across ticks. No `Frac` chemistry, no energy pool.
  */
 class CellWork(
-    val chemicals: MutableMap<String, Frac>,
-    val transfers: MutableMap<String, Frac>,
-    initialSuppression: Map<String, Frac>,
-    var touch: Frac,
+    val cytoplasm: MutableMap<String, Int>,
+    val biomass: MutableMap<String, Int>,
     var logicalRadius: Frac,
-    var divideCharge: Frac,
     val type: CellType,
     val genome: List<Gene>,
-    /** Environmental light at this cell's position this tick (field × exposure, sampled before the
-     *  gene pass). Read-only input — a Collector gene turns it into energy. */
-    val light: Frac = ZERO,
+    /** Energy quanta available this tick (1 quantum = 1 op), spent down as genes act. */
+    var quanta: Int,
+    /** Degradation accumulator carried across ticks (gains total-biomass-bonds each tick). */
+    var wear: Int,
+    /** The environment matter-grid cell this cell sits in (where Import draws / death deposits). -1 if
+     *  the cell has no position. */
+    val gridIndex: Int,
 ) {
-    var contraction = ZERO
-    val enzymes = mutableSetOf<Pair<String, String>>()
-    var isStickyTemp = false
+    /** Set true by a fired Mitosis gene; the lifecycle splits the cell. */
     var dividing = false
-
-    private val initialSuppression: Map<String, Frac> = initialSuppression
-    private var suppressionOverride: MutableMap<String, Frac>? = null
-    val suppression: Map<String, Frac> get() = suppressionOverride ?: initialSuppression
-    fun inhibit(chem: String, amount: Frac) {
-        val m = suppressionOverride ?: HashMap(initialSuppression).also { suppressionOverride = it }
-        m[chem] = (m[chem] ?: ZERO) + amount
-    }
 }
 
-private fun Gene.evaluate(cell: CellWork, delta: Frac) {
-    var activation = output.bias
-    for (input in inputs) {
-        activation += when (input.type) {
-            GeneInputType.Chem -> {
-                // reading a chemical consumes a little of it (rate ∝ weight); ÷10 keeps the original
-                // dynamics under the [0,1] rescale (chemicals were [0,10] before).
-                cell.transfers[input.chem] = (cell.transfers[input.chem] ?: ZERO) - (delta * Frac.abs(input.weight)).div(10)
-                (cell.chemicals[input.chem] ?: ZERO) * input.weight
-            }
-            GeneInputType.Touch -> cell.touch * input.weight
-            GeneInputType.Light -> cell.light * input.weight
-        }
-    }
-    when (output.type) {
-        GeneOutputType.Contract -> cell.contraction += activation
-        GeneOutputType.Inhibit -> cell.inhibit(output.chem1, activation)
-        GeneOutputType.Enzyme -> if (activation.sign > 0) cell.enzymes.add(Pair(output.chem1, output.chem2))
-        GeneOutputType.Sticky -> cell.isStickyTemp = true
-        // Mitosis is a charge-accumulating EVENT: activation is a rate of division progress;
-        // [CytoBiologyCore.act] fires the split + resets the charge at threshold.
-        GeneOutputType.Mitosis -> cell.divideCharge += activation
-        // Secrete: produce chem1 at rate = activation (a Collector turns light → energy).
-        GeneOutputType.Secrete -> cell.transfers[output.chem1] = (cell.transfers[output.chem1] ?: ZERO) + activation
-        GeneOutputType.Meiosis, GeneOutputType.Reinforce -> Unit
-    }
+/** Total biomass of a [biomass] map: Σ count × bond-count. Drives cell size and the death threshold. */
+fun totalBiomassBonds(biomass: Map<String, Int>): Int {
+    var sum = 0
+    for ((species, count) in biomass) sum += count * Molecules.bondCount(species)
+    return sum
 }
 
-/** Division charge a Mitosis gene must accrue to split (resets to 0 after). A counter — only added /
- *  compared, never multiplied — so it may exceed 1.0; rescaled ÷10 from the old 200 (activation, which
- *  feeds it, is now ÷10 smaller). */
-val DIVIDE_THRESHOLD = Frac(20, 1)
+// ── Preset genomes ───────────────────────────────────────────────────────────
+// Tunable knobs (MORPHOGENESIS §v1 spec): authoring thresholds for the autotroph.
+private const val STOCK_TARGET = 4     // import a/b until the cytoplasm holds this many
+private const val DIVIDE_BIOMASS = 8   // divide once biomass reaches this many bonds
 
-/** Stem mitosis gate: charge accrues only while energy exceeds this (0.5 = a half-full surplus). */
-val STEM_MITOSIS_ENERGY_GATE = Frac(1, 2)
-
-fun runGenes(cell: CellWork, delta: Frac) {
-    for (gene in cell.genome) gene.evaluate(cell, delta)
-}
-
-// Preset genomes — immutable, shared by every cell spawned as a given type.
-private val MUSCLE_GENES = listOf(
-    Gene(listOf(GeneInput(GeneInputType.Chem, "e", Frac(1, 1))), GeneOutput(GeneOutputType.Contract, "", "", ZERO)),
-)
-private val NOT_GENES = listOf(
-    Gene(listOf(GeneInput(GeneInputType.Chem, "e", Frac(-1, 1))), GeneOutput(GeneOutputType.Contract, "", "", Frac(1, 1))),
-)
-private val JUMP_GENES = listOf(
-    Gene(emptyList(), GeneOutput(GeneOutputType.Contract, "", "", Frac(1, 1))),
-)
-private val TOUCH_GENES = listOf(
-    Gene(listOf(GeneInput(GeneInputType.Touch, "", Frac(1, 1))), GeneOutput(GeneOutputType.Enzyme, "e", "n", ZERO)),
-)
-// Stem: divide on an energy surplus. activation = energy − gate, so charge accrues only while
-// energy > gate; the split halves energy → division is self-bounding by the energy economy.
-private val STEM_GENES = listOf(
-    Gene(listOf(GeneInput(GeneInputType.Chem, "energy", Frac(1, 1))), GeneOutput(GeneOutputType.Mitosis, "", "", -STEM_MITOSIS_ENERGY_GATE)),
-)
-// Collector: turn environmental light into energy (no free lunch — output scales with local light).
-private val COLLECTOR_GENES = listOf(
-    Gene(listOf(GeneInput(GeneInputType.Light, "", Frac(1, 1))), GeneOutput(GeneOutputType.Secrete, "energy", "", ZERO)),
+/**
+ * The hand-authored **light-only autotroph** (the v1 test creature): import the monomers a and b,
+ * bond them into `ab` (light-powered), lock `ab` into biomass to grow, and divide once big enough.
+ * A clonal colony of these grows and then **plateaus** as the local environment's a/b is drawn down —
+ * the matter carrying capacity.
+ */
+val AUTOTROPH_GENES: List<Gene> = listOf(
+    Gene(EnergySource.Light, GeneCondition(ConditionType.ChemQty, "a", Comparison.Less, STOCK_TARGET), GeneAction(ActionType.Import, "a")),
+    Gene(EnergySource.Light, GeneCondition(ConditionType.ChemQty, "b", Comparison.Less, STOCK_TARGET), GeneAction(ActionType.Import, "b")),
+    Gene(EnergySource.Light, GeneCondition(ConditionType.ChemQty, "a", Comparison.Greater, 0), GeneAction(ActionType.FormBond, "a", "b")),
+    Gene(EnergySource.Light, GeneCondition(ConditionType.ChemQty, "ab", Comparison.Greater, 0), GeneAction(ActionType.Convert, "ab")),
+    Gene(EnergySource.Light, GeneCondition(ConditionType.Biomass, "", Comparison.Greater, DIVIDE_BIOMASS), GeneAction(ActionType.Mitosis)),
 )
 
-/** The authored preset genome for a legacy cell type — seeds a freshly-spawned cell; afterwards the
- *  genome lives on the cell and is inherited on division, so it can diverge. */
+/** The authored preset genome for a cell type — seeds a freshly-spawned cell; afterwards the genome
+ *  lives on the cell and is inherited on division, so it can diverge. Only the autotroph (Collector)
+ *  carries a preset in v1; other legacy types start empty (inert) until authored. */
 fun genomeForType(type: CellType): List<Gene> = when (type) {
-    CellType.Muscle -> MUSCLE_GENES
-    CellType.Not -> NOT_GENES
-    CellType.Jump -> JUMP_GENES
-    CellType.Touch -> TOUCH_GENES
-    CellType.Stem -> STEM_GENES
-    CellType.Collector -> COLLECTOR_GENES
+    CellType.Collector -> AUTOTROPH_GENES
     else -> emptyList()
 }

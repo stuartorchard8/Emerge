@@ -26,8 +26,9 @@ fun SimBuilder.spawnCell(
     pos: Coord2,
     vel: Coord2,
     type: CellType,
-    chemicals: Map<String, Frac>,
-    logicalRadius: Frac,
+    cytoplasm: Map<String, Int> = emptyMap(),
+    biomass: Map<String, Int> = STARTER_BIOMASS,
+    logicalRadius: Frac = MIN_RADIUS,
     sticky: Boolean = false,
     genome: List<Gene> = genomeForType(type),
 ): EntityId {
@@ -46,11 +47,16 @@ fun SimBuilder.spawnCell(
     update<CytoCellComponent>(id) {
         CytoCellComponent(
             type = type,
-            chemicals = chemicals,
             logicalRadius = radius,
-            sticky = sticky,
+            cytoplasm = cytoplasm,
+            biomass = biomass,
             genome = genome,
+            sticky = sticky,
         )
     }
     return id
 }
+
+/** Default biomass for a freshly-spawned cell (e.g. a player-placed cell): a little structure so it
+ *  doesn't instantly die to the death-on-empty-biomass rule and can be observed. ⚙ */
+val STARTER_BIOMASS: Map<String, Int> = mapOf("ab" to 8)
