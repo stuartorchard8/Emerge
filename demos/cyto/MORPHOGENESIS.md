@@ -239,16 +239,16 @@ headless. Concrete decisions (knob magnitudes are starting values, tagged ⚙ tu
 ## Build order
 
 1. ✅ Heritable per-cell genome, inherited on division (`75690fb`).
-2. **Gene model rewrite** — `energy-source + binary-gate + action`. New `Gene`/`runGenes`, rewrite the
-   presets and `GeneCodec`. Drop the weighted-sum activation, `divideCharge`/`DIVIDE_THRESHOLD`,
-   Secrete-energy.
-3. **Chemistry as bonded molecules** — bond model + the no-repeat-bond rule + the per-bond energy
-   quantum; Form/Break actions. Remove the `energy` chemical and its dense column.
-4. **Biomass** — cytoplasm/biomass split, size = Σ bond-count, Convert action, deterministic
-   degradation (energy dissipated), death = biomass-collapse.
-5. **Environment** — retarget the parked grid to a finite multi-species **matter store** + static light
-   as the energy source; Import/Export actions; death deposits matter; resolve open-question #1.
-6. **Conservation gate** — matter-conservation invariant test; AoS↔SoA equivalence + save updated to
-   the new state.
-7. **Hand-built organism** on the new substrate (autotroph core + builder + divider), then **mutation +
-   selection**.
+2–6. ✅ **Matter-model biology, end-to-end (AoS)** (`c3bd291`). The gene rewrite (source+gate+action;
+   `Molecules` + no-repeat-bond + per-bond quantum), cytoplasm/biomass integer state (no `energy`),
+   the `CytoMatterGrid` reservoir (retarget of the energy grid) + static light, deterministic
+   degradation / size / death-recycles-matter, gate-only mitosis, and the matter-conservation test —
+   all landed and validated: the autotroph (`AUTOTROPH_GENES`) grows **1 → 24** and plateaus
+   (carrying capacity) with **total atoms bit-constant**. **Collapsed to the single AoS path** for the
+   rewrite — the SoA structural-win path + its equivalence/perf gates are **shelved (recoverable from
+   git, pre-`c3bd291`)** until the model is proven. (Export/Break-bond/Contract/Sticky/Separate
+   actions are deferred.)
+7. **Hand-built organism → mutation + selection.** Next: richer authored genomes (heterotrophy via
+   Break-bond, differentiation via asymmetric division + a fate latch), then mutation + selection.
+   **Re-introduce the SoA path** (and its byte-identity gate) once the model is settled and perf
+   matters.
