@@ -3,6 +3,8 @@ package org.emerge.demo.cyto.ui
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.render.torus.GPU
+import org.emerge.render.torus.ui.UiRectRenderer
+import org.emerge.render.torus.ui.UiTextRenderer
 import kotlin.math.min
 
 /**
@@ -46,8 +48,8 @@ class CytoControls {
     private enum class Group { CellType, TouchMode }
     private var openGroup: Group? = null
 
-    private val rectShader = CytoRectShader()
-    private val text = CytoTextRenderer()
+    private val rectShader = UiRectRenderer()
+    private val text = UiTextRenderer()
 
     private var resW = 1f
     private var resH = 1f

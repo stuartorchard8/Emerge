@@ -3,7 +3,7 @@ package org.emerge.demo.cyto
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoLightField
 import org.emerge.demo.cyto.sim.CytoUnits
-import org.emerge.demo.cyto.ui.CytoRectShader
+import org.emerge.render.torus.ui.UiRectRenderer
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.Mat4
 import org.emerge.sim.core.physics.components.ColliderComponent
@@ -25,7 +25,7 @@ class CytoRenderer {
     // Full-screen background fill, drawn first each frame — clears the previous frame
     // without a platform-specific glClear (the engine GPU doesn't expose one), so this
     // works identically on desktop, Android, and web.
-    private val bgShader = CytoRectShader()
+    private val bgShader = UiRectRenderer()
 
     // The cell shader does `min(u_color, texture)`, so a flat white texture yields the
     // cell's colour; the disc shape + shading come from the shader, not the texture. Built
@@ -57,7 +57,7 @@ class CytoRenderer {
     // Reuses the proven instanced-rect shader: the static field grid (one torus tile) baked to
     // heat colours once, projected to NDC + culled to the visible region each frame. Toggle with L.
     var showLightField = true
-    private val fieldShader = CytoRectShader(maxRects = FIELD_CELLS)
+    private val fieldShader = UiRectRenderer(maxRects = FIELD_CELLS)
     private val fieldCx = FloatArray(FIELD_CELLS)
     private val fieldCy = FloatArray(FIELD_CELLS)
     private val fieldColor = FloatArray(FIELD_CELLS * 4)

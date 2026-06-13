@@ -47,6 +47,11 @@ class CytoController(
     private val pendingDetaches = ArrayList<EntityId>()
     private var currentGrab: CytoInput.Grab? = null
 
+    /** The most recently grabbed cell — persists past [releaseGrab] so the info panel keeps showing it
+     *  until another cell is grabbed (or it dies). Null until the first grab. */
+    var lastHeldId: EntityId? = null
+        private set
+
     val tick: Long get() = tickCount
 
     fun tick(deltaSeconds: Float): CytoFrame {
@@ -112,6 +117,7 @@ class CytoController(
      *  weld to whatever it touches while held (Sticky hold mode). */
     fun grab(entity: EntityId, x: Float, y: Float, sticky: Boolean = false) {
         currentGrab = CytoInput.Grab(entity, x, y, sticky)
+        lastHeldId = entity
     }
 
     fun releaseGrab() {
@@ -144,6 +150,39 @@ class CytoController(
             out.add(Readout(CytoUnits.toLogical(transform.pos.x), CytoUnits.toLogical(transform.pos.y), text))
         }
         return out
+    }
+
+    /** A structured snapshot of one cell, for the in-game info panel. */
+    class CellInfo(
+        val id: Int,
+        val type: String,
+        val radius: String,
+        val totalBiomass: Int,
+        val cytoplasm: List<Pair<String, Int>>,
+        val biomass: List<Pair<String, Int>>,
+        val genomeLine: String?,
+    )
+
+    /** Info for the **last-held** cell (persists past release), or null if none has been held or it has
+     *  since died. Read each frame by the info panel. */
+    fun heldCellInfo(): CellInfo? {
+        val id = lastHeldId ?: return null
+        val cell = currentState.components.getTable<CytoCellComponent>().asMap()[id] ?: return null
+        return CellInfo(
+            id = id.value,
+            type = cell.type.name,
+            radius = fmt(cell.logicalRadius.toFloat()),
+            totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass),
+            cytoplasm = cell.cytoplasm.entries.map { it.key to it.value },
+            biomass = cell.biomass.entries.map { it.key to it.value },
+            genomeLine = if (cell.genome.isEmpty()) null else "GENES:${cell.genome.size}",
+        )
+    }
+
+    /** Fixed-point-ish 2dp formatter (multiplatform-safe — no String.format). */
+    private fun fmt(v: Float): String {
+        val h = (v * 100f).toInt()
+        return "${h / 100}.${(kotlin.math.abs(h) % 100).toString().padStart(2, '0')}"
     }
 
     // ── Persistence ─────────────────────────────────────────────────────────────

@@ -1,16 +1,17 @@
-package org.emerge.demo.cyto.ui
+package org.emerge.render.torus.ui
 
-import org.emerge.demo.cyto.shader.UiRectShaderSources
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.GpuFloatBuffer
 import org.emerge.render.torus.put
+import org.emerge.render.torus.shader.UiRectShaderSources
 import org.emerge.render.torus.shader.ShaderFactory
 
 /**
- * Instanced solid-colour rectangles in screen NDC — the fill for the on-screen control
- * buttons. Per-instance centre, half-size, and rgba colour.
+ * Instanced solid-colour rectangles in screen NDC — the fill primitive for the in-game UI toolkit
+ * ([Ui]) and its panels/buttons. Per-instance centre, half-size, and rgba colour. Shared across games
+ * (moved out of cyto). Caller wraps blend state.
  */
-class CytoRectShader(private val maxRects: Int = DEFAULT_MAX_RECTS) {
+class UiRectRenderer(private val maxRects: Int = DEFAULT_MAX_RECTS) {
     private val program = ShaderFactory.createProgram(
         UiRectShaderSources.vertex(),
         UiRectShaderSources.fragment(),

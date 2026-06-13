@@ -4,6 +4,8 @@ import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.CytoRenderer
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
+import org.emerge.demo.cyto.ui.cellInfoPanel
+import org.emerge.render.torus.ui.Ui
 import org.emerge.sim.core.EntityId
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.system.Configuration
@@ -43,13 +45,16 @@ object CytoSceneView {
         controls.onLoadBrush = { if (loadBrush(controller)) controls.selectBrush() }
         autoLoadSnapshotAtStartup(controller)
 
+        // Shared in-game UI toolkit — the last-held-cell info panel.
+        val ui = Ui()
+
         val mouse = MouseState()
-        installMouseHandlers(window, controller, renderer, controls, mouse)
+        installMouseHandlers(window, controller, renderer, controls, ui, mouse)
 
         var lastTime = glfwGetTime()
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents()
-            updateResolution(window, renderer, controls)
+            updateResolution(window, renderer, controls, ui)
 
             val now = glfwGetTime()
             val delta = (now - lastTime).toFloat().coerceIn(0f, 0.25f)
@@ -60,14 +65,18 @@ object CytoSceneView {
             val frame = controller.tick(delta)
 
             renderer.draw(frame) // renderer fills its own background
-            drawReadouts(controller, renderer, controls, mouse.grabId)
+            drawReadouts(controller, renderer, controls)
             controls.draw()
+            // Last-held-cell info panel (on top of the controls).
+            ui.frame { cellInfoPanel(controller.heldCellInfo()) }
+            ui.draw()
 
             glfwSwapBuffers(window)
         }
 
         renderer.cleanup()
         controls.cleanup()
+        ui.cleanup()
         glfwDestroyWindow(window)
         glfwTerminate()
     }
@@ -76,9 +85,10 @@ object CytoSceneView {
         controller: CytoController,
         renderer: CytoRenderer,
         controls: CytoControls,
-        grabId: EntityId?,
     ) {
-        val readouts = controller.readouts(grabId, controls.showChemicals)
+        // The held cell is shown by the info panel now; the floating readouts are only the
+        // Debug "show all" overlay.
+        val readouts = controller.readouts(null, controls.showChemicals)
         if (readouts.isEmpty()) return
         for (r in readouts) {
             val screen = renderer.worldToScreen(r.x, r.y)
@@ -144,6 +154,7 @@ object CytoSceneView {
         controller: CytoController,
         renderer: CytoRenderer,
         controls: CytoControls,
+        ui: Ui,
         state: MouseState,
     ) {
         glfwSetMouseButtonCallback(window) { win, button, action, _ ->
@@ -154,8 +165,8 @@ object CytoSceneView {
                     state.dragged = false
                     state.lastX = px.first
                     state.lastY = px.second
-                    // UI first: a hit consumes the press.
-                    if (controls.hitTest(px.first, px.second)) {
+                    // UI first: a hit (info-panel buttons, then the controls) consumes the press.
+                    if (ui.hitTest(px.first, px.second) || controls.hitTest(px.first, px.second)) {
                         state.uiConsumed = true
                         state.grabId = null
                         return@glfwSetMouseButtonCallback
@@ -210,7 +221,7 @@ object CytoSceneView {
     private fun isPrimaryDown(win: Long): Boolean =
         glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS
 
-    private fun updateResolution(window: Long, renderer: CytoRenderer, controls: CytoControls) {
+    private fun updateResolution(window: Long, renderer: CytoRenderer, controls: CytoControls, ui: Ui) {
         MemoryStack.stackPush().use { st ->
             val sizeX = st.mallocInt(1)
             val sizeY = st.mallocInt(1)
@@ -219,6 +230,7 @@ object CytoSceneView {
             val h = max(1f, sizeY[0].toFloat())
             renderer.setResolution(w, h)
             controls.setResolution(w, h)
+            ui.setResolution(w, h)
         }
     }
 

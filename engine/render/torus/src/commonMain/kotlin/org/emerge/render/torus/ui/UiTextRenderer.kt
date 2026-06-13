@@ -1,18 +1,18 @@
-package org.emerge.demo.cyto.ui
+package org.emerge.render.torus.ui
 
-import org.emerge.demo.cyto.shader.HudGlyphShaderSources
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.GpuFloatBuffer
 import org.emerge.render.torus.put
+import org.emerge.render.torus.shader.HudGlyphShaderSources
 import org.emerge.render.torus.shader.ShaderFactory
 
 /**
- * Minimal bitmap-font text renderer for the on-screen UI, adapted from drockets'
- * HudGlyphShader/OverlayHud (a procedural 5×7 glyph atlas + instanced NDC quads). The
- * glyph look isn't important here — only legible labels for the control buttons. Supports
- * centered, multi-line (`\n`) strings in pixel coordinates.
+ * Minimal bitmap-font text renderer for the in-game UI toolkit ([Ui]) — a procedural 5×7 glyph atlas +
+ * instanced NDC quads. Shared across games (moved out of cyto). Supports centered ([drawCentered]) and
+ * left-aligned, top-anchored ([drawLeft]) multi-line (`\n`) strings in pixel coordinates; the companion
+ * [measureWidthPx]/[measureHeightPx] let panels auto-size before drawing.
  */
-class CytoTextRenderer {
+class UiTextRenderer {
     private val program = ShaderFactory.createProgram(
         HudGlyphShaderSources.vertex(),
         HudGlyphShaderSources.fragment(),
@@ -44,25 +44,43 @@ class CytoTextRenderer {
 
     /** Draws [text] (multi-line, `\n`) centred at ([centerXpx], [centerYpx]). */
     fun drawCentered(
-        text: String,
-        centerXpx: Float,
-        centerYpx: Float,
-        pixelHeight: Float,
-        r: Float, g: Float, b: Float,
-        resW: Float, resH: Float,
+        text: String, centerXpx: Float, centerYpx: Float, pixelHeight: Float,
+        r: Float, g: Float, b: Float, resW: Float, resH: Float,
     ) {
         val lines = text.uppercase().split('\n')
-        val glyphW = pixelHeight * 0.75f
-        val lineGap = pixelHeight * 0.35f
+        val glyphW = pixelHeight * GLYPH_ASPECT
+        val lineGap = pixelHeight * LINE_GAP_RATIO
         val totalH = lines.size * pixelHeight + (lines.size - 1) * lineGap
-        var lineTop = centerYpx - totalH * 0.5f
+        val count = layoutGlyphs(lines, glyphW, lineGap, pixelHeight, centerYpx - totalH * 0.5f, resW, resH) { lineW ->
+            centerXpx - lineW * 0.5f
+        }
+        flush(count, r, g, b)
+    }
 
+    /** Draws [text] (multi-line, `\n`) left-aligned with its top edge at ([leftXpx], [topYpx]). */
+    fun drawLeft(
+        text: String, leftXpx: Float, topYpx: Float, pixelHeight: Float,
+        r: Float, g: Float, b: Float, resW: Float, resH: Float,
+    ) {
+        val lines = text.uppercase().split('\n')
+        val glyphW = pixelHeight * GLYPH_ASPECT
+        val lineGap = pixelHeight * LINE_GAP_RATIO
+        val count = layoutGlyphs(lines, glyphW, lineGap, pixelHeight, topYpx, resW, resH) { leftXpx }
+        flush(count, r, g, b)
+    }
+
+    /** Populates the glyph arrays; [lineStartX] gives the left pixel of a line from its pixel width.
+     *  Returns the glyph count. [topYpx] is the top of the first line. */
+    private inline fun layoutGlyphs(
+        lines: List<String>, glyphW: Float, lineGap: Float, pixelHeight: Float, topYpx: Float,
+        resW: Float, resH: Float, lineStartX: (lineW: Float) -> Float,
+    ): Int {
         var count = 0
         val uvW = 1f / FONT_COLS
         val uvH = 1f / FONT_ROWS
+        var lineTop = topYpx
         for (line in lines) {
-            val lineW = line.length * glyphW
-            var cursorX = centerXpx - lineW * 0.5f
+            var cursorX = lineStartX(line.length * glyphW)
             val baseY = lineTop + pixelHeight * 0.5f
             for (ch in line) {
                 if (count >= MAX_GLYPHS) break
@@ -82,8 +100,11 @@ class CytoTextRenderer {
             }
             lineTop += pixelHeight + lineGap
         }
-        if (count == 0) return
+        return count
+    }
 
+    private fun flush(count: Int, r: Float, g: Float, b: Float) {
+        if (count == 0) return
         GPU.bindVertexArray(vao)
         GPU.useProgram(program)
         GPU.activeTexture(TEXTURE_UNIT)
@@ -134,10 +155,24 @@ class CytoTextRenderer {
 
     companion object {
         const val MAX_GLYPHS = 256
+        const val GLYPH_ASPECT = 0.75f       // glyph width / pixel height
+        const val LINE_GAP_RATIO = 0.35f     // gap between lines / pixel height
         private const val TEXTURE_UNIT = 2
         private const val QUAD_VERTEX_COUNT = 4
         private const val FONT_COLS = 8
         private const val FONT_ROWS = 8
+
+        /** Widest line's pixel width (for panel auto-sizing). */
+        fun measureWidthPx(text: String, pixelHeight: Float): Float {
+            val glyphW = pixelHeight * GLYPH_ASPECT
+            var longest = 0
+            for (line in text.split('\n')) if (line.length > longest) longest = line.length
+            return longest * glyphW
+        }
+
+        /** Pixel height of [lineCount] stacked lines. */
+        fun measureHeightPx(lineCount: Int, pixelHeight: Float): Float =
+            if (lineCount <= 0) 0f else lineCount * pixelHeight + (lineCount - 1) * (pixelHeight * LINE_GAP_RATIO)
 
         private val GLYPHS = listOf(
             ' ', 'A', 'B', 'C', 'D', 'E', 'F', 'G',
