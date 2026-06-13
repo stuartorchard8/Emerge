@@ -31,8 +31,13 @@ object CytoGrabSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
 
         val target = CytoUnits.coord2(grab.x, grab.y)
         val toTarget = target - transform.pos // Frac2, torus-aware
+        // Cap the reach: a far/fast pointer would otherwise inject a teleporting one-tick velocity
+        // (pull ∝ distance, unclamped) that whips the cell's spring network. Beyond grabMaxReach the
+        // cell just follows at a bounded speed (grabStiffness × grabMaxReach per tick).
+        val maxReach = CytoUnits.len(cfg.grabMaxReach)
+        val reach = if (toTarget.len > maxReach) toTarget.norm * maxReach else toTarget
         // Spring toward the pointer, damped by current velocity.
-        val pull = toTarget * cfg.grabStiffness - vel * cfg.grabDamping
+        val pull = reach * cfg.grabStiffness - vel * cfg.grabDamping
         builder.update<ImpulseComponent>(grab.entity) { ImpulseComponent(vel = pull) + it }
 
         // Sticky hold mode: the dragged cell welds to whatever it touches. Set the transient

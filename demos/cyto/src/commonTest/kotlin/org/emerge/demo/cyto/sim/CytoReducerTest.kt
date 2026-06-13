@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.sim
 
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.sim.SimBuilder
@@ -162,6 +163,24 @@ class CytoReducerTest {
         fun genomes(s: SimState) = s.components.getTable<CytoCellComponent>().asMap().values
             .map { org.emerge.demo.cyto.sim.GeneCodec.serialize(it.genome) }.sorted()
         assertEquals(genomes(state), genomes(restored), "genomes not preserved through save")
+    }
+
+    @Test
+    fun grabDoesNotFlingACellAcrossTheWorld() {
+        // The mouse-joint reach cap: grabbing toward a far pointer must follow at a bounded speed, not
+        // inject a teleporting one-tick velocity (which used to whip the cell's spring network — the
+        // "spring spiking" on drag). Bound = grabStiffness × grabMaxReach (0.5 × 4 = 2 logical/tick).
+        var state = run {
+            val b = SimBuilder(SimState())
+            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Blank)
+            b.build()
+        }
+        val id = state.components.getTable<CytoCellComponent>().asMap().keys.first()
+        // Pointer 500 logical units away — the old unclamped pull would fling the cell ~250 units/tick.
+        state = reducer.reduce(cfg, state, mapOf(PlayerId(0) to CytoInput(grab = CytoInput.Grab(id, 500f, 0f))))
+        val v = state.components.getTable<MotionComponent>().asMap().getValue(id).vel
+        val speed = kotlin.math.hypot(CytoUnits.toLogical(v.x).toDouble(), CytoUnits.toLogical(v.y).toDouble())
+        assertTrue(speed < 3.0, "grab should follow at a bounded speed (~2), not fling; got $speed")
     }
 
     @Test

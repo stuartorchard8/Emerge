@@ -50,6 +50,12 @@ data class CytoConfig(
     val grabStiffness: Frac = Frac(1, 2),
     val grabDamping: Frac = Frac(1, 1),
 
+    /** Mouse-joint reach cap (logical units): the grab pull is computed as if the pointer is at most
+     *  this far away, so a fast/far pointer can't inject a teleporting one-tick velocity (which would
+     *  whip the cell's spring network). The cell then follows at up to grabStiffness × this per tick.
+     *  ⚙ (Without it, dragging spikes: a far target = a 0.5·distance velocity = hundreds of units/tick.) */
+    val grabMaxReach: Float = 4f,
+
     /** Per-tick genetic damage: each gene of every cell independently faces *each* mutation operator
      *  (threshold drift / duplication / deletion / point-mutation) with probability `1 / mutationRateDenom`
      *  every tick (not tied to division — accumulating damage both drives evolution and disrupts frozen
