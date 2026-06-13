@@ -70,6 +70,14 @@ object CytoBiologyCore {
         val source = gene.source
         var lightLeft = if (source is EnergySource.Light) work.quanta else 0
         var ops = 0
+        // Futile-cycle guard: a gene whose source + action exactly undo each other (e.g. BreakBond(ab) +
+        // FormBond(a,b) → break "ab", reform "ab") leaves the cell's mutable state unchanged across the op,
+        // yet would otherwise spin to MAX_OPS_PER_GENE every tick doing net-zero work. Because such an op
+        // is a no-op for the persisted state, halting on it is bit-identical to running it to the cap — so
+        // we stop the gene the first time a completed op changes nothing. Import (draws from the grid → cyto
+        // grows), Convert (biomass grows), and Repair (damage falls) all move the signature, so legitimate
+        // throughput genes are unaffected.
+        var sigPrev = stateSig(work)
         while (ops < MAX_OPS_PER_GENE) {
             if (!gate(gene.condition, work)) break  // re-checked each op: the gene acts only while its condition holds
             // Repair has no matter-feasibility of its own, so check the need BEFORE spending energy —
@@ -89,7 +97,21 @@ object CytoBiologyCore {
             }
             if (!acted) break
             ops++
+            val sigNow = stateSig(work)
+            if (sigNow == sigPrev) break  // op produced no net change → futile cycle, no point repeating
+            sigPrev = sigNow
         }
+    }
+
+    /** Order-independent signature of a cell's mutable biology state (cytoplasm + biomass +
+     *  connection damage). Used by [runGene] to detect a net-zero (futile) op. Distinct per-map
+     *  multipliers keep the same species in cytoplasm vs biomass from cancelling. */
+    private fun stateSig(work: CellWork): Long {
+        var h = 0L
+        for ((k, v) in work.cytoplasm) h += (k.hashCode() * 31L + 1L) * v
+        for ((k, v) in work.biomass) h += (k.hashCode() * 1000003L + 7L) * v
+        for ((k, v) in work.connectionDamage) h += (k.value * 2654435761L) xor v.toRawBits().toLong()
+        return h
     }
 
     /** Phase 2 — cytoplasm diffuses to connected neighbours: each cell sends ⌊count/(degree+1)⌋ of each
