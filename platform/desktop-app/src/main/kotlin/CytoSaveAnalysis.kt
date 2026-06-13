@@ -58,7 +58,14 @@ fun main(args: Array<String>) {
     }
 
     // ── run forward: does the population centroid drift while cells stay slow? ──
-    val cfg = CytoConfig()
+    // Optional ablation overrides: <dragCoefficient> <variableMass true/false> <connectionBreakDamage>.
+    val base = CytoConfig()
+    val cfg = base.copy(
+        dragCoefficient = args.getOrNull(2)?.toFloatOrNull() ?: base.dragCoefficient,
+        variableMass = args.getOrNull(3)?.toBooleanStrictOrNull() ?: base.variableMass,
+        connectionBreakDamage = args.getOrNull(4)?.toFloatOrNull() ?: base.connectionBreakDamage,
+    )
+    println("\ncfg: drag=${cfg.dragCoefficient} variableMass=${cfg.variableMass} breakDamage=${cfg.connectionBreakDamage}")
     val reducer = CytoReducer()
     val input = mapOf(PlayerId(0) to CytoInput.EMPTY)
     var prevC = centroid(state)
