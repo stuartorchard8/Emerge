@@ -67,6 +67,7 @@ private fun runVariant(
     executor: ParallelExecutor?,
 ) {
     val profiler = PipelineProfiler()
+    if (executor == null) profiler.allocReader = { allocatedBytes() } // single-threaded only: per-thread gauge
     val reducer = CytoReducer(profiler = profiler, executor = executor)
 
     // Warm the JIT on a throwaway state so steady-state numbers aren't polluted by compilation.
@@ -75,6 +76,7 @@ private fun runVariant(
     profiler.reset()
 
     val gc = gcSnapshot()
+    val allocStart = allocatedBytes()
     val wallStart = System.nanoTime()
     for (t in 0 until measure) {
         val tickStart = System.nanoTime()
@@ -82,6 +84,7 @@ private fun runVariant(
         profiler.recordTick(System.nanoTime() - tickStart)
     }
     val wallNanos = System.nanoTime() - wallStart
+    val allocDelta = allocatedBytes() - allocStart
     val gcDelta = gcSnapshot() - gc
 
     val report = profiler.report()
@@ -92,11 +95,12 @@ private fun runVariant(
     println("  tick: avg=${us(report.tickAvgNanos)}us  p50=${us(report.tickP50Nanos)}us  p95=${us(report.tickP95Nanos)}us  p99=${us(report.tickP99Nanos)}us  max=${us(report.tickMaxNanos)}us")
     println("  fps headroom: ${"%.1f".format(16_667_000.0 / report.tickAvgNanos)}x of a 60fps frame budget")
     println("  gc: ${gcDelta.count} collections, ${gcDelta.millis} ms paused")
+    println("  alloc: ${allocDelta / 1_000_000} MB total, ${allocDelta / measure / 1024} KB/tick")
     println()
-    println("  %-14s %10s %10s %7s".format("phase", "avg us", "max us", "share"))
-    println("  " + "-".repeat(45))
+    println("  %-14s %10s %10s %7s %10s".format("phase", "avg us", "max us", "share", "KB/tick"))
+    println("  " + "-".repeat(56))
     for (line in report.phases.sortedByDescending { it.avgNanos }) {
-        println("  %-14s %10d %10d %6.1f%%".format(line.name, line.avgNanos / 1000, line.maxNanos / 1000, line.sharePercent))
+        println("  %-14s %10d %10d %6.1f%% %10d".format(line.name, line.avgNanos / 1000, line.maxNanos / 1000, line.sharePercent, line.avgBytes / 1024))
     }
     println()
 }
@@ -105,6 +109,13 @@ private fun us(nanos: Long) = nanos / 1000
 
 private data class Gc(val count: Long, val millis: Long) {
     operator fun minus(o: Gc) = Gc(count - o.count, millis - o.millis)
+}
+
+/** Bytes allocated by the current (single benchmark) thread — a noise-immune allocation gauge on
+ *  HotSpot. The sequential run is single-threaded, so this captures essentially all of its allocation. */
+private fun allocatedBytes(): Long {
+    val bean = java.lang.management.ManagementFactory.getThreadMXBean() as com.sun.management.ThreadMXBean
+    return bean.getThreadAllocatedBytes(Thread.currentThread().id)
 }
 
 private fun gcSnapshot(): Gc {
