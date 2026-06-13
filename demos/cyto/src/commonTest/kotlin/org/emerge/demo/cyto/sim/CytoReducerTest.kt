@@ -94,6 +94,29 @@ class CytoReducerTest {
     }
 
     @Test
+    fun foodWebFeedsHeterotrophFromAutotrophLeak() {
+        // The food web: an autotroph (light) beside a heterotroph (no light, no Import). The autotroph
+        // leaks its surplus `ab` to the environment (down-gradient, free); the heterotroph absorbs it
+        // (free) and breaks/converts it into biomass + division. Its starter biomass (8) is below the
+        // divide gate (>8), so ANY heterotroph division proves it fed on the autotroph's output.
+        val (sx, sy) = CytoLightField.SOURCES.first()
+        var state = run {
+            val b = SimBuilder(SimState())
+            b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("a" to 4, "b" to 4), biomass = mapOf("ab" to 8))
+            b.spawnCell(CytoUnits.coord2(sx + 0.3f, sy), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 2), biomass = mapOf("ab" to 8))
+            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
+            b.build()
+        }
+        val total0 = totalAtoms(state)
+        repeat(1500) {
+            state = reducer.reduce(cfg, state, noInput)
+            assertEquals(total0, totalAtoms(state), "atoms not conserved at step ${it + 1}")
+        }
+        val heterotrophs = state.components.getTable<CytoCellComponent>().asMap().values.count { it.type == CellType.Muscle }
+        assertTrue(heterotrophs > 1, "heterotroph should have fed on the autotroph's leaked ab and divided; got $heterotrophs")
+    }
+
+    @Test
     fun divisionInheritsTheGenome() {
         // Clonal inheritance: every cell in the grown colony carries the autotroph genome (the
         // heritability that makes the substrate evolvable).

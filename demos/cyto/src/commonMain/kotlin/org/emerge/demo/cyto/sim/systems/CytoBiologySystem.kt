@@ -91,6 +91,8 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
             )
         }
 
+        // Phase 0 — passive cell↔env exchange (free, down-gradient; sequential, cells share a grid-cell).
+        for (id in orderedIds) CytoBiologyCore.passiveEnvExchange(works.getValue(id), grid)
         // Phase 1 — genes (sequential, drawing from the reservoir).
         for (id in orderedIds) CytoBiologyCore.runGenes(works.getValue(id), grid)
         // Phase 2 — cytoplasm diffusion (snapshot-based, order-independent).

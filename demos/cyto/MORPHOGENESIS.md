@@ -181,7 +181,14 @@ it `Frac`-exact, as the parked grid already did).
 ## Resolved (2026-06-12 y/n review) & still-open
 
 Resolved:
-1. **Active-only cell↔environment exchange** — no passive baseline, no Insulate-vs-env action.
+1. **Cell↔environment exchange is gradient-based** (revised 2026-06-13, Stu): **passive down-gradient
+   transport is FREE** — per species, a cell moves ⌊(env−cyto)/2⌋ between itself and its grid-cell each
+   tick (absorb when the env is richer, leak when the cell is). This is how cells feed for free on
+   what's around them and how an autotroph's surplus leaks out (root-exudate-style) to feed
+   heterotrophs — it's what makes the **food web** flow. **Active Import/Export genes cost energy** and
+   exist only to push *against* the gradient (concentrate / dump). (Earlier this was "active-only"; the
+   passive baseline is the correction. Future idea, deferred: a maintained gradient as an energy
+   *source*, chemiosmosis-style.)
 2. **Biomass = a second per-species integer-count map**; total biomass derived (Σ count × bonds).
 3. **Form bond joins two whole molecules end-to-end**, refused on a repeated bond.
 4. **Discrete integer matter; discrete energy quanta** (1 per bond); a gene does *N* = available-quanta

@@ -32,6 +32,27 @@ object CytoBiologyCore {
      *  bounded by available bonds — this caps a pathological store from being processed all at once). ⚙ */
     const val MAX_OPS_PER_GENE = 4096
 
+    /** Phase 0 — passive cell↔environment exchange (FREE, down-gradient): per species, move
+     *  ⌊(env − cyto)/2⌋ between the cell and its reservoir grid-cell (signed — absorb when the env is
+     *  richer, leak when the cell is), halving the gradient toward equilibrium. This is how a cell feeds
+     *  for free on what's around it (and how an autotroph's surplus leaks out to feed heterotrophs);
+     *  concentrating *against* the gradient is the job of the energy-costing Import/Export genes. Run in
+     *  a fixed cell order (cells share a grid-cell). Conservative; biomass is locked (doesn't exchange). */
+    fun passiveEnvExchange(work: CellWork, grid: CytoMatterGrid) {
+        val idx = work.gridIndex
+        if (idx < 0) return
+        val species = HashSet<String>(work.cytoplasm.keys)
+        species.addAll(grid.cellAt(idx).keys)
+        for (sp in species) {
+            val cyto = work.cytoplasm[sp] ?: 0
+            val env = grid.count(idx, sp)
+            val t = (env - cyto) / 2          // signed, toward zero; +ve = into the cell
+            if (t == 0) continue
+            addOrRemove(work.cytoplasm, sp, t)
+            if (t > 0) grid.draw(idx, sp, t) else grid.deposit(idx, sp, -t)
+        }
+    }
+
     /** Phase 1 — execute one cell's genome: each gated gene performs up to `work.quanta` ops of its
      *  action this tick (energy is per-gene, private, use-or-lose). Import draws from [grid] (so this
      *  must run in a fixed cell order across cells). */

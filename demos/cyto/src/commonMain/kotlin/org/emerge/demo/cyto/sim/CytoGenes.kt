@@ -91,21 +91,21 @@ fun totalBiomassBonds(biomass: Map<String, Int>): Int {
 }
 
 // ── Preset genomes ───────────────────────────────────────────────────────────
-// Tunable knobs (MORPHOGENESIS §v1 spec): authoring thresholds for the autotroph.
-private const val STOCK_TARGET = 4     // import a/b until the cytoplasm holds this many
+// Tunable knobs (MORPHOGENESIS §v1 spec).
+private const val LEAK_RESERVE = 4     // cytoplasm 'ab' the autotroph keeps back — passively leaks to
+                                       // the environment (down-gradient, free) → food for heterotrophs
 private const val DIVIDE_BIOMASS = 8   // divide once biomass reaches this many bonds
 
 /**
- * The hand-authored **light-only autotroph** (the v1 test creature): import the monomers a and b,
- * bond them into `ab` (light-powered), lock `ab` into biomass to grow, and divide once big enough.
- * A clonal colony of these grows and then **plateaus** as the local environment's a/b is drawn down —
- * the matter carrying capacity.
+ * The hand-authored **light-only autotroph** (the v1 creature). It absorbs the monomers a and b for
+ * free by passive uptake near a light source (no Import gene needed), bonds them into `ab` under light,
+ * locks most `ab` into biomass to grow, and divides. It keeps a small cytoplasm `ab` reserve which
+ * **leaks** to the environment (down-gradient, free — like root exudate), feeding heterotrophs. A
+ * clonal colony grows then **plateaus** as the local a/b is drawn down (the matter carrying capacity).
  */
 val AUTOTROPH_GENES: List<Gene> = listOf(
-    Gene(EnergySource.Light, GeneCondition(ConditionType.ChemQty, "a", Comparison.Less, STOCK_TARGET), GeneAction(ActionType.Import, "a")),
-    Gene(EnergySource.Light, GeneCondition(ConditionType.ChemQty, "b", Comparison.Less, STOCK_TARGET), GeneAction(ActionType.Import, "b")),
     Gene(EnergySource.Light, GeneCondition(ConditionType.ChemQty, "a", Comparison.Greater, 0), GeneAction(ActionType.FormBond, "a", "b")),
-    Gene(EnergySource.Light, GeneCondition(ConditionType.ChemQty, "ab", Comparison.Greater, 0), GeneAction(ActionType.Convert, "ab")),
+    Gene(EnergySource.Light, GeneCondition(ConditionType.ChemQty, "ab", Comparison.Greater, LEAK_RESERVE), GeneAction(ActionType.Convert, "ab")),
     Gene(EnergySource.Light, GeneCondition(ConditionType.Biomass, "", Comparison.Greater, DIVIDE_BIOMASS), GeneAction(ActionType.Mitosis)),
 )
 
