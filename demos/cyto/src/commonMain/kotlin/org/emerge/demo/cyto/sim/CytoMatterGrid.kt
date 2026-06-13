@@ -68,8 +68,10 @@ class CytoMatterGrid private constructor(private val cells: Array<HashMap<String
         val HALF = CytoLightField.HALF
 
         /** Peak free-monomer count seeded at a source grid cell (⚙ tunable — the matter carrying
-         *  capacity per source). Seeded for each monomer species (a, b). */
-        const val MATTER_PEAK = 64
+         *  capacity per source, hence base population). Seeded for each monomer species (a, b). Raised
+         *  from 64 to support a larger population: enough individuals that a lucky unmodified minority
+         *  persists by chance while the population as a whole explores the mutation space. */
+        const val MATTER_PEAK = 256
 
         /** The free monomer species the world is seeded with. */
         val SEED_MONOMERS = listOf("a", "b")

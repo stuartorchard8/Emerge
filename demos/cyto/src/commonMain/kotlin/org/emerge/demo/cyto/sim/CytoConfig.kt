@@ -53,6 +53,9 @@ data class CytoConfig(
     /** Per-tick genetic damage: each gene of every cell independently faces *each* mutation operator
      *  (threshold drift / duplication / deletion / point-mutation) with probability `1 / mutationRateDenom`
      *  every tick (not tied to division — accumulating damage both drives evolution and disrupts frozen
-     *  no-division steady states). `0` disables mutation. Default 10_000 = 0.01% per gene per operator. ⚙ */
-    val mutationRateDenom: Int = 10_000,
+     *  no-division steady states). `0` disables mutation. At 1/200_000 a cell accrues well under one
+     *  mutation per ~10k-tick lifetime, so most individuals persist unmodified by chance while the
+     *  population as a whole explores — and deleterious mutants that die just recycle their matter to
+     *  the survivors. (Was 1/10_000, which caused mutational meltdown.) ⚙ */
+    val mutationRateDenom: Int = 200_000,
 ) : PhysicsTuning

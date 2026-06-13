@@ -13,7 +13,10 @@ import org.emerge.sim.core.sim.SimState
  * the local matter is drawn down (the carrying capacity).
  */
 fun createCytoInitialState(): SimState {
-    val builder = SimBuilder(SimState())
+    // Seed the deterministic PRNG non-zero: the engine LCG's first draw degenerates to 0 from a 0 seed
+    // (3037000493 ushr 32 == 0), which would spuriously fire a mutation on the founder's first gene at
+    // tick 1. A fixed non-zero seed keeps the sim deterministic without that artifact.
+    val builder = SimBuilder(SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
     val (sx, sy) = CytoLightField.SOURCES.first()    // sit the seed on a light source
     builder.spawnCell(
         pos = CytoUnits.coord2(sx, sy),
