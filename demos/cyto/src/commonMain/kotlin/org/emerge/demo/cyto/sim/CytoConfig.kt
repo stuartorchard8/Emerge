@@ -50,6 +50,11 @@ data class CytoConfig(
     val grabStiffness: Frac = Frac(1, 2),
     val grabDamping: Frac = Frac(1, 1),
 
+    /** Variable-mass propulsion ("rocket"): when a cell's atoms change, rescale its velocity to hold
+     *  momentum (shed matter → speed up). True = on (the intended physics). A diagnostic toggle —
+     *  set false to ablate it and check whether colony self-propulsion comes from here. ⚙ */
+    val variableMass: Boolean = true,
+
     /** Mouse-joint reach cap (logical units): the grab pull is computed as if the pointer is at most
      *  this far away, so a fast/far pointer can't inject a teleporting one-tick velocity (which would
      *  whip the cell's spring network). The cell then follows at up to grabStiffness × this per tick.

@@ -34,6 +34,8 @@ fun main(args: Array<String>) {
     args.getOrNull(2)?.toIntOrNull()?.let { cfg = cfg.copy(mutationRateDenom = it) }
     val repulsionOn = (args.getOrNull(3)?.toIntOrNull() ?: 1) != 0
     if (!repulsionOn) cfg = cfg.copy(repulsion = Frac(0))
+    val rocketOn = (args.getOrNull(4)?.toIntOrNull() ?: 1) != 0
+    if (!rocketOn) cfg = cfg.copy(variableMass = false)
 
     val reducer = CytoReducer()
     val input = mapOf(PlayerId(0) to CytoInput.EMPTY)
@@ -61,7 +63,7 @@ fun main(args: Array<String>) {
     }
 
     fun fmt(d: Double) = ((d * 1_000_000).toLong() / 1_000_000.0).toString()
-    println("repulsion=${if (repulsionOn) "on" else "OFF"} mutationRateDenom=${cfg.mutationRateDenom}")
+    println("repulsion=${if (repulsionOn) "on" else "OFF"} rocket(variableMass)=${if (rocketOn) "on" else "OFF"} mutationRateDenom=${cfg.mutationRateDenom}")
     println("tick\tpop\t|momentum|\tcomSpeed\tkinetic\tmaxSpeed")
     fun line(t: Int) {
         val k = kinematics()

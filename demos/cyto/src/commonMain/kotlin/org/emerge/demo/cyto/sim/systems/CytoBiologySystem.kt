@@ -139,7 +139,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
             if (newMass != oldMass) {
                 builder.update<MaterialComponent>(id) { (it ?: materials.getValue(id)).copy(mass = newMass) }
                 val vel = motions[id]?.vel
-                if (vel != null && (vel.x.raw != 0 || vel.y.raw != 0)) {
+                if (cfg.variableMass && vel != null && (vel.x.raw != 0 || vel.y.raw != 0)) {
                     val nx = (vel.x.raw.toLong() * oldMass.toLong() / newMass.toLong()).toInt()
                     val ny = (vel.y.raw.toLong() * oldMass.toLong() / newMass.toLong()).toInt()
                     builder.update<MotionComponent>(id) { (it ?: motions.getValue(id)).copy(vel = Coord2(Coord(nx), Coord(ny))) }
