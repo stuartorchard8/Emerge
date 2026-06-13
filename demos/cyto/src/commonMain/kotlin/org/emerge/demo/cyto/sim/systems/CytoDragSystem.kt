@@ -37,7 +37,15 @@ object CytoDragSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         builder: SimBuilder,
         inputs: Map<PlayerId, CytoInput>,
     ) {
+        // The pointer-grabbed cell is under direct kinematic control (a mouse joint), not free-
+        // swimming, so environmental drag must not act on it: drag opposing the grab's pull would
+        // fight it every tick, and at a high drag coefficient (which cancels a fast cell's velocity in
+        // one tick) that fight oscillates — the held cell slings 2,0,2,0 when pulled a long distance.
+        // Its neighbours still drag; drag resumes on release.
+        val grabbed = inputs.values.firstOrNull()?.grab?.entity
+
         for ((id, _) in builder.entries<CytoCellComponent>()) {
+            if (id == grabbed) continue
             val transform = builder.getComponent<TransformComponent>(id) ?: continue
             val motion = builder.getComponent<MotionComponent>(id) ?: continue
 
