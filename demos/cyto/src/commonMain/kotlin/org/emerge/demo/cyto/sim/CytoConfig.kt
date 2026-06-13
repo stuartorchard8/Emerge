@@ -49,4 +49,10 @@ data class CytoConfig(
     /** Mouse-drag pull: how hard a grabbed cell is pulled toward the pointer, and its damping. */
     val grabStiffness: Frac = Frac(1, 2),
     val grabDamping: Frac = Frac(1, 1),
+
+    /** Per-tick genetic damage: each gene of every cell independently faces *each* mutation operator
+     *  (threshold drift / duplication / deletion / point-mutation) with probability `1 / mutationRateDenom`
+     *  every tick (not tied to division — accumulating damage both drives evolution and disrupts frozen
+     *  no-division steady states). `0` disables mutation. Default 10_000 = 0.01% per gene per operator. ⚙ */
+    val mutationRateDenom: Int = 10_000,
 ) : PhysicsTuning

@@ -4,6 +4,7 @@ import org.emerge.demo.cyto.sim.CellWork
 import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
+import org.emerge.demo.cyto.sim.CytoMutation
 import org.emerge.demo.cyto.sim.CytoExposure
 import org.emerge.demo.cyto.sim.CytoLightField
 import org.emerge.demo.cyto.sim.CytoMatterGrid
@@ -19,6 +20,7 @@ import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
+import org.emerge.sim.core.sim.nextRandomInt
 
 /** Emitted by [CytoBiologySystem]; consumed by [CytoLifecycleSystem] in a later phase. */
 data class CellDivisionIntent(val id: EntityId)
@@ -106,6 +108,9 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
         for (id in orderedIds) {
             val work = works.getValue(id)
             val cell = cells.getValue(id)
+            // Per-tick genetic damage (deterministic via the sim PRNG, in EntityId order). Copy-on-write:
+            // null unless something actually mutated, so unmutated cells keep their shared genome list.
+            val mutated = CytoMutation.mutate(cell.genome, cfg.mutationRateDenom) { until -> builder.nextRandomInt(until) }
             builder.update<CytoCellComponent>(id) {
                 cell.copy(
                     cytoplasm = work.cytoplasm,
@@ -113,6 +118,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
                     logicalRadius = work.logicalRadius,
                     wear = work.wear,
                     stickyTemp = false,
+                    genome = mutated ?: cell.genome,
                 )
             }
             if (work.logicalRadius != cell.logicalRadius) {

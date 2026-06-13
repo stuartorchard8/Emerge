@@ -16,7 +16,8 @@ import kotlin.test.assertTrue
  * genome is inherited clonally, and **matter (atoms) is conserved** through it all.
  */
 class CytoReducerTest {
-    private val cfg = CytoConfig()
+    // Mutation OFF by default so the base-mechanics tests are deterministic; the mutation test opts in.
+    private val cfg = CytoConfig(mutationRateDenom = 0)
     private val reducer = CytoReducer()
     private val noInput = mapOf(PlayerId(0) to CytoInput.EMPTY)
 
@@ -114,6 +115,32 @@ class CytoReducerTest {
         }
         val heterotrophs = state.components.getTable<CytoCellComponent>().asMap().values.count { it.type == CellType.Muscle }
         assertTrue(heterotrophs > 1, "heterotroph should have fed on the autotroph's leaked ab and divided; got $heterotrophs")
+    }
+
+    @Test
+    fun mutationDivergesGenomesAndConservesMatter() {
+        // Per-tick genetic damage: with mutation ON, lineages diverge from the seeded autotroph genome
+        // over time — and mutation never mints/destroys matter (it only edits genomes), so total atoms
+        // stay conserved. (rateDenom 0 elsewhere; here a high rate to force divergence quickly.)
+        val mutCfg = cfg.copy(mutationRateDenom = 200)
+        var state = createCytoInitialState()
+        val total0 = totalAtoms(state)
+        var sawDivergence = false
+        repeat(600) {
+            state = reducer.reduce(mutCfg, state, noInput)
+            assertEquals(total0, totalAtoms(state), "atoms not conserved under mutation at step ${it + 1}")
+            if (state.components.getTable<CytoCellComponent>().asMap().values.any { c -> c.genome != AUTOTROPH_GENES }) {
+                sawDivergence = true
+            }
+        }
+        assertTrue(sawDivergence, "mutation should have diverged at least one lineage from the seeded genome")
+    }
+
+    @Test
+    fun mutationDisabledIsNoOp() {
+        // rateDenom 0 ⇒ mutate() is a no-op (returns the shared genome unchanged) — what keeps the
+        // base-mechanics tests deterministic.
+        assertEquals(null, CytoMutation.mutate(AUTOTROPH_GENES, 0) { 0 })
     }
 
     @Test
