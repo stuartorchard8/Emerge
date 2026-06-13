@@ -233,8 +233,10 @@ class SpringConstraintSystem(
         // out the current separation velocity.
         val rawClosingSpeed = lengthError * spring.stiffness + separationSpeed * spring.damping
         // Under-relax by connectivity so a clustered body's many springs don't sum to an
-        // unstable over-correction (Jacobi stability). Lone springs: ÷1.
-        val relaxation = maxOf(countA, otherCount, 1)
+        // unstable over-correction (Jacobi stability). Floor of 2: even a lone spring keeps a
+        // stability margin (the {k=1,d=1} deadbeat has none, so a sustained perturbation — e.g. a
+        // drag dragging a 2-cell organism — could resonate it apart). ÷2 ⇒ a decaying, non-oscillating mode.
+        val relaxation = maxOf(countA, otherCount, 2)
         val closingSpeed = rawClosingSpeed / relaxation
 
         val totalMass = massA + massB
