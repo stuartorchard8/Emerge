@@ -166,6 +166,30 @@ class CytoReducerTest {
     }
 
     @Test
+    fun degenerateDivisionKillsTheCellAndRecyclesMatter() {
+        // A cell whose every molecule is count-1 can't split — neither daughter gets a whole instance,
+        // so it dies and all its matter is emitted to the environment (the general rounding rule:
+        // whole amounts preserved, remainders to the reservoir, never minted into a phantom cell).
+        val (sx, sy) = CytoLightField.SOURCES.first()
+        val divideNow = listOf(
+            Gene(EnergySource.Light, GeneCondition(ConditionType.Biomass, "", Comparison.Greater, 0), GeneAction(ActionType.Mitosis)),
+        )
+        var state = run {
+            val b = SimBuilder(SimState(randomSeed = 1))
+            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.empty()) }
+            b.spawnCell(
+                CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector,
+                cytoplasm = emptyMap(), biomass = mapOf("ab" to 1, "ba" to 1), logicalRadius = MIN_RADIUS, genome = divideNow,
+            )
+            b.build()
+        }
+        val total0 = totalAtoms(state)
+        repeat(3) { state = reducer.reduce(cfg, state, noInput) }
+        assertEquals(0, cellCount(state), "a cell with only count-1 molecules should die trying to divide")
+        assertEquals(total0, totalAtoms(state), "its matter must be recycled to the environment, conserved")
+    }
+
+    @Test
     fun grabDoesNotFlingACellAcrossTheWorld() {
         // The mouse-joint reach cap: grabbing toward a far pointer must follow at a bounded speed, not
         // inject a teleporting one-tick velocity (which used to whip the cell's spring network — the
