@@ -39,8 +39,11 @@ data class CytoConfig(
      *  less fragile connections. */
     val connectionBreakDamage: Float = 4f,
 
-    /** Per-tick velocity drag on a connected cell's unshielded velocity (original: ×-10·dt). */
-    val connectedDrag: Frac = Frac(10, 64),
+    /** Exposed-surface viscous drag (CytoDragSystem): quadratic coefficient over the exposed speed
+     *  (logical units/tick), capped at full cancellation. Higher = more drag; tune for the
+     *  decelerate-fast-glide-slow feel. Quadratic ⇒ v(t)=v0/(1+C·v0·t): at 0.05 a fast push (~2
+     *  logical/tick) decays gracefully over ~a second while a slow drift (~0.3) barely damps. */
+    val dragCoefficient: Float = 0.05f,
 
     /** Stretch (logical units) -> stress, for connection damage. Lower = a given stretch
      *  hurts less, so connections tolerate more deformation before they fray. */

@@ -3,6 +3,7 @@ package org.emerge.demo.cyto.sim
 import org.emerge.demo.cyto.sim.systems.CytoBiologySystem
 import org.emerge.demo.cyto.sim.systems.CytoConnectionMaintenanceSystem
 import org.emerge.demo.cyto.sim.systems.CytoContactSystem
+import org.emerge.demo.cyto.sim.systems.CytoDragSystem
 import org.emerge.demo.cyto.sim.systems.CytoGrabSystem
 import org.emerge.demo.cyto.sim.systems.CytoInteractionSystem
 import org.emerge.demo.cyto.sim.systems.CytoLifecycleSystem
@@ -55,7 +56,7 @@ class CytoReducer(
         // Grab runs before the constraint solver: it deposits the grabbed cell's pull, then the
         // solver reads that impulse and propagates it through the connections in the same tick, so a
         // dragged organism follows as one body (no lag-stretch, no grab special-casing).
-        Phase("forces", CytoGrabSystem, SpringConstraintSystem()),
+        Phase("forces", CytoGrabSystem, CytoDragSystem, SpringConstraintSystem()),
         Phase("lifecycle", CytoLifecycleSystem),
         Phase("integrate", IntegrationSystem),
     )
