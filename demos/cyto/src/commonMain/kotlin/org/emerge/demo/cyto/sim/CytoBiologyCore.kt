@@ -71,13 +71,14 @@ object CytoBiologyCore {
         var lightLeft = if (source is EnergySource.Light) work.quanta else 0
         var ops = 0
         // Futile-cycle guard: a gene whose source + action exactly undo each other (e.g. BreakBond(ab) +
-        // FormBond(a,b) → break "ab", reform "ab") leaves the cell's mutable state unchanged across the op,
-        // yet would otherwise spin to MAX_OPS_PER_GENE every tick doing net-zero work. Because such an op
-        // is a no-op for the persisted state, halting on it is bit-identical to running it to the cap — so
-        // we stop the gene the first time a completed op changes nothing. Import (draws from the grid → cyto
-        // grows), Convert (biomass grows), and Repair (damage falls) all move the signature, so legitimate
-        // throughput genes are unaffected.
-        var sigPrev = stateSig(work)
+        // FormBond(a,b) → break "ab", reform "ab") leaves the cell's mutable state unchanged from one op to
+        // the next, yet would otherwise spin to MAX_OPS_PER_GENE every tick doing net-zero work. Such an op
+        // is a no-op for the persisted state, so halting on it is bit-identical to running it to the cap —
+        // we stop the gene the first time two consecutive completed ops leave the state unchanged. The
+        // signature is computed only once an op actually completes (acting genes are the rare case), so a
+        // gated-off or energy-starved gene pays nothing. Import/Convert/Repair always move the signature,
+        // so legitimate throughput genes run to their real resource limit.
+        var sigPrev = 0L
         while (ops < MAX_OPS_PER_GENE) {
             if (!gate(gene.condition, work)) break  // re-checked each op: the gene acts only while its condition holds
             // Repair has no matter-feasibility of its own, so check the need BEFORE spending energy —
@@ -98,7 +99,7 @@ object CytoBiologyCore {
             if (!acted) break
             ops++
             val sigNow = stateSig(work)
-            if (sigNow == sigPrev) break  // op produced no net change → futile cycle, no point repeating
+            if (ops > 1 && sigNow == sigPrev) break  // two ops in a row changed nothing → futile cycle
             sigPrev = sigNow
         }
     }
@@ -119,31 +120,30 @@ object CytoBiologyCore {
      *  counts, writes deltas, applies after) so it's order-independent and conservative; biomass does
      *  not diffuse (it's locked). */
     fun diffuse(works: Map<EntityId, CellWork>, neighbourIds: Map<EntityId, List<EntityId>>) {
-        val snapshot = HashMap<EntityId, Map<String, Int>>(works.size)
-        val delta = HashMap<EntityId, HashMap<String, Int>>(works.size)
+        // No snapshot copy: the compute loop only ever reads a cell's *own* cytoplasm and writes to a
+        // separate delta map, never to any cytoplasm — so reading the live `w.cytoplasm` is identical to
+        // reading a pre-diffusion copy, and the deltas are applied only after every cell is computed.
+        // Deltas are allocated lazily, so the (typically many) isolated, degree-0 cells cost nothing.
+        val delta = HashMap<EntityId, HashMap<String, Int>>()
         for ((id, w) in works) {
-            snapshot[id] = HashMap(w.cytoplasm)
-            delta[id] = HashMap()
-        }
-        for ((id, _) in works) {
             val nbrs = neighbourIds[id] ?: continue
             val degree = nbrs.size
             if (degree == 0) continue
-            val snap = snapshot.getValue(id)
-            val selfDelta = delta.getValue(id)
-            for ((species, v) in snap) {
+            val selfDelta = delta.getOrPut(id) { HashMap() }
+            for ((species, v) in w.cytoplasm) {
                 val out = v / (degree + 1)
                 if (out <= 0) continue
                 selfDelta[species] = (selfDelta[species] ?: 0) - out * degree
                 for (nb in nbrs) {
-                    val nbDelta = delta[nb] ?: continue
+                    val nbDelta = delta.getOrPut(nb) { HashMap() }
                     nbDelta[species] = (nbDelta[species] ?: 0) + out
                 }
             }
         }
-        for ((id, w) in works) {
-            for ((species, d) in delta.getValue(id)) {
-                if (d != 0) addOrRemove(w.cytoplasm, species, d)
+        for ((id, d) in delta) {
+            val w = works.getValue(id)
+            for ((species, dv) in d) {
+                if (dv != 0) addOrRemove(w.cytoplasm, species, dv)
             }
         }
     }
