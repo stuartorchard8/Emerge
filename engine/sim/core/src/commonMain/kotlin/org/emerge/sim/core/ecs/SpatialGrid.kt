@@ -117,7 +117,7 @@ class SpatialGrid @PublishedApi internal constructor(
          * [minCellSize] is so large that fewer than 4 cells would fit, returns
          * `null` and the caller must fall back to an O(n²) sweep.
          */
-        fun forMinCellSize(minCellSize: Long): SpatialGrid? {
+        fun forMinCellSize(minCellSize: Long, maxCellsPerAxisLog2: Int = MAX_NUM_CELLS_LOG2): SpatialGrid? {
             require(minCellSize > 0) { "minCellSize must be positive, was $minCellSize" }
             var cellSizeLog2 = 0
             while (cellSizeLog2 < 32 && (1L shl cellSizeLog2) < minCellSize) {
@@ -125,11 +125,25 @@ class SpatialGrid @PublishedApi internal constructor(
             }
             var numCellsLog2 = 32 - cellSizeLog2
             if (numCellsLog2 < MIN_NUM_CELLS_LOG2) return null
-            if (numCellsLog2 > MAX_NUM_CELLS_LOG2) {
-                numCellsLog2 = MAX_NUM_CELLS_LOG2
+            // The cell size sets the *finest* grid correctness allows; the caller may request a coarser
+            // one (fewer cells per axis) when the world is sparse, so a handful of small bodies don't
+            // force a backing array sized to the whole 2^32 coordinate torus (up to 2^20 = 1M slots).
+            // Coarsening only grows cellSize, so it never under-sizes a cell or misses an overlapping pair.
+            val cap = maxCellsPerAxisLog2.coerceIn(MIN_NUM_CELLS_LOG2, MAX_NUM_CELLS_LOG2)
+            if (numCellsLog2 > cap) {
+                numCellsLog2 = cap
                 cellSizeLog2 = 32 - numCellsLog2
             }
             return SpatialGrid(cellSizeLog2, numCellsLog2)
+        }
+
+        /** Smallest `cellsPerAxisLog2` whose grid holds ≳ [entityCount] cells (one margin doubling on
+         *  top of `√entityCount`), so [forMinCellSize] can size the grid to the population rather than
+         *  the coordinate space. Clamped to the grid's valid range. */
+        fun cellsPerAxisLog2For(entityCount: Int): Int {
+            var axisLog2 = MIN_NUM_CELLS_LOG2
+            while (axisLog2 < MAX_NUM_CELLS_LOG2 && (1 shl (axisLog2 * 2)) < entityCount) axisLog2 += 1
+            return (axisLog2 + 1).coerceAtMost(MAX_NUM_CELLS_LOG2)
         }
     }
 }

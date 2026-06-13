@@ -114,8 +114,14 @@ class ContactSystem(
         }
 
         // Cell size must be >= 2 * maxRadius so every overlapping pair has
-        // centres within a 3×3 window of each other (on the torus).
-        val grid = SpatialGrid.forMinCellSize(minCellSize = maxRadiusRaw * 2L)
+        // centres within a 3×3 window of each other (on the torus). Size the
+        // grid to the body count, not the coordinate space: small bodies would
+        // otherwise drive it to the 2^20-cell cap, allocating a ~megabyte
+        // backing array every tick for a handful of entities.
+        val grid = SpatialGrid.forMinCellSize(
+            minCellSize = maxRadiusRaw * 2L,
+            maxCellsPerAxisLog2 = SpatialGrid.cellsPerAxisLog2For(validCount),
+        )
         if (grid != null) {
             for (i in 0 until n) {
                 if (transforms[i] != null) grid.insert(i, posX[i], posY[i])
