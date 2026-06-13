@@ -14,36 +14,37 @@ data class CytoConfig(
     override val rollingResistance: Frac = Frac(0),
     override val collisionSpeedDamageThreshold: Frac = Frac(0),
 
-    /** Soft-spring gains for cell connections (see SpringConstraintSystem). Matched to the
-     *  original Box2D DistanceJoint (frequencyHz=10, dampingRatio=4 at the 1/64 s step).
+    /** Connection gains for the split-impulse solver (see SpringConstraintSystem). The original Cyto
+     *  used a Box2D DistanceJoint at frequencyHz=10, dampingRatio=4 — *heavily overdamped*, i.e. a soft,
+     *  non-oscillatory relaxation toward rest that lets connections stretch under load. We reproduce
+     *  that overdamped-soft behaviour (not Box2D's literal float constants — the engine's fixed-point
+     *  Frac can't hold a stiffness of ~ω² ≈ 1e5) via the solver's two channels:
      *
-     *  Discretising that joint gives stiffness k = ω²·dt² = (2π·10)²/64² ≈ 0.96 and damping
-     *  d = 2ζω·dt ≈ 7.85. Stiffness is what sets the *static* stretch under load (e ≈ Δv/k),
-     *  so k≈1 is what keeps the membrane firm rather than squishy. The explicit single-pass
-     *  solver can't take d ≫ 1 (it would over-correct and bounce); the solver's modes solve
-     *  `λ² - (2-k-d)λ + (1-d) = 0`, and at k=1 the *only* non-oscillating damping is d=1,
-     *  giving a deadbeat response {0, 0}: firm, no overshoot, fast settle. That trades away
-     *  the original's slow overdamped *approach* (which this integrator can't do at high k)
-     *  but keeps its firmness — the visible "squish under load", which matters most here.
+     *   - [springStiffness] = the position-relaxation rate: the fraction of a connection's length error
+     *     pulled out per solver iteration, on the pseudo-velocity (position) channel. < 1 ⇒ soft: a
+     *     loaded connection sits at a stretch ≈ load / effective-rate instead of snapping to rest. This
+     *     visible stretch is what makes force-based breaking work (stretch ∝ transmitted force). Because
+     *     it's a pseudo-velocity, softening it never injects kinetic energy (no drag-rectified pump).
+     *   - [springDamping] = the fraction of relative normal velocity cancelled per iteration (real
+     *     velocity, dissipative) — the overdamping.
      *
-     *  Connectivity relaxation scales both gains down together in dense clusters (Jacobi
-     *  stability), so interior cells of a large colony stay softer than a lone pair; that's
-     *  the main residual gap from Box2D's iterative (converged-stiff) solve. */
-    val springStiffness: Frac = Frac(1, 1),
+     *  Soft enough to stretch + tear under load, firm enough to hold a colony's shape. Tune on runCyto. */
+    val springStiffness: Frac = Frac(1, 10),
     val springDamping: Frac = Frac(1, 1),
 
     /** Repulsion impulse fraction for overlapping, non-connected cells. */
     val repulsion: Frac = Frac(1, 2),
 
-    /** Connection breaks when accumulated stress damage exceeds this (original: 3). Higher =
-     *  less fragile connections. */
-    val connectionBreakDamage: Float = 4f,
+    /** Connection breaks when accumulated stress damage exceeds this (matches the original). Higher =
+     *  less fragile connections. Breaking is heal-gated by [connectionStressScale]'s −0.25/tick floor,
+     *  so only genuinely over-stretched connections (stretch past ~0.5 logical) ever accrue toward it. */
+    val connectionBreakDamage: Float = 3f,
 
     /** Exposed-surface viscous drag (CytoDragSystem): quadratic coefficient over the exposed speed
      *  (logical units/tick), capped at full cancellation. Higher = more drag; tune for the
      *  decelerate-fast-glide-slow feel. Quadratic ⇒ v(t)=v0/(1+C·v0·t): at 0.05 a fast push (~2
      *  logical/tick) decays gracefully over ~a second while a slow drift (~0.3) barely damps. */
-    val dragCoefficient: Float = 0.05f,
+    val dragCoefficient: Float = 1.0f,
 
     /** Stretch (logical units) -> stress, for connection damage. Lower = a given stretch
      *  hurts less, so connections tolerate more deformation before they fray. */
