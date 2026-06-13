@@ -19,10 +19,18 @@ class PipelineProfiler {
     private val phases = LinkedHashMap<String, PhaseAccum>()
     private val tickSamples = ArrayList<Long>()
 
+    /**
+     * Optional per-phase allocation gauge. When set, [recordPhaseAlloc] accumulates the bytes a phase
+     * allocates. The reader is injected (e.g. a HotSpot per-thread allocation counter) so the engine
+     * stays free of platform management dependencies. Null in production.
+     */
+    var allocReader: (() -> Long)? = null
+
     private class PhaseAccum(
         var totalNanos: Long = 0L,
         var maxNanos: Long = 0L,
         var count: Long = 0L,
+        var totalBytes: Long = 0L,
     )
 
     /** Records one [nanos] sample against the named phase. */
@@ -31,6 +39,11 @@ class PipelineProfiler {
         acc.totalNanos += nanos
         acc.count += 1
         if (nanos > acc.maxNanos) acc.maxNanos = nanos
+    }
+
+    /** Records one [bytes] allocation sample against the named phase (see [allocReader]). */
+    fun recordPhaseAlloc(name: String, bytes: Long) {
+        phases.getOrPut(name) { PhaseAccum() }.totalBytes += bytes
     }
 
     /** Records one whole-tick [nanos] sample. Samples are kept for percentile computation. */
@@ -71,6 +84,7 @@ class PipelineProfiler {
         val maxNanos: Long,
         val sharePercent: Double,
         val sampleCount: Long,
+        val avgBytes: Long = 0L,
     )
 
     fun report(): Report {
@@ -91,6 +105,7 @@ class PipelineProfiler {
                 maxNanos = acc.maxNanos,
                 sharePercent = (acc.totalNanos * 100.0) / totalPhaseNanos,
                 sampleCount = acc.count,
+                avgBytes = if (acc.count > 0) acc.totalBytes / acc.count else 0L,
             )
         }
 

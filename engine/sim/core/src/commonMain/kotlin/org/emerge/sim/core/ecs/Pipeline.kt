@@ -138,9 +138,12 @@ private inline fun PipelineProfiler?.timePhase(name: String, block: () -> Unit) 
         block()
         return
     }
+    val reader = allocReader
+    val allocStart = reader?.invoke() ?: 0L
     val start = TimeSource.Monotonic.markNow()
     block()
     recordPhase(name, start.elapsedNow().inWholeNanoseconds)
+    if (reader != null) recordPhaseAlloc(name, reader() - allocStart)
 }
 
 private fun <C, S, I> runPhaseSequential(
