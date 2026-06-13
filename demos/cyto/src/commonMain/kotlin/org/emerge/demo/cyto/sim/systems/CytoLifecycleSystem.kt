@@ -9,6 +9,7 @@ import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.MIN_RADIUS
+import org.emerge.demo.cyto.sim.atomCount
 import org.emerge.demo.cyto.sim.cellMass
 import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.demo.cyto.sim.totalBiomassBonds
@@ -119,6 +120,10 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         // Integer split: daughter takes ⌊C/2⌋ of each species (cytoplasm + biomass), mother keeps ⌈C/2⌉.
         val (motherCyto, daughterCyto) = halve(cell.cytoplasm)
         val (motherBio, daughterBio) = halve(cell.biomass)
+        // Too small to split: a daughter with 0 atoms would be mass-clamped to 1 (cellMass's min),
+        // minting phantom mass + momentum at the mother's velocity (the self-propulsion exploit) and
+        // dying immediately. A cell can't divide what it doesn't have — skip.
+        if (atomCount(daughterCyto) + atomCount(daughterBio) == 0) return
         val daughterRadius = radiusForBiomass(daughterBio)
 
         // Clonal division: the daughter inherits the mother's type AND genome.

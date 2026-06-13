@@ -120,6 +120,14 @@ tasks.register<JavaExec>("probeCytoLocomotion") {
     classpath = sourceSets["main"].runtimeClasspath
 }
 
+tasks.register<JavaExec>("analyzeCytoSave") {
+    group = "verification"
+    description = "Load a Cyto save and dissect its self-propelling colonies (physics momentum vs " +
+        "growth-creep) + dump their genomes. --args=\"<savePath> <ticks>\"."
+    mainClass = "org.emerge.desktop.CytoSaveAnalysisKt"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
 tasks.register<JavaExec>("probeCytoGrab") {
     group = "verification"
     description = "Headless drag-stability diagnostic: grab a welded cluster and orbit the target, " +
