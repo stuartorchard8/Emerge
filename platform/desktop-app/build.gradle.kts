@@ -111,6 +111,15 @@ tasks.register<JavaExec>("probeCytoPopulation") {
     classpath = sourceSets["main"].runtimeClasspath
 }
 
+tasks.register<JavaExec>("probeCytoLocomotion") {
+    group = "verification"
+    description = "Headless locomotion diagnostic: print total momentum / COM drift speed / kinetic " +
+        "energy over time to tell a real gait from a momentum-creating artifact. " +
+        "--args=\"<ticks> <every> <mutationRateDenom> <repulsion 0|1>\"."
+    mainClass = "org.emerge.desktop.CytoLocomotionProbeKt"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
 tasks.register<JavaExec>("runNorns") {
     group = "application"
     description = "Watch the Norns artificial-life colony live in the terminal (ASCII view). " +
