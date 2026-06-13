@@ -137,6 +137,15 @@ tasks.register<JavaExec>("probeCytoGrab") {
     classpath = sourceSets["main"].runtimeClasspath
 }
 
+tasks.register<JavaExec>("probeCytoDrag") {
+    group = "verification"
+    description = "Headless exposed-surface drag diagnostic: push a welded chain and log speed decay " +
+        "(lone = full drag; push along-axis = slippery; push across-axis = draggy). " +
+        "--args=\"<ticks> <every> <nCells> <vx> <vy>\"."
+    mainClass = "org.emerge.desktop.CytoDragProbeKt"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
 tasks.register<JavaExec>("runNorns") {
     group = "application"
     description = "Watch the Norns artificial-life colony live in the terminal (ASCII view). " +
