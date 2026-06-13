@@ -49,6 +49,10 @@ class CytoConnectionMaintenanceSystem(
         val springs = builder.entries<SpringConstraintComponent>()
         if (springs.isEmpty()) return
         val n = springs.size
+        // A grabbed cell's connections must not accrue stress damage: the lag-stretch from dragging is
+        // player manipulation, not organic stress, and would otherwise break the organism apart under a
+        // soft drag. Its springs heal instead while held.
+        val grabbed = inputs.values.firstOrNull()?.grab?.entity
 
         // Cache each spring-bearing cell's components into flat arrays under a dense index,
         // so the per-spring inner loops read transform/radius/motion/damage/springs by array
@@ -100,7 +104,7 @@ class CytoConnectionMaintenanceSystem(
                 if (start >= end) continue
                 tasks += {
                     val local = HashMap<EntityId, MutableSet<EntityId>>()
-                    processRange(cache, cfg, drag, start, end, newSpringComp, newDamageComp, dragImpulse, local)
+                    processRange(cache, cfg, drag, grabbed, start, end, newSpringComp, newDamageComp, dragImpulse, local)
                     brokenLocals[c] = local
                 }
             }
@@ -112,7 +116,7 @@ class CytoConnectionMaintenanceSystem(
             }
         } else {
             broken = HashMap()
-            processRange(cache, cfg, drag, 0, n, newSpringComp, newDamageComp, dragImpulse, broken)
+            processRange(cache, cfg, drag, grabbed, 0, n, newSpringComp, newDamageComp, dragImpulse, broken)
         }
 
         // 1. apply the rebuilt springs/damage for cells that changed.
@@ -161,6 +165,7 @@ class CytoConnectionMaintenanceSystem(
         c: Cache,
         cfg: CytoConfig,
         drag: Frac,
+        grabbed: EntityId?,
         aStart: Int,
         aEnd: Int,
         newSpringComp: Array<SpringConstraintComponent?>,
@@ -192,7 +197,8 @@ class CytoConnectionMaintenanceSystem(
                     ) springsChanged = true
                     val dist = (transformB.pos - transformA.pos).len
                     val stretch = CytoUnits.toLogical(dist) - CytoUnits.toLogical(rest)
-                    val stress = max(0f, stretch * cfg.connectionStressScale) - 0.25f
+                    val stress = if (id == grabbed || spring.other == grabbed) -0.25f
+                        else max(0f, stretch * cfg.connectionStressScale) - 0.25f
                     val prior = damageState[spring.other] ?: 0f
                     val damage = max(0f, prior + stress)
                     if (damage > cfg.connectionBreakDamage) springsChanged = true
@@ -211,8 +217,10 @@ class CytoConnectionMaintenanceSystem(
                         val rest = radiusA + radiusB
                         val dist = (transformB.pos - transformA.pos).len
                         val stretch = CytoUnits.toLogical(dist) - CytoUnits.toLogical(rest)
-                        // Stress only when stretched; relaxed connections heal by 0.25/tick.
-                        val stress = max(0f, stretch * cfg.connectionStressScale) - 0.25f
+                        // Stress only when stretched; relaxed connections heal by 0.25/tick. A grabbed
+                        // cell's connections never accrue stress (drag is not organic stress) — they heal.
+                        val stress = if (id == grabbed || other == grabbed) -0.25f
+                            else max(0f, stretch * cfg.connectionStressScale) - 0.25f
                         val damage = max(0f, (damageState[other] ?: 0f) + stress)
 
                         if (damage > cfg.connectionBreakDamage) {
