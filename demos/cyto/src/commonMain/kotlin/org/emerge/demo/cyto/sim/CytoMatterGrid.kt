@@ -68,10 +68,14 @@ class CytoMatterGrid private constructor(private val cells: Array<HashMap<String
         val HALF = CytoLightField.HALF
 
         /** Peak free-monomer count seeded at a source grid cell (⚙ tunable — the matter carrying
-         *  capacity per source, hence base population). Seeded for each monomer species (a, b). Raised
-         *  from 64 to support a larger population: enough individuals that a lucky unmodified minority
-         *  persists by chance while the population as a whole explores the mutation space. */
-        const val MATTER_PEAK = 256
+         *  capacity per source, hence the population ceiling). Seeded for each monomer species (a, b). */
+        const val MATTER_PEAK = 64
+
+        /** Gaussian radius of the matter clumps (logical units) — decoupled from the (wider) light
+         *  [CytoLightField.FALLOFF] so we can make the *nutrient* niches small (and total nutrients low)
+         *  without dimming the light field. Total world matter ≈ MATTER_PEAK × 4 sources × π(σ/cellSize)²;
+         *  keeping it small is the population cap while the per-cell sim is unoptimised. ⚙ */
+        const val MATTER_FALLOFF = 70f
 
         /** The free monomer species the world is seeded with. */
         val SEED_MONOMERS = listOf("a", "b")
@@ -86,7 +90,7 @@ class CytoMatterGrid private constructor(private val cells: Array<HashMap<String
         fun seeded(): CytoMatterGrid {
             val cells = Array(RES * RES) { HashMap<String, Int>() }
             val cellSize = SPAN / RES
-            val inv = 1f / (CytoLightField.FALLOFF * CytoLightField.FALLOFF)
+            val inv = 1f / (MATTER_FALLOFF * MATTER_FALLOFF)
             for (gy in 0 until RES) {
                 val wy = -HALF + (gy + 0.5f) * cellSize
                 for (gx in 0 until RES) {
