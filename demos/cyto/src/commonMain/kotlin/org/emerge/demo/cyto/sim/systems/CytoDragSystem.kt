@@ -65,14 +65,17 @@ object CytoDragSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
 
             val speed = CytoUnits.toLogical(exposed.len) // exposed speed, logical units/tick
             if (speed == 0f) continue
-            // fesh: quadratic drag, capped at the speed itself so the impulse can cancel but never
-            // reverse the exposed motion. The effective coefficient is the base surface drag plus a
-            // width term (cells have cross-sectional width — a wider cell pushes more fluid), scaled
-            // by the cell's radius and lower than the base. Both act on the same exposed velocity, so
-            // the width drag is shielded by neighbours exactly like the surface drag; capping the
-            // combined coefficient keeps the total from ever reversing.
-            val coefficient = cfg.dragCoefficient + cfg.cellWidthDragCoefficient * cell.logicalRadius.toFloat()
-            val dragSpeed = min(speed, coefficient * speed * speed)
+            // Two drags on the exposed velocity, summed and capped at the speed itself (so the impulse
+            // can cancel but never reverse the motion):
+            //   - surface drag (fesh): QUADRATIC — strong at speed, vanishes near zero;
+            //   - width drag: LINEAR in speed, scaled by the cell's radius (cross-sectional width).
+            //     Being linear, it damps proportionally at *all* speeds, so it settles slow drift the
+            //     quadratic term leaves behind. Both ride the same exposed velocity ⇒ shielded by
+            //     neighbours identically.
+            val radius = cell.logicalRadius.toFloat()
+            val surfaceDrag = cfg.dragCoefficient * speed * speed
+            val widthDrag = cfg.cellWidthDragCoefficient * radius * speed
+            val dragSpeed = min(speed, surfaceDrag + widthDrag)
             val impulse = exposed.norm * CytoUnits.len(-dragSpeed) // opposes the exposed velocity
             builder.update<ImpulseComponent>(id) { ImpulseComponent(vel = impulse) + it }
         }

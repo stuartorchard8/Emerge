@@ -47,9 +47,11 @@ data class CytoConfig(
     val dragCoefficient: Float = 0.5f,
 
     /** Additional per-cell drag for the cell's cross-sectional *width* (CytoDragSystem): a wider cell
-     *  pushes more fluid, so the effective drag coefficient gets `+ cellWidthDragCoefficient · radius`.
-     *  Acts on the same exposed (shielded) velocity as the base drag, and should stay *lower* than
-     *  [dragCoefficient] for a typical cell (radius ~0.3–0.7). */
+     *  pushes more fluid. Unlike the base surface drag (quadratic), this term is **linear** in speed —
+     *  `cellWidthDragCoefficient · radius · speed` — so it damps proportionally at *all* speeds and
+     *  settles slow drift the quadratic term leaves behind. It rides the same exposed (shielded)
+     *  velocity, so neighbours shield it like the surface drag. The value is the per-tick decay rate
+     *  per unit radius (`· radius` ⇒ effective rate ~0.1–0.2/tick for a typical cell); keep < 1/radius. */
     val cellWidthDragCoefficient: Float = 0.3f,
 
     /** Stretch (logical units) -> stress, for connection damage. Lower = a given stretch
