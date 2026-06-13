@@ -44,7 +44,7 @@ object CytoDragSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         // Its neighbours still drag; drag resumes on release.
         val grabbed = inputs.values.firstOrNull()?.grab?.entity
 
-        for ((id, _) in builder.entries<CytoCellComponent>()) {
+        for ((id, cell) in builder.entries<CytoCellComponent>()) {
             if (id == grabbed) continue
             val transform = builder.getComponent<TransformComponent>(id) ?: continue
             val motion = builder.getComponent<MotionComponent>(id) ?: continue
@@ -66,8 +66,13 @@ object CytoDragSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             val speed = CytoUnits.toLogical(exposed.len) // exposed speed, logical units/tick
             if (speed == 0f) continue
             // fesh: quadratic drag, capped at the speed itself so the impulse can cancel but never
-            // reverse the exposed motion.
-            val dragSpeed = min(speed, cfg.dragCoefficient * speed * speed)
+            // reverse the exposed motion. The effective coefficient is the base surface drag plus a
+            // width term (cells have cross-sectional width — a wider cell pushes more fluid), scaled
+            // by the cell's radius and lower than the base. Both act on the same exposed velocity, so
+            // the width drag is shielded by neighbours exactly like the surface drag; capping the
+            // combined coefficient keeps the total from ever reversing.
+            val coefficient = cfg.dragCoefficient + cfg.cellWidthDragCoefficient * cell.logicalRadius.toFloat()
+            val dragSpeed = min(speed, coefficient * speed * speed)
             val impulse = exposed.norm * CytoUnits.len(-dragSpeed) // opposes the exposed velocity
             builder.update<ImpulseComponent>(id) { ImpulseComponent(vel = impulse) + it }
         }

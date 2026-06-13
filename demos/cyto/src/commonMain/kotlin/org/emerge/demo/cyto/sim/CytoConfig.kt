@@ -29,11 +29,11 @@ data class CytoConfig(
      *     velocity, dissipative) — the overdamping.
      *
      *  Soft enough to stretch + tear under load, firm enough to hold a colony's shape. Tune on runCyto. */
-    val springStiffness: Frac = Frac(1, 10),
-    val springDamping: Frac = Frac(1, 1),
+    val springStiffness: Frac = Frac(1, 20),
+    val springDamping: Frac = Frac(1, 4),
 
     /** Repulsion impulse fraction for overlapping, non-connected cells. */
-    val repulsion: Frac = Frac(1, 2),
+    val repulsion: Frac = Frac(2, 3),
 
     /** Connection breaks when accumulated stress damage exceeds this (matches the original). Higher =
      *  less fragile connections. Breaking is heal-gated by [connectionStressScale]'s −0.25/tick floor,
@@ -44,7 +44,13 @@ data class CytoConfig(
      *  (logical units/tick), capped at full cancellation. Higher = more drag; tune for the
      *  decelerate-fast-glide-slow feel. Quadratic ⇒ v(t)=v0/(1+C·v0·t): at 0.05 a fast push (~2
      *  logical/tick) decays gracefully over ~a second while a slow drift (~0.3) barely damps. */
-    val dragCoefficient: Float = 1.0f,
+    val dragCoefficient: Float = 0.5f,
+
+    /** Additional per-cell drag for the cell's cross-sectional *width* (CytoDragSystem): a wider cell
+     *  pushes more fluid, so the effective drag coefficient gets `+ cellWidthDragCoefficient · radius`.
+     *  Acts on the same exposed (shielded) velocity as the base drag, and should stay *lower* than
+     *  [dragCoefficient] for a typical cell (radius ~0.3–0.7). */
+    val cellWidthDragCoefficient: Float = 0.3f,
 
     /** Stretch (logical units) -> stress, for connection damage. Lower = a given stretch
      *  hurts less, so connections tolerate more deformation before they fray. */
