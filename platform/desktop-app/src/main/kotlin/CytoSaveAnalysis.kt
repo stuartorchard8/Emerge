@@ -66,21 +66,57 @@ fun main(args: Array<String>) {
         dragCoefficient = args.getOrNull(2)?.toFloatOrNull() ?: base.dragCoefficient,
         variableMass = args.getOrNull(3)?.toBooleanStrictOrNull() ?: base.variableMass,
         connectionBreakDamage = args.getOrNull(4)?.toFloatOrNull() ?: base.connectionBreakDamage,
+        repulsion = args.getOrNull(5)?.toIntOrNull()?.let { org.emerge.sim.core.physics.primitives.Frac(it.toLong(), 100) } ?: base.repulsion,
     )
-    println("\ncfg: drag=${cfg.dragCoefficient} variableMass=${cfg.variableMass} breakDamage=${cfg.connectionBreakDamage}")
+    println("\ncfg: drag=${cfg.dragCoefficient} variableMass=${cfg.variableMass} breakDamage=${cfg.connectionBreakDamage} repulsion=${cfg.repulsion.toFloat()}")
     val reducer = CytoReducer()
     val input = mapOf(PlayerId(0) to CytoInput.EMPTY)
+
+    // One-shot: dissect the fastest unconnected cell — is it isolated in space (→ drag isn't acting,
+    // a bug) or touching another cell (→ a contact force balances drag)?
+    run {
+        val sc = state.components.getTable<SpringConstraintComponent>().asMap()
+        val ts = state.components.getTable<TransformComponent>().asMap()
+        val lone = cells(state).keys.filter { (sc[it]?.springs?.size ?: 0) == 0 }
+        val fastest = lone.maxByOrNull { val (vx, vy) = vel(state, it); vx * vx + vy * vy }
+        if (fastest != null) {
+            val (vx, vy) = vel(state, fastest)
+            val rawV = state.components.getTable<MotionComponent>().asMap()[fastest]?.vel
+            val p = ts[fastest]?.pos
+            val r = CytoUnits.toLogical(state.components.getTable<org.emerge.sim.core.physics.components.ColliderComponent>().asMap()[fastest]?.radius ?: org.emerge.sim.core.physics.primitives.Frac(0)).toDouble()
+            var nearest = Double.MAX_VALUE
+            for (other in cells(state).keys) {
+                if (other == fastest) continue
+                val po = ts[other] ?: continue
+                val d = CytoUnits.toLogical((po.pos - (p ?: po.pos)).len).toDouble()
+                if (d < nearest) nearest = d
+            }
+            println("\nfastest lone cell $fastest: speed=${f(sqrt(vx*vx+vy*vy))} velRaw=(${rawV?.x?.raw},${rawV?.y?.raw}) radius=${f(r)} nearestCellDist=${f(nearest)} (touching if < ~${f(2*r)})")
+        }
+    }
+
     var prevC = centroid(state)
     var netDx = 0.0; var netDy = 0.0
     fun springs(s: SimState) = s.components.getTable<SpringConstraintComponent>().asMap().values.sumOf { it.springs.size } / 2
-    println("\nforward run (population): tick\tpop\tsprings\tmeanSpeed\t|momentum|\tmaxStretch\tmaxDamage")
+    // Max speed among UNCONNECTED cells (no springs) — does an isolated single cell drift or settle?
+    fun maxLoneSpeed(s: SimState): Double {
+        val sc = s.components.getTable<SpringConstraintComponent>().asMap()
+        var mx = 0.0
+        for (id in cells(s).keys) {
+            if ((sc[id]?.springs?.size ?: 0) > 0) continue
+            val (vx, vy) = vel(s, id); val sp = sqrt(vx * vx + vy * vy)
+            if (sp > mx) mx = sp
+        }
+        return mx
+    }
+    println("\nforward run (population): tick\tpop\tsprings\tmeanSpeed\tmaxLoneSpeed\t|momentum|\tmaxStretch")
     for (t in 1..ticks) {
         state = reducer.reduce(cfg, state, input)
         if (t % (ticks / 10).coerceAtLeast(1) == 0) {
             val c = centroid(state)
             netDx += wrapDelta(c.first - prevC.first); netDy += wrapDelta(c.second - prevC.second)
             prevC = c
-            println("$t\t${cells(state).size}\t${springs(state)}\t${f(meanCellSpeedAll(state))}\t${f(momentumAll(state))}\t${f(maxStretch(state))}\t${f(maxDamage(state))}")
+            println("$t\t${cells(state).size}\t${springs(state)}\t${f(meanCellSpeedAll(state))}\t${f(maxLoneSpeed(state))}\t${f(momentumAll(state))}\t${f(maxStretch(state))}")
         }
     }
     println("\n(breaking needs stretch > 0.5 logical/tick sustained — stress = stretch·0.5 − 0.25, break at damage > ${cfg.connectionBreakDamage})")

@@ -37,13 +37,22 @@ fun main(args: Array<String>) {
     val nCells = args.getOrNull(2)?.toIntOrNull() ?: 4
     val vx = args.getOrNull(3)?.toFloatOrNull() ?: 2.0f
     val vy = args.getOrNull(4)?.toFloatOrNull() ?: 0.0f
+    val varMass = args.getOrNull(5)?.toBooleanStrictOrNull() ?: true
 
-    val cfg = CytoConfig()
+    val cfg = CytoConfig(variableMass = varMass)
     val reducer = CytoReducer()
     val noInput = mapOf(PlayerId(0) to CytoInput.EMPTY)
 
     val ids = ArrayList<EntityId>()
-    var state = run {
+    var state = if (nCells == 0) {
+        // Biology-active mode: the real autotroph founder (light + seeded matter grid), given a push,
+        // so mass-changing biology + the variable-mass rocket run — does it settle, or drift forever?
+        val s = org.emerge.demo.cyto.sim.createCytoInitialState()
+        val b = SimBuilder(s)
+        val founder = s.components.getTable<CytoCellComponent>().asMap().keys.first()
+        b.update<MotionComponent>(founder) { (it ?: error("founder has no motion")).copy(vel = CytoUnits.coord2(vx, vy)) }
+        b.build()
+    } else run {
         val b = SimBuilder(SimState(randomSeed = 1))
         for (i in 0 until nCells) {
             ids += b.spawnCell(
