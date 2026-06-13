@@ -28,8 +28,10 @@ import kotlin.math.sqrt
 fun main(args: Array<String>) {
     val path = args.getOrNull(0) ?: "platform/desktop-app/cyto-save.bin"
     val ticks = args.getOrNull(1)?.toIntOrNull() ?: 1000
-    val bytes = File(path).readBytes()
-    var state = CytoSaveCodec.decode(bytes)
+    // "fresh" → grow a colony from the default world instead of loading a save (to probe an
+    // actively-dividing population, where division placement matters).
+    var state = if (path == "fresh") org.emerge.demo.cyto.sim.createCytoInitialState()
+        else CytoSaveCodec.decode(File(path).readBytes())
     println("loaded $path: ${cells(state).size} cells")
 
     // ── colonies (spring-connected components) ──
