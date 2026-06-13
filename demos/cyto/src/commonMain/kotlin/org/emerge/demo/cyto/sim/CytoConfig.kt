@@ -41,10 +41,15 @@ data class CytoConfig(
     val connectionBreakDamage: Float = 3f,
 
     /** Exposed-surface viscous drag (CytoDragSystem): quadratic coefficient over the exposed speed
-     *  (logical units/tick), capped at full cancellation. Higher = more drag; tune for the
-     *  decelerate-fast-glide-slow feel. Quadratic ⇒ v(t)=v0/(1+C·v0·t): at 0.05 a fast push (~2
-     *  logical/tick) decays gracefully over ~a second while a slow drift (~0.3) barely damps. */
+     *  (logical units/tick). Higher = more drag; tune for the decelerate-fast-glide-slow feel. */
     val dragCoefficient: Float = 0.5f,
+
+    /** Max fraction of a cell's (exposed) speed drag may remove in one tick. The drag impulse is
+     *  capped at `dragMaxFraction · speed`, so a fast cell DECELERATES smoothly (≈ exponential at this
+     *  rate) instead of slamming to a stop — which is what lets a flicked cell carry real momentum and
+     *  glide before settling. Must be ≤ 1 (so drag never reverses the motion); the quadratic + linear
+     *  drags act in full below this cap, so slow drift still settles. */
+    val dragMaxFraction: Float = 0.3f,
 
     /** Additional per-cell drag for the cell's cross-sectional *width* (CytoDragSystem): a wider cell
      *  pushes more fluid. Unlike the base surface drag (quadratic), this term is **linear** in speed —

@@ -75,7 +75,11 @@ object CytoDragSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             val radius = cell.logicalRadius.toFloat()
             val surfaceDrag = cfg.dragCoefficient * speed * speed
             val widthDrag = cfg.cellWidthDragCoefficient * radius * speed
-            val dragSpeed = min(speed, surfaceDrag + widthDrag)
+            // Cap at a FRACTION of the speed (not the whole speed): a fast cell then decelerates
+            // smoothly (≈ exponential at dragMaxFraction/tick) and glides, instead of slamming to a
+            // stop in one tick — so a flicked cell carries real momentum. Slow drift is well below the
+            // cap, so the quadratic + linear drags still settle it.
+            val dragSpeed = min(cfg.dragMaxFraction * speed, surfaceDrag + widthDrag)
             val impulse = exposed.norm * CytoUnits.len(-dragSpeed) // opposes the exposed velocity
             builder.update<ImpulseComponent>(id) { ImpulseComponent(vel = impulse) + it }
         }
