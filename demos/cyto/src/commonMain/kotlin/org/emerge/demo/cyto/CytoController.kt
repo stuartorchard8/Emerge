@@ -195,10 +195,10 @@ class CytoController(
             org.emerge.demo.cyto.sim.ConditionType.Biomass -> "BIO$cmp${c.threshold}"
         }
         val src = when (val s = gene.source) {
-            org.emerge.demo.cyto.sim.EnergySource.Light -> ""
-            is org.emerge.demo.cyto.sim.EnergySource.BreakBond -> " (BRK ${s.bond})"
+            org.emerge.demo.cyto.sim.EnergySource.Light -> "LIGHT"
+            is org.emerge.demo.cyto.sim.EnergySource.BreakBond -> "BRK ${s.bond}"
         }
-        return "$action IF $cond$src"
+        return "$action IF $cond ($src)"
     }
 
     /** Fixed-point-ish 2dp formatter (multiplatform-safe — no String.format). */
