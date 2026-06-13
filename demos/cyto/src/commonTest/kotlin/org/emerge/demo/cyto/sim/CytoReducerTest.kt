@@ -262,4 +262,29 @@ class CytoReducerTest {
         repeat(40) { state = reducer.reduce(cfg, state, noInput) }
         assertTrue(maxConnectionDamage(state) >= 2.5f, "without a repair gene damage must not heal; got ${maxConnectionDamage(state)}")
     }
+
+    @Test
+    fun matterDiffusesAcrossTheGridConservingAtoms() {
+        // Seed all matter in one grid cell; with no cells/input, slow diffusion should spread it to
+        // neighbours while conserving total atoms every tick.
+        val seed = CytoMatterGrid.empty()
+        val center = seed.indexOf(0f, 0f)
+        seed.deposit(center, "a", 1000)
+        var state = run {
+            val b = SimBuilder(SimState())
+            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(seed) }
+            b.build()
+        }
+        fun grid() = state.components.getTable<CytoMatterGridComponent>().asMap().getValue(GRID_SINGLETON).grid
+        val total0 = grid().totalAtoms()
+        val centerStart = grid().count(center, "a")
+        repeat(200) {
+            state = reducer.reduce(cfg, state, noInput)
+            assertEquals(total0, grid().totalAtoms(), "diffusion must conserve atoms at step ${it + 1}")
+        }
+        val g = grid()
+        assertTrue(g.count(center, "a") < centerStart, "matter should have diffused out of the centre (was $centerStart)")
+        val right = g.indexOf(CytoMatterGrid.SPAN / CytoMatterGrid.RES, 0f) // one cell to the right
+        assertTrue(g.count(right, "a") > 0, "matter should have spread to a neighbouring cell")
+    }
 }

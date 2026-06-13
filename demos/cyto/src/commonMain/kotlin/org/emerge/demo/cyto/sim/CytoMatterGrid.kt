@@ -1,5 +1,6 @@
 package org.emerge.demo.cyto.sim
 
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.floor
 import kotlin.math.roundToInt
@@ -62,6 +63,47 @@ class CytoMatterGrid private constructor(private val cells: Array<HashMap<String
     /** Deep copy — so a tick's draws/deposits don't mutate a source snapshot in place. */
     fun copy(): CytoMatterGrid = CytoMatterGrid(Array(cells.size) { HashMap(cells[it]) })
 
+    /**
+     * One **slow diffusion** step: matter spreads down-gradient between neighbouring grid cells so it
+     * creeps out of source clumps toward where cells are depleting it. Snapshot-based (reads the current
+     * `cells`, writes a fresh `next`) so it's order-independent; every move is grid-cell→grid-cell, so
+     * total atoms are conserved exactly. Per species, each undirected edge moves `⌊|a−b|·num/den⌋` from
+     * the richer cell to the poorer. Integer ⇒ rate-quantized: gradients below `den/num` don't move, so
+     * it settles instead of perfectly equalising. Keep `4·num/den ≤ 1` (a cell touches 4 edges) so it
+     * can't be over-drawn negative.
+     */
+    fun diffused(num: Int, den: Int): CytoMatterGrid {
+        val next = Array(cells.size) { HashMap(cells[it]) }
+        for (gy in 0 until RES) {
+            for (gx in 0 until RES) {
+                val i = gy * RES + gx
+                diffuseEdge(i, gy * RES + wrapIndex(gx + 1), num, den, next) // right neighbour
+                diffuseEdge(i, wrapIndex(gy + 1) * RES + gx, num, den, next) // down neighbour
+            }
+        }
+        return CytoMatterGrid(next)
+    }
+
+    /** Move `⌊|a−b|·num/den⌋` of each shared species from the richer of cells [i],[j] to the poorer, in
+     *  [next]. Reads the pre-step counts from `cells` (snapshot) so edge order doesn't matter. */
+    private fun diffuseEdge(i: Int, j: Int, num: Int, den: Int, next: Array<HashMap<String, Int>>) {
+        val ci = cells[i]; val cj = cells[j]
+        if (ci.isEmpty() && cj.isEmpty()) return
+        val species = HashSet<String>(ci.keys); species.addAll(cj.keys)
+        for (s in species) {
+            val diff = (ci[s] ?: 0) - (cj[s] ?: 0)
+            val move = (abs(diff) * num) / den
+            if (move <= 0) continue
+            if (diff > 0) { bump(next[i], s, -move); bump(next[j], s, move) }
+            else { bump(next[j], s, -move); bump(next[i], s, move) }
+        }
+    }
+
+    private fun bump(map: HashMap<String, Int>, s: String, delta: Int) {
+        val v = (map[s] ?: 0) + delta
+        if (v <= 0) map.remove(s) else map[s] = v
+    }
+
     companion object {
         val RES = CytoLightField.RES
         val SPAN = CytoLightField.SPAN
@@ -77,8 +119,13 @@ class CytoMatterGrid private constructor(private val cells: Array<HashMap<String
          *  keeping it small is the population cap while the per-cell sim is unoptimised. ⚙ */
         const val MATTER_FALLOFF = 70f
 
+        /** Slow-diffusion rate: per tick, each grid-cell edge moves `⌊|gradient|·DIFFUSE_NUM/DIFFUSE_DEN⌋`
+         *  of each species down-gradient. Keep `4·NUM/DEN ≤ 1`. Smaller = slower + coarser settle. ⚙ */
+        const val DIFFUSE_NUM = 1
+        const val DIFFUSE_DEN = 8
+
         /** The free monomer species the world is seeded with. */
-        val SEED_MONOMERS = listOf("a", "b")
+        val SEED_MONOMERS = listOf("a", "b", "c", "d", "e", "f", "g")
 
         /**
          * A fresh reservoir: free monomers in a Gaussian bump around each of the 4 light sources, so the

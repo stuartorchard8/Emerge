@@ -7,6 +7,7 @@ import org.emerge.demo.cyto.sim.systems.CytoDragSystem
 import org.emerge.demo.cyto.sim.systems.CytoGrabSystem
 import org.emerge.demo.cyto.sim.systems.CytoInteractionSystem
 import org.emerge.demo.cyto.sim.systems.CytoLifecycleSystem
+import org.emerge.demo.cyto.sim.systems.CytoMatterDiffusionSystem
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.ecs.ParallelExecutor
@@ -48,7 +49,7 @@ class CytoReducer(
     private val executor: ParallelExecutor? = null,
 ) : SimReducer<CytoConfig, SimState, CytoInput> {
     private val pipeline: Pipeline<CytoConfig, SimState, CytoInput> = listOf(
-        Phase("interact", CytoInteractionSystem),
+        Phase("interact", CytoInteractionSystem, CytoMatterDiffusionSystem),
         Phase("reset", ImpulseResetSystem),
         Phase("contacts", ContactSystem(), CytoContactSystem),
         Phase("biology", CytoBiologySystem),
