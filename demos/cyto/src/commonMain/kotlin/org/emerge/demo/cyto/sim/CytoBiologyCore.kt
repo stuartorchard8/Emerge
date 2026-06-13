@@ -31,6 +31,9 @@ object CytoBiologyCore {
     /** Safety backstop on ops per gene per tick (Light is already capped by quanta; BreakBond is
      *  bounded by available bonds — this caps a pathological store from being processed all at once). ⚙ */
     const val MAX_OPS_PER_GENE = 4096
+    /** Connection damage healed per Repair op (one quantum). 0.25 matches the old free per-tick heal —
+     *  so ~one op/tick maintains a lightly-loaded connection; more stress needs more energy. ⚙ */
+    const val REPAIR_PER_OP = 0.25f
 
     /** Phase 0 — passive cell↔environment exchange (FREE, down-gradient): per species, move
      *  ⌊(env − cyto)/2⌋ between the cell and its reservoir grid-cell (signed — absorb when the env is
@@ -69,6 +72,9 @@ object CytoBiologyCore {
         var ops = 0
         while (ops < MAX_OPS_PER_GENE) {
             if (!gate(gene.condition, work)) break  // re-checked each op: the gene acts only while its condition holds
+            // Repair has no matter-feasibility of its own, so check the need BEFORE spending energy —
+            // otherwise a BreakBond repair gene would burn a bond every tick even with nothing to heal.
+            if (gene.action.type == ActionType.Repair && !hasConnectionDamage(work)) break
             val gotEnergy = when (source) {
                 is EnergySource.Light -> if (lightLeft > 0) { lightLeft--; true } else false
                 is EnergySource.BreakBond -> breakOne(work, source.bond)
@@ -79,6 +85,7 @@ object CytoBiologyCore {
                 ActionType.FormBond -> formBondOne(work, gene.action.a, gene.action.b)
                 ActionType.Convert -> convertOne(work, gene.action.a)
                 ActionType.Mitosis -> { work.dividing = true; return }  // one-shot: one quantum, then done
+                ActionType.Repair -> repairOne(work)
             }
             if (!acted) break
             ops++
@@ -189,6 +196,21 @@ object CytoBiologyCore {
         dec(work.cytoplasm, endA)
         dec(work.cytoplasm, startB)
         inc(work.cytoplasm, product, 1)
+        return true
+    }
+
+    private fun hasConnectionDamage(work: CellWork): Boolean = work.connectionDamage.values.any { it > 0f }
+
+    /** Heal the cell's most-damaged connection by [REPAIR_PER_OP] (deterministic tiebreak by neighbour
+     *  id). False when nothing is damaged — so the gene's quantum loop halts and spends no more energy. */
+    private fun repairOne(work: CellWork): Boolean {
+        val worst = work.connectionDamage.entries
+            .filter { it.value > 0f }
+            .minWithOrNull(compareByDescending<Map.Entry<EntityId, Float>> { it.value }.thenBy { it.key.value })
+            ?: return false
+        val healed = (worst.value - REPAIR_PER_OP).coerceAtLeast(0f)
+        if (healed <= 0f) work.connectionDamage.remove(worst.key) else work.connectionDamage[worst.key] = healed
+        work.repaired = true
         return true
     }
 

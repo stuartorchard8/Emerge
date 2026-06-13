@@ -1,6 +1,7 @@
 package org.emerge.demo.cyto.sim.systems
 
 import org.emerge.demo.cyto.sim.CellWork
+import org.emerge.demo.cyto.sim.ConnectionStateComponent
 import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
@@ -51,6 +52,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
         val cells = builder.entries<CytoCellComponent>()
         if (cells.isEmpty()) return
         val springs = builder.entries<SpringConstraintComponent>()
+        val connStates = builder.entries<ConnectionStateComponent>()
         val transforms = builder.entries<TransformComponent>()
         val motions = builder.entries<MotionComponent>()
         val materials = builder.entries<MaterialComponent>()
@@ -97,6 +99,7 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
                 quanta = quanta,
                 wear = cell.wear,
                 gridIndex = gridIndex,
+                connectionDamage = HashMap(connStates[id]?.damage ?: emptyMap()),
             )
         }
 
@@ -127,6 +130,11 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
                     stickyTemp = false,
                     genome = mutated ?: cell.genome,
                 )
+            }
+            // A Repair gene healed some connection damage — persist it so the connections phase (next)
+            // accrues this tick's stress on top of the reduced damage.
+            if (work.repaired) {
+                builder.update<ConnectionStateComponent>(id) { ConnectionStateComponent(work.connectionDamage) }
             }
             if (work.logicalRadius != cell.logicalRadius) {
                 builder.update<ColliderComponent>(id) { ColliderComponent(CytoUnits.len(work.logicalRadius.toFloat())) }

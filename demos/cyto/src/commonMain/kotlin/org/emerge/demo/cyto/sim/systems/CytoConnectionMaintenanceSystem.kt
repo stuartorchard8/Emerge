@@ -172,7 +172,7 @@ class CytoConnectionMaintenanceSystem(
                 ) springsChanged = true
                 val dist = (transformB.pos - transformA.pos).len
                 val stretch = CytoUnits.toLogical(dist) - CytoUnits.toLogical(rest)
-                val stress = max(0f, stretch * cfg.connectionStressScale) - 0.25f
+                val stress = max(0f, stretch * cfg.connectionStressScale)
                 val prior = damageState[spring.other] ?: 0f
                 val damage = max(0f, prior + stress)
                 if (damage > cfg.connectionBreakDamage) springsChanged = true
@@ -192,8 +192,9 @@ class CytoConnectionMaintenanceSystem(
                 val rest = radiusA + radiusB
                 val dist = (transformB.pos - transformA.pos).len
                 val stretch = CytoUnits.toLogical(dist) - CytoUnits.toLogical(rest)
-                // Stress only when stretched; relaxed connections heal by 0.25/tick.
-                val stress = max(0f, stretch * cfg.connectionStressScale) - 0.25f
+                // Stress accrues when stretched. There is NO free heal — the only way damage comes down
+                // is a powered Repair gene (CytoBiologyCore), applied in the biology phase before this.
+                val stress = max(0f, stretch * cfg.connectionStressScale)
                 val damage = max(0f, (damageState[other] ?: 0f) + stress)
 
                 if (damage > cfg.connectionBreakDamage) {

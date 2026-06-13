@@ -1,6 +1,7 @@
 package org.emerge.demo.cyto.sim
 
 import org.emerge.demo.cyto.cells.CellType
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.primitives.Frac
 
 /**
@@ -51,6 +52,9 @@ enum class ActionType {
     Convert,
     /** Divide (mitosis); [GeneAction.a]/[GeneAction.b] unused. */
     Mitosis,
+    /** Repair connection damage: each op heals the cell's most-damaged connection (operands unused).
+     *  Holding a body together is therefore genetic + energy-costing — there is no free heal. */
+    Repair,
 }
 
 /** A gene's action plus its (action-dependent) operands — single atoms for [ActionType.FormBond],
@@ -78,9 +82,16 @@ class CellWork(
     /** The environment matter-grid cell this cell sits in (where Import draws / death deposits). -1 if
      *  the cell has no position. */
     val gridIndex: Int,
+    /** This cell's per-connection stress damage (neighbour → damage), seeded from its
+     *  [ConnectionStateComponent]. A Repair gene op heals the most-damaged entry; the biology system
+     *  writes the (possibly healed) map back, and connection maintenance accrues stress on top. */
+    val connectionDamage: MutableMap<EntityId, Float>,
 ) {
     /** Set true by a fired Mitosis gene; the lifecycle splits the cell. */
     var dividing = false
+
+    /** True once a Repair gene healed any connection this tick — gates writing [connectionDamage] back. */
+    var repaired = false
 }
 
 /** Total biomass of a [biomass] map: Σ count × bond-count. Drives cell size and the death threshold. */
@@ -107,6 +118,8 @@ val AUTOTROPH_GENES: List<Gene> = listOf(
     Gene(EnergySource.Light, GeneCondition(ConditionType.ChemQty, "a", Comparison.Greater, 0), GeneAction(ActionType.FormBond, "a", "b")),
     Gene(EnergySource.Light, GeneCondition(ConditionType.ChemQty, "ab", Comparison.Greater, LEAK_RESERVE), GeneAction(ActionType.Convert, "ab")),
     Gene(EnergySource.Light, GeneCondition(ConditionType.Biomass, "", Comparison.Greater, DIVIDE_BIOMASS), GeneAction(ActionType.Mitosis)),
+    // Hold the colony together: light-powered connection repair (cheap where autotrophs live).
+    Gene(EnergySource.Light, GeneCondition(ConditionType.Biomass, "", Comparison.Greater, 0), GeneAction(ActionType.Repair)),
 )
 
 // Heterotroph knobs.
@@ -123,6 +136,8 @@ private const val HET_DIVIDE = 8       // divide once biomass reaches this many 
 val HETEROTROPH_GENES: List<Gene> = listOf(
     Gene(EnergySource.BreakBond("ab"), GeneCondition(ConditionType.ChemQty, "ab", Comparison.Greater, HET_RESERVE), GeneAction(ActionType.Convert, "ab")),
     Gene(EnergySource.BreakBond("ab"), GeneCondition(ConditionType.Biomass, "", Comparison.Greater, HET_DIVIDE), GeneAction(ActionType.Mitosis)),
+    // Hold together by burning stored 'ab' for repair — a real matter cost; frays once 'ab' runs out.
+    Gene(EnergySource.BreakBond("ab"), GeneCondition(ConditionType.ChemQty, "ab", Comparison.Greater, 0), GeneAction(ActionType.Repair)),
 )
 
 /** The authored preset genome for a cell type — seeds a freshly-spawned cell; afterwards the genome

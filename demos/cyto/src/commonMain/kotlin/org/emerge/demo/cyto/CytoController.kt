@@ -187,6 +187,7 @@ class CytoController(
             org.emerge.demo.cyto.sim.ActionType.FormBond -> "BOND ${a.a}${a.b}"
             org.emerge.demo.cyto.sim.ActionType.Convert -> "CONVERT ${a.a}"
             org.emerge.demo.cyto.sim.ActionType.Mitosis -> "DIVIDE"
+            org.emerge.demo.cyto.sim.ActionType.Repair -> "REPAIR"
         }
         val c = gene.condition
         val cmp = if (c.cmp == org.emerge.demo.cyto.sim.Comparison.Greater) ">" else "<"

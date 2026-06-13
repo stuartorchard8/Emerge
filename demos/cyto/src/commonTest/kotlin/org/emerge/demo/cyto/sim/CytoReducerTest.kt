@@ -217,4 +217,49 @@ class CytoReducerTest {
         assertTrue(cells.size > 1, "expected a colony")
         assertTrue(cells.all { it.genome == AUTOTROPH_GENES }, "every cell should inherit the autotroph genome")
     }
+
+    /** Build two Collector cells on a light source, spring-connected, with their connection pre-damaged
+     *  near the break threshold. Returns the state. */
+    private fun damagedPair(genome: List<Gene>, damage: Float): SimState {
+        val (sx, sy) = CytoLightField.SOURCES.first()
+        val b = SimBuilder(SimState(randomSeed = 1))
+        b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
+        val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, biomass = mapOf("ab" to 8), genome = genome)
+        val c = b.spawnCell(CytoUnits.coord2(sx + 0.5f, sy), Coord2.zero, CellType.Collector, biomass = mapOf("ab" to 8), genome = genome)
+        org.emerge.demo.cyto.sim.systems.addSpring(b, a, c, cfg)
+        b.update<ConnectionStateComponent>(a) { ConnectionStateComponent(mapOf(c to damage)) }
+        b.update<ConnectionStateComponent>(c) { ConnectionStateComponent(mapOf(a to damage)) }
+        return b.build()
+    }
+
+    private fun maxConnectionDamage(state: SimState): Float =
+        state.components.getTable<ConnectionStateComponent>().asMap().values
+            .flatMap { it.damage.values }.maxOrNull() ?: 0f
+
+    // Non-dividing genomes so the only variable across the two tests below is the repair gene (a
+    // dividing genome would rewire the connection to fresh damage-0 springs and confound the check).
+    private val repairOnly = listOf(
+        Gene(EnergySource.Light, GeneCondition(ConditionType.Biomass, "", Comparison.Greater, 0), GeneAction(ActionType.Repair)),
+    )
+
+    @Test
+    fun repairGeneHealsConnectionDamage() {
+        // A powered repair gene (light) pulls the pre-damage back down and the connection survives —
+        // and matter is conserved (light repair moves no matter; it only spends quanta).
+        var state = damagedPair(repairOnly, damage = 2.5f)
+        val total0 = totalAtoms(state)
+        repeat(40) { state = reducer.reduce(cfg, state, noInput) }
+        assertTrue(springCount(state) > 0, "repair + light should keep the connection alive")
+        assertTrue(maxConnectionDamage(state) < 2.5f, "repair should have reduced the damage; got ${maxConnectionDamage(state)}")
+        assertEquals(total0, totalAtoms(state), "repair must conserve matter")
+    }
+
+    @Test
+    fun withoutRepairGeneDamageIsNotHealed() {
+        // The same cells with no repair gene (empty genome): there is no free heal, so the (unstressed)
+        // damage is NOT reduced — holding a body together is now strictly genetic.
+        var state = damagedPair(emptyList(), damage = 2.5f)
+        repeat(40) { state = reducer.reduce(cfg, state, noInput) }
+        assertTrue(maxConnectionDamage(state) >= 2.5f, "without a repair gene damage must not heal; got ${maxConnectionDamage(state)}")
+    }
 }

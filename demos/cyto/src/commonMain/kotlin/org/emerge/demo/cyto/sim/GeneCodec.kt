@@ -12,7 +12,7 @@ package org.emerge.demo.cyto.sim
  *     Light : Biomass > 8 : Mitosis          # divide once biomass exceeds 8 bonds
  *
  * Condition is `ChemQty <species> <>|<> <n>` or `Biomass <>|<> <n>`; action is `Import <species>`,
- * `FormBond <a> <b>`, `Convert <species>`, or `Mitosis`. Blank lines and `#` comments are ignored.
+ * `FormBond <a> <b>`, `Convert <species>`, `Mitosis`, or `Repair`. Blank lines and `#` comments are ignored.
  * Round-trips every preset genome (see GeneCodecTest).
  */
 object GeneCodec {
@@ -69,6 +69,7 @@ object GeneCodec {
         ActionType.FormBond -> "FormBond ${tok(a.a)} ${tok(a.b)}"
         ActionType.Convert -> "Convert ${tok(a.a)}"
         ActionType.Mitosis -> "Mitosis"
+        ActionType.Repair -> "Repair"
     }
 
     private fun parseAction(t: List<String>): GeneAction = when (t[0]) {
@@ -76,6 +77,7 @@ object GeneCodec {
         "FormBond" -> { require(t.size == 3) { fmt(t) }; GeneAction(ActionType.FormBond, untok(t[1]), untok(t[2])) }
         "Convert" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Convert, untok(t[1])) }
         "Mitosis" -> GeneAction(ActionType.Mitosis)
+        "Repair" -> GeneAction(ActionType.Repair)
         else -> throw IllegalArgumentException("unknown action: ${t[0]}")
     }
 
