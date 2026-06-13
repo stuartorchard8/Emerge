@@ -52,7 +52,10 @@ class CytoReducer(
         Phase("contacts", ContactSystem(), CytoContactSystem),
         Phase("biology", CytoBiologySystem),
         Phase("connections", CytoConnectionMaintenanceSystem(executor)),
-        Phase("forces", SpringConstraintSystem(executor), CytoGrabSystem),
+        // Grab runs before the constraint solver: it deposits the grabbed cell's pull, then the
+        // solver reads that impulse and propagates it through the connections in the same tick, so a
+        // dragged organism follows as one body (no lag-stretch, no grab special-casing).
+        Phase("forces", CytoGrabSystem, SpringConstraintSystem()),
         Phase("lifecycle", CytoLifecycleSystem),
         Phase("integrate", IntegrationSystem),
     )
