@@ -65,19 +65,25 @@ object GeneCodec {
     }
 
     private fun action(a: GeneAction): String = when (a.type) {
-        ActionType.Import -> "Import ${a.a}"
-        ActionType.FormBond -> "FormBond ${a.a} ${a.b}"
-        ActionType.Convert -> "Convert ${a.a}"
+        ActionType.Import -> "Import ${tok(a.a)}"
+        ActionType.FormBond -> "FormBond ${tok(a.a)} ${tok(a.b)}"
+        ActionType.Convert -> "Convert ${tok(a.a)}"
         ActionType.Mitosis -> "Mitosis"
     }
 
     private fun parseAction(t: List<String>): GeneAction = when (t[0]) {
-        "Import" -> GeneAction(ActionType.Import, t[1])
-        "FormBond" -> GeneAction(ActionType.FormBond, t[1], t[2])
-        "Convert" -> GeneAction(ActionType.Convert, t[1])
+        "Import" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Import, untok(t[1])) }
+        "FormBond" -> { require(t.size == 3) { fmt(t) }; GeneAction(ActionType.FormBond, untok(t[1]), untok(t[2])) }
+        "Convert" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Convert, untok(t[1])) }
         "Mitosis" -> GeneAction(ActionType.Mitosis)
         else -> throw IllegalArgumentException("unknown action: ${t[0]}")
     }
+
+    // A mutation can leave an operand empty (e.g. an action-type change on an operand-less gene); encode
+    // empty as `_` so every representable gene round-trips (and decode never crashes on a missing token).
+    private fun tok(s: String) = s.ifEmpty { "_" }
+    private fun untok(s: String) = if (s == "_") "" else s
+    private fun fmt(t: List<String>) = "malformed action: ${t.joinToString(" ")}"
 
     private fun cmp(c: Comparison): String = if (c == Comparison.Greater) ">" else "<"
     private fun cmp(s: String): Comparison = when (s) {

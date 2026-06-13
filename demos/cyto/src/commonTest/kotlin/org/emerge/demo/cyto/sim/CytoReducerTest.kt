@@ -144,6 +144,27 @@ class CytoReducerTest {
     }
 
     @Test
+    fun saveRoundTripsTheMatterWorld() {
+        // Grow a varied world (mutation on so genomes diverge), then encode → decode and check it
+        // round-trips: cell count, every cell's genome (via GeneCodec text), spring count, and — the
+        // strongest check — total atoms (reservoir + cells) preserved through the save.
+        var state = createCytoInitialState()
+        val mutCfg = cfg.copy(mutationRateDenom = 200)
+        repeat(120) { state = reducer.reduce(mutCfg, state, noInput) }
+
+        val bytes = org.emerge.demo.cyto.CytoSaveCodec.encode(state)
+        val restored = org.emerge.demo.cyto.CytoSaveCodec.decode(bytes)
+
+        assertEquals(cellCount(state), cellCount(restored), "cell count")
+        assertTrue(cellCount(state) > 1, "expected a non-trivial colony to exercise the codec")
+        assertEquals(springCount(state), springCount(restored), "spring count")
+        assertEquals(totalAtoms(state), totalAtoms(restored), "total atoms not preserved through save")
+        fun genomes(s: SimState) = s.components.getTable<CytoCellComponent>().asMap().values
+            .map { org.emerge.demo.cyto.sim.GeneCodec.serialize(it.genome) }.sorted()
+        assertEquals(genomes(state), genomes(restored), "genomes not preserved through save")
+    }
+
+    @Test
     fun divisionInheritsTheGenome() {
         // Clonal inheritance: every cell in the grown colony carries the autotroph genome (the
         // heritability that makes the substrate evolvable).

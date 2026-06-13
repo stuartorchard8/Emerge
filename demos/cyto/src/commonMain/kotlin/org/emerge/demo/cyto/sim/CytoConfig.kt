@@ -57,5 +57,5 @@ data class CytoConfig(
      *  mutation per ~10k-tick lifetime, so most individuals persist unmodified by chance while the
      *  population as a whole explores — and deleterious mutants that die just recycle their matter to
      *  the survivors. (Was 1/10_000, which caused mutational meltdown.) ⚙ */
-    val mutationRateDenom: Int = 200_000,
+    val mutationRateDenom: Int = 100_000,
 ) : PhysicsTuning

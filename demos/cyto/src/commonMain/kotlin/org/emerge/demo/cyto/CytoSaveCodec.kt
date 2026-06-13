@@ -29,12 +29,14 @@ import org.emerge.sim.core.sim.SimState
  * energy-model saves don't load — cyto saves are regenerated runtime artifacts.)
  */
 object CytoSaveCodec {
-    private const val FORMAT_VERSION = 4
+    // v5: persist the PRNG randomSeed (mutation continuity + avoids the seed-0 LCG degeneracy on load).
+    private const val FORMAT_VERSION = 5
     private val cfg = CytoConfig()
 
     fun encode(state: SimState): ByteArray {
         val w = ByteWriter()
         w.writeInt(FORMAT_VERSION)
+        w.writeLong(state.randomSeed)
 
         val cells = state.components.getTable<CytoCellComponent>().asMap()
         val transforms = state.components.getTable<TransformComponent>()
@@ -92,7 +94,8 @@ object CytoSaveCodec {
         require(version == FORMAT_VERSION) {
             "Unsupported Cyto save format version: $version (expected $FORMAT_VERSION)"
         }
-        val builder = SimBuilder(SimState())
+        val randomSeed = c.readLong()
+        val builder = SimBuilder(SimState(randomSeed = randomSeed))
         val idMap = HashMap<Int, EntityId>()
 
         val cellCount = c.readInt()
