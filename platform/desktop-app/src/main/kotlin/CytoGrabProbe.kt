@@ -54,10 +54,11 @@ fun main(args: Array<String>) {
         state = run {
             val b = SimBuilder(SimState(randomSeed = 1))
             for (i in 0 until nCells) {
-                val bio = if (i == 0) 200 else 2
+                // Equal-mass cells (representative of a real organism) — the case where drag lag-
+                // stretches the connection toward the break threshold.
                 ids += b.spawnCell(
                     CytoUnits.coord2(i * 1.5f, 0f), Coord2.zero, CellType.Blank,
-                    biomass = mapOf("ab" to bio), logicalRadius = org.emerge.demo.cyto.sim.MIN_RADIUS,
+                    biomass = mapOf("ab" to 16), logicalRadius = org.emerge.demo.cyto.sim.MIN_RADIUS,
                 )
             }
             for (i in 0 until nCells - 1) addSpring(b, ids[i], ids[i + 1], cfg)
@@ -99,9 +100,10 @@ fun main(args: Array<String>) {
             gp?.let { CytoUnits.toLogical(it.y).toDouble() } ?: 0.0)
     }
 
+    fun springCount() = state.components.getTable<SpringConstraintComponent>().asMap().values.sumOf { it.springs.size } / 2
     fun fmt(d: Double) = ((d * 1000).toLong() / 1000.0).toString()
     println("cells=$nCells radius=$radius period=$period grabStiffness=${cfg.grabStiffness.toFloat()} grabDamping=${cfg.grabDamping.toFloat()}")
-    println("tick\ttargetX\ttargetY\tmaxSpeed\tkinetic\tmaxStretch\tcomLag")
+    println("tick\ttargetX\ttargetY\tmaxSpeed\tkinetic\tmaxStretch\tcomLag\tsprings")
     for (t in 0..ticks) {
         val ang = 2.0 * PI * t / period
         val tx = (centerX + radius * cos(ang)).toFloat()
@@ -110,7 +112,7 @@ fun main(args: Array<String>) {
         if (t % every == 0) {
             val s = stats()
             val lag = sqrt((s[3] - tx) * (s[3] - tx) + (s[4] - ty) * (s[4] - ty))
-            println("$t\t${fmt(tx.toDouble())}\t${fmt(ty.toDouble())}\t${fmt(s[0])}\t${fmt(s[1])}\t${fmt(s[2])}\t${fmt(lag)}")
+            println("$t\t${fmt(tx.toDouble())}\t${fmt(ty.toDouble())}\t${fmt(s[0])}\t${fmt(s[1])}\t${fmt(s[2])}\t${fmt(lag)}\t${springCount()}")
         }
     }
 }
