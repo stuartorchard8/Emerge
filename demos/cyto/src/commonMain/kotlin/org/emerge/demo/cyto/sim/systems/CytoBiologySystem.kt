@@ -11,12 +11,17 @@ import org.emerge.demo.cyto.sim.CytoMatterGrid
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
+import org.emerge.demo.cyto.sim.cellMass
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
 import org.emerge.sim.core.physics.components.ColliderComponent
+import org.emerge.sim.core.physics.components.MaterialComponent
+import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.primitives.Coord
+import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
@@ -47,6 +52,8 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
         if (cells.isEmpty()) return
         val springs = builder.entries<SpringConstraintComponent>()
         val transforms = builder.entries<TransformComponent>()
+        val motions = builder.entries<MotionComponent>()
+        val materials = builder.entries<MaterialComponent>()
         val lightField = CytoLightField.default()
         // The reservoir, cloned so this tick's draws/deposits don't mutate the input snapshot in place.
         // Default to an EMPTY reservoir when absent — seeding the world's matter is createCytoInitialState's
@@ -123,6 +130,20 @@ object CytoBiologySystem : EcsSystem<CytoConfig, SimState, org.emerge.demo.cyto.
             }
             if (work.logicalRadius != cell.logicalRadius) {
                 builder.update<ColliderComponent>(id) { ColliderComponent(CytoUnits.len(work.logicalRadius.toFloat())) }
+            }
+            // Mass = total atoms (additive ⇒ division conserves momentum). When matter entered/left this
+            // tick, conserve the cell's momentum across the mass change: v ← v · oldMass/newMass — so
+            // shedding matter speeds a cell up and absorbing it slows it down (variable-mass propulsion).
+            val newMass = cellMass(work.cytoplasm, work.biomass)
+            val oldMass = materials[id]?.mass ?: newMass
+            if (newMass != oldMass) {
+                builder.update<MaterialComponent>(id) { (it ?: materials.getValue(id)).copy(mass = newMass) }
+                val vel = motions[id]?.vel
+                if (vel != null && (vel.x.raw != 0 || vel.y.raw != 0)) {
+                    val nx = (vel.x.raw.toLong() * oldMass.toLong() / newMass.toLong()).toInt()
+                    val ny = (vel.y.raw.toLong() * oldMass.toLong() / newMass.toLong()).toInt()
+                    builder.update<MotionComponent>(id) { (it ?: motions.getValue(id)).copy(vel = Coord2(Coord(nx), Coord(ny))) }
+                }
             }
         }
         // Persist the reservoir (draws debited it this tick).

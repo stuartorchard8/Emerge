@@ -17,6 +17,17 @@ class GeneCodecTest {
         }
     }
 
+    /** Genes a mutation can produce — empty condition species / action operands (after a condition-type
+     *  or action-type flip) — must round-trip, not crash decode. Guards the save path. */
+    @Test
+    fun roundTripsEmptyOperandsAndSpecies() {
+        val genome = listOf(
+            Gene(EnergySource.Light, GeneCondition(ConditionType.ChemQty, "", Comparison.Less, 9), GeneAction(ActionType.Import, "")),
+            Gene(EnergySource.BreakBond("ab"), GeneCondition(ConditionType.Biomass, "", Comparison.Greater, 3), GeneAction(ActionType.FormBond, "", "")),
+        )
+        assertEquals(genome, GeneCodec.parse(GeneCodec.serialize(genome)), "empty operand/species genome")
+    }
+
     /** A hand-authored genome parses to exactly the genes intended (the author-by-text workflow). */
     @Test
     fun parsesAHandWrittenGenome() {

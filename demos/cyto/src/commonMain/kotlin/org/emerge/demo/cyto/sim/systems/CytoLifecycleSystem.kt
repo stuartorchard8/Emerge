@@ -9,11 +9,13 @@ import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.MIN_RADIUS
+import org.emerge.demo.cyto.sim.cellMass
 import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.demo.cyto.sim.totalBiomassBonds
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.EcsSystem
+import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Coord2
@@ -144,6 +146,11 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         }
         builder.update<CytoCellComponent>(motherId) { current ->
             (current ?: cell).copy(cytoplasm = motherCyto, biomass = motherBio, logicalRadius = radiusForBiomass(motherBio))
+        }
+        // Mass tracks atoms: the mother now holds only her half. Both cells keep the mother's velocity,
+        // and atom-mass is additive (daughter + mother atoms = original), so momentum is conserved.
+        builder.update<MaterialComponent>(motherId) { current ->
+            (current ?: error("mother has no material")).copy(mass = cellMass(motherCyto, motherBio))
         }
 
         addSpring(builder, motherId, daughter, cfg)

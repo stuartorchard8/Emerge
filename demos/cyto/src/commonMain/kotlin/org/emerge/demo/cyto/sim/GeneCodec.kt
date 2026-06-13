@@ -48,14 +48,14 @@ object GeneCodec {
     }
 
     private fun condition(c: GeneCondition): String = when (c.type) {
-        ConditionType.ChemQty -> "ChemQty ${c.species} ${cmp(c.cmp)} ${c.threshold}"
+        ConditionType.ChemQty -> "ChemQty ${tok(c.species)} ${cmp(c.cmp)} ${c.threshold}"
         ConditionType.Biomass -> "Biomass ${cmp(c.cmp)} ${c.threshold}"
     }
 
     private fun parseCondition(t: List<String>): GeneCondition = when (t[0]) {
         "ChemQty" -> {
             require(t.size == 4) { "ChemQty needs 'ChemQty <species> <>|<> <n>': ${t.joinToString(" ")}" }
-            GeneCondition(ConditionType.ChemQty, t[1], cmp(t[2]), t[3].toInt())
+            GeneCondition(ConditionType.ChemQty, untok(t[1]), cmp(t[2]), t[3].toInt())
         }
         "Biomass" -> {
             require(t.size == 3) { "Biomass needs 'Biomass <>|<> <n>': ${t.joinToString(" ")}" }

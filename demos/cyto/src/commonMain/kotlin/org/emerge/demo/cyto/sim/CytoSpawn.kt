@@ -15,8 +15,19 @@ val MIN_RADIUS = Frac(1, 4)
 const val RADIUS_ELASTICITY = 3
 val MAX_CHEM = Frac(1, 1)
 
-/** Cell mass ∝ radius (original: density = 1/r, mass = density·πr² = πr), as a UInt. */
-fun cellMass(logicalRadius: Frac): UInt = max(1, (logicalRadius.toFloat() * 1000f).toInt()).toUInt()
+/** Total atoms in a molecule-count map (Σ count × molecule length). */
+fun atomCount(molecules: Map<String, Int>): Int {
+    var s = 0
+    for ((species, n) in molecules) s += species.length * n
+    return s
+}
+
+/** Cell mass = its **total atoms** (cytoplasm + biomass), min 1. Atoms are conserved and *additive*,
+ *  so division (atoms split between daughters) conserves momentum, and shedding/absorbing matter
+ *  changes mass — the basis of the variable-mass propulsion (see CytoBiologySystem). Only mass *ratios*
+ *  matter to the physics (spring/contact weighting is ratio-based), so the absolute scale is free. */
+fun cellMass(cytoplasm: Map<String, Int>, biomass: Map<String, Int>): UInt =
+    max(1, atomCount(cytoplasm) + atomCount(biomass)).toUInt()
 
 /**
  * Spawns a cell entity: engine physics components + the [CytoCellComponent] biology.
@@ -38,7 +49,7 @@ fun SimBuilder.spawnCell(
         vel = vel,
         ang = Coord(0),
         angVel = Coord(0),
-        mass = cellMass(radius),
+        mass = cellMass(cytoplasm, biomass),
         radius = CytoUnits.len(radius.toFloat()),
         bounce = Frac(0),
         rough = Frac(0),
