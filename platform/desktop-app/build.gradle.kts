@@ -128,6 +128,16 @@ tasks.register<JavaExec>("analyzeCytoSave") {
     classpath = sourceSets["main"].runtimeClasspath
 }
 
+tasks.register<JavaExec>("benchCyto") {
+    group = "verification"
+    description = "Headless per-phase Cyto tick profiler: loads a save (or 'fresh'), warms the JIT, " +
+        "and prints the per-phase time breakdown + GC pressure, sequential and parallel. " +
+        "--args=\"<savePath|fresh> [warmupTicks] [measureTicks]\"."
+    mainClass = "org.emerge.desktop.CytoBenchmarkKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootDir
+}
+
 tasks.register<JavaExec>("probeCytoGrab") {
     group = "verification"
     description = "Headless drag-stability diagnostic: grab a welded cluster and orbit the target, " +
