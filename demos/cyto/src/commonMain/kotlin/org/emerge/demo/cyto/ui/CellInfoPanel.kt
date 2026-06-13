@@ -27,6 +27,9 @@ fun UiBuilder.cellInfoPanel(info: CytoController.CellInfo?) {
             gap(); row("STRUCTURE")
             for ((species, count) in info.biomass) keyValue(species, count.toString())
         }
-        info.genomeLine?.let { gap(); row(it) }
+        if (info.genes.isNotEmpty()) {
+            gap(); row("GENES")
+            for (gene in info.genes) row(gene, color = 0x88CC88FFL)
+        }
     }
 }

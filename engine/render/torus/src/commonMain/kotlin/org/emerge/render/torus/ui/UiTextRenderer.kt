@@ -181,6 +181,7 @@ class UiTextRenderer {
             'X', 'Y', 'Z', '0', '1', '2', '3', '4',
             '5', '6', '7', '8', '9', '(', ')', ':',
             '.', ',', '-', '_', '/', '\\', '+', '=',
+            '<', '>',
         )
         private val CHAR_TO_INDEX: Map<Char, Int> = GLYPHS.withIndex().associate { it.value to it.index }
         private val PATTERN: Map<Char, Array<String>> = mapOf(
@@ -232,6 +233,8 @@ class UiTextRenderer {
             '\\' to arrayOf("10000", "01000", "00100", "00010", "00001", "00000", "00000"),
             '+' to arrayOf("00000", "00100", "00100", "11111", "00100", "00100", "00000"),
             '=' to arrayOf("00000", "11111", "00000", "11111", "00000", "00000", "00000"),
+            '<' to arrayOf("00010", "00100", "01000", "10000", "01000", "00100", "00010"),
+            '>' to arrayOf("01000", "00100", "00010", "00001", "00010", "00100", "01000"),
         )
 
         private fun createFontTexture(): Int {

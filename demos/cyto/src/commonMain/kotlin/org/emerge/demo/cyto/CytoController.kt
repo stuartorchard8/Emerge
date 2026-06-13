@@ -160,7 +160,7 @@ class CytoController(
         val totalBiomass: Int,
         val cytoplasm: List<Pair<String, Int>>,
         val biomass: List<Pair<String, Int>>,
-        val genomeLine: String?,
+        val genes: List<String>,
     )
 
     /** Info for the **last-held** cell (persists past release), or null if none has been held or it has
@@ -175,8 +175,30 @@ class CytoController(
             totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass),
             cytoplasm = cell.cytoplasm.entries.map { it.key to it.value },
             biomass = cell.biomass.entries.map { it.key to it.value },
-            genomeLine = if (cell.genome.isEmpty()) null else "GENES:${cell.genome.size}",
+            genes = cell.genome.map { describeGene(it) },
         )
+    }
+
+    /** A compact, panel-friendly one-line description of a gene: `ACTION IF CONDITION [src]`. */
+    private fun describeGene(gene: org.emerge.demo.cyto.sim.Gene): String {
+        val a = gene.action
+        val action = when (a.type) {
+            org.emerge.demo.cyto.sim.ActionType.Import -> "IMPORT ${a.a}"
+            org.emerge.demo.cyto.sim.ActionType.FormBond -> "BOND ${a.a}${a.b}"
+            org.emerge.demo.cyto.sim.ActionType.Convert -> "CONVERT ${a.a}"
+            org.emerge.demo.cyto.sim.ActionType.Mitosis -> "DIVIDE"
+        }
+        val c = gene.condition
+        val cmp = if (c.cmp == org.emerge.demo.cyto.sim.Comparison.Greater) ">" else "<"
+        val cond = when (c.type) {
+            org.emerge.demo.cyto.sim.ConditionType.ChemQty -> "${c.species}$cmp${c.threshold}"
+            org.emerge.demo.cyto.sim.ConditionType.Biomass -> "BIO$cmp${c.threshold}"
+        }
+        val src = when (val s = gene.source) {
+            org.emerge.demo.cyto.sim.EnergySource.Light -> ""
+            is org.emerge.demo.cyto.sim.EnergySource.BreakBond -> " (BRK ${s.bond})"
+        }
+        return "$action IF $cond$src"
     }
 
     /** Fixed-point-ish 2dp formatter (multiplatform-safe — no String.format). */
