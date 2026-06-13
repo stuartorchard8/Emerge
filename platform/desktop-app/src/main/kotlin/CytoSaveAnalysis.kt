@@ -72,17 +72,42 @@ fun main(args: Array<String>) {
     val input = mapOf(PlayerId(0) to CytoInput.EMPTY)
     var prevC = centroid(state)
     var netDx = 0.0; var netDy = 0.0
-    println("\nforward run (population): tick\tpop\tmeanSpeed\t|momentum|\tnetCentroidDrift")
+    fun springs(s: SimState) = s.components.getTable<SpringConstraintComponent>().asMap().values.sumOf { it.springs.size } / 2
+    println("\nforward run (population): tick\tpop\tsprings\tmeanSpeed\t|momentum|\tmaxStretch\tmaxDamage")
     for (t in 1..ticks) {
         state = reducer.reduce(cfg, state, input)
         if (t % (ticks / 10).coerceAtLeast(1) == 0) {
             val c = centroid(state)
             netDx += wrapDelta(c.first - prevC.first); netDy += wrapDelta(c.second - prevC.second)
             prevC = c
-            val drift = sqrt(netDx * netDx + netDy * netDy)
-            println("$t\t${cells(state).size}\t${f(meanCellSpeedAll(state))}\t${f(momentumAll(state))}\t${f(drift)}")
+            println("$t\t${cells(state).size}\t${springs(state)}\t${f(meanCellSpeedAll(state))}\t${f(momentumAll(state))}\t${f(maxStretch(state))}\t${f(maxDamage(state))}")
         }
     }
+    println("\n(breaking needs stretch > 0.5 logical/tick sustained — stress = stretch·0.5 − 0.25, break at damage > ${cfg.connectionBreakDamage})")
+}
+
+/** Worst spring |dist − rest| over the world, in logical units — the breaking trigger's input. */
+private fun maxStretch(s: SimState): Double {
+    val ts = s.components.getTable<TransformComponent>().asMap()
+    var mx = 0.0
+    for ((id, sc) in s.components.getTable<SpringConstraintComponent>().asMap()) {
+        val pa = ts[id]?.pos ?: continue
+        for (sp in sc.springs) {
+            val pb = ts[sp.other]?.pos ?: continue
+            val stretch = kotlin.math.abs(CytoUnits.toLogical((pb - pa).len).toDouble() - CytoUnits.toLogical(sp.restLength).toDouble())
+            if (stretch > mx) mx = stretch
+        }
+    }
+    return mx
+}
+
+/** Worst accumulated connection-stress damage over the world (breaks past connectionBreakDamage). */
+private fun maxDamage(s: SimState): Double {
+    var mx = 0.0
+    for ((_, cs) in s.components.getTable<org.emerge.demo.cyto.sim.ConnectionStateComponent>().asMap()) {
+        for (d in cs.damage.values) if (d > mx) mx = d.toDouble()
+    }
+    return mx
 }
 
 private fun cells(s: SimState) = s.components.getTable<CytoCellComponent>().asMap()
