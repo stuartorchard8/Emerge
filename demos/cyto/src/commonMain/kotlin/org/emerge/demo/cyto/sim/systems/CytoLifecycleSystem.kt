@@ -109,8 +109,6 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             if (neighbourVector.x.raw == 0L && neighbourVector.y.raw == 0L) Norm.fromAngle(transform.ang)
             else neighbourVector.norm
 
-        val offset = neighbourNormal * CytoUnits.len(0.25f * cell.logicalRadius.toFloat())
-
         // Group connections by how aligned they are with the split direction.
         val ahead = ArrayList<EntityId>()
         val side = ArrayList<EntityId>()
@@ -141,6 +139,12 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             return
         }
         val daughterRadius = radiusForBiomass(halfBio)
+
+        // Place mother and daughter exactly their spring rest length apart — separation = 2·offset =
+        // 2·daughterRadius = rA+rB — so the new connection starts RELAXED, with no velocity kick. (The
+        // old offset of 0.25·motherRadius put the pair at ~35% of rest, so the spring shoved them apart
+        // every division; that churn was what the asymmetric drag rectified into chaotic locomotion.)
+        val offset = neighbourNormal * CytoUnits.len(daughterRadius.toFloat())
 
         // Clonal division: the daughter inherits the mother's type AND genome (separate map copies).
         val daughter = builder.spawnCell(
