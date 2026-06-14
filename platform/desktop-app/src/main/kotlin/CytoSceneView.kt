@@ -97,15 +97,18 @@ object CytoSceneView {
     }
 
     private val BRUSH_PATH: Path = Path.of("cyto-brush.gene")
-    private val STARTER_BRUSH = """
-        # cyto brush genome — one gene per line:  INPUTS  >  OUTPUT
-        #   input:  TYPE chem weight        (TYPE = Chem | Touch | Light;  _ = no chem name)
-        #   output: TYPE chem1 chem2 bias   (TYPE = Contract|Mitosis|Inhibit|Enzyme|Sticky|Secrete)
-        #   '-' = no inputs.  Edit, then click "Load Genome" to reload. Paint with Spawn (empty space) / Set.
-        # This starter cell collects light into energy and divides on a surplus:
-        Light _ 1.0 > Secrete energy _ 0.0
-        Chem energy 1.0 > Mitosis _ _ -5.0
-    """.trimIndent() + "\n"
+    // Generated from the live AUTOTROPH_GENES so the starter can never drift from the current gene model
+    // (the old hand-written weighted-sum text no longer parses under the matter-model GeneCodec).
+    private val STARTER_BRUSH: String = buildString {
+        appendLine("# cyto brush genome — one gene per line:  ENERGY-SOURCE : CONDITION : ACTION")
+        appendLine("#   source:    Light | Break <bond>")
+        appendLine("#   condition: ChemQty <species> >|< <n> | Biomass >|< <n> | Touching >|< <n>")
+        appendLine("#   action:    Import <s> | FormBond <a> <b> | Convert <s> | Expand | Contract | Mitosis | Repair")
+        appendLine("#   Blank lines and # comments are ignored. Edit, then click \"Load Genome\" to reload;")
+        appendLine("#   pick the 'Brush' type, then Spawn (empty space) / Set to paint.")
+        appendLine("# This starter IS the simple autotroph: bond a+b -> ab under light, grow, divide, self-repair.")
+        appendLine(org.emerge.demo.cyto.sim.GeneCodec.serialize(org.emerge.demo.cyto.sim.AUTOTROPH_GENES))
+    }
 
     /** Load the authoring brush genome from [BRUSH_PATH] (GeneCodec text), driven by the on-screen
      *  "Load Genome" button. If the file is absent, write a documented starter so there's something to
