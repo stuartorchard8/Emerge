@@ -1,8 +1,11 @@
 package org.emerge.demo.cyto.sim.soa
 
+import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.ConnectionStateComponent
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
+import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoMatterGrid
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
@@ -64,11 +67,21 @@ class CytoSoaEquivalenceTest {
                 .filterValues { it.isNotEmpty() }
         assertEquals(nonZeroDamage(aos), nonZeroDamage(soa), "$label connection damage (non-zero)")
 
+        // Springs are compared with **empty entries dropped**: removeSpringPair (detach / last break)
+        // leaves an empty SpringConstraintComponent([]) in AoS, whereas the SoA CSR derivation simply
+        // emits no entry for a spring-less cell — behaviourally identical (every reader does
+        // `?.springs ?: emptyList()`), only the representation differs.
+        fun nonEmptySprings(s: SimState): Map<org.emerge.sim.core.EntityId, List<org.emerge.sim.core.physics.components.SpringConstraint>> =
+            s.components.getTable<SpringConstraintComponent>().asMap()
+                .mapValues { it.value.springs }.filterValues { it.isNotEmpty() }
+        assertEquals(nonEmptySprings(aos), nonEmptySprings(soa), "$label springs (non-empty)")
+
         val types = aos.components.tables.keys + soa.components.tables.keys
         for (type in types) {
             if (type == ImpulseComponent::class) continue                  // transient; reset each tick
             if (type == CytoMatterGridComponent::class) continue           // compared by content below
             if (type == ConnectionStateComponent::class) continue          // compared (zero-normalized) above
+            if (type == SpringConstraintComponent::class) continue         // compared (empty-normalized) above
             val a = aos.components.tables[type]?.asMap() ?: emptyMap<Any, Any>()
             val s = soa.components.tables[type]?.asMap() ?: emptyMap<Any, Any>()
             assertEquals(a, s, "$label table ${type.simpleName}")
@@ -101,6 +114,64 @@ class CytoSoaEquivalenceTest {
             assertStatesMatch(aos, w.toSimState(), "mut tick=$t")
         }
         assertTrue(sawMutation, "mutation should have advanced the PRNG")
+    }
+
+    @Test
+    fun soaMatchesAosUnderPlayerInteractions() {
+        // Player interactions (delete / spawn / set / detach / grab) drive the bridged interaction +
+        // lifecycle paths; this asserts each stays bit-identical to AoS AND has its intended effect — the
+        // regression guard for click-to-delete et al. as the SoA port evolves.
+        var aos = createCytoInitialState()
+        var w = CytoWorld.fromSimState(aos)
+        val soa = CytoSoaReducer(cfg)
+        val pid = PlayerId(0)
+        repeat(80) { aos = reducer.reduce(cfg, aos, noInput); w = soa.tick(w) }   // grow a connected colony
+        assertStatesMatch(aos, w.toSimState(), "pre-interaction")
+        assertTrue(cellCount(aos) > 2 && springCount(aos) > 0, "need a connected colony")
+
+        fun step(input: CytoInput, label: String) {
+            aos = reducer.reduce(cfg, aos, mapOf(pid to input))
+            w = soa.tick(w, input)
+            assertStatesMatch(aos, w.toSimState(), label)
+        }
+        fun cells() = aos.components.getTable<CytoCellComponent>().asMap()
+        fun posOf(id: org.emerge.sim.core.EntityId): Pair<Float, Float> {
+            val p = aos.components.getTable<org.emerge.sim.core.physics.components.TransformComponent>().asMap().getValue(id).pos
+            return CytoUnits.toLogical(p.x) to CytoUnits.toLogical(p.y)
+        }
+
+        // DELETE: tapping a cell removes that specific cell (the reported regression). (Net count also
+        // shifts from concurrent biology division/death, so we assert the tapped cell is gone, not a count.)
+        val toDelete = cells().keys.sortedBy { it.value }.first()
+        val (dx, dy) = posOf(toDelete)
+        step(CytoInput(taps = listOf(CytoInput.Tap(dx, dy, TouchMode.Delete, CellType.Collector))), "delete")
+        assertTrue(toDelete !in cells().keys, "delete should remove the tapped cell")
+
+        // SPAWN: tap on empty space creates a cell there.
+        step(CytoInput(taps = listOf(CytoInput.Tap(500f, 500f, TouchMode.Base, CellType.Collector))), "spawn-tap")
+        assertTrue(
+            cells().keys.any { val (px, py) = posOf(it); kotlin.math.abs(px - 500f) < 2f && kotlin.math.abs(py - 500f) < 2f },
+            "an empty tap spawns a cell at the tapped point",
+        )
+
+        // SET: re-type a cell.
+        val toSet = cells().keys.sortedBy { it.value }.first()
+        val (sx, sy) = posOf(toSet)
+        step(CytoInput(taps = listOf(CytoInput.Tap(sx, sy, TouchMode.Set, CellType.Blank))), "set-type")
+        assertEquals(CellType.Blank, cells().getValue(toSet).type, "Set retypes the cell")
+
+        // DETACH: cut a connected cell's springs.
+        val connected = aos.components.getTable<SpringConstraintComponent>()
+            .asMap().entries.first { it.value.springs.isNotEmpty() }.key
+        step(CytoInput(detaches = listOf(connected)), "detach")
+        assertTrue(
+            aos.components.getTable<org.emerge.sim.core.physics.components.SpringConstraintComponent>().asMap()[connected]?.springs.isNullOrEmpty(),
+            "detach cuts all of the cell's springs",
+        )
+
+        // GRAB: pull a cell toward a point — it gains velocity toward the target.
+        val toGrab = cells().keys.sortedBy { it.value }.first()
+        step(CytoInput(grab = CytoInput.Grab(toGrab, 0f, 0f)), "grab")  // equivalence (assertStatesMatch) is the check
     }
 
     @Test

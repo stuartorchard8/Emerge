@@ -1,6 +1,10 @@
 package org.emerge.demo.cyto
 
+import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
+import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.TouchMode
+import org.emerge.sim.core.physics.components.TransformComponent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -24,6 +28,27 @@ class CytoControllerTest {
         repeat(20) { frame = c.tick(0.25f) }
         assertTrue(c.tick > 200, "should have run a couple hundred steps (was ${c.tick})")
         assertTrue(cells(frame) > start, "the autotroph colony should grow (was $start, now ${cells(frame)})")
+    }
+
+    @Test
+    fun clickToDeleteRemovesTheTappedCell() {
+        // The real player path: CytoController.tap(Delete) → CytoInput → CytoSoaReducer interaction +
+        // lifecycle bridges. Guards the click-to-delete regression end-to-end through the live runtime.
+        val c = CytoController()
+        var frame = c.tick(0f)
+        repeat(12) { frame = c.tick(0.25f) }   // grow a few cells
+        val cells = frame.state.components.getTable<CytoCellComponent>().asMap()
+        assertTrue(cells.size > 1, "need cells to delete (had ${cells.size})")
+
+        val target = cells.keys.first()
+        val pos = frame.state.components.getTable<TransformComponent>().asMap().getValue(target).pos
+        c.tap(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y), TouchMode.Delete, CellType.Collector)
+        frame = c.tick(0.25f)   // process the tap
+
+        assertTrue(
+            target !in frame.state.components.getTable<CytoCellComponent>().asMap().keys,
+            "click-to-delete should remove the tapped cell",
+        )
     }
 
     @Test

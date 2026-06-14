@@ -63,8 +63,14 @@ class CytoSoaReducer(
     private val weldLo = ArrayList<Int>()
     private val weldHi = ArrayList<Int>()
 
+    // CellDestroyIntents from Delete taps: emitted by CytoInteractionSystem in the interaction bridge,
+    // whose build() discards events — so we extract them here and marshal them into the lifecycle bridge
+    // (which consumes them), exactly as the AoS pipeline carries the event across phases.
+    private val interactDestroy = ArrayList<Int>()
+
     fun tick(w: CytoWorld, input: CytoInput = CytoInput.EMPTY): CytoWorld {
         val inputs = if (input === CytoInput.EMPTY) player else mapOf(PlayerId(0) to input)
+        interactDestroy.clear()
         var cur = w
         // interact: interaction (only when there's pointer input) then matter diffusion.
         cur = phaseR("interact") {
@@ -380,12 +386,13 @@ class CytoSoaReducer(
         input: CytoInput,
         inputs: Map<PlayerId, CytoInput>,
     ): CytoWorld {
-        if (weldLo.isEmpty() && divide.isEmpty() && destroy.isEmpty() && input.detaches.isEmpty()) return w
+        if (weldLo.isEmpty() && divide.isEmpty() && destroy.isEmpty() && input.detaches.isEmpty() && interactDestroy.isEmpty()) return w
         val impById = HashMap<Int, ImpulseComponent>(w.count)
         for (slot in 0 until w.count) impById[w.entityId[slot]] = w.impulse.gather(slot)
 
         val builder = SimBuilder(w.toSimState(includeImpulse = false))
         for (id in input.detaches) builder.emit(DetachIntent(id))      // interact order
+        for (idv in interactDestroy) builder.emit(CellDestroyIntent(EntityId(idv)))  // Delete taps (interact, before biology)
         for (id in destroy) builder.emit(CellDestroyIntent(id))         // biology order
         for (i in weldLo.indices) builder.emit(WeldIntent(EntityId(weldLo[i]), EntityId(weldHi[i]))) // contact order
         for (id in divide) builder.emit(CellDivisionIntent(id))         // biology order
@@ -404,6 +411,7 @@ class CytoSoaReducer(
     private fun bridgeInteraction(w: CytoWorld, inputs: Map<PlayerId, CytoInput>): CytoWorld {
         val builder = SimBuilder(w.toSimState(includeImpulse = false))
         CytoInteractionSystem.update(cfg, builder, inputs)
+        for (e in builder.events<CellDestroyIntent>()) interactDestroy.add(e.id.value)  // Delete taps → lifecycle
         val out = builder.build()
         val nw = CytoWorld.fromSimState(out)
         nw.world.randomSeed = out.randomSeed
