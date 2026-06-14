@@ -22,6 +22,14 @@ object CytoSeed {
     const val MATTER_FALLOFF = 70f
     /** The free monomer species the world is seeded with (the starting matter alphabet). */
     val SEED_MONOMERS = listOf("a", "b", "c", "d", "e", "f", "g")
+    /** Uniform reservoir: seed EVERY grid cell with [MATTER_UNIFORM_LEVEL] of each monomer instead of the
+     *  Gaussian clumps around the sources — for the moving-light world, where the daylight grazes the whole
+     *  torus and needs substrate everywhere (diffusion then refills grazed patches behind the band).
+     *  false = the 4 Gaussian clumps (matches the static 4-source world). */
+    const val MATTER_UNIFORM = false
+    /** Per-monomer count per grid cell when [MATTER_UNIFORM]. Total matter ≈ GRID_RES² × this × species,
+     *  so keep it small — ~8 ≈ the clumped world's ~216k atoms spread evenly. */
+    const val MATTER_UNIFORM_LEVEL = 8
 
     // ── Seed cell composition (a freshly-spawned / founder cell) ──────────────────────────────────────
     /** Founder autotroph's starting cytoplasm (a small a/b reserve to bootstrap bonding before passive

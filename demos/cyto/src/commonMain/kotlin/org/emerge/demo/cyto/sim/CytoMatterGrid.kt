@@ -152,6 +152,10 @@ class CytoMatterGrid private constructor(
          */
         fun seeded(): CytoMatterGrid {
             val cells = Array(RES * RES) { HashMap<String, Int>() }
+            if (CytoSeed.MATTER_UNIFORM) {   // flat substrate everywhere (the moving-light world)
+                for (cell in cells) for (m in SEED_MONOMERS) cell[m] = CytoSeed.MATTER_UNIFORM_LEVEL
+                return CytoMatterGrid(cells, BooleanArray(cells.size) { true })
+            }
             val cellSize = SPAN / RES
             val inv = 1f / (MATTER_FALLOFF * MATTER_FALLOFF)
             for (gy in 0 until RES) {
