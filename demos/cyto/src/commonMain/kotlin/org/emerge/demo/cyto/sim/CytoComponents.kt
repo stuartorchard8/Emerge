@@ -29,7 +29,7 @@ data class CytoCellComponent(
 
 /**
  * The world's finite **matter reservoir** ([CytoMatterGrid]), carried as a singleton component on a
- * reserved entity ([GRID_SINGLETON]) so the otherwise-stateless [org.emerge.demo.cyto.sim.CytoReducer]
+ * reserved entity ([GRID_SINGLETON]) so the otherwise-stateless reducer
  * (which rebuilds [org.emerge.sim.core.sim.SimState] each tick) persists it across ticks. The singleton
  * is invisible to every cell/physics iteration (no [CytoCellComponent] / transform / collider) and is
  * never allocated through the entity counter, so it never perturbs id allocation / `lastEntityValue`.

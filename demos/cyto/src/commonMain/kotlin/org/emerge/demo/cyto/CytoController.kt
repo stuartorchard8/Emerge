@@ -25,8 +25,8 @@ import org.emerge.sim.core.sim.SimState
  * The renderer, hit-testing, readouts, and save codec all consume an engine [SimState]; the world
  * is materialized into one via [CytoWorld.toSimState] **once per frame** (only when a step ran),
  * not per step — so multiple steps in a heavy frame share a single materialize and the per-step
- * SoA win is preserved. The SoA tick is byte-identical to the former AoS `CytoReducer` (gated by
- * `CytoSoaEquivalenceTest`), so behaviour — including save/load — is unchanged.
+ * SoA win is preserved. The reducer's behaviour is frozen as committed golden trajectories
+ * (`CytoGoldenTest`) and its invariants checked by `CytoSoaSpecTest`.
  */
 class CytoController(
     private val cfg: CytoConfig = CytoConfig(),

@@ -18,7 +18,7 @@ object CytoBiologyCore {
 
     // ── tunable knobs (MORPHOGENESIS §v1 spec) ──────────────────────────────────
     /** light → quanta: `quanta = floor(field × exposure × SCALE)` (computed in integer `Frac` raws, no
-     *  float — see [CytoBiologySystem]). Field peaks at ~STRENGTH (0.005), so a fully-exposed cell on a
+     *  float — see the reducer's biology phase). Field peaks at ~STRENGTH (0.005), so a fully-exposed cell on a
      *  source gets ~`STRENGTH·SCALE` ops/tick. ⚙ */
     const val LIGHT_QUANTA_SCALE = 2000
     /** Degradation: a cell's wear accumulator gains its total biomass bonds each tick; every

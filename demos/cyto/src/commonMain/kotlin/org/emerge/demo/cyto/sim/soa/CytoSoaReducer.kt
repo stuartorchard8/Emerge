@@ -58,7 +58,8 @@ import kotlin.time.TimeSource
  * (survivors' in-flight impulse restored). Events cross the bridge by extraction + injection (weld from
  * contacts, divide/destroy from biology, Delete-tap destroys from interaction).
  *
- * Gated tick-for-tick against [org.emerge.demo.cyto.sim.CytoReducer] by `CytoSoaEquivalenceTest`.
+ * The sole cyto reducer (the AoS `CytoReducer` oracle was retired once SoA landed). Behaviour is
+ * frozen as committed golden trajectories (`CytoGoldenTest`) with invariants in `CytoSoaSpecTest`.
  */
 class CytoSoaReducer(
     private val cfg: CytoConfig,
