@@ -118,6 +118,8 @@ class CytoSoaReducer(
     }
 
     fun tick(w: CytoWorld, input: CytoInput = CytoInput.EMPTY): CytoWorld {
+        w.world.tick += 1   // advance the deterministic sim clock (drives the moving light; survives the
+                            // bridges via toSimState/fromSimState, like randomSeed, and the save codec)
         val inputs = if (input === CytoInput.EMPTY) player else mapOf(PlayerId(0) to input)
         interactDestroy.clear()
         var cur = w

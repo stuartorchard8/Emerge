@@ -67,9 +67,12 @@ class CytoGoldenTest {
     // income unlocked (LIGHT_QUANTA_SCALE 2000→6000, the base-pop was light-limited not matter-limited)
     // and reservoir seed raised (CytoSeed.MATTER_PEAK 64→512, now the carrying-capacity ceiling). Probe:
     // founder colony booms ~1→600, busts →~200, recovers (was a flat ~40 plateau drifting to extinction).
+    // Re-baselined 2026-06-15: the sim clock (SimState.tick) now ADVANCES each tick (was dormant at 0) to
+    // drive the moving light field — only the `meta` digest (which hashes tick) shifted; physics/biology/
+    // topology/grid are byte-identical, confirming the clock is behaviourally inert with light-moving off.
     // growth, mutation off, 250 ticks from the default scene.
     private val GROWTH = mapOf(
-        "meta" to "81b32ed8511cdc9a",
+        "meta" to "b6054180fb5a194b",
         "physics" to "bd781dd9eace9146",
         "biology" to "4e740557f71acdf8",
         "topology" to "7747fc9158101724",
@@ -84,7 +87,7 @@ class CytoGoldenTest {
     // The mutation-off GROWTH/INTERACT goldens below are unchanged (no flex/touch gene in the default
     // scene, no mutation), confirming the drift is isolated to the new mechanics.
     private val MUTATION = mapOf(
-        "meta" to "640e3558e934f5b5",
+        "meta" to "2df03878f6c25904",
         "physics" to "6afe760b7eb41224",
         "biology" to "50e71114bfe63ac9",
         "topology" to "55f72f961a417be8",
@@ -92,7 +95,7 @@ class CytoGoldenTest {
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
-        "meta" to "ffc54120dcbf8b70",
+        "meta" to "c9a776316ba38152",
         "physics" to "ac232c30614698de",
         "biology" to "a07690019b0ac33f",
         "topology" to "88c68878f5be5167",

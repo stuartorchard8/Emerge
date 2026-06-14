@@ -30,13 +30,15 @@ import org.emerge.sim.core.sim.SimState
  */
 object CytoSaveCodec {
     // v5: persist the PRNG randomSeed (mutation continuity + avoids the seed-0 LCG degeneracy on load).
-    private const val FORMAT_VERSION = 5
+    // v6: persist the sim clock (state.tick) so the moving light field resumes at the right phase on load.
+    private const val FORMAT_VERSION = 6
     private val cfg = CytoConfig()
 
     fun encode(state: SimState): ByteArray {
         val w = ByteWriter()
         w.writeInt(FORMAT_VERSION)
         w.writeLong(state.randomSeed)
+        w.writeLong(state.tick)
 
         val cells = state.components.getTable<CytoCellComponent>().asMap()
         val transforms = state.components.getTable<TransformComponent>()
@@ -95,7 +97,8 @@ object CytoSaveCodec {
             "Unsupported Cyto save format version: $version (expected $FORMAT_VERSION)"
         }
         val randomSeed = c.readLong()
-        val builder = SimBuilder(SimState(randomSeed = randomSeed))
+        val tick = c.readLong()
+        val builder = SimBuilder(SimState(randomSeed = randomSeed, tick = tick))
         val idMap = HashMap<Int, EntityId>()
 
         val cellCount = c.readInt()
