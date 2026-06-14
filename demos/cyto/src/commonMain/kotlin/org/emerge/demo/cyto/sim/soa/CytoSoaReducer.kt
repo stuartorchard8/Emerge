@@ -459,8 +459,9 @@ class CytoSoaReducer(
             )
         }
 
-        for (slot in ordered) CytoBiologyCore.passiveEnvExchange(works.getValue(EntityId(w.entityId[slot])), grid)
-        for (slot in ordered) CytoBiologyCore.runGenes(works.getValue(EntityId(w.entityId[slot])), grid)
+        val orderedWorks = ordered.map { works.getValue(EntityId(w.entityId[it])) }
+        CytoBiologyCore.passiveEnvExchange(orderedWorks, grid)
+        for (work in orderedWorks) CytoBiologyCore.runGenes(work, grid)
         CytoBiologyCore.diffuse(works, neighbourIds)
         val divide = ArrayList<EntityId>(); val destroy = ArrayList<EntityId>()
         for (slot in ordered) CytoBiologyCore.finish(EntityId(w.entityId[slot]), works.getValue(EntityId(w.entityId[slot])), divide, destroy)

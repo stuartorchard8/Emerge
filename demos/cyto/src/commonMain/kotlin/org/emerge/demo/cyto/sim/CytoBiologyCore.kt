@@ -41,24 +41,72 @@ object CytoBiologyCore {
      *  cell can't balloon without limit. ⚙ */
     val FLEX_RANGE = Frac(1, 2)
 
-    /** Phase 0 — passive cell↔environment exchange (FREE, down-gradient): per species, move
-     *  ⌊(env − cyto)/2⌋ between the cell and its reservoir grid-cell (signed — absorb when the env is
-     *  richer, leak when the cell is), halving the gradient toward equilibrium. This is how a cell feeds
-     *  for free on what's around it (and how an autotroph's surplus leaks out to feed heterotrophs);
-     *  concentrating *against* the gradient is the job of the energy-costing Import/Export genes. Run in
-     *  a fixed cell order (cells share a grid-cell). Conservative; biomass is locked (doesn't exchange). */
-    fun passiveEnvExchange(work: CellWork, grid: CytoMatterGrid) {
-        val idx = work.gridIndex
-        if (idx < 0) return
-        val species = HashSet<String>(work.cytoplasm.keys)
-        species.addAll(grid.cellAt(idx).keys)
-        for (sp in species) {
-            val cyto = work.cytoplasm[sp] ?: 0
-            val env = grid.count(idx, sp)
-            val t = (env - cyto) / 2          // signed, toward zero; +ve = into the cell
-            if (t == 0) continue
-            addOrRemove(work.cytoplasm, sp, t)
-            if (t > 0) grid.draw(idx, sp, t) else grid.deposit(idx, sp, -t)
+    /** Phase 0 — passive cell↔environment exchange (FREE, down-gradient), **batched and fair**: per
+     *  species, each cell wants to move ⌊(env − cyto)/2⌋ between itself and its reservoir grid-cell
+     *  (signed — absorb when the env is richer, leak when the cell is), halving the gradient toward
+     *  equilibrium. This is how a cell feeds for free on what's around it (and how an autotroph's surplus
+     *  leaks out to feed heterotrophs); concentrating *against* the gradient is the job of the
+     *  energy-costing Import/Export genes. Biomass is locked (doesn't exchange).
+     *
+     *  **Fairness (the fix):** every cell sharing a grid-cell computes its desired transfer against the
+     *  *same snapshot* of that grid-cell, so the result is independent of cell order. Leakers always
+     *  deposit in full; absorbers that would collectively overdraw the snapshot share it **proportionally
+     *  to demand** (`⌊want · env / Σwant⌋`, the floor remainder handed out one-per-cell in the supplied
+     *  order). The old per-cell sequential draw let the lowest-EntityId cell skim the reservoir first
+     *  every tick, so a founder starved its own (higher-id, identical-genome) daughters — making resource
+     *  access a function of birth order rather than genome. [ordered] is the canonical (ascending-EntityId)
+     *  cell order; it only breaks ties in the proportional remainder, never who-goes-first for the bulk. */
+    fun passiveEnvExchange(ordered: List<CellWork>, grid: CytoMatterGrid) {
+        // Group cells by their grid-cell, preserving the canonical order for the remainder tiebreak.
+        val byCell = LinkedHashMap<Int, MutableList<CellWork>>()
+        for (w in ordered) {
+            if (w.gridIndex < 0) continue
+            byCell.getOrPut(w.gridIndex) { ArrayList() }.add(w)
+        }
+        for ((idx, cells) in byCell) {
+            val species = HashSet<String>(grid.cellAt(idx).keys)
+            for (w in cells) species.addAll(w.cytoplasm.keys)
+            for (sp in species) exchangeSpecies(idx, sp, cells, grid)
+        }
+    }
+
+    /** Resolve one species' passive exchange for the cells sharing grid-cell [idx], against the snapshot
+     *  `env`. Leakers deposit fully; absorbers split the snapshot proportionally when over-subscribed. */
+    private fun exchangeSpecies(idx: Int, sp: String, cells: List<CellWork>, grid: CytoMatterGrid) {
+        val env = grid.count(idx, sp)
+        val want = IntArray(cells.size)        // each absorber's desired draw against the shared snapshot
+        var demand = 0L                        // Σ want over absorbers
+        for (i in cells.indices) {
+            val cyto = cells[i].cytoplasm[sp] ?: 0
+            val t = (env - cyto) / 2           // signed, toward zero; +ve = into the cell
+            if (t < 0) {                       // leaker: always succeeds (deposits into the reservoir)
+                addOrRemove(cells[i].cytoplasm, sp, t)
+                grid.deposit(idx, sp, -t)
+            } else if (t > 0) {
+                want[i] = t
+                demand += t
+            }
+        }
+        if (demand == 0L) return
+        val grant = IntArray(cells.size)
+        if (demand <= env) {                   // not over-subscribed: everyone gets their full want
+            for (i in cells.indices) grant[i] = want[i]
+        } else {                               // over-subscribed: proportional floor + remainder
+            var granted = 0
+            for (i in cells.indices) {
+                grant[i] = (want[i].toLong() * env / demand).toInt()
+                granted += grant[i]
+            }
+            var leftover = env - granted       // < number of absorbers (Σ of dropped fractions)
+            for (i in cells.indices) {         // hand the remainder out one-per-absorber, in canonical order
+                if (leftover <= 0) break
+                if (want[i] > 0) { grant[i]++; leftover-- }
+            }
+        }
+        for (i in cells.indices) {
+            if (grant[i] <= 0) continue
+            addOrRemove(cells[i].cytoplasm, sp, grant[i])
+            grid.draw(idx, sp, grant[i])
         }
     }
 
