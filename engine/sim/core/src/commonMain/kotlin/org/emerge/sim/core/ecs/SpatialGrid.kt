@@ -137,13 +137,22 @@ class SpatialGrid @PublishedApi internal constructor(
             return SpatialGrid(cellSizeLog2, numCellsLog2)
         }
 
-        /** Smallest `cellsPerAxisLog2` whose grid holds ≳ [entityCount] cells (one margin doubling on
-         *  top of `√entityCount`), so [forMinCellSize] can size the grid to the population rather than
-         *  the coordinate space. Clamped to the grid's valid range. */
+        /**
+         * A `cellsPerAxisLog2` for [entityCount] entities — `√entityCount` with a **3-doubling margin**
+         * (~64× the cells), so [forMinCellSize] sizes the grid to the population rather than the whole
+         * coordinate space, *and* stays fine enough that clustered entities don't pile into a few
+         * overpopulated cells (the O(k²)-within-cell broadphase cliff). It only ever caps the grid
+         * *coarser* than the cell-size-derived fineness (`forMinCellSize` takes the `min`), so it never
+         * undersizes a cell below `2·maxRadius` — purely a smaller-backing-array knob. Clamped to range.
+         *
+         * The margin is for **clustered** distributions (e.g. cells packing around food): with the cluster
+         * in a fraction f of the grid, per-cell occupancy ≈ 1/(64·f). Large-bodied worlds (drockets) are
+         * unaffected — their coarse cell size wins the `min`, so the extra cells never materialize.
+         */
         fun cellsPerAxisLog2For(entityCount: Int): Int {
             var axisLog2 = MIN_NUM_CELLS_LOG2
             while (axisLog2 < MAX_NUM_CELLS_LOG2 && (1 shl (axisLog2 * 2)) < entityCount) axisLog2 += 1
-            return (axisLog2 + 1).coerceAtMost(MAX_NUM_CELLS_LOG2)
+            return (axisLog2 + 3).coerceAtMost(MAX_NUM_CELLS_LOG2)
         }
     }
 }
