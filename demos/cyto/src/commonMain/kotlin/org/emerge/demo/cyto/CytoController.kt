@@ -195,6 +195,8 @@ class CytoController(
             org.emerge.demo.cyto.sim.ActionType.Import -> "IMPORT ${a.a}"
             org.emerge.demo.cyto.sim.ActionType.FormBond -> "BOND ${a.a}${a.b}"
             org.emerge.demo.cyto.sim.ActionType.Convert -> "CONVERT ${a.a}"
+            org.emerge.demo.cyto.sim.ActionType.Expand -> "EXPAND"
+            org.emerge.demo.cyto.sim.ActionType.Contract -> "CONTRACT"
             org.emerge.demo.cyto.sim.ActionType.Mitosis -> "DIVIDE"
             org.emerge.demo.cyto.sim.ActionType.Repair -> "REPAIR"
         }

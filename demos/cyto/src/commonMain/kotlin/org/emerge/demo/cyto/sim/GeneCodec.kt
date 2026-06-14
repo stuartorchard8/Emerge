@@ -12,7 +12,8 @@ package org.emerge.demo.cyto.sim
  *     Light : Biomass > 8 : Mitosis          # divide once biomass exceeds 8 bonds
  *
  * Condition is `ChemQty <species> <>|<> <n>` or `Biomass <>|<> <n>`; action is `Import <species>`,
- * `FormBond <a> <b>`, `Convert <species>`, `Mitosis`, or `Repair`. Blank lines and `#` comments are ignored.
+ * `FormBond <a> <b>`, `Convert <species>`, `Expand`, `Contract`, `Mitosis`, or `Repair`. Blank lines and
+ * `#` comments are ignored.
  * Round-trips every preset genome (see GeneCodecTest).
  */
 object GeneCodec {
@@ -68,6 +69,8 @@ object GeneCodec {
         ActionType.Import -> "Import ${tok(a.a)}"
         ActionType.FormBond -> "FormBond ${tok(a.a)} ${tok(a.b)}"
         ActionType.Convert -> "Convert ${tok(a.a)}"
+        ActionType.Expand -> "Expand"
+        ActionType.Contract -> "Contract"
         ActionType.Mitosis -> "Mitosis"
         ActionType.Repair -> "Repair"
     }
@@ -76,6 +79,8 @@ object GeneCodec {
         "Import" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Import, untok(t[1])) }
         "FormBond" -> { require(t.size == 3) { fmt(t) }; GeneAction(ActionType.FormBond, untok(t[1]), untok(t[2])) }
         "Convert" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Convert, untok(t[1])) }
+        "Expand" -> GeneAction(ActionType.Expand)
+        "Contract" -> GeneAction(ActionType.Contract)
         "Mitosis" -> GeneAction(ActionType.Mitosis)
         "Repair" -> GeneAction(ActionType.Repair)
         else -> throw IllegalArgumentException("unknown action: ${t[0]}")

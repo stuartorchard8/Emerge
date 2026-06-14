@@ -28,6 +28,20 @@ class GeneCodecTest {
         assertEquals(genome, GeneCodec.parse(GeneCodec.serialize(genome)), "empty operand/species genome")
     }
 
+    /** Every action type round-trips — so a newly-added action can't silently fail to serialize (the
+     *  KDoc promises every representable gene round-trips; this is the enum-exhaustive backstop). */
+    @Test
+    fun roundTripsEveryActionType() {
+        for (action in ActionType.entries) {
+            // Empty operands serialize as `_` and decode back to empty, so this holds for both the
+            // operand-carrying (Import/FormBond/Convert) and operand-less (Expand/Contract/Mitosis/Repair)
+            // actions — the point is that the action token itself survives.
+            val gene = Gene(EnergySource.Light, GeneCondition(ConditionType.Biomass, "", Comparison.Greater, 0), GeneAction(action))
+            val back = GeneCodec.parse(GeneCodec.serialize(listOf(gene)))
+            assertEquals(listOf(gene), back, "$action")
+        }
+    }
+
     /** A hand-authored genome parses to exactly the genes intended (the author-by-text workflow). */
     @Test
     fun parsesAHandWrittenGenome() {

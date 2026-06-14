@@ -50,6 +50,15 @@ enum class ActionType {
     FormBond,
     /** Lock molecules of [GeneAction.a] from cytoplasm into biomass (structure → size). */
     Convert,
+    /** Push the cell's radius **above** its biomass baseline (operands unused). Each op nudges the
+     *  radius out by a fixed step up to a flex limit; the per-tick elastic relaxation toward the
+     *  biomass-derived size (see [CytoBiologyCore.finish]) pulls it back when the gene stops firing, so
+     *  it behaves like an actively-held muscle. The actuator a locomotion driver flexes against the
+     *  asymmetric surface drag. */
+    Expand,
+    /** Push the cell's radius **below** its biomass baseline, down to [MIN_RADIUS] (operands unused).
+     *  The contractile counterpart of [Expand]; same elastic relaxation back to baseline. */
+    Contract,
     /** Divide (mitosis); [GeneAction.a]/[GeneAction.b] unused. */
     Mitosis,
     /** Repair connection damage: each op heals the cell's most-damaged connection (operands unused).

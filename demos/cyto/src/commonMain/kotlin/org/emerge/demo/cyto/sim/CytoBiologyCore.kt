@@ -34,6 +34,12 @@ object CytoBiologyCore {
     /** Connection damage healed per Repair op (one quantum). 0.25 matches the old free per-tick heal —
      *  so ~one op/tick maintains a lightly-loaded connection; more stress needs more energy. ⚙ */
     const val REPAIR_PER_OP = 0.25f
+    /** Radius moved per Expand/Contract op (one quantum). ⚙ */
+    val FLEX_STEP = Frac(1, 64)
+    /** Max radius deviation a gene can hold the cell at, **away from** its biomass baseline (Expand
+     *  pushes up to baseline+this; Contract down to [MIN_RADIUS]). Bounds the actuator so a high-quanta
+     *  cell can't balloon without limit. ⚙ */
+    val FLEX_RANGE = Frac(1, 2)
 
     /** Phase 0 — passive cell↔environment exchange (FREE, down-gradient): per species, move
      *  ⌊(env − cyto)/2⌋ between the cell and its reservoir grid-cell (signed — absorb when the env is
@@ -81,9 +87,12 @@ object CytoBiologyCore {
         var sigPrev = 0L
         while (ops < MAX_OPS_PER_GENE) {
             if (!gate(gene.condition, work)) break  // re-checked each op: the gene acts only while its condition holds
-            // Repair has no matter-feasibility of its own, so check the need BEFORE spending energy —
-            // otherwise a BreakBond repair gene would burn a bond every tick even with nothing to heal.
+            // Actions whose feasibility doesn't depend on consuming the quantum are checked BEFORE
+            // spending energy — otherwise a BreakBond-powered gene would burn a bond every tick doing
+            // nothing (Repair with nothing to heal, a flex gene already at its limit).
             if (gene.action.type == ActionType.Repair && !hasConnectionDamage(work)) break
+            if (gene.action.type == ActionType.Expand && !canExpand(work)) break
+            if (gene.action.type == ActionType.Contract && !canContract(work)) break
             val gotEnergy = when (source) {
                 is EnergySource.Light -> if (lightLeft > 0) { lightLeft--; true } else false
                 is EnergySource.BreakBond -> breakOne(work, source.bond)
@@ -93,6 +102,8 @@ object CytoBiologyCore {
                 ActionType.Import -> importOne(work, grid, gene.action.a)
                 ActionType.FormBond -> formBondOne(work, gene.action.a, gene.action.b)
                 ActionType.Convert -> convertOne(work, gene.action.a)
+                ActionType.Expand -> expandOne(work)
+                ActionType.Contract -> contractOne(work)
                 ActionType.Mitosis -> { work.dividing = true; return }  // one-shot: one quantum, then done
                 ActionType.Repair -> repairOne(work)
             }
@@ -108,7 +119,7 @@ object CytoBiologyCore {
      *  connection damage). Used by [runGene] to detect a net-zero (futile) op. Distinct per-map
      *  multipliers keep the same species in cytoplasm vs biomass from cancelling. */
     private fun stateSig(work: CellWork): Long {
-        var h = 0L
+        var h = work.logicalRadius.raw * 40503L   // flex actions move only the radius — keep them progressing
         for ((k, v) in work.cytoplasm) h += (k.hashCode() * 31L + 1L) * v
         for ((k, v) in work.biomass) h += (k.hashCode() * 1000003L + 7L) * v
         for ((k, v) in work.connectionDamage) h += (k.value * 2654435761L) xor v.toRawBits().toLong()
@@ -157,9 +168,9 @@ object CytoBiologyCore {
             destroy.add(id)
             return
         }
-        // size = sqrt(bonds / BONDS_PER_FULL), elastically blended toward the target (matches the old
-        // growth feel); Frac.sqrt keeps it deterministic.
-        val target = Frac(bonds.toLong(), BONDS_PER_FULL).sqrt().coerceAtLeast(MIN_RADIUS)
+        // size relaxes elastically toward the biomass baseline (matches the old growth feel) — this same
+        // blend is what pulls a flexed (Expand/Contract) radius back to baseline once the gene stops.
+        val target = biomassRadius(bonds)
         work.logicalRadius =
             (work.logicalRadius * RADIUS_ELASTICITY + target).div(RADIUS_ELASTICITY + 1)
         if (work.dividing) divide.add(id)
@@ -233,6 +244,34 @@ object CytoBiologyCore {
         val healed = (worst.value - REPAIR_PER_OP).coerceAtLeast(0f)
         if (healed <= 0f) work.connectionDamage.remove(worst.key) else work.connectionDamage[worst.key] = healed
         work.repaired = true
+        return true
+    }
+
+    /** The biomass-derived baseline radius (the size the cell relaxes toward): `sqrt(bonds /
+     *  BONDS_PER_FULL)`, floored at [MIN_RADIUS]. Flex actions bound their deviation around this. */
+    private fun biomassRadius(bonds: Int): Frac =
+        Frac(bonds.toLong(), BONDS_PER_FULL).sqrt().coerceAtLeast(MIN_RADIUS)
+
+    /** Can an Expand op still move the radius (not yet at baseline+FLEX_RANGE)? Checked before spending
+     *  energy so a maxed-out gene stops drawing quanta (mirrors the Repair pre-check). */
+    private fun canExpand(work: CellWork): Boolean =
+        work.logicalRadius < biomassRadius(totalBiomassBonds(work.biomass)) + FLEX_RANGE
+
+    /** Can a Contract op still move the radius (not yet at MIN_RADIUS)? */
+    private fun canContract(work: CellWork): Boolean = work.logicalRadius > MIN_RADIUS
+
+    /** Push the radius out by [FLEX_STEP], clamped to baseline+[FLEX_RANGE]. Moves no matter. */
+    private fun expandOne(work: CellWork): Boolean {
+        val max = biomassRadius(totalBiomassBonds(work.biomass)) + FLEX_RANGE
+        if (work.logicalRadius >= max) return false
+        work.logicalRadius = (work.logicalRadius + FLEX_STEP).coerceIn(MIN_RADIUS, max)
+        return true
+    }
+
+    /** Pull the radius in by [FLEX_STEP], floored at [MIN_RADIUS]. Moves no matter. */
+    private fun contractOne(work: CellWork): Boolean {
+        if (work.logicalRadius <= MIN_RADIUS) return false
+        work.logicalRadius = (work.logicalRadius - FLEX_STEP).coerceAtLeast(MIN_RADIUS)
         return true
     }
 

@@ -52,12 +52,17 @@ class CytoGoldenTest {
         "grid" to "31bdd89ba35fc8b0",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
+    // Re-baselined when the Expand/Contract flex actions were added: ActionType grew 5→7, so
+    // point-mutation's `ActionType.entries[nextInt(size)]` draw now maps the same PRNG stream to
+    // different actions — a deliberate mechanic change that re-routes the mutated trajectory (and thus
+    // every downstream dimension). The mutation-off GROWTH/INTERACT goldens below are unchanged (no flex
+    // gene in the default scene, no mutation), confirming the drift is isolated to the new mechanic.
     private val MUTATION = mapOf(
-        "meta" to "b8e236fdaff67a5f",
-        "physics" to "8d03b4f54ae43fea",
-        "biology" to "625308b4bb117933",
-        "topology" to "4806f6c8c4244d0c",
-        "grid" to "ddcf67b7b0b25950",
+        "meta" to "b6a0b54b6c565d3e",
+        "physics" to "cc38c0d93e5a853",
+        "biology" to "fded2b130664d86f",
+        "topology" to "a8117535d658f405",
+        "grid" to "e8b7b667a45f82f5",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(

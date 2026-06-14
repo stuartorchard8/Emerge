@@ -268,4 +268,53 @@ class CytoSoaSpecTest {
         val right = g.indexOf(CytoMatterGrid.SPAN / CytoMatterGrid.RES, 0f)
         assertTrue(g.count(right, "a") > 0, "matter should have spread to a neighbouring cell")
     }
+
+    /** A flex gene of [action] powered by breaking stored `ab` (no light needed), always gated on. */
+    private fun flexGenome(action: ActionType) = listOf(
+        Gene(EnergySource.BreakBond("ab"), GeneCondition(ConditionType.Biomass, "", Comparison.Greater, 0), GeneAction(action)),
+    )
+
+    private fun radiusRaw(s: SimState, id: org.emerge.sim.core.EntityId): Long =
+        s.components.getTable<CytoCellComponent>().asMap().getValue(id).logicalRadius.raw
+
+    @Test
+    fun flexActionsResizeRadiusAroundBiomassBaseline() {
+        // Three cells with identical biomass (⇒ identical baseline radius), far apart so they never
+        // interact: one Expand gene, one Contract gene, one inert control. Each flex gene is fuelled by
+        // breaking stored `ab`. After a few ticks the expander sits above the baseline and the contractor
+        // below it — and the actions move no matter (radius is not a conserved quantity).
+        val initial = run {
+            val b = SimBuilder(SimState())
+            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8), genome = flexGenome(ActionType.Expand))
+            b.spawnCell(CytoUnits.coord2(20f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8), genome = flexGenome(ActionType.Contract))
+            b.spawnCell(CytoUnits.coord2(40f, 0f), Coord2.zero, CellType.Blank, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8), genome = emptyList())
+            b.build()
+        }
+        val ids = initial.components.getTable<CytoCellComponent>().asMap().keys.sortedBy { it.value }
+        val (expandId, contractId, controlId) = ids
+        val total0 = totalAtoms(initial)
+        val state = run(initial, ticks = 10) { s, t -> assertEquals(total0, totalAtoms(s), "flex must move no matter; broke at $t") }
+        assertTrue(radiusRaw(state, expandId) > radiusRaw(state, controlId), "Expand should hold the radius above the biomass baseline")
+        assertTrue(radiusRaw(state, contractId) < radiusRaw(state, controlId), "Contract should hold the radius below the biomass baseline")
+    }
+
+    @Test
+    fun expandedRadiusRelaxesBackToBaselineWhenTheGeneStops() {
+        // The muscle property: a held expansion springs back to the biomass baseline once the gene can no
+        // longer fire (here, its `ab` fuel runs out) — via the same elastic blend that grows a cell.
+        val initial = run {
+            val b = SimBuilder(SimState())
+            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 80), biomass = mapOf("ab" to 8), genome = flexGenome(ActionType.Expand))
+            b.spawnCell(CytoUnits.coord2(20f, 0f), Coord2.zero, CellType.Blank, cytoplasm = mapOf("ab" to 80), biomass = mapOf("ab" to 8), genome = emptyList())
+            b.build()
+        }
+        val ids = initial.components.getTable<CytoCellComponent>().asMap().keys.sortedBy { it.value }
+        val flexId = ids[0]; val controlId = ids[1]
+        val expanded = run(initial, ticks = 6)
+        assertTrue(radiusRaw(expanded, flexId) > radiusRaw(expanded, controlId), "should be expanded while fuelled")
+        val relaxed = run(expanded, ticks = 300)
+        assertTrue(radiusRaw(relaxed, flexId) < radiusRaw(expanded, flexId), "radius should fall back once the gene stops firing")
+        val ctrl = radiusRaw(relaxed, controlId)
+        assertTrue(kotlin.math.abs(radiusRaw(relaxed, flexId) - ctrl) < ctrl / 16, "radius should relax back to the biomass baseline")
+    }
 }
