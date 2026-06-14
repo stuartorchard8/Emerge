@@ -152,6 +152,10 @@ class CytoSoaReducer(
                 val sum = aR + w.radiusRaw[j]
                 val dx = longAbs((aX - w.posX[j]).toLong()); if (dx >= sum) continue
                 val dy = longAbs((aY - w.posY[j]).toLong()); if (dy >= sum) continue
+                // Spring-connected pairs produce no contact effect (CytoContactSystem skips them), and in a
+                // welded colony most overlapping pairs are connected — so skip them BEFORE the costly
+                // Contact.compute. Both directions, matching springExists(a,b) || springExists(b,a).
+                if (edgeExists(w, i, w.entityId[j]) || edgeExists(w, j, w.entityId[i])) continue
                 val contact = Contact.compute(
                     aId = EntityId(w.entityId[i]), bId = EntityId(w.entityId[j]),
                     aTransform = transformAt(w, i), bTransform = transformAt(w, j),
@@ -163,7 +167,7 @@ class CytoSoaReducer(
     }
 
     private fun handleContact(w: CytoWorld, i: Int, j: Int, contact: Contact) {
-        if (edgeExists(w, i, w.entityId[j])) return
+        // (connected pairs are already excluded before Contact.compute in the caller)
         val sticky = w.cell.sticky[i] || w.cell.stickyTemp[i] || w.cell.sticky[j] || w.cell.stickyTemp[j]
         val close = contact.penetration.raw * 4L > contact.minDist.raw
         if (sticky || close) {
