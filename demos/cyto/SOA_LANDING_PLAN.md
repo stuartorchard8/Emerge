@@ -193,6 +193,18 @@ construction):
 **Slice 5 — optimization (ongoing, post-landing).**
 - Turn on `ColumnPartition` parallel paths for forces/connections/contacts/biology at the N where fan-out
   pays (executor exists; was a net loss at N=100, pays at thousands).
+  - ✅ **Spring solve (forces) parallelized.** The in-place Gauss–Seidel solve (order-dependent → not
+    parallelizable without changing the result) was reformulated as **Jacobi** in *both* the AoS oracle
+    (`SpringConstraintSystem`, scatter) and the SoA reducer (`springSolve`, per-body gather over the
+    symmetric CSR via `ColumnPartition.disjoint`). Bit-identity holds because `Frac` deltas sum with
+    integer add (order-free) and the high-id endpoint's `normal_ba = −normal_ab` exactly; the
+    equivalence gate (incl. a forced-parallel case) stays green. Threshold 2048 from the
+    `profileCytoGrowth` crossover. Win at scale: forces ~2.1–2.7×, whole tick ~1.25–1.58× (pop 2.7k–13k).
+    Behaviour change vs the pre-Jacobi save accepted by Stu (softer per-iteration convergence).
+  - Next candidates: **biology** is now the co-dominant phase at scale (~28% of tick, single-threaded);
+    contacts/connections still sequential. Biology fan-out needs care (PRNG advances per gene in
+    EntityId order — see Determinism below); the interned-int chemistry rework below would cut its cost
+    first without threading.
 - **Chemistry → interned-int columns**: replace the object cytoplasm/biomass columns with dense
   interned-species int columns (the bounded-species property from MORPHOGENESIS) — removes the residual
   biology allocation and makes biology array-indexed. Gated by equivalence.
