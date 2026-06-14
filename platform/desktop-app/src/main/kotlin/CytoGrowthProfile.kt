@@ -11,6 +11,7 @@ import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
 import org.emerge.demo.cyto.sim.soa.CytoWorld
 import org.emerge.sim.core.ecs.ComponentStore
 import org.emerge.sim.core.ecs.ComponentTable
+import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.PipelineProfiler
 import org.emerge.sim.core.sim.SimState
 
@@ -30,34 +31,52 @@ fun main(args: Array<String>) {
     val growTicks = args.getOrNull(1)?.toIntOrNull() ?: 800
     val measureTicks = args.getOrNull(2)?.toIntOrNull() ?: 100
     val growBudgetMs = args.getOrNull(3)?.toLongOrNull() ?: 20_000L   // wall-time cap per factor's grow loop
-    val cfg = CytoConfig()  // live config (mutation on); we measure the SoA tick, not AoS-equivalence.
+    // Mutation OFF so the seq and parallel measurement passes evolve the *same* colony from the shared
+    // snapshot (with mutation on they diverge — the known mutation-on gap — and their single-threaded
+    // biology costs stop being comparable, muddying the forces seq-vs-par read).
+    val cfg = CytoConfig(mutationRateDenom = 0)
 
-    println("natural-growth scaling on the live SoA reducer (grow<=$growTicks ticks or ${growBudgetMs}ms, measure=$measureTicks)\n")
-    println("%8s %7s %8s %10s %9s   %s".format("matter×", "grown", "pop", "tick us", "%budget", "top phases (avg us / share)"))
-    println("-".repeat(110))
+    val executor = ParallelExecutor()
+    println("natural-growth scaling on the live SoA reducer (grow<=$growTicks ticks or ${growBudgetMs}ms, measure=$measureTicks)")
+    println("each factor grown once (sequential, deterministic), then the SAME world measured seq vs parallel.\n")
+    println("%8s %7s %8s  %5s %10s %9s   %s".format("matter×", "grown", "pop", "mode", "tick us", "%budget", "top phases (avg us / share)"))
+    println("-".repeat(120))
     System.out.flush()
     for (f in factors) {
-        val profiler = PipelineProfiler()
-        val soa = CytoSoaReducer(cfg, profiler = profiler)
-
+        // Grow once with a plain sequential reducer (deterministic), then snapshot the colony.
+        val grower = CytoSoaReducer(cfg)
         var w = CytoWorld.fromSimState(scaledMatter(f))
         val growStart = System.nanoTime()
         var grown = 0
         while (grown < growTicks && (System.nanoTime() - growStart) / 1_000_000 < growBudgetMs) {
-            w = soa.tick(w, CytoInput.EMPTY); grown++
+            w = grower.tick(w, CytoInput.EMPTY); grown++
         }
-        profiler.reset()
-        for (t in 0 until measureTicks) {
-            val s = System.nanoTime()
-            w = soa.tick(w, CytoInput.EMPTY)
-            profiler.recordTick(System.nanoTime() - s)
-        }
-        val r = profiler.report()
-        val top = r.phases.sortedByDescending { it.avgNanos }.take(3)
-            .joinToString("  ") { "%s %d/%.0f%%".format(it.name, it.avgNanos / 1000, it.sharePercent) }
-        println("%8d %7d %8d %10d %8.0f%%   %s".format(f, grown, w.count, r.tickAvgNanos / 1000, r.tickAvgNanos / 166_670.0, top))
+        val snapshot = w.toSimState()
+        val pop = w.count
+
+        // Measure the same grown world both ways. Parallel path uses a real executor (default threshold).
+        measure("seq ", f, grown, pop, snapshot, cfg, null, measureTicks)
+        measure("par ", f, grown, pop, snapshot, cfg, executor, measureTicks)
         System.out.flush()
     }
+    executor.close()
+}
+
+private fun measure(mode: String, f: Int, grown: Int, pop: Int, snapshot: SimState, cfg: CytoConfig, executor: ParallelExecutor?, ticks: Int) {
+    val profiler = PipelineProfiler()
+    val soa = CytoSoaReducer(cfg, executor = executor, profiler = profiler)
+    var w = CytoWorld.fromSimState(snapshot)
+    repeat(50) { w = soa.tick(w, CytoInput.EMPTY) }   // warm JIT + let the executor spin up
+    profiler.reset()
+    for (t in 0 until ticks) {
+        val s = System.nanoTime()
+        w = soa.tick(w, CytoInput.EMPTY)
+        profiler.recordTick(System.nanoTime() - s)
+    }
+    val r = profiler.report()
+    val top = r.phases.sortedByDescending { it.avgNanos }.take(3)
+        .joinToString("  ") { "%s %d/%.0f%%".format(it.name, it.avgNanos / 1000, it.sharePercent) }
+    println("%8d %7d %8d  %5s %10d %8.0f%%   %s".format(f, grown, pop, mode, r.tickAvgNanos / 1000, r.tickAvgNanos / 166_670.0, top))
 }
 
 /** A fresh world whose matter reservoir is seeded [factor]× richer (more nutrients ⇒ higher carrying

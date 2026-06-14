@@ -65,8 +65,12 @@ class CytoSoaReducer(
     private val executor: ParallelExecutor? = null,
     private val profiler: PipelineProfiler? = null,
     // Slot count above which the spring gather fans across [executor]; below it runs sequentially.
-    // Defaults to the framework's break-even; tests force the parallel path at small N by lowering it.
-    private val springParallelThreshold: Int = ColumnPartition.DEFAULT_THRESHOLD,
+    // Default 2048 from the profileCytoGrowth crossover: at ~1.4k cells the fan-out's wakeup/barrier
+    // cost and cache/bandwidth interference with the (single-threaded) biology/contacts phases still
+    // outweigh the forces win — a net loss — while by ~2.7k cells forces is ~2.1× and the tick ~1.25×
+    // faster. The game's normal carrying capacity (≤~500) thus stays sequential with zero overhead.
+    // Tests force the parallel path at small N by lowering this.
+    private val springParallelThreshold: Int = 2048,
 ) {
     private val player = mapOf(PlayerId(0) to CytoInput.EMPTY)
 
