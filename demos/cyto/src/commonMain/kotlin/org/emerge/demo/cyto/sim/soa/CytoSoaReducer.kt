@@ -64,6 +64,9 @@ class CytoSoaReducer(
     private val cfg: CytoConfig,
     private val executor: ParallelExecutor? = null,
     private val profiler: PipelineProfiler? = null,
+    // Slot count above which the spring gather fans across [executor]; below it runs sequentially.
+    // Defaults to the framework's break-even; tests force the parallel path at small N by lowering it.
+    private val springParallelThreshold: Int = ColumnPartition.DEFAULT_THRESHOLD,
 ) {
     private val player = mapOf(PlayerId(0) to CytoInput.EMPTY)
 
@@ -290,7 +293,7 @@ class CytoSoaReducer(
 
         // 1) velocity solve: cancel relative NORMAL velocity (damping only), normals from start positions.
         repeat(ITERATIONS) {
-            ColumnPartition.disjoint(n, executor) { start, end ->
+            ColumnPartition.disjoint(n, executor, springParallelThreshold) { start, end ->
                 for (i in start until end) {
                     val velI = vel[i] ?: continue
                     var acc = Frac2.zero
@@ -313,7 +316,7 @@ class CytoSoaReducer(
         }
         // 2) position solve (pseudo-velocity): move working positions toward rest length.
         repeat(ITERATIONS) {
-            ColumnPartition.disjoint(n, executor) { start, end ->
+            ColumnPartition.disjoint(n, executor, springParallelThreshold) { start, end ->
                 for (i in start until end) {
                     val posI = pos[i] ?: continue
                     var acc = Frac2.zero

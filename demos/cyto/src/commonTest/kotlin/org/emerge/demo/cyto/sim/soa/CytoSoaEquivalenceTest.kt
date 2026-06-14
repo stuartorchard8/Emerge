@@ -175,6 +175,30 @@ class CytoSoaEquivalenceTest {
     }
 
     @Test
+    fun soaReducerMatchesAosWithParallelSpringGather() {
+        // The spring solve fans its per-body gather across cores via ColumnPartition.disjoint. That is
+        // bit-identical to its sequential fallback only if each body writes solely its own delta from
+        // frozen state — so gate the *parallel* path against AoS too, forcing it on at small N with a
+        // threshold of 2 and a real executor (the default 256 threshold would otherwise run sequentially
+        // for a test-sized colony). Proves parallel == sequential == AoS, tick-for-tick.
+        val executor = org.emerge.sim.core.ecs.ParallelExecutor()
+        var aos = createCytoInitialState()
+        var w = CytoWorld.fromSimState(aos)
+        val soa = CytoSoaReducer(cfg, executor = executor, springParallelThreshold = 2)
+        var sawMultiDegree = false
+        for (t in 1..250) {
+            aos = reducer.reduce(cfg, aos, noInput)
+            w = soa.tick(w)
+            // A vacuous run (all cells degree ≤ 1) wouldn't exercise the gather's multi-neighbour sum.
+            if (aos.components.getTable<SpringConstraintComponent>().asMap().values.any { it.springs.size > 1 }) {
+                sawMultiDegree = true
+            }
+            assertStatesMatch(aos, w.toSimState(), "parallel tick=$t")
+        }
+        assertTrue(sawMultiDegree, "scenario should grow cells with >1 spring (the multi-neighbour gather)")
+    }
+
+    @Test
     fun roundTripsAGrownStateLosslessly() {
         var s = createCytoInitialState()
         repeat(250) { s = reducer.reduce(cfg, s, noInput) }  // grow a real colony (cells, springs, drawn-down matter)
