@@ -422,18 +422,30 @@ class CytoSoaReducer(
         val ordered = (0 until n).sortedBy { w.entityId[it] }   // ascending-EntityId (Import order + PRNG order)
         val works = LinkedHashMap<EntityId, CellWork>(n)
         val neighbourIds = HashMap<EntityId, List<EntityId>>(n)
-        for (slot in ordered) {
+        // Light shading — interference competition for energy. Cells sharing a grid-cell split that
+        // grid-cell's incident light by their light-capture weight (exposure × radius): a cell that grows —
+        // taking more space and exposed surface — captures a larger share and STARVES its smaller
+        // neighbours, which, unable to power Convert, decay and die, recycling their matter to the commons.
+        // A cell alone in its grid-cell keeps its full light (capture share = 1), so isolated trajectories
+        // are bit-unchanged. Two-pass: gather each cell's base light + capture weight, sum the weights per
+        // grid-cell, then quanta = baseQuanta × (cap / Σcap). `captureMilli` is the weight in milli-units
+        // (value × 1000) — a small integer that keeps the share arithmetic overflow-free and cancels
+        // exactly for a lone cell (so its quanta is then bit-identical to the un-shaded value).
+        val baseQuantaRaw = LongArray(n)   // ((sample × exposure) × SCALE).raw, per ordered position
+        val captureMilli = LongArray(n)    // (exposure × radius) × 1000, per ordered position
+        val capSumByGrid = HashMap<Int, Long>(n)   // Σ captureMilli per grid-cell
+        for ((k, slot) in ordered.withIndex()) {
             val id = EntityId(w.entityId[slot])
             val deg = w.csr.degreeOf(slot)
             val base = w.csr.offset[slot]
             val nbrs = ArrayList<EntityId>(deg)
-            for (k in 0 until deg) nbrs.add(EntityId(w.csr.otherId[base + k]))
+            for (j in 0 until deg) nbrs.add(EntityId(w.csr.otherId[base + j]))
             neighbourIds[id] = nbrs
 
             var ek = 0
-            for (k in 0 until deg) {
+            for (j in 0 until deg) {
                 if (ek >= CytoExposure.MAX_NEIGHBOURS) break
-                val ns = w.csr.otherSlot[base + k]; if (ns < 0) continue
+                val ns = w.csr.otherSlot[base + j]; if (ns < 0) continue
                 val d = delta(w, slot, ns)
                 expoScratch[ek++] = CytoExposure.diamondAngle(d.x, d.y).raw
             }
@@ -441,22 +453,38 @@ class CytoSoaReducer(
             val gridIndex = grid.indexOf(lx, ly)
             val sample = lightField.sampleAt(lx, ly)
             val exposure = CytoExposure.weight(expoScratch, ek)
-            val quanta = (((sample * exposure) * CytoBiologyCore.LIGHT_QUANTA_SCALE).raw / Int.MAX_VALUE.toLong()).toInt()
+            val radius = Frac(w.cell.logicalRadius[slot])
+            baseQuantaRaw[k] = ((sample * exposure) * CytoBiologyCore.LIGHT_QUANTA_SCALE).raw
+            // capture = exposure × radius, in milli-units. NOT `(exposure * radius)` — a big cell's radius
+            // exceeds Frac's safe ±2 value range, so that Frac×Frac overflows Long (negative capture →
+            // starves the founder). Reduce exposure to ≤1000 first, then scale by radius.raw.
+            val exposureMilli = exposure.raw * 1000L / Int.MAX_VALUE.toLong()   // exposure × 1000, ≤ 1000
+            captureMilli[k] = exposureMilli * radius.raw / Int.MAX_VALUE.toLong()
+            if (gridIndex >= 0) capSumByGrid[gridIndex] = (capSumByGrid[gridIndex] ?: 0L) + captureMilli[k]
 
             val damage = HashMap<EntityId, Float>(deg)
-            for (k in 0 until deg) damage[EntityId(w.csr.otherId[base + k])] = w.csr.edgeAux[base + k]
+            for (j in 0 until deg) damage[EntityId(w.csr.otherId[base + j])] = w.csr.edgeAux[base + j]
             works[id] = CellWork(
                 cytoplasm = HashMap(w.cell.cytoplasm[slot] ?: emptyMap()),
                 biomass = HashMap(w.cell.biomass[slot] ?: emptyMap()),
-                logicalRadius = Frac(w.cell.logicalRadius[slot]),
+                logicalRadius = radius,
                 type = CellType.entries[w.cell.type[slot]],
                 genome = w.cell.genome[slot] ?: emptyList(),
-                quanta = quanta,
+                quanta = 0,   // filled below, once per-grid-cell capture sums are known
                 touchCount = touchScratch[slot],
                 wear = w.cell.wear[slot],
                 gridIndex = gridIndex,
                 connectionDamage = damage,
             )
+        }
+        // Second pass: split each grid-cell's incident light among its occupants by capture share. The
+        // division order (cap / Σcap before / MAX) keeps full integer precision and, for a lone cell where
+        // Σcap == cap, reduces to baseQuantaRaw / MAX — the exact un-shaded quanta.
+        for ((k, slot) in ordered.withIndex()) {
+            val work = works.getValue(EntityId(w.entityId[slot]))
+            val capSum = if (work.gridIndex >= 0) capSumByGrid[work.gridIndex] ?: 0L else captureMilli[k]
+            work.quanta =
+                if (capSum <= 0L) 0 else (baseQuantaRaw[k] * captureMilli[k] / capSum / Int.MAX_VALUE.toLong()).toInt()
         }
 
         val orderedWorks = ordered.map { works.getValue(EntityId(w.entityId[it])) }
