@@ -32,8 +32,17 @@ object CytoTuning {
      *  LIGHT_QUANTA_SCALE conversion). In Frac's [0,1] range. */
     val LIGHT_STRENGTH = Frac(1, 200)
     /** Gaussian falloff radius of a light source (logical units): light is strong within ~σ and ~0 well
-     *  before the midpoint between sources, leaving dark contested zones. */
+     *  before the midpoint between sources, leaving dark contested zones. In moving mode it's the
+     *  half-width of the daylight band (how much of the world is "day" at once). */
     const val LIGHT_FALLOFF = 200f
+    /** Moving light: when true, a single daylight BAND sweeps across the world (a day/night terminator),
+     *  wrapping once per [LIGHT_ORBIT_PERIOD] ticks, replacing the 4 static sources. Cells must then hoard
+     *  through the dark (store bonded molecules + a BreakBond gene to burn them) or follow the light.
+     *  false = the 4 static quarter-point sources (the original world). */
+    const val LIGHT_MOVING = false
+    /** Ticks for the daylight band to sweep once around the torus — the day/night period. At ~60 ticks/s,
+     *  3600 ≈ one minute. (Only used when [LIGHT_MOVING].) */
+    const val LIGHT_ORBIT_PERIOD = 3600L
 
     // ── Matter dynamics (the conserved resource's per-tick law; its *seed* is in CytoSeed) ────────────
     /** Slow inter-grid-cell diffusion: per tick each edge moves `⌊|gradient|·NUM/DEN⌋` down-gradient.

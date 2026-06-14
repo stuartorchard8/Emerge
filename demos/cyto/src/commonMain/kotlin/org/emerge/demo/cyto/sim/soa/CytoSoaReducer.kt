@@ -454,7 +454,7 @@ class CytoSoaReducer(
             }
             val lx = CytoUnits.toLogical(Coord(w.posX[slot])); val ly = CytoUnits.toLogical(Coord(w.posY[slot]))
             val gridIndex = grid.indexOf(lx, ly)
-            val sample = lightField.sampleAt(lx, ly)
+            val sample = lightField.sampleAt(lx, ly, w.world.tick)
             val exposure = CytoExposure.weight(expoScratch, ek)
             val radius = Frac(w.cell.logicalRadius[slot])
             baseQuantaRaw[k] = ((sample * exposure) * CytoTuning.LIGHT_QUANTA_SCALE).raw

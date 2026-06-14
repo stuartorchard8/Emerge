@@ -66,7 +66,11 @@ class CytoRenderer {
     private val fInstHalf = FloatArray(FIELD_CELLS * 2)
     private val fInstColor = FloatArray(FIELD_CELLS * 4)
 
-    init {
+    init { bakeFieldColors(0L) }
+
+    /** Bake the light-field heatmap colours for sim-time [tick]. Static field → baked once at init; the
+     *  moving field → re-baked each frame in [draw] so the daylight band animates. */
+    private fun bakeFieldColors(tick: Long) {
         val field = CytoLightField.default()
         val cell = CytoLightField.SPAN / FRES
         var i = 0
@@ -75,7 +79,7 @@ class CytoRenderer {
             for (gx in 0 until FRES) {
                 val wx = -CytoLightField.HALF + (gx + 0.5f) * cell
                 fieldCx[i] = wx; fieldCy[i] = wy
-                val t = (field.sampleAt(wx, wy).toFloat() / CytoLightField.STRENGTH.toFloat()).coerceIn(0f, 1f)
+                val t = (field.sampleAt(wx, wy, tick).toFloat() / CytoLightField.STRENGTH.toFloat()).coerceIn(0f, 1f)
                 val b = i * 4
                 fieldColor[b] = 0.06f + t * 0.94f
                 fieldColor[b + 1] = 0.05f + t * 0.85f
@@ -144,6 +148,7 @@ class CytoRenderer {
         GPU.disableBlend()
         bgShader.drawInstanced(1, BG_CENTER, BG_HALF_SIZE, BG_COLOR)
         // Light-field heatmap over the world (opaque, on top of the clear, under the cells).
+        if (org.emerge.demo.cyto.sim.CytoTuning.LIGHT_MOVING) bakeFieldColors(frame.tick)   // animate the band
         drawLightField()
 
         GPU.enableBlend()

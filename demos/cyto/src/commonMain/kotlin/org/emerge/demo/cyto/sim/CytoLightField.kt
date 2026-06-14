@@ -26,9 +26,17 @@ import kotlin.math.floor
  */
 class CytoLightField private constructor(private val grid: LongArray) {
 
-    /** Light at a logical world position (bilinear, torus-wrapped). Interpolation is on the raw
-     *  Frac longs; the lerp weights are the (geometric) sub-cell fractions. */
-    fun sampleAt(logicalX: Float, logicalY: Float): Frac {
+    /** Light at a logical world position at sim-time [tick]. When [CytoTuning.LIGHT_MOVING], it's a single
+     *  daylight BAND sweeping across x (a day/night terminator); otherwise the static 4-source field
+     *  (tick ignored, the precomputed grid). */
+    fun sampleAt(logicalX: Float, logicalY: Float, tick: Long): Frac {
+        if (CytoTuning.LIGHT_MOVING) {
+            // Vertical band centred at bandCenterX(tick), y-independent so it lights the whole column it
+            // passes over; a single torus-wrapped gaussian (no precomputed grid needed for one source).
+            val dx = wrapDelta(logicalX - bandCenterX(tick))
+            val g = exp(-(dx * dx) / (FALLOFF * FALLOFF))
+            return Frac.fromFloat(STRENGTH.toFloat() * g)
+        }
         val u = (logicalX / SPAN + 0.5f) * RES
         val v = (logicalY / SPAN + 0.5f) * RES
         val x0 = wrapIndex(floor(u).toInt()); val x1 = wrapIndex(x0 + 1)
@@ -63,6 +71,15 @@ class CytoLightField private constructor(private val grid: LongArray) {
 
         /** Gaussian falloff radius (logical units) — value in [CytoTuning.LIGHT_FALLOFF]. */
         const val FALLOFF = CytoTuning.LIGHT_FALLOFF
+
+        /** x-position (logical) of the moving daylight band's centre at sim-time [tick] — sweeps
+         *  −HALF → HALF and wraps once per [CytoTuning.LIGHT_ORBIT_PERIOD] ticks. Deterministic (integer
+         *  modulo; no accumulation drift). Also used by renderers to draw the band. */
+        fun bandCenterX(tick: Long): Float {
+            val period = CytoTuning.LIGHT_ORBIT_PERIOD
+            val phase = ((tick % period) + period) % period   // [0, period), guards negative ticks
+            return -HALF + phase.toFloat() / period.toFloat() * SPAN
+        }
 
         private var cached: CytoLightField? = null
 

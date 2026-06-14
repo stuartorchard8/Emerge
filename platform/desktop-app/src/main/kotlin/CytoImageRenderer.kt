@@ -64,7 +64,7 @@ private fun drawView(
         val ly = centreY + pxToLogical(py)
         for (px in 0 until size) {
             val lx = centreX + pxToLogical(px)
-            val t = (field.sampleAt(lx, ly).toFloat() / hi).coerceIn(0f, 1f)
+            val t = (field.sampleAt(lx, ly, state.tick).toFloat() / hi).coerceIn(0f, 1f)
             img.setRGB(ox + px, py, heat(t).rgb)
         }
     }
