@@ -56,7 +56,7 @@ fun main(args: Array<String>) {
         executor.close()
     }
 
-    // ── struct-of-arrays (physics in-place on columns; biology/lifecycle bridged) ──
+    // ── struct-of-arrays (in-place columns incl. biology; lifecycle/interaction bridged) ──
     runSoaVariant(initial, cfg, input, warmup, measure)
 }
 
@@ -84,7 +84,7 @@ private fun runSoaVariant(initial: SimState, cfg: CytoConfig, input: Map<PlayerI
 
     val report = profiler.report()
     val cells = w.count
-    println("── SOA (in-place physics, biology/lifecycle bridged) ──")
+    println("── SOA (in-place incl. biology; lifecycle/interaction bridged) ──")
     println("  end population: $cells cells")
     println("  wall: ${wallNanos / 1_000_000} ms over $measure ticks")
     println("  tick: avg=${us(report.tickAvgNanos)}us  p50=${us(report.tickP50Nanos)}us  p95=${us(report.tickP95Nanos)}us  p99=${us(report.tickP99Nanos)}us  max=${us(report.tickMaxNanos)}us")

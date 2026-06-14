@@ -1,16 +1,22 @@
 package org.emerge.demo.cyto.sim.soa
 
+import org.emerge.demo.cyto.cells.CellType
+import org.emerge.demo.cyto.sim.CellWork
 import org.emerge.demo.cyto.sim.ConnectionStateComponent
+import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
+import org.emerge.demo.cyto.sim.CytoExposure
 import org.emerge.demo.cyto.sim.CytoInput
+import org.emerge.demo.cyto.sim.CytoLightField
 import org.emerge.demo.cyto.sim.CytoMatterGrid
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.CytoMutation
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
+import org.emerge.demo.cyto.sim.cellMass
 import org.emerge.demo.cyto.sim.systems.CellDestroyIntent
 import org.emerge.demo.cyto.sim.systems.CellDivisionIntent
-import org.emerge.demo.cyto.sim.systems.CytoBiologySystem
 import org.emerge.demo.cyto.sim.systems.CytoInteractionSystem
 import org.emerge.demo.cyto.sim.systems.CytoLifecycleSystem
 import org.emerge.demo.cyto.sim.systems.DetachIntent
@@ -41,14 +47,15 @@ import kotlin.time.TimeSource
 /**
  * Struct-of-arrays cyto tick on the persistent [CytoWorld] — approach (B) of SOA_LANDING_PLAN.md.
  *
- * The physics phases (diffusion, reset, contacts, connections, forces = grab+drag+spring, integrate)
+ * Most phases (diffusion, reset, contacts, **biology**, connections, forces = grab+drag+spring, integrate)
  * run **in place on the columns** — math reconstructs the engine `Frac`/`Coord2`/`Norm` value types from
- * the column raws and reuses the exact operators, so results are bit-identical to the AoS systems. The
- * two intricate/structural phases — **biology** and **lifecycle** — are still **bridged**: a minimal
- * `SimState` is materialized, the unmodified AoS system runs on it, and the result is folded back into
- * the columns (biology writes back into existing slots, preserving impulse + CSR; lifecycle changes
- * membership so the world is rebuilt and survivors' impulse restored). Events cross the bridges by
- * extraction (biology's divide/destroy) and injection (into lifecycle).
+ * the column raws and reuses the exact operators, so results are bit-identical to the AoS systems.
+ * Biology runs the shared `CytoBiologyCore` on per-cell `CellWork` built from the columns + CSR, with a
+ * world PRNG matching `SimBuilder.nextRandomInt` for mutation. Only the **structural** phase
+ * (`lifecycle`) — and `interaction` when there's pointer input — is still **bridged**: a minimal
+ * `SimState` is materialized, the unmodified AoS system runs, and the world is rebuilt from its output
+ * (survivors' in-flight impulse restored). Events cross the bridge by extraction + injection (weld from
+ * contacts, divide/destroy from biology, Delete-tap destroys from interaction).
  *
  * Gated tick-for-tick against [org.emerge.demo.cyto.sim.CytoReducer] by `CytoSoaEquivalenceTest`.
  */
@@ -68,6 +75,9 @@ class CytoSoaReducer(
     // (which consumes them), exactly as the AoS pipeline carries the event across phases.
     private val interactDestroy = ArrayList<Int>()
 
+    // reused per-cell scratch for exposure (neighbour diamond-angles); biology is single-threaded.
+    private val expoScratch = LongArray(CytoExposure.MAX_NEIGHBOURS)
+
     fun tick(w: CytoWorld, input: CytoInput = CytoInput.EMPTY): CytoWorld {
         val inputs = if (input === CytoInput.EMPTY) player else mapOf(PlayerId(0) to input)
         interactDestroy.clear()
@@ -80,7 +90,7 @@ class CytoSoaReducer(
         }
         phase("reset") { reset(cur) }
         phase("contacts") { contacts(cur) }
-        val (divide, destroy) = phaseR("biology") { bridgeBiology(cur, inputs) }
+        val (divide, destroy) = phaseR("biology") { biology(cur) }
         phase("connections") { connections(cur) }
         phase("forces") { grab(cur, input); drag(cur, input); springSolve(cur) }
         cur = phaseR("lifecycle") { bridgeLifecycle(cur, divide, destroy, input, inputs) }
@@ -340,39 +350,104 @@ class CytoSoaReducer(
         }
     }
 
-    // ── biology bridge ──────────────────────────────────────────────────────────
-    // Materialize → run the unmodified CytoBiologySystem → fold the updated cell/material/motion/
-    // collider/connection-damage + matter grid back into the EXISTING slots (biology never changes
-    // membership), preserving the impulse columns + CSR topology. Returns its divide/destroy intents.
-    private fun bridgeBiology(w: CytoWorld, inputs: Map<PlayerId, CytoInput>): Pair<List<EntityId>, List<EntityId>> {
-        val builder = SimBuilder(w.toSimState(includeImpulse = false))
-        CytoBiologySystem.update(cfg, builder, inputs)
-        val divide = builder.events<CellDivisionIntent>().map { it.id }
-        val destroy = builder.events<CellDestroyIntent>().map { it.id }
-        val out = builder.build()
-        val cellsT = out.components.getTable<CytoCellComponent>()
-        val matsT = out.components.getTable<MaterialComponent>()
-        val motsT = out.components.getTable<MotionComponent>()
-        val collsT = out.components.getTable<ColliderComponent>()
-        val connT = out.components.getTable<ConnectionStateComponent>()
-        for (slot in 0 until w.count) {
+    // ── biology (CytoBiologySystem) in place ─────────────────────────────────────
+    // The shared CytoBiologyCore (passive exchange → genes → diffusion → degradation/growth/death) runs
+    // verbatim on per-cell CellWork; only the orchestration — building CellWork from the columns + CSR,
+    // the light/exposure quanta, mutation via the world PRNG, and the write-back (cell columns, collider
+    // radius, mass + variable-mass momentum, repair damage into edgeAux) — is reimplemented over columns,
+    // so no per-tick SimState materialize. Bit-identical to the AoS system (mutation-off gated). Membership
+    // is unchanged (division/death are deferred to lifecycle). Returns its divide/destroy intents.
+    private fun biology(w: CytoWorld): Pair<List<EntityId>, List<EntityId>> {
+        val n = w.count
+        if (n == 0) return emptyList<EntityId>() to emptyList()
+        val lightField = CytoLightField.default()
+        val grid = w.grid   // post-diffusion; biology draws/deposits in place (copy-on-write)
+
+        val ordered = (0 until n).sortedBy { w.entityId[it] }   // ascending-EntityId (Import order + PRNG order)
+        val works = LinkedHashMap<EntityId, CellWork>(n)
+        val neighbourIds = HashMap<EntityId, List<EntityId>>(n)
+        for (slot in ordered) {
             val id = EntityId(w.entityId[slot])
-            cellsT[id]?.let { w.cell.scatter(slot, it) }
-            matsT[id]?.let { w.material.scatter(slot, it) }
-            motsT[id]?.let { w.motion.scatter(slot, it) }
-            collsT[id]?.let { w.collider.scatter(slot, it) }
-            // Repair genes lower connection damage (and remove the key entirely when fully healed to
-            // 0). Fold the post-biology damage into the CSR edges, treating a missing key as 0 — exactly
-            // as the connection-maintenance reads `damageState[other] ?: 0f`. (A cell biology didn't
-            // touch keeps the materialized map, which still holds every neighbour, so this is a no-op.)
-            val dmg = connT[id]?.damage
-            for (k in w.csr.offset[slot] until w.csr.offset[slot + 1]) {
-                w.csr.edgeAux[k] = dmg?.get(EntityId(w.csr.otherId[k])) ?: 0f
+            val deg = w.csr.degreeOf(slot)
+            val base = w.csr.offset[slot]
+            val nbrs = ArrayList<EntityId>(deg)
+            for (k in 0 until deg) nbrs.add(EntityId(w.csr.otherId[base + k]))
+            neighbourIds[id] = nbrs
+
+            var ek = 0
+            for (k in 0 until deg) {
+                if (ek >= CytoExposure.MAX_NEIGHBOURS) break
+                val ns = w.csr.otherSlot[base + k]; if (ns < 0) continue
+                val d = delta(w, slot, ns)
+                expoScratch[ek++] = CytoExposure.diamondAngle(d.x, d.y).raw
+            }
+            val lx = CytoUnits.toLogical(Coord(w.posX[slot])); val ly = CytoUnits.toLogical(Coord(w.posY[slot]))
+            val gridIndex = grid.indexOf(lx, ly)
+            val sample = lightField.sampleAt(lx, ly)
+            val exposure = CytoExposure.weight(expoScratch, ek)
+            val quanta = (((sample * exposure) * CytoBiologyCore.LIGHT_QUANTA_SCALE).raw / Int.MAX_VALUE.toLong()).toInt()
+
+            val damage = HashMap<EntityId, Float>(deg)
+            for (k in 0 until deg) damage[EntityId(w.csr.otherId[base + k])] = w.csr.edgeAux[base + k]
+            works[id] = CellWork(
+                cytoplasm = HashMap(w.cell.cytoplasm[slot] ?: emptyMap()),
+                biomass = HashMap(w.cell.biomass[slot] ?: emptyMap()),
+                logicalRadius = Frac(w.cell.logicalRadius[slot]),
+                type = CellType.entries[w.cell.type[slot]],
+                genome = w.cell.genome[slot] ?: emptyList(),
+                quanta = quanta,
+                wear = w.cell.wear[slot],
+                gridIndex = gridIndex,
+                connectionDamage = damage,
+            )
+        }
+
+        for (slot in ordered) CytoBiologyCore.passiveEnvExchange(works.getValue(EntityId(w.entityId[slot])), grid)
+        for (slot in ordered) CytoBiologyCore.runGenes(works.getValue(EntityId(w.entityId[slot])), grid)
+        CytoBiologyCore.diffuse(works, neighbourIds)
+        val divide = ArrayList<EntityId>(); val destroy = ArrayList<EntityId>()
+        for (slot in ordered) CytoBiologyCore.finish(EntityId(w.entityId[slot]), works.getValue(EntityId(w.entityId[slot])), divide, destroy)
+
+        for (slot in ordered) {
+            val id = EntityId(w.entityId[slot])
+            val work = works.getValue(id)
+            val mutated = CytoMutation.mutate(w.cell.genome[slot] ?: emptyList(), cfg.mutationRateDenom) { until -> nextRandomInt(w, until) }
+            val oldRadiusRaw = w.cell.logicalRadius[slot]
+            w.cell.cytoplasm[slot] = work.cytoplasm
+            w.cell.biomass[slot] = work.biomass
+            w.cell.logicalRadius[slot] = work.logicalRadius.raw
+            w.cell.wear[slot] = work.wear
+            w.cell.stickyTemp[slot] = false
+            if (mutated != null) w.cell.genome[slot] = mutated
+            if (work.repaired) {
+                for (k in w.csr.offset[slot] until w.csr.offset[slot + 1]) {
+                    w.csr.edgeAux[k] = work.connectionDamage[EntityId(w.csr.otherId[k])] ?: 0f
+                }
+            }
+            if (work.logicalRadius.raw != oldRadiusRaw) {
+                w.radiusRaw[slot] = CytoUnits.len(work.logicalRadius.toFloat()).raw
+            }
+            val newMass = cellMass(work.cytoplasm, work.biomass)
+            val oldMass = w.mass[slot].toUInt()
+            if (newMass != oldMass) {
+                w.mass[slot] = newMass.toInt()
+                if (cfg.variableMass && (w.velX[slot] != 0 || w.velY[slot] != 0)) {
+                    w.velX[slot] = (w.velX[slot].toLong() * oldMass.toLong() / newMass.toLong()).toInt()
+                    w.velY[slot] = (w.velY[slot].toLong() * oldMass.toLong() / newMass.toLong()).toInt()
+                }
             }
         }
-        out.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid?.let { w.grid = it }
-        w.world.randomSeed = out.randomSeed
         return divide to destroy
+    }
+
+    /** World PRNG, bit-identical to `SimBuilder.nextRandomInt` (mutation draws, in EntityId order). */
+    private fun nextRandomInt(w: CytoWorld): Int {
+        w.world.randomSeed = w.world.randomSeed * 2862933555777941757L + 3037000493L
+        return (w.world.randomSeed ushr 32).toInt()
+    }
+    private fun nextRandomInt(w: CytoWorld, until: Int): Int {
+        require(until > 0)
+        return (nextRandomInt(w).toLong() and 0x7FFFFFFFL).toInt() % until
     }
 
     // ── lifecycle bridge ──────────────────────────────────────────────────────────
