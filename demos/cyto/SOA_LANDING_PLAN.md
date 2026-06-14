@@ -113,6 +113,23 @@ Two viable shapes for the remaining work (see the open question at the bottom):
   event-coupled `lifecycle` segment) bridged via event-marshaling for now, port biology last. Captures
   most of the measured win at much lower risk; biology retains its (≤15%) copy cost until the final step.
 
+## Status (2026-06-14)
+
+- ✅ **Slice 0–1** — `CytoWorld` columns + bridged reducer, equivalence-gated.
+- ✅ **Slice 2** — physics phases (reset/contacts/connections/forces[grab+drag+Gauss-Seidel spring]/
+  integrate) in place on columns + `SpringCsr` + impulse columns; biology + lifecycle bridged.
+  Bit-identical vs AoS over 250 ticks (two faithful normalizations: impulse excluded, connection
+  damage zero-normalized — both matching AoS's own `?: 0f` semantics).
+- ✅ **Slice 4** — **SoA is the LIVE runtime**: `CytoController` drives `CytoSoaReducer` over a
+  persistent world, materializing once/frame. Already faster than AoS at the save's ~107 cells
+  (1249 → 915 µs/tick, 1.37×; max tail 13193 → 3130 µs), win grows with N. `benchCyto` has a SOA variant.
+- ⏳ **Slice 3** (remaining) — port **biology + lifecycle** in place to delete the last two bridges
+  (the per-tick materialize churn). The hard, bit-identity-critical part (gene loop incl. the
+  futile-cycle guard, PRNG-ordered mutation, diffusion, mass/momentum; division's cytoplasm/biomass
+  split). Do it under the same equivalence gate.
+- ⏳ **Slice 5** (remaining) — turn on `ColumnPartition` parallelism for the physics phases at scale;
+  replace the object cytoplasm/biomass columns with interned-int columns (the deferred chemistry lever).
+
 ## Slices (each independently landable and gated)
 
 > Order rationale: **bridge-everything first** so we have a green equivalence gate *before* optimizing
