@@ -76,6 +76,33 @@ class CytoSoaEquivalenceTest {
         assertEquals(gridContent(aos), gridContent(soa), "$label matter grid")
     }
 
+    @kotlin.test.Ignore  // KNOWN GAP (SOA_LANDING_PLAN.md): with frequent mutation the SoA tick diverges
+    // from AoS around tick 15 — a single cell's forces impulse differs despite identical neighbours,
+    // mass, radius, genome and (undirected) spring set. It is in the SHARED in-place physics/lifecycle
+    // port (reproduces with bridged AND in-place biology), exposed only by mutation-driven spatial
+    // configs (the PRNG itself advances bit-identically; randomSeed/tick/lastEntityValue match). The
+    // mutation-OFF gate above is bit-identical for 250 ticks. To re-enable once the divergence is fixed.
+    @Test
+    fun soaReducerMatchesAosWithMutationOn() {
+        // Mutation on (frequent) exercises the in-place world PRNG: it must advance the randomSeed
+        // bit-identically to SimBuilder.nextRandomInt, in EntityId order, or genomes (and the seed,
+        // which assertStatesMatch checks) diverge.
+        val mut = CytoConfig(mutationRateDenom = 20)
+        val aosReducer = CytoReducer()
+        var aos = createCytoInitialState()
+        var w = CytoWorld.fromSimState(aos)
+        val soa = CytoSoaReducer(mut)
+        val initialSeed = aos.randomSeed
+        var sawMutation = false
+        for (t in 1..200) {
+            aos = aosReducer.reduce(mut, aos, noInput)
+            w = soa.tick(w, CytoInput.EMPTY)
+            if (aos.randomSeed != initialSeed) sawMutation = true
+            assertStatesMatch(aos, w.toSimState(), "mut tick=$t")
+        }
+        assertTrue(sawMutation, "mutation should have advanced the PRNG")
+    }
+
     @Test
     fun roundTripsAGrownStateLosslessly() {
         var s = createCytoInitialState()

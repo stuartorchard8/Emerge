@@ -123,10 +123,18 @@ Two viable shapes for the remaining work (see the open question at the bottom):
 - ✅ **Slice 4** — **SoA is the LIVE runtime**: `CytoController` drives `CytoSoaReducer` over a
   persistent world, materializing once/frame. Already faster than AoS at the save's ~107 cells
   (1249 → 915 µs/tick, 1.37×; max tail 13193 → 3130 µs), win grows with N. `benchCyto` has a SOA variant.
-- ⏳ **Slice 3** (remaining) — port **biology + lifecycle** in place to delete the last two bridges
-  (the per-tick materialize churn). The hard, bit-identity-critical part (gene loop incl. the
-  futile-cycle guard, PRNG-ordered mutation, diffusion, mass/momentum; division's cytoplasm/biomass
-  split). Do it under the same equivalence gate.
+- ⏳ **Slice 3** (in progress / blocked) — biology was ported in place and is **bit-identical to AoS for
+  250 ticks with mutation OFF** (PRNG/world-seed advance verified bit-identical too). But a **mutation-ON
+  equivalence gate** (`soaReducerMatchesAosWithMutationOn`, frequent mutation) surfaced a divergence
+  around tick 15 that is **NOT in biology** — it reproduces with both bridged and in-place biology, so it
+  lives in the **shared in-place physics/lifecycle port** (committed in Slice 2). Symptoms: a single cell
+  gets a different `forces` impulse despite identical neighbours, mass, radius, genome and (undirected)
+  spring set; `randomSeed`/`tick`/`lastEntityValue` all match. It only manifests under
+  mutation-driven spatial configs (mutation-OFF runs are clean). The in-place biology was **reverted to
+  the bridge** pending this fix (it's an optimisation, not the cause); the mutation-ON gate is
+  `@Ignore`d with a pointer here. **This is the top open item: a real determinism gap in the live SoA
+  physics under the default (mutation-on) config — find the config-dependent forces/lifecycle difference
+  and re-enable the gate, then re-land in-place biology.**
 - ⏳ **Slice 5** (remaining) — turn on `ColumnPartition` parallelism for the physics phases at scale;
   replace the object cytoplasm/biomass columns with interned-int columns (the deferred chemistry lever).
 
