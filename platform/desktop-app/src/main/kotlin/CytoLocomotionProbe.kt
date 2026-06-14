@@ -3,10 +3,8 @@ package org.emerge.desktop
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
-import org.emerge.demo.cyto.sim.CytoReducer
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.createCytoInitialState
-import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.primitives.Frac
@@ -37,9 +35,8 @@ fun main(args: Array<String>) {
     val rocketOn = (args.getOrNull(4)?.toIntOrNull() ?: 1) != 0
     if (!rocketOn) cfg = cfg.copy(variableMass = false)
 
-    val reducer = CytoReducer()
-    val input = mapOf(PlayerId(0) to CytoInput.EMPTY)
     var state = createCytoInitialState()
+    val sim = CytoSoaSim(cfg, state)
 
     fun pop() = state.components.getTable<CytoCellComponent>().asMap().size
 
@@ -73,7 +70,7 @@ fun main(args: Array<String>) {
     }
     line(0)
     for (t in 1..ticks) {
-        state = reducer.reduce(cfg, state, input)
+        state = sim.step()
         if (t % every == 0) line(t)
     }
 }

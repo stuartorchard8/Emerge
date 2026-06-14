@@ -3,12 +3,9 @@ package org.emerge.desktop
 import org.emerge.demo.cyto.CytoSaveCodec
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
-import org.emerge.demo.cyto.sim.CytoInput
-import org.emerge.demo.cyto.sim.CytoReducer
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.sim.core.EntityId
-import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
@@ -69,8 +66,7 @@ fun main(args: Array<String>) {
         repulsion = args.getOrNull(5)?.toIntOrNull()?.let { org.emerge.sim.core.physics.primitives.Frac(it.toLong(), 100) } ?: base.repulsion,
     )
     println("\ncfg: drag=${cfg.dragCoefficient} variableMass=${cfg.variableMass} breakDamage=${cfg.connectionBreakDamage} repulsion=${cfg.repulsion.toFloat()}")
-    val reducer = CytoReducer()
-    val input = mapOf(PlayerId(0) to CytoInput.EMPTY)
+    val sim = CytoSoaSim(cfg, state)
 
     // One-shot: dissect the fastest unconnected cell — is it isolated in space (→ drag isn't acting,
     // a bug) or touching another cell (→ a contact force balances drag)?
@@ -111,7 +107,7 @@ fun main(args: Array<String>) {
     }
     println("\nforward run (population): tick\tpop\tsprings\tmeanSpeed\tmaxLoneSpeed\t|momentum|\tmaxStretch")
     for (t in 1..ticks) {
-        state = reducer.reduce(cfg, state, input)
+        state = sim.step()
         if (t % (ticks / 10).coerceAtLeast(1) == 0) {
             val c = centroid(state)
             netDx += wrapDelta(c.first - prevC.first); netDy += wrapDelta(c.second - prevC.second)

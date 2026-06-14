@@ -4,13 +4,11 @@ import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
-import org.emerge.demo.cyto.sim.CytoReducer
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.demo.cyto.sim.systems.addSpring
 import org.emerge.sim.core.EntityId
-import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
@@ -40,8 +38,6 @@ fun main(args: Array<String>) {
     val varMass = args.getOrNull(5)?.toBooleanStrictOrNull() ?: true
 
     val cfg = CytoConfig(variableMass = varMass)
-    val reducer = CytoReducer()
-    val noInput = mapOf(PlayerId(0) to CytoInput.EMPTY)
 
     val ids = ArrayList<EntityId>()
     var state = if (nCells == 0) {
@@ -63,6 +59,7 @@ fun main(args: Array<String>) {
         for (i in 0 until nCells - 1) addSpring(b, ids[i], ids[i + 1], cfg)
         b.build()
     }
+    val sim = CytoSoaSim(cfg, state)
 
     fun speeds(): Triple<Double, Double, Double> {
         val motions = state.components.getTable<MotionComponent>()
@@ -83,7 +80,7 @@ fun main(args: Array<String>) {
     println("nCells=$nCells push=($vx,$vy) dragCoefficient=${cfg.dragCoefficient}")
     println("tick\tcomSpeed\tmaxCell\tminCell")
     for (t in 0..ticks) {
-        if (t > 0) state = reducer.reduce(cfg, state, noInput)
+        if (t > 0) state = sim.step()
         if (t % every == 0) {
             val (com, mx, mn) = speeds()
             println("$t\t${fmt(com)}\t${fmt(mx)}\t${fmt(mn)}")

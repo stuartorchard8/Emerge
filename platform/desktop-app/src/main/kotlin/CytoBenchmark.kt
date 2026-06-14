@@ -4,9 +4,9 @@ import org.emerge.demo.cyto.CytoSaveCodec
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
-import org.emerge.demo.cyto.sim.CytoReducer
 import org.emerge.demo.cyto.sim.createCytoInitialState
-import org.emerge.sim.core.PlayerId
+import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
+import org.emerge.demo.cyto.sim.soa.CytoWorld
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.PipelineProfiler
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
@@ -14,11 +14,10 @@ import org.emerge.sim.core.sim.SimState
 import java.io.File
 
 /**
- * Headless per-phase profiler for the Cyto reducer. Loads a save (or grows a fresh world),
- * warms the JIT, then runs N measured ticks with a [PipelineProfiler] attached and prints the
- * per-phase time breakdown — sequential and (optionally) parallel — plus GC pressure. This is the
- * instrument for "where does a Cyto tick spend its time": run it on the save the user reports as
- * slow and read the share column.
+ * Headless per-phase profiler for the **live [CytoSoaReducer]**. Loads a save (or grows a fresh world),
+ * warms the JIT, then runs N measured ticks with a [PipelineProfiler] attached and prints the per-phase
+ * time breakdown — sequential and parallel (executor-backed spring gather) — plus GC pressure. The
+ * instrument for "where does a Cyto tick spend its time" on a reported-slow save.
  *
  * `--args="<savePath|fresh> [warmupTicks] [measureTicks]"`
  */
@@ -43,31 +42,26 @@ fun main(args: Array<String>) {
     println("warmup=$warmup measure=$measure ticks\n")
 
     val cfg = CytoConfig()
-    val input = mapOf(PlayerId(0) to CytoInput.EMPTY)
 
     // ── sequential (production single-thread path) ──
-    runVariant("SEQUENTIAL", initial, cfg, input, warmup, measure, executor = null)
+    runSoaVariant("SOA SEQUENTIAL", initial, cfg, CytoInput.EMPTY, warmup, measure, executor = null)
 
-    // ── parallel (executor-backed connection + spring fan-out) ──
+    // ── parallel (executor-backed spring gather; pays above the threshold) ──
     val executor = ParallelExecutor()
     try {
-        runVariant("PARALLEL (${executor.parallelism} workers)", initial, cfg, input, warmup, measure, executor)
+        runSoaVariant("SOA PARALLEL (${executor.parallelism} workers)", initial, cfg, CytoInput.EMPTY, warmup, measure, executor)
     } finally {
         executor.close()
     }
-
-    // ── struct-of-arrays (in-place columns incl. biology; lifecycle/interaction bridged) ──
-    runSoaVariant(initial, cfg, input, warmup, measure)
 }
 
-private fun runSoaVariant(initial: SimState, cfg: CytoConfig, input: Map<PlayerId, CytoInput>, warmup: Int, measure: Int) {
+private fun runSoaVariant(label: String, initial: SimState, cfg: CytoConfig, input: CytoInput, warmup: Int, measure: Int, executor: ParallelExecutor?) {
     val profiler = PipelineProfiler()
-    profiler.allocReader = { allocatedBytes() }
-    val reducer = org.emerge.demo.cyto.sim.soa.CytoSoaReducer(cfg, profiler = profiler)
-    val cytoInput = input.values.first()
+    if (executor == null) profiler.allocReader = { allocatedBytes() }  // single-threaded only: per-thread gauge
+    val reducer = CytoSoaReducer(cfg, executor = executor, profiler = profiler)
 
-    var w = org.emerge.demo.cyto.sim.soa.CytoWorld.fromSimState(initial)
-    for (t in 0 until warmup) w = reducer.tick(w, cytoInput)
+    var w = CytoWorld.fromSimState(initial)
+    for (t in 0 until warmup) w = reducer.tick(w, input)
     profiler.reset()
 
     val gc = gcSnapshot()
@@ -75,7 +69,7 @@ private fun runSoaVariant(initial: SimState, cfg: CytoConfig, input: Map<PlayerI
     val wallStart = System.nanoTime()
     for (t in 0 until measure) {
         val tickStart = System.nanoTime()
-        w = reducer.tick(w, cytoInput)
+        w = reducer.tick(w, input)
         profiler.recordTick(System.nanoTime() - tickStart)
     }
     val wallNanos = System.nanoTime() - wallStart
@@ -84,54 +78,6 @@ private fun runSoaVariant(initial: SimState, cfg: CytoConfig, input: Map<PlayerI
 
     val report = profiler.report()
     val cells = w.count
-    println("── SOA (in-place incl. biology; lifecycle/interaction bridged) ──")
-    println("  end population: $cells cells")
-    println("  wall: ${wallNanos / 1_000_000} ms over $measure ticks")
-    println("  tick: avg=${us(report.tickAvgNanos)}us  p50=${us(report.tickP50Nanos)}us  p95=${us(report.tickP95Nanos)}us  p99=${us(report.tickP99Nanos)}us  max=${us(report.tickMaxNanos)}us")
-    println("  fps headroom: ${"%.1f".format(16_667_000.0 / report.tickAvgNanos)}x of a 60fps frame budget")
-    println("  gc: ${gcDelta.count} collections, ${gcDelta.millis} ms paused")
-    println("  alloc: ${allocDelta / 1_000_000} MB total, ${allocDelta / measure / 1024} KB/tick")
-    println()
-    println("  %-14s %10s %10s %7s %10s".format("phase", "avg us", "max us", "share", "KB/tick"))
-    println("  " + "-".repeat(56))
-    for (line in report.phases.sortedByDescending { it.avgNanos }) {
-        println("  %-14s %10d %10d %6.1f%% %10d".format(line.name, line.avgNanos / 1000, line.maxNanos / 1000, line.sharePercent, line.avgBytes / 1024))
-    }
-    println()
-}
-
-private fun runVariant(
-    label: String,
-    initial: SimState,
-    cfg: CytoConfig,
-    input: Map<PlayerId, CytoInput>,
-    warmup: Int,
-    measure: Int,
-    executor: ParallelExecutor?,
-) {
-    val profiler = PipelineProfiler()
-    if (executor == null) profiler.allocReader = { allocatedBytes() } // single-threaded only: per-thread gauge
-    val reducer = CytoReducer(profiler = profiler, executor = executor)
-
-    // Warm the JIT on a throwaway state so steady-state numbers aren't polluted by compilation.
-    var state = initial
-    for (t in 0 until warmup) state = reducer.reduce(cfg, state, input)
-    profiler.reset()
-
-    val gc = gcSnapshot()
-    val allocStart = allocatedBytes()
-    val wallStart = System.nanoTime()
-    for (t in 0 until measure) {
-        val tickStart = System.nanoTime()
-        state = reducer.reduce(cfg, state, input)
-        profiler.recordTick(System.nanoTime() - tickStart)
-    }
-    val wallNanos = System.nanoTime() - wallStart
-    val allocDelta = allocatedBytes() - allocStart
-    val gcDelta = gcSnapshot() - gc
-
-    val report = profiler.report()
-    val cells = state.components.getTable<CytoCellComponent>().asMap().size
     println("── $label ──")
     println("  end population: $cells cells")
     println("  wall: ${wallNanos / 1_000_000} ms over $measure ticks")

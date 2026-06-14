@@ -3,12 +3,10 @@ package org.emerge.desktop
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
-import org.emerge.demo.cyto.sim.CytoReducer
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.demo.cyto.sim.systems.addSpring
 import org.emerge.sim.core.EntityId
-import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
@@ -42,13 +40,13 @@ fun main(args: Array<String>) {
     val period = args.getOrNull(4)?.toIntOrNull() ?: 400
 
     val cfg = CytoConfig()
-    val reducer = CytoReducer()
 
     // nCells > 0: a welded line with asymmetric masses (heavy grabbed cell + light tail — worst case
     // for the mass-ratio-weighted spring solver). nCells <= 0: a real grown colony from the default
     // world (dense, varied, evolved), warmed up, then grab the lowest-id (founder-lineage) cell.
     var state: SimState
     val grabbed: EntityId
+    val sim: CytoSoaSim
     if (nCells > 0) {
         val ids = ArrayList<EntityId>()
         state = run {
@@ -65,9 +63,11 @@ fun main(args: Array<String>) {
             b.build()
         }
         grabbed = ids[0]
+        sim = CytoSoaSim(cfg, state)
     } else {
         state = org.emerge.demo.cyto.sim.createCytoInitialState()
-        repeat(600) { state = reducer.reduce(cfg, state, mapOf(PlayerId(0) to CytoInput.EMPTY)) }
+        sim = CytoSoaSim(cfg, state)                       // warm up + main loop share one world
+        repeat(600) { state = sim.step() }
         grabbed = state.components.getTable<org.emerge.demo.cyto.sim.CytoCellComponent>().asMap().keys.minByOrNull { it.value }!!
     }
     val centerX = 0f; val centerY = 0f
@@ -108,7 +108,7 @@ fun main(args: Array<String>) {
         val ang = 2.0 * PI * t / period
         val tx = (centerX + radius * cos(ang)).toFloat()
         val ty = (centerY + radius * sin(ang)).toFloat()
-        if (t > 0) state = reducer.reduce(cfg, state, mapOf(PlayerId(0) to CytoInput(grab = CytoInput.Grab(grabbed, tx, ty, sticky = false))))
+        if (t > 0) state = sim.step(CytoInput(grab = CytoInput.Grab(grabbed, tx, ty, sticky = false)))
         if (t % every == 0) {
             val s = stats()
             val lag = sqrt((s[3] - tx) * (s[3] - tx) + (s[4] - ty) * (s[4] - ty))

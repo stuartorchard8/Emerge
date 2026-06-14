@@ -5,10 +5,8 @@ import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoLightField
 import org.emerge.demo.cyto.sim.CytoCellComponent
-import org.emerge.demo.cyto.sim.CytoReducer
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.createCytoInitialState
-import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.sim.SimState
 import java.awt.Color
@@ -30,10 +28,9 @@ fun main(args: Array<String>) {
     val ticks = args.getOrNull(1)?.toIntOrNull() ?: 400
 
     val cfg = CytoConfig()
-    val reducer = CytoReducer()
-    val input = mapOf(PlayerId(0) to CytoInput.EMPTY)
-    var state = createCytoInitialState()
-    repeat(ticks) { state = reducer.reduce(cfg, state, input) }
+    val sim = CytoSoaSim(cfg, createCytoInitialState())
+    var state = sim.state()
+    repeat(ticks) { state = sim.step() }
 
     val panel = 520
     val img = BufferedImage(panel * 2 + 12, panel, BufferedImage.TYPE_INT_RGB)

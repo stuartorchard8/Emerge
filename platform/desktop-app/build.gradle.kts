@@ -147,15 +147,6 @@ tasks.register<JavaExec>("profileCytoGrowth") {
     workingDir = rootDir
 }
 
-tasks.register<JavaExec>("profileCytoScale") {
-    group = "verification"
-    description = "Population-scaling profiler: replicate a save's cells to N≈500/2k/5k and report per-phase " +
-        "time + allocation vs population. --args=\"<savePath> <factorsCsv> [warmup] [measure]\"."
-    mainClass = "org.emerge.desktop.CytoScaleProfileKt"
-    classpath = sourceSets["main"].runtimeClasspath
-    workingDir = rootDir
-}
-
 tasks.register<JavaExec>("probeCytoGrab") {
     group = "verification"
     description = "Headless drag-stability diagnostic: grab a welded cluster and orbit the target, " +

@@ -4,10 +4,8 @@ import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
-import org.emerge.demo.cyto.sim.CytoReducer
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.createCytoInitialState
-import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.sim.SimState
 
 /**
@@ -24,9 +22,8 @@ fun main(args: Array<String>) {
     val every = args.getOrNull(1)?.toIntOrNull() ?: 500
     val baseCfg = CytoConfig()
     val cfg = args.getOrNull(2)?.toIntOrNull()?.let { baseCfg.copy(mutationRateDenom = it) } ?: baseCfg
-    val reducer = CytoReducer()
-    val input = mapOf(PlayerId(0) to CytoInput.EMPTY)
     var state = createCytoInitialState()
+    val sim = CytoSoaSim(cfg, state)
 
     fun cells() = state.components.getTable<CytoCellComponent>().asMap().values
     fun pop() = cells().size
@@ -59,7 +56,7 @@ fun main(args: Array<String>) {
     }
     line(0)
     for (t in 1..ticks) {
-        state = reducer.reduce(cfg, state, input)
+        state = sim.step()
         if (t % every == 0) line(t)
     }
     println("final: pop=${pop()}  total atoms=${reservoir() + cellAtoms()} (start $atoms0)")
