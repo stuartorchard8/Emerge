@@ -55,6 +55,49 @@ fun main(args: Array<String>) {
     } finally {
         executor.close()
     }
+
+    // ── struct-of-arrays (physics in-place on columns; biology/lifecycle bridged) ──
+    runSoaVariant(initial, cfg, input, warmup, measure)
+}
+
+private fun runSoaVariant(initial: SimState, cfg: CytoConfig, input: Map<PlayerId, CytoInput>, warmup: Int, measure: Int) {
+    val profiler = PipelineProfiler()
+    profiler.allocReader = { allocatedBytes() }
+    val reducer = org.emerge.demo.cyto.sim.soa.CytoSoaReducer(cfg, profiler = profiler)
+    val cytoInput = input.values.first()
+
+    var w = org.emerge.demo.cyto.sim.soa.CytoWorld.fromSimState(initial)
+    for (t in 0 until warmup) w = reducer.tick(w, cytoInput)
+    profiler.reset()
+
+    val gc = gcSnapshot()
+    val allocStart = allocatedBytes()
+    val wallStart = System.nanoTime()
+    for (t in 0 until measure) {
+        val tickStart = System.nanoTime()
+        w = reducer.tick(w, cytoInput)
+        profiler.recordTick(System.nanoTime() - tickStart)
+    }
+    val wallNanos = System.nanoTime() - wallStart
+    val allocDelta = allocatedBytes() - allocStart
+    val gcDelta = gcSnapshot() - gc
+
+    val report = profiler.report()
+    val cells = w.count
+    println("── SOA (in-place physics, biology/lifecycle bridged) ──")
+    println("  end population: $cells cells")
+    println("  wall: ${wallNanos / 1_000_000} ms over $measure ticks")
+    println("  tick: avg=${us(report.tickAvgNanos)}us  p50=${us(report.tickP50Nanos)}us  p95=${us(report.tickP95Nanos)}us  p99=${us(report.tickP99Nanos)}us  max=${us(report.tickMaxNanos)}us")
+    println("  fps headroom: ${"%.1f".format(16_667_000.0 / report.tickAvgNanos)}x of a 60fps frame budget")
+    println("  gc: ${gcDelta.count} collections, ${gcDelta.millis} ms paused")
+    println("  alloc: ${allocDelta / 1_000_000} MB total, ${allocDelta / measure / 1024} KB/tick")
+    println()
+    println("  %-14s %10s %10s %7s %10s".format("phase", "avg us", "max us", "share", "KB/tick"))
+    println("  " + "-".repeat(56))
+    for (line in report.phases.sortedByDescending { it.avgNanos }) {
+        println("  %-14s %10d %10d %6.1f%% %10d".format(line.name, line.avgNanos / 1000, line.maxNanos / 1000, line.sharePercent, line.avgBytes / 1024))
+    }
+    println()
 }
 
 private fun runVariant(

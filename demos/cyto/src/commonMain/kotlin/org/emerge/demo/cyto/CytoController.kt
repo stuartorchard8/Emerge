@@ -6,10 +6,10 @@ import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.sim.createCytoInitialState
 import org.emerge.demo.cyto.sim.CytoCellComponent
-import org.emerge.demo.cyto.sim.CytoReducer
 import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
+import org.emerge.demo.cyto.sim.soa.CytoWorld
 import org.emerge.sim.core.EntityId
-import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -34,13 +34,17 @@ class CytoController(
     // Work-stealing pool for the parallel spring solver (daemon threads on JVM/Android, no
     // shutdown needed; a no-op inline runner on JS).
     private val executor = ParallelExecutor()
-    private val reducer = CytoReducer(executor = executor)
+    private val reducer = CytoSoaReducer(cfg, executor = executor)
     private var tickCount = 0L
     private var accumulator = 0f
 
-    /** The live snapshot — what the renderer / hit-test / save read. The AoS [CytoReducer] returns a
-     *  fresh [SimState] each tick (the SoA structural-win path was shelved for the matter rework). */
-    private var currentState: SimState = createCytoInitialState()
+    /** The persistent struct-of-arrays world — the columns mutate in place each step (no per-tick
+     *  `SimState` rebuild). */
+    private var world: CytoWorld = CytoWorld.fromSimState(createCytoInitialState())
+
+    /** The live snapshot the renderer / hit-test / readouts / save read — materialized from [world]
+     *  via [CytoWorld.toSimState] **once per frame** (only when a step ran), not per step. */
+    private var currentState: SimState = world.toSimState()
 
     private val pendingSpawns = ArrayList<CytoInput.Spawn>()
     private val pendingTaps = ArrayList<CytoInput.Tap>()
@@ -57,6 +61,7 @@ class CytoController(
     fun tick(deltaSeconds: Float): CytoFrame {
         accumulator += deltaSeconds.coerceIn(0f, 0.25f)
         var firstStep = true
+        var stepped = false
         while (accumulator >= STEP) {
             // Spawns/taps are one-shot (consumed on the first step); the grab is continuous.
             val input = CytoInput(
@@ -70,11 +75,15 @@ class CytoController(
                 pendingTaps.clear()
                 pendingDetaches.clear()
             }
-            currentState = reducer.reduce(cfg, currentState, mapOf(PlayerId(0) to input))
+            world = reducer.tick(world, input)
             tickCount++
             accumulator -= STEP
             firstStep = false
+            stepped = true
         }
+        // Materialize once per frame (only when a step ran) — multiple steps in a heavy frame share one
+        // materialize, so the per-step SoA win is preserved.
+        if (stepped) currentState = world.toSimState()
         return CytoFrame(currentState, tickCount)
     }
 
@@ -213,7 +222,8 @@ class CytoController(
     fun snapshotBytes(): ByteArray = CytoSaveCodec.encode(currentState)
 
     fun restoreSnapshot(bytes: ByteArray) {
-        currentState = CytoSaveCodec.decode(bytes)
+        world = CytoWorld.fromSimState(CytoSaveCodec.decode(bytes))
+        currentState = world.toSimState()
         tickCount = 0
         accumulator = 0f
         pendingSpawns.clear()
