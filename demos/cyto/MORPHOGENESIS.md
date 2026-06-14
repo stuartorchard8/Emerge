@@ -59,10 +59,18 @@ A gene is exactly three parts (no multi-input weighted sums like the legacy mode
 1. **Energy source** — sets *how many quanta* (hence how many bond-ops) the gene gets this tick:
    - **Light** — the static field at the cell's position, scaled by **surface exposure** (interior
      cells are shaded; the existing `CytoExposure` weight carries over), floored to an integer quanta
-     count. Autotrophy.
+     count. Autotrophy. **Shading (interference competition):** cells sharing an environment grid-cell
+     split that grid-cell's incident light by **capture weight = exposure × radius**, so a bigger cell
+     captures a larger share and starves smaller neighbours (a cell alone in its grid-cell keeps the
+     full amount — capture share 1). Growth is thus an active weapon, not just self-benefit.
    - **Break bond X** — break a specified bond in a cytoplasmic molecule: releases its 1 quantum to
      power the action *and* splits the molecule into two fragments returned to cytoplasm (matter
      conserved). Heterotrophy / catabolism.
+
+   **Genome-bloat tax:** each gene that is *active* this tick (gate on + real work to do) is throttled
+   to a **1/N share** of its energy source, where N = the number of active genes — regardless of source
+   (Light → ⌊quanta/N⌋, Break bond → ⌊matching-molecules/N⌋). The unclaimed share is lost, so firing
+   many genes at once is costly and lean genomes out-grow bloated ones.
 2. **Binary condition** — flatly gates the gene on/off (extensible list; baseline):
    - quantity of a given chemical ≷ a threshold;
    - total biomass ≷ a threshold.
@@ -217,9 +225,11 @@ headless. Concrete decisions (knob magnitudes are starting values, tagged ⚙ tu
   No `energy`/Frac chemistry. Total biomass = Σ count × bondcount(species).
 - **Environment:** per grid-cell `Map<species, Int>`; seeded once with free monomers **a, b** in a
   gaussian around the 4 light sources ⚙ (good real estate = light + matter), a finite global total ⚙.
-- **Energy this tick** for a gene = `quanta = ⌊ light.sampleAt(pos) × exposure × LIGHT_QUANTA_SCALE ⌋`
-  ⚙ for a Light-sourced gene (target: a surface cell on a source gets a few quanta/tick). 1 quantum =
-  1 op.
+- **Energy this tick** for a cell = `quanta = ⌊ light.sampleAt(pos) × exposure × LIGHT_QUANTA_SCALE ⌋`
+  ⚙ (target: a surface cell on a source gets a few quanta/tick), then **shaded**: cells sharing a
+  grid-cell split it by capture weight `exposure × radius` (a lone cell keeps it all). 1 quantum = 1 op.
+  Each active gene then gets a **1/N** slice of the cell's quanta (Light) or of the matching cytoplasm
+  molecules (Break bond), N = active genes — the genome-bloat tax; the unused slice is lost.
 - **Gene** = `{ energySource: Light, condition: (ChemQty(species, ≷, n) | Biomass(≷, n)), action }`.
   v1 actions: **Import(species)** env→cytoplasm, N ops; **FormBond(a,b)** join a cytoplasm molecule
   ending in `a` with one starting in `b` (canonical = lexicographically-smallest candidates), refused
