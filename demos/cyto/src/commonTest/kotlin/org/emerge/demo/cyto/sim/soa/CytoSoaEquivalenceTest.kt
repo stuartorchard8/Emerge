@@ -1,0 +1,94 @@
+package org.emerge.demo.cyto.sim.soa
+
+import org.emerge.demo.cyto.sim.CytoCellComponent
+import org.emerge.demo.cyto.sim.CytoConfig
+import org.emerge.demo.cyto.sim.CytoInput
+import org.emerge.demo.cyto.sim.CytoMatterGrid
+import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.CytoReducer
+import org.emerge.demo.cyto.sim.GRID_SINGLETON
+import org.emerge.demo.cyto.sim.createCytoInitialState
+import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.physics.components.ImpulseComponent
+import org.emerge.sim.core.physics.components.SpringConstraintComponent
+import org.emerge.sim.core.sim.SimState
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+/**
+ * The landing gate for the struct-of-arrays cyto path (SOA_LANDING_PLAN.md): the SoA world must
+ * round-trip an engine `SimState` losslessly, and the SoA reducer must stay equal to the
+ * array-of-structs [CytoReducer] tick-for-tick. While the reducer is still fully bridged, both reduce
+ * to "[CytoWorld.toSimState]/[CytoWorld.fromSimState] are faithful" — but the same gate guards every
+ * later slice as phases move onto in-place columns.
+ *
+ * `ImpulseComponent` is excluded from the comparison: it is reset to empty every tick before anything
+ * reads it (so it carries no cross-tick state, and the SoA world deliberately doesn't store it). The
+ * matter reservoir is compared by **content** (per grid-cell molecule counts) because [CytoMatterGrid]
+ * has no value-equality.
+ */
+class CytoSoaEquivalenceTest {
+    private val cfg = CytoConfig(mutationRateDenom = 0)  // deterministic: mutation off
+    private val reducer = CytoReducer()
+    private val noInput = mapOf(PlayerId(0) to CytoInput.EMPTY)
+
+    private fun cellCount(s: SimState) = s.components.getTable<CytoCellComponent>().asMap().size
+    private fun springCount(s: SimState) =
+        s.components.getTable<SpringConstraintComponent>().asMap().values.sumOf { it.springs.size }
+
+    private fun gridContent(s: SimState): Map<Int, Map<String, Int>> {
+        val g = s.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid ?: return emptyMap()
+        val out = HashMap<Int, Map<String, Int>>()
+        for (idx in 0 until CytoMatterGrid.RES * CytoMatterGrid.RES) {
+            val c = g.cellAt(idx)
+            if (c.isNotEmpty()) out[idx] = HashMap(c)
+        }
+        return out
+    }
+
+    /** Asserts two states are equal across every tracked component table (impulse excluded, grid by content). */
+    private fun assertStatesMatch(aos: SimState, soa: SimState, label: String) {
+        assertEquals(aos.randomSeed, soa.randomSeed, "$label randomSeed")
+        assertEquals(aos.tick, soa.tick, "$label tick")
+        assertEquals(aos.world.lastEntityValue, soa.world.lastEntityValue, "$label lastEntityValue")
+        val types = aos.components.tables.keys + soa.components.tables.keys
+        for (type in types) {
+            if (type == ImpulseComponent::class) continue              // transient; reset each tick
+            if (type == CytoMatterGridComponent::class) continue       // compared by content below
+            val a = aos.components.tables[type]?.asMap() ?: emptyMap<Any, Any>()
+            val s = soa.components.tables[type]?.asMap() ?: emptyMap<Any, Any>()
+            assertEquals(a, s, "$label table ${type.simpleName}")
+        }
+        assertEquals(gridContent(aos), gridContent(soa), "$label matter grid")
+    }
+
+    @Test
+    fun roundTripsAGrownStateLosslessly() {
+        var s = createCytoInitialState()
+        repeat(250) { s = reducer.reduce(cfg, s, noInput) }  // grow a real colony (cells, springs, drawn-down matter)
+        assertTrue(cellCount(s) > 1, "scenario should grow past the founder (was ${cellCount(s)})")
+        assertTrue(springCount(s) > 0, "scenario should form connections")
+
+        val round = CytoWorld.fromSimState(s).toSimState()
+        assertStatesMatch(s, round, "round-trip")
+    }
+
+    @Test
+    fun soaReducerMatchesAosOverGrowthDivisionAndWeld() {
+        var aos = createCytoInitialState()
+        var w = CytoWorld.fromSimState(aos)
+        val soa = CytoSoaReducer(cfg)
+        val maxTick = 250
+        var sawSprings = false
+        for (t in 1..maxTick) {
+            aos = reducer.reduce(cfg, aos, noInput)
+            w = soa.tick(w)
+            if (springCount(aos) > 0) sawSprings = true
+            if (t % 25 == 0 || t == maxTick) assertStatesMatch(aos, w.toSimState(), "tick=$t")
+        }
+        // Non-vacuous: the scenario must actually exercise growth + connections, or equivalence is hollow.
+        assertTrue(cellCount(aos) > 1, "scenario should grow a colony (was ${cellCount(aos)})")
+        assertTrue(sawSprings, "scenario should form connections")
+    }
+}
