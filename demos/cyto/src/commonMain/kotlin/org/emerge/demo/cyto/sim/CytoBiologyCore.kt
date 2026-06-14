@@ -110,24 +110,51 @@ object CytoBiologyCore {
         }
     }
 
-    /** Phase 1 — execute one cell's genome: each gated gene performs up to `work.quanta` ops of its
-     *  action this tick (energy is per-gene, private, use-or-lose). Import draws from [grid] (so this
-     *  must run in a fixed cell order across cells). */
+    /** Phase 1 — execute one cell's genome (gated actions powered by the cell's energy sources). Import
+     *  draws from the shared [grid], so this must run in a fixed cell order across cells. */
     fun runGenes(work: CellWork, grid: CytoMatterGrid) {
-        for (gene in work.genome) runGene(gene, work, grid)
+        // Genome-bloat tax (PRESSURE.md proposal 3): the more genes are simultaneously ACTIVE, the less of
+        // its energy source each one gets — every active gene is throttled to a 1/N share of what it draws
+        // on, REGARDLESS of whether others use the same source. So firing many genes at once is costly (the
+        // unclaimed remainder is lost, not pooled), and lean, well-targeted genomes out-grow bloated ones —
+        // making a cell's genome matter to its survival. `nActive` is snapshotted before any gene runs (so
+        // the share is order-independent) and counts only genes with real work to do this tick — a gated-on
+        // gene with nothing to repair / already-maxed flex doesn't tax the others (see [isActive]).
+        val nActive = work.genome.count { isActive(it, work) }
+        if (nActive == 0) return
+        for (gene in work.genome) runGene(gene, work, grid, nActive)
     }
 
-    /** Execute one gated gene: repeatedly draw a quantum from its energy source and spend it on one
-     *  action op, until energy runs out or the action can't proceed. Light gives up to `work.quanta`
-     *  quanta; BreakBond gives one per bond it can break (so it's bounded by stored matter). */
-    private fun runGene(gene: Gene, work: CellWork, grid: CytoMatterGrid) {
+    /** A gene is "active" — counting toward the [runGenes] bloat tax — when its condition holds AND its
+     *  action isn't a guaranteed no-op this tick. So an always-on Repair gene with nothing damaged, or a
+     *  flex gene already at its limit, costs the cell (and its neighbours' share of the genome) nothing. */
+    private fun isActive(gene: Gene, work: CellWork): Boolean {
+        if (!gate(gene.condition, work)) return false
+        return when (gene.action.type) {
+            ActionType.Repair -> hasConnectionDamage(work)
+            ActionType.Expand -> canExpand(work)
+            ActionType.Contract -> canContract(work)
+            else -> true
+        }
+    }
+
+    /** Total instances of cytoplasm molecules containing [bond] — the substrate a BreakBond gene draws on,
+     *  used to size its 1/N energy share in [runGene]. */
+    private fun bondSubstrateCount(work: CellWork, bond: String): Int =
+        work.cytoplasm.entries.sumOf { if (it.value > 0 && it.key.contains(bond)) it.value else 0 }
+
+    /** Execute one gated gene: repeatedly draw a quantum from its energy source and spend it on one action
+     *  op, until its per-tick energy share runs out or the action can't proceed. Each active gene gets a
+     *  1/[nActive] slice of its source (the bloat tax): a Light gene may spend up to ⌊quanta/nActive⌋ quanta,
+     *  a BreakBond gene may cleave up to ⌊(matching molecules)/nActive⌋ bonds — the rest of the cell's light
+     *  / breakable matter is left for the other active genes, and any slice this gene doesn't use is lost. */
+    private fun runGene(gene: Gene, work: CellWork, grid: CytoMatterGrid, nActive: Int) {
         val source = gene.source
-        // Light is a SHARED per-cell budget: every light-sourced gene draws from the same `work.quanta`,
-        // spent down here across the genome (in gene order). So a genome with many light genes must
-        // budget its flux among them rather than getting a free full-power copy each — which had rewarded
-        // genome bloat (more genes = more total work at no cost). A gene whose gate is satisfied stops
-        // drawing, releasing the remaining budget to later genes; BreakBond genes are unaffected (their
-        // energy comes from the matter they cleave, not the light pool).
+        // This gene's private energy budget for the tick — its 1/nActive share of the source it draws on.
+        var energyLeft = when (source) {
+            is EnergySource.Light -> work.quanta / nActive
+            is EnergySource.BreakBond -> bondSubstrateCount(work, source.bond) / nActive
+        }
         var ops = 0
         // Futile-cycle guard: a gene whose source + action exactly undo each other (e.g. BreakBond(ab) +
         // FormBond(a,b) → break "ab", reform "ab") leaves the cell's mutable state unchanged from one op to
@@ -146,9 +173,10 @@ object CytoBiologyCore {
             if (gene.action.type == ActionType.Repair && !hasConnectionDamage(work)) break
             if (gene.action.type == ActionType.Expand && !canExpand(work)) break
             if (gene.action.type == ActionType.Contract && !canContract(work)) break
+            if (energyLeft <= 0) break   // this gene has spent its 1/nActive share of its source
             val gotEnergy = when (source) {
-                is EnergySource.Light -> if (work.quanta > 0) { work.quanta--; true } else false
-                is EnergySource.BreakBond -> breakOne(work, source.bond)
+                is EnergySource.Light -> { energyLeft--; true }   // a quantum from this gene's light slice
+                is EnergySource.BreakBond -> if (breakOne(work, source.bond)) { energyLeft--; true } else false
             }
             if (!gotEnergy) break
             val acted = when (gene.action.type) {

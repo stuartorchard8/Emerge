@@ -90,7 +90,8 @@ class CellWork(
     var logicalRadius: Frac,
     val type: CellType,
     val genome: List<Gene>,
-    /** Energy quanta available this tick (1 quantum = 1 op), spent down as genes act. */
+    /** Light energy available to the cell this tick (1 quantum = 1 op). Each active light gene gets a
+     *  1/N share of it (the bloat tax — see CytoBiologyCore.runGenes), not the whole pool. */
     var quanta: Int,
     /** Number of un-connected cells this cell is in contact with this tick (the [ConditionType.Touching]
      *  gate reads it). Transient — recomputed from the physics contacts each tick, never persisted. */

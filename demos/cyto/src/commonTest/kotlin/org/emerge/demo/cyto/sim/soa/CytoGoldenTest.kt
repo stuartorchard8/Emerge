@@ -59,13 +59,17 @@ class CytoGoldenTest {
     // three trajectory goldens shifted (every scene divides into co-located cells); a lone cell is
     // unaffected (capture share 1 → quanta bit-identical). parallelMatchesSequential held (the per-grid-cell
     // capture sum is order-independent).
+    // Re-baselined 2026-06-15: GENOME-BLOAT TAX (CytoBiologyCore.runGenes). Each active gene is now
+    // throttled to a 1/N share of its energy source (N = genes active that tick), regardless of source —
+    // replacing the shared light-pool spend-down with per-gene slices (the unclaimed share is lost). All
+    // three trajectory goldens shifted; the determinism gates held.
     // growth, mutation off, 250 ticks from the default scene.
     private val GROWTH = mapOf(
-        "meta" to "a688f5c8e8efbc6c",
-        "physics" to "2121bb7fbea9d2e",
-        "biology" to "dfa152a9d2aa2c1e",
-        "topology" to "b1cee7d3c52b9a68",
-        "grid" to "bc554ab086614448",
+        "meta" to "2cc2b311f53949fa",
+        "physics" to "9591079fa368af8f",
+        "biology" to "467fc7d419493385",
+        "topology" to "9295f0306166ed66",
+        "grid" to "7941cbbb9f02c4f1",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
     // Re-baselined twice for deliberate gene-model extensions, both of which re-route point-mutation's
@@ -76,19 +80,19 @@ class CytoGoldenTest {
     // The mutation-off GROWTH/INTERACT goldens below are unchanged (no flex/touch gene in the default
     // scene, no mutation), confirming the drift is isolated to the new mechanics.
     private val MUTATION = mapOf(
-        "meta" to "b59131101c0e2a6e",
-        "physics" to "d32a2f4b6a0b9e49",
-        "biology" to "89610c313204e6c3",
-        "topology" to "ecbed6367c0c5bca",
-        "grid" to "612c6a49b4ec8f7a",
+        "meta" to "9d780c5b9c30aa0",
+        "physics" to "8d7401f392d11901",
+        "biology" to "3ade895ca46e67ca",
+        "topology" to "9ee6c7a21a877c87",
+        "grid" to "1527457ef25605e7",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
-        "meta" to "9ba402f2c2629c7c",
-        "physics" to "fe25f086f15bde69",
-        "biology" to "ac715705b1ea73e0",
-        "topology" to "e78dc0b703c3ca43",
-        "grid" to "df7c2696b54805b4",
+        "meta" to "cc3c08744084beb8",
+        "physics" to "3fd3a84e48952a8e",
+        "biology" to "d739bd01ef144f46",
+        "topology" to "99818f584161b8b3",
+        "grid" to "ff7dd79427ca1373",
     )
 
     @Test
