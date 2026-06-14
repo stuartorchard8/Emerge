@@ -16,7 +16,7 @@ object CytoSeed {
     // ── Seed reservoir: a Gaussian bump of free monomers around each light source ─────────────────────
     /** Peak free-monomer count seeded at a source grid cell — the matter the world starts with per
      *  source (hence the early population ceiling, until it's drawn down / recycled). */
-    const val MATTER_PEAK = 64
+    const val MATTER_PEAK = 512
     /** Gaussian radius of the seeded matter clumps (logical units) — decoupled from the light falloff so
      *  nutrient niches can be tight (low total starting matter) without dimming the light field. */
     const val MATTER_FALLOFF = 70f
