@@ -214,8 +214,8 @@ object CytoBiologyCore {
 
     /** Phase 3 — degradation (biomass loses bonds at a rate ∝ size, fragments return to cytoplasm),
      *  size from biomass, and the death/division decision. */
-    fun finish(id: EntityId, work: CellWork, divide: MutableList<EntityId>, destroy: MutableList<EntityId>) {
-        degrade(work)
+    fun finish(id: EntityId, work: CellWork, grid: CytoMatterGrid, divide: MutableList<EntityId>, destroy: MutableList<EntityId>) {
+        degrade(work, grid)
         val bonds = totalBiomassBonds(work.biomass)
         if (bonds < DEATH_BIOMASS) {
             destroy.add(id)
@@ -338,9 +338,15 @@ object CytoBiologyCore {
     }
 
     /** Spontaneous decay: break `wear / DEGRADE_PERIOD` bonds this tick (rate ∝ biomass size), each
-     *  splitting the lexicographically-smallest biomass molecule's leftmost bond → two fragments back to
-     *  cytoplasm. The bond's energy is dissipated (not recovered). */
-    private fun degrade(work: CellWork) {
+     *  splitting the lexicographically-smallest biomass molecule's leftmost bond. The leftmost split peels
+     *  off the leading monomer ([f1], always the smaller/equal fragment); that **smaller fragment is
+     *  ejected to the environment** while the **larger** [f2] stays in cytoplasm. So biomass decay is a
+     *  real matter LEAK to the commons — a maintenance cost the cell must keep importing against
+     *  (selection for efficient builders) and a steady feed for the food web — not the old free cytoplasm
+     *  treadmill where both fragments stayed put and could be re-Converted for nothing. The bond's energy
+     *  is still dissipated (not recovered). With no position (`gridIndex < 0`) there's nowhere to eject to,
+     *  so both fragments stay in cytoplasm. */
+    private fun degrade(work: CellWork, grid: CytoMatterGrid) {
         work.wear += totalBiomassBonds(work.biomass)
         var broken = work.wear / DEGRADE_PERIOD
         work.wear %= DEGRADE_PERIOD
@@ -348,10 +354,10 @@ object CytoBiologyCore {
             val target = work.biomass.entries
                 .filter { it.value > 0 && it.key.length >= 2 }
                 .minByOrNull { it.key }?.key ?: break
-            val (f1, f2) = Molecules.splitLeftmost(target) ?: break
+            val (f1, f2) = Molecules.splitLeftmost(target) ?: break   // f1 = leading monomer (the smaller)
             dec(work.biomass, target)
-            inc(work.cytoplasm, f1, 1)
-            inc(work.cytoplasm, f2, 1)
+            inc(work.cytoplasm, f2, 1)                                // retain the larger fragment
+            if (work.gridIndex >= 0) grid.deposit(work.gridIndex, f1, 1) else inc(work.cytoplasm, f1, 1)
             broken--
         }
     }
