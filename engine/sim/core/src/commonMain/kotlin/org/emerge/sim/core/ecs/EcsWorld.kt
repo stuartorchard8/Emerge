@@ -26,8 +26,7 @@ data class EcsWorld(
             entities -= entityId.value
         }
     }
-
-    companion object {
-        val EMPTY = EcsWorld()
-    }
+    // No shared `EMPTY` singleton: this type is mutated in place (createEntity/removeEntity), so a shared
+    // instance would leak entity-allocation state across independent worlds. SimState.world defaults to a
+    // fresh EcsWorld() per construction instead.
 }

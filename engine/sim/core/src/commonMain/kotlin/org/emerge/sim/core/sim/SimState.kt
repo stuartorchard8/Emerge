@@ -11,7 +11,11 @@ import org.emerge.sim.core.physics.primitives.Contact
  * wrapper states.
  */
 data class SimState(
-    val world: EcsWorld = EcsWorld.EMPTY,
+    // A FRESH EcsWorld per construction (not a shared singleton): EcsWorld holds a mutable entity set +
+    // lastEntityValue that the builder mutates in place (intentional, for fork id-allocation), so a
+    // shared default would leak entity ids across independent SimStates and make ids depend on process
+    // history — breaking determinism for any two independent worlds (regression tests, repeated loads).
+    val world: EcsWorld = EcsWorld(),
     val components: ComponentStore = ComponentStore(),
     val contacts: List<Contact> = emptyList(),
     /**

@@ -1,7 +1,6 @@
 package org.emerge.demo.cyto.sim
 
 import org.emerge.demo.cyto.cells.CellType
-import org.emerge.sim.core.ecs.EcsWorld
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
@@ -16,12 +15,9 @@ import org.emerge.sim.core.sim.SimState
 fun createCytoInitialState(): SimState {
     // Seed the deterministic PRNG non-zero: the engine LCG's first draw degenerates to 0 from a 0 seed
     // (3037000493 ushr 32 == 0), which would spuriously fire a mutation on the founder's first gene at
-    // tick 1. A fixed non-zero seed keeps the sim deterministic without that artifact.
-    // Fresh EcsWorld per call (NOT the shared, mutable EcsWorld.EMPTY default): EMPTY's entity set is
-    // mutated in place by createEntity, so two createCytoInitialState() calls that shared it would hand
-    // their founders different ids (process-history-dependent) — breaking determinism across independent
-    // worlds (golden regression, two-world tests, repeated loads). A fresh world isolates each call.
-    val builder = SimBuilder(SimState(world = EcsWorld(), randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
+    // tick 1. A fixed non-zero seed keeps the sim deterministic without that artifact. (SimState's world
+    // defaults to a fresh EcsWorld per construction, so each call gets an isolated entity allocator.)
+    val builder = SimBuilder(SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
     val (sx, sy) = CytoLightField.SOURCES.first()    // sit the seed on a light source
     builder.spawnCell(
         pos = CytoUnits.coord2(sx, sy),
