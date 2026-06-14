@@ -205,6 +205,17 @@ construction):
 - **Contacts density cliff:** broadphase drifts toward O(k²) per grid cell as colonies pack near the 4
   fixed matter sources (the long-window profile hit 70% at N≈25k). Independent of SoA; may need a per-cell
   cap or dense-region handling as N grows. Track with `profileCytoScale`.
+  - *Possible lever — cap max cell size via an SA/V effectiveness penalty.* The broadphase grid's
+    `cellSize` must be `>= 2·maxRadius`, so the single largest cell sets the grid's coarseness for
+    everyone; one big cell forces a coarse grid → high per-cell occupancy → more O(k²). Capping the
+    *largest* radius lets `cellsPerAxisLog2For` size a finer grid (lower occupancy). A biologically
+    grounded way to cap it: make a cell's effectiveness (uptake/light gain) scale with **surface area,
+    not volume**, so as a cell grows its SA/V ratio falls and returns diminish — exactly the real
+    pressure that drives cells to divide rather than balloon. Triple win: caps `maxRadius` for the
+    broadphase, is biologically real, and adds evolutionary pressure toward division/multicellularity.
+    **Not urgent** — contacts is currently defused (connected-pair exclusion + the +3-margin finer grid
+    dropped it out of the top-3; forces/spring-solve is now the #1 phase). Revisit if contacts climbs
+    back up at higher N or if very-large cells emerge.
 - **Matter grid sharing across the materialize boundary** — the grid is already COW; ensure `toSimState`
   hands out the same instance semantics so a frame's render doesn't alias a mutating grid.
 
