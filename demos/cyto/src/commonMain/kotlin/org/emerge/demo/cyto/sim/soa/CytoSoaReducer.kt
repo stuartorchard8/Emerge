@@ -86,6 +86,30 @@ class CytoSoaReducer(
     // reused per-cell scratch for exposure (neighbour diamond-angles); biology is single-threaded.
     private val expoScratch = LongArray(CytoExposure.MAX_NEIGHBOURS)
 
+    // Spring-solve working set as raw Frac longs (x/y split), reused across ticks and grown on demand,
+    // so the per-body Jacobi gather allocates nothing per tick (no boxed Frac2 working arrays, no
+    // per-edge Frac2/Norm temporaries). p0 = start positions (velocity normals + pNet reference);
+    // p = working positions (moved by the position pass); bv = base (motion) velocity; v = working
+    // velocity (base + accumulated impulse); d = per-iteration per-body accumulated delta.
+    private var ssCap = 0
+    private var ssP0x = LongArray(0); private var ssP0y = LongArray(0)
+    private var ssPx = LongArray(0); private var ssPy = LongArray(0)
+    private var ssBvx = LongArray(0); private var ssBvy = LongArray(0)
+    private var ssVx = LongArray(0); private var ssVy = LongArray(0)
+    private var ssMass = LongArray(0)
+    private var ssDx = LongArray(0); private var ssDy = LongArray(0)
+
+    private fun ensureSpringScratch(n: Int) {
+        if (ssCap >= n) return
+        ssP0x = LongArray(n); ssP0y = LongArray(n)
+        ssPx = LongArray(n); ssPy = LongArray(n)
+        ssBvx = LongArray(n); ssBvy = LongArray(n)
+        ssVx = LongArray(n); ssVy = LongArray(n)
+        ssMass = LongArray(n)
+        ssDx = LongArray(n); ssDy = LongArray(n)
+        ssCap = n
+    }
+
     fun tick(w: CytoWorld, input: CytoInput = CytoInput.EMPTY): CytoWorld {
         val inputs = if (input === CytoInput.EMPTY) player else mapOf(PlayerId(0) to input)
         interactDestroy.clear()
@@ -276,78 +300,81 @@ class CytoSoaReducer(
     private fun springSolve(w: CytoWorld) {
         val n = w.count
         if (n == 0) return
-        // Working set, slot-indexed; only spring-bearing slots are seeded (others stay null and are skipped).
-        val pos0 = arrayOfNulls<Frac2>(n)   // start positions: velocity-solve normals + displacement reference
-        val pos = arrayOfNulls<Frac2>(n)    // working positions, moved by the position (pseudo-velocity) solve
-        val baseVel = arrayOfNulls<Frac2>(n)
-        val vel = arrayOfNulls<Frac2>(n)
-        val mass = LongArray(n)
+        ensureSpringScratch(n)
+        val p0x = ssP0x; val p0y = ssP0y; val px = ssPx; val py = ssPy
+        val bvx = ssBvx; val bvy = ssBvy; val vx = ssVx; val vy = ssVy
+        val mass = ssMass; val dx = ssDx; val dy = ssDy
+        val csr = w.csr
+        // Seed only spring-bearing slots; the gather/apply/emit loops all gate on degree>0, so stale
+        // scratch in spring-less slots is never read. asFrac2 widens the Coord raw Int to a Frac raw Long;
+        // the impulse seed folds in the grab/drag/contacts impulse already accumulated this tick.
         var anySpring = false
         for (i in 0 until n) {
-            if (w.csr.degreeOf(i) == 0) continue
+            if (csr.degreeOf(i) == 0) continue
             anySpring = true
-            val p = Coord2(Coord(w.posX[i]), Coord(w.posY[i])).asFrac2()
-            val bv = Coord2(Coord(w.velX[i]), Coord(w.velY[i])).asFrac2()
-            val imp = Frac2(Frac(w.impVelX[i]), Frac(w.impVelY[i]))
-            pos0[i] = p; pos[i] = p; baseVel[i] = bv; vel[i] = bv + imp
+            val pxr = w.posX[i].toLong(); val pyr = w.posY[i].toLong()
+            p0x[i] = pxr; p0y[i] = pyr; px[i] = pxr; py[i] = pyr
+            bvx[i] = w.velX[i].toLong(); bvy[i] = w.velY[i].toLong()
+            vx[i] = bvx[i] + w.impVelX[i]; vy[i] = bvy[i] + w.impVelY[i]
             mass[i] = w.mass[i].toUInt().toLong()
         }
         if (!anySpring) return
-        val delta = arrayOfNulls<Frac2>(n)  // per-iteration per-body accumulated correction
 
         // 1) velocity solve: cancel relative NORMAL velocity (damping only), normals from start positions.
+        //    Raw-Frac arithmetic mirrors the AoS Frac2/Norm ops op-for-op (see FRAC_MAX / lenRaw notes).
         repeat(ITERATIONS) {
             ColumnPartition.disjoint(n, executor, springParallelThreshold) { start, end ->
                 for (i in start until end) {
-                    val velI = vel[i] ?: continue
-                    var acc = Frac2.zero
-                    for (k in w.csr.offset[i] until w.csr.offset[i + 1]) {
-                        val j = w.csr.otherSlot[k]; if (j < 0) continue
-                        val d = pos0[j]!! - pos0[i]!!
-                        val dist = d.len
-                        if (dist.raw == 0L) continue
-                        val normal = d.normFromLen(dist)
-                        val totalMass = mass[i] + mass[j]; if (totalMass <= 0L) continue
-                        val relVel = (vel[j]!! - velI).dot(normal)
-                        val vCorr = relVel * Frac(w.csr.dampRaw[k])
-                        val weight = Frac(mass[j], totalMass.toInt())
-                        acc = acc + normal * (vCorr * weight)
+                    if (csr.degreeOf(i) == 0) continue
+                    var accX = 0L; var accY = 0L
+                    val mi = mass[i]; val vix = vx[i]; val viy = vy[i]; val p0ix = p0x[i]; val p0iy = p0y[i]
+                    for (k in csr.offset[i] until csr.offset[i + 1]) {
+                        val j = csr.otherSlot[k]; if (j < 0) continue
+                        val ddx = p0x[j] - p0ix; val ddy = p0y[j] - p0iy   // d = pos0[j] - pos0[i]
+                        val dist = lenRaw(ddx, ddy); if (dist == 0L) continue
+                        val nx = ddx * FRAC_MAX / dist; val ny = ddy * FRAC_MAX / dist   // normFromLen
+                        val total = mi + mass[j]; if (total <= 0L) continue
+                        val rvx = vx[j] - vix; val rvy = vy[j] - viy
+                        val relVel = rvx * nx / FRAC_MAX + rvy * ny / FRAC_MAX           // (relVel).dot(normal)
+                        val vCorr = relVel * csr.dampRaw[k] / FRAC_MAX
+                        val weight = mass[j] * FRAC_MAX / total.toInt().toLong()         // Frac(mass[j], total.toInt())
+                        val scalar = vCorr * weight / FRAC_MAX                           // vCorr * weight
+                        accX += nx * scalar / FRAC_MAX; accY += ny * scalar / FRAC_MAX   // normal * scalar
                     }
-                    delta[i] = acc
+                    dx[i] = accX; dy[i] = accY
                 }
             }
-            for (i in 0 until n) { val d = delta[i] ?: continue; vel[i] = vel[i]!! + d }
+            for (i in 0 until n) { if (csr.degreeOf(i) == 0) continue; vx[i] += dx[i]; vy[i] += dy[i] }
         }
         // 2) position solve (pseudo-velocity): move working positions toward rest length.
         repeat(ITERATIONS) {
             ColumnPartition.disjoint(n, executor, springParallelThreshold) { start, end ->
                 for (i in start until end) {
-                    val posI = pos[i] ?: continue
-                    var acc = Frac2.zero
-                    for (k in w.csr.offset[i] until w.csr.offset[i + 1]) {
-                        val j = w.csr.otherSlot[k]; if (j < 0) continue
-                        val d = pos[j]!! - posI
-                        val dist = d.len
-                        if (dist.raw == 0L) continue
-                        val normal = d.normFromLen(dist)
-                        val totalMass = mass[i] + mass[j]; if (totalMass <= 0L) continue
-                        val lengthError = dist - Frac(w.csr.restRaw[k])
-                        val pCorr = lengthError * Frac(w.csr.stiffRaw[k])
-                        val weight = Frac(mass[j], totalMass.toInt())
-                        acc = acc + normal * (pCorr * weight)
+                    if (csr.degreeOf(i) == 0) continue
+                    var accX = 0L; var accY = 0L
+                    val mi = mass[i]; val pix = px[i]; val piy = py[i]
+                    for (k in csr.offset[i] until csr.offset[i + 1]) {
+                        val j = csr.otherSlot[k]; if (j < 0) continue
+                        val ddx = px[j] - pix; val ddy = py[j] - piy     // d = pos[j] - pos[i]
+                        val dist = lenRaw(ddx, ddy); if (dist == 0L) continue
+                        val nx = ddx * FRAC_MAX / dist; val ny = ddy * FRAC_MAX / dist
+                        val total = mi + mass[j]; if (total <= 0L) continue
+                        val lengthError = dist - csr.restRaw[k]                          // dist - Frac(rest)
+                        val pCorr = lengthError * csr.stiffRaw[k] / FRAC_MAX
+                        val weight = mass[j] * FRAC_MAX / total.toInt().toLong()
+                        val scalar = pCorr * weight / FRAC_MAX
+                        accX += nx * scalar / FRAC_MAX; accY += ny * scalar / FRAC_MAX
                     }
-                    delta[i] = acc
+                    dx[i] = accX; dy[i] = accY
                 }
             }
-            for (i in 0 until n) { val d = delta[i] ?: continue; pos[i] = pos[i]!! + d }
+            for (i in 0 until n) { if (csr.degreeOf(i) == 0) continue; px[i] += dx[i]; py[i] += dy[i] }
         }
         // emit: vel channel = net velocity change (incl. prior impulse); pos channel += position correction.
-        for (slot in 0 until n) {
-            val p0 = pos0[slot] ?: continue
-            val vNet = vel[slot]!! - baseVel[slot]!!
-            val pNet = pos[slot]!! - p0
-            w.impVelX[slot] = vNet.x.raw; w.impVelY[slot] = vNet.y.raw
-            w.impPosX[slot] += pNet.x.raw; w.impPosY[slot] += pNet.y.raw
+        for (i in 0 until n) {
+            if (csr.degreeOf(i) == 0) continue
+            w.impVelX[i] = vx[i] - bvx[i]; w.impVelY[i] = vy[i] - bvy[i]
+            w.impPosX[i] += px[i] - p0x[i]; w.impPosY[i] += py[i] - p0y[i]
         }
     }
 
@@ -570,5 +597,34 @@ class CytoSoaReducer(
 
     companion object {
         private const val ITERATIONS = 4   // matches SpringConstraintSystem default
+
+        // Frac fixed-point scale (= Int.MAX_VALUE as Long). The raw-long spring math mirrors the Frac/
+        // Frac2/Norm operators op-for-op: Frac.div(o) = raw*MAX/o.raw, Frac.times(o) = raw*o.raw/MAX,
+        // Frac(n,d) = n*MAX/d — same grouping, same truncate-toward-zero division, so bit-identical to
+        // the AoS oracle (gated by CytoSoaEquivalenceTest, incl. the forced-parallel case).
+        private const val FRAC_MAX = 2147483647L  // Int.MAX_VALUE
+
+        // Exact replica of Frac2.len(x,y) on raw longs (no Frac2 allocation): raw-space integer hypot,
+        // with the same value-space sqrt fallback above |raw| = Int.MAX (where ax²+ay² would overflow).
+        private val SQRT_MAX_INT: Long = longISqrt(FRAC_MAX)
+        private fun lenRaw(xr: Long, yr: Long): Long {
+            val ax = if (xr < 0L) -xr else xr
+            val ay = if (yr < 0L) -yr else yr
+            if (ax == 0L) return ay
+            if (ay == 0L) return ax
+            return if (ax <= FRAC_MAX && ay <= FRAC_MAX) longISqrt(ax * ax + ay * ay)
+            else longISqrt(ax * ax / FRAC_MAX + ay * ay / FRAC_MAX, 2L, ax + ay) * SQRT_MAX_INT
+        }
+
+        // Integer sqrt, identical to Frac2.longISqrt (same default bounds), so lenRaw matches Frac2.len.
+        private fun longISqrt(n: Long, min: Long = 2L, max: Long = 2L * FRAC_MAX): Long {
+            if (n < 2) return n
+            var low = min; var high = max; var result = min
+            while (low <= high) {
+                val mid = low + (high - low) / 2
+                if (mid <= n / mid) { result = mid; low = mid + 1 } else high = mid - 1
+            }
+            return result
+        }
     }
 }

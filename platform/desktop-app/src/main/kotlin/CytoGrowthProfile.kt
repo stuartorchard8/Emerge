@@ -39,8 +39,8 @@ fun main(args: Array<String>) {
     val executor = ParallelExecutor()
     println("natural-growth scaling on the live SoA reducer (grow<=$growTicks ticks or ${growBudgetMs}ms, measure=$measureTicks)")
     println("each factor grown once (sequential, deterministic), then the SAME world measured seq vs parallel.\n")
-    println("%8s %7s %8s  %5s %10s %9s   %s".format("matter×", "grown", "pop", "mode", "tick us", "%budget", "top phases (avg us / share)"))
-    println("-".repeat(120))
+    println("%8s %7s %8s  %5s %10s %9s %9s   %s".format("matter×", "grown", "pop", "mode", "tick us", "%budget", "KB/tick", "top phases (avg us / share)"))
+    println("-".repeat(130))
     System.out.flush()
     for (f in factors) {
         // Grow once with a plain sequential reducer (deterministic), then snapshot the colony.
@@ -68,15 +68,24 @@ private fun measure(mode: String, f: Int, grown: Int, pop: Int, snapshot: SimSta
     var w = CytoWorld.fromSimState(snapshot)
     repeat(50) { w = soa.tick(w, CytoInput.EMPTY) }   // warm JIT + let the executor spin up
     profiler.reset()
+    // Whole-tick main-thread allocation (KB/tick). Captures the spring solver's per-tick garbage on the
+    // SEQ path exactly (all on this thread); on the PAR path the worker-thread gather alloc isn't counted.
+    val alloc0 = allocatedBytes()
     for (t in 0 until ticks) {
         val s = System.nanoTime()
         w = soa.tick(w, CytoInput.EMPTY)
         profiler.recordTick(System.nanoTime() - s)
     }
+    val allocKbPerTick = (allocatedBytes() - alloc0) / 1024 / ticks
     val r = profiler.report()
     val top = r.phases.sortedByDescending { it.avgNanos }.take(3)
         .joinToString("  ") { "%s %d/%.0f%%".format(it.name, it.avgNanos / 1000, it.sharePercent) }
-    println("%8d %7d %8d  %5s %10d %8.0f%%   %s".format(f, grown, pop, mode, r.tickAvgNanos / 1000, r.tickAvgNanos / 166_670.0, top))
+    println("%8d %7d %8d  %5s %10d %8.0f%% %9d   %s".format(f, grown, pop, mode, r.tickAvgNanos / 1000, r.tickAvgNanos / 166_670.0, allocKbPerTick, top))
+}
+
+private fun allocatedBytes(): Long {
+    val bean = java.lang.management.ManagementFactory.getThreadMXBean() as com.sun.management.ThreadMXBean
+    return bean.getThreadAllocatedBytes(Thread.currentThread().id)
 }
 
 /** A fresh world whose matter reservoir is seeded [factor]× richer (more nutrients ⇒ higher carrying
