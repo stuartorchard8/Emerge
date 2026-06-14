@@ -7,6 +7,7 @@ import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoExposure
+import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoLightField
 import org.emerge.demo.cyto.sim.CytoMatterGrid
@@ -454,7 +455,7 @@ class CytoSoaReducer(
             val sample = lightField.sampleAt(lx, ly)
             val exposure = CytoExposure.weight(expoScratch, ek)
             val radius = Frac(w.cell.logicalRadius[slot])
-            baseQuantaRaw[k] = ((sample * exposure) * CytoBiologyCore.LIGHT_QUANTA_SCALE).raw
+            baseQuantaRaw[k] = ((sample * exposure) * CytoTuning.LIGHT_QUANTA_SCALE).raw
             // capture = exposure × radius, in milli-units. NOT `(exposure * radius)` — a big cell's radius
             // exceeds Frac's safe ±2 value range, so that Frac×Frac overflows Long (negative capture →
             // starves the founder). Reduce exposure to ≤1000 first, then scale by radius.raw.

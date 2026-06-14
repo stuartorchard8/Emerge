@@ -135,23 +135,12 @@ class CytoMatterGrid private constructor(
         val SPAN = CytoLightField.SPAN
         val HALF = CytoLightField.HALF
 
-        /** Peak free-monomer count seeded at a source grid cell (⚙ tunable — the matter carrying
-         *  capacity per source, hence the population ceiling). Seeded for each monomer species (a, b). */
-        const val MATTER_PEAK = 64
-
-        /** Gaussian radius of the matter clumps (logical units) — decoupled from the (wider) light
-         *  [CytoLightField.FALLOFF] so we can make the *nutrient* niches small (and total nutrients low)
-         *  without dimming the light field. Total world matter ≈ MATTER_PEAK × 4 sources × π(σ/cellSize)²;
-         *  keeping it small is the population cap while the per-cell sim is unoptimised. ⚙ */
-        const val MATTER_FALLOFF = 70f
-
-        /** Slow-diffusion rate: per tick, each grid-cell edge moves `⌊|gradient|·DIFFUSE_NUM/DIFFUSE_DEN⌋`
-         *  of each species down-gradient. Keep `4·NUM/DEN ≤ 1`. Smaller = slower + coarser settle. ⚙ */
-        const val DIFFUSE_NUM = 1
-        const val DIFFUSE_DEN = 8
-
-        /** The free monomer species the world is seeded with. */
-        val SEED_MONOMERS = listOf("a", "b", "c", "d", "e", "f", "g")
+        // Values live in CytoTuning (the single tuning sheet); kept here as local references.
+        const val MATTER_PEAK = CytoTuning.MATTER_PEAK
+        const val MATTER_FALLOFF = CytoTuning.MATTER_FALLOFF
+        const val DIFFUSE_NUM = CytoTuning.MATTER_DIFFUSE_NUM
+        const val DIFFUSE_DEN = CytoTuning.MATTER_DIFFUSE_DEN
+        val SEED_MONOMERS = CytoTuning.SEED_MONOMERS
 
         /**
          * A fresh reservoir: free monomers in a Gaussian bump around each of the 4 light sources, so the

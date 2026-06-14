@@ -4,86 +4,28 @@ import org.emerge.sim.core.physics.model.PhysicsTuning
 import org.emerge.sim.core.physics.primitives.Frac
 
 /**
- * Cyto tuning. Implements the engine [PhysicsTuning] contract (Cyto uses no gravity or
- * rolling resistance, so those are zero), plus Cyto-specific physics knobs. The spring,
- * weld, repulsion, and damage constants are the ones that need *visual* tuning on
- * `runCyto` to feel like the original Box2D sim — they start at first-cut values.
+ * Cyto's **runtime** tuning: implements the engine [PhysicsTuning] contract (Cyto has no gravity /
+ * rolling resistance, so those are zero) and carries the per-instance-overridable physics + mutation
+ * knobs. The default values all live in [CytoTuning] (the single tuning sheet, with the explanatory
+ * docs) — edit them there; override here only when a specific run/test needs a different value
+ * (e.g. tests use `cfg.copy(mutationRateDenom = …)`).
  */
 data class CytoConfig(
     override val gravityNumerator: Frac = Frac(0),
     override val rollingResistance: Frac = Frac(0),
     override val collisionSpeedDamageThreshold: Frac = Frac(0),
 
-    /** Connection gains for the split-impulse solver (see SpringConstraintSystem). The original Cyto
-     *  used a Box2D DistanceJoint at frequencyHz=10, dampingRatio=4 — *heavily overdamped*, i.e. a soft,
-     *  non-oscillatory relaxation toward rest that lets connections stretch under load. We reproduce
-     *  that overdamped-soft behaviour (not Box2D's literal float constants — the engine's fixed-point
-     *  Frac can't hold a stiffness of ~ω² ≈ 1e5) via the solver's two channels:
-     *
-     *   - [springStiffness] = the position-relaxation rate: the fraction of a connection's length error
-     *     pulled out per solver iteration, on the pseudo-velocity (position) channel. < 1 ⇒ soft: a
-     *     loaded connection sits at a stretch ≈ load / effective-rate instead of snapping to rest. This
-     *     visible stretch is what makes force-based breaking work (stretch ∝ transmitted force). Because
-     *     it's a pseudo-velocity, softening it never injects kinetic energy (no drag-rectified pump).
-     *   - [springDamping] = the fraction of relative normal velocity cancelled per iteration (real
-     *     velocity, dissipative) — the overdamping.
-     *
-     *  Soft enough to stretch + tear under load, firm enough to hold a colony's shape. Tune on runCyto. */
-    val springStiffness: Frac = Frac(1, 20),
-    val springDamping: Frac = Frac(1, 4),
-
-    /** Repulsion impulse fraction for overlapping, non-connected cells. */
-    val repulsion: Frac = Frac(2, 3),
-
-    /** Connection breaks when accumulated stress damage exceeds this (matches the original). Higher =
-     *  less fragile connections. Breaking is heal-gated by [connectionStressScale]'s −0.25/tick floor,
-     *  so only genuinely over-stretched connections (stretch past ~0.5 logical) ever accrue toward it. */
-    val connectionBreakDamage: Float = 3f,
-
-    /** Exposed-surface viscous drag (CytoDragSystem): quadratic coefficient over the exposed speed
-     *  (logical units/tick). Higher = more drag; tune for the decelerate-fast-glide-slow feel. */
-    val dragCoefficient: Float = 0.2f,
-
-    /** Max fraction of a cell's (exposed) speed drag may remove in one tick. The drag impulse is
-     *  capped at `dragMaxFraction · speed`, so a fast cell DECELERATES smoothly (≈ exponential at this
-     *  rate) instead of slamming to a stop — which is what lets a flicked cell carry real momentum and
-     *  glide before settling. Must be ≤ 1 (so drag never reverses the motion); the quadratic + linear
-     *  drags act in full below this cap, so slow drift still settles. */
-    val dragMaxFraction: Float = 0.3f,
-
-    /** Additional per-cell drag for the cell's cross-sectional *width* (CytoDragSystem): a wider cell
-     *  pushes more fluid. Unlike the base surface drag (quadratic), this term is **linear** in speed —
-     *  `cellWidthDragCoefficient · radius · speed` — so it damps proportionally at *all* speeds and
-     *  settles slow drift the quadratic term leaves behind. It rides the same exposed (shielded)
-     *  velocity, so neighbours shield it like the surface drag. The value is the per-tick decay rate
-     *  per unit radius (`· radius` ⇒ effective rate ~0.1–0.2/tick for a typical cell); keep < 1/radius. */
-    val cellWidthDragCoefficient: Float = 0.02f,
-
-    /** Stretch (logical units) -> stress, for connection damage. Lower = a given stretch
-     *  hurts less, so connections tolerate more deformation before they fray. */
-    val connectionStressScale: Float = 0.5f,
-
-    /** Mouse-drag pull: how hard a grabbed cell is pulled toward the pointer, and its damping. */
-    val grabStiffness: Frac = Frac(1, 2),
-    val grabDamping: Frac = Frac(1, 1),
-
-    /** Variable-mass propulsion ("rocket"): when a cell's atoms change, rescale its velocity to hold
-     *  momentum (shed matter → speed up). True = on (the intended physics). A diagnostic toggle —
-     *  set false to ablate it and check whether colony self-propulsion comes from here. ⚙ */
-    val variableMass: Boolean = true,
-
-    /** Mouse-joint reach cap (logical units): the grab pull is computed as if the pointer is at most
-     *  this far away, so a fast/far pointer can't inject a teleporting one-tick velocity (which would
-     *  whip the cell's spring network). The cell then follows at up to grabStiffness × this per tick.
-     *  ⚙ (Without it, dragging spikes: a far target = a 0.5·distance velocity = hundreds of units/tick.) */
-    val grabMaxReach: Float = 4f,
-
-    /** Per-tick genetic damage: each gene of every cell independently faces *each* mutation operator
-     *  (threshold drift / duplication / deletion / point-mutation) with probability `1 / mutationRateDenom`
-     *  every tick (not tied to division — accumulating damage both drives evolution and disrupts frozen
-     *  no-division steady states). `0` disables mutation. At 1/200_000 a cell accrues well under one
-     *  mutation per ~10k-tick lifetime, so most individuals persist unmodified by chance while the
-     *  population as a whole explores — and deleterious mutants that die just recycle their matter to
-     *  the survivors. (Was 1/10_000, which caused mutational meltdown.) ⚙ */
-    val mutationRateDenom: Int = 100_000,
+    val springStiffness: Frac = CytoTuning.SPRING_STIFFNESS,
+    val springDamping: Frac = CytoTuning.SPRING_DAMPING,
+    val repulsion: Frac = CytoTuning.REPULSION,
+    val connectionBreakDamage: Float = CytoTuning.CONNECTION_BREAK_DAMAGE,
+    val dragCoefficient: Float = CytoTuning.DRAG_COEFFICIENT,
+    val dragMaxFraction: Float = CytoTuning.DRAG_MAX_FRACTION,
+    val cellWidthDragCoefficient: Float = CytoTuning.CELL_WIDTH_DRAG_COEFFICIENT,
+    val connectionStressScale: Float = CytoTuning.CONNECTION_STRESS_SCALE,
+    val grabStiffness: Frac = CytoTuning.GRAB_STIFFNESS,
+    val grabDamping: Frac = CytoTuning.GRAB_DAMPING,
+    val variableMass: Boolean = CytoTuning.VARIABLE_MASS,
+    val grabMaxReach: Float = CytoTuning.GRAB_MAX_REACH,
+    val mutationRateDenom: Int = CytoTuning.MUTATION_RATE_DENOM,
 ) : PhysicsTuning

@@ -16,30 +16,14 @@ import org.emerge.sim.core.physics.primitives.Frac
  */
 object CytoBiologyCore {
 
-    // ── tunable knobs (MORPHOGENESIS §v1 spec) ──────────────────────────────────
-    /** light → quanta: `quanta = floor(field × exposure × SCALE)` (computed in integer `Frac` raws, no
-     *  float — see the reducer's biology phase). Field peaks at ~STRENGTH (0.005), so a fully-exposed cell on a
-     *  source gets ~`STRENGTH·SCALE` ops/tick. ⚙ */
-    const val LIGHT_QUANTA_SCALE = 2000
-    /** Degradation: a cell's wear accumulator gains its total biomass bonds each tick; every
-     *  DEGRADE_PERIOD of accumulated wear breaks one bond (so decay rate ∝ size). ⚙ */
-    const val DEGRADE_PERIOD = 4000
-    /** Biomass bonds for a full-size (radius 1.0) cell — `radius = sqrt(bonds / BONDS_PER_FULL)`. ⚙ */
-    const val BONDS_PER_FULL = 16
-    /** Cell dies when total biomass falls below this (1 ⇒ dies once biomass is empty). ⚙ */
-    const val DEATH_BIOMASS = 1
-    /** Safety backstop on ops per gene per tick (Light is already capped by quanta; BreakBond is
-     *  bounded by available bonds — this caps a pathological store from being processed all at once). ⚙ */
-    const val MAX_OPS_PER_GENE = 4096
-    /** Connection damage healed per Repair op (one quantum). 0.25 matches the old free per-tick heal —
-     *  so ~one op/tick maintains a lightly-loaded connection; more stress needs more energy. ⚙ */
-    const val REPAIR_PER_OP = 0.25f
-    /** Radius moved per Expand/Contract op (one quantum). ⚙ */
-    val FLEX_STEP = Frac(1, 64)
-    /** Max radius deviation a gene can hold the cell at, **away from** its biomass baseline (Expand
-     *  pushes up to baseline+this; Contract down to [MIN_RADIUS]). Bounds the actuator so a high-quanta
-     *  cell can't balloon without limit. ⚙ */
-    val FLEX_RANGE = Frac(1, 2)
+    // ── tunable knobs — VALUES LIVE IN CytoTuning (the single tuning sheet); these are local references ──
+    const val BONDS_PER_FULL = CytoTuning.BONDS_PER_FULL      // also read by CytoLifecycleSystem
+    private const val DEGRADE_PERIOD = CytoTuning.DEGRADE_PERIOD
+    private const val DEATH_BIOMASS = CytoTuning.DEATH_BIOMASS
+    private const val MAX_OPS_PER_GENE = CytoTuning.MAX_OPS_PER_GENE
+    private const val REPAIR_PER_OP = CytoTuning.REPAIR_PER_OP
+    private val FLEX_STEP = CytoTuning.FLEX_STEP
+    private val FLEX_RANGE = CytoTuning.FLEX_RANGE
 
     /** Phase 0 — passive cell↔environment exchange (FREE, down-gradient), **batched and fair**: per
      *  species, each cell wants to move ⌊(env − cyto)/2⌋ between itself and its reservoir grid-cell

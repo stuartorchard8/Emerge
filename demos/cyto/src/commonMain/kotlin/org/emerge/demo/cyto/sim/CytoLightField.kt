@@ -45,8 +45,8 @@ class CytoLightField private constructor(private val grid: LongArray) {
     fun gridAt(gx: Int, gy: Int): Frac = Frac(grid[wrapIndex(gy) * RES + wrapIndex(gx)])
 
     companion object {
-        /** Grid resolution per axis (the field is smooth, so a coarse grid is plenty). */
-        const val RES = 64
+        /** Grid resolution per axis — value in [CytoTuning.GRID_RES]. */
+        const val RES = CytoTuning.GRID_RES
 
         /** Logical torus extent: [-HALF, HALF) per axis, [SPAN] = 2·HALF wide (see [CytoUnits]). */
         const val HALF = CytoUnits.CELLS_PER_AXIS.toFloat()
@@ -58,13 +58,11 @@ class CytoLightField private constructor(private val grid: LongArray) {
             listOf(-q to -q, -q to q, q to -q, q to q)
         }
 
-        /** Peak light at a source (≈ energy/tick a Collector sitting on it produces). Rescaled ÷10
-         *  from the old 0.05f into the Frac [0,1] range. */
-        val STRENGTH = Frac(1, 200)
+        /** Peak light at a source — value in [CytoTuning.LIGHT_STRENGTH]. */
+        val STRENGTH = CytoTuning.LIGHT_STRENGTH
 
-        /** Gaussian falloff radius (logical units): light is strong within ~σ of a source and decays
-         *  to ~0 well before the midpoint (HALF/2 away), leaving dark contested zones between sources. */
-        const val FALLOFF = 200f
+        /** Gaussian falloff radius (logical units) — value in [CytoTuning.LIGHT_FALLOFF]. */
+        const val FALLOFF = CytoTuning.LIGHT_FALLOFF
 
         private var cached: CytoLightField? = null
 

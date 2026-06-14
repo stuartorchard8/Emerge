@@ -53,6 +53,6 @@ object CytoExposure {
     private val THREE = Frac(3, 1)
     private val FULL_TURN_RAW = Frac(4, 1).raw
 
-    /** Max neighbours considered (a cell with more is buried → tiny exposure regardless). */
-    const val MAX_NEIGHBOURS = 32
+    /** Max neighbours considered — value in [CytoTuning.EXPOSURE_MAX_NEIGHBOURS]. */
+    const val MAX_NEIGHBOURS = CytoTuning.EXPOSURE_MAX_NEIGHBOURS
 }

@@ -10,10 +10,9 @@ import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.spawnBody
 import kotlin.math.max
 
-/** Min cell radius (logical), from the original Cyto `Cell`. */
-val MIN_RADIUS = Frac(1, 4)
-const val RADIUS_ELASTICITY = 3
-val MAX_CHEM = Frac(1, 1)
+// Values live in CytoTuning (the single tuning sheet); kept as top-level names for ergonomic use.
+val MIN_RADIUS = CytoTuning.MIN_RADIUS
+const val RADIUS_ELASTICITY = CytoTuning.RADIUS_ELASTICITY
 
 /** Total atoms in a molecule-count map (Σ count × molecule length). */
 fun atomCount(molecules: Map<String, Int>): Int {
@@ -68,6 +67,5 @@ fun SimBuilder.spawnCell(
     return id
 }
 
-/** Default biomass for a freshly-spawned cell (e.g. a player-placed cell): a little structure so it
- *  doesn't instantly die to the death-on-empty-biomass rule and can be observed. ⚙ */
-val STARTER_BIOMASS: Map<String, Int> = mapOf("ab" to 8)
+/** Default biomass for a freshly-spawned cell — value in [CytoTuning.STARTER_BIOMASS]. */
+val STARTER_BIOMASS: Map<String, Int> = CytoTuning.STARTER_BIOMASS

@@ -121,10 +121,9 @@ fun totalBiomassBonds(biomass: Map<String, Int>): Int {
 }
 
 // ── Preset genomes ───────────────────────────────────────────────────────────
-// Tunable knobs (MORPHOGENESIS §v1 spec).
-private const val LEAK_RESERVE = 4     // cytoplasm 'ab' the autotroph keeps back — passively leaks to
-                                       // the environment (down-gradient, free) → food for heterotrophs
-private const val DIVIDE_BIOMASS = 8   // divide once biomass reaches this many bonds
+// Threshold values live in CytoTuning (the single tuning sheet); the gene *structure* is below.
+private const val LEAK_RESERVE = CytoTuning.AUTOTROPH_LEAK_RESERVE
+private const val DIVIDE_BIOMASS = CytoTuning.AUTOTROPH_DIVIDE_BIOMASS
 
 /**
  * The hand-authored **light-only autotroph** (the v1 creature). It absorbs the monomers a and b for
@@ -141,9 +140,9 @@ val AUTOTROPH_GENES: List<Gene> = listOf(
     Gene(EnergySource.Light, GeneCondition(ConditionType.Biomass, "", Comparison.Greater, 0), GeneAction(ActionType.Repair)),
 )
 
-// Heterotroph knobs.
-private const val HET_RESERVE = 2      // keep this much cytoplasm 'ab' as an energy reserve
-private const val HET_DIVIDE = 8       // divide once biomass reaches this many bonds
+// Heterotroph thresholds — values in CytoTuning.
+private const val HET_RESERVE = CytoTuning.HETEROTROPH_RESERVE
+private const val HET_DIVIDE = CytoTuning.HETEROTROPH_DIVIDE_BIOMASS
 
 /**
  * A hand-authored **heterotroph**: it has no light genes — it lives on `ab` molecules already in its
