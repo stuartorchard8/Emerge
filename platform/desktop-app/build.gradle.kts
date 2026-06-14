@@ -138,6 +138,15 @@ tasks.register<JavaExec>("benchCyto") {
     workingDir = rootDir
 }
 
+tasks.register<JavaExec>("profileCytoGrowth") {
+    group = "verification"
+    description = "Grow a colony on the live SoA reducer at scaled nutrient levels, profiling the steady " +
+        "tick vs population to find the real bottleneck near the 60fps budget. --args=\"<factorsCsv> [grow] [measure]\"."
+    mainClass = "org.emerge.desktop.CytoGrowthProfileKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootDir
+}
+
 tasks.register<JavaExec>("profileCytoScale") {
     group = "verification"
     description = "Population-scaling profiler: replicate a save's cells to N≈500/2k/5k and report per-phase " +
