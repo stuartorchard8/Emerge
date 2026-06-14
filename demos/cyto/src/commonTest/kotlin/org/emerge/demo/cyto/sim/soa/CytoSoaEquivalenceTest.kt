@@ -1,5 +1,6 @@
 package org.emerge.demo.cyto.sim.soa
 
+import org.emerge.demo.cyto.sim.ConnectionStateComponent
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
@@ -52,10 +53,22 @@ class CytoSoaEquivalenceTest {
         assertEquals(aos.randomSeed, soa.randomSeed, "$label randomSeed")
         assertEquals(aos.tick, soa.tick, "$label tick")
         assertEquals(aos.world.lastEntityValue, soa.world.lastEntityValue, "$label lastEntityValue")
+        // Connection damage is compared with **zero entries dropped**: AoS lets a spring exist without a
+        // damage entry (a fresh connection) and reads a missing entry as `?: 0f`, whereas the SoA CSR
+        // always carries a 0 for a spring edge — behaviourally identical (repair ignores 0s; maintenance
+        // reads missing as 0), only the map representation differs. A genuine non-zero divergence is
+        // still caught (a non-zero never equals a missing/zero).
+        fun nonZeroDamage(s: SimState): Map<org.emerge.sim.core.EntityId, Map<org.emerge.sim.core.EntityId, Float>> =
+            s.components.getTable<ConnectionStateComponent>().asMap()
+                .mapValues { (_, c) -> c.damage.filterValues { it != 0f } }
+                .filterValues { it.isNotEmpty() }
+        assertEquals(nonZeroDamage(aos), nonZeroDamage(soa), "$label connection damage (non-zero)")
+
         val types = aos.components.tables.keys + soa.components.tables.keys
         for (type in types) {
-            if (type == ImpulseComponent::class) continue              // transient; reset each tick
-            if (type == CytoMatterGridComponent::class) continue       // compared by content below
+            if (type == ImpulseComponent::class) continue                  // transient; reset each tick
+            if (type == CytoMatterGridComponent::class) continue           // compared by content below
+            if (type == ConnectionStateComponent::class) continue          // compared (zero-normalized) above
             val a = aos.components.tables[type]?.asMap() ?: emptyMap<Any, Any>()
             val s = soa.components.tables[type]?.asMap() ?: emptyMap<Any, Any>()
             assertEquals(a, s, "$label table ${type.simpleName}")
@@ -85,7 +98,7 @@ class CytoSoaEquivalenceTest {
             aos = reducer.reduce(cfg, aos, noInput)
             w = soa.tick(w)
             if (springCount(aos) > 0) sawSprings = true
-            if (t % 25 == 0 || t == maxTick) assertStatesMatch(aos, w.toSimState(), "tick=$t")
+            assertStatesMatch(aos, w.toSimState(), "tick=$t")
         }
         // Non-vacuous: the scenario must actually exercise growth + connections, or equivalence is hollow.
         assertTrue(cellCount(aos) > 1, "scenario should grow a colony (was ${cellCount(aos)})")

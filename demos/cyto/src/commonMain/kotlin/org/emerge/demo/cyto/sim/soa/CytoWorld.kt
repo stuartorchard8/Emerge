@@ -11,15 +11,19 @@ import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsWorld
 import org.emerge.sim.core.ecs.soa.ColliderColumnStore
 import org.emerge.sim.core.ecs.soa.ComponentColumns
+import org.emerge.sim.core.ecs.soa.ImpulseColumnStore
 import org.emerge.sim.core.ecs.soa.MaterialColumnStore
 import org.emerge.sim.core.ecs.soa.MotionColumnStore
 import org.emerge.sim.core.ecs.soa.RenderShapeColumnStore
 import org.emerge.sim.core.ecs.soa.SoaWorld
+import org.emerge.sim.core.ecs.soa.SpringCsr
 import org.emerge.sim.core.ecs.soa.TransformColumnStore
 import org.emerge.sim.core.physics.components.ColliderComponent
+import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.RenderShapeComponent
+import org.emerge.sim.core.physics.components.SpringConstraint
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.BodyShape
@@ -31,43 +35,57 @@ import org.emerge.sim.core.sim.SimState
 /**
  * Cyto's struct-of-arrays world for the matter model, built on the generic [SoaWorld] framework:
  * engine physics components live in their stock column stores, the per-cell biology in
- * [CytoCellColumnStore], and the world's matter reservoir as the held [grid] singleton. The columns
- * mutate in place each tick (no per-tick `SimState` rebuild) — the structural win — read by a dense
- * slot index that is shared across all per-cell column types (every cell carries all of them, added
- * together in the source table's order, so a slot indexes the same entity everywhere).
+ * [CytoCellColumnStore], the spring topology + accrued damage in a framework [SpringCsr], and the
+ * world's matter reservoir as the held [grid] singleton. The in-place physics phases mutate the column
+ * arrays / CSR directly each tick (no per-tick `SimState` rebuild) read by a dense slot index shared
+ * across all per-cell columns (every cell carries all of them, added together in the source table's
+ * order, so a slot indexes the same entity everywhere).
  *
- * **Landing stage.** While the physics phases are still bridged through the AoS systems (see
- * `CytoSoaReducer`), connections are held as faithful per-entity objects — [springs] /
- * [connState] — rather than a packed CSR; the spring/connection-maintenance port (which introduces
- * the CSR + `edgeAux` damage) is a later slice. [ImpulseComponent] is deliberately **not** stored:
- * it is reset to empty every tick by `ImpulseResetSystem` before anything reads it, so it carries no
- * state across the tick boundary (the equivalence gate excludes it accordingly).
+ * **Impulse** is a dense per-cell accumulator (`ImpulseColumnStore`): zeroed by `reset`, written by
+ * contacts/connections/forces/grab/drag, applied by `integrate`. It carries no state across the tick
+ * boundary (so it's excluded from the equivalence gate and from [toSimState] unless explicitly
+ * requested for a bridge). **Springs/connection-damage** round-trip through the CSR (`toSimState`
+ * derives the `SpringConstraintComponent` / `ConnectionStateComponent` tables from it).
  */
 class CytoWorld private constructor(
     val world: SoaWorld,
     val cells: ComponentColumns<CytoCellComponent>,
     val transform: TransformColumnStore,
     val motion: MotionColumnStore,
+    val impulse: ImpulseColumnStore,
     val collider: ColliderColumnStore,
     val material: MaterialColumnStore,
     val renderShape: RenderShapeColumnStore,
     val cell: CytoCellColumnStore,
-    /** Connection topology + accrued damage, keyed by EntityId.value (faithful per-cell objects). */
-    val springs: HashMap<Int, SpringConstraintComponent>,
-    val connState: HashMap<Int, ConnectionStateComponent>,
+    val csr: SpringCsr,
     /** The finite matter reservoir singleton — held (copy-on-write) and re-emitted on [GRID_SINGLETON]. */
-    val grid: CytoMatterGrid,
+    var grid: CytoMatterGrid,
 ) {
     val count: Int get() = cells.count
     val entityId: IntArray get() = cells.denseIds()
     fun slotOf(idValue: Int): Int = cells.slotOfValue(idValue)
 
+    // physics columns (raw fixed-point: Coord = Int raw, Frac = Long raw)
+    val posX: IntArray get() = transform.posX
+    val posY: IntArray get() = transform.posY
+    val ang: IntArray get() = transform.ang
+    val velX: IntArray get() = motion.velX
+    val velY: IntArray get() = motion.velY
+    val angVel: IntArray get() = motion.angVel
+    val impPosX: LongArray get() = impulse.posX
+    val impPosY: LongArray get() = impulse.posY
+    val impVelX: LongArray get() = impulse.velX
+    val impVelY: LongArray get() = impulse.velY
+    val impAngVel: LongArray get() = impulse.angVel
+    val radiusRaw: LongArray get() = collider.radius
+    val mass: IntArray get() = material.mass
+
     companion object {
         /**
          * Loads a [CytoWorld] from an engine [SimState], **preserving the source `CytoCellComponent`
-         * table's iteration order** (do not sort) — the physics/contact systems iterate component
-         * tables in order, so reproducing it is what keeps the bridged tick bit-identical to AoS.
-         * Runs at the materialize boundary (loader / per-bridge), never inside a ported phase.
+         * table's iteration order** (do not sort) — physics/contact iterate component tables in order,
+         * so reproducing it keeps the tick bit-identical to AoS. Builds the spring CSR over that order
+         * (spring-list order preserved). Runs at the materialize boundary, never inside a ported phase.
          */
         fun fromSimState(state: SimState): CytoWorld {
             val cellsTable = state.components.getTable<CytoCellComponent>().asMap()
@@ -82,12 +100,14 @@ class CytoWorld private constructor(
             val world = SoaWorld(randomSeed = state.randomSeed, tick = state.tick)
             val transform = TransformColumnStore()
             val motion = MotionColumnStore()
+            val impulse = ImpulseColumnStore()
             val collider = ColliderColumnStore()
             val material = MaterialColumnStore()
             val renderShape = RenderShapeColumnStore()
             val cellStore = CytoCellColumnStore()
             world.register(TransformComponent::class, transform)
             world.register(MotionComponent::class, motion)
+            world.register(ImpulseComponent::class, impulse)
             world.register(ColliderComponent::class, collider)
             world.register(MaterialComponent::class, material)
             world.register(RenderShapeComponent::class, renderShape)
@@ -96,6 +116,7 @@ class CytoWorld private constructor(
             for ((id, cellComp) in cellsTable) {
                 world.add(id, TransformComponent::class, transforms[id] ?: TransformComponent(Coord2.zero, Coord(0)))
                 world.add(id, MotionComponent::class, motions[id] ?: MotionComponent(Coord2.zero, Coord(0)))
+                world.add(id, ImpulseComponent::class, ImpulseComponent())
                 world.add(id, ColliderComponent::class, colliders[id] ?: ColliderComponent(Frac(0)))
                 world.add(
                     id, MaterialComponent::class,
@@ -106,27 +127,31 @@ class CytoWorld private constructor(
             }
             world.seedLastEntityValue(state.world.lastEntityValue)
 
-            val springs = HashMap<Int, SpringConstraintComponent>(springTable.size)
-            for ((id, comp) in springTable) springs[id.value] = comp
-            val connState = HashMap<Int, ConnectionStateComponent>(damageTable.size)
-            for ((id, comp) in damageTable) connState[id.value] = comp
+            // Spring CSR over the cell ordering, preserving each cell's spring-list order; edgeAux carries
+            // the per-edge connection-stress damage (the ConnectionStateComponent value).
+            val csr = SpringCsr.build(
+                count = cellCols.count,
+                entityIdAt = { cellCols.denseIds()[it] },
+                slotOf = { cellCols.slotOfValue(it) },
+                springsAt = { slot -> springTable[cellCols.entityAt(slot)]?.springs ?: emptyList() },
+                edgeAuxAt = { slot, other -> damageTable[cellCols.entityAt(slot)]?.damage?.get(other) ?: 0f },
+            )
 
-            // Copy-on-write clone so a (future) in-place tick never reaches back into the source state.
             val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid?.copy()
                 ?: CytoMatterGrid.empty()
 
-            return CytoWorld(world, cellCols, transform, motion, collider, material, renderShape, cellStore, springs, connState, grid)
+            return CytoWorld(world, cellCols, transform, motion, impulse, collider, material, renderShape, cellStore, csr, grid)
         }
     }
 
     /**
      * Materializes the live store back into an engine [SimState] — the inverse of [fromSimState],
-     * faithful for every component the world tracks. The SoA→AoS boundary the live runtime renders,
-     * saves, and (during landing) bridges through; runs once per frame, never per tick. Emits tables
-     * in slot order (= the order [fromSimState] read them, so it round-trips AoS table order).
-     * [ImpulseComponent] is omitted by design (transient; reset every tick before use).
+     * faithful for every component the world tracks. Emits tables in slot order (= the order
+     * [fromSimState] read them). Springs + connection damage are derived from the CSR. [ImpulseComponent]
+     * is emitted only when [includeImpulse] (a bridge that needs the in-flight impulse); the equivalence
+     * gate and the live renderer/save never need it.
      */
-    fun toSimState(): SimState {
+    fun toSimState(includeImpulse: Boolean = false): SimState {
         val n = count
         val transforms = LinkedHashMap<EntityId, TransformComponent>(n)
         val motions = LinkedHashMap<EntityId, MotionComponent>(n)
@@ -134,40 +159,52 @@ class CytoWorld private constructor(
         val materials = LinkedHashMap<EntityId, MaterialComponent>(n)
         val rendersOut = LinkedHashMap<EntityId, RenderShapeComponent>(n)
         val cellsOut = LinkedHashMap<EntityId, CytoCellComponent>(n)
-        val springsOut = LinkedHashMap<EntityId, SpringConstraintComponent>(springs.size)
-        val damagesOut = LinkedHashMap<EntityId, ConnectionStateComponent>(connState.size)
+        val springsOut = LinkedHashMap<EntityId, SpringConstraintComponent>(n)
+        val damagesOut = LinkedHashMap<EntityId, ConnectionStateComponent>(n)
+        val impulsesOut = if (includeImpulse) LinkedHashMap<EntityId, ImpulseComponent>(n) else null
 
         for (slot in 0 until n) {
-            val idv = entityId[slot]
-            val id = EntityId(idv)
+            val id = EntityId(entityId[slot])
             transforms[id] = transform.gather(slot)
             motions[id] = motion.gather(slot)
             colliders[id] = collider.gather(slot)
             materials[id] = material.gather(slot)
             rendersOut[id] = renderShape.gather(slot)
             cellsOut[id] = cell.gather(slot)
-            springs[idv]?.let { springsOut[id] = it }
-            connState[idv]?.let { damagesOut[id] = it }
+            impulsesOut?.put(id, impulse.gather(slot))
+
+            val lo = csr.offset[slot]
+            val hi = csr.offset[slot + 1]
+            if (hi > lo) {
+                val springList = ArrayList<SpringConstraint>(hi - lo)
+                val damageMap = LinkedHashMap<EntityId, Float>(hi - lo)
+                for (k in lo until hi) {
+                    val other = EntityId(csr.otherId[k])
+                    springList.add(SpringConstraint(other, Frac(csr.restRaw[k]), Frac(csr.stiffRaw[k]), Frac(csr.dampRaw[k])))
+                    damageMap[other] = csr.edgeAux[k]
+                }
+                springsOut[id] = SpringConstraintComponent(springList)
+                damagesOut[id] = ConnectionStateComponent(damageMap)
+            }
         }
 
-        val components = ComponentStore(
-            mapOf(
-                TransformComponent::class to ComponentTable.fromMap(transforms),
-                MotionComponent::class to ComponentTable.fromMap(motions),
-                ColliderComponent::class to ComponentTable.fromMap(colliders),
-                MaterialComponent::class to ComponentTable.fromMap(materials),
-                RenderShapeComponent::class to ComponentTable.fromMap(rendersOut),
-                CytoCellComponent::class to ComponentTable.fromMap(cellsOut),
-                SpringConstraintComponent::class to ComponentTable.fromMap(springsOut),
-                ConnectionStateComponent::class to ComponentTable.fromMap(damagesOut),
-                CytoMatterGridComponent::class to ComponentTable.fromMap(
-                    linkedMapOf(GRID_SINGLETON to CytoMatterGridComponent(grid)),
-                ),
-            )
+        val tables = HashMap<kotlin.reflect.KClass<*>, ComponentTable<*>>()
+        tables[TransformComponent::class] = ComponentTable.fromMap(transforms)
+        tables[MotionComponent::class] = ComponentTable.fromMap(motions)
+        tables[ColliderComponent::class] = ComponentTable.fromMap(colliders)
+        tables[MaterialComponent::class] = ComponentTable.fromMap(materials)
+        tables[RenderShapeComponent::class] = ComponentTable.fromMap(rendersOut)
+        tables[CytoCellComponent::class] = ComponentTable.fromMap(cellsOut)
+        tables[SpringConstraintComponent::class] = ComponentTable.fromMap(springsOut)
+        tables[ConnectionStateComponent::class] = ComponentTable.fromMap(damagesOut)
+        tables[CytoMatterGridComponent::class] = ComponentTable.fromMap(
+            linkedMapOf(GRID_SINGLETON to CytoMatterGridComponent(grid)),
         )
+        if (impulsesOut != null) tables[ImpulseComponent::class] = ComponentTable.fromMap(impulsesOut)
+
         return SimState(
             world = EcsWorld(world.liveIds.toMutableSet(), world.lastEntityValue),
-            components = components,
+            components = ComponentStore(tables),
             contacts = emptyList(),
             randomSeed = world.randomSeed,
             tick = world.tick,
