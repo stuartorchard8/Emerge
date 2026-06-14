@@ -4,6 +4,9 @@ import org.emerge.demo.cyto.CytoSaveCodec
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.CytoLightField
+import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.components.MaterialComponent
@@ -30,6 +33,36 @@ fun main(args: Array<String>) {
     var state = if (path == "fresh") org.emerge.demo.cyto.sim.createCytoInitialState()
         else CytoSaveCodec.decode(File(path).readBytes())
     println("loaded $path: ${cells(state).size} cells")
+
+    // ── matter budget: where are the atoms, and is matter the population cap? (A save carries its OWN
+    //    serialized reservoir, so MATTER_PEAK changes only affect FRESH worlds, not a loaded save.) ──
+    run {
+        val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid
+        val reservoir = grid?.totalAtoms() ?: 0L
+        var cellAtoms = 0L
+        for ((_, c) in cells(state)) {
+            for ((sp, n) in c.cytoplasm) cellAtoms += sp.length.toLong() * n
+            for ((sp, n) in c.biomass) cellAtoms += sp.length.toLong() * n
+        }
+        println("matter: reservoir=$reservoir  cells=$cellAtoms  total=${reservoir + cellAtoms}")
+        // per-source: bucket cells + reservoir matter by nearest light source
+        val srcCells = IntArray(CytoLightField.SOURCES.size)
+        for ((id, _) in cells(state)) {
+            val p = state.components.getTable<TransformComponent>()[id]?.pos ?: continue
+            val lx = CytoUnits.toLogical(p.x); val ly = CytoUnits.toLogical(p.y)
+            var best = 0; var bestD = Float.MAX_VALUE
+            for ((i, s) in CytoLightField.SOURCES.withIndex()) {
+                val d = (lx - s.first) * (lx - s.first) + (ly - s.second) * (ly - s.second)
+                if (d < bestD) { bestD = d; best = i }
+            }
+            srcCells[best]++
+        }
+        println("cells per source (nearest): ${srcCells.toList()}")
+        val cs = cells(state).values
+        val avgBio = if (cs.isEmpty()) 0.0 else cs.sumOf { c -> c.biomass.entries.sumOf { (sp, n) -> (sp.length - 1).coerceAtLeast(0) * n } }.toDouble() / cs.size
+        val avgCyto = if (cs.isEmpty()) 0.0 else cs.sumOf { c -> c.cytoplasm.entries.sumOf { (sp, n) -> sp.length * n } }.toDouble() / cs.size
+        println("avg biomass-bonds/cell=${(avgBio*10).toInt()/10.0}  avg cytoplasm-atoms/cell=${(avgCyto*10).toInt()/10.0}")
+    }
 
     // ── colonies (spring-connected components) ──
     val colonies = components(state)
