@@ -122,7 +122,12 @@ object CytoBiologyCore {
      *  quanta; BreakBond gives one per bond it can break (so it's bounded by stored matter). */
     private fun runGene(gene: Gene, work: CellWork, grid: CytoMatterGrid) {
         val source = gene.source
-        var lightLeft = if (source is EnergySource.Light) work.quanta else 0
+        // Light is a SHARED per-cell budget: every light-sourced gene draws from the same `work.quanta`,
+        // spent down here across the genome (in gene order). So a genome with many light genes must
+        // budget its flux among them rather than getting a free full-power copy each — which had rewarded
+        // genome bloat (more genes = more total work at no cost). A gene whose gate is satisfied stops
+        // drawing, releasing the remaining budget to later genes; BreakBond genes are unaffected (their
+        // energy comes from the matter they cleave, not the light pool).
         var ops = 0
         // Futile-cycle guard: a gene whose source + action exactly undo each other (e.g. BreakBond(ab) +
         // FormBond(a,b) → break "ab", reform "ab") leaves the cell's mutable state unchanged from one op to
@@ -142,7 +147,7 @@ object CytoBiologyCore {
             if (gene.action.type == ActionType.Expand && !canExpand(work)) break
             if (gene.action.type == ActionType.Contract && !canContract(work)) break
             val gotEnergy = when (source) {
-                is EnergySource.Light -> if (lightLeft > 0) { lightLeft--; true } else false
+                is EnergySource.Light -> if (work.quanta > 0) { work.quanta--; true } else false
                 is EnergySource.BreakBond -> breakOne(work, source.bond)
             }
             if (!gotEnergy) break

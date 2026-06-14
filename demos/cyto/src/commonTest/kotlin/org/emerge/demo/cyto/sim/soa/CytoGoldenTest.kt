@@ -50,13 +50,16 @@ class CytoGoldenTest {
     // over-subscribed absorbers share proportionally). All three trajectory goldens shifted; the SoA
     // determinism gates (parallelMatchesSequential, grownStateRoundTrips) held, confirming the new split is
     // deterministic. See demos/cyto/PRESSURE.md.
+    // Re-baselined again same day: light became a SHARED per-cell quanta budget (CytoBiologyCore.runGene
+    // now spends `work.quanta` across all light-sourced genes in genome order) instead of handing each
+    // light gene its own full-power copy — removing the genome-bloat free lunch.
     // growth, mutation off, 250 ticks from the default scene.
     private val GROWTH = mapOf(
-        "meta" to "87be2777b6717a92",
-        "physics" to "60fa67e957ba17ab",
-        "biology" to "e2b3384764950b1e",
-        "topology" to "a3ef5905e30e21f8",
-        "grid" to "e968336a41d9b0dc",
+        "meta" to "41b7829c9a1aacc0",
+        "physics" to "e0b9b0f8eb9fc328",
+        "biology" to "3fc0ca01a923d1bc",
+        "topology" to "8fd9f422038553dd",
+        "grid" to "56d0af0a9fe3a9c2",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
     // Re-baselined twice for deliberate gene-model extensions, both of which re-route point-mutation's
@@ -67,19 +70,19 @@ class CytoGoldenTest {
     // The mutation-off GROWTH/INTERACT goldens below are unchanged (no flex/touch gene in the default
     // scene, no mutation), confirming the drift is isolated to the new mechanics.
     private val MUTATION = mapOf(
-        "meta" to "6e4d1f420b26c40c",
-        "physics" to "b0adf455a44a8bda",
-        "biology" to "d7bed006ac37da8b",
-        "topology" to "21717ae55f54369e",
-        "grid" to "505d7157e1e7397b",
+        "meta" to "8d63a649c7efc71f",
+        "physics" to "763234db35e479b3",
+        "biology" to "d048b60cd593ed4d",
+        "topology" to "6bccd7e69abb7200",
+        "grid" to "b6466bb68f5f9fd7",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
-        "meta" to "48233851dc740299",
-        "physics" to "b22c5f3fe5d9e691",
-        "biology" to "56a3ba340bcd03ed",
-        "topology" to "dddd77453c56846c",
-        "grid" to "eadb601b5a246b83",
+        "meta" to "4f178d299172bed0",
+        "physics" to "6180f77b61677745",
+        "biology" to "d48dd6713cdee9e1",
+        "topology" to "402099376d5afca5",
+        "grid" to "e4d4ebded923fc04",
     )
 
     @Test
