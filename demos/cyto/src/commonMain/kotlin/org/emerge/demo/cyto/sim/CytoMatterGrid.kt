@@ -135,12 +135,13 @@ class CytoMatterGrid private constructor(
         val SPAN = CytoLightField.SPAN
         val HALF = CytoLightField.HALF
 
-        // Values live in CytoTuning (the single tuning sheet); kept here as local references.
-        const val MATTER_PEAK = CytoTuning.MATTER_PEAK
-        const val MATTER_FALLOFF = CytoTuning.MATTER_FALLOFF
+        // Per-tick diffusion law lives in CytoTuning; the reservoir *seed* (peak/falloff/species) is
+        // initial data in CytoSeed. Kept here as local references.
+        const val MATTER_PEAK = CytoSeed.MATTER_PEAK
+        const val MATTER_FALLOFF = CytoSeed.MATTER_FALLOFF
         const val DIFFUSE_NUM = CytoTuning.MATTER_DIFFUSE_NUM
         const val DIFFUSE_DEN = CytoTuning.MATTER_DIFFUSE_DEN
-        val SEED_MONOMERS = CytoTuning.SEED_MONOMERS
+        val SEED_MONOMERS = CytoSeed.SEED_MONOMERS
 
         /**
          * A fresh reservoir: free monomers in a Gaussian bump around each of the 4 light sources, so the

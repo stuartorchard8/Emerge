@@ -3,19 +3,22 @@ package org.emerge.demo.cyto.sim
 import org.emerge.sim.core.physics.primitives.Frac
 
 /**
- * **The one place to tune Cyto.** Every balance "magic number" that shapes the sim's behaviour lives
- * here, grouped by subsystem, so refining the ecology is a single-file edit + rebuild. The original
- * owners ([CytoBiologyCore], [CytoLightField], [CytoMatterGrid], [CytoGenes], [CytoSpawn],
- * [CytoExposure]) and the runtime [CytoConfig] now read their values from here.
+ * **The fixed laws of the Cyto world** — the invariable constants the simulation reads *every tick* to
+ * decide how matter, energy, growth, death, and physics behave. They don't change during a run; tuning
+ * one changes the *rules* and re-bases the `CytoGoldenTest` goldens (re-baseline from the test's printed
+ * digests after a deliberate change). Grouped by subsystem; the original owners ([CytoBiologyCore],
+ * [CytoLightField], [CytoMatterGrid], [CytoExposure]) and the runtime [CytoConfig] read their values
+ * from here.
  *
- * Two things deliberately stay out:
+ * The *complement* of this object is [CytoSeed] — the **initial data** (starting reservoir + seed-organism
+ * design) the sim is set up with and then evolves/depletes away from. If a value defines "what the world
+ * starts as" rather than "a rule that holds forever", it belongs there, not here.
+ *
+ * Two things deliberately stay out of both:
  *  - **World coordinate scale** — `CytoUnits.CELLS_PER_AXIS` (the torus is this many base-cell diameters
- *    per axis); it defines the unit system the geometry below derives from, not a balance knob.
+ *    per axis); it defines the unit system the geometry below derives from.
  *  - **Genome *structure*** — which genes the presets are (`AUTOTROPH_GENES`/`HETEROTROPH_GENES` in
- *    [CytoGenes]); only their numeric thresholds are knobs, and those are below.
- *
- * Many values are deterministic-trajectory-critical: changing one re-bases the `CytoGoldenTest` goldens
- * (intended for a deliberate balance change — re-baseline from the test's printed digests).
+ *    [CytoGenes]); only their seed thresholds are data, and those live in [CytoSeed].
  */
 object CytoTuning {
 
@@ -32,20 +35,12 @@ object CytoTuning {
      *  before the midpoint between sources, leaving dark contested zones. */
     const val LIGHT_FALLOFF = 200f
 
-    // ── Matter reservoir (the conserved/limiting resource) ───────────────────────────────────────────
-    /** Peak free-monomer count seeded at a source grid cell — the matter carrying capacity per source,
-     *  hence the population ceiling. Seeded for each species in [SEED_MONOMERS]. */
-    const val MATTER_PEAK = 64
-    /** Gaussian radius of the matter clumps (logical units) — decoupled from [LIGHT_FALLOFF] so nutrient
-     *  niches can be tight (low total matter = a tighter population cap) without dimming the light. */
-    const val MATTER_FALLOFF = 70f
+    // ── Matter dynamics (the conserved resource's per-tick law; its *seed* is in CytoSeed) ────────────
     /** Slow inter-grid-cell diffusion: per tick each edge moves `⌊|gradient|·NUM/DEN⌋` down-gradient.
-     *  Keep `4·NUM/DEN ≤ 1` (a cell has 4 edges) so a cell can't be over-drawn negative. Smaller =
-     *  slower, coarser settle. */
+     *  Keep `4·NUM/DEN ≤ 1` (a cell has 4 edges) so a cell can't be over-drawn negative — violating it
+     *  makes the bump-to-zero clamp destroy matter (breaks conservation). Smaller = slower, coarser settle. */
     const val MATTER_DIFFUSE_NUM = 1
     const val MATTER_DIFFUSE_DEN = 8
-    /** The free monomer species the world is seeded with (also the matter alphabet in play). */
-    val SEED_MONOMERS = listOf("a", "b", "c", "d", "e", "f", "g")
 
     // ── Metabolism / energy (per gene, per tick) ─────────────────────────────────────────────────────
     /** light → quanta: `quanta = ⌊field × exposure × SCALE⌋` (a fully-exposed cell on a source gets
@@ -76,19 +71,6 @@ object CytoTuning {
     /** Max radius deviation a flex gene can hold the cell at, away from its biomass baseline (Expand up to
      *  baseline+this; Contract down to [MIN_RADIUS]) — bounds the actuator. */
     val FLEX_RANGE = Frac(1, 2)
-    /** Default biomass for a freshly-spawned cell (e.g. a player-placed cell): a little structure so it
-     *  doesn't instantly die to the death-on-empty-biomass rule. */
-    val STARTER_BIOMASS: Map<String, Int> = mapOf("ab" to 8)
-
-    // ── Genome preset thresholds (the gene *structure* lives in CytoGenes) ───────────────────────────
-    /** Autotroph: cytoplasm 'ab' kept back (passively leaks to the environment → food for heterotrophs). */
-    const val AUTOTROPH_LEAK_RESERVE = 4
-    /** Autotroph: divide once biomass reaches this many bonds. */
-    const val AUTOTROPH_DIVIDE_BIOMASS = 8
-    /** Heterotroph: cytoplasm 'ab' kept as an energy reserve. */
-    const val HETEROTROPH_RESERVE = 2
-    /** Heterotroph: divide once biomass reaches this many bonds. */
-    const val HETEROTROPH_DIVIDE_BIOMASS = 8
 
     // ── Exposure / shading ───────────────────────────────────────────────────────────────────────────
     /** Max connected neighbours considered when computing a cell's surface exposure (a cell with more is

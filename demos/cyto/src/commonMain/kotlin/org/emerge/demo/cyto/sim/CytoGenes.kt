@@ -121,9 +121,9 @@ fun totalBiomassBonds(biomass: Map<String, Int>): Int {
 }
 
 // ── Preset genomes ───────────────────────────────────────────────────────────
-// Threshold values live in CytoTuning (the single tuning sheet); the gene *structure* is below.
-private const val LEAK_RESERVE = CytoTuning.AUTOTROPH_LEAK_RESERVE
-private const val DIVIDE_BIOMASS = CytoTuning.AUTOTROPH_DIVIDE_BIOMASS
+// Seed threshold values live in CytoSeed (initial data — these evolve under mutation); structure below.
+private const val LEAK_RESERVE = CytoSeed.AUTOTROPH_LEAK_RESERVE
+private const val DIVIDE_BIOMASS = CytoSeed.AUTOTROPH_DIVIDE_BIOMASS
 
 /**
  * The hand-authored **light-only autotroph** (the v1 creature). It absorbs the monomers a and b for
@@ -140,9 +140,9 @@ val AUTOTROPH_GENES: List<Gene> = listOf(
     Gene(EnergySource.Light, GeneCondition(ConditionType.Biomass, "", Comparison.Greater, 0), GeneAction(ActionType.Repair)),
 )
 
-// Heterotroph thresholds — values in CytoTuning.
-private const val HET_RESERVE = CytoTuning.HETEROTROPH_RESERVE
-private const val HET_DIVIDE = CytoTuning.HETEROTROPH_DIVIDE_BIOMASS
+// Heterotroph seed thresholds — values in CytoSeed (initial data; evolve under mutation).
+private const val HET_RESERVE = CytoSeed.HETEROTROPH_RESERVE
+private const val HET_DIVIDE = CytoSeed.HETEROTROPH_DIVIDE_BIOMASS
 
 /**
  * A hand-authored **heterotroph**: it has no light genes — it lives on `ab` molecules already in its

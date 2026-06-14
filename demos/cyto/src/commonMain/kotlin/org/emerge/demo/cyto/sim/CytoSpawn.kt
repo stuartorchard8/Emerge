@@ -67,5 +67,5 @@ fun SimBuilder.spawnCell(
     return id
 }
 
-/** Default biomass for a freshly-spawned cell — value in [CytoTuning.STARTER_BIOMASS]. */
-val STARTER_BIOMASS: Map<String, Int> = CytoTuning.STARTER_BIOMASS
+/** Default biomass for a freshly-spawned cell — value in [CytoSeed.STARTER_BIOMASS] (initial data). */
+val STARTER_BIOMASS: Map<String, Int> = CytoSeed.STARTER_BIOMASS

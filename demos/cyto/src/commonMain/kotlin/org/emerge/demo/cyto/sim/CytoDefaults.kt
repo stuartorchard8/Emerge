@@ -23,8 +23,8 @@ fun createCytoInitialState(): SimState {
         pos = CytoUnits.coord2(sx, sy),
         vel = Coord2.zero,
         type = CellType.Collector,
-        cytoplasm = mapOf("a" to 4, "b" to 4),
-        biomass = mapOf("ab" to 8),
+        cytoplasm = CytoSeed.SEED_CYTOPLASM,
+        biomass = CytoSeed.STARTER_BIOMASS,
         logicalRadius = MIN_RADIUS,
     )
     builder.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
