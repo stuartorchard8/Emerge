@@ -55,3 +55,35 @@ in order:
 > NB: the "cells mutate excessively without consequence" framing was half-diagnosis — `mutationRateDenom`
 > is already tuned low (1/100k; a meltdown at 1/10k drove it down). The real lever was selection
 > *differential*, which the three changes above sharpen; mutation supply was not the problem.
+
+---
+
+## Implemented 2026-06-15 (Claude) — the two deferred selection mechanisms, picked up
+
+Stu reframed proposal 4: its value isn't *exploitation* (everyone shares thinner) but **interference** —
+an autotroph that grows takes up space/light and *actively harms* its neighbours, starving the unfit so
+they decay, die, and release their matter to the commons (death already recycles a cell's whole store to
+its reservoir grid-cell). With that framing both deferred mechanisms became worth building:
+
+4. **Light shading as interference competition** (`4214f42`) — **proposal 4, properly**. Cells sharing a
+   grid-cell now split its incident light by **capture weight (exposure × radius)**, not equally: a bigger
+   cell captures a larger share, so growth is a weapon. A cell alone in its grid-cell keeps full light
+   (capture share 1 ⇒ quanta bit-identical), so only crowding moves trajectories. The earlier worry
+   ("light is open throughput, a second brake over-damps") is answered by making it *competitive* rather
+   than a flat density tax — and it's the selection gradient that will drive locomotion (move toward
+   unshaded light). Footgun hit & noted: `exposure * radius` as `Frac×Frac` overflows `Long` once a grown
+   cell's radius leaves Frac's safe ±2 range → negative capture; compute capture in reduced raw-longs.
+3. **Genome-bloat tax, cross-source** (`603f308`) — the part of **proposal 3** that was dropped as
+   "incoherent for BreakBond". Each *active* gene is throttled to a 1/N share of its source (N = active
+   genes), regardless of source: Light → ⌊quanta/N⌋, BreakBond → ⌊(matching molecules)/N⌋, remainder lost.
+   Reproduces both of the proposal's worked examples exactly. "Active" excludes guaranteed no-ops (an
+   always-on Repair with nothing damaged), so it taxes real bloat without crippling a functional genome.
+   Subsumes the 2026-06-14 shared light-pool (per-gene slices can't overdraw the pool).
+
+**Proposal 1 — deliberately deferred again** (Stu's call). Death *already* works: a starved cell decays
+to `DEATH_BIOMASS` and recycles its matter, and shading now *creates* the starved cells — so the loop is
+closed without it. Proposal 1's real teeth need the resolution rescale (the operating band is only ~4–9
+integer bonds — `DIVIDE_BIOMASS 8`, halving on division — so no *safe* death floor fits between a
+freshly-divided daughter and a meaningful threshold without finer units). High-churn (≈6 coupled
+constants + autotroph-viability risk); revisit only if pressure is still too low after observing shading +
+the bloat tax in the live sim.
