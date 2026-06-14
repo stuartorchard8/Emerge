@@ -84,11 +84,41 @@ the live runtime**, gated for byte-faithful behaviour.
    path). Flipping it: hold a `CytoWorld`, step in place, `CytoFrame(world.toSimState())` once/frame.
    Render / hit-test / readouts / `CytoSaveCodec` all keep consuming `SimState` unchanged.
 
+## ⚠ Implementation finding (2026-06-14): phases can't be bridged piecemeal
+
+Slices 0–1 are **done and green** (`CytoSoaEquivalenceTest`). Starting Slice 2 surfaced a constraint
+that **revises the rest of the plan**: the pipeline phases are tightly coupled by two intra-tick
+handoffs that don't survive a materialize/reload boundary —
+
+- **Impulse** is accumulated across `reset → contacts → connections → forces → grab/drag` and consumed
+  by `integrate`. `toSimState` drops it (it's transient), so a bridge between any of these loses it.
+- **Events**: `contacts` emits `WeldIntent`; `biology` emits `CellDivisionIntent`/`CellDestroyIntent`;
+  `lifecycle` consumes all of them. These flow within one `runSequential`; split the producer from the
+  consumer across separate bridges and they vanish. The producers (contacts@3, biology@4) and consumer
+  (lifecycle@7) span almost the whole pipeline, with `connections`/`forces` in between.
+
+So there is **no safe "port one phase, bridge the rest" intermediate** — the coupled core
+(`contacts … lifecycle`) must move to in-place columns as a unit (carrying impulse in columns + intents
+in reducer lists). Slices 2 and 3 therefore **merge into one in-place port**. The gate mechanism shifts
+from "bridge the unported phases" to **per-phase isolation tests** (load a state → run the AoS phase via
+a minimal builder vs the in-place phase → diff), which pinpoints divergence without needing a bridge.
+
+Two viable shapes for the remaining work (see the open question at the bottom):
+- **(A) Full in-place port** — reset/contacts/connections/forces/grab/drag/lifecycle/integrate/biology
+  all on columns; removes every bridge and the whole copy-churn. Biggest win, biggest bit-identity risk
+  (the matter biology — `CellWork`, gene loop incl. the futile-cycle guard, PRNG-ordered mutation,
+  diffusion, mass/momentum — is the hard part).
+- **(B) Physics-in-place, biology bridged** — port the physics cluster in-place (the dominant
+  forces/connections/contacts cost + the per-tick physics copy-churn), keep `biology` (+the
+  event-coupled `lifecycle` segment) bridged via event-marshaling for now, port biology last. Captures
+  most of the measured win at much lower risk; biology retains its (≤15%) copy cost until the final step.
+
 ## Slices (each independently landable and gated)
 
-> Order rationale: **bridge-everything first** so we have a green equivalence gate *before* optimizing;
-> then port one hot phase at a time, re-running the gate after each. This is the drockets lesson — never
-> optimize without a known-good baseline to diff against.
+> Order rationale: **bridge-everything first** so we have a green equivalence gate *before* optimizing
+> (done — Slices 0–1). Then port the coupled core in-place, gated by per-phase isolation tests. The
+> physics phases port largely verbatim from the recovered energy-model reducer (they're
+> chemistry-agnostic); biology + lifecycle-division differ for matter and carry the real risk.
 
 **Slice 0 — `CytoWorld` + columns (pure addition, no runtime change).**
 - Recover `CytoWorld`/`CytoCellColumnStore` from `c3bd291`; strip the energy columns; add object columns
