@@ -42,7 +42,7 @@ data class CytoConfig(
 
     /** Exposed-surface viscous drag (CytoDragSystem): quadratic coefficient over the exposed speed
      *  (logical units/tick). Higher = more drag; tune for the decelerate-fast-glide-slow feel. */
-    val dragCoefficient: Float = 0.5f,
+    val dragCoefficient: Float = 0.2f,
 
     /** Max fraction of a cell's (exposed) speed drag may remove in one tick. The drag impulse is
      *  capped at `dragMaxFraction · speed`, so a fast cell DECELERATES smoothly (≈ exponential at this
@@ -57,7 +57,7 @@ data class CytoConfig(
      *  settles slow drift the quadratic term leaves behind. It rides the same exposed (shielded)
      *  velocity, so neighbours shield it like the surface drag. The value is the per-tick decay rate
      *  per unit radius (`· radius` ⇒ effective rate ~0.1–0.2/tick for a typical cell); keep < 1/radius. */
-    val cellWidthDragCoefficient: Float = 0.3f,
+    val cellWidthDragCoefficient: Float = 0.02f,
 
     /** Stretch (logical units) -> stress, for connection damage. Lower = a given stretch
      *  hurts less, so connections tolerate more deformation before they fray. */

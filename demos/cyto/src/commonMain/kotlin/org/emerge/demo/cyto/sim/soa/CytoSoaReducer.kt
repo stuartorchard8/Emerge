@@ -26,6 +26,7 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.PipelineProfiler
 import org.emerge.sim.core.ecs.SpatialGrid
+import org.emerge.sim.core.ecs.soa.ColumnPartition
 import org.emerge.sim.core.physics.components.ColliderComponent
 
 import org.emerge.sim.core.physics.components.ImpulseComponent
@@ -255,75 +256,83 @@ class CytoSoaReducer(
         }
     }
 
-    // ── forces: spring solve (SpringConstraintSystem) — sequential Gauss–Seidel, split impulse ──
+    // ── forces: spring solve (SpringConstraintSystem) — parallel per-body gather Jacobi, split impulse ──
+    //
+    // Jacobi (not Gauss–Seidel): each iteration reads frozen pos/vel and accumulates every body's
+    // correction into a delta buffer applied only after the sweep. Because the CSR is symmetric (cyto
+    // welds both endpoints) and the per-edge contribution is the same equal-and-opposite term whether
+    // scattered from the edge or gathered from each endpoint, gathering each body's own delta from its
+    // neighbours produces per-body deltas bit-identical to the AoS scatter oracle — and lets the gather
+    // fan disjointly across cores (each body writes only its own slot, so no merge, no races). The
+    // high-id endpoint computes `normal_ba = normFromLen(pos_a - pos_b) = -normal_ab` exactly (Frac
+    // division truncates toward zero ⇒ sign-symmetric), so its half matches the AoS low-id scatter term.
     private fun springSolve(w: CytoWorld) {
         val n = w.count
-        // Collect unique pairs (lo<hi by EntityId) from the CSR, with their spring params.
-        val loSlot = ArrayList<Int>(); val hiSlot = ArrayList<Int>()
-        val restRaw = ArrayList<Long>(); val stiffRaw = ArrayList<Long>(); val dampRaw = ArrayList<Long>()
-        for (i in 0 until n) {
-            val ownerId = w.entityId[i]
-            for (k in w.csr.offset[i] until w.csr.offset[i + 1]) {
-                val nSlot = w.csr.otherSlot[k]; if (nSlot < 0) continue
-                if (w.csr.otherId[k] <= ownerId) continue   // each pair once, owned by the lower id
-                loSlot.add(i); hiSlot.add(nSlot)
-                restRaw.add(w.csr.restRaw[k]); stiffRaw.add(w.csr.stiffRaw[k]); dampRaw.add(w.csr.dampRaw[k])
-            }
-        }
-        val m = loSlot.size
-        if (m == 0) return
-        // Deterministic order: by (loId, hiId).
-        val order = (0 until m).sortedWith(compareBy({ w.entityId[loSlot[it]] }, { w.entityId[hiSlot[it]] }))
-
-        // Working set, slot-indexed (only spring-bearing slots are touched).
-        val pos0 = arrayOfNulls<Frac2>(n)
-        val pos = arrayOfNulls<Frac2>(n)
+        if (n == 0) return
+        // Working set, slot-indexed; only spring-bearing slots are seeded (others stay null and are skipped).
+        val pos0 = arrayOfNulls<Frac2>(n)   // start positions: velocity-solve normals + displacement reference
+        val pos = arrayOfNulls<Frac2>(n)    // working positions, moved by the position (pseudo-velocity) solve
         val baseVel = arrayOfNulls<Frac2>(n)
         val vel = arrayOfNulls<Frac2>(n)
         val mass = LongArray(n)
-        fun ensure(slot: Int) {
-            if (pos0[slot] != null) return
-            val p = Coord2(Coord(w.posX[slot]), Coord(w.posY[slot])).asFrac2()
-            val bv = Coord2(Coord(w.velX[slot]), Coord(w.velY[slot])).asFrac2()
-            val imp = Frac2(Frac(w.impVelX[slot]), Frac(w.impVelY[slot]))
-            pos0[slot] = p; pos[slot] = p; baseVel[slot] = bv; vel[slot] = bv + imp
-            mass[slot] = w.mass[slot].toUInt().toLong()
+        var anySpring = false
+        for (i in 0 until n) {
+            if (w.csr.degreeOf(i) == 0) continue
+            anySpring = true
+            val p = Coord2(Coord(w.posX[i]), Coord(w.posY[i])).asFrac2()
+            val bv = Coord2(Coord(w.velX[i]), Coord(w.velY[i])).asFrac2()
+            val imp = Frac2(Frac(w.impVelX[i]), Frac(w.impVelY[i]))
+            pos0[i] = p; pos[i] = p; baseVel[i] = bv; vel[i] = bv + imp
+            mass[i] = w.mass[i].toUInt().toLong()
         }
-        for (idx in order) { ensure(loSlot[idx]); ensure(hiSlot[idx]) }
+        if (!anySpring) return
+        val delta = arrayOfNulls<Frac2>(n)  // per-iteration per-body accumulated correction
 
-        // 1) velocity solve (Gauss–Seidel), normals from start positions.
+        // 1) velocity solve: cancel relative NORMAL velocity (damping only), normals from start positions.
         repeat(ITERATIONS) {
-            for (idx in order) {
-                val a = loSlot[idx]; val b = hiSlot[idx]
-                val delta = pos0[b]!! - pos0[a]!!
-                val dist = delta.len
-                if (dist.raw == 0L) continue
-                val normal = delta.normFromLen(dist)
-                val totalMass = mass[a] + mass[b]; if (totalMass <= 0L) continue
-                val relVel = (vel[b]!! - vel[a]!!).dot(normal)
-                val vCorr = relVel * Frac(dampRaw[idx])
-                val weightA = Frac(mass[b], totalMass.toInt())
-                val weightB = Frac(mass[a], totalMass.toInt())
-                vel[a] = vel[a]!! + normal * (vCorr * weightA)
-                vel[b] = vel[b]!! - normal * (vCorr * weightB)
+            ColumnPartition.disjoint(n, executor) { start, end ->
+                for (i in start until end) {
+                    val velI = vel[i] ?: continue
+                    var acc = Frac2.zero
+                    for (k in w.csr.offset[i] until w.csr.offset[i + 1]) {
+                        val j = w.csr.otherSlot[k]; if (j < 0) continue
+                        val d = pos0[j]!! - pos0[i]!!
+                        val dist = d.len
+                        if (dist.raw == 0L) continue
+                        val normal = d.normFromLen(dist)
+                        val totalMass = mass[i] + mass[j]; if (totalMass <= 0L) continue
+                        val relVel = (vel[j]!! - velI).dot(normal)
+                        val vCorr = relVel * Frac(w.csr.dampRaw[k])
+                        val weight = Frac(mass[j], totalMass.toInt())
+                        acc = acc + normal * (vCorr * weight)
+                    }
+                    delta[i] = acc
+                }
             }
+            for (i in 0 until n) { val d = delta[i] ?: continue; vel[i] = vel[i]!! + d }
         }
-        // 2) position solve (pseudo-velocity), moving working positions toward rest.
+        // 2) position solve (pseudo-velocity): move working positions toward rest length.
         repeat(ITERATIONS) {
-            for (idx in order) {
-                val a = loSlot[idx]; val b = hiSlot[idx]
-                val delta = pos[b]!! - pos[a]!!
-                val dist = delta.len
-                if (dist.raw == 0L) continue
-                val normal = delta.normFromLen(dist)
-                val totalMass = mass[a] + mass[b]; if (totalMass <= 0L) continue
-                val lengthError = dist - Frac(restRaw[idx])
-                val pCorr = lengthError * Frac(stiffRaw[idx])
-                val weightA = Frac(mass[b], totalMass.toInt())
-                val weightB = Frac(mass[a], totalMass.toInt())
-                pos[a] = pos[a]!! + normal * (pCorr * weightA)
-                pos[b] = pos[b]!! - normal * (pCorr * weightB)
+            ColumnPartition.disjoint(n, executor) { start, end ->
+                for (i in start until end) {
+                    val posI = pos[i] ?: continue
+                    var acc = Frac2.zero
+                    for (k in w.csr.offset[i] until w.csr.offset[i + 1]) {
+                        val j = w.csr.otherSlot[k]; if (j < 0) continue
+                        val d = pos[j]!! - posI
+                        val dist = d.len
+                        if (dist.raw == 0L) continue
+                        val normal = d.normFromLen(dist)
+                        val totalMass = mass[i] + mass[j]; if (totalMass <= 0L) continue
+                        val lengthError = dist - Frac(w.csr.restRaw[k])
+                        val pCorr = lengthError * Frac(w.csr.stiffRaw[k])
+                        val weight = Frac(mass[j], totalMass.toInt())
+                        acc = acc + normal * (pCorr * weight)
+                    }
+                    delta[i] = acc
+                }
             }
+            for (i in 0 until n) { val d = delta[i] ?: continue; pos[i] = pos[i]!! + d }
         }
         // emit: vel channel = net velocity change (incl. prior impulse); pos channel += position correction.
         for (slot in 0 until n) {

@@ -17,10 +17,10 @@ import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
 
 /**
- * Sequential-impulse distance-constraint solver (Box2D-style), with **split-impulse** position
- * correction. Each [SpringConstraint] holds two bodies near its rest length. Per tick the solver runs
- * two independent Gauss–Seidel passes ([iterations] each) over the unique pairs, applied **in place**
- * so each constraint sees the previous one's result:
+ * Impulse distance-constraint solver (Box2D-style), with **split-impulse** position correction. Each
+ * [SpringConstraint] holds two bodies near its rest length. Per tick the solver runs two independent
+ * **Jacobi** passes ([iterations] each) over the unique pairs — each pass reads the frozen state from
+ * the pass's start and accumulates corrections into per-body deltas, applied only after the full sweep:
  *
  *   1. **Velocity** — cancel the relative *normal* velocity (scaled by `damping`), mass-weighted.
  *      Equal-and-opposite ⇒ momentum-conserving; pure velocity cancellation ⇒ dissipative, never
@@ -36,12 +36,12 @@ import org.emerge.sim.core.sim.SimState
  * damping·relVel` velocity impulse — the prior design — injected velocity to fix position error,
  * which the asymmetric drag then rectified into runaway locomotion.)
  *
- * In-place (Gauss–Seidel) application makes it stable at any connectivity — a body's springs see each
- * other within the pass, so none gets a summed over-correction — with no relaxation/fudge factor.
- * Pairs are processed in a fixed `(loId, hiId)` order, so the integer-[Frac] result is deterministic
- * regardless of component-table iteration order. Sequential by design — the only user (cyto) is small
- * enough that the parallel Jacobi solver this replaced wasn't worth its complexity. A spring must be
- * registered on (at least) the smaller of its two endpoint ids.
+ * Jacobi application makes the result **order-independent**: the per-body deltas are summed with
+ * integer-[Frac] addition (associative/commutative), so any processing order — sequential here, or the
+ * SoA reducer's parallel per-body gather across cores — produces bit-identical output. At high
+ * connectivity a body sums all its springs' corrections at once, so [iterations] (and the mass-weighting)
+ * carry the convergence the in-place sweep used to get for free; cyto's low welded degree settles fine.
+ * A spring must be registered on (at least) the smaller of its two endpoint ids.
  */
 class SpringConstraintSystem(
     private val iterations: Int = 4,
@@ -97,11 +97,24 @@ class SpringConstraintSystem(
         // Split-impulse, Box2D-style: solve the velocity and position constraints on SEPARATE channels,
         // so position correction never becomes real velocity (and so can't pump kinetic energy — the
         // bug where a spring's position bias fed the asymmetric drag's ratchet).
+        //
+        // **Jacobi (not Gauss–Seidel).** Each iteration reads the *frozen* state from the start of that
+        // iteration and accumulates every constraint's correction into per-body delta buffers, applied
+        // only after the whole sweep — so a constraint never sees another's partial result mid-pass.
+        // That makes the result independent of constraint order: the deltas are summed with integer
+        // `Frac` addition, which is associative/commutative, so any scatter/gather/partition order
+        // (including a parallel one) yields bit-identical output. The SoA solver exploits this to fan
+        // the per-body gather across cores; this oracle stays sequential but matches it bit-for-bit.
+        // (The prior in-place Gauss–Seidel was order-dependent and so could not be parallelized without
+        // changing the result.) Jacobi converges a touch softer per iteration; [iterations] absorbs it.
+        val dx = ArrayList<Frac2>(ids.size)
+        for (i in ids.indices) dx.add(Frac2.zero)
 
-        // 1) Velocity solve (Gauss–Seidel): cancel the relative NORMAL velocity (damping only — no
-        //    position bias), mass-weighted, in place. Equal-and-opposite ⇒ momentum-conserving; pure
-        //    velocity cancellation ⇒ dissipative, never energy-adding. Normals from the start positions.
+        // 1) Velocity solve: cancel the relative NORMAL velocity (damping only — no position bias),
+        //    mass-weighted. Equal-and-opposite ⇒ momentum-conserving; pure velocity cancellation ⇒
+        //    dissipative, never energy-adding. Normals from the start positions.
         repeat(iterations) {
+            for (i in ids.indices) dx[i] = Frac2.zero
             for (con in constraints) {
                 val a = con.a
                 val b = con.b
@@ -115,15 +128,17 @@ class SpringConstraintSystem(
                 val vCorr = relVel * con.spring.damping
                 val weightA = Frac(mass[b], totalMass.toInt())
                 val weightB = Frac(mass[a], totalMass.toInt())
-                vel[a] = vel[a] + normal * (vCorr * weightA)
-                vel[b] = vel[b] - normal * (vCorr * weightB)
+                dx[a] = dx[a] + normal * (vCorr * weightA)
+                dx[b] = dx[b] - normal * (vCorr * weightB)
             }
+            for (i in ids.indices) vel[i] = vel[i] + dx[i]
         }
 
         // 2) Position solve (pseudo-velocity): correct the length error by moving the working POSITIONS
-        //    toward rest (stiffness = fraction of the error closed per tick), mass-weighted, in place.
+        //    toward rest (stiffness = fraction of the error closed per tick), mass-weighted.
         //    Emitted as a position-only impulse below — it shifts position without touching velocity.
         repeat(iterations) {
+            for (i in ids.indices) dx[i] = Frac2.zero
             for (con in constraints) {
                 val a = con.a
                 val b = con.b
@@ -137,9 +152,10 @@ class SpringConstraintSystem(
                 val pCorr = lengthError * con.spring.stiffness
                 val weightA = Frac(mass[b], totalMass.toInt())
                 val weightB = Frac(mass[a], totalMass.toInt())
-                pos[a] = pos[a] + normal * (pCorr * weightA)
-                pos[b] = pos[b] - normal * (pCorr * weightB)
+                dx[a] = dx[a] + normal * (pCorr * weightA)
+                dx[b] = dx[b] - normal * (pCorr * weightB)
             }
+            for (i in ids.indices) pos[i] = pos[i] + dx[i]
         }
 
         // Emit: the real velocity change on .vel (this includes the contact/grab impulse we read in
