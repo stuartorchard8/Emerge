@@ -87,6 +87,11 @@ class CytoSoaReducer(
     // reused per-cell scratch for exposure (neighbour diamond-angles); biology is single-threaded.
     private val expoScratch = LongArray(CytoExposure.MAX_NEIGHBOURS)
 
+    // Per-cell count of un-connected cells touched this tick (the Touching gene gate). Filled by the
+    // sequential contacts phase, read by biology; transient (slot indices are stable between the two,
+    // since membership only changes in the later lifecycle phase). Grown on demand, zeroed each tick.
+    private var touchScratch = IntArray(0)
+
     // Spring-solve working set as raw Frac longs (x/y split), reused across ticks and grown on demand,
     // so the per-body Jacobi gather allocates nothing per tick (no boxed Frac2 working arrays, no
     // per-edge Frac2/Norm temporaries). p0 = start positions (velocity normals + pNet reference);
@@ -157,6 +162,7 @@ class CytoSoaReducer(
     private fun contacts(w: CytoWorld) {
         weldLo.clear(); weldHi.clear()
         val n = w.count
+        if (touchScratch.size < n) touchScratch = IntArray(n) else touchScratch.fill(0, 0, n)
         if (n < 2) return
         var maxRadius = 0L
         for (i in 0 until n) if (w.radiusRaw[i] > maxRadius) maxRadius = w.radiusRaw[i]
@@ -208,6 +214,8 @@ class CytoSoaReducer(
             if (ai < bi) { weldLo.add(ai); weldHi.add(bi) } else { weldLo.add(bi); weldHi.add(ai) }
             return
         }
+        // A real (un-welded) collision — both cells register a touch this tick (the Touching gate).
+        touchScratch[i]++; touchScratch[j]++
         val massA = w.mass[i].toUInt(); val massB = w.mass[j].toUInt()
         val total = (massA + massB).toLong()
         if (total <= 0L) return
@@ -444,6 +452,7 @@ class CytoSoaReducer(
                 type = CellType.entries[w.cell.type[slot]],
                 genome = w.cell.genome[slot] ?: emptyList(),
                 quanta = quanta,
+                touchCount = touchScratch[slot],
                 wear = w.cell.wear[slot],
                 gridIndex = gridIndex,
                 connectionDamage = damage,

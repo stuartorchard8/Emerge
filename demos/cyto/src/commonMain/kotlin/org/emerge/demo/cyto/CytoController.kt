@@ -205,6 +205,7 @@ class CytoController(
         val cond = when (c.type) {
             org.emerge.demo.cyto.sim.ConditionType.ChemQty -> "${c.species}$cmp${c.threshold}"
             org.emerge.demo.cyto.sim.ConditionType.Biomass -> "BIO$cmp${c.threshold}"
+            org.emerge.demo.cyto.sim.ConditionType.Touching -> "TOUCH$cmp${c.threshold}"
         }
         val src = when (val s = gene.source) {
             org.emerge.demo.cyto.sim.EnergySource.Light -> "LIGHT"

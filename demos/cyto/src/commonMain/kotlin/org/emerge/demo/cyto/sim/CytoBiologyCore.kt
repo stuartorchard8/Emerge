@@ -181,6 +181,7 @@ object CytoBiologyCore {
         val value = when (c.type) {
             ConditionType.ChemQty -> work.cytoplasm[c.species] ?: 0
             ConditionType.Biomass -> totalBiomassBonds(work.biomass)
+            ConditionType.Touching -> work.touchCount
         }
         return when (c.cmp) {
             Comparison.Greater -> value > c.threshold

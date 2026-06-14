@@ -37,6 +37,12 @@ enum class ConditionType {
     ChemQty,
     /** Total biomass (Σ count × bond-count) ≷ [GeneCondition.threshold]; [GeneCondition.species] ignored. */
     Biomass,
+    /** Number of **un-connected** cells this cell is in physical contact with this tick ≷
+     *  [GeneCondition.threshold] ([GeneCondition.species] ignored) — i.e. `Touching > 0` fires while the
+     *  cell is bumping a neighbour it isn't welded to. The matter-model port of old Cyto's `Touch` gene
+     *  input (a cell sensing collision pressure); welded neighbours don't count (they're structure, not
+     *  a touch event). A reactive, contact-driven gate — e.g. divide / secrete / grip on contact. */
+    Touching,
 }
 
 /** The one binary gate that turns a gene on/off this tick. */
@@ -86,6 +92,9 @@ class CellWork(
     val genome: List<Gene>,
     /** Energy quanta available this tick (1 quantum = 1 op), spent down as genes act. */
     var quanta: Int,
+    /** Number of un-connected cells this cell is in contact with this tick (the [ConditionType.Touching]
+     *  gate reads it). Transient — recomputed from the physics contacts each tick, never persisted. */
+    val touchCount: Int,
     /** Degradation accumulator carried across ticks (gains total-biomass-bonds each tick). */
     var wear: Int,
     /** The environment matter-grid cell this cell sits in (where Import draws / death deposits). -1 if

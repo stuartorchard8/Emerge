@@ -62,7 +62,7 @@ object CytoMutation {
     private fun pointMutate(g: Gene, nextInt: (Int) -> Int): Gene = when (nextInt(7)) {
         0 -> g.copy(condition = g.condition.copy(cmp = flip(g.condition.cmp)))
         1 -> g.copy(condition = g.condition.copy(species = pick(SPECIES, nextInt)))
-        2 -> g.copy(condition = g.condition.copy(type = flip(g.condition.type)))
+        2 -> g.copy(condition = g.condition.copy(type = ConditionType.entries[nextInt(ConditionType.entries.size)]))
         3 -> g.copy(action = g.action.copy(a = pick(SPECIES, nextInt)))
         4 -> g.copy(action = g.action.copy(b = pick(SPECIES, nextInt)))
         5 -> g.copy(action = g.action.copy(type = ActionType.entries[nextInt(ActionType.entries.size)]))
@@ -70,7 +70,6 @@ object CytoMutation {
     }
 
     private fun flip(c: Comparison) = if (c == Comparison.Greater) Comparison.Less else Comparison.Greater
-    private fun flip(t: ConditionType) = if (t == ConditionType.ChemQty) ConditionType.Biomass else ConditionType.ChemQty
     private fun flipSource(s: EnergySource, nextInt: (Int) -> Int): EnergySource = when (s) {
         EnergySource.Light -> EnergySource.BreakBond(pick(ATOMS, nextInt) + pick(ATOMS, nextInt))
         is EnergySource.BreakBond -> EnergySource.Light

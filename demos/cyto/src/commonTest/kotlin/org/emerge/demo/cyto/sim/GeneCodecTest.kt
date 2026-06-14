@@ -42,6 +42,18 @@ class GeneCodecTest {
         }
     }
 
+    /** Every condition type round-trips — the enum-exhaustive backstop for the gate token. */
+    @Test
+    fun roundTripsEveryConditionType() {
+        for (type in ConditionType.entries) {
+            val gene = Gene(EnergySource.Light, GeneCondition(type, "ab", Comparison.Greater, 2), GeneAction(ActionType.Mitosis))
+            val back = GeneCodec.parse(GeneCodec.serialize(listOf(gene)))
+            // Biomass/Touching ignore the species operand (not serialized), so normalise it for the compare.
+            val expected = if (type == ConditionType.ChemQty) gene else gene.copy(condition = gene.condition.copy(species = ""))
+            assertEquals(listOf(expected), back, "$type")
+        }
+    }
+
     /** A hand-authored genome parses to exactly the genes intended (the author-by-text workflow). */
     @Test
     fun parsesAHandWrittenGenome() {

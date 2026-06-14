@@ -317,4 +317,29 @@ class CytoSoaSpecTest {
         val ctrl = radiusRaw(relaxed, controlId)
         assertTrue(kotlin.math.abs(radiusRaw(relaxed, flexId) - ctrl) < ctrl / 16, "radius should relax back to the biomass baseline")
     }
+
+    @Test
+    fun touchingConditionGatesAGeneOnUnweldedCellContact() {
+        // A gene that fires only while in contact with a cell it isn't welded to. Two cells placed barely
+        // overlapping (so they touch + repel, not weld) each Expand on contact, fuelled by breaking stored
+        // `ab`; a lone control with the identical gene never touches anything, so its gate stays false.
+        val touchExpand = listOf(
+            Gene(EnergySource.BreakBond("ab"), GeneCondition(ConditionType.Touching, "", Comparison.Greater, 0), GeneAction(ActionType.Expand)),
+        )
+        fun cell(b: SimBuilder, x: Float) =
+            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 100), biomass = mapOf("ab" to 8), genome = touchExpand)
+        val initial = run {
+            val b = SimBuilder(SimState())
+            cell(b, -0.22f); cell(b, 0.22f)   // ~0.06 overlap at MIN_RADIUS ⇒ touch, not weld
+            cell(b, 20f)                       // lone control, never in contact
+            b.build()
+        }
+        val ids = initial.components.getTable<CytoCellComponent>().asMap().keys.sortedBy { it.value }
+        val (aId, bId, controlId) = ids
+        val total0 = totalAtoms(initial)
+        val state = run(initial, ticks = 2) { s, t -> assertEquals(total0, totalAtoms(s), "touch gating must conserve matter; broke at $t") }
+        val control = radiusRaw(state, controlId)
+        assertTrue(radiusRaw(state, aId) > control, "a touched cell should have fired its Touching-gated Expand (got ${radiusRaw(state, aId)} vs control $control)")
+        assertTrue(radiusRaw(state, bId) > control, "both touching cells should have fired")
+    }
 }

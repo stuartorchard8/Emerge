@@ -51,6 +51,7 @@ object GeneCodec {
     private fun condition(c: GeneCondition): String = when (c.type) {
         ConditionType.ChemQty -> "ChemQty ${tok(c.species)} ${cmp(c.cmp)} ${c.threshold}"
         ConditionType.Biomass -> "Biomass ${cmp(c.cmp)} ${c.threshold}"
+        ConditionType.Touching -> "Touching ${cmp(c.cmp)} ${c.threshold}"
     }
 
     private fun parseCondition(t: List<String>): GeneCondition = when (t[0]) {
@@ -61,6 +62,10 @@ object GeneCodec {
         "Biomass" -> {
             require(t.size == 3) { "Biomass needs 'Biomass <>|<> <n>': ${t.joinToString(" ")}" }
             GeneCondition(ConditionType.Biomass, "", cmp(t[1]), t[2].toInt())
+        }
+        "Touching" -> {
+            require(t.size == 3) { "Touching needs 'Touching <>|<> <n>': ${t.joinToString(" ")}" }
+            GeneCondition(ConditionType.Touching, "", cmp(t[1]), t[2].toInt())
         }
         else -> throw IllegalArgumentException("unknown condition: ${t[0]}")
     }
