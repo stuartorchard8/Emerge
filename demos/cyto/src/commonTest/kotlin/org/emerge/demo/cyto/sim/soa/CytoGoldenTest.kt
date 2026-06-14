@@ -1,0 +1,220 @@
+package org.emerge.demo.cyto.sim.soa
+
+import org.emerge.demo.cyto.cells.CellType
+import org.emerge.demo.cyto.sim.ConnectionStateComponent
+import org.emerge.demo.cyto.sim.CytoCellComponent
+import org.emerge.demo.cyto.sim.CytoConfig
+import org.emerge.demo.cyto.sim.CytoInput
+import org.emerge.demo.cyto.sim.CytoMatterGrid
+import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.GRID_SINGLETON
+import org.emerge.demo.cyto.sim.GeneCodec
+import org.emerge.demo.cyto.sim.TouchMode
+import org.emerge.demo.cyto.sim.createCytoInitialState
+import org.emerge.sim.core.EntityId
+import org.emerge.sim.core.physics.components.ColliderComponent
+import org.emerge.sim.core.physics.components.MaterialComponent
+import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.components.SpringConstraintComponent
+import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.sim.SimState
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+/**
+ * **The replacement for the AoS-oracle gate.** Instead of re-deriving correctness from a second
+ * (array-of-structs) implementation tick-for-tick, this freezes the *current, known-good* behaviour of
+ * the live [CytoSoaReducer] as committed golden digests and gates future optimisations against it: the
+ * "pre-optimised source of truth". The sim is fixed-point deterministic, so a fixed seed + scripted
+ * input yields a bit-stable trajectory across runs/machines, and a digest of the resulting state is a
+ * stable regression key.
+ *
+ * Why this is *more* coverage than the old AoS gate, not less: the AoS equivalence gate was `@Ignore`d
+ * under mutation (a never-resolved AoS↔SoA divergence), so it never covered the **mutation-on** config
+ * the game actually ships. The golden does — [mutationOn] locks the live evolving trajectory down.
+ *
+ * The digest is split into dimensions (meta / physics / biology / topology / grid) so a failure says
+ * *what* drifted. To intentionally re-baseline after a deliberate behaviour change, run the test, copy
+ * the `actual` hashes from the assertion messages into the constants below, and justify it in the commit.
+ *
+ * Determinism of the *parallel* path and faithfulness of the toSimState boundary are gated separately
+ * ([parallelMatchesSequential], [grownStateRoundTrips]) — no AoS implementation involved anywhere here.
+ */
+class CytoGoldenTest {
+
+    // ── Golden digests: { dimension -> FNV-1a hex } per scenario. Captured from the live SoA reducer. ──
+    // growth, mutation off, 250 ticks from the default scene.
+    private val GROWTH = mapOf(
+        "meta" to "7ebfb2c70b1f6f4c",
+        "physics" to "e787e19040881fe8",
+        "biology" to "805f16f232067b61",
+        "topology" to "7a4e6a7418e1ef93",
+        "grid" to "31bdd89ba35fc8b0",
+    )
+    // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
+    private val MUTATION = mapOf(
+        "meta" to "b8e236fdaff67a5f",
+        "physics" to "8d03b4f54ae43fea",
+        "biology" to "625308b4bb117933",
+        "topology" to "4806f6c8c4244d0c",
+        "grid" to "ddcf67b7b0b25950",
+    )
+    // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
+    private val INTERACT = mapOf(
+        "meta" to "f2144693e5233d68",
+        "physics" to "b213f30c8abdd21f",
+        "biology" to "603bf0a51503ca1b",
+        "topology" to "d997b8fa80fddbfb",
+        "grid" to "81d70b1545b2ea0a",
+    )
+
+    @Test
+    fun growthMutationOff() {
+        val cfg = CytoConfig(mutationRateDenom = 0)
+        val soa = CytoSoaReducer(cfg)
+        var w = CytoWorld.fromSimState(createCytoInitialState())
+        repeat(250) { w = soa.tick(w, CytoInput.EMPTY) }
+        assertGolden("growth", GROWTH, w.toSimState())
+    }
+
+    @Test
+    fun mutationOn() {
+        val cfg = CytoConfig(mutationRateDenom = 200)
+        val soa = CytoSoaReducer(cfg)
+        var w = CytoWorld.fromSimState(createCytoInitialState())
+        repeat(250) { w = soa.tick(w, CytoInput.EMPTY) }
+        assertGolden("mutation", MUTATION, w.toSimState())
+    }
+
+    @Test
+    fun scriptedInteractions() {
+        val cfg = CytoConfig(mutationRateDenom = 0)
+        val soa = CytoSoaReducer(cfg)
+        var w = CytoWorld.fromSimState(createCytoInitialState())
+        repeat(80) { w = soa.tick(w, CytoInput.EMPTY) }   // grow a connected colony
+        // A fixed input script (positions in logical units), one tap per tick, deterministic.
+        val collector = CellType.Collector
+        w = soa.tick(w, CytoInput(taps = listOf(CytoInput.Tap(0f, 0f, TouchMode.Delete, collector))))
+        w = soa.tick(w, CytoInput(taps = listOf(CytoInput.Tap(500f, 500f, TouchMode.Base, collector))))
+        w = soa.tick(w, CytoInput(taps = listOf(CytoInput.Tap(500f, 500f, TouchMode.Set, CellType.Blank))))
+        repeat(20) { w = soa.tick(w, CytoInput.EMPTY) }
+        assertGolden("interact", INTERACT, w.toSimState())
+    }
+
+    // ── SoA-only determinism + boundary gates (no AoS) ─────────────────────────────────────────────
+
+    @Test
+    fun parallelMatchesSequential() {
+        // The spring gather fans across cores via ColumnPartition.disjoint; that is bit-identical to its
+        // sequential fallback only if each body writes solely its own delta from frozen state. Run a
+        // parallel reducer (forced on at small N) lockstep with a sequential one and assert identical
+        // state each tick — the determinism guarantee, gated SoA-vs-SoA.
+        val cfg = CytoConfig(mutationRateDenom = 0)
+        val executor = org.emerge.sim.core.ecs.ParallelExecutor()
+        val seq = CytoSoaReducer(cfg)
+        val par = CytoSoaReducer(cfg, executor = executor, springParallelThreshold = 2)
+        var ws = CytoWorld.fromSimState(createCytoInitialState())
+        var wp = CytoWorld.fromSimState(createCytoInitialState())
+        for (t in 1..250) {
+            ws = seq.tick(ws, CytoInput.EMPTY)
+            wp = par.tick(wp, CytoInput.EMPTY)
+            assertEquals(digest(ws.toSimState()), digest(wp.toSimState()), "parallel != sequential at tick=$t")
+        }
+    }
+
+    @Test
+    fun grownStateRoundTrips() {
+        // toSimState/fromSimState is load-bearing (render + save read it). Grow a colony, round-trip the
+        // SoA world through a SimState, and assert the digest is unchanged.
+        val cfg = CytoConfig(mutationRateDenom = 0)
+        val soa = CytoSoaReducer(cfg)
+        var w = CytoWorld.fromSimState(createCytoInitialState())
+        repeat(250) { w = soa.tick(w, CytoInput.EMPTY) }
+        val before = w.toSimState()
+        val round = CytoWorld.fromSimState(before).toSimState()
+        assertEquals(digest(before), digest(round), "round-trip changed the state digest")
+    }
+
+    // ── digest ──────────────────────────────────────────────────────────────────────────────────
+
+    private fun assertGolden(label: String, golden: Map<String, String>, state: SimState) {
+        val actual = digest(state)
+        if (actual != golden) {
+            val dump = actual.entries.joinToString(",\n        ") { "\"${it.key}\" to \"${it.value}\"" }
+            throw AssertionError("$label digest drift. Current digests (paste to re-baseline):\n        $dump")
+        }
+    }
+
+    /** A canonical per-dimension FNV-1a digest of the persistent sim state (impulse excluded — transient,
+     *  reset each tick). Entities are visited in ascending EntityId order and every map is key-sorted, so
+     *  the string — and thus the hash — is stable across runs, JVMs, and component-table iteration order. */
+    private fun digest(s: SimState): Map<String, String> {
+        val cells = s.components.getTable<CytoCellComponent>().asMap()
+        val transforms = s.components.getTable<TransformComponent>().asMap()
+        val motions = s.components.getTable<MotionComponent>().asMap()
+        val materials = s.components.getTable<MaterialComponent>().asMap()
+        val colliders = s.components.getTable<ColliderComponent>().asMap()
+        val springs = s.components.getTable<SpringConstraintComponent>().asMap()
+        val conns = s.components.getTable<ConnectionStateComponent>().asMap()
+        val ids = cells.keys.sortedBy { it.value }
+
+        val meta = "seed=${s.randomSeed};tick=${s.tick};last=${s.world.lastEntityValue};n=${ids.size}"
+
+        val physics = StringBuilder()
+        for (id in ids) {
+            val p = transforms[id]?.pos; val v = motions[id]?.vel
+            val m = materials[id]?.mass ?: 0u; val r = colliders[id]?.radius?.raw ?: 0L
+            physics.append(id.value).append(':')
+                .append(p?.x?.raw).append(',').append(p?.y?.raw).append(',')
+                .append(v?.x?.raw).append(',').append(v?.y?.raw).append(',')
+                .append(m).append(',').append(r).append(';')
+        }
+
+        val biology = StringBuilder()
+        for (id in ids) {
+            val c = cells.getValue(id)
+            biology.append(id.value).append(':').append(c.type.name).append('|')
+                .append(c.logicalRadius.raw).append('|').append(c.wear).append('|')
+                .append(GeneCodec.serialize(c.genome)).append('|')
+                .append(mapStr(c.cytoplasm)).append('|').append(mapStr(c.biomass)).append(';')
+        }
+
+        val topology = StringBuilder()
+        for (id in ids) {
+            val sp = springs[id]?.springs.orEmpty()
+                .sortedBy { it.other.value }
+                .joinToString(",") { "${it.other.value}/${it.restLength.raw}/${it.stiffness.raw}/${it.damping.raw}" }
+            // Connection damage with zero entries dropped (a fresh spring carries 0; readers treat
+            // missing as 0 — only a genuine non-zero divergence should move the hash).
+            val dmg = conns[id]?.damage.orEmpty().filterValues { it != 0f }
+                .entries.sortedBy { it.key.value }.joinToString(",") { "${it.key.value}=${it.value}" }
+            if (sp.isNotEmpty() || dmg.isNotEmpty()) topology.append(id.value).append(":[").append(sp).append("][").append(dmg).append(']').append(';')
+        }
+
+        val gridSb = StringBuilder()
+        val grid = s.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid
+        if (grid != null) {
+            for (idx in 0 until CytoMatterGrid.RES * CytoMatterGrid.RES) {
+                val cell = grid.cellAt(idx)
+                if (cell.isNotEmpty()) gridSb.append(idx).append(':').append(mapStr(cell)).append(';')
+            }
+        }
+
+        return mapOf(
+            "meta" to fnv(meta),
+            "physics" to fnv(physics.toString()),
+            "biology" to fnv(biology.toString()),
+            "topology" to fnv(topology.toString()),
+            "grid" to fnv(gridSb.toString()),
+        )
+    }
+
+    private fun mapStr(m: Map<String, Int>): String =
+        m.entries.filter { it.value != 0 }.sortedBy { it.key }.joinToString(",") { "${it.key}=${it.value}" }
+
+    private fun fnv(s: String): String {
+        var h = -3750763034362895579L  // FNV-1a 64-bit offset basis (0xcbf29ce484222325)
+        for (ch in s) { h = h xor ch.code.toLong(); h *= 1099511628211L }
+        return h.toULong().toString(16)
+    }
+}
