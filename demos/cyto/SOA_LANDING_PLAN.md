@@ -1,5 +1,13 @@
 # Cyto SoA landing plan — toward the large-population end state
 
+> **STATUS: LANDED + AoS RETIRED (2026-06-14).** `CytoSoaReducer` is the sole, live cyto reducer on all
+> three hosts. The AoS `CytoReducer` oracle — and the bit-identity `CytoSoaEquivalenceTest` it backed —
+> have been **deleted**, along with the six duplicated AoS systems and `CytoReducerTest`. The gate is now
+> **`CytoGoldenTest`** (frozen golden-trajectory regression incl. mutation-on) + **`CytoSoaSpecTest`**
+> (ported biology invariants) + a parallel==sequential determinism check — no second implementation.
+> Probes run on SoA via the `CytoSoaSim` harness. Everything below is the historical landing record; its
+> references to the equivalence gate / AoS oracle describe how we *got* here, not the current setup.
+
 Status: planning (2026-06-14). Owner: perf track. Companion to `MORPHOGENESIS.md` (biology design is
 the contract; this doc is the data-layout/performance contract).
 
