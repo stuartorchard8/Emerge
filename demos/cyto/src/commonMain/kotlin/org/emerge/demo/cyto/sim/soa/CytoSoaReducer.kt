@@ -480,14 +480,19 @@ class CytoSoaReducer(
                 connectionDamage = damage,
             )
         }
-        // Second pass: split each grid-cell's incident light among its occupants by capture share. The
-        // division order (cap / Σcap before / MAX) keeps full integer precision and, for a lone cell where
-        // Σcap == cap, reduces to baseQuantaRaw / MAX — the exact un-shaded quanta.
+        // Second pass: turn each cell's base light into quanta. With [CytoTuning.LIGHT_SHADING] on, cells
+        // sharing a grid-cell split it by capture share (cap / Σcap); the division order (cap/Σcap before
+        // /MAX) keeps full integer precision and, for a lone cell where Σcap == cap, reduces to the same
+        // un-shaded value. With shading off, every cell simply gets its own full light (no co-located
+        // split) — a toggle to A/B whether shading still matters now the day/night cycle drives selection.
         for ((k, slot) in ordered.withIndex()) {
             val work = works.getValue(EntityId(w.entityId[slot]))
-            val capSum = if (work.gridIndex >= 0) capSumByGrid[work.gridIndex] ?: 0L else captureMilli[k]
-            work.quanta =
+            work.quanta = if (!CytoTuning.LIGHT_SHADING) {
+                (baseQuantaRaw[k] / Int.MAX_VALUE.toLong()).toInt()
+            } else {
+                val capSum = if (work.gridIndex >= 0) capSumByGrid[work.gridIndex] ?: 0L else captureMilli[k]
                 if (capSum <= 0L) 0 else (baseQuantaRaw[k] * captureMilli[k] / capSum / Int.MAX_VALUE.toLong()).toInt()
+            }
         }
 
         val orderedWorks = ordered.map { works.getValue(EntityId(w.entityId[it])) }

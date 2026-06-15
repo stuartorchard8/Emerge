@@ -35,6 +35,12 @@ object CytoTuning {
      *  before the midpoint between sources, leaving dark contested zones. In moving mode it's the
      *  half-width of the daylight band (how much of the world is "day" at once). */
     const val LIGHT_FALLOFF = 200f
+    /** Shading (interference competition): when true, cells sharing a grid-cell split that cell's incident
+     *  light by capture weight (exposure × radius), so a bigger cell starves its neighbours. False = every
+     *  cell gets its own full light (no co-located split) — toggle to test whether shading still earns its
+     *  keep now the day/night cycle provides periodic selection pressure. (Lone cells are identical either
+     *  way, so this only changes crowded grid-cells.) */
+    const val LIGHT_SHADING = true
     /** Moving light: when true, a single daylight BAND sweeps across the world (a day/night terminator),
      *  wrapping once per [LIGHT_ORBIT_PERIOD] ticks, replacing the 4 static sources. Cells must then hoard
      *  through the dark (store bonded molecules + a BreakBond gene to burn them) or follow the light.
