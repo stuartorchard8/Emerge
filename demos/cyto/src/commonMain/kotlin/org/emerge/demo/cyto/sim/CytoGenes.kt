@@ -79,6 +79,46 @@ data class GeneAction(val type: ActionType, val a: String = "", val b: String = 
 data class Gene(val source: EnergySource, val condition: GeneCondition, val action: GeneAction)
 
 /**
+ * A cell's metabolic reach — the bonds and atoms its genome can handle — used by **selective uptake**:
+ * a cell may only absorb/hold a species *all* of whose bonds (and, for a monomer, whose atom) it can
+ * handle. This bounds per-cell species to molecules buildable from the genome's bond-set (≤ a few dozen
+ * at the B=5 bond-cap), regardless of how diverse the surrounding environment is.
+ */
+class Handleable(private val bonds: Set<String>, private val atoms: Set<Char>) {
+    fun canHold(species: String): Boolean {
+        if (species.isEmpty()) return false
+        if (species.length == 1) return species[0] in atoms
+        for (i in 0 until species.length - 1) if (species.substring(i, i + 2) !in bonds) return false
+        return true
+    }
+}
+
+/** Derive a genome's [Handleable] reach: bonds it forms (FormBond), breaks (BreakBond), or references in
+ *  a Convert/Import/ChemQty operand; atoms are the endpoints of those bonds plus any monomer operand. */
+fun handleableOf(genome: List<Gene>): Handleable {
+    val bonds = HashSet<String>()
+    val atoms = HashSet<Char>()
+    fun addSpecies(s: String) {
+        if (s.isEmpty()) return
+        for (c in s) atoms.add(c)
+        for (i in 0 until s.length - 1) bonds.add(s.substring(i, i + 2))
+    }
+    for (g in genome) {
+        (g.source as? EnergySource.BreakBond)?.let { addSpecies(it.bond) }
+        if (g.condition.type == ConditionType.ChemQty) addSpecies(g.condition.species)
+        when (g.action.type) {
+            ActionType.FormBond -> {
+                val a = g.action.a; val b = g.action.b
+                if (a.isNotEmpty() && b.isNotEmpty()) { atoms.add(a[0]); atoms.add(b[0]); bonds.add("${a[0]}${b[0]}") }
+            }
+            ActionType.Convert, ActionType.Import -> addSpecies(g.action.a)
+            else -> {}
+        }
+    }
+    return Handleable(bonds, atoms)
+}
+
+/**
  * Mutable per-tick working state for one cell. Matter lives in two integer count maps: mobile
  * [cytoplasm] (genes act on it; diffuses to neighbours) and locked [biomass] (structure; sets size).
  * [quanta] is this tick's energy budget (from light × exposure); [wear] is the degradation accumulator
@@ -106,6 +146,10 @@ class CellWork(
      *  writes the (possibly healed) map back, and connection maintenance accrues stress on top. */
     val connectionDamage: MutableMap<EntityId, Float>,
 ) {
+    /** What this cell can metabolise (hence absorb/hold), derived once from its genome — selective uptake
+     *  gates passive exchange + diffusion on this so per-cell species stay bounded (see [handleableOf]). */
+    val handleable: Handleable = handleableOf(genome)
+
     /** Set true by a fired Mitosis gene; the lifecycle splits the cell. */
     var dividing = false
 

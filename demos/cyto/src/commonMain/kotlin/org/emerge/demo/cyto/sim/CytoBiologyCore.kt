@@ -65,7 +65,9 @@ object CytoBiologyCore {
             if (t < 0) {                       // leaker: always succeeds (deposits into the reservoir)
                 addOrRemove(cells[i].cytoplasm, sp, t)
                 grid.deposit(idx, sp, -t)
-            } else if (t > 0) {
+            } else if (t > 0 && cells[i].handleable.canHold(sp)) {
+                // SELECTIVE UPTAKE: only absorb a species the cell can metabolise; one it can't is left in
+                // the reservoir (conservation-safe), keeping per-cell species bounded by the genome.
                 want[i] = t
                 demand += t
             }
@@ -246,11 +248,17 @@ object CytoBiologyCore {
             for ((species, v) in w.cytoplasm) {
                 val out = v / (degree + 1)
                 if (out <= 0) continue
-                selfDelta[species] = (selfDelta[species] ?: 0) - out * degree
+                // SELECTIVE UPTAKE across the membrane too: only send to neighbours that can metabolise
+                // the species; the sender keeps the share meant for any that can't.
+                var receivers = 0
                 for (nb in nbrs) {
+                    val nbWork = works[nb] ?: continue
+                    if (!nbWork.handleable.canHold(species)) continue
                     val nbDelta = delta.getOrPut(nb) { HashMap() }
                     nbDelta[species] = (nbDelta[species] ?: 0) + out
+                    receivers++
                 }
+                if (receivers > 0) selfDelta[species] = (selfDelta[species] ?: 0) - out * receivers
             }
         }
         for ((id, d) in delta) {
