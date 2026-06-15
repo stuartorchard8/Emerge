@@ -71,6 +71,11 @@ object CytoTuning {
     /** Connection damage healed per Repair op (one quantum). 0.25 ≈ the old free per-tick heal, so ~one
      *  op/tick maintains a lightly-loaded connection; more stress needs more energy. */
     const val REPAIR_PER_OP = 0.25f
+    /** Active-uptake gradient cost (CytoBiologyCore Import): a gene's `k` energy units import
+     *  `⌊k·SCALE / (SCALE + max(0, cyto − env))⌋` molecules — 1:1 at/below the ambient reservoir level,
+     *  then diminishing as the cell concentrates above it. SCALE is the excess (cyto − env) at which yield
+     *  halves; lower = a tighter soft cap on hoarding + a steeper nutrient-poor niche barrier. ⚙ */
+    const val IMPORT_GRADIENT_SCALE = 4_000
 
     // ── Growth, size & death ─────────────────────────────────────────────────────────────────────────
     /** Biomass bonds for a full-size (radius 1.0) cell — `radius = sqrt(bonds / BONDS_PER_FULL)`. */

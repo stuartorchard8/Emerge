@@ -202,7 +202,15 @@ object CytoBiologyCore {
             ActionType.FormBond -> work.cytoplasm.inc(productId, k)
             ActionType.Import -> {
                 val importId = SpeciesRegistry.id(act.a)
-                val got = grid.draw(work.gridIndex, importId, k); if (got > 0) work.cytoplasm.inc(importId, got)
+                // Active uptake against a concentration gradient: the gene's k energy units buy fewer
+                // molecules the further the cell pushes its internal level ABOVE the ambient reservoir
+                // (1:1 at or below ambient — riding the free passive band — then diminishing). So filling
+                // up where a species is plentiful is cheap, and concentrating it scarce/against demand is
+                // dear; hoarding self-limits (a soft capacity) and nutrient-poor patches become a niche
+                // only an energy-rich cell can exploit. SCALE = the excess at which yield halves.
+                val excess = (work.cytoplasm.count(importId) - grid.count(work.gridIndex, importId)).coerceAtLeast(0).toLong()
+                val want = (k.toLong() * CytoTuning.IMPORT_GRADIENT_SCALE / (CytoTuning.IMPORT_GRADIENT_SCALE + excess)).toInt()
+                val got = grid.draw(work.gridIndex, importId, want); if (got > 0) work.cytoplasm.inc(importId, got)
             }
             ActionType.Mitosis -> work.dividing = true
             ActionType.Repair -> applyRepair(work, k)

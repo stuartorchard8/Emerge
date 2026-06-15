@@ -12,6 +12,7 @@ import org.emerge.demo.cyto.sim.CytoLightField
 import org.emerge.demo.cyto.sim.CytoMatterGrid
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoMutation
+import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.EnergySource
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
@@ -148,6 +149,40 @@ class CytoSoaSpecTest {
         val cell = state.components.getTable<CytoCellComponent>().asMap().values.first()
         assertEquals(5000, cell.cytoplasm["ab"] ?: 0, "metabolisable ab is retained (not leaked back to the reservoir)")
         assertTrue((cell.cytoplasm["c"] ?: 0) < 5000, "un-metabolisable c leaks toward the empty reservoir; got ${cell.cytoplasm["c"]}")
+    }
+
+    @Test
+    fun activeUptakeYieldsLessAgainstASteeperGradient() {
+        // Gradient-cost on Import: the same light budget buys far fewer molecules when the cell is already
+        // concentrated above the ambient reservoir. Two identical cells on a light source with a fat 'a'
+        // reservoir (so uptake is gradient-limited, not supply-limited) — one starting at ambient (excess 0),
+        // one well above it (excess 2×SCALE → ~1/3 yield). Biomass is small enough that nothing degrades in
+        // one tick, and at/above ambient passive exchange is inert, so the cytoplasm delta is pure uptake.
+        val (sx, sy) = CytoLightField.SOURCES.first()
+        val importGene = Gene(
+            EnergySource.Light,
+            GeneCondition(ConditionType.Biomass, "", Comparison.Greater, 0),
+            GeneAction(ActionType.Import, "a"),
+        )
+        fun uptakeFrom(startCytoA: Int): Int {
+            val initial = run {
+                val b = SimBuilder(SimState())
+                b.spawnCell(
+                    CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector,
+                    cytoplasm = mapOf("a" to startCytoA), biomass = mapOf("ab" to 1000), genome = listOf(importGene),
+                )
+                val grid = CytoMatterGrid.empty()
+                grid.deposit(grid.indexOf(sx, sy), "a", 1_000_000)
+                b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
+                b.build()
+            }
+            fun cytoA(s: SimState) = s.components.getTable<CytoCellComponent>().asMap().values.first().cytoplasm["a"] ?: 0
+            return cytoA(run(initial, ticks = 1) { _, _ -> }) - cytoA(initial)
+        }
+        val nearAmbient = uptakeFrom(1_000_000)                                       // excess 0 → full yield
+        val concentrated = uptakeFrom(1_000_000 + 2 * CytoTuning.IMPORT_GRADIENT_SCALE)  // excess 2×SCALE → ~1/3
+        assertTrue(concentrated > 0, "still imports something against the gradient; got $concentrated")
+        assertTrue(nearAmbient > concentrated * 2, "uptake should fall steeply with concentration; near=$nearAmbient conc=$concentrated")
     }
 
     @Test

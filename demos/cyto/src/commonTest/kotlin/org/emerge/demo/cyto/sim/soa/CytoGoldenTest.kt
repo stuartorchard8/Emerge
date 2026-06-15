@@ -112,12 +112,16 @@ class CytoGoldenTest {
     // (`ConditionType.entries[nextInt(size)]`), so it now consumes a PRNG int and can reach the new type.
     // The mutation-off GROWTH/INTERACT goldens below are unchanged (no flex/touch gene in the default
     // scene, no mutation), confirming the drift is isolated to the new mechanics.
+    // Re-baselined 2026-06-15: active-uptake GRADIENT COST — Import yield falls as the cell concentrates a
+    // species above the ambient reservoir (CytoBiologyCore + IMPORT_GRADIENT_SCALE). Only the mutation-on
+    // golden moves: the presets have no Import gene, so growth/interact are byte-identical (confirming the
+    // change is isolated to active uptake, which only arises under mutation).
     private val MUTATION = mapOf(
-        "meta" to "dc2cbba9d541ba76",
-        "physics" to "f0ad15c21ee4a495",
-        "biology" to "958eb4e2d44fa252",
-        "topology" to "25550e7742e9ae02",
-        "grid" to "d6e2e530ad27e4ca",
+        "meta" to "202e02b9bc201601",
+        "physics" to "6005eba7fa206467",
+        "biology" to "2b4184652d1767f3",
+        "topology" to "d59e206b7b2932ca",
+        "grid" to "ece170e94522be33",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
