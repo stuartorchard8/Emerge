@@ -45,6 +45,15 @@ object CytoSceneView {
         controls.onLoadBrush = { if (loadBrush(controller)) controls.selectBrush() }
         autoLoadSnapshotAtStartup(controller)
 
+        // Run the sim on its own thread, decoupled from this (vsync-paced) draw loop, with on-screen
+        // SLOW/PAUSE/FAST controls + a TPS/FPS readout.
+        val simDriver = CytoSimDriver(controller)
+        controls.showSimSpeed = true
+        controls.onSlower = { simDriver.slower() }
+        controls.onFaster = { simDriver.faster() }
+        controls.onTogglePause = { simDriver.togglePause() }
+        simDriver.start()
+
         // Shared in-game UI toolkit — the last-held-cell info panel.
         val ui = Ui()
 
@@ -52,6 +61,7 @@ object CytoSceneView {
         installMouseHandlers(window, controller, renderer, controls, ui, mouse)
 
         var lastTime = glfwGetTime()
+        var fps = 0.0
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents()
             updateResolution(window, renderer, controls, ui)
@@ -59,10 +69,15 @@ object CytoSceneView {
             val now = glfwGetTime()
             val delta = (now - lastTime).toFloat().coerceIn(0f, 0.25f)
             lastTime = now
+            if (delta > 0f) fps = fps * 0.9 + (1.0 / delta) * 0.1   // smoothed draw rate
 
             renderer.showLightField = controls.showLightField   // Light button → renderer
             controller.brushActive = controls.brushSelected      // "Brush" type selection → painting
-            val frame = controller.tick(delta)
+            // The sim advances on its own thread; we render whatever it last published.
+            val frame = controller.latestFrame()
+            controls.simPaused = simDriver.paused
+            controls.simBehind = simDriver.behind()
+            controls.simStatus = "${simDriver.status()}   ${fps.toInt()} FPS"
 
             renderer.draw(frame) // renderer fills its own background
             drawReadouts(controller, renderer, controls)
@@ -74,6 +89,7 @@ object CytoSceneView {
             glfwSwapBuffers(window)
         }
 
+        simDriver.stop()
         renderer.cleanup()
         controls.cleanup()
         ui.cleanup()

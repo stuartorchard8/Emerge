@@ -45,6 +45,21 @@ class CytoControls {
      *  lives in the host (this class is cross-platform), so the host wires this up. */
     var onLoadBrush: () -> Unit = {}
 
+    // ── Sim-speed control (threaded desktop host only; [showSimSpeed] gates the whole row off by default
+    //    so single-threaded web/android hosts are unaffected) ──────────────────────────────────────────
+    /** Show the top-left SLOW / PAUSE / FAST buttons + the TPS/FPS readout. */
+    var showSimSpeed: Boolean = false
+    var onSlower: () -> Unit = {}
+    var onFaster: () -> Unit = {}
+    var onTogglePause: () -> Unit = {}
+    /** Host-set each frame: the readout line (e.g. "256/512 TPS  60 FPS"), pause + behind flags. */
+    var simStatus: String = ""
+    var simPaused: Boolean = false
+    var simBehind: Boolean = false
+    private var simStatusX = 0f
+    private var simStatusY = 0f
+    private var simStatusH = 0f
+
     private enum class Group { CellType, TouchMode }
     private var openGroup: Group? = null
 
@@ -111,6 +126,17 @@ class CytoControls {
                 resW = resW, resH = resH,
             )
         }
+        // Sim-speed readout (left-anchored next to the speed buttons), amber when falling behind.
+        if (showSimSpeed && simStatus.isNotEmpty()) {
+            val color = when {
+                simBehind -> 0xEFB000FFL   // amber: target not being met
+                simPaused -> 0x9090A0FFL   // grey: paused
+                else -> 0x33DD33FFL        // green: keeping up
+            }
+            val (r, g, b) = rgb(color)
+            val approxW = simStatus.length * simStatusH * 0.62f
+            text.drawCentered(simStatus, simStatusX + approxW * 0.5f, simStatusY, simStatusH, r, g, b, resW, resH)
+        }
         GPU.disableBlend()
     }
 
@@ -134,6 +160,20 @@ class CytoControls {
         val gap = bs / 4f
         val pad = bs / 3f
         val bottomY = resH - pad - bs
+
+        // ── Sim-speed row (top-left): SLOW · PAUSE/PLAY · FAST, with the TPS/FPS readout to the right ──
+        if (showSimSpeed) {
+            val sbs = bs * 0.55f
+            val sgap = sbs / 4f
+            val topY = pad
+            var sx = pad
+            buttons.add(Btn(sx, topY, sbs, sbs, SIM_COLOR, "SLOW") { onSlower() }); sx += sbs + sgap
+            buttons.add(Btn(sx, topY, sbs, sbs, SIM_COLOR, if (simPaused) "PLAY" else "PAUSE") { onTogglePause() }); sx += sbs + sgap
+            buttons.add(Btn(sx, topY, sbs, sbs, SIM_COLOR, "FAST") { onFaster() }); sx += sbs + sgap
+            simStatusX = sx + sgap
+            simStatusY = topY + sbs * 0.5f
+            simStatusH = (sbs * 0.32f).coerceIn(9f, 18f)
+        }
 
         // ── Cell Type column (bottom-left) — the legacy type swatches plus a "Brush" swatch that
         // paints with the loaded brush genome (see CytoController.brushGenome). ──
@@ -226,5 +266,6 @@ class CytoControls {
         private const val DEBUG_COLOR = 0x606060FFL
         private const val LIGHT_COLOR = 0xEFD040FFL   // warm — the light field
         private const val GENE_COLOR = 0x44CC55FFL    // green — matches the Collector swatch
+        private const val SIM_COLOR = 0x3A6EA5FFL     // blue — the sim-speed controls
     }
 }

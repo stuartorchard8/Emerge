@@ -14,6 +14,7 @@ import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.sim.SimState
+import kotlin.concurrent.Volatile
 
 /**
  * Local-only controller for the native (Box2D-free) Cyto demo. Drives the **struct-of-arrays**
@@ -43,8 +44,23 @@ class CytoController(
     private var world: CytoWorld = CytoWorld.fromSimState(createCytoInitialState())
 
     /** The live snapshot the renderer / hit-test / readouts / save read — materialized from [world]
-     *  via [CytoWorld.toSimState] **once per frame** (only when a step ran), not per step. */
+     *  via [CytoWorld.toSimState] **once per frame** (single-threaded hosts) or at display cadence
+     *  ([publish], threaded hosts). `@Volatile` so a separate draw thread sees a consistent immutable
+     *  snapshot (it's only ever reassigned to a freshly-built SimState, never mutated in place). */
+    @Volatile
     private var currentState: SimState = world.toSimState()
+
+    /** The latest frame the draw thread reads via [latestFrame] (threaded desktop host). */
+    @Volatile
+    private var publishedFrame: CytoFrame = CytoFrame(currentState, 0)
+
+    /** Guards world advancement ([stepOnce]/[tick]) against [publish]/[restoreSnapshot] so a draw-thread
+     *  save/load can't swap [world] mid-step. Coarse (held across a whole tick) but only contended on the
+     *  rare load. */
+    private val stepLock = Any()
+    /** Guards the pointer-input buffers — appended from the UI/draw thread, drained on the sim thread.
+     *  Separate from [stepLock] so input is never blocked behind a heavy tick. */
+    private val inputLock = Any()
 
     private val pendingSpawns = ArrayList<CytoInput.Spawn>()
     private val pendingTaps = ArrayList<CytoInput.Tap>()
@@ -58,24 +74,15 @@ class CytoController(
 
     val tick: Long get() = tickCount
 
+    /** Single-threaded host loop (web / android): advance the world from the real frame delta at a fixed
+     *  [STEP] rate, materializing one SimState per frame. Desktop instead drives [stepOnce]/[publish] on
+     *  a dedicated sim thread (see CytoSimDriver) and reads [latestFrame]. */
     fun tick(deltaSeconds: Float): CytoFrame {
         accumulator += deltaSeconds.coerceIn(0f, 0.25f)
         var firstStep = true
         var stepped = false
         while (accumulator >= STEP) {
-            // Spawns/taps are one-shot (consumed on the first step); the grab is continuous.
-            val input = CytoInput(
-                spawns = if (firstStep) pendingSpawns.toList() else emptyList(),
-                taps = if (firstStep) pendingTaps.toList() else emptyList(),
-                grab = currentGrab,
-                detaches = if (firstStep) pendingDetaches.toList() else emptyList(),
-            )
-            if (firstStep) {
-                pendingSpawns.clear()
-                pendingTaps.clear()
-                pendingDetaches.clear()
-            }
-            world = reducer.tick(world, input)
+            world = reducer.tick(world, drainInput(firstStep))
             tickCount++
             accumulator -= STEP
             firstStep = false
@@ -84,8 +91,48 @@ class CytoController(
         // Materialize once per frame (only when a step ran) — multiple steps in a heavy frame share one
         // materialize, so the per-step SoA win is preserved.
         if (stepped) currentState = world.toSimState()
-        return CytoFrame(currentState, tickCount)
+        return CytoFrame(currentState, tickCount).also { publishedFrame = it }
     }
+
+    /** Drain the buffered pointer input into a [CytoInput]. Spawns/taps/detaches are one-shot (consumed
+     *  when [firstStep]); the grab is continuous. Thread-safe — the buffers are written from the UI
+     *  thread. */
+    private fun drainInput(firstStep: Boolean): CytoInput = withLock(inputLock) {
+        val input = CytoInput(
+            spawns = if (firstStep) pendingSpawns.toList() else emptyList(),
+            taps = if (firstStep) pendingTaps.toList() else emptyList(),
+            grab = currentGrab,
+            detaches = if (firstStep) pendingDetaches.toList() else emptyList(),
+        )
+        if (firstStep) {
+            pendingSpawns.clear()
+            pendingTaps.clear()
+            pendingDetaches.clear()
+        }
+        input
+    }
+
+    /** Advance the world by exactly one tick, consuming buffered input — the unit the desktop sim thread
+     *  loops on at its own cadence. Does NOT materialize a SimState (call [publish] at display cadence so
+     *  a fast sim isn't taxed by per-tick materialize). Thread-safe vs [publish]/[restoreSnapshot]. */
+    fun stepOnce() {
+        withLock(stepLock) {
+            world = reducer.tick(world, drainInput(firstStep = true))
+            tickCount++
+        }
+    }
+
+    /** Materialize the current world into a fresh immutable [CytoFrame] for the draw thread ([latestFrame]).
+     *  Call at display cadence, not every [stepOnce]. */
+    fun publish() {
+        withLock(stepLock) {
+            currentState = world.toSimState()
+            publishedFrame = CytoFrame(currentState, tickCount)
+        }
+    }
+
+    /** The latest published frame for the draw thread (threaded host). */
+    fun latestFrame(): CytoFrame = publishedFrame
 
     // ── Pointer interaction (logical Cyto coordinates) ──────────────────────────
 
@@ -99,11 +146,11 @@ class CytoController(
     private fun activeBrush() = if (brushActive) brushGenome else null
 
     fun spawn(x: Float, y: Float, type: CellType) {
-        pendingSpawns.add(CytoInput.Spawn(x, y, type, activeBrush()))
+        withLock(inputLock) { pendingSpawns.add(CytoInput.Spawn(x, y, type, activeBrush())) }
     }
 
     fun tap(x: Float, y: Float, mode: TouchMode, type: CellType) {
-        pendingTaps.add(CytoInput.Tap(x, y, mode, type, activeBrush()))
+        withLock(inputLock) { pendingTaps.add(CytoInput.Tap(x, y, mode, type, activeBrush())) }
     }
 
     /** The cell whose disc contains the logical point ([x], [y]), or null. */
@@ -125,17 +172,17 @@ class CytoController(
     /** Start/continue pulling [entity] toward the logical point each tick. [sticky] makes it
      *  weld to whatever it touches while held (Sticky hold mode). */
     fun grab(entity: EntityId, x: Float, y: Float, sticky: Boolean = false) {
-        currentGrab = CytoInput.Grab(entity, x, y, sticky)
+        withLock(inputLock) { currentGrab = CytoInput.Grab(entity, x, y, sticky) }
         lastHeldId = entity
     }
 
     fun releaseGrab() {
-        currentGrab = null
+        withLock(inputLock) { currentGrab = null }
     }
 
     /** Cut all of [entity]'s connections (Detach hold mode, on grab-start). */
     fun detach(entity: EntityId) {
-        pendingDetaches.add(entity)
+        withLock(inputLock) { pendingDetaches.add(entity) }
     }
 
     /** A cell's chemical readout: logical position + a multi-line "name:value" label. */
@@ -224,15 +271,22 @@ class CytoController(
 
     fun snapshotBytes(): ByteArray = CytoSaveCodec.encode(currentState)
 
+    /** Replace the world from a save. Thread-safe vs the sim thread ([stepLock]) — a draw-thread F9 load
+     *  can't swap [world] mid-step. */
     fun restoreSnapshot(bytes: ByteArray) {
-        world = CytoWorld.fromSimState(CytoSaveCodec.decode(bytes))
-        currentState = world.toSimState()
-        tickCount = 0
-        accumulator = 0f
-        pendingSpawns.clear()
-        pendingTaps.clear()
-        pendingDetaches.clear()
-        currentGrab = null
+        withLock(stepLock) {
+            world = CytoWorld.fromSimState(CytoSaveCodec.decode(bytes))
+            tickCount = 0
+            accumulator = 0f
+            currentState = world.toSimState()
+            publishedFrame = CytoFrame(currentState, 0)
+            withLock(inputLock) {
+                pendingSpawns.clear()
+                pendingTaps.clear()
+                pendingDetaches.clear()
+                currentGrab = null
+            }
+        }
     }
 
     companion object {
