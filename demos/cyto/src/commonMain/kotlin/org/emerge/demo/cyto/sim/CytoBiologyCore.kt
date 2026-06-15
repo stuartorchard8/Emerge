@@ -167,6 +167,15 @@ object CytoBiologyCore {
             ActionType.Repair -> k = minOf(k, repairOpsNeeded(work))
             ActionType.Expand -> k = minOf(k, flexOps(work.logicalRadius, flexMax(work)))
             ActionType.Contract -> k = minOf(k, flexOps(MIN_RADIUS, work.logicalRadius))
+            ActionType.Convert -> {
+                // Size cap: growth gets *less effective the bigger the cell already is*, scaling Convert
+                // by (1 − biomass/MAX) so biomass asymptotes to MAX_BIOMASS_BONDS. Bounds cell radius —
+                // keeps the broadphase grid fine (one runaway giant otherwise coarsens it for everyone)
+                // and stops Mitosis-less mutants growing without limit. Energy/decay can't cap size here
+                // (both dwarf maintenance), so the cap rides on growth.
+                val room = (CytoTuning.MAX_BIOMASS_BONDS - totalBiomassBonds(work.biomass)).coerceAtLeast(0)
+                k = (k.toLong() * room / CytoTuning.MAX_BIOMASS_BONDS).toInt()
+            }
             else -> {}
         }
         if (k <= 0) return

@@ -40,7 +40,7 @@ object CytoTuning {
      *  cell gets its own full light (no co-located split) — toggle to test whether shading still earns its
      *  keep now the day/night cycle provides periodic selection pressure. (Lone cells are identical either
      *  way, so this only changes crowded grid-cells.) */
-    const val LIGHT_SHADING = true
+    const val LIGHT_SHADING = false
     /** Moving light: when true, a single daylight BAND sweeps across the world (a day/night terminator),
      *  wrapping once per [LIGHT_ORBIT_PERIOD] ticks, replacing the 4 static sources. Cells must then hoard
      *  through the dark (store bonded molecules + a BreakBond gene to burn them) or follow the light.
@@ -68,6 +68,10 @@ object CytoTuning {
     // ── Growth, size & death ─────────────────────────────────────────────────────────────────────────
     /** Biomass bonds for a full-size (radius 1.0) cell — `radius = sqrt(bonds / BONDS_PER_FULL)`. */
     const val BONDS_PER_FULL = 16_000
+    /** Soft size cap: Convert (growth) is scaled by (1 − biomass/this), so biomass asymptotes here and a
+     *  cell can't balloon — bounding radius (~sqrt(this/BONDS_PER_FULL)) keeps the contact broadphase grid
+     *  fine. Must be > the divide threshold so normal cells still reach division. ⚙ */
+    const val MAX_BIOMASS_BONDS = 32_000
     /** Degradation: a cell's wear accumulator gains its total biomass bonds each tick; every
      *  DEGRADE_PERIOD of accumulated wear breaks one bond (so decay rate ∝ size). */
     const val DEGRADE_PERIOD = 4000
