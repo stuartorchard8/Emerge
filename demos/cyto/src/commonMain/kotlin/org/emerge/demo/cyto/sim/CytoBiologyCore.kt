@@ -9,6 +9,12 @@ import org.emerge.sim.core.physics.primitives.Frac
  * and matter is conserved by construction (atoms are only moved between cytoplasm, biomass, and the
  * reservoir — never minted).
  *
+ * Chemistry is **dense and id-keyed**: a cell's mobile cytoplasm and locked biomass are [MoleculeStore]s
+ * (id→count, held sorted ascending by [SpeciesRegistry] id). Because an id is a molecule's lexicographic
+ * rank, every deterministic lex tie-break the old string code expressed as `minByOrNull { it.key }` (the
+ * lex-smallest molecule containing a bond, ending in an atom, the leftmost-split degradation target …)
+ * is here a plain **forward scan** over the store — same choice, no per-tick hashing or boxing.
+ *
  * A tick runs in three phases over all cells: [runGenes] (each cell executes its genome — gated actions
  * powered by light quanta; sequential in EntityId order because Import draws from the shared reservoir),
  * then [diffuse] (cytoplasm spreads to connected neighbours, snapshot-based so it's order-independent),
@@ -47,23 +53,24 @@ object CytoBiologyCore {
             byCell.getOrPut(w.gridIndex) { ArrayList() }.add(w)
         }
         for ((idx, cells) in byCell) {
-            val species = HashSet<String>(grid.cellAt(idx).keys)
-            for (w in cells) species.addAll(w.cytoplasm.keys)
+            val species = HashSet<Int>()                    // union of grid-cell + every cell's cytoplasm
+            for (i in 0 until grid.cellSize(idx)) species.add(grid.cellIdAt(idx, i))
+            for (w in cells) for (i in 0 until w.cytoplasm.size) species.add(w.cytoplasm.idAt(i))
             for (sp in species) exchangeSpecies(idx, sp, cells, grid)
         }
     }
 
     /** Resolve one species' passive exchange for the cells sharing grid-cell [idx], against the snapshot
      *  `env`. Leakers deposit fully; absorbers split the snapshot proportionally when over-subscribed. */
-    private fun exchangeSpecies(idx: Int, sp: String, cells: List<CellWork>, grid: CytoMatterGrid) {
+    private fun exchangeSpecies(idx: Int, sp: Int, cells: List<CellWork>, grid: CytoMatterGrid) {
         val env = grid.count(idx, sp)
         val want = IntArray(cells.size)        // each absorber's desired draw against the shared snapshot
         var demand = 0L                        // Σ want over absorbers
         for (i in cells.indices) {
-            val cyto = cells[i].cytoplasm[sp] ?: 0
+            val cyto = cells[i].cytoplasm.count(sp)
             val t = (env - cyto) / 2           // signed, toward zero; +ve = into the cell
             if (t < 0) {                       // leaker: always succeeds (deposits into the reservoir)
-                addOrRemove(cells[i].cytoplasm, sp, t)
+                cells[i].cytoplasm.add(sp, t)
                 grid.deposit(idx, sp, -t)
             } else if (t > 0 && cells[i].handleable.canHold(sp)) {
                 // SELECTIVE UPTAKE: only absorb a species the cell can metabolise; one it can't is left in
@@ -90,7 +97,7 @@ object CytoBiologyCore {
         }
         for (i in cells.indices) {
             if (grant[i] <= 0) continue
-            addOrRemove(cells[i].cytoplasm, sp, grant[i])
+            cells[i].cytoplasm.add(sp, grant[i])
             grid.draw(idx, sp, grant[i])
         }
     }
@@ -108,7 +115,7 @@ object CytoBiologyCore {
         val active = work.genome.filter { isActive(it, work) }
         val n = active.size
         if (n == 0) return
-        val snap = HashMap(work.cytoplasm)        // immutable source of each gene's 1/n share
+        val snap = work.cytoplasm.copy()          // immutable source of each gene's 1/n share
         val quantaShare = work.quanta / n
         for (gene in active) applyGene(gene, work, grid, snap, n, quantaShare)
     }
@@ -132,37 +139,39 @@ object CytoBiologyCore {
      *  substrate and yield fragments). The op count [k] is computed up front from those caps and applied
      *  once — no loop. Matter-conserving: every per-op effect is the bulk of a conservative single op, and
      *  `k` never exceeds the snapshot share, so no pool goes negative. */
-    private fun applyGene(gene: Gene, work: CellWork, grid: CytoMatterGrid, snap: Map<String, Int>, n: Int, quantaShare: Int) {
+    private fun applyGene(gene: Gene, work: CellWork, grid: CytoMatterGrid, snap: MoleculeStore, n: Int, quantaShare: Int) {
         val src = gene.source
         val act = gene.action
         // Per-op cytoplasm consumption (action inputs + BreakBond substrate, SUMMED — so an overlap like
         // BreakBond(ab)+Convert(ab) eating 2 ab/op is counted correctly). Species resolved from the snapshot
-        // (lex-smallest), so the choice is order-independent.
-        val consume = HashMap<String, Int>()
-        var fragL: String? = null; var fragR: String? = null
+        // by forward scan (lex-smallest == lowest id), so the choice is order-independent.
+        val consume = HashMap<Int, Int>(4)
+        var fragLId = -1; var fragRId = -1
         if (src is EnergySource.BreakBond) {
-            val sp = snap.entries.filter { it.value > 0 && it.key.contains(src.bond) }.minByOrNull { it.key }?.key ?: return
-            val frags = Molecules.breakAt(sp, src.bond) ?: return
-            fragL = frags.first; fragR = frags.second
-            consume[sp] = (consume[sp] ?: 0) + 1
+            val bondIdx = SpeciesRegistry.bondIndexOf(src.bond)
+            val spId = firstWithBond(snap, bondIdx); if (spId < 0) return
+            fragLId = SpeciesRegistry.breakLeft(spId, bondIdx); fragRId = SpeciesRegistry.breakRight(spId, bondIdx)
+            if (fragLId < 0) return
+            consume[spId] = (consume[spId] ?: 0) + 1
         }
-        var product: String? = null
+        var productId = -1
+        var convertId = -1
         when (act.type) {
-            ActionType.Convert -> consume[act.a] = (consume[act.a] ?: 0) + 1
+            ActionType.Convert -> { convertId = SpeciesRegistry.id(act.a); consume[convertId] = (consume[convertId] ?: 0) + 1 }
             ActionType.FormBond -> {
                 val ac = act.a.firstOrNull() ?: return
                 val bc = act.b.firstOrNull() ?: return
-                val endA = snap.entries.filter { it.value > 0 && it.key.lastOrNull() == ac }.minByOrNull { it.key }?.key ?: return
-                val startB = snap.entries.filter { it.value > 0 && it.key.firstOrNull() == bc }.minByOrNull { it.key }?.key ?: return
-                product = Molecules.join(endA, startB) ?: return   // forbidden (polymerisation) ⇒ no-op
-                consume[endA] = (consume[endA] ?: 0) + 1
-                consume[startB] = (consume[startB] ?: 0) + 1
+                val endAId = firstEndingIn(snap, SpeciesRegistry.atomIndexOf(ac)); if (endAId < 0) return
+                val startBId = firstStartingWith(snap, SpeciesRegistry.atomIndexOf(bc)); if (startBId < 0) return
+                productId = SpeciesRegistry.join(endAId, startBId); if (productId < 0) return   // forbidden (polymerisation) ⇒ no-op
+                consume[endAId] = (consume[endAId] ?: 0) + 1
+                consume[startBId] = (consume[startBId] ?: 0) + 1
             }
             else -> {}   // Import draws from the grid; Repair/Expand/Contract/Mitosis consume no cytoplasm
         }
         // Op count: min over each consumed species' 1/n share, the light energy share, and action caps.
         var k = if (src is EnergySource.Light) quantaShare else Int.MAX_VALUE
-        for ((s, per) in consume) k = minOf(k, ((snap[s] ?: 0) / n) / per)
+        for ((s, per) in consume) k = minOf(k, (snap.count(s) / n) / per)
         when (act.type) {
             ActionType.Mitosis -> k = minOf(k, 1)
             ActionType.Import -> if (work.gridIndex < 0) k = 0
@@ -182,17 +191,41 @@ object CytoBiologyCore {
         }
         if (k <= 0) return
         // Apply: bulk consumption, then BreakBond fragments, then the action's output.
-        for ((s, per) in consume) addOrRemove(work.cytoplasm, s, -k * per)
-        if (fragL != null) { inc(work.cytoplasm, fragL, k); inc(work.cytoplasm, fragR!!, k) }
+        for ((s, per) in consume) work.cytoplasm.add(s, -k * per)
+        if (fragLId >= 0) { work.cytoplasm.inc(fragLId, k); work.cytoplasm.inc(fragRId, k) }
         when (act.type) {
-            ActionType.Convert -> inc(work.biomass, act.a, k)
-            ActionType.FormBond -> inc(work.cytoplasm, product!!, k)
-            ActionType.Import -> { val got = grid.draw(work.gridIndex, act.a, k); if (got > 0) inc(work.cytoplasm, act.a, got) }
+            ActionType.Convert -> work.biomass.inc(convertId, k)
+            ActionType.FormBond -> work.cytoplasm.inc(productId, k)
+            ActionType.Import -> {
+                val importId = SpeciesRegistry.id(act.a)
+                val got = grid.draw(work.gridIndex, importId, k); if (got > 0) work.cytoplasm.inc(importId, got)
+            }
             ActionType.Mitosis -> work.dividing = true
             ActionType.Repair -> applyRepair(work, k)
             ActionType.Expand -> work.logicalRadius = (work.logicalRadius + FLEX_STEP * k).coerceIn(MIN_RADIUS, flexMax(work))
             ActionType.Contract -> work.logicalRadius = (work.logicalRadius - FLEX_STEP * k).coerceAtLeast(MIN_RADIUS)
         }
+    }
+
+    /** Lowest-id (== lex-smallest) species in [snap] that contains bond [bondIdx], or -1 if none. */
+    private fun firstWithBond(snap: MoleculeStore, bondIdx: Int): Int {
+        if (bondIdx < 0) return -1
+        for (i in 0 until snap.size) { val id = snap.idAt(i); if (SpeciesRegistry.containsBond(id, bondIdx)) return id }
+        return -1
+    }
+
+    /** Lowest-id species in [snap] whose last atom is [atomIdx] (the FormBond end-A endpoint), or -1. */
+    private fun firstEndingIn(snap: MoleculeStore, atomIdx: Int): Int {
+        if (atomIdx < 0) return -1
+        for (i in 0 until snap.size) { val id = snap.idAt(i); if (SpeciesRegistry.lastAtom(id) == atomIdx) return id }
+        return -1
+    }
+
+    /** Lowest-id species in [snap] whose first atom is [atomIdx] (the FormBond start-B endpoint), or -1. */
+    private fun firstStartingWith(snap: MoleculeStore, atomIdx: Int): Int {
+        if (atomIdx < 0) return -1
+        for (i in 0 until snap.size) { val id = snap.idAt(i); if (SpeciesRegistry.firstAtom(id) == atomIdx) return id }
+        return -1
     }
 
     /** Flex steps to move the radius from [lo] up to [hi] (ceil of the gap / [FLEX_STEP]); 0 if none. */
@@ -235,18 +268,20 @@ object CytoBiologyCore {
      *  counts, writes deltas, applies after) so it's order-independent and conservative; biomass does
      *  not diffuse (it's locked). */
     fun diffuse(works: Map<EntityId, CellWork>, neighbourIds: Map<EntityId, List<EntityId>>) {
-        // No snapshot copy: the compute loop only ever reads a cell's *own* cytoplasm and writes to a
-        // separate delta map, never to any cytoplasm — so reading the live `w.cytoplasm` is identical to
-        // reading a pre-diffusion copy, and the deltas are applied only after every cell is computed.
-        // Deltas are allocated lazily, so the (typically many) isolated, degree-0 cells cost nothing.
-        val delta = HashMap<EntityId, HashMap<String, Int>>()
+        // The compute loop only ever reads a cell's *own* cytoplasm and writes to a separate delta map,
+        // never to any cytoplasm — so reading the live store is identical to reading a pre-diffusion copy,
+        // and the deltas are applied only after every cell is computed. Deltas allow negatives (the
+        // sender's outflow), so they're plain id→int maps, not stores; lazily allocated so the (typically
+        // many) isolated, degree-0 cells cost nothing.
+        val delta = HashMap<EntityId, HashMap<Int, Int>>()
         for ((id, w) in works) {
             val nbrs = neighbourIds[id] ?: continue
             val degree = nbrs.size
             if (degree == 0) continue
             val selfDelta = delta.getOrPut(id) { HashMap() }
-            for ((species, v) in w.cytoplasm) {
-                val out = v / (degree + 1)
+            for (i in 0 until w.cytoplasm.size) {
+                val species = w.cytoplasm.idAt(i)
+                val out = w.cytoplasm.countAt(i) / (degree + 1)
                 if (out <= 0) continue
                 // SELECTIVE UPTAKE across the membrane too: only send to neighbours that can metabolise
                 // the species; the sender keeps the share meant for any that can't.
@@ -264,7 +299,7 @@ object CytoBiologyCore {
         for ((id, d) in delta) {
             val w = works.getValue(id)
             for ((species, dv) in d) {
-                if (dv != 0) addOrRemove(w.cytoplasm, species, dv)
+                if (dv != 0) w.cytoplasm.add(species, dv)
             }
         }
     }
@@ -289,7 +324,7 @@ object CytoBiologyCore {
     // ── gates ────────────────────────────────────────────────────────────────
     private fun gate(c: GeneCondition, work: CellWork): Boolean {
         val value = when (c.type) {
-            ConditionType.ChemQty -> work.cytoplasm[c.species] ?: 0
+            ConditionType.ChemQty -> work.cytoplasm.count(SpeciesRegistry.id(c.species))
             ConditionType.Biomass -> totalBiomassBonds(work.biomass)
             ConditionType.Touching -> work.touchCount
         }
@@ -316,38 +351,32 @@ object CytoBiologyCore {
 
     /** Spontaneous decay: break `wear / DEGRADE_PERIOD` bonds this tick (rate ∝ biomass size), each
      *  splitting the lexicographically-smallest biomass molecule's leftmost bond. The leftmost split peels
-     *  off the leading monomer ([f1], always the smaller/equal fragment); that **smaller fragment is
-     *  ejected to the environment** while the **larger** [f2] stays in cytoplasm. So biomass decay is a
-     *  real matter LEAK to the commons — a maintenance cost the cell must keep importing against
-     *  (selection for efficient builders) and a steady feed for the food web — not the old free cytoplasm
-     *  treadmill where both fragments stayed put and could be re-Converted for nothing. The bond's energy
-     *  is still dissipated (not recovered). With no position (`gridIndex < 0`) there's nowhere to eject to,
-     *  so both fragments stay in cytoplasm. */
+     *  off the leading monomer (the smaller/equal fragment); that **smaller fragment is ejected to the
+     *  environment** while the **larger** remainder stays in cytoplasm. So biomass decay is a real matter
+     *  LEAK to the commons — a maintenance cost the cell must keep importing against (selection for
+     *  efficient builders) and a steady feed for the food web — not the old free cytoplasm treadmill where
+     *  both fragments stayed put and could be re-Converted for nothing. The bond's energy is still
+     *  dissipated (not recovered). With no position (`gridIndex < 0`) there's nowhere to eject to, so both
+     *  fragments stay in cytoplasm. */
     private fun degrade(work: CellWork, grid: CytoMatterGrid) {
         work.wear += totalBiomassBonds(work.biomass)
         var broken = work.wear / DEGRADE_PERIOD
         work.wear %= DEGRADE_PERIOD
         while (broken > 0) {
-            val target = work.biomass.entries
-                .filter { it.value > 0 && it.key.length >= 2 }
-                .minByOrNull { it.key }?.key ?: break
-            val (f1, f2) = Molecules.splitLeftmost(target) ?: break   // f1 = leading monomer (the smaller)
-            dec(work.biomass, target)
-            inc(work.cytoplasm, f2, 1)                                // retain the larger fragment
-            if (work.gridIndex >= 0) grid.deposit(work.gridIndex, f1, 1) else inc(work.cytoplasm, f1, 1)
+            val targetId = smallestMultiAtom(work.biomass)   // lex-smallest molecule with a bond to break
+            if (targetId < 0) break
+            val monoId = SpeciesRegistry.splitLeftMono(targetId)   // leading monomer (the smaller fragment)
+            val restId = SpeciesRegistry.splitLeftRest(targetId)   // the larger remainder
+            work.biomass.dec(targetId)
+            work.cytoplasm.inc(restId, 1)                          // retain the larger fragment
+            if (work.gridIndex >= 0) grid.deposit(work.gridIndex, monoId, 1) else work.cytoplasm.inc(monoId, 1)
             broken--
         }
     }
 
-    // ── map helpers ────────────────────────────────────────────────────────────
-    private fun inc(m: MutableMap<String, Int>, k: String, n: Int) {
-        m[k] = (m[k] ?: 0) + n
-    }
-
-    private fun dec(m: MutableMap<String, Int>, k: String) = addOrRemove(m, k, -1)
-
-    private fun addOrRemove(m: MutableMap<String, Int>, k: String, delta: Int) {
-        val v = (m[k] ?: 0) + delta
-        if (v <= 0) m.remove(k) else m[k] = v
+    /** Lowest-id (== lex-smallest) biomass species with at least one bond (length ≥ 2), or -1 if none. */
+    private fun smallestMultiAtom(biomass: MoleculeStore): Int {
+        for (i in 0 until biomass.size) { val id = biomass.idAt(i); if (SpeciesRegistry.atomCount(id) >= 2) return id }
+        return -1
     }
 }

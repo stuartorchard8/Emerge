@@ -32,11 +32,57 @@ object SpeciesRegistry {
         }
     }
 
+    // ── hot-path predicates (precomputed; the biology scans stores in ascending-id == lex order and tests
+    //    these instead of manipulating strings) ────────────────────────────────────────────────────────
+    /** Number of atom types in the alphabet (k). Bonds are indexed `firstAtom·k + secondAtom` (0..k²−1). */
+    private val k: Int = atoms.size
+    private val atomIdx: HashMap<Char, Int> = HashMap<Char, Int>(k * 2).apply { atoms.forEachIndexed { i, c -> put(c, i) } }
+    private val firstAtomById = IntArray(species.size) { atomIdx.getValue(species[it][0]) }
+    private val lastAtomById = IntArray(species.size) { atomIdx.getValue(species[it].last()) }
+    /** Per id, a bitmask of the bonds (`firstAtom·k+secondAtom`) the molecule contains. */
+    private val bondMaskById = IntArray(species.size) { id ->
+        var m = 0
+        val s = species[id]
+        for (i in 0 until s.length - 1) m = m or (1 shl (atomIdx.getValue(s[i]) * k + atomIdx.getValue(s[i + 1])))
+        m
+    }
+    /** Break tables indexed `[id·k² + bondIdx]`: the (left,right) fragment ids of breaking [id] at the
+     *  **first** occurrence of a bond, or -1 when the bond is absent. Precomputes [Molecules.breakAt]. */
+    private val breakLeftById = IntArray(species.size * k * k) { -1 }
+    private val breakRightById = IntArray(species.size * k * k).also { right ->
+        for (id in species.indices) for (a in 0 until k) for (b in 0 until k) {
+            val p = Molecules.breakAt(species[id], "${atoms[a]}${atoms[b]}") ?: continue
+            val at = id * k * k + a * k + b
+            breakLeftById[at] = idOf.getValue(p.first)
+            right[at] = idOf.getValue(p.second)
+        }
+    }
+
     /** id of a molecule string, or -1 if it isn't a legal species of this alphabet. */
     fun id(molecule: String): Int = idOf[molecule] ?: -1
     fun string(id: Int): String = species[id]
     fun bondCount(id: Int): Int = bondCountById[id]
     fun atomCount(id: Int): Int = atomCountById[id]
+
+    /** Atom-index of [c] (0..k−1), or -1 if not in the alphabet. */
+    fun atomIndexOf(c: Char): Int = atomIdx[c] ?: -1
+    /** Bond-index (`firstAtom·k+secondAtom`, 0..k²−1) of a 2-atom bond string, or -1 if malformed. */
+    fun bondIndexOf(bond: String): Int {
+        if (bond.length != 2) return -1
+        val a = atomIdx[bond[0]] ?: return -1
+        val b = atomIdx[bond[1]] ?: return -1
+        return a * k + b
+    }
+    /** Atom-index of [id]'s first / last atom (for FormBond endpoint matching). */
+    fun firstAtom(id: Int): Int = firstAtomById[id]
+    fun lastAtom(id: Int): Int = lastAtomById[id]
+    /** Bitmask of the bonds molecule [id] contains (bit `bondIdx` set per [bondIndexOf]). */
+    fun bondMask(id: Int): Int = bondMaskById[id]
+    /** Does molecule [id] contain bond [bondIdx] (an adjacent atom pair)? */
+    fun containsBond(id: Int, bondIdx: Int): Boolean = bondIdx >= 0 && (bondMaskById[id] ushr bondIdx) and 1 == 1
+    /** Left/right fragment id of breaking [id] at the first occurrence of [bondIdx], or -1 if absent. */
+    fun breakLeft(id: Int, bondIdx: Int): Int = if (bondIdx < 0) -1 else breakLeftById[id * k * k + bondIdx]
+    fun breakRight(id: Int, bondIdx: Int): Int = if (bondIdx < 0) -1 else breakRightById[id * k * k + bondIdx]
 
     /** Lead-monomer id from a leftmost split (`abc`→`a`), or -1 for a lone atom. */
     fun splitLeftMono(id: Int): Int = splitLeft[2 * id]

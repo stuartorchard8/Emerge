@@ -28,6 +28,17 @@ fun atomCount(molecules: Map<String, Int>): Int {
 fun cellMass(cytoplasm: Map<String, Int>, biomass: Map<String, Int>): UInt =
     max(1, atomCount(cytoplasm) + atomCount(biomass)).toUInt()
 
+/** Total atoms in an id-keyed [MoleculeStore] (Σ count × molecule length). */
+fun atomCount(molecules: MoleculeStore): Int {
+    var s = 0
+    for (i in 0 until molecules.size) s += SpeciesRegistry.atomCount(molecules.idAt(i)) * molecules.countAt(i)
+    return s
+}
+
+/** Cell mass from id-keyed stores (the hot-path form of [cellMass]). */
+fun cellMass(cytoplasm: MoleculeStore, biomass: MoleculeStore): UInt =
+    max(1, atomCount(cytoplasm) + atomCount(biomass)).toUInt()
+
 /**
  * Spawns a cell entity: engine physics components + the [CytoCellComponent] biology.
  * Radius is converted from logical to the engine fixed-point scale ([CytoUnits]).

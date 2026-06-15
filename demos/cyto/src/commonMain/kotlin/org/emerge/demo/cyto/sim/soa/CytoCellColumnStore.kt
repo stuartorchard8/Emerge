@@ -3,19 +3,18 @@ package org.emerge.demo.cyto.sim.soa
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.Gene
+import org.emerge.demo.cyto.sim.MoleculeStore
 import org.emerge.sim.core.ecs.soa.ColumnStore
 import org.emerge.sim.core.physics.primitives.Frac
 
 /**
  * Dense columns for the matter-model per-cell biology that the engine physics schemas don't cover
- * ([CytoCellComponent]). The scalar state is unboxed primitive arrays; the variable-size molecule
- * maps and the genome stay **object columns** (`Array<…?>`) for now — the species set is bounded
- * (no polymerisation, MORPHOGENESIS.md) so these will later become interned-int columns, but that
- * rework is deferred: it doesn't help the scale bottleneck (physics + per-tick copy churn), and
- * holding the maps by reference keeps the AoS↔SoA round-trip exact and the SoA landing low-risk.
+ * ([CytoCellComponent]). The scalar state is unboxed primitive arrays; the molecule counts are held
+ * id-keyed in a [MoleculeStore] per slot (dense chemistry) and the genome stays an object column.
  *
- * [scatter]/[gather] bridge to [CytoCellComponent] (loader / snapshot / compat); ported hot phases
- * read the public field arrays directly by slot index.
+ * [scatter]/[gather] bridge to [CytoCellComponent], converting the id-keyed stores to/from its
+ * string-keyed maps — a cold boundary (loader / snapshot / lifecycle); the hot biology phase reads the
+ * stores directly by slot index and never touches strings.
  */
 class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
     var logicalRadius = LongArray(0); private set    // Frac raw
@@ -23,9 +22,10 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
     var type = IntArray(0); private set              // CellType.ordinal
     var sticky = BooleanArray(0); private set
     var stickyTemp = BooleanArray(0); private set
-    // Object columns: held by reference (the maps/lists are immutable per tick), so round-trip is exact.
-    var cytoplasm = arrayOfNulls<Map<String, Int>>(0); private set
-    var biomass = arrayOfNulls<Map<String, Int>>(0); private set
+    // Molecule counts: id-keyed stores (held by reference; the reducer reassigns per tick). The genome
+    // stays an object column (immutable per tick), so round-trip is exact.
+    var cytoplasm = arrayOfNulls<MoleculeStore>(0); private set
+    var biomass = arrayOfNulls<MoleculeStore>(0); private set
     var genome = arrayOfNulls<List<Gene>>(0); private set
 
     override fun ensureCapacity(capacity: Int) {
@@ -46,16 +46,16 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         type[slot] = value.type.ordinal
         sticky[slot] = value.sticky
         stickyTemp[slot] = value.stickyTemp
-        cytoplasm[slot] = value.cytoplasm
-        biomass[slot] = value.biomass
+        cytoplasm[slot] = MoleculeStore.of(value.cytoplasm)
+        biomass[slot] = MoleculeStore.of(value.biomass)
         genome[slot] = value.genome
     }
 
     override fun gather(slot: Int): CytoCellComponent = CytoCellComponent(
         type = CellType.entries[type[slot]],
         logicalRadius = Frac(logicalRadius[slot]),
-        cytoplasm = cytoplasm[slot] ?: emptyMap(),
-        biomass = biomass[slot] ?: emptyMap(),
+        cytoplasm = cytoplasm[slot]?.toStringMap() ?: emptyMap(),
+        biomass = biomass[slot]?.toStringMap() ?: emptyMap(),
         genome = genome[slot] ?: emptyList(),
         wear = wear[slot],
         sticky = sticky[slot],

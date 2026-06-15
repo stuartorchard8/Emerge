@@ -84,28 +84,34 @@ data class Gene(val source: EnergySource, val condition: GeneCondition, val acti
  * handle. This bounds per-cell species to molecules buildable from the genome's bond-set (≤ a few dozen
  * at the B=5 bond-cap), regardless of how diverse the surrounding environment is.
  */
-class Handleable(private val bonds: Set<String>, private val atoms: Set<Char>) {
+class Handleable(private val bondMask: Int, private val atomMask: Int) {
     /** Distinct bond-types this genome reaches — capped by CytoTuning.GENOME_MAX_BOND_TYPES so per-cell
      *  species stay bounded (B bonds → ≤ a few dozen buildable molecules). */
-    val bondTypeCount: Int get() = bonds.size
+    val bondTypeCount: Int get() = bondMask.countOneBits()
 
-    fun canHold(species: String): Boolean {
-        if (species.isEmpty()) return false
-        if (species.length == 1) return species[0] in atoms
-        for (i in 0 until species.length - 1) if (species.substring(i, i + 2) !in bonds) return false
-        return true
+    /** Can the cell metabolise (hence absorb/hold) species [id]? A monomer iff its atom is reachable; a
+     *  multi-atom molecule iff *every* bond it contains is in the genome's bond-set (the original
+     *  string-substring test, recast as a bitmask subset over [SpeciesRegistry]-interned ids). */
+    fun canHold(id: Int): Boolean {
+        if (id < 0) return false
+        return if (SpeciesRegistry.atomCount(id) == 1) (atomMask ushr SpeciesRegistry.firstAtom(id)) and 1 == 1
+        else (SpeciesRegistry.bondMask(id) and bondMask.inv()) == 0
     }
 }
 
 /** Derive a genome's [Handleable] reach: bonds it forms (FormBond), breaks (BreakBond), or references in
- *  a Convert/Import/ChemQty operand; atoms are the endpoints of those bonds plus any monomer operand. */
+ *  a Convert/Import/ChemQty operand; atoms are the endpoints of those bonds plus any monomer operand.
+ *  Bonds/atoms are accumulated as [SpeciesRegistry]-indexed bitmasks (the alphabet is ≤ k=3 atoms, k²=9
+ *  bonds, so each fits an Int). */
 fun handleableOf(genome: List<Gene>): Handleable {
-    val bonds = HashSet<String>()
-    val atoms = HashSet<Char>()
+    var bondMask = 0
+    var atomMask = 0
+    fun addAtom(c: Char) { val a = SpeciesRegistry.atomIndexOf(c); if (a >= 0) atomMask = atomMask or (1 shl a) }
+    fun addBond(pair: String) { val b = SpeciesRegistry.bondIndexOf(pair); if (b >= 0) bondMask = bondMask or (1 shl b) }
     fun addSpecies(s: String) {
         if (s.isEmpty()) return
-        for (c in s) atoms.add(c)
-        for (i in 0 until s.length - 1) bonds.add(s.substring(i, i + 2))
+        for (c in s) addAtom(c)
+        for (i in 0 until s.length - 1) addBond(s.substring(i, i + 2))
     }
     for (g in genome) {
         (g.source as? EnergySource.BreakBond)?.let { addSpecies(it.bond) }
@@ -113,13 +119,13 @@ fun handleableOf(genome: List<Gene>): Handleable {
         when (g.action.type) {
             ActionType.FormBond -> {
                 val a = g.action.a; val b = g.action.b
-                if (a.isNotEmpty() && b.isNotEmpty()) { atoms.add(a[0]); atoms.add(b[0]); bonds.add("${a[0]}${b[0]}") }
+                if (a.isNotEmpty() && b.isNotEmpty()) { addAtom(a[0]); addAtom(b[0]); addBond("${a[0]}${b[0]}") }
             }
             ActionType.Convert, ActionType.Import -> addSpecies(g.action.a)
             else -> {}
         }
     }
-    return Handleable(bonds, atoms)
+    return Handleable(bondMask, atomMask)
 }
 
 /**
@@ -129,8 +135,8 @@ fun handleableOf(genome: List<Gene>): Handleable {
  * carried across ticks. No `Frac` chemistry, no energy pool.
  */
 class CellWork(
-    val cytoplasm: MutableMap<String, Int>,
-    val biomass: MutableMap<String, Int>,
+    val cytoplasm: MoleculeStore,
+    val biomass: MoleculeStore,
     var logicalRadius: Frac,
     val type: CellType,
     val genome: List<Gene>,
@@ -165,6 +171,13 @@ class CellWork(
 fun totalBiomassBonds(biomass: Map<String, Int>): Int {
     var sum = 0
     for ((species, count) in biomass) sum += count * Molecules.bondCount(species)
+    return sum
+}
+
+/** Total biomass of an id-keyed [biomass] store (the hot-path form of [totalBiomassBonds]). */
+fun totalBiomassBonds(biomass: MoleculeStore): Int {
+    var sum = 0
+    for (i in 0 until biomass.size) sum += biomass.countAt(i) * SpeciesRegistry.bondCount(biomass.idAt(i))
     return sum
 }
 

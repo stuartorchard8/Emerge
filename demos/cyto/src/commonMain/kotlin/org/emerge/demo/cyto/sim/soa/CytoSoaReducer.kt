@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.sim.soa
 
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CellWork
+import org.emerge.demo.cyto.sim.MoleculeStore
 import org.emerge.demo.cyto.sim.ConnectionStateComponent
 import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.CytoCellComponent
@@ -475,8 +476,8 @@ class CytoSoaReducer(
             val damage = HashMap<EntityId, Float>(deg)
             for (j in 0 until deg) damage[EntityId(w.csr.otherId[base + j])] = w.csr.edgeAux[base + j]
             works[id] = CellWork(
-                cytoplasm = HashMap(w.cell.cytoplasm[slot] ?: emptyMap()),
-                biomass = HashMap(w.cell.biomass[slot] ?: emptyMap()),
+                cytoplasm = (w.cell.cytoplasm[slot] ?: MoleculeStore()).copy(),
+                biomass = (w.cell.biomass[slot] ?: MoleculeStore()).copy(),
                 logicalRadius = radius,
                 type = CellType.entries[w.cell.type[slot]],
                 genome = w.cell.genome[slot] ?: emptyList(),

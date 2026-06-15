@@ -15,22 +15,26 @@ import kotlin.math.roundToInt
  * {reservoir + every cell's cytoplasm + biomass} is **conserved** — a hard carrying capacity. Access is
  * per **discrete** grid cell (no interpolation) and integer, so conservation holds exactly.
  *
+ * Counts are stored id-keyed in a [MoleculeStore] per cell (the dense-chemistry path): the hot biology
+ * accesses them by [SpeciesRegistry] id ([count]`(idx, id)`, [draw], [deposit]`(idx, id, …)`); the
+ * string-keyed overloads + [cellAt] are the cold boundary (save / render / lifecycle / inspection).
+ *
  * Geometry (resolution / extent / source layout) is shared with the static [CytoLightField], which
  * remains the (non-depletable) energy source.
  */
 class CytoMatterGrid private constructor(
-    private val cells: Array<HashMap<String, Int>>,
+    private val cells: Array<MoleculeStore>,
     /** Copy-on-write ownership: `owned[i]` is true once this grid has cloned cell `i` and may mutate it
-     *  freely. [copy] / [diffused] hand out grids that *share* the 4096 inner HashMaps (one array copy,
-     *  not 4096 map copies) and flip a bit + clone only the cells a tick actually touches — so per-tick
-     *  allocation tracks the handful of occupied cells, not the whole grid. */
+     *  freely. [copy] / [diffused] hand out grids that *share* the inner stores (one array copy, not 4096
+     *  store copies) and flip a bit + clone only the cells a tick actually touches — so per-tick allocation
+     *  tracks the handful of occupied cells, not the whole grid. */
     private val owned: BooleanArray,
 ) {
 
-    /** Ensure cell [i] is privately owned before mutating it (clone the shared map on first write). */
+    /** Ensure cell [i] is privately owned before mutating it (clone the shared store on first write). */
     private fun own(i: Int) {
         if (!owned[i]) {
-            cells[i] = HashMap(cells[i])
+            cells[i] = cells[i].copy()
             owned[i] = true
         }
     }
@@ -42,44 +46,50 @@ class CytoMatterGrid private constructor(
         return gy * RES + gx
     }
 
-    fun count(idx: Int, species: String): Int = cells[idx][species] ?: 0
+    // ── hot path (id-keyed) ──────────────────────────────────────────────────────────────────────────
+    fun count(idx: Int, id: Int): Int = cells[idx].count(id)
 
-    /** Draw up to [want] molecules of [species] from cell [idx]; returns how many were available (and
+    /** Number of distinct species present in cell [idx], and the i-th one's id — for iterating a cell's
+     *  contents without exposing the mutable store (used by passive exchange's species union). */
+    fun cellSize(idx: Int): Int = cells[idx].size
+    fun cellIdAt(idx: Int, i: Int): Int = cells[idx].idAt(i)
+
+    /** Draw up to [want] molecules of species [id] from cell [idx]; returns how many were available (and
      *  removes exactly that many). The only way matter enters a cell. */
-    fun draw(idx: Int, species: String, want: Int): Int {
-        if (want <= 0) return 0
-        val have = cells[idx][species] ?: 0
+    fun draw(idx: Int, id: Int, want: Int): Int {
+        if (want <= 0 || id < 0) return 0
+        val have = cells[idx].count(id)
         val taken = if (want < have) want else have
-        if (taken > 0) {
-            own(idx)
-            val left = have - taken
-            if (left == 0) cells[idx].remove(species) else cells[idx][species] = left
-        }
+        if (taken > 0) { own(idx); cells[idx].add(id, -taken) }
         return taken
     }
 
-    /** Return [amount] molecules of [species] to cell [idx] (death / export). The only way matter leaves
-     *  a cell back to the world. */
-    fun deposit(idx: Int, species: String, amount: Int) {
-        if (amount <= 0) return
+    /** Return [amount] molecules of species [id] to cell [idx] (death / export). The only way matter
+     *  leaves a cell back to the world. */
+    fun deposit(idx: Int, id: Int, amount: Int) {
+        if (amount <= 0 || id < 0) return
         own(idx)
-        cells[idx][species] = (cells[idx][species] ?: 0) + amount
+        cells[idx].add(id, amount)
     }
+
+    // ── string boundary (cold: lifecycle / save / inspection) ─────────────────────────────────────────
+    fun count(idx: Int, species: String): Int = cells[idx].count(SpeciesRegistry.id(species))
+    fun deposit(idx: Int, species: String, amount: Int) = deposit(idx, SpeciesRegistry.id(species), amount)
 
     /** Total **atoms** held in the reservoir (Σ count × molecule length) — the conserved quantity, with
      *  every cell's cytoplasm + biomass atoms. */
     fun totalAtoms(): Long {
         var sum = 0L
-        for (cell in cells) for ((species, count) in cell) sum += species.length.toLong() * count
+        for (cell in cells) for (i in 0 until cell.size) sum += SpeciesRegistry.atomCount(cell.idAt(i)).toLong() * cell.countAt(i)
         return sum
     }
 
-    /** Read-only view of one grid cell's contents (for save / inspection). */
-    fun cellAt(idx: Int): Map<String, Int> = cells[idx]
+    /** Read-only string view of one grid cell's contents (for save / inspection / digest). */
+    fun cellAt(idx: Int): Map<String, Int> = cells[idx].toStringMap()
 
     /** Copy-on-write clone — so a tick's draws/deposits don't mutate the source snapshot. Shares the
-     *  4096 inner maps (one array + one BooleanArray allocation); each cell is cloned lazily the first
-     *  time this grid mutates it (see [own]). */
+     *  inner stores (one array + one BooleanArray allocation); each cell is cloned lazily the first time
+     *  this grid mutates it (see [own]). */
     fun copy(): CytoMatterGrid = CytoMatterGrid(cells.copyOf(), BooleanArray(cells.size))
 
     /**
@@ -92,8 +102,6 @@ class CytoMatterGrid private constructor(
      * can't be over-drawn negative.
      */
     fun diffused(num: Int, den: Int): CytoMatterGrid {
-        // The result shares this grid's maps copy-on-write; only edges that actually move matter clone
-        // the two cells they touch, so a near-empty grid allocates a handful of maps, not 4096.
         val next = CytoMatterGrid(cells.copyOf(), BooleanArray(cells.size))
         for (gy in 0 until RES) {
             for (gx in 0 until RES) {
@@ -107,27 +115,31 @@ class CytoMatterGrid private constructor(
 
     /** Move `⌊|a−b|·num/den⌋` of each shared species from the richer of cells [i],[j] to the poorer, into
      *  [next] (copy-on-write). Reads the pre-step counts from `this.cells` (snapshot) so edge order doesn't
-     *  matter. Walks the two cells' keys directly (no per-edge HashSet union allocation). */
+     *  matter. Walks the two stores' ids directly (each species resolved once, both directions covered). */
     private fun diffuseEdge(i: Int, j: Int, num: Int, den: Int, next: CytoMatterGrid) {
         val ci = cells[i]; val cj = cells[j]
         if (ci.isEmpty() && cj.isEmpty()) return
-        for ((s, vi) in ci) moveSpecies(i, j, s, vi - (cj[s] ?: 0), num, den, next)
-        for ((s, vj) in cj) if (s !in ci) moveSpecies(i, j, s, -vj, num, den, next) // species only in j
+        for (a in 0 until ci.size) {
+            val id = ci.idAt(a)
+            moveSpecies(i, j, id, ci.countAt(a) - cj.count(id), num, den, next)
+        }
+        for (b in 0 until cj.size) {           // species present only in j (ci.count == 0)
+            val id = cj.idAt(b)
+            if (ci.count(id) == 0) moveSpecies(i, j, id, -cj.countAt(b), num, den, next)
+        }
     }
 
     /** Apply one species' down-gradient move for edge (i,j): `diff = ci − cj`. */
-    private fun moveSpecies(i: Int, j: Int, s: String, diff: Int, num: Int, den: Int, next: CytoMatterGrid) {
+    private fun moveSpecies(i: Int, j: Int, id: Int, diff: Int, num: Int, den: Int, next: CytoMatterGrid) {
         val move = (abs(diff) * num) / den
         if (move <= 0) return
-        if (diff > 0) { next.bump(i, s, -move); next.bump(j, s, move) }
-        else { next.bump(j, s, -move); next.bump(i, s, move) }
+        if (diff > 0) { next.bump(i, id, -move); next.bump(j, id, move) }
+        else { next.bump(j, id, -move); next.bump(i, id, move) }
     }
 
-    private fun bump(idx: Int, s: String, delta: Int) {
+    private fun bump(idx: Int, id: Int, delta: Int) {
         own(idx)
-        val map = cells[idx]
-        val v = (map[s] ?: 0) + delta
-        if (v <= 0) map.remove(s) else map[s] = v
+        cells[idx].add(id, delta)
     }
 
     /**
@@ -143,15 +155,14 @@ class CytoMatterGrid private constructor(
         val next = CytoMatterGrid(cells.copyOf(), BooleanArray(cells.size))
         for (i in cells.indices) {
             val cell = cells[i]
-            if (cell.isEmpty()) continue
-            for ((species, count) in cell) {
-                if (species.length < 2) continue          // monomers don't decay further
-                val broken = count / period
+            for (s in 0 until cell.size) {
+                val id = cell.idAt(s)
+                if (SpeciesRegistry.atomCount(id) < 2) continue   // monomers don't decay further
+                val broken = cell.countAt(s) / period
                 if (broken <= 0) continue
-                val (l, r) = Molecules.splitLeftmost(species) ?: continue
-                next.bump(i, species, -broken)
-                next.bump(i, l, broken)
-                next.bump(i, r, broken)
+                next.bump(i, id, -broken)
+                next.bump(i, SpeciesRegistry.splitLeftMono(id), broken)   // leading monomer
+                next.bump(i, SpeciesRegistry.splitLeftRest(id), broken)   // remainder
             }
         }
         return next
@@ -178,9 +189,10 @@ class CytoMatterGrid private constructor(
          * not conservation-critical.
          */
         fun seeded(): CytoMatterGrid {
-            val cells = Array(RES * RES) { HashMap<String, Int>() }
+            val cells = Array(RES * RES) { MoleculeStore() }
+            val monomerIds = SEED_MONOMERS.map { SpeciesRegistry.id(it) }
             if (CytoSeed.MATTER_UNIFORM) {   // flat substrate everywhere (the moving-light world)
-                for (cell in cells) for (m in SEED_MONOMERS) cell[m] = CytoSeed.MATTER_UNIFORM_LEVEL
+                for (cell in cells) for (m in monomerIds) cell.add(m, CytoSeed.MATTER_UNIFORM_LEVEL)
                 return CytoMatterGrid(cells, BooleanArray(cells.size) { true })
             }
             val cellSize = SPAN / RES
@@ -196,20 +208,20 @@ class CytoMatterGrid private constructor(
                     }
                     val n = (MATTER_PEAK * g).roundToInt()
                     if (n > 0) {
-                        val map = cells[gy * RES + gx]
-                        for (m in SEED_MONOMERS) map[m] = n
+                        val cell = cells[gy * RES + gx]
+                        for (m in monomerIds) cell.add(m, n)
                     }
                 }
             }
             return CytoMatterGrid(cells, BooleanArray(cells.size) { true })
         }
 
-        /** Reconstruct from saved per-cell maps. */
+        /** Reconstruct from saved per-cell string maps. */
         fun fromCells(saved: Array<HashMap<String, Int>>): CytoMatterGrid =
-            CytoMatterGrid(saved, BooleanArray(saved.size) { true })
+            CytoMatterGrid(Array(saved.size) { MoleculeStore.of(saved[it]) }, BooleanArray(saved.size) { true })
 
         /** An empty reservoir of the right size (for save decode to fill). */
-        fun empty(): CytoMatterGrid = CytoMatterGrid(Array(RES * RES) { HashMap() }, BooleanArray(RES * RES) { true })
+        fun empty(): CytoMatterGrid = CytoMatterGrid(Array(RES * RES) { MoleculeStore() }, BooleanArray(RES * RES) { true })
 
         private fun wrapIndex(i: Int): Int = ((i % RES) + RES) % RES
         private fun wrapDelta(d: Float): Float {
