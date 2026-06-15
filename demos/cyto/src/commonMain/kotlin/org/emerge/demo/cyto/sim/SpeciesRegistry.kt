@@ -116,10 +116,10 @@ object SpeciesRegistry {
             for (nxt in 0 until k) {
                 val bit = 1 shl (last * k + nxt)
                 if (used and bit != 0) continue
-                sb.append(atoms[nxt]); dfs(nxt, used or bit); sb.deleteCharAt(sb.length - 1)
+                sb.append(atoms[nxt]); dfs(nxt, used or bit); sb.deleteAt(sb.length - 1)
             }
         }
-        for (a in 0 until k) { sb.append(atoms[a]); dfs(a, 0); sb.deleteCharAt(sb.length - 1) }
+        for (a in 0 until k) { sb.append(atoms[a]); dfs(a, 0); sb.deleteAt(sb.length - 1) }
         return out
     }
 }
