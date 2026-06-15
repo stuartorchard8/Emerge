@@ -6,6 +6,8 @@ import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.sim.createCytoInitialState
 import org.emerge.demo.cyto.sim.CytoCellComponent
+import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
@@ -218,13 +220,25 @@ class CytoController(
         val cytoplasm: List<Pair<String, Int>>,
         val biomass: List<Pair<String, Int>>,
         val genes: List<String>,
+        /** The shared matter reservoir in the grid-cell this cell sits in (what's available locally). */
+        val reservoir: List<Pair<String, Int>>,
     )
 
     /** Info for the **last-held** cell (persists past release), or null if none has been held or it has
      *  since died. Read each frame by the info panel. */
     fun heldCellInfo(): CellInfo? {
         val id = lastHeldId ?: return null
-        val cell = currentState.components.getTable<CytoCellComponent>().asMap()[id] ?: return null
+        val state = currentState
+        val cell = state.components.getTable<CytoCellComponent>().asMap()[id] ?: return null
+        // The shared reservoir in the cell's current grid-cell — so the panel shows what matter is locally
+        // available outside the cell, not just inside it.
+        val reservoir: List<Pair<String, Int>> = run {
+            val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid
+            val pos = state.components.getTable<TransformComponent>()[id]?.pos
+            if (grid == null || pos == null) emptyList()
+            else grid.cellAt(grid.indexOf(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y)))
+                .entries.sortedBy { it.key }.map { it.key to it.value }
+        }
         return CellInfo(
             id = id.value,
             type = cell.type.name,
@@ -233,6 +247,7 @@ class CytoController(
             cytoplasm = cell.cytoplasm.entries.map { it.key to it.value },
             biomass = cell.biomass.entries.map { it.key to it.value },
             genes = cell.genome.map { describeGene(it) },
+            reservoir = reservoir,
         )
     }
 

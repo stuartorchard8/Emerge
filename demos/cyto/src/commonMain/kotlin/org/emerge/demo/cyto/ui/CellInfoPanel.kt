@@ -27,6 +27,10 @@ fun UiBuilder.cellInfoPanel(info: CytoController.CellInfo?) {
             gap(); row("STRUCTURE")
             for ((species, count) in info.biomass) keyValue(species, count.toString())
         }
+        if (info.reservoir.isNotEmpty()) {
+            gap(); row("RESERVOIR", color = 0xC8A050FFL)   // shared matter available in this cell's grid-cell
+            for ((species, count) in info.reservoir) keyValue(species, count.toString())
+        }
         if (info.genes.isNotEmpty()) {
             gap(); row("GENES")
             for (gene in info.genes) row(gene, color = 0x88CC88FFL)
