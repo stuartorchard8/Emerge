@@ -56,6 +56,9 @@ object CytoTuning {
      *  makes the bump-to-zero clamp destroy matter (breaks conservation). Smaller = slower, coarser settle. */
     const val MATTER_DIFFUSE_NUM = 1
     const val MATTER_DIFFUSE_DEN = 8
+    /** Run the (whole-grid) diffusion step only every Nth tick — it's a slow background process, so
+     *  per-tick is wasted work. Higher = cheaper but slower matter spread (net flow ~ 1/this). ⚙ */
+    const val MATTER_DIFFUSE_PERIOD = 8L
 
     // ── Metabolism / energy (per gene, per tick) ─────────────────────────────────────────────────────
     /** light → quanta: `quanta = ⌊field × exposure × SCALE⌋` (a fully-exposed cell on a source gets

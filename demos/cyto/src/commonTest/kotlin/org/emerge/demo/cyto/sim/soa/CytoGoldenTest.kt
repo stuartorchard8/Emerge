@@ -81,13 +81,15 @@ class CytoGoldenTest {
     // Re-baselined 2026-06-15: soft size cap — Convert scaled by (1 − biomass/MAX_BIOMASS_BONDS) so growth
     // tapers near the cap, bounding cell radius (keeps the contact broadphase fine). Shifts growth/division
     // timing across all scenes.
+    // Re-baselined 2026-06-15: matter diffusion now runs every MATTER_DIFFUSE_PERIOD ticks (not every
+    // tick) — a perf win; shifts the reservoir/grid trajectory.
     // growth, mutation off, 250 ticks from the default scene.
     private val GROWTH = mapOf(
-        "meta" to "8e74ac94c37cd38f",
-        "physics" to "8f0bfb142d0f6da3",
-        "biology" to "feba2ca257d82d4f",
-        "topology" to "6f03af6f8b3d5e4b",
-        "grid" to "f3f6cd512e895727",
+        "meta" to "5af7b45e8918b5c3",
+        "physics" to "555207f91c1610f9",
+        "biology" to "423b46aa700dec23",
+        "topology" to "6be6a7cc0c33160b",
+        "grid" to "2bb1dd2c6c47ddd1",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
     // Re-baselined twice for deliberate gene-model extensions, both of which re-route point-mutation's
@@ -98,19 +100,19 @@ class CytoGoldenTest {
     // The mutation-off GROWTH/INTERACT goldens below are unchanged (no flex/touch gene in the default
     // scene, no mutation), confirming the drift is isolated to the new mechanics.
     private val MUTATION = mapOf(
-        "meta" to "cf90ba97366beb64",
-        "physics" to "4bf8a43838217235",
-        "biology" to "9b4744f83985d01a",
-        "topology" to "febc6a2a29e1d87f",
-        "grid" to "6132cd9c14e158ba",
+        "meta" to "3f5e2712dd16ef51",
+        "physics" to "abdc2f300b0d7955",
+        "biology" to "5c41b3809695e24d",
+        "topology" to "dcd8b1fe76c4f341",
+        "grid" to "3c586c0edc4bf2d4",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
-        "meta" to "c18301e970615065",
-        "physics" to "bbc96886b0bf86cb",
-        "biology" to "f651861092d5c9a3",
-        "topology" to "69be7a0c63e03737",
-        "grid" to "64ebbf0f01e144fb",
+        "meta" to "d9931b1c77bbfe2",
+        "physics" to "2d907a55fc5a899f",
+        "biology" to "d182d9f6514e00ba",
+        "topology" to "d63c4e7d08103caa",
+        "grid" to "d3338536fded95e4",
     )
 
     @Test

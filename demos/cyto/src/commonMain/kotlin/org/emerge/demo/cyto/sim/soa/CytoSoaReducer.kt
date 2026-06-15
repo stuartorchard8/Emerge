@@ -126,7 +126,12 @@ class CytoSoaReducer(
         // interact: interaction (only when there's pointer input) then matter diffusion.
         cur = phaseR("interact") {
             if (input.spawns.isNotEmpty() || input.taps.isNotEmpty()) cur = bridgeInteraction(cur, inputs)
-            cur.grid = cur.grid.diffused(CytoMatterGrid.DIFFUSE_NUM, CytoMatterGrid.DIFFUSE_DEN)
+            // Matter diffusion walks every grid-cell, so run it only every Nth tick (it's a slow background
+            // process — per-tick resolution is wasted work, especially in a near-uniform field). Deterministic
+            // on the sim clock; conservation unaffected (each step is still a conservative move).
+            if (cur.world.tick % CytoTuning.MATTER_DIFFUSE_PERIOD == 0L) {
+                cur.grid = cur.grid.diffused(CytoMatterGrid.DIFFUSE_NUM, CytoMatterGrid.DIFFUSE_DEN)
+            }
             cur
         }
         phase("reset") { reset(cur) }
