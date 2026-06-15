@@ -15,6 +15,7 @@ import org.emerge.demo.cyto.sim.CytoMatterGrid
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoMutation
 import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.cellMass
 import org.emerge.demo.cyto.sim.systems.CellDestroyIntent
@@ -127,6 +128,32 @@ class CytoSoaReducer(
         if (ssEdgeCap >= e) return
         ssEnX = LongArray(e); ssEnY = LongArray(e); ssEw = LongArray(e)
         ssEdgeCap = e
+    }
+
+    // Biology working set, pooled by slot + reused across ticks, so a tick allocates no per-cell CellWork /
+    // connection-damage map / neighbour list and no per-tick light scratch (the old materialization).
+    private var bioCap = 0
+    private var bioWorks = arrayOfNulls<CellWork>(0)              // one pooled CellWork per slot, reset()/tick
+    private var bioNbrs = arrayOfNulls<ArrayList<EntityId>>(0)   // one pooled neighbour list per slot
+    private var bioBaseQuanta = LongArray(0)
+    private var bioCapture = LongArray(0)
+    private val bioWorksMap = LinkedHashMap<EntityId, CellWork>()   // reused (cleared each tick)
+    private val bioNeighbourIds = HashMap<EntityId, List<EntityId>>()
+    private val bioCapSum = HashMap<Int, Long>()
+    private val bioOrderedWorks = ArrayList<CellWork>()
+
+    private fun ensureBioScratch(n: Int) {
+        if (bioCap >= n) return
+        val nb = arrayOfNulls<CellWork>(n)
+        val nn = arrayOfNulls<ArrayList<EntityId>>(n)
+        for (i in 0 until bioCap) { nb[i] = bioWorks[i]; nn[i] = bioNbrs[i] }   // keep pooled objects (handleable cache)
+        for (i in bioCap until n) {
+            nb[i] = CellWork(MoleculeStore(), MoleculeStore(), MIN_RADIUS, CellType.Blank, emptyList(), 0, 0, 0, -1, HashMap())
+            nn[i] = ArrayList()
+        }
+        bioWorks = nb; bioNbrs = nn
+        bioBaseQuanta = LongArray(n); bioCapture = LongArray(n)
+        bioCap = n
     }
 
     fun tick(w: CytoWorld, input: CytoInput = CytoInput.EMPTY): CytoWorld {
@@ -464,9 +491,10 @@ class CytoSoaReducer(
         val lightField = CytoLightField.default()
         val grid = w.grid   // post-diffusion; biology draws/deposits in place (copy-on-write)
 
+        ensureBioScratch(n)
         val ordered = (0 until n).sortedBy { w.entityId[it] }   // ascending-EntityId (Import order + PRNG order)
-        val works = LinkedHashMap<EntityId, CellWork>(n)
-        val neighbourIds = HashMap<EntityId, List<EntityId>>(n)
+        val works = bioWorksMap.also { it.clear() }            // pooled, reused each tick
+        val neighbourIds = bioNeighbourIds.also { it.clear() }
         // Light shading — interference competition for energy. Cells sharing a grid-cell split that
         // grid-cell's incident light by their light-capture weight (exposure × radius): a cell that grows —
         // taking more space and exposed surface — captures a larger share and STARVES its smaller
@@ -476,14 +504,14 @@ class CytoSoaReducer(
         // grid-cell, then quanta = baseQuanta × (cap / Σcap). `captureMilli` is the weight in milli-units
         // (value × 1000) — a small integer that keeps the share arithmetic overflow-free and cancels
         // exactly for a lone cell (so its quanta is then bit-identical to the un-shaded value).
-        val baseQuantaRaw = LongArray(n)   // ((sample × exposure) × SCALE).raw, per ordered position
-        val captureMilli = LongArray(n)    // (exposure × radius) × 1000, per ordered position
-        val capSumByGrid = HashMap<Int, Long>(n)   // Σ captureMilli per grid-cell
+        val baseQuantaRaw = bioBaseQuanta   // ((sample × exposure) × SCALE).raw, per ordered position
+        val captureMilli = bioCapture       // (exposure × radius) × 1000, per ordered position
+        val capSumByGrid = bioCapSum.also { it.clear() }   // Σ captureMilli per grid-cell (only used when shading)
         for ((k, slot) in ordered.withIndex()) {
             val id = EntityId(w.entityId[slot])
             val deg = w.csr.degreeOf(slot)
             val base = w.csr.offset[slot]
-            val nbrs = ArrayList<EntityId>(deg)
+            val nbrs = bioNbrs[slot]!!.also { it.clear() }
             for (j in 0 until deg) nbrs.add(EntityId(w.csr.otherId[base + j]))
             neighbourIds[id] = nbrs
 
@@ -505,11 +533,10 @@ class CytoSoaReducer(
             // starves the founder). Reduce exposure to ≤1000 first, then scale by radius.raw.
             val exposureMilli = exposure.raw * 1000L / Int.MAX_VALUE.toLong()   // exposure × 1000, ≤ 1000
             captureMilli[k] = exposureMilli * radius.raw / Int.MAX_VALUE.toLong()
-            if (gridIndex >= 0) capSumByGrid[gridIndex] = (capSumByGrid[gridIndex] ?: 0L) + captureMilli[k]
+            if (CytoTuning.LIGHT_SHADING && gridIndex >= 0) capSumByGrid[gridIndex] = (capSumByGrid[gridIndex] ?: 0L) + captureMilli[k]
 
-            val damage = HashMap<EntityId, Float>(deg)
-            for (j in 0 until deg) damage[EntityId(w.csr.otherId[base + j])] = w.csr.edgeAux[base + j]
-            works[id] = CellWork(
+            val work = bioWorks[slot]!!
+            work.reset(
                 cytoplasm = (w.cell.cytoplasm[slot] ?: MoleculeStore()).copy(),
                 biomass = (w.cell.biomass[slot] ?: MoleculeStore()).copy(),
                 logicalRadius = radius,
@@ -519,8 +546,9 @@ class CytoSoaReducer(
                 touchCount = touchScratch[slot],
                 wear = w.cell.wear[slot],
                 gridIndex = gridIndex,
-                connectionDamage = damage,
             )
+            for (j in 0 until deg) work.connectionDamage[EntityId(w.csr.otherId[base + j])] = w.csr.edgeAux[base + j]
+            works[id] = work
         }
         // Second pass: turn each cell's base light into quanta. With [CytoTuning.LIGHT_SHADING] on, cells
         // sharing a grid-cell split it by capture share (cap / Σcap); the division order (cap/Σcap before
@@ -537,19 +565,20 @@ class CytoSoaReducer(
             }
         }
 
-        val orderedWorks = ordered.map { works.getValue(EntityId(w.entityId[it])) }
+        val orderedWorks = bioOrderedWorks.also { it.clear() }
+        for (slot in ordered) orderedWorks.add(bioWorks[slot]!!)
         CytoBiologyCore.passiveEnvExchange(orderedWorks, grid)
         for (work in orderedWorks) CytoBiologyCore.runGenes(work, grid)
         CytoBiologyCore.diffuse(works, neighbourIds)
         val divide = ArrayList<EntityId>(); val destroy = ArrayList<EntityId>()
         for (slot in ordered) {
             val id = EntityId(w.entityId[slot])
-            CytoBiologyCore.finish(id, works.getValue(id), grid, divide, destroy)
+            CytoBiologyCore.finish(id, bioWorks[slot]!!, grid, divide, destroy)
         }
 
         for (slot in ordered) {
             val id = EntityId(w.entityId[slot])
-            val work = works.getValue(id)
+            val work = bioWorks[slot]!!
             val mutated = CytoMutation.mutate(w.cell.genome[slot] ?: emptyList(), cfg.mutationRateDenom) { until -> nextRandomInt(w, until) }
             val oldRadiusRaw = w.cell.logicalRadius[slot]
             w.cell.cytoplasm[slot] = work.cytoplasm

@@ -133,38 +133,68 @@ fun handleableOf(genome: List<Gene>): Handleable {
  * [cytoplasm] (genes act on it; diffuses to neighbours) and locked [biomass] (structure; sets size).
  * [quanta] is this tick's energy budget (from light × exposure); [wear] is the degradation accumulator
  * carried across ticks. No `Frac` chemistry, no energy pool.
+ *
+ * **Pooled:** the SoA reducer keeps one CellWork per slot and [reset]s it every tick rather than
+ * allocating a fresh object — so all fields are mutable and [connectionDamage] is a reused map (cleared +
+ * refilled). [handleable] is recomputed only when the [genome] reference actually changes (it's stable
+ * across ticks unless mutated/edited), saving the per-tick bitmask rebuild.
  */
 class CellWork(
-    val cytoplasm: MoleculeStore,
-    val biomass: MoleculeStore,
+    var cytoplasm: MoleculeStore,
+    var biomass: MoleculeStore,
     var logicalRadius: Frac,
-    val type: CellType,
-    val genome: List<Gene>,
+    var type: CellType,
+    genome: List<Gene>,
     /** Light energy available to the cell this tick (1 quantum = 1 op). Each active light gene gets a
      *  1/N share of it (the bloat tax — see CytoBiologyCore.runGenes), not the whole pool. */
     var quanta: Int,
     /** Number of un-connected cells this cell is in contact with this tick (the [ConditionType.Touching]
      *  gate reads it). Transient — recomputed from the physics contacts each tick, never persisted. */
-    val touchCount: Int,
+    var touchCount: Int,
     /** Degradation accumulator carried across ticks (gains total-biomass-bonds each tick). */
     var wear: Int,
     /** The environment matter-grid cell this cell sits in (where Import draws / death deposits). -1 if
      *  the cell has no position. */
-    val gridIndex: Int,
+    var gridIndex: Int,
     /** This cell's per-connection stress damage (neighbour → damage), seeded from its
      *  [ConnectionStateComponent]. A Repair gene op heals the most-damaged entry; the biology system
      *  writes the (possibly healed) map back, and connection maintenance accrues stress on top. */
     val connectionDamage: MutableMap<EntityId, Float>,
 ) {
-    /** What this cell can metabolise (hence absorb/hold), derived once from its genome — selective uptake
-     *  gates passive exchange + diffusion on this so per-cell species stay bounded (see [handleableOf]). */
-    val handleable: Handleable = handleableOf(genome)
+    /** The genome this tick. Reassigning recomputes [handleable] only when the reference differs. */
+    var genome: List<Gene> = genome
+        private set
+
+    /** What this cell can metabolise (hence absorb/hold), derived from its genome — selective uptake gates
+     *  passive exchange + diffusion on this so per-cell species stay bounded (see [handleableOf]). */
+    var handleable: Handleable = handleableOf(genome)
+        private set
 
     /** Set true by a fired Mitosis gene; the lifecycle splits the cell. */
     var dividing = false
 
     /** True once a Repair gene healed any connection this tick — gates writing [connectionDamage] back. */
     var repaired = false
+
+    /** Repopulate this pooled instance for a new tick. [connectionDamage] is cleared (the caller refills
+     *  it); [handleable] is rebuilt only if [genome] changed reference. */
+    fun reset(
+        cytoplasm: MoleculeStore, biomass: MoleculeStore, logicalRadius: Frac, type: CellType,
+        genome: List<Gene>, quanta: Int, touchCount: Int, wear: Int, gridIndex: Int,
+    ) {
+        this.cytoplasm = cytoplasm
+        this.biomass = biomass
+        this.logicalRadius = logicalRadius
+        this.type = type
+        if (genome !== this.genome) { this.genome = genome; this.handleable = handleableOf(genome) }
+        this.quanta = quanta
+        this.touchCount = touchCount
+        this.wear = wear
+        this.gridIndex = gridIndex
+        connectionDamage.clear()
+        dividing = false
+        repaired = false
+    }
 }
 
 /** Total biomass of a [biomass] map: Σ count × bond-count. Drives cell size and the death threshold. */
