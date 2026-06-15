@@ -14,8 +14,14 @@ enum class Anchor { TopLeft, TopRight, BottomLeft, BottomRight }
  * if (ui.hitTest(px, py)) consumePress()
  * ```
  * The toolkit owns the shared [UiRectRenderer] + [UiTextRenderer] and the current resolution, so
- * widgets carry no GPU state. A panel is one auto-sized vertical stack anchored to a screen corner;
- * only [PanelBuilder.button] rows are interactive.
+ * widgets carry no GPU state.
+ *
+ * Panels are auto-sized vertical stacks; **multiple panels at the same [Anchor] stack** (a second
+ * TopRight panel sits below the first). Beyond plain rows it offers composite rows — [PanelBuilder.picker]
+ * (a click-to-expand dropdown drawn in an **overlay** layer on top of everything), [PanelBuilder.stepper]
+ * (**hold-to-repeat** ± with accelerating step), and [PanelBuilder.actionRow] (a row of small buttons).
+ * Hold-to-repeat needs the host to feed pointer state each frame: [hitTest] on press, [updateHold] while
+ * held, [releaseHold] on release.
  */
 class Ui {
     private val rectRenderer = UiRectRenderer()
@@ -23,14 +29,31 @@ class Ui {
     private var resW = 1f
     private var resH = 1f
 
-    // Per-frame accumulated draw commands (pixel coords) + interactive regions.
+    // Per-frame accumulated draw commands (pixel coords) + interactive regions. A separate *overlay* layer
+    // is drawn (and hit-tested) on top of the base layer — used for dropdown popups.
     private class RectCmd(val x: Float, val y: Float, val w: Float, val h: Float, val color: Long)
     private class TextCmd(val text: String, val x: Float, val y: Float, val h: Float, val color: Long, val centered: Boolean, val centerX: Float)
-    private class ClickRegion(val x: Float, val y: Float, val w: Float, val h: Float, val onClick: () -> Unit)
+    private class ClickRegion(
+        val x: Float, val y: Float, val w: Float, val h: Float, val onClick: () -> Unit,
+        /** ±1 for a hold-to-repeat stepper button (0 = plain click). */
+        val holdSign: Int = 0,
+        /** Called with the (accelerating) signed step on each repeat tick; null for plain buttons. */
+        val onStep: ((Int) -> Unit)? = null,
+    )
 
     private val rects = ArrayList<RectCmd>()
     private val texts = ArrayList<TextCmd>()
     private val clicks = ArrayList<ClickRegion>()
+    private val overlayRects = ArrayList<RectCmd>()
+    private val overlayTexts = ArrayList<TextCmd>()
+    private val overlayClicks = ArrayList<ClickRegion>()
+    /** Per-anchor running offset (px from the anchored edge) so panels at one corner stack. */
+    private val anchorCursor = HashMap<Anchor, Float>()
+
+    // Hold-to-repeat state (persists across frames while a stepper button is held).
+    private var heldRegion: ClickRegion? = null
+    private var heldSeconds = 0f
+    private var repeatTimer = 0f
 
     val resWidth: Float get() = resW
     val resHeight: Float get() = resH
@@ -40,24 +63,31 @@ class Ui {
         resH = heightPx.coerceAtLeast(1f)
     }
 
-    /** Rebuilds this frame's widget tree (clears the previous frame's geometry). */
+    /** Rebuilds this frame's widget tree (clears the previous frame's geometry; hold state persists). */
     fun frame(block: UiBuilder.() -> Unit) {
         rects.clear(); texts.clear(); clicks.clear()
+        overlayRects.clear(); overlayTexts.clear(); overlayClicks.clear()
+        anchorCursor.clear()
         UiBuilder(this).block()
     }
 
-    /** Draws this frame's widgets — all fills, then all text — self-contained blend. Call last (on top). */
+    /** Draws this frame's widgets — base layer then overlay (dropdowns) on top. Call last (on top). */
     fun draw() {
-        if (rects.isEmpty() && texts.isEmpty()) return
+        drawLayer(rects, texts)
+        drawLayer(overlayRects, overlayTexts)
+    }
+
+    private fun drawLayer(rs: List<RectCmd>, ts: List<TextCmd>) {
+        if (rs.isEmpty() && ts.isEmpty()) return
         GPU.enableBlend()
         GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
-        if (rects.isNotEmpty()) {
-            val n = rects.size
+        if (rs.isNotEmpty()) {
+            val n = rs.size
             val centers = FloatArray(n * 2)
             val halfSizes = FloatArray(n * 2)
             val colors = FloatArray(n * 4)
             for (i in 0 until n) {
-                val r = rects[i]
+                val r = rs[i]
                 centers[i * 2] = (r.x + r.w * 0.5f) / resW * 2f - 1f
                 centers[i * 2 + 1] = 1f - (r.y + r.h * 0.5f) / resH * 2f
                 halfSizes[i * 2] = r.w / resW
@@ -66,7 +96,7 @@ class Ui {
             }
             rectRenderer.drawInstanced(n, centers, halfSizes, colors)
         }
-        for (t in texts) {
+        for (t in ts) {
             val (cr, cg, cb) = rgb(t.color)
             if (t.centered) {
                 textRenderer.drawCentered(t.text, t.centerX, t.y + t.h * 0.5f, t.h, cr, cg, cb, resW, resH)
@@ -77,16 +107,45 @@ class Ui {
         GPU.disableBlend()
     }
 
-    /** Routes a pointer-down: invokes the topmost interactive region containing the point. */
+    /** Routes a pointer-down: invokes the topmost interactive region (overlay first) containing the point.
+     *  Starting a hold on a stepper button is handled here too. */
     fun hitTest(px: Float, py: Float): Boolean {
-        for (i in clicks.indices.reversed()) {
-            val c = clicks[i]
-            if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) {
-                c.onClick()
-                return true
-            }
-        }
+        for (i in overlayClicks.indices.reversed()) if (fire(overlayClicks[i], px, py)) return true
+        for (i in clicks.indices.reversed()) if (fire(clicks[i], px, py)) return true
         return false
+    }
+
+    private fun fire(c: ClickRegion, px: Float, py: Float): Boolean {
+        if (px < c.x || px > c.x + c.w || py < c.y || py > c.y + c.h) return false
+        if (c.holdSign != 0) { heldRegion = c; heldSeconds = 0f; repeatTimer = 0f }
+        c.onClick()
+        return true
+    }
+
+    /** While a stepper button is held, repeats its step with an accelerating magnitude. Call each frame
+     *  with the current pointer position; repeats pause while the pointer is off the button. */
+    fun updateHold(px: Float, py: Float, dtSeconds: Float) {
+        val r = heldRegion ?: return
+        val step = r.onStep ?: return
+        if (px < r.x || px > r.x + r.w || py < r.y || py > r.y + r.h) return
+        heldSeconds += dtSeconds
+        repeatTimer += dtSeconds
+        if (heldSeconds < INITIAL_DELAY) return
+        if (repeatTimer >= REPEAT_INTERVAL) {
+            repeatTimer = 0f
+            step(r.holdSign * magnitude(heldSeconds))
+        }
+    }
+
+    /** End any in-progress hold (call on pointer release). */
+    fun releaseHold() { heldRegion = null; heldSeconds = 0f; repeatTimer = 0f }
+
+    /** Accelerating step magnitude by how long the button's been held (for ×1000-scale values). */
+    private fun magnitude(t: Float): Int = when {
+        t < 1f -> 1
+        t < 2f -> 10
+        t < 3.5f -> 100
+        else -> 1000
     }
 
     fun cleanup() {
@@ -94,21 +153,35 @@ class Ui {
         textRenderer.cleanup()
     }
 
-    // ── internal emit API (called by the builders) ─────────────────────────────
-    internal fun emitRect(x: Float, y: Float, w: Float, h: Float, color: Long) {
-        rects.add(RectCmd(x, y, w, h, color))
-    }
-
+    // ── internal emit API (called by the builders) ─ all return Unit (so Item.emit overrides stay Unit) ─
+    internal fun emitRect(x: Float, y: Float, w: Float, h: Float, color: Long) { rects.add(RectCmd(x, y, w, h, color)) }
     internal fun emitTextLeft(text: String, x: Float, topY: Float, h: Float, color: Long) {
         texts.add(TextCmd(text, x, topY, h, color, centered = false, centerX = 0f))
     }
-
     internal fun emitTextCentered(text: String, centerX: Float, topY: Float, h: Float, color: Long) {
         texts.add(TextCmd(text, 0f, topY, h, color, centered = true, centerX = centerX))
     }
-
     internal fun emitClick(x: Float, y: Float, w: Float, h: Float, onClick: () -> Unit) {
         clicks.add(ClickRegion(x, y, w, h, onClick))
+    }
+    /** A hold-to-repeat stepper button: fires `onStep(sign)` on press, then `onStep(sign·magnitude)` while held. */
+    internal fun emitStepper(x: Float, y: Float, w: Float, h: Float, sign: Int, onStep: (Int) -> Unit) {
+        clicks.add(ClickRegion(x, y, w, h, { onStep(sign) }, holdSign = sign, onStep = onStep))
+    }
+
+    internal fun emitOverlayRect(x: Float, y: Float, w: Float, h: Float, color: Long) { overlayRects.add(RectCmd(x, y, w, h, color)) }
+    internal fun emitOverlayTextLeft(text: String, x: Float, topY: Float, h: Float, color: Long) {
+        overlayTexts.add(TextCmd(text, x, topY, h, color, centered = false, centerX = 0f))
+    }
+    internal fun emitOverlayClick(x: Float, y: Float, w: Float, h: Float, onClick: () -> Unit) {
+        overlayClicks.add(ClickRegion(x, y, w, h, onClick))
+    }
+
+    /** Starting offset (px from the anchored edge) for the next panel at [anchor], then advance it. */
+    internal fun nextPanelOffset(anchor: Anchor, margin: Float, span: Float, gap: Float): Float {
+        val cur = anchorCursor[anchor] ?: margin
+        anchorCursor[anchor] = cur + span + gap
+        return cur
     }
 
     private fun rgb(rgba: Long): Triple<Float, Float, Float> = Triple(
@@ -123,11 +196,17 @@ class Ui {
         out[base + 2] = ((rgba ushr 8) and 0xFF).toFloat() / 255f
         out[base + 3] = (rgba and 0xFF).toFloat() / 255f
     }
+
+    companion object {
+        private const val INITIAL_DELAY = 0.35f   // hold this long before auto-repeat begins
+        private const val REPEAT_INTERVAL = 0.05f // then fire this often
+    }
 }
 
 /** Frame-scoped builder: add panels. */
 class UiBuilder internal constructor(private val ui: Ui) {
-    /** An auto-sized panel anchored to a screen [anchor] corner, [margin] px from the edges. */
+    /** An auto-sized panel anchored to a screen [anchor] corner. Panels at the same anchor **stack**
+     *  (each below the previous, [margin] apart). */
     fun panel(
         anchor: Anchor,
         margin: Float = 12f,
@@ -143,13 +222,14 @@ class UiBuilder internal constructor(private val ui: Ui) {
         val contentH = pb.items.sumOf { it.height.toDouble() }.toFloat()
         val w = padding * 2 + contentW
         val h = padding * 2 + contentH
+        val offset = ui.nextPanelOffset(anchor, margin, h, margin)   // stack distance from the anchored edge
         val x = when (anchor) {
             Anchor.TopLeft, Anchor.BottomLeft -> margin
             Anchor.TopRight, Anchor.BottomRight -> ui.resWidth - margin - w
         }
         val y = when (anchor) {
-            Anchor.TopLeft, Anchor.TopRight -> margin
-            Anchor.BottomLeft, Anchor.BottomRight -> ui.resHeight - margin - h
+            Anchor.TopLeft, Anchor.TopRight -> offset
+            Anchor.BottomLeft, Anchor.BottomRight -> ui.resHeight - offset - h
         }
         ui.emitRect(x, y, w, h, background)
         var rowY = y + padding
@@ -170,6 +250,18 @@ class PanelBuilder internal constructor(private val rowHeight: Float) {
         items.add(KeyValueItem(key, value, keyColor, valueColor, rowHeight))
     fun button(label: String, color: Long, onClick: () -> Unit) = items.add(ButtonItem(label, color, rowHeight, onClick))
     fun gap(height: Float = 6f) = items.add(GapItem(height))
+
+    /** A label + a click-to-expand dropdown field showing [value]; when [open], its [options] render in
+     *  the overlay layer and a pick calls [onPick]. [onToggle] opens/closes the dropdown. */
+    fun picker(label: String, value: String, options: List<String>, open: Boolean, onToggle: () -> Unit, onPick: (Int) -> Unit) =
+        items.add(PickerItem(label, value, options, open, onToggle, onPick, rowHeight))
+
+    /** A label + `[-] value [+]` where ± are hold-to-repeat steppers calling [onStep] with a signed,
+     *  accelerating magnitude. */
+    fun stepper(label: String, value: String, onStep: (Int) -> Unit) = items.add(StepperItem(label, value, onStep, rowHeight))
+
+    /** A horizontal row of small buttons. */
+    fun actionRow(buttons: List<Triple<String, Long, () -> Unit>>) = items.add(ActionRowItem(buttons, rowHeight))
 
     internal interface Item {
         val height: Float
@@ -201,11 +293,77 @@ class PanelBuilder internal constructor(private val rowHeight: Float) {
             ui.emitTextCentered(label, x + contentW * 0.5f, topY + (height - textH) * 0.5f, textH, contrast(color))
             ui.emitClick(x, topY + inset, contentW, height - inset * 2f, onClick)
         }
-        private fun contrast(rgba: Long): Long {
-            val r = ((rgba ushr 24) and 0xFF).toFloat() / 255f
-            val g = ((rgba ushr 16) and 0xFF).toFloat() / 255f
-            val b = ((rgba ushr 8) and 0xFF).toFloat() / 255f
-            return if (0.299f * r + 0.587f * g + 0.114f * b < 0.5f) 0xFFFFFFFFL else 0x000000FFL
+    }
+
+    private class PickerItem(
+        val label: String, val value: String, val options: List<String>, val open: Boolean,
+        val onToggle: () -> Unit, val onPick: (Int) -> Unit, override val height: Float,
+    ) : Item {
+        private fun fieldW(textH: Float): Float {
+            var w = UiTextRenderer.measureWidthPx(value, textH)
+            for (o in options) w = maxOf(w, UiTextRenderer.measureWidthPx(o, textH))
+            return w + textH * 2.5f   // padding + the dropdown arrow
+        }
+        override fun measureWidth(textH: Float) = UiTextRenderer.measureWidthPx(label, textH) + textH + fieldW(textH)
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            val ty = topY + (height - textH) * 0.5f
+            ui.emitTextLeft(label, x, ty, textH, 0x9A9A9AFFL)
+            val fw = fieldW(textH)
+            val fx = x + contentW - fw
+            ui.emitRect(fx, topY + 1f, fw, height - 2f, if (open) 0x2A4A6AFFL else 0x303848FFL)
+            ui.emitTextLeft(value, fx + textH * 0.4f, ty, textH, 0xFFFFFFFFL)
+            ui.emitTextLeft("v", fx + fw - textH * 0.9f, ty, textH, 0xAACCFFFFL)
+            ui.emitClick(fx, topY + 1f, fw, height - 2f, onToggle)
+            if (open) {
+                // Drop the option list into the overlay layer (on top of every panel), below the field.
+                var oy = topY + height
+                for ((i, opt) in options.withIndex()) {
+                    ui.emitOverlayRect(fx, oy, fw, height, 0x1A2233FFL)
+                    ui.emitOverlayTextLeft(opt, fx + textH * 0.4f, oy + (height - textH) * 0.5f, textH, if (opt == value) 0xFFE070FFL else 0xCFE0FFFFL)
+                    ui.emitOverlayClick(fx, oy, fw, height) { onPick(i) }
+                    oy += height
+                }
+            }
+        }
+    }
+
+    private class StepperItem(val label: String, val value: String, val onStep: (Int) -> Unit, override val height: Float) : Item {
+        private fun btnW(textH: Float) = textH * 1.6f
+        private fun valW(textH: Float) = maxOf(UiTextRenderer.measureWidthPx(value, textH), textH * 3f)
+        override fun measureWidth(textH: Float) =
+            UiTextRenderer.measureWidthPx(label, textH) + textH + btnW(textH) * 2f + valW(textH) + textH
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            val ty = topY + (height - textH) * 0.5f
+            ui.emitTextLeft(label, x, ty, textH, 0x9A9A9AFFL)
+            val bw = btnW(textH); val vw = valW(textH)
+            val groupW = bw * 2f + vw
+            val gx = x + contentW - groupW
+            // [-]
+            ui.emitRect(gx, topY + 1f, bw, height - 2f, 0x444C5CFFL)
+            ui.emitTextCentered("-", gx + bw * 0.5f, ty, textH, 0xFFFFFFFFL)
+            ui.emitStepper(gx, topY + 1f, bw, height - 2f, -1, onStep)
+            // value
+            ui.emitTextCentered(value, gx + bw + vw * 0.5f, ty, textH, 0xFFFFFFFFL)
+            // [+]
+            val px = gx + bw + vw
+            ui.emitRect(px, topY + 1f, bw, height - 2f, 0x444C5CFFL)
+            ui.emitTextCentered("+", px + bw * 0.5f, ty, textH, 0xFFFFFFFFL)
+            ui.emitStepper(px, topY + 1f, bw, height - 2f, +1, onStep)
+        }
+    }
+
+    private class ActionRowItem(val buttons: List<Triple<String, Long, () -> Unit>>, override val height: Float) : Item {
+        private fun bw(label: String, textH: Float) = UiTextRenderer.measureWidthPx(label, textH) + textH * 1.6f
+        override fun measureWidth(textH: Float) = buttons.sumOf { bw(it.first, textH).toDouble() }.toFloat() + (buttons.size - 1) * textH * 0.5f
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            var bx = x
+            for ((label, color, onClick) in buttons) {
+                val w = bw(label, textH)
+                ui.emitRect(bx, topY + 1f, w, height - 2f, color)
+                ui.emitTextCentered(label, bx + w * 0.5f, topY + (height - textH) * 0.5f, textH, contrast(color))
+                ui.emitClick(bx, topY + 1f, w, height - 2f, onClick)
+                bx += w + textH * 0.5f
+            }
         }
     }
 
@@ -213,4 +371,11 @@ class PanelBuilder internal constructor(private val rowHeight: Float) {
         override fun measureWidth(textH: Float) = 0f
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) = Unit
     }
+}
+
+private fun contrast(rgba: Long): Long {
+    val r = ((rgba ushr 24) and 0xFF).toFloat() / 255f
+    val g = ((rgba ushr 16) and 0xFF).toFloat() / 255f
+    val b = ((rgba ushr 8) and 0xFF).toFloat() / 255f
+    return if (0.299f * r + 0.587f * g + 0.114f * b < 0.5f) 0xFFFFFFFFL else 0x000000FFL
 }

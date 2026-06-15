@@ -7,6 +7,7 @@ import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.sim.createCytoInitialState
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
 import org.emerge.demo.cyto.sim.soa.CytoWorld
 import org.emerge.sim.core.EntityId
@@ -234,6 +235,41 @@ class CytoController(
             genes = cell.genome.map { describeGene(it) },
         )
     }
+
+    // ── Live gene editing (the in-game gene-editor kit) ─────────────────────────
+    // Edits target the last-held cell. The world is mutated under [stepLock] (so the sim thread can't be
+    // mid-tick) and republished immediately, so the change shows even when paused. The editor holds the
+    // in-progress draft itself and commits via [setHeldGene] on close — these are the only live mutations.
+
+    /** The last-held cell's current genome (a fresh immutable list), or null if none / it died. */
+    fun heldGenome(): List<Gene>? =
+        lastHeldId?.let { currentState.components.getTable<CytoCellComponent>().asMap()[it]?.genome }
+
+    /** Apply [transform] to the held cell's genome (returning null = no change), then republish. */
+    private fun editHeldGenome(transform: (List<Gene>) -> List<Gene>?) {
+        val id = lastHeldId ?: return
+        withLock(stepLock) {
+            val slot = world.slotOf(id.value)
+            val next = if (slot < 0) null else transform(world.cell.genome[slot] ?: emptyList())
+            if (next != null) {
+                world.cell.genome[slot] = next
+                currentState = world.toSimState()
+                publishedFrame = CytoFrame(currentState, tickCount)
+            }
+        }
+    }
+
+    /** Replace the gene at [index] (commit a finished edit). */
+    fun setHeldGene(index: Int, gene: Gene) =
+        editHeldGenome { g -> if (index in g.indices) g.toMutableList().also { it[index] = gene } else null }
+
+    /** Delete the gene at [index]. */
+    fun deleteHeldGene(index: Int) =
+        editHeldGenome { g -> if (index in g.indices) g.toMutableList().also { it.removeAt(index) } else null }
+
+    /** Insert a copy of the gene at [index] immediately after it. */
+    fun duplicateHeldGene(index: Int) =
+        editHeldGenome { g -> if (index in g.indices) g.toMutableList().also { it.add(index + 1, g[index]) } else null }
 
     /** A compact, panel-friendly one-line description of a gene: `ACTION IF CONDITION [src]`. */
     private fun describeGene(gene: org.emerge.demo.cyto.sim.Gene): String {

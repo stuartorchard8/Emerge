@@ -4,7 +4,7 @@ import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.CytoRenderer
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
-import org.emerge.demo.cyto.ui.cellInfoPanel
+import org.emerge.demo.cyto.ui.GeneEditor
 import org.emerge.render.torus.ui.Ui
 import org.emerge.sim.core.EntityId
 import org.lwjgl.glfw.GLFW.*
@@ -54,11 +54,12 @@ object CytoSceneView {
         controls.onTogglePause = { simDriver.togglePause() }
         simDriver.start()
 
-        // Shared in-game UI toolkit — the last-held-cell info panel.
+        // Shared in-game UI toolkit — the last-held-cell info panel + the gene-editor kit.
         val ui = Ui()
+        val geneEditor = GeneEditor()
 
         val mouse = MouseState()
-        installMouseHandlers(window, controller, renderer, controls, ui, mouse)
+        installMouseHandlers(window, controller, renderer, controls, ui, geneEditor, mouse)
 
         var lastTime = glfwGetTime()
         var fps = 0.0
@@ -71,6 +72,12 @@ object CytoSceneView {
             lastTime = now
             if (delta > 0f) fps = fps * 0.9 + (1.0 / delta) * 0.1   // smoothed draw rate
 
+            // Drive hold-to-repeat steppers (threshold +/-) while the primary button is held.
+            if (isPrimaryDown(window)) {
+                val (cx, cy) = cursorPixel(window)
+                ui.updateHold(cx, cy, delta)
+            }
+
             renderer.showLightField = controls.showLightField   // Light button → renderer
             controller.brushActive = controls.brushSelected      // "Brush" type selection → painting
             // The sim advances on its own thread; we render whatever it last published.
@@ -82,8 +89,8 @@ object CytoSceneView {
             renderer.draw(frame) // renderer fills its own background
             drawReadouts(controller, renderer, controls)
             controls.draw()
-            // Last-held-cell info panel (on top of the controls).
-            ui.frame { cellInfoPanel(controller.heldCellInfo()) }
+            // Last-held-cell info panel + gene-editor kit (on top of the controls).
+            ui.frame { geneEditor.render(this, controller) }
             ui.draw()
 
             glfwSwapBuffers(window)
@@ -174,6 +181,7 @@ object CytoSceneView {
         renderer: CytoRenderer,
         controls: CytoControls,
         ui: Ui,
+        geneEditor: GeneEditor,
         state: MouseState,
     ) {
         glfwSetMouseButtonCallback(window) { win, button, action, _ ->
@@ -191,12 +199,14 @@ object CytoSceneView {
                         return@glfwSetMouseButtonCallback
                     }
                     state.uiConsumed = false
+                    geneEditor.closeDropdown()   // a press outside the UI dismisses any open picker
                     val world = renderer.screenToWorld(px.first, px.second)
                     val hit = controller.cellAt(world[0], world[1])
                     state.grabId = hit
                     if (hit != null && controls.touchMode == TouchMode.Detach) controller.detach(hit)
                 }
                 GLFW_RELEASE -> {
+                    ui.releaseHold()   // end any in-progress hold-to-repeat
                     if (!state.uiConsumed && !state.dragged) {
                         val world = renderer.screenToWorld(px.first, px.second)
                         controller.tap(world[0], world[1], controls.touchMode, controls.cellType)
