@@ -9,6 +9,9 @@ import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.ActionType
+import org.emerge.demo.cyto.sim.CytoTuning
+import org.emerge.demo.cyto.sim.Molecules
 import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.demo.cyto.sim.handleableOf
 import org.emerge.demo.cyto.sim.Gene
@@ -219,14 +222,17 @@ class CytoController(
         val type: String,
         val radius: String,
         val totalBiomass: Int,
-        /** Per-species metabolism table: environment (local reservoir) | cytoplasm | biomass, with the
-         *  passive-exchange flow direction between env and cytoplasm. Only metabolically-relevant species
-         *  (ones the cell can hold, or is currently carrying). */
+        /** Per-species metabolism table: environment (local reservoir) | cytoplasm | biomass, with a flow
+         *  arrow on each boundary. Only metabolically-relevant species (handleable, or stored in biomass). */
         val metabolism: List<MetRow>,
         val genes: List<String>,
     ) {
-        /** One row of the metabolism table. [dir] is ">>" (drawing in), "<<" (leaking out), "==" (held). */
-        class MetRow(val species: String, val env: Int, val cyto: Int, val bio: Int, val dir: String)
+        /** One row of the metabolism table. [dirEnvCyt] is the env↔cytoplasm flow, [dirCytBio] the
+         *  cytoplasm↔biomass flow; each is ">>" (toward bio/into cyt), "<<" (out) or "==" (no net flow). */
+        class MetRow(
+            val species: String, val env: Int, val cyto: Int, val bio: Int,
+            val dirEnvCyt: String, val dirCytBio: String,
+        )
     }
 
     /** Info for the **last-held** cell (persists past release), or null if none has been held or it has
@@ -242,26 +248,46 @@ class CytoController(
             if (grid == null || pos == null) emptyMap()
             else grid.cellAt(grid.indexOf(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y)))
         }
-        // Build the env|cyto|bio table over metabolically-relevant species: anything the cell is carrying
-        // (cytoplasm/biomass) plus anything in the reservoir it could metabolise. A species only in the
-        // reservoir that the cell can't use is hidden (it's the clutter we're filtering out). The arrow
-        // reflects what passive exchange does this tick: ">>" draws a usable species in (env > cyto),
-        // "<<" dumps an un-usable one down-gradient, "==" held (a usable surplus is now retained, or stuck).
+        // Predicted matter flows for the two boundaries (like the env↔cyt arrow, derived from the cell's
+        // genome + state, not measured). Convert genes build their operand cyt→bio; degradation breaks the
+        // lex-smallest multi-atom biomass molecule, sending its leading monomer to the reservoir and the
+        // remainder to cytoplasm — so that molecule + both fragments flow OUT of biomass (and the monomer
+        // out to env). Anything the cell can't use is hidden as ballast.
         val cytoMap = cell.cytoplasm; val bioMap = cell.biomass
         val handleable = handleableOf(cell.genome)
+        val convertOperands = cell.genome.filter { it.action.type == ActionType.Convert }.map { it.action.a }.toSet()
+        val degradeTarget = bioMap.entries.filter { it.value > 0 && it.key.length >= 2 }.minByOrNull { it.key }?.key
+        val degradeSplit = degradeTarget?.let { Molecules.splitLeftmost(it) }
+        val degradeMono = degradeSplit?.first       // ejected to the reservoir
+        val degradeRest = degradeSplit?.second       // returned to cytoplasm
+        // Approx degradation rate (broken bonds / tick) — wear gains total-biomass-bonds each tick and breaks
+        // one per DEGRADE_PERIOD, so steady-state ≈ bonds / period; ≥1 while there's anything to degrade.
+        val degRate = if (degradeTarget == null) 0
+            else maxOf(1, org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass) / CytoTuning.DEGRADE_PERIOD)
         val metabolism = (cytoMap.keys + bioMap.keys + envMap.keys).sorted().mapNotNull { s ->
             val env = envMap[s] ?: 0; val cyto = cytoMap[s] ?: 0; val bio = bioMap[s] ?: 0
             val canHold = handleable.canHold(SpeciesRegistry.id(s))
-            // Metabolically relevant = a species the cell can handle, or one locked in its biomass. Drop
-            // un-usable ballast (it shows as un-handleable junk passing through cytoplasm) — that's the
-            // clutter we're filtering out.
             if (!canHold && bio == 0) return@mapNotNull null
-            val dir = when {
-                canHold && env > cyto -> ">>"
-                !canHold && cyto > env -> "<<"
+            val dirCytBio = when {
+                s in convertOperands -> ">>"                                  // Convert builds it into biomass
+                s == degradeTarget || s == degradeMono || s == degradeRest -> "<<"  // degradation output (or the consumed molecule)
                 else -> "=="
             }
-            CellInfo.MetRow(s, env, cyto, bio, dir)
+            // env↔cyt is a SIGNED SUM: passive exchange (absorb usable when the reservoir's richer, leak
+            // un-usable surplus) plus the degradation monomer ejected to the reservoir. So a monomer that's
+            // abundant outside still reads ">>" (net drawn in) even while degradation trickles some out.
+            val passive = when {
+                canHold && env > cyto -> (env - cyto) / 2
+                !canHold && cyto > env -> -(cyto - env) / 2
+                else -> 0
+            }
+            val envCytNet = passive - (if (s == degradeMono) degRate else 0)
+            val dirEnvCyt = when {
+                envCytNet > 0 -> ">>"
+                envCytNet < 0 -> "<<"
+                else -> "=="
+            }
+            CellInfo.MetRow(s, env, cyto, bio, dirEnvCyt, dirCytBio)
         }
         return CellInfo(
             id = id.value,

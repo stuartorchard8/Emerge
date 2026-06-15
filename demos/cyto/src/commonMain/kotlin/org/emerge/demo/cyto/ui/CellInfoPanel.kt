@@ -34,19 +34,20 @@ fun PanelBuilder.metabolismTable(info: CytoController.CellInfo) {
     gap()
     row(METAB_HEADER, color = 0x9A9A9AFFL)
     for (r in info.metabolism) {
-        val color = when (r.dir) {
-            ">>" -> 0x66CC66FFL   // drawing in (gaining)
-            "<<" -> 0xCC8855FFL   // leaking out (losing)
-            else -> 0xC8C8C8FFL   // held / equilibrium
+        // Colour by the net story: any inflow/build → green, else any outflow → orange, else held.
+        val color = when {
+            r.dirEnvCyt == ">>" || r.dirCytBio == ">>" -> 0x66CC66FFL
+            r.dirEnvCyt == "<<" || r.dirCytBio == "<<" -> 0xCC8855FFL
+            else -> 0xC8C8C8FFL
         }
         row(metabRow(r), color)
     }
 }
 
-// Column layout (monospace): species[6] env[6] ' ' dir[2] ' ' cyto[6] ' ' bio[6].
+// Column layout (monospace): species[6] env[6] ' ' dirEC[2] ' ' cyto[6] ' ' dirCB[2] ' ' bio[6].
 private val METAB_HEADER =
-    "".padEnd(6) + "ENV".padStart(6) + "    " + "CYT".padStart(6) + " " + "BIO".padStart(6)
+    "".padEnd(6) + "ENV".padStart(6) + "    " + "CYT".padStart(6) + "    " + "BIO".padStart(6)
 
 private fun metabRow(r: CytoController.CellInfo.MetRow): String =
-    r.species.padEnd(6) + r.env.toString().padStart(6) + " " + r.dir + " " +
-        r.cyto.toString().padStart(6) + " " + r.bio.toString().padStart(6)
+    r.species.padEnd(6) + r.env.toString().padStart(6) + " " + r.dirEnvCyt + " " +
+        r.cyto.toString().padStart(6) + " " + r.dirCytBio + " " + r.bio.toString().padStart(6)
