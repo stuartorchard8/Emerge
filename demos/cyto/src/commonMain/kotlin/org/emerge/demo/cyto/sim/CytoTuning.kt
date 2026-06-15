@@ -59,6 +59,10 @@ object CytoTuning {
     /** Run the (whole-grid) diffusion step only every Nth tick — it's a slow background process, so
      *  per-tick is wasted work. Higher = cheaper but slower matter spread (net flow ~ 1/this). ⚙ */
     const val MATTER_DIFFUSE_PERIOD = 8L
+    /** Environmental decay: free molecules break their leftmost bond at rate 1/this per decay step (run on
+     *  the diffusion cadence). Returns matter stranded by selective uptake (species no live cell can use)
+     *  toward monomers. Higher = slower decay; 0 disables. ⚙ */
+    const val MATTER_DECAY_PERIOD = 4000
 
     // ── Metabolism / energy (per gene, per tick) ─────────────────────────────────────────────────────
     /** light → quanta: `quanta = ⌊field × exposure × SCALE⌋` (a fully-exposed cell on a source gets

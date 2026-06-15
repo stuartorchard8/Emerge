@@ -130,7 +130,9 @@ class CytoSoaReducer(
             // process — per-tick resolution is wasted work, especially in a near-uniform field). Deterministic
             // on the sim clock; conservation unaffected (each step is still a conservative move).
             if (cur.world.tick % CytoTuning.MATTER_DIFFUSE_PERIOD == 0L) {
-                cur.grid = cur.grid.diffused(CytoMatterGrid.DIFFUSE_NUM, CytoMatterGrid.DIFFUSE_DEN)
+                cur.grid = cur.grid
+                    .diffused(CytoMatterGrid.DIFFUSE_NUM, CytoMatterGrid.DIFFUSE_DEN)
+                    .decayed(CytoTuning.MATTER_DECAY_PERIOD)
             }
             cur
         }

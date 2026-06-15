@@ -130,6 +130,33 @@ class CytoMatterGrid private constructor(
         if (v <= 0) map.remove(s) else map[s] = v
     }
 
+    /**
+     * Spontaneous **environmental decay**: free molecules break their leftmost bond at rate `1/[period]`
+     * (⌊count/period⌋ of each multi-atom species per call), peeling the leading monomer off — `abc` →
+     * `a` + `bc` — with both fragments deposited in the same grid-cell. Over time every molecule erodes
+     * back to monomers, returning matter that selective uptake stranded (species no live cell can
+     * metabolise) to the accessible pool. Snapshot-based (reads `this`, writes copy-on-write `next`) and
+     * conservation-exact (a molecule's atoms = its two fragments' atoms). Same primitive as biomass decay.
+     */
+    fun decayed(period: Int): CytoMatterGrid {
+        if (period <= 0) return this
+        val next = CytoMatterGrid(cells.copyOf(), BooleanArray(cells.size))
+        for (i in cells.indices) {
+            val cell = cells[i]
+            if (cell.isEmpty()) continue
+            for ((species, count) in cell) {
+                if (species.length < 2) continue          // monomers don't decay further
+                val broken = count / period
+                if (broken <= 0) continue
+                val (l, r) = Molecules.splitLeftmost(species) ?: continue
+                next.bump(i, species, -broken)
+                next.bump(i, l, broken)
+                next.bump(i, r, broken)
+            }
+        }
+        return next
+    }
+
     companion object {
         val RES = CytoLightField.RES
         val SPAN = CytoLightField.SPAN
