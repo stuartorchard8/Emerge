@@ -89,10 +89,11 @@ class GeneEditor {
                         draft = d.copy(action = d.action.copy(a = species[i])); openField = null
                     }
                 ActionType.FormBond -> {
-                    picker("ATOM A", d.action.a.ifEmpty { "-" }, atoms, openField == Field.OperandA, { toggle(Field.OperandA) }) { i ->
+                    // FormBond uses only the first atom of each operand; show/edit just that atom.
+                    picker("ATOM A", d.action.a.take(1).ifEmpty { "-" }, atoms, openField == Field.OperandA, { toggle(Field.OperandA) }) { i ->
                         draft = d.copy(action = d.action.copy(a = atoms[i])); openField = null
                     }
-                    picker("ATOM B", d.action.b.ifEmpty { "-" }, atoms, openField == Field.OperandB, { toggle(Field.OperandB) }) { i ->
+                    picker("ATOM B", d.action.b.take(1).ifEmpty { "-" }, atoms, openField == Field.OperandB, { toggle(Field.OperandB) }) { i ->
                         draft = d.copy(action = d.action.copy(b = atoms[i])); openField = null
                     }
                 }
