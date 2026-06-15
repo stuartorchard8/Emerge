@@ -122,19 +122,32 @@ class CytoSoaSpecTest {
     }
 
     @Test
-    fun foodWebFeedsHeterotrophFromAutotrophLeak() {
-        val (sx, sy) = CytoLightField.SOURCES.first()
+    fun metabolicLeakRetainsUsableMatterDumpsWaste() {
+        // Metabolic leak: passive exchange retains a species the cell CAN metabolise (so it can hoard an
+        // imported reserve) but still dumps a species it can't use down-gradient. One inert gene makes `ab`
+        // (and atoms a,b) handleable while never firing (its gate is unreachable), so runGenes is a no-op and
+        // we observe the passive exchange alone. The cell sits in an empty reservoir, so without retention
+        // both `ab` and `c` would leak; with it, only the un-metabolisable `c` does.
+        val inertAbGene = Gene(
+            EnergySource.Light,
+            GeneCondition(ConditionType.ChemQty, "ab", Comparison.Greater, 1_000_000_000),  // never true
+            GeneAction(ActionType.Convert, "ab"),
+        )
         val initial = run {
             val b = SimBuilder(SimState())
-            b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("a" to 4000, "b" to 4000), biomass = mapOf("ab" to 8000))
-            b.spawnCell(CytoUnits.coord2(sx + 0.3f, sy), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 2000), biomass = mapOf("ab" to 8000))
-            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
+            b.spawnCell(
+                CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Collector,
+                cytoplasm = mapOf("ab" to 5000, "c" to 5000), biomass = mapOf("ab" to 2000),
+                genome = listOf(inertAbGene),
+            )
+            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.empty()) }
             b.build()
         }
         val total0 = totalAtoms(initial)
-        val state = run(initial, ticks = 1500) { s, t -> assertEquals(total0, totalAtoms(s), "atoms not conserved at step $t") }
-        val heterotrophs = state.components.getTable<CytoCellComponent>().asMap().values.count { it.type == CellType.Muscle }
-        assertTrue(heterotrophs > 1, "heterotroph should have fed on the autotroph's leaked ab and divided; got $heterotrophs")
+        val state = run(initial, ticks = 1) { s, t -> assertEquals(total0, totalAtoms(s), "atoms not conserved at step $t") }
+        val cell = state.components.getTable<CytoCellComponent>().asMap().values.first()
+        assertEquals(5000, cell.cytoplasm["ab"] ?: 0, "metabolisable ab is retained (not leaked back to the reservoir)")
+        assertTrue((cell.cytoplasm["c"] ?: 0) < 5000, "un-metabolisable c leaks toward the empty reservoir; got ${cell.cytoplasm["c"]}")
     }
 
     @Test

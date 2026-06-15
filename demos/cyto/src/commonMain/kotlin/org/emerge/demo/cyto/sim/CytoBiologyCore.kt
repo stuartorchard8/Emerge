@@ -67,12 +67,16 @@ object CytoBiologyCore {
         val want = IntArray(cells.size)        // each absorber's desired draw against the shared snapshot
         var demand = 0L                        // Σ want over absorbers
         for (i in cells.indices) {
+            val canHold = cells[i].handleable.canHold(sp)
             val cyto = cells[i].cytoplasm.count(sp)
             val t = (env - cyto) / 2           // signed, toward zero; +ve = into the cell
-            if (t < 0) {                       // leaker: always succeeds (deposits into the reservoir)
+            if (t < 0 && !canHold) {           // METABOLIC LEAK: only passively dump what the cell can't
+                // metabolise. A species the cell CAN use is retained (no down-gradient leak), so an Import
+                // gene can build a reserve and the cell coasts on it instead of bleeding it straight back to
+                // the reservoir. (Waste it can't use still leaks; the food web is fed by death + decay.)
                 cells[i].cytoplasm.add(sp, t)
                 grid.deposit(idx, sp, -t)
-            } else if (t > 0 && cells[i].handleable.canHold(sp)) {
+            } else if (t > 0 && canHold) {
                 // SELECTIVE UPTAKE: only absorb a species the cell can metabolise; one it can't is left in
                 // the reservoir (conservation-safe), keeping per-cell species bounded by the genome.
                 want[i] = t
