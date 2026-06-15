@@ -55,9 +55,6 @@ object CytoTuning {
     /** light → quanta: `quanta = ⌊field × exposure × SCALE⌋` (a fully-exposed cell on a source gets
      *  ~`STRENGTH·SCALE` ops/tick). 1 quantum = 1 op. */
     const val LIGHT_QUANTA_SCALE = 6000
-    /** Safety backstop on ops/gene/tick (Light is already capped by quanta, BreakBond by available bonds;
-     *  this caps a pathological store from being processed all at once). */
-    const val MAX_OPS_PER_GENE = 4096
     /** Connection damage healed per Repair op (one quantum). 0.25 ≈ the old free per-tick heal, so ~one
      *  op/tick maintains a lightly-loaded connection; more stress needs more energy. */
     const val REPAIR_PER_OP = 0.25f
