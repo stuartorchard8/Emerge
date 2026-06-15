@@ -110,10 +110,10 @@ class CytoGoldenTest {
     // scene, no mutation), confirming the drift is isolated to the new mechanics.
     private val MUTATION = mapOf(
         "meta" to "a795629bf2821ae",
-        "physics" to "d0db62b851255121",
-        "biology" to "f104a6444fcda90d",
-        "topology" to "6d0ac0a3e95302bf",
-        "grid" to "8af213c2d5037083",
+        "physics" to "a6897b38e8333773",
+        "biology" to "c0ed9662e7479bf6",
+        "topology" to "146bc2384f4a17a5",
+        "grid" to "ddf5082a6f7d6a8d",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(

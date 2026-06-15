@@ -85,6 +85,10 @@ data class Gene(val source: EnergySource, val condition: GeneCondition, val acti
  * at the B=5 bond-cap), regardless of how diverse the surrounding environment is.
  */
 class Handleable(private val bonds: Set<String>, private val atoms: Set<Char>) {
+    /** Distinct bond-types this genome reaches — capped by CytoTuning.GENOME_MAX_BOND_TYPES so per-cell
+     *  species stay bounded (B bonds → ≤ a few dozen buildable molecules). */
+    val bondTypeCount: Int get() = bonds.size
+
     fun canHold(species: String): Boolean {
         if (species.isEmpty()) return false
         if (species.length == 1) return species[0] in atoms

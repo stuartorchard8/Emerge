@@ -45,6 +45,10 @@ object CytoMutation {
             out.add(g)
             if (dup) out.add(g)                     // duplicate the (possibly-mutated) gene
         }
+        // Bond-cap: reject a mutation that would push the genome past GENOME_MAX_BOND_TYPES distinct bonds
+        // (keeps each cell's metabolic reach — hence its per-cell species — bounded). The PRNG draws above
+        // happened regardless, so determinism is unaffected; the cell just keeps its prior genome this tick.
+        if (out != null && handleableOf(out).bondTypeCount > CytoTuning.GENOME_MAX_BOND_TYPES) return null
         return out
     }
 

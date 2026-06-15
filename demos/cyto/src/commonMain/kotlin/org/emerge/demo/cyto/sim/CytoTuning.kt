@@ -138,4 +138,10 @@ object CytoTuning {
      *  `0` disables mutation. At 1/100k a cell accrues well under one mutation per ~10k-tick lifetime, so
      *  most individuals persist unmodified while the population explores. */
     const val MUTATION_RATE_DENOM = 100_000
+    /** Max distinct bond-types a genome may reach (formed/broken/referenced). A mutation that would push a
+     *  genome past this is rejected, bounding each cell's metabolic reach — hence (with selective uptake)
+     *  its per-cell species to ≤ the molecules buildable from B bonds (B=5 → ≤52). The dense-chemistry
+     *  representation relies on this bound. Different lineages can carry different B-bond sets, so global
+     *  diversity isn't capped — only per-organism breadth. ⚙ */
+    const val GENOME_MAX_BOND_TYPES = 5
 }
