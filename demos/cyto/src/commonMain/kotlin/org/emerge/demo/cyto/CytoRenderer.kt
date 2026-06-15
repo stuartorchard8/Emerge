@@ -10,6 +10,7 @@ import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import kotlin.math.max
+import kotlin.math.sqrt
 import kotlin.math.min
 
 /**
@@ -80,10 +81,14 @@ class CytoRenderer {
                 val wx = -CytoLightField.HALF + (gx + 0.5f) * cell
                 fieldCx[i] = wx; fieldCy[i] = wy
                 val t = (field.sampleAt(wx, wy, tick).toFloat() / CytoLightField.STRENGTH.toFloat()).coerceIn(0f, 1f)
+                // Perceptual ramp from pure black (no floor) up to the peak yellow (1.0, 0.9, 0.43).
+                // sqrt lifts dim values so any non-zero light reads as clearly lit — ONLY t==0 is black
+                // (so a cell on the fringe of the daylight band, e.g. 30% peak, no longer looks dark).
+                val s = sqrt(t)
                 val b = i * 4
-                fieldColor[b] = 0.06f + t * 0.94f
-                fieldColor[b + 1] = 0.05f + t * 0.85f
-                fieldColor[b + 2] = 0.10f + t * 0.33f
+                fieldColor[b] = s
+                fieldColor[b + 1] = s * 0.90f
+                fieldColor[b + 2] = s * 0.43f
                 fieldColor[b + 3] = 1f
                 i++
             }
