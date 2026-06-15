@@ -16,7 +16,7 @@ object CytoSeed {
     // ── Seed reservoir: a Gaussian bump of free monomers around each light source ─────────────────────
     /** Peak free-monomer count seeded at a source grid cell — the matter the world starts with per
      *  source (hence the early population ceiling, until it's drawn down / recycled). */
-    const val MATTER_PEAK = 512
+    const val MATTER_PEAK = 512_000
     /** Gaussian radius of the seeded matter clumps (logical units) — decoupled from the light falloff so
      *  nutrient niches can be tight (low total starting matter) without dimming the light field. */
     const val MATTER_FALLOFF = 70f
@@ -29,23 +29,23 @@ object CytoSeed {
     const val MATTER_UNIFORM = false
     /** Per-monomer count per grid cell when [MATTER_UNIFORM]. Total matter ≈ GRID_RES² × this × species,
      *  so keep it small — ~8 ≈ the clumped world's ~216k atoms spread evenly. */
-    const val MATTER_UNIFORM_LEVEL = 8
+    const val MATTER_UNIFORM_LEVEL = 8_000
 
     // ── Seed cell composition (a freshly-spawned / founder cell) ──────────────────────────────────────
     /** Founder autotroph's starting cytoplasm (a small a/b reserve to bootstrap bonding before passive
      *  uptake kicks in). */
-    val SEED_CYTOPLASM: Map<String, Int> = mapOf("a" to 4, "b" to 4)
+    val SEED_CYTOPLASM: Map<String, Int> = mapOf("a" to 4_000, "b" to 4_000)
     /** Biomass a freshly-spawned cell (and the founder) starts with — a little structure so it doesn't
      *  instantly die to the death-on-empty-biomass rule. */
-    val STARTER_BIOMASS: Map<String, Int> = mapOf("ab" to 8)
+    val STARTER_BIOMASS: Map<String, Int> = mapOf("ab" to 8_000)
 
     // ── Seed genome thresholds — the *starting* values of evolvable gene gates (structure in CytoGenes) ─
     /** Autotroph: cytoplasm 'ab' kept back (passively leaks to the environment → food for heterotrophs). */
-    const val AUTOTROPH_LEAK_RESERVE = 4
+    const val AUTOTROPH_LEAK_RESERVE = 4_000
     /** Autotroph: divide once biomass reaches this many bonds. */
-    const val AUTOTROPH_DIVIDE_BIOMASS = 8
+    const val AUTOTROPH_DIVIDE_BIOMASS = 8_000
     /** Heterotroph: cytoplasm 'ab' kept as an energy reserve. */
-    const val HETEROTROPH_RESERVE = 2
+    const val HETEROTROPH_RESERVE = 2_000
     /** Heterotroph: divide once biomass reaches this many bonds. */
-    const val HETEROTROPH_DIVIDE_BIOMASS = 8
+    const val HETEROTROPH_DIVIDE_BIOMASS = 8_000
 }

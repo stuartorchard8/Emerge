@@ -111,7 +111,7 @@ class CytoSoaSpecTest {
             val b = SimBuilder(SimState())
             b.spawnCell(
                 CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle,
-                cytoplasm = mapOf("ab" to 40), biomass = mapOf("ab" to 8),
+                cytoplasm = mapOf("ab" to 40000), biomass = mapOf("ab" to 8000),
             )
             b.build()
         }
@@ -126,8 +126,8 @@ class CytoSoaSpecTest {
         val (sx, sy) = CytoLightField.SOURCES.first()
         val initial = run {
             val b = SimBuilder(SimState())
-            b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("a" to 4, "b" to 4), biomass = mapOf("ab" to 8))
-            b.spawnCell(CytoUnits.coord2(sx + 0.3f, sy), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 2), biomass = mapOf("ab" to 8))
+            b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("a" to 4000, "b" to 4000), biomass = mapOf("ab" to 8000))
+            b.spawnCell(CytoUnits.coord2(sx + 0.3f, sy), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 2000), biomass = mapOf("ab" to 8000))
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
             b.build()
         }
@@ -221,8 +221,8 @@ class CytoSoaSpecTest {
         val (sx, sy) = CytoLightField.SOURCES.first()
         val b = SimBuilder(SimState(randomSeed = 1))
         b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
-        val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, biomass = mapOf("ab" to 8), genome = genome)
-        val c = b.spawnCell(CytoUnits.coord2(sx + 0.5f, sy), Coord2.zero, CellType.Collector, biomass = mapOf("ab" to 8), genome = genome)
+        val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, biomass = mapOf("ab" to 8000), genome = genome)
+        val c = b.spawnCell(CytoUnits.coord2(sx + 0.5f, sy), Coord2.zero, CellType.Collector, biomass = mapOf("ab" to 8000), genome = genome)
         addSpring(b, a, c, cfg)
         b.update<ConnectionStateComponent>(a) { ConnectionStateComponent(mapOf(c to damage)) }
         b.update<ConnectionStateComponent>(c) { ConnectionStateComponent(mapOf(a to damage)) }
@@ -285,9 +285,9 @@ class CytoSoaSpecTest {
         // below it — and the actions move no matter (radius is not a conserved quantity).
         val initial = run {
             val b = SimBuilder(SimState())
-            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8), genome = flexGenome(ActionType.Expand))
-            b.spawnCell(CytoUnits.coord2(20f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8), genome = flexGenome(ActionType.Contract))
-            b.spawnCell(CytoUnits.coord2(40f, 0f), Coord2.zero, CellType.Blank, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8), genome = emptyList())
+            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8000), genome = flexGenome(ActionType.Expand))
+            b.spawnCell(CytoUnits.coord2(20f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8000), genome = flexGenome(ActionType.Contract))
+            b.spawnCell(CytoUnits.coord2(40f, 0f), Coord2.zero, CellType.Blank, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8000), genome = emptyList())
             b.build()
         }
         val ids = initial.components.getTable<CytoCellComponent>().asMap().keys.sortedBy { it.value }
@@ -304,8 +304,8 @@ class CytoSoaSpecTest {
         // longer fire (here, its `ab` fuel runs out) — via the same elastic blend that grows a cell.
         val initial = run {
             val b = SimBuilder(SimState())
-            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 80), biomass = mapOf("ab" to 8), genome = flexGenome(ActionType.Expand))
-            b.spawnCell(CytoUnits.coord2(20f, 0f), Coord2.zero, CellType.Blank, cytoplasm = mapOf("ab" to 80), biomass = mapOf("ab" to 8), genome = emptyList())
+            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 80), biomass = mapOf("ab" to 8000), genome = flexGenome(ActionType.Expand))
+            b.spawnCell(CytoUnits.coord2(20f, 0f), Coord2.zero, CellType.Blank, cytoplasm = mapOf("ab" to 80), biomass = mapOf("ab" to 8000), genome = emptyList())
             b.build()
         }
         val ids = initial.components.getTable<CytoCellComponent>().asMap().keys.sortedBy { it.value }
@@ -327,7 +327,7 @@ class CytoSoaSpecTest {
             Gene(EnergySource.BreakBond("ab"), GeneCondition(ConditionType.Touching, "", Comparison.Greater, 0), GeneAction(ActionType.Expand)),
         )
         fun cell(b: SimBuilder, x: Float) =
-            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 100), biomass = mapOf("ab" to 8), genome = touchExpand)
+            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 100000), biomass = mapOf("ab" to 8000), genome = touchExpand)
         val initial = run {
             val b = SimBuilder(SimState())
             cell(b, -0.22f); cell(b, 0.22f)   // ~0.06 overlap at MIN_RADIUS ⇒ touch, not weld

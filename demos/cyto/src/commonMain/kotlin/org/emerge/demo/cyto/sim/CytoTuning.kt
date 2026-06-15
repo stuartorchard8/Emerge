@@ -54,19 +54,20 @@ object CytoTuning {
     // ── Metabolism / energy (per gene, per tick) ─────────────────────────────────────────────────────
     /** light → quanta: `quanta = ⌊field × exposure × SCALE⌋` (a fully-exposed cell on a source gets
      *  ~`STRENGTH·SCALE` ops/tick). 1 quantum = 1 op. */
-    const val LIGHT_QUANTA_SCALE = 6000
+    const val LIGHT_QUANTA_SCALE = 6_000_000
     /** Connection damage healed per Repair op (one quantum). 0.25 ≈ the old free per-tick heal, so ~one
      *  op/tick maintains a lightly-loaded connection; more stress needs more energy. */
     const val REPAIR_PER_OP = 0.25f
 
     // ── Growth, size & death ─────────────────────────────────────────────────────────────────────────
     /** Biomass bonds for a full-size (radius 1.0) cell — `radius = sqrt(bonds / BONDS_PER_FULL)`. */
-    const val BONDS_PER_FULL = 16
+    const val BONDS_PER_FULL = 16_000
     /** Degradation: a cell's wear accumulator gains its total biomass bonds each tick; every
      *  DEGRADE_PERIOD of accumulated wear breaks one bond (so decay rate ∝ size). */
     const val DEGRADE_PERIOD = 4000
-    /** Cell dies when total biomass falls below this (1 ⇒ dies once biomass is empty). */
-    const val DEATH_BIOMASS = 1
+    /** Cell dies when total biomass falls below this. At the ×1000 scale a divided daughter is ~4000 bonds,
+     *  so 1000 is a real starvation floor with headroom (raise it for harsher culling). */
+    const val DEATH_BIOMASS = 1_000
     /** Min cell radius (logical), from the original Cyto `Cell`. */
     val MIN_RADIUS = Frac(1, 4)
     /** Elastic blend pulling a cell's radius toward its biomass baseline each tick (higher = slower,
