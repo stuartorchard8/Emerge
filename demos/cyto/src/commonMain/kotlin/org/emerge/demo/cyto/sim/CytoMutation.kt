@@ -14,10 +14,10 @@ package org.emerge.demo.cyto.sim
  */
 object CytoMutation {
 
-    /** Species an operand/gate mutation may pick (monomers + the simple bonded forms that actually
-     *  exist in this world; `FormBond` reads only the first atom of each operand). */
-    private val SPECIES = listOf("a", "b", "ab", "ba")
-    private val ATOMS = listOf("a", "b")
+    /** Species an operand/gate mutation may pick (the k=3 monomers + their directed bonded pairs;
+     *  `FormBond` reads only the first atom of each operand). Kept to the a,b,c alphabet. */
+    private val SPECIES = listOf("a", "b", "c", "aa", "ab", "ac", "ba", "bb", "bc", "ca", "cb", "cc")
+    private val ATOMS = listOf("a", "b", "c")
 
     /** Apply per-tick mutation to [genome]; returns a new list if anything changed, else null. */
     fun mutate(genome: List<Gene>, rateDenom: Int, nextInt: (Int) -> Int): List<Gene>? {

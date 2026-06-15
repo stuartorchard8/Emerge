@@ -20,8 +20,10 @@ object CytoSeed {
     /** Gaussian radius of the seeded matter clumps (logical units) — decoupled from the light falloff so
      *  nutrient niches can be tight (low total starting matter) without dimming the light field. */
     const val MATTER_FALLOFF = 70f
-    /** The free monomer species the world is seeded with (the starting matter alphabet). */
-    val SEED_MONOMERS = listOf("a", "b", "c", "d", "e", "f", "g")
+    /** The free monomer species the world is seeded with — the **k=3 element alphabet**. Capped at 3 to
+     *  bound the molecule species space (3 elements → ≤1884 possible molecules), which the upcoming
+     *  dense-chemistry representation depends on. Mutation's alphabet matches (a,b,c). */
+    val SEED_MONOMERS = listOf("a", "b", "c")
     /** Uniform reservoir: seed EVERY grid cell with [MATTER_UNIFORM_LEVEL] of each monomer instead of the
      *  Gaussian clumps around the sources — for the moving-light world, where the daylight grazes the whole
      *  torus and needs substrate everywhere (diffusion then refills grazed patches behind the band).
