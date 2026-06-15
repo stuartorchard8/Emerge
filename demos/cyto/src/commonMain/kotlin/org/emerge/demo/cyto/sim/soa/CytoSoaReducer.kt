@@ -106,6 +106,11 @@ class CytoSoaReducer(
     private var ssVx = LongArray(0); private var ssVy = LongArray(0)
     private var ssMass = LongArray(0)
     private var ssDx = LongArray(0); private var ssDy = LongArray(0)
+    // Per-EDGE precompute (indexed by CSR edge slot): velocity-solve normals (from frozen p0) + weight
+    // (from masses). Both are constant across the 4 velocity iterations, and the weight is also reused by
+    // the position solve — so they're computed once per tick instead of per-iteration per-edge.
+    private var ssEdgeCap = 0
+    private var ssEnX = LongArray(0); private var ssEnY = LongArray(0); private var ssEw = LongArray(0)
 
     private fun ensureSpringScratch(n: Int) {
         if (ssCap >= n) return
@@ -116,6 +121,12 @@ class CytoSoaReducer(
         ssMass = LongArray(n)
         ssDx = LongArray(n); ssDy = LongArray(n)
         ssCap = n
+    }
+
+    private fun ensureEdgeScratch(e: Int) {
+        if (ssEdgeCap >= e) return
+        ssEnX = LongArray(e); ssEnY = LongArray(e); ssEw = LongArray(e)
+        ssEdgeCap = e
     }
 
     fun tick(w: CytoWorld, input: CytoInput = CytoInput.EMPTY): CytoWorld {
@@ -340,6 +351,33 @@ class CytoSoaReducer(
         }
         if (!anySpring) return
 
+        // 0) precompute per-edge velocity normals (from the frozen start positions p0) and the mass weight
+        //    — both constant across the 4 velocity iterations (and the weight is reused by the position
+        //    solve), so doing them once here instead of per-iteration removes a lenRaw + 3 divisions per
+        //    edge from 3 of every 4 velocity sweeps. Invalid edges (no partner / coincident / zero total
+        //    mass) get a 0 normal or 0 weight, which makes their contribution exactly 0 — identical to the
+        //    old `continue`. Parallel per-body (each body owns a disjoint CSR edge range). Bit-identical.
+        val edges = csr.offset[n]
+        ensureEdgeScratch(edges)
+        val enX = ssEnX; val enY = ssEnY; val ew = ssEw
+        ColumnPartition.disjoint(n, executor, springParallelThreshold) { start, end ->
+            for (i in start until end) {
+                if (csr.degreeOf(i) == 0) continue
+                val mi = mass[i]; val p0ix = p0x[i]; val p0iy = p0y[i]
+                for (k in csr.offset[i] until csr.offset[i + 1]) {
+                    val j = csr.otherSlot[k]
+                    if (j < 0) { enX[k] = 0L; enY[k] = 0L; ew[k] = 0L; continue }
+                    val total = mi + mass[j]
+                    ew[k] = if (total <= 0L) 0L else mass[j] * FRAC_MAX / total.toInt().toLong()
+                    val ddx = p0x[j] - p0ix; val ddy = p0y[j] - p0iy
+                    val dist = lenRaw(ddx, ddy)
+                    if (dist == 0L) { enX[k] = 0L; enY[k] = 0L } else {
+                        enX[k] = ddx * FRAC_MAX / dist; enY[k] = ddy * FRAC_MAX / dist   // normFromLen
+                    }
+                }
+            }
+        }
+
         // 1) velocity solve: cancel relative NORMAL velocity (damping only), normals from start positions.
         //    Raw-Frac arithmetic mirrors the AoS Frac2/Norm ops op-for-op (see FRAC_MAX / lenRaw notes).
         repeat(ITERATIONS) {
@@ -347,18 +385,14 @@ class CytoSoaReducer(
                 for (i in start until end) {
                     if (csr.degreeOf(i) == 0) continue
                     var accX = 0L; var accY = 0L
-                    val mi = mass[i]; val vix = vx[i]; val viy = vy[i]; val p0ix = p0x[i]; val p0iy = p0y[i]
+                    val vix = vx[i]; val viy = vy[i]
                     for (k in csr.offset[i] until csr.offset[i + 1]) {
                         val j = csr.otherSlot[k]; if (j < 0) continue
-                        val ddx = p0x[j] - p0ix; val ddy = p0y[j] - p0iy   // d = pos0[j] - pos0[i]
-                        val dist = lenRaw(ddx, ddy); if (dist == 0L) continue
-                        val nx = ddx * FRAC_MAX / dist; val ny = ddy * FRAC_MAX / dist   // normFromLen
-                        val total = mi + mass[j]; if (total <= 0L) continue
+                        val nx = enX[k]; val ny = enY[k]
                         val rvx = vx[j] - vix; val rvy = vy[j] - viy
                         val relVel = rvx * nx / FRAC_MAX + rvy * ny / FRAC_MAX           // (relVel).dot(normal)
                         val vCorr = relVel * csr.dampRaw[k] / FRAC_MAX
-                        val weight = mass[j] * FRAC_MAX / total.toInt().toLong()         // Frac(mass[j], total.toInt())
-                        val scalar = vCorr * weight / FRAC_MAX                           // vCorr * weight
+                        val scalar = vCorr * ew[k] / FRAC_MAX                            // vCorr * weight
                         accX += nx * scalar / FRAC_MAX; accY += ny * scalar / FRAC_MAX   // normal * scalar
                     }
                     dx[i] = accX; dy[i] = accY
@@ -366,23 +400,23 @@ class CytoSoaReducer(
             }
             for (i in 0 until n) { if (csr.degreeOf(i) == 0) continue; vx[i] += dx[i]; vy[i] += dy[i] }
         }
-        // 2) position solve (pseudo-velocity): move working positions toward rest length.
+        // 2) position solve (pseudo-velocity): move working positions toward rest length. The normal must
+        //    be recomputed each iteration (working positions move), but the mass weight is the precomputed
+        //    [ew]; a 0 weight (zero total mass) zeroes the contribution, as the old `continue` did.
         repeat(ITERATIONS) {
             ColumnPartition.disjoint(n, executor, springParallelThreshold) { start, end ->
                 for (i in start until end) {
                     if (csr.degreeOf(i) == 0) continue
                     var accX = 0L; var accY = 0L
-                    val mi = mass[i]; val pix = px[i]; val piy = py[i]
+                    val pix = px[i]; val piy = py[i]
                     for (k in csr.offset[i] until csr.offset[i + 1]) {
                         val j = csr.otherSlot[k]; if (j < 0) continue
                         val ddx = px[j] - pix; val ddy = py[j] - piy     // d = pos[j] - pos[i]
                         val dist = lenRaw(ddx, ddy); if (dist == 0L) continue
                         val nx = ddx * FRAC_MAX / dist; val ny = ddy * FRAC_MAX / dist
-                        val total = mi + mass[j]; if (total <= 0L) continue
                         val lengthError = dist - csr.restRaw[k]                          // dist - Frac(rest)
                         val pCorr = lengthError * csr.stiffRaw[k] / FRAC_MAX
-                        val weight = mass[j] * FRAC_MAX / total.toInt().toLong()
-                        val scalar = pCorr * weight / FRAC_MAX
+                        val scalar = pCorr * ew[k] / FRAC_MAX
                         accX += nx * scalar / FRAC_MAX; accY += ny * scalar / FRAC_MAX
                     }
                     dx[i] = accX; dy[i] = accY
