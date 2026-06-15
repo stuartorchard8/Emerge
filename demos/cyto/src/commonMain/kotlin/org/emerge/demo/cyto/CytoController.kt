@@ -9,6 +9,8 @@ import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.SpeciesRegistry
+import org.emerge.demo.cyto.sim.handleableOf
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
 import org.emerge.demo.cyto.sim.soa.CytoWorld
@@ -217,12 +219,15 @@ class CytoController(
         val type: String,
         val radius: String,
         val totalBiomass: Int,
-        val cytoplasm: List<Pair<String, Int>>,
-        val biomass: List<Pair<String, Int>>,
+        /** Per-species metabolism table: environment (local reservoir) | cytoplasm | biomass, with the
+         *  passive-exchange flow direction between env and cytoplasm. Only metabolically-relevant species
+         *  (ones the cell can hold, or is currently carrying). */
+        val metabolism: List<MetRow>,
         val genes: List<String>,
-        /** The shared matter reservoir in the grid-cell this cell sits in (what's available locally). */
-        val reservoir: List<Pair<String, Int>>,
-    )
+    ) {
+        /** One row of the metabolism table. [dir] is ">>" (drawing in), "<<" (leaking out), "==" (held). */
+        class MetRow(val species: String, val env: Int, val cyto: Int, val bio: Int, val dir: String)
+    }
 
     /** Info for the **last-held** cell (persists past release), or null if none has been held or it has
      *  since died. Read each frame by the info panel. */
@@ -230,24 +235,41 @@ class CytoController(
         val id = lastHeldId ?: return null
         val state = currentState
         val cell = state.components.getTable<CytoCellComponent>().asMap()[id] ?: return null
-        // The shared reservoir in the cell's current grid-cell — so the panel shows what matter is locally
-        // available outside the cell, not just inside it.
-        val reservoir: List<Pair<String, Int>> = run {
+        // Local reservoir contents (the grid-cell this cell sits in).
+        val envMap: Map<String, Int> = run {
             val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid
             val pos = state.components.getTable<TransformComponent>()[id]?.pos
-            if (grid == null || pos == null) emptyList()
+            if (grid == null || pos == null) emptyMap()
             else grid.cellAt(grid.indexOf(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y)))
-                .entries.sortedBy { it.key }.map { it.key to it.value }
+        }
+        // Build the env|cyto|bio table over metabolically-relevant species: anything the cell is carrying
+        // (cytoplasm/biomass) plus anything in the reservoir it could metabolise. A species only in the
+        // reservoir that the cell can't use is hidden (it's the clutter we're filtering out). The arrow
+        // reflects what passive exchange does this tick: ">>" draws a usable species in (env > cyto),
+        // "<<" dumps an un-usable one down-gradient, "==" held (a usable surplus is now retained, or stuck).
+        val cytoMap = cell.cytoplasm; val bioMap = cell.biomass
+        val handleable = handleableOf(cell.genome)
+        val metabolism = (cytoMap.keys + bioMap.keys + envMap.keys).sorted().mapNotNull { s ->
+            val env = envMap[s] ?: 0; val cyto = cytoMap[s] ?: 0; val bio = bioMap[s] ?: 0
+            val canHold = handleable.canHold(SpeciesRegistry.id(s))
+            // Metabolically relevant = a species the cell can handle, or one locked in its biomass. Drop
+            // un-usable ballast (it shows as un-handleable junk passing through cytoplasm) — that's the
+            // clutter we're filtering out.
+            if (!canHold && bio == 0) return@mapNotNull null
+            val dir = when {
+                canHold && env > cyto -> ">>"
+                !canHold && cyto > env -> "<<"
+                else -> "=="
+            }
+            CellInfo.MetRow(s, env, cyto, bio, dir)
         }
         return CellInfo(
             id = id.value,
             type = cell.type.name,
             radius = fmt(cell.logicalRadius.toFloat()),
             totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass),
-            cytoplasm = cell.cytoplasm.entries.map { it.key to it.value },
-            biomass = cell.biomass.entries.map { it.key to it.value },
+            metabolism = metabolism,
             genes = cell.genome.map { describeGene(it) },
-            reservoir = reservoir,
         )
     }
 

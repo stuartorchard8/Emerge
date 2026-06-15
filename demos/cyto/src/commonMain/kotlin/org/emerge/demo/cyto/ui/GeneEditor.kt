@@ -51,9 +51,7 @@ class GeneEditor {
             keyValue("TYPE", info.type)
             keyValue("SIZE", info.radius)
             keyValue("BIOMASS", info.totalBiomass.toString())
-            if (info.cytoplasm.isNotEmpty()) { gap(); row("CYTOPLASM"); for ((s, c) in info.cytoplasm) keyValue(s, c.toString()) }
-            if (info.biomass.isNotEmpty()) { gap(); row("STRUCTURE"); for ((s, c) in info.biomass) keyValue(s, c.toString()) }
-            if (info.reservoir.isNotEmpty()) { gap(); row("RESERVOIR", 0xC8A050FFL); for ((s, c) in info.reservoir) keyValue(s, c.toString()) }
+            metabolismTable(info)
             if (info.genes.isNotEmpty()) {
                 gap(); row("GENES (tap to edit)")
                 info.genes.forEachIndexed { i, desc ->
