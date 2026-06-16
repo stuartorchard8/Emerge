@@ -758,15 +758,15 @@ class CytoSoaReducer(
             else longISqrt(ax * ax / FRAC_MAX + ay * ay / FRAC_MAX, 2L, ax + ay) * SQRT_MAX_INT
         }
 
-        // Integer sqrt, identical to Frac2.longISqrt (same default bounds), so lenRaw matches Frac2.len.
+        // Integer sqrt, identical to Frac2.longISqrt (same fast double-seeded exact floor + [min,max]
+        // clamp), so lenRaw matches Frac2.len. See Frac2.longISqrt for the equivalence/determinism note.
         private fun longISqrt(n: Long, min: Long = 2L, max: Long = 2L * FRAC_MAX): Long {
             if (n < 2) return n
-            var low = min; var high = max; var result = min
-            while (low <= high) {
-                val mid = low + (high - low) / 2
-                if (mid <= n / mid) { result = mid; low = mid + 1 } else high = mid - 1
-            }
-            return result
+            var x = kotlin.math.sqrt(n.toDouble()).toLong()
+            if (x < 1L) x = 1L
+            while (x > n / x) x--
+            while (x + 1L <= n / (x + 1L)) x++
+            return if (x < min) min else if (x > max) max else x
         }
     }
 }

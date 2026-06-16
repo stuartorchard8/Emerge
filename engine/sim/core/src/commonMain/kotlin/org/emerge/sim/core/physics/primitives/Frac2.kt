@@ -57,21 +57,20 @@ data class Frac2(val x: Frac, val y: Frac) {
          *  (2·Int.MAX² ≈ 9.22e18 < Long.MAX), so [len] falls back to the value-space sqrt. */
         private const val HYPOT_RAW_MAX = Int.MAX_VALUE.toLong()
 
+        // Exact floor(√n) clamped to [min, max]. The former bisection over [min, max] was, for n ≥ 2,
+        // exactly clamp(floor(√n), min, max) — and for n < 2 it returns n. This computes the same value
+        // from a double seed corrected to integer exactness (the true root is < 2^52 for every n in range,
+        // so `sqrt(n.toDouble())` is within ±1 and the two correction loops finish in O(1)), trading the
+        // ~32 divisions of the bisection for one sqrt + a couple of overflow-safe division checks. The
+        // corrected result is the exact integer floor regardless of the double's rounding, so it is
+        // deterministic across platforms and bit-identical to the old bisection.
         private fun longISqrt(n: Long, min: Long = 2L, max: Long = 2*Int.MAX_VALUE.toLong()): Long {
             if (n < 2) return n
-            var low = min
-            var high = max
-            var result = min
-            while (low <= high) {
-                val mid = low + (high - low) / 2
-                if (mid <= n / mid) {
-                    result = mid
-                    low = mid + 1
-                } else {
-                    high = mid - 1
-                }
-            }
-            return result
+            var x = kotlin.math.sqrt(n.toDouble()).toLong()
+            if (x < 1L) x = 1L
+            while (x > n / x) x--                 // descend until x·x ≤ n
+            while (x + 1L <= n / (x + 1L)) x++     // ascend until (x+1)·(x+1) > n  → x = floor(√n)
+            return if (x < min) min else if (x > max) max else x
         }
         val sqrtMaxInt = longISqrt(Int.MAX_VALUE.toLong())
         private fun fracSqrt(f: Frac, max: Long): Frac {
