@@ -154,6 +154,12 @@ class CytoSoaReducer(
     private val bioNeighbourIds = HashMap<EntityId, List<EntityId>>()
     private val bioCapSum = HashMap<Int, Long>()
     private val bioOrderedWorks = ArrayList<CellWork>()
+    // Ascending-EntityId slot order (Import draw order + mutation PRNG order), as a reusable IntArray —
+    // replaces a per-tick `(0 until n).sortedBy { entityId }`, which boxed n Integers + a List every tick.
+    // Sorted via a packed (entityId<<32 | slot) LongArray so the primitive sort needs no boxing/comparator;
+    // entityIds are unique so the slot tiebreak never differs from the old stable sort.
+    private var bioOrder = IntArray(0)
+    private var bioOrderPacked = LongArray(0)
 
     private fun ensureBioScratch(n: Int) {
         if (bioCap >= n) return
@@ -521,7 +527,11 @@ class CytoSoaReducer(
         val grid = w.grid   // post-diffusion; biology draws/deposits in place (copy-on-write)
 
         ensureBioScratch(n)
-        val ordered = (0 until n).sortedBy { w.entityId[it] }   // ascending-EntityId (Import order + PRNG order)
+        if (bioOrder.size < n) { bioOrder = IntArray(n); bioOrderPacked = LongArray(n) }
+        val ordered = bioOrder   // ascending-EntityId (Import order + PRNG order); valid in [0, n)
+        for (i in 0 until n) bioOrderPacked[i] = (w.entityId[i].toLong() shl 32) or i.toLong()
+        bioOrderPacked.sort(0, n)
+        for (k in 0 until n) ordered[k] = (bioOrderPacked[k] and 0xFFFFFFFFL).toInt()
         val works = bioWorksMap.also { it.clear() }            // pooled, reused each tick
         val neighbourIds = bioNeighbourIds.also { it.clear() }
         // Light shading — interference competition for energy. Cells sharing a grid-cell split that
@@ -536,7 +546,8 @@ class CytoSoaReducer(
         val baseQuantaRaw = bioBaseQuanta   // ((sample × exposure) × SCALE).raw, per ordered position
         val captureMilli = bioCapture       // (exposure × radius) × 1000, per ordered position
         val capSumByGrid = bioCapSum.also { it.clear() }   // Σ captureMilli per grid-cell (only used when shading)
-        for ((k, slot) in ordered.withIndex()) {
+        for (k in 0 until n) {
+            val slot = ordered[k]
             val id = EntityId(w.entityId[slot])
             val deg = w.csr.degreeOf(slot)
             val base = w.csr.offset[slot]
@@ -584,7 +595,8 @@ class CytoSoaReducer(
         // /MAX) keeps full integer precision and, for a lone cell where Σcap == cap, reduces to the same
         // un-shaded value. With shading off, every cell simply gets its own full light (no co-located
         // split) — a toggle to A/B whether shading still matters now the day/night cycle drives selection.
-        for ((k, slot) in ordered.withIndex()) {
+        for (k in 0 until n) {
+            val slot = ordered[k]
             val work = works.getValue(EntityId(w.entityId[slot]))
             work.quanta = if (!CytoTuning.LIGHT_SHADING) {
                 (baseQuantaRaw[k] / Int.MAX_VALUE.toLong()).toInt()
@@ -595,17 +607,19 @@ class CytoSoaReducer(
         }
 
         val orderedWorks = bioOrderedWorks.also { it.clear() }
-        for (slot in ordered) orderedWorks.add(bioWorks[slot]!!)
+        for (k in 0 until n) orderedWorks.add(bioWorks[ordered[k]]!!)
         CytoBiologyCore.passiveEnvExchange(orderedWorks, grid)
         for (work in orderedWorks) CytoBiologyCore.runGenes(work, grid)
         CytoBiologyCore.diffuse(works, neighbourIds)
         val divide = ArrayList<EntityId>(); val destroy = ArrayList<EntityId>()
-        for (slot in ordered) {
+        for (k in 0 until n) {
+            val slot = ordered[k]
             val id = EntityId(w.entityId[slot])
             CytoBiologyCore.finish(id, bioWorks[slot]!!, grid, divide, destroy)
         }
 
-        for (slot in ordered) {
+        for (k in 0 until n) {
+            val slot = ordered[k]
             val id = EntityId(w.entityId[slot])
             val work = bioWorks[slot]!!
             val mutated = if (w.entityId[slot] == noMutateEntityId) null   // focused cell: frozen against mutation
