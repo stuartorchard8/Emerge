@@ -311,6 +311,18 @@ class CytoSoaSpecTest {
     }
 
     @Test
+    fun mutationCanGrowOperandsPastTwoAtoms() {
+        // Scripted PRNG drives one point-mutation that appends an atom to a FormBond operand, so the operand
+        // length itself evolves (not capped at the old mono/dimer pool). Draw order in CytoMutation.mutate:
+        // del,drift,point,dup (each fires on 0); then pointMutate's nextInt(8) case; then mutateSpecies.
+        val seq = intArrayOf(1, 1, 0, 1, /*case*/3, /*grow*/0, /*atom 'a'*/0)
+        var i = 0
+        val gene = Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(100)), GeneAction(ActionType.FormBond, "ab", "b"))
+        val out = CytoMutation.mutate(listOf(gene), rateDenom = 200) { seq[i++] }!!
+        assertEquals("aba", out[0].action.a, "FormBond operand should grow ab→aba (append), not stay a dimer")
+    }
+
+    @Test
     fun formBondMatchesBySuffixAndPrefix() {
         // FormBond "ab" "b" should bond a molecule ENDING WITH "ab" to one STARTING WITH "b" — i.e. ab+b→abb
         // — and must NOT touch the bare monomer "a" (which the looser single-atom "ends in a" rule would have

@@ -14,10 +14,10 @@ package org.emerge.demo.cyto.sim
  */
 object CytoMutation {
 
-    /** Species an operand/gate mutation may pick (the k=3 monomers + their directed bonded pairs;
-     *  `FormBond` reads only the first atom of each operand). Kept to the a,b,c alphabet. */
-    private val SPECIES = listOf("a", "b", "c", "aa", "ab", "ac", "ba", "bb", "bc", "ca", "cb", "cc")
     private val ATOMS = listOf("a", "b", "c")
+    /** Longest a species operand may drift to — the registry's max molecule length (k²+1). Operands rarely
+     *  reach it (drift is ±1/mutation and short-biased), so it almost never binds; it just bounds the space. */
+    private val MAX_OPERAND_LEN = SpeciesRegistry.species.maxOf { it.length }
 
     /** Apply per-tick mutation to [genome]; returns a new list if anything changed, else null. */
     fun mutate(genome: List<Gene>, rateDenom: Int, nextInt: (Int) -> Int): List<Gene>? {
@@ -74,21 +74,37 @@ object CytoMutation {
         0 -> g.copy(condition = g.condition.copy(cmp = flip(g.condition.cmp)))
         1 -> g.copy(condition = g.condition.copy(lhs = mutateOperand(g.condition.lhs, nextInt)))
         2 -> g.copy(condition = g.condition.copy(rhs = mutateOperand(g.condition.rhs, nextInt)))
-        3 -> g.copy(action = g.action.copy(a = pick(SPECIES, nextInt)))
-        4 -> g.copy(action = g.action.copy(b = pick(SPECIES, nextInt)))
+        3 -> g.copy(action = g.action.copy(a = mutateSpecies(g.action.a, nextInt)))
+        4 -> g.copy(action = g.action.copy(b = mutateSpecies(g.action.b, nextInt)))
         5 -> g.copy(action = g.action.copy(type = ActionType.entries[nextInt(ActionType.entries.size)]))
         6 -> g.copy(efficiency = (g.efficiency + if (nextInt(2) == 0) -1 else 1).coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR))  // nudge the efficiency gear ±1
         else -> g.copy(source = flipSource(g.source, nextInt))
     }
 
     /** Re-roll one condition operand to a fresh kind: a [Operand.Constant] (keeping any prior constant
-     *  value, so drift can still tune it), a [Operand.Chem] of a random species, [Operand.Biomass], or
-     *  [Operand.Touching]. */
+     *  value, so drift can still tune it), a [Operand.Chem] (drifting its species — see [mutateSpecies]),
+     *  [Operand.Biomass], or [Operand.Touching]. */
     private fun mutateOperand(op: Operand, nextInt: (Int) -> Int): Operand = when (nextInt(4)) {
         0 -> Operand.Constant((op as? Operand.Constant)?.value ?: 0)
-        1 -> Operand.Chem(pick(SPECIES, nextInt))
+        1 -> Operand.Chem(mutateSpecies((op as? Operand.Chem)?.species ?: "", nextInt))
         2 -> Operand.Biomass
         else -> Operand.Touching
+    }
+
+    /** Drift a species operand atom-by-atom — grow (append a random atom), shrink (drop the last), or
+     *  substitute one atom — so the operand's LENGTH itself evolves: FormBond suffix/prefix specificity, and
+     *  Convert/Import/Chem species. Stays in `[1, MAX_OPERAND_LEN]`, short-biased (drift is ±1). A result
+     *  that isn't a valid registry species is a neutral no-op for Convert/Import (selection prunes it) and a
+     *  literal suffix/prefix filter for FormBond — matching what the in-game atom-builder editor allows. */
+    private fun mutateSpecies(current: String, nextInt: (Int) -> Int): String = when (nextInt(3)) {
+        0 -> if (current.length < MAX_OPERAND_LEN) current + pick(ATOMS, nextInt) else substituteAtom(current, nextInt)  // grow
+        1 -> if (current.length > 1) current.dropLast(1) else pick(ATOMS, nextInt)                                       // shrink (keep ≥1)
+        else -> if (current.isEmpty()) pick(ATOMS, nextInt) else substituteAtom(current, nextInt)                        // substitute
+    }
+
+    private fun substituteAtom(s: String, nextInt: (Int) -> Int): String {
+        val i = nextInt(s.length)
+        return s.substring(0, i) + pick(ATOMS, nextInt) + s.substring(i + 1)
     }
 
     private fun flip(c: Comparison) = if (c == Comparison.Greater) Comparison.Less else Comparison.Greater
