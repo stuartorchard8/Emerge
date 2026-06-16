@@ -53,17 +53,34 @@ it drives the solar-vs-chem divergence.
 - Both cell-panel flow arrows are *predicted* from genome + state, not measured per-tick deltas (fine for
   the steady story; a gated-off gene still shows its intent).
 
-## Performance (2026-06-16 check)
+## Performance (2026-06-16 check, then optimised)
 
-NOT a regression. The ~4× perceived slowdown since the perf spike is ~3.6× more cells (save grew 1255 →
-4546 cells — metabolic-leak/hoarding raised viability/carrying capacity). Per-cell cost is flat/better:
-biology ~3.0 µs/cell (was 3.06), forces ~1.26 (was 1.46). Tick ~24.7 ms at 4546 cells (~40 TPS). Biology
-(56%) is the dominant phase and is compute-bound + sequential (shared grid → hard to parallelise). Headroom
-levers if wanted: harder culling / smaller world / population cap; otherwise it's just a richer ecosystem.
+The perceived slowdown was never a per-cell code regression — it's ~3.6× more cells (metabolic-leak/hoarding
+raised carrying capacity) and denser welded colonies (break-powered division). With the profile re-run on a
+535-cell founder colony (CytoBench probe, `-Dcytobench=1`), then a round of **bit-identical** throughput
+work landed (golden-gated; tick **3.73 → 1.35 ms, ~2.8×** at 535 cells):
+
+- **Fast exact integer sqrt** (Frac2.longISqrt, Frac.isqrt, the cyto reducer's lenRaw copy): the old
+  ~32-iteration division-per-step bisection → a double seed corrected to the exact integer floor (≈2
+  divisions). Biggest win — it's per-edge×iter in the spring solve and per-pair in contacts. Forces
+  942→154 µs, connections 129→20 µs, biology (biomassRadius) 800→656 µs.
+- **Contact box-filter before the sort**: a single large hoarding cell coarsens the broadphase grid
+  (cellSize ≥ 2·maxRadius), so each 3×3 window held ~73 far candidates and the O(cc²) per-cell insertion
+  sort dominated. Move the AABB test into the neighbour gather → sort only the ~0.8/cell that overlap.
+  Contacts 2092→377 µs.
+- **SpatialGrid reuse** across ticks (clearForReuse) — steady-state broadphase is now allocation-free
+  (tick garbage 1.59→~1.3 MB). GC win, not a CPU one.
+- **Reusable biology cell-order array** (drop per-tick Integer boxing) — small steady alloc win.
+
+Remaining: biology is now the dominant phase (~49%) and is compute-bound + sequential **by design** (shared
+reservoir grid + EntityId-ordered mutation PRNG → not bit-identically parallelisable without grid-cell
+partitioning). The next real lever is parallelising biology across grid-cells (medium effort, determinism-
+sensitive) or reducing per-cell work; otherwise harder culling / smaller world / population cap.
 
 Watch-items the bench surfaced (not perf-critical): cells hoard hard (one held 252k cytoplasm molecules —
-the gradient soft-cap barely bites under the abundant-matter dials), and genome bloat has an outlier (max 53
-genes, median 10) — check the bloat tax is still effective.
+the gradient soft-cap barely bites under the abundant-matter dials; this also coarsens the broadphase, so
+capping it helps perf too), and genome bloat has an outlier (max 53 genes, median 10) — check the bloat tax
+is still effective.
 
 ## Tooling / interaction (candidates)
 
