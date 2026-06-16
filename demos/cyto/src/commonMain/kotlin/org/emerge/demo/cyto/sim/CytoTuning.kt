@@ -112,8 +112,9 @@ object CytoTuning {
      *  its biomass/metabolic size grows past it. Decouples emergent metabolic size from physical size: a
      *  hoarding cell can be metabolically huge but never balloons its collider, which would otherwise coarsen
      *  the spatial grid (cellSize = 2·maxRadius) and weld it to the whole colony — an O(n·degree) per-tick
-     *  blow-up. Normal cells sit well under this (biomass ~8k ⇒ radius ~0.7), so only pathological giants cap. */
-    val MAX_COLLISION_RADIUS = Frac(2, 1)
+     *  blow-up. Normal cells sit under this (radius 1.0 = biomass 16k; carrying-capacity cells ~0.7-0.87, and
+     *  the seed GROW gates are < 16k), so only oversized cells have their footprint capped. */
+    val MAX_COLLISION_RADIUS = Frac(1, 1)
 
     // ── Exposure / shading ───────────────────────────────────────────────────────────────────────────
     /** Max connected neighbours considered when computing a cell's surface exposure (a cell with more is
