@@ -6,6 +6,7 @@ import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.sim.createCytoInitialState
 import org.emerge.demo.cyto.sim.CytoCellComponent
+import org.emerge.demo.cyto.sim.CytoExposure
 import org.emerge.demo.cyto.sim.CytoLightField
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
@@ -21,6 +22,7 @@ import org.emerge.demo.cyto.sim.soa.CytoWorld
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.physics.components.ColliderComponent
+import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.sim.SimState
 import kotlin.concurrent.Volatile
@@ -224,7 +226,7 @@ class CytoController(
         val type: String,
         val radius: String,
         val totalBiomass: Int,
-        /** Ambient light at the cell's position this tick, as % of peak (the field the heatmap shows). */
+        /** Light the cell actually captures this tick (ambient field × surface exposure), as % of peak. */
         val light: String,
         /** Per-species metabolism table: environment (local reservoir) | cytoplasm | biomass, with a flow
          *  arrow on each boundary. Only metabolically-relevant species (handleable, or stored in biomass). */
@@ -245,12 +247,23 @@ class CytoController(
         val id = lastHeldId ?: return null
         val state = currentState
         val cell = state.components.getTable<CytoCellComponent>().asMap()[id] ?: return null
-        val pos = state.components.getTable<TransformComponent>()[id]?.pos
-        // Ambient light at the cell this tick, as % of peak (matches the heatmap; uses the live sim clock).
+        val transforms = state.components.getTable<TransformComponent>()
+        val pos = transforms[id]?.pos
+        // The light the cell actually CAPTURES = ambient field × surface exposure (how much of its surface
+        // isn't buried by connected neighbours), as % of peak — what the cell's energy depends on, not the
+        // raw field. Exposure replicates CytoExposure (diamond-angle of each neighbour delta); lone = full.
         val light: String = if (pos == null) "?" else {
-            val sample = CytoLightField.default()
-                .sampleAt(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y), state.tick).toFloat()
-            "${(sample / CytoTuning.LIGHT_STRENGTH.toFloat() * 100f).coerceIn(0f, 100f).toInt()}%"
+            val sample = CytoLightField.default().sampleAt(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y), state.tick)
+            val angles = LongArray(CytoExposure.MAX_NEIGHBOURS)
+            var ek = 0
+            for (sp in state.components.getTable<SpringConstraintComponent>()[id]?.springs.orEmpty()) {
+                if (ek >= CytoExposure.MAX_NEIGHBOURS) break
+                val np = transforms[sp.other]?.pos ?: continue
+                val d = np - pos
+                angles[ek++] = CytoExposure.diamondAngle(d.x, d.y).raw
+            }
+            val exposure = CytoExposure.weight(angles, ek).toFloat()
+            "${(sample.toFloat() * exposure / CytoTuning.LIGHT_STRENGTH.toFloat() * 100f).coerceIn(0f, 100f).toInt()}%"
         }
         // Local reservoir contents (the grid-cell this cell sits in).
         val envMap: Map<String, Int> = run {
