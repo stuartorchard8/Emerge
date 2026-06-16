@@ -164,6 +164,9 @@ class CytoSoaReducer(
     private var bioCapture = LongArray(0)
     private val bioWorksMap = LinkedHashMap<EntityId, CellWork>()   // reused (cleared each tick)
     private val bioNeighbourIds = HashMap<EntityId, List<EntityId>>()
+    // Dividing cell → the morphogen its fired Mitosis gene named (asymmetric mitosis); populated in the
+    // biology finish loop, read when emitting CellDivisionIntent in bridgeLifecycle. Reused (cleared each tick).
+    private val divideMorphogen = HashMap<EntityId, String>()
     private val bioCapSum = HashMap<Int, Long>()
     private val bioOrderedWorks = ArrayList<CellWork>()
     // Ascending-EntityId slot order (Import draw order + mutation PRNG order), as a reusable IntArray —
@@ -644,10 +647,13 @@ class CytoSoaReducer(
         }
         CytoBiologyCore.diffuse(works, neighbourIds)
         val divide = ArrayList<EntityId>(); val destroy = ArrayList<EntityId>()
+        divideMorphogen.clear()
         for (k in 0 until n) {
             val slot = ordered[k]
             val id = EntityId(w.entityId[slot])
-            CytoBiologyCore.finish(id, bioWorks[slot]!!, grid, divide, destroy)
+            val work = bioWorks[slot]!!
+            CytoBiologyCore.finish(id, work, grid, divide, destroy)
+            if (work.dividing && work.divideMorphogen.isNotEmpty()) divideMorphogen[id] = work.divideMorphogen
         }
 
         for (k in 0 until n) {
@@ -749,7 +755,7 @@ class CytoSoaReducer(
         for (idv in interactDestroy) builder.emit(CellDestroyIntent(EntityId(idv)))  // Delete taps (interact, before biology)
         for (id in destroy) builder.emit(CellDestroyIntent(id))         // biology order
         for (i in weldLo.indices) builder.emit(WeldIntent(EntityId(weldLo[i]), EntityId(weldHi[i]))) // contact order
-        for (id in divide) builder.emit(CellDivisionIntent(id))         // biology order
+        for (id in divide) builder.emit(CellDivisionIntent(id, divideMorphogen[id] ?: ""))  // biology order
         CytoLifecycleSystem.update(cfg, builder, inputs)
         val out = builder.build()
 

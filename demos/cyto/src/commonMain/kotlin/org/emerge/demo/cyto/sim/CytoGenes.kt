@@ -201,6 +201,10 @@ class CellWork(
     /** Set true by a fired Mitosis gene; the lifecycle splits the cell. */
     var dividing = false
 
+    /** The fired Mitosis gene's operand (its [GeneAction.a]) — the morphogen species allocated **whole to
+     *  the daughter** on division (asymmetric mitosis, MORPHOGENESIS.md §C). "" ⇒ symmetric 50/50 split. */
+    var divideMorphogen: String = ""
+
     /** True once a Repair gene healed any connection this tick — gates writing [connectionDamage] back. */
     var repaired = false
 
@@ -235,6 +239,7 @@ class CellWork(
         this.gridIndex = gridIndex
         connectionDamage.clear()
         dividing = false
+        divideMorphogen = ""
         repaired = false
     }
 }

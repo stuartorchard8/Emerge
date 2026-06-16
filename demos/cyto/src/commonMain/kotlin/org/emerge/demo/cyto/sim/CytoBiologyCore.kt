@@ -292,7 +292,7 @@ object CytoBiologyCore {
                 val want = (k.toLong() * CytoTuning.IMPORT_GRADIENT_SCALE / (CytoTuning.IMPORT_GRADIENT_SCALE + excess)).toInt()
                 val got = grid.draw(work.gridIndex, importId, want); if (got > 0) work.cytoplasm.inc(importId, got)
             }
-            ActionType.Mitosis -> work.dividing = true
+            ActionType.Mitosis -> { work.dividing = true; work.divideMorphogen = act.a }
             ActionType.Repair -> applyRepair(work, k)
             ActionType.Contract -> work.logicalRadius = (work.logicalRadius - FLEX_STEP * k).coerceAtLeast(MIN_RADIUS)
         }

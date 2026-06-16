@@ -9,6 +9,7 @@ data class WeldIntent(val a: EntityId, val b: EntityId)
 data class DetachIntent(val id: EntityId)
 
 /** A cell should divide / die. Emitted by the biology phase (CytoSoaReducer.biology), consumed by
- *  [CytoLifecycleSystem] in a later phase. */
-data class CellDivisionIntent(val id: EntityId)
+ *  [CytoLifecycleSystem] in a later phase. [morphogen] (the fired Mitosis gene's operand, "" if none)
+ *  is the species allocated **whole to the daughter** for asymmetric mitosis (MORPHOGENESIS.md §C). */
+data class CellDivisionIntent(val id: EntityId, val morphogen: String = "")
 data class CellDestroyIntent(val id: EntityId)
