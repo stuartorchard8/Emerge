@@ -6,15 +6,16 @@ package org.emerge.demo.cyto.sim
  *
  * One gene per line, three `:`-separated parts — **energy source : condition : action**:
  *
- *     Light : ChemQty a < 4 : Import a       # import 'a' while the cytoplasm has < 4
- *     Light : ChemQty a > 0 : FormBond a b   # bond an 'a'-ending molecule to a 'b'-starting one
- *     Light : ChemQty ab > 0 : Convert ab    # lock 'ab' into biomass
- *     Light : Biomass > 8 : Mitosis          # divide once biomass exceeds 8 bonds
+ *     Light : a < 4 : Import a            # import 'a' while the cytoplasm 'a' count < 4
+ *     Light : a > 0 : FormBond a b        # bond an 'a'-ending molecule to a 'b'-starting one
+ *     Light : ab > 0 : Convert ab         # lock 'ab' into biomass
+ *     Light : Biomass > 8 : Mitosis       # divide once biomass exceeds 8 bonds
+ *     Break ab : Biomass < ab : Convert ab  # grow only while biomass is below the stored 'ab' reserve
  *
- * Condition is `ChemQty <species> <>|<> <n>` or `Biomass <>|<> <n>`; action is `Import <species>`,
- * `FormBond <a> <b>`, `Convert <species>`, `Expand`, `Contract`, `Mitosis`, or `Repair`. Blank lines and
- * `#` comments are ignored.
- * Round-trips every preset genome (see GeneCodecTest).
+ * Condition is `<operand> <>|<> <operand>`, each operand one of: an integer (a constant), `Biomass`,
+ * `Touching`, or a species token (its cytoplasm count). Action is `Import <species>`, `FormBond <a> <b>`,
+ * `Convert <species>`, `Expand`, `Contract`, `Mitosis`, or `Repair`. Blank lines and `#` comments are
+ * ignored. Round-trips every preset genome (see GeneCodecTest).
  */
 object GeneCodec {
 
@@ -48,26 +49,27 @@ object GeneCodec {
         else -> throw IllegalArgumentException("unknown energy source: ${t[0]}")
     }
 
-    private fun condition(c: GeneCondition): String = when (c.type) {
-        ConditionType.ChemQty -> "ChemQty ${tok(c.species)} ${cmp(c.cmp)} ${c.threshold}"
-        ConditionType.Biomass -> "Biomass ${cmp(c.cmp)} ${c.threshold}"
-        ConditionType.Touching -> "Touching ${cmp(c.cmp)} ${c.threshold}"
+    private fun condition(c: GeneCondition): String =
+        "${operand(c.lhs)} ${cmp(c.cmp)} ${operand(c.rhs)}"
+
+    private fun parseCondition(t: List<String>): GeneCondition {
+        require(t.size == 3) { "condition needs '<operand> <>|<> <operand>': ${t.joinToString(" ")}" }
+        return GeneCondition(parseOperand(t[0]), cmp(t[1]), parseOperand(t[2]))
     }
 
-    private fun parseCondition(t: List<String>): GeneCondition = when (t[0]) {
-        "ChemQty" -> {
-            require(t.size == 4) { "ChemQty needs 'ChemQty <species> <>|<> <n>': ${t.joinToString(" ")}" }
-            GeneCondition(ConditionType.ChemQty, untok(t[1]), cmp(t[2]), t[3].toInt())
-        }
-        "Biomass" -> {
-            require(t.size == 3) { "Biomass needs 'Biomass <>|<> <n>': ${t.joinToString(" ")}" }
-            GeneCondition(ConditionType.Biomass, "", cmp(t[1]), t[2].toInt())
-        }
-        "Touching" -> {
-            require(t.size == 3) { "Touching needs 'Touching <>|<> <n>': ${t.joinToString(" ")}" }
-            GeneCondition(ConditionType.Touching, "", cmp(t[1]), t[2].toInt())
-        }
-        else -> throw IllegalArgumentException("unknown condition: ${t[0]}")
+    private fun operand(op: Operand): String = when (op) {
+        is Operand.Constant -> op.value.toString()
+        is Operand.Chem -> tok(op.species)
+        Operand.Biomass -> "Biomass"
+        Operand.Touching -> "Touching"
+    }
+
+    // A token is `Biomass`/`Touching` (live readings), an integer (a constant), or a species token (its
+    // cytoplasm count). Species are lowercase letters, so they never collide with an integer or a keyword.
+    private fun parseOperand(s: String): Operand = when (s) {
+        "Biomass" -> Operand.Biomass
+        "Touching" -> Operand.Touching
+        else -> s.toIntOrNull()?.let { Operand.Constant(it) } ?: Operand.Chem(untok(s))
     }
 
     private fun action(a: GeneAction): String = when (a.type) {

@@ -31,22 +31,31 @@ sealed class EnergySource {
 /** A binary gate comparator. */
 enum class Comparison { Greater, Less }
 
-/** What a gene's binary condition tests. */
-enum class ConditionType {
-    /** Count of [GeneCondition.species] in the cytoplasm ≷ [GeneCondition.threshold]. */
-    ChemQty,
-    /** Total biomass (Σ count × bond-count) ≷ [GeneCondition.threshold]; [GeneCondition.species] ignored. */
-    Biomass,
-    /** Number of **un-connected** cells this cell is in physical contact with this tick ≷
-     *  [GeneCondition.threshold] ([GeneCondition.species] ignored) — i.e. `Touching > 0` fires while the
-     *  cell is bumping a neighbour it isn't welded to. The matter-model port of old Cyto's `Touch` gene
-     *  input (a cell sensing collision pressure); welded neighbours don't count (they're structure, not
-     *  a touch event). A reactive, contact-driven gate — e.g. divide / secrete / grip on contact. */
-    Touching,
+/** One side of a gene's binary [GeneCondition] — the value fed to the comparator. Either a fixed
+ *  [Constant] (the former gate "threshold"), or one of three **live readings** of the cell this tick:
+ *  a cytoplasm [Chem] count, total [Biomass], or the [Touching] contact count. Because *both* sides of a
+ *  condition are operands, a gene can gate on a relationship between two live quantities — e.g.
+ *  `Biomass < Chem("ab")` ("while I'm smaller than my stored `ab` reserve") — not only variable-vs-constant. */
+sealed class Operand {
+    /** A fixed integer compared against (the former gate threshold). */
+    data class Constant(val value: Int) : Operand()
+
+    /** Count of [species] in the cytoplasm (0 for an absent / unknown species). */
+    data class Chem(val species: String) : Operand()
+
+    /** Total biomass — Σ count × bond-count (also drives cell size + the death threshold). */
+    object Biomass : Operand()
+
+    /** Number of **un-connected** cells this cell is in physical contact with this tick — i.e.
+     *  `Touching > 0` fires while the cell is bumping a neighbour it isn't welded to. The matter-model
+     *  port of old Cyto's `Touch` gene input (a cell sensing collision pressure); welded neighbours don't
+     *  count (they're structure, not a touch event). A reactive, contact-driven gate. */
+    object Touching : Operand()
 }
 
-/** The one binary gate that turns a gene on/off this tick. */
-data class GeneCondition(val type: ConditionType, val species: String, val cmp: Comparison, val threshold: Int)
+/** The one binary gate that turns a gene on/off this tick: `lhs cmp rhs`, each side an [Operand]
+ *  (a [Operand.Constant] or a live cell reading). */
+data class GeneCondition(val lhs: Operand, val cmp: Comparison, val rhs: Operand)
 
 /** The single action a gene performs (v1 set). */
 enum class ActionType {
@@ -115,7 +124,8 @@ fun handleableOf(genome: List<Gene>): Handleable {
     }
     for (g in genome) {
         (g.source as? EnergySource.BreakBond)?.let { addSpecies(it.bond) }
-        if (g.condition.type == ConditionType.ChemQty) addSpecies(g.condition.species)
+        (g.condition.lhs as? Operand.Chem)?.let { addSpecies(it.species) }
+        (g.condition.rhs as? Operand.Chem)?.let { addSpecies(it.species) }
         when (g.action.type) {
             ActionType.FormBond -> {
                 val a = g.action.a; val b = g.action.b
@@ -148,7 +158,7 @@ class CellWork(
     /** Light energy available to the cell this tick (1 quantum = 1 op). Each active light gene gets a
      *  1/N share of it (the bloat tax — see CytoBiologyCore.runGenes), not the whole pool. */
     var quanta: Int,
-    /** Number of un-connected cells this cell is in contact with this tick (the [ConditionType.Touching]
+    /** Number of un-connected cells this cell is in contact with this tick (the [Operand.Touching]
      *  gate reads it). Transient — recomputed from the physics contacts each tick, never persisted. */
     var touchCount: Int,
     /** Degradation accumulator carried across ticks (gains total-biomass-bonds each tick). */
@@ -224,11 +234,11 @@ private const val DIVIDE_BIOMASS = CytoSeed.AUTOTROPH_DIVIDE_BIOMASS
  * clonal colony grows then **plateaus** as the local a/b is drawn down (the matter carrying capacity).
  */
 val AUTOTROPH_GENES: List<Gene> = listOf(
-    Gene(EnergySource.Light, GeneCondition(ConditionType.ChemQty, "a", Comparison.Greater, 0), GeneAction(ActionType.FormBond, "a", "b")),
-    Gene(EnergySource.Light, GeneCondition(ConditionType.ChemQty, "ab", Comparison.Greater, LEAK_RESERVE), GeneAction(ActionType.Convert, "ab")),
-    Gene(EnergySource.Light, GeneCondition(ConditionType.Biomass, "", Comparison.Greater, DIVIDE_BIOMASS), GeneAction(ActionType.Mitosis)),
+    Gene(EnergySource.Light, GeneCondition(Operand.Chem("a"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "a", "b")),
+    Gene(EnergySource.Light, GeneCondition(Operand.Chem("ab"), Comparison.Greater, Operand.Constant(LEAK_RESERVE)), GeneAction(ActionType.Convert, "ab")),
+    Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Mitosis)),
     // Hold the colony together: light-powered connection repair (cheap where autotrophs live).
-    Gene(EnergySource.Light, GeneCondition(ConditionType.Biomass, "", Comparison.Greater, 0), GeneAction(ActionType.Repair)),
+    Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
 )
 
 // Heterotroph seed thresholds — values in CytoSeed (initial data; evolve under mutation).
@@ -243,10 +253,10 @@ private const val HET_DIVIDE = CytoSeed.HETEROTROPH_DIVIDE_BIOMASS
  * `ab` runs out.
  */
 val HETEROTROPH_GENES: List<Gene> = listOf(
-    Gene(EnergySource.BreakBond("ab"), GeneCondition(ConditionType.ChemQty, "ab", Comparison.Greater, HET_RESERVE), GeneAction(ActionType.Convert, "ab")),
-    Gene(EnergySource.BreakBond("ab"), GeneCondition(ConditionType.Biomass, "", Comparison.Greater, HET_DIVIDE), GeneAction(ActionType.Mitosis)),
+    Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Chem("ab"), Comparison.Greater, Operand.Constant(HET_RESERVE)), GeneAction(ActionType.Convert, "ab")),
+    Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(HET_DIVIDE)), GeneAction(ActionType.Mitosis)),
     // Hold together by burning stored 'ab' for repair — a real matter cost; frays once 'ab' runs out.
-    Gene(EnergySource.BreakBond("ab"), GeneCondition(ConditionType.ChemQty, "ab", Comparison.Greater, 0), GeneAction(ActionType.Repair)),
+    Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Chem("ab"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
 )
 
 /** The authored preset genome for a cell type — seeds a freshly-spawned cell; afterwards the genome

@@ -106,7 +106,7 @@ class CytoGoldenTest {
     private val GROWTH = mapOf(
         "meta" to "73e78c689f12caa3",
         "physics" to "919a5e151d73c9e8",
-        "biology" to "d4f7b3bc984d64ea",
+        "biology" to "dcbffccecf66f5dc",
         "topology" to "65846c4130422883",
         "grid" to "bb9c95b0ec2c6a92",
     )
@@ -122,18 +122,26 @@ class CytoGoldenTest {
     // species above the ambient reservoir (CytoBiologyCore + IMPORT_GRADIENT_SCALE). Only the mutation-on
     // golden moves: the presets have no Import gene, so growth/interact are byte-identical (confirming the
     // change is isolated to active uptake, which only arises under mutation).
+    // Re-baselined 2026-06-16: condition operands generalised — a GeneCondition is now `lhs cmp rhs` with
+    // an Operand (Constant / Chem / Biomass / Touching) on BOTH sides. The GATE is behaviour-identical for
+    // the presets (lhs=variable, rhs=constant evaluates exactly as before), proven by the deterministic
+    // GROWTH/INTERACT scenarios moving ONLY in the `biology` dimension (which hashes GeneCodec.serialize,
+    // whose text format changed from `ChemQty ab > 0` to `ab > 0`) — meta/physics/topology/grid stay
+    // byte-identical. mutation-on moves in every dimension because point-mutation now re-rolls a whole
+    // operand (`mutateOperand`, nextInt(4) + maybe a species draw) instead of the old separate species/type
+    // draws, re-routing the PRNG stream and thus the whole trajectory.
     private val MUTATION = mapOf(
-        "meta" to "7f9b8c89db9b7855",
-        "physics" to "cb75e637b215f201",
-        "biology" to "b9665787add9c3d5",
-        "topology" to "f71c2134edcf9210",
-        "grid" to "671190ae31c9a24a",
+        "meta" to "71867ff4b3e2e953",
+        "physics" to "7a11a22227b3418d",
+        "biology" to "9c5956ed5380ea93",
+        "topology" to "6fe64815e3aa0612",
+        "grid" to "15c6bd48267f1f91",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
         "meta" to "57d3eb8799f7785f",
         "physics" to "a26080ae66071931",
-        "biology" to "ab5f96dcbf7932cf",
+        "biology" to "523840921768a5dd",
         "topology" to "102e08d773cbb7c6",
         "grid" to "593260a5d0e28713",
     )

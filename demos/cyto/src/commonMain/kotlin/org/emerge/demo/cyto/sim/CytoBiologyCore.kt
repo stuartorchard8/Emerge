@@ -335,15 +335,21 @@ object CytoBiologyCore {
 
     // ── gates ────────────────────────────────────────────────────────────────
     private fun gate(c: GeneCondition, work: CellWork): Boolean {
-        val value = when (c.type) {
-            ConditionType.ChemQty -> work.cytoplasm.count(SpeciesRegistry.id(c.species))
-            ConditionType.Biomass -> totalBiomassBonds(work.biomass)
-            ConditionType.Touching -> work.touchCount
-        }
+        val l = operand(c.lhs, work)
+        val r = operand(c.rhs, work)
         return when (c.cmp) {
-            Comparison.Greater -> value > c.threshold
-            Comparison.Less -> value < c.threshold
+            Comparison.Greater -> l > r
+            Comparison.Less -> l < r
         }
+    }
+
+    /** Evaluate one side of a [GeneCondition] to an integer: a [Operand.Constant]'s literal, or a live
+     *  reading of the cell this tick (cytoplasm count / total biomass / contact count). */
+    private fun operand(op: Operand, work: CellWork): Int = when (op) {
+        is Operand.Constant -> op.value
+        is Operand.Chem -> work.cytoplasm.count(SpeciesRegistry.id(op.species))
+        Operand.Biomass -> totalBiomassBonds(work.biomass)
+        Operand.Touching -> work.touchCount
     }
 
     private fun hasConnectionDamage(work: CellWork): Boolean = work.connectionDamage.values.any { it > 0f }

@@ -3,7 +3,6 @@ package org.emerge.demo.cyto.sim.soa
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.AUTOTROPH_GENES
 import org.emerge.demo.cyto.sim.Comparison
-import org.emerge.demo.cyto.sim.ConditionType
 import org.emerge.demo.cyto.sim.ConnectionStateComponent
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
@@ -20,6 +19,7 @@ import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.GeneAction
 import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.sim.GeneCondition
+import org.emerge.demo.cyto.sim.Operand
 import org.emerge.demo.cyto.sim.ActionType
 import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.createCytoInitialState
@@ -131,7 +131,7 @@ class CytoSoaSpecTest {
         // both `ab` and `c` would leak; with it, only the un-metabolisable `c` does.
         val inertAbGene = Gene(
             EnergySource.Light,
-            GeneCondition(ConditionType.ChemQty, "ab", Comparison.Greater, 1_000_000_000),  // never true
+            GeneCondition(Operand.Chem("ab"), Comparison.Greater, Operand.Constant(1_000_000_000)),  // never true
             GeneAction(ActionType.Convert, "ab"),
         )
         val initial = run {
@@ -161,7 +161,7 @@ class CytoSoaSpecTest {
         val (sx, sy) = CytoLightField.SOURCES.first()
         val importGene = Gene(
             EnergySource.Light,
-            GeneCondition(ConditionType.Biomass, "", Comparison.Greater, 0),
+            GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)),
             GeneAction(ActionType.Import, "a"),
         )
         fun uptakeFrom(startCytoA: Int): Int {
@@ -224,7 +224,7 @@ class CytoSoaSpecTest {
     fun degenerateDivisionKillsTheCellAndRecyclesMatter() {
         val (sx, sy) = CytoLightField.SOURCES.first()
         val divideNow = listOf(
-            Gene(EnergySource.Light, GeneCondition(ConditionType.Biomass, "", Comparison.Greater, 0), GeneAction(ActionType.Mitosis)),
+            Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Mitosis)),
         )
         val initial = run {
             val b = SimBuilder(SimState(randomSeed = 1))
@@ -278,7 +278,7 @@ class CytoSoaSpecTest {
     }
 
     private val repairOnly = listOf(
-        Gene(EnergySource.Light, GeneCondition(ConditionType.Biomass, "", Comparison.Greater, 0), GeneAction(ActionType.Repair)),
+        Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
     )
 
     @Test
@@ -319,7 +319,7 @@ class CytoSoaSpecTest {
 
     /** A flex gene of [action] powered by breaking stored `ab` (no light needed), always gated on. */
     private fun flexGenome(action: ActionType) = listOf(
-        Gene(EnergySource.BreakBond("ab"), GeneCondition(ConditionType.Biomass, "", Comparison.Greater, 0), GeneAction(action)),
+        Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(action)),
     )
 
     private fun radiusRaw(s: SimState, id: org.emerge.sim.core.EntityId): Long =
@@ -372,7 +372,7 @@ class CytoSoaSpecTest {
         // overlapping (so they touch + repel, not weld) each Expand on contact, fuelled by breaking stored
         // `ab`; a lone control with the identical gene never touches anything, so its gate stays false.
         val touchExpand = listOf(
-            Gene(EnergySource.BreakBond("ab"), GeneCondition(ConditionType.Touching, "", Comparison.Greater, 0), GeneAction(ActionType.Expand)),
+            Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Touching, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Expand)),
         )
         fun cell(b: SimBuilder, x: Float) =
             b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 100000), biomass = mapOf("ab" to 8000), genome = touchExpand)

@@ -54,23 +54,40 @@ object CytoMutation {
 
     private fun fires(rateDenom: Int, nextInt: (Int) -> Int) = nextInt(rateDenom) == 0
 
-    /** Nudge the gate threshold by ±1 (clamped ≥0). */
+    /** Nudge a [Operand.Constant] side of the gate by ±1 (clamped ≥0) — drifts the rhs constant if there
+     *  is one, else the lhs constant; a condition comparing two live variables has no constant to drift
+     *  (the ±1 sign is still drawn, keeping PRNG advancement deterministic). */
     private fun driftThreshold(g: Gene, nextInt: (Int) -> Int): Gene {
         val delta = if (nextInt(2) == 0) -1 else 1
-        val t = (g.condition.threshold + delta).coerceAtLeast(0)
-        return g.copy(condition = g.condition.copy(threshold = t))
+        val c = g.condition
+        val drifted = when {
+            c.rhs is Operand.Constant -> c.copy(rhs = Operand.Constant((c.rhs.value + delta).coerceAtLeast(0)))
+            c.lhs is Operand.Constant -> c.copy(lhs = Operand.Constant((c.lhs.value + delta).coerceAtLeast(0)))
+            else -> c
+        }
+        return g.copy(condition = drifted)
     }
 
-    /** Change one field of the gene — comparator, gate species/type, an action operand, the action
+    /** Change one field of the gene — comparator, either gate operand, an action operand, the action
      *  type, or the energy source. */
     private fun pointMutate(g: Gene, nextInt: (Int) -> Int): Gene = when (nextInt(7)) {
         0 -> g.copy(condition = g.condition.copy(cmp = flip(g.condition.cmp)))
-        1 -> g.copy(condition = g.condition.copy(species = pick(SPECIES, nextInt)))
-        2 -> g.copy(condition = g.condition.copy(type = ConditionType.entries[nextInt(ConditionType.entries.size)]))
+        1 -> g.copy(condition = g.condition.copy(lhs = mutateOperand(g.condition.lhs, nextInt)))
+        2 -> g.copy(condition = g.condition.copy(rhs = mutateOperand(g.condition.rhs, nextInt)))
         3 -> g.copy(action = g.action.copy(a = pick(SPECIES, nextInt)))
         4 -> g.copy(action = g.action.copy(b = pick(SPECIES, nextInt)))
         5 -> g.copy(action = g.action.copy(type = ActionType.entries[nextInt(ActionType.entries.size)]))
         else -> g.copy(source = flipSource(g.source, nextInt))
+    }
+
+    /** Re-roll one condition operand to a fresh kind: a [Operand.Constant] (keeping any prior constant
+     *  value, so drift can still tune it), a [Operand.Chem] of a random species, [Operand.Biomass], or
+     *  [Operand.Touching]. */
+    private fun mutateOperand(op: Operand, nextInt: (Int) -> Int): Operand = when (nextInt(4)) {
+        0 -> Operand.Constant((op as? Operand.Constant)?.value ?: 0)
+        1 -> Operand.Chem(pick(SPECIES, nextInt))
+        2 -> Operand.Biomass
+        else -> Operand.Touching
     }
 
     private fun flip(c: Comparison) = if (c == Comparison.Greater) Comparison.Less else Comparison.Greater

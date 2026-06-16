@@ -374,16 +374,21 @@ class CytoController(
         }
         val c = gene.condition
         val cmp = if (c.cmp == org.emerge.demo.cyto.sim.Comparison.Greater) ">" else "<"
-        val cond = when (c.type) {
-            org.emerge.demo.cyto.sim.ConditionType.ChemQty -> "${c.species}$cmp${c.threshold}"
-            org.emerge.demo.cyto.sim.ConditionType.Biomass -> "BIO$cmp${c.threshold}"
-            org.emerge.demo.cyto.sim.ConditionType.Touching -> "TOUCH$cmp${c.threshold}"
-        }
+        val cond = "${operandLabel(c.lhs)}$cmp${operandLabel(c.rhs)}"
         val src = when (val s = gene.source) {
             org.emerge.demo.cyto.sim.EnergySource.Light -> "LIGHT"
             is org.emerge.demo.cyto.sim.EnergySource.BreakBond -> "BRK ${s.bond}"
         }
         return "$action IF $cond ($src)"
+    }
+
+    /** Panel label for one condition operand: a constant's number, `BIO`/`TOUCH` for the live readings,
+     *  or the species token for a cytoplasm count. */
+    private fun operandLabel(op: org.emerge.demo.cyto.sim.Operand): String = when (op) {
+        is org.emerge.demo.cyto.sim.Operand.Constant -> op.value.toString()
+        is org.emerge.demo.cyto.sim.Operand.Chem -> op.species.ifEmpty { "?" }
+        org.emerge.demo.cyto.sim.Operand.Biomass -> "BIO"
+        org.emerge.demo.cyto.sim.Operand.Touching -> "TOUCH"
     }
 
     /** Fixed-point-ish 2dp formatter (multiplatform-safe — no String.format). */
