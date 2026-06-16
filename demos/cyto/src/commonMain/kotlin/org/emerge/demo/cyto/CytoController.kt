@@ -182,6 +182,7 @@ class CytoController(
     fun grab(entity: EntityId, x: Float, y: Float, sticky: Boolean = false) {
         withLock(inputLock) { currentGrab = CytoInput.Grab(entity, x, y, sticky) }
         lastHeldId = entity
+        reducer.noMutateEntityId = entity.value   // freeze the focused (inspected) cell against mutation
     }
 
     fun releaseGrab() {

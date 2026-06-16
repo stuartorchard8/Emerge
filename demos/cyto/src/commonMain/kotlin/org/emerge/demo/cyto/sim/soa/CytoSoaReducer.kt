@@ -1,6 +1,7 @@
 package org.emerge.demo.cyto.sim.soa
 
 import org.emerge.demo.cyto.cells.CellType
+import kotlin.concurrent.Volatile
 import org.emerge.demo.cyto.sim.CellWork
 import org.emerge.demo.cyto.sim.MoleculeStore
 import org.emerge.demo.cyto.sim.ConnectionStateComponent
@@ -77,6 +78,13 @@ class CytoSoaReducer(
     private val springParallelThreshold: Int = 2048,
 ) {
     private val player = mapOf(PlayerId(0) to CytoInput.EMPTY)
+
+    /** EntityId.value of a cell exempt from natural mutation (the focused/inspected cell), or -1 for none.
+     *  Set by the controller from the UI thread, read on the sim thread → `@Volatile`. Exempting a cell
+     *  skips its mutation PRNG draws, shifting the sequence — fine for live play; the goldens run with -1
+     *  (no focus) so they're unaffected. */
+    @Volatile
+    var noMutateEntityId = -1
 
     // weld intents produced by the in-place contacts phase, drained by the lifecycle bridge.
     private val weldLo = ArrayList<Int>()
@@ -579,7 +587,8 @@ class CytoSoaReducer(
         for (slot in ordered) {
             val id = EntityId(w.entityId[slot])
             val work = bioWorks[slot]!!
-            val mutated = CytoMutation.mutate(w.cell.genome[slot] ?: emptyList(), cfg.mutationRateDenom) { until -> nextRandomInt(w, until) }
+            val mutated = if (w.entityId[slot] == noMutateEntityId) null   // focused cell: frozen against mutation
+                else CytoMutation.mutate(w.cell.genome[slot] ?: emptyList(), cfg.mutationRateDenom) { until -> nextRandomInt(w, until) }
             val oldRadiusRaw = w.cell.logicalRadius[slot]
             w.cell.cytoplasm[slot] = work.cytoplasm
             w.cell.biomass[slot] = work.biomass
