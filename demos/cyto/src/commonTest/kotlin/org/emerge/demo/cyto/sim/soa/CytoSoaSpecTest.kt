@@ -310,6 +310,24 @@ class CytoSoaSpecTest {
         assertTrue(rich0 > rich5, "when energy is abundant, the low (uncapped) gear does more total work; g0=$rich0 g5=$rich5")
     }
 
+    @Test
+    fun formBondMatchesBySuffixAndPrefix() {
+        // FormBond "ab" "b" should bond a molecule ENDING WITH "ab" to one STARTING WITH "b" — i.e. ab+b→abb
+        // — and must NOT touch the bare monomer "a" (which the looser single-atom "ends in a" rule would have
+        // grabbed). That selectivity is the point: target specific molecules, skip irrelevant ones.
+        val work = CellWork(
+            cytoplasm = MoleculeStore.of(mapOf("a" to 1000, "ab" to 1000, "b" to 1000)),
+            biomass = MoleculeStore.of(mapOf("ab" to 1000)),
+            logicalRadius = MIN_RADIUS, type = CellType.Collector,
+            genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "ab", "b"))),
+            quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
+        )
+        CytoBiologyCore.runGenes(work, CytoMatterGrid.empty())
+        assertEquals(1000, work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("a")), "the bare monomer 'a' must be untouched (suffix 'ab' doesn't match it)")
+        assertTrue(work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("abb")) > 0, "ab+b should have bonded into abb")
+        assertTrue(work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("ab")) < 1000, "the 'ab' molecule should have been consumed")
+    }
+
     private fun damagedPair(genome: List<Gene>, damage: Float): SimState {
         val (sx, sy) = CytoLightField.SOURCES.first()
         val b = SimBuilder(SimState(randomSeed = 1))

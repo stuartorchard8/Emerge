@@ -25,7 +25,7 @@ import org.emerge.render.torus.ui.UiBuilder
  * editor state (which gene, the draft, which dropdown is open).
  */
 class GeneEditor {
-    private enum class Field { Source, LhsKind, Cmp, RhsKind, Action, OperandA, OperandB }
+    private enum class Field { Source, LhsKind, Cmp, RhsKind, Action }
 
     private var editingId: EntityId? = null
     private var editingIndex: Int? = null
@@ -108,13 +108,10 @@ class GeneEditor {
                 ActionType.Import, ActionType.Convert ->
                     speciesField("OPERAND", d.action.a, atoms) { s -> draft = d.copy(action = d.action.copy(a = s)) }
                 ActionType.FormBond -> {
-                    // FormBond uses only the first atom of each operand; show/edit just that atom.
-                    picker("ATOM A", d.action.a.take(1).ifEmpty { "-" }, atoms, openField == Field.OperandA, { toggle(Field.OperandA) }) { i ->
-                        draft = d.copy(action = d.action.copy(a = atoms[i])); openField = null
-                    }
-                    picker("ATOM B", d.action.b.take(1).ifEmpty { "-" }, atoms, openField == Field.OperandB, { toggle(Field.OperandB) }) { i ->
-                        draft = d.copy(action = d.action.copy(b = atoms[i])); openField = null
-                    }
+                    // Operands are a suffix/prefix match (built atom-by-atom): bond a molecule ENDING WITH the
+                    // first operand to one STARTING WITH the second. Single atom = the old end-atom/start-atom.
+                    speciesField("END WITH", d.action.a, atoms) { s -> draft = d.copy(action = d.action.copy(a = s)) }
+                    speciesField("START WITH", d.action.b, atoms) { s -> draft = d.copy(action = d.action.copy(b = s)) }
                 }
                 else -> {}
             }

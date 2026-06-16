@@ -205,10 +205,14 @@ object CytoBiologyCore {
         when (act.type) {
             ActionType.Convert -> { convertId = SpeciesRegistry.id(act.a); cn = addConsume(ids, per, cn, convertId) }
             ActionType.FormBond -> {
-                val ac = act.a.firstOrNull() ?: return
-                val bc = act.b.firstOrNull() ?: return
-                val endAId = firstEndingIn(snap, SpeciesRegistry.atomIndexOf(ac)); if (endAId < 0) return
-                val startBId = firstStartingWith(snap, SpeciesRegistry.atomIndexOf(bc)); if (startBId < 0) return
+                // Operands are a SUFFIX (act.a) and PREFIX (act.b): join the lex-smallest molecule ending
+                // with act.a to the lex-smallest starting with act.b. A single-atom operand (e.g. "c") is the
+                // original "ends/starts in that atom" behaviour; a longer one (e.g. "abc") is more selective,
+                // so the gene targets specific molecules instead of any sharing the junction atom (and skips
+                // wasting ops on, say, raw "cc"). The junction bond is act.a.last–act.b.first, as before.
+                if (act.a.isEmpty() || act.b.isEmpty()) return
+                val endAId = firstEndingWith(snap, act.a); if (endAId < 0) return
+                val startBId = firstStartingWith(snap, act.b); if (startBId < 0) return
                 productId = SpeciesRegistry.join(endAId, startBId); if (productId < 0) return   // forbidden (polymerisation) ⇒ no-op
                 cn = addConsume(ids, per, cn, endAId)
                 cn = addConsume(ids, per, cn, startBId)
@@ -301,17 +305,18 @@ object CytoBiologyCore {
         return -1
     }
 
-    /** Lowest-id species in [snap] whose last atom is [atomIdx] (the FormBond end-A endpoint), or -1. */
-    private fun firstEndingIn(snap: MoleculeStore, atomIdx: Int): Int {
-        if (atomIdx < 0) return -1
-        for (i in 0 until snap.size) { val id = snap.idAt(i); if (SpeciesRegistry.lastAtom(id) == atomIdx) return id }
+    /** Lowest-id (lex-smallest) species in [snap] whose string ENDS WITH [suffix] (the FormBond end-A
+     *  match), or -1. A single-atom suffix == "ends in that atom"; a longer one is a specific tail. */
+    private fun firstEndingWith(snap: MoleculeStore, suffix: String): Int {
+        if (suffix.isEmpty()) return -1
+        for (i in 0 until snap.size) { val id = snap.idAt(i); if (SpeciesRegistry.string(id).endsWith(suffix)) return id }
         return -1
     }
 
-    /** Lowest-id species in [snap] whose first atom is [atomIdx] (the FormBond start-B endpoint), or -1. */
-    private fun firstStartingWith(snap: MoleculeStore, atomIdx: Int): Int {
-        if (atomIdx < 0) return -1
-        for (i in 0 until snap.size) { val id = snap.idAt(i); if (SpeciesRegistry.firstAtom(id) == atomIdx) return id }
+    /** Lowest-id species in [snap] whose string STARTS WITH [prefix] (the FormBond start-B match), or -1. */
+    private fun firstStartingWith(snap: MoleculeStore, prefix: String): Int {
+        if (prefix.isEmpty()) return -1
+        for (i in 0 until snap.size) { val id = snap.idAt(i); if (SpeciesRegistry.string(id).startsWith(prefix)) return id }
         return -1
     }
 

@@ -372,9 +372,8 @@ class CytoController(
         val a = gene.action
         val action = when (a.type) {
             org.emerge.demo.cyto.sim.ActionType.Import -> "IMPORT ${a.a}"
-            // FormBond uses only the FIRST atom of each operand (the rest is ignored — a mutation can drop a
-            // multi-atom species in, but only a[0]/b[0] matter), so show just the two operative atoms.
-            org.emerge.demo.cyto.sim.ActionType.FormBond -> "BOND ${a.a.take(1)}${a.b.take(1)}"
+            // FormBond bonds a molecule ENDING WITH a.a to one STARTING WITH a.b (suffix·prefix match).
+            org.emerge.demo.cyto.sim.ActionType.FormBond -> "BOND ${a.a}·${a.b}"
             org.emerge.demo.cyto.sim.ActionType.Convert -> "CONVERT ${a.a}"
             org.emerge.demo.cyto.sim.ActionType.Contract -> "CONTRACT"
             org.emerge.demo.cyto.sim.ActionType.Mitosis -> "DIVIDE"

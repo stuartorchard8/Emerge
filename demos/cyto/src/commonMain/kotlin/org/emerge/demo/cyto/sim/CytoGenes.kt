@@ -144,8 +144,10 @@ fun handleableOf(genome: List<Gene>): Handleable {
         (g.condition.rhs as? Operand.Chem)?.let { addSpecies(it.species) }
         when (g.action.type) {
             ActionType.FormBond -> {
+                // Operands are a suffix/prefix the matched molecules carry, so the cell handles their whole
+                // atom/bond content plus the junction bond (suffix.last–prefix.first).
                 val a = g.action.a; val b = g.action.b
-                if (a.isNotEmpty() && b.isNotEmpty()) { addAtom(a[0]); addAtom(b[0]); addBond("${a[0]}${b[0]}") }
+                if (a.isNotEmpty() && b.isNotEmpty()) { addSpecies(a); addSpecies(b); addBond("${a.last()}${b.first()}") }
             }
             ActionType.Convert, ActionType.Import -> addSpecies(g.action.a)
             else -> {}
