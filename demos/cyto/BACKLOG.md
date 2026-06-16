@@ -15,6 +15,9 @@ lives in the conversation history; MORPHOGENESIS.md is the source of truth for t
   by its two operative atoms.
 - **Sim/draw decoupled** (own sim thread + speed control); **in-game gene-editor** (tap a gene → edit /
   dup / delete, dropdowns + hold-to-repeat).
+- **Content-coloring** — cells drawn by HSV: hue = biomass a/b/c→R/G/B atom mix, saturation = cyto:bio
+  instance ratio, value 0.75 (focused cell 1.0).
+- **Focused-cell mutation freeze** — the inspected cell (panel open) is exempt from natural mutation.
 
 ## Queued — energy economy (Stu's order)
 
@@ -46,6 +49,24 @@ it drives the solar-vs-chem divergence.
 - Both cell-panel flow arrows are *predicted* from genome + state, not measured per-tick deltas (fine for
   the steady story; a gated-off gene still shows its intent).
 
-## Tooling / interaction (next focus)
+## Performance (2026-06-16 check)
 
-Stu wants to improve his ability to **test & interact with the world**. _(to be filled in)_
+NOT a regression. The ~4× perceived slowdown since the perf spike is ~3.6× more cells (save grew 1255 →
+4546 cells — metabolic-leak/hoarding raised viability/carrying capacity). Per-cell cost is flat/better:
+biology ~3.0 µs/cell (was 3.06), forces ~1.26 (was 1.46). Tick ~24.7 ms at 4546 cells (~40 TPS). Biology
+(56%) is the dominant phase and is compute-bound + sequential (shared grid → hard to parallelise). Headroom
+levers if wanted: harder culling / smaller world / population cap; otherwise it's just a richer ecosystem.
+
+Watch-items the bench surfaced (not perf-critical): cells hoard hard (one held 252k cytoplasm molecules —
+the gradient soft-cap barely bites under the abundant-matter dials), and genome bloat has an outlier (max 53
+genes, median 10) — check the bloat tax is still effective.
+
+## Tooling / interaction (candidates)
+
+Stu's stated direction: improve ability to **test & interact**. Done: content-coloring, focused-cell
+mutation freeze. Remaining candidates (proposed, not yet picked):
+- Click-to-inspect / "follow this cell" (IDs renumber on save; throwaway probes keep being needed).
+- On-screen global readouts (population, reservoir vs cell matter, species histogram over time).
+- Matter-field heatmap toggle (see a chosen species' reservoir concentration, like the light heatmap).
+- Environment painting (drop/clear matter to set up a test patch).
+- Single-step / step-N alongside pause.
