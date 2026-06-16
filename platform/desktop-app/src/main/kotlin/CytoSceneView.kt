@@ -79,6 +79,7 @@ object CytoSceneView {
             }
 
             renderer.showLightField = controls.showLightField   // Light button → renderer
+            renderer.focusedCellId = controller.lastHeldId?.value ?: -1   // full-value highlight on the inspected cell
             controller.brushActive = controls.brushSelected      // "Brush" type selection → painting
             // The sim advances on its own thread; we render whatever it last published.
             val frame = controller.latestFrame()

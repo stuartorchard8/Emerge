@@ -58,6 +58,8 @@ class CytoRenderer {
     // Reuses the proven instanced-rect shader: the static field grid (one torus tile) baked to
     // heat colours once, projected to NDC + culled to the visible region each frame. Toggle with L.
     var showLightField = true
+    /** EntityId.value of the focused cell (info panel open) — drawn at full value; -1 = none. Host-set. */
+    var focusedCellId = -1
     private val fieldShader = UiRectRenderer(maxRects = FIELD_CELLS)
     private val fieldCx = FloatArray(FIELD_CELLS)
     private val fieldCy = FloatArray(FIELD_CELLS)
@@ -178,7 +180,7 @@ class CytoRenderer {
             matM.setProduct(matMT, matMS)
             mvp.setProduct(matP, matM)
 
-            packColor(cell.type.color)
+            cellColor(cell, id.value == focusedCellId)
 
             var count = 0
             val neighbours = springs[id]?.springs
@@ -262,11 +264,53 @@ class CytoRenderer {
         matP.setProduct(matS, matT)
     }
 
-    private fun packColor(rgba: Long) {
-        colorTmp[0] = ((rgba ushr 24) and 0xFF).toFloat() / 255f
-        colorTmp[1] = ((rgba ushr 16) and 0xFF).toFloat() / 255f
-        colorTmp[2] = ((rgba ushr 8) and 0xFF).toFloat() / 255f
-        colorTmp[3] = (rgba and 0xFF).toFloat() / 255f
+    /**
+     * Colour a cell by its **contents** (set by the host's [focusedCellId] for the value bump):
+     *  - **Hue** from the a/b/c → R/G/B atom mix of its *biomass* (so a cell built of one two-atom
+     *    molecule reads as a pure secondary — `ab`→yellow, `ac`→magenta, `bc`→cyan — and richer biomass
+     *    shifts hue as its composition changes).
+     *  - **Saturation** from the cytoplasm:biomass *instance* ratio (count species instances, not atoms):
+     *    no cytoplasm → grey (0); cytoplasm ≥ biomass → full (1).
+     *  - **Value** 0.75, or 1.0 for the focused cell (the one the info panel is open for).
+     */
+    private fun cellColor(cell: CytoCellComponent, focused: Boolean) {
+        var r = 0L; var g = 0L; var b = 0L
+        for ((species, count) in cell.biomass) for (ch in species) when (ch) {
+            'a' -> r += count; 'b' -> g += count; 'c' -> b += count
+        }
+        var cytInstances = 0; for (c in cell.cytoplasm.values) cytInstances += c
+        var bioInstances = 0; for (c in cell.biomass.values) bioInstances += c
+        val sat = when { cytInstances == 0 -> 0f; cytInstances >= bioInstances -> 1f; else -> cytInstances.toFloat() / bioInstances }
+        hsvToRgb(hueOf(r.toFloat(), g.toFloat(), b.toFloat()), sat, if (focused) 1f else 0.75f, colorTmp)
+        colorTmp[3] = 1f
+    }
+
+    /** Hue (0..1) of an (r,g,b) atom-count mix; 0 (red) when colourless. */
+    private fun hueOf(r: Float, g: Float, b: Float): Float {
+        val max = maxOf(r, g, b); val min = minOf(r, g, b); val d = max - min
+        if (d <= 0f) return 0f
+        val h = when (max) {
+            r -> (g - b) / d + (if (g < b) 6f else 0f)
+            g -> (b - r) / d + 2f
+            else -> (r - g) / d + 4f
+        }
+        return h / 6f
+    }
+
+    /** HSV (h,s,v all 0..1) → [out] RGB. */
+    private fun hsvToRgb(h: Float, s: Float, v: Float, out: FloatArray) {
+        if (s <= 0f) { out[0] = v; out[1] = v; out[2] = v; return }
+        val hh = (h - kotlin.math.floor(h)) * 6f
+        val i = hh.toInt(); val f = hh - i
+        val p = v * (1f - s); val q = v * (1f - s * f); val t = v * (1f - s * (1f - f))
+        when (i) {
+            0 -> { out[0] = v; out[1] = t; out[2] = p }
+            1 -> { out[0] = q; out[1] = v; out[2] = p }
+            2 -> { out[0] = p; out[1] = v; out[2] = t }
+            3 -> { out[0] = p; out[1] = q; out[2] = v }
+            4 -> { out[0] = t; out[1] = p; out[2] = v }
+            else -> { out[0] = v; out[1] = p; out[2] = q }
+        }
     }
 
     private companion object {
