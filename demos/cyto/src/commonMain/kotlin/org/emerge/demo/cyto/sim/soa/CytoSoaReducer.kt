@@ -244,22 +244,31 @@ class CytoSoaReducer(
 
         // Sequential single pass in (i asc, j asc) order — matches ContactSystem's emitted list order
         // and CytoContactSystem's processing order. Repulsion impulse is additive (order-free anyway).
+        // The cheap AABB overlap test (|dx|,|dy| < radius sum) runs INSIDE the neighbour gather, so only
+        // genuinely-near pairs reach the scratch list and the sort. This matters because a single large
+        // (e.g. hoarding) cell forces a coarse grid — `cellSize ≥ 2·maxRadius` for correctness — so every
+        // cell's 3×3 window holds dozens of far candidates; box-filtering before the O(cc²) insertion sort
+        // (rather than gathering all then sorting then filtering) cuts the sorted set from ~window-occupancy
+        // to the handful actually overlapping. Bit-identical: filter-then-stable-sort yields the same
+        // surviving pairs in the same j-ascending order as sort-then-filter.
         var scratch = IntArray(16)
         for (i in 0 until n) {
             val aX = w.posX[i]; val aY = w.posY[i]; val aR = w.radiusRaw[i]
             var cc = 0
             grid.forEachNeighbour(aX, aY) { j ->
                 if (j > i) {
-                    if (cc >= scratch.size) scratch = scratch.copyOf(scratch.size * 2)
-                    scratch[cc] = j; cc += 1
+                    val sum = aR + w.radiusRaw[j]
+                    val dx = longAbs((aX - w.posX[j]).toLong())
+                    val dy = longAbs((aY - w.posY[j]).toLong())
+                    if (dx < sum && dy < sum) {
+                        if (cc >= scratch.size) scratch = scratch.copyOf(scratch.size * 2)
+                        scratch[cc] = j; cc += 1
+                    }
                 }
             }
             insertionSort(scratch, cc)
             for (k in 0 until cc) {
                 val j = scratch[k]
-                val sum = aR + w.radiusRaw[j]
-                val dx = longAbs((aX - w.posX[j]).toLong()); if (dx >= sum) continue
-                val dy = longAbs((aY - w.posY[j]).toLong()); if (dy >= sum) continue
                 // Spring-connected pairs produce no contact effect (CytoContactSystem skips them), and in a
                 // welded colony most overlapping pairs are connected — so skip them BEFORE the costly
                 // Contact.compute. Both directions, matching springExists(a,b) || springExists(b,a).
