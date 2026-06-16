@@ -363,7 +363,9 @@ single genome. Matter conserved (the morphogen is allocated whole to one side; e
 reducer's finish loop → carried on `CellDivisionIntent(id, morphogen)` → `CytoLifecycleSystem.divide`
 withholds the morphogen from `floorSplit` (new `skip` param) and hands its whole count to the daughter
 (deposited to env, conserved, if the split is non-viable). Affirmed by
-`CytoSoaSpecTest.asymmetricMitosisDifferentiatesDaughters` (see Morphogen maintenance below).
+`CytoSoaSpecTest.asymmetricMitosisAllocatesMorphogenToOneDaughterAndItPersists` (the split + trace
+persistence) and `morphogenGatedFatePersistsAsBehaviouralDifferentiation` (a `Chem(morphogen)`-gated fate
+stays divergent across the colony — see Morphogen maintenance below).
 
 ### Morphogen maintenance, the active-import crux, and the `Conc` operand
 
@@ -379,13 +381,22 @@ keeps it?
   raises local env to the cell's level, the gradient flattens, and the low sibling can't take any up — so
   the *cellular* asymmetry persists; see the test.)
 
-**The crux to remember:** active Import *un-traces* a species (`handleableOf` adds an Import gene's
-species to the handle-set), which **re-enables cell↔cell diffusion of it** — so you cannot "just actively
-import" a trace morphogen to top it up without making it spread to siblings. Three ways out, in order of
-added code: (1) accept env-equilibrium (no new mechanism — test whether it suffices); (2) re-introduce a
-per-species seal that blocks env-leak *and* diffusion (the old `Inhibit`, folded into Import); (3) split
-"pump" from "permeability" so a species can be actively imported without becoming passively permeable.
-**Decision: try (1) first** (it's free) — the C experiment tells us if we ever need (2)/(3).
+**Sensing ≠ permeability (LANDED).** Originally `handleableOf` added a species a gene merely *sensed* in a
+`Chem` condition to the handle-set, so the moment a fate gene gated on a morphogen it became `canHold` and
+uptake+diffusion equilibrated it across the division weld — behavioural differentiation washed out. Fixed:
+`handleableOf` no longer adds condition operands (a sensor is not a channel). A gated morphogen now stays
+trace, so the fate persists — affirmed by `morphogenGatedFatePersistsAsBehaviouralDifferentiation`, and
+**golden-neutral** (all `CytoGoldenTest` scenes incl. `mutationOn` unchanged: every species the presets/
+evolved genomes sense, they also metabolise, so the mask never differed). Empirically the env-leak loss
+path is benign: a trace morphogen floors at its grid-cell's level and the low sibling can't take it up, so
+the cellular asymmetry holds without any seal.
+
+**The remaining crux:** **active Import still un-traces** a species (`handleableOf` adds an Import gene's
+species — a pump implies a channel), re-enabling its cell↔cell diffusion. So *self-maintaining* a morphogen
+by actively pumping it up isn't possible without it spreading to siblings. Not needed for the current
+mechanism (the division bolus + no-decay + trace-isolation maintains it), but if a future fate wants an
+actively-regenerated morphogen, that's the option-(3) "split pump from permeability" work — deferred until
+a genome actually needs it.
 
 **Concentration vs absolute counts (a separate, additive build).** Absolute-count gates (`Chem(sp) > k`)
 are confounded by size — a big cell trips them for free — and for morphogens especially, *concentration*
@@ -412,7 +423,8 @@ biomass = per-body). Separate commit; not part of C.
    Break-bond, differentiation via asymmetric division + a fate latch), then mutation + selection.
    (The SoA path is now the live shipping path with its byte-identity gate — done, not pending.)
 8. **Stronger selection — the three-mechanism plan** (§Three mechanisms for stronger selection,
-   2026-06-17). Independently buildable. **(C)** morphogen-asymmetric mitosis ✅ **built** (additive,
-   goldens byte-identical; affirmed by `asymmetricMitosisDifferentiatesDaughters`). Remaining:
-   **(A)** drop the leak-block / paid-retention-via-Import, **(B)** `Lyse` predatory harm, and the
-   additive **`Conc`** operand — focus order TBD.
+   2026-06-17). Independently buildable. **(C)** morphogen-asymmetric mitosis ✅ **built** + **sensing ≠
+   permeability** ✅ **built** (both additive, all goldens byte-identical incl. `mutationOn`): persistent
+   one-genome→two-states differentiation is affirmed end-to-end. Remaining: **(A)** drop the leak-block /
+   paid-retention-via-Import, **(B)** `Lyse` predatory harm, and the additive **`Conc`** operand — focus
+   order TBD.

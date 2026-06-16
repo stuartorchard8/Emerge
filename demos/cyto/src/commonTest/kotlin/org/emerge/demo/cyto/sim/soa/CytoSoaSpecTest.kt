@@ -267,13 +267,9 @@ class CytoSoaSpecTest {
         // `c` as its morphogen, so on division `c` goes WHOLE to the daughter and the mother keeps none.
         // Because `c` is trace, the mother can never re-acquire it (no uptake, no diffusion in) — so the
         // asymmetry the split establishes PERSISTS. That persistent positional difference between two
-        // clones from one founder is the substrate for differentiation.
-        //
-        // (NB: the moment a gene *gates* on `Chem(c)` to act on the difference, `handleableOf` marks `c`
-        // canHold — sensing currently grants permeability — and uptake+diffusion re-equilibrate it across
-        // the division weld. So C establishes the asymmetry but persistent *behavioural* differentiation
-        // needs the §A diffusion work, or sensing-≠-permeability in handleableOf. This test pins the
-        // mechanism, not that downstream fate genes hold their state — see the note to Stu.)
+        // clones from one founder is the substrate for differentiation. A gene that *gates* on `Chem(c)`
+        // to act on the difference keeps `c` trace too — sensing doesn't grant permeability (handleableOf)
+        // — so the behavioural fate persists; see morphogenGatedFatePersistsAsBehaviouralDifferentiation.
         val mitosis = Gene(
             EnergySource.BreakBond("ab"),
             GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(7_900)),
@@ -298,6 +294,49 @@ class CytoSoaSpecTest {
         val withoutC = cells.count { (it.cytoplasm["c"] ?: 0) == 0 }
         assertEquals(1, withC, "exactly one daughter inherits the morphogen")
         assertEquals(1, withoutC, "the other inherits none — and can't acquire a trace species, so the asymmetry persists")
+    }
+
+    @Test
+    fun morphogenGatedFatePersistsAsBehaviouralDifferentiation() {
+        // The payoff of C + sensing≠permeability: one genome → two stably-different cells. A founder
+        // divides asymmetrically on morphogen `c`; a fate gene (Contract) gates on `Chem(c) > 0`. Because
+        // *sensing* `c` doesn't make it handleable (handleableOf ignores condition operands), `c` stays a
+        // trace species — the mother (which got none) can never absorb or diffuse it in — so only the
+        // morphogen-bearing daughter expresses the contract fate, and it holds. Two clones, one genome,
+        // a divergent shape that persists. (Before the handleableOf change, gating on `c` made it canHold,
+        // so uptake+diffusion equilibrated it across the weld and both cells converged — see that commit.)
+        val mitosis = Gene(
+            EnergySource.BreakBond("ab"),
+            GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(7_900)),
+            GeneAction(ActionType.Mitosis, "c"),
+        )
+        val contractIfMorphogen = Gene(
+            EnergySource.BreakBond("ab"),
+            GeneCondition(Operand.Chem("c"), Comparison.Greater, Operand.Constant(0)),
+            GeneAction(ActionType.Contract),       // gates on `c` but acts on radius — `c` stays trace
+        )
+        val initial = run {
+            val b = SimBuilder(SimState())
+            b.spawnCell(
+                CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Blank,
+                cytoplasm = mapOf("ab" to 80_000, "c" to 2_000), biomass = mapOf("ab" to 8_000),
+                genome = listOf(mitosis, contractIfMorphogen),
+            )
+            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.empty()) }
+            b.build()
+        }
+        val total0 = totalAtoms(initial)
+        val state = run(initial, ticks = 20) { s, t -> assertEquals(total0, totalAtoms(s), "atoms not conserved at step $t") }
+
+        val cells = state.components.getTable<CytoCellComponent>().asMap().values.toList()
+        assertEquals(2, cells.size, "founder should divide exactly once")
+        val morphogenCell = cells.single { (it.cytoplasm["c"] ?: 0) > 0 }
+        val plainCell = cells.single { (it.cytoplasm["c"] ?: 0) == 0 }
+        assertTrue(
+            morphogenCell.logicalRadius < plainCell.logicalRadius,
+            "only the morphogen-bearing daughter should express the Contract fate (smaller radius), and it " +
+                "should persist; morphogen r=${morphogenCell.logicalRadius} vs plain r=${plainCell.logicalRadius}",
+        )
     }
 
     @Test

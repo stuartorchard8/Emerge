@@ -124,10 +124,17 @@ class Handleable(private val bondMask: Int, private val atomMask: Int) {
     }
 }
 
-/** Derive a genome's [Handleable] reach: bonds it forms (FormBond), breaks (BreakBond), or references in
- *  a Convert/Import/ChemQty operand; atoms are the endpoints of those bonds plus any monomer operand.
- *  Bonds/atoms are accumulated as [SpeciesRegistry]-indexed bitmasks (the alphabet is ≤ k=3 atoms, k²=9
- *  bonds, so each fits an Int). */
+/** Derive a genome's [Handleable] reach: bonds it forms (FormBond), breaks (BreakBond), or names in a
+ *  Convert/Import operand; atoms are the endpoints of those bonds plus any monomer operand. Bonds/atoms
+ *  are accumulated as [SpeciesRegistry]-indexed bitmasks (the alphabet is ≤ k=3 atoms, k²=9 bonds, so each
+ *  fits an Int).
+ *
+ *  **Sensing ≠ permeability:** a species a gene only *reads* in a [GeneCondition] (an [Operand.Chem] gate)
+ *  is deliberately **not** added — a sensor is not a channel. This is what lets a **morphogen** stay a
+ *  *trace* species: a fate gene can gate on `Chem(m)` to differentiate without thereby making `m`
+ *  metabolisable, so the canHold-gated passive exchange + cell↔cell diffusion can't equilibrate it across a
+ *  colony. The morphogen difference an asymmetric division establishes (MORPHOGENESIS.md §C) therefore
+ *  persists. (A species a gene both senses *and* metabolises is still handleable via the metabolic ref.) */
 fun handleableOf(genome: List<Gene>): Handleable {
     var bondMask = 0
     var atomMask = 0
@@ -140,8 +147,8 @@ fun handleableOf(genome: List<Gene>): Handleable {
     }
     for (g in genome) {
         (g.source as? EnergySource.BreakBond)?.let { addSpecies(it.bond) }
-        (g.condition.lhs as? Operand.Chem)?.let { addSpecies(it.species) }
-        (g.condition.rhs as? Operand.Chem)?.let { addSpecies(it.species) }
+        // NB: condition (Operand.Chem) operands are NOT added — sensing a species doesn't make it
+        // transportable (see the kdoc: this keeps a gated morphogen a trace species).
         when (g.action.type) {
             ActionType.FormBond -> {
                 // Operands are a suffix/prefix the matched molecules carry, so the cell handles their whole
