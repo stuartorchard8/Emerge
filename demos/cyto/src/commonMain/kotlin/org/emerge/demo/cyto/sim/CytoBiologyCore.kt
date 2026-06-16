@@ -218,11 +218,15 @@ object CytoBiologyCore {
         for (i in 0 until cn) k = minOf(k, (snap.count(ids[i]) / n) / per[i])
         when (act.type) {
             // Division is a BULK, size-scaling cost: it needs `biomass/4` energy THIS tick. Energy can't be
-            // accumulated (quanta are use-or-lose; bonds are spent the tick they're broken), so a small
-            // per-tick light flux practically can't fund it for any real cell — division is paid by burning
-            // a big chunk of stored bonds (a BreakBond-powered mitosis), and it gets dearer as the cell
-            // grows. The gate may hold below this; it then simply does nothing (no accumulation toward it).
-            ActionType.Mitosis -> { val cost = totalBiomassBonds(work.biomass) / 4; k = if (k >= cost) cost else 0 }
+            // accumulated (quanta are use-or-lose), so this MUST be paid by burning a big chunk of stored
+            // bonds — a BreakBond-powered mitosis. **Light can never fund division** (enforced here): a
+            // Light-sourced Mitosis is a no-op, no matter how bright. This is the "charge up to divide"
+            // invariant — a cell must hoard a reserve and break it, not photosynthesise-and-split. Without
+            // it, a single lit tick's quanta (which can dwarf biomass/4) trivially divides, collapsing the
+            // autotroph→heterotroph economy. The gate may hold below the cost; it then does nothing.
+            ActionType.Mitosis ->
+                if (src !is EnergySource.BreakBond) k = 0
+                else { val cost = totalBiomassBonds(work.biomass) / 4; k = if (k >= cost) cost else 0 }
             ActionType.Import -> if (work.gridIndex < 0) k = 0
             ActionType.Repair -> k = minOf(k, repairOpsNeeded(work))
             ActionType.Contract -> k = minOf(k, flexOps(MIN_RADIUS, work.logicalRadius))
