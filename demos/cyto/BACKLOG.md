@@ -28,10 +28,14 @@ The guiding principle: **too many things are hard-coded engine rules that should
 blocker is that actions cost too much, so cheap-enough actions is the unlock.** The gradient-cost above is
 the first step (efficient-slow is the free default; over-push only when contested).
 
-1. **Base-efficiency gene field** — an explicit evolvable trait so a cell can *choose* its rate↔efficiency
-   point per gene (not just ride the gradient). Must be a trade-off (not a monotone dial like raw potency),
-   e.g. discrete gears where high gear = more output per energy but a lower ops/tick rate cap — optimum is
-   niche-dependent (energy-rich → fast/wasteful, energy-poor → slow/efficient). Stu wants this.
+1. **Base-efficiency gene field — DONE (2026-06-16).** `Gene.efficiency` (gear g, 0..16): a throughput
+   action (Convert/Import/Repair; FormBond/Mitosis exempt) does `g+1` actions per energy unit but may spend
+   at most `EFFICIENCY_REF=2^16 >> g` energy/tick. g=0 = uncapped 1:1 baseline. Niche-dependent optimum
+   (energy-poor → high g/efficient, energy-rich → low g/throughput); a low-g gene is *always* less efficient
+   even when its ceiling goes unused (the cost that makes high throughput a niche adaptation, not a free
+   bonus). Landed alongside the **light nerf** (LIGHT_QUANTA_SCALE 6_000_000→120_000, ~50×) that makes
+   light-powered division non-viable *emergently* (peak quanta < biomass/4) — replacing the rejected
+   hard-coded break-only-Mitosis rule. Wired through codec (`@g`)/save/mutation/editor/panel.
 2. **Sensed-vs-metabolic split** — a `ChemQty` *sense*-gate currently makes the sensed species handleable →
    retained → the cell hoards a signal it only senses (e.g. cell 1403 hoards `c` from a `ChemQty cc` gate).
    Split "metabolic reach" (retain) from "sensed-only" (still absorbable to sense, but leaks so it tracks
