@@ -55,5 +55,11 @@ android {
     }
 }
 
+// Forward -Dcytobench to the JVM test JVM so the (otherwise-skipped) CytoBench perf probe can be run with
+//   ./gradlew :demos:cyto:jvmTest --tests "*CytoBench*" -Dcytobench=1
+tasks.withType<Test>().configureEach {
+    System.getProperty("cytobench")?.let { systemProperty("cytobench", it) }
+}
+
 // Generates *ShaderSources.kt from .vert / .frag files under src/commonMain/shaders/.
 registerShaderCodegen(packageName = "org.emerge.demo.cyto.shader")

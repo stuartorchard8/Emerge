@@ -17,6 +17,9 @@ class CytoBench {
 
     @Test
     fun profile() {
+        // Gated off by default (grows 22k ticks, ~40s) so a normal `jvmTest` run skips it. Enable with
+        // `-Dcytobench=1`; results land in /tmp/cytobench_out.txt.
+        if (System.getProperty("cytobench") == null) return
         val cfg = CytoConfig()   // live config (mutationRateDenom = 100_000)
         val soa = CytoSoaReducer(cfg)
         var w = CytoWorld.fromSimState(createCytoInitialState())
