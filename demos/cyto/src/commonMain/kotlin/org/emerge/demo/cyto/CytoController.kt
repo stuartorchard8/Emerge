@@ -6,6 +6,7 @@ import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.sim.createCytoInitialState
 import org.emerge.demo.cyto.sim.CytoCellComponent
+import org.emerge.demo.cyto.sim.CytoLightField
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.CytoUnits
@@ -223,6 +224,8 @@ class CytoController(
         val type: String,
         val radius: String,
         val totalBiomass: Int,
+        /** Ambient light at the cell's position this tick, as % of peak (the field the heatmap shows). */
+        val light: String,
         /** Per-species metabolism table: environment (local reservoir) | cytoplasm | biomass, with a flow
          *  arrow on each boundary. Only metabolically-relevant species (handleable, or stored in biomass). */
         val metabolism: List<MetRow>,
@@ -242,10 +245,16 @@ class CytoController(
         val id = lastHeldId ?: return null
         val state = currentState
         val cell = state.components.getTable<CytoCellComponent>().asMap()[id] ?: return null
+        val pos = state.components.getTable<TransformComponent>()[id]?.pos
+        // Ambient light at the cell this tick, as % of peak (matches the heatmap; uses the live sim clock).
+        val light: String = if (pos == null) "?" else {
+            val sample = CytoLightField.default()
+                .sampleAt(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y), state.tick).toFloat()
+            "${(sample / CytoTuning.LIGHT_STRENGTH.toFloat() * 100f).coerceIn(0f, 100f).toInt()}%"
+        }
         // Local reservoir contents (the grid-cell this cell sits in).
         val envMap: Map<String, Int> = run {
             val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid
-            val pos = state.components.getTable<TransformComponent>()[id]?.pos
             if (grid == null || pos == null) emptyMap()
             else grid.cellAt(grid.indexOf(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y)))
         }
@@ -295,6 +304,7 @@ class CytoController(
             type = cell.type.name,
             radius = fmt(cell.logicalRadius.toFloat()),
             totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass),
+            light = light,
             metabolism = metabolism,
             genes = cell.genome.map { describeGene(it) },
         )

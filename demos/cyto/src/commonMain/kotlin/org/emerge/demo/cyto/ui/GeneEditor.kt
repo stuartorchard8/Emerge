@@ -51,6 +51,7 @@ class GeneEditor {
             keyValue("TYPE", info.type)
             keyValue("SIZE", info.radius)
             keyValue("BIOMASS", info.totalBiomass.toString())
+            keyValue("LIGHT", info.light)
             metabolismTable(info)
             if (info.genes.isNotEmpty()) {
                 gap(); row("GENES (tap to edit)")
