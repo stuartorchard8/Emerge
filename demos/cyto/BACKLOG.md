@@ -72,10 +72,28 @@ work landed (golden-gated; tick **3.73 → 1.35 ms, ~2.8×** at 535 cells):
   (tick garbage 1.59→~1.3 MB). GC win, not a CPU one.
 - **Reusable biology cell-order array** (drop per-tick Integer boxing) — small steady alloc win.
 
-Remaining: biology is now the dominant phase (~49%) and is compute-bound + sequential **by design** (shared
-reservoir grid + EntityId-ordered mutation PRNG → not bit-identically parallelisable without grid-cell
-partitioning). The next real lever is parallelising biology across grid-cells (medium effort, determinism-
-sensitive) or reducing per-cell work; otherwise harder culling / smaller world / population cap.
+Biology is the dominant phase (~49% at normal pop, ~75% at thousands). Second round landed:
+
+- **runGenes made allocation-light** (CytoBiologyCore + CellWork scratch): the per-cell cytoplasm.copy()
+  snapshot, two genome.filter lists, and per-gene consume HashMap are now reused per-CellWork scratch
+  (MoleculeStore.copyFrom, activeScratch, consumeIds/Per). Bit-identical. Biology 11.4→10.0 ms and tick
+  garbage 17→11 MB at 5.5k cells; ~0.9 MB (was 1.3) at normal pop. A clean sequential win at all N.
+
+- **Grid-cell-parallel gene phase** (CytoSoaReducer.buildGridGroups + disjoint over groups): each grid-cell
+  is independent (touches only its own reservoir cell), so it's bit-identical (parallelMatchesSequential
+  gates it). **Verified a net LOSS and DEFAULTED OFF** (threshold Int.MAX_VALUE). CytoBench A/B up to ~5.5k
+  cells: every phase slows ~1.5× under the fan-out — including untouched single-threaded phases AND the
+  existing parallel spring solver — because pinning 8 cores busy every tick holds the desktop CPU at its
+  all-core clock (~1.5× below single-core turbo). Partial coverage (only `genes` is parallel) + per-tick
+  invokeAll overhead can't offset that. Kept (tested) for flat-all-core-clock targets (servers); lower the
+  threshold to enable. NOTE the spring solver (springParallelThreshold=2048) loses on this machine too — its
+  "2.1–2.7× at scale" win was likely measured on different hardware or phase-isolated; worth re-checking.
+
+Other levers if biology speed still matters at normal pop: parallelise MORE of biology (light/passive/finish
+per-group + diffuse) so the parallel fraction offsets the clock penalty (only helps on flat-clock CPUs), cut
+the remaining per-cell compute (repeated totalBiomassBonds, the two-pass light shading), or reduce work via
+harder culling / smaller world / population cap. Carrying capacity under moving light is a few hundred (the
+4546-cell figure was an older static-light save), so normal-pop tick is ~1.5 ms — already smooth.
 
 Watch-items the bench surfaced (not perf-critical): cells hoard hard (one held 252k cytoplasm molecules —
 the gradient soft-cap barely bites under the abundant-matter dials; this also coarsens the broadphase, so
