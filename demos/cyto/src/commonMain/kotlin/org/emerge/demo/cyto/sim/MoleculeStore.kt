@@ -54,6 +54,17 @@ class MoleculeStore private constructor(
     fun copy(): MoleculeStore =
         if (n == 0) MoleculeStore() else MoleculeStore(ids.copyOf(n), counts.copyOf(n), n)
 
+    /** Reuse this store as a snapshot of [src], reusing this store's backing arrays (grown only if too
+     *  small) so a per-tick snapshot allocates nothing once warmed. Copies [src]'s sorted/positive
+     *  invariant verbatim, so it's interchangeable with [copy] as a read-only snapshot. */
+    fun copyFrom(src: MoleculeStore) {
+        val m = src.n
+        if (ids.size < m) { ids = IntArray(m); counts = IntArray(m) }
+        src.ids.copyInto(ids, 0, 0, m)
+        src.counts.copyInto(counts, 0, 0, m)
+        n = m
+    }
+
     /** Boundary view for save / render / digest — a key-sorted `Map<String, Int>` identical to the old
      *  storage (counts are all > 0 by invariant, so no zero-filtering is needed). */
     fun toStringMap(): Map<String, Int> {

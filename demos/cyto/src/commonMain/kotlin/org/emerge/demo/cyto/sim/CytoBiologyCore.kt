@@ -121,25 +121,35 @@ object CytoBiologyCore {
         // before its action would carry a gated quantity across its OWN condition threshold (selfGateCap),
         // so a growth gene fills exactly to its limit instead of overshooting in one bulk step. Computed
         // from the tick-start snapshot, so it stays order-independent. Division is excluded here.
-        val continuous = genome.filter { it.action.type != ActionType.Mitosis && isActive(it, work) }
-        val n = continuous.size
+        // Active genes are collected into the reused [CellWork.activeScratch] (their genome indices, in
+        // genome order — same set/order the old `genome.filter` produced) so the pass allocates nothing.
+        val active = work.activeScratch
+        var n = 0
+        for (i in genome.indices) {
+            val g = genome[i]
+            if (g.action.type != ActionType.Mitosis && isActive(g, work)) active[n++] = i
+        }
         if (n > 0) {
-            val snap = work.cytoplasm.copy()          // immutable source of each gene's 1/n share
+            val snap = work.snapScratch.also { it.copyFrom(work.cytoplasm) }   // reused; immutable 1/n source
             val snapBiomass = totalBiomassBonds(work.biomass)
             val quantaShare = work.quanta / n
-            for (gene in continuous) applyGene(gene, work, grid, snap, snapBiomass, n, quantaShare)
+            for (j in 0 until n) applyGene(genome[active[j]], work, grid, snap, snapBiomass, n, quantaShare)
         }
         // Phase 2 — division resolved on the SETTLED state, as one atomic end-of-tick action (a clean
         // half-split is only sane atomically). The gate is RE-CHECKED here against the post-metabolism
         // state: a Mitosis gene armed at tick start but whose condition no longer holds now does NOT
         // divide. Funded from the settled cytoplasm (break the source bond to pay the bulk biomass/4 cost).
         if (!work.dividing) {
-            val dividers = genome.filter { it.action.type == ActionType.Mitosis && gate(it.condition, work) }
-            if (dividers.isNotEmpty()) {
-                val snap = work.cytoplasm.copy()
-                val quantaShare = work.quanta / dividers.size
-                for (gene in dividers) {
-                    applyGene(gene, work, grid, snap, totalBiomassBonds(work.biomass), dividers.size, quantaShare)
+            var dn = 0
+            for (i in genome.indices) {
+                val g = genome[i]
+                if (g.action.type == ActionType.Mitosis && gate(g.condition, work)) active[dn++] = i
+            }
+            if (dn > 0) {
+                val snap = work.snapScratch.also { it.copyFrom(work.cytoplasm) }
+                val quantaShare = work.quanta / dn
+                for (j in 0 until dn) {
+                    applyGene(genome[active[j]], work, grid, snap, totalBiomassBonds(work.biomass), dn, quantaShare)
                     if (work.dividing) break
                 }
             }
@@ -165,39 +175,49 @@ object CytoBiologyCore {
      *  substrate and yield fragments). The op count [k] is computed up front from those caps and applied
      *  once — no loop. Matter-conserving: every per-op effect is the bulk of a conservative single op, and
      *  `k` never exceeds the snapshot share, so no pool goes negative. */
+    /** Accumulate one consumed species [id] (one unit/op) into the [ids]/[per] scratch holding [cn] distinct
+     *  entries, summing if [id] is already present; returns the new entry count. Allocation-free (no map). */
+    private fun addConsume(ids: IntArray, per: IntArray, cn: Int, id: Int): Int {
+        for (i in 0 until cn) if (ids[i] == id) { per[i]++; return cn }
+        ids[cn] = id; per[cn] = 1; return cn + 1
+    }
+
     private fun applyGene(gene: Gene, work: CellWork, grid: CytoMatterGrid, snap: MoleculeStore, snapBiomass: Int, n: Int, quantaShare: Int) {
         val src = gene.source
         val act = gene.action
         // Per-op cytoplasm consumption (action inputs + BreakBond substrate, SUMMED — so an overlap like
-        // BreakBond(ab)+Convert(ab) eating 2 ab/op is counted correctly). Species resolved from the snapshot
-        // by forward scan (lex-smallest == lowest id), so the choice is order-independent.
-        val consume = HashMap<Int, Int>(4)
+        // BreakBond(ab)+Convert(ab) eating 2 ab/op is counted correctly). Accumulated into the reused
+        // per-work [consumeIds]/[consumePer] scratch (≤ 3 distinct species; addConsume sums collisions) so
+        // there's no per-gene map allocation. Species resolved from the snapshot by forward scan
+        // (lex-smallest == lowest id), so the choice is order-independent.
+        val ids = work.consumeIds; val per = work.consumePer
+        var cn = 0
         var fragLId = -1; var fragRId = -1
         if (src is EnergySource.BreakBond) {
             val bondIdx = SpeciesRegistry.bondIndexOf(src.bond)
             val spId = firstWithBond(snap, bondIdx); if (spId < 0) return
             fragLId = SpeciesRegistry.breakLeft(spId, bondIdx); fragRId = SpeciesRegistry.breakRight(spId, bondIdx)
             if (fragLId < 0) return
-            consume[spId] = (consume[spId] ?: 0) + 1
+            cn = addConsume(ids, per, cn, spId)
         }
         var productId = -1
         var convertId = -1
         when (act.type) {
-            ActionType.Convert -> { convertId = SpeciesRegistry.id(act.a); consume[convertId] = (consume[convertId] ?: 0) + 1 }
+            ActionType.Convert -> { convertId = SpeciesRegistry.id(act.a); cn = addConsume(ids, per, cn, convertId) }
             ActionType.FormBond -> {
                 val ac = act.a.firstOrNull() ?: return
                 val bc = act.b.firstOrNull() ?: return
                 val endAId = firstEndingIn(snap, SpeciesRegistry.atomIndexOf(ac)); if (endAId < 0) return
                 val startBId = firstStartingWith(snap, SpeciesRegistry.atomIndexOf(bc)); if (startBId < 0) return
                 productId = SpeciesRegistry.join(endAId, startBId); if (productId < 0) return   // forbidden (polymerisation) ⇒ no-op
-                consume[endAId] = (consume[endAId] ?: 0) + 1
-                consume[startBId] = (consume[startBId] ?: 0) + 1
+                cn = addConsume(ids, per, cn, endAId)
+                cn = addConsume(ids, per, cn, startBId)
             }
             else -> {}   // Import draws from the grid; Repair/Expand/Contract/Mitosis consume no cytoplasm
         }
         // Op count: min over each consumed species' 1/n share, the light energy share, and action caps.
         var k = if (src is EnergySource.Light) quantaShare else Int.MAX_VALUE
-        for ((s, per) in consume) k = minOf(k, (snap.count(s) / n) / per)
+        for (i in 0 until cn) k = minOf(k, (snap.count(ids[i]) / n) / per[i])
         when (act.type) {
             // Division is a BULK, size-scaling cost: it needs `biomass/4` energy THIS tick. Energy can't be
             // accumulated (quanta are use-or-lose; bonds are spent the tick they're broken), so a small
@@ -224,7 +244,7 @@ object CytoBiologyCore {
         }
         if (k <= 0) return
         // Apply: bulk consumption, then BreakBond fragments, then the action's output.
-        for ((s, per) in consume) work.cytoplasm.add(s, -k * per)
+        for (i in 0 until cn) work.cytoplasm.add(ids[i], -k * per[i])
         if (fragLId >= 0) { work.cytoplasm.inc(fragLId, k); work.cytoplasm.inc(fragRId, k) }
         when (act.type) {
             ActionType.Convert -> work.biomass.inc(convertId, k)

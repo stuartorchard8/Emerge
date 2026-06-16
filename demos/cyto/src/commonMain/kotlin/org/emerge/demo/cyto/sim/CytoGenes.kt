@@ -186,6 +186,17 @@ class CellWork(
     /** True once a Repair gene healed any connection this tick — gates writing [connectionDamage] back. */
     var repaired = false
 
+    /** Per-work scratch reused by [CytoBiologyCore.runGenes] so a tick's gene execution allocates nothing:
+     *  the tick-start cytoplasm snapshot ([snapScratch], filled via [MoleculeStore.copyFrom]), the active-gene
+     *  index list ([activeScratch], grown with the genome), and the per-gene consumed-species accumulator
+     *  ([consumeIds]/[consumePer], ≤ 3 distinct: BreakBond substrate + Convert/FormBond inputs). All are owned
+     *  by this CellWork, which a single thread processes during the (grid-cell-partitioned) gene phase, so
+     *  they need no synchronisation. */
+    val snapScratch = MoleculeStore()
+    var activeScratch = IntArray(genome.size.coerceAtLeast(1)); private set
+    val consumeIds = IntArray(4)
+    val consumePer = IntArray(4)
+
     /** Repopulate this pooled instance for a new tick. [connectionDamage] is cleared (the caller refills
      *  it); [handleable] is rebuilt only if [genome] changed reference. */
     fun reset(
@@ -196,7 +207,10 @@ class CellWork(
         this.biomass = biomass
         this.logicalRadius = logicalRadius
         this.type = type
-        if (genome !== this.genome) { this.genome = genome; this.handleable = handleableOf(genome) }
+        if (genome !== this.genome) {
+            this.genome = genome; this.handleable = handleableOf(genome)
+            if (activeScratch.size < genome.size) activeScratch = IntArray(genome.size)
+        }
         this.quanta = quanta
         this.touchCount = touchCount
         this.wear = wear
