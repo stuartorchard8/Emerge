@@ -55,13 +55,14 @@ class CytoControllerTest {
     fun saveSnapshotRoundTripsThroughTheSoaWorld() {
         val c = CytoController()
         repeat(4) { c.tick(1f) }
+        val savedTick = c.tick
         val bytes = c.snapshotBytes()
         val before = cells(c.tick(0f))
 
         val restored = CytoController()
         restored.restoreSnapshot(bytes)
         assertEquals(before, cells(restored.tick(0f)), "restored population should match the saved one")
-        assertEquals(0L, restored.tick, "restore resets the tick counter")
+        assertEquals(savedTick, restored.tick, "restore resumes the sim clock so the day/night phase persists")
         // And it keeps simulating from the restored world.
         var frame = restored.tick(0f)
         repeat(2) { frame = restored.tick(1f) }
