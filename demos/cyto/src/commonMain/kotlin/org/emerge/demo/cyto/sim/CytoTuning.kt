@@ -97,11 +97,8 @@ object CytoTuning {
     /** Elastic blend pulling a cell's radius toward its biomass baseline each tick (higher = slower,
      *  springier relaxation; also relaxes a flexed radius back when the flex gene stops). */
     const val RADIUS_ELASTICITY = 3
-    /** Radius moved per Expand/Contract op (one quantum). */
+    /** Radius moved per Contract op (one quantum), shrinking the cell below its biomass baseline. */
     val FLEX_STEP = Frac(1, 64)
-    /** Max radius deviation a flex gene can hold the cell at, away from its biomass baseline (Expand up to
-     *  baseline+this; Contract down to [MIN_RADIUS]) — bounds the actuator. */
-    val FLEX_RANGE = Frac(1, 2)
 
     // ── Exposure / shading ───────────────────────────────────────────────────────────────────────────
     /** Max connected neighbours considered when computing a cell's surface exposure (a cell with more is

@@ -338,42 +338,41 @@ class CytoSoaSpecTest {
         s.components.getTable<CytoCellComponent>().asMap().getValue(id).logicalRadius.raw
 
     @Test
-    fun flexActionsResizeRadiusAroundBiomassBaseline() {
-        // Three cells with identical biomass (⇒ identical baseline radius), far apart so they never
-        // interact: one Expand gene, one Contract gene, one inert control. Each flex gene is fuelled by
-        // breaking stored `ab`. After a few ticks the expander sits above the baseline and the contractor
-        // below it — and the actions move no matter (radius is not a conserved quantity).
+    fun contractShrinksRadiusBelowBiomassBaseline() {
+        // Two cells with identical biomass (⇒ identical baseline radius), far apart so they never interact:
+        // one Contract gene (fuelled by breaking stored `ab`), one inert control. After a few ticks the
+        // contractor sits below the baseline — and the action moves no matter (radius is not conserved).
+        // (Expand was banned — a radius above baseline would coarsen the broadphase grid — so Contract is
+        // the only flex action.)
         val initial = run {
             val b = SimBuilder(SimState())
-            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8000), genome = flexGenome(ActionType.Expand))
-            b.spawnCell(CytoUnits.coord2(20f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8000), genome = flexGenome(ActionType.Contract))
+            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8000), genome = flexGenome(ActionType.Contract))
             b.spawnCell(CytoUnits.coord2(40f, 0f), Coord2.zero, CellType.Blank, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8000), genome = emptyList())
             b.build()
         }
         val ids = initial.components.getTable<CytoCellComponent>().asMap().keys.sortedBy { it.value }
-        val (expandId, contractId, controlId) = ids
+        val contractId = ids[0]; val controlId = ids[1]
         val total0 = totalAtoms(initial)
         val state = run(initial, ticks = 10) { s, t -> assertEquals(total0, totalAtoms(s), "flex must move no matter; broke at $t") }
-        assertTrue(radiusRaw(state, expandId) > radiusRaw(state, controlId), "Expand should hold the radius above the biomass baseline")
         assertTrue(radiusRaw(state, contractId) < radiusRaw(state, controlId), "Contract should hold the radius below the biomass baseline")
     }
 
     @Test
-    fun expandedRadiusRelaxesBackToBaselineWhenTheGeneStops() {
-        // The muscle property: a held expansion springs back to the biomass baseline once the gene can no
-        // longer fire (here, its `ab` fuel runs out) — via the same elastic blend that grows a cell.
+    fun contractedRadiusRelaxesBackToBaselineWhenTheGeneStops() {
+        // The muscle property: a held contraction springs back UP to the biomass baseline once the gene can
+        // no longer fire (here, its `ab` fuel runs out) — via the same elastic blend that grows a cell.
         val initial = run {
             val b = SimBuilder(SimState())
-            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 80), biomass = mapOf("ab" to 8000), genome = flexGenome(ActionType.Expand))
+            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 80), biomass = mapOf("ab" to 8000), genome = flexGenome(ActionType.Contract))
             b.spawnCell(CytoUnits.coord2(20f, 0f), Coord2.zero, CellType.Blank, cytoplasm = mapOf("ab" to 80), biomass = mapOf("ab" to 8000), genome = emptyList())
             b.build()
         }
         val ids = initial.components.getTable<CytoCellComponent>().asMap().keys.sortedBy { it.value }
         val flexId = ids[0]; val controlId = ids[1]
-        val expanded = run(initial, ticks = 6)
-        assertTrue(radiusRaw(expanded, flexId) > radiusRaw(expanded, controlId), "should be expanded while fuelled")
-        val relaxed = run(expanded, ticks = 300)
-        assertTrue(radiusRaw(relaxed, flexId) < radiusRaw(expanded, flexId), "radius should fall back once the gene stops firing")
+        val contracted = run(initial, ticks = 6)
+        assertTrue(radiusRaw(contracted, flexId) < radiusRaw(contracted, controlId), "should be contracted while fuelled")
+        val relaxed = run(contracted, ticks = 300)
+        assertTrue(radiusRaw(relaxed, flexId) > radiusRaw(contracted, flexId), "radius should spring back up once the gene stops firing")
         val ctrl = radiusRaw(relaxed, controlId)
         assertTrue(kotlin.math.abs(radiusRaw(relaxed, flexId) - ctrl) < ctrl / 16, "radius should relax back to the biomass baseline")
     }
@@ -381,17 +380,20 @@ class CytoSoaSpecTest {
     @Test
     fun touchingConditionGatesAGeneOnUnweldedCellContact() {
         // A gene that fires only while in contact with a cell it isn't welded to. Two cells placed barely
-        // overlapping (so they touch + repel, not weld) each Expand on contact, fuelled by breaking stored
-        // `ab`; a lone control with the identical gene never touches anything, so its gate stays false.
-        val touchExpand = listOf(
-            Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Touching, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Expand)),
+        // overlapping (so they touch + repel, not weld) each Contract on contact, fuelled by breaking stored
+        // `ab`; a lone control with the identical gene never touches anything, so its gate stays false — so
+        // the touched cells end up smaller (contracted) than the control.
+        val touchContract = listOf(
+            Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Touching, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Contract)),
         )
+        // Spawn at the biomass baseline radius (sqrt(8000/16000) ≈ 0.7) so Contract has room to bite on tick 1
+        // (a cell already at MIN_RADIUS couldn't shrink); a shallow overlap touches without welding.
         fun cell(b: SimBuilder, x: Float) =
-            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 100000), biomass = mapOf("ab" to 8000), genome = touchExpand)
+            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 100000), biomass = mapOf("ab" to 8000), logicalRadius = org.emerge.sim.core.physics.primitives.Frac(7, 10), genome = touchContract)
         val initial = run {
             val b = SimBuilder(SimState())
-            cell(b, -0.22f); cell(b, 0.22f)   // ~0.06 overlap at MIN_RADIUS ⇒ touch, not weld
-            cell(b, 20f)                       // lone control, never in contact
+            cell(b, -0.6f); cell(b, 0.6f)   // ~0.2 overlap at radius 0.7 ⇒ touch, not weld
+            cell(b, 20f)                     // lone control, never in contact
             b.build()
         }
         val ids = initial.components.getTable<CytoCellComponent>().asMap().keys.sortedBy { it.value }
@@ -399,7 +401,7 @@ class CytoSoaSpecTest {
         val total0 = totalAtoms(initial)
         val state = run(initial, ticks = 2) { s, t -> assertEquals(total0, totalAtoms(s), "touch gating must conserve matter; broke at $t") }
         val control = radiusRaw(state, controlId)
-        assertTrue(radiusRaw(state, aId) > control, "a touched cell should have fired its Touching-gated Expand (got ${radiusRaw(state, aId)} vs control $control)")
-        assertTrue(radiusRaw(state, bId) > control, "both touching cells should have fired")
+        assertTrue(radiusRaw(state, aId) < control, "a touched cell should have fired its Touching-gated Contract (got ${radiusRaw(state, aId)} vs control $control)")
+        assertTrue(radiusRaw(state, bId) < control, "both touching cells should have fired")
     }
 }

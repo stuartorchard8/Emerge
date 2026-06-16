@@ -76,7 +76,6 @@ object GeneCodec {
         ActionType.Import -> "Import ${tok(a.a)}"
         ActionType.FormBond -> "FormBond ${tok(a.a)} ${tok(a.b)}"
         ActionType.Convert -> "Convert ${tok(a.a)}"
-        ActionType.Expand -> "Expand"
         ActionType.Contract -> "Contract"
         ActionType.Mitosis -> "Mitosis"
         ActionType.Repair -> "Repair"
@@ -86,7 +85,10 @@ object GeneCodec {
         "Import" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Import, untok(t[1])) }
         "FormBond" -> { require(t.size == 3) { fmt(t) }; GeneAction(ActionType.FormBond, untok(t[1]), untok(t[2])) }
         "Convert" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Convert, untok(t[1])) }
-        "Expand" -> GeneAction(ActionType.Expand)
+        // Expand was banned (it raised a cell's radius above the biomass soft-cap, coarsening the broadphase
+        // grid for the whole world; Contract is kept as the locomotion actuator). Legacy saves decode it to
+        // an inert Repair (a no-op while undamaged) rather than crashing on load.
+        "Expand" -> GeneAction(ActionType.Repair)
         "Contract" -> GeneAction(ActionType.Contract)
         "Mitosis" -> GeneAction(ActionType.Mitosis)
         "Repair" -> GeneAction(ActionType.Repair)

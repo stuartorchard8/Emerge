@@ -367,7 +367,6 @@ class CytoController(
             // multi-atom species in, but only a[0]/b[0] matter), so show just the two operative atoms.
             org.emerge.demo.cyto.sim.ActionType.FormBond -> "BOND ${a.a.take(1)}${a.b.take(1)}"
             org.emerge.demo.cyto.sim.ActionType.Convert -> "CONVERT ${a.a}"
-            org.emerge.demo.cyto.sim.ActionType.Expand -> "EXPAND"
             org.emerge.demo.cyto.sim.ActionType.Contract -> "CONTRACT"
             org.emerge.demo.cyto.sim.ActionType.Mitosis -> "DIVIDE"
             org.emerge.demo.cyto.sim.ActionType.Repair -> "REPAIR"

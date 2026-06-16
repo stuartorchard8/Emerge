@@ -65,14 +65,14 @@ enum class ActionType {
     FormBond,
     /** Lock molecules of [GeneAction.a] from cytoplasm into biomass (structure → size). */
     Convert,
-    /** Push the cell's radius **above** its biomass baseline (operands unused). Each op nudges the
-     *  radius out by a fixed step up to a flex limit; the per-tick elastic relaxation toward the
-     *  biomass-derived size (see [CytoBiologyCore.finish]) pulls it back when the gene stops firing, so
-     *  it behaves like an actively-held muscle. The actuator a locomotion driver flexes against the
-     *  asymmetric surface drag. */
-    Expand,
-    /** Push the cell's radius **below** its biomass baseline, down to [MIN_RADIUS] (operands unused).
-     *  The contractile counterpart of [Expand]; same elastic relaxation back to baseline. */
+    /** Push the cell's radius **below** its biomass baseline, down to [MIN_RADIUS] (operands unused). Each
+     *  op nudges the radius in by a fixed step; the per-tick elastic relaxation toward the biomass-derived
+     *  size (see [CytoBiologyCore.finish]) pulls it back when the gene stops firing, so it behaves like an
+     *  actively-held muscle — the locomotion actuator, flexed against the asymmetric surface drag. There is
+     *  deliberately **no Expand counterpart**: a radius *above* the biomass baseline would raise the
+     *  broadphase's max-radius (which sets the spatial-grid cell size), coarsening the collision grid for the
+     *  whole world. Contraction only ever shrinks a cell, so it never coarsens the grid; it's sufficient for
+     *  locomotion on its own (a travelling contraction wave). */
     Contract,
     /** Divide (mitosis); [GeneAction.a]/[GeneAction.b] unused. */
     Mitosis,
