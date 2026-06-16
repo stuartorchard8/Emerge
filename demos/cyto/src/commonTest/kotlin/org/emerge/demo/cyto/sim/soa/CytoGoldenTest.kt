@@ -104,11 +104,11 @@ class CytoGoldenTest {
     // determinism gates held; probeCytoPopulation sustains (plateau ~67, atoms conserved, radii bounded).
     // growth, mutation off, 250 ticks from the default scene.
     private val GROWTH = mapOf(
-        "meta" to "bfb97b4c88e32319",
-        "physics" to "643973d772a747c7",
-        "biology" to "a3a62d780b04cc7f",
-        "topology" to "324b9fdbcba328f8",
-        "grid" to "e1bd45b16a5ac916",
+        "meta" to "9e9bec4ae4480164",
+        "physics" to "163929d69e0e80d9",
+        "biology" to "37674682970e5189",
+        "topology" to "6b125557a8eeb217",
+        "grid" to "9e4e168e96451d83",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
     // Re-baselined twice for deliberate gene-model extensions, both of which re-route point-mutation's
@@ -149,20 +149,25 @@ class CytoGoldenTest {
     // under moving light, ~identical at the live mutation rate). This un-parks
     // heterotrophLivesOffStoredMatter (its break-powered Convert no longer overshoots, so it keeps a reserve
     // to divide).
+    // Re-baselined 2026-06-16 (#4): the fresh-world default is now MOVING LIGHT (CytoTuning.LIGHT_MOVING=true,
+    // committed) with the founder seeded at the world ORIGIN (0,0). The daylight band only lights the cell
+    // as it sweeps past (LIGHT_ORBIT_PERIOD), so growth is orbit-paced: the first division slips to ~tick 988
+    // (was ~200 under static sources). Golden + colonisation-spec tick budgets bumped past that (goldens
+    // 250→1500, interact grow 80→1200) so they still capture a real colony; determinism + conservation held.
     private val MUTATION = mapOf(
-        "meta" to "b4b1c7fc41ef0de4",
-        "physics" to "ef2fcf6525da8b8f",
-        "biology" to "eaf96e53ac06ed52",
-        "topology" to "85ed0cd68d2edb97",
-        "grid" to "7f912bd5c85f5883",
+        "meta" to "338dffb926c7659b",
+        "physics" to "e8c3c62e79591167",
+        "biology" to "dd19177e913e940d",
+        "topology" to "cbf29ce484222325",
+        "grid" to "341bc0718799ed37",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
-        "meta" to "3061e61d85cd813",
-        "physics" to "e5e70e491af66134",
-        "biology" to "fc110a0e8cb125b3",
-        "topology" to "a4c73831fd1507bd",
-        "grid" to "1531aae35ea0d02e",
+        "meta" to "3f0b2ba5aa1d4907",
+        "physics" to "5f7b5cbd504ec4ef",
+        "biology" to "37ebdf78451cfa47",
+        "topology" to "cbf29ce484222325",
+        "grid" to "e37d89cbe568c1e1",
     )
 
     @Test
@@ -170,7 +175,7 @@ class CytoGoldenTest {
         val cfg = CytoConfig(mutationRateDenom = 0)
         val soa = CytoSoaReducer(cfg)
         var w = CytoWorld.fromSimState(createCytoInitialState())
-        repeat(250) { w = soa.tick(w, CytoInput.EMPTY) }
+        repeat(1500) { w = soa.tick(w, CytoInput.EMPTY) }   // past the founder's first division (~tick 988 under moving light)
         assertGolden("growth", GROWTH, w.toSimState())
     }
 
@@ -179,7 +184,7 @@ class CytoGoldenTest {
         val cfg = CytoConfig(mutationRateDenom = 200)
         val soa = CytoSoaReducer(cfg)
         var w = CytoWorld.fromSimState(createCytoInitialState())
-        repeat(250) { w = soa.tick(w, CytoInput.EMPTY) }
+        repeat(1500) { w = soa.tick(w, CytoInput.EMPTY) }
         assertGolden("mutation", MUTATION, w.toSimState())
     }
 
@@ -188,7 +193,7 @@ class CytoGoldenTest {
         val cfg = CytoConfig(mutationRateDenom = 0)
         val soa = CytoSoaReducer(cfg)
         var w = CytoWorld.fromSimState(createCytoInitialState())
-        repeat(80) { w = soa.tick(w, CytoInput.EMPTY) }   // grow a connected colony
+        repeat(1200) { w = soa.tick(w, CytoInput.EMPTY) }   // grow a connected colony (slower under moving light)
         // A fixed input script (positions in logical units), one tap per tick, deterministic.
         val collector = CellType.Collector
         w = soa.tick(w, CytoInput(taps = listOf(CytoInput.Tap(0f, 0f, TouchMode.Delete, collector))))

@@ -101,7 +101,7 @@ class CytoSoaSpecTest {
     fun autotrophGrowsIntoAColony() {
         val initial = createCytoInitialState()
         val start = cellCount(initial)
-        val state = run(initial, ticks = 300)
+        val state = run(initial, ticks = 1200)   // first division ~tick 988 under the moving daylight band
         assertTrue(cellCount(state) > start, "autotroph should divide into a colony; got ${cellCount(state)} from $start")
         assertTrue(springCount(state) > 0, "divided cells should be spring-connected")
     }
@@ -210,13 +210,14 @@ class CytoSoaSpecTest {
 
     @Test
     fun saveRoundTripsTheMatterWorld() {
-        // Break-powered division bootstraps slowly (the founder builds a reserve + biomass for ~200-400
-        // ticks before its first split), so colonise at the deterministic baseline first, THEN evolve the
-        // colony under mutation — exercising the save codec on a real, multi-cell, genetically-diverged
-        // world. (Mutation-on from tick 0 wouldn't colonise here: the lone founder mutates before its slow
-        // first division. The LIVE world mutates 500× slower — MUTATION_RATE_DENOM=100_000 vs 200 — so its
-        // first division lands long before any mutation; rate 200 is a divergence stress fixture.)
-        val grown = run(createCytoInitialState(), ticks = 500)
+        // Break-powered division bootstraps slowly (under the moving daylight band the founder builds a
+        // reserve + biomass for ~1000 ticks before its first split), so colonise at the deterministic
+        // baseline first, THEN evolve the colony under mutation — exercising the save codec on a real,
+        // multi-cell, genetically-diverged world. (Mutation-on from tick 0 wouldn't colonise here: the lone
+        // founder mutates before its slow first division. The LIVE world mutates 500× slower —
+        // MUTATION_RATE_DENOM=100_000 vs 200 — so its first division lands long before any mutation; rate
+        // 200 is a divergence stress fixture.)
+        val grown = run(createCytoInitialState(), ticks = 1500)
         val state = run(grown, cfg.copy(mutationRateDenom = 200), ticks = 400)
 
         val bytes = org.emerge.demo.cyto.CytoSaveCodec.encode(state)
@@ -268,7 +269,7 @@ class CytoSoaSpecTest {
 
     @Test
     fun divisionInheritsTheGenome() {
-        val state = run(createCytoInitialState(), ticks = 300)
+        val state = run(createCytoInitialState(), ticks = 1200)   // first division ~tick 988 under moving light
         val cells = state.components.getTable<CytoCellComponent>().asMap().values
         assertTrue(cells.size > 1, "expected a colony")
         assertTrue(cells.all { it.genome == AUTOTROPH_GENES }, "every cell should inherit the autotroph genome")

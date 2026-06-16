@@ -45,7 +45,7 @@ object CytoTuning {
      *  wrapping once per [LIGHT_ORBIT_PERIOD] ticks, replacing the 4 static sources. Cells must then hoard
      *  through the dark (store bonded molecules + a BreakBond gene to burn them) or follow the light.
      *  false = the 4 static quarter-point sources (the original world). */
-    const val LIGHT_MOVING = false
+    const val LIGHT_MOVING = true
     /** Ticks for the daylight band to sweep once around the torus — the day/night period. At ~60 ticks/s,
      *  3600 ≈ one minute. (Only used when [LIGHT_MOVING].) */
     const val LIGHT_ORBIT_PERIOD = 3600L

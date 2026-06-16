@@ -7,10 +7,10 @@ import org.emerge.sim.core.sim.SimState
 
 /**
  * Fresh-start world (matter model, MORPHOGENESIS.md): one hand-authored **autotroph** ([Collector] =
- * [AUTOTROPH_GENES]) sitting on a light source, seeded with a little cytoplasm + biomass, plus the
- * finite [CytoMatterGrid] reservoir (free monomers near the sources). It imports a/b, bonds them into
- * `ab` under light, converts `ab` to biomass to grow, and divides — a clonal colony that **plateaus** as
- * the local matter is drawn down (the carrying capacity).
+ * [AUTOTROPH_GENES]) at the world origin, seeded with a little cytoplasm + biomass, plus the finite
+ * [CytoMatterGrid] reservoir. Under the moving daylight band ([CytoTuning.LIGHT_MOVING]) it bonds a/b into
+ * `ab` while lit, converts `ab` to biomass to grow, hoards a reserve through the dark, and divides by
+ * breaking it — a clonal colony that **plateaus** as the local matter is drawn down (the carrying capacity).
  */
 fun createCytoInitialState(): SimState {
     // Seed the deterministic PRNG non-zero: the engine LCG's first draw degenerates to 0 from a 0 seed
@@ -18,9 +18,8 @@ fun createCytoInitialState(): SimState {
     // tick 1. A fixed non-zero seed keeps the sim deterministic without that artifact. (SimState's world
     // defaults to a fresh EcsWorld per construction, so each call gets an isolated entity allocator.)
     val builder = SimBuilder(SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
-    val (sx, sy) = CytoLightField.SOURCES.first()    // sit the seed on a light source
     builder.spawnCell(
-        pos = CytoUnits.coord2(sx, sy),
+        pos = CytoUnits.coord2(0f, 0f),   // seed at the world origin (the moving daylight band sweeps to it)
         vel = Coord2.zero,
         type = CellType.Collector,
         cytoplasm = CytoSeed.SEED_CYTOPLASM,
