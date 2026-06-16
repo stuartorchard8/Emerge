@@ -11,6 +11,9 @@ lives in the conversation history; MORPHOGENESIS.md is the source of truth for t
   (`IMPORT_GRADIENT_SCALE`): 1:1 at/below ambient, diminishing as the cell concentrates above it. Hoarding
   self-limits (soft cap); nutrient-poor patches become an energy-rich niche; competition rewards
   over-pushing before the cheap band depletes. (Passive exchange + synthesis unchanged.)
+- **Emergent size limit** — replaced the hard Convert cap (`1 − biomass/MAX`) with throttling every op
+  except Mitosis by `SCALE/(SCALE+biomass)` (`METABOLIC_BIOMASS_SCALE`): metabolism slows with size while
+  decay rises, so growth crosses decay at an emergent (strength-dependent) size — no flat 32000.
 - **Cell panel** — env|CYT|BIO metabolism table with two flow arrows; reservoir shown; FormBond displayed
   by its two operative atoms.
 - **Sim/draw decoupled** (own sim thread + speed control); **in-game gene-editor** (tap a gene → edit /
@@ -35,8 +38,9 @@ the first step (efficient-slow is the free default; over-push only when conteste
    the reservoir). Proper fix for the hoarding-a-signal artifact.
 3. **Gradient cost on synthesis** (Convert / FormBond) — only if synthesis turns out to need the same
    diminishing-returns treatment; currently flat.
-4. **Cytoplasm capacity = f(biomass), overflow leaks** — Stu's idea; *likely redundant* now that the
-   gradient cost gives an emergent soft cap. Revisit only if a hard-ish capacity still feels wanted.
+4. **Cytoplasm capacity = f(biomass), overflow leaks** — Stu's idea; now *doubly redundant* (import
+   gradient soft-cap + the emergent metabolic size limit). Revisit only if a hard-ish capacity still feels
+   wanted.
 
 Rejected: per-resource energy sharing (divide light only among light genes) — keep the genome-bloat tax;
 it drives the solar-vs-chem divergence.
