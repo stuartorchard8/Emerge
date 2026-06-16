@@ -17,6 +17,43 @@ import kotlin.test.Test
 class CytoBench {
 
     @Test
+    fun reproFreezeColony() {
+        if (System.getProperty("cytorepro") == null) return
+        // A dense colony of normal cells + ONE giant (huge-biomass) cell among them — does the giant's radius
+        // coarsen the broadphase so contacts goes O(n²)?
+        fun build(giant: Boolean): CytoWorld {
+            val b = org.emerge.sim.core.sim.SimBuilder(org.emerge.sim.core.sim.SimState(randomSeed = 1))
+            b.update<org.emerge.demo.cyto.sim.CytoMatterGridComponent>(org.emerge.demo.cyto.sim.GRID_SINGLETON) {
+                org.emerge.demo.cyto.sim.CytoMatterGridComponent(org.emerge.demo.cyto.sim.CytoMatterGrid.empty())
+            }
+            val side = 30   // 900 cells packed ~MIN_RADIUS apart
+            for (gy in 0 until side) for (gx in 0 until side) {
+                val big = giant && gx == side / 2 && gy == side / 2
+                b.spawnCell(
+                    org.emerge.demo.cyto.sim.CytoUnits.coord2(-7.5f + gx * 0.5f, -7.5f + gy * 0.5f),
+                    org.emerge.sim.core.physics.primitives.Coord2.zero, org.emerge.demo.cyto.cells.CellType.Collector,
+                    biomass = mapOf("ab" to if (big) 30_000_000 else 4000),
+                    logicalRadius = if (big) org.emerge.sim.core.physics.primitives.Frac(40, 1) else org.emerge.demo.cyto.sim.MIN_RADIUS,
+                )
+            }
+            return CytoWorld.fromSimState(b.build())
+        }
+        val sb = StringBuilder()
+        for (giant in listOf(false, true)) {
+            val prof = PipelineProfiler()
+            val soa = CytoSoaReducer(CytoConfig(mutationRateDenom = 0), profiler = prof)
+            var w = build(giant)
+            repeat(5) { w = soa.tick(w, CytoInput.EMPTY) }   // warm
+            prof.reset()
+            repeat(20) { w = soa.tick(w, CytoInput.EMPTY) }
+            val r = prof.report()
+            sb.appendLine("giant=$giant cells=${w.count} tickAvg=%.1f ms".format(r.tickAvgNanos / 1e6))
+            for (p in r.phases.sortedByDescending { it.sharePercent }) sb.appendLine("  %-12s %8.1f us".format(p.name, p.avgNanos / 1e3))
+        }
+        java.io.File("/tmp/cytorepro.txt").writeText(sb.toString())
+    }
+
+    @Test
     fun profile() {
         // Gated off by default (grows 22k ticks, ~40s) so a normal `jvmTest` run skips it. Enable with
         // `-Dcytobench=1`; results land in /tmp/cytobench_out.txt.

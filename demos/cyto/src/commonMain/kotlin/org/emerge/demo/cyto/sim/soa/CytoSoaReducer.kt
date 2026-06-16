@@ -669,7 +669,9 @@ class CytoSoaReducer(
                 }
             }
             if (work.logicalRadius.raw != oldRadiusRaw) {
-                w.radiusRaw[slot] = CytoUnits.len(work.logicalRadius.toFloat()).raw
+                // Collision radius is capped (MAX_COLLISION_RADIUS) so a metabolically-huge cell keeps a
+                // bounded physical footprint — it can't coarsen the broadphase or weld to the whole colony.
+                w.radiusRaw[slot] = CytoUnits.len(work.logicalRadius.coerceAtMost(CytoTuning.MAX_COLLISION_RADIUS).toFloat()).raw
             }
             val newMass = cellMass(work.cytoplasm, work.biomass)
             val oldMass = w.mass[slot].toUInt()

@@ -108,6 +108,12 @@ object CytoTuning {
     const val RADIUS_ELASTICITY = 3
     /** Radius moved per Contract op (one quantum), shrinking the cell below its biomass baseline. */
     val FLEX_STEP = Frac(1, 64)
+    /** Cap on a cell's **collision/physical** radius (the broadphase + welding + render footprint), even as
+     *  its biomass/metabolic size grows past it. Decouples emergent metabolic size from physical size: a
+     *  hoarding cell can be metabolically huge but never balloons its collider, which would otherwise coarsen
+     *  the spatial grid (cellSize = 2·maxRadius) and weld it to the whole colony — an O(n·degree) per-tick
+     *  blow-up. Normal cells sit well under this (biomass ~8k ⇒ radius ~0.7), so only pathological giants cap. */
+    val MAX_COLLISION_RADIUS = Frac(2, 1)
 
     // ── Exposure / shading ───────────────────────────────────────────────────────────────────────────
     /** Max connected neighbours considered when computing a cell's surface exposure (a cell with more is

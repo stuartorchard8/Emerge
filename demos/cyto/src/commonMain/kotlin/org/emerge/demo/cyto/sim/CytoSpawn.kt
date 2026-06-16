@@ -60,7 +60,7 @@ fun SimBuilder.spawnCell(
         ang = Coord(0),
         angVel = Coord(0),
         mass = cellMass(cytoplasm, biomass),
-        radius = CytoUnits.len(radius.toFloat()),
+        radius = CytoUnits.len(radius.coerceAtMost(CytoTuning.MAX_COLLISION_RADIUS).toFloat()),   // capped collider; logicalRadius below stays emergent
         bounce = Frac(0),
         rough = Frac(0),
         shape = BodyShape.CIRCLE,
