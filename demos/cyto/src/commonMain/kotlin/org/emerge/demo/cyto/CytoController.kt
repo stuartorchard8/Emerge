@@ -226,7 +226,9 @@ class CytoController(
         val type: String,
         val radius: String,
         val totalBiomass: Int,
-        /** Light the cell actually captures this tick (ambient field × surface exposure), as % of peak. */
+        /** Light the cell actually captures this tick, as the energy **quanta** it powers actions with
+         *  (ambient field × surface exposure × LIGHT_QUANTA_SCALE — the same value the sim spends), with the
+         *  % of peak in parens. Quanta is the honest energy budget; the % alone hid how large it was. */
         val light: String,
         /** Per-species metabolism table: environment (local reservoir) | cytoplasm | biomass, with a flow
          *  arrow on each boundary. Only metabolically-relevant species (handleable, or stored in biomass). */
@@ -262,8 +264,13 @@ class CytoController(
                 val d = np - pos
                 angles[ek++] = CytoExposure.diamondAngle(d.x, d.y).raw
             }
-            val exposure = CytoExposure.weight(angles, ek).toFloat()
-            "${(sample.toFloat() * exposure / CytoTuning.LIGHT_STRENGTH.toFloat() * 100f).coerceIn(0f, 100f).toInt()}%"
+            val exposure = CytoExposure.weight(angles, ek)
+            // Quanta = the actual per-tick energy the cell powers actions with (matches CytoSoaReducer's
+            // light calc: (field × exposure × SCALE).raw / Int.MAX). Pre-shading (a co-located crowd splits
+            // it); it's the cell's gross capture. The % of peak follows it for context.
+            val quanta = (((sample * exposure) * CytoTuning.LIGHT_QUANTA_SCALE).raw / Int.MAX_VALUE.toLong()).toInt()
+            val pct = (sample.toFloat() * exposure.toFloat() / CytoTuning.LIGHT_STRENGTH.toFloat() * 100f).coerceIn(0f, 100f).toInt()
+            "$quanta q ($pct%)"
         }
         // Local reservoir contents (the grid-cell this cell sits in).
         val envMap: Map<String, Int> = run {
