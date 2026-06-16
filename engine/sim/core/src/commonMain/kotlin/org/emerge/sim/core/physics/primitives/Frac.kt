@@ -62,15 +62,18 @@ value class Frac(val raw: Long) {
          *  build from `exp`, rendering). Sim arithmetic stays in Frac. */
         fun fromFloat(f: Float): Frac = Frac((f.toDouble() * Int.MAX_VALUE.toDouble()).toLong())
 
+        // Exact floor(√n). The former [1, floor(√Long.MAX)] bisection was, for n ≥ 2, exactly floor(√n)
+        // (the bounds never clamp) and n for n < 2. A double seed corrected to integer exactness yields the
+        // same floor with one sqrt + a couple of overflow-safe division checks instead of ~31 divisions; the
+        // corrected result is the exact integer floor regardless of the double's rounding, so it stays
+        // deterministic across platforms and bit-identical to the old bisection.
         private fun isqrt(n: Long): Long {
             if (n < 2) return n
-            var lo = 1L; var hi = 3_037_000_499L   // floor(sqrt(Long.MAX_VALUE))
-            var r = 1L
-            while (lo <= hi) {
-                val mid = lo + (hi - lo) / 2
-                if (mid <= n / mid) { r = mid; lo = mid + 1 } else hi = mid - 1
-            }
-            return r
+            var x = kotlin.math.sqrt(n.toDouble()).toLong()
+            if (x < 1L) x = 1L
+            while (x > n / x) x--                 // descend until x·x ≤ n
+            while (x + 1L <= n / (x + 1L)) x++     // ascend until (x+1)·(x+1) > n  → x = floor(√n)
+            return x
         }
         private val SQRT_MAX_INT: Long = isqrt(Int.MAX_VALUE.toLong())
 
