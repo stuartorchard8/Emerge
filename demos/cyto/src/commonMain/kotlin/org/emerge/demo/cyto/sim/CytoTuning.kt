@@ -80,10 +80,12 @@ object CytoTuning {
     // ── Growth, size & death ─────────────────────────────────────────────────────────────────────────
     /** Biomass bonds for a full-size (radius 1.0) cell — `radius = sqrt(bonds / BONDS_PER_FULL)`. */
     const val BONDS_PER_FULL = 16_000
-    /** Soft size cap: Convert (growth) is scaled by (1 − biomass/this), so biomass asymptotes here and a
-     *  cell can't balloon — bounding radius (~sqrt(this/BONDS_PER_FULL)) keeps the contact broadphase grid
-     *  fine. Must be > the divide threshold so normal cells still reach division. ⚙ */
-    const val MAX_BIOMASS_BONDS = 32_000
+    /** Metabolic slowdown scale: every gene op **except Mitosis** is throttled by `SCALE/(SCALE+biomass)`,
+     *  so metabolism runs at half speed when biomass = this. A bigger cell builds (and acquires) slower
+     *  while size-proportional decay (degrade) keeps rising, so growth can't outpace decay above an
+     *  EMERGENT size — a soft, strength-dependent limit (stronger cells settle larger), not a hard cap.
+     *  Lower = an earlier/tighter plateau. ⚙ */
+    const val METABOLIC_BIOMASS_SCALE = 32_000
     /** Degradation: a cell's wear accumulator gains its total biomass bonds each tick; every
      *  DEGRADE_PERIOD of accumulated wear breaks one bond (so decay rate ∝ size). */
     const val DEGRADE_PERIOD = 4000

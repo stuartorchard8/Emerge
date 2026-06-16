@@ -182,16 +182,16 @@ object CytoBiologyCore {
             ActionType.Repair -> k = minOf(k, repairOpsNeeded(work))
             ActionType.Expand -> k = minOf(k, flexOps(work.logicalRadius, flexMax(work)))
             ActionType.Contract -> k = minOf(k, flexOps(MIN_RADIUS, work.logicalRadius))
-            ActionType.Convert -> {
-                // Size cap: growth gets *less effective the bigger the cell already is*, scaling Convert
-                // by (1 − biomass/MAX) so biomass asymptotes to MAX_BIOMASS_BONDS. Bounds cell radius —
-                // keeps the broadphase grid fine (one runaway giant otherwise coarsens it for everyone)
-                // and stops Mitosis-less mutants growing without limit. Energy/decay can't cap size here
-                // (both dwarf maintenance), so the cap rides on growth.
-                val room = (CytoTuning.MAX_BIOMASS_BONDS - totalBiomassBonds(work.biomass)).coerceAtLeast(0)
-                k = (k.toLong() * room / CytoTuning.MAX_BIOMASS_BONDS).toInt()
-            }
             else -> {}
+        }
+        // Metabolic slowdown with size: every op (except Mitosis — a big cell must still be able to divide
+        // to escape) runs at `k × SCALE/(SCALE+biomass)`. A bigger cell spreads its metabolic capacity over
+        // more structure, so its build/acquire rate falls while size-proportional decay keeps rising — they
+        // cross at an EMERGENT size where the cell can no longer outgrow its own decay. No hard cap: a
+        // stronger (better-fed/lit) cell settles larger; a weak one plateaus small (or shrinks back).
+        if (act.type != ActionType.Mitosis) {
+            val bio = totalBiomassBonds(work.biomass)
+            k = (k.toLong() * CytoTuning.METABOLIC_BIOMASS_SCALE / (CytoTuning.METABOLIC_BIOMASS_SCALE + bio)).toInt()
         }
         if (k <= 0) return
         // Apply: bulk consumption, then BreakBond fragments, then the action's output.
