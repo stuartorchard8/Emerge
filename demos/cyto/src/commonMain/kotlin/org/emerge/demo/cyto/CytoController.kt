@@ -322,7 +322,9 @@ class CytoController(
         return CellInfo(
             id = id.value,
             type = cell.type.name,
-            radius = fmt(cell.logicalRadius.toFloat()),
+            // Capped to the collision radius (what the cell physically is); biomass can drive logicalRadius
+            // past this but the footprint doesn't grow — so SIZE matches what's rendered/collides.
+            radius = fmt(cell.logicalRadius.coerceAtMost(CytoTuning.MAX_COLLISION_RADIUS).toFloat()),
             totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass),
             light = light,
             metabolism = metabolism,
