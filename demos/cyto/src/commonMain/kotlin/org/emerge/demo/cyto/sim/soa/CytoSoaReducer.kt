@@ -86,7 +86,7 @@ class CytoSoaReducer(
     // busy every tick pins the CPU at its all-core clock (~1.5× below single-core turbo). The partial
     // coverage (only the genes sub-phase is parallel) + per-tick invokeAll overhead can't offset that. The
     // scaffold is kept (bit-identical, tested) for flat-all-core-clock targets (servers); lower this there to
-    // enable it. See demos/cyto/BACKLOG.md.
+    // enable it. See demos/cyto/PERF.md.
     private val bioParallelThreshold: Int = Int.MAX_VALUE,
 ) {
     private val player = mapOf(PlayerId(0) to CytoInput.EMPTY)
