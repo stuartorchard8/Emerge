@@ -13,11 +13,13 @@ settled design we build toward; it is the contract, not a status log.
 
 > **2026-06-17 — three mechanisms for stronger selection.** A mutating, biodiverse population exists, but
 > selective pressure is too weak for more complex forms to be favoured — and two mechanics have drifted
-> from this contract. The settled plan is three **independently buildable** mechanisms (focus order TBD;
-> see **§Three mechanisms for stronger selection** near the end): **(A)** reopen symmetric down-gradient
-> diffusion, with an `Import` gene doubling as a *seal* against passive leak; **(B)** a direct-harm
-> `Lyse` action (predatory lysis of touching cells) for active competition; **(C)** gene-driven
-> **asymmetric** mitosis via morphogen concentration, the differentiation keystone.
+> from this contract. Three **independently buildable** mechanisms (see **§Three mechanisms for stronger
+> selection** near the end): **(A)** reopen symmetric down-gradient diffusion — *drop the leak-block*,
+> concentrate via paid active `Import` (PLANNED); **(B)** a direct-harm `Lyse` action (predatory lysis of
+> touching cells) for active competition (PLANNED); **(C)** gene-driven **asymmetric** mitosis via
+> morphogen concentration, the differentiation keystone — ✅ **built**, together with **sensing ≠
+> permeability** (a sensed morphogen stays trace), so persistent one-genome→many-cell-types
+> differentiation is affirmed end-to-end. Remaining: A, B, and the additive **`Conc`** operand.
 
 ## The central principle: matter is closed, energy is open
 
