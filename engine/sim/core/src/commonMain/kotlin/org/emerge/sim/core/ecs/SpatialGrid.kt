@@ -54,16 +54,32 @@ class SpatialGrid @PublishedApi internal constructor(
     @PublishedApi internal val cells: Array<IntList?> =
         arrayOfNulls(1 shl (numCellsLog2 * 2))
 
+    /** Keys touched since the last [clearForReuse], so a reuse clear visits only occupied cells rather
+     *  than scanning the whole (up to 1M-slot) backing array. */
+    private val occupied = IntList()
+
+    /** Dimensions packed as `(cellSizeLog2 shl 32) or numCellsLog2`, so a caller holding a cached grid can
+     *  cheaply check it still matches the dimensions it would otherwise rebuild (see [packedDimsFor]). */
+    val packedDims: Long get() = (cellSizeLog2.toLong() shl 32) or numCellsLog2.toLong()
+
     fun insert(index: Int, xRaw: Int, yRaw: Int) {
         val cx = (xRaw shr cellSizeLog2) and mask
         val cy = (yRaw shr cellSizeLog2) and mask
         val key = (cy shl numCellsLog2) or cx
-        val list = cells[key]
-        if (list == null) {
-            cells[key] = IntList().also { it.add(index) }
-        } else {
-            list.add(index)
-        }
+        var list = cells[key]
+        if (list == null) { list = IntList(); cells[key] = list }
+        if (list.size == 0) occupied.add(key)   // first entry into this cell since the last clear
+        list.add(index)
+    }
+
+    /** Reset to empty for reuse next tick, **retaining** the backing array and per-cell [IntList]s (only
+     *  their sizes are zeroed) — so a steady-state sim re-inserts into the same structures every tick with
+     *  zero allocation, instead of building a fresh grid (up to a 1M-ref array + an IntList per cell). Only
+     *  cells touched since the last clear are visited. Behaviourally identical to a fresh grid: insertion
+     *  order within a cell and the neighbour visit order are unchanged. */
+    fun clearForReuse() {
+        for (k in 0 until occupied.size) cells[occupied[k]]?.clear()
+        occupied.clear()
     }
 
     /**
@@ -118,13 +134,21 @@ class SpatialGrid @PublishedApi internal constructor(
          * `null` and the caller must fall back to an O(n²) sweep.
          */
         fun forMinCellSize(minCellSize: Long, maxCellsPerAxisLog2: Int = MAX_NUM_CELLS_LOG2): SpatialGrid? {
+            val dims = packedDimsFor(minCellSize, maxCellsPerAxisLog2)
+            return if (dims < 0L) null else ofPackedDims(dims)
+        }
+
+        /** The (cellSizeLog2, numCellsLog2) [forMinCellSize] would pick, packed as `(cellSizeLog2 shl 32) or
+         *  numCellsLog2`, or -1 if too few cells fit (the O(n²)-fallback case). Lets a caller decide whether a
+         *  cached grid still fits *without* allocating one — the basis for per-tick grid reuse ([packedDims]). */
+        fun packedDimsFor(minCellSize: Long, maxCellsPerAxisLog2: Int = MAX_NUM_CELLS_LOG2): Long {
             require(minCellSize > 0) { "minCellSize must be positive, was $minCellSize" }
             var cellSizeLog2 = 0
             while (cellSizeLog2 < 32 && (1L shl cellSizeLog2) < minCellSize) {
                 cellSizeLog2 += 1
             }
             var numCellsLog2 = 32 - cellSizeLog2
-            if (numCellsLog2 < MIN_NUM_CELLS_LOG2) return null
+            if (numCellsLog2 < MIN_NUM_CELLS_LOG2) return -1L
             // The cell size sets the *finest* grid correctness allows; the caller may request a coarser
             // one (fewer cells per axis) when the world is sparse, so a handful of small bodies don't
             // force a backing array sized to the whole 2^32 coordinate torus (up to 2^20 = 1M slots).
@@ -134,8 +158,12 @@ class SpatialGrid @PublishedApi internal constructor(
                 numCellsLog2 = cap
                 cellSizeLog2 = 32 - numCellsLog2
             }
-            return SpatialGrid(cellSizeLog2, numCellsLog2)
+            return (cellSizeLog2.toLong() shl 32) or numCellsLog2.toLong()
         }
+
+        /** Build a grid from dimensions packed by [packedDimsFor] / read off [packedDims]. */
+        fun ofPackedDims(packed: Long): SpatialGrid =
+            SpatialGrid((packed ushr 32).toInt(), (packed and 0xFFFFFFFFL).toInt())
 
         /**
          * A `cellsPerAxisLog2` for [entityCount] entities — `√entityCount` with a **3-doubling margin**

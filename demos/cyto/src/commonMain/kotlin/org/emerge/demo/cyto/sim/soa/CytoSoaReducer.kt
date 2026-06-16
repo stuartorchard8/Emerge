@@ -95,6 +95,11 @@ class CytoSoaReducer(
     // (which consumes them), exactly as the AoS pipeline carries the event across phases.
     private val interactDestroy = ArrayList<Int>()
 
+    // Broadphase grid, reused across ticks: cleared + re-inserted when the dimensions (cell size from
+    // maxRadius, cells-per-axis from population) are unchanged, rebuilt only when they shift — so a
+    // steady-state colony pays no per-tick grid allocation (was a fresh ~64K-ref array + per-cell IntList).
+    private var contactGrid: SpatialGrid? = null
+
     // reused per-cell scratch for exposure (neighbour diamond-angles); biology is single-threaded.
     private val expoScratch = LongArray(CytoExposure.MAX_NEIGHBOURS)
 
@@ -224,10 +229,17 @@ class CytoSoaReducer(
         var maxRadius = 0L
         for (i in 0 until n) if (w.radiusRaw[i] > maxRadius) maxRadius = w.radiusRaw[i]
         if (maxRadius <= 0L) return
-        val grid = SpatialGrid.forMinCellSize(
+        val dims = SpatialGrid.packedDimsFor(
             minCellSize = maxRadius * 2L,
             maxCellsPerAxisLog2 = SpatialGrid.cellsPerAxisLog2For(n),
-        ) ?: return
+        )
+        if (dims < 0L) return
+        val cached = contactGrid
+        val grid = if (cached != null && cached.packedDims == dims) {
+            cached.clearForReuse(); cached
+        } else {
+            SpatialGrid.ofPackedDims(dims).also { contactGrid = it }
+        }
         for (i in 0 until n) grid.insert(i, w.posX[i], w.posY[i])
 
         // Sequential single pass in (i asc, j asc) order — matches ContactSystem's emitted list order
