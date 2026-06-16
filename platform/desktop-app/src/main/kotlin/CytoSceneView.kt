@@ -126,8 +126,9 @@ object CytoSceneView {
     private val STARTER_BRUSH: String = buildString {
         appendLine("# cyto brush genome — one gene per line:  ENERGY-SOURCE : CONDITION : ACTION")
         appendLine("#   source:    Light | Break <bond>")
-        appendLine("#   condition: ChemQty <species> >|< <n> | Biomass >|< <n> | Touching >|< <n>")
-        appendLine("#   action:    Import <s> | FormBond <a> <b> | Convert <s> | Expand | Contract | Mitosis | Repair")
+        appendLine("#   condition: <operand> >|< <operand>  (operand = <n> | <species> | Biomass | Touching)")
+        appendLine("#              a species token may be any length: a, ab, abb, …  (e.g.  abb > 0 : Convert abb)")
+        appendLine("#   action:    Import <s> | FormBond <a> <b> | Convert <s> | Contract | Mitosis | Repair")
         appendLine("#   Blank lines and # comments are ignored. Edit, then click \"Load Genome\" to reload;")
         appendLine("#   pick the 'Brush' type, then Spawn (empty space) / Set to paint.")
         appendLine("# This starter IS the simple autotroph: bond a+b -> ab under light, grow, divide, self-repair.")

@@ -13,9 +13,10 @@ package org.emerge.demo.cyto.sim
  *     Break ab : Biomass < ab : Convert ab  # grow only while biomass is below the stored 'ab' reserve
  *
  * Condition is `<operand> <>|<> <operand>`, each operand one of: an integer (a constant), `Biomass`,
- * `Touching`, or a species token (its cytoplasm count). Action is `Import <species>`, `FormBond <a> <b>`,
- * `Convert <species>`, `Expand`, `Contract`, `Mitosis`, or `Repair`. Blank lines and `#` comments are
- * ignored. Round-trips every preset genome (see GeneCodecTest).
+ * `Touching`, or a species token (its cytoplasm count) — and a species token may be any length (`a`, `ab`,
+ * `abb`, …), not just a monomer/dimer. Action is `Import <species>`, `FormBond <a> <b>`, `Convert <species>`,
+ * `Contract`, `Mitosis`, or `Repair`. Blank lines and `#` comments are ignored. Round-trips every preset
+ * genome (see GeneCodecTest).
  */
 object GeneCodec {
 
