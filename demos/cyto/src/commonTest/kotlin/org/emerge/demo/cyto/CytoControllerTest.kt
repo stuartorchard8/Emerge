@@ -36,7 +36,7 @@ class CytoControllerTest {
         // lifecycle bridges. Guards the click-to-delete regression end-to-end through the live runtime.
         val c = CytoController()
         var frame = c.tick(0f)
-        repeat(12) { frame = c.tick(0.25f) }   // grow a few cells
+        repeat(40) { frame = c.tick(1f) }   // grow a few cells (break-powered division is slower)
         val cells = frame.state.components.getTable<CytoCellComponent>().asMap()
         assertTrue(cells.size > 1, "need cells to delete (had ${cells.size})")
 

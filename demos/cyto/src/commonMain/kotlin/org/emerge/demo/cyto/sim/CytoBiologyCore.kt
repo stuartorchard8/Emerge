@@ -177,18 +177,22 @@ object CytoBiologyCore {
         var k = if (src is EnergySource.Light) quantaShare else Int.MAX_VALUE
         for ((s, per) in consume) k = minOf(k, (snap.count(s) / n) / per)
         when (act.type) {
-            ActionType.Mitosis -> k = minOf(k, 1)
+            // Division is a BULK, size-scaling cost: it needs `biomass/4` energy THIS tick. Energy can't be
+            // accumulated (quanta are use-or-lose; bonds are spent the tick they're broken), so a small
+            // per-tick light flux practically can't fund it for any real cell — division is paid by burning
+            // a big chunk of stored bonds (a BreakBond-powered mitosis), and it gets dearer as the cell
+            // grows. The gate may hold below this; it then simply does nothing (no accumulation toward it).
+            ActionType.Mitosis -> { val cost = totalBiomassBonds(work.biomass) / 4; k = if (k >= cost) cost else 0 }
             ActionType.Import -> if (work.gridIndex < 0) k = 0
             ActionType.Repair -> k = minOf(k, repairOpsNeeded(work))
             ActionType.Expand -> k = minOf(k, flexOps(work.logicalRadius, flexMax(work)))
             ActionType.Contract -> k = minOf(k, flexOps(MIN_RADIUS, work.logicalRadius))
             else -> {}
         }
-        // Metabolic slowdown with size: every op (except Mitosis — a big cell must still be able to divide
-        // to escape) runs at `k × SCALE/(SCALE+biomass)`. A bigger cell spreads its metabolic capacity over
-        // more structure, so its build/acquire rate falls while size-proportional decay keeps rising — they
-        // cross at an EMERGENT size where the cell can no longer outgrow its own decay. No hard cap: a
-        // stronger (better-fed/lit) cell settles larger; a weak one plateaus small (or shrinks back).
+        // Metabolic slowdown with size: every op (except Mitosis, which has its own size-scaling cost above)
+        // runs at `k × SCALE/(SCALE+biomass)`. A bigger cell spreads its metabolic capacity over more
+        // structure, so its build/acquire rate falls while size-proportional decay keeps rising — they cross
+        // at an EMERGENT size the cell can't outgrow. No hard cap: a stronger cell settles larger.
         if (act.type != ActionType.Mitosis) {
             val bio = totalBiomassBonds(work.biomass)
             k = (k.toLong() * CytoTuning.METABOLIC_BIOMASS_SCALE / (CytoTuning.METABOLIC_BIOMASS_SCALE + bio)).toInt()

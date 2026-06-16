@@ -223,22 +223,24 @@ fun totalBiomassBonds(biomass: MoleculeStore): Int {
 
 // ── Preset genomes ───────────────────────────────────────────────────────────
 // Seed threshold values live in CytoSeed (initial data — these evolve under mutation); structure below.
-private const val LEAK_RESERVE = CytoSeed.AUTOTROPH_LEAK_RESERVE
 private const val DIVIDE_BIOMASS = CytoSeed.AUTOTROPH_DIVIDE_BIOMASS
 
 /**
- * The hand-authored **light-only autotroph** (the v1 creature). It absorbs the monomers a and b for
- * free by passive uptake near a light source (no Import gene needed), bonds them into `ab` under light,
- * locks most `ab` into biomass to grow, and divides. It keeps a small cytoplasm `ab` reserve which
- * **leaks** to the environment (down-gradient, free — like root exudate), feeding heterotrophs. A
- * clonal colony grows then **plateaus** as the local a/b is drawn down (the matter carrying capacity).
+ * The hand-authored **autotroph** (the v1 creature), built around **break-powered division**. Under
+ * light it bonds the monomers a+b into `ab` ([FormBond], topping up a cytoplasm reserve toward N) and
+ * locks `ab` into biomass to grow ([Convert]) while biomass < N. Division is a *bulk* cost (≈ biomass/4
+ * energy, which a per-tick light flux can't fund — see CytoBiologyCore.applyGene), so it's paid by
+ * **breaking** the stored `ab`: once biomass > N, the BreakBond-powered [Mitosis] burns ~biomass/4 of the
+ * `ab` reserve to split. Holding the reserve up to N (≈4× the division cost) keeps division affordable
+ * even when the reserve is split among genes. a and b are absorbed for free by passive uptake near light.
+ * The founder bootstraps for ~200-400 ticks (build reserve + biomass) then the clonal colony explodes;
+ * at the live mutation rate (CytoTuning.MUTATION_RATE_DENOM) that first division lands long before any
+ * mutation, so the lineage colonises reliably.
  */
 val AUTOTROPH_GENES: List<Gene> = listOf(
-    Gene(EnergySource.Light, GeneCondition(Operand.Chem("a"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "a", "b")),
-    Gene(EnergySource.Light, GeneCondition(Operand.Chem("ab"), Comparison.Greater, Operand.Constant(LEAK_RESERVE)), GeneAction(ActionType.Convert, "ab")),
-    Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Mitosis)),
-    // Hold the colony together: light-powered connection repair (cheap where autotrophs live).
-    Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
+    Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Mitosis)),
+    Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Convert, "ab")),
+    Gene(EnergySource.Light, GeneCondition(Operand.Chem("ab"), Comparison.Less, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.FormBond, "a", "b")),
 )
 
 // Heterotroph seed thresholds — values in CytoSeed (initial data; evolve under mutation).

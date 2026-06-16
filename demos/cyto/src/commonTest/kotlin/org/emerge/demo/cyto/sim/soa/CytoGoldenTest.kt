@@ -104,11 +104,11 @@ class CytoGoldenTest {
     // determinism gates held; probeCytoPopulation sustains (plateau ~67, atoms conserved, radii bounded).
     // growth, mutation off, 250 ticks from the default scene.
     private val GROWTH = mapOf(
-        "meta" to "73e78c689f12caa3",
-        "physics" to "919a5e151d73c9e8",
-        "biology" to "dcbffccecf66f5dc",
-        "topology" to "65846c4130422883",
-        "grid" to "bb9c95b0ec2c6a92",
+        "meta" to "e2078d4dd17004b9",
+        "physics" to "de4acf7358a0d22f",
+        "biology" to "e556eb3ac3049894",
+        "topology" to "6ea4f1d6845a088",
+        "grid" to "21496a91168b253f",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
     // Re-baselined twice for deliberate gene-model extensions, both of which re-route point-mutation's
@@ -130,20 +130,29 @@ class CytoGoldenTest {
     // byte-identical. mutation-on moves in every dimension because point-mutation now re-rolls a whole
     // operand (`mutateOperand`, nextInt(4) + maybe a species draw) instead of the old separate species/type
     // draws, re-routing the PRNG stream and thus the whole trajectory.
+    // Re-baselined 2026-06-16 (#2): BREAK-POWERED DIVISION — mitosis is now a bulk `biomass/4` cost (paid by
+    // breaking stored bonds; light can't fund it) and the seed AUTOTROPH was rebuilt around it (BreakBond
+    // mitosis from an `ab` reserve held to N; FormBond/Convert grow below N; no Repair gene — colonies hold
+    // together only by overlap-welding, not active heal). The mitosis rule + preset genome both changed, so
+    // ALL three trajectory goldens move in every dimension; determinism gates held. Validated: the founder
+    // colonises hard (1→955 by tick 600 under committed dials, mutation off) — dense enough that cells
+    // overlap-weld, so the mutation/interact `topology` is non-empty again. At the live
+    // MUTATION_RATE_DENOM=100_000 the first division lands long before any mutation, so the lineage is
+    // robust in the real world (the mutation-on goldens/specs crank the rate to 200 to exercise divergence).
     private val MUTATION = mapOf(
-        "meta" to "71867ff4b3e2e953",
-        "physics" to "7a11a22227b3418d",
-        "biology" to "9c5956ed5380ea93",
-        "topology" to "6fe64815e3aa0612",
-        "grid" to "15c6bd48267f1f91",
+        "meta" to "91506e30289b52c2",
+        "physics" to "e8916897642420ae",
+        "biology" to "d70552d5de8fdbf8",
+        "topology" to "1bfe31cacde6f6e8",
+        "grid" to "f76d20f2a942f38c",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
-        "meta" to "57d3eb8799f7785f",
-        "physics" to "a26080ae66071931",
-        "biology" to "523840921768a5dd",
-        "topology" to "102e08d773cbb7c6",
-        "grid" to "593260a5d0e28713",
+        "meta" to "fb5595865638464",
+        "physics" to "1569ab6843a6ae74",
+        "biology" to "7412b4c8a727b105",
+        "topology" to "c6e2b09d481c17d8",
+        "grid" to "360706bfc89986e1",
     )
 
     @Test
