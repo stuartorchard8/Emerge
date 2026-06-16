@@ -13,6 +13,10 @@ import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoMutation
 import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.CellWork
+import org.emerge.demo.cyto.sim.CytoBiologyCore
+import org.emerge.demo.cyto.sim.MoleculeStore
+import org.emerge.demo.cyto.sim.totalBiomassBonds
 import org.emerge.demo.cyto.sim.EnergySource
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.Gene
@@ -101,7 +105,7 @@ class CytoSoaSpecTest {
     fun autotrophGrowsIntoAColony() {
         val initial = createCytoInitialState()
         val start = cellCount(initial)
-        val state = run(initial, ticks = 1200)   // first division ~tick 988 under the moving daylight band
+        val state = run(initial, ticks = 3000)   // first division slips later under the ~50× light nerf
         assertTrue(cellCount(state) > start, "autotroph should divide into a colony; got ${cellCount(state)} from $start")
         assertTrue(springCount(state) > 0, "divided cells should be spring-connected")
     }
@@ -164,8 +168,10 @@ class CytoSoaSpecTest {
         // one well above it (excess 2×SCALE → ~1/3 yield). Biomass is small enough that nothing degrades in
         // one tick, and at/above ambient passive exchange is inert, so the cytoplasm delta is pure uptake.
         val (sx, sy) = CytoLightField.SOURCES.first()
+        // BreakBond("cc") fuel makes uptake light-independent; cc breaks to c+c (never `a`), so the measured
+        // `a` delta is pure import, not break fragments.
         val importGene = Gene(
-            EnergySource.Light,
+            EnergySource.BreakBond("cc"),
             GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)),
             GeneAction(ActionType.Import, "a"),
         )
@@ -174,7 +180,7 @@ class CytoSoaSpecTest {
                 val b = SimBuilder(SimState())
                 b.spawnCell(
                     CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector,
-                    cytoplasm = mapOf("a" to startCytoA), biomass = mapOf("ab" to 1000), genome = listOf(importGene),
+                    cytoplasm = mapOf("a" to startCytoA, "cc" to 1_000_000), biomass = mapOf("ab" to 1000), genome = listOf(importGene),
                 )
                 val grid = CytoMatterGrid.empty()
                 grid.deposit(grid.indexOf(sx, sy), "a", 1_000_000)
@@ -269,7 +275,7 @@ class CytoSoaSpecTest {
 
     @Test
     fun divisionInheritsTheGenome() {
-        val state = run(createCytoInitialState(), ticks = 1200)   // first division ~tick 988 under moving light
+        val state = run(createCytoInitialState(), ticks = 3000)   // first division slips later under the ~50× light nerf
         val cells = state.components.getTable<CytoCellComponent>().asMap().values
         assertTrue(cells.size > 1, "expected a colony")
         assertTrue(cells.all { it.genome == AUTOTROPH_GENES }, "every cell should inherit the autotroph genome")
@@ -277,12 +283,41 @@ class CytoSoaSpecTest {
 
     /** Two Collector cells on a light source, spring-connected, connection pre-damaged near the break
      *  threshold. */
+    @Test
+    fun efficiencyGearTradesEnergyForThroughput() {
+        // Drive one Convert gene directly with a fixed quanta budget + abundant substrate, so ENERGY is the
+        // binding constraint, and measure biomass locked per tick at gear g.
+        fun biomassGain(g: Int, quanta: Int): Int {
+            val work = CellWork(
+                cytoplasm = MoleculeStore.of(mapOf("ab" to 100_000_000)),   // substrate never binds
+                biomass = MoleculeStore.of(mapOf("ab" to 1000)),
+                logicalRadius = MIN_RADIUS, type = CellType.Collector,
+                genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(1_000_000_000)), GeneAction(ActionType.Convert, "ab"), efficiency = g)),
+                quanta = quanta, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
+            )
+            val before = totalBiomassBonds(work.biomass)
+            CytoBiologyCore.runGenes(work, CytoMatterGrid.empty())
+            return totalBiomassBonds(work.biomass) - before
+        }
+        // Energy-poor: a high gear squeezes ~(g+1)× more actions out of the same quanta.
+        val poor0 = biomassGain(0, 100)
+        val poor5 = biomassGain(5, 100)
+        assertTrue(poor5 >= poor0 * 5, "high gear should be ~6× as productive per scarce quantum; g0=$poor0 g5=$poor5")
+        // Energy-rich: gear 5's energy-spend cap (REF>>5) binds, so the uncapped gear 0 out-throughputs it —
+        // the cost that makes high efficiency a niche adaptation, not a free bonus.
+        val rich0 = biomassGain(0, 10_000_000)
+        val rich5 = biomassGain(5, 10_000_000)
+        assertTrue(rich0 > rich5, "when energy is abundant, the low (uncapped) gear does more total work; g0=$rich0 g5=$rich5")
+    }
+
     private fun damagedPair(genome: List<Gene>, damage: Float): SimState {
         val (sx, sy) = CytoLightField.SOURCES.first()
         val b = SimBuilder(SimState(randomSeed = 1))
         b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
-        val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, biomass = mapOf("ab" to 8000), genome = genome)
-        val c = b.spawnCell(CytoUnits.coord2(sx + 0.5f, sy), Coord2.zero, CellType.Collector, biomass = mapOf("ab" to 8000), genome = genome)
+        // A stored `ab` cytoplasm reserve so a BreakBond-powered repair gene has fuel regardless of where the
+        // moving daylight band is (light timing must not decide whether repair fires).
+        val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 8000), genome = genome)
+        val c = b.spawnCell(CytoUnits.coord2(sx + 0.5f, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 8000), genome = genome)
         addSpring(b, a, c, cfg)
         b.update<ConnectionStateComponent>(a) { ConnectionStateComponent(mapOf(c to damage)) }
         b.update<ConnectionStateComponent>(c) { ConnectionStateComponent(mapOf(a to damage)) }
@@ -290,7 +325,9 @@ class CytoSoaSpecTest {
     }
 
     private val repairOnly = listOf(
-        Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
+        // Break the stored `ab` reserve for repair energy — light-independent, so the test doesn't depend on
+        // where the moving daylight band happens to be.
+        Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
     )
 
     @Test

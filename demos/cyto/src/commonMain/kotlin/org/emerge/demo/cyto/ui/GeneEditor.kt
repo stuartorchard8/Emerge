@@ -4,6 +4,7 @@ import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.sim.ActionType
 import org.emerge.demo.cyto.sim.Comparison
 import org.emerge.demo.cyto.sim.CytoSeed
+import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.EnergySource
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.Operand
@@ -116,6 +117,12 @@ class GeneEditor {
                     }
                 }
                 else -> {}
+            }
+            // Efficiency gear — only the throughput actions use it (FormBond is lossless, Mitosis fixed).
+            if (d.action.type == ActionType.Convert || d.action.type == ActionType.Import || d.action.type == ActionType.Repair) {
+                stepper("EFF", d.efficiency.toString()) { delta ->
+                    draft = d.copy(efficiency = (d.efficiency + if (delta > 0) 1 else -1).coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR))
+                }
             }
             gap()
             actionRow(

@@ -21,7 +21,8 @@ package org.emerge.demo.cyto.sim
 object GeneCodec {
 
     fun serialize(genome: List<Gene>): String = genome.joinToString("\n") { gene ->
-        "${source(gene.source)} : ${condition(gene.condition)} : ${action(gene.action)}"
+        val effSuffix = if (gene.efficiency != 0) " @${gene.efficiency}" else ""   // efficiency gear, omitted when 0
+        "${source(gene.source)} : ${condition(gene.condition)} : ${action(gene.action)}$effSuffix"
     }
 
     fun parse(text: String): List<Gene> = text.lines().mapNotNull { raw ->
@@ -29,10 +30,17 @@ object GeneCodec {
         if (line.isEmpty()) return@mapNotNull null
         val parts = line.split(":")
         require(parts.size == 3) { "gene line must have three ':'-separated parts: \"$raw\"" }
+        // The action part may carry a trailing efficiency gear token `@<g>` (e.g. `Convert ab @6`).
+        val actionTokens = parts[2].trim().split(WS).toMutableList()
+        var efficiency = 0
+        if (actionTokens.isNotEmpty() && actionTokens.last().startsWith("@")) {
+            efficiency = actionTokens.removeAt(actionTokens.lastIndex).substring(1).toInt()
+        }
         Gene(
             source = parseSource(parts[0].trim().split(WS)),
             condition = parseCondition(parts[1].trim().split(WS)),
-            action = parseAction(parts[2].trim().split(WS)),
+            action = parseAction(actionTokens),
+            efficiency = efficiency,
         )
     }
 

@@ -190,13 +190,15 @@ object CytoBiologyCore {
         // (lex-smallest == lowest id), so the choice is order-independent.
         val ids = work.consumeIds; val per = work.consumePer
         var cn = 0
-        var fragLId = -1; var fragRId = -1
+        // BreakBond fuel: the lex-smallest molecule holding the bond, broken to release its quanta. Kept OUT
+        // of the action-consume scan (tracked as [breakSpId]) because efficiency consumes it at the
+        // bonds-broken rate ⌈k/gP1⌉, not 1/op; its overlap with an action input is summed back in below.
+        var breakSpId = -1; var fragLId = -1; var fragRId = -1
         if (src is EnergySource.BreakBond) {
             val bondIdx = SpeciesRegistry.bondIndexOf(src.bond)
-            val spId = firstWithBond(snap, bondIdx); if (spId < 0) return
-            fragLId = SpeciesRegistry.breakLeft(spId, bondIdx); fragRId = SpeciesRegistry.breakRight(spId, bondIdx)
+            breakSpId = firstWithBond(snap, bondIdx); if (breakSpId < 0) return
+            fragLId = SpeciesRegistry.breakLeft(breakSpId, bondIdx); fragRId = SpeciesRegistry.breakRight(breakSpId, bondIdx)
             if (fragLId < 0) return
-            cn = addConsume(ids, per, cn, spId)
         }
         var productId = -1
         var convertId = -1
@@ -213,20 +215,39 @@ object CytoBiologyCore {
             }
             else -> {}   // Import draws from the grid; Repair/Expand/Contract/Mitosis consume no cytoplasm
         }
-        // Op count: min over each consumed species' 1/n share, the light energy share, and action caps.
-        var k = if (src is EnergySource.Light) quantaShare else Int.MAX_VALUE
+        // Efficiency gear (Convert / Import / Repair only — FormBond is lossless, Mitosis is a fixed bulk
+        // cost; see [Gene]): each energy unit performs gP1 = g+1 actions, but at most `energyCap` units may
+        // be spent this tick. g=0 is the uncapped 1:1 baseline (every current gene behaves exactly as before).
+        val eff = when (act.type) {
+            ActionType.Convert, ActionType.Import, ActionType.Repair -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
+            else -> 0
+        }
+        val gP1 = eff + 1
+        val energyCap = if (eff == 0) Int.MAX_VALUE else CytoTuning.EFFICIENCY_REF ushr eff
+        // Energy units available: Light = the cell's quanta share; BreakBond = bonds it can break (one
+        // quantum each), from the fuel's 1/n share. Op budget = min(units, cap) × gP1.
+        val energyUnits = if (src is EnergySource.Light) quantaShare else snap.count(breakSpId) / n
+        var k = (minOf(energyUnits.toLong(), energyCap.toLong()) * gP1).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        // BreakBond: the fuel is also broken (⌈k/gP1⌉ bonds) and may double as an action input (pBreak/op);
+        // cap k so action-use + bonds-broken fit the fuel's share:  pBreak·k + ⌈k/gP1⌉ ≤ fuelShare.
+        if (breakSpId >= 0) {
+            var pBreak = 0
+            for (i in 0 until cn) if (ids[i] == breakSpId) pBreak = per[i]
+            val fuelShare = snap.count(breakSpId) / n
+            k = minOf(k, (fuelShare.toLong() * gP1 / (pBreak.toLong() * gP1 + 1L)).toInt())
+        }
+        // action-substrate caps (action inputs' 1/n share; the BreakBond fuel is handled above)
         for (i in 0 until cn) k = minOf(k, (snap.count(ids[i]) / n) / per[i])
         when (act.type) {
             // Division is a BULK, size-scaling cost: it needs `biomass/4` energy THIS tick. Energy can't be
-            // accumulated (quanta are use-or-lose), so this MUST be paid by burning a big chunk of stored
-            // bonds — a BreakBond-powered mitosis. **Light can never fund division** (enforced here): a
-            // Light-sourced Mitosis is a no-op, no matter how bright. This is the "charge up to divide"
-            // invariant — a cell must hoard a reserve and break it, not photosynthesise-and-split. Without
-            // it, a single lit tick's quanta (which can dwarf biomass/4) trivially divides, collapsing the
-            // autotroph→heterotroph economy. The gate may hold below the cost; it then does nothing.
-            ActionType.Mitosis ->
-                if (src !is EnergySource.BreakBond) k = 0
-                else { val cost = totalBiomassBonds(work.biomass) / 4; k = if (k >= cost) cost else 0 }
+            // accumulated (quanta are use-or-lose; bonds are spent the tick they're broken), so it can only
+            // be paid by breaking a big chunk of stored bonds in one tick — a BreakBond-powered mitosis. ANY
+            // energy source is accepted here; light-division is non-viable **emergently, not by rule**: the
+            // light scale is tuned so a cell's peak per-tick quanta stays well below biomass/4 for any real
+            // divide size, so a Light-sourced Mitosis just never reaches the cost (k < cost ⇒ 0). The "charge
+            // up to divide" comes for free — only a hoarded reserve broken in one tick clears the bar. The
+            // gate may hold below the cost; it then does nothing (no accumulation toward it).
+            ActionType.Mitosis -> { val cost = totalBiomassBonds(work.biomass) / 4; k = if (k >= cost) cost else 0 }
             ActionType.Import -> if (work.gridIndex < 0) k = 0
             ActionType.Repair -> k = minOf(k, repairOpsNeeded(work))
             ActionType.Contract -> k = minOf(k, flexOps(MIN_RADIUS, work.logicalRadius))
@@ -244,9 +265,14 @@ object CytoBiologyCore {
             k = (k.toLong() * CytoTuning.METABOLIC_BIOMASS_SCALE / (CytoTuning.METABOLIC_BIOMASS_SCALE + bio)).toInt()
         }
         if (k <= 0) return
-        // Apply: bulk consumption, then BreakBond fragments, then the action's output.
+        // Apply: action-input consumption, then the broken fuel + its fragments, then the action's output.
+        // The fuel is broken at ⌈k/gP1⌉ (each broken bond powers gP1 actions); at g=0 that's k (1:1, as before).
+        val bondsBroken = if (breakSpId >= 0) (k + gP1 - 1) / gP1 else 0
         for (i in 0 until cn) work.cytoplasm.add(ids[i], -k * per[i])
-        if (fragLId >= 0) { work.cytoplasm.inc(fragLId, k); work.cytoplasm.inc(fragRId, k) }
+        if (breakSpId >= 0) {
+            work.cytoplasm.add(breakSpId, -bondsBroken)
+            work.cytoplasm.inc(fragLId, bondsBroken); work.cytoplasm.inc(fragRId, bondsBroken)
+        }
         when (act.type) {
             ActionType.Convert -> work.biomass.inc(convertId, k)
             ActionType.FormBond -> work.cytoplasm.inc(productId, k)

@@ -385,7 +385,8 @@ class CytoController(
             org.emerge.demo.cyto.sim.EnergySource.Light -> "LIGHT"
             is org.emerge.demo.cyto.sim.EnergySource.BreakBond -> "BRK ${s.bond}"
         }
-        return "$action IF $cond ($src)"
+        val eff = if (gene.efficiency != 0) " e${gene.efficiency}" else ""   // efficiency gear (throughput actions)
+        return "$action IF $cond ($src)$eff"
     }
 
     /** Panel label for one condition operand: a constant's number, `BIO`/`TOUCH` for the live readings,

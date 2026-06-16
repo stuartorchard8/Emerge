@@ -69,14 +69,15 @@ object CytoMutation {
     }
 
     /** Change one field of the gene — comparator, either gate operand, an action operand, the action
-     *  type, or the energy source. */
-    private fun pointMutate(g: Gene, nextInt: (Int) -> Int): Gene = when (nextInt(7)) {
+     *  type, the efficiency gear, or the energy source. */
+    private fun pointMutate(g: Gene, nextInt: (Int) -> Int): Gene = when (nextInt(8)) {
         0 -> g.copy(condition = g.condition.copy(cmp = flip(g.condition.cmp)))
         1 -> g.copy(condition = g.condition.copy(lhs = mutateOperand(g.condition.lhs, nextInt)))
         2 -> g.copy(condition = g.condition.copy(rhs = mutateOperand(g.condition.rhs, nextInt)))
         3 -> g.copy(action = g.action.copy(a = pick(SPECIES, nextInt)))
         4 -> g.copy(action = g.action.copy(b = pick(SPECIES, nextInt)))
         5 -> g.copy(action = g.action.copy(type = ActionType.entries[nextInt(ActionType.entries.size)]))
+        6 -> g.copy(efficiency = (g.efficiency + if (nextInt(2) == 0) -1 else 1).coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR))  // nudge the efficiency gear ±1
         else -> g.copy(source = flipSource(g.source, nextInt))
     }
 

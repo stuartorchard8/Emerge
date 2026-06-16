@@ -85,7 +85,23 @@ enum class ActionType {
  *  a species for [ActionType.Import]/[ActionType.Convert], unused for [ActionType.Mitosis]. */
 data class GeneAction(val type: ActionType, val a: String = "", val b: String = "")
 
-data class Gene(val source: EnergySource, val condition: GeneCondition, val action: GeneAction)
+/**
+ * A gene: an energy source, a binary condition, an action — and an **efficiency gear** [efficiency] (g, in
+ * `[0, CytoTuning.EFFICIENCY_MAX_GEAR]`). The gear is a per-gene rate↔efficiency trade-off for the
+ * *throughput* actions (Convert / Import / Repair only — FormBond is already a lossless energy conversion,
+ * and Mitosis is a fixed `biomass/4` bulk event): each energy unit performs `g+1` actions (so higher g =
+ * more output per scarce energy), but the energy it may spend this tick is capped at
+ * `EFFICIENCY_REF >> g` (so higher g = a lower throughput ceiling). The optimum gear is niche-dependent —
+ * energy-poor cells favour high g (squeeze every quantum), energy-rich cells favour low g (burn surplus for
+ * raw throughput) — and a low-g gene is *always* less efficient (1 action/energy), even when its high
+ * ceiling goes unused, which is the cost that makes high throughput a niche adaptation, not a free bonus.
+ */
+data class Gene(
+    val source: EnergySource,
+    val condition: GeneCondition,
+    val action: GeneAction,
+    val efficiency: Int = 0,
+)
 
 /**
  * A cell's metabolic reach — the bonds and atoms its genome can handle — used by **selective uptake**:

@@ -24,9 +24,9 @@ class CytoControllerTest {
         var frame = c.tick(0f)
         val start = cells(frame)
         assertTrue(start >= 1, "founder should be present")
-        // Drive ~1280 steps (frame delta capped at 0.25s ⇒ 16 steps/tick at the 1/64 rate) — past the
-        // founder's first division (~tick 988 under the moving daylight band).
-        repeat(80) { frame = c.tick(0.25f) }
+        // Drive ~3200 steps (frame delta capped at 0.25s ⇒ 16 steps/tick at the 1/64 rate) — past the
+        // founder's first division, which slips later under the ~50× light nerf (reserve-building is slower).
+        repeat(200) { frame = c.tick(0.25f) }
         assertTrue(c.tick > 1000, "should have run past the first division (was ${c.tick})")
         assertTrue(cells(frame) > start, "the autotroph colony should grow (was $start, now ${cells(frame)})")
     }
@@ -37,7 +37,7 @@ class CytoControllerTest {
         // lifecycle bridges. Guards the click-to-delete regression end-to-end through the live runtime.
         val c = CytoController()
         var frame = c.tick(0f)
-        repeat(80) { frame = c.tick(1f) }   // grow a few cells (slower: break-powered + moving light)
+        repeat(200) { frame = c.tick(1f) }   // grow a few cells (slower under the ~50× light nerf)
         val cells = frame.state.components.getTable<CytoCellComponent>().asMap()
         assertTrue(cells.size > 1, "need cells to delete (had ${cells.size})")
 

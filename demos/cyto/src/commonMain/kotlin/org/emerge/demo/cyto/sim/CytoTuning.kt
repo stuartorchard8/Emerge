@@ -66,8 +66,17 @@ object CytoTuning {
 
     // ── Metabolism / energy (per gene, per tick) ─────────────────────────────────────────────────────
     /** light → quanta: `quanta = ⌊field × exposure × SCALE⌋` (a fully-exposed cell on a source gets
-     *  ~`STRENGTH·SCALE` ops/tick). 1 quantum = 1 op. */
-    const val LIGHT_QUANTA_SCALE = 6_000_000
+     *  ~`STRENGTH·SCALE` ops/tick). 1 quantum = 1 op. At STRENGTH=1/200 the peak per-tick budget is
+     *  `SCALE/200`, so SCALE=120_000 ⇒ ~600 ops/tick at full exposure (was 6_000_000 ⇒ ~30_000, an
+     *  absurd one-tick energy that let cells photosynthesise-and-divide; division is now break-powered and
+     *  this is nerfed ~50× so growth/charge-up is metered — tune by watching the cell panel's quanta). */
+    const val LIGHT_QUANTA_SCALE = 120_000
+    /** Per-gene efficiency gear (Gene.efficiency, g): a throughput action does `g+1` actions per energy unit
+     *  but may spend at most `EFFICIENCY_REF shr g` energy/tick. REF=2^16: g=0 ⇒ 1 action/energy, 65 536
+     *  energy cap (effectively unlimited at the light scale, so g=0 is the neutral default); g=16 ⇒ 17
+     *  actions/energy but only 1 energy/tick (≈17 actions). Optimum gear is niche-dependent — see [Gene]. */
+    const val EFFICIENCY_REF = 1 shl 16
+    const val EFFICIENCY_MAX_GEAR = 16
     /** Connection damage healed per Repair op (one quantum). 0.25 ≈ the old free per-tick heal, so ~one
      *  op/tick maintains a lightly-loaded connection; more stress needs more energy. */
     const val REPAIR_PER_OP = 0.25f
