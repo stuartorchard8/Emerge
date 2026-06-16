@@ -11,6 +11,14 @@ settled design we build toward; it is the contract, not a status log.
 > conservation-invariant / AoS↔SoA-parity / save patterns **retarget** to the matter store, so the
 > mechanism survives; only the currency changes.
 
+> **2026-06-17 — three mechanisms for stronger selection.** A mutating, biodiverse population exists, but
+> selective pressure is too weak for more complex forms to be favoured — and two mechanics have drifted
+> from this contract. The settled plan is three **independently buildable** mechanisms (focus order TBD;
+> see **§Three mechanisms for stronger selection** near the end): **(A)** reopen symmetric down-gradient
+> diffusion, with an `Import` gene doubling as a *seal* against passive leak; **(B)** a direct-harm
+> `Lyse` action (predatory lysis of touching cells) for active competition; **(C)** gene-driven
+> **asymmetric** mitosis via morphogen concentration, the differentiation keystone.
+
 ## The central principle: matter is closed, energy is open
 
 Like a real ecosystem (sunlight pours in for free; nutrients are finite and recycled):
@@ -78,15 +86,18 @@ A gene is exactly three parts (no multi-input weighted sums like the legacy mode
    - **Form bond** — join two **whole** molecules end-to-end (one ending in atom *a* + one starting
      with atom *b* → `…ab…`); refused if the product would repeat a bond (the no-repeat rule);
    - **Contract / Expand** radius beyond baseline;
-   - **Active import** a specific chemical (environment → cytoplasm);
+   - **Active import** a specific chemical (environment → cytoplasm) — *also seals that species against
+     passive down-gradient leak* (§Three mechanisms A);
    - **Active export** a specific chemical (cytoplasm → environment);
    - **Sticky** (adhere on contact) / **Separate** (disconnect);
-   - **Mitosis** (divide);
+   - **Mitosis** (divide) — optionally **asymmetric** (a named morphogen allocated whole to one daughter;
+     §Three mechanisms C);
+   - **Lyse** — predatory harm to a *touching, un-welded* cell (§Three mechanisms B);
    - **Convert** a chemical into biomass (lock it as structure).
 
-   *(There is no passive cell↔environment diffusion — all exchange is the Import/Export genes, so a
-   sealed cell is the default and no Insulate-vs-environment action is needed. Cell↔cell diffusion is a
-   separate question, TBD.)*
+   *(**Cell↔environment exchange is passive down-gradient by default** — see §Three mechanisms A and
+   §Resolved-#1 — and an `Import` gene both pumps a species up-gradient *and* seals it against passive
+   leak. Cell↔cell diffusion is cytoplasm-only, passive, floor-split — §Resolved-#5.)*
 
 Autotroph vs heterotroph, builder vs forager all fall out of which energy source + action a genome
 wires up — none of it is hardcoded.
@@ -127,9 +138,10 @@ wires up — none of it is hardcoded.
   `DIVIDE_THRESHOLD` go away). A Mitosis gene fires whenever its binary condition holds and its energy
   source can power it. **The half-split is its own brake:** division halves biomass + cytoplasm, which
   drops both daughters back below any biomass gate, so back-to-back division needs genuine surplus.
-- **Symmetric split now** (biomass and cytoplasm ~50/50 to the two daughters). **Asymmetric,
-  gene-driven split is the later keystone** — the deterministic morphogen/axis source for
-  differentiation (see below). Not now.
+- **Symmetric split is the default** (biomass and cytoplasm ~50/50 to the two daughters). **Gene-driven
+  asymmetric split is now designed** (§Three mechanisms C): the Mitosis gene's `a` operand names a
+  **morphogen** allocated *whole to one daughter* while everything else still halves — the deterministic
+  morphogen/axis source for differentiation. Empty `a` ⇒ today's symmetric split.
 
 ## Differentiation (one genome → different cells)
 
@@ -253,6 +265,137 @@ headless. Concrete decisions (knob magnitudes are starting values, tagged ⚙ tu
   colony **plateaus** as the local environment's a/b is drawn down (matter carrying capacity) — and
   matter is bit-conserved throughout.
 
+## Three mechanisms for stronger selection (2026-06-17)
+
+The diagnosis: a mutating population sustains itself but selection is too weak to favour complex forms.
+Three mechanisms address it; each is **independently buildable** (Stu picks the focus order), and each
+preserves the matter-conservation invariant, integer/PRNG-free determinism, and the live SoA
+byte-identity + parallel==sequential gates — so each lands as its own commit with regenerated
+`CytoGoldenTest` goldens.
+
+> **Mechanics already in code, ahead of this doc, that the three designs build on:** the per-gene
+> **efficiency gear** `g` (rate↔efficiency — each energy unit does `g+1` ops but spend is capped at
+> `EFFICIENCY_REF >> g`); **selective uptake** via `Handleable.canHold(species)` (a cell absorbs/holds
+> only species *all* of whose bonds its genome reaches — this is what bounds per-cell species count);
+> the **Repair** action + connection stress damage; the **Contract** locomotion actuator;
+> size-scaled **metabolic slowdown** and **degradation-as-env-leak**; gradient-cost **active Import**;
+> the `Touching` operand (un-welded contact count). The SoA path is the **live** path (`CytoSoaReducer`),
+> not a future re-introduction.
+
+### A. Symmetric diffusion — drop the leak-block, concentrate via active Import (PLANNED)
+
+**The regression.** `CytoBiologyCore.exchangeSpecies` gates the passive *leak* branch on `!canHold`: a
+cell sheds only waste it can't metabolise and **hoards every species it can use**, killing the
+env-mediated food web this doc intended (autotroph surplus feeding heterotrophs root-exudate-style).
+
+**The reframing that simplifies everything.** `canHold` gates **three separate branches**, and only one
+touches the block:
+- **uptake** (env→cell): canHold-gated — a cell won't absorb what it can't metabolise.
+- **cell↔cell diffuse**: canHold-gated — only sends to neighbours that can metabolise the species.
+- **leak** (cell→env): `!canHold`-gated — *the block lives only here.*
+
+So a species' **cell↔cell isolation is already free**: an unhandled (trace) species is never diffused to
+siblings and never absorbed by a neighbour, because both paths are canHold-gated. The block adds nothing
+there; it only governs whether a *handled* surplus leaks to env.
+
+**Design.** **Drop the leak-block** — every species leaks down-gradient freely; the only way to hold a
+reserve *above* ambient is the energy-costed **active Import** gene (paid retention, no free lunch —
+matches the doc's energy philosophy). This fixes the food web (handled surplus now bleeds to the commons)
+without touching morphogen isolation (which lives on diffuse/uptake, not leak).
+
+**The honest caveat.** Today's **break-powered division** funds its `biomass/4` cost by breaking a
+*hoarded* `ab` reserve (`AUTOTROPH_GENES`). Remove free retention and that reserve is continuously taxed
+by leak — the authored autotroph would need an `Import("ab")` gene to hold it, or the division-energy
+model needs a rethink. Not fatal (a fast builder stays ahead of a half-per-tick leak), but a real balance
+shift the goldens will show loudly. **Status: planned, not built** — and the `metabolicLeakRetains…` spec
+test currently *pins* the old block, so dropping it re-baselines that test + the goldens. Gated behind
+getting a feel for the morphogen behaviour first (below).
+
+**Touch point.** `exchangeSpecies`: delete the `!canHold` condition on the leak branch (leak always);
+leave uptake + `diffuse` canHold-gated.
+
+### B. Direct harm — predatory lysis of touching cells (active competition)
+
+**Problem.** The only competition today is indirect light-shading; nothing lets lineages directly fight.
+
+**Design — new action `Lyse`**, targeting **touching, un-welded cells** (the pairs the `Touching` gate
+already senses; welded colony-mates are spared). The contacts phase records the touch *adjacency*
+(pooled, like `bioNbrs`); a new snapshot-based `attack()` biology phase consumes it (order-independent +
+parallel-safe like `diffuse` — the victim's biomass is snapshotted and shared among attackers in
+canonical EntityId order). **Predation and lysis in one verb, with the efficiency gear `g` as the
+predator-strategy axis** (per Stu, 2026-06-17):
+
+- **Damage** — bonds of victim biomass torn off this tick = `min(energyUnits, EFFICIENCY_REF >> g)` ⚙.
+  Here the gear *lowers* the damage ceiling (higher `g` ⇒ less raw damage); the `g+1` op-multiplier does
+  **not** apply to damage.
+- Of the torn-off matter, the attacker **assimilates only species it `canHold`**; **metabolically
+  unsupported species are dumped to the environment** reservoir.
+- Of the *assimilable* matter, the **captured fraction rises with `g`**:
+  `captured = ⌊assimilable × (g+1)/(EFFICIENCY_MAX_GEAR+1)⌋` ⚙ → into attacker cytoplasm; the remainder
+  is **lost to env** (digestive spill).
+
+So **low `g` = a brutal shredder** (high damage, most of it spilled to the commons — feeds scavengers);
+**high `g` = a surgical digester** (less damage, but nearly all of it consumed immediately rather than
+lost). Every atom torn off the victim ends up in attacker-cytoplasm or env ⇒ conserved. (Coefficients ⚙
+tunable; the gene's `condition` will typically read `Touching > 0`; energy source is Light or BreakBond
+like any action.)
+
+**Selection consequence.** A carnivore tier appears, and prey gain reasons to evolve defences — size,
+separation, fast division, sealing — supplying the pressure that's currently missing.
+
+### C. Asymmetric mitosis via morphogen concentration — the differentiation keystone ✅ BUILT
+
+**Problem.** Division was a strict 50/50 floor-split (`CytoLifecycleSystem.floorSplit`), so a clonal
+colony had no deterministic way to differentiate from its founder.
+
+**Design.** The Mitosis gene's operand `a` names a **morphogen species**. On division that species is
+allocated **whole to the daughter** (the newly-spawned cell along the outward split normal); the mother
+keeps none, and **all other species still floor-split 50/50** (odd remainders to env, as now). Empty `a`
+⇒ today's symmetric split — so every existing genome and the golden trajectories are **byte-identical**
+(the asymmetric path is taken only when a Mitosis gene names a morphogen). The morphogen is **not** added
+to the handle-set (Mitosis isn't processed by `handleableOf`), so naming it keeps it a *trace* species.
+
+**Effect.** The two cells start with different cytoplasm composition, so genes gating on
+`Chem(morphogen)` fire in the daughter but not the mother → **deterministic differentiation** from a
+single genome. Matter conserved (the morphogen is allocated whole to one side; everything else unchanged).
+
+**Implementation (landed).** `CellWork.divideMorphogen` set when a Mitosis gene fires → captured by the
+reducer's finish loop → carried on `CellDivisionIntent(id, morphogen)` → `CytoLifecycleSystem.divide`
+withholds the morphogen from `floorSplit` (new `skip` param) and hands its whole count to the daughter
+(deposited to env, conserved, if the split is non-viable). Affirmed by
+`CytoSoaSpecTest.asymmetricMitosisDifferentiatesDaughters` (see Morphogen maintenance below).
+
+### Morphogen maintenance, the active-import crux, and the `Conc` operand
+
+**Maintaining a gradient (C's payoff) interacts with A.** Asymmetric division seeds a difference; what
+keeps it?
+- **cell↔cell equilibration is already prevented** for a *trace* (unhandled) morphogen — `diffuse` and
+  uptake are canHold-gated, so a low daughter literally cannot acquire it. (Cytoplasm also never decays —
+  only biomass degrades — so a held morphogen persists indefinitely.)
+- **env-leak is the one remaining loss path.** A trace morphogen sheds toward its grid-cell's level each
+  tick (`⌊(cyto−env)/2⌋`); it settles at env-equilibrium rather than vanishing, but if the grid-cell is a
+  big sink it can drain low. **Whether enough is retained to keep a `Chem(morphogen)` gate firing is
+  empirical** — what the C experiment probes. (Early result: in a shared grid-cell the leaked morphogen
+  raises local env to the cell's level, the gradient flattens, and the low sibling can't take any up — so
+  the *cellular* asymmetry persists; see the test.)
+
+**The crux to remember:** active Import *un-traces* a species (`handleableOf` adds an Import gene's
+species to the handle-set), which **re-enables cell↔cell diffusion of it** — so you cannot "just actively
+import" a trace morphogen to top it up without making it spread to siblings. Three ways out, in order of
+added code: (1) accept env-equilibrium (no new mechanism — test whether it suffices); (2) re-introduce a
+per-species seal that blocks env-leak *and* diffusion (the old `Inhibit`, folded into Import); (3) split
+"pump" from "permeability" so a species can be actively imported without becoming passively permeable.
+**Decision: try (1) first** (it's free) — the C experiment tells us if we ever need (2)/(3).
+
+**Concentration vs absolute counts (a separate, additive build).** Absolute-count gates (`Chem(sp) > k`)
+are confounded by size — a big cell trips them for free — and for morphogens especially, *concentration*
+is the meaningful signal (it gives a developmental clock for free: a fixed bolus dilutes as the cell
+grows, so the fate "times out" with no decay machinery). **Decision:** add a **`Conc` operand**
+*alongside* `Chem` (don't replace it — mutation explores both), compared deterministically by integer
+cross-multiply (`sp·denom ⋛ k·total`, no float); **keep `Biomass`-vs-`Constant` absolute** (the 1000
+death-floor is a genuine hard quantity). Open pick: the denominator (total cytoplasm = mole-fraction vs
+biomass = per-body). Separate commit; not part of C.
+
 ## Build order
 
 1. ✅ Heritable per-cell genome, inherited on division (`75690fb`).
@@ -267,5 +410,9 @@ headless. Concrete decisions (knob magnitudes are starting values, tagged ⚙ tu
    actions are deferred.)
 7. **Hand-built organism → mutation + selection.** Next: richer authored genomes (heterotrophy via
    Break-bond, differentiation via asymmetric division + a fate latch), then mutation + selection.
-   **Re-introduce the SoA path** (and its byte-identity gate) once the model is settled and perf
-   matters.
+   (The SoA path is now the live shipping path with its byte-identity gate — done, not pending.)
+8. **Stronger selection — the three-mechanism plan** (§Three mechanisms for stronger selection,
+   2026-06-17). Independently buildable. **(C)** morphogen-asymmetric mitosis ✅ **built** (additive,
+   goldens byte-identical; affirmed by `asymmetricMitosisDifferentiatesDaughters`). Remaining:
+   **(A)** drop the leak-block / paid-retention-via-Import, **(B)** `Lyse` predatory harm, and the
+   additive **`Conc`** operand — focus order TBD.
