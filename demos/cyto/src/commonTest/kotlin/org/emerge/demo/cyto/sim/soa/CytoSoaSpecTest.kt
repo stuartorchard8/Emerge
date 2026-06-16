@@ -30,7 +30,6 @@ import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -107,15 +106,11 @@ class CytoSoaSpecTest {
         assertTrue(springCount(state) > 0, "divided cells should be spring-connected")
     }
 
-    // PARKED pending sub-tick gene-activity interpolation. Under bulk division (mitosis = biomass/4) the
-    // heterotroph's break-powered Convert dumps a big slug of its `ab` reserve into biomass in the FIRST
-    // tick — the gate is evaluated at tick start, so the whole `k` applies and biomass overshoots (~27k)
-    // past any division-affordable point, leaving too little reserve to fund the bulk mitosis. Fixing this
-    // honestly needs a gene's action to use only the PORTION of the tick before it crosses its own / another
-    // gene's condition threshold (so Convert stops at N instead of overshooting), not a different genome.
-    // Un-@Ignore once that interpolation lands. (The autotroph is unaffected: its Convert is light-rate-
-    // limited, so it grows gradually.)
-    @Ignore
+    // The heterotroph builds biomass off its stored `ab` and divides a few times before the reserve runs
+    // out. This works only because of sub-tick interpolation (CytoBiologyCore.selfGateCap): without it the
+    // break-powered Convert would dump the whole reserve into biomass in one tick (overshooting its grow
+    // gate) and strand too little `ab` to fund the bulk mitosis. With the cap it stops at GROW, keeping a
+    // reserve to break for division.
     @Test
     fun heterotrophLivesOffStoredMatter() {
         val initial = run {

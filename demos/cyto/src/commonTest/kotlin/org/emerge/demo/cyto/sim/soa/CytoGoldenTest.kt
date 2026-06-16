@@ -104,11 +104,11 @@ class CytoGoldenTest {
     // determinism gates held; probeCytoPopulation sustains (plateau ~67, atoms conserved, radii bounded).
     // growth, mutation off, 250 ticks from the default scene.
     private val GROWTH = mapOf(
-        "meta" to "e2078d4dd17004b9",
-        "physics" to "de4acf7358a0d22f",
-        "biology" to "e556eb3ac3049894",
-        "topology" to "6ea4f1d6845a088",
-        "grid" to "21496a91168b253f",
+        "meta" to "bfb97b4c88e32319",
+        "physics" to "643973d772a747c7",
+        "biology" to "a3a62d780b04cc7f",
+        "topology" to "324b9fdbcba328f8",
+        "grid" to "e1bd45b16a5ac916",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
     // Re-baselined twice for deliberate gene-model extensions, both of which re-route point-mutation's
@@ -139,20 +139,30 @@ class CytoGoldenTest {
     // overlap-weld, so the mutation/interact `topology` is non-empty again. At the live
     // MUTATION_RATE_DENOM=100_000 the first division lands long before any mutation, so the lineage is
     // robust in the real world (the mutation-on goldens/specs crank the rate to 200 to exercise divergence).
+    // Re-baselined 2026-06-16 (#3): SUB-TICK INTERPOLATION + biomass/4 cost. A continuous growth gene now
+    // runs only for the portion of the tick before it crosses its OWN gate threshold (CytoBiologyCore
+    // .selfGateCap), so it fills to its limit instead of overshooting in one bulk step; Mitosis moved to an
+    // atomic END-OF-TICK pass whose gate is re-checked on the settled state. The autotroph's grow/divide
+    // thresholds split (GROW 8000 > DIVIDE 6000) so the now-capped grower still crosses the divide line.
+    // All three goldens move again (gene execution order + per-tick magnitudes changed); parallel==sequential
+    // and matter-conservation gates held. The autotroph still colonises reliably (1→276 by tick 600 probed
+    // under moving light, ~identical at the live mutation rate). This un-parks
+    // heterotrophLivesOffStoredMatter (its break-powered Convert no longer overshoots, so it keeps a reserve
+    // to divide).
     private val MUTATION = mapOf(
-        "meta" to "91506e30289b52c2",
-        "physics" to "e8916897642420ae",
-        "biology" to "d70552d5de8fdbf8",
-        "topology" to "1bfe31cacde6f6e8",
-        "grid" to "f76d20f2a942f38c",
+        "meta" to "b4b1c7fc41ef0de4",
+        "physics" to "ef2fcf6525da8b8f",
+        "biology" to "eaf96e53ac06ed52",
+        "topology" to "85ed0cd68d2edb97",
+        "grid" to "7f912bd5c85f5883",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
-        "meta" to "fb5595865638464",
-        "physics" to "1569ab6843a6ae74",
-        "biology" to "7412b4c8a727b105",
-        "topology" to "c6e2b09d481c17d8",
-        "grid" to "360706bfc89986e1",
+        "meta" to "3061e61d85cd813",
+        "physics" to "e5e70e491af66134",
+        "biology" to "fc110a0e8cb125b3",
+        "topology" to "a4c73831fd1507bd",
+        "grid" to "1531aae35ea0d02e",
     )
 
     @Test

@@ -42,12 +42,15 @@ object CytoSeed {
     val STARTER_BIOMASS: Map<String, Int> = mapOf("ab" to 8_000)
 
     // ── Seed genome thresholds — the *starting* values of evolvable gene gates (structure in CytoGenes) ─
-    /** Autotroph: cytoplasm 'ab' kept back (passively leaks to the environment → food for heterotrophs). */
-    const val AUTOTROPH_LEAK_RESERVE = 4_000
-    /** Autotroph: divide once biomass reaches this many bonds. */
-    const val AUTOTROPH_DIVIDE_BIOMASS = 8_000
-    /** Heterotroph: cytoplasm 'ab' kept as an energy reserve. */
-    const val HETEROTROPH_RESERVE = 2_000
-    /** Heterotroph: divide once biomass reaches this many bonds. */
+    // Grow > divide on purpose: with sub-tick interpolation a growth gene fills biomass exactly up to its
+    // GROW gate and stops, so the (lower) DIVIDE gate is what it crosses — if they were equal the cell would
+    // park at the threshold and never divide (see CytoBiologyCore.selfGateCap).
+    /** Autotroph: build biomass (and hold the cytoplasm 'ab' reserve) up to this. */
+    const val AUTOTROPH_GROW_BIOMASS = 8_000
+    /** Autotroph: divide once biomass exceeds this (< GROW). */
+    const val AUTOTROPH_DIVIDE_BIOMASS = 6_000
+    /** Heterotroph: build biomass off stored 'ab' up to this. */
+    const val HETEROTROPH_GROW_BIOMASS = 12_000
+    /** Heterotroph: divide once biomass exceeds this (< GROW). */
     const val HETEROTROPH_DIVIDE_BIOMASS = 8_000
 }

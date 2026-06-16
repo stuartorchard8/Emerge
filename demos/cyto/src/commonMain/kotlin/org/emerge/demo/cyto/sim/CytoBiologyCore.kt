@@ -116,12 +116,34 @@ object CytoBiologyCore {
      *  (inactive genes don't reserve a share — carrying them is taxed by mutation load instead). Import
      *  draws from the shared [grid], so this still runs in a fixed cell order across cells. */
     fun runGenes(work: CellWork, grid: CytoMatterGrid) {
-        val active = work.genome.filter { isActive(it, work) }
-        val n = active.size
-        if (n == 0) return
-        val snap = work.cytoplasm.copy()          // immutable source of each gene's 1/n share
-        val quantaShare = work.quanta / n
-        for (gene in active) applyGene(gene, work, grid, snap, n, quantaShare)
+        val genome = work.genome
+        // Phase 1 — continuous metabolic genes, INTERPOLATED: each runs only for the portion of the tick
+        // before its action would carry a gated quantity across its OWN condition threshold (selfGateCap),
+        // so a growth gene fills exactly to its limit instead of overshooting in one bulk step. Computed
+        // from the tick-start snapshot, so it stays order-independent. Division is excluded here.
+        val continuous = genome.filter { it.action.type != ActionType.Mitosis && isActive(it, work) }
+        val n = continuous.size
+        if (n > 0) {
+            val snap = work.cytoplasm.copy()          // immutable source of each gene's 1/n share
+            val snapBiomass = totalBiomassBonds(work.biomass)
+            val quantaShare = work.quanta / n
+            for (gene in continuous) applyGene(gene, work, grid, snap, snapBiomass, n, quantaShare)
+        }
+        // Phase 2 — division resolved on the SETTLED state, as one atomic end-of-tick action (a clean
+        // half-split is only sane atomically). The gate is RE-CHECKED here against the post-metabolism
+        // state: a Mitosis gene armed at tick start but whose condition no longer holds now does NOT
+        // divide. Funded from the settled cytoplasm (break the source bond to pay the bulk biomass/4 cost).
+        if (!work.dividing) {
+            val dividers = genome.filter { it.action.type == ActionType.Mitosis && gate(it.condition, work) }
+            if (dividers.isNotEmpty()) {
+                val snap = work.cytoplasm.copy()
+                val quantaShare = work.quanta / dividers.size
+                for (gene in dividers) {
+                    applyGene(gene, work, grid, snap, totalBiomassBonds(work.biomass), dividers.size, quantaShare)
+                    if (work.dividing) break
+                }
+            }
+        }
     }
 
     /** A gene is "active" — counting toward the [runGenes] bloat tax — when its condition holds AND its
@@ -143,7 +165,7 @@ object CytoBiologyCore {
      *  substrate and yield fragments). The op count [k] is computed up front from those caps and applied
      *  once — no loop. Matter-conserving: every per-op effect is the bulk of a conservative single op, and
      *  `k` never exceeds the snapshot share, so no pool goes negative. */
-    private fun applyGene(gene: Gene, work: CellWork, grid: CytoMatterGrid, snap: MoleculeStore, n: Int, quantaShare: Int) {
+    private fun applyGene(gene: Gene, work: CellWork, grid: CytoMatterGrid, snap: MoleculeStore, snapBiomass: Int, n: Int, quantaShare: Int) {
         val src = gene.source
         val act = gene.action
         // Per-op cytoplasm consumption (action inputs + BreakBond substrate, SUMMED — so an overlap like
@@ -187,7 +209,10 @@ object CytoBiologyCore {
             ActionType.Repair -> k = minOf(k, repairOpsNeeded(work))
             ActionType.Expand -> k = minOf(k, flexOps(work.logicalRadius, flexMax(work)))
             ActionType.Contract -> k = minOf(k, flexOps(MIN_RADIUS, work.logicalRadius))
-            else -> {}
+            // Sub-tick interpolation: a growth gene fills only up to its OWN gate threshold, never past it.
+            // perOp 0 (an unresolved/mutated species id) disables the cap rather than indexing by -1.
+            ActionType.Convert -> k = minOf(k, selfGateCap(gene.condition, qBiomass = true, qSpeciesId = -1, snapQ = snapBiomass, perOp = if (convertId >= 0) SpeciesRegistry.bondCount(convertId) else 0, snap = snap, snapBiomass = snapBiomass, work = work))
+            ActionType.FormBond -> k = minOf(k, selfGateCap(gene.condition, qBiomass = false, qSpeciesId = productId, snapQ = snap.count(productId), perOp = 1, snap = snap, snapBiomass = snapBiomass, work = work))
         }
         // Metabolic slowdown with size: every op (except Mitosis, which has its own size-scaling cost above)
         // runs at `k × SCALE/(SCALE+biomass)`. A bigger cell spreads its metabolic capacity over more
@@ -354,6 +379,39 @@ object CytoBiologyCore {
         is Operand.Chem -> work.cytoplasm.count(SpeciesRegistry.id(op.species))
         Operand.Biomass -> totalBiomassBonds(work.biomass)
         Operand.Touching -> work.touchCount
+    }
+
+    /** [operand], but reading the tick-start [snap]shot (cytoplasm + [snapBiomass]) instead of live state,
+     *  so a threshold derived from it is order-independent. Touching is transient (fixed for the tick). */
+    private fun operandSnap(op: Operand, snap: MoleculeStore, snapBiomass: Int, work: CellWork): Int = when (op) {
+        is Operand.Constant -> op.value
+        is Operand.Chem -> snap.count(SpeciesRegistry.id(op.species))
+        Operand.Biomass -> snapBiomass
+        Operand.Touching -> work.touchCount
+    }
+
+    /** Sub-tick interpolation cap: the max ops a growth action may do before the quantity it INCREASES
+     *  (biomass, when [qBiomass]; else cytoplasm species [qSpeciesId]) crosses the threshold of THIS gene's
+     *  own gate — i.e. the portion of the tick before the action would flip its own condition false. Only a
+     *  gate that the increase would break bounds it (`Q < limit`, or `limit > Q`); any other gate (or a gate
+     *  not reading Q) imposes no cap. Reads the snapshot so it's order-independent. */
+    private fun selfGateCap(
+        cond: GeneCondition, qBiomass: Boolean, qSpeciesId: Int, snapQ: Int, perOp: Int,
+        snap: MoleculeStore, snapBiomass: Int, work: CellWork,
+    ): Int {
+        if (perOp <= 0) return Int.MAX_VALUE
+        fun reads(op: Operand): Boolean = when (op) {
+            is Operand.Biomass -> qBiomass
+            is Operand.Chem -> !qBiomass && SpeciesRegistry.id(op.species) == qSpeciesId
+            else -> false
+        }
+        val limit = when {
+            reads(cond.lhs) && cond.cmp == Comparison.Less -> operandSnap(cond.rhs, snap, snapBiomass, work)   // Q < rhs
+            reads(cond.rhs) && cond.cmp == Comparison.Greater -> operandSnap(cond.lhs, snap, snapBiomass, work) // lhs > Q
+            else -> return Int.MAX_VALUE
+        }
+        val headroom = limit - snapQ
+        return if (headroom <= 0) 0 else headroom / perOp
     }
 
     private fun hasConnectionDamage(work: CellWork): Boolean = work.connectionDamage.values.any { it > 0f }

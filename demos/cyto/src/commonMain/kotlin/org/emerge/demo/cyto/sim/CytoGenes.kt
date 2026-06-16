@@ -223,39 +223,41 @@ fun totalBiomassBonds(biomass: MoleculeStore): Int {
 
 // ── Preset genomes ───────────────────────────────────────────────────────────
 // Seed threshold values live in CytoSeed (initial data — these evolve under mutation); structure below.
+private const val GROW_BIOMASS = CytoSeed.AUTOTROPH_GROW_BIOMASS
 private const val DIVIDE_BIOMASS = CytoSeed.AUTOTROPH_DIVIDE_BIOMASS
 
 /**
- * The hand-authored **autotroph** (the v1 creature), built around **break-powered division**. Under
- * light it bonds the monomers a+b into `ab` ([FormBond], topping up a cytoplasm reserve toward N) and
- * locks `ab` into biomass to grow ([Convert]) while biomass < N. Division is a *bulk* cost (≈ biomass/4
- * energy, which a per-tick light flux can't fund — see CytoBiologyCore.applyGene), so it's paid by
- * **breaking** the stored `ab`: once biomass > N, the BreakBond-powered [Mitosis] burns ~biomass/4 of the
- * `ab` reserve to split. Holding the reserve up to N (≈4× the division cost) keeps division affordable
- * even when the reserve is split among genes. a and b are absorbed for free by passive uptake near light.
- * The founder bootstraps for ~200-400 ticks (build reserve + biomass) then the clonal colony explodes;
- * at the live mutation rate (CytoTuning.MUTATION_RATE_DENOM) that first division lands long before any
- * mutation, so the lineage colonises reliably.
+ * The hand-authored **autotroph** (the v1 creature), built around **break-powered division**. Under light
+ * it bonds the monomers a+b into `ab` ([FormBond], topping the cytoplasm `ab` reserve up to GROW) and
+ * locks `ab` into biomass to grow ([Convert]) while biomass < GROW. Sub-tick interpolation
+ * (CytoBiologyCore.selfGateCap) stops each growth gene exactly at GROW rather than overshooting. Division
+ * is a *bulk* cost (≈ biomass/4 energy, which a per-tick light flux can't fund), so it's paid by
+ * **breaking** the stored `ab`: once biomass > DIVIDE, the BreakBond-powered [Mitosis] (resolved at end of
+ * tick) burns ~biomass/4 of the reserve to split. DIVIDE < GROW so the self-capped grower still crosses the
+ * divide line; the reserve (held to GROW ≈ 4× the cost) keeps division affordable. a and b are absorbed for
+ * free by passive uptake near light. At the live mutation rate (CytoTuning.MUTATION_RATE_DENOM) the first
+ * division lands long before any mutation, so the lineage colonises reliably.
  */
 val AUTOTROPH_GENES: List<Gene> = listOf(
     Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Mitosis)),
-    Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Convert, "ab")),
-    Gene(EnergySource.Light, GeneCondition(Operand.Chem("ab"), Comparison.Less, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.FormBond, "a", "b")),
+    Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.Convert, "ab")),
+    Gene(EnergySource.Light, GeneCondition(Operand.Chem("ab"), Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.FormBond, "a", "b")),
 )
 
 // Heterotroph seed thresholds — values in CytoSeed (initial data; evolve under mutation).
-private const val HET_RESERVE = CytoSeed.HETEROTROPH_RESERVE
+private const val HET_GROW = CytoSeed.HETEROTROPH_GROW_BIOMASS
 private const val HET_DIVIDE = CytoSeed.HETEROTROPH_DIVIDE_BIOMASS
 
 /**
  * A hand-authored **heterotroph**: it has no light genes — it lives on `ab` molecules already in its
- * cytoplasm (received by diffusion from autotroph neighbours, or its starter reserve), breaking some
- * for energy to power converting the rest into biomass and dividing. Closes the food web: autotroph
- * light → `ab` → (diffusion / death) → heterotroph biomass. Starves (and recycles its matter) once the
- * `ab` runs out.
+ * cytoplasm (received by diffusion from autotroph neighbours, or its starter reserve), **breaking** some
+ * `ab` to power both converting more `ab` into biomass (grow up to GROW, sub-tick-capped so it stops there
+ * instead of overshooting and stranding the reserve) and dividing (Mitosis once biomass > DIVIDE < GROW,
+ * funded by breaking the reserve it kept). Closes the food web: autotroph light → `ab` → (diffusion /
+ * death) → heterotroph biomass. Starves (and recycles its matter) once the `ab` runs out.
  */
 val HETEROTROPH_GENES: List<Gene> = listOf(
-    Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Chem("ab"), Comparison.Greater, Operand.Constant(HET_RESERVE)), GeneAction(ActionType.Convert, "ab")),
+    Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(HET_GROW)), GeneAction(ActionType.Convert, "ab")),
     Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(HET_DIVIDE)), GeneAction(ActionType.Mitosis)),
     // Hold together by burning stored 'ab' for repair — a real matter cost; frays once 'ab' runs out.
     Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Chem("ab"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
