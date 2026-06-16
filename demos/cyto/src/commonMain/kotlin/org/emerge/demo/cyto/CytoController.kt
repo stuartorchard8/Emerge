@@ -378,10 +378,14 @@ class CytoController(
     fun restoreSnapshot(bytes: ByteArray) {
         withLock(stepLock) {
             world = CytoWorld.fromSimState(CytoSaveCodec.decode(bytes))
-            tickCount = 0
+            // Resume the sim clock from the save (the codec persists it) rather than zeroing it — the clock
+            // drives the moving day/night band, both in the sim (reducer samples world.tick) and on screen
+            // (renderer bakes the band at frame.tick), so a reset would snap the cycle back AND desync the
+            // displayed band from the actual light.
+            tickCount = world.world.tick
             accumulator = 0f
             currentState = world.toSimState()
-            publishedFrame = CytoFrame(currentState, 0)
+            publishedFrame = CytoFrame(currentState, tickCount)
             withLock(inputLock) {
                 pendingSpawns.clear()
                 pendingTaps.clear()
