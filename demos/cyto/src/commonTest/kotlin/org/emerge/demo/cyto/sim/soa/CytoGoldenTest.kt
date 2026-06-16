@@ -214,7 +214,7 @@ class CytoGoldenTest {
         val cfg = CytoConfig(mutationRateDenom = 0)
         val executor = org.emerge.sim.core.ecs.ParallelExecutor()
         val seq = CytoSoaReducer(cfg)
-        val par = CytoSoaReducer(cfg, executor = executor, springParallelThreshold = 2)
+        val par = CytoSoaReducer(cfg, executor = executor, springParallelThreshold = 2, bioParallelThreshold = 2)
         var ws = CytoWorld.fromSimState(createCytoInitialState())
         var wp = CytoWorld.fromSimState(createCytoInitialState())
         for (t in 1..250) {

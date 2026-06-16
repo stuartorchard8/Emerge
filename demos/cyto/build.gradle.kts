@@ -59,6 +59,8 @@ android {
 //   ./gradlew :demos:cyto:jvmTest --tests "*CytoBench*" -Dcytobench=1
 tasks.withType<Test>().configureEach {
     System.getProperty("cytobench")?.let { systemProperty("cytobench", it) }
+    System.getProperty("cytocells")?.let { systemProperty("cytocells", it) }
+    System.getProperty("cytovariant")?.let { systemProperty("cytovariant", it) }
 }
 
 // Generates *ShaderSources.kt from .vert / .frag files under src/commonMain/shaders/.

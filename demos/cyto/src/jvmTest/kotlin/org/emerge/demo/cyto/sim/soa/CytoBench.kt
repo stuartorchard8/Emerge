@@ -4,6 +4,7 @@ import com.sun.management.ThreadMXBean
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.createCytoInitialState
+import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.sim.core.ecs.PipelineProfiler
 import java.lang.management.ManagementFactory
 import kotlin.test.Test
@@ -22,46 +23,89 @@ class CytoBench {
         if (System.getProperty("cytobench") == null) return
         val cfg = CytoConfig()   // live config (mutationRateDenom = 100_000)
         val soa = CytoSoaReducer(cfg)
-        var w = CytoWorld.fromSimState(createCytoInitialState())
-
-        // Grow to a realistic carrying capacity.
-        val grow = 22000
+        // -Dcytocells=N seeds N distributed founders directly (to profile the parallel crossover at a
+        // population the moving-light carrying capacity won't reach by growth); otherwise grow one founder.
+        val seedN = System.getProperty("cytocells")?.toIntOrNull()
+        var w = if (seedN != null) CytoWorld.fromSimState(seededColony(seedN)) else CytoWorld.fromSimState(createCytoInitialState())
+        val grow = if (seedN != null) 200 else 22000   // seeded: just settle into welds/exchange
         repeat(grow) {
             w = soa.tick(w, CytoInput.EMPTY)
             if (it % 2000 == 0) java.io.File("/tmp/cytobench_grow.txt").appendText("tick=$it cells=${w.count}\n")
         }
 
+        val executor = org.emerge.sim.core.ecs.ParallelExecutor()
+        val sb = StringBuilder()
+        sb.appendLine("grewTicks=$grow cells=${w.count} cores=${executor.parallelism}")
+        // Each variant runs from a FRESH deep copy of the same snapshot, so they see identical states (SEQ
+        // and PAR are bit-identical, so their warmup leaves both copies in the same state) — no confounding
+        // from the world evolving between the two runs.
+        val snap = w.toSimState()
+        // -Dcytovariant=seq|par runs only one variant (separate fresh JVM per variant) to rule out
+        // cross-variant contamination (JIT/GC/CPU-clock state); default runs both back-to-back.
+        val variant = System.getProperty("cytovariant")
+        if (variant == null || variant == "seq") profileVariant("SEQ ", cfg, null, CytoWorld.fromSimState(snap), sb)
+        if (variant == null || variant == "par") profileVariant("PAR ", cfg, executor, CytoWorld.fromSimState(snap), sb)
+        executor.close()
+        java.io.File("/tmp/cytobench_out.txt").writeText(sb.toString())
+    }
+
+    /** A SimState with [count] autotroph founders spread on a grid across the logical torus, so they land
+     *  in many distinct grid cells (with a few co-located) — a realistic high-N spatial distribution for the
+     *  broadphase + biology grid-cell grouping, reached directly instead of via slow growth. */
+    private fun seededColony(count: Int): org.emerge.sim.core.sim.SimState {
+        val builder = org.emerge.sim.core.sim.SimBuilder(
+            org.emerge.sim.core.sim.SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
+        val side = kotlin.math.ceil(kotlin.math.sqrt(count.toDouble())).toInt()
+        val spacing = 18f   // logical units; grid cell is 32 wide, so ~3 cells/grid-cell on average
+        val origin = -side * spacing / 2f
+        var made = 0
+        outer@ for (gy in 0 until side) for (gx in 0 until side) {
+            if (made >= count) break@outer
+            builder.spawnCell(
+                pos = org.emerge.demo.cyto.sim.CytoUnits.coord2(origin + gx * spacing, origin + gy * spacing),
+                vel = org.emerge.sim.core.physics.primitives.Coord2.zero,
+                type = org.emerge.demo.cyto.cells.CellType.Collector,
+                cytoplasm = org.emerge.demo.cyto.sim.CytoSeed.SEED_CYTOPLASM,
+                biomass = org.emerge.demo.cyto.sim.CytoSeed.STARTER_BIOMASS,
+                logicalRadius = org.emerge.demo.cyto.sim.MIN_RADIUS,
+            )
+            made++
+        }
+        builder.update<org.emerge.demo.cyto.sim.CytoMatterGridComponent>(org.emerge.demo.cyto.sim.GRID_SINGLETON) {
+            org.emerge.demo.cyto.sim.CytoMatterGridComponent(org.emerge.demo.cyto.sim.CytoMatterGrid.seeded())
+        }
+        return builder.build()
+    }
+
+    private fun profileVariant(
+        tag: String, cfg: CytoConfig, executor: org.emerge.sim.core.ecs.ParallelExecutor?,
+        start: CytoWorld, sb: StringBuilder,
+    ) {
         val tmx = ManagementFactory.getThreadMXBean() as ThreadMXBean
         tmx.isThreadAllocatedMemoryEnabled = true
         val tid = Thread.currentThread().id
         val profiler = PipelineProfiler()
-        profiler.allocReader = { tmx.getThreadAllocatedBytes(tid) }
-        val profiled = CytoSoaReducer(cfg, profiler = profiler)
-
-        // warmup
-        repeat(200) { w = profiled.tick(w, CytoInput.EMPTY) }
+        // Force the parallel path on at this N for the PAR run (threshold 2); SEQ has no executor.
+        val r0 = CytoSoaReducer(cfg, executor = executor, profiler = profiler,
+            springParallelThreshold = 2048,   // springs sequential in both — isolate the biology effect
+            bioParallelThreshold = if (executor != null) 2 else Int.MAX_VALUE)
+        var w = start
+        repeat(200) { w = r0.tick(w, CytoInput.EMPTY) }   // warmup
         profiler.reset()
-
         val measure = 600
         val allocStart = tmx.getThreadAllocatedBytes(tid)
         repeat(measure) {
             val t0 = System.nanoTime()
-            w = profiled.tick(w, CytoInput.EMPTY)
+            w = r0.tick(w, CytoInput.EMPTY)
             profiler.recordTick(System.nanoTime() - t0)
         }
         val allocPerTick = (tmx.getThreadAllocatedBytes(tid) - allocStart) / measure
-
         val r = profiler.report()
-        val sb = StringBuilder()
-        sb.appendLine("grewTicks=$grow cells=${w.count}")
-        sb.appendLine("tick avg=%.2f ms p50=%.2f p95=%.2f p99=%.2f".format(
-            r.tickAvgNanos / 1e6, r.tickP50Nanos / 1e6, r.tickP95Nanos / 1e6, r.tickP99Nanos / 1e6))
-        sb.appendLine("per-cell avg=%.3f us".format(r.tickAvgNanos / 1e3 / w.count))
-        sb.appendLine("alloc/tick=%.2f MB  (%.0f B/cell)".format(allocPerTick / 1e6, allocPerTick.toDouble() / w.count))
-        sb.appendLine("--- phases (avg us | max us | share%) ---")
-        for (p in r.phases.sortedByDescending { it.sharePercent }) {
-            sb.appendLine("%-12s %8.2f %8.2f %6.1f%%".format(p.name, p.avgNanos / 1e3, p.maxNanos / 1e3, p.sharePercent))
-        }
-        java.io.File("/tmp/cytobench_out.txt").writeText(sb.toString())
+        sb.appendLine("$tag tick avg=%.2f ms p50=%.2f p95=%.2f  per-cell=%.3f us  alloc(main)=%.2f MB".format(
+            r.tickAvgNanos / 1e6, r.tickP50Nanos / 1e6, r.tickP95Nanos / 1e6, r.tickAvgNanos / 1e3 / w.count, allocPerTick / 1e6))
+        val byName = r.phases.associateBy { it.name }
+        fun ph(p: String) = (byName[p]?.avgNanos ?: 0) / 1e3
+        sb.appendLine("$tag phases us: biology=%.0f contacts=%.0f forces=%.0f connections=%.0f interact=%.0f lifecycle=%.0f integrate=%.0f".format(
+            ph("biology"), ph("contacts"), ph("forces"), ph("connections"), ph("interact"), ph("lifecycle"), ph("integrate")))
     }
 }

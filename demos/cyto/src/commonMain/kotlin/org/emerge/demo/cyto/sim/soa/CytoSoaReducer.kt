@@ -76,6 +76,18 @@ class CytoSoaReducer(
     // faster. The game's normal carrying capacity (≤~500) thus stays sequential with zero overhead.
     // Tests force the parallel path at small N by lowering this.
     private val springParallelThreshold: Int = 2048,
+    // Cell count above which the biology gene phase fans grid-cell groups across [executor]. The grouping is
+    // bit-identical to the sequential pass (each grid-cell touches only its own reservoir cell, so groups are
+    // independent; parallelMatchesSequential gates it), so this is purely a perf knob.
+    //
+    // DEFAULTED OFF (Int.MAX_VALUE). Profiling (CytoBench A/B, up to ~5.5k cells) found the fan-out a net
+    // LOSS on a high-single-core-turbo desktop CPU: every phase — including untouched single-threaded ones,
+    // and even the existing parallel spring solver — slows ~1.5× under the fan-out, because holding 8 cores
+    // busy every tick pins the CPU at its all-core clock (~1.5× below single-core turbo). The partial
+    // coverage (only the genes sub-phase is parallel) + per-tick invokeAll overhead can't offset that. The
+    // scaffold is kept (bit-identical, tested) for flat-all-core-clock targets (servers); lower this there to
+    // enable it. See demos/cyto/BACKLOG.md.
+    private val bioParallelThreshold: Int = Int.MAX_VALUE,
 ) {
     private val player = mapOf(PlayerId(0) to CytoInput.EMPTY)
 
@@ -160,6 +172,14 @@ class CytoSoaReducer(
     // entityIds are unique so the slot tiebreak never differs from the old stable sort.
     private var bioOrder = IntArray(0)
     private var bioOrderPacked = LongArray(0)
+    // Grid-cell grouping for the parallel gene phase, rebuilt each tick by a counting-sort over gridIndex
+    // (bucket RES²+1 collects the position-less gridIndex<0 cells). bioGroupSlots holds the slots grouped by
+    // grid-cell (EntityId order within each group); bioGroupBounds[0..numGroups] delimit the non-empty
+    // groups (contiguous ranges into bioGroupSlots), so disjoint() can hand each worker whole groups.
+    private var bioBucketCount = IntArray(0)
+    private var bioBucketCursor = IntArray(0)
+    private var bioGroupSlots = IntArray(0)
+    private var bioGroupBounds = IntArray(0)
 
     private fun ensureBioScratch(n: Int) {
         if (bioCap >= n) return
@@ -609,7 +629,19 @@ class CytoSoaReducer(
         val orderedWorks = bioOrderedWorks.also { it.clear() }
         for (k in 0 until n) orderedWorks.add(bioWorks[ordered[k]]!!)
         CytoBiologyCore.passiveEnvExchange(orderedWorks, grid)
-        for (work in orderedWorks) CytoBiologyCore.runGenes(work, grid)
+        // Gene phase, fanned across grid-cell groups (each touches only its own reservoir cell, so groups are
+        // independent and the parallel pass is bit-identical to the sequential one — within a group cells run
+        // in EntityId order; across groups order is irrelevant since they share no state). Build the groups by
+        // a counting-sort over gridIndex, then disjoint() hands each worker whole groups.
+        val numGroups = buildGridGroups(w, n)
+        val exec = if (n >= bioParallelThreshold) executor else null
+        ColumnPartition.disjoint(numGroups, exec, threshold = 1) { gStart, gEnd ->
+            for (g in gStart until gEnd) {
+                for (k in bioGroupBounds[g] until bioGroupBounds[g + 1]) {
+                    CytoBiologyCore.runGenes(bioWorks[bioGroupSlots[k]]!!, grid)
+                }
+            }
+        }
         CytoBiologyCore.diffuse(works, neighbourIds)
         val divide = ArrayList<EntityId>(); val destroy = ArrayList<EntityId>()
         for (k in 0 until n) {
@@ -650,6 +682,39 @@ class CytoSoaReducer(
             }
         }
         return divide to destroy
+    }
+
+    /** Counting-sort the [n] cells (in `bioOrder` EntityId order) into grid-cell groups, writing the grouped
+     *  slots to `bioGroupSlots` and the non-empty group boundaries to `bioGroupBounds`. Position-less cells
+     *  (gridIndex < 0) collect in the last bucket — they touch no grid, so they're independent too. Returns
+     *  the number of non-empty groups. Within each group the slots stay in EntityId order (stable placement),
+     *  so a per-group sequential gene pass is bit-identical to the global EntityId-order pass. */
+    private fun buildGridGroups(w: CytoWorld, n: Int): Int {
+        val nb = CytoMatterGrid.RES * CytoMatterGrid.RES + 1   // last bucket = gridIndex < 0
+        if (bioBucketCount.size < nb) { bioBucketCount = IntArray(nb); bioBucketCursor = IntArray(nb) }
+        if (bioGroupSlots.size < n) bioGroupSlots = IntArray(n)
+        if (bioGroupBounds.size < nb + 1) bioGroupBounds = IntArray(nb + 1)
+        val cnt = bioBucketCount
+        for (b in 0 until nb) cnt[b] = 0
+        for (k in 0 until n) {
+            val gi = bioWorks[bioOrder[k]]!!.gridIndex
+            cnt[if (gi < 0) nb - 1 else gi]++
+        }
+        // Assign each non-empty bucket a contiguous slot range; record the group boundaries.
+        var cursor = 0; var numGroups = 0
+        for (b in 0 until nb) {
+            bioBucketCursor[b] = cursor
+            if (cnt[b] > 0) { bioGroupBounds[numGroups] = cursor; numGroups++; cursor += cnt[b] }
+        }
+        bioGroupBounds[numGroups] = cursor   // == n
+        // Place slots in EntityId order (stable counting-sort), so each group is EntityId-ordered.
+        for (k in 0 until n) {
+            val slot = bioOrder[k]
+            val gi = bioWorks[slot]!!.gridIndex
+            val b = if (gi < 0) nb - 1 else gi
+            bioGroupSlots[bioBucketCursor[b]++] = slot
+        }
+        return numGroups
     }
 
     /** World PRNG, bit-identical to `SimBuilder.nextRandomInt` (mutation draws, in EntityId order). */
