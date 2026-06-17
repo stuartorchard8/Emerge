@@ -34,9 +34,18 @@ object CytoSceneView {
 
     private fun runGl() {
         val controller = CytoController()
+        // Sim runs on its own thread (see below); created before the window so its controls can be bound to
+        // keys in initWindow.
+        val simDriver = CytoSimDriver(controller)
 
         // GL context must be current (initWindow) before any shader/texture is created.
-        val window = initWindow(onSave = { saveSnapshot(controller) }, onLoad = { loadSnapshot(controller) })
+        val window = initWindow(
+            onSave = { saveSnapshot(controller) },
+            onLoad = { loadSnapshot(controller) },
+            onTogglePause = { simDriver.togglePause() },   // Space
+            onSlower = { simDriver.slower() },              // [
+            onFaster = { simDriver.faster() },              // ]
+        )
 
         val renderer = CytoRenderer()
         val controls = CytoControls()
@@ -46,8 +55,7 @@ object CytoSceneView {
         autoLoadSnapshotAtStartup(controller)
 
         // Run the sim on its own thread, decoupled from this (vsync-paced) draw loop, with on-screen
-        // SLOW/PAUSE/FAST controls + a TPS/FPS readout.
-        val simDriver = CytoSimDriver(controller)
+        // SLOW/PAUSE/FAST controls + a TPS/FPS readout (also bound to Space / [ / ] — see initWindow).
         controls.showSimSpeed = true
         controls.onSlower = { simDriver.slower() }
         controls.onFaster = { simDriver.faster() }
@@ -148,7 +156,10 @@ object CytoSceneView {
             .getOrElse { controller.brushGenome = null; println("[cyto] parse failed ($BRUSH_PATH): ${it.message} — using type presets"); false }
     }
 
-    private fun initWindow(onSave: () -> Unit, onLoad: () -> Unit): Long {
+    private fun initWindow(
+        onSave: () -> Unit, onLoad: () -> Unit,
+        onTogglePause: () -> Unit, onSlower: () -> Unit, onFaster: () -> Unit,
+    ): Long {
         if (!glfwInit()) error("GLFW init failed")
         glfwDefaultWindowHints()
         glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE)
@@ -167,6 +178,9 @@ object CytoSceneView {
                 GLFW_KEY_ESCAPE -> glfwSetWindowShouldClose(win, true)
                 GLFW_KEY_F5 -> onSave()
                 GLFW_KEY_F9 -> onLoad()
+                GLFW_KEY_SPACE -> onTogglePause()       // play / pause
+                GLFW_KEY_LEFT_BRACKET -> onSlower()      // [  slower
+                GLFW_KEY_RIGHT_BRACKET -> onFaster()     // ]  faster
             }
         }
 
