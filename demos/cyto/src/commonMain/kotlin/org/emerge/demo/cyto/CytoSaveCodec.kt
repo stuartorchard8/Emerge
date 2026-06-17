@@ -97,12 +97,15 @@ object CytoSaveCodec {
     fun decode(bytes: ByteArray): SimState {
         val c = ByteCursor(bytes)
         val version = c.readInt()
-        require(version == FORMAT_VERSION) {
-            "Unsupported Cyto save format version: $version (expected $FORMAT_VERSION)"
+        // Read back-compatibly across the additive bumps (v6 = +tick, v7 = +mutation rate): older fields
+        // just default. Re-saving upgrades the file to the current version. (Pre-v6 = the energy model, a
+        // different structure — still rejected.)
+        require(version in 6..FORMAT_VERSION) {
+            "Unsupported Cyto save format version: $version (expected 6..$FORMAT_VERSION)"
         }
         val randomSeed = c.readLong()
         val tick = c.readLong()
-        val mutationRateDenom = c.readInt()
+        val mutationRateDenom = if (version >= 7) c.readInt() else -1   // v6 lacks the rate field → inherit
         val builder = SimBuilder(SimState(randomSeed = randomSeed, tick = tick))
         // Only restore the params singleton when explicitly set (≥0); -1 leaves the world inheriting the cfg default.
         if (mutationRateDenom >= 0) builder.update<CytoSimParamsComponent>(PARAMS_SINGLETON) { CytoSimParamsComponent(mutationRateDenom) }
