@@ -103,7 +103,7 @@ object CytoSceneView {
             drawReadouts(controller, renderer, controls)
             controls.draw()
             // Last-held-cell info panel + gene-editor kit (on top of the controls).
-            ui.frame { geneEditor.render(this, controller) }
+            ui.frame { geneEditor.render(this, controller) { exportHeldGenome(controller) } }
             ui.draw()
 
             glfwSwapBuffers(window)
@@ -158,6 +158,23 @@ object CytoSceneView {
         return runCatching { org.emerge.demo.cyto.sim.GeneCodec.parse(Files.readString(BRUSH_PATH)) }
             .map { controller.brushGenome = it; println("[cyto] brush genome: ${it.size} gene(s) — pick the 'Brush' type, then Spawn/Set to paint."); true }
             .getOrElse { controller.brushGenome = null; println("[cyto] parse failed ($BRUSH_PATH): ${it.message} — using type presets"); false }
+    }
+
+    /** Export the held cell's genome to a GeneCodec `.gene` file (the "EXPORT GENOME" button), so a genome
+     *  built in the editor or evolved in the sim can be saved out and later loaded as a brush. One file per
+     *  export, named by cell id + millis so successive exports never clobber each other. */
+    private fun exportHeldGenome(controller: CytoController) {
+        val genome = controller.heldGenome()
+        if (genome == null) { println("[cyto] export: no cell held"); return }
+        val id = controller.lastHeldId?.value ?: -1
+        val path = Path.of("cyto-genome-cell$id-${System.currentTimeMillis()}.gene")
+        val text = buildString {
+            appendLine("# cyto genome exported from cell $id — load it via Load Genome (rename to cyto-brush.gene).")
+            appendLine(org.emerge.demo.cyto.sim.GeneCodec.serialize(genome))
+        }
+        runCatching { Files.writeString(path, text) }
+            .onSuccess { println("[cyto] exported ${genome.size}-gene genome to ${path.toAbsolutePath()}") }
+            .onFailure { println("[cyto] export failed: ${it.message}") }
     }
 
     /** Compact label for the Mut button: "off", "1/1M", "1/100k", "1/1k", … */

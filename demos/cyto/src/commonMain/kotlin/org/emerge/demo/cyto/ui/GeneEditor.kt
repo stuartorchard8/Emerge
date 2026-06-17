@@ -50,7 +50,9 @@ class GeneEditor {
     /** Called if the editor target vanishes (cell died / deselected) — discard any in-progress edit. */
     fun closeDropdown() { openField = null }
 
-    fun render(b: UiBuilder, controller: CytoController) {
+    /** [onExport] is invoked when the EXPORT button is tapped — the host writes the held cell's genome to a
+     *  file (desktop file-I/O lives outside this commonMain kit). No-op default keeps non-desktop hosts simple. */
+    fun render(b: UiBuilder, controller: CytoController, onExport: () -> Unit = {}) {
         val info = controller.heldCellInfo()
         if (info == null) { reset(); return }
         if (editingId != null && editingId != controller.lastHeldId) reset()   // grabbed a different cell
@@ -67,6 +69,7 @@ class GeneEditor {
                 info.genes.forEachIndexed { i, desc ->
                     button(desc, if (editingIndex == i) 0x4488CCFFL else 0x2E5E2EFFL) { open(controller, i) }
                 }
+                button("EXPORT GENOME", 0x3A6EA5FFL) { onExport() }
             }
         }
 
