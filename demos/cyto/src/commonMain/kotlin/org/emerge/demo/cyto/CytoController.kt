@@ -391,8 +391,11 @@ class CytoController(
         val a = gene.action
         val action = when (a.type) {
             org.emerge.demo.cyto.sim.ActionType.Import -> "IMPORT ${a.a}"
-            // FormBond bonds a molecule ENDING WITH a.a to one STARTING WITH a.b (suffix·prefix match).
-            org.emerge.demo.cyto.sim.ActionType.FormBond -> "BOND ${a.a}·${a.b}"
+            // FormBond joins a.a (left) to a.b (right). Exact species by default; a `*` marks a wildcard
+            // (MORPHOGENESIS.md §2026-06-18) on the outer side — `*a` ends-with, `a*` starts-with — matching
+            // the codec text, so the at-a-glance view shows exact vs wildcard.
+            org.emerge.demo.cyto.sim.ActionType.FormBond ->
+                "BOND ${if (a.aWild && a.a.isNotEmpty()) "*${a.a}" else a.a}·${if (a.bWild && a.b.isNotEmpty()) "${a.b}*" else a.b}"
             org.emerge.demo.cyto.sim.ActionType.Convert -> "CONVERT ${a.a}"
             org.emerge.demo.cyto.sim.ActionType.Contract -> "CONTRACT"
             // DIVIDE, optionally asymmetric (→morphogen to the daughter, or →M:morphogen kept by the mother)
