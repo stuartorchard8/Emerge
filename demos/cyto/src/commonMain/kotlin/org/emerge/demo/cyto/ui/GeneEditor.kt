@@ -72,7 +72,9 @@ class GeneEditor {
 
         val d = draft ?: return
         val idx = editingIndex ?: return
-        b.panel(Anchor.TopRight) {
+        // A separate column to the LEFT of the cell-info panel, so a tall multi-clause editor doesn't stack
+        // under it and run off the bottom.
+        b.panel(Anchor.TopRight, newColumn = true) {
             title("EDIT GENE ${idx + 1}", 0xAACCFFFFL)
             picker("SOURCE", sourceLabel(d.source), sourceLabels, openField == Field.Source, { toggle(Field.Source) }) { i ->
                 draft = d.copy(source = if (i == 0) EnergySource.Light else EnergySource.BreakBond(bonds[i - 1])); openField = null

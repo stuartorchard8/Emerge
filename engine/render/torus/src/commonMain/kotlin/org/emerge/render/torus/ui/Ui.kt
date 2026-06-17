@@ -49,6 +49,11 @@ class Ui {
     private val overlayClicks = ArrayList<ClickRegion>()
     /** Per-anchor running offset (px from the anchored edge) so panels at one corner stack. */
     private val anchorCursor = HashMap<Anchor, Float>()
+    /** Per-anchor horizontal base (px from the anchored edge to the current column's near side) and the
+     *  current column's extent (max inset+width). A panel with `newColumn` starts a fresh column past the
+     *  previous one (to the left for right anchors), so two stacks can sit side-by-side. */
+    private val anchorInset = HashMap<Anchor, Float>()
+    private val anchorColumnExtent = HashMap<Anchor, Float>()
 
     // Hold-to-repeat state (persists across frames while a stepper button is held).
     private var heldRegion: ClickRegion? = null
@@ -67,7 +72,7 @@ class Ui {
     fun frame(block: UiBuilder.() -> Unit) {
         rects.clear(); texts.clear(); clicks.clear()
         overlayRects.clear(); overlayTexts.clear(); overlayClicks.clear()
-        anchorCursor.clear()
+        anchorCursor.clear(); anchorInset.clear(); anchorColumnExtent.clear()
         UiBuilder(this).block()
     }
 
@@ -184,6 +189,21 @@ class Ui {
         return cur
     }
 
+    /** Horizontal base (px from the anchored edge to the current column's near side) for [anchor]. */
+    internal fun columnInset(anchor: Anchor, margin: Float): Float = anchorInset[anchor] ?: margin
+
+    /** Record a panel's far extent (inset + width) so the next column can start past it. */
+    internal fun growColumn(anchor: Anchor, extent: Float) {
+        anchorColumnExtent[anchor] = maxOf(anchorColumnExtent[anchor] ?: 0f, extent)
+    }
+
+    /** Start a fresh column [margin] past the current one (to the left for right anchors), resetting the
+     *  vertical stack so the new column begins at the top edge. */
+    internal fun startNewColumn(anchor: Anchor, margin: Float) {
+        anchorInset[anchor] = (anchorColumnExtent[anchor] ?: margin) + margin
+        anchorCursor[anchor] = margin
+    }
+
     private fun rgb(rgba: Long): Triple<Float, Float, Float> = Triple(
         ((rgba ushr 24) and 0xFF).toFloat() / 255f,
         ((rgba ushr 16) and 0xFF).toFloat() / 255f,
@@ -213,6 +233,7 @@ class UiBuilder internal constructor(private val ui: Ui) {
         padding: Float = 8f,
         background: Long = 0x000000C0,
         rowHeight: Float = 18f,
+        newColumn: Boolean = false,
         block: PanelBuilder.() -> Unit,
     ) {
         val pb = PanelBuilder(rowHeight).apply(block)
@@ -222,15 +243,18 @@ class UiBuilder internal constructor(private val ui: Ui) {
         val contentH = pb.items.sumOf { it.height.toDouble() }.toFloat()
         val w = padding * 2 + contentW
         val h = padding * 2 + contentH
-        val offset = ui.nextPanelOffset(anchor, margin, h, margin)   // stack distance from the anchored edge
+        if (newColumn) ui.startNewColumn(anchor, margin)             // a fresh column beside the previous one
+        val inset = ui.columnInset(anchor, margin)                   // horizontal base for this column
+        val offset = ui.nextPanelOffset(anchor, margin, h, margin)   // vertical stack distance from the anchored edge
         val x = when (anchor) {
-            Anchor.TopLeft, Anchor.BottomLeft -> margin
-            Anchor.TopRight, Anchor.BottomRight -> ui.resWidth - margin - w
+            Anchor.TopLeft, Anchor.BottomLeft -> inset
+            Anchor.TopRight, Anchor.BottomRight -> ui.resWidth - inset - w
         }
         val y = when (anchor) {
             Anchor.TopLeft, Anchor.TopRight -> offset
             Anchor.BottomLeft, Anchor.BottomRight -> ui.resHeight - offset - h
         }
+        ui.growColumn(anchor, inset + w)
         ui.emitRect(x, y, w, h, background)
         var rowY = y + padding
         for (item in pb.items) {
