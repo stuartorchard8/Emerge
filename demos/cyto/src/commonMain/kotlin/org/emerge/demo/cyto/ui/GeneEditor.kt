@@ -136,8 +136,10 @@ class GeneEditor {
                 }
                 else -> {}
             }
-            // Efficiency gear — only the throughput actions use it (FormBond is lossless, Mitosis fixed).
-            if (d.action.type == ActionType.Convert || d.action.type == ActionType.Import || d.action.type == ActionType.Repair) {
+            // Efficiency gear — throughput actions (Convert/Import/Repair) use rate↔efficiency; FormBond uses
+            // the cap only (potency / morphogen-spread dial). Mitosis is exempt (fixed biomass/4 cost).
+            if (d.action.type == ActionType.Convert || d.action.type == ActionType.Import ||
+                d.action.type == ActionType.Repair || d.action.type == ActionType.FormBond) {
                 stepper("EFF", d.efficiency.toString()) { delta ->
                     draft = d.copy(efficiency = (d.efficiency + if (delta > 0) 1 else -1).coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR))
                 }

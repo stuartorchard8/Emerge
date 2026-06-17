@@ -220,15 +220,24 @@ object CytoBiologyCore {
             }
             else -> {}   // Import draws from the grid; Repair/Expand/Contract/Mitosis consume no cytoplasm
         }
-        // Efficiency gear (Convert / Import / Repair only — FormBond is lossless, Mitosis is a fixed bulk
-        // cost; see [Gene]): each energy unit performs gP1 = g+1 actions, but at most `energyCap` units may
-        // be spent this tick. g=0 is the uncapped 1:1 baseline (every current gene behaves exactly as before).
+        // Efficiency gear (see [Gene]): each energy unit performs gP1 = g+1 actions (the rate↔efficiency
+        // multiplier — Convert / Import / Repair only), but at most `energyCap` units may be spent this tick.
+        // g=0 is the uncapped 1:1 baseline (every current gene behaves exactly as before).
         val eff = when (act.type) {
             ActionType.Convert, ActionType.Import, ActionType.Repair -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
             else -> 0
         }
         val gP1 = eff + 1
-        val energyCap = if (eff == 0) Int.MAX_VALUE else CytoTuning.EFFICIENCY_REF ushr eff
+        // The per-tick CAP also applies to FormBond — but WITHOUT the gP1 multiplier (FormBond is a lossless
+        // 1:1 bond conversion; a multiplier would mint bonds). So on a FormBond gene the gear is pure
+        // potency-limiting: capping a morphogen source/sink's rate is the gradient-spread dial
+        // (MORPHOGENESIS.md §Morphogens for shape — caps consumption rate k ⇒ reach λ≈√(D/k)). Mitosis stays
+        // exempt (fixed biomass/4 bulk cost). g=0 ⇒ uncapped ⇒ existing FormBond genes are byte-identical.
+        val capGear = when (act.type) {
+            ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.FormBond -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
+            else -> 0
+        }
+        val energyCap = if (capGear == 0) Int.MAX_VALUE else CytoTuning.EFFICIENCY_REF ushr capGear
         // Energy units available: Light = the cell's quanta share; BreakBond = bonds it can break (one
         // quantum each), from the fuel's 1/n share. Op budget = min(units, cap) × gP1.
         val energyUnits = if (src is EnergySource.Light) quantaShare else snap.count(breakSpId) / n

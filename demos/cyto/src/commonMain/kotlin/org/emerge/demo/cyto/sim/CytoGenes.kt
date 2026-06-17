@@ -111,10 +111,12 @@ data class GeneAction(val type: ActionType, val a: String = "", val b: String = 
 /**
  * A gene: an energy source, a binary condition, an action — and an **efficiency gear** [efficiency] (g, in
  * `[0, CytoTuning.EFFICIENCY_MAX_GEAR]`). The gear is a per-gene rate↔efficiency trade-off for the
- * *throughput* actions (Convert / Import / Repair only — FormBond is already a lossless energy conversion,
- * and Mitosis is a fixed `biomass/4` bulk event): each energy unit performs `g+1` actions (so higher g =
+ * *throughput* actions (Convert / Import / Repair): each energy unit performs `g+1` actions (so higher g =
  * more output per scarce energy), but the energy it may spend this tick is capped at
- * `EFFICIENCY_REF >> g` (so higher g = a lower throughput ceiling). The optimum gear is niche-dependent —
+ * `EFFICIENCY_REF >> g` (so higher g = a lower throughput ceiling). **FormBond gets the *cap* but not the
+ * `g+1` multiplier** (it's a lossless 1:1 conversion — a multiplier would mint bonds): there the gear is pure
+ * potency-limiting, used e.g. to set how far a morphogen spreads from a source/sink loop. **Mitosis is
+ * exempt** (a fixed `biomass/4` bulk event). The optimum gear is niche-dependent —
  * energy-poor cells favour high g (squeeze every quantum), energy-rich cells favour low g (burn surplus for
  * raw throughput) — and a low-g gene is *always* less efficient (1 action/energy), even when its high
  * ceiling goes unused, which is the cost that makes high throughput a niche adaptation, not a free bonus.
