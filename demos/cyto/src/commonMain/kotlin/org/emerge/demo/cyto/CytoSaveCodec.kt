@@ -5,7 +5,9 @@ import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoMatterGrid
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.CytoSimParamsComponent
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
+import org.emerge.demo.cyto.sim.PARAMS_SINGLETON
 import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.demo.cyto.sim.systems.addSpring
@@ -31,7 +33,8 @@ import org.emerge.sim.core.sim.SimState
 object CytoSaveCodec {
     // v5: persist the PRNG randomSeed (mutation continuity + avoids the seed-0 LCG degeneracy on load).
     // v6: persist the sim clock (state.tick) so the moving light field resumes at the right phase on load.
-    private const val FORMAT_VERSION = 6
+    // v7: persist the runtime mutation rate-denominator (-1 = inherit the cfg default).
+    private const val FORMAT_VERSION = 7
     private val cfg = CytoConfig()
 
     fun encode(state: SimState): ByteArray {
@@ -39,6 +42,7 @@ object CytoSaveCodec {
         w.writeInt(FORMAT_VERSION)
         w.writeLong(state.randomSeed)
         w.writeLong(state.tick)
+        w.writeInt(state.components.getTable<CytoSimParamsComponent>()[PARAMS_SINGLETON]?.mutationRateDenom ?: -1)
 
         val cells = state.components.getTable<CytoCellComponent>().asMap()
         val transforms = state.components.getTable<TransformComponent>()
@@ -98,7 +102,10 @@ object CytoSaveCodec {
         }
         val randomSeed = c.readLong()
         val tick = c.readLong()
+        val mutationRateDenom = c.readInt()
         val builder = SimBuilder(SimState(randomSeed = randomSeed, tick = tick))
+        // Only restore the params singleton when explicitly set (≥0); -1 leaves the world inheriting the cfg default.
+        if (mutationRateDenom >= 0) builder.update<CytoSimParamsComponent>(PARAMS_SINGLETON) { CytoSimParamsComponent(mutationRateDenom) }
         val idMap = HashMap<Int, EntityId>()
 
         val cellCount = c.readInt()

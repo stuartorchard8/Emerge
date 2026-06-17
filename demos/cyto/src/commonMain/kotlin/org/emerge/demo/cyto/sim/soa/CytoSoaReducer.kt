@@ -667,7 +667,8 @@ class CytoSoaReducer(
             val id = EntityId(w.entityId[slot])
             val work = bioWorks[slot]!!
             val mutated = if (w.entityId[slot] == noMutateEntityId) null   // focused cell: frozen against mutation
-                else CytoMutation.mutate(w.cell.genome[slot] ?: emptyList(), cfg.mutationRateDenom) { until -> nextRandomInt(w, until) }
+                // Rate from the world if explicitly set (in-game control / save), else the cfg default (-1).
+                else CytoMutation.mutate(w.cell.genome[slot] ?: emptyList(), if (w.mutationRateDenom >= 0) w.mutationRateDenom else cfg.mutationRateDenom) { until -> nextRandomInt(w, until) }
             val oldRadiusRaw = w.cell.logicalRadius[slot]
             w.cell.cytoplasm[slot] = work.cytoplasm
             w.cell.biomass[slot] = work.biomass

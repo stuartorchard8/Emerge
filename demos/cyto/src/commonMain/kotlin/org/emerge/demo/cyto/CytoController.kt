@@ -368,6 +368,24 @@ class CytoController(
     fun duplicateHeldGene(index: Int) =
         editHeldGenome { g -> if (index in g.indices) g.toMutableList().also { it.add(index + 1, g[index]) } else null }
 
+    // ── Mutation rate — in-game tunable + saved on the world (CytoSimParamsComponent) ───────────────────
+    private val mutationLadder = intArrayOf(0, 1_000_000, 100_000, 10_000, 1_000)   // off → rare → … → frequent
+
+    /** The effective mutation rate-denominator: the world's explicit value, or the [cfg] default when unset
+     *  (the `-1` sentinel). 0 = mutation off; higher = rarer (per-gene per-tick `1/denom`). */
+    fun mutationRateDenom(): Int = world.mutationRateDenom.let { if (it >= 0) it else cfg.mutationRateDenom }
+
+    /** Cycle the mutation rate through [mutationLadder] (wrapping), set it explicitly on the world so it
+     *  saves, and republish so the change shows even while paused. */
+    fun cycleMutationRate() {
+        withLock(stepLock) {
+            val i = mutationLadder.indexOf(mutationRateDenom())
+            world.mutationRateDenom = mutationLadder[if (i < 0) 0 else (i + 1) % mutationLadder.size]
+            currentState = world.toSimState()
+            publishedFrame = CytoFrame(currentState, tickCount)
+        }
+    }
+
     /** A compact, panel-friendly one-line description of a gene: `ACTION IF CONDITION [src]`. */
     private fun describeGene(gene: org.emerge.demo.cyto.sim.Gene): String {
         val a = gene.action

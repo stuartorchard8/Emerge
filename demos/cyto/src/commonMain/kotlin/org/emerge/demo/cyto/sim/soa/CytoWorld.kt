@@ -4,7 +4,9 @@ import org.emerge.demo.cyto.sim.ConnectionStateComponent
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoMatterGrid
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.CytoSimParamsComponent
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
+import org.emerge.demo.cyto.sim.PARAMS_SINGLETON
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.ecs.ComponentStore
 import org.emerge.sim.core.ecs.ComponentTable
@@ -60,6 +62,10 @@ class CytoWorld private constructor(
     val csr: SpringCsr,
     /** The finite matter reservoir singleton — held (copy-on-write) and re-emitted on [GRID_SINGLETON]. */
     var grid: CytoMatterGrid,
+    /** Runtime mutation rate-denominator, or **-1 = inherit the [CytoConfig] default** (the reducer falls
+     *  back to `cfg.mutationRateDenom` when this is < 0). Set explicitly by in-game control / a loaded save;
+     *  round-trips via [CytoSimParamsComponent]. -1 keeps every cfg-driven test/probe + the goldens unchanged. */
+    var mutationRateDenom: Int = -1,
 ) {
     val count: Int get() = cells.count
     val entityId: IntArray get() = cells.denseIds()
@@ -139,8 +145,10 @@ class CytoWorld private constructor(
 
             val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid?.copy()
                 ?: CytoMatterGrid.empty()
+            // -1 (absent) = inherit the cfg default; an explicit value comes from in-game control / a save.
+            val mutationRateDenom = state.components.getTable<CytoSimParamsComponent>()[PARAMS_SINGLETON]?.mutationRateDenom ?: -1
 
-            return CytoWorld(world, cellCols, transform, motion, impulse, collider, material, renderShape, cellStore, csr, grid)
+            return CytoWorld(world, cellCols, transform, motion, impulse, collider, material, renderShape, cellStore, csr, grid, mutationRateDenom)
         }
     }
 
@@ -199,6 +207,11 @@ class CytoWorld private constructor(
         tables[ConnectionStateComponent::class] = ComponentTable.fromMap(damagesOut)
         tables[CytoMatterGridComponent::class] = ComponentTable.fromMap(
             linkedMapOf(GRID_SINGLETON to CytoMatterGridComponent(grid)),
+        )
+        // Emit the params singleton only when a value is explicitly set (≥0), so an unset (default) world
+        // round-trips byte-identically — every existing test/golden builds default worlds.
+        if (mutationRateDenom >= 0) tables[CytoSimParamsComponent::class] = ComponentTable.fromMap(
+            linkedMapOf(PARAMS_SINGLETON to CytoSimParamsComponent(mutationRateDenom)),
         )
         if (impulsesOut != null) tables[ImpulseComponent::class] = ComponentTable.fromMap(impulsesOut)
 

@@ -40,6 +40,15 @@ data class CytoMatterGridComponent(val grid: CytoMatterGrid)
  *  id (allocation grows from 0), never added to the live-id set, so it collides with nothing. */
 val GRID_SINGLETON = EntityId(Int.MAX_VALUE)
 
+/** Runtime-tunable, **saved** sim parameters — currently just the mutation rate-denominator — carried as a
+ *  singleton (like the matter grid) so they round-trip through `SimState` ↔ `CytoWorld` and the save file.
+ *  Present only once a value is *explicitly* set (in-game control / load); a fresh world omits it and
+ *  inherits the [CytoConfig] default (see `CytoWorld.mutationRateDenom`'s `-1` sentinel). */
+data class CytoSimParamsComponent(val mutationRateDenom: Int)
+
+/** Reserved entity id the [CytoSimParamsComponent] singleton lives on (one below [GRID_SINGLETON]). */
+val PARAMS_SINGLETON = EntityId(Int.MAX_VALUE - 1)
+
 /**
  * Per-cell connection bookkeeping that parallels the engine
  * [org.emerge.sim.core.physics.components.SpringConstraintComponent]: the accumulated stress damage for

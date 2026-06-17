@@ -60,6 +60,9 @@ object CytoSceneView {
         controls.onSlower = { simDriver.slower() }
         controls.onFaster = { simDriver.faster() }
         controls.onTogglePause = { simDriver.togglePause() }
+        // Mutation rate — tap the "Mut" button to cycle off → 1/1M → 1/100k → 1/10k → 1/1k (saved on the world).
+        controls.showMutation = true
+        controls.onCycleMutation = { controller.cycleMutationRate() }
         simDriver.start()
 
         // Shared in-game UI toolkit — the last-held-cell info panel + the gene-editor kit.
@@ -94,6 +97,7 @@ object CytoSceneView {
             controls.simPaused = simDriver.paused
             controls.simBehind = simDriver.behind()
             controls.simStatus = "${simDriver.status()}   ${fps.toInt()} FPS"
+            controls.mutationLabel = formatMutationRate(controller.mutationRateDenom())
 
             renderer.draw(frame) // renderer fills its own background
             drawReadouts(controller, renderer, controls)
@@ -154,6 +158,14 @@ object CytoSceneView {
         return runCatching { org.emerge.demo.cyto.sim.GeneCodec.parse(Files.readString(BRUSH_PATH)) }
             .map { controller.brushGenome = it; println("[cyto] brush genome: ${it.size} gene(s) — pick the 'Brush' type, then Spawn/Set to paint."); true }
             .getOrElse { controller.brushGenome = null; println("[cyto] parse failed ($BRUSH_PATH): ${it.message} — using type presets"); false }
+    }
+
+    /** Compact label for the Mut button: "off", "1/1M", "1/100k", "1/1k", … */
+    private fun formatMutationRate(denom: Int): String = when {
+        denom <= 0 -> "off"
+        denom % 1_000_000 == 0 -> "1/${denom / 1_000_000}M"
+        denom % 1_000 == 0 -> "1/${denom / 1_000}k"
+        else -> "1/$denom"
     }
 
     private fun initWindow(

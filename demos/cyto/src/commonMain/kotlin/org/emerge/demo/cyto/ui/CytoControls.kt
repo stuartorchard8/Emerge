@@ -45,6 +45,13 @@ class CytoControls {
      *  lives in the host (this class is cross-platform), so the host wires this up. */
     var onLoadBrush: () -> Unit = {}
 
+    // ── Mutation-rate control (gated by [showMutation]; host wires the cycle action + label) ────────────
+    /** Show the bottom-right "Mut" button that cycles the mutation rate through a ladder. */
+    var showMutation: Boolean = false
+    var onCycleMutation: () -> Unit = {}
+    /** Host-set each frame: the second line of the Mut button (e.g. "1/100k" or "off"). */
+    var mutationLabel: String = ""
+
     // ── Sim-speed control (threaded desktop host only; [showSimSpeed] gates the whole row off by default
     //    so single-threaded web/android hosts are unaffected) ──────────────────────────────────────────
     /** Show the top-left SLOW / PAUSE / FAST buttons + the TPS/FPS readout. */
@@ -222,6 +229,10 @@ class CytoControls {
         )
         buttons.add(
             Btn(rightX - 2f * (bs + gap), bottomY, bs, bs, GENE_COLOR, "Load\nGenome") { onLoadBrush() }
+        )
+        // Mutation-rate cycle (tap to step the ladder); desktop-gated like the sim-speed row.
+        if (showMutation) buttons.add(
+            Btn(rightX - 3f * (bs + gap), bottomY, bs, bs, SIM_COLOR, "Mut\n$mutationLabel") { onCycleMutation() }
         )
     }
 

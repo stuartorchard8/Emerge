@@ -347,6 +347,22 @@ class CytoSoaSpecTest {
     }
 
     @Test
+    fun mutationRateSavesAndDefaultsToInherit() {
+        // The in-game mutation rate (CytoSimParamsComponent) persists through the codec; an unset (default)
+        // world stays unset (-1 sentinel = inherit the cfg default), so every cfg-driven path is unchanged.
+        val initial = createCytoInitialState()
+        assertEquals(-1, CytoWorld.fromSimState(initial).mutationRateDenom, "fresh world inherits the cfg default")
+
+        val world = CytoWorld.fromSimState(initial)
+        world.mutationRateDenom = 10_000
+        val restored = org.emerge.demo.cyto.CytoSaveCodec.decode(org.emerge.demo.cyto.CytoSaveCodec.encode(world.toSimState()))
+        assertEquals(10_000, CytoWorld.fromSimState(restored).mutationRateDenom, "explicit rate survives save/load")
+
+        val defaultRT = org.emerge.demo.cyto.CytoSaveCodec.decode(org.emerge.demo.cyto.CytoSaveCodec.encode(CytoWorld.fromSimState(initial).toSimState()))
+        assertEquals(-1, CytoWorld.fromSimState(defaultRT).mutationRateDenom, "unset stays unset through save")
+    }
+
+    @Test
     fun degenerateDivisionKillsTheCellAndRecyclesMatter() {
         val (sx, sy) = CytoLightField.SOURCES.first()
         val divideNow = listOf(
