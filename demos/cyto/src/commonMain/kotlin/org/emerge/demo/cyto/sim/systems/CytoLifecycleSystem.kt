@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.sim.systems
 
 import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.CytoCellComponent
+import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoMatterGrid
@@ -76,7 +77,7 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         // Divide.
         for (intent in divideEvents) {
             if (intent.id in destroyed) continue
-            divide(builder, cfg, intent.id, intent.morphogen, intent.morphogenToMother, grid!!, destroyed)
+            divide(builder, cfg, intent.id, intent.morphogen, intent.morphogenToMother, intent.axisMorphogen, intent.divideAcross, grid!!, destroyed)
         }
 
         if (grid != null) builder.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
@@ -91,7 +92,7 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         for ((s, c) in cell.biomass) grid.deposit(idx, s, c)
     }
 
-    private fun divide(builder: SimBuilder, cfg: CytoConfig, motherId: EntityId, morphogen: String, morphogenToMother: Boolean, grid: CytoMatterGrid, destroyed: HashSet<EntityId>) {
+    private fun divide(builder: SimBuilder, cfg: CytoConfig, motherId: EntityId, morphogen: String, morphogenToMother: Boolean, axisMorphogen: String, divideAcross: Boolean, grid: CytoMatterGrid, destroyed: HashSet<EntityId>) {
         val cell = builder.getComponent<CytoCellComponent>(motherId) ?: return
         val transform = builder.getComponent<TransformComponent>(motherId) ?: return
         val motionVel = builder.getComponent<MotionComponent>(motherId)?.vel ?: Coord2.zero
@@ -109,13 +110,39 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             if (neighbourVector.x.raw == 0L && neighbourVector.y.raw == 0L) Norm.fromAngle(transform.ang)
             else neighbourVector.norm
 
+        // Oriented division (MORPHOGENESIS.md §Morphogens for shape): if the Mitosis gene named an
+        // axis-morphogen, place the daughter relative to that morphogen's LOCAL GRADIENT — *along* it
+        // (project → extend) or *across* it (slice → widen into a sheet) — instead of toward free space.
+        // The gradient axis is the line from the highest- to the lowest-concentration cell among the mother +
+        // welded neighbours (a single position difference ⇒ Frac-range-safe + deterministic, no float). Empty
+        // axis-morphogen, or no gradient, ⇒ the free-space neighbourNormal (so unoriented Mitosis is identical).
+        val splitNormal: Norm = run {
+            if (axisMorphogen.isEmpty()) return@run neighbourNormal
+            fun conc(c: CytoCellComponent): Int {
+                val b = totalBiomassBonds(c.biomass); return if (b <= 0) 0 else (c.cytoplasm[axisMorphogen] ?: 0) * CytoTuning.CONC_SCALE / b
+            }
+            var maxC = conc(cell); var minC = maxC; var maxPos = motherPos; var minPos = motherPos
+            for (n in neighbours) {
+                val nc = builder.getComponent<CytoCellComponent>(n) ?: continue
+                val np = builder.getComponent<TransformComponent>(n)?.pos ?: continue
+                val c = conc(nc)
+                if (c > maxC) { maxC = c; maxPos = np }
+                if (c < minC) { minC = c; minPos = np }
+            }
+            if (maxC == minC) return@run neighbourNormal               // flat → no gradient
+            val axisVec = minPos - maxPos                              // down-gradient direction
+            if (axisVec.x.raw == 0L && axisVec.y.raw == 0L) return@run neighbourNormal
+            val along = axisVec.norm
+            if (divideAcross) along.cw90 else along
+        }
+
         // Group connections by how aligned they are with the split direction.
         val ahead = ArrayList<EntityId>()
         val side = ArrayList<EntityId>()
         for (n in neighbours) {
             val np = builder.getComponent<TransformComponent>(n)?.pos ?: continue
             val toMother = (motherPos - np).norm
-            val s = toMother.dot(neighbourNormal).toFloat()
+            val s = toMother.dot(splitNormal).toFloat()
             val group = if (s.absoluteValue < 0.75f) 0f else s.sign
             when (group) {
                 -1f -> ahead.add(n)
@@ -150,7 +177,7 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         // 2·daughterRadius = rA+rB — so the new connection starts RELAXED, with no velocity kick. (The
         // old offset of 0.25·motherRadius put the pair at ~35% of rest, so the spring shoved them apart
         // every division; that churn was what the asymmetric drag rectified into chaotic locomotion.)
-        val offset = neighbourNormal * CytoUnits.len(daughterRadius.toFloat())
+        val offset = splitNormal * CytoUnits.len(daughterRadius.toFloat())
 
         // Clonal division: the daughter inherits the mother's type AND genome (separate map copies). The
         // morphogen (asymmetric mitosis) rides entirely with the daughter — its atoms make the daughter

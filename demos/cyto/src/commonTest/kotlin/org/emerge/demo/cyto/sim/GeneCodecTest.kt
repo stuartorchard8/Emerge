@@ -113,6 +113,21 @@ class GeneCodecTest {
         )
     }
 
+    /** Oriented division (MORPHOGENESIS.md §Morphogens for shape): the axis-morphogen + along/across mode
+     *  round-trip, composing with the asymmetric morphogen + retain-side. */
+    @Test
+    fun roundTripsOrientedMitosis() {
+        val gate = GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8))
+        // axis only (no asymmetric morphogen): `along`/`across <axis>`.
+        val along = Gene(EnergySource.Light, gate, GeneAction(ActionType.Mitosis, b = "bc"))
+        assertEquals("Light : Biomass > 8 : Mitosis along bc", GeneCodec.serialize(listOf(along)), "along, axis only")
+        assertEquals(listOf(along), GeneCodec.parse(GeneCodec.serialize(listOf(along))))
+        // all four Mitosis params at once: asym morphogen → mother, oriented across an axis.
+        val full = Gene(EnergySource.BreakBond("ab"), gate, GeneAction(ActionType.Mitosis, a = "ac", b = "bc", morphogenToMother = true, divideAcross = true))
+        assertEquals("Break ab : Biomass > 8 : Mitosis ac mother across bc", GeneCodec.serialize(listOf(full)), "asym+mother+across")
+        assertEquals(listOf(full), GeneCodec.parse(GeneCodec.serialize(listOf(full))))
+    }
+
     /** A hand-authored genome parses to exactly the genes intended (the author-by-text workflow). */
     @Test
     fun parsesAHandWrittenGenome() {

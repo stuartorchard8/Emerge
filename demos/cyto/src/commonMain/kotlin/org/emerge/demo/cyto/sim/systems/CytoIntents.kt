@@ -12,5 +12,13 @@ data class DetachIntent(val id: EntityId)
  *  [CytoLifecycleSystem] in a later phase. [morphogen] (the fired Mitosis gene's operand, "" if none)
  *  is the species allocated **whole to one side** for asymmetric mitosis (MORPHOGENESIS.md §C);
  *  [morphogenToMother] keeps it in the mother (centred source) instead of the daughter (edge source). */
-data class CellDivisionIntent(val id: EntityId, val morphogen: String = "", val morphogenToMother: Boolean = false)
+data class CellDivisionIntent(
+    val id: EntityId,
+    val morphogen: String = "",
+    val morphogenToMother: Boolean = false,
+    /** Oriented division: place the daughter along (`false`) / across (`true`) the local gradient of
+     *  [axisMorphogen]; empty ⇒ unoriented (free-space placement). */
+    val axisMorphogen: String = "",
+    val divideAcross: Boolean = false,
+)
 data class CellDestroyIntent(val id: EntityId)

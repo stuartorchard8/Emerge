@@ -101,14 +101,14 @@ object GeneCodec {
         ActionType.FormBond -> "FormBond ${tok(a.a)} ${tok(a.b)}"
         ActionType.Convert -> "Convert ${tok(a.a)}"
         ActionType.Contract -> "Contract"
-        // Mitosis optionally names a morphogen ([GeneAction.a]) allocated whole to one side (asymmetric
-        // division, MORPHOGENESIS.md §C); a trailing `mother` keeps it in the mother (centred source) vs the
-        // default daughter (edge source). Omit both when there's no morphogen so symmetric-split genomes
-        // serialize unchanged (`Mitosis`); emit so §C genomes round-trip / are hand-authorable.
-        ActionType.Mitosis -> when {
-            a.a.isEmpty() -> "Mitosis"
-            a.morphogenToMother -> "Mitosis ${tok(a.a)} mother"
-            else -> "Mitosis ${tok(a.a)}"
+        // Mitosis: optional morphogen ([GeneAction.a], allocated whole to one side — §C) with a trailing
+        // `mother` (centred source) vs default daughter (edge source); optional oriented division
+        // `along|across <axis-morphogen>` ([GeneAction.b]/[divideAcross], §Morphogens for shape). Each part
+        // is omitted when unset, so a bare `Mitosis` (symmetric, unoriented) round-trips unchanged.
+        ActionType.Mitosis -> buildString {
+            append("Mitosis")
+            if (a.a.isNotEmpty()) { append(" ${tok(a.a)}"); if (a.morphogenToMother) append(" mother") }
+            if (a.b.isNotEmpty()) append(if (a.divideAcross) " across ${tok(a.b)}" else " along ${tok(a.b)}")
         }
         ActionType.Repair -> "Repair"
     }
@@ -122,19 +122,20 @@ object GeneCodec {
         // an inert Repair (a no-op while undamaged) rather than crashing on load.
         "Expand" -> GeneAction(ActionType.Repair)
         "Contract" -> GeneAction(ActionType.Contract)
-        // `Mitosis` (symmetric), `Mitosis <morphogen>` (asymmetric → daughter), or `Mitosis <morphogen>
-        // mother|daughter` (which side keeps it; MORPHOGENESIS.md §C/§Source placement). Backward-compatible:
-        // a bare `Mitosis` parses to an empty operand + daughter side.
+        // `Mitosis [<morphogen> [mother|daughter]] [along|across <axis-morphogen>]` — optional asymmetric
+        // morphogen + retain-side (§C/§Source placement), optional oriented-division axis (§Morphogens for
+        // shape). Keyword tokens (mother/daughter/along/across) are recognised positionally; a bare `Mitosis`
+        // = symmetric + unoriented.
         "Mitosis" -> {
-            require(t.size <= 3) { fmt(t) }
-            val morph = if (t.size >= 2) untok(t[1]) else ""
-            val toMother = when {
-                t.size < 3 -> false
-                t[2] == "mother" -> true
-                t[2] == "daughter" -> false
-                else -> throw IllegalArgumentException("Mitosis side must be 'mother' or 'daughter': ${t[2]}")
+            val kw = setOf("mother", "daughter", "along", "across")
+            var i = 1; var morph = ""; var toMother = false; var axis = ""; var across = false
+            if (i < t.size && t[i] !in kw) { morph = untok(t[i]); i++ }
+            if (i < t.size && (t[i] == "mother" || t[i] == "daughter")) { toMother = t[i] == "mother"; i++ }
+            if (i < t.size && (t[i] == "along" || t[i] == "across")) {
+                across = t[i] == "across"; require(i + 1 < t.size) { fmt(t) }; axis = untok(t[i + 1]); i += 2
             }
-            GeneAction(ActionType.Mitosis, morph, morphogenToMother = toMother)
+            require(i == t.size) { fmt(t) }
+            GeneAction(ActionType.Mitosis, morph, axis, morphogenToMother = toMother, divideAcross = across)
         }
         "Repair" -> GeneAction(ActionType.Repair)
         else -> throw IllegalArgumentException("unknown action: ${t[0]}")

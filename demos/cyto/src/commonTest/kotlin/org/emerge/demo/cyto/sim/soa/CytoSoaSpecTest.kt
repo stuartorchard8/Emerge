@@ -10,6 +10,7 @@ import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoLightField
 import org.emerge.demo.cyto.sim.CytoMatterGrid
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.CytoSeed
 import org.emerge.demo.cyto.sim.CytoMutation
 import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.CytoUnits
@@ -31,6 +32,7 @@ import org.emerge.demo.cyto.sim.ActionType
 import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.createCytoInitialState
 import org.emerge.demo.cyto.sim.spawnCell
+import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.demo.cyto.sim.systems.addSpring
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
@@ -261,6 +263,46 @@ class CytoSoaSpecTest {
         assertTrue(mMother > 0 && mDaughter == 0, "mother-retention keeps the morphogen in the mother; got mother=$mMother daughter=$mDaughter")
         val (dMother, dDaughter) = morphogenSplit(toMother = false)
         assertTrue(dDaughter > 0 && dMother == 0, "daughter-retention hands the morphogen to the daughter; got mother=$dMother daughter=$dDaughter")
+    }
+
+    @Test
+    fun acrossOrientedDivisionGrowsA2DSheetNotAThread() {
+        // End-to-end (MORPHOGENESIS.md §Morphogens for shape): a single founder (seeded with the `cc`
+        // organizer determinant) sources the `bc` morphogen and divides ACROSS its gradient → the body widens
+        // into a 2D sheet (real y-extent), whereas the SAME genome with unoriented (default) division grows a
+        // 1-cell-thick thread (y-extent ≈ 0). Validates oriented placement at the organism scale.
+        fun yExtent(divideGene: String): Double {
+            val genome = GeneCodec.parse(
+                """
+                Light : ab < 4000 : FormBond a b
+                Light : Biomass < 4500 : Convert ab
+                $divideGene
+                Light : Conc(cc) > 0 : FormBond c c
+                Light : Conc(cc) > 0 : FormBond b c
+                Break bc : Conc(bc) > 30 : Convert bc
+                Break ab : Biomass > 0 : Repair
+                """.trimIndent(),
+            )
+            val initial = run {
+                val b = SimBuilder(SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
+                b.spawnCell(
+                    CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Collector,
+                    cytoplasm = mapOf("a" to 500, "b" to 500, "c" to 500, "cc" to 200),
+                    biomass = CytoSeed.STARTER_BIOMASS, genome = genome,
+                )
+                val grid = CytoMatterGrid.empty()
+                for (i in 0 until CytoMatterGrid.RES * CytoMatterGrid.RES) { grid.deposit(i, "a", 2000); grid.deposit(i, "b", 2000); grid.deposit(i, "c", 2000) }
+                b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
+                b.build()
+            }
+            val s = run(initial, ticks = 3000)
+            val ts = s.components.getTable<TransformComponent>().asMap()
+            val ys = s.components.getTable<CytoCellComponent>().asMap().keys.mapNotNull { ts[it]?.let { tr -> CytoUnits.toLogical(tr.pos.y).toDouble() } }
+            return if (ys.isEmpty()) 0.0 else ys.max() - ys.min()
+        }
+        val across = yExtent("Break ab : Biomass > 4000 : Mitosis cc across bc")
+        val thread = yExtent("Break ab : Biomass > 4000 : Mitosis cc")
+        assertTrue(across > thread + 1.0, "across-oriented division should widen into a 2D sheet; across y-extent=$across, thread y-extent=$thread")
     }
 
     @Test

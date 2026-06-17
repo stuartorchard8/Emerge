@@ -1,0 +1,18 @@
+# cyto brush genome — one gene per line:  ENERGY-SOURCE : CONDITION : ACTION
+#   source:    Light | Break <bond>
+#   condition: one or more clauses joined by ` & ` (AND); each is <operand> >|< <operand>,
+#              operand = <n> | <species> (cytoplasm count) | Conc(<species>) | Biomass | Touching
+#   action:    Import <s> | FormBond <a> <b> | Convert <s> | Contract | Mitosis [<morphogen> [mother]] | Repair
+#              (trailing @<g> = efficiency gear)
+#   Blank lines and # comments are ignored. Edit, then click "Load Genome" to reload;
+#   pick the 'Brush' type, then Spawn (empty space) / Set to paint.
+# Cell 1872 — the hand-authored monster (salvaged from the save).
+Break aa : aa > aab : FormBond c b @15
+Break bb : bb > abb : FormBond c b @10
+Break cb : ab > 900 & aa < 800 & a > ab : FormBond a a
+Break cb : ab < 900 & b > cb & aa < cb & b > ab : FormBond b b
+Break cb : Biomass < 2100 : Convert cb @12
+Break cb : cb > 5000 & bb < 200 & a > 1000 & b > 1000 : Mitosis ab
+Light : Conc(b) > bb : FormBond c b
+Light : aa < 20 & ab < 1000 : FormBond a b @15
+Light : aa > 100 : Repair

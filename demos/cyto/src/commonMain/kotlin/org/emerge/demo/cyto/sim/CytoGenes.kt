@@ -105,8 +105,14 @@ enum class ActionType {
  *  [ActionType.Mitosis] with a non-empty morphogen: it picks **which side keeps the morphogen** — `false`
  *  (default) hands it to the **daughter** (placed outward → an *edge/axial* source as the colony grows),
  *  `true` keeps it in the **mother** (stays embedded → a *centred/radial* source). A body-plan selector
- *  (MORPHOGENESIS.md §Source placement); invariant: only ever `true` when [type] is Mitosis. */
-data class GeneAction(val type: ActionType, val a: String = "", val b: String = "", val morphogenToMother: Boolean = false)
+ *  (MORPHOGENESIS.md §Source placement); invariant: only ever `true` when [type] is Mitosis.
+ *
+ *  **Oriented division** (MORPHOGENESIS.md §Morphogens for shape): for [ActionType.Mitosis], [b] names an
+ *  **axis-morphogen** — if non-empty, the daughter is placed relative to that morphogen's *local gradient*
+ *  (computed at division from welded neighbours) instead of toward free space: [divideAcross] `false` =
+ *  *along* ∇ (project → extends a thread), `true` = *across* ∇ (slice → widens into a 2D sheet). Empty [b] ⇒
+ *  unoriented (today's free-space placement). [divideAcross] is only ever `true` when [type] is Mitosis. */
+data class GeneAction(val type: ActionType, val a: String = "", val b: String = "", val morphogenToMother: Boolean = false, val divideAcross: Boolean = false)
 
 /**
  * A gene: an energy source, a binary condition, an action — and an **efficiency gear** [efficiency] (g, in
@@ -266,6 +272,11 @@ class CellWork(
      *  (centred source) rather than handing it to the daughter (edge source). */
     var divideMorphogenToMother: Boolean = false
 
+    /** The fired Mitosis gene's [GeneAction.b] (axis-morphogen) + [GeneAction.divideAcross] — orient the
+     *  split along (`false`) / across (`true`) that morphogen's local gradient. Empty ⇒ unoriented. */
+    var divideAxisMorphogen: String = ""
+    var divideAcross: Boolean = false
+
     /** True once a Repair gene healed any connection this tick — gates writing [connectionDamage] back. */
     var repaired = false
 
@@ -302,6 +313,8 @@ class CellWork(
         dividing = false
         divideMorphogen = ""
         divideMorphogenToMother = false
+        divideAxisMorphogen = ""
+        divideAcross = false
         repaired = false
     }
 }
