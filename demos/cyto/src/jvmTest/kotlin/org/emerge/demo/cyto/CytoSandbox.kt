@@ -18,6 +18,7 @@ import org.emerge.demo.cyto.sim.totalBiomassBonds
 import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
 import org.emerge.demo.cyto.sim.soa.CytoWorld
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
+import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
@@ -80,17 +81,25 @@ class CytoSandbox {
         fun row(s: String) = "$s: canDiffuse=${h.canDiffuse(SpeciesRegistry.id(s))} canHold=${h.canHold(SpeciesRegistry.id(s))}"
         sb.appendLine("morphogen isolation — ${row("ab")} | ${row("aab")} | ${row("abb")}")
         sb.appendLine()
-        sb.appendLine("tick\tpop\twelds\tatomsΔ\tavgBio\tab min/med/max\taa min/med/max")
+        // shape: bbox W×H of cell positions (thread ⇒ one axis ≫ the other; blob ⇒ ~square).
+        // Conc(aa): the AA-morphogen gradient (head-high → tail-low if a gradient is forming).
+        sb.appendLine("tick\tpop\twelds\tshape WxH\tConc(aa) min/med/max\tab min/med/max")
 
         var atoms0 = -1L
         fun report(t: Int, s: SimState) {
-            val cells = s.components.getTable<CytoCellComponent>().asMap().values.toList()
+            val cellMap = s.components.getTable<CytoCellComponent>().asMap()
+            val cells = cellMap.values.toList()
+            val transforms = s.components.getTable<TransformComponent>().asMap()
             val welds = s.components.getTable<SpringConstraintComponent>().asMap().values.sumOf { it.springs.size } / 2
             val atoms = totalAtoms(s); if (atoms0 < 0) atoms0 = atoms
-            val avgBio = if (cells.isEmpty()) 0 else cells.sumOf { totalBiomassBonds(it.biomass) } / cells.size
+            val xs = cellMap.keys.mapNotNull { transforms[it]?.let { tr -> CytoUnits.toLogical(tr.pos.x) } }
+            val ys = cellMap.keys.mapNotNull { transforms[it]?.let { tr -> CytoUnits.toLogical(tr.pos.y) } }
+            val shape = if (xs.isEmpty()) "-" else "${(xs.max() - xs.min()).toInt()}x${(ys.max() - ys.min()).toInt()}"
+            fun conc(c: CytoCellComponent): Int {
+                val bio = totalBiomassBonds(c.biomass); return if (bio <= 0) 0 else (c.cytoplasm["aa"] ?: 0) * 1000 / bio
+            }
             sb.appendLine(
-                "$t\t${cells.size}\t$welds\t${atoms - atoms0}\t$avgBio\t" +
-                    "${spread(cells.map { it.cytoplasm["ab"] ?: 0 })}\t${spread(cells.map { it.cytoplasm["aa"] ?: 0 })}",
+                "$t\t${cells.size}\t$welds\t$shape\t${spread(cells.map { conc(it) })}\t${spread(cells.map { it.cytoplasm["ab"] ?: 0 })}",
             )
         }
         report(0, initial)
