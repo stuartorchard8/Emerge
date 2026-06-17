@@ -74,7 +74,8 @@ enum class ActionType {
      *  whole world. Contraction only ever shrinks a cell, so it never coarsens the grid; it's sufficient for
      *  locomotion on its own (a travelling contraction wave). */
     Contract,
-    /** Divide (mitosis); [GeneAction.a]/[GeneAction.b] unused. */
+    /** Divide (mitosis). [GeneAction.a] optionally names a **morphogen** allocated *whole to one daughter*
+     *  (asymmetric division, MORPHOGENESIS.md §C); empty ⇒ symmetric 50/50 split. [GeneAction.b] unused. */
     Mitosis,
     /** Repair connection damage: each op heals the cell's most-damaged connection (operands unused).
      *  Holding a body together is therefore genetic + energy-costing — there is no free heal. */
@@ -82,7 +83,8 @@ enum class ActionType {
 }
 
 /** A gene's action plus its (action-dependent) operands — single atoms for [ActionType.FormBond],
- *  a species for [ActionType.Import]/[ActionType.Convert], unused for [ActionType.Mitosis]. */
+ *  a species for [ActionType.Import]/[ActionType.Convert], an optional morphogen species for
+ *  [ActionType.Mitosis] (asymmetric division; empty ⇒ symmetric). */
 data class GeneAction(val type: ActionType, val a: String = "", val b: String = "")
 
 /**

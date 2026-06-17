@@ -15,8 +15,9 @@ package org.emerge.demo.cyto.sim
  * Condition is `<operand> <>|<> <operand>`, each operand one of: an integer (a constant), `Biomass`,
  * `Touching`, or a species token (its cytoplasm count) — and a species token may be any length (`a`, `ab`,
  * `abb`, …), not just a monomer/dimer. Action is `Import <species>`, `FormBond <a> <b>`, `Convert <species>`,
- * `Contract`, `Mitosis`, or `Repair`. Blank lines and `#` comments are ignored. Round-trips every preset
- * genome (see GeneCodecTest).
+ * `Contract`, `Mitosis` *(or `Mitosis <morphogen>` for asymmetric division — the morphogen is allocated whole
+ * to one daughter, MORPHOGENESIS.md §C)*, or `Repair`. Blank lines and `#` comments are ignored. Round-trips
+ * every preset genome (see GeneCodecTest).
  */
 object GeneCodec {
 
@@ -86,7 +87,10 @@ object GeneCodec {
         ActionType.FormBond -> "FormBond ${tok(a.a)} ${tok(a.b)}"
         ActionType.Convert -> "Convert ${tok(a.a)}"
         ActionType.Contract -> "Contract"
-        ActionType.Mitosis -> "Mitosis"
+        // Mitosis optionally names a morphogen ([GeneAction.a]) allocated whole to one daughter (asymmetric
+        // division, MORPHOGENESIS.md §C). Omit the token when empty so symmetric-split genomes serialize
+        // unchanged (`Mitosis`); emit it otherwise so §C genomes round-trip / are hand-authorable.
+        ActionType.Mitosis -> if (a.a.isEmpty()) "Mitosis" else "Mitosis ${tok(a.a)}"
         ActionType.Repair -> "Repair"
     }
 
@@ -99,7 +103,9 @@ object GeneCodec {
         // an inert Repair (a no-op while undamaged) rather than crashing on load.
         "Expand" -> GeneAction(ActionType.Repair)
         "Contract" -> GeneAction(ActionType.Contract)
-        "Mitosis" -> GeneAction(ActionType.Mitosis)
+        // `Mitosis` (symmetric) or `Mitosis <morphogen>` (asymmetric — the morphogen goes whole to one
+        // daughter, MORPHOGENESIS.md §C). Backward-compatible: a bare `Mitosis` parses to an empty operand.
+        "Mitosis" -> { require(t.size <= 2) { fmt(t) }; GeneAction(ActionType.Mitosis, if (t.size == 2) untok(t[1]) else "") }
         "Repair" -> GeneAction(ActionType.Repair)
         else -> throw IllegalArgumentException("unknown action: ${t[0]}")
     }

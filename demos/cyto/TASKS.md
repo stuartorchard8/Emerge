@@ -20,22 +20,18 @@ substrate in order (1→4 in Next), then hand-author a gradient-based two-tissue
 
 The morphogen-for-shape substrate, in build order:
 
-1. [ ] **Codec fix — `Mitosis <morphogen>` round-trips.** `GeneCodec.action()` serializes `Mitosis` with no
-   operand, so the §C asymmetric-mitosis morphogen (`GeneAction.a`) is dropped — you can't hand-author a §C
-   genome in text. One-line fix in `GeneCodec` (serialize + parse the operand). Prerequisite for authoring
-   the monster.
-2. [ ] **`Conc` operand + AND-conjunction gate** — the positional-band readout primitive (`lo < Conc(m) AND
+1. [ ] **`Conc` operand + AND-conjunction gate** — the positional-band readout primitive (`lo < Conc(m) AND
    Conc(m) < hi`). `Conc` alongside `Chem` (mutation explores both), integer cross-multiply
    (`sp·denom ⋛ k·total`, no float); open: denominator = total cytoplasm (mole-fraction, leaning) vs biomass.
    Gate becomes a **list of clauses, all must hold** (NOT via `<`, OR via separate genes, no weighted sums);
    re-checked per op like the current single gate. Mutation adds/drops/mutates a clause. Codec: `&`-joined
    condition. Re-baselines `mutationOn` golden (PRNG route + new operand).
-3. [ ] **Signal decay + `canDiffuse`/`canMetabolise` split** — the gradient substrate. Split `canHold` into
+2. [ ] **Signal decay + `canDiffuse`/`canMetabolise` split** — the gradient substrate. Split `canHold` into
    `canDiffuse` (FormBond-produced-but-not-metabolised = morphogen; sender pushes down-gradient to **welded**
    neighbours, cell↔cell only) and `canMetabolise` (existing). Add per-tick decay of morphogen species back
    to monomers (matter-conserved). Source = a FormBond gene gated on a determinant (§C seeds it). **Re-baselines
    goldens** (new biology phase). Calm physics while testing the gradient.
-4. [ ] **Hand-author the v0 genome, run mutation-off via a probe** (`HOPEFUL_MONSTER.md` illustrative genome).
+3. [ ] **Hand-author the v0 genome, run mutation-off via a probe** (`HOPEFUL_MONSTER.md` illustrative genome).
    Tune decay/diffusion/thresholds until a stable point-source gradient + dividing-core / repairing-skin body
    forms and self-heals on a cut. **The reachability proof.**
 
@@ -117,6 +113,8 @@ The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (
 
 ## Done (recent highlights — git log is the archive)
 
+- [x] **Codec — `Mitosis <morphogen>` round-trips** — asymmetric-mitosis (§C) genomes are now
+  hand-authorable / saveable as text (was silently dropped); bare `Mitosis` stays symmetric. ✅ 2026-06-17
 - [x] **(C) Asymmetric mitosis via morphogen concentration** + **sensing ≠ permeability** — persistent
   one-genome→many-cell-type differentiation affirmed end-to-end. ✅ 2026-06-17
 - [x] **Sensed-vs-metabolic split** — `handleableOf` ignores condition operands (a sensor is not a
