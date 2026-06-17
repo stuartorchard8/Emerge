@@ -15,9 +15,14 @@ progress; drop from **Done** freely — `git log` is the real archive. Each task
 gradient → threads *or* 2D sheets). Demonstrated in the `CytoSandbox`: a single-cell-grown genome forms an
 organizer (isolated `cc` determinant) → `bc` morphogen gradient → light-clocked `Contract` on the high-`bc`
 side → it **swims** (COM drift 37 vs 1.8 unmoving); and `Mitosis cc across bc` widens the body from a thread
-(41x0) to a **2D sheet** (5x6). **Remaining for the jellyfish *bell*:** make a 2D body contract on **one
-side** (the bend) — i.e. break bilateral symmetry so the contraction is lateralised, not radial. That's the
-open frontier. (B) `Lyse` + competition parked. NOTE: a brush-painted cell lacks the maternal `cc` seed, so
+(41x0) to a **2D sheet** (5x6). **✅ THE BELL WORKS (`cyto-brush-jellyfish.gene`):** `Mitosis cc across bc`
+makes a 2D sheet, the `cc` organizer settles **off-centre** (orgOff ~0.5–0.76) → lateralised `bc` gradient →
+the high-`bc` flank contracts under daylight → **bend → directional drift ~10**. A single-cell-grown,
+genetically-differentiated 2D bend-swimmer. **Remaining = polish, the next frontier:** (1) a **faster
+oscillator** (a chemical clock vs the slow daylight band — ~1 stroke/orbit is the speed bottleneck); (2) a
+steadier bend (the organizer wanders); (3) directional control (heading is emergent-arbitrary); (4)
+cytoplasm-seed-on-spawn tooling so the brush actually differentiates. (B) `Lyse` + competition parked. NOTE: a
+brush-painted cell lacks the maternal `cc` seed, so
 it grows but doesn't differentiate — functional spawning needs a cytoplasm seed (future tooling).
 
 ---
