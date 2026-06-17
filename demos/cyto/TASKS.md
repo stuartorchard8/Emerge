@@ -33,9 +33,8 @@ The planned signal-decay rule + `canDiffuse`/`canMetabolise` split are **dropped
    **closes atomically** (no-repeat-bond + FormBond fragments — `AB`↔`CC` doesn't balance). Run **mutation-off,
    calm physics**; probe whether a readable point-source gradient forms (watch the integer-floor tail) and a
    stable core/skin body that self-heals on a cut. **The reachability proof.**
-   - *Optional, only if spread control is lacking:* apply the **efficiency gear to `FormBond` as a per-tick
-     cap** (`REF>>g`, not the `g+1` multiplier — that mints energy; golden-safe at g=0) so the consumer's rate
-     `k` (hence spread `λ≈√(D/k)`) becomes a heritable dial.
+   - Spread dial available: the **efficiency gear on `FormBond` is a per-tick cap** (✅ `a264a79`; `REF>>g`, no
+     multiplier) — set `g` on the sink gene to tune the consumer rate `k` (hence reach `λ≈√(D/k)`).
 
 Parked until shape is cracked (then re-introduce one axis per campaign — see `HOPEFUL_MONSTER.md` staging):
 

@@ -459,9 +459,10 @@ ingredient (without it diffusion flattens the gradient to nothing).
 
 Source + diffusion + distributed sink = a steady-state gradient (how real gradients are maintained). The
 consumer's rate `k` sets the length-scale `λ ≈ √(D/k)` (faster consumption ⇒ steeper, shorter range). `k`
-knob = the consumer gene's gate threshold, or — if an explicit dial proves needed — the **efficiency gear on
-`FormBond` as a per-tick *cap* (`REF>>g`), not the `g+1` multiplier** (which would mint energy; the cap is
-golden-safe at g=0). **Add the gear-cap only if probing shows the gate/balance isn't enough.**
+knob = the consumer gene's gate threshold, or the **efficiency gear on `FormBond` as a per-tick *cap*
+(`REF>>g`), not the `g+1` multiplier** (which would mint energy; the cap is golden-safe at g=0). **BUILT
+(`a264a79`)** — FormBond now respects the gear's cap (multiplier still exempt), so a sink gene's `g` is the
+spread dial; editable in the gene editor.
 
 **Two molecule classes, both already supported — `canHold` suffices, no split needed:**
 

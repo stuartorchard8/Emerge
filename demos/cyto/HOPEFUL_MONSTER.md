@@ -124,7 +124,7 @@ a gradient, the decay/diffusion rates or the source localisation are wrong — n
 3. **Author the v0 metabolic-loop genome + probe the gradient** — source/sink/diffusion (no new substrate;
    decay = metabolism). Pick `P`/`M` so the loop closes atomically. Run mutation-off, calm physics; confirm a
    readable gradient + a stable two-tissue body that self-heals. **The reachability proof** — the entire point.
-   *Optional:* the efficiency-gear-as-FormBond-cap spread dial, only if probing shows it's needed.
+   The FormBond efficiency-cap spread dial is now built (`a264a79`) — set `g` on the sink gene to tune reach.
 
 `Lyse`, apoptosis, chemotaxis, welded-neighbour count, methylation-commit, oriented division all stay parked
 until v0 proves the floor.
