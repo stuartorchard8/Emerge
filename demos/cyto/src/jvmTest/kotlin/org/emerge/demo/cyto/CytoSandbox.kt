@@ -56,7 +56,12 @@ class CytoSandbox {
                 cytoplasm = CytoSeed.SEED_CYTOPLASM, biomass = CytoSeed.STARTER_BIOMASS,
                 logicalRadius = MIN_RADIUS, genome = genome,
             )
-            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
+            // Abundant raw monomers everywhere (2000 a/b/c per grid cell) so proliferation isn't matter-limited.
+            val grid = CytoMatterGrid.empty()
+            for (idx in 0 until CytoMatterGrid.RES * CytoMatterGrid.RES) {
+                grid.deposit(idx, "a", 2000); grid.deposit(idx, "b", 2000); grid.deposit(idx, "c", 2000)
+            }
+            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
             b.build()
         }
 
