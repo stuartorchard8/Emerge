@@ -24,18 +24,23 @@ This doc is the **program** (how we'll do it + prove it). The **contract** (the 
 Morphogens are built **for shape, not fate**: a localised **source** + cell↔cell **diffusion** + a
 distributed **sink** → a steady-state **positional gradient** a cell reads to know where it is. **The sink is
 just metabolism** (2026-06-17): a morphogen is an ordinary metabolite in a **centre-source → everywhere-sink
-loop** — so it needs **no new substrate code** (see `MORPHOGENESIS.md` §Morphogens for shape).
+loop** — so the *gradient* needs no new substrate code (rides existing diffuse). The one addition built since —
+**produce-without-diffuse** (so an isolated determinant can be made on demand) — is done (`993ed17`). See
+`MORPHOGENESIS.md` §Morphogens for shape.
 
-- **Determinant** (`X`) — sensed-only + mitosis-allocated, never produced/metabolised → isolated, persistent =
-  **memory/fate**; marks the source (§C ✅).
-- **Morphogen** (`M`) — FormBond-**produced** at a centre **and** metabolised everywhere → diffuses for free
-  (`canHold`-true → existing cell↔cell diffuse) and is consumed (the sink = the decay) = **shape**.
+- **Determinant** (`X`) — FormBond-**synthesised** + sensed, **never metabolised** → `canHold` but **not**
+  `canDiffuse` ⇒ **intracellular** (held, never shared) = **memory/fate**; marks the source. *Produced on
+  demand and stays isolated* (✅ `993ed17`; better than the §C seeded sensed-only one, which leaked to env).
+- **Morphogen** (`M`) — synthesised at a centre **and** metabolised everywhere → `canDiffuse` (the sink
+  consumes it ⇒ in flux) → diffuses via existing cell↔cell diffuse + is consumed (the decay) = **shape**.
 - **Metabolite** — metabolised → **food**.
 
 Locked decisions: morphogens **cost matter** (FormBond source; metabolic consumption recycles atoms); diffuse
 **cell↔cell** (not the coarse env grid); gene gate is an **AND-conjunction** (✅ built). The planned
-signal-decay rule + `canDiffuse`/`canMetabolise` split are **dropped** — `sensing≠permeability` stays only for
-the determinant. Position is **upstream** of fate: read the gradient → at a threshold, commit a determinant.
+signal-decay *rule* is dropped (decay = metabolism), but a **produce-without-diffuse** split *was* added (✅
+`993ed17`): a derived metabolic-vs-synthetic `canHold`/`canDiffuse` — diffuse only what you metabolise, so a
+synthesised-only species is intracellular memory. Position is **upstream** of fate: read the gradient → at a
+threshold, commit a determinant.
 
 ## The ladder — smallest recognisable body first
 

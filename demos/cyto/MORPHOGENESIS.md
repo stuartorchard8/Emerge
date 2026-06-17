@@ -37,10 +37,12 @@ settled design we build toward; it is the contract, not a status log.
 > **promotes** the gene-logic + signal work and **demotes B** (`Lyse`, competition) until shape is cracked.
 > **Locked decisions:** morphogens **cost matter** (FormBond source; metabolic consumption recycles atoms);
 > diffuse **cell↔cell** (not the coarse env grid); the gene gate is an **AND-conjunction of binary clauses**
-> (NOT via `<`; OR via separate genes; no weighted sums). **2026-06-17 revision (see §Morphogens for shape):**
-> decay = metabolism, so the planned signal-decay rule + `canDiffuse`/`canMetabolise` split are **dropped** —
-> the morphogen rides existing mechanics (cell↔cell diffuse + a consumption gene). See **§Morphogens for
-> shape** below.
+> (NOT via `<`; OR via separate genes; no weighted sums). **2026-06-17 revisions (see §Morphogens for shape):**
+> (a) decay = metabolism — the planned *signal-decay rule* is dropped; the morphogen rides existing mechanics
+> (cell↔cell diffuse + a consumption gene). (b) A **produce-without-diffuse** split *was* added — a derived
+> **metabolic-vs-synthetic** `canHold`/`canDiffuse` (diffuse only what you metabolise; a synthesised-only
+> species is **intracellular memory**) — the intra-vs-inter-cellular morphogen distinction. See **§Morphogens
+> for shape** below.
 
 ## The central principle: matter is closed, energy is open
 
@@ -442,20 +444,26 @@ a *dynamic steady state*: a localised **source** produces the signal, it **diffu
 distributed **sink** consumes it, so concentration falls with distance. The sink is the non-negotiable
 ingredient (without it diffusion flattens the gradient to nothing).
 
-> **2026-06-17 revision — decay = metabolism (the source/sink loop), no new substrate.** The earlier plan
-> here (a special *signal-decay* rule + splitting `canHold` into `canDiffuse`/`canMetabolise`) is
-> **superseded** by a simpler, more emergent mechanism (Stu): **the morphogen is an ordinary metabolite in a
-> production/consumption loop**, and the *sink is just metabolism* — cells eat the morphogen. It rides
-> mechanics already in the engine; no decay rule, no `canHold` split.
+> **2026-06-17 revision — decay = metabolism (the source/sink loop).** The earlier plan here (a special
+> *signal-decay* rule) is **superseded** (Stu): **the morphogen is an ordinary metabolite in a
+> production/consumption loop**, and the *sink is just metabolism* — cells eat the morphogen. No decay rule.
+>
+> **2026-06-17 (later) — produce-without-diffuse split LANDED (`993ed17`).** A `canHold`/`canDiffuse` split
+> *was* added after all — but a **derived metabolic-vs-synthetic** one, not the originally-planned
+> morphogen-diffusion flag: `canDiffuse` = species the genome **metabolises** (Break/Convert/Import);
+> `canHold` = those **plus** ones it only **synthesises** (FormBond). So a synthesised-but-never-consumed
+> species is **intracellular** — held + sensed, never shared (the intra-vs-inter-cellular morphogen split,
+> SimulifeHub's genes 0-5). The metabolic-loop morphogen is unaffected (its sink *consumes* it ⇒ canDiffuse
+> ⇒ it still spreads). This is what lets a core **determinant** be *produced on demand and stay isolated*.
 
 **The metabolic-loop morphogen.** With primary energy molecule `P` and morphogen `M`:
 - **Source (centre only):** `Break P IF <determinant X> : FormBond → M` — spends the primary molecule to make
   `M`; the determinant `X` localises it to the founder lineage.
 - **Sink (every cell):** `Break M IF <true / Conc threshold> : FormBond → P` — metabolises `M` back. **This
   is the decay.**
-- **Spread, for free:** `M` is `canHold`-true everywhere, so the **existing** `CytoBiologyCore.diffuse`
-  (cell↔cell, welded neighbours, `⌊count/(degree+1)⌋` each, canHold-gated, conservative) carries it outward —
-  no new diffusion code. Metabolic-leak *retains* `M` (handleable), so it stays in the colony, not the env grid.
+- **Spread, for free:** `M` is **metabolised** (the sink consumes it) ⇒ `canDiffuse`-true, so the **existing**
+  `CytoBiologyCore.diffuse` (cell↔cell, welded neighbours, `⌊count/(degree+1)⌋` each, conservative) carries it
+  outward — no new diffusion code. Metabolic-leak *retains* `M` (canHold), so it stays in the colony, not the env.
 
 Source + diffusion + distributed sink = a steady-state gradient (how real gradients are maintained). The
 consumer's rate `k` sets the length-scale `λ ≈ √(D/k)` (faster consumption ⇒ steeper, shorter range). `k`
@@ -464,16 +472,17 @@ knob = the consumer gene's gate threshold, or the **efficiency gear on `FormBond
 (`a264a79`)** — FormBond now respects the gear's cap (multiplier still exempt), so a sink gene's `g` is the
 spread dial; editable in the gene editor.
 
-**Two molecule classes, both already supported — `canHold` suffices, no split needed:**
+**Three molecule classes, all derived from genome role (✅ all supported):**
 
 | Role | Genome signature | Behaviour | Use |
 |---|---|---|---|
-| **Determinant** (`X`) | sensed-only (`Chem`/`Conc`), mitosis-allocated, never produced/metabolised | isolated + persistent (sensing≠permeability, §C ✅) | memory / committed fate; **marks the source** |
-| **Morphogen** (`M`) | FormBond-**produced** at a source **and** metabolised everywhere | diffuses (`canHold`) + consumed (the sink) = **gradient** | positional **shape** |
-| **Metabolite** | metabolised | uptake + retained (`canHold`) | food / structure |
+| **Determinant** (`X`) | FormBond-**synthesised** (or seeded) + sensed, **never metabolised** | `canHold` (retained) but **not** `canDiffuse` ⇒ **intracellular** | memory / committed fate; **marks the source** — *produced on demand, stays isolated* |
+| **Morphogen** (`M`) | synthesised at a source **and** metabolised (the sink) everywhere | `canDiffuse` (consumed ⇒ in flux) ⇒ diffuses + consumed = **gradient** | positional **shape** |
+| **Metabolite** | metabolised | `canDiffuse` + uptake + retained | food / structure |
 
-`sensing ≠ permeability` stays — but only for the *determinant*; the spreading morphogen wants neither
-isolation nor a bolt-on decay, so the `canDiffuse`/`canMetabolise` split is **dropped**.
+(The §C *seeded sensed-only* determinant — never produced — still works, but the **synthesised** determinant
+above is better: it's *retained* (canHold) rather than leaking to env, and can be made on demand. `sensing ≠
+permeability` still holds — a sensed-only species opens no channel.)
 
 **Honest caveats (empirical — confirm by probing).** (1) **Integer-floor diffusion truncates the tail:**
 `⌊count/(degree+1)⌋` floors to 0 at low counts, so `M` stops spreading once thin (near-source counts are large

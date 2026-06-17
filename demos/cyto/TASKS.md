@@ -125,6 +125,13 @@ The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (
 
 ## Done (recent highlights — git log is the archive)
 
+- [x] **Produce-without-diffuse — intracellular memory** (`993ed17`) — `handleableOf` split into `canHold`
+  (metabolic ∪ synthetic = retain) vs `canDiffuse` (metabolic only = cell↔cell share). A species the genome
+  only synthesises (FormBond) and never consumes is now intracellular: held + sensed, never shared — so a
+  core determinant can be produced on demand and stay isolated (the intra-vs-inter morphogen split). Additive
+  (presets metabolise what they synthesise → all goldens byte-identical, incl. mutationOn).
+- [x] **FormBond efficiency cap** (`a264a79`) — the gear's per-tick cap (not the `g+1` multiplier) now applies
+  to FormBond = the morphogen-spread dial; editor shows EFF for FormBond. Additive (g=0 byte-identical).
 - [x] **Asymmetric-mitosis retain-side** (`123c860`) — `Mitosis <m> mother` keeps the morphogen in the
   mother (centred/radial source) vs the default daughter (edge/axial). Body-plan selector; additive (goldens
   byte-identical). Not yet mutated (deferred).
