@@ -25,13 +25,17 @@ import org.emerge.sim.core.sim.SimState
 import kotlin.test.Test
 
 /**
- * Throwaway sandbox: seed ONE founder with a hand-authored genome (mutation OFF) at the world origin and
- * watch how it develops over time — population, welds (multicellularity), the `ab` morphogen spread
- * (a proxy for differentiation), and matter conservation. NOT a gated test (no asserts) — a diagnostic.
- *   ./gradlew :demos:cyto:jvmTest --tests "*CytoSandbox*" [-Dsandboxticks=8000]   → /tmp/cytosandbox.txt
+ * Throwaway sandbox: seed ONE founder with a hand-authored genome (mutation OFF) at the origin and watch how
+ * it develops — population, body shape, **centre-of-mass drift** (does it swim?), **radius spread** (is it
+ * contracting?), and the concentration of up to two watch-species (a determinant / morphogen). NOT a gated
+ * test. Properties (all forwarded in build.gradle.kts):
+ *   -Dsandboxgenome=<file>   GeneCodec genome (default: cell 1872)
+ *   -Dsandboxseed=a:500,c:200 founder cytoplasm (default: CytoSeed.SEED_CYTOPLASM)
+ *   -Dsandboxwatch=cc,bc     two species to report Conc of (default aa,ab)
+ *   -Dsandboxticks=8000
+ *   → /tmp/cytosandbox.txt
  */
 class CytoSandbox {
-    // Cell 1872 — the hand-authored monster, pulled via InspectCell.
     private val genomeText = """
         Break aa : aa > aab : FormBond c b @15
         Break bb : bb > abb : FormBond c b @10
@@ -47,20 +51,21 @@ class CytoSandbox {
     @Test
     fun run() {
         val ticks = System.getProperty("sandboxticks")?.toIntOrNull() ?: 8000
-        // -Dsandboxgenome=<file> runs any GeneCodec-text genome; else the hard-coded cell-1872 monster.
         val genome = System.getProperty("sandboxgenome")?.let { GeneCodec.parse(java.io.File(it).readText()) }
             ?: GeneCodec.parse(genomeText)
+        val seed = System.getProperty("sandboxseed")?.let { s ->
+            s.split(",").associate { it.substringBefore(":") to it.substringAfter(":").toInt() }
+        } ?: CytoSeed.SEED_CYTOPLASM
+        val watch = (System.getProperty("sandboxwatch") ?: "aa,ab").split(",")
         val cfg = CytoConfig(mutationRateDenom = 0)   // mutation OFF — observe the *designed* organism
 
         val initial = run {
             val b = SimBuilder(SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
             b.spawnCell(
                 pos = CytoUnits.coord2(0f, 0f), vel = Coord2.zero, type = CellType.Collector,
-                cytoplasm = CytoSeed.SEED_CYTOPLASM, biomass = CytoSeed.STARTER_BIOMASS,
-                logicalRadius = MIN_RADIUS, genome = genome,
+                cytoplasm = seed, biomass = CytoSeed.STARTER_BIOMASS, logicalRadius = MIN_RADIUS, genome = genome,
             )
-            // Abundant raw monomers everywhere (2000 a/b/c per grid cell) so proliferation isn't matter-limited.
-            val grid = CytoMatterGrid.empty()
+            val grid = CytoMatterGrid.empty()   // abundant raw monomers everywhere so growth isn't matter-limited
             for (idx in 0 until CytoMatterGrid.RES * CytoMatterGrid.RES) {
                 grid.deposit(idx, "a", 2000); grid.deposit(idx, "b", 2000); grid.deposit(idx, "c", 2000)
             }
@@ -72,35 +77,31 @@ class CytoSandbox {
         var w = CytoWorld.fromSimState(initial)
 
         val sb = StringBuilder()
-        sb.appendLine("=== cell-1872 sandbox (mutation OFF, $ticks ticks, bare SEED founder) ===")
+        sb.appendLine("=== sandbox (mutation OFF, $ticks ticks, seed=$seed) ===")
         sb.appendLine(GeneCodec.serialize(genome))
         sb.appendLine()
-        // Smuggling check: any molecule carrying the synthetic-only 'ab' bond should be canHold (retained)
-        // but NOT canDiffuse (so it can't smuggle the 'ab' morphogen to neighbours).
         val h = handleableOf(genome)
-        fun row(s: String) = "$s: canDiffuse=${h.canDiffuse(SpeciesRegistry.id(s))} canHold=${h.canHold(SpeciesRegistry.id(s))}"
-        sb.appendLine("morphogen isolation — ${row("ab")} | ${row("aab")} | ${row("abb")}")
+        sb.appendLine("watch species $watch — " + watch.joinToString(" | ") {
+            "$it: canDiffuse=${h.canDiffuse(SpeciesRegistry.id(it))} canHold=${h.canHold(SpeciesRegistry.id(it))}"
+        })
         sb.appendLine()
-        // shape: bbox W×H of cell positions (thread ⇒ one axis ≫ the other; blob ⇒ ~square).
-        // Conc(aa): the AA-morphogen gradient (head-high → tail-low if a gradient is forming).
-        sb.appendLine("tick\tpop\twelds\tshape WxH\tConc(aa) min/med/max\tab min/med/max")
+        sb.appendLine("tick\tpop\twelds\tCOMdrift\tshape WxH\trad min/med/max\t${watch[0]} Conc\t${watch.getOrElse(1){"-"}} Conc")
 
-        var atoms0 = -1L
+        var com0: Pair<Double, Double>? = null
         fun report(t: Int, s: SimState) {
             val cellMap = s.components.getTable<CytoCellComponent>().asMap()
             val cells = cellMap.values.toList()
             val transforms = s.components.getTable<TransformComponent>().asMap()
             val welds = s.components.getTable<SpringConstraintComponent>().asMap().values.sumOf { it.springs.size } / 2
-            val atoms = totalAtoms(s); if (atoms0 < 0) atoms0 = atoms
-            val xs = cellMap.keys.mapNotNull { transforms[it]?.let { tr -> CytoUnits.toLogical(tr.pos.x) } }
-            val ys = cellMap.keys.mapNotNull { transforms[it]?.let { tr -> CytoUnits.toLogical(tr.pos.y) } }
+            val xs = cellMap.keys.mapNotNull { transforms[it]?.let { tr -> CytoUnits.toLogical(tr.pos.x).toDouble() } }
+            val ys = cellMap.keys.mapNotNull { transforms[it]?.let { tr -> CytoUnits.toLogical(tr.pos.y).toDouble() } }
             val shape = if (xs.isEmpty()) "-" else "${(xs.max() - xs.min()).toInt()}x${(ys.max() - ys.min()).toInt()}"
-            fun conc(c: CytoCellComponent): Int {
-                val bio = totalBiomassBonds(c.biomass); return if (bio <= 0) 0 else (c.cytoplasm["aa"] ?: 0) * 1000 / bio
-            }
-            sb.appendLine(
-                "$t\t${cells.size}\t$welds\t$shape\t${spread(cells.map { conc(it) })}\t${spread(cells.map { it.cytoplasm["ab"] ?: 0 })}",
-            )
+            val com = if (xs.isEmpty()) 0.0 to 0.0 else xs.average() to ys.average()
+            if (com0 == null) com0 = com
+            val drift = kotlin.math.hypot(com.first - com0!!.first, com.second - com0!!.second)
+            val rad = spread(cells.map { (it.logicalRadius.toFloat() * 100).toInt() })
+            fun conc(sp: String) = spread(cells.map { c -> val bio = totalBiomassBonds(c.biomass); if (bio <= 0) 0 else (c.cytoplasm[sp] ?: 0) * 1000 / bio })
+            sb.appendLine("$t\t${cells.size}\t$welds\t${(drift * 100).toInt() / 100.0}\t$shape\t$rad\t${conc(watch[0])}\t${if (watch.size > 1) conc(watch[1]) else "-"}")
         }
         report(0, initial)
         val every = (ticks / 16).coerceAtLeast(1)
@@ -116,15 +117,5 @@ class CytoSandbox {
         if (xs.isEmpty()) return "-/-/-"
         val s = xs.sorted()
         return "${s.first()}/${s[s.size / 2]}/${s.last()}"
-    }
-
-    private fun totalAtoms(s: SimState): Long {
-        var n = 0L
-        for (c in s.components.getTable<CytoCellComponent>().asMap().values) {
-            for ((sp, k) in c.cytoplasm) n += sp.length.toLong() * k
-            for ((sp, k) in c.biomass) n += sp.length.toLong() * k
-        }
-        n += s.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid?.totalAtoms() ?: 0L
-        return n
     }
 }

@@ -66,6 +66,8 @@ tasks.withType<Test>().configureEach {
     System.getProperty("savefile")?.let { systemProperty("savefile", it) }
     System.getProperty("sandboxgenome")?.let { systemProperty("sandboxgenome", it) }
     System.getProperty("sandboxticks")?.let { systemProperty("sandboxticks", it) }
+    System.getProperty("sandboxseed")?.let { systemProperty("sandboxseed", it) }
+    System.getProperty("sandboxwatch")?.let { systemProperty("sandboxwatch", it) }
 }
 
 // Generates *ShaderSources.kt from .vert / .frag files under src/commonMain/shaders/.
