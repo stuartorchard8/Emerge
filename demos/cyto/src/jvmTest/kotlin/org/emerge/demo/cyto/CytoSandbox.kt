@@ -85,23 +85,27 @@ class CytoSandbox {
             "$it: canDiffuse=${h.canDiffuse(SpeciesRegistry.id(it))} canHold=${h.canHold(SpeciesRegistry.id(it))}"
         })
         sb.appendLine()
-        sb.appendLine("tick\tpop\twelds\tCOMdrift\tshape WxH\trad min/med/max\t${watch[0]} Conc\t${watch.getOrElse(1){"-"}} Conc")
+        sb.appendLine("tick\tpop\tCOM(x,y)\tdrift\tshape WxH\torgOff\t${watch[0]} Conc\t${watch.getOrElse(1){"-"}} Conc")
 
         var com0: Pair<Double, Double>? = null
         fun report(t: Int, s: SimState) {
             val cellMap = s.components.getTable<CytoCellComponent>().asMap()
             val cells = cellMap.values.toList()
             val transforms = s.components.getTable<TransformComponent>().asMap()
-            val welds = s.components.getTable<SpringConstraintComponent>().asMap().values.sumOf { it.springs.size } / 2
             val xs = cellMap.keys.mapNotNull { transforms[it]?.let { tr -> CytoUnits.toLogical(tr.pos.x).toDouble() } }
             val ys = cellMap.keys.mapNotNull { transforms[it]?.let { tr -> CytoUnits.toLogical(tr.pos.y).toDouble() } }
             val shape = if (xs.isEmpty()) "-" else "${(xs.max() - xs.min()).toInt()}x${(ys.max() - ys.min()).toInt()}"
             val com = if (xs.isEmpty()) 0.0 to 0.0 else xs.average() to ys.average()
             if (com0 == null) com0 = com
             val drift = kotlin.math.hypot(com.first - com0!!.first, com.second - com0!!.second)
-            val rad = spread(cells.map { (it.logicalRadius.toFloat() * 100).toInt() })
+            // organizer offset: distance of the highest-watch[0] (determinant) cell from the body COM,
+            // normalised by the body half-extent (0 = central → radial gradient; ~1 = edge → lateral gradient).
+            val orgId = cellMap.entries.maxByOrNull { it.value.cytoplasm[watch[0]] ?: 0 }?.key
+            val orgPos = orgId?.let { transforms[it]?.let { tr -> CytoUnits.toLogical(tr.pos.x).toDouble() to CytoUnits.toLogical(tr.pos.y).toDouble() } }
+            val halfExtent = (if (xs.isEmpty()) 1.0 else maxOf(xs.max() - xs.min(), ys.max() - ys.min())).coerceAtLeast(1.0) / 2
+            val orgOff = if (orgPos == null) 0.0 else kotlin.math.hypot(orgPos.first - com.first, orgPos.second - com.second) / halfExtent
             fun conc(sp: String) = spread(cells.map { c -> val bio = totalBiomassBonds(c.biomass); if (bio <= 0) 0 else (c.cytoplasm[sp] ?: 0) * 1000 / bio })
-            sb.appendLine("$t\t${cells.size}\t$welds\t${(drift * 100).toInt() / 100.0}\t$shape\t$rad\t${conc(watch[0])}\t${if (watch.size > 1) conc(watch[1]) else "-"}")
+            sb.appendLine("$t\t${cells.size}\t(${com.first.toInt()},${com.second.toInt()})\t${(drift * 100).toInt() / 100.0}\t$shape\t${(orgOff * 100).toInt() / 100.0}\t${conc(watch[0])}\t${if (watch.size > 1) conc(watch[1]) else "-"}")
         }
         report(0, initial)
         val every = (ticks / 16).coerceAtLeast(1)
