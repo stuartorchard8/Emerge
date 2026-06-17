@@ -27,12 +27,13 @@ import org.emerge.render.torus.ui.UiBuilder
  * editor state (which gene, the draft, which dropdown is open).
  */
 class GeneEditor {
-    private enum class Field { Source, LhsKind, Cmp, RhsKind, Action }
+    private enum class Field { Source, LhsKind, Cmp, RhsKind, Action, MitosisSide }
 
     private var editingId: EntityId? = null
     private var editingIndex: Int? = null
     private var draft: Gene? = null
     private var openField: Field? = null
+    private var openClause: Int = -1   // which clause's LHS/CMP/RHS dropdown is open (for the AND-conjunction)
 
     // Option lists, derived from the seeded alphabet. Species operands are built atom-by-atom (see
     // [speciesField]) rather than picked from a fixed list, so any-length molecules (abb, abcb, …) are
@@ -76,35 +77,41 @@ class GeneEditor {
             picker("SOURCE", sourceLabel(d.source), sourceLabels, openField == Field.Source, { toggle(Field.Source) }) { i ->
                 draft = d.copy(source = if (i == 0) EnergySource.Light else EnergySource.BreakBond(bonds[i - 1])); openField = null
             }
-            // Both sides of the gate are operands (a constant or a live reading), so each gets a kind
-            // picker plus, when it's a Const/Chem/Conc, a value stepper / species picker. The UI edits the
-            // FIRST clause; any further AND-clauses are preserved untouched (author multi-clause via text).
-            val cl = clause0(d)
-            val lhs = cl.lhs
-            picker("LHS", operandKindLabels[operandKind(lhs)], operandKindLabels, openField == Field.LhsKind, { toggle(Field.LhsKind) }) { i ->
-                draft = withClause0(d, cl.copy(lhs = operandOfKind(i, lhs))); openField = null
+            // The gate is an AND-conjunction: render every clause (both sides are operands — a constant or a
+            // live reading — each with a kind picker + a value stepper / species field), with add/remove.
+            val clauses = d.condition.clauses
+            clauses.forEachIndexed { ci, cl ->
+                if (clauses.size > 1) row("AND ${ci + 1}", 0x99AACCFFL)
+                val lhs = cl.lhs
+                picker("LHS", operandKindLabels[operandKind(lhs)], operandKindLabels, openField == Field.LhsKind && openClause == ci, { toggleClause(Field.LhsKind, ci) }) { i ->
+                    draft = withClauseAt(d, ci, cl.copy(lhs = operandOfKind(i, lhs))); openField = null
+                }
+                when (lhs) {
+                    is Operand.Constant -> stepper("L VAL", lhs.value.toString()) { delta -> bumpConstantAt(ci, left = true, delta = delta) }
+                    is Operand.Chem -> speciesField("L CHEM", lhs.species, atoms) { s -> draft = withClauseAt(d, ci, cl.copy(lhs = Operand.Chem(s))) }
+                    is Operand.Conc -> speciesField("L CONC", lhs.species, atoms) { s -> draft = withClauseAt(d, ci, cl.copy(lhs = Operand.Conc(s))) }
+                    else -> {}
+                }
+                picker("CMP", if (cl.cmp == Comparison.Greater) ">" else "<", listOf(">", "<"), openField == Field.Cmp && openClause == ci, { toggleClause(Field.Cmp, ci) }) { i ->
+                    draft = withClauseAt(d, ci, cl.copy(cmp = if (i == 0) Comparison.Greater else Comparison.Less)); openField = null
+                }
+                val rhs = cl.rhs
+                picker("RHS", operandKindLabels[operandKind(rhs)], operandKindLabels, openField == Field.RhsKind && openClause == ci, { toggleClause(Field.RhsKind, ci) }) { i ->
+                    draft = withClauseAt(d, ci, cl.copy(rhs = operandOfKind(i, rhs))); openField = null
+                }
+                when (rhs) {
+                    is Operand.Constant -> stepper("R VAL", rhs.value.toString()) { delta -> bumpConstantAt(ci, left = false, delta = delta) }
+                    is Operand.Chem -> speciesField("R CHEM", rhs.species, atoms) { s -> draft = withClauseAt(d, ci, cl.copy(rhs = Operand.Chem(s))) }
+                    is Operand.Conc -> speciesField("R CONC", rhs.species, atoms) { s -> draft = withClauseAt(d, ci, cl.copy(rhs = Operand.Conc(s))) }
+                    else -> {}
+                }
+                if (clauses.size > 1) button("− AND ${ci + 1}", 0x804040FFL) { draft = removeClauseAt(d, ci); openField = null }
             }
-            when (lhs) {
-                is Operand.Constant -> stepper("L VAL", lhs.value.toString()) { delta -> bumpConstant(left = true, delta = delta) }
-                is Operand.Chem -> speciesField("L CHEM", lhs.species, atoms) { s -> draft = withClause0(d, cl.copy(lhs = Operand.Chem(s))) }
-                is Operand.Conc -> speciesField("L CONC", lhs.species, atoms) { s -> draft = withClause0(d, cl.copy(lhs = Operand.Conc(s))) }
-                else -> {}
-            }
-            picker("CMP", if (cl.cmp == Comparison.Greater) ">" else "<", listOf(">", "<"), openField == Field.Cmp, { toggle(Field.Cmp) }) { i ->
-                draft = withClause0(d, cl.copy(cmp = if (i == 0) Comparison.Greater else Comparison.Less)); openField = null
-            }
-            val rhs = cl.rhs
-            picker("RHS", operandKindLabels[operandKind(rhs)], operandKindLabels, openField == Field.RhsKind, { toggle(Field.RhsKind) }) { i ->
-                draft = withClause0(d, cl.copy(rhs = operandOfKind(i, rhs))); openField = null
-            }
-            when (rhs) {
-                is Operand.Constant -> stepper("R VAL", rhs.value.toString()) { delta -> bumpConstant(left = false, delta = delta) }
-                is Operand.Chem -> speciesField("R CHEM", rhs.species, atoms) { s -> draft = withClause0(d, cl.copy(rhs = Operand.Chem(s))) }
-                is Operand.Conc -> speciesField("R CONC", rhs.species, atoms) { s -> draft = withClause0(d, cl.copy(rhs = Operand.Conc(s))) }
-                else -> {}
-            }
+            if (clauses.size < CytoTuning.GENOME_MAX_CLAUSES) button("+ AND clause", 0x3A6EA5FFL) { draft = addClauseUi(d); openField = null }
             picker("ACTION", d.action.type.name, actionLabels, openField == Field.Action, { toggle(Field.Action) }) { i ->
-                draft = d.copy(action = d.action.copy(type = ActionType.entries[i])); openField = null
+                val newType = ActionType.entries[i]
+                // Clear the Mitosis-only retain-side flag when switching away (invariant: true ⟹ Mitosis).
+                draft = d.copy(action = d.action.copy(type = newType, morphogenToMother = d.action.morphogenToMother && newType == ActionType.Mitosis)); openField = null
             }
             when (d.action.type) {
                 ActionType.Import, ActionType.Convert ->
@@ -114,6 +121,18 @@ class GeneEditor {
                     // first operand to one STARTING WITH the second. Single atom = the old end-atom/start-atom.
                     speciesField("END WITH", d.action.a, atoms) { s -> draft = d.copy(action = d.action.copy(a = s)) }
                     speciesField("START WITH", d.action.b, atoms) { s -> draft = d.copy(action = d.action.copy(b = s)) }
+                }
+                ActionType.Mitosis -> {
+                    // Optional morphogen ⇒ asymmetric division; KEEP picks which side keeps it (centred vs edge
+                    // source — MORPHOGENESIS.md §Source placement). Empty morphogen ⇒ symmetric, flag cleared.
+                    speciesField("MORPHOGEN", d.action.a, atoms) { s ->
+                        draft = d.copy(action = d.action.copy(a = s, morphogenToMother = d.action.morphogenToMother && s.isNotEmpty()))
+                    }
+                    if (d.action.a.isNotEmpty()) {
+                        picker("KEEP", if (d.action.morphogenToMother) "mother" else "daughter", listOf("daughter", "mother"), openField == Field.MitosisSide, { toggle(Field.MitosisSide) }) { i ->
+                            draft = d.copy(action = d.action.copy(morphogenToMother = i == 1)); openField = null
+                        }
+                    }
                 }
                 else -> {}
             }
@@ -145,24 +164,39 @@ class GeneEditor {
 
     private fun toggle(f: Field) { openField = if (openField == f) null else f }
 
-    /** The gate's first clause (every editable gene has ≥1). */
-    private fun clause0(d: Gene): Clause = d.condition.clauses.first()
-
-    /** Replace clause 0, preserving any further AND-clauses. */
-    private fun withClause0(d: Gene, c: Clause): Gene {
+    /** Replace clause [ci], preserving the other AND-clauses. */
+    private fun withClauseAt(d: Gene, ci: Int, c: Clause): Gene {
         val cs = d.condition.clauses.toMutableList()
-        cs[0] = c
+        cs[ci] = c
         return d.copy(condition = GeneCondition(cs))
     }
 
-    /** Nudge the [Operand.Constant] value on one side of clause 0 (no-op if that side isn't a constant). */
-    private fun bumpConstant(left: Boolean, delta: Int) {
+    /** Drop clause [ci] (never empties the gate — a gene keeps ≥1 clause). */
+    private fun removeClauseAt(d: Gene, ci: Int): Gene {
+        val cs = d.condition.clauses
+        if (cs.size <= 1) return d
+        return d.copy(condition = GeneCondition(cs.filterIndexed { i, _ -> i != ci }))
+    }
+
+    /** Append a fresh AND-clause (a `Conc > 0` placeholder to edit), capped at [CytoTuning.GENOME_MAX_CLAUSES]. */
+    private fun addClauseUi(d: Gene): Gene {
+        if (d.condition.clauses.size >= CytoTuning.GENOME_MAX_CLAUSES) return d
+        return d.copy(condition = GeneCondition(d.condition.clauses + Clause(Operand.Conc(atoms.first()), Comparison.Greater, Operand.Constant(0))))
+    }
+
+    /** Nudge the [Operand.Constant] value on one side of clause [ci] (no-op if that side isn't a constant). */
+    private fun bumpConstantAt(ci: Int, left: Boolean, delta: Int) {
         val d = draft ?: return
-        val c = clause0(d)
+        val c = d.condition.clauses[ci]
         val op = if (left) c.lhs else c.rhs
         if (op !is Operand.Constant) return
         val next = Operand.Constant((op.value + delta).coerceAtLeast(0))
-        draft = withClause0(d, if (left) c.copy(lhs = next) else c.copy(rhs = next))
+        draft = withClauseAt(d, ci, if (left) c.copy(lhs = next) else c.copy(rhs = next))
+    }
+
+    /** Open/close clause [ci]'s [f] dropdown (the AND-clause pickers are keyed by clause index). */
+    private fun toggleClause(f: Field, ci: Int) {
+        if (openField == f && openClause == ci) openField = null else { openField = f; openClause = ci }
     }
 
     /** Picker index (into [operandKindLabels]) for an operand's kind. */
