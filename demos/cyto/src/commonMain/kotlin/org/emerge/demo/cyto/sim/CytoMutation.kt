@@ -81,7 +81,10 @@ object CytoMutation {
             2 -> { val ci = nextInt(cs.size); withClause(g, ci, cs[ci].copy(rhs = mutateOperand(cs[ci].rhs, nextInt))) }
             3 -> g.copy(action = g.action.copy(a = mutateSpecies(g.action.a, nextInt)))
             4 -> g.copy(action = g.action.copy(b = mutateSpecies(g.action.b, nextInt)))
-            5 -> g.copy(action = g.action.copy(type = ActionType.entries[nextInt(ActionType.entries.size)]))
+            5 -> {  // re-roll the action type; clear the Mitosis-only morphogenToMother flag if it's no longer Mitosis (keeps the invariant + codec round-trip)
+                val newType = ActionType.entries[nextInt(ActionType.entries.size)]
+                g.copy(action = g.action.copy(type = newType, morphogenToMother = g.action.morphogenToMother && newType == ActionType.Mitosis))
+            }
             6 -> g.copy(efficiency = (g.efficiency + if (nextInt(2) == 0) -1 else 1).coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR))  // nudge the efficiency gear ±1
             7 -> g.copy(source = flipSource(g.source, nextInt))
             8 -> addClause(g, nextInt)

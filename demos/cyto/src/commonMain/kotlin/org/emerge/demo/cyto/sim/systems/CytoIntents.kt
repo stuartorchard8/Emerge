@@ -10,6 +10,7 @@ data class DetachIntent(val id: EntityId)
 
 /** A cell should divide / die. Emitted by the biology phase (CytoSoaReducer.biology), consumed by
  *  [CytoLifecycleSystem] in a later phase. [morphogen] (the fired Mitosis gene's operand, "" if none)
- *  is the species allocated **whole to the daughter** for asymmetric mitosis (MORPHOGENESIS.md §C). */
-data class CellDivisionIntent(val id: EntityId, val morphogen: String = "")
+ *  is the species allocated **whole to one side** for asymmetric mitosis (MORPHOGENESIS.md §C);
+ *  [morphogenToMother] keeps it in the mother (centred source) instead of the daughter (edge source). */
+data class CellDivisionIntent(val id: EntityId, val morphogen: String = "", val morphogenToMother: Boolean = false)
 data class CellDestroyIntent(val id: EntityId)

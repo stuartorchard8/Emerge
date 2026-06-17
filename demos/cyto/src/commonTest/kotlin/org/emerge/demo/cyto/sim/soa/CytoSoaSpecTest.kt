@@ -229,6 +229,39 @@ class CytoSoaSpecTest {
     }
 
     @Test
+    fun asymmetricMitosisRetainSidePlacesMorphogen() {
+        // Retain-side (MORPHOGENESIS.md §Source placement): `Mitosis ac mother` keeps the morphogen in the
+        // MOTHER (the surviving original entity = a centred source); the default daughter-retention hands it
+        // to the new cell. Spawn one cell above the divide threshold with morphogen `ac` + cc fuel; after it
+        // divides, the morphogen sits whole on the selected side and the OTHER side has none.
+        fun morphogenSplit(toMother: Boolean): Pair<Int, Int> {  // (mother's ac, daughter's ac)
+            val gene = Gene(
+                EnergySource.BreakBond("cc"),
+                GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(1000)),
+                GeneAction(ActionType.Mitosis, "ac", morphogenToMother = toMother),
+            )
+            val initial = run {
+                val b = SimBuilder(SimState())
+                b.spawnCell(
+                    CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Collector,
+                    cytoplasm = mapOf("ac" to 100, "cc" to 100_000), biomass = mapOf("ab" to 4000), genome = listOf(gene),
+                )
+                b.build()
+            }
+            val motherId = initial.components.getTable<CytoCellComponent>().asMap().keys.first()
+            val cells = run(initial, ticks = 1).components.getTable<CytoCellComponent>().asMap()
+            assertEquals(2, cells.size, "should have divided into two")
+            val motherAc = cells[motherId]?.cytoplasm?.get("ac") ?: 0
+            val daughterAc = cells.entries.first { it.key != motherId }.value.cytoplasm["ac"] ?: 0
+            return motherAc to daughterAc
+        }
+        val (mMother, mDaughter) = morphogenSplit(toMother = true)
+        assertTrue(mMother > 0 && mDaughter == 0, "mother-retention keeps the morphogen in the mother; got mother=$mMother daughter=$mDaughter")
+        val (dMother, dDaughter) = morphogenSplit(toMother = false)
+        assertTrue(dDaughter > 0 && dMother == 0, "daughter-retention hands the morphogen to the daughter; got mother=$dMother daughter=$dDaughter")
+    }
+
+    @Test
     fun mutationDivergesGenomesAndConservesMatter() {
         val mutCfg = cfg.copy(mutationRateDenom = 200)
         val initial = createCytoInitialState()

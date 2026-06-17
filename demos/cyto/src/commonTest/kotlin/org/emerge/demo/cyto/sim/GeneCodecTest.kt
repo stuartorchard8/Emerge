@@ -74,7 +74,14 @@ class GeneCodecTest {
         assertEquals("Break ab : Biomass > 8 : Mitosis m", GeneCodec.serialize(listOf(asymmetric)), "serialized form")
         assertEquals(listOf(asymmetric), GeneCodec.parse(GeneCodec.serialize(listOf(asymmetric))), "asymmetric mitosis morphogen")
 
-        // A bare `Mitosis` token (no operand) still decodes to a symmetric split — backward compatibility.
+        // Retain-side (MORPHOGENESIS.md §Source placement): `mother` keeps the morphogen in the mother
+        // (centred source); default/`daughter` hands it out (edge source).
+        val toMother = Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Mitosis, "m", morphogenToMother = true))
+        assertEquals("Break ab : Biomass > 8 : Mitosis m mother", GeneCodec.serialize(listOf(toMother)), "serialized mother-retention")
+        assertEquals(listOf(toMother), GeneCodec.parse(GeneCodec.serialize(listOf(toMother))), "mother-retention round-trip")
+        assertEquals(listOf(asymmetric), GeneCodec.parse("Break ab : Biomass > 8 : Mitosis m daughter"), "explicit 'daughter' = default")
+
+        // A bare `Mitosis` token (no operand) still decodes to a symmetric, daughter-side split — backward compatibility.
         val symmetric = Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Mitosis))
         assertEquals(listOf(symmetric), GeneCodec.parse("Light : Biomass > 8 : Mitosis"), "bare Mitosis stays symmetric")
     }

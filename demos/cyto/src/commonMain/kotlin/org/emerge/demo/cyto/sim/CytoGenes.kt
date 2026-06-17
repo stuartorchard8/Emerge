@@ -101,8 +101,12 @@ enum class ActionType {
 
 /** A gene's action plus its (action-dependent) operands — single atoms for [ActionType.FormBond],
  *  a species for [ActionType.Import]/[ActionType.Convert], an optional morphogen species for
- *  [ActionType.Mitosis] (asymmetric division; empty ⇒ symmetric). */
-data class GeneAction(val type: ActionType, val a: String = "", val b: String = "")
+ *  [ActionType.Mitosis] (asymmetric division; empty ⇒ symmetric). [morphogenToMother] only applies to
+ *  [ActionType.Mitosis] with a non-empty morphogen: it picks **which side keeps the morphogen** — `false`
+ *  (default) hands it to the **daughter** (placed outward → an *edge/axial* source as the colony grows),
+ *  `true` keeps it in the **mother** (stays embedded → a *centred/radial* source). A body-plan selector
+ *  (MORPHOGENESIS.md §Source placement); invariant: only ever `true` when [type] is Mitosis. */
+data class GeneAction(val type: ActionType, val a: String = "", val b: String = "", val morphogenToMother: Boolean = false)
 
 /**
  * A gene: an energy source, a binary condition, an action — and an **efficiency gear** [efficiency] (g, in
@@ -228,8 +232,12 @@ class CellWork(
     var dividing = false
 
     /** The fired Mitosis gene's operand (its [GeneAction.a]) — the morphogen species allocated **whole to
-     *  the daughter** on division (asymmetric mitosis, MORPHOGENESIS.md §C). "" ⇒ symmetric 50/50 split. */
+     *  one daughter** on division (asymmetric mitosis, MORPHOGENESIS.md §C). "" ⇒ symmetric 50/50 split. */
     var divideMorphogen: String = ""
+
+    /** The fired Mitosis gene's [GeneAction.morphogenToMother] — keep [divideMorphogen] in the mother
+     *  (centred source) rather than handing it to the daughter (edge source). */
+    var divideMorphogenToMother: Boolean = false
 
     /** True once a Repair gene healed any connection this tick — gates writing [connectionDamage] back. */
     var repaired = false
@@ -266,6 +274,7 @@ class CellWork(
         connectionDamage.clear()
         dividing = false
         divideMorphogen = ""
+        divideMorphogenToMother = false
         repaired = false
     }
 }

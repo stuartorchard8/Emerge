@@ -76,7 +76,7 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         // Divide.
         for (intent in divideEvents) {
             if (intent.id in destroyed) continue
-            divide(builder, cfg, intent.id, intent.morphogen, grid!!, destroyed)
+            divide(builder, cfg, intent.id, intent.morphogen, intent.morphogenToMother, grid!!, destroyed)
         }
 
         if (grid != null) builder.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
@@ -91,7 +91,7 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         for ((s, c) in cell.biomass) grid.deposit(idx, s, c)
     }
 
-    private fun divide(builder: SimBuilder, cfg: CytoConfig, motherId: EntityId, morphogen: String, grid: CytoMatterGrid, destroyed: HashSet<EntityId>) {
+    private fun divide(builder: SimBuilder, cfg: CytoConfig, motherId: EntityId, morphogen: String, morphogenToMother: Boolean, grid: CytoMatterGrid, destroyed: HashSet<EntityId>) {
         val cell = builder.getComponent<CytoCellComponent>(motherId) ?: return
         val transform = builder.getComponent<TransformComponent>(motherId) ?: return
         val motionVel = builder.getComponent<MotionComponent>(motherId)?.vel ?: Coord2.zero
@@ -155,7 +155,9 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         // Clonal division: the daughter inherits the mother's type AND genome (separate map copies). The
         // morphogen (asymmetric mitosis) rides entirely with the daughter — its atoms make the daughter
         // heavier than the mother by that amount (spawnCell derives mass from cytoplasm), still conserved.
-        val daughterCyto = HashMap(half).apply { if (morphogenCount > 0) put(morphogen, morphogenCount) }
+        // Asymmetric morphogen goes to the daughter by default, or stays with the mother if morphogenToMother
+        // (a centred source). Either way it's allocated whole to exactly one side (conserved).
+        val daughterCyto = HashMap(half).apply { if (morphogenCount > 0 && !morphogenToMother) put(morphogen, morphogenCount) }
         val daughter = builder.spawnCell(
             pos = motherPos + offset,
             vel = motionVel,
@@ -178,14 +180,16 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         builder.update<TransformComponent>(motherId) { current ->
             (current ?: transform).copy(pos = motherPos - offset, ang = transform.ang + Frac(1, 2))
         }
+        val motherCyto = HashMap(half).apply { if (morphogenCount > 0 && morphogenToMother) put(morphogen, morphogenCount) }
         builder.update<CytoCellComponent>(motherId) { current ->
-            (current ?: cell).copy(cytoplasm = HashMap(half), biomass = HashMap(halfBio), logicalRadius = daughterRadius)
+            (current ?: cell).copy(cytoplasm = motherCyto, biomass = HashMap(halfBio), logicalRadius = daughterRadius)
         }
-        // Mass = atoms: mother + daughter atoms are equal and their sum + the emitted remainders =
-        // the original, both keep the mother's velocity ⇒ momentum is conserved (the remainders carry
-        // their share to the at-rest reservoir).
+        // Mass = atoms: the two sides' atoms (incl. whichever holds the asymmetric morphogen) + the emitted
+        // remainders = the original; both keep the mother's velocity ⇒ momentum conserved. Derive the mother's
+        // mass from its ACTUAL cytoplasm (motherCyto), so it's correct whether or not it retained the morphogen
+        // — identical to cellMass(half, …) in the default daughter-retention case.
         builder.update<MaterialComponent>(motherId) { current ->
-            (current ?: error("mother has no material")).copy(mass = cellMass(half, halfBio))
+            (current ?: error("mother has no material")).copy(mass = cellMass(motherCyto, halfBio))
         }
 
         addSpring(builder, motherId, daughter, cfg)
