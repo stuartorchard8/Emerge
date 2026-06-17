@@ -206,14 +206,14 @@ object CytoBiologyCore {
         when (act.type) {
             ActionType.Convert -> { convertId = SpeciesRegistry.id(act.a); cn = addConsume(ids, per, cn, convertId) }
             ActionType.FormBond -> {
-                // Operands are a SUFFIX (act.a) and PREFIX (act.b): join the most-abundant molecule ending
-                // with act.a to the most-abundant starting with act.b. A single-atom operand (e.g. "c") is the
-                // original "ends/starts in that atom" behaviour; a longer one (e.g. "abc") is more selective,
-                // so the gene targets specific molecules instead of any sharing the junction atom (and skips
-                // wasting ops on, say, raw "cc"). The junction bond is act.a.last–act.b.first, as before.
+                // Join a molecule ending in act.a to one starting with act.b. EXACT by default — act.a/act.b
+                // name the whole reactant species (MORPHOGENESIS.md §2026-06-18); so `FormBond a a` joins the
+                // monomer a to the monomer a (not the richest a-ender, which self-stalls once `aa` piles up).
+                // act.aWild / act.bWild opt into the legacy WILDCARD match (most-abundant molecule ending/
+                // starting with the operand). The junction bond is act.a.last–act.b.first either way.
                 if (act.a.isEmpty() || act.b.isEmpty()) return
-                val endAId = richestEndingWith(snap, act.a); if (endAId < 0) return
-                val startBId = richestStartingWith(snap, act.b); if (startBId < 0) return
+                val endAId = if (act.aWild) richestEndingWith(snap, act.a) else exactPresent(snap, act.a); if (endAId < 0) return
+                val startBId = if (act.bWild) richestStartingWith(snap, act.b) else exactPresent(snap, act.b); if (startBId < 0) return
                 productId = SpeciesRegistry.join(endAId, startBId); if (productId < 0) return   // forbidden (polymerisation) ⇒ no-op
                 cn = addConsume(ids, per, cn, endAId)
                 cn = addConsume(ids, per, cn, startBId)
@@ -325,8 +325,16 @@ object CytoBiologyCore {
         return best
     }
 
-    /** Most-abundant species in [snap] whose string ENDS WITH [suffix] (the FormBond end-A match; ties →
-     *  lowest id), or -1. A single-atom suffix == "ends in that atom"; a longer one is a specific tail. */
+    /** The EXACT species [molecule], iff present in [snap] (count > 0), else -1 — the default FormBond
+     *  reactant match (MORPHOGENESIS.md §2026-06-18). The present-check mirrors the richest-* helpers (which
+     *  only return a species they actually find), so an absent exact species no-ops like an absent wildcard. */
+    private fun exactPresent(snap: MoleculeStore, molecule: String): Int {
+        val id = SpeciesRegistry.id(molecule)
+        return if (id >= 0 && snap.count(id) > 0) id else -1
+    }
+
+    /** Most-abundant species in [snap] whose string ENDS WITH [suffix] (the FormBond end-A wildcard match;
+     *  ties → lowest id), or -1. A single-atom suffix == "ends in that atom"; a longer one is a specific tail. */
     private fun richestEndingWith(snap: MoleculeStore, suffix: String): Int {
         if (suffix.isEmpty()) return -1
         var best = -1; var bestCount = 0

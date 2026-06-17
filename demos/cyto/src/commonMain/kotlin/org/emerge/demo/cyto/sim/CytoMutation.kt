@@ -75,21 +75,23 @@ object CytoMutation {
      *  the efficiency gear, or the energy source. */
     private fun pointMutate(g: Gene, nextInt: (Int) -> Int): Gene {
         val cs = g.condition.clauses
-        return when (nextInt(10)) {
+        return when (nextInt(11)) {
             0 -> { val ci = nextInt(cs.size); withClause(g, ci, cs[ci].copy(cmp = flip(cs[ci].cmp))) }
             1 -> { val ci = nextInt(cs.size); withClause(g, ci, cs[ci].copy(lhs = mutateOperand(cs[ci].lhs, nextInt))) }
             2 -> { val ci = nextInt(cs.size); withClause(g, ci, cs[ci].copy(rhs = mutateOperand(cs[ci].rhs, nextInt))) }
             3 -> g.copy(action = g.action.copy(a = mutateSpecies(g.action.a, nextInt)))
             4 -> g.copy(action = g.action.copy(b = mutateSpecies(g.action.b, nextInt)))
-            5 -> {  // re-roll the action type; clear the Mitosis-only flags if it's no longer Mitosis (keeps the invariant + codec round-trip)
+            5 -> {  // re-roll the action type; clear the Mitosis/FormBond-only flags if it no longer applies (keeps the invariant + codec round-trip)
                 val newType = ActionType.entries[nextInt(ActionType.entries.size)]
                 val mitosis = newType == ActionType.Mitosis
-                g.copy(action = g.action.copy(type = newType, morphogenToMother = g.action.morphogenToMother && mitosis, divideAcross = g.action.divideAcross && mitosis))
+                val formBond = newType == ActionType.FormBond
+                g.copy(action = g.action.copy(type = newType, morphogenToMother = g.action.morphogenToMother && mitosis, divideAcross = g.action.divideAcross && mitosis, aWild = g.action.aWild && formBond, bWild = g.action.bWild && formBond))
             }
             6 -> g.copy(efficiency = (g.efficiency + if (nextInt(2) == 0) -1 else 1).coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR))  // nudge the efficiency gear ±1
             7 -> g.copy(source = flipSource(g.source, nextInt))
             8 -> addClause(g, nextInt)
-            else -> dropClause(g, nextInt)
+            9 -> dropClause(g, nextInt)
+            else -> toggleFormBondWild(g, nextInt)   // flip a FormBond operand exact↔wildcard (so evolution can discover generalists)
         }
     }
 
@@ -144,6 +146,17 @@ object CytoMutation {
     private fun substituteAtom(s: String, nextInt: (Int) -> Int): String {
         val i = nextInt(s.length)
         return s.substring(0, i) + pick(ATOMS, nextInt) + s.substring(i + 1)
+    }
+
+    /** Flip one FormBond operand between exact and wildcard (MORPHOGENESIS.md §2026-06-18). The side (a/b) is
+     *  drawn regardless of action type — so PRNG advancement is independent of gene content — but the flip is
+     *  a no-op on a non-FormBond gene (the flags are meaningless there + an invariant: only FormBond holds
+     *  them). */
+    private fun toggleFormBondWild(g: Gene, nextInt: (Int) -> Int): Gene {
+        val side = nextInt(2)
+        if (g.action.type != ActionType.FormBond) return g
+        return if (side == 0) g.copy(action = g.action.copy(aWild = !g.action.aWild))
+        else g.copy(action = g.action.copy(bWild = !g.action.bWild))
     }
 
     private fun flip(c: Comparison) = if (c == Comparison.Greater) Comparison.Less else Comparison.Greater

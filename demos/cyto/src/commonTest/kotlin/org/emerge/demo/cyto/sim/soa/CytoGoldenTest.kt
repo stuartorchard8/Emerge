@@ -166,12 +166,19 @@ class CytoGoldenTest {
     // Conc kind) — all re-routing the mutation-on PRNG stream. ONLY the mutation-on golden moves; growth +
     // interact are byte-identical (presets have no Conc/multi-clause gene, and a single-clause condition
     // evaluates exactly as before), confirming the change is additive.
+    // Re-baselined 2026-06-18: FormBond exact-species default + opt-in `*` wildcard (MORPHOGENESIS.md
+    // §2026-06-18). FormBond genes now resolve their operands EXACTLY by default (richest suffix/prefix
+    // match only when flagged wildcard), and point-mutation gained a wild-flag toggle (nextInt(10)→(11)),
+    // re-routing the PRNG stream. ONLY the mutation-on golden moves: growth + interact are byte-identical
+    // (the autotroph holds only {a,b,ab}, so `a` is the only a-ender and `b` the only b-starter ⇒ exact ≡
+    // wildcard for the presets). meta + topology are unchanged (same cell count + spring topology); only
+    // physics/biology/grid shift. Determinism gates (parallel==sequential, round-trip) held.
     private val MUTATION = mapOf(
         "meta" to "1e92bfc864dfae61",
-        "physics" to "c5ad8b6ac8e11382",
-        "biology" to "6d7fdb4479a577ea",
+        "physics" to "407c0416abf8c346",
+        "biology" to "9427c247c0dd0bbe",
         "topology" to "cbf29ce484222325",
-        "grid" to "28fb415478757ab9",
+        "grid" to "a10e9c66b4074679",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(

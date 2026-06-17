@@ -128,6 +128,29 @@ class GeneCodecTest {
         assertEquals(listOf(full), GeneCodec.parse(GeneCodec.serialize(listOf(full))))
     }
 
+    /** FormBond reactant matching (MORPHOGENESIS.md §2026-06-18): exact by default, `*` opts into a
+     *  wildcard (`*a` left = ends-with, `a*` right = starts-with). All four exact/wildcard combinations
+     *  round-trip, and the serialized text is the documented form. */
+    @Test
+    fun roundTripsFormBondExactAndWildcard() {
+        val gate = GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0))
+        val exact = Gene(EnergySource.Light, gate, GeneAction(ActionType.FormBond, "a", "b"))
+        assertEquals("Light : Biomass > 0 : FormBond a b", GeneCodec.serialize(listOf(exact)), "exact form")
+
+        val leftWild = Gene(EnergySource.Light, gate, GeneAction(ActionType.FormBond, "a", "b", aWild = true))
+        assertEquals("Light : Biomass > 0 : FormBond *a b", GeneCodec.serialize(listOf(leftWild)), "left wildcard")
+
+        val rightWild = Gene(EnergySource.Light, gate, GeneAction(ActionType.FormBond, "a", "b", bWild = true))
+        assertEquals("Light : Biomass > 0 : FormBond a b*", GeneCodec.serialize(listOf(rightWild)), "right wildcard")
+
+        val bothWild = Gene(EnergySource.Light, gate, GeneAction(ActionType.FormBond, "ab", "c", aWild = true, bWild = true))
+        assertEquals("Light : Biomass > 0 : FormBond *ab c*", GeneCodec.serialize(listOf(bothWild)), "both wildcard, multi-atom")
+
+        for (g in listOf(exact, leftWild, rightWild, bothWild)) {
+            assertEquals(listOf(g), GeneCodec.parse(GeneCodec.serialize(listOf(g))), "round-trip $g")
+        }
+    }
+
     /** A hand-authored genome parses to exactly the genes intended (the author-by-text workflow). */
     @Test
     fun parsesAHandWrittenGenome() {

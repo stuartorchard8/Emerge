@@ -98,7 +98,9 @@ object GeneCodec {
 
     private fun action(a: GeneAction): String = when (a.type) {
         ActionType.Import -> "Import ${tok(a.a)}"
-        ActionType.FormBond -> "FormBond ${tok(a.a)} ${tok(a.b)}"
+        // Exact species by default; a wildcard operand is marked with `*` on the outer (non-junction) side:
+        // `*a` = any molecule ENDING with a (left), `a*` = any STARTING with a (right). See GeneAction.aWild.
+        ActionType.FormBond -> "FormBond ${tok(wildLeft(a.a, a.aWild))} ${tok(wildRight(a.b, a.bWild))}"
         ActionType.Convert -> "Convert ${tok(a.a)}"
         ActionType.Contract -> "Contract"
         // Mitosis: optional morphogen ([GeneAction.a], allocated whole to one side — §C) with a trailing
@@ -115,7 +117,12 @@ object GeneCodec {
 
     private fun parseAction(t: List<String>): GeneAction = when (t[0]) {
         "Import" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Import, untok(t[1])) }
-        "FormBond" -> { require(t.size == 3) { fmt(t) }; GeneAction(ActionType.FormBond, untok(t[1]), untok(t[2])) }
+        "FormBond" -> {
+            require(t.size == 3) { fmt(t) }
+            val (a, aWild) = unwildLeft(untok(t[1]))
+            val (b, bWild) = unwildRight(untok(t[2]))
+            GeneAction(ActionType.FormBond, a, b, aWild = aWild, bWild = bWild)
+        }
         "Convert" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Convert, untok(t[1])) }
         // Expand was banned (it raised a cell's radius above the biomass soft-cap, coarsening the broadphase
         // grid for the whole world; Contract is kept as the locomotion actuator). Legacy saves decode it to
@@ -145,6 +152,13 @@ object GeneCodec {
     // empty as `_` so every representable gene round-trips (and decode never crashes on a missing token).
     private fun tok(s: String) = s.ifEmpty { "_" }
     private fun untok(s: String) = if (s == "_") "" else s
+
+    // FormBond wildcard `*` marker, on the outer (non-junction) side: `*a` left / `a*` right. Only emitted
+    // for a non-empty wildcard operand (an empty operand is a no-op gene, kept as `_`).
+    private fun wildLeft(s: String, wild: Boolean) = if (wild && s.isNotEmpty()) "*$s" else s
+    private fun wildRight(s: String, wild: Boolean) = if (wild && s.isNotEmpty()) "$s*" else s
+    private fun unwildLeft(s: String): Pair<String, Boolean> = if (s.startsWith("*")) s.substring(1) to true else s to false
+    private fun unwildRight(s: String): Pair<String, Boolean> = if (s.endsWith("*")) s.dropLast(1) to true else s to false
     private fun fmt(t: List<String>) = "malformed action: ${t.joinToString(" ")}"
 
     private fun cmp(c: Comparison): String = if (c == Comparison.Greater) ">" else "<"

@@ -560,7 +560,7 @@ class CytoSoaSpecTest {
     fun mutationCanGrowOperandsPastTwoAtoms() {
         // Scripted PRNG drives one point-mutation that appends an atom to a FormBond operand, so the operand
         // length itself evolves (not capped at the old mono/dimer pool). Draw order in CytoMutation.mutate:
-        // del,drift,point,dup (each fires on 0); then pointMutate's nextInt(8) case; then mutateSpecies.
+        // del,drift,point,dup (each fires on 0); then pointMutate's nextInt(11) case 3; then mutateSpecies.
         val seq = intArrayOf(1, 1, 0, 1, /*case*/3, /*grow*/0, /*atom 'a'*/0)
         var i = 0
         val gene = Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(100)), GeneAction(ActionType.FormBond, "ab", "b"))
@@ -570,14 +570,14 @@ class CytoSoaSpecTest {
 
     @Test
     fun formBondMatchesBySuffixAndPrefix() {
-        // FormBond "ab" "b" should bond a molecule ENDING WITH "ab" to one STARTING WITH "b" — i.e. ab+b→abb
-        // — and must NOT touch the bare monomer "a" (which the looser single-atom "ends in a" rule would have
-        // grabbed). That selectivity is the point: target specific molecules, skip irrelevant ones.
+        // WILDCARD match (MORPHOGENESIS.md §2026-06-18; opt-in via aWild/bWild): `*ab` "b*" bonds a molecule
+        // ENDING WITH "ab" to one STARTING WITH "b" — i.e. ab+b→abb — and must NOT touch the bare monomer "a"
+        // (which the looser single-atom "ends in a" rule would have grabbed). Targets specific molecules.
         val work = CellWork(
             cytoplasm = MoleculeStore.of(mapOf("a" to 1000, "ab" to 1000, "b" to 1000)),
             biomass = MoleculeStore.of(mapOf("ab" to 1000)),
             logicalRadius = MIN_RADIUS, type = CellType.Collector,
-            genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "ab", "b"))),
+            genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "ab", "b", aWild = true, bWild = true))),
             quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
         CytoBiologyCore.runGenes(work, CytoMatterGrid.empty())
@@ -588,16 +588,17 @@ class CytoSoaSpecTest {
 
     @Test
     fun formBondPicksMostAbundantMatchNotLexSmallest() {
-        // Regression for the cell-8 bug: among several molecules ending in "c", the gene must bond the one
-        // the cell has MOST of (the monomer "c", →cb), not whichever sorts first lexicographically. Here the
-        // lex-smallest match "abac" is a rare trace (count 1); the abundant feedstock is "c" (count 1000).
-        // The old lex-first rule grabbed "abac" and produced "abacb"; the count-first rule must make "cb".
+        // Regression for the cell-8 bug (WILDCARD match, opt-in): among several molecules ending in "c", the
+        // gene must bond the one the cell has MOST of (the monomer "c", →cb), not whichever sorts first
+        // lexicographically. Here the lex-smallest match "abac" is a rare trace (count 1); the abundant
+        // feedstock is "c" (count 1000). The old lex-first rule grabbed "abac" and produced "abacb"; the
+        // count-first rule must make "cb". (Exercises `*c`/`c*`; exact `c` would name only the monomer.)
         val sid = { s: String -> org.emerge.demo.cyto.sim.SpeciesRegistry.id(s) }
         val work = CellWork(
             cytoplasm = MoleculeStore.of(mapOf("abac" to 1, "c" to 1000, "b" to 1000)),
             biomass = MoleculeStore.of(mapOf("cb" to 1000)),
             logicalRadius = MIN_RADIUS, type = CellType.Collector,
-            genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "c", "b"))),
+            genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "c", "b", aWild = true, bWild = true))),
             quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
         CytoBiologyCore.runGenes(work, CytoMatterGrid.empty())
@@ -605,6 +606,32 @@ class CytoSoaSpecTest {
         assertEquals(1, work.cytoplasm.count(sid("abac")), "the rare lex-smallest match 'abac' must be left alone")
         assertEquals(0, work.cytoplasm.count(sid("abacb")), "must NOT have produced abacb (the old lex-first product)")
         assertTrue(work.cytoplasm.count(sid("c")) < 1000, "the abundant 'c' feedstock should have been consumed")
+    }
+
+    @Test
+    fun formBondExactBuildsHomodimerEvenWhenProductOutnumbersTheMonomer() {
+        // The diagnosed live bug (MORPHOGENESIS.md §2026-06-18): a cell stockpiling its own product `aa`
+        // (aa > a) STALLS under the wildcard match — `*a` and `a*` both resolve to the richest a-ender/-
+        // starter, which is `aa`, and `aa+aa` repeats the `aa` bond → polymerisation-forbidden → silent
+        // no-op. EXACT `a a` (the new default) joins the monomers regardless, so production continues.
+        val sid = { s: String -> org.emerge.demo.cyto.sim.SpeciesRegistry.id(s) }
+        fun run(aWild: Boolean, bWild: Boolean): Pair<Int, Int> {
+            val work = CellWork(
+                cytoplasm = MoleculeStore.of(mapOf("a" to 1000, "aa" to 5000)),   // product already outnumbers the monomer
+                biomass = MoleculeStore.of(mapOf("aa" to 2000)),
+                logicalRadius = MIN_RADIUS, type = CellType.Collector,
+                genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "a", "a", aWild = aWild, bWild = bWild))),
+                quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
+            )
+            CytoBiologyCore.runGenes(work, CytoMatterGrid.empty())
+            return work.cytoplasm.count(sid("a")) to work.cytoplasm.count(sid("aa"))
+        }
+        val (exactA, exactAA) = run(aWild = false, bWild = false)
+        assertTrue(exactAA > 5000, "EXACT FormBond a a builds more aa from the monomers (was 5000); got $exactAA")
+        assertTrue(exactA < 1000, "EXACT consumed monomer a (was 1000); got $exactA")
+        val (wildA, wildAA) = run(aWild = true, bWild = true)
+        assertEquals(5000, wildAA, "WILDCARD stalls — richest a-ender/-starter is aa, and aa+aa is forbidden; got $wildAA")
+        assertEquals(1000, wildA, "WILDCARD consumed nothing (no-op); got $wildA")
     }
 
     @Test

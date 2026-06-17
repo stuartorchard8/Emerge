@@ -8,6 +8,8 @@ import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoSimParamsComponent
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.PARAMS_SINGLETON
+import org.emerge.demo.cyto.sim.ActionType
+import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.demo.cyto.sim.systems.addSpring
@@ -34,7 +36,9 @@ object CytoSaveCodec {
     // v5: persist the PRNG randomSeed (mutation continuity + avoids the seed-0 LCG degeneracy on load).
     // v6: persist the sim clock (state.tick) so the moving light field resumes at the right phase on load.
     // v7: persist the runtime mutation rate-denominator (-1 = inherit the cfg default).
-    private const val FORMAT_VERSION = 7
+    // v8: FormBond flipped wildcard-default → exact-default (MORPHOGENESIS.md §2026-06-18); pre-v8 genomes are
+    // migrated to explicit wildcard on load (see [migrateFormBondToWildcard]) so they behave byte-for-byte.
+    private const val FORMAT_VERSION = 8
     private val cfg = CytoConfig()
 
     fun encode(state: SimState): ByteArray {
@@ -123,7 +127,7 @@ object CytoSaveCodec {
             val sticky = c.readByte().toInt() != 0
             val cytoplasm = readCounts(c)
             val biomass = readCounts(c)
-            val genome = GeneCodec.parse(c.readString())
+            val genome = GeneCodec.parse(c.readString()).let { if (version < 8) migrateFormBondToWildcard(it) else it }
 
             val newId = builder.spawnCell(pos, vel, type, cytoplasm, biomass, radius, sticky, genome)
             builder.update<CytoCellComponent>(newId) { current -> (current ?: error("spawn")).copy(wear = wear) }
@@ -149,6 +153,15 @@ object CytoSaveCodec {
 
         require(c.remaining() == 0) { "Unexpected trailing bytes in Cyto snapshot: ${c.remaining()}" }
         return builder.build()
+    }
+
+    /** v8 migration (MORPHOGENESIS.md §2026-06-18): FormBond went from wildcard-by-default (richest molecule
+     *  ending/starting with the operand) to **exact-species** by default. Pre-v8 genomes were authored/evolved
+     *  under the wildcard meaning, so mark every FormBond gene's operands as explicit wildcards — preserving
+     *  their behaviour byte-for-byte. Re-saving then stores them as v8 with the `*` markers, so the migration
+     *  runs once. (Empty operands stay no-ops; the flag is inert on them.) */
+    private fun migrateFormBondToWildcard(genome: List<Gene>): List<Gene> = genome.map { g ->
+        if (g.action.type == ActionType.FormBond) g.copy(action = g.action.copy(aWild = true, bWild = true)) else g
     }
 
     private fun writeCounts(w: ByteWriter, counts: Map<String, Int>) {

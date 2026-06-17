@@ -111,8 +111,23 @@ enum class ActionType {
  *  **axis-morphogen** — if non-empty, the daughter is placed relative to that morphogen's *local gradient*
  *  (computed at division from welded neighbours) instead of toward free space: [divideAcross] `false` =
  *  *along* ∇ (project → extends a thread), `true` = *across* ∇ (slice → widens into a 2D sheet). Empty [b] ⇒
- *  unoriented (today's free-space placement). [divideAcross] is only ever `true` when [type] is Mitosis. */
-data class GeneAction(val type: ActionType, val a: String = "", val b: String = "", val morphogenToMother: Boolean = false, val divideAcross: Boolean = false)
+ *  unoriented (today's free-space placement). [divideAcross] is only ever `true` when [type] is Mitosis.
+ *
+ *  **FormBond reactant matching** (MORPHOGENESIS.md §2026-06-18): for [ActionType.FormBond], [a]/[b] name the
+ *  two reactants by **exact species** (`a`+`b` → monomer `a` joined to monomer `b` → `ab`). [aWild] makes
+ *  [a] a **suffix wildcard** (match the most-abundant molecule *ending* with [a], the legacy behaviour);
+ *  [bWild] makes [b] a **prefix wildcard** (most-abundant *starting* with [b]). The bare atoms always live in
+ *  [a]/[b] (the flags only switch exact↔wildcard), so [handleableOf] reads them unchanged. Both flags are
+ *  only ever `true` when [type] is FormBond. */
+data class GeneAction(
+    val type: ActionType,
+    val a: String = "",
+    val b: String = "",
+    val morphogenToMother: Boolean = false,
+    val divideAcross: Boolean = false,
+    val aWild: Boolean = false,
+    val bWild: Boolean = false,
+)
 
 /**
  * A gene: an energy source, a binary condition, an action — and an **efficiency gear** [efficiency] (g, in
