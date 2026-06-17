@@ -280,13 +280,14 @@ class CytoController(
         }
         // Predicted matter flows for the two boundaries (like the env↔cyt arrow, derived from the cell's
         // genome + state, not measured). Convert genes build their operand cyt→bio; degradation breaks the
-        // lex-smallest multi-atom biomass molecule, sending its leading monomer to the reservoir and the
-        // remainder to cytoplasm — so that molecule + both fragments flow OUT of biomass (and the monomer
-        // out to env). Anything the cell can't use is hidden as ballast.
+        // most-abundant multi-atom biomass molecule (ties → lex-smallest), sending its leading monomer to the
+        // reservoir and the remainder to cytoplasm — so that molecule + both fragments flow OUT of biomass (and
+        // the monomer out to env). Anything the cell can't use is hidden as ballast.
         val cytoMap = cell.cytoplasm; val bioMap = cell.biomass
         val handleable = handleableOf(cell.genome)
         val convertOperands = cell.genome.filter { it.action.type == ActionType.Convert }.map { it.action.a }.toSet()
-        val degradeTarget = bioMap.entries.filter { it.value > 0 && it.key.length >= 2 }.minByOrNull { it.key }?.key
+        val degradeTarget = bioMap.entries.filter { it.value > 0 && it.key.length >= 2 }
+            .maxWithOrNull(compareBy<Map.Entry<String, Int>> { it.value }.thenByDescending { it.key })?.key
         val degradeSplit = degradeTarget?.let { Molecules.splitLeftmost(it) }
         val degradeMono = degradeSplit?.first       // ejected to the reservoir
         val degradeRest = degradeSplit?.second       // returned to cytoplasm

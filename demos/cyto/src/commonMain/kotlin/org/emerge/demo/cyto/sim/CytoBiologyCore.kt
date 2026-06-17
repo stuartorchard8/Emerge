@@ -10,10 +10,11 @@ import org.emerge.sim.core.physics.primitives.Frac
  * reservoir — never minted).
  *
  * Chemistry is **dense and id-keyed**: a cell's mobile cytoplasm and locked biomass are [MoleculeStore]s
- * (id→count, held sorted ascending by [SpeciesRegistry] id). Because an id is a molecule's lexicographic
- * rank, every deterministic lex tie-break the old string code expressed as `minByOrNull { it.key }` (the
- * lex-smallest molecule containing a bond, ending in an atom, the leftmost-split degradation target …)
- * is here a plain **forward scan** over the store — same choice, no per-tick hashing or boxing.
+ * (id→count, held sorted ascending by [SpeciesRegistry] id). When a gene must pick *which* molecule to act
+ * on among several matches (a substrate holding a bond, a FormBond suffix/prefix, a degradation target), it
+ * picks the **most abundant** one — the substrate the cell actually has most of — with the lowest id (lex
+ * rank) kept only as the deterministic tie-break. Each selection is a `forward scan` tracking the max count,
+ * a pure function of the snapshot, so it stays order-independent with no per-tick hashing or boxing.
  *
  * A tick runs in three phases over all cells: [runGenes] (each cell executes its genome — gated actions
  * powered by light quanta; sequential in EntityId order because Import draws from the shared reservoir),
@@ -186,17 +187,17 @@ object CytoBiologyCore {
         // Per-op cytoplasm consumption (action inputs + BreakBond substrate, SUMMED — so an overlap like
         // BreakBond(ab)+Convert(ab) eating 2 ab/op is counted correctly). Accumulated into the reused
         // per-work [consumeIds]/[consumePer] scratch (≤ 3 distinct species; addConsume sums collisions) so
-        // there's no per-gene map allocation. Species resolved from the snapshot by forward scan
-        // (lex-smallest == lowest id), so the choice is order-independent.
+        // there's no per-gene map allocation. Species resolved from the snapshot by **most-abundant match**
+        // (largest count wins; ties → lowest id) — a pure function of the snapshot, so order-independent.
         val ids = work.consumeIds; val per = work.consumePer
         var cn = 0
-        // BreakBond fuel: the lex-smallest molecule holding the bond, broken to release its quanta. Kept OUT
+        // BreakBond fuel: the most-abundant molecule holding the bond, broken to release its quanta. Kept OUT
         // of the action-consume scan (tracked as [breakSpId]) because efficiency consumes it at the
         // bonds-broken rate ⌈k/gP1⌉, not 1/op; its overlap with an action input is summed back in below.
         var breakSpId = -1; var fragLId = -1; var fragRId = -1
         if (src is EnergySource.BreakBond) {
             val bondIdx = SpeciesRegistry.bondIndexOf(src.bond)
-            breakSpId = firstWithBond(snap, bondIdx); if (breakSpId < 0) return
+            breakSpId = richestWithBond(snap, bondIdx); if (breakSpId < 0) return
             fragLId = SpeciesRegistry.breakLeft(breakSpId, bondIdx); fragRId = SpeciesRegistry.breakRight(breakSpId, bondIdx)
             if (fragLId < 0) return
         }
@@ -205,14 +206,14 @@ object CytoBiologyCore {
         when (act.type) {
             ActionType.Convert -> { convertId = SpeciesRegistry.id(act.a); cn = addConsume(ids, per, cn, convertId) }
             ActionType.FormBond -> {
-                // Operands are a SUFFIX (act.a) and PREFIX (act.b): join the lex-smallest molecule ending
-                // with act.a to the lex-smallest starting with act.b. A single-atom operand (e.g. "c") is the
+                // Operands are a SUFFIX (act.a) and PREFIX (act.b): join the most-abundant molecule ending
+                // with act.a to the most-abundant starting with act.b. A single-atom operand (e.g. "c") is the
                 // original "ends/starts in that atom" behaviour; a longer one (e.g. "abc") is more selective,
                 // so the gene targets specific molecules instead of any sharing the junction atom (and skips
                 // wasting ops on, say, raw "cc"). The junction bond is act.a.last–act.b.first, as before.
                 if (act.a.isEmpty() || act.b.isEmpty()) return
-                val endAId = firstEndingWith(snap, act.a); if (endAId < 0) return
-                val startBId = firstStartingWith(snap, act.b); if (startBId < 0) return
+                val endAId = richestEndingWith(snap, act.a); if (endAId < 0) return
+                val startBId = richestStartingWith(snap, act.b); if (startBId < 0) return
                 productId = SpeciesRegistry.join(endAId, startBId); if (productId < 0) return   // forbidden (polymerisation) ⇒ no-op
                 cn = addConsume(ids, per, cn, endAId)
                 cn = addConsume(ids, per, cn, startBId)
@@ -298,26 +299,42 @@ object CytoBiologyCore {
         }
     }
 
-    /** Lowest-id (== lex-smallest) species in [snap] that contains bond [bondIdx], or -1 if none. */
-    private fun firstWithBond(snap: MoleculeStore, bondIdx: Int): Int {
+    /** Most-abundant species in [snap] that contains bond [bondIdx] (ties → lowest id / lex-smallest),
+     *  or -1 if none. Selecting by **count** means a gene draws on the substrate it actually has the most
+     *  of, instead of whichever happens to sort first; lex is kept only as the deterministic tie-break so
+     *  the choice stays a pure function of the snapshot (order-independent). */
+    private fun richestWithBond(snap: MoleculeStore, bondIdx: Int): Int {
         if (bondIdx < 0) return -1
-        for (i in 0 until snap.size) { val id = snap.idAt(i); if (SpeciesRegistry.containsBond(id, bondIdx)) return id }
-        return -1
+        var best = -1; var bestCount = 0
+        for (i in 0 until snap.size) {
+            val id = snap.idAt(i)
+            if (SpeciesRegistry.containsBond(id, bondIdx)) { val c = snap.countAt(i); if (c > bestCount) { bestCount = c; best = id } }
+        }
+        return best
     }
 
-    /** Lowest-id (lex-smallest) species in [snap] whose string ENDS WITH [suffix] (the FormBond end-A
-     *  match), or -1. A single-atom suffix == "ends in that atom"; a longer one is a specific tail. */
-    private fun firstEndingWith(snap: MoleculeStore, suffix: String): Int {
+    /** Most-abundant species in [snap] whose string ENDS WITH [suffix] (the FormBond end-A match; ties →
+     *  lowest id), or -1. A single-atom suffix == "ends in that atom"; a longer one is a specific tail. */
+    private fun richestEndingWith(snap: MoleculeStore, suffix: String): Int {
         if (suffix.isEmpty()) return -1
-        for (i in 0 until snap.size) { val id = snap.idAt(i); if (SpeciesRegistry.string(id).endsWith(suffix)) return id }
-        return -1
+        var best = -1; var bestCount = 0
+        for (i in 0 until snap.size) {
+            val id = snap.idAt(i)
+            if (SpeciesRegistry.string(id).endsWith(suffix)) { val c = snap.countAt(i); if (c > bestCount) { bestCount = c; best = id } }
+        }
+        return best
     }
 
-    /** Lowest-id species in [snap] whose string STARTS WITH [prefix] (the FormBond start-B match), or -1. */
-    private fun firstStartingWith(snap: MoleculeStore, prefix: String): Int {
+    /** Most-abundant species in [snap] whose string STARTS WITH [prefix] (the FormBond start-B match; ties
+     *  → lowest id), or -1. */
+    private fun richestStartingWith(snap: MoleculeStore, prefix: String): Int {
         if (prefix.isEmpty()) return -1
-        for (i in 0 until snap.size) { val id = snap.idAt(i); if (SpeciesRegistry.string(id).startsWith(prefix)) return id }
-        return -1
+        var best = -1; var bestCount = 0
+        for (i in 0 until snap.size) {
+            val id = snap.idAt(i)
+            if (SpeciesRegistry.string(id).startsWith(prefix)) { val c = snap.countAt(i); if (c > bestCount) { bestCount = c; best = id } }
+        }
+        return best
     }
 
     /** Flex steps to move the radius from [lo] up to [hi] (ceil of the gap / [FLEX_STEP]); 0 if none. */
@@ -494,7 +511,7 @@ object CytoBiologyCore {
     private fun canContract(work: CellWork): Boolean = work.logicalRadius > MIN_RADIUS
 
     /** Spontaneous decay: break `wear / DEGRADE_PERIOD` bonds this tick (rate ∝ biomass size), each
-     *  splitting the lexicographically-smallest biomass molecule's leftmost bond. The leftmost split peels
+     *  splitting the **most-abundant** biomass molecule's leftmost bond (ties → lowest id). The leftmost split peels
      *  off the leading monomer (the smaller/equal fragment); that **smaller fragment is ejected to the
      *  environment** while the **larger** remainder stays in cytoplasm. So biomass decay is a real matter
      *  LEAK to the commons — a maintenance cost the cell must keep importing against (selection for
@@ -507,7 +524,7 @@ object CytoBiologyCore {
         var broken = work.wear / DEGRADE_PERIOD
         work.wear %= DEGRADE_PERIOD
         while (broken > 0) {
-            val targetId = smallestMultiAtom(work.biomass)   // lex-smallest molecule with a bond to break
+            val targetId = richestMultiAtom(work.biomass)   // most-abundant molecule with a bond to break
             if (targetId < 0) break
             val monoId = SpeciesRegistry.splitLeftMono(targetId)   // leading monomer (the smaller fragment)
             val restId = SpeciesRegistry.splitLeftRest(targetId)   // the larger remainder
@@ -518,9 +535,13 @@ object CytoBiologyCore {
         }
     }
 
-    /** Lowest-id (== lex-smallest) biomass species with at least one bond (length ≥ 2), or -1 if none. */
-    private fun smallestMultiAtom(biomass: MoleculeStore): Int {
-        for (i in 0 until biomass.size) { val id = biomass.idAt(i); if (SpeciesRegistry.atomCount(id) >= 2) return id }
-        return -1
+    /** Most-abundant biomass species with at least one bond (length ≥ 2), ties → lowest id, or -1 if none. */
+    private fun richestMultiAtom(biomass: MoleculeStore): Int {
+        var best = -1; var bestCount = 0
+        for (i in 0 until biomass.size) {
+            val id = biomass.idAt(i)
+            if (SpeciesRegistry.atomCount(id) >= 2) { val c = biomass.countAt(i); if (c > bestCount) { bestCount = c; best = id } }
+        }
+        return best
     }
 }

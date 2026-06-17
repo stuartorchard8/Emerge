@@ -485,6 +485,44 @@ class CytoSoaSpecTest {
         assertTrue(work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("ab")) < 1000, "the 'ab' molecule should have been consumed")
     }
 
+    @Test
+    fun formBondPicksMostAbundantMatchNotLexSmallest() {
+        // Regression for the cell-8 bug: among several molecules ending in "c", the gene must bond the one
+        // the cell has MOST of (the monomer "c", →cb), not whichever sorts first lexicographically. Here the
+        // lex-smallest match "abac" is a rare trace (count 1); the abundant feedstock is "c" (count 1000).
+        // The old lex-first rule grabbed "abac" and produced "abacb"; the count-first rule must make "cb".
+        val sid = { s: String -> org.emerge.demo.cyto.sim.SpeciesRegistry.id(s) }
+        val work = CellWork(
+            cytoplasm = MoleculeStore.of(mapOf("abac" to 1, "c" to 1000, "b" to 1000)),
+            biomass = MoleculeStore.of(mapOf("cb" to 1000)),
+            logicalRadius = MIN_RADIUS, type = CellType.Collector,
+            genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "c", "b"))),
+            quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
+        )
+        CytoBiologyCore.runGenes(work, CytoMatterGrid.empty())
+        assertTrue(work.cytoplasm.count(sid("cb")) > 0, "abundant c+b should have bonded into cb")
+        assertEquals(1, work.cytoplasm.count(sid("abac")), "the rare lex-smallest match 'abac' must be left alone")
+        assertEquals(0, work.cytoplasm.count(sid("abacb")), "must NOT have produced abacb (the old lex-first product)")
+        assertTrue(work.cytoplasm.count(sid("c")) < 1000, "the abundant 'c' feedstock should have been consumed")
+    }
+
+    @Test
+    fun breakBondPicksMostAbundantFuelNotLexSmallest() {
+        // BreakBond likewise breaks the molecule it has most of that holds the bond. "abc" holds bond "bc" and
+        // sorts before "bc", but the abundant fuel is the dimer "bc"; breaking it must yield b + c, not split abc.
+        val sid = { s: String -> org.emerge.demo.cyto.sim.SpeciesRegistry.id(s) }
+        val work = CellWork(
+            cytoplasm = MoleculeStore.of(mapOf("abc" to 1, "bc" to 1000, "c" to 1000)),
+            biomass = MoleculeStore.of(mapOf("cb" to 1000)),
+            logicalRadius = MIN_RADIUS, type = CellType.Collector,
+            genome = listOf(Gene(EnergySource.BreakBond("bc"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Convert, "c"))),
+            quanta = 0, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
+        )
+        CytoBiologyCore.runGenes(work, CytoMatterGrid.empty())
+        assertEquals(1, work.cytoplasm.count(sid("abc")), "the rare lex-smallest fuel 'abc' must be left alone")
+        assertTrue(work.cytoplasm.count(sid("bc")) < 1000, "the abundant 'bc' fuel should have been broken")
+    }
+
     private fun damagedPair(genome: List<Gene>, damage: Float): SimState {
         val (sx, sy) = CytoLightField.SOURCES.first()
         val b = SimBuilder(SimState(randomSeed = 1))
