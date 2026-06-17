@@ -51,11 +51,28 @@ sealed class Operand {
      *  port of old Cyto's `Touch` gene input (a cell sensing collision pressure); welded neighbours don't
      *  count (they're structure, not a touch event). A reactive, contact-driven gate. */
     object Touching : Operand()
+
+    /** **Concentration** of [species] — `count(species) · CytoTuning.CONC_SCALE / totalBiomass`, the
+     *  size-normalised counterpart of [Chem] (which is the raw count). 0 when biomass is 0 or the species is
+     *  absent. Because it divides by body size, a *fixed* morphogen bolus reads lower as the cell grows — a
+     *  developmental clock for free — and a positional gradient reads as concentration *bands* independent of
+     *  cell size. The morphogen-for-shape readout (MORPHOGENESIS.md §Morphogens for shape). Like [Chem] it is
+     *  a *sensor*, never added to the metabolic reach (sensing ≠ permeability — see [handleableOf]). */
+    data class Conc(val species: String) : Operand()
 }
 
-/** The one binary gate that turns a gene on/off this tick: `lhs cmp rhs`, each side an [Operand]
- *  (a [Operand.Constant] or a live cell reading). */
-data class GeneCondition(val lhs: Operand, val cmp: Comparison, val rhs: Operand)
+/** One AND-clause of a gene's gate: `lhs cmp rhs`, each side an [Operand]. */
+data class Clause(val lhs: Operand, val cmp: Comparison, val rhs: Operand)
+
+/** A gene's gate: a **conjunction** of [Clause]s — the gene fires this tick iff **every** clause holds
+ *  (an empty list is vacuously true). NOT is expressed as [Comparison.Less] (below/absence); OR by separate
+ *  genes with the same action; there are deliberately **no weighted sums** (they saturate, don't evolve).
+ *  Two clauses give a positional *band* (`lo < Conc(m)` AND `Conc(m) < hi`), the French-flag readout shape
+ *  is built from. */
+data class GeneCondition(val clauses: List<Clause>) {
+    /** Single-clause convenience — the overwhelmingly common shape; keeps terse call sites + presets. */
+    constructor(lhs: Operand, cmp: Comparison, rhs: Operand) : this(listOf(Clause(lhs, cmp, rhs)))
+}
 
 /** The single action a gene performs (v1 set). */
 enum class ActionType {
@@ -131,8 +148,8 @@ class Handleable(private val bondMask: Int, private val atomMask: Int) {
  *  are accumulated as [SpeciesRegistry]-indexed bitmasks (the alphabet is ≤ k=3 atoms, k²=9 bonds, so each
  *  fits an Int).
  *
- *  **Sensing ≠ permeability:** a species a gene only *reads* in a [GeneCondition] (an [Operand.Chem] gate)
- *  is deliberately **not** added — a sensor is not a channel. This is what lets a **morphogen** stay a
+ *  **Sensing ≠ permeability:** a species a gene only *reads* in a [GeneCondition] (an [Operand.Chem] or
+ *  [Operand.Conc] gate) is deliberately **not** added — a sensor is not a channel. This is what lets a **morphogen** stay a
  *  *trace* species: a fate gene can gate on `Chem(m)` to differentiate without thereby making `m`
  *  metabolisable, so the canHold-gated passive exchange + cell↔cell diffusion can't equilibrate it across a
  *  colony. The morphogen difference an asymmetric division establishes (MORPHOGENESIS.md §C) therefore

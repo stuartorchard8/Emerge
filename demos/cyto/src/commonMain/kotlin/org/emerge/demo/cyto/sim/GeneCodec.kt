@@ -12,9 +12,11 @@ package org.emerge.demo.cyto.sim
  *     Light : Biomass > 8 : Mitosis       # divide once biomass exceeds 8 bonds
  *     Break ab : Biomass < ab : Convert ab  # grow only while biomass is below the stored 'ab' reserve
  *
- * Condition is `<operand> <>|<> <operand>`, each operand one of: an integer (a constant), `Biomass`,
- * `Touching`, or a species token (its cytoplasm count) — and a species token may be any length (`a`, `ab`,
- * `abb`, …), not just a monomer/dimer. Action is `Import <species>`, `FormBond <a> <b>`, `Convert <species>`,
+ * Condition is one or more `<operand> <>|<> <operand>` clauses joined by ` & ` — the gene fires iff **all**
+ * hold (e.g. `c > 50 & c < 200` = a concentration band). Each operand is one of: an integer (a constant),
+ * `Biomass`, `Touching`, a species token (its cytoplasm count), or `Conc(<species>)` (its size-normalised
+ * concentration) — and a species token may be any length (`a`, `ab`, `abb`, …), not just a monomer/dimer.
+ * Action is `Import <species>`, `FormBond <a> <b>`, `Convert <species>`,
  * `Contract`, `Mitosis` *(or `Mitosis <morphogen>` for asymmetric division — the morphogen is allocated whole
  * to one daughter, MORPHOGENESIS.md §C)*, or `Repair`. Blank lines and `#` comments are ignored. Round-trips
  * every preset genome (see GeneCodecTest).
@@ -39,7 +41,7 @@ object GeneCodec {
         }
         Gene(
             source = parseSource(parts[0].trim().split(WS)),
-            condition = parseCondition(parts[1].trim().split(WS)),
+            condition = parseCondition(parts[1]),
             action = parseAction(actionTokens),
             efficiency = efficiency,
         )
@@ -59,26 +61,37 @@ object GeneCodec {
         else -> throw IllegalArgumentException("unknown energy source: ${t[0]}")
     }
 
-    private fun condition(c: GeneCondition): String =
-        "${operand(c.lhs)} ${cmp(c.cmp)} ${operand(c.rhs)}"
+    // Whole condition: clauses joined by ` & ` (an AND-conjunction).
+    private fun condition(c: GeneCondition): String = c.clauses.joinToString(" & ") { clause ->
+        "${operand(clause.lhs)} ${cmp(clause.cmp)} ${operand(clause.rhs)}"
+    }
 
-    private fun parseCondition(t: List<String>): GeneCondition {
-        require(t.size == 3) { "condition needs '<operand> <>|<> <operand>': ${t.joinToString(" ")}" }
-        return GeneCondition(parseOperand(t[0]), cmp(t[1]), parseOperand(t[2]))
+    private fun parseCondition(raw: String): GeneCondition {
+        val clauses = raw.split("&").map { part ->
+            val t = part.trim().split(WS)
+            require(t.size == 3) { "clause needs '<operand> <>|<> <operand>': \"$part\"" }
+            Clause(parseOperand(t[0]), cmp(t[1]), parseOperand(t[2]))
+        }
+        require(clauses.isNotEmpty()) { "condition needs at least one clause: \"$raw\"" }
+        return GeneCondition(clauses)
     }
 
     private fun operand(op: Operand): String = when (op) {
         is Operand.Constant -> op.value.toString()
         is Operand.Chem -> tok(op.species)
+        is Operand.Conc -> "Conc(${tok(op.species)})"
         Operand.Biomass -> "Biomass"
         Operand.Touching -> "Touching"
     }
 
-    // A token is `Biomass`/`Touching` (live readings), an integer (a constant), or a species token (its
-    // cytoplasm count). Species are lowercase letters, so they never collide with an integer or a keyword.
-    private fun parseOperand(s: String): Operand = when (s) {
-        "Biomass" -> Operand.Biomass
-        "Touching" -> Operand.Touching
+    // A token is `Biomass`/`Touching` (live readings), `Conc(<species>)` (concentration), an integer (a
+    // constant), or a species token (its cytoplasm count). Species are lowercase letters, so they never
+    // collide with an integer or a keyword.
+    private val CONC = Regex("^Conc\\((.*)\\)$")
+    private fun parseOperand(s: String): Operand = when {
+        s == "Biomass" -> Operand.Biomass
+        s == "Touching" -> Operand.Touching
+        CONC.matchEntire(s) != null -> Operand.Conc(untok(CONC.matchEntire(s)!!.groupValues[1]))
         else -> s.toIntOrNull()?.let { Operand.Constant(it) } ?: Operand.Chem(untok(s))
     }
 

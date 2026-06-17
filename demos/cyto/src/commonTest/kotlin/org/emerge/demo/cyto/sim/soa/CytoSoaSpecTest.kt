@@ -14,6 +14,7 @@ import org.emerge.demo.cyto.sim.CytoMutation
 import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.CellWork
+import org.emerge.demo.cyto.sim.Clause
 import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.MoleculeStore
 import org.emerge.demo.cyto.sim.totalBiomassBonds
@@ -194,6 +195,37 @@ class CytoSoaSpecTest {
         val concentrated = uptakeFrom(1_000_000 + 2 * CytoTuning.IMPORT_GRADIENT_SCALE)  // excess 2×SCALE → ~1/3
         assertTrue(concentrated > 0, "still imports something against the gradient; got $concentrated")
         assertTrue(nearAmbient > concentrated * 2, "uptake should fall steeply with concentration; near=$nearAmbient conc=$concentrated")
+    }
+
+    @Test
+    fun concBandAndGateFiresOnlyInRange() {
+        // Conc operand + AND-conjunction (MORPHOGENESIS.md §Morphogens for shape): a Convert gene gated
+        // `Conc(ab) > 50 & Conc(ab) < 200` locks ab into biomass only when the size-normalised ab
+        // concentration is in-band. With CONC_SCALE=1000 and biomass=1000 bonds, Conc(ab) == count(ab), so
+        // count 100 is in-band and 500 is above it. The above-band cell does NOT grow — which can only be the
+        // SECOND clause (the upper bound) being ANDed in (a lone `> 50` would fire at 500 too), proving the
+        // conjunction is enforced. cc is the (light-independent) BreakBond fuel.
+        val convert = Gene(
+            EnergySource.BreakBond("cc"),
+            GeneCondition(listOf(
+                Clause(Operand.Conc("ab"), Comparison.Greater, Operand.Constant(50)),
+                Clause(Operand.Conc("ab"), Comparison.Less, Operand.Constant(200)),
+            )),
+            GeneAction(ActionType.Convert, "ab"),
+        )
+        fun bioAbAfterTick(cytoAb: Int): Int {
+            val initial = run {
+                val b = SimBuilder(SimState())
+                b.spawnCell(
+                    CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Collector,
+                    cytoplasm = mapOf("ab" to cytoAb, "cc" to 1000), biomass = mapOf("ab" to 1000), genome = listOf(convert),
+                )
+                b.build()
+            }
+            return run(initial, ticks = 1).components.getTable<CytoCellComponent>().asMap().values.first().biomass["ab"] ?: 0
+        }
+        assertTrue(bioAbAfterTick(100) > 1000, "in-band (Conc 100) Converts → biomass grows; got ${bioAbAfterTick(100)}")
+        assertEquals(1000, bioAbAfterTick(500), "above-band (Conc 500) fails the upper clause → no Convert")
     }
 
     @Test

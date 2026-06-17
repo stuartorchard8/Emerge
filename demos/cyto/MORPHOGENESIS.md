@@ -525,11 +525,19 @@ into *occupied* space (vs today's free-space, rest-length, no-kick placement) �
 into the elongation push, but it reintroduces the division-kick risk the no-kick work fixed; place at rest
 length along the axis and let physics relax gradually.
 
-**Readout (`Conc` + AND-gates).** A cell reads its position with a concentration **band**:
-`lo < Conc(m) AND Conc(m) < hi` → "I'm in the middle ring" → express that tissue's action. This is why the
-AND-conjunction gate (above) is a prerequisite, and why `Conc` (size-independent) beats raw `Chem` count
-here. (Open: `Conc` denominator = total cytoplasm (mole-fraction) vs biomass (per-body) — lean
-mole-fraction.)
+**Readout (`Conc` + AND-gates) — BUILT (2026-06-17).** A cell reads its position with a concentration
+**band**: `lo < Conc(m) AND Conc(m) < hi` → "I'm in the middle ring" → express that tissue's action. The
+AND-conjunction gate (above) is the prerequisite, and `Conc` (size-normalised) beats raw `Chem` count here.
+**Denominator decided = biomass (per-body), not mole-fraction** (the doc's earlier tentative lean): `Conc(sp)
+= count(sp) · CytoTuning.CONC_SCALE / totalBiomassBonds` (CONC_SCALE=1000, Long-safe, 0 when biomass 0,
+integer floor ⇒ deterministic). Reasoning — mole-fraction (÷ total cytoplasm) floors a *trace* morphogen to
+0 against a hoarded-metabolite pool and couples the reading to unrelated hoarding; biomass = cell *size*, so
+a fixed bolus dilutes as the cell grows (the dilution-clock the rationale wanted) and the trace tail keeps
+resolution. Implementation: `Operand.Conc` is a uniform operand (every operand → one integer, integer
+compare), so `Conc`-vs-`Conc`/`Chem`/`Constant` all work; a `Constant` threshold reads on `CONC_SCALE`
+(k=500 ≈ 0.5 molecule per biomass-bond). `selfGateCap` leaves `Conc` clauses uncapped (the ratio isn't
+linear in the grown quantity). Like `Chem`, `Conc` is a *sensor* — never added to metabolic reach
+(sensing ≠ permeability).
 
 **Honest risks.** (1) **Signalling circuits don't emerge spontaneously** — a source nobody reads and a
 reader of an absent signal are each useless, so selection can't climb to them incrementally; the circuit

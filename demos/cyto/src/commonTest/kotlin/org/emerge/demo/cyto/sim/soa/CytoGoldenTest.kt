@@ -160,12 +160,18 @@ class CytoGoldenTest {
     // as it sweeps past (LIGHT_ORBIT_PERIOD), so growth is orbit-paced: the first division slips to ~tick 988
     // (was ~200 under static sources). Golden + colonisation-spec tick budgets bumped past that (goldens
     // 250→1500, interact grow 80→1200) so they still capture a real colony; determinism + conservation held.
+    // Re-baselined 2026-06-17: Conc operand + AND-conjunction gate. The gate is now a list of clauses (the
+    // single-clause convenience ctor keeps presets identical), and point-mutation grew from nextInt(8)→(10)
+    // (clause add/drop ops), drift/point now draw a clause index, and mutateOperand grew nextInt(4)→(5) (the
+    // Conc kind) — all re-routing the mutation-on PRNG stream. ONLY the mutation-on golden moves; growth +
+    // interact are byte-identical (presets have no Conc/multi-clause gene, and a single-clause condition
+    // evaluates exactly as before), confirming the change is additive.
     private val MUTATION = mapOf(
-        "meta" to "8b663010df9728c6",
-        "physics" to "fe1dbd5df7772336",
-        "biology" to "50bc0a54d873d377",
+        "meta" to "1e92bfc864dfae61",
+        "physics" to "c5ad8b6ac8e11382",
+        "biology" to "6d7fdb4479a577ea",
         "topology" to "cbf29ce484222325",
-        "grid" to "2f26064ac39f08f7",
+        "grid" to "28fb415478757ab9",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(

@@ -2,11 +2,13 @@ package org.emerge.demo.cyto.ui
 
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.sim.ActionType
+import org.emerge.demo.cyto.sim.Clause
 import org.emerge.demo.cyto.sim.Comparison
 import org.emerge.demo.cyto.sim.CytoSeed
 import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.EnergySource
 import org.emerge.demo.cyto.sim.Gene
+import org.emerge.demo.cyto.sim.GeneCondition
 import org.emerge.demo.cyto.sim.Operand
 import org.emerge.sim.core.EntityId
 import org.emerge.render.torus.ui.Anchor
@@ -42,7 +44,7 @@ class GeneEditor {
 
     /** The four operand kinds, in picker order: a constant value, a cytoplasm count, total biomass, or
      *  the contact count. */
-    private val operandKindLabels: List<String> = listOf("Const", "Chem", "BIO", "Touch")
+    private val operandKindLabels: List<String> = listOf("Const", "Chem", "Conc", "BIO", "Touch")
 
     /** Called if the editor target vanishes (cell died / deselected) — discard any in-progress edit. */
     fun closeDropdown() { openField = null }
@@ -75,30 +77,30 @@ class GeneEditor {
                 draft = d.copy(source = if (i == 0) EnergySource.Light else EnergySource.BreakBond(bonds[i - 1])); openField = null
             }
             // Both sides of the gate are operands (a constant or a live reading), so each gets a kind
-            // picker plus, when it's a Const/Chem, a value stepper / species picker.
-            val lhs = d.condition.lhs
+            // picker plus, when it's a Const/Chem/Conc, a value stepper / species picker. The UI edits the
+            // FIRST clause; any further AND-clauses are preserved untouched (author multi-clause via text).
+            val cl = clause0(d)
+            val lhs = cl.lhs
             picker("LHS", operandKindLabels[operandKind(lhs)], operandKindLabels, openField == Field.LhsKind, { toggle(Field.LhsKind) }) { i ->
-                draft = d.copy(condition = d.condition.copy(lhs = operandOfKind(i, lhs))); openField = null
+                draft = withClause0(d, cl.copy(lhs = operandOfKind(i, lhs))); openField = null
             }
             when (lhs) {
                 is Operand.Constant -> stepper("L VAL", lhs.value.toString()) { delta -> bumpConstant(left = true, delta = delta) }
-                is Operand.Chem -> speciesField("L CHEM", lhs.species, atoms) { s ->
-                    draft = d.copy(condition = d.condition.copy(lhs = Operand.Chem(s)))
-                }
+                is Operand.Chem -> speciesField("L CHEM", lhs.species, atoms) { s -> draft = withClause0(d, cl.copy(lhs = Operand.Chem(s))) }
+                is Operand.Conc -> speciesField("L CONC", lhs.species, atoms) { s -> draft = withClause0(d, cl.copy(lhs = Operand.Conc(s))) }
                 else -> {}
             }
-            picker("CMP", if (d.condition.cmp == Comparison.Greater) ">" else "<", listOf(">", "<"), openField == Field.Cmp, { toggle(Field.Cmp) }) { i ->
-                draft = d.copy(condition = d.condition.copy(cmp = if (i == 0) Comparison.Greater else Comparison.Less)); openField = null
+            picker("CMP", if (cl.cmp == Comparison.Greater) ">" else "<", listOf(">", "<"), openField == Field.Cmp, { toggle(Field.Cmp) }) { i ->
+                draft = withClause0(d, cl.copy(cmp = if (i == 0) Comparison.Greater else Comparison.Less)); openField = null
             }
-            val rhs = d.condition.rhs
+            val rhs = cl.rhs
             picker("RHS", operandKindLabels[operandKind(rhs)], operandKindLabels, openField == Field.RhsKind, { toggle(Field.RhsKind) }) { i ->
-                draft = d.copy(condition = d.condition.copy(rhs = operandOfKind(i, rhs))); openField = null
+                draft = withClause0(d, cl.copy(rhs = operandOfKind(i, rhs))); openField = null
             }
             when (rhs) {
                 is Operand.Constant -> stepper("R VAL", rhs.value.toString()) { delta -> bumpConstant(left = false, delta = delta) }
-                is Operand.Chem -> speciesField("R CHEM", rhs.species, atoms) { s ->
-                    draft = d.copy(condition = d.condition.copy(rhs = Operand.Chem(s)))
-                }
+                is Operand.Chem -> speciesField("R CHEM", rhs.species, atoms) { s -> draft = withClause0(d, cl.copy(rhs = Operand.Chem(s))) }
+                is Operand.Conc -> speciesField("R CONC", rhs.species, atoms) { s -> draft = withClause0(d, cl.copy(rhs = Operand.Conc(s))) }
                 else -> {}
             }
             picker("ACTION", d.action.type.name, actionLabels, openField == Field.Action, { toggle(Field.Action) }) { i ->
@@ -143,22 +145,33 @@ class GeneEditor {
 
     private fun toggle(f: Field) { openField = if (openField == f) null else f }
 
-    /** Nudge the [Operand.Constant] value on one side of the gate (no-op if that side isn't a constant). */
+    /** The gate's first clause (every editable gene has ≥1). */
+    private fun clause0(d: Gene): Clause = d.condition.clauses.first()
+
+    /** Replace clause 0, preserving any further AND-clauses. */
+    private fun withClause0(d: Gene, c: Clause): Gene {
+        val cs = d.condition.clauses.toMutableList()
+        cs[0] = c
+        return d.copy(condition = GeneCondition(cs))
+    }
+
+    /** Nudge the [Operand.Constant] value on one side of clause 0 (no-op if that side isn't a constant). */
     private fun bumpConstant(left: Boolean, delta: Int) {
         val d = draft ?: return
-        val c = d.condition
+        val c = clause0(d)
         val op = if (left) c.lhs else c.rhs
         if (op !is Operand.Constant) return
         val next = Operand.Constant((op.value + delta).coerceAtLeast(0))
-        draft = d.copy(condition = if (left) c.copy(lhs = next) else c.copy(rhs = next))
+        draft = withClause0(d, if (left) c.copy(lhs = next) else c.copy(rhs = next))
     }
 
     /** Picker index (into [operandKindLabels]) for an operand's kind. */
     private fun operandKind(op: Operand): Int = when (op) {
         is Operand.Constant -> 0
         is Operand.Chem -> 1
-        Operand.Biomass -> 2
-        Operand.Touching -> 3
+        is Operand.Conc -> 2
+        Operand.Biomass -> 3
+        Operand.Touching -> 4
     }
 
     /** Build an operand of the picked [kind], carrying [prev]'s value/species when the kind is unchanged
@@ -166,7 +179,8 @@ class GeneEditor {
     private fun operandOfKind(kind: Int, prev: Operand): Operand = when (kind) {
         0 -> Operand.Constant((prev as? Operand.Constant)?.value ?: 0)
         1 -> Operand.Chem((prev as? Operand.Chem)?.species ?: atoms.first())
-        2 -> Operand.Biomass
+        2 -> Operand.Conc((prev as? Operand.Conc)?.species ?: atoms.first())
+        3 -> Operand.Biomass
         else -> Operand.Touching
     }
 

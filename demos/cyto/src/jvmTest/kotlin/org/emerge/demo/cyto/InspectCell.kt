@@ -52,15 +52,23 @@ class InspectCell {
         fun opVal(o: org.emerge.demo.cyto.sim.Operand): Int = when (o) {
             is org.emerge.demo.cyto.sim.Operand.Constant -> o.value
             is org.emerge.demo.cyto.sim.Operand.Chem -> cell.cytoplasm[o.species] ?: 0
+            is org.emerge.demo.cyto.sim.Operand.Conc ->
+                if (bioBonds <= 0) 0 else ((cell.cytoplasm[o.species] ?: 0).toLong() * org.emerge.demo.cyto.sim.CytoTuning.CONC_SCALE / bioBonds).toInt()
             org.emerge.demo.cyto.sim.Operand.Biomass -> bioBonds
             org.emerge.demo.cyto.sim.Operand.Touching -> 0
         }
         for (g in cell.genome) {
-            val c0 = g.condition
-            val l = opVal(c0.lhs); val r = opVal(c0.rhs)
-            val pass = if (c0.cmp == org.emerge.demo.cyto.sim.Comparison.Greater) l > r else l < r
-            val cmp = if (c0.cmp == org.emerge.demo.cyto.sim.Comparison.Greater) ">" else "<"
-            var note = if (pass) "GATE OK" else "gate FALSE ($l$cmp$r)"
+            // AND-conjunction: the gate passes iff every clause holds.
+            fun clauseStr(c: org.emerge.demo.cyto.sim.Clause): String {
+                val l = opVal(c.lhs); val r = opVal(c.rhs)
+                val cmp = if (c.cmp == org.emerge.demo.cyto.sim.Comparison.Greater) ">" else "<"
+                return "$l$cmp$r"
+            }
+            val pass = g.condition.clauses.all { c ->
+                val l = opVal(c.lhs); val r = opVal(c.rhs)
+                if (c.cmp == org.emerge.demo.cyto.sim.Comparison.Greater) l > r else l < r
+            }
+            var note = if (pass) "GATE OK" else "gate FALSE (${g.condition.clauses.joinToString(" & ") { clauseStr(it) }})"
             if (pass && g.action.type == org.emerge.demo.cyto.sim.ActionType.Convert) {
                 val have = cell.cytoplasm[g.action.a] ?: 0
                 note += if (have > 0) "; has ${g.action.a}=$have" else "; but NO ${g.action.a} in cytoplasm → 0 ops"

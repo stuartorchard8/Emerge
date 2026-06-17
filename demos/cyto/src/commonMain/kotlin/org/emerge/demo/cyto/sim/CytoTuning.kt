@@ -164,4 +164,12 @@ object CytoTuning {
      *  representation relies on this bound. Different lineages can carry different B-bond sets, so global
      *  diversity isn't capped — only per-organism breadth. ⚙ */
     const val GENOME_MAX_BOND_TYPES = 5
+    /** Fixed scale for the [org.emerge.demo.cyto.sim.Operand.Conc] (concentration) operand: `Conc(sp)`
+     *  evaluates to `count(sp) · this / totalBiomass` (size-normalised), so a constant threshold reads as
+     *  "molecules of sp per unit body, ×this". 1000 ⇒ a threshold of 100 ≈ 0.1 molecule per biomass-bond.
+     *  Size-independent (a fixed bolus dilutes as biomass grows → a developmental clock). ⚙ */
+    const val CONC_SCALE = 1_000
+    /** Max AND-clauses in one gene's condition. A mutation that would add a clause past this is rejected
+     *  (bounds gate complexity + mutation cost); a positional *band* needs only 2 (`lo < Conc < hi`). ⚙ */
+    const val GENOME_MAX_CLAUSES = 4
 }

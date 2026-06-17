@@ -412,20 +412,27 @@ object CytoBiologyCore {
     }
 
     // ── gates ────────────────────────────────────────────────────────────────
+    /** The gate is a conjunction: the gene fires iff **every** clause holds (empty ⇒ true). */
     private fun gate(c: GeneCondition, work: CellWork): Boolean {
-        val l = operand(c.lhs, work)
-        val r = operand(c.rhs, work)
-        return when (c.cmp) {
+        for (clause in c.clauses) if (!clauseHolds(clause, work)) return false
+        return true
+    }
+
+    private fun clauseHolds(clause: Clause, work: CellWork): Boolean {
+        val l = operand(clause.lhs, work)
+        val r = operand(clause.rhs, work)
+        return when (clause.cmp) {
             Comparison.Greater -> l > r
             Comparison.Less -> l < r
         }
     }
 
-    /** Evaluate one side of a [GeneCondition] to an integer: a [Operand.Constant]'s literal, or a live
-     *  reading of the cell this tick (cytoplasm count / total biomass / contact count). */
+    /** Evaluate one side of a [Clause] to an integer: a [Operand.Constant]'s literal, or a live reading of
+     *  the cell this tick (cytoplasm count / size-normalised concentration / total biomass / contact count). */
     private fun operand(op: Operand, work: CellWork): Int = when (op) {
         is Operand.Constant -> op.value
         is Operand.Chem -> work.cytoplasm.count(SpeciesRegistry.id(op.species))
+        is Operand.Conc -> conc(work.cytoplasm.count(SpeciesRegistry.id(op.species)), totalBiomassBonds(work.biomass))
         Operand.Biomass -> totalBiomassBonds(work.biomass)
         Operand.Touching -> work.touchCount
     }
@@ -435,15 +442,23 @@ object CytoBiologyCore {
     private fun operandSnap(op: Operand, snap: MoleculeStore, snapBiomass: Int, work: CellWork): Int = when (op) {
         is Operand.Constant -> op.value
         is Operand.Chem -> snap.count(SpeciesRegistry.id(op.species))
+        is Operand.Conc -> conc(snap.count(SpeciesRegistry.id(op.species)), snapBiomass)
         Operand.Biomass -> snapBiomass
         Operand.Touching -> work.touchCount
     }
 
+    /** Size-normalised concentration (CytoTuning.CONC_SCALE units): molecules per unit biomass-bond. Long
+     *  intermediate (count·SCALE can exceed Int for a hoarding cell); 0 when biomass is 0. Integer floor ⇒
+     *  deterministic across platforms. */
+    private fun conc(count: Int, biomass: Int): Int =
+        if (biomass <= 0) 0 else (count.toLong() * CytoTuning.CONC_SCALE / biomass).toInt()
+
     /** Sub-tick interpolation cap: the max ops a growth action may do before the quantity it INCREASES
-     *  (biomass, when [qBiomass]; else cytoplasm species [qSpeciesId]) crosses the threshold of THIS gene's
-     *  own gate — i.e. the portion of the tick before the action would flip its own condition false. Only a
-     *  gate that the increase would break bounds it (`Q < limit`, or `limit > Q`); any other gate (or a gate
-     *  not reading Q) imposes no cap. Reads the snapshot so it's order-independent. */
+     *  (biomass, when [qBiomass]; else cytoplasm species [qSpeciesId]) crosses a threshold of THIS gene's
+     *  own gate — i.e. the portion of the tick before the action would flip its own condition false. Each
+     *  AND-clause that the increase would break bounds it (`Q < limit`, or `limit > Q`); the gene's cap is
+     *  the **tightest** (min) over all clauses. A clause not reading Q (incl. any [Operand.Conc] — its ratio
+     *  isn't linear in Q, so it's left uncapped) imposes none. Reads the snapshot so it's order-independent. */
     private fun selfGateCap(
         cond: GeneCondition, qBiomass: Boolean, qSpeciesId: Int, snapQ: Int, perOp: Int,
         snap: MoleculeStore, snapBiomass: Int, work: CellWork,
@@ -454,13 +469,17 @@ object CytoBiologyCore {
             is Operand.Chem -> !qBiomass && SpeciesRegistry.id(op.species) == qSpeciesId
             else -> false
         }
-        val limit = when {
-            reads(cond.lhs) && cond.cmp == Comparison.Less -> operandSnap(cond.rhs, snap, snapBiomass, work)   // Q < rhs
-            reads(cond.rhs) && cond.cmp == Comparison.Greater -> operandSnap(cond.lhs, snap, snapBiomass, work) // lhs > Q
-            else -> return Int.MAX_VALUE
+        var cap = Int.MAX_VALUE
+        for (clause in cond.clauses) {
+            val limit = when {
+                reads(clause.lhs) && clause.cmp == Comparison.Less -> operandSnap(clause.rhs, snap, snapBiomass, work)   // Q < rhs
+                reads(clause.rhs) && clause.cmp == Comparison.Greater -> operandSnap(clause.lhs, snap, snapBiomass, work) // lhs > Q
+                else -> continue
+            }
+            val headroom = limit - snapQ
+            cap = minOf(cap, if (headroom <= 0) 0 else headroom / perOp)
         }
-        val headroom = limit - snapQ
-        return if (headroom <= 0) 0 else headroom / perOp
+        return cap
     }
 
     private fun hasConnectionDamage(work: CellWork): Boolean = work.connectionDamage.values.any { it > 0f }

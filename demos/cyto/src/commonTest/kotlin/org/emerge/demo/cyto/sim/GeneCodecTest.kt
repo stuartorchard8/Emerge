@@ -44,10 +44,11 @@ class GeneCodecTest {
     }
 
     /** Every operand kind round-trips on either side of the gate — the exhaustive backstop for the
-     *  operand tokens (constant / species / Biomass / Touching) now that both sides are operands. */
+     *  operand tokens (constant / species / concentration / Biomass / Touching) now that both sides are
+     *  operands. */
     @Test
     fun roundTripsEveryOperandKindOnBothSides() {
-        val kinds = listOf(Operand.Constant(7), Operand.Chem("ab"), Operand.Biomass, Operand.Touching)
+        val kinds = listOf(Operand.Constant(7), Operand.Chem("ab"), Operand.Conc("abb"), Operand.Biomass, Operand.Touching)
         for (op in kinds) {
             val asLhs = Gene(EnergySource.Light, GeneCondition(op, Comparison.Greater, Operand.Constant(2)), GeneAction(ActionType.Mitosis))
             assertEquals(listOf(asLhs), GeneCodec.parse(GeneCodec.serialize(listOf(asLhs))), "$op as lhs")
@@ -76,6 +77,33 @@ class GeneCodecTest {
         // A bare `Mitosis` token (no operand) still decodes to a symmetric split — backward compatibility.
         val symmetric = Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Mitosis))
         assertEquals(listOf(symmetric), GeneCodec.parse("Light : Biomass > 8 : Mitosis"), "bare Mitosis stays symmetric")
+    }
+
+    /** A `Conc` (concentration) operand and a multi-clause AND condition round-trip + parse — the
+     *  positional-band readout the morphogen-for-shape work relies on (MORPHOGENESIS.md §Morphogens for
+     *  shape). A bare single-clause condition still parses (backward compatible). */
+    @Test
+    fun roundTripsConcBandAndMultiClause() {
+        val band = Gene(
+            EnergySource.Light,
+            GeneCondition(listOf(
+                Clause(Operand.Conc("ac"), Comparison.Greater, Operand.Constant(50)),
+                Clause(Operand.Conc("ac"), Comparison.Less, Operand.Constant(200)),
+            )),
+            GeneAction(ActionType.Convert, "ab"),
+        )
+        assertEquals("Light : Conc(ac) > 50 & Conc(ac) < 200 : Convert ab", GeneCodec.serialize(listOf(band)), "serialized band")
+        assertEquals(listOf(band), GeneCodec.parse(GeneCodec.serialize(listOf(band))), "Conc band round-trip")
+
+        // A hand-written multi-clause gate parses into ordered clauses; a single-clause one still works.
+        assertEquals(
+            GeneCondition(listOf(
+                Clause(Operand.Biomass, Comparison.Greater, Operand.Constant(8)),
+                Clause(Operand.Chem("ab"), Comparison.Less, Operand.Constant(4)),
+            )),
+            GeneCodec.parse("Light : Biomass > 8 & ab < 4 : Mitosis").single().condition,
+            "multi-clause parse",
+        )
     }
 
     /** A hand-authored genome parses to exactly the genes intended (the author-by-text workflow). */

@@ -379,9 +379,10 @@ class CytoController(
             org.emerge.demo.cyto.sim.ActionType.Mitosis -> "DIVIDE"
             org.emerge.demo.cyto.sim.ActionType.Repair -> "REPAIR"
         }
-        val c = gene.condition
-        val cmp = if (c.cmp == org.emerge.demo.cyto.sim.Comparison.Greater) ">" else "<"
-        val cond = "${operandLabel(c.lhs)}$cmp${operandLabel(c.rhs)}"
+        val cond = gene.condition.clauses.joinToString(" & ") { c ->
+            val cmp = if (c.cmp == org.emerge.demo.cyto.sim.Comparison.Greater) ">" else "<"
+            "${operandLabel(c.lhs)}$cmp${operandLabel(c.rhs)}"
+        }
         val src = when (val s = gene.source) {
             org.emerge.demo.cyto.sim.EnergySource.Light -> "LIGHT"
             is org.emerge.demo.cyto.sim.EnergySource.BreakBond -> "BRK ${s.bond}"
@@ -395,6 +396,7 @@ class CytoController(
     private fun operandLabel(op: org.emerge.demo.cyto.sim.Operand): String = when (op) {
         is org.emerge.demo.cyto.sim.Operand.Constant -> op.value.toString()
         is org.emerge.demo.cyto.sim.Operand.Chem -> op.species.ifEmpty { "?" }
+        is org.emerge.demo.cyto.sim.Operand.Conc -> "[${op.species.ifEmpty { "?" }}]"
         org.emerge.demo.cyto.sim.Operand.Biomass -> "BIO"
         org.emerge.demo.cyto.sim.Operand.Touching -> "TOUCH"
     }
