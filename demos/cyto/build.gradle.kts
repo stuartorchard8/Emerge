@@ -64,6 +64,8 @@ tasks.withType<Test>().configureEach {
     System.getProperty("cytorepro")?.let { systemProperty("cytorepro", it) }
     System.getProperty("inspectcell")?.let { systemProperty("inspectcell", it) }
     System.getProperty("savefile")?.let { systemProperty("savefile", it) }
+    System.getProperty("sandboxgenome")?.let { systemProperty("sandboxgenome", it) }
+    System.getProperty("sandboxticks")?.let { systemProperty("sandboxticks", it) }
 }
 
 // Generates *ShaderSources.kt from .vert / .frag files under src/commonMain/shaders/.

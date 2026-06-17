@@ -11,6 +11,8 @@ import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.sim.MIN_RADIUS
+import org.emerge.demo.cyto.sim.SpeciesRegistry
+import org.emerge.demo.cyto.sim.handleableOf
 import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.demo.cyto.sim.totalBiomassBonds
 import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
@@ -71,6 +73,12 @@ class CytoSandbox {
         val sb = StringBuilder()
         sb.appendLine("=== cell-1872 sandbox (mutation OFF, $ticks ticks, bare SEED founder) ===")
         sb.appendLine(GeneCodec.serialize(genome))
+        sb.appendLine()
+        // Smuggling check: any molecule carrying the synthetic-only 'ab' bond should be canHold (retained)
+        // but NOT canDiffuse (so it can't smuggle the 'ab' morphogen to neighbours).
+        val h = handleableOf(genome)
+        fun row(s: String) = "$s: canDiffuse=${h.canDiffuse(SpeciesRegistry.id(s))} canHold=${h.canHold(SpeciesRegistry.id(s))}"
+        sb.appendLine("morphogen isolation — ${row("ab")} | ${row("aab")} | ${row("abb")}")
         sb.appendLine()
         sb.appendLine("tick\tpop\twelds\tatomsΔ\tavgBio\tab min/med/max\taa min/med/max")
 
