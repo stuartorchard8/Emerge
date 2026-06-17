@@ -27,5 +27,5 @@ data class CytoConfig(
     val grabDamping: Frac = CytoTuning.GRAB_DAMPING,
     val variableMass: Boolean = CytoTuning.VARIABLE_MASS,
     val grabMaxReach: Float = CytoTuning.GRAB_MAX_REACH,
-    val mutationRateDenom: Int = CytoTuning.MUTATION_RATE_DENOM,
+    val mutationRateDenom: Int = if (CytoTuning.MUTATION_ENABLED) CytoTuning.MUTATION_RATE_DENOM else 0,
 ) : PhysicsTuning
