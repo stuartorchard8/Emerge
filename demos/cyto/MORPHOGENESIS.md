@@ -509,9 +509,15 @@ regardless of side: commit the founder to a **non-dividing organizer** (gate its
 so it stops moving via division entirely — though the side chosen *during the growth phase* still sets where
 that organizer ends up.
 
-**Oriented division — the anisotropy lever (v1).** Daughter placement is currently *toward free space*, which
-fills space isotropically → **blobs**. Real morphogenesis orients the *division plane*: consistently-oriented
-divisions elongate a structure (**strings / filaments / limbs**), mixed orientations fill out blobs. The
+**Oriented division — the anisotropy lever (BUILT `ce9cede`).** Daughter placement defaults to *toward free
+space* — which, it turns out, makes **threads** (each cell buds along the line away from its neighbours), not
+blobs. Oriented division lets a Mitosis gene name an **axis-morphogen** (`GeneAction.b`) and place the
+daughter **`along`** its gradient (project → extend a thread) or **`across`** it (slice → widen into a 2D
+sheet) — the ∇ computed once at division from welded neighbours (highest- to lowest-conc cell; Frac-safe,
+deterministic), falling back to the free-space normal when there's no gradient (so unoriented Mitosis is
+byte-identical). Demonstrated: the swimmer goes thread (41x0) → sheet (5x6) with `Mitosis cc across bc`.
+Real morphogenesis orients the *division plane*: consistently-oriented divisions elongate a structure
+(**strings / filaments / limbs**), mixed orientations fill out blobs. The
 reference axis is **the morphogen gradient ∇m** — a globally-coherent field, so the same field that says
 *where am I* also orients *which way do I divide* (real PCP / oriented division).
 

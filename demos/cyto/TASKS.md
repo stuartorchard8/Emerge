@@ -9,13 +9,16 @@ progress; drop from **Done** freely — `git log` is the real archive. Each task
 
 ## Now
 
-**The front line: author the v0 metabolic-loop monster.** The substrate is now complete — `Conc` + AND-gate,
-asymmetric mitosis with a **retain-side** (radial/centred *or* axial/edge source), the metabolic source/sink
-loop (decay = metabolism, rides existing diffuse), and the editor updated to author all of it. Next step is
-purely authoring + tuning (see `HOPEFUL_MONSTER.md`): pick `P`/`M` so the loop closes atomically, write the
-source/sink/readout genome, run mutation-off + calm physics, and probe whether a readable gradient + a stable
-self-healing two-tissue body forms. **The reachability proof.** (B) `Lyse` + competition/locomotion stay
-parked until shape is cracked.
+**The front line: a differentiated, self-propelling organism (the jellyfish goal).** Substrate is complete:
+`Conc` + AND-gate, retain-side, the metabolic source/sink morphogen loop, produce-without-diffuse
+(intracellular determinants), and **oriented division** (✅ `ce9cede` — Mitosis `along`/`across` a morphogen
+gradient → threads *or* 2D sheets). Demonstrated in the `CytoSandbox`: a single-cell-grown genome forms an
+organizer (isolated `cc` determinant) → `bc` morphogen gradient → light-clocked `Contract` on the high-`bc`
+side → it **swims** (COM drift 37 vs 1.8 unmoving); and `Mitosis cc across bc` widens the body from a thread
+(41x0) to a **2D sheet** (5x6). **Remaining for the jellyfish *bell*:** make a 2D body contract on **one
+side** (the bend) — i.e. break bilateral symmetry so the contraction is lateralised, not radial. That's the
+open frontier. (B) `Lyse` + competition parked. NOTE: a brush-painted cell lacks the maternal `cc` seed, so
+it grows but doesn't differentiate — functional spawning needs a cytoplasm seed (future tooling).
 
 ---
 
@@ -44,17 +47,6 @@ Parked until shape is cracked (then re-introduce one axis per campaign — see `
   `Import("ab")`). Interacts with the `canDiffuse` split above — sequence after it.
 - [ ] **(B) `Lyse` — predatory lysis** (§B) — **demoted** (competition, not morphogenesis). Snapshot `attack()`
   phase over the touch-adjacency; efficiency gear `g` = predator-strategy axis. After v0.
-- [ ] **Oriented division (v1) — strings vs blobs.** A Mitosis **`slice`/`project` param** relative to the
-  ∇m axis: `project` offsets the daughter along ∇m (`o-x`→`o-o-o`), `slice` offsets perpendicular
-  (`o-x`→`o<8`, the escape from gradient self-reference). Placement is a symmetric straddle (`±offset`), so the
-  `±` is just the retain-side param — no sign tiebreak. ∇m read **once at division** (cheap, not per-tick).
-  No-gradient fallback (no epsilon threshold — any nonzero diff = gradient): axis = ∇m → else neighbour-normal
-  (today's free-space) → else `transform.ang`. The **4 Mitosis params are independent** (asym-morphogen ✅,
-  retain-side = radial/axial body plan ✅ built `123c860`, axis-morphogen, slice/project) — only the last two
-  remain for this item; don't force morphogen reuse (it traps body plans). Bare `Mitosis` stays today's
-  behaviour (saves survive); goldens re-baseline. Spring
-  reassignment generalises (feed `divide`'s ahead/side the gradient normal). Caveat: forcing an axis places
-  daughters into occupied space → re-checks the no-kick placement.
 - [ ] **Locomotion controller** — genome-readable oscillator → travelling *contraction* wave (`Contract` +
   asymmetric drag built; `Expand` banned). Becomes v2 chemotaxis (dispersal). After v0.
 - [ ] **Gradient cost on synthesis (Convert / FormBond)** — *conditional*, only if synthesis needs the
@@ -125,6 +117,13 @@ The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (
 
 ## Done (recent highlights — git log is the archive)
 
+- [x] **Oriented division** (`ce9cede`) — Mitosis `along`/`across` a named axis-morphogen's gradient
+  (computed at division from welded neighbours) → threads or 2D sheets. Opt-in (empty axis = unoriented),
+  byte-identical goldens. Unblocks 2D bodies (the jellyfish bell). The `CytoSandbox` shows the swimmer go
+  thread→sheet with `Mitosis cc across bc`.
+- [x] **Differentiated swimmer (sandbox)** — single-cell-grown organism that propels via light-clocked
+  one-side `Contract` + asymmetric drag (COM drift 37 vs 1.8). Organizer determinant + morphogen gradient +
+  contraction all genetic. Saved as `cyto-brush*.gene` (needs a `cc` cytoplasm seed to differentiate).
 - [x] **Authoring/observing tooling** — mutation rate is now **in-game tunable + saved** (`3a1f896`:
   `CytoSimParamsComponent` on the world, `-1`=inherit-cfg sentinel keeps goldens/tests untouched; codec v7;
   "Mut" button cycles off→1/1M→1/100k→1/10k→1/1k); `CytoTuning.MUTATION_ENABLED` master switch (`19e1442`);
