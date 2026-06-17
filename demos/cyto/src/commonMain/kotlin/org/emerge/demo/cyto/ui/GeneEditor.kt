@@ -123,10 +123,13 @@ class GeneEditor {
                 ActionType.Import, ActionType.Convert ->
                     speciesField("OPERAND", d.action.a, atoms) { s -> draft = d.copy(action = d.action.copy(a = s)) }
                 ActionType.FormBond -> {
-                    // Operands are a suffix/prefix match (built atom-by-atom): bond a molecule ENDING WITH the
-                    // first operand to one STARTING WITH the second. Single atom = the old end-atom/start-atom.
-                    speciesField("END WITH", d.action.a, atoms) { s -> draft = d.copy(action = d.action.copy(a = s)) }
-                    speciesField("START WITH", d.action.b, atoms) { s -> draft = d.copy(action = d.action.copy(b = s)) }
+                    // Bond two molecules end-to-end. EXACT species by default — each operand names the whole
+                    // reactant (built atom-by-atom); the MATCH toggle opts into a WILDCARD (left = any molecule
+                    // ENDING with the operand, right = any STARTING with it). MORPHOGENESIS.md §2026-06-18.
+                    speciesField(if (d.action.aWild) "LEFT ·*" else "LEFT", d.action.a, atoms) { s -> draft = d.copy(action = d.action.copy(a = s)) }
+                    button(if (d.action.aWild) "LEFT MATCH: ends-with *" else "LEFT MATCH: exact", 0x3A6EA5FFL) { draft = d.copy(action = d.action.copy(aWild = !d.action.aWild)) }
+                    speciesField(if (d.action.bWild) "RIGHT *·" else "RIGHT", d.action.b, atoms) { s -> draft = d.copy(action = d.action.copy(b = s)) }
+                    button(if (d.action.bWild) "RIGHT MATCH: starts-with *" else "RIGHT MATCH: exact", 0x3A6EA5FFL) { draft = d.copy(action = d.action.copy(bWild = !d.action.bWild)) }
                 }
                 ActionType.Mitosis -> {
                     // Optional morphogen ⇒ asymmetric division; KEEP picks which side keeps it (centred vs edge
