@@ -18,16 +18,21 @@ substrate in order (1→4 in Next), then hand-author a gradient-based two-tissue
 
 ## Next
 
-The morphogen-for-shape substrate, in build order:
+**Substrate update (2026-06-17): the gradient needs NO new substrate code.** Decay = metabolism: a morphogen
+is an ordinary metabolite in a **centre-source → everywhere-sink loop** (centre synthesises it, every cell
+consumes it back), and it diffuses for free because it's `canHold`-true (existing `CytoBiologyCore.diffuse`).
+The planned signal-decay rule + `canDiffuse`/`canMetabolise` split are **dropped** (see `MORPHOGENESIS.md`
+§Morphogens for shape). So the next step is straight to authoring + probing:
 
-1. [ ] **Signal decay + `canDiffuse`/`canMetabolise` split** — the gradient substrate. Split `canHold` into
-   `canDiffuse` (FormBond-produced-but-not-metabolised = morphogen; sender pushes down-gradient to **welded**
-   neighbours, cell↔cell only) and `canMetabolise` (existing). Add per-tick decay of morphogen species back
-   to monomers (matter-conserved). Source = a FormBond gene gated on a determinant (§C seeds it). **Re-baselines
-   goldens** (new biology phase). Calm physics while testing the gradient.
-2. [ ] **Hand-author the v0 genome, run mutation-off via a probe** (`HOPEFUL_MONSTER.md` illustrative genome).
-   Tune decay/diffusion/thresholds until a stable point-source gradient + dividing-core / repairing-skin body
-   forms and self-heals on a cut. **The reachability proof.**
+1. [ ] **Author the v0 metabolic-loop genome + probe the gradient** (`HOPEFUL_MONSTER.md`). Source gene
+   `Break P IF Conc(X)>0 : FormBond → M` (X = §C determinant marking the centre); sink gene `Break M : FormBond
+   → P` in every cell (the decay); a `Conc(M)`-band readout driving two tissues. Pick `P`/`M` so the loop
+   **closes atomically** (no-repeat-bond + FormBond fragments — `AB`↔`CC` doesn't balance). Run **mutation-off,
+   calm physics**; probe whether a readable point-source gradient forms (watch the integer-floor tail) and a
+   stable core/skin body that self-heals on a cut. **The reachability proof.**
+   - *Optional, only if spread control is lacking:* apply the **efficiency gear to `FormBond` as a per-tick
+     cap** (`REF>>g`, not the `g+1` multiplier — that mints energy; golden-safe at g=0) so the consumer's rate
+     `k` (hence spread `λ≈√(D/k)`) becomes a heritable dial.
 
 Parked until shape is cracked (then re-introduce one axis per campaign — see `HOPEFUL_MONSTER.md` staging):
 

@@ -21,16 +21,21 @@ This doc is the **program** (how we'll do it + prove it). The **contract** (the 
 
 ## The substrate this needs (summary — contract in MORPHOGENESIS.md)
 
-Morphogens are built **for shape, not fate**: a localised **source** + cell↔cell **diffusion** + **decay**
-→ a steady-state **positional gradient** a cell reads to know where it is. Three genome-derived signal roles:
+Morphogens are built **for shape, not fate**: a localised **source** + cell↔cell **diffusion** + a
+distributed **sink** → a steady-state **positional gradient** a cell reads to know where it is. **The sink is
+just metabolism** (2026-06-17): a morphogen is an ordinary metabolite in a **centre-source → everywhere-sink
+loop** — so it needs **no new substrate code** (see `MORPHOGENESIS.md` §Morphogens for shape).
 
-- **Determinant** — sensed + mitosis-allocated, never produced → isolated, persistent = **memory/fate**.
-- **Morphogen** — FormBond-produced, not metabolised → diffuses + decays = **shape**.
+- **Determinant** (`X`) — sensed-only + mitosis-allocated, never produced/metabolised → isolated, persistent =
+  **memory/fate**; marks the source (§C ✅).
+- **Morphogen** (`M`) — FormBond-**produced** at a centre **and** metabolised everywhere → diffuses for free
+  (`canHold`-true → existing cell↔cell diffuse) and is consumed (the sink = the decay) = **shape**.
 - **Metabolite** — metabolised → **food**.
 
-Locked decisions: morphogens **cost matter** (FormBond; decay recycles atoms); diffuse **cell↔cell** (not the
-coarse env grid); gene gate is an **AND-conjunction** (NOT via `<`, OR via separate genes, no weighted sums).
-Position is **upstream** of fate: read the gradient → at a threshold, commit a determinant.
+Locked decisions: morphogens **cost matter** (FormBond source; metabolic consumption recycles atoms); diffuse
+**cell↔cell** (not the coarse env grid); gene gate is an **AND-conjunction** (✅ built). The planned
+signal-decay rule + `canDiffuse`/`canMetabolise` split are **dropped** — `sensing≠permeability` stays only for
+the determinant. Position is **upstream** of fate: read the gradient → at a threshold, commit a determinant.
 
 ## The ladder — smallest recognisable body first
 
@@ -56,8 +61,8 @@ Position is **upstream** of fate: read the gradient → at a threshold, commit a
 | Persistent determinant (memory) | trace morphogen (no cytoplasm decay) + asymmetric mitosis | **HAVE** (§C) |
 | Binary differentiation | morphogen-gated fate | **HAVE** (§C) |
 | Stop-dividing / block | gate `Mitosis` off | **HAVE** |
-| **Positional gradient (shape)** | morphogens isolated; no decay; no `canDiffuse`/`canMetabolise` split | **BUILD** (the substrate) |
-| **Concentration band readout** | only `>`/`<` count gates, single clause | **BUILD** (`Conc` + AND-gate) |
+| **Positional gradient (shape)** | source→sink metabolic loop + existing cell↔cell diffuse | **AUTHOR** (no new substrate — decay = metabolism) |
+| **Concentration band readout** | `Conc` operand + AND-conjunction gate | ✅ DONE (`d39dee5`) |
 | Localised source | FormBond exists; localise by gating on a determinant | **HAVE** (compose) |
 | Hand-author asymmetric mitosis in text | ~~`GeneCodec` drops the `Mitosis` morphogen operand~~ | ✅ DONE (`b2ce870`) |
 | Source body-plan (radial vs axial) | daughter spawns outward, mother steps inward → retain-side = drift direction | **PARAM** (default mother-retention = radial; daughter = axial) |
@@ -69,25 +74,32 @@ Position is **upstream** of fate: read the gradient → at a threshold, commit a
 
 ## Illustrative v0 genome (untuned — tune empirically)
 
-Pseudo-`GeneCodec`, one clonal genome. `f` = founder determinant (sensed + mitosis-allocated, never produced
-→ persistent, isolated). `m` = morphogen (FormBond-produced from `a`+`c`, not metabolised → diffuses + decays).
-`HI`/`LO`/`GROW`/`DIVIDE` are thresholds to tune.
+Pseudo-`GeneCodec`, one clonal genome (schematic — `m`/the `FormBond → …` products are placeholders; the
+real `P`/`M` must be chosen so the loop **closes atomically**, see caveats). `f` = founder determinant
+(sensed-only + mitosis-allocated, never produced/metabolised → persistent, isolated). `m` = morphogen, a
+**metabolite** in a source→sink loop. `HI`/`LO`/`GROW`/`DIVIDE` = thresholds to tune.
 
 ```
-# --- base metabolism (every cell): build & lock ab for biomass under light ---
+# --- base metabolism (every cell): build & lock 'ab' for biomass under light ---
 Light : ab < GROW : FormBond a b
 Light : Biomass < GROW : Convert ab
 
-# --- source: only the founder lineage (holds determinant f) emits morphogen m ---
-Light : Conc f > 0 : FormBond a c            # → 'ac' (= m); not metabolised ⇒ diffuses + decays
+# --- morphogen SOURCE (centre only — holds determinant f): spend the primary molecule to make m ---
+Break ab : Conc f > 0 : FormBond → m         # centre synthesises morphogen m
+
+# --- morphogen SINK (every cell): metabolise m back — THIS is the decay ---
+Break m : Biomass > 0 : FormBond → ab        # consume m; m is canHold-true ⇒ diffuses cell↔cell for free
 
 # --- symmetry break: keep f in one daughter so the source persists as a point ---
-Break ab : Biomass > DIVIDE : Mitosis f      # asymmetric: f → one side; mother-retention keeps source central (radial); daughter → edge (axial)
+Break ab : Biomass > DIVIDE : Mitosis f      # mother-retention = central source (radial); daughter = edge (axial)
 
-# --- positional readout: two tissues by concentration band ---
+# --- positional readout: two tissues by Conc(m) band ---
 Break ab : Conc m > HI : Mitosis             # core (high m): divide → bulk growth
 Light    : Conc m < LO : Repair              # boundary (low m): tough, non-dividing skin
 ```
+
+The SOURCE + SINK + cell↔cell diffusion (free, since `m` is metabolisable) maintain the gradient as a
+dynamic steady state; the SINK rate sets how far `m` reaches (`λ≈√(D/k)`).
 
 What to watch when this runs (mutation **off**, physics calmed): a stable concentration gradient from a point
 source; a dividing core wrapped in a non-dividing repairing rind; and — the real prize — the structure
@@ -107,12 +119,12 @@ a gradient, the decay/diffusion rates or the source localisation are wrong — n
 
 ## First moves (see TASKS.md → Now/Next)
 
-1. **Codec fix** — `Mitosis <morphogen>` round-trips (you can't even *write* §C genomes today).
-2. **`Conc` operand** + **AND-conjunction gate** — the positional-band readout primitive.
-3. **Signal decay + the `canDiffuse`/`canMetabolise` split** — cell↔cell morphogen diffusion; the gradient
-   substrate. Re-baselines goldens.
-4. **Hand-author the v0 genome, run mutation-off via a probe**, and tune until a stable two-tissue body
-   forms and self-heals. That's the reachability proof — the entire point of the exercise.
+1. ✅ **Codec fix** — `Mitosis <morphogen>` round-trips (`b2ce870`).
+2. ✅ **`Conc` operand + AND-conjunction gate** — the positional-band readout primitive (`d39dee5`).
+3. **Author the v0 metabolic-loop genome + probe the gradient** — source/sink/diffusion (no new substrate;
+   decay = metabolism). Pick `P`/`M` so the loop closes atomically. Run mutation-off, calm physics; confirm a
+   readable gradient + a stable two-tissue body that self-heals. **The reachability proof** — the entire point.
+   *Optional:* the efficiency-gear-as-FormBond-cap spread dial, only if probing shows it's needed.
 
-`Lyse`, apoptosis, chemotaxis, welded-neighbour count, methylation-commit all stay parked until v0 proves the
-floor.
+`Lyse`, apoptosis, chemotaxis, welded-neighbour count, methylation-commit, oriented division all stay parked
+until v0 proves the floor.
