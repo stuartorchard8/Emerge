@@ -44,6 +44,34 @@ settled design we build toward; it is the contract, not a status log.
 > species is **intracellular memory**) — the intra-vs-inter-cellular morphogen distinction. See **§Morphogens
 > for shape** below.
 
+> **2026-06-18 — FormBond is exact-species by default; wildcards are opt-in.** The bond-forming action used
+> to match its operands as *patterns*: `FormBond a b` joined the **most-abundant** molecule *ending* in `a`
+> to the most-abundant *starting* with `b` (suffix/prefix wildcard, richest-tiebreak). That made the
+> *simplest* intent — "bond these two specific molecules" — unreachable without defensive gating, and it
+> self-sabotages homodimers: once a cell stockpiles its own product `aa`, `FormBond a a` resolves *both* ends
+> to `aa` (the richest a-ender/-starter), and `aa+aa` repeats the `aa` bond → polymerisation-forbidden →
+> silent no-op, so production stalls *exactly* when the reserve grows (diagnosed on a live save: a cell with
+> `aa=7725 > a=7480` made zero `aa` despite full light and an open gate). **Fix:** an operand now names an
+> **exact species** by default (`FormBond a b` = monomer `a` + monomer `b` → `ab`; `FormBond ab c` → `abc`),
+> with a **`*` wildcard** opt-in — `*a` (left) = any molecule *ending* in `a`, `a*` (right) = any *starting*
+> with `a` (the old richest-match; richest+lowest-id tiebreak kept for determinism). Exact is a direct id
+> lookup (no scan, unambiguous); wildcards stay for *evolvability* (a generalist gene, robust to the exact
+> species drifting under mutation) but are no longer the default. The junction bond is still
+> `chosenLeft.last–chosenRight.first` and the no-repeat legality check is unchanged, so an illegal homodimer
+> (`ab`+`ab`→`abab`) is a *knowable-at-authoring* no-op rather than a runtime surprise. Represented as
+> `GeneAction.aWild`/`bWild` flags (the bare atoms stay in `a`/`b`, so `handleableOf` is untouched); the codec
+> text carries the `*`. **Scope:** FormBond was the *only* wildcard-by-default species match (Convert/Import
+> are exact; gate `Chem`/`Conc` are exact; BreakBond matches a *bond*, not a species — left as-is). The
+> mutation operator gains a wild-flag toggle (so evolution can still *discover* generalists) and the gene
+> editor a per-operand exact/wildcard toggle. **Compatibility (preserve-on-load):** the save format bumps to
+> **v8**; pre-v8 genomes were authored/evolved under the wildcard meaning, so on decode every FormBond gene
+> gets `aWild=bWild=true` — the evolved population and saved cells behave byte-for-byte as before; only newly
+> authored/edited genes (and mutated ones) get exact. The hand-authored presets need *no* edit and the
+> mutation-**off** goldens are byte-identical: the autotroph holds only `{a,b,ab}`, so `a` is the only
+> a-ender and `b` the only b-starter — exact ≡ wildcard for it. Only the **mutation-on** golden re-baselines
+> (the evolving config genuinely explores exact species now, and the mutation operator draws an extra PRNG
+> int for the new toggle).
+
 ## The central principle: matter is closed, energy is open
 
 Like a real ecosystem (sunlight pours in for free; nutrients are finite and recycled):
@@ -112,8 +140,10 @@ A gene is exactly three parts (no multi-input weighted sums like the legacy mode
    - quantity *or* **concentration** (`Conc`) of a given chemical ≷ a threshold (or another live quantity);
    - total biomass ≷ a threshold; un-welded **contact** count (`Touching`); **welded-neighbour** count.
 3. **Action** — one of (extensible list; baseline):
-   - **Form bond** — join two **whole** molecules end-to-end (one ending in atom *a* + one starting
-     with atom *b* → `…ab…`); refused if the product would repeat a bond (the no-repeat rule);
+   - **Form bond** — join two **whole** molecules end-to-end → `…ab…`; refused if the product would repeat
+     a bond (the no-repeat rule). Each operand names an **exact species** by default (`FormBond a b` = the
+     monomers `a`+`b`), with an opt-in **`*` wildcard** (`*a` = any molecule ending in `a`; `a*` = any
+     starting with `a`) — see the 2026-06-18 note above;
    - **Contract / Expand** radius beyond baseline;
    - **Active import** a specific chemical (environment → cytoplasm) — *also seals that species against
      passive down-gradient leak* (§Three mechanisms A);
