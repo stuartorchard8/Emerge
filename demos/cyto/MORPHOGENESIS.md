@@ -486,20 +486,44 @@ rock-stable source regardless of side: commit the founder to a **non-dividing or
 off once it sources) so it stops moving via division entirely — though the side chosen *during the growth
 phase* still sets where that organizer ends up.
 
-**Oriented division — the anisotropy lever (v1, separate from placement).** Daughter placement is currently
-*toward free space*, which fills space isotropically → **blobs**. Real morphogenesis orients the *division
-plane*: consistently-oriented divisions elongate a structure (**strings / filaments / limbs**), mixed
-orientations fill out blobs. Make this a **Mitosis axis parameter** — divide *along* vs *across* a reference
-axis. The reference axis is the crux, and **the morphogen gradient supplies it for free**: ∇m gives every
-cell a globally-coherent polarity, so the same field that says *where am I* says *which way do I divide* (real
-PCP / oriented division). Cost: that needs **directional** gradient sensing (a vector — compare `m` across
-neighbours), heavier than v0's scalar `Conc` and overlapping the v2 chemotaxis sense ⇒ a **v1 lever, after the
-scalar gradient works**. **Across-axis is *not* the only correct mode** — strings are exactly the non-blob
-morphology the continuous-space substrate can express and a fixed grid cannot (the payoff of the richer
-substrate). Caveat: forcing an axis places a daughter into *occupied* space (vs today's free-space,
-rest-length, no-kick placement) — the spring solver turns that into the elongation push, but it reintroduces
-the division-kick risk the no-kick work fixed; place at rest length along the axis and let physics relax
-gradually.
+**Oriented division — the anisotropy lever (v1).** Daughter placement is currently *toward free space*, which
+fills space isotropically → **blobs**. Real morphogenesis orients the *division plane*: consistently-oriented
+divisions elongate a structure (**strings / filaments / limbs**), mixed orientations fill out blobs. The
+reference axis is **the morphogen gradient ∇m** — a globally-coherent field, so the same field that says
+*where am I* also orients *which way do I divide* (real PCP / oriented division).
+
+- **`slice` vs `project` — a Mitosis gene parameter** (binary, gene-chosen — *not* a geometric tiebreak):
+  given the gradient axis, **project** offsets the daughter *along* it (extend: `o-x` → `o-o-o`), **slice**
+  offsets *perpendicular* (branch/widen: `o-x` → `o<8`). Placement is a **symmetric straddle**
+  (`motherPos ± offset`), so the only degree of freedom is the offset *axis*; the `±` is just mother-vs-daughter
+  = the **retain-side** body-plan param — there is no hidden sign ambiguity. `slice` is the escape from the
+  self-reference: it deliberately lays the *new* axis across the current gradient, and the daughters then read
+  fresh gradients of their own, so morphology can transition string↔blob (gated by `Conc` band, like any gene).
+- **Sensing is at-mitosis-only, not per-tick** — the axis matters only *when* a cell divides (a gated, rare,
+  1-tick event), so ∇m is computed once at that moment (O(neighbours)), after the division is locked in. This
+  is **cheap** — the earlier "heavy per-tick vector sensing" worry was wrong.
+- **No-gradient fallback (no epsilon threshold).** A gradient is "present" iff there is **any** nonzero
+  morphogen-concentration difference among neighbours; exactly-flat → fallback. (No threshold: a deterministic
+  integer sim has no noise to filter, so a threshold only relocates the knife-edge and adds a param; the
+  zero-difference boundary is well-defined for free.) The fallback **axis** layers on existing code:
+  **∇m if any gradient → else the neighbour-derived normal** (`divide`'s "away-from-average-neighbour",
+  i.e. project-along-it = today's free-space behaviour) **→ else `transform.ang`** (the existing zero-fallback).
+  So "the axis" is never undefined.
+- **The four Mitosis params are independent — don't force morphogen reuse.** Asym-allocation morphogen,
+  retain-side, **axis morphogen**, and slice/project are *decoupled*. Tying the axis morphogen to the
+  allocation morphogen would bake in a prior (you always orient by the field you're actively pumping into a
+  daughter) — a trap that limits body plans; and biologically the *positional* morphogen and the *fate
+  determinant* are different molecules. Cost: Mitosis is the richest gene (more mutation dimensions + codec
+  work). Degrades gracefully — an axis-morphogen with no gradient just hits the fallback above.
+
+**Across-axis (`slice`) is *not* the only correct mode** — strings are exactly the non-blob morphology the
+continuous-space substrate can express and a fixed grid cannot (the payoff of the richer substrate). **Goldens
+re-baseline** (byte-identity isn't a constraint here), but a **bare `Mitosis` (no params) stays today's
+behaviour** so existing saves / evolved genomes survive. Existing **spring reassignment generalises** — feed
+`divide`'s `ahead`/`side` classifier the gradient-derived normal. Caveat: forcing an axis can place a daughter
+into *occupied* space (vs today's free-space, rest-length, no-kick placement) — the spring solver turns that
+into the elongation push, but it reintroduces the division-kick risk the no-kick work fixed; place at rest
+length along the axis and let physics relax gradually.
 
 **Readout (`Conc` + AND-gates).** A cell reads its position with a concentration **band**:
 `lo < Conc(m) AND Conc(m) < hi` → "I'm in the middle ring" → express that tissue's action. This is why the

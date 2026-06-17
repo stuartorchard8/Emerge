@@ -43,13 +43,16 @@ Parked until shape is cracked (then re-introduce one axis per campaign — see `
   `Import("ab")`). Interacts with the `canDiffuse` split above — sequence after it.
 - [ ] **(B) `Lyse` — predatory lysis** (§B) — **demoted** (competition, not morphogenesis). Snapshot `attack()`
   phase over the touch-adjacency; efficiency gear `g` = predator-strategy axis. After v0.
-- [ ] **Oriented division (v1) — strings vs blobs.** A Mitosis **axis parameter** (divide *along* vs *across*
-  a reference axis); reference = the morphogen gradient ∇m, which supplies a coherent polarity for free.
-  Unlocks non-blob morphology (filaments/limbs) — the payoff of continuous space. Needs *directional*
-  gradient sensing (a vector, heavier than scalar `Conc`) ⇒ after the v0 scalar gradient. Also: the
-  retain-side of asymmetric mitosis is a **body-plan param** (mother-retention = radial/centred source;
-  daughter = axial/edge) — fold in when the Mitosis gene grows params. Caveat: forcing an axis places
-  daughters into occupied space → re-checks the no-kick division placement.
+- [ ] **Oriented division (v1) — strings vs blobs.** A Mitosis **`slice`/`project` param** relative to the
+  ∇m axis: `project` offsets the daughter along ∇m (`o-x`→`o-o-o`), `slice` offsets perpendicular
+  (`o-x`→`o<8`, the escape from gradient self-reference). Placement is a symmetric straddle (`±offset`), so the
+  `±` is just the retain-side param — no sign tiebreak. ∇m read **once at division** (cheap, not per-tick).
+  No-gradient fallback (no epsilon threshold — any nonzero diff = gradient): axis = ∇m → else neighbour-normal
+  (today's free-space) → else `transform.ang`. The **4 Mitosis params are independent** (asym-morphogen,
+  retain-side = radial/axial body plan, axis-morphogen, slice/project) — don't force morphogen reuse (it traps
+  body plans). Bare `Mitosis` stays today's behaviour (saves survive); goldens re-baseline. Spring
+  reassignment generalises (feed `divide`'s ahead/side the gradient normal). Caveat: forcing an axis places
+  daughters into occupied space → re-checks the no-kick placement.
 - [ ] **Locomotion controller** — genome-readable oscillator → travelling *contraction* wave (`Contract` +
   asymmetric drag built; `Expand` banned). Becomes v2 chemotaxis (dispersal). After v0.
 - [ ] **Gradient cost on synthesis (Convert / FormBond)** — *conditional*, only if synthesis needs the
