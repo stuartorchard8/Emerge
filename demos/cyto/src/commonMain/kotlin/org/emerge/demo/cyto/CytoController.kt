@@ -395,9 +395,13 @@ class CytoController(
             org.emerge.demo.cyto.sim.ActionType.FormBond -> "BOND ${a.a}·${a.b}"
             org.emerge.demo.cyto.sim.ActionType.Convert -> "CONVERT ${a.a}"
             org.emerge.demo.cyto.sim.ActionType.Contract -> "CONTRACT"
-            // DIVIDE, optionally asymmetric: →morphogen to the daughter, or →M:morphogen kept by the mother.
-            org.emerge.demo.cyto.sim.ActionType.Mitosis ->
-                if (a.a.isEmpty()) "DIVIDE" else "DIVIDE ${if (a.morphogenToMother) "→M:" else "→"}${a.a}"
+            // DIVIDE, optionally asymmetric (→morphogen to the daughter, or →M:morphogen kept by the mother)
+            // and optionally oriented (along/across an axis-morphogen's gradient).
+            org.emerge.demo.cyto.sim.ActionType.Mitosis -> {
+                val asym = if (a.a.isEmpty()) "" else " ${if (a.morphogenToMother) "→M:" else "→"}${a.a}"
+                val orient = if (a.b.isEmpty()) "" else " ${if (a.divideAcross) "across" else "along"} ${a.b}"
+                "DIVIDE$asym$orient"
+            }
             org.emerge.demo.cyto.sim.ActionType.Repair -> "REPAIR"
         }
         val cond = gene.condition.clauses.joinToString(" & ") { c ->

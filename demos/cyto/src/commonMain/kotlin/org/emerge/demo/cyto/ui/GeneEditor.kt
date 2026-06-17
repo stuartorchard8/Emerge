@@ -27,7 +27,7 @@ import org.emerge.render.torus.ui.UiBuilder
  * editor state (which gene, the draft, which dropdown is open).
  */
 class GeneEditor {
-    private enum class Field { Source, LhsKind, Cmp, RhsKind, Action, MitosisSide }
+    private enum class Field { Source, LhsKind, Cmp, RhsKind, Action, MitosisSide, MitosisAxis }
 
     private var editingId: EntityId? = null
     private var editingIndex: Int? = null
@@ -112,8 +112,9 @@ class GeneEditor {
             if (clauses.size < CytoTuning.GENOME_MAX_CLAUSES) button("+ AND clause", 0x3A6EA5FFL) { draft = addClauseUi(d); openField = null }
             picker("ACTION", d.action.type.name, actionLabels, openField == Field.Action, { toggle(Field.Action) }) { i ->
                 val newType = ActionType.entries[i]
-                // Clear the Mitosis-only retain-side flag when switching away (invariant: true ⟹ Mitosis).
-                draft = d.copy(action = d.action.copy(type = newType, morphogenToMother = d.action.morphogenToMother && newType == ActionType.Mitosis)); openField = null
+                // Clear the Mitosis-only flags when switching away (invariant: each ⟹ Mitosis).
+                val stillMitosis = newType == ActionType.Mitosis
+                draft = d.copy(action = d.action.copy(type = newType, morphogenToMother = d.action.morphogenToMother && stillMitosis, divideAcross = d.action.divideAcross && stillMitosis)); openField = null
             }
             when (d.action.type) {
                 ActionType.Import, ActionType.Convert ->
@@ -133,6 +134,17 @@ class GeneEditor {
                     if (d.action.a.isNotEmpty()) {
                         picker("KEEP", if (d.action.morphogenToMother) "mother" else "daughter", listOf("daughter", "mother"), openField == Field.MitosisSide, { toggle(Field.MitosisSide) }) { i ->
                             draft = d.copy(action = d.action.copy(morphogenToMother = i == 1)); openField = null
+                        }
+                    }
+                    // Oriented division: an axis-morphogen whose local ∇ (from welded neighbours) supplies the
+                    // division axis. Empty ⇒ unoriented free-space placement. ALONG ∇ extends a thread, ACROSS
+                    // widens a 2D sheet (MORPHOGENESIS.md §Morphogens for shape).
+                    speciesField("AXIS", d.action.b, atoms) { s ->
+                        draft = d.copy(action = d.action.copy(b = s, divideAcross = d.action.divideAcross && s.isNotEmpty()))
+                    }
+                    if (d.action.b.isNotEmpty()) {
+                        picker("ORIENT", if (d.action.divideAcross) "across" else "along", listOf("along", "across"), openField == Field.MitosisAxis, { toggle(Field.MitosisAxis) }) { i ->
+                            draft = d.copy(action = d.action.copy(divideAcross = i == 1)); openField = null
                         }
                     }
                 }
