@@ -125,6 +125,10 @@ The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (
 
 ## Done (recent highlights — git log is the archive)
 
+- [x] **Authoring/observing tooling** — mutation rate is now **in-game tunable + saved** (`3a1f896`:
+  `CytoSimParamsComponent` on the world, `-1`=inherit-cfg sentinel keeps goldens/tests untouched; codec v7;
+  "Mut" button cycles off→1/1M→1/100k→1/10k→1/1k); `CytoTuning.MUTATION_ENABLED` master switch (`19e1442`);
+  keyboard: Space pause/play, `[`/`]` slower/faster (`c61664a`). Desktop UI/keys need interactive validation.
 - [x] **Produce-without-diffuse — intracellular memory** (`993ed17`) — `handleableOf` split into `canHold`
   (metabolic ∪ synthetic = retain) vs `canDiffuse` (metabolic only = cell↔cell share). A species the genome
   only synthesises (FormBond) and never consumes is now intracellular: held + sensed, never shared — so a
