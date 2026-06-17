@@ -469,9 +469,37 @@ monomers, so signalling competes with growth for atoms (a real, conserved select
 make the source *localised*, gate production on a **determinant** the source cell holds: asymmetric mitosis
 (§C) seeds one lineage-cell with a persistent determinant `F`; a gene `Conc(F) > 0 : FormBond … (→ m)` makes
 only that cell a source, and `m` radiates the gradient. So the two signal classes **work together** — the
-determinant marks *who* sources, the morphogen carries *how far*. (Open knob: §C allocates the determinant
-to the *daughter* (outward → edge source); a *centred* source wants **mother-retention** — flip the
-allocation or make the side a parameter.)
+determinant marks *who* sources, the morphogen carries *how far*.
+
+**Source placement selects the body plan (not a metaphysical label).** "Which daughter keeps the
+determinant" carries no *identity* meaning — but in Cyto it is bound to a *physical direction*, so it is not
+arbitrary. `CytoLifecycleSystem.divide` spawns the daughter along the **outward** normal (away from
+neighbours, toward free space: `motherPos + offset`) and steps the mother **inward** (`motherPos − offset`).
+So which side keeps the determinant sets *which way the source drifts as the colony grows*: **daughter-retention**
+rides it to the expanding edge → an **axial / polar** gradient (a head–tail body axis); **mother-retention**
+keeps it embedded near the origin → a **radial / concentric** gradient (the skin-flesh-core plan). The
+asymmetry *defines a direction, and that direction is the body axis.* (Crisp only for cells with lopsided
+neighbours; for a fully-surrounded interior cell the outward normal degenerates to the cell's ~arbitrary
+angle — there the choice washes into jitter.) **Decision:** make the retain-side a **Mitosis parameter**
+(cheap; a body-plan selector, not a bug-knob); default **mother-retention** for the concentric v0. A
+rock-stable source regardless of side: commit the founder to a **non-dividing organizer** (gate its Mitosis
+off once it sources) so it stops moving via division entirely — though the side chosen *during the growth
+phase* still sets where that organizer ends up.
+
+**Oriented division — the anisotropy lever (v1, separate from placement).** Daughter placement is currently
+*toward free space*, which fills space isotropically → **blobs**. Real morphogenesis orients the *division
+plane*: consistently-oriented divisions elongate a structure (**strings / filaments / limbs**), mixed
+orientations fill out blobs. Make this a **Mitosis axis parameter** — divide *along* vs *across* a reference
+axis. The reference axis is the crux, and **the morphogen gradient supplies it for free**: ∇m gives every
+cell a globally-coherent polarity, so the same field that says *where am I* says *which way do I divide* (real
+PCP / oriented division). Cost: that needs **directional** gradient sensing (a vector — compare `m` across
+neighbours), heavier than v0's scalar `Conc` and overlapping the v2 chemotaxis sense ⇒ a **v1 lever, after the
+scalar gradient works**. **Across-axis is *not* the only correct mode** — strings are exactly the non-blob
+morphology the continuous-space substrate can express and a fixed grid cannot (the payoff of the richer
+substrate). Caveat: forcing an axis places a daughter into *occupied* space (vs today's free-space,
+rest-length, no-kick placement) — the spring solver turns that into the elongation push, but it reintroduces
+the division-kick risk the no-kick work fixed; place at rest length along the axis and let physics relax
+gradually.
 
 **Readout (`Conc` + AND-gates).** A cell reads its position with a concentration **band**:
 `lo < Conc(m) AND Conc(m) < hi` → "I'm in the middle ring" → express that tissue's action. This is why the

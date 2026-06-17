@@ -39,9 +39,11 @@ Position is **upstream** of fate: read the gradient → at a threshold, commit a
   cells do another (e.g. core = divide/bulk, boundary = repair/skin). Size still resource-capped (not
   intrinsically regulated). *This is the minimum that looks like an organism, not a blob.* **Reachability
   proof.**
-- **v1 — size regulation + committed fate.** The gradient bounds growth at an intrinsic size (not just
-  resources), and a fate persists independent of current position (commit a determinant at a threshold → a
-  true germline/core that stays put). Add a third tissue band.
+- **v1 — size regulation + committed fate + oriented division.** The gradient bounds growth at an intrinsic
+  size (not just resources); a fate persists independent of current position (commit a determinant at a
+  threshold → a true germline/core that stays put); a third tissue band; and **oriented division** — a
+  Mitosis axis parameter (divide *along* vs *across* the gradient) so the body can elongate into
+  strings/limbs, not just blobs. (Needs *directional* ∇m sensing — heavier than v0's scalar `Conc`.)
 - **v2 — life cycle.** Programmed apoptosis clears soma; dispersal (chemotaxis via the Contract actuator)
   scatters germline; development restarts. Needs new actions (Apoptosis, a locomotion controller).
 
@@ -55,8 +57,9 @@ Position is **upstream** of fate: read the gradient → at a threshold, commit a
 | **Positional gradient (shape)** | morphogens isolated; no decay; no `canDiffuse`/`canMetabolise` split | **BUILD** (the substrate) |
 | **Concentration band readout** | only `>`/`<` count gates, single clause | **BUILD** (`Conc` + AND-gate) |
 | Localised source | FormBond exists; localise by gating on a determinant | **HAVE** (compose) |
-| Hand-author asymmetric mitosis in text | `GeneCodec` drops the `Mitosis` morphogen operand | **TINY FIX** |
-| Centred source (vs edge) | §C allocates determinant to *daughter* (outward) | **KNOB** (mother-retention option) |
+| Hand-author asymmetric mitosis in text | ~~`GeneCodec` drops the `Mitosis` morphogen operand~~ | ✅ DONE (`b2ce870`) |
+| Source body-plan (radial vs axial) | daughter spawns outward, mother steps inward → retain-side = drift direction | **PARAM** (default mother-retention = radial; daughter = axial) |
+| Oriented division (strings vs blobs) | placement is "toward free space" only → isotropic blobs | **v1** — Mitosis axis param, reference = ∇m (needs directional sensing) |
 | Surface vs interior *topology* | `Touching` = un-welded only | optional sidecar: **welded-neighbour count** |
 | One-way commitment (methylation) | fate is soft/position-reactive | v1 (commit a determinant at threshold) |
 | Programmed apoptosis | passive starvation only | **MISSING** — v2 |
@@ -77,7 +80,7 @@ Light : Biomass < GROW : Convert ab
 Light : Conc f > 0 : FormBond a c            # → 'ac' (= m); not metabolised ⇒ diffuses + decays
 
 # --- symmetry break: keep f in one daughter so the source persists as a point ---
-Break ab : Biomass > DIVIDE : Mitosis f      # asymmetric: f allocated whole to one side (centred-source = mother-retention knob)
+Break ab : Biomass > DIVIDE : Mitosis f      # asymmetric: f → one side; mother-retention keeps source central (radial); daughter → edge (axial)
 
 # --- positional readout: two tissues by concentration band ---
 Break ab : Conc m > HI : Mitosis             # core (high m): divide → bulk growth
