@@ -399,12 +399,14 @@ object CytoBiologyCore {
                 val species = w.cytoplasm.idAt(i)
                 val out = w.cytoplasm.countAt(i) / (degree + 1)
                 if (out <= 0) continue
-                // SELECTIVE UPTAKE across the membrane too: only send to neighbours that can metabolise
-                // the species; the sender keeps the share meant for any that can't.
+                // Diffuse only species the neighbour METABOLISES (canDiffuse) — resources/signals in flux.
+                // A synthesised-but-never-consumed species is intracellular (produce-without-diffuse): it's
+                // held + sensed but never shared, so cell-private memory / a non-spreading determinant
+                // survives a welded colony. The sender keeps the share meant for any neighbour that can't.
                 var receivers = 0
                 for (nb in nbrs) {
                     val nbWork = works[nb] ?: continue
-                    if (!nbWork.handleable.canHold(species)) continue
+                    if (!nbWork.handleable.canDiffuse(species)) continue
                     val nbDelta = delta.getOrPut(nb) { HashMap() }
                     nbDelta[species] = (nbDelta[species] ?: 0) + out
                     receivers++

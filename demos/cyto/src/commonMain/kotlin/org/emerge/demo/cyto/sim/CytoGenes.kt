@@ -134,18 +134,31 @@ data class Gene(
  * handle. This bounds per-cell species to molecules buildable from the genome's bond-set (≤ a few dozen
  * at the B=5 bond-cap), regardless of how diverse the surrounding environment is.
  */
-class Handleable(private val bondMask: Int, private val atomMask: Int) {
+class Handleable(
+    private val bondMask: Int, private val atomMask: Int,                  // full reach: metabolised OR synthesised
+    private val diffuseBondMask: Int, private val diffuseAtomMask: Int,     // metabolised only (Break / Convert / Import)
+) {
     /** Distinct bond-types this genome reaches — capped by CytoTuning.GENOME_MAX_BOND_TYPES so per-cell
      *  species stay bounded (B bonds → ≤ a few dozen buildable molecules). */
     val bondTypeCount: Int get() = bondMask.countOneBits()
 
-    /** Can the cell metabolise (hence absorb/hold) species [id]? A monomer iff its atom is reachable; a
-     *  multi-atom molecule iff *every* bond it contains is in the genome's bond-set (the original
-     *  string-substring test, recast as a bitmask subset over [SpeciesRegistry]-interned ids). */
-    fun canHold(id: Int): Boolean {
+    /** Can the cell **hold/retain** species [id] — reachable by metabolism (Break/Convert/Import) *or* by
+     *  synthesis (FormBond)? A monomer iff its atom is reachable; a molecule iff *every* bond it contains is
+     *  in the set (a bitmask subset over [SpeciesRegistry] ids). Gates passive uptake + retain-vs-leak: a
+     *  species the genome produces or uses is kept in the cell, not shed to the environment. */
+    fun canHold(id: Int): Boolean = reaches(id, bondMask, atomMask)
+
+    /** Can the cell **diffuse** species [id] to/from welded neighbours — only species it **metabolises**
+     *  (Break/Convert/Import), i.e. resources/signals *in flux*. A species the genome merely **synthesises**
+     *  (FormBond) and never consumes is **intracellular**: held + readable, but never shared — cell-private
+     *  memory / a non-spreading determinant (MORPHOGENESIS.md §Morphogens for shape: produce-without-diffuse,
+     *  the intra-vs-inter-cellular morphogen split). */
+    fun canDiffuse(id: Int): Boolean = reaches(id, diffuseBondMask, diffuseAtomMask)
+
+    private fun reaches(id: Int, bm: Int, am: Int): Boolean {
         if (id < 0) return false
-        return if (SpeciesRegistry.atomCount(id) == 1) (atomMask ushr SpeciesRegistry.firstAtom(id)) and 1 == 1
-        else (SpeciesRegistry.bondMask(id) and bondMask.inv()) == 0
+        return if (SpeciesRegistry.atomCount(id) == 1) (am ushr SpeciesRegistry.firstAtom(id)) and 1 == 1
+        else (SpeciesRegistry.bondMask(id) and bm.inv()) == 0
     }
 }
 
@@ -159,33 +172,45 @@ class Handleable(private val bondMask: Int, private val atomMask: Int) {
  *  *trace* species: a fate gene can gate on `Chem(m)` to differentiate without thereby making `m`
  *  metabolisable, so the canHold-gated passive exchange + cell↔cell diffusion can't equilibrate it across a
  *  colony. The morphogen difference an asymmetric division establishes (MORPHOGENESIS.md §C) therefore
- *  persists. (A species a gene both senses *and* metabolises is still handleable via the metabolic ref.) */
+ *  persists. (A species a gene both senses *and* metabolises is still handleable via the metabolic ref.)
+ *
+ *  **Metabolism vs synthesis (produce-without-diffuse):** contributions are split into a **metabolic** set
+ *  (Break / Convert / Import — species the genome *consumes/transports*) and a **synthetic** set (FormBond
+ *  — species it *produces*). `canHold` = both (retain anything you produce or use); `canDiffuse` = metabolic
+ *  only. So a species the genome only synthesises (and never consumes) is **intracellular** — held + sensed
+ *  but never shared with neighbours: cell-private memory (the intra-vs-inter-cellular morphogen split). */
 fun handleableOf(genome: List<Gene>): Handleable {
-    var bondMask = 0
-    var atomMask = 0
-    fun addAtom(c: Char) { val a = SpeciesRegistry.atomIndexOf(c); if (a >= 0) atomMask = atomMask or (1 shl a) }
-    fun addBond(pair: String) { val b = SpeciesRegistry.bondIndexOf(pair); if (b >= 0) bondMask = bondMask or (1 shl b) }
-    fun addSpecies(s: String) {
+    var bondMask = 0; var atomMask = 0          // full reach (metabolic ∪ synthetic) → canHold
+    var mBondMask = 0; var mAtomMask = 0        // metabolic only (Break/Convert/Import) → canDiffuse
+    fun addAtom(c: Char, metabolic: Boolean) {
+        val a = SpeciesRegistry.atomIndexOf(c); if (a >= 0) { atomMask = atomMask or (1 shl a); if (metabolic) mAtomMask = mAtomMask or (1 shl a) }
+    }
+    fun addBond(pair: String, metabolic: Boolean) {
+        val b = SpeciesRegistry.bondIndexOf(pair); if (b >= 0) { bondMask = bondMask or (1 shl b); if (metabolic) mBondMask = mBondMask or (1 shl b) }
+    }
+    fun addSpecies(s: String, metabolic: Boolean) {
         if (s.isEmpty()) return
-        for (c in s) addAtom(c)
-        for (i in 0 until s.length - 1) addBond(s.substring(i, i + 2))
+        for (c in s) addAtom(c, metabolic)
+        for (i in 0 until s.length - 1) addBond(s.substring(i, i + 2), metabolic)
     }
     for (g in genome) {
-        (g.source as? EnergySource.BreakBond)?.let { addSpecies(it.bond) }
-        // NB: condition (Operand.Chem) operands are NOT added — sensing a species doesn't make it
+        (g.source as? EnergySource.BreakBond)?.let { addSpecies(it.bond, metabolic = true) }   // catabolism consumes the bond
+        // NB: condition (Operand.Chem/Conc) operands are NOT added — sensing a species doesn't make it
         // transportable (see the kdoc: this keeps a gated morphogen a trace species).
         when (g.action.type) {
             ActionType.FormBond -> {
-                // Operands are a suffix/prefix the matched molecules carry, so the cell handles their whole
-                // atom/bond content plus the junction bond (suffix.last–prefix.first).
+                // SYNTHESIS — the cell produces the joined molecule (and handles the operand fragments + the
+                // junction bond suffix.last–prefix.first). Production lets it HOLD the species, but does NOT
+                // make it diffusible (metabolic = false): a synthesised-but-never-consumed species stays
+                // intracellular. (If some gene also metabolises it, that ref flips it diffusible.)
                 val a = g.action.a; val b = g.action.b
-                if (a.isNotEmpty() && b.isNotEmpty()) { addSpecies(a); addSpecies(b); addBond("${a.last()}${b.first()}") }
+                if (a.isNotEmpty() && b.isNotEmpty()) { addSpecies(a, metabolic = false); addSpecies(b, metabolic = false); addBond("${a.last()}${b.first()}", metabolic = false) }
             }
-            ActionType.Convert, ActionType.Import -> addSpecies(g.action.a)
+            ActionType.Convert, ActionType.Import -> addSpecies(g.action.a, metabolic = true)   // consumes / transports
             else -> {}
         }
     }
-    return Handleable(bondMask, atomMask)
+    return Handleable(bondMask, atomMask, mBondMask, mAtomMask)
 }
 
 /**

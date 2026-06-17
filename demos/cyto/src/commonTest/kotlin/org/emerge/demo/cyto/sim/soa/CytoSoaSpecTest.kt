@@ -25,6 +25,8 @@ import org.emerge.demo.cyto.sim.GeneAction
 import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.sim.GeneCondition
 import org.emerge.demo.cyto.sim.Operand
+import org.emerge.demo.cyto.sim.SpeciesRegistry
+import org.emerge.demo.cyto.sim.handleableOf
 import org.emerge.demo.cyto.sim.ActionType
 import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.createCytoInitialState
@@ -259,6 +261,47 @@ class CytoSoaSpecTest {
         assertTrue(mMother > 0 && mDaughter == 0, "mother-retention keeps the morphogen in the mother; got mother=$mMother daughter=$mDaughter")
         val (dMother, dDaughter) = morphogenSplit(toMother = false)
         assertTrue(dDaughter > 0 && dMother == 0, "daughter-retention hands the morphogen to the daughter; got mother=$dMother daughter=$dDaughter")
+    }
+
+    @Test
+    fun handleableSplitsSynthesisFromMetabolism() {
+        // produce-without-diffuse: a species the genome only SYNTHESISES (FormBond) is held but intracellular;
+        // a METABOLISED species (Break/Convert/Import) is held AND diffusible.
+        val on = GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0))
+        val h = handleableOf(listOf(
+            Gene(EnergySource.Light, on, GeneAction(ActionType.FormBond, "a", "b")),     // 'ab' synthesised
+            Gene(EnergySource.BreakBond("cc"), on, GeneAction(ActionType.Convert, "cb")), // 'cb' metabolised
+        ))
+        val ab = SpeciesRegistry.id("ab"); val cb = SpeciesRegistry.id("cb")
+        assertTrue(h.canHold(ab) && !h.canDiffuse(ab), "synthesised 'ab' is held but intracellular (not diffusible)")
+        assertTrue(h.canHold(cb) && h.canDiffuse(cb), "metabolised 'cb' is held AND diffusible")
+    }
+
+    @Test
+    fun synthesisedSpeciesStaysIntracellularMetabolisedSpeciesDiffuses() {
+        // The behaviour, end-to-end: two overlapping (→ welding) cells share a genome where 'ab' is only
+        // synthesised (FormBond ⇒ intracellular) and 'cb' is metabolised (Convert ⇒ diffusible). Only cell A
+        // starts with both in cytoplasm; the genes are gated OFF so nothing is produced/consumed — only the
+        // diffuse phase moves matter. After welding, 'cb' spreads to B but 'ab' never leaves A.
+        val off = GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(Int.MAX_VALUE))
+        val genome = listOf(
+            Gene(EnergySource.Light, off, GeneAction(ActionType.FormBond, "a", "b")),
+            Gene(EnergySource.Light, off, GeneAction(ActionType.Convert, "cb")),
+        )
+        val initial = run {
+            val b = SimBuilder(SimState())
+            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector,
+                cytoplasm = mapOf("ab" to 1000, "cb" to 1000), biomass = mapOf("aa" to 2000), genome = genome)
+            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector,
+                cytoplasm = emptyMap(), biomass = mapOf("aa" to 2000), genome = genome)
+            b.build()
+        }
+        val cells = run(initial, ticks = 12).components.getTable<CytoCellComponent>().asMap().values.toList()
+        assertEquals(2, cells.size, "both cells alive")
+        val ab = cells.map { it.cytoplasm["ab"] ?: 0 }.sorted()
+        assertEquals(0, ab[0], "intracellular 'ab' did NOT diffuse to the neighbour")
+        assertTrue(ab[1] > 0, "'ab' retained in its own cell (not leaked)")
+        assertTrue(cells.all { (it.cytoplasm["cb"] ?: 0) > 0 }, "metabolised 'cb' diffused to both cells; got ${cells.map { it.cytoplasm["cb"] ?: 0 }}")
     }
 
     @Test
