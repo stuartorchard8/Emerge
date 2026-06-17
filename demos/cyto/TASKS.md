@@ -9,34 +9,48 @@ progress; drop from **Done** freely — `git log` is the real archive. Each task
 
 ## Now
 
-_Active focus — Stu pins this. The three-mechanism trio (A/B/`Conc`) and the locomotion controller are
-all teed up in **Next**; focus order is your pick (per the 2026-06-17 top note)._
+**The front line: morphogens for shape → the hopeful monster** (the 2026-06-17 keystone shift — see
+`HOPEFUL_MONSTER.md` for the program, `MORPHOGENESIS.md` §Morphogens for shape for the contract). Build the
+substrate in order (1→4 in Next), then hand-author a gradient-based two-tissue organism mutation-off. This
+**demotes (B) `Lyse`** and the broader competition/locomotion work until shape is cracked.
 
 ---
 
 ## Next
 
-Ready to build, roughly ordered:
+The morphogen-for-shape substrate, in build order:
 
-- [ ] **(A) Drop the leak-block — paid retention via `Import`** (§A. Symmetric diffusion). Delete the
-  `!canHold` condition on the leak branch of `exchangeSpecies` (leak always; uptake + `diffuse` stay
-  canHold-gated). Reopens the env-mediated food web. **Re-baselines** `metabolicLeakRetains…` spec +
-  the goldens; watch the break-powered-division autotroph (its hoarded `ab` reserve gets taxed — may
-  need an `Import("ab")` gene). Gated behind getting a feel for morphogen behaviour first.
-- [ ] **(B) `Lyse` — predatory lysis of touching, un-welded cells** (§B. Direct harm). New snapshot-based
-  `attack()` biology phase consuming the contacts touch-adjacency (order-independent + parallel-safe like
-  `diffuse`). Efficiency gear `g` = predator-strategy axis (low `g` brutal shredder → spills to commons;
-  high `g` surgical digester). Conserved. Adds a carnivore tier + defence pressure.
-- [ ] **`Conc` operand — concentration gates** (§Morphogen maintenance…). Add *alongside* `Chem` (don't
-  replace — mutation explores both); integer cross-multiply (`sp·denom ⋛ k·total`, no float). Gives a
-  developmental clock for free (fixed bolus dilutes as the cell grows). Keep `Biomass`-vs-`Constant`
-  absolute. Open pick: denominator = total cytoplasm (mole-fraction) vs biomass (per-body). Own commit.
-- [ ] **Locomotion controller** — a genome-readable oscillator driving a travelling *contraction* wave
-  (the `Contract` actuator + asymmetric drag are built; `Expand` banned 2026-06-16). The pending half of
-  the locomotion thread. Natural pairing with chemotaxis (see transcript-mined: directed movement).
-- [ ] **Gradient cost on synthesis (Convert / FormBond)** — *conditional*: only if synthesis turns out to
-  need the same diminishing-returns treatment Import got; currently flat. Revisit when a profile/balance
-  reason appears.
+1. [ ] **Codec fix — `Mitosis <morphogen>` round-trips.** `GeneCodec.action()` serializes `Mitosis` with no
+   operand, so the §C asymmetric-mitosis morphogen (`GeneAction.a`) is dropped — you can't hand-author a §C
+   genome in text. One-line fix in `GeneCodec` (serialize + parse the operand). Prerequisite for authoring
+   the monster.
+2. [ ] **`Conc` operand + AND-conjunction gate** — the positional-band readout primitive (`lo < Conc(m) AND
+   Conc(m) < hi`). `Conc` alongside `Chem` (mutation explores both), integer cross-multiply
+   (`sp·denom ⋛ k·total`, no float); open: denominator = total cytoplasm (mole-fraction, leaning) vs biomass.
+   Gate becomes a **list of clauses, all must hold** (NOT via `<`, OR via separate genes, no weighted sums);
+   re-checked per op like the current single gate. Mutation adds/drops/mutates a clause. Codec: `&`-joined
+   condition. Re-baselines `mutationOn` golden (PRNG route + new operand).
+3. [ ] **Signal decay + `canDiffuse`/`canMetabolise` split** — the gradient substrate. Split `canHold` into
+   `canDiffuse` (FormBond-produced-but-not-metabolised = morphogen; sender pushes down-gradient to **welded**
+   neighbours, cell↔cell only) and `canMetabolise` (existing). Add per-tick decay of morphogen species back
+   to monomers (matter-conserved). Source = a FormBond gene gated on a determinant (§C seeds it). **Re-baselines
+   goldens** (new biology phase). Calm physics while testing the gradient.
+4. [ ] **Hand-author the v0 genome, run mutation-off via a probe** (`HOPEFUL_MONSTER.md` illustrative genome).
+   Tune decay/diffusion/thresholds until a stable point-source gradient + dividing-core / repairing-skin body
+   forms and self-heals on a cut. **The reachability proof.**
+
+Parked until shape is cracked (then re-introduce one axis per campaign — see `HOPEFUL_MONSTER.md` staging):
+
+- [ ] **(A) Drop the leak-block — paid retention via `Import`** (§A). Still wanted (the food web); delete the
+  `!canHold` leak-branch condition (leak always; uptake + `diffuse` stay gated). Re-baselines
+  `metabolicLeakRetains…` + goldens; the break-powered autotroph's `ab` reserve gets taxed (may need
+  `Import("ab")`). Interacts with the `canDiffuse` split above — sequence after it.
+- [ ] **(B) `Lyse` — predatory lysis** (§B) — **demoted** (competition, not morphogenesis). Snapshot `attack()`
+  phase over the touch-adjacency; efficiency gear `g` = predator-strategy axis. After v0.
+- [ ] **Locomotion controller** — genome-readable oscillator → travelling *contraction* wave (`Contract` +
+  asymmetric drag built; `Expand` banned). Becomes v2 chemotaxis (dispersal). After v0.
+- [ ] **Gradient cost on synthesis (Convert / FormBond)** — *conditional*, only if synthesis needs the
+  diminishing-returns treatment Import got; currently flat.
 
 ---
 
@@ -52,35 +66,32 @@ focused-cell mutation freeze.)
 - [ ] Environment painting (drop/clear matter to set up a test patch).
 - [ ] Single-step / step-N alongside pause.
 
-### Transcript-mined (SimulifeHub Part 1 — candidate evolvable primitives)
-Cyto is **selection-driven**, not hand-authored — so these are *primitives that would let morphogenesis
-emerge under selection*, not scripted genomes. Each noted vs what already exists. Source:
+### Transcript-mined (SimulifeHub Part 1) — slotted into the v0/v1/v2 ladder
+The morphogen-gradient mechanism (transcript's "morphogens reach N cells, neighbours react to
+concentration") is now the **front line** (Now/Next — `HOPEFUL_MONSTER.md`), *hand-authored first* (these
+circuits don't emerge spontaneously), then refined by selection. The rest slot into the ladder. Source:
 `SimulifeHub-Part1.md`.
-- [ ] **One-way differentiation lock ("methylation")** — permanent gene silencing once a fate is taken.
-  Cyto fates currently persist via *trace-morphogen isolation* (§Sensing ≠ permeability), not locking — a
-  methylation primitive would make committed fates robust/irreversible. _New; no equivalent yet._
-- [ ] **Programmed cell death (`Apoptosis` / self-`Lyse`)** — a gene-driven self-kill action (with a rate),
-  distinct from `Lyse`-on-others (B) and from passive death-by-starvation. Enables sculpting + the
-  reproduction "apoptosis wave" (soma clears, germline disperses). _New as a gene action._
-- [ ] **Memory latch (positive-feedback trigger gene)** — a gene that gates on its own product → bistable
-  cell memory (the transcript's genes 0–5). Check whether a self-sustaining latch is *already evolvable*
-  with asymmetric mitosis + `Conc` gating; if not, it's a missing primitive for developmental memory.
-- [ ] **Explicit timer/countdown gene** — fire a morphogen after N ticks (transcript: asymmetric, stays in
-  mother). **Likely redundant** with the `Conc` developmental clock (bolus dilutes with growth) — note,
-  don't build unless `Conc` proves insufficient for sequencing.
-- [ ] **Multi-cell morphogen range / gradient** — transcript morphogens reach up to 9 cells. Cyto's gradient
-  substrate is the **env reservoir diffusion** (mechanism A) + 1-hop cell↔cell `diffuse`; explicit
-  multi-hop range is an alternative. Cross-ref A — probably emerges from A, don't pre-build.
-- _Neighbor-count sensing: already covered by the `Touching` operand (un-welded contact count); a
-  welded-neighbor count would be the only addition. Low priority._
+- [ ] **One-way commitment ("methylation")** — **v1.** Make a fate persist independent of current position:
+  at a gradient threshold, commit a **determinant** (isolated, non-decaying — the §C path). Lighter than
+  true gene-silencing; revisit a hard lock only if soft commitment drifts.
+- [ ] **Programmed cell death (`Apoptosis` / self-`Lyse`)** — **v2.** Gene-driven self-kill action; the
+  reproduction "apoptosis wave" (soma clears, germline disperses). _New gene action._
+- [ ] **Directed movement / chemotaxis** — **v2.** The locomotion controller (below) reading the gradient →
+  dispersal. The transcript's "move away from morphogen 12."
+- [ ] **Memory latch** — likely **subsumed by the determinant** (persistent, isolated, no decay) — a
+  self-feeding latch shouldn't be needed. Note, don't build.
+- [ ] **Explicit timer/countdown gene** — likely **subsumed by `Conc`** (a fixed bolus dilutes as the cell
+  grows = a developmental clock). Don't build unless `Conc` proves insufficient for sequencing.
+- [ ] **Welded-neighbour count operand** — optional v0 **sidecar** (gives *topology*: surface vs interior;
+  data already in `connectionDamage`). The gradient gives *geometry* and is the real substrate — neighbour
+  count is the cheap rind-only shortcut. Low priority now that gradients are the focus.
 
-### North-star behaviours to watch for (validation, not build tasks)
-Emergent organism-level milestones the transcript demonstrates — targets to recognise if/when selection
-(or a hand-authored probe genome) produces them:
-- [ ] Growth-boundary morphogen that limits body size.
-- [ ] Differentiation into skin (boundary) / flesh (interior) / germline (centre) from one genome.
-- [ ] Regeneration — boundary cells re-divide where a local morphogen is absent, then re-seal.
-- [ ] Reproduction cycle — apoptosis wave clears soma, germline disperses and restarts development.
+### North-star behaviours to watch for (validation milestones, not build tasks)
+The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (then selection) produces them:
+- [ ] **(v0)** Two tissues from one gradient — dividing core + non-dividing repairing skin — and
+  self-healing on a cut (the live gradient re-reads exposed cells as boundary).
+- [ ] **(v1)** Intrinsic size regulation (gradient bounds growth, not just resources); a committed centre.
+- [ ] **(v2)** Reproduction cycle — apoptosis clears soma, germline disperses and restarts development.
 
 ### Parked / redundant
 - [ ] **Cytoplasm capacity = f(biomass), overflow leaks** — *doubly redundant* now (import-gradient

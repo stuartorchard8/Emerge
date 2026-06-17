@@ -21,6 +21,24 @@ settled design we build toward; it is the contract, not a status log.
 > permeability** (a sensed morphogen stays trace), so persistent one-genome→many-cell-types
 > differentiation is affirmed end-to-end. Remaining: A, B, and the additive **`Conc`** operand.
 
+> **2026-06-17 (later) — keystone shift: morphogens for SHAPE, not just fate.** Designing toward a
+> hand-authored *hopeful monster* — a genome that develops into a *shaped, differentiated* body (see
+> `HOPEFUL_MONSTER.md`) — surfaced that the morphogen machinery was built backwards for that goal.
+> Isolated, persistent morphogens (§C + sensing≠permeability) give *fate/memory*; a *shaped* body needs
+> *positional gradients* — morphogens that **spread and decay** (source + diffusion + decay → a
+> steady-state gradient a cell reads to know *where it is*). Neighbour-count gives only *topology*
+> (am I on the surface); a gradient gives *geometry* (how far from the centre, which axis). Decision
+> (with Stu): pivot the keystone to **positional gradients**, and reclassify signals into three
+> **genome-derived roles** — **determinant** (sensed + mitosis-allocated, never produced → isolated,
+> persistent = memory/fate; the existing §C path), **morphogen** (FormBond-produced but not metabolised
+> → diffuses cell↔cell + decays = shape), **metabolite** (metabolised → food). Fate becomes *downstream*
+> of position (read the gradient → at a threshold, commit a determinant). This **promotes** the gene-logic
+> + signal work and **demotes B** (`Lyse`, competition) until shape is cracked. **Locked decisions:**
+> morphogens **cost matter** (FormBond source; decay recycles atoms back to monomers); diffuse
+> **cell↔cell** (not the coarse env grid — that sets a bad precedent); the gene gate becomes an
+> **AND-conjunction of binary clauses** (NOT via `<`; OR via separate genes; still no weighted sums). See
+> **§Morphogens for shape — positional gradients** below.
+
 ## The central principle: matter is closed, energy is open
 
 Like a real ecosystem (sunlight pours in for free; nutrients are finite and recycled):
@@ -81,9 +99,13 @@ A gene is exactly three parts (no multi-input weighted sums like the legacy mode
    to a **1/N share** of its energy source, where N = the number of active genes — regardless of source
    (Light → ⌊quanta/N⌋, Break bond → ⌊matching-molecules/N⌋). The unclaimed share is lost, so firing
    many genes at once is costly and lean genomes out-grow bloated ones.
-2. **Binary condition** — flatly gates the gene on/off (extensible list; baseline):
-   - quantity of a given chemical ≷ a threshold;
-   - total biomass ≷ a threshold.
+2. **Condition — an AND-conjunction of binary clauses** (2026-06-17; was a single gate). Each clause is
+   `operand ≷ operand`; the gene fires only when **all** clauses hold. NOT is `<` (below/absence); OR is
+   separate genes with the same action; still **no weighted sums** (rejected — monotone activation
+   saturates). This is the minimum logic for a *positional band* readout (`lo < Conc(m) AND Conc(m) < hi`),
+   the French-flag primitive shape needs. Baseline operands:
+   - quantity *or* **concentration** (`Conc`) of a given chemical ≷ a threshold (or another live quantity);
+   - total biomass ≷ a threshold; un-welded **contact** count (`Touching`); **welded-neighbour** count.
 3. **Action** — one of (extensible list; baseline):
    - **Form bond** — join two **whole** molecules end-to-end (one ending in atom *a* + one starting
      with atom *b* → `…ab…`); refused if the product would repeat a bond (the no-repeat rule);
@@ -409,6 +431,62 @@ cross-multiply (`sp·denom ⋛ k·total`, no float); **keep `Biomass`-vs-`Consta
 death-floor is a genuine hard quantity). Open pick: the denominator (total cytoplasm = mole-fraction vs
 biomass = per-body). Separate commit; not part of C.
 
+## Morphogens for shape — positional gradients (the keystone shift, 2026-06-17) — PLANNED
+
+The goal a shaped body needs is **positional information**: a cell must know *where it is* (centre vs
+boundary, how far along an axis) to lay out tissue geometrically. That comes from a **morphogen gradient**
+— a *dynamic steady state*, not a frozen field: a localised **source** produces the signal, it **diffuses**
+outward, and it **decays** everywhere, so concentration falls with distance from the source. Decay is the
+non-negotiable ingredient — without it a diffusing signal equilibrates to flat (no gradient). Cyto's
+"cytoplasm never decays" rule forbids exactly this, so adding decay *for signal species* is the keystone.
+
+**Three signal roles, all derived from genome role (no explicit flags — like `handleableOf`):**
+
+| Role | Genome signature | Behaviour | Use |
+|---|---|---|---|
+| **Determinant** | sensed (`Chem`/`Conc` clause) + mitosis-allocated, **never** FormBond-produced | isolated (no diffuse, no uptake), **persistent** (no decay) | memory / committed fate (the §C path) |
+| **Morphogen** | **FormBond-produced** but **not** metabolised (no Convert/BreakBond/food-Import) | **diffuses cell↔cell** + **decays** to monomers; not eaten | positional gradient = **shape** |
+| **Metabolite** | metabolised (Convert / BreakBond / Import-as-food) | uptake + retained (existing `canHold`) | food / structure |
+
+**The enabling refactor — split `canHold` into two predicates.** Today `canHold(species)` conflates
+*metabolise*, *absorb*, and *diffuse*. A morphogen must diffuse + decay **without** being eaten, so:
+- **`canDiffuse(species)`** — true for a **morphogen** (a species the genome FormBond-produces but does not
+  metabolise). A **sender** with `canDiffuse(s)` pushes `s` down-gradient to its **welded** neighbours, who
+  receive it passively into cytoplasm (the gradient flows from source outward through the colony). Diffusion
+  is **cell↔cell only** (locked decision — the env grid is too coarse and would set a bad precedent).
+- **`canMetabolise(species)`** — the existing `canHold`: governs uptake-as-food + retain-vs-leak.
+
+This **preserves sensing≠permeability** (sensing alone still opens no channel) and resolves the deferred
+"split pump from permeability" item: *production* opens the diffusion channel, not sensing.
+
+**Decay (new).** Each tick a morphogen species sheds a tunable fraction back toward monomers, atoms returned
+to cytoplasm — **matter-conserved**, consistent with the remainder-to-environment / degradation rules. The
+decay rate vs the diffusion rate sets the gradient's length scale (λ ≈ √(D∕k)) — the tuning knob for "how
+big is the patterned region."
+
+**Source (costs matter — locked decision).** A morphogen is produced by an ordinary **FormBond** gene from
+monomers, so signalling competes with growth for atoms (a real, conserved selective cost — very Cyto). To
+make the source *localised*, gate production on a **determinant** the source cell holds: asymmetric mitosis
+(§C) seeds one lineage-cell with a persistent determinant `F`; a gene `Conc(F) > 0 : FormBond … (→ m)` makes
+only that cell a source, and `m` radiates the gradient. So the two signal classes **work together** — the
+determinant marks *who* sources, the morphogen carries *how far*. (Open knob: §C allocates the determinant
+to the *daughter* (outward → edge source); a *centred* source wants **mother-retention** — flip the
+allocation or make the side a parameter.)
+
+**Readout (`Conc` + AND-gates).** A cell reads its position with a concentration **band**:
+`lo < Conc(m) AND Conc(m) < hi` → "I'm in the middle ring" → express that tissue's action. This is why the
+AND-conjunction gate (above) is a prerequisite, and why `Conc` (size-independent) beats raw `Chem` count
+here. (Open: `Conc` denominator = total cytoplasm (mole-fraction) vs biomass (per-body) — lean
+mole-fraction.)
+
+**Honest risks.** (1) **Signalling circuits don't emerge spontaneously** — a source nobody reads and a
+reader of an absent signal are each useless, so selection can't climb to them incrementally; the circuit
+must be **hand-authored first** (the hopeful monster), then refined by selection. (2) **Physics adds noise**
+— a jiggling, growing, dividing colony is a far harsher substrate for a reaction-diffusion gradient than
+SimulifeHub's frozen hex grid; the source+decay steady state self-corrects, but **calm the physics while
+cracking shape** (turn down locomotion/competition first). Both reinforce the staged plan in
+`HOPEFUL_MONSTER.md`.
+
 ## Build order
 
 1. ✅ Heritable per-cell genome, inherited on division (`75690fb`).
@@ -427,6 +505,12 @@ biomass = per-body). Separate commit; not part of C.
 8. **Stronger selection — the three-mechanism plan** (§Three mechanisms for stronger selection,
    2026-06-17). Independently buildable. **(C)** morphogen-asymmetric mitosis ✅ **built** + **sensing ≠
    permeability** ✅ **built** (both additive, all goldens byte-identical incl. `mutationOn`): persistent
-   one-genome→two-states differentiation is affirmed end-to-end. Remaining: **(A)** drop the leak-block /
-   paid-retention-via-Import, **(B)** `Lyse` predatory harm, and the additive **`Conc`** operand — focus
-   order TBD.
+   one-genome→two-states differentiation is affirmed end-to-end. **(A)** drop the leak-block /
+   paid-retention-via-Import — still wanted (the food web). **(B)** `Lyse` predatory harm — **demoted**
+   (competition, not morphogenesis; after shape).
+9. **Morphogens for shape → the hopeful monster** (§Morphogens for shape; the 2026-06-17 keystone shift;
+   full program in `HOPEFUL_MONSTER.md`). The current front line. Substrate: **AND-conjunction gate** +
+   **`Conc`** operand + **signal decay** + the **`canDiffuse`/`canMetabolise` split** (cell↔cell morphogen
+   diffusion) + **codec fix** so `Mitosis <morphogen>` round-trips. Then hand-author a gradient-sourced,
+   threshold-read, two-tissue organism (mutation off, calm physics) as a *reachability proof*, then turn
+   selection back on from that ancestor.
