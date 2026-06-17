@@ -491,11 +491,13 @@ rides it to the expanding edge → an **axial / polar** gradient (a head–tail 
 keeps it embedded near the origin → a **radial / concentric** gradient (the skin-flesh-core plan). The
 asymmetry *defines a direction, and that direction is the body axis.* (Crisp only for cells with lopsided
 neighbours; for a fully-surrounded interior cell the outward normal degenerates to the cell's ~arbitrary
-angle — there the choice washes into jitter.) **Decision:** make the retain-side a **Mitosis parameter**
-(cheap; a body-plan selector, not a bug-knob); default **mother-retention** for the concentric v0. A
-rock-stable source regardless of side: commit the founder to a **non-dividing organizer** (gate its Mitosis
-off once it sources) so it stops moving via division entirely — though the side chosen *during the growth
-phase* still sets where that organizer ends up.
+angle — there the choice washes into jitter.) **BUILT (`123c860`):** the retain-side is a **Mitosis
+parameter** — `GeneAction.morphogenToMother` / codec `Mitosis <m> mother` (default daughter = edge source;
+`mother` = centred source). A body-plan selector, not a bug-knob; additive (goldens byte-identical), and not
+yet mutated (the flag is authored/inherited, deferred from the mutation operator). A rock-stable source
+regardless of side: commit the founder to a **non-dividing organizer** (gate its Mitosis off once it sources)
+so it stops moving via division entirely — though the side chosen *during the growth phase* still sets where
+that organizer ends up.
 
 **Oriented division — the anisotropy lever (v1).** Daughter placement is currently *toward free space*, which
 fills space isotropically → **blobs**. Real morphogenesis orients the *division plane*: consistently-oriented

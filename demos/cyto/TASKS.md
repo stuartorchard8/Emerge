@@ -9,10 +9,13 @@ progress; drop from **Done** freely — `git log` is the real archive. Each task
 
 ## Now
 
-**The front line: morphogens for shape → the hopeful monster** (the 2026-06-17 keystone shift — see
-`HOPEFUL_MONSTER.md` for the program, `MORPHOGENESIS.md` §Morphogens for shape for the contract). Build the
-substrate in order (1→4 in Next), then hand-author a gradient-based two-tissue organism mutation-off. This
-**demotes (B) `Lyse`** and the broader competition/locomotion work until shape is cracked.
+**The front line: author the v0 metabolic-loop monster.** The substrate is now complete — `Conc` + AND-gate,
+asymmetric mitosis with a **retain-side** (radial/centred *or* axial/edge source), the metabolic source/sink
+loop (decay = metabolism, rides existing diffuse), and the editor updated to author all of it. Next step is
+purely authoring + tuning (see `HOPEFUL_MONSTER.md`): pick `P`/`M` so the loop closes atomically, write the
+source/sink/readout genome, run mutation-off + calm physics, and probe whether a readable gradient + a stable
+self-healing two-tissue body forms. **The reachability proof.** (B) `Lyse` + competition/locomotion stay
+parked until shape is cracked.
 
 ---
 
@@ -47,9 +50,10 @@ Parked until shape is cracked (then re-introduce one axis per campaign — see `
   (`o-x`→`o<8`, the escape from gradient self-reference). Placement is a symmetric straddle (`±offset`), so the
   `±` is just the retain-side param — no sign tiebreak. ∇m read **once at division** (cheap, not per-tick).
   No-gradient fallback (no epsilon threshold — any nonzero diff = gradient): axis = ∇m → else neighbour-normal
-  (today's free-space) → else `transform.ang`. The **4 Mitosis params are independent** (asym-morphogen,
-  retain-side = radial/axial body plan, axis-morphogen, slice/project) — don't force morphogen reuse (it traps
-  body plans). Bare `Mitosis` stays today's behaviour (saves survive); goldens re-baseline. Spring
+  (today's free-space) → else `transform.ang`. The **4 Mitosis params are independent** (asym-morphogen ✅,
+  retain-side = radial/axial body plan ✅ built `123c860`, axis-morphogen, slice/project) — only the last two
+  remain for this item; don't force morphogen reuse (it traps body plans). Bare `Mitosis` stays today's
+  behaviour (saves survive); goldens re-baseline. Spring
   reassignment generalises (feed `divide`'s ahead/side the gradient normal). Caveat: forcing an axis places
   daughters into occupied space → re-checks the no-kick placement.
 - [ ] **Locomotion controller** — genome-readable oscillator → travelling *contraction* wave (`Contract` +
@@ -122,6 +126,12 @@ The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (
 
 ## Done (recent highlights — git log is the archive)
 
+- [x] **Asymmetric-mitosis retain-side** (`123c860`) — `Mitosis <m> mother` keeps the morphogen in the
+  mother (centred/radial source) vs the default daughter (edge/axial). Body-plan selector; additive (goldens
+  byte-identical). Not yet mutated (deferred).
+- [x] **Gene editor — multi-clause AND + Conc + Mitosis morphogen/retain-side** (`40283c8`) — authors the
+  full current gene model in-UI (add/remove AND-clauses, Conc fields, MORPHOGEN + KEEP picker). *Needs Stu's
+  interactive validation (no headless GLFW).*
 - [x] **`Conc` operand + AND-conjunction gate** — concentration readout (`count·1000/biomass`,
   size-normalised) + a gene gate that's now a list of clauses, all must hold (`lo < Conc(m) & Conc(m) < hi`).
   Mutation adds/drops/mutates clauses (capped at `GENOME_MAX_CLAUSES`); codec `&`-joins; editor edits
