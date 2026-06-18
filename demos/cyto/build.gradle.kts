@@ -68,6 +68,9 @@ tasks.withType<Test>().configureEach {
     System.getProperty("sandboxticks")?.let { systemProperty("sandboxticks", it) }
     System.getProperty("sandboxseed")?.let { systemProperty("sandboxseed", it) }
     System.getProperty("sandboxwatch")?.let { systemProperty("sandboxwatch", it) }
+    System.getProperty("clockprobe")?.let { systemProperty("clockprobe", it) }
+    System.getProperty("clockmode")?.let { systemProperty("clockmode", it) }
+    System.getProperty("clockticks")?.let { systemProperty("clockticks", it) }
 }
 
 // Generates *ShaderSources.kt from .vert / .frag files under src/commonMain/shaders/.
