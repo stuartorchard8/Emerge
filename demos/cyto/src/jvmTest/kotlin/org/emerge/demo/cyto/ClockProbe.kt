@@ -42,6 +42,20 @@ class ClockProbe {
     )
     private val labels = listOf("metab:convert", "metab:fuel", "start", "cyc bc->ba", "cyc ba->bb", "cyc bb->bc", "contract")
 
+    /** The hand-tuned 6-gene METABOLIC clock (cyto-genome-metabolic-clock.gene): fuses metabolism into the
+     *  clock — there is no separate `aa` fuel currency. `bb` is the oscillator phase species, the energy store
+     *  (broken to drive the ring + contraction), AND the biomass precursor (Convert bb). The bootstrap
+     *  producer (#2) burns Light directly into `bb`, so the 7-gene version's Light->aa fuel gene is gone.
+     *  Self-starts + sustains (110 cycles / 15k ticks) — a real 7->6 reduction. */
+    private val metabolic = listOf(
+        "Break bb : ba < bb & ba < 1984 & Biomass < 4000 : Convert bb @15",  // grow biomass from bb (no aa)
+        "Light : bb < 8000 & bc < 1984 : FormBond b b",                      // bootstrap producer: Light -> bb
+        "Break bc : bb < bc & bb < 1984 : FormBond b a @6",                  // ring: bc -> ba
+        "Break ba : bc < ba & bc < 1984 : FormBond b b @6",                  // ring: ba -> bb
+        "Break bb : ba < bb & ba < 1984 : FormBond b c @6",                  // ring: bb -> bc
+        "Break bb : ba < bb & ba < 1984 & bb > 6000 : Contract @15",         // consume bb + contract (high phase)
+    )
+
     /** The simplified 6-gene clock: a 2-molecule ring bb<->bc (the third molecule ba is gone), with the
      *  start-gate cutoff [cut] as the period knob. */
     private fun ring2(cut: Int) = listOf(
@@ -71,11 +85,12 @@ class ClockProbe {
             for (i in baseline.indices) variants["drop#${i + 1} ${labels[i]}"] = baseline.filterIndexed { j, _ -> j != i }
             runVariants(variants, ticks); return
         }
-        // Validation set: baseline 7-gene vs the simplified 6-gene 2-ring at three period cutoffs.
-        variants["baseline 3-ring(7)"] = baseline
-        variants["2-ring cut=120(6)"] = ring2(120)
-        variants["2-ring cut=220(6)"] = ring2(220)
-        variants["2-ring cut=350(6)"] = ring2(350)
+        // Built-in reference set: two known-good clocks (the 7-gene baseline + the 6-gene metabolic clock)
+        // and one known-BAD (the 2-ring, which self-starts but deadlocks past ~4k ticks — kept as a reminder
+        // to judge clocks over a LONG run).
+        variants["baseline 3-ring(7) [good]"] = baseline
+        variants["metabolic-clock(6) [good]"] = metabolic
+        variants["2-ring(6) [BAD: locks up >~4k]"] = ring2(220)
         runVariants(variants, ticks)
     }
 
