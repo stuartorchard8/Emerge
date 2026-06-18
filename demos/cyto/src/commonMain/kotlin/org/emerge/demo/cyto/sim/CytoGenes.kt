@@ -295,6 +295,11 @@ class CellWork(
     /** True once a Repair gene healed any connection this tick — gates writing [connectionDamage] back. */
     var repaired = false
 
+    /** This cell's welded-neighbour count this tick. The **maintenance bonus**: a more-connected (less
+     *  exposed) cell pays less upkeep — biomass degradation is scaled by `1/(weldedDegree+1)` (and connection
+     *  stress likewise, in the connections phase), so 1 connection halves it, 2 thirds it, etc. */
+    var weldedDegree = 0
+
     /** Per-work scratch reused by [CytoBiologyCore.runGenes] so a tick's gene execution allocates nothing:
      *  the tick-start cytoplasm snapshot ([snapScratch], filled via [MoleculeStore.copyFrom]), the active-gene
      *  index list ([activeScratch], grown with the genome), and the per-gene consumed-species accumulator
@@ -310,7 +315,7 @@ class CellWork(
      *  it); [handleable] is rebuilt only if [genome] changed reference. */
     fun reset(
         cytoplasm: MoleculeStore, biomass: MoleculeStore, logicalRadius: Frac, type: CellType,
-        genome: List<Gene>, quanta: Int, touchCount: Int, wear: Int, gridIndex: Int,
+        genome: List<Gene>, quanta: Int, touchCount: Int, wear: Int, gridIndex: Int, weldedDegree: Int,
     ) {
         this.cytoplasm = cytoplasm
         this.biomass = biomass
@@ -324,6 +329,7 @@ class CellWork(
         this.touchCount = touchCount
         this.wear = wear
         this.gridIndex = gridIndex
+        this.weldedDegree = weldedDegree
         connectionDamage.clear()
         dividing = false
         divideMorphogen = ""

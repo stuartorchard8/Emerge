@@ -109,12 +109,18 @@ class CytoGoldenTest {
     // operand (mutation PRNG nextInt(7)→(8), re-routing the mutation-on stream) and a `@g` codec token.
     // growth (mutation off) shifts from the nerf alone; interact + mutation from nerf + the new mutation op.
     // growth, mutation off, 250 ticks from the default scene.
+    // Re-baselined 2026-06-19: MAINTENANCE BONUS for connected cells — biomass degradation (CytoBiologyCore
+    // .degrade) and connection stress accrual (CytoSoaReducer.connections) now scale by 1/(weldedDegree+1),
+    // so a less-exposed (more-welded) cell pays less upkeep. Only the GROWTH scene moves (its founder
+    // colonises into a dense overlap-welded mass, so cells have weldedDegree>0); mutation-on + interact are
+    // byte-identical (their cells stay lone → weldedDegree 0 → 1/1, a no-op). meta unchanged (same cell
+    // count/tick); physics/biology/topology/grid shift. Determinism gates (parallel==seq, round-trip) held.
     private val GROWTH = mapOf(
         "meta" to "9e9bec4ae4480164",
-        "physics" to "85d8ab578f040b1b",
-        "biology" to "f3ae95bda07cd426",
-        "topology" to "2875ad6fdda498d3",
-        "grid" to "b2d1172d6af41a4c",
+        "physics" to "bd61dc0f64dddd78",
+        "biology" to "7f8fa0ae3a0e224d",
+        "topology" to "48fe28f64568d4e3",
+        "grid" to "cdc5f220e01425ae",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
     // Re-baselined twice for deliberate gene-model extensions, both of which re-route point-mutation's

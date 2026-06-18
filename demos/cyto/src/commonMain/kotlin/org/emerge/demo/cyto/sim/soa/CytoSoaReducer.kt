@@ -353,7 +353,9 @@ class CytoSoaReducer(
                 val rest = radiusA + w.radiusRaw[nSlot]
                 val dist = deltaLen(w, i, nSlot)
                 val stretch = CytoUnits.toLogical(dist) - CytoUnits.toLogical(Frac(rest))
-                val stress = max(0f, stretch * cfg.connectionStressScale)
+                // Maintenance bonus: a more-connected cell's connections accrue stress slower —
+                // `1/(degree+1)` — so a well-knit body is cheap to hold together (matches degrade()).
+                val stress = max(0f, stretch * cfg.connectionStressScale) / (w.csr.degreeOf(i) + 1)
                 val damage = max(0f, w.csr.edgeAux[k] + stress)
                 if (damage > cfg.connectionBreakDamage) {
                     broken.add(pairKey(w.entityId[i], w.csr.otherId[k]))
@@ -614,6 +616,7 @@ class CytoSoaReducer(
                 touchCount = touchScratch[slot],
                 wear = w.cell.wear[slot],
                 gridIndex = gridIndex,
+                weldedDegree = deg,
             )
             for (j in 0 until deg) work.connectionDamage[EntityId(w.csr.otherId[base + j])] = w.csr.edgeAux[base + j]
             works[id] = work
