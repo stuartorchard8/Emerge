@@ -65,12 +65,17 @@ class GeneEditor {
             keyValue("LIGHT", info.light)
             metabolismTable(info)
             if (info.genes.isNotEmpty()) {
-                gap(); row("GENES (tap to edit; orange = inactive)")
+                gap(); row("GENES (tap to edit; orange = blocking)")
                 info.genes.forEachIndexed { i, g ->
-                    // editing = blue; firing this tick = green text; blocked = orange text on a neutral button.
-                    val bg = if (editingIndex == i) 0x4488CCFFL else 0x2A2A2AFFL
-                    val text = if (editingIndex == i) null else if (g.active) 0x66CC66FFL else 0xC8963CFFL
-                    button(g.desc, bg, text) { open(controller, i) }
+                    // Button background as before — editing = blue, active = green, inactive = grey — but the
+                    // parts of an inactive gene that are blocking it (failed clause / energy / input) draw
+                    // orange inline; everything else keeps the auto-contrast colour.
+                    val bg = when {
+                        editingIndex == i -> 0x4488CCFFL
+                        g.active -> 0x2E8B40FFL
+                        else -> 0x3C3C3CFFL
+                    }
+                    button(g.spans.map { it.text to (if (it.blocking) 0xC8963CFFL else null) }, bg) { open(controller, i) }
                 }
                 button("EXPORT GENOME", 0x3A6EA5FFL) { onExport() }
             }

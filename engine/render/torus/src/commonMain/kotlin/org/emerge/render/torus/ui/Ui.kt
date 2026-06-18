@@ -272,8 +272,12 @@ class PanelBuilder internal constructor(private val rowHeight: Float) {
     fun row(text: String, color: Long = 0xC8C8C8FFL) = items.add(TextItem(text, color, rowHeight))
     fun keyValue(key: String, value: String, keyColor: Long = 0x9A9A9AFFL, valueColor: Long = 0xFFFFFFFFL) =
         items.add(KeyValueItem(key, value, keyColor, valueColor, rowHeight))
-    /** [textColor] overrides the auto-contrast label colour (null = contrast against [color]). */
-    fun button(label: String, color: Long, textColor: Long? = null, onClick: () -> Unit) = items.add(ButtonItem(label, color, textColor, rowHeight, onClick))
+    fun button(label: String, color: Long, onClick: () -> Unit) = items.add(ButtonItem(label, color, rowHeight, onClick))
+
+    /** A button whose label is coloured **per segment**: each pair is (text, colour-or-null); a null
+     *  colour uses the auto-contrast against the button [color]. The segments render as one centred label
+     *  (e.g. to highlight just the blocking parts of a gene in orange). */
+    fun button(spans: List<Pair<String, Long?>>, color: Long, onClick: () -> Unit) = items.add(SpanButtonItem(spans, color, rowHeight, onClick))
     fun gap(height: Float = 6f) = items.add(GapItem(height))
 
     /** A label + a click-to-expand dropdown field showing [value]; when [open], its [options] render in
@@ -310,12 +314,29 @@ class PanelBuilder internal constructor(private val rowHeight: Float) {
         }
     }
 
-    private class ButtonItem(val label: String, val color: Long, val textColor: Long?, override val height: Float, val onClick: () -> Unit) : Item {
+    private class ButtonItem(val label: String, val color: Long, override val height: Float, val onClick: () -> Unit) : Item {
         override fun measureWidth(textH: Float) = UiTextRenderer.measureWidthPx(label, textH) + textH * 2f
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
             val inset = 1f
             ui.emitRect(x, topY + inset, contentW, height - inset * 2f, color)
-            ui.emitTextCentered(label, x + contentW * 0.5f, topY + (height - textH) * 0.5f, textH, textColor ?: contrast(color))
+            ui.emitTextCentered(label, x + contentW * 0.5f, topY + (height - textH) * 0.5f, textH, contrast(color))
+            ui.emitClick(x, topY + inset, contentW, height - inset * 2f, onClick)
+        }
+    }
+
+    /** A button whose label is a sequence of independently-coloured segments (see [button]). */
+    private class SpanButtonItem(val spans: List<Pair<String, Long?>>, val color: Long, override val height: Float, val onClick: () -> Unit) : Item {
+        private fun width(textH: Float) = spans.fold(0f) { acc, s -> acc + UiTextRenderer.measureWidthPx(s.first, textH) }
+        override fun measureWidth(textH: Float) = width(textH) + textH * 2f
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            val inset = 1f
+            ui.emitRect(x, topY + inset, contentW, height - inset * 2f, color)
+            var sx = x + (contentW - width(textH)) * 0.5f   // centre the whole label, lay segments left→right
+            val ty = topY + (height - textH) * 0.5f
+            for ((text, c) in spans) {
+                ui.emitTextLeft(text, sx, ty, textH, c ?: contrast(color))
+                sx += UiTextRenderer.measureWidthPx(text, textH)
+            }
             ui.emitClick(x, topY + inset, contentW, height - inset * 2f, onClick)
         }
     }

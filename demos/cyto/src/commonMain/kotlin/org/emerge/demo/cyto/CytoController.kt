@@ -245,9 +245,13 @@ class CytoController(
             val dirEnvCyt: String, val dirCytBio: String,
         )
 
-        /** One gene as the panel sees it: its [desc] text, whether it would FIRE this tick ([active]), and
-         *  if not, the [blockers] — which parts hold it back (failed condition / no energy / missing inputs). */
-        class GeneRow(val desc: String, val active: Boolean, val blockers: List<String>)
+        /** One gene as the panel sees it: [desc] plain text, whether it would FIRE this tick ([active]), and
+         *  [spans] — the description split into coloured segments with the blocking parts flagged. */
+        class GeneRow(val desc: String, val active: Boolean, val spans: List<Span>)
+
+        /** A run of a gene's description text; [blocking] ⇒ this part is currently keeping the gene from
+         *  firing (a failed condition clause, the energy source with no energy, or a missing action input). */
+        class Span(val text: String, val blocking: Boolean)
     }
 
     /** Info for the **last-held** cell (persists past release), or null if none has been held or it has
@@ -339,17 +343,18 @@ class CytoController(
             light = light,
             metabolism = metabolism,
             genes = cell.genome.map { g ->
-                val blockers = geneBlockers(g, cytoMap, envMap, totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass), quanta = capturedQuanta)
-                CellInfo.GeneRow(describeGene(g), active = blockers.isEmpty(), blockers = blockers)
+                val spans = describeGeneSpans(g, cytoMap, envMap, totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass), quanta = capturedQuanta)
+                CellInfo.GeneRow(desc = spans.joinToString("") { it.text }, active = spans.none { it.blocking }, spans = spans)
             },
         )
     }
 
-    /** Why a gene would NOT fire this tick (empty ⇒ it fires). Mirrors [org.emerge.demo.cyto.sim.CytoBiologyCore]'s
-     *  gating — condition, energy source, action inputs — but read from the panel's snapshot Maps. Approximate:
-     *  the `Touching` count is transient (not in a snapshot, read as 0) and the per-gene 1/N energy split isn't
-     *  modelled, so it answers "is anything blocking it?", not the exact op count. */
-    private fun geneBlockers(g: Gene, cyto: Map<String, Int>, env: Map<String, Int>, totalBiomass: Int, quanta: Int): List<String> {
+    /** The gene's panel description as coloured [CellInfo.Span]s — action, condition clauses, energy source —
+     *  with each part flagged [CellInfo.Span.blocking] when it's what stops the gene firing this tick (a failed
+     *  clause, no energy, or a missing action input). Mirrors [org.emerge.demo.cyto.sim.CytoBiologyCore]'s
+     *  gating read from the panel snapshot — approximate: `Touching` is transient (read as 0) and the per-gene
+     *  1/N energy split isn't modelled, so it shows *what's* blocking, not the exact op count. */
+    private fun describeGeneSpans(g: Gene, cyto: Map<String, Int>, env: Map<String, Int>, totalBiomass: Int, quanta: Int): List<CellInfo.Span> {
         val touch = 0
         fun eval(op: Operand): Int = when (op) {
             is Operand.Constant -> op.value
@@ -358,35 +363,42 @@ class CytoController(
             Operand.Biomass -> totalBiomass
             Operand.Touching -> touch
         }
-        val out = mutableListOf<String>()
-        val failed = g.condition.clauses.filter { c ->
+        fun clauseFails(c: org.emerge.demo.cyto.sim.Clause): Boolean {
             val l = eval(c.lhs); val r = eval(c.rhs)
-            if (c.cmp == Comparison.Greater) l <= r else l >= r
+            return if (c.cmp == Comparison.Greater) l <= r else l >= r
         }
-        if (failed.isNotEmpty()) out += "IF " + failed.joinToString(" ") { "${operandLabel(it.lhs)}${if (it.cmp == Comparison.Greater) ">" else "<"}${operandLabel(it.rhs)}" }
-        when (val s = g.source) {
-            EnergySource.Light -> if (quanta <= 0) out += "no light"
-            is EnergySource.BreakBond -> if (cyto.none { (sp, n) -> n > 0 && sp.contains(s.bond) }) out += "no ${s.bond} to break"
+        val energyBlocked = when (val s = g.source) {
+            EnergySource.Light -> quanta <= 0
+            is EnergySource.BreakBond -> cyto.none { (sp, n) -> n > 0 && sp.contains(s.bond) }
         }
         val a = g.action
-        when (a.type) {
-            ActionType.FormBond -> if (a.a.isNotEmpty() && a.b.isNotEmpty()) {
+        val inputBlocked = when (a.type) {
+            ActionType.FormBond -> a.a.isNotEmpty() && a.b.isNotEmpty() && run {
                 val haveA = if (a.aWild) cyto.any { (sp, n) -> n > 0 && sp.endsWith(a.a) } else (cyto[a.a] ?: 0) > 0
                 val haveB = if (a.bWild) cyto.any { (sp, n) -> n > 0 && sp.startsWith(a.b) } else (cyto[a.b] ?: 0) > 0
-                if (!a.aWild && !a.bWild && a.a == a.b) {
-                    if ((cyto[a.a] ?: 0) < 2) out += "need 2 ${a.a}"           // homodimer: one molecule can't bond to itself
-                    else if (Molecules.join(a.a, a.b) == null) out += "${a.a}+${a.b} can't bond"
-                } else {
-                    if (!haveA) out += "no ${a.a}"
-                    if (!haveB) out += "no ${a.b}"
+                when {
+                    !a.aWild && !a.bWild && a.a == a.b -> (cyto[a.a] ?: 0) < 2 || Molecules.join(a.a, a.b) == null  // homodimer needs 2 + a legal product
+                    !haveA || !haveB -> true
+                    !a.aWild && !a.bWild -> Molecules.join(a.a, a.b) == null                                       // both present but the product repeats a bond
+                    else -> false
                 }
-                if (!a.aWild && !a.bWild && haveA && haveB && a.a != a.b && Molecules.join(a.a, a.b) == null) out += "${a.a}+${a.b} can't bond"
             }
-            ActionType.Convert -> if ((cyto[a.a] ?: 0) <= 0) out += "no ${a.a}"
-            ActionType.Import -> if ((env[a.a] ?: 0) <= 0) out += "no ${a.a} in env"
-            else -> {}
+            ActionType.Convert -> (cyto[a.a] ?: 0) <= 0
+            ActionType.Import -> (env[a.a] ?: 0) <= 0
+            else -> false
         }
-        return out
+        val spans = mutableListOf<CellInfo.Span>()
+        spans += CellInfo.Span(actionLabel(a), inputBlocked)
+        spans += CellInfo.Span(" IF ", false)
+        g.condition.clauses.forEachIndexed { i, c ->
+            if (i > 0) spans += CellInfo.Span(" & ", false)
+            spans += CellInfo.Span(clauseStr(c), clauseFails(c))
+        }
+        spans += CellInfo.Span(" (", false)
+        spans += CellInfo.Span(srcLabel(g.source), energyBlocked)
+        spans += CellInfo.Span(")", false)
+        if (g.efficiency != 0) spans += CellInfo.Span(" e${g.efficiency}", false)
+        return spans
     }
 
     // ── Live gene editing (the in-game gene-editor kit) ─────────────────────────
@@ -442,37 +454,30 @@ class CytoController(
         }
     }
 
-    /** A compact, panel-friendly one-line description of a gene: `ACTION IF CONDITION [src]`. */
-    private fun describeGene(gene: org.emerge.demo.cyto.sim.Gene): String {
-        val a = gene.action
-        val action = when (a.type) {
-            org.emerge.demo.cyto.sim.ActionType.Import -> "IMPORT ${a.a}"
-            // FormBond joins a.a (left) to a.b (right). Exact species by default; a `*` marks a wildcard
-            // (MORPHOGENESIS.md §2026-06-18) on the outer side — `*a` ends-with, `a*` starts-with — matching
-            // the codec text, so the at-a-glance view shows exact vs wildcard.
-            org.emerge.demo.cyto.sim.ActionType.FormBond ->
-                "BOND ${if (a.aWild && a.a.isNotEmpty()) "*${a.a}" else a.a}·${if (a.bWild && a.b.isNotEmpty()) "${a.b}*" else a.b}"
-            org.emerge.demo.cyto.sim.ActionType.Convert -> "CONVERT ${a.a}"
-            org.emerge.demo.cyto.sim.ActionType.Contract -> "CONTRACT"
-            // DIVIDE, optionally asymmetric (→morphogen to the daughter, or →M:morphogen kept by the mother)
-            // and optionally oriented (along/across an axis-morphogen's gradient).
-            org.emerge.demo.cyto.sim.ActionType.Mitosis -> {
-                val asym = if (a.a.isEmpty()) "" else " ${if (a.morphogenToMother) "→M:" else "→"}${a.a}"
-                val orient = if (a.b.isEmpty()) "" else " ${if (a.divideAcross) "across" else "along"} ${a.b}"
-                "DIVIDE$asym$orient"
-            }
-            org.emerge.demo.cyto.sim.ActionType.Repair -> "REPAIR"
+    /** The action part of a gene's description (`BOND a·a`, `CONVERT ab`, `DIVIDE →m`, …). FormBond shows the
+     *  `*` wildcard markers (MORPHOGENESIS.md §2026-06-18) — `*a` ends-with, `a*` starts-with — like the codec. */
+    private fun actionLabel(a: org.emerge.demo.cyto.sim.GeneAction): String = when (a.type) {
+        ActionType.Import -> "IMPORT ${a.a}"
+        ActionType.FormBond ->
+            "BOND ${if (a.aWild && a.a.isNotEmpty()) "*${a.a}" else a.a}·${if (a.bWild && a.b.isNotEmpty()) "${a.b}*" else a.b}"
+        ActionType.Convert -> "CONVERT ${a.a}"
+        ActionType.Contract -> "CONTRACT"
+        ActionType.Mitosis -> {
+            val asym = if (a.a.isEmpty()) "" else " ${if (a.morphogenToMother) "→M:" else "→"}${a.a}"
+            val orient = if (a.b.isEmpty()) "" else " ${if (a.divideAcross) "across" else "along"} ${a.b}"
+            "DIVIDE$asym$orient"
         }
-        val cond = gene.condition.clauses.joinToString(" & ") { c ->
-            val cmp = if (c.cmp == org.emerge.demo.cyto.sim.Comparison.Greater) ">" else "<"
-            "${operandLabel(c.lhs)}$cmp${operandLabel(c.rhs)}"
-        }
-        val src = when (val s = gene.source) {
-            org.emerge.demo.cyto.sim.EnergySource.Light -> "LIGHT"
-            is org.emerge.demo.cyto.sim.EnergySource.BreakBond -> "BRK ${s.bond}"
-        }
-        val eff = if (gene.efficiency != 0) " e${gene.efficiency}" else ""   // efficiency gear (throughput actions)
-        return "$action IF $cond ($src)$eff"
+        ActionType.Repair -> "REPAIR"
+    }
+
+    /** One condition clause as `lhs<cmp>rhs` (e.g. `ab<800`). */
+    private fun clauseStr(c: org.emerge.demo.cyto.sim.Clause): String =
+        "${operandLabel(c.lhs)}${if (c.cmp == Comparison.Greater) ">" else "<"}${operandLabel(c.rhs)}"
+
+    /** The energy-source part (`LIGHT` / `BRK ab`). */
+    private fun srcLabel(s: EnergySource): String = when (s) {
+        EnergySource.Light -> "LIGHT"
+        is EnergySource.BreakBond -> "BRK ${s.bond}"
     }
 
     /** Panel label for one condition operand: a constant's number, `BIO`/`TOUCH` for the live readings,
