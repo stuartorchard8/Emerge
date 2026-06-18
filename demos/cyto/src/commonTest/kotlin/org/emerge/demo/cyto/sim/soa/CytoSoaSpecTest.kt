@@ -36,6 +36,7 @@ import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.demo.cyto.sim.systems.addSpring
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
+import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
@@ -685,6 +686,33 @@ class CytoSoaSpecTest {
     fun withoutRepairGeneDamageIsNotHealed() {
         val state = run(damagedPair(emptyList(), damage = 2.5f), ticks = 40)
         assertTrue(maxConnectionDamage(state) >= 2.5f, "without a repair gene damage must not heal; got ${maxConnectionDamage(state)}")
+    }
+
+    @Test
+    fun repairGeneWeldsATouchingCell() {
+        // Gene-driven adhesion (MORPHOGENESIS): a Repair-active cell touching an un-welded cell forms a weld
+        // with it (born "at 0 health", healed by the spare repair). Two cells set a LIGHT touch apart — close
+        // enough to register a touch, not deep enough for the overlap auto-weld (overlappingCellsWeld) — so a
+        // weld can ONLY come from Repair. With it they weld; without it they don't.
+        fun touchingPair(genome: List<Gene>): SimState {
+            val b = SimBuilder(SimState(randomSeed = 1))
+            // biomass 4000 bonds ⇒ baseline radius sqrt(4000/16000)=0.5; pin logicalRadius to it so the cells
+            // are full-size from tick 0 (no elastic growth drift). minDist = 1.0; placed 0.9 apart ⇒
+            // penetration 0.1 — a touch (contact), but well under the auto-weld threshold (penetration >
+            // minDist/4 = 0.25). `ab` reserve fuels the BreakBond Repair gene (light-independent).
+            val r = Frac(1, 2)
+            b.spawnCell(CytoUnits.coord2(-0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = genome)
+            b.spawnCell(CytoUnits.coord2(0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = genome)
+            return b.build()
+        }
+        val withRepair = touchingPair(repairOnly)
+        val total0 = totalAtoms(withRepair)
+        val welded = run(withRepair, ticks = 20)
+        assertTrue(springCount(welded) > 0, "a Repair-active cell should weld a touching un-welded cell")
+        assertEquals(total0, totalAtoms(welded), "forming a Repair-weld conserves matter")
+
+        val control = run(touchingPair(emptyList()), ticks = 20)
+        assertEquals(0, springCount(control), "without a Repair gene a light touch must NOT weld")
     }
 
     @Test

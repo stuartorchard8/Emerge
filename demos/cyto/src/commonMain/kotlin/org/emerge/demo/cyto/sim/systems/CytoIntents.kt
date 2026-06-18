@@ -5,6 +5,12 @@ import org.emerge.sim.core.EntityId
 /** Two cells should be connected by a spring (a < b). Emitted by the contact system. */
 data class WeldIntent(val a: EntityId, val b: EntityId)
 
+/** A Repair-active cell touching an un-welded cell forms a weld with it (a < b), born "at 0 health"
+ *  (maximum damage) but immediately healed by [heal] (the summed repair the touching cell(s) spent on it).
+ *  So the new weld starts at `breakDamage - heal` and only persists if ongoing Repair keeps it below the
+ *  break threshold — adhesion costs repair energy. Emitted by the biology phase (Repair action). */
+data class WeldHealIntent(val a: EntityId, val b: EntityId, val heal: Float)
+
 /** All of this cell's connections should be cut. Emitted by the Detach tap. */
 data class DetachIntent(val id: EntityId)
 

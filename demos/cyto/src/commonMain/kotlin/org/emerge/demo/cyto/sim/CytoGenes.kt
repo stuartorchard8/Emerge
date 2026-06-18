@@ -295,6 +295,14 @@ class CellWork(
     /** True once a Repair gene healed any connection this tick — gates writing [connectionDamage] back. */
     var repaired = false
 
+    /** Un-welded cells this cell is **touching** this tick (filled from the contacts phase after [reset]).
+     *  A firing Repair gene welds these (CytoBiologyCore.applyRepair) — gene-driven adhesion. */
+    val touchingIds: MutableList<EntityId> = ArrayList()
+
+    /** Welds the Repair action wants to form this tick: touching-cell id → the repair healed into the new
+     *  weld at birth. Drained by the reducer into [systems.WeldHealIntent]s for the lifecycle. */
+    val weldHeals: MutableMap<EntityId, Float> = HashMap()
+
     /** This cell's welded-neighbour count this tick. The **maintenance bonus**: a more-connected (less
      *  exposed) cell pays less upkeep — biomass degradation is scaled by `1/(weldedDegree+1)` (and connection
      *  stress likewise, in the connections phase), so 1 connection halves it, 2 thirds it, etc. */
@@ -331,6 +339,8 @@ class CellWork(
         this.gridIndex = gridIndex
         this.weldedDegree = weldedDegree
         connectionDamage.clear()
+        touchingIds.clear()
+        weldHeals.clear()
         dividing = false
         divideMorphogen = ""
         divideMorphogenToMother = false

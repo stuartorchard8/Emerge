@@ -28,6 +28,7 @@ object CytoBiologyCore {
     private const val DEGRADE_PERIOD = CytoTuning.DEGRADE_PERIOD
     private const val DEATH_BIOMASS = CytoTuning.DEATH_BIOMASS
     private const val REPAIR_PER_OP = CytoTuning.REPAIR_PER_OP
+    private const val CONNECTION_BREAK_DAMAGE = CytoTuning.CONNECTION_BREAK_DAMAGE
     private val FLEX_STEP = CytoTuning.FLEX_STEP
 
     /** Phase 0 — passive cell↔environment exchange (FREE, down-gradient), **batched and fair**: per
@@ -162,7 +163,8 @@ object CytoBiologyCore {
     private fun isActive(gene: Gene, work: CellWork): Boolean {
         if (!gate(gene.condition, work)) return false
         return when (gene.action.type) {
-            ActionType.Repair -> hasConnectionDamage(work)
+            // Repair works if there's damage to heal OR an un-welded cell to stick to (gene-driven adhesion).
+            ActionType.Repair -> hasConnectionDamage(work) || work.touchingIds.isNotEmpty()
             ActionType.Contract -> canContract(work)
             else -> true
         }
@@ -364,15 +366,21 @@ object CytoBiologyCore {
         return ((gap + FLEX_STEP.raw - 1L) / FLEX_STEP.raw).toInt()
     }
 
-    /** Repair ops to fully heal the cell's connection damage (each op heals [REPAIR_PER_OP]). */
+    /** Repair ops the cell could use this tick: enough to fully heal existing connection damage PLUS to
+     *  birth-heal a weld with each un-welded cell it's touching (each up to [CONNECTION_BREAK_DAMAGE]) — so a
+     *  cell with no damaged connections still gets ops to form adhesion welds (see [applyRepair]). */
     private fun repairOpsNeeded(work: CellWork): Int {
-        var dmg = 0f
+        var dmg = work.touchingIds.size * CONNECTION_BREAK_DAMAGE
         for (v in work.connectionDamage.values) if (v > 0f) dmg += v
         if (dmg <= 0f) return 0
         return kotlin.math.ceil(dmg / REPAIR_PER_OP).toInt()
     }
 
-    /** Heal up to `k·REPAIR_PER_OP` total damage, worst connection first (deterministic tiebreak by id). */
+    /** Heal up to `k·REPAIR_PER_OP` total damage, worst existing connection first (deterministic tiebreak by
+     *  id). Then spend any LEFTOVER repair on **adhesion**: form a weld with each un-welded cell this one is
+     *  touching, born at full damage ("0 health") but healed by the budget spent — so a cell only sticks to
+     *  what its spare repair can afford, and the weld then needs ongoing Repair to survive (MORPHOGENESIS:
+     *  Repair doubles as the sticky gene). The actual spring is created by the lifecycle from [weldHeals]. */
     private fun applyRepair(work: CellWork, k: Int) {
         var budget = k * REPAIR_PER_OP
         val order = work.connectionDamage.entries
@@ -386,6 +394,15 @@ object CytoBiologyCore {
             budget -= heal
             val left = cur - heal
             if (left <= 0f) work.connectionDamage.remove(id) else work.connectionDamage[id] = left
+        }
+        // Leftover budget forms new welds with touching un-welded cells (lowest id first, deterministic).
+        if (budget > 0f && work.touchingIds.isNotEmpty()) {
+            for (id in work.touchingIds.sortedBy { it.value }) {
+                if (budget <= 0f) break
+                val heal = if (budget <= CONNECTION_BREAK_DAMAGE) budget else CONNECTION_BREAK_DAMAGE
+                budget -= heal
+                work.weldHeals[id] = heal
+            }
         }
         work.repaired = true
     }

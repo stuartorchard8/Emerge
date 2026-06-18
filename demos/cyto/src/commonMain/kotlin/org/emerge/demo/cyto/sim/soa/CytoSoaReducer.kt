@@ -24,6 +24,7 @@ import org.emerge.demo.cyto.sim.systems.CellDivisionIntent
 import org.emerge.demo.cyto.sim.systems.CytoInteractionSystem
 import org.emerge.demo.cyto.sim.systems.CytoLifecycleSystem
 import org.emerge.demo.cyto.sim.systems.DetachIntent
+import org.emerge.demo.cyto.sim.systems.WeldHealIntent
 import org.emerge.demo.cyto.sim.systems.WeldIntent
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
@@ -102,6 +103,10 @@ class CytoSoaReducer(
     private val weldLo = ArrayList<Int>()
     private val weldHi = ArrayList<Int>()
 
+    // Repair-weld intents (canonical pairKey → summed birth-heal), collected from the biology Repair action,
+    // drained by the lifecycle bridge. A pair may get heal from both touching cells, so it's summed.
+    private val weldHealByPair = HashMap<Long, Float>()
+
     // CellDestroyIntents from Delete taps: emitted by CytoInteractionSystem in the interaction bridge,
     // whose build() discards events — so we extract them here and marshal them into the lifecycle bridge
     // (which consumes them), exactly as the AoS pipeline carries the event across phases.
@@ -119,6 +124,10 @@ class CytoSoaReducer(
     // sequential contacts phase, read by biology; transient (slot indices are stable between the two,
     // since membership only changes in the later lifecycle phase). Grown on demand, zeroed each tick.
     private var touchScratch = IntArray(0)
+
+    // Per-cell list of un-welded cells touched this tick (their entity-id values), filled alongside
+    // touchScratch by the contacts phase and read by the Repair action to form adhesion welds. Pooled.
+    private var touchingScratch = Array(0) { ArrayList<Int>() }
 
     // Spring-solve working set as raw Frac longs (x/y split), reused across ticks and grown on demand,
     // so the per-body Jacobi gather allocates nothing per tick (no boxed Frac2 working arrays, no
@@ -259,6 +268,7 @@ class CytoSoaReducer(
         weldLo.clear(); weldHi.clear()
         val n = w.count
         if (touchScratch.size < n) touchScratch = IntArray(n) else touchScratch.fill(0, 0, n)
+        if (touchingScratch.size < n) touchingScratch = Array(n) { ArrayList() } else for (i in 0 until n) touchingScratch[i].clear()
         if (n < 2) return
         var maxRadius = 0L
         for (i in 0 until n) if (w.radiusRaw[i] > maxRadius) maxRadius = w.radiusRaw[i]
@@ -326,8 +336,10 @@ class CytoSoaReducer(
             if (ai < bi) { weldLo.add(ai); weldHi.add(bi) } else { weldLo.add(bi); weldHi.add(ai) }
             return
         }
-        // A real (un-welded) collision — both cells register a touch this tick (the Touching gate).
+        // A real (un-welded) collision — both cells register a touch this tick (the Touching gate) and
+        // record each other as an adhesion candidate (a firing Repair gene welds them — gene-driven sticky).
         touchScratch[i]++; touchScratch[j]++
+        touchingScratch[i].add(w.entityId[j]); touchingScratch[j].add(w.entityId[i])
         val massA = w.mass[i].toUInt(); val massB = w.mass[j].toUInt()
         val total = (massA + massB).toLong()
         if (total <= 0L) return
@@ -619,6 +631,7 @@ class CytoSoaReducer(
                 weldedDegree = deg,
             )
             for (j in 0 until deg) work.connectionDamage[EntityId(w.csr.otherId[base + j])] = w.csr.edgeAux[base + j]
+            for (tid in touchingScratch[slot]) work.touchingIds.add(EntityId(tid))
             works[id] = work
         }
         // Second pass: turn each cell's base light into quanta. With [CytoTuning.LIGHT_SHADING] on, cells
@@ -659,11 +672,16 @@ class CytoSoaReducer(
         divideMorphogenToMother.clear()
         divideAxis.clear()
         divideAcross.clear()
+        weldHealByPair.clear()
         for (k in 0 until n) {
             val slot = ordered[k]
             val id = EntityId(w.entityId[slot])
             val work = bioWorks[slot]!!
             CytoBiologyCore.finish(id, work, grid, divide, destroy)
+            for ((other, heal) in work.weldHeals) {                 // Repair-weld requests → summed per pair
+                val key = pairKey(id.value, other.value)
+                weldHealByPair[key] = (weldHealByPair[key] ?: 0f) + heal
+            }
             if (work.dividing) {
                 if (work.divideMorphogen.isNotEmpty()) {
                     divideMorphogen[id] = work.divideMorphogen
@@ -767,7 +785,7 @@ class CytoSoaReducer(
         input: CytoInput,
         inputs: Map<PlayerId, CytoInput>,
     ): CytoWorld {
-        if (weldLo.isEmpty() && divide.isEmpty() && destroy.isEmpty() && input.detaches.isEmpty() && interactDestroy.isEmpty()) return w
+        if (weldLo.isEmpty() && weldHealByPair.isEmpty() && divide.isEmpty() && destroy.isEmpty() && input.detaches.isEmpty() && interactDestroy.isEmpty()) return w
         val impById = HashMap<Int, ImpulseComponent>(w.count)
         for (slot in 0 until w.count) impById[w.entityId[slot]] = w.impulse.gather(slot)
 
@@ -776,6 +794,7 @@ class CytoSoaReducer(
         for (idv in interactDestroy) builder.emit(CellDestroyIntent(EntityId(idv)))  // Delete taps (interact, before biology)
         for (id in destroy) builder.emit(CellDestroyIntent(id))         // biology order
         for (i in weldLo.indices) builder.emit(WeldIntent(EntityId(weldLo[i]), EntityId(weldHi[i]))) // contact order
+        for (key in weldHealByPair.keys.sorted()) builder.emit(WeldHealIntent(EntityId((key ushr 32).toInt()), EntityId(key.toInt()), weldHealByPair.getValue(key)))  // sorted = deterministic
         for (id in divide) builder.emit(CellDivisionIntent(id, divideMorphogen[id] ?: "", id in divideMorphogenToMother, divideAxis[id] ?: "", id in divideAcross))  // biology order
         CytoLifecycleSystem.update(cfg, builder, inputs)
         val out = builder.build()

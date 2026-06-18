@@ -74,6 +74,17 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             if (!springExists(builder, intent.a, intent.b)) addSpring(builder, intent.a, intent.b, cfg)
         }
 
+        // Repair-weld (gene-driven adhesion): a touching pair welded by a firing Repair gene, born at full
+        // damage ("0 health") but already healed by the repair the cell(s) spent on it this tick — so it
+        // only survives if ongoing Repair keeps it below the break threshold (MORPHOGENESIS: Repair = sticky).
+        for (intent in builder.events<WeldHealIntent>()) {
+            if (intent.a in destroyed || intent.b in destroyed) continue
+            if (!welded.add(intent.a to intent.b)) continue
+            if (!springExists(builder, intent.a, intent.b)) {
+                addSpring(builder, intent.a, intent.b, cfg, initialDamage = (cfg.connectionBreakDamage - intent.heal).coerceAtLeast(0f))
+            }
+        }
+
         // Divide.
         for (intent in divideEvents) {
             if (intent.id in destroyed) continue

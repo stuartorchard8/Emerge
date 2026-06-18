@@ -17,16 +17,16 @@ import org.emerge.sim.core.sim.SimBuilder
 fun springExists(builder: SimBuilder, a: EntityId, b: EntityId): Boolean =
     builder.getComponent<SpringConstraintComponent>(a)?.springs?.any { it.other == b } == true
 
-fun addSpring(builder: SimBuilder, a: EntityId, b: EntityId, cfg: CytoConfig) {
+fun addSpring(builder: SimBuilder, a: EntityId, b: EntityId, cfg: CytoConfig, initialDamage: Float = 0f) {
     if (a == b) return
     val ra = builder.getComponent<ColliderComponent>(a)?.radius ?: return
     val rb = builder.getComponent<ColliderComponent>(b)?.radius ?: return
     val rest = ra + rb
-    attachSpring(builder, a, b, rest, cfg)
-    attachSpring(builder, b, a, rest, cfg)
+    attachSpring(builder, a, b, rest, cfg, initialDamage)
+    attachSpring(builder, b, a, rest, cfg, initialDamage)
 }
 
-private fun attachSpring(builder: SimBuilder, owner: EntityId, other: EntityId, rest: org.emerge.sim.core.physics.primitives.Frac, cfg: CytoConfig) {
+private fun attachSpring(builder: SimBuilder, owner: EntityId, other: EntityId, rest: org.emerge.sim.core.physics.primitives.Frac, cfg: CytoConfig, initialDamage: Float) {
     builder.update<SpringConstraintComponent>(owner) { cur ->
         val list = cur?.springs ?: emptyList()
         if (list.any { it.other == other }) {
@@ -37,7 +37,9 @@ private fun attachSpring(builder: SimBuilder, owner: EntityId, other: EntityId, 
     }
     builder.update<ConnectionStateComponent>(owner) { cur ->
         val damage = cur?.damage ?: emptyMap()
-        ConnectionStateComponent(damage + (other to (damage[other] ?: 0f)))
+        // A brand-new connection is born at [initialDamage] ("0 health" = breakDamage for a Repair-weld);
+        // an existing one keeps its current damage. Symmetric on both endpoints.
+        ConnectionStateComponent(damage + (other to (damage[other] ?: initialDamage)))
     }
 }
 
