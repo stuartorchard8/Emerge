@@ -104,8 +104,14 @@ class CytoSoaReducer(
     private val weldHi = ArrayList<Int>()
 
     // Repair-weld intents (canonical pairKey → summed birth-heal), collected from the biology Repair action,
-    // drained by the lifecycle bridge. A pair may get heal from both touching cells, so it's summed.
+    // drained by the lifecycle bridge. A pair may get heal from both touching cells, so it's summed; the
+    // count tracks how many of the two cells requested it (a weld forms only at 2 — Option 2, both repairing).
     private val weldHealByPair = HashMap<Long, Float>()
+    private val weldHealCount = HashMap<Long, Int>()
+
+    // Reused scratch for the connections phase: one shared damage per undirected connection (pairKey → the
+    // best-healed of its two stored edge values), so a connection is a single stress value, not two.
+    private val connPairDmg = HashMap<Long, Float>()
 
     // CellDestroyIntents from Delete taps: emitted by CytoInteractionSystem in the interaction bridge,
     // whose build() discards events — so we extract them here and marshal them into the lifecycle bridge
@@ -356,6 +362,21 @@ class CytoSoaReducer(
     // ── connections (CytoConnectionMaintenanceSystem) ───────────────────────────
     // Refresh rest lengths, accrue stress damage into edgeAux, break over-stressed springs.
     private fun connections(w: CytoWorld) {
+        // A connection has ONE shared damage, not two per-direction values. Pass 1: per undirected pair, take
+        // the best-healed of its two stored edge values, so EITHER endpoint's Repair maintains the link.
+        val pairDmg = connPairDmg.also { it.clear() }
+        for (i in 0 until w.count) {
+            for (k in w.csr.offset[i] until w.csr.offset[i + 1]) {
+                if (w.csr.otherSlot[k] < 0) continue
+                val key = pairKey(w.entityId[i], w.csr.otherId[k])
+                val cur = w.csr.edgeAux[k]
+                val prev = pairDmg[key]
+                if (prev == null || cur < prev) pairDmg[key] = cur
+            }
+        }
+        // Pass 2: add this tick's stress to the shared value and write it back to BOTH directed edges (so they
+        // stay in sync). Stress is symmetric and uses the better-connected endpoint's maintenance bonus
+        // (1/(degree+1)), so a well-knit body is cheap to hold together (matches degrade()).
         val broken = HashSet<Long>()
         for (i in 0 until w.count) {
             val radiusA = w.radiusRaw[i]
@@ -365,12 +386,12 @@ class CytoSoaReducer(
                 val rest = radiusA + w.radiusRaw[nSlot]
                 val dist = deltaLen(w, i, nSlot)
                 val stretch = CytoUnits.toLogical(dist) - CytoUnits.toLogical(Frac(rest))
-                // Maintenance bonus: a more-connected cell's connections accrue stress slower —
-                // `1/(degree+1)` — so a well-knit body is cheap to hold together (matches degrade()).
-                val stress = max(0f, stretch * cfg.connectionStressScale) / (w.csr.degreeOf(i) + 1)
-                val damage = max(0f, w.csr.edgeAux[k] + stress)
+                val deg = maxOf(w.csr.degreeOf(i), w.csr.degreeOf(nSlot))
+                val stress = max(0f, stretch * cfg.connectionStressScale) / (deg + 1)
+                val key = pairKey(w.entityId[i], w.csr.otherId[k])
+                val damage = max(0f, (pairDmg[key] ?: w.csr.edgeAux[k]) + stress)
                 if (damage > cfg.connectionBreakDamage) {
-                    broken.add(pairKey(w.entityId[i], w.csr.otherId[k]))
+                    broken.add(key)
                 } else {
                     w.csr.restRaw[k] = rest
                     w.csr.stiffRaw[k] = cfg.springStiffness.raw
@@ -673,14 +694,16 @@ class CytoSoaReducer(
         divideAxis.clear()
         divideAcross.clear()
         weldHealByPair.clear()
+        weldHealCount.clear()
         for (k in 0 until n) {
             val slot = ordered[k]
             val id = EntityId(w.entityId[slot])
             val work = bioWorks[slot]!!
             CytoBiologyCore.finish(id, work, grid, divide, destroy)
-            for ((other, heal) in work.weldHeals) {                 // Repair-weld requests → summed per pair
+            for ((other, heal) in work.weldHeals) {                 // Repair-weld requests → summed + counted per pair
                 val key = pairKey(id.value, other.value)
                 weldHealByPair[key] = (weldHealByPair[key] ?: 0f) + heal
+                weldHealCount[key] = (weldHealCount[key] ?: 0) + 1
             }
             if (work.dividing) {
                 if (work.divideMorphogen.isNotEmpty()) {
@@ -785,7 +808,11 @@ class CytoSoaReducer(
         input: CytoInput,
         inputs: Map<PlayerId, CytoInput>,
     ): CytoWorld {
-        if (weldLo.isEmpty() && weldHealByPair.isEmpty() && divide.isEmpty() && destroy.isEmpty() && input.detaches.isEmpty() && interactDestroy.isEmpty()) return w
+        // Option 2 — a Repair-weld forms only when BOTH touching cells requested it this tick (both repairing
+        // in phase): a body's clock-synchronised cells weld each other, but an out-of-phase foreign cell
+        // rarely lines up, so cross-organism welding is rare. (weldHealCount[key]==2 ⇒ both sides asked.)
+        val readyWelds = weldHealByPair.keys.filter { weldHealCount[it] == 2 }.sorted()
+        if (weldLo.isEmpty() && readyWelds.isEmpty() && divide.isEmpty() && destroy.isEmpty() && input.detaches.isEmpty() && interactDestroy.isEmpty()) return w
         val impById = HashMap<Int, ImpulseComponent>(w.count)
         for (slot in 0 until w.count) impById[w.entityId[slot]] = w.impulse.gather(slot)
 
@@ -794,7 +821,7 @@ class CytoSoaReducer(
         for (idv in interactDestroy) builder.emit(CellDestroyIntent(EntityId(idv)))  // Delete taps (interact, before biology)
         for (id in destroy) builder.emit(CellDestroyIntent(id))         // biology order
         for (i in weldLo.indices) builder.emit(WeldIntent(EntityId(weldLo[i]), EntityId(weldHi[i]))) // contact order
-        for (key in weldHealByPair.keys.sorted()) builder.emit(WeldHealIntent(EntityId((key ushr 32).toInt()), EntityId(key.toInt()), weldHealByPair.getValue(key)))  // sorted = deterministic
+        for (key in readyWelds) builder.emit(WeldHealIntent(EntityId((key ushr 32).toInt()), EntityId(key.toInt()), weldHealByPair.getValue(key)))  // both-repairing pairs, sorted = deterministic
         for (id in divide) builder.emit(CellDivisionIntent(id, divideMorphogen[id] ?: "", id in divideMorphogenToMother, divideAxis[id] ?: "", id in divideAcross))  // biology order
         CytoLifecycleSystem.update(cfg, builder, inputs)
         val out = builder.build()

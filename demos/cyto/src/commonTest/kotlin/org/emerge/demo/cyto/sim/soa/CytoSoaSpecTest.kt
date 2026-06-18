@@ -694,25 +694,30 @@ class CytoSoaSpecTest {
         // with it (born "at 0 health", healed by the spare repair). Two cells set a LIGHT touch apart — close
         // enough to register a touch, not deep enough for the overlap auto-weld (overlappingCellsWeld) — so a
         // weld can ONLY come from Repair. With it they weld; without it they don't.
-        fun touchingPair(genome: List<Gene>): SimState {
+        fun touchingPair(genomeA: List<Gene>, genomeB: List<Gene>): SimState {
             val b = SimBuilder(SimState(randomSeed = 1))
             // biomass 4000 bonds ⇒ baseline radius sqrt(4000/16000)=0.5; pin logicalRadius to it so the cells
             // are full-size from tick 0 (no elastic growth drift). minDist = 1.0; placed 0.9 apart ⇒
             // penetration 0.1 — a touch (contact), but well under the auto-weld threshold (penetration >
             // minDist/4 = 0.25). `ab` reserve fuels the BreakBond Repair gene (light-independent).
             val r = Frac(1, 2)
-            b.spawnCell(CytoUnits.coord2(-0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = genome)
-            b.spawnCell(CytoUnits.coord2(0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = genome)
+            b.spawnCell(CytoUnits.coord2(-0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = genomeA)
+            b.spawnCell(CytoUnits.coord2(0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = genomeB)
             return b.build()
         }
-        val withRepair = touchingPair(repairOnly)
-        val total0 = totalAtoms(withRepair)
-        val welded = run(withRepair, ticks = 20)
-        assertTrue(springCount(welded) > 0, "a Repair-active cell should weld a touching un-welded cell")
+        val both = touchingPair(repairOnly, repairOnly)
+        val total0 = totalAtoms(both)
+        val welded = run(both, ticks = 20)
+        assertTrue(springCount(welded) > 0, "two Repair-active touching cells should weld")
         assertEquals(total0, totalAtoms(welded), "forming a Repair-weld conserves matter")
 
-        val control = run(touchingPair(emptyList()), ticks = 20)
-        assertEquals(0, springCount(control), "without a Repair gene a light touch must NOT weld")
+        val none = run(touchingPair(emptyList(), emptyList()), ticks = 20)
+        assertEquals(0, springCount(none), "without a Repair gene a light touch must NOT weld")
+
+        // Option 2: a weld needs BOTH cells repairing the same tick (the clock-as-identity gate). One-sided
+        // Repair — the foreign-contact case — must not weld.
+        val oneSided = run(touchingPair(repairOnly, emptyList()), ticks = 20)
+        assertEquals(0, springCount(oneSided), "a weld requires BOTH cells repairing; one-sided Repair must NOT weld")
     }
 
     @Test
