@@ -200,10 +200,10 @@ class GeneEditor {
         return d.copy(condition = GeneCondition(cs.filterIndexed { i, _ -> i != ci }))
     }
 
-    /** Append a fresh AND-clause (a `Conc > 0` placeholder to edit), capped at [CytoTuning.GENOME_MAX_CLAUSES]. */
+    /** Append a fresh AND-clause (a `Chem > 0` placeholder to edit), capped at [CytoTuning.GENOME_MAX_CLAUSES]. */
     private fun addClauseUi(d: Gene): Gene {
         if (d.condition.clauses.size >= CytoTuning.GENOME_MAX_CLAUSES) return d
-        return d.copy(condition = GeneCondition(d.condition.clauses + Clause(Operand.Conc(atoms.first()), Comparison.Greater, Operand.Constant(0))))
+        return d.copy(condition = GeneCondition(d.condition.clauses + Clause(Operand.Chem(atoms.first()), Comparison.Greater, Operand.Constant(0))))
     }
 
     /** Nudge the [Operand.Constant] value on one side of clause [ci] (no-op if that side isn't a constant). */
