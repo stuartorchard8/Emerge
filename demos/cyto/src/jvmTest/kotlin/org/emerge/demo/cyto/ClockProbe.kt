@@ -60,6 +60,12 @@ class ClockProbe {
         if (System.getProperty("clockprobe") == null) return   // gate: don't slow the normal jvmTest run
         val ticks = System.getProperty("clockticks")?.toIntOrNull() ?: 8000
         val variants = LinkedHashMap<String, List<String>>()
+        // -Dclockgenome=<file>: probe a single genome from a .gene file (vs the built-in comparison set).
+        System.getProperty("clockgenome")?.let { path ->
+            val genes = java.io.File(path).readLines().map { it.substringBefore('#').trim() }.filter { it.isNotEmpty() }
+            variants["file:${java.io.File(path).name}"] = genes
+            runVariants(variants, ticks); return
+        }
         if (System.getProperty("clockmode") == "ablate") {
             variants["baseline(7)"] = baseline
             for (i in baseline.indices) variants["drop#${i + 1} ${labels[i]}"] = baseline.filterIndexed { j, _ -> j != i }

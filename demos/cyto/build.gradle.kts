@@ -71,6 +71,7 @@ tasks.withType<Test>().configureEach {
     System.getProperty("clockprobe")?.let { systemProperty("clockprobe", it) }
     System.getProperty("clockmode")?.let { systemProperty("clockmode", it) }
     System.getProperty("clockticks")?.let { systemProperty("clockticks", it) }
+    System.getProperty("clockgenome")?.let { systemProperty("clockgenome", it) }
 }
 
 // Generates *ShaderSources.kt from .vert / .frag files under src/commonMain/shaders/.
