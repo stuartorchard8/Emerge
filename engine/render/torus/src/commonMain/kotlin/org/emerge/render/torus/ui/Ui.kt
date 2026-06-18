@@ -272,7 +272,8 @@ class PanelBuilder internal constructor(private val rowHeight: Float) {
     fun row(text: String, color: Long = 0xC8C8C8FFL) = items.add(TextItem(text, color, rowHeight))
     fun keyValue(key: String, value: String, keyColor: Long = 0x9A9A9AFFL, valueColor: Long = 0xFFFFFFFFL) =
         items.add(KeyValueItem(key, value, keyColor, valueColor, rowHeight))
-    fun button(label: String, color: Long, onClick: () -> Unit) = items.add(ButtonItem(label, color, rowHeight, onClick))
+    /** [textColor] overrides the auto-contrast label colour (null = contrast against [color]). */
+    fun button(label: String, color: Long, textColor: Long? = null, onClick: () -> Unit) = items.add(ButtonItem(label, color, textColor, rowHeight, onClick))
     fun gap(height: Float = 6f) = items.add(GapItem(height))
 
     /** A label + a click-to-expand dropdown field showing [value]; when [open], its [options] render in
@@ -309,12 +310,12 @@ class PanelBuilder internal constructor(private val rowHeight: Float) {
         }
     }
 
-    private class ButtonItem(val label: String, val color: Long, override val height: Float, val onClick: () -> Unit) : Item {
+    private class ButtonItem(val label: String, val color: Long, val textColor: Long?, override val height: Float, val onClick: () -> Unit) : Item {
         override fun measureWidth(textH: Float) = UiTextRenderer.measureWidthPx(label, textH) + textH * 2f
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
             val inset = 1f
             ui.emitRect(x, topY + inset, contentW, height - inset * 2f, color)
-            ui.emitTextCentered(label, x + contentW * 0.5f, topY + (height - textH) * 0.5f, textH, contrast(color))
+            ui.emitTextCentered(label, x + contentW * 0.5f, topY + (height - textH) * 0.5f, textH, textColor ?: contrast(color))
             ui.emitClick(x, topY + inset, contentW, height - inset * 2f, onClick)
         }
     }
