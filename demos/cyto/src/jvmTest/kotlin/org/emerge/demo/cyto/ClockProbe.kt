@@ -98,6 +98,14 @@ class ClockProbe {
     // output) so it's topology-agnostic. Override with -Dclockwatch=bb,bc,bbc.
     private val watch = (System.getProperty("clockwatch") ?: "bb,ba,bc").split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
+    // Seeding is configurable because monomer-in-the-loop clocks are sensitive to it: a rich environment
+    // passively pins a `canHold` monomer phase near the ambient level (uptake), which can wedge the ring.
+    // -Dclockseed=a:500,b:500  (cytoplasm)   -Dclockenv=400  (per-monomer reservoir level; -1 = the default).
+    private val seedCyto: Map<String, Int> = System.getProperty("clockseed")
+        ?.split(",")?.associate { it.substringBefore(":").trim() to it.substringAfter(":").trim().toInt() }
+        ?: mapOf("a" to 2000, "b" to 2000, "c" to 500, "aa" to 4000)
+    private val envLevel: Int = System.getProperty("clockenv")?.toIntOrNull() ?: -1
+
     private fun runVariants(variants: LinkedHashMap<String, List<String>>, ticks: Int) {
         val sb = StringBuilder()
         sb.appendLine("=== clock probe ($ticks ticks, single lit cell, mutation OFF) ===")
@@ -125,12 +133,13 @@ class ClockProbe {
             val b = SimBuilder(SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
             b.spawnCell(
                 pos = CytoUnits.coord2(0f, 0f), vel = Coord2.zero, type = CellType.Collector,
-                cytoplasm = mapOf("a" to 2000, "b" to 2000, "c" to 500, "aa" to 4000),  // fuel + monomers; NO clock chems
+                cytoplasm = seedCyto,
                 biomass = CytoSeed.STARTER_BIOMASS, logicalRadius = MIN_RADIUS, genome = genome,
             )
             val grid = CytoMatterGrid.empty()
             for (idx in 0 until CytoMatterGrid.RES * CytoMatterGrid.RES) {
-                grid.deposit(idx, "a", 4000); grid.deposit(idx, "b", 4000); grid.deposit(idx, "c", 2000)
+                if (envLevel >= 0) { grid.deposit(idx, "a", envLevel); grid.deposit(idx, "b", envLevel); grid.deposit(idx, "c", envLevel) }
+                else { grid.deposit(idx, "a", 4000); grid.deposit(idx, "b", 4000); grid.deposit(idx, "c", 2000) }
             }
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
             b.build()
