@@ -65,9 +65,16 @@ class GeneEditor {
             keyValue("LIGHT", info.light)
             metabolismTable(info)
             if (info.genes.isNotEmpty()) {
-                gap(); row("GENES (tap to edit)")
-                info.genes.forEachIndexed { i, desc ->
-                    button(desc, if (editingIndex == i) 0x4488CCFFL else 0x2E5E2EFFL) { open(controller, i) }
+                gap(); row("GENES (tap to edit; dim = inactive)")
+                info.genes.forEachIndexed { i, g ->
+                    // editing = blue; firing this tick = green; blocked = dim grey (with the reasons below it).
+                    val color = when {
+                        editingIndex == i -> 0x4488CCFFL
+                        g.active -> 0x2E8B40FFL
+                        else -> 0x3C3C3CFFL
+                    }
+                    button(g.desc, color) { open(controller, i) }
+                    if (!g.active && g.blockers.isNotEmpty()) row("   - ${g.blockers.joinToString("   ")}", 0xC8963CFFL)
                 }
                 button("EXPORT GENOME", 0x3A6EA5FFL) { onExport() }
             }

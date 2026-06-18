@@ -23,8 +23,11 @@ fun UiBuilder.cellInfoPanel(info: CytoController.CellInfo?) {
         keyValue("LIGHT", info.light)
         metabolismTable(info)
         if (info.genes.isNotEmpty()) {
-            gap(); row("GENES")
-            for (gene in info.genes) row(gene, color = 0x88CC88FFL)
+            gap(); row("GENES (dim = inactive)")
+            for (g in info.genes) {
+                row(g.desc, color = if (g.active) 0x88CC88FFL else 0x6E6E6EFFL)   // active green, inactive grey
+                if (!g.active && g.blockers.isNotEmpty()) row("   - ${g.blockers.joinToString("   ")}", color = 0xC8963CFFL)
+            }
         }
     }
 }

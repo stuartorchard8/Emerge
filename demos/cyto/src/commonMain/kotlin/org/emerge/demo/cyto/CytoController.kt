@@ -12,7 +12,10 @@ import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.ActionType
+import org.emerge.demo.cyto.sim.Comparison
 import org.emerge.demo.cyto.sim.CytoTuning
+import org.emerge.demo.cyto.sim.EnergySource
+import org.emerge.demo.cyto.sim.Operand
 import org.emerge.demo.cyto.sim.Molecules
 import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.demo.cyto.sim.handleableOf
@@ -233,7 +236,7 @@ class CytoController(
         /** Per-species metabolism table: environment (local reservoir) | cytoplasm | biomass, with a flow
          *  arrow on each boundary. Only metabolically-relevant species (handleable, or stored in biomass). */
         val metabolism: List<MetRow>,
-        val genes: List<String>,
+        val genes: List<GeneRow>,
     ) {
         /** One row of the metabolism table. [dirEnvCyt] is the env↔cytoplasm flow, [dirCytBio] the
          *  cytoplasm↔biomass flow; each is ">>" (toward bio/into cyt), "<<" (out) or "==" (no net flow). */
@@ -241,6 +244,10 @@ class CytoController(
             val species: String, val env: Int, val cyto: Int, val bio: Int,
             val dirEnvCyt: String, val dirCytBio: String,
         )
+
+        /** One gene as the panel sees it: its [desc] text, whether it would FIRE this tick ([active]), and
+         *  if not, the [blockers] — which parts hold it back (failed condition / no energy / missing inputs). */
+        class GeneRow(val desc: String, val active: Boolean, val blockers: List<String>)
     }
 
     /** Info for the **last-held** cell (persists past release), or null if none has been held or it has
@@ -254,6 +261,7 @@ class CytoController(
         // The light the cell actually CAPTURES = ambient field × surface exposure (how much of its surface
         // isn't buried by connected neighbours), as % of peak — what the cell's energy depends on, not the
         // raw field. Exposure replicates CytoExposure (diamond-angle of each neighbour delta); lone = full.
+        var capturedQuanta = 0   // lifted out of [light] so the gene-activity diagnosis can read it
         val light: String = if (pos == null) "?" else {
             val sample = CytoLightField.default().sampleAt(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y), state.tick)
             val angles = LongArray(CytoExposure.MAX_NEIGHBOURS)
@@ -269,6 +277,7 @@ class CytoController(
             // light calc: (field × exposure × SCALE).raw / Int.MAX). Pre-shading (a co-located crowd splits
             // it); it's the cell's gross capture. The % of peak follows it for context.
             val quanta = (((sample * exposure) * CytoTuning.LIGHT_QUANTA_SCALE).raw / Int.MAX_VALUE.toLong()).toInt()
+            capturedQuanta = quanta
             val pct = (sample.toFloat() * exposure.toFloat() / CytoTuning.LIGHT_STRENGTH.toFloat() * 100f).coerceIn(0f, 100f).toInt()
             "$quanta q ($pct%)"
         }
@@ -329,8 +338,55 @@ class CytoController(
             totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass),
             light = light,
             metabolism = metabolism,
-            genes = cell.genome.map { describeGene(it) },
+            genes = cell.genome.map { g ->
+                val blockers = geneBlockers(g, cytoMap, envMap, totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass), quanta = capturedQuanta)
+                CellInfo.GeneRow(describeGene(g), active = blockers.isEmpty(), blockers = blockers)
+            },
         )
+    }
+
+    /** Why a gene would NOT fire this tick (empty ⇒ it fires). Mirrors [org.emerge.demo.cyto.sim.CytoBiologyCore]'s
+     *  gating — condition, energy source, action inputs — but read from the panel's snapshot Maps. Approximate:
+     *  the `Touching` count is transient (not in a snapshot, read as 0) and the per-gene 1/N energy split isn't
+     *  modelled, so it answers "is anything blocking it?", not the exact op count. */
+    private fun geneBlockers(g: Gene, cyto: Map<String, Int>, env: Map<String, Int>, totalBiomass: Int, quanta: Int): List<String> {
+        val touch = 0
+        fun eval(op: Operand): Int = when (op) {
+            is Operand.Constant -> op.value
+            is Operand.Chem -> cyto[op.species] ?: 0
+            is Operand.Conc -> if (totalBiomass > 0) ((cyto[op.species] ?: 0).toLong() * CytoTuning.CONC_SCALE / totalBiomass).toInt() else 0
+            Operand.Biomass -> totalBiomass
+            Operand.Touching -> touch
+        }
+        val out = mutableListOf<String>()
+        val failed = g.condition.clauses.filter { c ->
+            val l = eval(c.lhs); val r = eval(c.rhs)
+            if (c.cmp == Comparison.Greater) l <= r else l >= r
+        }
+        if (failed.isNotEmpty()) out += "IF " + failed.joinToString(" ") { "${operandLabel(it.lhs)}${if (it.cmp == Comparison.Greater) ">" else "<"}${operandLabel(it.rhs)}" }
+        when (val s = g.source) {
+            EnergySource.Light -> if (quanta <= 0) out += "no light"
+            is EnergySource.BreakBond -> if (cyto.none { (sp, n) -> n > 0 && sp.contains(s.bond) }) out += "no ${s.bond} to break"
+        }
+        val a = g.action
+        when (a.type) {
+            ActionType.FormBond -> if (a.a.isNotEmpty() && a.b.isNotEmpty()) {
+                val haveA = if (a.aWild) cyto.any { (sp, n) -> n > 0 && sp.endsWith(a.a) } else (cyto[a.a] ?: 0) > 0
+                val haveB = if (a.bWild) cyto.any { (sp, n) -> n > 0 && sp.startsWith(a.b) } else (cyto[a.b] ?: 0) > 0
+                if (!a.aWild && !a.bWild && a.a == a.b) {
+                    if ((cyto[a.a] ?: 0) < 2) out += "need 2 ${a.a}"           // homodimer: one molecule can't bond to itself
+                    else if (Molecules.join(a.a, a.b) == null) out += "${a.a}+${a.b} can't bond"
+                } else {
+                    if (!haveA) out += "no ${a.a}"
+                    if (!haveB) out += "no ${a.b}"
+                }
+                if (!a.aWild && !a.bWild && haveA && haveB && a.a != a.b && Molecules.join(a.a, a.b) == null) out += "${a.a}+${a.b} can't bond"
+            }
+            ActionType.Convert -> if ((cyto[a.a] ?: 0) <= 0) out += "no ${a.a}"
+            ActionType.Import -> if ((env[a.a] ?: 0) <= 0) out += "no ${a.a} in env"
+            else -> {}
+        }
+        return out
     }
 
     // ── Live gene editing (the in-game gene-editor kit) ─────────────────────────
