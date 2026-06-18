@@ -94,23 +94,29 @@ class ClockProbe {
         runVariants(variants, ticks)
     }
 
+    // Species whose counts are reported (debugging); the rhythm itself is measured on RADIUS (the actuator
+    // output) so it's topology-agnostic. Override with -Dclockwatch=bb,bc,bbc.
+    private val watch = (System.getProperty("clockwatch") ?: "bb,ba,bc").split(",").map { it.trim() }.filter { it.isNotEmpty() }
+
     private fun runVariants(variants: LinkedHashMap<String, List<String>>, ticks: Int) {
         val sb = StringBuilder()
         sb.appendLine("=== clock probe ($ticks ticks, single lit cell, mutation OFF) ===")
-        sb.appendLine("self-start = clock chems start 0 and rise > 100. cycles = bb up-crossings. works = self-start & cycles>=2 & contracts & alive.\n")
-        sb.appendLine("variant\tgenes\tselfStart\tbb\tba\tbc\tcycles\tperiod\tradΔ\tbiomass\talive\tWORKS\tbb sparkline (whole run)")
+        sb.appendLine("rhythm measured on RADIUS (the contraction output). self-start = watched chems start 0 and rise.")
+        sb.appendLine("AUTONOMOUS = period well under the ${'$'}LIGHT_ORBIT (3600) light day. works = self-start & cycles>=3 & autonomous & alive.")
+        sb.appendLine("watch=$watch\n")
+        sb.appendLine("variant\tgenes\tselfStart\t${watch.joinToString("\t")}\tradCycles\tperiod\tautonomous\tradΔ\tbiomass\talive\tWORKS\tradius sparkline")
         for ((name, genes) in variants) {
             val r = simulate(GeneCodec.parse(genes.joinToString("\n")), ticks)
-            // contraction ⇒ radΔ well above the no-contract baseline (~2.9e8 in this scenario); use 4e8.
-            val works = r.selfStart && r.cycles >= 2 && r.radAmp > 400_000_000L && r.alive
-            sb.appendLine("$name\t${genes.size}\t${r.selfStart}\t${r.bb}\t${r.ba}\t${r.bc}\t${r.cycles}\t${r.period}\t${r.radAmp}\t${r.bio}\t${r.alive}\t${if (works) "yes" else "NO"}\t${r.spark}")
+            val autonomous = r.period in 1..1800   // oscillates >=2x faster than the 3600-tick light day
+            val works = r.selfStart && r.cycles >= 3 && autonomous && r.alive
+            sb.appendLine("$name\t${genes.size}\t${r.selfStart}\t${r.watchStr}\t${r.cycles}\t${r.period}\t$autonomous\t${r.radAmp}\t${r.bio}\t${r.alive}\t${if (works) "yes" else "NO"}\t${r.spark}")
         }
         java.io.File("/tmp/clockprobe.txt").writeText(sb.toString())
         println(sb)
     }
 
     private class Res(
-        val selfStart: Boolean, val bb: String, val ba: String, val bc: String,
+        val selfStart: Boolean, val watchStr: String,
         val cycles: Int, val period: Int, val radAmp: Long, val bio: String, val alive: Boolean, val spark: String,
     )
 
@@ -131,44 +137,48 @@ class ClockProbe {
         }
         val soa = CytoSoaReducer(CytoConfig(mutationRateDenom = 0))
         var w = CytoWorld.fromSimState(initial)
-        val bb = IntArray(ticks + 1); val ba = IntArray(ticks + 1); val bc = IntArray(ticks + 1)
+        val series = watch.associateWith { IntArray(ticks + 1) }
         val rad = LongArray(ticks + 1); val bio = IntArray(ticks + 1); val alive = BooleanArray(ticks + 1)
         fun sample(t: Int, s: SimState) {
             val cells = s.components.getTable<CytoCellComponent>().asMap().values
             val c = cells.firstOrNull() ?: return
             alive[t] = true
-            bb[t] = c.cytoplasm["bb"] ?: 0; ba[t] = c.cytoplasm["ba"] ?: 0; bc[t] = c.cytoplasm["bc"] ?: 0
+            for (sp in watch) series.getValue(sp)[t] = c.cytoplasm[sp] ?: 0
             rad[t] = c.logicalRadius.raw; bio[t] = totalBiomassBonds(c.biomass)
         }
         sample(0, initial)
         for (t in 1..ticks) { w = soa.tick(w, CytoInput.EMPTY); sample(t, w.toSimState()) }
 
-        val lo = ticks / 4   // steady-state window (skip startup)
-        fun range(a: IntArray): Triple<Int, Int, String> {
+        val lo = ticks / 2   // measure only the SECOND HALF — excludes startup transients AND catches lock-ups
+                             // (a clock that wobbles early then freezes reads as flat here, unlike a ticks/4 window)
+        fun rangeStr(a: IntArray): String {
             var mn = Int.MAX_VALUE; var mx = Int.MIN_VALUE
             for (t in lo..ticks) if (alive[t]) { mn = minOf(mn, a[t]); mx = maxOf(mx, a[t]) }
-            return if (mx == Int.MIN_VALUE) Triple(0, 0, "dead") else Triple(mn, mx, "$mn..$mx")
+            return if (mx == Int.MIN_VALUE) "dead" else "$mn..$mx"
         }
-        val (bbmn, bbmx, bbStr) = range(bb); val baStr = range(ba).third; val bcStr = range(bc).third
-        // cycles = bb up-crossings of its midline (the clock period), with a deadband to ignore jitter.
-        val mid = (bbmn + bbmx) / 2; val dead = (bbmx - bbmn) / 8
-        var cycles = 0; var above = false
-        for (t in lo..ticks) if (alive[t]) {
-            if (bb[t] > mid + dead && !above) { cycles++; above = true }
-            if (bb[t] < mid - dead) above = false
-        }
-        val period = if (cycles > 0) (ticks - lo) / cycles else 0
+        val watchStr = watch.joinToString("\t") { rangeStr(series.getValue(it)) }
+        // rhythm on RADIUS: count up-crossings of its midline (deadband), topology-agnostic contraction beats.
         var rmn = Long.MAX_VALUE; var rmx = Long.MIN_VALUE
         for (t in lo..ticks) if (alive[t]) { rmn = minOf(rmn, rad[t]); rmx = maxOf(rmx, rad[t]) }
         val radAmp = if (rmx == Long.MIN_VALUE) 0L else rmx - rmn
+        val rmid = (rmn + rmx) / 2; val rdead = radAmp / 8
+        var cycles = 0; var above = false
+        if (rmx != Long.MIN_VALUE) for (t in lo..ticks) if (alive[t]) {
+            if (rad[t] > rmid + rdead && !above) { cycles++; above = true }
+            if (rad[t] < rmid - rdead) above = false
+        }
+        // A flatlined radius has near-zero amplitude; the deadband then shrinks to nothing and counts
+        // micro-jitter as thousands of cycles. Require a real amplitude before believing any rhythm.
+        if (radAmp < 50_000_000L) cycles = 0
+        val period = if (cycles > 0) (ticks - lo) / cycles else 0
         var bmn = Int.MAX_VALUE; var bmx = Int.MIN_VALUE
         for (t in lo..ticks) if (alive[t]) { bmn = minOf(bmn, bio[t]); bmx = maxOf(bmx, bio[t]) }
         val bioStr = if (bmx == Int.MIN_VALUE) "dead" else "$bmn..$bmx"
-        val startedZero = bb[0] + ba[0] + bc[0] == 0
-        val rose = maxOf(bb.maxOrNull() ?: 0, ba.maxOrNull() ?: 0, bc.maxOrNull() ?: 0) > 100
-        // bb sparkline across the whole run (50 samples, 0-9 by global bb range) — eyeball the oscillation.
-        val gmn = bb.minOrNull() ?: 0; val gmx = bb.maxOrNull() ?: 0; val span = (gmx - gmn).coerceAtLeast(1)
-        val spark = (0 until 50).joinToString("") { i -> val t = i * ticks / 49; ('0' + (((bb[t] - gmn) * 9) / span)).toString() }
-        return Res(startedZero && rose, bbStr, baStr, bcStr, cycles, period, radAmp, bioStr, alive[ticks], spark)
+        val startedZero = watch.sumOf { series.getValue(it)[0] } == 0
+        val rose = watch.maxOf { series.getValue(it).maxOrNull() ?: 0 } > 100
+        // radius sparkline across the whole run (50 samples, 0-9 by global radius range).
+        val gmn = rad.minOrNull() ?: 0L; val gmx = rad.maxOrNull() ?: 0L; val span = (gmx - gmn).coerceAtLeast(1)
+        val spark = (0 until 50).joinToString("") { i -> val t = i * ticks / 49; ('0' + (((rad[t] - gmn) * 9) / span).toInt()).toString() }
+        return Res(startedZero && rose, watchStr, cycles, period, radAmp, bioStr, alive[ticks], spark)
     }
 }
