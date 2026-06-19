@@ -20,6 +20,9 @@ class BioProfile {
     var exchSpeciesCalls = 0L     // Σ exchangeSpecies calls (= Σ distinct species per grid-cell)
     var exchCellIters = 0L        // Σ (species × cells) iterations — the core exchange work
     var exchMaxCellsInCell = 0L   // max cells sharing one grid-cell (clustering peak)
+    var exchUseful = 0L           // (species × cell) visits that actually exchanged (leaker or absorber)
+    var exchNoop = 0L             // visits where the cell neither holds nor can-hold the species (pure waste)
+    var exchGridSpecies = 0L      // Σ grid-reservoir species per grid-cell (the env-origin half of the union)
 
     // ── runGenes ──
     var genesCells = 0L           // runGenes invocations (≈ population)
@@ -34,6 +37,7 @@ class BioProfile {
         ticks = 0L
         exchGroupNanos = 0L; exchSpeciesNanos = 0L
         exchGridCells = 0L; exchSpeciesCalls = 0L; exchCellIters = 0L; exchMaxCellsInCell = 0L
+        exchUseful = 0L; exchNoop = 0L; exchGridSpecies = 0L
         genesCells = 0L; genesScanned = 0L; genesActive = 0L
         genesIsActiveNanos = 0L; genesApplyNanos = 0L
         richestBondCalls = 0L; wildcardCalls = 0L
@@ -46,6 +50,7 @@ class BioProfile {
             appendLine("  bio-profile over $ticks ticks (per-tick):")
             appendLine("    exchange: group=${us(exchGroupNanos)}us species=${us(exchSpeciesNanos)}us")
             appendLine("              gridCells=${exchGridCells / t}  speciesCalls=${exchSpeciesCalls / t}  cellIters=${exchCellIters / t}  maxCellsPerGridCell=$exchMaxCellsInCell")
+            appendLine("              useful=${exchUseful / t}  noop=${exchNoop / t}  gridSpecies=${exchGridSpecies / t}  (cytoOnlySpeciesCalls=${(exchSpeciesCalls - exchGridSpecies) / t})")
             appendLine("    genes:    isActiveScan=${us(genesIsActiveNanos)}us apply=${us(genesApplyNanos)}us")
             appendLine("              cells=${genesCells / t}  genesScanned=${genesScanned / t}  active(applyGene)=${genesActive / t}  richestBond=${richestBondCalls / t}  wildcard=${wildcardCalls / t}")
         }

@@ -163,6 +163,12 @@ class Handleable(
      *  species stay bounded (B bonds → ≤ a few dozen buildable molecules). */
     val bondTypeCount: Int get() = bondMask.countOneBits()
 
+    /** Identity of the **canHold** reach (the (bond,atom) masks [canHold] tests against), packed into a Long.
+     *  Two cells with equal keys answer [canHold] identically for every species — so passive exchange can
+     *  group co-located cells by key and test each grid species against the few distinct keys instead of
+     *  every cell (a clonal blob collapses to ~1 key). diffuse masks are excluded (not part of canHold). */
+    val canHoldKey: Long get() = (bondMask.toLong() shl 32) or (atomMask.toLong() and 0xFFFFFFFFL)
+
     /** Can the cell **hold/retain** species [id] — reachable by metabolism (Break/Convert/Import) *or* by
      *  synthesis (FormBond)? A monomer iff its atom is reachable; a molecule iff *every* bond it contains is
      *  in the set (a bitmask subset over [SpeciesRegistry] ids). Gates passive uptake + retain-vs-leak: a
