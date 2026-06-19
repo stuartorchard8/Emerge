@@ -351,10 +351,27 @@ class CytoSoaReducer(
         if (total <= 0L) return
         val weightA = Frac(massB.toLong(), total.toInt())
         val weightB = Frac(massA.toLong(), total.toInt())
-        val push = contact.penetration * cfg.repulsion
         val normal = contact.normal
-        val impA = normal * (push * weightA)
-        val impB = -(normal * (push * weightB))
+        // Repulsion pushes the pair apart proportional to penetration; the damping term removes a fraction of
+        // their relative NORMAL velocity, making the collision inelastic. Net per-axis impulse for cell i is
+        // normal * ((push - damping*vn) * weightA): the push injects separation speed (overlap → kinetic),
+        // the damping bleeds it off, so a continuously-overlapping cluster settles at a finite speed instead
+        // of pumping unbounded velocity (the rapid-division explosion). vn>0 means already separating.
+        //
+        // The relative velocity is read LIVE — base velocity plus the impulse already accumulated this pass —
+        // so the contact solve is Gauss–Seidel: a later contact on the same cell sees the velocity earlier
+        // contacts already damped, and the corrections converge. Reading a FROZEN velocity instead lets every
+        // contact remove the same vn, so in a densely-overlapping cell the dampings stack past the real
+        // relative velocity, reverse it and amplify (explicit over-damping) — which itself explodes. Live
+        // reads make the pass order-dependent, but contacts run in a fixed (i asc, j asc) order, so it's
+        // deterministic; the push half stays purely additive/positional as before.
+        val vn = Frac2(
+            Frac((w.velX[i].toLong() + w.impVelX[i]) - (w.velX[j].toLong() + w.impVelX[j])),
+            Frac((w.velY[i].toLong() + w.impVelY[i]) - (w.velY[j].toLong() + w.impVelY[j])),
+        ).dot(normal)                                            // relative normal velocity (+ = separating)
+        val effective = contact.penetration * cfg.repulsion - vn * cfg.contactDamping
+        val impA = normal * (effective * weightA)
+        val impB = -(normal * (effective * weightB))
         w.impVelX[i] += impA.x.raw; w.impVelY[i] += impA.y.raw
         w.impVelX[j] += impB.x.raw; w.impVelY[j] += impB.y.raw
     }
@@ -386,10 +403,16 @@ class CytoSoaReducer(
                 val rest = radiusA + w.radiusRaw[nSlot]
                 val dist = deltaLen(w, i, nSlot)
                 val stretch = CytoUnits.toLogical(dist) - CytoUnits.toLogical(Frac(rest))
-                // Maintenance bonus 1/2^deg (better-connected endpoint): a well-knit body's internal
-                // connections are nearly free to hold, matching degrade(). Surface connections stay costly.
                 val deg = maxOf(w.csr.degreeOf(i), w.csr.degreeOf(nSlot))
-                val stress = max(0f, stretch * cfg.connectionStressScale) / (1 shl deg.coerceAtMost(20))
+                // Tension (pulled past rest): maintenance bonus 1/2^deg (better-connected endpoint) — a
+                // well-knit body's internal connections are nearly free to HOLD TOGETHER, matching degrade().
+                val tension = max(0f, stretch * cfg.connectionStressScale) / (1 shl deg.coerceAtMost(20))
+                // Compression (crushed inside rest by more than the tolerance): NOT degree-discounted, so an
+                // over-packed blob — a cell dividing faster than its daughters can separate — crushes its own
+                // welds and sheds them, fragmenting/dispersing instead of fusing into one rigid over-
+                // constrained mass the spring solver can't hold. Mild resting overlap (< tolerance) is free.
+                val compression = max(0f, -stretch - cfg.compressionTolerance) * cfg.connectionStressScale
+                val stress = tension + compression
                 val key = pairKey(w.entityId[i], w.csr.otherId[k])
                 val damage = max(0f, (pairDmg[key] ?: w.csr.edgeAux[k]) + stress)
                 if (damage > cfg.connectionBreakDamage) {

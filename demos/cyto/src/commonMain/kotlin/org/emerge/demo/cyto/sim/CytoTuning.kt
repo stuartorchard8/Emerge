@@ -45,7 +45,7 @@ object CytoTuning {
      *  a fully-buried interior cell still photosynthesises (as if light arrives from an orthogonal 3rd
      *  dimension), so it can fund its own upkeep. **false** (the original behaviour): light scales by surface
      *  exposure, so a surrounded cell gets ~0 light. Toggle to compare interior-cell viability either way. */
-    const val LIGHT_IGNORES_EXPOSURE = true
+    const val LIGHT_IGNORES_EXPOSURE = false
     /** Moving light: when true, a single daylight BAND sweeps across the world (a day/night terminator),
      *  wrapping once per [LIGHT_ORBIT_PERIOD] ticks, replacing the 4 static sources. Cells must then hoard
      *  through the dark (store bonded molecules + a BreakBond gene to burn them) or follow the light.
@@ -135,8 +135,32 @@ object CytoTuning {
     val SPRING_DAMPING = Frac(1, 4)
     /** Repulsion impulse fraction for overlapping, non-connected cells. */
     val REPULSION = Frac(2, 3)
+    /**
+     * Fraction of the relative NORMAL velocity removed from an (un-welded) contact each tick — makes the
+     * collision inelastic. Without it, repulsion injects an outward velocity impulse with no dissipation, so
+     * a continuously-overlapping cluster (e.g. a cell dividing faster than its daughters can separate) pumps
+     * unbounded velocity. With it, overlap reaches a finite equilibrium separation speed (~push/damping)
+     * instead of ramping. Mirrors SPRING_DAMPING for welds.
+     */
+    val CONTACT_DAMPING = Frac(1, 4)
     /** Connection breaks when accumulated stress damage exceeds this (higher = less fragile). */
     const val CONNECTION_BREAK_DAMAGE = 3f
+    /**
+     * Hard cap on how many welds one cell can hold. A new weld (division, contact-stick, or Repair-heal) is
+     * refused once either endpoint already has this many. A cell has at most ~6 spatial neighbours in 2D, so
+     * 8 is generous slack — but it stops a rapidly-dividing lineage from accreting an unbounded weld fan
+     * (degree 25-30) that turns the colony into a wildly over-constrained network the explicit spring solver
+     * can't satisfy (it diverges). Pure safety backstop; normal bodies never reach it.
+     */
+    const val MAX_WELD_DEGREE = 8
+    /**
+     * Overlap (logical units, past which two *welded* cells crushed closer than their rest length start to
+     * accrue breaking stress — and unlike tension stress this is NOT discounted by the maintenance bonus, so
+     * a crushed weld breaks no matter how well-connected. An over-packed blob (a cell dividing faster than
+     * its daughters can separate) therefore sheds its welds and fragments/disperses instead of fusing into
+     * one rigid mass. Mild resting overlap below this is free, so normal packed bodies are unaffected.
+     */
+    const val COMPRESSION_TOLERANCE = 0.1f
     /** Exposed-surface viscous drag, quadratic coefficient over exposed speed (logical units/tick). */
     const val DRAG_COEFFICIENT = 0.2f
     /** Max fraction of a cell's exposed speed drag may remove in one tick (≤ 1) — lets a flicked cell

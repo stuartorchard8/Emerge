@@ -658,8 +658,12 @@ class CytoSoaSpecTest {
         b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
         // A stored `ab` cytoplasm reserve so a BreakBond-powered repair gene has fuel regardless of where the
         // moving daylight band is (light timing must not decide whether repair fires).
+        // Place the pair at ~rest length (biomass 8000 ⇒ radius 0.707 ⇒ rest 1.414), within the compression
+        // tolerance, so the connection is damaged but UNSTRESSED — isolating the heal-vs-not mechanic. (A
+        // crushed pair — the old 0.5 spacing — would now accrue compression stress and break, since crushed
+        // welds are designed to shed; see COMPRESSION_TOLERANCE.)
         val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 8000), genome = genome)
-        val c = b.spawnCell(CytoUnits.coord2(sx + 0.5f, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 8000), genome = genome)
+        val c = b.spawnCell(CytoUnits.coord2(sx + 1.4f, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 8000), genome = genome)
         addSpring(b, a, c, cfg)
         b.update<ConnectionStateComponent>(a) { ConnectionStateComponent(mapOf(c to damage)) }
         b.update<ConnectionStateComponent>(c) { ConnectionStateComponent(mapOf(a to damage)) }

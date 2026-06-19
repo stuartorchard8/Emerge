@@ -21,6 +21,14 @@ fun addSpring(builder: SimBuilder, a: EntityId, b: EntityId, cfg: CytoConfig, in
     if (a == b) return
     val ra = builder.getComponent<ColliderComponent>(a)?.radius ?: return
     val rb = builder.getComponent<ColliderComponent>(b)?.radius ?: return
+    // Degree cap (safety backstop): refuse a NEW weld once either endpoint is already at MAX_WELD_DEGREE, so a
+    // rapidly-dividing lineage can't accrete an unbounded weld fan that over-constrains the spring solver.
+    // Re-welding an existing pair is always allowed (it just refreshes — attachSpring no-ops on the spring).
+    val springsA = builder.getComponent<SpringConstraintComponent>(a)?.springs ?: emptyList()
+    if (springsA.none { it.other == b }) {
+        val degB = builder.getComponent<SpringConstraintComponent>(b)?.springs?.size ?: 0
+        if (springsA.size >= cfg.maxWeldDegree || degB >= cfg.maxWeldDegree) return
+    }
     val rest = ra + rb
     attachSpring(builder, a, b, rest, cfg, initialDamage)
     attachSpring(builder, b, a, rest, cfg, initialDamage)
