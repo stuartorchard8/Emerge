@@ -256,6 +256,10 @@ class UiBuilder internal constructor(private val ui: Ui) {
         }
         ui.growColumn(anchor, inset + w)
         ui.emitRect(x, y, w, h, background)
+        // The panel background absorbs taps so a press on the panel (not just its buttons) doesn't fall
+        // through to the world behind it. Registered BEFORE the items, so each button — added after — still
+        // wins in hitTest's reverse-order scan; this no-op only catches presses on the empty panel area.
+        ui.emitClick(x, y, w, h) {}
         var rowY = y + padding
         for (item in pb.items) {
             item.emit(ui, x + padding, rowY, contentW, textH)
