@@ -559,9 +559,11 @@ object CytoBiologyCore {
      *  dissipated (not recovered). With no position (`gridIndex < 0`) there's nowhere to eject to, so both
      *  fragments stay in cytoplasm. */
     private fun degrade(work: CellWork, grid: CytoMatterGrid) {
-        // Maintenance bonus: a more-connected (less exposed) cell degrades slower — wear accrues at
-        // `1/(weldedDegree+1)` (1 connection → half, 2 → third, …). Neighbours shoulder the upkeep.
-        work.wear += totalBiomassBonds(work.biomass) / (work.weldedDegree + 1)
+        // Maintenance bonus: a more-connected (less exposed) cell degrades much slower — wear accrues at
+        // `1/(weldedDegree+1)²` (1 connection → 1/4, 2 → 1/9, 6 → 1/49). Interior cells of a body are nearly
+        // free to maintain, so they don't have to carry their own weight from light/nutrients they can't reach.
+        val bonus = (work.weldedDegree + 1) * (work.weldedDegree + 1)
+        work.wear += totalBiomassBonds(work.biomass) / bonus
         var broken = work.wear / DEGRADE_PERIOD
         work.wear %= DEGRADE_PERIOD
         while (broken > 0) {
