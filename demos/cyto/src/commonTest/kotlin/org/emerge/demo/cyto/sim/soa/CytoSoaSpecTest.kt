@@ -693,6 +693,17 @@ class CytoSoaSpecTest {
     }
 
     @Test
+    fun repairHealRateIsCappedPerTick() {
+        // Repair mends at a bounded RATE: one tick heals at most MAX_REPAIR_HEAL_PER_TICK per connection,
+        // however much fuel the cell hoards. So an energy-rich cell can't instantly undo damage — the basis
+        // for a hard enough stretch breaking a link despite active repair (its stress outruns this cap).
+        val cap = CytoTuning.MAX_REPAIR_HEAL_PER_TICK
+        val dmg = maxConnectionDamage(run(damagedPair(repairOnly, damage = 2.5f), ticks = 1))
+        assertTrue(dmg < 2.5f, "repair should heal some damage in a tick; got $dmg")
+        assertTrue(dmg >= 2.5f - cap - 1e-3f, "one tick must not heal more than the per-tick cap ($cap); got $dmg (healed ${2.5f - dmg})")
+    }
+
+    @Test
     fun repairGeneWeldsATouchingCell() {
         // Gene-driven adhesion (MORPHOGENESIS): a Repair-active cell touching an un-welded cell forms a weld
         // with it (born "at 0 health", healed by the spare repair). Two cells set a LIGHT touch apart — close

@@ -85,6 +85,14 @@ object CytoTuning {
     /** Connection damage healed per Repair op (one quantum). 0.25 ≈ the old free per-tick heal, so ~one
      *  op/tick maintains a lightly-loaded connection; more stress needs more energy. */
     const val REPAIR_PER_OP = 0.25f
+    /**
+     * Max damage a single EXISTING connection can be healed per tick, however much repair energy the cell
+     * has. Repair mends at a bounded RATE — so a connection whose per-tick stretch stress exceeds this accrues
+     * net damage and eventually breaks regardless of efficiency or hoarded fuel (without this, an energy-rich
+     * cell healed all damage every tick and stayed welded under any stretch). Since stretch stress scales with
+     * stretch, this is effectively the *stretch the link can be held against*: below it repair wins, above it
+     * the link gives. Birth-heal welds (gene-driven adhesion) are exempt — they form once at full strength. ⚙ */
+    const val MAX_REPAIR_HEAL_PER_TICK = 0.5f
     /** Active-uptake gradient cost (CytoBiologyCore Import): a gene's `k` energy units import
      *  `⌊k·SCALE / (SCALE + max(0, cyto − env))⌋` molecules — 1:1 at/below the ambient reservoir level,
      *  then diminishing as the cell concentrates above it. SCALE is the excess (cyto − env) at which yield

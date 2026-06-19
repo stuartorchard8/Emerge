@@ -28,6 +28,7 @@ object CytoBiologyCore {
     private const val DEGRADE_PERIOD = CytoTuning.DEGRADE_PERIOD
     private const val DEATH_BIOMASS = CytoTuning.DEATH_BIOMASS
     private const val REPAIR_PER_OP = CytoTuning.REPAIR_PER_OP
+    private const val MAX_REPAIR_HEAL_PER_TICK = CytoTuning.MAX_REPAIR_HEAL_PER_TICK
     private const val CONNECTION_BREAK_DAMAGE = CytoTuning.CONNECTION_BREAK_DAMAGE
     private val FLEX_STEP = CytoTuning.FLEX_STEP
 
@@ -374,7 +375,9 @@ object CytoBiologyCore {
      *  cell with no damaged connections still gets ops to form adhesion welds (see [applyRepair]). */
     private fun repairOpsNeeded(work: CellWork): Int {
         var dmg = work.touchingIds.size * CONNECTION_BREAK_DAMAGE
-        for (v in work.connectionDamage.values) if (v > 0f) dmg += v
+        // Each EXISTING connection heals at most MAX_REPAIR_HEAL_PER_TICK this tick, so don't request ops the
+        // cap won't let us spend (birth-heal welds, above, are exempt — a one-off weld forms at full strength).
+        for (v in work.connectionDamage.values) if (v > 0f) dmg += minOf(v, MAX_REPAIR_HEAL_PER_TICK)
         if (dmg <= 0f) return 0
         return kotlin.math.ceil(dmg / REPAIR_PER_OP).toInt()
     }
@@ -393,7 +396,11 @@ object CytoBiologyCore {
         for (id in order) {
             if (budget <= 0f) break
             val cur = work.connectionDamage[id] ?: continue
-            val heal = if (cur <= budget) cur else budget
+            // Cap the heal an existing connection can receive per tick: repair mends at a bounded RATE, so it
+            // can't instantly undo arbitrary damage. A connection stretched hard enough that its stress
+            // outruns this cap accrues net damage and eventually breaks no matter how much repair energy the
+            // cell has (the time-bomb hoarder used to fully heal every tick and stay welded under any stretch).
+            val heal = minOf(cur, budget, MAX_REPAIR_HEAL_PER_TICK)
             budget -= heal
             val left = cur - heal
             if (left <= 0f) work.connectionDamage.remove(id) else work.connectionDamage[id] = left
