@@ -262,6 +262,18 @@ class CytoSoaReducer(
         return r
     }
 
+    // Biology sub-phase splitter (throwaway profiling aid): records the elapsed since the previous split
+    // under [name], so the biology() internals (build/exchange/genes/diffuse/finish/writeback) each get
+    // their own row. The bio:* rows sum to the "biology" umbrella phase (which is still recorded), so the
+    // per-phase share% column is diluted for them — read the absolute avg-us column. Off in production
+    // (profiler == null): one null-check per call, nothing recorded, bit-identical.
+    private var bioMark = TimeSource.Monotonic.markNow()
+    private fun bioSplit(name: String) {
+        val p = profiler ?: return
+        p.recordPhase(name, bioMark.elapsedNow().inWholeNanoseconds)
+        bioMark = TimeSource.Monotonic.markNow()
+    }
+
     // ── reset (ImpulseResetSystem) — zero the dense impulse accumulator ──────────
     private fun reset(w: CytoWorld) {
         for (i in 0 until w.count) {
@@ -626,6 +638,7 @@ class CytoSoaReducer(
     private fun biology(w: CytoWorld): Pair<List<EntityId>, List<EntityId>> {
         val n = w.count
         if (n == 0) return emptyList<EntityId>() to emptyList()
+        if (profiler != null) bioMark = TimeSource.Monotonic.markNow()
         val lightField = CytoLightField.default()
         val grid = w.grid   // post-diffusion; biology draws/deposits in place (copy-on-write)
 
@@ -701,6 +714,7 @@ class CytoSoaReducer(
             work.exposureMilli = exposureMilli.toInt()   // surface exposure (0..1000), damps passive env-exchange
             works[id] = work
         }
+        bioSplit("bio:build")   // per-cell CellWork build: light sample, exposure, cytoplasm/biomass copy, reset
         // Second pass: turn each cell's base light into quanta. With [CytoTuning.LIGHT_SHADING] on, cells
         // sharing a grid-cell split it by capture share (cap / Σcap); the division order (cap/Σcap before
         // /MAX) keeps full integer precision and, for a lone cell where Σcap == cap, reduces to the same
@@ -716,10 +730,12 @@ class CytoSoaReducer(
                 if (capSum <= 0L) 0 else (baseQuantaRaw[k] * captureMilli[k] / capSum / Int.MAX_VALUE.toLong()).toInt()
             }
         }
+        bioSplit("bio:quanta")   // light-shading second pass (per-grid-cell capture-share split)
 
         val orderedWorks = bioOrderedWorks.also { it.clear() }
         for (k in 0 until n) orderedWorks.add(bioWorks[ordered[k]]!!)
         CytoBiologyCore.passiveEnvExchange(orderedWorks, grid)
+        bioSplit("bio:exchange")   // passive env-exchange with the matter grid
         // Gene phase, fanned across grid-cell groups (each touches only its own reservoir cell, so groups are
         // independent and the parallel pass is bit-identical to the sequential one — within a group cells run
         // in EntityId order; across groups order is irrelevant since they share no state). Build the groups by
@@ -733,7 +749,9 @@ class CytoSoaReducer(
                 }
             }
         }
+        bioSplit("bio:genes")   // gene execution (incl. buildGridGroups grouping)
         CytoBiologyCore.diffuse(works, neighbourIds)
+        bioSplit("bio:diffuse")   // inter-cell cytoplasm diffusion across welds
         val divide = ArrayList<EntityId>(); val destroy = ArrayList<EntityId>()
         divideMorphogen.clear()
         divideMorphogenToMother.clear()
@@ -762,6 +780,7 @@ class CytoSoaReducer(
                 }
             }
         }
+        bioSplit("bio:finish")   // CytoBiologyCore.finish per cell (degrade/grow/death intents, weld-heal collect)
 
         for (k in 0 until n) {
             val slot = ordered[k]
@@ -797,6 +816,7 @@ class CytoSoaReducer(
                 }
             }
         }
+        bioSplit("bio:writeback")   // mutation (CytoMutation.mutate) + write columns/radius/mass back
         return divide to destroy
     }
 
