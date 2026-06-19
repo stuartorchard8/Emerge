@@ -156,11 +156,23 @@ object CytoTuning {
     /**
      * Hard cap on how many welds one cell can hold. A new weld (division, contact-stick, or Repair-heal) is
      * refused once either endpoint already has this many. A cell has at most ~6 spatial neighbours in 2D, so
-     * 8 is generous slack — but it stops a rapidly-dividing lineage from accreting an unbounded weld fan
+     * 10 is generous slack — but it stops a rapidly-dividing lineage from accreting an unbounded weld fan
      * (degree 25-30) that turns the colony into a wildly over-constrained network the explicit spring solver
-     * can't satisfy (it diverges). Pure safety backstop; normal bodies never reach it.
-     */
-    const val MAX_WELD_DEGREE = 8
+     * can't satisfy (it diverges). Pure safety backstop; normal bodies never reach it. Also bounds
+     * [CYTOPLASM_DIFFUSE_DENOM] (the diffusion divisor must stay ≥ a cell's degree to keep cytoplasm
+     * diffusion non-negative). ⚙ */
+    const val MAX_WELD_DEGREE = 10
+    /**
+     * Cytoplasm cell↔cell diffusion divisor: each cell sends `⌊count/this⌋` of a diffusible species to **each**
+     * welded neighbour and keeps the rest ([CytoBiologyCore.diffuse]). A **fixed** divisor (not `degree+1`) is
+     * the whole point: dividing by the *sender's own degree* makes the steady-state concentration `∝ (degree+1)`
+     * — high-degree interior cells pile up ~2× their low-degree neighbours, which stalls a low↔high chemical
+     * clock and corrupts a positional morphogen gradient. A fixed divisor is edge-symmetric (Fickian) → the
+     * steady state is **uniform** across identical cells (a source/sink still makes a clean distance-from-source
+     * gradient); the divisor only sets the *speed*, never the bias. Must stay `≥ MAX_WELD_DEGREE` so the integer
+     * floor guarantees `out·degree ≤ count` (no cell goes negative); `MAX_WELD_DEGREE + 1` is the tightest
+     * value with no convergence transient (the densest cell would otherwise momentarily empty). ⚙ */
+    const val CYTOPLASM_DIFFUSE_DENOM = MAX_WELD_DEGREE + 1
     /**
      * Overlap (logical units, past which two *welded* cells crushed closer than their rest length start to
      * accrue breaking stress — and unlike tension stress this is NOT discounted by the maintenance bonus, so

@@ -118,10 +118,10 @@ class CytoGoldenTest {
     // (decoupled), so it's golden-neutral. Gates held.
     private val GROWTH = mapOf(
         "meta" to "9e9bec4ae4480164",
-        "physics" to "bd61dc0f64dddd78",
-        "biology" to "7f8fa0ae3a0e224d",
-        "topology" to "48fe28f64568d4e3",
-        "grid" to "cdc5f220e01425ae",
+        "physics" to "cd572967d4615d5a",
+        "biology" to "a90024dd8c59dcf3",
+        "topology" to "2925fede43facb67",
+        "grid" to "b85a188eef9ccf0c",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
     // Re-baselined twice for deliberate gene-model extensions, both of which re-route point-mutation's

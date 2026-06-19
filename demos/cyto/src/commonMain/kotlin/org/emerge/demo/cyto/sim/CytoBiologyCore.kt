@@ -31,6 +31,7 @@ object CytoBiologyCore {
     private const val REPAIR_PER_OP = CytoTuning.REPAIR_PER_OP
     private const val MAX_REPAIR_HEAL_PER_TICK = CytoTuning.MAX_REPAIR_HEAL_PER_TICK
     private const val CONNECTION_BREAK_DAMAGE = CytoTuning.CONNECTION_BREAK_DAMAGE
+    private const val CYTOPLASM_DIFFUSE_DENOM = CytoTuning.CYTOPLASM_DIFFUSE_DENOM
     private val FLEX_STEP = CytoTuning.FLEX_STEP
 
     /** Phase 0 — passive cell↔environment exchange (FREE, down-gradient), **batched and fair**: per
@@ -476,10 +477,14 @@ object CytoBiologyCore {
         work.repaired = true
     }
 
-    /** Phase 2 — cytoplasm diffuses to connected neighbours: each cell sends ⌊count/(degree+1)⌋ of each
-     *  species to **each** neighbour and keeps the remainder. Snapshot-based (reads pre-diffusion
-     *  counts, writes deltas, applies after) so it's order-independent and conservative; biomass does
-     *  not diffuse (it's locked). */
+    /** Phase 2 — cytoplasm diffuses to connected neighbours: each cell sends ⌊count/CYTOPLASM_DIFFUSE_DENOM⌋
+     *  of each species to **each** neighbour and keeps the remainder. The divisor is a FIXED constant, **not**
+     *  `degree+1`: dividing by the sender's own degree would make the steady state `∝ (degree+1)` (high-degree
+     *  interior cells pile up ~2× their neighbours — stalls a low↔high clock, corrupts a positional gradient).
+     *  A fixed divisor is edge-symmetric (Fickian) → **uniform** steady state across identical cells; the divisor
+     *  only sets the speed. It stays `≥ MAX_WELD_DEGREE` so the integer floor keeps `out·degree ≤ count` (no cell
+     *  goes negative). Snapshot-based (reads pre-diffusion counts, writes deltas, applies after) so it's
+     *  order-independent and conservative; biomass does not diffuse (it's locked). */
     fun diffuse(works: Map<EntityId, CellWork>, neighbourIds: Map<EntityId, List<EntityId>>) {
         // The compute loop only ever reads a cell's *own* cytoplasm and writes to a separate delta map,
         // never to any cytoplasm — so reading the live store is identical to reading a pre-diffusion copy,
@@ -494,7 +499,7 @@ object CytoBiologyCore {
             val selfDelta = delta.getOrPut(id) { HashMap() }
             for (i in 0 until w.cytoplasm.size) {
                 val species = w.cytoplasm.idAt(i)
-                val out = w.cytoplasm.countAt(i) / (degree + 1)
+                val out = w.cytoplasm.countAt(i) / CYTOPLASM_DIFFUSE_DENOM
                 if (out <= 0) continue
                 // Diffuse only species the neighbour METABOLISES (canDiffuse) — resources/signals in flux.
                 // A synthesised-but-never-consumed species is intracellular (produce-without-diffuse): it's
