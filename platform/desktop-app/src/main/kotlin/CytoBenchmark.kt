@@ -1,6 +1,7 @@
 package org.emerge.desktop
 
 import org.emerge.demo.cyto.CytoSaveCodec
+import org.emerge.demo.cyto.sim.BioProfile
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
@@ -58,11 +59,13 @@ fun main(args: Array<String>) {
 private fun runSoaVariant(label: String, initial: SimState, cfg: CytoConfig, input: CytoInput, warmup: Int, measure: Int, executor: ParallelExecutor?) {
     val profiler = PipelineProfiler()
     if (executor == null) profiler.allocReader = { allocatedBytes() }  // single-threaded only: per-thread gauge
-    val reducer = CytoSoaReducer(cfg, executor = executor, profiler = profiler)
+    val bioProfile = BioProfile()
+    val reducer = CytoSoaReducer(cfg, executor = executor, profiler = profiler, bioProfile = bioProfile)
 
     var w = CytoWorld.fromSimState(initial)
     for (t in 0 until warmup) w = reducer.tick(w, input)
     profiler.reset()
+    bioProfile.reset()
 
     val gc = gcSnapshot()
     val allocStart = allocatedBytes()
@@ -91,6 +94,8 @@ private fun runSoaVariant(label: String, initial: SimState, cfg: CytoConfig, inp
     for (line in report.phases.sortedByDescending { it.avgNanos }) {
         println("  %-14s %10d %10d %6.1f%% %10d".format(line.name, line.avgNanos / 1000, line.maxNanos / 1000, line.sharePercent, line.avgBytes / 1024))
     }
+    println()
+    print(bioProfile.summary())
     println()
 }
 

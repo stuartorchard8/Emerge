@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.sim
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.primitives.Frac
+import kotlin.time.TimeSource
 
 /**
  * The per-cell biology of the matter model (MORPHOGENESIS.md), operating on [CellWork] + the
@@ -47,19 +48,28 @@ object CytoBiologyCore {
      *  every tick, so a founder starved its own (higher-id, identical-genome) daughters — making resource
      *  access a function of birth order rather than genome. [ordered] is the canonical (ascending-EntityId)
      *  cell order; it only breaks ties in the proportional remainder, never who-goes-first for the bulk. */
-    fun passiveEnvExchange(ordered: List<CellWork>, grid: CytoMatterGrid) {
+    fun passiveEnvExchange(ordered: List<CellWork>, grid: CytoMatterGrid, stats: BioProfile? = null) {
+        val tGroup = if (stats != null) TimeSource.Monotonic.markNow() else null
         // Group cells by their grid-cell, preserving the canonical order for the remainder tiebreak.
         val byCell = LinkedHashMap<Int, MutableList<CellWork>>()
         for (w in ordered) {
             if (w.gridIndex < 0) continue
             byCell.getOrPut(w.gridIndex) { ArrayList() }.add(w)
         }
+        if (stats != null) { stats.ticks++; stats.exchGridCells += byCell.size; stats.exchGroupNanos += tGroup!!.elapsedNow().inWholeNanoseconds }
+        val tSpecies = if (stats != null) TimeSource.Monotonic.markNow() else null
         for ((idx, cells) in byCell) {
             val species = HashSet<Int>()                    // union of grid-cell + every cell's cytoplasm
             for (i in 0 until grid.cellSize(idx)) species.add(grid.cellIdAt(idx, i))
             for (w in cells) for (i in 0 until w.cytoplasm.size) species.add(w.cytoplasm.idAt(i))
+            if (stats != null) {
+                stats.exchSpeciesCalls += species.size
+                stats.exchCellIters += species.size.toLong() * cells.size
+                if (cells.size > stats.exchMaxCellsInCell) stats.exchMaxCellsInCell = cells.size.toLong()
+            }
             for (sp in species) exchangeSpecies(idx, sp, cells, grid)
         }
+        if (stats != null) stats.exchSpeciesNanos += tSpecies!!.elapsedNow().inWholeNanoseconds
     }
 
     /** Resolve one species' passive exchange for the cells sharing grid-cell [idx], against the snapshot
@@ -120,8 +130,10 @@ object CytoBiologyCore {
      *  The 1/N split is the genome-bloat tax: more simultaneously-active genes ⇒ each gets a thinner slice
      *  (inactive genes don't reserve a share — carrying them is taxed by mutation load instead). Import
      *  draws from the shared [grid], so this still runs in a fixed cell order across cells. */
-    fun runGenes(work: CellWork, grid: CytoMatterGrid) {
+    fun runGenes(work: CellWork, grid: CytoMatterGrid, stats: BioProfile? = null) {
         val genome = work.genome
+        if (stats != null) { stats.genesCells++; stats.genesScanned += genome.size }
+        val tScan = if (stats != null) TimeSource.Monotonic.markNow() else null
         // Phase 1 — continuous metabolic genes, INTERPOLATED: each runs only for the portion of the tick
         // before its action would carry a gated quantity across its OWN condition threshold (selfGateCap),
         // so a growth gene fills exactly to its limit instead of overshooting in one bulk step. Computed
@@ -134,12 +146,15 @@ object CytoBiologyCore {
             val g = genome[i]
             if (g.action.type != ActionType.Mitosis && isActive(g, work)) active[n++] = i
         }
+        if (stats != null) { stats.genesIsActiveNanos += tScan!!.elapsedNow().inWholeNanoseconds; stats.genesActive += n }
+        val tApply = if (stats != null) TimeSource.Monotonic.markNow() else null
         if (n > 0) {
             val snap = work.snapScratch.also { it.copyFrom(work.cytoplasm) }   // reused; immutable 1/n source
             val snapBiomass = totalBiomassBonds(work.biomass)
             val quantaShare = work.quanta / n
-            for (j in 0 until n) applyGene(genome[active[j]], work, grid, snap, snapBiomass, n, quantaShare)
+            for (j in 0 until n) applyGene(genome[active[j]], work, grid, snap, snapBiomass, n, quantaShare, stats)
         }
+        if (stats != null) stats.genesApplyNanos += tApply!!.elapsedNow().inWholeNanoseconds
         // Phase 2 — division resolved on the SETTLED state, as one atomic end-of-tick action (a clean
         // half-split is only sane atomically). The gate is RE-CHECKED here against the post-metabolism
         // state: a Mitosis gene armed at tick start but whose condition no longer holds now does NOT
@@ -154,7 +169,7 @@ object CytoBiologyCore {
                 val snap = work.snapScratch.also { it.copyFrom(work.cytoplasm) }
                 val quantaShare = work.quanta / dn
                 for (j in 0 until dn) {
-                    applyGene(genome[active[j]], work, grid, snap, totalBiomassBonds(work.biomass), dn, quantaShare)
+                    applyGene(genome[active[j]], work, grid, snap, totalBiomassBonds(work.biomass), dn, quantaShare, stats)
                     if (work.dividing) break
                 }
             }
@@ -187,7 +202,7 @@ object CytoBiologyCore {
         ids[cn] = id; per[cn] = 1; return cn + 1
     }
 
-    private fun applyGene(gene: Gene, work: CellWork, grid: CytoMatterGrid, snap: MoleculeStore, snapBiomass: Int, n: Int, quantaShare: Int) {
+    private fun applyGene(gene: Gene, work: CellWork, grid: CytoMatterGrid, snap: MoleculeStore, snapBiomass: Int, n: Int, quantaShare: Int, stats: BioProfile? = null) {
         val src = gene.source
         val act = gene.action
         // Per-op cytoplasm consumption (action inputs + BreakBond substrate, SUMMED — so an overlap like
@@ -203,6 +218,7 @@ object CytoBiologyCore {
         var breakSpId = -1; var fragLId = -1; var fragRId = -1
         if (src is EnergySource.BreakBond) {
             val bondIdx = SpeciesRegistry.bondIndexOf(src.bond)
+            if (stats != null) stats.richestBondCalls++
             breakSpId = richestWithBond(snap, bondIdx); if (breakSpId < 0) return
             fragLId = SpeciesRegistry.breakLeft(breakSpId, bondIdx); fragRId = SpeciesRegistry.breakRight(breakSpId, bondIdx)
             if (fragLId < 0) return
@@ -218,6 +234,7 @@ object CytoBiologyCore {
                 // act.aWild / act.bWild opt into the legacy WILDCARD match (most-abundant molecule ending/
                 // starting with the operand). The junction bond is act.a.last–act.b.first either way.
                 if (act.a.isEmpty() || act.b.isEmpty()) return
+                if (stats != null) { if (act.aWild) stats.wildcardCalls++; if (act.bWild) stats.wildcardCalls++ }
                 val endAId = if (act.aWild) richestEndingWith(snap, act.a) else exactPresent(snap, act.a); if (endAId < 0) return
                 val startBId = if (act.bWild) richestStartingWith(snap, act.b) else exactPresent(snap, act.b); if (startBId < 0) return
                 productId = SpeciesRegistry.join(endAId, startBId); if (productId < 0) return   // forbidden (polymerisation) ⇒ no-op

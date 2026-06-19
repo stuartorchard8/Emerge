@@ -5,6 +5,7 @@ import kotlin.concurrent.Volatile
 import org.emerge.demo.cyto.sim.CellWork
 import org.emerge.demo.cyto.sim.MoleculeStore
 import org.emerge.demo.cyto.sim.ConnectionStateComponent
+import org.emerge.demo.cyto.sim.BioProfile
 import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
@@ -70,6 +71,9 @@ class CytoSoaReducer(
     private val cfg: CytoConfig,
     private val executor: ParallelExecutor? = null,
     private val profiler: PipelineProfiler? = null,
+    // Fine-grained accumulator for the two biology hot phases (off in production). NOT thread-safe, so it
+    // requires the single-threaded biology path (bioParallelThreshold left OFF). Reset/printed by the bench.
+    private val bioProfile: BioProfile? = null,
     // Slot count above which the spring gather fans across [executor]; below it runs sequentially.
     // Default 2048 from the profileCytoGrowth crossover: at ~1.4k cells the fan-out's wakeup/barrier
     // cost and cache/bandwidth interference with the (single-threaded) biology/contacts phases still
@@ -734,7 +738,7 @@ class CytoSoaReducer(
 
         val orderedWorks = bioOrderedWorks.also { it.clear() }
         for (k in 0 until n) orderedWorks.add(bioWorks[ordered[k]]!!)
-        CytoBiologyCore.passiveEnvExchange(orderedWorks, grid)
+        CytoBiologyCore.passiveEnvExchange(orderedWorks, grid, bioProfile)
         bioSplit("bio:exchange")   // passive env-exchange with the matter grid
         // Gene phase, fanned across grid-cell groups (each touches only its own reservoir cell, so groups are
         // independent and the parallel pass is bit-identical to the sequential one — within a group cells run
@@ -745,7 +749,7 @@ class CytoSoaReducer(
         ColumnPartition.disjoint(numGroups, exec, threshold = 1) { gStart, gEnd ->
             for (g in gStart until gEnd) {
                 for (k in bioGroupBounds[g] until bioGroupBounds[g + 1]) {
-                    CytoBiologyCore.runGenes(bioWorks[bioGroupSlots[k]]!!, grid)
+                    CytoBiologyCore.runGenes(bioWorks[bioGroupSlots[k]]!!, grid, bioProfile)
                 }
             }
         }
