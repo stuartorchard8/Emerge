@@ -167,18 +167,21 @@ object CytoBiologyCore {
         // Active genes are collected into the reused [CellWork.activeScratch] (their genome indices, in
         // genome order — same set/order the old `genome.filter` produced) so the pass allocates nothing.
         val active = work.activeScratch
+        // Tick-start biomass — constant through the whole isActive scan AND equal to the 1/n snapshot's
+        // biomass (no gene has applied yet), so compute the O(species) sum ONCE and reuse it for every
+        // clause of every gate (was re-summed per Biomass/Conc operand) and for snapBiomass below.
+        val bioBonds = totalBiomassBonds(work.biomass)
         var n = 0
         for (i in genome.indices) {
             val g = genome[i]
-            if (g.action.type != ActionType.Mitosis && isActive(g, work)) active[n++] = i
+            if (g.action.type != ActionType.Mitosis && isActive(g, work, bioBonds)) active[n++] = i
         }
         if (stats != null) { stats.genesIsActiveNanos += tScan!!.elapsedNow().inWholeNanoseconds; stats.genesActive += n }
         val tApply = if (stats != null) TimeSource.Monotonic.markNow() else null
         if (n > 0) {
             val snap = work.snapScratch.also { it.copyFrom(work.cytoplasm) }   // reused; immutable 1/n source
-            val snapBiomass = totalBiomassBonds(work.biomass)
             val quantaShare = work.quanta / n
-            for (j in 0 until n) applyGene(genome[active[j]], work, grid, snap, snapBiomass, n, quantaShare, stats)
+            for (j in 0 until n) applyGene(genome[active[j]], work, grid, snap, bioBonds, n, quantaShare, stats)
         }
         if (stats != null) stats.genesApplyNanos += tApply!!.elapsedNow().inWholeNanoseconds
         // Phase 2 — division resolved on the SETTLED state, as one atomic end-of-tick action (a clean
@@ -186,10 +189,13 @@ object CytoBiologyCore {
         // state: a Mitosis gene armed at tick start but whose condition no longer holds now does NOT
         // divide. Funded from the settled cytoplasm (break the source bond to pay the bulk biomass/4 cost).
         if (!work.dividing) {
+            // Post-phase-1 biomass — constant through the Mitosis re-checks (a Mitosis gene either divides
+            // and breaks the loop, or no-ops; neither mutates biomass here), so sum it once for all gates.
+            val bioBondsNow = totalBiomassBonds(work.biomass)
             var dn = 0
             for (i in genome.indices) {
                 val g = genome[i]
-                if (g.action.type == ActionType.Mitosis && gate(g.condition, work)) active[dn++] = i
+                if (g.action.type == ActionType.Mitosis && gate(g.condition, work, bioBondsNow)) active[dn++] = i
             }
             if (dn > 0) {
                 val snap = work.snapScratch.also { it.copyFrom(work.cytoplasm) }
@@ -205,8 +211,8 @@ object CytoBiologyCore {
     /** A gene is "active" — counting toward the [runGenes] bloat tax — when its condition holds AND its
      *  action isn't a guaranteed no-op this tick. So an always-on Repair gene with nothing damaged, or a
      *  flex gene already at its limit, costs the cell (and its neighbours' share of the genome) nothing. */
-    private fun isActive(gene: Gene, work: CellWork): Boolean {
-        if (!gate(gene.condition, work)) return false
+    private fun isActive(gene: Gene, work: CellWork, bioBonds: Int): Boolean {
+        if (!gate(gene.condition, work, bioBonds)) return false
         return when (gene.action.type) {
             // Repair works if there's damage to heal OR an un-welded cell to stick to (gene-driven adhesion).
             ActionType.Repair -> hasConnectionDamage(work) || work.touchingIds.isNotEmpty()
@@ -252,7 +258,7 @@ object CytoBiologyCore {
         var productId = -1
         var convertId = -1
         when (act.type) {
-            ActionType.Convert -> { convertId = SpeciesRegistry.id(act.a); cn = addConsume(ids, per, cn, convertId) }
+            ActionType.Convert -> { convertId = act.aId; cn = addConsume(ids, per, cn, convertId) }
             ActionType.FormBond -> {
                 // Join a molecule ending in act.a to one starting with act.b. EXACT by default — act.a/act.b
                 // name the whole reactant species (MORPHOGENESIS.md §2026-06-18); so `FormBond a a` joins the
@@ -261,8 +267,8 @@ object CytoBiologyCore {
                 // starting with the operand). The junction bond is act.a.last–act.b.first either way.
                 if (act.a.isEmpty() || act.b.isEmpty()) return
                 if (stats != null) { if (act.aWild) stats.wildcardCalls++; if (act.bWild) stats.wildcardCalls++ }
-                val endAId = if (act.aWild) richestEndingWith(snap, act.a) else exactPresent(snap, act.a); if (endAId < 0) return
-                val startBId = if (act.bWild) richestStartingWith(snap, act.b) else exactPresent(snap, act.b); if (startBId < 0) return
+                val endAId = if (act.aWild) richestEndingWith(snap, act.a) else exactPresent(snap, act.aId); if (endAId < 0) return
+                val startBId = if (act.bWild) richestStartingWith(snap, act.b) else exactPresent(snap, act.bId); if (startBId < 0) return
                 productId = SpeciesRegistry.join(endAId, startBId); if (productId < 0) return   // forbidden (polymerisation) ⇒ no-op
                 cn = addConsume(ids, per, cn, endAId)
                 cn = addConsume(ids, per, cn, startBId)
@@ -340,7 +346,7 @@ object CytoBiologyCore {
             ActionType.Convert -> work.biomass.inc(convertId, k)
             ActionType.FormBond -> work.cytoplasm.inc(productId, k)
             ActionType.Import -> {
-                val importId = SpeciesRegistry.id(act.a)
+                val importId = act.aId
                 // Active uptake against a concentration gradient: the gene's k energy units buy fewer
                 // molecules the further the cell pushes its internal level ABOVE the ambient reservoir
                 // (1:1 at or below ambient — riding the free passive band — then diminishing). So filling
@@ -374,13 +380,12 @@ object CytoBiologyCore {
         return best
     }
 
-    /** The EXACT species [molecule], iff present in [snap] (count > 0), else -1 — the default FormBond
-     *  reactant match (MORPHOGENESIS.md §2026-06-18). The present-check mirrors the richest-* helpers (which
-     *  only return a species they actually find), so an absent exact species no-ops like an absent wildcard. */
-    private fun exactPresent(snap: MoleculeStore, molecule: String): Int {
-        val id = SpeciesRegistry.id(molecule)
-        return if (id >= 0 && snap.count(id) > 0) id else -1
-    }
+    /** The exact species [id] (precomputed on the [GeneAction]), iff present in [snap] (count > 0), else -1 —
+     *  the default FormBond reactant match (MORPHOGENESIS.md §2026-06-18). The present-check mirrors the
+     *  richest-* helpers (which only return a species they find), so an absent exact species no-ops like an
+     *  absent wildcard; a non-species operand (id < 0) likewise no-ops. */
+    private fun exactPresent(snap: MoleculeStore, id: Int): Int =
+        if (id >= 0 && snap.count(id) > 0) id else -1
 
     /** Most-abundant species in [snap] whose string ENDS WITH [suffix] (the FormBond end-A wildcard match;
      *  ties → lowest id), or -1. A single-atom suffix == "ends in that atom"; a longer one is a specific tail. */
@@ -532,15 +537,17 @@ object CytoBiologyCore {
     }
 
     // ── gates ────────────────────────────────────────────────────────────────
-    /** The gate is a conjunction: the gene fires iff **every** clause holds (empty ⇒ true). */
-    private fun gate(c: GeneCondition, work: CellWork): Boolean {
-        for (clause in c.clauses) if (!clauseHolds(clause, work)) return false
+    /** The gate is a conjunction: the gene fires iff **every** clause holds (empty ⇒ true). [bioBonds] is the
+     *  caller-computed total biomass for this evaluation (constant across the gate), so Biomass/Conc operands
+     *  read it instead of re-summing the biomass store per clause. */
+    private fun gate(c: GeneCondition, work: CellWork, bioBonds: Int): Boolean {
+        for (clause in c.clauses) if (!clauseHolds(clause, work, bioBonds)) return false
         return true
     }
 
-    private fun clauseHolds(clause: Clause, work: CellWork): Boolean {
-        val l = operand(clause.lhs, work)
-        val r = operand(clause.rhs, work)
+    private fun clauseHolds(clause: Clause, work: CellWork, bioBonds: Int): Boolean {
+        val l = operand(clause.lhs, work, bioBonds)
+        val r = operand(clause.rhs, work, bioBonds)
         return when (clause.cmp) {
             Comparison.Greater -> l > r
             Comparison.Less -> l < r
@@ -548,12 +555,13 @@ object CytoBiologyCore {
     }
 
     /** Evaluate one side of a [Clause] to an integer: a [Operand.Constant]'s literal, or a live reading of
-     *  the cell this tick (cytoplasm count / size-normalised concentration / total biomass / contact count). */
-    private fun operand(op: Operand, work: CellWork): Int = when (op) {
+     *  the cell this tick (cytoplasm count / size-normalised concentration / total biomass / contact count).
+     *  [bioBonds] is the caller-computed total biomass (Biomass/Conc read it; the species id is precomputed). */
+    private fun operand(op: Operand, work: CellWork, bioBonds: Int): Int = when (op) {
         is Operand.Constant -> op.value
-        is Operand.Chem -> work.cytoplasm.count(SpeciesRegistry.id(op.species))
-        is Operand.Conc -> conc(work.cytoplasm.count(SpeciesRegistry.id(op.species)), totalBiomassBonds(work.biomass))
-        Operand.Biomass -> totalBiomassBonds(work.biomass)
+        is Operand.Chem -> work.cytoplasm.count(op.speciesId)
+        is Operand.Conc -> conc(work.cytoplasm.count(op.speciesId), bioBonds)
+        Operand.Biomass -> bioBonds
         Operand.Touching -> work.touchCount
     }
 
@@ -561,8 +569,8 @@ object CytoBiologyCore {
      *  so a threshold derived from it is order-independent. Touching is transient (fixed for the tick). */
     private fun operandSnap(op: Operand, snap: MoleculeStore, snapBiomass: Int, work: CellWork): Int = when (op) {
         is Operand.Constant -> op.value
-        is Operand.Chem -> snap.count(SpeciesRegistry.id(op.species))
-        is Operand.Conc -> conc(snap.count(SpeciesRegistry.id(op.species)), snapBiomass)
+        is Operand.Chem -> snap.count(op.speciesId)
+        is Operand.Conc -> conc(snap.count(op.speciesId), snapBiomass)
         Operand.Biomass -> snapBiomass
         Operand.Touching -> work.touchCount
     }
@@ -586,7 +594,7 @@ object CytoBiologyCore {
         if (perOp <= 0) return Int.MAX_VALUE
         fun reads(op: Operand): Boolean = when (op) {
             is Operand.Biomass -> qBiomass
-            is Operand.Chem -> !qBiomass && SpeciesRegistry.id(op.species) == qSpeciesId
+            is Operand.Chem -> !qBiomass && op.speciesId == qSpeciesId
             else -> false
         }
         var cap = Int.MAX_VALUE

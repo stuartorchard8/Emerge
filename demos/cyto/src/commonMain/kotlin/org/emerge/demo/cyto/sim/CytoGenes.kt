@@ -41,7 +41,12 @@ sealed class Operand {
     data class Constant(val value: Int) : Operand()
 
     /** Count of [species] in the cytoplasm (0 for an absent / unknown species). */
-    data class Chem(val species: String) : Operand()
+    data class Chem(val species: String) : Operand() {
+        /** [species] resolved to its [SpeciesRegistry] id once at construction (a pure function of the
+         *  immutable [species] string), so the per-tick gate path reads an int instead of re-hashing the
+         *  string every evaluation. Not a constructor param ⇒ untouched by equals/hashCode/copy. */
+        val speciesId: Int = SpeciesRegistry.id(species)
+    }
 
     /** Total biomass — Σ count × bond-count (also drives cell size + the death threshold). */
     object Biomass : Operand()
@@ -58,7 +63,10 @@ sealed class Operand {
      *  developmental clock for free — and a positional gradient reads as concentration *bands* independent of
      *  cell size. The morphogen-for-shape readout (MORPHOGENESIS.md §Morphogens for shape). Like [Chem] it is
      *  a *sensor*, never added to the metabolic reach (sensing ≠ permeability — see [handleableOf]). */
-    data class Conc(val species: String) : Operand()
+    data class Conc(val species: String) : Operand() {
+        /** [species] resolved to its [SpeciesRegistry] id once at construction (see [Chem.speciesId]). */
+        val speciesId: Int = SpeciesRegistry.id(species)
+    }
 }
 
 /** One AND-clause of a gene's gate: `lhs cmp rhs`, each side an [Operand]. */
@@ -127,7 +135,14 @@ data class GeneAction(
     val divideAcross: Boolean = false,
     val aWild: Boolean = false,
     val bWild: Boolean = false,
-)
+) {
+    /** [a]/[b] resolved to [SpeciesRegistry] ids once at construction (pure functions of the immutable
+     *  operand strings; -1 when empty/not a species), so applyGene's exact-species paths (Convert / Import /
+     *  exact FormBond) read an int instead of re-hashing. Not constructor params ⇒ no effect on data-class
+     *  equality. The wildcard FormBond paths still match on the [a]/[b] strings. */
+    val aId: Int = SpeciesRegistry.id(a)
+    val bId: Int = SpeciesRegistry.id(b)
+}
 
 /**
  * A gene: an energy source, a binary condition, an action — and an **efficiency gear** [efficiency] (g, in
