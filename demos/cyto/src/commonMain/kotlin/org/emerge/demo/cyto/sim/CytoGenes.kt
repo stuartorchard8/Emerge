@@ -303,6 +303,12 @@ class CellWork(
      *  weld at birth. Drained by the reducer into [systems.WeldHealIntent]s for the lifecycle. */
     val weldHeals: MutableMap<EntityId, Float> = HashMap()
 
+    /** This cell's surface exposure this tick, in milli-units (0..1000; 1000 = lone/fully exposed, ~0 =
+     *  fully surrounded). Damps passive env↔cytoplasm exchange (CytoBiologyCore.exchangeSpecies) so a
+     *  buried cell is buffered from the environment — its internal chemistry isn't perturbed by the reservoir
+     *  and a body's interior is a protected milieu. (Set by the reducer from [CytoExposure.weight].) */
+    var exposureMilli = 1000
+
     /** This cell's welded-neighbour count this tick. The **maintenance bonus**: a more-connected (less
      *  exposed) cell pays less upkeep — biomass degradation is scaled by `1/(weldedDegree+1)` (and connection
      *  stress likewise, in the connections phase), so 1 connection halves it, 2 thirds it, etc. */

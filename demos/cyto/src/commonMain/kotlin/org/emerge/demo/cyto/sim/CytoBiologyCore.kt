@@ -70,7 +70,10 @@ object CytoBiologyCore {
         for (i in cells.indices) {
             val canHold = cells[i].handleable.canHold(sp)
             val cyto = cells[i].cytoplasm.count(sp)
-            val t = (env - cyto) / 2           // signed, toward zero; +ve = into the cell
+            // Exchange happens across the cell's EXPOSED surface, so damp it by exposure (0..1000 milli): a
+            // buried interior cell barely trades with the reservoir (protected milieu); a lone/surface cell
+            // trades fully. Conservation-safe: the same damped `t` drives both the cytoplasm and grid sides.
+            val t = (((env - cyto) / 2).toLong() * cells[i].exposureMilli / 1000L).toInt()   // signed, toward zero; +ve = into the cell
             if (t < 0 && !canHold) {           // METABOLIC LEAK: only passively dump what the cell can't
                 // metabolise. A species the cell CAN use is retained (no down-gradient leak), so an Import
                 // gene can build a reserve and the cell coasts on it instead of bleeding it straight back to

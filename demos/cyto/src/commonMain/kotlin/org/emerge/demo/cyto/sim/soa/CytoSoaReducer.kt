@@ -632,7 +632,10 @@ class CytoSoaReducer(
             val sample = lightField.sampleAt(lx, ly, w.world.tick)
             val exposure = CytoExposure.weight(expoScratch, ek)
             val radius = Frac(w.cell.logicalRadius[slot])
-            baseQuantaRaw[k] = ((sample * exposure) * CytoTuning.LIGHT_QUANTA_SCALE).raw
+            // Light is NOT coupled to surface exposure (as if it arrives from an orthogonal 3rd dimension):
+            // a fully-surrounded interior cell still photosynthesises, so it can pull its own weight instead
+            // of being dead weight. (Exposure still governs env-exchange + the optional co-located shading.)
+            baseQuantaRaw[k] = (sample * CytoTuning.LIGHT_QUANTA_SCALE).raw
             // capture = exposure × radius, in milli-units. NOT `(exposure * radius)` — a big cell's radius
             // exceeds Frac's safe ±2 value range, so that Frac×Frac overflows Long (negative capture →
             // starves the founder). Reduce exposure to ≤1000 first, then scale by radius.raw.
@@ -655,6 +658,7 @@ class CytoSoaReducer(
             )
             for (j in 0 until deg) work.connectionDamage[EntityId(w.csr.otherId[base + j])] = w.csr.edgeAux[base + j]
             for (tid in touchingScratch[slot]) work.touchingIds.add(EntityId(tid))
+            work.exposureMilli = exposureMilli.toInt()   // surface exposure (0..1000), damps passive env-exchange
             works[id] = work
         }
         // Second pass: turn each cell's base light into quanta. With [CytoTuning.LIGHT_SHADING] on, cells
