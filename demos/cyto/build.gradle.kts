@@ -72,6 +72,8 @@ tasks.withType<Test>().configureEach {
     System.getProperty("clockmode")?.let { systemProperty("clockmode", it) }
     System.getProperty("clockticks")?.let { systemProperty("clockticks", it) }
     System.getProperty("clockgenome")?.let { systemProperty("clockgenome", it) }
+    System.getProperty("divbug")?.let { systemProperty("divbug", it) }
+    System.getProperty("divticks")?.let { systemProperty("divticks", it) }
     System.getProperty("clockwatch")?.let { systemProperty("clockwatch", it) }
     System.getProperty("clockseed")?.let { systemProperty("clockseed", it) }
     System.getProperty("clockenv")?.let { systemProperty("clockenv", it) }
