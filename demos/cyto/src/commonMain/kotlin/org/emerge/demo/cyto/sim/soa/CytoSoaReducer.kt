@@ -386,10 +386,10 @@ class CytoSoaReducer(
                 val rest = radiusA + w.radiusRaw[nSlot]
                 val dist = deltaLen(w, i, nSlot)
                 val stretch = CytoUnits.toLogical(dist) - CytoUnits.toLogical(Frac(rest))
-                // Maintenance bonus 1/(deg+1)² (better-connected endpoint): a well-knit body's internal
+                // Maintenance bonus 1/2^deg (better-connected endpoint): a well-knit body's internal
                 // connections are nearly free to hold, matching degrade(). Surface connections stay costly.
                 val deg = maxOf(w.csr.degreeOf(i), w.csr.degreeOf(nSlot))
-                val stress = max(0f, stretch * cfg.connectionStressScale) / ((deg + 1) * (deg + 1))
+                val stress = max(0f, stretch * cfg.connectionStressScale) / (1 shl deg.coerceAtMost(20))
                 val key = pairKey(w.entityId[i], w.csr.otherId[k])
                 val damage = max(0f, (pairDmg[key] ?: w.csr.edgeAux[k]) + stress)
                 if (damage > cfg.connectionBreakDamage) {
@@ -632,10 +632,12 @@ class CytoSoaReducer(
             val sample = lightField.sampleAt(lx, ly, w.world.tick)
             val exposure = CytoExposure.weight(expoScratch, ek)
             val radius = Frac(w.cell.logicalRadius[slot])
-            // Light is NOT coupled to surface exposure (as if it arrives from an orthogonal 3rd dimension):
-            // a fully-surrounded interior cell still photosynthesises, so it can pull its own weight instead
-            // of being dead weight. (Exposure still governs env-exchange + the optional co-located shading.)
-            baseQuantaRaw[k] = (sample * CytoTuning.LIGHT_QUANTA_SCALE).raw
+            // Light vs surface exposure (CytoTuning.LIGHT_IGNORES_EXPOSURE): when true (default), light is
+            // independent of exposure — a buried interior cell still photosynthesises (3rd-dimension model) so
+            // it can pull its own weight; when false, light scales by exposure so a surrounded cell is shaded
+            // (the original behaviour). Exposure still governs env-exchange + the optional co-located shading.
+            baseQuantaRaw[k] = if (CytoTuning.LIGHT_IGNORES_EXPOSURE) (sample * CytoTuning.LIGHT_QUANTA_SCALE).raw
+                else ((sample * exposure) * CytoTuning.LIGHT_QUANTA_SCALE).raw
             // capture = exposure × radius, in milli-units. NOT `(exposure * radius)` — a big cell's radius
             // exceeds Frac's safe ±2 value range, so that Frac×Frac overflows Long (negative capture →
             // starves the founder). Reduce exposure to ≤1000 first, then scale by radius.raw.

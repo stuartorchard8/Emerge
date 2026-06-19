@@ -41,6 +41,11 @@ object CytoTuning {
      *  keep now the day/night cycle provides periodic selection pressure. (Lone cells are identical either
      *  way, so this only changes crowded grid-cells.) */
     const val LIGHT_SHADING = false
+    /** Whether light reaches surrounded cells. **true** (current): light is independent of surface exposure —
+     *  a fully-buried interior cell still photosynthesises (as if light arrives from an orthogonal 3rd
+     *  dimension), so it can fund its own upkeep. **false** (the original behaviour): light scales by surface
+     *  exposure, so a surrounded cell gets ~0 light. Toggle to compare interior-cell viability either way. */
+    const val LIGHT_IGNORES_EXPOSURE = true
     /** Moving light: when true, a single daylight BAND sweeps across the world (a day/night terminator),
      *  wrapping once per [LIGHT_ORBIT_PERIOD] ticks, replacing the 4 static sources. Cells must then hoard
      *  through the dark (store bonded molecules + a BreakBond gene to burn them) or follow the light.

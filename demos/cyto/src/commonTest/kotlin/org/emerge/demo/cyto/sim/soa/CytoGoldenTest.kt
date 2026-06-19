@@ -110,16 +110,18 @@ class CytoGoldenTest {
     // growth (mutation off) shifts from the nerf alone; interact + mutation from nerf + the new mutation op.
     // growth, mutation off, 250 ticks from the default scene.
     // Re-baselined 2026-06-19: MAINTENANCE BONUS for connected cells — biomass degradation + connection
-    // stress scale by 1/(weldedDegree+1). Then re-baselined again (same day): bonus made HARSHER —
-    // 1/(weldedDegree+1)² — so interior cells of a body are nearly free to maintain (degrade()/connections()).
-    // Only GROWTH moves (its founder colonises into a dense welded mass); mutation-on + interact byte-identical
-    // (lone cells → degree 0 → no-op). meta unchanged; physics/biology/topology/grid shift; gates held.
+    // stress scale by a per-cell welded-degree factor. Tried 1/(n+1), then 1/(n+1)², now **1/2^n** (1 nbr →
+    // 1/2, 2 → 1/4, 6 → 1/64; halves again per extra bond). NB the GROWTH digests here equal the original
+    // 1/(n+1) baseline: this scene's colony is mostly degree 0–1, where 1/2^n == 1/(n+1) (they only diverge
+    // at degree ≥2), so the golden doesn't exercise the deep-interior regime. mutation-on + interact
+    // byte-identical (lone cells → degree 0 → no-op). The light-exposure toggle defaults to current
+    // (decoupled), so it's golden-neutral. Gates held.
     private val GROWTH = mapOf(
         "meta" to "9e9bec4ae4480164",
-        "physics" to "33a9951788bf4935",
-        "biology" to "4e7fb7715b5a5cfb",
-        "topology" to "b4c4d64b98098a2f",
-        "grid" to "68bd7dbfe7521c1",
+        "physics" to "bd61dc0f64dddd78",
+        "biology" to "7f8fa0ae3a0e224d",
+        "topology" to "48fe28f64568d4e3",
+        "grid" to "cdc5f220e01425ae",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
     // Re-baselined twice for deliberate gene-model extensions, both of which re-route point-mutation's
