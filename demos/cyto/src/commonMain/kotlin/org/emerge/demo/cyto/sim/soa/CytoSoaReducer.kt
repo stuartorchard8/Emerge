@@ -408,12 +408,20 @@ class CytoSoaReducer(
                 // Tension (pulled past rest): maintenance bonus 1/2^deg (better-connected endpoint) — a
                 // well-knit body's internal connections are nearly free to HOLD TOGETHER, matching degrade().
                 val tension = max(0f, stretch * cfg.connectionStressScale) / (1 shl deg.coerceAtMost(20))
-                // Over-stretch: ramps from 0 at rest to a full CONNECTION_BREAK_DAMAGE at
-                // OVERSTRETCH_BREAK_MULTIPLE × rest (~2 cell-widths of gap, where the bond rendering breaks
-                // down), so a hard yank destroys even a perfectly healthy, well-knit, actively-repaired link in
-                // ONE tick. NOT degree-discounted — past this distance the link is non-physical and gives.
+                // Over-stretch: a NON-LINEAR ramp, (stretch/breakDist)^exponent × CONNECTION_BREAK_DAMAGE,
+                // reaching a full break-in-one-tick at OVERSTRETCH_BREAK_MULTIPLE × rest (~2 cell-widths of gap,
+                // where the bond rendering breaks down). The exponent keeps low/moderate stretch cheap so links
+                // flex and recover under normal load, while a hard yank near the break distance spikes to
+                // destroy even a perfectly healthy, well-knit, actively-repaired link in ONE tick. NOT
+                // degree-discounted — past the break distance the link is non-physical and gives. Integer power
+                // via repeated multiply keeps it deterministic (no transcendental pow()).
                 val breakDist = cfg.overStretchBreakMultiple * restLogical
-                val overStretch = if (stretch > 0f && breakDist > 0f) cfg.connectionBreakDamage * (stretch / breakDist) else 0f
+                val overStretch = if (stretch > 0f && breakDist > 0f) {
+                    val ratio = stretch / breakDist
+                    var p = 1f
+                    repeat(cfg.overStretchDamageExponent) { p *= ratio }
+                    cfg.connectionBreakDamage * p
+                } else 0f
                 // Compression (crushed inside rest by more than the tolerance): NOT degree-discounted, so an
                 // over-packed blob — a cell dividing faster than its daughters can separate — crushes its own
                 // welds and sheds them, fragmenting/dispersing instead of fusing into one rigid over-

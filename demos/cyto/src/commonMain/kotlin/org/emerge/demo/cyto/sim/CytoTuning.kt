@@ -184,9 +184,16 @@ object CytoTuning {
      * one cell-width, two touching cells' centres being one diameter apart). At this much STRETCH (gap beyond
      * rest) a link takes a full CONNECTION_BREAK_DAMAGE of stress in a single tick — enough to destroy a
      * perfectly healthy link instantly, no matter how well-knit or how hard it's repaired (this term is NOT
-     * degree-discounted). It ramps linearly from 0 at rest to full at this distance. 2.0 ⇒ a ~2-cell-width
-     * gap, where the bond rendering starts breaking down. Lower = links snap sooner under load. ⚙ */
+     * degree-discounted). 2.0 ⇒ a ~2-cell-width gap, where the bond rendering starts breaking down. Lower =
+     * links snap sooner under load. ⚙ */
     const val OVERSTRETCH_BREAK_MULTIPLE = 2.0f
+    /**
+     * Exponent of the over-stretch damage ramp: damage = (stretch / breakDistance)^this × CONNECTION_BREAK_DAMAGE.
+     * 1 = linear (a given stretch fraction hurts proportionally — too fragile, moderate stretch breaks links);
+     * higher = the curve stays near zero through low/moderate stretch and spikes only as it nears the break
+     * distance, so links flex and recover under normal load but still snap instantly at ~2 cell-widths.
+     * Integer (applied by repeated multiply) so it's deterministic — no transcendental pow(). ⚙ */
+    const val OVERSTRETCH_DAMAGE_EXPONENT = 3
     /** Mouse-drag pull toward the pointer, and its damping. */
     val GRAB_STIFFNESS = Frac(1, 2)
     val GRAB_DAMPING = Frac(1, 1)
