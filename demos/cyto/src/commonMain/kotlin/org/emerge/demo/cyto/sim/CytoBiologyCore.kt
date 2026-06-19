@@ -58,7 +58,13 @@ object CytoBiologyCore {
         }
         if (stats != null) { stats.ticks++; stats.exchGridCells += byCell.size; stats.exchGroupNanos += tGroup!!.elapsedNow().inWholeNanoseconds }
         val tSpecies = if (stats != null) TimeSource.Monotonic.markNow() else null
+        // Reused across every species-call of this tick (grown on demand): the per-species want/grant
+        // working arrays, so exchangeSpecies allocates nothing (was a fresh pair per species per grid-cell,
+        // ~thousands of IntArrays/tick). exchangeSpecies uses only the first cells.size entries.
+        var want = IntArray(0)
+        var grant = IntArray(0)
         for ((idx, cells) in byCell) {
+            if (want.size < cells.size) { want = IntArray(cells.size); grant = IntArray(cells.size) }
             val species = HashSet<Int>()                    // union of grid-cell + every cell's cytoplasm
             for (i in 0 until grid.cellSize(idx)) species.add(grid.cellIdAt(idx, i))
             for (w in cells) for (i in 0 until w.cytoplasm.size) species.add(w.cytoplasm.idAt(i))
@@ -67,16 +73,18 @@ object CytoBiologyCore {
                 stats.exchCellIters += species.size.toLong() * cells.size
                 if (cells.size > stats.exchMaxCellsInCell) stats.exchMaxCellsInCell = cells.size.toLong()
             }
-            for (sp in species) exchangeSpecies(idx, sp, cells, grid)
+            for (sp in species) exchangeSpecies(idx, sp, cells, grid, want, grant)
         }
         if (stats != null) stats.exchSpeciesNanos += tSpecies!!.elapsedNow().inWholeNanoseconds
     }
 
     /** Resolve one species' passive exchange for the cells sharing grid-cell [idx], against the snapshot
-     *  `env`. Leakers deposit fully; absorbers split the snapshot proportionally when over-subscribed. */
-    private fun exchangeSpecies(idx: Int, sp: Int, cells: List<CellWork>, grid: CytoMatterGrid) {
+     *  `env`. Leakers deposit fully; absorbers split the snapshot proportionally when over-subscribed.
+     *  [want]/[grant] are caller-owned scratch (≥ cells.size); only the first cells.size entries are used —
+     *  want is zeroed here per call (non-absorbers must read 0), grant is fully assigned before it's read. */
+    private fun exchangeSpecies(idx: Int, sp: Int, cells: List<CellWork>, grid: CytoMatterGrid, want: IntArray, grant: IntArray) {
         val env = grid.count(idx, sp)
-        val want = IntArray(cells.size)        // each absorber's desired draw against the shared snapshot
+        for (i in cells.indices) want[i] = 0   // each absorber's desired draw against the shared snapshot
         var demand = 0L                        // Σ want over absorbers
         for (i in cells.indices) {
             val canHold = cells[i].handleable.canHold(sp)
@@ -99,7 +107,6 @@ object CytoBiologyCore {
             }
         }
         if (demand == 0L) return
-        val grant = IntArray(cells.size)
         if (demand <= env) {                   // not over-subscribed: everyone gets their full want
             for (i in cells.indices) grant[i] = want[i]
         } else {                               // over-subscribed: proportional floor + remainder
@@ -360,10 +367,16 @@ object CytoBiologyCore {
      *  ties → lowest id), or -1. A single-atom suffix == "ends in that atom"; a longer one is a specific tail. */
     private fun richestEndingWith(snap: MoleculeStore, suffix: String): Int {
         if (suffix.isEmpty()) return -1
+        // Fast path: a single-atom suffix == "ends in that atom", matched on the precomputed last-atom id
+        // (an int compare) instead of an O(len) string endsWith per species. Bit-identical: an unknown atom
+        // (atomIndexOf < 0) matches nothing, exactly as no species string ends with it.
+        val atom = if (suffix.length == 1) SpeciesRegistry.atomIndexOf(suffix[0]) else -1
         var best = -1; var bestCount = 0
         for (i in 0 until snap.size) {
             val id = snap.idAt(i)
-            if (SpeciesRegistry.string(id).endsWith(suffix)) { val c = snap.countAt(i); if (c > bestCount) { bestCount = c; best = id } }
+            val match = if (suffix.length == 1) SpeciesRegistry.lastAtom(id) == atom
+                        else SpeciesRegistry.string(id).endsWith(suffix)
+            if (match) { val c = snap.countAt(i); if (c > bestCount) { bestCount = c; best = id } }
         }
         return best
     }
@@ -372,10 +385,15 @@ object CytoBiologyCore {
      *  → lowest id), or -1. */
     private fun richestStartingWith(snap: MoleculeStore, prefix: String): Int {
         if (prefix.isEmpty()) return -1
+        // Fast path: single-atom prefix == "starts with that atom", matched on the precomputed first-atom id
+        // (see [richestEndingWith]). Bit-identical.
+        val atom = if (prefix.length == 1) SpeciesRegistry.atomIndexOf(prefix[0]) else -1
         var best = -1; var bestCount = 0
         for (i in 0 until snap.size) {
             val id = snap.idAt(i)
-            if (SpeciesRegistry.string(id).startsWith(prefix)) { val c = snap.countAt(i); if (c > bestCount) { bestCount = c; best = id } }
+            val match = if (prefix.length == 1) SpeciesRegistry.firstAtom(id) == atom
+                        else SpeciesRegistry.string(id).startsWith(prefix)
+            if (match) { val c = snap.countAt(i); if (c > bestCount) { bestCount = c; best = id } }
         }
         return best
     }
