@@ -401,18 +401,25 @@ class CytoSoaReducer(
                 val nSlot = w.csr.otherSlot[k]
                 if (nSlot < 0) continue
                 val rest = radiusA + w.radiusRaw[nSlot]
+                val restLogical = CytoUnits.toLogical(Frac(rest))
                 val dist = deltaLen(w, i, nSlot)
-                val stretch = CytoUnits.toLogical(dist) - CytoUnits.toLogical(Frac(rest))
+                val stretch = CytoUnits.toLogical(dist) - restLogical
                 val deg = maxOf(w.csr.degreeOf(i), w.csr.degreeOf(nSlot))
                 // Tension (pulled past rest): maintenance bonus 1/2^deg (better-connected endpoint) — a
                 // well-knit body's internal connections are nearly free to HOLD TOGETHER, matching degrade().
                 val tension = max(0f, stretch * cfg.connectionStressScale) / (1 shl deg.coerceAtMost(20))
+                // Over-stretch: ramps from 0 at rest to a full CONNECTION_BREAK_DAMAGE at
+                // OVERSTRETCH_BREAK_MULTIPLE × rest (~2 cell-widths of gap, where the bond rendering breaks
+                // down), so a hard yank destroys even a perfectly healthy, well-knit, actively-repaired link in
+                // ONE tick. NOT degree-discounted — past this distance the link is non-physical and gives.
+                val breakDist = cfg.overStretchBreakMultiple * restLogical
+                val overStretch = if (stretch > 0f && breakDist > 0f) cfg.connectionBreakDamage * (stretch / breakDist) else 0f
                 // Compression (crushed inside rest by more than the tolerance): NOT degree-discounted, so an
                 // over-packed blob — a cell dividing faster than its daughters can separate — crushes its own
                 // welds and sheds them, fragmenting/dispersing instead of fusing into one rigid over-
                 // constrained mass the spring solver can't hold. Mild resting overlap (< tolerance) is free.
                 val compression = max(0f, -stretch - cfg.compressionTolerance) * cfg.connectionStressScale
-                val stress = tension + compression
+                val stress = tension + overStretch + compression
                 val key = pairKey(w.entityId[i], w.csr.otherId[k])
                 val damage = max(0f, (pairDmg[key] ?: w.csr.edgeAux[k]) + stress)
                 if (damage > cfg.connectionBreakDamage) {

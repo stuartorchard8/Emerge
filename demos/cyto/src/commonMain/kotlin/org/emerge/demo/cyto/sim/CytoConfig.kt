@@ -26,6 +26,7 @@ data class CytoConfig(
     val dragMaxFraction: Float = CytoTuning.DRAG_MAX_FRACTION,
     val cellWidthDragCoefficient: Float = CytoTuning.CELL_WIDTH_DRAG_COEFFICIENT,
     val connectionStressScale: Float = CytoTuning.CONNECTION_STRESS_SCALE,
+    val overStretchBreakMultiple: Float = CytoTuning.OVERSTRETCH_BREAK_MULTIPLE,
     val grabStiffness: Frac = CytoTuning.GRAB_STIFFNESS,
     val grabDamping: Frac = CytoTuning.GRAB_DAMPING,
     val variableMass: Boolean = CytoTuning.VARIABLE_MASS,

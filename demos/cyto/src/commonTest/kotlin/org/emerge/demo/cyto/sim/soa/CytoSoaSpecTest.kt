@@ -658,12 +658,13 @@ class CytoSoaSpecTest {
         b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
         // A stored `ab` cytoplasm reserve so a BreakBond-powered repair gene has fuel regardless of where the
         // moving daylight band is (light timing must not decide whether repair fires).
-        // Place the pair at ~rest length (biomass 8000 ⇒ radius 0.707 ⇒ rest 1.414), within the compression
-        // tolerance, so the connection is damaged but UNSTRESSED — isolating the heal-vs-not mechanic. (A
-        // crushed pair — the old 0.5 spacing — would now accrue compression stress and break, since crushed
-        // welds are designed to shed; see COMPRESSION_TOLERANCE.)
-        val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 8000), genome = genome)
-        val c = b.spawnCell(CytoUnits.coord2(sx + 1.4f, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 8000), genome = genome)
+        // PIN logicalRadius to the biomass baseline (4000 bonds ⇒ radius 0.5) so the cells are full-size from
+        // tick 0 — otherwise the radius elastically grows toward its target, the spring rest grows with it,
+        // and the link is transiently compressed/stretched during growth, confounding the damage tests. Placed
+        // at rest (rest = 2×0.5 = 1.0) so the connection is damaged but UNSTRESSED — isolating heal-vs-not.
+        val r = Frac(1, 2)
+        val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = genome)
+        val c = b.spawnCell(CytoUnits.coord2(sx + 1.0f, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = genome)
         addSpring(b, a, c, cfg)
         b.update<ConnectionStateComponent>(a) { ConnectionStateComponent(mapOf(c to damage)) }
         b.update<ConnectionStateComponent>(c) { ConnectionStateComponent(mapOf(a to damage)) }
@@ -701,6 +702,23 @@ class CytoSoaSpecTest {
         val dmg = maxConnectionDamage(run(damagedPair(repairOnly, damage = 2.5f), ticks = 1))
         assertTrue(dmg < 2.5f, "repair should heal some damage in a tick; got $dmg")
         assertTrue(dmg >= 2.5f - cap - 1e-3f, "one tick must not heal more than the per-tick cap ($cap); got $dmg (healed ${2.5f - dmg})")
+    }
+
+    @Test
+    fun extremeStretchBreaksHealthyConnectionInOneTick() {
+        // A perfectly healthy (damage 0) link stretched past the over-stretch break distance
+        // (OVERSTRETCH_BREAK_MULTIPLE × rest ≈ 2 cell-widths of gap) takes a full CONNECTION_BREAK_DAMAGE of
+        // stress in a single tick and breaks — repair can't pre-empt it (stress is applied after biology).
+        val (sx, sy) = CytoLightField.SOURCES.first()
+        val b = SimBuilder(SimState(randomSeed = 1))
+        b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
+        // Pin radius 0.5 (no growth drift) ⇒ rest 1.0, break distance = 2 × rest = 2.0 of stretch. Centres 3.2
+        // apart ⇒ stretch 2.2 (≈2.2 cell-widths), just past the break point.
+        val r = Frac(1, 2)
+        val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
+        val c = b.spawnCell(CytoUnits.coord2(sx + 3.2f, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
+        addSpring(b, a, c, cfg)
+        assertEquals(0, springCount(run(b.build(), ticks = 1)), "a link stretched past ~2 cell-widths must break in one tick, even with repair")
     }
 
     @Test
