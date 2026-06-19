@@ -117,6 +117,9 @@ The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (
   abundant-matter dials; also coarsens the broadphase, so capping helps perf too). Mechanism A may
   address via leak.
 - [ ] **Genome-bloat outlier** (max 53 genes, median 10) — check the bloat tax is still effective.
+  Perf angle (2026-06-19, see `PERF.md`): after the biology micro-opts, `bio:genes` is volume-bound on
+  genome size and `Biomass`/`Conc` gates dominate — so capping genome growth is now the top *performance*
+  lever too (not just a selection-health one), attacking gates + exchange at the source.
 
 ---
 

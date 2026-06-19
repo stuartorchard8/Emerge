@@ -45,7 +45,7 @@ Biology is the dominant phase (~49% at normal pop, ~75% at thousands). Second ro
 
 - Parallelise MORE of biology (light/passive/finish per-group + diffuse) so the parallel fraction offsets
   the clock penalty (only helps on flat-clock CPUs).
-- Cut remaining per-cell compute (repeated `totalBiomassBonds`, the two-pass light shading).
+- Cut remaining per-cell compute (~~repeated `totalBiomassBonds`~~ done 2026-06-19, see below; the two-pass light shading remains).
 - Reduce work via harder culling / smaller world / population cap.
 
 Carrying capacity under moving light is a few hundred (the 4546-cell figure was an older static-light
@@ -56,3 +56,46 @@ save), so normal-pop tick is ~1.5 ms — already smooth.
 - Cells hoard hard (one held 252k cytoplasm molecules — gradient soft-cap barely bites; coarsens the
   broadphase, so capping helps perf too). Mechanism A (leak) may address.
 - Genome bloat outlier (max 53 genes, median 10) — check the bloat tax is still effective.
+
+## 2026-06-19 — biology profiled to the sub-phase, then ~2× on a heavy evolved save
+
+Profiled a real reported-heavy save (`platform/desktop-app/cyto-save-17-jun.bin`: **1906 cells**, evolved
+genomes med 15 / max 49 genes, big cytoplasm). Unlike the founder-colony runs above, biology here was
+**~92% of the tick and the sim ran OVER the 60fps budget (~19.3 ms/tick, 0.9×)**. Parallelism is moot:
+the only parallel phase (springs) is 0.9% of the tick — the bottleneck is entirely single-threaded biology.
+
+**New tooling:** `BioProfile` (`sim/BioProfile.kt`) — fine-grained timers + counters for `passiveEnvExchange`
+and `runGenes`, threaded via optional `stats` params, printed by `benchCyto`. Plus reducer `bio:*` profiler
+sub-phase splits (build/quanta/exchange/genes/diffuse/finish/writeback). All gated off in production (null) →
+bit-identical. (Within biology the cost was ~50/50 genes/exchange; the per-cell `MoleculeStore.copy()` is
+NOT a cost — cells hold a median ~14 *distinct species*, not the molecule total, and `copy()` is O(species).)
+
+Four bit-identical wins (golden + spec gates green throughout), instrumented A/B on this save:
+
+- **Wildcard FormBond fast path** (`richestEndingWith/StartingWith`): evolved `aWild/bWild` genes drove
+  23k string `endsWith/startsWith` scans/tick. Single-atom suffix/prefix now matches on `SpeciesRegistry`'s
+  precomputed first/last-atom id (int compare); multi-char keeps the string path. → genes apply −19%.
+- **Exchange `want/grant` scratch reuse**: was a fresh `IntArray` pair per species per grid-cell (~5.5k
+  allocs/tick) → caller-owned scratch grown once/tick. → tick alloc −29%; exchange −6% (confirming the cost
+  was iteration, not allocation).
+- **Cell-major `passiveEnvExchange`** (the big one): `BioProfile` showed **99.5% of exchange iterations were
+  no-ops** (240k/241k — cells visited for a grid-reservoir species they neither hold nor can metabolise;
+  species were 96% grid-origin). Restructured to group co-located cells by canHold reach
+  (`Handleable.canHoldKey`; a clonal blob → ~1 group), test each grid species against the few distinct
+  reaches (skip a whole group at once), absorbers from the groups (sorted to canonical cellIdx order for the
+  proportional remainder), leakers from the cytoplasm holders. **exchange −56%, cellIters 241k→33k, tick
+  19.2→15.6 ms, crossed the budget (0.9×→1.1×).** Costs ~0.8 MB/tick for the per-grid-cell groups/holders
+  maps (poolable; GC still trivial).
+- **Gene gate-path: cache ids + memoize biomass** (biggest single jump): (a) `Operand.Chem/Conc.species` and
+  `GeneAction.a/b` resolve to `SpeciesRegistry` ids ONCE at construction (`speciesId`/`aId`/`bId`, body vals
+  so data-class equals/copy unaffected) — no per-eval string re-hash; (b) `totalBiomassBonds` (O(distinct
+  biomass species)) was recomputed per `Biomass`/`Conc` operand — it's constant across a cell's gating scan,
+  so compute once and thread through `gate`/`operand` (reuse for the 1/n `snapBiomass`). **Bigger than
+  expected → Biomass/Conc gates dominate evolved genomes (the morphogen-shape design):** isActiveScan −37%,
+  apply −34%, **biology 13.9→9.1 ms, tick 15.6→10.3 ms, 1.1×→1.6×.**
+
+**Net: 19.3 ms (over budget) → ~10.3 ms instrumented / ~8–9 ms clean (1.6× headroom).** Remaining `bio:genes`
+(~5.4 ms) and `bio:exchange` (~2.6 ms — the clone iterating its own metabolite species × ~236 blob members,
+mostly canHold-but-saturated) are now **volume-bound on genome size / blob density**. Further code micro-opts
+are diminishing returns; **capping genome growth / blob size** is the higher-leverage lever and attacks both
+at the source — but it's a behaviour/selection change (not bit-identical), so decide it on gameplay merits.
