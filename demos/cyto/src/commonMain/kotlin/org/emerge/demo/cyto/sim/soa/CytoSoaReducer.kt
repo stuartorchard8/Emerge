@@ -643,7 +643,15 @@ class CytoSoaReducer(
             val ang = transform.ang + Frac(motion.angVel.raw.toLong()) + impulse.angVel / 2
             val angVel = motion.angVel + impulse.angVel
             w.posX[i] = pos.x.raw; w.posY[i] = pos.y.raw; w.ang[i] = ang.raw
-            w.velX[i] = vel.x.raw; w.velY[i] = vel.y.raw; w.angVel[i] = angVel.raw
+            // Velocity reconciliation: v = Δx/dt (dt=1). The weld solve moves cells through the POSITION
+            // channel (impPos, a stable pseudo-velocity projection); discarding it left velX carrying only the
+            // damping channel, so drag/contacts were blind to constraint-driven motion (no locomotion). Setting
+            // velocity to the realized per-tick displacement folds that motion back in. Torus Coord subtraction
+            // is modular ⇒ the small signed delta is exact across the wrap. Welds now carry inertia (they'll
+            // overshoot/ring); SPRING_DAMPING's velocity solve bleeds it. (Was: w.velX = vel.x.raw — damping only.)
+            w.velX[i] = pos.x.raw - transform.pos.x.raw
+            w.velY[i] = pos.y.raw - transform.pos.y.raw
+            w.angVel[i] = angVel.raw
         }
     }
 

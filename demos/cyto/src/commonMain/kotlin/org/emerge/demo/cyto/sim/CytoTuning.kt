@@ -168,7 +168,7 @@ object CytoTuning {
      */
     val CONTACT_DAMPING = Frac(1, 4)
     /** Connection breaks when accumulated stress damage exceeds this (higher = less fragile). */
-    const val CONNECTION_BREAK_DAMAGE = 3f
+    const val CONNECTION_BREAK_DAMAGE = 5f
     /**
      * Hard cap on how many welds one cell can hold. A new weld (division, contact-stick, or Repair-heal) is
      * refused once either endpoint already has this many. A cell has at most ~6 spatial neighbours in 2D, so
@@ -198,7 +198,7 @@ object CytoTuning {
      */
     const val COMPRESSION_TOLERANCE = 0.1f
     /** Exposed-surface viscous drag, quadratic coefficient over exposed speed (logical units/tick). */
-    const val DRAG_COEFFICIENT = 0.2f
+    const val DRAG_COEFFICIENT = 0.8f
     /** Max fraction of a cell's exposed speed drag may remove in one tick (≤ 1) — lets a flicked cell
      *  decelerate smoothly and glide rather than slam to a stop. */
     const val DRAG_MAX_FRACTION = 0.3f
@@ -214,7 +214,7 @@ object CytoTuning {
      * perfectly healthy link instantly, no matter how well-knit or how hard it's repaired (this term is NOT
      * degree-discounted). 2.0 ⇒ a ~2-cell-width gap, where the bond rendering starts breaking down. Lower =
      * links snap sooner under load. ⚙ */
-    const val OVERSTRETCH_BREAK_MULTIPLE = 2.0f
+    const val OVERSTRETCH_BREAK_MULTIPLE = 2.5f
     /**
      * Exponent of the over-stretch damage ramp: damage = (stretch / breakDistance)^this × CONNECTION_BREAK_DAMAGE.
      * 1 = linear (a given stretch fraction hurts proportionally — too fragile, moderate stretch breaks links);

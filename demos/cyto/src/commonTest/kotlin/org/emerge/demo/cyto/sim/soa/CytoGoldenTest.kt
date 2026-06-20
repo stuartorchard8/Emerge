@@ -116,9 +116,18 @@ class CytoGoldenTest {
     // at degree ≥2), so the golden doesn't exercise the deep-interior regime. mutation-on + interact
     // byte-identical (lone cells → degree 0 → no-op). The light-exposure toggle defaults to current
     // (decoupled), so it's golden-neutral. Gates held.
+    // Re-baselined 2026-06-21: VELOCITY RECONCILIATION (v = Δx/dt in integrate). The weld solve moves cells
+    // through the position channel (impPos, pseudo-velocity); integrate now sets velocity to the realized
+    // per-tick displacement instead of discarding the position-correction part, so velocity-reading forces
+    // (drag, contacts) finally see constraint-driven motion — unblocking locomotion (a breathing organism in
+    // the save now drifts ~115 cell-diam over 20k ticks; was bit-frozen). ONLY the GROWTH `physics` digest
+    // moves (it hashes velocity); meta/biology/topology/grid are byte-identical (colony size, chemistry, welds
+    // unchanged), and mutation-on + interact goldens are fully byte-identical (their sampled cells aren't in
+    // active spring motion). Determinism gates (parallel==sequential, round-trip) held; welds now carry inertia
+    // (SPRING_DAMPING bleeds the ring) and the full 130-cell save stays stable over 8k ticks.
     private val GROWTH = mapOf(
         "meta" to "9e9bec4ae4480164",
-        "physics" to "caad3adbeab7faab",
+        "physics" to "ed59bfdad59c83a6",
         "biology" to "a90024dd8c59dcf3",
         "topology" to "2925fede43facb67",
         "grid" to "b85a188eef9ccf0c",

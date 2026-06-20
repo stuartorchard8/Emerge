@@ -712,11 +712,15 @@ class CytoSoaSpecTest {
         val (sx, sy) = CytoLightField.SOURCES.first()
         val b = SimBuilder(SimState(randomSeed = 1))
         b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
-        // Pin radius 0.5 (no growth drift) ⇒ rest 1.0, break distance = 2 × rest = 2.0 of stretch. Centres 3.2
-        // apart ⇒ stretch 2.2 (≈2.2 cell-widths), just past the break point.
+        // Pin radius 0.5 (no growth drift) ⇒ rest 1.0, break distance = OVERSTRETCH_BREAK_MULTIPLE × rest.
+        // Place the centres ~10% PAST the break point — derived from the tuning so the test tracks
+        // OVERSTRETCH_BREAK_MULTIPLE instead of hardcoding a gap that silently goes under the threshold when
+        // welds are made less fragile (centres rest×(1 + 1.1·multiple) apart ⇒ stretch just over breakDist).
         val r = Frac(1, 2)
+        val rest = 1f   // 2 × radius 0.5
+        val centreDist = rest * (1f + 1.1f * CytoTuning.OVERSTRETCH_BREAK_MULTIPLE)
         val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
-        val c = b.spawnCell(CytoUnits.coord2(sx + 3.2f, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
+        val c = b.spawnCell(CytoUnits.coord2(sx + centreDist, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
         addSpring(b, a, c, cfg)
         assertEquals(0, springCount(run(b.build(), ticks = 1)), "a link stretched past ~2 cell-widths must break in one tick, even with repair")
     }
