@@ -83,6 +83,10 @@ tasks.withType<Test>().configureEach {
     System.getProperty("swimticks")?.let { systemProperty("swimticks", it) }
     System.getProperty("collprobe")?.let { systemProperty("collprobe", it) }
     System.getProperty("collticks")?.let { systemProperty("collticks", it) }
+    System.getProperty("ctrl")?.let { systemProperty("ctrl", it) }
+    System.getProperty("ctrlgenome")?.let { systemProperty("ctrlgenome", it) }
+    System.getProperty("ctrlseed")?.let { systemProperty("ctrlseed", it) }
+    System.getProperty("ctrlticks")?.let { systemProperty("ctrlticks", it) }
 }
 
 // Generates *ShaderSources.kt from .vert / .frag files under src/commonMain/shaders/.

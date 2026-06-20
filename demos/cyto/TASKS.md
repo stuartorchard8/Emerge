@@ -43,6 +43,23 @@ it grows but doesn't differentiate — functional spawning needs a cytoplasm see
 
 ## Next
 
+**⚑ SEQUENCED PLAN for steerable locomotion (chemotaxis) — `PLAN_taxis_substrate.md` (2026-06-21).** The
+bend motor works (velocity reconciliation `91145a6f` + lateralised `Contract`), but *steering* needs a goal
+(matter/light gradient) and an instrument (the body as a differential sensor of local intake). The matter
+substrate can't supply a readable gradient: grid cell = 32 cell-diam (a body sits in ONE cell), and
+diffusion flattens any self-dug gradient. Fix, in order:
+1. [ ] **World rescale + real torus (DO FIRST).** Shrink `CytoUnits.CELLS_PER_AXIS` (1024 → ~128–256); wrap
+   cell **positions** + the collision broadphase like drockets/scavengers (today only the *fields* wrap;
+   physics positions run to the Int boundary so edge cells never interact + desync from the field they read).
+   Re-baselines goldens.
+2. [ ] **Matter field: fine static grid + Gaussian local gather, NO diffusion** (`PLAN_taxis_substrate.md`).
+   `MATTER_GRID_RES` (fine, ≈1 cell-diam) decoupled from coarse light; cells pull from a precomputed integer
+   Gaussian/disc stencil (conservative apportionment) — feeds sessile cells, IS the intake-density sensor,
+   lets self-dug craters persist, and is a perf win (O(cells×kernel) not O(RES²)+alloc). Deposit stays local
+   (carcass food patches).
+3. [ ] **Resume the controller as taxis:** swap the bend's lateralising signal from the fixed `cc` organizer
+   to an environment-driven matter-sensitive metabolite → bend toward food. Size cap NOT needed.
+
 **Substrate update (2026-06-17): the gradient needs NO new substrate code.** Decay = metabolism: a morphogen
 is an ordinary metabolite in a **centre-source → everywhere-sink loop** (centre synthesises it, every cell
 consumes it back), and it diffuses for free because it's `canHold`-true (existing `CytoBiologyCore.diffuse`).
