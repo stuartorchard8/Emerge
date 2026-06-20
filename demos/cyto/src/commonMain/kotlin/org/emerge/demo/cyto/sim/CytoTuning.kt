@@ -139,6 +139,22 @@ object CytoTuning {
      *  soft: a loaded connection sits stretched instead of snapping to rest (and that stretch is what
      *  drives force-based breaking). Softening it injects no kinetic energy. */
     val SPRING_STIFFNESS = Frac(1, 20)
+    /**
+     * Asymmetric weld stiffness: a COMPRESSED weld (crushed below rest) relaxes this many times harder than a
+     * stretched one (which uses [SPRING_STIFFNESS]). Tension stays soft so flex/contraction/locomotion are
+     * untouched; only the *outward push* against crushing is stiffened. This is the dial for the through-cell
+     * degeneracy: a chord A–C welded across a middle cell B is held short by B being squashable, so it settles
+     * at a low over-stretch ratio (≈ 0.17 at multiple 1 — *below* the ≈0.21 band of ordinary welds, so it
+     * can't be told apart by stretch). Stiffening B's compression resistance makes the A–B/B–C struts win the
+     * equilibrium and hold A,C apart, raising the chord's settled over-stretch ratio toward the straight-line
+     * ceiling: for a symmetric collinear triad, **ratio = m / (2·(m+2))** (m = this multiple) —
+     *   m=1 → 0.17 (limp, today)   m=1.5 → 0.21 (clears the ordinary-weld band)   m=3 → 0.30   m→∞ → 0.50 ceiling.
+     * Welds stay fully compressible (B still squashes, just not limply); the chord never reaches a stretch that
+     * breaks it alone (≤0.5), but it lifts clear of the legit band (so a tuned over-stretch break can target it)
+     * and the higher carried load makes the collinear config more sensitive to perturbation (buckles B out into
+     * 2D → a legitimate triangle). Integer multiple of the base relaxation rate; keep ≤ ~10 so m·SPRING_STIFFNESS
+     * stays a stable (<1) per-iteration relaxation. ⚙ */
+    const val WELD_COMPRESSION_STIFFNESS_MULTIPLE = 3
     /** Fraction of relative normal velocity cancelled per iteration (real, dissipative) — the overdamping. */
     val SPRING_DAMPING = Frac(1, 4)
     /** Repulsion impulse fraction for overlapping, non-connected cells. */

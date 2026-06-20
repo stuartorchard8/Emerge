@@ -584,6 +584,7 @@ class CytoSoaReducer(
         // 2) position solve (pseudo-velocity): move working positions toward rest length. The normal must
         //    be recomputed each iteration (working positions move), but the mass weight is the precomputed
         //    [ew]; a 0 weight (zero total mass) zeroes the contribution, as the old `continue` did.
+        val compStiffMul = cfg.weldCompressionStiffnessMultiple   // compressed welds push back this much harder
         repeat(ITERATIONS) {
             ColumnPartition.disjoint(n, executor, springParallelThreshold) { start, end ->
                 for (i in start until end) {
@@ -595,8 +596,13 @@ class CytoSoaReducer(
                         val ddx = px[j] - pix; val ddy = py[j] - piy     // d = pos[j] - pos[i]
                         val dist = lenRaw(ddx, ddy); if (dist == 0L) continue
                         val nx = ddx * FRAC_MAX / dist; val ny = ddy * FRAC_MAX / dist
-                        val lengthError = dist - csr.restRaw[k]                          // dist - Frac(rest)
-                        val pCorr = lengthError * csr.stiffRaw[k] / FRAC_MAX
+                        val lengthError = dist - csr.restRaw[k]                          // dist - Frac(rest); <0 = compressed
+                        // A compressed weld pushes back harder than a stretched one relaxes (asymmetric stiffness):
+                        // stiffens the outward push that holds a squashable middle cell apart, lifting a
+                        // through-cell chord's settled stretch clear of the ordinary-weld band. Stretched/at-rest
+                        // path is byte-identical (multiply only when lengthError < 0).
+                        var pCorr = lengthError * csr.stiffRaw[k] / FRAC_MAX
+                        if (lengthError < 0L) pCorr *= compStiffMul
                         val scalar = pCorr * ew[k] / FRAC_MAX
                         accX += nx * scalar / FRAC_MAX; accY += ny * scalar / FRAC_MAX
                     }

@@ -16,6 +16,8 @@ data class CytoConfig(
     override val collisionSpeedDamageThreshold: Frac = Frac(0),
 
     val springStiffness: Frac = CytoTuning.SPRING_STIFFNESS,
+    /** Compressed welds relax this many × harder than stretched ones (the through-cell-degeneracy dial). */
+    val weldCompressionStiffnessMultiple: Int = CytoTuning.WELD_COMPRESSION_STIFFNESS_MULTIPLE,
     val springDamping: Frac = CytoTuning.SPRING_DAMPING,
     val repulsion: Frac = CytoTuning.REPULSION,
     val contactDamping: Frac = CytoTuning.CONTACT_DAMPING,
