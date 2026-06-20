@@ -59,6 +59,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                 lastTimeNanos = now
 
                 val frame = controller.tick(delta)
+                r.colorMode = c.colorMode // Color button → renderer
                 r.draw(frame) // renderer fills its own background
                 for (readout in controller.readouts(grabId, c.showChemicals)) {
                     val screen = r.worldToScreen(readout.x, readout.y)

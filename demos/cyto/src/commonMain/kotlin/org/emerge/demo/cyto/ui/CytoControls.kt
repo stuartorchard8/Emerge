@@ -1,5 +1,6 @@
 package org.emerge.demo.cyto.ui
 
+import org.emerge.demo.cyto.CellColorMode
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.render.torus.GPU
@@ -40,6 +41,16 @@ class CytoControls {
     /** Whether to draw the light-field heatmap (the host reads this and applies it to the renderer). */
     var showLightField: Boolean = true
         private set
+
+    /** Cell display colour mode (the host reads this and applies it to the renderer). Cycled by the
+     *  bottom-right "Color" button. */
+    var colorMode: CellColorMode = CellColorMode.Bio
+        private set
+
+    private fun cycleColorMode() {
+        val modes = CellColorMode.entries
+        colorMode = modes[(colorMode.ordinal + 1) % modes.size]
+    }
 
     /** Host action for the "Load Genome" button — (re)load the brush genome from its file. File IO
      *  lives in the host (this class is cross-platform), so the host wires this up. */
@@ -234,6 +245,11 @@ class CytoControls {
         if (showMutation) buttons.add(
             Btn(rightX - 3f * (bs + gap), bottomY, bs, bs, SIM_COLOR, "Mut\n$mutationLabel") { onCycleMutation() }
         )
+        // Cell colour-mode cycle (BIO ↔ CYT) — sits to the left of the cluster, past the optional Mut button.
+        val colorSlot = if (showMutation) 4f else 3f
+        buttons.add(
+            Btn(rightX - colorSlot * (bs + gap), bottomY, bs, bs, COLOR_MODE_COLOR, "Color\n${colorMode.label}") { cycleColorMode() }
+        )
     }
 
     private fun <T> addOptionRows(
@@ -278,5 +294,6 @@ class CytoControls {
         private const val LIGHT_COLOR = 0xEFD040FFL   // warm — the light field
         private const val GENE_COLOR = 0x44CC55FFL    // green — matches the Collector swatch
         private const val SIM_COLOR = 0x3A6EA5FFL     // blue — the sim-speed controls
+        private const val COLOR_MODE_COLOR = 0x8A5BC0FFL // purple — the cell colour-mode cycle
     }
 }

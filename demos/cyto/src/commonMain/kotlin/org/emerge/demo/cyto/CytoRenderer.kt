@@ -13,6 +13,14 @@ import kotlin.math.max
 import kotlin.math.sqrt
 import kotlin.math.min
 
+/** Cell display colour modes, cycled by the on-screen "Color" button (see [CytoRenderer.colorMode]). */
+enum class CellColorMode(val label: String) {
+    /** Hue from the biomass atom mix, saturation from the cytoplasm:biomass ratio (the original look). */
+    Bio("BIO"),
+    /** Hue from the cytoplasm atom mix — i.e. the ratio of a cell's cytoplasm contents; grey when empty. */
+    Cyt("CYT"),
+}
+
 /**
  * Draws the native Cyto world on Emerge's GPU. Reads the [org.emerge.sim.core.sim.SimState]
  * component tables (transform, collider, cell type, spring connections) and routes each
@@ -58,6 +66,8 @@ class CytoRenderer {
     // Reuses the proven instanced-rect shader: the static field grid (one torus tile) baked to
     // heat colours once, projected to NDC + culled to the visible region each frame. Toggle with L.
     var showLightField = true
+    /** How cells are coloured (Host-set from the controls' "Color" button). */
+    var colorMode = CellColorMode.Bio
     /** EntityId.value of the focused cell (info panel open) — drawn at full value; -1 = none. Host-set. */
     var focusedCellId = -1
     private val fieldShader = UiRectRenderer(maxRects = FIELD_CELLS)
@@ -265,23 +275,45 @@ class CytoRenderer {
     }
 
     /**
-     * Colour a cell by its **contents** (set by the host's [focusedCellId] for the value bump):
+     * Colour a cell by its **contents**, per [colorMode]. **Value** is always 0.75, or 1.0 for the
+     * focused cell (the one the info panel is open for).
+     *
+     * [CellColorMode.Bio]:
      *  - **Hue** from the a/b/c → R/G/B atom mix of its *biomass* (so a cell built of one two-atom
      *    molecule reads as a pure secondary — `ab`→yellow, `ac`→magenta, `bc`→cyan — and richer biomass
      *    shifts hue as its composition changes).
      *  - **Saturation** from the cytoplasm:biomass *instance* ratio (count species instances, not atoms):
      *    no cytoplasm → grey (0); cytoplasm ≥ biomass → full (1).
-     *  - **Value** 0.75, or 1.0 for the focused cell (the one the info panel is open for).
+     *
+     * [CellColorMode.Cyt]:
+     *  - **Hue** from the a/b/c → R/G/B atom mix of its *cytoplasm* (the ratio of its cytoplasm contents),
+     *    **ignoring monomer species** (single-atom molecules) — so the hue reflects the bonded-molecule mix.
+     *  - **Saturation** full when it holds any non-monomer cytoplasm, grey (0) when empty.
      */
     private fun cellColor(cell: CytoCellComponent, focused: Boolean) {
+        val value = if (focused) 1f else 0.75f
         var r = 0L; var g = 0L; var b = 0L
-        for ((species, count) in cell.biomass) for (ch in species) when (ch) {
-            'a' -> r += count; 'b' -> g += count; 'c' -> b += count
+        when (colorMode) {
+            CellColorMode.Bio -> {
+                for ((species, count) in cell.biomass) for (ch in species) when (ch) {
+                    'a' -> r += count; 'b' -> g += count; 'c' -> b += count
+                }
+                var cytInstances = 0; for (c in cell.cytoplasm.values) cytInstances += c
+                var bioInstances = 0; for (c in cell.biomass.values) bioInstances += c
+                val sat = when { cytInstances == 0 -> 0f; cytInstances >= bioInstances -> 1f; else -> cytInstances.toFloat() / bioInstances }
+                hsvToRgb(hueOf(r.toFloat(), g.toFloat(), b.toFloat()), sat, value, colorTmp)
+            }
+            CellColorMode.Cyt -> {
+                for ((species, count) in cell.cytoplasm) {
+                    if (species.length < 2) continue   // ignore monomers (single-atom species)
+                    for (ch in species) when (ch) {
+                        'a' -> r += count; 'b' -> g += count; 'c' -> b += count
+                    }
+                }
+                val sat = if (r + g + b > 0L) 1f else 0f
+                hsvToRgb(hueOf(r.toFloat(), g.toFloat(), b.toFloat()), sat, value, colorTmp)
+            }
         }
-        var cytInstances = 0; for (c in cell.cytoplasm.values) cytInstances += c
-        var bioInstances = 0; for (c in cell.biomass.values) bioInstances += c
-        val sat = when { cytInstances == 0 -> 0f; cytInstances >= bioInstances -> 1f; else -> cytInstances.toFloat() / bioInstances }
-        hsvToRgb(hueOf(r.toFloat(), g.toFloat(), b.toFloat()), sat, if (focused) 1f else 0.75f, colorTmp)
         colorTmp[3] = 1f
     }
 

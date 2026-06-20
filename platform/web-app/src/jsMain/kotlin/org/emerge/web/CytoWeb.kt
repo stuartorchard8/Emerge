@@ -111,6 +111,7 @@ fun startCyto(canvas: HTMLCanvasElement) {
         val delta = if (last == 0.0) 0f else ((ts - last) / 1000.0).toFloat().coerceIn(0f, 0.25f)
         last = ts
         val f = controller.tick(delta)
+        renderer.colorMode = controls.colorMode   // Color button → renderer
         renderer.draw(f)
         for (r in controller.readouts(grabId, controls.showChemicals)) {
             val screen = renderer.worldToScreen(r.x, r.y)
