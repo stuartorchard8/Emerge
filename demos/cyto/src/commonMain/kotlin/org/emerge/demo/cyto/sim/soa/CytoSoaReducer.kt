@@ -410,6 +410,10 @@ class CytoSoaReducer(
         // Pass 2: add this tick's stress to the shared value and write it back to BOTH directed edges (so they
         // stay in sync). Stress is symmetric and uses the better-connected endpoint's maintenance bonus
         // (1/(degree+1)), so a well-knit body is cheap to hold together (matches degrade()).
+        // Collinearity scan cadence (amortizes the through-cell check; damage is ×period to keep break rate
+        // cadence-independent — see WELD_COLLINEAR_CHECK_PERIOD).
+        val collinearPeriod = cfg.weldCollinearCheckPeriod.coerceAtLeast(1)
+        val scanCollinear = collinearPeriod == 1 || w.world.tick % collinearPeriod == 0L
         val broken = HashSet<Long>()
         for (i in 0 until w.count) {
             val radiusA = w.radiusRaw[i]
@@ -443,7 +447,12 @@ class CytoSoaReducer(
                 // welds and sheds them, fragmenting/dispersing instead of fusing into one rigid over-
                 // constrained mass the spring solver can't hold. Mild resting overlap (< tolerance) is free.
                 val compression = max(0f, -stretch - cfg.compressionTolerance) * cfg.connectionStressScale
-                val stress = tension + overStretch + compression
+                // Through-cell chord: a weld with a common welded neighbour ~collinear between its endpoints is
+                // a structural degeneracy invisible to stretch (it sits near rest when crammed). Geometric, so
+                // it accrues damage from the angle alone until it breaks (leaving the real A–B/B–C welds).
+                val collinear = if (scanCollinear && w.csr.degreeOf(i) >= 2 && w.csr.degreeOf(nSlot) >= 2 &&
+                    throughCellChord(w, i, nSlot)) cfg.weldCollinearDamage * collinearPeriod else 0f
+                val stress = tension + overStretch + compression + collinear
                 val key = pairKey(w.entityId[i], w.csr.otherId[k])
                 val damage = max(0f, (pairDmg[key] ?: w.csr.edgeAux[k]) + stress)
                 if (damage > cfg.connectionBreakDamage) {
@@ -930,6 +939,30 @@ class CytoSoaReducer(
         Coord2(Coord(w.posX[b]), Coord(w.posY[b])) - Coord2(Coord(w.posX[a]), Coord(w.posY[a]))
 
     private fun deltaLen(w: CytoWorld, a: Int, b: Int): Frac = delta(w, a, b).len
+
+    /** Does the weld [i]–[nSlot] pass ~through a common welded neighbour B (a structural degeneracy)? True iff
+     *  some cell B is welded to BOTH endpoints AND sits ~collinear between them — angle(i,B,nSlot) > acos(cos
+     *  threshold). Squared-cosine test (no sqrt/acos) so it's deterministic: with the angle obtuse (dot<0),
+     *  `cos < T` (both negative) ⇔ `dot² > T²·|Bi|²·|BnSlot|²`. Work is bounded by MAX_WELD_DEGREE per endpoint. */
+    private fun throughCellChord(w: CytoWorld, i: Int, nSlot: Int): Boolean {
+        val cosSq = cfg.weldCollinearCos * cfg.weldCollinearCos
+        for (k2 in w.csr.offset[i] until w.csr.offset[i + 1]) {
+            val b = w.csr.otherSlot[k2]
+            if (b < 0 || b == nSlot) continue
+            var common = false                                    // is B also welded to nSlot?
+            for (k3 in w.csr.offset[nSlot] until w.csr.offset[nSlot + 1]) {
+                if (w.csr.otherSlot[k3] == b) { common = true; break }
+            }
+            if (!common) continue
+            val bix = (w.posX[i] - w.posX[b]).toFloat(); val biy = (w.posY[i] - w.posY[b]).toFloat()
+            val bjx = (w.posX[nSlot] - w.posX[b]).toFloat(); val bjy = (w.posY[nSlot] - w.posY[b]).toFloat()
+            val dot = bix * bjx + biy * bjy
+            if (dot >= 0f) continue                               // ≤90° — B is beside, not between
+            val la2 = bix * bix + biy * biy; val lb2 = bjx * bjx + bjy * bjy
+            if (dot * dot > cosSq * la2 * lb2) return true        // cos < threshold ⇒ collinear through B
+        }
+        return false
+    }
 
     /** Whether slot [i] has a CSR edge to entity-id [otherId]. */
     private fun edgeExists(w: CytoWorld, i: Int, otherId: Int): Boolean {

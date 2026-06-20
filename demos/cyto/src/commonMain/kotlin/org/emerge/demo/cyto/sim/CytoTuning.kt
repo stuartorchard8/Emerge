@@ -154,7 +154,7 @@ object CytoTuning {
      * and the higher carried load makes the collinear config more sensitive to perturbation (buckles B out into
      * 2D → a legitimate triangle). Integer multiple of the base relaxation rate; keep ≤ ~10 so m·SPRING_STIFFNESS
      * stays a stable (<1) per-iteration relaxation. ⚙ */
-    const val WELD_COMPRESSION_STIFFNESS_MULTIPLE = 3
+    const val WELD_COMPRESSION_STIFFNESS_MULTIPLE = 5
     /** Fraction of relative normal velocity cancelled per iteration (real, dissipative) — the overdamping. */
     val SPRING_DAMPING = Frac(1, 4)
     /** Repulsion impulse fraction for overlapping, non-connected cells. */
@@ -222,6 +222,24 @@ object CytoTuning {
      * distance, so links flex and recover under normal load but still snap instantly at ~2 cell-widths.
      * Integer (applied by repeated multiply) so it's deterministic — no transcendental pow(). ⚙ */
     const val OVERSTRETCH_DAMAGE_EXPONENT = 3
+    /**
+     * Through-cell (collinearity) damage: a weld whose two endpoints share a welded neighbour B sitting
+     * ~collinear BETWEEN them — a chord passing *through* cell B — is a structural degeneracy the stretch
+     * terms can't catch: in a crammed body such a chord sits near rest (low/zero over-stretch) yet is
+     * geometrically unmistakable (angle at B → 180°). When a common neighbour's angle exceeds acos(this) the
+     * chord accrues [WELD_COLLINEAR_DAMAGE] of stress (NOT degree-discounted) until it breaks, leaving the
+     * real A–B / B–C welds intact. The threshold sits in the dead zone between legit triangles (apex ≤ ~110°
+     * in packed bodies) and through-cell chords (≥ ~155°). Compared via SQUARED cosine (sqrt-free) so it stays
+     * deterministic — no transcendental. -0.7 ≈ 134°. ⚙ */
+    const val WELD_COLLINEAR_COS = -0.7f
+    /** Stress/tick added to a confirmed through-cell chord ([WELD_COLLINEAR_COS]). Net of repair (capped at
+     *  [MAX_REPAIR_HEAL_PER_TICK]) this must be positive to ever break it; 1.5 ⇒ ~net 1.0/tick ⇒ breaks in
+     *  ~[CONNECTION_BREAK_DAMAGE]/1 ticks, while a single transient collinear tick (1.5, then healed) can't. ⚙ */
+    const val WELD_COLLINEAR_DAMAGE = 1.5f
+    /** Scan cadence (ticks) for the collinearity check. A through-cell chord persists for thousands of ticks,
+     *  so it needn't be scanned every tick; >1 amortizes the (small, degree-bounded) cost — the per-scan damage
+     *  is ×this so the average break rate is cadence-independent. 1 = every tick. ⚙ */
+    const val WELD_COLLINEAR_CHECK_PERIOD = 1
     /** Mouse-drag pull toward the pointer, and its damping. */
     val GRAB_STIFFNESS = Frac(1, 2)
     val GRAB_DAMPING = Frac(1, 1)

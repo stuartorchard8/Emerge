@@ -30,6 +30,10 @@ data class CytoConfig(
     val connectionStressScale: Float = CytoTuning.CONNECTION_STRESS_SCALE,
     val overStretchBreakMultiple: Float = CytoTuning.OVERSTRETCH_BREAK_MULTIPLE,
     val overStretchDamageExponent: Int = CytoTuning.OVERSTRETCH_DAMAGE_EXPONENT,
+    /** Through-cell-chord stress (degeneracy where a weld passes ~collinearly through a common neighbour). */
+    val weldCollinearCos: Float = CytoTuning.WELD_COLLINEAR_COS,
+    val weldCollinearDamage: Float = CytoTuning.WELD_COLLINEAR_DAMAGE,
+    val weldCollinearCheckPeriod: Int = CytoTuning.WELD_COLLINEAR_CHECK_PERIOD,
     val grabStiffness: Frac = CytoTuning.GRAB_STIFFNESS,
     val grabDamping: Frac = CytoTuning.GRAB_DAMPING,
     val variableMass: Boolean = CytoTuning.VARIABLE_MASS,

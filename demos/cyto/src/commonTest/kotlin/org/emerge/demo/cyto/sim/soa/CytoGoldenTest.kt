@@ -118,7 +118,7 @@ class CytoGoldenTest {
     // (decoupled), so it's golden-neutral. Gates held.
     private val GROWTH = mapOf(
         "meta" to "9e9bec4ae4480164",
-        "physics" to "6546866e5ba78081",
+        "physics" to "caad3adbeab7faab",
         "biology" to "a90024dd8c59dcf3",
         "topology" to "2925fede43facb67",
         "grid" to "b85a188eef9ccf0c",
