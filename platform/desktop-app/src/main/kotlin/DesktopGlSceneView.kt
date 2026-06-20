@@ -128,9 +128,6 @@ object DesktopGlSceneView {
             if (key in 0 until pressedKeys.size) {
                 pressedKeys[key] = (action != GLFW_RELEASE)
             }
-            if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-                glfwSetWindowShouldClose(win, true)
-            }
         }
 
         glfwMakeContextCurrent(window)
