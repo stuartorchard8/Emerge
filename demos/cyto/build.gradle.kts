@@ -78,6 +78,11 @@ tasks.withType<Test>().configureEach {
     System.getProperty("clockseed")?.let { systemProperty("clockseed", it) }
     System.getProperty("clockenv")?.let { systemProperty("clockenv", it) }
     System.getProperty("weldticks")?.let { systemProperty("weldticks", it) }
+    System.getProperty("swimprobe")?.let { systemProperty("swimprobe", it) }
+    System.getProperty("swimcell")?.let { systemProperty("swimcell", it) }
+    System.getProperty("swimticks")?.let { systemProperty("swimticks", it) }
+    System.getProperty("collprobe")?.let { systemProperty("collprobe", it) }
+    System.getProperty("collticks")?.let { systemProperty("collticks", it) }
 }
 
 // Generates *ShaderSources.kt from .vert / .frag files under src/commonMain/shaders/.
