@@ -25,16 +25,26 @@ The blocker: the matter grid is **far too coarse and diffusion flattens it.**
   inside one grid cell → every body cell reads the *same* matter value → **zero gradient, unreadable.**
 - `MATTER_DIFFUSE=1/8` every 8 ticks refills depleted cells → smears any self-dug gradient back to flat.
 
-## Prerequisite (separate work, do FIRST): world rescale + torus geometry
+## Prerequisite (separate work, do FIRST): world RESCALE (not a wrap fix)
 
-1. **Shrink the world.** `CytoUnits.CELLS_PER_AXIS` 1024 → something small (candidate ~128–256) so a
-   cell-scale matter grid is affordable and organisms aren't lost in a near-empty plane. Rebalances
-   carrying capacity, light-orbit period, seeding — expect golden re-baselines.
-2. **Make it a real torus.** Wrap **cell positions** into `[-HALF,HALF)` each tick (integrate) and make the
-   **collision broadphase** (`SpatialGrid`) wrap, matching drockets/scavengers. Today only the fields
-   (`CytoLightField`/`CytoMatterGrid` via `wrapDelta`/`wrapIndex`) wrap; physics positions run off to the
-   `Int` boundary and edge cells never interact — so body position and the field it reads desync.
-3. Re-baseline goldens; confirm `SwimProbe`/`ControllerProbe` still grow + swim at the new scale.
+**Correction (2026-06-21):** cyto is ALREADY a proper Int-torus — `Coord` wraps via two's-complement Int
+overflow (positions wrap free), `SpatialGrid` tiles the full signed-Int torus with bitmask wrap (broadphase
+wraps), and the fields wrap at `SPAN = 2·CELLS_PER_AXIS` = exactly the Coord boundary (logical ±1024 =
+±Int.MAX). Nothing is broken. The issue is purely **scale**: the torus is 1024 cell-diam across, so a colony
+of tens of cells fills <1% of it and never reaches the seam → behaves like an open plane. (Earlier "physics
+doesn't wrap / desyncs from fields" note was wrong.)
+
+Fix = **scale objects up** so the fixed ±INT_MAX torus holds the right number of cells (as drockets/scavengers do):
+1. **Drop `CytoUnits.CELLS_PER_AXIS`** 1024 → ~128. Routes through `SCALE = 1/CELLS_PER_AXIS`, so it
+   uniformly scales every object up in raw Coord units; body-relative dynamics should be preserved
+   (stiffness/damping are dimensionless `Frac` rates; drag works on `toLogical(speed)` where the rescale
+   cancels) — confirm via goldens/probes. Bonus: grid cell = `SPAN/RES = 2·CELLS_PER_AXIS/RES`, so at 128
+   with `RES=64` a grid cell is already 4 cell-diam (was 32) — 8× finer for free, which is why this is first.
+2. **Re-tune world-scale-dependent (non-body-relative) constants:** light band width / `LIGHT_FALLOFF`,
+   matter seeding `MATTER_PEAK`/`MATTER_FALLOFF`, and any literal-`1024`/world-absolute distances (grab
+   reach, spawn spread, probe placements — grep them).
+3. Re-baseline goldens + determinism gates; probe that a colony drifts, **wraps at the seam, and interacts
+   across it**; visual render check at the new scale.
 
 ## The shift (this plan) — fine static matter grid + Gaussian local gather, no diffusion
 

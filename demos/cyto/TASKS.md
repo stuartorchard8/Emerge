@@ -48,10 +48,13 @@ bend motor works (velocity reconciliation `91145a6f` + lateralised `Contract`), 
 (matter/light gradient) and an instrument (the body as a differential sensor of local intake). The matter
 substrate can't supply a readable gradient: grid cell = 32 cell-diam (a body sits in ONE cell), and
 diffusion flattens any self-dug gradient. Fix, in order:
-1. [ ] **World rescale + real torus (DO FIRST).** Shrink `CytoUnits.CELLS_PER_AXIS` (1024 → ~128–256); wrap
-   cell **positions** + the collision broadphase like drockets/scavengers (today only the *fields* wrap;
-   physics positions run to the Int boundary so edge cells never interact + desync from the field they read).
-   Re-baselines goldens.
+1. [ ] **World RESCALE (DO FIRST).** NB cyto is *already* a proper Int-torus (Coord wraps via Int overflow,
+   SpatialGrid broadphase wraps, fields wrap at SPAN=2·CELLS_PER_AXIS=±Int.MAX) — it's not a wrap bug, it's
+   *scale*: the world is 1024 cell-diam across so colonies never reach the seam. Fix = scale objects up:
+   drop `CytoUnits.CELLS_PER_AXIS` (1024 → ~128) — one constant, routes through SCALE, preserves
+   body-relative dynamics (verify via goldens). Bonus: also makes the matter grid 8× finer relative to cells
+   for free (grid cell 32→4 diam). Then re-tune world-scale constants (light/matter spatial extents,
+   literal-1024 distances) + re-baseline goldens.
 2. [ ] **Matter field: fine static grid + Gaussian local gather, NO diffusion** (`PLAN_taxis_substrate.md`).
    `MATTER_GRID_RES` (fine, ≈1 cell-diam) decoupled from coarse light; cells pull from a precomputed integer
    Gaussian/disc stencil (conservative apportionment) — feeds sessile cells, IS the intake-density sensor,
