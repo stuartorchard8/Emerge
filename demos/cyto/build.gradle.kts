@@ -77,6 +77,7 @@ tasks.withType<Test>().configureEach {
     System.getProperty("clockwatch")?.let { systemProperty("clockwatch", it) }
     System.getProperty("clockseed")?.let { systemProperty("clockseed", it) }
     System.getProperty("clockenv")?.let { systemProperty("clockenv", it) }
+    System.getProperty("weldticks")?.let { systemProperty("weldticks", it) }
 }
 
 // Generates *ShaderSources.kt from .vert / .frag files under src/commonMain/shaders/.
