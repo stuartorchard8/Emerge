@@ -34,7 +34,7 @@ object CytoTuning {
     /** Gaussian falloff radius of a light source (logical units): light is strong within ~σ and ~0 well
      *  before the midpoint between sources, leaving dark contested zones. In moving mode it's the
      *  half-width of the daylight band (how much of the world is "day" at once). */
-    const val LIGHT_FALLOFF = 200f
+    const val LIGHT_FALLOFF = 25f   // ÷8 with the 1024→128 world rescale (keeps the band ~10% of the world)
     /** Shading (interference competition): when true, cells sharing a grid-cell split that cell's incident
      *  light by capture weight (exposure × radius), so a bigger cell starves its neighbours. False = every
      *  cell gets its own full light (no co-located split) — toggle to test whether shading still earns its
@@ -53,7 +53,7 @@ object CytoTuning {
     const val LIGHT_MOVING = true
     /** Ticks for the daylight band to sweep once around the torus — the day/night period. At ~60 ticks/s,
      *  3600 ≈ one minute. (Only used when [LIGHT_MOVING].) */
-    const val LIGHT_ORBIT_PERIOD = 3600L
+    const val LIGHT_ORBIT_PERIOD = 450L   // ÷8 with the 1024→128 rescale: band keeps the same cell-diam/tick sweep speed
 
     // ── Matter dynamics (the conserved resource's per-tick law; its *seed* is in CytoSeed) ────────────
     /** Slow inter-grid-cell diffusion: per tick each edge moves `⌊|gradient|·NUM/DEN⌋` down-gradient.

@@ -559,7 +559,10 @@ class CytoSoaReducer(
                     if (j < 0) { enX[k] = 0L; enY[k] = 0L; ew[k] = 0L; continue }
                     val total = mi + mass[j]
                     ew[k] = if (total <= 0L) 0L else mass[j] * FRAC_MAX / total.toInt().toLong()
-                    val ddx = p0x[j] - p0ix; val ddy = p0y[j] - p0iy
+                    // torus-modular delta: positions are widened Coord (Int), so subtract as Int (two's-
+                    // complement wrap) before widening — a weld straddling the seam reads the SHORT delta, not
+                    // a ~2³² gap. Off-seam (delta fits Int) this is identical to the plain Long subtraction.
+                    val ddx = (p0x[j].toInt() - p0ix.toInt()).toLong(); val ddy = (p0y[j].toInt() - p0iy.toInt()).toLong()
                     val dist = lenRaw(ddx, ddy)
                     if (dist == 0L) { enX[k] = 0L; enY[k] = 0L } else {
                         enX[k] = ddx * FRAC_MAX / dist; enY[k] = ddy * FRAC_MAX / dist   // normFromLen
@@ -602,7 +605,8 @@ class CytoSoaReducer(
                     val pix = px[i]; val piy = py[i]
                     for (k in csr.offset[i] until csr.offset[i + 1]) {
                         val j = csr.otherSlot[k]; if (j < 0) continue
-                        val ddx = px[j] - pix; val ddy = py[j] - piy     // d = pos[j] - pos[i]
+                        val ddx = (px[j].toInt() - pix.toInt()).toLong()   // torus-modular (Int wrap); d = pos[j] - pos[i]
+                        val ddy = (py[j].toInt() - piy.toInt()).toLong()
                         val dist = lenRaw(ddx, ddy); if (dist == 0L) continue
                         val nx = ddx * FRAC_MAX / dist; val ny = ddy * FRAC_MAX / dist
                         val lengthError = dist - csr.restRaw[k]                          // dist - Frac(rest); <0 = compressed

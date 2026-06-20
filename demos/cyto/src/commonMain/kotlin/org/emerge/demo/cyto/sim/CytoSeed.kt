@@ -19,7 +19,7 @@ object CytoSeed {
     const val MATTER_PEAK = 512_000
     /** Gaussian radius of the seeded matter clumps (logical units) — decoupled from the light falloff so
      *  nutrient niches can be tight (low total starting matter) without dimming the light field. */
-    const val MATTER_FALLOFF = 70f
+    const val MATTER_FALLOFF = 9f   // ÷8 with the 1024→128 world rescale (keeps nutrient clumps tight relative to the world)
     /** The free monomer species the world is seeded with — the **k=3 element alphabet**. Capped at 3 to
      *  bound the molecule species space (3 elements → ≤1884 possible molecules), which the upcoming
      *  dense-chemistry representation depends on. Mutation's alphabet matches (a,b,c). */
