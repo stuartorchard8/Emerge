@@ -84,7 +84,6 @@ object NornsSwingView {
                         CreatureBaker.clear(); lockedFollowId = null
                         println("loaded ${world.population} norns from ${saveFile.absolutePath}")
                     } else println("no save at ${saveFile.absolutePath}")
-                    KeyEvent.VK_ESCAPE -> System.exit(0)
                 }
             }
         })

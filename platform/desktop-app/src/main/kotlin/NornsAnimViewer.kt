@@ -359,7 +359,6 @@ object NornsAnimViewer {
                     KeyEvent.VK_RIGHT -> if (!playing) { phase += 0.1f; canvas.repaint() }
                     KeyEvent.VK_OPEN_BRACKET -> speedSlider.value = (speedSlider.value - 3).coerceAtLeast(0)
                     KeyEvent.VK_CLOSE_BRACKET -> speedSlider.value = (speedSlider.value + 3).coerceAtMost(100)
-                    KeyEvent.VK_ESCAPE -> System.exit(0)
                 }
             }
         })
