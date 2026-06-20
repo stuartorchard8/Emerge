@@ -1,0 +1,13 @@
+# cyto genome exported from cell 22 — load it via Load Genome (rename to cyto-brush.gene).
+Break aa : Biomass < 4000 : Convert aa @15
+Light : ac < 8000 & ab < 1000 & aa < 8000 : FormBond a c
+Break ac : ab < 1000 : FormBond a a @9
+Break aa : ac < 1000 : FormBond a b @9
+Break ab : aa < 1000 : FormBond a c @9
+Break ab : ab > 999 & ac > 999 : FormBond a c @8
+Break ac : ab < 1000 & cb > 7860 : Contract @15
+Break ac : cb < 2000 : FormBond b c @15
+Break ac : bc > 2000 & cb < 8000 & ab < 1000 : FormBond c b @4
+Break cb : bc < 1900 & aa < 1000 : FormBond a c @14
+Break ac : ab < 1000 & cb > 7998 : Mitosis bc mother along bc
+Break aa : ac < 1000 : Repair

@@ -1,0 +1,27 @@
+# cyto-jelly — heart's fast clock + self-restart, lateralised into a directional swimmer.
+# = cyto-heart.gene (relaxation-oscillator clock on aa->ab->ac, contract on the ab phase, oriented division,
+#   repair, self-restart) PLUS the jellyfish morphogen machinery: a seeded cc organizer sources a bc gradient,
+#   division is asymmetric+oriented (Mitosis cc across bc) -> a 2D sheet with an off-centre organizer, and the
+#   contraction is gated on (clock phase) AND (high-bc flank) so ONE side pulses at clock speed -> directional
+#   bend -> thrust.  Bond types used: aa, ab, ac, bc, cc = 5 (the GENOME_MAX_BOND_TYPES cap).
+# Seed the founder with the organizer mark: sandbox -Dsandboxseed=cc:200,a:500 (cc = maternal determinant).
+
+# grow biomass
+Break aa : Biomass < 4000 : Convert aa @15
+Light : aa < 8000 & ab < 1000 : FormBond a a
+# clock ring  aa -> ab -> ac -> aa  (heart's relaxation oscillator)
+Break ac : ab < ac & ab < 1000 : FormBond a a @7
+Break aa : ac < aa & ac < 1000 : FormBond a b @7
+Break ab : aa < ab & aa < 1000 : FormBond a c @7
+# organizer: seeded cc persists on its own (never metabolised -> intracellular, allocated whole on division),
+# so NO self-sustain gene needed — keeps the light budget lean for the clock.
+# morphogen: organizer sources bc (break-powered, NOT light, so the clock keeps full light); everyone sinks it.
+Light : cc > 0 & ab > 1000 : FormBond b c
+Break bc : Conc(bc) > 30 : Convert bc
+# DIRECTIONAL locomotion: contract on the clock's ab-phase AND only on the high-bc flank (fast + one-sided)
+Break ab : aa < ab & aa < 1000 & ab > 6000 & Conc(bc) > 20 : Contract @15
+# oriented + asymmetric division -> 2D sheet, organizer kept off-centre (lateralised gradient)
+Break ab : aa < ab & aa < 1000 & ab > 21500 : Mitosis cc across bc @15
+# cohesion + self-restart (kick a stalled clock when all three phases coexist)
+Break aa : ac < aa & ac < 1000 : Repair @15
+Break ac : aa > 999 & ab > 999 & ac > 999 : FormBond a a
