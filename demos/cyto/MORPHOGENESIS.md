@@ -237,6 +237,45 @@ bookkeeping. Discipline stays: **one biology path** (`CytoBiologyCore`), correct
 equivalence gate, optimise from profiles. The bounded species set (no polymerisation) helps cap the
 per-cell map sizes.
 
+## Physics — springs, velocity, drag (the locomotion substrate, 2026-06-21)
+
+How a cell *moves under its own genome* — the chain that makes a `Contract` gene turn into displacement,
+and why it was silently broken until 2026-06-21.
+
+- **Welds are a hybrid PBD/split-impulse solver.** Each tick the spring solve runs two passes: a
+  **velocity** pass that cancels relative normal velocity (`SPRING_DAMPING`, damping only — no stiffness),
+  and a **position** pass that projects positions toward rest length (`SPRING_STIFFNESS`) as a
+  *pseudo-velocity* written to the `impPos` channel. Position-projection is used (not a stiffness force in
+  the velocity channel) for two reasons: it's **unconditionally stable** for any coefficient in [0,1], and
+  `Frac`'s ±2 value range **can't represent** a real stiff-spring constant anyway (reduce to O(1)
+  relaxation rates).
+- **`Contract` actuates through rest length.** A `Contract` gene shrinks `logicalRadius`; biology
+  write-back syncs the collider radius; weld rest length = sum of the two radii. So a contracting cell
+  shortens its welds → the position pass pulls neighbours in. The motion is real but lives in the
+  **position channel** (`impPos`), carrying ~no velocity by construction.
+- **The bug (fixed):** `integrate` discarded the position-correction when setting velocity (`velX = vel`,
+  the damping channel only). Drag reads **only** `velX/velY`, so it was **blind to all spring-driven
+  motion** → zero thrust no matter how a genome flexes. A breathing organism was bit-frozen (COM drift
+  0.0 over 20k ticks) despite a 40% radius breath. NOTE: earlier "it swims, COM drift ~37" sandbox claims
+  were **growth-confounded** — an asymmetrically-*growing* colony shifts its centroid without locomotion;
+  a non-growing (senescent) organism isolates true propulsion, and it was zero.
+- **The fix — velocity reconciliation, `v = Δx/dt`.** `integrate` now sets velocity to the realized
+  per-tick displacement (`pos − oldPos`, torus-modular), folding the position-projection back into
+  `velX/velY` — the standard PBD step the solver had been skipping. Drag (unchanged) now sees the motion.
+  Same organism now drifts ~115 cell-diam / 20k ticks. Welds gain **inertia** (they overshoot/ring);
+  `SPRING_DAMPING` bleeds it (130-cell save stable 8k ticks). Internal momentum stays conserved
+  (mass-weighted corrections cancel per edge) so net drift is **drag-only = real propulsion**. A
+  *reciprocal* breath can now swim: inertia + a time-asymmetric stroke + asymmetric drag breaks the
+  scallop theorem (direction is incidental, though — steering needs the phased-wave controller).
+- **Collisions were never broken by the decoupling.** The contact solver's **penetration-repulsion** term
+  fires on overlap independent of the velocity channel, so a spring-driven body still pushes what it
+  touches (verified: a breather shoved a free cell 3.16 cell-diam). Cyto contacts are a penetration-spring
+  (overlap → injected separation velocity), not a momentum-conserving impulse — a side effect now made
+  more physical by reconciliation but never a blocker.
+- **Diagnostics:** `SwimProbe` (`-Dswimprobe=1`) measures COM drift / breath-vs-wave phase / the
+  velocity-vs-position channel split; `CollisionChannelProbe` (`-Dcollprobe=1`) the spring-vs-velocity
+  collision contrast.
+
 ## Tech debt (carried forward)
 
 De-float to finish what `dc22be3` started — still-`Float` spots that aren't yet bulletproof

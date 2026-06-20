@@ -9,6 +9,20 @@ progress; drop from **Done** freely — `git log` is the real archive. Each task
 
 ## Now
 
+**⚡ Locomotion unblocked at the root (2026-06-21, `91145a6f`).** Diagnosing why a hand-built welded swimmer
+wouldn't move (not even a tiny COM shift over tens of thousands of ticks) found the real blocker: the weld
+solver moves cells through the **position-correction channel** (`impPos`) but `integrate` discarded it when
+setting velocity, and **drag reads only the velocity channel** — so drag was blind to all spring-driven
+motion. Fixed with PBD velocity reconciliation (`v = Δx/dt` in `integrate`, no drag change). A breathing
+organism that was bit-frozen now drifts ~115 cell-diam/20k ticks; the 130-cell save stays stable. **Caveat
+on prior claims:** earlier "swims, COM drift ~37/10" numbers were on *growing* colonies and are
+growth-confounded (asymmetric growth shifts the centroid without locomotion) — true propulsion on a
+non-growing organism was zero pre-fix. So self-propulsion is now genuinely real, but **direction is
+incidental** (inertia + asymmetric breath, not steered); steering still needs the phased-wave controller
+(see Next). Also tuned welds for viable life: `CONNECTION_BREAK_DAMAGE 3→5`, `OVERSTRETCH_BREAK_MULTIPLE
+2.0→2.5`, `DRAG_COEFFICIENT 0.2→0.8`. Design: `MORPHOGENESIS.md` §Physics. Diagnostics: `SwimProbe` /
+`CollisionChannelProbe`.
+
 **The front line: a differentiated, self-propelling organism (the jellyfish goal).** Substrate is complete:
 `Conc` + AND-gate, retain-side, the metabolic source/sink morphogen loop, produce-without-diffuse
 (intracellular determinants), and **oriented division** (✅ `ce9cede` — Mitosis `along`/`across` a morphogen
@@ -52,8 +66,12 @@ Parked until shape is cracked (then re-introduce one axis per campaign — see `
   `Import("ab")`). Interacts with the `canDiffuse` split above — sequence after it.
 - [ ] **(B) `Lyse` — predatory lysis** (§B) — **demoted** (competition, not morphogenesis). Snapshot `attack()`
   phase over the touch-adjacency; efficiency gear `g` = predator-strategy axis. After v0.
-- [ ] **Locomotion controller** — genome-readable oscillator → travelling *contraction* wave (`Contract` +
-  asymmetric drag built; `Expand` banned). Becomes v2 chemotaxis (dispersal). After v0.
+- [ ] **Locomotion controller** — genome-readable oscillator → travelling *contraction* wave for
+  **directional** (steered) swimming. Physics substrate is now FULLY wired (`Contract` actuator + asymmetric
+  drag + velocity reconciliation so drag actually sees the motion — `91145a6f`; `Expand` banned). What's
+  missing is purely the *controller*: a phase signal the genome can read (clock/morphogen vs
+  position-along-axis) so contraction fires in a travelling phase across the body → a chosen heading instead
+  of the current incidental drift. Becomes v2 chemotaxis (dispersal). After v0.
 - [ ] **Gradient cost on synthesis (Convert / FormBond)** — *conditional*, only if synthesis needs the
   diminishing-returns treatment Import got; currently flat.
 
@@ -125,6 +143,12 @@ The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (
 
 ## Done (recent highlights — git log is the archive)
 
+- [x] **Velocity reconciliation — locomotion unblocked** (`91145a6f`, 2026-06-21) — `integrate` now sets
+  velocity to the realized per-tick displacement (`v = Δx/dt`), folding the weld solver's position-correction
+  back into `velX/velY` so drag/contacts see spring-driven motion. No drag-equation change. A bit-frozen
+  breathing organism now swims ~115 cell-diam/20k ticks; welds gain inertia (damping bleeds the ring), save
+  stable. Only the GROWTH `physics` golden moved; determinism gates held. + viability tuning (less-fragile
+  welds, stronger drag). Diagnostics `SwimProbe`/`CollisionChannelProbe` (`7197fd2f`). §Physics.
 - [x] **Oriented division** (`ce9cede`) — Mitosis `along`/`across` a named axis-morphogen's gradient
   (computed at division from welded neighbours) → threads or 2D sheets. Opt-in (empty axis = unoriented),
   byte-identical goldens. Unblocks 2D bodies (the jellyfish bell). The `CytoSandbox` shows the swimmer go
