@@ -25,7 +25,14 @@ The blocker: the matter grid is **far too coarse and diffusion flattens it.**
   inside one grid cell → every body cell reads the *same* matter value → **zero gradient, unreadable.**
 - `MATTER_DIFFUSE=1/8` every 8 ticks refills depleted cells → smears any self-dug gradient back to flat.
 
-## Prerequisite (separate work, do FIRST): world RESCALE (not a wrap fix)
+## Prerequisite — world RESCALE: ✅ DONE (`5ec4903b`, 2026-06-21)
+
+`CELLS_PER_AXIS` 1024→128 + world-scale constants ÷8; matter grid cell now 4 cell-diam (was 32). Caught +
+fixed a real seam bug (weld solver subtracted positions non-modularly → explosion across the seam) and added
+`CytoTorusTest` (boundary≡centre + field periodicity). Body-relative dynamics preserved; goldens re-baselined.
+Next: bump `MATTER_GRID_RES` for a ≈1-cell-diam grid, then the gather rework below.
+
+## (Historical detail) world RESCALE (not a wrap fix)
 
 **Correction (2026-06-21):** cyto is ALREADY a proper Int-torus — `Coord` wraps via two's-complement Int
 overflow (positions wrap free), `SpatialGrid` tiles the full signed-Int torus with bitmask wrap (broadphase
