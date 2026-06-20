@@ -45,6 +45,7 @@ object CytoSceneView {
             onTogglePause = { simDriver.togglePause() },   // Space
             onSlower = { simDriver.slower() },              // [
             onFaster = { simDriver.faster() },              // ]
+            onDeselect = { controller.clearSelection() },   // Esc
         )
 
         val renderer = CytoRenderer()
@@ -189,6 +190,7 @@ object CytoSceneView {
     private fun initWindow(
         onSave: () -> Unit, onLoad: () -> Unit,
         onTogglePause: () -> Unit, onSlower: () -> Unit, onFaster: () -> Unit,
+        onDeselect: () -> Unit,
     ): Long {
         if (!glfwInit()) error("GLFW init failed")
         glfwDefaultWindowHints()
@@ -205,7 +207,7 @@ object CytoSceneView {
         glfwSetKeyCallback(window) { win, key, _, action, _ ->
             if (action != GLFW_PRESS) return@glfwSetKeyCallback
             when (key) {
-                GLFW_KEY_ESCAPE -> glfwSetWindowShouldClose(win, true)
+                GLFW_KEY_ESCAPE -> onDeselect()   // clear the cell selection (no close-on-escape)
                 GLFW_KEY_F5 -> onSave()
                 GLFW_KEY_F9 -> onLoad()
                 GLFW_KEY_SPACE -> onTogglePause()       // play / pause

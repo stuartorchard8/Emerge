@@ -6,6 +6,7 @@ import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.render.torus.ui.UiRectRenderer
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.Mat4
+import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -70,6 +71,10 @@ class CytoRenderer {
     var colorMode = CellColorMode.Bio
     /** EntityId.value of the focused cell (info panel open) — drawn at full value; -1 = none. Host-set. */
     var focusedCellId = -1
+    /** EntityId.values of the focused cell's directly-welded neighbours, rebuilt each frame in [draw]
+     *  (cleared, then refilled — no per-frame allocation). When a cell is focused, every cell NOT in
+     *  this set and not the focused cell itself is dimmed, so the welded cluster stands out. */
+    private val focusNeighbours = HashSet<Int>()
     private val fieldShader = UiRectRenderer(maxRects = FIELD_CELLS)
     private val fieldCx = FloatArray(FIELD_CELLS)
     private val fieldCy = FloatArray(FIELD_CELLS)
@@ -178,6 +183,16 @@ class CytoRenderer {
         val colliders = components.getTable<ColliderComponent>()
         val springs = components.getTable<SpringConstraintComponent>()
 
+        // The welded neighbours of the focused cell — used to dim everything outside that cluster so
+        // it's obvious which cells the selection is bonded to. Only active while the focused cell is
+        // actually present (a focused cell can die without [focusedCellId] being cleared — without this
+        // guard its now-empty neighbour set would dim every cell to darkness).
+        focusNeighbours.clear()
+        val dimActive = focusedCellId >= 0 && cells.containsKey(EntityId(focusedCellId))
+        if (dimActive) {
+            springs[EntityId(focusedCellId)]?.springs?.forEach { focusNeighbours.add(it.other.value) }
+        }
+
         for ((id, cell) in cells) {
             val transform = transforms[id] ?: continue
             val collider = colliders[id] ?: continue
@@ -190,7 +205,10 @@ class CytoRenderer {
             matM.setProduct(matMT, matMS)
             mvp.setProduct(matP, matM)
 
-            cellColor(cell, id.value == focusedCellId)
+            val focused = id.value == focusedCellId
+            // Dim a cell only when a present cell is focused and this one is neither it nor a direct weld.
+            val dimmed = dimActive && !focused && id.value !in focusNeighbours
+            cellColor(cell, focused, dimmed)
 
             var count = 0
             val neighbours = springs[id]?.springs
@@ -275,8 +293,9 @@ class CytoRenderer {
     }
 
     /**
-     * Colour a cell by its **contents**, per [colorMode]. **Value** is always 0.75, or 1.0 for the
-     * focused cell (the one the info panel is open for).
+     * Colour a cell by its **contents**, per [colorMode]. **Value** is normally 0.75, rising to 1.0 for the
+     * focused cell (the one the info panel is open for) and dropping to [DIM_VALUE] for a [dimmed] cell —
+     * one outside the focused cell's welded cluster, so the bonded cells read clearly against the rest.
      *
      * [CellColorMode.Bio]:
      *  - **Hue** from the a/b/c → R/G/B atom mix of its *biomass* (so a cell built of one two-atom
@@ -290,8 +309,12 @@ class CytoRenderer {
      *    **ignoring monomer species** (single-atom molecules) — so the hue reflects the bonded-molecule mix.
      *  - **Saturation** full when it holds any non-monomer cytoplasm, grey (0) when empty.
      */
-    private fun cellColor(cell: CytoCellComponent, focused: Boolean) {
-        val value = if (focused) 1f else 0.75f
+    private fun cellColor(cell: CytoCellComponent, focused: Boolean, dimmed: Boolean) {
+        val value = when {
+            focused -> 1f
+            dimmed -> DIM_VALUE
+            else -> 0.75f
+        }
         var r = 0L; var g = 0L; var b = 0L
         when (colorMode) {
             CellColorMode.Bio -> {
@@ -350,5 +373,8 @@ class CytoRenderer {
         // fine — a near-uniform tint up close, the 4 sources visible when zoomed out).
         const val FRES = 48
         const val FIELD_CELLS = FRES * FRES
+        // Brightness of cells outside the focused cell's welded cluster — dark enough to recede, but
+        // still faintly visible so the surrounding context isn't lost entirely.
+        const val DIM_VALUE = 0.22f
     }
 }

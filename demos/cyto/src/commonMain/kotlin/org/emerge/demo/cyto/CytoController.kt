@@ -195,6 +195,13 @@ class CytoController(
         withLock(inputLock) { currentGrab = null }
     }
 
+    /** Clear the selection: the info panel closes and the previously-focused cell resumes mutating.
+     *  Unlike [releaseGrab] (which only ends the current drag), this drops [lastHeldId] entirely. */
+    fun clearSelection() {
+        lastHeldId = null
+        reducer.noMutateEntityId = -1   // unfreeze: no cell is exempt from natural mutation
+    }
+
     /** Cut all of [entity]'s connections (Detach hold mode, on grab-start). */
     fun detach(entity: EntityId) {
         withLock(inputLock) { pendingDetaches.add(entity) }
