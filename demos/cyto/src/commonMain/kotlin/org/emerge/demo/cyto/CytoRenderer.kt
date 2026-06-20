@@ -375,6 +375,6 @@ class CytoRenderer {
         const val FIELD_CELLS = FRES * FRES
         // Brightness of cells outside the focused cell's welded cluster — dark enough to recede, but
         // still faintly visible so the surrounding context isn't lost entirely.
-        const val DIM_VALUE = 0.22f
+        const val DIM_VALUE = 0.5f
     }
 }
