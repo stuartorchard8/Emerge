@@ -62,10 +62,12 @@ private fun drawMatter(
     fun sx(lx: Float) = ox + (lx - centreX + halfWindow) * pxPerLogical
     fun sy(ly: Float) = (ly - centreY + halfWindow) * pxPerLogical
 
+    val finestSize = org.emerge.demo.cyto.sim.CytoMatterField.TILE / (1 shl org.emerge.demo.cyto.sim.CytoMatterField.MAX_DEPTH)
+    val refDensity = org.emerge.demo.cyto.sim.CytoSeed.MATTER_UNIFORM_LEVEL.toDouble()
     grid.forEachLeaf { x, y, leafSize, store ->
         val x0 = sx(x); val y0 = sy(y); val wpx = leafSize * pxPerLogical
         if (x0 + wpx < ox || x0 > ox + size || y0 + wpx < 0 || y0 > size) return@forEachLeaf
-        // Fill = atom-mix hue at low value (the cell-colour rule applied to the leaf's contents).
+        // Fill = per-area a/b/c atom density as raw RGB, normalised so a full base-density leaf is white.
         var r = 0L; var gg = 0L; var b = 0L
         for (i in 0 until store.size) {
             val cnt = store.countAt(i)
@@ -73,8 +75,8 @@ private fun drawMatter(
                 'a' -> r += cnt; 'b' -> gg += cnt; 'c' -> b += cnt
             }
         }
-        val sat = if (r + gg + b > 0L) 1f else 0f
-        g.color = hsv(hue(r.toFloat(), gg.toFloat(), b.toFloat()), sat, 0.25f)
+        val across = (leafSize / finestSize).toDouble(); val denom = across * across * refDensity
+        g.color = Color((r / denom).coerceIn(0.0, 1.0).toFloat(), (gg / denom).coerceIn(0.0, 1.0).toFloat(), (b / denom).coerceIn(0.0, 1.0).toFloat())
         g.fillRect(x0.toInt(), y0.toInt(), wpx.toInt().coerceAtLeast(1), wpx.toInt().coerceAtLeast(1))
         // 2px grey border.
         g.color = Color(102, 102, 102)
@@ -98,7 +100,7 @@ private fun drawMatter(
         g.fillOval((cxp - rad).toInt(), (cyp - rad).toInt(), (2 * rad).toInt(), (2 * rad).toInt())
     }
 
-    g.color = Color(235, 232, 224); g.font = Font("SansSerif", Font.BOLD, 13)
+    g.color = Color(40, 40, 40); g.font = Font("SansSerif", Font.BOLD, 13)   // dark: the base fill is white
     g.drawString(label, ox + 8, 18)
 }
 

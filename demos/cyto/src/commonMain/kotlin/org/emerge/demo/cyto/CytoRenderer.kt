@@ -2,7 +2,9 @@ package org.emerge.demo.cyto
 
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoLightField
+import org.emerge.demo.cyto.sim.CytoMatterField
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.CytoSeed
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.SpeciesRegistry
@@ -88,9 +90,10 @@ class CytoRenderer {
     private val fInstColor = FloatArray(FIELD_CELLS * 4)
 
     // ── matter-field overlay (the adaptive quad-tree reservoir, drawn as bordered leaf squares) ──
-    // Each visible leaf → a 2px-bordered square: fill hue/saturation from the leaf's a/b/c atom mix
-    // (the same rule as cell colouring) but value forced low (MATTER_VALUE) so cells stand out. Borders
-    // are drawn first, fills (inset by the border width) painted on top, leaving a 2px frame. Toggle "Matter".
+    // Each visible leaf → a 2px-bordered square: fill is the leaf's per-area a/b/c atom DENSITY as raw RGB,
+    // normalised so a full base-density leaf is white and depletion darkens + discolours it (the channel the
+    // cells drained drops out). Borders are drawn first, fills (inset by the border width) painted on top,
+    // leaving a 2px frame. Toggle "Matter".
     var showMatterField = false
     private val matterShader = UiRectRenderer(maxRects = MATTER_MAX_LEAVES)
     private val matCx = FloatArray(MATTER_MAX_LEAVES)
@@ -308,7 +311,7 @@ class CytoRenderer {
             val hY = half / hwy
             if (ndcX + hX < -1f || ndcX - hX > 1f || ndcY + hY < -1f || ndcY - hY > 1f) return@forEachLeaf
             matCx[n] = ndcX; matCy[n] = ndcY; matHx[n] = hX; matHy[n] = hY
-            leafColor(store, matColorTmp)
+            leafColor(size, store, matColorTmp)
             val c4 = n * 4
             matFillColor[c4] = matColorTmp[0]; matFillColor[c4 + 1] = matColorTmp[1]
             matFillColor[c4 + 2] = matColorTmp[2]; matFillColor[c4 + 3] = 1f
@@ -339,9 +342,11 @@ class CytoRenderer {
         matterShader.drawInstanced(n, mInstCenter, mInstHalf, mInstColor)
     }
 
-    /** Colour a matter leaf by its a/b/c atom mix (hue) and whether it holds anything (saturation), at the
-     *  fixed low [MATTER_VALUE] — the cell-colour rule applied to the leaf's contents. */
-    private fun leafColor(store: org.emerge.demo.cyto.sim.MoleculeStore, out: FloatArray) {
+    /** Colour a matter leaf by its per-area a/b/c atom DENSITY as raw RGB (a→R, b→G, c→B), normalised by the
+     *  leaf's area × the seed density so a full base-density leaf is white (1,1,1) and depletion both darkens
+     *  it and shifts its hue away from whatever species the cells drew down. Counts scale with leaf area, so
+     *  the divisor is the leaf's finest-cell area × [MATTER_REF_DENSITY]. */
+    private fun leafColor(size: Float, store: org.emerge.demo.cyto.sim.MoleculeStore, out: FloatArray) {
         var r = 0L; var g = 0L; var b = 0L
         for (i in 0 until store.size) {
             val cnt = store.countAt(i)
@@ -349,8 +354,11 @@ class CytoRenderer {
                 'a' -> r += cnt; 'b' -> g += cnt; 'c' -> b += cnt
             }
         }
-        val sat = if (r + g + b > 0L) 1f else 0f
-        hsvToRgb(hueOf(r.toFloat(), g.toFloat(), b.toFloat()), sat, MATTER_VALUE, out)
+        val across = (size / MATTER_FINEST_SIZE).toDouble()
+        val denom = across * across * MATTER_REF_DENSITY
+        out[0] = (r / denom).coerceIn(0.0, 1.0).toFloat()
+        out[1] = (g / denom).coerceIn(0.0, 1.0).toFloat()
+        out[2] = (b / denom).coerceIn(0.0, 1.0).toFloat()
     }
 
     fun cleanup() {
@@ -467,9 +475,11 @@ class CytoRenderer {
         // Matter-overlay caps + look. Leaves are walked + culled to the visible region, so the cap only
         // bites when fully zoomed out over a deeply-refined tree (excess leaves are dropped, not wrapped).
         const val MATTER_MAX_LEAVES = 16384
-        // Fill brightness — low so cells (value 0.75–1.0) read clearly on top of the overlay.
-        const val MATTER_VALUE = 0.25f
-        // Border colour: a neutral grey, brighter than the dim fills so the leaf grid is legible.
+        // Leaf counts scale with area; normalise by the finest leaf size + the seed density so a full
+        // base-density leaf reads as white (1,1,1) regardless of how merged it is.
+        val MATTER_FINEST_SIZE = CytoMatterField.TILE / (1 shl CytoMatterField.MAX_DEPTH)
+        val MATTER_REF_DENSITY = CytoSeed.MATTER_UNIFORM_LEVEL.toDouble()
+        // Border colour: a neutral grey, visible against both the bright base fills and depleted dark ones.
         val MATTER_BORDER = floatArrayOf(0.4f, 0.4f, 0.4f)
     }
 }
