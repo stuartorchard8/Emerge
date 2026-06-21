@@ -1,7 +1,8 @@
 package org.emerge.demo.cyto
 
 import org.emerge.demo.cyto.sim.CytoCellComponent
-import org.emerge.demo.cyto.sim.CytoMatterGrid
+import org.emerge.demo.cyto.sim.CytoMatterField
+import org.emerge.demo.cyto.sim.CytoSeed
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.GeneCodec
@@ -36,13 +37,10 @@ class InspectCell {
 
         val transforms = state.components.getTable<TransformComponent>().asMap()
         val pos = transforms[id]?.pos
-        val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid ?: CytoMatterGrid.empty()
-        val gridIndex = if (pos != null) {
-            grid.indexOf(org.emerge.demo.cyto.sim.CytoUnits.toLogical(pos.x), org.emerge.demo.cyto.sim.CytoUnits.toLogical(pos.y))
-        } else -1
+        val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid ?: CytoMatterField.empty()
 
         sb.appendLine("\n=== cell $target (type ${cell.type}) ===")
-        sb.appendLine("logicalRadius=${cell.logicalRadius.raw} wear=${cell.wear} gridIndex=$gridIndex")
+        sb.appendLine("logicalRadius=${cell.logicalRadius.raw} wear=${cell.wear}")
         sb.appendLine("cytoplasm=${cell.cytoplasm}")
         sb.appendLine("biomass=${cell.biomass}")
         val bioBonds = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass)
@@ -78,11 +76,9 @@ class InspectCell {
         val h = handleableOf(cell.genome)
         sb.appendLine("handleable bondTypes=${h.bondTypeCount}; canHold: " +
             listOf("a", "b", "c", "ab", "abb", "bb").joinToString(" ") { "$it=${h.canHold(SpeciesRegistry.id(it))}" })
-        if (gridIndex >= 0) {
-            val res = LinkedHashMap<String, Int>()
-            val rc = grid.cellAt(gridIndex)
-            for ((sp, n) in rc) res[sp] = n
-            sb.appendLine("reservoir @ $gridIndex = $res")
+        if (pos != null) {
+            val rc = grid.contentsAt(org.emerge.demo.cyto.sim.CytoUnits.toLogical(pos.x), org.emerge.demo.cyto.sim.CytoUnits.toLogical(pos.y))
+            sb.appendLine("reservoir @ cell footprint = ${LinkedHashMap(rc)}")
         }
 
         // Replicate the reducer's per-tick LIGHT quanta for this cell (sample × exposure × SCALE), using its

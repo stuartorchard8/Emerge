@@ -341,6 +341,12 @@ class CellWork(
     var cx = 0f
     var cy = 0f
 
+    /** Per-tick active-uptake bias (species id → units): an Import gene lowers the cell's effective target for
+     *  that species in the passive diffusion junction (CytoBiologyCore.passiveEnvExchange), so it absorbs that
+     *  much extra. Recorded grid-free during the (parallel) gene phase; consumed by the sequential junction.
+     *  Cleared each [reset]. */
+    val importBias: MutableMap<Int, Int> = HashMap()
+
     /** Per-work scratch reused by [CytoBiologyCore.runGenes] so a tick's gene execution allocates nothing:
      *  the tick-start cytoplasm snapshot ([snapScratch], filled via [MoleculeStore.copyFrom]), the active-gene
      *  index list ([activeScratch], grown with the genome), and the per-gene consumed-species accumulator
@@ -373,6 +379,7 @@ class CellWork(
         this.weldedDegree = weldedDegree
         connectionDamage.clear()
         touchingIds.clear()
+        importBias.clear()
         weldHeals.clear()
         dividing = false
         divideMorphogen = ""

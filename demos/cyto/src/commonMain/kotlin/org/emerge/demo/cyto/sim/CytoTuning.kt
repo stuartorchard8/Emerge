@@ -7,7 +7,7 @@ import org.emerge.sim.core.physics.primitives.Frac
  * decide how matter, energy, growth, death, and physics behave. They don't change during a run; tuning
  * one changes the *rules* and re-bases the `CytoGoldenTest` goldens (re-baseline from the test's printed
  * digests after a deliberate change). Grouped by subsystem; the original owners ([CytoBiologyCore],
- * [CytoLightField], [CytoMatterGrid], [CytoExposure]) and the runtime [CytoConfig] read their values
+ * [CytoLightField], [CytoMatterField], [CytoExposure]) and the runtime [CytoConfig] read their values
  * from here.
  *
  * The *complement* of this object is [CytoSeed] — the **initial data** (starting reservoir + seed-organism
@@ -73,6 +73,11 @@ object CytoTuning {
      *  the diffusion cadence). Returns matter stranded by selective uptake (species no live cell can use)
      *  toward monomers. Higher = slower decay; 0 disables. ⚙ */
     const val MATTER_DECAY_PERIOD = 4000
+    /** Quad-tree matter field (QUADTREE.md): raw ticks a finest region may go un-accessed before its parent
+     *  pools it one layer coarser. Collapse climbs one layer per this delay (matter spreads over 2× area each
+     *  time), so an unobserved corpse fully re-integrates over ~MAX_DEPTH·this ticks. Higher = sharper, longer-
+     *  lived self-dug gradients (and more live nodes); the "background diffusion length in time". ⚙ */
+    const val MATTER_COLLAPSE_DELAY = 64
 
     // ── Metabolism / energy (per gene, per tick) ─────────────────────────────────────────────────────
     /** light → quanta: `quanta = ⌊field × exposure × SCALE⌋` (a fully-exposed cell on a source gets

@@ -24,7 +24,7 @@ class CytoBench {
         fun build(giant: Boolean): CytoWorld {
             val b = org.emerge.sim.core.sim.SimBuilder(org.emerge.sim.core.sim.SimState(randomSeed = 1))
             b.update<org.emerge.demo.cyto.sim.CytoMatterGridComponent>(org.emerge.demo.cyto.sim.GRID_SINGLETON) {
-                org.emerge.demo.cyto.sim.CytoMatterGridComponent(org.emerge.demo.cyto.sim.CytoMatterGrid.empty())
+                org.emerge.demo.cyto.sim.CytoMatterGridComponent(org.emerge.demo.cyto.sim.CytoMatterField.empty())
             }
             val side = 30   // 900 cells packed ~MIN_RADIUS apart
             for (gy in 0 until side) for (gx in 0 until side) {
@@ -109,7 +109,7 @@ class CytoBench {
             made++
         }
         builder.update<org.emerge.demo.cyto.sim.CytoMatterGridComponent>(org.emerge.demo.cyto.sim.GRID_SINGLETON) {
-            org.emerge.demo.cyto.sim.CytoMatterGridComponent(org.emerge.demo.cyto.sim.CytoMatterGrid.seeded())
+            org.emerge.demo.cyto.sim.CytoMatterGridComponent(org.emerge.demo.cyto.sim.CytoMatterField.seededUniform(org.emerge.demo.cyto.sim.CytoSeed.MATTER_UNIFORM_LEVEL))
         }
         return builder.build()
     }

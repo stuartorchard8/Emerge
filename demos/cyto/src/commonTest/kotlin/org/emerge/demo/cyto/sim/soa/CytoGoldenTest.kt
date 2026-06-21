@@ -5,7 +5,8 @@ import org.emerge.demo.cyto.sim.ConnectionStateComponent
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
-import org.emerge.demo.cyto.sim.CytoMatterGrid
+import org.emerge.demo.cyto.sim.CytoMatterField
+import org.emerge.demo.cyto.sim.CytoSeed
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.GeneCodec
@@ -137,12 +138,20 @@ class CytoGoldenTest {
     // cell's footprint (sequential id-order, conservation-exact), and seeding flipped to UNIFORM (no diffusion
     // ⇒ matter must be everywhere). All three trajectory goldens move in every dimension; matterIsConserved +
     // autotrophGrowsIntoAColony + parallel==sequential + round-trip + torus-homogeneity all held.
+    // Re-baselined 2026-06-21: ADAPTIVE QUAD-TREE MATTER FIELD (QUADTREE.md). The flat CytoMatterGrid is
+    // replaced by CytoMatterField — a per-tile adaptive quad-tree refined to sub-cell leaves under cell
+    // footprints, with a bidirectional diffusion JUNCTION (openFootprint/balance) replacing the old flat
+    // disc-gather + grid-diffusion, and observer-gated progressive collapse instead of full-map diffusion.
+    // Cell matter uptake is now sampled from the fine leaves around each cell rather than a coarse grid index,
+    // so per-tick uptake magnitudes differ → the whole trajectory diverges. ALL three goldens move in every
+    // changed dimension; the `grid` digest now hashes the quad-tree leaves (forEachLeaf). Determinism gates
+    // (parallel==sequential, round-trip) and matter conservation held.
     private val GROWTH = mapOf(
-        "meta" to "a60cbf0ee8b8ac32",
-        "physics" to "aad7cad32fc9f41a",
-        "biology" to "c1fe3631d6fe9659",
-        "topology" to "b9e1faf4eb82bcc1",
-        "grid" to "67ab40ac02b9a697",
+        "meta" to "361ae09861a326a5",
+        "physics" to "449a6c1d52942efd",
+        "biology" to "245c16643e8bb68c",
+        "topology" to "343d2bbc95076a70",
+        "grid" to "cd9e4e9621c3b45c",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
     // Re-baselined twice for deliberate gene-model extensions, both of which re-route point-mutation's
@@ -203,18 +212,18 @@ class CytoGoldenTest {
     // physics/biology/grid shift. Determinism gates (parallel==sequential, round-trip) held.
     private val MUTATION = mapOf(
         "meta" to "1e92bfc864dfae61",
-        "physics" to "e99827f6213d1777",
-        "biology" to "cb0908605cc77f65",
+        "physics" to "74133a78001e7074",
+        "biology" to "aeda58a3d930b31f",
         "topology" to "cbf29ce484222325",
-        "grid" to "c0d67691608dc5b4",
+        "grid" to "14bda9de730d694d",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
-        "meta" to "405f0d6c2c18baf3",
-        "physics" to "f3013ea613438c2e",
-        "biology" to "a4a993a444f2adf3",
-        "topology" to "cc9bfc6e45240f49",
-        "grid" to "288f7889abcb601c",
+        "meta" to "55a7033be3330d49",
+        "physics" to "411f63331af8d85e",
+        "biology" to "f2ded6de8d97a3af",
+        "topology" to "fd73fd6bcc44c407",
+        "grid" to "ed1a57ed737ab93b",
     )
 
     @Test
@@ -342,10 +351,12 @@ class CytoGoldenTest {
 
         val gridSb = StringBuilder()
         val grid = s.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid
-        if (grid != null) {
-            for (idx in 0 until CytoMatterGrid.RES * CytoMatterGrid.RES) {
-                val cell = grid.cellAt(idx)
-                if (cell.isNotEmpty()) gridSb.append(idx).append(':').append(mapStr(cell)).append(';')
+        // Quad-tree field: hash each leaf by its region (corner + size) + contents (stable DFS order).
+        grid?.forEachLeaf { x, y, sz, store ->
+            if (store.size > 0) {
+                gridSb.append(x).append(',').append(y).append(',').append(sz).append(':')
+                for (i in 0 until store.size) gridSb.append(store.idAt(i)).append('=').append(store.countAt(i)).append(',')
+                gridSb.append(';')
             }
         }
 

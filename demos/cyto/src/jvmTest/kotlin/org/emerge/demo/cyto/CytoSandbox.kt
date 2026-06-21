@@ -4,9 +4,9 @@ import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
-import org.emerge.demo.cyto.sim.CytoMatterGrid
-import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.CytoMatterField
 import org.emerge.demo.cyto.sim.CytoSeed
+import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.GeneCodec
@@ -65,11 +65,8 @@ class CytoSandbox {
                 pos = CytoUnits.coord2(0f, 0f), vel = Coord2.zero, type = CellType.Collector,
                 cytoplasm = seed, biomass = CytoSeed.STARTER_BIOMASS, logicalRadius = MIN_RADIUS, genome = genome,
             )
-            val grid = CytoMatterGrid.empty()   // abundant raw monomers everywhere so growth isn't matter-limited
-            for (idx in 0 until CytoMatterGrid.RES * CytoMatterGrid.RES) {
-                grid.deposit(idx, "a", 2000); grid.deposit(idx, "b", 2000); grid.deposit(idx, "c", 2000)
-            }
-            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
+            // abundant raw monomers everywhere so growth isn't matter-limited
+            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(2000)) }
             b.build()
         }
 

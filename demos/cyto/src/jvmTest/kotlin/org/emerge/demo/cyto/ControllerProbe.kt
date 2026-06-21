@@ -3,9 +3,9 @@ package org.emerge.demo.cyto
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
-import org.emerge.demo.cyto.sim.CytoMatterGrid
-import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.CytoMatterField
 import org.emerge.demo.cyto.sim.CytoSeed
+import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.GeneCodec
@@ -47,11 +47,7 @@ class ControllerProbe {
             val b = SimBuilder(SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
             b.spawnCell(pos = CytoUnits.coord2(0f, 0f), vel = Coord2.zero, type = CellType.Collector,
                 cytoplasm = seed, biomass = CytoSeed.STARTER_BIOMASS, logicalRadius = MIN_RADIUS, genome = genome)
-            val grid = CytoMatterGrid.empty()
-            for (idx in 0 until CytoMatterGrid.RES * CytoMatterGrid.RES) {
-                grid.deposit(idx, "a", 4000); grid.deposit(idx, "b", 4000); grid.deposit(idx, "c", 4000)
-            }
-            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
+            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(4000)) }
             b.build()
         }
 

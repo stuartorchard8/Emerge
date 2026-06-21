@@ -8,9 +8,9 @@ import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoLightField
-import org.emerge.demo.cyto.sim.CytoMatterGrid
-import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.CytoMatterField
 import org.emerge.demo.cyto.sim.CytoSeed
+import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoMutation
 import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.CytoUnits
@@ -137,71 +137,10 @@ class CytoSoaSpecTest {
         assertTrue(cellCount(state) > start, "heterotroph should grow + divide off stored ab; got ${cellCount(state)}")
     }
 
-    @Test
-    fun metabolicLeakRetainsUsableMatterDumpsWaste() {
-        // Metabolic leak: passive exchange retains a species the cell CAN metabolise (so it can hoard an
-        // imported reserve) but still dumps a species it can't use down-gradient. One inert gene makes `ab`
-        // (and atoms a,b) handleable while never firing (its gate is unreachable), so runGenes is a no-op and
-        // we observe the passive exchange alone. The cell sits in an empty reservoir, so without retention
-        // both `ab` and `c` would leak; with it, only the un-metabolisable `c` does.
-        val inertAbGene = Gene(
-            EnergySource.Light,
-            GeneCondition(Operand.Chem("ab"), Comparison.Greater, Operand.Constant(1_000_000_000)),  // never true
-            GeneAction(ActionType.Convert, "ab"),
-        )
-        val initial = run {
-            val b = SimBuilder(SimState())
-            b.spawnCell(
-                CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Collector,
-                cytoplasm = mapOf("ab" to 5000, "c" to 5000), biomass = mapOf("ab" to 2000),
-                genome = listOf(inertAbGene),
-            )
-            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.empty()) }
-            b.build()
-        }
-        val total0 = totalAtoms(initial)
-        val state = run(initial, ticks = 1) { s, t -> assertEquals(total0, totalAtoms(s), "atoms not conserved at step $t") }
-        val cell = state.components.getTable<CytoCellComponent>().asMap().values.first()
-        assertEquals(5000, cell.cytoplasm["ab"] ?: 0, "metabolisable ab is retained (not leaked back to the reservoir)")
-        assertTrue((cell.cytoplasm["c"] ?: 0) < 5000, "un-metabolisable c leaks toward the empty reservoir; got ${cell.cytoplasm["c"]}")
-    }
-
-    @Test
-    fun activeUptakeYieldsLessAgainstASteeperGradient() {
-        // Gradient-cost on Import: the same light budget buys far fewer molecules when the cell is already
-        // concentrated above the ambient reservoir. Two identical cells on a light source with a fat 'a'
-        // reservoir (so uptake is gradient-limited, not supply-limited) — one starting at ambient (excess 0),
-        // one well above it (excess 2×SCALE → ~1/3 yield). Biomass is small enough that nothing degrades in
-        // one tick, and at/above ambient passive exchange is inert, so the cytoplasm delta is pure uptake.
-        val (sx, sy) = CytoLightField.SOURCES.first()
-        // BreakBond("cc") fuel makes uptake light-independent; cc breaks to c+c (never `a`), so the measured
-        // `a` delta is pure import, not break fragments.
-        val importGene = Gene(
-            EnergySource.BreakBond("cc"),
-            GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)),
-            GeneAction(ActionType.Import, "a"),
-        )
-        fun uptakeFrom(startCytoA: Int): Int {
-            val initial = run {
-                val b = SimBuilder(SimState())
-                b.spawnCell(
-                    CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector,
-                    cytoplasm = mapOf("a" to startCytoA, "cc" to 1_000_000), biomass = mapOf("ab" to 1000), genome = listOf(importGene),
-                )
-                val grid = CytoMatterGrid.empty()
-                grid.deposit(grid.indexOf(sx, sy), "a", 1_000_000)
-                b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
-                b.build()
-            }
-            fun cytoA(s: SimState) = s.components.getTable<CytoCellComponent>().asMap().values.first().cytoplasm["a"] ?: 0
-            return cytoA(run(initial, ticks = 1) { _, _ -> }) - cytoA(initial)
-        }
-        val nearAmbient = uptakeFrom(1_000_000)                                       // excess 0 → full yield
-        val concentrated = uptakeFrom(1_000_000 + 2 * CytoTuning.IMPORT_GRADIENT_SCALE)  // excess 2×SCALE → ~1/3
-        assertTrue(concentrated > 0, "still imports something against the gradient; got $concentrated")
-        assertTrue(nearAmbient > concentrated * 2, "uptake should fall steeply with concentration; near=$nearAmbient conc=$concentrated")
-    }
-
+    // RETIRED with the quad-tree matter field (QUADTREE.md): metabolicLeakRetainsUsableMatterDumpsWaste
+    // (there is no passive waste leak now — waste accumulates until death/export) and
+    // activeUptakeYieldsLessAgainstASteeperGradient (Import is now a flat C_eff bias on the diffusion
+    // junction, no gradient-cost diminishing returns).
     @Test
     fun concBandAndGateFiresOnlyInRange() {
         // Conc operand + AND-conjunction (MORPHOGENESIS.md §Morphogens for shape): a Convert gene gated
@@ -291,9 +230,7 @@ class CytoSoaSpecTest {
                     cytoplasm = mapOf("a" to 500, "b" to 500, "c" to 500, "cc" to 200),
                     biomass = CytoSeed.STARTER_BIOMASS, genome = genome,
                 )
-                val grid = CytoMatterGrid.empty()
-                for (i in 0 until CytoMatterGrid.RES * CytoMatterGrid.RES) { grid.deposit(i, "a", 2000); grid.deposit(i, "b", 2000); grid.deposit(i, "c", 2000) }
-                b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
+                b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(2000)) }
                 b.build()
             }
             val s = run(initial, ticks = 3000)
@@ -413,7 +350,7 @@ class CytoSoaSpecTest {
         )
         val initial = run {
             val b = SimBuilder(SimState(randomSeed = 1))
-            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.empty()) }
+            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.empty()) }
             b.spawnCell(
                 CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector,
                 cytoplasm = emptyMap(), biomass = mapOf("ab" to 1, "ba" to 1), logicalRadius = MIN_RADIUS, genome = divideNow,
@@ -449,7 +386,7 @@ class CytoSoaSpecTest {
                 cytoplasm = mapOf("ab" to 50_000, "c" to 2_000), biomass = mapOf("ab" to 8_000),
                 genome = listOf(mitosis),
             )
-            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.empty()) }
+            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.empty()) }
             b.build()
         }
         val total0 = totalAtoms(initial)
@@ -489,7 +426,7 @@ class CytoSoaSpecTest {
                 cytoplasm = mapOf("ab" to 80_000, "c" to 2_000), biomass = mapOf("ab" to 8_000),
                 genome = listOf(mitosis, contractIfMorphogen),
             )
-            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.empty()) }
+            b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.empty()) }
             b.build()
         }
         val total0 = totalAtoms(initial)
@@ -543,7 +480,7 @@ class CytoSoaSpecTest {
                 quanta = quanta, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
             )
             val before = totalBiomassBonds(work.biomass)
-            CytoBiologyCore.runGenes(work, CytoMatterGrid.empty())
+            CytoBiologyCore.runGenes(work)
             return totalBiomassBonds(work.biomass) - before
         }
         // Energy-poor: a high gear squeezes ~(g+1)× more actions out of the same quanta.
@@ -581,7 +518,7 @@ class CytoSoaSpecTest {
             genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "ab", "b", aWild = true, bWild = true))),
             quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
-        CytoBiologyCore.runGenes(work, CytoMatterGrid.empty())
+        CytoBiologyCore.runGenes(work)
         assertEquals(1000, work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("a")), "the bare monomer 'a' must be untouched (suffix 'ab' doesn't match it)")
         assertTrue(work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("abb")) > 0, "ab+b should have bonded into abb")
         assertTrue(work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("ab")) < 1000, "the 'ab' molecule should have been consumed")
@@ -602,7 +539,7 @@ class CytoSoaSpecTest {
             genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "c", "b", aWild = true, bWild = true))),
             quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
-        CytoBiologyCore.runGenes(work, CytoMatterGrid.empty())
+        CytoBiologyCore.runGenes(work)
         assertTrue(work.cytoplasm.count(sid("cb")) > 0, "abundant c+b should have bonded into cb")
         assertEquals(1, work.cytoplasm.count(sid("abac")), "the rare lex-smallest match 'abac' must be left alone")
         assertEquals(0, work.cytoplasm.count(sid("abacb")), "must NOT have produced abacb (the old lex-first product)")
@@ -624,7 +561,7 @@ class CytoSoaSpecTest {
                 genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "a", "a", aWild = aWild, bWild = bWild))),
                 quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
             )
-            CytoBiologyCore.runGenes(work, CytoMatterGrid.empty())
+            CytoBiologyCore.runGenes(work)
             return work.cytoplasm.count(sid("a")) to work.cytoplasm.count(sid("aa"))
         }
         val (exactA, exactAA) = run(aWild = false, bWild = false)
@@ -647,7 +584,7 @@ class CytoSoaSpecTest {
             genome = listOf(Gene(EnergySource.BreakBond("bc"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Convert, "c"))),
             quanta = 0, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
-        CytoBiologyCore.runGenes(work, CytoMatterGrid.empty())
+        CytoBiologyCore.runGenes(work)
         assertEquals(1, work.cytoplasm.count(sid("abc")), "the rare lex-smallest fuel 'abc' must be left alone")
         assertTrue(work.cytoplasm.count(sid("bc")) < 1000, "the abundant 'bc' fuel should have been broken")
     }
@@ -655,7 +592,7 @@ class CytoSoaSpecTest {
     private fun damagedPair(genome: List<Gene>, damage: Float): SimState {
         val (sx, sy) = CytoLightField.SOURCES.first()
         val b = SimBuilder(SimState(randomSeed = 1))
-        b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
+        b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(CytoSeed.MATTER_UNIFORM_LEVEL)) }
         // A stored `ab` cytoplasm reserve so a BreakBond-powered repair gene has fuel regardless of where the
         // moving daylight band is (light timing must not decide whether repair fires).
         // PIN logicalRadius to the biomass baseline (4000 bonds ⇒ radius 0.5) so the cells are full-size from
@@ -711,7 +648,7 @@ class CytoSoaSpecTest {
         // stress in a single tick and breaks — repair can't pre-empt it (stress is applied after biology).
         val (sx, sy) = CytoLightField.SOURCES.first()
         val b = SimBuilder(SimState(randomSeed = 1))
-        b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
+        b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(CytoSeed.MATTER_UNIFORM_LEVEL)) }
         // Pin radius 0.5 (no growth drift) ⇒ rest 1.0, break distance = OVERSTRETCH_BREAK_MULTIPLE × rest.
         // Place the centres ~10% PAST the break point — derived from the tuning so the test tracks
         // OVERSTRETCH_BREAK_MULTIPLE instead of hardcoding a gap that silently goes under the threshold when
@@ -759,23 +696,34 @@ class CytoSoaSpecTest {
 
     @Test
     fun matterDoesNotDiffuseAnUndisturbedDepositStaysPut() {
-        // Diffusion was removed (the disc gather replaces its feed-sessile role + keeps self-dug gradients
-        // sharp). With no cells around, a deposit stays exactly where it's put and atoms are conserved — the
-        // opposite of the old diffusion behaviour. (Endpoint check only; totalAtoms walks the whole RES² grid.)
-        val seed = CytoMatterGrid.empty()
-        val center = seed.indexOf(0f, 0f)
-        seed.deposit(center, "a", 1000)   // 'a' is a monomer → environmental decay leaves it untouched too
+        // Diffusion was removed (the disc gather + observer-gated quad collapse replace it). With no cells
+        // around, a monomer deposit stays exactly where it's put and atoms are conserved.
+        val seed = CytoMatterField.empty()
+        val aId = SpeciesRegistry.id("a")
+        // Deposit well inside a single base tile (the origin is a 4-tile corner, which would split the disc).
+        // The disc refines to fine leaves (~0.25 cell-diam), so the 1000 atoms spread across the footprint's
+        // leaves — read locality by summing leaves NEAR vs FAR, not a single point.
+        seed.deposit(40f, 40f, 0.6f, aId, 1000)   // 'a' is a monomer → env decay leaves it untouched too
         val initial = run {
             val b = SimBuilder(SimState())
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(seed) }
             b.build()
         }
         fun grid(s: SimState) = s.components.getTable<CytoMatterGridComponent>().asMap().getValue(GRID_SINGLETON).grid
+        // Sum species `sp` over leaves whose centre is within `rad` cell-diam of (px,py).
+        fun near(g: CytoMatterField, sp: Int, px: Float, py: Float, rad: Float): Int {
+            var sum = 0
+            g.forEachLeaf { x, y, size, store ->
+                val cxL = x + size * 0.5f; val cyL = y + size * 0.5f
+                val ddx = cxL - px; val ddy = cyL - py
+                if (ddx * ddx + ddy * ddy <= rad * rad) sum += store.count(sp)
+            }
+            return sum
+        }
         val total0 = grid(initial).totalAtoms()
         val g = grid(run(initial, ticks = 200))
-        assertEquals(1000, g.count(center, "a"), "with diffusion gone an undisturbed deposit must stay put")
-        val right = g.indexOf(CytoMatterGrid.SPAN / CytoMatterGrid.RES, 0f)
-        assertEquals(0, g.count(right, "a"), "matter must NOT spread to a neighbour (no diffusion)")
+        assertEquals(1000, near(g, aId, 40f, 40f, 4f), "with diffusion gone an undisturbed deposit must stay put")
+        assertEquals(0, near(g, aId, -40f, -40f, 4f), "matter must NOT spread to a distant point (no diffusion)")
         assertEquals(total0, g.totalAtoms(), "matter conserved")
     }
 

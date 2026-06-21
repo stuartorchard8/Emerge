@@ -28,13 +28,14 @@ data class CytoCellComponent(
 )
 
 /**
- * The world's finite **matter reservoir** ([CytoMatterGrid]), carried as a singleton component on a
+ * The world's finite **matter reservoir** ([CytoMatterField], an adaptive quad-tree — see QUADTREE.md),
+ * carried as a singleton component on a
  * reserved entity ([GRID_SINGLETON]) so the otherwise-stateless reducer
  * (which rebuilds [org.emerge.sim.core.sim.SimState] each tick) persists it across ticks. The singleton
  * is invisible to every cell/physics iteration (no [CytoCellComponent] / transform / collider) and is
  * never allocated through the entity counter, so it never perturbs id allocation / `lastEntityValue`.
  */
-data class CytoMatterGridComponent(val grid: CytoMatterGrid)
+data class CytoMatterGridComponent(val grid: CytoMatterField)
 
 /** Reserved entity id the [CytoMatterGridComponent] singleton lives on — far above any allocated cell
  *  id (allocation grows from 0), never added to the live-id set, so it collides with nothing. */

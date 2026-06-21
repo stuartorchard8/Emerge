@@ -3,7 +3,8 @@ package org.emerge.demo.cyto
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
-import org.emerge.demo.cyto.sim.CytoMatterGrid
+import org.emerge.demo.cyto.sim.CytoMatterField
+import org.emerge.demo.cyto.sim.CytoSeed
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoSimParamsComponent
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
@@ -28,7 +29,7 @@ import org.emerge.sim.core.sim.SimState
 /**
  * Versioned byte snapshot of a matter-model Cyto [SimState]: each cell's position/velocity, type,
  * radius, wear, stickiness, its cytoplasm + biomass molecule counts, and its genome (GeneCodec text);
- * the connection (spring) pairs; and the finite [CytoMatterGrid] reservoir. Saved ids are remapped to
+ * the connection (spring) pairs; and the finite [CytoMatterField] reservoir. Saved ids are remapped to
  * freshly-spawned ids on decode so connections rebuild correctly. (v4 = the matter rework; earlier
  * energy-model saves don't load — cyto saves are regenerated runtime artifacts.)
  */
@@ -38,7 +39,7 @@ object CytoSaveCodec {
     // v7: persist the runtime mutation rate-denominator (-1 = inherit the cfg default).
     // v8: FormBond flipped wildcard-default → exact-default (MORPHOGENESIS.md §2026-06-18); pre-v8 genomes are
     // migrated to explicit wildcard on load (see [migrateFormBondToWildcard]) so they behave byte-for-byte.
-    private const val FORMAT_VERSION = 8
+    private const val FORMAT_VERSION = 9
     private val cfg = CytoConfig()
 
     fun encode(state: SimState): ByteArray {
@@ -84,17 +85,9 @@ object CytoSaveCodec {
             w.writeInt(packed.toInt())
         }
 
-        // Matter reservoir: every non-empty grid cell.
-        val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid ?: CytoMatterGrid.empty()
-        val nonEmpty = ArrayList<Int>()
-        for (idx in 0 until CytoMatterGrid.RES * CytoMatterGrid.RES) {
-            if (grid.cellAt(idx).isNotEmpty()) nonEmpty.add(idx)
-        }
-        w.writeInt(nonEmpty.size)
-        for (idx in nonEmpty) {
-            w.writeInt(idx)
-            writeCounts(w, grid.cellAt(idx))
-        }
+        // Matter reservoir: the quad-tree, serialised structurally (exact incl. internal monomer stashes).
+        val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid ?: CytoMatterField.empty()
+        grid.encodeTree({ w.writeByte(it.toByte()) }, { writeCounts(w, it) }, { w.writeInt(it) })
         return w.toByteArray()
     }
 
@@ -142,12 +135,14 @@ object CytoSaveCodec {
             if (a != null && b != null) addSpring(builder, a, b, cfg)
         }
 
-        val grid = CytoMatterGrid.empty()
-        val gridCellCount = c.readInt()
-        require(gridCellCount >= 0) { "Invalid grid-cell count: $gridCellCount" }
-        repeat(gridCellCount) {
-            val idx = c.readInt()
-            for ((species, count) in readCounts(c)) grid.deposit(idx, species, count)
+        val grid = if (version >= 9) {
+            CytoMatterField.decodeTree({ c.readByte().toInt() }, { readCounts(c) }, { c.readInt() })
+        } else {
+            // v6–8 stored a FLAT grid (count + idx/counts pairs). The quad-tree world is a different scale,
+            // so consume + discard those bytes and start the field fresh (the cells/springs still restore).
+            val gridCellCount = c.readInt(); require(gridCellCount >= 0) { "Invalid grid-cell count: $gridCellCount" }
+            repeat(gridCellCount) { c.readInt(); readCounts(c) }
+            CytoMatterField.seededUniform(CytoSeed.MATTER_UNIFORM_LEVEL)
         }
         builder.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
 

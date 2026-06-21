@@ -54,7 +54,7 @@ class CytoMatterFieldTest {
     @Test fun depositConserves() {
         val f = CytoMatterField.seededUniform(10)
         val before = f.totalAtoms()
-        f.deposit(-20f, 30f, 0.6f, A, amount = 1000, tick = 1)   // monomer ⇒ molecules == atoms
+        f.deposit(-20f, 30f, 0.6f, A, amount = 1000)   // monomer ⇒ molecules == atoms
         assertEquals(before + 1000L, f.totalAtoms(), "deposit adds exactly the amount")
     }
 
@@ -80,7 +80,7 @@ class CytoMatterFieldTest {
 
     @Test fun decayConservesAndAtomises() {
         val f = CytoMatterField.empty()
-        f.deposit(0f, 0f, 0.6f, AB, amount = 4096, tick = 1)   // a pile of 'ab' molecules
+        f.deposit(0f, 0f, 0.6f, AB, amount = 4096)   // a pile of 'ab' molecules
         val t0 = f.totalAtoms()
         repeat(20) { f.maintain(2 + it, collapseDelay = Int.MAX_VALUE, decayPeriod = 2) }  // decay, no collapse
         assertEquals(t0, f.totalAtoms(), "decay conserves atoms (ab → a + b)")
@@ -94,7 +94,7 @@ class CytoMatterFieldTest {
         fun run(): CytoMatterField {
             val f = CytoMatterField.seededUniform(10)
             f.openFootprint(3f, 3f, 0.6f, 1); f.balance(A, 4); f.closeFootprint()
-            f.deposit(3f, 3f, 0.6f, AB, 500, 2)
+            f.deposit(3f, 3f, 0.6f, AB, 500)
             f.openFootprint(-40f, 80f, 0.6f, 3); f.balance(A, 0); f.closeFootprint()  // near a different tile
             f.maintain(70, 64, 4)
             return f

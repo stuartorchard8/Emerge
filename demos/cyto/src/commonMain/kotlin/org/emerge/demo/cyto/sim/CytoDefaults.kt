@@ -8,7 +8,7 @@ import org.emerge.sim.core.sim.SimState
 /**
  * Fresh-start world (matter model, MORPHOGENESIS.md): one hand-authored **autotroph** ([Collector] =
  * [AUTOTROPH_GENES]) at the world origin, seeded with a little cytoplasm + biomass, plus the finite
- * [CytoMatterGrid] reservoir. Under the moving daylight band ([CytoTuning.LIGHT_MOVING]) it bonds a/b into
+ * [CytoMatterField] reservoir. Under the moving daylight band ([CytoTuning.LIGHT_MOVING]) it bonds a/b into
  * `ab` while lit, converts `ab` to biomass to grow, hoards a reserve through the dark, and divides by
  * breaking it — a clonal colony that **plateaus** as the local matter is drawn down (the carrying capacity).
  */
@@ -26,6 +26,6 @@ fun createCytoInitialState(): SimState {
         biomass = CytoSeed.STARTER_BIOMASS,
         logicalRadius = MIN_RADIUS,
     )
-    builder.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterGrid.seeded()) }
+    builder.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(CytoSeed.MATTER_UNIFORM_LEVEL)) }
     return builder.build()
 }

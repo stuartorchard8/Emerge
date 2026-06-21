@@ -13,7 +13,7 @@ import org.emerge.demo.cyto.sim.CytoExposure
 import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoLightField
-import org.emerge.demo.cyto.sim.CytoMatterGrid
+import org.emerge.demo.cyto.sim.CytoMatterField
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoMutation
 import org.emerge.demo.cyto.sim.CytoUnits
@@ -234,10 +234,11 @@ class CytoSoaReducer(
             // Matter diffusion walks every grid-cell, so run it only every Nth tick (it's a slow background
             // process — per-tick resolution is wasted work, especially in a near-uniform field). Deterministic
             // on the sim clock; conservation unaffected (each step is still a conservative move).
-            // Diffusion removed (the disc gather replaces its feed-sessile role + keeps gradients sharp);
-            // environmental decay stays (free molecules atomise over time → unique species fall, matter returns).
+            // Quad-tree self-upkeep (QUADTREE.md maintain): progressive collapse of unobserved regions +
+            // species decay. Runs every MATTER_DIFFUSE_PERIOD ticks, mutating the field in place (walks only
+            // allocated nodes — the void is ~free). collapseDelay is in raw ticks (matches leaf lastAccessTick).
             if (cur.world.tick % CytoTuning.MATTER_DIFFUSE_PERIOD == 0L) {
-                cur.grid = cur.grid.decayed(CytoTuning.MATTER_DECAY_PERIOD)
+                cur.grid.maintain(cur.world.tick.toInt(), CytoTuning.MATTER_COLLAPSE_DELAY, CytoTuning.MATTER_DECAY_PERIOD)
             }
             cur
         }
@@ -710,7 +711,6 @@ class CytoSoaReducer(
                 expoScratch[ek++] = CytoExposure.diamondAngle(d.x, d.y).raw
             }
             val lx = CytoUnits.toLogical(Coord(w.posX[slot])); val ly = CytoUnits.toLogical(Coord(w.posY[slot]))
-            val gridIndex = grid.indexOf(lx, ly)
             val sample = lightField.sampleAt(lx, ly, w.world.tick)
             val exposure = CytoExposure.weight(expoScratch, ek)
             val radius = Frac(w.cell.logicalRadius[slot])
@@ -725,7 +725,6 @@ class CytoSoaReducer(
             // starves the founder). Reduce exposure to ≤1000 first, then scale by radius.raw.
             val exposureMilli = exposure.raw * 1000L / Int.MAX_VALUE.toLong()   // exposure × 1000, ≤ 1000
             captureMilli[k] = exposureMilli * radius.raw / Int.MAX_VALUE.toLong()
-            if (CytoTuning.LIGHT_SHADING && gridIndex >= 0) capSumByGrid[gridIndex] = (capSumByGrid[gridIndex] ?: 0L) + captureMilli[k]
 
             val work = bioWorks[slot]!!
             work.reset(
@@ -737,7 +736,7 @@ class CytoSoaReducer(
                 quanta = 0,   // filled below, once per-grid-cell capture sums are known
                 touchCount = touchScratch[slot],
                 wear = w.cell.wear[slot],
-                gridIndex = gridIndex,
+                gridIndex = -1,   // vestigial (no flat grid); the cell uses cx,cy for its footprint
                 weldedDegree = deg,
             )
             for (j in 0 until deg) work.connectionDamage[EntityId(w.csr.otherId[base + j])] = w.csr.edgeAux[base + j]
@@ -766,22 +765,16 @@ class CytoSoaReducer(
 
         val orderedWorks = bioOrderedWorks.also { it.clear() }
         for (k in 0 until n) orderedWorks.add(bioWorks[ordered[k]]!!)
-        CytoBiologyCore.passiveEnvExchange(orderedWorks, grid, bioProfile)
-        bioSplit("bio:exchange")   // passive env-exchange with the matter grid
-        // Gene phase, fanned across grid-cell groups (each touches only its own reservoir cell, so groups are
-        // independent and the parallel pass is bit-identical to the sequential one — within a group cells run
-        // in EntityId order; across groups order is irrelevant since they share no state). Build the groups by
-        // a counting-sort over gridIndex, then disjoint() hands each worker whole groups.
-        val numGroups = buildGridGroups(w, n)
+        CytoBiologyCore.passiveEnvExchange(orderedWorks, grid, w.world.tick.toInt(), bioProfile)
+        bioSplit("bio:exchange")   // passive env-exchange (the diffusion junction) with the quad-tree field
+        // Gene phase. runGenes is now grid-FREE (Import is a junction bias, degrade ejects to cytoplasm), so
+        // each cell is fully independent — any partition is bit-identical to sequential. Fan cells (in
+        // bioOrder = EntityId order) across disjoint slot ranges; no grid-cell grouping needed any more.
         val exec = if (n >= bioParallelThreshold) executor else null
-        ColumnPartition.disjoint(numGroups, exec, threshold = 1) { gStart, gEnd ->
-            for (g in gStart until gEnd) {
-                for (k in bioGroupBounds[g] until bioGroupBounds[g + 1]) {
-                    CytoBiologyCore.runGenes(bioWorks[bioGroupSlots[k]]!!, grid, bioProfile)
-                }
-            }
+        ColumnPartition.disjoint(n, exec, threshold = 1) { kStart, kEnd ->
+            for (k in kStart until kEnd) CytoBiologyCore.runGenes(bioWorks[ordered[k]]!!, bioProfile)
         }
-        bioSplit("bio:genes")   // gene execution (incl. buildGridGroups grouping)
+        bioSplit("bio:genes")   // gene execution
         CytoBiologyCore.diffuse(works, neighbourIds)
         bioSplit("bio:diffuse")   // inter-cell cytoplasm diffusion across welds
         val divide = ArrayList<EntityId>(); val destroy = ArrayList<EntityId>()
@@ -795,7 +788,7 @@ class CytoSoaReducer(
             val slot = ordered[k]
             val id = EntityId(w.entityId[slot])
             val work = bioWorks[slot]!!
-            CytoBiologyCore.finish(id, work, grid, divide, destroy)
+            CytoBiologyCore.finish(id, work, divide, destroy)
             for ((other, heal) in work.weldHeals) {                 // Repair-weld requests → summed + counted per pair
                 val key = pairKey(id.value, other.value)
                 weldHealByPair[key] = (weldHealByPair[key] ?: 0f) + heal
@@ -850,39 +843,6 @@ class CytoSoaReducer(
         }
         bioSplit("bio:writeback")   // mutation (CytoMutation.mutate) + write columns/radius/mass back
         return divide to destroy
-    }
-
-    /** Counting-sort the [n] cells (in `bioOrder` EntityId order) into grid-cell groups, writing the grouped
-     *  slots to `bioGroupSlots` and the non-empty group boundaries to `bioGroupBounds`. Position-less cells
-     *  (gridIndex < 0) collect in the last bucket — they touch no grid, so they're independent too. Returns
-     *  the number of non-empty groups. Within each group the slots stay in EntityId order (stable placement),
-     *  so a per-group sequential gene pass is bit-identical to the global EntityId-order pass. */
-    private fun buildGridGroups(w: CytoWorld, n: Int): Int {
-        val nb = CytoMatterGrid.RES * CytoMatterGrid.RES + 1   // last bucket = gridIndex < 0
-        if (bioBucketCount.size < nb) { bioBucketCount = IntArray(nb); bioBucketCursor = IntArray(nb) }
-        if (bioGroupSlots.size < n) bioGroupSlots = IntArray(n)
-        if (bioGroupBounds.size < nb + 1) bioGroupBounds = IntArray(nb + 1)
-        val cnt = bioBucketCount
-        for (b in 0 until nb) cnt[b] = 0
-        for (k in 0 until n) {
-            val gi = bioWorks[bioOrder[k]]!!.gridIndex
-            cnt[if (gi < 0) nb - 1 else gi]++
-        }
-        // Assign each non-empty bucket a contiguous slot range; record the group boundaries.
-        var cursor = 0; var numGroups = 0
-        for (b in 0 until nb) {
-            bioBucketCursor[b] = cursor
-            if (cnt[b] > 0) { bioGroupBounds[numGroups] = cursor; numGroups++; cursor += cnt[b] }
-        }
-        bioGroupBounds[numGroups] = cursor   // == n
-        // Place slots in EntityId order (stable counting-sort), so each group is EntityId-ordered.
-        for (k in 0 until n) {
-            val slot = bioOrder[k]
-            val gi = bioWorks[slot]!!.gridIndex
-            val b = if (gi < 0) nb - 1 else gi
-            bioGroupSlots[bioBucketCursor[b]++] = slot
-        }
-        return numGroups
     }
 
     /** World PRNG, bit-identical to `SimBuilder.nextRandomInt` (mutation draws, in EntityId order). */

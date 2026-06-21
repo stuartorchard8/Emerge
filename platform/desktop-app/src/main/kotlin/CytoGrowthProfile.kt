@@ -3,7 +3,8 @@ package org.emerge.desktop
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
-import org.emerge.demo.cyto.sim.CytoMatterGrid
+import org.emerge.demo.cyto.sim.CytoMatterField
+import org.emerge.demo.cyto.sim.CytoSeed
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.createCytoInitialState
@@ -89,17 +90,20 @@ private fun allocatedBytes(): Long {
 }
 
 /** A fresh world whose matter reservoir is seeded [factor]× richer (more nutrients ⇒ higher carrying
- *  capacity). Multiplies every seeded grid-cell's molecule counts; geometry (the four source clumps) is
- *  unchanged, so the colony still grows where the light + matter are. */
+ *  capacity). Multiplies every leaf's molecule counts; geometry is unchanged, so the colony still grows
+ *  where the light + matter are. */
 private fun scaledMatter(factor: Int): SimState {
     val state = createCytoInitialState()
     if (factor == 1) return state
     val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid ?: return state
-    val n = CytoMatterGrid.RES * CytoMatterGrid.RES
-    val scaled = Array(n) { idx -> HashMap(grid.cellAt(idx).mapValues { it.value * factor }) }
+    val scaled = grid.copy()
+    scaled.forEachLeaf { _, _, _, store ->
+        val ids = IntArray(store.size) { store.idAt(it) }   // snapshot: scaling existing species keeps size stable
+        for (id in ids) store.add(id, store.count(id) * (factor - 1))
+    }
     val tables = HashMap(state.components.tables)
     tables[CytoMatterGridComponent::class] = ComponentTable.fromMap(
-        linkedMapOf(GRID_SINGLETON to CytoMatterGridComponent(CytoMatterGrid.fromCells(scaled))),
+        linkedMapOf(GRID_SINGLETON to CytoMatterGridComponent(scaled)),
     )
     return state.copy(components = ComponentStore(tables))
 }

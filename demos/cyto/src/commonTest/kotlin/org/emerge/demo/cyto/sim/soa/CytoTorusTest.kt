@@ -4,9 +4,9 @@ import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoLightField
-import org.emerge.demo.cyto.sim.CytoMatterGrid
-import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.CytoMatterField
 import org.emerge.demo.cyto.sim.CytoSeed
+import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.Gene
@@ -72,10 +72,7 @@ class CytoTorusTest {
                     logicalRadius = MIN_RADIUS, genome = genome)
             }
             for (k in 1 until ids.size) addSpring(b, ids[0], ids[k], cfg)
-            val grid = CytoMatterGrid.empty()   // uniform matter → no position dependence
-            for (idx in 0 until CytoMatterGrid.RES * CytoMatterGrid.RES) {
-                grid.deposit(idx, "a", 4000); grid.deposit(idx, "b", 4000); grid.deposit(idx, "c", 4000)
-            }
+            val grid = CytoMatterField.seededUniform(4000)   // uniform matter → no position dependence
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
             b.build()
         }
@@ -123,13 +120,14 @@ class CytoTorusTest {
     }
 
     @Test
-    fun matterGridIndexIsToroidallyPeriodic() {
-        val grid = CytoMatterGrid.empty()
+    fun matterFieldIsToroidallyPeriodic() {
+        // The field tiles the torus: contents read at (x,y) must equal those at (x+SPAN, y+SPAN).
+        val grid = CytoMatterField.seededUniform(10)
         val span = CytoLightField.SPAN
         for (x in listOf(-130f, -64f, -1f, 0f, 1f, 64f, 130f)) {
             for (y in listOf(-77f, 0f, 64f)) {
-                assertEquals(grid.indexOf(x, y), grid.indexOf(x + span, y + span),
-                    "matter grid index must be SPAN-periodic at ($x,$y)")
+                assertEquals(grid.contentsAt(x, y), grid.contentsAt(x + span, y + span),
+                    "matter field must be SPAN-periodic at ($x,$y)")
             }
         }
     }

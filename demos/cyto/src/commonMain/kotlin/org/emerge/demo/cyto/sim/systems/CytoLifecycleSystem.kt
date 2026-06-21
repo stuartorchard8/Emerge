@@ -5,7 +5,8 @@ import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoInput
-import org.emerge.demo.cyto.sim.CytoMatterGrid
+import org.emerge.demo.cyto.sim.CytoMatterField
+import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
@@ -52,9 +53,9 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         val destroyEvents = builder.events<CellDestroyIntent>()
         val divideEvents = builder.events<CellDivisionIntent>()
         val destroyed = HashSet<EntityId>()
-        val grid: CytoMatterGrid? =
+        val grid: CytoMatterField? =
             if (destroyEvents.isNotEmpty() || divideEvents.isNotEmpty()) {
-                builder.getComponent<CytoMatterGridComponent>(GRID_SINGLETON)?.grid?.copy() ?: CytoMatterGrid.empty()
+                builder.getComponent<CytoMatterGridComponent>(GRID_SINGLETON)?.grid?.copy() ?: CytoMatterField.empty()
             } else null
 
         // Destroy: a dying cell returns all its molecules to its reservoir grid-cell, drops its
@@ -95,15 +96,15 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
     }
 
     /** Deposit a cell's entire cytoplasm + biomass into its reservoir grid-cell (death recycling). */
-    private fun depositCellMatter(builder: SimBuilder, grid: CytoMatterGrid, id: EntityId) {
+    private fun depositCellMatter(builder: SimBuilder, grid: CytoMatterField, id: EntityId) {
         val cell = builder.getComponent<CytoCellComponent>(id) ?: return
         val pos = builder.getComponent<TransformComponent>(id)?.pos ?: return
-        val idx = grid.indexOf(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y))
-        for ((s, c) in cell.cytoplasm) grid.deposit(idx, s, c)
-        for ((s, c) in cell.biomass) grid.deposit(idx, s, c)
+        val lx = CytoUnits.toLogical(pos.x); val ly = CytoUnits.toLogical(pos.y); val r = cell.logicalRadius.toFloat()
+        for ((s, c) in cell.cytoplasm) grid.deposit(lx, ly, r, SpeciesRegistry.id(s), c)
+        for ((s, c) in cell.biomass) grid.deposit(lx, ly, r, SpeciesRegistry.id(s), c)
     }
 
-    private fun divide(builder: SimBuilder, cfg: CytoConfig, motherId: EntityId, morphogen: String, morphogenToMother: Boolean, axisMorphogen: String, divideAcross: Boolean, grid: CytoMatterGrid, destroyed: HashSet<EntityId>) {
+    private fun divide(builder: SimBuilder, cfg: CytoConfig, motherId: EntityId, morphogen: String, morphogenToMother: Boolean, axisMorphogen: String, divideAcross: Boolean, grid: CytoMatterField, destroyed: HashSet<EntityId>) {
         val cell = builder.getComponent<CytoCellComponent>(motherId) ?: return
         val transform = builder.getComponent<TransformComponent>(motherId) ?: return
         val motionVel = builder.getComponent<MotionComponent>(motherId)?.vel ?: Coord2.zero
@@ -164,19 +165,19 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         // General rounding rule: split each species ⌊C/2⌋ to EACH side and emit the odd remainder
         // (C mod 2) to the environment — whole amounts preserved, remainders to the reservoir, never
         // minted. (Daughter and mother get the same floor share.)
-        val gridIdx = grid.indexOf(CytoUnits.toLogical(motherPos.x), CytoUnits.toLogical(motherPos.y))
+        val mlx = CytoUnits.toLogical(motherPos.x); val mly = CytoUnits.toLogical(motherPos.y); val mr = cell.logicalRadius.toFloat()
         // Asymmetric mitosis (MORPHOGENESIS.md §C): the named morphogen is withheld from the even split
         // (skipped in floorSplit) and handed **whole to the daughter** below; the mother keeps none. Empty
         // morphogen ⇒ skip matches nothing ⇒ the split is byte-identical to the old symmetric path.
         val morphogenCount = if (morphogen.isNotEmpty()) (cell.cytoplasm[morphogen] ?: 0) else 0
-        val half = floorSplit(cell.cytoplasm, grid, gridIdx, skip = morphogen)
-        val halfBio = floorSplit(cell.biomass, grid, gridIdx)
+        val half = floorSplit(cell.cytoplasm, grid, mlx, mly, mr, skip = morphogen)
+        val halfBio = floorSplit(cell.biomass, grid, mlx, mly, mr)
 
         // If neither daughter can take a whole molecule (every species was count ≤ 1), the cell can't
         // split — it dies, its matter already emitted to the reservoir as the remainders above (plus the
         // withheld morphogen, deposited here so it isn't lost — conservation).
         if (atomCount(half) + atomCount(halfBio) == 0) {
-            if (morphogenCount > 0) grid.deposit(gridIdx, morphogen, morphogenCount)
+            if (morphogenCount > 0) grid.deposit(mlx, mly, mr, SpeciesRegistry.id(morphogen), morphogenCount)
             for (n in neighbours) removeSpringPair(builder, motherId, n)
             builder.removeEntity(motherId)
             destroyed.add(motherId)
@@ -233,18 +234,18 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         addSpring(builder, motherId, daughter, cfg)
     }
 
-    /** Each side gets ⌊count/2⌋ of a species; the odd remainder (count mod 2) is deposited to the
-     *  reservoir cell [gridIdx]. Returns the per-side floor map (daughter and mother share it). [skip] (a
-     *  non-empty species) is left out of the even split entirely — the caller allocates it asymmetrically
-     *  (the morphogen, handed whole to one daughter). */
-    private fun floorSplit(m: Map<String, Int>, grid: CytoMatterGrid, gridIdx: Int, skip: String = ""): Map<String, Int> {
+    /** Each side gets ⌊count/2⌋ of a species; the odd remainder (count mod 2) is deposited to the reservoir
+     *  at the mother's footprint (cx,cy,radius). Returns the per-side floor map (daughter and mother share
+     *  it). [skip] (a non-empty species) is left out of the even split — the caller allocates it
+     *  asymmetrically (the morphogen, handed whole to one daughter). */
+    private fun floorSplit(m: Map<String, Int>, grid: CytoMatterField, cx: Float, cy: Float, radius: Float, skip: String = ""): Map<String, Int> {
         val half = HashMap<String, Int>()
         for ((species, count) in m) {
             if (species == skip) continue
             val h = count / 2
             if (h > 0) half[species] = h
             val remainder = count - 2 * h
-            if (remainder > 0) grid.deposit(gridIdx, species, remainder)
+            if (remainder > 0) grid.deposit(cx, cy, radius, SpeciesRegistry.id(species), remainder)
         }
         return half
     }

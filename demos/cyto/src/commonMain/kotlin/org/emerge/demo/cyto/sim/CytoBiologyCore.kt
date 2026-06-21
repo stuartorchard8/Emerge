@@ -6,7 +6,7 @@ import kotlin.time.TimeSource
 
 /**
  * The per-cell biology of the matter model (MORPHOGENESIS.md), operating on [CellWork] + the
- * environment [CytoMatterGrid]. Everything here is integer/`Frac` and PRNG-free, so it is deterministic
+ * environment [CytoMatterField]. Everything here is integer/`Frac` and PRNG-free, so it is deterministic
  * and matter is conserved by construction (atoms are only moved between cytoplasm, biomass, and the
  * reservoir — never minted).
  *
@@ -34,72 +34,33 @@ object CytoBiologyCore {
     private const val CYTOPLASM_DIFFUSE_DENOM = CytoTuning.CYTOPLASM_DIFFUSE_DENOM
     private val FLEX_STEP = CytoTuning.FLEX_STEP
 
-    /** Phase 0 — passive cell↔environment exchange (FREE, down-gradient), **batched and fair**: per
-     *  species, each cell wants to move ⌊(env − cyto)/2⌋ between itself and its reservoir grid-cell
-     *  (signed — absorb when the env is richer, leak when the cell is), halving the gradient toward
-     *  equilibrium. This is how a cell feeds for free on what's around it (and how an autotroph's surplus
-     *  leaks out to feed heterotrophs); concentrating *against* the gradient is the job of the
-     *  energy-costing Import/Export genes. Biomass is locked (doesn't exchange).
-     *
-     *  **Fairness (the fix):** every cell sharing a grid-cell computes its desired transfer against the
-     *  *same snapshot* of that grid-cell, so the result is independent of cell order. Leakers always
-     *  deposit in full; absorbers that would collectively overdraw the snapshot share it **proportionally
-     *  to demand** (`⌊want · env / Σwant⌋`, the floor remainder handed out one-per-cell in the supplied
-     *  order). The old per-cell sequential draw let the lowest-EntityId cell skim the reservoir first
-     *  every tick, so a founder starved its own (higher-id, identical-genome) daughters — making resource
-     *  access a function of birth order rather than genome. [ordered] is the canonical (ascending-EntityId)
-     *  cell order; it only breaks ties in the proportional remainder, never who-goes-first for the bulk. */
-    fun passiveEnvExchange(ordered: List<CellWork>, grid: CytoMatterGrid, stats: BioProfile? = null) {
+    /** Phase 0 — passive cell↔environment **diffusion junction** (FREE, bidirectional). Each cell (id-order,
+     *  sequential) opens its circular footprint on the quad-tree field and the field balances every
+     *  `canDiffuse` species toward an effective target `cEff = cytoplasm − importBias` (Import lowers it ⇒
+     *  inward diffusion); we apply the returned net Δ to cytoplasm. Determinants (synthesised-only) and
+     *  foreign species (not `canDiffuse`) are excluded; there is **no passive leak** of un-metabolisable waste
+     *  (it accumulates until death/export). Conservation-exact (QUADTREE.md exchange); the cell senses local
+     *  matter density through this intake. Sequential ⇒ the footprint's overlapping field access is race-free
+     *  (the parallel gene phase touches no field). Cells also mix their footprint across tile borders here. */
+    fun passiveEnvExchange(ordered: List<CellWork>, grid: CytoMatterField, tick: Int, stats: BioProfile? = null) {
         val tGroup = if (stats != null) TimeSource.Monotonic.markNow() else null
-        // SEQUENTIAL (entity-id order — Gauss-Seidel): each cell equilibrates its cytoplasm toward the AVERAGE
-        // concentration over its circular DISC footprint (grid cells within its radius), absorbing what it can
-        // metabolise and leaking un-metabolisable surplus back across the disc. Diffusion is gone, so this disc
-        // gather IS how a sessile cell feeds AND how a body senses local matter density (intake ∝ footprint
-        // content → the taxis signal). Overlapping discs of welded neighbours share contested grid cells by
-        // id-order priority — deterministic + conservation-exact (every move is an integer cyto↔grid transfer).
-        // Called once, sequentially (CytoSoaReducer.biology) — never on the parallel gene path, so the disc's
-        // overlapping grid access is race-free.
-        val disc = IntArray(CytoMatterGrid.DISC_CAPACITY)
-        val species = HashSet<Int>()
+        val fp = HashSet<Int>(); val species = HashSet<Int>()
         for (w in ordered) {
-            if (w.gridIndex < 0) continue
-            val nd = grid.fillDisc(w.cx, w.cy, w.logicalRadius.toFloat(), disc)   // radius is already in logical units
+            val n = grid.openFootprint(w.cx, w.cy, w.logicalRadius.toFloat(), tick)
+            if (n == 0) { grid.closeFootprint(); continue }
             species.clear()
-            val cyt = w.cytoplasm; for (j in 0 until cyt.size) species.add(cyt.idAt(j))        // leak candidates
-            for (d in 0 until nd) { val gi = disc[d]; for (s in 0 until grid.cellSize(gi)) species.add(grid.cellIdAt(gi, s)) } // absorb candidates
+            val cyt = w.cytoplasm
+            for (j in 0 until cyt.size) { val id = cyt.idAt(j); if (w.handleable.canDiffuse(id)) species.add(id) }
+            grid.footprintSpecies(fp); for (id in fp) if (w.handleable.canDiffuse(id)) species.add(id)
             if (stats != null) stats.exchSpeciesCalls += species.size
-            for (sp in species) discExchangeSpecies(w, sp, grid, disc, nd, stats)
+            for (sp in species) {
+                val cEff = (cyt.count(sp) - (w.importBias[sp] ?: 0)).coerceAtLeast(0)
+                val delta = grid.balance(sp, cEff)
+                if (delta != 0) { cyt.add(sp, delta); if (stats != null) stats.exchUseful++ }
+            }
+            grid.closeFootprint()
         }
         if (stats != null) { stats.ticks++; stats.exchGroupNanos += tGroup!!.elapsedNow().inWholeNanoseconds }
-    }
-
-    /** One species' disc exchange for cell [w] over its [nd]-cell footprint [disc]. ABSORB (canHold &&
-     *  disc-avg > cyto): draw the exposure-damped half-gap from the disc (greedy, disc order), bounded by what's
-     *  present. LEAK (!canHold && cyto > disc-avg): spread the surplus back across the disc. Every move is an
-     *  exact integer cytoplasm↔grid transfer ⇒ matter-conservative; fixed disc order + id-order caller ⇒
-     *  deterministic. Exposure damps both directions (a buried cell trades less). */
-    private fun discExchangeSpecies(w: CellWork, sp: Int, grid: CytoMatterGrid, disc: IntArray, nd: Int, stats: BioProfile?) {
-        var envSum = 0
-        for (d in 0 until nd) envSum += grid.count(disc[d], sp)
-        val cyto = w.cytoplasm.count(sp)
-        val envAvg = envSum / nd
-        val t = (((envAvg - cyto) / 2).toLong() * w.exposureMilli / 1000L).toInt()
-        val canHold = w.handleable.canHold(sp)
-        if (canHold && t > 0) {                                   // absorb
-            val target = if (t < envSum) t else envSum
-            var rem = target; var d = 0
-            while (rem > 0 && d < nd) { rem -= grid.draw(disc[d], sp, rem); d++ }
-            val got = target - rem
-            if (got > 0) { w.cytoplasm.add(sp, got); if (stats != null) stats.exchUseful++ }
-        } else if (!canHold && t < 0) {                           // leak waste the cell can't use
-            var leak = -t; if (leak > cyto) leak = cyto
-            if (leak > 0) {
-                w.cytoplasm.add(sp, -leak)
-                val per = leak / nd; var extra = leak - per * nd
-                for (d in 0 until nd) { var amt = per; if (extra > 0) { amt++; extra-- }; if (amt > 0) grid.deposit(disc[d], sp, amt) }
-                if (stats != null) stats.exchUseful++
-            }
-        } else if (stats != null) stats.exchNoop++
     }
 
 
@@ -112,7 +73,7 @@ object CytoBiologyCore {
      *  The 1/N split is the genome-bloat tax: more simultaneously-active genes ⇒ each gets a thinner slice
      *  (inactive genes don't reserve a share — carrying them is taxed by mutation load instead). Import
      *  draws from the shared [grid], so this still runs in a fixed cell order across cells. */
-    fun runGenes(work: CellWork, grid: CytoMatterGrid, stats: BioProfile? = null) {
+    fun runGenes(work: CellWork, stats: BioProfile? = null) {
         val genome = work.genome
         if (stats != null) { stats.genesCells++; stats.genesScanned += genome.size }
         val tScan = if (stats != null) TimeSource.Monotonic.markNow() else null
@@ -137,7 +98,7 @@ object CytoBiologyCore {
         if (n > 0) {
             val snap = work.snapScratch.also { it.copyFrom(work.cytoplasm) }   // reused; immutable 1/n source
             val quantaShare = work.quanta / n
-            for (j in 0 until n) applyGene(genome[active[j]], work, grid, snap, bioBonds, n, quantaShare, stats)
+            for (j in 0 until n) applyGene(genome[active[j]], work, snap, bioBonds, n, quantaShare, stats)
         }
         if (stats != null) stats.genesApplyNanos += tApply!!.elapsedNow().inWholeNanoseconds
         // Phase 2 — division resolved on the SETTLED state, as one atomic end-of-tick action (a clean
@@ -157,7 +118,7 @@ object CytoBiologyCore {
                 val snap = work.snapScratch.also { it.copyFrom(work.cytoplasm) }
                 val quantaShare = work.quanta / dn
                 for (j in 0 until dn) {
-                    applyGene(genome[active[j]], work, grid, snap, totalBiomassBonds(work.biomass), dn, quantaShare, stats)
+                    applyGene(genome[active[j]], work, snap, totalBiomassBonds(work.biomass), dn, quantaShare, stats)
                     if (work.dividing) break
                 }
             }
@@ -190,7 +151,7 @@ object CytoBiologyCore {
         ids[cn] = id; per[cn] = 1; return cn + 1
     }
 
-    private fun applyGene(gene: Gene, work: CellWork, grid: CytoMatterGrid, snap: MoleculeStore, snapBiomass: Int, n: Int, quantaShare: Int, stats: BioProfile? = null) {
+    private fun applyGene(gene: Gene, work: CellWork, snap: MoleculeStore, snapBiomass: Int, n: Int, quantaShare: Int, stats: BioProfile? = null) {
         val src = gene.source
         val act = gene.action
         // Per-op cytoplasm consumption (action inputs + BreakBond substrate, SUMMED — so an overlap like
@@ -273,7 +234,7 @@ object CytoBiologyCore {
             // up to divide" comes for free — only a hoarded reserve broken in one tick clears the bar. The
             // gate may hold below the cost; it then does nothing (no accumulation toward it).
             ActionType.Mitosis -> { val cost = totalBiomassBonds(work.biomass) / 4; k = if (k >= cost) cost else 0 }
-            ActionType.Import -> if (work.gridIndex < 0) k = 0
+            ActionType.Import -> {}   // k energy units become a junction bias (applied in passiveEnvExchange)
             ActionType.Repair -> k = minOf(k, repairOpsNeeded(work))
             ActionType.Contract -> k = minOf(k, flexOps(MIN_RADIUS, work.logicalRadius))
             // Sub-tick interpolation: a growth gene fills only up to its OWN gate threshold, never past it.
@@ -302,16 +263,12 @@ object CytoBiologyCore {
             ActionType.Convert -> work.biomass.inc(convertId, k)
             ActionType.FormBond -> work.cytoplasm.inc(productId, k)
             ActionType.Import -> {
-                val importId = act.aId
-                // Active uptake against a concentration gradient: the gene's k energy units buy fewer
-                // molecules the further the cell pushes its internal level ABOVE the ambient reservoir
-                // (1:1 at or below ambient — riding the free passive band — then diminishing). So filling
-                // up where a species is plentiful is cheap, and concentrating it scarce/against demand is
-                // dear; hoarding self-limits (a soft capacity) and nutrient-poor patches become a niche
-                // only an energy-rich cell can exploit. SCALE = the excess at which yield halves.
-                val excess = (work.cytoplasm.count(importId) - grid.count(work.gridIndex, importId)).coerceAtLeast(0).toLong()
-                val want = (k.toLong() * CytoTuning.IMPORT_GRADIENT_SCALE / (CytoTuning.IMPORT_GRADIENT_SCALE + excess)).toInt()
-                val got = grid.draw(work.gridIndex, importId, want); if (got > 0) work.cytoplasm.inc(importId, got)
+                // Active uptake is now a BIAS on the passive diffusion junction (QUADTREE.md): the gene's k
+                // energy units lower the cell's effective target for `importId`, so the junction (in
+                // passiveEnvExchange) draws that much extra IN from the footprint, concentrating it above
+                // ambient. No field access here ⇒ the gene phase stays grid-free + parallel-safe. (The old
+                // gradient-cost diminishing-returns is dropped for v1; revisit if hoarding misbehaves.)
+                work.importBias[act.aId] = (work.importBias[act.aId] ?: 0) + k
             }
             ActionType.Mitosis -> {
                 work.dividing = true; work.divideMorphogen = act.a; work.divideMorphogenToMother = act.morphogenToMother
@@ -481,8 +438,8 @@ object CytoBiologyCore {
 
     /** Phase 3 — degradation (biomass loses bonds at a rate ∝ size, fragments return to cytoplasm),
      *  size from biomass, and the death/division decision. */
-    fun finish(id: EntityId, work: CellWork, grid: CytoMatterGrid, divide: MutableList<EntityId>, destroy: MutableList<EntityId>) {
-        degrade(work, grid)
+    fun finish(id: EntityId, work: CellWork, divide: MutableList<EntityId>, destroy: MutableList<EntityId>) {
+        degrade(work)
         val bonds = totalBiomassBonds(work.biomass)
         if (bonds < DEATH_BIOMASS) {
             destroy.add(id)
@@ -590,7 +547,7 @@ object CytoBiologyCore {
      *  both fragments stayed put and could be re-Converted for nothing. The bond's energy is still
      *  dissipated (not recovered). With no position (`gridIndex < 0`) there's nowhere to eject to, so both
      *  fragments stay in cytoplasm. */
-    private fun degrade(work: CellWork, grid: CytoMatterGrid) {
+    private fun degrade(work: CellWork) {
         // Maintenance bonus: a more-connected cell degrades much slower — wear accrues at `1/2^weldedDegree`
         // (1 neighbour → 1/2, 2 → 1/4, 6 → 1/64, halving again for each extra bond evolution squeezes in).
         // Interior cells of a body are nearly free to maintain. (Exponent capped at 20 to avoid Int overflow;
@@ -606,7 +563,8 @@ object CytoBiologyCore {
             val restId = SpeciesRegistry.splitLeftRest(targetId)   // the larger remainder
             work.biomass.dec(targetId)
             work.cytoplasm.inc(restId, 1)                          // retain the larger fragment
-            if (work.gridIndex >= 0) grid.deposit(work.gridIndex, monoId, 1) else work.cytoplasm.inc(monoId, 1)
+            work.cytoplasm.inc(monoId, 1)                          // peeled monomer → cytoplasm; the junction
+            //   leaks it back to the field if it's canDiffuse (keeps degrade grid-free ⇒ parallel-safe).
             broken--
         }
     }

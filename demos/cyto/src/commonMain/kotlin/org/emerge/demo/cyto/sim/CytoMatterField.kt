@@ -34,6 +34,17 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
 
         fun empty(): CytoMatterField = CytoMatterField(Array(BASE_RES * BASE_RES) { QuadNode.leaf() })
 
+        /** Inverse of [encodeTree]: rebuild from the codec's byte/int/store readers. */
+        fun decodeTree(readByte: () -> Int, readStore: () -> Map<String, Int>, readInt: () -> Int): CytoMatterField =
+            CytoMatterField(Array(BASE_RES * BASE_RES) { decodeNode(readByte, readStore, readInt) })
+        private fun decodeNode(rb: () -> Int, rs: () -> Map<String, Int>, ri: () -> Int): QuadNode {
+            if (rb() == 0) return QuadNode.leaf().also { it.store = MoleculeStore.of(rs()) }
+            val rem = IntArray(3) { ri() }                       // remainder first (matches encodeNode order)
+            val ch = Array(4) { decodeNode(rb, rs, ri) }
+            return QuadNode.internal(ch, rem)
+        }
+
+
         /** Uniform larder: every tile a leaf holding `level` of each monomer over its whole area. A tile is
          *  TILE×TILE cell-diam = (TILE/0.25)² finest cells, so a fully-merged tile holds `level · cells²`. */
         fun seededUniform(level: Int): CytoMatterField {
@@ -142,7 +153,7 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
         if (depth == MAX_DEPTH) {
             val ccx = x + sz * 0.5f; val ccy = y + sz * 0.5f
             val ex = ccx - cx; val ey = ccy - cy
-            if (ex * ex + ey * ey <= r * r) { node.lastAccessTick = tick; visit(node) }
+            if (ex * ex + ey * ey <= r * r) { if (tick >= 0) node.lastAccessTick = tick; visit(node) }   // tick<0 ⇒ don't re-stamp
             return
         }
         if (node.isLeaf) splitLeaf(node)
@@ -195,14 +206,16 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     fun closeFootprint() = fpLeaves.clear()
 
     // ── death / export deposit ─────────────────────────────────────────────────────────────────────────
-    /** Add `amount` of `sp` spread across the cell's footprint (refine to fine first). Conservation-exact. */
-    fun deposit(cx: Float, cy: Float, radius: Float, sp: Int, amount: Int, tick: Int) {
+    /** Add `amount` of `sp` spread across a footprint (refine to fine first; does NOT re-stamp the collapse
+     *  clock — a death/division deposit lands where the cell just was, already fresh). Conservation-exact. */
+    fun deposit(cx: Float, cy: Float, radius: Float, sp: Int, amount: Int) {
         if (amount <= 0) return
-        val n = openFootprint(cx, cy, radius, tick)
-        if (n == 0) { closeFootprint(); return }
+        fpLeaves.clear()
+        descendDisc(cx, cy, radius, -1) { fpLeaves.add(it) }   // tick = -1 ⇒ no stamp
+        val n = fpLeaves.size; if (n == 0) { fpLeaves.clear(); return }
         val per = amount / n; var extra = amount - per * n
         for (leaf in fpLeaves) { var a = per; if (extra > 0) { a++; extra-- }; if (a > 0) leaf.store!!.add(sp, a) }
-        closeFootprint()
+        fpLeaves.clear()
     }
 
     // ── maintenance: progressive collapse + species decay ──────────────────────────────────────────────
@@ -221,6 +234,38 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     }
     /** Atomise ⌊count/period⌋ of each multi-atom species (peel leftmost bond). Conservation-exact; does NOT
      *  touch lastAccessTick. */
+    // ── snapshot / read / serialise (for the reducer bridge, UI, save codec) ───────────────────────────
+    /** Deep clone (snapshot isolation: the lifecycle bridge mutates a copy). Sparse ⇒ O(allocated nodes). */
+    fun copy(): CytoMatterField = CytoMatterField(Array(roots.size) { cloneNode(roots[it]) })
+    private fun cloneNode(n: QuadNode): QuadNode =
+        if (n.isLeaf) QuadNode.leaf().also { it.store!!.copyFrom(n.store!!); it.lastAccessTick = n.lastAccessTick }
+        else QuadNode.internal(Array(4) { cloneNode(n.children!![it]) }, n.monomerRemainder.copyOf())
+
+    /** Read-only contents of the finest EXISTING leaf containing (cx,cy) — no split (for the UI panel). */
+    fun contentsAt(cx: Float, cy: Float): Map<String, Int> {
+        var x = -HALF + mod2(floor((cx / SPAN + 0.5f) * BASE_RES).toInt()) * TILE
+        var y = -HALF + mod2(floor((cy / SPAN + 0.5f) * BASE_RES).toInt()) * TILE
+        var node = roots[mod2(floor((cy / SPAN + 0.5f) * BASE_RES).toInt()) * BASE_RES + mod2(floor((cx / SPAN + 0.5f) * BASE_RES).toInt())]
+        var sz = TILE
+        while (!node.isLeaf) {
+            val h = sz * 0.5f; val east = cx >= x + h; val south = cy >= y + h
+            val q = (if (south) 2 else 0) + (if (east) 1 else 0)
+            if (east) x += h; if (south) y += h; sz = h; node = node.children!![q]
+        }
+        return node.store!!.toStringMap()
+    }
+    private fun mod2(i: Int) = ((i % BASE_RES) + BASE_RES) % BASE_RES
+
+    /** Structured serialise (exact incl. internal stashes). Codec supplies the byte/int/store writers. */
+    fun encodeTree(writeByte: (Int) -> Unit, writeStore: (Map<String, Int>) -> Unit, writeInt: (Int) -> Unit) {
+        for (root in roots) encodeNode(root, writeByte, writeStore, writeInt)
+    }
+    private fun encodeNode(n: QuadNode, wb: (Int) -> Unit, ws: (Map<String, Int>) -> Unit, wi: (Int) -> Unit) {
+        if (n.isLeaf) { wb(0); ws(n.store!!.toStringMap()) }
+        else { wb(1); for (s in n.monomerRemainder) wi(s); for (c in n.children!!) encodeNode(c, wb, ws, wi) }
+    }
+
+    // ── species decay (atomise over time) — called by maintain ──────────────────────────────────────────
     private fun decayLeaf(node: QuadNode, period: Int) {
         if (period <= 0) return
         val store = node.store!!
@@ -254,5 +299,7 @@ class QuadNode private constructor() {
 
     companion object {
         fun leaf(): QuadNode = QuadNode().also { it.store = MoleculeStore() }
+        fun internal(ch: Array<QuadNode>, rem: IntArray): QuadNode =
+            QuadNode().also { it.children = ch; rem.copyInto(it.monomerRemainder) }
     }
 }

@@ -2,7 +2,7 @@ package org.emerge.demo.cyto.sim.soa
 
 import org.emerge.demo.cyto.sim.ConnectionStateComponent
 import org.emerge.demo.cyto.sim.CytoCellComponent
-import org.emerge.demo.cyto.sim.CytoMatterGrid
+import org.emerge.demo.cyto.sim.CytoMatterField
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoSimParamsComponent
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
@@ -61,7 +61,7 @@ class CytoWorld private constructor(
     val cell: CytoCellColumnStore,
     val csr: SpringCsr,
     /** The finite matter reservoir singleton — held (copy-on-write) and re-emitted on [GRID_SINGLETON]. */
-    var grid: CytoMatterGrid,
+    var grid: CytoMatterField,
     /** Runtime mutation rate-denominator, or **-1 = inherit the [CytoConfig] default** (the reducer falls
      *  back to `cfg.mutationRateDenom` when this is < 0). Set explicitly by in-game control / a loaded save;
      *  round-trips via [CytoSimParamsComponent]. -1 keeps every cfg-driven test/probe + the goldens unchanged. */
@@ -144,7 +144,7 @@ class CytoWorld private constructor(
             )
 
             val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid?.copy()
-                ?: CytoMatterGrid.empty()
+                ?: CytoMatterField.empty()
             // -1 (absent) = inherit the cfg default; an explicit value comes from in-game control / a save.
             val mutationRateDenom = state.components.getTable<CytoSimParamsComponent>()[PARAMS_SINGLETON]?.mutationRateDenom ?: -1
 

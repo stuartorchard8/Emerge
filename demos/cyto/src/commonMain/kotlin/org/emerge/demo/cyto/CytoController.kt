@@ -296,7 +296,7 @@ class CytoController(
         val envMap: Map<String, Int> = run {
             val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid
             if (grid == null || pos == null) emptyMap()
-            else grid.cellAt(grid.indexOf(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y)))
+            else grid.contentsAt(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y))
         }
         // Predicted matter flows for the two boundaries (like the env↔cyt arrow, derived from the cell's
         // genome + state, not measured). Convert genes build their operand cyt→bio; degradation breaks the
