@@ -42,6 +42,10 @@ class CytoControls {
     var showLightField: Boolean = true
         private set
 
+    /** Whether to draw the matter-field overlay (bordered leaf squares; host applies it to the renderer). */
+    var showMatterField: Boolean = false
+        private set
+
     /** Cell display colour mode (the host reads this and applies it to the renderer). Cycled by the
      *  bottom-right "Color" button. */
     var colorMode: CellColorMode = CellColorMode.Bio
@@ -250,6 +254,12 @@ class CytoControls {
         buttons.add(
             Btn(rightX - colorSlot * (bs + gap), bottomY, bs, bs, COLOR_MODE_COLOR, "Color\n${colorMode.label}") { cycleColorMode() }
         )
+        // Matter-field overlay toggle (bordered leaf squares) — leftmost in the cluster.
+        buttons.add(
+            Btn(rightX - (colorSlot + 1f) * (bs + gap), bottomY, bs, bs, MATTER_COLOR, "Matter\n${if (showMatterField) "ON" else "OFF"}") {
+                showMatterField = !showMatterField
+            }
+        )
     }
 
     private fun <T> addOptionRows(
@@ -295,5 +305,6 @@ class CytoControls {
         private const val GENE_COLOR = 0x44CC55FFL    // green — matches the Collector swatch
         private const val SIM_COLOR = 0x3A6EA5FFL     // blue — the sim-speed controls
         private const val COLOR_MODE_COLOR = 0x8A5BC0FFL // purple — the cell colour-mode cycle
+        private const val MATTER_COLOR = 0x35A0A0FFL      // teal — the matter-field overlay toggle
     }
 }

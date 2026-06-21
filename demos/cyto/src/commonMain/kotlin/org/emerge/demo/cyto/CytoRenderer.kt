@@ -2,7 +2,10 @@ package org.emerge.demo.cyto
 
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoLightField
+import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.GRID_SINGLETON
+import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.render.torus.ui.UiRectRenderer
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.Mat4
@@ -83,6 +86,22 @@ class CytoRenderer {
     private val fInstCenter = FloatArray(FIELD_CELLS * 2)
     private val fInstHalf = FloatArray(FIELD_CELLS * 2)
     private val fInstColor = FloatArray(FIELD_CELLS * 4)
+
+    // ── matter-field overlay (the adaptive quad-tree reservoir, drawn as bordered leaf squares) ──
+    // Each visible leaf → a 2px-bordered square: fill hue/saturation from the leaf's a/b/c atom mix
+    // (the same rule as cell colouring) but value forced low (MATTER_VALUE) so cells stand out. Borders
+    // are drawn first, fills (inset by the border width) painted on top, leaving a 2px frame. Toggle "Matter".
+    var showMatterField = false
+    private val matterShader = UiRectRenderer(maxRects = MATTER_MAX_LEAVES)
+    private val matCx = FloatArray(MATTER_MAX_LEAVES)
+    private val matCy = FloatArray(MATTER_MAX_LEAVES)
+    private val matHx = FloatArray(MATTER_MAX_LEAVES)
+    private val matHy = FloatArray(MATTER_MAX_LEAVES)
+    private val matFillColor = FloatArray(MATTER_MAX_LEAVES * 4)
+    private val mInstCenter = FloatArray(MATTER_MAX_LEAVES * 2)
+    private val mInstHalf = FloatArray(MATTER_MAX_LEAVES * 2)
+    private val mInstColor = FloatArray(MATTER_MAX_LEAVES * 4)
+    private val matColorTmp = FloatArray(4)
 
     init { bakeFieldColors(0L) }
 
@@ -172,6 +191,7 @@ class CytoRenderer {
         // Light-field heatmap over the world (opaque, on top of the clear, under the cells).
         if (org.emerge.demo.cyto.sim.CytoTuning.LIGHT_MOVING) bakeFieldColors(frame.tick)   // animate the band
         drawLightField()
+        drawMatterField(frame)
 
         GPU.enableBlend()
         GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
@@ -266,10 +286,78 @@ class CytoRenderer {
         if (n > 0) fieldShader.drawInstanced(n, fInstCenter, fInstHalf, fInstColor)
     }
 
+    /** Draw the matter quad-tree as bordered leaf squares: project each visible leaf to NDC, colour it by
+     *  its atom mix at low value, and draw a border pass then an inset fill pass so a 2px frame remains.
+     *  Variable leaf sizes ⇒ walked + culled fresh each frame (the tree changes as cells refine/collapse it). */
+    private fun drawMatterField(frame: CytoFrame) {
+        if (!showMatterField) return
+        val grid = frame.state.components.getTable<CytoMatterGridComponent>().asMap()[GRID_SINGLETON]?.grid ?: return
+        val aspect = resW / resH
+        val hwx = viewHeight * aspect * 0.5f
+        val hwy = viewHeight * 0.5f
+        if (hwx <= 0f || hwy <= 0f) return
+
+        // Collect visible leaves (centre + half-extent in NDC, fill colour) in one tree walk, capped.
+        var n = 0
+        grid.forEachLeaf { x, y, size, store ->
+            if (n >= MATTER_MAX_LEAVES) return@forEachLeaf
+            val half = size * 0.5f
+            val ndcX = (x + half - centerX) / hwx
+            val ndcY = (y + half - centerY) / hwy
+            val hX = half / hwx
+            val hY = half / hwy
+            if (ndcX + hX < -1f || ndcX - hX > 1f || ndcY + hY < -1f || ndcY - hY > 1f) return@forEachLeaf
+            matCx[n] = ndcX; matCy[n] = ndcY; matHx[n] = hX; matHy[n] = hY
+            leafColor(store, matColorTmp)
+            val c4 = n * 4
+            matFillColor[c4] = matColorTmp[0]; matFillColor[c4 + 1] = matColorTmp[1]
+            matFillColor[c4 + 2] = matColorTmp[2]; matFillColor[c4 + 3] = 1f
+            n++
+        }
+        if (n == 0) return
+
+        // Pass 1 — borders at full leaf size, in the border colour (drawn first → painted under the fills).
+        for (i in 0 until n) {
+            val c2 = i * 2; val c4 = i * 4
+            mInstCenter[c2] = matCx[i]; mInstCenter[c2 + 1] = matCy[i]
+            mInstHalf[c2] = matHx[i]; mInstHalf[c2 + 1] = matHy[i]
+            mInstColor[c4] = MATTER_BORDER[0]; mInstColor[c4 + 1] = MATTER_BORDER[1]
+            mInstColor[c4 + 2] = MATTER_BORDER[2]; mInstColor[c4 + 3] = 1f
+        }
+        matterShader.drawInstanced(n, mInstCenter, mInstHalf, mInstColor)
+
+        // Pass 2 — fills inset by a 2px border on every side (NDC spans 2 over the axis pixel count).
+        val borderNdcX = 2f * (2f / resW)
+        val borderNdcY = 2f * (2f / resH)
+        for (i in 0 until n) {
+            val c2 = i * 2; val c4 = i * 4
+            mInstCenter[c2] = matCx[i]; mInstCenter[c2 + 1] = matCy[i]
+            mInstHalf[c2] = max(0f, matHx[i] - borderNdcX); mInstHalf[c2 + 1] = max(0f, matHy[i] - borderNdcY)
+            mInstColor[c4] = matFillColor[c4]; mInstColor[c4 + 1] = matFillColor[c4 + 1]
+            mInstColor[c4 + 2] = matFillColor[c4 + 2]; mInstColor[c4 + 3] = 1f
+        }
+        matterShader.drawInstanced(n, mInstCenter, mInstHalf, mInstColor)
+    }
+
+    /** Colour a matter leaf by its a/b/c atom mix (hue) and whether it holds anything (saturation), at the
+     *  fixed low [MATTER_VALUE] — the cell-colour rule applied to the leaf's contents. */
+    private fun leafColor(store: org.emerge.demo.cyto.sim.MoleculeStore, out: FloatArray) {
+        var r = 0L; var g = 0L; var b = 0L
+        for (i in 0 until store.size) {
+            val cnt = store.countAt(i)
+            for (ch in SpeciesRegistry.string(store.idAt(i))) when (ch) {
+                'a' -> r += cnt; 'b' -> g += cnt; 'c' -> b += cnt
+            }
+        }
+        val sat = if (r + g + b > 0L) 1f else 0f
+        hsvToRgb(hueOf(r.toFloat(), g.toFloat(), b.toFloat()), sat, MATTER_VALUE, out)
+    }
+
     fun cleanup() {
         shader.deleteProgram()
         bgShader.deleteProgram()
         fieldShader.deleteProgram()
+        matterShader.deleteProgram()
         GPU.deleteTextures(cellTextureId)
     }
 
@@ -376,5 +464,12 @@ class CytoRenderer {
         // Brightness of cells outside the focused cell's welded cluster — dark enough to recede, but
         // still faintly visible so the surrounding context isn't lost entirely.
         const val DIM_VALUE = 0.5f
+        // Matter-overlay caps + look. Leaves are walked + culled to the visible region, so the cap only
+        // bites when fully zoomed out over a deeply-refined tree (excess leaves are dropped, not wrapped).
+        const val MATTER_MAX_LEAVES = 16384
+        // Fill brightness — low so cells (value 0.75–1.0) read clearly on top of the overlay.
+        const val MATTER_VALUE = 0.25f
+        // Border colour: a neutral grey, brighter than the dim fills so the leaf grid is legible.
+        val MATTER_BORDER = floatArrayOf(0.4f, 0.4f, 0.4f)
     }
 }

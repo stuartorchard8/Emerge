@@ -91,6 +91,7 @@ object CytoSceneView {
             }
 
             renderer.showLightField = controls.showLightField   // Light button → renderer
+            renderer.showMatterField = controls.showMatterField // Matter button → renderer
             renderer.colorMode = controls.colorMode             // Color button → renderer
             renderer.focusedCellId = controller.lastHeldId?.value ?: -1   // full-value highlight on the inspected cell
             controller.brushActive = controls.brushSelected      // "Brush" type selection → painting

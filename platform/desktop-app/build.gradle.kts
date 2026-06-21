@@ -103,6 +103,14 @@ tasks.register<JavaExec>("renderCyto") {
     classpath = sourceSets["main"].runtimeClasspath
 }
 
+tasks.register<JavaExec>("renderCytoMatter") {
+    group = "application"
+    description = "Render the Cyto matter quad-tree headlessly (bordered leaf squares + cells) to a PNG. " +
+        "--args=\"<outPng> <ticks>\" (defaults: build/cyto-matter.png, 1200)."
+    mainClass = "org.emerge.desktop.CytoMatterImageRendererKt"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
 tasks.register<JavaExec>("probeCytoPopulation") {
     group = "verification"
     description = "Headless population probe: seed a self-sufficient (collect+divide) genome on a " +
