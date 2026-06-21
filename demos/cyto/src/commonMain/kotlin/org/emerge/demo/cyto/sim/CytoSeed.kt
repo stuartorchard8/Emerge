@@ -28,10 +28,15 @@ object CytoSeed {
      *  Gaussian clumps around the sources — for the moving-light world, where the daylight grazes the whole
      *  torus and needs substrate everywhere (diffusion then refills grazed patches behind the band).
      *  false = the 4 Gaussian clumps (matches the static 4-source world). */
-    const val MATTER_UNIFORM = false
-    /** Per-monomer count per grid cell when [MATTER_UNIFORM]. Total matter ≈ GRID_RES² × this × species,
-     *  so keep it small — ~8 ≈ the clumped world's ~216k atoms spread evenly. */
-    const val MATTER_UNIFORM_LEVEL = 8_000
+    // Diffusion is OFF (disc gather replaces it), so matter must be present EVERYWHERE — a cell depletes its
+    // own footprint and nothing refills it, so clumped seeding would starve everything outside a clump. Uniform
+    // seeding makes the whole field a locally-depletable larder (and the depletion an organism digs IS the
+    // gradient + the motility pressure). See PLAN_taxis_substrate.md.
+    const val MATTER_UNIFORM = true
+    /** Per-monomer count per (sub-cell) grid cell. At MATTER_GRID_RES=1024 a cell's ~13-grid-cell footprint
+     *  then holds ~13× this per species — sized so a founder's footprint ≈ the old single-grid-cell access
+     *  (~8k), i.e. enough to bootstrap, scarce enough that depletion bites. */
+    const val MATTER_UNIFORM_LEVEL = 600
 
     // ── Seed cell composition (a freshly-spawned / founder cell) ──────────────────────────────────────
     /** Founder autotroph's starting cytoplasm (a small a/b reserve to bootstrap bonding before passive

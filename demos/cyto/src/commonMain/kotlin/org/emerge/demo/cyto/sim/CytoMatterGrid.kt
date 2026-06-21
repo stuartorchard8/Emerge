@@ -92,49 +92,29 @@ class CytoMatterGrid private constructor(
      *  this grid mutates it (see [own]). */
     fun copy(): CytoMatterGrid = CytoMatterGrid(cells.copyOf(), BooleanArray(cells.size))
 
-    /**
-     * One **slow diffusion** step: matter spreads down-gradient between neighbouring grid cells so it
-     * creeps out of source clumps toward where cells are depleting it. Snapshot-based (reads the current
-     * `cells`, writes a fresh `next`) so it's order-independent; every move is grid-cell→grid-cell, so
-     * total atoms are conserved exactly. Per species, each undirected edge moves `⌊|a−b|·num/den⌋` from
-     * the richer cell to the poorer. Integer ⇒ rate-quantized: gradients below `den/num` don't move, so
-     * it settles instead of perfectly equalising. Keep `4·num/den ≤ 1` (a cell touches 4 edges) so it
-     * can't be over-drawn negative.
-     */
-    fun diffused(num: Int, den: Int): CytoMatterGrid {
-        val next = CytoMatterGrid(cells.copyOf(), BooleanArray(cells.size))
-        for (gy in 0 until RES) {
-            for (gx in 0 until RES) {
-                val i = gy * RES + gx
-                diffuseEdge(i, gy * RES + wrapIndex(gx + 1), num, den, next) // right neighbour
-                diffuseEdge(i, wrapIndex(gy + 1) * RES + gx, num, den, next) // down neighbour
+    /** Fill [out] with the grid-cell indices whose CENTRE lies within [radiusLogical] of (cx,cy) on the
+     *  torus — a cell's circular absorption footprint (the disc gather). Row-major over the disc's bounding
+     *  box (deterministic order); returns the count (always ≥ 1, the centre cell). The half-extent is capped
+     *  at [MAX_DISC_SPAN] so a giant cell can't gather from an unbounded disc; [out] must be sized
+     *  `(2·MAX_DISC_SPAN+1)²`. */
+    fun fillDisc(cx: Float, cy: Float, radiusLogical: Float, out: IntArray): Int {
+        val cellSize = SPAN / RES
+        val span = ((radiusLogical / cellSize).toInt() + 1).coerceAtMost(MAX_DISC_SPAN)
+        val gcx = floor((cx / SPAN + 0.5f) * RES).toInt()
+        val gcy = floor((cy / SPAN + 0.5f) * RES).toInt()
+        val r2 = radiusLogical * radiusLogical
+        var n = 0
+        for (dy in -span..span) {
+            val gy = wrapIndex(gcy + dy)
+            val ddy = wrapDelta((-HALF + (gy + 0.5f) * cellSize) - cy)   // grid-cell centre → torus delta
+            for (dx in -span..span) {
+                val gx = wrapIndex(gcx + dx)
+                val ddx = wrapDelta((-HALF + (gx + 0.5f) * cellSize) - cx)
+                if (ddx * ddx + ddy * ddy <= r2 && n < out.size) { out[n] = gy * RES + gx; n++ }
             }
         }
-        return next
-    }
-
-    /** Move `⌊|a−b|·num/den⌋` of each shared species from the richer of cells [i],[j] to the poorer, into
-     *  [next] (copy-on-write). Reads the pre-step counts from `this.cells` (snapshot) so edge order doesn't
-     *  matter. Walks the two stores' ids directly (each species resolved once, both directions covered). */
-    private fun diffuseEdge(i: Int, j: Int, num: Int, den: Int, next: CytoMatterGrid) {
-        val ci = cells[i]; val cj = cells[j]
-        if (ci.isEmpty() && cj.isEmpty()) return
-        for (a in 0 until ci.size) {
-            val id = ci.idAt(a)
-            moveSpecies(i, j, id, ci.countAt(a) - cj.count(id), num, den, next)
-        }
-        for (b in 0 until cj.size) {           // species present only in j (ci.count == 0)
-            val id = cj.idAt(b)
-            if (ci.count(id) == 0) moveSpecies(i, j, id, -cj.countAt(b), num, den, next)
-        }
-    }
-
-    /** Apply one species' down-gradient move for edge (i,j): `diff = ci − cj`. */
-    private fun moveSpecies(i: Int, j: Int, id: Int, diff: Int, num: Int, den: Int, next: CytoMatterGrid) {
-        val move = (abs(diff) * num) / den
-        if (move <= 0) return
-        if (diff > 0) { next.bump(i, id, -move); next.bump(j, id, move) }
-        else { next.bump(j, id, -move); next.bump(i, id, move) }
+        if (n == 0) { out[0] = wrapIndex(gcy) * RES + wrapIndex(gcx); return 1 }   // always ≥ the centre cell
+        return n
     }
 
     private fun bump(idx: Int, id: Int, delta: Int) {
@@ -169,16 +149,21 @@ class CytoMatterGrid private constructor(
     }
 
     companion object {
-        val RES = CytoLightField.RES
+        /** Matter resolution is DECOUPLED from the light grid (sub-cell — see CytoTuning.MATTER_GRID_RES);
+         *  SPAN/HALF (the torus extent) still come from the shared world geometry. */
+        val RES = CytoTuning.MATTER_GRID_RES
         val SPAN = CytoLightField.SPAN
         val HALF = CytoLightField.HALF
 
-        // Per-tick diffusion law lives in CytoTuning; the reservoir *seed* (peak/falloff/species) is
-        // initial data in CytoSeed. Kept here as local references.
+        /** Disc-gather half-extent cap (grid cells): bounds a giant cell's footprint for perf. [fillDisc]'s
+         *  `out` must be sized `(2·MAX_DISC_SPAN+1)²`. */
+        const val MAX_DISC_SPAN = 8
+        const val DISC_CAPACITY = (2 * MAX_DISC_SPAN + 1) * (2 * MAX_DISC_SPAN + 1)
+
+        // The reservoir *seed* (peak/falloff/species) is initial data in CytoSeed. (Diffusion removed — the
+        // disc gather replaces its "feed sessile cells" role; environmental decay stays.)
         const val MATTER_PEAK = CytoSeed.MATTER_PEAK
         const val MATTER_FALLOFF = CytoSeed.MATTER_FALLOFF
-        const val DIFFUSE_NUM = CytoTuning.MATTER_DIFFUSE_NUM
-        const val DIFFUSE_DEN = CytoTuning.MATTER_DIFFUSE_DEN
         val SEED_MONOMERS = CytoSeed.SEED_MONOMERS
 
         /**

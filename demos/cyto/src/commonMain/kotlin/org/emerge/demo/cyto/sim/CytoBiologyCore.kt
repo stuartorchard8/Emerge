@@ -51,102 +51,57 @@ object CytoBiologyCore {
      *  cell order; it only breaks ties in the proportional remainder, never who-goes-first for the bulk. */
     fun passiveEnvExchange(ordered: List<CellWork>, grid: CytoMatterGrid, stats: BioProfile? = null) {
         val tGroup = if (stats != null) TimeSource.Monotonic.markNow() else null
-        // Group cells by their grid-cell, preserving the canonical order for the remainder tiebreak.
-        val byCell = LinkedHashMap<Int, MutableList<CellWork>>()
+        // SEQUENTIAL (entity-id order — Gauss-Seidel): each cell equilibrates its cytoplasm toward the AVERAGE
+        // concentration over its circular DISC footprint (grid cells within its radius), absorbing what it can
+        // metabolise and leaking un-metabolisable surplus back across the disc. Diffusion is gone, so this disc
+        // gather IS how a sessile cell feeds AND how a body senses local matter density (intake ∝ footprint
+        // content → the taxis signal). Overlapping discs of welded neighbours share contested grid cells by
+        // id-order priority — deterministic + conservation-exact (every move is an integer cyto↔grid transfer).
+        // Called once, sequentially (CytoSoaReducer.biology) — never on the parallel gene path, so the disc's
+        // overlapping grid access is race-free.
+        val disc = IntArray(CytoMatterGrid.DISC_CAPACITY)
+        val species = HashSet<Int>()
         for (w in ordered) {
             if (w.gridIndex < 0) continue
-            byCell.getOrPut(w.gridIndex) { ArrayList() }.add(w)
+            val nd = grid.fillDisc(w.cx, w.cy, w.logicalRadius.toFloat(), disc)   // radius is already in logical units
+            species.clear()
+            val cyt = w.cytoplasm; for (j in 0 until cyt.size) species.add(cyt.idAt(j))        // leak candidates
+            for (d in 0 until nd) { val gi = disc[d]; for (s in 0 until grid.cellSize(gi)) species.add(grid.cellIdAt(gi, s)) } // absorb candidates
+            if (stats != null) stats.exchSpeciesCalls += species.size
+            for (sp in species) discExchangeSpecies(w, sp, grid, disc, nd, stats)
         }
-        if (stats != null) { stats.ticks++; stats.exchGridCells += byCell.size; stats.exchGroupNanos += tGroup!!.elapsedNow().inWholeNanoseconds }
-        val tSpecies = if (stats != null) TimeSource.Monotonic.markNow() else null
-        // Reused (grown on demand) across all species of this tick: the packed absorber list (cellIdx<<32 |
-        // want) and its parallel grants — sized to the per-grid-cell population, the absorber ceiling.
-        var abs = LongArray(0)
-        var grant = IntArray(0)
-        for ((idx, cells) in byCell) {
-            if (abs.size < cells.size) { abs = LongArray(cells.size); grant = IntArray(cells.size) }
-            // Group co-located cells by their canHold REACH (clonal blob → ~1 group), members in canonical
-            // (cells-index) order. Lets a grid species be tested against the few distinct reaches instead of
-            // every cell — the 99.5%-no-op visits (cells that can neither hold nor metabolise the species)
-            // are skipped a whole group at a time. Bit-identical: same participants, same canonical order.
-            val groups = LinkedHashMap<Long, MutableList<Int>>()
-            for (i in cells.indices) groups.getOrPut(cells[i].handleable.canHoldKey) { ArrayList() }.add(i)
-            // Index cells by the species they HOLD (canonical order) — the leaker candidates, and (with the
-            // grid reservoir's species) the species union that can have any effect.
-            val holders = HashMap<Int, MutableList<Int>>()
-            for (i in cells.indices) { val c = cells[i].cytoplasm; for (j in 0 until c.size) holders.getOrPut(c.idAt(j)) { ArrayList() }.add(i) }
-            val species = HashSet<Int>(holders.keys)
-            for (i in 0 until grid.cellSize(idx)) species.add(grid.cellIdAt(idx, i))
-            if (stats != null) {
-                stats.exchSpeciesCalls += species.size
-                stats.exchGridSpecies += grid.cellSize(idx)
-                if (cells.size > stats.exchMaxCellsInCell) stats.exchMaxCellsInCell = cells.size.toLong()
-            }
-            for (sp in species) exchangeSpecies(idx, sp, cells, grid, groups, holders[sp], abs, grant, stats)
-        }
-        if (stats != null) stats.exchSpeciesNanos += tSpecies!!.elapsedNow().inWholeNanoseconds
+        if (stats != null) { stats.ticks++; stats.exchGroupNanos += tGroup!!.elapsedNow().inWholeNanoseconds }
     }
 
-    /** Resolve one species' passive exchange for the cells sharing grid-cell [idx], against the snapshot
-     *  `env`. Absorbers (canHold && env>cyto) come from the canHold-reach [groups] — a whole group is skipped
-     *  on one canHold test, so foreign grid species touch no cells; leakers (!canHold && cyto>env) come from
-     *  [holdersForSp] (the cells holding sp). [abs] (packed cellIdx<<32 | want) + [grant] are caller scratch
-     *  (≥ cells.size). Bit-identical to the old per-cell scan: identical participants, identical canonical
-     *  order for the proportional remainder (absorbers sorted by cellIdx, which == ascending EntityId). */
-    private fun exchangeSpecies(
-        idx: Int, sp: Int, cells: List<CellWork>, grid: CytoMatterGrid,
-        groups: Map<Long, MutableList<Int>>, holdersForSp: List<Int>?,
-        abs: LongArray, grant: IntArray, stats: BioProfile? = null,
-    ) {
-        val env = grid.count(idx, sp)
-        // ── absorbers: only cells whose group canHolds sp (one test per distinct reach, not per cell) ──
-        var na = 0
-        var demand = 0L                        // Σ want over absorbers
-        for ((_, members) in groups) {
-            if (!cells[members[0]].handleable.canHold(sp)) continue   // whole group can't metabolise sp → skip
-            for (m in members) {
-                if (stats != null) stats.exchCellIters++
-                val cyto = cells[m].cytoplasm.count(sp)
-                // Exchange happens across the cell's EXPOSED surface, so damp it by exposure (0..1000 milli):
-                // a buried interior cell barely trades; a lone/surface cell trades fully. Conservation-safe:
-                // the same damped `t` drives both the cytoplasm and grid sides.
-                val t = (((env - cyto) / 2).toLong() * cells[m].exposureMilli / 1000L).toInt()
-                // SELECTIVE UPTAKE: only absorb (t>0) a species the cell can metabolise (its group canHolds).
-                if (t > 0) { abs[na] = (m.toLong() shl 32) or (t.toLong() and 0xFFFFFFFFL); na++; demand += t }
-                else if (stats != null) stats.exchNoop++   // canHold but at/over equilibrium → retained, no-op
-            }
-        }
-        if (na > 1) abs.sort(0, na)            // canonical (cellIdx) order — high 32 bits, unique per absorber
-        if (na > 0) {
-            if (demand <= env) {               // not over-subscribed: everyone gets their full want
-                for (a in 0 until na) grant[a] = (abs[a] and 0xFFFFFFFFL).toInt()
-            } else {                           // over-subscribed: proportional floor + remainder
-                var granted = 0
-                for (a in 0 until na) { val w = (abs[a] and 0xFFFFFFFFL).toInt(); grant[a] = (w.toLong() * env / demand).toInt(); granted += grant[a] }
-                var leftover = env - granted   // < na (Σ of dropped fractions); hand out one-per-absorber, canonical order
-                for (a in 0 until na) { if (leftover <= 0) break; grant[a]++; leftover-- }
-            }
-            for (a in 0 until na) {
-                val g = grant[a]; if (g <= 0) continue
-                val m = (abs[a] ushr 32).toInt()
-                cells[m].cytoplasm.add(sp, g)
-                grid.draw(idx, sp, g)
+    /** One species' disc exchange for cell [w] over its [nd]-cell footprint [disc]. ABSORB (canHold &&
+     *  disc-avg > cyto): draw the exposure-damped half-gap from the disc (greedy, disc order), bounded by what's
+     *  present. LEAK (!canHold && cyto > disc-avg): spread the surplus back across the disc. Every move is an
+     *  exact integer cytoplasm↔grid transfer ⇒ matter-conservative; fixed disc order + id-order caller ⇒
+     *  deterministic. Exposure damps both directions (a buried cell trades less). */
+    private fun discExchangeSpecies(w: CellWork, sp: Int, grid: CytoMatterGrid, disc: IntArray, nd: Int, stats: BioProfile?) {
+        var envSum = 0
+        for (d in 0 until nd) envSum += grid.count(disc[d], sp)
+        val cyto = w.cytoplasm.count(sp)
+        val envAvg = envSum / nd
+        val t = (((envAvg - cyto) / 2).toLong() * w.exposureMilli / 1000L).toInt()
+        val canHold = w.handleable.canHold(sp)
+        if (canHold && t > 0) {                                   // absorb
+            val target = if (t < envSum) t else envSum
+            var rem = target; var d = 0
+            while (rem > 0 && d < nd) { rem -= grid.draw(disc[d], sp, rem); d++ }
+            val got = target - rem
+            if (got > 0) { w.cytoplasm.add(sp, got); if (stats != null) stats.exchUseful++ }
+        } else if (!canHold && t < 0) {                           // leak waste the cell can't use
+            var leak = -t; if (leak > cyto) leak = cyto
+            if (leak > 0) {
+                w.cytoplasm.add(sp, -leak)
+                val per = leak / nd; var extra = leak - per * nd
+                for (d in 0 until nd) { var amt = per; if (extra > 0) { amt++; extra-- }; if (amt > 0) grid.deposit(disc[d], sp, amt) }
                 if (stats != null) stats.exchUseful++
             }
-        }
-        // ── leakers: cells holding sp that CAN'T metabolise it dump the surplus (down-gradient, full) ──
-        // A species the cell CAN use is retained (handled above / no-op), so an Import gene can build a
-        // reserve and coast on it; only un-metabolisable waste leaks, feeding the food web via death + decay.
-        if (holdersForSp != null) for (m in holdersForSp) {
-            val cell = cells[m]
-            if (cell.handleable.canHold(sp)) continue   // metabolised → retained, not a leaker
-            if (stats != null) stats.exchCellIters++
-            val cyto = cell.cytoplasm.count(sp)
-            val t = (((env - cyto) / 2).toLong() * cell.exposureMilli / 1000L).toInt()
-            if (t < 0) { cell.cytoplasm.add(sp, t); grid.deposit(idx, sp, -t); if (stats != null) stats.exchUseful++ }
-            else if (stats != null) stats.exchNoop++
-        }
+        } else if (stats != null) stats.exchNoop++
     }
+
 
     /** Phase 1 — execute one cell's genome. Each ACTIVE gene gets a flat **1/N share** (N = active-gene
      *  count) of every resource it touches — the cell's light quanta and each cytoplasm species it consumes

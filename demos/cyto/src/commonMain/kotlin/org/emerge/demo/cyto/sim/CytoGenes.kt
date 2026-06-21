@@ -335,6 +335,12 @@ class CellWork(
      *  stress likewise, in the connections phase), so 1 connection halves it, 2 thirds it, etc. */
     var weldedDegree = 0
 
+    /** This cell's logical world position this tick — the centre of its circular **disc gather** footprint
+     *  (CytoBiologyCore passive exchange + Import draw matter from grid cells within [logicalRadius] of here).
+     *  Set by the reducer alongside [gridIndex]; defaults to origin so a position-less probe still runs. */
+    var cx = 0f
+    var cy = 0f
+
     /** Per-work scratch reused by [CytoBiologyCore.runGenes] so a tick's gene execution allocates nothing:
      *  the tick-start cytoplasm snapshot ([snapScratch], filled via [MoleculeStore.copyFrom]), the active-gene
      *  index list ([activeScratch], grown with the genome), and the per-gene consumed-species accumulator

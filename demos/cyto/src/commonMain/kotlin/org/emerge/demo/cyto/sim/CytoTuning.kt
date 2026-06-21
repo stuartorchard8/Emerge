@@ -26,6 +26,11 @@ object CytoTuning {
     /** Resolution per torus axis of the light field + matter grid (the fields are smooth, so coarse is
      *  plenty). The grid has RES² cells. */
     const val GRID_RES = 64
+    /** Matter-field resolution, DECOUPLED from the (coarse) light grid: at the 128-cell world, RES=1024 ⇒
+     *  grid cell = 0.25 cell-diam (sub-cell), so a cell's radius spans ~2 grid cells and it absorbs over a
+     *  ~13-grid-cell circular footprint (the disc gather). Diffusion is OFF, so this is allocated once + the
+     *  per-tick cost is just the gather, not O(RES²). See PLAN_taxis_substrate.md. */
+    const val MATTER_GRID_RES = 1024
 
     // ── Light field (the open energy source) ─────────────────────────────────────────────────────────
     /** Peak light at a source (≈ quanta/tick a fully-exposed cell sitting on it harvests, before the

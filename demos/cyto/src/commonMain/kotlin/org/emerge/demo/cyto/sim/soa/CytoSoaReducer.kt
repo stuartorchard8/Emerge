@@ -234,10 +234,10 @@ class CytoSoaReducer(
             // Matter diffusion walks every grid-cell, so run it only every Nth tick (it's a slow background
             // process — per-tick resolution is wasted work, especially in a near-uniform field). Deterministic
             // on the sim clock; conservation unaffected (each step is still a conservative move).
+            // Diffusion removed (the disc gather replaces its feed-sessile role + keeps gradients sharp);
+            // environmental decay stays (free molecules atomise over time → unique species fall, matter returns).
             if (cur.world.tick % CytoTuning.MATTER_DIFFUSE_PERIOD == 0L) {
-                cur.grid = cur.grid
-                    .diffused(CytoMatterGrid.DIFFUSE_NUM, CytoMatterGrid.DIFFUSE_DEN)
-                    .decayed(CytoTuning.MATTER_DECAY_PERIOD)
+                cur.grid = cur.grid.decayed(CytoTuning.MATTER_DECAY_PERIOD)
             }
             cur
         }
@@ -743,6 +743,7 @@ class CytoSoaReducer(
             for (j in 0 until deg) work.connectionDamage[EntityId(w.csr.otherId[base + j])] = w.csr.edgeAux[base + j]
             for (tid in touchingScratch[slot]) work.touchingIds.add(EntityId(tid))
             work.exposureMilli = exposureMilli.toInt()   // surface exposure (0..1000), damps passive env-exchange
+            work.cx = lx; work.cy = ly                    // disc-gather footprint centre (logical position)
             works[id] = work
         }
         bioSplit("bio:build")   // per-cell CellWork build: light sample, exposure, cytoplasm/biomass copy, reset

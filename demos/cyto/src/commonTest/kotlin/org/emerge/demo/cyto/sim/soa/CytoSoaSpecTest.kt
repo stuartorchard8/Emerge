@@ -758,10 +758,13 @@ class CytoSoaSpecTest {
     }
 
     @Test
-    fun matterDiffusesAcrossTheGridConservingAtoms() {
+    fun matterDoesNotDiffuseAnUndisturbedDepositStaysPut() {
+        // Diffusion was removed (the disc gather replaces its feed-sessile role + keeps self-dug gradients
+        // sharp). With no cells around, a deposit stays exactly where it's put and atoms are conserved — the
+        // opposite of the old diffusion behaviour. (Endpoint check only; totalAtoms walks the whole RES² grid.)
         val seed = CytoMatterGrid.empty()
         val center = seed.indexOf(0f, 0f)
-        seed.deposit(center, "a", 1000)
+        seed.deposit(center, "a", 1000)   // 'a' is a monomer → environmental decay leaves it untouched too
         val initial = run {
             val b = SimBuilder(SimState())
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(seed) }
@@ -769,12 +772,11 @@ class CytoSoaSpecTest {
         }
         fun grid(s: SimState) = s.components.getTable<CytoMatterGridComponent>().asMap().getValue(GRID_SINGLETON).grid
         val total0 = grid(initial).totalAtoms()
-        val centerStart = grid(initial).count(center, "a")
-        val state = run(initial, ticks = 200) { s, t -> assertEquals(total0, grid(s).totalAtoms(), "diffusion must conserve atoms at step $t") }
-        val g = grid(state)
-        assertTrue(g.count(center, "a") < centerStart, "matter should have diffused out of the centre (was $centerStart)")
+        val g = grid(run(initial, ticks = 200))
+        assertEquals(1000, g.count(center, "a"), "with diffusion gone an undisturbed deposit must stay put")
         val right = g.indexOf(CytoMatterGrid.SPAN / CytoMatterGrid.RES, 0f)
-        assertTrue(g.count(right, "a") > 0, "matter should have spread to a neighbouring cell")
+        assertEquals(0, g.count(right, "a"), "matter must NOT spread to a neighbour (no diffusion)")
+        assertEquals(total0, g.totalAtoms(), "matter conserved")
     }
 
     /** A flex gene of [action] powered by breaking stored `ab` (no light needed), always gated on. */
