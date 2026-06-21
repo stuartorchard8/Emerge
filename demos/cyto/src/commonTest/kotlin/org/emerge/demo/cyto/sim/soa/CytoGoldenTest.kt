@@ -152,12 +152,15 @@ class CytoGoldenTest {
     // so only scenarios whose unobserved regions collapse 2+ layers within budget move: GROWTH + INTERACT
     // drift (cells vacate regions that then pool more slowly), MUTATION is byte-identical. Determinism +
     // conservation gates held.
+    // Re-baselined 2026-06-21 (#3): base MATTER_COLLAPSE_DELAY 64→256 (finest layer now holds 256 ticks before
+    // pooling; coarser layers scale from there). Same shape as #2 — GROWTH + INTERACT drift, MUTATION
+    // byte-identical; determinism + conservation held.
     private val GROWTH = mapOf(
-        "meta" to "a7f4398451ba6446",
-        "physics" to "a354688f8d29a11e",
-        "biology" to "6854975f0d09566d",
-        "topology" to "26402c909b96a91e",
-        "grid" to "eb992db6390d82c0",
+        "meta" to "361ae09861a326a5",
+        "physics" to "76dda322bc78db5d",
+        "biology" to "7451b2238d661772",
+        "topology" to "1860e514f73c5852",
+        "grid" to "52533379bffc2b68",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
     // Re-baselined twice for deliberate gene-model extensions, both of which re-route point-mutation's
@@ -225,11 +228,11 @@ class CytoGoldenTest {
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
-        "meta" to "b575bb5db8415431",
-        "physics" to "a0a1ac641fd5fb45",
-        "biology" to "34ca266f46003bb1",
-        "topology" to "a34ce428aa73a2f0",
-        "grid" to "a9a079132ee206aa",
+        "meta" to "a006f43ef951cf91",
+        "physics" to "fdd040f5531e2fc9",
+        "biology" to "e93205feb017c590",
+        "topology" to "2a21111a90798500",
+        "grid" to "6bf7b07e1e7bcd71",
     )
 
     @Test

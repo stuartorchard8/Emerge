@@ -78,7 +78,7 @@ object CytoTuning {
      *  that spreads matter over 2× the area waits 2× as long — dispersal advances at a constant speed (twice
      *  as far ⇒ twice as long). A fully unobserved corpse re-integrates to the tile over ~this·2^(MAX_DEPTH)
      *  ticks. Higher = sharper, longer-lived self-dug gradients (and more live nodes). ⚙ */
-    const val MATTER_COLLAPSE_DELAY = 64
+    const val MATTER_COLLAPSE_DELAY = 256
 
     // ── Metabolism / energy (per gene, per tick) ─────────────────────────────────────────────────────
     /** light → quanta: `quanta = ⌊field × exposure × SCALE⌋` (a fully-exposed cell on a source gets
