@@ -73,10 +73,11 @@ object CytoTuning {
      *  the diffusion cadence). Returns matter stranded by selective uptake (species no live cell can use)
      *  toward monomers. Higher = slower decay; 0 disables. ⚙ */
     const val MATTER_DECAY_PERIOD = 4000
-    /** Quad-tree matter field (QUADTREE.md): raw ticks a finest region may go un-accessed before its parent
-     *  pools it one layer coarser. Collapse climbs one layer per this delay (matter spreads over 2× area each
-     *  time), so an unobserved corpse fully re-integrates over ~MAX_DEPTH·this ticks. Higher = sharper, longer-
-     *  lived self-dug gradients (and more live nodes); the "background diffusion length in time". ⚙ */
+    /** Quad-tree matter field (QUADTREE.md): raw ticks a FINEST (depth MAX_DEPTH) region may go un-accessed
+     *  before its parent pools it one layer coarser. The delay DOUBLES per layer above the finest, so a merge
+     *  that spreads matter over 2× the area waits 2× as long — dispersal advances at a constant speed (twice
+     *  as far ⇒ twice as long). A fully unobserved corpse re-integrates to the tile over ~this·2^(MAX_DEPTH)
+     *  ticks. Higher = sharper, longer-lived self-dug gradients (and more live nodes). ⚙ */
     const val MATTER_COLLAPSE_DELAY = 64
 
     // ── Metabolism / energy (per gene, per tick) ─────────────────────────────────────────────────────

@@ -220,16 +220,23 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
 
     // ── maintenance: progressive collapse + species decay ──────────────────────────────────────────────
     fun maintain(currentTick: Int, collapseDelay: Int, decayPeriod: Int) {
-        for (r in roots) maintainNode(r, currentTick, collapseDelay, decayPeriod)
+        for (r in roots) maintainNode(r, 0, currentTick, collapseDelay, decayPeriod)
     }
     /** Post-order: decay leaves; merge an all-leaf internal node whose children are all stale (→ progressive,
-     *  since the merged leaf is fresh and blocks its parent for another delay). */
-    private fun maintainNode(node: QuadNode, tick: Int, collapseDelay: Int, decayPeriod: Int) {
+     *  since the merged leaf is fresh and blocks its parent for another delay).
+     *
+     *  The stale threshold DOUBLES per layer above the finest: [collapseDelay] is the delay for the finest
+     *  leaves (depth [MAX_DEPTH]); a merge whose children sit one layer up waits twice as long, and so on.
+     *  A merge pools matter over a node twice as wide as the layer below, so making it wait twice as long
+     *  means dispersal advances at a roughly constant speed — twice as far takes twice as long. */
+    private fun maintainNode(node: QuadNode, depth: Int, tick: Int, collapseDelay: Int, decayPeriod: Int) {
         if (node.isLeaf) { decayLeaf(node, decayPeriod); return }
         val ch = node.children!!
-        for (c in ch) maintainNode(c, tick, collapseDelay, decayPeriod)
+        for (c in ch) maintainNode(c, depth + 1, tick, collapseDelay, decayPeriod)
+        // The children are at depth+1; their merge delay doubles for each layer they sit above the finest.
+        val childDelay = collapseDelay shl (MAX_DEPTH - (depth + 1))
         var allLeafStale = true
-        for (c in ch) if (!c.isLeaf || tick - c.lastAccessTick < collapseDelay) { allLeafStale = false; break }
+        for (c in ch) if (!c.isLeaf || tick - c.lastAccessTick < childDelay) { allLeafStale = false; break }
         if (allLeafStale) mergeNode(node, tick)
     }
     /** Atomise ⌊count/period⌋ of each multi-atom species (peel leftmost bond). Conservation-exact; does NOT

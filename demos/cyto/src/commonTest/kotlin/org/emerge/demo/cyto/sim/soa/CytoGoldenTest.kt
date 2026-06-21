@@ -146,12 +146,18 @@ class CytoGoldenTest {
     // so per-tick uptake magnitudes differ → the whole trajectory diverges. ALL three goldens move in every
     // changed dimension; the `grid` digest now hashes the quad-tree leaves (forEachLeaf). Determinism gates
     // (parallel==sequential, round-trip) and matter conservation held.
+    // Re-baselined 2026-06-21 (#2): DEPTH-SCALED COLLAPSE DELAY. The collapse threshold now DOUBLES per layer
+    // above the finest (64 at depth 9, 128 at 8, 256 at 7, …) so dispersal advances at a constant speed —
+    // twice as far takes twice as long (CytoMatterField.maintainNode). The finest-layer timing is unchanged,
+    // so only scenarios whose unobserved regions collapse 2+ layers within budget move: GROWTH + INTERACT
+    // drift (cells vacate regions that then pool more slowly), MUTATION is byte-identical. Determinism +
+    // conservation gates held.
     private val GROWTH = mapOf(
-        "meta" to "361ae09861a326a5",
-        "physics" to "449a6c1d52942efd",
-        "biology" to "245c16643e8bb68c",
-        "topology" to "343d2bbc95076a70",
-        "grid" to "cd9e4e9621c3b45c",
+        "meta" to "a7f4398451ba6446",
+        "physics" to "a354688f8d29a11e",
+        "biology" to "6854975f0d09566d",
+        "topology" to "26402c909b96a91e",
+        "grid" to "eb992db6390d82c0",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
     // Re-baselined twice for deliberate gene-model extensions, both of which re-route point-mutation's
@@ -219,11 +225,11 @@ class CytoGoldenTest {
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
-        "meta" to "55a7033be3330d49",
-        "physics" to "411f63331af8d85e",
-        "biology" to "f2ded6de8d97a3af",
-        "topology" to "fd73fd6bcc44c407",
-        "grid" to "ed1a57ed737ab93b",
+        "meta" to "b575bb5db8415431",
+        "physics" to "a0a1ac641fd5fb45",
+        "biology" to "34ca266f46003bb1",
+        "topology" to "a34ce428aa73a2f0",
+        "grid" to "a9a079132ee206aa",
     )
 
     @Test

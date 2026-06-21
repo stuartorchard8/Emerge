@@ -60,22 +60,30 @@ class CytoMatterFieldTest {
 
     @Test fun maintainConservesAndProgressivelyCollapses() {
         val f = CytoMatterField.seededUniform(10)
-        f.openFootprint(0f, 0f, 0.6f, 1); f.closeFootprint()    // split a region at tick 1
+        // Split symmetrically at the 4-tile corner (the origin) at tick 1, down to the finest depth.
+        f.openFootprint(0f, 0f, 0.6f, 1); f.closeFootprint()
         val split = leafCount(f); assertTrue(split > 4)
         val t0 = f.totalAtoms()
-        var tk = 1
+        // The collapse delay DOUBLES per layer above the finest (base = 1 here for speed): a region twice as
+        // coarse takes twice as long to pool, so matter disperses at a constant speed. Step tick-by-tick and
+        // record the ticks where the leaf count drops (one layer of the tree collapsing) — the gaps double.
+        val collapseTicks = ArrayList<Int>()
         var prev = split
-        var collapsedSteps = 0
-        repeat(40) {
-            tk += 64
-            f.maintain(tk, collapseDelay = 64, decayPeriod = Int.MAX_VALUE)  // no decay, just collapse
+        for (tk in 2..520) {
+            f.maintain(tk, collapseDelay = 1, decayPeriod = Int.MAX_VALUE)   // no decay, just collapse
             val now = leafCount(f)
-            if (now < prev) collapsedSteps++       // collapse happens in steps (progressive), not all at once
+            if (now < prev) collapseTicks.add(tk)
             prev = now
         }
         assertEquals(t0, f.totalAtoms(), "maintain conserves")
         assertTrue(leafCount(f) <= 4, "unobserved region fully collapses back to tile leaves")
-        assertTrue(collapsedSteps >= 2, "collapse is progressive (multiple layers over time), got $collapsedSteps")
+        assertTrue(collapseTicks.size >= 3, "collapse is progressive (one layer at a time), got ${collapseTicks.size}")
+        // Each successive layer waits twice as long as the one below: the gaps between collapse events double.
+        for (i in 2 until collapseTicks.size) {
+            val prevGap = collapseTicks[i - 1] - collapseTicks[i - 2]
+            val gap = collapseTicks[i] - collapseTicks[i - 1]
+            assertEquals(prevGap * 2, gap, "layer $i should take twice as long as the one below (twice as far ⇒ twice as long)")
+        }
     }
 
     @Test fun decayConservesAndAtomises() {
