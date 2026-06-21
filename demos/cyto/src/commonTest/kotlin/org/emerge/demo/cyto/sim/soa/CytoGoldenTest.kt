@@ -155,12 +155,17 @@ class CytoGoldenTest {
     // Re-baselined 2026-06-21 (#3): base MATTER_COLLAPSE_DELAY 64→256 (finest layer now holds 256 ticks before
     // pooling; coarser layers scale from there). Same shape as #2 — GROWTH + INTERACT drift, MUTATION
     // byte-identical; determinism + conservation held.
+    // Re-baselined 2026-06-22: IMPORT FIX — the gene phase now runs BEFORE the cell↔env junction (was after),
+    // so an Import gene's bias actually reaches the junction the same tick (it was cleared every tick at build
+    // before the junction could ever read it ⇒ Import was inert). The reorder gives every cell a one-tick
+    // phase shift between metabolism and intake, so GROWTH + INTERACT (mutation-off presets, no Import gene)
+    // drift; mutationOn is byte-identical. Determinism + conservation gates held.
     private val GROWTH = mapOf(
-        "meta" to "361ae09861a326a5",
-        "physics" to "76dda322bc78db5d",
-        "biology" to "7451b2238d661772",
-        "topology" to "1860e514f73c5852",
-        "grid" to "52533379bffc2b68",
+        "meta" to "84082687f0ee6d08",
+        "physics" to "1043dcc7a8d4369f",
+        "biology" to "baf00700cafc32d7",
+        "topology" to "9211070e7923116f",
+        "grid" to "23d55361f9c93269",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
     // Re-baselined twice for deliberate gene-model extensions, both of which re-route point-mutation's
@@ -228,11 +233,11 @@ class CytoGoldenTest {
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
-        "meta" to "a006f43ef951cf91",
-        "physics" to "fdd040f5531e2fc9",
-        "biology" to "e93205feb017c590",
-        "topology" to "2a21111a90798500",
-        "grid" to "6bf7b07e1e7bcd71",
+        "meta" to "3f0b2ca5aa1d4aba",
+        "physics" to "92d136dc01c23f4",
+        "biology" to "4195a04258b66e54",
+        "topology" to "cbf29ce484222325",
+        "grid" to "82fdecae7773bed6",
     )
 
     @Test

@@ -34,10 +34,12 @@ object CytoBiologyCore {
     private const val CYTOPLASM_DIFFUSE_DENOM = CytoTuning.CYTOPLASM_DIFFUSE_DENOM
     private val FLEX_STEP = CytoTuning.FLEX_STEP
 
-    /** Phase 0 — passive cell↔environment **diffusion junction** (FREE, bidirectional). Each cell (id-order,
-     *  sequential) opens its circular footprint on the quad-tree field and the field balances every
-     *  `canDiffuse` species toward an effective target `cEff = cytoplasm − importBias` (Import lowers it ⇒
-     *  inward diffusion); we apply the returned net Δ to cytoplasm. Determinants (synthesised-only) and
+    /** Passive cell↔environment **diffusion junction** (FREE, bidirectional). Runs AFTER the gene phase
+     *  ([runGenes]) so it consumes the `importBias` that Import genes record this tick (the bias is cleared
+     *  every tick at build, so genes must set it between build and here — see the reducer's phase order).
+     *  Each cell (id-order, sequential) opens its circular footprint on the quad-tree field and the field
+     *  balances every `canDiffuse` species toward an effective target `cEff = cytoplasm − importBias` (Import
+     *  lowers it ⇒ inward diffusion / retention); we apply the returned net Δ to cytoplasm. Determinants (synthesised-only) and
      *  foreign species (not `canDiffuse`) are excluded; there is **no passive leak** of un-metabolisable waste
      *  (it accumulates until death/export). Conservation-exact (QUADTREE.md exchange); the cell senses local
      *  matter density through this intake. Sequential ⇒ the footprint's overlapping field access is race-free

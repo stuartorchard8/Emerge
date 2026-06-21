@@ -763,18 +763,23 @@ class CytoSoaReducer(
         }
         bioSplit("bio:quanta")   // light-shading second pass (per-grid-cell capture-share split)
 
-        val orderedWorks = bioOrderedWorks.also { it.clear() }
-        for (k in 0 until n) orderedWorks.add(bioWorks[ordered[k]]!!)
-        CytoBiologyCore.passiveEnvExchange(orderedWorks, grid, w.world.tick.toInt(), bioProfile)
-        bioSplit("bio:exchange")   // passive env-exchange (the diffusion junction) with the quad-tree field
-        // Gene phase. runGenes is now grid-FREE (Import is a junction bias, degrade ejects to cytoplasm), so
-        // each cell is fully independent — any partition is bit-identical to sequential. Fan cells (in
-        // bioOrder = EntityId order) across disjoint slot ranges; no grid-cell grouping needed any more.
+        // Gene phase FIRST, then the junction. An Import gene records its bias on the CellWork during
+        // runGenes, and the junction (passiveEnvExchange) is the ONLY consumer of that bias — but the bias is
+        // cleared every tick in the per-cell build (reset). So genes must run AFTER build and BEFORE the
+        // junction for the bias to reach it; with the old exchange-then-genes order the junction always read a
+        // freshly-cleared (empty) bias and Import was inert. runGenes is grid-FREE (Import is a junction bias,
+        // degrade ejects to cytoplasm), so each cell is fully independent — any partition is bit-identical to
+        // sequential. Fan cells (in bioOrder = EntityId order) across disjoint slot ranges.
         val exec = if (n >= bioParallelThreshold) executor else null
         ColumnPartition.disjoint(n, exec, threshold = 1) { kStart, kEnd ->
             for (k in kStart until kEnd) CytoBiologyCore.runGenes(bioWorks[ordered[k]]!!, bioProfile)
         }
-        bioSplit("bio:genes")   // gene execution
+        bioSplit("bio:genes")   // gene execution (records each cell's Import bias for the junction below)
+        // The passive cell↔environment junction — CONSUMES the Import bias recorded by runGenes this tick.
+        val orderedWorks = bioOrderedWorks.also { it.clear() }
+        for (k in 0 until n) orderedWorks.add(bioWorks[ordered[k]]!!)
+        CytoBiologyCore.passiveEnvExchange(orderedWorks, grid, w.world.tick.toInt(), bioProfile)
+        bioSplit("bio:exchange")   // passive env-exchange (the diffusion junction) with the quad-tree field
         CytoBiologyCore.diffuse(works, neighbourIds)
         bioSplit("bio:diffuse")   // inter-cell cytoplasm diffusion across welds
         val divide = ArrayList<EntityId>(); val destroy = ArrayList<EntityId>()

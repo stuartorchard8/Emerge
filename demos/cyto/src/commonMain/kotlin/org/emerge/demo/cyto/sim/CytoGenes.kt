@@ -343,8 +343,9 @@ class CellWork(
 
     /** Per-tick active-uptake bias (species id → units): an Import gene lowers the cell's effective target for
      *  that species in the passive diffusion junction (CytoBiologyCore.passiveEnvExchange), so it absorbs that
-     *  much extra. Recorded grid-free during the (parallel) gene phase; consumed by the sequential junction.
-     *  Cleared each [reset]. */
+     *  much extra. Recorded grid-free during the (parallel) gene phase, then consumed THIS SAME TICK by the
+     *  sequential junction (the reducer runs genes before the junction so the bias is non-empty when read).
+     *  Cleared each [reset] — i.e. at the start of the next tick's build. */
     val importBias: MutableMap<Int, Int> = HashMap()
 
     /** Per-work scratch reused by [CytoBiologyCore.runGenes] so a tick's gene execution allocates nothing:
