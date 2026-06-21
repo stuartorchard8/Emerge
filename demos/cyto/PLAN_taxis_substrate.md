@@ -1,7 +1,34 @@
-# Plan — matter-field substrate for taxis (PARKED)
+# Plan — matter-field substrate for taxis
 
-**Status: PARKED.** Blocked on **world rescale + torus geometry** (do that first; this plan tunes values
-that only make sense once the world is the right size and a real torus). Written 2026-06-21.
+**Status: world rescale DONE (`5ec4903b`). Now building the matter field: dense sub-cell grid + disc gather.**
+Written 2026-06-21.
+
+## Decided substrate (2026-06-21): RES=1024, dense per-species, disc gather, no diffusion
+- **MATTER_GRID_RES = 1024** (decoupled from the coarse light grid): grid cell = 0.25 cell-diam (SUB-CELL).
+  A cell's radius spans ~2 grid cells → a ~13-grid-cell circular footprint. (RES=2048 = smoother circle but
+  ~50-cell footprint + 4× memory — not worth it.)
+- **Dense per-species storage** (`IntArray(RES²)` × k species) instead of `Array<MoleculeStore>` — 12 MB vs
+  48 MB at 1024, and O(1) indexing for the gather.
+- **Disc gather** = circular absorption boundary: a cell draws from grid cells within its radius, fair-shared
+  on overlap (generalise "over-subscribed absorbers share proportionally"), integer apportionment, fixed
+  entity-id order. Replaces diffusion's feed-immobile role + IS the intake-density sensor.
+- **No diffusion** (removed) — self-dug craters persist; per-tick cost is just the gather (O(cells×~13)).
+- **Keep access behind grid methods** (`gatherDisc(cx,cy,radius,sp,want)`, local deposit, count/draw) so the
+  quad-tree below is a later internal swap, NOT a biology refactor. No premature AMR scaffolding (YAGNI).
+
+## Stu's ideal trajectory (FUTURE, not now): variable-density quad-tree grid
+Adaptive-mesh resource field: **full res near observers (cells), degrading toward 1×1 in empty space.** When
+a quad is far enough from any observer, its children **recombine** their matter into a shared pool ("structural
+diffusion gated by observers"); when an observer approaches, it **splits** back to fine (pooled matter
+redistributed *evenly* — the diffused state). Resolves the original diffusion tension: sharp where organisms
+sense/eat, pooled where nobody looks; storage ∝ observed area (lets the world grow large again). NB it's a
+**behavioural** change (reintroduces background mixing), not a transparent optimization, so A/B it. Crux:
+bit-conservative + deterministic split/merge with **hysteresis** (observer-position-driven). The dense grid
+above is the reference implementation the quad-tree must match near observers.
+
+---
+
+(Originally PARKED behind world rescale + torus geometry — now done.)
 
 ## Why this exists (the chain that led here)
 
