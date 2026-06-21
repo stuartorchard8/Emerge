@@ -93,6 +93,11 @@ object CytoTuning {
      *  actions/energy but only 1 energy/tick (≈17 actions). Optimum gear is niche-dependent — see [Gene]. */
     const val EFFICIENCY_REF = 1 shl 16
     const val EFFICIENCY_MAX_GEAR = 16
+    /** Import gain: each energy unit an Import gene spends lowers the cell's effective junction target
+     *  (`cEff = cytoplasm − gain·k`) by this much, so the passive diffusion junction draws that many extra
+     *  units IN per spent quantum (CytoBiologyCore.passiveEnvExchange). >1 makes active uptake more efficient,
+     *  which a cell needs to concentrate a species above ambient and hold separation from the environment. */
+    const val IMPORT_BIAS_GAIN = 4
     /** Connection damage healed per Repair op (one quantum). 0.25 ≈ the old free per-tick heal, so ~one
      *  op/tick maintains a lightly-loaded connection; more stress needs more energy. */
     const val REPAIR_PER_OP = 0.25f

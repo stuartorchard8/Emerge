@@ -266,9 +266,10 @@ object CytoBiologyCore {
                 // Active uptake is now a BIAS on the passive diffusion junction (QUADTREE.md): the gene's k
                 // energy units lower the cell's effective target for `importId`, so the junction (in
                 // passiveEnvExchange) draws that much extra IN from the footprint, concentrating it above
-                // ambient. No field access here ⇒ the gene phase stays grid-free + parallel-safe. (The old
-                // gradient-cost diminishing-returns is dropped for v1; revisit if hoarding misbehaves.)
-                work.importBias[act.aId] = (work.importBias[act.aId] ?: 0) + k
+                // ambient. Each unit is worth IMPORT_BIAS_GAIN of bias so uptake is efficient enough to hold
+                // a species above ambient. No field access here ⇒ the gene phase stays grid-free + parallel-
+                // safe. (The old gradient-cost diminishing-returns is dropped for v1; revisit if hoarding misbehaves.)
+                work.importBias[act.aId] = (work.importBias[act.aId] ?: 0) + k * CytoTuning.IMPORT_BIAS_GAIN
             }
             ActionType.Mitosis -> {
                 work.dividing = true; work.divideMorphogen = act.a; work.divideMorphogenToMother = act.morphogenToMother
