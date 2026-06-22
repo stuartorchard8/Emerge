@@ -34,6 +34,7 @@ object CytoBiologyCore {
     private const val CONNECTION_BREAK_DAMAGE = CytoTuning.CONNECTION_BREAK_DAMAGE
     private const val CYTOPLASM_DIFFUSE_DENOM = CytoTuning.CYTOPLASM_DIFFUSE_DENOM
     private val FLEX_STEP = CytoTuning.FLEX_STEP
+    private val MIN_EXPOSURE_FOR_TRANSFER = CytoTuning.MIN_EXPOSURE_FOR_TRANSFER
 
     /** Passive cell↔environment **diffusion junction** (FREE, bidirectional). Runs AFTER the gene phase
      *  ([runGenes]) so it consumes the `importBias` that Import genes record this tick (the bias is cleared
@@ -49,6 +50,7 @@ object CytoBiologyCore {
         val tGroup = if (stats != null) TimeSource.Monotonic.markNow() else null
         val fp = HashSet<Int>(); val species = HashSet<Int>()
         for (w in ordered) {
+            if (w.exposureMilli <= MIN_EXPOSURE_FOR_TRANSFER) { continue }
             val n = grid.openFootprint(w.cx, w.cy, w.logicalRadius.toFloat(), tick)
             if (n == 0) { grid.closeFootprint(); continue }
             species.clear()

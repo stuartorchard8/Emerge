@@ -151,13 +151,9 @@ class CytoController(
     // ── Pointer interaction (logical Cyto coordinates) ──────────────────────────
 
     /** The authoring "brush" genome loaded from a `.gene` file (null until loaded). */
-    var brushGenome: List<org.emerge.demo.cyto.sim.Gene>? = null
+    var brushGenome: List<Gene>? = null
 
-    /** Whether painting uses the brush ([brushGenome]) rather than the selected type's preset — driven
-     *  by the "Brush" selection in the cell-type controls. Off = type presets (the default). */
-    var brushActive: Boolean = false
-
-    private fun activeBrush() = if (brushActive) brushGenome else null
+    private fun activeBrush() = brushGenome
 
     fun spawn(x: Float, y: Float, type: CellType) {
         withLock(inputLock) { pendingSpawns.add(CytoInput.Spawn(x, y, type, activeBrush())) }

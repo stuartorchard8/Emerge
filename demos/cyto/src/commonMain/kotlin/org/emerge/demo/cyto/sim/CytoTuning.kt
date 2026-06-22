@@ -149,6 +149,8 @@ object CytoTuning {
     /** Max connected neighbours considered when computing a cell's surface exposure (a cell with more is
      *  buried → tiny exposure regardless). */
     const val EXPOSURE_MAX_NEIGHBOURS = 32
+    /** Smallest exposure milli-units that allows cells to be exposed to the environment matter grid. */
+    const val MIN_EXPOSURE_FOR_TRANSFER = 200
 
     // ── Connection physics & feel (defaults for the runtime [CytoConfig]; tune live on runCyto) ──────
     /** Position-relaxation rate of a connection per solver iteration (pseudo-velocity channel). < 1 ⇒
@@ -220,7 +222,7 @@ object CytoTuning {
     const val DRAG_MAX_FRACTION = 0.3f
     /** Linear per-cell width drag: `coeff · radius · speed` — damps at all speeds, settling the slow
      *  drift the quadratic term leaves behind. Keep < 1/radius. */
-    const val CELL_WIDTH_DRAG_COEFFICIENT = 0.02f
+    const val CELL_WIDTH_DRAG_COEFFICIENT = 0.00f
     /** Stretch (logical units) → stress, for connection damage. Lower = a given stretch hurts less. */
     const val CONNECTION_STRESS_SCALE = 0.5f
     /**
@@ -230,7 +232,7 @@ object CytoTuning {
      * perfectly healthy link instantly, no matter how well-knit or how hard it's repaired (this term is NOT
      * degree-discounted). 2.0 ⇒ a ~2-cell-width gap, where the bond rendering starts breaking down. Lower =
      * links snap sooner under load. ⚙ */
-    const val OVERSTRETCH_BREAK_MULTIPLE = 2.5f
+    const val OVERSTRETCH_BREAK_MULTIPLE = 2.2f
     /**
      * Exponent of the over-stretch damage ramp: damage = (stretch / breakDistance)^this × CONNECTION_BREAK_DAMAGE.
      * 1 = linear (a given stretch fraction hurts proportionally — too fragile, moderate stretch breaks links);

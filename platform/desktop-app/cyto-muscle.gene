@@ -1,0 +1,16 @@
+# cyto genome exported from cell 164
+Break ac : Biomass < 4000 : Convert ac @15
+Light : ab < 8000 & ac < 1000 : FormBond a b
+Break bc : ac < 900 & ab > 900 : Import ab @15
+Break ab : bc < 900 & ac > 900 : Import ac @15
+Break ac : ab < 900 & bc > 900 : Import bc @15
+Break bc : ac < 900 : FormBond a b @10
+Break ab : bc < 900 : FormBond a c @10
+Break ac : ab < 900 : FormBond b c @10
+Break bc : bc > 899 & ab > 899 : FormBond a b @9
+Break bc : bc < 900 & ac > 1200 : FormBond b a @15
+Break ba : ba > 0 : Contract @15
+Break ac : cb < 8 & ca < 8 : FormBond c a
+Break ac : cb < 16 & ab < 900 & ca > 0 : FormBond c b @15
+Break ac : ab < 900 & cb > 15 : Mitosis across a
+Break ac : ab < 900 : Repair @10

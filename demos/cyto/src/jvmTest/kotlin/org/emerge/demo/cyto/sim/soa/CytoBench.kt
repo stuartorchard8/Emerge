@@ -102,7 +102,6 @@ class CytoBench {
                 pos = org.emerge.demo.cyto.sim.CytoUnits.coord2(origin + gx * spacing, origin + gy * spacing),
                 vel = org.emerge.sim.core.physics.primitives.Coord2.zero,
                 type = org.emerge.demo.cyto.cells.CellType.Collector,
-                cytoplasm = org.emerge.demo.cyto.sim.CytoSeed.SEED_CYTOPLASM,
                 biomass = org.emerge.demo.cyto.sim.CytoSeed.STARTER_BIOMASS,
                 logicalRadius = org.emerge.demo.cyto.sim.MIN_RADIUS,
             )

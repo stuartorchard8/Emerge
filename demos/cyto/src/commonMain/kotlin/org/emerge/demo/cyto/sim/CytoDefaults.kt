@@ -22,7 +22,6 @@ fun createCytoInitialState(): SimState {
         pos = CytoUnits.coord2(0f, 0f),   // seed at the world origin (the moving daylight band sweeps to it)
         vel = Coord2.zero,
         type = CellType.Collector,
-        cytoplasm = CytoSeed.SEED_CYTOPLASM,
         biomass = CytoSeed.STARTER_BIOMASS,
         logicalRadius = MIN_RADIUS,
     )

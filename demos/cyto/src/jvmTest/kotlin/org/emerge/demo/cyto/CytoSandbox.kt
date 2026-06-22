@@ -55,7 +55,7 @@ class CytoSandbox {
             ?: GeneCodec.parse(genomeText)
         val seed = System.getProperty("sandboxseed")?.let { s ->
             s.split(",").associate { it.substringBefore(":") to it.substringAfter(":").toInt() }
-        } ?: CytoSeed.SEED_CYTOPLASM
+        } ?: emptyMap()
         val watch = (System.getProperty("sandboxwatch") ?: "aa,ab").split(",")
         val cfg = CytoConfig(mutationRateDenom = 0)   // mutation OFF — observe the *designed* organism
 

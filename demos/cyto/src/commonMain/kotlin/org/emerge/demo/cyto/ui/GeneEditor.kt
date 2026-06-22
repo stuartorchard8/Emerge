@@ -221,7 +221,7 @@ class GeneEditor {
         val c = d.condition.clauses[ci]
         val op = if (left) c.lhs else c.rhs
         if (op !is Operand.Constant) return
-        val next = Operand.Constant((op.value + delta).coerceAtLeast(0))
+        val next = Operand.Constant((op.value + delta - (op.value%delta)).coerceAtLeast(0))
         draft = withClauseAt(d, ci, if (left) c.copy(lhs = next) else c.copy(rhs = next))
     }
 

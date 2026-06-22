@@ -28,13 +28,6 @@ class CytoControls {
     var cellType: CellType = CellType.Stem
         private set
 
-    /** When true, the cell-type column's selection is the loaded brush genome rather than [cellType] —
-     *  the host paints with the brush. Selected via the "Brush" swatch in the type column. */
-    var brushSelected: Boolean = false
-        private set
-
-    /** Make the brush the active type selection (e.g. right after a genome loads). */
-    fun selectBrush() { brushSelected = true; openGroup = null }
     var showChemicals: Boolean = false
         private set
 
@@ -58,9 +51,12 @@ class CytoControls {
 
     /** Host action for the "Load Genome" button — (re)load the brush genome from its file. File IO
      *  lives in the host (this class is cross-platform), so the host wires this up. */
-    var onLoadBrush: () -> Unit = {}
+    var onLoadGenome: () -> Unit = {}
 
-    // ── Mutation-rate control (gated by [showMutation]; host wires the cycle action + label) ────────────
+    /** Show/hide debug button for old debug visuals */
+    var showDebug: Boolean = false
+
+    // ── Mutation-rate control; host wires the cycle action + label) ────────────
     /** Show the bottom-right "Mut" button that cycles the mutation rate through a ladder. */
     var showMutation: Boolean = false
     var onCycleMutation: () -> Unit = {}
@@ -200,8 +196,8 @@ class CytoControls {
         // ── Cell Type column (bottom-left) — the legacy type swatches plus a "Brush" swatch that
         // paints with the loaded brush genome (see CytoController.brushGenome). ──
         val typeX = pad
-        val headerLabel = if (brushSelected) "Brush\nGenome" else "${cellType.name}\nCell"
-        val headerColor = if (brushSelected) GENE_COLOR else cellType.color
+        val headerLabel = "${cellType.name}\nCell"
+        val headerColor = cellType.color
         if (openGroup == Group.CellType) {
             buttons.add(Btn(typeX, bottomY, bs, bs, headerColor, headerLabel) { openGroup = null })
             val rows = CellType.entries.groupBy { it.group }.values.toList()
@@ -209,10 +205,7 @@ class CytoControls {
                 groups = rows,
                 baseY = bottomY, bs = bs, gap = gap, leftX = typeX,
                 color = { it.color }, label = { it.name },
-            ) { selected -> cellType = selected; brushSelected = false; openGroup = null }
-            // "Brush" swatch on the row past the type rows.
-            val brushY = bottomY - (rows.size + 1) * (bs + gap)
-            buttons.add(Btn(typeX, brushY, bs, bs, GENE_COLOR, "Brush\nGenome") { brushSelected = true; openGroup = null })
+            ) { selected -> cellType = selected; openGroup = null; onLoadGenome() }
         } else {
             buttons.add(Btn(typeX, bottomY, bs, bs, headerColor, headerLabel) { openGroup = Group.CellType })
         }
@@ -230,35 +223,35 @@ class CytoControls {
             buttons.add(Btn(modeX, bottomY, bs, bs, touchMode.color, "${touchMode.name}\nMode") { openGroup = Group.TouchMode })
         }
 
-        // ── Bottom-right cluster: Load Genome | Light toggle | Debug toggle ──
+        // ── Bottom-right cluster: Visuals and global parameters ──
         val rightX = resW - pad - bs
+        var x = rightX
+        if (showDebug) {
+            buttons.add(
+                Btn(x, bottomY, bs, bs, DEBUG_COLOR, "Debug\n${if (showChemicals) "ON" else "OFF"}") {
+                    showChemicals = !showChemicals
+                }
+            )
+            x -= bs + gap
+        }
+
+        val gridButtonColor = if (showMatterField) MATTER_COLOR else LIGHT_COLOR
+        val gridButtonLabel = "${if (showMatterField) "MATTER" else "LIGHT"}\nGRID"
         buttons.add(
-            Btn(rightX, bottomY, bs, bs, DEBUG_COLOR, "Debug\n${if (showChemicals) "ON" else "OFF"}") {
-                showChemicals = !showChemicals
+            Btn(x, bottomY, bs, bs, gridButtonColor, gridButtonLabel) {
+                showMatterField = !showMatterField
+                showLightField = !showMatterField
             }
-        )
-        buttons.add(
-            Btn(rightX - (bs + gap), bottomY, bs, bs, LIGHT_COLOR, "Light\n${if (showLightField) "ON" else "OFF"}") {
-                showLightField = !showLightField
-            }
-        )
-        buttons.add(
-            Btn(rightX - 2f * (bs + gap), bottomY, bs, bs, GENE_COLOR, "Load\nGenome") { onLoadBrush() }
         )
         // Mutation-rate cycle (tap to step the ladder); desktop-gated like the sim-speed row.
+        x -= bs + gap
         if (showMutation) buttons.add(
-            Btn(rightX - 3f * (bs + gap), bottomY, bs, bs, SIM_COLOR, "Mut\n$mutationLabel") { onCycleMutation() }
+            Btn(x, bottomY, bs, bs, SIM_COLOR, "Mut\n$mutationLabel") { onCycleMutation() }
         )
-        // Cell colour-mode cycle (BIO ↔ CYT) — sits to the left of the cluster, past the optional Mut button.
-        val colorSlot = if (showMutation) 4f else 3f
+        // Cell colour-mode cycle (BIO ↔ CYT)
+        x -= bs + gap
         buttons.add(
-            Btn(rightX - colorSlot * (bs + gap), bottomY, bs, bs, COLOR_MODE_COLOR, "Color\n${colorMode.label}") { cycleColorMode() }
-        )
-        // Matter-field overlay toggle (bordered leaf squares) — leftmost in the cluster.
-        buttons.add(
-            Btn(rightX - (colorSlot + 1f) * (bs + gap), bottomY, bs, bs, MATTER_COLOR, "Matter\n${if (showMatterField) "ON" else "OFF"}") {
-                showMatterField = !showMatterField
-            }
+            Btn(x, bottomY, bs, bs, COLOR_MODE_COLOR, "Color\n${colorMode.label}") { cycleColorMode() }
         )
     }
 
@@ -302,7 +295,6 @@ class CytoControls {
     companion object {
         private const val DEBUG_COLOR = 0x606060FFL
         private const val LIGHT_COLOR = 0xEFD040FFL   // warm — the light field
-        private const val GENE_COLOR = 0x44CC55FFL    // green — matches the Collector swatch
         private const val SIM_COLOR = 0x3A6EA5FFL     // blue — the sim-speed controls
         private const val COLOR_MODE_COLOR = 0x8A5BC0FFL // purple — the cell colour-mode cycle
         private const val MATTER_COLOR = 0x35A0A0FFL      // teal — the matter-field overlay toggle

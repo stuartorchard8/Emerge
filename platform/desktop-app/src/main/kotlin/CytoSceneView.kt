@@ -2,6 +2,7 @@ package org.emerge.desktop
 
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.CytoRenderer
+import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
 import org.emerge.demo.cyto.ui.GeneEditor
@@ -13,6 +14,7 @@ import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.pow
@@ -52,7 +54,7 @@ object CytoSceneView {
         val controls = CytoControls()
         // On-screen buttons drive these (no keyboard-only controls): the Light button owns its toggle
         // state (synced to the renderer each frame), the Load-Genome button loads the brush genome.
-        controls.onLoadBrush = { if (loadBrush(controller)) controls.selectBrush() }
+        controls.onLoadGenome = { loadGenome(controller, controls.cellType) }
         autoLoadSnapshotAtStartup(controller)
 
         // Run the sim on its own thread, decoupled from this (vsync-paced) draw loop, with on-screen
@@ -94,7 +96,6 @@ object CytoSceneView {
             renderer.showMatterField = controls.showMatterField // Matter button → renderer
             renderer.colorMode = controls.colorMode             // Color button → renderer
             renderer.focusedCellId = controller.lastHeldId?.value ?: -1   // full-value highlight on the inspected cell
-            controller.brushActive = controls.brushSelected      // "Brush" type selection → painting
             // The sim advances on its own thread; we render whatever it last published.
             val frame = controller.latestFrame()
             controls.simPaused = simDriver.paused
@@ -106,7 +107,9 @@ object CytoSceneView {
             drawReadouts(controller, renderer, controls)
             controls.draw()
             // Last-held-cell info panel + gene-editor kit (on top of the controls).
-            ui.frame { geneEditor.render(this, controller) { exportHeldGenome(controller) } }
+            ui.frame { geneEditor.render(this, controller) {
+                exportHeldGenome(controller, controls.cellType)
+            } }
             ui.draw()
 
             glfwSwapBuffers(window)
@@ -135,7 +138,8 @@ object CytoSceneView {
         }
     }
 
-    private val BRUSH_PATH: Path = Path.of("cyto-brush.gene")
+    /** Helper to associate cell types with saved genomes. */
+    private fun cellTypeGeneFilename(type: CellType): String = "cyto-${type.name.lowercase()}.gene";
     // Generated from the live AUTOTROPH_GENES so the starter can never drift from the current gene model
     // (the old hand-written weighted-sum text no longer parses under the matter-model GeneCodec).
     private val STARTER_BRUSH: String = buildString {
@@ -146,37 +150,60 @@ object CytoSceneView {
         appendLine("#   action:    Import <s> | FormBond <a> <b> | Convert <s> | Contract | Mitosis | Repair")
         appendLine("#   Blank lines and # comments are ignored. Edit, then click \"Load Genome\" to reload;")
         appendLine("#   pick the 'Brush' type, then Spawn (empty space) / Set to paint.")
-        appendLine("# This starter IS the simple autotroph: bond a+b -> ab under light, grow, divide, self-repair.")
+        appendLine("# This starter IS the simple autotroph: bond a+b -> ab under light, grow, divide.")
         appendLine(org.emerge.demo.cyto.sim.GeneCodec.serialize(org.emerge.demo.cyto.sim.AUTOTROPH_GENES))
     }
 
-    /** Load the authoring brush genome from [BRUSH_PATH] (GeneCodec text), driven by the on-screen
-     *  "Load Genome" button. If the file is absent, write a documented starter so there's something to
+    /** Load the authoring brush genome based on [CellType] (GeneCodec text), driven by switching
+     *  cell type. If the file is absent, write a documented starter so there's something to
      *  edit + a working brush. */
-    private fun loadBrush(controller: CytoController): Boolean {
-        if (!Files.exists(BRUSH_PATH)) {
-            runCatching { Files.writeString(BRUSH_PATH, STARTER_BRUSH) }
-            println("[cyto] wrote a starter ${BRUSH_PATH.toAbsolutePath()} — edit it and click Load Genome to reload.")
+    private fun loadGenome(controller: CytoController, type: CellType): Boolean {
+        val path: Path = Path.of(cellTypeGeneFilename(type))
+        if (!Files.exists(path)) {
+            runCatching { Files.writeString(path, STARTER_BRUSH) }
+            println("[cyto] wrote a starter ${path.toAbsolutePath()} — edit it and click Load Genome to reload.")
         }
-        return runCatching { org.emerge.demo.cyto.sim.GeneCodec.parse(Files.readString(BRUSH_PATH)) }
-            .map { controller.brushGenome = it; println("[cyto] brush genome: ${it.size} gene(s) — pick the 'Brush' type, then Spawn/Set to paint."); true }
-            .getOrElse { controller.brushGenome = null; println("[cyto] parse failed ($BRUSH_PATH): ${it.message} — using type presets"); false }
+        return runCatching { org.emerge.demo.cyto.sim.GeneCodec.parse(Files.readString(path)) }
+            .map { controller.brushGenome = it; println("[cyto] ${type.name} genome: ${it.size} gene(s)"); true }
+            .getOrElse { controller.brushGenome = null; println("[cyto] parse failed ($path): ${it.message} — using type presets"); false }
     }
 
-    /** Export the held cell's genome to a GeneCodec `.gene` file (the "EXPORT GENOME" button), so a genome
-     *  built in the editor or evolved in the sim can be saved out and later loaded as a brush. One file per
-     *  export, named by cell id + millis so successive exports never clobber each other. */
-    private fun exportHeldGenome(controller: CytoController) {
+    /** Export the held cell's genome to a GeneCodec `.gene` file (the "EXPORT GENOME" button).
+     *  If an existing 'cyto-[CellType.name].gene' file exists, it is archived with a timestamp so it is
+     *  never overwritten, and the new genome is saved directly as 'cyto-[CellType.name].gene'. */
+    private fun exportHeldGenome(controller: CytoController, type: CellType) {
         val genome = controller.heldGenome()
         if (genome == null) { println("[cyto] export: no cell held"); return }
         val id = controller.lastHeldId?.value ?: -1
-        val path = Path.of("cyto-genome-cell$id-${System.currentTimeMillis()}.gene")
+
+        val filename: String = cellTypeGeneFilename(type)
+        val path: Path = Path.of(filename)
+
+        // 1. Rename any existing 'cyto-brush.gene' file to include a timestamp
+        if (Files.exists(path)) {
+            // possible footgun if cellTypePath changes
+            val archiveName = "old-${filename.replace(".gene", "-${ System.currentTimeMillis() }.gene")}"
+            val archivePath = Path.of(archiveName)
+            runCatching {
+                Files.move(path, archivePath, StandardCopyOption.ATOMIC_MOVE)
+            }.onFailure {
+                println("[cyto] warning: failed to archive existing brush file: ${it.message}")
+                // Optional: Fall back to standard move if ATOMIC_MOVE fails on this filesystem
+                runCatching { Files.move(path, archivePath) }
+            }
+        }
+
+        // 2. Save the newly exported genome directly to 'cyto-brush.gene'
         val text = buildString {
-            appendLine("# cyto genome exported from cell $id — load it via Load Genome (rename to cyto-brush.gene).")
+            appendLine("# cyto genome exported from cell $id")
             appendLine(org.emerge.demo.cyto.sim.GeneCodec.serialize(genome))
         }
+
         runCatching { Files.writeString(path, text) }
-            .onSuccess { println("[cyto] exported ${genome.size}-gene genome to ${path.toAbsolutePath()}") }
+            .onSuccess {
+                println("[cyto] exported ${genome.size}-gene genome to ${path.toAbsolutePath()}")
+                controller.brushGenome = genome
+            }
             .onFailure { println("[cyto] export failed: ${it.message}") }
     }
 
