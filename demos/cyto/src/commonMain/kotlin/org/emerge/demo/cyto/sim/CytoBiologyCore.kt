@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.sim
 
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.primitives.Frac
+import kotlin.math.max
 import kotlin.time.TimeSource
 
 /**
@@ -220,6 +221,14 @@ object CytoBiologyCore {
         // quantum each), from the fuel's 1/n share. Op budget = min(units, cap) × gP1.
         val energyUnits = if (src is EnergySource.Light) quantaShare else snap.count(breakSpId) / n
         var k = (minOf(energyUnits.toLong(), energyCap.toLong()) * gP1).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        // Metabolic slowdown with size: every op (except Mitosis, which has its own size-scaling cost above)
+        // runs at `k × SCALE/(SCALE+biomass)`. A bigger cell spreads its metabolic capacity over more
+        // structure, so its build/acquire rate falls while size-proportional decay keeps rising — they cross
+        // at an EMERGENT size the cell can't outgrow. No hard cap: a stronger cell settles larger.
+        if (act.type != ActionType.Mitosis) {
+            val bio = totalBiomassBonds(work.biomass)
+            k = (k.toLong() * CytoTuning.METABOLIC_BIOMASS_SCALE / (CytoTuning.METABOLIC_BIOMASS_SCALE + bio)).toInt()
+        }
         // BreakBond: the fuel is also broken (⌈k/gP1⌉ bonds) and may double as an action input (pBreak/op);
         // cap k so action-use + bonds-broken fit the fuel's share:  pBreak·k + ⌈k/gP1⌉ ≤ fuelShare.
         if (breakSpId >= 0) {
@@ -247,14 +256,6 @@ object CytoBiologyCore {
             // perOp 0 (an unresolved/mutated species id) disables the cap rather than indexing by -1.
             ActionType.Convert -> k = minOf(k, selfGateCap(gene.condition, qBiomass = true, qSpeciesId = -1, snapQ = snapBiomass, perOp = if (convertId >= 0) SpeciesRegistry.bondCount(convertId) else 0, snap = snap, snapBiomass = snapBiomass, work = work))
             ActionType.FormBond -> k = minOf(k, selfGateCap(gene.condition, qBiomass = false, qSpeciesId = productId, snapQ = snap.count(productId), perOp = 1, snap = snap, snapBiomass = snapBiomass, work = work))
-        }
-        // Metabolic slowdown with size: every op (except Mitosis, which has its own size-scaling cost above)
-        // runs at `k × SCALE/(SCALE+biomass)`. A bigger cell spreads its metabolic capacity over more
-        // structure, so its build/acquire rate falls while size-proportional decay keeps rising — they cross
-        // at an EMERGENT size the cell can't outgrow. No hard cap: a stronger cell settles larger.
-        if (act.type != ActionType.Mitosis) {
-            val bio = totalBiomassBonds(work.biomass)
-            k = (k.toLong() * CytoTuning.METABOLIC_BIOMASS_SCALE / (CytoTuning.METABOLIC_BIOMASS_SCALE + bio)).toInt()
         }
         if (k <= 0) return
         // Apply: action-input consumption, then the broken fuel + its fragments, then the action's output.
