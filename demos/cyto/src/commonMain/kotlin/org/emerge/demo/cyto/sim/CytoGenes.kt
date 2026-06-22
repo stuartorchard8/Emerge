@@ -147,9 +147,12 @@ data class GeneAction(
 /**
  * A gene: an energy source, a binary condition, an action — and an **efficiency gear** [efficiency] (g, in
  * `[0, CytoTuning.EFFICIENCY_MAX_GEAR]`). The gear is a per-gene rate↔efficiency trade-off for the
- * *throughput* actions (Convert / Import / Repair): each energy unit performs `g+1` actions (so higher g =
- * more output per scarce energy), but the energy it may spend this tick is capped at
- * `EFFICIENCY_REF >> g` (so higher g = a lower throughput ceiling). **FormBond gets the *cap* but not the
+ * *throughput* actions (Convert / Import / Repair / Contract): each energy unit performs `g+1` actions (so
+ * higher g = more output per scarce energy), but the energy it may spend this tick is capped at
+ * `EFFICIENCY_REF >> g` (so higher g = a lower throughput ceiling). For **Contract** this is the muscle-fibre
+ * axis: low g = fast-twitch (1 flex step/quantum, burns energy hard for max per-tick travel), high g =
+ * slow-twitch (g+1 steps/quantum so contraction sips fuel — fewer BreakBond bonds per step — but the cap
+ * rate-limits per-tick travel). **FormBond gets the *cap* but not the
  * `g+1` multiplier** (it's a lossless 1:1 conversion — a multiplier would mint bonds): there the gear is pure
  * potency-limiting, used e.g. to set how far a morphogen spreads from a source/sink loop. **Mitosis is
  * exempt** (a fixed `biomass/4` bulk event). The optimum gear is niche-dependent —

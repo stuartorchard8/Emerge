@@ -195,10 +195,14 @@ object CytoBiologyCore {
             else -> {}   // Import draws from the grid; Repair/Expand/Contract/Mitosis consume no cytoplasm
         }
         // Efficiency gear (see [Gene]): each energy unit performs gP1 = g+1 actions (the rate↔efficiency
-        // multiplier — Convert / Import / Repair only), but at most `energyCap` units may be spent this tick.
-        // g=0 is the uncapped 1:1 baseline (every current gene behaves exactly as before).
+        // multiplier — Convert / Import / Repair / Contract), but at most `energyCap` units may be spent this
+        // tick. g=0 is the uncapped 1:1 baseline (every current gene behaves exactly as before). Contract uses
+        // the multiplier safely (it moves the radius, mints no matter): high g ⇒ more flex steps per quantum
+        // (cheaper contraction — for BreakBond-powered Contract, fewer fuel bonds broken per step) but the cap
+        // throttles per-tick contraction throughput. A muscle-fibre axis: low g = fast-twitch (energy-hungry,
+        // max per-tick travel), high g = slow-twitch (sips fuel, rate-limited).
         val eff = when (act.type) {
-            ActionType.Convert, ActionType.Import, ActionType.Repair -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
+            ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.Contract -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
             else -> 0
         }
         val gP1 = eff + 1
@@ -208,7 +212,7 @@ object CytoBiologyCore {
         // (MORPHOGENESIS.md §Morphogens for shape — caps consumption rate k ⇒ reach λ≈√(D/k)). Mitosis stays
         // exempt (fixed biomass/4 bulk cost). g=0 ⇒ uncapped ⇒ existing FormBond genes are byte-identical.
         val capGear = when (act.type) {
-            ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.FormBond -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
+            ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.FormBond, ActionType.Contract -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
             else -> 0
         }
         val energyCap = if (capGear == 0) Int.MAX_VALUE else CytoTuning.EFFICIENCY_REF ushr capGear
