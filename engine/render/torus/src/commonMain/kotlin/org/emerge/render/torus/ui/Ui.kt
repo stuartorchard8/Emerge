@@ -136,9 +136,10 @@ class Ui {
         heldSeconds += dtSeconds
         repeatTimer += dtSeconds
         if (heldSeconds < INITIAL_DELAY) return
-        if (repeatTimer >= REPEAT_INTERVAL) {
+        val delta = magnitude(heldSeconds)
+        if (repeatTimer >= repeatInterval(delta)) {
             repeatTimer = 0f
-            step(r.holdSign * magnitude(heldSeconds))
+            step(r.holdSign * delta)
         }
     }
 
@@ -148,9 +149,16 @@ class Ui {
     /** Accelerating step magnitude by how long the button's been held (for ×1000-scale values). */
     private fun magnitude(t: Float): Int = when {
         t < 1f -> 1
-        t < 2f -> 10
-        t < 3.5f -> 100
+        t < 5f -> 10
+        t < 10f -> 100
         else -> 1000
+    }
+
+    /** Decelerating step interval by how large the increment is. */
+    private fun repeatInterval(n: Int): Float = when {
+        n < 10 -> 0.05f
+        n < 100 -> 0.25f
+        else -> 0.50f
     }
 
     fun cleanup() {
@@ -219,7 +227,6 @@ class Ui {
 
     companion object {
         private const val INITIAL_DELAY = 0.35f   // hold this long before auto-repeat begins
-        private const val REPEAT_INTERVAL = 0.05f // then fire this often
     }
 }
 
