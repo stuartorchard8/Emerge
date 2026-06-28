@@ -33,10 +33,11 @@ object CytoSeed {
     // seeding makes the whole field a locally-depletable larder (and the depletion an organism digs IS the
     // gradient + the motility pressure). See PLAN_taxis_substrate.md.
     const val MATTER_UNIFORM = true
-    /** Per-monomer count per (sub-cell) grid cell. At MATTER_GRID_RES=1024 a cell's ~13-grid-cell footprint
-     *  then holds ~13× this per species — sized so a founder's footprint ≈ the old single-grid-cell access
-     *  (~8k), i.e. enough to bootstrap, scarce enough that depletion bites. */
-    const val MATTER_UNIFORM_LEVEL = 600
+    /** Per-monomer density per cell-diameter squared area. At MATTER_GRID_RES=1024 cells have a 4x4 footbrint.
+     *  Each 16 cells holds this per species — sized so a founder's footprint has access to roughly this much matter.
+     *  i.e. enough to bootstrap, scarce enough that depletion bites. */
+    const val MATTER_UNIFORM_LEVEL_CELL_SCALE = 4000
+    const val MATTER_UNIFORM_LEVEL = MATTER_UNIFORM_LEVEL_CELL_SCALE / 16
 
     // ── Seed cell composition (a freshly-spawned / founder cell) ──────────────────────────────────────
     /** Biomass a freshly-spawned cell (and the founder) starts with — a little structure so it doesn't

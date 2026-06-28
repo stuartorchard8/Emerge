@@ -58,7 +58,7 @@ object CytoTuning {
     const val LIGHT_MOVING = true
     /** Ticks for the daylight band to sweep once around the torus — the day/night period. At ~60 ticks/s,
      *  3600 ≈ one minute. (Only used when [LIGHT_MOVING].) */
-    const val LIGHT_ORBIT_PERIOD = 3600L   // ÷8 with the 1024→128 rescale: band keeps the same cell-diam/tick sweep speed
+    const val LIGHT_ORBIT_PERIOD = 3600L
 
     // ── Matter dynamics (the conserved resource's per-tick law; its *seed* is in CytoSeed) ────────────
     /** Slow inter-grid-cell diffusion: per tick each edge moves `⌊|gradient|·NUM/DEN⌋` down-gradient.
