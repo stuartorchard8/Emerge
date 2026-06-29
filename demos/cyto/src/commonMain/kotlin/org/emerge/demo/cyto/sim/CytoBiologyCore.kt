@@ -60,7 +60,7 @@ object CytoBiologyCore {
             if (stats != null) stats.exchSpeciesCalls += species.size
             for (sp in species) {
                 val cEff = (cyt.count(sp) - (w.importBias[sp] ?: 0)).coerceAtLeast(0)
-                val delta = grid.balance(sp, cEff)
+                val delta = grid.balance(sp, cEff, CytoTuning.DIFFUSION_SCALE_FACTOR)
                 if (delta != 0) { cyt.add(sp, delta); if (stats != null) stats.exchUseful++ }
             }
             grid.closeFootprint()

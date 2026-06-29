@@ -34,7 +34,7 @@ class CytoMatterFieldTest {
         val before = f.totalAtoms()
         val n = f.openFootprint(5f, 5f, 0.6f, 1)
         assertTrue(n > 0)
-        val delta = f.balance(A, cEff = 0)         // cell wants 0 ⇒ each leaf (a=10) gives 5 ⇒ delta = 5·n
+        val delta = f.balance(A, cEff = 0, scaleFactor = 0f)   // cell wants 0 ⇒ each leaf (a=10) gives 5 ⇒ delta = 5·n
         f.closeFootprint()
         assertTrue(delta > 0, "cell with cEff=0 absorbs from a rich footprint")
         assertEquals(before - delta.toLong(), f.totalAtoms(), "grid total changes by exactly −delta")
@@ -45,7 +45,7 @@ class CytoMatterFieldTest {
         val before = f.totalAtoms()
         f.openFootprint(5f, 5f, 0.6f, 1)
         val n = f.openFootprint(5f, 5f, 0.6f, 1)
-        val delta = f.balance(A, cEff = 100 * n)   // cell much richer (bucket=100 vs leaf 10) ⇒ delta < 0 (leaks in)
+        val delta = f.balance(A, cEff = 100 * n, scaleFactor = 0f)   // cell much richer (bucket=100 vs leaf 10) ⇒ delta < 0 (leaks in)
         f.closeFootprint()
         assertTrue(delta < 0, "cell richer than footprint pushes matter in (negative delta)")
         assertEquals(before - delta.toLong(), f.totalAtoms(), "conserved both ways")
@@ -101,9 +101,9 @@ class CytoMatterFieldTest {
     @Test fun deterministic() {
         fun run(): CytoMatterField {
             val f = CytoMatterField.seededUniform(10)
-            f.openFootprint(3f, 3f, 0.6f, 1); f.balance(A, 4); f.closeFootprint()
+            f.openFootprint(3f, 3f, 0.6f, 1); f.balance(A, 4, 0f); f.closeFootprint()
             f.deposit(3f, 3f, 0.6f, AB, 500)
-            f.openFootprint(-40f, 80f, 0.6f, 3); f.balance(A, 0); f.closeFootprint()  // near a different tile
+            f.openFootprint(-40f, 80f, 0.6f, 3); f.balance(A, 0, 0f); f.closeFootprint()  // near a different tile
             f.maintain(70, 64, 4)
             return f
         }

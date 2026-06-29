@@ -63,7 +63,7 @@ private fun drawMatter(
     fun sy(ly: Float) = (ly - centreY + halfWindow) * pxPerLogical
 
     val finestSize = org.emerge.demo.cyto.sim.CytoMatterField.TILE / (1 shl org.emerge.demo.cyto.sim.CytoMatterField.MAX_DEPTH)
-    val refDensity = org.emerge.demo.cyto.sim.CytoSeed.MATTER_UNIFORM_LEVEL.toDouble()
+    val refDensity = org.emerge.demo.cyto.sim.CytoSeed.MATTER_UNIFORM_LEVEL.toDouble()*4.0
     grid.forEachLeaf { x, y, leafSize, store ->
         val x0 = sx(x); val y0 = sy(y); val wpx = leafSize * pxPerLogical
         if (x0 + wpx < ox || x0 > ox + size || y0 + wpx < 0 || y0 > size) return@forEachLeaf

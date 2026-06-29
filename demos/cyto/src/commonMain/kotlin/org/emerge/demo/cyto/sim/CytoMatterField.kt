@@ -1,6 +1,7 @@
 package org.emerge.demo.cyto.sim
 
 import kotlin.math.floor
+import kotlin.math.min
 
 /**
  * The environment **matter field** as an adaptive quad-tree (replaces the flat `CytoMatterGrid`). Fine
@@ -185,22 +186,24 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
         for (leaf in fpLeaves) { val s = leaf.store!!; for (i in 0 until s.size) out.add(s.idAt(i)) }
     }
 
-    /** Balance the open footprint's `sp` toward `cEff/N` (bidirectional diffusion), larger source keeping the
-     *  odd unit. Returns the net Δ to apply to the cell's cytoplasm (grid changes by −Δ). Conservation-exact. */
-    fun balance(sp: Int, cEff: Int): Int {
+    /** Balance the open footprint's `sp` toward `cEff/N` (bidirectional diffusion), with size-dependent
+     *  dampening via [scaleFactor] so larger molecules equilibrate more slowly. Returns the net Δ to apply
+     *  to the cell's cytoplasm (grid changes by −Δ). Conservation-exact. */
+    fun balance(sp: Int, cEff: Int, scaleFactor: Float): Int {
         val n = fpLeaves.size; if (n == 0) return 0
+        val atomCount = SpeciesRegistry.atomCount(sp)
+        val denom = 2.shl(min(31, (atomCount*scaleFactor).toInt()))  // 2 for monomers; scales up for polymers (2,4,8,16,32...)
         val bucket = cEff / n                       // remainder kept in cell (untransacted)
-        var returned = 0
+        var totalMovement = 0
         for (leaf in fpLeaves) {
             val store = leaf.store!!
-            val e = store.count(sp); val total = e + bucket; val half = total / 2
-            val eNew: Int; val bNew: Int
-            if (e >= bucket) { eNew = total - half; bNew = half } else { eNew = half; bNew = total - half }
-            val d = eNew - e
-            if (d != 0) store.add(sp, d)             // exact integer move
-            returned += bNew
+            val delta = store.count(sp) - bucket  // +ve gradient towards cell, -ve gradient away from cell
+            val movement = delta/denom  // lower movement for larger species
+
+            if (movement != 0) store.add(sp, -movement)             // exact integer move
+            totalMovement += movement
         }
-        return returned - bucket * n                 // Δ into the cell
+        return totalMovement                 // Δ into the cell
     }
 
     fun closeFootprint() = fpLeaves.clear()

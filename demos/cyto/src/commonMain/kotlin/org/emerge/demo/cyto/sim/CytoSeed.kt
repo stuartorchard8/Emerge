@@ -36,7 +36,7 @@ object CytoSeed {
     /** Per-monomer density per cell-diameter squared area. At MATTER_GRID_RES=1024 cells have a 4x4 footbrint.
      *  Each 16 cells holds this per species — sized so a founder's footprint has access to roughly this much matter.
      *  i.e. enough to bootstrap, scarce enough that depletion bites. */
-    const val MATTER_UNIFORM_LEVEL_CELL_SCALE = 4000
+    const val MATTER_UNIFORM_LEVEL_CELL_SCALE = 3000
     const val MATTER_UNIFORM_LEVEL = MATTER_UNIFORM_LEVEL_CELL_SCALE / 16
 
     // ── Seed cell composition (a freshly-spawned / founder cell) ──────────────────────────────────────
@@ -49,11 +49,11 @@ object CytoSeed {
     // GROW gate and stops, so the (lower) DIVIDE gate is what it crosses — if they were equal the cell would
     // park at the threshold and never divide (see CytoBiologyCore.selfGateCap).
     /** Autotroph: build biomass (and hold the cytoplasm 'ab' reserve) up to this. */
-    const val AUTOTROPH_GROW_BIOMASS = 8_000
+    const val AUTOTROPH_GROW_BIOMASS = 3_000
     /** Autotroph: divide once biomass exceeds this (< GROW). */
-    const val AUTOTROPH_DIVIDE_BIOMASS = 6_000
+    const val AUTOTROPH_DIVIDE_BIOMASS = 2_000
     /** Heterotroph: build biomass off stored 'ab' up to this. */
-    const val HETEROTROPH_GROW_BIOMASS = 12_000
+    const val HETEROTROPH_GROW_BIOMASS = 4_000
     /** Heterotroph: divide once biomass exceeds this (< GROW). */
-    const val HETEROTROPH_DIVIDE_BIOMASS = 8_000
+    const val HETEROTROPH_DIVIDE_BIOMASS = 3_000
 }
