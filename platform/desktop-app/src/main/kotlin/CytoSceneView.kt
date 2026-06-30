@@ -96,8 +96,12 @@ object CytoSceneView {
             renderer.showMatterField = controls.showMatterField // Matter button → renderer
             renderer.colorMode = controls.colorMode             // Color button → renderer
             renderer.focusedCellId = controller.lastHeldId?.value ?: -1   // full-value highlight on the inspected cell
-            val (fx, fy) = controller.heldCellPosition() ?: (-1f to -1f)
-            renderer.follow(controller.lastHeldId?.value ?: -1, fx, fy)
+            // Only follow when a cell is focused but NOT being grabbed.
+            if (!controller.isGrabbed) {
+                val (fx, fy) = controller.heldCellPosition() ?: (-1f to -1f)
+                val id = controller.lastHeldId?.value ?: -1
+                renderer.follow(id, fx, fy)
+            }
             // The sim advances on its own thread; we render whatever it last published.
             val frame = controller.latestFrame()
             controls.simPaused = simDriver.paused
@@ -308,7 +312,13 @@ object CytoSceneView {
             val px = cursorPixel(win)
             val dx = px.first - state.lastX
             val dy = px.second - state.lastY
-            if (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX) state.dragged = true
+            if (!state.dragged && (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX)) {
+                state.dragged = true
+                val grabId = state.grabId
+                if (grabId == null) {
+                    controller.clearSelection()
+                }
+            }
 
             val grabId = state.grabId
             if (grabId != null) {

@@ -72,7 +72,12 @@ fun startCyto(canvas: HTMLCanvasElement) {
         val (x, y) = toPx(e)
         val dx = x - lastX
         val dy = y - lastY
-        if (abs(dx) > DRAG_THRESHOLD || abs(dy) > DRAG_THRESHOLD) dragged = true
+        if (!dragged && (abs(dx) > DRAG_THRESHOLD || abs(dy) > DRAG_THRESHOLD)) {
+            dragged = true
+            if (grabId == null) {
+                controller.clearSelection()
+            }
+        }
         val held = grabId
         if (held != null) {
             val world = renderer.screenToWorld(x, y)
@@ -113,8 +118,12 @@ fun startCyto(canvas: HTMLCanvasElement) {
         last = ts
         val f = controller.tick(delta)
         renderer.colorMode = controls.colorMode   // Color button → renderer
-        val (fx, fy) = controller.heldCellPosition() ?: (-1f to -1f)
-        renderer.follow(controller.lastHeldId?.value ?: -1, fx, fy)
+        // Only follow when a cell is focused but NOT being grabbed.
+        if (!controller.isGrabbed) {
+            val (fx, fy) = controller.heldCellPosition() ?: (-1f to -1f)
+            val id = controller.lastHeldId?.value ?: -1
+            renderer.follow(id, fx, fy)
+        }
         renderer.draw(f)
         for (r in controller.readouts(grabId, controls.showChemicals)) {
             val screen = renderer.worldToScreen(r.x, r.y)

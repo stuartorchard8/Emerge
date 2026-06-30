@@ -81,10 +81,12 @@ class CytoController(
     private val pendingDetaches = ArrayList<EntityId>()
     private var currentGrab: CytoInput.Grab? = null
 
+    /** True while the user is actively dragging/grabbing a cell. */
+    val isGrabbed: Boolean get() = currentGrab != null
+
     /** The most recently grabbed cell — persists past [releaseGrab] so the info panel keeps showing it
      *  until another cell is grabbed (or it dies). Null until the first grab. */
     var lastHeldId: EntityId? = null
-        private set
 
     val tick: Long get() = tickCount
 
@@ -420,7 +422,12 @@ class CytoController(
     /** World-space position of the focused/held cell, or null if no cell is focused or it has died. */
     fun heldCellPosition(): Pair<Float, Float>? {
         val id = lastHeldId ?: return null
-        val transform = currentState.components.getTable<TransformComponent>()[id] ?: return null
+        val transform = currentState.components.getTable<TransformComponent>()[id]
+        if (transform == null) {
+            lastHeldId = null
+            reducer.noMutateEntityId = -1
+            return null
+        }
         return CytoUnits.toLogical(transform.pos.x) to CytoUnits.toLogical(transform.pos.y)
     }
 

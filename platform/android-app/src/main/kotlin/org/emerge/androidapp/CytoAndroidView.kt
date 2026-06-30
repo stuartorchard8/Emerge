@@ -60,8 +60,12 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
 
                 val frame = controller.tick(delta)
                 r.colorMode = c.colorMode // Color button → renderer
-                val (fx, fy) = controller.heldCellPosition() ?: (-1f to -1f)
-                r.follow(controller.lastHeldId?.value ?: -1, fx, fy)
+                // Only follow when a cell is focused but NOT being grabbed.
+                if (!controller.isGrabbed) {
+                    val (fx, fy) = controller.heldCellPosition() ?: (-1f to -1f)
+                    val id = controller.lastHeldId?.value ?: -1
+                    r.follow(id, fx, fy)
+                }
                 r.draw(frame) // renderer fills its own background
                 for (readout in controller.readouts(grabId, c.showChemicals)) {
                     val screen = r.worldToScreen(readout.x, readout.y)
@@ -115,7 +119,12 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         val c = controls ?: return
         val dx = x - lastX
         val dy = y - lastY
-        if (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX) dragged = true
+        if (!dragged && (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX)) {
+            dragged = true
+            if (grabId == null) {
+                controller.clearSelection()
+            }
+        }
         val held = grabId
         if (held != null) {
             val world = r.screenToWorld(x, y)
