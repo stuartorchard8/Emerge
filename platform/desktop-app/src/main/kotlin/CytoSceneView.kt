@@ -284,6 +284,10 @@ object CytoSceneView {
                 GLFW_RELEASE -> {
                     ui.releaseHold()   // end any in-progress hold-to-repeat
                     if (!state.uiConsumed && !state.dragged) {
+                        val hit = state.grabId
+                        if (hit != null) {
+                            controller.focus(hit)
+                        }
                         val world = renderer.screenToWorld(px.first, px.second)
                         controller.tap(world[0], world[1], controls.touchMode, controls.cellType)
                     }

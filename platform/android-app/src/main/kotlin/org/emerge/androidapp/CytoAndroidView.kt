@@ -129,6 +129,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         val r = renderer
         val c = controls
         if (!uiConsumed && !dragged && r != null && c != null) {
+            if (grabId != null) controller.focus(grabId!!)
             val world = r.screenToWorld(x, y)
             controller.tap(world[0], world[1], c.touchMode, c.cellType)
         }

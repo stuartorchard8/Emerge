@@ -87,6 +87,7 @@ fun startCyto(canvas: HTMLCanvasElement) {
         val e = ev as MouseEvent
         if (e.button.toInt() != 0) return@addEventListener
         if (!uiConsumed && !dragged) {
+            if (grabId != null) controller.focus(grabId!!)
             val (x, y) = toPx(e)
             val world = renderer.screenToWorld(x, y)
             controller.tap(world[0], world[1], controls.touchMode, controls.cellType)

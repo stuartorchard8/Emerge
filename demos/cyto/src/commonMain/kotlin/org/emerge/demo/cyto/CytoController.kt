@@ -191,6 +191,13 @@ class CytoController(
         withLock(inputLock) { currentGrab = null }
     }
 
+    /** Focus a cell without grabbing it — sets [lastHeldId] and freezes mutation so the info panel
+     *  can display it. Used when the user clicks (not drags) a cell. */
+    fun focus(entity: EntityId) {
+        lastHeldId = entity
+        reducer.noMutateEntityId = entity.value
+    }
+
     /** Clear the selection: the info panel closes and the previously-focused cell resumes mutating.
      *  Unlike [releaseGrab] (which only ends the current drag), this drops [lastHeldId] entirely. */
     fun clearSelection() {
