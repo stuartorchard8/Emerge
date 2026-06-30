@@ -478,8 +478,8 @@ class CytoRenderer {
         // Leaf counts scale with area; normalise by the finest leaf size + the seed density so a full
         // base-density leaf reads as white (1,1,1) regardless of how merged it is.
         val MATTER_FINEST_SIZE = CytoMatterField.TILE / (1 shl CytoMatterField.MAX_DEPTH)
-        val MATTER_REF_DENSITY = CytoSeed.MATTER_UNIFORM_LEVEL.toDouble()
+        const val MATTER_REF_DENSITY = CytoSeed.MATTER_UNIFORM_LEVEL.toDouble()*4.0
         // Border colour: a neutral grey, visible against both the bright base fills and depleted dark ones.
-        val MATTER_BORDER = floatArrayOf(0.4f, 0.4f, 0.4f)
+        val MATTER_BORDER = floatArrayOf(0.1f, 0.1f, 0.1f)
     }
 }

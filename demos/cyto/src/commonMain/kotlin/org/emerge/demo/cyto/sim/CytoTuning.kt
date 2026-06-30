@@ -81,18 +81,20 @@ object CytoTuning {
     const val MATTER_COLLAPSE_DELAY = 256
 
     // ── Metabolism / energy (per gene, per tick) ─────────────────────────────────────────────────────
+    /** Scale factor for all chemical interactions. Defines the ratio between the minimum cell biomass and the smallest energy unit */
+    const val CHEMISTRY_SCALE = 1_000
     /** light → quanta: `quanta = ⌊field × exposure × SCALE⌋` (a fully-exposed cell on a source gets
      *  ~`STRENGTH·SCALE` ops/tick). 1 quantum = 1 op. At STRENGTH=1/200 the peak per-tick budget is
      *  `SCALE/200`, so SCALE=120_000 ⇒ ~600 ops/tick at full exposure (was 6_000_000 ⇒ ~30_000, an
      *  absurd one-tick energy that let cells photosynthesise-and-divide; division is now break-powered and
      *  this is nerfed ~50× so growth/charge-up is metered — tune by watching the cell panel's quanta). */
-    const val LIGHT_QUANTA_SCALE = 120_000
+    const val LIGHT_QUANTA_SCALE = 120 * CHEMISTRY_SCALE
     /** Per-gene efficiency gear (Gene.efficiency, g): a throughput action does `g+1` actions per energy unit
-     *  but may spend at most `EFFICIENCY_REF shr g` energy/tick. REF=2^16: g=0 ⇒ 1 action/energy, 65 536
-     *  energy cap (effectively unlimited at the light scale, so g=0 is the neutral default); g=16 ⇒ 17
-     *  actions/energy but only 1 energy/tick (≈17 actions). Optimum gear is niche-dependent — see [Gene]. */
-    const val EFFICIENCY_REF = 1 shl 16
+     *  but may spend at most `EFFICIENCY_REF shr g` energy/tick. REF=2^24: g=0 ⇒ 1 action/energy, 16 777 216
+     *  energy cap (effectively unlimited at the light scale, so g=0 is the neutral default); g=24 ⇒ 24
+     *  actions/energy but only 1 energy/tick (≈24 actions). Optimum gear is niche-dependent — see [Gene]. */
     const val EFFICIENCY_MAX_GEAR = 16
+    const val EFFICIENCY_REF = 1 shl EFFICIENCY_MAX_GEAR
     /** Import gain: each energy unit an Import gene spends lowers the cell's effective junction target
      *  (`cEff = cytoplasm − gain·k`) by this much, so the passive diffusion junction draws that many extra
      *  units IN per spent quantum (CytoBiologyCore.passiveEnvExchange). >1 makes active uptake more efficient,
@@ -117,19 +119,18 @@ object CytoTuning {
 
     // ── Growth, size & death ─────────────────────────────────────────────────────────────────────────
     /** Biomass bonds for a full-size (radius 1.0) cell — `radius = sqrt(bonds / BONDS_PER_FULL)`. */
-    const val BONDS_PER_FULL = 16_000
+    const val BONDS_PER_FULL = 16 * CHEMISTRY_SCALE
     /** Metabolic slowdown scale: every gene op **except Mitosis** is throttled by `SCALE/(SCALE+biomass)`,
      *  so metabolism runs at half speed when biomass = this. A bigger cell builds (and acquires) slower
      *  while size-proportional decay (degrade) keeps rising, so growth can't outpace decay above an
      *  EMERGENT size — a soft, strength-dependent limit (stronger cells settle larger), not a hard cap.
      *  Lower = an earlier/tighter plateau. ⚙ */
-    const val METABOLIC_BIOMASS_SCALE = 32_000
+    const val METABOLIC_BIOMASS_SCALE = 32 * CHEMISTRY_SCALE
     /** Degradation: a cell's wear accumulator gains its total biomass bonds each tick; every
      *  DEGRADE_PERIOD of accumulated wear breaks one bond (so decay rate ∝ size). */
     const val DEGRADE_PERIOD = 4000
-    /** Cell dies when total biomass falls below this. At the ×1000 scale a divided daughter is ~4000 bonds,
-     *  so 1000 is a real starvation floor with headroom (raise it for harsher culling). */
-    const val DEATH_BIOMASS = 1_000
+    /** Cell dies when total biomass falls below this. */
+    const val DEATH_BIOMASS = 1 * CHEMISTRY_SCALE
     /** Min cell radius (logical), from the original Cyto `Cell`. */
     val MIN_RADIUS = Frac(1, 4)
     /** Elastic blend pulling a cell's radius toward its biomass baseline each tick (higher = slower,
@@ -277,7 +278,7 @@ object CytoTuning {
      *  (threshold drift / duplication / deletion / point-mutation) with probability `1/this` per tick.
      *  `0` disables mutation. At 1/100k a cell accrues well under one mutation per ~10k-tick lifetime, so
      *  most individuals persist unmodified while the population explores. */
-    const val MUTATION_RATE_DENOM = 100_000
+    const val MUTATION_RATE_DENOM = 0
     /** Master switch for mutation. `false` makes the live config run with rate-denom 0 — fully deterministic,
      *  no genetic drift — for authoring / observing a fixed genome. (Probes that pass an explicit
      *  `mutationRateDenom` are unaffected; this only changes the [CytoConfig] default.) */
@@ -292,7 +293,7 @@ object CytoTuning {
      *  evaluates to `count(sp) · this / totalBiomass` (size-normalised), so a constant threshold reads as
      *  "molecules of sp per unit body, ×this". 1000 ⇒ a threshold of 100 ≈ 0.1 molecule per biomass-bond.
      *  Size-independent (a fixed bolus dilutes as biomass grows → a developmental clock). ⚙ */
-    const val CONC_SCALE = 1_000
+    const val CONC_SCALE = 1 * CHEMISTRY_SCALE
     /** Max AND-clauses in one gene's condition. A mutation that would add a clause past this is rejected
      *  (bounds gate complexity + mutation cost); a positional *band* needs only 2 (`lo < Conc < hi`). ⚙ */
     const val GENOME_MAX_CLAUSES = 4
