@@ -1,11 +1,11 @@
-# cyto genome exported from cell 141
+# cyto genome exported from cell 187
 Break ac : Biomass < 4000 : Convert ac @15
 Light : ab < 8000 & ac < 200 : FormBond a b
 Break bc : ac < 200 : FormBond a b @10
 Break ab : bc < 200 : FormBond a c @10
 Break ac : ab < 200 : FormBond b c @10
 Break ac : ac > 199 & bc > 199 & ab > 199 : FormBond b c @9
-Break ab : bc < 200 & ab > 1200 : Contract @15
+Break ab : bc < 300 & bc > ac : Contract @15
 Break ac : cb < 8 & ca < 8 : FormBond c a
 Break ac : cb < 16 & ab < 200 & ca > 0 : FormBond c b @15
 Break ac : ab < 200 & cb > 15 : Mitosis across a

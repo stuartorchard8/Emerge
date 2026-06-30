@@ -48,24 +48,55 @@ object CytoBiologyCore {
      *  (the parallel gene phase touches no field). Cells also mix their footprint across tile borders here. */
     fun passiveEnvExchange(ordered: List<CellWork>, grid: CytoMatterField, tick: Int, stats: BioProfile? = null) {
         val tGroup = if (stats != null) TimeSource.Monotonic.markNow() else null
-        val fp = HashSet<Int>(); val species = HashSet<Int>()
+        val fp = HashSet<Int>()
+        val species = HashSet<Int>()
         for (w in ordered) {
-            if (w.exposureMilli <= MIN_EXPOSURE_FOR_TRANSFER) { continue }
+            if (w.exposureMilli <= MIN_EXPOSURE_FOR_TRANSFER) {
+                continue
+            }
             val n = grid.openFootprint(w.cx, w.cy, w.logicalRadius.toFloat(), tick)
-            if (n == 0) { grid.closeFootprint(); continue }
+            if (n == 0) {
+                grid.closeFootprint()
+                continue
+            }
             species.clear()
             val cyt = w.cytoplasm
-            for (j in 0 until cyt.size) { val id = cyt.idAt(j); if (w.handleable.canDiffuse(id)) species.add(id) }
-            grid.footprintSpecies(fp); for (id in fp) if (w.handleable.canDiffuse(id)) species.add(id)
-            if (stats != null) stats.exchSpeciesCalls += species.size
+            for (j in 0 until cyt.size) {
+                val id = cyt.idAt(j)
+                if (w.handleable.canDiffuse(id)) {
+                    species.add(id)
+                }
+            }
+            grid.footprintSpecies(fp)
+            for (id in fp) {
+                if (w.handleable.canDiffuse(id)) {
+                    species.add(id)
+                }
+            }
+            if (stats != null) {
+                stats.exchSpeciesCalls += species.size
+            }
             for (sp in species) {
-                val cEff = (cyt.count(sp) - (w.importBias[sp] ?: 0)).coerceAtLeast(0)
-                val delta = grid.balance(sp, cEff, CytoTuning.DIFFUSION_SCALE_FACTOR)
-                if (delta != 0) { cyt.add(sp, delta); if (stats != null) stats.exchUseful++ }
+                val importBias = w.importBias[sp] ?: 0
+                val atomCount = SpeciesRegistry.atomCount(sp)
+                // Only transfer monomers or species with genetic bias
+                if (importBias != 0 || atomCount == 1) {
+                    val cEff = (cyt.count(sp) - (w.importBias[sp] ?: 0)).coerceAtLeast(0)
+                    val delta = grid.balance(sp, cEff, CytoTuning.DIFFUSION_SCALE_FACTOR)
+                    if (delta != 0) {
+                        cyt.add(sp, delta)
+                        if (stats != null) {
+                            stats.exchUseful++
+                        }
+                    }
+                }
             }
             grid.closeFootprint()
         }
-        if (stats != null) { stats.ticks++; stats.exchGroupNanos += tGroup!!.elapsedNow().inWholeNanoseconds }
+        if (stats != null) {
+            stats.ticks++
+            stats.exchGroupNanos += tGroup!!.elapsedNow().inWholeNanoseconds
+        }
     }
 
 

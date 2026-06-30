@@ -200,7 +200,7 @@ object CytoTuning {
     /** Size-dependence of diffusion rate. Each molecule beyond a monomer scales its diffusion divisor
      *  by this factor: `denom = base * (1 + (atomCount - 1) * scale)`. Monomers diffuse at full speed;
      *  polymers slow down. `0` = current behavior (no size effect). ⚙ */
-    const val DIFFUSION_SCALE_FACTOR = 2f
+    const val DIFFUSION_SCALE_FACTOR = 1f
     /**
      * Cytoplasm cell↔cell diffusion divisor: each cell sends `⌊count/this⌋` of a diffusible species to **each**
      * welded neighbour and keeps the rest ([CytoBiologyCore.diffuse]). A **fixed** divisor (not `degree+1`) is
