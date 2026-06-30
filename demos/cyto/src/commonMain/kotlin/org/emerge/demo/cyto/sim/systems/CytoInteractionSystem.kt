@@ -57,6 +57,7 @@ object CytoInteractionSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
                     // TapUp modes act on a click; Base/Sticky/Detach are hold modes (handled
                     // on grab — see CytoGrabSystem / the detaches list), so a click is a no-op.
                     TouchMode.Delete -> builder.emit(CellDestroyIntent(id))
+                    TouchMode.Kill -> killOrganism(builder, id)
                     // Set re-types the cell AND re-genomes it (brush, else the type preset) — so a
                     // cell's behaviour follows what you painted, not a stale genome.
                     TouchMode.Set -> builder.update<CytoCellComponent>(id) { c ->
@@ -76,5 +77,18 @@ object CytoInteractionSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         val dy = CytoUnits.toLogical(transform.pos.y) - y
         val r = CytoUnits.toLogical(radius)
         return dx * dx + dy * dy < r * r
+    }
+
+    /** Kill the entire organism connected to [root]: BFS over welded neighbours, emit a destroy intent for each. */
+    private fun killOrganism(builder: SimBuilder, root: EntityId) {
+        val visited = hashSetOf(root)
+        val queue = mutableListOf(root)
+        while (queue.isNotEmpty()) {
+            val cur = queue.removeAt(0)
+            builder.emit(CellDestroyIntent(cur))
+            for (n in neighboursOf(builder, cur)) {
+                if (visited.add(n)) queue.add(n)
+            }
+        }
     }
 }

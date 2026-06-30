@@ -41,4 +41,5 @@ enum class TouchMode(val color: Long, val group: TouchModeGroup) {
     Activate(0x0000FFFF, TouchModeGroup.TapUp),
     Delete(0xFF0000FF, TouchModeGroup.TapUp),
     Set(0xAA00AAFF, TouchModeGroup.TapUp),
+    Kill(0xF55000000, TouchModeGroup.TapUp),
 }
