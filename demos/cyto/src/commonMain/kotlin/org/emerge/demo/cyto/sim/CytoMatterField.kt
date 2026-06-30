@@ -75,10 +75,13 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
         }
     }
     fun leafWalk(node: QuadNode, x: Float, y: Float, sz: Float, visit: (Float, Float, Float, MoleculeStore) -> Unit) {
-        if (node.isLeaf) { visit(x, y, sz, node.store!!); return }
+        if (node.isLeaf) {
+            try { visit(x, y, sz, node.store!!) } catch (e: NullPointerException) { /* merged mid-traversal, skip */ }
+            return
+        }
         val h = sz * 0.5f; val ch = node.children!!
-        leafWalk(ch[0], x, y, h, visit); leafWalk(ch[1], x + h, y, h, visit)
-        leafWalk(ch[2], x, y + h, h, visit); leafWalk(ch[3], x + h, y + h, h, visit)
+        try { leafWalk(ch[0], x, y, h, visit); leafWalk(ch[1], x + h, y, h, visit) } catch (e: NullPointerException) { /* skip subtree */ }
+        try { leafWalk(ch[2], x, y + h, h, visit); leafWalk(ch[3], x + h, y + h, h, visit) } catch (e: NullPointerException) { /* skip subtree */ }
     }
     private fun forEachInternal(visit: (QuadNode) -> Unit) {
         for (r in roots) internalWalk(r, visit)
@@ -253,16 +256,20 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
 
     /** Read-only contents of the finest EXISTING leaf containing (cx,cy) — no split (for the UI panel). */
     fun contentsAt(cx: Float, cy: Float): Map<String, Int> {
-        var x = -HALF + mod2(floor((cx / SPAN + 0.5f) * BASE_RES).toInt()) * TILE
-        var y = -HALF + mod2(floor((cy / SPAN + 0.5f) * BASE_RES).toInt()) * TILE
-        var node = roots[mod2(floor((cy / SPAN + 0.5f) * BASE_RES).toInt()) * BASE_RES + mod2(floor((cx / SPAN + 0.5f) * BASE_RES).toInt())]
-        var sz = TILE
-        while (!node.isLeaf) {
-            val h = sz * 0.5f; val east = cx >= x + h; val south = cy >= y + h
-            val q = (if (south) 2 else 0) + (if (east) 1 else 0)
-            if (east) x += h; if (south) y += h; sz = h; node = node.children!![q]
+        try {
+            var x = -HALF + mod2(floor((cx / SPAN + 0.5f) * BASE_RES).toInt()) * TILE
+            var y = -HALF + mod2(floor((cy / SPAN + 0.5f) * BASE_RES).toInt()) * TILE
+            var node = roots[mod2(floor((cy / SPAN + 0.5f) * BASE_RES).toInt()) * BASE_RES + mod2(floor((cx / SPAN + 0.5f) * BASE_RES).toInt())]
+            var sz = TILE
+            while (!node.isLeaf) {
+                val h = sz * 0.5f; val east = cx >= x + h; val south = cy >= y + h
+                val q = (if (south) 2 else 0) + (if (east) 1 else 0)
+                if (east) x += h; if (south) y += h; sz = h; node = node.children!![q]
+            }
+            return node.store!!.toStringMap()
+        } catch (_: NullPointerException) {
+            return emptyMap()
         }
-        return node.store!!.toStringMap()
     }
     private fun mod2(i: Int) = ((i % BASE_RES) + BASE_RES) % BASE_RES
 

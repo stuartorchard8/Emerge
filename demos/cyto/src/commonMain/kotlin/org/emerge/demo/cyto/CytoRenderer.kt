@@ -363,19 +363,9 @@ class CytoRenderer {
         }
         if (n == 0) return
 
-        // Pass 1 — borders at full leaf size, in the border colour (drawn first → painted under the fills).
-        for (i in 0 until n) {
-            val c2 = i * 2; val c4 = i * 4
-            mInstCenter[c2] = matCx[i]; mInstCenter[c2 + 1] = matCy[i]
-            mInstHalf[c2] = matHx[i]; mInstHalf[c2 + 1] = matHy[i]
-            mInstColor[c4] = MATTER_BORDER[0]; mInstColor[c4 + 1] = MATTER_BORDER[1]
-            mInstColor[c4 + 2] = MATTER_BORDER[2]; mInstColor[c4 + 3] = 1f
-        }
-        matterShader.drawInstanced(n, mInstCenter, mInstHalf, mInstColor)
-
-        // Pass 2 — fills inset by a 2px border on every side (NDC spans 2 over the axis pixel count).
-        val borderNdcX = 2f * (2f / resW)
-        val borderNdcY = 2f * (2f / resH)
+        // Fills inset by a 1px border on every side (NDC spans 2 over the axis pixel count).
+        val borderNdcX = 1f * (2f / resW)
+        val borderNdcY = 1f * (2f / resH)
         for (i in 0 until n) {
             val c2 = i * 2; val c4 = i * 4
             mInstCenter[c2] = matCx[i]; mInstCenter[c2 + 1] = matCy[i]
@@ -518,7 +508,7 @@ class CytoRenderer {
         const val DIM_VALUE = 0.5f
         // Matter-overlay caps + look. Leaves are walked + culled to the visible region, so the cap only
         // bites when fully zoomed out over a deeply-refined tree (excess leaves are dropped, not wrapped).
-        const val MATTER_MAX_LEAVES = 16384
+        const val MATTER_MAX_LEAVES = 65535
         // Leaf counts scale with area; normalise by the finest leaf size + the seed density so a full
         // base-density leaf reads as white (1,1,1) regardless of how merged it is.
         val MATTER_FINEST_SIZE = CytoMatterField.TILE / (1 shl CytoMatterField.MAX_DEPTH)
