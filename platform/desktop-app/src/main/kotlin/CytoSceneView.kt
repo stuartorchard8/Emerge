@@ -96,6 +96,8 @@ object CytoSceneView {
             renderer.showMatterField = controls.showMatterField // Matter button → renderer
             renderer.colorMode = controls.colorMode             // Color button → renderer
             renderer.focusedCellId = controller.lastHeldId?.value ?: -1   // full-value highlight on the inspected cell
+            val (fx, fy) = controller.heldCellPosition() ?: (-1f to -1f)
+            renderer.follow(controller.lastHeldId?.value ?: -1, fx, fy)
             // The sim advances on its own thread; we render whatever it last published.
             val frame = controller.latestFrame()
             controls.simPaused = simDriver.paused

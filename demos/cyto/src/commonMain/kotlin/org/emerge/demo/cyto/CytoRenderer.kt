@@ -76,6 +76,49 @@ class CytoRenderer {
     var colorMode = CellColorMode.Bio
     /** EntityId.value of the focused cell (info panel open) — drawn at full value; -1 = none. Host-set. */
     var focusedCellId = -1
+
+    // ── smooth camera follow ─────────────────────────────────────────────────────
+    private var followId = -1
+    private var followX = 0f
+    private var followY = 0f
+    private var followVX = 0f
+    private var followVY = 0f
+    private val FOLLOW_DAMPING = 5f
+
+    /** Tell the renderer to smoothly follow entity [id] at world position ([x], [y]).
+     *  Call every frame — when [id] changes the target resets; when it becomes negative
+     *  the camera stops following (coasts to a halt via damping). */
+    fun follow(id: Int, x: Float, y: Float) {
+        if (id != followId) {
+            // new target — snap position, reset velocity
+            followId = id
+            followX = x
+            followY = y
+            followVX = 0f
+            followVY = 0f
+        } else if (id >= 0) {
+            followX = x
+            followY = y
+        }
+    }
+
+    /** Apply the follow target to the camera centre [centerX]/[centerY] using damped spring.
+     *  Call once per frame in [draw], before any NDC computation. */
+    private fun applyFollow() {
+        if (followId < 0) return
+        val damping = FOLLOW_DAMPING
+        var vx = followVX
+        var vy = followVY
+        vx += (followX - centerX) * damping
+        vy += (followY - centerY) * damping
+        val frac = 1f / 60f
+        vx *= frac
+        vy *= frac
+        centerX += vx
+        centerY += vy
+        followVX = vx
+        followVY = vy
+    }
     /** EntityId.values of the focused cell's directly-welded neighbours, rebuilt each frame in [draw]
      *  (cleared, then refilled — no per-frame allocation). When a cell is focused, every cell NOT in
      *  this set and not the focused cell itself is dimmed, so the welded cluster stands out. */
@@ -186,6 +229,7 @@ class CytoRenderer {
     }
 
     fun draw(frame: CytoFrame) {
+        applyFollow()
         computeProjection()
 
         // Background fill (opaque) — clears the frame.

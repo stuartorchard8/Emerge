@@ -113,6 +113,8 @@ fun startCyto(canvas: HTMLCanvasElement) {
         last = ts
         val f = controller.tick(delta)
         renderer.colorMode = controls.colorMode   // Color button → renderer
+        val (fx, fy) = controller.heldCellPosition() ?: (-1f to -1f)
+        renderer.follow(controller.lastHeldId?.value ?: -1, fx, fy)
         renderer.draw(f)
         for (r in controller.readouts(grabId, controls.showChemicals)) {
             val screen = renderer.worldToScreen(r.x, r.y)

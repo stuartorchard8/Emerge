@@ -417,6 +417,13 @@ class CytoController(
     // in-progress draft itself and commits via [setHeldGene] on close — these are the only live mutations.
 
     /** The last-held cell's current genome (a fresh immutable list), or null if none / it died. */
+    /** World-space position of the focused/held cell, or null if no cell is focused or it has died. */
+    fun heldCellPosition(): Pair<Float, Float>? {
+        val id = lastHeldId ?: return null
+        val transform = currentState.components.getTable<TransformComponent>()[id] ?: return null
+        return CytoUnits.toLogical(transform.pos.x) to CytoUnits.toLogical(transform.pos.y)
+    }
+
     fun heldGenome(): List<Gene>? =
         lastHeldId?.let { currentState.components.getTable<CytoCellComponent>().asMap()[it]?.genome }
 

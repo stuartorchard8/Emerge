@@ -60,6 +60,8 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
 
                 val frame = controller.tick(delta)
                 r.colorMode = c.colorMode // Color button → renderer
+                val (fx, fy) = controller.heldCellPosition() ?: (-1f to -1f)
+                r.follow(controller.lastHeldId?.value ?: -1, fx, fy)
                 r.draw(frame) // renderer fills its own background
                 for (readout in controller.readouts(grabId, c.showChemicals)) {
                     val screen = r.worldToScreen(readout.x, readout.y)
