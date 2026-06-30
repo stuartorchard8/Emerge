@@ -13,6 +13,7 @@ import org.emerge.demo.cyto.sim.CytoSeed
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
 import org.emerge.demo.cyto.sim.CytoMutation
 import org.emerge.demo.cyto.sim.CytoTuning
+import org.emerge.demo.cyto.sim.RepairWeldMode
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.CellWork
 import org.emerge.demo.cyto.sim.Clause
@@ -668,6 +669,9 @@ class CytoSoaSpecTest {
         // with it (born "at 0 health", healed by the spare repair). Two cells set a LIGHT touch apart — close
         // enough to register a touch, not deep enough for the overlap auto-weld (overlappingCellsWeld) — so a
         // weld can ONLY come from Repair. With it they weld; without it they don't.
+        // (Uses Always mode so the two-cell test works — InternalOnly requires a shared neighbor.)
+        val saved = CytoTuning.REPAIR_WELD_MODE
+        CytoTuning.REPAIR_WELD_MODE = RepairWeldMode.Always
         fun touchingPair(genomeA: List<Gene>, genomeB: List<Gene>): SimState {
             val b = SimBuilder(SimState(randomSeed = 1))
             // biomass 4000 bonds ⇒ baseline radius sqrt(4000/16000)=0.5; pin logicalRadius to it so the cells
@@ -692,6 +696,42 @@ class CytoSoaSpecTest {
         // Repair — the foreign-contact case — must not weld.
         val oneSided = run(touchingPair(repairOnly, emptyList()), ticks = 20)
         assertEquals(0, springCount(oneSided), "a weld requires BOTH cells repairing; one-sided Repair must NOT weld")
+        CytoTuning.REPAIR_WELD_MODE = saved
+    }
+
+    @Test
+    fun repairWeldInternalOnlySharesNeighbor() {
+        // InternalOnly: Repair only welds touching cells that share a connected neighbour.
+        // Triangle: C at origin, A at (0.5, 0), B at (-0.3, 0.5).
+        // A-C and B-C auto-weld (overlap > 0.25). A-B touch (penetration ~0.057 < 0.25, no auto-weld).
+        // When A and B both repair, they weld because they share C as a connected neighbour.
+        CytoTuning.REPAIR_WELD_MODE = RepairWeldMode.InternalOnly
+        try {
+            val b = SimBuilder(SimState(randomSeed = 1))
+            val r = Frac(1, 2)
+            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
+            b.spawnCell(CytoUnits.coord2(0.5f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
+            b.spawnCell(CytoUnits.coord2(-0.3f, 0.5f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
+            val result = run(b.build(), ticks = 20)
+            val sc = springCount(result)
+            println("InternalOnly: springCount=$sc")
+            assertTrue(sc >= 2, "InternalOnly: got $sc springs (expected ≥2)")
+
+            // InternalOnly: two cells touching (no shared neighbor) should NOT weld via Repair
+            CytoTuning.REPAIR_WELD_MODE = RepairWeldMode.InternalOnly
+            val twoB = SimBuilder(SimState(randomSeed = 1))
+            val r2 = Frac(1, 2)
+            // Two cells 0.9 apart (penetration 0.1 < 0.25 → touch, no auto-weld)
+            twoB.spawnCell(CytoUnits.coord2(-0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r2, genome = repairOnly)
+            twoB.spawnCell(CytoUnits.coord2(0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r2, genome = repairOnly)
+            val twoResult = run(twoB.build(), ticks = 20)
+            val twoCount = springCount(twoResult)
+            // No shared neighbor → no repair weld in InternalOnly mode. 0 springs = no weld.
+            println("InternalOnly two-cell: $twoCount springs")
+            assertEquals(0, twoCount, "InternalOnly: two touching cells with no shared neighbor should NOT weld")
+        } finally {
+            CytoTuning.REPAIR_WELD_MODE = RepairWeldMode.Always
+        }
     }
 
     @Test

@@ -330,6 +330,10 @@ class CellWork(
      *  A firing Repair gene welds these (CytoBiologyCore.applyRepair) — gene-driven adhesion. */
     val touchingIds: MutableList<EntityId> = ArrayList()
 
+    /** Cells this cell shares a weld-neighbour with, derived from [touchingIds] by the reducer before the
+     *  biology phase (used by [CytoTuning.RepairWeldMode.InternalOnly] to restrict adhesion welds). */
+    val internalTouching: MutableSet<EntityId> = HashSet()
+
     /** Welds the Repair action wants to form this tick: touching-cell id → the repair healed into the new
      *  weld at birth. Drained by the reducer into [systems.WeldHealIntent]s for the lifecycle. */
     val weldHeals: MutableMap<EntityId, Float> = HashMap()
@@ -390,6 +394,7 @@ class CellWork(
         this.weldedDegree = weldedDegree
         connectionDamage.clear()
         touchingIds.clear()
+        internalTouching.clear()
         importBias.clear()
         weldHeals.clear()
         dividing = false

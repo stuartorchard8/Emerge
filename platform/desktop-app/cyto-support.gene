@@ -1,4 +1,4 @@
-# cyto genome exported from cell 87
+# cyto genome exported from cell 41
 Break ab : Biomass < 4000 & c < a & c < b & ba < 31 : Convert ab @15
 Break ac : Biomass < 4000 & b < a & b < c & ba > 30 : Convert ac @15
 Break bc : Biomass < 4000 & a < b & a < c : Convert bc @15
@@ -14,5 +14,5 @@ Break ba : cc < 1 & ba > 1 : FormBond a b @14
 Break ac : ba < 5 & ca < ac : FormBond c a
 Break ca : ba > 9 : FormBond a c @14
 Break ac : cc > 0 & ca < 10 & Biomass > 2000 : Mitosis cc mother across ba
-Break ac : ca > 4000 & ba < 5 & Biomass > 3999 : Mitosis ba mother sever along ba
-Break ac : ab < 500 & cc < 1 : Repair @10
+Break ac : ca > 3000 & ba < 5 & Biomass > 3999 : Mitosis ba mother sever along ba
+Break ac : ab < 300 : Repair @10

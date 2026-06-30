@@ -748,6 +748,43 @@ class CytoSoaReducer(
             works[id] = work
         }
         bioSplit("bio:build")   // per-cell CellWork build: light sample, exposure, cytoplasm/biomass copy, reset
+        // Compute internalTouching — cells that share a connected neighbour (for RepairWeldMode.InternalOnly).
+        // For each cell k and each cell Y touching k: check if Y is also welded to some weld-neighbour of k.
+        for (k in 0 until n) {
+            val work = bioWorks[ordered[k]]!!
+            val nbrIds = neighbourIds[EntityId(w.entityId[ordered[k]])]
+            if (nbrIds != null && work.touchingIds.isNotEmpty()) {
+                val mySlot = ordered[k]
+                for (touchId in work.touchingIds) {
+                    val touchIdVal = touchId.value
+                    val touchSlot = w.slotOf(touchIdVal)
+                    for (nbrId in nbrIds) {
+                        val nbrSlot = w.slotOf(nbrId.value)
+                        if (nbrSlot < 0) continue
+                        // Check if nbr is welded to touch (both directions via CSR):
+                        // nbr's CSR edges (weld-neighbors) include touch?
+                        var nbrKnowsTouch = false
+                        for (e in w.csr.offset[nbrSlot] until w.csr.offset[nbrSlot + 1]) {
+                            if (w.csr.otherId[e] == touchIdVal) { nbrKnowsTouch = true; break }
+                        }
+                        if (!nbrKnowsTouch) continue
+                        // Also check touch knows nbr (robustness — welds are bidirectional in CSR):
+                        var touchKnowsNbr = false
+                        val touchRealSlot = if (touchSlot >= 0) touchSlot else w.slotOf(nbrId.value)
+                        if (touchRealSlot >= 0) {
+                            for (e in w.csr.offset[touchRealSlot] until w.csr.offset[touchRealSlot + 1]) {
+                                if (w.csr.otherId[e] == nbrId.value) { touchKnowsNbr = true; break }
+                            }
+                        }
+                        if (nbrKnowsTouch && touchKnowsNbr) {
+                            work.internalTouching.add(touchId)
+                            break
+                        }
+                    }
+                }
+            }
+        }
+        bioSplit("bio:internalTouching")   // shared-neighbor computation for RepairWeldMode.InternalOnly
         // Second pass: turn each cell's base light into quanta. With [CytoTuning.LIGHT_SHADING] on, cells
         // sharing a grid-cell split it by capture share (cap / Σcap); the division order (cap/Σcap before
         // /MAX) keeps full integer precision and, for a lone cell where Σcap == cap, reduces to the same
