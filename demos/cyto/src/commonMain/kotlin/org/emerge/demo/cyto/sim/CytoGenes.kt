@@ -127,12 +127,15 @@ enum class ActionType {
  *  [bWild] makes [b] a **prefix wildcard** (most-abundant *starting* with [b]). The bare atoms always live in
  *  [a]/[b] (the flags only switch exact↔wildcard), so [handleableOf] reads them unchanged. Both flags are
  *  only ever `true` when [type] is FormBond. */
-data class GeneAction(
+ data class GeneAction(
     val type: ActionType,
     val a: String = "",
     val b: String = "",
     val morphogenToMother: Boolean = false,
     val divideAcross: Boolean = false,
+    /** When true (Mitosis only): the daughter rejects all welds from the mother, splitting off as a
+     *  separate 1-celled organism. The mother keeps its connections intact. */
+    val rejectMother: Boolean = false,
     val aWild: Boolean = false,
     val bWild: Boolean = false,
 ) {
@@ -316,6 +319,10 @@ class CellWork(
     var divideAxisMorphogen: String = ""
     var divideAcross: Boolean = false
 
+    /** The fired Mitosis gene's [GeneAction.rejectMother] — the daughter rejects all mother welds,
+     *  splitting off as a separate 1-celled organism. */
+    var divideRejectMother: Boolean = false
+
     /** True once a Repair gene healed any connection this tick — gates writing [connectionDamage] back. */
     var repaired = false
 
@@ -390,6 +397,7 @@ class CellWork(
         divideMorphogenToMother = false
         divideAxisMorphogen = ""
         divideAcross = false
+        divideRejectMother = false
         repaired = false
     }
 }

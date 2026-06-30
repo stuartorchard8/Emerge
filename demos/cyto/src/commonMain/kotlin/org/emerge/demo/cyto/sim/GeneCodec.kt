@@ -19,7 +19,8 @@ package org.emerge.demo.cyto.sim
  * Action is `Import <species>`, `FormBond <a> <b>`, `Convert <species>`,
  * `Contract`, `Mitosis` *(or `Mitosis <morphogen>` for asymmetric division — the morphogen is allocated whole
  * to one side, MORPHOGENESIS.md §C; append `mother` to keep it in the mother = centred source, vs the default
- * daughter = edge source)*, or `Repair`. Blank lines and `#` comments are ignored. Round-trips every preset
+ * daughter = edge source; append `sever` so the daughter rejects all mother welds → splits off as a separate
+ * 1-celled organism)*, or `Repair`. Blank lines and `#` comments are ignored. Round-trips every preset
  * genome (see GeneCodecTest).
  */
 object GeneCodec {
@@ -110,6 +111,7 @@ object GeneCodec {
         ActionType.Mitosis -> buildString {
             append("Mitosis")
             if (a.a.isNotEmpty()) { append(" ${tok(a.a)}"); if (a.morphogenToMother) append(" mother") }
+            if (a.rejectMother) append(" sever")
             if (a.b.isNotEmpty()) append(if (a.divideAcross) " across ${tok(a.b)}" else " along ${tok(a.b)}")
         }
         ActionType.Repair -> "Repair"
@@ -134,15 +136,16 @@ object GeneCodec {
         // shape). Keyword tokens (mother/daughter/along/across) are recognised positionally; a bare `Mitosis`
         // = symmetric + unoriented.
         "Mitosis" -> {
-            val kw = setOf("mother", "daughter", "along", "across")
-            var i = 1; var morph = ""; var toMother = false; var axis = ""; var across = false
+            val kw = setOf("mother", "daughter", "along", "across", "sever")
+            var i = 1; var morph = ""; var toMother = false; var axis = ""; var across = false; var sever = false
             if (i < t.size && t[i] !in kw) { morph = untok(t[i]); i++ }
             if (i < t.size && (t[i] == "mother" || t[i] == "daughter")) { toMother = t[i] == "mother"; i++ }
+            if (i < t.size && t[i] == "sever") { sever = true; i++ }
             if (i < t.size && (t[i] == "along" || t[i] == "across")) {
                 across = t[i] == "across"; require(i + 1 < t.size) { fmt(t) }; axis = untok(t[i + 1]); i += 2
             }
             require(i == t.size) { fmt(t) }
-            GeneAction(ActionType.Mitosis, morph, axis, morphogenToMother = toMother, divideAcross = across)
+            GeneAction(ActionType.Mitosis, morph, axis, morphogenToMother = toMother, divideAcross = across, rejectMother = sever)
         }
         "Repair" -> GeneAction(ActionType.Repair)
         else -> throw IllegalArgumentException("unknown action: ${t[0]}")

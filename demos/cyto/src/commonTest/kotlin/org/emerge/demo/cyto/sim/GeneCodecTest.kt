@@ -128,6 +128,26 @@ class GeneCodecTest {
         assertEquals(listOf(full), GeneCodec.parse(GeneCodec.serialize(listOf(full))))
     }
 
+    /** Mitosis with `sever` — the daughter rejects all mother welds, splitting off as a separate 1-celled
+     *  organism. Round-trips with and without asymmetric morphogen. */
+    @Test
+    fun roundTripsMitosisSever() {
+        val gate = GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8))
+        // bare sever: `sever` alone
+        val sever = Gene(EnergySource.Light, gate, GeneAction(ActionType.Mitosis, rejectMother = true))
+        assertEquals("Light : Biomass > 8 : Mitosis sever", GeneCodec.serialize(listOf(sever)))
+        assertEquals(listOf(sever), GeneCodec.parse(GeneCodec.serialize(listOf(sever))), "sever round-trip")
+
+        // sever + asymmetric morphogen to mother
+        val fullSever = Gene(EnergySource.BreakBond("ab"), gate, GeneAction(ActionType.Mitosis, a = "x", morphogenToMother = true, rejectMother = true))
+        assertEquals("Break ab : Biomass > 8 : Mitosis x mother sever", GeneCodec.serialize(listOf(fullSever)))
+        assertEquals(listOf(fullSever), GeneCodec.parse(GeneCodec.serialize(listOf(fullSever))), "sever+mother round-trip")
+
+        // sever + oriented division
+        val orientedSever = Gene(EnergySource.Light, gate, GeneAction(ActionType.Mitosis, b = "bc", divideAcross = true, rejectMother = true))
+        assertEquals(orientedSever, GeneCodec.parse("Light : Biomass > 8 : Mitosis sever across bc").single())
+    }
+
     /** FormBond reactant matching (MORPHOGENESIS.md §2026-06-18): exact by default, `*` opts into a
      *  wildcard (`*a` left = ends-with, `a*` right = starts-with). All four exact/wildcard combinations
      *  round-trip, and the serialized text is the documented form. */

@@ -26,5 +26,8 @@ data class CellDivisionIntent(
      *  [axisMorphogen]; empty ⇒ unoriented (free-space placement). */
     val axisMorphogen: String = "",
     val divideAcross: Boolean = false,
+    /** When true, the daughter rejects all welds from the mother — splits off as a separate 1-celled
+     *  organism; mother keeps its connections intact. */
+    val rejectMother: Boolean = false,
 )
 data class CellDestroyIntent(val id: EntityId)

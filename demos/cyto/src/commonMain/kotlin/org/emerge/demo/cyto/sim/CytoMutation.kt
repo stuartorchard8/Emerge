@@ -85,7 +85,7 @@ object CytoMutation {
                 val newType = ActionType.entries[nextInt(ActionType.entries.size)]
                 val mitosis = newType == ActionType.Mitosis
                 val formBond = newType == ActionType.FormBond
-                g.copy(action = g.action.copy(type = newType, morphogenToMother = g.action.morphogenToMother && mitosis, divideAcross = g.action.divideAcross && mitosis, aWild = g.action.aWild && formBond, bWild = g.action.bWild && formBond))
+                g.copy(action = g.action.copy(type = newType, morphogenToMother = g.action.morphogenToMother && mitosis, divideAcross = g.action.divideAcross && mitosis, rejectMother = g.action.rejectMother && mitosis, aWild = g.action.aWild && formBond, bWild = g.action.bWild && formBond))
             }
             6 -> g.copy(efficiency = (g.efficiency + if (nextInt(2) == 0) -1 else 1).coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR))  // nudge the efficiency gear ±1
             7 -> g.copy(source = flipSource(g.source, nextInt))

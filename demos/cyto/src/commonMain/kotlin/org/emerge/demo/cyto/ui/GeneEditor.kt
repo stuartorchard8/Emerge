@@ -125,7 +125,7 @@ class GeneEditor {
                 val newType = ActionType.entries[i]
                 // Clear the Mitosis-only flags when switching away (invariant: each ⟹ Mitosis).
                 val stillMitosis = newType == ActionType.Mitosis
-                draft = d.copy(action = d.action.copy(type = newType, morphogenToMother = d.action.morphogenToMother && stillMitosis, divideAcross = d.action.divideAcross && stillMitosis)); openField = null
+                draft = d.copy(action = d.action.copy(type = newType, morphogenToMother = d.action.morphogenToMother && stillMitosis, divideAcross = d.action.divideAcross && stillMitosis, rejectMother = d.action.rejectMother && stillMitosis)); openField = null
             }
             when (d.action.type) {
                 ActionType.Import, ActionType.Convert ->
@@ -161,6 +161,7 @@ class GeneEditor {
                             draft = d.copy(action = d.action.copy(divideAcross = i == 1)); openField = null
                         }
                     }
+                    button(if (d.action.rejectMother) "SEVER: yes" else "SEVER: no", 0x3A6EA5FFL) { draft = d.copy(action = d.action.copy(rejectMother = !d.action.rejectMother)) }
                 }
                 else -> {}
             }

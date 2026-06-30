@@ -89,7 +89,7 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         // Divide.
         for (intent in divideEvents) {
             if (intent.id in destroyed) continue
-            divide(builder, cfg, intent.id, intent.morphogen, intent.morphogenToMother, intent.axisMorphogen, intent.divideAcross, grid!!, destroyed)
+            divide(builder, cfg, intent.id, intent.morphogen, intent.morphogenToMother, intent.axisMorphogen, intent.divideAcross, intent.rejectMother, grid!!, destroyed)
         }
 
         if (grid != null) builder.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(grid) }
@@ -104,7 +104,7 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         for ((s, c) in cell.biomass) grid.deposit(lx, ly, r, SpeciesRegistry.id(s), c)
     }
 
-    private fun divide(builder: SimBuilder, cfg: CytoConfig, motherId: EntityId, morphogen: String, morphogenToMother: Boolean, axisMorphogen: String, divideAcross: Boolean, grid: CytoMatterField, destroyed: HashSet<EntityId>) {
+    private fun divide(builder: SimBuilder, cfg: CytoConfig, motherId: EntityId, morphogen: String, morphogenToMother: Boolean, axisMorphogen: String, divideAcross: Boolean, rejectMother: Boolean, grid: CytoMatterField, destroyed: HashSet<EntityId>) {
         val cell = builder.getComponent<CytoCellComponent>(motherId) ?: return
         val transform = builder.getComponent<TransformComponent>(motherId) ?: return
         val motionVel = builder.getComponent<MotionComponent>(motherId)?.vel ?: Coord2.zero
@@ -207,12 +207,14 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             genome = cell.genome,
         )
 
-        for (n in ahead) {
-            addSpring(builder, daughter, n, cfg)
-            removeSpringPair(builder, motherId, n)
-        }
-        for (n in side) {
-            addSpring(builder, daughter, n, cfg)
+        if (!rejectMother) {
+            for (n in ahead) {
+                addSpring(builder, daughter, n, cfg)
+                removeSpringPair(builder, motherId, n)
+            }
+            for (n in side) {
+                addSpring(builder, daughter, n, cfg)
+            }
         }
 
         // Mother: step back along the split, rotate a quarter turn, keep its (equal) half of the matter.
@@ -231,7 +233,7 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             (current ?: error("mother has no material")).copy(mass = cellMass(motherCyto, halfBio))
         }
 
-        addSpring(builder, motherId, daughter, cfg)
+        if (!rejectMother) addSpring(builder, motherId, daughter, cfg)
     }
 
     /** Each side gets ⌊count/2⌋ of a species; the odd remainder (count mod 2) is deposited to the reservoir

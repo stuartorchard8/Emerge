@@ -313,7 +313,7 @@ object CytoBiologyCore {
             }
             ActionType.Mitosis -> {
                 work.dividing = true; work.divideMorphogen = act.a; work.divideMorphogenToMother = act.morphogenToMother
-                work.divideAxisMorphogen = act.b; work.divideAcross = act.divideAcross
+                work.divideAxisMorphogen = act.b; work.divideAcross = act.divideAcross; work.divideRejectMother = act.rejectMother
             }
             ActionType.Repair -> applyRepair(work, k)
             ActionType.Contract -> work.logicalRadius = (work.logicalRadius - FLEX_STEP * k).coerceAtLeast(MIN_RADIUS)

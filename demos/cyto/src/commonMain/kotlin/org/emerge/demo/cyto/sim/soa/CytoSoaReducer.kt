@@ -191,6 +191,8 @@ class CytoSoaReducer(
     // Oriented division: the axis-morphogen (if any) the split orients to, and which cells split ACROSS it.
     private val divideAxis = HashMap<EntityId, String>()
     private val divideAcross = HashSet<EntityId>()
+    // Which dividing cells should split off from the mother (reject all mother welds → daughter is a 1-cell organism).
+    private val divideRejectMother = HashSet<EntityId>()
     private val bioCapSum = HashMap<Int, Long>()
     private val bioOrderedWorks = ArrayList<CellWork>()
     // Ascending-EntityId slot order (Import draw order + mutation PRNG order), as a reusable IntArray —
@@ -787,6 +789,7 @@ class CytoSoaReducer(
         divideMorphogenToMother.clear()
         divideAxis.clear()
         divideAcross.clear()
+        divideRejectMother.clear()
         weldHealByPair.clear()
         weldHealCount.clear()
         for (k in 0 until n) {
@@ -808,6 +811,7 @@ class CytoSoaReducer(
                     divideAxis[id] = work.divideAxisMorphogen
                     if (work.divideAcross) divideAcross.add(id)
                 }
+                if (work.divideRejectMother) divideRejectMother.add(id)
             }
         }
         bioSplit("bio:finish")   // CytoBiologyCore.finish per cell (degrade/grow/death intents, weld-heal collect)
@@ -885,7 +889,7 @@ class CytoSoaReducer(
         for (id in destroy) builder.emit(CellDestroyIntent(id))         // biology order
         for (i in weldLo.indices) builder.emit(WeldIntent(EntityId(weldLo[i]), EntityId(weldHi[i]))) // contact order
         for (key in readyWelds) builder.emit(WeldHealIntent(EntityId((key ushr 32).toInt()), EntityId(key.toInt()), weldHealByPair.getValue(key)))  // both-repairing pairs, sorted = deterministic
-        for (id in divide) builder.emit(CellDivisionIntent(id, divideMorphogen[id] ?: "", id in divideMorphogenToMother, divideAxis[id] ?: "", id in divideAcross))  // biology order
+        for (id in divide) builder.emit(CellDivisionIntent(id, divideMorphogen[id] ?: "", id in divideMorphogenToMother, divideAxis[id] ?: "", id in divideAcross, id in divideRejectMother))  // biology order
         CytoLifecycleSystem.update(cfg, builder, inputs)
         val out = builder.build()
 
