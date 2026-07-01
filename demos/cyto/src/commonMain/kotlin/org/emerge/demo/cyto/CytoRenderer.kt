@@ -364,8 +364,8 @@ class CytoRenderer {
         if (n == 0) return
 
         // Fills inset by a 1px border on every side (NDC spans 2 over the axis pixel count).
-        val borderNdcX = 1f * (2f / resW)
-        val borderNdcY = 1f * (2f / resH)
+        val borderNdcX = 0f * (2f / resW)
+        val borderNdcY = 0f * (2f / resH)
         for (i in 0 until n) {
             val c2 = i * 2; val c4 = i * 4
             mInstCenter[c2] = matCx[i]; mInstCenter[c2 + 1] = matCy[i]
@@ -423,21 +423,11 @@ class CytoRenderer {
     }
 
     /**
-     * Colour a cell by its **contents**, per [colorMode]. **Value** is normally 0.75, rising to 1.0 for the
-     * focused cell (the one the info panel is open for) and dropping to [DIM_VALUE] for a [dimmed] cell —
-     * one outside the focused cell's welded cluster, so the bonded cells read clearly against the rest.
-     *
-     * [CellColorMode.Bio]:
-     *  - **Hue** from the a/b/c → R/G/B atom mix of its *biomass* (so a cell built of one two-atom
-     *    molecule reads as a pure secondary — `ab`→yellow, `ac`→magenta, `bc`→cyan — and richer biomass
-     *    shifts hue as its composition changes).
-     *  - **Saturation** from the cytoplasm:biomass *instance* ratio (count species instances, not atoms):
-     *    no cytoplasm → grey (0); cytoplasm ≥ biomass → full (1).
-     *
-     * [CellColorMode.Cyt]:
-     *  - **Hue** from the a/b/c → R/G/B atom mix of its *cytoplasm* (the ratio of its cytoplasm contents),
-     *    **ignoring monomer species** (single-atom molecules) — so the hue reflects the bonded-molecule mix.
-     *  - **Saturation** full when it holds any non-monomer cytoplasm, grey (0) when empty.
+     * Colour a cell by its **contents**, per [colorMode]. Each a/b/c atom count maps to R/G/B,
+     * normalised by the total so the colour represents the atom-ratio mix (e.g. equal parts → grey,
+     * `ab`-only → yellow). The RGB is then scaled by a value factor: 1.0 for the focused cell,
+     * 0.75 for normal cells, and [DIM_VALUE] for dimmed neighbours — keeping selection status visible
+     * without distorting the colour hue via HSV saturation.
      */
     private fun cellColor(cell: CytoCellComponent, focused: Boolean, dimmed: Boolean) {
         val value = when {
@@ -451,10 +441,6 @@ class CytoRenderer {
                 for ((species, count) in cell.biomass) for (ch in species) when (ch) {
                     'a' -> r += count; 'b' -> g += count; 'c' -> b += count
                 }
-                var cytInstances = 0; for (c in cell.cytoplasm.values) cytInstances += c
-                var bioInstances = 0; for (c in cell.biomass.values) bioInstances += c
-                val sat = when { cytInstances == 0 -> 0f; cytInstances >= bioInstances -> 1f; else -> cytInstances.toFloat() / bioInstances }
-                hsvToRgb(hueOf(r.toFloat(), g.toFloat(), b.toFloat()), sat, value, colorTmp)
             }
             CellColorMode.Cyt -> {
                 for ((species, count) in cell.cytoplasm) {
@@ -463,39 +449,13 @@ class CytoRenderer {
                         'a' -> r += count; 'b' -> g += count; 'c' -> b += count
                     }
                 }
-                val sat = if (r + g + b > 0L) 1f else 0f
-                hsvToRgb(hueOf(r.toFloat(), g.toFloat(), b.toFloat()), sat, value, colorTmp)
             }
         }
-        colorTmp[3] = 1f
-    }
-
-    /** Hue (0..1) of an (r,g,b) atom-count mix; 0 (red) when colourless. */
-    private fun hueOf(r: Float, g: Float, b: Float): Float {
-        val max = maxOf(r, g, b); val min = minOf(r, g, b); val d = max - min
-        if (d <= 0f) return 0f
-        val h = when (max) {
-            r -> (g - b) / d + (if (g < b) 6f else 0f)
-            g -> (b - r) / d + 2f
-            else -> (r - g) / d + 4f
-        }
-        return h / 6f
-    }
-
-    /** HSV (h,s,v all 0..1) → [out] RGB. */
-    private fun hsvToRgb(h: Float, s: Float, v: Float, out: FloatArray) {
-        if (s <= 0f) { out[0] = v; out[1] = v; out[2] = v; return }
-        val hh = (h - kotlin.math.floor(h)) * 6f
-        val i = hh.toInt(); val f = hh - i
-        val p = v * (1f - s); val q = v * (1f - s * f); val t = v * (1f - s * (1f - f))
-        when (i) {
-            0 -> { out[0] = v; out[1] = t; out[2] = p }
-            1 -> { out[0] = q; out[1] = v; out[2] = p }
-            2 -> { out[0] = p; out[1] = v; out[2] = t }
-            3 -> { out[0] = p; out[1] = q; out[2] = v }
-            4 -> { out[0] = t; out[1] = p; out[2] = v }
-            else -> { out[0] = v; out[1] = p; out[2] = q }
-        }
+        val peak = max(r, max(g, b)).toDouble()
+        val scale = if (peak <= 0) 0.0 else value / peak
+        colorTmp[0] = (r.toDouble() * scale).coerceIn(0.0, 1.0).toFloat()
+        colorTmp[1] = (g.toDouble() * scale).coerceIn(0.0, 1.0).toFloat()
+        colorTmp[2] = (b.toDouble() * scale).coerceIn(0.0, 1.0).toFloat()
     }
 
     private companion object {
