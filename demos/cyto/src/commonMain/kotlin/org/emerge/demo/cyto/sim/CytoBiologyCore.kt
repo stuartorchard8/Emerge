@@ -336,7 +336,7 @@ object CytoBiologyCore {
      *  of, instead of whichever happens to sort first; lex is kept only as the deterministic tie-break so
      *  the choice stays a pure function of the snapshot (order-independent). */
     private fun richestWithBond(snap: MoleculeStore, bondIdx: Int): Int {
-        if (bondIdx < 0) return -1
+        if (bondIdx < 0 || !snap.hasBond(bondIdx)) return -1
         var best = -1; var bestCount = 0
         for (i in 0 until snap.size) {
             val id = snap.idAt(i)
@@ -360,6 +360,7 @@ object CytoBiologyCore {
         // (an int compare) instead of an O(len) string endsWith per species. Bit-identical: an unknown atom
         // (atomIndexOf < 0) matches nothing, exactly as no species string ends with it.
         val atom = if (suffix.length == 1) SpeciesRegistry.atomIndexOf(suffix[0]) else -1
+        if (atom >= 0 && !snap.hasLastAtom(atom)) return -1
         var best = -1; var bestCount = 0
         for (i in 0 until snap.size) {
             val id = snap.idAt(i)
@@ -377,6 +378,7 @@ object CytoBiologyCore {
         // Fast path: single-atom prefix == "starts with that atom", matched on the precomputed first-atom id
         // (see [richestEndingWith]). Bit-identical.
         val atom = if (prefix.length == 1) SpeciesRegistry.atomIndexOf(prefix[0]) else -1
+        if (atom >= 0 && !snap.hasFirstAtom(atom)) return -1
         var best = -1; var bestCount = 0
         for (i in 0 until snap.size) {
             val id = snap.idAt(i)

@@ -17,8 +17,12 @@ class MoleculeStore private constructor(
     private var ids: IntArray,
     private var counts: IntArray,
     private var n: Int,
+    var _bondPresence: Int = 0,  // bitmask of bonds present (max 9 bits for k=3)
+    var _firstAtomMask: Int = 0, // bitmask of first atoms present (max 3 bits for k=3)
+    var _lastAtomMask: Int = 0,  // bitmask of last atoms present (max 3 bits for k=3)
+    private var _masksDirty: Boolean = false,  // lazily rebuild masks on first query
 ) {
-    constructor() : this(EMPTY, EMPTY, 0)
+    constructor() : this(EMPTY, EMPTY, 0, 0, 0, 0, false)
 
     val size: Int get() = n
     fun isEmpty(): Boolean = n == 0
@@ -44,33 +48,76 @@ class MoleculeStore private constructor(
     }
 
     /** Apply `count[id] += delta`, pruning to absent when the result is ≤ 0 — identical semantics to the
-     *  old `addOrRemove(map, key, delta)`. A no-op for [id] < 0 or a non-positive delta on an absent id. */
+     *  old `addOrRemove(map, key, delta)`. A no-op for [id] < 0 or a non-positive delta on an absent id.
+     *  Marks masks as dirty for lazy rebuild on next query. */
     fun add(id: Int, delta: Int) {
         if (id < 0 || delta == 0) return
         val i = indexOf(id)
         if (i >= 0) {
             val v = counts[i] + delta
-            if (v <= 0) removeAt(i) else counts[i] = v
+            if (v <= 0) { removeAt(i); _masksDirty = true }
+            else counts[i] = v
         } else if (delta > 0) {
             insertAt(-(i + 1), id, delta)
+            _masksDirty = true
         }
     }
+
+    /** Rebuild all presence masks from scratch — lazy, called on first query after mutations. */
+    fun rebuildBondMask() {
+        if (!_masksDirty) return
+        _bondPresence = 0
+        _firstAtomMask = 0
+        _lastAtomMask = 0
+        for (i in 0 until n) {
+            val id = ids[i]
+            _bondPresence = _bondPresence or SpeciesRegistry.bondMask(id)
+            _firstAtomMask = _firstAtomMask or (1 shl SpeciesRegistry.firstAtom(id))
+            _lastAtomMask = _lastAtomMask or (1 shl SpeciesRegistry.lastAtom(id))
+        }
+        _masksDirty = false
+    }
+
+    /** Fast check: does this store contain any species with the given bond? */
+    fun hasBond(bondIdx: Int): Boolean { rebuildBondMask(); return bondIdx >= 0 && (_bondPresence and (1 shl bondIdx)) != 0 }
+    /** Fast check: does this store contain any species ending with the given atom index? */
+    fun hasLastAtom(atomIdx: Int): Boolean { rebuildBondMask(); return atomIdx >= 0 && atomIdx < 32 && (_lastAtomMask and (1 shl atomIdx)) != 0 }
+    /** Fast check: does this store contain any species starting with the given atom index? */
+    fun hasFirstAtom(atomIdx: Int): Boolean { rebuildBondMask(); return atomIdx >= 0 && atomIdx < 32 && (_firstAtomMask and (1 shl atomIdx)) != 0 }
 
     fun inc(id: Int, n: Int) = add(id, n)
     fun dec(id: Int) = add(id, -1)
 
     fun copy(): MoleculeStore =
-        if (n == 0) MoleculeStore() else MoleculeStore(ids.copyOf(n), counts.copyOf(n), n)
+        if (n == 0) MoleculeStore() else MoleculeStore(ids.copyOf(n), counts.copyOf(n), n).also { s ->
+            s._bondPresence = _bondPresence
+            s._firstAtomMask = _firstAtomMask
+            s._lastAtomMask = _lastAtomMask
+            s._masksDirty = false
+        }
 
     /** Reuse this store as a snapshot of [src], reusing this store's backing arrays (grown only if too
      *  small) so a per-tick snapshot allocates nothing once warmed. Copies [src]'s sorted/positive
-     *  invariant verbatim, so it's interchangeable with [copy] as a read-only snapshot. */
+     *  invariant verbatim, so it's interchangeable with [copy] as a read-only snapshot.
+     *  Rebuilds masks from the copied data to ensure correctness. */
     fun copyFrom(src: MoleculeStore) {
         val m = src.n
         if (ids.size < m) { ids = IntArray(m); counts = IntArray(m) }
         src.ids.copyInto(ids, 0, 0, m)
         src.counts.copyInto(counts, 0, 0, m)
         n = m
+        // Rebuild masks from scratch — copying from src could propagate stale masks
+        // if src had uncommitted add() calls.
+        _bondPresence = 0
+        _firstAtomMask = 0
+        _lastAtomMask = 0
+        _masksDirty = false
+        for (i in 0 until n) {
+            val id = ids[i]
+            _bondPresence = _bondPresence or SpeciesRegistry.bondMask(id)
+            _firstAtomMask = _firstAtomMask or (1 shl SpeciesRegistry.firstAtom(id))
+            _lastAtomMask = _lastAtomMask or (1 shl SpeciesRegistry.lastAtom(id))
+        }
     }
 
     /** Boundary view for save / render / digest — a key-sorted `Map<String, Int>` identical to the old
