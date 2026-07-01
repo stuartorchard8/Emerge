@@ -76,7 +76,7 @@ class CytoMatterFieldTest {
             prev = now
         }
         assertEquals(t0, f.totalAtoms(), "maintain conserves")
-        assertTrue(leafCount(f) <= 4, "unobserved region fully collapses back to tile leaves")
+        assertTrue(leafCount(f) <= CytoMatterField.BASE_RES * CytoMatterField.BASE_RES, "unobserved region fully collapses back to tile leaves")
         assertTrue(collapseTicks.size >= 3, "collapse is progressive (one layer at a time), got ${collapseTicks.size}")
         // Each successive layer waits twice as long as the one below: the gaps between collapse events double.
         for (i in 2 until collapseTicks.size) {

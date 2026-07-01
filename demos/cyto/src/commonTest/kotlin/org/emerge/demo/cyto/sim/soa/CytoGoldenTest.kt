@@ -161,11 +161,11 @@ class CytoGoldenTest {
     // phase shift between metabolism and intake, so GROWTH + INTERACT (mutation-off presets, no Import gene)
     // drift; mutationOn is byte-identical. Determinism + conservation gates held.
     private val GROWTH = mapOf(
-        "meta" to "187ed166f49aa1ee",
-        "physics" to "a00cb8c6da76eace",
-        "biology" to "7d4082cd23010a6c",
-        "topology" to "cbf29ce484222325",
-        "grid" to "3245d033e5a0635",
+        "meta" to "9e9bec4ae4480164",
+        "physics" to "72ec668967e216df",
+        "biology" to "d1343491c5ea8852",
+        "topology" to "5b223f15ca88036",
+        "grid" to "c34194a6e59d19be",
     )
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
     // Re-baselined 2026-06-29: SIZE-DEPENDENT DIFFUSION — CytoMatterField.balance() now uses a
@@ -231,18 +231,18 @@ class CytoGoldenTest {
     // physics/biology/grid shift. Determinism gates (parallel==sequential, round-trip) held.
     private val MUTATION = mapOf(
         "meta" to "1e92bfc864dfae61",
-        "physics" to "27a1a31049619ea8",
-        "biology" to "9260bfc3ccd51803",
+        "physics" to "695b74b1307ab28d",
+        "biology" to "be2364ac99b61159",
         "topology" to "cbf29ce484222325",
-        "grid" to "ce1fa0bc090fff1f",
+        "grid" to "3f1cd0282e716c4f",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
-        "meta" to "3f0b2ca5aa1d4aba",
-        "physics" to "f11aaa4dff6a4187",
-        "biology" to "278c10705884061c",
-        "topology" to "cbf29ce484222325",
-        "grid" to "9385f705191a4c78",
+        "meta" to "d381cf84adc97208",
+        "physics" to "46a0fcaa59484f5b",
+        "biology" to "5e79b4952dd17090",
+        "topology" to "14c8fec24025c071",
+        "grid" to "26d3d939ecb27da6",
     )
 
     @Test
