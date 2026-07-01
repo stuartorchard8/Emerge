@@ -35,6 +35,14 @@ class MoleculeStore private constructor(
         return if (i >= 0) counts[i] else 0
     }
 
+    /** Fast linear-scan count — optimal for tiny stores (≤ 8 species) where binary-search branch
+      *  overhead dominates. Used by the matter-field exchange loop. */
+    fun countLinear(id: Int): Int {
+        if (id < 0) return 0
+        for (i in 0 until n) if (ids[i] == id) return counts[i]
+        return 0
+    }
+
     /** Apply `count[id] += delta`, pruning to absent when the result is ≤ 0 — identical semantics to the
      *  old `addOrRemove(map, key, delta)`. A no-op for [id] < 0 or a non-positive delta on an absent id. */
     fun add(id: Int, delta: Int) {

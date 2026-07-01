@@ -76,18 +76,29 @@ object CytoBiologyCore {
             if (stats != null) {
                 stats.exchSpeciesCalls += species.size
             }
-            for (sp in species) {
-                val importBias = w.importBias[sp] ?: 0
-                val atomCount = SpeciesRegistry.atomCount(sp)
-                // Only transfer monomers or species with genetic bias
-                if (importBias != 0 || atomCount == 1) {
-                    val cEff = (cyt.count(sp) - (w.importBias[sp] ?: 0)).coerceAtLeast(0)
-                    val delta = grid.balance(sp, cEff, CytoTuning.DIFFUSION_SCALE_FACTOR)
-                    if (delta != 0) {
-                        cyt.add(sp, delta)
-                        if (stats != null) {
-                            stats.exchUseful++
-                        }
+            // Collect transferable species into indexed arrays for batched balance.
+            // Filter: only monomers (atomCount == 1) or species with genetic import bias.
+            val transferN = species.count { sp ->
+                val ib = w.importBias[sp] ?: 0
+                ib != 0 || SpeciesRegistry.atomCount(sp) == 1
+            }
+            if (transferN > 0) {
+                val transferIdx = IntArray(transferN)
+                val transferCeffs = IntArray(transferN)
+                var t = 0
+                for (sp in species) {
+                    val ib = w.importBias[sp] ?: 0
+                    if (ib != 0 || SpeciesRegistry.atomCount(sp) == 1) {
+                        transferIdx[t] = sp
+                        transferCeffs[t] = (cyt.count(sp) - ib).coerceAtLeast(0)
+                        t++
+                    }
+                }
+                val deltas = grid.balanceBatched(transferIdx, transferCeffs, CytoTuning.DIFFUSION_SCALE_FACTOR)
+                for (i in 0 until transferN) {
+                    if (deltas[i] != 0) {
+                        cyt.add(transferIdx[i], deltas[i])
+                        if (stats != null) stats.exchUseful++
                     }
                 }
             }

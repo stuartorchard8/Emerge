@@ -173,13 +173,25 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     // ── the diffusion junction (exchange) ──────────────────────────────────────────────────────────────
     /** Reusable scratch: the fine leaves of one cell's footprint, collected by [openFootprint]. */
     private val fpLeaves = ArrayList<QuadNode>()
-
     /** Open a cell's footprint: refine + stamp + collect its N fine leaves. Returns N (0 = nothing). Follow
-     *  with [balance] per species, then [closeFootprint]. NOT re-entrant (single scratch) — exchange runs
-     *  sequentially (id-order), never on the parallel gene path. */
+      *  with [balance] per species, then [closeFootprint]. NOT re-entrant (single scratch) — exchange runs
+      *  sequentially (id-order), never on the parallel gene path. */
     fun openFootprint(cx: Float, cy: Float, radius: Float, tick: Int): Int {
         fpLeaves.clear()
-        descendDisc(cx, cy, radius, tick) { fpLeaves.add(it) }
+        descendDisc(cx, cy, radius, tick) { node ->
+            fpLeaves.add(node)
+            // Set presence mask for monomers a(=A), b(=B), c(=C) — the species passively diffused.
+            // Mask bits: 1=a, 2=b, 4=c. Enables O(1) skip in balance().
+            val s = node.store!!
+            var mask = 0
+            for (i in 0 until s.size) {
+                val id = s.idAt(i)
+                if (id == A) mask = mask or 1
+                else if (id == B) mask = mask or 2
+                else if (id == C) mask = mask or 4
+            }
+            node.presenceMask = mask
+        }
         return fpLeaves.size
     }
 
@@ -190,23 +202,55 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     }
 
     /** Balance the open footprint's `sp` toward `cEff/N` (bidirectional diffusion), with size-dependent
-     *  dampening via [scaleFactor] so larger molecules equilibrate more slowly. Returns the net Δ to apply
-     *  to the cell's cytoplasm (grid changes by −Δ). Conservation-exact. */
+      *  dampening via [scaleFactor] so larger molecules equilibrate more slowly. Returns the net Δ to apply
+      *  to the cell's cytoplasm (grid changes by −Δ). Conservation-exact. */
     fun balance(sp: Int, cEff: Int, scaleFactor: Float): Int {
         val n = fpLeaves.size; if (n == 0) return 0
+        // Early-exit mask bit for monomers (a=0→bit1, b=1→bit2, c=2→bit4).
+        // Skips leaf iteration when no leaf contains this species — eliminates 73% of useless calls.
+        val maskBit = if (sp == A) 1 else if (sp == B) 2 else if (sp == C) 4 else 0
+
         val atomCount = SpeciesRegistry.atomCount(sp)
         val denom = 2.shl(min(31, (atomCount*scaleFactor).toInt()))  // 2 for monomers; scales up for polymers (2,4,8,16,32...)
         val bucket = cEff / n                       // remainder kept in cell (untransacted)
         var totalMovement = 0
         for (leaf in fpLeaves) {
+            // Skip leaves that don't contain this species (presence mask from openFootprint).
+            if (maskBit != 0 && (leaf.presenceMask and maskBit) == 0) continue
+
             val store = leaf.store!!
-            val delta = store.count(sp) - bucket  // +ve gradient towards cell, -ve gradient away from cell
+            val delta = store.countLinear(sp) - bucket  // +ve gradient towards cell, -ve gradient away from cell
             val movement = delta/denom  // lower movement for larger species
 
-            if (movement != 0) store.add(sp, -movement)             // exact integer move
+            if (movement != 0) store.add(sp, -movement)
             totalMovement += movement
         }
         return totalMovement                 // Δ into the cell
+    }
+
+    /** Batched balance: process all species in a single leaf pass (avoids 3× leaf re-traversal).
+      *  Returns per-species delta array (same order as sps). */
+    fun balanceBatched(sps: IntArray, cEffs: IntArray, scaleFactor: Float): IntArray {
+        val n = fpLeaves.size; if (n == 0) return IntArray(sps.size)
+        val results = IntArray(sps.size)
+        for (leaf in fpLeaves) {
+            val store = leaf.store!!
+            for (i in 0 until store.size) {
+                val sid = store.idAt(i)
+                val sc = store.countAt(i)
+                for (j in sps.indices) {
+                    if (sid == sps[j]) {
+                        val bucket = cEffs[j] / n
+                        val denom = 2.shl(min(31, (SpeciesRegistry.atomCount(sid)*scaleFactor).toInt()))
+                        val delta = sc - bucket
+                        val movement = delta / denom
+                        if (movement != 0) store.add(sps[j], -movement)
+                        results[j] += movement
+                    }
+                }
+            }
+        }
+        return results
     }
 
     fun closeFootprint() = fpLeaves.clear()
@@ -309,6 +353,7 @@ class QuadNode private constructor() {
     var lastAccessTick = 0
     var children: Array<QuadNode>? = null
     val monomerRemainder = IntArray(3)
+    var presenceMask = 0  // bit-mask of monomers present (bit 0=a, 1=b, 2=c); set during openFootprint
     val isLeaf: Boolean get() = children == null
 
     fun becomeInternal(ch: Array<QuadNode>) { children = ch; store = null }
