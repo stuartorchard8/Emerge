@@ -489,10 +489,10 @@ object CytoBiologyCore {
         }
     }
 
-    /** Phase 3 — degradation (biomass loses bonds at a rate ∝ size, fragments return to cytoplasm),
-     *  size from biomass, and the death/division decision. */
-    fun finish(id: EntityId, work: CellWork, divide: MutableList<EntityId>, destroy: MutableList<EntityId>) {
-        degrade(work)
+    /** Phase 3 — degradation (biomass loses bonds at a rate ∝ size, whole molecules shed to environment),
+      *  size from biomass, and the death/division decision. */
+    fun finish(id: EntityId, work: CellWork, grid: CytoMatterField, divide: MutableList<EntityId>, destroy: MutableList<EntityId>) {
+        degrade(work, grid)
         val bonds = totalBiomassBonds(work.biomass)
         if (bonds < DEATH_BIOMASS) {
             destroy.add(id)
@@ -591,34 +591,28 @@ object CytoBiologyCore {
      *  fully-contracted gene stops drawing quanta (mirrors the Repair pre-check). */
     private fun canContract(work: CellWork): Boolean = work.logicalRadius > MIN_RADIUS
 
-    /** Spontaneous decay: break `wear / DEGRADE_PERIOD` bonds this tick (rate ∝ biomass size), each
-     *  splitting the **most-abundant** biomass molecule's leftmost bond (ties → lowest id). The leftmost split peels
-     *  off the leading monomer (the smaller/equal fragment); that **smaller fragment is ejected to the
-     *  environment** while the **larger** remainder stays in cytoplasm. So biomass decay is a real matter
-     *  LEAK to the commons — a maintenance cost the cell must keep importing against (selection for
-     *  efficient builders) and a steady feed for the food web — not the old free cytoplasm treadmill where
-     *  both fragments stayed put and could be re-Converted for nothing. The bond's energy is still
-     *  dissipated (not recovered). With no position (`gridIndex < 0`) there's nowhere to eject to, so both
-     *  fragments stay in cytoplasm. */
-    private fun degrade(work: CellWork) {
+    /** Spontaneous decay: shed `wear / DEGRADE_PERIOD` whole biomass molecules to the environment
+      *  at a rate ∝ biomass size. Each tick the cell's **most-abundant** biomass molecule loses one copy,
+      *  dropped directly into the matter field at the cell's position (like shed skin — no splitting,
+      *  no cytoplasm intermediate). The molecule then decays at the environment's own rate.
+      *  This is a real matter LEAK — a maintenance cost the cell must keep importing against (selection for
+      *  efficient builders) and a steady feed for the food web. The bond's energy is still dissipated. */
+    private fun degrade(work: CellWork, grid: CytoMatterField) {
         // Maintenance bonus: a more-connected cell degrades much slower — wear accrues at `1/2^weldedDegree`
         // (1 neighbour → 1/2, 2 → 1/4, 6 → 1/64, halving again for each extra bond evolution squeezes in).
         // Interior cells of a body are nearly free to maintain. (Exponent capped at 20 to avoid Int overflow;
         // 2^20 already makes upkeep ~0 for any realistic biomass.)
         val bonus = 1 shl work.weldedDegree.coerceAtMost(20)
         work.wear += totalBiomassBonds(work.biomass) / bonus
-        var broken = work.wear / DEGRADE_PERIOD
+        val broken = work.wear / DEGRADE_PERIOD
         work.wear %= DEGRADE_PERIOD
-        while (broken > 0) {
+        if (broken > 0) {
             val targetId = richestMultiAtom(work.biomass)   // most-abundant molecule with a bond to break
-            if (targetId < 0) break
-            val monoId = SpeciesRegistry.splitLeftMono(targetId)   // leading monomer (the smaller fragment)
-            val restId = SpeciesRegistry.splitLeftRest(targetId)   // the larger remainder
-            work.biomass.dec(targetId)
-            work.cytoplasm.inc(restId, 1)                          // retain the larger fragment
-            work.cytoplasm.inc(monoId, 1)                          // peeled monomer → cytoplasm; the junction
-            //   leaks it back to the field if it's canDiffuse (keeps degrade grid-free ⇒ parallel-safe).
-            broken--
+            if (targetId >= 0) {
+                val count = minOf(broken, work.biomass.count(targetId))
+                work.biomass.add(targetId, -count)
+                grid.deposit(work.cx, work.cy, work.logicalRadius.toFloat(), targetId, count)
+            }
         }
     }
 

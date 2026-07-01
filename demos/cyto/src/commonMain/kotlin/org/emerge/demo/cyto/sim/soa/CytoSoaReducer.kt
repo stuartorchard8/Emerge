@@ -833,7 +833,7 @@ class CytoSoaReducer(
             val slot = ordered[k]
             val id = EntityId(w.entityId[slot])
             val work = bioWorks[slot]!!
-            CytoBiologyCore.finish(id, work, divide, destroy)
+            CytoBiologyCore.finish(id, work, grid, divide, destroy)
             for ((other, heal) in work.weldHeals) {                 // Repair-weld requests → summed + counted per pair
                 val key = pairKey(id.value, other.value)
                 weldHealByPair[key] = (weldHealByPair[key] ?: 0f) + heal
