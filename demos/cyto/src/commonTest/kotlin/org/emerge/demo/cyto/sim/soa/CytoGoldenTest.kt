@@ -297,6 +297,7 @@ class CytoGoldenTest {
             wp = par.tick(wp, CytoInput.EMPTY)
             assertEquals(digest(ws.toSimState()), digest(wp.toSimState()), "parallel != sequential at tick=$t")
         }
+        executor.close()
     }
 
     @Test
