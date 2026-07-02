@@ -173,6 +173,14 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     // ── the diffusion junction (exchange) ──────────────────────────────────────────────────────────────
     /** Reusable scratch: the fine leaves of one cell's footprint, collected by [openFootprint]. */
     private val fpLeaves = ArrayList<QuadNode>()
+    /** Scratch open-addressing hash table for [balanceBatched] species-ID → transfer-index lookup.
+      *  64-entry power-of-2 table with linear probing — O(1) average, zero allocation, no boxing.
+      *  Covers all practical transfer-species counts (cells rarely transfer > 30 species). */
+    private val HT_MASK = 63  // (1 << 6) - 1
+    private var htSize = 0
+    private val htKeys = IntArray(64)
+    private val htVals = IntArray(64)
+    private val htOccupied = BooleanArray(64)
     /** Open a cell's footprint: refine + stamp + collect its N fine leaves. Returns N (0 = nothing). Follow
       *  with [balance] per species, then [closeFootprint]. NOT re-entrant (single scratch) — exchange runs
       *  sequentially (id-order), never on the parallel gene path. */
@@ -229,28 +237,46 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     }
 
     /** Batched balance: process all species in a single leaf pass (avoids 3× leaf re-traversal).
-      *  Returns per-species delta array (same order as sps). */
+      *  Returns per-species delta array (same order as sps).
+      *  Uses scratch [htPutAll]/[htGet] hash table for O(1) species-ID lookup. */
     fun balanceBatched(sps: IntArray, cEffs: IntArray, scaleFactor: Float): IntArray {
         val n = fpLeaves.size; if (n == 0) return IntArray(sps.size)
         val results = IntArray(sps.size)
+        htPutAll(sps)
         for (leaf in fpLeaves) {
             val store = leaf.store!!
             for (i in 0 until store.size) {
                 val sid = store.idAt(i)
                 val sc = store.countAt(i)
-                for (j in sps.indices) {
-                    if (sid == sps[j]) {
-                        val bucket = cEffs[j] / n
-                        val denom = 2.shl(min(31, (SpeciesRegistry.atomCount(sid)*scaleFactor).toInt()))
-                        val delta = sc - bucket
-                        val movement = delta / denom
-                        if (movement != 0) store.add(sps[j], -movement)
-                        results[j] += movement
-                    }
-                }
+                val j = htGet(sid)
+                if (j < 0) continue
+                val bucket = cEffs[j] / n
+                val denom = 2.shl(min(31, (SpeciesRegistry.atomCount(sid)*scaleFactor).toInt()))
+                val delta = sc - bucket
+                val movement = delta / denom
+                if (movement != 0) store.add(sps[j], -movement)
+                results[j] += movement
             }
         }
         return results
+    }
+
+    /** Populate the scratch hash table with species-ID → transfer-index mapping. */
+    private fun htPutAll(sps: IntArray) {
+        htSize = 0
+        htOccupied.fill(false)
+        for (j in sps.indices) {
+            var pos = sps[j].hashCode() and HT_MASK
+            while (htOccupied[pos] && htKeys[pos] != sps[j]) pos = (pos + 1) and HT_MASK
+            if (!htOccupied[pos]) { htOccupied[pos] = true; htKeys[pos] = sps[j]; htVals[pos] = j; htSize++ }
+        }
+    }
+
+    /** Lookup species ID in scratch hash table; returns index or -1 if absent. */
+    private fun htGet(id: Int): Int {
+        var pos = id.hashCode() and HT_MASK
+        while (htOccupied[pos]) { if (htKeys[pos] == id) return htVals[pos]; pos = (pos + 1) and HT_MASK }
+        return -1
     }
 
     fun closeFootprint() = fpLeaves.clear()
