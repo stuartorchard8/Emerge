@@ -11,6 +11,7 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.ecs.ComponentStore
 import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.ecs.EcsWorld
+import kotlin.reflect.KClass
 import org.emerge.sim.core.ecs.soa.ColliderColumnStore
 import org.emerge.sim.core.ecs.soa.ComponentColumns
 import org.emerge.sim.core.ecs.soa.ImpulseColumnStore
@@ -155,21 +156,24 @@ class CytoWorld private constructor(
     /**
      * Materializes the live store back into an engine [SimState] — the inverse of [fromSimState],
      * faithful for every component the world tracks. Emits tables in slot order (= the order
-     * [fromSimState] read them). Springs + connection damage are derived from the CSR. [ImpulseComponent]
-     * is emitted only when [includeImpulse] (a bridge that needs the in-flight impulse); the equivalence
-     * gate and the live renderer/save never need it.
+     * [fromSimState] read them). [ImpulseComponent] is emitted only when [includeImpulse] (a bridge
+     * that needs the in-flight impulse); the live renderer/save never need it.
+     *
+     * Springs + connection damage ARE materialized from the CSR so that bridge systems
+     * (CytoInteractionSystem, CytoLifecycleSystem) can walk neighbours via
+     * SpringConstraintComponent — the renderer instead reads CSR directly via [getSpringData]
+     * to avoid per-tick component allocation.
      */
     fun toSimState(includeImpulse: Boolean = false): SimState {
+        // Materialize into fresh maps (SimState must own its data — the renderer may iterate while
+        // the sim thread mutates the world for the next tick).
         val n = count
         val transforms = LinkedHashMap<EntityId, TransformComponent>(n)
         val motions = LinkedHashMap<EntityId, MotionComponent>(n)
         val colliders = LinkedHashMap<EntityId, ColliderComponent>(n)
         val materials = LinkedHashMap<EntityId, MaterialComponent>(n)
-        val rendersOut = LinkedHashMap<EntityId, RenderShapeComponent>(n)
-        val cellsOut = LinkedHashMap<EntityId, CytoCellComponent>(n)
-        val springsOut = LinkedHashMap<EntityId, SpringConstraintComponent>(n)
-        val damagesOut = LinkedHashMap<EntityId, ConnectionStateComponent>(n)
-        val impulsesOut = if (includeImpulse) LinkedHashMap<EntityId, ImpulseComponent>(n) else null
+        val renders = LinkedHashMap<EntityId, RenderShapeComponent>(n)
+        val cells = LinkedHashMap<EntityId, CytoCellComponent>(n)
 
         for (slot in 0 until n) {
             val id = EntityId(entityId[slot])
@@ -177,43 +181,51 @@ class CytoWorld private constructor(
             motions[id] = motion.gather(slot)
             colliders[id] = collider.gather(slot)
             materials[id] = material.gather(slot)
-            rendersOut[id] = renderShape.gather(slot)
-            cellsOut[id] = cell.gather(slot)
-            impulsesOut?.put(id, impulse.gather(slot))
-
-            val lo = csr.offset[slot]
-            val hi = csr.offset[slot + 1]
-            if (hi > lo) {
-                val springList = ArrayList<SpringConstraint>(hi - lo)
-                val damageMap = LinkedHashMap<EntityId, Float>(hi - lo)
-                for (k in lo until hi) {
-                    val other = EntityId(csr.otherId[k])
-                    springList.add(SpringConstraint(other, Frac(csr.restRaw[k]), Frac(csr.stiffRaw[k]), Frac(csr.dampRaw[k])))
-                    damageMap[other] = csr.edgeAux[k]
-                }
-                springsOut[id] = SpringConstraintComponent(springList)
-                damagesOut[id] = ConnectionStateComponent(damageMap)
-            }
+            renders[id] = renderShape.gather(slot)
+            cells[id] = cell.gather(slot)
         }
 
-        val tables = HashMap<kotlin.reflect.KClass<*>, ComponentTable<*>>()
+        val tables = HashMap<KClass<*>, ComponentTable<*>>(9)
         tables[TransformComponent::class] = ComponentTable.fromMap(transforms)
         tables[MotionComponent::class] = ComponentTable.fromMap(motions)
         tables[ColliderComponent::class] = ComponentTable.fromMap(colliders)
         tables[MaterialComponent::class] = ComponentTable.fromMap(materials)
-        tables[RenderShapeComponent::class] = ComponentTable.fromMap(rendersOut)
-        tables[CytoCellComponent::class] = ComponentTable.fromMap(cellsOut)
-        tables[SpringConstraintComponent::class] = ComponentTable.fromMap(springsOut)
-        tables[ConnectionStateComponent::class] = ComponentTable.fromMap(damagesOut)
+        tables[RenderShapeComponent::class] = ComponentTable.fromMap(renders)
+        tables[CytoCellComponent::class] = ComponentTable.fromMap(cells)
         tables[CytoMatterGridComponent::class] = ComponentTable.fromMap(
             linkedMapOf(GRID_SINGLETON to CytoMatterGridComponent(grid)),
         )
-        // Emit the params singleton only when a value is explicitly set (≥0), so an unset (default) world
-        // round-trips byte-identically — every existing test/golden builds default worlds.
         if (mutationRateDenom >= 0) tables[CytoSimParamsComponent::class] = ComponentTable.fromMap(
             linkedMapOf(PARAMS_SINGLETON to CytoSimParamsComponent(mutationRateDenom)),
         )
-        if (impulsesOut != null) tables[ImpulseComponent::class] = ComponentTable.fromMap(impulsesOut)
+        if (includeImpulse) {
+            val impulses = LinkedHashMap<EntityId, ImpulseComponent>(n)
+            for (slot in 0 until n) impulses[EntityId(entityId[slot])] = impulse.gather(slot)
+            tables[ImpulseComponent::class] = ComponentTable.fromMap(impulses)
+        }
+
+        // Materialize spring/connection components from CSR so the SimState carries connection
+        // topology for systems that read it (e.g. CytoInteractionSystem → killOrganism walks neighbours).
+        val springTable = LinkedHashMap<EntityId, SpringConstraintComponent>(n)
+        val damageTable = LinkedHashMap<EntityId, ConnectionStateComponent>(n)
+        for (slot in 0 until n) {
+            val id = EntityId(entityId[slot])
+            val lo = csr.beginOf(slot)
+            val hi = csr.endOf(slot)
+            if (lo < hi) {
+                val springs = ArrayList<SpringConstraint>(hi - lo)
+                val damage = HashMap<EntityId, Float>(hi - lo)
+                for (k in lo until hi) {
+                    if (csr.otherSlot[k] < 0) continue
+                    springs.add(SpringConstraint(EntityId(csr.otherId[k]), Frac(csr.restRaw[k]), Frac(csr.stiffRaw[k]), Frac(csr.dampRaw[k])))
+                    damage[EntityId(csr.otherId[k])] = csr.edgeAux[k]
+                }
+                springTable[id] = SpringConstraintComponent(springs)
+                damageTable[id] = ConnectionStateComponent(damage)
+            }
+        }
+        tables[SpringConstraintComponent::class] = ComponentTable.fromMap(springTable)
+        tables[ConnectionStateComponent::class] = ComponentTable.fromMap(damageTable)
 
         return SimState(
             world = EcsWorld(world.liveIds.toMutableSet(), world.lastEntityValue),
@@ -221,6 +233,25 @@ class CytoWorld private constructor(
             contacts = emptyList(),
             randomSeed = world.randomSeed,
             tick = world.tick,
+        )
+    }
+
+    /**
+     * Provides read-only CSR data for the renderer. Avoids materializing [SpringConstraintComponent]/[ConnectionStateComponent]
+     * into the SimState, eliminating per-tick per-entity ArrayList/HashMap allocation.
+     */
+    fun getSpringData(): org.emerge.demo.cyto.CytoFrameSpringData? {
+        val n = count
+        return org.emerge.demo.cyto.CytoFrameSpringData(
+            entityId = entityId,
+            csrOffset = csr.offset,
+            csrOtherSlot = csr.otherSlot,
+            csrOtherId = csr.otherId,
+            csrRestRaw = csr.restRaw,
+            csrStiffRaw = csr.stiffRaw,
+            csrDampRaw = csr.dampRaw,
+            csrEdgeAux = csr.edgeAux,
+            slotOfEntityId = ::slotOf,
         )
     }
 }

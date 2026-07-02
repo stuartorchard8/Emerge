@@ -248,7 +248,10 @@ class CytoRenderer {
         val cells = components.getTable<CytoCellComponent>().asMap()
         val transforms = components.getTable<TransformComponent>()
         val colliders = components.getTable<ColliderComponent>()
-        val springs = components.getTable<SpringConstraintComponent>()
+
+        // CSR-based spring access (avoids SimState SpringConstraintComponent allocation)
+        val springData = frame.springData
+        val springTable = if (springData == null) components.getTable<SpringConstraintComponent>() else null
 
         // The welded neighbours of the focused cell — used to dim everything outside that cluster so
         // it's obvious which cells the selection is bonded to. Only active while the focused cell is
@@ -256,8 +259,16 @@ class CytoRenderer {
         // guard its now-empty neighbour set would dim every cell to darkness).
         focusNeighbours.clear()
         val dimActive = focusedCellId >= 0 && cells.containsKey(EntityId(focusedCellId))
-        if (dimActive) {
-            springs[EntityId(focusedCellId)]?.springs?.forEach { focusNeighbours.add(it.other.value) }
+        if (dimActive && springTable != null) {
+            springTable[EntityId(focusedCellId)]?.springs?.forEach { focusNeighbours.add(it.other.value) }
+        }
+        if (dimActive && springData != null) {
+            val slot = springData.slotOfEntityId(focusedCellId)
+            if (slot >= 0) {
+                val lo = springData.csrOffset[slot]
+                val hi = springData.csrOffset[slot + 1]
+                for (k in lo until hi) focusNeighbours.add(springData.csrOtherId[k])
+            }
         }
 
         for ((id, cell) in cells) {
@@ -278,20 +289,41 @@ class CytoRenderer {
             cellColor(cell, focused, dimmed)
 
             var count = 0
-            val neighbours = springs[id]?.springs
-            if (neighbours != null) {
-                for (spring in neighbours) {
-                    if (count >= CytoCellShader.MAX_NEIGHBOURS) break
-                    val nt = transforms[spring.other] ?: continue
-                    val nr = colliders[spring.other] ?: continue
-                    // Torus-aware delta (Coord2 - Coord2 = shortest Frac2), y flipped for the shader.
-                    val delta = nt.pos - transform.pos
-                    val base = count * 4
-                    neighbourTmp[base] = CytoUnits.toLogical(delta.x)
-                    neighbourTmp[base + 1] = -CytoUnits.toLogical(delta.y)
-                    neighbourTmp[base + 2] = CytoUnits.toLogical(nr.radius)
-                    neighbourTmp[base + 3] = 0f
-                    count++
+            if (springData != null) {
+                // CSR-based iteration (no per-entity ArrayList allocation)
+                val slot = springData.slotOfEntityId(id.value)
+                if (slot >= 0) {
+                    val lo = springData.csrOffset[slot]
+                    val hi = springData.csrOffset[slot + 1]
+                    for (k in lo until hi) {
+                        if (count >= CytoCellShader.MAX_NEIGHBOURS) break
+                        val nbEntityId = springData.csrOtherId[k]
+                        val nt = transforms[EntityId(nbEntityId)] ?: continue
+                        val nr = colliders[EntityId(nbEntityId)] ?: continue
+                        val delta = nt.pos - transform.pos
+                        val base = count * 4
+                        neighbourTmp[base] = CytoUnits.toLogical(delta.x)
+                        neighbourTmp[base + 1] = -CytoUnits.toLogical(delta.y)
+                        neighbourTmp[base + 2] = CytoUnits.toLogical(nr.radius)
+                        neighbourTmp[base + 3] = 0f
+                        count++
+                    }
+                }
+            } else if (springTable != null) {
+                val neighbours = springTable[id]?.springs
+                if (neighbours != null) {
+                    for (spring in neighbours) {
+                        if (count >= CytoCellShader.MAX_NEIGHBOURS) break
+                        val nt = transforms[spring.other] ?: continue
+                        val nr = colliders[spring.other] ?: continue
+                        val delta = nt.pos - transform.pos
+                        val base = count * 4
+                        neighbourTmp[base] = CytoUnits.toLogical(delta.x)
+                        neighbourTmp[base + 1] = -CytoUnits.toLogical(delta.y)
+                        neighbourTmp[base + 2] = CytoUnits.toLogical(nr.radius)
+                        neighbourTmp[base + 3] = 0f
+                        count++
+                    }
                 }
             }
 

@@ -251,7 +251,9 @@ class CytoGoldenTest {
         val soa = CytoSoaReducer(cfg)
         var w = CytoWorld.fromSimState(createCytoInitialState())
         repeat(1500) { w = soa.tick(w, CytoInput.EMPTY) }   // past the founder's first division (~tick 988 under moving light)
-        assertGolden("growth", GROWTH, w.toSimState())
+        val state = w.toSimState()
+        val sd = w.getSpringData()
+        assertGolden("growth", GROWTH, state, sd)
     }
 
     @Test
@@ -260,7 +262,9 @@ class CytoGoldenTest {
         val soa = CytoSoaReducer(cfg)
         var w = CytoWorld.fromSimState(createCytoInitialState())
         repeat(1500) { w = soa.tick(w, CytoInput.EMPTY) }
-        assertGolden("mutation", MUTATION, w.toSimState())
+        val state = w.toSimState()
+        val sd = w.getSpringData()
+        assertGolden("mutation", MUTATION, state, sd)
     }
 
     @Test
@@ -275,17 +279,15 @@ class CytoGoldenTest {
         w = soa.tick(w, CytoInput(taps = listOf(CytoInput.Tap(500f, 500f, TouchMode.Base, collector))))
         w = soa.tick(w, CytoInput(taps = listOf(CytoInput.Tap(500f, 500f, TouchMode.Set, CellType.Blank))))
         repeat(20) { w = soa.tick(w, CytoInput.EMPTY) }
-        assertGolden("interact", INTERACT, w.toSimState())
+        val state = w.toSimState()
+        val sd = w.getSpringData()
+        assertGolden("interact", INTERACT, state, sd)
     }
 
     // ── SoA-only determinism + boundary gates (no AoS) ─────────────────────────────────────────────
 
     @Test
     fun parallelMatchesSequential() {
-        // The spring gather fans across cores via ColumnPartition.disjoint; that is bit-identical to its
-        // sequential fallback only if each body writes solely its own delta from frozen state. Run a
-        // parallel reducer (forced on at small N) lockstep with a sequential one and assert identical
-        // state each tick — the determinism guarantee, gated SoA-vs-SoA.
         val cfg = CytoConfig(mutationRateDenom = 0)
         val executor = org.emerge.sim.core.ecs.ParallelExecutor()
         val seq = CytoSoaReducer(cfg)
@@ -295,7 +297,9 @@ class CytoGoldenTest {
         for (t in 1..250) {
             ws = seq.tick(ws, CytoInput.EMPTY)
             wp = par.tick(wp, CytoInput.EMPTY)
-            assertEquals(digest(ws.toSimState()), digest(wp.toSimState()), "parallel != sequential at tick=$t")
+            val ss = ws.toSimState()
+            val sp = wp.toSimState()
+            assertEquals(digest(ss, ws.getSpringData()), digest(sp, wp.getSpringData()), "parallel != sequential at tick=$t")
         }
         executor.close()
     }
@@ -309,14 +313,16 @@ class CytoGoldenTest {
         var w = CytoWorld.fromSimState(createCytoInitialState())
         repeat(250) { w = soa.tick(w, CytoInput.EMPTY) }
         val before = w.toSimState()
+        val sd = w.getSpringData()
         val round = CytoWorld.fromSimState(before).toSimState()
-        assertEquals(digest(before), digest(round), "round-trip changed the state digest")
+        val roundW = CytoWorld.fromSimState(before)
+        assertEquals(digest(before, sd), digest(round, roundW.getSpringData()), "round-trip changed the state digest")
     }
 
     // ── digest ──────────────────────────────────────────────────────────────────────────────────
 
-    private fun assertGolden(label: String, golden: Map<String, String>, state: SimState) {
-        val actual = digest(state)
+    private fun assertGolden(label: String, golden: Map<String, String>, state: SimState, springData: org.emerge.demo.cyto.CytoFrameSpringData? = null) {
+        val actual = digest(state, springData)
         if (actual != golden) {
             val dump = actual.entries.joinToString(",\n        ") { "\"${it.key}\" to \"${it.value}\"" }
             throw AssertionError("$label digest drift. Current digests (paste to re-baseline):\n        $dump")
@@ -325,15 +331,21 @@ class CytoGoldenTest {
 
     /** A canonical per-dimension FNV-1a digest of the persistent sim state (impulse excluded — transient,
      *  reset each tick). Entities are visited in ascending EntityId order and every map is key-sorted, so
-     *  the string — and thus the hash — is stable across runs, JVMs, and component-table iteration order. */
-    private fun digest(s: SimState): Map<String, String> {
+     *  the string — and thus the hash — is stable across runs, JVMs, and component-table iteration order.
+     *  Spring/damage data is read from CSR when available, falling back to SimState tables. */
+    private fun digest(s: SimState, springData: org.emerge.demo.cyto.CytoFrameSpringData? = null): Map<String, String> {
         val cells = s.components.getTable<CytoCellComponent>().asMap()
         val transforms = s.components.getTable<TransformComponent>().asMap()
         val motions = s.components.getTable<MotionComponent>().asMap()
         val materials = s.components.getTable<MaterialComponent>().asMap()
         val colliders = s.components.getTable<ColliderComponent>().asMap()
-        val springs = s.components.getTable<SpringConstraintComponent>().asMap()
-        val conns = s.components.getTable<ConnectionStateComponent>().asMap()
+        // Fall back to SimState tables if CSR data not provided (legacy tests)
+        val springsTable = if (springData == null) s.components.getTable<SpringConstraintComponent>() else null
+        val connsTable = if (springData == null) s.components.getTable<ConnectionStateComponent>() else null
+        val springs: Map<EntityId, org.emerge.sim.core.physics.components.SpringConstraintComponent>? =
+            if (springsTable != null) springsTable.asMap() else null
+        val conns: Map<EntityId, ConnectionStateComponent>? =
+            if (connsTable != null) connsTable.asMap() else null
         val ids = cells.keys.sortedBy { it.value }
 
         val meta = "seed=${s.randomSeed};tick=${s.tick};last=${s.world.lastEntityValue};n=${ids.size}"
@@ -359,14 +371,31 @@ class CytoGoldenTest {
 
         val topology = StringBuilder()
         for (id in ids) {
-            val sp = springs[id]?.springs.orEmpty()
-                .sortedBy { it.other.value }
-                .joinToString(",") { "${it.other.value}/${it.restLength.raw}/${it.stiffness.raw}/${it.damping.raw}" }
-            // Connection damage with zero entries dropped (a fresh spring carries 0; readers treat
-            // missing as 0 — only a genuine non-zero divergence should move the hash).
-            val dmg = conns[id]?.damage.orEmpty().filterValues { it != 0f }
-                .entries.sortedBy { it.key.value }.joinToString(",") { "${it.key.value}=${it.value}" }
-            if (sp.isNotEmpty() || dmg.isNotEmpty()) topology.append(id.value).append(":[").append(sp).append("][").append(dmg).append(']').append(';')
+            // Use CSR data if available, else fall back to SimState tables
+            var spStr = ""
+            var dmgStr = ""
+            if (springData != null) {
+                val slot = springData.slotOfEntityId(id.value)
+                if (slot >= 0) {
+                    val lo = springData.csrOffset[slot]
+                    val hi = springData.csrOffset[slot + 1]
+                    // Build sorted spring string from CSR
+                    data class E(val otherId: Int, val rest: Long, val stiff: Long, val damp: Long, val aux: Float)
+                    val edgeList = mutableListOf<E>()
+                    for (k in lo until hi) {
+                        edgeList.add(E(springData.csrOtherId[k], springData.csrRestRaw[k], springData.csrStiffRaw[k], springData.csrDampRaw[k], springData.csrEdgeAux[k]))
+                    }
+                    spStr = edgeList.sortedBy { it.otherId }.joinToString(",") { "${it.otherId}/${it.rest}/${it.stiff}/${it.damp}" }
+                    dmgStr = edgeList.filter { it.aux != 0f }.sortedBy { it.otherId }.joinToString(",") { "${it.otherId}=${it.aux}" }
+                }
+            } else if (springs != null) {
+                spStr = springs[id]?.springs.orEmpty()
+                    .sortedBy { it.other.value }
+                    .joinToString(",") { "${it.other.value}/${it.restLength.raw}/${it.stiffness.raw}/${it.damping.raw}" }
+                dmgStr = conns?.get(id)?.damage?.orEmpty()?.filterValues { it != 0f }
+                    ?.entries?.sortedBy { it.key.value }?.joinToString(",") { "${it.key.value}=${it.value}" } ?: ""
+            }
+            if (spStr.isNotEmpty() || dmgStr.isNotEmpty()) topology.append(id.value).append(":[").append(spStr).append("][").append(dmgStr).append(']').append(';')
         }
 
         val gridSb = StringBuilder()

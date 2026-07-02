@@ -107,7 +107,7 @@ class CytoController(
         // Materialize once per frame (only when a step ran) — multiple steps in a heavy frame share one
         // materialize, so the per-step SoA win is preserved.
         if (stepped) currentState = world.toSimState()
-        return CytoFrame(currentState, tickCount).also { publishedFrame = it }
+        return CytoFrame(currentState, tickCount, world.getSpringData()).also { publishedFrame = it }
     }
 
     /** Drain the buffered pointer input into a [CytoInput]. Spawns/taps/detaches are one-shot (consumed
