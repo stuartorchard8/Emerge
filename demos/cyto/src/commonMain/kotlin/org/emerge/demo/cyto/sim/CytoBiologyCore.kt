@@ -3,7 +3,31 @@ package org.emerge.demo.cyto.sim
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.primitives.Frac
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.time.TimeSource
+
+// Scratch arrays for CytoBiologyCore.diffuse — single-threaded, reused across calls.
+// Replaces HashMap<EntityId, HashMap<Int, Int>> with flat arrays for O(1) access.
+private var diffMaxId = 0
+private var diffSpeciesKeys = mutableListOf<IntArray>()
+private var diffSpeciesVals = mutableListOf<IntArray>()
+private var diffSizes = IntArray(0)
+
+/** Grow/resize scratch delta storage for diffuse to hold up to [maxId] entity entries. */
+private fun ensureDiffScratch(maxId: Int) {
+    if (maxId < 0) return
+    diffMaxId = maxId
+    while (diffSpeciesKeys.size <= maxId) { diffSpeciesKeys.add(IntArray(0)); diffSpeciesVals.add(IntArray(0)) }
+    if (diffSizes.size <= maxId) {
+        val old = diffSizes; diffSizes = IntArray(maxId + 1)
+        for (i in 0 until old.size) diffSizes[i] = old[i]
+    }
+}
+
+/** Clear all delta entries (called at start of each diffuse call). */
+private fun clearDiffScratch() {
+    for (i in 0..diffMaxId) diffSizes[i] = 0
+}
 
 /**
  * The per-cell biology of the matter model (MORPHOGENESIS.md), operating on [CellWork] + the
@@ -454,42 +478,86 @@ object CytoBiologyCore {
      *  A fixed divisor is edge-symmetric (Fickian) → **uniform** steady state across identical cells; the divisor
      *  only sets the speed. It stays `≥ MAX_WELD_DEGREE` so the integer floor keeps `out·degree ≤ count` (no cell
      *  goes negative). Snapshot-based (reads pre-diffusion counts, writes deltas, applies after) so it's
-     *  order-independent and conservative; biomass does not diffuse (it's locked). */
+     *  order-independent and conservative; biomass does not diffuse (it's locked).
+     *  Uses scratch flat arrays instead of HashMaps for O(1) per-species delta access. */
     fun diffuse(works: Map<EntityId, CellWork>, neighbourIds: Map<EntityId, List<EntityId>>) {
         // The compute loop only ever reads a cell's *own* cytoplasm and writes to a separate delta map,
         // never to any cytoplasm — so reading the live store is identical to reading a pre-diffusion copy,
-        // and the deltas are applied only after every cell is computed. Deltas allow negatives (the
-        // sender's outflow), so they're plain id→int maps, not stores; lazily allocated so the (typically
-        // many) isolated, degree-0 cells cost nothing.
-        val delta = HashMap<EntityId, HashMap<Int, Int>>()
+        // and the deltas are applied only after every cell is computed.
+        val maxId = works.keys.maxOfOrNull { it.value } ?: 0
+        ensureDiffScratch(maxId)
+        clearDiffScratch()
+
+        // Helper: add delta for entity [id], species [sp], value [v].
+        // Grows the per-entity species array on demand (cap at 64 species).
+            fun addDelta(idVal: Int, sp: Int, v: Int) {
+            val s = diffSizes[idVal]
+            if (s < diffSpeciesKeys[idVal].size) {
+                diffSpeciesKeys[idVal][s] = sp
+                diffSpeciesVals[idVal][s] += v
+            } else if (s < 64) {
+                val keys = diffSpeciesKeys[idVal]
+                val vals = diffSpeciesVals[idVal]
+                if (keys.size <= s) {
+                    val sz = max(4, keys.size * 2)
+                    diffSpeciesKeys[idVal] = keys.copyOf(max(sz, s + 1))
+                    diffSpeciesVals[idVal] = vals.copyOf(max(sz, s + 1))
+                }
+                diffSpeciesKeys[idVal][s] = sp
+                diffSpeciesVals[idVal][s] = v
+            }
+            diffSizes[idVal] = s + 1
+        }
+
+        // Helper: accumulate delta value for existing species entry.
+            fun addDeltaValue(idVal: Int, sp: Int, v: Int) {
+            val s = diffSizes[idVal]
+            for (i in 0 until s) {
+                if (diffSpeciesKeys[idVal][i] == sp) {
+                    diffSpeciesVals[idVal][i] += v
+                    return
+                }
+            }
+            if (s < 64) {
+                val keys = diffSpeciesKeys[idVal]
+                val vals = diffSpeciesVals[idVal]
+                if (keys.size <= s) {
+                    val sz = max(4, keys.size * 2)
+                    diffSpeciesKeys[idVal] = keys.copyOf(max(sz, s + 1))
+                    diffSpeciesVals[idVal] = vals.copyOf(max(sz, s + 1))
+                }
+                diffSpeciesKeys[idVal][s] = sp
+                diffSpeciesVals[idVal][s] = v
+                diffSizes[idVal] = s + 1
+            }
+        }
+
         for ((id, w) in works) {
             val nbrs = neighbourIds[id] ?: continue
             val degree = nbrs.size
             if (degree == 0) continue
-            val selfDelta = delta.getOrPut(id) { HashMap() }
             for (i in 0 until w.cytoplasm.size) {
                 val species = w.cytoplasm.idAt(i)
                 val out = w.cytoplasm.countAt(i) / CYTOPLASM_DIFFUSE_DENOM
                 if (out <= 0) continue
-                // Diffuse only species the neighbour METABOLISES (canDiffuse) — resources/signals in flux.
-                // A synthesised-but-never-consumed species is intracellular (produce-without-diffuse): it's
-                // held + sensed but never shared, so cell-private memory / a non-spreading determinant
-                // survives a welded colony. The sender keeps the share meant for any neighbour that can't.
                 var receivers = 0
                 for (nb in nbrs) {
                     val nbWork = works[nb] ?: continue
                     if (!nbWork.handleable.canDiffuse(species)) continue
-                    val nbDelta = delta.getOrPut(nb) { HashMap() }
-                    nbDelta[species] = (nbDelta[species] ?: 0) + out
+                    addDeltaValue(nb.value, species, out)
                     receivers++
                 }
-                if (receivers > 0) selfDelta[species] = (selfDelta[species] ?: 0) - out * receivers
+                if (receivers > 0) addDeltaValue(id.value, species, -out * receivers)
             }
         }
-        for ((id, d) in delta) {
-            val w = works.getValue(id)
-            for ((species, dv) in d) {
-                if (dv != 0) w.cytoplasm.add(species, dv)
+
+        // Apply deltas back to cytoplasm
+        for ((id, w) in works) {
+            val s = diffSizes[id.value]
+            if (s == 0) continue
+            for (i in 0 until s) {
+                val dv = diffSpeciesVals[id.value][i]
+                if (dv != 0) w.cytoplasm.add(diffSpeciesKeys[id.value][i], dv)
             }
         }
     }
