@@ -297,18 +297,8 @@ object CytoTuning {
     /** Max AND-clauses in one gene's condition. A mutation that would add a clause past this is rejected
      *  (bounds gate complexity + mutation cost); a positional *band* needs only 2 (`lo < Conc < hi`). ⚙ */
     const val GENOME_MAX_CLAUSES = 4
-    /** Controls how the Repair action forms adhesion welds between touching un-welded cells.
-     *  ⚙ */
-    var REPAIR_WELD_MODE: RepairWeldMode = RepairWeldMode.InternalOnly
-}
-
-/** Controls how the Repair action forms adhesion welds between touching un-welded cells. */
-enum class RepairWeldMode {
-    /** Repair forms welds with every touching un-welded cell (original behaviour — bodies can fuse). */
-    Always,
     /** Repair only forms welds between cells that share a connected neighbour (internal body repair
-     *  only — the internals auto-heal while distinct bodies do not merge). */
-    InternalOnly,
-    /** Repair never forms new welds — it only heals existing connections. */
-    Never
+     *  only — the internals auto-heal while distinct bodies do not merge). This is hard-coded;
+     *  the Always and Never modes have been removed. ⚙ */
+    val REPAIR_WELD_INTERNAL_ONLY = true
 }

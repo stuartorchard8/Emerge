@@ -397,16 +397,12 @@ object CytoBiologyCore {
     }
 
     /** Repair ops the cell could use this tick: enough to fully heal existing connection damage PLUS
-     *  (when REPAIR_WELD_MODE != Never) to birth-heal a weld with each eligible un-welded cell
-     *  it's touching (each up to [CONNECTION_BREAK_DAMAGE]) — so a cell with no damaged connections still
-     *  gets ops to form adhesion welds (see [applyRepair]). Eligible cells are all touching (Always), only
-     *  those sharing a connected neighbour (InternalOnly), or none (Never). */
+     *  to birth-heal a weld with each eligible un-welded cell it's touching (each up to
+     *  [CONNECTION_BREAK_DAMAGE]) — so a cell with no damaged connections still gets ops to form
+     *  adhesion welds (see [applyRepair]). Eligible cells are those sharing a connected neighbour
+     *  (InternalOnly mode — hard-coded). */
     private fun repairOpsNeeded(work: CellWork): Int {
-        val adhesionTargets = when (CytoTuning.REPAIR_WELD_MODE) {
-            RepairWeldMode.InternalOnly -> work.internalTouching
-            RepairWeldMode.Always -> work.touchingIds
-            RepairWeldMode.Never -> emptySet()
-        }
+        val adhesionTargets = work.internalTouching
         var dmg: Float = adhesionTargets.size * CONNECTION_BREAK_DAMAGE
         // Each EXISTING connection heals at most MAX_REPAIR_HEAL_PER_TICK this tick, so don't request ops the
         // cap won't let us spend (birth-heal welds, above, are exempt — a one-off weld forms at full strength).
@@ -439,11 +435,7 @@ object CytoBiologyCore {
             if (left <= 0f) work.connectionDamage.remove(id) else work.connectionDamage[id] = left
         }
         // Leftover budget forms new welds with eligible un-welded cells (lowest id first, deterministic).
-        val adhesionTargets = when (CytoTuning.REPAIR_WELD_MODE) {
-            RepairWeldMode.InternalOnly -> work.internalTouching
-            RepairWeldMode.Always -> work.touchingIds
-            RepairWeldMode.Never -> emptySet()
-        }
+        val adhesionTargets = work.internalTouching
         if (budget > 0f && adhesionTargets.isNotEmpty()) {
             for (id in adhesionTargets.sortedBy { it.value }) {
                 if (budget <= 0f) break

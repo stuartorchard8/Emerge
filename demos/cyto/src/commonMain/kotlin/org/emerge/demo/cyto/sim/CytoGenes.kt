@@ -331,7 +331,7 @@ class CellWork(
     val touchingIds: MutableList<EntityId> = ArrayList()
 
     /** Cells this cell shares a weld-neighbour with, derived from [touchingIds] by the reducer before the
-     *  biology phase (used by [CytoTuning.RepairWeldMode.InternalOnly] to restrict adhesion welds). */
+     *  biology phase (used by [CytoTuning.REPAIR_WELD_INTERNAL_ONLY] to restrict adhesion welds). */
     val internalTouching: MutableSet<EntityId> = HashSet()
 
     /** Welds the Repair action wants to form this tick: touching-cell id → the repair healed into the new
