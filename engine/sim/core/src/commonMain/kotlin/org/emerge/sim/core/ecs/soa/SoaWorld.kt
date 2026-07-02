@@ -28,7 +28,8 @@ class SoaWorld(
     /** Deterministic monotonic tick clock, mirroring [org.emerge.sim.core.sim.SimState.tick]. */
     var tick: Long = 0L,
 ) {
-    private val columnsByType = LinkedHashMap<KClass<*>, ComponentColumns<*>>()
+    /** Registered column stores, in registration order. Internal — used by materializeToSimState. */
+    val columnsByType = LinkedHashMap<KClass<*>, ComponentColumns<*>>()
     private val liveEntities = HashSet<Int>()
 
     /** Mirrors `EcsWorld.lastEntityValue`: the cursor the next [createEntity] scans from. */
