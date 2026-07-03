@@ -232,16 +232,44 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
       *  Returns per-species delta array (same order as sps).
       *  Inverted loop: iterates over the [transferN] transfer species and binary-searches each
       *  in the sorted leaf store — only ~10 species need balancing vs. ~10+ species per leaf,
-      *  so we skip O(store_size - transferN) wasted lookups per leaf. */
+      *  so we skip O(store_size - transferN) wasted lookups per leaf.
+      *  Also skips entire leaves whose presenceMask doesn't contain any monomer bits from
+      *  the transfer set, eliminating traversal of leaves with no transferable monomers. */
     fun balanceBatched(transferN: Int, transferIdx: IntArray, transferCeffs: IntArray, scaleFactor: Float): IntArray {
         val n = fpLeaves.size; if (n == 0) return IntArray(transferN)
         val results = IntArray(transferN)
+        // Pre-compute monomer bits needed by the transfer set.
+        // Bits: 1=a, 2=b, 4=c. Monomer-only species only need mask check.
+        var monomerMaskNeed = 0
+        for (t in 0 until transferN) {
+            val sp = transferIdx[t]
+            if (SpeciesRegistry.atomCount(sp) == 1) {
+                if (sp == A) monomerMaskNeed = monomerMaskNeed or 1
+                else if (sp == B) monomerMaskNeed = monomerMaskNeed or 2
+                else if (sp == C) monomerMaskNeed = monomerMaskNeed or 4
+            }
+        }
         for (leaf in fpLeaves) {
+            // Skip leaves whose presence mask doesn't contain any monomer bits needed by transfer.
+            // This skips O(leaves) entirely for leaves that only have polymers (not transferable monomers).
+            if (monomerMaskNeed != 0 && (leaf.presenceMask and monomerMaskNeed) == 0) {
+                // No monomers present — but polymers might still be transferable via import bias.
+                // We need to check if there are any non-monomer transfer species.
+                var hasNonMono = false
+                for (t in 0 until transferN) {
+                    if (SpeciesRegistry.atomCount(transferIdx[t]) > 1) { hasNonMono = true; break }
+                }
+                if (!hasNonMono) continue  // safe to skip
+            }
             val store = leaf.store!!
             // Only look up the transfer species in this leaf (binary search on sorted store).
-            // Since transferN ≪ store.size for dense leaves, this skips wasted lookups.
             for (t in 0 until transferN) {
                 val sid = transferIdx[t]
+                // Fast monomer check: skip if leaf doesn't have this monomer (presence mask).
+                if (SpeciesRegistry.atomCount(sid) == 1) {
+                    val bit = if (sid == A) 1 else if (sid == B) 2 else if (sid == C) 4 else 0
+                    if (bit != 0 && (leaf.presenceMask and bit) == 0) continue
+                }
                 val idx = store.binarySearchId(sid)
                 if (idx < 0) continue   // species not in this leaf
                 val sc = store.countAt(idx)
