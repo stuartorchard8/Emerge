@@ -129,6 +129,23 @@ class MoleculeStore private constructor(
         return m
     }
 
+    /** Binary search for [id] in the sorted species array. Returns the index if found, or negative
+     *  if absent. Public for use by [CytoMatterField.balanceBatched]. */
+    fun binarySearchId(id: Int): Int {
+        if (id < 0) return -2
+        var lo = 0; var hi = n - 1
+        while (lo <= hi) {
+            val mid = (lo + hi) ushr 1
+            val v = ids[mid]
+            when {
+                v < id -> lo = mid + 1
+                v > id -> hi = mid - 1
+                else -> return mid
+            }
+        }
+        return -(lo + 1)
+    }
+
     /** Binary search: index of [id], or `-(insertionPoint) - 1` if absent (java/kotlin convention). */
     private fun indexOf(id: Int): Int {
         var lo = 0; var hi = n - 1

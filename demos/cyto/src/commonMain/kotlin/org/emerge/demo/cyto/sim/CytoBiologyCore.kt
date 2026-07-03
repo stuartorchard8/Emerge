@@ -118,7 +118,7 @@ object CytoBiologyCore {
                         t++
                     }
                 }
-                val deltas = grid.balanceBatched(transferIdx, transferCeffs, CytoTuning.DIFFUSION_SCALE_FACTOR)
+                val deltas = grid.balanceBatched(transferN, transferIdx, transferCeffs, CytoTuning.DIFFUSION_SCALE_FACTOR)
                 for (i in 0 until transferN) {
                     if (deltas[i] != 0) {
                         cyt.add(transferIdx[i], deltas[i])
