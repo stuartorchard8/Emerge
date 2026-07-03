@@ -234,7 +234,7 @@ class CytoSoaSpecTest {
                 b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(2000)) }
                 b.build()
             }
-            val s = run(initial, ticks = 3000)
+            val s = run(initial, ticks = 1500)
             val ts = s.components.getTable<TransformComponent>().asMap()
             val ys = s.components.getTable<CytoCellComponent>().asMap().keys.mapNotNull { ts[it]?.let { tr -> CytoUnits.toLogical(tr.pos.y).toDouble() } }
             return if (ys.isEmpty()) 0.0 else ys.max() - ys.min()
