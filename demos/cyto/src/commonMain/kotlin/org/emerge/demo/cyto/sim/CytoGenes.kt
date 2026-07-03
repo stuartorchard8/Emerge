@@ -168,7 +168,34 @@ data class Gene(
     val condition: GeneCondition,
     val action: GeneAction,
     val efficiency: Int = 0,
-)
+) {
+    /** Pre-computed: efficiency gear + 1 (throughput multiplier for actions). */
+    val gP1: Int get() = efficiency + 1
+
+    /** Pre-computed: energy cap based on efficiency gear. 0 = uncapped (Int.MAX_VALUE). */
+    val energyCap: Int get() {
+        val g = efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
+        return if (g == 0) Int.MAX_VALUE else CytoTuning.EFFICIENCY_REF ushr g
+    }
+
+    /** Pre-computed: whether this gene's action benefits from efficiency gear (Convert/Import/Repair/Contract). */
+    val actionHasEfficiency: Boolean get() = when (action.type) {
+        ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.Contract -> true
+        else -> false
+    }
+
+    /** Pre-computed: whether this gene's action has the cap (Convert/Import/Repair/FormBond/Contract). */
+    val actionHasCap: Boolean get() = when (action.type) {
+        ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.FormBond, ActionType.Contract -> true
+        else -> false
+    }
+
+    // Note: breakSpId, fragLId, fragRId are computed at apply time because they depend on snap.
+    // But bondIndexOf is pre-computable.
+    val preBondIdx: Int get() = (source as? EnergySource.BreakBond)?.let {
+        SpeciesRegistry.bondIndexOf(it.bond)
+    } ?: -1
+}
 
 /**
  * A cell's metabolic reach — the bonds and atoms its genome can handle — used by **selective uptake**:
