@@ -163,15 +163,22 @@ object CytoBiologyCore {
         var n = 0
 
         if (CytoTuning.ROUND_ROBIN_GENES && genomeSize > 0) {
-            // ── Round-robin mode ──────────────────────────────────────────────
-            // Only ONE non-division gene per genome is evaluated per tick.
-            // The gene index is computed from the global tick count: rrIdx = tick % genomeSize.
-            // This means all cells with the same genome size are automatically synchronized
-            // across the entire simulation — no per-cell state, no sync logic needed.
+            // ── Round-robin condition evaluation ──────────────────────────────
+            // The gene at rrIdx gets its condition re-evaluated this tick.
+            // All other genes use their cached active state from the last time
+            // they were evaluated (or false if never evaluated).
             val rrIdx = tick % genomeSize
-            // Evaluate only the round-robin gene for non-division actions
-            val rrGene = genome[rrIdx]
-            if (rrGene.action.type != ActionType.Mitosis && isActive(rrGene, work, bioBonds)) active[n++] = rrIdx
+            for (i in genome.indices) {
+                val g = genome[i]
+                if (g.action.type != ActionType.Mitosis) {
+                    val isActive = if (i == rrIdx) {
+                        isActive(g, work, bioBonds).also { work._cachedActive[i] = it }
+                    } else {
+                        work._cachedActive[i]
+                    }
+                    if (isActive) active[n++] = i
+                }
+            }
         } else {
             // ── Sequential mode (original) ────────────────────────────────────
             // All active genes are evaluated per tick.

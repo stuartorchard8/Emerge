@@ -162,10 +162,10 @@ class CytoGoldenTest {
     // drift; mutationOn is byte-identical. Determinism + conservation gates held.
     private val GROWTH = mapOf(
         "meta" to "9e9bec4ae4480164",
-        "physics" to "eb68e9b129ce4dce",
-        "biology" to "52fb526f02b01fae",
-        "topology" to "9154972dca7299ac",
-        "grid" to "a2be1b39d144c3d3",
+        "physics" to "7c6ed85bc50bfa34",
+        "biology" to "edfefa2e1851beae",
+        "topology" to "3013533f47249864",
+        "grid" to "8ba148025f083c8b",
     )
     // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
     // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
@@ -243,10 +243,10 @@ class CytoGoldenTest {
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
         "meta" to "d381cf84adc97208",
-        "physics" to "b1a4faeced3f9906",
-        "biology" to "1ed24244f000a3c4",
-        "topology" to "9161c4f023538d29",
-        "grid" to "1dbcbb4f682d0fc9",
+        "physics" to "cd7980deee4ecd0",
+        "biology" to "1b07af51b6ab7afb",
+        "topology" to "5a8e2d5b8d108eef",
+        "grid" to "1b02d86b64b4a7cb",
     )
 
     @Test
