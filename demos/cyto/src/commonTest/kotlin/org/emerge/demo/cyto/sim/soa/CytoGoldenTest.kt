@@ -162,11 +162,13 @@ class CytoGoldenTest {
     // drift; mutationOn is byte-identical. Determinism + conservation gates held.
     private val GROWTH = mapOf(
         "meta" to "9e9bec4ae4480164",
-        "physics" to "a304ed27b543623",
-        "biology" to "8d961fe807057236",
-        "topology" to "9aecbc0aea4ff130",
-        "grid" to "6b15a597bcca8dfa",
+        "physics" to "10e8fc2e44b73fb8",
+        "biology" to "d80ab877289899a7",
+        "topology" to "b87dbfeecee40c68",
+        "grid" to "a2be1b39d144c3d3",
     )
+    // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
+    // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
     // Re-baselined 2026-07-04: EXCHANGE_BATCHES=4 — staggered cell↔environment exchange so each tick only
     // 1/N of cells exchange, dividing exchange cost by N. Changes nutrient timing → different trajectories.
     // mutation on (rateDenom 200), 250 ticks — the live evolving config the AoS gate never covered.
@@ -241,9 +243,9 @@ class CytoGoldenTest {
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     private val INTERACT = mapOf(
         "meta" to "d381cf84adc97208",
-        "physics" to "7263129c34560229",
-        "biology" to "41fd9d494c696408",
-        "topology" to "9dbfa258647279bb",
+        "physics" to "8a8a7ac3fe2c80c3",
+        "biology" to "152bf76eb84a08b0",
+        "topology" to "b4c962c132bf5711",
         "grid" to "8866f6988026bd69",
     )
 

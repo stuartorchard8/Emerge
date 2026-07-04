@@ -287,6 +287,9 @@ object CytoTuning {
      *  so the exchange cost is divided by N. Cells are assigned to the least-populated batch when they first
      *  appear in the world (e.g. at spawn or after division), keeping batches balanced. N ≥ 1. ⚙ */
     const val EXCHANGE_BATCHES = 4
+    /** Cytoplasm diffusion between connected cells runs only every Nth tick — it's a slow process
+     *  so per-tick is wasteful. Higher = cheaper but slower inter-cell nutrient sharing (⚙). */
+    const val CYTOPLASM_DIFFUSE_PERIOD = 2
     /** Max distinct bond-types a genome may reach (formed/broken/referenced). A mutation that would push a
      *  genome past this is rejected, bounding each cell's metabolic reach — hence (with selective uptake)
      *  its per-cell species to ≤ the molecules buildable from B bonds (B=5 → ≤52). The dense-chemistry

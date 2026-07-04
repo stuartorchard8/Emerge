@@ -382,7 +382,10 @@ class BiologySystem(
         CytoBiologyCore.passiveEnvExchange(orderedWorks, grid, world.world.tick.toInt(), bioProfile)
         bioSplit("bio:exchange")
 
-        CytoBiologyCore.diffuse(works, neighbourIds)
+        // Cytoplasm diffusion between connected cells — runs every N ticks to reduce cost
+        if (world.world.tick % CytoTuning.CYTOPLASM_DIFFUSE_PERIOD == 0L) {
+            CytoBiologyCore.diffuse(works, neighbourIds)
+        }
         bioSplit("bio:diffuse")
 
         state.divide.clear(); state.destroy.clear()
