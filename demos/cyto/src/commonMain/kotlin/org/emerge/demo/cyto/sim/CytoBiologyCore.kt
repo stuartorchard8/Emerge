@@ -604,13 +604,23 @@ object CytoBiologyCore {
     /** Evaluate one side of a [Clause] to an integer: a [Operand.Constant]'s literal, or a live reading of
       *  the cell this tick (cytoplasm count / size-normalised concentration / total biomass / contact count).
       *  [bioBonds] is the caller-computed total biomass (Biomass/Conc read it; the species id is precomputed).
-      *  Uses [work.cachedCount] for O(1) species lookups after first tick's binary search. */
+      *  Uses [work.cachedCount] for O(1) species lookups. Fast path for operands that don't need lookup. */
     private fun operand(op: Operand, work: CellWork, bioBonds: Int): Int = when (op) {
         is Operand.Constant -> op.value
         is Operand.Chem -> work.cachedCount(op.speciesId)
         is Operand.Conc -> conc(work.cachedCount(op.speciesId), bioBonds)
         Operand.Biomass -> bioBonds
         Operand.Touching -> work.touchCount
+    }
+
+    /** Fast-path variant of [operand] for clauses without Chem/Conc operands. Avoids the when-dispatch
+     *  and cachedCount calls — just compares pre-loaded values. Called from [clauseHoldsFast] when both
+     *  operands are non-lookup types. */
+    private fun operandFast(op: Operand, work: CellWork, bioBonds: Int): Int = when (op) {
+        is Operand.Constant -> op.value
+        Operand.Biomass -> bioBonds
+        Operand.Touching -> work.touchCount
+        else -> throw IllegalStateException("operandFast called with lookup operand")
     }
 
     /** [operand], but reading the tick-start [snap]shot (cytoplasm + [snapBiomass]) instead of live state,

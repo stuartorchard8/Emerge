@@ -37,8 +37,14 @@ enum class Comparison { Greater, Less }
  *  condition are operands, a gene can gate on a relationship between two live quantities — e.g.
  *  `Biomass < Chem("ab")` ("while I'm smaller than my stored `ab` reserve") — not only variable-vs-constant. */
 sealed class Operand {
+    /** True if this operand requires a species lookup from cytoplasm (Chem or Conc). False for
+     *  Constant, Biomass, and Touching which are free. Pre-computed at construction for fast gate evaluation. */
+    abstract val needsLookup: Boolean
+
     /** A fixed integer compared against (the former gate threshold). */
-    data class Constant(val value: Int) : Operand()
+    data class Constant(val value: Int) : Operand() {
+        override val needsLookup = false
+    }
 
     /** Count of [species] in the cytoplasm (0 for an absent / unknown species). */
     data class Chem(val species: String) : Operand() {
@@ -46,16 +52,21 @@ sealed class Operand {
          *  immutable [species] string), so the per-tick gate path reads an int instead of re-hashing the
          *  string every evaluation. Not a constructor param ⇒ untouched by equals/hashCode/copy. */
         val speciesId: Int = SpeciesRegistry.id(species)
+        override val needsLookup = true
     }
 
     /** Total biomass — Σ count × bond-count (also drives cell size + the death threshold). */
-    object Biomass : Operand()
+    object Biomass : Operand() {
+        override val needsLookup = false
+    }
 
     /** Number of **un-connected** cells this cell is in physical contact with this tick — i.e.
      *  `Touching > 0` fires while the cell is bumping a neighbour it isn't welded to. The matter-model
      *  port of old Cyto's `Touch` gene input (a cell sensing collision pressure); welded neighbours don't
      *  count (they're structure, not a touch event). A reactive, contact-driven gate. */
-    object Touching : Operand()
+    object Touching : Operand() {
+        override val needsLookup = false
+    }
 
     /** **Concentration** of [species] — `count(species) · CytoTuning.CONC_SCALE / totalBiomass`, the
      *  size-normalised counterpart of [Chem] (which is the raw count). 0 when biomass is 0 or the species is
@@ -66,6 +77,7 @@ sealed class Operand {
     data class Conc(val species: String) : Operand() {
         /** [species] resolved to its [SpeciesRegistry] id once at construction (see [Chem.speciesId]). */
         val speciesId: Int = SpeciesRegistry.id(species)
+        override val needsLookup = true
     }
 }
 
