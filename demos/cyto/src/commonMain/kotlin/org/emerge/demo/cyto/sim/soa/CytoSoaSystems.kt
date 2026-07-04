@@ -306,7 +306,22 @@ class BiologySystem(
                 seed = slot,
             )
             for (j in 0 until deg) work.connectionDamage[EntityId(world.csr.otherId[base + j])] = world.csr.edgeAux[base + j]
-            for (tid in state.touchingScratch[slot]) work.touchingIds.add(EntityId(tid))
+            for (tid in state.touchingScratch[slot]) {
+                work.touchingIds.add(EntityId(tid))
+                val ts = world.slotOf(tid)
+                if (ts >= 0) {
+                    val lx = CytoUnits.toLogical(Coord(world.posX[ts]))
+                    val ly = CytoUnits.toLogical(Coord(world.posY[ts]))
+                    if (work._touchingCellN >= work._touchingCellCx.size) {
+                        val newSize = work._touchingCellCx.size * 2
+                        work._touchingCellCx = work._touchingCellCx.copyOf(newSize)
+                        work._touchingCellCy = work._touchingCellCy.copyOf(newSize)
+                    }
+                    work._touchingCellCx[work._touchingCellN] = lx
+                    work._touchingCellCy[work._touchingCellN] = ly
+                    work._touchingCellN++
+                }
+            }
             work.exposureMilli = exposureMilli.toInt()
             work.cx = lx; work.cy = ly
             works[id] = work

@@ -374,6 +374,12 @@ class CellWork(
      *  A firing Repair gene welds these (CytoBiologyCore.applyRepair) — gene-driven adhesion. */
     val touchingIds: MutableList<EntityId> = ArrayList()
 
+    /** Logical positions of touching cells, aligned with [touchingIds].
+     *  Used by degrade to find the center-most touching cell for biomass shedding. */
+    var _touchingCellCx = FloatArray(8)
+    var _touchingCellCy = FloatArray(8)
+    var _touchingCellN = 0
+
     /** Cells this cell shares a weld-neighbour with, derived from [touchingIds] by the reducer before the
      *  biology phase (used to restrict adhesion welds to internal body repair). */
     val internalTouching: MutableSet<EntityId> = HashSet()
@@ -564,6 +570,7 @@ class CellWork(
         connectionDamage.clear()
         touchingIds.clear()
         internalTouching.clear()
+        _touchingCellN = 0
         importBias.clear()
         weldHeals.clear()
         dividing = false

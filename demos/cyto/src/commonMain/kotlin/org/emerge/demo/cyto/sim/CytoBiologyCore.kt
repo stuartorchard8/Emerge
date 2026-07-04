@@ -707,7 +707,7 @@ object CytoBiologyCore {
 
     /** Spontaneous decay: shed `wear / DEGRADE_PERIOD` whole biomass molecules to the environment
       *  at a rate ∝ biomass size. Each tick the cell's **most-abundant** biomass molecule loses one copy,
-      *  dropped directly into the matter field at the cell's position (like shed skin — no splitting,
+      *  dropped at the center-most touching cell's position (like shed skin — no splitting,
       *  no cytoplasm intermediate). The molecule then decays at the environment's own rate.
       *  This is a real matter LEAK — a maintenance cost the cell must keep importing against (selection for
       *  efficient builders) and a steady feed for the food web. The bond's energy is still dissipated. */
@@ -725,7 +725,30 @@ object CytoBiologyCore {
             if (targetId >= 0) {
                 val count = minOf(broken, work.biomass.count(targetId))
                 work.biomass.add(targetId, -count)
-                grid.deposit(work.cx, work.cy, work.logicalRadius.toFloat(), targetId, count)
+                // Deposit at center-most touching cell, or the cell's own position if none.
+                val depositX: Float
+                val depositY: Float
+                if (work._touchingCellN > 0) {
+                    val cxSum = work._touchingCellCx.slice(0 until work._touchingCellN).sum()
+                    val cySum = work._touchingCellCy.slice(0 until work._touchingCellN).sum()
+                    val centroidX = cxSum / work._touchingCellN
+                    val centroidY = cySum / work._touchingCellN
+                    var bestDist = Float.MAX_VALUE
+                    var bestX = 0f
+                    var bestY = 0f
+                    for (i in 0 until work._touchingCellN) {
+                        val dx = work._touchingCellCx[i] - centroidX
+                        val dy = work._touchingCellCy[i] - centroidY
+                        val dist = dx * dx + dy * dy
+                        if (dist < bestDist) { bestDist = dist; bestX = work._touchingCellCx[i]; bestY = work._touchingCellCy[i] }
+                    }
+                    depositX = bestX
+                    depositY = bestY
+                } else {
+                    depositX = work.cx
+                    depositY = work.cy
+                }
+                grid.deposit(depositX, depositY, work.logicalRadius.toFloat(), targetId, count)
             }
         }
     }
