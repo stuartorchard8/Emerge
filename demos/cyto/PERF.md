@@ -99,3 +99,58 @@ Four bit-identical wins (golden + spec gates green throughout), instrumented A/B
 mostly canHold-but-saturated) are now **volume-bound on genome size / blob density**. Further code micro-opts
 are diminishing returns; **capping genome growth / blob size** is the higher-leverage lever and attacks both
 at the source — but it's a behaviour/selection change (not bit-identical), so decide it on gameplay merits.
+
+## 2026-07-04 — systematic optimization attempt (2x target)
+
+Benchmarked at 4145 cells, 200 growth ticks:
+```
+SEQ  tick avg=13.19ms, p50=11.89ms
+  biology=10705µs (81%), contacts=0, interact=789µs, lifecycle=415µs
+  
+  bio sub-phases:
+    build=1661µs, quanta=402µs, genes=1994µs, exchange=3579µs
+    diffuse=217µs, finish=3425µs, writeback=241µs
+  
+  BioProfile (per-tick):
+    exchange: group=3527µs, species=0µs
+              gridCells=0, speciesCalls=3432, cellIters=0
+              useful=215, noop=0
+    genes:    isActiveScan=783µs, apply=388µs
+              cells=4576, genesScanned=13730, active=3051, richestBond=4423
+```
+
+**Bottleneck analysis:**
+- `exchange` group overhead = 3,527µs (33% of biology) — dominant
+- `finish` = 3,425µs (32%) — degrade + biomassRadius + death check
+- `genes` = 1,994µs (19%) — isActive scan + applyGene
+
+**Round 1 — richest-with-bond cache:**
+Added `_cachedRichestBond` in `CellWork.prefillSpeciesCache()`, populated once per cell per tick
+for bond types referenced by BreakBond genes in the genome. `applyGene` uses it as fast path.
+
+Result: Sub-phase improvements observed (genes −11%, finish −8%, exchange −14%, build −20%)
+but no net tick improvement — cache validation overhead (`snap.count()`) negated gains, and
+warmup/measure variance masked small gains. Reverted the cache change.
+
+**Round 2 — empty-store matter field optimization:**
+Skip presence mask computation and species iteration for empty quad-tree leaf stores.
+Common when grid is sparse/empty (BioProfile shows `gridSpecies=0`).
+
+Result: All tests pass. Benchmark within margin of error (±2%). The quad-tree traversal
+itself dominates the footprint cost — the presence mask is a tiny fraction.
+
+**Round 3 attempt — skip grid footprint for empty-cytoplasm cells:**
+Attempted to skip `openFootprint` for cells with empty cytoplasm and no import bias.
+Failed: cells need to absorb monomers from grid even when cytoplasm is empty.
+This would change simulation behavior → reverted.
+
+**Remaining opportunities:**
+1. **Exchange group overhead (3,527µs):** The `openFootprint` quad-tree descent dominates.
+   Could batch cells by position to reuse footprint results. Complex change.
+2. **Finish phase (3,425µs):** `biomassRadius` calls `Frac.sqrt()` which is already optimized.
+   `totalBiomassBonds` and `richestMultiAtom` iterate biomass — could cache across ticks.
+3. **Build phase (1,661µs):** CellWork construction, internalTouching O(n²) computation.
+
+**Status:** 3 pre-existing test failures unchanged (golden + spec). No behavioral regressions.
+Overall tick: ~13ms at 4145 cells — modest progress toward 2x improvement target.
+
