@@ -393,6 +393,12 @@ class CellWork(
      *  Set once when the cell first appears; persists across ticks. -1 = not yet assigned (assigned on first build). */
     var exchangeBatch: Int = -1
 
+    /** Cached result of `hasConnectionDamage(work)` for the current tick, precomputed in [prefillSpeciesCache].
+     *  Avoids iterating over the HashMap once per gene during isActive scanning. */
+    var _cachedHasDamage = false
+    /** Cached result of `canContract(work)` for the current tick. */
+    var _cachedCanContract = false
+
     /** Per-work scratch reused by [CytoBiologyCore.runGenes] so a tick's gene execution allocates nothing:
      *  the tick-start cytoplasm snapshot ([snapScratch], filled via [MoleculeStore.copyFrom]), the active-gene
      *  index list ([activeScratch], grown with the genome), and the per-gene consumed-species accumulator
@@ -403,22 +409,32 @@ class CellWork(
     var activeScratch = IntArray(genome.size.coerceAtLeast(1)); private set
     val consumeIds = IntArray(4)
     val consumePer = IntArray(4)
-    /** Species count cache for gate evaluation: species id → count. Filled once per tick from snapScratch
-     *  before the gate scan, so repeated cytoplasm.count() calls during gate evaluation hit this cache
-     *  (O(1) lookup) instead of binary-searching the MoleculeStore (O(log n)). Max 32 entries. */
+    /** Species count cache for gate evaluation: species id → count. Pre-populated from [cytoplasm] at the
+     *  start of [CytoBiologyCore.runGenes], so gate lookups are O(1) array scans instead of
+     *  binary-searching the MoleculeStore (O(log n)). Max 32 entries. */
     private val _speciesCache = IntArray(32)
     private val _speciesCacheIds = IntArray(32)
     private var _speciesCacheSize = 0
-    /** Get count from species cache; fills cache on miss (up to 32 entries, then ignores). */
+    /** Populate the species cache from [cytoplasm]. Call once at the start of runGenes so all gate
+     *  evaluations get O(1) lookups. Max 32 entries (most cells have ~5 species). */
+    fun prefillSpeciesCache() {
+        _speciesCacheSize = 0
+        val size = cytoplasm.size
+        val limit = if (size < 32) size else 32
+        for (i in 0 until limit) {
+            _speciesCacheIds[_speciesCacheSize] = cytoplasm.idAt(i)
+            _speciesCache[_speciesCacheSize] = cytoplasm.countAt(i)
+            _speciesCacheSize++
+        }
+        // Pre-compute expensive per-gene checks so isActive doesn't iterate HashMaps/compare Fracs per gene.
+        _cachedHasDamage = connectionDamage.values.any { it > 0f } || touchingIds.isNotEmpty()
+        _cachedCanContract = logicalRadius > CytoTuning.MIN_RADIUS
+    }
+    /** Get count from pre-populated species cache. Returns 0 for unknown species. */
     fun cachedCount(id: Int): Int {
         val size = _speciesCacheSize
         for (i in 0 until size) if (_speciesCacheIds[i] == id) return _speciesCache[i]
-        if (size < 32) {
-            _speciesCacheIds[_speciesCacheSize] = id
-            _speciesCache[_speciesCacheSize++] = cytoplasm.count(id)
-            return _speciesCache[size]
-        }
-        return cytoplasm.count(id)
+        return 0
     }
 
     /** Repopulate this pooled instance for a new tick. [connectionDamage] is cleared (the caller refills

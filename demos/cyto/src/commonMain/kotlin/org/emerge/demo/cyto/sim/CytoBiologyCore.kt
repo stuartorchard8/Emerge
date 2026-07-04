@@ -150,6 +150,8 @@ object CytoBiologyCore {
         val genome = work.genome
         if (stats != null) { stats.genesCells++; stats.genesScanned += genome.size }
         val tScan = if (stats != null) TimeSource.Monotonic.markNow() else null
+        // Pre-populate species cache for O(1) gate lookups — max 32 entries, most cells have ~5.
+        work.prefillSpeciesCache()
         // Phase 1 — continuous metabolic genes, INTERPOLATED: each runs only for the portion of the tick
         // before its action would carry a gated quantity across its OWN condition threshold (selfGateCap),
         // so a growth gene fills exactly to its limit instead of overshooting in one bulk step. Computed
@@ -200,13 +202,13 @@ object CytoBiologyCore {
 
     /** A gene is "active" — counting toward the [runGenes] bloat tax — when its condition holds AND its
      *  action isn't a guaranteed no-op this tick. So an always-on Repair gene with nothing damaged, or a
-     *  flex gene already at its limit, costs the cell (and its neighbours' share of the genome) nothing. */
+     *  flex gene already at its limit, costs the cell (and its neighbours' share of the genome) nothing.
+     *  Uses [work._cachedHasDamage] and [work._cachedCanContract] for O(1) action checks. */
     private fun isActive(gene: Gene, work: CellWork, bioBonds: Int): Boolean {
         if (!gate(gene.condition, work, bioBonds)) return false
         return when (gene.action.type) {
-            // Repair works if there's damage to heal OR an un-welded cell to stick to (gene-driven adhesion).
-            ActionType.Repair -> hasConnectionDamage(work) || work.touchingIds.isNotEmpty()
-            ActionType.Contract -> canContract(work)
+            ActionType.Repair -> work._cachedHasDamage
+            ActionType.Contract -> work._cachedCanContract
             else -> true
         }
     }
