@@ -411,10 +411,16 @@ class CellWork(
     var exchangeBatch: Int = -1
 
     /** Cached result of `hasConnectionDamage(work)` for the current tick, precomputed in [prefillSpeciesCache].
-     *  Avoids iterating over the HashMap once per gene during isActive scanning. */
+      *  Avoids iterating over the HashMap once per gene during isActive scanning. */
     var _cachedHasDamage = false
     /** Cached result of `canContract(work)` for the current tick. */
     var _cachedCanContract = false
+    /** Cached richest-with-bond result: bondIndex → speciesId. Computed once per tick in [prefillSpeciesCache].
+     *  Allows [CytoBiologyCore.applyGene] to skip O(species) scans for BreakBond genes. */
+    internal val _cachedRichestBond = IntArray(32) { -1 }
+    private var _cachedBondGen = 0
+    /** Increment [ _cachedBondGen] when biomass/cytoplasm is modified. Set in [reset]. */
+    var _bondGen = 0
 
     /** Per-work scratch reused by [CytoBiologyCore.runGenes] so a tick's gene execution allocates nothing:
      *  the tick-start cytoplasm snapshot ([snapScratch], filled via [MoleculeStore.copyFrom]), the active-gene
@@ -456,6 +462,39 @@ class CellWork(
         // Pre-compute expensive per-gene checks so isActive doesn't iterate HashMaps/compare Fracs per gene.
         _cachedHasDamage = connectionDamage.values.any { it > 0f } || touchingIds.isNotEmpty()
         _cachedCanContract = logicalRadius > CytoTuning.MIN_RADIUS
+        // Pre-compute richest-with-bond for bond types referenced by BreakBond genes in this genome.
+        // Only compute for bonds the cell actually needs, avoiding unnecessary work for autotrophs.
+        _bondGen++
+        var bondTypesNeeded = 0
+        val neededBonds = IntArray(8)
+        for (g in genome) {
+            if (g.source is EnergySource.BreakBond) {
+                val bIdx = SpeciesRegistry.bondIndexOf((g.source as EnergySource.BreakBond).bond)
+                var alreadyNeeded = false
+                for (k in 0 until bondTypesNeeded) if (neededBonds[k] == bIdx) { alreadyNeeded = true; break }
+                if (!alreadyNeeded && bondTypesNeeded < neededBonds.size) {
+                    neededBonds[bondTypesNeeded++] = bIdx
+                }
+            }
+        }
+        if (bondTypesNeeded > 0) {
+            for (i in 0 until cytoplasm.size) {
+                val id = cytoplasm.idAt(i)
+                val cnt = cytoplasm.count(id)
+                if (cnt <= 0) continue
+                val bondMask = SpeciesRegistry.bondMask(id)
+                for (k in 0 until bondTypesNeeded) {
+                    val bIdx = neededBonds[k]
+                    if (bIdx >= 32) continue
+                    if ((bondMask shr bIdx) and 1 != 0) {
+                        val existingBest = _cachedRichestBond[bIdx]
+                        if (existingBest < 0 || cnt > cytoplasm.count(existingBest)) {
+                            _cachedRichestBond[bIdx] = id
+                        }
+                    }
+                }
+            }
+        }
     }
     /** Get count from pre-populated species cache. Returns 0 for unknown species. */
     fun cachedCount(id: Int): Int {

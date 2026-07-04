@@ -261,7 +261,22 @@ object CytoBiologyCore {
         if (src is EnergySource.BreakBond) {
             val bondIdx = SpeciesRegistry.bondIndexOf(src.bond)
             if (stats != null) stats.richestBondCalls++
-            breakSpId = richestWithBond(snap, bondIdx); if (breakSpId < 0) return
+            // Use cached richest-with-bond from prefillSpeciesCache if available.
+            breakSpId = work._cachedRichestBond[bondIdx]
+            if (breakSpId < 0) {
+                // Fallback: compute on the fly (should be rare if cache is populated correctly).
+                breakSpId = richestWithBond(snap, bondIdx)
+                if (breakSpId < 0) return
+                // Update cache for next time.
+                work._cachedRichestBond[bondIdx] = breakSpId
+            } else {
+                // Verify cached result is still valid (species still present in snap).
+                if (breakSpId >= 0 && snap.count(breakSpId) <= 0) {
+                    breakSpId = richestWithBond(snap, bondIdx)
+                    if (breakSpId < 0) return
+                    work._cachedRichestBond[bondIdx] = breakSpId
+                }
+            }
             fragLId = SpeciesRegistry.breakLeft(breakSpId, bondIdx); fragRId = SpeciesRegistry.breakRight(breakSpId, bondIdx)
             if (fragLId < 0) return
         }
