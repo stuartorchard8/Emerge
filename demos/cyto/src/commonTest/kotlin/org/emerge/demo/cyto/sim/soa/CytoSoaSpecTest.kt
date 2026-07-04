@@ -481,7 +481,7 @@ class CytoSoaSpecTest {
                 quanta = quanta, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
             )
             val before = totalBiomassBonds(work.biomass)
-            CytoBiologyCore.runGenes(work)
+            CytoBiologyCore.runGenes(work, 0)
             return totalBiomassBonds(work.biomass) - before
         }
         // Energy-poor: a high gear squeezes ~(g+1)× more actions out of the same quanta.
@@ -519,7 +519,7 @@ class CytoSoaSpecTest {
             genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "ab", "b", aWild = true, bWild = true))),
             quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
-        CytoBiologyCore.runGenes(work)
+        CytoBiologyCore.runGenes(work, 0)
         assertEquals(1000, work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("a")), "the bare monomer 'a' must be untouched (suffix 'ab' doesn't match it)")
         assertTrue(work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("abb")) > 0, "ab+b should have bonded into abb")
         assertTrue(work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("ab")) < 1000, "the 'ab' molecule should have been consumed")
@@ -540,7 +540,7 @@ class CytoSoaSpecTest {
             genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "c", "b", aWild = true, bWild = true))),
             quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
-        CytoBiologyCore.runGenes(work)
+        CytoBiologyCore.runGenes(work, 0)
         assertTrue(work.cytoplasm.count(sid("cb")) > 0, "abundant c+b should have bonded into cb")
         assertEquals(1, work.cytoplasm.count(sid("abac")), "the rare lex-smallest match 'abac' must be left alone")
         assertEquals(0, work.cytoplasm.count(sid("abacb")), "must NOT have produced abacb (the old lex-first product)")
@@ -562,7 +562,7 @@ class CytoSoaSpecTest {
                 genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "a", "a", aWild = aWild, bWild = bWild))),
                 quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
             )
-            CytoBiologyCore.runGenes(work)
+            CytoBiologyCore.runGenes(work, 0)
             return work.cytoplasm.count(sid("a")) to work.cytoplasm.count(sid("aa"))
         }
         val (exactA, exactAA) = run(aWild = false, bWild = false)
@@ -585,7 +585,7 @@ class CytoSoaSpecTest {
             genome = listOf(Gene(EnergySource.BreakBond("bc"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Convert, "c"))),
             quanta = 0, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
-        CytoBiologyCore.runGenes(work)
+        CytoBiologyCore.runGenes(work, 0)
         assertEquals(1, work.cytoplasm.count(sid("abc")), "the rare lex-smallest fuel 'abc' must be left alone")
         assertTrue(work.cytoplasm.count(sid("bc")) < 1000, "the abundant 'bc' fuel should have been broken")
     }

@@ -22,7 +22,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
     var type = IntArray(0); private set              // CellType.ordinal
     var sticky = BooleanArray(0); private set
     var stickyTemp = BooleanArray(0); private set
-    // Molecule counts: id-keyed stores (held by reference; the reducer reassigns per tick). The genome
+    // Molecule counts: id-keyed stores (held by reference; the reducer reassignes per tick). The genome
     // stays an object column (immutable per tick), so round-trip is exact.
     var cytoplasm = arrayOfNulls<MoleculeStore>(0); private set
     var biomass = arrayOfNulls<MoleculeStore>(0); private set

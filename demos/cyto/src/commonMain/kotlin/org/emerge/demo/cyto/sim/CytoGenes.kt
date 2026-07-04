@@ -362,6 +362,11 @@ class CellWork(
      *  splitting off as a separate 1-celled organism. */
     var divideRejectMother: Boolean = false
 
+    /** Cooldown ticks remaining before mitosis genes are re-evaluated. Set to [genomeSize] when a
+     *  mitosis fires, preventing the cell from dividing again until its biomass recovers and the
+     *  round-robin cycles past the mitosis gene. Prevents instant re-division cascades. */
+    var mitosisCooldown: Int = 0
+
     /** True once a Repair gene healed any connection this tick — gates writing [connectionDamage] back. */
     var repaired = false
 
@@ -427,10 +432,20 @@ class CellWork(
     private val _speciesCache = IntArray(32)
     private val _speciesCacheIds = IntArray(32)
     private var _speciesCacheSize = 0
+
+    /** Per-cell resolved cache: maps [speciesId] → [_speciesCache] index.
+     *  Populated by [populateResolved] at the start of each cell's gene phase.
+     *  During evaluation, [CytoBiologyCore.operand] reads [_speciesCache[cacheIndex]] directly
+     *  instead of doing a linear scan. This turns O(S) per-operand lookups into O(1) for resolved
+     *  species — critical when the same species is read by hundreds of genes. */
+    internal val _resolvedIds = IntArray(64)
+    internal val _resolvedIdx = IntArray(64)
+    internal var _resolvedN = 0
     /** Populate the species cache from [cytoplasm]. Call once at the start of runGenes so all gate
      *  evaluations get O(1) lookups. Max 32 entries (most cells have ~5 species). */
     fun prefillSpeciesCache() {
         _speciesCacheSize = 0
+        _resolvedN = 0  // clear resolved cache for new cell
         val size = cytoplasm.size
         val limit = if (size < 32) size else 32
         for (i in 0 until limit) {
@@ -449,11 +464,83 @@ class CellWork(
         return 0
     }
 
+    /** Populate [resolved cache](from [_resolvedIds]/[_resolvedIdx]) from [genome] by scanning the
+     *  pre-populated [_speciesCacheIds] once per unique species. After this, [CytoBiologyCore.operand]
+     *  can read [_speciesCache[index]] directly instead of scanning the cache array.
+     *  Total cost: O(G × clauses + S × G_unique) where S = cytoplasm species, G_unique = unique species in genome. */
+    fun populateResolved(genome: List<Gene>) {
+        // Collect unique species IDs from all operands in the genome
+        _resolvedN = 0
+        for (g in genome) {
+            for (c in g.condition.clauses) {
+                for (op in arrayOf(c.lhs, c.rhs)) {
+                    if (op.needsLookup) {
+                        val sid = when (op) {
+                            is Operand.Chem -> op.speciesId
+                            is Operand.Conc -> op.speciesId
+                            else -> continue
+                        }
+                        // Add if not already present (dedup)
+                        var found = false
+                        for (i in 0 until _resolvedN) {
+                            if (_resolvedIds[i] == sid) { found = true; break }
+                        }
+                        if (!found && _resolvedN < _resolvedIds.size) {
+                            _resolvedIds[_resolvedN] = sid
+                            _resolvedIdx[_resolvedN] = -1  // default: not in cache
+                            // Resolve: find cache index for this species
+                            for (i in 0 until _speciesCacheSize) {
+                                if (_speciesCacheIds[i] == sid) {
+                                    _resolvedIdx[_resolvedN] = i
+                                    break
+                                }
+                            }
+                            _resolvedN++
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Read count for a species using **lazy resolution**: first encounter does a linear scan through
+     *  the species cache and caches the index; subsequent encounters get O(1) direct access.
+     *  No pre-compute step — the resolved cache is built on-the-fly during gene evaluation. */
+    fun resolvedCount(speciesId: Int): Int {
+        // Check resolved cache first
+        for (i in 0 until _resolvedN) {
+            if (_resolvedIds[i] == speciesId) {
+                val idx = _resolvedIdx[i]
+                if (idx >= 0 && idx < _speciesCacheSize) return _speciesCache[idx]
+                return 0  // species resolved but absent
+            }
+        }
+        // Not in resolved cache — resolve now
+        if (_resolvedN < _resolvedIds.size) {
+            _resolvedIds[_resolvedN] = speciesId
+            _resolvedIdx[_resolvedN] = -1  // default
+            for (i in 0 until _speciesCacheSize) {
+                if (_speciesCacheIds[i] == speciesId) {
+                    _resolvedIdx[_resolvedN] = i
+                    break
+                }
+            }
+            _resolvedN++
+            // Retry with the now-resolved entry
+            val idx = _resolvedIdx[_resolvedN - 1]
+            if (idx >= 0 && idx < _speciesCacheSize) return _speciesCache[idx]
+            return 0
+        }
+        // Fallback: resolved cache full — scan species cache directly
+        return cachedCount(speciesId)
+    }
+
     /** Repopulate this pooled instance for a new tick. [connectionDamage] is cleared (the caller refills
      *  it); [handleable] is rebuilt only if [genome] changed reference. */
     fun reset(
         cytoplasm: MoleculeStore, biomass: MoleculeStore, logicalRadius: Frac, type: CellType,
         genome: List<Gene>, quanta: Int, touchCount: Int, wear: Int, gridIndex: Int, weldedDegree: Int,
+        seed: Int = 0,  // Used to seed the round-robin gene index for new cells
     ) {
         this.cytoplasm = cytoplasm
         this.biomass = biomass
@@ -481,6 +568,11 @@ class CellWork(
         divideRejectMother = false
         repaired = false
         _speciesCacheSize = 0
+        _resolvedN = 0
+        // Reset mitosis cooldown when genome changes (new cell or mutation).
+        if (genome !== this.genome) {
+            this.mitosisCooldown = 0
+        }
     }
 }
 

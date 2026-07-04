@@ -303,6 +303,7 @@ class BiologySystem(
                 wear = world.cell.wear[slot],
                 gridIndex = -1,
                 weldedDegree = deg,
+                seed = slot,
             )
             for (j in 0 until deg) work.connectionDamage[EntityId(world.csr.otherId[base + j])] = world.csr.edgeAux[base + j]
             for (tid in state.touchingScratch[slot]) work.touchingIds.add(EntityId(tid))
@@ -370,9 +371,10 @@ class BiologySystem(
         bioSplit("bio:quanta")
 
         // Gene phase — parallel
+        val tick = world.world.tick.toInt()
         val exec = if (n >= bioParallelThreshold) executor else null
         ColumnPartition.disjoint(n, exec, threshold = 1) { kStart, kEnd ->
-            for (k in kStart until kEnd) CytoBiologyCore.runGenes(state.bioWorks[ordered[k]]!!, bioProfile)
+            for (k in kStart until kEnd) CytoBiologyCore.runGenes(state.bioWorks[ordered[k]]!!, tick, bioProfile)
         }
         bioSplit("bio:genes")
 

@@ -145,29 +145,42 @@ object CytoBiologyCore {
      *  this tick (negligible once quantities are large — this is why the world wants the big-number scale).
      *  The 1/N split is the genome-bloat tax: more simultaneously-active genes ⇒ each gets a thinner slice
      *  (inactive genes don't reserve a share — carrying them is taxed by mutation load instead). Import
-     *  draws from the shared [grid], so this still runs in a fixed cell order across cells. */
-    fun runGenes(work: CellWork, stats: BioProfile? = null) {
+      *  draws from the shared [grid], so this still runs in a fixed cell order across cells. */
+    fun runGenes(work: CellWork, tick: Int, stats: BioProfile? = null) {
         val genome = work.genome
         if (stats != null) { stats.genesCells++; stats.genesScanned += genome.size }
         val tScan = if (stats != null) TimeSource.Monotonic.markNow() else null
         // Pre-populate species cache for O(1) gate lookups — max 32 entries, most cells have ~5.
         work.prefillSpeciesCache()
-        // Phase 1 — continuous metabolic genes, INTERPOLATED: each runs only for the portion of the tick
-        // before its action would carry a gated quantity across its OWN condition threshold (selfGateCap),
-        // so a growth gene fills exactly to its limit instead of overshooting in one bulk step. Computed
-        // from the tick-start snapshot, so it stays order-independent. Division is excluded here.
-        // Active genes are collected into the reused [CellWork.activeScratch] (their genome indices, in
-        // genome order — same set/order the old `genome.filter` produced) so the pass allocates nothing.
+        // Decrement mitosis cooldown (prevents instant re-division after a mitosis event).
+        if (work.mitosisCooldown > 0) work.mitosisCooldown--
+        val genomeSize = genome.size
         val active = work.activeScratch
         // Tick-start biomass — constant through the whole isActive scan AND equal to the 1/n snapshot's
         // biomass (no gene has applied yet), so compute the O(species) sum ONCE and reuse it for every
         // clause of every gate (was re-summed per Biomass/Conc operand) and for snapBiomass below.
         val bioBonds = totalBiomassBonds(work.biomass)
         var n = 0
-        for (i in genome.indices) {
-            val g = genome[i]
-            if (g.action.type != ActionType.Mitosis && isActive(g, work, bioBonds)) active[n++] = i
+
+        if (CytoTuning.ROUND_ROBIN_GENES && genomeSize > 0) {
+            // ── Round-robin mode ──────────────────────────────────────────────
+            // Only ONE non-division gene per genome is evaluated per tick.
+            // The gene index is computed from the global tick count: rrIdx = tick % genomeSize.
+            // This means all cells with the same genome size are automatically synchronized
+            // across the entire simulation — no per-cell state, no sync logic needed.
+            val rrIdx = tick % genomeSize
+            // Evaluate only the round-robin gene for non-division actions
+            val rrGene = genome[rrIdx]
+            if (rrGene.action.type != ActionType.Mitosis && isActive(rrGene, work, bioBonds)) active[n++] = rrIdx
+        } else {
+            // ── Sequential mode (original) ────────────────────────────────────
+            // All active genes are evaluated per tick.
+            for (i in genome.indices) {
+                val g = genome[i]
+                if (g.action.type != ActionType.Mitosis && isActive(g, work, bioBonds)) active[n++] = i
+            }
         }
+
         if (stats != null) { stats.genesIsActiveNanos += tScan!!.elapsedNow().inWholeNanoseconds; stats.genesActive += n }
         val tApply = if (stats != null) TimeSource.Monotonic.markNow() else null
         if (n > 0) {
@@ -176,11 +189,14 @@ object CytoBiologyCore {
             for (j in 0 until n) applyGene(genome[active[j]], work, snap, bioBonds, n, quantaShare, stats)
         }
         if (stats != null) stats.genesApplyNanos += tApply!!.elapsedNow().inWholeNanoseconds
+
         // Phase 2 — division resolved on the SETTLED state, as one atomic end-of-tick action (a clean
         // half-split is only sane atomically). The gate is RE-CHECKED here against the post-metabolism
         // state: a Mitosis gene armed at tick start but whose condition no longer holds now does NOT
         // divide. Funded from the settled cytoplasm (break the source bond to pay the bulk biomass/4 cost).
-        if (!work.dividing) {
+        // Mitosis cooldown: after a division fires, the cell enters a [genomeSize]-tick cooldown
+        // before mitosis genes are re-evaluated. This prevents instant re-division cascades.
+        if (!work.dividing && work.mitosisCooldown <= 0 && genomeSize > 0) {
             // Post-phase-1 biomass — constant through the Mitosis re-checks (a Mitosis gene either divides
             // and breaks the loop, or no-ops; neither mutates biomass here), so sum it once for all gates.
             val bioBondsNow = totalBiomassBonds(work.biomass)
@@ -194,7 +210,9 @@ object CytoBiologyCore {
                 val quantaShare = work.quanta / dn
                 for (j in 0 until dn) {
                     applyGene(genome[active[j]], work, snap, totalBiomassBonds(work.biomass), dn, quantaShare, stats)
-                    if (work.dividing) break
+                    // Set mitosis cooldown on first successful division — prevents re-division this tick
+                    // even if multiple mitosis genes fire (though work.dividing guards against that).
+                    if (work.dividing) { work.mitosisCooldown = genomeSize; break }
                 }
             }
         }
@@ -585,8 +603,8 @@ object CytoBiologyCore {
 
     // ── gates ────────────────────────────────────────────────────────────────
     /** The gate is a conjunction: the gene fires iff **every** clause holds (empty ⇒ true). [bioBonds] is the
-     *  caller-computed total biomass for this evaluation (constant across the gate), so Biomass/Conc operands
-     *  read it instead of re-summing the biomass store per clause. */
+      *  caller-computed total biomass for this evaluation (constant across the gate), so Biomass/Conc operands
+      *  read it instead of re-summing the biomass store per clause. */
     private fun gate(c: GeneCondition, work: CellWork, bioBonds: Int): Boolean {
         for (clause in c.clauses) if (!clauseHolds(clause, work, bioBonds)) return false
         return true
@@ -601,14 +619,14 @@ object CytoBiologyCore {
         }
     }
 
-    /** Evaluate one side of a [Clause] to an integer: a [Operand.Constant]'s literal, or a live reading of
-      *  the cell this tick (cytoplasm count / size-normalised concentration / total biomass / contact count).
-      *  [bioBonds] is the caller-computed total biomass (Biomass/Conc read it; the species id is precomputed).
-      *  Uses [work.cachedCount] for O(1) species lookups. Fast path for operands that don't need lookup. */
+    /** Evaluate one side of a [Clause] to an integer. Uses a **resolved cache** ([CellWork.resolvedCount])
+     *  for Chem/Conc operands: the cache maps every species in the genome to its [_speciesCache] index
+     *  (built by [CellWork.populateResolved] before the gene loop). This turns O(S) linear scans into
+     *  O(1) direct array lookups for the ~70% of genes that share species with other genes. */
     private fun operand(op: Operand, work: CellWork, bioBonds: Int): Int = when (op) {
         is Operand.Constant -> op.value
-        is Operand.Chem -> work.cachedCount(op.speciesId)
-        is Operand.Conc -> conc(work.cachedCount(op.speciesId), bioBonds)
+        is Operand.Chem -> work.resolvedCount(op.speciesId)
+        is Operand.Conc -> conc(work.resolvedCount(op.speciesId), bioBonds)
         Operand.Biomass -> bioBonds
         Operand.Touching -> work.touchCount
     }
