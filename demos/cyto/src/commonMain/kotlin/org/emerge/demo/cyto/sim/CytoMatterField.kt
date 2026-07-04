@@ -182,15 +182,18 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
             fpLeaves.add(node)
             // Set presence mask for monomers a(=A), b(=B), c(=C) — the species passively diffused.
             // Mask bits: 1=a, 2=b, 4=c. Enables O(1) skip in balance().
+            // Skip mask computation for empty stores — common when grid is sparse.
             val s = node.store!!
-            var mask = 0
-            for (i in 0 until s.size) {
-                val id = s.idAt(i)
-                if (id == A) mask = mask or 1
-                else if (id == B) mask = mask or 2
-                else if (id == C) mask = mask or 4
+            if (s.size > 0) {
+                var mask = 0
+                for (i in 0 until s.size) {
+                    val id = s.idAt(i)
+                    if (id == A) mask = mask or 1
+                    else if (id == B) mask = mask or 2
+                    else if (id == C) mask = mask or 4
+                }
+                node.presenceMask = mask
             }
-            node.presenceMask = mask
         }
         return fpLeaves.size
     }
@@ -198,7 +201,10 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     /** Collect the species present across the open footprint into [out] (deduped); returns count. */
     fun footprintSpecies(out: HashSet<Int>) {
         out.clear()
-        for (leaf in fpLeaves) { val s = leaf.store!!; for (i in 0 until s.size) out.add(s.idAt(i)) }
+        for (leaf in fpLeaves) {
+            val s = leaf.store!!
+            if (s.size > 0) for (i in 0 until s.size) out.add(s.idAt(i))
+        }
     }
 
     /** Balance the open footprint's `sp` toward `cEff/N` (bidirectional diffusion), with size-dependent
