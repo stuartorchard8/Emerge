@@ -149,10 +149,13 @@ class CytoSoaReducer(
         // divide/destroy to the lifecycle bridge, and connections needs biology's weld-heal data).
         // We create phases around the system lists so profiler timing works correctly.
         val preBioPhase = listOf(SoaPhase("reset+contacts", parts.preBio))
-        val postBioPhase = listOf(SoaPhase("forces+integrate", parts.postBio))
         phase("reset+contacts") { runSoa(cfg, cur, inputs, preBioPhase, profiler) }
         phaseR("biology") { parts.bioUpdate(cfg, cur, inputs); state.divide to state.destroy }
-        phase("forces+integrate") { runSoa(cfg, cur, inputs, postBioPhase, profiler) }
+        // Profile each post-bio system separately
+        for ((idx, sys) in parts.postBio.withIndex()) {
+            val name = if (idx == parts.postBio.size - 1) "forces+integrate" else "force:${sys::class.java.simpleName}"
+            phase(name) { runSoa(cfg, cur, inputs, listOf(SoaPhase(name, sys)), profiler) }
+        }
         // ── Cold bridge: lifecycle ──────────────────────────────────────────────────
         cur = phaseR("lifecycle") { bridgeLifecycle(cur, state.divide, state.destroy, input, inputs) }
         return cur
