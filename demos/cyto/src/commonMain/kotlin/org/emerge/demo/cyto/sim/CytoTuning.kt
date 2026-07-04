@@ -283,6 +283,10 @@ object CytoTuning {
      *  no genetic drift — for authoring / observing a fixed genome. (Probes that pass an explicit
      *  `mutationRateDenom` are unaffected; this only changes the [CytoConfig] default.) */
     const val MUTATION_ENABLED = true
+    /** Cell↔environment exchange is staggered across N batches: each tick only batch `(tick % N)` exchanges,
+     *  so the exchange cost is divided by N. Cells are assigned to the least-populated batch when they first
+     *  appear in the world (e.g. at spawn or after division), keeping batches balanced. N ≥ 1. ⚙ */
+    const val EXCHANGE_BATCHES = 4
     /** Max distinct bond-types a genome may reach (formed/broken/referenced). A mutation that would push a
      *  genome past this is rejected, bounding each cell's metabolic reach — hence (with selective uptake)
      *  its per-cell species to ≤ the molecules buildable from B bonds (B=5 → ≤52). The dense-chemistry

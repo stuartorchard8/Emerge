@@ -230,6 +230,7 @@ class BiologySystem(
     private val profiler: PipelineProfiler?,
     private val noMutateEntityIdProvider: () -> Int,
     private val state: CytoPipelineState,
+    private val bioProfile: org.emerge.demo.cyto.sim.BioProfile? = null,
 ) {
 
     // Per-tick profiling marker
@@ -259,6 +260,9 @@ class BiologySystem(
         val baseQuantaRaw = state.bioBaseQuanta
         val captureMilli = state.bioCapture
         val capSumByGrid = state.bioCapSum.also { it.clear() }
+
+        // Staggered exchange batch sizes (cells per batch).
+        val batchSizes = IntArray(CytoTuning.EXCHANGE_BATCHES)
 
         for (k in 0 until n) {
             val slot = ordered[k]
@@ -305,6 +309,16 @@ class BiologySystem(
             work.exposureMilli = exposureMilli.toInt()
             work.cx = lx; work.cy = ly
             works[id] = work
+
+            // Staggered exchange batch assignment: new cells (exchangeBatch == -1) go to the least-populated batch.
+            if (work.exchangeBatch < 0) {
+                var bestBatch = 0
+                for (b in 1 until CytoTuning.EXCHANGE_BATCHES) {
+                    if (batchSizes[b] < batchSizes[bestBatch]) bestBatch = b
+                }
+                work.exchangeBatch = bestBatch
+                batchSizes[bestBatch]++
+            }
         }
         bioSplit("bio:build")
 
@@ -358,14 +372,14 @@ class BiologySystem(
         // Gene phase — parallel
         val exec = if (n >= bioParallelThreshold) executor else null
         ColumnPartition.disjoint(n, exec, threshold = 1) { kStart, kEnd ->
-            for (k in kStart until kEnd) CytoBiologyCore.runGenes(state.bioWorks[ordered[k]]!!, null)
+            for (k in kStart until kEnd) CytoBiologyCore.runGenes(state.bioWorks[ordered[k]]!!, bioProfile)
         }
         bioSplit("bio:genes")
 
         // Passive env-exchange junction
         val orderedWorks = state.bioOrderedWorks.also { it.clear() }
         for (k in 0 until n) orderedWorks.add(state.bioWorks[ordered[k]]!!)
-        CytoBiologyCore.passiveEnvExchange(orderedWorks, grid, world.world.tick.toInt(), null)
+        CytoBiologyCore.passiveEnvExchange(orderedWorks, grid, world.world.tick.toInt(), bioProfile)
         bioSplit("bio:exchange")
 
         CytoBiologyCore.diffuse(works, neighbourIds)
@@ -718,8 +732,9 @@ fun CytoHotPipeline(
     bioParallelThreshold: Int = Int.MAX_VALUE,
     profiler: PipelineProfiler?,
     noMutateEntityIdProvider: () -> Int,
+    bioProfile: org.emerge.demo.cyto.sim.BioProfile? = null,
 ): CytoPipelineParts {
-    val bioSystem = BiologySystem(executor, springParallelThreshold, bioParallelThreshold, profiler, noMutateEntityIdProvider, state)
+    val bioSystem = BiologySystem(executor, springParallelThreshold, bioParallelThreshold, profiler, noMutateEntityIdProvider, state, bioProfile)
     val bioUpdate: (CytoConfig, CytoWorld, Map<PlayerId, *>) -> Unit = bioSystem::update
 
     return CytoPipelineParts(

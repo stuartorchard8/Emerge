@@ -74,7 +74,9 @@ object CytoBiologyCore {
         val tGroup = if (stats != null) TimeSource.Monotonic.markNow() else null
         val fp = HashSet<Int>()
         val species = HashSet<Int>()
+        val currentBatch = tick % CytoTuning.EXCHANGE_BATCHES
         for (w in ordered) {
+            if (w.exchangeBatch != currentBatch) continue
             if (w.exposureMilli <= MIN_EXPOSURE_FOR_TRANSFER) {
                 continue
             }
@@ -598,22 +600,24 @@ object CytoBiologyCore {
     }
 
     /** Evaluate one side of a [Clause] to an integer: a [Operand.Constant]'s literal, or a live reading of
-     *  the cell this tick (cytoplasm count / size-normalised concentration / total biomass / contact count).
-     *  [bioBonds] is the caller-computed total biomass (Biomass/Conc read it; the species id is precomputed). */
+      *  the cell this tick (cytoplasm count / size-normalised concentration / total biomass / contact count).
+      *  [bioBonds] is the caller-computed total biomass (Biomass/Conc read it; the species id is precomputed).
+      *  Uses [work.cachedCount] for O(1) species lookups after first tick's binary search. */
     private fun operand(op: Operand, work: CellWork, bioBonds: Int): Int = when (op) {
         is Operand.Constant -> op.value
-        is Operand.Chem -> work.cytoplasm.count(op.speciesId)
-        is Operand.Conc -> conc(work.cytoplasm.count(op.speciesId), bioBonds)
+        is Operand.Chem -> work.cachedCount(op.speciesId)
+        is Operand.Conc -> conc(work.cachedCount(op.speciesId), bioBonds)
         Operand.Biomass -> bioBonds
         Operand.Touching -> work.touchCount
     }
 
     /** [operand], but reading the tick-start [snap]shot (cytoplasm + [snapBiomass]) instead of live state,
-     *  so a threshold derived from it is order-independent. Touching is transient (fixed for the tick). */
+     *  so a threshold derived from it is order-independent. Touching is transient (fixed for the tick).
+     *  Uses [work.cachedCount] (population from snap) so gate evaluation also benefits. */
     private fun operandSnap(op: Operand, snap: MoleculeStore, snapBiomass: Int, work: CellWork): Int = when (op) {
         is Operand.Constant -> op.value
-        is Operand.Chem -> snap.count(op.speciesId)
-        is Operand.Conc -> conc(snap.count(op.speciesId), snapBiomass)
+        is Operand.Chem -> work.cachedCount(op.speciesId)
+        is Operand.Conc -> conc(work.cachedCount(op.speciesId), snapBiomass)
         Operand.Biomass -> snapBiomass
         Operand.Touching -> work.touchCount
     }

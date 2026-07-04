@@ -121,6 +121,7 @@ class CytoSoaReducer(
         bioParallelThreshold = bioParallelThreshold,
         profiler = profiler,
         noMutateEntityIdProvider = { noMutateEntityId },
+        bioProfile = bioProfile,
     )
 
     fun tick(w: CytoWorld, input: CytoInput = CytoInput.EMPTY): CytoWorld {

@@ -1,0 +1,12 @@
+# cyto genome exported from cell 59
+Break aa : Biomass < 8000 : Convert aa @15
+Light : ac < 8000 & ab < 1000 & aa < 8000 : FormBond a c
+Break ac : ab < 1000 : FormBond a a @9
+Break aa : ac < 1000 : FormBond a b @9
+Break ab : aa < 1000 : FormBond a c @9
+Light : cc > 0 & cc < 4000 : FormBond c c
+Light : cc > 0 : FormBond b c
+Break bc : Conc(bc) > 30 & Biomass < 8000 : Convert bc
+Break ac : ab < 1000 & Conc(bc) > 20 : Contract @15
+Break ac : ab < 1000 & Biomass > 7000 & Conc(bc) > 22 : Mitosis cc across bc @15
+Break ac : ab < 1000 : Repair @10

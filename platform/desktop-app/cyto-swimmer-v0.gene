@@ -1,0 +1,26 @@
+# cyto-swimmer-v0 — directional BEND swimmer (locomotion controller).
+# = senescence's proven 3-phase clock (aa->ab->ac relaxation oscillator) + the jelly's lateralised-bend
+#   machinery (cc organizer -> bc gradient -> one-flank clock-gated Contract), with division GATED ON A
+#   bc MID-BAND so the gradient itself regulates size (body grows until the gradient covers it, then stops).
+# Bonds: aa, ab, ac, bc, cc = 5 (the GENOME_MAX_BOND_TYPES cap). Seed: -Dctrlseed=cc:200,a:500.
+
+# grow biomass
+Break aa : Biomass < 4000 : Convert aa @15
+# clock fuel + 3-phase ring aa -> ab -> ac (the senescence timer, proven to oscillate + drive Contract)
+Light : ac < 8000 & ab < 1000 & aa < 8000 : FormBond a c
+Break ac : ab < 1000 : FormBond a a @9
+Break aa : ac < 1000 : FormBond a b @9
+Break ab : aa < 1000 : FormBond a c @9
+# organizer determinant: SYNTHESISE cc (so it's canHold = held + sensed, never shared/consumed -> stays
+# intracellular and is allocated off-centre on division). Seeded in the founder.
+Light : cc > 0 & cc < 4000 : FormBond c c
+# morphogen gradient: only the organizer sources bc; every cell sinks it -> high near organizer, low far
+Light : cc > 0 : FormBond b c
+Break bc : Conc(bc) > 30 : Convert bc
+# LATERALISED contraction: clock ab-low phase AND high-bc flank -> one side pulses on the clock -> bend
+Break ac : ab < 1000 & Conc(bc) > 20 : Contract @15
+# oriented division: bootstraps at the founder's bc (~30) and self-limits as the growing body's sinks
+# drain the organizer's bc below the gate -> size regulation from the gradient. across bc -> 2D sheet, off-centre.
+Break ac : ab < 1000 & Conc(bc) > 22 : Mitosis cc across bc @15
+# cohesion / self-heal
+Break ac : ab < 1000 : Repair @10

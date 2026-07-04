@@ -389,6 +389,10 @@ class CellWork(
      *  Cleared each [reset] — i.e. at the start of the next tick's build. */
     val importBias: MutableMap<Int, Int> = HashMap()
 
+    /** Exchange batch assignment: this cell's environment exchange occurs only when `(tick % EXCHANGE_BATCHES) == exchangeBatch`.
+     *  Set once when the cell first appears; persists across ticks. -1 = not yet assigned (assigned on first build). */
+    var exchangeBatch: Int = -1
+
     /** Per-work scratch reused by [CytoBiologyCore.runGenes] so a tick's gene execution allocates nothing:
      *  the tick-start cytoplasm snapshot ([snapScratch], filled via [MoleculeStore.copyFrom]), the active-gene
      *  index list ([activeScratch], grown with the genome), and the per-gene consumed-species accumulator
@@ -399,6 +403,23 @@ class CellWork(
     var activeScratch = IntArray(genome.size.coerceAtLeast(1)); private set
     val consumeIds = IntArray(4)
     val consumePer = IntArray(4)
+    /** Species count cache for gate evaluation: species id → count. Filled once per tick from snapScratch
+     *  before the gate scan, so repeated cytoplasm.count() calls during gate evaluation hit this cache
+     *  (O(1) lookup) instead of binary-searching the MoleculeStore (O(log n)). Max 32 entries. */
+    private val _speciesCache = IntArray(32)
+    private val _speciesCacheIds = IntArray(32)
+    private var _speciesCacheSize = 0
+    /** Get count from species cache; fills cache on miss (up to 32 entries, then ignores). */
+    fun cachedCount(id: Int): Int {
+        val size = _speciesCacheSize
+        for (i in 0 until size) if (_speciesCacheIds[i] == id) return _speciesCache[i]
+        if (size < 32) {
+            _speciesCacheIds[_speciesCacheSize] = id
+            _speciesCache[_speciesCacheSize++] = cytoplasm.count(id)
+            return _speciesCache[size]
+        }
+        return cytoplasm.count(id)
+    }
 
     /** Repopulate this pooled instance for a new tick. [connectionDamage] is cleared (the caller refills
      *  it); [handleable] is rebuilt only if [genome] changed reference. */
@@ -431,6 +452,7 @@ class CellWork(
         divideAcross = false
         divideRejectMother = false
         repaired = false
+        _speciesCacheSize = 0
     }
 }
 
