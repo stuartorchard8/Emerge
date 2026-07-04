@@ -761,7 +761,7 @@ fun CytoHotPipeline(
 // ──────────────────────────────────────────────────────────────────────────────
 
 /** The number of Jacobi iterations used by the spring constraint solver. */
-const val ITERATIONS = 4
+const val ITERATIONS = 3
 
 /** Frac fixed-point scale (= Int.MAX_VALUE as Long). */
 const val FRAC_MAX = 2147483647L  // Int.MAX_VALUE
