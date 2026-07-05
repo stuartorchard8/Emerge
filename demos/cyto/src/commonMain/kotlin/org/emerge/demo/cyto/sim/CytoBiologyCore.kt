@@ -455,7 +455,10 @@ object CytoBiologyCore {
      *  adhesion welds (see [applyRepair]). Eligible cells are those sharing a connected neighbour
      *  (InternalOnly mode — hard-coded). */
     private fun repairOpsNeeded(work: CellWork): Int {
-        val adhesionTargets = work.internalTouching
+        // InternalOnly mode: when a cell already has welds, only count touching cells that share a
+        // connected neighbour (body-internal repair). When a cell has no welds yet, count all touching
+        // cells so the first connection can form (e.g. mother↔daughter after division).
+        val adhesionTargets = if (work.weldedDegree > 0) work.internalTouching else work.touchingIds
         var dmg: Float = adhesionTargets.size * CONNECTION_BREAK_DAMAGE
         // Each EXISTING connection heals at most MAX_REPAIR_HEAL_PER_TICK this tick, so don't request ops the
         // cap won't let us spend (birth-heal welds, above, are exempt — a one-off weld forms at full strength).
@@ -488,7 +491,11 @@ object CytoBiologyCore {
             if (left <= 0f) work.connectionDamage.remove(id) else work.connectionDamage[id] = left
         }
         // Leftover budget forms new welds with eligible un-welded cells (lowest id first, deterministic).
-        val adhesionTargets = work.internalTouching
+        // InternalOnly mode: once a cell already has welds (weldedDegree > 0), only weld touching cells
+        // that share a connected neighbour (body-internal repair). When a cell has no welds yet
+        // (weldedDegree == 0), allow welding any touching cell so the first connection can form
+        // (e.g. mother↔daughter after division, before a shared neighbor exists).
+        val adhesionTargets = if (work.weldedDegree > 0) work.internalTouching else work.touchingIds
         if (budget > 0f && adhesionTargets.isNotEmpty()) {
             for (id in adhesionTargets.sortedBy { it.value }) {
                 if (budget <= 0f) break

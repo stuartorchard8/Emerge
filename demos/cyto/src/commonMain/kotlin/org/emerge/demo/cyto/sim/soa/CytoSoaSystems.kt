@@ -885,7 +885,7 @@ fun lenRaw(xr: Long, yr: Long): Long {
 /** Handle contact: weld decision + repulsion impulse. */
 fun handleContact(w: CytoWorld, i: Int, j: Int, contact: Contact, cfg: CytoConfig, state: CytoPipelineState) {
     val sticky = w.cell.sticky[i] || w.cell.stickyTemp[i] || w.cell.sticky[j] || w.cell.stickyTemp[j]
-    val close = contact.penetration.raw * 4L > contact.minDist.raw
+    val close = CytoTuning.AUTO_WELD_ON_OVERLAP && contact.penetration.raw * 4L > contact.minDist.raw
     if (sticky || close) {
         val ai = w.entityId[i]; val bi = w.entityId[j]
         if (ai < bi) { state.weldLo.add(ai); state.weldHi.add(bi) } else { state.weldLo.add(bi); state.weldHi.add(ai) }

@@ -91,14 +91,16 @@ class CytoSoaSpecTest {
 
     @Test
     fun overlappingCellsWeld() {
+        // Two deeply overlapping cells with a Repair gene that burns stored 'ab'.
+        // Auto-weld on overlap is disabled; the weld forms via Repair adhesion.
         val initial = run {
             val b = SimBuilder(SimState())
-            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Blank)
-            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Blank)
+            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = Frac(1, 2), genome = repairOnly)
+            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = Frac(1, 2), genome = repairOnly)
             b.build()
         }
-        val state = run(initial, ticks = 5)
-        assertTrue(springCount(state) > 0, "overlapping cells should have welded")
+        val state = run(initial, ticks = 20)
+        assertTrue(springCount(state) > 0, "overlapping Repair-active cells should have welded")
     }
 
     @Test
@@ -260,21 +262,22 @@ class CytoSoaSpecTest {
 
     @Test
     fun synthesisedSpeciesStaysIntracellularMetabolisedSpeciesDiffuses() {
-        // The behaviour, end-to-end: two overlapping (→ welding) cells share a genome where 'ab' is only
-        // synthesised (FormBond ⇒ intracellular) and 'cb' is metabolised (Convert ⇒ diffusible). Only cell A
-        // starts with both in cytoplasm; the genes are gated OFF so nothing is produced/consumed — only the
-        // diffuse phase moves matter. After welding, 'cb' spreads to B but 'ab' never leaves A.
+        // The behaviour, end-to-end: two overlapping (→ welding via Repair) cells share a genome where
+        // 'ab' is only synthesised (FormBond ⇒ intracellular) and 'cb' is metabolised (Convert ⇒ diffusible).
+        // Only cell A starts with both in cytoplasm; the genes are gated OFF so nothing is produced/consumed
+        // — only the diffuse phase moves matter. After welding, 'cb' spreads to B but 'ab' never leaves A.
         val off = GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(Int.MAX_VALUE))
         val genome = listOf(
             Gene(EnergySource.Light, off, GeneAction(ActionType.FormBond, "a", "b")),
             Gene(EnergySource.Light, off, GeneAction(ActionType.Convert, "cb")),
+            Gene(EnergySource.BreakBond("cb"), GeneCondition(Operand.Chem("cb"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),  // weld via repair
         )
         val initial = run {
             val b = SimBuilder(SimState())
             b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector,
                 cytoplasm = mapOf("ab" to 1000, "cb" to 1000), biomass = mapOf("aa" to 2000), genome = genome)
             b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector,
-                cytoplasm = emptyMap(), biomass = mapOf("aa" to 2000), genome = genome)
+                cytoplasm = mapOf("cb" to 1), biomass = mapOf("aa" to 2000), genome = genome)  // minimal cb for Repair energy
             b.build()
         }
         val cells = run(initial, ticks = 12).components.getTable<CytoCellComponent>().asMap().values.toList()
@@ -680,13 +683,13 @@ class CytoSoaSpecTest {
             return b.build()
         }
 
-        // Two Repair-active cells touching but NOT sharing a neighbor — should NOT weld in InternalOnly mode.
-        // (The weld scenario is tested in repairWeldInternalOnlySharesNeighbor using a triangle.)
+        // Two Repair-active cells touching but NOT sharing a neighbor — should weld (first-connection rule).
+        // Once welded, additional repair welds are restricted to InternalOnly mode.
         val both = touchingPair(repairOnly, repairOnly)
         val total0 = totalAtoms(both)
-        val noWeld = run(both, ticks = 20)
-        assertEquals(0, springCount(noWeld), "two Repair-active touching cells with no shared neighbor should NOT weld (InternalOnly)")
-        assertEquals(total0, totalAtoms(noWeld), "conserves matter even when no weld forms")
+        val welded = run(both, ticks = 20)
+        assertTrue(springCount(welded) > 0, "two Repair-active touching cells with no shared neighbor should weld (first-connection rule)")
+        assertEquals(total0, totalAtoms(welded), "conserves matter even when weld forms")
 
         val none = run(touchingPair(emptyList(), emptyList()), ticks = 20)
         assertEquals(0, springCount(none), "without a Repair gene a light touch must NOT weld")
@@ -701,19 +704,23 @@ class CytoSoaSpecTest {
     fun repairWeldInternalOnlySharesNeighbor() {
         // InternalOnly: Repair only welds touching cells that share a connected neighbour.
         // Triangle: C at origin, A at (0.5, 0), B at (-0.3, 0.5).
-        // A-C and B-C auto-weld (overlap > 0.25). A-B touch (penetration ~0.057 < 0.25, no auto-weld).
+        // A-C and B-C are pre-welded (overlap > 0.25 used to auto-weld them, but we weld manually now).
+        // A-B touch (penetration ~0.057 < 0.25, no auto-weld).
         // When A and B both repair, they weld because they share C as a connected neighbour.
         val b = SimBuilder(SimState(randomSeed = 1))
         val r = Frac(1, 2)
-        b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
-        b.spawnCell(CytoUnits.coord2(0.5f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
-        b.spawnCell(CytoUnits.coord2(-0.3f, 0.5f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
+        val c = b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
+        val a = b.spawnCell(CytoUnits.coord2(0.5f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
+        val bCell = b.spawnCell(CytoUnits.coord2(-0.3f, 0.5f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
+        // Pre-weld A-C and B-C to form the triangle backbone (auto-weld on overlap is disabled).
+        addSpring(b, a, c, cfg)
+        addSpring(b, bCell, c, cfg)
         val result = run(b.build(), ticks = 20)
         val sc = springCount(result)
         println("InternalOnly: springCount=$sc")
         assertTrue(sc >= 2, "InternalOnly: got $sc springs (expected ≥2)")
 
-        // Two cells touching (no shared neighbor) should NOT weld via Repair
+        // Two cells touching (no shared neighbor) should weld via Repair (first-connection rule).
         val twoB = SimBuilder(SimState(randomSeed = 1))
         val r2 = Frac(1, 2)
         // Two cells 0.9 apart (penetration 0.1 < 0.25 → touch, no auto-weld)
@@ -721,9 +728,9 @@ class CytoSoaSpecTest {
         twoB.spawnCell(CytoUnits.coord2(0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r2, genome = repairOnly)
         val twoResult = run(twoB.build(), ticks = 20)
         val twoCount = springCount(twoResult)
-        // No shared neighbor → no repair weld. 0 springs = no weld.
+        // No shared neighbor → first-connection repair weld still forms. >0 springs = weld.
         println("InternalOnly two-cell: $twoCount springs")
-        assertEquals(0, twoCount, "InternalOnly: two touching cells with no shared neighbor should NOT weld")
+        assertTrue(twoCount > 0, "InternalOnly: two touching cells with no shared neighbor should weld (first-connection rule)")
     }
 
     @Test

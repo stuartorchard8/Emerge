@@ -184,6 +184,10 @@ object CytoTuning {
      * instead of ramping. Mirrors SPRING_DAMPING for welds.
      */
     val CONTACT_DAMPING = Frac(1, 4)
+    /** When true, two non-connected cells that overlap significantly (penetration > 25% of minDist)
+     *  auto-weld on contact. This causes cells to stick together when physics pushes them into
+     *  deep overlap (e.g. cells dividing while surrounded). ⚙ */
+    const val AUTO_WELD_ON_OVERLAP = false
     /** Connection breaks when accumulated stress damage exceeds this (higher = less fragile). */
     const val CONNECTION_BREAK_DAMAGE = 5f
     /**
