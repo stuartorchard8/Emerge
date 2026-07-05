@@ -197,15 +197,16 @@ data class Gene(
         return if (g == 0) Int.MAX_VALUE else CytoTuning.EFFICIENCY_REF ushr g
     }
 
-    /** Pre-computed: whether this gene's action benefits from efficiency gear (Convert/Import/Repair/Contract/Lyse). */
+    /** Pre-computed: whether this gene's action uses efficiency gear
+     *  (Convert/Import/Repair/Contract = throughput multiplier, Lyse = capture fraction). */
     val actionHasEfficiency: Boolean get() = when (action.type) {
         ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.Contract, ActionType.Lyse -> true
         else -> false
     }
 
-    /** Pre-computed: whether this gene's action has the cap (Convert/Import/Repair/FormBond/Contract/Lyse). */
+    /** Pre-computed: whether this gene's action has the energy cap (Convert/Import/Repair/FormBond/Contract). */
     val actionHasCap: Boolean get() = when (action.type) {
-        ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.FormBond, ActionType.Contract, ActionType.Lyse -> true
+        ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.FormBond, ActionType.Contract -> true
         else -> false
     }
 

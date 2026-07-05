@@ -728,18 +728,21 @@ object CytoBiologyCore {
     private fun canContract(work: CellWork): Boolean = work.logicalRadius > MIN_RADIUS
 
     /** Spontaneous decay: shed `wear / DEGRADE_PERIOD` whole biomass molecules to the environment
-      *  at a rate ∝ biomass size. Each tick the cell's **most-abundant** biomass molecule loses one copy,
-      *  dropped at the center-most touching cell's position (like shed skin — no splitting,
-      *  no cytoplasm intermediate). The molecule then decays at the environment's own rate.
-      *  This is a real matter LEAK — a maintenance cost the cell must keep importing against (selection for
-      *  efficient builders) and a steady feed for the food web. The bond's energy is still dissipated. */
+      *  at a rate ∝ total cell mass (biomass bonds + cytoplasm molecule count). Each tick the cell's
+      *  **most-abundant** biomass molecule loses one copy, dropped at the center-most touching cell's
+      *  position (like shed skin — no splitting, no cytoplasm intermediate). The molecule then decays at
+      *  the environment's own rate. This is a real matter LEAK — a maintenance cost the cell must keep
+      *  importing against (selection for efficient builders) and a steady feed for the food web.
+      *  Cytoplasm count adds a hoarding tax: more cytoplasm → more wear → faster biomass drain. */
     private fun degrade(work: CellWork, grid: CytoMatterField) {
         // Maintenance bonus: a more-connected cell degrades much slower — wear accrues at `1/2^weldedDegree`
         // (1 neighbour → 1/2, 2 → 1/4, 6 → 1/64, halving again for each extra bond evolution squeezes in).
         // Interior cells of a body are nearly free to maintain. (Exponent capped at 20 to avoid Int overflow;
         // 2^20 already makes upkeep ~0 for any realistic biomass.)
         val bonus = 1 shl work.weldedDegree.coerceAtMost(20)
-        work.wear += totalBiomassBonds(work.biomass) / bonus
+        var totalCytChem = 0
+        for (i in 0 until work.cytoplasm.size) totalCytChem += work.cytoplasm.countAt(i)
+        work.wear += (totalCytChem + totalBiomassBonds(work.biomass)) / bonus
         val broken = work.wear / DEGRADE_PERIOD
         work.wear %= DEGRADE_PERIOD
         if (broken > 0) {

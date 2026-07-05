@@ -85,8 +85,10 @@ object CytoTuning {
     const val CHEMISTRY_SCALE = 1_000
     /** light → quanta: `quanta = ⌊field × exposure × SCALE⌋` (a fully-exposed cell on a source gets
      *  ~`STRENGTH·SCALE` ops/tick). 1 quantum = 1 op. At STRENGTH=1/200 the peak per-tick budget is
-     *  `SCALE/200`, so SCALE=60_000 ⇒ ~300 ops/tick at full exposure. */
-    const val LIGHT_QUANTA_SCALE = 60 * CHEMISTRY_SCALE
+     *  `SCALE/200`, so SCALE=120_000 ⇒ ~600 ops/tick at full exposure (was 6_000_000 ⇒ ~30_000, an
+     *  absurd one-tick energy that let cells photosynthesise-and-divide; division is now break-powered and
+     *  this is nerfed ~50× so growth/charge-up is metered — tune by watching the cell panel's quanta). */
+    const val LIGHT_QUANTA_SCALE = 120 * CHEMISTRY_SCALE
     /** Per-gene efficiency gear (Gene.efficiency, g): a throughput action does `g+1` actions per energy unit
      *  but may spend at most `EFFICIENCY_REF shr g` energy/tick. REF=2^24: g=0 ⇒ 1 action/energy, 16 777 216
      *  energy cap (effectively unlimited at the light scale, so g=0 is the neutral default); g=24 ⇒ 24
@@ -125,8 +127,9 @@ object CytoTuning {
      *  Lower = an earlier/tighter plateau. ⚙ */
     const val METABOLIC_BIOMASS_SCALE = 32 * CHEMISTRY_SCALE
     /** Degradation: a cell's wear accumulator gains its total biomass bonds each tick; every
-     *  DEGRADE_PERIOD of accumulated wear breaks one bond (so decay rate ∝ size). */
-    const val DEGRADE_PERIOD = 4000
+     *  DEGRADE_PERIOD of accumulated wear breaks one bond (so decay rate ∝ size).
+     *  Increased from 4000 to 18000 to compensate for cytoplasm contribution to wear. */
+    const val DEGRADE_PERIOD = 18000
     /** Cell dies when total biomass falls below this. */
     const val DEATH_BIOMASS = 1 * CHEMISTRY_SCALE
     /** Min cell radius (logical), from the original Cyto `Cell`. */
