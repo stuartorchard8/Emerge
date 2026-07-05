@@ -68,11 +68,11 @@ object CytoTuning {
     const val MATTER_DIFFUSE_DEN = 8
     /** Run the (whole-grid) diffusion step only every Nth tick — it's a slow background process, so
      *  per-tick is wasted work. Higher = cheaper but slower matter spread (net flow ~ 1/this). ⚙ */
-    const val MATTER_DIFFUSE_PERIOD = 8L
+    const val MATTER_DIFFUSE_PERIOD = 128L
     /** Environmental decay: free molecules break their leftmost bond at rate 1/this per decay step (run on
      *  the diffusion cadence). Returns matter stranded by selective uptake (species no live cell can use)
      *  toward monomers. Higher = slower decay; 0 disables. ⚙ */
-    const val MATTER_DECAY_PERIOD = 4000
+    const val MATTER_DECAY_PERIOD = 8000
     /** Quad-tree matter field (QUADTREE.md): raw ticks a FINEST (depth MAX_DEPTH) region may go un-accessed
      *  before its parent pools it one layer coarser. The delay DOUBLES per layer above the finest, so a merge
      *  that spreads matter over 2× the area waits 2× as long — dispersal advances at a constant speed (twice
@@ -85,10 +85,8 @@ object CytoTuning {
     const val CHEMISTRY_SCALE = 1_000
     /** light → quanta: `quanta = ⌊field × exposure × SCALE⌋` (a fully-exposed cell on a source gets
      *  ~`STRENGTH·SCALE` ops/tick). 1 quantum = 1 op. At STRENGTH=1/200 the peak per-tick budget is
-     *  `SCALE/200`, so SCALE=120_000 ⇒ ~600 ops/tick at full exposure (was 6_000_000 ⇒ ~30_000, an
-     *  absurd one-tick energy that let cells photosynthesise-and-divide; division is now break-powered and
-     *  this is nerfed ~50× so growth/charge-up is metered — tune by watching the cell panel's quanta). */
-    const val LIGHT_QUANTA_SCALE = 120 * CHEMISTRY_SCALE
+     *  `SCALE/200`, so SCALE=60_000 ⇒ ~300 ops/tick at full exposure. */
+    const val LIGHT_QUANTA_SCALE = 60 * CHEMISTRY_SCALE
     /** Per-gene efficiency gear (Gene.efficiency, g): a throughput action does `g+1` actions per energy unit
      *  but may spend at most `EFFICIENCY_REF shr g` energy/tick. REF=2^24: g=0 ⇒ 1 action/energy, 16 777 216
      *  energy cap (effectively unlimited at the light scale, so g=0 is the neutral default); g=24 ⇒ 24
@@ -258,11 +256,11 @@ object CytoTuning {
     /** Stress/tick added to a confirmed through-cell chord ([WELD_COLLINEAR_COS]). Net of repair (capped at
      *  [MAX_REPAIR_HEAL_PER_TICK]) this must be positive to ever break it; 1.5 ⇒ ~net 1.0/tick ⇒ breaks in
      *  ~[CONNECTION_BREAK_DAMAGE]/1 ticks, while a single transient collinear tick (1.5, then healed) can't. ⚙ */
-    const val WELD_COLLINEAR_DAMAGE = 1.5f
+    const val WELD_COLLINEAR_DAMAGE = 2.0f
     /** Scan cadence (ticks) for the collinearity check. A through-cell chord persists for thousands of ticks,
      *  so it needn't be scanned every tick; >1 amortizes the (small, degree-bounded) cost — the per-scan damage
      *  is ×this so the average break rate is cadence-independent. 1 = every tick. ⚙ */
-    const val WELD_COLLINEAR_CHECK_PERIOD = 1
+    const val WELD_COLLINEAR_CHECK_PERIOD = 3
     /** Mouse-drag pull toward the pointer, and its damping. */
     val GRAB_STIFFNESS = Frac(1, 2)
     val GRAB_DAMPING = Frac(1, 1)
