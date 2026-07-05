@@ -492,6 +492,7 @@ class CytoController(
             "DIVIDE$asym$orient"
         }
         ActionType.Repair -> "REPAIR"
+        ActionType.Lyse -> "LYSE"
     }
 
     /** One condition clause as `lhs<cmp>rhs` (e.g. `ab<800`). */

@@ -1,7 +1,9 @@
 package org.emerge.demo.cyto.sim.soa
 
 import org.emerge.demo.cyto.cells.CellType
+import org.emerge.demo.cyto.sim.ActionType
 import org.emerge.demo.cyto.sim.BioProfile
+import org.emerge.demo.cyto.sim.systems.LyseAttackIntent
 import org.emerge.demo.cyto.sim.CellWork
 import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.CytoConfig
@@ -73,6 +75,9 @@ class CytoPipelineState {
 
     // ── Connection maintenance scratch ──
     val connPairDmg = HashMap<Long, Float>()
+
+    // ── Lysis attack intents, accumulated from biology, drained by the reducer after lifecycle ──
+    val lyseIntents = ArrayList<LyseAttackIntent>()
 
     // ── Broadphase grid, reused across ticks ──
     var contactGrid: SpatialGrid? = null
@@ -437,6 +442,28 @@ class BiologySystem(
             }
         }
         bioSplit("bio:finish")
+
+        // Accumulate lysis attack intents from biology
+        state.lyseIntents.clear()
+        for (k in 0 until n) {
+            val slot = ordered[k]
+            val work = state.bioWorks[slot]!!
+            if (work.lyseTargets.isEmpty()) continue
+            val attackerId = EntityId(world.entityId[slot])
+            val victimIds = work.lyseTargets.keys.toList()
+            // Damage = total biomass torn off across all victims.
+            val totalDamage = work.lyseTargets.values.sum()
+            if (totalDamage <= 0) continue
+            // Lyse steals all species — no species operand.
+            val lyseGene = work.genome.firstOrNull { it.action.type == ActionType.Lyse }
+            val g = lyseGene?.efficiency?.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR) ?: 0
+            state.lyseIntents.add(LyseAttackIntent(
+                attacker = attackerId,
+                victims = victimIds,
+                damage = totalDamage,
+                gear = g,
+            ))
+        }
 
         // Write-back
         val noMutateEntityId = noMutateEntityIdProvider()

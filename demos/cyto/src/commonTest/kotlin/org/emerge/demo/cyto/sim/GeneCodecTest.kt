@@ -171,6 +171,27 @@ class GeneCodecTest {
         }
     }
 
+    /** Lysis (MORPHOGENESIS.md §B): `Lyse` steals all species from touching cells.
+     *  Undigestible species are forced into the attacker's cytoplasm — the basis of prey toxicity. */
+    @Test
+    fun roundTripsLyseAction() {
+        val gate = GeneCondition(Operand.Touching, Comparison.Greater, Operand.Constant(0))
+        // Bare lyse (steal all species)
+        val lyse = Gene(EnergySource.BreakBond("ab"), gate, GeneAction(ActionType.Lyse))
+        assertEquals("Break ab : Touching > 0 : Lyse", GeneCodec.serialize(listOf(lyse)), "lyse")
+        assertEquals(listOf(lyse), GeneCodec.parse(GeneCodec.serialize(listOf(lyse))), "lyse round-trip")
+
+        // With efficiency gear
+        val lyseGear = Gene(EnergySource.BreakBond("ab"), gate, GeneAction(ActionType.Lyse), efficiency = 3)
+        assertEquals("Break ab : Touching > 0 : Lyse @3", GeneCodec.serialize(listOf(lyseGear)), "lyse with gear")
+        assertEquals(listOf(lyseGear), GeneCodec.parse(GeneCodec.serialize(listOf(lyseGear))), "lyse+gear round-trip")
+
+        // Light-powered lyse
+        val lyseLight = Gene(EnergySource.Light, gate, GeneAction(ActionType.Lyse), efficiency = 0)
+        assertEquals("Light : Touching > 0 : Lyse", GeneCodec.serialize(listOf(lyseLight)), "lyse with light")
+        assertEquals(listOf(lyseLight), GeneCodec.parse(GeneCodec.serialize(listOf(lyseLight))), "lyse light round-trip")
+    }
+
     /** A hand-authored genome parses to exactly the genes intended (the author-by-text workflow). */
     @Test
     fun parsesAHandWrittenGenome() {

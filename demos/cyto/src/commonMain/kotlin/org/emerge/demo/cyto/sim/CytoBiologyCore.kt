@@ -353,6 +353,7 @@ object CytoBiologyCore {
             // perOp 0 (an unresolved/mutated species id) disables the cap rather than indexing by -1.
             ActionType.Convert -> k = minOf(k, selfGateCap(gene.condition, qBiomass = true, qSpeciesId = -1, snapQ = snapBiomass, perOp = if (convertId >= 0) SpeciesRegistry.bondCount(convertId) else 0, snap = snap, snapBiomass = snapBiomass, work = work))
             ActionType.FormBond -> k = minOf(k, selfGateCap(gene.condition, qBiomass = false, qSpeciesId = productId, snapQ = snap.count(productId), perOp = 1, snap = snap, snapBiomass = snapBiomass, work = work))
+            ActionType.Lyse -> {} // No sub-tick cap — damage is capped by available biomass in the attack phase
         }
         if (k <= 0) return
         // Apply: action-input consumption, then the broken fuel + its fragments, then the action's output.
@@ -381,6 +382,20 @@ object CytoBiologyCore {
             }
             ActionType.Repair -> applyRepair(work, k)
             ActionType.Contract -> work.logicalRadius = (work.logicalRadius - FLEX_STEP * k).coerceAtLeast(MIN_RADIUS)
+            ActionType.Lyse -> {
+                // Queue lysis attacks on all touching un-welded cells. Each op tears `k` total energy
+                // units of biomass, split across all touching victims (each loses `k / numVictims`).
+                // Lyse steals ALL species — no species targeting. Undigestible species are forced
+                // into the attacker's cytoplasm as a metabolic burden (MORPHOGENESIS.md §B).
+                work.lyseTargets.clear()
+                val numVictims = work.touchingIds.size
+                if (numVictims > 0) {
+                    val damagePerVictim = k / numVictims
+                    for (victimId in work.touchingIds) {
+                        work.lyseTargets[victimId] = damagePerVictim
+                    }
+                }
+            }
         }
     }
 

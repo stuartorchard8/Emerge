@@ -19,10 +19,12 @@ import org.emerge.demo.cyto.sim.CytoMutation
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
+import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.demo.cyto.sim.cellMass
 import org.emerge.demo.cyto.sim.systems.CellDestroyIntent
 import org.emerge.demo.cyto.sim.systems.CellDivisionIntent
 import org.emerge.demo.cyto.sim.systems.CytoInteractionSystem
+import org.emerge.demo.cyto.sim.systems.LyseAttackIntent
 import org.emerge.demo.cyto.sim.systems.CytoLifecycleSystem
 import org.emerge.demo.cyto.sim.systems.DetachIntent
 import org.emerge.demo.cyto.sim.systems.WeldHealIntent
@@ -158,6 +160,15 @@ class CytoSoaReducer(
         }
         // ── Cold bridge: lifecycle ──────────────────────────────────────────────────
         cur = phaseR("lifecycle") { bridgeLifecycle(cur, state.divide, state.destroy, input, inputs) }
+
+        // ── Lysis attack phase ────────────────────────────────────────────────────
+        // Process lysis attacks after lifecycle (victims/attackers guaranteed to exist).
+        // Tears biomass from victims, assimilates into attacker's cytoplasm.
+        // Per MORPHOGENESIS.md §B: efficiency gear controls the damage/capture balance.
+        if (state.lyseIntents.isNotEmpty()) {
+            cur = phaseR("lyse") { processLyseAttacks(cur, state.lyseIntents); state.lyseIntents.clear(); cur }
+        }
+
         return cur
     }
 
@@ -222,6 +233,67 @@ class CytoSoaReducer(
         val nw = CytoWorld.fromSimState(out)
         nw.world.randomSeed = out.randomSeed
         return nw
+    }
+
+    // ── lysis attack processing ─────────────────────────────────────────────────
+    /** Process all lyse attack intents: shred all biomass from victims, assimilate what the attacker
+     *  can hold. Undigestible species are forced into the attacker's cytoplasm — a metabolic burden
+     *  that accumulates over time (creating evolutionary pressure for prey to produce predator-toxic
+     *  chemicals). Returns the world. */
+    private fun processLyseAttacks(w: CytoWorld, intents: List<LyseAttackIntent>): CytoWorld {
+        val maxGear = CytoTuning.EFFICIENCY_MAX_GEAR
+        for (intent in intents) {
+            val attackerSlot = w.slotOf(intent.attacker.value)
+            if (attackerSlot < 0) continue
+
+            // Capture fraction: ⌊(gear+1) / (EFFICIENCY_MAX_GEAR+1)⌋.
+            // Low gear = brute shredder (high damage, low capture — most spilled to env).
+            // High gear = surgical digester (less damage, high capture — nearly all assimilated).
+            // Undigestible species (attacker can't hold them) are FORCED into attacker cytoplasm,
+            // creating a metabolic burden — the basis of prey toxicity.
+            val captureNum = (intent.gear + 1).toLong()
+            val captureDen = (maxGear + 1).toLong()
+            val damagePerVictim = if (intent.victims.isEmpty()) 0 else intent.damage / intent.victims.size
+            if (damagePerVictim <= 0) continue
+
+            for (victimId in intent.victims) {
+                val victimSlot = w.slotOf(victimId.value)
+                if (victimSlot < 0) continue
+
+                val victimBio = w.cell.biomass[victimSlot] ?: continue
+                if (victimBio.isEmpty()) continue
+
+                val attackerCyto = w.cell.cytoplasm[attackerSlot] ?: run {
+                    val store = MoleculeStore()
+                    w.cell.cytoplasm[attackerSlot] = store
+                    store
+                }
+
+                // Steal all species equally (proportional to victim biomass composition).
+                var totalStolen = 0
+                for (i in 0 until victimBio.size) {
+                    val spId = victimBio.idAt(i)
+                    val victimCount = victimBio.countAt(i)
+                    if (victimCount <= 0) continue
+                    // Steal proportional to count.
+                    val stolen = minOf(damagePerVictim.toLong(), victimCount.toLong()).toInt()
+                    victimBio.add(spId, -stolen)
+                    totalStolen += stolen
+
+                    // Assimilate: ⌊stolen × captureNum / captureDen⌋
+                    val captured = (stolen.toLong() * captureNum / captureDen).toInt()
+                    attackerCyto.inc(spId, captured)
+
+                    // Undigestible (spilled) species are FORCED into attacker cytoplasm instead of env.
+                    // These accumulate and dilute useful cytoplasm — the toxicity mechanism.
+                    val spilled = stolen - captured
+                    if (spilled > 0) {
+                        attackerCyto.inc(spId, spilled)
+                    }
+                }
+            }
+        }
+        return w
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────────

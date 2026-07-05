@@ -16,11 +16,12 @@ package org.emerge.demo.cyto.sim
  * hold (e.g. `c > 50 & c < 200` = a concentration band). Each operand is one of: an integer (a constant),
  * `Biomass`, `Touching`, a species token (its cytoplasm count), or `Conc(<species>)` (its size-normalised
  * concentration) — and a species token may be any length (`a`, `ab`, `abb`, …), not just a monomer/dimer.
- * Action is `Import <species>`, `FormBond <a> <b>`, `Convert <species>`,
- * `Contract`, `Mitosis` *(or `Mitosis <morphogen>` for asymmetric division — the morphogen is allocated whole
- * to one side, MORPHOGENESIS.md §C; append `mother` to keep it in the mother = centred source, vs the default
- * daughter = edge source; append `sever` so the daughter rejects all mother welds → splits off as a separate
- * 1-celled organism)*, or `Repair`. Blank lines and `#` comments are ignored. Round-trips every preset
+ *  Action is `Import <species>`, `FormBond <a> <b>`, `Convert <species>`,
+ *  `Contract`, `Mitosis` *(or `Mitosis <morphogen>` for asymmetric division — the morphogen is allocated whole
+ *  to one side, MORPHOGENESIS.md §C; append `mother` to keep it in the mother = centred source, vs the default
+ *  daughter = edge source; append `sever` so the daughter rejects all mother welds → splits off as a separate
+ *  1-celled organism)*, `Repair`, or `Lyse` *(steals all species from touching cells — MORPHOGENESIS.md §B)*.
+ *  Blank lines and `#` comments are ignored. Round-trips every preset
  * genome (see GeneCodecTest).
  */
 object GeneCodec {
@@ -115,6 +116,7 @@ object GeneCodec {
             if (a.b.isNotEmpty()) append(if (a.divideAcross) " across ${tok(a.b)}" else " along ${tok(a.b)}")
         }
         ActionType.Repair -> "Repair"
+        ActionType.Lyse -> "Lyse"
     }
 
     private fun parseAction(t: List<String>): GeneAction = when (t[0]) {
@@ -148,6 +150,7 @@ object GeneCodec {
             GeneAction(ActionType.Mitosis, morph, axis, morphogenToMother = toMother, divideAcross = across, rejectMother = sever)
         }
         "Repair" -> GeneAction(ActionType.Repair)
+        "Lyse" -> GeneAction(ActionType.Lyse)
         else -> throw IllegalArgumentException("unknown action: ${t[0]}")
     }
 

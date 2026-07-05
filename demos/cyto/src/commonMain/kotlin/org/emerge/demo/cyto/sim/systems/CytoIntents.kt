@@ -31,3 +31,16 @@ data class CellDivisionIntent(
     val rejectMother: Boolean = false,
 )
 data class CellDestroyIntent(val id: EntityId)
+
+/** A lysis attack: cell [attacker] shreds all biomass from each [victims] (un-welded touching cells),
+ *  assimilating what it can hold. Undigestible species are forced into the attacker's cytoplasm —
+ *  a metabolic burden that accumulates over time.
+ *  [damage] = total energy units torn off the victims' biomass.
+ *  [gear] = efficiency gear (0..EFFICIENCY_MAX_GEAR). Per MORPHOGENESIS.md §B:
+ *    capture = ⌊damage × (gear+1) / (EFFICIENCY_MAX_GEAR+1)⌋ (rest forced into cytoplasm). */
+data class LyseAttackIntent(
+    val attacker: EntityId,
+    val victims: List<EntityId>,
+    val damage: Int,
+    val gear: Int,
+)

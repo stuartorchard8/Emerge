@@ -117,6 +117,13 @@ enum class ActionType {
     /** Repair connection damage: each op heals the cell's most-damaged connection (operands unused).
      *  Holding a body together is therefore genetic + energy-costing — there is no free heal. */
     Repair,
+    /** Tear biomass from touching un-welded cells: the attacker shreds the victim's biomass and
+     *  assimilates everything it can hold. Undigestible species are forced into the attacker's
+     *  cytoplasm — a metabolic burden that accumulates and dilutes useful cytoplasm. This creates
+     *  an evolutionary arms race: prey can evolve a predator-toxic chemical (held by prey,
+     *  undigestible by predator) as defense, forcing predators to either evolve detox or avoid that
+     *  prey type. Efficiency gear controls the damage/capture balance per MORPHOGENESIS.md §B. */
+    Lyse,
 }
 
 /** A gene's action plus its (action-dependent) operands — single atoms for [ActionType.FormBond],
@@ -190,15 +197,15 @@ data class Gene(
         return if (g == 0) Int.MAX_VALUE else CytoTuning.EFFICIENCY_REF ushr g
     }
 
-    /** Pre-computed: whether this gene's action benefits from efficiency gear (Convert/Import/Repair/Contract). */
+    /** Pre-computed: whether this gene's action benefits from efficiency gear (Convert/Import/Repair/Contract/Lyse). */
     val actionHasEfficiency: Boolean get() = when (action.type) {
-        ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.Contract -> true
+        ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.Contract, ActionType.Lyse -> true
         else -> false
     }
 
-    /** Pre-computed: whether this gene's action has the cap (Convert/Import/Repair/FormBond/Contract). */
+    /** Pre-computed: whether this gene's action has the cap (Convert/Import/Repair/FormBond/Contract/Lyse). */
     val actionHasCap: Boolean get() = when (action.type) {
-        ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.FormBond, ActionType.Contract -> true
+        ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.FormBond, ActionType.Contract, ActionType.Lyse -> true
         else -> false
     }
 
@@ -373,6 +380,10 @@ class CellWork(
     /** Un-welded cells this cell is **touching** this tick (filled from the contacts phase after [reset]).
      *  A firing Repair gene welds these (CytoBiologyCore.applyRepair) — gene-driven adhesion. */
     val touchingIds: MutableList<EntityId> = ArrayList()
+
+    /** Lysis attack targets: victim entity-id → count of species to steal. A firing Lyse gene queues
+     *  attacks on all touching un-welded cells; the attack phase processes them after biology (MORPHOGENESIS.md §B). */
+    val lyseTargets: MutableMap<EntityId, Int> = HashMap()
 
     /** Logical positions of touching cells, aligned with [touchingIds].
      *  Used by degrade to find the center-most touching cell for biomass shedding. */
@@ -573,6 +584,7 @@ class CellWork(
         _touchingCellN = 0
         importBias.clear()
         weldHeals.clear()
+        lyseTargets.clear()
         dividing = false
         divideMorphogen = ""
         divideMorphogenToMother = false

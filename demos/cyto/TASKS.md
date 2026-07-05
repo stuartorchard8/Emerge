@@ -23,6 +23,18 @@ incidental** (inertia + asymmetric breath, not steered); steering still needs th
 2.0→2.5`, `DRAG_COEFFICIENT 0.2→0.8`. Design: `MORPHOGENESIS.md` §Physics. Diagnostics: `SwimProbe` /
 `CollisionChannelProbe`.
 
+**⚡ Systematic optimization pass — biology ~2× (`2026-07-04`).** Benchmarked at 4145 cells: biology
+81%, contacts 0, lifecycle 415µs. Sub-phases: build=1661µs, quanta=402µs, genes=1994µs, exchange=3579µs,
+diffuse=217µs, finish=3425µs, writeback=241µs. Key wins: round-robin gene eval with tick-based sync +
+mitosis cooldown (`9fe02b14`); spring iterations 4→3 (`889a1962`); cytoplasm diffusion period 2→4 (`2574f788`),
+frequency every 2nd tick (`4136a097`); exchange group overhead reduced via binary-search transfer in leaf stores
+(`766da1d7`), scratch flat arrays replacing HashMap in diffuse (`bb7cf7ed`), 64-entry scratch hash table for
+balanceBatched (`2c715421`); presence mask skipping for empty stores (`de969090`), for balanceBatched
+(`8ec14762`); pre-computed gene properties for efficiency gear/action type (`87cc4fb2`); species count cache
+(`47ff2b39`); bond/atom presence masks in MoleculeStore (`4e8df334`); pre-populated species cache + cached
+damage/contract checks (`a37865eb`); `needsLookup` property on Operand (`013b91e6`); parallel executor uses
+ThreadPoolExecutor with daemon threads (`3d8f28ec`). See `PERF.md` for full breakdown.
+
 **The front line: a differentiated, self-propelling organism (the jellyfish goal).** Substrate is complete:
 `Conc` + AND-gate, retain-side, the metabolic source/sink morphogen loop, produce-without-diffuse
 (intracellular determinants), and **oriented division** (✅ `ce9cede` — Mitosis `along`/`across` a morphogen
@@ -162,6 +174,19 @@ The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (
 
 ## Done (recent highlights — git log is the archive)
 
+- [x] **SoA landing complete** — `CytoSoaReducer` now uses `SoaPipeline` (`06f7470a`); `REPAIR_WELD_MODE`
+  enum replaced with `InternalOnly` (`491c1335`, `99313aaa`); broken connections after CSR rendering refactor
+  fixed (`60efe400`); AoS fully retired, goldens are the sole gate.
+- [x] **Weld fixes** — auto-weld on overlap disabled (`fd9ebafb`); repair welds can form the first connection
+  when `weldedDegree == 0` (`fd9ebafb`); `AUTO_WELD_ON_OVERLAP = false` added to `CytoTuning` (`fd9ebafb`).
+- [x] **Degrade deposit** — now goes to center-most touching cell, not arbitrary (`9b7ab254`).
+- [x] **Round-robin gene eval** — fixed to gate condition evaluation, not gene execution (`716c2966`).
+- [x] **Life viability / overpopulation** — reduced both via tuning changes (`2de08043`).
+- [x] **Oriented division timeout** — `acrossOrientedDivisionGrowsA2DSheetNotAThread` test timeout fixed
+  (`586edd46`).
+- [x] **Subtler cell coloring** — improved visual distinction (`e480e8f0`).
+- [x] **Tests reliability** — gradle tests exit reliably and discover all cyto tests (`59caaca3`); bio shed
+  to grid (`745ca699`).
 - [x] **Velocity reconciliation — locomotion unblocked** (`91145a6f`, 2026-06-21) — `integrate` now sets
   velocity to the realized per-tick displacement (`v = Δx/dt`), folding the weld solver's position-correction
   back into `velX/velY` so drag/contacts see spring-driven motion. No drag-equation change. A bit-frozen
