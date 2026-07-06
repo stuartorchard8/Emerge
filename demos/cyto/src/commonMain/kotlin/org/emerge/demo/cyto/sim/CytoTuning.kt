@@ -26,11 +26,6 @@ object CytoTuning {
     /** Resolution per torus axis of the light field + matter grid (the fields are smooth, so coarse is
      *  plenty). The grid has RES² cells. */
     const val GRID_RES = 64
-    /** Matter-field resolution, DECOUPLED from the (coarse) light grid: at the 128-cell world, RES=1024 ⇒
-     *  grid cell = 0.25 cell-diam (sub-cell), so a cell's radius spans ~2 grid cells and it absorbs over a
-     *  ~13-grid-cell circular footprint (the disc gather). Diffusion is OFF, so this is allocated once + the
-     *  per-tick cost is just the gather, not O(RES²). See PLAN_taxis_substrate.md. */
-    const val MATTER_GRID_RES = 1024
 
     // ── Light field (the open energy source) ─────────────────────────────────────────────────────────
     /** Peak light at a source (≈ quanta/tick a fully-exposed cell sitting on it harvests, before the
@@ -39,7 +34,7 @@ object CytoTuning {
     /** Gaussian falloff radius of a light source (logical units): light is strong within ~σ and ~0 well
      *  before the midpoint between sources, leaving dark contested zones. In moving mode it's the
      *  half-width of the daylight band (how much of the world is "day" at once). */
-    const val LIGHT_FALLOFF = 25f   // ÷8 with the 1024→128 world rescale (keeps the band ~10% of the world)
+    const val LIGHT_FALLOFF = 8f   // ÷8 with the 1024→128 world rescale (keeps the band ~10% of the world)
     /** Shading (interference competition): when true, cells sharing a grid-cell split that cell's incident
      *  light by capture weight (exposure × radius), so a bigger cell starves its neighbours. False = every
      *  cell gets its own full light (no co-located split) — toggle to test whether shading still earns its

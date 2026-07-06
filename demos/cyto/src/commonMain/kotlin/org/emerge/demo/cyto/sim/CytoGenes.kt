@@ -636,7 +636,7 @@ private const val DIVIDE_BIOMASS = CytoSeed.AUTOTROPH_DIVIDE_BIOMASS
  * division lands long before any mutation, so the lineage colonises reliably.
  */
 val AUTOTROPH_GENES: List<Gene> = listOf(
-    Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Mitosis)),
+    Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Mitosis, rejectMother = true)),
     Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.Convert, "ab")),
     Gene(EnergySource.Light, GeneCondition(Operand.Chem("ab"), Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.FormBond, "a", "b")),
 )
