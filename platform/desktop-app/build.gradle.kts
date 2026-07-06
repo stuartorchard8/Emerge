@@ -95,6 +95,14 @@ tasks.register<JavaExec>("runCyto") {
     jvmArgs("-Demerge.mode=cyto")
 }
 
+tasks.register<JavaExec>("runUIGallery") {
+    group = "application"
+    description = "Run the UI widget gallery"
+    mainClass = "org.emerge.desktop.Main_jvmKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    jvmArgs("-Demerge.mode=ui-gallery")
+}
+
 tasks.register<JavaExec>("renderCyto") {
     group = "application"
     description = "Render the Cyto world headlessly (light-field heatmap + cells) to a PNG. " +
@@ -332,4 +340,13 @@ tasks.register<JavaExec>("runRigCheck") {
     description = "Verify part-bake → NornRig: bake a genome's parts + composite a walk cycle. --args=\"<png> <morph>\""
     mainClass = "org.emerge.desktop.RigCheckKt"
     classpath = sourceSets["main"].runtimeClasspath
+}
+
+tasks.register<JavaExec>("renderUIGallery") {
+    group = "application"
+    description = "Render UI Gallery as Java2D PNG (no OpenGL) → build/ui-gallery.png"
+    mainClass = "org.emerge.desktop.UIGallerySnapshotKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    args("build/ui-gallery.png")
+    workingDir = rootProject.layout.buildDirectory.get().asFile
 }
