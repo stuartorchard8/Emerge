@@ -320,6 +320,15 @@ tasks.register<JavaExec>("benchNorns") {
     jvmArgs("-Dnorns.prof")
 }
 
+tasks.register<JavaExec>("benchCytoSave") {
+    group = "verification"
+    description = "Benchmark Cyto save/encode/decode: phase-by-phase timing for encode, decode, and round-trip. " +
+        "--args=\"<savePath|fresh> [warmupIters] [measureIters]\""
+    mainClass = "org.emerge.desktop.CytoSaveBenchmarkKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootDir
+}
+
 tasks.register<JavaExec>("runMorphLab") {
     group = "application"
     description = "MorphLab: live authoring tool for the creature baseline — sculpt the genome (parts, " +
