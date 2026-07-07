@@ -783,9 +783,11 @@ class CytoSoaSpecTest {
         val seed = CytoMatterField.empty()
         val aId = SpeciesRegistry.id("r")
         // Deposit well inside a single base tile (the origin is a 4-tile corner, which would split the disc).
+        // Coords must stay in-bounds: the torus is [-HALF,HALF) = [-32,32) with TILE=16, so (8,8) sits mid-tile
+        // in [0,16) — clear of the tile corners (0/16) and the wrap seam. (40,40) would wrap to (-24,-24).
         // The disc refines to fine leaves (~0.25 cell-diam), so the 1000 atoms spread across the footprint's
         // leaves — read locality by summing leaves NEAR vs FAR, not a single point.
-        seed.deposit(40f, 40f, 0.6f, aId, 1000)   // 'a' is a monomer → env decay leaves it untouched too
+        seed.deposit(8f, 8f, 0.6f, aId, 1000)   // 'r' is a monomer → env decay leaves it untouched too
         val initial = run {
             val b = SimBuilder(SimState())
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(seed) }
@@ -804,8 +806,8 @@ class CytoSoaSpecTest {
         }
         val total0 = grid(initial).totalAtoms()
         val g = grid(run(initial, ticks = 200))
-        assertEquals(1000, near(g, aId, 40f, 40f, 4f), "with diffusion gone an undisturbed deposit must stay put")
-        assertEquals(0, near(g, aId, -40f, -40f, 4f), "matter must NOT spread to a distant point (no diffusion)")
+        assertEquals(1000, near(g, aId, 8f, 8f, 4f), "with diffusion gone an undisturbed deposit must stay put")
+        assertEquals(0, near(g, aId, -24f, -24f, 4f), "matter must NOT spread to a distant point (no diffusion)")
         assertEquals(total0, g.totalAtoms(), "matter conserved")
     }
 
