@@ -7,8 +7,8 @@ import kotlin.test.assertTrue
 /** Standalone invariants for the adaptive quad-tree matter field (QUADTREE.md): conservation through every
  *  op, determinism, and progressive collapse — validated in isolation before integration. */
 class CytoMatterFieldTest {
-    private val A = SpeciesRegistry.id("a")
-    private val AB = SpeciesRegistry.id("ab")
+    private val A = SpeciesRegistry.id("r")
+    private val AB = SpeciesRegistry.id("rg")
 
     private fun leafCount(f: CytoMatterField): Int { var n = 0; f.forEachLeaf { _, _, _, _ -> n++ }; return n }
     private fun digest(f: CytoMatterField): String {
@@ -34,7 +34,7 @@ class CytoMatterFieldTest {
         val before = f.totalAtoms()
         val n = f.openFootprint(5f, 5f, 0.6f, 1)
         assertTrue(n > 0)
-        val delta = f.balance(A, cEff = 0, scaleFactor = 0f)   // cell wants 0 ⇒ each leaf (a=10) gives 5 ⇒ delta = 5·n
+        val delta = f.balance(A, cEff = 0, scaleFactor = 0f)   // cell wants 0 ⇒ each leaf (r=10) gives 5 ⇒ delta = 5·n
         f.closeFootprint()
         assertTrue(delta > 0, "cell with cEff=0 absorbs from a rich footprint")
         assertEquals(before - delta.toLong(), f.totalAtoms(), "grid total changes by exactly −delta")
@@ -88,13 +88,13 @@ class CytoMatterFieldTest {
 
     @Test fun decayConservesAndAtomises() {
         val f = CytoMatterField.empty()
-        f.deposit(0f, 0f, 0.6f, AB, amount = 4096)   // a pile of 'ab' molecules
+        f.deposit(0f, 0f, 0.6f, AB, amount = 4096)   // a pile of 'rg' molecules
         val t0 = f.totalAtoms()
         repeat(20) { f.maintain(2 + it, collapseDelay = Int.MAX_VALUE, decayPeriod = 2) }  // decay, no collapse
-        assertEquals(t0, f.totalAtoms(), "decay conserves atoms (ab → a + b)")
-        var ab = 0L; var mono = 0L
-        f.forEachLeaf { _, _, _, s -> ab += s.count(AB).toLong(); mono += s.count(A).toLong() }
-        assertTrue(ab < 4096, "some 'ab' atomised")
+        assertEquals(t0, f.totalAtoms(), "decay conserves atoms (rg → r + g)")
+        var rg = 0L; var mono = 0L
+        f.forEachLeaf { _, _, _, s -> rg += s.count(AB).toLong(); mono += s.count(A).toLong() }
+        assertTrue(rg < 4096, "some 'rg' atomised")
         assertTrue(mono > 0, "monomers released")
     }
 

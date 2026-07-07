@@ -53,7 +53,7 @@ fun main(args: Array<String>) {
         for (i in 0 until nCells) {
             ids += b.spawnCell(
                 CytoUnits.coord2(i * 1.5f, 0f), CytoUnits.coord2(vx, vy), CellType.Blank,
-                biomass = mapOf("ab" to 16), logicalRadius = MIN_RADIUS,
+                biomass = mapOf("rg" to 16), logicalRadius = MIN_RADIUS,
             )
         }
         for (i in 0 until nCells - 1) addSpring(b, ids[i], ids[i + 1], cfg)

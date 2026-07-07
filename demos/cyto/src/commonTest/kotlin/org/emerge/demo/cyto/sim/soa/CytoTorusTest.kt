@@ -38,8 +38,8 @@ import kotlin.test.assertTrue
 class CytoTorusTest {
 
     private val cfg = CytoConfig(mutationRateDenom = 0)
-    private val aId = SpeciesRegistry.id("a")
-    private val abId = SpeciesRegistry.id("ab")
+    private val aId = SpeciesRegistry.id("r")
+    private val abId = SpeciesRegistry.id("rg")
 
     /** Relative state of a world: each cell's torus-delta from the lowest-id cell + vel/radius/chem, sorted
      *  by EntityId. The delta uses raw `Int` subtraction (modular on the torus), so a whole-world translation
@@ -68,7 +68,7 @@ class CytoTorusTest {
             val ids = pts.mapIndexed { k, p ->
                 b.spawnCell(pos = CytoUnits.coord2(p.first, p.second),
                     vel = if (k == 0) CytoUnits.coord2(0.03f, 0.02f) else Coord2.zero, type = CellType.Collector,
-                    cytoplasm = mapOf("a" to 2000, "ab" to 40000), biomass = CytoSeed.STARTER_BIOMASS,
+                    cytoplasm = mapOf("r" to 2000, "rg" to 40000), biomass = CytoSeed.STARTER_BIOMASS,
                     logicalRadius = MIN_RADIUS, genome = genome)
             }
             for (k in 1 until ids.size) addSpring(b, ids[0], ids[k], cfg)

@@ -32,38 +32,38 @@ import kotlin.test.Test
  */
 class ClockProbe {
     private val baseline = listOf(
-        "Break aa : Biomass < 2400 : Convert aa @15",        // 1 metabolism: aa -> biomass
-        "Light : Conc(a) > 0 : FormBond a a",                // 2 metabolism: light -> aa (fuel)
-        "Break aa : bb < 220 & bc < 200 : FormBond b b @10", // 3 clock START+maintain (bb producer from fuel)
-        "Break bc : bb < bc & bb < 200 : FormBond b a @15",  // 4 cycle: bc -> ba
-        "Break ba : bc < ba & bc < 200 : FormBond b b @15",  // 5 cycle: ba -> bb
-        "Break bb : ba < bb & ba < 200 : FormBond b c @15",  // 6 cycle: bb -> bc
-        "Break bb : ba < bb & ba < 200 : Contract @15",      // 7 consume bb + contract
+        "Break rr : Biomass < 2400 : Convert rr @15",        // 1 metabolism: rr -> biomass
+        "Light : Conc(r) > 0 : FormBond r r",                // 2 metabolism: light -> rr (fuel)
+        "Break rr : gg < 220 & gb < 200 : FormBond g g @10", // 3 clock START+maintain (gg producer from fuel)
+        "Break gb : gg < gb & gg < 200 : FormBond g r @15",  // 4 cycle: gb -> gr
+        "Break gr : gb < gr & gb < 200 : FormBond g g @15",  // 5 cycle: gr -> gg
+        "Break gg : gr < gg & gr < 200 : FormBond g b @15",  // 6 cycle: gg -> gb
+        "Break gg : gr < gg & gr < 200 : Contract @15",      // 7 consume gg + contract
     )
-    private val labels = listOf("metab:convert", "metab:fuel", "start", "cyc bc->ba", "cyc ba->bb", "cyc bb->bc", "contract")
+    private val labels = listOf("metab:convert", "metab:fuel", "start", "cyc gb->gr", "cyc gr->gg", "cyc gg->gb", "contract")
 
     /** The hand-tuned 6-gene METABOLIC clock (cyto-genome-metabolic-clock.gene): fuses metabolism into the
-     *  clock — there is no separate `aa` fuel currency. `bb` is the oscillator phase species, the energy store
-     *  (broken to drive the ring + contraction), AND the biomass precursor (Convert bb). The bootstrap
-     *  producer (#2) burns Light directly into `bb`, so the 7-gene version's Light->aa fuel gene is gone.
+     *  clock — there is no separate `rr` fuel currency. `gg` is the oscillator phase species, the energy store
+     *  (broken to drive the ring + contraction), AND the biomass precursor (Convert gg). The bootstrap
+     *  producer (#2) burns Light directly into `gg`, so the 7-gene version's Light->rr fuel gene is gone.
      *  Self-starts + sustains (110 cycles / 15k ticks) — a real 7->6 reduction. */
     private val metabolic = listOf(
-        "Break bb : ba < bb & ba < 1984 & Biomass < 4000 : Convert bb @15",  // grow biomass from bb (no aa)
-        "Light : bb < 8000 & bc < 1984 : FormBond b b",                      // bootstrap producer: Light -> bb
-        "Break bc : bb < bc & bb < 1984 : FormBond b a @6",                  // ring: bc -> ba
-        "Break ba : bc < ba & bc < 1984 : FormBond b b @6",                  // ring: ba -> bb
-        "Break bb : ba < bb & ba < 1984 : FormBond b c @6",                  // ring: bb -> bc
-        "Break bb : ba < bb & ba < 1984 & bb > 6000 : Contract @15",         // consume bb + contract (high phase)
+        "Break gg : gr < gg & gr < 1984 & Biomass < 4000 : Convert gg @15",  // grow biomass from gg (no rr)
+        "Light : gg < 8000 & gb < 1984 : FormBond g g",                      // bootstrap producer: Light -> gg
+        "Break gb : gg < gb & gg < 1984 : FormBond g r @6",                  // ring: gb -> gr
+        "Break gr : gb < gr & gb < 1984 : FormBond g g @6",                  // ring: gr -> gg
+        "Break gg : gr < gg & gr < 1984 : FormBond g b @6",                  // ring: gg -> gb
+        "Break gg : gr < gg & gr < 1984 & gg > 6000 : Contract @15",         // consume gg + contract (high phase)
     )
 
-    /** The simplified 6-gene clock: a 2-molecule ring bb<->bc (the third molecule ba is gone), with the
+    /** The simplified 6-gene clock: a 2-molecule ring gg<->gb (the third molecule gr is gone), with the
      *  start-gate cutoff [cut] as the period knob. */
     private fun ring2(cut: Int) = listOf(
         baseline[0], baseline[1],
-        "Break aa : bb < $cut & bc < 200 : FormBond b b @10",  // start: seed bb from fuel (cutoff = period)
-        "Break bb : bc < bb & bc < 200 : FormBond b c @15",    // bb -> bc
-        "Break bc : bb < bc & bb < 200 : FormBond b b @15",    // bc -> bb
-        "Break bb : bc < bb & bc < 200 : Contract @15",        // contract in the bb->bc phase
+        "Break rr : gg < $cut & gb < 200 : FormBond g g @10",  // start: seed gg from fuel (cutoff = period)
+        "Break gg : gb < gg & gb < 200 : FormBond g b @15",    // gg -> gb
+        "Break gb : gg < gb & gg < 200 : FormBond g g @15",    // gb -> gg
+        "Break gg : gb < gg & gb < 200 : Contract @15",        // contract in the gg->gb phase
     )
 
     /** On-demand only (skipped in the normal suite). Run with:
@@ -95,15 +95,15 @@ class ClockProbe {
     }
 
     // Species whose counts are reported (debugging); the rhythm itself is measured on RADIUS (the actuator
-    // output) so it's topology-agnostic. Override with -Dclockwatch=bb,bc,bbc.
-    private val watch = (System.getProperty("clockwatch") ?: "bb,ba,bc").split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    // output) so it's topology-agnostic. Override with -Dclockwatch=gg,gb,ggb.
+    private val watch = (System.getProperty("clockwatch") ?: "gg,gr,gb").split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
     // Seeding is configurable because monomer-in-the-loop clocks are sensitive to it: a rich environment
     // passively pins a `canHold` monomer phase near the ambient level (uptake), which can wedge the ring.
-    // -Dclockseed=a:500,b:500  (cytoplasm)   -Dclockenv=400  (per-monomer reservoir level; -1 = the default).
+    // -Dclockseed=r:500,g:500  (cytoplasm)   -Dclockenv=400  (per-monomer reservoir level; -1 = the default).
     private val seedCyto: Map<String, Int> = System.getProperty("clockseed")
         ?.split(",")?.associate { it.substringBefore(":").trim() to it.substringAfter(":").trim().toInt() }
-        ?: mapOf("a" to 2000, "b" to 2000, "c" to 500, "aa" to 4000)
+        ?: mapOf("r" to 2000, "g" to 2000, "b" to 500, "rr" to 4000)
     private val envLevel: Int = System.getProperty("clockenv")?.toIntOrNull() ?: -1
 
     private fun runVariants(variants: LinkedHashMap<String, List<String>>, ticks: Int) {

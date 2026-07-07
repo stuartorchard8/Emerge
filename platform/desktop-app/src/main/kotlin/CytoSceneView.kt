@@ -152,11 +152,11 @@ object CytoSceneView {
         appendLine("# cyto brush genome — one gene per line:  ENERGY-SOURCE : CONDITION : ACTION")
         appendLine("#   source:    Light | Break <bond>")
         appendLine("#   condition: <operand> >|< <operand>  (operand = <n> | <species> | Biomass | Touching)")
-        appendLine("#              a species token may be any length: a, ab, abb, …  (e.g.  abb > 0 : Convert abb)")
+        appendLine("#              a species token may be any length: r, rg, rgg, …  (e.g.  rgg > 0 : Convert rgg)")
         appendLine("#   action:    Import <s> | FormBond <a> <b> | Convert <s> | Contract | Mitosis | Repair")
         appendLine("#   Blank lines and # comments are ignored. Edit, then click \"Load Genome\" to reload;")
         appendLine("#   pick the 'Brush' type, then Spawn (empty space) / Set to paint.")
-        appendLine("# This starter IS the simple autotroph: bond a+b -> ab under light, grow, divide.")
+        appendLine("# This starter IS the simple autotroph: bond r+g -> rg under light, grow, divide.")
         appendLine(org.emerge.demo.cyto.sim.GeneCodec.serialize(org.emerge.demo.cyto.sim.AUTOTROPH_GENES))
     }
 

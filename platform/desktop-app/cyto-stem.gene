@@ -1,18 +1,18 @@
 # cyto genome exported from cell 310
-Break ab : Biomass < 4000 & c < a & c < b : Convert ab @15
-Break ac : Biomass < 4000 & b < a & b < c : Convert ac @15
-Break bc : Biomass < 4000 & a < b & a < c : Convert bc @15
-Light : ab < 8000 & ac < 200 : FormBond a b
-Break bc : ac < 200 : FormBond a b @10
-Break ab : bc < 200 : FormBond a c @10
-Break ac : ab < 200 : FormBond b c @10
-Break ac : ac > 199 & bc > 199 & ab > 199 : FormBond b c @9
-Break ac : bc < 1000 & bc > ac & ba > 30 : Contract @15
-Break ac : cb < 8 & cc < 1 : FormBond c c
-Break ab : ba < 200 & cc > 0 : FormBond b a
-Break ba : cc < 1 : FormBond a b @14
-Break ac : Biomass < 4000 & ba > 30 : Convert ba @15
-Break ac : cb < 8 & ca < 8 : FormBond c a
-Break ac : cb < 16 & ab < 200 & ca > 0 : FormBond c b @15
-Break ac : ab < 200 & cb > 15 : Mitosis cc mother along ba
-Break ac : ab < 500 : Repair @10
+Break rg : Biomass < 4000 & b < r & b < g : Convert rg @15
+Break rb : Biomass < 4000 & g < r & g < b : Convert rb @15
+Break gb : Biomass < 4000 & r < g & r < b : Convert gb @15
+Light : rg < 8000 & rb < 200 : FormBond r g
+Break gb : rb < 200 : FormBond r g @10
+Break rg : gb < 200 : FormBond r b @10
+Break rb : rg < 200 : FormBond g b @10
+Break rb : rb > 199 & gb > 199 & rg > 199 : FormBond g b @9
+Break rb : gb < 1000 & gb > rb & gr > 30 : Contract @15
+Break rb : bg < 8 & bb < 1 : FormBond b b
+Break rg : gr < 200 & bb > 0 : FormBond g r
+Break gr : bb < 1 : FormBond r g @14
+Break rb : Biomass < 4000 & gr > 30 : Convert gr @15
+Break rb : bg < 8 & br < 8 : FormBond b r
+Break rb : bg < 16 & rg < 200 & br > 0 : FormBond b g @15
+Break rb : rg < 200 & bg > 15 : Mitosis bb mother along gr
+Break rb : rg < 500 : Repair @10

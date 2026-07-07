@@ -75,7 +75,7 @@ class InspectCell {
         }
         val h = handleableOf(cell.genome)
         sb.appendLine("handleable bondTypes=${h.bondTypeCount}; canHold: " +
-            listOf("a", "b", "c", "ab", "abb", "bb").joinToString(" ") { "$it=${h.canHold(SpeciesRegistry.id(it))}" })
+            listOf("r", "g", "b", "rg", "rgg", "gb").joinToString(" ") { "$it=${h.canHold(SpeciesRegistry.id(it))}" })
         if (pos != null) {
             val rc = grid.contentsAt(org.emerge.demo.cyto.sim.CytoUnits.toLogical(pos.x), org.emerge.demo.cyto.sim.CytoUnits.toLogical(pos.y))
             sb.appendLine("reservoir @ cell footprint = ${LinkedHashMap(rc)}")

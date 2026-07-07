@@ -14,7 +14,7 @@ package org.emerge.demo.cyto.sim
  */
 object CytoMutation {
 
-    private val ATOMS = listOf("a", "b", "c")
+    private val ATOMS = listOf("r", "g", "b")
     /** Longest a species operand may drift to — the registry's max molecule length (k²+1). Operands rarely
      *  reach it (drift is ±1/mutation and short-biased), so it almost never binds; it just bounds the space. */
     private val MAX_OPERAND_LEN = SpeciesRegistry.species.maxOf { it.length }

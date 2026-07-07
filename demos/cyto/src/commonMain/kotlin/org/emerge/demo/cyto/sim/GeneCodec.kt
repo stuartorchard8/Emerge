@@ -6,16 +6,16 @@ package org.emerge.demo.cyto.sim
  *
  * One gene per line, three `:`-separated parts — **energy source : condition : action**:
  *
- *     Light : a < 4 : Import a            # import 'a' while the cytoplasm 'a' count < 4
- *     Light : a > 0 : FormBond a b        # bond an 'a'-ending molecule to a 'b'-starting one
- *     Light : ab > 0 : Convert ab         # lock 'ab' into biomass
+ *     Light : r < 4 : Import r            # import 'r' while the cytoplasm 'r' count < 4
+ *     Light : r > 0 : FormBond r g        # bond an 'r'-ending molecule to a 'g'-starting one
+ *     Light : rg > 0 : Convert rg         # lock 'rg' into biomass
  *     Light : Biomass > 8 : Mitosis       # divide once biomass exceeds 8 bonds
- *     Break ab : Biomass < ab : Convert ab  # grow only while biomass is below the stored 'ab' reserve
+ *     Break rg : Biomass < rg : Convert rg  # grow only while biomass is below the stored 'rg' reserve
  *
  * Condition is one or more `<operand> <>|<> <operand>` clauses joined by ` & ` — the gene fires iff **all**
- * hold (e.g. `c > 50 & c < 200` = a concentration band). Each operand is one of: an integer (a constant),
+ * hold (e.g. `b > 50 & b < 200` = a concentration band). Each operand is one of: an integer (a constant),
  * `Biomass`, `Touching`, a species token (its cytoplasm count), or `Conc(<species>)` (its size-normalised
- * concentration) — and a species token may be any length (`a`, `ab`, `abb`, …), not just a monomer/dimer.
+ * concentration) — and a species token may be any length (`r`, `rg`, `rgg`, …), not just a monomer/dimer.
  *  Action is `Import <species>`, `FormBond <a> <b>`, `Convert <species>`,
  *  `Contract`, `Mitosis` *(or `Mitosis <morphogen>` for asymmetric division — the morphogen is allocated whole
  *  to one side, MORPHOGENESIS.md §C; append `mother` to keep it in the mother = centred source, vs the default
@@ -36,7 +36,7 @@ object GeneCodec {
         if (line.isEmpty()) return@mapNotNull null
         val parts = line.split(":")
         require(parts.size == 3) { "gene line must have three ':'-separated parts: \"$raw\"" }
-        // The action part may carry a trailing efficiency gear token `@<g>` (e.g. `Convert ab @6`).
+        // The action part may carry a trailing efficiency gear token `@<g>` (e.g. `Convert rg @6`).
         val actionTokens = parts[2].trim().split(WS).toMutableList()
         var efficiency = 0
         if (actionTokens.isNotEmpty() && actionTokens.last().startsWith("@")) {

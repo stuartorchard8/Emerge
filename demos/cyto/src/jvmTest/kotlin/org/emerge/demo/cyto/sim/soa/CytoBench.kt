@@ -32,7 +32,7 @@ class CytoBench {
                 b.spawnCell(
                     org.emerge.demo.cyto.sim.CytoUnits.coord2(-7.5f + gx * 0.5f, -7.5f + gy * 0.5f),
                     org.emerge.sim.core.physics.primitives.Coord2.zero, org.emerge.demo.cyto.cells.CellType.Collector,
-                    biomass = mapOf("ab" to if (big) 30_000_000 else 4000),
+                    biomass = mapOf("rg" to if (big) 30_000_000 else 4000),
                     logicalRadius = if (big) org.emerge.sim.core.physics.primitives.Frac(40, 1) else org.emerge.demo.cyto.sim.MIN_RADIUS,
                 )
             }

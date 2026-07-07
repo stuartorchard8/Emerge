@@ -21,13 +21,13 @@ import kotlin.test.assertTrue
  * blob seeded uniformly and asserts it STAYS uniform; it fails loudly if the degree-bias ever returns.
  */
 class DiffusionBiasProbe {
-    private val bb = SpeciesRegistry.id("bb")
-    // a genome that metabolises bb (Break/Convert) so handleable.canDiffuse(bb) == true
-    private val genome = GeneCodec.parse("Break bb : Biomass < 4000 : Convert bb")
+    private val gg = SpeciesRegistry.id("gg")
+    // a genome that metabolises gg (Break/Convert) so handleable.canDiffuse(gg) == true
+    private val genome = GeneCodec.parse("Break gg : Biomass < 4000 : Convert gg")
 
     private fun mkCell(count: Int) = CellWork(
-        cytoplasm = MoleculeStore.of(mapOf("bb" to count)),
-        biomass = MoleculeStore.of(mapOf("aa" to 4000)),
+        cytoplasm = MoleculeStore.of(mapOf("gg" to count)),
+        biomass = MoleculeStore.of(mapOf("rr" to 4000)),
         logicalRadius = MIN_RADIUS, type = CellType.Collector, genome = genome,
         quanta = 0, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = mutableMapOf(),
     )
@@ -51,9 +51,9 @@ class DiffusionBiasProbe {
     fun diffusionSpreadsEvenlyRegardlessOfDegree() {
         val (works, nbrs) = blob(seed = 1200)   // identical cells, identical seed (uniform start)
         repeat(400) { CytoBiologyCore.diffuse(works, nbrs) }
-        val counts = works.values.map { it.cytoplasm.count(bb) }
-        val centre = works.getValue(EntityId(0)).cytoplasm.count(bb)   // degree 6
-        val ring = works.getValue(EntityId(1)).cytoplasm.count(bb)     // degree 3
+        val counts = works.values.map { it.cytoplasm.count(gg) }
+        val centre = works.getValue(EntityId(0)).cytoplasm.count(gg)   // degree 6
+        val ring = works.getValue(EntityId(1)).cytoplasm.count(gg)     // degree 3
         // integer-floor rounding can leave a ±1 jitter; the degree-bias bug was a ~1.76× gap, so a tight
         // tolerance both passes the fix and fails the bug.
         val spread = counts.max() - counts.min()

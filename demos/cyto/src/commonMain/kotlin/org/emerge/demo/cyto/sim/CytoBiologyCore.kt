@@ -278,8 +278,8 @@ object CytoBiologyCore {
             ActionType.Convert -> { convertId = act.aId; cn = addConsume(ids, per, cn, convertId) }
             ActionType.FormBond -> {
                 // Join a molecule ending in act.a to one starting with act.b. EXACT by default — act.a/act.b
-                // name the whole reactant species (MORPHOGENESIS.md §2026-06-18); so `FormBond a a` joins the
-                // monomer a to the monomer a (not the richest a-ender, which self-stalls once `aa` piles up).
+                // name the whole reactant species (MORPHOGENESIS.md §2026-06-18); so `FormBond r r` joins the
+                // monomer r to the monomer r (not the richest r-ender, which self-stalls once `rr` piles up).
                 // act.aWild / act.bWild opt into the legacy WILDCARD match (most-abundant molecule ending/
                 // starting with the operand). The junction bond is act.a.last–act.b.first either way.
                 if (act.a.isEmpty() || act.b.isEmpty()) return

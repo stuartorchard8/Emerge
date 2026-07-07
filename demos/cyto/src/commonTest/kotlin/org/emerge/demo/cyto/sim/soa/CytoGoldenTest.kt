@@ -160,12 +160,21 @@ class CytoGoldenTest {
     // before the junction could ever read it ⇒ Import was inert). The reorder gives every cell a one-tick
     // phase shift between metabolism and intake, so GROWTH + INTERACT (mutation-off presets, no Import gene)
     // drift; mutationOn is byte-identical. Determinism + conservation gates held.
+    // Re-baselined 2026-07-07: ABC→RGB alphabet rename (CytoSeed.SEED_MONOMERS a,b,c → r,g,b). The element
+    // atoms are the same three species, just renamed, BUT SpeciesRegistry ids are assigned in LEXICOGRAPHIC
+    // order, and the new letters sort b<g<r whereas the old sorted a<b<c — so the deterministic "lowest-id ==
+    // lex-smallest" tie-break the biology uses (FormBond/BreakBond/degradation) resolves to a DIFFERENT
+    // physical atom (old 'a' was rank-0/preferred; its image 'r' is now rank-2). The trajectory therefore
+    // shifts in physics/biology/grid for all three scenes (and meta/topology for GROWTH+INTERACT, whose
+    // colonies now grow/weld differently — GROWTH+INTERACT topology went empty at their tick budgets).
+    // Determinism gates (parallelMatchesSequential, grownStateRoundTrips) held, confirming the shift is a
+    // deterministic consequence of the rename, not nondeterminism.
     private val GROWTH = mapOf(
-        "meta" to "9e9bec4ae4480164",
-        "physics" to "eda4801aa68bc66d",
-        "biology" to "cd70a4bcb2667a8d",
-        "topology" to "d1b19bc06365406",
-        "grid" to "701d9e640a9b3258",
+        "meta" to "48166b50118b474d",
+        "physics" to "5aa619a3e9ecb72e",
+        "biology" to "cb6ce2e7e9a42282",
+        "topology" to "cbf29ce484222325",
+        "grid" to "115922b3bb6f54fb",
     )
     // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
     // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
@@ -233,22 +242,25 @@ class CytoGoldenTest {
     // (the autotroph holds only {a,b,ab}, so `a` is the only a-ender and `b` the only b-starter ⇒ exact ≡
     // wildcard for the presets). meta + topology are unchanged (same cell count + spring topology); only
     // physics/biology/grid shift. Determinism gates (parallel==sequential, round-trip) held.
+    // Re-baselined 2026-07-07 (ABC→RGB rename; see the GROWTH note). meta + topology are byte-identical here
+    // (same seed/tick/cell-count, no springs sampled); physics/biology/grid shift with the tie-break re-order.
     private val MUTATION = mapOf(
         "meta" to "1e92bfc864dfae61",
-        "physics" to "d993125313b3e8ee",
-        "biology" to "a549b29f3a3685d8",
+        "physics" to "18576b464111a3b7",
+        "biology" to "586c4c8a301e42a4",
         "topology" to "cbf29ce484222325",
-        "grid" to "a243524ff471c66f",
+        "grid" to "de004af3a01bf2f9",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     // Re-baselined 2026-07-05: restored LIGHT_QUANTA_SCALE 60k→120k (matter viability) +
     // DEGRADE_PERIOD 4000→18000 (cytoplasm degradation) + MATTER_UNIFORM_LEVEL_CELL_SCALE 2k→3k.
+    // Re-baselined 2026-07-07 (ABC→RGB rename; see the GROWTH note). All dimensions shift; topology went empty.
     private val INTERACT = mapOf(
-        "meta" to "599eed689d76d697",
-        "physics" to "62f9e753be81dd7b",
-        "biology" to "6e3f421d93df51bb",
-        "topology" to "1b2755f7dad5f2d5",
-        "grid" to "cd2467a6e05a5fb1",
+        "meta" to "a162f64d34e62980",
+        "physics" to "807fe85388be237a",
+        "biology" to "f4c28ecad2c49683",
+        "topology" to "cbf29ce484222325",
+        "grid" to "17549bc06b08f596",
     )
 
     @Test

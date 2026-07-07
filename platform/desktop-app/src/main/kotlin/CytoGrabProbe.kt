@@ -56,7 +56,7 @@ fun main(args: Array<String>) {
                 // stretches the connection toward the break threshold.
                 ids += b.spawnCell(
                     CytoUnits.coord2(i * 1.5f, 0f), Coord2.zero, CellType.Blank,
-                    biomass = mapOf("ab" to 16), logicalRadius = org.emerge.demo.cyto.sim.MIN_RADIUS,
+                    biomass = mapOf("rg" to 16), logicalRadius = org.emerge.demo.cyto.sim.MIN_RADIUS,
                 )
             }
             for (i in 0 until nCells - 1) addSpring(b, ids[i], ids[i + 1], cfg)

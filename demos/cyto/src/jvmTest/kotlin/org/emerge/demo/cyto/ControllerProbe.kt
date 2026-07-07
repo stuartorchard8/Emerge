@@ -73,7 +73,7 @@ class ControllerProbe {
             // organizer offset: distance of the highest-cc cell from COM / body half-extent (0 central, ~1 edge)
             var orgI = 0; var maxCc = -1
             var minx = Double.MAX_VALUE; var maxx = -Double.MAX_VALUE; var miny = Double.MAX_VALUE; var maxy = -Double.MAX_VALUE
-            val ccId = SpeciesRegistry.id("cc")
+            val ccId = SpeciesRegistry.id("bb")
             for (i in 0 until c) {
                 val cc = w.cell.cytoplasm[i]?.count(ccId) ?: 0
                 if (cc > maxCc) { maxCc = cc; orgI = i }

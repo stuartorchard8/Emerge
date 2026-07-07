@@ -30,22 +30,22 @@ import kotlin.test.Test
  * contracting?), and the concentration of up to two watch-species (a determinant / morphogen). NOT a gated
  * test. Properties (all forwarded in build.gradle.kts):
  *   -Dsandboxgenome=<file>   GeneCodec genome (default: cell 1872)
- *   -Dsandboxseed=a:500,c:200 founder cytoplasm (default: CytoSeed.SEED_CYTOPLASM)
- *   -Dsandboxwatch=cc,bc     two species to report Conc of (default aa,ab)
+ *   -Dsandboxseed=r:500,b:200 founder cytoplasm (default: CytoSeed.SEED_CYTOPLASM)
+ *   -Dsandboxwatch=bb,gb     two species to report Conc of (default rr,rg)
  *   -Dsandboxticks=8000
  *   → /tmp/cytosandbox.txt
  */
 class CytoSandbox {
     private val genomeText = """
-        Break aa : aa > aab : FormBond c b @15
-        Break bb : bb > abb : FormBond c b @10
-        Break cb : ab > 900 & aa < 800 & a > ab : FormBond a a
-        Break cb : ab < 900 & b > cb & aa < cb & b > ab : FormBond b b
-        Break cb : Biomass < 2100 : Convert cb @12
-        Break cb : cb > 5000 & bb < 200 & a > 1000 & b > 1000 : Mitosis ab
-        Light : Conc(b) > bb : FormBond c b
-        Light : aa < 20 & ab < 1000 : FormBond a b @15
-        Light : aa > 100 : Repair
+        Break rr : rr > rrg : FormBond b g @15
+        Break gg : gg > rgg : FormBond b g @10
+        Break bg : rg > 900 & rr < 800 & r > rg : FormBond r r
+        Break bg : rg < 900 & g > bg & rr < bg & g > rg : FormBond g g
+        Break bg : Biomass < 2100 : Convert bg @12
+        Break bg : bg > 5000 & gg < 200 & r > 1000 & g > 1000 : Mitosis rg
+        Light : Conc(g) > gg : FormBond b g
+        Light : rr < 20 & rg < 1000 : FormBond r g @15
+        Light : rr > 100 : Repair
     """.trimIndent()
 
     @Test
@@ -56,7 +56,7 @@ class CytoSandbox {
         val seed = System.getProperty("sandboxseed")?.let { s ->
             s.split(",").associate { it.substringBefore(":") to it.substringAfter(":").toInt() }
         } ?: emptyMap()
-        val watch = (System.getProperty("sandboxwatch") ?: "aa,ab").split(",")
+        val watch = (System.getProperty("sandboxwatch") ?: "rr,rg").split(",")
         val cfg = CytoConfig(mutationRateDenom = 0)   // mutation OFF — observe the *designed* organism
 
         val initial = run {

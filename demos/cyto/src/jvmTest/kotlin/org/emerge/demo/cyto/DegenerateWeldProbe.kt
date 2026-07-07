@@ -37,14 +37,14 @@ import kotlin.test.Test
 class DegenerateWeldProbe {
     private val pulser = GeneCodec.parse(
         """
-        Break bb : Biomass < 4000 : Convert bb @15
-        Light : bb < 8000 & bc < 1000 : FormBond b b
-        Break bc : bb < bc & bb < 1000 : FormBond b a @6
-        Break ba : bc < ba & bc < 1000 : FormBond b b @6
-        Break bb : ba < bb & ba < 1000 : FormBond b c @6
-        Break bb : ba < bb & ba < 1000 & bb > 6000 : Contract @15
-        Break bb : ba < bb & ba < 1000 & bb > 21500 : Mitosis across a @15
-        Break bb : ba < bb & ba < 1000 : Repair @15
+        Break gg : Biomass < 4000 : Convert gg @15
+        Light : gg < 8000 & gb < 1000 : FormBond g g
+        Break gb : gg < gb & gg < 1000 : FormBond g r @6
+        Break gr : gb < gr & gb < 1000 : FormBond g g @6
+        Break gg : gr < gg & gr < 1000 : FormBond g b @6
+        Break gg : gr < gg & gr < 1000 & gg > 6000 : Contract @15
+        Break gg : gr < gg & gr < 1000 & gg > 21500 : Mitosis across r @15
+        Break gg : gr < gg & gr < 1000 : Repair @15
         """.trimIndent()
     )
 
@@ -60,7 +60,7 @@ class DegenerateWeldProbe {
         val initial = run {
             val b = SimBuilder(SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
             for ((x, y) in pts) b.spawnCell(pos = CytoUnits.coord2(x, y), vel = Coord2.zero, type = CellType.Collector,
-                cytoplasm = mapOf("b" to 2000, "bb" to 20000), biomass = CytoSeed.STARTER_BIOMASS, logicalRadius = MIN_RADIUS, genome = pulser)
+                cytoplasm = mapOf("g" to 2000, "gg" to 20000), biomass = CytoSeed.STARTER_BIOMASS, logicalRadius = MIN_RADIUS, genome = pulser)
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(2000)) }
             b.build()
         }
@@ -114,7 +114,7 @@ class DegenerateWeldProbe {
      *  ratio = m/(2(m+2)): m=1→0.17, m=3→0.30, m=5→0.36. (No perturbation: a symmetric triad stays collinear.) */
     @Test
     fun constructedThroughCellWeld() {
-        val repair = GeneCodec.parse("Break bb : bb > 0 : Repair @15")   // steady repair energy from stored bb
+        val repair = GeneCodec.parse("Break gg : gg > 0 : Repair @15")   // steady repair energy from stored gg
         val out = StringBuilder()
         out.appendLine("=== constructed A–B–C collinear, chord A–C through B; settled state at tick 3000 ===")
         out.appendLine("m (compStiffMul)\tpredicted ratio m/(2(m+2))\tmeasured ratio\t|AC|\trestAC\tangleB°\talive")
@@ -124,7 +124,7 @@ class DegenerateWeldProbe {
             val initial = run {
                 val b = SimBuilder(SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
                 fun cell(x: Float) = b.spawnCell(pos = CytoUnits.coord2(x, 0f), vel = Coord2.zero, type = CellType.Collector,
-                    cytoplasm = mapOf("bb" to 100000), biomass = CytoSeed.STARTER_BIOMASS, logicalRadius = MIN_RADIUS, genome = repair)
+                    cytoplasm = mapOf("gg" to 100000), biomass = CytoSeed.STARTER_BIOMASS, logicalRadius = MIN_RADIUS, genome = repair)
                 idA = cell(-0.5f); idB = cell(0f); idC = cell(0.5f)
                 addSpring(b, idA, idB, cfg); addSpring(b, idB, idC, cfg); addSpring(b, idA, idC, cfg)   // chord A–C through B
                 b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(2000)) }

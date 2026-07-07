@@ -29,7 +29,7 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
         /** Max disc half-extent (cell-diam) — bounds a giant cell's footprint. */
         const val MAX_DISC_RADIUS = 4f
 
-        val A = SpeciesRegistry.id("a"); val B = SpeciesRegistry.id("b"); val C = SpeciesRegistry.id("c")
+        val A = SpeciesRegistry.id("r"); val B = SpeciesRegistry.id("g"); val C = SpeciesRegistry.id("b")
         private val MONO = intArrayOf(A, B, C)
         private fun monoSlot(id: Int): Int = when (id) { A -> 0; B -> 1; C -> 2; else -> -1 }
 
@@ -67,7 +67,7 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     }
 
     /** Read-only diagnostic: accumulate per-element (monomer) atom totals into [out] (indexed by element
-     *  id, e.g. 0=a,1=b,2=c). Complete — decomposes leaf polymers AND counts internal-node monomer
+     *  id, e.g. 0=r,1=g,2=b). Complete — decomposes leaf polymers AND counts internal-node monomer
      *  remainder — so ΣΣ[out] equals [totalAtoms]. Used by conservation checks to localise WHICH element
      *  leaks. No behaviour change. */
     fun elementTotals(out: LongArray) {
@@ -199,8 +199,8 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
         fpLeaves.clear()
         descendDisc(cx, cy, radius, tick) { node ->
             fpLeaves.add(node)
-            // Set presence mask for monomers a(=A), b(=B), c(=C) — the species passively diffused.
-            // Mask bits: 1=a, 2=b, 4=c. Enables O(1) skip in balance().
+            // Set presence mask for monomers r(=R), g(=G), b(=B) — the species passively diffused.
+            // Mask bits: 1=r, 2=g, 4=b. Enables O(1) skip in balance().
             // Skip mask computation for empty stores — common when grid is sparse.
             val s = node.store!!
             if (s.size > 0) {
@@ -231,7 +231,7 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
       *  to the cell's cytoplasm (grid changes by −Δ). Conservation-exact. */
     fun balance(sp: Int, cEff: Int, scaleFactor: Float): Int {
         val n = fpLeaves.size; if (n == 0) return 0
-        // Early-exit mask bit for monomers (a=0→bit1, b=1→bit2, c=2→bit4).
+        // Early-exit mask bit for monomers (r=0→bit1, g=1→bit2, b=2→bit4).
         // Skips leaf iteration when no leaf contains this species — eliminates 73% of useless calls.
         val maskBit = if (sp == A) 1 else if (sp == B) 2 else if (sp == C) 4 else 0
 
@@ -264,7 +264,7 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
         val n = fpLeaves.size; if (n == 0) return IntArray(transferN)
         val results = IntArray(transferN)
         // Pre-compute monomer bits needed by the transfer set.
-        // Bits: 1=a, 2=b, 4=c. Monomer-only species only need mask check.
+        // Bits: 1=r, 2=g, 4=b. Monomer-only species only need mask check.
         var monomerMaskNeed = 0
         for (t in 0 until transferN) {
             val sp = transferIdx[t]
@@ -409,7 +409,7 @@ class QuadNode private constructor() {
     var lastAccessTick = 0
     var children: Array<QuadNode>? = null
     val monomerRemainder = IntArray(3)
-    var presenceMask = 0  // bit-mask of monomers present (bit 0=a, 1=b, 2=c); set during openFootprint
+    var presenceMask = 0  // bit-mask of monomers present (bit 0=r, 1=g, 2=b); set during openFootprint
     val isLeaf: Boolean get() = children == null
 
     fun becomeInternal(ch: Array<QuadNode>) { children = ch; store = null }

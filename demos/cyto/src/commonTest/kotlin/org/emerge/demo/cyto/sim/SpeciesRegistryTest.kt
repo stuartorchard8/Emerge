@@ -38,7 +38,7 @@ class SpeciesRegistryTest {
     /** A non-species (illegal molecule, or one over a foreign alphabet) maps to -1. */
     @Test
     fun unknownMoleculeIsMinusOne() {
-        assertEquals(-1, SpeciesRegistry.id("abab"), "repeated bond ab is not legal")
+        assertEquals(-1, SpeciesRegistry.id("rgrg"), "repeated bond rg is not legal")
         assertEquals(-1, SpeciesRegistry.id("z"), "foreign atom")
         assertEquals(-1, SpeciesRegistry.id(""), "empty")
     }

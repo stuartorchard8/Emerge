@@ -95,8 +95,8 @@ class CytoSoaSpecTest {
         // Auto-weld on overlap is disabled; the weld forms via Repair adhesion.
         val initial = run {
             val b = SimBuilder(SimState())
-            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = Frac(1, 2), genome = repairOnly)
-            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = Frac(1, 2), genome = repairOnly)
+            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = Frac(1, 2), genome = repairOnly)
+            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = Frac(1, 2), genome = repairOnly)
             b.build()
         }
         val state = run(initial, ticks = 20)
@@ -130,7 +130,7 @@ class CytoSoaSpecTest {
             val b = SimBuilder(SimState())
             b.spawnCell(
                 CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle,
-                cytoplasm = mapOf("ab" to 40000), biomass = mapOf("ab" to 8000),
+                cytoplasm = mapOf("rg" to 40000), biomass = mapOf("rg" to 8000),
             )
             b.build()
         }
@@ -153,23 +153,23 @@ class CytoSoaSpecTest {
         // SECOND clause (the upper bound) being ANDed in (a lone `> 50` would fire at 500 too), proving the
         // conjunction is enforced. cc is the (light-independent) BreakBond fuel.
         val convert = Gene(
-            EnergySource.BreakBond("cc"),
+            EnergySource.BreakBond("bb"),
             GeneCondition(listOf(
-                Clause(Operand.Conc("ab"), Comparison.Greater, Operand.Constant(50)),
-                Clause(Operand.Conc("ab"), Comparison.Less, Operand.Constant(200)),
+                Clause(Operand.Conc("rg"), Comparison.Greater, Operand.Constant(50)),
+                Clause(Operand.Conc("rg"), Comparison.Less, Operand.Constant(200)),
             )),
-            GeneAction(ActionType.Convert, "ab"),
+            GeneAction(ActionType.Convert, "rg"),
         )
         fun bioAbAfterTick(cytoAb: Int): Int {
             val initial = run {
                 val b = SimBuilder(SimState())
                 b.spawnCell(
                     CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Collector,
-                    cytoplasm = mapOf("ab" to cytoAb, "cc" to 1000), biomass = mapOf("ab" to 1000), genome = listOf(convert),
+                    cytoplasm = mapOf("rg" to cytoAb, "bb" to 1000), biomass = mapOf("rg" to 1000), genome = listOf(convert),
                 )
                 b.build()
             }
-            return run(initial, ticks = 1).components.getTable<CytoCellComponent>().asMap().values.first().biomass["ab"] ?: 0
+            return run(initial, ticks = 1).components.getTable<CytoCellComponent>().asMap().values.first().biomass["rg"] ?: 0
         }
         assertTrue(bioAbAfterTick(100) > 1000, "in-band (Conc 100) Converts → biomass grows; got ${bioAbAfterTick(100)}")
         assertEquals(1000, bioAbAfterTick(500), "above-band (Conc 500) fails the upper clause → no Convert")
@@ -183,23 +183,23 @@ class CytoSoaSpecTest {
         // divides, the morphogen sits whole on the selected side and the OTHER side has none.
         fun morphogenSplit(toMother: Boolean): Pair<Int, Int> {  // (mother's ac, daughter's ac)
             val gene = Gene(
-                EnergySource.BreakBond("cc"),
+                EnergySource.BreakBond("bb"),
                 GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(1000)),
-                GeneAction(ActionType.Mitosis, "ac", morphogenToMother = toMother),
+                GeneAction(ActionType.Mitosis, "rb", morphogenToMother = toMother),
             )
             val initial = run {
                 val b = SimBuilder(SimState())
                 b.spawnCell(
                     CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Collector,
-                    cytoplasm = mapOf("ac" to 100, "cc" to 100_000), biomass = mapOf("ab" to 4000), genome = listOf(gene),
+                    cytoplasm = mapOf("rb" to 100, "bb" to 100_000), biomass = mapOf("rg" to 4000), genome = listOf(gene),
                 )
                 b.build()
             }
             val motherId = initial.components.getTable<CytoCellComponent>().asMap().keys.first()
             val cells = run(initial, ticks = 1).components.getTable<CytoCellComponent>().asMap()
             assertEquals(2, cells.size, "should have divided into two")
-            val motherAc = cells[motherId]?.cytoplasm?.get("ac") ?: 0
-            val daughterAc = cells.entries.first { it.key != motherId }.value.cytoplasm["ac"] ?: 0
+            val motherAc = cells[motherId]?.cytoplasm?.get("rb") ?: 0
+            val daughterAc = cells.entries.first { it.key != motherId }.value.cytoplasm["rb"] ?: 0
             return motherAc to daughterAc
         }
         val (mMother, mDaughter) = morphogenSplit(toMother = true)
@@ -217,20 +217,20 @@ class CytoSoaSpecTest {
         fun yExtent(divideGene: String): Double {
             val genome = GeneCodec.parse(
                 """
-                Light : ab < 4000 : FormBond a b
-                Light : Biomass < 4500 : Convert ab
+                Light : rg < 4000 : FormBond r g
+                Light : Biomass < 4500 : Convert rg
                 $divideGene
-                Light : Conc(cc) > 0 : FormBond c c
-                Light : Conc(cc) > 0 : FormBond b c
-                Break bc : Conc(bc) > 30 : Convert bc
-                Break ab : Biomass > 0 : Repair
+                Light : Conc(bb) > 0 : FormBond b b
+                Light : Conc(bb) > 0 : FormBond g b
+                Break gb : Conc(gb) > 30 : Convert gb
+                Break rg : Biomass > 0 : Repair
                 """.trimIndent(),
             )
             val initial = run {
                 val b = SimBuilder(SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
                 b.spawnCell(
                     CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Collector,
-                    cytoplasm = mapOf("a" to 500, "b" to 500, "c" to 500, "cc" to 200),
+                    cytoplasm = mapOf("r" to 500, "g" to 500, "b" to 500, "bb" to 200),
                     biomass = CytoSeed.STARTER_BIOMASS, genome = genome,
                 )
                 b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(2000)) }
@@ -241,8 +241,8 @@ class CytoSoaSpecTest {
             val ys = s.components.getTable<CytoCellComponent>().asMap().keys.mapNotNull { ts[it]?.let { tr -> CytoUnits.toLogical(tr.pos.y).toDouble() } }
             return if (ys.isEmpty()) 0.0 else ys.max() - ys.min()
         }
-        val across = yExtent("Break ab : Biomass > 4000 : Mitosis cc across bc")
-        val thread = yExtent("Break ab : Biomass > 4000 : Mitosis cc")
+        val across = yExtent("Break rg : Biomass > 4000 : Mitosis bb across gb")
+        val thread = yExtent("Break rg : Biomass > 4000 : Mitosis bb")
         assertTrue(across > thread + 1.0, "across-oriented division should widen into a 2D sheet; across y-extent=$across, thread y-extent=$thread")
     }
 
@@ -252,12 +252,12 @@ class CytoSoaSpecTest {
         // a METABOLISED species (Break/Convert/Import) is held AND diffusible.
         val on = GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0))
         val h = handleableOf(listOf(
-            Gene(EnergySource.Light, on, GeneAction(ActionType.FormBond, "a", "b")),     // 'ab' synthesised
-            Gene(EnergySource.BreakBond("cc"), on, GeneAction(ActionType.Convert, "cb")), // 'cb' metabolised
+            Gene(EnergySource.Light, on, GeneAction(ActionType.FormBond, "r", "g")),     // 'rg' synthesised
+            Gene(EnergySource.BreakBond("bb"), on, GeneAction(ActionType.Convert, "bg")), // 'bg' metabolised
         ))
-        val ab = SpeciesRegistry.id("ab"); val cb = SpeciesRegistry.id("cb")
-        assertTrue(h.canHold(ab) && !h.canDiffuse(ab), "synthesised 'ab' is held but intracellular (not diffusible)")
-        assertTrue(h.canHold(cb) && h.canDiffuse(cb), "metabolised 'cb' is held AND diffusible")
+        val rg = SpeciesRegistry.id("rg"); val bg = SpeciesRegistry.id("bg")
+        assertTrue(h.canHold(rg) && !h.canDiffuse(rg), "synthesised 'rg' is held but intracellular (not diffusible)")
+        assertTrue(h.canHold(bg) && h.canDiffuse(bg), "metabolised 'bg' is held AND diffusible")
     }
 
     @Test
@@ -268,24 +268,24 @@ class CytoSoaSpecTest {
         // — only the diffuse phase moves matter. After welding, 'cb' spreads to B but 'ab' never leaves A.
         val off = GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(Int.MAX_VALUE))
         val genome = listOf(
-            Gene(EnergySource.Light, off, GeneAction(ActionType.FormBond, "a", "b")),
-            Gene(EnergySource.Light, off, GeneAction(ActionType.Convert, "cb")),
-            Gene(EnergySource.BreakBond("cb"), GeneCondition(Operand.Chem("cb"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),  // weld via repair
+            Gene(EnergySource.Light, off, GeneAction(ActionType.FormBond, "r", "g")),
+            Gene(EnergySource.Light, off, GeneAction(ActionType.Convert, "bg")),
+            Gene(EnergySource.BreakBond("bg"), GeneCondition(Operand.Chem("bg"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),  // weld via repair
         )
         val initial = run {
             val b = SimBuilder(SimState())
             b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector,
-                cytoplasm = mapOf("ab" to 1000, "cb" to 1000), biomass = mapOf("aa" to 2000), genome = genome)
+                cytoplasm = mapOf("rg" to 1000, "bg" to 1000), biomass = mapOf("rr" to 2000), genome = genome)
             b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector,
-                cytoplasm = mapOf("cb" to 1), biomass = mapOf("aa" to 2000), genome = genome)  // minimal cb for Repair energy
+                cytoplasm = mapOf("bg" to 1), biomass = mapOf("rr" to 2000), genome = genome)  // minimal bg for Repair energy
             b.build()
         }
         val cells = run(initial, ticks = 12).components.getTable<CytoCellComponent>().asMap().values.toList()
         assertEquals(2, cells.size, "both cells alive")
-        val ab = cells.map { it.cytoplasm["ab"] ?: 0 }.sorted()
-        assertEquals(0, ab[0], "intracellular 'ab' did NOT diffuse to the neighbour")
-        assertTrue(ab[1] > 0, "'ab' retained in its own cell (not leaked)")
-        assertTrue(cells.all { (it.cytoplasm["cb"] ?: 0) > 0 }, "metabolised 'cb' diffused to both cells; got ${cells.map { it.cytoplasm["cb"] ?: 0 }}")
+        val rg = cells.map { it.cytoplasm["rg"] ?: 0 }.sorted()
+        assertEquals(0, rg[0], "intracellular 'rg' did NOT diffuse to the neighbour")
+        assertTrue(rg[1] > 0, "'rg' retained in its own cell (not leaked)")
+        assertTrue(cells.all { (it.cytoplasm["bg"] ?: 0) > 0 }, "metabolised 'bg' diffused to both cells; got ${cells.map { it.cytoplasm["bg"] ?: 0 }}")
     }
 
     @Test
@@ -357,7 +357,7 @@ class CytoSoaSpecTest {
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.empty()) }
             b.spawnCell(
                 CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector,
-                cytoplasm = emptyMap(), biomass = mapOf("ab" to 1, "ba" to 1), logicalRadius = MIN_RADIUS, genome = divideNow,
+                cytoplasm = emptyMap(), biomass = mapOf("rg" to 1, "gb" to 1), logicalRadius = MIN_RADIUS, genome = divideNow,
             )
             b.build()
         }
@@ -379,15 +379,15 @@ class CytoSoaSpecTest {
         // to act on the difference keeps `c` trace too — sensing doesn't grant permeability (handleableOf)
         // — so the behavioural fate persists; see morphogenGatedFatePersistsAsBehaviouralDifferentiation.
         val mitosis = Gene(
-            EnergySource.BreakBond("ab"),
+            EnergySource.BreakBond("rg"),
             GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(7_900)),
-            GeneAction(ActionType.Mitosis, "c"),   // morphogen `c` → whole to the daughter
+            GeneAction(ActionType.Mitosis, "b"),   // morphogen `b` → whole to the daughter
         )
         val initial = run {
             val b = SimBuilder(SimState())
             b.spawnCell(
                 CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Blank,
-                cytoplasm = mapOf("ab" to 50_000, "c" to 2_000), biomass = mapOf("ab" to 8_000),
+                cytoplasm = mapOf("rg" to 50_000, "b" to 2_000), biomass = mapOf("rg" to 8_000),
                 genome = listOf(mitosis),
             )
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.empty()) }
@@ -398,10 +398,10 @@ class CytoSoaSpecTest {
 
         val cells = state.components.getTable<CytoCellComponent>().asMap().values.toList()
         assertEquals(2, cells.size, "founder should divide exactly once (daughters can't re-divide at half biomass)")
-        val withC = cells.count { (it.cytoplasm["c"] ?: 0) > 0 }
-        val withoutC = cells.count { (it.cytoplasm["c"] ?: 0) == 0 }
-        assertEquals(1, withC, "exactly one daughter inherits the morphogen")
-        assertEquals(1, withoutC, "the other inherits none — and can't acquire a trace species, so the asymmetry persists")
+        val withB = cells.count { (it.cytoplasm["b"] ?: 0) > 0 }
+        val withoutB = cells.count { (it.cytoplasm["b"] ?: 0) == 0 }
+        assertEquals(1, withB, "exactly one daughter inherits the morphogen")
+        assertEquals(1, withoutB, "the other inherits none — and can't acquire a trace species, so the asymmetry persists")
     }
 
     @Test
@@ -414,20 +414,20 @@ class CytoSoaSpecTest {
         // a divergent shape that persists. (Before the handleableOf change, gating on `c` made it canHold,
         // so uptake+diffusion equilibrated it across the weld and both cells converged — see that commit.)
         val mitosis = Gene(
-            EnergySource.BreakBond("ab"),
+            EnergySource.BreakBond("rg"),
             GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(7_900)),
-            GeneAction(ActionType.Mitosis, "c"),
+            GeneAction(ActionType.Mitosis, "b"),
         )
         val contractIfMorphogen = Gene(
-            EnergySource.BreakBond("ab"),
-            GeneCondition(Operand.Chem("c"), Comparison.Greater, Operand.Constant(0)),
-            GeneAction(ActionType.Contract),       // gates on `c` but acts on radius — `c` stays trace
+            EnergySource.BreakBond("rg"),
+            GeneCondition(Operand.Chem("b"), Comparison.Greater, Operand.Constant(0)),
+            GeneAction(ActionType.Contract),       // gates on `b` but acts on radius — `b` stays trace
         )
         val initial = run {
             val b = SimBuilder(SimState())
             b.spawnCell(
                 CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Blank,
-                cytoplasm = mapOf("ab" to 80_000, "c" to 2_000), biomass = mapOf("ab" to 8_000),
+                cytoplasm = mapOf("rg" to 80_000, "b" to 2_000), biomass = mapOf("rg" to 8_000),
                 genome = listOf(mitosis, contractIfMorphogen),
             )
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.empty()) }
@@ -438,8 +438,8 @@ class CytoSoaSpecTest {
 
         val cells = state.components.getTable<CytoCellComponent>().asMap().values.toList()
         assertEquals(2, cells.size, "founder should divide exactly once")
-        val morphogenCell = cells.single { (it.cytoplasm["c"] ?: 0) > 0 }
-        val plainCell = cells.single { (it.cytoplasm["c"] ?: 0) == 0 }
+        val morphogenCell = cells.single { (it.cytoplasm["b"] ?: 0) > 0 }
+        val plainCell = cells.single { (it.cytoplasm["b"] ?: 0) == 0 }
         assertTrue(
             morphogenCell.logicalRadius < plainCell.logicalRadius,
             "only the morphogen-bearing daughter should express the Contract fate (smaller radius), and it " +
@@ -477,10 +477,10 @@ class CytoSoaSpecTest {
         // binding constraint, and measure biomass locked per tick at gear g.
         fun biomassGain(g: Int, quanta: Int): Int {
             val work = CellWork(
-                cytoplasm = MoleculeStore.of(mapOf("ab" to 100_000_000)),   // substrate never binds
-                biomass = MoleculeStore.of(mapOf("ab" to 1000)),
+                cytoplasm = MoleculeStore.of(mapOf("rg" to 100_000_000)),   // substrate never binds
+                biomass = MoleculeStore.of(mapOf("rg" to 1000)),
                 logicalRadius = MIN_RADIUS, type = CellType.Collector,
-                genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(1_000_000_000)), GeneAction(ActionType.Convert, "ab"), efficiency = g)),
+                genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(1_000_000_000)), GeneAction(ActionType.Convert, "rg"), efficiency = g)),
                 quanta = quanta, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
             )
             val before = totalBiomassBonds(work.biomass)
@@ -503,109 +503,109 @@ class CytoSoaSpecTest {
         // Scripted PRNG drives one point-mutation that appends an atom to a FormBond operand, so the operand
         // length itself evolves (not capped at the old mono/dimer pool). Draw order in CytoMutation.mutate:
         // del,drift,point,dup (each fires on 0); then pointMutate's nextInt(11) case 3; then mutateSpecies.
-        val seq = intArrayOf(1, 1, 0, 1, /*case*/3, /*grow*/0, /*atom 'a'*/0)
+        val seq = intArrayOf(1, 1, 0, 1, /*case*/3, /*grow*/0, /*atom 'r'*/0)
         var i = 0
-        val gene = Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(100)), GeneAction(ActionType.FormBond, "ab", "b"))
+        val gene = Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(100)), GeneAction(ActionType.FormBond, "rg", "g"))
         val out = CytoMutation.mutate(listOf(gene), rateDenom = 200) { seq[i++] }!!
-        assertEquals("aba", out[0].action.a, "FormBond operand should grow ab→aba (append), not stay a dimer")
+        assertEquals("rgr", out[0].action.a, "FormBond operand should grow rg→rgr (append), not stay a dimer")
     }
 
     @Test
     fun formBondMatchesBySuffixAndPrefix() {
-        // WILDCARD match (MORPHOGENESIS.md §2026-06-18; opt-in via aWild/bWild): `*ab` "b*" bonds a molecule
-        // ENDING WITH "ab" to one STARTING WITH "b" — i.e. ab+b→abb — and must NOT touch the bare monomer "a"
-        // (which the looser single-atom "ends in a" rule would have grabbed). Targets specific molecules.
+        // WILDCARD match (MORPHOGENESIS.md §2026-06-18; opt-in via aWild/bWild): `*rg` "g*" bonds a molecule
+        // ENDING WITH "rg" to one STARTING WITH "g" — i.e. rg+g→rgg — and must NOT touch the bare monomer "r"
+        // (which the looser single-atom "ends in r" rule would have grabbed). Targets specific molecules.
         val work = CellWork(
-            cytoplasm = MoleculeStore.of(mapOf("a" to 1000, "ab" to 1000, "b" to 1000)),
-            biomass = MoleculeStore.of(mapOf("ab" to 1000)),
+            cytoplasm = MoleculeStore.of(mapOf("r" to 1000, "rg" to 1000, "g" to 1000)),
+            biomass = MoleculeStore.of(mapOf("rg" to 1000)),
             logicalRadius = MIN_RADIUS, type = CellType.Collector,
-            genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "ab", "b", aWild = true, bWild = true))),
+            genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "rg", "g", aWild = true, bWild = true))),
             quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
         CytoBiologyCore.runGenes(work, 0)
-        assertEquals(1000, work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("a")), "the bare monomer 'a' must be untouched (suffix 'ab' doesn't match it)")
-        assertTrue(work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("abb")) > 0, "ab+b should have bonded into abb")
-        assertTrue(work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("ab")) < 1000, "the 'ab' molecule should have been consumed")
+        assertEquals(1000, work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("r")), "the bare monomer 'r' must be untouched (suffix 'rg' doesn't match it)")
+        assertTrue(work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("rgg")) > 0, "rg+g should have bonded into rgg")
+        assertTrue(work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("rg")) < 1000, "the 'rg' molecule should have been consumed")
     }
 
     @Test
     fun formBondPicksMostAbundantMatchNotLexSmallest() {
-        // Regression for the cell-8 bug (WILDCARD match, opt-in): among several molecules ending in "c", the
-        // gene must bond the one the cell has MOST of (the monomer "c", →cb), not whichever sorts first
-        // lexicographically. Here the lex-smallest match "abac" is a rare trace (count 1); the abundant
-        // feedstock is "c" (count 1000). The old lex-first rule grabbed "abac" and produced "abacb"; the
-        // count-first rule must make "cb". (Exercises `*c`/`c*`; exact `c` would name only the monomer.)
+        // Regression for the cell-8 bug (WILDCARD match, opt-in): among several molecules ending in "b", the
+        // gene must bond the one the cell has MOST of (the monomer "b", →bg), not whichever sorts first
+        // lexicographically. Here the lex-smallest match "rgrb" is a rare trace (count 1); the abundant
+        // feedstock is "b" (count 1000). The old lex-first rule grabbed "rgrb" and produced "rgrbg"; the
+        // count-first rule must make "bg". (Exercises `*b`/`b*`; exact `b` would name only the monomer.)
         val sid = { s: String -> org.emerge.demo.cyto.sim.SpeciesRegistry.id(s) }
         val work = CellWork(
-            cytoplasm = MoleculeStore.of(mapOf("abac" to 1, "c" to 1000, "b" to 1000)),
-            biomass = MoleculeStore.of(mapOf("cb" to 1000)),
+            cytoplasm = MoleculeStore.of(mapOf("rgrb" to 1, "b" to 1000, "g" to 1000)),
+            biomass = MoleculeStore.of(mapOf("bg" to 1000)),
             logicalRadius = MIN_RADIUS, type = CellType.Collector,
-            genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "c", "b", aWild = true, bWild = true))),
+            genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "b", "g", aWild = true, bWild = true))),
             quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
         CytoBiologyCore.runGenes(work, 0)
-        assertTrue(work.cytoplasm.count(sid("cb")) > 0, "abundant c+b should have bonded into cb")
-        assertEquals(1, work.cytoplasm.count(sid("abac")), "the rare lex-smallest match 'abac' must be left alone")
-        assertEquals(0, work.cytoplasm.count(sid("abacb")), "must NOT have produced abacb (the old lex-first product)")
-        assertTrue(work.cytoplasm.count(sid("c")) < 1000, "the abundant 'c' feedstock should have been consumed")
+        assertTrue(work.cytoplasm.count(sid("bg")) > 0, "abundant b+g should have bonded into bg")
+        assertEquals(1, work.cytoplasm.count(sid("rgrb")), "the rare lex-smallest match 'rgrb' must be left alone")
+        assertEquals(0, work.cytoplasm.count(sid("rgrbg")), "must NOT have produced rgrbg (the old lex-first product)")
+        assertTrue(work.cytoplasm.count(sid("b")) < 1000, "the abundant 'b' feedstock should have been consumed")
     }
 
     @Test
     fun formBondExactBuildsHomodimerEvenWhenProductOutnumbersTheMonomer() {
-        // The diagnosed live bug (MORPHOGENESIS.md §2026-06-18): a cell stockpiling its own product `aa`
-        // (aa > a) STALLS under the wildcard match — `*a` and `a*` both resolve to the richest a-ender/-
-        // starter, which is `aa`, and `aa+aa` repeats the `aa` bond → polymerisation-forbidden → silent
-        // no-op. EXACT `a a` (the new default) joins the monomers regardless, so production continues.
+        // The diagnosed live bug (MORPHOGENESIS.md §2026-06-18): a cell stockpiling its own product `rr`
+        // (rr > r) STALLS under the wildcard match — `*r` and `r*` both resolve to the richest r-ender/-
+        // starter, which is `rr`, and `rr+rr` repeats the `rr` bond → polymerisation-forbidden → silent
+        // no-op. EXACT `r r` (the new default) joins the monomers regardless, so production continues.
         val sid = { s: String -> org.emerge.demo.cyto.sim.SpeciesRegistry.id(s) }
         fun run(aWild: Boolean, bWild: Boolean): Pair<Int, Int> {
             val work = CellWork(
-                cytoplasm = MoleculeStore.of(mapOf("a" to 1000, "aa" to 5000)),   // product already outnumbers the monomer
-                biomass = MoleculeStore.of(mapOf("aa" to 2000)),
+                cytoplasm = MoleculeStore.of(mapOf("r" to 1000, "rr" to 5000)),   // product already outnumbers the monomer
+                biomass = MoleculeStore.of(mapOf("rr" to 2000)),
                 logicalRadius = MIN_RADIUS, type = CellType.Collector,
-                genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "a", "a", aWild = aWild, bWild = bWild))),
+                genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "r", "r", aWild = aWild, bWild = bWild))),
                 quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
             )
             CytoBiologyCore.runGenes(work, 0)
-            return work.cytoplasm.count(sid("a")) to work.cytoplasm.count(sid("aa"))
+            return work.cytoplasm.count(sid("r")) to work.cytoplasm.count(sid("rr"))
         }
-        val (exactA, exactAA) = run(aWild = false, bWild = false)
-        assertTrue(exactAA > 5000, "EXACT FormBond a a builds more aa from the monomers (was 5000); got $exactAA")
-        assertTrue(exactA < 1000, "EXACT consumed monomer a (was 1000); got $exactA")
-        val (wildA, wildAA) = run(aWild = true, bWild = true)
-        assertEquals(5000, wildAA, "WILDCARD stalls — richest a-ender/-starter is aa, and aa+aa is forbidden; got $wildAA")
-        assertEquals(1000, wildA, "WILDCARD consumed nothing (no-op); got $wildA")
+        val (exactR, exactRR) = run(aWild = false, bWild = false)
+        assertTrue(exactRR > 5000, "EXACT FormBond r r builds more rr from the monomers (was 5000); got $exactRR")
+        assertTrue(exactR < 1000, "EXACT consumed monomer r (was 1000); got $exactR")
+        val (wildR, wildRR) = run(aWild = true, bWild = true)
+        assertEquals(5000, wildRR, "WILDCARD stalls — richest r-ender/-starter is rr, and rr+rr is forbidden; got $wildRR")
+        assertEquals(1000, wildR, "WILDCARD consumed nothing (no-op); got $wildR")
     }
 
     @Test
     fun breakBondPicksMostAbundantFuelNotLexSmallest() {
-        // BreakBond likewise breaks the molecule it has most of that holds the bond. "abc" holds bond "bc" and
-        // sorts before "bc", but the abundant fuel is the dimer "bc"; breaking it must yield b + c, not split abc.
+        // BreakBond likewise breaks the molecule it has most of that holds the bond. "rgb" holds bond "gb" and
+        // sorts before "gb", but the abundant fuel is the dimer "gb"; breaking it must yield g + b, not split rgb.
         val sid = { s: String -> org.emerge.demo.cyto.sim.SpeciesRegistry.id(s) }
         val work = CellWork(
-            cytoplasm = MoleculeStore.of(mapOf("abc" to 1, "bc" to 1000, "c" to 1000)),
-            biomass = MoleculeStore.of(mapOf("cb" to 1000)),
+            cytoplasm = MoleculeStore.of(mapOf("rgb" to 1, "gb" to 1000, "b" to 1000)),
+            biomass = MoleculeStore.of(mapOf("bg" to 1000)),
             logicalRadius = MIN_RADIUS, type = CellType.Collector,
-            genome = listOf(Gene(EnergySource.BreakBond("bc"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Convert, "c"))),
+            genome = listOf(Gene(EnergySource.BreakBond("gb"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Convert, "b"))),
             quanta = 0, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
         CytoBiologyCore.runGenes(work, 0)
-        assertEquals(1, work.cytoplasm.count(sid("abc")), "the rare lex-smallest fuel 'abc' must be left alone")
-        assertTrue(work.cytoplasm.count(sid("bc")) < 1000, "the abundant 'bc' fuel should have been broken")
+        assertEquals(1, work.cytoplasm.count(sid("rgb")), "the rare lex-smallest fuel 'rgb' must be left alone")
+        assertTrue(work.cytoplasm.count(sid("gb")) < 1000, "the abundant 'gb' fuel should have been broken")
     }
 
     private fun damagedPair(genome: List<Gene>, damage: Float): SimState {
         val (sx, sy) = CytoLightField.SOURCES.first()
         val b = SimBuilder(SimState(randomSeed = 1))
         b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(CytoSeed.MATTER_UNIFORM_LEVEL)) }
-        // A stored `ab` cytoplasm reserve so a BreakBond-powered repair gene has fuel regardless of where the
+        // A stored `rg` cytoplasm reserve so a BreakBond-powered repair gene has fuel regardless of where the
         // moving daylight band is (light timing must not decide whether repair fires).
         // PIN logicalRadius to the biomass baseline (4000 bonds ⇒ radius 0.5) so the cells are full-size from
         // tick 0 — otherwise the radius elastically grows toward its target, the spring rest grows with it,
         // and the link is transiently compressed/stretched during growth, confounding the damage tests. Placed
         // at rest (rest = 2×0.5 = 1.0) so the connection is damaged but UNSTRESSED — isolating heal-vs-not.
         val r = Frac(1, 2)
-        val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = genome)
-        val c = b.spawnCell(CytoUnits.coord2(sx + 1.0f, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = genome)
+        val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = genome)
+        val c = b.spawnCell(CytoUnits.coord2(sx + 1.0f, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = genome)
         addSpring(b, a, c, cfg)
         b.update<ConnectionStateComponent>(a) { ConnectionStateComponent(mapOf(c to damage)) }
         b.update<ConnectionStateComponent>(c) { ConnectionStateComponent(mapOf(a to damage)) }
@@ -613,9 +613,9 @@ class CytoSoaSpecTest {
     }
 
     private val repairOnly = listOf(
-        // Break the stored `ab` reserve for repair energy — light-independent, so the test doesn't depend on
+        // Break the stored `rg` reserve for repair energy — light-independent, so the test doesn't depend on
         // where the moving daylight band happens to be.
-        Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
+        Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
     )
 
     @Test
@@ -660,8 +660,8 @@ class CytoSoaSpecTest {
         val r = Frac(1, 2)
         val rest = 1f   // 2 × radius 0.5
         val centreDist = rest * (1f + 1.1f * CytoTuning.OVERSTRETCH_BREAK_MULTIPLE)
-        val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
-        val c = b.spawnCell(CytoUnits.coord2(sx + centreDist, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
+        val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
+        val c = b.spawnCell(CytoUnits.coord2(sx + centreDist, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
         addSpring(b, a, c, cfg)
         assertEquals(0, springCount(run(b.build(), ticks = 1)), "a link stretched past ~2 cell-widths must break in one tick, even with repair")
     }
@@ -678,8 +678,8 @@ class CytoSoaSpecTest {
             // penetration 0.1 — a touch (contact), but well under the auto-weld threshold (penetration >
             // minDist/4 = 0.25). `ab` reserve fuels the BreakBond Repair gene (light-independent).
             val r = Frac(1, 2)
-            b.spawnCell(CytoUnits.coord2(-0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = genomeA)
-            b.spawnCell(CytoUnits.coord2(0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = genomeB)
+            b.spawnCell(CytoUnits.coord2(-0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = genomeA)
+            b.spawnCell(CytoUnits.coord2(0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = genomeB)
             return b.build()
         }
 
@@ -709,9 +709,9 @@ class CytoSoaSpecTest {
         // When A and B both repair, they weld because they share C as a connected neighbour.
         val b = SimBuilder(SimState(randomSeed = 1))
         val r = Frac(1, 2)
-        val c = b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
-        val a = b.spawnCell(CytoUnits.coord2(0.5f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
-        val bCell = b.spawnCell(CytoUnits.coord2(-0.3f, 0.5f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r, genome = repairOnly)
+        val c = b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
+        val a = b.spawnCell(CytoUnits.coord2(0.5f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
+        val bCell = b.spawnCell(CytoUnits.coord2(-0.3f, 0.5f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
         // Pre-weld A-C and B-C to form the triangle backbone (auto-weld on overlap is disabled).
         addSpring(b, a, c, cfg)
         addSpring(b, bCell, c, cfg)
@@ -724,8 +724,8 @@ class CytoSoaSpecTest {
         val twoB = SimBuilder(SimState(randomSeed = 1))
         val r2 = Frac(1, 2)
         // Two cells 0.9 apart (penetration 0.1 < 0.25 → touch, no auto-weld)
-        twoB.spawnCell(CytoUnits.coord2(-0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r2, genome = repairOnly)
-        twoB.spawnCell(CytoUnits.coord2(0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("ab" to 50000), biomass = mapOf("ab" to 4000), logicalRadius = r2, genome = repairOnly)
+        twoB.spawnCell(CytoUnits.coord2(-0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r2, genome = repairOnly)
+        twoB.spawnCell(CytoUnits.coord2(0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r2, genome = repairOnly)
         val twoResult = run(twoB.build(), ticks = 20)
         val twoCount = springCount(twoResult)
         // No shared neighbor → first-connection repair weld still forms. >0 springs = weld.
@@ -738,7 +738,7 @@ class CytoSoaSpecTest {
         // Diffusion was removed (the disc gather + observer-gated quad collapse replace it). With no cells
         // around, a monomer deposit stays exactly where it's put and atoms are conserved.
         val seed = CytoMatterField.empty()
-        val aId = SpeciesRegistry.id("a")
+        val aId = SpeciesRegistry.id("r")
         // Deposit well inside a single base tile (the origin is a 4-tile corner, which would split the disc).
         // The disc refines to fine leaves (~0.25 cell-diam), so the 1000 atoms spread across the footprint's
         // leaves — read locality by summing leaves NEAR vs FAR, not a single point.
@@ -768,7 +768,7 @@ class CytoSoaSpecTest {
 
     /** A flex gene of [action] powered by breaking stored `ab` (no light needed), always gated on. */
     private fun flexGenome(action: ActionType) = listOf(
-        Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(action)),
+        Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(action)),
     )
 
     private fun radiusRaw(s: SimState, id: org.emerge.sim.core.EntityId): Long =
@@ -783,8 +783,8 @@ class CytoSoaSpecTest {
         // the only flex action.)
         val initial = run {
             val b = SimBuilder(SimState())
-            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8000), genome = flexGenome(ActionType.Contract))
-            b.spawnCell(CytoUnits.coord2(40f, 0f), Coord2.zero, CellType.Blank, cytoplasm = mapOf("ab" to 200), biomass = mapOf("ab" to 8000), genome = emptyList())
+            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("rg" to 200), biomass = mapOf("rg" to 8000), genome = flexGenome(ActionType.Contract))
+            b.spawnCell(CytoUnits.coord2(40f, 0f), Coord2.zero, CellType.Blank, cytoplasm = mapOf("rg" to 200), biomass = mapOf("rg" to 8000), genome = emptyList())
             b.build()
         }
         val ids = initial.components.getTable<CytoCellComponent>().asMap().keys.sortedBy { it.value }
@@ -800,8 +800,8 @@ class CytoSoaSpecTest {
         // no longer fire (here, its `ab` fuel runs out) — via the same elastic blend that grows a cell.
         val initial = run {
             val b = SimBuilder(SimState())
-            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 80), biomass = mapOf("ab" to 8000), genome = flexGenome(ActionType.Contract))
-            b.spawnCell(CytoUnits.coord2(20f, 0f), Coord2.zero, CellType.Blank, cytoplasm = mapOf("ab" to 80), biomass = mapOf("ab" to 8000), genome = emptyList())
+            b.spawnCell(CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("rg" to 80), biomass = mapOf("rg" to 8000), genome = flexGenome(ActionType.Contract))
+            b.spawnCell(CytoUnits.coord2(20f, 0f), Coord2.zero, CellType.Blank, cytoplasm = mapOf("rg" to 80), biomass = mapOf("rg" to 8000), genome = emptyList())
             b.build()
         }
         val ids = initial.components.getTable<CytoCellComponent>().asMap().keys.sortedBy { it.value }
@@ -821,12 +821,12 @@ class CytoSoaSpecTest {
         // `ab`; a lone control with the identical gene never touches anything, so its gate stays false — so
         // the touched cells end up smaller (contracted) than the control.
         val touchContract = listOf(
-            Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Touching, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Contract)),
+            Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Touching, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Contract)),
         )
         // Spawn at the biomass baseline radius (sqrt(8000/16000) ≈ 0.7) so Contract has room to bite on tick 1
         // (a cell already at MIN_RADIUS couldn't shrink); a shallow overlap touches without welding.
         fun cell(b: SimBuilder, x: Float) =
-            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("ab" to 100000), biomass = mapOf("ab" to 8000), logicalRadius = org.emerge.sim.core.physics.primitives.Frac(7, 10), genome = touchContract)
+            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("rg" to 100000), biomass = mapOf("rg" to 8000), logicalRadius = org.emerge.sim.core.physics.primitives.Frac(7, 10), genome = touchContract)
         val initial = run {
             val b = SimBuilder(SimState())
             cell(b, -0.6f); cell(b, 0.6f)   // ~0.2 overlap at radius 0.7 ⇒ touch, not weld
