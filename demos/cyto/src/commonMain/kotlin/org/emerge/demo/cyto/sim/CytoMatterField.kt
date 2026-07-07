@@ -66,6 +66,25 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
         return sum
     }
 
+    /** Read-only diagnostic: accumulate per-element (monomer) atom totals into [out] (indexed by element
+     *  id, e.g. 0=a,1=b,2=c). Complete — decomposes leaf polymers AND counts internal-node monomer
+     *  remainder — so ΣΣ[out] equals [totalAtoms]. Used by conservation checks to localise WHICH element
+     *  leaks. No behaviour change. */
+    fun elementTotals(out: LongArray) {
+        forEachLeaf { _, _, _, store ->
+            for (i in 0 until store.size) {
+                val c = store.countAt(i).toLong()
+                var cur = store.idAt(i)
+                while (SpeciesRegistry.atomCount(cur) > 1) {   // peel one lead monomer per step
+                    out[SpeciesRegistry.firstAtom(cur)] += c
+                    cur = SpeciesRegistry.splitLeftRest(cur)
+                }
+                out[SpeciesRegistry.firstAtom(cur)] += c       // final lone atom
+            }
+        }
+        forEachInternal { node -> for (s in 0..2) out[s] += node.monomerRemainder[s].toLong() }
+    }
+
     /** Visit every leaf with its region (origin x,y + size) and store — stable order (tiles, then DFS NW→SE).
      *  Used for digest/save/conservation; coordinates are the leaf's lower-left corner. */
     fun forEachLeaf(visit: (x: Float, y: Float, size: Float, store: MoleculeStore) -> Unit) {

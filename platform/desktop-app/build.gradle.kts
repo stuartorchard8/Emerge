@@ -119,6 +119,15 @@ tasks.register<JavaExec>("renderCytoMatter") {
     classpath = sourceSets["main"].runtimeClasspath
 }
 
+tasks.register<JavaExec>("checkCytoConservation") {
+    group = "application"
+    description = "Load a Cyto save, tally per-element atoms, run N ticks, re-tally — reports any leak. " +
+        "--args=\"<savePath> <ticks>\" (defaults: platform/desktop-app/cyto-save.bin, 1000)."
+    mainClass = "org.emerge.desktop.CytoConservationCheckKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootDir   // so the default relative save path resolves from the repo root
+}
+
 tasks.register<JavaExec>("probeCytoPopulation") {
     group = "verification"
     description = "Headless population probe: seed a self-sufficient (collect+divide) genome on a " +
