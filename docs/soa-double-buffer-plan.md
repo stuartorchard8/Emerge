@@ -142,6 +142,25 @@ where the POD-vs-jagged distinction is handled once instead of per component.
 Double-buffering erases the *model* losses (the ones touching the engine spine) and leaves the
 *ergonomic* loss (codegen) plus the memory/copy costs and the jagged-column problem.
 
+## Where the performance actually comes from
+
+This work is a **foundation swap, not a throughput win in itself** — worth stating plainly so it isn't
+oversold. The fixed-capacity cell chem (Phase 1) is arguably a slight steady-state *memory increase* in
+isolation (a median ~14-species cell's per-tick `.copy()` now allocates `IntArray(32)` instead of ~16).
+The payoff is in what the uniform double-buffered layout **enables**, none of which exists yet:
+
+1. **Eliminate the per-tick `.copy()` allocation.** Today biology copies each cell's chem store every
+   tick (`CytoSoaSystems.kt` ~L301). With two pooled double-buffer slabs that are swapped, there is no
+   per-cell/per-tick allocation at all — this is the real GC win, and uniform fixed-size backing is its
+   precondition.
+2. **SIMD / vectorization** over contiguous uniform primitive columns — structurally impossible on a
+   hashmap-of-objects, and the substrate the hardware-acceleration goal needs.
+3. **Lock-free deterministic parallelism** — read-front/write-back with slot-range partitioning,
+   replacing the fork/join that was a net loss on Stu's high-turbo CPU (`reference_cyto_perf_levers`).
+
+Banked separately this session (a genuine, measured throughput win, not foundation): the `resolvedCount`
+cache-of-a-cache collapse, ~18% off biology.
+
 ## Suggested sequencing
 
 1. **Prove the generality gap** — hand-port one fixed-width AoS demo (drockets or scavengers) onto the
