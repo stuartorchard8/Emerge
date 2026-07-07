@@ -111,6 +111,46 @@ class CytoSoaSpecTest {
     }
 
     @Test
+    fun lyseStealsAllVictimSpeciesNotJustSome() {
+        // Regression: processLyseAttacks iterated the victim biomass store while add()-removing each fully
+        // drained species. That removal compacts the store, shifting unvisited species under the loop cursor
+        // → they were SKIPPED, so "Lyse steals all species" silently missed some (and matter that should have
+        // moved to the attacker stayed in the victim). Fixed by snapshotting the victim's species first.
+        // Setup: a Lyse attacker overlaps (touches, un-welded) a victim whose biomass holds three distinct
+        // species of one molecule each — one Lyse hit fully drains each, triggering the mid-iteration compaction.
+        val lyseGene = Gene(
+            EnergySource.BreakBond("bb"),
+            GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)),   // always fires
+            GeneAction(ActionType.Lyse),
+        )
+        val initial = run {
+            val b = SimBuilder(SimState())
+            b.spawnCell(   // attacker: bb fuel powers Lyse; its own biomass is never a victim
+                CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector,
+                cytoplasm = mapOf("bb" to 100_000), biomass = mapOf("bb" to 4000),
+                logicalRadius = Frac(1, 2), genome = listOf(lyseGene),
+            )
+            b.spawnCell(   // victim: three distinct biomass species, each fully drainable in one hit
+                CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector,
+                cytoplasm = mapOf("rg" to 100), biomass = mapOf("rr" to 1, "gg" to 1, "bb" to 1),
+                logicalRadius = Frac(1, 2), genome = emptyList(),
+            )
+            b.build()
+        }
+        val victimId = initial.components.getTable<CytoCellComponent>().asMap()
+            .entries.first { it.value.genome.isEmpty() }.key
+        val total0 = totalAtoms(initial)
+
+        val state = run(initial, ticks = 1)   // one tick: victim is drained by Lyse but not yet death-collected
+
+        assertEquals(total0, totalAtoms(state), "lyse must conserve atoms")
+        val victimBio = state.components.getTable<CytoCellComponent>().asMap()[victimId]?.biomass ?: emptyMap()
+        val leftover = (victimBio["rr"] ?: 0) + (victimBio["gg"] ?: 0) + (victimBio["bb"] ?: 0)
+        assertEquals(0, leftover,
+            "Lyse must steal ALL victim biomass species; leftover=$leftover means it skipped some (mid-iteration compaction)")
+    }
+
+    @Test
     fun autotrophGrowsIntoAColony() {
         val initial = createCytoInitialState()
         val start = cellCount(initial)

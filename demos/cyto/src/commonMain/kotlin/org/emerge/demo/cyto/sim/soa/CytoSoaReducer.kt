@@ -269,16 +269,20 @@ class CytoSoaReducer(
                     store
                 }
 
-                // Steal all species equally (proportional to victim biomass composition).
-                var totalStolen = 0
-                for (i in 0 until victimBio.size) {
-                    val spId = victimBio.idAt(i)
-                    val victimCount = victimBio.countAt(i)
+                // Steal all species. Snapshot the victim's (id, count) first: add() below removes a
+                // species when it fully drains, which compacts the store — iterating it live by index
+                // would shift unvisited species under the cursor and skip them (so "steal all" would
+                // silently miss species and stop early). Mirrors decayLeaf's snapshot discipline.
+                val vN = victimBio.size
+                val vIds = IntArray(vN); val vCnts = IntArray(vN)
+                for (i in 0 until vN) { vIds[i] = victimBio.idAt(i); vCnts[i] = victimBio.countAt(i) }
+                for (i in 0 until vN) {
+                    val spId = vIds[i]
+                    val victimCount = vCnts[i]
                     if (victimCount <= 0) continue
                     // Steal proportional to count.
                     val stolen = minOf(damagePerVictim.toLong(), victimCount.toLong()).toInt()
                     victimBio.add(spId, -stolen)
-                    totalStolen += stolen
 
                     // Assimilate: ⌊stolen × captureNum / captureDen⌋
                     val captured = (stolen.toLong() * captureNum / captureDen).toInt()
