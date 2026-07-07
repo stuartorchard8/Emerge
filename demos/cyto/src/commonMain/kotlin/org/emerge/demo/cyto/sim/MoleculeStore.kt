@@ -17,12 +17,22 @@ class MoleculeStore private constructor(
     private var ids: IntArray,
     private var counts: IntArray,
     private var n: Int,
+    /** Fixed distinct-species capacity for a cell store (pre-sized backing, never grows in steady
+     *  state); 0 = unbounded/dynamic — used by grid-leaf reservoirs, which legitimately accumulate
+     *  many species. See [grow] for the Phase-2 overflow (toxicity eviction) hook. */
+    private val cap: Int,
     var _bondPresence: Int = 0,  // bitmask of bonds present (max 9 bits for k=3)
     var _firstAtomMask: Int = 0, // bitmask of first atoms present (max 3 bits for k=3)
     var _lastAtomMask: Int = 0,  // bitmask of last atoms present (max 3 bits for k=3)
     private var _masksDirty: Boolean = false,  // lazily rebuild masks on first query
 ) {
-    constructor() : this(EMPTY, EMPTY, 0, 0, 0, 0, false)
+    /** [cap] = 0 → dynamic (grid reservoirs); [cap] > 0 → fixed-capacity backing pre-sized to [cap]
+     *  (cell cytoplasm/biomass), so the column is uniform and never reallocates under the cap. */
+    constructor(cap: Int = 0) : this(
+        if (cap > 0) IntArray(cap) else EMPTY,
+        if (cap > 0) IntArray(cap) else EMPTY,
+        0, cap,
+    )
 
     val size: Int get() = n
     fun isEmpty(): Boolean = n == 0
@@ -88,13 +98,16 @@ class MoleculeStore private constructor(
     fun inc(id: Int, n: Int) = add(id, n)
     fun dec(id: Int) = add(id, -1)
 
-    fun copy(): MoleculeStore =
-        if (n == 0) MoleculeStore() else MoleculeStore(ids.copyOf(n), counts.copyOf(n), n).also { s ->
+    fun copy(): MoleculeStore {
+        if (n == 0) return MoleculeStore(cap)
+        val backing = if (cap > 0) cap else n
+        return MoleculeStore(ids.copyOf(backing), counts.copyOf(backing), n, cap).also { s ->
             s._bondPresence = _bondPresence
             s._firstAtomMask = _firstAtomMask
             s._lastAtomMask = _lastAtomMask
             s._masksDirty = false
         }
+    }
 
     /** Reuse this store as a snapshot of [src], reusing this store's backing arrays (grown only if too
      *  small) so a per-tick snapshot allocates nothing once warmed. Copies [src]'s sorted/positive
@@ -173,17 +186,22 @@ class MoleculeStore private constructor(
     }
 
     private fun grow() {
-        val cap = if (ids.size == 0) 4 else ids.size * 2
-        ids = ids.copyOf(cap); counts = counts.copyOf(cap)
+        // A capped cell store reaching here means it would exceed its distinct-species cap. Phase 2
+        // replaces this with the toxicity mechanic: evict the scarcest species (spilling its atoms to
+        // the cell's grid leaf) instead of growing. Until then we grow as a bit-identical safety net —
+        // verified never hit across the golden trajectories, so the cap holds in practice.
+        val newCap = if (ids.size == 0) 4 else ids.size * 2
+        ids = ids.copyOf(newCap); counts = counts.copyOf(newCap)
     }
 
     companion object {
         private val EMPTY = IntArray(0)
 
-        /** Build a store from a string-keyed count map (the load / lifecycle boundary). */
-        fun of(map: Map<String, Int>): MoleculeStore {
-            if (map.isEmpty()) return MoleculeStore()
-            val s = MoleculeStore()
+        /** Build a store from a string-keyed count map (the load / lifecycle boundary). Pass [cap]
+         *  > 0 for a cell store (fixed capacity); leave 0 for a dynamic grid-leaf reservoir. */
+        fun of(map: Map<String, Int>, cap: Int = 0): MoleculeStore {
+            if (map.isEmpty()) return MoleculeStore(cap)
+            val s = MoleculeStore(cap)
             for ((species, c) in map) if (c > 0) s.add(SpeciesRegistry.id(species), c)
             return s
         }

@@ -22,6 +22,12 @@ import org.emerge.sim.core.physics.primitives.Frac
  */
 object CytoTuning {
 
+    /** Max distinct chemical species a single cell (cytoplasm or biomass) may hold. Fixed so the cell
+     *  chem store is a pre-sized, non-growing array (uniform column → double-buffer-friendly). A cell
+     *  acquiring a species beyond this (mainly via lysis-ingested toxins) evicts its scarcest one — the
+     *  cap doubles as the toxicity mechanic (Phase 2). Grid-leaf reservoirs are uncapped. */
+    const val CELL_CHEM_CAP = 32
+
     // ── Grid geometry (shared by the light field + matter reservoir) ─────────────────────────────────
     /** Resolution per torus axis of the light field + matter grid (the fields are smooth, so coarse is
      *  plenty). The grid has RES² cells. */

@@ -298,8 +298,8 @@ class BiologySystem(
 
             val work = state.bioWorks[slot]!!
             work.reset(
-                cytoplasm = (world.cell.cytoplasm[slot] ?: MoleculeStore()).copy(),
-                biomass = (world.cell.biomass[slot] ?: MoleculeStore()).copy(),
+                cytoplasm = (world.cell.cytoplasm[slot] ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP)).copy(),
+                biomass = (world.cell.biomass[slot] ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP)).copy(),
                 logicalRadius = radius,
                 type = CellType.entries[world.cell.type[slot]],
                 genome = world.cell.genome[slot] ?: emptyList(),

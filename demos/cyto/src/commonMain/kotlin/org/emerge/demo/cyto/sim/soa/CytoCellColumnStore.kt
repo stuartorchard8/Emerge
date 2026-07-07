@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.sim.soa
 
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
+import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.MoleculeStore
 import org.emerge.sim.core.ecs.soa.ColumnStore
@@ -46,8 +47,8 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         type[slot] = value.type.ordinal
         sticky[slot] = value.sticky
         stickyTemp[slot] = value.stickyTemp
-        cytoplasm[slot] = MoleculeStore.of(value.cytoplasm)
-        biomass[slot] = MoleculeStore.of(value.biomass)
+        cytoplasm[slot] = MoleculeStore.of(value.cytoplasm, CytoTuning.CELL_CHEM_CAP)
+        biomass[slot] = MoleculeStore.of(value.biomass, CytoTuning.CELL_CHEM_CAP)
         genome[slot] = value.genome
     }
 

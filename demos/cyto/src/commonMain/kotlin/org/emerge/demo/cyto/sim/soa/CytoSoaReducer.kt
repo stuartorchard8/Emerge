@@ -258,7 +258,7 @@ class CytoSoaReducer(
                 if (victimBio.isEmpty()) continue
 
                 val attackerCyto = w.cell.cytoplasm[attackerSlot] ?: run {
-                    val store = MoleculeStore()
+                    val store = MoleculeStore(CytoTuning.CELL_CHEM_CAP)
                     w.cell.cytoplasm[attackerSlot] = store
                     store
                 }
