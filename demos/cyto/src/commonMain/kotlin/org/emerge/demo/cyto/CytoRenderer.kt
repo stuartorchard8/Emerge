@@ -408,7 +408,7 @@ class CytoRenderer {
         matterShader.drawInstanced(n, mInstCenter, mInstHalf, mInstColor)
     }
 
-    /** Colour a matter leaf by its per-area a/b/c atom DENSITY as raw RGB (a→R, b→G, c→B), normalised by the
+    /** Colour a matter leaf by its per-area r/g/b atom DENSITY as raw RGB (r→R, g→G, b→B), normalised by the
      *  leaf's area × the seed density so a full base-density leaf is white (1,1,1) and depletion both darkens
      *  it and shifts its hue away from whatever species the cells drew down. Counts scale with leaf area, so
      *  the divisor is the leaf's finest-cell area × [MATTER_REF_DENSITY]. */
@@ -417,7 +417,7 @@ class CytoRenderer {
         for (i in 0 until store.size) {
             val cnt = store.countAt(i)
             for (ch in SpeciesRegistry.string(store.idAt(i))) when (ch) {
-                'a' -> r += cnt; 'b' -> g += cnt; 'c' -> b += cnt
+                'r' -> r += cnt; 'g' -> g += cnt; 'b' -> b += cnt
             }
         }
         val across = (size / MATTER_FINEST_SIZE).toDouble()
@@ -455,7 +455,7 @@ class CytoRenderer {
     }
 
     /**
-     * Colour a cell by its **contents**, per [colorMode]. Each a/b/c atom count maps to R/G/B,
+     * Colour a cell by its **contents**, per [colorMode]. Each r/g/b atom count maps to R/G/B,
      * normalised by the total so the colour represents the atom-ratio mix (e.g. equal parts → grey,
      * `ab`-only → yellow). The RGB is then scaled by a value factor: 1.0 for the focused cell,
      * 0.75 for normal cells, and [DIM_VALUE] for dimmed neighbours — keeping selection status visible
@@ -471,14 +471,14 @@ class CytoRenderer {
         when (colorMode) {
             CellColorMode.Bio -> {
                 for ((species, count) in cell.biomass) for (ch in species) when (ch) {
-                    'a' -> r += count; 'b' -> g += count; 'c' -> b += count
+                    'r' -> r += count; 'g' -> g += count; 'b' -> b += count
                 }
             }
             CellColorMode.Cyt -> {
                 for ((species, count) in cell.cytoplasm) {
                     if (species.length < 2) continue   // ignore monomers (single-atom species)
                     for (ch in species) when (ch) {
-                        'a' -> r += count; 'b' -> g += count; 'c' -> b += count
+                        'r' -> r += count; 'g' -> g += count; 'b' -> b += count
                     }
                 }
             }

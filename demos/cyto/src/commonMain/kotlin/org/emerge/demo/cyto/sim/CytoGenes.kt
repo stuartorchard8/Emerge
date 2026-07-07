@@ -23,7 +23,7 @@ sealed class EnergySource {
     /** Environmental light: up to `floor(field × exposure × scale)` quanta this tick. */
     object Light : EnergySource()
 
-    /** Break one instance of [bond] (a 2-atom pair, e.g. `"ab"`) in a cytoplasm molecule per op,
+    /** Break one instance of [bond] (a 2-atom pair, e.g. `"rg"`) in a cytoplasm molecule per op,
      *  releasing its quantum; the molecule splits into two fragments returned to the cytoplasm. */
     data class BreakBond(val bond: String) : EnergySource()
 }
@@ -35,7 +35,7 @@ enum class Comparison { Greater, Less }
  *  [Constant] (the former gate "threshold"), or one of three **live readings** of the cell this tick:
  *  a cytoplasm [Chem] count, total [Biomass], or the [Touching] contact count. Because *both* sides of a
  *  condition are operands, a gene can gate on a relationship between two live quantities — e.g.
- *  `Biomass < Chem("ab")` ("while I'm smaller than my stored `ab` reserve") — not only variable-vs-constant. */
+ *  `Biomass < Chem("rg")` ("while I'm smaller than my stored `rg` reserve") — not only variable-vs-constant. */
 sealed class Operand {
     /** True if this operand requires a species lookup from cytoplasm (Chem or Conc). False for
      *  Constant, Biomass, and Touching which are free. Pre-computed at construction for fast gate evaluation. */
@@ -141,7 +141,7 @@ enum class ActionType {
  *  unoriented (today's free-space placement). [divideAcross] is only ever `true` when [type] is Mitosis.
  *
  *  **FormBond reactant matching** (MORPHOGENESIS.md §2026-06-18): for [ActionType.FormBond], [a]/[b] name the
- *  two reactants by **exact species** (`a`+`b` → monomer `a` joined to monomer `b` → `ab`). [aWild] makes
+ *  two reactants by **exact species** (`r`+`g` → monomer `r` joined to monomer `g` → `rg`). [aWild] makes
  *  [a] a **suffix wildcard** (match the most-abundant molecule *ending* with [a], the legacy behaviour);
  *  [bWild] makes [b] a **prefix wildcard** (most-abundant *starting* with [b]). The bare atoms always live in
  *  [a]/[b] (the flags only switch exact↔wildcard), so [handleableOf] reads them unchanged. Both flags are
@@ -625,20 +625,20 @@ private const val DIVIDE_BIOMASS = CytoSeed.AUTOTROPH_DIVIDE_BIOMASS
 
 /**
  * The hand-authored **autotroph** (the v1 creature), built around **break-powered division**. Under light
- * it bonds the monomers a+b into `ab` ([FormBond], topping the cytoplasm `ab` reserve up to GROW) and
- * locks `ab` into biomass to grow ([Convert]) while biomass < GROW. Sub-tick interpolation
+ * it bonds the monomers r+g into `rg` ([FormBond], topping the cytoplasm `rg` reserve up to GROW) and
+ * locks `rg` into biomass to grow ([Convert]) while biomass < GROW. Sub-tick interpolation
  * (CytoBiologyCore.selfGateCap) stops each growth gene exactly at GROW rather than overshooting. Division
  * is a *bulk* cost (≈ biomass/4 energy, which a per-tick light flux can't fund), so it's paid by
- * **breaking** the stored `ab`: once biomass > DIVIDE, the BreakBond-powered [Mitosis] (resolved at end of
+ * **breaking** the stored `rg`: once biomass > DIVIDE, the BreakBond-powered [Mitosis] (resolved at end of
  * tick) burns ~biomass/4 of the reserve to split. DIVIDE < GROW so the self-capped grower still crosses the
- * divide line; the reserve (held to GROW ≈ 4× the cost) keeps division affordable. a and b are absorbed for
+ * divide line; the reserve (held to GROW ≈ 4× the cost) keeps division affordable. r and g are absorbed for
  * free by passive uptake near light. At the live mutation rate (CytoTuning.MUTATION_RATE_DENOM) the first
  * division lands long before any mutation, so the lineage colonises reliably.
  */
 val AUTOTROPH_GENES: List<Gene> = listOf(
-    Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Mitosis, rejectMother = true)),
-    Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.Convert, "ab")),
-    Gene(EnergySource.Light, GeneCondition(Operand.Chem("ab"), Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.FormBond, "a", "b")),
+    Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Mitosis, rejectMother = true)),
+    Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.Convert, "rg")),
+    Gene(EnergySource.Light, GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.FormBond, "r", "g")),
 )
 
 // Heterotroph seed thresholds — values in CytoSeed (initial data; evolve under mutation).
@@ -646,18 +646,18 @@ private const val HET_GROW = CytoSeed.HETEROTROPH_GROW_BIOMASS
 private const val HET_DIVIDE = CytoSeed.HETEROTROPH_DIVIDE_BIOMASS
 
 /**
- * A hand-authored **heterotroph**: it has no light genes — it lives on `ab` molecules already in its
+ * A hand-authored **heterotroph**: it has no light genes — it lives on `rg` molecules already in its
  * cytoplasm (received by diffusion from autotroph neighbours, or its starter reserve), **breaking** some
- * `ab` to power both converting more `ab` into biomass (grow up to GROW, sub-tick-capped so it stops there
+ * `rg` to power both converting more `rg` into biomass (grow up to GROW, sub-tick-capped so it stops there
  * instead of overshooting and stranding the reserve) and dividing (Mitosis once biomass > DIVIDE < GROW,
- * funded by breaking the reserve it kept). Closes the food web: autotroph light → `ab` → (diffusion /
- * death) → heterotroph biomass. Starves (and recycles its matter) once the `ab` runs out.
+ * funded by breaking the reserve it kept). Closes the food web: autotroph light → `rg` → (diffusion /
+ * death) → heterotroph biomass. Starves (and recycles its matter) once the `rg` runs out.
  */
 val HETEROTROPH_GENES: List<Gene> = listOf(
-    Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(HET_GROW)), GeneAction(ActionType.Convert, "ab")),
-    Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(HET_DIVIDE)), GeneAction(ActionType.Mitosis)),
-    // Hold together by burning stored 'ab' for repair — a real matter cost; frays once 'ab' runs out.
-    Gene(EnergySource.BreakBond("ab"), GeneCondition(Operand.Chem("ab"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
+    Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(HET_GROW)), GeneAction(ActionType.Convert, "rg")),
+    Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(HET_DIVIDE)), GeneAction(ActionType.Mitosis)),
+    // Hold together by burning stored 'rg' for repair — a real matter cost; frays once 'rg' runs out.
+    Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
 )
 
 /** The authored preset genome for a cell type — seeds a freshly-spawned cell; afterwards the genome
