@@ -62,7 +62,7 @@ class CytoLightField private constructor(private val grid: LongArray) {
 
         /** Light sources at the torus quarter-points (a 2×2 equidistant grid). */
         val SOURCES: List<Pair<Float, Float>> = run {
-            val q = HALF / 2f   // ±512 for a 1024-half torus
+            val q = HALF / 2f   // ±16 for a 64-cell-diam torus
             listOf(-q to -q, -q to q, q to -q, q to q)
         }
 

@@ -12,8 +12,8 @@ import org.emerge.sim.core.physics.primitives.Frac
  * torus is 2.0 wide (normalised −1..1), so it spans [CELLS_PER_AXIS] base-cell *diameters* per axis and
  * wraps (free, via `Coord`'s two's-complement Int overflow; the boundary is always ±Int.MAX). Sized so a
  * colony of tens of cells is a meaningful fraction of the torus and actually reaches + wraps at the seam —
- * the torus is real, not a never-touched edge. (Was 1024 — far too big; the world behaved like an open
- * plane because nothing ever reached the boundary. Dropped to 128 on 2026-06-21; see PLAN_taxis_substrate.md.)
+ * the torus is real, not a never-touched edge. (Historical: 1024→128→32, progressively smaller so the
+ * torus boundary has behavioral impact; see PLAN_taxis_substrate.md.)
  */
 object CytoUnits {
     /** Base-cell diameters across the torus per axis. */
@@ -21,7 +21,7 @@ object CytoUnits {
 
     private const val SCALE = 1f / CELLS_PER_AXIS // logical-radius-unit -> normalised
 
-    /** Logical length (in cell-radius units) -> engine [Frac]. radius 1.0 -> Frac(1,1024). */
+    /** Logical length (in cell-radius units) -> engine [Frac]. radius 1.0 -> Frac(1,32). */
     fun len(logical: Float): Frac = Frac((logical * SCALE * Int.MAX_VALUE).toLong())
 
     /** Logical coordinate -> torus [Coord] (wraps via Int two's-complement for huge values). */

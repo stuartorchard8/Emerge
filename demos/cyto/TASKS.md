@@ -32,7 +32,7 @@ frequency every 2nd tick (`4136a097`); exchange group overhead reduced via binar
 balanceBatched (`2c715421`); presence mask skipping for empty stores (`de969090`), for balanceBatched
 (`8ec14762`); pre-computed gene properties for efficiency gear/action type (`87cc4fb2`); species count cache
 (`47ff2b39`); bond/atom presence masks in MoleculeStore (`4e8df334`); pre-populated species cache + cached
-damage/contract checks (`a37865eb`); `needsLookup` property on Operand (`013b91e6`); parallel executor uses
+damage/contract checks (`a37865eb`); parallel executor uses
 ThreadPoolExecutor with daemon threads (`3d8f28ec`). See `PERF.md` for full breakdown.
 
 **The front line: a differentiated, self-propelling organism (the jellyfish goal).** Substrate is complete:

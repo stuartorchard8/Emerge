@@ -37,14 +37,8 @@ enum class Comparison { Greater, Less }
  *  condition are operands, a gene can gate on a relationship between two live quantities — e.g.
  *  `Biomass < Chem("rg")` ("while I'm smaller than my stored `rg` reserve") — not only variable-vs-constant. */
 sealed class Operand {
-    /** True if this operand requires a species lookup from cytoplasm (Chem or Conc). False for
-     *  Constant, Biomass, and Touching which are free. Pre-computed at construction for fast gate evaluation. */
-    abstract val needsLookup: Boolean
-
     /** A fixed integer compared against (the former gate threshold). */
-    data class Constant(val value: Int) : Operand() {
-        override val needsLookup = false
-    }
+    data class Constant(val value: Int) : Operand()
 
     /** Count of [species] in the cytoplasm (0 for an absent / unknown species). */
     data class Chem(val species: String) : Operand() {
@@ -52,21 +46,16 @@ sealed class Operand {
          *  immutable [species] string), so the per-tick gate path reads an int instead of re-hashing the
          *  string every evaluation. Not a constructor param ⇒ untouched by equals/hashCode/copy. */
         val speciesId: Int = SpeciesRegistry.id(species)
-        override val needsLookup = true
     }
 
     /** Total biomass — Σ count × bond-count (also drives cell size + the death threshold). */
-    object Biomass : Operand() {
-        override val needsLookup = false
-    }
+    object Biomass : Operand()
 
     /** Number of **un-connected** cells this cell is in physical contact with this tick — i.e.
      *  `Touching > 0` fires while the cell is bumping a neighbour it isn't welded to. The matter-model
      *  port of old Cyto's `Touch` gene input (a cell sensing collision pressure); welded neighbours don't
      *  count (they're structure, not a touch event). A reactive, contact-driven gate. */
-    object Touching : Operand() {
-        override val needsLookup = false
-    }
+    object Touching : Operand()
 
     /** **Concentration** of [species] — `count(species) · CytoTuning.CONC_SCALE / totalBiomass`, the
      *  size-normalised counterpart of [Chem] (which is the raw count). 0 when biomass is 0 or the species is
@@ -77,7 +66,6 @@ sealed class Operand {
     data class Conc(val species: String) : Operand() {
         /** [species] resolved to its [SpeciesRegistry] id once at construction (see [Chem.speciesId]). */
         val speciesId: Int = SpeciesRegistry.id(species)
-        override val needsLookup = true
     }
 }
 
@@ -456,19 +444,16 @@ class CellWork(
     private val _speciesCacheIds = IntArray(32)
     private var _speciesCacheSize = 0
 
-    /** Per-cell resolved cache: maps [speciesId] → [_speciesCache] index.
-     *  Populated by [populateResolved] at the start of each cell's gene phase.
-     *  During evaluation, [CytoBiologyCore.operand] reads [_speciesCache[cacheIndex]] directly
-     *  instead of doing a linear scan. This turns O(S) per-operand lookups into O(1) for resolved
-     *  species — critical when the same species is read by hundreds of genes. */
+    /** Per-cell lazy resolved cache: maps [speciesId] → [_speciesCache] index.
+      *  Built on-demand by [CytoBiologyCore.operand] on first read per species per cell.
+      *  Subsequent reads get O(1) direct access. */
     internal val _resolvedIds = IntArray(64)
     internal val _resolvedIdx = IntArray(64)
     internal var _resolvedN = 0
     /** Populate the species cache from [cytoplasm]. Call once at the start of runGenes so all gate
-     *  evaluations get O(1) lookups. Max 32 entries (most cells have ~5 species). */
+      *  evaluations get O(1) lookups. Max 32 entries (most cells have ~5 species). */
     fun prefillSpeciesCache() {
         _speciesCacheSize = 0
-        _resolvedN = 0  // clear resolved cache for new cell
         val size = cytoplasm.size
         val limit = if (size < 32) size else 32
         for (i in 0 until limit) {
@@ -487,44 +472,6 @@ class CellWork(
         return 0
     }
 
-    /** Populate [resolved cache](from [_resolvedIds]/[_resolvedIdx]) from [genome] by scanning the
-     *  pre-populated [_speciesCacheIds] once per unique species. After this, [CytoBiologyCore.operand]
-     *  can read [_speciesCache[index]] directly instead of scanning the cache array.
-     *  Total cost: O(G × clauses + S × G_unique) where S = cytoplasm species, G_unique = unique species in genome. */
-    fun populateResolved(genome: List<Gene>) {
-        // Collect unique species IDs from all operands in the genome
-        _resolvedN = 0
-        for (g in genome) {
-            for (c in g.condition.clauses) {
-                for (op in arrayOf(c.lhs, c.rhs)) {
-                    if (op.needsLookup) {
-                        val sid = when (op) {
-                            is Operand.Chem -> op.speciesId
-                            is Operand.Conc -> op.speciesId
-                            else -> continue
-                        }
-                        // Add if not already present (dedup)
-                        var found = false
-                        for (i in 0 until _resolvedN) {
-                            if (_resolvedIds[i] == sid) { found = true; break }
-                        }
-                        if (!found && _resolvedN < _resolvedIds.size) {
-                            _resolvedIds[_resolvedN] = sid
-                            _resolvedIdx[_resolvedN] = -1  // default: not in cache
-                            // Resolve: find cache index for this species
-                            for (i in 0 until _speciesCacheSize) {
-                                if (_speciesCacheIds[i] == sid) {
-                                    _resolvedIdx[_resolvedN] = i
-                                    break
-                                }
-                            }
-                            _resolvedN++
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     /** Read count for a species using **lazy resolution**: first encounter does a linear scan through
      *  the species cache and caches the index; subsequent encounters get O(1) direct access.
@@ -594,7 +541,6 @@ class CellWork(
         divideRejectMother = false
         repaired = false
         _speciesCacheSize = 0
-        _resolvedN = 0
         // Reset mitosis cooldown when genome changes (new cell or mutation).
         if (genome !== this.genome) {
             this.mitosisCooldown = 0

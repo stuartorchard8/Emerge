@@ -34,7 +34,7 @@ object CytoTuning {
     /** Gaussian falloff radius of a light source (logical units): light is strong within ~σ and ~0 well
      *  before the midpoint between sources, leaving dark contested zones. In moving mode it's the
      *  half-width of the daylight band (how much of the world is "day" at once). */
-    const val LIGHT_FALLOFF = 8f   // ÷8 with the 1024→128 world rescale (keeps the band ~10% of the world)
+    const val LIGHT_FALLOFF = 8f   // ~12.5% of 64-cell-diam torus width
     /** Shading (interference competition): when true, cells sharing a grid-cell split that cell's incident
      *  light by capture weight (exposure × radius), so a bigger cell starves its neighbours. False = every
      *  cell gets its own full light (no co-located split) — toggle to test whether shading still earns its

@@ -18,7 +18,7 @@ object CytoSeed {
      *  bound the molecule species space (3 elements → ≤1884 possible molecules), which the upcoming
      *  dense-chemistry representation depends on. Mutation's alphabet matches (r,g,b). */
     val SEED_MONOMERS = listOf("r", "g", "b")
-    /** Per-monomer density per cell-diameter squared area. At MATTER_GRID_RES=1024 cells have a 4x4 footbrint.
+    /** Per-monomer density per cell-diameter squared area. Grid tile resolution determines cell footprint scale.
      *  Each 16 cells holds this per species — sized so a founder's footprint has access to roughly this much matter.
      *  i.e. enough to bootstrap, scarce enough that depletion bites. */
     const val MATTER_UNIFORM_LEVEL_CELL_SCALE = 2 * CHEMISTRY_SCALE

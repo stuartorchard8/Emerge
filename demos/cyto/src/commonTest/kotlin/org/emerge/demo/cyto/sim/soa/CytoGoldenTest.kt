@@ -117,45 +117,9 @@ class CytoGoldenTest {
     // at degree ≥2), so the golden doesn't exercise the deep-interior regime. mutation-on + interact
     // byte-identical (lone cells → degree 0 → no-op). The light-exposure toggle defaults to current
     // (decoupled), so it's golden-neutral. Gates held.
-    // Re-baselined 2026-06-21: VELOCITY RECONCILIATION (v = Δx/dt in integrate). The weld solve moves cells
-    // through the position channel (impPos, pseudo-velocity); integrate now sets velocity to the realized
-    // per-tick displacement instead of discarding the position-correction part, so velocity-reading forces
-    // (drag, contacts) finally see constraint-driven motion — unblocking locomotion (a breathing organism in
-    // the save now drifts ~115 cell-diam over 20k ticks; was bit-frozen). ONLY the GROWTH `physics` digest
-    // moves (it hashes velocity); meta/biology/topology/grid are byte-identical (colony size, chemistry, welds
-    // unchanged), and mutation-on + interact goldens are fully byte-identical (their sampled cells aren't in
-    // active spring motion). Determinism gates (parallel==sequential, round-trip) held; welds now carry inertia
-    // (SPRING_DAMPING bleeds the ring) and the full 130-cell save stays stable over 8k ticks.
-    // Re-baselined 2026-06-21: WORLD RESCALE — CytoUnits.CELLS_PER_AXIS 1024→128 (scale objects up so the
-    // fixed ±Int.MAX torus is the right size — colonies now reach + wrap at the seam) + the world-scale
-    // constants ÷8 (LIGHT_FALLOFF 200→25, LIGHT_ORBIT_PERIOD 3600→450, MATTER_FALLOFF 70→9). Body-relative
-    // dynamics are preserved (contraction amplitude byte-identical in probes), but absolute positions, light
-    // timing, and the seeded matter field all shift, so ALL THREE trajectory goldens move in every dimension.
-    // Seeded world still grows (autotrophGrowsIntoAColony green); determinism gates held; new homogeneity
-    // tests (boundary≡centre) added. Grid cell is now 4 cell-diam (was 32) — the matter-field work can follow.
-    // Re-baselined 2026-06-21: MATTER FIELD REWORK — MATTER_GRID_RES=1024 (sub-cell, decoupled from light),
-    // dense-sparse storage, diffusion REMOVED (decay kept), uptake is now a circular DISC gather over the
-    // cell's footprint (sequential id-order, conservation-exact), and seeding flipped to UNIFORM (no diffusion
-    // ⇒ matter must be everywhere). All three trajectory goldens move in every dimension; matterIsConserved +
-    // autotrophGrowsIntoAColony + parallel==sequential + round-trip + torus-homogeneity all held.
-    // Re-baselined 2026-06-21: ADAPTIVE QUAD-TREE MATTER FIELD (QUADTREE.md). The flat CytoMatterGrid is
-    // replaced by CytoMatterField — a per-tile adaptive quad-tree refined to sub-cell leaves under cell
-    // footprints, with a bidirectional diffusion JUNCTION (openFootprint/balance) replacing the old flat
-    // disc-gather + grid-diffusion, and observer-gated progressive collapse instead of full-map diffusion.
-    // Cell matter uptake is now sampled from the fine leaves around each cell rather than a coarse grid index,
-    // so per-tick uptake magnitudes differ → the whole trajectory diverges. ALL three goldens move in every
-    // changed dimension; the `grid` digest now hashes the quad-tree leaves (forEachLeaf). Determinism gates
-    // (parallel==sequential, round-trip) and matter conservation held.
-    // Re-baselined 2026-06-21 (#2): DEPTH-SCALED COLLAPSE DELAY. The collapse threshold now DOUBLES per layer
-    // above the finest (64 at depth 9, 128 at 8, 256 at 7, …) so dispersal advances at a constant speed —
-    // twice as far takes twice as long (CytoMatterField.maintainNode). The finest-layer timing is unchanged,
-    // so only scenarios whose unobserved regions collapse 2+ layers within budget move: GROWTH + INTERACT
-    // drift (cells vacate regions that then pool more slowly), MUTATION is byte-identical. Determinism +
-    // conservation gates held.
-    // Re-baselined 2026-06-21 (#3): base MATTER_COLLAPSE_DELAY 64→256 (finest layer now holds 256 ticks before
-    // pooling; coarser layers scale from there). Same shape as #2 — GROWTH + INTERACT drift, MUTATION
-    // byte-identical; determinism + conservation held.
-    // Re-baselined 2026-06-22: IMPORT FIX — the gene phase now runs BEFORE the cell↔env junction (was after),
+    // Detailed golden-change history is in git log (see cleanup initiative `project_cleanup_initiative.md`).
+    // Re-baselined 2026-07-07: ABC→RGB alphabet rename (CytoSeed.SEED_MONOMERS a,b,c → r,g,b). The element
+    // atoms are the same three species, just renamed, BUT SpeciesRegistry ids are assigned in LEXICOGRAPHIC
     // so an Import gene's bias actually reaches the junction the same tick (it was cleared every tick at build
     // before the junction could ever read it ⇒ Import was inert). The reorder gives every cell a one-tick
     // phase shift between metabolism and intake, so GROWTH + INTERACT (mutation-off presets, no Import gene)

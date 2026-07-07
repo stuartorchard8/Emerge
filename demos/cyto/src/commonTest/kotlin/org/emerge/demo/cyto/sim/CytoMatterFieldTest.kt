@@ -24,7 +24,7 @@ class CytoMatterFieldTest {
     @Test fun splitConservesAtoms() {
         val f = CytoMatterField.seededUniform(10)
         val t0 = f.totalAtoms()
-        f.openFootprint(5f, 5f, 0.6f, 1); f.closeFootprint()   // forces splits to depth 9
+        f.openFootprint(5f, 5f, 0.6f, 1); f.closeFootprint()   // forces splits to MAX_DEPTH
         assertTrue(leafCount(f) > 4, "footprint access should have refined the tile")
         assertEquals(t0, f.totalAtoms(), "split must conserve atoms")
     }

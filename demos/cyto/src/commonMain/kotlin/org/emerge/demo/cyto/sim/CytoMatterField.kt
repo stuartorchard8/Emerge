@@ -23,9 +23,9 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     companion object {
         const val BASE_RES = 4
         const val MAX_DEPTH = 6
-        val SPAN = CytoLightField.SPAN          // logical torus extent (256 cell-diam)
-        val HALF = CytoLightField.HALF          // 128
-        val TILE = SPAN / BASE_RES              // 128 cell-diam per tile
+        val SPAN = CytoLightField.SPAN          // logical torus extent (64 cell-diam)
+        val HALF = CytoLightField.HALF          // 32
+        val TILE = SPAN / BASE_RES              // 16 cell-diam per tile
         /** Max disc half-extent (cell-diam) — bounds a giant cell's footprint. */
         const val MAX_DISC_RADIUS = 4f
 

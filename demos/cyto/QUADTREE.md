@@ -17,18 +17,18 @@ act as diffusion junctions** that mix their footprint (incl. across tile borders
 ## Data model
 
 - The torus is a fixed **base grid of `BASE_RES × BASE_RES` tiles**, **torus mod-indexed** — the wrap lives
-  entirely here, so no quad-tree ever straddles the seam. `BASE_RES = 2` (a 2×2 floor: the world never fully
+  entirely here, so no quad-tree ever straddles the seam. `BASE_RES = 4` (a 4×4 floor: the world never fully
   unifies, which is fine — there's ~always ≥1 observer).
-- Each tile is the root of an **adaptive quad-tree**, max depth `MAX_DEPTH = 9`. With `SPAN = 2·CELLS_PER_AXIS
-  = 256` cell-diam: tile = 128 cell-diam, finest leaf = 128/2⁹ = **0.25 cell-diam** (sub-cell; a cell's radius
-  spans ~2 fine leaves → ~13-leaf circular footprint).
+- Each tile is the root of an **adaptive quad-tree**, max depth `MAX_DEPTH = 6`. With `SPAN = 2·CELLS_PER_AXIS
+  = 64` cell-diam: tile = 16 cell-diam, finest leaf = 16/2⁶ = **0.25 cell-diam** (sub-cell; a cell's radius
+  spans ~4 fine leaves → ~63-leaf circular footprint).
 - A **node** is one of:
   - **leaf**: `{ MoleculeStore store, int lastAccessTick }`
   - **internal**: `{ 4 child node-refs, int[3] monomerRemainder }` — *no* `lastAccessTick`.
 - **Storage**: pooled index arrays (struct-of-arrays) + free-lists for nodes and `MoleculeStore`s, so
   split/merge recycle and steady-state per-tick allocation is ~0. **Sparse**: only split nodes exist; the void
   is a few tile-leaves.
-- **Tunable constants** (all sim-behaviour knobs): `BASE_RES=2`, `MAX_DEPTH=9`, `COLLAPSE_DELAY` (≈64,
+- **Tunable constants** (all sim-behaviour knobs): `BASE_RES=4`, `MAX_DEPTH=6`, `COLLAPSE_DELAY` (≈256,
   per-layer no-access delay before pooling), `DECAY_PERIOD` (species atomisation rate), `MAINTAIN_PERIOD`
   (≈8–16, how often `maintain` runs), and a disc-radius cap (giant-cell footprint bound).
 

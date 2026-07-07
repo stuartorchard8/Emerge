@@ -648,10 +648,9 @@ object CytoBiologyCore {
         }
     }
 
-    /** Evaluate one side of a [Clause] to an integer. Uses a **resolved cache** ([CellWork.resolvedCount])
-     *  for Chem/Conc operands: the cache maps every species in the genome to its [_speciesCache] index
-     *  (built by [CellWork.populateResolved] before the gene loop). This turns O(S) linear scans into
-     *  O(1) direct array lookups for the ~70% of genes that share species with other genes. */
+    /** Evaluate one side of a [Clause] to an integer. Uses [CellWork.resolvedCount] with lazy
+      *  per-species resolution: the first read per species per cell does a linear scan and caches
+      *  the index for O(1) subsequent reads. */
     private fun operand(op: Operand, work: CellWork, bioBonds: Int): Int = when (op) {
         is Operand.Constant -> op.value
         is Operand.Chem -> work.resolvedCount(op.speciesId)
