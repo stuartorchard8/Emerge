@@ -26,7 +26,7 @@ class CytoBench {
             b.update<org.emerge.demo.cyto.sim.CytoMatterGridComponent>(org.emerge.demo.cyto.sim.GRID_SINGLETON) {
                 org.emerge.demo.cyto.sim.CytoMatterGridComponent(org.emerge.demo.cyto.sim.CytoMatterField.empty())
             }
-            val side = 30   // 900 cells packed ~MIN_RADIUS apart
+            val side = 30
             for (gy in 0 until side) for (gx in 0 until side) {
                 val big = giant && gx == side / 2 && gy == side / 2
                 b.spawnCell(
@@ -93,7 +93,7 @@ class CytoBench {
         val builder = org.emerge.sim.core.sim.SimBuilder(
             org.emerge.sim.core.sim.SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
         val side = kotlin.math.ceil(kotlin.math.sqrt(count.toDouble())).toInt()
-        val spacing = 18f   // logical units; grid cell is 32 wide, so ~3 cells/grid-cell on average
+        val spacing = 18f
         val origin = -side * spacing / 2f
         var made = 0
         outer@ for (gy in 0 until side) for (gx in 0 until side) {

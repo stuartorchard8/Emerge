@@ -44,7 +44,7 @@ class DivisionBugProbe {
             var maxDeg = 0
             for (i in 0 until w.count) maxDeg = maxOf(maxDeg, w.csr.degreeOf(i))
             val n = cells.size
-            // Report on division bursts, big velocities, or every 100 ticks for baseline.
+            // Report on division bursts, big velocities, or periodically for baseline.
             val velExplode = maxVel > 10_000_000L   // tune after seeing the baseline; raw vel is Int-bounded
             if (t % 100 == 0 || n != prevCells || (velExplode && !bursting)) {
                 sb.appendLine("$t\t$n\t$maxVel\t$maxPos\t$maxDeg")

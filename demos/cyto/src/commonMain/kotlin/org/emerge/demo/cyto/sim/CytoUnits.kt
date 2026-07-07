@@ -21,7 +21,7 @@ object CytoUnits {
 
     private const val SCALE = 1f / CELLS_PER_AXIS // logical-radius-unit -> normalised
 
-    /** Logical length (in cell-radius units) -> engine [Frac]. radius 1.0 -> Frac(1,32). */
+    /** Logical length (in cell-radius units) -> engine [Frac]. */
     fun len(logical: Float): Frac = Frac((logical * SCALE * Int.MAX_VALUE).toLong())
 
     /** Logical coordinate -> torus [Coord] (wraps via Int two's-complement for huge values). */

@@ -351,13 +351,10 @@ class CytoSoaSpecTest {
 
     @Test
     fun saveRoundTripsTheMatterWorld() {
-        // Break-powered division bootstraps slowly (under the moving daylight band the founder builds a
-        // reserve + biomass for ~1000 ticks before its first split), so colonise at the deterministic
-        // baseline first, THEN evolve the colony under mutation — exercising the save codec on a real,
+        // Break-powered division bootstraps slowly, so colonise at the deterministic baseline first,
+        // THEN evolve the colony under mutation — exercising the save codec on a real,
         // multi-cell, genetically-diverged world. (Mutation-on from tick 0 wouldn't colonise here: the lone
-        // founder mutates before its slow first division. The LIVE world mutates 500× slower —
-        // MUTATION_RATE_DENOM=100_000 vs 200 — so its first division lands long before any mutation; rate
-        // 200 is a divergence stress fixture.)
+        // founder mutates before its first division. The LIVE world mutates slower than the stress fixture.)
         val grown = run(createCytoInitialState(), ticks = 1500)
         val state = run(grown, cfg.copy(mutationRateDenom = 200), ticks = 400)
 
@@ -679,9 +676,9 @@ class CytoSoaSpecTest {
 
     @Test
     fun repairHealRateIsCappedPerTick() {
-        // Repair mends at a bounded RATE: one tick heals at most MAX_REPAIR_HEAL_PER_TICK per connection,
-        // however much fuel the cell hoards. So an energy-rich cell can't instantly undo damage — the basis
-        // for a hard enough stretch breaking a link despite active repair (its stress outruns this cap).
+        // Repair mends at a bounded RATE per connection regardless of fuel hoarded, so an energy-rich
+        // cell can't instantly undo damage — the basis for a hard enough stretch breaking a link
+        // despite active repair (its stress outruns this cap).
         val cap = CytoTuning.MAX_REPAIR_HEAL_PER_TICK
         val dmg = maxConnectionDamage(run(damagedPair(repairOnly, damage = 2.5f), ticks = 1))
         assertTrue(dmg < 2.5f, "repair should heal some damage in a tick; got $dmg")
@@ -690,23 +687,23 @@ class CytoSoaSpecTest {
 
     @Test
     fun extremeStretchBreaksHealthyConnectionInOneTick() {
-        // A perfectly healthy (damage 0) link stretched past the over-stretch break distance
-        // (OVERSTRETCH_BREAK_MULTIPLE × rest ≈ 2 cell-widths of gap) takes a full CONNECTION_BREAK_DAMAGE of
-        // stress in a single tick and breaks — repair can't pre-empt it (stress is applied after biology).
+        // A perfectly healthy link stretched past the over-stretch break distance takes a full
+        // CONNECTION_BREAK_DAMAGE of stress in a single tick and breaks — repair can't pre-empt it
+        // (stress is applied after biology).
         val (sx, sy) = CytoLightField.SOURCES.first()
         val b = SimBuilder(SimState(randomSeed = 1))
         b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(CytoSeed.MATTER_UNIFORM_LEVEL)) }
-        // Pin radius 0.5 (no growth drift) ⇒ rest 1.0, break distance = OVERSTRETCH_BREAK_MULTIPLE × rest.
-        // Place the centres ~10% PAST the break point — derived from the tuning so the test tracks
-        // OVERSTRETCH_BREAK_MULTIPLE instead of hardcoding a gap that silently goes under the threshold when
-        // welds are made less fragile (centres rest×(1 + 1.1·multiple) apart ⇒ stretch just over breakDist).
+        // Pin radius so rest = 1.0, break distance = OVERSTRETCH_BREAK_MULTIPLE × rest.
+        // Place the centres past the break point — derived from the tuning so the test tracks
+        // OVERSTRETCH_BREAK_MULTIPLE instead of hardcoding a gap that silently goes under the threshold
+        // when welds are made less fragile.
         val r = Frac(1, 2)
         val rest = 1f   // 2 × radius 0.5
         val centreDist = rest * (1f + 1.1f * CytoTuning.OVERSTRETCH_BREAK_MULTIPLE)
         val a = b.spawnCell(CytoUnits.coord2(sx, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
         val c = b.spawnCell(CytoUnits.coord2(sx + centreDist, sy), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
         addSpring(b, a, c, cfg)
-        assertEquals(0, springCount(run(b.build(), ticks = 1)), "a link stretched past ~2 cell-widths must break in one tick, even with repair")
+        assertEquals(0, springCount(run(b.build(), ticks = 1)), "a link stretched past break distance must break in one tick, even with repair")
     }
 
     @Test
@@ -716,10 +713,9 @@ class CytoSoaSpecTest {
         // welds to touching cells that share a connected neighbour.
         fun touchingPair(genomeA: List<Gene>, genomeB: List<Gene>): SimState {
             val b = SimBuilder(SimState(randomSeed = 1))
-            // biomass 4000 bonds ⇒ baseline radius sqrt(4000/16000)=0.5; pin logicalRadius to it so the cells
-            // are full-size from tick 0 (no elastic growth drift). minDist = 1.0; placed 0.9 apart ⇒
-            // penetration 0.1 — a touch (contact), but well under the auto-weld threshold (penetration >
-            // minDist/4 = 0.25). `ab` reserve fuels the BreakBond Repair gene (light-independent).
+            // biomass bonds ⇒ baseline radius; pin logicalRadius to it so the cells are full-size from
+            // tick 0 (no elastic growth drift). minDist = 1.0; placed apart so penetration is a touch
+            // (contact), but well under the auto-weld threshold. Reserve fuels the BreakBond Repair gene.
             val r = Frac(1, 2)
             b.spawnCell(CytoUnits.coord2(-0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = genomeA)
             b.spawnCell(CytoUnits.coord2(0.45f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = genomeB)
@@ -782,10 +778,8 @@ class CytoSoaSpecTest {
         // around, a monomer deposit stays exactly where it's put and atoms are conserved.
         val seed = CytoMatterField.empty()
         val aId = SpeciesRegistry.id("r")
-        // Deposit well inside a single base tile (the origin is a 4-tile corner, which would split the disc).
-        // Coords must stay in-bounds: the torus is [-HALF,HALF) = [-32,32) with TILE=16, so (8,8) sits mid-tile
-        // in [0,16) — clear of the tile corners (0/16) and the wrap seam. (40,40) would wrap to (-24,-24).
-        // The disc refines to fine leaves (~0.25 cell-diam), so the 1000 atoms spread across the footprint's
+        // Deposit well inside a single base tile (the origin is a multi-tile corner, which would split the disc).
+        // Coords must stay in-bounds. The disc refines to fine leaves, so atoms spread across the footprint's
         // leaves — read locality by summing leaves NEAR vs FAR, not a single point.
         seed.deposit(8f, 8f, 0.6f, aId, 1000)   // 'r' is a monomer → env decay leaves it untouched too
         val initial = run {

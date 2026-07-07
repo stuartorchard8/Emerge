@@ -186,9 +186,7 @@ object CytoLifecycleSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         val daughterRadius = radiusForBiomass(halfBio)
 
         // Place mother and daughter exactly their spring rest length apart — separation = 2·offset =
-        // 2·daughterRadius = rA+rB — so the new connection starts RELAXED, with no velocity kick. (The
-        // old offset of 0.25·motherRadius put the pair at ~35% of rest, so the spring shoved them apart
-        // every division; that churn was what the asymmetric drag rectified into chaotic locomotion.)
+        // 2·daughterRadius = rA+rB — so the new connection starts RELAXED, with no velocity kick.
         val offset = splitNormal * CytoUnits.len(daughterRadius.toFloat())
 
         // Clonal division: the daughter inherits the mother's type AND genome (separate map copies). The

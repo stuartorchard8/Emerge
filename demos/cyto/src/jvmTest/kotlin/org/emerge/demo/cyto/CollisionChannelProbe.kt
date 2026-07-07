@@ -73,7 +73,7 @@ class CollisionChannelProbe {
         val faceY = CytoUnits.toLogical(Coord(w0.posY[face])).toDouble()
         val faceR = CytoUnits.toLogical(Coord(w0.radiusRaw[face].toInt())).toDouble()
         val tgtR = CytoUnits.toLogical(Coord(org.emerge.sim.core.physics.primitives.Frac(MIN_RADIUS.raw).let { CytoUnits.len(it.toFloat()).raw.toInt() })).toDouble()
-        // place a FREE inert target just touching the face (gap ~0.02 cell-diam) along +x
+        // place a FREE inert target just touching the face along +x
         val tgtX = faceX + faceR + tgtR + 0.02
         val tgtY = faceY
 

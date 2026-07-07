@@ -79,22 +79,16 @@ class CytoSoaReducer(
     // requires the single-threaded biology path (bioParallelThreshold left OFF). Reset/printed by the bench.
     private val bioProfile: BioProfile? = null,
     // Slot count above which the spring gather fans across [executor]; below it runs sequentially.
-    // Default 2048 from the profileCytoGrowth crossover: at ~1.4k cells the fan-out's wakeup/barrier
-    // cost and cache/bandwidth interference with the (single-threaded) biology/contacts phases still
-    // outweigh the forces win — a net loss — while by ~2.7k cells forces is ~2.1× and the tick ~1.25×
-    // faster. The game's normal carrying capacity (≤~500) thus stays sequential with zero overhead.
+    // Set high enough that the game's normal population stays sequential with zero overhead.
     // Tests force the parallel path at small N by lowering this.
     private val springParallelThreshold: Int = 2048,
     // Cell count above which the biology gene phase fans grid-cell groups across [executor]. The grouping is
     // bit-identical to the sequential pass (each grid-cell touches only its own reservoir cell, so groups are
     // independent; parallelMatchesSequential gates it), so this is purely a perf knob.
     //
-    // DEFAULTED OFF (Int.MAX_VALUE). Profiling (CytoBench A/B, up to ~5.5k cells) found the fan-out a net
-    // LOSS on a high-single-core-turbo desktop CPU: every phase — including untouched single-threaded ones,
-    // and even the existing parallel spring solver — slows ~1.5× under the fan-out, because holding 8 cores
-    // busy every tick pins the CPU at its all-core clock (~1.5× below single-core turbo). The partial
-    // coverage (only the genes sub-phase is parallel) + per-tick invokeAll overhead can't offset that. The
-    // scaffold is kept (bit-identical, tested) for flat-all-core-clock targets (servers); lower this there to
+    // DEFAULTED OFF — profiling found the fan-out a net LOSS on typical desktop hardware because holding
+    // all cores busy pins the CPU at its all-core clock, offsetting the parallelism benefit. The scaffold
+    // is kept (bit-identical, tested) for flat-all-core-clock targets (servers); lower this there to
     // enable it. See demos/cyto/PERF.md.
     private val bioParallelThreshold: Int = Int.MAX_VALUE,
 ) {

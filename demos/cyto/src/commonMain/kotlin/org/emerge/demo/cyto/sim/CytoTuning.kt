@@ -33,8 +33,8 @@ object CytoTuning {
     val LIGHT_STRENGTH = Frac(1, 200)
     /** Gaussian falloff radius of a light source (logical units): light is strong within ~σ and ~0 well
      *  before the midpoint between sources, leaving dark contested zones. In moving mode it's the
-     *  half-width of the daylight band (how much of the world is "day" at once). */
-    const val LIGHT_FALLOFF = 8f   // ~12.5% of 64-cell-diam torus width
+     *  half-width of the daylight band (how much of the world is "day" at once). ⚙ */
+    const val LIGHT_FALLOFF = 8f
     /** Shading (interference competition): when true, cells sharing a grid-cell split that cell's incident
      *  light by capture weight (exposure × radius), so a bigger cell starves its neighbours. False = every
      *  cell gets its own full light (no co-located split) — toggle to test whether shading still earns its
@@ -51,43 +51,38 @@ object CytoTuning {
      *  through the dark (store bonded molecules + a BreakBond gene to burn them) or follow the light.
      *  false = the 4 static quarter-point sources (the original world). */
     const val LIGHT_MOVING = true
-    /** Ticks for the daylight band to sweep once around the torus — the day/night period. At ~60 ticks/s,
-     *  3600 ≈ one minute. (Only used when [LIGHT_MOVING].) */
+    /** Ticks for the daylight band to sweep once around the torus — the day/night period. (Only used when [LIGHT_MOVING].) */
     const val LIGHT_ORBIT_PERIOD = 3600L
 
     // ── Matter dynamics (the conserved resource's per-tick law; its *seed* is in CytoSeed) ────────────
     /** Slow inter-grid-cell diffusion: per tick each edge moves `⌊|gradient|·NUM/DEN⌋` down-gradient.
-     *  Keep `4·NUM/DEN ≤ 1` (a cell has 4 edges) so a cell can't be over-drawn negative — violating it
-     *  makes the bump-to-zero clamp destroy matter (breaks conservation). Smaller = slower, coarser settle. */
+     *  Keep `4·NUM/DEN ≤ 1` so a cell can't be over-drawn negative — violating it
+     *  makes the bump-to-zero clamp destroy matter (breaks conservation). Smaller = slower, coarser settle. ⚙ */
     const val MATTER_DIFFUSE_NUM = 1
     const val MATTER_DIFFUSE_DEN = 8
     /** Run the (whole-grid) diffusion step only every Nth tick — it's a slow background process, so
      *  per-tick is wasted work. Higher = cheaper but slower matter spread (net flow ~ 1/this). ⚙ */
     const val MATTER_DIFFUSE_PERIOD = 128L
     /** Environmental decay: free molecules break their leftmost bond at rate 1/this per decay step (run on
-     *  the diffusion cadence). Returns matter stranded by selective uptake (species no live cell can use)
-     *  toward monomers. Higher = slower decay; 0 disables. ⚙ */
+     *  the diffusion cadence). Returns matter stranded by selective uptake toward monomers. Higher = slower decay; 0 disables. ⚙ */
     const val MATTER_DECAY_PERIOD = 8000
     /** Quad-tree matter field (QUADTREE.md): raw ticks a FINEST (depth MAX_DEPTH) region may go un-accessed
      *  before its parent pools it one layer coarser. The delay DOUBLES per layer above the finest, so a merge
      *  that spreads matter over 2× the area waits 2× as long — dispersal advances at a constant speed (twice
-     *  as far ⇒ twice as long). A fully unobserved corpse re-integrates to the tile over ~this·2^(MAX_DEPTH)
-     *  ticks. Higher = sharper, longer-lived self-dug gradients (and more live nodes). ⚙ */
+     *  as far ⇒ twice as long). Higher = sharper, longer-lived self-dug gradients (and more live nodes). ⚙ */
     const val MATTER_COLLAPSE_DELAY = 256
 
     // ── Metabolism / energy (per gene, per tick) ─────────────────────────────────────────────────────
     /** Scale factor for all chemical interactions. Defines the ratio between the minimum cell biomass and the smallest energy unit */
     const val CHEMISTRY_SCALE = 1_000
     /** light → quanta: `quanta = ⌊field × exposure × SCALE⌋` (a fully-exposed cell on a source gets
-     *  ~`STRENGTH·SCALE` ops/tick). 1 quantum = 1 op. At STRENGTH=1/200 the peak per-tick budget is
-     *  `SCALE/200`, so SCALE=120_000 ⇒ ~600 ops/tick at full exposure (was 6_000_000 ⇒ ~30_000, an
-     *  absurd one-tick energy that let cells photosynthesise-and-divide; division is now break-powered and
-     *  this is nerfed ~50× so growth/charge-up is metered — tune by watching the cell panel's quanta). */
+     *  ~`STRENGTH·SCALE` ops/tick). 1 quantum = 1 op. The peak per-tick budget scales with LIGHT_QUANTA_SCALE
+     *  to meter cell growth and charge-up rates. Tune by watching the cell panel's quanta. ⚙ */
     const val LIGHT_QUANTA_SCALE = 120 * CHEMISTRY_SCALE
     /** Per-gene efficiency gear (Gene.efficiency, g): a throughput action does `g+1` actions per energy unit
-     *  but may spend at most `EFFICIENCY_REF shr g` energy/tick. REF=2^24: g=0 ⇒ 1 action/energy, 16 777 216
-     *  energy cap (effectively unlimited at the light scale, so g=0 is the neutral default); g=24 ⇒ 24
-     *  actions/energy but only 1 energy/tick (≈24 actions). Optimum gear is niche-dependent — see [Gene]. */
+     *  but may spend at most `EFFICIENCY_REF shr g` energy/tick. g=0 is the uncapped neutral default;
+     *  higher values increase actions/energy but cap the energy budget, trading throughput rate for fuel
+     *  efficiency. Optimum gear is niche-dependent — see [Gene]. ⚙ */
     const val EFFICIENCY_MAX_GEAR = 16
     const val EFFICIENCY_REF = 1 shl EFFICIENCY_MAX_GEAR
     /** Import gain: each energy unit an Import gene spends lowers the cell's effective junction target
@@ -95,8 +90,7 @@ object CytoTuning {
      *  units IN per spent quantum (CytoBiologyCore.passiveEnvExchange). >1 makes active uptake more efficient,
      *  which a cell needs to concentrate a species above ambient and hold separation from the environment. */
     const val IMPORT_BIAS_GAIN = 4
-    /** Connection damage healed per Repair op (one quantum). 0.25 ≈ the old free per-tick heal, so ~one
-     *  op/tick maintains a lightly-loaded connection; more stress needs more energy. */
+    /** Connection damage healed per Repair op (one quantum). ⚙ */
     const val REPAIR_PER_OP = 0.25f
     /**
      * Max damage a single EXISTING connection can be healed per tick, however much repair energy the cell
@@ -122,8 +116,7 @@ object CytoTuning {
      *  Lower = an earlier/tighter plateau. ⚙ */
     const val METABOLIC_BIOMASS_SCALE = 32 * CHEMISTRY_SCALE
     /** Degradation: a cell's wear accumulator gains its total biomass bonds each tick; every
-     *  DEGRADE_PERIOD of accumulated wear breaks one bond (so decay rate ∝ size).
-     *  Increased from 4000 to 18000 to compensate for cytoplasm contribution to wear. */
+     *  DEGRADE_PERIOD of accumulated wear breaks one bond (so decay rate ∝ size). ⚙ */
     const val DEGRADE_PERIOD = 18000
     /** Cell dies when total biomass falls below this. */
     const val DEATH_BIOMASS = 1 * CHEMISTRY_SCALE
@@ -137,9 +130,8 @@ object CytoTuning {
     /** Cap on a cell's **collision/physical** radius (the broadphase + welding + render footprint), even as
      *  its biomass/metabolic size grows past it. Decouples emergent metabolic size from physical size: a
      *  hoarding cell can be metabolically huge but never balloons its collider, which would otherwise coarsen
-     *  the spatial grid (cellSize = 2·maxRadius) and weld it to the whole colony — an O(n·degree) per-tick
-     *  blow-up. Normal cells sit under this (radius 1.0 = biomass 16k; carrying-capacity cells ~0.7-0.87, and
-     *  the seed GROW gates are < 16k), so only oversized cells have their footprint capped. */
+     *  the spatial grid and weld it to the whole colony — an O(n·degree) per-tick blow-up. Only oversized
+     *  cells have their footprint capped. ⚙ */
     val MAX_COLLISION_RADIUS = Frac(1, 1)
 
     // ── Exposure / shading ───────────────────────────────────────────────────────────────────────────
@@ -159,16 +151,14 @@ object CytoTuning {
      * stretched one (which uses [SPRING_STIFFNESS]). Tension stays soft so flex/contraction/locomotion are
      * untouched; only the *outward push* against crushing is stiffened. This is the dial for the through-cell
      * degeneracy: a chord A–C welded across a middle cell B is held short by B being squashable, so it settles
-     * at a low over-stretch ratio (≈ 0.17 at multiple 1 — *below* the ≈0.21 band of ordinary welds, so it
-     * can't be told apart by stretch). Stiffening B's compression resistance makes the A–B/B–C struts win the
-     * equilibrium and hold A,C apart, raising the chord's settled over-stretch ratio toward the straight-line
-     * ceiling: for a symmetric collinear triad, **ratio = m / (2·(m+2))** (m = this multiple) —
-     *   m=1 → 0.17 (limp, today)   m=1.5 → 0.21 (clears the ordinary-weld band)   m=3 → 0.30   m→∞ → 0.50 ceiling.
-     * Welds stay fully compressible (B still squashes, just not limply); the chord never reaches a stretch that
-     * breaks it alone (≤0.5), but it lifts clear of the legit band (so a tuned over-stretch break can target it)
-     * and the higher carried load makes the collinear config more sensitive to perturbation (buckles B out into
-     * 2D → a legitimate triangle). Integer multiple of the base relaxation rate; keep ≤ ~10 so m·SPRING_STIFFNESS
-     * stays a stable (<1) per-iteration relaxation. ⚙ */
+     * at a low over-stretch ratio — *below* the band of ordinary welds, so it can't be told apart by stretch.
+     * Stiffening B's compression resistance makes the A–B/B–C struts win the equilibrium and hold A,C apart,
+     * raising the chord's settled over-stretch ratio toward the straight-line ceiling: for a symmetric collinear
+     * triad, ratio = m / (2·(m+2)) (m = this multiple). Welds stay fully compressible (B still squashes);
+     * the chord never reaches a stretch that breaks it alone, but it lifts clear of the legit band (so a tuned
+     * over-stretch break can target it) and the higher carried load makes the collinear config more sensitive
+     * to perturbation (buckles B out into 2D → a legitimate triangle). Integer multiple of the base relaxation
+     * rate; keep within a stable range so m·SPRING_STIFFNESS stays <1 per-iteration. ⚙ */
     const val WELD_COMPRESSION_STIFFNESS_MULTIPLE = 5
     /** Fraction of relative normal velocity cancelled per iteration (real, dissipative) — the overdamping. */
     val SPRING_DAMPING = Frac(1, 4)
@@ -182,9 +172,9 @@ object CytoTuning {
      * instead of ramping. Mirrors SPRING_DAMPING for welds.
      */
     val CONTACT_DAMPING = Frac(1, 4)
-    /** When true, two non-connected cells that overlap significantly (penetration > 25% of minDist)
-     *  auto-weld on contact. This causes cells to stick together when physics pushes them into
-     *  deep overlap (e.g. cells dividing while surrounded). ⚙ */
+    /** When true, two non-connected cells that overlap significantly auto-weld on contact. This causes
+     *  cells to stick together when physics pushes them into deep overlap (e.g. cells dividing while
+     *  surrounded). ⚙ */
     const val AUTO_WELD_ON_OVERLAP = false
     /** Connection breaks when accumulated stress damage exceeds this (higher = less fragile). */
     const val CONNECTION_BREAK_DAMAGE = 5f
@@ -231,33 +221,30 @@ object CytoTuning {
     /** Stretch (logical units) → stress, for connection damage. Lower = a given stretch hurts less. */
     const val CONNECTION_STRESS_SCALE = 0.5f
     /**
-     * Over-stretch break distance, in multiples of a connection's rest length (rest = sum of the two radii ≈
-     * one cell-width, two touching cells' centres being one diameter apart). At this much STRETCH (gap beyond
-     * rest) a link takes a full CONNECTION_BREAK_DAMAGE of stress in a single tick — enough to destroy a
-     * perfectly healthy link instantly, no matter how well-knit or how hard it's repaired (this term is NOT
-     * degree-discounted). 2.0 ⇒ a ~2-cell-width gap, where the bond rendering starts breaking down. Lower =
-     * links snap sooner under load. ⚙ */
+     * Over-stretch break distance, in multiples of a connection's rest length (rest = sum of the two radii).
+     * At this much STRETCH (gap beyond rest) a link takes a full CONNECTION_BREAK_DAMAGE of stress in a
+     * single tick — enough to destroy a perfectly healthy link instantly, no matter how well-knit or how
+     * hard it's repaired (this term is NOT degree-discounted). Lower = links snap sooner under load. ⚙ */
     const val OVERSTRETCH_BREAK_MULTIPLE = 2.2f
     /**
      * Exponent of the over-stretch damage ramp: damage = (stretch / breakDistance)^this × CONNECTION_BREAK_DAMAGE.
      * 1 = linear (a given stretch fraction hurts proportionally — too fragile, moderate stretch breaks links);
      * higher = the curve stays near zero through low/moderate stretch and spikes only as it nears the break
-     * distance, so links flex and recover under normal load but still snap instantly at ~2 cell-widths.
+     * distance, so links flex and recover under normal load but still snap at high stretch.
      * Integer (applied by repeated multiply) so it's deterministic — no transcendental pow(). ⚙ */
     const val OVERSTRETCH_DAMAGE_EXPONENT = 3
     /**
      * Through-cell (collinearity) damage: a weld whose two endpoints share a welded neighbour B sitting
      * ~collinear BETWEEN them — a chord passing *through* cell B — is a structural degeneracy the stretch
      * terms can't catch: in a crammed body such a chord sits near rest (low/zero over-stretch) yet is
-     * geometrically unmistakable (angle at B → 180°). When a common neighbour's angle exceeds acos(this) the
-     * chord accrues [WELD_COLLINEAR_DAMAGE] of stress (NOT degree-discounted) until it breaks, leaving the
-     * real A–B / B–C welds intact. The threshold sits in the dead zone between legit triangles (apex ≤ ~110°
-     * in packed bodies) and through-cell chords (≥ ~155°). Compared via SQUARED cosine (sqrt-free) so it stays
-     * deterministic — no transcendental. -0.7 ≈ 134°. ⚙ */
+     * geometrically unmistakable. When a common neighbour's angle exceeds acos(this) the chord accrues
+     * [WELD_COLLINEAR_DAMAGE] of stress (NOT degree-discounted) until it breaks, leaving the real A–B / B–C
+     * welds intact. The threshold sits in the dead zone between legit triangles and through-cell chords.
+     * Compared via SQUARED cosine (sqrt-free) so it stays deterministic — no transcendental. ⚙ */
     const val WELD_COLLINEAR_COS = -0.7f
     /** Stress/tick added to a confirmed through-cell chord ([WELD_COLLINEAR_COS]). Net of repair (capped at
-     *  [MAX_REPAIR_HEAL_PER_TICK]) this must be positive to ever break it; 1.5 ⇒ ~net 1.0/tick ⇒ breaks in
-     *  ~[CONNECTION_BREAK_DAMAGE]/1 ticks, while a single transient collinear tick (1.5, then healed) can't. ⚙ */
+     *  [MAX_REPAIR_HEAL_PER_TICK]) this must be positive to ever break it. Higher values break chords
+     *  faster. ⚙ */
     const val WELD_COLLINEAR_DAMAGE = 2.0f
     /** Scan cadence (ticks) for the collinearity check. A through-cell chord persists for thousands of ticks,
      *  so it needn't be scanned every tick; >1 amortizes the (small, degree-bounded) cost — the per-scan damage
@@ -276,8 +263,7 @@ object CytoTuning {
     // ── Evolution ────────────────────────────────────────────────────────────────────────────────────
     /** Per-tick genetic damage: each gene of every cell independently faces each mutation operator
      *  (threshold drift / duplication / deletion / point-mutation) with probability `1/this` per tick.
-     *  `0` disables mutation. At 1/100k a cell accrues well under one mutation per ~10k-tick lifetime, so
-     *  most individuals persist unmodified while the population explores. */
+     *  `0` disables mutation. ⚙ */
     const val MUTATION_RATE_DENOM = 0
     /** Master switch for mutation. `false` makes the live config run with rate-denom 0 — fully deterministic,
      *  no genetic drift — for authoring / observing a fixed genome. (Probes that pass an explicit
@@ -303,8 +289,8 @@ object CytoTuning {
     const val GENOME_MAX_BOND_TYPES = 5
     /** Fixed scale for the [org.emerge.demo.cyto.sim.Operand.Conc] (concentration) operand: `Conc(sp)`
      *  evaluates to `count(sp) · this / totalBiomass` (size-normalised), so a constant threshold reads as
-     *  "molecules of sp per unit body, ×this". 1000 ⇒ a threshold of 100 ≈ 0.1 molecule per biomass-bond.
-     *  Size-independent (a fixed bolus dilutes as biomass grows → a developmental clock). ⚙ */
+     *  "molecules of sp per unit body, ×this". Size-independent (a fixed bolus dilutes as biomass grows →
+     *  a developmental clock). ⚙ */
     const val CONC_SCALE = 1 * CHEMISTRY_SCALE
     /** Max AND-clauses in one gene's condition. A mutation that would add a clause past this is rejected
      *  (bounds gate complexity + mutation cost); a positional *band* needs only 2 (`lo < Conc < hi`). ⚙ */

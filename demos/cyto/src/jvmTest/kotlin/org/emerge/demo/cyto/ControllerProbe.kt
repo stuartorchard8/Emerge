@@ -96,7 +96,7 @@ class ControllerProbe {
         val every = (ticks / 20).coerceAtLeast(1)
         for (t in 0..ticks step every) sb.appendLine("$t\t${pop[t]}\t(${f(comX[t])},${f(comY[t])})\t${f(meanR[t])}\t${f(orgOff[t])}")
 
-        // late window = last 40% (after growth has plateaued, so drift = locomotion not growth-shift)
+        // late window = last portion (after growth has plateaued, so drift = locomotion not growth-shift)
         val w0 = (ticks * 6) / 10
         var rlo = Double.MAX_VALUE; var rhi = -Double.MAX_VALUE
         for (t in w0..ticks) { if (meanR[t] < rlo) rlo = meanR[t]; if (meanR[t] > rhi) rhi = meanR[t] }

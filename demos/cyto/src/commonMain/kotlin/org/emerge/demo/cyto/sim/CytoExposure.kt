@@ -17,7 +17,7 @@ import org.emerge.sim.core.physics.primitives.Frac
 object CytoExposure {
 
     /** Monotonic pseudo-angle of (x, y) in [0, 4), increasing CCW — an `atan2`-free, trig-free,
-     *  scale-invariant ordering key (the "diamond angle"). 1 unit ≈ 90°. */
+     *  scale-invariant ordering key (the "diamond angle"). */
     fun diamondAngle(x: Frac, y: Frac): Frac {
         if (x.raw == 0L && y.raw == 0L) return ZERO
         return if (y.raw >= 0L) {

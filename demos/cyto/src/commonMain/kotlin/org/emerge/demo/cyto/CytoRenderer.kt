@@ -163,9 +163,8 @@ class CytoRenderer {
                 val wx = -CytoLightField.HALF + (gx + 0.5f) * cell
                 fieldCx[i] = wx; fieldCy[i] = wy
                 val t = (field.sampleAt(wx, wy, tick).toFloat() / CytoLightField.STRENGTH.toFloat()).coerceIn(0f, 1f)
-                // Perceptual ramp from pure black (no floor) up to the peak yellow (1.0, 0.9, 0.43).
-                // sqrt lifts dim values so any non-zero light reads as clearly lit — ONLY t==0 is black
-                // (so a cell on the fringe of the daylight band, e.g. 30% peak, no longer looks dark).
+                // Perceptual ramp from pure black (no floor) up to the peak yellow.
+                // sqrt lifts dim values so any non-zero light reads as clearly lit — ONLY t==0 is black.
                 val s = sqrt(t)
                 val b = i * 4
                 fieldColor[b] = s

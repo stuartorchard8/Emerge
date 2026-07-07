@@ -42,11 +42,10 @@ class ClockProbe {
     )
     private val labels = listOf("metab:convert", "metab:fuel", "start", "cyc gb->gr", "cyc gr->gg", "cyc gg->gb", "contract")
 
-    /** The hand-tuned 6-gene METABOLIC clock (cyto-genome-metabolic-clock.gene): fuses metabolism into the
-     *  clock — there is no separate `rr` fuel currency. `gg` is the oscillator phase species, the energy store
-     *  (broken to drive the ring + contraction), AND the biomass precursor (Convert gg). The bootstrap
-     *  producer (#2) burns Light directly into `gg`, so the 7-gene version's Light->rr fuel gene is gone.
-     *  Self-starts + sustains (110 cycles / 15k ticks) — a real 7->6 reduction. */
+    /** The hand-tuned 6-gene METABOLIC clock: fuses metabolism into the clock — there is no separate fuel
+     *  currency. The oscillator phase species also serves as the energy store (broken to drive the ring +
+     *  contraction) and the biomass precursor. The bootstrap producer burns Light directly into the phase
+     *  species, simplifying the gene set. Self-starts and sustains. */
     private val metabolic = listOf(
         "Break gg : gr < gg & gr < 1984 & Biomass < 4000 : Convert gg @15",  // grow biomass from gg (no rr)
         "Light : gg < 8000 & gb < 1984 : FormBond g g",                      // bootstrap producer: Light -> gg

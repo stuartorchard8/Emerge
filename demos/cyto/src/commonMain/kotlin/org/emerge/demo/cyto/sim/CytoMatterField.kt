@@ -23,9 +23,9 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     companion object {
         const val BASE_RES = 4
         const val MAX_DEPTH = 6
-        val SPAN = CytoLightField.SPAN          // logical torus extent (64 cell-diam)
-        val HALF = CytoLightField.HALF          // 32
-        val TILE = SPAN / BASE_RES              // 16 cell-diam per tile
+        val SPAN = CytoLightField.SPAN
+        val HALF = CytoLightField.HALF
+        val TILE = SPAN / BASE_RES
         /** Max disc half-extent (cell-diam) — bounds a giant cell's footprint. */
         const val MAX_DISC_RADIUS = 4f
 
@@ -232,7 +232,7 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     fun balance(sp: Int, cEff: Int, scaleFactor: Float): Int {
         val n = fpLeaves.size; if (n == 0) return 0
         // Early-exit mask bit for monomers (r=0→bit1, g=1→bit2, b=2→bit4).
-        // Skips leaf iteration when no leaf contains this species — eliminates 73% of useless calls.
+        // Skips leaf iteration when no leaf contains this species — eliminates most useless calls.
         val maskBit = if (sp == A) 1 else if (sp == B) 2 else if (sp == C) 4 else 0
 
         val atomCount = SpeciesRegistry.atomCount(sp)

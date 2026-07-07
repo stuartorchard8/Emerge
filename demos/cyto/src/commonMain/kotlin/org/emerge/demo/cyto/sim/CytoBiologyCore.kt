@@ -734,10 +734,9 @@ object CytoBiologyCore {
       *  importing against (selection for efficient builders) and a steady feed for the food web.
       *  Cytoplasm count adds a hoarding tax: more cytoplasm → more wear → faster biomass drain. */
     private fun degrade(work: CellWork, grid: CytoMatterField) {
-        // Maintenance bonus: a more-connected cell degrades much slower — wear accrues at `1/2^weldedDegree`
-        // (1 neighbour → 1/2, 2 → 1/4, 6 → 1/64, halving again for each extra bond evolution squeezes in).
+        // Maintenance bonus: a more-connected cell degrades much slower — wear accrues at `1/2^weldedDegree`.
         // Interior cells of a body are nearly free to maintain. (Exponent capped at 20 to avoid Int overflow;
-        // 2^20 already makes upkeep ~0 for any realistic biomass.)
+        // high values already make upkeep ~0 for any realistic biomass.)
         val bonus = 1 shl work.weldedDegree.coerceAtMost(20)
         var totalCytChem = 0
         for (i in 0 until work.cytoplasm.size) totalCytChem += work.cytoplasm.countAt(i)

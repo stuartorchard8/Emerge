@@ -34,7 +34,7 @@ class CytoMatterFieldTest {
         val before = f.totalAtoms()
         val n = f.openFootprint(5f, 5f, 0.6f, 1)
         assertTrue(n > 0)
-        val delta = f.balance(A, cEff = 0, scaleFactor = 0f)   // cell wants 0 ⇒ each leaf (r=10) gives 5 ⇒ delta = 5·n
+        val delta = f.balance(A, cEff = 0, scaleFactor = 0f)   // cell wants 0 ⇒ leaves give delta
         f.closeFootprint()
         assertTrue(delta > 0, "cell with cEff=0 absorbs from a rich footprint")
         assertEquals(before - delta.toLong(), f.totalAtoms(), "grid total changes by exactly −delta")
@@ -45,7 +45,7 @@ class CytoMatterFieldTest {
         val before = f.totalAtoms()
         f.openFootprint(5f, 5f, 0.6f, 1)
         val n = f.openFootprint(5f, 5f, 0.6f, 1)
-        val delta = f.balance(A, cEff = 100 * n, scaleFactor = 0f)   // cell much richer (bucket=100 vs leaf 10) ⇒ delta < 0 (leaks in)
+        val delta = f.balance(A, cEff = 100 * n, scaleFactor = 0f)   // cell much richer than leaves ⇒ delta < 0 (leaks in)
         f.closeFootprint()
         assertTrue(delta < 0, "cell richer than footprint pushes matter in (negative delta)")
         assertEquals(before - delta.toLong(), f.totalAtoms(), "conserved both ways")
@@ -64,7 +64,7 @@ class CytoMatterFieldTest {
         f.openFootprint(0f, 0f, 0.6f, 1); f.closeFootprint()
         val split = leafCount(f); assertTrue(split > 4)
         val t0 = f.totalAtoms()
-        // The collapse delay DOUBLES per layer above the finest (base = 1 here for speed): a region twice as
+        // The collapse delay DOUBLES per layer above the finest: a region twice as
         // coarse takes twice as long to pool, so matter disperses at a constant speed. Step tick-by-tick and
         // record the ticks where the leaf count drops (one layer of the tree collapsing) — the gaps double.
         val collapseTicks = ArrayList<Int>()

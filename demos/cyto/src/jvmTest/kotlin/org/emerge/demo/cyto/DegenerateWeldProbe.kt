@@ -110,8 +110,8 @@ class DegenerateWeldProbe {
 
     /** Construct the exact degeneracy: A–B–C collinear, ALL THREE welded (the A–C chord passes through B).
      *  Symmetry keeps B between A and C. Repair on. Sweeps the compression-stiffness multiple m and reads the
-     *  SETTLED chord geometry — confirming |AC| (and the over-stretch ratio) rises with m as predicted by
-     *  ratio = m/(2(m+2)): m=1→0.17, m=3→0.30, m=5→0.36. (No perturbation: a symmetric triad stays collinear.) */
+     *  SETTLED chord geometry — confirming |AC| (and the over-stretch ratio) rises with m as predicted.
+     *  (No perturbation: a symmetric triad stays collinear.) */
     @Test
     fun constructedThroughCellWeld() {
         val repair = GeneCodec.parse("Break gg : gg > 0 : Repair @15")   // steady repair energy from stored gg
