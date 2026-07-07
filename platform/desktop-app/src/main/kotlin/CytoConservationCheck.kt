@@ -4,7 +4,9 @@ import org.emerge.demo.cyto.CytoSaveCodec
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.CytoSeed
 import org.emerge.demo.cyto.sim.CytoSimParamsComponent
+import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.PARAMS_SINGLETON
 import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
@@ -65,7 +67,8 @@ fun main(args: Array<String>) {
         if (b == 0L && a == 0L) continue
         val d = a - b
         if (d != 0L) leaked = true
-        println("  %-4s %16d %16d %14d".format(('a' + i).toString(), b, a, d))
+        val label = CytoSeed.SEED_MONOMERS.getOrElse(i) { "?$i" }
+        println("  %-4s %16d %16d %14d".format(label, b, a, d))
     }
     val tb = before.sum(); val ta = after.sum()
     println("  " + "-".repeat(52))
@@ -78,13 +81,15 @@ fun main(args: Array<String>) {
         println("\n✅ CONSERVED — every element total unchanged over $ticks ticks.")
 }
 
-/** Per-element (a/b/c…) atom totals across grid + all cells' cytoplasm + biomass. Index i = element 'a'+i. */
+/** Per-element (monomer) atom totals across grid + all cells' cytoplasm + biomass. Index i = the monomer
+ *  element id [SpeciesRegistry.atomIndexOf] returns — same axis the grid's [elementTotals] uses, so grid and
+ *  cell tallies line up. Alphabet-agnostic (works for a/b/c, r/g/b, …). */
 private fun elementTotals(state: SimState): LongArray {
     val out = LongArray(8)
     state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid?.elementTotals(out)
     for (cell in state.components.getTable<CytoCellComponent>().asMap().values) {
-        for ((sp, c) in cell.cytoplasm) for (ch in sp) out[ch - 'a'] += c.toLong()
-        for ((sp, c) in cell.biomass) for (ch in sp) out[ch - 'a'] += c.toLong()
+        for ((sp, c) in cell.cytoplasm) for (ch in sp) out[SpeciesRegistry.atomIndexOf(ch)] += c.toLong()
+        for ((sp, c) in cell.biomass) for (ch in sp) out[SpeciesRegistry.atomIndexOf(ch)] += c.toLong()
     }
     return out
 }
