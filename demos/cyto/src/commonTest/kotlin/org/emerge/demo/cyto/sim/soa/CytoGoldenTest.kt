@@ -169,12 +169,15 @@ class CytoGoldenTest {
     // colonies now grow/weld differently — GROWTH+INTERACT topology went empty at their tick budgets).
     // Determinism gates (parallelMatchesSequential, grownStateRoundTrips) held, confirming the shift is a
     // deterministic consequence of the rename, not nondeterminism.
+    // Captured at MATTER_UNIFORM_LEVEL_CELL_SCALE = 2×CHEMISTRY_SCALE (CytoSeed lowered 3→2 this session);
+    // that seed density feeds createCytoInitialState's uniform matter, so it drives the grid digest (and
+    // biology/physics via uptake) — re-baseline against the committed value if it changes again.
     private val GROWTH = mapOf(
-        "meta" to "48166b50118b474d",
-        "physics" to "5aa619a3e9ecb72e",
-        "biology" to "cb6ce2e7e9a42282",
+        "meta" to "202667cafeba6da4",
+        "physics" to "9cbdc379493585e9",
+        "biology" to "a02d5e4c0e31e7ab",
         "topology" to "cbf29ce484222325",
-        "grid" to "115922b3bb6f54fb",
+        "grid" to "e04937d0956c0d7c",
     )
     // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
     // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
@@ -244,23 +247,26 @@ class CytoGoldenTest {
     // physics/biology/grid shift. Determinism gates (parallel==sequential, round-trip) held.
     // Re-baselined 2026-07-07 (ABC→RGB rename; see the GROWTH note). meta + topology are byte-identical here
     // (same seed/tick/cell-count, no springs sampled); physics/biology/grid shift with the tie-break re-order.
+    // Values captured after the processLyseAttacks compaction fix (f717fc2f), which can also perturb the
+    // mutation-on trajectory once a mutated Lyse gene fully drains a victim species (growth/interact have no
+    // Lyse gene, so their drift is the rename alone). Determinism gates held.
     private val MUTATION = mapOf(
         "meta" to "1e92bfc864dfae61",
-        "physics" to "18576b464111a3b7",
-        "biology" to "586c4c8a301e42a4",
+        "physics" to "91a135ab1e995aac",
+        "biology" to "5c6e81e38d2cc17b",
         "topology" to "cbf29ce484222325",
-        "grid" to "de004af3a01bf2f9",
+        "grid" to "17ef230258cc34b6",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     // Re-baselined 2026-07-05: restored LIGHT_QUANTA_SCALE 60k→120k (matter viability) +
     // DEGRADE_PERIOD 4000→18000 (cytoplasm degradation) + MATTER_UNIFORM_LEVEL_CELL_SCALE 2k→3k.
     // Re-baselined 2026-07-07 (ABC→RGB rename; see the GROWTH note). All dimensions shift; topology went empty.
     private val INTERACT = mapOf(
-        "meta" to "a162f64d34e62980",
-        "physics" to "807fe85388be237a",
-        "biology" to "f4c28ecad2c49683",
+        "meta" to "3185843a1972eddd",
+        "physics" to "ab93ff84e0506201",
+        "biology" to "76b5325ce7aeac68",
         "topology" to "cbf29ce484222325",
-        "grid" to "17549bc06b08f596",
+        "grid" to "296309b3814e7ead",
     )
 
     @Test
