@@ -156,7 +156,10 @@ class CytoSoaSpecTest {
         val start = cellCount(initial)
         val state = run(initial, ticks = 3000)   // first division slips later under the ~50× light nerf
         assertTrue(cellCount(state) > start, "autotroph should divide into a colony; got ${cellCount(state)} from $start")
-        assertTrue(springCount(state) > 0, "divided cells should be spring-connected")
+        // NB: no spring-connectedness assertion. Auto-weld on overlap was deliberately disabled (fd9ebafb) —
+        // welds now form only via the Repair gene (kept off the seed autotroph for single-cell viability +
+        // motility under mutation), so daughters do NOT weld by design. See overlappingCellsWeld /
+        // repairGeneWeldsATouchingCell for the welding path.
     }
 
     // The heterotroph builds biomass off its stored `ab` and divides a few times before the reserve runs
