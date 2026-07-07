@@ -1,12 +1,12 @@
 # cyto genome exported from cell 141
-Break ac : Biomass < 4000 : Convert ac @15
-Light : ab < 8000 & ac < 200 : FormBond a b
-Break bc : ac < 200 : FormBond a b @10
-Break ab : bc < 200 : FormBond a c @10
-Break ac : ab < 200 : FormBond b c @10
-Break ac : ac > 199 & bc > 199 & ab > 199 : FormBond b c @9
-Break ab : bc < 200 & ab > 1200 : Contract @15
-Break ac : cb < 8 & ca < 8 : FormBond c a
-Break ac : cb < 16 & ab < 200 & ca > 0 : FormBond c b @15
-Break ac : ab < 200 & cb > 15 : Mitosis across a
-Break ac : ab < 500 : Repair @10
+Break rb : Biomass < 4000 : Convert rb @15
+Light : rg < 8000 & rb < 200 : FormBond r g
+Break gb : rb < 200 : FormBond r g @10
+Break rg : gb < 200 : FormBond r b @10
+Break rb : rg < 200 : FormBond g b @10
+Break rb : rb > 199 & gb > 199 & rg > 199 : FormBond g b @9
+Break rg : gb < 200 & rg > 1200 : Contract @15
+Break rb : bg < 8 & br < 8 : FormBond b r
+Break rb : bg < 16 & rg < 200 & br > 0 : FormBond b g @15
+Break rb : rg < 200 & bg > 15 : Mitosis across r
+Break rb : rg < 500 : Repair @10

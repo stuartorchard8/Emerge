@@ -1,5 +1,0 @@
-# cyto genome exported from cell 248
-Break ab : Biomass > 2000 : Mitosis
-Break ab : ab > 0 : Convert ab
-Break ac : ac > 0 : Convert ac
-Break bc : bc > 0 : Convert bc
