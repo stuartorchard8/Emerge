@@ -648,13 +648,12 @@ object CytoBiologyCore {
         }
     }
 
-    /** Evaluate one side of a [Clause] to an integer. Uses [CellWork.resolvedCount] with lazy
-      *  per-species resolution: the first read per species per cell does a linear scan and caches
-      *  the index for O(1) subsequent reads. */
+    /** Evaluate one side of a [Clause] to an integer. Reads species counts from [CellWork.cachedCount]
+      *  (a linear scan of the pre-populated, ≤32-entry species cache). */
     private fun operand(op: Operand, work: CellWork, bioBonds: Int): Int = when (op) {
         is Operand.Constant -> op.value
-        is Operand.Chem -> work.resolvedCount(op.speciesId)
-        is Operand.Conc -> conc(work.resolvedCount(op.speciesId), bioBonds)
+        is Operand.Chem -> work.cachedCount(op.speciesId)
+        is Operand.Conc -> conc(work.cachedCount(op.speciesId), bioBonds)
         Operand.Biomass -> bioBonds
         Operand.Touching -> work.touchCount
     }

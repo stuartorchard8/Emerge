@@ -444,12 +444,6 @@ class CellWork(
     private val _speciesCacheIds = IntArray(32)
     private var _speciesCacheSize = 0
 
-    /** Per-cell lazy resolved cache: maps [speciesId] → [_speciesCache] index.
-      *  Built on-demand by [CytoBiologyCore.operand] on first read per species per cell.
-      *  Subsequent reads get O(1) direct access. */
-    internal val _resolvedIds = IntArray(64)
-    internal val _resolvedIdx = IntArray(64)
-    internal var _resolvedN = 0
     /** Populate the species cache from [cytoplasm]. Call once at the start of runGenes so all gate
       *  evaluations get O(1) lookups. Max 32 entries (most cells have ~5 species). */
     fun prefillSpeciesCache() {
@@ -470,39 +464,6 @@ class CellWork(
         val size = _speciesCacheSize
         for (i in 0 until size) if (_speciesCacheIds[i] == id) return _speciesCache[i]
         return 0
-    }
-
-
-    /** Read count for a species using **lazy resolution**: first encounter does a linear scan through
-     *  the species cache and caches the index; subsequent encounters get O(1) direct access.
-     *  No pre-compute step — the resolved cache is built on-the-fly during gene evaluation. */
-    fun resolvedCount(speciesId: Int): Int {
-        // Check resolved cache first
-        for (i in 0 until _resolvedN) {
-            if (_resolvedIds[i] == speciesId) {
-                val idx = _resolvedIdx[i]
-                if (idx >= 0 && idx < _speciesCacheSize) return _speciesCache[idx]
-                return 0  // species resolved but absent
-            }
-        }
-        // Not in resolved cache — resolve now
-        if (_resolvedN < _resolvedIds.size) {
-            _resolvedIds[_resolvedN] = speciesId
-            _resolvedIdx[_resolvedN] = -1  // default
-            for (i in 0 until _speciesCacheSize) {
-                if (_speciesCacheIds[i] == speciesId) {
-                    _resolvedIdx[_resolvedN] = i
-                    break
-                }
-            }
-            _resolvedN++
-            // Retry with the now-resolved entry
-            val idx = _resolvedIdx[_resolvedN - 1]
-            if (idx >= 0 && idx < _speciesCacheSize) return _speciesCache[idx]
-            return 0
-        }
-        // Fallback: resolved cache full — scan species cache directly
-        return cachedCount(speciesId)
     }
 
     /** Repopulate this pooled instance for a new tick. [connectionDamage] is cleared (the caller refills
