@@ -37,6 +37,9 @@ import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
 import org.emerge.sim.core.ecs.soa.ComponentColumns
 import org.emerge.sim.core.ecs.soa.ImpulseColumnStore
+import org.emerge.sim.core.ecs.soa.SoaPhase
+import org.emerge.sim.core.ecs.soa.SoaSystem
+import org.emerge.sim.core.ecs.soa.runSoa
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.LandingAttachmentComponent
@@ -85,24 +88,47 @@ class DrocketsSoaReducer(private val cfg: DrocketsConfig) {
         Phase("effects", ParticleSystem, DrocketParticleSystem).isolated(),
     )
 
+    // The clean, in-place SoA phases run through the generic engine [runSoa] pipeline (the second
+    // consumer of [SoaPhase]/[SoaSystem] after cyto — same phase-barrier semantics, world type
+    // parameterised to [DrocketsWorld]). Each system delegates to the ported method below; the
+    // hard/structural phases stay on the AoS bridge above. Systems run sequentially on the shared
+    // mutable world exactly as the direct calls did — bit-identical.
+    private val preBridge: List<SoaPhase<DrocketsConfig, DrocketsWorld>> = listOf(
+        SoaPhase("reset", SoaSystem { _, w, _ -> reset(w) }),
+        SoaPhase(
+            "aiAndMotion",
+            SoaSystem { _, w, _ -> drocketAi(w) },
+            SoaSystem { _, w, _ -> drocketWalk(w) },
+            SoaSystem { _, w, _ -> knightAi(w) },
+            SoaSystem { _, w, _ -> knightWalk(w) },
+            SoaSystem { _, w, _ -> spriteAnimation(w) },
+        ),
+        SoaPhase(
+            "forceGather",
+            SoaSystem { _, w, _ -> gravity(w) },
+            SoaSystem { _, w, _ -> atmosphereDrag(w) },
+        ),
+    )
+    private val attachmentPhase: List<SoaPhase<DrocketsConfig, DrocketsWorld>> =
+        listOf(SoaPhase("attachment", SoaSystem { _, w, _ -> attachment(w) }))
+    private val integratePhase: List<SoaPhase<DrocketsConfig, DrocketsWorld>> =
+        listOf(SoaPhase("integrate", SoaSystem { _, w, _ -> integrate(w) }))
+
     /**
      * One full tick over a persistent [DrocketsWorld]. Sequential phases mutate columns in
-     * place; the two bridge points run the exact AoS phases and return a reloaded world.
+     * place via [runSoa]; the two bridge points run the exact AoS phases and return a reloaded world.
      */
     fun tick(initial: DrocketsWorld, inputs: Map<PlayerId, DrocketsInput>): DrocketsWorld {
         var w = initial
-        reset(w)
-        // aiAndMotion (sequential, in place).
-        drocketAi(w); drocketWalk(w); knightAi(w); knightWalk(w); spriteAnimation(w)
-        // forceGather (in place).
-        forceGather(w)
+        // reset + aiAndMotion + forceGather (sequential, in place).
+        runSoa(cfg, w, inputs, preBridge)
         // contactDetect + contactResponse (isolated) + lifecycle (bridged).
         w = bridge(w, contactAndLifecycle, inputs)
         densifyImpulse(w) // restore the dense accumulator the bridge reload flattened to a sparse table
-        attachment(w)
+        runSoa(cfg, w, inputs, attachmentPhase)
         // effects (isolated, bridged).
         w = bridge(w, effectsPhase, inputs)
-        integrate(w)
+        runSoa(cfg, w, inputs, integratePhase)
         w.world.tick = initial.world.tick + 1
         return w
     }
