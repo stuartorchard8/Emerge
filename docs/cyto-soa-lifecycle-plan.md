@@ -145,12 +145,20 @@ critical finding). Whole-tick: removing ~20ms of serial lifecycle also RELIEVES 
 tax on the rest, so the biology parallelism already landed should finally convert to whole-tick wins.
 
 ## State of the tree at handoff (updated 2026-07-09)
-- Committed & green: exchange tile-parallel (`c90b9645`), cleanup (`362c9bb5`), lifecycle sub-timing
-  (`43d567ef`), docs. **Step 0 + Step 1 (SoA-native destroy+detach)** landed this session.
-- **`LcMixProbe` throwaway DELETED** — the event-mix question is answered (regime split, recorded above).
-- **NEXT: Step 3 — SoA-native DIVISION** (the growth-phase common case). Step 2 (weld/heal) stays on the
-  round-trip fallback for now (never seen in either measured regime; do it last). The division port
-  (`divide()`) is the substantial one — allocate the daughter via `world.createEntity` + `world.add` of all
-  6 physics columns + CytoCellComponent in division-intent order, rewire ahead/side springs, then reuse
-  `rebuildAfterStructuralEdit`. Verify entity-id allocation matches SimBuilder and slot/edge order matches
-  the round-trip (the risk areas listed above).
+- **Steps 0 + 1 + 3 landed & green** (`1028f5ac` destroy+detach, `6dce0a6d` division). Bit-identical:
+  golden (all 3), CytoSoaSpecTest, CytoSoaEquivalenceTest. `LcMixProbe` throwaway deleted.
+- **Perf (clean A/B, 8192-spread / 10278 cells, division-dominated) — see PERF.md:** lifecycle
+  30 ms → 88 µs (round-trip gone); whole tick PAR **72.9 → 28.2 ms (2.59×)**; biology PAR 23.0 → 17.4 ms
+  (all-core-clock tax relief, biology code unchanged — the predicted second-order win). Mature colony:
+  lifecycle 35 µs.
+- **`applyLifecycleSoa` now covers detach + destroy + division.** Only weld / weld-heal still fall back to
+  `bridgeLifecycle` (Step 2).
+
+### Remaining (optional — decide with Stu)
+- **Step 2 — SoA-native WELD + WELD-HEAL.** LOW VALUE: never observed in either measured regime (growing =
+  division-only, mature = destroy-only), so the fallback is effectively free. Doing it only buys the ability
+  to *delete the round-trip entirely* (remove `bridgeLifecycle`, `toSimState(includeImpulse)` bridge usage,
+  the impById gather/scatter, the `lc:*` timing probe). Reuse `LcAdjacency.addSpring(a,b,initialDamage)` —
+  weld = `addSpring(a,b)`; weld-heal = `addSpring(a,b, initialDamage = (breakDamage − heal).coerceAtLeast(0))`.
+  Ordering: detach, destroy, weld, weld-heal, divide (the `welded` set dedups weld+heal). Then drop the gate.
+- Whether the ~2.6× whole-tick win is enough or the biology phase (now the dominant cost) is the next target.

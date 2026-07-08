@@ -4,6 +4,36 @@ Empirical findings + levers (reference, not a task list — open work lives in `
 `MORPHOGENESIS.md`). Discipline: **one biology path** (`CytoBiologyCore`), correctness first via the
 golden + parallel==sequential gates, optimise from profiles. CytoBench probe via `-Dcytobench=1`.
 
+## 2026-07-09 — SoA-native lifecycle (kill the AoS round-trip): whole-tick 2.6×
+
+The lifecycle bridge was the last AoS round-trip in the hot tick: every lifecycle tick materialized a
+`SimState`, ran the unmodified `CytoLifecycleSystem`, and rebuilt the whole `CytoWorld` (all SoA columns +
+CSR) from freshly-allocated maps — dominated by `fromSim` (~68% of a ~30ms lifecycle phase). Ported the
+common-case events (**detach + destroy + division**) to run in place on the persistent world
+(`applyLifecycleSoa` in CytoSoaReducer): structural spring edits on an entity-id-keyed adjacency snapshot
+(`LcAdjacency`, reproducing addSpring/removeSpringPair/degree-cap/dedup), daughters allocated via
+`world.createEntity` + `world.add` of all 7 columns (matching spawnBody/spawnCell + fromSimState's impulse),
+mother writes via column scatter, grid deposits in place, then one `compact()` + `csr.rebuildFrom`. Only
+weld / weld-heal ticks still round-trip (never observed in either measured colony regime — see
+`docs/cyto-soa-lifecycle-plan.md`). **Bit-identical** (golden + CytoSoaSpecTest + CytoSoaEquivalenceTest).
+
+Clean per-JVM A/B at **8192-spread, 10278 cells** (division-dominated), baseline = `43d567ef`:
+
+```
+              lifecycle    whole tick (PAR)   biology (PAR)   alloc/tick (PAR)
+baseline      30034 µs     72.92 ms           23009 µs        52.75 MB
+SoA-native       88 µs     28.15 ms           17393 µs        19.68 MB
+              ~340× / gone   2.59×              1.32×           2.7× less
+```
+
+- **Lifecycle phase eliminated:** 30 ms → 88 µs (`lifecycle-sub toSim/update/fromSim` all 0 — the
+  round-trip never fires). CSR rebuild from SoA state is sub-ms, as `pruneEdges` already proved.
+- **All-core-clock tax relief (the predicted second-order win):** biology PAR 23.0 → 17.4 ms with the
+  biology code *unchanged* — removing ~30 ms of serial lifecycle stopped pinning 8 cores below turbo, so
+  the already-landed biology parallelism finally converts to a whole-tick win.
+- Mature steady-state colony (grow-one-founder, 1564 cells, destroy-only): lifecycle now **35 µs** (was
+  round-trip-bound); whole tick ~2 ms.
+
 ## 2026-06-16 check, then optimised
 
 The perceived slowdown was never a per-cell code regression — it's ~3.6× more cells (metabolic-leak/
