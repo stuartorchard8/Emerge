@@ -139,7 +139,7 @@ class CytoPipelineState {
         val nn = arrayOfNulls<ArrayList<EntityId>>(n)
         for (i in 0 until bioCap) { nb[i] = bioWorks[i]; nn[i] = bioNbrs[i] }
         for (i in bioCap until n) {
-            nb[i] = CellWork(MoleculeStore(), MoleculeStore(), CytoTuning.MIN_RADIUS, CellType.Blank, emptyList(), 0, 0, 0, -1, HashMap())
+            nb[i] = CellWork(MoleculeStore(CytoTuning.CELL_CHEM_CAP), MoleculeStore(CytoTuning.CELL_CHEM_CAP), CytoTuning.MIN_RADIUS, CellType.Blank, emptyList(), 0, 0, 0, -1, HashMap())
             nn[i] = ArrayList()
         }
         bioWorks = nb; bioNbrs = nn
@@ -298,8 +298,10 @@ class BiologySystem(
 
             val work = state.bioWorks[slot]!!
             work.reset(
-                cytoplasm = (world.cell.cytoplasm[slot] ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP)).copy(),
-                biomass = (world.cell.biomass[slot] ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP)).copy(),
+                // Pass the column (front) store directly; reset copies it into work's pooled buffer, so
+                // no per-tick allocation here. The front store is not mutated during the biology pass.
+                cytoplasm = world.cell.cytoplasm[slot] ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP),
+                biomass = world.cell.biomass[slot] ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP),
                 logicalRadius = radius,
                 type = CellType.entries[world.cell.type[slot]],
                 genome = world.cell.genome[slot] ?: emptyList(),
@@ -475,8 +477,11 @@ class BiologySystem(
                 else CytoMutation.mutate(world.cell.genome[slot] ?: emptyList(), if (world.mutationRateDenom >= 0) world.mutationRateDenom else cfg.mutationRateDenom) { until -> nextRandomInt(world, until) }
 
             val oldRadiusRaw = world.cell.logicalRadius[slot]
-            world.cell.cytoplasm[slot] = work.cytoplasm
-            world.cell.biomass[slot] = work.biomass
+            // Commit work (back) into the persistent column (front) store in place — copyFrom reuses the
+            // column store's backing, so this allocation-free swap replaces the old per-tick .copy().
+            // A brand-new slot with no store yet gets one seeded from work (rare; allocates once).
+            world.cell.cytoplasm[slot]?.copyFrom(work.cytoplasm) ?: run { world.cell.cytoplasm[slot] = work.cytoplasm.copy() }
+            world.cell.biomass[slot]?.copyFrom(work.biomass) ?: run { world.cell.biomass[slot] = work.biomass.copy() }
             world.cell.logicalRadius[slot] = work.logicalRadius.raw
             world.cell.wear[slot] = work.wear
             world.cell.stickyTemp[slot] = false

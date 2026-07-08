@@ -473,8 +473,11 @@ class CellWork(
         genome: List<Gene>, quanta: Int, touchCount: Int, wear: Int, gridIndex: Int, weldedDegree: Int,
         seed: Int = 0,  // Used to seed the round-robin gene index for new cells
     ) {
-        this.cytoplasm = cytoplasm
-        this.biomass = biomass
+        // Double-buffer: copy the source (front) into this pooled work store (back) rather than
+        // aliasing it — so biology mutates the reused buffer, allocating nothing per tick. The reducer
+        // commits work back to the column with a matching copyFrom at writeback.
+        this.cytoplasm.copyFrom(cytoplasm)
+        this.biomass.copyFrom(biomass)
         this.logicalRadius = logicalRadius
         this.type = type
         if (genome !== this.genome) {
