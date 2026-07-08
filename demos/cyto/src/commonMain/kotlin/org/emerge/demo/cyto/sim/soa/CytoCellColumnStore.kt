@@ -16,6 +16,13 @@ import org.emerge.sim.core.physics.primitives.Frac
  * [scatter]/[gather] bridge to [CytoCellComponent], converting the id-keyed stores to/from its
  * string-keyed maps — a cold boundary (loader / snapshot / lifecycle); the hot biology phase reads the
  * stores directly by slot index and never touches strings.
+ *
+ * **Double-buffered chemistry (column-slab swap):** cytoplasm/biomass are stored as front + back
+ * slab buffers (genome is single-buffered — see [swapBuffers]). Each tick: (1) the biology phase copies
+ * front → back for each live slot and hands the back store to CellWork by reference, (2) genes mutate the
+ * back buffer in place via those references, (3) `swapBuffers()` swaps front↔back in O(count) — this is the
+ * write-back barrier that commits all mutations atomically. `moveSlot()` synchronizes both buffers
+ * during compaction so slot identity is preserved across swaps.
  */
 class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
     var logicalRadius = LongArray(0); private set    // Frac raw
@@ -23,11 +30,18 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
     var type = IntArray(0); private set              // CellType.ordinal
     var sticky = BooleanArray(0); private set
     var stickyTemp = BooleanArray(0); private set
-    // Molecule counts: id-keyed stores (held by reference; the reducer reassignes per tick). The genome
-    // stays an object column (immutable per tick), so round-trip is exact.
+    var genome = arrayOfNulls<List<Gene>>(0); private set
+
+    // Molecule counts: id-keyed stores (held by reference).
     var cytoplasm = arrayOfNulls<MoleculeStore>(0); private set
     var biomass = arrayOfNulls<MoleculeStore>(0); private set
-    var genome = arrayOfNulls<List<Gene>>(0); private set
+
+    // Double-buffer: back buffers swapped with front at the biology write-back barrier.
+    // CellWork.reset() reads front → mutates CellWork's back buffer; writeback() swaps.
+    // Genome is NOT double-buffered: genes only READ it, and the mutation system writes the
+    // mutated genome directly to the front buffer after biology completes (see BiologySystem).
+    var backCytoplasm = arrayOfNulls<MoleculeStore>(0); private set
+    var backBiomass = arrayOfNulls<MoleculeStore>(0); private set
 
     override fun ensureCapacity(capacity: Int) {
         if (logicalRadius.size >= capacity) return
@@ -36,9 +50,33 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         type = type.copyOf(capacity)
         sticky = sticky.copyOf(capacity)
         stickyTemp = stickyTemp.copyOf(capacity)
+        genome = genome.copyOf(capacity)
         cytoplasm = cytoplasm.copyOf(capacity)
         biomass = biomass.copyOf(capacity)
-        genome = genome.copyOf(capacity)
+        backCytoplasm = backCytoplasm.copyOf(capacity)
+        backBiomass = backBiomass.copyOf(capacity)
+    }
+
+    /** Ensure back buffers have the given capacity (null-initialized). */
+    fun ensureCapacityBack(capacity: Int) {
+        if (backCytoplasm.size >= capacity) return
+        backCytoplasm = backCytoplasm.copyOf(capacity)
+        backBiomass = backBiomass.copyOf(capacity)
+    }
+
+    /**
+     * Swap front↔back buffer references for cytoplasm and biomass columns.
+     * Called once at the biology write-back barrier — after all cells' genes have mutated
+     * the back buffer and scalar state has been committed. O(count) pointer swap. [count] is the
+     * caller's live entity count (world.count); every live slot's back buffer must have been seeded
+     * this tick. Genome is deliberately excluded: it is not double-buffered (genes only read it; the
+     * mutation system writes the mutated genome straight to the front buffer).
+     */
+    fun swapBuffers(count: Int) {
+        for (i in 0 until count) {
+            val tmp = cytoplasm[i]; cytoplasm[i] = backCytoplasm[i]; backCytoplasm[i] = tmp
+            val tmpBio = biomass[i]; biomass[i] = backBiomass[i]; backBiomass[i] = tmpBio
+        }
     }
 
     override fun scatter(slot: Int, value: CytoCellComponent) {
@@ -50,6 +88,11 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         cytoplasm[slot] = MoleculeStore.of(value.cytoplasm, CytoTuning.CELL_CHEM_CAP)
         biomass[slot] = MoleculeStore.of(value.biomass, CytoTuning.CELL_CHEM_CAP)
         genome[slot] = value.genome
+        // Also initialize back buffers — the swap will pick them up.
+        // For freshly-scattered entities (spawn), the back buffer starts as a copy.
+        ensureCapacityBack(slot + 1)
+        backCytoplasm[slot] = MoleculeStore.of(value.cytoplasm, CytoTuning.CELL_CHEM_CAP)
+        backBiomass[slot] = MoleculeStore.of(value.biomass, CytoTuning.CELL_CHEM_CAP)
     }
 
     override fun gather(slot: Int): CytoCellComponent = CytoCellComponent(
@@ -69,8 +112,11 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         type[dst] = type[src]
         sticky[dst] = sticky[src]
         stickyTemp[dst] = stickyTemp[src]
+        genome[dst] = genome[src]
         cytoplasm[dst] = cytoplasm[src]
         biomass[dst] = biomass[src]
-        genome[dst] = genome[src]
+        // Also move the back-buffer references so compaction stays in sync.
+        backCytoplasm[dst] = backCytoplasm[src]
+        backBiomass[dst] = backBiomass[src]
     }
 }

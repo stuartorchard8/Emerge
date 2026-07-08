@@ -306,6 +306,10 @@ fun handleableOf(genome: List<Gene>): Handleable {
  * allocating a fresh object — so all fields are mutable and [connectionDamage] is a reused map (cleared +
  * refilled). [handleable] is recomputed only when the [genome] reference actually changes (it's stable
  * across ticks unless mutated/edited), saving the per-tick bitmask rebuild.
+ *
+ * **Column-slab double-buffer:** [reset] assigns [cytoplasm]/[biomass] to reference the column's
+ * back-buffer slot directly (no copy). Genes mutate the back buffer in place. [writeback] commits
+ * by swapping the column's front/back buffers in O(1).
  */
 class CellWork(
     var cytoplasm: MoleculeStore,
@@ -466,18 +470,25 @@ class CellWork(
         return 0
     }
 
-    /** Repopulate this pooled instance for a new tick. [connectionDamage] is cleared (the caller refills
-     *  it); [handleable] is rebuilt only if [genome] changed reference. */
+    /**
+     * Repopulate this pooled instance for a new tick. [connectionDamage] is cleared (the caller refills
+     *  it); [handleable] is rebuilt only if [genome] changed reference.
+     *
+     * Column-slab double-buffer: the caller has assigned [cytoplasm]/[biomass] to point at the
+     * column's back-buffer stores. This method copies the column's front buffer into those stores
+     * (initializing the back buffer for genes to mutate), then genes mutate in place. At the tick
+     * barrier, [CytoCellColumnStore.swapBuffers()] commits by swapping front/back references.
+     */
     fun reset(
         cytoplasm: MoleculeStore, biomass: MoleculeStore, logicalRadius: Frac, type: CellType,
         genome: List<Gene>, quanta: Int, touchCount: Int, wear: Int, gridIndex: Int, weldedDegree: Int,
         seed: Int = 0,  // Used to seed the round-robin gene index for new cells
     ) {
-        // Double-buffer: copy the source (front) into this pooled work store (back) rather than
-        // aliasing it — so biology mutates the reused buffer, allocating nothing per tick. The reducer
-        // commits work back to the column with a matching copyFrom at writeback.
-        this.cytoplasm.copyFrom(cytoplasm)
-        this.biomass.copyFrom(biomass)
+        // Column-slab double-buffer: [cytoplasm]/[biomass] are the column's BACK-buffer slot stores
+        // (the caller has already copied front → back for this slot). Reference them directly so genes
+        // mutate the back buffer in place; CytoCellColumnStore.swapBuffers() commits at the tick barrier.
+        this.cytoplasm = cytoplasm
+        this.biomass = biomass
         this.logicalRadius = logicalRadius
         this.type = type
         if (genome !== this.genome) {

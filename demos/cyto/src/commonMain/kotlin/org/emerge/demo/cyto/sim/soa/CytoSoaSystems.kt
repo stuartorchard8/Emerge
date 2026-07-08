@@ -297,11 +297,19 @@ class BiologySystem(
             captureMilli[k] = exposureMilli * radius.raw / Int.MAX_VALUE.toLong()
 
             val work = state.bioWorks[slot]!!
+            // Column-slab double-buffer: seed this slot's BACK stores from the committed front, then hand
+            // them to work by reference. Genes mutate the back buffer; swapBuffers() commits at the barrier.
+            // The front stores stay untouched during the biology pass (readable for divide/lyse intents).
+            world.cell.ensureCapacityBack(slot + 1)
+            val backCyto = world.cell.backCytoplasm[slot]
+                ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP).also { world.cell.backCytoplasm[slot] = it }
+            world.cell.cytoplasm[slot]?.let { backCyto.copyFrom(it) }
+            val backBio = world.cell.backBiomass[slot]
+                ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP).also { world.cell.backBiomass[slot] = it }
+            world.cell.biomass[slot]?.let { backBio.copyFrom(it) }
             work.reset(
-                // Pass the column (front) store directly; reset copies it into work's pooled buffer, so
-                // no per-tick allocation here. The front store is not mutated during the biology pass.
-                cytoplasm = world.cell.cytoplasm[slot] ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP),
-                biomass = world.cell.biomass[slot] ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP),
+                cytoplasm = backCyto,
+                biomass = backBio,
                 logicalRadius = radius,
                 type = CellType.entries[world.cell.type[slot]],
                 genome = world.cell.genome[slot] ?: emptyList(),
@@ -467,7 +475,7 @@ class BiologySystem(
             ))
         }
 
-        // Write-back
+        // Write-back: mutate durable scalar columns, commit chem via slab swap, handle genome mutations.
         val noMutateEntityId = noMutateEntityIdProvider()
         for (k in 0 until n) {
             val slot = ordered[k]
@@ -477,11 +485,7 @@ class BiologySystem(
                 else CytoMutation.mutate(world.cell.genome[slot] ?: emptyList(), if (world.mutationRateDenom >= 0) world.mutationRateDenom else cfg.mutationRateDenom) { until -> nextRandomInt(world, until) }
 
             val oldRadiusRaw = world.cell.logicalRadius[slot]
-            // Commit work (back) into the persistent column (front) store in place — copyFrom reuses the
-            // column store's backing, so this allocation-free swap replaces the old per-tick .copy().
-            // A brand-new slot with no store yet gets one seeded from work (rare; allocates once).
-            world.cell.cytoplasm[slot]?.copyFrom(work.cytoplasm) ?: run { world.cell.cytoplasm[slot] = work.cytoplasm.copy() }
-            world.cell.biomass[slot]?.copyFrom(work.biomass) ?: run { world.cell.biomass[slot] = work.biomass.copy() }
+            // Commit scalar state directly into the persistent column (front) store.
             world.cell.logicalRadius[slot] = work.logicalRadius.raw
             world.cell.wear[slot] = work.wear
             world.cell.stickyTemp[slot] = false
@@ -504,6 +508,8 @@ class BiologySystem(
                 }
             }
         }
+        // Slab swap: commits all chemistry mutations in O(count) pointer swap instead of per-cell copyFrom.
+        world.cell.swapBuffers(n)
         bioSplit("bio:writeback")
     }
 
