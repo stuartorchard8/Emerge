@@ -186,12 +186,16 @@ cache-of-a-cache collapse, ~18% off biology.
 3 (persistent variable-length columns for cyto) is **✅ done** — cell chem is fixed-cap-32 (see Progress).
 Remaining, in recommended order:
 
-1. **Column-slab double buffer on cyto** — promote the per-cell pooling (`2e82ccbb`) to two whole-column
-   buffers (front/back) swapped at the tick barrier, starting with the chem columns. This is the concrete
-   next payoff-and-proof step: it removes the per-cell `copyFrom` in favour of a slab swap, and turns the
-   read-front/write-back model into a real column-level pattern before generalising. Golden-gated; expect
-   bit-identical. Watch the interaction with `compact()` (see Open questions) and with the lyse phase,
-   which mutates the chem columns *after* biology's swap (lyse writes must target the committed front).
+1. **Column-slab double buffer on cyto** — ✅ **done** (`fa760a14`, 2026-07-08). Cell `cytoplasm`/`biomass`
+   now have front + back column buffers in `CytoCellColumnStore`, swapped at the write-back barrier via
+   `swapBuffers(count)`. Biology seeds each live slot's back store from the committed front and hands it to
+   `CellWork` by reference; genes mutate the back buffer in place; the barrier commits with an O(count)
+   pointer swap. Genome stays single-buffered (read-only in genes; mutation writes the front directly).
+   Bit-identical (`CytoGoldenTest` + `CytoSoaSpecTest`). A/B on a quiet box: tick-time + biology-phase
+   neutral, alloc ~+0.2 MB (the per-cell path was already alloc-free for chem) — payoff is the whole-column
+   layout for parallelism, not an immediate win. NB: the two defects the first attempt shipped — a never-set
+   `count` field so the swap was a no-op, and `CellWork` mutating a private buffer disconnected from the back
+   column — are what the fix wired up.
 2. **Build KSP column-store codegen** — kill the ergonomic tax; generate the field arrays + scatter/gather
    + swap/carry-forward-copy + flat serialize + the per-field POD-vs-reference policy hook. Near-
    prerequisite before touching every component in the engine.
