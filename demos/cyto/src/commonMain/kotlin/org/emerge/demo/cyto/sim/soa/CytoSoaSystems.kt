@@ -95,6 +95,8 @@ class CytoPipelineState {
     val bioNeighbourIds = HashMap<EntityId, List<EntityId>>()
     val bioCapSum = HashMap<Int, Long>()
     val bioOrderedWorks = ArrayList<CellWork>()
+    // Reusable scratch for the drop-contested passive exchange (serial pre-pass touch-count + batch list).
+    val exchangeScratch = org.emerge.demo.cyto.sim.ExchangeScratch()
     // Ascending-EntityId slot order as a reusable IntArray (sorted via packed LongArray)
     var bioOrder = IntArray(0)
     var bioOrderPacked = LongArray(0)
@@ -425,7 +427,8 @@ class BiologySystem(
         // Passive env-exchange junction
         val orderedWorks = state.bioOrderedWorks.also { it.clear() }
         for (k in 0 until n) orderedWorks.add(state.bioWorks[ordered[k]]!!)
-        CytoBiologyCore.passiveEnvExchange(orderedWorks, grid, world.world.tick.toInt(), bioProfile)
+        CytoBiologyCore.passiveEnvExchange(orderedWorks, grid, world.world.tick.toInt(),
+            state.exchangeScratch, bioExec, threshold = 1, stats = bioProfile)
         bioSplit("bio:exchange")
 
         // Cytoplasm diffusion between connected cells — runs every N ticks to reduce cost

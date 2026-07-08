@@ -136,12 +136,19 @@ class CytoGoldenTest {
     // Re-baselined 2026-07-05: restored LIGHT_QUANTA_SCALE 60k→120k (matter viability) +
     // DEGRADE_PERIOD 4000→18000 (cytoplasm degradation) + MATTER_UNIFORM_LEVEL_CELL_SCALE 2k→3k.
     // Re-baselined 2026-07-07 (ABC→RGB rename; see the GROWTH note). All dimensions shift; topology went empty.
+    // Re-baselined 2026-07-08: DROP-CONTESTED passive exchange (parallelizable). A quad-tree leaf touched by
+    // ≥2 cells in the same exchange batch is now DROPPED (skipped this tick) so single-owner leaves can be
+    // balanced in parallel order-independently; the per-cell target divisor also becomes the uncontested-leaf
+    // count. Only INTERACT moves — its scripted colony packs cells densely enough for footprints to overlap;
+    // GROWTH + MUTATION are byte-identical (their colony density has zero contested leaves, so the junction is
+    // unchanged there), confirming the drift is isolated to the overlapping-footprint case. The contested set
+    // is geometry-only ⇒ thread-count-independent, so parallelMatchesSequential + conservation held.
     private val INTERACT = mapOf(
-        "meta" to "3185843a1972eddd",
-        "physics" to "ab93ff84e0506201",
-        "biology" to "76b5325ce7aeac68",
+        "meta" to "fd92edb8d415aaa8",
+        "physics" to "f546a6890eca0c8d",
+        "biology" to "53e8c8002c75a3b7",
         "topology" to "cbf29ce484222325",
-        "grid" to "296309b3814e7ead",
+        "grid" to "6a45c78db36bf8af",
     )
 
     @Test

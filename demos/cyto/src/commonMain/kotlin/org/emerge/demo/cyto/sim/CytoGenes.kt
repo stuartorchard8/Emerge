@@ -445,6 +445,16 @@ class CellWork(
     val expoScratch = LongArray(CytoExposure.MAX_NEIGHBOURS)
     val consumeIds = IntArray(4)
     val consumePer = IntArray(4)
+    /** Per-work scratch for the drop-contested passive exchange (CytoBiologyCore.passiveEnvExchange). Filled in
+     *  the serial pre-pass — [exchLeaves] holds this cell's footprint leaves (then filtered in place to the
+     *  UNCONTESTED, single-owner subset), [exchN] the uncontested count, and [exchTransferIdx]/[exchTransferCeffs]
+     *  the transferable species + effective targets — so the parallel pass reads only per-cell-owned state and
+     *  writes only disjoint leaf stores + this cell's cytoplasm. Reused across ticks. */
+    val exchLeaves = ArrayList<QuadNode>()
+    var exchN = 0
+    var exchTransferN = 0
+    var exchTransferIdx = IntArray(8)
+    var exchTransferCeffs = IntArray(8)
     /** Species count cache for gate evaluation: species id → count. Pre-populated from [cytoplasm] at the
      *  start of [CytoBiologyCore.runGenes], so gate lookups are O(1) array scans instead of
      *  binary-searching the MoleculeStore (O(log n)). Max 32 entries. */

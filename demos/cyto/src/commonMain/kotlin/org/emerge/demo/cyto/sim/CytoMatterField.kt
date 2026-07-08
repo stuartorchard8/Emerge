@@ -315,6 +315,56 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     /** Probe-only: visit the currently-open footprint's leaves (identity) without mutating anything. */
     fun forEachFootprintLeaf(action: (QuadNode) -> Unit) { for (leaf in fpLeaves) action(leaf) }
 
+    /** Copy the currently-open footprint's leaves into [out] (drop-contested exchange caches these per cell
+     *  in the serial pre-pass so the parallel pass never re-descends/refines the tree). */
+    fun copyFootprintLeaves(out: MutableList<QuadNode>) { out.clear(); for (leaf in fpLeaves) out.add(leaf) }
+
+    /** Thread-safe variant of [balanceBatched] for the drop-contested parallel exchange: balances over an
+     *  explicit, caller-owned [leaves] list (NOT the shared [fpLeaves] cursor) and applies each net Δ straight
+     *  into [cyt] (grid loses −Δ). All state is local or per-cell-disjoint, so parallel workers whose cells own
+     *  disjoint (uncontested) leaves never race. [n] is the divisor for the per-leaf target (cEff/n) — the
+     *  caller passes the *uncontested* leaf count, so a cell equilibrates across only the leaves it still owns.
+     *  Mirrors [balanceBatched]'s presence-mask skips and size-dependent [scaleFactor] damping exactly. */
+    fun balanceBatchedOn(
+        leaves: List<QuadNode>, n: Int, transferN: Int,
+        transferIdx: IntArray, transferCeffs: IntArray, scaleFactor: Float, cyt: MoleculeStore,
+    ) {
+        if (n == 0 || transferN == 0) return
+        var monomerMaskNeed = 0
+        for (t in 0 until transferN) {
+            val sp = transferIdx[t]
+            if (SpeciesRegistry.atomCount(sp) == 1) {
+                if (sp == A) monomerMaskNeed = monomerMaskNeed or 1
+                else if (sp == B) monomerMaskNeed = monomerMaskNeed or 2
+                else if (sp == C) monomerMaskNeed = monomerMaskNeed or 4
+            }
+        }
+        for (leaf in leaves) {
+            if (monomerMaskNeed != 0 && (leaf.presenceMask and monomerMaskNeed) == 0) {
+                var hasNonMono = false
+                for (t in 0 until transferN) {
+                    if (SpeciesRegistry.atomCount(transferIdx[t]) > 1) { hasNonMono = true; break }
+                }
+                if (!hasNonMono) continue
+            }
+            val store = leaf.store!!
+            for (t in 0 until transferN) {
+                val sid = transferIdx[t]
+                if (SpeciesRegistry.atomCount(sid) == 1) {
+                    val bit = if (sid == A) 1 else if (sid == B) 2 else if (sid == C) 4 else 0
+                    if (bit != 0 && (leaf.presenceMask and bit) == 0) continue
+                }
+                val idx = store.binarySearchId(sid)
+                if (idx < 0) continue
+                val sc = store.countAt(idx)
+                val bucket = transferCeffs[t] / n
+                val denom = 2.shl(min(31, (SpeciesRegistry.atomCount(sid)*scaleFactor).toInt()))
+                val movement = (sc - bucket) / denom
+                if (movement != 0) { store.add(sid, -movement); cyt.add(sid, movement) }
+            }
+        }
+    }
+
     // ── death / export deposit ─────────────────────────────────────────────────────────────────────────
     /** Add `amount` of `sp` spread across a footprint (refine to fine first; does NOT re-stamp the collapse
      *  clock — a death/division deposit lands where the cell just was, already fresh). Conservation-exact. */
