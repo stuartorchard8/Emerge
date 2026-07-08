@@ -50,37 +50,55 @@ Pattern legend: disjoint / additive / grid-cell / detectThenApply (see
 | writeback | ~8 | disjoint + **per-cell RNG re-baseline** | Tier 2, not started |
 | lifecycle (19% of *tick*) | — | detectThenApply | Tier 3, hardest |
 
-## The exchange blocker (tomorrow's main topic — Stu is sketching ideas)
-`passiveEnvExchange` (CytoBiologyCore.kt:73, grid primitives CytoMatterField.kt
-:198–312) **cannot be parallelized bit-identically**, because:
-1. **Order-dependent, not just racy:** `balanceBatched` moves
-   `(leaf.count(sp) − cEff/n)/denom` against the leaf's *live* count, so if cell A
-   depletes a leaf, cell B draws differently. Sequential cell order is load-bearing.
-2. **Footprints straddle boundaries:** a cell's disc spans multiple quad-tree
-   leaves, so no clean leaf-partition also cleanly partitions cells.
-3. **Single-threaded cursor:** grid holds one shared `fpLeaves` — any parallel
-   version must make it reentrant (pass the leaf list, don't store it).
+## Exchange — DECIDED approach (2026-07-08, Stu): conflict-detect + drop-contested
+`passiveEnvExchange` (CytoBiologyCore.kt:73; grid primitives CytoMatterField.kt
+:161–312) is order-DEPENDENT (`balanceBatched` moves `(leaf.count(sp) − cEff/n)/denom`
+against a leaf's *live* count, so cell order matters), so it can't be parallelized
+bit-identically. Chosen path makes it order-INDEPENDENT by only exchanging on leaves
+a single cell touches this batch, and **dropping contested leaves** (conscious golden
+re-baseline — accepted):
 
-Grid-cell partitioning is therefore a poor fit: race-free only with boundary
-serialization/coloring, and **still not bit-identical** (any reorder changes the
-result) → needs a re-baseline anyway, plus boundary bookkeeping.
+1. **Per-thread conflict grids.** One 2-bit-per-tile grid per thread
+   (unaccessed / accessed / contested), reused across ticks (memset to clear). Use a
+   plain dense grid (not the quad-tree) for stable reusable memory. **Resolution must
+   be ≥ the finest quad-tree leaf** (coarser = safe-but-less-parallel; finer/misaligned
+   = unsafe false-clean). Memory is a non-issue (2 bits × tiles × N = KB–few MB).
+2. **Pass 1 (parallel, cells split over threads):** each thread marks the tiles under
+   its cells' footprints in its own grid — `accessed` on first touch, `contested` on
+   any later touch within that thread.
+3. **Pass 2 (combine):** a tile is globally contested iff any thread marked it
+   `contested` OR ≥2 threads marked it `accessed`. Accumulate into grid 0 (the truth).
+4. **Pass 3 (parallel, per cell):** exchange each cell **only on its uncontested
+   leaves** (per-tile-partial — cells keep their ~4 uncontested *central* leaves since
+   base radius = 2 leaves; only shifting peripheral leaves get dropped). Contested
+   leaves are inaccessible this tick — **dropped, not deferred to a serial tail.**
 
-**Key lever:** every transfer is **conservation-exact regardless of order** — only
-the *distribution* changes. So the real fix is to make exchange
-**order-independent**, after which parallelism is trivial AND bit-identical across
-cores. The read-front/write-back form: snapshot each leaf at tick start, every cell
-computes its draw against the *frozen* counts, accumulate cell→leaf deltas
-additively (`AdditivePartition`), apply once with a per-leaf clamp when demand >
-supply. This also re-baselines (frozen draws ≠ sequential depletion), but is
-strictly better than partitioning: simpler, no boundary logic, deterministic on any
-core count, and matches the double-buffer philosophy already adopted for cells.
+Why this is safe: uncontested leaves are single-owner ⇒ order-independent ⇒
+deterministic; the contested set is geometry-only ⇒ **thread-count-independent**, so
+the new golden is stable across any N. Conservation-exact (dropped leaves untouched).
+Decide the `bucket = cEff/n` denominator explicitly (n = uncontested-leaf count,
+varies per tick) — it's a re-baseline either way.
 
-Both viable paths need a **conscious golden re-baseline** — that's Stu's decision,
-and where his non-grid-cell ideas should drive. If his ideas make exchange
-order-independent, they dominate the partition approach outright; build on those.
+**PREREQUISITE HAZARD — don't miss (Claude flagged, not in Stu's sketch):**
+`openFootprint`/`descendNode` **REFINE the quad-tree** (`splitLeaf` at line 182) and
+stamp `lastAccessTick` during traversal — a shared *structural* mutation, unsafe even
+when final leaves are disjoint (root→leaf path is shared). Method is explicitly "NOT
+re-entrant, sequential only." So the parallel passes MUST be preceded by a **serial
+pre-pass that refines + enumerates each exchanging cell's footprint** (cache per-cell
+leaf lists). After that the tree is frozen; parallel mark/exchange only mutate leaf
+*stores* (disjoint on uncontested) and read cached leaf lists. Also need a read-only
+footprint enumeration (don't mutate `presenceMask`/`fpLeaves` in parallel). This serial
+refine/enumerate is ~1/3 of exchange cost (the quad-tree descent) → caps the in-exchange
+parallel win to the ~2/3 balance/transfer portion (Amdahl within exchange).
+
+**FIRST STEP before building:** instrument the *existing sequential* exchange to
+measure (a) the contested-cell/leaf fraction and (b) the *dropped transfer magnitude*
+(matter that contested leaves would have moved) at real colony densities. Confirms the
+sacrifice is minor (Stu's premise: contested = transient peripheral overlap, interior
+uptake ≈ already depleted) before committing. If dropped transfer is large, revisit.
 
 ## Expectation-setting
 Full biology+lifecycle parallel ≈ 54% of tick; at a realistic ~5× on the parallel
-portion, Amdahl gives ~1.7–1.8× whole-tick — real, not order-of-magnitude. Every
-step golden-gated except the two deliberate re-baselines (exchange reformulation;
-writeback per-cell RNG). Uncommitted: nothing — tree clean at `54ae5d3b`.
+portion, Amdahl gives ~1.7–1.8× whole-tick — real, not order-of-magnitude. Golden
+re-baselines expected for exchange (drop-contested) and later writeback (per-cell RNG);
+everything else stays bit-identical. Uncommitted: nothing — tree clean at `54ae5d3b`.
