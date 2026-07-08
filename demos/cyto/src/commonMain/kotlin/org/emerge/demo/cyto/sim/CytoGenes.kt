@@ -455,6 +455,9 @@ class CellWork(
     var exchTransferN = 0
     var exchTransferIdx = IntArray(8)
     var exchTransferCeffs = IntArray(8)
+    /** Per-cell species-union scratch for the parallel exchange pass 2 (thread-local: each cell is processed
+     *  by a single worker, so this needs no synchronisation). */
+    val exchSpecies = HashSet<Int>()
     /** Species count cache for gate evaluation: species id → count. Pre-populated from [cytoplasm] at the
      *  start of [CytoBiologyCore.runGenes], so gate lookups are O(1) array scans instead of
      *  binary-searching the MoleculeStore (O(log n)). Max 32 entries. */

@@ -364,6 +364,94 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
         }
     }
 
+    // ── tile-parallel drop-contested exchange (root-tile partitioned refine + count, then per-cell exchange) ─
+    /** Enumerate the root tiles a footprint disc overlaps (mirrors [descendDisc]'s tile loop). Each visit is
+     *  one root descent: `ti` = the (torus-wrapped) root index, `gxRaw`/`gyRaw` = the UNWRAPPED tile indices
+     *  that fix the descent origin. A footprint spanning tiles yields several visits. The refine pass groups
+     *  cells by `ti` so disjoint roots refine in parallel (splitLeaf never crosses a root boundary). */
+    inline fun forEachFootprintTile(cx: Float, cy: Float, radiusRaw: Float, visit: (ti: Int, gxRaw: Int, gyRaw: Int) -> Unit) {
+        val r = if (radiusRaw > MAX_DISC_RADIUS) MAX_DISC_RADIUS else radiusRaw
+        val gxMin = floor((cx - r + HALF) / TILE).toInt(); val gxMax = floor((cx + r + HALF) / TILE).toInt()
+        val gyMin = floor((cy - r + HALF) / TILE).toInt(); val gyMax = floor((cy + r + HALF) / TILE).toInt()
+        for (gyRaw in gyMin..gyMax) for (gxRaw in gxMin..gxMax) {
+            val mgx = ((gxRaw % BASE_RES) + BASE_RES) % BASE_RES
+            val mgy = ((gyRaw % BASE_RES) + BASE_RES) % BASE_RES
+            visit((mgy * BASE_RES) + mgx, gxRaw, gyRaw)
+        }
+    }
+
+    /** PASS 1 (one root tile, single-threaded within that tile): descend the `(gxRaw,gyRaw)` root of this cell's
+     *  footprint, refining to the finest depth (splitLeaf) + stamping + setting the presence mask, and counting
+     *  how many cells touch each finest leaf ([QuadNode.exchTouch], lazily reset per `tick`). Only mutates this
+     *  root's subtree, so different tiles run on different threads safely. */
+    fun refineCountRoot(gxRaw: Int, gyRaw: Int, cx: Float, cy: Float, radiusRaw: Float, tick: Int) {
+        val r = if (radiusRaw > MAX_DISC_RADIUS) MAX_DISC_RADIUS else radiusRaw
+        val ox = -HALF + gxRaw * TILE; val oy = -HALF + gyRaw * TILE
+        refineCountNode(roots[mod(gyRaw) * BASE_RES + mod(gxRaw)], ox, oy, TILE, 0, cx, cy, r, tick)
+    }
+    private fun refineCountNode(node: QuadNode, x: Float, y: Float, sz: Float, depth: Int,
+                                cx: Float, cy: Float, r: Float, tick: Int) {
+        val dx = maxOf(x - cx, cx - (x + sz), 0f); val dy = maxOf(y - cy, cy - (y + sz), 0f)
+        if (dx * dx + dy * dy > r * r) return
+        if (depth == MAX_DEPTH) {
+            val ccx = x + sz * 0.5f; val ccy = y + sz * 0.5f
+            val ex = ccx - cx; val ey = ccy - cy
+            if (ex * ex + ey * ey <= r * r) {
+                node.lastAccessTick = tick
+                val s = node.store!!
+                if (s.size > 0) {
+                    var mask = 0
+                    for (i in 0 until s.size) {
+                        val id = s.idAt(i)
+                        if (id == A) mask = mask or 1 else if (id == B) mask = mask or 2 else if (id == C) mask = mask or 4
+                    }
+                    node.presenceMask = mask
+                }
+                if (node.exchTouchTick != tick) { node.exchTouch = 0; node.exchTouchTick = tick }
+                node.exchTouch++
+            }
+            return
+        }
+        if (node.isLeaf) splitLeaf(node)
+        val h = sz * 0.5f; val ch = node.children!!
+        refineCountNode(ch[0], x, y, h, depth + 1, cx, cy, r, tick)
+        refineCountNode(ch[1], x + h, y, h, depth + 1, cx, cy, r, tick)
+        refineCountNode(ch[2], x, y + h, h, depth + 1, cx, cy, r, tick)
+        refineCountNode(ch[3], x + h, y + h, h, depth + 1, cx, cy, r, tick)
+    }
+
+    /** PASS 2 (one cell, read-only — the tree is frozen after pass 1): collect this cell's UNCONTESTED finest
+     *  leaves (touched by exactly one cell this batch) into [out]. Never splits (pass 1 already refined every
+     *  footprint), so different cells run on different threads safely; the collected leaves are single-owner,
+     *  so the caller's [balanceBatchedOn] mutates disjoint stores. */
+    fun collectUncontestedFootprint(cx: Float, cy: Float, radiusRaw: Float, tick: Int, out: MutableList<QuadNode>) {
+        out.clear()
+        val r = if (radiusRaw > MAX_DISC_RADIUS) MAX_DISC_RADIUS else radiusRaw
+        val gxMin = floor((cx - r + HALF) / TILE).toInt(); val gxMax = floor((cx + r + HALF) / TILE).toInt()
+        val gyMin = floor((cy - r + HALF) / TILE).toInt(); val gyMax = floor((cy + r + HALF) / TILE).toInt()
+        for (gyRaw in gyMin..gyMax) for (gxRaw in gxMin..gxMax) {
+            val ox = -HALF + gxRaw * TILE; val oy = -HALF + gyRaw * TILE
+            collectUncontestedNode(roots[mod(gyRaw) * BASE_RES + mod(gxRaw)], ox, oy, TILE, 0, cx, cy, r, tick, out)
+        }
+    }
+    private fun collectUncontestedNode(node: QuadNode, x: Float, y: Float, sz: Float, depth: Int,
+                                       cx: Float, cy: Float, r: Float, tick: Int, out: MutableList<QuadNode>) {
+        val dx = maxOf(x - cx, cx - (x + sz), 0f); val dy = maxOf(y - cy, cy - (y + sz), 0f)
+        if (dx * dx + dy * dy > r * r) return
+        if (depth == MAX_DEPTH) {
+            val ccx = x + sz * 0.5f; val ccy = y + sz * 0.5f
+            val ex = ccx - cx; val ey = ccy - cy
+            if (ex * ex + ey * ey <= r * r && node.exchTouchTick == tick && node.exchTouch < 2) out.add(node)
+            return
+        }
+        if (node.isLeaf) return   // read-only: pass 1 refined every footprint, so a leaf here can't be in-disc
+        val h = sz * 0.5f; val ch = node.children!!
+        collectUncontestedNode(ch[0], x, y, h, depth + 1, cx, cy, r, tick, out)
+        collectUncontestedNode(ch[1], x + h, y, h, depth + 1, cx, cy, r, tick, out)
+        collectUncontestedNode(ch[2], x, y + h, h, depth + 1, cx, cy, r, tick, out)
+        collectUncontestedNode(ch[3], x + h, y + h, h, depth + 1, cx, cy, r, tick, out)
+    }
+
     // ── death / export deposit ─────────────────────────────────────────────────────────────────────────
     /** Add `amount` of `sp` spread across a footprint (refine to fine first; does NOT re-stamp the collapse
      *  clock — a death/division deposit lands where the cell just was, already fresh). Conservation-exact. */
@@ -463,6 +551,10 @@ class QuadNode private constructor() {
     var children: Array<QuadNode>? = null
     val monomerRemainder = IntArray(3)
     var presenceMask = 0  // bit-mask of monomers present (bit 0=r, 1=g, 2=b); set during openFootprint
+    // Drop-contested exchange: per-batch count of cells touching this finest leaf, lazily reset via the
+    // stamp (exchTouchTick == the exchange tick means the count is live). ≥2 ⇒ contested ⇒ dropped.
+    var exchTouch = 0
+    var exchTouchTick = -1
     val isLeaf: Boolean get() = children == null
 
     fun becomeInternal(ch: Array<QuadNode>) { children = ch; store = null }

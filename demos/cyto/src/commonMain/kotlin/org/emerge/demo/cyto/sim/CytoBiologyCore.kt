@@ -8,16 +8,15 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.time.TimeSource
 
-/** Reusable scratch for the drop-contested [CytoBiologyCore.passiveEnvExchange] serial pre-pass. Held by the
- *  pipeline state (one per reducer) so the pre-pass allocates nothing per tick. Not thread-safe — only the
- *  serial pre-pass touches it; the parallel pass reads per-cell [CellWork] scratch instead. */
+/** Reusable scratch for the tile-parallel drop-contested [CytoBiologyCore.passiveEnvExchange]. Held by the
+ *  pipeline state (one per reducer). The serial assignment pass fills it; the parallel passes only READ it
+ *  (per-cell mutable state lives on [CellWork]). */
 class ExchangeScratch {
-    /** leaf identity → number of batch-eligible cells that touched it this batch (≥2 ⇒ contested ⇒ dropped). */
-    val touchCount = HashMap<QuadNode, Int>()
-    /** the batch-eligible cells that actually opened a footprint this tick (compact, partitioned in pass 3). */
+    /** the batch-eligible cells this tick (compact; pass 2 partitions over these by index). */
     val batchCells = ArrayList<CellWork>()
-    /** per-cell species-union scratch (canDiffuse species across a cell's uncontested leaves + its cytoplasm). */
-    val species = HashSet<Int>()
+    /** one bucket per root tile (BASE_RES² = 16): packed (batchCellIdx<<32 | (gx+0x8000)<<16 | (gy+0x8000))
+     *  entries, each = one root descent. Pass 1 partitions the 16 tiles across threads; disjoint roots. */
+    val tileBuckets: Array<ArrayList<Long>> = Array(CytoMatterField.BASE_RES * CytoMatterField.BASE_RES) { ArrayList() }
 }
 
 // Scratch arrays for CytoBiologyCore.diffuse — single-threaded, reused across calls.
@@ -83,95 +82,97 @@ object CytoBiologyCore {
      *  `canDiffuse`) are excluded; there is **no passive leak** of un-metabolisable waste. Conservation-exact
      *  (QUADTREE.md exchange); the cell senses local matter density through this intake.
      *
-     *  **Drop-contested parallelization (2026-07-08).** The naive per-cell loop is order-DEPENDENT (a leaf's
-     *  live count shifts as earlier cells balance against it) and refines the shared quad-tree, so it can't be
-     *  parallelized bit-identically. Instead:
-     *   1. **Serial pre-pass** (must be serial — `openFootprint` REFINES the tree + stamps access) refines and
-     *      *caches* each batch-eligible cell's footprint leaves, tallying how many cells touch each leaf.
-     *   2. A leaf touched by ≥2 cells is **contested** and DROPPED (each cell filters it out of its cached
-     *      list); a leaf touched by exactly one cell is **single-owner**.
-     *   3. **Parallel pass** balances each cell over only its single-owner leaves. Single-owner ⇒ no two cells
-     *      write the same leaf store, and each cell writes only its own cytoplasm ⇒ order-independent ⇒ the
-     *      parallel result is bit-identical to the sequential fallback (the cross-peer determinism gate).
-     *  The contested set is geometry-only ⇒ thread-count-independent ⇒ a stable golden. Conservation-exact
-     *  (dropped leaves are untouched). When no leaf is contested (the common colony density — see the
-     *  ExchangeProbe findings) this is bit-identical to the old junction; only overlapping footprints re-baseline. */
+     *  **Tile-parallel drop-contested parallelization (2026-07-08).** The naive per-cell loop is order-DEPENDENT
+     *  (a leaf's live count shifts as earlier cells balance against it) and refines the shared quad-tree, so it
+     *  can't be parallelized bit-identically as-is. Instead, in three passes:
+     *   0. **Serial assignment** (cheap, no tree touch): collect the batch-eligible cells and bucket each
+     *      footprint's root-tile descents (`forEachFootprintTile`) by root index.
+     *   1. **Parallel by ROOT TILE** ([CytoMatterField.refineCountRoot]): each of the 16 roots is refined on one
+     *      thread — since `splitLeaf` never crosses a root boundary, disjoint roots mutate safely. This pass
+     *      refines every footprint to the finest depth, sets presence masks, and counts how many cells touch
+     *      each finest leaf. Every finest leaf lives in exactly one root, so its touch count is complete within
+     *      its tile — **no cross-tile merge**. A leaf touched by ≥2 cells is contested.
+     *   2. **Parallel by CELL** ([CytoMatterField.collectUncontestedFootprint]): the tree is frozen, so each
+     *      cell read-only-descends, collects its UNCONTESTED (single-owner) leaves, and balances over them into
+     *      its own cytoplasm. Single-owner ⇒ no two cells write the same leaf store; own cytoplasm ⇒ no cross-
+     *      cell writes ⇒ order-independent ⇒ bit-identical to the sequential fallback (the determinism gate).
+     *  Contested is geometry-only ⇒ thread-count-independent ⇒ stable golden; dropped leaves are untouched
+     *  (conservation-exact). This is the same computation as the earlier serial-pre-pass drop-contested (same
+     *  contested set, same balance) — just reorganised so the whole descent is parallel — so it is bit-identical
+     *  to it (no re-baseline). */
     fun passiveEnvExchange(
         ordered: List<CellWork>, grid: CytoMatterField, tick: Int, scratch: ExchangeScratch,
         executor: ParallelExecutor? = null, threshold: Int = Int.MAX_VALUE, stats: BioProfile? = null,
     ) {
         val tGroup = if (stats != null) TimeSource.Monotonic.markNow() else null
         val currentBatch = tick % CytoTuning.EXCHANGE_BATCHES
-        val touchCount = scratch.touchCount.also { it.clear() }
         val batchCells = scratch.batchCells.also { it.clear() }
+        val tileBuckets = scratch.tileBuckets
+        for (b in tileBuckets) b.clear()
 
-        // ── Serial pre-pass: refine + enumerate each footprint, tally per-leaf touch counts. ──
-        val tDescent = if (ExchangeProbe.enabled) TimeSource.Monotonic.markNow() else null
+        // ── Pass 0 (serial, cheap): collect batch cells + bucket their root-tile descents by root index. ──
         for (w in ordered) {
             if (w.exchangeBatch != currentBatch) continue
             if (w.exposureMilli <= MIN_EXPOSURE_FOR_TRANSFER) continue
-            val n = grid.openFootprint(w.cx, w.cy, w.logicalRadius.toFloat(), tick)
-            if (n == 0) { grid.closeFootprint(); continue }
-            grid.copyFootprintLeaves(w.exchLeaves)
-            for (leaf in w.exchLeaves) touchCount[leaf] = (touchCount[leaf] ?: 0) + 1
+            val idx = batchCells.size
             batchCells.add(w)
-            grid.closeFootprint()
+            grid.forEachFootprintTile(w.cx, w.cy, w.logicalRadius.toFloat()) { ti, gx, gy ->
+                tileBuckets[ti].add((idx.toLong() shl 32) or ((gx + 0x8000).toLong() shl 16) or (gy + 0x8000).toLong())
+            }
         }
 
-        if (tDescent != null) { ExchangeProbe.descentNanos += tDescent.elapsedNow().inWholeNanoseconds }
-        // ── Serial pre-pass: drop contested (≥2-cell) leaves, build each cell's transfer plan. ──
-        val tPlan = if (ExchangeProbe.enabled) TimeSource.Monotonic.markNow() else null
-        val species = scratch.species
-        for (w in batchCells) {
-            val leaves = w.exchLeaves
-            var keep = 0
-            for (i in leaves.indices) {
-                val leaf = leaves[i]
-                if ((touchCount[leaf] ?: 0) < 2) leaves[keep++] = leaf
-            }
-            while (leaves.size > keep) leaves.removeAt(leaves.size - 1)
-            w.exchN = keep
-            w.exchTransferN = 0
-            if (keep == 0) continue
-            // Species union over the surviving (single-owner) leaves + this cell's cytoplasm.
-            species.clear()
-            val cyt = w.cytoplasm
-            for (j in 0 until cyt.size) { val id = cyt.idAt(j); if (w.handleable.canDiffuse(id)) species.add(id) }
-            for (leaf in leaves) {
-                val s = leaf.store!!
-                if (s.size > 0) for (i in 0 until s.size) { val id = s.idAt(i); if (w.handleable.canDiffuse(id)) species.add(id) }
-            }
-            if (stats != null) stats.exchSpeciesCalls += species.size
-            // Transferable = monomers (atomCount 1) or species with a genetic import bias.
-            var transferN = 0
-            for (sp in species) { val ib = w.importBias[sp] ?: 0; if (ib != 0 || SpeciesRegistry.atomCount(sp) == 1) transferN++ }
-            if (transferN == 0) continue
-            if (w.exchTransferIdx.size < transferN) { w.exchTransferIdx = IntArray(transferN); w.exchTransferCeffs = IntArray(transferN) }
-            var t = 0
-            for (sp in species) {
-                val ib = w.importBias[sp] ?: 0
-                if (ib != 0 || SpeciesRegistry.atomCount(sp) == 1) {
-                    w.exchTransferIdx[t] = sp
-                    w.exchTransferCeffs[t] = (cyt.count(sp) - ib).coerceAtLeast(0)
-                    t++
+        // ── Pass 1 (parallel by root tile): refine + masks + per-leaf touch counts. Disjoint roots. ──
+        ColumnPartition.disjoint(tileBuckets.size, executor, threshold) { tStart, tEnd ->
+            for (ti in tStart until tEnd) {
+                val bucket = tileBuckets[ti]
+                for (bi in bucket.indices) {
+                    val p = bucket[bi]
+                    val w = batchCells[(p ushr 32).toInt()]
+                    val gx = ((p ushr 16) and 0xFFFF).toInt() - 0x8000
+                    val gy = (p and 0xFFFF).toInt() - 0x8000
+                    grid.refineCountRoot(gx, gy, w.cx, w.cy, w.logicalRadius.toFloat(), tick)
                 }
             }
-            w.exchTransferN = transferN
         }
 
-        if (tPlan != null) { ExchangeProbe.planNanos += tPlan.elapsedNow().inWholeNanoseconds }
-        // ── Parallel pass: balance each cell over its single-owner leaves (disjoint stores ⇒ SEQ==PAR). ──
-        val tBalance = if (ExchangeProbe.enabled) TimeSource.Monotonic.markNow() else null
+        // ── Pass 2 (parallel by cell): collect uncontested leaves, build transfer plan, balance. ──
         val m = batchCells.size
         ColumnPartition.disjoint(m, executor, threshold) { start, end ->
             for (ci in start until end) {
                 val w = batchCells[ci]
-                if (w.exchN == 0 || w.exchTransferN == 0) continue
-                grid.balanceBatchedOn(w.exchLeaves, w.exchN, w.exchTransferN, w.exchTransferIdx,
-                    w.exchTransferCeffs, CytoTuning.DIFFUSION_SCALE_FACTOR, w.cytoplasm)
+                grid.collectUncontestedFootprint(w.cx, w.cy, w.logicalRadius.toFloat(), tick, w.exchLeaves)
+                val leaves = w.exchLeaves
+                val keep = leaves.size
+                w.exchN = keep
+                w.exchTransferN = 0
+                if (keep == 0) continue
+                // Species union over the single-owner leaves + this cell's cytoplasm.
+                val species = w.exchSpecies.also { it.clear() }
+                val cyt = w.cytoplasm
+                for (j in 0 until cyt.size) { val id = cyt.idAt(j); if (w.handleable.canDiffuse(id)) species.add(id) }
+                for (leaf in leaves) {
+                    val s = leaf.store!!
+                    if (s.size > 0) for (i in 0 until s.size) { val id = s.idAt(i); if (w.handleable.canDiffuse(id)) species.add(id) }
+                }
+                // Transferable = monomers (atomCount 1) or species with a genetic import bias.
+                var transferN = 0
+                for (sp in species) { val ib = w.importBias[sp] ?: 0; if (ib != 0 || SpeciesRegistry.atomCount(sp) == 1) transferN++ }
+                if (transferN == 0) continue
+                if (w.exchTransferIdx.size < transferN) { w.exchTransferIdx = IntArray(transferN); w.exchTransferCeffs = IntArray(transferN) }
+                var t = 0
+                for (sp in species) {
+                    val ib = w.importBias[sp] ?: 0
+                    if (ib != 0 || SpeciesRegistry.atomCount(sp) == 1) {
+                        w.exchTransferIdx[t] = sp
+                        w.exchTransferCeffs[t] = (cyt.count(sp) - ib).coerceAtLeast(0)
+                        t++
+                    }
+                }
+                w.exchTransferN = transferN
+                grid.balanceBatchedOn(leaves, keep, transferN, w.exchTransferIdx, w.exchTransferCeffs,
+                    CytoTuning.DIFFUSION_SCALE_FACTOR, cyt)
             }
         }
-        if (tBalance != null) { ExchangeProbe.balanceNanos += tBalance.elapsedNow().inWholeNanoseconds; ExchangeProbe.ticks++ }
 
         if (stats != null) {
             stats.ticks++
