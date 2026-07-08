@@ -144,21 +144,27 @@ a few ms once division is native (steps 1–2 alone won't help a division-domina
 critical finding). Whole-tick: removing ~20ms of serial lifecycle also RELIEVES the all-core-clock
 tax on the rest, so the biology parallelism already landed should finally convert to whole-tick wins.
 
-## State of the tree at handoff (updated 2026-07-09)
-- **Steps 0 + 1 + 3 landed & green** (`1028f5ac` destroy+detach, `6dce0a6d` division). Bit-identical:
-  golden (all 3), CytoSoaSpecTest, CytoSoaEquivalenceTest. `LcMixProbe` throwaway deleted.
-- **Perf (clean A/B, 8192-spread / 10278 cells, division-dominated) — see PERF.md:** lifecycle
-  30 ms → 88 µs (round-trip gone); whole tick PAR **72.9 → 28.2 ms (2.59×)**; biology PAR 23.0 → 17.4 ms
-  (all-core-clock tax relief, biology code unchanged — the predicted second-order win). Mature colony:
-  lifecycle 35 µs.
-- **`applyLifecycleSoa` now covers detach + destroy + division.** Only weld / weld-heal still fall back to
-  `bridgeLifecycle` (Step 2).
+## ✅ COMPLETE (2026-07-09) — the AoS lifecycle round-trip is GONE
+All steps landed & green (goldens ×5 incl. new weldHeal+stickyWeld, CytoSoaSpecTest,
+parallelMatchesSequential, grownStateRoundTrips):
+- `1028f5ac` steps 0+1 (detach + destroy) · `6dce0a6d` step 3 (division) · `c379d984` perf docs
+- `ce614057` weld/heal golden coverage (captured from the round-trip — the reference)
+- `27418d97` step 2 (weld + weld-heal) + **deleted `bridgeLifecycle`** (SimState materialize /
+  CytoLifecycleSystem.update / fromSimState rebuild / impulse gather-scatter / `lc:*` probe)
+- `cb8c162c` **deleted the now-dead `CytoLifecycleSystem`** (255 lines; round-trip was its only caller)
 
-### Remaining (optional — decide with Stu)
-- **Step 2 — SoA-native WELD + WELD-HEAL.** LOW VALUE: never observed in either measured regime (growing =
-  division-only, mature = destroy-only), so the fallback is effectively free. Doing it only buys the ability
-  to *delete the round-trip entirely* (remove `bridgeLifecycle`, `toSimState(includeImpulse)` bridge usage,
-  the impById gather/scatter, the `lc:*` timing probe). Reuse `LcAdjacency.addSpring(a,b,initialDamage)` —
-  weld = `addSpring(a,b)`; weld-heal = `addSpring(a,b, initialDamage = (breakDamage − heal).coerceAtLeast(0))`.
-  Ordering: detach, destroy, weld, weld-heal, divide (the `welded` set dedups weld+heal). Then drop the gate.
-- Whether the ~2.6× whole-tick win is enough or the biology phase (now the dominant cost) is the next target.
+`applyLifecycle` (renamed from `applyLifecycleSoa`) is now the whole lifecycle — detach + destroy +
+weld + weld-heal + division — in place on the persistent world, no fallback.
+
+**Perf (clean A/B, 8192-spread / 10278 cells, division-dominated) — see PERF.md:** lifecycle
+30 ms → 88 µs; whole tick PAR **72.9 → 28.2 ms (2.59×)**; biology PAR 23.0 → 17.4 ms (all-core-clock tax
+relief, biology code unchanged — the predicted second-order win). Mature colony: lifecycle 35 µs.
+
+### Follow-up debt (flagged, not chased)
+- The `WeldIntent` / `WeldHealIntent` / `DetachIntent` / `CellDivisionIntent` event classes are now
+  consumer-less (biology/contacts write to `state`, not builder events; `CytoLifecycleSystem` was the only
+  reader). `CytoInteractionSystem` still emits a vestigial `DetachIntent` whose events are discarded.
+  `CellDestroyIntent` stays live (interaction Delete-taps). A tidy-up pass could remove the four dead intents.
+- `toSimState(includeImpulse=true)` is now never called (only the deleted bridge used it) — param could drop.
+- **Next perf target: biology is again the dominant phase** (2026-07-08 roadmap: exchange reformulate /
+  finish detect-then-apply / writeback).
