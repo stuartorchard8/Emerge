@@ -303,7 +303,6 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
                 val delta = sc - bucket
                 val movement = delta / denom
                 if (movement != 0) store.add(sid, -movement)
-                if (ExchangeProbe.enabled) ExchangeProbe.attribute(leaf, movement)
                 results[t] += movement
             }
         }

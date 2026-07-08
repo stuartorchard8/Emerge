@@ -1,66 +1,38 @@
 package org.emerge.demo.cyto.sim
 
-import kotlin.math.abs
-
 /**
- * Throwaway measurement probe for the [CytoBiologyCore.passiveEnvExchange] parallelization decision
- * (see `docs/cyto-parallel-next-session.md`). Answers the two "measure before building" questions for the
- * DECIDED drop-contested approach:
- *   (a) contested fraction — how many leaves (and cells) would be dropped because ≥2 cells in the same
- *       exchange batch touch the same fine leaf (order-dependence ⇒ can't parallelize bit-identically), and
- *   (b) dropped-transfer magnitude — how much matter movement happens *on* those contested leaves and would
- *       therefore be skipped this tick, vs. the movement kept on single-owner leaves.
+ * Throwaway timing probe for the [CytoBiologyCore.passiveEnvExchange] descent-parallelization decision
+ * (see `docs/cyto-parallel-next-session.md`). Splits the drop-contested exchange into its three costs so we
+ * can see the Amdahl ceiling of the proposed 4-step redesign BEFORE building it:
+ *   - [descentNanos] — the serial quad-tree descent (openFootprint: refine + stamp + copy leaves). In the
+ *     redesign this becomes the serial "step 3" (refine only), so it caps the achievable speedup.
+ *   - [planNanos] — drop-contested filtering + species union + transfer-array build (redesign steps 1/2/4a,
+ *     all parallelizable).
+ *   - [balanceNanos] — the balance/transfer inner loop (already parallel in debdaddc; redesign step 4b).
  *
- * Off in production (`enabled == false`); the exchange path checks the flag on the hot loop. NOT thread-safe
- * — it only runs on the sequential exchange path. A leaf is "contested" iff ≥2 batch-eligible cells touch it
- * (this is exactly the thread-count-independent contested set of the parallel design: any two cells sharing a
- * leaf force it contested whether they land in the same thread partition or different ones).
+ * Off in production ([enabled] == false); NOT thread-safe — only the sequential measurement path sets it.
  */
 object ExchangeProbe {
     var enabled = false
 
-    // ── per-batch working state (rebuilt each passiveEnvExchange call) ──
-    /** leaf identity → number of batch-eligible cells that touched it this batch. */
-    val touchCount = HashMap<QuadNode, Int>()
-    /** leaves with touchCount ≥ 2 this batch (order-dependent ⇒ dropped by the parallel plan). */
-    val contested = HashSet<QuadNode>()
+    var ticks = 0L
+    var descentNanos = 0L
+    var planNanos = 0L
+    var balanceNanos = 0L
 
-    // ── accumulators (summed over every measured batch) ──
-    var batches = 0L
-    var cells = 0L                // batch-eligible cells that actually exchanged (n>0)
-    var contestedCells = 0L       // of those, cells whose footprint includes ≥1 contested leaf
-    var leafTouches = 0L          // Σ footprint leaves with multiplicity (per-cell leaf counts summed)
-    var distinctLeaves = 0L       // Σ distinct leaves touched per batch
-    var contestedLeaves = 0L      // Σ contested (≥2-cell) leaves per batch
-    var keptMag = 0L              // Σ |movement| on single-owner leaves (survives the parallel plan)
-    var droppedMag = 0L           // Σ |movement| on contested leaves (skipped by the parallel plan)
-
-    fun reset() {
-        touchCount.clear(); contested.clear()
-        batches = 0; cells = 0; contestedCells = 0
-        leafTouches = 0; distinctLeaves = 0; contestedLeaves = 0
-        keptMag = 0; droppedMag = 0
-    }
-
-    /** Called by [CytoMatterField.balanceBatched] per leaf-movement to attribute magnitude. */
-    fun attribute(leaf: QuadNode, movement: Int) {
-        if (movement == 0) return
-        if (contested.contains(leaf)) droppedMag += abs(movement).toLong()
-        else keptMag += abs(movement).toLong()
-    }
+    fun reset() { ticks = 0; descentNanos = 0; planNanos = 0; balanceNanos = 0 }
 
     fun report(): String {
-        val b = batches.coerceAtLeast(1)
-        val leaves = distinctLeaves.coerceAtLeast(1)
-        val c = cells.coerceAtLeast(1)
-        val mag = (keptMag + droppedMag).coerceAtLeast(1)
-        fun pct(n: Long, d: Long) = 100.0 * n / d
+        val t = ticks.coerceAtLeast(1)
+        val total = (descentNanos + planNanos + balanceNanos).coerceAtLeast(1)
+        fun us(n: Long) = n / 1000 / t
+        fun pct(n: Long) = "%.1f".format(100.0 * n / total)
         return buildString {
-            appendLine("  exchange-contention over $batches batches:")
-            appendLine("    cells/batch=${cells / b}  contestedCells=${contestedCells} (${"%.1f".format(pct(contestedCells, c))}%)")
-            appendLine("    distinctLeaves/batch=${distinctLeaves / b}  leafTouches/batch=${leafTouches / b}  (avg cells/leaf=${"%.2f".format(leafTouches.toDouble() / leaves)})")
-            appendLine("    contestedLeaves=${contestedLeaves} of ${distinctLeaves} (${"%.1f".format(pct(contestedLeaves, leaves))}% of touched leaves)")
-            appendLine("    transfer magnitude: kept=${keptMag}  dropped=${droppedMag}  → DROPPED ${"%.2f".format(pct(droppedMag, mag))}% of all movement")
+            appendLine("  exchange timing over $ticks measured ticks (per-tick):")
+            appendLine("    descent(serial refine)=${us(descentNanos)}us (${pct(descentNanos)}%)")
+            appendLine("    plan(parallelizable)  =${us(planNanos)}us (${pct(planNanos)}%)")
+            appendLine("    balance(parallel)     =${us(balanceNanos)}us (${pct(balanceNanos)}%)")
+            appendLine("    → serial-floor if only descent stays serial: ${pct(descentNanos)}% of exchange")
         }
     }
 }

@@ -106,6 +106,7 @@ object CytoBiologyCore {
         val batchCells = scratch.batchCells.also { it.clear() }
 
         // ── Serial pre-pass: refine + enumerate each footprint, tally per-leaf touch counts. ──
+        val tDescent = if (ExchangeProbe.enabled) TimeSource.Monotonic.markNow() else null
         for (w in ordered) {
             if (w.exchangeBatch != currentBatch) continue
             if (w.exposureMilli <= MIN_EXPOSURE_FOR_TRANSFER) continue
@@ -117,7 +118,9 @@ object CytoBiologyCore {
             grid.closeFootprint()
         }
 
+        if (tDescent != null) { ExchangeProbe.descentNanos += tDescent.elapsedNow().inWholeNanoseconds }
         // ── Serial pre-pass: drop contested (≥2-cell) leaves, build each cell's transfer plan. ──
+        val tPlan = if (ExchangeProbe.enabled) TimeSource.Monotonic.markNow() else null
         val species = scratch.species
         for (w in batchCells) {
             val leaves = w.exchLeaves
@@ -156,7 +159,9 @@ object CytoBiologyCore {
             w.exchTransferN = transferN
         }
 
+        if (tPlan != null) { ExchangeProbe.planNanos += tPlan.elapsedNow().inWholeNanoseconds }
         // ── Parallel pass: balance each cell over its single-owner leaves (disjoint stores ⇒ SEQ==PAR). ──
+        val tBalance = if (ExchangeProbe.enabled) TimeSource.Monotonic.markNow() else null
         val m = batchCells.size
         ColumnPartition.disjoint(m, executor, threshold) { start, end ->
             for (ci in start until end) {
@@ -166,6 +171,7 @@ object CytoBiologyCore {
                     w.exchTransferCeffs, CytoTuning.DIFFUSION_SCALE_FACTOR, w.cytoplasm)
             }
         }
+        if (tBalance != null) { ExchangeProbe.balanceNanos += tBalance.elapsedNow().inWholeNanoseconds; ExchangeProbe.ticks++ }
 
         if (stats != null) {
             stats.ticks++

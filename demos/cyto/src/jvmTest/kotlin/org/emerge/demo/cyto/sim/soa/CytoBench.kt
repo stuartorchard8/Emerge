@@ -55,9 +55,9 @@ class CytoBench {
 
     @Test
     fun exchangeContention() {
-        // Measure the drop-contested sacrifice BEFORE building the parallel exchange (see
-        // docs/cyto-parallel-next-session.md "FIRST STEP"). Enable with `-Dcytoexchprobe=1`
-        // (optionally -Dcytocells=N / -Dcytospread=1); results land in /tmp/cyto_exchprobe.txt.
+        // Split the drop-contested exchange into descent(serial) / plan / balance to size the Amdahl
+        // ceiling of the descent-parallelization redesign (see docs/cyto-parallel-next-session.md).
+        // Enable with `-Dcytoexchprobe=1` (optionally -Dcytocells=N / -Dcytospread=1); → /tmp/cyto_exchprobe.txt.
         if (System.getProperty("cytoexchprobe") == null) return
         val cfg = CytoConfig()
         val soa = CytoSoaReducer(cfg)
