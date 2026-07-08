@@ -21,6 +21,8 @@ import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.demo.cyto.sim.cellMass
+import org.emerge.demo.cyto.sim.atomCount
+import org.emerge.demo.cyto.sim.totalBiomassBonds
 import org.emerge.demo.cyto.sim.systems.CellDestroyIntent
 import org.emerge.demo.cyto.sim.systems.CellDivisionIntent
 import org.emerge.demo.cyto.sim.systems.CytoInteractionSystem
@@ -42,17 +44,22 @@ import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.ImpulseComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
+import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.SpringConstraint
 import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.primitives.BodyShape
 import org.emerge.sim.core.physics.primitives.Contact
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
+import org.emerge.sim.core.physics.primitives.Norm
 import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.contacts
+import kotlin.math.absoluteValue
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sign
 import kotlin.time.TimeSource
 
 /**
@@ -188,10 +195,12 @@ class CytoSoaReducer(
      * takes the [bridgeLifecycle] round-trip). Bit-identical to the round-trip for the sets it covers
      * (gated by CytoGoldenTest / parallelMatchesSequential / conservation).
      *
-     * **Step 1 — DESTROY + DETACH only.** Welds, weld-heals, and divisions still round-trip (they add
-     * springs / allocate entities; ported in later steps). Detach cuts a cell's springs; destroy deposits
-     * the dead cell's matter to the reservoir, drops its springs, and removes the entity. Then a single
-     * compact + CSR rebuild reproduces the round-trip's surviving slot order + edge order exactly.
+     * **Steps 1+3 — DETACH + DESTROY + DIVISION.** Only welds / weld-heals still round-trip (they never
+     * co-occur with these in the measured regimes — see docs/cyto-soa-lifecycle-plan.md — so the fallback
+     * is effectively free). The spring topology is edited on an entity-id-keyed adjacency snapshot
+     * ([LcAdjacency], mutated by the same detach/destroy/divide logic as [CytoLifecycleSystem], in the same
+     * order), daughters are allocated + column-added exactly as `spawnCell`/`fromSimState` do, then a single
+     * compact + `csr.rebuildFrom` reproduces the round-trip's survivor slot order + edge order.
      */
     private fun applyLifecycleSoa(
         w: CytoWorld,
@@ -200,27 +209,107 @@ class CytoSoaReducer(
         readyWelds: List<Long>,
         divide: List<EntityId>,
     ): CytoWorld? {
-        // Gate: this step handles only detach + destroy. Bail (→ round-trip) if any weld/heal/division fires.
-        if (state.weldLo.isNotEmpty() || readyWelds.isNotEmpty() || divide.isNotEmpty()) return null
+        // Gate: this path covers detach + destroy + division. Bail (→ round-trip) if any weld/heal fires.
+        if (state.weldLo.isNotEmpty() || readyWelds.isNotEmpty()) return null
 
-        val broken = HashSet<Long>()
-        // Detach (interact order): cut every connection of the named cell.
-        for (id in input.detaches) markPairsBroken(w, id.value, broken)
-
-        // Destroy (emit order = interact Delete-taps, then biology deaths), deduped like the AoS `destroyed`
-        // set. Each dying cell recycles ALL its matter to its reservoir grid-cell, drops its springs, is removed.
+        val adj = LcAdjacency(w)
         val destroyed = HashSet<Int>()
+
+        // Detach (interact order): cut every connection of the named cell.
+        for (id in input.detaches) for (n in adj.neighbours(id.value)) adj.removePair(id.value, n)
+
+        // Destroy (emit order: interact Delete-taps, then biology deaths), deduped like the AoS `destroyed`
+        // set. Each dying cell recycles ALL its matter to its reservoir grid-cell, drops its springs, is removed.
         val order = ArrayList<Int>(interactDestroy.size + destroy.size)
         for (idv in interactDestroy) if (destroyed.add(idv)) order.add(idv)
         for (id in destroy) if (destroyed.add(id.value)) order.add(id.value)
         for (idv in order) {
             val slot = w.slotOf(idv); if (slot < 0) continue
             depositCellMatterSoa(w, slot)
-            markPairsBroken(w, idv, broken)
+            for (n in adj.neighbours(idv)) adj.removePair(idv, n)
             w.world.removeEntity(EntityId(idv))
         }
-        rebuildAfterStructuralEdit(w, broken)
+
+        // Divide (biology order). Runs after destroy so a daughter reuses a just-freed id exactly as the
+        // AoS allocator would (createEntity scans from lastEntityValue skipping live ids).
+        for (id in divide) {
+            if (destroyed.contains(id.value)) continue
+            divideSoa(w, adj, id, destroyed)
+        }
+
+        // Reclaim removed slots (stable insertion order — survivors then daughters-in-intent-order) and
+        // rebuild the CSR over the new ordering from the (id-keyed, so compaction-stable) adjacency snapshot.
+        w.world.compact()
+        w.csr.rebuildFrom(
+            count = w.count,
+            entityIdAt = { w.entityId[it] },
+            slotOf = { w.slotOf(it) },
+            springsAt = { slot -> adj.springs[w.entityId[slot]] ?: emptyList() },
+            edgeAuxAt = { slot, other -> adj.dmg[w.entityId[slot]]?.get(other.value) ?: 0f },
+        )
         return w
+    }
+
+    /**
+     * Entity-id-keyed adjacency snapshot for SoA-native lifecycle edits — the mutable working copy of the
+     * spring topology + per-edge damage, seeded from the current CSR (preserving each cell's edge order).
+     * The add/remove/query methods reproduce [addSpring]/[removeSpringPair]/[springExists]/[neighboursOf]
+     * exactly (degree cap, dedup, symmetric edges, `rest = ra + rb`, damage-preserving attach). Keyed by
+     * entity id (not slot) so it survives the [compact] barrier; the CSR is rebuilt from it at the end.
+     */
+    private inner class LcAdjacency(val w: CytoWorld) {
+        val springs = HashMap<Int, ArrayList<SpringConstraint>>(w.count)
+        val dmg = HashMap<Int, HashMap<Int, Float>>(w.count)
+
+        init {
+            for (slot in 0 until w.count) {
+                val lo = w.csr.offset[slot]; val hi = w.csr.offset[slot + 1]
+                if (lo >= hi) continue
+                val ownerId = w.entityId[slot]
+                val list = ArrayList<SpringConstraint>(hi - lo)
+                val d = HashMap<Int, Float>(hi - lo)
+                for (k in lo until hi) {
+                    val other = w.csr.otherId[k]
+                    list.add(SpringConstraint(EntityId(other), Frac(w.csr.restRaw[k]), Frac(w.csr.stiffRaw[k]), Frac(w.csr.dampRaw[k])))
+                    d[other] = w.csr.edgeAux[k]
+                }
+                springs[ownerId] = list
+                dmg[ownerId] = d
+            }
+        }
+
+        /** Other endpoint of each of [id]'s springs (a fresh list, safe to iterate while mutating). */
+        fun neighbours(id: Int): List<Int> = springs[id]?.map { it.other.value } ?: emptyList()
+
+        /** Add a symmetric spring a↔b (mirrors [addSpring]): degree-capped, deduped, `rest = ra + rb`. */
+        fun addSpring(a: Int, b: Int, initialDamage: Float = 0f) {
+            if (a == b) return
+            val sa = w.slotOf(a); if (sa < 0) return
+            val sb = w.slotOf(b); if (sb < 0) return
+            val listA = springs[a]
+            if (listA == null || listA.none { it.other.value == b }) {   // a NEW weld: enforce the degree cap
+                val degA = listA?.size ?: 0
+                val degB = springs[b]?.size ?: 0
+                if (degA >= cfg.maxWeldDegree || degB >= cfg.maxWeldDegree) return
+            }
+            val rest = Frac(w.radiusRaw[sa]) + Frac(w.radiusRaw[sb])
+            attach(a, b, rest, initialDamage)
+            attach(b, a, rest, initialDamage)
+        }
+
+        private fun attach(owner: Int, other: Int, rest: Frac, initialDamage: Float) {
+            val list = springs.getOrPut(owner) { ArrayList() }
+            if (list.none { it.other.value == other }) list.add(SpringConstraint(EntityId(other), rest, cfg.springStiffness, cfg.springDamping))
+            val d = dmg.getOrPut(owner) { HashMap() }
+            if (!d.containsKey(other)) d[other] = initialDamage   // keep an existing edge's damage; else born at [initialDamage]
+        }
+
+        /** Cut the spring between [a] and [b] on both endpoints (mirrors [removeSpringPair]). */
+        fun removePair(a: Int, b: Int) {
+            springs[a]?.let { l -> l.removeAll { it.other.value == b } }
+            springs[b]?.let { l -> l.removeAll { it.other.value == a } }
+            dmg[a]?.remove(b); dmg[b]?.remove(a)
+        }
     }
 
     /** Deposit a cell's entire cytoplasm + biomass into its reservoir grid-cell (death recycling), SoA-native.
@@ -233,38 +322,140 @@ class CytoSoaReducer(
         w.cell.biomass[slot]?.let { for (i in 0 until it.size) w.grid.deposit(lx, ly, r, it.idAt(i), it.countAt(i)) }
     }
 
-    /** Mark every current CSR pair of [idValue] as broken (both directions, via the symmetric [pairKey]). */
-    private fun markPairsBroken(w: CytoWorld, idValue: Int, broken: HashSet<Long>) {
-        val slot = w.slotOf(idValue); if (slot < 0) return
-        for (k in w.csr.offset[slot] until w.csr.offset[slot + 1]) broken.add(pairKey(idValue, w.csr.otherId[k]))
-    }
+    /**
+     * SoA-native mitosis — a line-for-line port of [CytoLifecycleSystem.divide] onto the persistent world.
+     * Reads the mother + neighbours via column [gather] (identical to what the round-trip's SimBuilder sees),
+     * edits the spring topology on [adj], allocates the daughter via `world.createEntity` + `world.add` of all
+     * 7 columns (matching `spawnBody`/`spawnCell` + `fromSimState`'s ImpulseComponent), and writes the mother's
+     * updated Transform/CytoCell/Material back via [scatter]. Grid deposits go straight to `w.grid` (in place,
+     * order-free). The "can't split" case removes the mother (its matter already emitted as remainders).
+     */
+    private fun divideSoa(w: CytoWorld, adj: LcAdjacency, motherId: EntityId, destroyed: HashSet<Int>) {
+        val motherSlot = w.slotOf(motherId.value); if (motherSlot < 0) return
+        val cell = w.cell.gather(motherSlot)
+        val transform = w.transform.gather(motherSlot)
+        val motionVel = w.motion.gather(motherSlot).vel
+        val motherPos = transform.pos
+        val neighbours = adj.neighbours(motherId.value).map { EntityId(it) }
 
-    /** After entity removals / edge breaks: snapshot the surviving adjacency (entity-id-keyed, so it
-     *  survives compaction), compact the columns (reclaims removed slots, stable insertion order), then
-     *  rebuild the CSR over the new ordering — reproducing the round-trip's survivor + edge order. */
-    private fun rebuildAfterStructuralEdit(w: CytoWorld, broken: HashSet<Long>) {
-        val keep = HashMap<Int, MutableList<SpringConstraint>>(w.count)
-        val dmg = HashMap<Int, HashMap<Int, Float>>(w.count)
-        for (slot in 0 until w.count) {
-            if (!w.cells.isAlive(slot)) continue                     // skip removed owners
-            val ownerId = w.entityId[slot]
-            for (k in w.csr.offset[slot] until w.csr.offset[slot + 1]) {
-                val otherId = w.csr.otherId[k]
-                if (broken.contains(pairKey(ownerId, otherId))) continue
-                keep.getOrPut(ownerId) { ArrayList() }
-                    .add(SpringConstraint(EntityId(otherId), Frac(w.csr.restRaw[k]), Frac(w.csr.stiffRaw[k]), Frac(w.csr.dampRaw[k])))
-                dmg.getOrPut(ownerId) { HashMap() }[otherId] = w.csr.edgeAux[k]
+        // Division parameters — same source as the round-trip's CellDivisionIntent (see bridgeLifecycle).
+        val morphogen = state.divideMorphogen[motherId] ?: ""
+        val morphogenToMother = motherId in state.divideMorphogenToMother
+        val axisMorphogen = state.divideAxis[motherId] ?: ""
+        val divideAcross = motherId in state.divideAcross
+        val rejectMother = motherId in state.divideRejectMother
+
+        fun posOf(id: EntityId): Coord2? = w.slotOf(id.value).let { if (it < 0) null else w.transform.gather(it).pos }
+        fun cellOf(id: EntityId): CytoCellComponent? = w.slotOf(id.value).let { if (it < 0) null else w.cell.gather(it) }
+
+        // Outward normal = away from the average neighbour direction.
+        var sumDelta = Frac2.zero
+        for (n in neighbours) {
+            val np = posOf(n) ?: continue
+            sumDelta = sumDelta + (np - motherPos)
+        }
+        val neighbourVector = -(sumDelta / (neighbours.size + 1))
+        val neighbourNormal: Norm =
+            if (neighbourVector.x.raw == 0L && neighbourVector.y.raw == 0L) Norm.fromAngle(transform.ang)
+            else neighbourVector.norm
+
+        // Oriented division (MORPHOGENESIS.md): place the daughter along/across the axis-morphogen gradient.
+        val splitNormal: Norm = run {
+            if (axisMorphogen.isEmpty()) return@run neighbourNormal
+            fun conc(c: CytoCellComponent): Int {
+                val b = totalBiomassBonds(c.biomass); return if (b <= 0) 0 else (c.cytoplasm[axisMorphogen] ?: 0) * CytoTuning.CONC_SCALE / b
+            }
+            var maxC = conc(cell); var minC = maxC; var maxPos = motherPos; var minPos = motherPos
+            for (n in neighbours) {
+                val nc = cellOf(n) ?: continue
+                val np = posOf(n) ?: continue
+                val c = conc(nc)
+                if (c > maxC) { maxC = c; maxPos = np }
+                if (c < minC) { minC = c; minPos = np }
+            }
+            if (maxC == minC) return@run neighbourNormal               // flat → no gradient
+            val axisVec = minPos - maxPos                              // down-gradient direction
+            if (axisVec.x.raw == 0L && axisVec.y.raw == 0L) return@run neighbourNormal
+            val along = axisVec.norm
+            if (divideAcross) along.cw90 else along
+        }
+
+        // Group connections by how aligned they are with the split direction.
+        val ahead = ArrayList<EntityId>()
+        val side = ArrayList<EntityId>()
+        for (n in neighbours) {
+            val np = posOf(n) ?: continue
+            val toMother = (motherPos - np).norm
+            val s = toMother.dot(splitNormal).toFloat()
+            val group = if (s.absoluteValue < 0.75f) 0f else s.sign
+            when (group) {
+                -1f -> ahead.add(n)
+                0f -> side.add(n)
             }
         }
-        w.world.compact()
-        w.csr.rebuildFrom(
-            count = w.count,
-            entityIdAt = { w.entityId[it] },
-            slotOf = { w.slotOf(it) },
-            springsAt = { slot -> keep[w.entityId[slot]] ?: emptyList() },
-            edgeAuxAt = { slot, other -> dmg[w.entityId[slot]]?.get(other.value) ?: 0f },
-        )
+
+        // Split each species ⌊C/2⌋ to EACH side; the odd remainder goes to the reservoir (conserved, never minted).
+        val mlx = CytoUnits.toLogical(motherPos.x); val mly = CytoUnits.toLogical(motherPos.y); val mr = cell.logicalRadius.toFloat()
+        val morphogenCount = if (morphogen.isNotEmpty()) (cell.cytoplasm[morphogen] ?: 0) else 0
+        val half = floorSplitSoa(w, cell.cytoplasm, mlx, mly, mr, skip = morphogen)
+        val halfBio = floorSplitSoa(w, cell.biomass, mlx, mly, mr)
+
+        // Neither daughter can take a whole molecule ⇒ the cell can't split: it dies (matter already emitted).
+        if (atomCount(half) + atomCount(halfBio) == 0) {
+            if (morphogenCount > 0) w.grid.deposit(mlx, mly, mr, SpeciesRegistry.id(morphogen), morphogenCount)
+            for (n in neighbours) adj.removePair(motherId.value, n.value)
+            w.world.removeEntity(motherId)
+            destroyed.add(motherId.value)
+            return
+        }
+        val daughterRadius = radiusForBiomassSoa(halfBio)
+        val radius = daughterRadius.coerceAtLeast(MIN_RADIUS)
+        val offset = splitNormal * CytoUnits.len(daughterRadius.toFloat())
+
+        // Clonal daughter: inherits the mother's type + genome; the asymmetric morphogen rides whole to one side.
+        val daughterCyto = HashMap(half).apply { if (morphogenCount > 0 && !morphogenToMother) put(morphogen, morphogenCount) }
+        val daughterBio = HashMap(halfBio)
+        val daughter = w.world.createEntity()
+        // Mirror spawnBody + spawnCell, plus fromSimState's ImpulseComponent — 7 columns, in that order.
+        w.world.add(daughter, TransformComponent(pos = motherPos + offset, ang = Coord(0)))
+        w.world.add(daughter, MotionComponent(vel = motionVel, angVel = Coord(0)))
+        w.world.add(daughter, ImpulseComponent())
+        w.world.add(daughter, ColliderComponent(radius = CytoUnits.len(radius.coerceAtMost(CytoTuning.MAX_COLLISION_RADIUS).toFloat())))
+        w.world.add(daughter, MaterialComponent(mass = cellMass(daughterCyto, daughterBio), bounce = Frac(0), rough = Frac(0)))
+        w.world.add(daughter, RenderShapeComponent(BodyShape.CIRCLE))
+        w.world.add(daughter, CytoCellComponent(type = cell.type, logicalRadius = radius, cytoplasm = daughterCyto, biomass = daughterBio, genome = cell.genome))
+
+        if (!rejectMother) {
+            for (n in ahead) { adj.addSpring(daughter.value, n.value); adj.removePair(motherId.value, n.value) }
+            for (n in side) adj.addSpring(daughter.value, n.value)
+        }
+
+        // Mother: step back along the split, rotate a quarter turn, keep its (equal) half of the matter.
+        w.transform.scatter(motherSlot, transform.copy(pos = motherPos - offset, ang = transform.ang + Frac(1, 2)))
+        val motherCyto = HashMap(half).apply { if (morphogenCount > 0 && morphogenToMother) put(morphogen, morphogenCount) }
+        w.cell.scatter(motherSlot, cell.copy(cytoplasm = motherCyto, biomass = HashMap(halfBio), logicalRadius = daughterRadius))
+        w.material.scatter(motherSlot, w.material.gather(motherSlot).copy(mass = cellMass(motherCyto, halfBio)))
+
+        if (!rejectMother) adj.addSpring(motherId.value, daughter.value)
     }
+
+    /** Per-side ⌊count/2⌋ split; the odd remainder is deposited to the reservoir at (cx,cy,radius).
+     *  [skip] (the asymmetric morphogen) is left out — allocated whole to one side by the caller.
+     *  Mirrors CytoLifecycleSystem.floorSplit. */
+    private fun floorSplitSoa(w: CytoWorld, m: Map<String, Int>, cx: Float, cy: Float, radius: Float, skip: String = ""): Map<String, Int> {
+        val half = HashMap<String, Int>()
+        for ((species, count) in m) {
+            if (species == skip) continue
+            val h = count / 2
+            if (h > 0) half[species] = h
+            val remainder = count - 2 * h
+            if (remainder > 0) w.grid.deposit(cx, cy, radius, SpeciesRegistry.id(species), remainder)
+        }
+        return half
+    }
+
+    private fun radiusForBiomassSoa(biomass: Map<String, Int>): Frac =
+        Frac(totalBiomassBonds(biomass).toLong(), CytoBiologyCore.BONDS_PER_FULL).sqrt().coerceAtLeast(MIN_RADIUS)
 
     // ── lifecycle bridge ──────────────────────────────────────────────────────────
     // Materialize → inject the weld/divide/destroy/detach intents → run the unmodified
