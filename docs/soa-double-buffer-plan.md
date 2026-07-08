@@ -1,8 +1,29 @@
 # SoA Double-Buffer Plan
 
-**Status:** design sketch (2026-07-08). No code yet. This is the durable home for the decision to
-re-back the engine's ECS storage with double-buffered struct-of-arrays columns, and the record of
+**Status:** design + foundation partly landed (2026-07-08). This is the durable home for the decision
+to re-back the engine's ECS storage with double-buffered struct-of-arrays columns, and the record of
 what that costs and gains.
+
+## Progress (2026-07-08)
+
+Landed on `main`, all golden + spec (incl. `parallelMatchesSequential`) gated:
+- **Dead SoA cold-path scaffolding deleted** (`e76ccc59`/`245f2ab2`) — the framework no longer advertises
+  parallel/isolated execution it never had.
+- **`resolvedCount` cache-of-a-cache collapsed** (`50c7bdac`) — genuine ~18% biology win (the only
+  measured throughput win so far).
+- **Cyto chem is fixed-capacity** (`f4b0d11f` Phase 1, `b3358547` Phase 2) — cell cytoplasm/biomass
+  capped at `CytoTuning.CELL_CHEM_CAP=32`, grid reservoirs uncapped. Overflow at the lysis vector evicts
+  the scarcest species, spilling to the grid (conserved) — the cap is a gameplay feature. **This solves
+  the "persistent variable-length column" wrinkle below for cyto**: cell chem is now uniform fixed-width.
+- **Biology double-buffer pooled** (`2e82ccbb`) — biology was already a phase-level double buffer
+  (pass A reads column/front → writes pooled `CellWork`/back; pass B commits); the back buffer is now a
+  pooled fixed-cap-32 store seeded via `copyFrom` instead of a fresh `.copy()`, and writeback commits in
+  place. **Clean A/B @1607 cells: alloc 5.29→4.22 MB/tick (−20%), tick time neutral.** The GC-pressure
+  cut is the payoff; the pooled fixed buffers are the substrate for the column-slab version.
+
+**Confirmed:** this whole track is a foundation swap. The measured wins so far are the `resolvedCount`
+collapse (throughput) and the −20% alloc (GC). The *large* throughput wins (SIMD, parallelism) are still
+ahead and come from the column-slab double buffer + hardware acceleration, not from what's landed.
 
 ## Motivation
 
@@ -149,10 +170,9 @@ oversold. The fixed-capacity cell chem (Phase 1) is arguably a slight steady-sta
 isolation (a median ~14-species cell's per-tick `.copy()` now allocates `IntArray(32)` instead of ~16).
 The payoff is in what the uniform double-buffered layout **enables**, none of which exists yet:
 
-1. **Eliminate the per-tick `.copy()` allocation.** Today biology copies each cell's chem store every
-   tick (`CytoSoaSystems.kt` ~L301). With two pooled double-buffer slabs that are swapped, there is no
-   per-cell/per-tick allocation at all — this is the real GC win, and uniform fixed-size backing is its
-   precondition.
+1. **Eliminate the per-tick `.copy()` allocation.** ✅ Partly done (`2e82ccbb`): biology now pools the
+   back buffer via `copyFrom` instead of `.copy()`, measured −20% alloc/tick. The *remaining* step is the
+   true column-slab form (two whole-column buffers swapped at the tick barrier), which also unlocks 2+3.
 2. **SIMD / vectorization** over contiguous uniform primitive columns — structurally impossible on a
    hashmap-of-objects, and the substrate the hardware-acceleration goal needs.
 3. **Lock-free deterministic parallelism** — read-front/write-back with slot-range partitioning,
@@ -163,15 +183,28 @@ cache-of-a-cache collapse, ~18% off biology.
 
 ## Suggested sequencing
 
-1. **Prove the generality gap** — hand-port one fixed-width AoS demo (drockets or scavengers) onto the
-   existing `SoaPhase`/`SoaWorld`, double-buffered. Surfaces the migration cost and the Jacobi
-   restructuring without touching the engine API, and is a pure-memcpy case (no jagged wrinkle).
-2. **Build KSP column-store codegen** — kill the ergonomic tax; make it generate swap/copy/serialize +
-   the per-field policy hook.
-3. **Solve persistent variable-length columns for cyto** — decide COW `MoleculeStore` vs arena vs
-   fixed-width dense chem (tie this to the "remove dynamic arrays from cyto" work).
+3 (persistent variable-length columns for cyto) is **✅ done** — cell chem is fixed-cap-32 (see Progress).
+Remaining, in recommended order:
+
+1. **Column-slab double buffer on cyto** — promote the per-cell pooling (`2e82ccbb`) to two whole-column
+   buffers (front/back) swapped at the tick barrier, starting with the chem columns. This is the concrete
+   next payoff-and-proof step: it removes the per-cell `copyFrom` in favour of a slab swap, and turns the
+   read-front/write-back model into a real column-level pattern before generalising. Golden-gated; expect
+   bit-identical. Watch the interaction with `compact()` (see Open questions) and with the lyse phase,
+   which mutates the chem columns *after* biology's swap (lyse writes must target the committed front).
+2. **Build KSP column-store codegen** — kill the ergonomic tax; generate the field arrays + scatter/gather
+   + swap/carry-forward-copy + flat serialize + the per-field POD-vs-reference policy hook. Near-
+   prerequisite before touching every component in the engine.
+3. **Prove the generality gap** — hand-port one fixed-width AoS demo (drockets or scavengers) onto
+   `SoaPhase`/`SoaWorld`, double-buffered. Pure-memcpy case (no jagged wrinkle); surfaces the migration
+   cost and the Jacobi restructuring without touching the engine API. Gives `SoaPhase` its needed second
+   consumer.
 4. **Re-back `ComponentStore`** — route the ~212 AoS read sites through columns; make the
-   pure-reducer → double-buffered-world contract change the explicit, golden-gated cutover.
+   pure-reducer → double-buffered-world contract change the explicit, golden-gated cutover. Largest/
+   riskiest; do last, after the model is proven on two consumers and codegen removes the boilerplate.
+5. **Hardware-accelerated parallelism** — Stu's end goal, explicitly deferred until the foundation is
+   clean. Do NOT stub it (that was the dead `runSoaParallel`/`Isolated` scaffolding we deleted). Lead with
+   SIMD-over-contiguous-columns (independent of the turbo-collapse issue), not multicore fan-out.
 
 ## Open questions
 
