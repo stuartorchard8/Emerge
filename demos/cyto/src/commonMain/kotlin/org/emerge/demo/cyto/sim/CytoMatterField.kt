@@ -217,15 +217,6 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
         return fpLeaves.size
     }
 
-    /** Collect the species present across the open footprint into [out] (deduped); returns count. */
-    fun footprintSpecies(out: HashSet<Int>) {
-        out.clear()
-        for (leaf in fpLeaves) {
-            val s = leaf.store!!
-            if (s.size > 0) for (i in 0 until s.size) out.add(s.idAt(i))
-        }
-    }
-
     /** Balance the open footprint's `sp` toward `cEff/N` (bidirectional diffusion), with size-dependent
       *  dampening via [scaleFactor] so larger molecules equilibrate more slowly. Returns the net Δ to apply
       *  to the cell's cytoplasm (grid changes by −Δ). Conservation-exact. */
@@ -253,77 +244,15 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
         return totalMovement                 // Δ into the cell
     }
 
-    /** Batched balance: process all species in a single leaf pass (avoids 3× leaf re-traversal).
-      *  Returns per-species delta array (same order as sps).
-      *  Inverted loop: iterates over the [transferN] transfer species and binary-searches each
-      *  in the sorted leaf store — only ~10 species need balancing vs. ~10+ species per leaf,
-      *  so we skip O(store_size - transferN) wasted lookups per leaf.
-      *  Also skips entire leaves whose presenceMask doesn't contain any monomer bits from
-      *  the transfer set, eliminating traversal of leaves with no transferable monomers. */
-    fun balanceBatched(transferN: Int, transferIdx: IntArray, transferCeffs: IntArray, scaleFactor: Float): IntArray {
-        val n = fpLeaves.size; if (n == 0) return IntArray(transferN)
-        val results = IntArray(transferN)
-        // Pre-compute monomer bits needed by the transfer set.
-        // Bits: 1=r, 2=g, 4=b. Monomer-only species only need mask check.
-        var monomerMaskNeed = 0
-        for (t in 0 until transferN) {
-            val sp = transferIdx[t]
-            if (SpeciesRegistry.atomCount(sp) == 1) {
-                if (sp == A) monomerMaskNeed = monomerMaskNeed or 1
-                else if (sp == B) monomerMaskNeed = monomerMaskNeed or 2
-                else if (sp == C) monomerMaskNeed = monomerMaskNeed or 4
-            }
-        }
-        for (leaf in fpLeaves) {
-            // Skip leaves whose presence mask doesn't contain any monomer bits needed by transfer.
-            // This skips O(leaves) entirely for leaves that only have polymers (not transferable monomers).
-            if (monomerMaskNeed != 0 && (leaf.presenceMask and monomerMaskNeed) == 0) {
-                // No monomers present — but polymers might still be transferable via import bias.
-                // We need to check if there are any non-monomer transfer species.
-                var hasNonMono = false
-                for (t in 0 until transferN) {
-                    if (SpeciesRegistry.atomCount(transferIdx[t]) > 1) { hasNonMono = true; break }
-                }
-                if (!hasNonMono) continue  // safe to skip
-            }
-            val store = leaf.store!!
-            // Only look up the transfer species in this leaf (binary search on sorted store).
-            for (t in 0 until transferN) {
-                val sid = transferIdx[t]
-                // Fast monomer check: skip if leaf doesn't have this monomer (presence mask).
-                if (SpeciesRegistry.atomCount(sid) == 1) {
-                    val bit = if (sid == A) 1 else if (sid == B) 2 else if (sid == C) 4 else 0
-                    if (bit != 0 && (leaf.presenceMask and bit) == 0) continue
-                }
-                val idx = store.binarySearchId(sid)
-                if (idx < 0) continue   // species not in this leaf
-                val sc = store.countAt(idx)
-                val bucket = transferCeffs[t] / n
-                val denom = 2.shl(min(31, (SpeciesRegistry.atomCount(sid)*scaleFactor).toInt()))
-                val delta = sc - bucket
-                val movement = delta / denom
-                if (movement != 0) store.add(sid, -movement)
-                results[t] += movement
-            }
-        }
-        return results
-    }
-
     fun closeFootprint() = fpLeaves.clear()
 
-    /** Probe-only: visit the currently-open footprint's leaves (identity) without mutating anything. */
-    fun forEachFootprintLeaf(action: (QuadNode) -> Unit) { for (leaf in fpLeaves) action(leaf) }
-
-    /** Copy the currently-open footprint's leaves into [out] (drop-contested exchange caches these per cell
-     *  in the serial pre-pass so the parallel pass never re-descends/refines the tree). */
-    fun copyFootprintLeaves(out: MutableList<QuadNode>) { out.clear(); for (leaf in fpLeaves) out.add(leaf) }
-
-    /** Thread-safe variant of [balanceBatched] for the drop-contested parallel exchange: balances over an
-     *  explicit, caller-owned [leaves] list (NOT the shared [fpLeaves] cursor) and applies each net Δ straight
-     *  into [cyt] (grid loses −Δ). All state is local or per-cell-disjoint, so parallel workers whose cells own
-     *  disjoint (uncontested) leaves never race. [n] is the divisor for the per-leaf target (cEff/n) — the
-     *  caller passes the *uncontested* leaf count, so a cell equilibrates across only the leaves it still owns.
-     *  Mirrors [balanceBatched]'s presence-mask skips and size-dependent [scaleFactor] damping exactly. */
+    /** Thread-safe batched balance for the tile-parallel drop-contested exchange: balances all transfer species
+     *  over an explicit, caller-owned [leaves] list (NOT the shared [fpLeaves] cursor) in a single leaf pass,
+     *  applying each net Δ straight into [cyt] (grid loses −Δ). All state is local or per-cell-disjoint, so
+     *  parallel workers whose cells own disjoint (uncontested) leaves never race. [n] is the divisor for the
+     *  per-leaf target (cEff/n) — the caller passes the *uncontested* leaf count, so a cell equilibrates across
+     *  only the leaves it still owns. Skips leaves whose presence mask lacks any needed monomer bit, and
+     *  binary-searches each transfer species in the sorted leaf store; size-dependent [scaleFactor] damping. */
     fun balanceBatchedOn(
         leaves: List<QuadNode>, n: Int, transferN: Int,
         transferIdx: IntArray, transferCeffs: IntArray, scaleFactor: Float, cyt: MoleculeStore,

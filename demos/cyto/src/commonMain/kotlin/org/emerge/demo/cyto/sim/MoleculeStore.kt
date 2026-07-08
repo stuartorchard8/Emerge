@@ -154,7 +154,7 @@ class MoleculeStore private constructor(
     }
 
     /** Binary search for [id] in the sorted species array. Returns the index if found, or negative
-     *  if absent. Public for use by [CytoMatterField.balanceBatched]. */
+     *  if absent. Public for use by [CytoMatterField.balanceBatchedOn]. */
     fun binarySearchId(id: Int): Int {
         if (id < 0) return -2
         var lo = 0; var hi = n - 1
