@@ -156,15 +156,14 @@ class CytoWorld private constructor(
     /**
      * Materializes the live store back into an engine [SimState] — the inverse of [fromSimState],
      * faithful for every component the world tracks. Emits tables in slot order (= the order
-     * [fromSimState] read them). [ImpulseComponent] is emitted only when [includeImpulse] (a bridge
-     * that needs the in-flight impulse); the live renderer/save never need it.
+     * [fromSimState] read them). [ImpulseComponent] is deliberately NOT emitted — it's transient
+     * (zeroed each tick) and no consumer (renderer / save / interaction bridge) needs it.
      *
-     * Springs + connection damage ARE materialized from the CSR so that bridge systems
-     * (CytoInteractionSystem, CytoLifecycleSystem) can walk neighbours via
-     * SpringConstraintComponent — the renderer instead reads CSR directly via [getSpringData]
-     * to avoid per-tick component allocation.
+     * Springs + connection damage ARE materialized from the CSR so that the interaction bridge
+     * (CytoInteractionSystem) can walk neighbours via SpringConstraintComponent — the renderer instead
+     * reads CSR directly via [getSpringData] to avoid per-tick component allocation.
      */
-    fun toSimState(includeImpulse: Boolean = false): SimState {
+    fun toSimState(): SimState {
         // Materialize into fresh maps (SimState must own its data — the renderer may iterate while
         // the sim thread mutates the world for the next tick).
         val n = count
@@ -198,11 +197,6 @@ class CytoWorld private constructor(
         if (mutationRateDenom >= 0) tables[CytoSimParamsComponent::class] = ComponentTable.fromMap(
             linkedMapOf(PARAMS_SINGLETON to CytoSimParamsComponent(mutationRateDenom)),
         )
-        if (includeImpulse) {
-            val impulses = LinkedHashMap<EntityId, ImpulseComponent>(n)
-            for (slot in 0 until n) impulses[EntityId(entityId[slot])] = impulse.gather(slot)
-            tables[ImpulseComponent::class] = ComponentTable.fromMap(impulses)
-        }
 
         // Materialize spring/connection components from CSR so the SimState carries connection
         // topology for systems that read it (e.g. CytoInteractionSystem → killOrganism walks neighbours).

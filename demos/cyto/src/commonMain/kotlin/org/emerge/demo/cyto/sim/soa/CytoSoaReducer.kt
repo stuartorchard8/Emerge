@@ -474,7 +474,7 @@ class CytoSoaReducer(
 
     // ── interaction bridge (only when there's pointer input) ─────────────────────
     private fun bridgeInteraction(w: CytoWorld, inputs: Map<PlayerId, CytoInput>): CytoWorld {
-        val builder = SimBuilder(w.toSimState(includeImpulse = false))
+        val builder = SimBuilder(w.toSimState())
         CytoInteractionSystem.update(cfg, builder, inputs)
         for (e in builder.events<CellDestroyIntent>()) interactDestroy.add(e.id.value)  // Delete taps → lifecycle
         val out = builder.build()
