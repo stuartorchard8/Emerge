@@ -91,11 +91,26 @@ footprint enumeration (don't mutate `presenceMask`/`fpLeaves` in parallel). This
 refine/enumerate is ~1/3 of exchange cost (the quad-tree descent) → caps the in-exchange
 parallel win to the ~2/3 balance/transfer portion (Amdahl within exchange).
 
-**FIRST STEP before building:** instrument the *existing sequential* exchange to
-measure (a) the contested-cell/leaf fraction and (b) the *dropped transfer magnitude*
-(matter that contested leaves would have moved) at real colony densities. Confirms the
-sacrifice is minor (Stu's premise: contested = transient peripheral overlap, interior
-uptake ≈ already depleted) before committing. If dropped transfer is large, revisit.
+**FIRST STEP before building — DONE (2026-07-08, commit `fca26d58`).** `ExchangeProbe`
+(off in production; `-Dcytoexchprobe=1`, golden bit-identical) tallies cells-per-fine-leaf
+per batch and attributes transfer movement to contested (≥2-cell) vs single-owner leaves.
+`CytoBench.exchangeContention`, 600 batches:
+- **Naturally-grown colony (1485 cells): 0% leaves contested, 0% movement dropped.**
+  avg cells/leaf = 1.00 — the exchange-batching already staggers cells enough that
+  co-location within a batch is nil.
+- Seeded 8192 spread evenly (grew to 10.6k, *denser than natural*): 5.4% leaves
+  contested, **10.2% of transfer magnitude dropped**, 55% of cells touch ≥1 contested
+  leaf (but keep their central uncontested leaves).
+- Seeded 8192 fixed-spacing: degenerate — 18-unit spacing wraps the 32-wide torus and
+  stacks *exactly* 8 cells/leaf → 100% contested. A seeding artifact, not representative.
+
+**Verdict: GREEN LIGHT.** Contested fraction tracks *density* (cells/leaf), not N. At
+realistic colony density the drop-contested sacrifice is ~zero; it only reaches ~10% if
+cells are packed tighter than a grown colony. If Stu re-inflates the torus in proportion
+to population (the whole point), density — and thus contested fraction — stays ≈0.
+Stu's premise confirmed. **Next: build the drop-contested parallel exchange** (serial
+refine/enumerate pre-pass → parallel mark → parallel per-cell exchange on uncontested
+leaves), per the numbered plan above.
 
 ## Expectation-setting
 Full biology+lifecycle parallel ≈ 54% of tick; at a realistic ~5× on the parallel
