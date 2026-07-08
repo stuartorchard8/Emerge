@@ -1,6 +1,8 @@
 package org.emerge.demo.cyto.sim.soa
 
 import org.emerge.demo.cyto.cells.CellType
+import org.emerge.demo.cyto.sim.ActionType
+import org.emerge.demo.cyto.sim.Comparison
 import org.emerge.demo.cyto.sim.ConnectionStateComponent
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
@@ -8,19 +10,30 @@ import org.emerge.demo.cyto.sim.CytoInput
 import org.emerge.demo.cyto.sim.CytoMatterField
 import org.emerge.demo.cyto.sim.CytoSeed
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.CytoUnits
+import org.emerge.demo.cyto.sim.EnergySource
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
+import org.emerge.demo.cyto.sim.Gene
+import org.emerge.demo.cyto.sim.GeneAction
 import org.emerge.demo.cyto.sim.GeneCodec
+import org.emerge.demo.cyto.sim.GeneCondition
+import org.emerge.demo.cyto.sim.Operand
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.sim.createCytoInitialState
+import org.emerge.demo.cyto.sim.spawnCell
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.MaterialComponent
 import org.emerge.sim.core.physics.components.MotionComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.primitives.Coord2
+import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.sim.SimBuilder
 import org.emerge.sim.core.sim.SimState
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * **The replacement for the AoS-oracle gate.** Instead of re-deriving correctness from a second
@@ -188,6 +201,75 @@ class CytoGoldenTest {
         val state = w.toSimState()
         val sd = w.getSpringData()
         assertGolden("interact", INTERACT, state, sd)
+    }
+
+    // Repair gene: burn the stored `rg` reserve for repair energy (light-independent). A touching pair
+    // both repairing the same tick welds via gene-driven adhesion (WeldHealIntent path).
+    private val repairOnly = listOf(
+        Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
+    )
+
+    // Weld-heal + sticky-weld goldens: the default GROWTH/INTERACT/MUTATION scenarios use the non-sticky,
+    // no-Repair seed autotroph, so they NEVER weld — leaving the lifecycle weld / weld-heal paths ungated.
+    // These two lock the current (round-trip) welding trajectory so the SoA-native weld port is bit-identical.
+    private val WELD_HEAL = mapOf(
+        "meta" to "bb3fa685a6d77664",
+        "physics" to "e1f0eb9dac564c27",
+        "biology" to "85da6bf92a822d33",
+        "topology" to "3fbe37c55d1782a1",
+        "grid" to "a857f5de984d921d",
+    )
+    private val STICKY_WELD = mapOf(
+        "meta" to "350eaa4577a67db5",
+        "physics" to "f275e1d75b990506",
+        "biology" to "ca5045ab30a68078",
+        "topology" to "50c3109fc080d836",
+        "grid" to "ea6b5be6086c9296",
+    )
+
+    @Test
+    fun weldHealColony() {
+        // Three deeply-overlapping Repair-active cells: as they co-repair they weld-heal into a cluster
+        // (WeldHealIntent + division as reserves split), exercising the weld-heal lifecycle path.
+        val cfg = CytoConfig(mutationRateDenom = 0)
+        val soa = CytoSoaReducer(cfg)
+        val initial = run {
+            val b = SimBuilder(SimState(randomSeed = 1))
+            val r = Frac(1, 2)
+            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
+            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
+            b.spawnCell(CytoUnits.coord2(0f, 0.15f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
+            b.build()
+        }
+        var w = CytoWorld.fromSimState(initial)
+        repeat(40) { w = soa.tick(w, CytoInput.EMPTY) }
+        val state = w.toSimState()
+        val sd = w.getSpringData()
+        assertTrue(state.components.getTable<SpringConstraintComponent>().asMap().values.any { it.springs.isNotEmpty() },
+            "weld-heal scenario produced no springs — it must weld to gate the weld-heal path")
+        assertGolden("weldHeal", WELD_HEAL, state, sd)
+    }
+
+    @Test
+    fun stickyWeldPair() {
+        // Two overlapping sticky cells (no Repair): the contact system welds them via the plain WeldIntent
+        // path (sticky ⇒ weldLo), which the default goldens never trigger (AUTO_WELD_ON_OVERLAP is off).
+        val cfg = CytoConfig(mutationRateDenom = 0)
+        val soa = CytoSoaReducer(cfg)
+        val initial = run {
+            val b = SimBuilder(SimState(randomSeed = 1))
+            val r = Frac(1, 2)
+            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, sticky = true, genome = emptyList())
+            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, sticky = true, genome = emptyList())
+            b.build()
+        }
+        var w = CytoWorld.fromSimState(initial)
+        repeat(10) { w = soa.tick(w, CytoInput.EMPTY) }
+        val state = w.toSimState()
+        val sd = w.getSpringData()
+        assertTrue(state.components.getTable<SpringConstraintComponent>().asMap().values.any { it.springs.isNotEmpty() },
+            "sticky pair produced no springs — it must weld to gate the plain-weld path")
+        assertGolden("stickyWeld", STICKY_WELD, state, sd)
     }
 
     // ── SoA-only determinism + boundary gates (no AoS) ─────────────────────────────────────────────
