@@ -181,6 +181,91 @@ class CytoSoaReducer(
         return r
     }
 
+    // ── SoA-native lifecycle (incremental; see docs/cyto-soa-lifecycle-plan.md) ─────
+    /**
+     * Applies the tick's lifecycle events directly on the persistent [CytoWorld] — no AoS round-trip.
+     * Returns the mutated world, or **null when the tick's event set isn't handled yet** (the caller then
+     * takes the [bridgeLifecycle] round-trip). Bit-identical to the round-trip for the sets it covers
+     * (gated by CytoGoldenTest / parallelMatchesSequential / conservation).
+     *
+     * **Step 1 — DESTROY + DETACH only.** Welds, weld-heals, and divisions still round-trip (they add
+     * springs / allocate entities; ported in later steps). Detach cuts a cell's springs; destroy deposits
+     * the dead cell's matter to the reservoir, drops its springs, and removes the entity. Then a single
+     * compact + CSR rebuild reproduces the round-trip's surviving slot order + edge order exactly.
+     */
+    private fun applyLifecycleSoa(
+        w: CytoWorld,
+        destroy: List<EntityId>,
+        input: CytoInput,
+        readyWelds: List<Long>,
+        divide: List<EntityId>,
+    ): CytoWorld? {
+        // Gate: this step handles only detach + destroy. Bail (→ round-trip) if any weld/heal/division fires.
+        if (state.weldLo.isNotEmpty() || readyWelds.isNotEmpty() || divide.isNotEmpty()) return null
+
+        val broken = HashSet<Long>()
+        // Detach (interact order): cut every connection of the named cell.
+        for (id in input.detaches) markPairsBroken(w, id.value, broken)
+
+        // Destroy (emit order = interact Delete-taps, then biology deaths), deduped like the AoS `destroyed`
+        // set. Each dying cell recycles ALL its matter to its reservoir grid-cell, drops its springs, is removed.
+        val destroyed = HashSet<Int>()
+        val order = ArrayList<Int>(interactDestroy.size + destroy.size)
+        for (idv in interactDestroy) if (destroyed.add(idv)) order.add(idv)
+        for (id in destroy) if (destroyed.add(id.value)) order.add(id.value)
+        for (idv in order) {
+            val slot = w.slotOf(idv); if (slot < 0) continue
+            depositCellMatterSoa(w, slot)
+            markPairsBroken(w, idv, broken)
+            w.world.removeEntity(EntityId(idv))
+        }
+        rebuildAfterStructuralEdit(w, broken)
+        return w
+    }
+
+    /** Deposit a cell's entire cytoplasm + biomass into its reservoir grid-cell (death recycling), SoA-native.
+     *  Mirrors CytoLifecycleSystem.depositCellMatter; deposits are additive per (leaf, species) ⇒ order-free. */
+    private fun depositCellMatterSoa(w: CytoWorld, slot: Int) {
+        val lx = CytoUnits.toLogical(Coord(w.posX[slot]))
+        val ly = CytoUnits.toLogical(Coord(w.posY[slot]))
+        val r = Frac(w.cell.logicalRadius[slot]).toFloat()
+        w.cell.cytoplasm[slot]?.let { for (i in 0 until it.size) w.grid.deposit(lx, ly, r, it.idAt(i), it.countAt(i)) }
+        w.cell.biomass[slot]?.let { for (i in 0 until it.size) w.grid.deposit(lx, ly, r, it.idAt(i), it.countAt(i)) }
+    }
+
+    /** Mark every current CSR pair of [idValue] as broken (both directions, via the symmetric [pairKey]). */
+    private fun markPairsBroken(w: CytoWorld, idValue: Int, broken: HashSet<Long>) {
+        val slot = w.slotOf(idValue); if (slot < 0) return
+        for (k in w.csr.offset[slot] until w.csr.offset[slot + 1]) broken.add(pairKey(idValue, w.csr.otherId[k]))
+    }
+
+    /** After entity removals / edge breaks: snapshot the surviving adjacency (entity-id-keyed, so it
+     *  survives compaction), compact the columns (reclaims removed slots, stable insertion order), then
+     *  rebuild the CSR over the new ordering — reproducing the round-trip's survivor + edge order. */
+    private fun rebuildAfterStructuralEdit(w: CytoWorld, broken: HashSet<Long>) {
+        val keep = HashMap<Int, MutableList<SpringConstraint>>(w.count)
+        val dmg = HashMap<Int, HashMap<Int, Float>>(w.count)
+        for (slot in 0 until w.count) {
+            if (!w.cells.isAlive(slot)) continue                     // skip removed owners
+            val ownerId = w.entityId[slot]
+            for (k in w.csr.offset[slot] until w.csr.offset[slot + 1]) {
+                val otherId = w.csr.otherId[k]
+                if (broken.contains(pairKey(ownerId, otherId))) continue
+                keep.getOrPut(ownerId) { ArrayList() }
+                    .add(SpringConstraint(EntityId(otherId), Frac(w.csr.restRaw[k]), Frac(w.csr.stiffRaw[k]), Frac(w.csr.dampRaw[k])))
+                dmg.getOrPut(ownerId) { HashMap() }[otherId] = w.csr.edgeAux[k]
+            }
+        }
+        w.world.compact()
+        w.csr.rebuildFrom(
+            count = w.count,
+            entityIdAt = { w.entityId[it] },
+            slotOf = { w.slotOf(it) },
+            springsAt = { slot -> keep[w.entityId[slot]] ?: emptyList() },
+            edgeAuxAt = { slot, other -> dmg[w.entityId[slot]]?.get(other.value) ?: 0f },
+        )
+    }
+
     // ── lifecycle bridge ──────────────────────────────────────────────────────────
     // Materialize → inject the weld/divide/destroy/detach intents → run the unmodified
     // CytoLifecycleSystem (it changes membership: spawns daughters, removes dead, rewires springs) →
@@ -197,6 +282,9 @@ class CytoSoaReducer(
         // rarely lines up, so cross-organism welding is rare. (state.weldHealCount[key]==2 ⇒ both sides asked.)
         val readyWelds = state.weldHealByPair.keys.filter { state.weldHealCount[it] == 2 }.sorted()
         if (state.weldLo.isEmpty() && readyWelds.isEmpty() && divide.isEmpty() && destroy.isEmpty() && input.detaches.isEmpty() && interactDestroy.isEmpty()) return w
+        // SoA-native fast path (incremental — see docs/cyto-soa-lifecycle-plan.md). Handles the event
+        // sets it can do structurally in place (no AoS round-trip); returns null to fall back below.
+        applyLifecycleSoa(w, destroy, input, readyWelds, divide)?.let { return it }
         val tToSim = if (profiler != null) TimeSource.Monotonic.markNow() else null
         val impById = HashMap<Int, ImpulseComponent>(w.count)
         for (slot in 0 until w.count) impById[w.entityId[slot]] = w.impulse.gather(slot)
