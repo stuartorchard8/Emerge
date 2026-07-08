@@ -24,13 +24,8 @@ import org.emerge.demo.cyto.sim.cellMass
 import org.emerge.demo.cyto.sim.atomCount
 import org.emerge.demo.cyto.sim.totalBiomassBonds
 import org.emerge.demo.cyto.sim.systems.CellDestroyIntent
-import org.emerge.demo.cyto.sim.systems.CellDivisionIntent
 import org.emerge.demo.cyto.sim.systems.CytoInteractionSystem
 import org.emerge.demo.cyto.sim.systems.LyseAttackIntent
-import org.emerge.demo.cyto.sim.systems.CytoLifecycleSystem
-import org.emerge.demo.cyto.sim.systems.DetachIntent
-import org.emerge.demo.cyto.sim.systems.WeldHealIntent
-import org.emerge.demo.cyto.sim.systems.WeldIntent
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ParallelExecutor
@@ -69,11 +64,12 @@ import kotlin.time.TimeSource
  * run **in place on the columns** — math reconstructs the engine `Frac`/`Coord2`/`Norm` value types from
  * the column raws and reuses the exact operators, so results are bit-identical to the AoS systems.
  * Biology runs the shared `CytoBiologyCore` on per-cell `CellWork` built from the columns + CSR, with a
- * world PRNG matching `SimBuilder.nextRandomInt` for mutation. Only the **structural** phase
- * (`lifecycle`) — and `interaction` when there's pointer input — is still **bridged**: a minimal
- * `SimState` is materialized, the unmodified AoS system runs, and the world is rebuilt from its output
- * (survivors' in-flight impulse restored). Events cross the bridge by extraction + injection (weld from
- * contacts, divide/destroy from biology, Delete-tap destroys from interaction).
+ * world PRNG matching `SimBuilder.nextRandomInt` for mutation. The **structural** phase (`lifecycle` —
+ * detach/destroy/weld/weld-heal/division) is also SoA-native ([applyLifecycle], editing the columns + CSR
+ * in place via an entity-id-keyed adjacency snapshot). Only `interaction` (when there's pointer input) is
+ * still **bridged**: a minimal `SimState` is materialized, the unmodified AoS interaction system runs, and
+ * the world is rebuilt from its output. Events reach lifecycle via `state` (weld from contacts,
+ * divide/destroy from biology, Delete-tap destroys from interaction).
  *
  * The sole cyto reducer (the AoS `CytoReducer` oracle was retired once SoA landed). Behaviour is
  * frozen as committed golden trajectories (`CytoGoldenTest`) with invariants in `CytoSoaSpecTest`.
@@ -159,8 +155,8 @@ class CytoSoaReducer(
             val name = if (idx == parts.postBio.size - 1) "forces+integrate" else "force:${sys::class.java.simpleName}"
             phase(name) { runSoa(cfg, cur, inputs, listOf(SoaPhase(name, sys)), profiler) }
         }
-        // ── Cold bridge: lifecycle ──────────────────────────────────────────────────
-        cur = phaseR("lifecycle") { bridgeLifecycle(cur, state.divide, state.destroy, input, inputs) }
+        // ── Lifecycle (SoA-native, in place — no AoS round-trip) ────────────────────
+        cur = phaseR("lifecycle") { applyLifecycle(cur, state.divide, state.destroy, input) }
 
         // ── Lysis attack phase ────────────────────────────────────────────────────
         // Process lysis attacks after lifecycle (victims/attackers guaranteed to exist).
@@ -195,22 +191,23 @@ class CytoSoaReducer(
      * takes the [bridgeLifecycle] round-trip). Bit-identical to the round-trip for the sets it covers
      * (gated by CytoGoldenTest / parallelMatchesSequential / conservation).
      *
-     * **Steps 1+3 — DETACH + DESTROY + DIVISION.** Only welds / weld-heals still round-trip (they never
-     * co-occur with these in the measured regimes — see docs/cyto-soa-lifecycle-plan.md — so the fallback
-     * is effectively free). The spring topology is edited on an entity-id-keyed adjacency snapshot
-     * ([LcAdjacency], mutated by the same detach/destroy/divide logic as [CytoLifecycleSystem], in the same
-     * order), daughters are allocated + column-added exactly as `spawnCell`/`fromSimState` do, then a single
-     * compact + `csr.rebuildFrom` reproduces the round-trip's survivor slot order + edge order.
+     * **The whole lifecycle — DETACH + DESTROY + WELD + WELD-HEAL + DIVISION** — in `CytoLifecycleSystem`'s
+     * exact order, so it fully replaces the round-trip (no fallback). The spring topology is edited on an
+     * entity-id-keyed adjacency snapshot ([LcAdjacency], mutated by the same logic as [CytoLifecycleSystem]),
+     * daughters are allocated + column-added exactly as `spawnCell`/`fromSimState` do, then a single compact
+     * + `csr.rebuildFrom` reproduces the round-trip's survivor slot order + edge order.
      */
-    private fun applyLifecycleSoa(
+    private fun applyLifecycle(
         w: CytoWorld,
+        divide: List<EntityId>,
         destroy: List<EntityId>,
         input: CytoInput,
-        readyWelds: List<Long>,
-        divide: List<EntityId>,
-    ): CytoWorld? {
-        // Gate: this path covers detach + destroy + division. Bail (→ round-trip) if any weld/heal fires.
-        if (state.weldLo.isNotEmpty() || readyWelds.isNotEmpty()) return null
+    ): CytoWorld {
+        // Option 2 — a Repair-weld forms only when BOTH touching cells requested it this tick (both repairing
+        // in phase): a body's clock-synchronised cells weld each other, but an out-of-phase foreign cell
+        // rarely lines up, so cross-organism welding is rare. (state.weldHealCount[key]==2 ⇒ both sides asked.)
+        val readyWelds = state.weldHealByPair.keys.filter { state.weldHealCount[it] == 2 }.sorted()
+        if (state.weldLo.isEmpty() && readyWelds.isEmpty() && divide.isEmpty() && destroy.isEmpty() && input.detaches.isEmpty() && interactDestroy.isEmpty()) return w
 
         val adj = LcAdjacency(w)
         val destroyed = HashSet<Int>()
@@ -228,6 +225,24 @@ class CytoSoaReducer(
             depositCellMatterSoa(w, slot)
             for (n in adj.neighbours(idv)) adj.removePair(idv, n)
             w.world.removeEntity(EntityId(idv))
+        }
+
+        // Weld then weld-heal, sharing a `welded` dedup set (pairKey = the (min,max) ordering of both the
+        // WeldIntent(weldLo,weldHi) and WeldHealIntent(key>>32,key) the round-trip emits). Skip pairs touching
+        // a just-destroyed cell. addSpring no-ops on an already-present edge (= the AoS springExists guard).
+        val welded = HashSet<Long>()
+        for (i in state.weldLo.indices) {                       // contact order
+            val a = state.weldLo[i]; val b = state.weldHi[i]
+            if (a in destroyed || b in destroyed) continue
+            if (!welded.add(pairKey(a, b))) continue
+            adj.addSpring(a, b)
+        }
+        for (key in readyWelds) {                               // both-repairing pairs, sorted = deterministic
+            val a = (key ushr 32).toInt(); val b = key.toInt()
+            if (a in destroyed || b in destroyed) continue
+            if (!welded.add(pairKey(a, b))) continue
+            // Repair-weld: born at full break-damage minus the heal the cell(s) spent this tick (see addSpring).
+            adj.addSpring(a, b, initialDamage = (cfg.connectionBreakDamage - state.weldHealByPair.getValue(key)).coerceAtLeast(0f))
         }
 
         // Divide (biology order). Runs after destroy so a daughter reuses a just-freed id exactly as the
@@ -338,7 +353,7 @@ class CytoSoaReducer(
         val motherPos = transform.pos
         val neighbours = adj.neighbours(motherId.value).map { EntityId(it) }
 
-        // Division parameters — same source as the round-trip's CellDivisionIntent (see bridgeLifecycle).
+        // Division parameters — the per-cell intent data the biology phase recorded into `state`.
         val morphogen = state.divideMorphogen[motherId] ?: ""
         val morphogenToMother = motherId in state.divideMorphogenToMother
         val axisMorphogen = state.divideAxis[motherId] ?: ""
@@ -456,52 +471,6 @@ class CytoSoaReducer(
 
     private fun radiusForBiomassSoa(biomass: Map<String, Int>): Frac =
         Frac(totalBiomassBonds(biomass).toLong(), CytoBiologyCore.BONDS_PER_FULL).sqrt().coerceAtLeast(MIN_RADIUS)
-
-    // ── lifecycle bridge ──────────────────────────────────────────────────────────
-    // Materialize → inject the weld/divide/destroy/detach intents → run the unmodified
-    // CytoLifecycleSystem (it changes membership: spawns daughters, removes dead, rewires springs) →
-    // rebuild the world from its output, restoring surviving cells' in-flight impulse.
-    private fun bridgeLifecycle(
-        w: CytoWorld,
-        divide: List<EntityId>,
-        destroy: List<EntityId>,
-        input: CytoInput,
-        inputs: Map<PlayerId, CytoInput>,
-    ): CytoWorld {
-        // Option 2 — a Repair-weld forms only when BOTH touching cells requested it this tick (both repairing
-        // in phase): a body's clock-synchronised cells weld each other, but an out-of-phase foreign cell
-        // rarely lines up, so cross-organism welding is rare. (state.weldHealCount[key]==2 ⇒ both sides asked.)
-        val readyWelds = state.weldHealByPair.keys.filter { state.weldHealCount[it] == 2 }.sorted()
-        if (state.weldLo.isEmpty() && readyWelds.isEmpty() && divide.isEmpty() && destroy.isEmpty() && input.detaches.isEmpty() && interactDestroy.isEmpty()) return w
-        // SoA-native fast path (incremental — see docs/cyto-soa-lifecycle-plan.md). Handles the event
-        // sets it can do structurally in place (no AoS round-trip); returns null to fall back below.
-        applyLifecycleSoa(w, destroy, input, readyWelds, divide)?.let { return it }
-        val tToSim = if (profiler != null) TimeSource.Monotonic.markNow() else null
-        val impById = HashMap<Int, ImpulseComponent>(w.count)
-        for (slot in 0 until w.count) impById[w.entityId[slot]] = w.impulse.gather(slot)
-
-        val builder = SimBuilder(w.toSimState(includeImpulse = false))
-        if (tToSim != null) profiler!!.recordPhase("lc:toSim", tToSim.elapsedNow().inWholeNanoseconds)
-        for (id in input.detaches) builder.emit(DetachIntent(id))      // interact order
-        for (idv in interactDestroy) builder.emit(CellDestroyIntent(EntityId(idv)))  // Delete taps (interact, before biology)
-        for (id in destroy) builder.emit(CellDestroyIntent(id))         // biology order
-        for (i in state.weldLo.indices) builder.emit(WeldIntent(EntityId(state.weldLo[i]), EntityId(state.weldHi[i]))) // contact order
-        for (key in readyWelds) builder.emit(WeldHealIntent(EntityId((key ushr 32).toInt()), EntityId(key.toInt()), state.weldHealByPair.getValue(key)))  // both-repairing pairs, sorted = deterministic
-        for (id in divide) builder.emit(CellDivisionIntent(id, state.divideMorphogen[id] ?: "", id in state.divideMorphogenToMother, state.divideAxis[id] ?: "", id in state.divideAcross, id in state.divideRejectMother))  // biology order
-        val tUpdate = if (profiler != null) TimeSource.Monotonic.markNow() else null
-        CytoLifecycleSystem.update(cfg, builder, inputs)
-        if (tUpdate != null) profiler!!.recordPhase("lc:update", tUpdate.elapsedNow().inWholeNanoseconds)
-        val tFromSim = if (profiler != null) TimeSource.Monotonic.markNow() else null
-        val out = builder.build()
-
-        val nw = CytoWorld.fromSimState(out)
-        for (slot in 0 until nw.count) {
-            impById[nw.entityId[slot]]?.let { nw.impulse.scatter(slot, it) }
-        }
-        nw.world.randomSeed = out.randomSeed
-        if (tFromSim != null) profiler!!.recordPhase("lc:fromSim", tFromSim.elapsedNow().inWholeNanoseconds)
-        return nw
-    }
 
     // ── interaction bridge (only when there's pointer input) ─────────────────────
     private fun bridgeInteraction(w: CytoWorld, inputs: Map<PlayerId, CytoInput>): CytoWorld {
