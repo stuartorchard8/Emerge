@@ -45,7 +45,7 @@ Pattern legend: disjoint / additive / grid-cell / detectThenApply (see
 | build | 18 | disjoint | ✅ done (1.49×) |
 | genes | 18 | disjoint | ✅ done (2.54×) |
 | internalTouching / quanta | <2 | — | intentionally serial (too small) |
-| **exchange** | **36** | needs reformulation | ⛔ blocked — see below |
+| **exchange** | **36** | drop-contested | ✅ done, but only **1.10×** — Amdahl-capped by the serial descent (see below) |
 | finish | 18 | detectThenApply (per-cell + serial grid deposit) | Tier 2, not started |
 | writeback | ~8 | disjoint + **per-cell RNG re-baseline** | Tier 2, not started |
 | lifecycle (19% of *tick*) | — | detectThenApply | Tier 3, hardest |
@@ -111,6 +111,27 @@ to population (the whole point), density — and thus contested fraction — sta
 Stu's premise confirmed. **Next: build the drop-contested parallel exchange** (serial
 refine/enumerate pre-pass → parallel mark → parallel per-cell exchange on uncontested
 leaves), per the numbered plan above.
+
+## Exchange — BUILT (2026-07-08, commit `debdaddc`), but Amdahl-capped
+Drop-contested exchange is implemented and green: serial pre-pass refines+caches each cell's
+footprint leaves and tallies cells-per-leaf; contested (≥2-cell) leaves are dropped; a parallel
+`ColumnPartition.disjoint` pass balances each cell over its single-owner leaves (new
+`CytoMatterField.balanceBatchedOn`, thread-safe, applies Δ straight to cytoplasm). SEQ==PAR held;
+only INTERACT golden re-baselined (GROWTH+MUTATION byte-identical — zero contested at their density).
+
+**Clean per-JVM A/B @ seeded 8192 spread (grew to 10278 cells, 8 cores):**
+- exchange **18458µs → 16787µs = only 1.10×**. biology 45372→35807 (1.27×), whole tick 97.6→86.8ms.
+- (build 1.88×, genes 2.37× — those scale; exchange doesn't.)
+
+**Why only 1.10×:** at this density exchange is dominated by the **serial quad-tree descent**
+(`openFootprint` refines the tree + stamps access → must stay serial), and ONLY the balance/transfer
+portion parallelizes. The predicted "serial descent ~1/3, caps the win" was optimistic here — at
+high spatial spread the descent is a much larger share (sparse leaves ⇒ cheap balance), so the
+parallel fraction is small. **Next lever for exchange = parallelize the descent itself**: split into
+(a) a serial refine-ONLY pass (cheap at steady state — the tree is already refined, few `splitLeaf`s
+fire) then (b) a parallel read-only enumerate + per-thread touch-count maps merged (the original
+per-thread-conflict-grid design). Deferred — decide with Stu whether the exchange win justifies it,
+given lifecycle (30ms, now co-dominant with biology) is the bigger untouched serial block.
 
 ## Expectation-setting
 Full biology+lifecycle parallel ≈ 54% of tick; at a realistic ~5× on the parallel
