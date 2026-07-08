@@ -151,5 +151,7 @@ class CytoBench {
         sb.appendLine("$tag bio-sub us: build=%.0f internalTouching=%.0f quanta=%.0f genes=%.0f exchange=%.0f diffuse=%.0f finish=%.0f writeback=%.0f".format(
             ph("bio:build"), ph("bio:internalTouching"), ph("bio:quanta"), ph("bio:genes"),
             ph("bio:exchange"), ph("bio:diffuse"), ph("bio:finish"), ph("bio:writeback")))
+        sb.appendLine("$tag lifecycle-sub us: toSim=%.0f update=%.0f fromSim=%.0f".format(
+            ph("lc:toSim"), ph("lc:update"), ph("lc:fromSim")))
     }
 }

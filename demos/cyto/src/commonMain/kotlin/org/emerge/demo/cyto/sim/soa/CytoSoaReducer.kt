@@ -197,17 +197,22 @@ class CytoSoaReducer(
         // rarely lines up, so cross-organism welding is rare. (state.weldHealCount[key]==2 ⇒ both sides asked.)
         val readyWelds = state.weldHealByPair.keys.filter { state.weldHealCount[it] == 2 }.sorted()
         if (state.weldLo.isEmpty() && readyWelds.isEmpty() && divide.isEmpty() && destroy.isEmpty() && input.detaches.isEmpty() && interactDestroy.isEmpty()) return w
+        val tToSim = if (profiler != null) TimeSource.Monotonic.markNow() else null
         val impById = HashMap<Int, ImpulseComponent>(w.count)
         for (slot in 0 until w.count) impById[w.entityId[slot]] = w.impulse.gather(slot)
 
         val builder = SimBuilder(w.toSimState(includeImpulse = false))
+        if (tToSim != null) profiler!!.recordPhase("lc:toSim", tToSim.elapsedNow().inWholeNanoseconds)
         for (id in input.detaches) builder.emit(DetachIntent(id))      // interact order
         for (idv in interactDestroy) builder.emit(CellDestroyIntent(EntityId(idv)))  // Delete taps (interact, before biology)
         for (id in destroy) builder.emit(CellDestroyIntent(id))         // biology order
         for (i in state.weldLo.indices) builder.emit(WeldIntent(EntityId(state.weldLo[i]), EntityId(state.weldHi[i]))) // contact order
         for (key in readyWelds) builder.emit(WeldHealIntent(EntityId((key ushr 32).toInt()), EntityId(key.toInt()), state.weldHealByPair.getValue(key)))  // both-repairing pairs, sorted = deterministic
         for (id in divide) builder.emit(CellDivisionIntent(id, state.divideMorphogen[id] ?: "", id in state.divideMorphogenToMother, state.divideAxis[id] ?: "", id in state.divideAcross, id in state.divideRejectMother))  // biology order
+        val tUpdate = if (profiler != null) TimeSource.Monotonic.markNow() else null
         CytoLifecycleSystem.update(cfg, builder, inputs)
+        if (tUpdate != null) profiler!!.recordPhase("lc:update", tUpdate.elapsedNow().inWholeNanoseconds)
+        val tFromSim = if (profiler != null) TimeSource.Monotonic.markNow() else null
         val out = builder.build()
 
         val nw = CytoWorld.fromSimState(out)
@@ -215,6 +220,7 @@ class CytoSoaReducer(
             impById[nw.entityId[slot]]?.let { nw.impulse.scatter(slot, it) }
         }
         nw.world.randomSeed = out.randomSeed
+        if (tFromSim != null) profiler!!.recordPhase("lc:fromSim", tFromSim.elapsedNow().inWholeNanoseconds)
         return nw
     }
 
