@@ -151,6 +151,51 @@ class CytoSoaSpecTest {
     }
 
     @Test
+    fun scarcestIndexPicksLowestCountThenLowestId() {
+        val s = MoleculeStore()
+        s.inc(3, 5); s.inc(1, 5); s.inc(9, 2); s.inc(4, 2)  // min count 2 shared by ids 4 and 9
+        assertEquals(4, s.idAt(s.scarcestIndex()), "ties broken by lowest species id")
+    }
+
+    @Test
+    fun chemCapEvictsScarcestSpeciesToEnvConservingMatter() {
+        // The toxicity mechanic: a cell at its distinct-species cap that ingests a new (toxic) species
+        // evicts its scarcest resident, spilling those atoms to the grid — cap holds, matter conserved.
+        val cap = CytoTuning.CELL_CHEM_CAP
+        val grid = CytoMatterField.empty()
+        val cyto = MoleculeStore(cap)
+        for (id in 0 until cap) cyto.inc(id, if (id == 7) 1 else 100)  // id 7 is the unique scarcest
+        assertEquals(cap, cyto.size)
+
+        val toxinId = cap + 3
+        val toxinAmount = 50
+        val before = storeAtoms(cyto) + gridAtoms(grid)
+
+        CytoSoaReducer.ingestWithCap(grid, cyto, toxinId, toxinAmount, ax = 0f, ay = 0f, ar = 0.5f)
+
+        assertEquals(cap, cyto.size, "distinct-species cap must hold at $cap")
+        assertEquals(0, cyto.count(7), "the scarcest resident (id 7) is evicted")
+        assertTrue(cyto.count(toxinId) > 0, "the incoming toxin is admitted")
+        val added = toxinAmount.toLong() * SpeciesRegistry.atomCount(toxinId)
+        assertEquals(before + added, storeAtoms(cyto) + gridAtoms(grid),
+            "matter conserved: the evicted species' atoms spilled to the grid, none lost")
+    }
+
+    private fun storeAtoms(s: MoleculeStore): Long {
+        var sum = 0L
+        for (i in 0 until s.size) sum += SpeciesRegistry.atomCount(s.idAt(i)).toLong() * s.countAt(i)
+        return sum
+    }
+
+    private fun gridAtoms(g: CytoMatterField): Long {
+        var sum = 0L
+        g.forEachLeaf { _, _, _, store ->
+            for (i in 0 until store.size) sum += SpeciesRegistry.atomCount(store.idAt(i)).toLong() * store.countAt(i)
+        }
+        return sum
+    }
+
+    @Test
     fun autotrophGrowsIntoAColony() {
         val initial = createCytoInitialState()
         val start = cellCount(initial)

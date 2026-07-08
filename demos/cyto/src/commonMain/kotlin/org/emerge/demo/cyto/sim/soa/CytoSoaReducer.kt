@@ -230,23 +230,25 @@ class CytoSoaReducer(
     }
 
     // ── lysis attack processing ─────────────────────────────────────────────────
+
     /** Process all lyse attack intents: shred all biomass from victims, assimilate what the attacker
      *  can hold. Undigestible species are forced into the attacker's cytoplasm — a metabolic burden
      *  that accumulates over time (creating evolutionary pressure for prey to produce predator-toxic
      *  chemicals). Returns the world. */
     private fun processLyseAttacks(w: CytoWorld, intents: List<LyseAttackIntent>): CytoWorld {
-        val maxGear = CytoTuning.EFFICIENCY_MAX_GEAR
         for (intent in intents) {
             val attackerSlot = w.slotOf(intent.attacker.value)
             if (attackerSlot < 0) continue
 
-            // Capture fraction: ⌊(gear+1) / (EFFICIENCY_MAX_GEAR+1)⌋.
-            // Low gear = brute shredder (high damage, low capture — most spilled to env).
-            // High gear = surgical digester (less damage, high capture — nearly all assimilated).
-            // Undigestible species (attacker can't hold them) are FORCED into attacker cytoplasm,
-            // creating a metabolic burden — the basis of prey toxicity.
-            val captureNum = (intent.gear + 1).toLong()
-            val captureDen = (maxGear + 1).toLong()
+            // Attacker's grid location, for spilling any cap-evicted (toxic) species to the environment.
+            val ax = CytoUnits.toLogical(Coord(w.posX[attackerSlot]))
+            val ay = CytoUnits.toLogical(Coord(w.posY[attackerSlot]))
+            val ar = Frac(w.cell.logicalRadius[attackerSlot]).toFloat()
+
+            // All stolen biomass is forced into the attacker's cytoplasm as a metabolic burden — the
+            // basis of prey toxicity. (The old gear-based capture/spill fraction was a no-op — both
+            // halves landed in cytoplasm regardless of gear — so it's dropped; intent.gear no longer
+            // affects lyse. The chem-cap eviction in ingestWithCap is now what spills toxins to env.)
             val damagePerVictim = if (intent.victims.isEmpty()) 0 else intent.damage / intent.victims.size
             if (damagePerVictim <= 0) continue
 
@@ -278,16 +280,12 @@ class CytoSoaReducer(
                     val stolen = minOf(damagePerVictim.toLong(), victimCount.toLong()).toInt()
                     victimBio.add(spId, -stolen)
 
-                    // Assimilate: ⌊stolen × captureNum / captureDen⌋
-                    val captured = (stolen.toLong() * captureNum / captureDen).toInt()
-                    attackerCyto.inc(spId, captured)
-
-                    // Undigestible (spilled) species are FORCED into attacker cytoplasm instead of env.
-                    // These accumulate and dilute useful cytoplasm — the toxicity mechanism.
-                    val spilled = stolen - captured
-                    if (spilled > 0) {
-                        attackerCyto.inc(spId, spilled)
-                    }
+                    // All stolen atoms are forced into the attacker's cytoplasm (the gear-based
+                    // capture/spill split is cosmetic here — both halves land in cytoplasm), where they
+                    // accumulate as a metabolic burden. Once the cell hits its distinct-species cap, a
+                    // new (undigestible, toxic) species evicts the scarcest resident to the environment
+                    // — the toxicity release valve. See [ingestWithCap].
+                    ingestWithCap(w.grid, attackerCyto, spId, stolen, ax, ay, ar)
                 }
             }
         }
@@ -374,6 +372,37 @@ class CytoSoaReducer(
     private fun longAbs(v: Long): Long = if (v < 0L) -v else v
 
     companion object {
+        /**
+         * Absorb [amount] of species [spId] into a cell's cytoplasm [cyto], enforcing the fixed
+         * distinct-species cap ([CytoTuning.CELL_CHEM_CAP]) — the toxicity mechanic. If the species is
+         * already held, or there is room under the cap, it is simply absorbed. Otherwise the scarcest of
+         * {resident scarcest, incoming} is evicted, its atoms spilled to the cell's grid leaf at
+         * ([ax], [ay]) radius [ar] — so matter is conserved and a saturated cell leaks its rarest
+         * chemical to the environment rather than growing unbounded. Deterministic: scarcest = lowest
+         * count, ties broken by lowest species id.
+         */
+        internal fun ingestWithCap(
+            grid: CytoMatterField, cyto: MoleculeStore, spId: Int, amount: Int,
+            ax: Float, ay: Float, ar: Float,
+        ) {
+            if (amount <= 0) return
+            if (cyto.count(spId) > 0 || cyto.size < CytoTuning.CELL_CHEM_CAP) {
+                cyto.inc(spId, amount)
+                return
+            }
+            // At cap with a new species: evict the scarcest, spilling it to the environment.
+            val si = cyto.scarcestIndex()
+            val scarceId = cyto.idAt(si)
+            val scarceCount = cyto.countAt(si)
+            if (amount < scarceCount || (amount == scarceCount && spId < scarceId)) {
+                grid.deposit(ax, ay, ar, spId, amount)            // incoming is scarcest → straight to env
+            } else {
+                cyto.add(scarceId, -scarceCount)                  // evict resident scarcest…
+                grid.deposit(ax, ay, ar, scarceId, scarceCount)   // …to env
+                cyto.inc(spId, amount)                            // …admit the incoming species
+            }
+        }
+
         private const val ITERATIONS = 4   // matches SpringConstraintSystem default
 
         // Frac fixed-point scale (= Int.MAX_VALUE as Long). The raw-long spring math mirrors the Frac/

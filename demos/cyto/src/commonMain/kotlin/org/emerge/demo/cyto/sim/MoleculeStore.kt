@@ -98,6 +98,17 @@ class MoleculeStore private constructor(
     fun inc(id: Int, n: Int) = add(id, n)
     fun dec(id: Int) = add(id, -1)
 
+    /** Index of the scarcest species (lowest count; ties broken by lowest id). Returns -1 if empty.
+     *  Ids are stored ascending, so the first-seen minimum count is already the lowest-id tie-break.
+     *  Used by the cell chem-cap eviction (the lysis-toxicity release valve). */
+    fun scarcestIndex(): Int {
+        if (n == 0) return -1
+        var best = 0
+        var bestCount = counts[0]
+        for (i in 1 until n) if (counts[i] < bestCount) { bestCount = counts[i]; best = i }
+        return best
+    }
+
     fun copy(): MoleculeStore {
         if (n == 0) return MoleculeStore(cap)
         val backing = if (cap > 0) cap else n
