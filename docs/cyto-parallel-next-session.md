@@ -45,7 +45,7 @@ Pattern legend: disjoint / additive / grid-cell / detectThenApply (see
 | build | 18 | disjoint | ✅ done (1.49×) |
 | genes | 18 | disjoint | ✅ done (2.54×) |
 | internalTouching / quanta | <2 | — | intentionally serial (too small) |
-| **exchange** | **36** | drop-contested | ✅ done, but only **1.10×** — Amdahl-capped by the serial descent (see below) |
+| **exchange** | **36** | tile-parallel drop-contested | ✅ done — **~3× (SEQ→PAR)**; descent now parallel. See below. |
 | finish | 18 | detectThenApply (per-cell + serial grid deposit) | Tier 2, not started |
 | writeback | ~8 | disjoint + **per-cell RNG re-baseline** | Tier 2, not started |
 | lifecycle (19% of *tick*) | — | detectThenApply | Tier 3, hardest |
@@ -132,6 +132,29 @@ parallel fraction is small. **Next lever for exchange = parallelize the descent 
 fire) then (b) a parallel read-only enumerate + per-thread touch-count maps merged (the original
 per-thread-conflict-grid design). Deferred — decide with Stu whether the exchange win justifies it,
 given lifecycle (30ms, now co-dominant with biology) is the bigger untouched serial block.
+
+## Exchange — DESCENT NOW PARALLEL (2026-07-08, commit `c90b9645`)
+The 1.10× wall was the serial quad-tree descent (measured: descent 51.7% / plan 33.9% / balance
+14.4% of exchange — only balance was parallel). Fixed by **tile-partitioning the descent** (Stu's
+idea): the tree is 16 independent root subtrees, `splitLeaf` never crosses a root boundary, so:
+- **Pass 0** serial: bucket each footprint's per-root descents by root index (cheap, no tree touch).
+- **Pass 1** parallel BY ROOT TILE: refine each root on one thread + set masks + count per-leaf
+  touches. Every finest leaf lives in exactly one root ⇒ touch count is complete per-tile ⇒ **no
+  merge**, and the contested set folds into this pass for free.
+- **Pass 2** parallel BY CELL: tree frozen ⇒ each cell read-only-descends, collects its uncontested
+  single-owner leaves, balances into its own cytoplasm. Disjoint ⇒ SEQ==PAR.
+**Bit-identical to `debdaddc`** (same contested set + balance, reorganised): all three goldens
+unchanged, parallelMatchesSequential + conservation held — NO re-baseline.
+
+**Clean-ish per-JVM A/B @ 8192 spread (10278 cells, 8 cores):** PAR exchange **7161µs**, down from
+the prior parallel exchange's **16787µs (2.3×)**; SEQ→PAR this session 22418→7161 (**3.1×**, SEQ
+inflated by machine load). Biology SEQ→PAR 2.15×. Cost: the descent runs twice (refine + enumerate),
+so SEQ is ~20% slower than debdaddc-SEQ — but both descents parallelize, so PAR wins big.
+Caveat: 16 fixed tiles ⇒ clumped colonies load-imbalance (untested; spread balances well).
+
+**Exchange is no longer the biology bottleneck.** Remaining serial-ish biology: finish (~6.4ms PAR),
+writeback (~2.7ms), internalTouching (~3.2ms). **Lifecycle (~38ms, ~42% of tick) is now the single
+biggest serial block** — the next target.
 
 ## Expectation-setting
 Full biology+lifecycle parallel ≈ 54% of tick; at a realistic ~5× on the parallel
