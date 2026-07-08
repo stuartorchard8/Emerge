@@ -45,7 +45,7 @@ Pattern legend: disjoint / additive / grid-cell / detectThenApply (see
 | build | 18 | disjoint | ✅ done (1.49×) |
 | genes | 18 | disjoint | ✅ done (2.54×) |
 | internalTouching / quanta | <2 | — | intentionally serial (too small) |
-| **exchange** | **36** | tile-parallel drop-contested | ✅ done — **~3× (SEQ→PAR)**; descent now parallel. See below. |
+| **exchange** | **36** | tile-parallel drop-contested | ✅ done — **2.34× (SEQ→PAR)**; descent now parallel. See below. |
 | finish | 18 | detectThenApply (per-cell + serial grid deposit) | Tier 2, not started |
 | writeback | ~8 | disjoint + **per-cell RNG re-baseline** | Tier 2, not started |
 | lifecycle (19% of *tick*) | — | detectThenApply | Tier 3, hardest |
@@ -146,15 +146,19 @@ idea): the tree is 16 independent root subtrees, `splitLeaf` never crosses a roo
 **Bit-identical to `debdaddc`** (same contested set + balance, reorganised): all three goldens
 unchanged, parallelMatchesSequential + conservation held — NO re-baseline.
 
-**Clean-ish per-JVM A/B @ 8192 spread (10278 cells, 8 cores):** PAR exchange **7161µs**, down from
-the prior parallel exchange's **16787µs (2.3×)**; SEQ→PAR this session 22418→7161 (**3.1×**, SEQ
-inflated by machine load). Biology SEQ→PAR 2.15×. Cost: the descent runs twice (refine + enumerate),
-so SEQ is ~20% slower than debdaddc-SEQ — but both descents parallelize, so PAR wins big.
-Caveat: 16 fixed tiles ⇒ clumped colonies load-imbalance (untested; spread balances well).
+**Clean per-JVM A/B @ 8192 spread (10278 cells, 8 cores):**
+- exchange **13708µs SEQ → 5861µs PAR = 2.34×** (was 1.10× at debdaddc). genes 2.03×, build 1.65×,
+  biology-total 37262→23710 (1.57×).
+- Bonus: tile-parallel SEQ exchange (13708µs) is *lower* than debdaddc-SEQ (~18458µs) — the
+  integer-index refine + read-only enumerate avoids the old openFootprint's HashSet touch-count +
+  leaf-copy + footprintSpecies overhead, so it's faster even single-threaded despite descending twice.
+- Caveat: 16 fixed tiles ⇒ clumped colonies load-imbalance (untested; spread balances well).
 
-**Exchange is no longer the biology bottleneck.** Remaining serial-ish biology: finish (~6.4ms PAR),
-writeback (~2.7ms), internalTouching (~3.2ms). **Lifecycle (~38ms, ~42% of tick) is now the single
-biggest serial block** — the next target.
+**⚠️ Whole-tick win is only 1.09× (79.6→72.9ms) despite biology 1.57×** — the all-core-clock ceiling
+([[reference_cyto_perf_levers]]): pinning 8 cores for parallel biology drops the CPU below single-core
+turbo, so the STILL-SERIAL lifecycle runs **22% SLOWER in PAR (24.5→29.9ms)**, clawing back most of
+the biology gain. **Lifecycle (~30ms, ~41% of the PAR tick) is now the single biggest serial block —
+the clear next target;** until it's parallel too, further biology parallelism keeps paying this tax.
 
 ## Expectation-setting
 Full biology+lifecycle parallel ≈ 54% of tick; at a realistic ~5× on the parallel
