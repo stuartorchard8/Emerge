@@ -93,7 +93,12 @@ class CytoBench {
         val builder = org.emerge.sim.core.sim.SimBuilder(
             org.emerge.sim.core.sim.SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
         val side = kotlin.math.ceil(kotlin.math.sqrt(count.toDouble())).toInt()
-        val spacing = 18f
+        // -Dcytospread=1 tiles the founders evenly across the full torus (spacing = torus/side) instead of
+        // the fixed 18-unit spacing, which at high N wraps many times over the small (CELLS_PER_AXIS=32)
+        // torus and clumps cells — starving the grid-cell parallel partitioner. Even tiling is the
+        // best-case spread for measuring parallel-partition potential.
+        val spacing = if (System.getProperty("cytospread") != null)
+            (org.emerge.demo.cyto.sim.CytoUnits.CELLS_PER_AXIS.toFloat() / side) else 18f
         val origin = -side * spacing / 2f
         var made = 0
         outer@ for (gy in 0 until side) for (gx in 0 until side) {
@@ -143,5 +148,8 @@ class CytoBench {
         fun ph(p: String) = (byName[p]?.avgNanos ?: 0) / 1e3
         sb.appendLine("$tag phases us: biology=%.0f contacts=%.0f forces=%.0f connections=%.0f interact=%.0f lifecycle=%.0f integrate=%.0f".format(
             ph("biology"), ph("contacts"), ph("forces"), ph("connections"), ph("interact"), ph("lifecycle"), ph("integrate")))
+        sb.appendLine("$tag bio-sub us: build=%.0f internalTouching=%.0f quanta=%.0f genes=%.0f exchange=%.0f diffuse=%.0f finish=%.0f writeback=%.0f".format(
+            ph("bio:build"), ph("bio:internalTouching"), ph("bio:quanta"), ph("bio:genes"),
+            ph("bio:exchange"), ph("bio:diffuse"), ph("bio:finish"), ph("bio:writeback")))
     }
 }

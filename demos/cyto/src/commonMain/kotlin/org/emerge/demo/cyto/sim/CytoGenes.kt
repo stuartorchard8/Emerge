@@ -439,6 +439,10 @@ class CellWork(
      *  they need no synchronisation. */
     val snapScratch = MoleculeStore()
     var activeScratch = IntArray(genome.size.coerceAtLeast(1)); private set
+    /** Per-work scratch for the neighbour diamond-angle exposure sample built in the biology build phase.
+     *  Owned by this CellWork so the build phase can run slot-partitioned in parallel without sharing a
+     *  single state-level scratch array across workers. */
+    val expoScratch = LongArray(CytoExposure.MAX_NEIGHBOURS)
     val consumeIds = IntArray(4)
     val consumePer = IntArray(4)
     /** Species count cache for gate evaluation: species id → count. Pre-populated from [cytoplasm] at the

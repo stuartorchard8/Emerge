@@ -269,79 +269,92 @@ class BiologySystem(
         // Staggered exchange batch sizes (cells per batch).
         val batchSizes = IntArray(CytoTuning.EXCHANGE_BATCHES)
 
+        // Parallel per-cell build. Every write here is slot-local (bioNbrs[slot], baseQuantaRaw[k],
+        // captureMilli[k], the slot's own back-buffer store, and the cell's own CellWork), so the range
+        // partitions cleanly with no cross-slot writes. The `neighbourIds`/`works` maps (needed only by
+        // diffuse) and the order-dependent staggered-batch assignment are deferred to the serial tail below.
+        // Hoist the back-buffer capacity grow out of the parallel region so no worker reallocs the array.
+        world.cell.ensureCapacityBack(n)
+        val bioExec = if (n >= bioParallelThreshold) executor else null
+        ColumnPartition.disjoint(n, bioExec, threshold = 1) { kStart, kEnd ->
+            for (k in kStart until kEnd) {
+                val slot = ordered[k]
+                val deg = world.csr.degreeOf(slot)
+                val base = world.csr.offset[slot]
+                val nbrs = state.bioNbrs[slot]!!.also { it.clear() }
+                for (j in 0 until deg) nbrs.add(EntityId(world.csr.otherId[base + j]))
+
+                val work = state.bioWorks[slot]!!
+                val expo = work.expoScratch
+                var ek = 0
+                for (j in 0 until deg) {
+                    if (ek >= CytoExposure.MAX_NEIGHBOURS) break
+                    val ns = world.csr.otherSlot[base + j]; if (ns < 0) continue
+                    val d = delta(world, slot, ns)
+                    expo[ek++] = CytoExposure.diamondAngle(d.x, d.y).raw
+                }
+                val lx = CytoUnits.toLogical(Coord(world.posX[slot])); val ly = CytoUnits.toLogical(Coord(world.posY[slot]))
+                val sample = lightField.sampleAt(lx, ly, world.world.tick)
+                val exposure = CytoExposure.weight(expo, ek)
+                val radius = Frac(world.cell.logicalRadius[slot])
+
+                baseQuantaRaw[k] = if (CytoTuning.LIGHT_IGNORES_EXPOSURE) (sample * CytoTuning.LIGHT_QUANTA_SCALE).raw
+                    else ((sample * exposure) * CytoTuning.LIGHT_QUANTA_SCALE).raw
+
+                val exposureMilli = exposure.raw * 1000L / Int.MAX_VALUE.toLong()
+                captureMilli[k] = exposureMilli * radius.raw / Int.MAX_VALUE.toLong()
+
+                // Column-slab double-buffer: seed this slot's BACK stores from the committed front, then hand
+                // them to work by reference. Genes mutate the back buffer; swapBuffers() commits at the barrier.
+                // The front stores stay untouched during the biology pass (readable for divide/lyse intents).
+                val backCyto = world.cell.backCytoplasm[slot]
+                    ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP).also { world.cell.backCytoplasm[slot] = it }
+                world.cell.cytoplasm[slot]?.let { backCyto.copyFrom(it) }
+                val backBio = world.cell.backBiomass[slot]
+                    ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP).also { world.cell.backBiomass[slot] = it }
+                world.cell.biomass[slot]?.let { backBio.copyFrom(it) }
+                work.reset(
+                    cytoplasm = backCyto,
+                    biomass = backBio,
+                    logicalRadius = radius,
+                    type = CellType.entries[world.cell.type[slot]],
+                    genome = world.cell.genome[slot] ?: emptyList(),
+                    quanta = 0,
+                    touchCount = state.touchScratch[slot],
+                    wear = world.cell.wear[slot],
+                    gridIndex = -1,
+                    weldedDegree = deg,
+                    seed = slot,
+                )
+                for (j in 0 until deg) work.connectionDamage[EntityId(world.csr.otherId[base + j])] = world.csr.edgeAux[base + j]
+                for (tid in state.touchingScratch[slot]) {
+                    work.touchingIds.add(EntityId(tid))
+                    val ts = world.slotOf(tid)
+                    if (ts >= 0) {
+                        val tlx = CytoUnits.toLogical(Coord(world.posX[ts]))
+                        val tly = CytoUnits.toLogical(Coord(world.posY[ts]))
+                        if (work._touchingCellN >= work._touchingCellCx.size) {
+                            val newSize = work._touchingCellCx.size * 2
+                            work._touchingCellCx = work._touchingCellCx.copyOf(newSize)
+                            work._touchingCellCy = work._touchingCellCy.copyOf(newSize)
+                        }
+                        work._touchingCellCx[work._touchingCellN] = tlx
+                        work._touchingCellCy[work._touchingCellN] = tly
+                        work._touchingCellN++
+                    }
+                }
+                work.exposureMilli = exposureMilli.toInt()
+                work.cx = lx; work.cy = ly
+            }
+        }
+
+        // Serial tail: populate the diffuse lookup maps (cross-cell, so kept off the parallel region) and
+        // assign staggered exchange batches greedily in canonical slot order (order-dependent → serial).
         for (k in 0 until n) {
             val slot = ordered[k]
-            val id = EntityId(world.entityId[slot])
-            val deg = world.csr.degreeOf(slot)
-            val base = world.csr.offset[slot]
-            val nbrs = state.bioNbrs[slot]!!.also { it.clear() }
-            for (j in 0 until deg) nbrs.add(EntityId(world.csr.otherId[base + j]))
-            neighbourIds[id] = nbrs
-
-            var ek = 0
-            for (j in 0 until deg) {
-                if (ek >= CytoExposure.MAX_NEIGHBOURS) break
-                val ns = world.csr.otherSlot[base + j]; if (ns < 0) continue
-                val d = delta(world, slot, ns)
-                state.expoScratch[ek++] = CytoExposure.diamondAngle(d.x, d.y).raw
-            }
-            val lx = CytoUnits.toLogical(Coord(world.posX[slot])); val ly = CytoUnits.toLogical(Coord(world.posY[slot]))
-            val sample = lightField.sampleAt(lx, ly, world.world.tick)
-            val exposure = CytoExposure.weight(state.expoScratch, ek)
-            val radius = Frac(world.cell.logicalRadius[slot])
-
-            baseQuantaRaw[k] = if (CytoTuning.LIGHT_IGNORES_EXPOSURE) (sample * CytoTuning.LIGHT_QUANTA_SCALE).raw
-                else ((sample * exposure) * CytoTuning.LIGHT_QUANTA_SCALE).raw
-
-            val exposureMilli = exposure.raw * 1000L / Int.MAX_VALUE.toLong()
-            captureMilli[k] = exposureMilli * radius.raw / Int.MAX_VALUE.toLong()
-
             val work = state.bioWorks[slot]!!
-            // Column-slab double-buffer: seed this slot's BACK stores from the committed front, then hand
-            // them to work by reference. Genes mutate the back buffer; swapBuffers() commits at the barrier.
-            // The front stores stay untouched during the biology pass (readable for divide/lyse intents).
-            world.cell.ensureCapacityBack(slot + 1)
-            val backCyto = world.cell.backCytoplasm[slot]
-                ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP).also { world.cell.backCytoplasm[slot] = it }
-            world.cell.cytoplasm[slot]?.let { backCyto.copyFrom(it) }
-            val backBio = world.cell.backBiomass[slot]
-                ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP).also { world.cell.backBiomass[slot] = it }
-            world.cell.biomass[slot]?.let { backBio.copyFrom(it) }
-            work.reset(
-                cytoplasm = backCyto,
-                biomass = backBio,
-                logicalRadius = radius,
-                type = CellType.entries[world.cell.type[slot]],
-                genome = world.cell.genome[slot] ?: emptyList(),
-                quanta = 0,
-                touchCount = state.touchScratch[slot],
-                wear = world.cell.wear[slot],
-                gridIndex = -1,
-                weldedDegree = deg,
-                seed = slot,
-            )
-            for (j in 0 until deg) work.connectionDamage[EntityId(world.csr.otherId[base + j])] = world.csr.edgeAux[base + j]
-            for (tid in state.touchingScratch[slot]) {
-                work.touchingIds.add(EntityId(tid))
-                val ts = world.slotOf(tid)
-                if (ts >= 0) {
-                    val lx = CytoUnits.toLogical(Coord(world.posX[ts]))
-                    val ly = CytoUnits.toLogical(Coord(world.posY[ts]))
-                    if (work._touchingCellN >= work._touchingCellCx.size) {
-                        val newSize = work._touchingCellCx.size * 2
-                        work._touchingCellCx = work._touchingCellCx.copyOf(newSize)
-                        work._touchingCellCy = work._touchingCellCy.copyOf(newSize)
-                    }
-                    work._touchingCellCx[work._touchingCellN] = lx
-                    work._touchingCellCy[work._touchingCellN] = ly
-                    work._touchingCellN++
-                }
-            }
-            work.exposureMilli = exposureMilli.toInt()
-            work.cx = lx; work.cy = ly
-            works[id] = work
-
-            // Staggered exchange batch assignment: new cells (exchangeBatch == -1) go to the least-populated batch.
+            neighbourIds[EntityId(world.entityId[slot])] = state.bioNbrs[slot]!!
+            works[EntityId(world.entityId[slot])] = work
             if (work.exchangeBatch < 0) {
                 var bestBatch = 0
                 for (b in 1 until CytoTuning.EXCHANGE_BATCHES) {
@@ -353,12 +366,13 @@ class BiologySystem(
         }
         bioSplit("bio:build")
 
-        // Compute internalTouching
+        // Compute internalTouching — kept sequential: sub-millisecond even at 8k cells, so fork/join
+        // dispatch overhead outweighs any parallel win (measured net-negative). Reads own neighbours
+        // (bioNbrs[slot]) + read-only CSR/sparse-set, writes only its own work.internalTouching.
         for (k in 0 until n) {
             val work = state.bioWorks[ordered[k]]!!
-            val nbrIds = neighbourIds[EntityId(world.entityId[ordered[k]])]
+            val nbrIds = state.bioNbrs[ordered[k]]
             if (nbrIds != null && work.touchingIds.isNotEmpty()) {
-                val mySlot = ordered[k]
                 for (touchId in work.touchingIds) {
                     val touchIdVal = touchId.value
                     val touchSlot = world.slotOf(touchIdVal)
@@ -387,10 +401,11 @@ class BiologySystem(
         }
         bioSplit("bio:internalTouching")
 
-        // Second pass: turn base light into quanta
+        // Second pass: turn base light into quanta — kept sequential (sub-millisecond; dispatch overhead
+        // would exceed the work).
         for (k in 0 until n) {
             val slot = ordered[k]
-            val work = works.getValue(EntityId(world.entityId[slot]))
+            val work = state.bioWorks[slot]!!
             work.quanta = if (!CytoTuning.LIGHT_SHADING) {
                 (baseQuantaRaw[k] / Int.MAX_VALUE.toLong()).toInt()
             } else {
@@ -402,8 +417,7 @@ class BiologySystem(
 
         // Gene phase — parallel
         val tick = world.world.tick.toInt()
-        val exec = if (n >= bioParallelThreshold) executor else null
-        ColumnPartition.disjoint(n, exec, threshold = 1) { kStart, kEnd ->
+        ColumnPartition.disjoint(n, bioExec, threshold = 1) { kStart, kEnd ->
             for (k in kStart until kEnd) CytoBiologyCore.runGenes(state.bioWorks[ordered[k]]!!, tick, bioProfile)
         }
         bioSplit("bio:genes")
