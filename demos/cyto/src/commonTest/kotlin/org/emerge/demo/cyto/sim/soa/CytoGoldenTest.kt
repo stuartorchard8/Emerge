@@ -204,7 +204,7 @@ class CytoGoldenTest {
     }
 
     // Repair gene: burn the stored `rg` reserve for repair energy (light-independent). A touching pair
-    // both repairing the same tick welds via gene-driven adhesion (WeldHealIntent path).
+    // both repairing the same tick welds via gene-driven adhesion (the weld-heal path).
     private val repairOnly = listOf(
         Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
     )
@@ -230,7 +230,7 @@ class CytoGoldenTest {
     @Test
     fun weldHealColony() {
         // Three deeply-overlapping Repair-active cells: as they co-repair they weld-heal into a cluster
-        // (WeldHealIntent + division as reserves split), exercising the weld-heal lifecycle path.
+        // (weld-heal + division as reserves split), exercising the weld-heal lifecycle path.
         val cfg = CytoConfig(mutationRateDenom = 0)
         val soa = CytoSoaReducer(cfg)
         val initial = run {
@@ -252,7 +252,7 @@ class CytoGoldenTest {
 
     @Test
     fun stickyWeldPair() {
-        // Two overlapping sticky cells (no Repair): the contact system welds them via the plain WeldIntent
+        // Two overlapping sticky cells (no Repair): the contact system welds them via the plain-weld
         // path (sticky ⇒ weldLo), which the default goldens never trigger (AUTO_WELD_ON_OVERLAP is off).
         val cfg = CytoConfig(mutationRateDenom = 0)
         val soa = CytoSoaReducer(cfg)

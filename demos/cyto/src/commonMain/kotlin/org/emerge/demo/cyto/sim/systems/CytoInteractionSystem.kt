@@ -38,8 +38,8 @@ object CytoInteractionSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
             )
         }
 
-        // Detach hold mode (acts on grab-start): cut all of the cell's connections.
-        for (id in input.detaches) builder.emit(DetachIntent(id))
+        // Detach (cut all of a cell's connections) is handled directly by the lifecycle phase, which reads
+        // `input.detaches` — no intent needed here.
 
         if (input.taps.isEmpty()) return
         val cells = builder.entries<CytoCellComponent>()

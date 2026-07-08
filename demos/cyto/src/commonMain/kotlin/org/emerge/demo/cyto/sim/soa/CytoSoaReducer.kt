@@ -227,9 +227,9 @@ class CytoSoaReducer(
             w.world.removeEntity(EntityId(idv))
         }
 
-        // Weld then weld-heal, sharing a `welded` dedup set (pairKey = the (min,max) ordering of both the
-        // WeldIntent(weldLo,weldHi) and WeldHealIntent(key>>32,key) the round-trip emits). Skip pairs touching
-        // a just-destroyed cell. addSpring no-ops on an already-present edge (= the AoS springExists guard).
+        // Weld then weld-heal, sharing a `welded` dedup set. pairKey gives the (min,max) ordering — the same
+        // for a contact weld (weldLo,weldHi) and a repair weld-heal (key>>32,key) — so one pair welds once,
+        // whichever fires first. Skip pairs touching a just-destroyed cell; addSpring no-ops on an existing edge.
         val welded = HashSet<Long>()
         for (i in state.weldLo.indices) {                       // contact order
             val a = state.weldLo[i]; val b = state.weldHi[i]

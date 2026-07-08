@@ -389,7 +389,7 @@ class CellWork(
     val internalTouching: MutableSet<EntityId> = HashSet()
 
     /** Welds the Repair action wants to form this tick: touching-cell id → the repair healed into the new
-     *  weld at birth. Drained by the reducer into [systems.WeldHealIntent]s for the lifecycle. */
+     *  weld at birth. Drained by the reducer into `state.weldHealByPair` for the lifecycle phase. */
     val weldHeals: MutableMap<EntityId, Float> = HashMap()
 
     /** This cell's surface exposure this tick, in milli-units (0..1000; 1000 = lone/fully exposed, ~0 =
