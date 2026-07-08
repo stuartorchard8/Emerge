@@ -303,6 +303,7 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
                 val delta = sc - bucket
                 val movement = delta / denom
                 if (movement != 0) store.add(sid, -movement)
+                if (ExchangeProbe.enabled) ExchangeProbe.attribute(leaf, movement)
                 results[t] += movement
             }
         }
@@ -310,6 +311,9 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     }
 
     fun closeFootprint() = fpLeaves.clear()
+
+    /** Probe-only: visit the currently-open footprint's leaves (identity) without mutating anything. */
+    fun forEachFootprintLeaf(action: (QuadNode) -> Unit) { for (leaf in fpLeaves) action(leaf) }
 
     // ── death / export deposit ─────────────────────────────────────────────────────────────────────────
     /** Add `amount` of `sp` spread across a footprint (refine to fine first; does NOT re-stamp the collapse

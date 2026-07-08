@@ -87,6 +87,8 @@ tasks.withType<Test>().configureEach {
     System.getProperty("ctrlgenome")?.let { systemProperty("ctrlgenome", it) }
     System.getProperty("ctrlseed")?.let { systemProperty("ctrlseed", it) }
     System.getProperty("ctrlticks")?.let { systemProperty("ctrlticks", it) }
+    System.getProperty("cytospread")?.let { systemProperty("cytospread", it) }
+    System.getProperty("cytoexchprobe")?.let { systemProperty("cytoexchprobe", it) }
 }
 
 // Generates *ShaderSources.kt from .vert / .frag files under src/commonMain/shaders/.

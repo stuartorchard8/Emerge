@@ -54,6 +54,31 @@ class CytoBench {
     }
 
     @Test
+    fun exchangeContention() {
+        // Measure the drop-contested sacrifice BEFORE building the parallel exchange (see
+        // docs/cyto-parallel-next-session.md "FIRST STEP"). Enable with `-Dcytoexchprobe=1`
+        // (optionally -Dcytocells=N / -Dcytospread=1); results land in /tmp/cyto_exchprobe.txt.
+        if (System.getProperty("cytoexchprobe") == null) return
+        val cfg = CytoConfig()
+        val soa = CytoSoaReducer(cfg)
+        val seedN = System.getProperty("cytocells")?.toIntOrNull()
+        var w = if (seedN != null) CytoWorld.fromSimState(seededColony(seedN)) else CytoWorld.fromSimState(createCytoInitialState())
+        val grow = if (seedN != null) 200 else 22000
+        repeat(grow) { w = soa.tick(w, CytoInput.EMPTY) }
+
+        org.emerge.demo.cyto.sim.ExchangeProbe.reset()
+        org.emerge.demo.cyto.sim.ExchangeProbe.enabled = true
+        repeat(600) { w = soa.tick(w, CytoInput.EMPTY) }
+        org.emerge.demo.cyto.sim.ExchangeProbe.enabled = false
+
+        val sb = StringBuilder()
+        sb.appendLine("grewTicks=$grow cells=${w.count} seedN=${seedN ?: "grown"} spread=${System.getProperty("cytospread") != null}")
+        sb.append(org.emerge.demo.cyto.sim.ExchangeProbe.report())
+        java.io.File("/tmp/cyto_exchprobe.txt").writeText(sb.toString())
+        println(sb)
+    }
+
+    @Test
     fun profile() {
         // Gated off by default (grows 22k ticks, ~40s) so a normal `jvmTest` run skips it. Enable with
         // `-Dcytobench=1`; results land in /tmp/cytobench_out.txt.

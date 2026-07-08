@@ -75,6 +75,24 @@ object CytoBiologyCore {
         val fp = HashSet<Int>()
         val species = HashSet<Int>()
         val currentBatch = tick % CytoTuning.EXCHANGE_BATCHES
+        // Probe pass A (bench-only, off in production): tally how many batch-eligible cells touch each fine
+        // leaf, so the real pass below can attribute movement to contested (≥2-cell) vs single-owner leaves.
+        if (ExchangeProbe.enabled) {
+            ExchangeProbe.touchCount.clear(); ExchangeProbe.contested.clear()
+            for (w in ordered) {
+                if (w.exchangeBatch != currentBatch) continue
+                if (w.exposureMilli <= MIN_EXPOSURE_FOR_TRANSFER) continue
+                grid.openFootprint(w.cx, w.cy, w.logicalRadius.toFloat(), tick)
+                grid.forEachFootprintLeaf { leaf ->
+                    ExchangeProbe.touchCount[leaf] = (ExchangeProbe.touchCount[leaf] ?: 0) + 1
+                }
+                grid.closeFootprint()
+            }
+            for ((leaf, cnt) in ExchangeProbe.touchCount) if (cnt >= 2) ExchangeProbe.contested.add(leaf)
+            ExchangeProbe.batches++
+            ExchangeProbe.distinctLeaves += ExchangeProbe.touchCount.size
+            ExchangeProbe.contestedLeaves += ExchangeProbe.contested.size
+        }
         for (w in ordered) {
             if (w.exchangeBatch != currentBatch) continue
             if (w.exposureMilli <= MIN_EXPOSURE_FOR_TRANSFER) {
@@ -84,6 +102,15 @@ object CytoBiologyCore {
             if (n == 0) {
                 grid.closeFootprint()
                 continue
+            }
+            if (ExchangeProbe.enabled) {
+                ExchangeProbe.cells++
+                var cellContested = false
+                grid.forEachFootprintLeaf { leaf ->
+                    ExchangeProbe.leafTouches++
+                    if (ExchangeProbe.contested.contains(leaf)) cellContested = true
+                }
+                if (cellContested) ExchangeProbe.contestedCells++
             }
             species.clear()
             val cyt = w.cytoplasm
