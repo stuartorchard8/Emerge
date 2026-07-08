@@ -48,7 +48,7 @@ Pattern legend: disjoint / additive / grid-cell / detectThenApply (see
 | **exchange** | **36** | tile-parallel drop-contested | ✅ done — **2.34× (SEQ→PAR)**; descent now parallel. See below. |
 | finish | 18 | detectThenApply (per-cell + serial grid deposit) | Tier 2, not started |
 | writeback | ~8 | disjoint + **per-cell RNG re-baseline** | Tier 2, not started |
-| lifecycle (19% of *tick*) | — | detectThenApply | Tier 3, hardest |
+| lifecycle (19% of *tick*) | — | SoA-native (not parallel) | ✅ DONE 2026-07-09 — round-trip DELETED; 30ms→~0. See below. |
 
 ## Exchange — DECIDED approach (2026-07-08, Stu): conflict-detect + drop-contested
 `passiveEnvExchange` (CytoBiologyCore.kt:73; grid primitives CytoMatterField.kt
@@ -159,6 +159,12 @@ unchanged, parallelMatchesSequential + conservation held — NO re-baseline.
 turbo, so the STILL-SERIAL lifecycle runs **22% SLOWER in PAR (24.5→29.9ms)**, clawing back most of
 the biology gain. **Lifecycle (~30ms, ~41% of the PAR tick) is now the single biggest serial block —
 the clear next target;** until it's parallel too, further biology parallelism keeps paying this tax.
+
+**✅ RESOLVED 2026-07-09 — lifecycle is now SoA-native (materialization, not parallelism); tax relieved.**
+The AoS round-trip was deleted; lifecycle went 30ms→88µs. In a fresh A/B @8192-spread/10278 cells: whole
+tick PAR **72.9→28.2ms (2.59×)**, and biology PAR fell 23.0→17.4ms (1.32×) with biology code UNCHANGED —
+i.e. removing the ~30ms serial lifecycle let the already-landed biology parallelism convert to a whole-tick
+win. See `docs/cyto-soa-lifecycle-plan.md` (complete) + `docs/cyto-next-session.md` for what's next.
 
 ## Expectation-setting
 Full biology+lifecycle parallel ≈ 54% of tick; at a realistic ~5× on the parallel
