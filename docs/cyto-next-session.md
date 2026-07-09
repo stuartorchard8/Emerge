@@ -95,9 +95,15 @@ gameplay target.** SEQ 17.7ms → PAR 11.3ms (1.57×). Per-cell cost is **2.4× 
   SEQ), drag 788→326µs (0.77×→1.87×)** — ~1070µs clock-tax relief. New `parallelMatchesSequentialWeldedColony`
   test (packed moving sticky grid) covers the welded parallel path the tiny weld goldens didn't. No re-baseline.
 - **Weld physics is now handled.** Remaining PAR cost in the welded scenario is biology (genes ~2100 /
-  exchange ~1600 / diffuse ~800 µs — the last two the serial-ish ones) and the still-serial connections
-  loop-1 min-map (cheap). Biology's serial **exchange pre-pass** and **lifecycle** are the deepest levers
-  left; beyond that it's the behavioural caps below.
+  exchange ~1600 / diffuse ~800 µs).
+- **Exchange pre-pass — measured, NOT worth parallelising (2026-07-09).** Added per-pass timers
+  (`-Dcytosave` + `exch-pass` line). On the welded save the exchange splits pass0(serial)=97µs /
+  pass1(par)=578 / pass2(par)=910 — **Pass 0 is only ~6% of exchange, <1% of tick.** The expensive
+  quad-tree descent already moved into parallel Pass 1 (`c90b9645`), so the residual serial pre-pass is
+  just cheap tile enumeration; parallelising it (per-chunk `batchCells`/`tileBuckets` merge) would cost
+  more coordination than the ~85µs ceiling. Deepest levers left: **`diffuse`** (serial, ~800µs in welded
+  colonies — cytoplasm sharing between welded cells, runs every `CYTOPLASM_DIFFUSE_PERIOD`), **lifecycle**
+  (division/destroy, serial), and the **behavioural caps** below.
 
 ### 3. Behavioural levers (bit-CHANGING — a gameplay decision, do with Stu)
 Per the 2026-07-04 finding, code micro-opts on biology are exhausted; the residual cost is
