@@ -27,9 +27,17 @@ geometry without recapturing goldens and introduced a real light-starvation regr
   `degrade` stages its grid deposit onto `CellWork` and the deposit + divide/destroy + weld-heal/morphogen
   harvests replay serially in k-order. @8192-spread/8-core: `bio:finish` 5444→~4550µs (~15%), whole PAR
   tick 22.8→~21.6ms. Modest because the serial apply loop (map harvests) was intentionally left serial.
-- **Re-profiled bio-sub mix (PAR µs @8k):** exchange 4640, **finish 4550**, build 3000, genes 1550,
-  writeback 1690, internalTouching 820. After this commit the top serial remaining is **writeback (~1690,
-  needs a per-cell RNG re-baseline → new golden)**; build/genes/exchange/finish now all parallel.
+- **Biology `writeback` is now parallel (2026-07-09, commit `c6cb0734`).** Replaced the single shared-LCG
+  mutation draw with a **per-cell splitmix64 stream** keyed on (world seed, entity id, tick) — order-
+  independent, so the loop runs via `ColumnPartition.disjoint`. splitmix64 avalanching guarantees adjacent
+  entity ids (clonal clusters) get decorrelated streams (`MutationRngTest` guards it). Bit-changing:
+  re-baselined `mutationOn` only (growth/interact never draw). writeback ~1690→~1255µs (~25%).
+- **Re-profiled bio-sub mix (PAR µs @8k):** exchange ~4600, finish ~4550, build ~3000, genes ~1550,
+  writeback ~1255, internalTouching ~820. **All per-cell biology sub-phases are now parallel.** The only
+  serial ones left are internalTouching (~5%, cross-cell weld-neighbour set — order-sensitive) and the
+  tiny quanta/diffuse/slab-swap tails (<2% each). Per-cell biology parallelism is essentially exhausted —
+  the next lever is either the **serial exchange pre-pass / internalTouching**, the **spring solver**, or
+  the **behavioural caps** (below).
 
 - **The SoA-native lifecycle is COMPLETE — the AoS round-trip is deleted.** Detach, destroy, weld,
   weld-heal, and division all run in place on the persistent `CytoWorld` (`applyLifecycle` in
@@ -52,29 +60,28 @@ on the hot sub-phases and/or behavioural caps.
 
 ## Next steps (in recommended order)
 
-### 1. Re-profile the biology sub-phase mix now that lifecycle is off the tick (cheap, sets priorities)
-The % shares in `cyto-parallel-next-session.md` (exchange 36%, build/genes/finish ~18%) predate this
-work. Re-run the `profile` bench and read the `bio-sub` SEQ/PAR breakdown to re-rank the remaining
-serial sub-phases before investing. Note the `profile` PAR variant **already enables parallel biology**
-(`bioParallelThreshold = 2` when an executor is present) and keeps springs sequential to isolate the
-biology effect — so its PAR/SEQ numbers already reflect parallel biology.
+Bench (clean per-JVM variant — always use this, never back-to-back):
 ```
 ./gradlew :demos:cyto:jvmTest --tests "*CytoBench.profile*" --rerun-tasks \
-  -Dcytobench=1 -Dcytocells=8192 -Dcytospread=1        # runs SEQ then PAR; /tmp/cytobench_out.txt
-# add -Dcytovariant=seq|par to run one variant per JVM (avoids JIT/clock cross-contamination)
+  -Dcytobench=1 -Dcytocells=8192 -Dcytospread=1 -Dcytovariant=par   # or seq; /tmp/cytobench_out.txt
 ```
 Sweep harness: `scratchpad/bio_parallel_sweep.sh` (8-core) / `bio_sweep_former.sh` (20-core `former`).
+**Caveat:** after many back-to-back benches the machine thermally throttles — all phases inflate ~20%
+together. Compare a phase's SHARE / A-B against the parent commit, not raw absolute tick, when the box
+is warm.
 
-### 2. Tier-2 biology parallelism — the remaining headroom — see `docs/cyto-parallel-next-session.md`
-That doc has the full roadmap + patterns (`disjoint` / `additive` / `grid-cell` / `detectThenApply`
-in `ColumnPartition`). Remaining sub-phases, by share of biology @8k:
-- **finish (~18%)** — `detectThenApply`: per-cell degrade/biomassRadius/death compute parallel, the
-  grid deposit (death recycling) serial. Not started.
-- **writeback (~8%)** — `disjoint`, but needs a **per-cell RNG re-baseline** (mutation draws) → a new
-  golden. Not started.
-- build / genes / exchange already parallel; internalTouching / quanta intentionally serial (<2%).
-- Amdahl ceiling for full biology+lifecycle parallel ≈ **1.7–1.8× whole-tick** at a realistic ~5× on
-  the parallel portion — real, not order-of-magnitude.
+### 1. Per-cell biology parallelism is DONE (finish + writeback landed this session)
+build / genes / exchange / finish / writeback are all `ColumnPartition`-parallel now. Remaining serial:
+**internalTouching (~5%)** — the cross-cell weld-neighbour set (order-sensitive; would need `additive`
+or a detect-then-apply re-baseline for a small share) — and the tiny quanta/diffuse/slab-swap tails.
+Diminishing returns on further per-cell biology work; look higher up the tick.
+
+### 2. Next parallelism frontiers (bigger fish than the biology tails)
+- **Spring solver** — the `profile` bench keeps springs SEQUENTIAL to isolate biology, so its numbers
+  hide spring cost. In the real tick the Jacobi solver is order-independent (see `project_soa_core`) and
+  a candidate for parallelisation; profile the FULL tick (not just `profile`) to size it.
+- **Serial exchange pre-pass / internalTouching** — the drop-contested exchange has a serial pre-pass
+  that assigns uncontested leaves; if it's grown with the 4× world it may now be worth attacking.
 
 ### 3. Behavioural levers (bit-CHANGING — a gameplay decision, do with Stu)
 Per the 2026-07-04 finding, code micro-opts on biology are exhausted; the residual cost is
