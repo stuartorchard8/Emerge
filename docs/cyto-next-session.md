@@ -101,9 +101,14 @@ gameplay target.** SEQ 17.7ms → PAR 11.3ms (1.57×). Per-cell cost is **2.4× 
   pass1(par)=578 / pass2(par)=910 — **Pass 0 is only ~6% of exchange, <1% of tick.** The expensive
   quad-tree descent already moved into parallel Pass 1 (`c90b9645`), so the residual serial pre-pass is
   just cheap tile enumeration; parallelising it (per-chunk `batchCells`/`tileBuckets` merge) would cost
-  more coordination than the ~85µs ceiling. Deepest levers left: **`diffuse`** (serial, ~800µs in welded
-  colonies — cytoplasm sharing between welded cells, runs every `CYTOPLASM_DIFFUSE_PERIOD`), **lifecycle**
-  (division/destroy, serial), and the **behavioural caps** below.
+  more coordination than the ~85µs ceiling.
+- **`diffuse` — DONE (2026-07-10, commit `d98ddc87`).** Reformulated the serial scatter (cell writes deltas
+  into neighbours' slots — racy) into a **gather**: each cell computes its own net Δ from its neighbours'
+  pre-diffusion cytoplasm (RECEIVE each neighbour's diffusable species + SEND out·receivers) and writes only
+  its own slot. Valid because the weld graph is symmetric; bit-identical (integer delta sums are
+  order-independent, no re-baseline). Both passes run `ColumnPartition.disjoint` over an ordered id list.
+  Clean A/B @cyto-support-save (2619 welded, 8-core): **diffuse 1347→536µs (2.51×)**, whole tick 17.81→17.00ms.
+  Deepest levers left: **lifecycle** (division/destroy, serial) and the **behavioural caps** below.
 
 ### 3. Behavioural levers (bit-CHANGING — a gameplay decision, do with Stu)
 Per the 2026-07-04 finding, code micro-opts on biology are exhausted; the residual cost is
