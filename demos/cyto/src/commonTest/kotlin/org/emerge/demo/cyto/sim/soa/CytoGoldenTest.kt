@@ -60,12 +60,18 @@ class CytoGoldenTest {
     // Each re-baseline reflects a deliberate change to game rules, tuning, or gene model.
     // Full history is in git log (see cleanup initiative docs for detail).
     // GROWTH captured at the current MATTER_UNIFORM_LEVEL_CELL_SCALE seed density.
+    // Re-baselined 2026-07-09: `cyto: 4x world size` (2ede0271) enlarged the torus (CytoMatterField/
+    // CytoUnits) without recapturing goldens — the world geometry shifts toroidal positions, grid indices,
+    // and (over 1500 ticks) the colony population. All five scenario goldens move on world extent alone;
+    // parallelMatchesSequential + grownStateRoundTrips held throughout, so this is a pure world-size
+    // re-baseline (no rule/tuning change). Trajectory goldens shift meta/physics/grid; weld goldens shift
+    // physics/topology.
     private val GROWTH = mapOf(
-        "meta" to "202667cafeba6da4",
-        "physics" to "9cbdc379493585e9",
-        "biology" to "a02d5e4c0e31e7ab",
+        "meta" to "9e9bec4ae4480164",
+        "physics" to "8e0c3afcdea1015d",
+        "biology" to "eeec97fccc900bb",
         "topology" to "cbf29ce484222325",
-        "grid" to "e04937d0956c0d7c",
+        "grid" to "ca155081515c2193",
     )
     // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
     // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
@@ -138,12 +144,14 @@ class CytoGoldenTest {
     // Values captured after the processLyseAttacks compaction fix (f717fc2f), which can also perturb the
     // mutation-on trajectory once a mutated Lyse gene fully drains a victim species (growth/interact have no
     // Lyse gene, so their drift is the rename alone). Determinism gates held.
+    // Re-baselined 2026-07-09: 4x world size (see GROWTH). meta + biology byte-identical here (same
+    // population + chemistry); physics + grid shift with the larger torus.
     private val MUTATION = mapOf(
         "meta" to "1e92bfc864dfae61",
-        "physics" to "91a135ab1e995aac",
+        "physics" to "662d1945c31cceec",
         "biology" to "5c6e81e38d2cc17b",
         "topology" to "cbf29ce484222325",
-        "grid" to "17ef230258cc34b6",
+        "grid" to "ee468358acca1f88",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     // Re-baselined 2026-07-05: restored LIGHT_QUANTA_SCALE 60k→120k (matter viability) +
@@ -156,12 +164,13 @@ class CytoGoldenTest {
     // GROWTH + MUTATION are byte-identical (their colony density has zero contested leaves, so the junction is
     // unchanged there), confirming the drift is isolated to the overlapping-footprint case. The contested set
     // is geometry-only ⇒ thread-count-independent, so parallelMatchesSequential + conservation held.
+    // Re-baselined 2026-07-09: 4x world size (see GROWTH). meta/physics/biology/grid all shift.
     private val INTERACT = mapOf(
-        "meta" to "fd92edb8d415aaa8",
-        "physics" to "f546a6890eca0c8d",
-        "biology" to "53e8c8002c75a3b7",
+        "meta" to "3f0b2ca5aa1d4aba",
+        "physics" to "d9f3e8b696fd1c7c",
+        "biology" to "5bbb1ae9950c364",
         "topology" to "cbf29ce484222325",
-        "grid" to "6a45c78db36bf8af",
+        "grid" to "edbbbed6b49e2ebd",
     )
 
     @Test
@@ -212,18 +221,20 @@ class CytoGoldenTest {
     // Weld-heal + sticky-weld goldens: the default GROWTH/INTERACT/MUTATION scenarios use the non-sticky,
     // no-Repair seed autotroph, so they NEVER weld — leaving the lifecycle weld / weld-heal paths ungated.
     // These two lock the current (round-trip) welding trajectory so the SoA-native weld port is bit-identical.
+    // Re-baselined 2026-07-09: 4x world size (see GROWTH). physics + topology (weld positions) shift;
+    // meta/biology/grid byte-identical (tiny fixed colony, same chemistry, no grid deposit in-frame).
     private val WELD_HEAL = mapOf(
         "meta" to "bb3fa685a6d77664",
-        "physics" to "e1f0eb9dac564c27",
+        "physics" to "833547b126f43a4e",
         "biology" to "85da6bf92a822d33",
-        "topology" to "3fbe37c55d1782a1",
+        "topology" to "5ac56469d2cb67f",
         "grid" to "a857f5de984d921d",
     )
     private val STICKY_WELD = mapOf(
         "meta" to "350eaa4577a67db5",
-        "physics" to "f275e1d75b990506",
+        "physics" to "f7edf29a779a21ca",
         "biology" to "ca5045ab30a68078",
-        "topology" to "50c3109fc080d836",
+        "topology" to "e6e1ea3b978eaabc",
         "grid" to "ea6b5be6086c9296",
     )
 
