@@ -1,24 +1,17 @@
 package org.emerge.demo.cyto.sim.soa
 
-import org.emerge.demo.cyto.cells.CellType
 import kotlin.concurrent.Volatile
 import org.emerge.demo.cyto.sim.CellWork
 import org.emerge.demo.cyto.sim.MoleculeStore
-import org.emerge.demo.cyto.sim.ConnectionStateComponent
 import org.emerge.demo.cyto.sim.BioProfile
 import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoConfig
-import org.emerge.demo.cyto.sim.CytoExposure
 import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.CytoInput
-import org.emerge.demo.cyto.sim.CytoLightField
 import org.emerge.demo.cyto.sim.CytoMatterField
-import org.emerge.demo.cyto.sim.CytoMatterGridComponent
-import org.emerge.demo.cyto.sim.CytoMutation
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.MIN_RADIUS
-import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.demo.cyto.sim.cellMass
 import org.emerge.demo.cyto.sim.atomCount
@@ -30,8 +23,6 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.ecs.ParallelExecutor
 import org.emerge.sim.core.ecs.PipelineProfiler
-import org.emerge.sim.core.ecs.SpatialGrid
-import org.emerge.sim.core.ecs.soa.ColumnPartition
 import org.emerge.sim.core.ecs.soa.runSoa
 import org.emerge.sim.core.ecs.soa.SoaPhase
 import org.emerge.sim.core.physics.components.ColliderComponent
@@ -43,7 +34,6 @@ import org.emerge.sim.core.physics.components.RenderShapeComponent
 import org.emerge.sim.core.physics.components.SpringConstraint
 import org.emerge.sim.core.physics.components.TransformComponent
 import org.emerge.sim.core.physics.primitives.BodyShape
-import org.emerge.sim.core.physics.primitives.Contact
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Coord2
 import org.emerge.sim.core.physics.primitives.Frac
@@ -546,85 +536,6 @@ class CytoSoaReducer(
         return w
     }
 
-    // ── helpers ───────────────────────────────────────────────────────────────────
-    private fun transformAt(w: CytoWorld, slot: Int): TransformComponent =
-        TransformComponent(Coord2(Coord(w.posX[slot]), Coord(w.posY[slot])), Coord(w.ang[slot]))
-
-    /** Torus-aware position delta posB - posA, as a [Frac2]. */
-    private fun delta(w: CytoWorld, a: Int, b: Int): Frac2 =
-        Coord2(Coord(w.posX[b]), Coord(w.posY[b])) - Coord2(Coord(w.posX[a]), Coord(w.posY[a]))
-
-    private fun deltaLen(w: CytoWorld, a: Int, b: Int): Frac = delta(w, a, b).len
-
-    /** Does the weld [i]–[nSlot] pass ~through a common welded neighbour B (a structural degeneracy)? True iff
-     *  some cell B is welded to BOTH endpoints AND sits ~collinear between them — angle(i,B,nSlot) > acos(cos
-     *  threshold). Squared-cosine test (no sqrt/acos) so it's deterministic: with the angle obtuse (dot<0),
-     *  `cos < T` (both negative) ⇔ `dot² > T²·|Bi|²·|BnSlot|²`. Work is bounded by MAX_WELD_DEGREE per endpoint. */
-    private fun throughCellChord(w: CytoWorld, i: Int, nSlot: Int): Boolean {
-        val cosSq = cfg.weldCollinearCos * cfg.weldCollinearCos
-        for (k2 in w.csr.offset[i] until w.csr.offset[i + 1]) {
-            val b = w.csr.otherSlot[k2]
-            if (b < 0 || b == nSlot) continue
-            var common = false                                    // is B also welded to nSlot?
-            for (k3 in w.csr.offset[nSlot] until w.csr.offset[nSlot + 1]) {
-                if (w.csr.otherSlot[k3] == b) { common = true; break }
-            }
-            if (!common) continue
-            val bix = (w.posX[i] - w.posX[b]).toFloat(); val biy = (w.posY[i] - w.posY[b]).toFloat()
-            val bjx = (w.posX[nSlot] - w.posX[b]).toFloat(); val bjy = (w.posY[nSlot] - w.posY[b]).toFloat()
-            val dot = bix * bjx + biy * bjy
-            if (dot >= 0f) continue                               // ≤90° — B is beside, not between
-            val la2 = bix * bix + biy * biy; val lb2 = bjx * bjx + bjy * bjy
-            if (dot * dot > cosSq * la2 * lb2) return true        // cos < threshold ⇒ collinear through B
-        }
-        return false
-    }
-
-    /** Whether slot [i] has a CSR edge to entity-id [otherId]. */
-    private fun edgeExists(w: CytoWorld, i: Int, otherId: Int): Boolean {
-        for (k in w.csr.offset[i] until w.csr.offset[i + 1]) if (w.csr.otherId[k] == otherId) return true
-        return false
-    }
-
-    /** Rebuild the CSR dropping the [broken] pairs (both directions), preserving edgeAux on the rest. */
-    private fun pruneEdges(w: CytoWorld, broken: HashSet<Long>) {
-        // Snapshot the surviving adjacency per slot before rebuilding (edgeAux preserved).
-        val keep = HashMap<Int, MutableList<SpringConstraint>>(w.count)
-        val dmg = HashMap<Int, HashMap<Int, Float>>(w.count)
-        for (slot in 0 until w.count) {
-            val ownerId = w.entityId[slot]
-            for (k in w.csr.offset[slot] until w.csr.offset[slot + 1]) {
-                val otherId = w.csr.otherId[k]
-                if (broken.contains(pairKey(ownerId, otherId))) continue
-                keep.getOrPut(ownerId) { ArrayList() }
-                    .add(SpringConstraint(EntityId(otherId), Frac(w.csr.restRaw[k]), Frac(w.csr.stiffRaw[k]), Frac(w.csr.dampRaw[k])))
-                dmg.getOrPut(ownerId) { HashMap() }[otherId] = w.csr.edgeAux[k]
-            }
-        }
-        w.csr.rebuildFrom(
-            count = w.count,
-            entityIdAt = { w.entityId[it] },
-            slotOf = { w.slotOf(it) },
-            springsAt = { slot -> keep[w.entityId[slot]] ?: emptyList() },
-            edgeAuxAt = { slot, other -> dmg[w.entityId[slot]]?.get(other.value) ?: 0f },
-        )
-    }
-
-    private fun pairKey(a: Int, b: Int): Long {
-        val lo = min(a, b); val hi = max(a, b)
-        return (lo.toLong() shl 32) or (hi.toLong() and 0xFFFFFFFFL)
-    }
-
-    private fun insertionSort(a: IntArray, size: Int) {
-        for (i in 1 until size) {
-            val v = a[i]; var j = i - 1
-            while (j >= 0 && a[j] > v) { a[j + 1] = a[j]; j -= 1 }
-            a[j + 1] = v
-        }
-    }
-
-    private fun longAbs(v: Long): Long = if (v < 0L) -v else v
-
     companion object {
         /**
          * Absorb [amount] of species [spId] into a cell's cytoplasm [cyto], enforcing the fixed
@@ -655,37 +566,6 @@ class CytoSoaReducer(
                 grid.deposit(ax, ay, ar, scarceId, scarceCount)   // …to env
                 cyto.inc(spId, amount)                            // …admit the incoming species
             }
-        }
-
-        private const val ITERATIONS = 4   // matches SpringConstraintSystem default
-
-        // Frac fixed-point scale (= Int.MAX_VALUE as Long). The raw-long spring math mirrors the Frac/
-        // Frac2/Norm operators op-for-op: Frac.div(o) = raw*MAX/o.raw, Frac.times(o) = raw*o.raw/MAX,
-        // Frac(n,d) = n*MAX/d — same grouping, same truncate-toward-zero division, so bit-identical to
-        // the AoS oracle (gated by CytoSoaEquivalenceTest, incl. the forced-parallel case).
-        private const val FRAC_MAX = 2147483647L  // Int.MAX_VALUE
-
-        // Exact replica of Frac2.len(x,y) on raw longs (no Frac2 allocation): raw-space integer hypot,
-        // with the same value-space sqrt fallback above |raw| = Int.MAX (where ax²+ay² would overflow).
-        private val SQRT_MAX_INT: Long = longISqrt(FRAC_MAX)
-        private fun lenRaw(xr: Long, yr: Long): Long {
-            val ax = if (xr < 0L) -xr else xr
-            val ay = if (yr < 0L) -yr else yr
-            if (ax == 0L) return ay
-            if (ay == 0L) return ax
-            return if (ax <= FRAC_MAX && ay <= FRAC_MAX) longISqrt(ax * ax + ay * ay)
-            else longISqrt(ax * ax / FRAC_MAX + ay * ay / FRAC_MAX, 2L, ax + ay) * SQRT_MAX_INT
-        }
-
-        // Integer sqrt, identical to Frac2.longISqrt (same fast double-seeded exact floor + [min,max]
-        // clamp), so lenRaw matches Frac2.len. See Frac2.longISqrt for the equivalence/determinism note.
-        private fun longISqrt(n: Long, min: Long = 2L, max: Long = 2L * FRAC_MAX): Long {
-            if (n < 2) return n
-            var x = kotlin.math.sqrt(n.toDouble()).toLong()
-            if (x < 1L) x = 1L
-            while (x > n / x) x--
-            while (x + 1L <= n / (x + 1L)) x++
-            return if (x < min) min else if (x > max) max else x
         }
     }
 }
