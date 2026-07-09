@@ -314,6 +314,46 @@ class CytoGoldenTest {
     }
 
     @Test
+    fun parallelMatchesSequentialWeldedColony() {
+        // The default parallelMatchesSequential grows the non-welding autotroph, so it never exercises the
+        // parallel weld-physics phases (ConnectionsSystem stress/damage/break, DragSystem, the spring solve).
+        // Build a packed grid of sticky, overlapping, MOVING cells: they weld into a body, so springs form
+        // and the connections/drag/spring-solve phases all do real work — then assert SEQ == PAR every tick.
+        val cfg = CytoConfig(mutationRateDenom = 0)
+        val executor = org.emerge.sim.core.ecs.ParallelExecutor()
+        val seq = CytoSoaReducer(cfg)
+        val par = CytoSoaReducer(cfg, executor = executor, springParallelThreshold = 2, bioParallelThreshold = 2)
+        val initial = run {
+            val b = SimBuilder(SimState(randomSeed = 7))
+            val r = Frac(1, 2)
+            val spacing = 0.06f   // < 2·radius in normalised units ⇒ cells overlap ⇒ sticky weld
+            for (gy in 0 until 5) for (gx in 0 until 5) {
+                // A shear velocity field (varies across the grid) stretches/compresses the welds so the
+                // stress/overstretch/break paths fire, not just the rest state.
+                val vx = (gy - 2) * 0.02f
+                b.spawnCell(
+                    CytoUnits.coord2((gx - 2) * spacing, (gy - 2) * spacing), CytoUnits.coord2(vx, 0f),
+                    CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000),
+                    logicalRadius = r, sticky = true, genome = emptyList())
+            }
+            b.build()
+        }
+        var ws = CytoWorld.fromSimState(initial)
+        var wp = CytoWorld.fromSimState(initial)
+        var sawSprings = false
+        for (t in 1..60) {
+            ws = seq.tick(ws, CytoInput.EMPTY)
+            wp = par.tick(wp, CytoInput.EMPTY)
+            val ss = ws.toSimState()
+            assertEquals(digest(ss, ws.getSpringData()), digest(wp.toSimState(), wp.getSpringData()),
+                "parallel != sequential (welded colony) at tick=$t")
+            if (ss.components.getTable<SpringConstraintComponent>().asMap().values.any { it.springs.isNotEmpty() }) sawSprings = true
+        }
+        assertTrue(sawSprings, "welded-colony equivalence test never formed a spring — it isn't exercising the weld-physics phases")
+        executor.close()
+    }
+
+    @Test
     fun grownStateRoundTrips() {
         // toSimState/fromSimState is load-bearing (render + save read it). Grow a colony, round-trip the
         // SoA world through a SimState, and assert the digest is unchanged.
