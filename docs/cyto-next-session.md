@@ -5,19 +5,21 @@ Start-here pointer for the next cyto perf session. Read this + memory
 `main` (no branches), golden-gate everything, show diffs before committing, A/B with the clean
 per-JVM bench (never the contaminated back-to-back run).
 
-## ⚠️ Golden gate: recaptured; ONE real regression remains
+## ✅ Golden gate GREEN again (was red after the 4× world)
 The `cyto: 4x world size` commit (`2ede0271`, CELLS_PER_AXIS 32→64, MAX_DEPTH 6→7) changed world
-geometry without recapturing goldens. **Fixed 2026-07-09 (`50689c61`): all 5 `CytoGoldenTest`
-scenarios recaptured — the digest gate is green again** (pure world-size re-baseline;
-parallelMatchesSequential + grownStateRoundTrips held).
-
-**Still failing — a genuine regression, NOT a digest issue:**
-`CytoSoaSpecTest.acrossOrientedDivisionGrowsA2DSheetNotAThread`. In the 4× world the founder's
-normalised footprint (engine radius `Frac(1,64)`) halved, so it under-samples the matter grid and
-**never divides** — y-extent `0.0` for both across- and thread-oriented genomes at 1500 AND 6000
-ticks, and even with 4× seed matter (`seededUniform(8000)`). This is a real morphogenesis/tuning
-interaction with the world size — **needs a gameplay decision** (retune the scenario's cell size /
-import footprint / seed, or reconsider the 4× jump). Don't hack the tick budget; it doesn't help.
+geometry without recapturing goldens and introduced a real light-starvation regression. Both fixed
+2026-07-09; **all 44 `CytoGoldenTest` + `CytoSoaSpecTest` cases pass.** Two commits:
+1. `50689c61` — recaptured all 5 golden scenarios for the enlarged torus (pure world-size re-baseline;
+   parallelMatchesSequential + grownStateRoundTrips held).
+2. `99ed1104` — **`LIGHT_FALLOFF` now scales with the world** (`CELLS_PER_AXIS/4`, was a fixed 8). The
+   moving daylight band's half-width was a fixed logical constant, so in the doubled torus it covered
+   only half the relative slice and — starting at −HALF, twice as far from a center-seeded cell — its
+   gaussian tail reached the founder ~225 ticks later. The `acrossOrientedDivision` autotroph never
+   caught daylight within its 1500-tick budget and starved (biomass 2474→dead, never dividing). Scaling
+   FALLOFF keeps the day-band at a constant 1/8 of the torus span (self-similar day/night under any
+   world size); re-baselined the two light-driven goldens (growth, interact). **Lesson: after a world
+   size change, audit fixed logical constants (`LIGHT_FALLOFF`, `LIGHT_ORBIT_PERIOD`, …) for ones that
+   should scale with `CELLS_PER_AXIS` — period-doubling alone does NOT fix onset timing.**
 
 ## Where we are (what just landed)
 - **Biology `finish` is now parallel (2026-07-09, commit `dfd1ce04`).** `detect-then-apply`: cell-local
