@@ -584,38 +584,30 @@ object CytoBiologyCore {
      *  only sets the speed. It stays `≥ MAX_WELD_DEGREE` so the integer floor keeps `out·degree ≤ count` (no cell
      *  goes negative). Snapshot-based (reads pre-diffusion counts, writes deltas, applies after) so it's
      *  order-independent and conservative; biomass does not diffuse (it's locked).
-     *  Uses scratch flat arrays instead of HashMaps for O(1) per-species delta access. */
-    fun diffuse(works: Map<EntityId, CellWork>, neighbourIds: Map<EntityId, List<EntityId>>) {
-        // The compute loop only ever reads a cell's *own* cytoplasm and writes to a separate delta map,
-        // never to any cytoplasm — so reading the live store is identical to reading a pre-diffusion copy,
-        // and the deltas are applied only after every cell is computed.
-        val maxId = works.keys.maxOfOrNull { it.value } ?: 0
+     *  Uses scratch flat arrays instead of HashMaps for O(1) per-species delta access.
+     *
+     *  **Parallel gather (not scatter).** The weld graph is symmetric (`nb ∈ nbrs[id] ⟺ id ∈ nbrs[nb]`,
+     *  see CytoSoaReducer's "symmetric edges" invariant), so each cell's net Δ can be computed entirely
+     *  from its *own* neighbours' pre-diffusion cytoplasm: it RECEIVES `⌊count_nb/DENOM⌋` of every species
+     *  a neighbour holds that this cell can diffuse, and SENDS `out·receivers` of each of its own species.
+     *  Both passes write only the cell's OWN slot (delta scratch, then own cytoplasm), so they partition
+     *  disjointly with no cross-slot writes — bit-identical to the old scatter but fully parallel. */
+    fun diffuse(
+        orderedIds: List<EntityId>,
+        works: Map<EntityId, CellWork>,
+        neighbourIds: Map<EntityId, List<EntityId>>,
+        executor: ParallelExecutor? = null,
+        threshold: Int = Int.MAX_VALUE,
+    ) {
+        val n = orderedIds.size
+        if (n == 0) return
+        var maxId = 0
+        for (id in orderedIds) if (id.value > maxId) maxId = id.value
         ensureDiffScratch(maxId)
         clearDiffScratch()
 
-        // Helper: add delta for entity [id], species [sp], value [v].
-        // Grows the per-entity species array on demand (cap at 64 species).
-            fun addDelta(idVal: Int, sp: Int, v: Int) {
-            val s = diffSizes[idVal]
-            if (s < diffSpeciesKeys[idVal].size) {
-                diffSpeciesKeys[idVal][s] = sp
-                diffSpeciesVals[idVal][s] += v
-            } else if (s < 64) {
-                val keys = diffSpeciesKeys[idVal]
-                val vals = diffSpeciesVals[idVal]
-                if (keys.size <= s) {
-                    val sz = max(4, keys.size * 2)
-                    diffSpeciesKeys[idVal] = keys.copyOf(max(sz, s + 1))
-                    diffSpeciesVals[idVal] = vals.copyOf(max(sz, s + 1))
-                }
-                diffSpeciesKeys[idVal][s] = sp
-                diffSpeciesVals[idVal][s] = v
-            }
-            diffSizes[idVal] = s + 1
-        }
-
-        // Helper: accumulate delta value for existing species entry.
-            fun addDeltaValue(idVal: Int, sp: Int, v: Int) {
+        // Helper: accumulate delta value for entity [idVal], species [sp] (self-only, single-owner slot).
+        fun addDeltaValue(idVal: Int, sp: Int, v: Int) {
             val s = diffSizes[idVal]
             for (i in 0 until s) {
                 if (diffSpeciesKeys[idVal][i] == sp) {
@@ -637,32 +629,54 @@ object CytoBiologyCore {
             }
         }
 
-        for ((id, w) in works) {
-            val nbrs = neighbourIds[id] ?: continue
-            val degree = nbrs.size
-            if (degree == 0) continue
-            for (i in 0 until w.cytoplasm.size) {
-                val species = w.cytoplasm.idAt(i)
-                val out = w.cytoplasm.countAt(i) / CYTOPLASM_DIFFUSE_DENOM
-                if (out <= 0) continue
-                var receivers = 0
+        // Pass 1 — each cell gathers its own net Δ (reads own + neighbours' pre-diffusion cytoplasm,
+        // writes only its own delta scratch). Disjoint by index ⇒ each thread owns distinct id.value slots.
+        ColumnPartition.disjoint(n, executor, threshold) { start, end ->
+            for (k in start until end) {
+                val id = orderedIds[k]
+                val w = works[id] ?: continue
+                val nbrs = neighbourIds[id] ?: continue
+                if (nbrs.isEmpty()) continue
+                val idVal = id.value
+                // RECEIVE: from each neighbour, every species it holds that THIS cell can diffuse.
                 for (nb in nbrs) {
                     val nbWork = works[nb] ?: continue
-                    if (!nbWork.handleable.canDiffuse(species)) continue
-                    addDeltaValue(nb.value, species, out)
-                    receivers++
+                    val cyt = nbWork.cytoplasm
+                    for (i in 0 until cyt.size) {
+                        val species = cyt.idAt(i)
+                        if (!w.handleable.canDiffuse(species)) continue
+                        val out = cyt.countAt(i) / CYTOPLASM_DIFFUSE_DENOM
+                        if (out <= 0) continue
+                        addDeltaValue(idVal, species, out)
+                    }
                 }
-                if (receivers > 0) addDeltaValue(id.value, species, -out * receivers)
+                // SEND: this cell's own species, once per neighbour that can receive it.
+                val myCyt = w.cytoplasm
+                for (i in 0 until myCyt.size) {
+                    val species = myCyt.idAt(i)
+                    val out = myCyt.countAt(i) / CYTOPLASM_DIFFUSE_DENOM
+                    if (out <= 0) continue
+                    var receivers = 0
+                    for (nb in nbrs) {
+                        val nbWork = works[nb] ?: continue
+                        if (nbWork.handleable.canDiffuse(species)) receivers++
+                    }
+                    if (receivers > 0) addDeltaValue(idVal, species, -out * receivers)
+                }
             }
         }
 
-        // Apply deltas back to cytoplasm
-        for ((id, w) in works) {
-            val s = diffSizes[id.value]
-            if (s == 0) continue
-            for (i in 0 until s) {
-                val dv = diffSpeciesVals[id.value][i]
-                if (dv != 0) w.cytoplasm.add(diffSpeciesKeys[id.value][i], dv)
+        // Pass 2 — apply each cell's own delta back to its own cytoplasm (disjoint).
+        ColumnPartition.disjoint(n, executor, threshold) { start, end ->
+            for (k in start until end) {
+                val id = orderedIds[k]
+                val w = works[id] ?: continue
+                val s = diffSizes[id.value]
+                if (s == 0) continue
+                for (i in 0 until s) {
+                    val dv = diffSpeciesVals[id.value][i]
+                    if (dv != 0) w.cytoplasm.add(diffSpeciesKeys[id.value][i], dv)
+                }
             }
         }
     }

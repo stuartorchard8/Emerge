@@ -50,7 +50,8 @@ class DiffusionBiasProbe {
     @Test
     fun diffusionSpreadsEvenlyRegardlessOfDegree() {
         val (works, nbrs) = blob(seed = 1200)   // identical cells, identical seed (uniform start)
-        repeat(400) { CytoBiologyCore.diffuse(works, nbrs) }
+        val orderedIds = works.keys.toList()
+        repeat(400) { CytoBiologyCore.diffuse(orderedIds, works, nbrs) }
         val counts = works.values.map { it.cytoplasm.count(gg) }
         val centre = works.getValue(EntityId(0)).cytoplasm.count(gg)   // degree 6
         val ring = works.getValue(EntityId(1)).cytoplasm.count(gg)     // degree 3

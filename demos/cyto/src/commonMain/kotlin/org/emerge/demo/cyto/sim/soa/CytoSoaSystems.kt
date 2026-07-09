@@ -95,6 +95,8 @@ class CytoPipelineState {
     val bioNeighbourIds = HashMap<EntityId, List<EntityId>>()
     val bioCapSum = HashMap<Int, Long>()
     val bioOrderedWorks = ArrayList<CellWork>()
+    // Slot-ordered entity ids parallel to bioOrderedWorks — lets diffuse partition over an indexable list.
+    val bioOrderedIds = ArrayList<EntityId>()
     // Reusable scratch for the drop-contested passive exchange (serial pre-pass touch-count + batch list).
     val exchangeScratch = org.emerge.demo.cyto.sim.ExchangeScratch()
     // Ascending-EntityId slot order as a reusable IntArray (sorted via packed LongArray)
@@ -263,6 +265,7 @@ class BiologySystem(
 
         val works = state.bioWorksMap.also { it.clear() }
         val neighbourIds = state.bioNeighbourIds.also { it.clear() }
+        val orderedIds = state.bioOrderedIds.also { it.clear() }
 
         val baseQuantaRaw = state.bioBaseQuanta
         val captureMilli = state.bioCapture
@@ -355,8 +358,10 @@ class BiologySystem(
         for (k in 0 until n) {
             val slot = ordered[k]
             val work = state.bioWorks[slot]!!
-            neighbourIds[EntityId(world.entityId[slot])] = state.bioNbrs[slot]!!
-            works[EntityId(world.entityId[slot])] = work
+            val eid = EntityId(world.entityId[slot])
+            neighbourIds[eid] = state.bioNbrs[slot]!!
+            works[eid] = work
+            orderedIds.add(eid)
             if (work.exchangeBatch < 0) {
                 var bestBatch = 0
                 for (b in 1 until CytoTuning.EXCHANGE_BATCHES) {
@@ -433,7 +438,7 @@ class BiologySystem(
 
         // Cytoplasm diffusion between connected cells — runs every N ticks to reduce cost
         if (world.world.tick % CytoTuning.CYTOPLASM_DIFFUSE_PERIOD == 0L) {
-            CytoBiologyCore.diffuse(works, neighbourIds)
+            CytoBiologyCore.diffuse(orderedIds, works, neighbourIds, bioExec, threshold = 1)
         }
         bioSplit("bio:diffuse")
 
