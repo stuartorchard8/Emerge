@@ -5,7 +5,25 @@ Start-here pointer for the next cyto perf session. Read this + memory
 `main` (no branches), golden-gate everything, show diffs before committing, A/B with the clean
 per-JVM bench (never the contaminated back-to-back run).
 
+## ⚠️ Golden gate is RED at baseline (recapture needed)
+The `cyto: 4x world size` commit (`2ede0271`) changed world geometry (`CytoMatterField`/`CytoUnits`)
+without recapturing the golden digests, so **6 tests fail at HEAD regardless of any code change**:
+`CytoGoldenTest.{mutationOn, growthMutationOff, weldHealColony, scriptedInteractions, stickyWeldPair}`
+and `CytoSoaSpecTest.acrossOrientedDivisionGrowsA2DSheetNotAThread`. `parallelMatchesSequential` still
+passes, so the equivalence gate is intact — but the digest gate needs re-capturing (a gameplay/world
+decision for Stu) before it can catch regressions again. Until then, verify perf changes by comparing
+the failing-set with/without the change (identical set ⇒ bit-identical), not by "all green".
+
 ## Where we are (what just landed)
+- **Biology `finish` is now parallel (2026-07-09, commit `dfd1ce04`).** `detect-then-apply`: cell-local
+  `finishCompute` (degrade + death + radius) runs slot-partitioned via `ColumnPartition.disjoint`;
+  `degrade` stages its grid deposit onto `CellWork` and the deposit + divide/destroy + weld-heal/morphogen
+  harvests replay serially in k-order. @8192-spread/8-core: `bio:finish` 5444→~4550µs (~15%), whole PAR
+  tick 22.8→~21.6ms. Modest because the serial apply loop (map harvests) was intentionally left serial.
+- **Re-profiled bio-sub mix (PAR µs @8k):** exchange 4640, **finish 4550**, build 3000, genes 1550,
+  writeback 1690, internalTouching 820. After this commit the top serial remaining is **writeback (~1690,
+  needs a per-cell RNG re-baseline → new golden)**; build/genes/exchange/finish now all parallel.
+
 - **The SoA-native lifecycle is COMPLETE — the AoS round-trip is deleted.** Detach, destroy, weld,
   weld-heal, and division all run in place on the persistent `CytoWorld` (`applyLifecycle` in
   `CytoSoaReducer`); `bridgeLifecycle` and the dead `CytoLifecycleSystem` (255 lines) are gone, plus
