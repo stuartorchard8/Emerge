@@ -76,19 +76,32 @@ build / genes / exchange / finish / writeback are all `ColumnPartition`-parallel
 or a detect-then-apply re-baseline for a small share) — and the tiny quanta/diffuse/slab-swap tails.
 Diminishing returns on further per-cell biology work; look higher up the tick.
 
-### 2. Next parallelism frontiers (bigger fish than the biology tails)
-- **Spring solver — RULED OUT (2026-07-09).** Sized it via the full-tick bench (`-Dcytospringthresh` +
-  post-bio phase reporting, commit added this session). At a grown 8698-cell colony `springSolve` is
-  **~4µs = 0.03% of a 14ms tick**, and `ConnectionsSystem` ~10µs — both ~0 because the **default
-  autotroph never welds** (no Repair gene, `AUTO_WELD_ON_OVERLAP` off), so there are no springs. The
-  solver is already Jacobi/`disjoint`-parallel-capable but has nothing to do. Only relevant for a
-  Repair/sticky multicellular colony, which isn't the default. Not a target.
-- **Full-tick reality (grown 8698 cells, default cfg, PAR):** tick 14.2ms — biology **72%** (exchange
-  2983 / finish 2574 / build 2189 / genes 1103 / writeback 983 µs, all parallel), lifecycle 1124µs (8%,
-  serial), drag 415µs, forces+integrate 205µs. **Biology is still the whole game and per-cell biology is
-  already parallel** — remaining levers are the serial exchange pre-pass, lifecycle (division/destroy,
-  serial), or the behavioural caps below. NB the grown colony is CLUMPED (14ms) vs the seeded-spread
-  bench (~21ms) — a bigger *spread* world makes exchange the dominant cost.
+### 2. Next parallelism frontiers — DEPENDS ON SCENARIO (autotroph vs multicellular)
+Profile the target scenario with `-Dcytosave=/abs/path.bin` (welded colonies) — the phase mix differs
+sharply from the non-welding autotroph:
+
+**(a) Non-welding autotroph (grown 8698 cells, PAR, 14.2ms):** biology **72%** (all sub-phases parallel),
+lifecycle 8%, and **weld physics ~0** (springSolve ~4µs, connections ~10µs — cells never weld). For THIS
+scenario the spring/connections phases are non-targets and biology's serial exchange pre-pass / lifecycle
+are the only levers left.
+
+**(b) Multicellular "support genome" save (`cyto-support-save.bin`, 2619 welded cells) — the likely
+gameplay target.** SEQ 17.7ms → PAR 11.3ms (1.57×). Per-cell cost is **2.4× the autotroph** (4.1 vs
+1.7µs). Phase mix (SEQ→PAR µs): biology 12948→6140 (**2.11×**, genes 5381→1942, exchange 3729→1505 — the
+per-cell biology parallelism pays off strongly here too), **springSolve 1375→868 (1.58×** — a REAL win,
+already parallel; the "ruled out" call only held for the autotroph), and the two remaining SERIAL,
+un-parallelised weld-physics phases:
+  - **`ConnectionsSystem` (spring stress/damage/break): 1568 SEQ → 2002 PAR — it runs SLOWER under PAR**
+    (all-core-clock tax: biology fanning 8 cores drops the CPU below turbo, penalising this serial phase).
+    **THE prime target.** Parallelisable bit-identically: loop-1 min-`pairDmg` map stays serial (cheap),
+    loop-2 per-edge stress/damage compute (deltaLen sqrt + throughCellChord collinear) is per-directed-edge
+    with disjoint CSR-column writes → `ColumnPartition.disjoint` over cells, collecting the `broken` keys
+    per-chunk (detect-then-apply), then serial `pruneEdges`. No re-baseline (order-independent).
+  - **`DragSystem`: 610 SEQ → 788 PAR** — same clock-tax story. Per-cell loop writing only `impVel[i]`,
+    reading neighbours read-only → trivially `disjoint`-parallel, bit-identical.
+Parallelising both would speed weld colonies AND stop them paying the clock tax. NB the weld goldens are
+tiny (2–3 cells) so `parallelMatchesSequential` gives thin coverage of the welded path — consider a
+larger welded parallel-equivalence check when doing this.
 
 ### 3. Behavioural levers (bit-CHANGING — a gameplay decision, do with Stu)
 Per the 2026-07-04 finding, code micro-opts on biology are exhausted; the residual cost is
