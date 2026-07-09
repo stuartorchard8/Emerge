@@ -23,6 +23,9 @@ class BioProfile {
     var exchUseful = 0L           // (species × cell) visits that actually exchanged (leaker or absorber)
     var exchNoop = 0L             // visits where the cell neither holds nor can-hold the species (pure waste)
     var exchGridSpecies = 0L      // Σ grid-reservoir species per grid-cell (the env-origin half of the union)
+    var exchPass0Nanos = 0L       // pre-pass: collect batch cells + bucket footprint tiles (currently serial)
+    var exchPass1Nanos = 0L       // parallel: refine roots + per-leaf touch counts
+    var exchPass2Nanos = 0L       // parallel: collect uncontested leaves + build plan + balance
 
     // ── runGenes ──
     var genesCells = 0L           // runGenes invocations (≈ population)
@@ -38,6 +41,7 @@ class BioProfile {
         exchGroupNanos = 0L; exchSpeciesNanos = 0L
         exchGridCells = 0L; exchSpeciesCalls = 0L; exchCellIters = 0L; exchMaxCellsInCell = 0L
         exchUseful = 0L; exchNoop = 0L; exchGridSpecies = 0L
+        exchPass0Nanos = 0L; exchPass1Nanos = 0L; exchPass2Nanos = 0L
         genesCells = 0L; genesScanned = 0L; genesActive = 0L
         genesIsActiveNanos = 0L; genesApplyNanos = 0L
         richestBondCalls = 0L; wildcardCalls = 0L

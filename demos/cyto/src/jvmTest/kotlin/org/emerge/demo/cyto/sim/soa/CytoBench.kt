@@ -138,12 +138,15 @@ class CytoBench {
         // -Dcytospringthresh=N sets the spring-solver parallel threshold (default 2048 = springs sequential,
         // to isolate the biology effect). Set it low (e.g. 2) to also parallelise the spring solve and size it.
         val springThresh = System.getProperty("cytospringthresh")?.toIntOrNull() ?: 2048
+        val bioProf = org.emerge.demo.cyto.sim.BioProfile()
         val r0 = CytoSoaReducer(cfg, executor = executor, profiler = profiler,
             springParallelThreshold = springThresh,
-            bioParallelThreshold = if (executor != null) 2 else Int.MAX_VALUE)
+            bioParallelThreshold = if (executor != null) 2 else Int.MAX_VALUE,
+            bioProfile = bioProf)
         var w = start
         repeat(200) { w = r0.tick(w, CytoInput.EMPTY) }   // warmup
         profiler.reset()
+        bioProf.reset()
         val measure = 600
         val allocStart = tmx.getThreadAllocatedBytes(tid)
         repeat(measure) {
@@ -169,5 +172,8 @@ class CytoBench {
         sb.appendLine("$tag postbio us: connections=%.0f grab=%.0f drag=%.0f springSolve=%.0f forces+integrate=%.0f".format(
             ph("force:ConnectionsSystem"), ph("force:GrabSystem"), ph("force:DragSystem"),
             ph("force:SpringSolveSystem"), ph("forces+integrate")))
+        val bt = bioProf.ticks.coerceAtLeast(1)
+        sb.appendLine("$tag exch-pass us: pass0(serial)=%.0f pass1(par)=%.0f pass2(par)=%.0f".format(
+            bioProf.exchPass0Nanos / 1e3 / bt, bioProf.exchPass1Nanos / 1e3 / bt, bioProf.exchPass2Nanos / 1e3 / bt))
     }
 }

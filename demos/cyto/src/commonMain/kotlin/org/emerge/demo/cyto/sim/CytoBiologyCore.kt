@@ -110,6 +110,7 @@ object CytoBiologyCore {
         val tileBuckets = scratch.tileBuckets
         for (b in tileBuckets) b.clear()
 
+        val tP0 = if (stats != null) TimeSource.Monotonic.markNow() else null
         // ── Pass 0 (serial, cheap): collect batch cells + bucket their root-tile descents by root index. ──
         for (w in ordered) {
             if (w.exchangeBatch != currentBatch) continue
@@ -121,6 +122,7 @@ object CytoBiologyCore {
             }
         }
 
+        val tP1 = if (stats != null) TimeSource.Monotonic.markNow() else null
         // ── Pass 1 (parallel by root tile): refine + masks + per-leaf touch counts. Disjoint roots. ──
         ColumnPartition.disjoint(tileBuckets.size, executor, threshold) { tStart, tEnd ->
             for (ti in tStart until tEnd) {
@@ -135,6 +137,7 @@ object CytoBiologyCore {
             }
         }
 
+        val tP2 = if (stats != null) TimeSource.Monotonic.markNow() else null
         // ── Pass 2 (parallel by cell): collect uncontested leaves, build transfer plan, balance. ──
         val m = batchCells.size
         ColumnPartition.disjoint(m, executor, threshold) { start, end ->
@@ -177,6 +180,13 @@ object CytoBiologyCore {
         if (stats != null) {
             stats.ticks++
             stats.exchGroupNanos += tGroup!!.elapsedNow().inWholeNanoseconds
+            // Each mark's elapsedNow() measures from that mark to now (end), so an earlier mark reads larger.
+            val e0 = tP0!!.elapsedNow().inWholeNanoseconds   // pass0+pass1+pass2
+            val e1 = tP1!!.elapsedNow().inWholeNanoseconds   // pass1+pass2
+            val e2 = tP2!!.elapsedNow().inWholeNanoseconds   // pass2
+            stats.exchPass0Nanos += e0 - e1
+            stats.exchPass1Nanos += e1 - e2
+            stats.exchPass2Nanos += e2
         }
     }
 
