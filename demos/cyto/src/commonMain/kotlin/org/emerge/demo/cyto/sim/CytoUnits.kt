@@ -17,7 +17,7 @@ import org.emerge.sim.core.physics.primitives.Frac
  */
 object CytoUnits {
     /** Base-cell diameters across the torus per axis. */
-    const val CELLS_PER_AXIS = 32
+    const val CELLS_PER_AXIS = 64
 
     private const val SCALE = 1f / CELLS_PER_AXIS // logical-radius-unit -> normalised
 

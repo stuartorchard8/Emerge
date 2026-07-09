@@ -22,7 +22,7 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     // ── build ────────────────────────────────────────────────────────────────────────────────────────
     companion object {
         const val BASE_RES = 4
-        const val MAX_DEPTH = 6
+        const val MAX_DEPTH = 7
         val SPAN = CytoLightField.SPAN
         val HALF = CytoLightField.HALF
         val TILE = SPAN / BASE_RES
