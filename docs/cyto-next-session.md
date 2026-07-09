@@ -5,14 +5,19 @@ Start-here pointer for the next cyto perf session. Read this + memory
 `main` (no branches), golden-gate everything, show diffs before committing, A/B with the clean
 per-JVM bench (never the contaminated back-to-back run).
 
-## ⚠️ Golden gate is RED at baseline (recapture needed)
-The `cyto: 4x world size` commit (`2ede0271`) changed world geometry (`CytoMatterField`/`CytoUnits`)
-without recapturing the golden digests, so **6 tests fail at HEAD regardless of any code change**:
-`CytoGoldenTest.{mutationOn, growthMutationOff, weldHealColony, scriptedInteractions, stickyWeldPair}`
-and `CytoSoaSpecTest.acrossOrientedDivisionGrowsA2DSheetNotAThread`. `parallelMatchesSequential` still
-passes, so the equivalence gate is intact — but the digest gate needs re-capturing (a gameplay/world
-decision for Stu) before it can catch regressions again. Until then, verify perf changes by comparing
-the failing-set with/without the change (identical set ⇒ bit-identical), not by "all green".
+## ⚠️ Golden gate: recaptured; ONE real regression remains
+The `cyto: 4x world size` commit (`2ede0271`, CELLS_PER_AXIS 32→64, MAX_DEPTH 6→7) changed world
+geometry without recapturing goldens. **Fixed 2026-07-09 (`50689c61`): all 5 `CytoGoldenTest`
+scenarios recaptured — the digest gate is green again** (pure world-size re-baseline;
+parallelMatchesSequential + grownStateRoundTrips held).
+
+**Still failing — a genuine regression, NOT a digest issue:**
+`CytoSoaSpecTest.acrossOrientedDivisionGrowsA2DSheetNotAThread`. In the 4× world the founder's
+normalised footprint (engine radius `Frac(1,64)`) halved, so it under-samples the matter grid and
+**never divides** — y-extent `0.0` for both across- and thread-oriented genomes at 1500 AND 6000
+ticks, and even with 4× seed matter (`seededUniform(8000)`). This is a real morphogenesis/tuning
+interaction with the world size — **needs a gameplay decision** (retune the scenario's cell size /
+import footprint / seed, or reconsider the 4× jump). Don't hack the tick budget; it doesn't help.
 
 ## Where we are (what just landed)
 - **Biology `finish` is now parallel (2026-07-09, commit `dfd1ce04`).** `detect-then-apply`: cell-local
