@@ -109,6 +109,16 @@ gameplay target.** SEQ 17.7ms → PAR 11.3ms (1.57×). Per-cell cost is **2.4× 
   order-independent, no re-baseline). Both passes run `ColumnPartition.disjoint` over an ordered id list.
   Clean A/B @cyto-support-save (2619 welded, 8-core): **diffuse 1347→536µs (2.51×)**, whole tick 17.81→17.00ms.
   Deepest levers left: **lifecycle** (division/destroy, serial) and the **behavioural caps** below.
+- **Small-phase PAR-tax gating — INVESTIGATED, NO WIN, reverted (2026-07-10).** A cross-JVM seq-vs-par table
+  suggested finish/writeback/connections run *slower* under PAR at 2619 welded cells (finish 745→1000, etc.),
+  so we prototyped a `lightPhaseParallelThreshold` to gate them serial below a cell count. A **clean cooled
+  same-session A/B** (3 interleaved gated-vs-ungated pairs, box idled 120s first) **refuted the premise**:
+  parallel is *faster* for all three — finish ~1085 vs ~1239µs serial, writeback ~705 vs ~763, connections
+  ~3034 vs ~3123, whole tick ~15.64 vs ~16.26ms. Gating would have *regressed* the tick ~0.6ms. The original
+  "PAR loses" numbers were **cross-JVM thermal artifacts** (separate JVMs at different thermal states — the box
+  was warm). **Lesson: never conclude a phase-level PAR regression from cross-JVM absolute numbers; only a
+  cooled, interleaved, same-session A/B (toggle via a `-D` knob in one JVM run each, box idled first) is
+  trustworthy.** Change fully reverted; nothing landed.
 
 ### 3. Behavioural levers (bit-CHANGING — a gameplay decision, do with Stu)
 Per the 2026-07-04 finding, code micro-opts on biology are exhausted; the residual cost is
