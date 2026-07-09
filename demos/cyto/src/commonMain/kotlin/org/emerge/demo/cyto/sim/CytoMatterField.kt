@@ -49,7 +49,7 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
         /** Uniform larder: every tile a leaf holding `level` of each monomer over its whole area. A tile is
          *  TILE×TILE cell-diam = (TILE/0.25)² finest cells, so a fully-merged tile holds `level · cells²`. */
         fun seededUniform(level: Int): CytoMatterField {
-            val finest = 1 shl MAX_DEPTH                 // finest cells along a tile axis (512)
+            val finest = 1 shl MAX_DEPTH                 // finest cells along a tile axis (128 at MAX_DEPTH=7)
             val cellsPerTile = finest * finest           // a merged tile pools this many finest cells' worth
             return CytoMatterField(Array(BASE_RES * BASE_RES) {
                 QuadNode.leaf().also { n -> for (m in MONO) n.store!!.add(m, level * cellsPerTile) }

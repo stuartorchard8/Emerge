@@ -10,6 +10,12 @@ plugins {
 kotlin {
     // Intentionally do not hard-pin a toolchain version.
     // This keeps the project easy to build on fresh machines without extra JDK installs.
+
+    // Silence the KT-61573 Beta notice for expect/actual classes — we use them deliberately
+    // (AtomicRef/ReentrantLock/ParallelExecutor/GPU) and the pattern is stable for our purposes.
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
 }
 
 tasks.withType<Test>().configureEach {
