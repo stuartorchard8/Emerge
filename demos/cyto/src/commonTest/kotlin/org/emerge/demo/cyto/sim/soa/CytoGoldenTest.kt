@@ -151,12 +151,16 @@ class CytoGoldenTest {
     // Lyse gene, so their drift is the rename alone). Determinism gates held.
     // Re-baselined 2026-07-09: 4x world size (see GROWTH). meta + biology byte-identical here (same
     // population + chemistry); physics + grid shift with the larger torus.
+    // Re-baselined 2026-07-09 (#3): PER-CELL mutation RNG (splitmix64 keyed on world-seed+entityId+tick)
+    // replaced the single shared LCG stream, so the write-back loop parallelises (order-independent draws).
+    // A different-but-equivalent PRNG stream ⇒ the whole mutation-on trajectory moves; growth/interact
+    // (rateDenom 0, never draw) are untouched. parallelMatchesSequential + all invariants held.
     private val MUTATION = mapOf(
-        "meta" to "1e92bfc864dfae61",
-        "physics" to "662d1945c31cceec",
-        "biology" to "5c6e81e38d2cc17b",
+        "meta" to "187ed166f49aa1ee",
+        "physics" to "a5c190d5c5580fed",
+        "biology" to "c1f1c0bbc245635d",
         "topology" to "cbf29ce484222325",
-        "grid" to "ee468358acca1f88",
+        "grid" to "8d2d9044724d0ae5",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     // Re-baselined 2026-07-05: restored LIGHT_QUANTA_SCALE 60k→120k (matter viability) +

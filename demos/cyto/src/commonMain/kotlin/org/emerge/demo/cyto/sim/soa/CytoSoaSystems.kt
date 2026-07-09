@@ -500,13 +500,22 @@ class BiologySystem(
         }
 
         // Write-back: mutate durable scalar columns, commit chem via slab swap, handle genome mutations.
+        // Per-cell disjoint: every write below is slot-local (durable columns, mass, this slot's own CSR
+        // edges) and each cell's mutation RNG is derived purely from (world seed, entity id, tick) — never
+        // from iteration order — so the loop parallelises. The slab swap is a single serial pointer swap after.
         val noMutateEntityId = noMutateEntityIdProvider()
-        for (k in 0 until n) {
+        val rateDenom = if (world.mutationRateDenom >= 0) world.mutationRateDenom else cfg.mutationRateDenom
+        val baseSeed = world.world.randomSeed
+        val mutTick = world.world.tick
+        ColumnPartition.disjoint(n, bioExec, threshold = 1) { kStart, kEnd ->
+          val rng = MutationRng()
+          val draw: (Int) -> Int = { until -> rng.nextInt(until) }
+          for (k in kStart until kEnd) {
             val slot = ordered[k]
-            val id = EntityId(world.entityId[slot])
             val work = state.bioWorks[slot]!!
-            val mutated = if (world.entityId[slot] == noMutateEntityId) null
-                else CytoMutation.mutate(world.cell.genome[slot] ?: emptyList(), if (world.mutationRateDenom >= 0) world.mutationRateDenom else cfg.mutationRateDenom) { until -> nextRandomInt(world, until) }
+            val entityId = world.entityId[slot]
+            val mutated = if (entityId == noMutateEntityId || rateDenom <= 0) null
+                else { rng.seed(baseSeed, entityId, mutTick); CytoMutation.mutate(world.cell.genome[slot] ?: emptyList(), rateDenom, draw) }
 
             val oldRadiusRaw = world.cell.logicalRadius[slot]
             // Commit scalar state directly into the persistent column (front) store.
@@ -531,6 +540,7 @@ class BiologySystem(
                     world.velY[slot] = (world.velY[slot].toLong() * oldMass.toLong() / newMass.toLong()).toInt()
                 }
             }
+          }
         }
         // Slab swap: commits all chemistry mutations in O(count) pointer swap instead of per-cell copyFrom.
         world.cell.swapBuffers(n)
@@ -543,13 +553,40 @@ class BiologySystem(
         bioMark = TimeSource.Monotonic.markNow()
     }
 
-    private fun nextRandomInt(w: CytoWorld): Int {
-        w.world.randomSeed = w.world.randomSeed * 2862933555777941757L + 3037000493L
-        return (w.world.randomSeed ushr 32).toInt()
+}
+
+/**
+ * Per-cell mutation PRNG (splitmix64). Order-INDEPENDENT: [seed] derives a cell's stream purely from the
+ * world seed, the cell's entity id, and the tick — never from how many cells ran before it — so the
+ * write-back loop parallelises and stays bit-identical to its sequential fallback. splitmix64's finalizer
+ * avalanches every input bit across all 64 output bits, so cells with ADJACENT entity ids (spatially
+ * clustered clones) get fully decorrelated streams rather than near-identical mutations. Pure Long
+ * arithmetic ⇒ deterministic across JVM/JS/native. One instance per worker chunk (re-seeded per cell).
+ */
+internal class MutationRng {
+    private var state = 0L
+    fun seed(base: Long, entityId: Int, tick: Long) {
+        // Combine the three inputs with distinct odd increments, then one splitmix finalizer so the starting
+        // state is well-scrambled before the first draw (adjacent entity ids ⇒ well-separated states).
+        var z = base + entityId.toLong() * GAMMA + tick * TICK_GAMMA
+        z = (z xor (z ushr 30)) * MIX1
+        z = (z xor (z ushr 27)) * MIX2
+        state = z xor (z ushr 31)
     }
-    private fun nextRandomInt(w: CytoWorld, until: Int): Int {
-        require(until > 0)
-        return (nextRandomInt(w).toLong() and 0x7FFFFFFFL).toInt() % until
+    fun nextInt(until: Int): Int {
+        state += GAMMA
+        var z = state
+        z = (z xor (z ushr 30)) * MIX1
+        z = (z xor (z ushr 27)) * MIX2
+        z = z xor (z ushr 31)
+        return ((z and 0x7FFFFFFFFFFFFFFFL) % until).toInt()
+    }
+    private companion object {
+        // splitmix64 constants written as signed Long literals (top bit set ⇒ negative two's-complement):
+        const val GAMMA = -0x61C8864680B583EBL      // 0x9E3779B97F4A7C15 golden-ratio increment
+        const val TICK_GAMMA = 0x2545F4914F6CDD1DL   // a second odd increment for the tick axis
+        const val MIX1 = -0x40A7B892E31B1A47L        // 0xBF58476D1CE4E5B9
+        const val MIX2 = -0x6B2FB644ECCEEE15L        // 0x94D049BB133111EB
     }
 }
 
