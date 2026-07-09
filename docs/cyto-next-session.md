@@ -87,21 +87,17 @@ are the only levers left.
 
 **(b) Multicellular "support genome" save (`cyto-support-save.bin`, 2619 welded cells) — the likely
 gameplay target.** SEQ 17.7ms → PAR 11.3ms (1.57×). Per-cell cost is **2.4× the autotroph** (4.1 vs
-1.7µs). Phase mix (SEQ→PAR µs): biology 12948→6140 (**2.11×**, genes 5381→1942, exchange 3729→1505 — the
-per-cell biology parallelism pays off strongly here too), **springSolve 1375→868 (1.58×** — a REAL win,
-already parallel; the "ruled out" call only held for the autotroph), and the two remaining SERIAL,
-un-parallelised weld-physics phases:
-  - **`ConnectionsSystem` (spring stress/damage/break): 1568 SEQ → 2002 PAR — it runs SLOWER under PAR**
-    (all-core-clock tax: biology fanning 8 cores drops the CPU below turbo, penalising this serial phase).
-    **THE prime target.** Parallelisable bit-identically: loop-1 min-`pairDmg` map stays serial (cheap),
-    loop-2 per-edge stress/damage compute (deltaLen sqrt + throughCellChord collinear) is per-directed-edge
-    with disjoint CSR-column writes → `ColumnPartition.disjoint` over cells, collecting the `broken` keys
-    per-chunk (detect-then-apply), then serial `pruneEdges`. No re-baseline (order-independent).
-  - **`DragSystem`: 610 SEQ → 788 PAR** — same clock-tax story. Per-cell loop writing only `impVel[i]`,
-    reading neighbours read-only → trivially `disjoint`-parallel, bit-identical.
-Parallelising both would speed weld colonies AND stop them paying the clock tax. NB the weld goldens are
-tiny (2–3 cells) so `parallelMatchesSequential` gives thin coverage of the welded path — consider a
-larger welded parallel-equivalence check when doing this.
+1.7µs). Biology 12948→6140 (**2.11×**), springSolve 1375→868 (1.58×, already parallel).
+- **`ConnectionsSystem` + `DragSystem` — DONE (2026-07-09, commit `3aca7dda`).** Both weld-physics phases
+  were serial and ran SLOWER under PAR than their own SEQ (all-core-clock tax). Parallelised bit-identically
+  (Drag: `disjoint`; Connections loop-2: `detectThenApply` over cells, emit break-keys, serial prune;
+  loop-1 min-map stays serial). Same-snapshot PAR before→after: **connections 2002→1396µs (0.78×→1.12× vs
+  SEQ), drag 788→326µs (0.77×→1.87×)** — ~1070µs clock-tax relief. New `parallelMatchesSequentialWeldedColony`
+  test (packed moving sticky grid) covers the welded parallel path the tiny weld goldens didn't. No re-baseline.
+- **Weld physics is now handled.** Remaining PAR cost in the welded scenario is biology (genes ~2100 /
+  exchange ~1600 / diffuse ~800 µs — the last two the serial-ish ones) and the still-serial connections
+  loop-1 min-map (cheap). Biology's serial **exchange pre-pass** and **lifecycle** are the deepest levers
+  left; beyond that it's the behavioural caps below.
 
 ### 3. Behavioural levers (bit-CHANGING — a gameplay decision, do with Stu)
 Per the 2026-07-04 finding, code micro-opts on biology are exhausted; the residual cost is
