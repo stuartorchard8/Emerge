@@ -30,7 +30,8 @@ weld/divide/destroy fires.
    - `SpringCsr.rebuildFrom(count, entityIdAt, slotOf, springsAt, edgeAuxAt)` → rebuild CSR over
      the (post-compact) ordering; grows arrays only when needed.
 2. **In-tick CSR rebuild from SoA state is already done and is CHEAP.** `pruneEdges`
-   (CytoSoaReducer.kt:355 AND CytoSoaSystems.kt:880 — duplicated, cleanup candidate) snapshots
+   (lives in `CytoSoaHelpers.kt`; the duplicate private copy in `CytoSoaReducer` was removed
+   2026-07-10, `afc221f8`) snapshots
    surviving adjacency per slot and calls `csr.rebuildFrom` when springs break. The `connections`
    phase profiles at ~0µs → **the CSR rebuild is sub-ms; the expensive part is purely the SimState
    map round-trip.** This is the proof that SoA-native structural edits will be fast.
