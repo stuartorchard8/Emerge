@@ -127,8 +127,11 @@ class CytoBench {
         val tid = Thread.currentThread().id
         val profiler = PipelineProfiler()
         // Force the parallel path on at this N for the PAR run (threshold 2); SEQ has no executor.
+        // -Dcytospringthresh=N sets the spring-solver parallel threshold (default 2048 = springs sequential,
+        // to isolate the biology effect). Set it low (e.g. 2) to also parallelise the spring solve and size it.
+        val springThresh = System.getProperty("cytospringthresh")?.toIntOrNull() ?: 2048
         val r0 = CytoSoaReducer(cfg, executor = executor, profiler = profiler,
-            springParallelThreshold = 2048,   // springs sequential in both — isolate the biology effect
+            springParallelThreshold = springThresh,
             bioParallelThreshold = if (executor != null) 2 else Int.MAX_VALUE)
         var w = start
         repeat(200) { w = r0.tick(w, CytoInput.EMPTY) }   // warmup
@@ -153,5 +156,10 @@ class CytoBench {
             ph("bio:exchange"), ph("bio:diffuse"), ph("bio:finish"), ph("bio:writeback")))
         sb.appendLine("$tag lifecycle-sub us: toSim=%.0f update=%.0f fromSim=%.0f".format(
             ph("lc:toSim"), ph("lc:update"), ph("lc:fromSim")))
+        // Post-bio systems are profiled per-class as `force:<SystemName>`; the last (integrate) as
+        // `forces+integrate`. Springs only exist in a WELDED colony (grown from a founder, not seeded).
+        sb.appendLine("$tag postbio us: connections=%.0f grab=%.0f drag=%.0f springSolve=%.0f forces+integrate=%.0f".format(
+            ph("force:ConnectionsSystem"), ph("force:GrabSystem"), ph("force:DragSystem"),
+            ph("force:SpringSolveSystem"), ph("forces+integrate")))
     }
 }
