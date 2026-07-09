@@ -62,9 +62,17 @@ class CytoBench {
         val soa = CytoSoaReducer(cfg)
         // -Dcytocells=N seeds N distributed founders directly (to profile the parallel crossover at a
         // population the moving-light carrying capacity won't reach by growth); otherwise grow one founder.
+        // -Dcytosave=PATH loads a saved colony (e.g. a welded multicellular scenario) instead of
+        // seeding/growing — the realistic way to profile welds/springs/connections.
+        val savePath = System.getProperty("cytosave")
         val seedN = System.getProperty("cytocells")?.toIntOrNull()
-        var w = if (seedN != null) CytoWorld.fromSimState(seededColony(seedN)) else CytoWorld.fromSimState(createCytoInitialState())
-        val grow = if (seedN != null) 200 else 22000   // seeded: just settle into welds/exchange
+        var w = when {
+            savePath != null -> CytoWorld.fromSimState(
+                org.emerge.demo.cyto.CytoSaveCodec.decode(java.io.File(savePath).readBytes()))
+            seedN != null -> CytoWorld.fromSimState(seededColony(seedN))
+            else -> CytoWorld.fromSimState(createCytoInitialState())
+        }
+        val grow = if (seedN != null) 200 else if (savePath != null) 400 else 22000   // save: brief settle
         repeat(grow) {
             w = soa.tick(w, CytoInput.EMPTY)
             if (it % 2000 == 0) java.io.File("/tmp/cytobench_grow.txt").appendText("tick=$it cells=${w.count}\n")

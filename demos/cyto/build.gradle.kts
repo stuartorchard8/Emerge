@@ -61,6 +61,9 @@ tasks.withType<Test>().configureEach {
     System.getProperty("cytobench")?.let { systemProperty("cytobench", it) }
     System.getProperty("cytocells")?.let { systemProperty("cytocells", it) }
     System.getProperty("cytovariant")?.let { systemProperty("cytovariant", it) }
+    System.getProperty("cytospread")?.let { systemProperty("cytospread", it) }
+    System.getProperty("cytospringthresh")?.let { systemProperty("cytospringthresh", it) }
+    System.getProperty("cytosave")?.let { systemProperty("cytosave", it) }
     System.getProperty("cytorepro")?.let { systemProperty("cytorepro", it) }
     System.getProperty("inspectcell")?.let { systemProperty("inspectcell", it) }
     System.getProperty("savefile")?.let { systemProperty("savefile", it) }
