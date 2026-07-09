@@ -446,11 +446,18 @@ class BiologySystem(
         state.weldHealByPair.clear()
         state.weldHealCount.clear()
 
+        // Finish (degrade + death/division decision) — the per-cell compute is cell-local, so it runs
+        // slot-partitioned in parallel; the grid deposit + divide/destroy/weld-heal harvests are shared
+        // writes replayed serially below in k-order (bit-identical to the single-threaded sweep).
+        ColumnPartition.disjoint(n, bioExec, threshold = 1) { kStart, kEnd ->
+            for (k in kStart until kEnd) CytoBiologyCore.finishCompute(state.bioWorks[ordered[k]]!!)
+        }
         for (k in 0 until n) {
             val slot = ordered[k]
             val id = EntityId(world.entityId[slot])
             val work = state.bioWorks[slot]!!
-            CytoBiologyCore.finish(id, work, grid, state.divide, state.destroy)
+            CytoBiologyCore.applyDegradeDeposit(work, grid)
+            if (work.dying) state.destroy.add(id) else if (work.dividing) state.divide.add(id)
             for ((other, heal) in work.weldHeals) {
                 val key = pairKey(id.value, other.value)
                 state.weldHealByPair[key] = (state.weldHealByPair[key] ?: 0f) + heal

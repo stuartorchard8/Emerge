@@ -345,6 +345,19 @@ class CellWork(
     /** Set true by a fired Mitosis gene; the lifecycle splits the cell. */
     var dividing = false
 
+    /** Set by [CytoBiologyCore.finishCompute] when this cell's biomass fell below the death threshold —
+     *  read in the serial finish-apply pass to queue the destroy. */
+    var dying = false
+
+    /** Biomass-shed deposit staged by [CytoBiologyCore.degrade] during the parallel finish-compute pass,
+     *  applied to the shared matter grid serially afterwards (grid writes can't run concurrently). A
+     *  [degradeDepositCount] of 0 means nothing to deposit this tick. */
+    var degradeDepositCount = 0
+    var degradeDepositTargetId = -1
+    var degradeDepositX = 0f
+    var degradeDepositY = 0f
+    var degradeDepositRadius = 0f
+
     /** The fired Mitosis gene's operand (its [GeneAction.a]) — the morphogen species allocated **whole to
      *  one daughter** on division (asymmetric mitosis, MORPHOGENESIS.md §C). "" ⇒ symmetric 50/50 split. */
     var divideMorphogen: String = ""

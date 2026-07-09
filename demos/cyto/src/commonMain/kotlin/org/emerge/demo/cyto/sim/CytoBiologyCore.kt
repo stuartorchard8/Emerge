@@ -658,20 +658,30 @@ object CytoBiologyCore {
     }
 
     /** Phase 3 — degradation (biomass loses bonds at a rate ∝ size, whole molecules shed to environment),
-      *  size from biomass, and the death/division decision. */
-    fun finish(id: EntityId, work: CellWork, grid: CytoMatterField, divide: MutableList<EntityId>, destroy: MutableList<EntityId>) {
-        degrade(work, grid)
+      *  size from biomass, and the death/division decision. Cell-local: mutates cell-owned biomass, stages
+      *  the grid deposit on [work], sets [CellWork.dying], and relaxes the radius. No shared-state writes —
+      *  safe to run slot-partitioned in parallel. The staged grid deposit ([applyDegradeDeposit]) and the
+      *  divide/destroy list appends are replayed serially afterwards in the reducer's finish-apply pass. */
+    fun finishCompute(work: CellWork) {
+        degrade(work)
         val bonds = totalBiomassBonds(work.biomass)
         if (bonds < DEATH_BIOMASS) {
-            destroy.add(id)
+            work.dying = true
             return
         }
+        work.dying = false
         // size relaxes elastically toward the biomass baseline (matches the old growth feel) — this same
         // blend is what pulls a Contract-flexed radius back up to baseline once the gene stops.
         val target = biomassRadius(bonds)
         work.logicalRadius =
             (work.logicalRadius * RADIUS_ELASTICITY + target).div(RADIUS_ELASTICITY + 1)
-        if (work.dividing) divide.add(id)
+    }
+
+    /** Serial apply of the deposit [degrade] staged onto [work] (grid writes can't run concurrently). */
+    fun applyDegradeDeposit(work: CellWork, grid: CytoMatterField) {
+        if (work.degradeDepositCount <= 0) return
+        grid.deposit(work.degradeDepositX, work.degradeDepositY, work.degradeDepositRadius,
+            work.degradeDepositTargetId, work.degradeDepositCount)
     }
 
     // ── gates ────────────────────────────────────────────────────────────────
@@ -776,7 +786,8 @@ object CytoBiologyCore {
       *  the environment's own rate. This is a real matter LEAK — a maintenance cost the cell must keep
       *  importing against (selection for efficient builders) and a steady feed for the food web.
       *  Cytoplasm count adds a hoarding tax: more cytoplasm → more wear → faster biomass drain. */
-    private fun degrade(work: CellWork, grid: CytoMatterField) {
+    private fun degrade(work: CellWork) {
+        work.degradeDepositCount = 0
         // Maintenance bonus: a more-connected cell degrades much slower — wear accrues at `1/2^weldedDegree`.
         // Interior cells of a body are nearly free to maintain. (Exponent capped at 20 to avoid Int overflow;
         // high values already make upkeep ~0 for any realistic biomass.)
@@ -814,7 +825,11 @@ object CytoBiologyCore {
                     depositX = work.cx
                     depositY = work.cy
                 }
-                grid.deposit(depositX, depositY, work.logicalRadius.toFloat(), targetId, count)
+                work.degradeDepositX = depositX
+                work.degradeDepositY = depositY
+                work.degradeDepositRadius = work.logicalRadius.toFloat()
+                work.degradeDepositTargetId = targetId
+                work.degradeDepositCount = count
             }
         }
     }
