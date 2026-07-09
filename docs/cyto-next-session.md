@@ -77,11 +77,18 @@ or a detect-then-apply re-baseline for a small share) — and the tiny quanta/di
 Diminishing returns on further per-cell biology work; look higher up the tick.
 
 ### 2. Next parallelism frontiers (bigger fish than the biology tails)
-- **Spring solver** — the `profile` bench keeps springs SEQUENTIAL to isolate biology, so its numbers
-  hide spring cost. In the real tick the Jacobi solver is order-independent (see `project_soa_core`) and
-  a candidate for parallelisation; profile the FULL tick (not just `profile`) to size it.
-- **Serial exchange pre-pass / internalTouching** — the drop-contested exchange has a serial pre-pass
-  that assigns uncontested leaves; if it's grown with the 4× world it may now be worth attacking.
+- **Spring solver — RULED OUT (2026-07-09).** Sized it via the full-tick bench (`-Dcytospringthresh` +
+  post-bio phase reporting, commit added this session). At a grown 8698-cell colony `springSolve` is
+  **~4µs = 0.03% of a 14ms tick**, and `ConnectionsSystem` ~10µs — both ~0 because the **default
+  autotroph never welds** (no Repair gene, `AUTO_WELD_ON_OVERLAP` off), so there are no springs. The
+  solver is already Jacobi/`disjoint`-parallel-capable but has nothing to do. Only relevant for a
+  Repair/sticky multicellular colony, which isn't the default. Not a target.
+- **Full-tick reality (grown 8698 cells, default cfg, PAR):** tick 14.2ms — biology **72%** (exchange
+  2983 / finish 2574 / build 2189 / genes 1103 / writeback 983 µs, all parallel), lifecycle 1124µs (8%,
+  serial), drag 415µs, forces+integrate 205µs. **Biology is still the whole game and per-cell biology is
+  already parallel** — remaining levers are the serial exchange pre-pass, lifecycle (division/destroy,
+  serial), or the behavioural caps below. NB the grown colony is CLUMPED (14ms) vs the seeded-spread
+  bench (~21ms) — a bigger *spread* world makes exchange the dominant cost.
 
 ### 3. Behavioural levers (bit-CHANGING — a gameplay decision, do with Stu)
 Per the 2026-07-04 finding, code micro-opts on biology are exhausted; the residual cost is
