@@ -52,12 +52,53 @@ One commit per step; each step leaves the build green.
   stray root `drockets-save-0.bin` moved home. Verified per-app dependency rule holds:
   every launcher depends only on its own core + engine modules. Module tree now exactly
   matches the target layout.
+- 2026-07-10: step 6 tidy-up done + buckets written (above); restructure COMPLETE apart
+  from Stu's verdict on the buckets.
 
-- [ ] **Step 6 — tidy-up pass + removal/promotion proposal.**
-  With the structure clean, walk the per-app desktop/tool files and propose two buckets
-  for Stu's review (no unilateral deletion): (a) candidates to REMOVE entirely
-  (stale probes/benchmarks/one-off checks), (b) candidates to PROMOTE into the engine
-  (generic tooling like UIGallery / sprite atlas plumbing / image renderers).
+- [x] **Step 6 — tidy-up pass + removal/promotion proposal.**
+  Tidy-up done: deleted `utils/` (untouched Gradle-template boilerplate, `org.example`,
+  not in settings); moved `emerge-modularization-plan.md` → `docs/`. (`InputAxis.kt`
+  looked dead but its `axis()` helper is used by `DesktopGlSceneView` — kept.)
+  Buckets below await Stu's decision.
+
+## Step 6 buckets — for review
+
+### (a) REMOVE candidates (one-off diagnostics whose findings are already logged)
+
+Each is a standalone main + gradle task; deleting one is a 2-minute, fully reversible
+git revert. Ordered by confidence:
+
+- `apps/drockets/desktop`: the 4 flag-variant bench tasks (`benchDrocketsZgc/Jfr/GcLog/
+  OverlayGcLog`) — same main as `benchDrockets`, just different jvmArgs; trivially
+  recreated when needed.
+- `apps/cyto/desktop`: `CytoDragProbe`, `CytoGrabProbe`, `CytoLocomotionProbe`,
+  `CytoPopulationProbe`, `CytoSaveAnalysis`, `CytoGrowthProfile` — investigation probes
+  from past sessions; outcomes are recorded in PERF.md / plan docs. (`CytoBenchmark`,
+  `CytoSaveBenchmark`, `CytoConservationCheck`, and the two image renderers still earn
+  their keep.)
+- `apps/norns/desktop`: `RigCheck`, `CreatureRendererCheck` — verification one-offs for
+  now-landed work.
+- `apps/scavengers/desktop`: `ProfileMain`/`profileSim` — JFR profiler predating the
+  per-app bench harnesses; superseded?
+- The save/genome zoo in `apps/cyto/desktop/` (17 tracked `.gene`, dated `.bin` saves,
+  `cyto-save.bak`) — propose: keep the curated genome library, delete dated/`.bak` saves
+  (or move the keepers to a `genomes/` subdir and gitignore all `.bin`).
+- `.cursor/plans/` — stale editor artifacts referencing the old layout.
+
+### (b) PROMOTE-to-engine candidates
+
+- `UIGallery` + `UIGallerySnapshot` (currently `apps/cyto/desktop`): a shared-UI-toolkit
+  gallery whose ONLY cyto import is `CytoControls` as a sample widget. Swap the sample for
+  a generic panel and this becomes an engine tool — natural home: a small
+  `engine/render/torus` dev-tool module (or jvmTest fixture). Right now the UI toolkit has
+  no engine-side showcase at all.
+- `DrocketsSpriteAtlas`/`KnightSpriteAtlas` (drockets desktop): PNG-strip → GL atlas
+  loading is generic; if scavengers or norns ever need sprite atlases on desktop, extract
+  the loader into `engine/render/torus` and keep only the sprite lists per app. Not worth
+  it pre-emptively (modularize-over-generalize) — flag only.
+- Headless PNG world-renderers (`CytoImageRenderer`, `NornsImageRenderer`): the
+  "tick N, render to PNG" harness shape recurs per app but the rendering is app-specific;
+  leave as-is.
 
 ## Log
 

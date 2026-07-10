@@ -14,7 +14,7 @@ networking + torus rendering) with apps that exercise the engine on desktop, And
 
 The engine is **game-agnostic**: it knows nothing about rockets, planets, crashes, respawns, or
 cells. Each app brings its own config, input type, state extensions, and codec registry. (See
-`emerge-modularization-plan.md` for the history of how Scavengers-flavored types were extracted
+`docs/emerge-modularization-plan.md` for the history of how Scavengers-flavored types were extracted
 out of the engine.)
 
 ### Gradle modules (what depends on what)
