@@ -40,10 +40,11 @@ One commit per step; each step leaves the build green.
   App data files (`.gene`/`.bin`/`.morph` saves, prefs) moved into their app's desktop dir;
   save-path literals updated. `platform/desktop-app` deleted.
 
-- [ ] **Step 4 — split `platform/web-app` into per-app web modules.**
-  Per-app Kotlin/JS entry points (`apps/{scavengers,cyto}/web`); shared canvas/host glue
-  → `engine/host/web`. The `?demo=` switch dies — each app is its own bundle. Delete
-  `platform/web-app` and the now-empty `platform/`.
+- [x] **Step 4 — split `platform/web-app` into per-app web modules.**
+  `apps/{scavengers,cyto}/web`, each its own Kotlin/JS browser bundle with its own
+  `index.html`; the `?demo=` switch died (CytoWeb got its own `main` doing GPU.init).
+  As with desktop, no shared glue worth an `engine/host/web` module — the canvas/GL
+  bootstrap is ~4 lines per app. `platform/` deleted entirely.
 
 - [ ] **Step 5 — reference sweep.**
   CI workflows, README (layout, module list, mermaid map, run commands), docs/, agent

@@ -7,9 +7,8 @@ networking + torus rendering) with apps that exercise the engine on desktop, And
 
 - **`engine/`**: reusable, game-agnostic engine modules (simulation, networking, rendering)
 - **`apps/`**: the games/sims built on the engine (`scavengers`, `drockets`, `cyto`, `norns`);
-  each app is `apps/<game>/{core, android, …}` — platform-free logic plus its own launchers
-- **`platform/`**: legacy shared desktop/web hosts (being split into per-app modules;
-  see `docs/apps-restructure-plan.md`)
+  each app is `apps/<game>/{core, desktop, android, web}` — platform-free logic plus its
+  own launchers; apps depend only on their own core + `engine/`, never on another app
 - **`buildSrc/`**: Gradle convention plugins
 - **`gradle/`**: version catalog + wrapper
 
@@ -57,8 +56,8 @@ out of the engine.)
   `buildsrc.convention.desktop-app` convention plugin). Each carries its app's run /
   benchmark / probe tasks (`./gradlew :apps:cyto:desktop:tasks` to list them).
 - `:apps:scavengers:android`, `:apps:cyto:android` → standalone Android apps.
-- `:platform:web-app` → `:apps:scavengers:core`, `:apps:cyto:core` (Kotlin/JS, websocket
-  transport; app selected via `?demo=cyto`). Being split per-app next.
+- `:apps:scavengers:web`, `:apps:cyto:web` → standalone Kotlin/JS browser bundles
+  (scavengers keeps the websocket join mode via `?mode=join`).
 
 #### Visual map
 
@@ -86,10 +85,8 @@ graph TD
     desk_norns[norns:desktop]
     android_scav[scavengers:android]
     android_cyto[cyto:android]
-  end
-
-  subgraph platform
-    web[web-app]
+    web_scav[scavengers:web]
+    web_cyto[cyto:web]
   end
 
   net_loop --> net_api
@@ -113,7 +110,8 @@ graph TD
   desk_norns --> norns
   android_scav --> scav
   android_cyto --> cyto
-  web --> scav & cyto
+  web_scav --> scav
+  web_cyto --> cyto
 ```
 
 ### Build & run
@@ -127,7 +125,7 @@ Use the Gradle Wrapper:
 - **Desktop — Cyto**: `./gradlew :apps:cyto:desktop:run`
 - **Desktop — Norns**: `./gradlew :apps:norns:desktop:run` (console; `runNornsSwing` for the window)
 - **Android debug**: `./gradlew :apps:cyto:android:installDebug` (or `:apps:scavengers:android:installDebug`)
-- **Web**: build/serve `:platform:web-app` and open with `?demo=cyto` (or the default app)
+- **Web**: build/serve `:apps:cyto:web` or `:apps:scavengers:web` (e.g. `./gradlew :apps:cyto:web:jsBrowserDevelopmentRun`)
 
 ### Kotlin Multiplatform notes (source set hierarchy)
 

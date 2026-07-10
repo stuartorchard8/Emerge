@@ -2,6 +2,8 @@ plugins {
     id("buildsrc.convention.kotlin-mpp")
 }
 
+buildDir = file("$rootDir/.build/scavengers-web")
+
 kotlin {
     js(IR) {
         browser {
@@ -22,7 +24,6 @@ kotlin {
                 implementation(project(":engine:net:api"))
                 implementation(project(":engine:net:transports:websocket"))
                 implementation(project(":apps:scavengers:core"))
-                implementation(project(":apps:cyto:core"))
             }
             resources.srcDir("$rootDir/assets")
         }

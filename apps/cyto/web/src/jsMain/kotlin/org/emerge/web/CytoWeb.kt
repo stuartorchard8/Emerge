@@ -1,6 +1,8 @@
 package org.emerge.web
 
+import kotlinx.browser.document
 import kotlinx.browser.window
+import org.emerge.render.torus.GPU
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.CytoRenderer
 import org.emerge.demo.cyto.sim.TouchMode
@@ -15,9 +17,16 @@ import kotlin.math.pow
 /**
  * Web host for the native Cyto demo (WebGL2). Mirrors the desktop host: pointer-down hits
  * the on-screen [CytoControls] first, else grabs a cell / pans; drag moves; click spawns or
- * acts per the current mode/type; wheel zooms toward the cursor. Assumes `GPU.init(gl)` was
- * already called by [main]. Single-player, so the rAF loop drives sim + render + UI.
+ * acts per the current mode/type; wheel zooms toward the cursor. Single-player, so the
+ * rAF loop drives sim + render + UI.
  */
+fun main() {
+    val canvas = document.getElementById("canvas") as HTMLCanvasElement
+    val gl = canvas.getContext("webgl2") ?: error("WebGL2 not supported")
+    GPU.init(gl)
+    startCyto(canvas)
+}
+
 fun startCyto(canvas: HTMLCanvasElement) {
     val controller = CytoController()
     val renderer = CytoRenderer()
