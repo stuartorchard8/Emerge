@@ -55,4 +55,4 @@ drockets-save*
 drockets-prefs*
 *-save.bin
 norns.save
-cyto-brush*.gene
+*.gene

@@ -72,7 +72,7 @@ const val DIFFUSION_SCALE_FACTOR = 0
 
 ### 2. `CytoMatterField.kt` — cell↔environment diffusion
 
-**File**: `demos/cyto/src/commonMain/kotlin/org/emerge/demo/cyto/sim/CytoMatterField.kt`
+**File**: `apps/cyto/src/commonMain/kotlin/org/emerge/demo/cyto/sim/CytoMatterField.kt`
 
 **Method to modify**: `balance(sp: Int, cEff: Int)` (line 190)
 
@@ -127,7 +127,7 @@ fun balance(sp: Int, cEff: Int, scaleFactor: Float): Int {
 
 ### 3. `CytoBiologyCore.kt` — cell↔cell diffusion
 
-**File**: `demos/cyto/src/commonMain/kotlin/org/emerge/demo/cyto/sim/CytoBiologyCore.kt`
+**File**: `apps/cyto/src/commonMain/kotlin/org/emerge/demo/cyto/sim/CytoBiologyCore.kt`
 
 **Method to modify**: `diffuse()` (line 410)
 

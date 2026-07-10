@@ -1,18 +1,19 @@
 # Emerge
 
 This repo is a Kotlin Multiplatform foundation for a game engine (deterministic simulation +
-networking + torus rendering) with demo games that exercise the engine on desktop, Android, and web.
+networking + torus rendering) with apps that exercise the engine on desktop, Android, and web.
 
 ### Repo layout (how to navigate)
 
 - **`engine/`**: reusable, game-agnostic engine modules (simulation, networking, rendering)
-- **`demos/`**: sample games built on the engine (currently: `scavengers`, `drockets`, `cyto`)
-- **`platform/`**: platform hosts / apps (desktop + Android + web)
+- **`apps/`**: the games/sims built on the engine (`scavengers`, `drockets`, `cyto`, `norns`)
+- **`platform/`**: platform hosts (desktop + web multi-app launchers; per-app Android shells
+  under `platform/android/`)
 - **`buildSrc/`**: Gradle convention plugins
 - **`gradle/`**: version catalog + wrapper
 
 The engine is **game-agnostic**: it knows nothing about rockets, planets, crashes, respawns, or
-cells. Each demo brings its own config, input type, state extensions, and codec registry. (See
+cells. Each app brings its own config, input type, state extensions, and codec registry. (See
 `emerge-modularization-plan.md` for the history of how Scavengers-flavored types were extracted
 out of the engine.)
 
@@ -33,29 +34,30 @@ out of the engine.)
     contacts, gravity, springs, particles, …), `SimState`/`SimInput`/`PhysicsTuning`.
   - `:engine:sim:sync` → `:engine:sim:core`, `:engine:net:api` (lockstep/state sync)
   - `:engine:sim:codecs:ecs` → `:engine:sim:core`, `:engine:sim:sync`, `:engine:net:api`
-    (generic per-component wire codecs + a per-demo `CodecRegistry`; no game-specific shape)
+    (generic per-component wire codecs + a per-app `CodecRegistry`; no game-specific shape)
 
 - **Rendering**
   - `:engine:render:torus` → `:engine:sim:core` (wrapping-world shader renderer)
 
-#### Demos (each self-contained: own config, input, state extensions, codecs)
+#### Apps (each self-contained: own config, input, state extensions, codecs)
 
-- `:demos:scavengers` → `sim:core`, `sim:sync`, `codecs:ecs`, `render:torus`, `net:api`,
+- `:apps:scavengers` → `sim:core`, `sim:sync`, `codecs:ecs`, `render:torus`, `net:api`,
   `net:transports:tcp`, `net:transports:websocket` — the full-featured networked reference game.
-- `:demos:drockets` → `sim:core`, `sim:sync`, `codecs:ecs`, `render:torus`, `net:api` —
+- `:apps:drockets` → `sim:core`, `sim:sync`, `codecs:ecs`, `render:torus`, `net:api` —
   rocketry + genetics demo. Carries a shadow struct-of-arrays reducer under `soa/`
   (`DrocketsWorld`/`DrocketsSoaReducer`), gated against the canonical reducer by
   bit-identity equivalence tests.
-- `:demos:cyto` → `sim:core`, `sim:sync`, `render:torus`, `net:api` — native ECS cell sim on
+- `:apps:cyto` → `sim:core`, `sim:sync`, `render:torus`, `net:api` — native ECS cell sim on
   the wrapping fixed-point torus (Cyto port). Also carries a shadow SoA reducer under `sim/soa/`.
 
 #### Platform hosts
 
-- `:platform:desktop-app` → all three demos (+ engine + loopback/tcp/websocket, LWJGL).
+- `:platform:desktop-app` → all apps (+ engine + loopback/tcp/websocket, LWJGL).
   Run tasks: `run`, `runDrockets`, `runCyto`, plus Drockets benchmark harnesses.
-- `:platform:android-app` → `:demos:scavengers`, `:demos:cyto`.
-- `:platform:web-app` → `:demos:scavengers`, `:demos:cyto` (Kotlin/JS, websocket transport;
-  demo selected via `?demo=cyto`).
+- `:platform:android:scavengers` → `:apps:scavengers` (standalone Android app).
+- `:platform:android:cyto` → `:apps:cyto` (standalone Android app).
+- `:platform:web-app` → `:apps:scavengers`, `:apps:cyto` (Kotlin/JS, websocket transport;
+  app selected via `?demo=cyto`).
 
 #### Visual map
 
@@ -72,15 +74,17 @@ graph TD
     render[render:torus]
   end
 
-  subgraph demos
+  subgraph apps
     scav[scavengers]
     drockets[drockets]
     cyto[cyto]
+    norns[norns]
   end
 
   subgraph platform
     desktop[desktop-app]
-    android[android-app]
+    android_scav[android:scavengers]
+    android_cyto[android:cyto]
     web[web-app]
   end
 
@@ -99,8 +103,9 @@ graph TD
   drockets --> sim_core & sim_sync & codecs_ecs & render & net_api
   cyto --> sim_core & sim_sync & render & net_api
 
-  desktop --> scav & drockets & cyto
-  android --> scav & cyto
+  desktop --> scav & drockets & cyto & norns
+  android_scav --> scav
+  android_cyto --> cyto
   web --> scav & cyto
 ```
 
@@ -113,8 +118,8 @@ Use the Gradle Wrapper:
 - **Desktop (default demo)**: `./gradlew :platform:desktop-app:run`
 - **Desktop — Drockets**: `./gradlew :platform:desktop-app:runDrockets`
 - **Desktop — Cyto**: `./gradlew :platform:desktop-app:runCyto`
-- **Android debug**: `./gradlew :platform:android-app:installDebug`
-- **Web**: build/serve `:platform:web-app` and open with `?demo=cyto` (or the default demo)
+- **Android debug**: `./gradlew :platform:android:cyto:installDebug` (or `:platform:android:scavengers:installDebug`)
+- **Web**: build/serve `:platform:web-app` and open with `?demo=cyto` (or the default app)
 
 ### Kotlin Multiplatform notes (source set hierarchy)
 
@@ -151,7 +156,7 @@ real-time scanning**.
       Drockets + Cyto) and generalize the per-demo `World`/`Columns`/`Reducer` boilerplate.
 - [ ] Set up a remote server to host the backend and web frontend
 - [x] Merge Drockets repo into Emerge
-- [x] Merge Cyto repo into Emerge — `:demos:cyto` runs natively on the engine
+- [x] Merge Cyto repo into Emerge — `:apps:cyto` runs natively on the engine
       (`./gradlew :platform:desktop-app:runCyto`). The cell sim is a deterministic ECS
       reducer on the engine's fixed-point torus, using a generic `SpringConstraintSystem`
       (in `:engine:sim:core`) in place of Box2D distance joints. The world wraps

@@ -35,8 +35,9 @@ plugins {
 // If there are changes in only one of the projects, Gradle will rebuild only the one that has changed.
 // Learn more about structuring projects with Gradle - https://docs.gradle.org/8.7/userguide/multi_project_builds.html
 include(":platform:desktop-app")
-include(":platform:android-app")
 include(":platform:web-app")
+include(":platform:android:scavengers")
+include(":platform:android:cyto")
 
 include(":engine:sim:core")
 include(":engine:sim:sync")
@@ -49,9 +50,9 @@ include(":engine:net:transports:loopback")
 include(":engine:net:transports:tcp")
 include(":engine:net:transports:websocket")
 
-include(":demos:scavengers")
-include(":demos:drockets")
-include(":demos:cyto")
-include(":demos:norns")
+include(":apps:scavengers")
+include(":apps:drockets")
+include(":apps:cyto")
+include(":apps:norns")
 
 rootProject.name = "Emerge"
