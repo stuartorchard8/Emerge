@@ -1,6 +1,4 @@
-package org.emerge.desktop
-
-import org.emerge.demo.cyto.ui.CytoControls
+package org.emerge.render.ui.gallery
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.Ui
 import org.lwjgl.glfw.GLFW.*
@@ -8,12 +6,13 @@ import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
 import kotlin.math.max
 
-object UIGallery {
-    fun start() {
-        Thread { runGallery() }.start()
-    }
+fun main() {
+    UIGallery.run()
+}
 
-    private fun runGallery() {
+object UIGallery {
+    /** Runs the gallery window on the calling thread until closed. */
+    fun run() {
         if (!glfwInit()) error("GLFW init failed")
         glfwDefaultWindowHints()
         glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE)
@@ -32,15 +31,6 @@ object UIGallery {
         org.lwjgl.opengl.GL.createCapabilities()
 
         val ui = Ui()
-        val controls = CytoControls()
-        controls.showSimSpeed = true
-        controls.showMutation = true
-        controls.showDebug = true
-        controls.onSlower = { }
-        controls.onFaster = { }
-        controls.onTogglePause = { }
-        controls.onCycleMutation = { }
-        controls.onLoadGenome = { }
 
         val state = GalleryState()
         val mouse = object { var down = false; var x = 0f; var y = 0f }
@@ -72,7 +62,7 @@ object UIGallery {
 
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents()
-            updateResolution(window, ui, controls)
+            updateResolution(window, ui)
 
             val now = glfwGetTime()
             val delta = (now - lastTime).toFloat().coerceIn(0f, 0.25f)
@@ -214,22 +204,6 @@ object UIGallery {
                     keyValue("scale", state.stepperScale.toString())
                     keyValue("offset", state.stepperOffset.toString())
                     keyValue("rate", state.stepperRate.toString())
-                    gap()
-                    row("CytoControls:", 0x9A9A9AFFL)
-                    keyValue("cellType", controls.cellType.name)
-                    keyValue("touchMode", controls.touchMode.name)
-                    keyValue("colorMode", controls.colorMode.name)
-                    keyValue("chem", if (controls.showChemicals) "ON" else "OFF")
-                    keyValue("light", if (controls.showLightField) "ON" else "OFF")
-                    keyValue("matter", if (controls.showMatterField) "ON" else "OFF")
-                    if (controls.showMutation) {
-                        keyValue("mutation", controls.mutationLabel)
-                    }
-                    if (controls.showSimSpeed) {
-                        keyValue("simStatus", controls.simStatus)
-                        keyValue("paused", if (controls.simPaused) "YES" else "NO")
-                        keyValue("behind", if (controls.simBehind) "YES" else "NO")
-                    }
                 }
 
                 // ── Multi-anchor layout demo ──
@@ -239,11 +213,6 @@ object UIGallery {
                     row("Stacks above the edge")
                     keyValue("x", "0..1280")
                     keyValue("y", "0..860")
-                    gap()
-                    row("Click CytoControls buttons:")
-                    row("Bottom-left: Cell Type / Touch Mode")
-                    row("Bottom-right: Debug / Grid / Color / Mut")
-                    row("Top-left: SLOW / PAUSE / FAST")
                 }
 
                 panel(Anchor.BottomRight) {
@@ -256,33 +225,25 @@ object UIGallery {
                     button("I'm a button", 0x3A6EA5FFL) { state.brBtn++ }
                     row("BottomRight clicks: ${state.brBtn}")
                 }
-
-                // ── CytoControls is rendered separately, not inside ui.frame ──
             }
 
             // ── Render ──
-            controls.setResolution(ui.resWidth, ui.resHeight)
             ui.draw()
-            controls.draw()
 
             glfwSwapBuffers(window)
         }
 
         ui.cleanup()
-        controls.cleanup()
         glfwDestroyWindow(window)
         glfwTerminate()
     }
 
-    private fun updateResolution(window: Long, ui: Ui, controls: CytoControls) {
+    private fun updateResolution(window: Long, ui: Ui) {
         MemoryStack.stackPush().use { st ->
             val sizeX = st.mallocInt(1)
             val sizeY = st.mallocInt(1)
             glfwGetFramebufferSize(window, sizeX, sizeY)
-            val w = max(1f, sizeX[0].toFloat())
-            val h = max(1f, sizeY[0].toFloat())
-            ui.setResolution(w, h)
-            controls.setResolution(w, h)
+            ui.setResolution(max(1f, sizeX[0].toFloat()), max(1f, sizeY[0].toFloat()))
         }
     }
 

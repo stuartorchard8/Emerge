@@ -47,6 +47,7 @@
             <option value="$PROJECT_DIR$/engine/net/transports/websocket" />
             <option value="$PROJECT_DIR$/engine/render" />
             <option value="$PROJECT_DIR$/engine/render/torus" />
+            <option value="$PROJECT_DIR$/engine/render/ui-gallery" />
             <option value="$PROJECT_DIR$/engine/sim" />
             <option value="$PROJECT_DIR$/engine/sim/codecs" />
             <option value="$PROJECT_DIR$/engine/sim/codecs/ecs" />

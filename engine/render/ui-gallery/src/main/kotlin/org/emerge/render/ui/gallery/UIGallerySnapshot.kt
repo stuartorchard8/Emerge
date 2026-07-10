@@ -1,4 +1,4 @@
-package org.emerge.desktop
+package org.emerge.render.ui.gallery
 
 import java.awt.*
 import java.awt.image.BufferedImage
@@ -248,11 +248,6 @@ fun main(args: Array<String>) {
     sLine("color", "Red"); sLine("preset", "Default")
     SY += 6
     sLine("scale", "100"); sLine("offset", "0"); sLine("rate", "1000")
-    SY += 6
-    t("CytoControls:", RX + PAD, SY + ay(RW, rowFont), rowFont, DIM); SY += RW
-    sLine("cellType", "Stem"); sLine("touchMode", "Base"); sLine("colorMode", "Bio")
-    sLine("chem", "OFF"); sLine("light", "ON"); sLine("matter", "OFF"); sLine("mutation", "off")
-    sLine("simStatus", "256 TPS  60 FPS"); sLine("paused", "NO"); sLine("behind", "NO")
 
     // ═══ BOTTOM-LEFT panel ═══
     val BLy = H - 140
@@ -265,10 +260,6 @@ fun main(args: Array<String>) {
     t("0..1280", 12 + 636 - PAD - wm("0..1280", keyFont), bly + ay(RW, keyFont), keyFont, WHITE); bly += RW
     t("y", 12 + PAD, bly + ay(RW, keyFont), keyFont, GRAY)
     t("0..860", 12 + 636 - PAD - wm("0..860", keyFont), bly + ay(RW, keyFont), keyFont, WHITE); bly += RW + 4
-    for (t2 in listOf("Click CytoControls buttons:", "Bottom-left: Cell Type / Touch Mode",
-                       "Bottom-right: Debug / Grid / Color / Mut", "Top-left: SLOW / PAUSE / FAST")) {
-        t(t2, 12 + PAD, bly + ay(RW, rowFont), rowFont, GRAY); bly += RW
-    }
 
     // ═══ BOTTOM-RIGHT panel ═══
     panel(W - 280, BLy, 268, 128)
@@ -280,46 +271,6 @@ fun main(args: Array<String>) {
     btn(W - 280 + PAD, bly, wm("I'm a button", btnFont) + 40, RW, BLUE, "I'm a button")
     bly += RW
     t("BottomRight clicks: 0", W - 280 + PAD, bly + ay(RW, rowFont), rowFont, DIM)
-
-    // ═══ CytoControls overlay ═══
-    val cP = 16
-    val bs = 64
-    val cG = 16
-    val cBY = H - cP - bs
-
-    var csx = cP
-    val sbs = (bs * 0.55).toInt()
-    val sgap = sbs / 4
-    for ((lbl, col) in listOf(Pair("SLOW", BLUE), Pair("PAUSE", BLUE), Pair("FAST", BLUE))) {
-        g.color = col
-        g.fillRoundRect(csx, cP, sbs, sbs, 3, 3)
-        g.color = WHITE; g.font = btnFont
-        g.drawString(lbl, (csx + sbs / 2 - wm(lbl, btnFont) / 2).toFloat(), (cP + sbs / 2 + ay(sbs, btnFont)).toFloat())
-        csx += sbs + sgap
-    }
-
-    g.color = BLUE; g.fillRoundRect(cP, cBY, bs, bs, 3, 3)
-    g.color = WHITE; g.font = btnFont
-    g.drawString("Stem", (cP + bs / 2 - wm("Stem", btnFont) / 2).toFloat(), (cBY + bs / 2 + ay(bs, btnFont)).toFloat())
-    g.drawString("Cell", (cP + bs / 2 - wm("Cell", btnFont) / 2).toFloat(), (cBY + bs / 2 + ay(bs, btnFont) + 13).toFloat())
-
-    val mX = cP + bs + cG
-    g.color = GREEN; g.fillRoundRect(mX, cBY, bs, bs, 3, 3)
-    g.drawString("Base", (mX + bs / 2 - wm("Base", btnFont) / 2).toFloat(), (cBY + bs / 2 + ay(bs, btnFont)).toFloat())
-    g.drawString("Mode", (mX + bs / 2 - wm("Mode", btnFont) / 2).toFloat(), (cBY + bs / 2 + ay(bs, btnFont) + 13).toFloat())
-
-    var cbx = W - cP - bs
-    fun cBtn(bx: Int, l1: String, l2: String, col: Color) {
-        g.color = col; g.fillRoundRect(bx, cBY, bs, bs, 3, 3)
-        g.color = if (col == Color(96, 96, 96)) WHITE else Color(0, 0, 0)
-        g.font = btnFont
-        g.drawString(l1, (bx + bs / 2 - wm(l1, btnFont) / 2).toFloat(), (cBY + bs / 2 + ay(bs, btnFont)).toFloat())
-        g.drawString(l2, (bx + bs / 2 - wm(l2, btnFont) / 2).toFloat(), (cBY + bs / 2 + ay(bs, btnFont) + 13).toFloat())
-    }
-    cBtn(cbx, "Color", "Bio", PURPLE); cbx -= bs + cG
-    cBtn(cbx, "Mut", "off", BLUE); cbx -= bs + cG
-    cBtn(cbx, "LIGHT", "GRID", Color(239, 208, 64)); cbx -= bs + cG
-    cBtn(cbx, "Debug", "OFF", Color(96, 96, 96))
 
     g.dispose()
     out.parentFile?.mkdirs()

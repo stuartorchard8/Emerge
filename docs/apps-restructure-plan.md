@@ -54,6 +54,13 @@ One commit per step; each step leaves the build green.
   matches the target layout.
 - 2026-07-10: step 6 tidy-up done + buckets written (above); restructure COMPLETE apart
   from Stu's verdict on the buckets.
+- 2026-07-10: buckets executed on Stu's go-ahead (`33be2593` remove, promote follows).
+  Removed: 6 cyto probes, 2 norns checks, scavengers profileSim, 4 drockets bench
+  flag-variants, `.cursor/plans`. **Save/genome files kept — Stu has plans for saves.**
+  Promoted: UIGallery + UIGallerySnapshot → new `:engine:render:ui-gallery` dev-tool
+  module (`runUIGallery` = its `run` task, `renderUIGallery` for the PNG snapshot),
+  fully decoupled from cyto (CytoControls sample usage stripped); verified via rendered
+  snapshot. Sprite-atlas loaders stay per-app (flag only). Plan CLOSED.
 
 - [x] **Step 6 — tidy-up pass + removal/promotion proposal.**
   Tidy-up done: deleted `utils/` (untouched Gradle-template boilerplate, `org.example`,

@@ -38,6 +38,8 @@ out of the engine.)
 
 - **Rendering**
   - `:engine:render:torus` → `:engine:sim:core` (wrapping-world shader renderer)
+  - `:engine:render:ui-gallery` — dev tool showcasing the shared immediate-mode UI toolkit
+    (`./gradlew :engine:render:ui-gallery:run`, or `renderUIGallery` for a PNG snapshot)
 
 #### Apps (each self-contained: own config, input, state extensions, codecs)
 
