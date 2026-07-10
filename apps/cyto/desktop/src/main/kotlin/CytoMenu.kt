@@ -41,6 +41,9 @@ class CytoMenu {
     private var openPicker = OpenPicker.None
     private enum class OpenPicker { None, Distribution }
 
+    /** Save currently awaiting a delete confirmation on the Load screen (null = none). */
+    private var pendingDelete: String? = null
+
     class Callbacks(
         /** Build + start a brand-new world from [scenario] (rebuilds the sim). */
         val onStart: (CytoScenario) -> Unit,
@@ -56,7 +59,7 @@ class CytoMenu {
     )
 
     /** Open the shell back to the title screen (e.g. the in-game Menu button / a fresh boot). */
-    fun openTitle() { inGame = false; page = Page.Title; openPicker = OpenPicker.None }
+    fun openTitle() { inGame = false; page = Page.Title; openPicker = OpenPicker.None; pendingDelete = null }
 
     /** Open the Save-name screen from in-game, pre-filling a default name. */
     fun openSave(default: String) {
@@ -167,13 +170,21 @@ class CytoMenu {
             gap(6f)
             if (saves.isEmpty()) row("No saves yet.", 0x8B96A8FFL)
             for (name in saves.take(12)) {
-                actionRow(listOf(
-                    Triple(name, MENU_BTN) { cb.onLoadNamed(name) },
-                    Triple("Del", MENU_QUIT) { cb.onDelete(name) },
-                ))
+                if (pendingDelete == name) {
+                    actionRow(listOf(
+                        Triple("Delete '$name'?", 0x53384AFFL) { },
+                        Triple("Yes", MENU_DANGER) { cb.onDelete(name); pendingDelete = null },
+                        Triple("No", MENU_BTN) { pendingDelete = null },
+                    ))
+                } else {
+                    actionRow(listOf(
+                        Triple(name, MENU_BTN) { cb.onLoadNamed(name) },
+                        Triple("Del", MENU_QUIT) { pendingDelete = name },
+                    ))
+                }
             }
             gap(8f)
-            button("Back", MENU_QUIT) { page = Page.Title }
+            button("Back", MENU_QUIT) { page = Page.Title; pendingDelete = null }
         }
     }
 
@@ -221,6 +232,7 @@ class CytoMenu {
         private const val MENU_BTN = 0x2A3550FFL
         private const val MENU_ACCENT = 0x2E6E5EFFL
         private const val MENU_QUIT = 0x53384AFFL
+        private const val MENU_DANGER = 0xB03A3AFFL
 
         private fun clamp(v: Int, lo: Int, hi: Int) = if (v < lo) lo else if (v > hi) hi else v
         private fun clampL(v: Long, lo: Long, hi: Long) = if (v < lo) lo else if (v > hi) hi else v
