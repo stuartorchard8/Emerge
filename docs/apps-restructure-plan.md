@@ -27,7 +27,7 @@ One commit per step; each step leaves the build green.
   stay at `apps/X/`. Coordinates `:apps:X` → `:apps:X:core`; update all references
   (settings, platform build files, CI, docs, `.build/` dir names `demo-X` → `X-core`).
 
-- [ ] **Step 2 — move Android shells under their games.**
+- [x] **Step 2 — move Android shells under their games.**
   `platform/android/{cyto,scavengers}` → `apps/{cyto,scavengers}/android`
   (`:platform:android:X` → `:apps:X:android`). Update settings, CI, README.
 
@@ -60,3 +60,5 @@ One commit per step; each step leaves the build green.
   `:apps:X` → `:apps:X:core`, `.build/demo-X` → `.build/X-core`. Side find: cyto
   commonMain had JVM-only `::class.java` (JS compile was silently broken) — fixed
   separately before this step's verification.
+- 2026-07-10: step 2 done. `:apps:{cyto,scavengers}:android` build green;
+  `platform/` now holds only the legacy desktop/web hosts.

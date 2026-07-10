@@ -36,8 +36,8 @@ plugins {
 // Learn more about structuring projects with Gradle - https://docs.gradle.org/8.7/userguide/multi_project_builds.html
 include(":platform:desktop-app")
 include(":platform:web-app")
-include(":platform:android:scavengers")
-include(":platform:android:cyto")
+include(":apps:scavengers:android")
+include(":apps:cyto:android")
 
 include(":engine:sim:core")
 include(":engine:sim:sync")

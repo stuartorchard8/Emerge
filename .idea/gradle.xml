@@ -22,9 +22,15 @@
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/apps" />
             <option value="$PROJECT_DIR$/apps/cyto" />
+            <option value="$PROJECT_DIR$/apps/cyto/android" />
+            <option value="$PROJECT_DIR$/apps/cyto/core" />
             <option value="$PROJECT_DIR$/apps/drockets" />
+            <option value="$PROJECT_DIR$/apps/drockets/core" />
             <option value="$PROJECT_DIR$/apps/norns" />
+            <option value="$PROJECT_DIR$/apps/norns/core" />
             <option value="$PROJECT_DIR$/apps/scavengers" />
+            <option value="$PROJECT_DIR$/apps/scavengers/android" />
+            <option value="$PROJECT_DIR$/apps/scavengers/core" />
             <option value="$PROJECT_DIR$/buildSrc" />
             <option value="$PROJECT_DIR$/engine" />
             <option value="$PROJECT_DIR$/engine/net" />
@@ -41,9 +47,6 @@
             <option value="$PROJECT_DIR$/engine/sim/core" />
             <option value="$PROJECT_DIR$/engine/sim/sync" />
             <option value="$PROJECT_DIR$/platform" />
-            <option value="$PROJECT_DIR$/platform/android" />
-            <option value="$PROJECT_DIR$/platform/android/cyto" />
-            <option value="$PROJECT_DIR$/platform/android/scavengers" />
             <option value="$PROJECT_DIR$/platform/desktop-app" />
             <option value="$PROJECT_DIR$/platform/web-app" />
           </set>

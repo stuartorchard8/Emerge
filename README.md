@@ -6,9 +6,10 @@ networking + torus rendering) with apps that exercise the engine on desktop, And
 ### Repo layout (how to navigate)
 
 - **`engine/`**: reusable, game-agnostic engine modules (simulation, networking, rendering)
-- **`apps/`**: the games/sims built on the engine (`scavengers`, `drockets`, `cyto`, `norns`)
-- **`platform/`**: platform hosts (desktop + web multi-app launchers; per-app Android shells
-  under `platform/android/`)
+- **`apps/`**: the games/sims built on the engine (`scavengers`, `drockets`, `cyto`, `norns`);
+  each app is `apps/<game>/{core, android, …}` — platform-free logic plus its own launchers
+- **`platform/`**: legacy shared desktop/web hosts (being split into per-app modules;
+  see `docs/apps-restructure-plan.md`)
 - **`buildSrc/`**: Gradle convention plugins
 - **`gradle/`**: version catalog + wrapper
 
@@ -54,8 +55,8 @@ out of the engine.)
 
 - `:platform:desktop-app` → all apps (+ engine + loopback/tcp/websocket, LWJGL).
   Run tasks: `run`, `runDrockets`, `runCyto`, plus Drockets benchmark harnesses.
-- `:platform:android:scavengers` → `:apps:scavengers:core` (standalone Android app).
-- `:platform:android:cyto` → `:apps:cyto:core` (standalone Android app).
+- `:apps:scavengers:android` → `:apps:scavengers:core` (standalone Android app).
+- `:apps:cyto:android` → `:apps:cyto:core` (standalone Android app).
 - `:platform:web-app` → `:apps:scavengers:core`, `:apps:cyto:core` (Kotlin/JS, websocket transport;
   app selected via `?demo=cyto`).
 
@@ -75,16 +76,16 @@ graph TD
   end
 
   subgraph apps
-    scav[scavengers]
-    drockets[drockets]
-    cyto[cyto]
-    norns[norns]
+    scav[scavengers:core]
+    drockets[drockets:core]
+    cyto[cyto:core]
+    norns[norns:core]
+    android_scav[scavengers:android]
+    android_cyto[cyto:android]
   end
 
   subgraph platform
     desktop[desktop-app]
-    android_scav[android:scavengers]
-    android_cyto[android:cyto]
     web[web-app]
   end
 
@@ -118,7 +119,7 @@ Use the Gradle Wrapper:
 - **Desktop (default demo)**: `./gradlew :platform:desktop-app:run`
 - **Desktop — Drockets**: `./gradlew :platform:desktop-app:runDrockets`
 - **Desktop — Cyto**: `./gradlew :platform:desktop-app:runCyto`
-- **Android debug**: `./gradlew :platform:android:cyto:installDebug` (or `:platform:android:scavengers:installDebug`)
+- **Android debug**: `./gradlew :apps:cyto:android:installDebug` (or `:apps:scavengers:android:installDebug`)
 - **Web**: build/serve `:platform:web-app` and open with `?demo=cyto` (or the default app)
 
 ### Kotlin Multiplatform notes (source set hierarchy)

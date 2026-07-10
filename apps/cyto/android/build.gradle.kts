@@ -3,14 +3,14 @@ plugins {
     kotlin("android")
 }
 
-buildDir = file("$rootDir/.build/android-scavengers")
+buildDir = file("$rootDir/.build/cyto-android")
 
 android {
-    namespace = "org.emerge.scavengers"
+    namespace = "org.emerge.cyto"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "org.emerge.scavengers"
+        applicationId = "org.emerge.cyto"
         minSdk = 26
         targetSdk = 36
         versionCode = 28
@@ -47,13 +47,8 @@ android {
 
 dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1")
-    implementation(project(":apps:scavengers:core"))
+    implementation(project(":apps:cyto:core"))
     implementation(project(":engine:render:torus"))
     implementation(project(":engine:sim:core"))
     implementation(project(":engine:sim:sync"))
-    implementation(project(":engine:sim:codecs:ecs"))
-    implementation(project(":engine:net:api"))
-    implementation(project(":engine:net:transports:loopback"))
-    implementation(project(":engine:net:transports:tcp"))
-    implementation(project(":engine:net:transports:websocket"))
 }
