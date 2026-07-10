@@ -79,7 +79,21 @@ object UIGallery {
                 ui.updateHold(mouse.x, mouse.y, delta)
             }
 
-            // ── Build widget tree ──
+            buildGalleryFrame(ui, state, fps)
+
+            // ── Render ──
+            ui.draw()
+
+            glfwSwapBuffers(window)
+        }
+
+        ui.cleanup()
+        glfwDestroyWindow(window)
+        glfwTerminate()
+    }
+
+    /** Builds one frame of the gallery widget tree — shared by the live window and the PNG snapshot. */
+    fun buildGalleryFrame(ui: Ui, state: GalleryState, fps: Float) {
             ui.frame {
                 // ── Title / Row / KeyValue demo ──
                 panel(Anchor.TopLeft) {
@@ -226,16 +240,6 @@ object UIGallery {
                     row("BottomRight clicks: ${state.brBtn}")
                 }
             }
-
-            // ── Render ──
-            ui.draw()
-
-            glfwSwapBuffers(window)
-        }
-
-        ui.cleanup()
-        glfwDestroyWindow(window)
-        glfwTerminate()
     }
 
     private fun updateResolution(window: Long, ui: Ui) {

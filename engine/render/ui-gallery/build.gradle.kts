@@ -18,9 +18,9 @@ application {
 
 tasks.register<JavaExec>("renderUIGallery") {
     group = "application"
-    description = "Render UI Gallery as Java2D PNG (no OpenGL) → build/ui-gallery.png"
+    description = "Render one frame of the UI Gallery with the real OpenGL toolkit → build/ui-gallery.png"
     mainClass = "org.emerge.render.ui.gallery.UIGallerySnapshotKt"
     classpath = sourceSets["main"].runtimeClasspath
-    args("build/ui-gallery.png")
+    args("ui-gallery.png")
     workingDir = rootProject.layout.buildDirectory.get().asFile
 }
