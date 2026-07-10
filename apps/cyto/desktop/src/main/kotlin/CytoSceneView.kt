@@ -293,8 +293,10 @@ object CytoSceneView {
             }
             if (action != GLFW_PRESS) return@glfwSetKeyCallback
             when (key) {
-                GLFW_KEY_ESCAPE -> controller.clearSelection()   // clear the cell selection (no close-on-escape)
-                GLFW_KEY_F5 -> onSave("quicksave")
+                // Esc clears the current cell selection; with nothing selected it opens the front-end menu.
+                GLFW_KEY_ESCAPE ->
+                    if (controller.lastHeldId != null) controller.clearSelection()
+                    else { menu.openTitle(); simDriver.setPaused(true) }
                 GLFW_KEY_SPACE -> simDriver.togglePause()
                 GLFW_KEY_LEFT_BRACKET -> simDriver.slower()
                 GLFW_KEY_RIGHT_BRACKET -> simDriver.faster()

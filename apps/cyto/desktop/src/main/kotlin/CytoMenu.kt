@@ -211,7 +211,7 @@ class CytoMenu {
             row("divide, and evolve. Drag cells, inspect genomes,", 0xC8C8C8FFL)
             row("and watch a colony find its carrying capacity.", 0xC8C8C8FFL)
             gap(8f)
-            row("Space pause  •  [ ] speed  •  F5/F9 save/load", 0x8B96A8FFL)
+            row("Space pause  •  [ ] speed  •  Esc menu", 0x8B96A8FFL)
             gap(8f)
             button("Back", MENU_QUIT) { page = Page.Title }
         }
