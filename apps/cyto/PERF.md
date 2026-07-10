@@ -89,7 +89,7 @@ save), so normal-pop tick is ~1.5 ms — already smooth.
 
 ## 2026-06-19 — biology profiled to the sub-phase, then ~2× on a heavy evolved save
 
-Profiled a real reported-heavy save (`platform/desktop-app/cyto-save-17-jun.bin`: **1906 cells**, evolved
+Profiled a real reported-heavy save (`apps/cyto/desktop/cyto-save-17-jun.bin`: **1906 cells**, evolved
 genomes med 15 / max 49 genes, big cytoplasm). Unlike the founder-colony runs above, biology here was
 **~92% of the tick and the sim ran OVER the 60fps budget (~19.3 ms/tick, 0.9×)**. Parallelism is moot:
 the only parallel phase (springs) is 0.9% of the tick — the bottleneck is entirely single-threaded biology.

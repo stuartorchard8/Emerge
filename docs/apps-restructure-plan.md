@@ -46,9 +46,12 @@ One commit per step; each step leaves the build green.
   As with desktop, no shared glue worth an `engine/host/web` module — the canvas/GL
   bootstrap is ~4 lines per app. `platform/` deleted entirely.
 
-- [ ] **Step 5 — reference sweep.**
-  CI workflows, README (layout, module list, mermaid map, run commands), docs/, agent
-  memory. Add/verify nothing depends across apps.
+- [x] **Step 5 — reference sweep.**
+  CI workflows, README (layout, module list, mermaid map, run commands), docs/
+  (norns DESIGN.md, cyto PERF.md), agent memory all updated to the new coordinates;
+  stray root `drockets-save-0.bin` moved home. Verified per-app dependency rule holds:
+  every launcher depends only on its own core + engine modules. Module tree now exactly
+  matches the target layout.
 
 - [ ] **Step 6 — tidy-up pass + removal/promotion proposal.**
   With the structure clean, walk the per-app desktop/tool files and propose two buckets

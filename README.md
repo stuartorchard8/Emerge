@@ -163,11 +163,12 @@ real-time scanning**.
 - [ ] Set up a remote server to host the backend and web frontend
 - [x] Merge Drockets repo into Emerge
 - [x] Merge Cyto repo into Emerge — `:apps:cyto:core` runs natively on the engine
-      (`./gradlew :platform:desktop-app:runCyto`). The cell sim is a deterministic ECS
+      (`./gradlew :apps:cyto:desktop:run`). The cell sim is a deterministic ECS
       reducer on the engine's fixed-point torus, using a generic `SpringConstraintSystem`
       (in `:engine:sim:core`) in place of Box2D distance joints. The world wraps
-      (1024×1024 base cells). Runs on all three hosts — desktop (`runCyto`), Android
-      (`CytoActivity`), and web (`?demo=cyto`) — with cell-drag and on-screen controls.
+      (1024×1024 base cells). Runs on all three hosts — desktop (`:apps:cyto:desktop:run`),
+      Android (`:apps:cyto:android`), and web (`:apps:cyto:web`) — with cell-drag and
+      on-screen controls.
 
 #### Experiments
 

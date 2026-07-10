@@ -107,7 +107,7 @@ dependency-ordered (later ones read earlier ones).
    **side-scrolling, multi-floor** `NornsWorld` (creatures walk floors connected by lifts, forage,
    eat, age, starve / die of old age, and seek mates to breed) with a scrolling **follow-camera**,
    a **creature detail panel**, slower pacing + speed/pause controls, and **player interaction**
-   (drop food, hand-feed, pick-up-and-place). Run live: `./gradlew :platform:desktop-app:runNorns
+   (drop food, hand-feed, pick-up-and-place). Run live: `./gradlew :apps:norns:desktop:run
    -q --console=plain`. Gated by `NornsWorldTest`: viable + bounded multi-floor colony,
    in-bounds, determinism, the interaction commands, held-creature behaviour, and a well-formed
    camera frame. Under food scarcity the colony now **visibly evolves** (mean metabolism drifts
@@ -218,7 +218,7 @@ build stops here because everything remaining (subsystem 8 + fidelity) needs hum
 - Subsystem 8 (render host): 🟡 interactive side-scroll ASCII host done — multi-floor,
   follow-camera, detail panel (now showing the brain's current decision), player interaction
   (food/feed/pick/place), pacing controls; colony visibly evolves. Run
-  `./gradlew :platform:desktop-app:runNorns -q --console=plain`. GPU sprite host deferred (G11).
+  `./gradlew :apps:norns:desktop:run -q --console=plain`. GPU sprite host deferred (G11).
 - **Brain wired into behaviour (G10 resolved):** creatures now act via their neural-net brain
   (`CreatureMind`), instinct-primed + reward-refined. Gated by `CreatureMindTest`.
 - **Brain instinct gene-encoded (G5 resolved):** instinct is heritable + mutable, so *behaviour
@@ -277,7 +277,7 @@ The "verification wall" above is largely crossed — there is now a **visible, w
 real art pipeline. Current state:
 
 ### Rendering & art (the canonical host)
-- **One renderer, Java2D**: `NornsImageRenderer` (in `:platform:desktop-app`). Two entry points
+- **One renderer, Java2D**: `NornsImageRenderer` (in `:apps:norns:desktop`). Two entry points
   share it: **`runNornsSwing`** (live window — ←/→ or A/D pan, F follow, left-click a Norn to
   follow, right-click drop food, P pause, `[`/`]` speed) and **`renderNorns`** (headless PNG frames
   + 2× zoom / surface crops, used to iterate the look). `runNorns` is still the lightweight ASCII
@@ -319,7 +319,7 @@ instead. Not NornRig's fixed baked skeleton either: he wants to *compose* the cr
 with custom anchor points and author the animations. Hence the rig compositor.)
 
 ### The rig editor (`runNornsAnim`)
-`./gradlew :platform:desktop-app:runNornsAnim` opens a Swing editor:
+`./gradlew :apps:norns:desktop:runNornsAnim` opens a Swing editor:
 - Pick a **breed + age** and a **part**; tune that part's **anchor** (where it joins its parent),
   **pivot**, **rest angle**, **z-order**, and its **per-action animation** (`bias` + sine
   `amp`/`freq`/`phase`/`sign`) — plus the **global per-action body bob/lean/hop** — all live, with
@@ -329,7 +329,7 @@ with custom anchor points and author the animations. Hence the rig compositor.)
 - **Save/Load/Export** the whole rig as a text file (`norn-rig*.txt`) — a look + its animations,
   reloadable and iterable. `--render <png>` writes a headless contact sheet (display-less checks).
 
-### Code (all in `:platform:desktop-app`)
+### Code (all in `:apps:norns:desktop`)
 - **`NornParts`** — loads a breed/age's individual sprite-part PNGs + their `.att` anchor points as
   plain data (decoupled from the live `NornRig`).
 - **`NornRigDef`** — the editable rig model (parts → sprite/parent/anchor/pivot/rest/z + per-action
