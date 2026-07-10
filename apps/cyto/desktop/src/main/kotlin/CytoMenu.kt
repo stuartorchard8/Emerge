@@ -16,12 +16,17 @@ import org.emerge.render.torus.ui.UiBuilder
  * actually build/resume a world. While [inGame] the shell draws nothing (the sim owns the screen).
  */
 class CytoMenu {
-    enum class Page { Title, New, Custom, About, Settings }
+    enum class Page { Title, New, Custom, Load, Save, About, Settings }
 
     /** True once a world is running and the player has dismissed the menu — the host renders the sim instead. */
     var inGame = false
     var page = Page.Title
         private set
+
+    /** In-progress name on the [Page.Save] screen (typed via the host's char callback). */
+    private val nameBuffer = StringBuilder()
+    /** True while the Save name field should receive keyboard input. */
+    val capturingName: Boolean get() = !inGame && page == Page.Save
 
     // Editable Custom-scenario fields (seeded from the historical default).
     private var worldSize = CytoWorldConfig.DEFAULT_CELLS_PER_AXIS
@@ -41,16 +46,31 @@ class CytoMenu {
         val onStart: (CytoScenario) -> Unit,
         /** Resume the world already in memory (the autoloaded/last save). */
         val onContinue: () -> Unit,
-        /** Load the on-disk save into a fresh world. */
-        val onLoad: () -> Unit,
+        /** Load the named on-disk save into the world. */
+        val onLoadNamed: (String) -> Unit,
+        /** Write the current world to a named save. */
+        val onSave: (String) -> Unit,
+        /** Delete a named save. */
+        val onDelete: (String) -> Unit,
         val onQuit: () -> Unit,
     )
 
     /** Open the shell back to the title screen (e.g. the in-game Menu button / a fresh boot). */
     fun openTitle() { inGame = false; page = Page.Title; openPicker = OpenPicker.None }
 
+    /** Open the Save-name screen from in-game, pre-filling a default name. */
+    fun openSave(default: String) {
+        inGame = false; page = Page.Save; openPicker = OpenPicker.None
+        nameBuffer.setLength(0); nameBuffer.append(default)
+    }
+
     /** Dismiss the shell (the world takes over). */
     fun enterGame() { inGame = true; openPicker = OpenPicker.None }
+
+    // ── Save-name text entry (fed by the host's GLFW char / key callbacks) ──────────────
+    fun typeChar(c: Char) { if (capturingName && nameBuffer.length < 40 && c >= ' ') nameBuffer.append(c) }
+    fun backspace() { if (capturingName && nameBuffer.isNotEmpty()) nameBuffer.setLength(nameBuffer.length - 1) }
+    fun currentName(): String = nameBuffer.toString()
 
     /** Build the current custom-screen selections into a scenario. */
     private fun customScenario(): CytoScenario {
@@ -69,14 +89,17 @@ class CytoMenu {
         )
     }
 
-    /** Rebuild this frame's menu widgets. Call inside `ui.frame { … }`. No-op while [inGame]. */
-    fun render(ui: UiBuilder, hasSave: Boolean, cb: Callbacks) {
+    /** Rebuild this frame's menu widgets. Call inside `ui.frame { … }`. No-op while [inGame]. [saves] is the
+     *  list of on-disk save names (newest first) for the Title/Load screens. */
+    fun render(ui: UiBuilder, saves: List<String>, cb: Callbacks) {
         if (inGame) return
         ui.background(0x0A0E14EEL)
         when (page) {
-            Page.Title -> title(ui, hasSave, cb)
+            Page.Title -> title(ui, saves.isNotEmpty(), cb)
             Page.New -> newGame(ui, cb)
             Page.Custom -> custom(ui, cb)
+            Page.Load -> load(ui, saves, cb)
+            Page.Save -> save(ui, cb)
             Page.About -> about(ui)
             Page.Settings -> settings(ui)
         }
@@ -87,7 +110,7 @@ class CytoMenu {
             title("CYTO", 0x6FD6C4FFL)
             gap(14f)
             button("Continue", MENU_BTN) { cb.onContinue() }
-            if (hasSave) button("Load", MENU_BTN) { cb.onLoad() }
+            if (hasSave) button("Load", MENU_BTN) { page = Page.Load }
             button("New", MENU_ACCENT) { page = Page.New }
             gap(6f)
             button("Quit", MENU_QUIT) { cb.onQuit() }
@@ -135,6 +158,36 @@ class CytoMenu {
             gap(10f)
             button("Start", MENU_ACCENT) { cb.onStart(customScenario()) }
             button("Back", MENU_QUIT) { page = Page.New }
+        }
+    }
+
+    private fun load(ui: UiBuilder, saves: List<String>, cb: Callbacks) {
+        ui.panel(Anchor.Center, padding = 20f, background = 0x141C2CF0, rowHeight = 26f) {
+            title("Load World", 0x6FD6C4FFL)
+            gap(6f)
+            if (saves.isEmpty()) row("No saves yet.", 0x8B96A8FFL)
+            for (name in saves.take(12)) {
+                actionRow(listOf(
+                    Triple(name, MENU_BTN) { cb.onLoadNamed(name) },
+                    Triple("Del", MENU_QUIT) { cb.onDelete(name) },
+                ))
+            }
+            gap(8f)
+            button("Back", MENU_QUIT) { page = Page.Title }
+        }
+    }
+
+    private fun save(ui: UiBuilder, cb: Callbacks) {
+        val name = currentName()
+        ui.panel(Anchor.Center, padding = 20f, background = 0x141C2CF0, rowHeight = 26f) {
+            title("Save World", 0x6FD6C4FFL)
+            row("Type a name (Enter to save):", 0x8B96A8FFL)
+            gap(4f)
+            // The name field: show the buffer + a caret so it reads as an editable field.
+            row("> ${name}_", 0xFFFFFFFFL)
+            gap(10f)
+            if (name.isNotBlank()) button("Save", MENU_ACCENT) { cb.onSave(name) }
+            button("Back", MENU_QUIT) { enterGame() }
         }
     }
 

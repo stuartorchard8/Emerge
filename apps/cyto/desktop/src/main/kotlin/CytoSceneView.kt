@@ -27,10 +27,6 @@ import kotlin.math.pow
  * the controls' current mode + cell type. F5/F9 save/load.
  */
 object CytoSceneView {
-    private val SAVE_PATH: Path = Path.of("cyto-save.bin")
-    /** Sidecar recording the saved world's geometry ([org.emerge.demo.cyto.sim.CytoWorldConfig]) so a Load can
-     *  resize the torus/day-night to match before restoring the snapshot (the .bin doesn't carry it). */
-    private val WORLD_PATH: Path = Path.of("cyto-save.world")
 
     fun start() {
         Configuration.STACK_SIZE.set(512)
@@ -43,22 +39,17 @@ object CytoSceneView {
         // keys in initWindow.
         val simDriver = CytoSimDriver(controller)
 
-        // GL context must be current (initWindow) before any shader/texture is created.
-        val window = initWindow(
-            onSave = { saveSnapshot(controller) },
-            onLoad = { loadSnapshot(controller) },
-            onTogglePause = { simDriver.togglePause() },   // Space
-            onSlower = { simDriver.slower() },              // [
-            onFaster = { simDriver.faster() },              // ]
-            onDeselect = { controller.clearSelection() },   // Esc
-        )
+        // GL context must be current (initWindow) before any shader/texture is created. Input callbacks are
+        // installed below, once the menu + sim controls they route to exist.
+        val window = initWindow()
 
         val renderer = CytoRenderer()
         val controls = CytoControls()
         // On-screen buttons drive these (no keyboard-only controls): the Light button owns its toggle
         // state (synced to the renderer each frame), the Load-Genome button loads the brush genome.
         controls.onLoadGenome = { loadGenome(controller, controls.cellType) }
-        autoLoadSnapshotAtStartup(controller)
+        // Resume the most recent named save at boot so Continue picks up where you left off.
+        CytoSaves.mostRecent()?.let { CytoSaves.load(controller, it) }
 
         // Run the sim on its own thread, decoupled from this (vsync-paced) draw loop, with on-screen
         // SLOW/PAUSE/FAST controls + a TPS/FPS readout (also bound to Space / [ / ] — see initWindow).
@@ -86,16 +77,23 @@ object CytoSceneView {
                 menu.enterGame(); simDriver.setPaused(false)
             },
             onContinue = { menu.enterGame(); simDriver.setPaused(false) },
-            onLoad = {
+            onLoadNamed = { name ->
                 simDriver.setPaused(true)
-                loadSnapshot(controller)
+                CytoSaves.load(controller, name)
+                renderer.resetView()
                 menu.enterGame(); simDriver.setPaused(false)
             },
+            onSave = { name ->
+                CytoSaves.save(controller, name)
+                menu.enterGame(); simDriver.setPaused(false)
+            },
+            onDelete = { name -> CytoSaves.delete(name) },   // stays on the Load page; list refreshes next frame
             onQuit = { glfwSetWindowShouldClose(window, true) },
         )
 
         val mouse = MouseState()
         installMouseHandlers(window, controller, renderer, controls, ui, geneEditor, menu, mouse)
+        installKeyHandlers(window, controller, simDriver, menu) { name -> CytoSaves.save(controller, name) }
 
         var lastTime = glfwGetTime()
         var fps = 0.0
@@ -139,12 +137,15 @@ object CytoSceneView {
                 ui.frame {
                     geneEditor.render(this, controller) { exportHeldGenome(controller, controls.cellType) }
                     panel(org.emerge.render.torus.ui.Anchor.TopLeft, background = 0x00000000) {
-                        button("Menu", 0x2A3550FFL) { menu.openTitle(); simDriver.setPaused(true) }
+                        actionRow(listOf(
+                            Triple("Menu", 0x2A3550FFL) { menu.openTitle(); simDriver.setPaused(true) },
+                            Triple("Save", 0x2E6E5EFFL) { menu.openSave(defaultSaveName(controller)); simDriver.setPaused(true) },
+                        ))
                     }
                 }
             } else {
                 // Front-end shell over the (paused) world.
-                ui.frame { menu.render(this, Files.exists(SAVE_PATH), menuCallbacks) }
+                ui.frame { menu.render(this, CytoSaves.list(), menuCallbacks) }
             }
             ui.draw()
 
@@ -251,11 +252,7 @@ object CytoSceneView {
         else -> "1/$denom"
     }
 
-    private fun initWindow(
-        onSave: () -> Unit, onLoad: () -> Unit,
-        onTogglePause: () -> Unit, onSlower: () -> Unit, onFaster: () -> Unit,
-        onDeselect: () -> Unit,
-    ): Long {
+    private fun initWindow(): Long {
         if (!glfwInit()) error("GLFW init failed")
         glfwDefaultWindowHints()
         glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE)
@@ -268,24 +265,48 @@ object CytoSceneView {
         val window = glfwCreateWindow(720, 720, "Cyto", NULL, NULL)
         if (window == NULL) error("Failed to create GLFW window")
 
-        glfwSetKeyCallback(window) { win, key, _, action, _ ->
-            if (action != GLFW_PRESS) return@glfwSetKeyCallback
-            when (key) {
-                GLFW_KEY_ESCAPE -> onDeselect()   // clear the cell selection (no close-on-escape)
-                GLFW_KEY_F5 -> onSave()
-                GLFW_KEY_F9 -> onLoad()
-                GLFW_KEY_SPACE -> onTogglePause()       // play / pause
-                GLFW_KEY_LEFT_BRACKET -> onSlower()      // [  slower
-                GLFW_KEY_RIGHT_BRACKET -> onFaster()     // ]  faster
-            }
-        }
-
         glfwMakeContextCurrent(window)
         glfwSwapInterval(1)
         glfwShowWindow(window)
         org.lwjgl.opengl.GL.createCapabilities()
         return window
     }
+
+    /** Keyboard: while the Save-name field is up, keys type into it (Backspace/Enter/Esc); otherwise the
+     *  in-game keys (Esc deselect, F5 quick-save, Space pause, [ ] speed) apply, plus a char callback that
+     *  feeds printable characters into the name field. */
+    private fun installKeyHandlers(
+        window: Long, controller: CytoController, simDriver: CytoSimDriver, menu: CytoMenu,
+        onSave: (String) -> Unit,
+    ) {
+        glfwSetKeyCallback(window) { _, key, _, action, _ ->
+            if (action != GLFW_PRESS && action != GLFW_REPEAT) return@glfwSetKeyCallback
+            if (menu.capturingName) {
+                when (key) {
+                    GLFW_KEY_BACKSPACE -> menu.backspace()
+                    GLFW_KEY_ENTER, GLFW_KEY_KP_ENTER -> if (menu.currentName().isNotBlank()) {
+                        onSave(menu.currentName()); menu.enterGame(); simDriver.setPaused(false)
+                    }
+                    GLFW_KEY_ESCAPE -> { menu.enterGame(); simDriver.setPaused(false) }
+                }
+                return@glfwSetKeyCallback
+            }
+            if (action != GLFW_PRESS) return@glfwSetKeyCallback
+            when (key) {
+                GLFW_KEY_ESCAPE -> controller.clearSelection()   // clear the cell selection (no close-on-escape)
+                GLFW_KEY_F5 -> onSave("quicksave")
+                GLFW_KEY_SPACE -> simDriver.togglePause()
+                GLFW_KEY_LEFT_BRACKET -> simDriver.slower()
+                GLFW_KEY_RIGHT_BRACKET -> simDriver.faster()
+            }
+        }
+        glfwSetCharCallback(window) { _, codepoint ->
+            if (menu.capturingName && codepoint in 32..126) menu.typeChar(codepoint.toChar())
+        }
+    }
+
+    /** A default save name for the in-game Save button: "world @ <tick>". */
+    private fun defaultSaveName(controller: CytoController): String = "world ${controller.tick}"
 
     private fun installMouseHandlers(
         window: Long,
@@ -410,60 +431,6 @@ object CytoSceneView {
             cursorX[0].toFloat() * framebufferW[0].toFloat() / w.toFloat(),
             cursorY[0].toFloat() * framebufferH[0].toFloat() / h.toFloat(),
         )
-    }
-
-    private fun saveSnapshot(controller: CytoController) {
-        try {
-            val bytes = controller.snapshotBytes()
-            Files.write(SAVE_PATH, bytes)
-            saveWorldGeometry()
-            println("Saved Cyto snapshot (${bytes.size} bytes) to ${SAVE_PATH.toAbsolutePath()}")
-        } catch (t: Throwable) {
-            println("Failed saving Cyto snapshot: ${t.message}")
-        }
-    }
-
-    private fun loadSnapshot(controller: CytoController) {
-        try {
-            if (!Files.exists(SAVE_PATH)) {
-                println("No Cyto snapshot found at ${SAVE_PATH.toAbsolutePath()}")
-                return
-            }
-            restoreWorldGeometry()   // resize the torus/day-night to the save BEFORE restoring the snapshot
-            val bytes = Files.readAllBytes(SAVE_PATH)
-            controller.restoreSnapshot(bytes)
-            println("Loaded Cyto snapshot (${bytes.size} bytes)")
-        } catch (t: Throwable) {
-            println("Failed loading Cyto snapshot: ${t.message}")
-        }
-    }
-
-    private fun autoLoadSnapshotAtStartup(controller: CytoController) {
-        if (!Files.exists(SAVE_PATH)) return
-        try {
-            restoreWorldGeometry()
-            controller.restoreSnapshot(Files.readAllBytes(SAVE_PATH))
-            println("Auto-loaded Cyto snapshot")
-        } catch (t: Throwable) {
-            println("Failed auto-loading Cyto snapshot: ${t.message}")
-        }
-    }
-
-    /** Persist the live world geometry beside the snapshot (`cyto-save.world`): `cellsPerAxis orbitPeriod dayFraction`. */
-    private fun saveWorldGeometry() {
-        val c = org.emerge.demo.cyto.sim.CytoWorldConfig
-        runCatching { Files.writeString(WORLD_PATH, "${c.cellsPerAxis} ${c.orbitPeriod} ${c.dayFraction}") }
-    }
-
-    /** Apply a saved geometry sidecar to [org.emerge.demo.cyto.sim.CytoWorldConfig], if present. */
-    private fun restoreWorldGeometry() {
-        if (!Files.exists(WORLD_PATH)) return
-        runCatching {
-            val parts = Files.readString(WORLD_PATH).trim().split(Regex("\\s+"))
-            if (parts.size >= 3) {
-                org.emerge.demo.cyto.sim.CytoWorldConfig.applyFrom(parts[0].toInt(), parts[1].toLong(), parts[2].toFloat())
-            }
-        }.onFailure { println("Failed reading world geometry: ${it.message}") }
     }
 
     private class MouseState {
