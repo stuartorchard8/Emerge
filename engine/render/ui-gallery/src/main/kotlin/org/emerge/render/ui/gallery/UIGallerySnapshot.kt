@@ -16,9 +16,6 @@ import javax.imageio.ImageIO
  */
 fun main(args: Array<String>) {
     val out = File(args.getOrElse(0) { "build/ui-gallery.png" })
-    val w = 1280
-    val h = 860
-
     if (!glfwInit()) error("GLFW init failed")
     glfwDefaultWindowHints()
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE)
@@ -27,7 +24,7 @@ fun main(args: Array<String>) {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE)
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, 1)
 
-    val window = glfwCreateWindow(w, h, "UI Gallery Snapshot", NULL, NULL)
+    val window = glfwCreateWindow(GALLERY_WIDTH, GALLERY_HEIGHT, "UI Gallery Snapshot", NULL, NULL)
     if (window == NULL) error("Failed to create GLFW window")
     glfwMakeContextCurrent(window)
     org.lwjgl.opengl.GL.createCapabilities()
@@ -41,7 +38,7 @@ fun main(args: Array<String>) {
 
     UIGallery.buildGalleryFrame(ui, GalleryState(), fps = 60f)
 
-    glClearColor(0f, 0f, 0f, 1f)
+    glClearColor(0.07f, 0.07f, 0.09f, 1f)
     glClear(GL_COLOR_BUFFER_BIT)
     ui.draw()
     glFinish()
