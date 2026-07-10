@@ -142,7 +142,7 @@ class CytoSoaReducer(
         phaseR("biology") { parts.bioUpdate(cfg, cur, inputs); state.divide to state.destroy }
         // Profile each post-bio system separately
         for ((idx, sys) in parts.postBio.withIndex()) {
-            val name = if (idx == parts.postBio.size - 1) "forces+integrate" else "force:${sys::class.java.simpleName}"
+            val name = if (idx == parts.postBio.size - 1) "forces+integrate" else "force:${sys::class.simpleName}"
             phase(name) { runSoa(cfg, cur, inputs, listOf(SoaPhase(name, sys)), profiler) }
         }
         // ── Lifecycle (SoA-native, in place — no AoS round-trip) ────────────────────
