@@ -422,6 +422,7 @@ class CytoController(
             }
             ActionType.Convert -> (cyto[a.a] ?: 0) <= 0
             ActionType.Import -> (env[a.a] ?: 0) <= 0
+            ActionType.Export -> (cyto[a.a] ?: 0) <= 0
             else -> false
         }
         val spans = mutableListOf<CellInfo.Span>()
@@ -516,6 +517,7 @@ class CytoController(
      *  `*` wildcard markers (MORPHOGENESIS.md §2026-06-18) — `*a` ends-with, `a*` starts-with — like the codec. */
     private fun actionLabel(a: org.emerge.demo.cyto.sim.GeneAction): String = when (a.type) {
         ActionType.Import -> "IMPORT ${a.a}"
+        ActionType.Export -> "EXPORT ${a.a}"
         ActionType.FormBond ->
             "BOND ${if (a.aWild && a.a.isNotEmpty()) "*${a.a}" else a.a}·${if (a.bWild && a.b.isNotEmpty()) "${a.b}*" else a.b}"
         ActionType.Convert -> "CONVERT ${a.a}"

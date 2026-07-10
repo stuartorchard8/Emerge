@@ -257,7 +257,7 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
      *  binary-searches each transfer species in the sorted leaf store; size-dependent [scaleFactor] damping. */
     fun balanceBatchedOn(
         leaves: List<QuadNode>, n: Int, transferN: Int,
-        transferIdx: IntArray, transferCeffs: IntArray, scaleFactor: Float, cyt: MoleculeStore,
+        transferIdx: IntArray, transferCeffs: IntArray, transferDir: IntArray, scaleFactor: Float, cyt: MoleculeStore,
     ) {
         if (n == 0 || transferN == 0) return
         var monomerMaskNeed = 0
@@ -289,7 +289,17 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
                 val sc = store.countAt(idx)
                 val bucket = transferCeffs[t] / n
                 val denom = 2.shl(min(31, (SpeciesRegistry.atomCount(sid)*scaleFactor).toInt()))
-                val movement = (sc - bucket) / denom
+                // +movement flows INTO the cell (cyt gains, leaf loses). A one-way gate clamps the sign:
+                // dir +1 (Import) permits inward only, dir -1 (Export) permits outward only, 0 is free.
+                var movement = (sc - bucket) / denom
+                val dir = transferDir[t]
+                if (dir > 0 && movement < 0) movement = 0
+                else if (dir < 0 && movement > 0) movement = 0
+                // Never push out more than the cell actually holds (Export's inflated cEff can demand more
+                // than cytoplasm has; the outflow is spread across leaves until the reserve is spent). Reads
+                // the live count so successive leaves see the depleted remainder. Keeps cytoplasm ≥ 0 without
+                // breaking conservation (leaf and cyt exchange the same clamped amount).
+                if (dir < 0 && movement < 0) movement = movement.coerceAtLeast(-cyt.count(sid))
                 if (movement != 0) { store.add(sid, -movement); cyt.add(sid, movement) }
             }
         }

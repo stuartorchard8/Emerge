@@ -100,6 +100,7 @@ object GeneCodec {
 
     private fun action(a: GeneAction): String = when (a.type) {
         ActionType.Import -> "Import ${tok(a.a)}"
+        ActionType.Export -> "Export ${tok(a.a)}"
         // Exact species by default; a wildcard operand is marked with `*` on the outer (non-junction) side:
         // `*a` = any molecule ENDING with a (left), `a*` = any STARTING with a (right). See GeneAction.aWild.
         ActionType.FormBond -> "FormBond ${tok(wildLeft(a.a, a.aWild))} ${tok(wildRight(a.b, a.bWild))}"
@@ -121,6 +122,7 @@ object GeneCodec {
 
     private fun parseAction(t: List<String>): GeneAction = when (t[0]) {
         "Import" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Import, untok(t[1])) }
+        "Export" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Export, untok(t[1])) }
         "FormBond" -> {
             require(t.size == 3) { fmt(t) }
             val (a, aWild) = unwildLeft(untok(t[1]))

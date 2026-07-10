@@ -84,8 +84,14 @@ data class GeneCondition(val clauses: List<Clause>) {
 
 /** The single action a gene performs (v1 set). */
 enum class ActionType {
-    /** Move molecules of [GeneAction.a] from the local environment into the cytoplasm. */
+    /** Open a **one-way inward gate** for [GeneAction.a]: the species may diffuse *into* the cell but
+     *  never leak out, and the gene biases the passive junction to draw it in above ambient. The polar
+     *  opposite of [Export]. */
     Import,
+    /** Open a **one-way outward gate** for [GeneAction.a]: the species may diffuse *out* of the cell but
+     *  never back in, and the gene biases the passive junction to expel it below ambient. The polar
+     *  opposite of [Import] — a secretion / waste-dumping actuator. */
+    Export,
     /** Join a cytoplasm molecule ending in atom [GeneAction.a] with one starting in atom [GeneAction.b]. */
     FormBond,
     /** Lock molecules of [GeneAction.a] from cytoplasm into biomass (structure → size). */
@@ -188,13 +194,13 @@ data class Gene(
     /** Pre-computed: whether this gene's action uses efficiency gear
      *  (Convert/Import/Repair/Contract = throughput multiplier, Lyse = capture fraction). */
     val actionHasEfficiency: Boolean get() = when (action.type) {
-        ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.Contract, ActionType.Lyse -> true
+        ActionType.Convert, ActionType.Import, ActionType.Export, ActionType.Repair, ActionType.Contract, ActionType.Lyse -> true
         else -> false
     }
 
-    /** Pre-computed: whether this gene's action has the energy cap (Convert/Import/Repair/FormBond/Contract). */
+    /** Pre-computed: whether this gene's action has the energy cap (Convert/Import/Export/Repair/FormBond/Contract). */
     val actionHasCap: Boolean get() = when (action.type) {
-        ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.FormBond, ActionType.Contract -> true
+        ActionType.Convert, ActionType.Import, ActionType.Export, ActionType.Repair, ActionType.FormBond, ActionType.Contract -> true
         else -> false
     }
 
@@ -213,7 +219,11 @@ data class Gene(
  */
 class Handleable(
     private val bondMask: Int, private val atomMask: Int,                  // full reach: metabolised OR synthesised
-    private val diffuseBondMask: Int, private val diffuseAtomMask: Int,     // metabolised only (Break / Convert / Import)
+    // Directional diffusion reach. A species diffuses INWARD if the genome takes it in (Break / Convert /
+    // Import) and OUTWARD if the genome sheds it (Break / Convert / Export). Break/Convert are internal
+    // metabolism ⇒ bidirectional; Import is inward-only, Export is outward-only (the 1-way gates).
+    private val diffuseInBondMask: Int, private val diffuseInAtomMask: Int,
+    private val diffuseOutBondMask: Int, private val diffuseOutAtomMask: Int,
 ) {
     /** Distinct bond-types this genome reaches — capped by CytoTuning.GENOME_MAX_BOND_TYPES so per-cell
      *  species stay bounded (B bonds → ≤ a few dozen buildable molecules). */
@@ -231,12 +241,20 @@ class Handleable(
      *  species the genome produces or uses is kept in the cell, not shed to the environment. */
     fun canHold(id: Int): Boolean = reaches(id, bondMask, atomMask)
 
-    /** Can the cell **diffuse** species [id] to/from welded neighbours — only species it **metabolises**
-     *  (Break/Convert/Import), i.e. resources/signals *in flux*. A species the genome merely **synthesises**
-     *  (FormBond) and never consumes is **intracellular**: held + readable, but never shared — cell-private
-     *  memory / a non-spreading determinant (MORPHOGENESIS.md §Morphogens for shape: produce-without-diffuse,
-     *  the intra-vs-inter-cellular morphogen split). */
-    fun canDiffuse(id: Int): Boolean = reaches(id, diffuseBondMask, diffuseAtomMask)
+    /** Can species [id] diffuse **into** the cell — reachable by inward metabolism (Break/Convert) or an
+     *  [ActionType.Import] gate. */
+    fun canDiffuseIn(id: Int): Boolean = reaches(id, diffuseInBondMask, diffuseInAtomMask)
+
+    /** Can species [id] diffuse **out of** the cell — reachable by outward metabolism (Break/Convert) or an
+     *  [ActionType.Export] gate. */
+    fun canDiffuseOut(id: Int): Boolean = reaches(id, diffuseOutBondMask, diffuseOutAtomMask)
+
+    /** Can the cell **diffuse** species [id] to/from welded neighbours in *either* direction — species it
+     *  **metabolises** (Break/Convert) or gates (Import/Export), i.e. resources/signals *in flux*. A species
+     *  the genome merely **synthesises** (FormBond) and never consumes is **intracellular**: held + readable,
+     *  but never shared — cell-private memory / a non-spreading determinant (MORPHOGENESIS.md §Morphogens for
+     *  shape: produce-without-diffuse, the intra-vs-inter-cellular morphogen split). */
+    fun canDiffuse(id: Int): Boolean = canDiffuseIn(id) || canDiffuseOut(id)
 
     private fun reaches(id: Int, bm: Int, am: Int): Boolean {
         if (id < 0) return false
@@ -264,36 +282,46 @@ class Handleable(
  *  but never shared with neighbours: cell-private memory (the intra-vs-inter-cellular morphogen split). */
 fun handleableOf(genome: List<Gene>): Handleable {
     var bondMask = 0; var atomMask = 0          // full reach (metabolic ∪ synthetic) → canHold
-    var mBondMask = 0; var mAtomMask = 0        // metabolic only (Break/Convert/Import) → canDiffuse
-    fun addAtom(c: Char, metabolic: Boolean) {
-        val a = SpeciesRegistry.atomIndexOf(c); if (a >= 0) { atomMask = atomMask or (1 shl a); if (metabolic) mAtomMask = mAtomMask or (1 shl a) }
+    var inBondMask = 0; var inAtomMask = 0      // inward reach (Break/Convert/Import) → canDiffuseIn
+    var outBondMask = 0; var outAtomMask = 0    // outward reach (Break/Convert/Export) → canDiffuseOut
+    // `dir`: +1 inward-only (Import), -1 outward-only (Export), 0 bidirectional (Break/Convert), null synthetic-only (FormBond).
+    fun addAtom(c: Char, dir: Int?) {
+        val a = SpeciesRegistry.atomIndexOf(c); if (a < 0) return
+        atomMask = atomMask or (1 shl a)
+        if (dir != null && dir >= 0) inAtomMask = inAtomMask or (1 shl a)
+        if (dir != null && dir <= 0) outAtomMask = outAtomMask or (1 shl a)
     }
-    fun addBond(pair: String, metabolic: Boolean) {
-        val b = SpeciesRegistry.bondIndexOf(pair); if (b >= 0) { bondMask = bondMask or (1 shl b); if (metabolic) mBondMask = mBondMask or (1 shl b) }
+    fun addBond(pair: String, dir: Int?) {
+        val b = SpeciesRegistry.bondIndexOf(pair); if (b < 0) return
+        bondMask = bondMask or (1 shl b)
+        if (dir != null && dir >= 0) inBondMask = inBondMask or (1 shl b)
+        if (dir != null && dir <= 0) outBondMask = outBondMask or (1 shl b)
     }
-    fun addSpecies(s: String, metabolic: Boolean) {
+    fun addSpecies(s: String, dir: Int?) {
         if (s.isEmpty()) return
-        for (c in s) addAtom(c, metabolic)
-        for (i in 0 until s.length - 1) addBond(s.substring(i, i + 2), metabolic)
+        for (c in s) addAtom(c, dir)
+        for (i in 0 until s.length - 1) addBond(s.substring(i, i + 2), dir)
     }
     for (g in genome) {
-        (g.source as? EnergySource.BreakBond)?.let { addSpecies(it.bond, metabolic = true) }   // catabolism consumes the bond
+        (g.source as? EnergySource.BreakBond)?.let { addSpecies(it.bond, dir = 0) }   // catabolism consumes the bond (bidirectional)
         // NB: condition (Operand.Chem/Conc) operands are NOT added — sensing a species doesn't make it
         // transportable (see the kdoc: this keeps a gated morphogen a trace species).
         when (g.action.type) {
             ActionType.FormBond -> {
                 // SYNTHESIS — the cell produces the joined molecule (and handles the operand fragments + the
                 // junction bond suffix.last–prefix.first). Production lets it HOLD the species, but does NOT
-                // make it diffusible (metabolic = false): a synthesised-but-never-consumed species stays
+                // make it diffusible (dir = null): a synthesised-but-never-consumed species stays
                 // intracellular. (If some gene also metabolises it, that ref flips it diffusible.)
                 val a = g.action.a; val b = g.action.b
-                if (a.isNotEmpty() && b.isNotEmpty()) { addSpecies(a, metabolic = false); addSpecies(b, metabolic = false); addBond("${a.last()}${b.first()}", metabolic = false) }
+                if (a.isNotEmpty() && b.isNotEmpty()) { addSpecies(a, dir = null); addSpecies(b, dir = null); addBond("${a.last()}${b.first()}", dir = null) }
             }
-            ActionType.Convert, ActionType.Import -> addSpecies(g.action.a, metabolic = true)   // consumes / transports
+            ActionType.Convert -> addSpecies(g.action.a, dir = 0)      // consumes internally ⇒ bidirectional
+            ActionType.Import -> addSpecies(g.action.a, dir = +1)      // one-way inward gate
+            ActionType.Export -> addSpecies(g.action.a, dir = -1)      // one-way outward gate
             else -> {}
         }
     }
-    return Handleable(bondMask, atomMask, mBondMask, mAtomMask)
+    return Handleable(bondMask, atomMask, inBondMask, inAtomMask, outBondMask, outAtomMask)
 }
 
 /**
@@ -429,6 +457,12 @@ class CellWork(
      *  Cleared each [reset] — i.e. at the start of the next tick's build. */
     val importBias: MutableMap<Int, Int> = HashMap()
 
+    /** Per-tick active-secretion bias (species id → units): an Export gene raises the cell's effective target
+     *  for that species in the passive diffusion junction (CytoBiologyCore.passiveEnvExchange), so it expels
+     *  that much extra below ambient. The polar opposite of [importBias]; recorded grid-free in the (parallel)
+     *  gene phase, consumed the same tick by the sequential junction, cleared each [reset]. */
+    val exportBias: MutableMap<Int, Int> = HashMap()
+
     /** Exchange batch assignment: this cell's environment exchange occurs only when `(tick % EXCHANGE_BATCHES) == exchangeBatch`.
      *  Set once when the cell first appears; persists across ticks. -1 = not yet assigned (assigned on first build). */
     var exchangeBatch: Int = -1
@@ -468,6 +502,9 @@ class CellWork(
     var exchTransferN = 0
     var exchTransferIdx = IntArray(8)
     var exchTransferCeffs = IntArray(8)
+    /** Per-transfer-species junction direction, aligned with [exchTransferIdx]: +1 inward-only (an Import
+     *  gate), -1 outward-only (an Export gate), 0 bidirectional (a plain monomer). */
+    var exchTransferDir = IntArray(8)
     /** Per-cell species-union scratch for the parallel exchange pass 2 (thread-local: each cell is processed
      *  by a single worker, so this needs no synchronisation). */
     val exchSpecies = HashSet<Int>()
@@ -536,6 +573,7 @@ class CellWork(
         internalTouching.clear()
         _touchingCellN = 0
         importBias.clear()
+        exportBias.clear()
         weldHeals.clear()
         lyseTargets.clear()
         dividing = false

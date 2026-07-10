@@ -307,6 +307,14 @@ Resolved:
    exist only to push *against* the gradient (concentrate / dump). (Earlier this was "active-only"; the
    passive baseline is the correction. Future idea, deferred: a maintained gradient as an energy
    *source*, chemiosmosis-style.)
+   > **Directional gates (2026-07-11, Stu):** `Import` and `Export` are now **one-way** channels, not just
+   > gradient biases. `Import(x)` biases the junction target *down* (`cEff = cyt − bias`) **and** clamps `x`
+   > to inward-only movement — it can never leak the species back out, so opening a channel for a
+   > non-monomer no longer risks a net loss. `Export(x)` is the polar opposite: biases the target *up*
+   > (`cEff = cyt + bias`) and clamps `x` to outward-only — a secretion / waste-dump actuator that also
+   > blocks the species from re-entering. The direction is enforced in **both** junctions: cell↔environment
+   > (`balanceBatchedOn` sign-clamp) and cell↔cell (`canDiffuseIn`/`canDiffuseOut` on the directed weld
+   > edge). Break/Convert stay **bidirectional** (internal metabolism in flux — the food web).
 2. **Biomass = a second per-species integer-count map**; total biomass derived (Σ count × bonds).
 3. **Form bond joins two whole molecules end-to-end**, refused on a repeated bond.
 4. **Discrete integer matter; discrete energy quanta** (1 per bond); a gene does *N* = available-quanta

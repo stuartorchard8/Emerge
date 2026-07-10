@@ -76,10 +76,13 @@ object CytoBiologyCore {
     /** Passive cell↔environment **diffusion junction** (FREE, bidirectional). Runs AFTER the gene phase
      *  ([runGenes]) so it consumes the `importBias` that Import genes record this tick (the bias is cleared
      *  every tick at build, so genes must set it between build and here — see the reducer's phase order).
-     *  Each cell opens its circular footprint on the quad-tree field and the field balances every `canDiffuse`
-     *  species toward an effective target `cEff = cytoplasm − importBias` (Import lowers it ⇒ inward diffusion /
-     *  retention); we apply the net Δ to cytoplasm. Determinants (synthesised-only) and foreign species (not
-     *  `canDiffuse`) are excluded; there is **no passive leak** of un-metabolisable waste. Conservation-exact
+     *  Each cell opens its circular footprint on the quad-tree field and the field balances every transferable
+     *  species toward an effective target: `cEff = cytoplasm − importBias` (Import lowers it ⇒ **inward-only**
+     *  diffusion / retention) or `cEff = cytoplasm + exportBias` (Export raises it ⇒ **outward-only** diffusion /
+     *  secretion), a plain monomer balancing freely toward ambient. The junction clamps each gated species to its
+     *  one direction, so an Import channel never leaks the species back out and an Export channel never lets it
+     *  back in. We apply the net Δ to cytoplasm. Determinants (synthesised-only) and foreign species are
+     *  excluded; there is **no passive leak** of un-metabolisable waste. Conservation-exact
      *  (QUADTREE.md exchange); the cell senses local matter density through this intake.
      *
      *  **Tile-parallel drop-contested parallelization (2026-07-08).** The naive per-cell loop is order-DEPENDENT
@@ -157,23 +160,34 @@ object CytoBiologyCore {
                     val s = leaf.store!!
                     if (s.size > 0) for (i in 0 until s.size) { val id = s.idAt(i); if (w.handleable.canDiffuse(id)) species.add(id) }
                 }
-                // Transferable = monomers (atomCount 1) or species with a genetic import bias.
+                // Transferable = monomers (bidirectional passive exchange) or species with a genetic
+                // import/export bias (the one-way gates). Import lowers the effective target (draws in);
+                // Export raises it (pushes out); a plain monomer balances freely toward its ambient level.
                 var transferN = 0
-                for (sp in species) { val ib = w.importBias[sp] ?: 0; if (ib != 0 || SpeciesRegistry.atomCount(sp) == 1) transferN++ }
+                for (sp in species) {
+                    val ib = w.importBias[sp] ?: 0; val eb = w.exportBias[sp] ?: 0
+                    if (ib != 0 || eb != 0 || SpeciesRegistry.atomCount(sp) == 1) transferN++
+                }
                 if (transferN == 0) continue
-                if (w.exchTransferIdx.size < transferN) { w.exchTransferIdx = IntArray(transferN); w.exchTransferCeffs = IntArray(transferN) }
+                if (w.exchTransferIdx.size < transferN) { w.exchTransferIdx = IntArray(transferN); w.exchTransferCeffs = IntArray(transferN); w.exchTransferDir = IntArray(transferN) }
                 var t = 0
                 for (sp in species) {
-                    val ib = w.importBias[sp] ?: 0
-                    if (ib != 0 || SpeciesRegistry.atomCount(sp) == 1) {
+                    val ib = w.importBias[sp] ?: 0; val eb = w.exportBias[sp] ?: 0
+                    if (ib != 0 || eb != 0 || SpeciesRegistry.atomCount(sp) == 1) {
                         w.exchTransferIdx[t] = sp
-                        w.exchTransferCeffs[t] = (cyt.count(sp) - ib).coerceAtLeast(0)
+                        // Import biases the target down (inward-only, dir +1); Export biases it up
+                        // (outward-only, dir -1); an unbiased monomer stays at its raw count (bidirectional).
+                        when {
+                            ib != 0 -> { w.exchTransferCeffs[t] = (cyt.count(sp) - ib).coerceAtLeast(0); w.exchTransferDir[t] = 1 }
+                            eb != 0 -> { w.exchTransferCeffs[t] = cyt.count(sp) + eb; w.exchTransferDir[t] = -1 }
+                            else -> { w.exchTransferCeffs[t] = cyt.count(sp); w.exchTransferDir[t] = 0 }
+                        }
                         t++
                     }
                 }
                 w.exchTransferN = transferN
                 grid.balanceBatchedOn(leaves, keep, transferN, w.exchTransferIdx, w.exchTransferCeffs,
-                    CytoTuning.DIFFUSION_SCALE_FACTOR, cyt)
+                    w.exchTransferDir, CytoTuning.DIFFUSION_SCALE_FACTOR, cyt)
             }
         }
 
@@ -354,7 +368,7 @@ object CytoBiologyCore {
         // throttles per-tick contraction throughput. A muscle-fibre axis: low g = fast-twitch (energy-hungry,
         // max per-tick travel), high g = slow-twitch (sips fuel, rate-limited).
         val eff = when (act.type) {
-            ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.Contract -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
+            ActionType.Convert, ActionType.Import, ActionType.Export, ActionType.Repair, ActionType.Contract -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
             else -> 0
         }
         val gP1 = eff + 1
@@ -364,7 +378,7 @@ object CytoBiologyCore {
         // (MORPHOGENESIS.md §Morphogens for shape — caps consumption rate k ⇒ reach λ≈√(D/k)). Mitosis stays
         // exempt (fixed biomass/4 bulk cost). g=0 ⇒ uncapped ⇒ existing FormBond genes are byte-identical.
         val capGear = when (act.type) {
-            ActionType.Convert, ActionType.Import, ActionType.Repair, ActionType.FormBond, ActionType.Contract -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
+            ActionType.Convert, ActionType.Import, ActionType.Export, ActionType.Repair, ActionType.FormBond, ActionType.Contract -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
             else -> 0
         }
         val energyCap = if (capGear == 0) Int.MAX_VALUE else CytoTuning.EFFICIENCY_REF ushr capGear
@@ -400,7 +414,7 @@ object CytoBiologyCore {
             // up to divide" comes for free — only a hoarded reserve broken in one tick clears the bar. The
             // gate may hold below the cost; it then does nothing (no accumulation toward it).
             ActionType.Mitosis -> { val cost = totalBiomassBonds(work.biomass) / 4; k = if (k >= cost) cost else 0 }
-            ActionType.Import -> {}   // k energy units become a junction bias (applied in passiveEnvExchange)
+            ActionType.Import, ActionType.Export -> {}   // k energy units become a junction bias (applied in passiveEnvExchange)
             ActionType.Repair -> k = minOf(k, repairOpsNeeded(work))
             ActionType.Contract -> k = minOf(k, flexOps(MIN_RADIUS, work.logicalRadius))
             // Sub-tick interpolation: a growth gene fills only up to its OWN gate threshold, never past it.
@@ -429,6 +443,13 @@ object CytoBiologyCore {
                 // a species above ambient. No field access here ⇒ the gene phase stays grid-free + parallel-
                 // safe. (The old gradient-cost diminishing-returns is dropped for v1; revisit if hoarding misbehaves.)
                 work.importBias[act.aId] = (work.importBias[act.aId] ?: 0) + k * CytoTuning.IMPORT_BIAS_GAIN
+            }
+            ActionType.Export -> {
+                // The polar opposite of Import: the gene's k energy units RAISE the cell's effective target
+                // for `aId` in the passive junction (passiveEnvExchange), so it treats the cell as over-full
+                // and expels that much extra OUT to the footprint, holding the species below ambient. Combined
+                // with the one-way outward gate (canDiffuseOut only) this makes Export a pure secretion channel.
+                work.exportBias[act.aId] = (work.exportBias[act.aId] ?: 0) + k * CytoTuning.IMPORT_BIAS_GAIN
             }
             ActionType.Mitosis -> {
                 work.dividing = true; work.divideMorphogen = act.a; work.divideMorphogenToMother = act.morphogenToMother
@@ -638,28 +659,33 @@ object CytoBiologyCore {
                 val nbrs = neighbourIds[id] ?: continue
                 if (nbrs.isEmpty()) continue
                 val idVal = id.value
-                // RECEIVE: from each neighbour, every species it holds that THIS cell can diffuse.
+                // RECEIVE: from each neighbour, every species the neighbour can shed OUT and THIS cell can
+                // take IN. Directional: an Import gene lets a species enter (not leave), an Export gene lets it
+                // leave (not enter), so the directed edge nb→this fires iff nb.canDiffuseOut && this.canDiffuseIn.
                 for (nb in nbrs) {
                     val nbWork = works[nb] ?: continue
                     val cyt = nbWork.cytoplasm
                     for (i in 0 until cyt.size) {
                         val species = cyt.idAt(i)
-                        if (!w.handleable.canDiffuse(species)) continue
+                        if (!nbWork.handleable.canDiffuseOut(species)) continue
+                        if (!w.handleable.canDiffuseIn(species)) continue
                         val out = cyt.countAt(i) / CYTOPLASM_DIFFUSE_DENOM
                         if (out <= 0) continue
                         addDeltaValue(idVal, species, out)
                     }
                 }
-                // SEND: this cell's own species, once per neighbour that can receive it.
+                // SEND: this cell's own species, once per neighbour that can take it IN — but only species this
+                // cell can shed OUT (the same directed-edge gate as RECEIVE, so the pair stays conservation-exact).
                 val myCyt = w.cytoplasm
                 for (i in 0 until myCyt.size) {
                     val species = myCyt.idAt(i)
+                    if (!w.handleable.canDiffuseOut(species)) continue
                     val out = myCyt.countAt(i) / CYTOPLASM_DIFFUSE_DENOM
                     if (out <= 0) continue
                     var receivers = 0
                     for (nb in nbrs) {
                         val nbWork = works[nb] ?: continue
-                        if (nbWork.handleable.canDiffuse(species)) receivers++
+                        if (nbWork.handleable.canDiffuseIn(species)) receivers++
                     }
                     if (receivers > 0) addDeltaValue(idVal, species, -out * receivers)
                 }

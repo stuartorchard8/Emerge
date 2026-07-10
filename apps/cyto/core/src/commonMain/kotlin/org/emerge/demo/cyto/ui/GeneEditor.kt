@@ -128,7 +128,7 @@ class GeneEditor {
                 draft = d.copy(action = d.action.copy(type = newType, morphogenToMother = d.action.morphogenToMother && stillMitosis, divideAcross = d.action.divideAcross && stillMitosis, rejectMother = d.action.rejectMother && stillMitosis)); openField = null
             }
             when (d.action.type) {
-                ActionType.Import, ActionType.Convert ->
+                ActionType.Import, ActionType.Export, ActionType.Convert ->
                     speciesField("OPERAND", d.action.a, atoms) { s -> draft = d.copy(action = d.action.copy(a = s)) }
                 ActionType.FormBond -> {
                     // Bond two molecules end-to-end. EXACT species by default — each operand names the whole
@@ -169,6 +169,7 @@ class GeneEditor {
             // FormBond uses the cap only (potency / morphogen-spread dial); Lyse uses gear for capture
             // fraction (assimilation ratio). Mitosis is exempt (fixed biomass/4 cost).
             if (d.action.type == ActionType.Convert || d.action.type == ActionType.Import ||
+                d.action.type == ActionType.Export ||
                 d.action.type == ActionType.Repair || d.action.type == ActionType.FormBond ||
                 d.action.type == ActionType.Contract || d.action.type == ActionType.Lyse) {
                 stepper("EFF", d.efficiency.toString()) { delta ->
