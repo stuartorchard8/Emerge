@@ -33,6 +33,7 @@ fun main(args: Array<String>) {
     val fbH = IntArray(1)
     glfwGetFramebufferSize(window, fbW, fbH)
 
+    glViewport(0, 0, fbW[0], fbH[0])
     val ui = Ui()
     ui.setResolution(fbW[0].toFloat(), fbH[0].toFloat())
 

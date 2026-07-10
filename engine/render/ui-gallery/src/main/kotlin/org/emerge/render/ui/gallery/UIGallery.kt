@@ -236,6 +236,7 @@ object UIGallery {
             val sizeX = st.mallocInt(1)
             val sizeY = st.mallocInt(1)
             glfwGetFramebufferSize(window, sizeX, sizeY)
+            glViewport(0, 0, max(1, sizeX[0]), max(1, sizeY[0]))
             ui.setResolution(max(1f, sizeX[0].toFloat()), max(1f, sizeY[0].toFloat()))
         }
     }
