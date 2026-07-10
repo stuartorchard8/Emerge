@@ -17,7 +17,7 @@ import kotlin.math.roundToInt
  * Type commands at any time (they're read on a background thread so the animation never blocks):
  *   food <fl> <x> | feed <id> | pick <id> | place <id> <fl> <x> | follow <id> | speed <ms> | pause | go | quit
  *
- * Run: `./gradlew :platform:desktop-app:runNorns -q --console=plain`
+ * Run: `./gradlew :apps:norns:desktop:runNorns -q --console=plain`
  *   optional `--args="<steps> <seed> <delayMs>"`.
  */
 fun main(args: Array<String>) {

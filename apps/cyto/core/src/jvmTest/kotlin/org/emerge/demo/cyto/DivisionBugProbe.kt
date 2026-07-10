@@ -21,7 +21,7 @@ class DivisionBugProbe {
     @Test
     fun run() {
         if (System.getProperty("divbug") == null) return
-        val path = System.getProperty("savefile") ?: "/home/stu/emerge/platform/desktop-app/cyto-save.bin"
+        val path = System.getProperty("savefile") ?: "/home/stu/emerge/apps/cyto/desktop/cyto-save.bin"
         val ticks = System.getProperty("divticks")?.toIntOrNull() ?: 5000
         val state = CytoSaveCodec.decode(java.io.File(path).readBytes())
         val soa = CytoSoaReducer(CytoConfig(mutationRateDenom = 0))

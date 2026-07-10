@@ -18,13 +18,13 @@ import kotlin.time.TimeSource
  * spikes to a specific stage.
  *
  * Usage:
- *   ./gradlew :platform:desktop-app:benchDrocketsOverlay
+ *   ./gradlew :apps:drockets:desktop:benchDrocketsOverlay
  *     --args="path/to/save.bin [warmup] [measure] [filter]"
  *
  * Defaults: warmup=120 ticks, measure=600 ticks, filter=LIVING_STEINER.
  */
 fun main(args: Array<String>) {
-    val savePath = args.getOrNull(0) ?: "platform/desktop-app/drockets-save.bin"
+    val savePath = args.getOrNull(0) ?: "apps/drockets/desktop/drockets-save.bin"
     val warmup = args.getOrNull(1)?.toIntOrNull() ?: 120
     val measure = args.getOrNull(2)?.toIntOrNull() ?: 600
     val filterArg = args.getOrNull(3)

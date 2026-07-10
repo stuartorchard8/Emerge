@@ -8,21 +8,6 @@ const val SKIP_LAUNCHER = false
 fun main() {
     val emergeMode = System.getProperty("emerge.mode")
     if (emergeMode != null) {
-        if (emergeMode == "drockets") {
-            println("[main] emerge.mode=drockets")
-            DrocketsSceneView.start()
-            return
-        }
-        if (emergeMode == "cyto") {
-            println("[main] emerge.mode=cyto")
-            CytoSceneView.start()
-            return
-        }
-        if (emergeMode == "ui-gallery") {
-            println("[main] emerge.mode=ui-gallery")
-            UIGallery.start()
-            return
-        }
         val settings = when (emergeMode) {
             "headless-host" -> LaunchSettings(mode = LaunchMode.HEADLESS_HOST, gameMode = GameMode.CO_OP, port = 7777)
             "join-local" -> LaunchSettings(mode = LaunchMode.JOIN, gameMode = GameMode.CO_OP, hostIp = "127.0.0.1", port = 7777)

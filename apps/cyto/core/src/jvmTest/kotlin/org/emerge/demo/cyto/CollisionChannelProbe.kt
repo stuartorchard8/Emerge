@@ -50,7 +50,7 @@ class CollisionChannelProbe {
 
     // ── A: spring-driven organism vs a free target ──────────────────────────────
     private fun scenarioA(sb: StringBuilder) {
-        val path = System.getProperty("savefile") ?: "/home/stu/emerge/platform/desktop-app/cyto-save.bin"
+        val path = System.getProperty("savefile") ?: "/home/stu/emerge/apps/cyto/desktop/cyto-save.bin"
         val seedId = System.getProperty("swimcell")?.toIntOrNull() ?: 100
         val ticks = System.getProperty("collticks")?.toIntOrNull() ?: 10000
         val state = CytoSaveCodec.decode(java.io.File(path).readBytes())

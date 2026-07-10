@@ -53,7 +53,7 @@ object NornsAnimViewer {
     fun run() {
         val first = NornParts.firstAvailable()
         if (first == null) {
-            JOptionPane.showMessageDialog(null, "No Norn sprite parts found under assets/norns/. Run via :platform:desktop-app:runNornsAnim.")
+            JOptionPane.showMessageDialog(null, "No Norn sprite parts found under assets/norns/. Run via :apps:norns:desktop:runNornsAnim.")
             return
         }
         var breed = first.first

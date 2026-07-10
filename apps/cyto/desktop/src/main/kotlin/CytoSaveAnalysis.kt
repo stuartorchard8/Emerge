@@ -26,7 +26,7 @@ import kotlin.math.sqrt
  * speed + net momentum, to see drift accumulate. `--args="<savePath> <ticks>"`.
  */
 fun main(args: Array<String>) {
-    val path = args.getOrNull(0) ?: "platform/desktop-app/cyto-save.bin"
+    val path = args.getOrNull(0) ?: "apps/cyto/desktop/cyto-save.bin"
     val ticks = args.getOrNull(1)?.toIntOrNull() ?: 1000
     // "fresh" → grow a colony from the default world instead of loading a save (to probe an
     // actively-dividing population, where division placement matters).

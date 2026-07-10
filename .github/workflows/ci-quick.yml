@@ -28,7 +28,7 @@ jobs:
 
       - name: Quick checks (JVM tests + Android assemble)
         run: |
-          ./gradlew --no-daemon :platform:desktop-app:build
+          ./gradlew --no-daemon :apps:scavengers:desktop:build :apps:cyto:desktop:build :apps:drockets:desktop:build :apps:norns:desktop:build
           ./gradlew --no-daemon jvmTest
           ./gradlew --no-daemon :apps:scavengers:android:assembleDebug :apps:cyto:android:assembleDebug
 

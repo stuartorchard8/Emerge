@@ -8,7 +8,7 @@ import java.awt.image.BufferedImage
 /**
  * Headless performance probe for the Norns world — isolates the three cost centres so we know what to
  * optimise: the **sim** tick, a single cold **SDF bake**, and a full **frame** (baked-warm vs the
- * Java2D-only path). Run: `./gradlew :platform:desktop-app:benchNorns`.
+ * Java2D-only path). Run: `./gradlew :apps:norns:desktop:benchNorns`.
  */
 fun main() {
     System.setProperty("java.awt.headless", "true")

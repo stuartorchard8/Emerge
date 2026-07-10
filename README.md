@@ -51,14 +51,14 @@ out of the engine.)
 - `:apps:cyto:core` → `sim:core`, `sim:sync`, `render:torus`, `net:api` — native ECS cell sim on
   the wrapping fixed-point torus (Cyto port). Also carries a shadow SoA reducer under `sim/soa/`.
 
-#### Platform hosts
+#### Launchers (per app; each depends only on its own core + engine)
 
-- `:platform:desktop-app` → all apps (+ engine + loopback/tcp/websocket, LWJGL).
-  Run tasks: `run`, `runDrockets`, `runCyto`, plus Drockets benchmark harnesses.
-- `:apps:scavengers:android` → `:apps:scavengers:core` (standalone Android app).
-- `:apps:cyto:android` → `:apps:cyto:core` (standalone Android app).
-- `:platform:web-app` → `:apps:scavengers:core`, `:apps:cyto:core` (Kotlin/JS, websocket transport;
-  app selected via `?demo=cyto`).
+- `:apps:<game>:desktop` → `:apps:<game>:core` (JVM application, LWJGL via the
+  `buildsrc.convention.desktop-app` convention plugin). Each carries its app's run /
+  benchmark / probe tasks (`./gradlew :apps:cyto:desktop:tasks` to list them).
+- `:apps:scavengers:android`, `:apps:cyto:android` → standalone Android apps.
+- `:platform:web-app` → `:apps:scavengers:core`, `:apps:cyto:core` (Kotlin/JS, websocket
+  transport; app selected via `?demo=cyto`). Being split per-app next.
 
 #### Visual map
 
@@ -80,12 +80,15 @@ graph TD
     drockets[drockets:core]
     cyto[cyto:core]
     norns[norns:core]
+    desk_scav[scavengers:desktop]
+    desk_drockets[drockets:desktop]
+    desk_cyto[cyto:desktop]
+    desk_norns[norns:desktop]
     android_scav[scavengers:android]
     android_cyto[cyto:android]
   end
 
   subgraph platform
-    desktop[desktop-app]
     web[web-app]
   end
 
@@ -104,7 +107,10 @@ graph TD
   drockets --> sim_core & sim_sync & codecs_ecs & render & net_api
   cyto --> sim_core & sim_sync & render & net_api
 
-  desktop --> scav & drockets & cyto & norns
+  desk_scav --> scav
+  desk_drockets --> drockets
+  desk_cyto --> cyto
+  desk_norns --> norns
   android_scav --> scav
   android_cyto --> cyto
   web --> scav & cyto
@@ -116,9 +122,10 @@ Use the Gradle Wrapper:
 
 - **Build everything**: `./gradlew build`
 - **Run tests**: `./gradlew test`
-- **Desktop (default demo)**: `./gradlew :platform:desktop-app:run`
-- **Desktop — Drockets**: `./gradlew :platform:desktop-app:runDrockets`
-- **Desktop — Cyto**: `./gradlew :platform:desktop-app:runCyto`
+- **Desktop — Scavengers**: `./gradlew :apps:scavengers:desktop:run`
+- **Desktop — Drockets**: `./gradlew :apps:drockets:desktop:run`
+- **Desktop — Cyto**: `./gradlew :apps:cyto:desktop:run`
+- **Desktop — Norns**: `./gradlew :apps:norns:desktop:run` (console; `runNornsSwing` for the window)
 - **Android debug**: `./gradlew :apps:cyto:android:installDebug` (or `:apps:scavengers:android:installDebug`)
 - **Web**: build/serve `:platform:web-app` and open with `?demo=cyto` (or the default app)
 

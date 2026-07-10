@@ -31,10 +31,14 @@ One commit per step; each step leaves the build green.
   `platform/android/{cyto,scavengers}` → `apps/{cyto,scavengers}/android`
   (`:platform:android:X` → `:apps:X:android`). Update settings, CI, README.
 
-- [ ] **Step 3 — split `platform/desktop-app` into per-app desktop modules.**
-  Sort the ~35 files: per-game mains/benchmarks/probes → `apps/X/desktop`; genuinely
-  cross-game host glue (GL scene view, input, window plumbing) → `engine/host/desktop`.
-  Per-game run tasks become `:apps:X:desktop:run`. Delete `platform/desktop-app`.
+- [x] **Step 3 — split `platform/desktop-app` into per-app desktop modules.**
+  Sort the ~43 files: per-game mains/benchmarks/probes → `apps/X/desktop`. Finding: there
+  was NO genuinely cross-game glue (`DesktopGlSceneView`/`DesktopLauncher` are scavengers-
+  only; `InputAxis` is dead) — so no `engine/host/desktop` module was needed; the shared
+  LWJGL/application boilerplate became the `buildsrc.convention.desktop-app` convention
+  plugin instead. Run tasks are `:apps:X:desktop:run` (+ each app's bench/probe tasks).
+  App data files (`.gene`/`.bin`/`.morph` saves, prefs) moved into their app's desktop dir;
+  save-path literals updated. `platform/desktop-app` deleted.
 
 - [ ] **Step 4 — split `platform/web-app` into per-app web modules.**
   Per-app Kotlin/JS entry points (`apps/{scavengers,cyto}/web`); shared canvas/host glue

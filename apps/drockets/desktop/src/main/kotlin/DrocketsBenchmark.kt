@@ -15,9 +15,9 @@ import org.emerge.sim.core.sim.SimState
  * percentiles. No rendering, no networking, no input — just raw simulation cost.
  *
  * Usage:
- *   ./gradlew :platform:desktop-app:benchDrockets                     # default 500 drockets
- *   ./gradlew :platform:desktop-app:benchDrockets --args="200"        # 200 drockets
- *   ./gradlew :platform:desktop-app:benchDrockets --args="500 600 3000"
+ *   ./gradlew :apps:drockets:desktop:benchDrockets                     # default 500 drockets
+ *   ./gradlew :apps:drockets:desktop:benchDrockets --args="200"        # 200 drockets
+ *   ./gradlew :apps:drockets:desktop:benchDrockets --args="500 600 3000"
  *     # 500 drockets, 600 warmup ticks, 3000 measured ticks
  */
 fun main(args: Array<String>) {

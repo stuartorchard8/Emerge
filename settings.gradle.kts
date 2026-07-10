@@ -34,7 +34,10 @@ plugins {
 // Include subprojects in the build.
 // If there are changes in only one of the projects, Gradle will rebuild only the one that has changed.
 // Learn more about structuring projects with Gradle - https://docs.gradle.org/8.7/userguide/multi_project_builds.html
-include(":platform:desktop-app")
+include(":apps:scavengers:desktop")
+include(":apps:cyto:desktop")
+include(":apps:drockets:desktop")
+include(":apps:norns:desktop")
 include(":platform:web-app")
 include(":apps:scavengers:android")
 include(":apps:cyto:android")

@@ -23,7 +23,7 @@ class WeldInspect {
     @Test
     fun inspect() {
         val target = System.getProperty("inspectcell")?.toIntOrNull() ?: 11
-        val path = System.getProperty("savefile") ?: "/home/stu/emerge/platform/desktop-app/cyto-save.bin"
+        val path = System.getProperty("savefile") ?: "/home/stu/emerge/apps/cyto/desktop/cyto-save.bin"
         val weldTicks = System.getProperty("weldticks")?.toIntOrNull() ?: 0   // run the reducer this many ticks first
         val loaded = CytoSaveCodec.decode(java.io.File(path).readBytes())
         val state = if (weldTicks <= 0) loaded else run {

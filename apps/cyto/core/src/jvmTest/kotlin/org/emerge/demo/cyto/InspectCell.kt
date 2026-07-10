@@ -23,7 +23,7 @@ class InspectCell {
     @Test
     fun inspect() {
         val target = System.getProperty("inspectcell")?.toIntOrNull() ?: return
-        val path = System.getProperty("savefile") ?: "/home/stu/emerge/platform/desktop-app/cyto-save.bin"
+        val path = System.getProperty("savefile") ?: "/home/stu/emerge/apps/cyto/desktop/cyto-save.bin"
         val state = CytoSaveCodec.decode(java.io.File(path).readBytes())
         val sb = StringBuilder()
         sb.appendLine("save=$path  tick=${state.tick}  seed=${state.randomSeed}")

@@ -28,7 +28,7 @@ import java.io.File
  * Decode breaks down into: header parse, cells spawn, spring rebuild, matter decode, build().
  */
 fun main(args: Array<String>) {
-    val path = args.getOrNull(0) ?: "platform/desktop-app/cyto-save.bin"
+    val path = args.getOrNull(0) ?: "apps/cyto/desktop/cyto-save.bin"
     val warmup = args.getOrNull(1)?.toIntOrNull() ?: 50
     val measure = args.getOrNull(2)?.toIntOrNull() ?: 500
 

@@ -19,14 +19,14 @@ import java.io.File
  * matter grid + every cell's cytoplasm + biomass, runs the SoA reducer N ticks (mutation as saved), and
  * re-tallies. Any element whose total changes is a conservation leak.
  *
- * --args="<savePath> [ticks]"  (defaults: platform/desktop-app/cyto-save.bin, 1000)
+ * --args="<savePath> [ticks]"  (defaults: apps/cyto/desktop/cyto-save.bin, 1000)
  *
  * Broad by design (per-element totals over the whole world) — catches typical leaks; a leak that swaps
  * atoms between elements in exactly matching amounts would slip through, but that is not a realistic
  * failure mode here.
  */
 fun main(args: Array<String>) {
-    val path = args.getOrNull(0) ?: "platform/desktop-app/cyto-save.bin"
+    val path = args.getOrNull(0) ?: "apps/cyto/desktop/cyto-save.bin"
     val ticks = args.getOrNull(1)?.toIntOrNull() ?: 1000
 
     val initial: SimState = CytoSaveCodec.decode(File(path).readBytes())

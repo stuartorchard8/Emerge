@@ -35,7 +35,7 @@ class SwimProbe {
     @Test
     fun run() {
         if (System.getProperty("swimprobe") == null) return
-        val path = System.getProperty("savefile") ?: "/home/stu/emerge/platform/desktop-app/cyto-save.bin"
+        val path = System.getProperty("savefile") ?: "/home/stu/emerge/apps/cyto/desktop/cyto-save.bin"
         val ticks = System.getProperty("swimticks")?.toIntOrNull() ?: 20000
         val seedId = System.getProperty("swimcell")?.toIntOrNull() ?: 100
 
