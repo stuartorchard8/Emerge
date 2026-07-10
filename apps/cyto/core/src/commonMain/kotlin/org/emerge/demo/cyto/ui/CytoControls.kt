@@ -28,6 +28,15 @@ class CytoControls {
     var cellType: CellType = CellType.Stem
         private set
 
+    // ── Dynamic genome-brush palette (host-provided; desktop's genome library) ─────────────────────────
+    /** Palette entries `(name, swatch-colour)`. When non-empty this REPLACES the legacy [CellType] swatches
+     *  in the bottom-left column, so the brush menu is driven by the player's saved genomes. */
+    var genomePalette: List<Pair<String, Long>> = emptyList()
+    /** Index of the selected palette entry (host-owned; drives the header swatch). */
+    var selectedGenome: Int = -1
+    /** Called when a palette entry is picked — the host loads that genome as the brush. */
+    var onSelectGenome: (Int) -> Unit = {}
+
     var showChemicals: Boolean = false
         private set
 
@@ -193,21 +202,44 @@ class CytoControls {
             simStatusH = (sbs * 0.32f).coerceIn(9f, 18f)
         }
 
-        // ── Cell Type column (bottom-left) — the legacy type swatches plus a "Brush" swatch that
-        // paints with the loaded brush genome (see CytoController.brushGenome). ──
+        // ── Brush column (bottom-left) — the dynamic genome-library palette when the host supplies one,
+        // else the legacy CellType swatches (android/web). Picking a swatch sets the brush genome. ──
         val typeX = pad
-        val headerLabel = "${cellType.name}\nCell"
-        val headerColor = cellType.color
-        if (openGroup == Group.CellType) {
-            buttons.add(Btn(typeX, bottomY, bs, bs, headerColor, headerLabel) { openGroup = null })
-            val rows = CellType.entries.groupBy { it.group }.values.toList()
-            addOptionRows(
-                groups = rows,
-                baseY = bottomY, bs = bs, gap = gap, leftX = typeX,
-                color = { it.color }, label = { it.name },
-            ) { selected -> cellType = selected; openGroup = null; onLoadGenome() }
+        if (genomePalette.isNotEmpty()) {
+            val sel = genomePalette.getOrNull(selectedGenome)
+            val headerColor = sel?.second ?: 0x606060FFL
+            val headerLabel = "${sel?.first ?: "Genome"}\nBrush"
+            if (openGroup == Group.CellType) {
+                buttons.add(Btn(typeX, bottomY, bs, bs, headerColor, headerLabel) { openGroup = null })
+                // Swatches wrap into rows stacked above the header (newest additions read left→right, bottom→up).
+                val perRow = 3
+                var rowIndex = 1
+                for (row in genomePalette.withIndex().chunked(perRow)) {
+                    val y = bottomY - rowIndex * (bs + gap)
+                    var x = typeX
+                    for ((idx, entry) in row) {
+                        buttons.add(Btn(x, y, bs, bs, entry.second, entry.first) { onSelectGenome(idx); openGroup = null })
+                        x += bs + gap
+                    }
+                    rowIndex++
+                }
+            } else {
+                buttons.add(Btn(typeX, bottomY, bs, bs, headerColor, headerLabel) { openGroup = Group.CellType })
+            }
         } else {
-            buttons.add(Btn(typeX, bottomY, bs, bs, headerColor, headerLabel) { openGroup = Group.CellType })
+            val headerLabel = "${cellType.name}\nCell"
+            val headerColor = cellType.color
+            if (openGroup == Group.CellType) {
+                buttons.add(Btn(typeX, bottomY, bs, bs, headerColor, headerLabel) { openGroup = null })
+                val rows = CellType.entries.groupBy { it.group }.values.toList()
+                addOptionRows(
+                    groups = rows,
+                    baseY = bottomY, bs = bs, gap = gap, leftX = typeX,
+                    color = { it.color }, label = { it.name },
+                ) { selected -> cellType = selected; openGroup = null; onLoadGenome() }
+            } else {
+                buttons.add(Btn(typeX, bottomY, bs, bs, headerColor, headerLabel) { openGroup = Group.CellType })
+            }
         }
 
         // ── Touch Mode column (to the right of the type column) ──

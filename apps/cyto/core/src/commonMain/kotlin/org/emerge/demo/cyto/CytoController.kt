@@ -459,6 +459,15 @@ class CytoController(
     fun heldGenome(): List<Gene>? =
         lastHeldId?.let { currentState.components.getTable<CytoCellComponent>().asMap()[it]?.genome }
 
+    /** The held cell's current **BIO** display colour (biomass atom-mix, the same hue the renderer's Bio mode
+     *  shows) as packed RGBA, or null if no cell is held. Used to colour a saved-genome swatch by the creature
+     *  it was exported from. */
+    fun heldBioColorRgba(): Long? {
+        val id = lastHeldId ?: return null
+        val cell = currentState.components.getTable<CytoCellComponent>().asMap()[id] ?: return null
+        return bioSwatchColor(cell.biomass)
+    }
+
     /** Apply [transform] to the held cell's genome (returning null = no change), then republish. */
     private fun editHeldGenome(transform: (List<Gene>) -> List<Gene>?) {
         val id = lastHeldId ?: return
@@ -578,4 +587,17 @@ class CytoController(
     companion object {
         const val STEP = 1f / 64f
     }
+}
+
+/** Pack a biomass atom-mix into a full-value RGBA swatch colour (r/g/b atom counts → R/G/B, normalised by
+ *  the peak channel); neutral grey when there's no biomass. Mirrors the renderer's Bio colour, at value 1. */
+internal fun bioSwatchColor(biomass: Map<String, Int>): Long {
+    var r = 0L; var g = 0L; var b = 0L
+    for ((species, count) in biomass) for (ch in species) when (ch) {
+        'r' -> r += count; 'g' -> g += count; 'b' -> b += count
+    }
+    val peak = maxOf(r, maxOf(g, b))
+    if (peak <= 0) return 0x888888FFL
+    val rr = r * 255 / peak; val gg = g * 255 / peak; val bb = b * 255 / peak
+    return (rr shl 24) or (gg shl 16) or (bb shl 8) or 0xFF
 }

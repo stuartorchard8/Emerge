@@ -2,7 +2,6 @@ package org.emerge.desktop
 
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.CytoRenderer
-import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
 import org.emerge.demo.cyto.ui.GeneEditor
@@ -12,9 +11,6 @@ import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.system.Configuration
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.pow
@@ -45,9 +41,15 @@ object CytoSceneView {
 
         val renderer = CytoRenderer()
         val controls = CytoControls()
-        // On-screen buttons drive these (no keyboard-only controls): the Light button owns its toggle
-        // state (synced to the renderer each frame), the Load-Genome button loads the brush genome.
-        controls.onLoadGenome = { loadGenome(controller, controls.cellType) }
+        // The bottom-left brush palette is driven by the genome library (cyto-genomes/, seeded on first use).
+        // Selecting a swatch sets the brush genome; `genomes`/`selectedGenome` are refreshed on save/delete.
+        var genomes = CytoGenomes.list()
+        var selectedGenome = 0
+        controller.brushGenome = genomes.getOrNull(selectedGenome)?.genome
+        controls.onSelectGenome = { i ->
+            selectedGenome = i
+            controller.brushGenome = genomes.getOrNull(i)?.genome
+        }
         // Resume the most recent named save at boot so Continue picks up where you left off.
         CytoSaves.mostRecent()?.let { CytoSaves.load(controller, it) }
 
@@ -88,12 +90,19 @@ object CytoSceneView {
                 menu.enterGame(); simDriver.setPaused(false)
             },
             onDelete = { name -> CytoSaves.delete(name) },   // stays on the Load page; list refreshes next frame
+            onSaveGenome = { name, color, genome ->
+                CytoGenomes.save(name, color, genome)
+                genomes = CytoGenomes.list()
+                selectedGenome = genomes.indexOfFirst { it.name == CytoSaves.sanitize(name) }.coerceAtLeast(0)
+                controller.brushGenome = genomes.getOrNull(selectedGenome)?.genome
+                menu.enterGame(); simDriver.setPaused(false)
+            },
             onQuit = { glfwSetWindowShouldClose(window, true) },
         )
 
         val mouse = MouseState()
         installMouseHandlers(window, controller, renderer, controls, ui, geneEditor, menu, mouse)
-        installKeyHandlers(window, controller, simDriver, menu) { name -> CytoSaves.save(controller, name) }
+        installKeyHandlers(window, controller, simDriver, menu, menuCallbacks)
 
         var lastTime = glfwGetTime()
         var fps = 0.0
@@ -129,13 +138,24 @@ object CytoSceneView {
             controls.simStatus = "${simDriver.status()}   ${fps.toInt()} FPS"
             controls.mutationLabel = formatMutationRate(controller.mutationRateDenom())
 
+            // Feed the genome library into the brush palette (reflects any just-saved genome).
+            controls.genomePalette = genomes.map { it.name to it.color }
+            controls.selectedGenome = selectedGenome
+
             renderer.draw(frame) // renderer fills its own background (also the backdrop behind the menu)
             if (menu.inGame) {
                 drawReadouts(controller, renderer, controls)
                 controls.draw()
                 // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
                 ui.frame {
-                    geneEditor.render(this, controller) { exportHeldGenome(controller, controls.cellType) }
+                    geneEditor.render(this, controller) {
+                        val g = controller.heldGenome()
+                        if (g != null) {
+                            val default = genomes.getOrNull(selectedGenome)?.name ?: "genome"
+                            menu.openGenomeSave(default, g, controller.heldBioColorRgba() ?: 0x888888FFL)
+                            simDriver.setPaused(true)
+                        }
+                    }
                     panel(org.emerge.render.torus.ui.Anchor.TopLeft, background = 0x00000000) {
                         actionRow(listOf(
                             Triple("Menu", 0x2A3550FFL) { menu.openTitle(); simDriver.setPaused(true) },
@@ -175,75 +195,6 @@ object CytoSceneView {
         }
     }
 
-    /** Helper to associate cell types with saved genomes. */
-    private fun cellTypeGeneFilename(type: CellType): String = "cyto-${type.name.lowercase()}.gene";
-    // Generated from the live AUTOTROPH_GENES so the starter can never drift from the current gene model
-    // (the old hand-written weighted-sum text no longer parses under the matter-model GeneCodec).
-    private val STARTER_BRUSH: String = buildString {
-        appendLine("# cyto brush genome — one gene per line:  ENERGY-SOURCE : CONDITION : ACTION")
-        appendLine("#   source:    Light | Break <bond>")
-        appendLine("#   condition: <operand> >|< <operand>  (operand = <n> | <species> | Biomass | Touching)")
-        appendLine("#              a species token may be any length: r, rg, rgg, …  (e.g.  rgg > 0 : Convert rgg)")
-        appendLine("#   action:    Import <s> | FormBond <a> <b> | Convert <s> | Contract | Mitosis | Repair")
-        appendLine("#   Blank lines and # comments are ignored. Edit, then click \"Load Genome\" to reload;")
-        appendLine("#   pick the 'Brush' type, then Spawn (empty space) / Set to paint.")
-        appendLine("# This starter IS the simple autotroph: bond r+g -> rg under light, grow, divide.")
-        appendLine(org.emerge.demo.cyto.sim.GeneCodec.serialize(org.emerge.demo.cyto.sim.AUTOTROPH_GENES))
-    }
-
-    /** Load the authoring brush genome based on [CellType] (GeneCodec text), driven by switching
-     *  cell type. If the file is absent, write a documented starter so there's something to
-     *  edit + a working brush. */
-    private fun loadGenome(controller: CytoController, type: CellType): Boolean {
-        val path: Path = Path.of(cellTypeGeneFilename(type))
-        if (!Files.exists(path)) {
-            runCatching { Files.writeString(path, STARTER_BRUSH) }
-            println("[cyto] wrote a starter ${path.toAbsolutePath()} — edit it and click Load Genome to reload.")
-        }
-        return runCatching { org.emerge.demo.cyto.sim.GeneCodec.parse(Files.readString(path)) }
-            .map { controller.brushGenome = it; println("[cyto] ${type.name} genome: ${it.size} gene(s)"); true }
-            .getOrElse { controller.brushGenome = null; println("[cyto] parse failed ($path): ${it.message} — using type presets"); false }
-    }
-
-    /** Export the held cell's genome to a GeneCodec `.gene` file (the "EXPORT GENOME" button).
-     *  If an existing 'cyto-[CellType.name].gene' file exists, it is archived with a timestamp so it is
-     *  never overwritten, and the new genome is saved directly as 'cyto-[CellType.name].gene'. */
-    private fun exportHeldGenome(controller: CytoController, type: CellType) {
-        val genome = controller.heldGenome()
-        if (genome == null) { println("[cyto] export: no cell held"); return }
-        val id = controller.lastHeldId?.value ?: -1
-
-        val filename: String = cellTypeGeneFilename(type)
-        val path: Path = Path.of(filename)
-
-        // 1. Rename any existing 'cyto-brush.gene' file to include a timestamp
-        if (Files.exists(path)) {
-            // possible footgun if cellTypePath changes
-            val archiveName = "old-${filename.replace(".gene", "-${ System.currentTimeMillis() }.gene")}"
-            val archivePath = Path.of(archiveName)
-            runCatching {
-                Files.move(path, archivePath, StandardCopyOption.ATOMIC_MOVE)
-            }.onFailure {
-                println("[cyto] warning: failed to archive existing brush file: ${it.message}")
-                // Optional: Fall back to standard move if ATOMIC_MOVE fails on this filesystem
-                runCatching { Files.move(path, archivePath) }
-            }
-        }
-
-        // 2. Save the newly exported genome directly to 'cyto-brush.gene'
-        val text = buildString {
-            appendLine("# cyto genome exported from cell $id")
-            appendLine(org.emerge.demo.cyto.sim.GeneCodec.serialize(genome))
-        }
-
-        runCatching { Files.writeString(path, text) }
-            .onSuccess {
-                println("[cyto] exported ${genome.size}-gene genome to ${path.toAbsolutePath()}")
-                controller.brushGenome = genome
-            }
-            .onFailure { println("[cyto] export failed: ${it.message}") }
-    }
-
     /** Compact label for the Mut button: "off", "1/1M", "1/100k", "1/1k", … */
     private fun formatMutationRate(denom: Int): String = when {
         denom <= 0 -> "off"
@@ -277,7 +228,7 @@ object CytoSceneView {
      *  feeds printable characters into the name field. */
     private fun installKeyHandlers(
         window: Long, controller: CytoController, simDriver: CytoSimDriver, menu: CytoMenu,
-        onSave: (String) -> Unit,
+        cb: CytoMenu.Callbacks,
     ) {
         glfwSetKeyCallback(window) { _, key, _, action, _ ->
             if (action != GLFW_PRESS && action != GLFW_REPEAT) return@glfwSetKeyCallback
@@ -285,7 +236,10 @@ object CytoSceneView {
                 when (key) {
                     GLFW_KEY_BACKSPACE -> menu.backspace()
                     GLFW_KEY_ENTER, GLFW_KEY_KP_ENTER -> if (menu.currentName().isNotBlank()) {
-                        onSave(menu.currentName()); menu.enterGame(); simDriver.setPaused(false)
+                        // Enter commits the active name field to its page's save action.
+                        if (menu.page == CytoMenu.Page.SaveGenome)
+                            cb.onSaveGenome(menu.currentName(), menu.pendingGenomeColor(), menu.pendingGenome())
+                        else cb.onSave(menu.currentName())
                     }
                     GLFW_KEY_ESCAPE -> { menu.enterGame(); simDriver.setPaused(false) }
                 }

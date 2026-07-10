@@ -6,6 +6,7 @@ import org.emerge.demo.cyto.sim.CytoSeed
 import org.emerge.demo.cyto.sim.CytoWorldConfig
 import org.emerge.demo.cyto.sim.Distribution
 import org.emerge.demo.cyto.sim.FounderSpec
+import org.emerge.demo.cyto.sim.Gene
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.UiBuilder
 
@@ -16,17 +17,23 @@ import org.emerge.render.torus.ui.UiBuilder
  * actually build/resume a world. While [inGame] the shell draws nothing (the sim owns the screen).
  */
 class CytoMenu {
-    enum class Page { Title, New, Custom, Load, Save, About, Settings }
+    enum class Page { Title, New, Custom, Load, Save, SaveGenome, About, Settings }
 
     /** True once a world is running and the player has dismissed the menu — the host renders the sim instead. */
     var inGame = false
     var page = Page.Title
         private set
 
-    /** In-progress name on the [Page.Save] screen (typed via the host's char callback). */
+    /** In-progress name on a name-entry screen (typed via the host's char callback). */
     private val nameBuffer = StringBuilder()
-    /** True while the Save name field should receive keyboard input. */
-    val capturingName: Boolean get() = !inGame && page == Page.Save
+    /** True while a name field should receive keyboard input (world save or genome save). */
+    val capturingName: Boolean get() = !inGame && (page == Page.Save || page == Page.SaveGenome)
+
+    /** The held cell's genome + swatch colour captured when the Save-Genome screen was opened. */
+    private var pendingGenome: List<Gene> = emptyList()
+    private var pendingGenomeColor: Long = 0x888888FFL
+    fun pendingGenome(): List<Gene> = pendingGenome
+    fun pendingGenomeColor(): Long = pendingGenomeColor
 
     // Editable Custom-scenario fields (seeded from the historical default).
     private var worldSize = CytoWorldConfig.DEFAULT_CELLS_PER_AXIS
@@ -55,6 +62,8 @@ class CytoMenu {
         val onSave: (String) -> Unit,
         /** Delete a named save. */
         val onDelete: (String) -> Unit,
+        /** Save the held cell's genome to the named genome-library entry (name, colour, genome). */
+        val onSaveGenome: (String, Long, List<Gene>) -> Unit,
         val onQuit: () -> Unit,
     )
 
@@ -64,6 +73,13 @@ class CytoMenu {
     /** Open the Save-name screen from in-game, pre-filling a default name. */
     fun openSave(default: String) {
         inGame = false; page = Page.Save; openPicker = OpenPicker.None
+        nameBuffer.setLength(0); nameBuffer.append(default)
+    }
+
+    /** Open the Save-Genome screen from in-game, capturing the held cell's genome + BIO swatch colour. */
+    fun openGenomeSave(default: String, genome: List<Gene>, color: Long) {
+        inGame = false; page = Page.SaveGenome; openPicker = OpenPicker.None
+        pendingGenome = genome; pendingGenomeColor = color
         nameBuffer.setLength(0); nameBuffer.append(default)
     }
 
@@ -103,6 +119,7 @@ class CytoMenu {
             Page.Custom -> custom(ui, cb)
             Page.Load -> load(ui, saves, cb)
             Page.Save -> save(ui, cb)
+            Page.SaveGenome -> saveGenome(ui, cb)
             Page.About -> about(ui)
             Page.Settings -> settings(ui)
         }
@@ -198,6 +215,22 @@ class CytoMenu {
             row("> ${name}_", 0xFFFFFFFFL)
             gap(10f)
             if (name.isNotBlank()) button("Save", MENU_ACCENT) { cb.onSave(name) }
+            button("Back", MENU_QUIT) { enterGame() }
+        }
+    }
+
+    private fun saveGenome(ui: UiBuilder, cb: Callbacks) {
+        val name = currentName()
+        ui.panel(Anchor.Center, padding = 20f, background = 0x141C2CF0, rowHeight = 26f) {
+            title("Save Genome", 0x6FD6C4FFL)
+            row("Names the current cell's genome as a reusable", 0x8B96A8FFL)
+            row("brush. Same name overwrites.", 0x8B96A8FFL)
+            gap(6f)
+            // Swatch preview (the exported cell's BIO colour) + the editable name field.
+            button("swatch", pendingGenomeColor) { }
+            row("> ${name}_", 0xFFFFFFFFL)
+            gap(10f)
+            if (name.isNotBlank()) button("Save", MENU_ACCENT) { cb.onSaveGenome(name, pendingGenomeColor, pendingGenome) }
             button("Back", MENU_QUIT) { enterGame() }
         }
     }

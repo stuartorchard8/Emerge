@@ -174,6 +174,18 @@ The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (
 
 ## Done (recent highlights — git log is the archive)
 
+- [x] **Front-end shell + scenarios (desktop)** — title screen (Continue / Load / New / Quit + ?/Settings)
+  drawn with the shared UI toolkit (new `Center` anchor + fullscreen `background()`); **New** picks a base
+  `CytoScenario` or **Custom** (world size, day/night ticks, matter level, founder species + layout). World
+  size / light-falloff / day-night period are now runtime via `CytoWorldConfig` (defaults reproduce the old
+  constants byte-for-byte, so goldens are unchanged); matter-grid `BASE_RES` is coupled to world size so a
+  cell's footprint is size-invariant. Esc (nothing selected) opens the menu.
+- [x] **Named saves + genome library (desktop)** — worlds save to `cyto-saves/<name>.bin` (+ `.world`
+  geometry sidecar) via an in-game Save button with name entry; Load screen lists saves with delete-confirm.
+  The brush palette is now driven by a **genome library** (`cyto-genomes/<name>.gene`, color header + GeneCodec
+  body, seeded with Autotroph/Heterotroph defaults): "Save Genome" names/overwrites an entry, its swatch taking
+  the exported cell's BIO colour. `CellType` is retained only as an inert per-cell label. Save/genome files
+  live in the app run dir (`apps/cyto/desktop/`).
 - [x] **SoA landing complete** — `CytoSoaReducer` now uses `SoaPipeline` (`06f7470a`); `REPAIR_WELD_MODE`
   enum replaced with `InternalOnly` (`491c1335`, `99313aaa`); broken connections after CSR rendering refactor
   fixed (`60efe400`); AoS fully retired, goldens are the sole gate.

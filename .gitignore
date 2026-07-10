@@ -56,3 +56,6 @@ drockets-prefs*
 *-save.bin
 norns.save
 *.gene
+# Cyto named-save + genome-library folders (world snapshots + geometry sidecars + saved genomes)
+cyto-saves/
+cyto-genomes/
