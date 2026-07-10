@@ -28,6 +28,9 @@ import kotlin.math.pow
  */
 object CytoSceneView {
     private val SAVE_PATH: Path = Path.of("cyto-save.bin")
+    /** Sidecar recording the saved world's geometry ([org.emerge.demo.cyto.sim.CytoWorldConfig]) so a Load can
+     *  resize the torus/day-night to match before restoring the snapshot (the .bin doesn't carry it). */
+    private val WORLD_PATH: Path = Path.of("cyto-save.world")
 
     fun start() {
         Configuration.STACK_SIZE.set(512)
@@ -72,8 +75,27 @@ object CytoSceneView {
         val ui = Ui()
         val geneEditor = GeneEditor()
 
+        // Front-end shell (title / new / custom / about). Boot into the menu with the sim paused behind it.
+        val menu = CytoMenu()
+        simDriver.setPaused(true)
+        val menuCallbacks = CytoMenu.Callbacks(
+            onStart = { scenario ->
+                simDriver.setPaused(true)
+                controller.newGame(scenario)
+                renderer.resetView()
+                menu.enterGame(); simDriver.setPaused(false)
+            },
+            onContinue = { menu.enterGame(); simDriver.setPaused(false) },
+            onLoad = {
+                simDriver.setPaused(true)
+                loadSnapshot(controller)
+                menu.enterGame(); simDriver.setPaused(false)
+            },
+            onQuit = { glfwSetWindowShouldClose(window, true) },
+        )
+
         val mouse = MouseState()
-        installMouseHandlers(window, controller, renderer, controls, ui, geneEditor, mouse)
+        installMouseHandlers(window, controller, renderer, controls, ui, geneEditor, menu, mouse)
 
         var lastTime = glfwGetTime()
         var fps = 0.0
@@ -109,13 +131,21 @@ object CytoSceneView {
             controls.simStatus = "${simDriver.status()}   ${fps.toInt()} FPS"
             controls.mutationLabel = formatMutationRate(controller.mutationRateDenom())
 
-            renderer.draw(frame) // renderer fills its own background
-            drawReadouts(controller, renderer, controls)
-            controls.draw()
-            // Last-held-cell info panel + gene-editor kit (on top of the controls).
-            ui.frame { geneEditor.render(this, controller) {
-                exportHeldGenome(controller, controls.cellType)
-            } }
+            renderer.draw(frame) // renderer fills its own background (also the backdrop behind the menu)
+            if (menu.inGame) {
+                drawReadouts(controller, renderer, controls)
+                controls.draw()
+                // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
+                ui.frame {
+                    geneEditor.render(this, controller) { exportHeldGenome(controller, controls.cellType) }
+                    panel(org.emerge.render.torus.ui.Anchor.TopLeft, background = 0x00000000) {
+                        button("Menu", 0x2A3550FFL) { menu.openTitle(); simDriver.setPaused(true) }
+                    }
+                }
+            } else {
+                // Front-end shell over the (paused) world.
+                ui.frame { menu.render(this, Files.exists(SAVE_PATH), menuCallbacks) }
+            }
             ui.draw()
 
             glfwSwapBuffers(window)
@@ -264,11 +294,18 @@ object CytoSceneView {
         controls: CytoControls,
         ui: Ui,
         geneEditor: GeneEditor,
+        menu: CytoMenu,
         state: MouseState,
     ) {
         glfwSetMouseButtonCallback(window) { win, button, action, _ ->
             if (button != GLFW_MOUSE_BUTTON_LEFT) return@glfwSetMouseButtonCallback
             val px = cursorPixel(win)
+            // While the front-end shell is up, clicks only route to its widgets — no world interaction.
+            if (!menu.inGame) {
+                if (action == GLFW_PRESS) ui.hitTest(px.first, px.second)
+                else ui.releaseHold()
+                return@glfwSetMouseButtonCallback
+            }
             when (action) {
                 GLFW_PRESS -> {
                     state.dragged = false
@@ -306,6 +343,7 @@ object CytoSceneView {
         }
 
         glfwSetCursorPosCallback(window) { win, _, _ ->
+            if (!menu.inGame) return@glfwSetCursorPosCallback
             if (state.uiConsumed) return@glfwSetCursorPosCallback
             // Only react while the primary button is held (grabId set on a cell, else pan).
             if (!isPrimaryDown(win)) return@glfwSetCursorPosCallback
@@ -332,6 +370,7 @@ object CytoSceneView {
         }
 
         glfwSetScrollCallback(window) { win, _, yoffset ->
+            if (!menu.inGame) return@glfwSetScrollCallback
             if (yoffset == 0.0) return@glfwSetScrollCallback
             val steps = yoffset.coerceIn(-24.0, 24.0)
             val px = cursorPixel(win)
@@ -377,6 +416,7 @@ object CytoSceneView {
         try {
             val bytes = controller.snapshotBytes()
             Files.write(SAVE_PATH, bytes)
+            saveWorldGeometry()
             println("Saved Cyto snapshot (${bytes.size} bytes) to ${SAVE_PATH.toAbsolutePath()}")
         } catch (t: Throwable) {
             println("Failed saving Cyto snapshot: ${t.message}")
@@ -389,6 +429,7 @@ object CytoSceneView {
                 println("No Cyto snapshot found at ${SAVE_PATH.toAbsolutePath()}")
                 return
             }
+            restoreWorldGeometry()   // resize the torus/day-night to the save BEFORE restoring the snapshot
             val bytes = Files.readAllBytes(SAVE_PATH)
             controller.restoreSnapshot(bytes)
             println("Loaded Cyto snapshot (${bytes.size} bytes)")
@@ -400,11 +441,29 @@ object CytoSceneView {
     private fun autoLoadSnapshotAtStartup(controller: CytoController) {
         if (!Files.exists(SAVE_PATH)) return
         try {
+            restoreWorldGeometry()
             controller.restoreSnapshot(Files.readAllBytes(SAVE_PATH))
             println("Auto-loaded Cyto snapshot")
         } catch (t: Throwable) {
             println("Failed auto-loading Cyto snapshot: ${t.message}")
         }
+    }
+
+    /** Persist the live world geometry beside the snapshot (`cyto-save.world`): `cellsPerAxis orbitPeriod dayFraction`. */
+    private fun saveWorldGeometry() {
+        val c = org.emerge.demo.cyto.sim.CytoWorldConfig
+        runCatching { Files.writeString(WORLD_PATH, "${c.cellsPerAxis} ${c.orbitPeriod} ${c.dayFraction}") }
+    }
+
+    /** Apply a saved geometry sidecar to [org.emerge.demo.cyto.sim.CytoWorldConfig], if present. */
+    private fun restoreWorldGeometry() {
+        if (!Files.exists(WORLD_PATH)) return
+        runCatching {
+            val parts = Files.readString(WORLD_PATH).trim().split(Regex("\\s+"))
+            if (parts.size >= 3) {
+                org.emerge.demo.cyto.sim.CytoWorldConfig.applyFrom(parts[0].toInt(), parts[1].toLong(), parts[2].toFloat())
+            }
+        }.onFailure { println("Failed reading world geometry: ${it.message}") }
     }
 
     private class MouseState {

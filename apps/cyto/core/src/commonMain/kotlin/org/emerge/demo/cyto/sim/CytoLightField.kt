@@ -56,12 +56,13 @@ class CytoLightField private constructor(private val grid: LongArray) {
         /** Grid resolution per axis — value in [CytoTuning.GRID_RES]. */
         const val RES = CytoTuning.GRID_RES
 
-        /** Logical torus extent: [-HALF, HALF) per axis, [SPAN] = 2·HALF wide (see [CytoUnits]). */
-        const val HALF = CytoUnits.CELLS_PER_AXIS.toFloat()
-        const val SPAN = 2f * HALF
+        /** Logical torus extent: [-HALF, HALF) per axis, [SPAN] = 2·HALF wide (see [CytoUnits]). Runtime
+         *  (tracks the world size in [CytoWorldConfig]). */
+        val HALF: Float get() = CytoUnits.CELLS_PER_AXIS.toFloat()
+        val SPAN: Float get() = 2f * HALF
 
         /** Light sources at the torus quarter-points (a 2×2 equidistant grid). */
-        val SOURCES: List<Pair<Float, Float>> = run {
+        val SOURCES: List<Pair<Float, Float>> get() = run {
             val q = HALF / 2f
             listOf(-q to -q, -q to q, q to -q, q to q)
         }
@@ -70,7 +71,7 @@ class CytoLightField private constructor(private val grid: LongArray) {
         val STRENGTH = CytoTuning.LIGHT_STRENGTH
 
         /** Gaussian falloff radius (logical units) — value in [CytoTuning.LIGHT_FALLOFF]. */
-        const val FALLOFF = CytoTuning.LIGHT_FALLOFF
+        val FALLOFF: Float get() = CytoTuning.LIGHT_FALLOFF
 
         /** x-position (logical) of the moving daylight band's centre at sim-time [tick] — sweeps
          *  −HALF → HALF and wraps once per [CytoTuning.LIGHT_ORBIT_PERIOD] ticks. Deterministic (integer

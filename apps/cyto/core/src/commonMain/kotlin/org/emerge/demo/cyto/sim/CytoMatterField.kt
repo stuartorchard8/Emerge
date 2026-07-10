@@ -21,11 +21,13 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
 
     // ── build ────────────────────────────────────────────────────────────────────────────────────────
     companion object {
-        const val BASE_RES = 4
+        /** Base tiles per torus axis — runtime, coupled to the world size so the finest leaf stays a fixed
+         *  logical size and a cell's matter footprint is world-size-invariant (see [CytoWorldConfig.matterBaseRes]). */
+        val BASE_RES: Int get() = CytoWorldConfig.matterBaseRes
         const val MAX_DEPTH = 7
-        val SPAN = CytoLightField.SPAN
-        val HALF = CytoLightField.HALF
-        val TILE = SPAN / BASE_RES
+        val SPAN: Float get() = CytoLightField.SPAN
+        val HALF: Float get() = CytoLightField.HALF
+        val TILE: Float get() = SPAN / BASE_RES
         /** Max disc half-extent (cell-diam) — bounds a giant cell's footprint. */
         const val MAX_DISC_RADIUS = 4f
 

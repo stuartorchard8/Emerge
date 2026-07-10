@@ -45,17 +45,21 @@ import kotlin.concurrent.Volatile
  */
 class CytoController(
     private val cfg: CytoConfig = CytoConfig(),
+    /** The starting-world recipe. **[CytoWorldConfig] must already reflect this** (call
+     *  `CytoWorldConfig.applyFrom(scenario)` before constructing) — the reducer sizes per-tile buffers from the
+     *  world size at construction, which happens before the initial world is built below. */
+    scenario: org.emerge.demo.cyto.sim.CytoScenario = org.emerge.demo.cyto.sim.CytoScenario.DEFAULT,
 ) {
     // Work-stealing pool for the parallel spring solver (daemon threads on JVM/Android, no
     // shutdown needed; a no-op inline runner on JS).
     private val executor = ParallelExecutor()
-    private val reducer = CytoSoaReducer(cfg, executor = executor)
+    private var reducer = CytoSoaReducer(cfg, executor = executor)
     private var tickCount = 0L
     private var accumulator = 0f
 
     /** The persistent struct-of-arrays world — the columns mutate in place each step (no per-tick
      *  `SimState` rebuild). */
-    private var world: CytoWorld = CytoWorld.fromSimState(createCytoInitialState())
+    private var world: CytoWorld = CytoWorld.fromSimState(createCytoInitialState(scenario))
 
     /** The live snapshot the renderer / hit-test / readouts / save read — materialized from [world]
      *  via [CytoWorld.toSimState] **once per frame** (single-threaded hosts) or at display cadence
@@ -149,6 +153,27 @@ class CytoController(
 
     /** The latest published frame for the draw thread (threaded host). */
     fun latestFrame(): CytoFrame = publishedFrame
+
+    /** Tear down the current world and build a fresh one from [scenario] — the title-screen *New* path.
+     *  Applies the scenario geometry to [org.emerge.demo.cyto.sim.CytoWorldConfig] and rebuilds the reducer
+     *  (its per-tile buffers are sized from the world size) and the world. Thread-safe vs the sim thread;
+     *  pause the driver around it so no half-torn step runs. */
+    fun newGame(scenario: org.emerge.demo.cyto.sim.CytoScenario) {
+        withLock(stepLock) {
+            org.emerge.demo.cyto.sim.CytoWorldConfig.applyFrom(scenario)
+            reducer = CytoSoaReducer(cfg, executor = executor)
+            world = CytoWorld.fromSimState(createCytoInitialState(scenario))
+            tickCount = 0L
+            accumulator = 0f
+            currentState = world.toSimState()
+            publishedFrame = CytoFrame(currentState, tickCount)
+            lastHeldId = null
+            reducer.noMutateEntityId = -1
+            withLock(inputLock) {
+                pendingSpawns.clear(); pendingTaps.clear(); pendingDetaches.clear(); currentGrab = null
+            }
+        }
+    }
 
     // ── Pointer interaction (logical Cyto coordinates) ──────────────────────────
 
@@ -529,6 +554,9 @@ class CytoController(
      *  can't swap [world] mid-step. */
     fun restoreSnapshot(bytes: ByteArray) {
         withLock(stepLock) {
+            // Rebuild the reducer: a save from a different world size needs its per-tile buffers re-sized to
+            // the current [CytoWorldConfig] (the host applies the saved geometry to the holder before this).
+            reducer = CytoSoaReducer(cfg, executor = executor)
             world = CytoWorld.fromSimState(CytoSaveCodec.decode(bytes))
             // Resume the sim clock from the save (the codec persists it) rather than zeroing it — the clock
             // drives the moving day/night band, both in the sim (reducer samples world.tick) and on screen

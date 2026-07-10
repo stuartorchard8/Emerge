@@ -2,8 +2,9 @@ package org.emerge.render.torus.ui
 
 import org.emerge.render.torus.GPU
 
-/** Screen corner a panel is anchored to. */
-enum class Anchor { TopLeft, TopRight, BottomLeft, BottomRight }
+/** Screen position a panel is anchored to. [Center] centres a panel on both axes (for title screens / modal
+ *  menus); multiple [Center] panels stack downward from the centre of the first. */
+enum class Anchor { TopLeft, TopRight, BottomLeft, BottomRight, Center }
 
 /**
  * A tiny **immediate-mode** in-game UI toolkit, shared across games. Rebuild the widget tree every
@@ -250,18 +251,33 @@ class UiBuilder internal constructor(private val ui: Ui) {
         val contentH = pb.items.sumOf { it.height.toDouble() }.toFloat()
         val w = padding * 2 + contentW
         val h = padding * 2 + contentH
+        if (anchor == Anchor.Center) {
+            val x = (ui.resWidth - w) * 0.5f
+            val stack = ui.nextPanelOffset(anchor, 0f, h, margin)    // 0 for the first, then h+margin for extras
+            val y = (ui.resHeight - h) * 0.5f + stack
+            emitPanel(x, y, w, h, padding, contentW, textH, background, pb)
+            return
+        }
         if (newColumn) ui.startNewColumn(anchor, margin)             // a fresh column beside the previous one
         val inset = ui.columnInset(anchor, margin)                   // horizontal base for this column
         val offset = ui.nextPanelOffset(anchor, margin, h, margin)   // vertical stack distance from the anchored edge
         val x = when (anchor) {
-            Anchor.TopLeft, Anchor.BottomLeft -> inset
             Anchor.TopRight, Anchor.BottomRight -> ui.resWidth - inset - w
+            else -> inset
         }
         val y = when (anchor) {
-            Anchor.TopLeft, Anchor.TopRight -> offset
             Anchor.BottomLeft, Anchor.BottomRight -> ui.resHeight - offset - h
+            else -> offset
         }
         ui.growColumn(anchor, inset + w)
+        emitPanel(x, y, w, h, padding, contentW, textH, background, pb)
+    }
+
+    /** Emit a panel's background + click-catcher + rows at an already-resolved (x, y). */
+    private fun emitPanel(
+        x: Float, y: Float, w: Float, h: Float, padding: Float,
+        contentW: Float, textH: Float, background: Long, pb: PanelBuilder,
+    ) {
         ui.emitRect(x, y, w, h, background)
         // The panel background absorbs taps so a press on the panel (not just its buttons) doesn't fall
         // through to the world behind it. Registered BEFORE the items, so each button — added after — still
@@ -272,6 +288,13 @@ class UiBuilder internal constructor(private val ui: Ui) {
             item.emit(ui, x + padding, rowY, contentW, textH)
             rowY += item.height
         }
+    }
+
+    /** A full-screen fill — a backdrop for a title screen / modal menu. Emit it **first** (it draws behind
+     *  later panels) — it also swallows any click that misses a widget so the scene behind doesn't react. */
+    fun background(color: Long) {
+        ui.emitRect(0f, 0f, ui.resWidth, ui.resHeight, color)
+        ui.emitClick(0f, 0f, ui.resWidth, ui.resHeight) {}
     }
 }
 

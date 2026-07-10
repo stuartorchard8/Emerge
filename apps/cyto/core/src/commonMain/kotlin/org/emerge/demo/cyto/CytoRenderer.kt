@@ -85,6 +85,14 @@ class CytoRenderer {
     private var followVY = 0f
     private val FOLLOW_DAMPING = 5f
 
+    /** Recentre the camera on the origin and frame the (possibly resized) torus — used when a fresh world is
+     *  started so the view isn't left zoomed on the previous world's scale. */
+    fun resetView() {
+        centerX = 0f; centerY = 0f
+        viewHeight = org.emerge.demo.cyto.sim.CytoUnits.CELLS_PER_AXIS * 1.5f
+        followId = -1; followX = 0f; followY = 0f; followVX = 0f; followVY = 0f
+    }
+
     /** Tell the renderer to smoothly follow entity [id] at world position ([x], [y]).
      *  Call every frame — when [id] changes the target resets; when it becomes negative
      *  the camera stops following (coasts to a halt via damping). */

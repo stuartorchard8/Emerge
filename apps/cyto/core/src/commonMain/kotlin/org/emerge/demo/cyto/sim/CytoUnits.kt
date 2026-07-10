@@ -16,10 +16,11 @@ import org.emerge.sim.core.physics.primitives.Frac
  * torus boundary has behavioral impact; see PLAN_taxis_substrate.md.)
  */
 object CytoUnits {
-    /** Base-cell diameters across the torus per axis. */
-    const val CELLS_PER_AXIS = 64
+    /** Base-cell diameters across the torus per axis. **Runtime** now (title-screen *New* picks it) — reads
+     *  [CytoWorldConfig], defaulting to 64 so goldens/probes that never touch the holder are unchanged. */
+    val CELLS_PER_AXIS: Int get() = CytoWorldConfig.cellsPerAxis
 
-    private const val SCALE = 1f / CELLS_PER_AXIS // logical-radius-unit -> normalised
+    private val SCALE: Float get() = 1f / CytoWorldConfig.cellsPerAxis // logical-radius-unit -> normalised
 
     /** Logical length (in cell-radius units) -> engine [Frac]. */
     fun len(logical: Float): Frac = Frac((logical * SCALE * Int.MAX_VALUE).toLong())

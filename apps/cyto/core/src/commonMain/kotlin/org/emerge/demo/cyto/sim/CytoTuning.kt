@@ -43,7 +43,7 @@ object CytoTuning {
      *  (CELLS_PER_AXIS/4 ⇒ the band is always 1/8 of the torus span) so the day/night cycle stays
      *  self-similar under a world-size change — a fixed value would shrink the relative daylight slice and
      *  starve a center-seeded autotroph as the torus grows. ⚙ */
-    const val LIGHT_FALLOFF = CytoUnits.CELLS_PER_AXIS / 4f
+    val LIGHT_FALLOFF: Float get() = CytoWorldConfig.dayFraction * CytoUnits.CELLS_PER_AXIS
     /** Shading (interference competition): when true, cells sharing a grid-cell split that cell's incident
      *  light by capture weight (exposure × radius), so a bigger cell starves its neighbours. False = every
      *  cell gets its own full light (no co-located split) — toggle to test whether shading still earns its
@@ -61,7 +61,7 @@ object CytoTuning {
      *  false = the 4 static quarter-point sources (the original world). */
     const val LIGHT_MOVING = true
     /** Ticks for the daylight band to sweep once around the torus — the day/night period. (Only used when [LIGHT_MOVING].) */
-    const val LIGHT_ORBIT_PERIOD = 3600L
+    val LIGHT_ORBIT_PERIOD: Long get() = CytoWorldConfig.orbitPeriod
 
     // ── Matter dynamics (the conserved resource's per-tick law; its *seed* is in CytoSeed) ────────────
     /** Slow inter-grid-cell diffusion: per tick each edge moves `⌊|gradient|·NUM/DEN⌋` down-gradient.

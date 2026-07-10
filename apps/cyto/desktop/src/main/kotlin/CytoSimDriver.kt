@@ -29,6 +29,7 @@ class CytoSimDriver(private val controller: CytoController) {
     fun stop() { running = false; LockSupport.unpark(thread) }
 
     fun togglePause() { paused = !paused }
+    fun setPaused(p: Boolean) { paused = p }
     fun faster() { targetTps = if (targetTps == UNLIMITED) UNLIMITED else (targetTps * 2).let { if (it > MAX_TPS) UNLIMITED else it } }
     fun slower() { targetTps = if (targetTps == UNLIMITED) MAX_TPS else (targetTps / 2).coerceAtLeast(MIN_TPS) }
 
