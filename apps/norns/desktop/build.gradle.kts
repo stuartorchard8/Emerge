@@ -63,16 +63,3 @@ tasks.register<JavaExec>("runMorphLab") {
     classpath = sourceSets["main"].runtimeClasspath
 }
 
-tasks.register<JavaExec>("checkCreatureRender") {
-    group = "verification"
-    description = "Verify the consolidated CreatureRenderer: bake the baseline genome across moods. --args=\"<png>\""
-    mainClass = "org.emerge.desktop.CreatureRendererCheckKt"
-    classpath = sourceSets["main"].runtimeClasspath
-}
-
-tasks.register<JavaExec>("runRigCheck") {
-    group = "verification"
-    description = "Verify part-bake → NornRig: bake a genome's parts + composite a walk cycle. --args=\"<png> <morph>\""
-    mainClass = "org.emerge.desktop.RigCheckKt"
-    classpath = sourceSets["main"].runtimeClasspath
-}

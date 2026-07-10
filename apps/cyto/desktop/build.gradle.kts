@@ -58,32 +58,6 @@ tasks.register<JavaExec>("checkCytoConservation") {
     workingDir = rootDir   // so the default relative save path resolves from the repo root
 }
 
-tasks.register<JavaExec>("probeCytoPopulation") {
-    group = "verification"
-    description = "Headless population probe: seed a self-sufficient (collect+divide) genome on a " +
-        "light source, print population over time (does exposure cap growth?). --args=\"<ticks> <every>\"."
-    mainClass = "org.emerge.desktop.CytoPopulationProbeKt"
-    classpath = sourceSets["main"].runtimeClasspath
-}
-
-tasks.register<JavaExec>("probeCytoLocomotion") {
-    group = "verification"
-    description = "Headless locomotion diagnostic: print total momentum / COM drift speed / kinetic " +
-        "energy over time to tell a real gait from a momentum-creating artifact. " +
-        "--args=\"<ticks> <every> <mutationRateDenom> <repulsion 0|1>\"."
-    mainClass = "org.emerge.desktop.CytoLocomotionProbeKt"
-    classpath = sourceSets["main"].runtimeClasspath
-}
-
-tasks.register<JavaExec>("analyzeCytoSave") {
-    group = "verification"
-    description = "Load a Cyto save and dissect its self-propelling colonies (physics momentum vs " +
-        "growth-creep) + dump their genomes. --args=\"<savePath> <ticks>\"."
-    mainClass = "org.emerge.desktop.CytoSaveAnalysisKt"
-    classpath = sourceSets["main"].runtimeClasspath
-    workingDir = rootDir
-}
-
 tasks.register<JavaExec>("benchCyto") {
     group = "verification"
     description = "Headless per-phase Cyto tick profiler: loads a save (or 'fresh'), warms the JIT, " +
@@ -92,33 +66,6 @@ tasks.register<JavaExec>("benchCyto") {
     mainClass = "org.emerge.desktop.CytoBenchmarkKt"
     classpath = sourceSets["main"].runtimeClasspath
     workingDir = rootDir
-}
-
-tasks.register<JavaExec>("profileCytoGrowth") {
-    group = "verification"
-    description = "Grow a colony on the live SoA reducer at scaled nutrient levels, profiling the steady " +
-        "tick vs population to find the real bottleneck near the 60fps budget. --args=\"<factorsCsv> [grow] [measure]\"."
-    mainClass = "org.emerge.desktop.CytoGrowthProfileKt"
-    classpath = sourceSets["main"].runtimeClasspath
-    workingDir = rootDir
-}
-
-tasks.register<JavaExec>("probeCytoGrab") {
-    group = "verification"
-    description = "Headless drag-stability diagnostic: grab a welded cluster and orbit the target, " +
-        "logging max speed / kinetic energy / spring stretch / follow-lag (does dragging spike?). " +
-        "--args=\"<ticks> <every> <cells> <orbitRadius> <orbitPeriod>\"."
-    mainClass = "org.emerge.desktop.CytoGrabProbeKt"
-    classpath = sourceSets["main"].runtimeClasspath
-}
-
-tasks.register<JavaExec>("probeCytoDrag") {
-    group = "verification"
-    description = "Headless exposed-surface drag diagnostic: push a welded chain and log speed decay " +
-        "(lone = full drag; push along-axis = slippery; push across-axis = draggy). " +
-        "--args=\"<ticks> <every> <nCells> <vx> <vy>\"."
-    mainClass = "org.emerge.desktop.CytoDragProbeKt"
-    classpath = sourceSets["main"].runtimeClasspath
 }
 
 tasks.register<JavaExec>("benchCytoSave") {
