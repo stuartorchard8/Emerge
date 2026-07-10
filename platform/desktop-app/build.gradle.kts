@@ -30,10 +30,10 @@ val lwjglNatives: String = run {
 }
 
 dependencies {
-    implementation(project(":apps:scavengers"))
-    implementation(project(":apps:drockets"))
-    implementation(project(":apps:cyto"))
-    implementation(project(":apps:norns"))
+    implementation(project(":apps:scavengers:core"))
+    implementation(project(":apps:drockets:core"))
+    implementation(project(":apps:cyto:core"))
+    implementation(project(":apps:norns:core"))
     implementation(project(":engine:render:torus"))
     implementation(project(":engine:sim:core"))
     implementation(project(":engine:sim:sync"))

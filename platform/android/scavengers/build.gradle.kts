@@ -47,7 +47,7 @@ android {
 
 dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1")
-    implementation(project(":apps:scavengers"))
+    implementation(project(":apps:scavengers:core"))
     implementation(project(":engine:render:torus"))
     implementation(project(":engine:sim:core"))
     implementation(project(":engine:sim:sync"))

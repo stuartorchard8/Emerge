@@ -30,7 +30,7 @@ import kotlin.test.Test
  *   - is the organizer off-centre? (lateralised gradient → a bend, not a symmetric breath)
  *   - does it swim, and how STRAIGHT? (net COM displacement + straightness = net/path over the late window)
  *
- *   ./gradlew :apps:cyto:jvmTest --tests "*ControllerProbe*" -Dctrl=1 \
+ *   ./gradlew :apps:cyto:core:jvmTest --tests "*ControllerProbe*" -Dctrl=1 \
  *      -Dctrlgenome=/abs/path.gene [-Dctrlseed=cc:200,a:500] [-Dctrlticks=40000]
  *   -> /tmp/ctrlprobe.txt
  */

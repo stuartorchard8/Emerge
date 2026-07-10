@@ -33,7 +33,7 @@ import kotlin.test.Test
  * what little it does is penetration-driven jitter, not sustained momentum), spring-driven striking is
  * broken by the same root cause as drag.
  *
- *   ./gradlew :apps:cyto:jvmTest --tests "*CollisionChannelProbe*" -Dcollprobe=1 [-Dswimcell=100] [-Dsavefile=...]
+ *   ./gradlew :apps:cyto:core:jvmTest --tests "*CollisionChannelProbe*" -Dcollprobe=1 [-Dswimcell=100] [-Dsavefile=...]
  *   -> /tmp/collprobe.txt
  */
 class CollisionChannelProbe {

@@ -41,22 +41,22 @@ out of the engine.)
 
 #### Apps (each self-contained: own config, input, state extensions, codecs)
 
-- `:apps:scavengers` → `sim:core`, `sim:sync`, `codecs:ecs`, `render:torus`, `net:api`,
+- `:apps:scavengers:core` → `sim:core`, `sim:sync`, `codecs:ecs`, `render:torus`, `net:api`,
   `net:transports:tcp`, `net:transports:websocket` — the full-featured networked reference game.
-- `:apps:drockets` → `sim:core`, `sim:sync`, `codecs:ecs`, `render:torus`, `net:api` —
+- `:apps:drockets:core` → `sim:core`, `sim:sync`, `codecs:ecs`, `render:torus`, `net:api` —
   rocketry + genetics demo. Carries a shadow struct-of-arrays reducer under `soa/`
   (`DrocketsWorld`/`DrocketsSoaReducer`), gated against the canonical reducer by
   bit-identity equivalence tests.
-- `:apps:cyto` → `sim:core`, `sim:sync`, `render:torus`, `net:api` — native ECS cell sim on
+- `:apps:cyto:core` → `sim:core`, `sim:sync`, `render:torus`, `net:api` — native ECS cell sim on
   the wrapping fixed-point torus (Cyto port). Also carries a shadow SoA reducer under `sim/soa/`.
 
 #### Platform hosts
 
 - `:platform:desktop-app` → all apps (+ engine + loopback/tcp/websocket, LWJGL).
   Run tasks: `run`, `runDrockets`, `runCyto`, plus Drockets benchmark harnesses.
-- `:platform:android:scavengers` → `:apps:scavengers` (standalone Android app).
-- `:platform:android:cyto` → `:apps:cyto` (standalone Android app).
-- `:platform:web-app` → `:apps:scavengers`, `:apps:cyto` (Kotlin/JS, websocket transport;
+- `:platform:android:scavengers` → `:apps:scavengers:core` (standalone Android app).
+- `:platform:android:cyto` → `:apps:cyto:core` (standalone Android app).
+- `:platform:web-app` → `:apps:scavengers:core`, `:apps:cyto:core` (Kotlin/JS, websocket transport;
   app selected via `?demo=cyto`).
 
 #### Visual map
@@ -156,7 +156,7 @@ real-time scanning**.
       Drockets + Cyto) and generalize the per-demo `World`/`Columns`/`Reducer` boilerplate.
 - [ ] Set up a remote server to host the backend and web frontend
 - [x] Merge Drockets repo into Emerge
-- [x] Merge Cyto repo into Emerge — `:apps:cyto` runs natively on the engine
+- [x] Merge Cyto repo into Emerge — `:apps:cyto:core` runs natively on the engine
       (`./gradlew :platform:desktop-app:runCyto`). The cell sim is a deterministic ECS
       reducer on the engine's fixed-point torus, using a generic `SpringConstraintSystem`
       (in `:engine:sim:core`) in place of Box2D distance joints. The world wraps

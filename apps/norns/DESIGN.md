@@ -1,6 +1,6 @@
 # Norns — a spiritual successor to Creatures (1996)
 
-`:apps:norns` is an attempt to recreate the *mechanism* of the original Creatures (Albia /
+`:apps:norns:core` is an attempt to recreate the *mechanism* of the original Creatures (Albia /
 C1, 1996) artificial-life simulation on the Emerge engine: biochemistry, a genome, a
 neural-network brain, biology/physiology, drives, and reproduction — deterministic, on the
 engine's fixed-tick ECS.
@@ -153,7 +153,7 @@ dependency-ordered (later ones read earlier ones).
 
 ## Assumptions (things I chose without confirmation — revisit in tuning)
 
-- **A1.** Module working title is "Norns"/`:apps:norns`. Renameable; "Norn" is Creatures
+- **A1.** Module working title is "Norns"/`:apps:norns:core`. Renameable; "Norn" is Creatures
   terminology — a spiritual-successor may want an original name (Stu's call).
 - **A2.** Chemical concentrations are floats in `[0, 1]` (normalised). C1 used 0–255 integer
   steps; a fidelity pass may rescale. Determinism is unaffected (IEEE float ops are

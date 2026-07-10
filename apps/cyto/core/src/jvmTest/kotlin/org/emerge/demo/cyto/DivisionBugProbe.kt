@@ -15,7 +15,7 @@ import kotlin.test.Test
  * SoA reducer (mutation OFF), and each tick reports cell count, the max |velocity| and max |position| across
  * all cells. The bomb cell's genome divides hard once lit, so over a light orbit the colony bursts — we watch
  * for the tick velocities blow up. Gated: run with
- *   ./gradlew :apps:cyto:jvmTest --tests "*DivisionBugProbe*" -Ddivbug=1 [-Ddivticks=5000] [-Dsavefile=...]
+ *   ./gradlew :apps:cyto:core:jvmTest --tests "*DivisionBugProbe*" -Ddivbug=1 [-Ddivticks=5000] [-Dsavefile=...]
  */
 class DivisionBugProbe {
     @Test

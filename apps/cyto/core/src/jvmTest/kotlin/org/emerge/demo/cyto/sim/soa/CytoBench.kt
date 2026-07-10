@@ -12,7 +12,7 @@ import kotlin.test.Test
 /**
  * Throwaway perf probe (NOT a gate) — grow a realistic colony, then profile each tick phase
  * for time and per-thread allocation bytes. Run with:
- *   ./gradlew :apps:cyto:jvmTest --tests "*CytoBench*" -i
+ *   ./gradlew :apps:cyto:core:jvmTest --tests "*CytoBench*" -i
  */
 class CytoBench {
 

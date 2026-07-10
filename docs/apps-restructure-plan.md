@@ -22,7 +22,7 @@ One commit per step; each step leaves the build green.
 
 ## Steps
 
-- [ ] **Step 1 — nest game logic as `apps/<game>/core`.**
+- [x] **Step 1 — nest game logic as `apps/<game>/core`.**
   Move each `apps/X/{build.gradle.kts,src}` into `apps/X/core/`; game docs (PERF.md etc.)
   stay at `apps/X/`. Coordinates `:apps:X` → `:apps:X:core`; update all references
   (settings, platform build files, CI, docs, `.build/` dir names `demo-X` → `X-core`).
@@ -55,3 +55,8 @@ One commit per step; each step leaves the build green.
 
 - 2026-07-10: plan written; prior commit `92c9e131` already did demos→apps +
   `platform/android/{cyto,scavengers}` (step 2 is now a trivial move).
+- 2026-07-10: step 1 done. `apps/X/{build.gradle.kts,src}` → `apps/X/core/`; game docs
+  stayed at `apps/X/`; norns `reference/` moved into core (used by tests). Coordinates
+  `:apps:X` → `:apps:X:core`, `.build/demo-X` → `.build/X-core`. Side find: cyto
+  commonMain had JVM-only `::class.java` (JS compile was silently broken) — fixed
+  separately before this step's verification.

@@ -6,9 +6,9 @@ base {
     archivesName.set("demo-norns")
 }
 
-buildDir = file("$rootDir/.build/demo-norns")
+buildDir = file("$rootDir/.build/norns-core")
 
-// :apps:norns — a spiritual successor to Creatures (1996): a deterministic artificial-life
+// :apps:norns:core — a spiritual successor to Creatures (1996): a deterministic artificial-life
 // sim (biochemistry + genetics + neural-net brain + biology) on the Emerge engine.
 //
 // JVM-only for now: the whole simulation is pure commonMain Kotlin and is built/verified

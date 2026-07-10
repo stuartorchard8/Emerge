@@ -16,7 +16,7 @@ import kotlin.test.Test
  * Throwaway diagnostic: dump one cell from a cyto-save.bin **as the running app sees it** — i.e. by its
  * post-load EntityId (CytoSaveCodec.decode remaps saved ids to fresh ones, which is what the info panel
  * shows). Run with -Dinspectcell=<id>; writes to /tmp/inspectcell.txt.
- *   ./gradlew :apps:cyto:jvmTest --tests "*InspectCell*" -Dinspectcell=1803
+ *   ./gradlew :apps:cyto:core:jvmTest --tests "*InspectCell*" -Dinspectcell=1803
  */
 class InspectCell {
 

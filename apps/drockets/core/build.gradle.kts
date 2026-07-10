@@ -7,7 +7,7 @@ base {
     archivesName.set("demo-drockets")
 }
 
-buildDir = file("$rootDir/.build/demo-drockets")
+buildDir = file("$rootDir/.build/drockets-core")
 
 kotlin {
     applyDefaultHierarchyTemplate()

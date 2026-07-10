@@ -264,7 +264,7 @@ object NornsAnimViewer {
 
         val loadRefBtn = JButton("Reference…").apply {
             addActionListener {
-                val fc = JFileChooser(File("demos/norns/reference").takeIf { it.isDirectory } ?: File("."))
+                val fc = JFileChooser(File("apps/norns/core/reference").takeIf { it.isDirectory } ?: File("."))
                 if (fc.showOpenDialog(canvas) == JFileChooser.APPROVE_OPTION) {
                     refImg = runCatching { ImageIO.read(fc.selectedFile) }.getOrNull()
                     if (refImg != null) { showRef = true; refChk.isSelected = true; canvas.repaint() }

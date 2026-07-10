@@ -8,7 +8,7 @@ base {
 }
 
 // Stable build dir (expect AV exclusions instead of per-run build dirs).
-buildDir = file("$rootDir/.build/demo-scavengers")
+buildDir = file("$rootDir/.build/scavengers-core")
 
 kotlin {
     applyDefaultHierarchyTemplate()

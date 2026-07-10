@@ -27,7 +27,7 @@ import kotlin.test.Test
  *   - is there any COM momentum (do the internal forces ever net into a push on the whole body)?
  *
  * Gated:
- *   ./gradlew :apps:cyto:jvmTest --tests "*SwimProbe*" -Dswimprobe=1 \
+ *   ./gradlew :apps:cyto:core:jvmTest --tests "*SwimProbe*" -Dswimprobe=1 \
  *      [-Dswimcell=100] [-Dswimticks=20000] [-Dsavefile=...]
  *   -> /tmp/swimprobe.txt
  */

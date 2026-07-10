@@ -50,9 +50,9 @@ include(":engine:net:transports:loopback")
 include(":engine:net:transports:tcp")
 include(":engine:net:transports:websocket")
 
-include(":apps:scavengers")
-include(":apps:drockets")
-include(":apps:cyto")
-include(":apps:norns")
+include(":apps:scavengers:core")
+include(":apps:drockets:core")
+include(":apps:cyto:core")
+include(":apps:norns:core")
 
 rootProject.name = "Emerge"

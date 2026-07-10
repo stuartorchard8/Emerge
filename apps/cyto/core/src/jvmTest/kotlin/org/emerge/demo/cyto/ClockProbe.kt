@@ -66,7 +66,7 @@ class ClockProbe {
     )
 
     /** On-demand only (skipped in the normal suite). Run with:
-     *    ./gradlew :apps:cyto:jvmTest --tests "*ClockProbe*" -Dclockprobe=1 [-Dclockmode=ablate] [-Dclockticks=8000]
+     *    ./gradlew :apps:cyto:core:jvmTest --tests "*ClockProbe*" -Dclockprobe=1 [-Dclockmode=ablate] [-Dclockticks=8000]
      *  Default mode validates candidate simplifications vs the baseline; `ablate` drops each gene in turn. */
     @Test
     fun run() {

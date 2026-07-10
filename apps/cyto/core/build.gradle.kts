@@ -7,7 +7,7 @@ base {
     archivesName.set("demo-cyto")
 }
 
-buildDir = file("$rootDir/.build/demo-cyto")
+buildDir = file("$rootDir/.build/cyto-core")
 
 // Phase B: native, Box2D-free. All code is multiplatform commonMain, so Cyto targets the
 // same platforms as the other demos (Android / JVM / JS).
@@ -56,7 +56,7 @@ android {
 }
 
 // Forward -Dcytobench to the JVM test JVM so the (otherwise-skipped) CytoBench perf probe can be run with
-//   ./gradlew :apps:cyto:jvmTest --tests "*CytoBench*" -Dcytobench=1
+//   ./gradlew :apps:cyto:core:jvmTest --tests "*CytoBench*" -Dcytobench=1
 tasks.withType<Test>().configureEach {
     System.getProperty("cytobench")?.let { systemProperty("cytobench", it) }
     System.getProperty("cytocells")?.let { systemProperty("cytocells", it) }

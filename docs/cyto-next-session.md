@@ -62,7 +62,7 @@ on the hot sub-phases and/or behavioural caps.
 
 Bench (clean per-JVM variant — always use this, never back-to-back):
 ```
-./gradlew :apps:cyto:jvmTest --tests "*CytoBench.profile*" --rerun-tasks \
+./gradlew :apps:cyto:core:jvmTest --tests "*CytoBench.profile*" --rerun-tasks \
   -Dcytobench=1 -Dcytocells=8192 -Dcytospread=1 -Dcytovariant=par   # or seq; /tmp/cytobench_out.txt
 ```
 Sweep harness: `scratchpad/bio_parallel_sweep.sh` (8-core) / `bio_sweep_former.sh` (20-core `former`).
@@ -134,7 +134,7 @@ decide it on gameplay merits, not perf alone.
 
 ## Gates (must stay green — this is the whole discipline)
 ```
-./gradlew :apps:cyto:jvmTest --tests "*CytoGoldenTest*" --tests "*CytoSoaSpecTest*"
+./gradlew :apps:cyto:core:jvmTest --tests "*CytoGoldenTest*" --tests "*CytoSoaSpecTest*"
 ```
 - `CytoGoldenTest`: 5 golden scenarios (growth / mutation / interact + **weldHeal + stickyWeld**),
   `parallelMatchesSequential`, `grownStateRoundTrips`. NB there is **no** `CytoSoaEquivalenceTest` —
