@@ -65,7 +65,7 @@ class GeneEditor {
             keyValue("LIGHT", info.light)
             metabolismTable(info)
             if (info.genes.isNotEmpty()) {
-                gap(); row("GENES (tap to edit; orange = blocking)")
+                gap(); row("GENES (tap to edit. orange = blocking)")
                 info.genes.forEachIndexed { i, g ->
                     // Button background as before — editing = blue, active = green, inactive = grey — but the
                     // parts of an inactive gene that are blocking it (failed clause / energy / input) draw
