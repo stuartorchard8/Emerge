@@ -24,64 +24,102 @@ what it's doing** — feeding, repair, decay, division all happen in the sim wit
 ## 2. The core gap in the pipeline
 
 The renderer reads component tables (`CytoCellComponent`, `Transform`, `Collider`) from the published
-`frame`. Those carry **state** (current biomass, cytoplasm counts) but not **events** — there's no
-per-cell "fired a light gene / absorbed N light / gained-or-lost M biomass this tick" signal. Every
-visual below needs one. So the foundational work is a **per-cell visual-signal channel**, not the
-animations themselves.
+`frame`. Those carry **state** (current biomass, cytoplasm counts) but not **flows** — there's no
+per-cell record of how much of each species moved ENV↔CYT, CYT→BIO, or BIO→ENV *this tick*. Every
+visual below is driven by those per-tick transfers, so the foundational work is a **per-cell,
+per-species transfer read-model** (§4), not the animations themselves.
 
 Design constraint (engine boundary, see `[[feedback_modularize_over_generalize]]`): the sim stays
 game-agnostic and deterministic. Visual signals are *derived read-model*, published on the frame; they
 must **never feed back into sim state** and must not affect the golden trajectory. The golden/spec
 gate (`CytoGoldenTest`, `CytoSoaSpecTest`) must stay green untouched.
 
-## 3. The visual-signal channel (foundation — build first)
+## 3. The approach: cytoplasmic activity as surface particles
 
-A compact per-cell struct the reducer fills during biology and publishes on the frame alongside the
-component tables. Candidate fields (all cheap, already computed mid-tick):
+Rather than a handful of authored "event" animations, cells **render their metabolism directly**:
+small particles and expanding fields on/around the cell surface, driven by the **actual per-tick,
+per-species transfer amounts** the biology already computes. The visuals ARE the read-model of the
+chemistry table — emergent from whatever the cell happens to be doing, not scripted per chapter. Four
+metabolic flows, each with its own visual treatment (§5). A cell doing many things at once layers them.
 
-- `lightAbsorbed` — light energy consumed by light-powered genes this tick (drives feeding glow).
-- `biomassDelta` — net biomass change this tick, signed (repair/growth vs decay/starvation).
-- `geneFiredMask` / `divideThisTick` — which actions fired (division pinch, activity flicker).
-- optional `contactCount` / weld events — for later (shedding, bonding cues).
+Colour follows the same atom-mix logic as `cellColor`, but per **species** rather than per whole cell:
+`r`→red, `g`→green, `b`→blue, `rg`→yellow, etc. (sum the atom channels of the species token, normalise).
+A shared `speciesColor(token)` helper serves both the per-species particles and the averaged-colour
+fields. This wants factoring out of `CytoRenderer.cellColor` so the two stay consistent.
 
-Smoothing lives in the **renderer**, not the sim: keep a small per-entity ring of recent signal so a
-one-tick event animates over ~0.3–0.5s of wall time (the sim tick rate ≠ frame rate). Entities come
-and go, so key by `EntityId` and evict on absence (same pattern as `focusNeighbours`).
+## 4. The visual-signal channel (foundation — build first)
 
-## 4. Slices, in priority order
+The four flows below are all computed inside biology each tick but not currently exposed. Foundation
+work is a per-cell, per-species **transfer read-model** published on the frame:
 
-**Slice A — Feeding glow (thin slice; rescues Ch2, proves the channel).**
-When a cell absorbs light, pulse a warm rim/halo scaled by `lightAbsorbed`. In daylight it glows and
-tops up; in the dark band it goes quiet. This alone makes Ch2's "feeds on light, dark = can't feed"
-directly visible. Smallest end-to-end path through the new channel — build and validate this first.
+- **ENV↔CYT** — signed per-species amount moved across the membrane this tick, from `passiveEnvExchange`
+  (import/export bias + diffusion). Positive = into cytoplasm (flow 1), negative = out (flow 2).
+- **CYT→BIO** — per-species amount locked into biomass this tick, from `Convert` (`work.biomass.inc`).
+- **BIO→ENV** — per-species amount released by biomass decay this tick.
 
-**Slice B — Repair / growth / starvation.**
-Ease the drawn radius toward the true radius so growth is gradual, not a pop. Signed `biomassDelta`
-tints or shimmers: a gentle mend-glow while rebuilding, a desaturated/withering look while losing mass.
-This is the "holds steady, tops itself up" loop and the future "starves without matter" (Ch4) cue.
+Constraints (§2): derived read-model only, published alongside the component tables, never fed back
+into sim state, golden/spec gate untouched. Per-species maps are small (seed alphabet), but this is the
+hot path — accumulate into reused per-cell buffers, don't allocate per tick.
 
-**Slice C — Division.**
-A brief pinch/split animation on `divideThisTick` — the disc necks and separates — so reproduction
-reads as an event, not a spawn. Pairs with Ch4's "big enough, it splits in two."
+**Renderer-side state (all animation lives here, not the sim):** particles for ENV↔CYT are spawned
+discretely — each tick, emit a count of new particles per species proportional to that tick's transfer,
+then advance/age them every frame independent of tick rate. The CYT→BIO / BIO→ENV fields are continuous,
+so each cell keeps a per-flow **intensity** value that eases toward the current transfer rate — this is
+the warm-up (fade-in as activity starts) / cool-down (fade-out as it stops). Key all per-cell state by
+`EntityId`, evict on absence (same pattern as `focusNeighbours`).
 
-**Slice D — Ambient life.**
-Subtle idle motion (membrane wobble, slow matter-uptake motes toward feeding cells) so a calm world
-still looks alive rather than paused. Lowest priority, highest polish.
+## 5. The four flows (visual spec)
 
-## 5. Validation
+**Flow 1 — ENV→CYT (absorption).** Species-coloured particles fade into view just outside the cell's
+border and drift toward the centre; at the halfway point they pivot to fading out, reaching fully
+invisible at the centre. One particle stream per species, coloured by that species (`speciesColor`).
+New particles spawn each tick in proportion to that tick's inward transfer for the species.
+
+**Flow 2 — CYT→ENV (secretion).** The reverse of flow 1: particles fade in near the centre, drift
+outward, and fade out as they cross the border. Same per-species colouring and per-tick spawn rule,
+driven by outward transfer.
+
+**Flow 3 — CYT→BIO (building).** A filled circle in the species' **average** colour (multiple species
+may convert at once), starting at radius 0 at the cell centre with full opacity and expanding outward to
+the cell's full radius, its opacity falling linearly to zero over the expansion. Continuous while
+building, so it gets a **warm-up** (opacity envelope fades in when building starts) and **cool-down**
+(fades out when it stops), driven by the eased CYT→BIO intensity.
+
+**Flow 4 — BIO→ENV (decay).** A filled circle in the average species colour rendered **behind** the
+cell, starting at the cell's radius with full opacity and expanding to 0.125 beyond the cell radius
+(1.125×), fading linearly to transparent over the expansion. Same warm-up/cool-down envelope as flow 3,
+driven by the eased BIO→ENV intensity.
+
+Notes: flows 1–2 are **discrete per-species particles** (no warm-up/cool-down — the particle lifecycle
+is the fade); flows 3–4 are **continuous averaged-colour fields** with the warm-up/cool-down envelope.
+Render order matters — flow 4 draws behind the cell disc, flows 1–3 on/in front of it.
+
+## 6. Build order
+
+1. **Signal channel (flow 3 first — CYT→BIO).** The simplest single flow end-to-end: expose per-species
+   Convert amounts, add the `speciesColor` helper, render the expanding build-circle with warm-up/
+   cool-down. Proves the read-model + renderer-state plumbing on the calm grow-only autotroph (it's
+   constantly building to top itself up, so it's easy to eyeball). Rescues Ch2/Ch3's "feed and repair."
+2. **BIO→ENV field (flow 4)** — reuses the same intensity/envelope machinery, behind the cell.
+3. **ENV↔CYT particles (flows 1–2)** — the discrete-particle system; more moving parts (spawn, age,
+   pivot-fade), so it comes after the continuous fields prove the channel.
+
+## 7. Validation
 
 Per `[[feedback_iterate_with_harness]]`: render + Read screenshots via `CytoAgentHarness` before
-claiming anything reads right. Static PNGs won't show motion, so the harness may need a `shot` sequence
-across ticks (feeding cell in light vs dark; a cell mid-repair; a division) to eyeball the animation
-frames. Confirm the golden/spec gate stays green after the signal channel lands.
+claiming anything reads right. Static PNGs won't show motion or particle drift, so use a `shot` sequence
+across successive ticks/frames (a building cell watched over its warm-up; an absorbing cell in daylight)
+to eyeball the animation. Confirm `CytoGoldenTest` / `CytoSoaSpecTest` stay green after the channel lands.
 
-## 6. Open questions for Stu
+## 8. Open questions for Stu
 
-1. **Scope of "alive":** minimum viable (Slices A–B, enough to fix Ch2's observability) vs the full
-   ambient pass (A–D)?
-2. **Art direction:** glow/halo/particle language, or something more diegetic (membrane deformation,
-   colour temperature)? Any reference look?
-3. **Signal set:** is the §3 field list the right initial cut, or are there processes you specifically
-   want surfaced first (e.g. weld stress in Ch5/Ch6)?
+1. **Scope:** all four flows, or start with the two continuous fields (flows 3–4) and hold the particle
+   system (1–2) for a follow-up?
+2. **Tuning knobs** (defer to iteration, but flag now): particles-per-unit-transfer and particle size
+   for flows 1–2; warm-up/cool-down durations for flows 3–4; whether opacity should scale with transfer
+   *magnitude* or just presence/absence of the flow.
+3. **Legibility when layered:** a cell simultaneously absorbing (flow 1), building (flow 3) and decaying
+   (flow 4) stacks three treatments — acceptable as emergent richness, or do we need a priority/dominant
+   flow so it doesn't muddy?
 4. Should the collapsed chemistry table eventually become **campaign-mask-gated** (hidden entirely in
-   early chapters, not just collapsed) once the visuals carry its information?
+   early chapters, not just collapsed) once these visuals carry its information?
