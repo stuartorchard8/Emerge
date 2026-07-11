@@ -40,6 +40,10 @@ class GeneEditor {
      *  one they care about. Cross-frame UI state, like the rest of the editor. */
     private val expandedGroups = HashSet<String>()
 
+    /** The dense ENV/CYT/BIO metabolism table is collapsed by default — it's a spreadsheet of chemical
+     *  counts that overwhelms a new player. Tap the header to reveal it. Reset when the target cell changes. */
+    private var metabExpanded = false
+
     // Option lists, derived from the seeded alphabet. Species operands are built atom-by-atom (see
     // [speciesField]) rather than picked from a fixed list, so any-length molecules (abb, abcb, …) are
     // reachable — the old monomer+dimer dropdown couldn't express them.
@@ -74,7 +78,11 @@ class GeneEditor {
             keyValue("SIZE", info.radius)
             keyValue("BIOMASS", info.totalBiomass.toString())
             keyValue("LIGHT", info.light)
-            metabolismTable(info)
+            if (info.metabolism.isNotEmpty()) {
+                gap()
+                button("${if (metabExpanded) "-" else "+"} CHEMISTRY (${info.metabolism.size})", 0x2A3550FFL) { metabExpanded = !metabExpanded }
+                if (metabExpanded) metabolismTable(info)
+            }
             if (info.genes.isNotEmpty()) {
                 val liveGenes = info.genes.map { it.gene }
                 val sections = grouping?.sections(liveGenes)
@@ -312,6 +320,7 @@ class GeneEditor {
         editingIndex = null
         draft = null
         openField = null
+        metabExpanded = false
     }
 
     private fun sourceLabel(s: EnergySource): String = when (s) {
