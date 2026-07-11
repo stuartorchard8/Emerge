@@ -11,6 +11,7 @@ import org.emerge.demo.cyto.campaign.WorldRun
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.AUTOTROPH_GENES
 import org.emerge.demo.cyto.sim.AUTOTROPH_GROW_ONLY_GENES
+import org.emerge.demo.cyto.sim.AUTOTROPH_REPAIR_GENE
 import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.FounderSpec
 import org.emerge.demo.cyto.ui.GeneGroup
@@ -45,17 +46,27 @@ object CampaignContent {
         founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GROW_ONLY_GENES)),
     )
 
+    /** Ch5+ substrate: the grow+reproduce autotroph the player built in Ch4 (the full [AUTOTROPH_GENES]). It
+     *  colonises on its own, but with no cohesion gene the colony frays into a loose, drifting cloud - the
+     *  problem Ch5 fixes by inserting the Hold Together group. */
+    private val GROW_REPRODUCE = CytoScenario.DEFAULT.copy(
+        name = "Campaign",
+        founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GENES)),
+    )
+
     /** The genes of the full autotroph that the grow-only substrate is *missing* - the reproduction subsystem
      *  the player adds in Act II (structurally, whatever [AUTOTROPH_GENES] has that the grow-only set doesn't:
      *  the break-powered Mitosis gene). */
     private val REPRODUCE_GENES = AUTOTROPH_GENES.filter { it !in AUTOTROPH_GROW_ONLY_GENES }
 
-    /** Functional grouping for the campaign autotroph: its two genes read as one "Grow" subsystem, and the
-     *  reproduction gene (once the player adds it in Act II) buckets into "Reproduce". Collapsed, the genome
-     *  shows one or two plain labels instead of a wall of conditions - the §10 comprehension win. */
+    /** Functional grouping for the campaign autotroph, over the whole Act II arc: two grow genes read as one
+     *  "Grow" subsystem, the reproduction gene as "Reproduce", the cohesion gene as "Hold Together". Absent
+     *  groups only surface as "+ ADD" buttons in the chapter that names them insertable, so each chapter
+     *  offers just the one subsystem it teaches. Collapsed, the genome reads as a few plain labels (§10). */
     private val CAMPAIGN_GROUPING = GenomeGrouping(listOf(
         GeneGroup("Grow", 0x3E9E5AFFL, AUTOTROPH_GROW_ONLY_GENES),
         GeneGroup("Reproduce", 0xC77DD0FFL, REPRODUCE_GENES),
+        GeneGroup("Hold Together", 0xD98C40FFL, listOf(AUTOTROPH_REPAIR_GENE)),
     ))
 
     val CHAPTERS: List<Chapter> = listOf(
@@ -63,6 +74,7 @@ object CampaignContent {
         chapter2LetThereBeLight(),
         chapter3AnatomyOfAGene(),
         chapter4Reproduce(),
+        chapter5HoldTogether(),
     )
 
     val ORDER: List<String> = CHAPTERS.map { it.id }
@@ -184,7 +196,7 @@ object CampaignContent {
         blurb = "Add a gene, and turn one static cell into a spreading colony.",
         scenario = GROW_ONLY,
         grouping = CAMPAIGN_GROUPING,
-        allowGroupInsert = true,
+        insertableGroups = setOf("Reproduce"),
         steps = listOf(
             Step(
                 text = "This organism grows but can't reproduce - on its own it's a dead end. Let's fix that. Select the cell to open its genome.",
@@ -229,6 +241,60 @@ object CampaignContent {
             ),
             Step(
                 text = "That's the core tension: light is free and endless, but matter is scarce. Every colony grows until it runs into that budget. From here on, the game is about managing it.",
+                gate = Gate.Next,
+                allow = WATCH,
+                world = WorldRun.Live,
+            ),
+        ),
+    )
+
+    /** Act II, cohesion. The Ch4 colony spread into a loose, drifting cloud. Here the player inserts a
+     *  "Hold Together" (Repair) subsystem *before* the cell colonises, so every descendant spends a little
+     *  energy staying bonded - and the colony grows as a cohesive body instead of a scattering cloud.
+     *  Teaches that a body is held together actively, at a cost, not for free. */
+    private fun chapter5HoldTogether() = Chapter(
+        id = "ch05-hold",
+        act = 2,
+        title = "Hold Together",
+        blurb = "A cloud of cells isn't a body. Make the colony cohere.",
+        scenario = GROW_REPRODUCE,
+        grouping = CAMPAIGN_GROUPING,
+        insertableGroups = setOf("Hold Together"),
+        steps = listOf(
+            Step(
+                text = "Here's the grow-and-reproduce cell you built. Last time, its colony spread into a loose, drifting cloud - because nothing held the cells together.",
+                gate = Gate.Next,
+                allow = LOOK,
+            ),
+            Step(
+                text = "Let's fix that before it spreads. Select the cell to open its genome.",
+                gate = Gate.Did(PlayerAction.SelectedCell, "Select the cell"),
+                allow = LOOK,
+                spotlight = Spotlight(hint = "Click the cell"),
+            ),
+            Step(
+                text = "Add the HOLD TOGETHER group. It spends a little stored energy keeping each cell bonded to its neighbours.",
+                gate = Gate.World(
+                    "Add the Hold Together group",
+                    met = { (it.focused?.geneCount ?: 0) >= 4 },
+                ),
+                allow = LOOK,
+                spotlight = Spotlight(hint = "+ ADD HOLD TOGETHER, below the groups"),
+                detail = "Cohesion isn't free here - holding a body together costs matter, and a cell that runs out will start to fray. A body is something a colony actively maintains.",
+            ),
+            Step(
+                text = "Now speed up and watch it colonise. This time the offspring stay bonded - the colony packs into a dense mass instead of scattering into a thin cloud.",
+                gate = Gate.World(
+                    "Grow to 40 cells",
+                    met = { it.cellCount >= 40 },
+                    progress = { it.cellCount.coerceAtMost(40) to 40 },
+                ),
+                allow = WATCH,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "SLOW / PAUSE / FAST, top-left"),
+            ),
+            Step(
+                text = "Compare it to last chapter's drifting cloud - this one holds together. Grow, reproduce, cohere: three subsystems, and a single cell has become a living body.",
                 gate = Gate.Next,
                 allow = WATCH,
                 world = WorldRun.Live,

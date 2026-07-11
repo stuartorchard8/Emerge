@@ -29,10 +29,10 @@ class Chapter(
      *  gene editor shows the held cell's genes collapsed into named subsystems instead of a flat list, so
      *  Act II can teach at the subsystem level. Order-preserving label only — no effect on the sim. */
     val grouping: GenomeGrouping? = null,
-    /** Whether the gene editor offers "+ ADD <group>" buttons for the [grouping]'s absent subsystems. Off
-     *  for the reading chapters (Act I / Ch3) so a group can't be inserted before its chapter teaches it;
-     *  on for the chapters whose objective is to insert one (Ch4+). */
-    val allowGroupInsert: Boolean = false,
+    /** Which of the [grouping]'s groups the gene editor offers as "+ ADD <group>" buttons when they're absent
+     *  from the held cell. Named per chapter so a chapter offers only the one subsystem it teaches (Ch4 =
+     *  Reproduce, Ch5 = Hold Together); empty (Act I / Ch3) = read-only, no inserts. */
+    val insertableGroups: Set<String> = emptySet(),
 )
 
 /** One coaching beat: the instruction, how it advances ([gate]), which controls are live ([allow]), an

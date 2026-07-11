@@ -237,7 +237,7 @@ object CytoAgentHarness {
         private fun buildOverlay() {
             val mask = director.controlMask
             ui.frame {
-                if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, allowGroupInsert = director.activeChapter?.allowGroupInsert == true) {}
+                if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet()) {}
                 if (director.active) director.render(this, controller)
             }
         }
@@ -280,7 +280,7 @@ object CytoAgentHarness {
             renderer.draw(controller.latestFrame())          // scene (fills its own background)
             controls.draw()                                  // bottom toolbar
             ui.frame {                                        // info panel + coach overlay
-                if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, allowGroupInsert = director.activeChapter?.allowGroupInsert == true) {}
+                if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet()) {}
                 if (director.active) director.render(this, controller)
             }
             ui.draw()

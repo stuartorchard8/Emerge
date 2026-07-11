@@ -61,7 +61,7 @@ class GeneEditor {
         b: UiBuilder,
         controller: CytoController,
         grouping: GenomeGrouping? = null,
-        allowGroupInsert: Boolean = true,
+        insertableGroups: Set<String> = emptySet(),
         onExport: () -> Unit = {},
     ) {
         val info = controller.heldCellInfo()
@@ -91,11 +91,12 @@ class GeneEditor {
                         }
                         if (open) for (item in sec.items) geneButton(controller, info.genes[item.index], item.index)
                     }
-                    // Absent groups (a defined subsystem this cell doesn't have yet) show as a ready-made
-                    // "ADD" affordance: one tap inserts the whole pre-made group. This is how Act II teaches
-                    // an action — the player adds a *meaningful unit*, not a hand-authored gene.
-                    if (allowGroupInsert) for (grp in grouping.groups) {
-                        if (grp.members.isNotEmpty() && grp.members.none { it in liveGenes }) {
+                    // Absent groups the current chapter marks insertable show as a ready-made "ADD" affordance:
+                    // one tap inserts the whole pre-made group. This is how Act II teaches an action — the
+                    // player adds a *meaningful unit*, not a hand-authored gene. Per-group gating (vs a single
+                    // flag) lets a chapter offer only the one subsystem it's teaching.
+                    for (grp in grouping.groups) {
+                        if (grp.name in insertableGroups && grp.members.isNotEmpty() && grp.members.none { it in liveGenes }) {
                             button("+ ADD ${grp.name.uppercase()}", 0x2A3F5AFFL) { controller.addHeldGenes(grp.members) }
                         }
                     }

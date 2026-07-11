@@ -208,7 +208,7 @@ object CytoSceneView {
                         geneEditor.render(
                             this, controller,
                             grouping = director.activeChapter?.grouping,
-                            allowGroupInsert = director.activeChapter?.allowGroupInsert == true,
+                            insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                         ) {
                             val g = controller.heldGenome()
                             if (g != null) {

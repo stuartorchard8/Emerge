@@ -643,6 +643,13 @@ val AUTOTROPH_GROW_ONLY_GENES: List<Gene> = listOf(
     Gene(EnergySource.Light, GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.FormBond, "r", "g")),
 )
 
+/** A **cohesion** gene for the autotroph: while it has any stored `rg`, burn a little to [ActionType.Repair]
+ *  the welds that hold it to its neighbours. Without it a dividing colony frays — daughters drift apart into
+ *  a loose cloud; with it the colony binds into a cohesive body (the real matter cost means it frays again
+ *  once `rg` runs out). The campaign's "Hold Together" subsystem, inserted in Ch5. */
+val AUTOTROPH_REPAIR_GENE: Gene =
+    Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(2500)), GeneAction(ActionType.Repair))
+
 // Heterotroph seed thresholds — values in CytoSeed (initial data; evolve under mutation).
 private const val HET_GROW = CytoSeed.HETEROTROPH_GROW_BIOMASS
 private const val HET_DIVIDE = CytoSeed.HETEROTROPH_DIVIDE_BIOMASS
