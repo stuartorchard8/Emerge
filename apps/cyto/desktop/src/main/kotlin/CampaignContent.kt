@@ -142,7 +142,7 @@ object CampaignContent {
             ),
             Step(
                 text = "Now click the cell to select it.",
-                gate = Gate.Did(PlayerAction.SelectedCell, "Select the cell"),
+                gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = LOOK,
                 spotlight = Spotlight(dim = true),
             ),
@@ -174,7 +174,7 @@ object CampaignContent {
         steps = listOf(
             Step(
                 text = "You've watched this cell hold steady. Now let's read why it does what it does. Click it to open its dossier.",
-                gate = Gate.Did(PlayerAction.SelectedCell, "Select the cell"),
+                gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "Click the cell"),
             ),
@@ -226,7 +226,7 @@ object CampaignContent {
         steps = listOf(
             Step(
                 text = "This organism grows but can't reproduce - on its own it's a dead end. Let's fix that. Select the cell to open its genome.",
-                gate = Gate.Did(PlayerAction.SelectedCell, "Select the cell"),
+                gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "Click the cell"),
             ),
@@ -295,7 +295,7 @@ object CampaignContent {
             ),
             Step(
                 text = "Select the cell, open its REPRODUCE group, and tap the divide gene inside to edit it.",
-                gate = Gate.Did(PlayerAction.SelectedCell, "Select the cell"),
+                gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "Click the cell, then + REPRODUCE, then the gene"),
             ),
