@@ -187,6 +187,7 @@ object CytoSceneView {
             // Control masking: an active chapter restricts the toolbar to what the current step allows.
             val mask = director.controlMask
             controls.showBrush = mask.allows(Control.Brush)
+            controls.showTouchModes = mask.allows(Control.Brush)
             controls.showSimSpeed = mask.allows(Control.Speed)
             controls.showMutation = mask.allows(Control.Mutation)
             controls.simPaused = simDriver.paused
@@ -384,8 +385,12 @@ object CytoSceneView {
                         if (hit != null) {
                             controller.focus(hit)
                         }
-                        val world = renderer.screenToWorld(px.first, px.second)
-                        controller.tap(world[0], world[1], controls.touchMode, controls.cellType)
+                        // Painting is gated with the brush: while a campaign step masks Brush off,
+                        // a world tap must not spawn/act (selection above still works via focus()).
+                        if (controls.showBrush) {
+                            val world = renderer.screenToWorld(px.first, px.second)
+                            controller.tap(world[0], world[1], controls.touchMode, controls.cellType)
+                        }
                     }
                     controller.releaseGrab()
                     state.grabId = null

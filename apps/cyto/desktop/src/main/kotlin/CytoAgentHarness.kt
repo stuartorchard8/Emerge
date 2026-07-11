@@ -269,6 +269,7 @@ object CytoAgentHarness {
         private fun shot(name: String) {
             val mask = director.controlMask
             controls.showBrush = mask.allows(Control.Brush)
+            controls.showTouchModes = mask.allows(Control.Brush)
             controls.showSimSpeed = mask.allows(Control.Speed)
             controls.showMutation = mask.allows(Control.Mutation)
             renderer.showLightField = controls.showLightField

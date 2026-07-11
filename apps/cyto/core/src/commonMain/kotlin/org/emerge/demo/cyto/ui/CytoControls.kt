@@ -44,6 +44,10 @@ class CytoControls {
      *  chapters so a new player isn't shown painting before they've learned to look. Default true. */
     var showBrush: Boolean = true
 
+    /** Show the Touch Mode column. Masked alongside [showBrush] during early campaign chapters —
+     *  the modes act on the world the same way painting does, so they hide until painting is taught. */
+    var showTouchModes: Boolean = true
+
     /** Whether to draw the light-field heatmap (the host reads this and applies it to the renderer). */
     var showLightField: Boolean = true
         private set
@@ -265,7 +269,9 @@ class CytoControls {
 
         // ── Touch Mode column (to the right of the type column) ──
         val modeX = pad + bs + gap
-        if (openGroup == Group.TouchMode) {
+        if (!showTouchModes) {
+            if (openGroup == Group.TouchMode) openGroup = null   // mask flipped mid-pick
+        } else if (openGroup == Group.TouchMode) {
             buttons.add(Btn(modeX, bottomY, bs, bs, touchMode.color, "${touchMode.name}\nMode") { openGroup = null })
             addOptionRows(
                 groups = TouchMode.entries.groupBy { it.group }.values.toList(),
