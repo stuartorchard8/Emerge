@@ -9,8 +9,10 @@ import org.emerge.demo.cyto.campaign.Spotlight
 import org.emerge.demo.cyto.campaign.Step
 import org.emerge.demo.cyto.campaign.WorldRun
 import org.emerge.demo.cyto.cells.CellType
+import org.emerge.demo.cyto.sim.ActionType
 import org.emerge.demo.cyto.sim.AUTOTROPH_GENES
 import org.emerge.demo.cyto.sim.AUTOTROPH_GROW_ONLY_GENES
+import org.emerge.demo.cyto.sim.AUTOTROPH_REPAIR_GENE
 import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.FounderSpec
 import org.emerge.demo.cyto.sim.Gene
@@ -38,13 +40,20 @@ object CampaignContent {
 
     private const val GROUP_GROW = "Grow"
     private const val GROUP_REPRODUCE = "Reproduce"
+    private const val GROUP_HOLD = "Hold Together"
 
     private fun List<Gene>.tagged(group: String): List<Gene> = map { it.copy(group = group) }
+
+    /** Tag a full-autotroph gene by its role: the two grow genes → Grow, the Mitosis gene → Reproduce. */
+    private fun Gene.taggedByRole(): Gene = copy(group = if (this in AUTOTROPH_GROW_ONLY_GENES) GROUP_GROW else GROUP_REPRODUCE)
 
     /** The reproduction subsystem the grow-only substrate is missing (the break-powered Mitosis gene) — the
      *  genes Ch4's "+ ADD REPRODUCE" inserts, pre-tagged so they carry their group label from the moment
      *  they're added. */
     private val REPRODUCE_GENES = AUTOTROPH_GENES.filter { it !in AUTOTROPH_GROW_ONLY_GENES }.tagged(GROUP_REPRODUCE)
+
+    /** The cohesion subsystem Ch6's "+ ADD HOLD TOGETHER" inserts: a Repair gene, pre-tagged. */
+    private val HOLD_TOGETHER_GENES = listOf(AUTOTROPH_REPAIR_GENE).tagged(GROUP_HOLD)
 
     /** The campaign's substrate: a single autotroph whose reproduction gene has been removed, so it grows to
      *  full size and then holds there, stationary and self-repairing but unable to spread (see
@@ -56,13 +65,21 @@ object CampaignContent {
         founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GROW_ONLY_GENES.tagged(GROUP_GROW))),
     )
 
-    /** Ch5+ substrate: the grow+reproduce autotroph the player built in Ch4 (the full [AUTOTROPH_GENES], tagged
+    /** Ch5 substrate: the grow+reproduce autotroph the player built in Ch4 (the full [AUTOTROPH_GENES], tagged
      *  in place so gene order — behaviourally significant — is preserved). It colonises on its own; Ch5 makes
      *  the colony cohere by toggling the divide gene's SEVER field. */
     private val GROW_REPRODUCE = CytoScenario.DEFAULT.copy(
         name = "Campaign",
-        founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GENES.map {
-            it.copy(group = if (it in AUTOTROPH_GROW_ONLY_GENES) GROUP_GROW else GROUP_REPRODUCE)
+        founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GENES.map { it.taggedByRole() })),
+    )
+
+    /** Ch6 substrate: the Ch5 end-state — a *welded* grow+reproduce autotroph (divide gene's SEVER already
+     *  off, so daughters stay attached). It grows into a connected body when towed, but strain snaps its
+     *  welds; Ch6 adds Repair to hold it together. */
+    private val GROW_REPRODUCE_WELDED = CytoScenario.DEFAULT.copy(
+        name = "Campaign",
+        founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GENES.map { g ->
+            g.taggedByRole().let { if (it.action.type == ActionType.Mitosis) it.copy(action = it.action.copy(rejectMother = false)) else it }
         })),
     )
 
@@ -74,6 +91,7 @@ object CampaignContent {
     private val CAMPAIGN_GROUPING = GenomeGrouping(listOf(
         GeneGroup(GROUP_GROW, 0x3E9E5AFFL),
         GeneGroup(GROUP_REPRODUCE, 0xC77DD0FFL, insert = REPRODUCE_GENES),
+        GeneGroup(GROUP_HOLD, 0xD98C40FFL, insert = HOLD_TOGETHER_GENES),
     ))
 
     val CHAPTERS: List<Chapter> = listOf(
@@ -82,6 +100,7 @@ object CampaignContent {
         chapter3AnatomyOfAGene(),
         chapter4Reproduce(),
         chapter5HoldTogether(),
+        chapter6HoldUnderStrain(),
     )
 
     val ORDER: List<String> = CHAPTERS.map { it.id }
@@ -318,6 +337,63 @@ object CampaignContent {
                 allow = WATCH,
                 world = WorldRun.Live,
                 detail = "Welds bind neighbours, but they aren't unbreakable - yank the body and cells tear loose. Keeping a body intact while it moves is a job of its own, coming up.",
+            ),
+        ),
+    )
+
+    /** Act II, cohesion under strain. Ch5's welded body holds when still but tears when dragged hard - welds
+     *  strain and snap. Here the player inserts a Repair "Hold Together" group; Repair is damage-gated, so it
+     *  costs nothing at rest and, under strain, heals the welds as fast as dragging damages them - the body
+     *  now holds together while it moves. Teaches that keeping a body intact is an active, on-demand job. */
+    private fun chapter6HoldUnderStrain() = Chapter(
+        id = "ch06-strain",
+        act = 2,
+        title = "Under Strain",
+        blurb = "Welds snap when you pull. Teach the body to mend itself.",
+        scenario = GROW_REPRODUCE_WELDED,
+        grouping = CAMPAIGN_GROUPING,
+        insertableGroups = setOf(GROUP_HOLD),
+        steps = listOf(
+            Step(
+                text = "Here's your welded body again. Drag it around to grow it into a small colony first.",
+                gate = Gate.World(
+                    "Grow to 10 cells by dragging",
+                    met = { it.cellCount >= 10 },
+                    progress = { it.cellCount.coerceAtMost(10) to 10 },
+                ),
+                allow = WATCH,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "Press and drag a cell to tow the body"),
+            ),
+            Step(
+                text = "Now yank it around hard and fast. See cells tear loose off the back - the welds survive a gentle tow, but a sharp pull snaps them.",
+                gate = Gate.Next,
+                allow = WATCH,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "Drag hard and fast - cells shed off the back"),
+            ),
+            Step(
+                text = "Select a cell and add the HOLD TOGETHER group. It's a Repair gene: it mends strained welds, and re-attaches neighbours that have drifted back together.",
+                gate = Gate.World(
+                    "Add the Hold Together group",
+                    met = { (it.focused?.geneCount ?: 0) >= 4 },
+                ),
+                allow = LOOK,
+                spotlight = Spotlight(hint = "+ ADD HOLD TOGETHER, below the groups"),
+                detail = "Repair costs nothing while the body is calm - it only fires when there's damage to heal. Under strain it spends stored rg to mend welds, up to a limit.",
+            ),
+            Step(
+                text = "Now drag it around again. It's tougher - Repair keeps mending the strained welds, so it holds together through pulls that tore it apart before. Yank hard enough and cells still rip loose, but it takes real force now.",
+                gate = Gate.Next,
+                allow = WATCH,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "Drag it - it holds together far better now"),
+            ),
+            Step(
+                text = "Grow, reproduce, cohere, and now mend under stress. Your single cell has become a tough, mobile body that repairs its own damage - a real creature.",
+                gate = Gate.Next,
+                allow = WATCH,
+                world = WorldRun.Live,
             ),
         ),
     )

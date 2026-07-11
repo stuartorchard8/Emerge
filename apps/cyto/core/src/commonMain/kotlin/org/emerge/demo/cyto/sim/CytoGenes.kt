@@ -636,6 +636,15 @@ val AUTOTROPH_GENES: List<Gene> = listOf(
     Gene(EnergySource.Light, GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.FormBond, "r", "g")),
 )
 
+/** A **cohesion / weld-maintenance** gene for the autotroph: while it has any stored `rg`, burn some to
+ *  [ActionType.Repair]. Repair is damage-gated (a no-op with nothing to heal — CytoBiologyCore), so it costs
+ *  nothing on a calm body and only fires under strain: physical stress (e.g. the player dragging the colony)
+ *  accrues weld damage, and Repair heals it each tick — plus welds touching neighbours that share a
+ *  connection. Without it, strained welds snap and cells shed; with it, the body holds together while it
+ *  moves. The campaign's "Hold Together" subsystem, inserted in Ch6. */
+val AUTOTROPH_REPAIR_GENE: Gene =
+    Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair))
+
 /**
  * The autotroph with its **reproduction gene removed** — a self-sustaining organism that grows to full size
  * and then holds there, but never divides or spreads. It bonds r+g into `rg` under light and locks `rg` into
