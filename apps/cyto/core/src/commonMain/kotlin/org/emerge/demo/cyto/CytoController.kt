@@ -316,7 +316,8 @@ class CytoController(
         }
         val focused = lastHeldId?.let { id ->
             cells[id]?.let { c ->
-                FocusedCell(c.type, totalBiomassBonds(c.biomass), c.genome.size, c.cytoplasm)
+                val divideWelds = c.genome.any { it.action.type == ActionType.Mitosis && !it.action.rejectMother }
+                FocusedCell(c.type, totalBiomassBonds(c.biomass), c.genome.size, c.cytoplasm, divideWelds)
             }
         }
         return WorldStats(tickCount, count, byType, maxBio, species, focused)

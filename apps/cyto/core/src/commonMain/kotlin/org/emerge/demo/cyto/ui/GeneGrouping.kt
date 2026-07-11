@@ -8,7 +8,13 @@ import org.emerge.demo.cyto.sim.Gene
  * genes run**. Grouping never reorders or edits the genome (gene order is behaviourally significant — see the
  * `reference_gene_order_matters` note), so assigning/showing a group is a guaranteed behavioural no-op.
  */
-class GeneGroup(val name: String, val color: Long, val members: List<Gene>)
+/**
+ * [members] is the match-set: a live gene belongs to this group if it structurally equals one of them. List
+ * *every* form a member gene may take (e.g. a divide gene with SEVER on or off) so that editing a field
+ * doesn't drop the gene out of its group. [insert] is what the "+ ADD" affordance drops in — usually a single
+ * canonical form, so a broad match-set doesn't cause the whole set to be inserted. Defaults to [members].
+ */
+class GeneGroup(val name: String, val color: Long, val members: List<Gene>, val insert: List<Gene> = members)
 
 /**
  * A grouping overlay for one authored genome: the [groups] its genes fall into. The gene editor buckets a

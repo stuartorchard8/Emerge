@@ -53,4 +53,7 @@ class FocusedCell(
     val biomass: Int,
     val geneCount: Int,
     val cytoplasm: Map<String, Int>,
+    /** True if the cell has a division gene whose daughters stay **welded** to the mother (Mitosis with
+     *  sever off). Lets a chapter gate on the player toggling the SEVER field (Ch5). */
+    val divideWelds: Boolean = false,
 )

@@ -643,12 +643,13 @@ val AUTOTROPH_GROW_ONLY_GENES: List<Gene> = listOf(
     Gene(EnergySource.Light, GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.FormBond, "r", "g")),
 )
 
-/** A **cohesion** gene for the autotroph: while it has any stored `rg`, burn a little to [ActionType.Repair]
- *  the welds that hold it to its neighbours. Without it a dividing colony frays — daughters drift apart into
- *  a loose cloud; with it the colony binds into a cohesive body (the real matter cost means it frays again
- *  once `rg` runs out). The campaign's "Hold Together" subsystem, inserted in Ch5. */
-val AUTOTROPH_REPAIR_GENE: Gene =
-    Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(2500)), GeneAction(ActionType.Repair))
+/** The autotroph's reproduction (Mitosis) gene in **both** the forms the campaign shows it: the default
+ *  severing split and the welded variant the player makes by toggling SEVER off (Ch5). Used as the "Reproduce"
+ *  group's match-set so editing that one field doesn't drop the gene out of its group (grouping matches by
+ *  exact value). Insertion still uses only the default (see the group's `insert`). */
+val AUTOTROPH_REPRODUCE_VARIANTS: List<Gene> =
+    AUTOTROPH_GENES.filter { it.action.type == ActionType.Mitosis }
+        .flatMap { g -> listOf(g, g.copy(action = g.action.copy(rejectMother = !g.action.rejectMother))) }
 
 // Heterotroph seed thresholds — values in CytoSeed (initial data; evolve under mutation).
 private const val HET_GROW = CytoSeed.HETEROTROPH_GROW_BIOMASS

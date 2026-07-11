@@ -11,7 +11,7 @@ import org.emerge.demo.cyto.campaign.WorldRun
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.AUTOTROPH_GENES
 import org.emerge.demo.cyto.sim.AUTOTROPH_GROW_ONLY_GENES
-import org.emerge.demo.cyto.sim.AUTOTROPH_REPAIR_GENE
+import org.emerge.demo.cyto.sim.AUTOTROPH_REPRODUCE_VARIANTS
 import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.FounderSpec
 import org.emerge.demo.cyto.ui.GeneGroup
@@ -59,14 +59,15 @@ object CampaignContent {
      *  the break-powered Mitosis gene). */
     private val REPRODUCE_GENES = AUTOTROPH_GENES.filter { it !in AUTOTROPH_GROW_ONLY_GENES }
 
-    /** Functional grouping for the campaign autotroph, over the whole Act II arc: two grow genes read as one
-     *  "Grow" subsystem, the reproduction gene as "Reproduce", the cohesion gene as "Hold Together". Absent
-     *  groups only surface as "+ ADD" buttons in the chapter that names them insertable, so each chapter
-     *  offers just the one subsystem it teaches. Collapsed, the genome reads as a few plain labels (§10). */
+    /** Functional grouping for the campaign autotroph, over the Act II arc: two grow genes read as one "Grow"
+     *  subsystem, the reproduction gene as "Reproduce". An absent group only surfaces as a "+ ADD" button in
+     *  the chapter that names it insertable, so each chapter offers just the one subsystem it teaches.
+     *  Collapsed, the genome reads as a couple of plain labels (§10). */
     private val CAMPAIGN_GROUPING = GenomeGrouping(listOf(
         GeneGroup("Grow", 0x3E9E5AFFL, AUTOTROPH_GROW_ONLY_GENES),
-        GeneGroup("Reproduce", 0xC77DD0FFL, REPRODUCE_GENES),
-        GeneGroup("Hold Together", 0xD98C40FFL, listOf(AUTOTROPH_REPAIR_GENE)),
+        // Match set covers both SEVER on/off (the Ch5 edit) so the gene keeps its label after editing; the
+        // "+ ADD" affordance inserts only the default severing form.
+        GeneGroup("Reproduce", 0xC77DD0FFL, members = AUTOTROPH_REPRODUCE_VARIANTS, insert = REPRODUCE_GENES),
     ))
 
     val CHAPTERS: List<Chapter> = listOf(
@@ -248,56 +249,69 @@ object CampaignContent {
         ),
     )
 
-    /** Act II, cohesion. The Ch4 colony spread into a loose, drifting cloud. Here the player inserts a
-     *  "Hold Together" (Repair) subsystem *before* the cell colonises, so every descendant spends a little
-     *  energy staying bonded - and the colony grows as a cohesive body instead of a scattering cloud.
-     *  Teaches that a body is held together actively, at a cost, not for free. */
+    /** Act II, first *direct gene edit*. The Ch4 colony scattered because every daughter severs on division -
+     *  and severing doubles as locomotion (the two cells shove apart into fresh matter, fuelling more
+     *  divisions). Here the player flips a single field, SEVER: yes -> no, so daughters stay welded. The
+     *  welded pair holds together but stalls - stuck in place, it starves and stops dividing. The fix is
+     *  *dragging*: tow the body around to feed it fresh matter and it grows again. That both unsticks it and
+     *  sets up the next chapter - dragging strains the welds, and keeping them intact is a job of its own. */
     private fun chapter5HoldTogether() = Chapter(
         id = "ch05-hold",
         act = 2,
         title = "Hold Together",
-        blurb = "A cloud of cells isn't a body. Make the colony cohere.",
+        blurb = "A cloud of cells isn't a body. Weld it into one, and lead it.",
         scenario = GROW_REPRODUCE,
         grouping = CAMPAIGN_GROUPING,
-        insertableGroups = setOf("Hold Together"),
         steps = listOf(
             Step(
-                text = "Here's the grow-and-reproduce cell you built. Last time, its colony spread into a loose, drifting cloud - because nothing held the cells together.",
+                text = "Here's the grow-and-reproduce cell you built. Its colony scattered into a loose cloud - each daughter split off and shot away on its own. Let's make it stay together instead.",
                 gate = Gate.Next,
                 allow = LOOK,
             ),
             Step(
-                text = "Let's fix that before it spreads. Select the cell to open its genome.",
+                text = "Select the cell, open its REPRODUCE group, and tap the divide gene inside to edit it.",
                 gate = Gate.Did(PlayerAction.SelectedCell, "Select the cell"),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "Click the cell"),
+                spotlight = Spotlight(hint = "Click the cell, then + REPRODUCE, then the gene"),
             ),
             Step(
-                text = "Add the HOLD TOGETHER group. It spends a little stored energy keeping each cell bonded to its neighbours.",
+                text = "In the gene's fields, find SEVER: yes - that's what cuts each daughter loose. Switch it to SEVER: no, then press DONE.",
                 gate = Gate.World(
-                    "Add the Hold Together group",
-                    met = { (it.focused?.geneCount ?: 0) >= 4 },
+                    "Set SEVER to no",
+                    met = { it.focused?.divideWelds == true },
                 ),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "+ ADD HOLD TOGETHER, below the groups"),
-                detail = "Cohesion isn't free here - holding a body together costs matter, and a cell that runs out will start to fray. A body is something a colony actively maintains.",
+                spotlight = Spotlight(hint = "SEVER toggle, then DONE"),
+                detail = "SEVER yes = the daughter breaks free as its own cell. SEVER no = it stays welded to its mother. One field, two completely different creatures.",
             ),
             Step(
-                text = "Now speed up and watch it colonise. This time the offspring stay bonded - the colony packs into a dense mass instead of scattering into a thin cloud.",
+                text = "Speed up and watch. It divides once, into a welded pair - then stops. Splitting off used to fling the cells into fresh matter. Now they sit still and quickly eat what's right around them.",
                 gate = Gate.World(
-                    "Grow to 40 cells",
-                    met = { it.cellCount >= 40 },
-                    progress = { it.cellCount.coerceAtMost(40) to 40 },
+                    "Watch it divide once",
+                    met = { it.cellCount >= 2 },
                 ),
                 allow = WATCH,
                 world = WorldRun.Live,
                 spotlight = Spotlight(hint = "SLOW / PAUSE / FAST, top-left"),
             ),
             Step(
-                text = "Compare it to last chapter's drifting cloud - this one holds together. Grow, reproduce, cohere: three subsystems, and a single cell has become a living body.",
+                text = "They're starving in place. So feed them yourself: drag the cell across the world. Fresh matter under the body restarts division - lead it around and grow it.",
+                gate = Gate.World(
+                    "Grow to 12 cells by dragging",
+                    met = { it.cellCount >= 12 },
+                    progress = { it.cellCount.coerceAtMost(12) to 12 },
+                ),
+                allow = WATCH,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "Press and drag a cell to tow the body"),
+                detail = "The whole welded body follows the cell you grab, sweeping into fresh matter as it goes - so it keeps dividing as long as you keep finding it food.",
+            ),
+            Step(
+                text = "You're towing a living, connected body - one toggled field turned a scattering swarm into this. But drag it hard and you'll see the welds strain, and snap. Holding together under stress is next.",
                 gate = Gate.Next,
                 allow = WATCH,
                 world = WorldRun.Live,
+                detail = "Welds bind neighbours, but they aren't unbreakable - yank the body and cells tear loose. Keeping a body intact while it moves is a job of its own, coming up.",
             ),
         ),
     )
