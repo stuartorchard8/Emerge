@@ -17,6 +17,16 @@ application {
     mainClass = "org.emerge.desktop.CytoMainKt"
 }
 
+tasks.register<JavaExec>("cytoAgent") {
+    group = "application"
+    description = "Headless, script-driven Cyto harness for agents/CI: run the world, inject pointer " +
+        "input, drive the campaign, and capture PNG + JSON observations. " +
+        "--args=\"<scriptFile|-> [outDir]\" (outDir default: agent-out)."
+    mainClass = "org.emerge.desktop.CytoAgentHarnessKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootDir   // so cyto-genomes/, saves, and agent-out resolve from the repo root
+}
+
 tasks.register<JavaExec>("renderCyto") {
     group = "application"
     description = "Render the Cyto world headlessly (light-field heatmap + cells) to a PNG. " +

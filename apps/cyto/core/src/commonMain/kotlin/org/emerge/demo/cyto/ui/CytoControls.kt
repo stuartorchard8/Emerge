@@ -40,6 +40,10 @@ class CytoControls {
     var showChemicals: Boolean = false
         private set
 
+    /** Host-set: whether to draw the bottom-left brush column. The campaign masks it off in early
+     *  chapters so a new player isn't shown painting before they've learned to look. Default true. */
+    var showBrush: Boolean = true
+
     /** Whether to draw the light-field heatmap (the host reads this and applies it to the renderer). */
     var showLightField: Boolean = true
         private set
@@ -106,6 +110,21 @@ class CytoControls {
     fun setResolution(widthPx: Float, heightPx: Float) {
         resW = widthPx.coerceAtLeast(1f)
         resH = heightPx.coerceAtLeast(1f)
+    }
+
+    /** Rebuild the button list without drawing (no GPU) — so a headless driver can enumerate/tap by
+     *  label. The live host doesn't need this ([draw] rebuilds each frame). */
+    fun rebuild() = layout()
+
+    /** Labelled buttons currently laid out (newlines flattened to spaces). Call [rebuild] first. */
+    fun elements(): List<String> = buttons.map { it.label.replace('\n', ' ') }
+
+    /** Fire the first button whose (newline-flattened) label contains [query], case-insensitive. Call
+     *  [rebuild] first so the button list reflects the current state. Returns true if one fired. */
+    fun tap(query: String): Boolean {
+        val q = query.lowercase()
+        for (b in buttons) if (b.label.replace('\n', ' ').lowercase().contains(q)) { b.action(); return true }
+        return false
     }
 
     /** Returns true if the pointer-down hit a control (and applied its action). */
@@ -205,7 +224,9 @@ class CytoControls {
         // ── Brush column (bottom-left) — the dynamic genome-library palette when the host supplies one,
         // else the legacy CellType swatches (android/web). Picking a swatch sets the brush genome. ──
         val typeX = pad
-        if (genomePalette.isNotEmpty()) {
+        if (!showBrush) {
+            // Brush column masked off (campaign early chapters) — skip both palette + legacy swatches.
+        } else if (genomePalette.isNotEmpty()) {
             val sel = genomePalette.getOrNull(selectedGenome)
             val headerColor = sel?.second ?: 0x606060FFL
             val headerLabel = "${sel?.first ?: "Genome"}\nBrush"

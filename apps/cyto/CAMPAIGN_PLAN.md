@@ -1,0 +1,723 @@
+# Cyto — Campaign / Story Mode (design plan)
+
+*A staged, problem-driven onboarding that teaches the world, then the gene, then how genes compose
+into emergent bodies. This doc is the design contract for the in-game tutorial; `TUTORIAL.md` is its
+prose companion (the campaign is the interactive path through the same material).*
+
+> **Agent harness (2026-07-11):** `CytoAgentHarness` (desktop, `./gradlew :apps:cyto:desktop:cytoAgent
+> --args="<script> [outDir]"`) drives Cyto **headlessly** — script commands: `scenario`/`campaign`/`run`/
+> `runs`/`camera`/`tap`/`select`/`spawn`/`drag`/`overlay`/`next`/`shot`/`state`/`echo`. Renders cells+coach
+> to PNG via `java.awt` (`controller.agentCells()`) and dumps world+coach JSON (`director.snapshot()`),
+> so an agent can iterate without the GL window. Also fixed: bitmap font is uppercase-only + limited
+> punctuation (added `'`; `;`/`—`/`◆▸✓🔒` render as `?` — `UiTextRenderer.supports()` + `CampaignContent.
+> validateGlyphs()` guard against regressions); per-step `WorldRun.Frozen/Live` so a slow reader isn't
+> overtaken by later-concept events (world holds still on reading beats).
+>
+> **Status (2026-07-11):** Phase 0 + Act I landed. Built: the `campaign` engine in core commonMain
+> (`CampaignModel`/`CampaignQuery`/`CampaignDirector`), the `BottomCenter` UI anchor, `controller.worldStats()`,
+> and desktop wiring (coach overlay, control masking, player-action detection, `CampaignProgress`
+> persistence, a Campaign menu branch). Two chapters authored (`ch01-first-contact`, `ch02-light`).
+> Director logic unit-tested (`CampaignDirectorTest`); golden trajectory unchanged. Not yet done:
+> region-targeted spotlights/arrows (v1 uses a text hint + optional dim), Phases 3–5 (Acts II–IV +
+> gene groups §10), and live in-app visual playtest (needs a GL session). The architecture is grounded
+> in what exists
+> today: the immediate-mode `Ui` toolkit (`engine/render/torus/.../ui/Ui.kt`), the `CytoMenu` shell +
+> `Callbacks`, the `CytoScenario` recipe system, the genome library (`CytoGenomes`), and the
+> controller's world-query surface (`heldCellInfo`, the `CytoCellComponent` table, `newGame`).
+
+---
+
+## 1. Design goals & principles
+
+The problem we're solving: Cyto is *impenetrable on first contact*. A new player sees a coloured blob
+pulsing on a black field and has no way in. The campaign is the way in.
+
+Five principles drive every decision below:
+
+1. **Problem before mechanism.** Never explain a feature in the abstract. Pose a *situation the
+   player wants to resolve* ("this cell is starving in the dark — fix it"), and let the mechanism be
+   the tool that resolves it. Engagement comes from a goal, not a lecture.
+2. **One new idea per beat.** Each step introduces exactly one concept and immediately exercises it.
+   The player never holds more than one new thing in working memory at a time.
+3. **Show the emergence, don't assert it.** The payoff of Cyto is that simple local rules produce
+   complex global behaviour. The campaign is structured so the player *builds the simple rule and
+   then watches the complex thing happen* — the "aha" is earned, not told.
+4. **Depth is opt-in.** Every chapter has a *required spine* (the minimum to progress) and *optional
+   depth* (info cards, side-objectives, "try this"). A player who wants to rush learns the essentials;
+   a player who wants mastery can go arbitrarily deep. The campaign is a ladder, not a rail.
+5. **Graduate to the sandbox.** The campaign's endpoint is *competence in the existing free-play
+   tools* (New/Custom worlds, the gene editor, the genome library). It hands the player off to
+   open-ended play, it doesn't wall them inside a scripted track.
+
+Non-goals: we are **not** rebuilding the sim, the physics, or the gene model. We are **not** replacing
+the existing New/Custom/Load flow — the campaign is a sibling to it. We reuse the `Ui` toolkit,
+`CytoScenario`, and `.gene` genomes wholesale.
+
+---
+
+## 2. The shape of the whole thing
+
+The campaign is **four acts, ~11 chapters**, each chapter a hand-authored world + a scripted coaching
+sequence + one or more objectives. Difficulty and conceptual load rise monotonically.
+
+| Act | Theme | Chapters | What the player leaves knowing |
+|---|---|---|---|
+| **I — The World** | Interaction literacy | 1–2 | Camera, selection, the info panel, light vs matter, that cells live and die on their own |
+| **II — The Gene** | Single-action literacy | 3–7 | The gene grammar; each of the seven actions, one at a time, by using it to solve a problem |
+| **III — Composition** | Emergence | 8–10 | Clocks (feedback/timing), morphogen gradients (position), oriented division (shape) |
+| **IV — The Wild** | Graduation | 11 + sandbox | Combining everything into a body; turning on mutation/selection; free play |
+
+Acts I–II are tightly scripted (high hand-holding). Act III loosens (the player is composing, we
+coach less). Act IV is essentially the existing sandbox with an optional challenge list.
+
+### 2.1 Chapter list (spine)
+
+- **Ch 1 — First Contact.** *Problem:* "There's a lone cell. Find it and learn to look at it."
+  Teaches pan/zoom, click-to-select, the info panel, that the world wraps (toroidal).
+- **Ch 2 — Let There Be Light.** *Problem:* "Keep this cell fed as day turns to night." Teaches the
+  light overlay + day/night band, matter overlay + depletion, passive feeding, growth→division→
+  carrying-capacity — all by *watching* the seeded autotroph and nudging it.
+- **Ch 3 — Anatomy of a Gene.** *Problem:* "Why does this cell do what it does? Read its program."
+  Opens the gene editor; walks the three parts of a gene; the grammar.
+- **Ch 4 — Grow.** *Problem:* "This cell makes food but never grows. Give it the gene it's missing."
+  Player adds a `Convert` gene. Teaches Convert, FormBond dependency, the reserve/threshold idea.
+- **Ch 5 — Divide.** *Problem:* "One cell isn't a body. Make it multiply." Player adds `Mitosis`;
+  meets `Break` energy for bulk cost, the halving brake, `sever` vs welded colony.
+- **Ch 6 — The Food Web.** *Problem:* "This second creature can't photosynthesise. Feed it." Teaches
+  passive diffusion, Import/Export one-way gates, autotroph→heterotroph flow.
+- **Ch 7 — Hold Together & Move.** *Problem:* "Your colony is falling apart / can't move." Short
+  beats for `Repair` (cohesion), `Contract` (locomotion), and a taste of `Lyse` (predation).
+- **Ch 8 — The Clock.** *Problem:* "Make a cell that acts on a schedule, then make a colony that
+  pulses." Dilution timer (`Conc`) → ring oscillator → phased `Contract` = swimming.
+- **Ch 9 — Knowing Where You Are.** *Problem:* "Make cells that behave differently depending on where
+  they are in the body." Asymmetric mitosis seeds a source; sink everywhere; `Conc` bands → two
+  tissues (two colours). The differentiation keystone.
+- **Ch 10 — Shape.** *Problem:* "Break out of the blob." Oriented division `along`/`across` → threads
+  and sheets.
+- **Ch 11 — The Hopeful Monster (capstone).** *Problem:* "Grow one genome into a shaped, differentiated,
+  self-holding body — then let evolution loose on it." Combines Ch 8–10; ends by turning on mutation
+  and watching selection act. Open-ended; graduates to sandbox.
+
+### 2.2 Progression & unlocking
+
+- Chapters unlock in order; completing *N* unlocks *N+1*. Any unlocked chapter is replayable.
+- Progress persists to a small file (`campaign-progress`, alongside `cyto-saves/` and
+  `cyto-genomes/`): highest unlocked chapter + per-chapter completion flags.
+- Genomes the player builds during the campaign can be EXPORTed to the genome library (existing flow),
+  so campaign work carries into sandbox play.
+- A "Skip to sandbox" escape hatch is always available from the campaign menu (respect the player's
+  time; some players arrive already knowing cellular automata).
+
+---
+
+## 3. Architecture
+
+The campaign is a thin, self-contained layer over the existing game. It introduces one new subsystem
+(the **director**), one new menu branch, and a handful of read-only query methods on the controller.
+Nothing in the sim changes.
+
+```
+                 ┌─────────────────────────────────────────────┐
+   CytoSceneView │  frame loop (existing)                        │
+   (desktop host)│    renderer.draw(frame)                       │
+                 │    controls.draw()                            │
+                 │    ui.frame { geneEditor.render(...)          │
+                 │               menu / campaign overlay  }  ◄───┼── NEW: campaign overlay
+                 │    ui.draw()                                   │
+                 └───────────────┬──────────────────────────────┘
+                                 │ drives
+                 ┌───────────────▼──────────────────────────────┐
+                 │  CampaignDirector           (NEW, commonMain) │
+                 │   - current chapter + step index              │
+                 │   - evaluates step gates & objectives         │
+                 │   - renders the coach overlay (Ui toolkit)    │
+                 │   - restricts/enables controls per step       │
+                 └───────┬───────────────────────┬──────────────┘
+             reads       │                        │  reads/writes
+        ┌────────────────▼─────┐        ┌─────────▼───────────────┐
+        │ CampaignQuery (NEW)  │        │ CampaignProgress (NEW)  │
+        │  read-only world     │        │  persisted unlock state │
+        │  stats on controller │        │  (desktop file I/O)     │
+        └──────────────────────┘        └─────────────────────────┘
+```
+
+### 3.1 New types
+
+**`campaign/Campaign.kt` (commonMain, `org.emerge.demo.cyto.campaign`)** — the authored content model:
+
+```kotlin
+/** A full chapter: a world recipe, a scripted coaching sequence, and its win condition(s). */
+class Chapter(
+    val id: String,                 // stable key for progress persistence, e.g. "ch02-light"
+    val act: Int,
+    val title: String,
+    val blurb: String,              // one-line teaser on the chapter-select card
+    val scenario: CytoScenario,     // reuses the existing recipe system
+    val seededGenomes: List<NamedGenome> = emptyList(),  // genomes this chapter provides as brushes
+    val steps: List<Step>,          // the ordered coaching beats
+)
+
+/** One coaching beat. Holds the instruction, how it advances, and what the player may do meanwhile. */
+class Step(
+    val text: String,               // the coach panel copy (short — one idea)
+    val detail: String? = null,     // optional "more" card, opt-in depth
+    val spotlight: Spotlight? = null,   // where to point the player's eye
+    val gate: Gate,                 // what advances to the next step
+    val allow: ControlMask = ControlMask.ALL,  // which controls are live this step
+    val onEnter: (StepContext) -> Unit = {},    // e.g. spawn a helper cell, focus a target
+)
+
+/** What advances a step. */
+sealed interface Gate {
+    object Next : Gate                                   // manual: the "Next" button
+    class World(val desc: String, val met: (CampaignQuery) -> Boolean) : Gate  // a world condition
+    class Did(val action: PlayerAction) : Gate           // player performed an interaction
+    class All(val gates: List<Gate>) : Gate              // every sub-gate met
+}
+
+/** Interactions the director can wait on (observed via controller/host state deltas). */
+enum class PlayerAction { SelectedCell, OpenedInfoPanel, OpenedGeneEditor, PaintedCell,
+                          ToggledLight, ToggledMatter, Paused, ZoomedOrPanned, EditedGene }
+
+/** Where to draw attention. Named UI regions avoid needing to introspect arbitrary widget rects. */
+sealed interface Spotlight {
+    enum class Region { Palette, InfoPanel, SpeedControls, MutButton, MenuButton, LightMatterButtons, GeneEditor, Screen }
+    class Ui(val region: Region, val arrow: Boolean = true) : Spotlight
+    class WorldCell(val pick: (CampaignQuery) -> Int?) : Spotlight   // ring a specific entity
+    class WorldPoint(val x: Float, val y: Float) : Spotlight
+}
+```
+
+**`campaign/CampaignQuery.kt`** — a read-only snapshot the objective predicates run against. Backed
+by a scan of the `CytoCellComponent` table (exactly what `readouts()` / `heldCellInfo()` already do):
+
+```kotlin
+class CampaignQuery(
+    val tick: Long,
+    val cellCount: Int,
+    val countByType: Map<CellType, Int>,
+    val maxBiomass: Int,
+    val speciesPresentAnywhere: Set<String>,     // union of cytoplasm+biomass species over all cells
+    val distinctBiomassProfiles: Int,            // ~ how many visually distinct "tissues" exist
+    val focusedCell: FocusedCell?,               // the currently-selected cell, if any
+    val paletteSelection: String?,               // selected brush genome name
+    val lightOverlayOn: Boolean,
+    val matterOverlayOn: Boolean,
+    val paused: Boolean,
+) {
+    class FocusedCell(val type: CellType, val biomass: Int, val genome: List<Gene>,
+                      val cytoplasm: Map<String, Int>, val geneCount: Int)
+}
+```
+
+This is the single new read surface on the controller: a `fun campaignQuery(host: HostFlags): CampaignQuery`
+that iterates the component table once. `distinctBiomassProfiles` is a cheap heuristic (bucket cells by
+their dominant biomass molecule) that lets us detect "the colony differentiated into two tissues"
+without any new sim state.
+
+**`campaign/CampaignDirector.kt`** — the runtime. Owns `chapterIndex`, `stepIndex`, evaluates the
+current step's gate/objective each frame, renders the coach overlay, and reports which controls are
+masked. Immediate-mode, same lifecycle as `GeneEditor`:
+
+```kotlin
+class CampaignDirector(val campaign: Campaign, val progress: CampaignProgress) {
+    fun render(ui: UiBuilder, controller: CytoController, host: HostFlags)   // draw coach + spotlight
+    fun update(query: CampaignQuery)                                         // advance gates/objectives
+    val controlMask: ControlMask     // host consults this to grey out disabled buttons
+    val activeChapter: Chapter?
+    fun startChapter(c: Chapter, controller: CytoController)
+    fun exitToMenu()
+}
+```
+
+**`CampaignContent.kt` (desktop)** — the authored chapters themselves, in a small Kotlin DSL (below).
+Kept in desktop for now (like `CytoGenomes`/`CytoSaves`); the *engine* (`CampaignDirector`) is
+commonMain so Android/web can host the same content later.
+
+### 3.2 Authoring DSL
+
+Chapters are data, but Kotlin-authored (type-safe, refactor-safe, and it can reference `CytoScenario`
+/ `CellType` / `.gene` text directly). A builder keeps them readable:
+
+```kotlin
+val CH02_LIGHT = chapter("ch02-light", act = 1, title = "Let There Be Light") {
+    blurb("Watch a cell feed on sunlight — and survive the night.")
+    scenario(CytoScenario.DEFAULT)                       // single autotroph at origin
+
+    step("This green cell is an autotroph — it eats light. Press [Light] to see the sun.") {
+        spotlight(Ui(Region.LightMatterButtons))
+        gate(Did(ToggledLight))
+    }
+    step("The bright band is daylight sweeping across the world. Where it's dark, the cell can't feed.") {
+        gate(Next)
+    }
+    step("Speed things up and watch it grow, then split.") {
+        spotlight(Ui(Region.SpeedControls))
+        gate(World("Reach 8 cells") { it.cellCount >= 8 })
+    }
+    step("It stopped multiplying — it ran out of matter nearby. Turn on [Matter] to see what's left.") {
+        spotlight(Ui(Region.LightMatterButtons))
+        gate(All(listOf(Did(ToggledMatter), World("plateau") { it.cellCount in 8..40 && it.tick > START + 4000 })))
+    }
+    complete("Matter is finite; light is free. That tension is the whole game.")
+}
+```
+
+### 3.3 Host integration (CytoSceneView)
+
+Minimal, additive changes to the existing frame loop:
+
+1. **Menu branch.** Add `Page.Campaign` (chapter select) and a `Campaign` button on the Title screen.
+   New callbacks: `onStartChapter(Chapter)` (builds the scenario via existing `onStart` plumbing, then
+   activates the director) and `onExitCampaign()`.
+2. **Overlay.** Inside the existing `ui.frame { … }` in-game block, after the gene editor, call
+   `director.render(this, controller, hostFlags)` when a chapter is active. The coach panel is a new
+   **bottom-center** anchored panel (§4.1).
+3. **Objective tick.** Once per frame build a `CampaignQuery` and call `director.update(query)`.
+   `HostFlags` carries the host-owned booleans the query needs (light/matter overlay, paused,
+   selected genome) — these already live in `CytoControls`/`CytoSceneView`.
+4. **Control masking.** Where controls are drawn, consult `director.controlMask` to skip/grey disabled
+   ones (e.g., Ch 1 hides the palette and gene editor so the player isn't overwhelmed). This is the
+   only slightly invasive change; it's a set of `if (mask.allows(X))` guards around existing draws.
+5. **Observing `PlayerAction`s.** The director detects interactions by diffing controller/host state
+   between frames (selection changed → `SelectedCell`; `heldCellInfo() != null` first time →
+   `OpenedInfoPanel`; a genome edit committed → `EditedGene`; overlay toggles → `ToggledLight`/
+   `ToggledMatter`). No new event bus needed — it's all observable from the query + host flags.
+
+### 3.4 What must be added vs reused
+
+| Reused as-is | New (small) | New (the work) |
+|---|---|---|
+| `Ui` toolkit (panels, steppers, overlay) | `Anchor.BottomCenter` / `TopCenter` (2 enum cases + layout) | `CampaignDirector` runtime |
+| `CytoScenario` + `newGame` | `controller.campaignQuery()` (one table scan) | The authored chapter content (Ch 1–11) |
+| `CytoGenomes` `.gene` genomes | `HostFlags` struct | Coach overlay + spotlight rendering |
+| `CytoMenu` shell pattern | `campaign-progress` persistence (mirror `CytoSaves`) | Control-mask plumbing in the host |
+| `GeneEditor` (Ch 3+ reuse it directly) | `Page.Campaign` + 2 callbacks | Playtesting/tuning each chapter's thresholds |
+
+No sim changes. No physics changes. The gene model is untouched.
+
+---
+
+## 4. The coach UI
+
+### 4.1 The coach panel
+
+A persistent **bottom-center** panel while a chapter is active:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  ◆ Ch 2 · Let There Be Light                          (2/5)   │
+│                                                                │
+│  Speed things up and watch it grow, then split.                │
+│                                                                │
+│  ▸ Objective: reach 8 cells            ▓▓▓▓▓░░░  5/8            │
+│                                                                │
+│  [ More ]                              [ Skip ]     [ Next ▸ ] │
+└──────────────────────────────────────────────────────────────┘
+```
+
+- **Header:** chapter title + step counter, so the player always knows where they are.
+- **Body:** the one-idea instruction. Short. Second person, imperative.
+- **Objective row:** only shown for `World` gates — the live predicate rendered as a progress bar +
+  count, so the player sees themselves making progress (this is the engagement engine). Built from the
+  toolkit's rects; the count comes from the same predicate, exposed as `progress: (Query) -> Pair<Int,Int>?`.
+- **Buttons:** `More` (opens the opt-in `detail` card as a stacked panel), `Skip` (advance without the
+  gate — always available, respects player time), `Next` (only enabled for `Gate.Next`, or once a
+  `World`/`Did` gate is satisfied, so the player confirms they've read it before moving on).
+
+`Anchor.BottomCenter` is the one new toolkit primitive — a straightforward addition mirroring `Center`
+(centre horizontally, stack up from the bottom edge). The existing `Center` code path shows exactly
+how to do it.
+
+### 4.2 Spotlight & attention
+
+To point the eye without introspecting arbitrary widget rects, we use **named regions** whose screen
+positions the host already knows (the palette is bottom-left, info panel top-right, speed controls in
+the controls bar, etc.). The director asks the host for the pixel rect of a `Spotlight.Region`, then:
+
+- **Dim** the rest of the screen with a translucent full-screen rect (toolkit `background`), and
+- draw a **pulsing outline** around the target rect (an animated colour — the director carries a phase
+  clock), plus an optional **arrow** (a small triangle rect) pointing at it.
+
+For world targets (`WorldCell`/`WorldPoint`) the ring is drawn at the projected screen position via
+`renderer.worldToScreen` (already used for the debug readouts) and follows the cell each frame.
+
+Dimming is **opt-in per step** (only when we truly want to force focus, e.g. "click *this* button" in
+Ch 1). Most steps just show the coach panel and maybe an arrow — heavy dimming every step is
+patronising and we avoid it (principle 4).
+
+### 4.3 Tone & copy rules
+
+- Second person, present imperative: "Click the cell." Not "The user should click…".
+- Name the payoff, not the mechanism, in the *problem* framing; name the mechanism in the *resolution*.
+- ≤ ~14 words per instruction line where possible; overflow goes in `More`.
+- Every chapter ends on a **one-sentence "why this matters"** that ties the mechanic back to
+  emergence (the `complete(...)` line).
+
+---
+
+## 5. Minutia — Act I, fully specified
+
+This is the part the rest of the campaign is patterned on. Two chapters, every step: copy, spotlight,
+gate, control mask, and the query each objective needs. (World tick offsets shown as `START` = the
+chapter's start tick.)
+
+### Chapter 1 — First Contact
+
+*Goal: the player can move the camera, select a cell, and read the info panel. No genetics, no
+painting — pure interaction literacy. Controls masked down to camera + selection so nothing distracts.*
+
+**Scenario:** `CytoScenario.DEFAULT` (one autotroph at origin), **sim paused on entry** so the world is
+still and unintimidating. **Control mask:** camera (pan/zoom) + click-select only. Palette, gene
+editor, speed, mutation, save — all hidden.
+
+| # | Coach text | Spotlight | Gate | Notes / query |
+|---|---|---|---|---|
+| 1 | "Welcome to Cyto. This is a single living cell, floating in an empty world." | `WorldCell{ founder }` (gentle ring, no dim) | `Next` | `onEnter`: `controller.focus(founder)` then clear, camera centred on it |
+| 2 | "Drag empty space to move around. Scroll to zoom. Try it — find the cell again." | none | `Did(ZoomedOrPanned)` | detect via camera delta from host |
+| 3 | "Click the cell to select it." | `WorldCell{ founder }` + arrow, **dim on** | `Did(SelectedCell)` | `query.focusedCell != null` |
+| 4 | "This panel is the cell's dossier: its size, its chemistry, and its genes. You'll live in here." | `Ui(InfoPanel)` | `Next` | info panel already opens on select |
+| 5 | "The world wraps around — walk off one edge and you arrive at the other. It's a doughnut." | none | `Next` | optional `detail`: why a torus (no walls, homogeneous) |
+| — | *complete:* "That's the whole world: cells, light, and matter. Next, let's watch this one live." | | | unlock Ch 2 |
+
+Design notes: pausing the sim in Ch 1 is deliberate — a moving target while learning to pan/zoom is
+frustrating. Step 3 is the one place we hard-dim, because "click the cell" must not be missable. Step 2
+accepts *any* camera movement as success (generous gate — we're building confidence, not testing
+precision).
+
+### Chapter 2 — Let There Be Light
+
+*Goal: the player understands energy (light, free) vs matter (finite), sees the autonomous
+grow→divide→plateau loop, and can use the overlays + speed controls. Still no painting/editing.*
+
+**Scenario:** `CytoScenario.DEFAULT`, **sim running** (slow). **Control mask:** camera, selection,
+speed controls, light/matter overlays. Gene editor + palette still hidden.
+
+| # | Coach text | Spotlight | Gate | Notes / query |
+|---|---|---|---|---|
+| 1 | "This green cell is an *autotroph* — it eats sunlight. Press Light to see the sun." | `Ui(LightMatterButtons)` + arrow | `Did(ToggledLight)` | `query.lightOverlayOn` |
+| 2 | "The bright band is daylight, sweeping across the world. In the dark, the cell can't feed." | none | `Next` | `detail`: exposure — interior cells are shaded too |
+| 3 | "Watch it work. Speed the sim up." | `Ui(SpeedControls)` + arrow | `Did(Paused)`-family: any speed change | host speed delta |
+| 4 | "It's converting light and matter into its own body — growing." | `WorldCell{ founder }` | `World("grow") { it.maxBiomass > 1500 }` | progress bar on biomass |
+| 5 | "Big enough, it splits in two. Keep watching." | none | `World("reach 4 cells") { it.cellCount >= 4 }` | progress 1→4 |
+| 6 | "A colony! But it's slowing down. Turn on Matter to see why." | `Ui(LightMatterButtons)` | `Did(ToggledMatter)` | `query.matterOverlayOn` |
+| 7 | "The cells have eaten the matter around them. Nothing is created from nothing here — matter is finite." | `WorldPoint(colony)` | `World("plateau") { it.cellCount in 4..60 && it.tick - START > 5000 }` | the carrying-capacity beat |
+| — | *complete:* "Light is free and endless; matter is scarce and recycled. Every creature you build lives inside that budget." | | | unlock Ch 3 |
+
+Design notes: Ch 2 is *observational* — the player mostly watches and toggles. That's intentional
+pacing: after the interaction drills of Ch 1, Ch 2 lets the world perform for them and seeds the two
+resources they'll spend the rest of the campaign managing. Step 7's plateau gate has a time floor so
+the player actually witnesses the slowdown rather than blowing past it. If the colony dies out early
+(possible under harsh light), the director detects `cellCount == 0` and offers a "reset chapter"
+prompt rather than soft-locking — a general safety net (§7).
+
+### Bridge into Act II
+
+Ch 2 → Ch 3 is the hinge from *watching* to *authoring*. Ch 3 ("Anatomy of a Gene") re-uses the exact
+world the player just watched, but now un-masks the gene editor and walks the three parts of one gene
+on the very autotroph they've been observing — so their first look at code is code they already
+understand the *behaviour* of. That ordering (behaviour first, then its program) is the core teaching
+move of the whole campaign.
+
+---
+
+## 6. Minutia — how the later chapters teach (sketch)
+
+Act I is specified to the step; Acts II–IV are specified to the *chapter contract* (problem, the one
+gene/idea, the objective predicate, the "watch it happen" payoff). Each will be expanded to Act I's
+resolution during implementation.
+
+- **Ch 3 Anatomy.** World: the running autotroph. Un-mask the gene editor. Steps walk source→condition
+  →action on gene 1 (`Light : rg < 3000 : FormBond r g`), each field spotlighted in the editor.
+  Objective: open the editor and view each of the 3 genes (`Did(OpenedGeneEditor)` + a per-gene "seen"
+  tally). No edits yet — reading before writing.
+- **Ch 4 Grow.** World seeds a **crippled** genome (production only: `FormBond` but no `Convert`) as
+  the founder. Problem: "it makes `rg` but never grows." Player adds `Convert rg` via the editor.
+  Objective: `focusedCell.biomass` climbs past a threshold *and* the genome contains a Convert gene.
+  Payoff: the cell visibly swells. Teaches the cytoplasm→biomass lock + threshold gating.
+- **Ch 5 Divide.** From Ch 4's now-growing cell, add `Mitosis`. Coach the `Break`-powered bulk cost and
+  the halving brake; offer `sever` as an optional toggle ("bud off a colonist"). Objective:
+  `cellCount >= 2`. Payoff: the first division.
+- **Ch 6 Food Web.** Scenario seeds an autotroph colony + one heterotroph (`CellType.Muscle`) a short
+  distance away. Problem: "this one can't photosynthesise — keep it alive." Teaches passive diffusion
+  (move it *next to* the autotroph and it feeds) and, as depth, `Import` to hoard. Objective: the
+  heterotroph survives *N* ticks / grows. `query` needs per-type survival — available from
+  `countByType` deltas.
+- **Ch 7 Hold & Move.** Three short beats on one welded colony: `Repair` (stop the fray — objective:
+  connection damage stops rising, or simply "add a Repair gene and it stops shedding cells"),
+  `Contract` (add it and watch a cell flex), a *taste* of `Lyse` (a predator nibbles a neighbour).
+  Kept light — these are actuators the player will combine later.
+- **Ch 8 The Clock.** Two-part. (a) Dilution timer: seed a cell with a determinant bolus, add a gene
+  gated `Conc(m) < k` that changes colour; watch the fate trip after a fixed growth interval. (b) Load
+  a ring-oscillator genome (the user's own `simple-clock`), inspect the phase species cycling in the
+  info panel, tune the `@gear` on the `Contract` and watch the pulse rate change. Objective (a): a cell
+  changes biomass profile on schedule; (b): observe/produce a pulsing colony. This is where "emergence
+  from feedback" lands.
+- **Ch 9 Knowing Where You Are.** The differentiation keystone. Provide a scaffolded genome with the
+  source/sink loop pre-wired but the **readout bands blank**; the player fills in two `Conc(M)` bands to
+  drive two different `Convert`s. Objective: `distinctBiomassProfiles >= 2` sustained across the colony
+  (two stable tissues = two colours). Payoff: the colony visibly stripes. Coach sensing≠permeability
+  ("reading the morphogen doesn't drain it — that's why the pattern holds").
+- **Ch 10 Shape.** From Ch 9's differentiated blob, introduce `Mitosis ... across/along <axis>`.
+  Objective: grow a non-round body (a shape metric — e.g. bounding-box aspect ratio from cell
+  positions, or simply "a thread of length ≥ L"). Payoff: the colony elongates into a thread or widens
+  into a sheet.
+- **Ch 11 Hopeful Monster (capstone).** Minimal coaching. A blank-ish world and a checklist of
+  sub-goals drawn from Ch 8–10 (a gradient, two tissues, cohesion via Repair, a shape). When the body
+  holds, the final beat: "Now turn on Mutation and walk away." Spotlight the `Mut` button; the chapter
+  "completes" but the world keeps running as the player's first sandbox. Graduation.
+
+**Act IV / Sandbox.** Not a chapter — completing Ch 11 unlocks the normal New/Custom/Load flow framed
+as "free play", plus an optional **Challenges** list (self-contained objectives with no coaching:
+"colony of 100", "a swimmer that crosses the world", "three tissues", "survive 50k ticks on Long
+Nights"). Challenges reuse the exact `Gate.World` predicate machinery with no step scripting — cheap to
+author, high replay value.
+
+---
+
+## 7. Cross-cutting concerns
+
+- **Soft-lock safety.** Every `World`/`Did` gate is escapable via `Skip`. Additionally the director
+  watches for dead-end states (colony extinct, cell the objective referenced destroyed) and surfaces a
+  "Restart chapter" prompt. A chapter can never trap the player.
+- **Determinism / saves.** Campaign worlds are ordinary `SimState`s — they save/load through the
+  existing codec. Entering a chapter mid-progress can re-seed from its scenario (chapters are short) or,
+  later, snapshot progress. v1: re-seed on entry (simplest, and chapters are designed to reach their
+  objective in a few minutes).
+- **Reduced-noise physics for Act III.** Ch 8–10 want a calmer substrate (the `MORPHOGENESIS.md`
+  caveat: physics is noisy for gradients). Chapters can carry scenario overrides (slower day cycle,
+  fewer founders); if needed we expose one or two calm-physics knobs on the scenario, but v1 leans on
+  scenario tuning already available.
+- **Accessibility of depth.** The `detail`/`More` cards are where the `TUTORIAL.md` prose lives —
+  literally reuse its section text so the two artifacts stay in sync (single source of truth: the
+  campaign links to tutorial sections by anchor for players who want the full write-up).
+- **Localisation-readiness.** All coach copy is data on the `Step`, not inline in code, so a future
+  pass could externalise strings. Not a v1 concern, but the DSL keeps it free.
+
+---
+
+## 8. Build order (when we implement)
+
+Staged so there's a runnable, playtestable thing after every phase:
+
+1. **Phase 0 — skeleton.** `Anchor.BottomCenter`; `CampaignQuery` + `controller.campaignQuery()`;
+   `CampaignDirector` with a hard-coded 2-step chapter; coach panel rendering; wire into the frame loop
+   behind a debug key. *Exit criteria:* a coach panel appears over a live world and a `Next` gate works.
+2. **Phase 1 — Act I end-to-end.** The DSL; `Spotlight` (Ui-region + dim + arrow); `PlayerAction`
+   detection; control masking; Ch 1 + Ch 2 authored and tuned. *Exit criteria:* a new player can go
+   from cold boot through Ch 2 and understand light vs matter. **This is the first shippable slice.**
+3. **Phase 2 — menu + persistence.** `Page.Campaign` chapter-select; `CampaignProgress` file;
+   unlock/replay; "Skip to sandbox". *Exit criteria:* campaign is reachable from the title screen and
+   remembers progress.
+4. **Phase 3 — Act II (the gene).** Ch 3–7, reusing the `GeneEditor`. The crippled-genome seed pattern
+   (Ch 4) and per-type objectives (Ch 6) are the new bits. *Exit criteria:* a player learns every action
+   by using it.
+5. **Phase 4 — Act III (composition).** Ch 8–10. The scaffolded-genome pattern (fill-in-the-blank
+   genes) and shape/tissue metrics. Heaviest tuning load — these are where the sim fights back.
+6. **Phase 5 — capstone + challenges.** Ch 11; the Challenges list; graduation hand-off; polish pass on
+   copy and pacing across the whole arc.
+
+Phases 0–2 deliver a genuinely useful onboarding (the impenetrability problem is *mostly* an Act I
+problem — most people bounce in the first minute). Phases 3–5 deepen it toward mastery.
+
+---
+
+## 9. Open questions for Stu
+
+1. **Editor-first vs pre-baked genomes in Act II.** Do you want players *typing/clicking* genes into
+   the editor from Ch 4 (higher friction, deeper learning), or mostly *toggling pre-made genes on/off*
+   (lower friction, faster)? The plan assumes editor-first with heavy scaffolding; a "gene toggle"
+   simplification is easy to fold in if you'd rather. **See §10 — gene groups reshape this answer:
+   the deepest friction (editing individual gene fields) is deferred to last, and Act II teaches
+   through named *functional groups* first.**
+2. **How much hand-holding in Act III?** Fill-in-the-blank scaffolds (plan's assumption) vs "here's a
+   working example, now tinker" vs "build it from scratch". Steeper = more satisfying but more
+   drop-off. Could vary per chapter.
+3. **Challenges as the retention layer?** Worth investing in the post-campaign Challenges list, or keep
+   v1 focused on the linear campaign and let the sandbox be the endpoint?
+4. **Voice.** The `complete(...)` lines lean poetic ("matter is scarce and recycled"). Keep that
+   register, or drier/more technical?
+
+---
+
+## 10. Gene groups — functional grouping in the editor
+
+*Added after playtest feedback: the flat gene list is the single hardest wall for a new player. A
+19-gene genome reads as 19 disconnected conditions and actions. But a hand-crafted genome isn't
+flat — it's a set of **subsystems** that each do one job. Exposing that structure is the biggest
+single comprehension win available, and it unlocks a family of authoring features (copy/insert genes
+and whole subsystems between creatures).*
+
+### 10.1 The idea
+
+Let genes be tagged into **named functional groups** — purely a UI/authoring layer, with **no effect
+on how genes run**. Stu's `Swimmer` (19 genes) partitions cleanly into six purposes:
+
+> **Energy Storage · Metabolic Clock · Locomotion · Differentiation · Growth · Reproduction**
+
+Grouped, the impenetrable list becomes six individually-understandable subsystems. This is *exactly*
+the campaign's progressive-disclosure philosophy applied to the genome itself, and it gives a natural
+three-level depth ladder:
+
+```
+  Swimmer                              ← level 1: the creature
+  ├─ ▸ Energy Storage      (2 genes)   ← level 2: six purposes (collapsed) — the campaign lives here
+  ├─ ▸ Metabolic Clock     (5 genes)
+  ├─ ▾ Locomotion          (3 genes)
+  │    ├─ Break gg : gr<gg & gr<1000 & gg>6000 : Contract @15   ← level 3: individual genes
+  │    └─ …                                                      ← level 3b: expand a gene → its fields
+  ├─ ▸ Differentiation     (4 genes)
+  ├─ ▸ Growth              (2 genes)
+  └─ ▸ Reproduction        (3 genes)
+```
+
+A player expands only as deep as they want. The campaign introduces the *six purposes* long before it
+ever asks anyone to touch a single gene field — which is the correct deferral (per Stu: individual
+gene/group design is the deepest layer and should come **last**).
+
+### 10.2 The hard constraint (verified): grouping must never reorder
+
+`ROUND_ROBIN_GENES` is on in the shipping config. In `CytoBiologyCore.runGenes`, only the gene at
+`rrIdx = tick % genomeSize` re-evaluates its condition each tick; the rest reuse a cached active flag.
+**So a gene's behaviour depends on its index in the list** — reordering a genome changes its
+trajectory and breaks the golden gate. New cells also seed their round-robin phase by a per-cell seed.
+
+Consequence: **grouping cannot be modelled as "reorder genes so a group is contiguous."** Doing that
+to Stu's existing Swimmer (crafted in a specific order) would silently change how it swims — the exact
+opposite of a comprehension aid. Therefore:
+
+- **Group membership is an order-preserving label.** The genome's stored order (= sim order) is never
+  touched by grouping. Groups may be **non-contiguous** in storage; the editor **collates by group for
+  display** (display order ≠ storage order).
+- **Assigning, renaming, recolouring, collapsing, or reordering *groups* is a guaranteed behavioural
+  no-op.** Only adding/deleting/editing actual genes changes behaviour (as it does today).
+
+### 10.3 Data model — zero sim changes
+
+Groups live in the **authoring/library layer**, not in `Gene`, not in `CytoCellComponent`, not in the
+sim save codec. Nothing the reducer or golden tests touch is modified.
+
+```kotlin
+/** A named, coloured functional subsystem: an order-independent set of member genes. */
+class GeneGroup(val name: String, val color: Long, val members: Set<GeneRef>)
+
+/** An authored genome = the flat list the sim runs, PLUS its grouping overlay. This is what a
+ *  .gene library file and the editor draft hold; a live cell still just carries List<Gene>. */
+class GenomeDoc(val genes: List<Gene>, val groups: List<GeneGroup>) {
+    // genes not in any group render in an implicit "Ungrouped" bucket.
+}
+```
+
+`GeneRef` identifies a gene *within a doc* stably across edits — a small positional-index-plus-fingerprint
+handle (index for O(1) access, a hash of the gene's fields to survive re-parsing / detect the same gene
+after neighbours change). Membership is a `Set`, so it's inherently order-free.
+
+**Why library-level, not per-cell.** Grouping is a property of *authored* genomes — the human
+categories a designer imposed. Evolved cells in the wild have no meaningful human grouping (evolution
+doesn't respect our purposes), so they simply show ungrouped, which is honest. The editor shows groups
+whenever it's editing a genome of known provenance:
+
+- Editing a **library genome** (the Genome Workshop, §10.5) — groups always present.
+- Inspecting a **live cell painted from a library genome** — the host keeps a best-effort,
+  non-persisted `Map<EntityId, GenomeDocId>` "painted-from" association (UI-only, never enters the sim
+  snapshot or determinism), so the editor can re-attach the doc's groups. A cell that has since mutated
+  past a structural match falls back to ungrouped ("custom").
+
+### 10.4 Persistence — a backward-compatible codec extension
+
+Extend the `.gene` text format with **group section headers**, parsed order-preservingly:
+
+```
+# genome: Swimmer
+# color: a09effff
+## group: Energy Storage #efd040
+Break rg : Biomass < 4000 & b < r & b < g & gr < 31 : Convert rg @15
+Break rb : Biomass < 4000 & g < r & g < b & gr > 30 : Convert rb @15
+## group: Metabolic Clock #40efd0
+Light : rg < 10000 & rb < 400 & gb < 400 : FormBond r g
+…
+## group: Locomotion #dd3333
+Break rb : gb < 2000 & gb > rb & gb > 1000 & gr > 30 : Contract @15
+```
+
+- A `## group: <name> [#rrggbb]` line opens a group; following genes belong to it until the next
+  header. Genes before any header are ungrouped.
+- **Storage order is preserved exactly** — the file lists genes in sim order; a header is just a label
+  boundary. When a group is *non-contiguous* in sim order (rare in hand-authored genomes, common after
+  edits), serialization falls back to an inline per-line tag (`… : Contract @15   ## Locomotion`) so
+  order is never sacrificed to keep a group's lines together.
+- The existing parser already strips `#` comments, so **every current `.gene` file loads unchanged**
+  (all genes ungrouped). `GeneCodec.parse` keeps returning `List<Gene>`; a new
+  `GeneCodec.parseDoc(text): GenomeDoc` reads the group layer alongside. `GeneCodecTest` gains
+  round-trip cases; the flat-parse path is untouched, so the golden gate is unaffected.
+
+### 10.5 The editor, reworked around groups
+
+Two surfaces:
+
+1. **Live-cell inspector (existing info panel).** Unchanged for debugging evolved cells (flat list),
+   but when a group overlay is available it renders the **collapsed group view** by default — six rows,
+   not nineteen. Tap a group to expand its genes; tap a gene to expand its fields (today's editor).
+   This is the depth ladder of §10.1 with no new interaction model — just a collapse level on top of
+   what `GeneEditor` already does.
+2. **Genome Workshop (new, library-level).** Edit a `.gene` library entry *as a document*: create/
+   rename/recolour groups, drag genes between groups (a label change — no reorder), add/delete genes,
+   and save back to the library. This is where deliberate authoring happens, kept separate from the
+   in-world inspector.
+
+New editor operations, all label-level and behaviour-safe except where they add/remove genes:
+
+- **Collapse/expand** a group (view only).
+- **Rename / recolour** a group.
+- **Move a gene** to another group (label change only).
+- **Copy** a gene or a whole group to a clipboard (`List<Gene>` + optional group label).
+- **Insert** clipboard genes into another genome (appends genes in sim order + carries the group
+  label). This is the "lift the Locomotion subsystem out of Swimmer and drop it into a new creature"
+  feature — the payoff Stu called out. Inserting genes *does* change behaviour (you added genes), which
+  is correct and expected; the group label just travels with them.
+- **Enable/disable** a whole group at once (bulk — implemented as add/remove of its genes, so it's a
+  real behavioural change; useful for A/B-ing a subsystem: "turn the Metabolic Clock off and watch the
+  swimmer stop pulsing").
+
+### 10.6 How this reshapes Act II (and answers open question #1)
+
+Grouping lets the campaign teach at the **subsystem** level for most of Act II and defer raw
+gene-field editing to the very end:
+
+- **Ch 3 (Anatomy)** now introduces the genome as *a set of named purposes* first (expand the founder's
+  groups), and only then drills one group down to a single gene. Purpose before syntax.
+- **Ch 4–7** teach one action apiece by **enabling/disabling or inserting a group**, not by hand-writing
+  gene fields: "your cell can't grow — insert the *Growth* group" (drag the pre-made group in) rather
+  than "author a `Convert rg` gene from blank dropdowns." Far lower friction; the player manipulates
+  *meaningful units*.
+- **Individual gene-field editing becomes its own late chapter** (or an Act III/IV capstone skill),
+  reached only once the player fluently composes at the group level — matching Stu's "leave gene design
+  till much later, or last."
+
+This also seeds a **group library** (a palette of reusable subsystems — "Energy Storage", a
+"Metabolic Clock", etc.) that a player assembles creatures from, which is a gentler on-ramp than the
+blank-genome editor and a genuinely useful sandbox tool in its own right.
+
+### 10.7 Build-order placement
+
+Gene groups slot into the plan as follows:
+
+- **Phase 3′ (folds into Phase 3, Act II):** `GenomeDoc` + `GeneGroup`, `parseDoc`/`serializeDoc`,
+  the collapsed group view in the inspector, and enable/disable/insert-group. This is the machinery
+  Act II's low-friction teaching depends on, so it lands *with* Act II, not after.
+- **Phase 3.5 (new):** the Genome Workshop (full group authoring + clipboard) and the group library.
+  Useful for sandbox authoring; not strictly required to ship Act II, so it can trail slightly.
+- Raw per-field gene editing (today's `GeneEditor`) is already built — it simply becomes the deepest,
+  last-taught rung rather than the entry point.
+
+### 10.8 Settled decisions (2026-07-11, Stu)
+
+- **Group provenance = UI-only association.** The non-persisted "painted-from" map (§10.3) is the v1
+  approach; grouping is **not** stored per cell and does **not** survive world save/load. The one firm
+  requirement: wherever a genome's groups are known, the editor must render them as **collapsed
+  segments that are expandable/openable** (the depth ladder of §10.1) — collapsed-by-default is the
+  default view, not an afterthought. A cell of unknown provenance shows the flat list.
+- **Grouping is always manual.** No auto-suggested/heuristic bucketing. Evolved genomes are chaotic and
+  their genes don't partition into curated-style purposes, so auto-grouping would produce misleading
+  categories — grouping is a deliberate act a *human author* performs on a *curated* genome, and the UI
+  treats it that way.

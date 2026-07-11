@@ -630,6 +630,19 @@ val AUTOTROPH_GENES: List<Gene> = listOf(
     Gene(EnergySource.Light, GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.FormBond, "r", "g")),
 )
 
+/**
+ * The autotroph with its **reproduction gene removed** — a self-sustaining organism that grows to full size
+ * and then holds there, but never divides or spreads. It bonds r+g into `rg` under light and locks `rg` into
+ * body mass up to GROW; size-proportional decay is repaired by the same Convert gene re-firing when biomass
+ * dips, so it sits at a stable equilibrium. Used by the campaign as a calm, easy-to-reason-about **substrate**:
+ * the player watches it obey its two grow genes, then *adds* the Mitosis gene (see [AUTOTROPH_GENES]) to make
+ * it reproduce. Not seeded by any sandbox scenario — supplied explicitly via [FounderSpec.genome].
+ */
+val AUTOTROPH_GROW_ONLY_GENES: List<Gene> = listOf(
+    Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.Convert, "rg")),
+    Gene(EnergySource.Light, GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.FormBond, "r", "g")),
+)
+
 // Heterotroph seed thresholds — values in CytoSeed (initial data; evolve under mutation).
 private const val HET_GROW = CytoSeed.HETEROTROPH_GROW_BIOMASS
 private const val HET_DIVIDE = CytoSeed.HETEROTROPH_DIVIDE_BIOMASS

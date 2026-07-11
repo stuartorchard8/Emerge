@@ -19,7 +19,11 @@ import org.emerge.demo.cyto.sim.Operand
 import org.emerge.demo.cyto.sim.Molecules
 import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.demo.cyto.sim.handleableOf
+import org.emerge.demo.cyto.sim.totalBiomassBonds
 import org.emerge.demo.cyto.sim.Gene
+import org.emerge.demo.cyto.campaign.WorldStats
+import org.emerge.demo.cyto.campaign.FocusedCell
+import org.emerge.demo.cyto.campaign.AgentCell
 import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
 import org.emerge.demo.cyto.sim.soa.CytoWorld
 import org.emerge.sim.core.EntityId
@@ -293,6 +297,59 @@ class CytoController(
 
     /** Info for the **last-held** cell (persists past release), or null if none has been held or it has
      *  since died. Read each frame by the info panel. */
+    /** A read-only world snapshot for the campaign director's objective predicates — one scan of the cell
+     *  component table (the same table [readouts]/[heldCellInfo] read). Cheap enough to call once a frame. */
+    fun worldStats(): WorldStats {
+        val state = currentState
+        val cells = state.components.getTable<CytoCellComponent>().asMap()
+        var count = 0
+        var maxBio = 0
+        val byType = HashMap<CellType, Int>()
+        val species = HashSet<String>()
+        for ((_, cell) in cells) {
+            count++
+            byType[cell.type] = (byType[cell.type] ?: 0) + 1
+            val bio = totalBiomassBonds(cell.biomass)
+            if (bio > maxBio) maxBio = bio
+            for (s in cell.cytoplasm.keys) species.add(s)
+            for (s in cell.biomass.keys) species.add(s)
+        }
+        val focused = lastHeldId?.let { id ->
+            cells[id]?.let { c ->
+                FocusedCell(c.type, totalBiomassBonds(c.biomass), c.genome.size, c.cytoplasm)
+            }
+        }
+        return WorldStats(tickCount, count, byType, maxBio, species, focused)
+    }
+
+    /** All cells as logical-space render primitives for a headless (CPU) view — the agent harness draws
+     *  these to a PNG. Positions/radii are converted to logical Cyto units (the same space the camera works
+     *  in). */
+    fun agentCells(): List<AgentCell> {
+        val state = currentState
+        val cells = state.components.getTable<CytoCellComponent>().asMap()
+        val transforms = state.components.getTable<TransformComponent>()
+        val colliders = state.components.getTable<ColliderComponent>()
+        val selId = lastHeldId
+        val out = ArrayList<AgentCell>(cells.size)
+        for ((id, cell) in cells) {
+            val t = transforms[id] ?: continue
+            val radiusFrac = colliders[id]?.radius ?: cell.logicalRadius
+            out.add(
+                AgentCell(
+                    id = id.value,
+                    x = CytoUnits.toLogical(t.pos.x),
+                    y = CytoUnits.toLogical(t.pos.y),
+                    radius = CytoUnits.toLogical(radiusFrac),
+                    type = cell.type,
+                    biomass = totalBiomassBonds(cell.biomass),
+                    selected = id == selId,
+                ),
+            )
+        }
+        return out
+    }
+
     fun heldCellInfo(): CellInfo? {
         val id = lastHeldId ?: return null
         val state = currentState

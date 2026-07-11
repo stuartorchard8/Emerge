@@ -4,8 +4,9 @@ import org.emerge.demo.cyto.cells.CellType
 
 /** How many founders of one [type] to seed. Only [CellType.Collector] (autotroph) and [CellType.Muscle]
  *  (heterotroph) carry a real starter genome today — other types spawn genome-less and quickly die, so the
- *  New/Custom UI only offers those two. */
-data class FounderSpec(val type: CellType, val count: Int)
+ *  New/Custom UI only offers those two. [genome] overrides the type's preset genome when non-null (the
+ *  campaign uses this to seed a hand-picked starter, e.g. a grow-only autotroph); null = the type default. */
+data class FounderSpec(val type: CellType, val count: Int, val genome: List<Gene>? = null)
 
 /** How founders are laid out across the torus. */
 enum class Distribution {

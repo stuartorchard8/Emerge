@@ -8,7 +8,10 @@ import org.emerge.demo.cyto.campaign.PlayerAction
 import org.emerge.demo.cyto.campaign.Spotlight
 import org.emerge.demo.cyto.campaign.Step
 import org.emerge.demo.cyto.campaign.WorldRun
+import org.emerge.demo.cyto.cells.CellType
+import org.emerge.demo.cyto.sim.AUTOTROPH_GROW_ONLY_GENES
 import org.emerge.demo.cyto.sim.CytoScenario
+import org.emerge.demo.cyto.sim.FounderSpec
 import org.emerge.render.torus.ui.UiTextRenderer
 
 /**
@@ -27,6 +30,16 @@ object CampaignContent {
     /** LOOK plus the overlay + speed controls - for watching the world run. */
     private val WATCH = ControlMask.of(
         Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Speed, Control.Menu,
+    )
+
+    /** The campaign's substrate: a single autotroph whose reproduction gene has been removed, so it grows to
+     *  full size and then holds there, stationary and self-repairing but unable to spread (see
+     *  [AUTOTROPH_GROW_ONLY_GENES]). The player watches this calm, easy-to-reason-about organism, reads its two
+     *  grow genes, then *adds* reproduction to bring it to life. Frames the world as a substrate to author,
+     *  not a busy ecosystem to catch up on. */
+    private val GROW_ONLY = CytoScenario.DEFAULT.copy(
+        name = "Campaign",
+        founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GROW_ONLY_GENES)),
     )
 
     val CHAPTERS: List<Chapter> = listOf(
@@ -59,7 +72,7 @@ object CampaignContent {
         act = 1,
         title = "First Contact",
         blurb = "Meet a single living cell, and learn to look at it.",
-        scenario = CytoScenario.DEFAULT,
+        scenario = GROW_ONLY,
         steps = listOf(
             Step(
                 text = "Welcome to Cyto. That speck in the middle is a single living cell, floating in an empty world.",
@@ -100,16 +113,16 @@ object CampaignContent {
         act = 2,
         title = "Anatomy of a Gene",
         blurb = "Read the tiny program that runs a living cell.",
-        scenario = CytoScenario.DEFAULT,
+        scenario = GROW_ONLY,
         steps = listOf(
             Step(
-                text = "You've watched this cell live. Now let's read why it does what it does. Click it to open its dossier.",
+                text = "You've watched this cell hold steady. Now let's read why it does what it does. Click it to open its dossier.",
                 gate = Gate.Did(PlayerAction.SelectedCell, "Select the cell"),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "Click the cell"),
             ),
             Step(
-                text = "Look at the GENES list in the panel. This cell is run by just three rules - that whole list is the entire creature.",
+                text = "Look at the GENES list in the panel. This whole organism is run by just two rules - that short list is the entire creature.",
                 gate = Gate.Next,
                 allow = LOOK,
                 spotlight = Spotlight(hint = "GENES list, in the panel top-right"),
@@ -121,18 +134,19 @@ object CampaignContent {
                 detail = "Example: 'CONVERT RG IF BIO<3000 (LIGHT)' means - powered by light, while the cell is still small, lock rg into body mass. What to do, when to do it, and the power for it.",
             ),
             Step(
-                text = "Colour tells you a gene's state right now: green means it's firing, grey means it's waiting, and orange marks the part that's blocking it.",
+                text = "Both genes do one job: GROW. One bonds raw matter into food, the other locks that food into body mass. Together they keep the cell fed and repaired.",
+                gate = Gate.Next,
+                allow = LOOK,
+                detail = "That's why it holds steady: as decay nibbles its body, CONVERT re-fires and rebuilds it, right back up to full size. A self-sustaining loop.",
+            ),
+            Step(
+                text = "Colour shows a gene's state right now: green means it's firing, grey means it's waiting, and orange marks the part that's blocking it.",
                 gate = Gate.Next,
                 allow = LOOK,
                 detail = "Only one gene runs per tick (round-robin), so at any instant most genes sit idle - watch the colours shift as the cell cycles through them.",
             ),
             Step(
-                text = "Tap any gene to open it - every part becomes an editable field. Have a look, but you don't need to change anything yet.",
-                gate = Gate.Next,
-                allow = LOOK,
-            ),
-            Step(
-                text = "Three genes, three jobs: make food, grow, then divide. That's it. Next you'll fix a cell that's missing one of them.",
+                text = "But notice what's missing: nothing here makes a new cell. This organism can grow, but it can't reproduce. Next, you'll give it that power.",
                 gate = Gate.Next,
                 allow = LOOK,
             ),
@@ -143,52 +157,38 @@ object CampaignContent {
         id = "ch02-light",
         act = 1,
         title = "Let There Be Light",
-        blurb = "Watch a cell feed on sunlight, and reveal what it eats.",
-        scenario = CytoScenario.DEFAULT,
+        blurb = "Watch a cell feed on sunlight - and hold its ground.",
+        scenario = GROW_ONLY,
         steps = listOf(
             Step(
-                text = "This cell is an autotroph - it eats light. The bright band sweeping across the world is daylight. Where it's dark, the cell can't feed.",
+                text = "This cell is an autotroph - it feeds on light. The bright band sweeping across the world is daylight. Where it's dark, the cell can't feed.",
                 gate = Gate.Next,
                 allow = WATCH,
-                detail = "Interior cells are shaded by their neighbours too, so being buried also starves a cell of light.",
+                detail = "Light comes from a few fixed sources and sweeps as the world turns, so every spot has a day and a night.",
             ),
             Step(
-                text = "Let's watch it work. Speed the simulation up with the controls at the top-left.",
+                text = "Let's watch it live. Speed the simulation up with the controls at the top-left.",
                 gate = Gate.Did(PlayerAction.ChangedSpeed, "Change the sim speed"),
                 allow = WATCH,
                 world = WorldRun.Live,
                 spotlight = Spotlight(hint = "SLOW / PAUSE / FAST, top-left"),
             ),
             Step(
-                text = "It's turning light and matter into its own body - growing.",
-                gate = Gate.World(
-                    "Watch it grow",
-                    met = { it.maxBiomass > 1500 },
-                    progress = { (it.maxBiomass.coerceAtMost(1500)) to 1500 },
-                ),
+                text = "Watch it for a while. It feeds, repairs itself, and holds its size - but it never grows past this, and it never spreads. On its own, this organism just sits here.",
+                gate = Gate.Next,
                 allow = WATCH,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "Watch the cell swell"),
+                detail = "It's already at full size, so it just tops itself up: light rebuilds whatever the slow decay of living wears away. A quiet, stable loop.",
             ),
             Step(
-                text = "Big enough, it splits in two. Keep watching - a colony is forming.",
-                gate = Gate.World(
-                    "Reach 4 cells",
-                    met = { it.cellCount >= 4 },
-                    progress = { it.cellCount.coerceAtMost(4) to 4 },
-                ),
-                allow = WATCH,
-                world = WorldRun.Live,
-            ),
-            Step(
-                text = "The colony is slowing down - it has eaten the matter nearby. Tap the LIGHT/MATTER button to reveal what's left.",
+                text = "Its body is built from matter. Tap the LIGHT/MATTER button to reveal the raw matter scattered around it.",
                 gate = Gate.Did(PlayerAction.ToggledMatterOverlay, "Show the matter overlay"),
                 allow = WATCH,
                 world = WorldRun.Live,
                 spotlight = Spotlight(hint = "LIGHT/MATTER GRID button, bottom-right"),
             ),
             Step(
-                text = "Nothing here comes from nothing: matter is finite, and recycled on death. Light is free, matter is scarce. Every creature you build lives inside that budget.",
+                text = "That matter is finite - nothing here comes from nothing. Light is free and endless, but matter is scarce and recycled. Every creature you build lives inside that budget.",
                 gate = Gate.Next,
                 allow = WATCH,
             ),

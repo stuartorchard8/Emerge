@@ -162,6 +162,11 @@ class UiTextRenderer {
         private const val FONT_COLS = 8
         private const val FONT_ROWS = 8
 
+        /** Whether [ch] has a glyph (text is uppercase-folded before drawing, so lowercase counts as its
+         *  uppercase). Unsupported characters render as `?` — callers/authors can assert against this to keep
+         *  copy within the bitmap font. */
+        fun supports(ch: Char): Boolean = CHAR_TO_INDEX.containsKey(ch.uppercaseChar())
+
         /** Widest line's pixel width (for panel auto-sizing). */
         fun measureWidthPx(text: String, pixelHeight: Float): Float {
             val glyphW = pixelHeight * GLYPH_ASPECT
@@ -182,7 +187,7 @@ class UiTextRenderer {
             '5', '6', '7', '8', '9', '(', ')', ':',
             '.', ',', '-', '_', '/', '\\', '+', '=',
             '<', '>', '*', '&', '[', ']', '%', '?',
-            '→', '·',   // → (asym-mitosis), · (FormBond junction)
+            '→', '·', '\'',   // → (asym-mitosis), · (FormBond junction), ' (apostrophe/contractions)
         )
         private val CHAR_TO_INDEX: Map<Char, Int> = GLYPHS.withIndex().associate { it.value to it.index }
         private val PATTERN: Map<Char, Array<String>> = mapOf(
@@ -244,6 +249,7 @@ class UiTextRenderer {
             '?' to arrayOf("01110", "10001", "00001", "00010", "00100", "00000", "00100"),
             '→' to arrayOf("00000", "00100", "00010", "11111", "00010", "00100", "00000"),
             '·' to arrayOf("00000", "00000", "00000", "00100", "00000", "00000", "00000"),
+            '\'' to arrayOf("00100", "00100", "01000", "00000", "00000", "00000", "00000"),
         )
 
         private fun createFontTexture(): Int {

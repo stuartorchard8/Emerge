@@ -26,13 +26,14 @@ fun createCytoInitialState(scenario: CytoScenario = CytoScenario.DEFAULT): SimSt
     // (3037000493 ushr 32 == 0), which would spuriously fire a mutation on the founder's first gene at
     // tick 1. A fixed non-zero seed keeps the sim deterministic without that artifact.
     val builder = SimBuilder(SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
-    for ((pos, type) in founderPlacements(scenario)) {
+    for (p in founderPlacements(scenario)) {
         builder.spawnCell(
-            pos = pos,
+            pos = p.pos,
             vel = Coord2.zero,
-            type = type,
+            type = p.type,
             biomass = CytoSeed.STARTER_BIOMASS,
             logicalRadius = MIN_RADIUS,
+            genome = p.genome ?: genomeForType(p.type),
         )
     }
     builder.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(scenario.matterLevel)) }
@@ -45,33 +46,36 @@ fun createCytoInitialState(scenario: CytoScenario = CytoScenario.DEFAULT): SimSt
  * them on a jittered square grid across the inner ~75% of the torus, so colonies start apart and contest the
  * space between them. A single clustered founder lands exactly at the origin (preserving the old boot world).
  */
-private fun founderPlacements(scenario: CytoScenario): List<Pair<Coord2, CellType>> {
-    val types = ArrayList<CellType>()
-    for (f in scenario.founders) repeat(f.count.coerceAtLeast(0)) { types.add(f.type) }
-    if (types.isEmpty()) return emptyList()
+private class Placement(val pos: Coord2, val type: CellType, val genome: List<Gene>?)
+
+private fun founderPlacements(scenario: CytoScenario): List<Placement> {
+    // Expand each FounderSpec into per-founder (type, genome) entries, preserving its optional genome override.
+    val founders = ArrayList<Pair<CellType, List<Gene>?>>()
+    for (f in scenario.founders) repeat(f.count.coerceAtLeast(0)) { founders.add(f.type to f.genome) }
+    if (founders.isEmpty()) return emptyList()
     val half = CytoUnits.CELLS_PER_AXIS.toFloat()
-    val out = ArrayList<Pair<Coord2, CellType>>(types.size)
+    val out = ArrayList<Placement>(founders.size)
     when (scenario.distribution) {
         Distribution.Clustered -> {
-            if (types.size == 1) return listOf(CytoUnits.coord2(0f, 0f) to types[0])
+            if (founders.size == 1) return listOf(Placement(CytoUnits.coord2(0f, 0f), founders[0].first, founders[0].second))
             val ring = 3f
-            for ((i, t) in types.withIndex()) {
-                val a = (i.toFloat() / types.size) * TAU
-                out.add(CytoUnits.coord2(ring * cos(a), ring * sin(a)) to t)
+            for ((i, f) in founders.withIndex()) {
+                val a = (i.toFloat() / founders.size) * TAU
+                out.add(Placement(CytoUnits.coord2(ring * cos(a), ring * sin(a)), f.first, f.second))
             }
         }
         Distribution.Scattered -> {
             val extent = half * 0.75f
-            val cols = ceil(sqrt(types.size.toFloat())).toInt().coerceAtLeast(1)
+            val cols = ceil(sqrt(founders.size.toFloat())).toInt().coerceAtLeast(1)
             val step = (2f * extent) / cols
-            for ((i, t) in types.withIndex()) {
+            for ((i, f) in founders.withIndex()) {
                 val gx = i % cols; val gy = i / cols
                 // Cell centre + a deterministic jitter (index-hashed) so a grid doesn't look mechanical.
                 val jx = (hash01(i * 2 + 1) - 0.5f) * step * 0.5f
                 val jy = (hash01(i * 2 + 2) - 0.5f) * step * 0.5f
                 val x = -extent + (gx + 0.5f) * step + jx
                 val y = -extent + (gy + 0.5f) * step + jy
-                out.add(CytoUnits.coord2(x, y) to t)
+                out.add(Placement(CytoUnits.coord2(x, y), f.first, f.second))
             }
         }
     }

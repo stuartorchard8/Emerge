@@ -2,6 +2,10 @@ package org.emerge.desktop
 
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.CytoRenderer
+import org.emerge.demo.cyto.campaign.CampaignDirector
+import org.emerge.demo.cyto.campaign.CampaignQuery
+import org.emerge.demo.cyto.campaign.Control
+import org.emerge.demo.cyto.campaign.PlayerAction
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
 import org.emerge.demo.cyto.ui.GeneEditor
@@ -34,6 +38,8 @@ object CytoSceneView {
         // Sim runs on its own thread (see below); created before the window so its controls can be bound to
         // keys in initWindow.
         val simDriver = CytoSimDriver(controller)
+        // One-shot interaction signals the campaign director consumes each frame (set by input callbacks).
+        val signals = CampaignSignals()
 
         // GL context must be current (initWindow) before any shader/texture is created. Input callbacks are
         // installed below, once the menu + sim controls they route to exist.
@@ -56,9 +62,9 @@ object CytoSceneView {
         // Run the sim on its own thread, decoupled from this (vsync-paced) draw loop, with on-screen
         // SLOW/PAUSE/FAST controls + a TPS/FPS readout (also bound to Space / [ / ] — see initWindow).
         controls.showSimSpeed = true
-        controls.onSlower = { simDriver.slower() }
-        controls.onFaster = { simDriver.faster() }
-        controls.onTogglePause = { simDriver.togglePause() }
+        controls.onSlower = { simDriver.slower(); signals.speedChanged = true }
+        controls.onFaster = { simDriver.faster(); signals.speedChanged = true }
+        controls.onTogglePause = { simDriver.togglePause(); signals.speedChanged = true }
         // Mutation rate — tap the "Mut" button to cycle off → 1/1M → 1/100k → 1/10k → 1/1k (saved on the world).
         controls.showMutation = true
         controls.onCycleMutation = { controller.cycleMutationRate() }
@@ -68,12 +74,27 @@ object CytoSceneView {
         val ui = Ui()
         val geneEditor = GeneEditor()
 
+        // Campaign / story mode: the director drives the coach overlay; progress persists across runs.
+        val director = CampaignDirector()
+        val campaignProgress = CampaignProgress.load()
+
         // Front-end shell (title / new / custom / about). Boot into the menu with the sim paused behind it.
         val menu = CytoMenu()
+        menu.campaignChapters = CampaignContent.CHAPTERS
+        menu.campaignUnlocked = { campaignProgress.isUnlocked(it, CampaignContent.ORDER) }
+        menu.campaignCompleted = { campaignProgress.isCompleted(it) }
+        director.onChapterComplete = { id ->
+            campaignProgress.complete(id)
+            menu.openCampaign(); simDriver.setPaused(true)
+        }
+        // Each step chooses whether the world runs or holds still (so a slow reader isn't overtaken by a
+        // later concept). Applied on step entry; the player keeps manual pause/speed control within a step.
+        director.onStepEnter = { step -> simDriver.setPaused(step.world == org.emerge.demo.cyto.campaign.WorldRun.Frozen) }
         simDriver.setPaused(true)
         val menuCallbacks = CytoMenu.Callbacks(
             onStart = { scenario ->
                 simDriver.setPaused(true)
+                director.stop()   // leaving the campaign for free play
                 controller.newGame(scenario)
                 renderer.resetView()
                 menu.enterGame(); simDriver.setPaused(false)
@@ -81,8 +102,16 @@ object CytoSceneView {
             onContinue = { menu.enterGame(); simDriver.setPaused(false) },
             onLoadNamed = { name ->
                 simDriver.setPaused(true)
+                director.stop()
                 CytoSaves.load(controller, name)
                 renderer.resetView()
+                menu.enterGame(); simDriver.setPaused(false)
+            },
+            onStartChapter = { ch ->
+                simDriver.setPaused(true)
+                controller.newGame(ch.scenario)
+                renderer.resetView()
+                director.start(ch, controller)
                 menu.enterGame(); simDriver.setPaused(false)
             },
             onSave = { name ->
@@ -101,11 +130,14 @@ object CytoSceneView {
         )
 
         val mouse = MouseState()
-        installMouseHandlers(window, controller, renderer, controls, ui, geneEditor, menu, mouse)
+        installMouseHandlers(window, controller, renderer, controls, ui, geneEditor, menu, mouse, signals)
         installKeyHandlers(window, controller, simDriver, menu, menuCallbacks)
 
         var lastTime = glfwGetTime()
         var fps = 0.0
+        // Campaign interaction tracking (diffed frame-to-frame to raise PlayerActions).
+        var prevHeldId: Int? = null
+        var prevMatterOverlay = controls.showMatterField
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents()
             updateResolution(window, renderer, controls, ui)
@@ -133,6 +165,30 @@ object CytoSceneView {
             }
             // The sim advances on its own thread; we render whatever it last published.
             val frame = controller.latestFrame()
+
+            // ── Campaign director: detect this frame's interactions, then advance gates ──────────────
+            if (director.active) {
+                val actions = HashSet<PlayerAction>()
+                if (signals.consumeCameraMoved()) actions.add(PlayerAction.MovedCamera)
+                if (signals.consumeSpeedChanged()) actions.add(PlayerAction.ChangedSpeed)
+                val heldNow = controller.lastHeldId?.value
+                if (heldNow != null && heldNow != prevHeldId) actions.add(PlayerAction.SelectedCell)
+                if (controls.showMatterField && !prevMatterOverlay) actions.add(PlayerAction.ToggledMatterOverlay)
+                val query = CampaignQuery(
+                    controller.worldStats(),
+                    matterOverlayOn = controls.showMatterField,
+                    paused = simDriver.paused,
+                    selectedGenome = genomes.getOrNull(selectedGenome)?.name,
+                )
+                director.update(query, actions)
+                prevHeldId = heldNow
+                prevMatterOverlay = controls.showMatterField
+            }
+            // Control masking: an active chapter restricts the toolbar to what the current step allows.
+            val mask = director.controlMask
+            controls.showBrush = mask.allows(Control.Brush)
+            controls.showSimSpeed = mask.allows(Control.Speed)
+            controls.showMutation = mask.allows(Control.Mutation)
             controls.simPaused = simDriver.paused
             controls.simBehind = simDriver.behind()
             controls.simStatus = "${simDriver.status()}   ${fps.toInt()} FPS"
@@ -148,12 +204,14 @@ object CytoSceneView {
                 controls.draw()
                 // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
                 ui.frame {
-                    geneEditor.render(this, controller) {
-                        val g = controller.heldGenome()
-                        if (g != null) {
-                            val default = genomes.getOrNull(selectedGenome)?.name ?: "genome"
-                            menu.openGenomeSave(default, g, controller.heldBioColorRgba() ?: 0x888888FFL)
-                            simDriver.setPaused(true)
+                    if (mask.allows(Control.GeneEditor)) {
+                        geneEditor.render(this, controller) {
+                            val g = controller.heldGenome()
+                            if (g != null) {
+                                val default = genomes.getOrNull(selectedGenome)?.name ?: "genome"
+                                menu.openGenomeSave(default, g, controller.heldBioColorRgba() ?: 0x888888FFL)
+                                simDriver.setPaused(true)
+                            }
                         }
                     }
                     panel(org.emerge.render.torus.ui.Anchor.TopLeft, background = 0x00000000) {
@@ -162,6 +220,8 @@ object CytoSceneView {
                             Triple("Save", 0x2E6E5EFFL) { menu.openSave(defaultSaveName(controller)); simDriver.setPaused(true) },
                         ))
                     }
+                    // The campaign coach overlay (bottom-centre), on top of the controls.
+                    director.render(this, controller)
                 }
             } else {
                 // Front-end shell over the (paused) world.
@@ -273,6 +333,7 @@ object CytoSceneView {
         geneEditor: GeneEditor,
         menu: CytoMenu,
         state: MouseState,
+        signals: CampaignSignals,
     ) {
         glfwSetMouseButtonCallback(window) { win, button, action, _ ->
             if (button != GLFW_MOUSE_BUTTON_LEFT) return@glfwSetMouseButtonCallback
@@ -341,6 +402,7 @@ object CytoSceneView {
                 controller.grab(grabId, world[0], world[1], sticky = controls.touchMode == TouchMode.Sticky)
             } else {
                 renderer.panByPixels(dx, dy)
+                signals.cameraMoved = true
             }
             state.lastX = px.first
             state.lastY = px.second
@@ -352,6 +414,7 @@ object CytoSceneView {
             val steps = yoffset.coerceIn(-24.0, 24.0)
             val px = cursorPixel(win)
             renderer.zoomAtScreen(px.first, px.second, 1.1.pow(steps).toFloat())
+            signals.cameraMoved = true
         }
     }
 
@@ -387,6 +450,15 @@ object CytoSceneView {
             cursorX[0].toFloat() * framebufferW[0].toFloat() / w.toFloat(),
             cursorY[0].toFloat() * framebufferH[0].toFloat() / h.toFloat(),
         )
+    }
+
+    /** One-shot interaction flags raised by input callbacks, consumed once per frame by the campaign
+     *  director. `consume*` reads-and-clears so each interaction fires exactly one [PlayerAction]. */
+    private class CampaignSignals {
+        var cameraMoved = false
+        var speedChanged = false
+        fun consumeCameraMoved(): Boolean = cameraMoved.also { cameraMoved = false }
+        fun consumeSpeedChanged(): Boolean = speedChanged.also { speedChanged = false }
     }
 
     private class MouseState {

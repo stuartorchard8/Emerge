@@ -4,7 +4,7 @@ import org.emerge.render.torus.GPU
 
 /** Screen position a panel is anchored to. [Center] centres a panel on both axes (for title screens / modal
  *  menus); multiple [Center] panels stack downward from the centre of the first. */
-enum class Anchor { TopLeft, TopRight, BottomLeft, BottomRight, Center }
+enum class Anchor { TopLeft, TopRight, BottomLeft, BottomRight, Center, BottomCenter }
 
 /**
  * A tiny **immediate-mode** in-game UI toolkit, shared across games. Rebuild the widget tree every
@@ -40,7 +40,13 @@ class Ui {
         val holdSign: Int = 0,
         /** Called with the (accelerating) signed step on each repeat tick; null for plain buttons. */
         val onStep: ((Int) -> Unit)? = null,
+        /** Human-meaningful label for a button region (null for background/picker catchers). Lets a
+         *  headless driver enumerate + tap widgets by name — see [elements] / [tapLabel]. */
+        val label: String? = null,
     )
+
+    /** A labelled interactive region, for headless enumeration ([elements]). */
+    class UiElement(val label: String, val x: Float, val y: Float, val w: Float, val h: Float)
 
     private val rects = ArrayList<RectCmd>()
     private val texts = ArrayList<TextCmd>()
@@ -175,8 +181,26 @@ class Ui {
     internal fun emitTextCentered(text: String, centerX: Float, topY: Float, h: Float, color: Long) {
         texts.add(TextCmd(text, 0f, topY, h, color, centered = true, centerX = centerX))
     }
-    internal fun emitClick(x: Float, y: Float, w: Float, h: Float, onClick: () -> Unit) {
-        clicks.add(ClickRegion(x, y, w, h, onClick))
+    internal fun emitClick(x: Float, y: Float, w: Float, h: Float, label: String? = null, onClick: () -> Unit) {
+        clicks.add(ClickRegion(x, y, w, h, onClick, label = label))
+    }
+
+    /** The current frame's labelled interactive regions (buttons), for headless drivers. Rebuild the
+     *  frame with [frame] first. */
+    fun elements(): List<UiElement> {
+        val out = ArrayList<UiElement>()
+        for (c in overlayClicks) if (c.label != null) out.add(UiElement(c.label, c.x, c.y, c.w, c.h))
+        for (c in clicks) if (c.label != null) out.add(UiElement(c.label, c.x, c.y, c.w, c.h))
+        return out
+    }
+
+    /** Invoke the first button region whose label contains [label] (case-insensitive). Returns true if
+     *  one fired. Overlay regions (open dropdowns) win, then the base layer. */
+    fun tapLabel(label: String): Boolean {
+        val q = label.lowercase()
+        for (c in overlayClicks) if (c.label?.lowercase()?.contains(q) == true) { c.onClick(); return true }
+        for (c in clicks) if (c.label?.lowercase()?.contains(q) == true) { c.onClick(); return true }
+        return false
     }
     /** A hold-to-repeat stepper button: fires `onStep(sign)` on press, then `onStep(sign·magnitude)` while held. */
     internal fun emitStepper(x: Float, y: Float, w: Float, h: Float, sign: Int, onStep: (Int) -> Unit) {
@@ -255,6 +279,14 @@ class UiBuilder internal constructor(private val ui: Ui) {
             val x = (ui.resWidth - w) * 0.5f
             val stack = ui.nextPanelOffset(anchor, 0f, h, margin)    // 0 for the first, then h+margin for extras
             val y = (ui.resHeight - h) * 0.5f + stack
+            emitPanel(x, y, w, h, padding, contentW, textH, background, pb)
+            return
+        }
+        if (anchor == Anchor.BottomCenter) {
+            // Centred horizontally, anchored a [margin] gap above the bottom edge; extra panels stack upward.
+            val x = (ui.resWidth - w) * 0.5f
+            val stack = ui.nextPanelOffset(anchor, margin, h, margin)
+            val y = ui.resHeight - h - stack
             emitPanel(x, y, w, h, padding, contentW, textH, background, pb)
             return
         }
@@ -354,7 +386,7 @@ class PanelBuilder internal constructor(private val rowHeight: Float) {
             val inset = 1f
             ui.emitRect(x, topY + inset, contentW, height - inset * 2f, color)
             ui.emitTextCentered(label, x + contentW * 0.5f, topY + (height - textH) * 0.5f, textH, contrast(color))
-            ui.emitClick(x, topY + inset, contentW, height - inset * 2f, onClick)
+            ui.emitClick(x, topY + inset, contentW, height - inset * 2f, label = label, onClick = onClick)
         }
     }
 
@@ -371,7 +403,7 @@ class PanelBuilder internal constructor(private val rowHeight: Float) {
                 ui.emitTextLeft(text, sx, ty, textH, c ?: contrast(color))
                 sx += UiTextRenderer.measureWidthPx(text, textH)
             }
-            ui.emitClick(x, topY + inset, contentW, height - inset * 2f, onClick)
+            ui.emitClick(x, topY + inset, contentW, height - inset * 2f, label = spans.joinToString("") { it.first }, onClick = onClick)
         }
     }
 
@@ -393,7 +425,7 @@ class PanelBuilder internal constructor(private val rowHeight: Float) {
             ui.emitRect(fx, topY + 1f, fw, height - 2f, if (open) 0x2A4A6AFFL else 0x303848FFL)
             ui.emitTextLeft(value, fx + textH * 0.4f, ty, textH, 0xFFFFFFFFL)
             ui.emitTextLeft("v", fx + fw - textH * 0.9f, ty, textH, 0xAACCFFFFL)
-            ui.emitClick(fx, topY + 1f, fw, height - 2f, onToggle)
+            ui.emitClick(fx, topY + 1f, fw, height - 2f, onClick = onToggle)
             if (open) {
                 // Drop the option list into the overlay layer (on top of every panel), below the field.
                 var oy = topY + height
@@ -441,7 +473,7 @@ class PanelBuilder internal constructor(private val rowHeight: Float) {
                 val w = bw(label, textH)
                 ui.emitRect(bx, topY + 1f, w, height - 2f, color)
                 ui.emitTextCentered(label, bx + w * 0.5f, topY + (height - textH) * 0.5f, textH, contrast(color))
-                ui.emitClick(bx, topY + 1f, w, height - 2f, onClick)
+                ui.emitClick(bx, topY + 1f, w, height - 2f, label = label, onClick = onClick)
                 bx += w + textH * 0.5f
             }
         }

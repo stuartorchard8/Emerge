@@ -1,5 +1,6 @@
 package org.emerge.desktop
 
+import org.emerge.demo.cyto.campaign.Chapter
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.CytoSeed
@@ -17,7 +18,12 @@ import org.emerge.render.torus.ui.UiBuilder
  * actually build/resume a world. While [inGame] the shell draws nothing (the sim owns the screen).
  */
 class CytoMenu {
-    enum class Page { Title, New, Custom, Load, Save, SaveGenome, About, Settings }
+    enum class Page { Title, Campaign, New, Custom, Load, Save, SaveGenome, About, Settings }
+
+    /** Campaign chapter list + unlock predicate, host-set each frame (drives the Campaign page). */
+    var campaignChapters: List<Chapter> = emptyList()
+    var campaignUnlocked: (String) -> Boolean = { true }
+    var campaignCompleted: (String) -> Boolean = { false }
 
     /** True once a world is running and the player has dismissed the menu — the host renders the sim instead. */
     var inGame = false
@@ -64,8 +70,13 @@ class CytoMenu {
         val onDelete: (String) -> Unit,
         /** Save the held cell's genome to the named genome-library entry (name, colour, genome). */
         val onSaveGenome: (String, Long, List<Gene>) -> Unit,
+        /** Start the given campaign chapter (rebuilds the world + activates the director). */
+        val onStartChapter: (Chapter) -> Unit,
         val onQuit: () -> Unit,
     )
+
+    /** Open the campaign chapter-select page (e.g. after finishing a chapter). */
+    fun openCampaign() { inGame = false; page = Page.Campaign; openPicker = OpenPicker.None }
 
     /** Open the shell back to the title screen (e.g. the in-game Menu button / a fresh boot). */
     fun openTitle() { inGame = false; page = Page.Title; openPicker = OpenPicker.None; pendingDelete = null }
@@ -115,6 +126,7 @@ class CytoMenu {
         ui.background(0x0A0E14EEL)
         when (page) {
             Page.Title -> title(ui, saves.isNotEmpty(), cb)
+            Page.Campaign -> campaign(ui, cb)
             Page.New -> newGame(ui, cb)
             Page.Custom -> custom(ui, cb)
             Page.Load -> load(ui, saves, cb)
@@ -129,9 +141,10 @@ class CytoMenu {
         ui.panel(Anchor.Center, padding = 22f, background = 0x141C2CF0, rowHeight = 30f) {
             title("CYTO", 0x6FD6C4FFL)
             gap(14f)
+            button("Campaign", MENU_ACCENT) { page = Page.Campaign }
             button("Continue", MENU_BTN) { cb.onContinue() }
             if (hasSave) button("Load", MENU_BTN) { page = Page.Load }
-            button("New", MENU_ACCENT) { page = Page.New }
+            button("New (Sandbox)", MENU_BTN) { page = Page.New }
             gap(6f)
             button("Quit", MENU_QUIT) { cb.onQuit() }
         }
@@ -141,6 +154,28 @@ class CytoMenu {
                 Triple("?", MENU_BTN) { page = Page.About },
                 Triple("Settings", MENU_BTN) { page = Page.Settings },
             ))
+        }
+    }
+
+    private fun campaign(ui: UiBuilder, cb: Callbacks) {
+        ui.panel(Anchor.Center, padding = 20f, background = 0x141C2CF0, rowHeight = 28f) {
+            title("Campaign", 0x6FD6C4FFL)
+            row("Learn the world, one idea at a time.", 0x8B96A8FFL)
+            gap(8f)
+            if (campaignChapters.isEmpty()) row("No chapters yet.", 0x8B96A8FFL)
+            for (ch in campaignChapters) {
+                val unlocked = campaignUnlocked(ch.id)
+                val done = campaignCompleted(ch.id)
+                val mark = if (done) "* " else ""
+                if (unlocked) {
+                    button("$mark${ch.title}", if (done) MENU_BTN else MENU_ACCENT) { cb.onStartChapter(ch) }
+                } else {
+                    // Locked: a non-interactive greyed row.
+                    row("[LOCKED] ${ch.title}", 0x5A6070FFL)
+                }
+            }
+            gap(8f)
+            button("Back", MENU_QUIT) { page = Page.Title }
         }
     }
 
