@@ -119,9 +119,6 @@ class CampaignDirector {
         val ch = chapter ?: return
         val step = currentStep ?: return
         val query = lastQuery
-        // Visual-only dim: the spotlighted steps often ask for a world click, so it must not swallow taps.
-        if (step.spotlight?.dim == true) ui.background(0x00000088, blockClicks = false)
-
         val gate = step.gate
         val nextEnabled = gate is Gate.Next || gateMet
 

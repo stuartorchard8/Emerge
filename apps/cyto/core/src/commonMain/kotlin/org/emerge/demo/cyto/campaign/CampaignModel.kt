@@ -87,9 +87,9 @@ enum class PlayerAction {
 }
 
 /** A hint about where to point the player's attention. v1 is intentionally lightweight: an optional text
- *  cue rendered in the coach panel plus an optional screen [dim] to force focus. Region-targeted rings /
- *  arrows are a planned enhancement (CAMPAIGN_PLAN.md §4.2). */
-class Spotlight(val hint: String? = null, val dim: Boolean = false)
+ *  cue rendered in the coach panel. Region-targeted rings / arrows are a planned enhancement
+ *  (CAMPAIGN_PLAN.md §4.2). */
+class Spotlight(val hint: String? = null)
 
 /** Which controls are live during a step — everything else is hidden/greyed by the host. An immutable
  *  allow-set so authored steps read declaratively (`ControlMask.of(Camera, Select)`). */

@@ -144,7 +144,6 @@ object CampaignContent {
                 text = "Now click the cell to select it.",
                 gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = LOOK,
-                spotlight = Spotlight(dim = true),
             ),
             Step(
                 text = "This panel is the cell's dossier: its size, its chemistry, and its genes. You'll live in here.",

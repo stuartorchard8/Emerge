@@ -346,12 +346,10 @@ class UiBuilder internal constructor(private val ui: Ui) {
     }
 
     /** A full-screen fill — a backdrop for a title screen / modal menu. Emit it **first** (it draws behind
-     *  later panels). With [blockClicks] (the default) it also swallows any click that misses a widget so
-     *  the scene behind doesn't react; pass false for a purely visual dim (e.g. a tutorial spotlight that
-     *  still needs world clicks to land). */
-    fun background(color: Long, blockClicks: Boolean = true) {
+     *  later panels) — it also swallows any click that misses a widget so the scene behind doesn't react. */
+    fun background(color: Long) {
         ui.emitRect(0f, 0f, ui.resWidth, ui.resHeight, color)
-        if (blockClicks) ui.emitClick(0f, 0f, ui.resWidth, ui.resHeight) {}
+        ui.emitClick(0f, 0f, ui.resWidth, ui.resHeight) {}
     }
 }
 
