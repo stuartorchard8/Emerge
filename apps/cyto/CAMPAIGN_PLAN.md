@@ -6,24 +6,67 @@ prose companion (the campaign is the interactive path through the same material)
 
 > **Agent harness (2026-07-11):** `CytoAgentHarness` (desktop, `./gradlew :apps:cyto:desktop:cytoAgent
 > --args="<script> [outDir]"`) drives Cyto **headlessly** — script commands: `scenario`/`campaign`/`run`/
-> `runs`/`camera`/`tap`/`select`/`spawn`/`drag`/`overlay`/`next`/`shot`/`state`/`echo`. Renders cells+coach
+> `runs`/`camera`/`tap`/`select`/`spawn`/`clickcell`/`dragcell <id> <u> <v> <ticks>`/`cells`/`elements`/
+> `tap-ui <label>`/`overlay`/`next`/`shot`/`state`/`echo` (see the `CytoAgentHarness` KDoc for the full
+> list + per-command tick advance). Renders cells+coach
 > to PNG via `java.awt` (`controller.agentCells()`) and dumps world+coach JSON (`director.snapshot()`),
 > so an agent can iterate without the GL window. Also fixed: bitmap font is uppercase-only + limited
 > punctuation (added `'`; `;`/`—`/`◆▸✓🔒` render as `?` — `UiTextRenderer.supports()` + `CampaignContent.
 > validateGlyphs()` guard against regressions); per-step `WorldRun.Frozen/Live` so a slow reader isn't
 > overtaken by later-concept events (world holds still on reading beats).
 >
-> **Status (2026-07-11):** Phase 0 + Act I landed. Built: the `campaign` engine in core commonMain
-> (`CampaignModel`/`CampaignQuery`/`CampaignDirector`), the `BottomCenter` UI anchor, `controller.worldStats()`,
-> and desktop wiring (coach overlay, control masking, player-action detection, `CampaignProgress`
-> persistence, a Campaign menu branch). Two chapters authored (`ch01-first-contact`, `ch02-light`).
-> Director logic unit-tested (`CampaignDirectorTest`); golden trajectory unchanged. Not yet done:
-> region-targeted spotlights/arrows (v1 uses a text hint + optional dim), Phases 3–5 (Acts II–IV +
-> gene groups §10), and live in-app visual playtest (needs a GL session). The architecture is grounded
-> in what exists
-> today: the immediate-mode `Ui` toolkit (`engine/render/torus/.../ui/Ui.kt`), the `CytoMenu` shell +
-> `Callbacks`, the `CytoScenario` recipe system, the genome library (`CytoGenomes`), and the
-> controller's world-query surface (`heldCellInfo`, the `CytoCellComponent` table, `newGame`).
+> **Status (2026-07-12): Ch1–6 built and committed** (Act I + most of Act II). This section is the
+> **fresh-session handoff** — the plan below (§5–6) records the ORIGINAL design; the arc actually shipped
+> diverged from it (see "As-built arc" next), so trust this block over §5–6 where they disagree.
+>
+> **Engine (core commonMain `org.emerge.demo.cyto.campaign`):** `CampaignModel` (`Chapter`/`Step`/`Gate`/
+> `PlayerAction`/`ControlMask`/`Spotlight`/`WorldRun`), `CampaignQuery`+`WorldStats`+`FocusedCell`,
+> `CampaignDirector` (coach overlay via the shared `Ui` toolkit, gate eval, step advance, `snapshot()` for
+> the harness). Desktop host: `CampaignContent.kt` (the authored chapters + genomes + grouping),
+> `CampaignProgress.kt` (unlock persistence), wiring in `CytoSceneView.kt` (coach render, control masking,
+> player-action detection, Campaign menu branch), and `CytoAgentHarness.kt` (headless driver).
+>
+> **As-built arc (the campaign runs on a single grow-only autotroph *substrate* the player authors, NOT
+> the busy default ecosystem):**
+> - **Ch1 First Contact** — camera, select, info panel, torus. Paused, grow-only cell.
+> - **Ch2 Let There Be Light** — light feeds it; it grows to full size and *holds steady* (stationary,
+>   self-repairing, never spreads). Matter is DELIBERATELY not introduced here (a lone cell never visibly
+>   starves — Stu's call); it lands in Ch4.
+> - **Ch3 Anatomy of a Gene** — opens the gene editor; genome shown **by function** (collapsed groups),
+>   teaches purpose-first then the grammar `ACTION IF CONDITION (SOURCE)`.
+> - **Ch4 Give It Life** — player inserts the **Reproduce** group (one tap "+ ADD REPRODUCE"); the static
+>   cell divides and spreads; the colony's depleted "comet" patch introduces the finite-matter budget.
+> - **Ch5 Hold Together** — first **direct gene edit**: toggle the divide gene's `SEVER: yes→no` so daughters
+>   stay welded. Welded cells stall (severing was locomotion!), so the player **drags** the body to feed it —
+>   a towed, connected body.
+> - **Ch6 Under Strain** — welded body tears when yanked (welds now half-durable); player inserts the
+>   **Repair** "Hold Together" group; body becomes tougher (damage-gated Repair, tougher-not-invincible).
+>
+> **Gene grouping = a persistent per-gene TAG** (`Gene.group: String`, §10 — see the updated §10 for the
+> as-built design). No matching: the tag survives editing/division/mutation/save (round-tripped by
+> `GeneCodec` as an optional 4th `:`-part). Editor (`GeneEditor`) renders collapsed groups + a "+ ADD
+> <group>" affordance for absent insertable groups; `GenomeGrouping.sections()` buckets by tag.
+>
+> **Sim changes made for the campaign:** `AUTOTROPH_GROW_ONLY_GENES`, `AUTOTROPH_REPAIR_GENE`,
+> `FounderSpec.genome` override (per-founder genome), `FocusedCell.divideWelds`, and
+> `CONNECTION_BREAK_DAMAGE` **halved 5→2.5** (welds were too durable to tear on drag) — golden re-baselined
+> (only the 2 weld goldens moved; trajectory/determinism gates unchanged), weld spec-test fixtures
+> recalibrated. All committed.
+>
+> **Tests green:** `CampaignDirectorTest`, `GenomeGroupingTest`, `GeneCodecTest` (tagged round-trip),
+> `CytoGoldenTest` (re-baselined), full `CytoSoaSpecTest`.
+>
+> **⚠️ Not done / open:** (1) **Ch6 drag FEEL is unverified** — the harness `dragcell` moves too smoothly to
+> over-stretch welds, so the tear-vs-hold visual + threshold tuning need a **live GL drag playtest** (Stu
+> confirmed manual tearing works). (2) region-targeted spotlights/arrows still text-hint-only. (3) Ch7+
+> (Food Web / Contract / clocks / differentiation / shape / capstone — see §6). (4) The Genome Workshop /
+> group-library / move-between-groups UI (§10.5) — data model supports re-tagging, no UI yet. (5) No live
+> in-app visual playtest of the whole arc yet.
+>
+> **Architecture grounding (unchanged):** the immediate-mode `Ui` toolkit (`engine/render/torus/.../ui/
+> Ui.kt`), the `CytoMenu` shell + `Callbacks`, the `CytoScenario` recipe system, the genome library
+> (`CytoGenomes`), and the controller's world-query surface (`heldCellInfo`, `worldStats()`,
+> `CytoCellComponent` table, `newGame`).
 
 ---
 
@@ -541,6 +584,27 @@ problem — most people bounce in the first minute). Phases 3–5 deepen it towa
 ---
 
 ## 10. Gene groups — functional grouping in the editor
+
+> **AS BUILT (2026-07-12) — read this before §10.1–10.8 below, which record the ORIGINAL design and are
+> partly superseded.** Grouping shipped as a **persistent per-gene tag**, not the match/`GenomeDoc`/`GeneRef`/
+> "painted-from provenance" scheme §10.3–10.4 proposed:
+> - **`Gene.group: String = ""`** is a real (inert) field on the sim gene. Membership is this tag alone — **no
+>   matching of any kind**. The tag survives editing (`copy` keeps it), division + mutation inheritance, and
+>   **save/load**: `GeneCodec` round-trips it as an optional **4th `:`-part** (`… : Convert rg : Grow`),
+>   omitted when empty so untagged genomes are byte-identical (golden + old `.gene`/saves unaffected). This
+>   replaced §10.8's "UI-only, not saved" decision — Stu asked for the proper persistent tag (it's needed
+>   later anyway).
+> - **`GeneGroup(name, color, insert)`** (in `ui/GeneGrouping.kt`) is display style + an optional pre-tagged
+>   insert-template; **`GenomeGrouping.sections(genome)`** buckets live genes by `gene.group` (registry order
+>   → unregistered tags → untagged "Other"). `GeneEditor.render(grouping, insertableGroups)` shows collapsed
+>   group headers (`+ Grow (2)`, tap to expand) and a `+ ADD <group>` affordance for absent insertable groups
+>   (inserts `group.insert` via `CytoController.addHeldGenes`). Genes can be **re-tagged to move between
+>   groups** (data model ready; §10.5 Genome Workshop / move-UI / group-library still unbuilt).
+> - The campaign seeds/inserts **pre-tagged** genes (`CampaignContent`: `GROUP_GROW`/`GROUP_REPRODUCE`/
+>   `GROUP_HOLD`), preserving gene order. `Chapter.grouping` + `Chapter.insertableGroups` drive it.
+>
+> The idea, motivation, hard order-preservation constraint (§10.2), and Act-II teaching reshape (§10.6) all
+> still hold — only the *mechanism* (tag vs match) and *persistence* (saved vs UI-only) changed.
 
 *Added after playtest feedback: the flat gene list is the single hardest wall for a new player. A
 19-gene genome reads as 19 disconnected conditions and actions. But a hand-crafted genome isn't
