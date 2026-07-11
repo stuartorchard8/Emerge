@@ -552,6 +552,12 @@ class CytoController(
     fun duplicateHeldGene(index: Int) =
         editHeldGenome { g -> if (index in g.indices) g.toMutableList().also { it.add(index + 1, g[index]) } else null }
 
+    /** Append [genes] to the held cell's genome (skipping any it already has, by value). The campaign's
+     *  "insert a functional group" op — adds a ready-made subsystem to a cell in one action. Appends at the
+     *  end so existing gene order (behaviourally significant under round-robin) is untouched. */
+    fun addHeldGenes(genes: List<Gene>) =
+        editHeldGenome { g -> genes.filter { it !in g }.takeIf { it.isNotEmpty() }?.let { g + it } }
+
     // ── Mutation rate — in-game tunable + saved on the world (CytoSimParamsComponent) ───────────────────
     private val mutationLadder = intArrayOf(0, 1_000_000, 100_000, 10_000, 1_000)   // off → rare → … → frequent
 

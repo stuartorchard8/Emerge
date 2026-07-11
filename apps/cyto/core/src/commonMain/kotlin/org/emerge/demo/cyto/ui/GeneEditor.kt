@@ -57,7 +57,13 @@ class GeneEditor {
 
     /** [onExport] is invoked when the EXPORT button is tapped — the host writes the held cell's genome to a
      *  file (desktop file-I/O lives outside this commonMain kit). No-op default keeps non-desktop hosts simple. */
-    fun render(b: UiBuilder, controller: CytoController, grouping: GenomeGrouping? = null, onExport: () -> Unit = {}) {
+    fun render(
+        b: UiBuilder,
+        controller: CytoController,
+        grouping: GenomeGrouping? = null,
+        allowGroupInsert: Boolean = true,
+        onExport: () -> Unit = {},
+    ) {
         val info = controller.heldCellInfo()
         if (info == null) { reset(); return }
         if (editingId != null && editingId != controller.lastHeldId) reset()   // grabbed a different cell
@@ -70,7 +76,8 @@ class GeneEditor {
             keyValue("LIGHT", info.light)
             metabolismTable(info)
             if (info.genes.isNotEmpty()) {
-                val sections = grouping?.sections(info.genes.map { it.gene })
+                val liveGenes = info.genes.map { it.gene }
+                val sections = grouping?.sections(liveGenes)
                 if (sections != null) {
                     gap(); row("GENES BY FUNCTION (tap a group to open it)")
                     for (sec in sections) {
@@ -83,6 +90,14 @@ class GeneEditor {
                             if (open) expandedGroups.remove(label) else expandedGroups.add(label)
                         }
                         if (open) for (item in sec.items) geneButton(controller, info.genes[item.index], item.index)
+                    }
+                    // Absent groups (a defined subsystem this cell doesn't have yet) show as a ready-made
+                    // "ADD" affordance: one tap inserts the whole pre-made group. This is how Act II teaches
+                    // an action — the player adds a *meaningful unit*, not a hand-authored gene.
+                    if (allowGroupInsert) for (grp in grouping.groups) {
+                        if (grp.members.isNotEmpty() && grp.members.none { it in liveGenes }) {
+                            button("+ ADD ${grp.name.uppercase()}", 0x2A3F5AFFL) { controller.addHeldGenes(grp.members) }
+                        }
                     }
                 } else {
                     gap(); row("GENES (tap to edit. orange = blocking)")

@@ -205,7 +205,11 @@ object CytoSceneView {
                 // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
                 ui.frame {
                     if (mask.allows(Control.GeneEditor)) {
-                        geneEditor.render(this, controller, grouping = director.activeChapter?.grouping) {
+                        geneEditor.render(
+                            this, controller,
+                            grouping = director.activeChapter?.grouping,
+                            allowGroupInsert = director.activeChapter?.allowGroupInsert == true,
+                        ) {
                             val g = controller.heldGenome()
                             if (g != null) {
                                 val default = genomes.getOrNull(selectedGenome)?.name ?: "genome"
@@ -340,8 +344,13 @@ object CytoSceneView {
             val px = cursorPixel(win)
             // While the front-end shell is up, clicks only route to its widgets — no world interaction.
             if (!menu.inGame) {
-                if (action == GLFW_PRESS) ui.hitTest(px.first, px.second)
-                else ui.releaseHold()
+                if (action == GLFW_PRESS) {
+                    ui.hitTestDown(px.first, px.second)
+                }
+                else {
+                    ui.hitTestUp(px.first, px.second)
+                    ui.releaseHold()
+                }
                 return@glfwSetMouseButtonCallback
             }
             when (action) {
@@ -350,7 +359,7 @@ object CytoSceneView {
                     state.lastX = px.first
                     state.lastY = px.second
                     // UI first: a hit (info-panel buttons, then the controls) consumes the press.
-                    if (ui.hitTest(px.first, px.second) || controls.hitTest(px.first, px.second)) {
+                    if (ui.hitTestDown(px.first, px.second) || controls.hitTest(px.first, px.second)) {
                         state.uiConsumed = true
                         state.grabId = null
                         return@glfwSetMouseButtonCallback
@@ -363,6 +372,12 @@ object CytoSceneView {
                     if (hit != null && controls.touchMode == TouchMode.Detach) controller.detach(hit)
                 }
                 GLFW_RELEASE -> {
+                    // UI first: a hit (info-panel buttons, then the controls) consumes the press.
+                    if (ui.hitTestUp(px.first, px.second)) {
+                        state.uiConsumed = true
+                        state.grabId = null
+                        return@glfwSetMouseButtonCallback
+                    }
                     ui.releaseHold()   // end any in-progress hold-to-repeat
                     if (!state.uiConsumed && !state.dragged) {
                         val hit = state.grabId

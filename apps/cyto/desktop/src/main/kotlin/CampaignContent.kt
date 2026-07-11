@@ -62,6 +62,7 @@ object CampaignContent {
         chapter1FirstContact(),
         chapter2LetThereBeLight(),
         chapter3AnatomyOfAGene(),
+        chapter4Reproduce(),
     )
 
     val ORDER: List<String> = CHAPTERS.map { it.id }
@@ -172,6 +173,69 @@ object CampaignContent {
         ),
     )
 
+    /** Act II, first authoring beat. The player brings the static grow-only organism to life by *inserting*
+     *  the ready-made Reproduce subsystem (one tap on "ADD REPRODUCE"), then watches it divide and spread.
+     *  Teaches Mitosis by using it to solve a problem, and the group-insert idea: you build with meaningful
+     *  units, not raw genes. */
+    private fun chapter4Reproduce() = Chapter(
+        id = "ch04-reproduce",
+        act = 2,
+        title = "Give It Life",
+        blurb = "Add a gene, and turn one static cell into a spreading colony.",
+        scenario = GROW_ONLY,
+        grouping = CAMPAIGN_GROUPING,
+        allowGroupInsert = true,
+        steps = listOf(
+            Step(
+                text = "This organism grows but can't reproduce - on its own it's a dead end. Let's fix that. Select the cell to open its genome.",
+                gate = Gate.Did(PlayerAction.SelectedCell, "Select the cell"),
+                allow = LOOK,
+                spotlight = Spotlight(hint = "Click the cell"),
+            ),
+            Step(
+                text = "Below its GROW group is a ready-made subsystem it's missing: ADD REPRODUCE. Tap it to give the cell a reproduction gene.",
+                gate = Gate.World(
+                    "Add the Reproduce group",
+                    met = { (it.focused?.geneCount ?: 0) >= 3 },
+                ),
+                allow = LOOK,
+                spotlight = Spotlight(hint = "+ ADD REPRODUCE, below the groups"),
+                detail = "You're not writing a gene by hand - you're dropping in a whole pre-made function. That's how bodies are built here: from reusable subsystems.",
+            ),
+            Step(
+                text = "Done. It now has a REPRODUCE group. Speed the sim up and watch: big enough, the cell splits in two, then those split, and a colony spreads.",
+                gate = Gate.World(
+                    "Grow to 30 cells",
+                    met = { it.cellCount >= 30 },
+                    progress = { it.cellCount.coerceAtMost(30) to 30 },
+                ),
+                allow = WATCH,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "SLOW / PAUSE / FAST, top-left"),
+            ),
+            Step(
+                text = "One gene turned a static cell into a spreading colony - small genetic change, huge behaviour. But it won't fill the world forever. Turn on the matter grid to see the limit.",
+                gate = Gate.Did(PlayerAction.ToggledMatterOverlay, "Show the matter grid"),
+                allow = WATCH,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "LIGHT/MATTER GRID button, bottom-right"),
+            ),
+            Step(
+                text = "See the dark patch? That's matter the colony has already used up. Cells stuck in that exhausted zone can't divide - only the frontier, reaching fresh matter, keeps spreading.",
+                gate = Gate.Next,
+                allow = WATCH,
+                world = WorldRun.Live,
+                detail = "Zoom out to see the whole colony: a bright, growing edge chasing fresh matter, dragging a spent, crowded interior behind it.",
+            ),
+            Step(
+                text = "That's the core tension: light is free and endless, but matter is scarce. Every colony grows until it runs into that budget. From here on, the game is about managing it.",
+                gate = Gate.Next,
+                allow = WATCH,
+                world = WorldRun.Live,
+            ),
+        ),
+    )
+
     private fun chapter2LetThereBeLight() = Chapter(
         id = "ch02-light",
         act = 1,
@@ -201,16 +265,10 @@ object CampaignContent {
                 detail = "It's already at full size, so it just tops itself up: light rebuilds whatever the slow decay of living wears away. A quiet, stable loop.",
             ),
             Step(
-                text = "Its body is built from matter. Tap the LIGHT/MATTER button to reveal the raw matter scattered around it.",
-                gate = Gate.Did(PlayerAction.ToggledMatterOverlay, "Show the matter overlay"),
-                allow = WATCH,
-                world = WorldRun.Live,
-                spotlight = Spotlight(hint = "LIGHT/MATTER GRID button, bottom-right"),
-            ),
-            Step(
-                text = "That matter is finite - nothing here comes from nothing. Light is free and endless, but matter is scarce and recycled. Every creature you build lives inside that budget.",
+                text = "So it's alive and self-sustaining - but static. A single cell, holding its ground forever. Next, let's read the tiny program that runs it, and then give it the power to multiply.",
                 gate = Gate.Next,
                 allow = WATCH,
+                world = WorldRun.Live,
             ),
         ),
     )
