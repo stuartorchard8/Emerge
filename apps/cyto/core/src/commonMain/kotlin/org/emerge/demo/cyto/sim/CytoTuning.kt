@@ -185,8 +185,11 @@ object CytoTuning {
      *  cells to stick together when physics pushes them into deep overlap (e.g. cells dividing while
      *  surrounded). ⚙ */
     const val AUTO_WELD_ON_OVERLAP = false
-    /** Connection breaks when accumulated stress damage exceeds this (higher = less fragile). */
-    const val CONNECTION_BREAK_DAMAGE = 5f
+    /** Connection breaks when accumulated stress damage exceeds this (higher = less fragile). Halved from 5
+     *  (2026-07-11): welds were too durable — a dragged welded body never tore, so cohesion/Repair had no
+     *  visible stakes. Damage *scaling* (how stretch accrues stress) is unchanged; only the break threshold
+     *  drops, so a hard pull now snaps un-repaired welds while Repair mends fast enough to hold. ⚙ */
+    const val CONNECTION_BREAK_DAMAGE = 2.5f
     /**
      * Hard cap on how many welds one cell can hold. A new weld (division, contact-stick, or Repair-heal) is
      * refused once either endpoint already has this many. A cell has at most ~6 spatial neighbours in 2D, so

@@ -233,18 +233,23 @@ class CytoGoldenTest {
     // These two lock the current (round-trip) welding trajectory so the SoA-native weld port is bit-identical.
     // Re-baselined 2026-07-09: 4x world size (see GROWTH). physics + topology (weld positions) shift;
     // meta/biology/grid byte-identical (tiny fixed colony, same chemistry, no grid deposit in-frame).
+    // Re-baselined 2026-07-11: CONNECTION_BREAK_DAMAGE halved 5→2.5 (welds were too durable — a dragged
+    // welded body never tore, leaving cohesion/Repair with no visible stakes for the campaign). Only the two
+    // weld goldens move, and only in their weld-dependent dimensions (weldHeal: physics/biology/topology;
+    // sticky: topology — fewer welds survive under the lower break threshold); every trajectory + determinism
+    // gate is byte-identical (the sandbox autotroph severs, so its colonisation doesn't depend on welds).
     private val WELD_HEAL = mapOf(
         "meta" to "bb3fa685a6d77664",
-        "physics" to "833547b126f43a4e",
-        "biology" to "85da6bf92a822d33",
-        "topology" to "5ac56469d2cb67f",
+        "physics" to "b47e91853a3c8a02",
+        "biology" to "999427a698b3b417",
+        "topology" to "9bfc123c376c0371",
         "grid" to "a857f5de984d921d",
     )
     private val STICKY_WELD = mapOf(
         "meta" to "350eaa4577a67db5",
         "physics" to "f7edf29a779a21ca",
         "biology" to "ca5045ab30a68078",
-        "topology" to "e6e1ea3b978eaabc",
+        "topology" to "8f9ae79f7f29791a",
         "grid" to "ea6b5be6086c9296",
     )
 
