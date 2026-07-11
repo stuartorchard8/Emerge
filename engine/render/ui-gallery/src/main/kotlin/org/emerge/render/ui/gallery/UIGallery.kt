@@ -185,9 +185,11 @@ object UIGallery {
             if (action == GLFW_PRESS) {
                 mouseDown = true
                 val (px, py) = cursorPixel(window)
-                ui.hitTest(px, py)
+                ui.hitTestDown(px, py)
             } else {
                 mouseDown = false
+                val (px, py) = cursorPixel(window)
+                ui.hitTestUp(px, py)
                 ui.releaseHold()
             }
         }

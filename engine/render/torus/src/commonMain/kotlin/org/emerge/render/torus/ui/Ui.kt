@@ -21,7 +21,7 @@ enum class Anchor { TopLeft, TopRight, BottomLeft, BottomRight, Center, BottomCe
  * TopRight panel sits below the first). Beyond plain rows it offers composite rows — [PanelBuilder.picker]
  * (a click-to-expand dropdown drawn in an **overlay** layer on top of everything), [PanelBuilder.stepper]
  * (**hold-to-repeat** ± with accelerating step), and [PanelBuilder.actionRow] (a row of small buttons).
- * Hold-to-repeat needs the host to feed pointer state each frame: [hitTest] on press, [updateHold] while
+ * Hold-to-repeat needs the host to feed pointer state each frame: [hitTestDown] on press, [updateHold] while
  * held, [releaseHold] on release.
  */
 class Ui {
@@ -119,17 +119,40 @@ class Ui {
         GPU.disableBlend()
     }
 
-    /** Routes a pointer-down: invokes the topmost interactive region (overlay first) containing the point.
+    private fun pointInBounds(c: ClickRegion, px: Float, py: Float): Boolean {
+        return px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h
+    }
+
+    /** Routes a pointer-down: marks the topmost interactive region (overlay first) containing the point.
      *  Starting a hold on a stepper button is handled here too. */
-    fun hitTest(px: Float, py: Float): Boolean {
-        for (i in overlayClicks.indices.reversed()) if (fire(overlayClicks[i], px, py)) return true
-        for (i in clicks.indices.reversed()) if (fire(clicks[i], px, py)) return true
+    fun hitTestDown(px: Float, py: Float): Boolean {
+        for (i in overlayClicks.indices.reversed()) if (regionHitTestDown(overlayClicks[i], px, py)) return true
+        for (i in clicks.indices.reversed()) if (regionHitTestDown(clicks[i], px, py)) return true
         return false
     }
 
-    private fun fire(c: ClickRegion, px: Float, py: Float): Boolean {
-        if (px < c.x || px > c.x + c.w || py < c.y || py > c.y + c.h) return false
-        if (c.holdSign != 0) { heldRegion = c; heldSeconds = 0f; repeatTimer = 0f }
+    private fun regionHitTestDown(c: ClickRegion, px: Float, py: Float): Boolean {
+        if (!pointInBounds(c, px, py)) return false
+        heldRegion = c
+        heldSeconds = 0f
+        repeatTimer = 0f
+        return true
+    }
+
+    /** Routes a pointer-up: invokes the topmost interactive region (overlay first) containing the point. */
+    fun hitTestUp(px: Float, py: Float): Boolean {
+        // Valid clicks must end within [INITIAL_DELAY] of the initial mouse down
+        if (heldSeconds >= INITIAL_DELAY) return false
+        for (i in overlayClicks.indices.reversed()) if (regionHitTestUp(overlayClicks[i], px, py)) return true
+        for (i in clicks.indices.reversed()) if (regionHitTestUp(clicks[i], px, py)) return true
+        return false
+    }
+
+    private fun regionHitTestUp(c: ClickRegion, px: Float, py: Float): Boolean {
+        // Valid clicks must end on the same region they started in.
+        if (!pointInBounds(c, px, py)) return false
+        // TODO proper comparison
+        if (c.label != heldRegion?.label) return false
         c.onClick()
         return true
     }
