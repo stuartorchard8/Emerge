@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.campaign
 
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.sim.CytoScenario
+import org.emerge.demo.cyto.ui.GenomeGrouping
 
 /**
  * The authored content model for the campaign / story mode (see `apps/cyto/CAMPAIGN_PLAN.md`). A
@@ -24,6 +25,10 @@ class Chapter(
     val scenario: CytoScenario,
     val steps: List<Step>,
     val seededGenomeNames: List<String> = emptyList(),
+    /** An optional functional grouping for this chapter's genome (CAMPAIGN_PLAN.md §10). When present the
+     *  gene editor shows the held cell's genes collapsed into named subsystems instead of a flat list, so
+     *  Act II can teach at the subsystem level. Order-preserving label only — no effect on the sim. */
+    val grouping: GenomeGrouping? = null,
 )
 
 /** One coaching beat: the instruction, how it advances ([gate]), which controls are live ([allow]), an

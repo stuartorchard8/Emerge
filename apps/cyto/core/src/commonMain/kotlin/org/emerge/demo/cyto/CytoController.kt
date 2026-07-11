@@ -288,7 +288,7 @@ class CytoController(
 
         /** One gene as the panel sees it: [desc] plain text, whether it would FIRE this tick ([active]), and
          *  [spans] — the description split into coloured segments with the blocking parts flagged. */
-        class GeneRow(val desc: String, val active: Boolean, val spans: List<Span>)
+        class GeneRow(val desc: String, val active: Boolean, val spans: List<Span>, val gene: Gene)
 
         /** A run of a gene's description text; [blocking] ⇒ this part is currently keeping the gene from
          *  firing (a failed condition clause, the energy source with no energy, or a missing action input). */
@@ -438,7 +438,7 @@ class CytoController(
             metabolism = metabolism,
             genes = cell.genome.map { g ->
                 val spans = describeGeneSpans(g, cytoMap, envMap, totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass), quanta = capturedQuanta)
-                CellInfo.GeneRow(desc = spans.joinToString("") { it.text }, active = spans.none { it.blocking }, spans = spans)
+                CellInfo.GeneRow(desc = spans.joinToString("") { it.text }, active = spans.none { it.blocking }, spans = spans, gene = g)
             },
         )
     }

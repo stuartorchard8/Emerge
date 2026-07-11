@@ -35,6 +35,11 @@ class GeneEditor {
     private var openField: Field? = null
     private var openClause: Int = -1   // which clause's LHS/CMP/RHS dropdown is open (for the AND-conjunction)
 
+    /** Which functional groups are expanded (by name) when a [GenomeGrouping] overlay is showing. Collapsed
+     *  by default so the genome reads as a few named subsystems, not a wall of genes; the player opens the
+     *  one they care about. Cross-frame UI state, like the rest of the editor. */
+    private val expandedGroups = HashSet<String>()
+
     // Option lists, derived from the seeded alphabet. Species operands are built atom-by-atom (see
     // [speciesField]) rather than picked from a fixed list, so any-length molecules (abb, abcb, …) are
     // reachable — the old monomer+dimer dropdown couldn't express them.
@@ -52,7 +57,7 @@ class GeneEditor {
 
     /** [onExport] is invoked when the EXPORT button is tapped — the host writes the held cell's genome to a
      *  file (desktop file-I/O lives outside this commonMain kit). No-op default keeps non-desktop hosts simple. */
-    fun render(b: UiBuilder, controller: CytoController, onExport: () -> Unit = {}) {
+    fun render(b: UiBuilder, controller: CytoController, grouping: GenomeGrouping? = null, onExport: () -> Unit = {}) {
         val info = controller.heldCellInfo()
         if (info == null) { reset(); return }
         if (editingId != null && editingId != controller.lastHeldId) reset()   // grabbed a different cell
@@ -65,17 +70,23 @@ class GeneEditor {
             keyValue("LIGHT", info.light)
             metabolismTable(info)
             if (info.genes.isNotEmpty()) {
-                gap(); row("GENES (tap to edit. orange = blocking)")
-                info.genes.forEachIndexed { i, g ->
-                    // Button background as before — editing = blue, active = green, inactive = grey — but the
-                    // parts of an inactive gene that are blocking it (failed clause / energy / input) draw
-                    // orange inline; everything else keeps the auto-contrast colour.
-                    val bg = when {
-                        editingIndex == i -> 0x4488CCFFL
-                        g.active -> 0x2E8B40FFL
-                        else -> 0x3C3C3CFFL
+                val sections = grouping?.sections(info.genes.map { it.gene })
+                if (sections != null) {
+                    gap(); row("GENES BY FUNCTION (tap a group to open it)")
+                    for (sec in sections) {
+                        val label = sec.name ?: "OTHER"
+                        val open = expandedGroups.contains(label)
+                        // A group header: "+ NAME (n)" collapsed / "- NAME (n)" expanded (triangle glyphs
+                        // aren't in the bitmap font). Tinted with the group's colour so subsystems are
+                        // visually distinct at a glance.
+                        button("${if (open) "-" else "+"} $label (${sec.items.size})", groupHeaderBg(sec.color)) {
+                            if (open) expandedGroups.remove(label) else expandedGroups.add(label)
+                        }
+                        if (open) for (item in sec.items) geneButton(controller, info.genes[item.index], item.index)
                     }
-                    button(g.spans.map { it.text to (if (it.blocking) 0xC8963CFFL else null) }, bg) { open(controller, i) }
+                } else {
+                    gap(); row("GENES (tap to edit. orange = blocking)")
+                    info.genes.forEachIndexed { i, g -> geneButton(controller, g, i) }
                 }
                 button("EXPORT GENOME", 0x3A6EA5FFL) { onExport() }
             }
@@ -186,6 +197,26 @@ class GeneEditor {
                 ),
             )
         }
+    }
+
+    /** One gene as a tappable button: editing = blue, active = green, inactive = grey; the parts of an
+     *  inactive gene that block it (failed clause / energy / input) draw orange inline. [i] is its live
+     *  genome index, used to open it for editing. */
+    private fun PanelBuilder.geneButton(controller: CytoController, g: CytoController.CellInfo.GeneRow, i: Int) {
+        val bg = when {
+            editingIndex == i -> 0x4488CCFFL
+            g.active -> 0x2E8B40FFL
+            else -> 0x3C3C3CFFL
+        }
+        button(g.spans.map { it.text to (if (it.blocking) 0xC8963CFFL else null) }, bg) { open(controller, i) }
+    }
+
+    /** A dark tint of a group's [color] (40% brightness, full alpha) for its collapsible header background. */
+    private fun groupHeaderBg(color: Long): Long {
+        val r = ((color ushr 24) and 0xFF) * 40 / 100
+        val g = ((color ushr 16) and 0xFF) * 40 / 100
+        val b = ((color ushr 8) and 0xFF) * 40 / 100
+        return (r shl 24) or (g shl 16) or (b shl 8) or 0xFF
     }
 
     private fun open(controller: CytoController, index: Int) {

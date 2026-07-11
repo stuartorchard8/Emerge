@@ -9,9 +9,12 @@ import org.emerge.demo.cyto.campaign.Spotlight
 import org.emerge.demo.cyto.campaign.Step
 import org.emerge.demo.cyto.campaign.WorldRun
 import org.emerge.demo.cyto.cells.CellType
+import org.emerge.demo.cyto.sim.AUTOTROPH_GENES
 import org.emerge.demo.cyto.sim.AUTOTROPH_GROW_ONLY_GENES
 import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.FounderSpec
+import org.emerge.demo.cyto.ui.GeneGroup
+import org.emerge.demo.cyto.ui.GenomeGrouping
 import org.emerge.render.torus.ui.UiTextRenderer
 
 /**
@@ -41,6 +44,19 @@ object CampaignContent {
         name = "Campaign",
         founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GROW_ONLY_GENES)),
     )
+
+    /** The genes of the full autotroph that the grow-only substrate is *missing* - the reproduction subsystem
+     *  the player adds in Act II (structurally, whatever [AUTOTROPH_GENES] has that the grow-only set doesn't:
+     *  the break-powered Mitosis gene). */
+    private val REPRODUCE_GENES = AUTOTROPH_GENES.filter { it !in AUTOTROPH_GROW_ONLY_GENES }
+
+    /** Functional grouping for the campaign autotroph: its two genes read as one "Grow" subsystem, and the
+     *  reproduction gene (once the player adds it in Act II) buckets into "Reproduce". Collapsed, the genome
+     *  shows one or two plain labels instead of a wall of conditions - the §10 comprehension win. */
+    private val CAMPAIGN_GROUPING = GenomeGrouping(listOf(
+        GeneGroup("Grow", 0x3E9E5AFFL, AUTOTROPH_GROW_ONLY_GENES),
+        GeneGroup("Reproduce", 0xC77DD0FFL, REPRODUCE_GENES),
+    ))
 
     val CHAPTERS: List<Chapter> = listOf(
         chapter1FirstContact(),
@@ -73,6 +89,7 @@ object CampaignContent {
         title = "First Contact",
         blurb = "Meet a single living cell, and learn to look at it.",
         scenario = GROW_ONLY,
+        grouping = CAMPAIGN_GROUPING,
         steps = listOf(
             Step(
                 text = "Welcome to Cyto. That speck in the middle is a single living cell, floating in an empty world.",
@@ -105,15 +122,16 @@ object CampaignContent {
         ),
     )
 
-    /** Act II opener. Re-uses the autotroph the player watched in Ch 2, but now opens its gene list and
-     *  teaches the grammar: every cell is run by a short program of SOURCE : CONDITION : ACTION rules.
-     *  Reading before writing - no edits here, just learning to read the cell's own three genes. */
+    /** Act II opener. Re-uses the grow-only autotroph, and opens its genome - shown BY FUNCTION, so the
+     *  player meets it as named subsystems (here a single "Grow" group) before ever seeing a raw gene.
+     *  Purpose before syntax: read the group label, then open it to read the two genes inside. */
     private fun chapter3AnatomyOfAGene() = Chapter(
         id = "ch03-anatomy",
         act = 2,
         title = "Anatomy of a Gene",
         blurb = "Read the tiny program that runs a living cell.",
         scenario = GROW_ONLY,
+        grouping = CAMPAIGN_GROUPING,
         steps = listOf(
             Step(
                 text = "You've watched this cell hold steady. Now let's read why it does what it does. Click it to open its dossier.",
@@ -122,10 +140,17 @@ object CampaignContent {
                 spotlight = Spotlight(hint = "Click the cell"),
             ),
             Step(
-                text = "Look at the GENES list in the panel. This whole organism is run by just two rules - that short list is the entire creature.",
+                text = "Its genome is shown by FUNCTION. Right now there's just one job: GROW. That single label sums up everything this organism does.",
                 gate = Gate.Next,
                 allow = LOOK,
-                spotlight = Spotlight(hint = "GENES list, in the panel top-right"),
+                spotlight = Spotlight(hint = "the GROW group, in the panel top-right"),
+                detail = "A genome is a set of subsystems, each doing one job. Grouping them this way turns a wall of rules into a handful of purposes you can read at a glance.",
+            ),
+            Step(
+                text = "Tap the GROW group to open it. Inside are the actual genes - two of them - that carry out the job.",
+                gate = Gate.Next,
+                allow = LOOK,
+                spotlight = Spotlight(hint = "tap + GROW (2) to expand it"),
             ),
             Step(
                 text = "Each gene reads as one sentence: an ACTION, IF a CONDITION holds, powered by a SOURCE shown in brackets.",
@@ -134,19 +159,13 @@ object CampaignContent {
                 detail = "Example: 'CONVERT RG IF BIO<3000 (LIGHT)' means - powered by light, while the cell is still small, lock rg into body mass. What to do, when to do it, and the power for it.",
             ),
             Step(
-                text = "Both genes do one job: GROW. One bonds raw matter into food, the other locks that food into body mass. Together they keep the cell fed and repaired.",
+                text = "The two GROW genes work together: one bonds raw matter into food, the other locks that food into body mass. That loop keeps the cell fed and repaired.",
                 gate = Gate.Next,
                 allow = LOOK,
-                detail = "That's why it holds steady: as decay nibbles its body, CONVERT re-fires and rebuilds it, right back up to full size. A self-sustaining loop.",
+                detail = "That's why it holds steady: as decay nibbles its body, CONVERT re-fires and rebuilds it, right back up to full size. Colour shows each gene's state - green is firing, grey is waiting, orange marks what's blocking it.",
             ),
             Step(
-                text = "Colour shows a gene's state right now: green means it's firing, grey means it's waiting, and orange marks the part that's blocking it.",
-                gate = Gate.Next,
-                allow = LOOK,
-                detail = "Only one gene runs per tick (round-robin), so at any instant most genes sit idle - watch the colours shift as the cell cycles through them.",
-            ),
-            Step(
-                text = "But notice what's missing: nothing here makes a new cell. This organism can grow, but it can't reproduce. Next, you'll give it that power.",
+                text = "But notice what's missing: there's no group for reproduction. This organism can grow, but it can't multiply. Next, you'll add that.",
                 gate = Gate.Next,
                 allow = LOOK,
             ),
@@ -159,6 +178,7 @@ object CampaignContent {
         title = "Let There Be Light",
         blurb = "Watch a cell feed on sunlight - and hold its ground.",
         scenario = GROW_ONLY,
+        grouping = CAMPAIGN_GROUPING,
         steps = listOf(
             Step(
                 text = "This cell is an autotroph - it feeds on light. The bright band sweeping across the world is daylight. Where it's dark, the cell can't feed.",

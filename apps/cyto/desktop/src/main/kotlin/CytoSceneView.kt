@@ -205,7 +205,7 @@ object CytoSceneView {
                 // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
                 ui.frame {
                     if (mask.allows(Control.GeneEditor)) {
-                        geneEditor.render(this, controller) {
+                        geneEditor.render(this, controller, grouping = director.activeChapter?.grouping) {
                             val g = controller.heldGenome()
                             if (g != null) {
                                 val default = genomes.getOrNull(selectedGenome)?.name ?: "genome"
