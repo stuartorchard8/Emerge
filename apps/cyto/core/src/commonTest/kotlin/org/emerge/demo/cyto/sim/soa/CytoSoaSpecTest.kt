@@ -703,20 +703,23 @@ class CytoSoaSpecTest {
         Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
     )
 
+    // Fixture damage stays a fraction of CONNECTION_BREAK_DAMAGE (2.5) so the weld is partially damaged but
+    // INTACT — a value at/over the threshold would break the (unstressed) link and there'd be no damage to
+    // measure. 1.25 = half the threshold (mirrors the pre-nerf 2.5-of-5).
     @Test
     fun repairGeneHealsConnectionDamage() {
-        val initial = damagedPair(repairOnly, damage = 2.5f)
+        val initial = damagedPair(repairOnly, damage = 1.25f)
         val total0 = totalAtoms(initial)
         val state = run(initial, ticks = 40)
         assertTrue(springCount(state) > 0, "repair + light should keep the connection alive")
-        assertTrue(maxConnectionDamage(state) < 2.5f, "repair should have reduced the damage; got ${maxConnectionDamage(state)}")
+        assertTrue(maxConnectionDamage(state) < 1.25f, "repair should have reduced the damage; got ${maxConnectionDamage(state)}")
         assertEquals(total0, totalAtoms(state), "repair must conserve matter")
     }
 
     @Test
     fun withoutRepairGeneDamageIsNotHealed() {
-        val state = run(damagedPair(emptyList(), damage = 2.5f), ticks = 40)
-        assertTrue(maxConnectionDamage(state) >= 2.5f, "without a repair gene damage must not heal; got ${maxConnectionDamage(state)}")
+        val state = run(damagedPair(emptyList(), damage = 1.25f), ticks = 40)
+        assertTrue(maxConnectionDamage(state) >= 1.25f, "without a repair gene damage must not heal; got ${maxConnectionDamage(state)}")
     }
 
     @Test
@@ -725,9 +728,9 @@ class CytoSoaSpecTest {
         // cell can't instantly undo damage — the basis for a hard enough stretch breaking a link
         // despite active repair (its stress outruns this cap).
         val cap = CytoTuning.MAX_REPAIR_HEAL_PER_TICK
-        val dmg = maxConnectionDamage(run(damagedPair(repairOnly, damage = 2.5f), ticks = 1))
-        assertTrue(dmg < 2.5f, "repair should heal some damage in a tick; got $dmg")
-        assertTrue(dmg >= 2.5f - cap - 1e-3f, "one tick must not heal more than the per-tick cap ($cap); got $dmg (healed ${2.5f - dmg})")
+        val dmg = maxConnectionDamage(run(damagedPair(repairOnly, damage = 1.25f), ticks = 1))
+        assertTrue(dmg < 1.25f, "repair should heal some damage in a tick; got $dmg")
+        assertTrue(dmg >= 1.25f - cap - 1e-3f, "one tick must not heal more than the per-tick cap ($cap); got $dmg (healed ${1.25f - dmg})")
     }
 
     @Test
