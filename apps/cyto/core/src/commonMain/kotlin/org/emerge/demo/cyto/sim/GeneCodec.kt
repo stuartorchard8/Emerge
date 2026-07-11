@@ -21,21 +21,25 @@ package org.emerge.demo.cyto.sim
  *  to one side, MORPHOGENESIS.md §C; append `mother` to keep it in the mother = centred source, vs the default
  *  daughter = edge source; append `sever` so the daughter rejects all mother welds → splits off as a separate
  *  1-celled organism)*, `Repair`, or `Lyse` *(steals all species from touching cells — MORPHOGENESIS.md §B)*.
- *  Blank lines and `#` comments are ignored. Round-trips every preset
- * genome (see GeneCodecTest).
+ *  An optional **4th `:`-part** is a functional-group tag ([Gene.group], e.g. `… : Convert rg : Grow`),
+ *  omitted when ungrouped so 3-part genomes are unchanged. Blank lines and `#` comments are ignored.
+ *  Round-trips every preset genome (see GeneCodecTest).
  */
 object GeneCodec {
 
     fun serialize(genome: List<Gene>): String = genome.joinToString("\n") { gene ->
         val effSuffix = if (gene.efficiency != 0) " @${gene.efficiency}" else ""   // efficiency gear, omitted when 0
-        "${source(gene.source)} : ${condition(gene.condition)} : ${action(gene.action)}$effSuffix"
+        // The functional-group tag is an optional 4th `:`-part, omitted when ungrouped so untagged genomes
+        // (every sandbox preset + pre-tag save/`.gene` file) round-trip byte-identically to the 3-part form.
+        val groupSuffix = if (gene.group.isNotEmpty()) " : ${gene.group}" else ""
+        "${source(gene.source)} : ${condition(gene.condition)} : ${action(gene.action)}$effSuffix$groupSuffix"
     }
 
     fun parse(text: String): List<Gene> = text.lines().mapNotNull { raw ->
         val line = raw.substringBefore('#').trim()
         if (line.isEmpty()) return@mapNotNull null
         val parts = line.split(":")
-        require(parts.size == 3) { "gene line must have three ':'-separated parts: \"$raw\"" }
+        require(parts.size == 3 || parts.size == 4) { "gene line must have three (or four, with a group tag) ':'-separated parts: \"$raw\"" }
         // The action part may carry a trailing efficiency gear token `@<g>` (e.g. `Convert rg @6`).
         val actionTokens = parts[2].trim().split(WS).toMutableList()
         var efficiency = 0
@@ -47,6 +51,7 @@ object GeneCodec {
             condition = parseCondition(parts[1]),
             action = parseAction(actionTokens),
             efficiency = efficiency,
+            group = if (parts.size == 4) parts[3].trim() else "",
         )
     }
 

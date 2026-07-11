@@ -17,6 +17,21 @@ class GeneCodecTest {
         }
     }
 
+    /** The functional-group tag ([Gene.group]) round-trips as the optional 4th `:`-part, so grouping survives
+     *  save/load (the world save codec serializes through GeneCodec). Untagged genes stay 3-part; a tag with a
+     *  space is preserved verbatim. */
+    @Test
+    fun roundTripsGroupTag() {
+        val genome = listOf(
+            Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(3000)), GeneAction(ActionType.Convert, "rg"), group = "Grow"),
+            Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(2000)), GeneAction(ActionType.Mitosis, rejectMother = true), group = "Hold Together"),
+            Gene(EnergySource.Light, GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(3000)), GeneAction(ActionType.FormBond, "r", "g")),  // untagged
+        )
+        val text = GeneCodec.serialize(genome)
+        assertEquals(genome, GeneCodec.parse(text), "tagged genome round-trip")
+        assertEquals(3, text.lines().last().split(":").size, "untagged gene stays 3-part")
+    }
+
     /** Genes a mutation can produce — an empty [Operand.Chem] species / empty action operands (after a
      *  kind- or action-type flip) — must round-trip, not crash decode. Guards the save path. */
     @Test

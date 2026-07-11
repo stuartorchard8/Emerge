@@ -181,6 +181,12 @@ data class Gene(
     val condition: GeneCondition,
     val action: GeneAction,
     val efficiency: Int = 0,
+    /** A **functional-group tag** — an authoring/UI label naming the subsystem this gene belongs to (e.g.
+     *  "Grow", "Reproduce"); "" = ungrouped. Purely a label: it has no effect on how the gene runs. It is a
+     *  real, persistent field so it survives editing (`copy` keeps it), division/mutation inheritance, and
+     *  save/load (round-tripped by [GeneCodec]); the gene editor groups by this tag rather than by matching
+     *  (CAMPAIGN_PLAN.md §10). Genes can be re-tagged to move them between groups. */
+    val group: String = "",
 ) {
     /** Pre-computed: efficiency gear + 1 (throughput multiplier for actions). */
     val gP1: Int get() = efficiency + 1
@@ -642,14 +648,6 @@ val AUTOTROPH_GROW_ONLY_GENES: List<Gene> = listOf(
     Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.Convert, "rg")),
     Gene(EnergySource.Light, GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.FormBond, "r", "g")),
 )
-
-/** The autotroph's reproduction (Mitosis) gene in **both** the forms the campaign shows it: the default
- *  severing split and the welded variant the player makes by toggling SEVER off (Ch5). Used as the "Reproduce"
- *  group's match-set so editing that one field doesn't drop the gene out of its group (grouping matches by
- *  exact value). Insertion still uses only the default (see the group's `insert`). */
-val AUTOTROPH_REPRODUCE_VARIANTS: List<Gene> =
-    AUTOTROPH_GENES.filter { it.action.type == ActionType.Mitosis }
-        .flatMap { g -> listOf(g, g.copy(action = g.action.copy(rejectMother = !g.action.rejectMother))) }
 
 // Heterotroph seed thresholds — values in CytoSeed (initial data; evolve under mutation).
 private const val HET_GROW = CytoSeed.HETEROTROPH_GROW_BIOMASS

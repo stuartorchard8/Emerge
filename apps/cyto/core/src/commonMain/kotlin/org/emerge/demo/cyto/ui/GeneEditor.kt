@@ -96,7 +96,7 @@ class GeneEditor {
                     // player adds a *meaningful unit*, not a hand-authored gene. Per-group gating (vs a single
                     // flag) lets a chapter offer only the one subsystem it's teaching.
                     for (grp in grouping.groups) {
-                        if (grp.name in insertableGroups && grp.insert.isNotEmpty() && grp.members.none { it in liveGenes }) {
+                        if (grp.name in insertableGroups && grp.insert.isNotEmpty() && liveGenes.none { it.group == grp.name }) {
                             button("+ ADD ${grp.name.uppercase()}", 0x2A3F5AFFL) { controller.addHeldGenes(grp.insert) }
                         }
                     }

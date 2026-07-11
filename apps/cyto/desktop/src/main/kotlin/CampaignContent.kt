@@ -11,9 +11,9 @@ import org.emerge.demo.cyto.campaign.WorldRun
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.AUTOTROPH_GENES
 import org.emerge.demo.cyto.sim.AUTOTROPH_GROW_ONLY_GENES
-import org.emerge.demo.cyto.sim.AUTOTROPH_REPRODUCE_VARIANTS
 import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.FounderSpec
+import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.ui.GeneGroup
 import org.emerge.demo.cyto.ui.GenomeGrouping
 import org.emerge.render.torus.ui.UiTextRenderer
@@ -36,6 +36,16 @@ object CampaignContent {
         Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Speed, Control.Menu,
     )
 
+    private const val GROUP_GROW = "Grow"
+    private const val GROUP_REPRODUCE = "Reproduce"
+
+    private fun List<Gene>.tagged(group: String): List<Gene> = map { it.copy(group = group) }
+
+    /** The reproduction subsystem the grow-only substrate is missing (the break-powered Mitosis gene) — the
+     *  genes Ch4's "+ ADD REPRODUCE" inserts, pre-tagged so they carry their group label from the moment
+     *  they're added. */
+    private val REPRODUCE_GENES = AUTOTROPH_GENES.filter { it !in AUTOTROPH_GROW_ONLY_GENES }.tagged(GROUP_REPRODUCE)
+
     /** The campaign's substrate: a single autotroph whose reproduction gene has been removed, so it grows to
      *  full size and then holds there, stationary and self-repairing but unable to spread (see
      *  [AUTOTROPH_GROW_ONLY_GENES]). The player watches this calm, easy-to-reason-about organism, reads its two
@@ -43,31 +53,27 @@ object CampaignContent {
      *  not a busy ecosystem to catch up on. */
     private val GROW_ONLY = CytoScenario.DEFAULT.copy(
         name = "Campaign",
-        founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GROW_ONLY_GENES)),
+        founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GROW_ONLY_GENES.tagged(GROUP_GROW))),
     )
 
-    /** Ch5+ substrate: the grow+reproduce autotroph the player built in Ch4 (the full [AUTOTROPH_GENES]). It
-     *  colonises on its own, but with no cohesion gene the colony frays into a loose, drifting cloud - the
-     *  problem Ch5 fixes by inserting the Hold Together group. */
+    /** Ch5+ substrate: the grow+reproduce autotroph the player built in Ch4 (the full [AUTOTROPH_GENES], tagged
+     *  in place so gene order — behaviourally significant — is preserved). It colonises on its own; Ch5 makes
+     *  the colony cohere by toggling the divide gene's SEVER field. */
     private val GROW_REPRODUCE = CytoScenario.DEFAULT.copy(
         name = "Campaign",
-        founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GENES)),
+        founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GENES.map {
+            it.copy(group = if (it in AUTOTROPH_GROW_ONLY_GENES) GROUP_GROW else GROUP_REPRODUCE)
+        })),
     )
 
-    /** The genes of the full autotroph that the grow-only substrate is *missing* - the reproduction subsystem
-     *  the player adds in Act II (structurally, whatever [AUTOTROPH_GENES] has that the grow-only set doesn't:
-     *  the break-powered Mitosis gene). */
-    private val REPRODUCE_GENES = AUTOTROPH_GENES.filter { it !in AUTOTROPH_GROW_ONLY_GENES }
-
     /** Functional grouping for the campaign autotroph, over the Act II arc: two grow genes read as one "Grow"
-     *  subsystem, the reproduction gene as "Reproduce". An absent group only surfaces as a "+ ADD" button in
-     *  the chapter that names it insertable, so each chapter offers just the one subsystem it teaches.
-     *  Collapsed, the genome reads as a couple of plain labels (§10). */
+     *  subsystem, the reproduction gene as "Reproduce". Membership is by each gene's [Gene.group] tag (set
+     *  when the genome is seeded / inserted), so it survives editing — no matching. An absent group only
+     *  surfaces as a "+ ADD" button in the chapter that names it insertable. Collapsed, the genome reads as a
+     *  couple of plain labels (§10). */
     private val CAMPAIGN_GROUPING = GenomeGrouping(listOf(
-        GeneGroup("Grow", 0x3E9E5AFFL, AUTOTROPH_GROW_ONLY_GENES),
-        // Match set covers both SEVER on/off (the Ch5 edit) so the gene keeps its label after editing; the
-        // "+ ADD" affordance inserts only the default severing form.
-        GeneGroup("Reproduce", 0xC77DD0FFL, members = AUTOTROPH_REPRODUCE_VARIANTS, insert = REPRODUCE_GENES),
+        GeneGroup(GROUP_GROW, 0x3E9E5AFFL),
+        GeneGroup(GROUP_REPRODUCE, 0xC77DD0FFL, insert = REPRODUCE_GENES),
     ))
 
     val CHAPTERS: List<Chapter> = listOf(

@@ -3,45 +3,41 @@ package org.emerge.demo.cyto.ui
 import org.emerge.demo.cyto.sim.Gene
 
 /**
- * A named, coloured **functional subsystem** of a genome (CAMPAIGN_PLAN.md §10): an order-independent set of
- * member genes, matched by structural equality. Purely an authoring/display label — it has **no effect on how
- * genes run**. Grouping never reorders or edits the genome (gene order is behaviourally significant — see the
- * `reference_gene_order_matters` note), so assigning/showing a group is a guaranteed behavioural no-op.
+ * Display style for a **functional group** (CAMPAIGN_PLAN.md §10): a [name] that matches genes carrying that
+ * [Gene.group] tag, plus a [color] for its header. [insert] is the pre-tagged genes the gene editor's "+ ADD"
+ * affordance drops in for this group (empty = not offered as an insert). Membership is by the gene's own tag,
+ * never by matching gene contents — so editing, moving, or re-tagging a gene keeps grouping correct.
  */
-/**
- * [members] is the match-set: a live gene belongs to this group if it structurally equals one of them. List
- * *every* form a member gene may take (e.g. a divide gene with SEVER on or off) so that editing a field
- * doesn't drop the gene out of its group. [insert] is what the "+ ADD" affordance drops in — usually a single
- * canonical form, so a broad match-set doesn't cause the whole set to be inserted. Defaults to [members].
- */
-class GeneGroup(val name: String, val color: Long, val members: List<Gene>, val insert: List<Gene> = members)
+class GeneGroup(val name: String, val color: Long, val insert: List<Gene> = emptyList())
 
 /**
- * A grouping overlay for one authored genome: the [groups] its genes fall into. The gene editor buckets a
- * *live* genome against this by gene equality and collates by group for display — so the impenetrable flat
- * list collapses into a few understandable subsystems (the campaign shows two grow genes as one "Grow"
- * label). Display order differs from storage/sim order, which is safe precisely because grouping is a label,
- * not a reorder. Genes matching no group render in an implicit "Other" section; empty groups are omitted.
+ * A grouping overlay for a genome: the ordered [groups] whose names/colours style the display. The gene
+ * editor buckets a live genome by each gene's [Gene.group] tag and renders the impenetrable flat list as a
+ * few named subsystems (the campaign shows two grow genes as one "Grow" label). Because the tag lives on the
+ * gene, grouping survives edits and division — no fuzzy or structural matching anywhere.
  */
 class GenomeGrouping(val groups: List<GeneGroup>) {
 
-    /** Bucket [genome] into display [Section]s: each non-empty group in declared order (holding its matched
-     *  live genes, in live order), then an "Other" section for the rest. Every gene keeps its live [Item.index]
-     *  so the editor opens the correct gene despite the display reordering. A gene matching several groups
-     *  joins the first. */
+    /** Bucket [genome] into display [Section]s by gene tag: each registered [groups] entry that has ≥1 tagged
+     *  gene (in declared order), then any tag not in the registry (discovery order), then the untagged genes
+     *  as an unnamed "Other" section. Every gene keeps its live [Item.index] so the editor addresses the right
+     *  gene despite the display grouping. */
     fun sections(genome: List<Gene>): List<Section> {
-        val assigned = BooleanArray(genome.size)
+        // Preserve first-seen order of tags, and the live index of every gene under each tag.
+        val byTag = LinkedHashMap<String, MutableList<Item>>()
+        genome.forEachIndexed { i, g -> byTag.getOrPut(g.group) { ArrayList() }.add(Item(i, g)) }
         val out = ArrayList<Section>()
+        val registered = HashSet<String>()
         for (grp in groups) {
-            val items = ArrayList<Item>()
-            genome.forEachIndexed { i, g ->
-                if (!assigned[i] && grp.members.contains(g)) { items.add(Item(i, g)); assigned[i] = true }
-            }
-            if (items.isNotEmpty()) out.add(Section(grp.name, grp.color, items))
+            registered.add(grp.name)
+            byTag[grp.name]?.let { out.add(Section(grp.name, grp.color, it)) }
         }
-        val other = ArrayList<Item>()
-        genome.forEachIndexed { i, g -> if (!assigned[i]) other.add(Item(i, g)) }
-        if (other.isNotEmpty()) out.add(Section(null, OTHER_COLOR, other))
+        // Tagged genes whose group has no registered style (e.g. after a re-tag to a new name): keep the name,
+        // give it a neutral colour.
+        for ((tag, items) in byTag) {
+            if (tag.isNotEmpty() && tag !in registered) out.add(Section(tag, OTHER_COLOR, items))
+        }
+        byTag[""]?.let { out.add(Section(null, OTHER_COLOR, it)) }
         return out
     }
 
@@ -54,7 +50,7 @@ class GenomeGrouping(val groups: List<GeneGroup>) {
     class Item(val index: Int, val gene: Gene)
 
     companion object {
-        /** Neutral colour for the "Other" bucket (unmatched / evolved genes). */
+        /** Neutral colour for the untagged "Other" bucket and unregistered tags. */
         const val OTHER_COLOR = 0x6B7280FFL
     }
 }
