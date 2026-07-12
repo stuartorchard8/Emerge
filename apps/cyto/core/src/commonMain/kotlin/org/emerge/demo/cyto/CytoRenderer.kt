@@ -19,8 +19,12 @@ import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
+import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.min
 
@@ -185,6 +189,24 @@ class CytoRenderer {
     /** Global pulse phase [0,1), advanced once per rendered frame — the expansion clock for the build
      *  glow (per-cell it's offset so cells don't pulse in lockstep). Frame-driven, not tick-driven. */
     private var pulsePhase = 0f
+
+    // ── ENV↔CYT transfer particles (flows 1 & 2) ────────────────────────────────────────────────
+    // Discrete world-space particles: spawned each *tick* in proportion to that tick's membrane transfer,
+    // then aged every *frame* (independent of tick rate). Flow 1 (absorption) drifts a species-coloured
+    // speck from just outside the cell inward to the centre; flow 2 (secretion) is the reverse. A particle
+    // is (spawn pos) + progress·(displacement); the alpha envelope fades it in then out (sin(π·progress)).
+    private val partX0 = FloatArray(PARTICLE_MAX)
+    private val partY0 = FloatArray(PARTICLE_MAX)
+    private val partDX = FloatArray(PARTICLE_MAX)
+    private val partDY = FloatArray(PARTICLE_MAX)
+    private val partProg = FloatArray(PARTICLE_MAX)
+    private val partR = FloatArray(PARTICLE_MAX)
+    private val partG = FloatArray(PARTICLE_MAX)
+    private val partB = FloatArray(PARTICLE_MAX)
+    private val partSize = FloatArray(PARTICLE_MAX)
+    private var partCount = 0
+    private var lastParticleTick = -1L
+    private val partRng = kotlin.random.Random(0x0CEE)
     private val matCircS = Mat4.scratch()
     private val matCircT = Mat4.scratch()
     private val matCircM = Mat4.scratch()
@@ -337,6 +359,9 @@ class CytoRenderer {
         }
 
         buildSeen.clear()
+        // Particles (flows 1&2) are spawned once per tick; aged every frame in drawParticles().
+        val spawnParticles = frame.tick != lastParticleTick
+        lastParticleTick = frame.tick
         var buildCount = 0
         for ((id, cell) in cells) {
             val transform = transforms[id] ?: continue
@@ -344,6 +369,8 @@ class CytoRenderer {
             val radius = CytoUnits.toLogical(collider.radius)
             val cx = CytoUnits.toLogical(transform.pos.x)
             val cy = CytoUnits.toLogical(transform.pos.y)
+
+            if (spawnParticles) spawnTransferParticles(cx, cy, radius, cell)
 
             // Flow 3 (CYT→BIO): ease this cell's build intensity toward this tick's converted amount,
             // then stage a soft disc if it's building enough to see. Keyed by EntityId; evicted below.
@@ -459,7 +486,100 @@ class CytoRenderer {
             GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
         }
 
+        // Flows 1 & 2: age + draw the ENV↔CYT transfer particles, on top of the cells.
+        drawParticles()
+
         GPU.disableBlend()
+    }
+
+    /** Spawn this tick's ENV↔CYT particles for one cell: [envCytIn] → inward absorption specks (flow 1),
+     *  [envCytOut] → outward secretion specks (flow 2), a count per species ∝ that species' transfer. */
+    private fun spawnTransferParticles(cx: Float, cy: Float, radius: Float, cell: CytoCellComponent) {
+        val size = radius * PARTICLE_SIZE_FRAC
+        val outer = radius * PARTICLE_OUTER
+        for ((species, amt) in cell.envCytIn) {
+            speciesColorInto(species, speciesTmp)
+            val n = min(PARTICLE_MAX_PER_SPECIES, (amt * PARTICLE_PER_UNIT).roundToInt())
+            for (j in 0 until n) {
+                val ang = partRng.nextFloat() * TAU
+                val dx = cos(ang); val dy = sin(ang)
+                // inward: start just outside the border, displace to the centre.
+                addParticle(cx + dx * outer, cy + dy * outer, -dx * outer, -dy * outer, size)
+            }
+        }
+        for ((species, amt) in cell.envCytOut) {
+            speciesColorInto(species, speciesTmp)
+            val n = min(PARTICLE_MAX_PER_SPECIES, (amt * PARTICLE_PER_UNIT).roundToInt())
+            for (j in 0 until n) {
+                val ang = partRng.nextFloat() * TAU
+                val dx = cos(ang); val dy = sin(ang)
+                // outward: start at the centre, displace out past the border.
+                addParticle(cx, cy, dx * outer, dy * outer, size)
+            }
+        }
+    }
+
+    /** Append one particle (colour read from [speciesTmp]); silently drops if the pool is full. */
+    private fun addParticle(x0: Float, y0: Float, dx: Float, dy: Float, size: Float) {
+        if (partCount >= PARTICLE_MAX) return
+        val i = partCount++
+        partX0[i] = x0; partY0[i] = y0; partDX[i] = dx; partDY[i] = dy; partProg[i] = 0f
+        partR[i] = speciesTmp[0]; partG[i] = speciesTmp[1]; partB[i] = speciesTmp[2]; partSize[i] = size
+    }
+
+    /** Age every live particle one frame, compacting out the dead, and additively draw the survivors as
+     *  small species-coloured specks whose opacity fades in then out over their life (sin envelope). */
+    private fun drawParticles() {
+        var w = 0
+        var inst = 0
+        for (i in 0 until partCount) {
+            val prog = partProg[i] + PARTICLE_PROG_SPEED
+            if (prog >= 1f) continue                          // expired → drop (not compacted forward)
+            // Keep: compact into slot w.
+            partX0[w] = partX0[i]; partY0[w] = partY0[i]; partDX[w] = partDX[i]; partDY[w] = partDY[i]
+            partProg[w] = prog
+            partR[w] = partR[i]; partG[w] = partG[i]; partB[w] = partB[i]; partSize[w] = partSize[i]
+            val x = partX0[i] + prog * partDX[i]
+            val y = partY0[i] + prog * partDY[i]
+            val alpha = sin(prog.toDouble() * PI).toFloat() * PARTICLE_MAX_ALPHA
+            val s = partSize[i]
+            matCircS.setScale(s, s)
+            matCircT.setTranslation(x, y)
+            matCircM.setProduct(matCircT, matCircS)
+            mvpCirc.setProduct(matP, matCircM)
+            mvpCirc.copyInto(buildMatrices, inst * Mat4.FLOATS)
+            buildPrimaryIds[inst] = 0f
+            buildShapes[inst] = 0f
+            buildAlphas[inst] = alpha
+            val tb = inst * 3
+            buildTints[tb] = partR[i]; buildTints[tb + 1] = partG[i]; buildTints[tb + 2] = partB[i]
+            inst++
+            w++
+        }
+        partCount = w
+        if (inst > 0) {
+            GPU.setBlendFuncSrcAlphaOne()
+            GPU.bindVertexArray(circleVao)
+            circleShader.drawInstanced(
+                vOffset = 0,
+                instanceCount = inst,
+                matricesColMajor = buildMatrices,
+                primaryIds = buildPrimaryIds,
+                shapes = buildShapes,
+                alphas = buildAlphas,
+                tintColorsRgb = buildTints,
+            )
+            GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
+        }
+    }
+
+    /** RGB of a single species token (r→R, g→G, b→B), normalised to its peak channel, into [out]. */
+    private fun speciesColorInto(token: String, out: FloatArray) {
+        var r = 0; var g = 0; var b = 0
+        for (ch in token) when (ch) { 'r' -> r++; 'g' -> g++; 'b' -> b++ }
+        val peak = max(r, max(g, b))
+        if (peak <= 0) { out[0] = 1f; out[1] = 1f; out[2] = 1f; return }
+        out[0] = r.toFloat() / peak; out[1] = g.toFloat() / peak; out[2] = b.toFloat() / peak
     }
 
     /**
@@ -754,5 +874,15 @@ class CytoRenderer {
         const val DECAY_MIN_VISIBLE = 0.02f
         const val DECAY_PULSES = 2
         const val DECAY_MAX_SCALE = 1.5f
+
+        // ── Flows 1 & 2 (ENV↔CYT transfer particles) tuning. ──
+        const val PARTICLE_MAX = 6000                 // hard cap on live particles (excess spawns dropped)
+        const val PARTICLE_PER_UNIT = 0.03f           // particles spawned per unit of species transfer/tick
+        const val PARTICLE_MAX_PER_SPECIES = 5        // …capped per species per cell per tick
+        const val PARTICLE_SIZE_FRAC = 0.14f          // speck radius as a fraction of the cell radius
+        const val PARTICLE_OUTER = 1.25f              // spawn/endpoint radial distance in cell radii
+        const val PARTICLE_PROG_SPEED = 0.025f        // life progress per frame (~40 frames ≈ 0.7s at 60fps)
+        const val PARTICLE_MAX_ALPHA = 0.9f           // peak speck opacity (mid-life; additive)
+        val TAU = (2.0 * PI).toFloat()
     }
 }
