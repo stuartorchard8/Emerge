@@ -319,7 +319,15 @@ object CampaignContent {
                 spotlight = Spotlight(hint = "SLOW / PAUSE / FAST, top-left"),
             ),
             Step(
-                text = "They're starving in place. So feed them yourself: drag the cell across the world. Fresh matter under the body restarts division - lead it around and grow it.",
+                text = "Why has it stalled? Turn on the matter grid. See the dark patch right under the pair - that's matter they've already eaten. Stuck in their own used-up ground, they've nothing left to build a daughter from.",
+                gate = Gate.Did(PlayerAction.ToggledMatterOverlay, "Show the matter grid"),
+                allow = WATCH,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "LIGHT/MATTER GRID button, bottom-right"),
+                detail = "The bright ground all around them is fresh matter they can't reach - welded in place, they can't cross to it on their own.",
+            ),
+            Step(
+                text = "So feed them yourself: drag the pair onto that bright, fresh matter. Fresh ground under the body restarts division - lead it around and watch the dark trail it eats behind it as it grows.",
                 gate = Gate.World(
                     "Grow to 12 cells by dragging",
                     met = { it.cellCount >= 12 },
@@ -406,27 +414,28 @@ object CampaignContent {
         grouping = CAMPAIGN_GROUPING,
         steps = listOf(
             Step(
-                text = "This cell is an autotroph - it feeds on light. The bright band sweeping across the world is daylight. Where it's dark, the cell can't feed.",
+                text = "This cell is an autotroph - it feeds on light. Those bright bands filling the world are daylight - the dark gaps between them are night. See how the cell is sitting in a dark patch right now? In shadow, it can't feed.",
                 gate = Gate.Next,
                 allow = WATCH,
                 detail = "Light comes from a few fixed sources and sweeps as the world turns, so every spot has a day and a night.",
             ),
             Step(
-                text = "Let's watch it live. Speed the simulation up with the controls at the top-left.",
+                text = "Let's set it in motion. Speed the world up - top-left - and watch the daylight sweep across and slide over the cell.",
                 gate = Gate.Did(PlayerAction.ChangedSpeed, "Change the sim speed"),
                 allow = WATCH,
                 world = WorldRun.Live,
                 spotlight = Spotlight(hint = "SLOW / PAUSE / FAST, top-left"),
             ),
             Step(
-                text = "Watch it for a while. It feeds, repairs itself, and holds its size - but it never grows past this, and it never spreads. On its own, this organism just sits here.",
-                gate = Gate.Next,
+                text = "Now click the cell and watch its LIGHT reading in the panel. When daylight covers it the number climbs - that's it feeding. When night passes over, it drops back to zero.",
+                gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = WATCH,
                 world = WorldRun.Live,
-                detail = "It's already at full size, so it just tops itself up: light rebuilds whatever the slow decay of living wears away. A quiet, stable loop.",
+                spotlight = Spotlight(hint = "LIGHT, in the panel top-right"),
+                detail = "Watch SIZE too: it barely moves. Each spell of daylight rebuilds whatever the slow decay of living wears away, topping the cell back up to full - but never past it. A quiet, stable loop.",
             ),
             Step(
-                text = "So it's alive and self-sustaining - but static. A single cell, holding its ground forever. Next, let's read the tiny program that runs it, and then give it the power to multiply.",
+                text = "So it's alive and self-sustaining - but static. It never grows past this size, and it never spreads: a single cell, holding its ground forever. Next, let's read the tiny program that runs it, and then give it the power to multiply.",
                 gate = Gate.Next,
                 allow = WATCH,
                 world = WorldRun.Live,
