@@ -399,10 +399,11 @@ class CellWork(
     // BIO→ENV (decay): species id → count released by biomass decay this tick (from degrade).
     var bioToEnvCount = 0
     var bioToEnvTargetId = -1
-    // ENV↔CYT net transfer: species id → net signed transfer across the membrane this tick
-    // (positive = inward absorption, negative = outward secretion). Computed from import/export bias
-    // + passive exchange delta.
-    val envCytNet = MoleculeStore(CytoTuning.CELL_CHEM_CAP)
+    // ENV↔CYT transfer across the membrane this tick, split into two positive stores because MoleculeStore
+    // can't hold negative counts (a signed net would silently drop secretion). [envCytIn] = amount that
+    // moved into the cytoplasm (flow 1, absorption); [envCytOut] = amount that left it (flow 2, secretion).
+    val envCytIn = MoleculeStore(CytoTuning.CELL_CHEM_CAP)
+    val envCytOut = MoleculeStore(CytoTuning.CELL_CHEM_CAP)
 
     /** The fired Mitosis gene's operand (its [GeneAction.a]) — the morphogen species allocated **whole to
      *  one daughter** on division (asymmetric mitosis, MORPHOGENESIS.md §C). "" ⇒ symmetric 50/50 split. */
@@ -610,7 +611,7 @@ class CellWork(
         // Clear visual flow tracking.
         cytToBio.clear()
         bioToEnvCount = 0; bioToEnvTargetId = -1
-        envCytNet.clear()
+        envCytIn.clear(); envCytOut.clear()
         _exchPreN = 0
         // Reset mitosis cooldown when genome changes (new cell or mutation).
         if (genome !== this.genome) {

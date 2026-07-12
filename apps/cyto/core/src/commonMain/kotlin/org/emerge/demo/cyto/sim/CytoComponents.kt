@@ -33,6 +33,11 @@ data class CytoCellComponent(
      *  single degraded species per tick). Published for the renderer's "decay" flow (flow 4); same
      *  derived-only, golden-excluded constraints as [cytToBio]. Empty when nothing decayed. */
     val bioToEnv: Map<String, Int> = emptyMap(),
+    /** Visual read-model (LIVING_WORLD_PLAN.md §4): ENV↔CYT membrane transfer this tick, split so both
+     *  directions survive (MoleculeStore can't hold negatives). [envCytIn] drives the absorption particles
+     *  (flow 1), [envCytOut] the secretion particles (flow 2). Same derived-only, golden-excluded rules. */
+    val envCytIn: Map<String, Int> = emptyMap(),
+    val envCytOut: Map<String, Int> = emptyMap(),
 )
 
 /**

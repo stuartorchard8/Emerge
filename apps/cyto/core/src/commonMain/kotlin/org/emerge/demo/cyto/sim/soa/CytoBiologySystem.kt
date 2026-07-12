@@ -326,6 +326,12 @@ class BiologySystem(
             ctb.copyFrom(work.cytToBio)
             world.cell.bioToEnvSpecies[slot] = work.bioToEnvTargetId
             world.cell.bioToEnvCount[slot] = work.bioToEnvCount
+            val eci = world.cell.envCytIn[slot]
+                ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP).also { world.cell.envCytIn[slot] = it }
+            eci.copyFrom(work.envCytIn)
+            val eco = world.cell.envCytOut[slot]
+                ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP).also { world.cell.envCytOut[slot] = it }
+            eco.copyFrom(work.envCytOut)
             if (work.repaired) {
                 for (k in world.csr.offset[slot] until world.csr.offset[slot + 1]) {
                     world.csr.edgeAux[k] = work.connectionDamage[EntityId(world.csr.otherId[k])] ?: 0f

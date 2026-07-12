@@ -200,9 +200,8 @@ object CytoBiologyCore {
                     val pre = w._exchPreCount[t]
                     val post = cyt.count(sp)
                     val net = post - pre  // positive = net inward, negative = net outward
-                    if (net != 0) {
-                        w.envCytNet.inc(sp, net)
-                    }
+                    if (net > 0) w.envCytIn.inc(sp, net)
+                    else if (net < 0) w.envCytOut.inc(sp, -net)
                 }
             }
         }

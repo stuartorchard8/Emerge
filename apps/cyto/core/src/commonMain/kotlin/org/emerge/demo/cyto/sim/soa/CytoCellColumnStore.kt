@@ -45,6 +45,9 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
     // sheds one species per tick). speciesId = -1 / count = 0 means nothing decayed. Same lifecycle.
     var bioToEnvSpecies = IntArray(0); private set
     var bioToEnvCount = IntArray(0); private set
+    // Visual read-model (front only): ENV↔CYT membrane transfer this tick, split by direction.
+    var envCytIn = arrayOfNulls<MoleculeStore>(0); private set
+    var envCytOut = arrayOfNulls<MoleculeStore>(0); private set
 
     // Double-buffer: back buffers swapped with front at the biology write-back barrier.
     // CellWork.reset() reads front → mutates CellWork's back buffer; writeback() swaps.
@@ -66,6 +69,8 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         cytToBio = cytToBio.copyOf(capacity)
         bioToEnvSpecies = bioToEnvSpecies.copyOf(capacity)
         bioToEnvCount = bioToEnvCount.copyOf(capacity)
+        envCytIn = envCytIn.copyOf(capacity)
+        envCytOut = envCytOut.copyOf(capacity)
         backCytoplasm = backCytoplasm.copyOf(capacity)
         backBiomass = backBiomass.copyOf(capacity)
     }
@@ -104,6 +109,8 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         cytToBio[slot] = null
         bioToEnvSpecies[slot] = -1
         bioToEnvCount[slot] = 0
+        envCytIn[slot] = null
+        envCytOut[slot] = null
         genome[slot] = value.genome
         // Also initialize back buffers — the swap will pick them up.
         // For freshly-scattered entities (spawn), the back buffer starts as a copy.
@@ -124,6 +131,8 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         cytToBio = cytToBio[slot]?.toStringMap() ?: emptyMap(),
         bioToEnv = if (bioToEnvCount[slot] > 0 && bioToEnvSpecies[slot] >= 0)
             mapOf(SpeciesRegistry.string(bioToEnvSpecies[slot]) to bioToEnvCount[slot]) else emptyMap(),
+        envCytIn = envCytIn[slot]?.toStringMap() ?: emptyMap(),
+        envCytOut = envCytOut[slot]?.toStringMap() ?: emptyMap(),
     )
 
     override fun moveSlot(dst: Int, src: Int) {
@@ -138,6 +147,8 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         cytToBio[dst] = cytToBio[src]
         bioToEnvSpecies[dst] = bioToEnvSpecies[src]
         bioToEnvCount[dst] = bioToEnvCount[src]
+        envCytIn[dst] = envCytIn[src]
+        envCytOut[dst] = envCytOut[src]
         // Also move the back-buffer references so compaction stays in sync.
         backCytoplasm[dst] = backCytoplasm[src]
         backBiomass[dst] = backBiomass[src]
