@@ -195,9 +195,14 @@ class CytoRenderer {
     // Discrete world-space particles: spawned each *tick* in proportion to that tick's membrane transfer,
     // then aged every *frame* (independent of tick rate). Flow 1 (absorption) drifts a species-coloured
     // speck from just outside the cell inward to the centre; flow 2 (secretion) is the reverse. A particle
-    // is (spawn pos) + progress·(displacement); the alpha envelope fades it in then out (sin(π·progress)).
-    private val partX0 = FloatArray(PARTICLE_MAX)
-    private val partY0 = FloatArray(PARTICLE_MAX)
+    // is anchored to a cell: its world position is (anchor cell centre) + (spawn offset) + progress·
+    // (displacement), so specks track the cell as it moves instead of lagging behind at their spawn point.
+    // The alpha envelope fades it in then out (sin(π·progress)).
+    private val partOffX = FloatArray(PARTICLE_MAX)   // spawn offset from the anchor cell's centre
+    private val partOffY = FloatArray(PARTICLE_MAX)
+    private val partBaseX = FloatArray(PARTICLE_MAX)  // anchor cell's centre, refreshed each frame (frozen if it dies)
+    private val partBaseY = FloatArray(PARTICLE_MAX)
+    private val partCell = IntArray(PARTICLE_MAX)     // anchor cell EntityId.value (which cell the speck rides)
     private val partDX = FloatArray(PARTICLE_MAX)
     private val partDY = FloatArray(PARTICLE_MAX)
     private val partProg = FloatArray(PARTICLE_MAX)
@@ -222,6 +227,7 @@ class CytoRenderer {
     private val weldDirX = FloatArray(WELD_DIR_MAX)
     private val weldDirY = FloatArray(WELD_DIR_MAX)
     private val weldLen = FloatArray(WELD_DIR_MAX)   // centre-to-centre distance to each welded neighbour
+    private val weldOtherId = IntArray(WELD_DIR_MAX)  // EntityId.value of each welded neighbour (speck-B anchor)
     private val matCircS = Mat4.scratch()
     private val matCircT = Mat4.scratch()
     private val matCircM = Mat4.scratch()
@@ -398,8 +404,8 @@ class CytoRenderer {
 
             if (spawnParticles) {
                 val weldCount = gatherWeldDirs(id, transform, springData, springTable, transforms)
-                spawnTransferParticles(cx, cy, radius, cell, weldCount)
-                if (weldCount > 0) spawnWeldParticles(cx, cy, radius, cell, weldCount)
+                spawnTransferParticles(id.value, cx, cy, radius, cell, weldCount)
+                if (weldCount > 0) spawnWeldParticles(id.value, cx, cy, radius, cell, weldCount)
             }
 
             // Flow 3 (CYT→BIO): ease this cell's build intensity toward this tick's converted amount,
@@ -517,7 +523,7 @@ class CytoRenderer {
         }
 
         // Flows 1 & 2: age + draw the ENV↔CYT transfer particles, on top of the cells.
-        drawParticles()
+        drawParticles(transforms)
 
         GPU.disableBlend()
     }
@@ -526,7 +532,7 @@ class CytoRenderer {
      *  [envCytOut] → outward secretion specks (flow 2), a count per species ∝ that species' transfer.
      *  [weldCount] welded-neighbour directions (in [weldDirX]/[weldDirY]) bias spawns onto the exposed
      *  surface; a fully-enclosed cell finds no exposed angle and so emits ~no env particles. */
-    private fun spawnTransferParticles(cx: Float, cy: Float, radius: Float, cell: CytoCellComponent, weldCount: Int) {
+    private fun spawnTransferParticles(cellId: Int, cx: Float, cy: Float, radius: Float, cell: CytoCellComponent, weldCount: Int) {
         val size = radius * PARTICLE_SIZE_FRAC
         val outerR = radius * PARTICLE_OUTER      // 1.125r — just outside the border
         val innerR = radius * PARTICLE_INNER      // 0.875r — just inside the border
@@ -538,7 +544,7 @@ class CytoRenderer {
                 val ang = pickExposedAngle(weldCount); if (ang < 0f) continue
                 val dx = cos(ang); val dy = sin(ang)
                 // inward: start at 1.125r, displace inward to 0.875r (peak brightness at the border).
-                addParticle(cx + dx * outerR, cy + dy * outerR, -dx * bandR, -dy * bandR, size)
+                addParticle(cellId, cx, cy, dx * outerR, dy * outerR, -dx * bandR, -dy * bandR, size)
             }
         }
         for ((species, amt) in cell.envCytOut) {
@@ -548,7 +554,7 @@ class CytoRenderer {
                 val ang = pickExposedAngle(weldCount); if (ang < 0f) continue
                 val dx = cos(ang); val dy = sin(ang)
                 // outward: start at 0.875r, displace outward to 1.125r.
-                addParticle(cx + dx * innerR, cy + dy * innerR, dx * bandR, dy * bandR, size)
+                addParticle(cellId, cx, cy, dx * innerR, dy * innerR, dx * bandR, dy * bandR, size)
             }
         }
     }
@@ -558,7 +564,7 @@ class CytoRenderer {
      *  side (its 1.125r→0.875r). Both directions get an independent ±[WELD_JITTER] angular jitter around the
      *  weld line so the exchange reads organic rather than a rigid centre-to-centre beam. The two halves need
      *  no positional correlation; showing both in equal measure just balances the send/receive read. */
-    private fun spawnWeldParticles(cx: Float, cy: Float, radius: Float, cell: CytoCellComponent, weldCount: Int) {
+    private fun spawnWeldParticles(cellId: Int, cx: Float, cy: Float, radius: Float, cell: CytoCellComponent, weldCount: Int) {
         if (cell.weldOut.isEmpty()) return
         val size = radius * PARTICLE_SIZE_FRAC
         val outerR = radius * PARTICLE_OUTER
@@ -570,15 +576,16 @@ class CytoRenderer {
             for (j in 0 until n) {
                 val i = partRng.nextInt(weldCount)          // pick one of this cell's welds
                 val base = atan2(weldDirY[i], weldDirX[i])
-                // Speck A: leaves this cell outward toward the neighbour.
+                // Speck A: leaves this cell outward toward the neighbour — anchored to (rides) this cell.
                 val aOut = base + (partRng.nextFloat() - 0.5f) * 2f * WELD_JITTER
                 val ox = cos(aOut); val oy = sin(aOut)
-                addParticle(cx + ox * innerR, cy + oy * innerR, ox * bandR, oy * bandR, size)
-                // Speck B: enters the neighbour from the seam side (approach its border, move inward).
+                addParticle(cellId, cx, cy, ox * innerR, oy * innerR, ox * bandR, oy * bandR, size)
+                // Speck B: enters the neighbour from the seam side — anchored to (rides) that neighbour, so its
+                // offset is relative to the neighbour's centre (nx, ny), not this cell's.
                 val nx = cx + weldDirX[i] * weldLen[i]; val ny = cy + weldDirY[i] * weldLen[i]
                 val aIn = base + (partRng.nextFloat() - 0.5f) * 2f * WELD_JITTER
                 val ix = cos(aIn); val iy = sin(aIn)
-                addParticle(nx - ix * outerR, ny - iy * outerR, ix * bandR, iy * bandR, size)
+                addParticle(weldOtherId[i], nx, ny, -ix * outerR, -iy * outerR, ix * bandR, iy * bandR, size)
             }
         }
     }
@@ -594,21 +601,26 @@ class CytoRenderer {
         transforms: ComponentTable<TransformComponent>,
     ): Int {
         var n = 0
-        fun push(nt: TransformComponent) {
+        fun push(otherId: Int, nt: TransformComponent) {
             if (n >= WELD_DIR_MAX) return
             val delta = nt.pos - transform.pos
             val dx = CytoUnits.toLogical(delta.x); val dy = CytoUnits.toLogical(delta.y)
             val len = sqrt(dx * dx + dy * dy)
-            if (len > 1e-4f) { weldDirX[n] = dx / len; weldDirY[n] = dy / len; weldLen[n] = len; n++ }
+            if (len > 1e-4f) {
+                weldDirX[n] = dx / len; weldDirY[n] = dy / len; weldLen[n] = len; weldOtherId[n] = otherId; n++
+            }
         }
         if (springData != null) {
             val slot = springData.slotOfEntityId(id.value)
             if (slot >= 0) {
                 val lo = springData.csrOffset[slot]; val hi = springData.csrOffset[slot + 1]
-                for (k in lo until hi) { transforms[EntityId(springData.csrOtherId[k])]?.let { push(it) } }
+                for (k in lo until hi) {
+                    val oid = springData.csrOtherId[k]
+                    transforms[EntityId(oid)]?.let { push(oid, it) }
+                }
             }
         } else if (springTable != null) {
-            springTable[id]?.springs?.forEach { transforms[it.other]?.let { nt -> push(nt) } }
+            springTable[id]?.springs?.forEach { transforms[it.other]?.let { nt -> push(it.other.value, nt) } }
         }
         return n
     }
@@ -632,28 +644,34 @@ class CytoRenderer {
 
     /** Append one particle (colour read from [speciesTmp]); drops if the pool is full. Tracks attempts vs
      *  drops so the per-tick [spawnScale] throttle can back off before ordering-based starvation kicks in. */
-    private fun addParticle(x0: Float, y0: Float, dx: Float, dy: Float, size: Float) {
+    private fun addParticle(cellId: Int, cx: Float, cy: Float, offX: Float, offY: Float, dx: Float, dy: Float, size: Float) {
         spawnAttempts++
         if (partCount >= PARTICLE_MAX) { spawnDropped++; return }
         val i = partCount++
-        partX0[i] = x0; partY0[i] = y0; partDX[i] = dx; partDY[i] = dy; partProg[i] = 0f
+        partCell[i] = cellId; partBaseX[i] = cx; partBaseY[i] = cy
+        partOffX[i] = offX; partOffY[i] = offY; partDX[i] = dx; partDY[i] = dy; partProg[i] = 0f
         partR[i] = speciesTmp[0]; partG[i] = speciesTmp[1]; partB[i] = speciesTmp[2]; partSize[i] = size
     }
 
     /** Age every live particle one frame, compacting out the dead, and additively draw the survivors as
      *  small species-coloured specks whose opacity fades in then out over their life (sin envelope). */
-    private fun drawParticles() {
+    private fun drawParticles(transforms: ComponentTable<TransformComponent>) {
         var w = 0
         var inst = 0
         for (i in 0 until partCount) {
             val prog = partProg[i] + PARTICLE_PROG_SPEED
             if (prog >= 1f) continue                          // expired → drop (not compacted forward)
+            // Refresh the anchor cell's centre so the speck rides the moving cell; if the cell died, the
+            // base stays frozen at its last known centre (the speck ages out in place).
+            val nt = transforms[EntityId(partCell[i])]
+            if (nt != null) { partBaseX[i] = CytoUnits.toLogical(nt.pos.x); partBaseY[i] = CytoUnits.toLogical(nt.pos.y) }
             // Keep: compact into slot w.
-            partX0[w] = partX0[i]; partY0[w] = partY0[i]; partDX[w] = partDX[i]; partDY[w] = partDY[i]
+            partCell[w] = partCell[i]; partBaseX[w] = partBaseX[i]; partBaseY[w] = partBaseY[i]
+            partOffX[w] = partOffX[i]; partOffY[w] = partOffY[i]; partDX[w] = partDX[i]; partDY[w] = partDY[i]
             partProg[w] = prog
             partR[w] = partR[i]; partG[w] = partG[i]; partB[w] = partB[i]; partSize[w] = partSize[i]
-            val x = partX0[i] + prog * partDX[i]
-            val y = partY0[i] + prog * partDY[i]
+            val x = partBaseX[i] + partOffX[i] + prog * partDX[i]
+            val y = partBaseY[i] + partOffY[i] + prog * partDY[i]
             val alpha = sin(prog.toDouble() * PI).toFloat() * PARTICLE_MAX_ALPHA
             val s = partSize[i]
             matCircS.setScale(s, s)
