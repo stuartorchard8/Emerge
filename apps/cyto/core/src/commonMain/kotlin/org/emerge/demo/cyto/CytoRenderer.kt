@@ -187,6 +187,11 @@ class CytoRenderer {
     /** Per-cell eased BIO→ENV decay intensity (flow 4), same keying/eviction as [buildIntensity]. */
     private val decayIntensity = HashMap<Int, Float>()
     private val decaySeen = HashSet<Int>()
+    /** Per-cell eased flow colour (RGB), keyed by EntityId.value — the disc/halo hue drifts toward the
+     *  currently-transferring species' colour a little each frame instead of snapping, so a cell that
+     *  switches which species it's building/shedding cross-fades. Evicted alongside the intensity maps. */
+    private val buildColor = HashMap<Int, FloatArray>()
+    private val decayColor = HashMap<Int, FloatArray>()
     /** Global pulse phase [0,1), advanced once per rendered frame — the expansion clock for the build
      *  glow (per-cell it's offset so cells don't pulse in lockstep). Frame-driven, not tick-driven. */
     private var pulsePhase = 0f
@@ -417,8 +422,15 @@ class CytoRenderer {
             val inten = ((buildIntensity[eid] ?: 0f) + (buildTarget - (buildIntensity[eid] ?: 0f)) * BUILD_EASE)
             buildIntensity[eid] = inten
             buildSeen.add(eid)
-            if (inten > BUILD_MIN_VISIBLE) {
+            // Drift the disc hue toward the species currently being built (only while there IS a transfer;
+            // during cool-down we hold the last colour so a finished build fades out in its own hue, not grey).
+            if (cell.cytToBio.isNotEmpty()) {
                 averageSpeciesColor(cell.cytToBio, speciesTmp)
+                easeFlowColor(buildColor, eid, speciesTmp, FLOW_COLOR_EASE)
+            }
+            if (inten > BUILD_MIN_VISIBLE) {
+                buildColor[eid]?.let { speciesTmp[0] = it[0]; speciesTmp[1] = it[1]; speciesTmp[2] = it[2] }
+                    ?: averageSpeciesColor(cell.cytToBio, speciesTmp)
                 // Emit BUILD_PULSES staggered discs that each grow from the cell centre (r=0) out to its
                 // rim (r=radius), fading their opacity to zero over the expansion — so the cell reads as a
                 // continuous outward pulse. The per-cell phase offset (golden-ratio hash of the id) keeps
@@ -504,7 +516,9 @@ class CytoRenderer {
             )
         }
         // Evict intensity state for cells that vanished (died/off-frame) — same pattern as focusNeighbours.
-        if (buildIntensity.size > buildSeen.size) buildIntensity.keys.retainAll(buildSeen)
+        if (buildIntensity.size > buildSeen.size) {
+            buildIntensity.keys.retainAll(buildSeen); buildColor.keys.retainAll(buildSeen)
+        }
 
         // Flow 3: draw the staged build discs on top of the cell discs (LIVING_WORLD_PLAN.md §5 render order).
         // Additive so the "building" glow reads as a brightening core on a cell of any colour (a balanced
@@ -746,13 +760,19 @@ class CytoRenderer {
             val inten = if (target > prev) target else prev * DECAY_COOL
             decayIntensity[eid] = inten
             decaySeen.add(eid)
+            // Drift the halo hue toward the just-shed species (hold it between sheds, as with the build disc).
+            if (cell.bioToEnv.isNotEmpty()) {
+                averageSpeciesColor(cell.bioToEnv, speciesTmp)
+                easeFlowColor(decayColor, eid, speciesTmp, FLOW_COLOR_EASE)
+            }
             if (inten <= DECAY_MIN_VISIBLE) continue
             val transform = transforms[id] ?: continue
             val collider = colliders[id] ?: continue
             val radius = CytoUnits.toLogical(collider.radius)
             val cx = CytoUnits.toLogical(transform.pos.x)
             val cy = CytoUnits.toLogical(transform.pos.y)
-            averageSpeciesColor(cell.bioToEnv, speciesTmp)
+            decayColor[eid]?.let { speciesTmp[0] = it[0]; speciesTmp[1] = it[1]; speciesTmp[2] = it[2] }
+                ?: averageSpeciesColor(cell.bioToEnv, speciesTmp)
             val offRaw = eid * 0.61803398f
             val base = pulsePhase + (offRaw - floor(offRaw))
             for (k in 0 until DECAY_PULSES) {
@@ -775,7 +795,9 @@ class CytoRenderer {
                 count++
             }
         }
-        if (decayIntensity.size > decaySeen.size) decayIntensity.keys.retainAll(decaySeen)
+        if (decayIntensity.size > decaySeen.size) {
+            decayIntensity.keys.retainAll(decaySeen); decayColor.keys.retainAll(decaySeen)
+        }
         if (count > 0) {
             GPU.setBlendFuncSrcAlphaOne()
             GPU.bindVertexArray(circleVao)
@@ -806,6 +828,22 @@ class CytoRenderer {
         var total = 0L
         for ((_, count) in cell.cytToBio) total += count
         return (total.toFloat() / BUILD_REF).coerceIn(0f, 1f)
+    }
+
+    /** Ease this cell's stored flow colour toward [target] by [ease] and return it (writing the result into
+     *  [target] for the caller to use). First sighting snaps to [target] so a cell's first pulse shows its
+     *  true hue rather than drifting up from an arbitrary default. Call only when there IS a transfer this
+     *  tick; while cooling down (no transfer) the caller holds the last colour instead of fading to grey. */
+    private fun easeFlowColor(store: HashMap<Int, FloatArray>, eid: Int, target: FloatArray, ease: Float) {
+        val c = store[eid]
+        if (c == null) {
+            store[eid] = floatArrayOf(target[0], target[1], target[2])
+            return
+        }
+        c[0] += (target[0] - c[0]) * ease
+        c[1] += (target[1] - c[1]) * ease
+        c[2] += (target[2] - c[2]) * ease
+        target[0] = c[0]; target[1] = c[1]; target[2] = c[2]
     }
 
     /** Average atom-mix colour of a per-species count [map] (r→R, g→G, b→B), normalised to its peak channel
@@ -996,6 +1034,9 @@ class CytoRenderer {
         const val BUILD_MAX = CircleShader.MAX_INSTANCES
         // Per-frame easing toward the tick's build target (warm-up / cool-down rate). ~0.08 ⇒ ≈1s ramp.
         const val BUILD_EASE = 0.08f
+        // Per-frame easing of the build/decay disc hue toward the currently-transferring species' colour
+        // (shared by flows 3 & 4). Lower ⇒ slower, more gradual cross-fade when the built species changes.
+        const val FLOW_COLOR_EASE = 0.05f
         // Converted-count that maps to full build intensity (target saturates here).
         const val BUILD_REF = 120f
         // Peak opacity of a pulse at birth (frac→0), at full intensity. Additive; a few pulses overlap.
