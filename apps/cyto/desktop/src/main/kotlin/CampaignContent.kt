@@ -327,7 +327,7 @@ object CampaignContent {
                 detail = "The bright ground all around them is fresh matter they can't reach - welded in place, they can't cross to it on their own.",
             ),
             Step(
-                text = "So feed them yourself: drag the pair onto that bright, fresh matter. Fresh ground under the body restarts division - lead it around and watch the dark trail it eats behind it as it grows.",
+                text = "So feed them yourself: drag the pair onto that bright, fresh matter. Fresh ground restarts division - lead the body around and watch the dark trail it eats behind it. As they feed, tiny flecks of matter drift in through the cells' skins and pass between the welded ones.",
                 gate = Gate.World(
                     "Grow to 12 cells by dragging",
                     met = { it.cellCount >= 12 },
@@ -336,7 +336,7 @@ object CampaignContent {
                 allow = WATCH,
                 world = WorldRun.Live,
                 spotlight = Spotlight(hint = "Press and drag a cell to tow the body"),
-                detail = "The whole welded body follows the cell you grab, sweeping into fresh matter as it goes - so it keeps dividing as long as you keep finding it food.",
+                detail = "It only builds in daylight, so if it stalls mid-tow you may have towed it into night. The matter grid hides the day/night light while it's on - tap the grid button back to LIGHT to see where the sun is, then carry on.",
             ),
             Step(
                 text = "You're towing a living, connected body - one toggled field turned a scattering swarm into this. But drag it hard and you'll see the welds strain, and snap. Holding together under stress is next.",
