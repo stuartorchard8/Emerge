@@ -573,13 +573,19 @@ class CytoRenderer {
         }
     }
 
-    /** RGB of a single species token (r→R, g→G, b→B), normalised to its peak channel, into [out]. */
+    /** RGB of a single species token (r→R, g→G, b→B), normalised to its peak channel, then desaturated
+     *  toward that peak by [PARTICLE_SATURATION] (keeps brightness, softens the hue), into [out]. */
     private fun speciesColorInto(token: String, out: FloatArray) {
         var r = 0; var g = 0; var b = 0
         for (ch in token) when (ch) { 'r' -> r++; 'g' -> g++; 'b' -> b++ }
         val peak = max(r, max(g, b))
         if (peak <= 0) { out[0] = 1f; out[1] = 1f; out[2] = 1f; return }
-        out[0] = r.toFloat() / peak; out[1] = g.toFloat() / peak; out[2] = b.toFloat() / peak
+        // Lerp each channel toward 1 (the normalised peak) by (1 - saturation): full sat keeps the pure hue,
+        // lower sat pulls it toward white without dimming.
+        val t = 1f - PARTICLE_SATURATION
+        out[0] = (r.toFloat() / peak).let { it + (1f - it) * t }
+        out[1] = (g.toFloat() / peak).let { it + (1f - it) * t }
+        out[2] = (b.toFloat() / peak).let { it + (1f - it) * t }
     }
 
     /**
@@ -879,7 +885,8 @@ class CytoRenderer {
         const val PARTICLE_MAX = 6000                 // hard cap on live particles (excess spawns dropped)
         const val PARTICLE_PER_UNIT = 0.03f           // particles spawned per unit of species transfer/tick
         const val PARTICLE_MAX_PER_SPECIES = 5        // …capped per species per cell per tick
-        const val PARTICLE_SIZE_FRAC = 0.14f          // speck radius as a fraction of the cell radius
+        const val PARTICLE_SIZE_FRAC = 0.035f         // speck radius as a fraction of the cell radius
+        const val PARTICLE_SATURATION = 0.5f          // colour saturation of the specks (1 = full species hue)
         const val PARTICLE_OUTER = 1.25f              // spawn/endpoint radial distance in cell radii
         const val PARTICLE_PROG_SPEED = 0.025f        // life progress per frame (~40 frames ≈ 0.7s at 60fps)
         const val PARTICLE_MAX_ALPHA = 0.9f           // peak speck opacity (mid-life; additive)
