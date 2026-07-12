@@ -185,9 +185,25 @@ object CytoBiologyCore {
                         t++
                     }
                 }
+                // Snapshot pre-transfer counts for ENV↔CYT net transfer tracking.
+                w._exchPreN = transferN
+                for (t in 0 until transferN) {
+                    w._exchPreIdx[t] = w.exchTransferIdx[t]
+                    w._exchPreCount[t] = cyt.count(w.exchTransferIdx[t])
+                }
                 w.exchTransferN = transferN
                 grid.balanceBatchedOn(leaves, keep, transferN, w.exchTransferIdx, w.exchTransferCeffs,
                     w.exchTransferDir, CytoTuning.DIFFUSION_SCALE_FACTOR, cyt)
+                // Post-transfer: compute net ENV↔CYT delta per species.
+                for (t in 0 until w._exchPreN) {
+                    val sp = w._exchPreIdx[t]
+                    val pre = w._exchPreCount[t]
+                    val post = cyt.count(sp)
+                    val net = post - pre  // positive = net inward, negative = net outward
+                    if (net != 0) {
+                        w.envCytNet.inc(sp, net)
+                    }
+                }
             }
         }
 
@@ -433,8 +449,14 @@ object CytoBiologyCore {
             work.cytoplasm.inc(fragLId, bondsBroken); work.cytoplasm.inc(fragRId, bondsBroken)
         }
         when (act.type) {
-            ActionType.Convert -> work.biomass.inc(convertId, k)
-            ActionType.FormBond -> work.cytoplasm.inc(productId, k)
+            ActionType.Convert -> {
+                work.biomass.inc(convertId, k)
+                work.cytToBio.inc(convertId, k)
+            }
+            ActionType.FormBond -> {
+                work.cytoplasm.inc(productId, k)
+                work.cytToBio.inc(productId, k)
+            }
             ActionType.Import -> {
                 // Active uptake is now a BIAS on the passive diffusion junction (QUADTREE.md): the gene's k
                 // energy units lower the cell's effective target for `importId`, so the junction (in
@@ -880,6 +902,9 @@ object CytoBiologyCore {
                 work.degradeDepositRadius = work.logicalRadius.toFloat()
                 work.degradeDepositTargetId = targetId
                 work.degradeDepositCount = count
+                // Visual signal: BIO→ENV decay flow.
+                work.bioToEnvCount = count
+                work.bioToEnvTargetId = targetId
             }
         }
     }

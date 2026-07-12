@@ -109,6 +109,15 @@ class MoleculeStore private constructor(
         return best
     }
 
+    /** Clear all species from this store (set n=0, keeping the backing arrays). */
+    fun clear() {
+        n = 0
+        _bondPresence = 0
+        _firstAtomMask = 0
+        _lastAtomMask = 0
+        _masksDirty = false
+    }
+
     fun copy(): MoleculeStore {
         if (n == 0) return MoleculeStore(cap)
         val backing = if (cap > 0) cap else n

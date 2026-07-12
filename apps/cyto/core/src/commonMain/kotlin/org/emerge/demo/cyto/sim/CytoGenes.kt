@@ -384,13 +384,25 @@ class CellWork(
     var dying = false
 
     /** Biomass-shed deposit staged by [CytoBiologyCore.degrade] during the parallel finish-compute pass,
-     *  applied to the shared matter grid serially afterwards (grid writes can't run concurrently). A
-     *  [degradeDepositCount] of 0 means nothing to deposit this tick. */
+      *  applied to the shared matter grid serially afterwards (grid writes can't run concurrently). A
+      *  [degradeDepositCount] of 0 means nothing to deposit this tick. */
     var degradeDepositCount = 0
     var degradeDepositTargetId = -1
     var degradeDepositX = 0f
     var degradeDepositY = 0f
     var degradeDepositRadius = 0f
+
+    // ── Visual signal channel: per-cell, per-species transfer read-model (LIVING_WORLD_PLAN.md §4) ──
+    // Derived read-model only — never fed back into sim state, never affects golden trajectory.
+    // CYT→BIO (building): species id → count locked into biomass this tick from Convert/FormBond genes.
+    val cytToBio = MoleculeStore(CytoTuning.CELL_CHEM_CAP)
+    // BIO→ENV (decay): species id → count released by biomass decay this tick (from degrade).
+    var bioToEnvCount = 0
+    var bioToEnvTargetId = -1
+    // ENV↔CYT net transfer: species id → net signed transfer across the membrane this tick
+    // (positive = inward absorption, negative = outward secretion). Computed from import/export bias
+    // + passive exchange delta.
+    val envCytNet = MoleculeStore(CytoTuning.CELL_CHEM_CAP)
 
     /** The fired Mitosis gene's operand (its [GeneAction.a]) — the morphogen species allocated **whole to
      *  one daughter** on division (asymmetric mitosis, MORPHOGENESIS.md §C). "" ⇒ symmetric 50/50 split. */
@@ -512,8 +524,13 @@ class CellWork(
      *  gate), -1 outward-only (an Export gate), 0 bidirectional (a plain monomer). */
     var exchTransferDir = IntArray(8)
     /** Per-cell species-union scratch for the parallel exchange pass 2 (thread-local: each cell is processed
-     *  by a single worker, so this needs no synchronisation). */
+      *  by a single worker, so this needs no synchronisation). */
     val exchSpecies = HashSet<Int>()
+    /** Pre-transfer snapshot for ENV↔CYT net tracking: per-transfer-species index + count, captured
+      *  before balanceBatchedOn mutates the cytoplasm. Reused across ticks. */
+    var _exchPreN = 0
+    var _exchPreIdx = IntArray(8)
+    var _exchPreCount = IntArray(8)
     /** Species count cache for gate evaluation: species id → count. Pre-populated from [cytoplasm] at the
      *  start of [CytoBiologyCore.runGenes], so gate lookups are O(1) array scans instead of
      *  binary-searching the MoleculeStore (O(log n)). Max 32 entries. */
@@ -590,6 +607,11 @@ class CellWork(
         divideRejectMother = false
         repaired = false
         _speciesCacheSize = 0
+        // Clear visual flow tracking.
+        cytToBio.clear()
+        bioToEnvCount = 0; bioToEnvTargetId = -1
+        envCytNet.clear()
+        _exchPreN = 0
         // Reset mitosis cooldown when genome changes (new cell or mutation).
         if (genome !== this.genome) {
             this.mitosisCooldown = 0
