@@ -212,18 +212,16 @@ class CytoRenderer {
     private val partSize = FloatArray(PARTICLE_MAX)
     private var partCount = 0
     private var lastParticleTick = -1L
-    // Adaptive spawn throttle. Two jobs: (1) keep the *per-tick* spawn count under [PER_TICK_MAX] so a
-    // whole world doesn't spawn one giant synchronised batch (which then fades in/out in unison — a global
-    // pulse) and instead trickles in ~1/40 of the pool per tick, spreading particle ages evenly; (2) split
-    // that budget *fairly* across cells regardless of draw order. Every cell's spawn demand is scaled by
-    // [spawnScale], recomputed once per tick from the previous tick's demand toward a target just below the
-    // hard cap (proportional control: converges in ~1 tick since demand is slowly-varying). [PER_TICK_MAX]
-    // is also enforced as a hard per-tick ceiling in [addParticle] as a backstop for the first tick / spikes.
-    // spawnScale starts low so the world's particles fade in over the first few ticks rather than bursting.
+    // Adaptive spawn throttle: when the pool saturates, later-iterated cells get their spawns dropped purely
+    // by draw order — unfair. Instead we scale *every* cell's spawn demand this tick by [spawnScale],
+    // recomputed once per tick from the previous tick's saturation (AIMD): multiplicatively back off when
+    // spawns were dropped, additively recover toward 1 when there was slack. Uniform across cells within a
+    // tick, so the budget splits fairly by transfer magnitude regardless of iteration order. spawnScale
+    // starts low so the world's particles ease in over the first few ticks rather than bursting all at once
+    // (a synchronised batch that would fade in/out in unison — a global pulse).
     private var spawnScale = 0.05f
     private var spawnAttempts = 0
     private var spawnDropped = 0
-    private var spawnedThisTick = 0
     private val partRng = kotlin.random.Random(0x0CEE)
     // Welded-neighbour unit directions (logical world space) for the cell being spawned — particles are
     // biased onto the *exposed* surface, so specks don't appear on the seams between bonded cells (which
@@ -388,13 +386,15 @@ class CytoRenderer {
         val spawnParticles = frame.tick != lastParticleTick
         lastParticleTick = frame.tick
         if (spawnParticles) {
-            // Steer next tick's demand toward PER_TICK_TARGET (just below the hard cap) from this tick's
-            // demand: proportional control, spawnScale *= target/demand, clamped to [MIN, 1]. Over budget →
-            // scale down; under budget → recover up. Then reset the per-tick counters.
-            spawnScale = (spawnScale * PER_TICK_TARGET / max(spawnAttempts, 1)).coerceIn(SPAWN_SCALE_MIN, 1f)
+            // Update the throttle from the *previous* spawn-tick's saturation, then reset its counters.
+            if (spawnDropped > 0 && spawnAttempts > 0) {
+                val fit = (spawnAttempts - spawnDropped).toFloat() / spawnAttempts
+                spawnScale = max(SPAWN_SCALE_MIN, spawnScale * fit)
+            } else {
+                spawnScale = min(1f, spawnScale + SPAWN_SCALE_RECOVER)
+            }
             spawnAttempts = 0
             spawnDropped = 0
-            spawnedThisTick = 0
         }
         var buildCount = 0
         for ((id, cell) in cells) {
@@ -646,13 +646,11 @@ class CytoRenderer {
         return -1f
     }
 
-    /** Append one particle (colour read from [speciesTmp]); drops if the pool is full or this tick's hard
-     *  [PER_TICK_MAX] budget is spent. Tracks demand (attempts) vs drops so the per-tick [spawnScale] throttle
-     *  can back off before ordering-based starvation kicks in. */
+    /** Append one particle (colour read from [speciesTmp]); drops if the pool is full. Tracks attempts vs
+     *  drops so the per-tick [spawnScale] throttle can back off before ordering-based starvation kicks in. */
     private fun addParticle(cellId: Int, cx: Float, cy: Float, offX: Float, offY: Float, dx: Float, dy: Float, size: Float) {
         spawnAttempts++
-        if (partCount >= PARTICLE_MAX || spawnedThisTick >= PER_TICK_MAX) { spawnDropped++; return }
-        spawnedThisTick++
+        if (partCount >= PARTICLE_MAX) { spawnDropped++; return }
         val i = partCount++
         partCell[i] = cellId; partBaseX[i] = cx; partBaseY[i] = cy
         partOffX[i] = offX; partOffY[i] = offY; partDX[i] = dx; partDY[i] = dy; partProg[i] = 0f
@@ -1020,9 +1018,8 @@ class CytoRenderer {
 
         // ── Flows 1 & 2 (ENV↔CYT transfer particles) tuning. ──
         const val PARTICLE_MAX = 10000                 // hard cap on live particles (excess spawns dropped)
-        const val PER_TICK_MAX = PARTICLE_MAX / 40    // hard ceiling on spawns per tick (~1 particle-life's worth)
-        const val PER_TICK_TARGET = PER_TICK_MAX * 0.8f // throttle aims here, below the cap, so it rarely clips
         const val SPAWN_SCALE_MIN = 0.02f             // floor on the adaptive spawn throttle (never fully mute)
+        const val SPAWN_SCALE_RECOVER = 0.12f         // per-tick additive recovery of the throttle (also the ease-in rate)
         const val PARTICLE_PER_UNIT = 0.03f           // particles spawned per unit of species transfer/tick
         const val PARTICLE_MAX_PER_SPECIES = 5        // …capped per species per cell per tick
         const val PARTICLE_SIZE_FRAC = 0.035f         // speck radius as a fraction of the cell radius
