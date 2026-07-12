@@ -96,7 +96,39 @@ Render order matters — flow 4 draws behind the cell disc, flows 1–3 on/in fr
 
 ## 6. Build order
 
-> **Status (2026-07-12): all four flows shipped.** Notable deviations from the plan as written, learned
+> **Status (2026-07-12, session 2): visual channel COMPLETE + polished — validated live on Stu's
+> "swimmer"-genome save (an actively-metabolising colony, not the equilibrium autotroph).** Added this
+> session, beyond the original four flows:
+> - **Flow 5 — CYT→CYT cell↔cell (weld) transfer.** New sim read-model (`weldOut`, golden-safe) + two
+>   uncorrelated ±25°-jittered specks per unit (one leaving this cell, one entering the neighbour it rides),
+>   travelling a `0.25r→1.25r` band with a ±0.25r per-speck origin jitter.
+> - **Particle system polish:** all transfer specks moved to a uniform membrane band; specks now **anchored
+>   to their cell** (offset + per-frame-refreshed base centre) so they track motion instead of lagging;
+>   **fairness throttle** (per-tick spawnScale, AIMD off pool saturation) so draw-order no longer starves
+>   later cells; **~40-tick ease-in** (spawnScale starts low, recovers 0.024/tick) so the world doesn't
+>   spawn one synchronised batch that pulses in unison.
+> - **Flow colour cross-fade:** build (flow 3) and decay (flow 4) discs/halos ease their hue toward the
+>   transferring species' colour instead of snapping (`FLOW_COLOR_EASE`), snap on first sight, hold during
+>   cool-down. **Decay soft fade-in:** flow 4's impulse replaced with an attack-release envelope (eases up
+>   at `BUILD_EASE`, then releases + cools at `DECAY_COOL`); flow 3's `BUILD_EASE` softened 0.08→0.03.
+> - **Not yet seen by the agent** (single-hue harness colony + rare sheds): the colour cross-fade and decay
+>   fade-in are logically sound but were verified by Stu on the swimmer save, not via the harness.
+>
+> **Open questions resolved (§8):** Q1 scope = all flows (+a 5th) shipped. Q3 legibility = acceptable as-is
+> (Stu: transfers "mostly legible", base readability solved). Q4 = the chemistry table is already collapsed
+> by default, which answers it. **The one remaining thread is campaign integration** (below).
+>
+> **Next step — campaign pivot to the swimmer genome.** The living-world visuals only *pay off* on an
+> organism that actively metabolises; the campaign's grow-only autotroph substrate sits at equilibrium and
+> shows ~nothing (flows 3/4). Rather than retrofit the early chapters, the plan is to have the campaign
+> **incrementally build toward the swimmer genome** (Ch7 `Contract` locomotion → Ch8 phased-Contract
+> swimming already point here) so a live, feeding, moving body naturally exhibits the flows — then
+> **describe each transfer in the campaign copy** at that point (so new users learn them, not just intuit
+> them). Further visual iteration rides on later campaign stages. See [[project_cyto_campaign]].
+>
+> ---
+>
+> *Session 1 (2026-07-12): all four flows shipped.* Notable deviations from the plan as written, learned
 > during implementation:
 > - **Flow 3** renders as an *expanding pulse* (a few staggered discs growing centre→rim, fading), not a
 >   single static field — reads far better as "building" and Stu preferred it.
@@ -128,6 +160,11 @@ across successive ticks/frames (a building cell watched over its warm-up; an abs
 to eyeball the animation. Confirm `CytoGoldenTest` / `CytoSoaSpecTest` stay green after the channel lands.
 
 ## 8. Open questions for Stu
+
+> **Resolved (2026-07-12 session 2) — see the §6 status block.** Q1 (scope): all flows + a 5th shipped.
+> Q2 (tuning): iterated live (particle throttle/ease-in, band, colour ease, fade-in rates). Q3
+> (legibility): accepted as mostly-legible, base readability solved. Q4 (mask-gating): the chemistry table
+> is already collapsed by default. Only campaign integration remains (§6 "Next step").
 
 1. **Scope:** all four flows, or start with the two continuous fields (flows 3–4) and hold the particle
    system (1–2) for a follow-up?

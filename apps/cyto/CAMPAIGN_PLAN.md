@@ -63,6 +63,17 @@ prose companion (the campaign is the interactive path through the same material)
 > group-library / move-between-groups UI (§10.5) — data model supports re-tagging, no UI yet. (5) No live
 > in-app visual playtest of the whole arc yet.
 >
+> **Next session — pivot the arc to exhibit the swimmer genome + the living-world visuals.** The
+> `LIVING_WORLD_PLAN.md` metabolic visuals (build/decay/ENV↔CYT/weld transfer specks + glows) are COMPLETE
+> and polished, but they only pay off on an organism that *actively metabolises*. The campaign substrate is
+> a grow-only autotroph sitting at biomass-cap equilibrium — it builds/decays ~nothing, so those visuals
+> are invisible in-campaign. **Direction:** have Ch7+ deliberately build toward the **swimmer genome**
+> (Ch7 `Contract` locomotion → Ch8 phased-Contract swimming already aim here) so a live, feeding, moving
+> body naturally shows the flows, and **add campaign copy that names each transfer** as it appears (so new
+> users learn them rather than intuiting them). Stu validated the visuals live on his swimmer-genome save;
+> getting the campaign to that point is the main build task. Further visual iteration rides on later
+> stages. See `LIVING_WORLD_PLAN.md` §6 "Next step" and [[project_cyto_living_world]].
+>
 > **Architecture grounding (unchanged):** the immediate-mode `Ui` toolkit (`engine/render/torus/.../ui/
 > Ui.kt`), the `CytoMenu` shell + `Callbacks`, the `CytoScenario` recipe system, the genome library
 > (`CytoGenomes`), and the controller's world-query surface (`heldCellInfo`, `worldStats()`,
