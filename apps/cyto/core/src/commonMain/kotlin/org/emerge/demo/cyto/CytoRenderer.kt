@@ -1019,7 +1019,7 @@ class CytoRenderer {
         // ── Flows 1 & 2 (ENV↔CYT transfer particles) tuning. ──
         const val PARTICLE_MAX = 10000                 // hard cap on live particles (excess spawns dropped)
         const val SPAWN_SCALE_MIN = 0.02f             // floor on the adaptive spawn throttle (never fully mute)
-        const val SPAWN_SCALE_RECOVER = 0.12f         // per-tick additive recovery of the throttle (also the ease-in rate)
+        const val SPAWN_SCALE_RECOVER = 0.024f        // per-tick additive recovery (also the ease-in rate: ~40 ticks to full)
         const val PARTICLE_PER_UNIT = 0.03f           // particles spawned per unit of species transfer/tick
         const val PARTICLE_MAX_PER_SPECIES = 5        // …capped per species per cell per tick
         const val PARTICLE_SIZE_FRAC = 0.035f         // speck radius as a fraction of the cell radius
