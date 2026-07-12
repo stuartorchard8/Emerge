@@ -2,6 +2,7 @@ package org.emerge.desktop
 
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.CytoRenderer
+import org.emerge.demo.cyto.CytoSaveCodec
 import org.emerge.demo.cyto.campaign.CampaignDirector
 import org.emerge.demo.cyto.campaign.CampaignQuery
 import org.emerge.demo.cyto.campaign.Control
@@ -182,6 +183,12 @@ object CytoAgentHarness {
                     val ticks = t.getOrNull(4)?.toIntOrNull() ?: error("dragcell <id> <u> <v> <ticks> (explicit duration)")
                     repeat(ticks.coerceAtLeast(1)) { controller.grab(id, x, y); controller.stepOnce() }
                     controller.releaseGrab(); controller.publish(); sync()
+                }
+                "save" -> {
+                    val path = line.removePrefix("save").trim().trim('"')
+                    controller.publish()
+                    File(path).writeBytes(CytoSaveCodec.encode(controller.latestFrame().state))
+                    println("[agent] saved -> $path (${controller.worldStats().cellCount} cells, tick ${controller.tick})")
                 }
                 "cells" -> listCells()
                 "com" -> {
