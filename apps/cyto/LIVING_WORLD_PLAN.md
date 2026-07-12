@@ -96,6 +96,22 @@ Render order matters — flow 4 draws behind the cell disc, flows 1–3 on/in fr
 
 ## 6. Build order
 
+> **Status (2026-07-12): all four flows shipped.** Notable deviations from the plan as written, learned
+> during implementation:
+> - **Flow 3** renders as an *expanding pulse* (a few staggered discs growing centre→rim, fading), not a
+>   single static field — reads far better as "building" and Stu preferred it.
+> - **Flow 4** decay is a *rare discrete shed* (one molecule every ~`DEGRADE_PERIOD` ticks), not a
+>   continuous flow, so it uses an **impulse-and-cooldown** envelope (flash on shed, fade out) rather than
+>   flow 3's ease-toward-target. Its halo colour == the shed species' colour, so contrast is weak against a
+>   same-colour background (fine in a colour-varied world).
+> - **Flows 1–2** required a sim fix: `envCytNet` (a single `MoleculeStore`) silently dropped secretion
+>   because the store prunes non-positive counts — split into `envCytIn` / `envCytOut`.
+> - **Premise correction:** the calm `GROW_ONLY`/Genesis founder (ch01–ch03 worlds) does **not** build or
+>   decay meaningfully — it sits at biomass cap, light-starved-into-equilibrium — so flows 3/4 are ~invisible
+>   there. The "constantly building to top itself up" assumption below is wrong for that scenario; the flows
+>   were validated on the active **Predator & Prey** colony instead. Making the campaign worlds *show* these
+>   visuals (Open question 4) is now unfinished business, not a solved problem.
+
 1. **Signal channel (flow 3 first — CYT→BIO).** The simplest single flow end-to-end: expose per-species
    Convert amounts, add the `speciesColor` helper, render the expanding build-circle with warm-up/
    cool-down. Proves the read-model + renderer-state plumbing on the calm grow-only autotroph (it's
