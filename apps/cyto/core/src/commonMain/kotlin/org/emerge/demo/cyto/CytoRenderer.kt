@@ -207,6 +207,11 @@ class CytoRenderer {
     private var partCount = 0
     private var lastParticleTick = -1L
     private val partRng = kotlin.random.Random(0x0CEE)
+    // Welded-neighbour unit directions (logical world space) for the cell being spawned — particles are
+    // biased onto the *exposed* surface, so specks don't appear on the seams between bonded cells (which
+    // read as cell↔cell transfer). Filled per cell by gatherWeldDirs.
+    private val weldDirX = FloatArray(WELD_DIR_MAX)
+    private val weldDirY = FloatArray(WELD_DIR_MAX)
     private val matCircS = Mat4.scratch()
     private val matCircT = Mat4.scratch()
     private val matCircM = Mat4.scratch()
@@ -370,7 +375,10 @@ class CytoRenderer {
             val cx = CytoUnits.toLogical(transform.pos.x)
             val cy = CytoUnits.toLogical(transform.pos.y)
 
-            if (spawnParticles) spawnTransferParticles(cx, cy, radius, cell)
+            if (spawnParticles) {
+                val weldCount = gatherWeldDirs(id, transform, springData, springTable, transforms)
+                spawnTransferParticles(cx, cy, radius, cell, weldCount)
+            }
 
             // Flow 3 (CYT→BIO): ease this cell's build intensity toward this tick's converted amount,
             // then stage a soft disc if it's building enough to see. Keyed by EntityId; evicted below.
@@ -493,15 +501,17 @@ class CytoRenderer {
     }
 
     /** Spawn this tick's ENV↔CYT particles for one cell: [envCytIn] → inward absorption specks (flow 1),
-     *  [envCytOut] → outward secretion specks (flow 2), a count per species ∝ that species' transfer. */
-    private fun spawnTransferParticles(cx: Float, cy: Float, radius: Float, cell: CytoCellComponent) {
+     *  [envCytOut] → outward secretion specks (flow 2), a count per species ∝ that species' transfer.
+     *  [weldCount] welded-neighbour directions (in [weldDirX]/[weldDirY]) bias spawns onto the exposed
+     *  surface; a fully-enclosed cell finds no exposed angle and so emits ~no env particles. */
+    private fun spawnTransferParticles(cx: Float, cy: Float, radius: Float, cell: CytoCellComponent, weldCount: Int) {
         val size = radius * PARTICLE_SIZE_FRAC
         val outer = radius * PARTICLE_OUTER
         for ((species, amt) in cell.envCytIn) {
             speciesColorInto(species, speciesTmp)
             val n = min(PARTICLE_MAX_PER_SPECIES, (amt * PARTICLE_PER_UNIT).roundToInt())
             for (j in 0 until n) {
-                val ang = partRng.nextFloat() * TAU
+                val ang = pickExposedAngle(weldCount); if (ang < 0f) continue
                 val dx = cos(ang); val dy = sin(ang)
                 // inward: start just outside the border, displace to the centre.
                 addParticle(cx + dx * outer, cy + dy * outer, -dx * outer, -dy * outer, size)
@@ -511,12 +521,59 @@ class CytoRenderer {
             speciesColorInto(species, speciesTmp)
             val n = min(PARTICLE_MAX_PER_SPECIES, (amt * PARTICLE_PER_UNIT).roundToInt())
             for (j in 0 until n) {
-                val ang = partRng.nextFloat() * TAU
+                val ang = pickExposedAngle(weldCount); if (ang < 0f) continue
                 val dx = cos(ang); val dy = sin(ang)
                 // outward: start at the centre, displace out past the border.
                 addParticle(cx, cy, dx * outer, dy * outer, size)
             }
         }
+    }
+
+    /** Fill [weldDirX]/[weldDirY] with the unit directions (logical world space) to this cell's welded
+     *  neighbours; returns the count (≤ [WELD_DIR_MAX]). Mirrors the neighbour walk the cell shader uses,
+     *  but keeps world-space y (no shader flip). */
+    private fun gatherWeldDirs(
+        id: EntityId,
+        transform: TransformComponent,
+        springData: org.emerge.demo.cyto.CytoFrameSpringData?,
+        springTable: ComponentTable<SpringConstraintComponent>?,
+        transforms: ComponentTable<TransformComponent>,
+    ): Int {
+        var n = 0
+        fun push(nt: TransformComponent) {
+            if (n >= WELD_DIR_MAX) return
+            val delta = nt.pos - transform.pos
+            val dx = CytoUnits.toLogical(delta.x); val dy = CytoUnits.toLogical(delta.y)
+            val len = sqrt(dx * dx + dy * dy)
+            if (len > 1e-4f) { weldDirX[n] = dx / len; weldDirY[n] = dy / len; n++ }
+        }
+        if (springData != null) {
+            val slot = springData.slotOfEntityId(id.value)
+            if (slot >= 0) {
+                val lo = springData.csrOffset[slot]; val hi = springData.csrOffset[slot + 1]
+                for (k in lo until hi) { transforms[EntityId(springData.csrOtherId[k])]?.let { push(it) } }
+            }
+        } else if (springTable != null) {
+            springTable[id]?.springs?.forEach { transforms[it.other]?.let { nt -> push(nt) } }
+        }
+        return n
+    }
+
+    /** A random spawn angle that avoids the welded seams: rejects any direction within an arc of a weld
+     *  ([WELD_BLOCK_COS]). Returns -1 if no exposed angle is found in [PARTICLE_SPAWN_TRIES] tries (cell
+     *  effectively enclosed) so the caller drops the particle. */
+    private fun pickExposedAngle(weldCount: Int): Float {
+        if (weldCount == 0) return partRng.nextFloat() * TAU
+        repeat(PARTICLE_SPAWN_TRIES) {
+            val a = partRng.nextFloat() * TAU
+            val dx = cos(a); val dy = sin(a)
+            var blocked = false
+            for (i in 0 until weldCount) {
+                if (dx * weldDirX[i] + dy * weldDirY[i] > WELD_BLOCK_COS) { blocked = true; break }
+            }
+            if (!blocked) return a
+        }
+        return -1f
     }
 
     /** Append one particle (colour read from [speciesTmp]); silently drops if the pool is full. */
@@ -889,7 +946,10 @@ class CytoRenderer {
         const val PARTICLE_SATURATION = 0.5f          // colour saturation of the specks (1 = full species hue)
         const val PARTICLE_OUTER = 1.25f              // spawn/endpoint radial distance in cell radii
         const val PARTICLE_PROG_SPEED = 0.025f        // life progress per frame (~40 frames ≈ 0.7s at 60fps)
-        const val PARTICLE_MAX_ALPHA = 0.9f           // peak speck opacity (mid-life; additive)
+        const val PARTICLE_MAX_ALPHA = 0.5f           // peak speck opacity (mid-life; additive)
+        const val WELD_DIR_MAX = 16                   // max welded-neighbour directions considered for biasing
+        const val PARTICLE_SPAWN_TRIES = 8            // rejection-sampling attempts before dropping a speck
+        const val WELD_BLOCK_COS = 0.6f               // cos of the blocked half-arc around each weld (~53°)
         val TAU = (2.0 * PI).toFloat()
     }
 }
