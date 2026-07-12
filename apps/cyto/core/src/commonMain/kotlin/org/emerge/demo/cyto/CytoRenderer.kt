@@ -20,6 +20,7 @@ import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
 import kotlin.math.PI
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
@@ -206,12 +207,21 @@ class CytoRenderer {
     private val partSize = FloatArray(PARTICLE_MAX)
     private var partCount = 0
     private var lastParticleTick = -1L
+    // Adaptive spawn throttle: when the pool saturates, later-iterated cells get their spawns dropped
+    // purely by draw order — unfair. Instead we scale *every* cell's spawn demand this tick by [spawnScale],
+    // recomputed once per tick from the previous tick's saturation (AIMD): multiplicatively back off when
+    // spawns were dropped, additively recover toward 1 when there was slack. Uniform across cells within a
+    // tick, so the budget splits fairly by transfer magnitude regardless of iteration order.
+    private var spawnScale = 1f
+    private var spawnAttempts = 0
+    private var spawnDropped = 0
     private val partRng = kotlin.random.Random(0x0CEE)
     // Welded-neighbour unit directions (logical world space) for the cell being spawned — particles are
     // biased onto the *exposed* surface, so specks don't appear on the seams between bonded cells (which
     // read as cell↔cell transfer). Filled per cell by gatherWeldDirs.
     private val weldDirX = FloatArray(WELD_DIR_MAX)
     private val weldDirY = FloatArray(WELD_DIR_MAX)
+    private val weldLen = FloatArray(WELD_DIR_MAX)   // centre-to-centre distance to each welded neighbour
     private val matCircS = Mat4.scratch()
     private val matCircT = Mat4.scratch()
     private val matCircM = Mat4.scratch()
@@ -367,6 +377,17 @@ class CytoRenderer {
         // Particles (flows 1&2) are spawned once per tick; aged every frame in drawParticles().
         val spawnParticles = frame.tick != lastParticleTick
         lastParticleTick = frame.tick
+        if (spawnParticles) {
+            // Update the throttle from the *previous* spawn-tick's saturation, then reset its counters.
+            if (spawnDropped > 0 && spawnAttempts > 0) {
+                val fit = (spawnAttempts - spawnDropped).toFloat() / spawnAttempts
+                spawnScale = max(SPAWN_SCALE_MIN, spawnScale * fit)
+            } else {
+                spawnScale = min(1f, spawnScale + SPAWN_SCALE_RECOVER)
+            }
+            spawnAttempts = 0
+            spawnDropped = 0
+        }
         var buildCount = 0
         for ((id, cell) in cells) {
             val transform = transforms[id] ?: continue
@@ -378,6 +399,7 @@ class CytoRenderer {
             if (spawnParticles) {
                 val weldCount = gatherWeldDirs(id, transform, springData, springTable, transforms)
                 spawnTransferParticles(cx, cy, radius, cell, weldCount)
+                if (weldCount > 0) spawnWeldParticles(cx, cy, radius, cell, weldCount)
             }
 
             // Flow 3 (CYT→BIO): ease this cell's build intensity toward this tick's converted amount,
@@ -506,25 +528,57 @@ class CytoRenderer {
      *  surface; a fully-enclosed cell finds no exposed angle and so emits ~no env particles. */
     private fun spawnTransferParticles(cx: Float, cy: Float, radius: Float, cell: CytoCellComponent, weldCount: Int) {
         val size = radius * PARTICLE_SIZE_FRAC
-        val outer = radius * PARTICLE_OUTER
+        val outerR = radius * PARTICLE_OUTER      // 1.125r — just outside the border
+        val innerR = radius * PARTICLE_INNER      // 0.875r — just inside the border
+        val bandR = outerR - innerR               // radial span a speck travels
         for ((species, amt) in cell.envCytIn) {
             speciesColorInto(species, speciesTmp)
-            val n = min(PARTICLE_MAX_PER_SPECIES, (amt * PARTICLE_PER_UNIT).roundToInt())
+            val n = min(PARTICLE_MAX_PER_SPECIES, (amt * PARTICLE_PER_UNIT * spawnScale).roundToInt())
             for (j in 0 until n) {
                 val ang = pickExposedAngle(weldCount); if (ang < 0f) continue
                 val dx = cos(ang); val dy = sin(ang)
-                // inward: start just outside the border, displace to the centre.
-                addParticle(cx + dx * outer, cy + dy * outer, -dx * outer, -dy * outer, size)
+                // inward: start at 1.125r, displace inward to 0.875r (peak brightness at the border).
+                addParticle(cx + dx * outerR, cy + dy * outerR, -dx * bandR, -dy * bandR, size)
             }
         }
         for ((species, amt) in cell.envCytOut) {
             speciesColorInto(species, speciesTmp)
-            val n = min(PARTICLE_MAX_PER_SPECIES, (amt * PARTICLE_PER_UNIT).roundToInt())
+            val n = min(PARTICLE_MAX_PER_SPECIES, (amt * PARTICLE_PER_UNIT * spawnScale).roundToInt())
             for (j in 0 until n) {
                 val ang = pickExposedAngle(weldCount); if (ang < 0f) continue
                 val dx = cos(ang); val dy = sin(ang)
-                // outward: start at the centre, displace out past the border.
-                addParticle(cx, cy, dx * outer, dy * outer, size)
+                // outward: start at 0.875r, displace outward to 1.125r.
+                addParticle(cx + dx * innerR, cy + dy * innerR, dx * bandR, dy * bandR, size)
+            }
+        }
+    }
+
+    /** Flow 5 (CYT→CYT across welds): each unit of [weldOut] spawns *two* uncorrelated specks — one leaving
+     *  THIS cell outward toward a welded neighbour (0.875r→1.125r), one entering the NEIGHBOUR from the seam
+     *  side (its 1.125r→0.875r). Both directions get an independent ±[WELD_JITTER] angular jitter around the
+     *  weld line so the exchange reads organic rather than a rigid centre-to-centre beam. The two halves need
+     *  no positional correlation; showing both in equal measure just balances the send/receive read. */
+    private fun spawnWeldParticles(cx: Float, cy: Float, radius: Float, cell: CytoCellComponent, weldCount: Int) {
+        if (cell.weldOut.isEmpty()) return
+        val size = radius * PARTICLE_SIZE_FRAC
+        val outerR = radius * PARTICLE_OUTER
+        val innerR = radius * PARTICLE_INNER
+        val bandR = outerR - innerR
+        for ((species, amt) in cell.weldOut) {
+            speciesColorInto(species, speciesTmp)
+            val n = min(PARTICLE_MAX_PER_SPECIES, (amt * WELD_PER_UNIT * spawnScale).roundToInt())
+            for (j in 0 until n) {
+                val i = partRng.nextInt(weldCount)          // pick one of this cell's welds
+                val base = atan2(weldDirY[i], weldDirX[i])
+                // Speck A: leaves this cell outward toward the neighbour.
+                val aOut = base + (partRng.nextFloat() - 0.5f) * 2f * WELD_JITTER
+                val ox = cos(aOut); val oy = sin(aOut)
+                addParticle(cx + ox * innerR, cy + oy * innerR, ox * bandR, oy * bandR, size)
+                // Speck B: enters the neighbour from the seam side (approach its border, move inward).
+                val nx = cx + weldDirX[i] * weldLen[i]; val ny = cy + weldDirY[i] * weldLen[i]
+                val aIn = base + (partRng.nextFloat() - 0.5f) * 2f * WELD_JITTER
+                val ix = cos(aIn); val iy = sin(aIn)
+                addParticle(nx - ix * outerR, ny - iy * outerR, ix * bandR, iy * bandR, size)
             }
         }
     }
@@ -545,7 +599,7 @@ class CytoRenderer {
             val delta = nt.pos - transform.pos
             val dx = CytoUnits.toLogical(delta.x); val dy = CytoUnits.toLogical(delta.y)
             val len = sqrt(dx * dx + dy * dy)
-            if (len > 1e-4f) { weldDirX[n] = dx / len; weldDirY[n] = dy / len; n++ }
+            if (len > 1e-4f) { weldDirX[n] = dx / len; weldDirY[n] = dy / len; weldLen[n] = len; n++ }
         }
         if (springData != null) {
             val slot = springData.slotOfEntityId(id.value)
@@ -576,9 +630,11 @@ class CytoRenderer {
         return -1f
     }
 
-    /** Append one particle (colour read from [speciesTmp]); silently drops if the pool is full. */
+    /** Append one particle (colour read from [speciesTmp]); drops if the pool is full. Tracks attempts vs
+     *  drops so the per-tick [spawnScale] throttle can back off before ordering-based starvation kicks in. */
     private fun addParticle(x0: Float, y0: Float, dx: Float, dy: Float, size: Float) {
-        if (partCount >= PARTICLE_MAX) return
+        spawnAttempts++
+        if (partCount >= PARTICLE_MAX) { spawnDropped++; return }
         val i = partCount++
         partX0[i] = x0; partY0[i] = y0; partDX[i] = dx; partDY[i] = dy; partProg[i] = 0f
         partR[i] = speciesTmp[0]; partG[i] = speciesTmp[1]; partB[i] = speciesTmp[2]; partSize[i] = size
@@ -939,17 +995,22 @@ class CytoRenderer {
         const val DECAY_MAX_SCALE = 1.5f
 
         // ── Flows 1 & 2 (ENV↔CYT transfer particles) tuning. ──
-        const val PARTICLE_MAX = 6000                 // hard cap on live particles (excess spawns dropped)
+        const val PARTICLE_MAX = 10000                 // hard cap on live particles (excess spawns dropped)
+        const val SPAWN_SCALE_MIN = 0.02f             // floor on the adaptive spawn throttle (never fully mute)
+        const val SPAWN_SCALE_RECOVER = 0.05f         // per-tick additive recovery of the throttle when it has slack
         const val PARTICLE_PER_UNIT = 0.03f           // particles spawned per unit of species transfer/tick
         const val PARTICLE_MAX_PER_SPECIES = 5        // …capped per species per cell per tick
         const val PARTICLE_SIZE_FRAC = 0.035f         // speck radius as a fraction of the cell radius
         const val PARTICLE_SATURATION = 0.5f          // colour saturation of the specks (1 = full species hue)
-        const val PARTICLE_OUTER = 1.25f              // spawn/endpoint radial distance in cell radii
+        const val PARTICLE_OUTER = 1.125f             // outer band radius in cell radii (just outside border)
+        const val PARTICLE_INNER = 0.875f             // inner band radius in cell radii (just inside border)
         const val PARTICLE_PROG_SPEED = 0.025f        // life progress per frame (~40 frames ≈ 0.7s at 60fps)
         const val PARTICLE_MAX_ALPHA = 0.5f           // peak speck opacity (mid-life; additive)
         const val WELD_DIR_MAX = 16                   // max welded-neighbour directions considered for biasing
         const val PARTICLE_SPAWN_TRIES = 8            // rejection-sampling attempts before dropping a speck
         const val WELD_BLOCK_COS = 0.6f               // cos of the blocked half-arc around each weld (~53°)
+        const val WELD_PER_UNIT = 0.02f               // cross-weld specks spawned per unit sent across welds
+        const val WELD_JITTER = 0.4363f               // ±angular jitter (rad, ~25°) of cross-weld specks
         val TAU = (2.0 * PI).toFloat()
     }
 }
