@@ -567,9 +567,7 @@ class CytoRenderer {
     private fun spawnWeldParticles(cellId: Int, cx: Float, cy: Float, radius: Float, cell: CytoCellComponent, weldCount: Int) {
         if (cell.weldOut.isEmpty()) return
         val size = radius * PARTICLE_SIZE_FRAC
-        val outerR = radius * PARTICLE_OUTER
-        val innerR = radius * PARTICLE_INNER
-        val bandR = outerR - innerR
+        val spanR = (WELD_PARTICLE_END - WELD_PARTICLE_START) * radius   // constant travel length (radii)
         for ((species, amt) in cell.weldOut) {
             speciesColorInto(species, speciesTmp)
             val n = min(PARTICLE_MAX_PER_SPECIES, (amt * WELD_PER_UNIT * spawnScale).roundToInt())
@@ -577,15 +575,19 @@ class CytoRenderer {
                 val i = partRng.nextInt(weldCount)          // pick one of this cell's welds
                 val base = atan2(weldDirY[i], weldDirX[i])
                 // Speck A: leaves this cell outward toward the neighbour — anchored to (rides) this cell.
+                // Travels START→END radii, with an independent ±WELD_ORIGIN_JITTER shift on the whole span.
                 val aOut = base + (partRng.nextFloat() - 0.5f) * 2f * WELD_JITTER
                 val ox = cos(aOut); val oy = sin(aOut)
-                addParticle(cellId, cx, cy, ox * innerR, oy * innerR, ox * bandR, oy * bandR, size)
+                val aStart = (WELD_PARTICLE_START + (partRng.nextFloat() - 0.5f) * 2f * WELD_ORIGIN_JITTER) * radius
+                addParticle(cellId, cx, cy, ox * aStart, oy * aStart, ox * spanR, oy * spanR, size)
                 // Speck B: enters the neighbour from the seam side — anchored to (rides) that neighbour, so its
-                // offset is relative to the neighbour's centre (nx, ny), not this cell's.
+                // offset is relative to the neighbour's centre (nx, ny). Mirror of A: starts far (END) and moves
+                // inward to START, with its own independent origin jitter.
                 val nx = cx + weldDirX[i] * weldLen[i]; val ny = cy + weldDirY[i] * weldLen[i]
                 val aIn = base + (partRng.nextFloat() - 0.5f) * 2f * WELD_JITTER
                 val ix = cos(aIn); val iy = sin(aIn)
-                addParticle(weldOtherId[i], nx, ny, -ix * outerR, -iy * outerR, ix * bandR, iy * bandR, size)
+                val bStart = (WELD_PARTICLE_END + (partRng.nextFloat() - 0.5f) * 2f * WELD_ORIGIN_JITTER) * radius
+                addParticle(weldOtherId[i], nx, ny, -ix * bStart, -iy * bStart, ix * spanR, iy * spanR, size)
             }
         }
     }
@@ -1029,6 +1031,9 @@ class CytoRenderer {
         const val WELD_BLOCK_COS = 0.6f               // cos of the blocked half-arc around each weld (~53°)
         const val WELD_PER_UNIT = 0.02f               // cross-weld specks spawned per unit sent across welds
         const val WELD_JITTER = 0.4363f               // ±angular jitter (rad, ~25°) of cross-weld specks
+        const val WELD_PARTICLE_START = 0.25f         // cross-weld speck inner travel radius (cell radii)
+        const val WELD_PARTICLE_END = 1.25f           // cross-weld speck outer travel radius (cell radii)
+        const val WELD_ORIGIN_JITTER = 0.25f          // ± random shift of a cross-weld speck's whole travel span
         val TAU = (2.0 * PI).toFloat()
     }
 }
