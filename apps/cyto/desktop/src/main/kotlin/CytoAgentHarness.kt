@@ -129,7 +129,12 @@ object CytoAgentHarness {
         fun exec(line: String) {
             val t = line.split(Regex("\\s+"))
             when (t[0]) {
-                "scenario" -> { director.stop(); controller.newGame(preset(t.getOrElse(1) { "Genesis" })); renderer.resetView() }
+                "scenario" -> {
+                    // Preset names can be multi-word ("Twin Colonies"); take the rest of the line, minus
+                    // any surrounding quotes, rather than just the first whitespace token.
+                    val name = line.removePrefix("scenario").trim().trim('"').ifEmpty { "Genesis" }
+                    director.stop(); controller.newGame(preset(name)); renderer.resetView()
+                }
                 "campaign" -> {
                     val ch = CampaignContent.CHAPTERS.firstOrNull { it.id == t.getOrNull(1) }
                         ?: error("unknown chapter '${t.getOrNull(1)}' (have ${CampaignContent.ORDER})")
