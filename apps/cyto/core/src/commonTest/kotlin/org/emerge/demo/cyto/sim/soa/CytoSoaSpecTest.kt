@@ -455,24 +455,25 @@ class CytoSoaSpecTest {
     @Test
     fun asymmetricMitosisAllocatesMorphogenToOneDaughterAndItPersists() {
         // C — asymmetric mitosis (MORPHOGENESIS.md §C). A founder poised to divide carries a *trace*
-        // morphogen `c`: no gene metabolises OR senses it, so it is `!canHold`, and the canHold-gated
-        // cell↔cell diffusion and env-uptake can therefore never move it. The single Mitosis gene names
-        // `c` as its morphogen, so on division `c` goes WHOLE to the daughter and the mother keeps none.
-        // Because `c` is trace, the mother can never re-acquire it (no uptake, no diffusion in) — so the
+        // morphogen `gb` (a MOLECULE — bare atoms are now universally permeable, so a trace determinant must
+        // be a bond): no gene metabolises OR senses it, so it is `!canHold`, and the canHold-gated cell↔cell
+        // diffusion and env-uptake can therefore never move it. The single Mitosis gene names `gb` as its
+        // morphogen, so on division `gb` goes WHOLE to the daughter and the mother keeps none.
+        // Because `gb` is trace, the mother can never re-acquire it (no uptake, no diffusion in) — so the
         // asymmetry the split establishes PERSISTS. That persistent positional difference between two
-        // clones from one founder is the substrate for differentiation. A gene that *gates* on `Chem(c)`
-        // to act on the difference keeps `c` trace too — sensing doesn't grant permeability (handleableOf)
+        // clones from one founder is the substrate for differentiation. A gene that *gates* on `Chem(gb)`
+        // to act on the difference keeps `gb` trace too — sensing doesn't grant permeability (handleableOf)
         // — so the behavioural fate persists; see morphogenGatedFatePersistsAsBehaviouralDifferentiation.
         val mitosis = Gene(
             EnergySource.BreakBond("rg"),
             GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(7_900)),
-            GeneAction(ActionType.Mitosis, "b"),   // morphogen `b` → whole to the daughter
+            GeneAction(ActionType.Mitosis, "gb"),   // morphogen `gb` → whole to the daughter
         )
         val initial = run {
             val b = SimBuilder(SimState())
             b.spawnCell(
                 CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Blank,
-                cytoplasm = mapOf("rg" to 50_000, "b" to 2_000), biomass = mapOf("rg" to 8_000),
+                cytoplasm = mapOf("rg" to 50_000, "gb" to 2_000), biomass = mapOf("rg" to 8_000),
                 genome = listOf(mitosis),
             )
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.empty()) }
@@ -483,8 +484,8 @@ class CytoSoaSpecTest {
 
         val cells = state.components.getTable<CytoCellComponent>().asMap().values.toList()
         assertEquals(2, cells.size, "founder should divide exactly once (daughters can't re-divide at half biomass)")
-        val withB = cells.count { (it.cytoplasm["b"] ?: 0) > 0 }
-        val withoutB = cells.count { (it.cytoplasm["b"] ?: 0) == 0 }
+        val withB = cells.count { (it.cytoplasm["gb"] ?: 0) > 0 }
+        val withoutB = cells.count { (it.cytoplasm["gb"] ?: 0) == 0 }
         assertEquals(1, withB, "exactly one daughter inherits the morphogen")
         assertEquals(1, withoutB, "the other inherits none — and can't acquire a trace species, so the asymmetry persists")
     }
@@ -492,27 +493,27 @@ class CytoSoaSpecTest {
     @Test
     fun morphogenGatedFatePersistsAsBehaviouralDifferentiation() {
         // The payoff of C + sensing≠permeability: one genome → two stably-different cells. A founder
-        // divides asymmetrically on morphogen `c`; a fate gene (Contract) gates on `Chem(c) > 0`. Because
-        // *sensing* `c` doesn't make it handleable (handleableOf ignores condition operands), `c` stays a
-        // trace species — the mother (which got none) can never absorb or diffuse it in — so only the
-        // morphogen-bearing daughter expresses the contract fate, and it holds. Two clones, one genome,
-        // a divergent shape that persists. (Before the handleableOf change, gating on `c` made it canHold,
-        // so uptake+diffusion equilibrated it across the weld and both cells converged — see that commit.)
+        // divides asymmetrically on morphogen `gb`; a fate gene (Contract) gates on `Chem(gb) > 0`. Because
+        // *sensing* `gb` doesn't make it handleable (handleableOf ignores condition operands) and no gene
+        // metabolises it, `gb` stays a trace MOLECULE — the mother (which got none) can never absorb or
+        // diffuse it in — so only the morphogen-bearing daughter expresses the contract fate, and it holds.
+        // Two clones, one genome, a divergent shape that persists. (The trace species must be a molecule now
+        // that bare atoms diffuse freely regardless of genome; a monomer morphogen would equilibrate.)
         val mitosis = Gene(
             EnergySource.BreakBond("rg"),
             GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(7_900)),
-            GeneAction(ActionType.Mitosis, "b"),
+            GeneAction(ActionType.Mitosis, "gb"),
         )
         val contractIfMorphogen = Gene(
             EnergySource.BreakBond("rg"),
-            GeneCondition(Operand.Chem("b"), Comparison.Greater, Operand.Constant(0)),
-            GeneAction(ActionType.Contract),       // gates on `b` but acts on radius — `b` stays trace
+            GeneCondition(Operand.Chem("gb"), Comparison.Greater, Operand.Constant(0)),
+            GeneAction(ActionType.Contract),       // gates on `gb` but acts on radius — `gb` stays trace
         )
         val initial = run {
             val b = SimBuilder(SimState())
             b.spawnCell(
                 CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Blank,
-                cytoplasm = mapOf("rg" to 80_000, "b" to 2_000), biomass = mapOf("rg" to 8_000),
+                cytoplasm = mapOf("rg" to 80_000, "gb" to 2_000), biomass = mapOf("rg" to 8_000),
                 genome = listOf(mitosis, contractIfMorphogen),
             )
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.empty()) }
@@ -523,8 +524,8 @@ class CytoSoaSpecTest {
 
         val cells = state.components.getTable<CytoCellComponent>().asMap().values.toList()
         assertEquals(2, cells.size, "founder should divide exactly once")
-        val morphogenCell = cells.single { (it.cytoplasm["b"] ?: 0) > 0 }
-        val plainCell = cells.single { (it.cytoplasm["b"] ?: 0) == 0 }
+        val morphogenCell = cells.single { (it.cytoplasm["gb"] ?: 0) > 0 }
+        val plainCell = cells.single { (it.cytoplasm["gb"] ?: 0) == 0 }
         assertTrue(
             morphogenCell.logicalRadius < plainCell.logicalRadius,
             "only the morphogen-bearing daughter should express the Contract fate (smaller radius), and it " +

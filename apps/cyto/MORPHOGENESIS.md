@@ -533,6 +533,15 @@ ingredient (without it diffusion flattens the gradient to nothing).
 > SimulifeHub's genes 0-5). The metabolic-loop morphogen is unaffected (its sink *consumes* it ⇒ canDiffuse
 > ⇒ it still spreads). This is what lets a core **determinant** be *produced on demand and stay isolated*.
 
+> **2026-07-13 — bare atoms are universally permeable (elements diffuse freely).** The `canDiffuse` gate now
+> applies to **molecules only**: the single-atom elements `a`/`b`/`c` diffuse to/from every cell both ways
+> regardless of genome (a cell can always draw the feedstock it builds from, e.g. import `b` to make `bb`).
+> The genome-gated selective-uptake, Import/Export one-way gates, and produce-without-diffuse split all stand
+> for **molecules**. Consequence: **a trace determinant/morphogen must be a *molecule*, not a bare atom** — a
+> monomer morphogen would now equilibrate across the colony. (Motivation: a reduced genome that synthesises
+> `bb` from `b` but never catabolises a `b`-bond had no inward reach to `b` and could never acquire its own
+> feedstock — an emergent dead-end from an over-broad rule.)
+
 **The metabolic-loop morphogen.** With primary energy molecule `P` and morphogen `M`:
 - **Source (centre only):** `Break P IF <determinant X> : FormBond → M` — spends the primary molecule to make
   `M`; the determinant `X` localises it to the founder lineage.
@@ -559,7 +568,8 @@ spread dial; editable in the gene editor.
 
 (The §C *seeded sensed-only* determinant — never produced — still works, but the **synthesised** determinant
 above is better: it's *retained* (canHold) rather than leaking to env, and can be made on demand. `sensing ≠
-permeability` still holds — a sensed-only species opens no channel.)
+permeability` still holds — a sensed-only species opens no channel. **All three roles must be *molecules***
+since 2026-07-13 — bare atoms diffuse freely and can't be trace species; e.g. use the homodimer `bb`, not `b`.)
 
 **Honest caveats (empirical — confirm by probing).** (1) **Integer-floor diffusion truncates the tail:**
 `⌊count/(degree+1)⌋` floors to 0 at low counts, so `M` stops spreading once thin (near-source counts are large

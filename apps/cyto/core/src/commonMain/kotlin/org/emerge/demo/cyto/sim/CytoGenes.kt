@@ -247,19 +247,26 @@ class Handleable(
      *  species the genome produces or uses is kept in the cell, not shed to the environment. */
     fun canHold(id: Int): Boolean = reaches(id, bondMask, atomMask)
 
-    /** Can species [id] diffuse **into** the cell — reachable by inward metabolism (Break/Convert) or an
-     *  [ActionType.Import] gate. */
-    fun canDiffuseIn(id: Int): Boolean = reaches(id, diffuseInBondMask, diffuseInAtomMask)
+    /** The element alphabet — the single-atom monomers a/b/c — is **universally permeable**: every cell's
+     *  membrane passes the raw elements both ways regardless of genome, so a genome can always draw the
+     *  feedstock it builds from and shed surplus. Only **molecules** (bonds) are genome-gated (below).
+     *  Consequence: a **trace morphogen** can no longer be a bare atom — it must be a molecule. */
+    private fun isFreeMonomer(id: Int): Boolean = id >= 0 && SpeciesRegistry.atomCount(id) == 1
 
-    /** Can species [id] diffuse **out of** the cell — reachable by outward metabolism (Break/Convert) or an
-     *  [ActionType.Export] gate. */
-    fun canDiffuseOut(id: Int): Boolean = reaches(id, diffuseOutBondMask, diffuseOutAtomMask)
+    /** Can species [id] diffuse **into** the cell — a free monomer (always), or a molecule reachable by
+     *  inward metabolism (Break/Convert) or an [ActionType.Import] gate. */
+    fun canDiffuseIn(id: Int): Boolean = isFreeMonomer(id) || reaches(id, diffuseInBondMask, diffuseInAtomMask)
 
-    /** Can the cell **diffuse** species [id] to/from welded neighbours in *either* direction — species it
-     *  **metabolises** (Break/Convert) or gates (Import/Export), i.e. resources/signals *in flux*. A species
-     *  the genome merely **synthesises** (FormBond) and never consumes is **intracellular**: held + readable,
-     *  but never shared — cell-private memory / a non-spreading determinant (MORPHOGENESIS.md §Morphogens for
-     *  shape: produce-without-diffuse, the intra-vs-inter-cellular morphogen split). */
+    /** Can species [id] diffuse **out of** the cell — a free monomer (always), or a molecule reachable by
+     *  outward metabolism (Break/Convert) or an [ActionType.Export] gate. */
+    fun canDiffuseOut(id: Int): Boolean = isFreeMonomer(id) || reaches(id, diffuseOutBondMask, diffuseOutAtomMask)
+
+    /** Can the cell **diffuse** species [id] to/from welded neighbours in *either* direction — a free monomer
+     *  (always) or a **molecule** it **metabolises** (Break/Convert) or gates (Import/Export), i.e.
+     *  resources/signals *in flux*. A molecule the genome merely **synthesises** (FormBond) and never consumes
+     *  is **intracellular**: held + readable, but never shared — cell-private memory / a non-spreading
+     *  determinant (MORPHOGENESIS.md §Morphogens: produce-without-diffuse, the intra-vs-inter-cellular
+     *  morphogen split — which now applies to molecules only, since bare atoms are universally permeable). */
     fun canDiffuse(id: Int): Boolean = canDiffuseIn(id) || canDiffuseOut(id)
 
     private fun reaches(id: Int, bm: Int, am: Int): Boolean {

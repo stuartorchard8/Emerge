@@ -172,14 +172,17 @@ object CytoBiologyCore {
                 if (w.exchTransferIdx.size < transferN) { w.exchTransferIdx = IntArray(transferN); w.exchTransferCeffs = IntArray(transferN); w.exchTransferDir = IntArray(transferN) }
                 var t = 0
                 for (sp in species) {
+                    val isMono = SpeciesRegistry.atomCount(sp) == 1
                     val ib = w.importBias[sp] ?: 0; val eb = w.exportBias[sp] ?: 0
-                    if (ib != 0 || eb != 0 || SpeciesRegistry.atomCount(sp) == 1) {
+                    if (ib != 0 || eb != 0 || isMono) {
                         w.exchTransferIdx[t] = sp
-                        // Import biases the target down (inward-only, dir +1); Export biases it up
-                        // (outward-only, dir -1); an unbiased monomer stays at its raw count (bidirectional).
+                        // A monomer (element) always balances freely toward its ambient level (bidirectional,
+                        // dir 0) — the Import/Export one-way gates apply to MOLECULES only. For a molecule,
+                        // Import biases the target down (inward-only, dir +1) and Export biases it up
+                        // (outward-only, dir -1).
                         when {
-                            ib != 0 -> { w.exchTransferCeffs[t] = (cyt.count(sp) - ib).coerceAtLeast(0); w.exchTransferDir[t] = 1 }
-                            eb != 0 -> { w.exchTransferCeffs[t] = cyt.count(sp) + eb; w.exchTransferDir[t] = -1 }
+                            !isMono && ib != 0 -> { w.exchTransferCeffs[t] = (cyt.count(sp) - ib).coerceAtLeast(0); w.exchTransferDir[t] = 1 }
+                            !isMono && eb != 0 -> { w.exchTransferCeffs[t] = cyt.count(sp) + eb; w.exchTransferDir[t] = -1 }
                             else -> { w.exchTransferCeffs[t] = cyt.count(sp); w.exchTransferDir[t] = 0 }
                         }
                         t++

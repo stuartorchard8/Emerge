@@ -72,11 +72,11 @@ class CytoGoldenTest {
     // the relative slice of the doubled torus). growth + interact shift (light-driven trajectories); the
     // no/low-light mutation/weld/sticky goldens are unaffected.
     private val GROWTH = mapOf(
-        "meta" to "cbed7de57f2b67e2",
-        "physics" to "64ed96733cfbbcbd",
-        "biology" to "30cd0cef1d8000b8",
+        "meta" to "6690f1e62190d995",
+        "physics" to "f2f5a875aa1e7ec8",
+        "biology" to "1d8531507fd443d2",
         "topology" to "cbf29ce484222325",
-        "grid" to "b9a770c0d017cf0",
+        "grid" to "f9e4287b7637b92f",
     )
     // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
     // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
@@ -157,10 +157,10 @@ class CytoGoldenTest {
     // (rateDenom 0, never draw) are untouched. parallelMatchesSequential + all invariants held.
     private val MUTATION = mapOf(
         "meta" to "187ed166f49aa1ee",
-        "physics" to "a5c190d5c5580fed",
-        "biology" to "c1f1c0bbc245635d",
+        "physics" to "546c1052b9bf32a1",
+        "biology" to "7cf59cd62f48b956",
         "topology" to "cbf29ce484222325",
-        "grid" to "8d2d9044724d0ae5",
+        "grid" to "4cdde19abbecd20e",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     // Re-baselined 2026-07-05: restored LIGHT_QUANTA_SCALE 60k→120k (matter viability) +
@@ -177,10 +177,10 @@ class CytoGoldenTest {
     // Re-baselined 2026-07-09 (#2): LIGHT_FALLOFF scales with the world (see GROWTH #2).
     private val INTERACT = mapOf(
         "meta" to "fd92edb8d415aaa8",
-        "physics" to "6d9a063b270427a4",
-        "biology" to "2c7616e17f007281",
+        "physics" to "75d0073c4549c4bf",
+        "biology" to "6d125f86c8d49b4f",
         "topology" to "cbf29ce484222325",
-        "grid" to "5d932fd270eee021",
+        "grid" to "a5b930bc8f65c649",
     )
 
     @Test
