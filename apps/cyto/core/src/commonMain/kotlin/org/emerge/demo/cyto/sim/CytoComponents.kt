@@ -29,6 +29,10 @@ data class CytoCellComponent(
      *  FormBond genes). Derived, published for the renderer's "building" flow (flow 3); never fed back into
      *  sim state, excluded from the golden digest. Empty when the cell built nothing this tick. */
     val cytToBio: Map<String, Int> = emptyMap(),
+    /** Visual read-model (LIVING_WORLD_PLAN.md §4): species→count released BIO→ENV by decay this tick (a
+     *  single degraded species per tick). Published for the renderer's "decay" flow (flow 4); same
+     *  derived-only, golden-excluded constraints as [cytToBio]. Empty when nothing decayed. */
+    val bioToEnv: Map<String, Int> = emptyMap(),
 )
 
 /**

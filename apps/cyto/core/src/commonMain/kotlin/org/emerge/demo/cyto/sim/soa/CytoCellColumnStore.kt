@@ -5,6 +5,7 @@ import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.MoleculeStore
+import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.sim.core.ecs.soa.ColumnStore
 import org.emerge.sim.core.physics.primitives.Frac
 
@@ -40,6 +41,10 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
     // straight into the front column at the biology writeback barrier (not double-buffered — it's a
     // derived per-tick signal, never read back into sim state). Published via [gather] for the renderer.
     var cytToBio = arrayOfNulls<MoleculeStore>(0); private set
+    // Visual read-model (front only): BIO→ENV decay this tick — a single species id + count (degrade
+    // sheds one species per tick). speciesId = -1 / count = 0 means nothing decayed. Same lifecycle.
+    var bioToEnvSpecies = IntArray(0); private set
+    var bioToEnvCount = IntArray(0); private set
 
     // Double-buffer: back buffers swapped with front at the biology write-back barrier.
     // CellWork.reset() reads front → mutates CellWork's back buffer; writeback() swaps.
@@ -59,6 +64,8 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         cytoplasm = cytoplasm.copyOf(capacity)
         biomass = biomass.copyOf(capacity)
         cytToBio = cytToBio.copyOf(capacity)
+        bioToEnvSpecies = bioToEnvSpecies.copyOf(capacity)
+        bioToEnvCount = bioToEnvCount.copyOf(capacity)
         backCytoplasm = backCytoplasm.copyOf(capacity)
         backBiomass = backBiomass.copyOf(capacity)
     }
@@ -95,6 +102,8 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         biomass[slot] = MoleculeStore.of(value.biomass, CytoTuning.CELL_CHEM_CAP)
         // Derived visual signal: not persisted through scatter (starts empty; refilled each tick at writeback).
         cytToBio[slot] = null
+        bioToEnvSpecies[slot] = -1
+        bioToEnvCount[slot] = 0
         genome[slot] = value.genome
         // Also initialize back buffers — the swap will pick them up.
         // For freshly-scattered entities (spawn), the back buffer starts as a copy.
@@ -113,6 +122,8 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         sticky = sticky[slot],
         stickyTemp = stickyTemp[slot],
         cytToBio = cytToBio[slot]?.toStringMap() ?: emptyMap(),
+        bioToEnv = if (bioToEnvCount[slot] > 0 && bioToEnvSpecies[slot] >= 0)
+            mapOf(SpeciesRegistry.string(bioToEnvSpecies[slot]) to bioToEnvCount[slot]) else emptyMap(),
     )
 
     override fun moveSlot(dst: Int, src: Int) {
@@ -125,6 +136,8 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         cytoplasm[dst] = cytoplasm[src]
         biomass[dst] = biomass[src]
         cytToBio[dst] = cytToBio[src]
+        bioToEnvSpecies[dst] = bioToEnvSpecies[src]
+        bioToEnvCount[dst] = bioToEnvCount[src]
         // Also move the back-buffer references so compaction stays in sync.
         backCytoplasm[dst] = backCytoplasm[src]
         backBiomass[dst] = backBiomass[src]
