@@ -18,6 +18,7 @@ import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.sqrt
 import kotlin.math.min
@@ -177,6 +178,9 @@ class CytoRenderer {
     /** Per-cell eased build intensity, keyed by EntityId.value; evicted when the cell is absent. */
     private val buildIntensity = HashMap<Int, Float>()
     private val buildSeen = HashSet<Int>()
+    /** Global pulse phase [0,1), advanced once per rendered frame — the expansion clock for the build
+     *  glow (per-cell it's offset so cells don't pulse in lockstep). Frame-driven, not tick-driven. */
+    private var pulsePhase = 0f
     private val matCircS = Mat4.scratch()
     private val matCircT = Mat4.scratch()
     private val matCircM = Mat4.scratch()
@@ -322,6 +326,8 @@ class CytoRenderer {
         }
 
         buildSeen.clear()
+        pulsePhase += BUILD_PULSE_SPEED
+        if (pulsePhase >= 1f) pulsePhase -= 1f
         var buildCount = 0
         for ((id, cell) in cells) {
             val transform = transforms[id] ?: continue
@@ -337,19 +343,33 @@ class CytoRenderer {
             val inten = ((buildIntensity[eid] ?: 0f) + (buildTarget - (buildIntensity[eid] ?: 0f)) * BUILD_EASE)
             buildIntensity[eid] = inten
             buildSeen.add(eid)
-            if (inten > BUILD_MIN_VISIBLE && buildCount < BUILD_MAX) {
+            if (inten > BUILD_MIN_VISIBLE) {
                 averageSpeciesColor(cell.cytToBio, speciesTmp)
-                matCircS.setScale(radius, radius)
-                matCircT.setTranslation(cx, cy)
-                matCircM.setProduct(matCircT, matCircS)
-                mvpCirc.setProduct(matP, matCircM)
-                mvpCirc.copyInto(buildMatrices, buildCount * Mat4.FLOATS)
-                buildPrimaryIds[buildCount] = 0f
-                buildShapes[buildCount] = 0f
-                buildAlphas[buildCount] = (inten * BUILD_MAX_ALPHA).coerceIn(0f, 1f)
-                val tb = buildCount * 3
-                buildTints[tb] = speciesTmp[0]; buildTints[tb + 1] = speciesTmp[1]; buildTints[tb + 2] = speciesTmp[2]
-                buildCount++
+                // Emit BUILD_PULSES staggered discs that each grow from the cell centre (r=0) out to its
+                // rim (r=radius), fading their opacity to zero over the expansion — so the cell reads as a
+                // continuous outward pulse. The per-cell phase offset (golden-ratio hash of the id) keeps
+                // neighbouring cells from pulsing in lockstep.
+                val offRaw = eid * 0.61803398f
+                val base = pulsePhase + (offRaw - floor(offRaw))
+                for (k in 0 until BUILD_PULSES) {
+                    if (buildCount >= BUILD_MAX) break
+                    var frac = base + k.toFloat() / BUILD_PULSES
+                    frac -= floor(frac)                                  // wrap to [0,1)
+                    val a = inten * (1f - frac) * BUILD_MAX_ALPHA        // fade out as it expands
+                    if (a <= 0.003f) continue
+                    val r = frac * radius                                // grow 0 → cell radius
+                    matCircS.setScale(r, r)
+                    matCircT.setTranslation(cx, cy)
+                    matCircM.setProduct(matCircT, matCircS)
+                    mvpCirc.setProduct(matP, matCircM)
+                    mvpCirc.copyInto(buildMatrices, buildCount * Mat4.FLOATS)
+                    buildPrimaryIds[buildCount] = 0f
+                    buildShapes[buildCount] = 0f
+                    buildAlphas[buildCount] = a.coerceIn(0f, 1f)
+                    val tb = buildCount * 3
+                    buildTints[tb] = speciesTmp[0]; buildTints[tb + 1] = speciesTmp[1]; buildTints[tb + 2] = speciesTmp[2]
+                    buildCount++
+                }
             }
 
             matMS.setScale(2f * radius, 2f * radius)
@@ -632,9 +652,13 @@ class CytoRenderer {
         const val BUILD_EASE = 0.08f
         // Converted-count that maps to full build intensity (target saturates here).
         const val BUILD_REF = 120f
-        // Peak disc opacity at full intensity (kept < 1 so the cell colour still reads through the glow).
+        // Peak opacity of a pulse at birth (frac→0), at full intensity. Additive; a few pulses overlap.
         const val BUILD_MAX_ALPHA = 0.7f
-        // Below this eased intensity the disc is skipped (fully cooled down).
+        // Below this eased intensity the glow is skipped (fully cooled down).
         const val BUILD_MIN_VISIBLE = 0.02f
+        // Number of staggered expansion pulses per building cell — so there's always one mid-flight.
+        const val BUILD_PULSES = 3
+        // Phase advanced per rendered frame; 1/speed frames per full expansion (~0.015 ⇒ ≈1.1s at 60fps).
+        const val BUILD_PULSE_SPEED = 0.015f
     }
 }
