@@ -12,6 +12,7 @@ import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.ActionType
 import org.emerge.demo.cyto.sim.AUTOTROPH_GENES
 import org.emerge.demo.cyto.sim.AUTOTROPH_GROW_ONLY_GENES
+import org.emerge.demo.cyto.sim.AUTOTROPH_MOVE_GENE
 import org.emerge.demo.cyto.sim.AUTOTROPH_REPAIR_GENE
 import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.FounderSpec
@@ -41,6 +42,7 @@ object CampaignContent {
     private const val GROUP_GROW = "Grow"
     private const val GROUP_REPRODUCE = "Reproduce"
     private const val GROUP_HOLD = "Hold Together"
+    private const val GROUP_MOVE = "Move"
 
     private fun List<Gene>.tagged(group: String): List<Gene> = map { it.copy(group = group) }
 
@@ -54,6 +56,11 @@ object CampaignContent {
 
     /** The cohesion subsystem Ch6's "+ ADD HOLD TOGETHER" inserts: a Repair gene, pre-tagged. */
     private val HOLD_TOGETHER_GENES = listOf(AUTOTROPH_REPAIR_GENE).tagged(GROUP_HOLD)
+
+    /** The locomotion subsystem Ch7's "+ ADD MOVE" inserts: a single Contract gene, pre-tagged. Powered by
+     *  breaking the `rg` reserve, it flexes the cell in place and drives it into constant metabolism (so the
+     *  Living-World flows finally show). Phased across a body it becomes swimming — held for Ch8. */
+    private val MOVE_GENES = listOf(AUTOTROPH_MOVE_GENE).tagged(GROUP_MOVE)
 
     /** The campaign's substrate: a single autotroph whose reproduction gene has been removed, so it grows to
      *  full size and then holds there, stationary and self-repairing but unable to spread (see
@@ -92,7 +99,19 @@ object CampaignContent {
         GeneGroup(GROUP_GROW, 0x3E9E5AFFL),
         GeneGroup(GROUP_REPRODUCE, 0xC77DD0FFL, insert = REPRODUCE_GENES),
         GeneGroup(GROUP_HOLD, 0xD98C40FFL, insert = HOLD_TOGETHER_GENES),
+        GeneGroup(GROUP_MOVE, 0xD0504AFFL, insert = MOVE_GENES),
     ))
+
+    /** Ch7 substrate: the Ch6 end-state - a welded grow+reproduce autotroph that also holds itself together
+     *  (the Repair "Hold Together" gene already inserted). It's tough and self-mending but inert; Ch7 adds a
+     *  Contract "Move" gene so it flexes and comes alive. Grow/Reproduce tagged by role; the trailing Repair
+     *  carries its Hold-Together tag. */
+    private val GROW_REPRODUCE_WELDED_HOLD = CytoScenario.DEFAULT.copy(
+        name = "Campaign",
+        founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GENES.map { g ->
+            g.taggedByRole().let { if (it.action.type == ActionType.Mitosis) it.copy(action = it.action.copy(rejectMother = false)) else it }
+        } + HOLD_TOGETHER_GENES)),
+    )
 
     val CHAPTERS: List<Chapter> = listOf(
         chapter1FirstContact(),
@@ -101,6 +120,7 @@ object CampaignContent {
         chapter4Reproduce(),
         chapter5HoldTogether(),
         chapter6HoldUnderStrain(),
+        chapter7Move(),
     )
 
     val ORDER: List<String> = CHAPTERS.map { it.id }
@@ -398,6 +418,60 @@ object CampaignContent {
             ),
             Step(
                 text = "Grow, reproduce, cohere, and now mend under stress. Your single cell has become a tough, mobile body that repairs its own damage - a real creature.",
+                gate = Gate.Next,
+                allow = WATCH,
+                world = WorldRun.Live,
+            ),
+        ),
+    )
+
+    /** Act II close / bridge to Act III (locomotion arc). In Ch5-6 the *player* supplied the motion, dragging
+     *  the body around to feed it. Ch7 starts handing that job to the organism. The player inserts the **Move**
+     *  subsystem - a single light-powered Contract gene - and watches the body clench through the day and relax
+     *  at night (contraction coupled to sunlight). Crucially the squeeze is even and symmetric, so the body
+     *  pulls in on itself and goes *nowhere* - the deliberate lesson that sets up Ch8 (a morphogen gradient ->
+     *  asymmetric contraction -> real directional movement) and Ch9 (a metabolic clock to decouple the beat
+     *  from day/night). See [AUTOTROPH_MOVE_GENE]. */
+    private fun chapter7Move() = Chapter(
+        id = "ch07-move",
+        act = 2,
+        title = "A Muscle",
+        blurb = "You've been dragging this body to its food. Time it learned to move itself.",
+        scenario = GROW_REPRODUCE_WELDED_HOLD,
+        grouping = CAMPAIGN_GROUPING,
+        insertableGroups = setOf(GROUP_MOVE),
+        steps = listOf(
+            Step(
+                text = "Twice now, YOU have been the muscle - dragging this body around to find it food. A real creature moves itself. Let's start giving it that power.",
+                gate = Gate.Next,
+                allow = WATCH,
+            ),
+            Step(
+                text = "Select the cell and add the MOVE group. It's a single Contract gene - a muscle. A contracting cell clenches inward, pulling itself smaller.",
+                gate = Gate.World(
+                    "Add the Move group",
+                    met = { (it.focused?.geneCount ?: 0) >= 5 },
+                ),
+                allow = LOOK,
+                spotlight = Spotlight(hint = "+ ADD MOVE, below the groups"),
+                detail = "Like its grow genes, this muscle runs on light - so it can only clench while daylight is on it. In the dark it goes slack.",
+            ),
+            Step(
+                text = "Speed up and watch it through a day and a night. As daylight sweeps over it, the body clenches up tight and small - the muscle firing. As night follows, the light leaves and it relaxes slowly back to full size.",
+                gate = Gate.Did(PlayerAction.ChangedSpeed, "Change the sim speed"),
+                allow = WATCH,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "SLOW / PAUSE / FAST, top-left"),
+                detail = "It may sit in shadow a while first - wait for the bright band to reach it, then you'll see it pull in. It breathes in time with the sun.",
+            ),
+            Step(
+                text = "So it can clench - but look where it ends up - exactly where it started. It squeezes evenly, all over at once, so every pull cancels every other. An even contraction just pulses on the spot. It gets nowhere.",
+                gate = Gate.Next,
+                allow = WATCH,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "To actually travel, the body has to squeeze LOPSIDED - cells on one side pulling harder than the other, so it lurches that way. To do that, the cells must first tell which side they're on. Building that sense of place is next.",
                 gate = Gate.Next,
                 allow = WATCH,
                 world = WorldRun.Live,

@@ -671,6 +671,20 @@ val AUTOTROPH_GENES: List<Gene> = listOf(
 val AUTOTROPH_REPAIR_GENE: Gene =
     Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair))
 
+/** A **muscle** gene for the autotroph — the campaign's first taste of locomotion. Under light, while the
+ *  cell has real size, [ActionType.Contract] clenches it smaller. It's **light-powered** (not break-powered)
+ *  on purpose: (1) the calm autotroph keeps its energy locked in biomass, not in a breakable `rg` reserve, so
+ *  a BreakBond muscle would never fire on it; (2) coupling contraction to sunlight is itself the teaching
+ *  point — the body visibly **clenches through the day and relaxes at night** (Light gone ⇒ Contract can't
+ *  fire ⇒ CytoBiologyCore's radius-elasticity swells it back to the biomass baseline). Contract only ever
+ *  shrinks (canContract, gated on radius > MIN_RADIUS) and touches only the radius, so the squeeze is **even
+ *  and symmetric** — the whole body pulls in on itself and nets zero travel. That "flexes but goes nowhere"
+ *  is deliberate: it motivates **asymmetric contraction** via a morphogen gradient (Ch8) for real directional
+ *  movement, and a **metabolic clock** (Ch9) to decouple the beat from the day/night cycle. The campaign's
+ *  "Move" subsystem, inserted in Ch7. */
+val AUTOTROPH_MOVE_GENE: Gene =
+    Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(GROW_BIOMASS / 2)), GeneAction(ActionType.Contract), efficiency = 15)
+
 /**
  * The autotroph with its **reproduction gene removed** — a self-sustaining organism that grows to full size
  * and then holds there, but never divides or spreads. It bonds r+g into `rg` under light and locks `rg` into
