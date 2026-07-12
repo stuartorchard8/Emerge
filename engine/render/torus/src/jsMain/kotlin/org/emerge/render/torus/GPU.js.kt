@@ -307,6 +307,10 @@ actual object GPU {
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
     }
 
+    actual fun setBlendFuncSrcAlphaOne() {
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE)
+    }
+
     // -- Scissor --
 
     actual fun enableScissorTest() {

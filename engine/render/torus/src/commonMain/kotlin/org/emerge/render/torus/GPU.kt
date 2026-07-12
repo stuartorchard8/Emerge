@@ -68,6 +68,8 @@ expect object GPU {
     fun enableBlend()
     fun disableBlend()
     fun setBlendFuncSrcAlphaOneMinusSrcAlpha()
+    /** Additive blend (src·srcAlpha + dst): for glows/particles that should only ever brighten. */
+    fun setBlendFuncSrcAlphaOne()
 
     fun enableScissorTest()
     fun disableScissorTest()
