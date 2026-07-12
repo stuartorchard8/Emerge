@@ -9,8 +9,11 @@ import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.render.torus.ui.UiRectRenderer
+import org.emerge.render.torus.shader.CircleShader
 import org.emerge.render.torus.GPU
+import org.emerge.render.torus.GpuFloatBuffer
 import org.emerge.render.torus.Mat4
+import org.emerge.render.torus.put
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
@@ -157,7 +160,47 @@ class CytoRenderer {
     private val mInstColor = FloatArray(MATTER_MAX_LEAVES * 4)
     private val matColorTmp = FloatArray(4)
 
-    init { bakeFieldColors(0L) }
+    // ── metabolic activity fields (LIVING_WORLD_PLAN.md §5) ──────────────────────────────────────
+    // Flow 3 (CYT→BIO "building"): a soft species-coloured disc drawn over each building cell, its
+    // opacity = a per-cell eased intensity that warms up as the cell starts converting cytoplasm to
+    // biomass and cools down as it stops. Rendered with the engine's instanced soft-disc shader.
+    // The VAO is bound *before* the shader is constructed so the shader's instance attributes attach
+    // to it; the base geometry (a triangle circumscribing the unit disc) is uploaded to location 0.
+    private val circleVao = GPU.genAndBindVertexArrays()
+    private val circleShader = CircleShader()
+    private val circleVbo = GPU.genBuffers()
+    private val buildMatrices = FloatArray(BUILD_MAX * Mat4.FLOATS)
+    private val buildPrimaryIds = FloatArray(BUILD_MAX)
+    private val buildShapes = FloatArray(BUILD_MAX)      // all 0 ⇒ soft disc
+    private val buildAlphas = FloatArray(BUILD_MAX)
+    private val buildTints = FloatArray(BUILD_MAX * 3)
+    /** Per-cell eased build intensity, keyed by EntityId.value; evicted when the cell is absent. */
+    private val buildIntensity = HashMap<Int, Float>()
+    private val buildSeen = HashSet<Int>()
+    private val matCircS = Mat4.scratch()
+    private val matCircT = Mat4.scratch()
+    private val matCircM = Mat4.scratch()
+    private val mvpCirc = Mat4.scratch()
+    private val speciesTmp = FloatArray(3)
+
+    init {
+        bakeFieldColors(0L)
+        uploadCircleGeom()
+    }
+
+    /** Upload the circumscribing triangle the [CircleShader] rasterises the unit disc within (its
+     *  fragment shader discards outside `dot(local,local) > 1`). Bound to the shared [circleVao]. */
+    private fun uploadCircleGeom() {
+        GPU.bindVertexArray(circleVao)
+        val verts = floatArrayOf(-1f, 1.7320508f, 2f, 0f, -1f, -1.7320508f)
+        val buf = GpuFloatBuffer(verts.size)
+        buf.put(verts).flip()
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, circleVbo)
+        GPU.enableVertexAttribArray(0)
+        GPU.putVertexAttribPointer(0, 2, GPU.FLOAT, false, 2 * 4, 0)
+        GPU.bufferData(GPU.ARRAY_BUFFER, verts.size, buf, GPU.STATIC_DRAW)
+        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
+    }
 
     /** Bake the light-field heatmap colours for sim-time [tick]. Static field → baked once at init; the
      *  moving field → re-baked each frame in [draw] so the daylight band animates. */
@@ -278,12 +321,36 @@ class CytoRenderer {
             }
         }
 
+        buildSeen.clear()
+        var buildCount = 0
         for ((id, cell) in cells) {
             val transform = transforms[id] ?: continue
             val collider = colliders[id] ?: continue
             val radius = CytoUnits.toLogical(collider.radius)
             val cx = CytoUnits.toLogical(transform.pos.x)
             val cy = CytoUnits.toLogical(transform.pos.y)
+
+            // Flow 3 (CYT→BIO): ease this cell's build intensity toward this tick's converted amount,
+            // then stage a soft disc if it's building enough to see. Keyed by EntityId; evicted below.
+            val eid = id.value
+            val buildTarget = buildTargetFor(cell)
+            val inten = ((buildIntensity[eid] ?: 0f) + (buildTarget - (buildIntensity[eid] ?: 0f)) * BUILD_EASE)
+            buildIntensity[eid] = inten
+            buildSeen.add(eid)
+            if (inten > BUILD_MIN_VISIBLE && buildCount < BUILD_MAX) {
+                averageSpeciesColor(cell.cytToBio, speciesTmp)
+                matCircS.setScale(radius, radius)
+                matCircT.setTranslation(cx, cy)
+                matCircM.setProduct(matCircT, matCircS)
+                mvpCirc.setProduct(matP, matCircM)
+                mvpCirc.copyInto(buildMatrices, buildCount * Mat4.FLOATS)
+                buildPrimaryIds[buildCount] = 0f
+                buildShapes[buildCount] = 0f
+                buildAlphas[buildCount] = (inten * BUILD_MAX_ALPHA).coerceIn(0f, 1f)
+                val tb = buildCount * 3
+                buildTints[tb] = speciesTmp[0]; buildTints[tb + 1] = speciesTmp[1]; buildTints[tb + 2] = speciesTmp[2]
+                buildCount++
+            }
 
             matMS.setScale(2f * radius, 2f * radius)
             matMT.setTranslation(cx, cy)
@@ -342,8 +409,49 @@ class CytoRenderer {
                 count = count,
             )
         }
+        // Evict intensity state for cells that vanished (died/off-frame) — same pattern as focusNeighbours.
+        if (buildIntensity.size > buildSeen.size) buildIntensity.keys.retainAll(buildSeen)
+
+        // Flow 3: draw the staged build discs on top of the cell discs (LIVING_WORLD_PLAN.md §5 render order).
+        // Additive so the "building" glow reads as a brightening core on a cell of any colour (a balanced
+        // rgb builder's average colour is near-white, which an alpha blend would wash out invisibly).
+        if (buildCount > 0) {
+            GPU.setBlendFuncSrcAlphaOne()
+            GPU.bindVertexArray(circleVao)
+            circleShader.drawInstanced(
+                vOffset = 0,
+                instanceCount = buildCount,
+                matricesColMajor = buildMatrices,
+                primaryIds = buildPrimaryIds,
+                shapes = buildShapes,
+                alphas = buildAlphas,
+                tintColorsRgb = buildTints,
+            )
+            GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
+        }
 
         GPU.disableBlend()
+    }
+
+    /** This tick's normalised CYT→BIO build target for [cell] ∈ [0,1]: total converted species count this
+     *  tick over [BUILD_REF]. The per-cell easing (warm-up/cool-down) turns this into the disc opacity. */
+    private fun buildTargetFor(cell: CytoCellComponent): Float {
+        if (cell.cytToBio.isEmpty()) return 0f
+        var total = 0L
+        for ((_, count) in cell.cytToBio) total += count
+        return (total.toFloat() / BUILD_REF).coerceIn(0f, 1f)
+    }
+
+    /** Average atom-mix colour of a per-species count [map] (r→R, g→G, b→B), normalised to its peak channel
+     *  so the hue is the mix and the brightness is full. Grey-ish stays grey; a pure `rg` build reads yellow. */
+    private fun averageSpeciesColor(map: Map<String, Int>, out: FloatArray) {
+        var r = 0L; var g = 0L; var b = 0L
+        for ((species, count) in map) for (ch in species) when (ch) {
+            'r' -> r += count; 'g' -> g += count; 'b' -> b += count
+        }
+        val peak = max(r, max(g, b)).toDouble()
+        if (peak <= 0) { out[0] = 1f; out[1] = 1f; out[2] = 1f; return }
+        out[0] = (r / peak).toFloat(); out[1] = (g / peak).toFloat(); out[2] = (b / peak).toFloat()
     }
 
     /** Draw the static light field as a heatmap: project each grid cell (one torus tile) to NDC,
@@ -439,6 +547,9 @@ class CytoRenderer {
         bgShader.deleteProgram()
         fieldShader.deleteProgram()
         matterShader.deleteProgram()
+        circleShader.deleteProgram()
+        GPU.deleteBuffers(circleVbo)
+        if (circleVao != null) GPU.deleteVertexArrays(circleVao)
         GPU.deleteTextures(cellTextureId)
     }
 
@@ -514,5 +625,16 @@ class CytoRenderer {
         const val MATTER_REF_DENSITY = CytoSeed.MATTER_UNIFORM_LEVEL.toDouble()*4.0
         // Border colour: a neutral grey, visible against both the bright base fills and depleted dark ones.
         val MATTER_BORDER = floatArrayOf(0.1f, 0.1f, 0.1f)
+
+        // ── Flow 3 (CYT→BIO "building") tuning — iterate via the agent harness. ──
+        const val BUILD_MAX = CircleShader.MAX_INSTANCES
+        // Per-frame easing toward the tick's build target (warm-up / cool-down rate). ~0.08 ⇒ ≈1s ramp.
+        const val BUILD_EASE = 0.08f
+        // Converted-count that maps to full build intensity (target saturates here).
+        const val BUILD_REF = 120f
+        // Peak disc opacity at full intensity (kept < 1 so the cell colour still reads through the glow).
+        const val BUILD_MAX_ALPHA = 0.7f
+        // Below this eased intensity the disc is skipped (fully cooled down).
+        const val BUILD_MIN_VISIBLE = 0.02f
     }
 }
