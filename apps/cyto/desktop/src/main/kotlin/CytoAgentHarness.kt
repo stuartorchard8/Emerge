@@ -215,6 +215,7 @@ object CytoAgentHarness {
             for (c in controller.agentCells().sortedBy { it.id }) {
                 val s = renderer.worldToScreen(c.x, c.y)
                 sb.append("  {\"id\": ${c.id}, \"type\": \"${c.type.name}\", \"biomass\": ${c.biomass}, ")
+                sb.append("\"radius\": ${"%.3f".format(c.radius)}, ")
                 sb.append("\"selected\": ${c.selected}, \"u\": ${"%.3f".format(s[0] / RES_W)}, \"v\": ${"%.3f".format(s[1] / RES_H)}}\n")
             }
             sb.append("]")
