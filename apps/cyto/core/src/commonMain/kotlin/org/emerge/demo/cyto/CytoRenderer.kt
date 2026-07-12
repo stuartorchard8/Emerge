@@ -187,6 +187,9 @@ class CytoRenderer {
     /** Per-cell eased BIO→ENV decay intensity (flow 4), same keying/eviction as [buildIntensity]. */
     private val decayIntensity = HashMap<Int, Float>()
     private val decaySeen = HashSet<Int>()
+    /** Per-cell attack-envelope goal for the decay halo (flow 4): the shed level it's easing up toward; 0
+     *  once reached (released). Keyed/evicted with [decayIntensity]. */
+    private val decayGoal = HashMap<Int, Float>()
     /** Per-cell eased flow colour (RGB), keyed by EntityId.value — the disc/halo hue drifts toward the
      *  currently-transferring species' colour a little each frame instead of snapping, so a cell that
      *  switches which species it's building/shedding cross-fades. Evicted alongside the intensity maps. */
@@ -753,11 +756,21 @@ class CytoRenderer {
         for ((id, cell) in cells) {
             val eid = id.value
             // Decay is a rare discrete shed (one molecule every ~DEGRADE_PERIOD ticks), not a continuous
-            // flow — so model it as an impulse: jump to the shed's magnitude when it fires, then cool down
-            // slowly so each shed reads as a halo that flashes and disperses.
-            val target = decayTargetFor(cell)
+            // flow. Model each shed as an attack-release envelope: a shed latches a goal level, the halo
+            // eases *up* toward it at the build rate (BUILD_EASE — same soft fade-in as flow 3), then once
+            // it has essentially reached the goal it releases, cooling by DECAY_COOL and clearing the latch.
+            val shed = decayTargetFor(cell)
+            var goal = decayGoal[eid] ?: 0f
+            if (shed > goal) goal = shed                       // (re)start attack toward a new/bigger shed
             val prev = decayIntensity[eid] ?: 0f
-            val inten = if (target > prev) target else prev * DECAY_COOL
+            val inten: Float
+            if (prev < goal * DECAY_ATTACK_REACHED) {
+                inten = prev + (goal - prev) * BUILD_EASE      // attack: soft eased rise
+            } else {
+                inten = prev * DECAY_COOL                      // release: cool down
+                goal = 0f                                      // consume the latch (a new shed re-arms it)
+            }
+            decayGoal[eid] = goal
             decayIntensity[eid] = inten
             decaySeen.add(eid)
             // Drift the halo hue toward the just-shed species (hold it between sheds, as with the build disc).
@@ -797,6 +810,7 @@ class CytoRenderer {
         }
         if (decayIntensity.size > decaySeen.size) {
             decayIntensity.keys.retainAll(decaySeen); decayColor.keys.retainAll(decaySeen)
+            decayGoal.keys.retainAll(decaySeen)
         }
         if (count > 0) {
             GPU.setBlendFuncSrcAlphaOne()
@@ -1050,9 +1064,11 @@ class CytoRenderer {
         const val BUILD_PULSE_SPEED = 0.015f
 
         // ── Flow 4 (BIO→ENV "decay") tuning. Halo pulses from the rim (1×) out to DECAY_MAX_SCALE×. ──
-        // Impulse model: a shed jumps intensity to (count/REF), then it cools by DECAY_COOL each frame.
+        // Attack-release model: a shed latches a goal (count/REF), the halo eases up to it at BUILD_EASE,
+        // then releases and cools by DECAY_COOL each frame.
         const val DECAY_REF = 2f
         const val DECAY_COOL = 0.93f            // ~0.5s fade at 60fps
+        const val DECAY_ATTACK_REACHED = 0.97f  // fraction of the goal that counts as "reached" → release
         const val DECAY_MAX_ALPHA = 0.85f
         const val DECAY_MIN_VISIBLE = 0.02f
         const val DECAY_PULSES = 2
