@@ -15,6 +15,7 @@ import org.emerge.render.torus.GpuFloatBuffer
 import org.emerge.render.torus.Mat4
 import org.emerge.render.torus.put
 import org.emerge.sim.core.EntityId
+import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -178,6 +179,9 @@ class CytoRenderer {
     /** Per-cell eased build intensity, keyed by EntityId.value; evicted when the cell is absent. */
     private val buildIntensity = HashMap<Int, Float>()
     private val buildSeen = HashSet<Int>()
+    /** Per-cell eased BIO→ENV decay intensity (flow 4), same keying/eviction as [buildIntensity]. */
+    private val decayIntensity = HashMap<Int, Float>()
+    private val decaySeen = HashSet<Int>()
     /** Global pulse phase [0,1), advanced once per rendered frame — the expansion clock for the build
      *  glow (per-cell it's offset so cells don't pulse in lockstep). Frame-driven, not tick-driven. */
     private var pulsePhase = 0f
@@ -294,14 +298,21 @@ class CytoRenderer {
         drawLightField()
         drawMatterField(frame)
 
-        GPU.enableBlend()
-        GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
-        shader.begin(cellTextureId)
-
         val components = frame.state.components
         val cells = components.getTable<CytoCellComponent>().asMap()
         val transforms = components.getTable<TransformComponent>()
         val colliders = components.getTable<ColliderComponent>()
+
+        // One pulse-clock tick per rendered frame, shared by the metabolic fields (flows 3 & 4).
+        pulsePhase += BUILD_PULSE_SPEED
+        if (pulsePhase >= 1f) pulsePhase -= 1f
+
+        GPU.enableBlend()
+        // Flow 4 (BIO→ENV decay) draws first, behind the cell discs (LIVING_WORLD_PLAN.md §5 render order).
+        drawDecayField(cells, transforms, colliders)
+
+        GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
+        shader.begin(cellTextureId)
 
         // CSR-based spring access (avoids SimState SpringConstraintComponent allocation)
         val springData = frame.springData
@@ -326,8 +337,6 @@ class CytoRenderer {
         }
 
         buildSeen.clear()
-        pulsePhase += BUILD_PULSE_SPEED
-        if (pulsePhase >= 1f) pulsePhase -= 1f
         var buildCount = 0
         for ((id, cell) in cells) {
             val transform = transforms[id] ?: continue
@@ -451,6 +460,82 @@ class CytoRenderer {
         }
 
         GPU.disableBlend()
+    }
+
+    /**
+     * Flow 4 (BIO→ENV decay): a species-coloured halo that pulses outward from each decaying cell's rim
+     * into the surrounding environment, drawn **behind** the cell discs (so only the annulus past the cell
+     * radius shows) and additively (a faint dispersing haze against the dark background / light field).
+     * Same eased warm-up/cool-down envelope and staggered-pulse machinery as flow 3.
+     */
+    private fun drawDecayField(
+        cells: Map<EntityId, CytoCellComponent>,
+        transforms: ComponentTable<TransformComponent>,
+        colliders: ComponentTable<ColliderComponent>,
+    ) {
+        decaySeen.clear()
+        var count = 0
+        for ((id, cell) in cells) {
+            val eid = id.value
+            // Decay is a rare discrete shed (one molecule every ~DEGRADE_PERIOD ticks), not a continuous
+            // flow — so model it as an impulse: jump to the shed's magnitude when it fires, then cool down
+            // slowly so each shed reads as a halo that flashes and disperses.
+            val target = decayTargetFor(cell)
+            val prev = decayIntensity[eid] ?: 0f
+            val inten = if (target > prev) target else prev * DECAY_COOL
+            decayIntensity[eid] = inten
+            decaySeen.add(eid)
+            if (inten <= DECAY_MIN_VISIBLE) continue
+            val transform = transforms[id] ?: continue
+            val collider = colliders[id] ?: continue
+            val radius = CytoUnits.toLogical(collider.radius)
+            val cx = CytoUnits.toLogical(transform.pos.x)
+            val cy = CytoUnits.toLogical(transform.pos.y)
+            averageSpeciesColor(cell.bioToEnv, speciesTmp)
+            val offRaw = eid * 0.61803398f
+            val base = pulsePhase + (offRaw - floor(offRaw))
+            for (k in 0 until DECAY_PULSES) {
+                if (count >= BUILD_MAX) break
+                var frac = base + k.toFloat() / DECAY_PULSES
+                frac -= floor(frac)
+                val a = inten * (1f - frac) * DECAY_MAX_ALPHA
+                if (a <= 0.003f) continue
+                val r = radius * (1f + frac * (DECAY_MAX_SCALE - 1f))   // grow from the rim outward
+                matCircS.setScale(r, r)
+                matCircT.setTranslation(cx, cy)
+                matCircM.setProduct(matCircT, matCircS)
+                mvpCirc.setProduct(matP, matCircM)
+                mvpCirc.copyInto(buildMatrices, count * Mat4.FLOATS)
+                buildPrimaryIds[count] = 0f
+                buildShapes[count] = 0f
+                buildAlphas[count] = a.coerceIn(0f, 1f)
+                val tb = count * 3
+                buildTints[tb] = speciesTmp[0]; buildTints[tb + 1] = speciesTmp[1]; buildTints[tb + 2] = speciesTmp[2]
+                count++
+            }
+        }
+        if (decayIntensity.size > decaySeen.size) decayIntensity.keys.retainAll(decaySeen)
+        if (count > 0) {
+            GPU.setBlendFuncSrcAlphaOne()
+            GPU.bindVertexArray(circleVao)
+            circleShader.drawInstanced(
+                vOffset = 0,
+                instanceCount = count,
+                matricesColMajor = buildMatrices,
+                primaryIds = buildPrimaryIds,
+                shapes = buildShapes,
+                alphas = buildAlphas,
+                tintColorsRgb = buildTints,
+            )
+        }
+    }
+
+    /** This tick's normalised BIO→ENV decay target for [cell] ∈ [0,1]: released count over [DECAY_REF]. */
+    private fun decayTargetFor(cell: CytoCellComponent): Float {
+        if (cell.bioToEnv.isEmpty()) return 0f
+        var total = 0L
+        for ((_, count) in cell.bioToEnv) total += count
+        return (total.toFloat() / DECAY_REF).coerceIn(0f, 1f)
     }
 
     /** This tick's normalised CYT→BIO build target for [cell] ∈ [0,1]: total converted species count this
@@ -660,5 +745,14 @@ class CytoRenderer {
         const val BUILD_PULSES = 3
         // Phase advanced per rendered frame; 1/speed frames per full expansion (~0.015 ⇒ ≈1.1s at 60fps).
         const val BUILD_PULSE_SPEED = 0.015f
+
+        // ── Flow 4 (BIO→ENV "decay") tuning. Halo pulses from the rim (1×) out to DECAY_MAX_SCALE×. ──
+        // Impulse model: a shed jumps intensity to (count/REF), then it cools by DECAY_COOL each frame.
+        const val DECAY_REF = 2f
+        const val DECAY_COOL = 0.93f            // ~0.5s fade at 60fps
+        const val DECAY_MAX_ALPHA = 0.85f
+        const val DECAY_MIN_VISIBLE = 0.02f
+        const val DECAY_PULSES = 2
+        const val DECAY_MAX_SCALE = 1.5f
     }
 }
