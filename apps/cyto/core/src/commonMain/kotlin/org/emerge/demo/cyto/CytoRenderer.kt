@@ -1032,8 +1032,9 @@ class CytoRenderer {
 
         // ── Flow 3 (CYT→BIO "building") tuning — iterate via the agent harness. ──
         const val BUILD_MAX = CircleShader.MAX_INSTANCES
-        // Per-frame easing toward the tick's build target (warm-up / cool-down rate). ~0.08 ⇒ ≈1s ramp.
-        const val BUILD_EASE = 0.08f
+        // Per-frame easing toward the tick's build target (warm-up / cool-down rate). Lower ⇒ gentler
+        // fade-in; 0.03 ⇒ ≈2-3s ramp so the build glow eases in softly rather than popping on.
+        const val BUILD_EASE = 0.03f
         // Per-frame easing of the build/decay disc hue toward the currently-transferring species' colour
         // (shared by flows 3 & 4). Lower ⇒ slower, more gradual cross-fade when the built species changes.
         const val FLOW_COLOR_EASE = 0.05f
