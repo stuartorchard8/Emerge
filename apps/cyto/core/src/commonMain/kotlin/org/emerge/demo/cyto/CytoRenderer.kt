@@ -1081,11 +1081,11 @@ class CytoRenderer {
         const val PARTICLE_PER_UNIT = 0.03f           // particles spawned per unit of species transfer/tick
         const val PARTICLE_MAX_PER_SPECIES = 5        // …capped per species per cell per tick
         const val PARTICLE_SIZE_FRAC = 0.035f         // speck radius as a fraction of the cell radius
-        const val PARTICLE_SATURATION = 0.5f          // colour saturation of the specks (1 = full species hue)
+        const val PARTICLE_SATURATION = 1.0f          // colour saturation of the specks (1 = full species hue)
         const val PARTICLE_OUTER = 1.125f             // outer band radius in cell radii (just outside border)
         const val PARTICLE_INNER = 0.125f             // inner band radius in cell radii (just inside border)
         const val PARTICLE_PROG_SPEED = 0.025f        // life progress per frame (~40 frames ≈ 0.7s at 60fps)
-        const val PARTICLE_MAX_ALPHA = 0.25f           // peak speck opacity (mid-life; additive)
+        const val PARTICLE_MAX_ALPHA = 0.125f           // peak speck opacity (mid-life; additive)
         const val WELD_DIR_MAX = 16                   // max welded-neighbour directions considered for biasing
         const val PARTICLE_SPAWN_TRIES = 8            // rejection-sampling attempts before dropping a speck
         const val WELD_BLOCK_COS = 0.6f               // cos of the blocked half-arc around each weld (~53°)
