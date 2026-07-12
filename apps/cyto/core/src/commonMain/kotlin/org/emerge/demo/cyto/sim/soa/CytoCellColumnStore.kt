@@ -36,6 +36,11 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
     var cytoplasm = arrayOfNulls<MoleculeStore>(0); private set
     var biomass = arrayOfNulls<MoleculeStore>(0); private set
 
+    // Visual read-model (single-buffered, front only): per-species CYT→BIO built this tick, written
+    // straight into the front column at the biology writeback barrier (not double-buffered — it's a
+    // derived per-tick signal, never read back into sim state). Published via [gather] for the renderer.
+    var cytToBio = arrayOfNulls<MoleculeStore>(0); private set
+
     // Double-buffer: back buffers swapped with front at the biology write-back barrier.
     // CellWork.reset() reads front → mutates CellWork's back buffer; writeback() swaps.
     // Genome is NOT double-buffered: genes only READ it, and the mutation system writes the
@@ -53,6 +58,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         genome = genome.copyOf(capacity)
         cytoplasm = cytoplasm.copyOf(capacity)
         biomass = biomass.copyOf(capacity)
+        cytToBio = cytToBio.copyOf(capacity)
         backCytoplasm = backCytoplasm.copyOf(capacity)
         backBiomass = backBiomass.copyOf(capacity)
     }
@@ -87,6 +93,8 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         stickyTemp[slot] = value.stickyTemp
         cytoplasm[slot] = MoleculeStore.of(value.cytoplasm, CytoTuning.CELL_CHEM_CAP)
         biomass[slot] = MoleculeStore.of(value.biomass, CytoTuning.CELL_CHEM_CAP)
+        // Derived visual signal: not persisted through scatter (starts empty; refilled each tick at writeback).
+        cytToBio[slot] = null
         genome[slot] = value.genome
         // Also initialize back buffers — the swap will pick them up.
         // For freshly-scattered entities (spawn), the back buffer starts as a copy.
@@ -104,6 +112,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         wear = wear[slot],
         sticky = sticky[slot],
         stickyTemp = stickyTemp[slot],
+        cytToBio = cytToBio[slot]?.toStringMap() ?: emptyMap(),
     )
 
     override fun moveSlot(dst: Int, src: Int) {
@@ -115,6 +124,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         genome[dst] = genome[src]
         cytoplasm[dst] = cytoplasm[src]
         biomass[dst] = biomass[src]
+        cytToBio[dst] = cytToBio[src]
         // Also move the back-buffer references so compaction stays in sync.
         backCytoplasm[dst] = backCytoplasm[src]
         backBiomass[dst] = backBiomass[src]

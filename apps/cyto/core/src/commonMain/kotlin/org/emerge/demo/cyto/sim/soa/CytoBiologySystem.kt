@@ -320,6 +320,10 @@ class BiologySystem(
             world.cell.wear[slot] = work.wear
             world.cell.stickyTemp[slot] = false
             if (mutated != null) world.cell.genome[slot] = mutated
+            // Visual read-model: commit this tick's CYT→BIO transfer into the front column (slot-local).
+            val ctb = world.cell.cytToBio[slot]
+                ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP).also { world.cell.cytToBio[slot] = it }
+            ctb.copyFrom(work.cytToBio)
             if (work.repaired) {
                 for (k in world.csr.offset[slot] until world.csr.offset[slot + 1]) {
                     world.csr.edgeAux[k] = work.connectionDamage[EntityId(world.csr.otherId[k])] ?: 0f

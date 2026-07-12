@@ -25,6 +25,10 @@ data class CytoCellComponent(
     val sticky: Boolean = false,
     /** Transient: gene-driven stickiness for this tick; OR-ed with [sticky] by the contact system. */
     val stickyTemp: Boolean = false,
+    /** Visual read-model (LIVING_WORLD_PLAN.md §4): per-species count locked CYT→BIO this tick (Convert /
+     *  FormBond genes). Derived, published for the renderer's "building" flow (flow 3); never fed back into
+     *  sim state, excluded from the golden digest. Empty when the cell built nothing this tick. */
+    val cytToBio: Map<String, Int> = emptyMap(),
 )
 
 /**
