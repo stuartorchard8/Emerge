@@ -708,7 +708,10 @@ object CytoBiologyCore {
                         val nbWork = works[nb] ?: continue
                         if (nbWork.handleable.canDiffuseIn(species)) receivers++
                     }
-                    if (receivers > 0) addDeltaValue(idVal, species, -out * receivers)
+                    if (receivers > 0) {
+                        addDeltaValue(idVal, species, -out * receivers)
+                        w.weldOut.inc(species, out * receivers)   // visual read-model (flow 5)
+                    }
                 }
             }
         }

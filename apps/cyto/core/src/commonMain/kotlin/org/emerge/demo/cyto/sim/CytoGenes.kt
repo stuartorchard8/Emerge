@@ -404,6 +404,9 @@ class CellWork(
     // moved into the cytoplasm (flow 1, absorption); [envCytOut] = amount that left it (flow 2, secretion).
     val envCytIn = MoleculeStore(CytoTuning.CELL_CHEM_CAP)
     val envCytOut = MoleculeStore(CytoTuning.CELL_CHEM_CAP)
+    // CYT→CYT across welds (flow 5): species id → total count this cell SENT to its welded neighbours this
+    // tick (from [CytoBiologyCore.diffuse]). Drives the cross-weld transfer specks.
+    val weldOut = MoleculeStore(CytoTuning.CELL_CHEM_CAP)
 
     /** The fired Mitosis gene's operand (its [GeneAction.a]) — the morphogen species allocated **whole to
      *  one daughter** on division (asymmetric mitosis, MORPHOGENESIS.md §C). "" ⇒ symmetric 50/50 split. */
@@ -611,7 +614,7 @@ class CellWork(
         // Clear visual flow tracking.
         cytToBio.clear()
         bioToEnvCount = 0; bioToEnvTargetId = -1
-        envCytIn.clear(); envCytOut.clear()
+        envCytIn.clear(); envCytOut.clear(); weldOut.clear()
         _exchPreN = 0
         // Reset mitosis cooldown when genome changes (new cell or mutation).
         if (genome !== this.genome) {

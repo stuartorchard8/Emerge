@@ -48,6 +48,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
     // Visual read-model (front only): ENV↔CYT membrane transfer this tick, split by direction.
     var envCytIn = arrayOfNulls<MoleculeStore>(0); private set
     var envCytOut = arrayOfNulls<MoleculeStore>(0); private set
+    var weldOut = arrayOfNulls<MoleculeStore>(0); private set
 
     // Double-buffer: back buffers swapped with front at the biology write-back barrier.
     // CellWork.reset() reads front → mutates CellWork's back buffer; writeback() swaps.
@@ -71,6 +72,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         bioToEnvCount = bioToEnvCount.copyOf(capacity)
         envCytIn = envCytIn.copyOf(capacity)
         envCytOut = envCytOut.copyOf(capacity)
+        weldOut = weldOut.copyOf(capacity)
         backCytoplasm = backCytoplasm.copyOf(capacity)
         backBiomass = backBiomass.copyOf(capacity)
     }
@@ -111,6 +113,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         bioToEnvCount[slot] = 0
         envCytIn[slot] = null
         envCytOut[slot] = null
+        weldOut[slot] = null
         genome[slot] = value.genome
         // Also initialize back buffers — the swap will pick them up.
         // For freshly-scattered entities (spawn), the back buffer starts as a copy.
@@ -133,6 +136,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
             mapOf(SpeciesRegistry.string(bioToEnvSpecies[slot]) to bioToEnvCount[slot]) else emptyMap(),
         envCytIn = envCytIn[slot]?.toStringMap() ?: emptyMap(),
         envCytOut = envCytOut[slot]?.toStringMap() ?: emptyMap(),
+        weldOut = weldOut[slot]?.toStringMap() ?: emptyMap(),
     )
 
     override fun moveSlot(dst: Int, src: Int) {
@@ -149,6 +153,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         bioToEnvCount[dst] = bioToEnvCount[src]
         envCytIn[dst] = envCytIn[src]
         envCytOut[dst] = envCytOut[src]
+        weldOut[dst] = weldOut[src]
         // Also move the back-buffer references so compaction stays in sync.
         backCytoplasm[dst] = backCytoplasm[src]
         backBiomass[dst] = backBiomass[src]

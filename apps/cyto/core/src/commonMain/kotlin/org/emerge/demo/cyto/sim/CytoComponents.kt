@@ -38,6 +38,9 @@ data class CytoCellComponent(
      *  (flow 1), [envCytOut] the secretion particles (flow 2). Same derived-only, golden-excluded rules. */
     val envCytIn: Map<String, Int> = emptyMap(),
     val envCytOut: Map<String, Int> = emptyMap(),
+    /** Visual read-model (LIVING_WORLD_PLAN.md §4): species→count this cell sent CYT→CYT across its welds
+     *  this tick (from diffusion). Drives the cross-weld transfer specks (flow 5). Empty when it sent none. */
+    val weldOut: Map<String, Int> = emptyMap(),
 )
 
 /**

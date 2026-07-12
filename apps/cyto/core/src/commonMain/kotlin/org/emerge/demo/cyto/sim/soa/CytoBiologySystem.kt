@@ -332,6 +332,9 @@ class BiologySystem(
             val eco = world.cell.envCytOut[slot]
                 ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP).also { world.cell.envCytOut[slot] = it }
             eco.copyFrom(work.envCytOut)
+            val wo = world.cell.weldOut[slot]
+                ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP).also { world.cell.weldOut[slot] = it }
+            wo.copyFrom(work.weldOut)
             if (work.repaired) {
                 for (k in world.csr.offset[slot] until world.csr.offset[slot + 1]) {
                     world.csr.edgeAux[k] = work.connectionDamage[EntityId(world.csr.otherId[k])] ?: 0f
