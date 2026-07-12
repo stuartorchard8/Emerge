@@ -8,6 +8,8 @@ import org.emerge.demo.cyto.campaign.Control
 import org.emerge.demo.cyto.campaign.PlayerAction
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoScenario
+import org.emerge.demo.cyto.sim.FounderSpec
+import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
 import org.emerge.demo.cyto.ui.GeneEditor
@@ -140,6 +142,18 @@ object CytoAgentHarness {
                         ?: error("unknown chapter '${t.getOrNull(1)}' (have ${CampaignContent.ORDER})")
                     controller.newGame(ch.scenario); director.start(ch, controller); renderer.resetView()
                 }
+                "genome" -> {
+                    // Spawn a single founder from a .gene file — for testing hand-authored / campaign-stage
+                    // genomes (viability, differentiation, locomotion). Push it with `dragcell` to bootstrap.
+                    val path = line.removePrefix("genome").trim().trim('"')
+                    val genes = GeneCodec.parse(File(path).readText())
+                    val scn = CytoScenario.DEFAULT.copy(
+                        name = "Probe",
+                        founders = listOf(FounderSpec(CellType.Collector, 1, genome = genes)),
+                    )
+                    director.stop(); controller.newGame(scn); renderer.resetView()
+                    println("[agent] genome loaded: ${genes.size} genes from $path")
+                }
                 "run" -> advance(t[1].toInt())
                 "runs" -> advance((t[1].toFloat() * 64f).toInt())
                 "camera" -> {
@@ -170,6 +184,16 @@ object CytoAgentHarness {
                     controller.releaseGrab(); controller.publish(); sync()
                 }
                 "cells" -> listCells()
+                "com" -> {
+                    // Mass-weighted centre of mass (world logical coords) + count — for measuring locomotion
+                    // drift of a welded body over a run (sample `com`, diff the x/y across ticks).
+                    val cs = controller.agentCells()
+                    if (cs.isEmpty()) { println("[agent] com: no cells") } else {
+                        var mt = 0.0; var cx = 0.0; var cy = 0.0
+                        for (c in cs) { val m = c.biomass.toDouble(); mt += m; cx += m * c.x; cy += m * c.y }
+                        println("[agent] com tick=${controller.tick} cells=${cs.size} x=${"%.4f".format(cx / mt)} y=${"%.4f".format(cy / mt)}")
+                    }
+                }
                 "elements" -> listElements()
                 "tap-ui" -> tapUi(line.removePrefix("tap-ui").trim())
                 "overlay" -> {
