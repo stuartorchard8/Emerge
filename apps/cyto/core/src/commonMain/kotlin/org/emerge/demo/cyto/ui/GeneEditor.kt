@@ -163,7 +163,7 @@ class GeneEditor {
                 draft = d.copy(action = d.action.copy(type = newType, morphogenToMother = d.action.morphogenToMother && stillMitosis, divideAcross = d.action.divideAcross && stillMitosis, rejectMother = d.action.rejectMother && stillMitosis)); openField = null
             }
             when (d.action.type) {
-                ActionType.Import, ActionType.Export, ActionType.Convert ->
+                ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain ->
                     speciesField("OPERAND", d.action.a, atoms) { s -> draft = d.copy(action = d.action.copy(a = s)) }
                 ActionType.FormBond -> {
                     // Bond two molecules end-to-end. EXACT species by default — each operand names the whole

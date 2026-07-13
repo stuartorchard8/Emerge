@@ -542,6 +542,15 @@ ingredient (without it diffusion flattens the gradient to nothing).
 > `bb` from `b` but never catabolises a `b`-bond had no inward reach to `b` and could never acquire its own
 > feedstock — an emergent dead-end from an over-broad rule.)
 
+> **2026-07-13 — `Retain` makes retention explicit (a gene action).** Keeping a species cell-private is no
+> longer an accident of whether the genome happens to *not* metabolise it (the derived `canDiffuse` rule,
+> which proved brittle — e.g. adding a `Convert bb` to colour a tissue silently demoted the `bb` determinant
+> to a diffusible species). `Retain <species>` is a per-tick membrane seal: while it fires (costing **1
+> energy/tick**), the species makes **no** boundary crossing in any direction (CYT↔CYT weld, CYT→ENV,
+> ENV→CYT), overriding the derived permeability. It adds no metabolic reach. A determinant is now built
+> (`FormBond`) + sensed (`Chem`/`Conc`) + **`Retain`ed**, and kept in cytoplasm (never `Convert`ed into
+> splittable biomass). If the cell can't pay the 1 energy the seal drops that tick — memory costs energy.
+
 **The metabolic-loop morphogen.** With primary energy molecule `P` and morphogen `M`:
 - **Source (centre only):** `Break P IF <determinant X> : FormBond → M` — spends the primary molecule to make
   `M`; the determinant `X` localises it to the founder lineage.

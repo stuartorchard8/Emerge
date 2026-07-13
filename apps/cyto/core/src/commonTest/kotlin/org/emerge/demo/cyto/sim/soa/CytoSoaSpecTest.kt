@@ -377,6 +377,38 @@ class CytoSoaSpecTest {
     }
 
     @Test
+    fun retainSealsAgainstWeldDiffusionAndCostsEnergy() {
+        // Explicit membrane seal (ActionType.Retain), independent of the derived canDiffuse rule. `bg` is
+        // metabolised (Convert, gated OFF) ⇒ canDiffuse-true, so across a weld it normally spreads to the
+        // neighbour (cf. synthesisedSpeciesStaysIntracellular…). A `Retain bg` gene — powered by breaking the
+        // plentiful, unrelated `rg` (1 energy/tick, so weld + seal fuels are decoupled) — blocks every
+        // boundary crossing of `bg`, so it stays whole in the cell that started with it, while spending fuel.
+        val on = GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0))
+        val off = GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(Int.MAX_VALUE))
+        fun pair(extra: List<Gene>): SimState {
+            val genome = listOf(
+                Gene(EnergySource.Light, off, GeneAction(ActionType.Convert, "bg")),   // makes `bg` canDiffuse (gated off)
+                Gene(EnergySource.BreakBond("rg"), on, GeneAction(ActionType.Repair)), // weld, powered by rg
+            ) + extra
+            val b = SimBuilder(SimState())
+            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector,
+                cytoplasm = mapOf("bg" to 1_000, "rg" to 5_000), biomass = mapOf("rr" to 2_000), genome = genome)
+            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector,
+                cytoplasm = mapOf("rg" to 5_000), biomass = mapOf("rr" to 2_000), genome = genome)
+            return b.build()
+        }
+        val retain = Gene(EnergySource.BreakBond("rg"), on, GeneAction(ActionType.Retain, "bg"))
+
+        val sealed = run(pair(listOf(retain)), ticks = 16).components.getTable<CytoCellComponent>().asMap().values.toList()
+        val leaky = run(pair(emptyList()), ticks = 16).components.getTable<CytoCellComponent>().asMap().values.toList()
+
+        assertEquals(2, sealed.size, "both cells alive")
+        assertEquals(0, sealed.minOf { it.cytoplasm["bg"] ?: 0 }, "Retain sealed `bg` — it never crossed to the neighbour")
+        assertTrue(leaky.minOf { it.cytoplasm["bg"] ?: 0 } > 0, "control (no Retain): `bg` diffused across the weld to both cells")
+        assertTrue(sealed.any { (it.cytoplasm["rg"] ?: 0) < 5_000 }, "the seal cost fuel — `rg` was broken to pay for it")
+    }
+
+    @Test
     fun mutationDivergesGenomesAndConservesMatter() {
         val mutCfg = cfg.copy(mutationRateDenom = 200)
         val initial = createCytoInitialState()

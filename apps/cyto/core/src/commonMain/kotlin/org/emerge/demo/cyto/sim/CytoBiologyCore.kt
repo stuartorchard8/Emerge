@@ -165,6 +165,7 @@ object CytoBiologyCore {
                 // Export raises it (pushes out); a plain monomer balances freely toward its ambient level.
                 var transferN = 0
                 for (sp in species) {
+                    if (sp in w.retained) continue   // membrane sealed to this species (Retain gene)
                     val ib = w.importBias[sp] ?: 0; val eb = w.exportBias[sp] ?: 0
                     if (ib != 0 || eb != 0 || SpeciesRegistry.atomCount(sp) == 1) transferN++
                 }
@@ -172,6 +173,7 @@ object CytoBiologyCore {
                 if (w.exchTransferIdx.size < transferN) { w.exchTransferIdx = IntArray(transferN); w.exchTransferCeffs = IntArray(transferN); w.exchTransferDir = IntArray(transferN) }
                 var t = 0
                 for (sp in species) {
+                    if (sp in w.retained) continue   // membrane sealed to this species (Retain gene)
                     val isMono = SpeciesRegistry.atomCount(sp) == 1
                     val ib = w.importBias[sp] ?: 0; val eb = w.exportBias[sp] ?: 0
                     if (ib != 0 || eb != 0 || isMono) {
@@ -408,7 +410,7 @@ object CytoBiologyCore {
         // runs at `k × SCALE/(SCALE+biomass)`. A bigger cell spreads its metabolic capacity over more
         // structure, so its build/acquire rate falls while size-proportional decay keeps rising — they cross
         // at an EMERGENT size the cell can't outgrow. No hard cap: a stronger cell settles larger.
-        if (act.type != ActionType.Mitosis) {
+        if (act.type != ActionType.Mitosis && act.type != ActionType.Retain) {
             val bio = totalBiomassBonds(work.biomass)
             k = (k.toLong() * CytoTuning.METABOLIC_BIOMASS_SCALE / (CytoTuning.METABOLIC_BIOMASS_SCALE + bio)).toInt()
         }
@@ -435,6 +437,7 @@ object CytoBiologyCore {
             ActionType.Import, ActionType.Export -> {}   // k energy units become a junction bias (applied in passiveEnvExchange)
             ActionType.Repair -> k = minOf(k, repairOpsNeeded(work))
             ActionType.Contract -> k = minOf(k, flexOps(MIN_RADIUS, work.logicalRadius))
+            ActionType.Retain -> k = minOf(k, 1)   // a flat 1-energy/tick membrane seal (no throughput scaling)
             // Sub-tick interpolation: a growth gene fills only up to its OWN gate threshold, never past it.
             // perOp 0 (an unresolved/mutated species id) disables the cap rather than indexing by -1.
             ActionType.Convert -> k = minOf(k, selfGateCap(gene.condition, qBiomass = true, qSpeciesId = -1, snapQ = snapBiomass, perOp = if (convertId >= 0) SpeciesRegistry.bondCount(convertId) else 0, snap = snap, snapBiomass = snapBiomass, work = work))
@@ -481,6 +484,9 @@ object CytoBiologyCore {
             }
             ActionType.Repair -> applyRepair(work, k)
             ActionType.Contract -> work.logicalRadius = (work.logicalRadius - FLEX_STEP * k).coerceAtLeast(MIN_RADIUS)
+            // The 1 energy is already spent (fuel broken / quantum used above); seal the membrane to this
+            // species for this tick — the boundary junctions skip anything in `retained`.
+            ActionType.Retain -> if (act.aId >= 0) work.retained.add(act.aId)
             ActionType.Lyse -> {
                 // Queue lysis attacks on all touching un-welded cells. Each op tears `k` total energy
                 // units of biomass, split across all touching victims (each loses `k / numVictims`).
@@ -691,6 +697,7 @@ object CytoBiologyCore {
                     val cyt = nbWork.cytoplasm
                     for (i in 0 until cyt.size) {
                         val species = cyt.idAt(i)
+                        if (species in w.retained || species in nbWork.retained) continue   // either membrane sealed
                         if (!nbWork.handleable.canDiffuseOut(species)) continue
                         if (!w.handleable.canDiffuseIn(species)) continue
                         val out = cyt.countAt(i) / CYTOPLASM_DIFFUSE_DENOM
@@ -703,12 +710,14 @@ object CytoBiologyCore {
                 val myCyt = w.cytoplasm
                 for (i in 0 until myCyt.size) {
                     val species = myCyt.idAt(i)
+                    if (species in w.retained) continue   // this membrane sealed to it ⇒ sheds nothing
                     if (!w.handleable.canDiffuseOut(species)) continue
                     val out = myCyt.countAt(i) / CYTOPLASM_DIFFUSE_DENOM
                     if (out <= 0) continue
                     var receivers = 0
                     for (nb in nbrs) {
                         val nbWork = works[nb] ?: continue
+                        if (species in nbWork.retained) continue   // neighbour sealed ⇒ can't receive
                         if (nbWork.handleable.canDiffuseIn(species)) receivers++
                     }
                     if (receivers > 0) {

@@ -593,6 +593,7 @@ class CytoController(
         }
         ActionType.Repair -> "REPAIR"
         ActionType.Lyse -> "LYSE"
+        ActionType.Retain -> "RETAIN ${a.a}"
     }
 
     /** One condition clause as `lhs<cmp>rhs` (e.g. `ab<800`). */

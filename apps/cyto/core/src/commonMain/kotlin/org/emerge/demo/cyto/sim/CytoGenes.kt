@@ -118,6 +118,14 @@ enum class ActionType {
      *  undigestible by predator) as defense, forcing predators to either evolve detox or avoid that
      *  prey type. Efficiency gear controls the damage/capture balance per MORPHOGENESIS.md §B. */
     Lyse,
+    /** **Seal the membrane** to [GeneAction.a]: while this gene fires (costing 1 energy/tick), the species
+     *  makes **no** boundary crossing in any direction — no CYT↔CYT weld diffusion, no CYT→ENV leak, no
+     *  ENV→CYT uptake (nor an Import/Export bias). Retention becomes an **explicit** genetic act, decoupled
+     *  from the derived `canDiffuse` permeability: this is how a morphogen/determinant is kept cell-private
+     *  (a species produced + sensed but deliberately not shared), without relying on whether the genome
+     *  happens to metabolise it. Adds no metabolic reach. If the cell can't pay the 1 energy, the seal drops
+     *  that tick and the species diffuses normally — memory costs energy. */
+    Retain,
 }
 
 /** A gene's action plus its (action-dependent) operands — single atoms for [ActionType.FormBond],
@@ -492,6 +500,13 @@ class CellWork(
      *  gene phase, consumed the same tick by the sequential junction, cleared each [reset]. */
     val exportBias: MutableMap<Int, Int> = HashMap()
 
+    /** Per-tick membrane seal (species ids): a [ActionType.Retain] gene that fired + paid its 1 energy this
+     *  tick adds its species here, and every boundary junction (env exchange + cell↔cell diffuse) then skips
+     *  it in BOTH directions — an explicit, energy-gated override of the derived `canDiffuse` permeability.
+     *  Recorded grid-free during the (parallel) gene phase, consumed the same tick by the sequential
+     *  junctions, cleared each [reset]. */
+    val retained: MutableSet<Int> = HashSet()
+
     /** Exchange batch assignment: this cell's environment exchange occurs only when `(tick % EXCHANGE_BATCHES) == exchangeBatch`.
      *  Set once when the cell first appears; persists across ticks. -1 = not yet assigned (assigned on first build). */
     var exchangeBatch: Int = -1
@@ -608,6 +623,7 @@ class CellWork(
         _touchingCellN = 0
         importBias.clear()
         exportBias.clear()
+        retained.clear()
         weldHeals.clear()
         lyseTargets.clear()
         dividing = false

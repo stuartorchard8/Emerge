@@ -123,6 +123,7 @@ object GeneCodec {
         }
         ActionType.Repair -> "Repair"
         ActionType.Lyse -> "Lyse"
+        ActionType.Retain -> "Retain ${tok(a.a)}"
     }
 
     private fun parseAction(t: List<String>): GeneAction = when (t[0]) {
@@ -135,6 +136,7 @@ object GeneCodec {
             GeneAction(ActionType.FormBond, a, b, aWild = aWild, bWild = bWild)
         }
         "Convert" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Convert, untok(t[1])) }
+        "Retain" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Retain, untok(t[1])) }
         // Expand was banned (it raised a cell's radius above the biomass soft-cap, coarsening the broadphase
         // grid for the whole world; Contract is kept as the locomotion actuator). Legacy saves decode it to
         // an inert Repair (a no-op while undamaged) rather than crashing on load.
