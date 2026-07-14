@@ -317,7 +317,18 @@ class CytoController(
         val focused = lastHeldId?.let { id ->
             cells[id]?.let { c ->
                 val divideWelds = c.genome.any { it.action.type == ActionType.Mitosis && !it.action.rejectMother }
-                FocusedCell(c.type, totalBiomassBonds(c.biomass), c.genome.size, c.cytoplasm, divideWelds)
+                val contractGenes = c.genome.filter { it.action.type == ActionType.Contract }
+                val contractOnBreak = contractGenes.any { it.source is EnergySource.BreakBond }
+                val contractOnMarked = contractGenes.any { g ->
+                    g.condition.clauses.any { cl ->
+                        val lhs = cl.lhs
+                        lhs is Operand.Chem && lhs.species == "bb" && cl.cmp == Comparison.Greater
+                    }
+                }
+                FocusedCell(
+                    c.type, totalBiomassBonds(c.biomass), c.genome.size, c.cytoplasm,
+                    divideWelds, contractOnBreak, contractOnMarked,
+                )
             }
         }
         return WorldStats(tickCount, count, byType, maxBio, species, focused)

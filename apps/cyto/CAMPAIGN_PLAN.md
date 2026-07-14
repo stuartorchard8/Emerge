@@ -58,8 +58,15 @@ prose companion (the campaign is the interactive path through the same material)
 >
 > **⚠️ Not done / open:** (1) **Ch6 drag FEEL is unverified** — the harness `dragcell` moves too smoothly to
 > over-stretch welds, so the tear-vs-hold visual + threshold tuning need a **live GL drag playtest** (Stu
-> confirmed manual tearing works). (2) region-targeted spotlights/arrows still text-hint-only. (3) Ch7+
-> (Food Web / Contract / clocks / differentiation / shape / capstone — see §6). (4) The Genome Workshop /
+> confirmed manual tearing works). (2) region-targeted spotlights/arrows still text-hint-only. (3) Ch7–9
+> BUILT (Ch7 Contract muscle → Ch8 polarise/differentiation → **Ch9 "A Beat of Its Own": a metabolic clock
+> (internal oscillator) + editing a 3-generation lineage by hand — clock, then muscle-fuel Light→Break rg
+> (swims at night), then marker flip bb<1→bb>0 (better swimmer), each generation tapped out as a live copy
+> of the last via the "last-modified brush" `Chapter.spawnCopiesHeldCell`). Ch9 uses Stu's swimmerx/swimmerxX
+> genomes.** Still open above Ch9: Food Web / shape / capstone (see §6). **Ch9 needs a live behaviour
+> playtest** (does the clocked body pulse+crawl, does the Break-rg variant swim past nightfall, does the
+> marker-flip out-swim it — the biology is Stu's validated swimmer save, the campaign wiring is harness-verified).
+> (4) The Genome Workshop /
 > group-library / move-between-groups UI (§10.5) — data model supports re-tagging, no UI yet. (5) No live
 > in-app visual playtest of the whole arc yet.
 >

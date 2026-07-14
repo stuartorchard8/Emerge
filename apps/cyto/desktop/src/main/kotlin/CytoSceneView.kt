@@ -192,7 +192,14 @@ object CytoSceneView {
             // brush palette. Only inside an active chapter - when idle the mask is ALL (which includes Spawn),
             // and applying it would clobber the sandbox's own brush genome with a null chapter spawnGenome.
             controls.worldSpawnEnabled = director.active && mask.allows(Control.Spawn)
-            if (controls.worldSpawnEnabled) controller.brushGenome = director.activeChapter?.spawnGenome
+            if (controls.worldSpawnEnabled) {
+                val chapter = director.activeChapter
+                // "Last-modified brush" (Ch9): tap out a live copy of the selected cell's genome, so the
+                // player's just-made muscle edits carry into the next cell. Falls back to the fixed spawn genome.
+                controller.brushGenome =
+                    if (chapter?.spawnCopiesHeldCell == true) controller.heldGenome() ?: chapter.spawnGenome
+                    else chapter?.spawnGenome
+            }
             controls.showSimSpeed = mask.allows(Control.Speed)
             controls.showMutation = mask.allows(Control.Mutation)
             controls.simPaused = simDriver.paused

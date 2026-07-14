@@ -39,6 +39,12 @@ class Chapter(
      *  founder dies before it gets going). Null ⇒ no world-spawn even if a step allowed it. The host sets this
      *  as the brush genome and permits empty-space taps *without* surfacing the full brush palette. */
     val spawnGenome: List<Gene>? = null,
+    /** When true, an empty-space tap during a [Control.Spawn] step drops a **live copy of the currently
+     *  selected cell's genome** instead of the fixed [spawnGenome] — a "last-modified brush". Ch9 leans on
+     *  this: each time the player edits the muscle on their selected cell, the next cell they tap out carries
+     *  those edits, so they iterate a lineage in place (and can go off-script if they choose). Falls back to
+     *  [spawnGenome] when no cell is selected. */
+    val spawnCopiesHeldCell: Boolean = false,
 )
 
 /** One coaching beat: the instruction, how it advances ([gate]), which controls are live ([allow]), an

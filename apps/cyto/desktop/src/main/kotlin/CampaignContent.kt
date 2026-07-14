@@ -186,6 +186,72 @@ object CampaignContent {
         GeneGroup(GROUP_POLARIZE, insert = CH8_POLARIZE_GENES),
     ))
 
+    // ── Ch9: the metabolic clock + the muscle-fuel lineage (Stu's swimmerx / swimmerxX genomes) ──────────
+    // Ch8 left a swimmer that moves only in daylight (a light-powered muscle). Ch9 gives it an internal
+    // OSCILLATOR - the `clock` group synthesises a `gb`/`gg`/`bg` feedback loop that rises and falls on its
+    // own beat - and the muscle here is already wired to wait on it (`gb > 50`), so before the clock is added
+    // the body sits still. The player then edits a LINEAGE by hand across three generations, each tapped out
+    // as a live copy of the last (the "last-modified brush", [Chapter.spawnCopiesHeldCell]):
+    //   gen 1: as-authored - Light-powered muscle on the BARE cells (`bb < 1`); swims by day only.
+    //   gen 2: muscle fuel Light -> Break rg; runs on stored reserves, so it swims through the night too.
+    //   gen 3: muscle marker `bb < 1` -> `bb > 0`; the MARKED cell drives instead - a more adept swimmer.
+    // Authored as text so it reads like the `.gene` library files it came from (group tags = the 4th part).
+    private const val GROUP_CLOCK = "clock"
+
+    /** Ch9 substrate: the swimmerx genome WITHOUT its clock group. Every group is present - feed, maintain,
+     *  polarize, move, grow - but the MOVE muscle gates on `gb > 50`, a clock chemical nothing here makes, so
+     *  the body sits inert (like Ch7/Ch8's calm starting cell). Adding CLOCK sets it beating. */
+    private val CH9_INIT_GENES: List<Gene> = GeneCodec.parse(
+        """
+        Light : rg < 10000 : FormBond r g : feed
+        Break rg : Biomass < 3000 & rg > 500 : Convert rg @15 : maintain
+        Break rg : rg > 500 : Repair @10 : maintain
+        Break rg : gr < 1 & bb < rg : FormBond b b : polarize
+        Break rg : bb > 1 & bb < rg : FormBond b b : polarize
+        Break bb : Biomass < 3000 & bb > 40 : Convert bb @15 : polarize
+        Break bb : bb > 1 : Retain bb : polarize
+        Break rg : bb > 0 & gr < rg : FormBond g r : polarize
+        Break gr : bb < 1 & gr > 1 : FormBond r g @14 : polarize
+        Light : bb < 1 & gb > 50 : Contract @15 : move
+        Break rg : bb < 5 & gr > 0 & br < 200 : FormBond b r : grow
+        Break br : gr > 9 : FormBond r g @10 : grow
+        Break rg : br < 20 & gr > 1000 & Biomass > 2000 : Mitosis bb mother across gr : grow
+        """.trimIndent(),
+    )
+
+    /** The clock subsystem Ch9's "+ ADD CLOCK" inserts: a `gg`/`gb`/`bg` feedback loop, powered by breaking
+     *  `br`, that oscillates on its own beat. The muscle (`gb > 50`) fires on the crest, so the body pulses. */
+    private val CH9_CLOCK_GENES: List<Gene> = GeneCodec.parse(
+        """
+        Break rg : gg < 20 & gb < 20 & br > 100 : FormBond b g : clock
+        Break rg : gg > 19 & bg < 20 & br > 100 : FormBond b g : clock
+        Break gb : gg < 20 : FormBond b g @14 : clock
+        Break bg : gg > 19 : FormBond g b @14 : clock
+        Break rg : gg < 30 & bg > 100 : FormBond g g : clock
+        Break gg : gb > 100 : FormBond r g : clock
+        """.trimIndent(),
+    )
+
+    /** The clocked swimmer = substrate + clock (the exact order "+ ADD" produces). The fallback re-seed genome
+     *  for empty-space taps when no cell is selected; normally the tap copies the selected cell's live genome. */
+    private val CH9_FULL_GENES: List<Gene> = CH9_INIT_GENES + CH9_CLOCK_GENES
+
+    private val CH9_SUBSTRATE = CytoScenario.DEFAULT.copy(
+        name = "Campaign",
+        founders = listOf(FounderSpec(CellType.Stem, 1, genome = CH9_INIT_GENES)),
+    )
+
+    /** Ch9's grouping - the swimmer's subsystems, with CLOCK offered as the insert (the rest are the substrate
+     *  the player already has). Header colours auto-derive from the names. */
+    private val CH9_GROUPING = GenomeGrouping(listOf(
+        GeneGroup("feed"),
+        GeneGroup("maintain"),
+        GeneGroup(GROUP_POLARIZE),
+        GeneGroup("move"),
+        GeneGroup("grow"),
+        GeneGroup(GROUP_CLOCK, insert = CH9_CLOCK_GENES),
+    ))
+
     val CHAPTERS: List<Chapter> = listOf(
         chapter1FirstContact(),
         chapter2LetThereBeLight(),
@@ -195,6 +261,7 @@ object CampaignContent {
         chapter6HoldUnderStrain(),
         chapter7Move(),
         chapter8Polarise(),
+        chapter9Clock(),
     )
 
     val ORDER: List<String> = CHAPTERS.map { it.id }
@@ -607,6 +674,105 @@ object CampaignContent {
             ),
             Step(
                 text = "From a cell that only pulsed in place, you have a creature that SWIMS - just because its cells took on different roles. That's differentiation: one genome, read differently depending on where a cell sits.",
+                gate = Gate.Next,
+                allow = WATCH_TIME,
+                world = WorldRun.Live,
+            ),
+        ),
+    )
+
+    /** Act III, the locomotion payoff continued. Ch8's swimmer moved only in daylight. Ch9 hands it a
+     *  metabolic CLOCK (an internal oscillator) so its beat no longer depends on the sun, then walks the player
+     *  through editing a three-generation LINEAGE - clock, then a fuel swap (moves at night), then a marker
+     *  flip (a better swimmer) - each generation tapped out as a live copy of the last via the last-modified
+     *  brush ([Chapter.spawnCopiesHeldCell]). All three coexist in one world for the closing payoff. See
+     *  [CH9_INIT_GENES]/[CH9_CLOCK_GENES]. */
+    private fun chapter9Clock() = Chapter(
+        id = "ch09-clock",
+        act = 3,
+        title = "A Beat of Its Own",
+        blurb = "It swims on sunlight, and stalls every night. Give it an inner clock, then breed it better.",
+        scenario = CH9_SUBSTRATE,
+        grouping = CH9_GROUPING,
+        insertableGroups = setOf(GROUP_CLOCK),
+        spawnGenome = CH9_FULL_GENES,
+        spawnCopiesHeldCell = true,
+        steps = listOf(
+            Step(
+                text = "Last chapter it swam on sunlight alone - crawling by day, drifting dead through every night. A real swimmer keeps a rhythm of its own. Let's give this one an inner beat.",
+                gate = Gate.Next,
+                allow = WATCH,
+            ),
+            Step(
+                text = "Here's that swimmer - almost. Select it and open its genome. FEED, POLARIZE, MOVE, GROW are all here, yet it sits perfectly still. Its muscle has been wired to wait on a beat it doesn't have yet.",
+                gate = Gate.World("Select the cell", { it.focused != null }),
+                allow = LOOK,
+                spotlight = Spotlight(hint = "Click the cell"),
+            ),
+            Step(
+                text = "Add the CLOCK group. It builds a chemical that rises and falls on a loop of its own - an oscillator, ticking inside the cell whether or not the sun is up.",
+                gate = Gate.World("Add the Clock group", met = { (it.focused?.geneCount ?: 0) >= 19 }),
+                allow = LOOK,
+                spotlight = Spotlight(hint = "+ ADD CLOCK, below the groups"),
+                detail = "The muscle only fires when this clock chemical runs high. So instead of one long squeeze through the daylight, the body now PULSES - clench, release, clench - in time with its own beat.",
+            ),
+            Step(
+                text = "Give it a push to get it going, and watch. In daylight the muscle now fires in beats and the little body pulses along as it crawls. If a founder dies before it gets going, tap an empty space to drop in another.",
+                gate = Gate.World(
+                    "Grow it to a moving cluster",
+                    met = { it.cellCount >= 3 },
+                    progress = { it.cellCount.coerceAtMost(3) to 3 },
+                ),
+                allow = WATCH_TIME,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "Drag to push. Tap empty space to re-seed."),
+            ),
+            Step(
+                text = "But the muscle still runs on LIGHT, so night still stops it dead. Let's breed a variant that doesn't need the sun. Tap an empty space to lay down a fresh copy of your cell, then select that new one to work on it.",
+                gate = Gate.Did(PlayerAction.SelectedCell, "Tap out a fresh copy and select it"),
+                allow = WATCH_TIME,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "Tap empty space, then click the new cell"),
+                detail = "Every cell you tap out now copies whatever genome your selected cell carries - so this fresh one already has the clock. You'll change just one thing about it.",
+            ),
+            Step(
+                text = "Open its MOVE muscle and switch its power SOURCE from LIGHT to BREAK RG. Now it burns a stored reserve instead of sunlight - fuel it carries with it, day or night.",
+                gate = Gate.World("Switch the muscle to Break RG", met = { it.focused?.contractOnBreak == true }),
+                allow = WATCH_TIME,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "MOVE -> the muscle gene -> SOURCE -> Brk rg"),
+                detail = "Change only its fuel and leave the rest. The clock keeps ticking - the muscle just draws on reserves now instead of waiting for daylight.",
+            ),
+            Step(
+                text = "Push your new variant off and speed the world up. Watch it cross from day into night - and keep swimming. On stored reserves its clock beats on in the dark, so it no longer stalls when the sun goes down.",
+                gate = Gate.Next,
+                allow = WATCH_TIME,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "Drag to push, then FAST - watch it swim past nightfall"),
+            ),
+            Step(
+                text = "One more change makes a far better swimmer. Right now the BARE cells pull while the MARKED cell holds still. Tap out another fresh copy - it carries your night-swimmer genome - and select it.",
+                gate = Gate.Did(PlayerAction.SelectedCell, "Tap out another copy and select it"),
+                allow = WATCH_TIME,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "Tap empty space, then click the new cell"),
+            ),
+            Step(
+                text = "In its MOVE muscle, flip the marker test: change BB < 1 to BB > 0, so the MARKED cells drive the stroke instead of the bare ones. One flipped test, a different, stronger swim.",
+                gate = Gate.World("Flip the muscle to BB > 0", met = { it.focused?.contractOnMarked == true }),
+                allow = WATCH_TIME,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "MOVE -> the muscle gene -> set BB's test to > and its value to 0"),
+                detail = "In the editor, find the muscle's BB clause: set its comparator to > and step its value down to 0. That hands the driving role to the other cell type.",
+            ),
+            Step(
+                text = "Push it off among the others. Now three of your lineage share one world - the day-only original, the night-runner, and this newest one - and you can watch the newest out-swim them both.",
+                gate = Gate.Next,
+                allow = WATCH_TIME,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "You just bred a lineage by hand: a clock to free it from the sun, a fuel swap to move by night, a flipped marker to swim better. One genome, iterated - each cell you tapped out carried your latest design forward.",
                 gate = Gate.Next,
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
