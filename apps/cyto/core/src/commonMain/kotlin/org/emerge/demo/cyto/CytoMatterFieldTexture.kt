@@ -4,6 +4,7 @@ import org.emerge.demo.cyto.shader.MatterFieldShaderSources
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.GpuFloatBuffer
 import org.emerge.render.torus.put
+import org.emerge.render.torus.shader.NoiseTexture
 import org.emerge.render.torus.shader.ShaderFactory
 
 /**
@@ -22,18 +23,27 @@ internal class CytoMatterFieldTexture(private val res: Int) {
     private val vao = GPU.genAndBindVertexArrays()
     private val vbo = GPU.genBuffers()
     private val texture = GPU.genTextures()
+    private val noiseTexture = GPU.genTextures()
 
     private val locTex = GPU.getUniformLocation(program, "uTex")
+    private val locNoise = GPU.getUniformLocation(program, "uNoise")
     private val locCenter = GPU.getUniformLocation(program, "uCenter")
     private val locHalfView = GPU.getUniformLocation(program, "uHalfView")
     private val locHalf = GPU.getUniformLocation(program, "uHalf")
     private val locSpan = GPU.getUniformLocation(program, "uSpan")
+    private val locTime = GPU.getUniformLocation(program, "uTime")
+    private val locAmp = GPU.getUniformLocation(program, "uAmp")
 
     init {
         uploadTriangle()
         GPU.activeTexture(TEX_UNIT)
         GPU.bindTexture2D(texture)
         GPU.configureTexture2DRepeatLinear()   // GL_REPEAT wrap (torus) + linear filter (smooth cloud)
+        // The tileable value-noise that drives the gaseous domain warp — baked + uploaded once.
+        GPU.activeTexture(NOISE_UNIT)
+        GPU.bindTexture2D(noiseTexture)
+        GPU.configureTexture2DRepeatLinear()
+        GPU.uploadTextureR8(NOISE_RES, NOISE_RES, NoiseTexture.createTileable(NOISE_RES))
         GPU.bindTexture2D(0)
     }
 
@@ -45,17 +55,23 @@ internal class CytoMatterFieldTexture(private val res: Int) {
         centerX: Float, centerY: Float,
         halfViewX: Float, halfViewY: Float,
         half: Float, span: Float,
+        time: Float, amp: Float,
     ) {
         GPU.bindVertexArray(vao)
         GPU.useProgram(program)
         GPU.activeTexture(TEX_UNIT)
         GPU.bindTexture2D(texture)
         GPU.uploadTextureRGBA8(res, res, pixels)
+        GPU.activeTexture(NOISE_UNIT)
+        GPU.bindTexture2D(noiseTexture)
         GPU.putUniform1i(locTex, TEX_UNIT)
+        GPU.putUniform1i(locNoise, NOISE_UNIT)
         GPU.putUniform2f(locCenter, centerX, centerY)
         GPU.putUniform2f(locHalfView, halfViewX, halfViewY)
         GPU.putUniform1f(locHalf, half)
         GPU.putUniform1f(locSpan, span)
+        GPU.putUniform1f(locTime, time)
+        GPU.putUniform1f(locAmp, amp)
         GPU.drawTriangles(0, 3)
     }
 
@@ -63,6 +79,7 @@ internal class CytoMatterFieldTexture(private val res: Int) {
         GPU.deleteProgram(program)
         GPU.deleteBuffers(vbo)
         GPU.deleteTextures(texture)
+        GPU.deleteTextures(noiseTexture)
         if (vao != null) GPU.deleteVertexArrays(vao)
     }
 
@@ -81,5 +98,7 @@ internal class CytoMatterFieldTexture(private val res: Int) {
     private companion object {
         // Distinct from the sprite atlas unit (1) so binds don't clobber each other.
         const val TEX_UNIT = 2
+        const val NOISE_UNIT = 3
+        const val NOISE_RES = 256
     }
 }
