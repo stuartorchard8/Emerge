@@ -2,6 +2,7 @@ package org.emerge.render.torus
 
 import org.lwjgl.opengl.GL33C
 import org.lwjgl.system.MemoryStack
+import org.lwjgl.system.MemoryUtil
 import kotlin.use
 
 actual object GPU {
@@ -69,39 +70,31 @@ actual object GPU {
         GL33C.glTexParameteri(GL33C.GL_TEXTURE_2D, GL33C.GL_TEXTURE_MAG_FILTER, GL33C.GL_LINEAR)
     }
     actual fun uploadTextureR8(width: Int, height: Int, data: ByteArray) {
-        MemoryStack.stackPush().use { st ->
-            val buffer = st.malloc(data.size)
+        // Off-heap (not MemoryStack): textures can exceed the ~64KB stack (e.g. a 256² RGBA density map).
+        val buffer = MemoryUtil.memAlloc(data.size)
+        try {
             buffer.put(data)
             buffer.flip()
             GL33C.glTexImage2D(
-                GL33C.GL_TEXTURE_2D,
-                0,
-                GL33C.GL_R8,
-                width,
-                height,
-                0,
-                GL33C.GL_RED,
-                GL33C.GL_UNSIGNED_BYTE,
-                buffer,
+                GL33C.GL_TEXTURE_2D, 0, GL33C.GL_R8, width, height, 0,
+                GL33C.GL_RED, GL33C.GL_UNSIGNED_BYTE, buffer,
             )
+        } finally {
+            MemoryUtil.memFree(buffer)
         }
     }
     actual fun uploadTextureRGBA8(width: Int, height: Int, data: ByteArray) {
-        MemoryStack.stackPush().use { st ->
-            val buffer = st.malloc(data.size)
+        // Off-heap (not MemoryStack): textures can exceed the ~64KB stack (e.g. a 256² RGBA density map).
+        val buffer = MemoryUtil.memAlloc(data.size)
+        try {
             buffer.put(data)
             buffer.flip()
             GL33C.glTexImage2D(
-                GL33C.GL_TEXTURE_2D,
-                0,
-                GL33C.GL_RGBA8,
-                width,
-                height,
-                0,
-                GL33C.GL_RGBA,
-                GL33C.GL_UNSIGNED_BYTE,
-                buffer,
+                GL33C.GL_TEXTURE_2D, 0, GL33C.GL_RGBA8, width, height, 0,
+                GL33C.GL_RGBA, GL33C.GL_UNSIGNED_BYTE, buffer,
             )
+        } finally {
+            MemoryUtil.memFree(buffer)
         }
     }
     actual fun configureTexture2DClampNearest() {
