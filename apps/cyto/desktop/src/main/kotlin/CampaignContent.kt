@@ -99,10 +99,10 @@ object CampaignContent {
      *  surfaces as a "+ ADD" button in the chapter that names it insertable. Collapsed, the genome reads as a
      *  couple of plain labels (§10). */
     private val CAMPAIGN_GROUPING = GenomeGrouping(listOf(
-        GeneGroup(GROUP_GROW, 0x3E9E5AFFL),
-        GeneGroup(GROUP_REPRODUCE, 0xC77DD0FFL, insert = REPRODUCE_GENES),
-        GeneGroup(GROUP_HOLD, 0xD98C40FFL, insert = HOLD_TOGETHER_GENES),
-        GeneGroup(GROUP_MOVE, 0xD0504AFFL, insert = MOVE_GENES),
+        GeneGroup(GROUP_GROW),
+        GeneGroup(GROUP_REPRODUCE, insert = REPRODUCE_GENES),
+        GeneGroup(GROUP_HOLD, insert = HOLD_TOGETHER_GENES),
+        GeneGroup(GROUP_MOVE, insert = MOVE_GENES),
     ))
 
     /** Ch7 substrate: the Ch6 end-state - a welded grow+reproduce autotroph that also holds itself together

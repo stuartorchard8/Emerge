@@ -29,6 +29,10 @@ import org.emerge.render.torus.ui.UiBuilder
 class GeneEditor {
     private enum class Field { Source, LhsKind, Cmp, RhsKind, Action, MitosisSide, MitosisAxis }
 
+    /** A registry-less grouping used in free play: [GenomeGrouping.sections] still buckets a tagged genome by
+     *  its own tags (auto-coloured by name); it just offers no "+ ADD" inserts (those are campaign-authored). */
+    private val EMPTY_GROUPING = GenomeGrouping(emptyList())
+
     private var editingId: EntityId? = null
     private var editingIndex: Int? = null
     private var draft: Gene? = null
@@ -85,7 +89,11 @@ class GeneEditor {
             }
             if (info.genes.isNotEmpty()) {
                 val liveGenes = info.genes.map { it.gene }
-                val sections = grouping?.sections(liveGenes)
+                // Show the grouped view whenever a grouping is supplied (campaign, with "+ ADD" inserts) OR
+                // the genome carries any group tag (free play / loaded saves) — so grouping is a property of
+                // the genome, visible everywhere, not a campaign-only feature. Untagged genomes stay flat.
+                val effectiveGrouping = grouping ?: if (liveGenes.any { it.group.isNotEmpty() }) EMPTY_GROUPING else null
+                val sections = effectiveGrouping?.sections(liveGenes)
                 if (sections != null) {
                     gap(); row("GENES BY FUNCTION (tap a group to open it)")
                     for (sec in sections) {
@@ -103,7 +111,7 @@ class GeneEditor {
                     // one tap inserts the whole pre-made group. This is how Act II teaches an action — the
                     // player adds a *meaningful unit*, not a hand-authored gene. Per-group gating (vs a single
                     // flag) lets a chapter offer only the one subsystem it's teaching.
-                    for (grp in grouping.groups) {
+                    for (grp in effectiveGrouping.groups) {
                         if (grp.name in insertableGroups && grp.insert.isNotEmpty() && liveGenes.none { it.group == grp.name }) {
                             button("+ ADD ${grp.name.uppercase()}", 0x2A3F5AFFL) { controller.addHeldGenes(grp.insert) }
                         }

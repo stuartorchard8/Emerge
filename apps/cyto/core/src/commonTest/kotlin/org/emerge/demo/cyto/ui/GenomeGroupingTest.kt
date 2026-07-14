@@ -21,8 +21,8 @@ class GenomeGroupingTest {
     private fun divide(group: String = "Reproduce") = Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(2000)), GeneAction(ActionType.Mitosis), group = group)
 
     private val grouping = GenomeGrouping(listOf(
-        GeneGroup("Grow", 0x1L),
-        GeneGroup("Reproduce", 0x2L),
+        GeneGroup("Grow"),
+        GeneGroup("Reproduce"),
     ))
 
     @Test fun onePresentGroupOnly() {
@@ -64,5 +64,18 @@ class GenomeGroupingTest {
 
     @Test fun emptyGenomeYieldsNoSections() {
         assertTrue(grouping.sections(emptyList()).isEmpty())
+    }
+
+    @Test fun autoColorIsDeterministicPerName() {
+        // A group's colour is a pure function of its name (no registry) — stable across calls, and the same
+        // name always yields the same colour so a group looks identical everywhere it appears.
+        assertEquals(GenomeGrouping.autoColor("Polarise"), GenomeGrouping.autoColor("Polarise"))
+        assertTrue(GenomeGrouping.autoColor("Grow") and 0xFFL == 0xFFL, "opaque (full alpha)")
+    }
+
+    @Test fun registrylessGroupingStillBucketsByTag() {
+        // Free-play path: no registered groups, but a tagged genome still splits into named sections.
+        val secs = GenomeGrouping(emptyList()).sections(listOf(grow(), divide()))
+        assertEquals(setOf("Grow", "Reproduce"), secs.mapNotNull { it.name }.toSet())
     }
 }
