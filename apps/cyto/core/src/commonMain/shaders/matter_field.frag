@@ -20,8 +20,8 @@ uniform float uAmp;          // warp amplitude, uv units
 // (x,y) vector. Integer base frequencies (3, 7) keep it periodic in uv, so the warp is seamless across the
 // torus wrap (the scroll + constant lookup offsets are shared between uv and uv+1).
 vec2 warpOffset(vec2 uv) {
-    vec2 t1 = vec2(0.006, 0.010) * uTime;
-    vec2 t2 = vec2(-0.011, 0.005) * uTime;
+    vec2 t1 = vec2(0.00006, 0.00010) * uTime;
+    vec2 t2 = vec2(-0.00011, 0.00005) * uTime;
     vec2 o1 = vec2(
         texture(uNoise, uv * 3.0 + t1).r,
         texture(uNoise, uv * 3.0 + t1 + vec2(0.37, 0.11)).r) - 0.5;
