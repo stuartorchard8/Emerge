@@ -517,11 +517,6 @@ class CellWork(
     /** Cached result of `canContract(work)` for the current tick. */
     var _cachedCanContract = false
 
-    /** Cached per-gene active state for round-robin condition evaluation.
-     *  When round-robin is enabled, only one gene per tick gets its condition re-evaluated;
-     *  the rest use this cached result. Set to false when the genome reference changes. */
-    var _cachedActive = BooleanArray(genome.size.coerceAtLeast(1)); private set
-
     /** Per-work scratch reused by [CytoBiologyCore.runGenes] so a tick's gene execution allocates nothing:
      *  the tick-start cytoplasm snapshot ([snapScratch], filled via [MoleculeStore.copyFrom]), the active-gene
      *  index list ([activeScratch], grown with the genome), and the per-gene consumed-species accumulator
@@ -610,7 +605,6 @@ class CellWork(
         if (genome !== this.genome) {
             this.genome = genome; this.handleable = handleableOf(genome)
             if (activeScratch.size < genome.size) activeScratch = IntArray(genome.size)
-            if (_cachedActive.size < genome.size) _cachedActive = BooleanArray(genome.size)
         }
         this.quanta = quanta
         this.touchCount = touchCount
@@ -639,12 +633,6 @@ class CellWork(
         bioToEnvCount = 0; bioToEnvTargetId = -1
         envCytIn.clear(); envCytOut.clear(); weldOut.clear()
         _exchPreN = 0
-        // Reset mitosis cooldown when genome changes (new cell or mutation).
-        if (genome !== this.genome) {
-            this.mitosisCooldown = 0
-            // Clear cached active states for the new genome.
-            _cachedActive.fill(false)
-        }
     }
 }
 

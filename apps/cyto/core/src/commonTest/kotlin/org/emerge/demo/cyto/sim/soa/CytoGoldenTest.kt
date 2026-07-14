@@ -71,12 +71,17 @@ class CytoGoldenTest {
     // without this a center-seeded autotroph starves (the band's fixed 8-unit half-width covered only half
     // the relative slice of the doubled torus). growth + interact shift (light-driven trajectories); the
     // no/low-light mutation/weld/sticky goldens are unaffected.
+    // Re-baselined 2026-07-14: round-robin gene evaluation removed — every non-division gene now re-checks
+    // its condition every tick (was 1 gene/tick, rest on a stale cache). Genes respond to their gates
+    // immediately, so light-driven growth follows a slightly different (more responsive) trajectory. Only
+    // the light-driven goldens (growth + interact) shift; mutation/weld/sticky and parallel==sequential are
+    // unaffected. topology unchanged (structure identical).
     private val GROWTH = mapOf(
-        "meta" to "6690f1e62190d995",
-        "physics" to "f2f5a875aa1e7ec8",
-        "biology" to "1d8531507fd443d2",
+        "meta" to "873a0eee26c7ffde",
+        "physics" to "9d24a6dea72bf751",
+        "biology" to "1cab1adf8876f616",
         "topology" to "cbf29ce484222325",
-        "grid" to "f9e4287b7637b92f",
+        "grid" to "2db35396cb00fb50",
     )
     // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
     // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
@@ -175,12 +180,14 @@ class CytoGoldenTest {
     // is geometry-only ⇒ thread-count-independent, so parallelMatchesSequential + conservation held.
     // Re-baselined 2026-07-09: 4x world size (see GROWTH). meta/physics/biology/grid all shift.
     // Re-baselined 2026-07-09 (#2): LIGHT_FALLOFF scales with the world (see GROWTH #2).
+    // Re-baselined 2026-07-14: round-robin gene evaluation removed (see GROWTH). physics/biology/grid shift
+    // with the more-responsive gene trajectories; meta + topology unchanged.
     private val INTERACT = mapOf(
         "meta" to "fd92edb8d415aaa8",
-        "physics" to "75d0073c4549c4bf",
-        "biology" to "6d125f86c8d49b4f",
+        "physics" to "da1fd935b91fc161",
+        "biology" to "874f2e30e03d2d29",
         "topology" to "cbf29ce484222325",
-        "grid" to "a5b930bc8f65c649",
+        "grid" to "cd7738ee26ca895a",
     )
 
     @Test

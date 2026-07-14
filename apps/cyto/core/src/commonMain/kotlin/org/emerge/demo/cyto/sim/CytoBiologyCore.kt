@@ -234,7 +234,7 @@ object CytoBiologyCore {
      *  The 1/N split is the genome-bloat tax: more simultaneously-active genes ⇒ each gets a thinner slice
      *  (inactive genes don't reserve a share — carrying them is taxed by mutation load instead). Import
       *  draws from the shared [grid], so this still runs in a fixed cell order across cells. */
-    fun runGenes(work: CellWork, tick: Int, stats: BioProfile? = null) {
+    fun runGenes(work: CellWork, stats: BioProfile? = null) {
         val genome = work.genome
         if (stats != null) { stats.genesCells++; stats.genesScanned += genome.size }
         val tScan = if (stats != null) TimeSource.Monotonic.markNow() else null
@@ -250,30 +250,13 @@ object CytoBiologyCore {
         val bioBonds = totalBiomassBonds(work.biomass)
         var n = 0
 
-        if (CytoTuning.ROUND_ROBIN_GENES && genomeSize > 0) {
-            // ── Round-robin condition evaluation ──────────────────────────────
-            // The gene at rrIdx gets its condition re-evaluated this tick.
-            // All other genes use their cached active state from the last time
-            // they were evaluated (or false if never evaluated).
-            val rrIdx = tick % genomeSize
-            for (i in genome.indices) {
-                val g = genome[i]
-                if (g.action.type != ActionType.Mitosis) {
-                    val isActive = if (i == rrIdx) {
-                        isActive(g, work, bioBonds).also { work._cachedActive[i] = it }
-                    } else {
-                        work._cachedActive[i]
-                    }
-                    if (isActive) active[n++] = i
-                }
-            }
-        } else {
-            // ── Sequential mode (original) ────────────────────────────────────
-            // All active genes are evaluated per tick.
-            for (i in genome.indices) {
-                val g = genome[i]
-                if (g.action.type != ActionType.Mitosis && isActive(g, work, bioBonds)) active[n++] = i
-            }
+        // Every non-division gene re-evaluates its condition every tick. The gene phase is already
+        // parallel per-cell (BiologySystem), so the O(genomeSize) scan is thread-absorbed — there's no
+        // stale-cache class of bugs (a gene's active state always reflects the current cytoplasm, so
+        // Retain seals reliably, post-division daughters evaluate against their own new state, etc.).
+        for (i in genome.indices) {
+            val g = genome[i]
+            if (g.action.type != ActionType.Mitosis && isActive(g, work, bioBonds)) active[n++] = i
         }
 
         if (stats != null) { stats.genesIsActiveNanos += tScan!!.elapsedNow().inWholeNanoseconds; stats.genesActive += n }

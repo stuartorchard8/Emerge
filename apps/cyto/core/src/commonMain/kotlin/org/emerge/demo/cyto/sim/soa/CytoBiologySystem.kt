@@ -217,7 +217,7 @@ class BiologySystem(
         // Gene phase — parallel
         val tick = world.world.tick.toInt()
         ColumnPartition.disjoint(n, bioExec, threshold = 1) { kStart, kEnd ->
-            for (k in kStart until kEnd) CytoBiologyCore.runGenes(state.bioWorks[ordered[k]]!!, tick, bioProfile)
+            for (k in kStart until kEnd) CytoBiologyCore.runGenes(state.bioWorks[ordered[k]]!!, bioProfile)
         }
         bioSplit("bio:genes")
 
