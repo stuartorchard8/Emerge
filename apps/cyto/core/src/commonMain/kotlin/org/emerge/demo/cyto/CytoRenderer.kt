@@ -19,11 +19,13 @@ import org.emerge.sim.core.ecs.ComponentTable
 import org.emerge.sim.core.physics.components.ColliderComponent
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
 import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.physics.primitives.Coord
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
+import kotlin.math.round
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -60,13 +62,18 @@ class CytoRenderer {
     private var resW = 1f
     private var resH = 1f
 
-    private var centerX = 0f
-    private var centerY = 0f
+    // Camera centre as a torus [Coord] per axis (like Scavengers/Drockets): panning adds fixed-point offsets
+    // that wrap for free via two's-complement Int overflow, so the camera never drifts into unbounded space
+    // and every object is drawn at its shortest torus delta from the camera → seamless edge wrapping.
+    private var cameraX = Coord(0)
+    private var cameraY = Coord(0)
+    // Camera position in logical units, refreshed once per frame in [computeProjection] — the base the
+    // per-object [viewX]/[viewY] wrap against (and what the field shaders take as their centre).
+    private var camLogX = 0f
+    private var camLogY = 0f
     private var viewHeight = 100f
 
     private val matP = Mat4.scratch()
-    private val matS = Mat4.scratch()
-    private val matT = Mat4.scratch()
     private val matM = Mat4.scratch()
     private val matMS = Mat4.scratch()
     private val matMT = Mat4.scratch()
@@ -98,7 +105,7 @@ class CytoRenderer {
     /** Recentre the camera on the origin and frame the (possibly resized) torus — used when a fresh world is
      *  started so the view isn't left zoomed on the previous world's scale. */
     fun resetView() {
-        centerX = 0f; centerY = 0f
+        cameraX = Coord(0); cameraY = Coord(0)
         viewHeight = org.emerge.demo.cyto.sim.CytoUnits.CELLS_PER_AXIS * 1.5f
         followId = -1; followX = 0f; followY = 0f; followVX = 0f; followVY = 0f
     }
@@ -120,20 +127,24 @@ class CytoRenderer {
         }
     }
 
-    /** Apply the follow target to the camera centre [centerX]/[centerY] using damped spring.
+    /** Apply the follow target to the camera centre ([cameraX]/[cameraY]) using damped spring.
      *  Call once per frame in [draw], before any NDC computation. */
     private fun applyFollow() {
         if (followId < 0) return
         val damping = FOLLOW_DAMPING
+        // Spring toward the target along the SHORTEST torus path (wrapLogical of the logical delta), so a
+        // target that has wrapped around an edge is chased across the seam, not the long way round.
+        val camLX = CytoUnits.toLogical(cameraX)
+        val camLY = CytoUnits.toLogical(cameraY)
         var vx = followVX
         var vy = followVY
-        vx += (followX - centerX) * damping
-        vy += (followY - centerY) * damping
+        vx += wrapLogical(followX - camLX) * damping
+        vy += wrapLogical(followY - camLY) * damping
         val frac = 1f / 60f
         vx *= frac
         vy *= frac
-        centerX += vx
-        centerY += vy
+        cameraX += CytoUnits.len(vx)
+        cameraY += CytoUnits.len(vy)
         followVX = vx
         followVY = vy
     }
@@ -264,8 +275,8 @@ class CytoRenderer {
 
     fun panByPixels(dxPx: Float, dyPx: Float) {
         val worldPerPx = viewHeight / resH
-        centerX -= dxPx * worldPerPx
-        centerY += dyPx * worldPerPx
+        cameraX -= CytoUnits.len(dxPx * worldPerPx)
+        cameraY += CytoUnits.len(dyPx * worldPerPx)
     }
 
     fun zoomByFactor(factor: Float) {
@@ -279,28 +290,30 @@ class CytoRenderer {
         val before = screenToWorld(px, py)
         viewHeight = (viewHeight / factor).coerceIn(0.5f, 100_000f)
         val after = screenToWorld(px, py)
-        centerX += before[0] - after[0]
-        centerY += before[1] - after[1]
+        cameraX += CytoUnits.len(before[0] - after[0])
+        cameraY += CytoUnits.len(before[1] - after[1])
     }
 
-    /** Framebuffer pixel -> logical world `[x, y]`. */
+    /** Framebuffer pixel -> logical world `[x, y]`. Logical is relative to the (wrapped) camera and may fall
+     *  outside `[-HALF, HALF)`; callers convert it back to a torus [Coord] (which wraps), so that's fine. */
     fun screenToWorld(px: Float, py: Float): FloatArray {
         val aspect = resW / resH
         val viewWidth = viewHeight * aspect
         val ndcX = px / resW * 2f - 1f
         val ndcY = 1f - py / resH * 2f
         return floatArrayOf(
-            centerX + ndcX * viewWidth * 0.5f,
-            centerY + ndcY * viewHeight * 0.5f,
+            CytoUnits.toLogical(cameraX) + ndcX * viewWidth * 0.5f,
+            CytoUnits.toLogical(cameraY) + ndcY * viewHeight * 0.5f,
         )
     }
 
-    /** Logical world (x, y) -> framebuffer pixel `[px, py]` (inverse of [screenToWorld]). */
+    /** Logical world (x, y) -> framebuffer pixel `[px, py]` (inverse of [screenToWorld]). Uses the shortest
+     *  torus delta to the camera, so a point that has wrapped past an edge maps to the near side of the view. */
     fun worldToScreen(worldX: Float, worldY: Float): FloatArray {
         val aspect = resW / resH
         val viewWidth = viewHeight * aspect
-        val ndcX = (worldX - centerX) / (viewWidth * 0.5f)
-        val ndcY = (worldY - centerY) / (viewHeight * 0.5f)
+        val ndcX = wrapLogical(worldX - CytoUnits.toLogical(cameraX)) / (viewWidth * 0.5f)
+        val ndcY = wrapLogical(worldY - CytoUnits.toLogical(cameraY)) / (viewHeight * 0.5f)
         return floatArrayOf(
             (ndcX + 1f) * 0.5f * resW,
             (1f - ndcY) * 0.5f * resH,
@@ -415,7 +428,7 @@ class CytoRenderer {
                     if (a <= 0.003f) continue
                     val r = frac * radius                                // grow 0 → cell radius
                     matCircS.setScale(r, r)
-                    matCircT.setTranslation(cx, cy)
+                    matCircT.setTranslation(viewX(cx), viewY(cy))
                     matCircM.setProduct(matCircT, matCircS)
                     mvpCirc.setProduct(matP, matCircM)
                     mvpCirc.copyInto(buildMatrices, buildCount * Mat4.FLOATS)
@@ -429,7 +442,7 @@ class CytoRenderer {
             }
 
             matMS.setScale(2f * radius, 2f * radius)
-            matMT.setTranslation(cx, cy)
+            matMT.setTranslation(viewX(cx), viewY(cy))
             matM.setProduct(matMT, matMS)
             mvp.setProduct(matP, matM)
 
@@ -663,7 +676,7 @@ class CytoRenderer {
             val alpha = sin(prog.toDouble() * PI).toFloat() * PARTICLE_MAX_ALPHA
             val s = partSize[i]
             matCircS.setScale(s, s)
-            matCircT.setTranslation(x, y)
+            matCircT.setTranslation(viewX(x), viewY(y))
             matCircM.setProduct(matCircT, matCircS)
             mvpCirc.setProduct(matP, matCircM)
             mvpCirc.copyInto(buildMatrices, inst * Mat4.FLOATS)
@@ -848,7 +861,7 @@ class CytoRenderer {
         val hwx = viewHeight * aspect * 0.5f
         if (hwx <= 0f) return
         lightFieldShader.draw(
-            centerX = centerX,
+            centerX = camLogX,
             halfViewX = hwx,
             bandX = CytoLightField.bandCenterX(tick),
             falloff = CytoLightField.FALLOFF,
@@ -870,7 +883,7 @@ class CytoRenderer {
         rasterizeMatter(grid)
         matterField.draw(
             pixels = matterPixels,
-            centerX = centerX, centerY = centerY,
+            centerX = camLogX, centerY = camLogY,
             halfViewX = hwx, halfViewY = hwy,
             half = CytoLightField.HALF, span = CytoLightField.SPAN,
             time = frame.tick.toFloat(), amp = MATTER_WARP_AMP,
@@ -949,10 +962,24 @@ class CytoRenderer {
     private fun computeProjection() {
         val aspect = resW / resH
         val viewWidth = viewHeight * aspect
-        matT.setTranslation(-centerX, -centerY)
-        matS.setScale(2f / viewWidth, 2f / viewHeight)
-        matP.setProduct(matS, matT)
+        // The camera is applied per-object (as a wrapped delta via viewX/viewY), not by a single translation
+        // matrix — a matrix can't wrap. So the projection is a pure scale-to-NDC; objects arrive pre-offset.
+        camLogX = CytoUnits.toLogical(cameraX)
+        camLogY = CytoUnits.toLogical(cameraY)
+        matP.setScale(2f / viewWidth, 2f / viewHeight)
     }
+
+    /** Wrap a logical delta to the shortest torus offset, `[-HALF, HALF)` (period [CytoLightField.SPAN]). */
+    private fun wrapLogical(d: Float): Float {
+        val span = CytoLightField.SPAN
+        return d - span * round(d / span)
+    }
+
+    /** Logical world x/y → camera-relative logical, wrapped to the shortest torus offset. The per-object
+     *  camera transform: every drawn thing is placed at its nearest image of the camera, so it slides
+     *  seamlessly across the torus edges instead of off into unbounded space. */
+    private fun viewX(logicalX: Float): Float = wrapLogical(logicalX - camLogX)
+    private fun viewY(logicalY: Float): Float = wrapLogical(logicalY - camLogY)
 
     /**
      * Colour a cell by its **contents**, per [colorMode]. Each r/g/b atom count maps to R/G/B,
