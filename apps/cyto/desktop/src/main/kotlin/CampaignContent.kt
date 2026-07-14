@@ -34,9 +34,12 @@ object CampaignContent {
     /** Camera + cell selection + the info panel - enough to explore, nothing to overwhelm. */
     private val LOOK = ControlMask.of(Control.Camera, Control.Select, Control.GeneEditor, Control.Menu)
 
-    /** LOOK plus the overlay + speed controls - for watching the world run. */
+    /** LOOK plus the overlay control - for watching the world run at the campaign's curated pace. Note: no
+     *  Speed control. Early chapters deliberately withhold the SLOW/PAUSE/FAST buttons (the campaign runs its
+     *  Live steps at a good default speed on its own); time controls are introduced later, in Ch8, where
+     *  watching long-term locomotion across day/night cycles makes them genuinely useful. */
     private val WATCH = ControlMask.of(
-        Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Speed, Control.Menu,
+        Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Menu,
     )
 
     private const val GROUP_GROW = "Grow"
@@ -260,7 +263,7 @@ object CampaignContent {
                 detail = "You're not writing a gene by hand - you're dropping in a whole pre-made function. That's how bodies are built here: from reusable subsystems.",
             ),
             Step(
-                text = "Done. It now has a REPRODUCE group. Speed the sim up and watch: big enough, the cell splits in two, then those split, and a colony spreads.",
+                text = "Done. It now has a REPRODUCE group. Watch: big enough, the cell splits in two, then those split, and a colony spreads.",
                 gate = Gate.World(
                     "Grow to 30 cells",
                     met = { it.cellCount >= 30 },
@@ -268,7 +271,6 @@ object CampaignContent {
                 ),
                 allow = WATCH,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "SLOW / PAUSE / FAST, top-left"),
             ),
             Step(
                 text = "One gene turned a static cell into a spreading colony - small genetic change, huge behaviour. But it won't fill the world forever. Turn on the matter grid to see the limit.",
@@ -329,14 +331,13 @@ object CampaignContent {
                 detail = "SEVER yes = the daughter breaks free as its own cell. SEVER no = it stays welded to its mother. One field, two completely different creatures.",
             ),
             Step(
-                text = "Speed up and watch. It divides once, into a welded pair - then stops. Splitting off used to fling the cells into fresh matter. Now they sit still and quickly eat what's right around them.",
+                text = "Watch. It divides once, into a welded pair - then stops. Splitting off used to fling the cells into fresh matter. Now they sit still and quickly eat what's right around them.",
                 gate = Gate.World(
                     "Watch it divide once",
                     met = { it.cellCount >= 2 },
                 ),
                 allow = WATCH,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "SLOW / PAUSE / FAST, top-left"),
             ),
             Step(
                 text = "Why has it stalled? Turn on the matter grid. See the dark patch right under the pair - that's matter they've already eaten. Stuck in their own used-up ground, they've nothing left to build a daughter from.",
@@ -457,11 +458,10 @@ object CampaignContent {
                 detail = "Like its grow genes, this muscle runs on light - so it can only clench while daylight is on it. In the dark it goes slack.",
             ),
             Step(
-                text = "Speed up and watch it through a day and a night. As daylight sweeps over it, the body clenches up tight and small - the muscle firing. As night follows, the light leaves and it relaxes slowly back to full size.",
-                gate = Gate.Did(PlayerAction.ChangedSpeed, "Change the sim speed"),
+                text = "Watch it through a day and a night. As daylight sweeps over it, the body clenches up tight and small - the muscle firing. As night follows, the light leaves and it relaxes slowly back to full size.",
+                gate = Gate.Next,
                 allow = WATCH,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "SLOW / PAUSE / FAST, top-left"),
                 detail = "It may sit in shadow a while first - wait for the bright band to reach it, then you'll see it pull in. It breathes in time with the sun.",
             ),
             Step(
@@ -494,11 +494,10 @@ object CampaignContent {
                 detail = "Light comes from a few fixed sources and sweeps as the world turns, so every spot has a day and a night.",
             ),
             Step(
-                text = "Let's set it in motion. Speed the world up - top-left - and watch the daylight sweep across and slide over the cell.",
-                gate = Gate.Did(PlayerAction.ChangedSpeed, "Change the sim speed"),
+                text = "The world is turning. Watch the daylight sweep across and slide over the cell - it passes into the light, then back into shadow.",
+                gate = Gate.Next,
                 allow = WATCH,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "SLOW / PAUSE / FAST, top-left"),
             ),
             Step(
                 text = "Now click the cell and watch its LIGHT reading in the panel. When daylight covers it the number climbs - that's it feeding. When night passes over, it drops back to zero.",
