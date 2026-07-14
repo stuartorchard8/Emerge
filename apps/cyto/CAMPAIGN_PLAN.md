@@ -15,10 +15,11 @@ prose companion (the campaign is the interactive path through the same material)
 > validateGlyphs()` guard against regressions); per-step `WorldRun.Frozen/Live` so a slow reader isn't
 > overtaken by later-concept events (world holds still on reading beats).
 >
-> **Status (2026-07-14): Ch1–9 built and committed** (Act I + II + the locomotion arc opener). This section
-> and **§2.1 (the spine)** are the canonical current record; the deeper design in **§5–6 is the ORIGINAL
-> sketch and is now stale** (its chapter numbering never matched what shipped) — trust this block + §2.1 over
-> §5–6 where they disagree. **Next build target: Ch10 Reproduction** (see the handoff at the end of this block).
+> **Status (2026-07-14): Ch1–10 built and committed** (Act I + II + the full locomotion arc through
+> reproduction). This section and **§2.1 (the spine)** are the canonical current record; the deeper design in
+> **§5–6 is the ORIGINAL sketch and is now stale** (its chapter numbering never matched what shipped) — trust
+> this block + §2.1 over §5–6 where they disagree. **Next build target: Ch11 capstone (optional, unspecced)**
+> — the core arc is complete; a capstone would turn on mutation/selection and graduate to sandbox (scope TBD).
 >
 > **Engine (core commonMain `org.emerge.demo.cyto.campaign`):** `CampaignModel` (`Chapter`/`Step`/`Gate`/
 > `PlayerAction`/`ControlMask`/`Spotlight`/`WorldRun`), `CampaignQuery`+`WorldStats`+`FocusedCell`,
@@ -54,6 +55,10 @@ prose companion (the campaign is the interactive path through the same material)
 >   (swims at night) → marker flip bb<1→bb>0 (better swimmer), each generation tapped out as a **live copy of
 >   the selected cell** ("last-modified brush", `Chapter.spawnCopiesHeldCell`). Uses Stu's swimmerx/swimmerxX
 >   genomes. (Growth-limiting NOT needed here — already in Ch8.)
+> - **Ch10 Spread** — arc close. Substrate = the Ch9 end-state swimmer (growth-capped); player inserts a
+>   **Reproduce** group (Stu's `reproducer.gene` = a reserve Convert + a `Mitosis gr mother sever` division,
+>   rejectMother) so a freed daughter buds off unwelded, escapes the size cap, and grows a new swimmer — one
+>   creature becomes a spreading, colonising lineage. Closes the "single speck → living lineage" through-line.
 >
 > **Gene grouping = a persistent per-gene TAG** (`Gene.group: String`, §10 — see the updated §10 for the
 > as-built design). No matching: the tag survives editing/division/mutation/save (round-tripped by
@@ -79,24 +84,18 @@ prose companion (the campaign is the interactive path through the same material)
 > wiring is auto-verified. (4) The Genome Workshop / group-library / move-between-groups UI (§10.5) — data
 > model supports re-tagging, no UI yet. (5) No live in-app visual playtest of the whole arc yet.
 >
-> **Next session — build Ch10 Reproduction** (the arc's growth-limit slot is retired; growth-limiting was
-> folded into Ch8, so reproduction takes the Ch10 number; a capstone can follow as Ch11). **Chapter contract:**
-> - *Problem:* your Ch9 swimmer grows to a set size and holds there — one lone creature. A lineage needs to
->   **spread**: bud off new swimmers that go colonise on their own.
-> - *The one idea:* **sever division** — add a `Mitosis … sever` gene (rejectMother = true) so a daughter
->   breaks free as its own 1-celled founder and grows into a fresh swimmer, instead of staying welded to the
->   cap-limited body. Mirrors Ch4's "+ ADD REPRODUCE" insert, but on the swimmer lineage (the original
->   17-gene `Swimmer.gene` carried exactly such a gene: `Mitosis gr mother sever along gr` at the extremities).
-> - *Substrate:* the Ch9 end-state swimmer (clocked, moving) **minus** a reproduce group; insert = the sever
->   gene, tagged `reproduce`. Reuse the group-insert machinery + a `geneCount` gate (as Ch8/Ch9 do).
-> - *Objective / payoff:* `cellCount` climbs well past the single-cluster cap (e.g. ≥ N), i.e. NEW independent
->   swimmers appear and spread — visible colonisation, not just one body pulsing in place. Remember the
->   **push-to-start** constraint (single cells can't locomote) and that **severing IS locomotion** (flung
->   daughters reach fresh matter) — both already documented in [[project_cyto_campaign]].
-> - *Watch for:* the swimmer is growth-capped by the Ch8 morphogen, so confirm in the harness that a severed
->   daughter actually escapes the cap and grows (the cap senses body size, so a lone founder should be below
->   it). Build the substrate genome by trimming Swimmerx/SwimmerxX, verify the sever-insert via the harness
->   (gene count + render), then live-playtest the colonisation.
+> **Ch10 Spread — BUILT (`f49522b4`).** Substrate = the Ch9 end-state swimmer (Stu's SwimmerxX, growth-capped
+> by the Ch8 morphogen); player inserts a REPRODUCE group (Stu's `reproducer.gene` payload = a reserve Convert
+> + a `Mitosis gr mother sever` division, rejectMother) so a freed daughter buds off unwelded, escapes the cap,
+> and grows a new swimmer. Objective `cellCount ≥ 20`. Harness-verified for flow (glyph-clean, 19→21 genes,
+> sever-division fires 1→2→3 once pushed to fresh matter). The full colonisation payoff joins Ch8/Ch9 on the
+> **live-GL-playtest** list — it needs autonomous swimming over many day/night cycles to see the lineage spread.
+>
+> **Next session — Ch11 capstone (optional, unspecced).** The core arc (single grow-only speck → clocked,
+> differentiated, self-reproducing swimmer lineage) is COMPLETE at Ch10. A capstone would turn on
+> mutation/selection and graduate to the open sandbox with minimal coaching; scope is TBD and it may not be
+> needed. Higher-value near-term work is the **live-GL playtest pass** over Ch8–10 (the locomotion/colonisation
+> payoffs are only harness-flow-verified) rather than a new chapter.
 >
 > **Living-world visuals note (still open, lower priority):** the `LIVING_WORLD_PLAN.md` metabolic flows only
 > pay off on an actively-metabolising body — the swimmer lineage (Ch7+) now provides one, so a future pass can
@@ -182,10 +181,14 @@ coach less). Act IV is essentially the existing sandbox with an optional challen
   clock, then breed it better." Insert the **Clock** group (oscillator), then edit a **3-generation lineage
   by hand** (fuel Light→Break rg = night-swimming; marker bb<1→bb>0 = better swimmer) via the **last-modified
   brush** (`Chapter.spawnCopiesHeldCell`). Uses Stu's swimmerx/swimmerxX genomes.
-- **Ch 10 — Reproduction** ⏳ NEXT. *Problem:* "Your swimmer grows to a set size and stops — one creature.
-  Make it spread." Insert a **Reproduce** group (a `Mitosis … sever` gene) so it buds off free-swimming
-  colonists. Objective: `cellCount` climbs past the single-cluster cap (new independent swimmers appear).
-  Full chapter contract in the fresh-session handoff at the top of this doc.
+- **Ch 10 — Spread** ✅ (`f49522b4`). *Problem:* "Your swimmer grows to a set size and stops — one creature.
+  Make it spread." Substrate = the Ch9 end-state swimmer (Stu's SwimmerxX, growth-capped by the Ch8
+  morphogen); player inserts a **Reproduce** group (Stu's `reproducer.gene` payload = a reserve-building
+  Convert + a `Mitosis gr mother sever` division, rejectMother) so a freed daughter buds off unwelded,
+  escapes the size cap, and grows into a new swimmer. Objective: `cellCount ≥ 20` (new independent swimmers
+  colonise). **Flow-verified in harness** (loads glyph-clean, ADD REPRODUCE = 19→21 genes, sever-division
+  fires 1→2→3 once pushed to fresh matter); the full colonisation payoff shares the Ch8/Ch9 live-GL-playtest
+  item (autonomous swimming over many day/night cycles).
 - **Ch 11 — Capstone / Hopeful Monster** (optional, unspecced). *Problem:* "You've built a whole swimmer —
   now turn on mutation and let selection act." Minimal coaching; graduates to sandbox. Scope TBD.
 
