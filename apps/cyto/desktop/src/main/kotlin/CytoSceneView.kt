@@ -188,6 +188,10 @@ object CytoSceneView {
             val mask = director.controlMask
             controls.showBrush = mask.allows(Control.Brush)
             controls.showTouchModes = mask.allows(Control.Brush)
+            // Ch8 "tap to add a cell": permit empty-space spawns of the chapter's genome without the full
+            // brush palette. Set the brush genome so the tap-spawn (and Set mode) drops in the right creature.
+            controls.worldSpawnEnabled = mask.allows(Control.Spawn)
+            if (controls.worldSpawnEnabled) controller.brushGenome = director.activeChapter?.spawnGenome
             controls.showSimSpeed = mask.allows(Control.Speed)
             controls.showMutation = mask.allows(Control.Mutation)
             controls.simPaused = simDriver.paused
@@ -400,7 +404,10 @@ object CytoSceneView {
                         }
                         // Painting is gated with the brush: while a campaign step masks Brush off,
                         // a world tap must not spawn/act (selection above still works via focus()).
-                        if (controls.showBrush) {
+                        // worldSpawnEnabled is the narrow exception: Ch8 permits empty-space spawns of the
+                        // chapter genome without the palette (an empty-space tap spawns; a tap on a cell in
+                        // the default Base mode is a no-op, so selection is unaffected).
+                        if (controls.showBrush || controls.worldSpawnEnabled) {
                             val world = renderer.screenToWorld(px.first, px.second)
                             controller.tap(world[0], world[1], controls.touchMode, controls.cellType)
                         }

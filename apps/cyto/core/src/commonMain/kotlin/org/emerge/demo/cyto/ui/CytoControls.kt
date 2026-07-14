@@ -48,6 +48,10 @@ class CytoControls {
      *  the modes act on the world the same way painting does, so they hide until painting is taught. */
     var showTouchModes: Boolean = true
 
+    /** Host-set: permit a tap on empty space to spawn the brush genome even while the brush palette is hidden
+     *  (Control.Spawn). Ch8's focused "tap to add a cell" re-seed, without exposing the full paint toolkit. */
+    var worldSpawnEnabled: Boolean = false
+
     /** Whether to draw the light-field heatmap (the host reads this and applies it to the renderer). */
     var showLightField: Boolean = true
         private set

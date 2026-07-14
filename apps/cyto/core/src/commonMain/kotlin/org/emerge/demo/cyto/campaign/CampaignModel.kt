@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.campaign
 
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.sim.CytoScenario
+import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.ui.GenomeGrouping
 
 /**
@@ -33,6 +34,11 @@ class Chapter(
      *  from the held cell. Named per chapter so a chapter offers only the one subsystem it teaches (Ch4 =
      *  Reproduce, Ch5 = Hold Together); empty (Act I / Ch3) = read-only, no inserts. */
     val insertableGroups: Set<String> = emptySet(),
+    /** The genome a tap on empty space drops in as a fresh cell, during steps whose [ControlMask] allows
+     *  [Control.Spawn] (Ch8's "tap an empty space to add another cell with the same genome" — a re-seed if a
+     *  founder dies before it gets going). Null ⇒ no world-spawn even if a step allowed it. The host sets this
+     *  as the brush genome and permits empty-space taps *without* surfacing the full brush palette. */
+    val spawnGenome: List<Gene>? = null,
 )
 
 /** One coaching beat: the instruction, how it advances ([gate]), which controls are live ([allow]), an
@@ -102,5 +108,6 @@ class ControlMask private constructor(private val allowed: Set<Control>) {
     }
 }
 
-/** The host-maskable control surfaces. */
-enum class Control { Camera, Select, Brush, GeneEditor, Speed, Mutation, Overlays, Save, Menu }
+/** The host-maskable control surfaces. [Spawn] permits tapping empty space to drop in a [Chapter.spawnGenome]
+ *  cell *without* the full [Brush] palette — a focused re-seed affordance (Ch8). */
+enum class Control { Camera, Select, Brush, GeneEditor, Speed, Mutation, Overlays, Save, Menu, Spawn }

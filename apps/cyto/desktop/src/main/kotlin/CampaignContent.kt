@@ -17,6 +17,7 @@ import org.emerge.demo.cyto.sim.AUTOTROPH_REPAIR_GENE
 import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.FounderSpec
 import org.emerge.demo.cyto.sim.Gene
+import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.ui.GeneGroup
 import org.emerge.demo.cyto.ui.GenomeGrouping
 import org.emerge.render.torus.ui.UiTextRenderer
@@ -40,6 +41,19 @@ object CampaignContent {
      *  watching long-term locomotion across day/night cycles makes them genuinely useful. */
     private val WATCH = ControlMask.of(
         Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Menu,
+    )
+
+    /** WATCH plus tapping empty space to re-seed the chapter genome (Ch8's "tap to add a cell"). No time
+     *  controls yet — those arrive on the next beat. */
+    private val SPAWN = ControlMask.of(
+        Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Menu, Control.Spawn,
+    )
+
+    /** WATCH plus the SLOW/PAUSE/FAST time controls (and re-seeding) - introduced in Ch8, the first chapter
+     *  where the player watches long-running behaviour (day/night-linked locomotion) and needs to pace time. */
+    private val WATCH_TIME = ControlMask.of(
+        Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Menu,
+        Control.Speed, Control.Spawn,
     )
 
     private const val GROUP_GROW = "Grow"
@@ -116,6 +130,62 @@ object CampaignContent {
         } + HOLD_TOGETHER_GENES)),
     )
 
+    // ── Ch8: the Polarise / differentiation genome (Stu's world-8 swimmer lineage) ──────────────────────
+    // A bespoke locomotion genome, tagged into functional groups. Unlike the Ch1-7 autotroph it runs a
+    // b/bb/gr/br chemistry: `bb` is a morphogen handed WHOLE to one daughter on division (Mitosis `bb
+    // mother`), so only the marked side carries it. The MOVE muscle (light-powered Contract) fires while
+    // `bb < 1`, so the UN-marked cells clench and the marked cell holds still - an ASYMMETRIC squeeze that
+    // makes the body travel. Authored as text + parsed via GeneCodec so it reads exactly like the `.gene`
+    // files it came from (group tags = the optional 4th `:`-part).
+    private const val GROUP_POLARIZE = "polarize"
+
+    /** Ch8 substrate: the swimmer WITHOUT its polarize group - it feeds, maintains, and contracts, but with
+     *  no `bb` marker every cell clenches the same, so (like Ch7's muscle) it goes nowhere; and with no `gr`
+     *  the grow chain stalls, so it can't divide. A calm single cell, just like Ch7's end-state. */
+    private val CH8_INIT_GENES: List<Gene> = GeneCodec.parse(
+        """
+        Light : rg < 10000 : FormBond r g : feed
+        Break rg : Biomass < 3000 & rg > 500 : Convert rg @15 : maintain
+        Break rg : rg > 500 : Repair @10 : maintain
+        Light : bb < 1 : Contract @15 : move
+        Break rg : bb < 5 & gr > 0 & br < rg : FormBond b r : grow
+        Break br : gr > 9 : FormBond r g @13 : grow
+        Break rg : br < 10 & Biomass > 2000 : Mitosis bb mother across gr : grow
+        """.trimIndent(),
+    )
+
+    /** The polarize subsystem Ch8's "+ ADD POLARIZE" inserts: it synthesises the `bb` morphogen and hands it
+     *  to one daughter, establishing the front/back difference that makes contraction asymmetric. */
+    private val CH8_POLARIZE_GENES: List<Gene> = GeneCodec.parse(
+        """
+        Break rg : gr < 1 & bb < rg : FormBond b b : polarize
+        Break rg : bb > 1 & bb < rg : FormBond b b : polarize
+        Break bb : Biomass < 3000 & bb > 40 : Convert bb @15 : polarize
+        Break bb : bb > 1 : Retain bb : polarize
+        Break rg : bb > 0 & gr < rg : FormBond g r : polarize
+        Break gr : bb < 1 & gr > 1 : FormBond r g @14 : polarize
+        """.trimIndent(),
+    )
+
+    /** The full differentiated swimmer = substrate + polarize (the exact order "+ ADD" produces, appending
+     *  the inserted group). Used as the re-seed genome for the "tap empty space to add a cell" affordance. */
+    private val CH8_FULL_GENES: List<Gene> = CH8_INIT_GENES + CH8_POLARIZE_GENES
+
+    private val CH8_SUBSTRATE = CytoScenario.DEFAULT.copy(
+        name = "Campaign",
+        founders = listOf(FounderSpec(CellType.Stem, 1, genome = CH8_INIT_GENES)),
+    )
+
+    /** Ch8's grouping - the swimmer's functional subsystems. Only POLARIZE is offered as an insert (the rest
+     *  are the substrate the player already has). Header colours auto-derive from the names. */
+    private val CH8_GROUPING = GenomeGrouping(listOf(
+        GeneGroup("feed"),
+        GeneGroup("maintain"),
+        GeneGroup("move"),
+        GeneGroup("grow"),
+        GeneGroup(GROUP_POLARIZE, insert = CH8_POLARIZE_GENES),
+    ))
+
     val CHAPTERS: List<Chapter> = listOf(
         chapter1FirstContact(),
         chapter2LetThereBeLight(),
@@ -124,6 +194,7 @@ object CampaignContent {
         chapter5HoldTogether(),
         chapter6HoldUnderStrain(),
         chapter7Move(),
+        chapter8Polarise(),
     )
 
     val ORDER: List<String> = CHAPTERS.map { it.id }
@@ -474,6 +545,70 @@ object CampaignContent {
                 text = "To actually travel, the body has to squeeze LOPSIDED - cells on one side pulling harder than the other, so it lurches that way. To do that, the cells must first tell which side they're on. Building that sense of place is next.",
                 gate = Gate.Next,
                 allow = WATCH,
+                world = WorldRun.Live,
+            ),
+        ),
+    )
+
+    /** Act III opener - the locomotion payoff. The player takes a calm single cell (grows/contracts but
+     *  goes nowhere, like Ch7's end-state), adds the POLARIZE group, and it comes alive: dividing into a
+     *  small cluster whose marked and bare cells contract unevenly, so the body crawls. Introduces two
+     *  things: cellular differentiation via a morphogen (a marker handed to one daughter → asymmetric
+     *  contraction → real travel), and the SLOW/PAUSE/FAST time controls, now that behaviour plays out over
+     *  day-night cycles. Also teaches the re-seed affordance (tap empty space) since a lone founder can die
+     *  before it gets going. See [CH8_INIT_GENES]/[CH8_POLARIZE_GENES]. */
+    private fun chapter8Polarise() = Chapter(
+        id = "ch08-polarise",
+        act = 3,
+        title = "A Sense of Place",
+        blurb = "An even squeeze goes nowhere. Teach the cells which side they're on.",
+        scenario = CH8_SUBSTRATE,
+        grouping = CH8_GROUPING,
+        insertableGroups = setOf(GROUP_POLARIZE),
+        spawnGenome = CH8_FULL_GENES,
+        steps = listOf(
+            Step(
+                text = "Last chapter your muscle squeezed the whole body at once - it pulsed on the spot and went nowhere. To travel, some cells must pull while others hold still. For that, a cell first has to know which side it's on.",
+                gate = Gate.Next,
+                allow = LOOK,
+            ),
+            Step(
+                text = "Here's a body built for it. Select it and open its genome - FEED, MAINTAIN, GROW, and a MOVE muscle like before. But it's still missing the one thing that makes its cells DIFFER from each other.",
+                gate = Gate.World("Select the cell", { it.focused != null }),
+                allow = LOOK,
+                spotlight = Spotlight(hint = "Click the cell"),
+            ),
+            Step(
+                text = "Add the POLARIZE group. It builds a chemical marker and, on every division, hands it to just ONE of the two daughters - so one cell ends up marked and the other bare. That difference is a sense of place.",
+                gate = Gate.World("Add the Polarise group", met = { (it.focused?.geneCount ?: 0) >= 13 }),
+                allow = LOOK,
+                spotlight = Spotlight(hint = "+ ADD POLARIZE, below the groups"),
+                detail = "The muscle only fires in cells WITHOUT the marker. So the marked cell holds still while its neighbours clench - the squeeze is now lopsided, and a lopsided squeeze travels.",
+            ),
+            Step(
+                text = "Now give it a push to get it started - press and drag it across the world. As it grows and divides, the marked and bare cells pull unevenly and the little body starts to crawl. If a founder dies before it gets going, tap an empty space to drop in another cell with the same genome.",
+                gate = Gate.World(
+                    "Grow it to a moving cluster",
+                    met = { it.cellCount >= 2 },
+                    progress = { it.cellCount.coerceAtMost(2) to 2 },
+                ),
+                allow = SPAWN,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "Drag to push. Tap empty space to re-seed."),
+                detail = "It usually settles into a small cluster of a few cells - that's enough to move. A lone cell can't locomote, so it needs that first shove (or a fresh neighbour) to get over the line.",
+            ),
+            Step(
+                text = "It swims on sunlight - the muscle only fires in the light, so it crawls through the day and drifts at night. Speed the world up to watch it travel across a few day-night cycles.",
+                gate = Gate.Did(PlayerAction.ChangedSpeed, "Change the sim speed"),
+                allow = WATCH_TIME,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "SLOW / PAUSE / FAST, top-left"),
+                detail = "This is why the time controls appear now: locomotion plays out over whole day-night cycles - too slow to sit and watch in real time.",
+            ),
+            Step(
+                text = "From a cell that only pulsed in place, you have a creature that SWIMS - just because its cells took on different roles. That's differentiation: one genome, read differently depending on where a cell sits.",
+                gate = Gate.Next,
+                allow = WATCH_TIME,
                 world = WorldRun.Live,
             ),
         ),
