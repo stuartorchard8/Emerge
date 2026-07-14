@@ -602,7 +602,7 @@ class CytoSoaSpecTest {
                 quanta = quanta, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
             )
             val before = totalBiomassBonds(work.biomass)
-            CytoBiologyCore.runGenes(work, 0)
+            CytoBiologyCore.runGenes(work)
             return totalBiomassBonds(work.biomass) - before
         }
         // Energy-poor: a high gear squeezes ~(g+1)× more actions out of the same quanta.
@@ -640,7 +640,7 @@ class CytoSoaSpecTest {
             genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "rg", "g", aWild = true, bWild = true))),
             quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
-        CytoBiologyCore.runGenes(work, 0)
+        CytoBiologyCore.runGenes(work)
         assertEquals(1000, work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("r")), "the bare monomer 'r' must be untouched (suffix 'rg' doesn't match it)")
         assertTrue(work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("rgg")) > 0, "rg+g should have bonded into rgg")
         assertTrue(work.cytoplasm.count(org.emerge.demo.cyto.sim.SpeciesRegistry.id("rg")) < 1000, "the 'rg' molecule should have been consumed")
@@ -661,7 +661,7 @@ class CytoSoaSpecTest {
             genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "b", "g", aWild = true, bWild = true))),
             quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
-        CytoBiologyCore.runGenes(work, 0)
+        CytoBiologyCore.runGenes(work)
         assertTrue(work.cytoplasm.count(sid("bg")) > 0, "abundant b+g should have bonded into bg")
         assertEquals(1, work.cytoplasm.count(sid("rgrb")), "the rare lex-smallest match 'rgrb' must be left alone")
         assertEquals(0, work.cytoplasm.count(sid("rgrbg")), "must NOT have produced rgrbg (the old lex-first product)")
@@ -683,7 +683,7 @@ class CytoSoaSpecTest {
                 genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.FormBond, "r", "r", aWild = aWild, bWild = bWild))),
                 quanta = 300, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
             )
-            CytoBiologyCore.runGenes(work, 0)
+            CytoBiologyCore.runGenes(work)
             return work.cytoplasm.count(sid("r")) to work.cytoplasm.count(sid("rr"))
         }
         val (exactR, exactRR) = run(aWild = false, bWild = false)
@@ -706,7 +706,7 @@ class CytoSoaSpecTest {
             genome = listOf(Gene(EnergySource.BreakBond("gb"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Convert, "b"))),
             quanta = 0, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
-        CytoBiologyCore.runGenes(work, 0)
+        CytoBiologyCore.runGenes(work)
         assertEquals(1, work.cytoplasm.count(sid("rgb")), "the rare lex-smallest fuel 'rgb' must be left alone")
         assertTrue(work.cytoplasm.count(sid("gb")) < 1000, "the abundant 'gb' fuel should have been broken")
     }
@@ -960,5 +960,107 @@ class CytoSoaSpecTest {
         val control = radiusRaw(state, controlId)
         assertTrue(radiusRaw(state, aId) < control, "a touched cell should have fired its Touching-gated Contract (got ${radiusRaw(state, aId)} vs control $control)")
         assertTrue(radiusRaw(state, bId) < control, "both touching cells should have fired")
+    }
+
+    @Test
+    fun retainSealsRegardlessOfGenePosition() {
+        // Retain genes are freshly evaluated every tick (no round-robin cache), so a Retain sitting
+        // deep in a large genome still seals from the tick its gate first holds — no stale-cache leak
+        // window. Build a 13-gene genome with Retain at idx 7 and confirm the sealed species never
+        // crosses the weld even across many ticks.
+        // Build a 13-gene genome where Retain sits at idx 6 (evaluated only at ticks
+        // 6, 19, 32 … under pure round-robin). Run 20 ticks past tick 0: at tick 7 the
+        // cached flag would still be false (never re-evaluated since tick 0 where bb was
+        // absent), so without the fix bb leaks; with the fix it stays sealed.
+        //
+        // Gene layout (13 entries): idx 0-5 = no-ops to fill slots, idx 6 = Retain(bg),
+        // idx 7-12 = no-ops. The cell starts with NO bg; at tick 1 a FormBond gene makes
+        // bg. Retain's gate is bg > 0. Under round-robin stale-cache, idx 6 stays false
+        // for 12 ticks (tick 7-18).
+        val filler = Gene(EnergySource.Light,
+            GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(Int.MAX_VALUE)),
+            GeneAction(ActionType.Repair))   // always-off filler
+        val makeBg = Gene(EnergySource.BreakBond("rg"),
+            GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(1_000_000)),
+            GeneAction(ActionType.FormBond, "bg"))   // always-on (gated by huge biomass)
+        val sealBg = Gene(EnergySource.BreakBond("rg"),
+            GeneCondition(Operand.Chem("bg"), Comparison.Greater, Operand.Constant(0)),
+            GeneAction(ActionType.Retain, "bg"))
+
+        val genome = List(6) { filler } + listOf(makeBg, sealBg) + List(5) { filler }
+        // genome[6] = makeBg, genome[7] = sealBg (Retain at idx 7)
+        // With 13 genes, idx 7 fires at ticks 7, 20, 33 … round-robin.
+
+        // Cell 1 gets bg + Retain; Cell 2 is empty. They touch.
+        fun setup(): SimState {
+            val b = SimBuilder(SimState())
+            // Cell A: has bg=500, rg=10000, biomass=2000 — Retain fires (bg > 0), seals bg
+            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector,
+                cytoplasm = mapOf("bg" to 500, "rg" to 10_000), biomass = mapOf("rr" to 2_000),
+                genome = genome)
+            // Cell B: no bg — should NOT receive bg from A
+            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector,
+                cytoplasm = mapOf("rg" to 10_000), biomass = mapOf("rr" to 2_000),
+                genome = genome)
+            return b.build()
+        }
+
+        val state = run(setup(), ticks = 20)
+        val cells = state.components.getTable<CytoCellComponent>().asMap().values.toList()
+        assertEquals(2, cells.size, "both cells alive after 20 ticks")
+        // The cell that started with bg (cell A) still has it — Retain sealed it.
+        val bgInA = cells.first { it.cytoplasm["bg"] != null && it.cytoplasm["bg"]!! > 0 }
+        val bgInB = cells.firstOrNull { it.cytoplasm["bg"] != null && it.cytoplasm["bg"]!! > 0 }
+        // Cell B should NOT have bg — the Retain gene sealed it at cell A.
+        assertEquals(1, cells.count { it.cytoplasm["bg"] != null && it.cytoplasm["bg"]!! > 0 },
+            "bg should stay in the cell that started with it; Retain sealed the membrane")
+    }
+
+    @Test
+    fun retainDoesNotBlockMonomerPrecursorSynthesisInNeighbour() {
+        // REPRO of the Ch8 "bb leaks despite Retain bb" report. The DIMER bb never crosses the seal
+        // (retainSealsAgainstWeldDiffusion proves that). What actually happens: the free MONOMER b diffuses
+        // across the weld (free-monomer rule), and the neighbour rebuilds bb LOCALLY via its own FormBond b b.
+        val on = GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0))
+        val alwaysOn = GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(1_000_000))
+        val genome = listOf(
+            Gene(EnergySource.BreakBond("rg"), alwaysOn, GeneAction(ActionType.FormBond, "b", "b")), // build bb from b
+            Gene(EnergySource.BreakBond("rg"), on, GeneAction(ActionType.Repair)),                    // weld
+            Gene(EnergySource.BreakBond("rg"),
+                GeneCondition(Operand.Chem("bb"), Comparison.Greater, Operand.Constant(0)),
+                GeneAction(ActionType.Retain, "bb")),                                                 // seal bb
+        )
+        fun setup(neighbourCanSynthesise: Boolean): SimState {
+            val bGenome = if (neighbourCanSynthesise) genome else genome.drop(1) // drop FormBond b b
+            val b = SimBuilder(SimState())
+            // Cell A: has bb + lots of monomer b to shed, seals its bb.
+            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector,
+                cytoplasm = mapOf("bb" to 500, "b" to 4_000, "rg" to 10_000), biomass = mapOf("rr" to 2_000),
+                genome = genome)
+            // Cell B: no bb, no b to start.
+            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector,
+                cytoplasm = mapOf("rg" to 10_000), biomass = mapOf("rr" to 2_000),
+                genome = bGenome)
+            return b.build()
+        }
+        fun bbOf(s: SimState) = s.components.getTable<CytoCellComponent>().asMap().values
+            .sortedBy { it.cytoplasm["rr"] }.map { it.cytoplasm["bb"] ?: 0 }
+
+        val withSynth = run(setup(true), ticks = 30)
+        val cellsW = withSynth.components.getTable<CytoCellComponent>().asMap().values.toList()
+        // A keeps its sealed bb (~500, never crossed); B ends up WITH bb — but built it itself.
+        val aBB = cellsW.maxOf { it.cytoplasm["bb"] ?: 0 }
+        val bBB = cellsW.minOf { it.cytoplasm["bb"] ?: 0 }
+        val bHasB = cellsW.any { (it.cytoplasm["b"] ?: 0) > 0 }
+        println("[REPRO] with-synth: A_bb=$aBB  B_bb=$bBB  someBmonomer=$bHasB")
+        assertTrue(aBB >= 500, "A's bb stayed sealed (never leaked out)")
+        assertTrue(bBB > 0, "neighbour ended up WITH bb — the reported 'leak'")
+
+        // Control: neighbour lacks FormBond b b ⇒ receives monomer b but CANNOT make bb ⇒ stays bb-free.
+        val noSynth = run(setup(false), ticks = 30)
+        val cellsN = noSynth.components.getTable<CytoCellComponent>().asMap().values.toList()
+        val bBBNoSynth = cellsN.minOf { it.cytoplasm["bb"] ?: 0 }
+        println("[REPRO] no-synth:   B_bb=$bBBNoSynth")
+        assertEquals(0, bBBNoSynth, "without local FormBond b b the neighbour gets NO bb — proving it was synthesis, not a dimer leak")
     }
 }

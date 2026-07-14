@@ -8,7 +8,9 @@ import org.emerge.demo.cyto.campaign.CampaignQuery
 import org.emerge.demo.cyto.campaign.Control
 import org.emerge.demo.cyto.campaign.PlayerAction
 import org.emerge.demo.cyto.cells.CellType
+import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoScenario
+import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.FounderSpec
 import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.sim.TouchMode
@@ -16,6 +18,8 @@ import org.emerge.demo.cyto.ui.CytoControls
 import org.emerge.demo.cyto.ui.GeneEditor
 import org.emerge.render.torus.ui.Ui
 import org.emerge.sim.core.EntityId
+import org.emerge.sim.core.physics.components.TransformComponent
+import org.emerge.sim.core.sim.SimState
 import org.lwjgl.BufferUtils
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.opengl.GL11.*
@@ -138,6 +142,13 @@ object CytoAgentHarness {
                     val name = line.removePrefix("scenario").trim().trim('"').ifEmpty { "Genesis" }
                     director.stop(); controller.newGame(preset(name)); renderer.resetView()
                 }
+                "load" -> {
+                    val path = line.removePrefix("load").trim().trim('"')
+                    val bytes = File(path).readBytes()
+                    controller.restoreSnapshot(bytes)
+                    renderer.resetView()
+                    println("[agent] loaded $path, tick ${controller.tick}, cells ${controller.worldStats().cellCount}")
+                }
                 "campaign" -> {
                     val ch = CampaignContent.CHAPTERS.firstOrNull { it.id == t.getOrNull(1) }
                         ?: error("unknown chapter '${t.getOrNull(1)}' (have ${CampaignContent.ORDER})")
@@ -178,10 +189,11 @@ object CytoAgentHarness {
                     controller.spawn(x, y, CellType.Collector); advance(1); pendingActions.add(PlayerAction.PaintedCell)
                 }
                 "clickcell" -> { controller.focus(EntityId(t[1].toInt())); pendingActions.add(PlayerAction.SelectedCell); sync() }
-                "dragcell" -> {
+                "dragcell", "stickycell" -> {
+                    val sticky = t[0] == "stickycell"
                     val id = EntityId(t[1].toInt()); val (x, y) = world(t[2].toFloat(), t[3].toFloat())
-                    val ticks = t.getOrNull(4)?.toIntOrNull() ?: error("dragcell <id> <u> <v> <ticks> (explicit duration)")
-                    repeat(ticks.coerceAtLeast(1)) { controller.grab(id, x, y); controller.stepOnce() }
+                    val ticks = t.getOrNull(4)?.toIntOrNull() ?: error("${t[0]} <id> <u> <v> <ticks> (explicit duration)")
+                    repeat(ticks.coerceAtLeast(1)) { controller.grab(id, x, y, sticky); controller.stepOnce() }
                     controller.releaseGrab(); controller.publish(); sync()
                 }
                 "save" -> {
@@ -214,6 +226,7 @@ object CytoAgentHarness {
                 "next" -> { sync(); println("[agent] next -> ${if (director.tryAdvance(controller)) "advanced" else "blocked (goal not met)"}") }
                 "shot" -> { sync(); shot(t.getOrElse(1) { "shot" }) }
                 "state" -> { sync(); dumpState(t.getOrElse(1) { "state" }) }
+                "dumpraw" -> dumpRaw()
                 "echo" -> println("[agent] ${line.removePrefix("echo").trim()}")
                 else -> error("unknown command '${t[0]}'")
             }
@@ -261,6 +274,38 @@ object CytoAgentHarness {
             println("[agent] coach/panel buttons: $uiBtns")
             println("[agent] control buttons: $ctlBtns")
         }
+
+        private fun dumpRaw() {
+            val frame = controller.latestFrame().state
+            val cells = frame.components.getTable<CytoCellComponent>().asMap()
+            val xforms = frame.components.getTable<TransformComponent>()
+            val sb = StringBuilder("[\n")
+            for ((id, cell) in cells) {
+                val t = xforms[id]
+                sb.append("  {\n")
+                sb.append("    \"id\": ${id.value}, \"type\": \"${cell.type.name}\", ")
+                sb.append("\"biomass\": ${totalBiomassBonds(cell.biomass)}, ")
+                sb.append("\"pos\": ${t?.let { "${"%.3f".format(CytoUnits.toLogical(t.pos.x))},${"%.3f".format(CytoUnits.toLogical(t.pos.y))}" } ?: "null"},\n")
+                sb.append("    \"cytoplasm\": {")
+                sb.append(cell.cytoplasm.entries.joinToString(", ") { "\"${it.key}\": ${it.value}" })
+                sb.append("},\n")
+                sb.append("    \"genes\": [\n")
+                for ((idx, gene) in cell.genome.withIndex()) {
+                    sb.append("      {\"idx\": $idx, \"src\": \"${gene.source}\", \"cond\": \"${gene.condition}\", \"act\": \"${gene.action}\", \"eff\": ${gene.efficiency}}")
+                    if (idx < cell.genome.size - 1) sb.append(",")
+                    sb.append("\n")
+                }
+                sb.append("    ]\n")
+                sb.append("  }")
+                if (id != cells.keys.last()) sb.append(",")
+                sb.append("\n")
+            }
+            sb.append("]")
+            println(sb)
+            File(outDir, "dumpraw.json").writeText(sb.toString())
+        }
+
+        private fun totalBiomassBonds(biomass: Map<String, Int>): Int = biomass.values.sum()
 
         private fun tapUi(label: String) {
             buildOverlay()
