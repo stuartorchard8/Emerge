@@ -57,6 +57,14 @@ sealed class Operand {
      *  count (they're structure, not a touch event). A reactive, contact-driven gate. */
     object Touching : Operand()
 
+    /** Number of **welded (connected) neighbours** this cell has this tick — its structural degree
+     *  (`CellWork.weldedDegree`, the count already driving the upkeep discount). Unlike [Touching] (transient,
+     *  un-welded bumps) this is stable body structure: an interior cell reads high, a surface / tip / free
+     *  cell reads low. Lets a gene gate on POSITION-IN-BODY — e.g. `Neighbours < 1` fires only on a lone or
+     *  just-severed founder, `Neighbours > 2` only deep inside a cluster. A differentiation-by-connectivity
+     *  sensor. */
+    object Neighbours : Operand()
+
     /** **Concentration** of [species] — `count(species) · CytoTuning.CONC_SCALE / totalBiomass`, the
      *  size-normalised counterpart of [Chem] (which is the raw count). 0 when biomass is 0 or the species is
      *  absent. Because it divides by body size, a *fixed* morphogen bolus reads lower as the cell grows — a

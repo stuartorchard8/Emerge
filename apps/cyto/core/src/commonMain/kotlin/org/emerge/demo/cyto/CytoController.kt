@@ -391,6 +391,9 @@ class CytoController(
             val pct = (sample.toFloat() * exposure.toFloat() / CytoTuning.LIGHT_STRENGTH.toFloat() * 100f).coerceIn(0f, 100f).toInt()
             "$quanta q ($pct%)"
         }
+        // Welded-neighbour count (structural degree) — the live value the Operand.Neighbours gate reads.
+        // Springs ARE the welds, so their count is the cell's weldedDegree this tick.
+        val weldedDegree = state.components.getTable<SpringConstraintComponent>()[id]?.springs?.size ?: 0
         // Local reservoir contents (the grid-cell this cell sits in).
         val envMap: Map<String, Int> = run {
             val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid
@@ -449,7 +452,7 @@ class CytoController(
             light = light,
             metabolism = metabolism,
             genes = cell.genome.map { g ->
-                val spans = describeGeneSpans(g, cytoMap, envMap, totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass), quanta = capturedQuanta)
+                val spans = describeGeneSpans(g, cytoMap, envMap, totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass), quanta = capturedQuanta, weldedDegree = weldedDegree)
                 CellInfo.GeneRow(desc = spans.joinToString("") { it.text }, active = spans.none { it.blocking }, spans = spans, gene = g)
             },
         )
@@ -460,7 +463,7 @@ class CytoController(
      *  clause, no energy, or a missing action input). Mirrors [org.emerge.demo.cyto.sim.CytoBiologyCore]'s
      *  gating read from the panel snapshot — approximate: `Touching` is transient (read as 0) and the per-gene
      *  1/N energy split isn't modelled, so it shows *what's* blocking, not the exact op count. */
-    private fun describeGeneSpans(g: Gene, cyto: Map<String, Int>, env: Map<String, Int>, totalBiomass: Int, quanta: Int): List<CellInfo.Span> {
+    private fun describeGeneSpans(g: Gene, cyto: Map<String, Int>, env: Map<String, Int>, totalBiomass: Int, quanta: Int, weldedDegree: Int): List<CellInfo.Span> {
         val touch = 0
         fun eval(op: Operand): Int = when (op) {
             is Operand.Constant -> op.value
@@ -468,6 +471,7 @@ class CytoController(
             is Operand.Conc -> if (totalBiomass > 0) ((cyto[op.species] ?: 0).toLong() * CytoTuning.CONC_SCALE / totalBiomass).toInt() else 0
             Operand.Biomass -> totalBiomass
             Operand.Touching -> touch
+            Operand.Neighbours -> weldedDegree
         }
         fun clauseFails(c: org.emerge.demo.cyto.sim.Clause): Boolean {
             val l = eval(c.lhs); val r = eval(c.rhs)
@@ -617,7 +621,7 @@ class CytoController(
         is EnergySource.BreakBond -> "BRK ${s.bond}"
     }
 
-    /** Panel label for one condition operand: a constant's number, `BIO`/`TOUCH` for the live readings,
+    /** Panel label for one condition operand: a constant's number, `BIO`/`TOUCH`/`NBRS` for the live readings,
      *  or the species token for a cytoplasm count. */
     private fun operandLabel(op: org.emerge.demo.cyto.sim.Operand): String = when (op) {
         is org.emerge.demo.cyto.sim.Operand.Constant -> op.value.toString()
@@ -625,6 +629,7 @@ class CytoController(
         is org.emerge.demo.cyto.sim.Operand.Conc -> "[${op.species.ifEmpty { "?" }}]"
         org.emerge.demo.cyto.sim.Operand.Biomass -> "BIO"
         org.emerge.demo.cyto.sim.Operand.Touching -> "TOUCH"
+        org.emerge.demo.cyto.sim.Operand.Neighbours -> "NBRS"
     }
 
     /** Fixed-point-ish 2dp formatter (multiplatform-safe — no String.format). */

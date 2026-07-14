@@ -779,6 +779,7 @@ object CytoBiologyCore {
         is Operand.Conc -> conc(work.cachedCount(op.speciesId), bioBonds)
         Operand.Biomass -> bioBonds
         Operand.Touching -> work.touchCount
+        Operand.Neighbours -> work.weldedDegree
     }
 
     /** Fast-path variant of [operand] for clauses without Chem/Conc operands. Avoids the when-dispatch
@@ -788,6 +789,7 @@ object CytoBiologyCore {
         is Operand.Constant -> op.value
         Operand.Biomass -> bioBonds
         Operand.Touching -> work.touchCount
+        Operand.Neighbours -> work.weldedDegree
         else -> throw IllegalStateException("operandFast called with lookup operand")
     }
 
@@ -800,6 +802,7 @@ object CytoBiologyCore {
         is Operand.Conc -> conc(work.cachedCount(op.speciesId), snapBiomass)
         Operand.Biomass -> snapBiomass
         Operand.Touching -> work.touchCount
+        Operand.Neighbours -> work.weldedDegree
     }
 
     /** Size-normalised concentration (CytoTuning.CONC_SCALE units): molecules per unit biomass-bond. Long

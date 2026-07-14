@@ -54,6 +54,7 @@ class InspectCell {
                 if (bioBonds <= 0) 0 else ((cell.cytoplasm[o.species] ?: 0).toLong() * org.emerge.demo.cyto.sim.CytoTuning.CONC_SCALE / bioBonds).toInt()
             org.emerge.demo.cyto.sim.Operand.Biomass -> bioBonds
             org.emerge.demo.cyto.sim.Operand.Touching -> 0
+            org.emerge.demo.cyto.sim.Operand.Neighbours -> 0
         }
         for (g in cell.genome) {
             // AND-conjunction: the gate passes iff every clause holds.

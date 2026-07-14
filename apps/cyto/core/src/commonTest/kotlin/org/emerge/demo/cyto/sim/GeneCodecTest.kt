@@ -59,11 +59,11 @@ class GeneCodecTest {
     }
 
     /** Every operand kind round-trips on either side of the gate — the exhaustive backstop for the
-     *  operand tokens (constant / species / concentration / Biomass / Touching) now that both sides are
-     *  operands. */
+     *  operand tokens (constant / species / concentration / Biomass / Touching / Neighbours) now that both
+     *  sides are operands. */
     @Test
     fun roundTripsEveryOperandKindOnBothSides() {
-        val kinds = listOf(Operand.Constant(7), Operand.Chem("rg"), Operand.Conc("rgg"), Operand.Biomass, Operand.Touching)
+        val kinds = listOf(Operand.Constant(7), Operand.Chem("rg"), Operand.Conc("rgg"), Operand.Biomass, Operand.Touching, Operand.Neighbours)
         for (op in kinds) {
             val asLhs = Gene(EnergySource.Light, GeneCondition(op, Comparison.Greater, Operand.Constant(2)), GeneAction(ActionType.Mitosis))
             assertEquals(listOf(asLhs), GeneCodec.parse(GeneCodec.serialize(listOf(asLhs))), "$op as lhs")

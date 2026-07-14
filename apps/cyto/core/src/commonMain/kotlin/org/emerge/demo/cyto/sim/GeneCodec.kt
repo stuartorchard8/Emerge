@@ -14,7 +14,7 @@ package org.emerge.demo.cyto.sim
  *
  * Condition is one or more `<operand> <>|<> <operand>` clauses joined by ` & ` — the gene fires iff **all**
  * hold (e.g. `b > 50 & b < 200` = a concentration band). Each operand is one of: an integer (a constant),
- * `Biomass`, `Touching`, a species token (its cytoplasm count), or `Conc(<species>)` (its size-normalised
+ * `Biomass`, `Touching`, `Neighbours`, a species token (its cytoplasm count), or `Conc(<species>)` (its size-normalised
  * concentration) — and a species token may be any length (`r`, `rg`, `rgg`, …), not just a monomer/dimer.
  *  Action is `Import <species>`, `FormBond <a> <b>`, `Convert <species>`,
  *  `Contract`, `Mitosis` *(or `Mitosis <morphogen>` for asymmetric division — the morphogen is allocated whole
@@ -90,15 +90,17 @@ object GeneCodec {
         is Operand.Conc -> "Conc(${tok(op.species)})"
         Operand.Biomass -> "Biomass"
         Operand.Touching -> "Touching"
+        Operand.Neighbours -> "Neighbours"
     }
 
-    // A token is `Biomass`/`Touching` (live readings), `Conc(<species>)` (concentration), an integer (a
+    // A token is `Biomass`/`Touching`/`Neighbours` (live readings), `Conc(<species>)` (concentration), an integer (a
     // constant), or a species token (its cytoplasm count). Species are lowercase letters, so they never
     // collide with an integer or a keyword.
     private val CONC = Regex("^Conc\\((.*)\\)$")
     private fun parseOperand(s: String): Operand = when {
         s == "Biomass" -> Operand.Biomass
         s == "Touching" -> Operand.Touching
+        s == "Neighbours" -> Operand.Neighbours
         CONC.matchEntire(s) != null -> Operand.Conc(untok(CONC.matchEntire(s)!!.groupValues[1]))
         else -> s.toIntOrNull()?.let { Operand.Constant(it) } ?: Operand.Chem(untok(s))
     }

@@ -963,6 +963,36 @@ class CytoSoaSpecTest {
     }
 
     @Test
+    fun neighboursConditionGatesAGeneOnWeldedDegree() {
+        // The Operand.Neighbours gate reads the cell's welded (connected) degree. Two deeply overlapping cells
+        // Repair-weld into a connected pair (weldedDegree ⇒ 1); each also carries a Neighbours-gated Contract,
+        // so once welded they clench. A lone control with the identical genome never welds (degree stays 0), so
+        // its Neighbours-gated Contract never fires — leaving it larger than the welded, contracted pair.
+        val weldThenSense = listOf(
+            // Repair burns stored `rg` to weld the overlapping pair (auto-weld on overlap is disabled).
+            Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
+            // Contract only while connected to at least one neighbour.
+            Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Neighbours, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Contract)),
+        )
+        fun cell(b: SimBuilder, x: Float) =
+            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 100000), biomass = mapOf("rg" to 8000), logicalRadius = org.emerge.sim.core.physics.primitives.Frac(7, 10), genome = weldThenSense)
+        val initial = run {
+            val b = SimBuilder(SimState())
+            cell(b, -0.1f); cell(b, 0.1f)   // deep overlap ⇒ Repair welds them into a connected pair
+            cell(b, 20f)                     // lone control, never welds
+            b.build()
+        }
+        val ids = initial.components.getTable<CytoCellComponent>().asMap().keys.sortedBy { it.value }
+        val (aId, bId, controlId) = ids
+        val total0 = totalAtoms(initial)
+        val state = run(initial, ticks = 40) { s, t -> assertEquals(total0, totalAtoms(s), "neighbour gating must conserve matter; broke at $t") }
+        assertTrue(springCount(state) > 0, "the overlapping pair should have Repair-welded (so weldedDegree > 0)")
+        val control = radiusRaw(state, controlId)
+        assertTrue(radiusRaw(state, aId) < control, "a welded cell should have fired its Neighbours-gated Contract (got ${radiusRaw(state, aId)} vs control $control)")
+        assertTrue(radiusRaw(state, bId) < control, "both welded cells should have fired")
+    }
+
+    @Test
     fun retainSealsRegardlessOfGenePosition() {
         // Retain genes are freshly evaluated every tick (no round-robin cache), so a Retain sitting
         // deep in a large genome still seals from the tick its gate first holds — no stale-cache leak

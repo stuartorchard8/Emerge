@@ -64,7 +64,7 @@ class GeneEditor {
 
     /** The four operand kinds, in picker order: a constant value, a cytoplasm count, total biomass, or
      *  the contact count. */
-    private val operandKindLabels: List<String> = listOf("Const", "Chem", "Conc", "BIO", "Touch")
+    private val operandKindLabels: List<String> = listOf("Const", "Chem", "Conc", "BIO", "Touch", "Nbrs")
 
     /** Called if the editor target vanishes (cell died / deselected) — discard any in-progress edit. */
     fun closeDropdown() { openField = null }
@@ -356,6 +356,7 @@ class GeneEditor {
         is Operand.Conc -> 2
         Operand.Biomass -> 3
         Operand.Touching -> 4
+        Operand.Neighbours -> 5
     }
 
     /** Build an operand of the picked [kind], carrying [prev]'s value/species when the kind is unchanged
@@ -365,7 +366,8 @@ class GeneEditor {
         1 -> Operand.Chem((prev as? Operand.Chem)?.species ?: atoms.first())
         2 -> Operand.Conc((prev as? Operand.Conc)?.species ?: atoms.first())
         3 -> Operand.Biomass
-        else -> Operand.Touching
+        4 -> Operand.Touching
+        else -> Operand.Neighbours
     }
 
     private fun commit(controller: CytoController) {

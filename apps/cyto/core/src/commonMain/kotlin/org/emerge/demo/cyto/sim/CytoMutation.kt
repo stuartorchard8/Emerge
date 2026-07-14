@@ -123,13 +123,14 @@ object CytoMutation {
 
     /** Re-roll one clause operand to a fresh kind: a [Operand.Constant] (keeping any prior constant value,
      *  so drift can still tune it), a [Operand.Chem] / [Operand.Conc] (drifting its species — see
-     *  [mutateSpecies]), [Operand.Biomass], or [Operand.Touching]. */
-    private fun mutateOperand(op: Operand, nextInt: (Int) -> Int): Operand = when (nextInt(5)) {
+     *  [mutateSpecies]), [Operand.Biomass], [Operand.Touching], or [Operand.Neighbours]. */
+    private fun mutateOperand(op: Operand, nextInt: (Int) -> Int): Operand = when (nextInt(6)) {
         0 -> Operand.Constant((op as? Operand.Constant)?.value ?: 0)
         1 -> Operand.Chem(mutateSpecies((op as? Operand.Chem)?.species ?: "", nextInt))
         2 -> Operand.Conc(mutateSpecies((op as? Operand.Conc)?.species ?: "", nextInt))
         3 -> Operand.Biomass
-        else -> Operand.Touching
+        4 -> Operand.Touching
+        else -> Operand.Neighbours
     }
 
     /** Drift a species operand atom-by-atom — grow (append a random atom), shrink (drop the last), or
