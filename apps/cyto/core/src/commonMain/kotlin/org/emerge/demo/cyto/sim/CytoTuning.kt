@@ -79,7 +79,7 @@ object CytoTuning {
      *  before its parent pools it one layer coarser. The delay DOUBLES per layer above the finest, so a merge
      *  that spreads matter over 2× the area waits 2× as long — dispersal advances at a constant speed (twice
      *  as far ⇒ twice as long). Higher = sharper, longer-lived self-dug gradients (and more live nodes). ⚙ */
-    const val MATTER_COLLAPSE_DELAY = 256
+    const val MATTER_COLLAPSE_DELAY = 2048
 
     // ── Metabolism / energy (per gene, per tick) ─────────────────────────────────────────────────────
     /** Scale factor for all chemical interactions. Defines the ratio between the minimum cell biomass and the smallest energy unit */
