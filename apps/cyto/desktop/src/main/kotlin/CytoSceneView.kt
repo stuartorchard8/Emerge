@@ -189,8 +189,9 @@ object CytoSceneView {
             controls.showBrush = mask.allows(Control.Brush)
             controls.showTouchModes = mask.allows(Control.Brush)
             // Ch8 "tap to add a cell": permit empty-space spawns of the chapter's genome without the full
-            // brush palette. Set the brush genome so the tap-spawn (and Set mode) drops in the right creature.
-            controls.worldSpawnEnabled = mask.allows(Control.Spawn)
+            // brush palette. Only inside an active chapter - when idle the mask is ALL (which includes Spawn),
+            // and applying it would clobber the sandbox's own brush genome with a null chapter spawnGenome.
+            controls.worldSpawnEnabled = director.active && mask.allows(Control.Spawn)
             if (controls.worldSpawnEnabled) controller.brushGenome = director.activeChapter?.spawnGenome
             controls.showSimSpeed = mask.allows(Control.Speed)
             controls.showMutation = mask.allows(Control.Mutation)
