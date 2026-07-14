@@ -252,6 +252,72 @@ object CampaignContent {
         GeneGroup(GROUP_CLOCK, insert = CH9_CLOCK_GENES),
     ))
 
+    // ── Ch10: reproduction / colonisation (Stu's reproducer genome = SwimmerxX + a sever-division group) ──
+    // The Ch9 end-state swimmer (clocked, night-running, marked-cell muscle) is growth-capped by the Ch8
+    // morphogen: it grows to a small cluster and holds there - one lone creature. Ch10 adds a REPRODUCE
+    // group whose payload is a SEVER division (`Mitosis gr mother sever` = rejectMother): when the body is
+    // big enough it buds a daughter FREE - no weld - as its own single-celled founder, which drifts off,
+    // escapes the size cap (it's small again), and grows into a whole new swimmer. A lineage that spreads.
+    private const val GROUP_REPRODUCE_SWIMMER = "reproduce"
+
+    /** Ch10 substrate: the Ch9 end-state swimmer (Stu's SwimmerxX) WITHOUT its reproduce group. It swims -
+     *  clocked, break-powered, marked-cell muscle - but every division stays welded and the morphogen caps
+     *  its size, so it grows to one small cluster and holds there. Adding REPRODUCE lets it colonise. */
+    private val CH10_INIT_GENES: List<Gene> = GeneCodec.parse(
+        """
+        Light : rg < 10000 : FormBond r g : feed
+        Break rg : Biomass < 3000 & rg > 500 : Convert rg @15 : maintain
+        Break rg : rg > 500 : Repair @10 : maintain
+        Break rg : gr < 1 & bb < rg : FormBond b b : polarize
+        Break rg : bb > 1 & bb < rg : FormBond b b : polarize
+        Break bb : Biomass < 3000 & bb > 40 : Convert bb @15 : polarize
+        Break bb : bb > 1 : Retain bb : polarize
+        Break rg : bb > 0 & gr < rg : FormBond g r : polarize
+        Break gr : bb < 1 & gr > 1 : FormBond r g @14 : polarize
+        Break rg : bb > 0 & gb > 50 & rg > 500 : Contract @15 : move
+        Break rg : gg < 20 & gb < 20 & br > 100 : FormBond b g : clock
+        Break rg : gg > 19 & bg < 20 & br > 100 : FormBond b g : clock
+        Break gb : gg < 20 : FormBond b g @14 : clock
+        Break bg : gg > 19 : FormBond g b @14 : clock
+        Break rg : gg < 30 & bg > 100 : FormBond g g : clock
+        Break gg : gb > 100 : FormBond r g : clock
+        Break rg : bb < 5 & gr > 0 & br < 200 : FormBond b r : grow
+        Break br : gr > 9 : FormBond r g @10 : grow
+        Break rg : br < 20 & gr > 1000 & Biomass > 2000 : Mitosis bb mother across gr : grow
+        """.trimIndent(),
+    )
+
+    /** The reproduction subsystem Ch10's "+ ADD REPRODUCE" inserts: a reserve-building Convert plus a SEVER
+     *  division (`Mitosis gr mother sever` = rejectMother). Once the body is large it splits off a daughter
+     *  that breaks free, unwelded, as its own founder - which then drifts away and grows a new swimmer. */
+    private val CH10_REPRODUCE_GENES: List<Gene> = GeneCodec.parse(
+        """
+        Break br : br > 179 & Biomass < 5000 & rg > 5000 : Convert br : reproduce
+        Break rg : Biomass > 3500 & gr > 1000 : Mitosis gr mother sever along gr : reproduce
+        """.trimIndent(),
+    )
+
+    /** The reproducing swimmer = substrate + reproduce (the exact order "+ ADD" produces). Fallback re-seed
+     *  genome for empty-space taps when no cell is selected. */
+    private val CH10_FULL_GENES: List<Gene> = CH10_INIT_GENES + CH10_REPRODUCE_GENES
+
+    private val CH10_SUBSTRATE = CytoScenario.DEFAULT.copy(
+        name = "Campaign",
+        founders = listOf(FounderSpec(CellType.Stem, 1, genome = CH10_INIT_GENES)),
+    )
+
+    /** Ch10's grouping - the full swimmer's subsystems, with REPRODUCE offered as the insert (the rest are
+     *  the substrate the player already has). Header colours auto-derive from the names. */
+    private val CH10_GROUPING = GenomeGrouping(listOf(
+        GeneGroup("feed"),
+        GeneGroup("maintain"),
+        GeneGroup(GROUP_POLARIZE),
+        GeneGroup("move"),
+        GeneGroup("clock"),
+        GeneGroup("grow"),
+        GeneGroup(GROUP_REPRODUCE_SWIMMER, insert = CH10_REPRODUCE_GENES),
+    ))
+
     val CHAPTERS: List<Chapter> = listOf(
         chapter1FirstContact(),
         chapter2LetThereBeLight(),
@@ -262,6 +328,7 @@ object CampaignContent {
         chapter7Move(),
         chapter8Polarise(),
         chapter9Clock(),
+        chapter10Reproduce(),
     )
 
     val ORDER: List<String> = CHAPTERS.map { it.id }
@@ -773,6 +840,62 @@ object CampaignContent {
             ),
             Step(
                 text = "You just bred a lineage by hand: a clock to free it from the sun, a fuel swap to move by night, a flipped marker to swim better. One genome, iterated - each cell you tapped out carried your latest design forward.",
+                gate = Gate.Next,
+                allow = WATCH_TIME,
+                world = WorldRun.Live,
+            ),
+        ),
+    )
+
+    /** Act III close - the reproduction / colonisation payoff. The Ch9 swimmer is a single, growth-capped
+     *  creature: it grows to a small cluster and holds there. The player inserts a REPRODUCE group whose
+     *  payload is a SEVER division - once big enough the body buds a daughter FREE (unwelded), a fresh
+     *  single-celled founder that drifts off, escapes the size cap, and grows into a whole new swimmer. From
+     *  one lone body to a spreading lineage. See [CH10_INIT_GENES]/[CH10_REPRODUCE_GENES]. */
+    private fun chapter10Reproduce() = Chapter(
+        id = "ch10-reproduce",
+        act = 3,
+        title = "Spread",
+        blurb = "You've bred one fine swimmer. Now make it multiply - a lineage that colonises the world.",
+        scenario = CH10_SUBSTRATE,
+        grouping = CH10_GROUPING,
+        insertableGroups = setOf(GROUP_REPRODUCE_SWIMMER),
+        spawnGenome = CH10_FULL_GENES,
+        steps = listOf(
+            Step(
+                text = "Here's your finished swimmer - clock, night-running muscle, the lot. But watch it a while and you'll see the catch: it grows to a small cluster, and stops. One creature, holding its place.",
+                gate = Gate.Next,
+                allow = WATCH_TIME,
+                world = WorldRun.Live,
+                detail = "That size cap is the POLARISE morphogen doing double duty - the same marker that tells cells which side they're on also lets the body sense how big it is, so it never outgrows a tidy cluster.",
+            ),
+            Step(
+                text = "A lineage can't live in one body. It has to SPREAD - throw off new founders that swim away and start colonies of their own. Select the swimmer and open its genome.",
+                gate = Gate.World("Select the cell", { it.focused != null }),
+                allow = LOOK,
+                spotlight = Spotlight(hint = "Click the cell"),
+            ),
+            Step(
+                text = "Add the REPRODUCE group. It's a division that SEVERS: once the body is large enough, it buds a daughter that breaks FREE - no weld holding it back - as its own single cell.",
+                gate = Gate.World("Add the Reproduce group", met = { (it.focused?.geneCount ?: 0) >= 21 }),
+                allow = LOOK,
+                spotlight = Spotlight(hint = "+ ADD REPRODUCE, below the groups"),
+                detail = "A freed daughter is small again, so it's back under the size cap - free to grow into a whole new swimmer. That's the trick: sever to escape the cap, then regrow. Severing also shoves the two apart, flinging the founder off toward fresh matter.",
+            ),
+            Step(
+                text = "Give it a push to get it going, then speed the world up and watch. As each body reaches full size it flings off a founder - that founder swims away, grows, and buds again. One swimmer becomes a scattered, spreading lineage.",
+                gate = Gate.World(
+                    "Spread to 20 cells",
+                    met = { it.cellCount >= 20 },
+                    progress = { it.cellCount.coerceAtMost(20) to 20 },
+                ),
+                allow = WATCH_TIME,
+                world = WorldRun.Live,
+                spotlight = Spotlight(hint = "Drag to push, then FAST. Tap empty space to re-seed a dead founder."),
+                detail = "Each new founder needs matter to grow, so they spread OUTWARD into fresh ground - the same finite-matter budget from Ch4, now driving a whole population across the world.",
+            ),
+            Step(
+                text = "That's the full arc: one cell that could only grow, taught to reproduce, cohere, mend, move, differentiate, keep time - and now to seed new life. From a single speck, a living lineage that spreads on its own.",
                 gate = Gate.Next,
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
