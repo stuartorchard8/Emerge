@@ -23,6 +23,7 @@ class CytoCellShader {
   private val uTexture = GPU.getUniformLocation(program, "u_texture")
   private val uRadius = GPU.getUniformLocation(program, "u_radius")
   private val uColor = GPU.getUniformLocation(program, "u_color")
+  private val uBorder = GPU.getUniformLocation(program, "u_border")
   private val uNeighbourCount = GPU.getUniformLocation(program, "u_neighbourCount")
   private val uNeighbour = GPU.getUniformLocation(program, "u_neighbour[0]")
 
@@ -57,6 +58,7 @@ class CytoCellShader {
     GPU.activeTexture(CELL_TEXTURE_UNIT)
     GPU.bindTexture2D(textureId)
     GPU.putUniform1i(uTexture, CELL_TEXTURE_UNIT)
+    GPU.putUniform1f(uBorder, MEMBRANE_BORDER)
   }
 
   /**
@@ -90,6 +92,10 @@ class CytoCellShader {
 
   companion object {
     private const val CELL_TEXTURE_UNIT = 0
+
+    /** Membrane thickness in logical world units; the body inside it renders transparent. */
+    const val MEMBRANE_BORDER = 0.125f
+
     private const val QUAD_VERTEX_COUNT = 4
     const val MAX_NEIGHBOURS = 8
   }

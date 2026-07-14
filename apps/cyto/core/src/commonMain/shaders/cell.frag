@@ -14,6 +14,10 @@ uniform sampler2D u_texture;
 uniform float u_radius;
 uniform vec4 u_color;
 uniform float u_charge;
+// Membrane thickness in logical world units. <= 0 fills the body solid.
+uniform float u_border;
+
+const float FAR = 1e9;
 
 const int MAX_NEIGHBOURS = 8;
 uniform int u_neighbourCount;
@@ -21,7 +25,18 @@ uniform int u_neighbourCount;
 // vec4 array so the renderer can upload it with a single vec4 uniform call.
 uniform vec4 u_neighbour[MAX_NEIGHBOURS];
 
-float drawConnection(vec2 uv, float len, float r1, float r2, vec2 c1) {
+// Inside-depth (uv units) of the neck toward one neighbour: the distance from uv to the
+// nearer of the two outer tangent lines, or 0.0 when uv is outside the neck. `owned` is
+// cleared when uv sits past the mid-plane, i.e. when the neighbour draws this fragment.
+// The tangent lines are shared geometry between the two cells, so the depths — and hence
+// the membrane bands — line up across that seam.
+//
+// `seam` returns the distance to the mid-plane where this cell hands over to the
+// neighbour, or FAR when that plane doesn't bound uv. It is halved, so this cell and the
+// neighbour each lay down half a membrane and their bands sum to u_border across the join.
+float drawConnection(vec2 uv, float r1, float r2, vec2 c1, out bool owned, out float seam) {
+    owned = true;
+    seam = FAR;
     if (c1.x == 0.0 && c1.y == 0.0) {
         return 0.0;
     }
@@ -57,7 +72,12 @@ float drawConnection(vec2 uv, float len, float r1, float r2, vec2 c1) {
         vec2 tmid_ = (c1Edge_ + c2Edge_) / 2.0;
         vec2 c12Center = (tmid + tmid_) / 2.0;
         float dot_uv2 = dot(uv - c12Center, c1);
-        return -dot_uv2;
+        if (dot_uv2 > 0.0) {
+            owned = false;
+            return 0.0;
+        }
+        seam = (-dot_uv2 / length(c1)) * 2.0;
+        return min(-dotPerp / length(tlinePerp), dotPerp_ / length(tlinePerp_));
     }
     return 0.0;
 }
@@ -70,24 +90,39 @@ void main() {
     fragColor = min(u_color, texture(u_texture, v_texCoords));
     fragColor.rgb *= (2.0 - len - (1.0 / (u_charge / 32.0 + 1.0)));
     fragColor.a = 1.0;
-    bool withinBounds = bool(len < r1);
+
+    // Depth of uv inside the body, as a union (max) of the disc and every neck. The disc
+    // arc under a neck goes interior, so no membrane is drawn along it.
+    float depth = r1 - len;
+    // Distance to the nearest seam with a neighbour — an edge of this cell's own shape,
+    // clipping the body below, so welded cells stay individually outlined.
+    float seams = FAR;
 
     float divisor = u_radius * 2.0;
     for (int i = 0; i < u_neighbourCount; ++i) {
         float rad = u_neighbour[i].z / divisor;
         vec2 pos = u_neighbour[i].xy / divisor;
-        float penetration = drawConnection(uv, len, r1, rad, pos);
-        if (penetration < 0.0) {
+        bool owned;
+        float seam;
+        float neck = drawConnection(uv, r1, rad, pos, owned, seam);
+        if (!owned) {
             // Point is closer to the other cell than this one, so the other cell renders it.
             fragColor.a = 0.0;
             return;
         }
-        if (penetration > 0.0) {
-            withinBounds = true;
-        }
+        depth = max(depth, neck);
+        seams = min(seams, seam);
+    }
+    depth = min(depth, seams);
+
+    if (depth <= 0.0) {
+        fragColor.a = 0.0;
+        return;
     }
 
-    if (!withinBounds) {
+    float border = u_border / divisor;
+    if (border > 0.0 && depth > border) {
+        // Interior of the membrane — left transparent for details to be drawn into later.
         fragColor.a = 0.0;
     }
 }
