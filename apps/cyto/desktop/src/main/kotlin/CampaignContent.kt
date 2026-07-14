@@ -595,7 +595,7 @@ object CampaignContent {
                 allow = SPAWN,
                 world = WorldRun.Live,
                 spotlight = Spotlight(hint = "Drag to push. Tap empty space to re-seed."),
-                detail = "It usually settles into a small cluster of a few cells - that's enough to move. A lone cell can't locomote, so it needs that first shove (or a fresh neighbour) to get over the line.",
+                detail = "It grows into a small cluster of a few cells and then stops - that's deliberate. POLARIZE does double duty: the same marker gradient that tells cells which side they're on also lets the body sense how big it is, so it grows to a set size and holds there instead of spreading forever. A lone cell can't locomote, so it needs that first shove (or a fresh neighbour) to get over the line.",
             ),
             Step(
                 text = "It swims on sunlight - the muscle only fires in the light, so it crawls through the day and drifts at night. Speed the world up to watch it travel across a few day-night cycles.",
