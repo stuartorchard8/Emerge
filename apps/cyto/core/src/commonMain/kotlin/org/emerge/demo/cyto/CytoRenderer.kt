@@ -141,17 +141,9 @@ class CytoRenderer {
      *  (cleared, then refilled — no per-frame allocation). When a cell is focused, every cell NOT in
      *  this set and not the focused cell itself is dimmed, so the welded cluster stands out. */
     private val focusNeighbours = HashSet<Int>()
-    // The light field is drawn as a gouraud-interpolated mesh (continuous), not a grid of flat cells: sample
-    // the field at the (FRES+1)² grid VERTICES, then let the GPU interpolate colour across each cell's two
-    // triangles. Static world vertex positions (baked once), per-vertex colours (re-baked per frame while the
-    // daylight band moves), per-frame vertex NDC, and the expanded independent-triangle vertex list.
-    private val fieldMesh = CytoFieldMesh(FIELD_MESH_VERTS)
-    private val fieldWX = FloatArray(FIELD_VERTS)
-    private val fieldWY = FloatArray(FIELD_VERTS)
-    private val fieldVColor = FloatArray(FIELD_VERTS * 4)
-    private val fieldVNdc = FloatArray(FIELD_VERTS * 2)
-    private val fieldMeshPos = FloatArray(FIELD_MESH_VERTS * 2)
-    private val fieldMeshColor = FloatArray(FIELD_MESH_VERTS * 4)
+    // The light field is drawn as a single full-screen triangle whose fragment shader evaluates the moving
+    // daylight band analytically per pixel — continuous by construction, no mesh or per-frame baking.
+    private val lightFieldShader = CytoLightFieldShader()
 
     // ── matter-field overlay (the adaptive quad-tree reservoir, drawn as bordered leaf squares) ──
     // Each visible leaf → a 2px-bordered square: fill is the leaf's per-area a/b/c atom DENSITY as raw RGB,
@@ -248,24 +240,7 @@ class CytoRenderer {
     private val speciesTmp = FloatArray(3)
 
     init {
-        initFieldGeom()
-        bakeFieldColors(0L)
         uploadCircleGeom()
-    }
-
-    /** Bake the static world positions of the light-field mesh's grid vertices (one torus tile,
-     *  `[-HALF, HALF]²`, at `FRES` cells ⇒ `FRES+1` vertices per axis). Done once; only the colours change. */
-    private fun initFieldGeom() {
-        val step = CytoLightField.SPAN / FRES
-        var i = 0
-        for (gy in 0..FRES) {
-            val wy = -CytoLightField.HALF + gy * step
-            for (gx in 0..FRES) {
-                fieldWX[i] = -CytoLightField.HALF + gx * step
-                fieldWY[i] = wy
-                i++
-            }
-        }
     }
 
     /** Upload the circumscribing triangle the [CircleShader] rasterises the unit disc within (its
@@ -284,22 +259,6 @@ class CytoRenderer {
 
     /** Bake the light-field heatmap colours for sim-time [tick]. Static field → baked once at init; the
      *  moving field → re-baked each frame in [draw] so the daylight band animates. */
-    private fun bakeFieldColors(tick: Long) {
-        val field = CytoLightField.default()
-        val invStrength = 1f / CytoLightField.STRENGTH.toFloat()
-        for (i in 0 until FIELD_VERTS) {
-            val t = (field.sampleAt(fieldWX[i], fieldWY[i], tick).toFloat() * invStrength).coerceIn(0f, 1f)
-            // Perceptual ramp from pure black (no floor) up to the peak yellow.
-            // sqrt lifts dim values so any non-zero light reads as clearly lit — ONLY t==0 is black.
-            val s = sqrt(t)
-            val b = i * 4
-            fieldVColor[b] = s
-            fieldVColor[b + 1] = s * 0.90f
-            fieldVColor[b + 2] = s * 0.43f
-            fieldVColor[b + 3] = 1f
-        }
-    }
-
     fun setResolution(widthPx: Float, heightPx: Float) {
         resW = max(1f, widthPx)
         resH = max(1f, heightPx)
@@ -359,8 +318,7 @@ class CytoRenderer {
         GPU.disableBlend()
         bgShader.drawInstanced(1, BG_CENTER, BG_HALF_SIZE, BG_COLOR)
         // Light-field heatmap over the world (opaque, on top of the clear, under the cells).
-        if (org.emerge.demo.cyto.sim.CytoTuning.LIGHT_MOVING) bakeFieldColors(frame.tick)   // animate the band
-        drawLightField()
+        drawLightField(frame.tick)
         drawMatterField(frame)
 
         val components = frame.state.components
@@ -884,44 +842,22 @@ class CytoRenderer {
         out[0] = (r / peak).toFloat(); out[1] = (g / peak).toFloat(); out[2] = (b / peak).toFloat()
     }
 
-    /** Draw the light field as a smooth, gouraud-interpolated mesh (one torus tile): project every grid
-     *  vertex to NDC, then expand the grid into an independent-triangle list carrying each corner's NDC +
-     *  baked colour, so the GPU interpolates the field continuously across every cell (no visible grid).
-     *  Camera has no rotation, so world→NDC is a pure scale+translate. Off-tile triangles are GPU-clipped. */
-    private fun drawLightField() {
+    /** Draw the light field as a single full-screen triangle: its fragment shader evaluates the moving
+     *  daylight band analytically per pixel, so the field is continuous and covers the whole screen (torus-
+     *  wrapped, no tile edge). Passes the camera→world mapping + the band position for sim-time [tick]. */
+    private fun drawLightField(tick: Long) {
         if (!showLightField) return
         val aspect = resW / resH
         val hwx = viewHeight * aspect * 0.5f
-        val hwy = viewHeight * 0.5f
-        if (hwx <= 0f || hwy <= 0f) return
-        // Project each grid vertex to NDC once (shared by the up-to-6 triangles that touch it).
-        for (i in 0 until FIELD_VERTS) {
-            fieldVNdc[i * 2] = (fieldWX[i] - centerX) / hwx
-            fieldVNdc[i * 2 + 1] = (fieldWY[i] - centerY) / hwy
-        }
-        // Expand the (FRES+1)² vertex grid into 2 triangles per cell.
-        val vn = FRES + 1
-        var v = 0
-        for (gy in 0 until FRES) {
-            for (gx in 0 until FRES) {
-                val i00 = gy * vn + gx
-                val i10 = i00 + 1
-                val i01 = i00 + vn
-                val i11 = i01 + 1
-                emitFieldVertex(i00, v++); emitFieldVertex(i10, v++); emitFieldVertex(i11, v++)
-                emitFieldVertex(i00, v++); emitFieldVertex(i11, v++); emitFieldVertex(i01, v++)
-            }
-        }
-        fieldMesh.draw(v, fieldMeshPos, fieldMeshColor)
-    }
-
-    /** Copy grid vertex [gridIdx]'s projected NDC + baked colour into output mesh vertex [outVertex]. */
-    private fun emitFieldVertex(gridIdx: Int, outVertex: Int) {
-        val p = outVertex * 2; val c = outVertex * 4
-        val gp = gridIdx * 2; val gc = gridIdx * 4
-        fieldMeshPos[p] = fieldVNdc[gp]; fieldMeshPos[p + 1] = fieldVNdc[gp + 1]
-        fieldMeshColor[c] = fieldVColor[gc]; fieldMeshColor[c + 1] = fieldVColor[gc + 1]
-        fieldMeshColor[c + 2] = fieldVColor[gc + 2]; fieldMeshColor[c + 3] = fieldVColor[gc + 3]
+        if (hwx <= 0f) return
+        lightFieldShader.draw(
+            centerX = centerX,
+            halfViewX = hwx,
+            bandX = CytoLightField.bandCenterX(tick),
+            falloff = CytoLightField.FALLOFF,
+            half = CytoLightField.HALF,
+            span = CytoLightField.SPAN,
+        )
     }
 
     /** Draw the matter quad-tree as bordered leaf squares: project each visible leaf to NDC, colour it by
@@ -989,7 +925,7 @@ class CytoRenderer {
     fun cleanup() {
         shader.deleteProgram()
         bgShader.deleteProgram()
-        fieldMesh.deleteProgram()
+        lightFieldShader.deleteProgram()
         matterShader.deleteProgram()
         circleShader.deleteProgram()
         GPU.deleteBuffers(circleVbo)
@@ -1053,13 +989,6 @@ class CytoRenderer {
     }
 
     private companion object {
-        // Heatmap mesh resolution per axis over one torus tile. The field renders gouraud-interpolated, so
-        // this is the sampling grid (not visible cells) — enough to capture the 4 Gaussian sources' curvature
-        // when zoomed out, while up close the interpolation keeps it perfectly smooth. (FRES+1)² vertices; the
-        // grid expands to FRES² cells × 2 triangles × 3 vertices for the independent-triangle draw.
-        const val FRES = 48
-        const val FIELD_VERTS = (FRES + 1) * (FRES + 1)
-        const val FIELD_MESH_VERTS = FRES * FRES * 6
         // Brightness of cells outside the focused cell's welded cluster — dark enough to recede, but
         // still faintly visible so the surrounding context isn't lost entirely.
         const val DIM_VALUE = 0.5f

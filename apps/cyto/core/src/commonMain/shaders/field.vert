@@ -1,15 +1,13 @@
 #version 330 core
 
-// The light-field heatmap as a smooth, gouraud-interpolated mesh. Each vertex carries a
-// pre-baked heat colour sampled from the (continuous) light field; the GPU interpolates it
-// across every triangle, so the field renders as the continuous energy landscape it is,
-// with no visible grid cells. Vertices arrive already projected to screen NDC.
-layout(location = 0) in vec2 aPos;    // screen NDC
-layout(location = 1) in vec4 aColor;  // pre-baked heat rgba
+// A single full-screen triangle. The fragment shader evaluates the light field analytically per pixel,
+// so the daylight band renders as the continuous field it is (no mesh, no baking). Only the clip-space
+// x is forwarded — the moving band is y-independent (it lights whole columns).
+layout(location = 0) in vec2 aPos;  // clip-space fullscreen triangle: (-1,-1), (3,-1), (-1,3)
 
-out vec4 vColor;
+out float vClipX;
 
 void main() {
-    vColor = aColor;
+    vClipX = aPos.x;
     gl_Position = vec4(aPos, 0.0, 1.0);
 }
