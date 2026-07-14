@@ -15,9 +15,10 @@ prose companion (the campaign is the interactive path through the same material)
 > validateGlyphs()` guard against regressions); per-step `WorldRun.Frozen/Live` so a slow reader isn't
 > overtaken by later-concept events (world holds still on reading beats).
 >
-> **Status (2026-07-12): Ch1–6 built and committed** (Act I + most of Act II). This section is the
-> **fresh-session handoff** — the plan below (§5–6) records the ORIGINAL design; the arc actually shipped
-> diverged from it (see "As-built arc" next), so trust this block over §5–6 where they disagree.
+> **Status (2026-07-14): Ch1–9 built and committed** (Act I + II + the locomotion arc opener). This section
+> and **§2.1 (the spine)** are the canonical current record; the deeper design in **§5–6 is the ORIGINAL
+> sketch and is now stale** (its chapter numbering never matched what shipped) — trust this block + §2.1 over
+> §5–6 where they disagree. **Next build target: Ch10 Reproduction** (see the handoff at the end of this block).
 >
 > **Engine (core commonMain `org.emerge.demo.cyto.campaign`):** `CampaignModel` (`Chapter`/`Step`/`Gate`/
 > `PlayerAction`/`ControlMask`/`Spotlight`/`WorldRun`), `CampaignQuery`+`WorldStats`+`FocusedCell`,
@@ -41,6 +42,18 @@ prose companion (the campaign is the interactive path through the same material)
 >   a towed, connected body.
 > - **Ch6 Under Strain** — welded body tears when yanked (welds now half-durable); player inserts the
 >   **Repair** "Hold Together" group; body becomes tougher (damage-gated Repair, tougher-not-invincible).
+> - **Ch7 A Muscle** — inserts the **Move** group (a single light-powered `Contract` gene); the body clenches
+>   by day and relaxes at night, but an *even* squeeze goes nowhere — the deliberate lesson that sets up
+>   asymmetry. (Substrate switches here from the r/g autotroph toward the swimmer lineage.)
+> - **Ch8 A Sense of Place** — Act III opener. Inserts the **Polarise** group: a `bb` morphogen handed whole
+>   to one daughter → marked/bare cells contract unevenly → the body **crawls** (asymmetric contraction = real
+>   travel). Growth-limiting is **smuggled in here** (the same morphogen gradient lets the body sense its size
+>   and stop at a small cluster). Introduces time controls + the tap-empty-space re-seed affordance.
+> - **Ch9 A Beat of Its Own** — a metabolic **Clock** group (internal oscillator) frees the muscle's beat from
+>   sunlight, then the player edits a **3-generation lineage by hand**: clock → muscle-fuel Light→Break rg
+>   (swims at night) → marker flip bb<1→bb>0 (better swimmer), each generation tapped out as a **live copy of
+>   the selected cell** ("last-modified brush", `Chapter.spawnCopiesHeldCell`). Uses Stu's swimmerx/swimmerxX
+>   genomes. (Growth-limiting NOT needed here — already in Ch8.)
 >
 > **Gene grouping = a persistent per-gene TAG** (`Gene.group: String`, §10 — see the updated §10 for the
 > as-built design). No matching: the tag survives editing/division/mutation/save (round-tripped by
@@ -58,28 +71,36 @@ prose companion (the campaign is the interactive path through the same material)
 >
 > **⚠️ Not done / open:** (1) **Ch6 drag FEEL is unverified** — the harness `dragcell` moves too smoothly to
 > over-stretch welds, so the tear-vs-hold visual + threshold tuning need a **live GL drag playtest** (Stu
-> confirmed manual tearing works). (2) region-targeted spotlights/arrows still text-hint-only. (3) Ch7–9
-> BUILT (Ch7 Contract muscle → Ch8 polarise/differentiation → **Ch9 "A Beat of Its Own": a metabolic clock
-> (internal oscillator) + editing a 3-generation lineage by hand — clock, then muscle-fuel Light→Break rg
-> (swims at night), then marker flip bb<1→bb>0 (better swimmer), each generation tapped out as a live copy
-> of the last via the "last-modified brush" `Chapter.spawnCopiesHeldCell`). Ch9 uses Stu's swimmerx/swimmerxX
-> genomes.** Still open above Ch9: Food Web / shape / capstone (see §6). **Ch9 needs a live behaviour
-> playtest** (does the clocked body pulse+crawl, does the Break-rg variant swim past nightfall, does the
-> marker-flip out-swim it — the biology is Stu's validated swimmer save, the campaign wiring is harness-verified).
-> (4) The Genome Workshop /
-> group-library / move-between-groups UI (§10.5) — data model supports re-tagging, no UI yet. (5) No live
-> in-app visual playtest of the whole arc yet.
+> confirmed manual tearing works). (2) region-targeted spotlights/arrows still text-hint-only. (3) **Ch8–9
+> behaviour is harness-verified for FLOW ONLY** (chapters load glyph-clean, group-inserts take the right gene
+> counts, coach + editor render) — the actual locomotion payoffs need a **live GL playtest**: does Ch8's body
+> crawl once polarised; does Ch9's body pulse+crawl on the clock, does the Break-rg variant swim past
+> nightfall, does the marker-flip out-swim it. The biology is Stu's validated swimmer save; only the campaign
+> wiring is auto-verified. (4) The Genome Workshop / group-library / move-between-groups UI (§10.5) — data
+> model supports re-tagging, no UI yet. (5) No live in-app visual playtest of the whole arc yet.
 >
-> **Next session — pivot the arc to exhibit the swimmer genome + the living-world visuals.** The
-> `LIVING_WORLD_PLAN.md` metabolic visuals (build/decay/ENV↔CYT/weld transfer specks + glows) are COMPLETE
-> and polished, but they only pay off on an organism that *actively metabolises*. The campaign substrate is
-> a grow-only autotroph sitting at biomass-cap equilibrium — it builds/decays ~nothing, so those visuals
-> are invisible in-campaign. **Direction:** have Ch7+ deliberately build toward the **swimmer genome**
-> (Ch7 `Contract` locomotion → Ch8 phased-Contract swimming already aim here) so a live, feeding, moving
-> body naturally shows the flows, and **add campaign copy that names each transfer** as it appears (so new
-> users learn them rather than intuiting them). Stu validated the visuals live on his swimmer-genome save;
-> getting the campaign to that point is the main build task. Further visual iteration rides on later
-> stages. See `LIVING_WORLD_PLAN.md` §6 "Next step" and [[project_cyto_living_world]].
+> **Next session — build Ch10 Reproduction** (the arc's growth-limit slot is retired; growth-limiting was
+> folded into Ch8, so reproduction takes the Ch10 number; a capstone can follow as Ch11). **Chapter contract:**
+> - *Problem:* your Ch9 swimmer grows to a set size and holds there — one lone creature. A lineage needs to
+>   **spread**: bud off new swimmers that go colonise on their own.
+> - *The one idea:* **sever division** — add a `Mitosis … sever` gene (rejectMother = true) so a daughter
+>   breaks free as its own 1-celled founder and grows into a fresh swimmer, instead of staying welded to the
+>   cap-limited body. Mirrors Ch4's "+ ADD REPRODUCE" insert, but on the swimmer lineage (the original
+>   17-gene `Swimmer.gene` carried exactly such a gene: `Mitosis gr mother sever along gr` at the extremities).
+> - *Substrate:* the Ch9 end-state swimmer (clocked, moving) **minus** a reproduce group; insert = the sever
+>   gene, tagged `reproduce`. Reuse the group-insert machinery + a `geneCount` gate (as Ch8/Ch9 do).
+> - *Objective / payoff:* `cellCount` climbs well past the single-cluster cap (e.g. ≥ N), i.e. NEW independent
+>   swimmers appear and spread — visible colonisation, not just one body pulsing in place. Remember the
+>   **push-to-start** constraint (single cells can't locomote) and that **severing IS locomotion** (flung
+>   daughters reach fresh matter) — both already documented in [[project_cyto_campaign]].
+> - *Watch for:* the swimmer is growth-capped by the Ch8 morphogen, so confirm in the harness that a severed
+>   daughter actually escapes the cap and grows (the cap senses body size, so a lone founder should be below
+>   it). Build the substrate genome by trimming Swimmerx/SwimmerxX, verify the sever-insert via the harness
+>   (gene count + render), then live-playtest the colonisation.
+>
+> **Living-world visuals note (still open, lower priority):** the `LIVING_WORLD_PLAN.md` metabolic flows only
+> pay off on an actively-metabolising body — the swimmer lineage (Ch7+) now provides one, so a future pass can
+> **add campaign copy naming each transfer** as it appears. See [[project_cyto_living_world]].
 >
 > **Architecture grounding (unchanged):** the immediate-mode `Ui` toolkit (`engine/render/torus/.../ui/
 > Ui.kt`), the `CytoMenu` shell + `Callbacks`, the `CytoScenario` recipe system, the genome library
@@ -124,40 +145,49 @@ sequence + one or more objectives. Difficulty and conceptual load rise monotonic
 | Act | Theme | Chapters | What the player leaves knowing |
 |---|---|---|---|
 | **I — The World** | Interaction literacy | 1–2 | Camera, selection, the info panel, light vs matter, that cells live and die on their own |
-| **II — The Gene** | Single-action literacy | 3–7 | The gene grammar; each of the seven actions, one at a time, by using it to solve a problem |
-| **III — Composition** | Emergence | 8–10 | Clocks (feedback/timing), morphogen gradients (position), oriented division (shape) |
-| **IV — The Wild** | Graduation | 11 + sandbox | Combining everything into a body; turning on mutation/selection; free play |
+| **II — Building a Body** | Subsystem literacy | 3–7 | The gene grammar; grow → reproduce → cohere → mend → move, each added as a functional group to solve a problem |
+| **III — A Creature** | Emergence + locomotion | 8–10(11) | Differentiation (asymmetric contraction = travel), a metabolic clock (own beat), editing a lineage by hand, reproduction (colonise) |
+| **IV — The Wild** | Graduation | 11 + sandbox | The full swimmer; turning on mutation/selection; free play |
 
 Acts I–II are tightly scripted (high hand-holding). Act III loosens (the player is composing, we
 coach less). Act IV is essentially the existing sandbox with an optional challenge list.
 
-### 2.1 Chapter list (spine)
+### 2.1 Chapter list (spine) — AS BUILT (canonical)
 
-- **Ch 1 — First Contact.** *Problem:* "There's a lone cell. Find it and learn to look at it."
-  Teaches pan/zoom, click-to-select, the info panel, that the world wraps (toroidal).
-- **Ch 2 — Let There Be Light.** *Problem:* "Keep this cell fed as day turns to night." Teaches the
-  light overlay + day/night band, matter overlay + depletion, passive feeding, growth→division→
-  carrying-capacity — all by *watching* the seeded autotroph and nudging it.
-- **Ch 3 — Anatomy of a Gene.** *Problem:* "Why does this cell do what it does? Read its program."
-  Opens the gene editor; walks the three parts of a gene; the grammar.
-- **Ch 4 — Grow.** *Problem:* "This cell makes food but never grows. Give it the gene it's missing."
-  Player adds a `Convert` gene. Teaches Convert, FormBond dependency, the reserve/threshold idea.
-- **Ch 5 — Divide.** *Problem:* "One cell isn't a body. Make it multiply." Player adds `Mitosis`;
-  meets `Break` energy for bulk cost, the halving brake, `sever` vs welded colony.
-- **Ch 6 — The Food Web.** *Problem:* "This second creature can't photosynthesise. Feed it." Teaches
-  passive diffusion, Import/Export one-way gates, autotroph→heterotroph flow.
-- **Ch 7 — Hold Together & Move.** *Problem:* "Your colony is falling apart / can't move." Short
-  beats for `Repair` (cohesion), `Contract` (locomotion), and a taste of `Lyse` (predation).
-- **Ch 8 — The Clock.** *Problem:* "Make a cell that acts on a schedule, then make a colony that
-  pulses." Dilution timer (`Conc`) → ring oscillator → phased `Contract` = swimming.
-- **Ch 9 — Knowing Where You Are.** *Problem:* "Make cells that behave differently depending on where
-  they are in the body." Asymmetric mitosis seeds a source; sink everywhere; `Conc` bands → two
-  tissues (two colours). The differentiation keystone.
-- **Ch 10 — Shape.** *Problem:* "Break out of the blob." Oriented division `along`/`across` → threads
-  and sheets.
-- **Ch 11 — The Hopeful Monster (capstone).** *Problem:* "Grow one genome into a shaped, differentiated,
-  self-holding body — then let evolution loose on it." Combines Ch 8–10; ends by turning on mutation
-  and watching selection act. Open-ended; graduates to sandbox.
+> This is the spine that actually shipped (Ch1–9 built 2026-07-11…14). It **replaces** the original design
+> sketch that used to live here (preserved in §6, now flagged stale). The campaign runs on a **single
+> author-able organism** the player grows into a creature — a grow-only autotroph for Act I–II, transitioning
+> to the **swimmer lineage** at Ch7. Each Act-II/III chapter adds/edits ONE functional **group** (§10).
+
+- **Ch 1 — First Contact** ✅. *Problem:* "There's a lone cell. Find it and learn to look at it." Pan/zoom,
+  select, the info panel, the toroidal world. Grow-only autotroph, paused.
+- **Ch 2 — Let There Be Light** ✅. *Problem:* "Watch a cell feed on sunlight and hold its ground." Light
+  field + day/night; it grows to full size and holds steady (never spreads). Matter deferred to Ch4.
+- **Ch 3 — Anatomy of a Gene** ✅. *Problem:* "Why does this cell do what it does? Read its program." Opens
+  the editor; genome shown **by function** (groups); grammar `ACTION IF CONDITION (SOURCE)`.
+- **Ch 4 — Give It Life** ✅. *Problem:* "It grows but can't reproduce." Insert the **Reproduce** group; it
+  divides + spreads; the depleted "comet" patch introduces the finite-matter budget.
+- **Ch 5 — Hold Together** ✅. *Problem:* "A scattering swarm isn't a body." First direct gene edit — toggle
+  `SEVER: yes→no` so daughters stay welded; the player **drags** the towed body to feed it.
+- **Ch 6 — Under Strain** ✅. *Problem:* "Welds snap when you pull." Insert the **Hold Together** (Repair)
+  group; damage-gated Repair mends welds under strain (tougher, not invincible).
+- **Ch 7 — A Muscle** ✅. *Problem:* "It's been dragged to its food — time it moved itself." Insert the
+  **Move** group (light-powered `Contract`); it clenches by day, but an *even* squeeze goes nowhere → sets
+  up asymmetry. (Substrate transitions to the swimmer lineage here.)
+- **Ch 8 — A Sense of Place** ✅. *Problem:* "An even squeeze goes nowhere — teach the cells which side
+  they're on." Insert the **Polarise** group; a `bb` morphogen handed to one daughter → asymmetric
+  contraction → it **crawls**. Growth-limiting is folded in (the gradient also caps body size). Introduces
+  time controls + the tap-to-re-seed affordance.
+- **Ch 9 — A Beat of Its Own** ✅. *Problem:* "It swims on sunlight and stalls every night — give it an inner
+  clock, then breed it better." Insert the **Clock** group (oscillator), then edit a **3-generation lineage
+  by hand** (fuel Light→Break rg = night-swimming; marker bb<1→bb>0 = better swimmer) via the **last-modified
+  brush** (`Chapter.spawnCopiesHeldCell`). Uses Stu's swimmerx/swimmerxX genomes.
+- **Ch 10 — Reproduction** ⏳ NEXT. *Problem:* "Your swimmer grows to a set size and stops — one creature.
+  Make it spread." Insert a **Reproduce** group (a `Mitosis … sever` gene) so it buds off free-swimming
+  colonists. Objective: `cellCount` climbs past the single-cluster cap (new independent swimmers appear).
+  Full chapter contract in the fresh-session handoff at the top of this doc.
+- **Ch 11 — Capstone / Hopeful Monster** (optional, unspecced). *Problem:* "You've built a whole swimmer —
+  now turn on mutation and let selection act." Minimal coaching; graduates to sandbox. Scope TBD.
 
 ### 2.2 Progression & unlocking
 
@@ -482,7 +512,14 @@ move of the whole campaign.
 
 ---
 
-## 6. Minutia — how the later chapters teach (sketch)
+## 6. Minutia — how the later chapters teach (ORIGINAL sketch — STALE, superseded by §2.1)
+
+> ⚠️ **STALE — do not build from this.** This was the original Ch3–11 design sketch, written before the arc
+> was built. **The as-built arc diverged from it** (the campaign became a single author-able organism grown
+> into a swimmer, not the food-web/two-creature spine below), and the **chapter numbers here do NOT match the
+> shipped chapters**. The canonical spine is **§2.1 (AS BUILT)**; the next-chapter contract (Ch10 Reproduction)
+> is in the fresh-session handoff at the top. Kept only for historical design intent (some ideas — Food Web,
+> Shape, capstone — may still be mined for Act IV / later chapters).
 
 Act I is specified to the step; Acts II–IV are specified to the *chapter contract* (problem, the one
 gene/idea, the objective predicate, the "watch it happen" payoff). Each will be expanded to Act I's
