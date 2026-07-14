@@ -776,7 +776,7 @@ class CytoRenderer {
                 if (a <= 0.003f) continue
                 val r = radius * (1f + frac * (DECAY_MAX_SCALE - 1f))   // grow from the rim outward
                 matCircS.setScale(r, r)
-                matCircT.setTranslation(cx, cy)
+                matCircT.setTranslation(viewX(cx), viewY(cy))
                 matCircM.setProduct(matCircT, matCircS)
                 mvpCirc.setProduct(matP, matCircM)
                 mvpCirc.copyInto(buildMatrices, count * Mat4.FLOATS)
