@@ -131,7 +131,7 @@ object CytoSceneView {
 
         val mouse = MouseState()
         installMouseHandlers(window, controller, renderer, controls, ui, geneEditor, menu, mouse, signals)
-        installKeyHandlers(window, controller, simDriver, menu, menuCallbacks)
+        installKeyHandlers(window, controller, simDriver, menu, geneEditor, menuCallbacks)
 
         var lastTime = glfwGetTime()
         var fps = 0.0
@@ -293,10 +293,20 @@ object CytoSceneView {
      *  feeds printable characters into the name field. */
     private fun installKeyHandlers(
         window: Long, controller: CytoController, simDriver: CytoSimDriver, menu: CytoMenu,
-        cb: CytoMenu.Callbacks,
+        geneEditor: GeneEditor, cb: CytoMenu.Callbacks,
     ) {
         glfwSetKeyCallback(window) { _, key, _, action, _ ->
             if (action != GLFW_PRESS && action != GLFW_REPEAT) return@glfwSetKeyCallback
+            // In-game group tagging captures a typed name — route edit keys to the editor, not the global
+            // shortcuts (Space/[/]) so typing a space doesn't pause the sim (mirrors the menu name field).
+            if (geneEditor.capturingGroupName) {
+                when (key) {
+                    GLFW_KEY_BACKSPACE -> geneEditor.groupBackspace()
+                    GLFW_KEY_ENTER, GLFW_KEY_KP_ENTER -> geneEditor.confirmGroupName()
+                    GLFW_KEY_ESCAPE -> geneEditor.cancelGroupName()
+                }
+                return@glfwSetKeyCallback
+            }
             if (menu.capturingName) {
                 when (key) {
                     GLFW_KEY_BACKSPACE -> menu.backspace()
@@ -322,7 +332,10 @@ object CytoSceneView {
             }
         }
         glfwSetCharCallback(window) { _, codepoint ->
-            if (menu.capturingName && codepoint in 32..126) menu.typeChar(codepoint.toChar())
+            if (codepoint in 32..126) {
+                if (menu.capturingName) menu.typeChar(codepoint.toChar())
+                else if (geneEditor.capturingGroupName) geneEditor.typeGroupChar(codepoint.toChar())
+            }
         }
     }
 

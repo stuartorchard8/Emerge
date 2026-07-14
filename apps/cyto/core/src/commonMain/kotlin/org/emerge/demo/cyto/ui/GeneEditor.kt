@@ -27,7 +27,7 @@ import org.emerge.render.torus.ui.UiBuilder
  * editor state (which gene, the draft, which dropdown is open).
  */
 class GeneEditor {
-    private enum class Field { Source, LhsKind, Cmp, RhsKind, Action, MitosisSide, MitosisAxis }
+    private enum class Field { Source, LhsKind, Cmp, RhsKind, Action, MitosisSide, MitosisAxis, Group }
 
     /** A registry-less grouping used in free play: [GenomeGrouping.sections] still buckets a tagged genome by
      *  its own tags (auto-coloured by name); it just offers no "+ ADD" inserts (those are campaign-authored). */
@@ -38,6 +38,12 @@ class GeneEditor {
     private var draft: Gene? = null
     private var openField: Field? = null
     private var openClause: Int = -1   // which clause's LHS/CMP/RHS dropdown is open (for the AND-conjunction)
+
+    // In-game group tagging: when the player picks "New group..." the editor captures a typed name into
+    // [groupBuffer] (the host routes keystrokes here — see [capturingGroupName]/[typeGroupChar]). Only the
+    // draft's tag changes; it commits with DONE like every other field.
+    private var capturingGroup = false
+    private val groupBuffer = StringBuilder()
 
     /** Which functional groups are expanded (by name) when a [GenomeGrouping] overlay is showing. Collapsed
      *  by default so the genome reads as a few named subsystems, not a wall of genes; the player opens the
@@ -62,6 +68,33 @@ class GeneEditor {
 
     /** Called if the editor target vanishes (cell died / deselected) — discard any in-progress edit. */
     fun closeDropdown() { openField = null }
+
+    /** True while the editor is capturing a typed group name — the host routes keystrokes here instead of
+     *  its global shortcuts (mirrors the menu's name-capture). */
+    val capturingGroupName: Boolean get() = capturingGroup
+
+    /** Append a printable char to the group name being typed (host char-callback). */
+    fun typeGroupChar(c: Char) { if (capturingGroup && groupBuffer.length < 24 && c >= ' ') groupBuffer.append(c) }
+
+    /** Delete the last typed char of the group name (host BACKSPACE). */
+    fun groupBackspace() { if (capturingGroup && groupBuffer.isNotEmpty()) groupBuffer.setLength(groupBuffer.length - 1) }
+
+    /** Commit the typed group name onto the draft (host ENTER); a blank name is ignored (leaves the tag as-is). */
+    fun confirmGroupName() {
+        if (!capturingGroup) return
+        val name = groupBuffer.toString().trim()
+        if (name.isNotEmpty()) draft = draft?.copy(group = name)
+        capturingGroup = false
+    }
+
+    /** Abandon the typed group name unchanged (host ESC). */
+    fun cancelGroupName() { capturingGroup = false }
+
+    private fun startGroupCapture(initial: String) {
+        capturingGroup = true
+        groupBuffer.setLength(0); groupBuffer.append(initial)
+        openField = null
+    }
 
     /** [onExport] is invoked when the EXPORT button is tapped — the host writes the held cell's genome to a
      *  file (desktop file-I/O lives outside this commonMain kit). No-op default keeps non-desktop hosts simple. */
@@ -219,6 +252,25 @@ class GeneEditor {
                     draft = d.copy(efficiency = (d.efficiency + if (delta > 0) 1 else -1).coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR))
                 }
             }
+            // Functional-group tag — assign the gene to a subsystem from inside the editor (no .gene file
+            // editing). Pick an existing group in this genome, clear it, or type a brand-new name. Only the
+            // draft changes here; the tag commits with DONE like every other field.
+            gap()
+            if (capturingGroup) {
+                row("NEW GROUP: ${groupBuffer}_", 0xAACCFFFFL)
+                row("ENTER confirm . ESC cancel", 0x99AACCFFL)
+            } else {
+                val existing = controller.heldGenome()?.mapNotNull { it.group.ifBlank { null } }?.distinct() ?: emptyList()
+                val opts = listOf(NO_GROUP) + existing + NEW_GROUP
+                picker("GROUP", d.group.ifEmpty { NO_GROUP }, opts, openField == Field.Group, { toggle(Field.Group) }) { i ->
+                    draft = when {
+                        i == 0 -> d.copy(group = "")
+                        i == opts.lastIndex -> { startGroupCapture(d.group); d }
+                        else -> d.copy(group = existing[i - 1])
+                    }
+                    openField = null
+                }
+            }
             gap()
             actionRow(
                 listOf(
@@ -329,11 +381,18 @@ class GeneEditor {
         draft = null
         openField = null
         metabExpanded = false
+        capturingGroup = false
+        groupBuffer.setLength(0)
     }
 
     private fun sourceLabel(s: EnergySource): String = when (s) {
         EnergySource.Light -> "Light"
         is EnergySource.BreakBond -> "Brk ${s.bond}"
+    }
+
+    private companion object {
+        const val NO_GROUP = "(none)"
+        const val NEW_GROUP = "New group..."
     }
 }
 
