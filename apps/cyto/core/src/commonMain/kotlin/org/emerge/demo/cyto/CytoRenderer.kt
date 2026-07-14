@@ -1000,7 +1000,7 @@ class CytoRenderer {
         const val MATTER_TEX_RES = 512
         // Gaseous domain-warp amplitude (uv units) — how far the animated noise displaces the density lookup.
         // Small: just enough to break up the quad-tree's blocky leaf edges without smearing away definition.
-        const val MATTER_WARP_AMP = 0.007f
+        const val MATTER_WARP_AMP = 0.005f
         // Leaf counts scale with area; normalise by the finest leaf size + the seed density so a full
         // base-density leaf reads as white (1,1,1) regardless of how merged it is.
         val MATTER_FINEST_SIZE = CytoMatterField.TILE / (1 shl CytoMatterField.MAX_DEPTH)
