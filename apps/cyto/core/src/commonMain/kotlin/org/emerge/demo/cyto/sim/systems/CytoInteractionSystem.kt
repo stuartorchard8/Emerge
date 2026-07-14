@@ -69,12 +69,16 @@ object CytoInteractionSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
         }
     }
 
-    /** Cell contains a logical point if the point is within its radius. */
+    /** Cell contains a logical point if the point is within its radius. The point is converted to a torus
+     *  [Coord2] first so the test uses the shortest-torus delta (`Coord.minus` wraps via two's-complement
+     *  Int overflow) — otherwise a tap near a world edge misses a cell that sits across the seam, even
+     *  though it renders right under the cursor. Mirrors [CytoController.cellAt]. */
     private fun contains(builder: SimBuilder, id: EntityId, x: Float, y: Float): Boolean {
         val transform = builder.getComponent<TransformComponent>(id) ?: return false
         val radius = builder.getComponent<ColliderComponent>(id)?.radius ?: return false
-        val dx = CytoUnits.toLogical(transform.pos.x) - x
-        val dy = CytoUnits.toLogical(transform.pos.y) - y
+        val delta = transform.pos - CytoUnits.coord2(x, y)
+        val dx = CytoUnits.toLogical(delta.x)
+        val dy = CytoUnits.toLogical(delta.y)
         val r = CytoUnits.toLogical(radius)
         return dx * dx + dy * dy < r * r
     }

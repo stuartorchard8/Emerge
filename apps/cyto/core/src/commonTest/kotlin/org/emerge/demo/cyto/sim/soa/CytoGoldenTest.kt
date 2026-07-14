@@ -180,14 +180,20 @@ class CytoGoldenTest {
     // is geometry-only ⇒ thread-count-independent, so parallelMatchesSequential + conservation held.
     // Re-baselined 2026-07-09: 4x world size (see GROWTH). meta/physics/biology/grid all shift.
     // Re-baselined 2026-07-09 (#2): LIGHT_FALLOFF scales with the world (see GROWTH #2).
+    // Re-baselined 2026-07-15: the tap hit test (CytoInteractionSystem.contains) became torus-aware — it
+    // compared flat logical deltas, so a tap never matched a cell across the seam and fell through to the
+    // "miss ⇒ insert a cell" branch. This script's (500, 500) taps are ~4 world-spans out and wrap to
+    // logical (-12, -12): the old baseline captured the bug — Base spawned a cell there, then Set MISSED
+    // that very cell and stacked a second one on top (pop 9). Now Set re-types it (pop 8), so meta moves by
+    // that one cell and physics/biology/grid follow; topology unchanged.
     // Re-baselined 2026-07-14: round-robin gene evaluation removed (see GROWTH). physics/biology/grid shift
     // with the more-responsive gene trajectories; meta + topology unchanged.
     private val INTERACT = mapOf(
-        "meta" to "fd92edb8d415aaa8",
-        "physics" to "da1fd935b91fc161",
-        "biology" to "874f2e30e03d2d29",
+        "meta" to "2f287e9ca4c65e66",
+        "physics" to "4dbbdf7d9a45b73c",
+        "biology" to "358447f445151035",
         "topology" to "cbf29ce484222325",
-        "grid" to "cd7738ee26ca895a",
+        "grid" to "fb8d7ad7068e177b",
     )
 
     @Test

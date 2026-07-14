@@ -194,16 +194,27 @@ class CytoController(
         withLock(inputLock) { pendingTaps.add(CytoInput.Tap(x, y, mode, type, activeBrush())) }
     }
 
-    /** The cell whose disc contains the logical point ([x], [y]), or null. */
+    /**
+     * The cell whose disc contains the logical point ([x], [y]), or null.
+     *
+     * The point is converted to a torus [Coord2] **first**, so the hit test measures the same
+     * shortest-torus delta the renderer draws with (`Coord.minus` wraps for free via two's-complement
+     * Int overflow). Subtracting in logical space instead would compare a wrapped-around cell against an
+     * unwrapped click and miss it: near a world edge, a cell drawn right under the cursor but technically
+     * across the seam is a whole world-span away in flat coordinates. [CytoRenderer.screenToWorld]
+     * deliberately returns an unwrapped logical point and leaves this conversion to its callers.
+     */
     fun cellAt(x: Float, y: Float): EntityId? {
         val state = currentState
         val transforms = state.components.getTable<TransformComponent>()
         val colliders = state.components.getTable<ColliderComponent>()
+        val point = CytoUnits.coord2(x, y)
         for (id in state.components.getTable<CytoCellComponent>().keys()) {
             val transform = transforms[id] ?: continue
             val radius = colliders[id]?.radius ?: continue
-            val dx = CytoUnits.toLogical(transform.pos.x) - x
-            val dy = CytoUnits.toLogical(transform.pos.y) - y
+            val delta = transform.pos - point
+            val dx = CytoUnits.toLogical(delta.x)
+            val dy = CytoUnits.toLogical(delta.y)
             val r = CytoUnits.toLogical(radius)
             if (dx * dx + dy * dy < r * r) return id
         }

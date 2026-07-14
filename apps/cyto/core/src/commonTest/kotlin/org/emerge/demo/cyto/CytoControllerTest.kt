@@ -2,6 +2,7 @@ package org.emerge.demo.cyto
 
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
+import org.emerge.demo.cyto.sim.CytoLightField
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -49,6 +50,56 @@ class CytoControllerTest {
         assertTrue(
             target !in frame.state.components.getTable<CytoCellComponent>().asMap().keys,
             "click-to-delete should remove the tapped cell",
+        )
+    }
+
+    /**
+     * Near a world edge the camera is on one side of the seam and a cell can be on the other, yet it still
+     * renders under the cursor (the renderer draws every object at its shortest torus delta from the
+     * camera). [CytoRenderer.screenToWorld] deliberately returns an *unwrapped* logical point, so such a
+     * click arrives a full [CytoLightField.SPAN] away from the cell's stored position. The hit test must
+     * wrap it; before the fix it compared flat deltas, missed, and the miss fell through to "insert a cell".
+     */
+    @Test
+    fun cellAtHitsACellAcrossTheTorusSeam() {
+        val c = CytoController()
+        var frame = c.tick(0f)
+        repeat(200) { frame = c.tick(1f) }
+        val target = frame.state.components.getTable<CytoCellComponent>().asMap().keys.first()
+        val pos = frame.state.components.getTable<TransformComponent>().asMap().getValue(target).pos
+        val x = CytoUnits.toLogical(pos.x)
+        val y = CytoUnits.toLogical(pos.y)
+
+        // Whichever cell owns this point (discs can overlap) is the one every wrapped click must also find.
+        val hit = c.cellAt(x, y)
+        assertTrue(hit != null, "sanity: a cell should be hit at its own centre")
+        val span = CytoLightField.SPAN
+        assertEquals(hit, c.cellAt(x + span, y), "a click one span east should wrap onto the same cell")
+        assertEquals(hit, c.cellAt(x - span, y), "a click one span west should wrap onto the same cell")
+        assertEquals(hit, c.cellAt(x, y + span), "a click one span north should wrap onto the same cell")
+        assertEquals(hit, c.cellAt(x, y - span), "a click one span south should wrap onto the same cell")
+    }
+
+    /** The same seam bug lived in the sim-side tap resolution (CytoInteractionSystem.contains), which
+     *  resolves Delete/Kill/Set taps. Guards it end-to-end through the live runtime. */
+    @Test
+    fun clickToDeleteWorksAcrossTheTorusSeam() {
+        val c = CytoController()
+        var frame = c.tick(0f)
+        repeat(200) { frame = c.tick(1f) }
+        val cells = frame.state.components.getTable<CytoCellComponent>().asMap()
+        assertTrue(cells.size > 1, "need cells to delete (had ${cells.size})")
+
+        val target = cells.keys.first()
+        val pos = frame.state.components.getTable<TransformComponent>().asMap().getValue(target).pos
+        // Tap a full span away — as a click near the seam arrives.
+        val span = CytoLightField.SPAN
+        c.tap(CytoUnits.toLogical(pos.x) + span, CytoUnits.toLogical(pos.y), TouchMode.Delete, CellType.Collector)
+        frame = c.tick(0.25f)
+
+        assertTrue(
+            target !in frame.state.components.getTable<CytoCellComponent>().asMap().keys,
+            "a delete tap across the seam should remove the tapped cell",
         )
     }
 
