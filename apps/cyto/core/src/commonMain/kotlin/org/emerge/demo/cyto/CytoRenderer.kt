@@ -151,15 +151,12 @@ class CytoRenderer {
     // cells drained drops out). Borders are drawn first, fills (inset by the border width) painted on top,
     // leaving a 2px frame. Toggle "Matter".
     var showMatterField = false
-    private val matterShader = UiRectRenderer(maxRects = MATTER_MAX_LEAVES)
-    private val matCx = FloatArray(MATTER_MAX_LEAVES)
-    private val matCy = FloatArray(MATTER_MAX_LEAVES)
-    private val matHx = FloatArray(MATTER_MAX_LEAVES)
-    private val matHy = FloatArray(MATTER_MAX_LEAVES)
-    private val matFillColor = FloatArray(MATTER_MAX_LEAVES * 4)
-    private val mInstCenter = FloatArray(MATTER_MAX_LEAVES * 2)
-    private val mInstHalf = FloatArray(MATTER_MAX_LEAVES * 2)
-    private val mInstColor = FloatArray(MATTER_MAX_LEAVES * 4)
+    // The matter field is rasterised (quad-tree → a fixed-res RGBA density texture) each frame, then drawn as
+    // one full-screen triangle sampling it with GL_REPEAT + linear filtering — so it reads as a smooth,
+    // torus-wrapped density cloud covering the whole screen (no tile edge, no leaf cap). Matches the light
+    // field's full-screen treatment.
+    private val matterField = CytoMatterFieldTexture(MATTER_TEX_RES)
+    private val matterPixels = ByteArray(MATTER_TEX_RES * MATTER_TEX_RES * 4)
     private val matColorTmp = FloatArray(4)
 
     // ── metabolic activity fields (LIVING_WORLD_PLAN.md §5) ──────────────────────────────────────
@@ -860,9 +857,9 @@ class CytoRenderer {
         )
     }
 
-    /** Draw the matter quad-tree as bordered leaf squares: project each visible leaf to NDC, colour it by
-     *  its atom mix at low value, and draw a border pass then an inset fill pass so a 2px frame remains.
-     *  Variable leaf sizes ⇒ walked + culled fresh each frame (the tree changes as cells refine/collapse it). */
+    /** Draw the matter field: rasterise the quad-tree into the density texture (one torus tile) and draw one
+     *  full-screen triangle sampling it with GL_REPEAT + linear filtering, so it reads as a smooth, wrapped
+     *  density cloud over the whole screen (the fragment maps each pixel → world → texcoord). */
     private fun drawMatterField(frame: CytoFrame) {
         if (!showMatterField) return
         val grid = frame.state.components.getTable<CytoMatterGridComponent>().asMap()[GRID_SINGLETON]?.grid ?: return
@@ -870,37 +867,41 @@ class CytoRenderer {
         val hwx = viewHeight * aspect * 0.5f
         val hwy = viewHeight * 0.5f
         if (hwx <= 0f || hwy <= 0f) return
+        rasterizeMatter(grid)
+        matterField.draw(
+            pixels = matterPixels,
+            centerX = centerX, centerY = centerY,
+            halfViewX = hwx, halfViewY = hwy,
+            half = CytoLightField.HALF, span = CytoLightField.SPAN,
+        )
+    }
 
-        // Collect visible leaves (centre + half-extent in NDC, fill colour) in one tree walk, capped.
-        var n = 0
+    /** Rasterise the matter quad-tree into [matterPixels] (a [MATTER_TEX_RES]² RGBA density map of one torus
+     *  tile). Each leaf fills its covered texel range with its [leafColor] density; leaves tile the whole tile
+     *  so every texel is written (cleared first as a guard against boundary rounding). Row 0 = y = −HALF. */
+    private fun rasterizeMatter(grid: CytoMatterField) {
+        val res = MATTER_TEX_RES
+        val span = CytoLightField.SPAN
+        val half = CytoLightField.HALF
+        matterPixels.fill(0)
         grid.forEachLeaf { x, y, size, store ->
-            if (n >= MATTER_MAX_LEAVES) return@forEachLeaf
-            val half = size * 0.5f
-            val ndcX = (x + half - centerX) / hwx
-            val ndcY = (y + half - centerY) / hwy
-            val hX = half / hwx
-            val hY = half / hwy
-            if (ndcX + hX < -1f || ndcX - hX > 1f || ndcY + hY < -1f || ndcY - hY > 1f) return@forEachLeaf
-            matCx[n] = ndcX; matCy[n] = ndcY; matHx[n] = hX; matHy[n] = hY
             leafColor(size, store, matColorTmp)
-            val c4 = n * 4
-            matFillColor[c4] = matColorTmp[0]; matFillColor[c4 + 1] = matColorTmp[1]
-            matFillColor[c4 + 2] = matColorTmp[2]; matFillColor[c4 + 3] = 1f
-            n++
+            val r = (matColorTmp[0] * 255f).toInt().coerceIn(0, 255).toByte()
+            val g = (matColorTmp[1] * 255f).toInt().coerceIn(0, 255).toByte()
+            val b = (matColorTmp[2] * 255f).toInt().coerceIn(0, 255).toByte()
+            val c0 = (((x + half) / span) * res).toInt()
+            val r0 = (((y + half) / span) * res).toInt()
+            val colEnd = maxOf(c0 + 1, (((x + size + half) / span) * res).toInt())
+            val rowEnd = maxOf(r0 + 1, (((y + size + half) / span) * res).toInt())
+            for (row in r0 until rowEnd) {
+                val base = row.coerceIn(0, res - 1) * res
+                for (col in c0 until colEnd) {
+                    val p = (base + col.coerceIn(0, res - 1)) * 4
+                    matterPixels[p] = r; matterPixels[p + 1] = g; matterPixels[p + 2] = b
+                    matterPixels[p + 3] = 255.toByte()
+                }
+            }
         }
-        if (n == 0) return
-
-        // Fills inset by a 1px border on every side (NDC spans 2 over the axis pixel count).
-        val borderNdcX = 0f * (2f / resW)
-        val borderNdcY = 0f * (2f / resH)
-        for (i in 0 until n) {
-            val c2 = i * 2; val c4 = i * 4
-            mInstCenter[c2] = matCx[i]; mInstCenter[c2 + 1] = matCy[i]
-            mInstHalf[c2] = max(0f, matHx[i] - borderNdcX); mInstHalf[c2 + 1] = max(0f, matHy[i] - borderNdcY)
-            mInstColor[c4] = matFillColor[c4]; mInstColor[c4 + 1] = matFillColor[c4 + 1]
-            mInstColor[c4 + 2] = matFillColor[c4 + 2]; mInstColor[c4 + 3] = 1f
-        }
-        matterShader.drawInstanced(n, mInstCenter, mInstHalf, mInstColor)
     }
 
     /** Colour a matter leaf by its per-area r/g/b atom DENSITY as raw RGB (r→R, g→G, b→B), normalised by the
@@ -926,7 +927,7 @@ class CytoRenderer {
         shader.deleteProgram()
         bgShader.deleteProgram()
         lightFieldShader.deleteProgram()
-        matterShader.deleteProgram()
+        matterField.deleteProgram()
         circleShader.deleteProgram()
         GPU.deleteBuffers(circleVbo)
         if (circleVao != null) GPU.deleteVertexArrays(circleVao)
@@ -992,15 +993,13 @@ class CytoRenderer {
         // Brightness of cells outside the focused cell's welded cluster — dark enough to recede, but
         // still faintly visible so the surrounding context isn't lost entirely.
         const val DIM_VALUE = 0.5f
-        // Matter-overlay caps + look. Leaves are walked + culled to the visible region, so the cap only
-        // bites when fully zoomed out over a deeply-refined tree (excess leaves are dropped, not wrapped).
-        const val MATTER_MAX_LEAVES = 65535
+        // Resolution of the matter density texture (one torus tile). Fixed + world-size-independent; linear
+        // filtering smooths it into a continuous cloud, so a moderate resolution is plenty. ~256KB/frame.
+        const val MATTER_TEX_RES = 256
         // Leaf counts scale with area; normalise by the finest leaf size + the seed density so a full
         // base-density leaf reads as white (1,1,1) regardless of how merged it is.
         val MATTER_FINEST_SIZE = CytoMatterField.TILE / (1 shl CytoMatterField.MAX_DEPTH)
         const val MATTER_REF_DENSITY = CytoSeed.MATTER_UNIFORM_LEVEL.toDouble()*4.0
-        // Border colour: a neutral grey, visible against both the bright base fills and depleted dark ones.
-        val MATTER_BORDER = floatArrayOf(0.1f, 0.1f, 0.1f)
 
         // ── Flow 3 (CYT→BIO "building") tuning — iterate via the agent harness. ──
         const val BUILD_MAX = CircleShader.MAX_INSTANCES
