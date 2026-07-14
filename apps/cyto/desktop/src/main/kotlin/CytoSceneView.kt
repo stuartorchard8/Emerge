@@ -153,6 +153,23 @@ object CytoSceneView {
                 ui.updateHold(cx, cy, delta)
             }
 
+            // WASD free camera pan. Held keys pan the camera each frame (delta-scaled); taking manual
+            // control clears any cell-follow, exactly as dragging empty space does. Suppressed while a name
+            // field is capturing keystrokes so typing W/A/S/D doesn't move the camera.
+            if (menu.inGame && !menu.capturingName && !geneEditor.capturingGroupName) {
+                var kx = 0f; var ky = 0f
+                if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) kx -= 1f   // move camera right
+                if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) kx += 1f   // move camera left
+                if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) ky += 1f   // move camera up
+                if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) ky -= 1f   // move camera down
+                if (kx != 0f || ky != 0f) {
+                    val step = CAMERA_KEY_PAN_PX_PER_SEC * delta
+                    renderer.panByPixels(kx * step, ky * step)
+                    controller.clearSelection()
+                    signals.cameraMoved = true
+                }
+            }
+
             renderer.showLightField = controls.showLightField   // Light button → renderer
             renderer.showMatterField = controls.showMatterField // Matter button → renderer
             renderer.colorMode = controls.colorMode             // Color button → renderer
@@ -518,4 +535,7 @@ object CytoSceneView {
     }
 
     private const val DRAG_THRESHOLD_PX = 4f
+    // WASD camera pan rate, in pixels/second (fed to panByPixels, so it scales with zoom just like a drag).
+    // ~one screen-height per second at the default window height.
+    private const val CAMERA_KEY_PAN_PX_PER_SEC = 900f
 }
