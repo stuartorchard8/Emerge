@@ -192,7 +192,7 @@ The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (
 - [x] **Weld fixes** — auto-weld on overlap disabled (`fd9ebafb`); repair welds can form the first connection
   when `weldedDegree == 0` (`fd9ebafb`); `AUTO_WELD_ON_OVERLAP = false` added to `CytoTuning` (`fd9ebafb`).
 - [x] **Degrade deposit** — now goes to center-most touching cell, not arbitrary (`9b7ab254`).
-- [x] **Round-robin gene eval** — fixed to gate condition evaluation, not gene execution (`716c2966`).
+- [x] **Round-robin gene eval** — fixed to gate condition evaluation, not gene execution (`716c2966`). **REMOVED 2026-07-14** (`d45570df`): all non-division genes now re-check every tick; parallelism absorbs the cost. Killed the stale-cache bug class (Retain flicker, post-mitosis stale flags).
 - [x] **Life viability / overpopulation** — reduced both via tuning changes (`2de08043`).
 - [x] **Oriented division timeout** — `acrossOrientedDivisionGrowsA2DSheetNotAThread` test timeout fixed
   (`586edd46`).

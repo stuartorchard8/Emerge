@@ -650,16 +650,19 @@ A player expands only as deep as they want. The campaign introduces the *six pur
 ever asks anyone to touch a single gene field — which is the correct deferral (per Stu: individual
 gene/group design is the deepest layer and should come **last**).
 
-### 10.2 The hard constraint (verified): grouping must never reorder
+### 10.2 The hard constraint: grouping must never reorder
 
-`ROUND_ROBIN_GENES` is on in the shipping config. In `CytoBiologyCore.runGenes`, only the gene at
-`rrIdx = tick % genomeSize` re-evaluates its condition each tick; the rest reuse a cached active flag.
-**So a gene's behaviour depends on its index in the list** — reordering a genome changes its
-trajectory and breaks the golden gate. New cells also seed their round-robin phase by a per-cell seed.
+> **Update 2026-07-14: round-robin removed.** `ROUND_ROBIN_GENES` and the `_cachedActive` cache are
+> gone — every non-division gene now re-evaluates its condition **every tick**. So the old `rrIdx =
+> tick % genomeSize` index-sensitivity no longer exists, and gene order is now *largely* behaviourally
+> neutral (condition timing is index-independent; apply is order-independent by design). The
+> order-preserving rule below is kept as a **safe convention**, not a hard trajectory constraint —
+> future order-coupled logic (mutation PRNG, etc.) could reintroduce sensitivity, and a stable stored
+> order keeps the golden gate and save diffs clean.
 
-Consequence: **grouping cannot be modelled as "reorder genes so a group is contiguous."** Doing that
-to Stu's existing Swimmer (crafted in a specific order) would silently change how it swims — the exact
-opposite of a comprehension aid. Therefore:
+Consequence: **grouping is still not modelled as "reorder genes so a group is contiguous."** Even
+though reordering no longer silently changes how Stu's Swimmer swims, contiguity-by-reorder would
+churn stored order for no benefit. Therefore:
 
 - **Group membership is an order-preserving label.** The genome's stored order (= sim order) is never
   touched by grouping. Groups may be **non-contiguous** in storage; the editor **collates by group for

@@ -550,6 +550,16 @@ ingredient (without it diffusion flattens the gradient to nothing).
 > ENV→CYT), overriding the derived permeability. It adds no metabolic reach. A determinant is now built
 > (`FormBond`) + sensed (`Chem`/`Conc`) + **`Retain`ed**, and kept in cytoplasm (never `Convert`ed into
 > splittable biomass). If the cell can't pay the 1 energy the seal drops that tick — memory costs energy.
+>
+> **2026-07-14 — `Retain` seals the species, not its precursor (Ch8 gotcha).** A `Retain <M>` seal on a
+> *dimer* `M = xy` blocks `M` from crossing the membrane, but the free **monomers** `x`/`y` still diffuse
+> freely (the free-monomer rule). So a welded neighbour that shares the genome receives the monomers and
+> **re-synthesises `M` locally** via its own `FormBond x y` — which looks exactly like `M` "leaking" but is
+> local manufacture (verified: neighbour *with* the `FormBond` gains `M`; *without* it gains 0, same monomer
+> inflow — `retainDoesNotBlockMonomerPrecursorSynthesisInNeighbour`). **Consequence for differentiation:**
+> retaining the finished determinant is not enough to keep two same-genome tissues distinct — the daughter
+> must be prevented from *synthesising* it, i.e. gate the `FormBond` source on an asymmetric signal the
+> daughter genuinely lacks (a morphogen the mother monopolises), not just seal the product. Open for Ch8.
 
 **The metabolic-loop morphogen.** With primary energy molecule `P` and morphogen `M`:
 - **Source (centre only):** `Break P IF <determinant X> : FormBond → M` — spends the primary molecule to make
