@@ -430,6 +430,10 @@ class CellWork(
     // CYT→CYT across welds (flow 5): species id → total count this cell SENT to its welded neighbours this
     // tick (from [CytoBiologyCore.diffuse]). Drives the cross-weld transfer specks.
     val weldOut = MoleculeStore(CytoTuning.CELL_CHEM_CAP)
+    // Which genes passed their condition this tick: bit i = genome[i] active. Drives the per-gene particle's
+    // brightness. Genes past bit 63 are not represented (genomes that long don't occur; the particles for
+    // them simply read inactive). Mitosis genes are resolved in a later phase and never set a bit here.
+    var activeMask = 0L
 
     /** The fired Mitosis gene's operand (its [GeneAction.a]) — the morphogen species allocated **whole to
      *  one daughter** on division (asymmetric mitosis, MORPHOGENESIS.md §C). "" ⇒ symmetric 50/50 split. */
@@ -640,6 +644,7 @@ class CellWork(
         cytToBio.clear()
         bioToEnvCount = 0; bioToEnvTargetId = -1
         envCytIn.clear(); envCytOut.clear(); weldOut.clear()
+        activeMask = 0L
         _exchPreN = 0
     }
 }

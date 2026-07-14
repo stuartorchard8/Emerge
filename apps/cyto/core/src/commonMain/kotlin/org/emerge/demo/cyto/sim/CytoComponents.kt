@@ -41,6 +41,10 @@ data class CytoCellComponent(
     /** Visual read-model (LIVING_WORLD_PLAN.md §4): species→count this cell sent CYT→CYT across its welds
      *  this tick (from diffusion). Drives the cross-weld transfer specks (flow 5). Empty when it sent none. */
     val weldOut: Map<String, Int> = emptyMap(),
+    /** Visual read-model: bit i = `genome[i]` passed its condition this tick. Drives each gene particle's
+     *  active/inactive brightness. Derived per-tick state — rebuilt by the gene phase every tick, so it is
+     *  neither saved nor restored; genes past bit 63 are unrepresented and read inactive. */
+    val activeMask: Long = 0L,
 )
 
 /**

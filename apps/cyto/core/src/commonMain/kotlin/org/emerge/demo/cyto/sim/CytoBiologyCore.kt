@@ -254,10 +254,15 @@ object CytoBiologyCore {
         // parallel per-cell (BiologySystem), so the O(genomeSize) scan is thread-absorbed — there's no
         // stale-cache class of bugs (a gene's active state always reflects the current cytoplasm, so
         // Retain seals reliably, post-division daughters evaluate against their own new state, etc.).
+        var activeMask = 0L
         for (i in genome.indices) {
             val g = genome[i]
-            if (g.action.type != ActionType.Mitosis && isActive(g, work, bioBonds)) active[n++] = i
+            if (g.action.type != ActionType.Mitosis && isActive(g, work, bioBonds)) {
+                active[n++] = i
+                if (i < 64) activeMask = activeMask or (1L shl i)
+            }
         }
+        work.activeMask = activeMask
 
         if (stats != null) { stats.genesIsActiveNanos += tScan!!.elapsedNow().inWholeNanoseconds; stats.genesActive += n }
         val tApply = if (stats != null) TimeSource.Monotonic.markNow() else null

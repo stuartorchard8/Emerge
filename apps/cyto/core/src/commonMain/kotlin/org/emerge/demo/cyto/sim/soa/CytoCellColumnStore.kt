@@ -49,6 +49,9 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
     var envCytIn = arrayOfNulls<MoleculeStore>(0); private set
     var envCytOut = arrayOfNulls<MoleculeStore>(0); private set
     var weldOut = arrayOfNulls<MoleculeStore>(0); private set
+    // Visual read-model (front only): bit i = genome[i] passed its condition this tick. Same lifecycle —
+    // rebuilt every tick by the gene phase, so it is not persisted through [scatter].
+    var activeMask = LongArray(0); private set
 
     // Double-buffer: back buffers swapped with front at the biology write-back barrier.
     // CellWork.reset() reads front → mutates CellWork's back buffer; writeback() swaps.
@@ -73,6 +76,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         envCytIn = envCytIn.copyOf(capacity)
         envCytOut = envCytOut.copyOf(capacity)
         weldOut = weldOut.copyOf(capacity)
+        activeMask = activeMask.copyOf(capacity)
         backCytoplasm = backCytoplasm.copyOf(capacity)
         backBiomass = backBiomass.copyOf(capacity)
     }
@@ -114,6 +118,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         envCytIn[slot] = null
         envCytOut[slot] = null
         weldOut[slot] = null
+        activeMask[slot] = 0L
         genome[slot] = value.genome
         // Also initialize back buffers — the swap will pick them up.
         // For freshly-scattered entities (spawn), the back buffer starts as a copy.
@@ -137,6 +142,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         envCytIn = envCytIn[slot]?.toStringMap() ?: emptyMap(),
         envCytOut = envCytOut[slot]?.toStringMap() ?: emptyMap(),
         weldOut = weldOut[slot]?.toStringMap() ?: emptyMap(),
+        activeMask = activeMask[slot],
     )
 
     override fun moveSlot(dst: Int, src: Int) {
@@ -154,6 +160,7 @@ class CytoCellColumnStore : ColumnStore<CytoCellComponent> {
         envCytIn[dst] = envCytIn[src]
         envCytOut[dst] = envCytOut[src]
         weldOut[dst] = weldOut[src]
+        activeMask[dst] = activeMask[src]
         // Also move the back-buffer references so compaction stays in sync.
         backCytoplasm[dst] = backCytoplasm[src]
         backBiomass[dst] = backBiomass[src]

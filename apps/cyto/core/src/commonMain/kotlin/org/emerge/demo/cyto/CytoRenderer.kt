@@ -1,6 +1,7 @@
 package org.emerge.demo.cyto
 
 import org.emerge.demo.cyto.sim.CytoCellComponent
+import org.emerge.demo.cyto.sim.EnergySource
 import org.emerge.demo.cyto.sim.CytoLightField
 import org.emerge.demo.cyto.sim.CytoMatterField
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
@@ -201,6 +202,16 @@ class CytoRenderer {
     /** Global pulse phase [0,1), advanced once per rendered frame — the expansion clock for the build
      *  glow (per-cell it's offset so cells don't pulse in lockstep). Frame-driven, not tick-driven. */
     private var pulsePhase = 0f
+
+    // ── Gene particles ──────────────────────────────────────────────────────────────────────────
+    /** Per-cell eased gene brightness (one entry per gene), keyed by EntityId.value and evicted like
+     *  [buildIntensity]. The only per-particle state there is — position is procedural (see
+     *  [drawGeneParticles]). */
+    private val geneBright = HashMap<Int, FloatArray>()
+    private val geneSeen = HashSet<Int>()
+    /** Drift clock for the gene specks, advanced once per rendered frame (frame-driven, like [pulsePhase],
+     *  so the wander is smooth regardless of tick rate — and keeps drifting while paused). */
+    private var geneTime = 0f
 
     // ── ENV↔CYT transfer particles (flows 1 & 2) ────────────────────────────────────────────────
     // Discrete world-space particles: spawned each *tick* in proportion to that tick's membrane transfer,
@@ -524,7 +535,142 @@ class CytoRenderer {
         // Flows 1 & 2: age + draw the ENV↔CYT transfer particles, on top of the cells.
         drawParticles(transforms)
 
+        // One speck per gene, drifting in each cell's hollow centre.
+        drawGeneParticles(cells, transforms, colliders)
+
         GPU.disableBlend()
+    }
+
+    /**
+     * Draws one particle per gene inside each cell's transparent centre: hue = the gene's energy source
+     * (white for Light, the bond's species colour for BreakBond), brightness eased between
+     * [GENE_INACTIVE_VALUE] and 1 as the gene's condition flips.
+     *
+     * Motion is **procedural, not simulated**: each speck's offset is a sum of two sines per axis, seeded
+     * from `hash(cellId, geneIndex)`, read off a shared [SIN_LUT]. Two incommensurate frequencies per axis
+     * make the path quasi-periodic, so it wanders rather than tracing an obvious Lissajous loop. Nothing is
+     * stored per particle and nothing integrates, so the drift costs a few table lookups, survives
+     * save/load, and can't accumulate error. Only the eased brightness is remembered (per cell, keyed like
+     * [buildIntensity]).
+     *
+     * The genome is ~17 genes across every cell, so a full world would be ~43k specks — far past what's
+     * legible or cheap. Two gates keep the real count low: cells smaller than [GENE_MIN_CELL_PX] on screen
+     * are skipped (17 specks in a 10px cell is mush), as are cells outside the view. Both are cheap
+     * per-cell tests that run before any per-gene work.
+     */
+    private fun drawGeneParticles(
+        cells: Map<EntityId, CytoCellComponent>,
+        transforms: ComponentTable<TransformComponent>,
+        colliders: ComponentTable<ColliderComponent>,
+    ) {
+        geneTime += GENE_TIME_STEP
+        geneSeen.clear()
+        val pxPerUnit = resH / viewHeight
+        // Half-extents of the view in logical units, for the off-screen test.
+        val halfH = viewHeight / 2f
+        val halfW = halfH * (resW / resH)
+        var inst = 0
+
+        for ((id, cell) in cells) {
+            val genome = cell.genome
+            if (genome.isEmpty()) continue
+            val collider = colliders[id] ?: continue
+            val radius = CytoUnits.toLogical(collider.radius)
+            if (radius * pxPerUnit < GENE_MIN_CELL_PX) continue      // too small to read → skip
+            val transform = transforms[id] ?: continue
+            val vx = viewX(CytoUnits.toLogical(transform.pos.x))
+            val vy = viewY(CytoUnits.toLogical(transform.pos.y))
+            if (vx + radius < -halfW || vx - radius > halfW) continue // off-screen → skip
+            if (vy + radius < -halfH || vy - radius > halfH) continue
+
+            geneSeen.add(id.value)
+            var bright = geneBright[id.value]
+            if (bright == null || bright.size != genome.size) {
+                // First sight of this cell, or its genome changed length (mutation) — (re)start the ease
+                // from the inactive floor rather than from black.
+                bright = FloatArray(genome.size) { GENE_INACTIVE_VALUE }
+                geneBright[id.value] = bright
+            }
+
+            val size = radius * GENE_SIZE_FRAC
+            // Keep specks inside the hollow centre: the shader draws a CytoCellShader.MEMBRANE_BORDER-thick
+            // membrane in world units, so the free interior shrinks as the cell does (and can vanish).
+            val orbit = radius - CytoCellShader.MEMBRANE_BORDER - size
+            if (orbit <= 0f) continue
+
+            for (i in genome.indices) {
+                if (inst >= GENE_MAX) break
+                val active = i < 64 && (cell.activeMask ushr i) and 1L == 1L
+                val target = if (active) 1f else GENE_INACTIVE_VALUE
+                bright[i] += (target - bright[i]) * GENE_EASE
+                val v = bright[i]
+
+                val h = hash32(id.value * 31 + i)
+                // Four phases + four frequencies from one hash; frequencies are spread over an irrational-ish
+                // spacing so the two sines on an axis don't re-align into a closed loop.
+                val ox = sinLut(geneTime * GENE_FREQ_A + phaseOf(h, 0)) * 0.6f +
+                    sinLut(geneTime * GENE_FREQ_B + phaseOf(h, 8)) * 0.4f
+                val oy = sinLut(geneTime * GENE_FREQ_C + phaseOf(h, 16)) * 0.6f +
+                    sinLut(geneTime * GENE_FREQ_D + phaseOf(h, 24)) * 0.4f
+
+                geneColorInto(genome[i].source, speciesTmp)
+                matCircS.setScale(size, size)
+                matCircT.setTranslation(vx + ox * orbit, vy + oy * orbit)
+                matCircM.setProduct(matCircT, matCircS)
+                mvpCirc.setProduct(matP, matCircM)
+                mvpCirc.copyInto(buildMatrices, inst * Mat4.FLOATS)
+                buildPrimaryIds[inst] = 0f
+                buildShapes[inst] = 0f
+                buildAlphas[inst] = GENE_ALPHA
+                val tb = inst * 3
+                // Scale the hue by the eased brightness — an inactive gene is the same colour at
+                // GENE_INACTIVE_VALUE of the value, not a different (washed-out) colour.
+                buildTints[tb] = speciesTmp[0] * v
+                buildTints[tb + 1] = speciesTmp[1] * v
+                buildTints[tb + 2] = speciesTmp[2] * v
+                inst++
+            }
+            if (inst >= GENE_MAX) break
+        }
+
+        if (geneBright.size > geneSeen.size) geneBright.keys.retainAll(geneSeen)
+
+        if (inst > 0) {
+            GPU.setBlendFuncSrcAlphaOne()
+            GPU.bindVertexArray(circleVao)
+            circleShader.drawInstanced(
+                vOffset = 0,
+                instanceCount = inst,
+                matricesColMajor = buildMatrices,
+                primaryIds = buildPrimaryIds,
+                shapes = buildShapes,
+                alphas = buildAlphas,
+                tintColorsRgb = buildTints,
+            )
+            GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
+        }
+    }
+
+    /** A gene's particle hue: white for Light (autotrophy has no species), else the broken bond's colour.
+     *  [speciesColorInto] already yields white for a token with no colour channels. */
+    private fun geneColorInto(source: EnergySource, out: FloatArray) =
+        speciesColorInto(if (source is EnergySource.BreakBond) source.bond else "", out)
+
+    /** Phase in radians from 8 bits of [h] starting at [shift]. */
+    private fun phaseOf(h: Int, shift: Int): Float = ((h ushr shift) and 0xFF) * (TAU / 256f)
+
+    /** Nearest-entry sine lookup. At [SIN_LUT_SIZE] entries the worst-case error is ~0.006 of the
+     *  amplitude — invisible on a drifting speck, and it turns four `sin` calls per particle per frame
+     *  into four array reads. */
+    private fun sinLut(radians: Float): Float {
+        val i = (radians * (SIN_LUT_SIZE / TAU)).toInt() and (SIN_LUT_SIZE - 1)
+        return SIN_LUT[i]
+    }
+
+    private fun hash32(x: Int): Int {
+        var h = x * -0x61c88647
+        h = h xor (h ushr 15); h *= -0x7ee3623b; h = h xor (h ushr 13)
+        return h
     }
 
     /** Spawn this tick's ENV↔CYT particles for one cell: [envCytIn] → inward absorption specks (flow 1),
@@ -1062,6 +1208,22 @@ class CytoRenderer {
         const val DECAY_MIN_VISIBLE = 0.02f
         const val DECAY_PULSES = 2
         const val DECAY_MAX_SCALE = 1.5f
+
+        // ── Gene particles tuning. ──
+        const val GENE_MAX = 20000                    // hard cap on gene specks drawn in one frame
+        const val GENE_INACTIVE_VALUE = 0.25f         // colour value of a gene that failed its condition
+        const val GENE_EASE = 0.08f                   // per-frame ease toward the active/inactive value
+        const val GENE_SIZE_FRAC = 0.07f              // speck radius as a fraction of the cell radius
+        const val GENE_ALPHA = 0.9f                   // speck opacity (additive; value carried in the tint)
+        const val GENE_MIN_CELL_PX = 14f              // skip cells whose radius is under this on screen
+        const val GENE_TIME_STEP = 0.016f             // drift clock advance per frame
+        // Drift frequencies: two per axis, deliberately non-harmonic so the pair never closes into a loop.
+        const val GENE_FREQ_A = 0.9f
+        const val GENE_FREQ_B = 1.37f
+        const val GENE_FREQ_C = 1.11f
+        const val GENE_FREQ_D = 0.71f
+        const val SIN_LUT_SIZE = 1024                 // power of two — index masks instead of modulo
+        val SIN_LUT = FloatArray(SIN_LUT_SIZE) { sin(it * 2.0 * PI / SIN_LUT_SIZE).toFloat() }
 
         // ── Flows 1 & 2 (ENV↔CYT transfer particles) tuning. ──
         const val PARTICLE_MAX = 10000                 // hard cap on live particles (excess spawns dropped)

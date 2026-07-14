@@ -66,6 +66,7 @@ tasks.withType<Test>().configureEach {
     System.getProperty("cytosave")?.let { systemProperty("cytosave", it) }
     System.getProperty("cytorepro")?.let { systemProperty("cytorepro", it) }
     System.getProperty("inspectcell")?.let { systemProperty("inspectcell", it) }
+    System.getProperty("geneprobe")?.let { systemProperty("geneprobe", it) }
     System.getProperty("savefile")?.let { systemProperty("savefile", it) }
     System.getProperty("sandboxgenome")?.let { systemProperty("sandboxgenome", it) }
     System.getProperty("sandboxticks")?.let { systemProperty("sandboxticks", it) }

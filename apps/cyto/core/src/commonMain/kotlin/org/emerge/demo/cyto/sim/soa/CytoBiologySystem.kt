@@ -335,6 +335,7 @@ class BiologySystem(
             val wo = world.cell.weldOut[slot]
                 ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP).also { world.cell.weldOut[slot] = it }
             wo.copyFrom(work.weldOut)
+            world.cell.activeMask[slot] = work.activeMask
             if (work.repaired) {
                 for (k in world.csr.offset[slot] until world.csr.offset[slot + 1]) {
                     world.csr.edgeAux[k] = work.connectionDamage[EntityId(world.csr.otherId[k])] ?: 0f
