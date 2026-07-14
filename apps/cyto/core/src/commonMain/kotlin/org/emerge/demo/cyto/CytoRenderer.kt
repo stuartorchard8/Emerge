@@ -994,12 +994,13 @@ class CytoRenderer {
         // Brightness of cells outside the focused cell's welded cluster — dark enough to recede, but
         // still faintly visible so the surrounding context isn't lost entirely.
         const val DIM_VALUE = 0.5f
-        // Resolution of the matter density texture (one torus tile). Fixed + world-size-independent; linear
-        // filtering smooths it into a continuous cloud, so a moderate resolution is plenty. ~256KB/frame.
-        const val MATTER_TEX_RES = 256
-        // Gaseous domain-warp amplitude (uv units) — how far the animated noise displaces the density lookup,
-        // hiding the quad-tree's blocky leaf edges. ~0.04 tile = pronounced, smoky churn.
-        const val MATTER_WARP_AMP = 0.04f
+        // Resolution of the matter density texture (one torus tile). Fixed + world-size-independent. Higher
+        // res keeps the matter's real structure crisp under linear filtering (the warp only needs to soften
+        // leaf edges, not carry detail). 512² RGBA ≈ 1MB/frame (off-heap upload).
+        const val MATTER_TEX_RES = 512
+        // Gaseous domain-warp amplitude (uv units) — how far the animated noise displaces the density lookup.
+        // Small: just enough to break up the quad-tree's blocky leaf edges without smearing away definition.
+        const val MATTER_WARP_AMP = 0.007f
         // Leaf counts scale with area; normalise by the finest leaf size + the seed density so a full
         // base-density leaf reads as white (1,1,1) regardless of how merged it is.
         val MATTER_FINEST_SIZE = CytoMatterField.TILE / (1 shl CytoMatterField.MAX_DEPTH)
