@@ -76,12 +76,22 @@ class CytoGoldenTest {
     // immediately, so light-driven growth follows a slightly different (more responsive) trajectory. Only
     // the light-driven goldens (growth + interact) shift; mutation/weld/sticky and parallel==sequential are
     // unaffected. topology unchanged (structure identical).
+    // Re-baselined 2026-07-15: MATTER_COLLAPSE_DELAY 256 -> 2048 (20470a2b), a deliberate VISUAL change —
+    // leaves are held ~8x longer before merging, so the matter field keeps its definition instead of pooling
+    // away. The delay doubles per layer above the finest, so within a 1500-tick run no merge fires at all
+    // now: the tree simply stays refined. physics/biology/grid shift because a differently-refined tree
+    // distributes matter slightly differently through the passiveEnvExchange junction, which propagates to
+    // cell chemistry and thus position; meta/topology are byte-identical. The ECOLOGY is unchanged — the
+    // founder's population curve is identical at both delays (1 -> 41 by tick 1500, first division ~tick
+    // 1000) — so this is a pure grid-structure re-baseline, not a rule/tuning change. The mutation/weld/
+    // sticky goldens are unaffected (no merge fires within their runs either); parallelMatchesSequential +
+    // grownStateRoundTrips held throughout.
     private val GROWTH = mapOf(
         "meta" to "873a0eee26c7ffde",
-        "physics" to "9d24a6dea72bf751",
-        "biology" to "1cab1adf8876f616",
+        "physics" to "e5c4cdb5f6d05b6c",
+        "biology" to "18d6fa070cdf13c0",
         "topology" to "cbf29ce484222325",
-        "grid" to "2db35396cb00fb50",
+        "grid" to "fa4f365ce684e53e",
     )
     // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
     // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
