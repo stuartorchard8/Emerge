@@ -145,20 +145,18 @@ object CytoRenderBenchmark {
 
             // ── Sim-side cost of filling the renderer's flat leaf summary ──
             // maintain() fills it during a walk it already performs, but tallying each leaf's store is real
-            // new sim-thread work. Isolate it: decayPeriod=0 and a huge collapse delay make maintain a pure,
-            // repeatable traversal (no decay, no merge), and the two variants are interleaved in ONE process
-            // so thermal drift hits both equally — cross-process A/B on a throttling laptop is meaningless.
+            // new sim-thread work. Isolate it: decayPeriod=0 makes maintain a pure, repeatable traversal
+            // (no decay), and the two variants are interleaved in ONE process so thermal drift hits both
+            // equally — cross-process A/B on a throttling laptop is meaningless.
             println("\n-- sim-side: maintain() with vs without summary fill (interleaved) --")
             run {
                 val grid = b.controller.latestFrame().state.components
                     .getTable<CytoMatterGridComponent>().asMap()[GRID_SINGLETON]?.grid
                 if (grid == null) println("  (no grid)") else {
-                    val tick = 1 shl 20
-                    val delay = 1 shl 12   // large enough that nothing is stale => no merges
                     fun once(enabled: Boolean): Long {
                         grid.summaryEnabled = enabled
                         val t = System.nanoTime()
-                        grid.maintain(tick, delay, 0)
+                        grid.maintain(0)
                         return (System.nanoTime() - t) / 1000
                     }
                     repeat(20) { once(true); once(false) }         // warm

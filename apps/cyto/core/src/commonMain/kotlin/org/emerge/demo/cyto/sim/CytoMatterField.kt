@@ -4,18 +4,22 @@ import kotlin.math.floor
 import kotlin.math.min
 
 /**
- * The environment **matter field** as an adaptive quad-tree (replaces the flat `CytoMatterGrid`). Fine
- * (0.25 cell-diam) only where observed; collapses toward coarse in the void; cells exchange with it as
- * diffusion junctions. **Authoritative design: `QUADTREE.md`.**
+ * The environment **matter field** as a refine-only quad-tree. Fine (0.25 cell-diam) wherever a cell has
+ * been; coarse only where nothing has ever looked. Cells exchange with it as diffusion junctions.
  *
- * Geometry: a `BASE_RES²` torus-mod-indexed grid of tiles (the wrap lives only here), each an adaptive
- * quad-tree of depth ≤ [MAX_DEPTH]. A [QuadNode] is a leaf (`store` + `lastAccessTick`) or internal
- * (`children` + a `monomerRemainder` stash). All matter ops are **exact integer** (conservation) in a
- * **fixed traversal order** (determinism); only the *geometry* (which leaves a disc covers) uses Float —
- * same-platform deterministic, matching the existing light-field stance (not cross-platform lockstep).
+ * **There is no diffusion.** The field is inert: matter stays exactly where it was last left, and the only
+ * thing that ever moves it is life — a cell's footprint balances all its leaves toward a common level
+ * (mixing *through* the cell), [deposit] returns death/spill, and [decayLeaf] atomises polymers in place.
+ * A collapse-toward-coarse pass used to double as the world's only diffusion, but it could only ever fire
+ * where no cell was (an occupied leaf re-stamps its access tick every batch and so never merged), which
+ * made it diffusion that switched off exactly where it would have mattered. It was removed rather than
+ * kept as a bad approximation; if diffusion returns it should be an explicit, isotropic step.
  *
- * v1 allocates nodes/stores directly (no pool yet) — correctness first; object pooling is the noted
- * follow-up for split/merge churn.
+ * Geometry: a `BASE_RES²` torus-mod-indexed grid of tiles (the wrap lives only here), each a quad-tree of
+ * depth ≤ [MAX_DEPTH]. A [QuadNode] is a leaf (`store`) or internal (`children` + a `monomerRemainder`
+ * stash). All matter ops are **exact integer** (conservation) in a **fixed traversal order** (determinism);
+ * only the *geometry* (which leaves a disc covers) uses Float — same-platform deterministic, matching the
+ * existing light-field stance (not cross-platform lockstep).
  */
 class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
 
@@ -152,7 +156,7 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
      *  stash on the node; no remainder ever favours a child ⇒ no spatial bias. Conservation-exact. */
     private fun splitLeaf(node: QuadNode) {
         val store = node.store!!
-        val children = Array(4) { QuadNode.leaf().also { it.lastAccessTick = node.lastAccessTick } }
+        val children = Array(4) { QuadNode.leaf() }
         // monomer tallies start from the leaf's monomers; complex remainders atomise INTO these first.
         val mono = IntArray(3)
         for (s in 0..2) mono[s] = store.count(MONO[s])
@@ -183,45 +187,36 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
         val slot = monoSlot(rest); if (slot >= 0) mono[slot] += count
     }
 
-    /** Internal node whose 4 children are ALL leaves → leaf. Sums children + releases the stash; merged leaf
-     *  takes `currentTick` (→ progressive collapse). Conservation-exact. Precondition checked by caller. */
-    private fun mergeNode(node: QuadNode, currentTick: Int) {
-        val merged = MoleculeStore()
-        for (ch in node.children!!) { val s = ch.store!!; for (i in 0 until s.size) merged.add(s.idAt(i), s.countAt(i)) }
-        for (s in 0..2) if (node.monomerRemainder[s] > 0) merged.add(MONO[s], node.monomerRemainder[s])
-        node.becomeLeaf(merged, currentTick)
-    }
-
     // ── access traversal (descendDisc) ─────────────────────────────────────────────────────────────────
-    /** Visit the finest leaves whose centre is within `r` of (cx,cy), splitting on the way + stamping access.
+    /** Visit the finest leaves whose centre is within `r` of (cx,cy), splitting on the way.
      *  Float geometry (same-platform deterministic). */
-    fun descendDisc(cx: Float, cy: Float, rRaw: Float, tick: Int, visit: (QuadNode) -> Unit) {
+    fun descendDisc(cx: Float, cy: Float, rRaw: Float, visit: (QuadNode) -> Unit) {
         val r = if (rRaw > MAX_DISC_RADIUS) MAX_DISC_RADIUS else rRaw
         val gxMin = floor((cx - r + HALF) / TILE).toInt(); val gxMax = floor((cx + r + HALF) / TILE).toInt()
         val gyMin = floor((cy - r + HALF) / TILE).toInt(); val gyMax = floor((cy + r + HALF) / TILE).toInt()
         for (gyRaw in gyMin..gyMax) for (gxRaw in gxMin..gxMax) {
             val ox = -HALF + gxRaw * TILE; val oy = -HALF + gyRaw * TILE      // UNWRAPPED tile origin
             val root = roots[mod(gyRaw) * BASE_RES + mod(gxRaw)]
-            descendNode(root, ox, oy, TILE, 0, cx, cy, r, tick, visit)
+            descendNode(root, ox, oy, TILE, 0, cx, cy, r, visit)
         }
     }
     fun descendNode(node: QuadNode, x: Float, y: Float, sz: Float, depth: Int,
-                    cx: Float, cy: Float, r: Float, tick: Int, visit: (QuadNode) -> Unit) {
+                    cx: Float, cy: Float, r: Float, visit: (QuadNode) -> Unit) {
         // box–circle prune
         val dx = maxOf(x - cx, cx - (x + sz), 0f); val dy = maxOf(y - cy, cy - (y + sz), 0f)
         if (dx * dx + dy * dy > r * r) return
         if (depth == MAX_DEPTH) {
             val ccx = x + sz * 0.5f; val ccy = y + sz * 0.5f
             val ex = ccx - cx; val ey = ccy - cy
-            if (ex * ex + ey * ey <= r * r) { if (tick >= 0) node.lastAccessTick = tick; visit(node) }   // tick<0 ⇒ don't re-stamp
+            if (ex * ex + ey * ey <= r * r) visit(node)
             return
         }
         if (node.isLeaf) splitLeaf(node)
         val h = sz * 0.5f; val ch = node.children!!
-        descendNode(ch[0], x, y, h, depth + 1, cx, cy, r, tick, visit)
-        descendNode(ch[1], x + h, y, h, depth + 1, cx, cy, r, tick, visit)
-        descendNode(ch[2], x, y + h, h, depth + 1, cx, cy, r, tick, visit)
-        descendNode(ch[3], x + h, y + h, h, depth + 1, cx, cy, r, tick, visit)
+        descendNode(ch[0], x, y, h, depth + 1, cx, cy, r, visit)
+        descendNode(ch[1], x + h, y, h, depth + 1, cx, cy, r, visit)
+        descendNode(ch[2], x, y + h, h, depth + 1, cx, cy, r, visit)
+        descendNode(ch[3], x + h, y + h, h, depth + 1, cx, cy, r, visit)
     }
 
     private fun mod(i: Int): Int = ((i % BASE_RES) + BASE_RES) % BASE_RES
@@ -229,12 +224,12 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     // ── the diffusion junction (exchange) ──────────────────────────────────────────────────────────────
     /** Reusable scratch: the fine leaves of one cell's footprint, collected by [openFootprint]. */
     private val fpLeaves = ArrayList<QuadNode>()
-    /** Open a cell's footprint: refine + stamp + collect its N fine leaves. Returns N (0 = nothing). Follow
+    /** Open a cell's footprint: refine + collect its N fine leaves. Returns N (0 = nothing). Follow
       *  with [balance] per species, then [closeFootprint]. NOT re-entrant (single scratch) — exchange runs
       *  sequentially (id-order), never on the parallel gene path. */
-    fun openFootprint(cx: Float, cy: Float, radius: Float, tick: Int): Int {
+    fun openFootprint(cx: Float, cy: Float, radius: Float): Int {
         fpLeaves.clear()
-        descendDisc(cx, cy, radius, tick) { node ->
+        descendDisc(cx, cy, radius) { node ->
             fpLeaves.add(node)
             // Set presence mask for monomers r(=R), g(=G), b(=B) — the species passively diffused.
             // Mask bits: 1=r, 2=g, 4=b. Enables O(1) skip in balance().
@@ -373,7 +368,6 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
             val ccx = x + sz * 0.5f; val ccy = y + sz * 0.5f
             val ex = ccx - cx; val ey = ccy - cy
             if (ex * ex + ey * ey <= r * r) {
-                node.lastAccessTick = tick
                 val s = node.store!!
                 if (s.size > 0) {
                     var mask = 0
@@ -429,41 +423,34 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     }
 
     // ── death / export deposit ─────────────────────────────────────────────────────────────────────────
-    /** Add `amount` of `sp` spread across a footprint (refine to fine first; does NOT re-stamp the collapse
-     *  clock — a death/division deposit lands where the cell just was, already fresh). Conservation-exact. */
+    /** Add `amount` of `sp` spread across a footprint (refine to fine first). Conservation-exact. */
     fun deposit(cx: Float, cy: Float, radius: Float, sp: Int, amount: Int) {
         if (amount <= 0) return
         fpLeaves.clear()
-        descendDisc(cx, cy, radius, -1) { fpLeaves.add(it) }   // tick = -1 ⇒ no stamp
+        descendDisc(cx, cy, radius) { fpLeaves.add(it) }
         val n = fpLeaves.size; if (n == 0) { fpLeaves.clear(); return }
         val per = amount / n; var extra = amount - per * n
         for (leaf in fpLeaves) { var a = per; if (extra > 0) { a++; extra-- }; if (a > 0) leaf.store!!.add(sp, a) }
         fpLeaves.clear()
     }
 
-    // ── maintenance: progressive collapse + species decay ──────────────────────────────────────────────
-    fun maintain(currentTick: Int, collapseDelay: Int, decayPeriod: Int) {
+    // ── maintenance: species decay ─────────────────────────────────────────────────────────────────────
+    fun maintain(decayPeriod: Int) {
         // Refill the renderer's flat read model as we go — this walk already visits every node and reads
         // every leaf's store, so the summary is essentially free here (see [MatterLeafSummary]).
         val buf = summaryBack.also { it.reset() }
         for (gy in 0 until BASE_RES) for (gx in 0 until BASE_RES) {
             val ox = -HALF + gx * TILE; val oy = -HALF + gy * TILE
-            maintainNode(roots[gy * BASE_RES + gx], ox, oy, TILE, 0, currentTick, collapseDelay, decayPeriod, buf)
+            maintainNode(roots[gy * BASE_RES + gx], ox, oy, TILE, decayPeriod, buf)
         }
         // Publish: the draw thread reads whatever `summaryFront` points at when it starts a frame.
         summaryBack = summaryFront
         summaryFront = buf
     }
-    /** Post-order: decay leaves; merge an all-leaf internal node whose children are all stale (→ progressive,
-     *  since the merged leaf is fresh and blocks its parent for another delay).
-     *
-     *  The stale threshold DOUBLES per layer above the finest: [collapseDelay] is the delay for the finest
-     *  leaves (depth [MAX_DEPTH]); a merge whose children sit one layer up waits twice as long, and so on.
-     *  A merge pools matter over a node twice as wide as the layer below, so making it wait twice as long
-     *  means dispersal advances at a roughly constant speed — twice as far takes twice as long. */
+    /** Decay every leaf, refilling the summary as we go. The tree only ever refines: nothing pools it back
+     *  toward coarse, so matter stays exactly where it was last left unless a cell moves it. */
     private fun maintainNode(
-        node: QuadNode, x: Float, y: Float, sz: Float, depth: Int,
-        tick: Int, collapseDelay: Int, decayPeriod: Int, buf: MatterLeafSummary,
+        node: QuadNode, x: Float, y: Float, sz: Float, decayPeriod: Int, buf: MatterLeafSummary,
     ) {
         if (node.isLeaf) {
             decayLeaf(node, decayPeriod)
@@ -472,23 +459,10 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
         }
         val ch = node.children!!
         val h = sz * 0.5f
-        maintainNode(ch[0], x, y, h, depth + 1, tick, collapseDelay, decayPeriod, buf)
-        maintainNode(ch[1], x + h, y, h, depth + 1, tick, collapseDelay, decayPeriod, buf)
-        maintainNode(ch[2], x, y + h, h, depth + 1, tick, collapseDelay, decayPeriod, buf)
-        maintainNode(ch[3], x + h, y + h, h, depth + 1, tick, collapseDelay, decayPeriod, buf)
-        // The children are at depth+1; their merge delay doubles for each layer they sit above the finest.
-        val childDelay = collapseDelay shl (MAX_DEPTH - (depth + 1))
-        var allLeafStale = true
-        for (c in ch) if (!c.isLeaf || tick - c.lastAccessTick < childDelay) { allLeafStale = false; break }
-        if (allLeafStale) {
-            mergeNode(node, tick)
-            if (summaryEnabled) {
-                // Post-order + the all-leaf merge condition means the four children each appended exactly
-                // one entry, and they are the last four — drop them and record the merged leaf instead.
-                buf.rollback(4)
-                buf.addLeaf(x, y, sz, node.store!!)
-            }
-        }
+        maintainNode(ch[0], x, y, h, decayPeriod, buf)
+        maintainNode(ch[1], x + h, y, h, decayPeriod, buf)
+        maintainNode(ch[2], x, y + h, h, decayPeriod, buf)
+        maintainNode(ch[3], x + h, y + h, h, decayPeriod, buf)
     }
     /** Atomise ⌊count/period⌋ of each multi-atom species (peel leftmost bond). Conservation-exact; does NOT
      *  touch lastAccessTick. */
@@ -496,7 +470,7 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
     /** Deep clone (snapshot isolation: the lifecycle bridge mutates a copy). Sparse ⇒ O(allocated nodes). */
     fun copy(): CytoMatterField = CytoMatterField(Array(roots.size) { cloneNode(roots[it]) })
     private fun cloneNode(n: QuadNode): QuadNode =
-        if (n.isLeaf) QuadNode.leaf().also { it.store!!.copyFrom(n.store!!); it.lastAccessTick = n.lastAccessTick }
+        if (n.isLeaf) QuadNode.leaf().also { it.store!!.copyFrom(n.store!!) }
         else QuadNode.internal(Array(4) { cloneNode(n.children!![it]) }, n.monomerRemainder.copyOf())
 
     /** Read-only contents of the finest EXISTING leaf containing (cx,cy) — no split (for the UI panel). */
@@ -596,9 +570,6 @@ class MatterLeafSummary {
         n++
     }
 
-    /** Drop the last [k] entries — used when a post-order merge replaces its children with one leaf. */
-    fun rollback(k: Int) { n -= k }
-
     private fun grow() {
         val c = xs.size * 2
         xs = xs.copyOf(c); ys = ys.copyOf(c); sizes = sizes.copyOf(c)
@@ -609,10 +580,10 @@ class MatterLeafSummary {
 }
 
 /** A quad-tree node: leaf (store != null, children == null) or internal (children != null). Mutated in place
- *  by split/merge so a node keeps its identity across refinement. */
+ *  by [becomeInternal] so a node keeps its identity across refinement. Refinement is one-way — nothing
+ *  merges a node back into a leaf. */
 class QuadNode private constructor() {
     var store: MoleculeStore? = null
-    var lastAccessTick = 0
     var children: Array<QuadNode>? = null
     val monomerRemainder = IntArray(3)
     var presenceMask = 0  // bit-mask of monomers present (bit 0=r, 1=g, 2=b); set during openFootprint
@@ -623,7 +594,6 @@ class QuadNode private constructor() {
     val isLeaf: Boolean get() = children == null
 
     fun becomeInternal(ch: Array<QuadNode>) { children = ch; store = null }
-    fun becomeLeaf(s: MoleculeStore, tick: Int) { store = s; lastAccessTick = tick; children = null; monomerRemainder.fill(0) }
 
     companion object {
         fun leaf(): QuadNode = QuadNode().also { it.store = MoleculeStore() }

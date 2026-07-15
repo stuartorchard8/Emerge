@@ -64,22 +64,12 @@ object CytoTuning {
     val LIGHT_ORBIT_PERIOD: Long get() = CytoWorldConfig.orbitPeriod
 
     // ── Matter dynamics (the conserved resource's per-tick law; its *seed* is in CytoSeed) ────────────
-    /** Slow inter-grid-cell diffusion: per tick each edge moves `⌊|gradient|·NUM/DEN⌋` down-gradient.
-     *  Keep `4·NUM/DEN ≤ 1` so a cell can't be over-drawn negative — violating it
-     *  makes the bump-to-zero clamp destroy matter (breaks conservation). Smaller = slower, coarser settle. ⚙ */
-    const val MATTER_DIFFUSE_NUM = 1
-    const val MATTER_DIFFUSE_DEN = 8
-    /** Run the (whole-grid) diffusion step only every Nth tick — it's a slow background process, so
-     *  per-tick is wasted work. Higher = cheaper but slower matter spread (net flow ~ 1/this). ⚙ */
-    const val MATTER_DIFFUSE_PERIOD = 128L
+    /** Cadence of the matter field's maintenance pass (decay). There is no diffusion — the field is inert
+     *  and only cells move matter — so this is a slow background process; per-tick would be wasted work. ⚙ */
+    const val MATTER_MAINTAIN_PERIOD = 128L
     /** Environmental decay: free molecules break their leftmost bond at rate 1/this per decay step (run on
-     *  the diffusion cadence). Returns matter stranded by selective uptake toward monomers. Higher = slower decay; 0 disables. ⚙ */
+     *  the maintenance cadence). Returns matter stranded by selective uptake toward monomers. Higher = slower decay; 0 disables. ⚙ */
     const val MATTER_DECAY_PERIOD = 8000
-    /** Quad-tree matter field (QUADTREE.md): raw ticks a FINEST (depth MAX_DEPTH) region may go un-accessed
-     *  before its parent pools it one layer coarser. The delay DOUBLES per layer above the finest, so a merge
-     *  that spreads matter over 2× the area waits 2× as long — dispersal advances at a constant speed (twice
-     *  as far ⇒ twice as long). Higher = sharper, longer-lived self-dug gradients (and more live nodes). ⚙ */
-    const val MATTER_COLLAPSE_DELAY = 2048
 
     // ── Metabolism / energy (per gene, per tick) ─────────────────────────────────────────────────────
     /** Scale factor for all chemical interactions. Defines the ratio between the minimum cell biomass and the smallest energy unit */

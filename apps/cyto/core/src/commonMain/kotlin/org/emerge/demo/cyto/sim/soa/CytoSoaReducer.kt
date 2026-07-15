@@ -122,14 +122,11 @@ class CytoSoaReducer(
         // interact: interaction (only when there's pointer input) then matter diffusion.
         cur = phaseR("interact") {
             if (input.spawns.isNotEmpty() || input.taps.isNotEmpty()) cur = bridgeInteraction(cur, inputs)
-            // Matter diffusion walks every grid-cell, so run it only every Nth tick (it's a slow background
-            // process — per-tick resolution is wasted work, especially in a near-uniform field). Deterministic
-            // on the sim clock; conservation unaffected (each step is still a conservative move).
-            // Quad-tree self-upkeep (QUADTREE.md maintain): progressive collapse of unobserved regions +
-            // species decay. Runs every MATTER_DIFFUSE_PERIOD ticks, mutating the field in place (walks only
-            // allocated nodes — the void is ~free). collapseDelay is in raw ticks (matches leaf lastAccessTick).
-            if (cur.world.tick % CytoTuning.MATTER_DIFFUSE_PERIOD == 0L) {
-                cur.grid.maintain(cur.world.tick.toInt(), CytoTuning.MATTER_COLLAPSE_DELAY, CytoTuning.MATTER_DECAY_PERIOD)
+            // Matter field upkeep: species decay, walking every allocated node (the void is ~free). A slow
+            // background process, so it runs every MATTER_MAINTAIN_PERIOD ticks rather than per-tick,
+            // mutating the field in place. Deterministic on the sim clock; conservation unaffected.
+            if (cur.world.tick % CytoTuning.MATTER_MAINTAIN_PERIOD == 0L) {
+                cur.grid.maintain(CytoTuning.MATTER_DECAY_PERIOD)
             }
             cur
         }

@@ -4,8 +4,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Standalone invariants for the adaptive quad-tree matter field (QUADTREE.md): conservation through every
- *  op, determinism, and progressive collapse — validated in isolation before integration. */
+/** Standalone invariants for the refine-only quad-tree matter field: conservation through every op,
+ *  determinism, and inertness (nothing but a cell ever moves matter). */
 class CytoMatterFieldTest {
     private val A = SpeciesRegistry.id("r")
     private val AB = SpeciesRegistry.id("rg")
@@ -24,7 +24,7 @@ class CytoMatterFieldTest {
     @Test fun splitConservesAtoms() {
         val f = CytoMatterField.seededUniform(10)
         val t0 = f.totalAtoms()
-        f.openFootprint(5f, 5f, 0.6f, 1); f.closeFootprint()   // forces splits to MAX_DEPTH
+        f.openFootprint(5f, 5f, 0.6f); f.closeFootprint()   // forces splits to MAX_DEPTH
         assertTrue(leafCount(f) > 4, "footprint access should have refined the tile")
         assertEquals(t0, f.totalAtoms(), "split must conserve atoms")
     }
@@ -32,7 +32,7 @@ class CytoMatterFieldTest {
     @Test fun exchangeConservesAndReturnsDelta() {
         val f = CytoMatterField.seededUniform(10)
         val before = f.totalAtoms()
-        val n = f.openFootprint(5f, 5f, 0.6f, 1)
+        val n = f.openFootprint(5f, 5f, 0.6f)
         assertTrue(n > 0)
         val delta = f.balance(A, cEff = 0, scaleFactor = 0f)   // cell wants 0 ⇒ leaves give delta
         f.closeFootprint()
@@ -43,8 +43,8 @@ class CytoMatterFieldTest {
     @Test fun exchangeLeaksWhenCellRicher() {
         val f = CytoMatterField.seededUniform(10)
         val before = f.totalAtoms()
-        f.openFootprint(5f, 5f, 0.6f, 1)
-        val n = f.openFootprint(5f, 5f, 0.6f, 1)
+        f.openFootprint(5f, 5f, 0.6f)
+        val n = f.openFootprint(5f, 5f, 0.6f)
         val delta = f.balance(A, cEff = 100 * n, scaleFactor = 0f)   // cell much richer than leaves ⇒ delta < 0 (leaks in)
         f.closeFootprint()
         assertTrue(delta < 0, "cell richer than footprint pushes matter in (negative delta)")
@@ -58,39 +58,29 @@ class CytoMatterFieldTest {
         assertEquals(before + 1000L, f.totalAtoms(), "deposit adds exactly the amount")
     }
 
-    @Test fun maintainConservesAndProgressivelyCollapses() {
+    /** The field is INERT: with no cell touching it and no decay due, maintain must not move a single atom
+     *  and must not coarsen the tree. The old field pooled unobserved regions back toward coarse leaves,
+     *  which doubled as the world's only diffusion — but it could only ever fire where no cell was, so it
+     *  was removed rather than kept as a bad approximation of diffusion. Refinement is now one-way, and
+     *  matter stays exactly where it was last left until life moves it. */
+    @Test fun maintainLeavesAnUnobservedFieldExactlyAsItWas() {
         val f = CytoMatterField.seededUniform(10)
-        // Split symmetrically at the 4-tile corner (the origin) at tick 1, down to the finest depth.
-        f.openFootprint(0f, 0f, 0.6f, 1); f.closeFootprint()
+        // Split symmetrically at the 4-tile corner (the origin), down to the finest depth.
+        f.openFootprint(0f, 0f, 0.6f); f.closeFootprint()
         val split = leafCount(f); assertTrue(split > 4)
         val t0 = f.totalAtoms()
-        // The collapse delay DOUBLES per layer above the finest: a region twice as
-        // coarse takes twice as long to pool, so matter disperses at a constant speed. Step tick-by-tick and
-        // record the ticks where the leaf count drops (one layer of the tree collapsing) — the gaps double.
-        val collapseTicks = ArrayList<Int>()
-        var prev = split
-        for (tk in 2..520) {
-            f.maintain(tk, collapseDelay = 1, decayPeriod = Int.MAX_VALUE)   // no decay, just collapse
-            val now = leafCount(f)
-            if (now < prev) collapseTicks.add(tk)
-            prev = now
-        }
+        val d0 = digest(f)
+        repeat(520) { f.maintain(decayPeriod = Int.MAX_VALUE) }   // no decay due ⇒ maintain is a pure walk
         assertEquals(t0, f.totalAtoms(), "maintain conserves")
-        assertTrue(leafCount(f) <= CytoMatterField.BASE_RES * CytoMatterField.BASE_RES, "unobserved region fully collapses back to tile leaves")
-        assertTrue(collapseTicks.size >= 3, "collapse is progressive (one layer at a time), got ${collapseTicks.size}")
-        // Each successive layer waits twice as long as the one below: the gaps between collapse events double.
-        for (i in 2 until collapseTicks.size) {
-            val prevGap = collapseTicks[i - 1] - collapseTicks[i - 2]
-            val gap = collapseTicks[i] - collapseTicks[i - 1]
-            assertEquals(prevGap * 2, gap, "layer $i should take twice as long as the one below (twice as far ⇒ twice as long)")
-        }
+        assertEquals(split, leafCount(f), "the tree must never coarsen — refinement is one-way")
+        assertEquals(d0, digest(f), "an unobserved field must not move a single atom")
     }
 
     @Test fun decayConservesAndAtomises() {
         val f = CytoMatterField.empty()
         f.deposit(0f, 0f, 0.6f, AB, amount = 4096)   // a pile of 'rg' molecules
         val t0 = f.totalAtoms()
-        repeat(20) { f.maintain(2 + it, collapseDelay = Int.MAX_VALUE, decayPeriod = 2) }  // decay, no collapse
+        repeat(20) { f.maintain(decayPeriod = 2) }
         assertEquals(t0, f.totalAtoms(), "decay conserves atoms (rg → r + g)")
         var rg = 0L; var mono = 0L
         f.forEachLeaf { _, _, _, s -> rg += s.count(AB).toLong(); mono += s.count(A).toLong() }
@@ -101,18 +91,17 @@ class CytoMatterFieldTest {
     @Test fun deterministic() {
         fun run(): CytoMatterField {
             val f = CytoMatterField.seededUniform(10)
-            f.openFootprint(3f, 3f, 0.6f, 1); f.balance(A, 4, 0f); f.closeFootprint()
+            f.openFootprint(3f, 3f, 0.6f); f.balance(A, 4, 0f); f.closeFootprint()
             f.deposit(3f, 3f, 0.6f, AB, 500)
-            f.openFootprint(-40f, 80f, 0.6f, 3); f.balance(A, 0, 0f); f.closeFootprint()  // near a different tile
-            f.maintain(70, 64, 4)
+            f.openFootprint(-40f, 80f, 0.6f); f.balance(A, 0, 0f); f.closeFootprint()  // near a different tile
+            f.maintain(4)
             return f
         }
         assertEquals(digest(run()), digest(run()), "identical op sequences produce identical fields")
     }
 
-    /** The renderer's flat [MatterLeafSummary] must describe exactly the same leaves as a tree walk —
-     *  same geometry, same per-channel atom totals — both before any tick and after maintain() has run
-     *  (which fills it incrementally, rolling back four child entries wherever a post-order merge fires).
+    /** The renderer's flat [MatterLeafSummary] must describe exactly the same leaves as a tree walk — same
+     *  geometry, same per-channel atom totals — both before any tick and after maintain() has refilled it.
      *  A drift here silently miscolours or drops regions of the matter overlay. */
     private fun summaryDigest(f: CytoMatterField): String {
         val s = f.leafSummary
@@ -147,22 +136,19 @@ class CytoMatterFieldTest {
         assertEquals(leafCount(f), f.leafSummary.n)
     }
 
-    @Test fun leafSummaryTracksMaintainThroughCollapse() {
+    @Test fun leafSummaryTracksMaintainThroughDecay() {
         val f = CytoMatterField.seededUniform(10)
-        f.openFootprint(0f, 0f, 0.6f, 1); f.closeFootprint()
+        f.openFootprint(0f, 0f, 0.6f); f.closeFootprint()
         f.deposit(0f, 0f, 0.3f, AB, 500)
         assertTrue(leafCount(f) > 4)
-        // Step well past the doubling collapse delays so merges fire at several layers, checking the
-        // summary against an independent walk every tick.
-        var merges = 0
-        var prev = leafCount(f)
-        for (tk in 2..520) {
-            f.maintain(tk, 8, 64)
-            val now = leafCount(f)
-            if (now < prev) merges++
-            prev = now
-            assertEquals(walkDigest(f), summaryDigest(f), "summary drifted from the tree at tick $tk")
+        // Decay rewrites leaf stores under the summary every pass; check the published summary against an
+        // independent walk each time.
+        repeat(64) {
+            f.maintain(decayPeriod = 4)
+            assertEquals(walkDigest(f), summaryDigest(f), "summary drifted from the tree on pass $it")
         }
-        assertTrue(merges > 0, "expected the tree to collapse at least once (exercising rollback)")
+        var rg = 0L
+        f.forEachLeaf { _, _, _, s -> rg += s.count(AB).toLong() }
+        assertTrue(rg < 500, "decay should have atomised some 'rg' (so the summary was tracking real churn)")
     }
 }
