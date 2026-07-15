@@ -58,6 +58,22 @@ object SpeciesRegistry {
         }
     }
 
+    /** Per id, the atom multiset as `[3·id + channel]` counts over the r/g/b element alphabet — the same
+     *  tally a `for (ch in string(id))` scan produces, precomputed. The matter-field rasteriser colours one
+     *  leaf per quad-tree leaf (~127k of them per frame on a refined world), so doing this by walking the
+     *  molecule string there dominated the render thread. Channels not in the alphabet stay 0, which is what
+     *  a colourless token should render as (white is the caller's zero-atom convention). */
+    private val rgbById = IntArray(species.size * 3).also { arr ->
+        for (id in species.indices) for (ch in species[id]) when (ch) {
+            'r' -> arr[3 * id]++
+            'g' -> arr[3 * id + 1]++
+            'b' -> arr[3 * id + 2]++
+        }
+    }
+
+    /** Count of [channel] (0=r, 1=g, 2=b) atoms in species [id]. See [rgbById]. */
+    fun atomsInChannel(id: Int, channel: Int): Int = rgbById[3 * id + channel]
+
     /** id of a molecule string, or -1 if it isn't a legal species of this alphabet. */
     fun id(molecule: String): Int = idOf[molecule] ?: -1
     fun string(id: Int): String = species[id]

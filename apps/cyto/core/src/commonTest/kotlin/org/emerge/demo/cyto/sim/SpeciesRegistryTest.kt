@@ -109,4 +109,16 @@ class SpeciesRegistryTest {
             }
         }
     }
+
+    /** [SpeciesRegistry.atomsInChannel] must equal the per-molecule character scan it replaced — the matter
+     *  renderer's leaf colour is derived from it, so a drift here silently miscolours the field. */
+    @Test
+    fun atomsInChannelMatchesStringScan() {
+        for (id in 0 until SpeciesRegistry.size) {
+            val s = SpeciesRegistry.string(id)
+            for ((channel, atom) in listOf('r', 'g', 'b').withIndex()) {
+                assertEquals(s.count { it == atom }, SpeciesRegistry.atomsInChannel(id, channel), "atoms '$atom' in $s")
+            }
+        }
+    }
 }
