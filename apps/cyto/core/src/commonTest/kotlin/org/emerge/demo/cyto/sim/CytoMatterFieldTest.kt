@@ -4,16 +4,16 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Standalone invariants for the refine-only quad-tree matter field: conservation through every op,
- *  determinism, and inertness (nothing but a cell ever moves matter). */
+/** Standalone invariants for the dense matter field: conservation through every op, determinism, and
+ *  inertness (nothing but a cell ever moves matter). */
 class CytoMatterFieldTest {
     private val A = SpeciesRegistry.id("r")
     private val AB = SpeciesRegistry.id("rg")
 
-    private fun leafCount(f: CytoMatterField): Int { var n = 0; f.forEachLeaf { _, _, _, _ -> n++ }; return n }
+    private fun occupiedTexels(f: CytoMatterField): Int { var n = 0; f.forEachTexel { _, _, _, _ -> n++ }; return n }
     private fun digest(f: CytoMatterField): String {
         val sb = StringBuilder()
-        f.forEachLeaf { x, y, sz, s ->
+        f.forEachTexel { x, y, sz, s ->
             sb.append(x).append(',').append(y).append(',').append(sz).append(':')
             for (i in 0 until s.size) sb.append(s.idAt(i)).append('=').append(s.countAt(i)).append(',')
             sb.append(';')
@@ -21,12 +21,20 @@ class CytoMatterFieldTest {
         return sb.toString()
     }
 
-    @Test fun splitConservesAtoms() {
+    @Test fun seededUniformFillsEveryTexelAndConserves() {
+        val f = CytoMatterField.seededUniform(10)
+        val res = f.resolution
+        assertEquals(res * res, occupiedTexels(f), "a uniform seed reaches every texel")
+        // 3 monomers × 10 each, in every texel — one atom apiece.
+        assertEquals(3L * 10 * res * res, f.totalAtoms())
+    }
+
+    @Test fun footprintCoversTexelsAndConserves() {
         val f = CytoMatterField.seededUniform(10)
         val t0 = f.totalAtoms()
-        f.openFootprint(5f, 5f, 0.6f); f.closeFootprint()   // forces splits to MAX_DEPTH
-        assertTrue(leafCount(f) > 4, "footprint access should have refined the tile")
-        assertEquals(t0, f.totalAtoms(), "split must conserve atoms")
+        val n = f.openFootprint(5f, 5f, 0.6f); f.closeFootprint()
+        assertTrue(n > 0, "a footprint should cover at least one texel")
+        assertEquals(t0, f.totalAtoms(), "opening a footprint must not move atoms")
     }
 
     @Test fun exchangeConservesAndReturnsDelta() {
@@ -58,21 +66,18 @@ class CytoMatterFieldTest {
         assertEquals(before + 1000L, f.totalAtoms(), "deposit adds exactly the amount")
     }
 
-    /** The field is INERT: with no cell touching it and no decay due, maintain must not move a single atom
-     *  and must not coarsen the tree. The old field pooled unobserved regions back toward coarse leaves,
-     *  which doubled as the world's only diffusion — but it could only ever fire where no cell was, so it
-     *  was removed rather than kept as a bad approximation of diffusion. Refinement is now one-way, and
-     *  matter stays exactly where it was last left until life moves it. */
+    /** The field is INERT: with no cell touching it and no decay due, maintain must not move a single atom.
+     *  The old quad-tree pooled unobserved regions back toward coarse leaves, and the re-smear on re-split
+     *  doubled as the world's only diffusion — but it could only ever fire where no cell was, so it was
+     *  removed rather than kept as a bad approximation. Matter now stays exactly where it was last left
+     *  until life moves it. */
     @Test fun maintainLeavesAnUnobservedFieldExactlyAsItWas() {
         val f = CytoMatterField.seededUniform(10)
-        // Split symmetrically at the 4-tile corner (the origin), down to the finest depth.
-        f.openFootprint(0f, 0f, 0.6f); f.closeFootprint()
-        val split = leafCount(f); assertTrue(split > 4)
+        f.deposit(0f, 0f, 0.6f, AB, amount = 4096)   // a non-uniform pile to notice any drift
         val t0 = f.totalAtoms()
         val d0 = digest(f)
-        repeat(520) { f.maintain(decayPeriod = Int.MAX_VALUE) }   // no decay due ⇒ maintain is a pure walk
+        repeat(520) { f.maintain(decayPeriod = Int.MAX_VALUE) }   // no decay due ⇒ maintain moves nothing
         assertEquals(t0, f.totalAtoms(), "maintain conserves")
-        assertEquals(split, leafCount(f), "the tree must never coarsen — refinement is one-way")
         assertEquals(d0, digest(f), "an unobserved field must not move a single atom")
     }
 
@@ -83,7 +88,7 @@ class CytoMatterFieldTest {
         repeat(20) { f.maintain(decayPeriod = 2) }
         assertEquals(t0, f.totalAtoms(), "decay conserves atoms (rg → r + g)")
         var rg = 0L; var mono = 0L
-        f.forEachLeaf { _, _, _, s -> rg += s.count(AB).toLong(); mono += s.count(A).toLong() }
+        f.forEachTexel { _, _, _, s -> rg += s.count(AB).toLong(); mono += s.count(A).toLong() }
         assertTrue(rg < 4096, "some 'rg' atomised")
         assertTrue(mono > 0, "monomers released")
     }
@@ -100,23 +105,23 @@ class CytoMatterFieldTest {
         assertEquals(digest(run()), digest(run()), "identical op sequences produce identical fields")
     }
 
-    /** The renderer's flat [MatterLeafSummary] must describe exactly the same leaves as a tree walk — same
-     *  geometry, same per-channel atom totals — both before any tick and after maintain() has refilled it.
-     *  A drift here silently miscolours or drops regions of the matter overlay. */
-    private fun summaryDigest(f: CytoMatterField): String {
-        val s = f.leafSummary
+    /** The renderer's per-channel read model must agree with an independent tally of the columns, both
+     *  before any tick and after maintain() has refilled it. A drift here silently miscolours the overlay. */
+    private fun channelDigest(f: CytoMatterField): String {
         val sb = StringBuilder()
-        for (i in 0 until s.n) {
-            sb.append(s.xs[i]).append(',').append(s.ys[i]).append(',').append(s.sizes[i]).append(':')
-            sb.append(s.reds[i]).append('/').append(s.greens[i]).append('/').append(s.blues[i]).append(';')
+        for (i in 0 until f.resolution * f.resolution) {
+            val r = f.channelRed[i]; val g = f.channelGreen[i]; val b = f.channelBlue[i]
+            if (r == 0 && g == 0 && b == 0) continue
+            sb.append(i).append(':').append(r).append('/').append(g).append('/').append(b).append(';')
         }
         return sb.toString()
     }
 
-    /** The same digest, computed independently by walking the tree and tallying each leaf's store. */
+    /** The same digest, computed independently by walking the texels and tallying each one's contents. */
     private fun walkDigest(f: CytoMatterField): String {
         val sb = StringBuilder()
-        f.forEachLeaf { x, y, sz, store ->
+        val t = CytoMatterField.SPAN / f.resolution
+        f.forEachTexel { x, y, _, store ->
             var r = 0L; var g = 0L; var b = 0L
             for (i in 0 until store.size) {
                 val c = store.countAt(i); val id = store.idAt(i)
@@ -124,31 +129,30 @@ class CytoMatterFieldTest {
                 g += c * SpeciesRegistry.atomsInChannel(id, 1)
                 b += c * SpeciesRegistry.atomsInChannel(id, 2)
             }
-            sb.append(x).append(',').append(y).append(',').append(sz).append(':')
+            if (r == 0L && g == 0L && b == 0L) return@forEachTexel
+            val ix = ((x + CytoMatterField.HALF) / t).toInt()
+            val iy = ((y + CytoMatterField.HALF) / t).toInt()
+            sb.append(iy * f.resolution + ix).append(':')
             sb.append(r).append('/').append(g).append('/').append(b).append(';')
         }
         return sb.toString()
     }
 
-    @Test fun leafSummaryMatchesTreeWalkOnConstruction() {
+    @Test fun channelReadModelMatchesColumnsOnConstruction() {
         val f = CytoMatterField.seededUniform(10)
-        assertEquals(walkDigest(f), summaryDigest(f), "summary must be built up-front (pre-tick)")
-        assertEquals(leafCount(f), f.leafSummary.n)
+        assertEquals(walkDigest(f), channelDigest(f), "channels must be built up-front (pre-tick)")
     }
 
-    @Test fun leafSummaryTracksMaintainThroughDecay() {
+    @Test fun channelReadModelTracksMaintainThroughDecay() {
         val f = CytoMatterField.seededUniform(10)
-        f.openFootprint(0f, 0f, 0.6f); f.closeFootprint()
         f.deposit(0f, 0f, 0.3f, AB, 500)
-        assertTrue(leafCount(f) > 4)
-        // Decay rewrites leaf stores under the summary every pass; check the published summary against an
-        // independent walk each time.
+        // Decay rewrites the columns under the read model every pass; check it against an independent walk.
         repeat(64) {
             f.maintain(decayPeriod = 4)
-            assertEquals(walkDigest(f), summaryDigest(f), "summary drifted from the tree on pass $it")
+            assertEquals(walkDigest(f), channelDigest(f), "channels drifted from the columns on pass $it")
         }
         var rg = 0L
-        f.forEachLeaf { _, _, _, s -> rg += s.count(AB).toLong() }
-        assertTrue(rg < 500, "decay should have atomised some 'rg' (so the summary was tracking real churn)")
+        f.forEachTexel { _, _, _, s -> rg += s.count(AB).toLong() }
+        assertTrue(rg < 500, "decay should have atomised some 'rg' (so the read model tracked real churn)")
     }
 }

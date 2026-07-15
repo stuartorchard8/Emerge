@@ -39,7 +39,7 @@ object CytoSaveCodec {
     // v7: persist the runtime mutation rate-denominator (-1 = inherit the cfg default).
     // v8: FormBond flipped wildcard-default → exact-default (MORPHOGENESIS.md §2026-06-18); pre-v8 genomes are
     // migrated to explicit wildcard on load (see [migrateFormBondToWildcard]) so they behave byte-for-byte.
-    private const val FORMAT_VERSION = 9
+    private const val FORMAT_VERSION = 10
     private val cfg = CytoConfig()
 
     fun encode(state: SimState): ByteArray {
@@ -85,18 +85,19 @@ object CytoSaveCodec {
             w.writeInt(packed.toInt())
         }
 
-        // Matter reservoir: the quad-tree, serialised structurally (exact incl. internal monomer stashes).
+        // Matter reservoir: the dense field, one full column per present species.
         val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid ?: CytoMatterField.empty()
-        grid.encodeTree({ w.writeByte(it.toByte()) }, { writeCounts(w, it) }, { w.writeInt(it) })
+        grid.encode({ w.writeInt(it) }, { w.writeString(it) })
         return w.toByteArray()
     }
 
     fun decode(bytes: ByteArray): SimState {
         val c = ByteCursor(bytes)
         val version = c.readInt()
-        // Read back-compatibly across the additive bumps (v6 = +tick, v7 = +mutation rate): older fields
-        // just default. Re-saving upgrades the file to the current version. (Pre-v6 = the energy model, a
-        // different structure — still rejected.)
+        // Read back-compatibly across the bumps (v6 = +tick, v7 = +mutation rate, v10 = the dense matter
+        // field replacing v9's quad-tree): older fields just default and a v9 tree is migrated on load.
+        // Re-saving upgrades the file to the current version. (Pre-v6 = the energy model, a different
+        // structure — still rejected.)
         require(version in 6..FORMAT_VERSION) {
             "Unsupported Cyto save format version: $version (expected 6..$FORMAT_VERSION)"
         }
@@ -135,7 +136,11 @@ object CytoSaveCodec {
             if (a != null && b != null) addSpring(builder, a, b, cfg)
         }
 
-        val grid = if (version >= 9) {
+        val grid = if (version >= 10) {
+            CytoMatterField.empty().also { it.decodeInto({ c.readInt() }, { c.readString() }) }
+        } else if (version == 9) {
+            // v9 stored the adaptive quad-tree. Walk it and splat each leaf across the texels it covered —
+            // the field is dense now, so a coarse leaf's pooled matter spreads over its whole region.
             CytoMatterField.decodeTree({ c.readByte().toInt() }, { readCounts(c) }, { c.readInt() })
         } else {
             // v6–8 stored a FLAT grid (count + idx/counts pairs). The quad-tree world is a different scale,

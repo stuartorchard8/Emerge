@@ -12,11 +12,8 @@ import kotlin.time.TimeSource
  *  pipeline state (one per reducer). The serial assignment pass fills it; the parallel passes only READ it
  *  (per-cell mutable state lives on [CellWork]). */
 class ExchangeScratch {
-    /** the batch-eligible cells this tick (compact; pass 2 partitions over these by index). */
+    /** the batch-eligible cells this tick (compact; pass 1 partitions over these by index). */
     val batchCells = ArrayList<CellWork>()
-    /** one bucket per root tile (BASE_RES² = 16): packed (batchCellIdx<<32 | (gx+0x8000)<<16 | (gy+0x8000))
-     *  entries, each = one root descent. Pass 1 partitions the 16 tiles across threads; disjoint roots. */
-    val tileBuckets: Array<ArrayList<Long>> = Array(CytoMatterField.BASE_RES * CytoMatterField.BASE_RES) { ArrayList() }
 }
 
 // Scratch arrays for CytoBiologyCore.diffuse — single-threaded, reused across calls.
@@ -83,26 +80,20 @@ object CytoBiologyCore {
      *  one direction, so an Import channel never leaks the species back out and an Export channel never lets it
      *  back in. We apply the net Δ to cytoplasm. Determinants (synthesised-only) and foreign species are
      *  excluded; there is **no passive leak** of un-metabolisable waste. Conservation-exact
-     *  (QUADTREE.md exchange); the cell senses local matter density through this intake.
+     *  the cell senses local matter density through this intake.
      *
-     *  **Tile-parallel drop-contested parallelization (2026-07-08).** The naive per-cell loop is order-DEPENDENT
-     *  (a leaf's live count shifts as earlier cells balance against it) and refines the shared quad-tree, so it
-     *  can't be parallelized bit-identically as-is. Instead, in three passes:
-     *   0. **Serial assignment** (cheap, no tree touch): collect the batch-eligible cells and bucket each
-     *      footprint's root-tile descents (`forEachFootprintTile`) by root index.
-     *   1. **Parallel by ROOT TILE** ([CytoMatterField.refineCountRoot]): each of the 16 roots is refined on one
-     *      thread — since `splitLeaf` never crosses a root boundary, disjoint roots mutate safely. This pass
-     *      refines every footprint to the finest depth, sets presence masks, and counts how many cells touch
-     *      each finest leaf. Every finest leaf lives in exactly one root, so its touch count is complete within
-     *      its tile — **no cross-tile merge**. A leaf touched by ≥2 cells is contested.
-     *   2. **Parallel by CELL** ([CytoMatterField.collectUncontestedFootprint]): the tree is frozen, so each
-     *      cell read-only-descends, collects its UNCONTESTED (single-owner) leaves, and balances over them into
-     *      its own cytoplasm. Single-owner ⇒ no two cells write the same leaf store; own cytoplasm ⇒ no cross-
-     *      cell writes ⇒ order-independent ⇒ bit-identical to the sequential fallback (the determinism gate).
-     *  Contested is geometry-only ⇒ thread-count-independent ⇒ stable golden; dropped leaves are untouched
-     *  (conservation-exact). This is the same computation as the earlier serial-pre-pass drop-contested (same
-     *  contested set, same balance) — just reorganised so the whole descent is parallel — so it is bit-identical
-     *  to it (no re-baseline). */
+     *  **Drop-contested parallelization.** The naive per-cell loop is order-DEPENDENT (a texel's live count
+     *  shifts as earlier cells balance against it), so it can't be parallelized bit-identically as-is.
+     *  Instead, in two passes:
+     *   0. **Serial counting** (cheap): collect the batch-eligible cells and, per cell, count how many
+     *      footprints touch each texel ([CytoMatterField.countFootprint]). A texel touched by ≥2 is contested.
+     *   1. **Parallel by CELL** ([CytoMatterField.collectUncontestedFootprint]): each cell collects its
+     *      UNCONTESTED (single-owner) texels and balances over them into its own cytoplasm. Single-owner ⇒ no
+     *      two cells write the same texel; own cytoplasm ⇒ no cross-cell writes ⇒ order-independent ⇒
+     *      bit-identical to the sequential fallback (the determinism gate).
+     *  Contested is geometry-only ⇒ thread-count-independent ⇒ stable golden; dropped texels are untouched
+     *  (conservation-exact). The dense field needs no refinement pass, so the tile-partitioned refine this
+     *  used to open with (splitting a shared quad-tree, hence the root-disjoint bucketing) is simply gone. */
     fun passiveEnvExchange(
         ordered: List<CellWork>, grid: CytoMatterField, tick: Int, scratch: ExchangeScratch,
         executor: ParallelExecutor? = null, threshold: Int = Int.MAX_VALUE, stats: BioProfile? = null,
@@ -110,56 +101,33 @@ object CytoBiologyCore {
         val tGroup = if (stats != null) TimeSource.Monotonic.markNow() else null
         val currentBatch = tick % CytoTuning.EXCHANGE_BATCHES
         val batchCells = scratch.batchCells.also { it.clear() }
-        val tileBuckets = scratch.tileBuckets
-        for (b in tileBuckets) b.clear()
 
         val tP0 = if (stats != null) TimeSource.Monotonic.markNow() else null
-        // ── Pass 0 (serial, cheap): collect batch cells + bucket their root-tile descents by root index. ──
+        // ── Pass 0 (serial, cheap): collect batch cells + count how many touch each footprint texel. ──
         for (w in ordered) {
             if (w.exchangeBatch != currentBatch) continue
             if (w.exposureMilli <= MIN_EXPOSURE_FOR_TRANSFER) continue
-            val idx = batchCells.size
             batchCells.add(w)
-            grid.forEachFootprintTile(w.cx, w.cy, w.logicalRadius.toFloat()) { ti, gx, gy ->
-                tileBuckets[ti].add((idx.toLong() shl 32) or ((gx + 0x8000).toLong() shl 16) or (gy + 0x8000).toLong())
-            }
+            grid.countFootprint(w.cx, w.cy, w.logicalRadius.toFloat(), tick)
         }
 
         val tP1 = if (stats != null) TimeSource.Monotonic.markNow() else null
-        // ── Pass 1 (parallel by root tile): refine + masks + per-leaf touch counts. Disjoint roots. ──
-        ColumnPartition.disjoint(tileBuckets.size, executor, threshold) { tStart, tEnd ->
-            for (ti in tStart until tEnd) {
-                val bucket = tileBuckets[ti]
-                for (bi in bucket.indices) {
-                    val p = bucket[bi]
-                    val w = batchCells[(p ushr 32).toInt()]
-                    val gx = ((p ushr 16) and 0xFFFF).toInt() - 0x8000
-                    val gy = (p and 0xFFFF).toInt() - 0x8000
-                    grid.refineCountRoot(gx, gy, w.cx, w.cy, w.logicalRadius.toFloat(), tick)
-                }
-            }
-        }
-
-        val tP2 = if (stats != null) TimeSource.Monotonic.markNow() else null
-        // ── Pass 2 (parallel by cell): collect uncontested leaves, build transfer plan, balance. ──
+        // ── Pass 1 (parallel by cell): collect uncontested texels, build transfer plan, balance. ──
         val m = batchCells.size
         ColumnPartition.disjoint(m, executor, threshold) { start, end ->
             for (ci in start until end) {
                 val w = batchCells[ci]
-                grid.collectUncontestedFootprint(w.cx, w.cy, w.logicalRadius.toFloat(), tick, w.exchLeaves)
-                val leaves = w.exchLeaves
-                val keep = leaves.size
+                grid.collectUncontestedFootprint(w.cx, w.cy, w.logicalRadius.toFloat(), tick, w.exchTexels)
+                val texels = w.exchTexels
+                val keep = texels.size
                 w.exchN = keep
                 w.exchTransferN = 0
                 if (keep == 0) continue
-                // Species union over the single-owner leaves + this cell's cytoplasm.
+                // Species union over the single-owner texels + this cell's cytoplasm.
                 val species = w.exchSpecies.also { it.clear() }
                 val cyt = w.cytoplasm
                 for (j in 0 until cyt.size) { val id = cyt.idAt(j); if (w.handleable.canDiffuse(id)) species.add(id) }
-                for (leaf in leaves) {
-                    val s = leaf.store!!
-                    if (s.size > 0) for (i in 0 until s.size) { val id = s.idAt(i); if (w.handleable.canDiffuse(id)) species.add(id) }
-                }
+                grid.forEachPresentSpeciesIn(texels) { id -> if (w.handleable.canDiffuse(id)) species.add(id) }
                 // Transferable = monomers (bidirectional passive exchange) or species with a genetic
                 // import/export bias (the one-way gates). Import lowers the effective target (draws in);
                 // Export raises it (pushes out); a plain monomer balances freely toward its ambient level.
@@ -197,7 +165,7 @@ object CytoBiologyCore {
                     w._exchPreCount[t] = cyt.count(w.exchTransferIdx[t])
                 }
                 w.exchTransferN = transferN
-                grid.balanceBatchedOn(leaves, keep, transferN, w.exchTransferIdx, w.exchTransferCeffs,
+                grid.balanceBatchedOn(texels, keep, transferN, w.exchTransferIdx, w.exchTransferCeffs,
                     w.exchTransferDir, CytoTuning.DIFFUSION_SCALE_FACTOR, cyt)
                 // Post-transfer: compute net ENV↔CYT delta per species.
                 for (t in 0 until w._exchPreN) {
@@ -215,12 +183,10 @@ object CytoBiologyCore {
             stats.ticks++
             stats.exchGroupNanos += tGroup!!.elapsedNow().inWholeNanoseconds
             // Each mark's elapsedNow() measures from that mark to now (end), so an earlier mark reads larger.
-            val e0 = tP0!!.elapsedNow().inWholeNanoseconds   // pass0+pass1+pass2
-            val e1 = tP1!!.elapsedNow().inWholeNanoseconds   // pass1+pass2
-            val e2 = tP2!!.elapsedNow().inWholeNanoseconds   // pass2
+            val e0 = tP0!!.elapsedNow().inWholeNanoseconds   // pass0+pass1
+            val e1 = tP1!!.elapsedNow().inWholeNanoseconds   // pass1
             stats.exchPass0Nanos += e0 - e1
-            stats.exchPass1Nanos += e1 - e2
-            stats.exchPass2Nanos += e2
+            stats.exchPass1Nanos += e1
         }
     }
 
@@ -451,7 +417,7 @@ object CytoBiologyCore {
                 work.cytToBio.inc(productId, k)
             }
             ActionType.Import -> {
-                // Active uptake is now a BIAS on the passive diffusion junction (QUADTREE.md): the gene's k
+                // Active uptake is now a BIAS on the passive diffusion junction: the gene's k
                 // energy units lower the cell's effective target for `importId`, so the junction (in
                 // passiveEnvExchange) draws that much extra IN from the footprint, concentrating it above
                 // ambient. Each unit is worth IMPORT_BIAS_GAIN of bias so uptake is efficient enough to hold

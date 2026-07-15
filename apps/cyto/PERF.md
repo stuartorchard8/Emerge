@@ -9,6 +9,53 @@ golden + parallel==sequential gates, optimise from profiles. CytoBench probe via
 > `benchCyto` — which is blind to frame rate. For the **draw thread (FPS)** use `benchCytoRender` (see the
 > 2026-07-15 entry). Establish *which one* is actually slow before profiling either.
 
+## 2026-07-15 (#2) — the matter field went dense; the overlay is now 1.0ms and exchange -31%
+
+`CytoMatterField` was an adaptive quad-tree; it is now a flat `RES`² texel grid stored as one dense
+`IntArray` **column per species** (SoA). Two findings drove it:
+
+- **The self-collapse was doing ~nothing.** It pooled unobserved regions toward coarse leaves, but an
+  occupied leaf re-stamps its access tick every exchange batch, so it could only ever fire where no cell
+  was. At the shipped `COLLAPSE_DELAY=2048`, an A/B over 5000 ticks was visually identical: 59734 leaves
+  with it vs 61282 without (+2.6%). Removed → refinement one-way → the tree grew toward dense anyway while
+  still paying 4 dependent pointer hops per texel.
+- **The species axis is tiny.** A census of `cyto-small-save` found only **16 distinct species** present in
+  the field (of 1884 legal), four of them (`b`, `rg`, `r`, `g`) in **100% of leaves**. So dense columns are
+  ~1 MB each and mostly full: **16.8 MB** at the default 64-world. (Memory is quadratic in world size —
+  ~270 MB at a 256-world. Chunked columns are the escape hatch if that ever lands.)
+
+Draw thread, `squish.bin` @ 1920×1080 (`rasterizeMatter`, measured directly — FPS on this box drifts):
+
+```
+quad-tree walk, per frame        12.5 ms
++ flat MatterLeafSummary          3.1 ms   (cost 2.08 ms/tick on the SIM thread to fill)
+dense columns                     1.0 ms   (cost 0.70 ms/tick to fill the channel read model)
+```
+
+The summary is **gone**: the renderer reads three dense per-channel `IntArray`s that `maintain` refills.
+Two traps found while landing it, both worth remembering:
+- **Divides.** The first dense cut was *4.26 ms* — SLOWER than the summary — purely from 3 double divisions
+  per texel × 262k. Hoisting to a float reciprocal-multiply: 4.26 → **1.00 ms**.
+- **Branch-per-texel.** `rebuildChannels` fused all 3 channels into one loop with a test each. Splitting
+  into one branch-free accumulate per (species, contributing channel) — usually 1, a species contributes to
+  ≤3 — cut 2.55 → **0.70 ms/tick**.
+
+Sim tick, `cyto-save.bin` (2562 cells), interleaved-ish A/B (thermal drift ⇒ treat as approximate):
+
+```
+              tree      dense
+bio:exchange  4107us    2837us   -31%    (no quad-tree descent; footprint = index arithmetic)
+biology      16449us   15187us   -7.7%
+tick avg     20925us   19552us   -6.6%
+```
+
+Exchange also lost a whole pass: the old 3-pass drop-contested dance opened with a tile-partitioned
+**refine** (roots bucketed so `splitLeaf` never crossed a boundary). A dense grid has nothing to refine, so
+it's 2 passes — serial touch-count, then parallel-by-cell balance. `maintain` with the read model off is now
+**0.00 ms** (was a full tree walk). `parallelMatchesSequential` + conservation held throughout; goldens
+re-baselined for iteration order (DFS/Z → row-major), population curve identical for 1500 ticks and −2.8% at
+6000. See the `CytoMatterField` KDoc for the design (`QUADTREE.md` is deleted — it described the old tree).
+
 ## 2026-07-15 — the draw thread (FPS): the matter overlay was 12.5ms/frame of CPU
 
 First render-side profiling this project has had. New tool **`benchCytoRender`**

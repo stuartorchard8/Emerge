@@ -1,7 +1,7 @@
 # Plan — matter-field substrate for taxis
 
 **Status: world rescale DONE (`5ec4903b`). Matter field DONE (2026-06-21): we went straight to the adaptive
-quad-tree (`CytoMatterField`, see QUADTREE.md) rather than the dense reference grid below — sub-cell leaves
+dense per-species texel grid (`CytoMatterField`) rather than the reference grid below — sub-cell texels
 under cell footprints, a bidirectional diffusion junction in place of disc-gather + flat diffusion, and
 observer-gated progressive collapse. Landed live on the SoA path; goldens re-baselined, conservation +
 determinism gates green. NEXT: resume the locomotion controller as taxis (env-driven, matter-sensitive

@@ -137,8 +137,8 @@ object CytoRenderBenchmark {
             // Split the overlay's cost: the CPU quad-tree walk + texel fill is timed inside the renderer,
             // so whatever the overlay adds beyond it is texture upload + the full-screen warp shader.
             println(
-                "      ↳ CPU rasterizeMatter = %.2fms over %d leaves (rest = upload + warp shader)".format(
-                    b.renderer.lastRasterizeUs / 1000.0, b.renderer.lastLeafCount,
+                "      ↳ CPU rasterizeMatter = %.2fms over %d texels (rest = upload + warp shader)".format(
+                    b.renderer.lastRasterizeUs / 1000.0, b.renderer.lastTexelCount,
                 )
             )
             b.renderer.showMatterField = false

@@ -19,10 +19,10 @@ import javax.imageio.ImageIO
 import kotlin.math.floor
 
 /**
- * Headless PNG view of the **matter quad-tree** — each leaf a 2px-bordered square coloured by its a/b/c
- * atom mix at low value (exactly the rule [org.emerge.demo.cyto.CytoRenderer] uses for the in-app overlay),
- * with the cells on top. This is a CPU/AWT mirror of the GPU overlay so the leaf geometry + colouring can
- * be eyeballed without the GPU host. `--args="<outPng> <ticks>"` (defaults: build/cyto-matter.png, 1200).
+ * Headless PNG view of the **dense matter field** — each texel coloured by its r/g/b atom density (exactly
+ * the rule [org.emerge.demo.cyto.CytoRenderer] uses for the in-app overlay), with the cells on top. This is
+ * a CPU/AWT mirror of the GPU overlay so the field can be eyeballed without the GPU host.
+ * `--args="<outPng> <ticks>"` (defaults: build/cyto-matter.png, 1200).
  */
 fun main(args: Array<String>) {
     System.setProperty("java.awt.headless", "true")
@@ -39,18 +39,19 @@ fun main(args: Array<String>) {
     g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF)
     g.color = Color(0, 0, 0); g.fillRect(0, 0, img.width, img.height)
 
-    // Full torus, then a zoom on the seed colony at the origin (where cells refine the tree).
-    drawMatter(img, g, state, 0, panel, centreX = 0f, centreY = 0f, halfWindow = org.emerge.demo.cyto.sim.CytoLightField.HALF, label = "matter quad-tree (full torus)")
-    drawMatter(img, g, state, panel + 12, panel, centreX = 0f, centreY = 0f, halfWindow = 18f, label = "zoom @ origin (refined leaves)")
+    // Full torus, then a zoom on the seed colony at the origin.
+    drawMatter(img, g, state, 0, panel, centreX = 0f, centreY = 0f, halfWindow = org.emerge.demo.cyto.sim.CytoLightField.HALF, label = "matter field (full torus)")
+    drawMatter(img, g, state, panel + 12, panel, centreX = 0f, centreY = 0f, halfWindow = 18f, label = "zoom @ origin")
 
     g.dispose(); out.parentFile?.mkdirs(); ImageIO.write(img, "png", out)
     val grid = state.components.getTable<CytoMatterGridComponent>().asMap()[GRID_SINGLETON]?.grid
-    var leaves = 0; grid?.forEachLeaf { _, _, _, _ -> leaves++ }
+    var occupied = 0; grid?.forEachTexel { _, _, _, _ -> occupied++ }
     val cells = state.components.getTable<CytoCellComponent>().asMap().size
-    println("wrote ${out.absolutePath}  (ticks=$ticks, cells=$cells, leaves=$leaves)")
+    val res = grid?.resolution ?: 0
+    println("wrote ${out.absolutePath}  (ticks=$ticks, cells=$cells, grid=${res}x$res, occupiedTexels=$occupied)")
 }
 
-/** One panel: the matter leaves as bordered squares, cells on top, over [-halfWindow,halfWindow]. */
+/** One panel: the dense matter field as per-texel density, cells on top, over [-halfWindow,halfWindow]. */
 private fun drawMatter(
     img: BufferedImage, g: java.awt.Graphics2D, state: SimState, ox: Int, size: Int,
     centreX: Float, centreY: Float, halfWindow: Float, label: String,
@@ -62,26 +63,28 @@ private fun drawMatter(
     fun sx(lx: Float) = ox + (lx - centreX + halfWindow) * pxPerLogical
     fun sy(ly: Float) = (ly - centreY + halfWindow) * pxPerLogical
 
-    val finestSize = org.emerge.demo.cyto.sim.CytoMatterField.TILE / (1 shl org.emerge.demo.cyto.sim.CytoMatterField.MAX_DEPTH)
-    val refDensity = org.emerge.demo.cyto.sim.CytoSeed.MATTER_UNIFORM_LEVEL.toDouble()*4.0
-    grid.forEachLeaf { x, y, leafSize, store ->
-        val x0 = sx(x); val y0 = sy(y); val wpx = leafSize * pxPerLogical
-        if (x0 + wpx < ox || x0 > ox + size || y0 + wpx < 0 || y0 > size) return@forEachLeaf
-        // Fill = per-area a/b/c atom density as raw RGB, normalised so a full base-density leaf is white.
-        var r = 0L; var gg = 0L; var b = 0L
-        for (i in 0 until store.size) {
-            val cnt = store.countAt(i)
-            for (ch in SpeciesRegistry.string(store.idAt(i))) when (ch) {
-                'a' -> r += cnt; 'b' -> gg += cnt; 'c' -> b += cnt
-            }
+    // Fill = the texel's r/g/b atom density as raw RGB, normalised so a full base-density texel is white —
+    // the same rule CytoRenderer's overlay uses, read from the same per-channel arrays.
+    val refDensity = org.emerge.demo.cyto.sim.CytoSeed.MATTER_UNIFORM_LEVEL.toDouble() * 4.0
+    val fres = grid.resolution
+    val texel = org.emerge.demo.cyto.sim.CytoMatterField.SPAN / fres
+    val half = org.emerge.demo.cyto.sim.CytoLightField.HALF
+    val chR = grid.channelRed; val chG = grid.channelGreen; val chB = grid.channelBlue
+    for (iy in 0 until fres) {
+        val y = -half + iy * texel
+        val y0 = sy(y); val wpx = texel * pxPerLogical
+        if (y0 + wpx < 0 || y0 > size) continue
+        for (ix in 0 until fres) {
+            val x0 = sx(-half + ix * texel)
+            if (x0 + wpx < ox || x0 > ox + size) continue
+            val i = iy * fres + ix
+            g.color = Color(
+                (chR[i] / refDensity).coerceIn(0.0, 1.0).toFloat(),
+                (chG[i] / refDensity).coerceIn(0.0, 1.0).toFloat(),
+                (chB[i] / refDensity).coerceIn(0.0, 1.0).toFloat(),
+            )
+            g.fillRect(x0.toInt(), y0.toInt(), wpx.toInt().coerceAtLeast(1), wpx.toInt().coerceAtLeast(1))
         }
-        val across = (leafSize / finestSize).toDouble(); val denom = across * across * refDensity
-        g.color = Color((r / denom).coerceIn(0.0, 1.0).toFloat(), (gg / denom).coerceIn(0.0, 1.0).toFloat(), (b / denom).coerceIn(0.0, 1.0).toFloat())
-        g.fillRect(x0.toInt(), y0.toInt(), wpx.toInt().coerceAtLeast(1), wpx.toInt().coerceAtLeast(1))
-        // 2px grey border.
-        g.color = Color(102, 102, 102)
-        g.stroke = BasicStroke(2f)
-        g.drawRect(x0.toInt(), y0.toInt(), wpx.toInt().coerceAtLeast(1), wpx.toInt().coerceAtLeast(1))
     }
 
     // Cells on top — atom-mix hue at full value so they stand out against the dim overlay.

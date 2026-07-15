@@ -86,12 +86,22 @@ class CytoGoldenTest {
     // 1000) — so this is a pure grid-structure re-baseline, not a rule/tuning change. The mutation/weld/
     // sticky goldens are unaffected (no merge fires within their runs either); parallelMatchesSequential +
     // grownStateRoundTrips held throughout.
+    // Re-baselined 2026-07-15 (#2): the matter field became a dense per-species grid (was a quad-tree). ALL
+    // five goldens shift, but only in microstate: meta is byte-identical on growth/mutation and topology on
+    // every one, and the population curve is IDENTICAL to the tree's for the first 1500 ticks (the goldens'
+    // whole horizon), drifting to only -2.8% by tick 6000 with the same lag, take-off and shape. The cause
+    // is ITERATION ORDER, not a rule change: the tree walked a footprint in DFS quadrant (Z) order, the
+    // dense grid walks it row-major, and two ops are order-sensitive — deposit hands its ±1 remainder to the
+    // first N texels, and an Export clamps against the live cytoplasm so later texels see a depleted
+    // reserve. Both are arbitrary either way; row-major is simply the dense field's natural (and
+    // cache-friendly) order. "grid" additionally shifts because the digest now enumerates texels, not
+    // leaves. parallelMatchesSequential + grownStateRoundTrips + conservation held throughout.
     private val GROWTH = mapOf(
         "meta" to "873a0eee26c7ffde",
-        "physics" to "e5c4cdb5f6d05b6c",
-        "biology" to "18d6fa070cdf13c0",
+        "physics" to "5c1317d587a1aede",
+        "biology" to "8ad841ffa73d9aad",
         "topology" to "cbf29ce484222325",
-        "grid" to "fa4f365ce684e53e",
+        "grid" to "787452dba8dde9fa",
     )
     // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
     // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
@@ -175,7 +185,7 @@ class CytoGoldenTest {
         "physics" to "546c1052b9bf32a1",
         "biology" to "7cf59cd62f48b956",
         "topology" to "cbf29ce484222325",
-        "grid" to "4cdde19abbecd20e",
+        "grid" to "25a3500d9428ce06",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     // Re-baselined 2026-07-05: restored LIGHT_QUANTA_SCALE 60k→120k (matter viability) +
@@ -203,7 +213,7 @@ class CytoGoldenTest {
         "physics" to "4dbbdf7d9a45b73c",
         "biology" to "358447f445151035",
         "topology" to "cbf29ce484222325",
-        "grid" to "fb8d7ad7068e177b",
+        "grid" to "17ae6b8a8f8f89f7",
     )
 
     @Test
@@ -266,14 +276,14 @@ class CytoGoldenTest {
         "physics" to "b47e91853a3c8a02",
         "biology" to "999427a698b3b417",
         "topology" to "9bfc123c376c0371",
-        "grid" to "a857f5de984d921d",
+        "grid" to "7019020475aa5760",
     )
     private val STICKY_WELD = mapOf(
         "meta" to "350eaa4577a67db5",
         "physics" to "f7edf29a779a21ca",
         "biology" to "ca5045ab30a68078",
         "topology" to "8f9ae79f7f29791a",
-        "grid" to "ea6b5be6086c9296",
+        "grid" to "571fec754e148c01",
     )
 
     @Test
@@ -478,7 +488,7 @@ class CytoGoldenTest {
         val gridSb = StringBuilder()
         val grid = s.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid
         // Quad-tree field: hash each leaf by its region (corner + size) + contents (stable DFS order).
-        grid?.forEachLeaf { x, y, sz, store ->
+        grid?.forEachTexel { x, y, sz, store ->
             if (store.size > 0) {
                 gridSb.append(x).append(',').append(y).append(',').append(sz).append(':')
                 for (i in 0 until store.size) gridSb.append(store.idAt(i)).append('=').append(store.countAt(i)).append(',')

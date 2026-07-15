@@ -143,11 +143,7 @@ private fun benchEncode(label: String, initial: SimState, warmup: Int, measure: 
     for (i in 0 until measure) {
         val t = System.nanoTime()
         val w = org.emerge.net.codec.ByteWriter()
-        grid.encodeTree(
-            { w.writeByte(it.toByte()) },
-            { writeCounts(w, it) },
-            { w.writeInt(it) },
-        )
+        grid.encode({ w.writeInt(it) }, { w.writeString(it) })
         matterTimes[i] = System.nanoTime() - t
     }
 

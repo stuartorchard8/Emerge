@@ -189,7 +189,7 @@ class CytoSoaSpecTest {
 
     private fun gridAtoms(g: CytoMatterField): Long {
         var sum = 0L
-        g.forEachLeaf { _, _, _, store ->
+        g.forEachTexel { _, _, _, store ->
             for (i in 0 until store.size) sum += SpeciesRegistry.atomCount(store.idAt(i)).toLong() * store.countAt(i)
         }
         return sum
@@ -228,7 +228,7 @@ class CytoSoaSpecTest {
         assertTrue(cellCount(state) > start, "heterotroph should grow + divide off stored ab; got ${cellCount(state)}")
     }
 
-    // RETIRED with the quad-tree matter field (QUADTREE.md): metabolicLeakRetainsUsableMatterDumpsWaste
+    // RETIRED with the quad-tree matter field: metabolicLeakRetainsUsableMatterDumpsWaste
     // (there is no passive waste leak now — waste accumulates until death/export) and
     // activeUptakeYieldsLessAgainstASteeperGradient (Import is now a flat C_eff bias on the diffusion
     // junction, no gradient-cost diminishing returns).
@@ -872,7 +872,7 @@ class CytoSoaSpecTest {
         // Sum species `sp` over leaves whose centre is within `rad` cell-diam of (px,py).
         fun near(g: CytoMatterField, sp: Int, px: Float, py: Float, rad: Float): Int {
             var sum = 0
-            g.forEachLeaf { x, y, size, store ->
+            g.forEachTexel { x, y, size, store ->
                 val cxL = x + size * 0.5f; val cyL = y + size * 0.5f
                 val ddx = cxL - px; val ddy = cyL - py
                 if (ddx * ddx + ddy * ddy <= rad * rad) sum += store.count(sp)

@@ -48,7 +48,7 @@ data class CytoCellComponent(
 )
 
 /**
- * The world's finite **matter reservoir** ([CytoMatterField], an adaptive quad-tree — see QUADTREE.md),
+ * The world's finite **matter reservoir** ([CytoMatterField], a dense per-species texel grid),
  * carried as a singleton component on a
  * reserved entity ([GRID_SINGLETON]) so the otherwise-stateless reducer
  * (which rebuilds [org.emerge.sim.core.sim.SimState] each tick) persists it across ticks. The singleton

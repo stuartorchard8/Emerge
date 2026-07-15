@@ -97,7 +97,7 @@ class CytoRenderer {
     /** CPU micros spent in the last [rasterizeMatter] (quad-tree walk → texel fill), and leaves visited.
      *  Read by the render benchmark to split the matter overlay's cost into CPU raster vs GPU sample. */
     var lastRasterizeUs = 0L; private set
-    var lastLeafCount = 0; private set
+    var lastTexelCount = 0; private set
     /** How cells are coloured (Host-set from the controls' "Color" button). */
     var colorMode = CellColorMode.Bio
     /** EntityId.value of the focused cell (info panel open) — drawn at full value; -1 = none. Host-set. */
@@ -177,7 +177,6 @@ class CytoRenderer {
     // field's full-screen treatment.
     private val matterField = CytoMatterFieldTexture(MATTER_TEX_RES)
     private val matterPixels = ByteArray(MATTER_TEX_RES * MATTER_TEX_RES * 4)
-    private val matColorTmp = FloatArray(4)
 
     // ── metabolic activity fields (LIVING_WORLD_PLAN.md §5) ──────────────────────────────────────
     // Flow 3 (CYT→BIO "building"): a soft species-coloured disc drawn over each building cell, its
@@ -1046,54 +1045,48 @@ class CytoRenderer {
         )
     }
 
-    /** Rasterise the matter quad-tree into [matterPixels] (a [MATTER_TEX_RES]² RGBA density map of one torus
-     *  tile). Each leaf fills its covered texel range with its [leafColor] density; leaves tile the whole tile
-     *  so every texel is written (cleared first as a guard against boundary rounding). Row 0 = y = −HALF. */
+    /** Rasterise the dense matter field into [matterPixels] (a [MATTER_TEX_RES]² RGBA density map of one
+     *  torus tile). The field IS a texel grid, so this is a straight scan of its per-channel atom totals —
+     *  no tree walk, no store deref, no per-leaf normalisation, and nothing to clear. Row 0 = y = −HALF.
+     *
+     *  The field's resolution tracks the world size while the texture is fixed, so a non-default world is
+     *  point-sampled (they coincide 1:1 at the default 64-world). The sim refreshes the channel arrays on
+     *  its maintain cadence; reading one mid-refresh is fine — the values are per-texel independent and a
+     *  frame that mixes two ticks of matter density is not observable. */
     private fun rasterizeMatter(grid: CytoMatterField) {
         val res = MATTER_TEX_RES
-        val span = CytoLightField.SPAN
-        val half = CytoLightField.HALF
-        matterPixels.fill(0)
-        // Scan the sim's flat per-tick leaf snapshot rather than walking the live quad-tree: contiguous
-        // arrays, no store deref, and no race against the sim mutating the tree under us. Read the buffer
-        // reference once — maintain() may publish a newer one mid-scan, and finishing on the old (one tick
-        // stale) snapshot is correct.
-        val summary = grid.leafSummary
-        val n = summary.n
-        val xs = summary.xs; val ys = summary.ys; val sizes = summary.sizes
-        val reds = summary.reds; val greens = summary.greens; val blues = summary.blues
-        for (i in 0 until n) {
-            val x = xs[i]; val y = ys[i]; val size = sizes[i]
-            leafColor(size, reds[i], greens[i], blues[i], matColorTmp)
-            val r = (matColorTmp[0] * 255f).toInt().coerceIn(0, 255).toByte()
-            val g = (matColorTmp[1] * 255f).toInt().coerceIn(0, 255).toByte()
-            val b = (matColorTmp[2] * 255f).toInt().coerceIn(0, 255).toByte()
-            val c0 = (((x + half) / span) * res).toInt()
-            val r0 = (((y + half) / span) * res).toInt()
-            val colEnd = maxOf(c0 + 1, (((x + size + half) / span) * res).toInt())
-            val rowEnd = maxOf(r0 + 1, (((y + size + half) / span) * res).toInt())
-            for (row in r0 until rowEnd) {
-                val base = row.coerceIn(0, res - 1) * res
-                for (col in c0 until colEnd) {
-                    val p = (base + col.coerceIn(0, res - 1)) * 4
-                    matterPixels[p] = r; matterPixels[p + 1] = g; matterPixels[p + 2] = b
-                    matterPixels[p + 3] = 255.toByte()
+        val fres = grid.resolution
+        val chR = grid.channelRed; val chG = grid.channelGreen; val chB = grid.channelBlue
+        // Reciprocal-multiply, not divide: this runs 3x per texel over the whole grid, and a float multiply
+        // is a fraction of the cost of a double divide.
+        val scale = (255.0 / MATTER_REF_DENSITY).toFloat()
+        val opaque = 255.toByte()
+        if (fres == res) {
+            // 1:1 (the default world) — one flat pass, no index remap.
+            for (i in 0 until res * res) {
+                val p = i * 4
+                val r = (chR[i] * scale).toInt(); val g = (chG[i] * scale).toInt(); val b = (chB[i] * scale).toInt()
+                matterPixels[p] = (if (r > 255) 255 else r).toByte()
+                matterPixels[p + 1] = (if (g > 255) 255 else g).toByte()
+                matterPixels[p + 2] = (if (b > 255) 255 else b).toByte()
+                matterPixels[p + 3] = opaque
+            }
+        } else {
+            for (row in 0 until res) {
+                val fbase = (row * fres / res) * fres
+                val pbase = row * res
+                for (col in 0 until res) {
+                    val i = fbase + col * fres / res
+                    val p = (pbase + col) * 4
+                    val r = (chR[i] * scale).toInt(); val g = (chG[i] * scale).toInt(); val b = (chB[i] * scale).toInt()
+                    matterPixels[p] = (if (r > 255) 255 else r).toByte()
+                    matterPixels[p + 1] = (if (g > 255) 255 else g).toByte()
+                    matterPixels[p + 2] = (if (b > 255) 255 else b).toByte()
+                    matterPixels[p + 3] = opaque
                 }
             }
         }
-        lastLeafCount = n
-    }
-
-    /** Colour a matter leaf by its per-area r/g/b atom DENSITY as raw RGB (r→R, g→G, b→B), normalised by the
-     *  leaf's area × the seed density so a full base-density leaf is white (1,1,1) and depletion both darkens
-     *  it and shifts its hue away from whatever species the cells drew down. Counts scale with leaf area, so
-     *  the divisor is the leaf's finest-cell area × [MATTER_REF_DENSITY]. */
-    private fun leafColor(size: Float, r: Long, g: Long, b: Long, out: FloatArray) {
-        val across = (size / MATTER_FINEST_SIZE).toDouble()
-        val denom = across * across * MATTER_REF_DENSITY
-        out[0] = (r / denom).coerceIn(0.0, 1.0).toFloat()
-        out[1] = (g / denom).coerceIn(0.0, 1.0).toFloat()
-        out[2] = (b / denom).coerceIn(0.0, 1.0).toFloat()
+        lastTexelCount = res * res
     }
 
     fun cleanup() {
@@ -1189,7 +1182,6 @@ class CytoRenderer {
         const val MATTER_WARP_AMP = 0.005f
         // Leaf counts scale with area; normalise by the finest leaf size + the seed density so a full
         // base-density leaf reads as white (1,1,1) regardless of how merged it is.
-        val MATTER_FINEST_SIZE = CytoMatterField.TILE / (1 shl CytoMatterField.MAX_DEPTH)
         const val MATTER_REF_DENSITY = CytoSeed.MATTER_UNIFORM_LEVEL.toDouble()*4.0
 
         // ── Flow 3 (CYT→BIO "building") tuning — iterate via the agent harness. ──
