@@ -19,6 +19,41 @@ import kotlin.math.min
  */
 class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
 
+    // ── renderer read model (see [MatterLeafSummary]) ──────────────────────────────────────────────────
+    // Double-buffered: [maintain] fills `summaryBack` during its per-tick walk then swaps it in, so the draw
+    // thread only ever scans a buffer the sim has finished with. Built up-front too, so a field that is
+    // decoded/seeded but not yet ticked (a just-loaded save, a paused world) still draws.
+    private var summaryFront = MatterLeafSummary()
+    private var summaryBack = MatterLeafSummary()
+
+    /** The latest published flat leaf snapshot — the renderer's matter-overlay source. */
+    val leafSummary: MatterLeafSummary get() = summaryFront
+
+    /** Whether [maintain] refreshes [leafSummary]. Tallying every leaf's store is the one part of the
+     *  summary that is NOT free (the walk and the store reads are already paid for), so a host that isn't
+     *  drawing the matter overlay can switch it off and the sim does no extra work at all. */
+    var summaryEnabled = true
+
+    init { rebuildLeafSummary() }
+
+    /** Fill [leafSummary] from the current tree without maintaining it. [maintain] keeps it fresh
+     *  thereafter; this covers construction (decode / seed / copy), before any tick has run. */
+    private fun rebuildLeafSummary() {
+        val buf = summaryFront.also { it.reset() }
+        for (gy in 0 until BASE_RES) for (gx in 0 until BASE_RES) {
+            val ox = -HALF + gx * TILE; val oy = -HALF + gy * TILE
+            summaryWalk(roots[gy * BASE_RES + gx], ox, oy, TILE, buf)
+        }
+    }
+
+    private fun summaryWalk(node: QuadNode, x: Float, y: Float, sz: Float, buf: MatterLeafSummary) {
+        if (node.isLeaf) { buf.addLeaf(x, y, sz, node.store!!); return }
+        val ch = node.children!!
+        val h = sz * 0.5f
+        summaryWalk(ch[0], x, y, h, buf); summaryWalk(ch[1], x + h, y, h, buf)
+        summaryWalk(ch[2], x, y + h, h, buf); summaryWalk(ch[3], x + h, y + h, h, buf)
+    }
+
     // ── build ────────────────────────────────────────────────────────────────────────────────────────
     companion object {
         /** Base tiles per torus axis — runtime, coupled to the world size so the finest leaf stays a fixed
@@ -408,7 +443,16 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
 
     // ── maintenance: progressive collapse + species decay ──────────────────────────────────────────────
     fun maintain(currentTick: Int, collapseDelay: Int, decayPeriod: Int) {
-        for (r in roots) maintainNode(r, 0, currentTick, collapseDelay, decayPeriod)
+        // Refill the renderer's flat read model as we go — this walk already visits every node and reads
+        // every leaf's store, so the summary is essentially free here (see [MatterLeafSummary]).
+        val buf = summaryBack.also { it.reset() }
+        for (gy in 0 until BASE_RES) for (gx in 0 until BASE_RES) {
+            val ox = -HALF + gx * TILE; val oy = -HALF + gy * TILE
+            maintainNode(roots[gy * BASE_RES + gx], ox, oy, TILE, 0, currentTick, collapseDelay, decayPeriod, buf)
+        }
+        // Publish: the draw thread reads whatever `summaryFront` points at when it starts a frame.
+        summaryBack = summaryFront
+        summaryFront = buf
     }
     /** Post-order: decay leaves; merge an all-leaf internal node whose children are all stale (→ progressive,
      *  since the merged leaf is fresh and blocks its parent for another delay).
@@ -417,15 +461,34 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
      *  leaves (depth [MAX_DEPTH]); a merge whose children sit one layer up waits twice as long, and so on.
      *  A merge pools matter over a node twice as wide as the layer below, so making it wait twice as long
      *  means dispersal advances at a roughly constant speed — twice as far takes twice as long. */
-    private fun maintainNode(node: QuadNode, depth: Int, tick: Int, collapseDelay: Int, decayPeriod: Int) {
-        if (node.isLeaf) { decayLeaf(node, decayPeriod); return }
+    private fun maintainNode(
+        node: QuadNode, x: Float, y: Float, sz: Float, depth: Int,
+        tick: Int, collapseDelay: Int, decayPeriod: Int, buf: MatterLeafSummary,
+    ) {
+        if (node.isLeaf) {
+            decayLeaf(node, decayPeriod)
+            if (summaryEnabled) buf.addLeaf(x, y, sz, node.store!!)
+            return
+        }
         val ch = node.children!!
-        for (c in ch) maintainNode(c, depth + 1, tick, collapseDelay, decayPeriod)
+        val h = sz * 0.5f
+        maintainNode(ch[0], x, y, h, depth + 1, tick, collapseDelay, decayPeriod, buf)
+        maintainNode(ch[1], x + h, y, h, depth + 1, tick, collapseDelay, decayPeriod, buf)
+        maintainNode(ch[2], x, y + h, h, depth + 1, tick, collapseDelay, decayPeriod, buf)
+        maintainNode(ch[3], x + h, y + h, h, depth + 1, tick, collapseDelay, decayPeriod, buf)
         // The children are at depth+1; their merge delay doubles for each layer they sit above the finest.
         val childDelay = collapseDelay shl (MAX_DEPTH - (depth + 1))
         var allLeafStale = true
         for (c in ch) if (!c.isLeaf || tick - c.lastAccessTick < childDelay) { allLeafStale = false; break }
-        if (allLeafStale) mergeNode(node, tick)
+        if (allLeafStale) {
+            mergeNode(node, tick)
+            if (summaryEnabled) {
+                // Post-order + the all-leaf merge condition means the four children each appended exactly
+                // one entry, and they are the last four — drop them and record the merged leaf instead.
+                buf.rollback(4)
+                buf.addLeaf(x, y, sz, node.store!!)
+            }
+        }
     }
     /** Atomise ⌊count/period⌋ of each multi-atom species (peel leftmost bond). Conservation-exact; does NOT
      *  touch lastAccessTick. */
@@ -482,6 +545,67 @@ class CytoMatterField private constructor(private val roots: Array<QuadNode>) {
             store.add(SpeciesRegistry.splitLeftRest(id), broken)
         }
     }
+}
+
+/**
+ * A flat, contiguous snapshot of every leaf in a [CytoMatterField] — the **renderer's read model** for the
+ * matter overlay, in parallel arrays rather than a tree of nodes.
+ *
+ * The overlay used to be drawn by walking the live quad-tree once per *frame*, colouring each leaf from its
+ * [MoleculeStore]. That walk chases four dependent pointers per leaf (node → store → ids → counts) and a
+ * refined world has >100k leaves, so it cost ~80-110ns/leaf — ~12ms/frame of pure DRAM latency, which alone
+ * put the overlay under 60fps. Nothing about it needed to be per-frame: the field only changes when the sim
+ * ticks. [CytoMatterField.maintain] already walks every node and reads every leaf's store once per tick, so
+ * it fills this summary as a by-product of a traversal it was already paying for, and the renderer scans
+ * contiguous arrays with no tree and no store deref.
+ *
+ * Double-buffered by [CytoMatterField]: the sim fills the back buffer and swaps it in at the end of
+ * `maintain`, so the draw thread never reads a buffer mid-write. (The renderer reads the field's grid by
+ * reference off the published frame — see `CytoWorld.toSimState` — so this also removes the torn-tree race
+ * that `leafWalk`'s `catch (NullPointerException)` guards were absorbing.)
+ *
+ * Colour is kept as raw per-channel **atom totals**, not a final density: the normalisation divisor is a
+ * renderer concern (its reference density), so the sim stays render-agnostic.
+ */
+class MatterLeafSummary {
+    /** Number of live entries; entries [0, n) of every array are valid. */
+    var n = 0
+        private set
+    var xs = FloatArray(INITIAL_CAP); private set
+    var ys = FloatArray(INITIAL_CAP); private set
+    var sizes = FloatArray(INITIAL_CAP); private set
+    var reds = LongArray(INITIAL_CAP); private set
+    var greens = LongArray(INITIAL_CAP); private set
+    var blues = LongArray(INITIAL_CAP); private set
+
+    fun reset() { n = 0 }
+
+    /** Append one leaf, tallying its store's r/g/b atoms off [SpeciesRegistry]'s precomputed per-id table. */
+    fun addLeaf(x: Float, y: Float, sz: Float, store: MoleculeStore) {
+        var r = 0L; var g = 0L; var b = 0L
+        for (i in 0 until store.size) {
+            val cnt = store.countAt(i)
+            val id = store.idAt(i)
+            r += cnt * SpeciesRegistry.atomsInChannel(id, 0)
+            g += cnt * SpeciesRegistry.atomsInChannel(id, 1)
+            b += cnt * SpeciesRegistry.atomsInChannel(id, 2)
+        }
+        if (n == xs.size) grow()
+        xs[n] = x; ys[n] = y; sizes[n] = sz
+        reds[n] = r; greens[n] = g; blues[n] = b
+        n++
+    }
+
+    /** Drop the last [k] entries — used when a post-order merge replaces its children with one leaf. */
+    fun rollback(k: Int) { n -= k }
+
+    private fun grow() {
+        val c = xs.size * 2
+        xs = xs.copyOf(c); ys = ys.copyOf(c); sizes = sizes.copyOf(c)
+        reds = reds.copyOf(c); greens = greens.copyOf(c); blues = blues.copyOf(c)
+    }
+
+    private companion object { const val INITIAL_CAP = 4096 }
 }
 
 /** A quad-tree node: leaf (store != null, children == null) or internal (children != null). Mutated in place

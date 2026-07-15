@@ -10,6 +10,7 @@ import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.render.torus.ui.UiRectRenderer
+import kotlin.time.TimeSource
 import org.emerge.render.torus.shader.CircleShader
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.GpuFloatBuffer
@@ -90,6 +91,13 @@ class CytoRenderer {
     // Reuses the proven instanced-rect shader: the static field grid (one torus tile) baked to
     // heat colours once, projected to NDC + culled to the visible region each frame. Toggle with L.
     var showLightField = true
+    /** Per-gene specks inside each cell ([drawGeneParticles]). Off is a pure visual subtraction — used by
+     *  the render benchmark to attribute their cost, and available as a host-side quality knob. */
+    var showGeneParticles = true
+    /** CPU micros spent in the last [rasterizeMatter] (quad-tree walk → texel fill), and leaves visited.
+     *  Read by the render benchmark to split the matter overlay's cost into CPU raster vs GPU sample. */
+    var lastRasterizeUs = 0L; private set
+    var lastLeafCount = 0; private set
     /** How cells are coloured (Host-set from the controls' "Color" button). */
     var colorMode = CellColorMode.Bio
     /** EntityId.value of the focused cell (info panel open) — drawn at full value; -1 = none. Host-set. */
@@ -536,7 +544,7 @@ class CytoRenderer {
         drawParticles(transforms)
 
         // One speck per gene, drifting in each cell's hollow centre.
-        drawGeneParticles(cells, transforms, colliders)
+        if (showGeneParticles) drawGeneParticles(cells, transforms, colliders)
 
         GPU.disableBlend()
     }
@@ -1026,7 +1034,9 @@ class CytoRenderer {
         val hwx = viewHeight * aspect * 0.5f
         val hwy = viewHeight * 0.5f
         if (hwx <= 0f || hwy <= 0f) return
+        val tRaster = TimeSource.Monotonic.markNow()
         rasterizeMatter(grid)
+        lastRasterizeUs = tRaster.elapsedNow().inWholeMicroseconds
         matterField.draw(
             pixels = matterPixels,
             centerX = camLogX, centerY = camLogY,
@@ -1044,8 +1054,17 @@ class CytoRenderer {
         val span = CytoLightField.SPAN
         val half = CytoLightField.HALF
         matterPixels.fill(0)
-        grid.forEachLeaf { x, y, size, store ->
-            leafColor(size, store, matColorTmp)
+        // Scan the sim's flat per-tick leaf snapshot rather than walking the live quad-tree: contiguous
+        // arrays, no store deref, and no race against the sim mutating the tree under us. Read the buffer
+        // reference once — maintain() may publish a newer one mid-scan, and finishing on the old (one tick
+        // stale) snapshot is correct.
+        val summary = grid.leafSummary
+        val n = summary.n
+        val xs = summary.xs; val ys = summary.ys; val sizes = summary.sizes
+        val reds = summary.reds; val greens = summary.greens; val blues = summary.blues
+        for (i in 0 until n) {
+            val x = xs[i]; val y = ys[i]; val size = sizes[i]
+            leafColor(size, reds[i], greens[i], blues[i], matColorTmp)
             val r = (matColorTmp[0] * 255f).toInt().coerceIn(0, 255).toByte()
             val g = (matColorTmp[1] * 255f).toInt().coerceIn(0, 255).toByte()
             val b = (matColorTmp[2] * 255f).toInt().coerceIn(0, 255).toByte()
@@ -1062,20 +1081,14 @@ class CytoRenderer {
                 }
             }
         }
+        lastLeafCount = n
     }
 
     /** Colour a matter leaf by its per-area r/g/b atom DENSITY as raw RGB (r→R, g→G, b→B), normalised by the
      *  leaf's area × the seed density so a full base-density leaf is white (1,1,1) and depletion both darkens
      *  it and shifts its hue away from whatever species the cells drew down. Counts scale with leaf area, so
      *  the divisor is the leaf's finest-cell area × [MATTER_REF_DENSITY]. */
-    private fun leafColor(size: Float, store: org.emerge.demo.cyto.sim.MoleculeStore, out: FloatArray) {
-        var r = 0L; var g = 0L; var b = 0L
-        for (i in 0 until store.size) {
-            val cnt = store.countAt(i)
-            for (ch in SpeciesRegistry.string(store.idAt(i))) when (ch) {
-                'r' -> r += cnt; 'g' -> g += cnt; 'b' -> b += cnt
-            }
-        }
+    private fun leafColor(size: Float, r: Long, g: Long, b: Long, out: FloatArray) {
         val across = (size / MATTER_FINEST_SIZE).toDouble()
         val denom = across * across * MATTER_REF_DENSITY
         out[0] = (r / denom).coerceIn(0.0, 1.0).toFloat()

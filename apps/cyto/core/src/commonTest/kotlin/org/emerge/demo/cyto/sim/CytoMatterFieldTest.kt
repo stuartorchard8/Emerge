@@ -109,4 +109,60 @@ class CytoMatterFieldTest {
         }
         assertEquals(digest(run()), digest(run()), "identical op sequences produce identical fields")
     }
+
+    /** The renderer's flat [MatterLeafSummary] must describe exactly the same leaves as a tree walk —
+     *  same geometry, same per-channel atom totals — both before any tick and after maintain() has run
+     *  (which fills it incrementally, rolling back four child entries wherever a post-order merge fires).
+     *  A drift here silently miscolours or drops regions of the matter overlay. */
+    private fun summaryDigest(f: CytoMatterField): String {
+        val s = f.leafSummary
+        val sb = StringBuilder()
+        for (i in 0 until s.n) {
+            sb.append(s.xs[i]).append(',').append(s.ys[i]).append(',').append(s.sizes[i]).append(':')
+            sb.append(s.reds[i]).append('/').append(s.greens[i]).append('/').append(s.blues[i]).append(';')
+        }
+        return sb.toString()
+    }
+
+    /** The same digest, computed independently by walking the tree and tallying each leaf's store. */
+    private fun walkDigest(f: CytoMatterField): String {
+        val sb = StringBuilder()
+        f.forEachLeaf { x, y, sz, store ->
+            var r = 0L; var g = 0L; var b = 0L
+            for (i in 0 until store.size) {
+                val c = store.countAt(i); val id = store.idAt(i)
+                r += c * SpeciesRegistry.atomsInChannel(id, 0)
+                g += c * SpeciesRegistry.atomsInChannel(id, 1)
+                b += c * SpeciesRegistry.atomsInChannel(id, 2)
+            }
+            sb.append(x).append(',').append(y).append(',').append(sz).append(':')
+            sb.append(r).append('/').append(g).append('/').append(b).append(';')
+        }
+        return sb.toString()
+    }
+
+    @Test fun leafSummaryMatchesTreeWalkOnConstruction() {
+        val f = CytoMatterField.seededUniform(10)
+        assertEquals(walkDigest(f), summaryDigest(f), "summary must be built up-front (pre-tick)")
+        assertEquals(leafCount(f), f.leafSummary.n)
+    }
+
+    @Test fun leafSummaryTracksMaintainThroughCollapse() {
+        val f = CytoMatterField.seededUniform(10)
+        f.openFootprint(0f, 0f, 0.6f, 1); f.closeFootprint()
+        f.deposit(0f, 0f, 0.3f, AB, 500)
+        assertTrue(leafCount(f) > 4)
+        // Step well past the doubling collapse delays so merges fire at several layers, checking the
+        // summary against an independent walk every tick.
+        var merges = 0
+        var prev = leafCount(f)
+        for (tk in 2..520) {
+            f.maintain(tk, 8, 64)
+            val now = leafCount(f)
+            if (now < prev) merges++
+            prev = now
+            assertEquals(walkDigest(f), summaryDigest(f), "summary drifted from the tree at tick $tk")
+        }
+        assertTrue(merges > 0, "expected the tree to collapse at least once (exercising rollback)")
+    }
 }
