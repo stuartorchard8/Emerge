@@ -72,6 +72,16 @@ tasks.register<JavaExec>("benchCytoRender") {
     workingDir = rootDir
 }
 
+tasks.register<JavaExec>("benchCytoThrottle") {
+    group = "verification"
+    description = "Measure the CytoSimDriver throttle: drives the real sim thread over the speed ladder on a " +
+        "save and reports achieved vs target TPS (plus the unlimited-rung sim ceiling). " +
+        "--args=\"<savePath> [secondsPerRung]\"."
+    mainClass = "org.emerge.desktop.CytoThrottleBenchmarkKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootDir
+}
+
 tasks.register<JavaExec>("benchCytoSave") {
     group = "verification"
     description = "Benchmark Cyto save/encode/decode: phase-by-phase timing for encode, decode, and round-trip. " +
