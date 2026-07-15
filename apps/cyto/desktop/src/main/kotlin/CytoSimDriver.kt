@@ -50,15 +50,16 @@ class CytoSimDriver(private val controller: CytoController) {
         var windowStartNs = System.nanoTime()
         var ticksInWindow = 0
         var lastPublishNs = windowStartNs
+        var nextTickNs = windowStartNs
         while (running) {
             if (paused) {
                 actualTps = 0.0
                 controller.publish()                 // reflect any just-applied load/edit while paused
                 LockSupport.parkNanos(PUBLISH_INTERVAL_NS)
                 windowStartNs = System.nanoTime(); ticksInWindow = 0
+                nextTickNs = windowStartNs           // no catch-up burst for time spent paused
                 continue
             }
-            val stepStartNs = System.nanoTime()
             controller.stepOnce()
             ticksInWindow++
 
@@ -71,11 +72,21 @@ class CytoSimDriver(private val controller: CytoController) {
                 actualTps = ticksInWindow * 1e9 / (now - windowStartNs)
                 windowStartNs = now; ticksInWindow = 0
             }
-            // Throttle to the target rate (unless unlimited): sleep off the remainder of this tick's slice.
+            // Throttle to the target rate (unless unlimited) against an absolute deadline that advances by
+            // exactly one slice per tick. parkNanos overshoots by a fixed ~60us; sleeping off "the rest of
+            // this tick" instead would pay that overshoot every tick and cap the rate well under target
+            // (2048 -> ~1800). Carrying the deadline makes the overshoot a constant phase offset, not a
+            // rate error: each park is shortened by however late the last one woke.
             if (targetTps != UNLIMITED) {
                 val sliceNs = 1_000_000_000L / targetTps
-                val sleepNs = sliceNs - (System.nanoTime() - stepStartNs)
+                nextTickNs += sliceNs
+                val sleepNs = nextTickNs - System.nanoTime()
                 if (sleepNs > 0) LockSupport.parkNanos(sleepNs)
+                // Too heavy to keep up (or the target just changed): resync rather than bank a burst of
+                // catch-up ticks to be run back-to-back later.
+                else if (-sleepNs > sliceNs * MAX_LAG_SLICES) nextTickNs = System.nanoTime()
+            } else {
+                nextTickNs = now                     // keep the deadline live for a switch back to throttled
             }
         }
     }
@@ -87,5 +98,6 @@ class CytoSimDriver(private val controller: CytoController) {
         private const val MAX_TPS = 8192           // doubling past this → UNLIMITED
         private const val PUBLISH_INTERVAL_NS = 1_000_000_000L / 100   // publish ≤100 Hz (display cadence)
         private const val TPS_WINDOW_NS = 500_000_000L                 // 0.5 s trailing window for actualTps
+        private const val MAX_LAG_SLICES = 4                           // lag past this → resync, don't catch up
     }
 }
