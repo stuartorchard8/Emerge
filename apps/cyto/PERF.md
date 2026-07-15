@@ -4,6 +4,45 @@ Empirical findings + levers (reference, not a task list — open work lives in `
 `MORPHOGENESIS.md`). Discipline: **one biology path** (`CytoBiologyCore`), correctness first via the
 golden + parallel==sequential gates, optimise from profiles. CytoBench probe via `-Dcytobench=1`.
 
+> **TPS ≠ FPS.** The desktop host runs the sim and the draw loop on **separate threads**, so a slow tick and
+> a slow frame are independent problems. Everything below this banner is the **sim tick (TPS)**, measured with
+> `benchCyto` — which is blind to frame rate. For the **draw thread (FPS)** use `benchCytoRender` (see the
+> 2026-07-15 entry). Establish *which one* is actually slow before profiling either.
+
+## 2026-07-15 — the draw thread (FPS): the matter overlay was 12.5ms/frame of CPU
+
+First render-side profiling this project has had. New tool **`benchCytoRender`**
+(`--args="<save> [frames] [w] [h]"`): renders a frozen save through the real GL pipeline in a hidden GLFW
+window, `glFinish` per frame, subtracting one feature at a time to attribute cost. On `squish.bin`
+(2642 cells, 127k leaves), 1920×1080, Iris Xe:
+
+```
+default (light + gene particles)   4.7 ms   211 FPS
+MATTER grid overlay               16.8 ms    59 FPS   ← rasterizeMatter = 12.5 ms, 100% CPU
+after the flat leaf snapshot       ~9 ms   ~115 FPS   ← rasterizeMatter = 3.1 ms
+```
+
+- **The GPU was never the problem.** The domain-warp shader and the 1MB texture upload measure free; the
+  cost was entirely CPU, in `rasterizeMatter` rebuilding the 512² density texture **every frame** by walking
+  the live quad-tree. Nothing needed to be per-frame — the field only changes when the sim ticks.
+- **Cost is linear in LEAF count, not cell count** (~80–110ns/leaf: 20k leaves = 2.2ms, 127k = 12.5ms). That
+  rate is DRAM latency: each leaf chases four dependent pointers (`QuadNode → store → ids → counts`).
+  `MATTER_COLLAPSE_DELAY = 2048` holds the tree at ~127k leaves (48% of the 262k max) — a deliberate visual
+  choice, not a regression.
+- **Fix (`6537d650`): `maintain()` already walks every node and reads every leaf's store once per tick**, so
+  it now fills a flat double-buffered `MatterLeafSummary` (parallel x/y/size + atom-total arrays) as a
+  by-product; the renderer scans contiguous memory. Rendered PNG byte-identical, golden digests unchanged.
+  Also removes a real race: `toSimState` publishes the grid **by reference**, so the draw thread was walking
+  the tree as the sim mutated it — what `leafWalk`'s `catch (NullPointerException)` guards were absorbing.
+  The tally is **not** free: **+2.08ms/tick**; `summaryEnabled` can gate it (overlay defaults off).
+- **Next FPS lever (untouched):** the cell pass issues **one non-instanced draw call per cell** (~2642) with
+  **no off-screen culling** — flat across the zoom sweep, ~5ms. `CytoCellShader` already flags it:
+  "instancing is a later optimization". Fine today; the wall if cell counts grow.
+- **Measurement discipline on this box (i7-1165G7, 15W, 4 cores):** it drifts 20–30% run-to-run and
+  thermally collapses under sustained load — an *unchanged* baseline tick read 20.2ms early and **101ms**
+  after ~40min of benching. **Cross-process A/B is worthless; interleave variants in ONE process** and
+  compare medians. Parallel scaling also tops out ~2.3× (4 real cores + HT), i.e. already near its ceiling.
+
 ## 2026-07-09 — SoA-native lifecycle (kill the AoS round-trip): whole-tick 2.6×
 
 The lifecycle bridge was the last AoS round-trip in the hot tick: every lifecycle tick materialized a
