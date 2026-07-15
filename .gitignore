@@ -62,3 +62,6 @@ cyto-genomes/
 
 # Cyto agent harness output
 agent-out/
+
+# Cyto campaign progress (local player state)
+campaign-progress
