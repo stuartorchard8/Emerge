@@ -121,10 +121,14 @@ class GeneEditor {
         if (info == null) { reset(); return }
         if (editingId != null && editingId != controller.lastHeldId) reset()   // grabbed a different cell
 
-        // Narrow (phone) layout: while a gene is open, the whole screen becomes the L3 gene-detail modal
-        // (apps/cyto/UI_REDESIGN.md §3), replacing the two stacked desktop panels. The wide layout below is
-        // untouched, so desktop renders bit-identically.
-        if (narrow && draft != null) { renderGeneModal(b, controller); return }
+        // Narrow (phone) layout (apps/cyto/UI_REDESIGN.md §3), replacing the two stacked desktop panels: a
+        // held cell shows the L2 detail sheet; opening a gene raises the full-screen L3 modal over it. The
+        // wide layout below is untouched, so desktop renders bit-identically.
+        if (narrow) {
+            if (draft != null) renderGeneModal(b, controller)
+            else renderCellSheet(b, controller, info, grouping, insertableGroups, onExport)
+            return
+        }
 
         b.panel(Anchor.TopRight) {
             title("CELL ${info.id}")
@@ -297,6 +301,52 @@ class GeneEditor {
                     Triple("DEL", 0xCC3333FFL) { controller.deleteHeldGene(idx); reset() },
                 ),
             )
+        }
+    }
+
+    /**
+     * The **L2 cell-detail sheet** (narrow/phone layout — `apps/cyto/UI_REDESIGN.md` §3): the held cell's
+     * vitals, a collapsible chemistry table, and its genome grouped into collapsible subsystems, as a docked
+     * bottom sheet over the live world. Tapping a gene raises the L3 modal. Reuses the same grouping,
+     * chemistry table and gene-row rendering as the wide desktop panel — only the container differs.
+     */
+    private fun renderCellSheet(
+        b: UiBuilder, controller: CytoController, info: CytoController.CellInfo,
+        grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit,
+    ) {
+        b.dockBottom("cell-sheet", heightFraction = 0.58f, rowHeight = 44f, textSize = 15f) {
+            title("CELL ${info.id}  ${info.type}")
+            row("SIZE ${info.radius}    BIO ${info.totalBiomass}    LIGHT ${info.light}", 0x9A9A9AFFL)
+            if (info.metabolism.isNotEmpty()) {
+                gap(6f)
+                button("${if (metabExpanded) "-" else "+"} CHEMISTRY (${info.metabolism.size})", 0x2A3550FFL) { metabExpanded = !metabExpanded }
+                if (metabExpanded) metabolismTable(info)
+            }
+            if (info.genes.isNotEmpty()) {
+                gap(8f)
+                row("GENOME  (TAP A GENE TO EDIT)", 0x7A8699FFL)
+                val liveGenes = info.genes.map { it.gene }
+                val effectiveGrouping = grouping ?: if (liveGenes.any { it.group.isNotEmpty() }) EMPTY_GROUPING else null
+                val sections = effectiveGrouping?.sections(liveGenes)
+                if (sections != null) {
+                    for (sec in sections) {
+                        val label = sec.name ?: "OTHER"
+                        val open = expandedGroups.contains(label)
+                        button("${if (open) "-" else "+"} $label (${sec.items.size})", groupHeaderBg(sec.color)) {
+                            if (open) expandedGroups.remove(label) else expandedGroups.add(label)
+                        }
+                        if (open) for (item in sec.items) geneButton(controller, info.genes[item.index], item.index)
+                    }
+                    for (grp in effectiveGrouping.groups) {
+                        if (grp.name in insertableGroups && grp.insert.isNotEmpty() && liveGenes.none { it.group == grp.name })
+                            button("+ ADD ${grp.name.uppercase()}", 0x2A3F5AFFL) { controller.addHeldGenes(grp.insert) }
+                    }
+                } else {
+                    info.genes.forEachIndexed { i, g -> geneButton(controller, g, i) }
+                }
+                gap(6f)
+                button("EXPORT GENOME", 0x3A6EA5FFL) { onExport() }
+            }
         }
     }
 

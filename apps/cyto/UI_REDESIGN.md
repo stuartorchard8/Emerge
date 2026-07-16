@@ -340,7 +340,13 @@ Each step ends in something visible at phone size via the harness
    interleaved), so a later opaque rect occludes earlier text — without it the modal's text bled through
    the sheet. Proven bit-identical on the ui-gallery snapshot (static + scrolled), so the change is
    transparent to all existing UI.
-5. **L1/L2 sheets**; retire the current info panel.
+5. **L2 cell sheet** **DONE** (partial — L1 collapsed-peek detent still to do). `Ui.dockBottom` (a
+   persistent, no-scrim, scrollable bottom sheet over the live world) hosts `renderCellSheet`: the held
+   cell's vitals, a collapsible chemistry table, and the genome as collapsible colour-tinted subsystems —
+   reusing the same grouping / chemistry / gene-row code as the wide panel, only the container differs.
+   Tapping a gene raises the L3 modal. Wired into the desktop host: below `NARROW_MAX_PX` the cell view is
+   this sheet, not the wide `TopRight` panel. **Still to do:** the L1↔L2 drag detents, and the two-line
+   gene card (a one-line 30-char label still overflows a narrow width).
 6. **L0 bar + Brush/Layers/Speed sheets**; retire the scattered `CytoControls` buttons.
 7. **Android host**: wire `Ui` + touch routing; then menu/saves/sim-driver (audit Phase 4).
 8. **Campaign**: coach docking, spotlight-vs-level, touch copy pass.

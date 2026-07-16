@@ -238,6 +238,9 @@ object CytoSceneView {
                 // Menu/Save bar are suppressed behind it.
                 val narrow = ui.resWidth < NARROW_MAX_PX
                 val modalUp = narrow && geneEditor.isEditing
+                // In narrow mode a held cell fills the lower screen (L2 sheet) or the whole screen (L3 modal),
+                // so the coach steps aside until it's dismissed (§6.1 — proper coach docking is later work).
+                val cellUp = narrow && controller.lastHeldId != null
                 // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
                 ui.frame {
                     if (mask.allows(Control.GeneEditor)) {
@@ -262,9 +265,9 @@ object CytoSceneView {
                                 Triple("Save", 0x2E6E5EFFL) { menu.openSave(defaultSaveName(controller)); simDriver.setPaused(true) },
                             ))
                         }
-                        // The campaign coach overlay (bottom-centre), on top of the controls.
-                        director.render(this, controller)
                     }
+                    // The campaign coach overlay (bottom-centre), on top of the controls.
+                    if (!cellUp) director.render(this, controller)
                 }
             } else {
                 // Front-end shell over the (paused) world.

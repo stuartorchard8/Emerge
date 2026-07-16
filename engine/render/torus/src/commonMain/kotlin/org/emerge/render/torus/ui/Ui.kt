@@ -662,6 +662,28 @@ class UiBuilder internal constructor(private val ui: Ui) {
         scrollArea(id, 0f, top + titlePx, fullW, sheetH - titlePx, padding = margin, rowHeight = rowHeight, textSize = textSize, block = body)
     }
 
+    /**
+     * A **docked bottom sheet** — a persistent, scrollable panel filling the bottom [heightFraction] of the
+     * screen, full width, with **no scrim** so the world above stays live (the narrow-layout host for the L2
+     * cell view, `apps/cyto/UI_REDESIGN.md` §3). Unlike [sheet] it doesn't dim or dismiss on an outside tap;
+     * a tap above it falls through to the world (deselecting the cell dismisses it naturally). [id] keys the
+     * scroll offset; sizes are dp (× [Ui.scale]).
+     */
+    fun dockBottom(
+        id: String,
+        heightFraction: Float = 0.58f,
+        background: Long = 0x121722F2L,
+        padding: Float = 12f,
+        rowHeight: Float = 18f,
+        textSize: Float = rowHeight * TEXT_TO_ROW_RATIO,
+        block: PanelBuilder.() -> Unit,
+    ) {
+        val fullW = ui.resWidth
+        val fullH = ui.resHeight
+        val h = fullH * heightFraction.coerceIn(0.15f, 1f)
+        scrollArea(id, 0f, fullH - h, fullW, h, padding = padding, rowHeight = rowHeight, textSize = textSize, background = background, block = block)
+    }
+
     fun scrollArea(
         id: String,
         x: Float, y: Float, w: Float, h: Float,
