@@ -66,6 +66,10 @@ class GeneEditor {
      *  the contact count. */
     private val operandKindLabels: List<String> = listOf("Const", "Chem", "Conc", "BIO", "Touch", "Nbrs")
 
+    /** True while a gene is open for editing. In the narrow layout the L3 modal is full-screen, so the host
+     *  suppresses other overlays (the campaign coach) behind it — see `apps/cyto/UI_REDESIGN.md` §6.1. */
+    val isEditing: Boolean get() = draft != null
+
     /** Called if the editor target vanishes (cell died / deselected) — discard any in-progress edit. */
     fun closeDropdown() { openField = null }
 
@@ -103,11 +107,17 @@ class GeneEditor {
         controller: CytoController,
         grouping: GenomeGrouping? = null,
         insertableGroups: Set<String> = emptySet(),
+        narrow: Boolean = false,
         onExport: () -> Unit = {},
     ) {
         val info = controller.heldCellInfo()
         if (info == null) { reset(); return }
         if (editingId != null && editingId != controller.lastHeldId) reset()   // grabbed a different cell
+
+        // Narrow (phone) layout: while a gene is open, the whole screen becomes the L3 gene-detail modal
+        // (apps/cyto/UI_REDESIGN.md §3), replacing the two stacked desktop panels. The wide layout below is
+        // untouched, so desktop renders bit-identically.
+        if (narrow && draft != null) { renderGeneModal(b, controller); return }
 
         b.panel(Anchor.TopRight) {
             title("CELL ${info.id}")
@@ -281,6 +291,86 @@ class GeneEditor {
                 ),
             )
         }
+    }
+
+    /**
+     * The **L3 gene-detail modal** (narrow/phone layout — `apps/cyto/UI_REDESIGN.md` §3). The gene reads as a
+     * sentence: **WHEN** <condition> **DO** <action> **POWERED BY** <source>, each phrase a tappable chip that
+     * opens its picker. Inline binary choices (comparator, sever, orient, keep) are segmented controls — no
+     * drill-down. Chip taps that need a value list (operands, action, source, morphogen, group) will open L4
+     * sheets in the next step; here they lay out and read live draft state.
+     */
+    private fun renderGeneModal(b: UiBuilder, controller: CytoController) {
+        val d = draft ?: return
+        val idx = editingIndex ?: return
+        b.modal(
+            id = "gene-modal",
+            title = "GENE ${idx + 1}${d.group.ifEmpty { "" }.let { if (it.isEmpty()) "" else " · $it" }}",
+            onBack = { reset() },
+            statusBar = 24f, titleBar = 56f, bottomBar = 72f, rowHeight = 48f, textSize = 16f,
+            actions = listOf(
+                Triple("CANCEL", 0x808890FFL) { reset() },
+                Triple("DONE", 0x33AA33FFL) { commit(controller) },
+            ),
+        ) {
+            // ── WHEN: the condition, one row of three chips per AND-clause ──
+            row("WHEN", 0x7A8699FFL)
+            val clauses = d.condition.clauses
+            clauses.forEachIndexed { ci, cl ->
+                clauseRow(
+                    operandLabel(cl.lhs), if (cl.cmp == Comparison.Greater) ">" else "<", operandLabel(cl.rhs),
+                    onLhs = {}, onRhs = {},
+                    onCmp = { draft = withClauseAt(d, ci, cl.copy(cmp = if (cl.cmp == Comparison.Greater) Comparison.Less else Comparison.Greater)) },
+                )
+            }
+            if (clauses.size < CytoTuning.GENOME_MAX_CLAUSES)
+                chip("", "+ AND CLAUSE", 0x1E2634FFL) { draft = addClauseUi(d) }
+            gap(12f)
+
+            // ── DO: the action, then only the fields this action actually has ──
+            row("DO", 0x7A8699FFL)
+            chip("", d.action.type.name, 0x35507AFFL) {}
+            when (d.action.type) {
+                ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain ->
+                    chip("OPERAND", d.action.a.uppercase().ifEmpty { "(NONE)" }, onTap = {})
+                ActionType.FormBond -> {
+                    chip("LEFT", d.action.a.uppercase().ifEmpty { "(NONE)" }, onTap = {})
+                    segmented("MATCH L", listOf("EXACT", "ENDS *"), if (d.action.aWild) 1 else 0) { i -> draft = d.copy(action = d.action.copy(aWild = i == 1)) }
+                    chip("RIGHT", d.action.b.uppercase().ifEmpty { "(NONE)" }, onTap = {})
+                    segmented("MATCH R", listOf("EXACT", "* STARTS"), if (d.action.bWild) 1 else 0) { i -> draft = d.copy(action = d.action.copy(bWild = i == 1)) }
+                }
+                ActionType.Mitosis -> {
+                    chip("MORPHOGEN", d.action.a.uppercase().ifEmpty { "(NONE)" }, onTap = {})
+                    if (d.action.a.isNotEmpty())
+                        segmented("KEEP", listOf("DAUGHTER", "MOTHER"), if (d.action.morphogenToMother) 1 else 0) { i -> draft = d.copy(action = d.action.copy(morphogenToMother = i == 1)) }
+                    chip("AXIS", d.action.b.uppercase().ifEmpty { "(NONE)" }, onTap = {})
+                    if (d.action.b.isNotEmpty())
+                        segmented("ORIENT", listOf("ALONG", "ACROSS"), if (d.action.divideAcross) 1 else 0) { i -> draft = d.copy(action = d.action.copy(divideAcross = i == 1)) }
+                    segmented("SEVER", listOf("NO", "YES"), if (d.action.rejectMother) 1 else 0) { i -> draft = d.copy(action = d.action.copy(rejectMother = i == 1)) }
+                }
+                else -> {}
+            }
+            if (d.action.type != ActionType.Mitosis)
+                chip("EFFICIENCY", d.efficiency.toString(), onTap = {})
+            gap(12f)
+
+            // ── POWERED BY: the energy source ──
+            row("POWERED BY", 0x7A8699FFL)
+            chip("", sourceLabel(d.source).uppercase(), onTap = {})
+            gap(12f)
+
+            chip("GROUP", d.group.uppercase().ifEmpty { "(NONE)" }, onTap = {})
+        }
+    }
+
+    /** A compact operand label for an L3 clause chip (see [renderGeneModal]). */
+    private fun operandLabel(op: Operand): String = when (op) {
+        is Operand.Constant -> op.value.toString()
+        is Operand.Chem -> "CHEM ${op.species.uppercase()}"
+        is Operand.Conc -> "CONC ${op.species.uppercase()}"
+        Operand.Biomass -> "BIO"
+        Operand.Touching -> "TOUCH"
+        Operand.Neighbours -> "NBRS"
     }
 
     /** One gene as a tappable button: editing = blue, active = green, inactive = grey; the parts of an

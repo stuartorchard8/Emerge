@@ -26,17 +26,8 @@ tasks.register<JavaExec>("cytoAgent") {
     classpath = sourceSets["main"].runtimeClasspath
     workingDir = rootDir   // so cyto-genomes/, saves, and agent-out resolve from the repo root
     // Let -Dcyto.agent.w/h reach the harness (e.g. to reproduce a phone framebuffer).
-    for (key in listOf("cyto.agent.w", "cyto.agent.h", "cyto.agent.density"))
+    for (key in listOf("cyto.agent.w", "cyto.agent.h", "cyto.agent.density", "cyto.agent.narrow"))
         providers.systemProperty(key).orNull?.let { systemProperty(key, it) }
-}
-
-// THROWAWAY: renders the UI_REDESIGN.md L3 mock at a phone size. Delete with MobileMockRender.kt.
-tasks.register<JavaExec>("mobileMock") {
-    group = "application"
-    description = "Render the proposed mobile gene-detail screen (design mock) to agent-out/mock-l3-*.png."
-    mainClass = "org.emerge.desktop.MobileMockRenderKt"
-    classpath = sourceSets["main"].runtimeClasspath
-    workingDir = rootDir
 }
 
 tasks.register<JavaExec>("renderCyto") {

@@ -316,11 +316,21 @@ Each step ends in something visible at phone size via the harness
    scroll cancels its click. `GPU.setScissor` already existed on JVM/Android/JS. ~~**Chip + Segmented +
    List row**~~ **DONE** (`a73ad823`). All showcased in `ui-gallery`; its snapshot now also captures a
    *scrolled* frame, the only way a static shot proves the clip holds at an offset.
-   **Still to do: Modal** (full-screen, title bar + back, stacked over a sheet), **Sheet**, **overflow
-   menu**, **confirm dialog**.
-3. **L3 gene detail, vertical slice.** The densest, highest-risk screen — proving it here de-risks
-   the rest. Render at 1080×2400 and compare against §3's wireframe. **Next up.**
-4. **L4 pickers** (list / number / species / segmented). Kills the 2000-tap bug.
+   **Modal** (full-screen: fixed title bar with back + `...`, fixed bottom action bar, a scrolling body
+   between them) landed with step 3. **Still to do: Sheet** (the L4 host), **overflow menu**, **confirm dialog**.
+3. ~~**L3 gene detail, vertical slice.**~~ **DONE.** `Ui.modal` + `PanelBuilder.clauseRow` (a clause as
+   one row of three chips), and `GeneEditor.render(narrow = true)` — while a gene is open, the whole
+   screen becomes the L3 modal instead of the two desktop panels. Wired to the **live draft**: rendered
+   at 1080×2400 against the actual `ch10-reproduce` genome (harness `-Dcyto.agent.narrow=true`). Both the
+   Mitosis worst case (3 clauses + morphogen + axis, fits without scroll) and a typical Convert gene match
+   §3's wireframe. Inline binary controls (comparator, KEEP, ORIENT, SEVER, FormBond MATCH) are fully
+   wired segmented controls; the value chips (operands, action, source, morphogen, group) lay out and read
+   live state but their taps are inert until step 4 supplies the L4 pickers. Desktop (narrow=false) renders
+   bit-identically — the wide two-column form is untouched. Coach suppressed behind the modal (§6.1). The
+   throwaway `MobileMockRender` is deleted, its job done.
+4. **L4 pickers** (list / number / species / segmented) + the **Sheet** primitive that hosts them. Wires
+   the L3 value chips (operands, action, source, morphogen, group) that currently no-op. Kills the
+   2000-tap bug. **Next up.**
 5. **L1/L2 sheets**; retire the current info panel.
 6. **L0 bar + Brush/Layers/Speed sheets**; retire the scattered `CytoControls` buttons.
 7. **Android host**: wire `Ui` + touch routing; then menu/saves/sim-driver (audit Phase 4).

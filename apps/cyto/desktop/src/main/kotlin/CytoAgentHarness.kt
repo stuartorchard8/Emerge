@@ -69,6 +69,8 @@ object CytoAgentHarness {
     private val RES_H = System.getProperty("cyto.agent.h")?.toIntOrNull() ?: 900
     // dp -> px for the UI kit (-Dcyto.agent.density). 1.0 = desktop; ~2.625 reproduces a 420dpi phone.
     private val DENSITY = System.getProperty("cyto.agent.density")?.toFloatOrNull() ?: 1f
+    // Narrow/phone layout: an open gene renders as the full-screen L3 modal (UI_REDESIGN.md §3).
+    private val NARROW = System.getProperty("cyto.agent.narrow")?.toBoolean() ?: false
 
     fun run(scriptText: String, outDir: File) {
         outDir.mkdirs()
@@ -328,8 +330,8 @@ object CytoAgentHarness {
         private fun buildOverlay() {
             val mask = director.controlMask
             ui.frame {
-                if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet()) {}
-                if (director.active) director.render(this, controller)
+                if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW) {}
+                if (director.active && !(NARROW && geneEditor.isEditing)) director.render(this, controller)
             }
         }
 
@@ -372,8 +374,8 @@ object CytoAgentHarness {
             renderer.draw(controller.latestFrame())          // scene (fills its own background)
             controls.draw()                                  // bottom toolbar
             ui.frame {                                        // info panel + coach overlay
-                if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet()) {}
-                if (director.active) director.render(this, controller)
+                if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW) {}
+                if (director.active && !(NARROW && geneEditor.isEditing)) director.render(this, controller)
             }
             ui.draw()
             glFinish()
