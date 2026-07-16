@@ -323,7 +323,7 @@ class CytoSoaReducer(
     private fun depositCellMatterSoa(w: CytoWorld, slot: Int) {
         val lx = CytoUnits.toLogical(Coord(w.posX[slot]))
         val ly = CytoUnits.toLogical(Coord(w.posY[slot]))
-        val r = Frac(w.cell.logicalRadius[slot]).toFloat()
+        val r = CytoTuning.physicalRadius(Frac(w.cell.logicalRadius[slot])).toFloat()
         w.cell.cytoplasm[slot]?.let { for (i in 0 until it.size) w.grid.deposit(lx, ly, r, it.idAt(i), it.countAt(i)) }
         w.cell.biomass[slot]?.let { for (i in 0 until it.size) w.grid.deposit(lx, ly, r, it.idAt(i), it.countAt(i)) }
     }
@@ -401,7 +401,7 @@ class CytoSoaReducer(
         }
 
         // Split each species ⌊C/2⌋ to EACH side; the odd remainder goes to the reservoir (conserved, never minted).
-        val mlx = CytoUnits.toLogical(motherPos.x); val mly = CytoUnits.toLogical(motherPos.y); val mr = cell.logicalRadius.toFloat()
+        val mlx = CytoUnits.toLogical(motherPos.x); val mly = CytoUnits.toLogical(motherPos.y); val mr = CytoTuning.physicalRadius(cell.logicalRadius).toFloat()
         val morphogenCount = if (morphogen.isNotEmpty()) (cell.cytoplasm[morphogen] ?: 0) else 0
         val half = floorSplitSoa(w, cell.cytoplasm, mlx, mly, mr, skip = morphogen)
         val halfBio = floorSplitSoa(w, cell.biomass, mlx, mly, mr)
@@ -415,7 +415,7 @@ class CytoSoaReducer(
             return
         }
         val daughterRadius = radiusForBiomassSoa(halfBio)
-        val radius = daughterRadius.coerceAtLeast(MIN_RADIUS)
+        val radius = CytoTuning.physicalRadius(daughterRadius.coerceAtLeast(MIN_RADIUS))
         val offset = splitNormal * CytoUnits.len(daughterRadius.toFloat())
 
         // Clonal daughter: inherits the mother's type + genome; the asymmetric morphogen rides whole to one side.
@@ -426,7 +426,7 @@ class CytoSoaReducer(
         w.world.add(daughter, TransformComponent(pos = motherPos + offset, ang = Coord(0)))
         w.world.add(daughter, MotionComponent(vel = motionVel, angVel = Coord(0)))
         w.world.add(daughter, ImpulseComponent())
-        w.world.add(daughter, ColliderComponent(radius = CytoUnits.len(radius.coerceAtMost(CytoTuning.MAX_COLLISION_RADIUS).toFloat())))
+        w.world.add(daughter, ColliderComponent(radius = CytoUnits.len(CytoTuning.physicalRadius(radius).toFloat())))
         w.world.add(daughter, MaterialComponent(mass = cellMass(daughterCyto, daughterBio), bounce = Frac(0), rough = Frac(0)))
         w.world.add(daughter, RenderShapeComponent(BodyShape.CIRCLE))
         w.world.add(daughter, CytoCellComponent(type = cell.type, logicalRadius = radius, cytoplasm = daughterCyto, biomass = daughterBio, genome = cell.genome))
@@ -488,7 +488,7 @@ class CytoSoaReducer(
             // Attacker's grid location, for spilling any cap-evicted (toxic) species to the environment.
             val ax = CytoUnits.toLogical(Coord(w.posX[attackerSlot]))
             val ay = CytoUnits.toLogical(Coord(w.posY[attackerSlot]))
-            val ar = Frac(w.cell.logicalRadius[attackerSlot]).toFloat()
+            val ar = CytoTuning.physicalRadius(Frac(w.cell.logicalRadius[attackerSlot])).toFloat()
 
             // All stolen biomass is forced into the attacker's cytoplasm as a metabolic burden — the
             // basis of prey toxicity. (The old gear-based capture/spill fraction was a no-op — both

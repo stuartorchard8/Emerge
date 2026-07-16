@@ -158,12 +158,25 @@ object CytoTuning {
     const val RADIUS_ELASTICITY = 3
     /** Radius moved per Contract op (one quantum), shrinking the cell below its biomass baseline. */
     val FLEX_STEP = Frac(1, 64)
-    /** Cap on a cell's **collision/physical** radius (the broadphase + welding + render footprint), even as
-     *  its biomass/metabolic size grows past it. Decouples emergent metabolic size from physical size: a
-     *  hoarding cell can be metabolically huge but never balloons its collider, which would otherwise coarsen
-     *  the spatial grid and weld it to the whole colony — an O(n·degree) per-tick blow-up. Only oversized
-     *  cells have their footprint capped. ⚙ */
+    /** Cap on a cell's **physical** radius — everything the cell occupies space with: broadphase, welding,
+     *  render, AND its matter footprint (exchange + every deposit). Emergent metabolic size still grows past
+     *  it: a hoarding cell can be metabolically huge but never balloons its collider, which would otherwise
+     *  coarsen the spatial grid and weld it to the whole colony — an O(n·degree) per-tick blow-up. Only
+     *  oversized cells are capped. Always apply via [physicalRadius]. ⚙ */
     val MAX_COLLISION_RADIUS = Frac(1, 1)
+
+    /** A cell's **physical** radius: its emergent metabolic [logical] radius clamped to
+     *  [MAX_COLLISION_RADIUS]. Use this for anything the cell should not be able to reach beyond its own
+     *  visible boundary.
+     *
+     *  **The matter footprint goes through here too**, as of 2026-07-16. It used to pass `logicalRadius`
+     *  raw, bounded only by `CytoMatterField.MAX_DISC_RADIUS` (4.0) — 4× this cap, so **16× the area**. A
+     *  giant cell rendered 1.0 wide while feeding from a 4.0 disc, visibly reaching outside itself.
+     *
+     *  Absorption and the deposits must clamp *identically*: a cell sheds into exactly the disc it
+     *  exchanges over (see `CytoDegradeDepositTest`), so capping one without the other would let it drop
+     *  matter it cannot reclaim. */
+    fun physicalRadius(logical: Frac): Frac = logical.coerceAtMost(MAX_COLLISION_RADIUS)
 
     // ── Exposure / shading ───────────────────────────────────────────────────────────────────────────
     /** Max connected neighbours considered when computing a cell's surface exposure (a cell with more is

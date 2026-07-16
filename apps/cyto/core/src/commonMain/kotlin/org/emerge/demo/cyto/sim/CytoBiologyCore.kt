@@ -108,7 +108,7 @@ object CytoBiologyCore {
             if (w.exchangeBatch != currentBatch) continue
             if (w.exposureMilli <= MIN_EXPOSURE_FOR_TRANSFER) continue
             batchCells.add(w)
-            grid.countFootprint(w.cx, w.cy, w.logicalRadius.toFloat(), tick)
+            grid.countFootprint(w.cx, w.cy, CytoTuning.physicalRadius(w.logicalRadius).toFloat(), tick)
         }
 
         val tP1 = if (stats != null) TimeSource.Monotonic.markNow() else null
@@ -117,7 +117,8 @@ object CytoBiologyCore {
         ColumnPartition.disjoint(m, executor, threshold) { start, end ->
             for (ci in start until end) {
                 val w = batchCells[ci]
-                grid.collectUncontestedFootprint(w.cx, w.cy, w.logicalRadius.toFloat(), tick, w.exchTexels)
+                grid.collectUncontestedFootprint(
+                    w.cx, w.cy, CytoTuning.physicalRadius(w.logicalRadius).toFloat(), tick, w.exchTexels)
                 val texels = w.exchTexels
                 val keep = texels.size
                 w.exchN = keep
@@ -857,7 +858,7 @@ object CytoBiologyCore {
                 // in the body too (a colony's cells collectively cover the body), without the mismatch.
                 work.degradeDepositX = work.cx
                 work.degradeDepositY = work.cy
-                work.degradeDepositRadius = work.logicalRadius.toFloat()
+                work.degradeDepositRadius = CytoTuning.physicalRadius(work.logicalRadius).toFloat()
                 work.degradeDepositTargetId = targetId
                 work.degradeDepositCount = count
                 // Visual signal: BIO→ENV decay flow.

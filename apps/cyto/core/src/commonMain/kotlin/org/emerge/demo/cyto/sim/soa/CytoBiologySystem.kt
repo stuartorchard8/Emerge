@@ -327,7 +327,7 @@ class BiologySystem(
                 }
             }
             if (work.logicalRadius.raw != oldRadiusRaw) {
-                world.radiusRaw[slot] = CytoUnits.len(work.logicalRadius.coerceAtMost(CytoTuning.MAX_COLLISION_RADIUS).toFloat()).raw
+                world.radiusRaw[slot] = CytoUnits.len(CytoTuning.physicalRadius(work.logicalRadius).toFloat()).raw
             }
             val newMass = cellMass(work.cytoplasm, work.biomass)
             val oldMass = world.mass[slot].toUInt()

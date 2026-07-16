@@ -111,6 +111,43 @@ class CytoDegradeDepositTest {
         assertTrue(counts.max() - counts.min() <= 1, "uneven spread: ${counts.min()}..${counts.max()}")
     }
 
+    /** A cell must never touch matter outside its own visible boundary. Metabolic size is emergent and
+     *  unbounded, but PHYSICAL size is capped at [CytoTuning.MAX_COLLISION_RADIUS] — the collider, the weld
+     *  radius, the render radius, and the matter footprint all clamp to it.
+     *
+     *  Before 2026-07-16 the footprint didn't: it passed `logicalRadius` raw, bounded only by
+     *  `CytoMatterField.MAX_DISC_RADIUS` (4.0) — 4× the cap, i.e. **16× the area** — so a hoarding cell
+     *  rendered 1.0 wide while feeding from a 4.0 disc. */
+    @Test fun aGiantCellCannotShedBeyondItsPhysicalRadius() {
+        val f = CytoMatterField.empty()
+        val giant = shedder(3.3f, -7.1f, Frac(4, 1), touching = 0)   // metabolically huge, 4× the cap
+        assertTrue(giant.logicalRadius > CytoTuning.MAX_COLLISION_RADIUS, "want an oversized cell to clamp")
+        CytoBiologyCore.finishCompute(giant)
+        CytoBiologyCore.applyDegradeDeposit(giant, f)
+
+        assertEquals(
+            CytoTuning.MAX_COLLISION_RADIUS.toFloat(), giant.degradeDepositRadius,
+            "an oversized cell's deposit disc must clamp to the physical radius",
+        )
+        // …and the matter really does stay inside the capped disc, not merely the staged number.
+        val capped = reachable(f, giant, CytoTuning.MAX_COLLISION_RADIUS)
+        assertEquals(capped, texelsHolding(f, giant.degradeDepositTargetId), "shed must stay inside the collider")
+
+        // The uncapped disc it used to reach is strictly larger — this is the regression being pinned.
+        val uncapped = reachable(f, giant, Frac(4, 1))
+        assertTrue(uncapped.size > capped.size * 4, "sanity: the old reach was vastly bigger (${uncapped.size} vs ${capped.size})")
+    }
+
+    /** A normal-sized cell is below the cap, so the clamp must not touch it. */
+    @Test fun anOrdinaryCellIsUnaffectedByTheCap() {
+        val f = CytoMatterField.empty()
+        val w = shedder(3.3f, -7.1f, Frac(1, 2), touching = 0)
+        CytoBiologyCore.finishCompute(w)
+        assertEquals(Frac(1, 2).toFloat(), w.degradeDepositRadius, "a sub-cap cell keeps its own radius")
+        CytoBiologyCore.applyDegradeDeposit(w, f)
+        assertEquals(reachable(f, w, Frac(1, 2)), texelsHolding(f, w.degradeDepositTargetId))
+    }
+
     /** Conservation across the shed: what biomass loses, the field gains, exactly. */
     @Test fun sheddingConservesAtoms() {
         val f = CytoMatterField.empty()
