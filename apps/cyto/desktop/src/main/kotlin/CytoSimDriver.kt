@@ -81,14 +81,38 @@ class CytoSimDriver(private val controller: CytoController) {
                 val sliceNs = 1_000_000_000L / targetTps
                 nextTickNs += sliceNs
                 val sleepNs = nextTickNs - System.nanoTime()
-                if (sleepNs > 0) LockSupport.parkNanos(sleepNs)
-                // Too heavy to keep up (or the target just changed): resync rather than bank a burst of
-                // catch-up ticks to be run back-to-back later.
-                else if (-sleepNs > sliceNs * MAX_LAG_SLICES) nextTickNs = System.nanoTime()
+                if (sleepNs > 0) waitUntil(nextTickNs, sleepNs)
+                // Behind: run flat out to repay the debt. Only give up once we're a long way back (the world
+                // is genuinely too heavy, or the target just changed) — resyncing forgives the missed ticks,
+                // so doing it eagerly costs rate outright. The bound is wall-clock, not slices, because what
+                // puts us here is a wall-clock event (a GC pause): a 10ms hitch is 82 slices at 8192 TPS but
+                // two thirds of one at 64, and a slice-based bound would forgive the former while banking a
+                // second-long catch-up burst for the latter.
+                else if (-sleepNs > MAX_LAG_NS) nextTickNs = System.nanoTime()
             } else {
                 nextTickNs = now                     // keep the deadline live for a switch back to throttled
             }
         }
+    }
+
+    /**
+     * Waits until [deadlineNs] — by spinning above [SPIN_ABOVE_TPS], parking at or below it.
+     *
+     * A thread that parks for most of every slice reads as an idle core, so a scaling governor drops the
+     * clock and each tick costs ~3x what it does free-running (measured: 55us -> 150us at 2048). The sim then
+     * can't fit tick+sleep into the slice and lands 12-20% under target — while UNLIMITED, which never
+     * sleeps, holds full speed on the same world. Spinning keeps the core resident: tick cost stays at its
+     * free-running 55us across every rung.
+     *
+     * It has to be the *whole* wait, not a short spin before the deadline: what the governor responds to is
+     * duty cycle, so a 150us tail on a 977us slice still leaves the core ~70% idle and still downclocks
+     * (measured: no better than a pure park). Hence the [SPIN_ABOVE_TPS] floor — spinning costs a core, and
+     * the slow rungs sleep away most of their slice. They can afford to: their slices are long enough to
+     * absorb a downclocked tick and still hit target.
+     */
+    private fun waitUntil(deadlineNs: Long, sleepNs: Long) {
+        if (targetTps <= SPIN_ABOVE_TPS) { LockSupport.parkNanos(sleepNs); return }
+        while (System.nanoTime() < deadlineNs) Thread.onSpinWait()
     }
 
     companion object {
@@ -98,6 +122,7 @@ class CytoSimDriver(private val controller: CytoController) {
         private const val MAX_TPS = 8192           // doubling past this → UNLIMITED
         private const val PUBLISH_INTERVAL_NS = 1_000_000_000L / 100   // publish ≤100 Hz (display cadence)
         private const val TPS_WINDOW_NS = 500_000_000L                 // 0.5 s trailing window for actualTps
-        private const val MAX_LAG_SLICES = 4                           // lag past this → resync, don't catch up
+        private const val MAX_LAG_NS = 25_000_000L                     // lag past this → resync, don't catch up
+        private const val SPIN_ABOVE_TPS = 512                         // ≤ this → park (spinning costs a core)
     }
 }
