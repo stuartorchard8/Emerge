@@ -17,6 +17,10 @@ fun main() {
 const val GALLERY_WIDTH = 1440
 const val GALLERY_HEIGHT = 900
 
+/** Scroll-offset key for the scroll-area demo (the widget tree is rebuilt each frame, so scroll state
+ *  lives in [Ui] under this id). */
+const val SCROLL_DEMO_ID = "gallery-scroll"
+
 /**
  * Interactive showcase for the shared immediate-mode UI toolkit: every widget kind, one panel each.
  * [buildGalleryFrame] holds the widget tree (also rendered headlessly by [UIGallerySnapshot]);
@@ -35,6 +39,22 @@ object UIGallery {
             panel(Anchor.TopLeft) { steppers(state) }
             // Right side: everything the widgets mutate, in one place.
             panel(Anchor.TopRight) { statePanel(state, fps) }
+            // A scrolling, clipped viewport — content taller than its box. Drag inside it or wheel over it;
+            // rows clipped out of view are neither drawn nor clickable.
+            scrollArea(
+                SCROLL_DEMO_ID,
+                x = GALLERY_WIDTH - 380f, y = 340f, w = 360f, h = 420f,
+                background = 0x10182CF0L,
+            ) {
+                title("SCROLL AREA (drag / wheel)")
+                row("40 rows in a 420px viewport", 0x9A9A9AFFL)
+                gap(6f)
+                for (i in 1..40) {
+                    button("Row $i" + if (state.scrollPick == i) "  <" else "", if (state.scrollPick == i) 0x3A6EA5FFL else 0x2A3550FFL) {
+                        state.scrollPick = i
+                    }
+                }
+            }
             // Bottom corners: anchor/stacking demo.
             panel(Anchor.BottomLeft) { bottomLeft() }
             panel(Anchor.BottomRight) { bottomRight(state) }
@@ -194,6 +214,19 @@ object UIGallery {
             }
         }
 
+        // Drag inside a scroll area scrolls it (and cancels the pending click).
+        glfwSetCursorPosCallback(window) { _, _, _ ->
+            if (!mouseDown) return@glfwSetCursorPosCallback
+            val (px, py) = cursorPixel(window)
+            ui.dragTo(px, py)
+        }
+
+        // Wheel scrolls whichever area is under the cursor.
+        glfwSetScrollCallback(window) { _, _, yoffset ->
+            val (px, py) = cursorPixel(window)
+            ui.scrollAreaAt(px, py)?.let { ui.scrollBy(it, (-yoffset * 40.0).toFloat()) }
+        }
+
         var lastTime = glfwGetTime()
         var fps = 0f
         var frameCount = 0
@@ -288,4 +321,7 @@ class GalleryState {
     var scale = 100
     var offset = 0
     var rate = 1000
+
+    /** Which row of the scroll-area demo was last clicked (proves clipped rows aren't clickable). */
+    var scrollPick = 0
 }

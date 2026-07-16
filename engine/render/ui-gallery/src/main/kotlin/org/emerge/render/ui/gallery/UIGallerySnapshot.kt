@@ -37,33 +37,43 @@ fun main(args: Array<String>) {
     val ui = Ui()
     ui.setResolution(fbW[0].toFloat(), fbH[0].toFloat())
 
-    UIGallery.buildGalleryFrame(ui, GalleryState(), fps = 60f)
+    val state = GalleryState()
 
-    glClearColor(0.07f, 0.07f, 0.09f, 1f)
-    glClear(GL_COLOR_BUFFER_BIT)
-    ui.draw()
-    glFinish()
+    fun capture(target: File) {
+        glClearColor(0.07f, 0.07f, 0.09f, 1f)
+        glClear(GL_COLOR_BUFFER_BIT)
+        ui.draw()
+        glFinish()
 
-    val pixels = BufferUtils.createByteBuffer(fbW[0] * fbH[0] * 4)
-    glReadPixels(0, 0, fbW[0], fbH[0], GL_RGBA, GL_UNSIGNED_BYTE, pixels)
+        val pixels = BufferUtils.createByteBuffer(fbW[0] * fbH[0] * 4)
+        glReadPixels(0, 0, fbW[0], fbH[0], GL_RGBA, GL_UNSIGNED_BYTE, pixels)
 
-    val img = BufferedImage(fbW[0], fbH[0], BufferedImage.TYPE_INT_RGB)
-    for (y in 0 until fbH[0]) {
-        val srcRow = fbH[0] - 1 - y // GL rows are bottom-up
-        for (x in 0 until fbW[0]) {
-            val i = (srcRow * fbW[0] + x) * 4
-            val r = pixels.get(i).toInt() and 0xFF
-            val g = pixels.get(i + 1).toInt() and 0xFF
-            val b = pixels.get(i + 2).toInt() and 0xFF
-            img.setRGB(x, y, (r shl 16) or (g shl 8) or b)
+        val img = BufferedImage(fbW[0], fbH[0], BufferedImage.TYPE_INT_RGB)
+        for (y in 0 until fbH[0]) {
+            val srcRow = fbH[0] - 1 - y // GL rows are bottom-up
+            for (x in 0 until fbW[0]) {
+                val i = (srcRow * fbW[0] + x) * 4
+                val r = pixels.get(i).toInt() and 0xFF
+                val g = pixels.get(i + 1).toInt() and 0xFF
+                val b = pixels.get(i + 2).toInt() and 0xFF
+                img.setRGB(x, y, (r shl 16) or (g shl 8) or b)
+            }
         }
+        target.parentFile?.mkdirs()
+        ImageIO.write(img, "png", target)
+        println("wrote ${target.absolutePath}")
     }
+
+    UIGallery.buildGalleryFrame(ui, state, fps = 60f)
+    capture(out)
+
+    // Second capture, scrolled: the offset only exists after a frame has laid the area out, so scroll
+    // between builds. Proves the clip holds at a non-zero offset — the thing a static shot can't show.
+    ui.scrollBy(SCROLL_DEMO_ID, 300f)
+    UIGallery.buildGalleryFrame(ui, state, fps = 60f)
+    capture(File(out.parentFile, out.nameWithoutExtension + "-scrolled.png"))
 
     ui.cleanup()
     glfwDestroyWindow(window)
     glfwTerminate()
-
-    out.parentFile?.mkdirs()
-    ImageIO.write(img, "png", out)
-    println("wrote ${out.absolutePath}")
 }

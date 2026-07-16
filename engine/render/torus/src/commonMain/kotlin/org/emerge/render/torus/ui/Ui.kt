@@ -1,6 +1,7 @@
 package org.emerge.render.torus.ui
 
 import org.emerge.render.torus.GPU
+import kotlin.math.abs
 
 /** Screen position a panel is anchored to. [Center] centres a panel on both axes (for title screens / modal
  *  menus); multiple [Center] panels stack downward from the centre of the first. */
@@ -33,8 +34,8 @@ class Ui {
 
     // Per-frame accumulated draw commands (pixel coords) + interactive regions. A separate *overlay* layer
     // is drawn (and hit-tested) on top of the base layer — used for dropdown popups.
-    private class RectCmd(val x: Float, val y: Float, val w: Float, val h: Float, val color: Long)
-    private class TextCmd(val text: String, val x: Float, val y: Float, val h: Float, val color: Long, val centered: Boolean, val centerX: Float)
+    private class RectCmd(val x: Float, val y: Float, val w: Float, val h: Float, val color: Long, val clip: Int = -1)
+    private class TextCmd(val text: String, val x: Float, val y: Float, val h: Float, val color: Long, val centered: Boolean, val centerX: Float, val clip: Int = -1)
     private class ClickRegion(
         val x: Float, val y: Float, val w: Float, val h: Float, val onClick: () -> Unit,
         /** ±1 for a hold-to-repeat stepper button (0 = plain click). */
@@ -44,7 +45,13 @@ class Ui {
         /** Human-meaningful label for a button region (null for background/picker catchers). Lets a
          *  headless driver enumerate + tap widgets by name — see [elements] / [tapLabel]. */
         val label: String? = null,
+        /** Index into [clipRects], or -1. A region scrolled out of its viewport must not be clickable,
+         *  so hit-testing intersects the clip too. */
+        val clip: Int = -1,
     )
+
+    /** A scroll viewport laid out this frame (see [UiBuilder.scrollArea]). */
+    private class ScrollRegion(val id: String, val x: Float, val y: Float, val w: Float, val h: Float, val contentH: Float)
 
     /** A labelled interactive region, for headless enumeration ([elements]). */
     class UiElement(val label: String, val x: Float, val y: Float, val w: Float, val h: Float)
@@ -67,6 +74,18 @@ class Ui {
     private var heldRegion: ClickRegion? = null
     private var heldSeconds = 0f
     private var repeatTimer = 0f
+
+    // ── Scrolling ──────────────────────────────────────────────────────────────────────────────────────
+    /** Clip rectangles (px, `x,y,w,h`) this frame; commands reference them by index. */
+    private val clipRects = ArrayList<FloatArray>()
+    private var currentClip = -1
+    /** Scroll distance per area id — the one piece of scroll state that must outlive the frame. */
+    private val scrollOffsets = HashMap<String, Float>()
+    private val scrollRegions = ArrayList<ScrollRegion>()
+    private var activeScroll: String? = null
+    private var scrollLastY = 0f
+    /** Set once a press turns into a scroll drag — suppresses the click on release, like a desktop drag. */
+    private var scrolled = false
 
     val resWidth: Float get() = resW
     val resHeight: Float get() = resH
@@ -93,6 +112,7 @@ class Ui {
         rects.clear(); texts.clear(); clicks.clear()
         overlayRects.clear(); overlayTexts.clear(); overlayClicks.clear()
         anchorCursor.clear(); anchorInset.clear(); anchorColumnExtent.clear()
+        clipRects.clear(); scrollRegions.clear(); currentClip = -1
         UiBuilder(this).block()
     }
 
@@ -102,26 +122,45 @@ class Ui {
         drawLayer(overlayRects, overlayTexts)
     }
 
+    /** Apply (or clear) the scissor for clip index [clip]. GL's scissor origin is **bottom-left**, so the
+     *  y flips against our top-left pixel space. */
+    private fun applyClip(clip: Int) {
+        if (clip < 0) { GPU.disableScissorTest(); return }
+        val c = clipRects[clip]
+        GPU.enableScissorTest()
+        GPU.setScissor(c[0].toInt(), (resH - (c[1] + c[3])).toInt(), c[2].toInt(), c[3].toInt())
+    }
+
     private fun drawLayer(rs: List<RectCmd>, ts: List<TextCmd>) {
         if (rs.isEmpty() && ts.isEmpty()) return
         GPU.enableBlend()
         GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
-        if (rs.isNotEmpty()) {
-            val n = rs.size
+        // Rects are emitted in tree order, so same-clip commands are contiguous: draw them in runs, one
+        // instanced call per run, re-scissoring between runs.
+        var i = 0
+        while (i < rs.size) {
+            val clip = rs[i].clip
+            var j = i
+            while (j < rs.size && rs[j].clip == clip) j++
+            applyClip(clip)
+            val n = j - i
             val centers = FloatArray(n * 2)
             val halfSizes = FloatArray(n * 2)
             val colors = FloatArray(n * 4)
-            for (i in 0 until n) {
-                val r = rs[i]
-                centers[i * 2] = (r.x + r.w * 0.5f) / resW * 2f - 1f
-                centers[i * 2 + 1] = 1f - (r.y + r.h * 0.5f) / resH * 2f
-                halfSizes[i * 2] = r.w / resW
-                halfSizes[i * 2 + 1] = r.h / resH
-                packColor(r.color, colors, i * 4)
+            for (k in 0 until n) {
+                val r = rs[i + k]
+                centers[k * 2] = (r.x + r.w * 0.5f) / resW * 2f - 1f
+                centers[k * 2 + 1] = 1f - (r.y + r.h * 0.5f) / resH * 2f
+                halfSizes[k * 2] = r.w / resW
+                halfSizes[k * 2 + 1] = r.h / resH
+                packColor(r.color, colors, k * 4)
             }
             rectRenderer.drawInstanced(n, centers, halfSizes, colors)
+            i = j
         }
+        var lastClip = Int.MIN_VALUE
         for (t in ts) {
+            if (t.clip != lastClip) { applyClip(t.clip); lastClip = t.clip }
             val (cr, cg, cb) = rgb(t.color)
             if (t.centered) {
                 textRenderer.drawCentered(t.text, t.centerX, t.y + t.h * 0.5f, t.h, cr, cg, cb, resW, resH)
@@ -129,20 +168,65 @@ class Ui {
                 textRenderer.drawLeft(t.text, t.x, t.y, t.h, cr, cg, cb, resW, resH)
             }
         }
+        GPU.disableScissorTest()
         GPU.disableBlend()
     }
 
     private fun pointInBounds(c: ClickRegion, px: Float, py: Float): Boolean {
-        return px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h
+        if (px < c.x || px > c.x + c.w || py < c.y || py > c.y + c.h) return false
+        // A region scrolled outside its viewport is not clickable, even though its rect still "contains"
+        // the point — the pixels aren't on screen.
+        if (c.clip >= 0) {
+            val r = clipRects[c.clip]
+            if (px < r[0] || px > r[0] + r[2] || py < r[1] || py > r[1] + r[3]) return false
+        }
+        return true
     }
 
     /** Routes a pointer-down: marks the topmost interactive region (overlay first) containing the point.
      *  Starting a hold on a stepper button is handled here too. */
     fun hitTestDown(px: Float, py: Float): Boolean {
+        // A press inside a scroll viewport also arms a scroll drag. This runs *before* the widget scan and
+        // doesn't consume: the same press may still be a button tap — [dragTo] decides which it became.
+        activeScroll = null
+        scrolled = false
+        for (r in scrollRegions) {
+            if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
+                activeScroll = r.id
+                scrollLastY = py
+                break
+            }
+        }
         for (i in overlayClicks.indices.reversed()) if (regionHitTestDown(overlayClicks[i], px, py)) return true
         for (i in clicks.indices.reversed()) if (regionHitTestDown(clicks[i], px, py)) return true
-        return false
+        return activeScroll != null
     }
+
+    /** Feed pointer movement while held. If the press began in a scroll area, this scrolls it and (past
+     *  [SCROLL_SLOP]) cancels the pending click, exactly as a drag does elsewhere. Returns true if it scrolled. */
+    fun dragTo(px: Float, py: Float): Boolean {
+        val id = activeScroll ?: return false
+        val dy = py - scrollLastY
+        scrollLastY = py
+        if (!scrolled && abs(dy) < SCROLL_SLOP) return false
+        scrolled = true
+        val region = scrollRegions.firstOrNull { it.id == id } ?: return false
+        val max = maxOf(0f, region.contentH - region.h)
+        scrollOffsets[id] = ((scrollOffsets[id] ?: 0f) - dy).coerceIn(0f, max)
+        heldRegion = null   // a scroll is not a hold-to-repeat
+        return true
+    }
+
+    /** Scroll [id] by [dy] px (mouse wheel). Clamped to the content. */
+    fun scrollBy(id: String, dy: Float) {
+        val region = scrollRegions.firstOrNull { it.id == id } ?: return
+        val max = maxOf(0f, region.contentH - region.h)
+        scrollOffsets[id] = ((scrollOffsets[id] ?: 0f) + dy).coerceIn(0f, max)
+    }
+
+    /** The scroll area under a point, or null — lets a host route wheel events. */
+    fun scrollAreaAt(px: Float, py: Float): String? =
+        scrollRegions.firstOrNull { px >= it.x && px <= it.x + it.w && py >= it.y && py <= it.y + it.h }?.id
 
     private fun regionHitTestDown(c: ClickRegion, px: Float, py: Float): Boolean {
         if (!pointInBounds(c, px, py)) return false
@@ -154,6 +238,9 @@ class Ui {
 
     /** Routes a pointer-up: invokes the topmost interactive region (overlay first) containing the point. */
     fun hitTestUp(px: Float, py: Float): Boolean {
+        // A press that turned into a scroll is not a click.
+        if (scrolled) { activeScroll = null; scrolled = false; return true }
+        activeScroll = null
         // Valid clicks must end within [INITIAL_DELAY] of the initial mouse down
         if (heldSeconds >= INITIAL_DELAY) return false
         for (i in overlayClicks.indices.reversed()) if (regionHitTestUp(overlayClicks[i], px, py)) return true
@@ -210,15 +297,31 @@ class Ui {
     }
 
     // ── internal emit API (called by the builders) ─ all return Unit (so Item.emit overrides stay Unit) ─
-    internal fun emitRect(x: Float, y: Float, w: Float, h: Float, color: Long) { rects.add(RectCmd(x, y, w, h, color)) }
+    internal fun emitRect(x: Float, y: Float, w: Float, h: Float, color: Long) { rects.add(RectCmd(x, y, w, h, color, currentClip)) }
     internal fun emitTextLeft(text: String, x: Float, topY: Float, h: Float, color: Long) {
-        texts.add(TextCmd(text, x, topY, h, color, centered = false, centerX = 0f))
+        texts.add(TextCmd(text, x, topY, h, color, centered = false, centerX = 0f, clip = currentClip))
     }
     internal fun emitTextCentered(text: String, centerX: Float, topY: Float, h: Float, color: Long) {
-        texts.add(TextCmd(text, 0f, topY, h, color, centered = true, centerX = centerX))
+        texts.add(TextCmd(text, 0f, topY, h, color, centered = true, centerX = centerX, clip = currentClip))
     }
     internal fun emitClick(x: Float, y: Float, w: Float, h: Float, label: String? = null, onClick: () -> Unit) {
-        clicks.add(ClickRegion(x, y, w, h, onClick, label = label))
+        clicks.add(ClickRegion(x, y, w, h, onClick, label = label, clip = currentClip))
+    }
+
+    /** Open a clip + scroll viewport; returns the scroll offset to lay content out against. */
+    internal fun beginScroll(id: String, x: Float, y: Float, w: Float, h: Float): Float {
+        clipRects.add(floatArrayOf(x, y, w, h))
+        currentClip = clipRects.size - 1
+        return scrollOffsets[id] ?: 0f
+    }
+
+    /** Close a scroll viewport, recording its content height so scrolling can clamp to it. */
+    internal fun endScroll(id: String, x: Float, y: Float, w: Float, h: Float, contentH: Float) {
+        scrollRegions.add(ScrollRegion(id, x, y, w, h, contentH))
+        // Content can shrink between frames (a collapsed group); re-clamp so the view can't stay past the end.
+        val max = maxOf(0f, contentH - h)
+        scrollOffsets[id]?.let { if (it > max) scrollOffsets[id] = max }
+        currentClip = -1
     }
 
     /** The current frame's labelled interactive regions (buttons), for headless drivers. Rebuild the
@@ -288,6 +391,7 @@ class Ui {
 
     companion object {
         private const val INITIAL_DELAY = 0.35f   // hold this long before auto-repeat begins
+        private const val SCROLL_SLOP = 2f        // px of movement before a press becomes a scroll
     }
 }
 
@@ -374,6 +478,49 @@ class UiBuilder internal constructor(private val ui: Ui) {
     fun background(color: Long) {
         ui.emitRect(0f, 0f, ui.resWidth, ui.resHeight, color)
         ui.emitClick(0f, 0f, ui.resWidth, ui.resHeight) {}
+    }
+
+    /**
+     * A **scrolling, clipped** vertical stack inside an explicit viewport (px). Content taller than the
+     * viewport scrolls: drag inside it (see [Ui.dragTo]) or wheel over it ([Ui.scrollBy]). Rows clipped
+     * out of view are neither drawn nor clickable.
+     *
+     * [id] keys the scroll offset across frames — it must be stable and unique per area, since the widget
+     * tree itself is rebuilt every frame and carries no state. Unlike [panel], the viewport is **given**,
+     * not auto-sized: a scroll area exists precisely because its content doesn't fit.
+     *
+     * Sizes are dp (scaled by [Ui.scale]); the viewport rect is raw px, since callers derive it from the
+     * screen. Needed because genome length is unbounded — see `apps/cyto/UI_REDESIGN.md` §2.3.
+     */
+    fun scrollArea(
+        id: String,
+        x: Float, y: Float, w: Float, h: Float,
+        padding: Float = 8f,
+        rowHeight: Float = 18f,
+        textSize: Float = rowHeight * TEXT_TO_ROW_RATIO,
+        background: Long = 0x00000000,
+        block: PanelBuilder.() -> Unit,
+    ) {
+        val s = ui.scale
+        val paddingPx = padding * s
+        val textH = textSize * s
+        val pb = PanelBuilder(rowHeight * s, s).apply(block)
+        val contentH = pb.items.sumOf { it.height.toDouble() }.toFloat() + paddingPx * 2
+
+        val offset = ui.beginScroll(id, x, y, w, h)
+        if (background != 0x00000000L) ui.emitRect(x, y, w, h, background)
+        // Catches presses on empty space so they arm a scroll drag instead of falling through to the world.
+        // Emitted before the rows, so each row — added after — still wins hitTest's reverse-order scan.
+        ui.emitClick(x, y, w, h) {}
+        var rowY = y + paddingPx - offset
+        val contentW = w - paddingPx * 2
+        for (item in pb.items) {
+            // Cull rows fully outside the viewport: cheap, and keeps a long genome from emitting hundreds
+            // of off-screen draw commands every frame.
+            if (rowY + item.height >= y && rowY <= y + h) item.emit(ui, x + paddingPx, rowY, contentW, textH)
+            rowY += item.height
+        }
+        ui.endScroll(id, x, y, w, h, contentH)
     }
 }
 
