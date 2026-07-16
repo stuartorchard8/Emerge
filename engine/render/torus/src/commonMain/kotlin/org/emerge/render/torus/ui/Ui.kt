@@ -34,8 +34,9 @@ class Ui {
 
     // Per-frame accumulated draw commands (pixel coords) + interactive regions. A separate *overlay* layer
     // is drawn (and hit-tested) on top of the base layer — used for dropdown popups.
-    private class RectCmd(val x: Float, val y: Float, val w: Float, val h: Float, val color: Long, val clip: Int = -1)
-    private class TextCmd(val text: String, val x: Float, val y: Float, val h: Float, val color: Long, val centered: Boolean, val centerX: Float, val clip: Int = -1)
+    private sealed interface DrawCmd { val clip: Int }
+    private class RectCmd(val x: Float, val y: Float, val w: Float, val h: Float, val color: Long, override val clip: Int = -1) : DrawCmd
+    private class TextCmd(val text: String, val x: Float, val y: Float, val h: Float, val color: Long, val centered: Boolean, val centerX: Float, override val clip: Int = -1) : DrawCmd
     private class ClickRegion(
         val x: Float, val y: Float, val w: Float, val h: Float, val onClick: () -> Unit,
         /** ±1 for a hold-to-repeat stepper button (0 = plain click). */
@@ -56,8 +57,10 @@ class Ui {
     /** A labelled interactive region, for headless enumeration ([elements]). */
     class UiElement(val label: String, val x: Float, val y: Float, val w: Float, val h: Float)
 
-    private val rects = ArrayList<RectCmd>()
-    private val texts = ArrayList<TextCmd>()
+    // Base layer, as a single **insertion-ordered** stream (rects and text interleaved), so a later opaque
+    // rect occludes earlier text — a modal's text vanishes behind a sheet drawn over it. (The old
+    // rects-then-text split couldn't do that; it's why the dropdown "overlay" layer exists.)
+    private val cmds = ArrayList<DrawCmd>()
     private val clicks = ArrayList<ClickRegion>()
     private val overlayRects = ArrayList<RectCmd>()
     private val overlayTexts = ArrayList<TextCmd>()
@@ -109,7 +112,7 @@ class Ui {
 
     /** Rebuilds this frame's widget tree (clears the previous frame's geometry; hold state persists). */
     fun frame(block: UiBuilder.() -> Unit) {
-        rects.clear(); texts.clear(); clicks.clear()
+        cmds.clear(); clicks.clear()
         overlayRects.clear(); overlayTexts.clear(); overlayClicks.clear()
         anchorCursor.clear(); anchorInset.clear(); anchorColumnExtent.clear()
         clipRects.clear(); scrollRegions.clear(); currentClip = -1
@@ -118,7 +121,7 @@ class Ui {
 
     /** Draws this frame's widgets — base layer then overlay (dropdowns) on top. Call last (on top). */
     fun draw() {
-        drawLayer(rects, texts)
+        drawStream(cmds)
         drawLayer(overlayRects, overlayTexts)
     }
 
@@ -131,12 +134,55 @@ class Ui {
         GPU.setScissor(c[0].toInt(), (resH - (c[1] + c[3])).toInt(), c[2].toInt(), c[3].toInt())
     }
 
+    /** Draw the base layer in strict insertion order, so later commands paint over earlier ones. Consecutive
+     *  rects sharing a clip are still coalesced into one instanced call; a text command (or a clip change)
+     *  flushes the pending rect batch first, preserving draw order. */
+    private fun drawStream(cs: List<DrawCmd>) {
+        if (cs.isEmpty()) return
+        GPU.enableBlend()
+        GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
+        var curClip = Int.MIN_VALUE
+        var i = 0
+        while (i < cs.size) {
+            val c = cs[i]
+            if (c is RectCmd) {
+                // Coalesce the run of same-clip rects starting here.
+                val clip = c.clip
+                var j = i
+                while (j < cs.size && cs[j].let { it is RectCmd && it.clip == clip }) j++
+                if (clip != curClip) { applyClip(clip); curClip = clip }
+                val n = j - i
+                val centers = FloatArray(n * 2)
+                val halfSizes = FloatArray(n * 2)
+                val colors = FloatArray(n * 4)
+                for (k in 0 until n) {
+                    val r = cs[i + k] as RectCmd
+                    centers[k * 2] = (r.x + r.w * 0.5f) / resW * 2f - 1f
+                    centers[k * 2 + 1] = 1f - (r.y + r.h * 0.5f) / resH * 2f
+                    halfSizes[k * 2] = r.w / resW
+                    halfSizes[k * 2 + 1] = r.h / resH
+                    packColor(r.color, colors, k * 4)
+                }
+                rectRenderer.drawInstanced(n, centers, halfSizes, colors)
+                i = j
+            } else {
+                val t = c as TextCmd
+                if (t.clip != curClip) { applyClip(t.clip); curClip = t.clip }
+                val (cr, cg, cb) = rgb(t.color)
+                if (t.centered) textRenderer.drawCentered(t.text, t.centerX, t.y + t.h * 0.5f, t.h, cr, cg, cb, resW, resH)
+                else textRenderer.drawLeft(t.text, t.x, t.y, t.h, cr, cg, cb, resW, resH)
+                i++
+            }
+        }
+        GPU.disableScissorTest()
+        GPU.disableBlend()
+    }
+
+    /** Overlay layer (dropdown popups): non-overlapping, so the simpler rects-then-text split is fine. */
     private fun drawLayer(rs: List<RectCmd>, ts: List<TextCmd>) {
         if (rs.isEmpty() && ts.isEmpty()) return
         GPU.enableBlend()
         GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
-        // Rects are emitted in tree order, so same-clip commands are contiguous: draw them in runs, one
-        // instanced call per run, re-scissoring between runs.
         var i = 0
         while (i < rs.size) {
             val clip = rs[i].clip
@@ -297,12 +343,12 @@ class Ui {
     }
 
     // ── internal emit API (called by the builders) ─ all return Unit (so Item.emit overrides stay Unit) ─
-    internal fun emitRect(x: Float, y: Float, w: Float, h: Float, color: Long) { rects.add(RectCmd(x, y, w, h, color, currentClip)) }
+    internal fun emitRect(x: Float, y: Float, w: Float, h: Float, color: Long) { cmds.add(RectCmd(x, y, w, h, color, currentClip)) }
     internal fun emitTextLeft(text: String, x: Float, topY: Float, h: Float, color: Long) {
-        texts.add(TextCmd(text, x, topY, h, color, centered = false, centerX = 0f, clip = currentClip))
+        cmds.add(TextCmd(text, x, topY, h, color, centered = false, centerX = 0f, clip = currentClip))
     }
     internal fun emitTextCentered(text: String, centerX: Float, topY: Float, h: Float, color: Long) {
-        texts.add(TextCmd(text, 0f, topY, h, color, centered = true, centerX = centerX, clip = currentClip))
+        cmds.add(TextCmd(text, 0f, topY, h, color, centered = true, centerX = centerX, clip = currentClip))
     }
     internal fun emitClick(x: Float, y: Float, w: Float, h: Float, label: String? = null, onClick: () -> Unit) {
         clicks.add(ClickRegion(x, y, w, h, onClick, label = label, clip = currentClip))
@@ -565,6 +611,55 @@ class UiBuilder internal constructor(private val ui: Ui) {
                 ui.emitClick(bx, btnY, btnW, btnH, label = a.first, onClick = a.third)
             }
         }
+    }
+
+    /**
+     * A **bottom sheet** — the narrow-layout host for L4 field pickers (`apps/cyto/UI_REDESIGN.md` §3–4),
+     * stacked over an open [modal]. A dimming scrim covers the screen (tap it, or the title-bar `X`, to
+     * [onDismiss]); the sheet itself is a bottom-anchored panel of height [heightFraction] × screen, with a
+     * title bar and a **scrolling body** (so a long option list — every energy source, every action — fits).
+     *
+     * Emit it **after** the modal in the same frame: its scrim + panel then draw on top, and its click
+     * regions win the reverse-order hit-test. [id] keys the body scroll offset.
+     */
+    fun sheet(
+        id: String,
+        title: String,
+        onDismiss: () -> Unit,
+        heightFraction: Float = 0.6f,
+        titleBar: Float = 56f,
+        margin: Float = 16f,
+        scrim: Long = 0x000000AAL,
+        background: Long = 0x121722FFL,
+        barColor: Long = 0x1B2230FFL,
+        padding: Float = 8f,
+        rowHeight: Float = 18f,
+        textSize: Float = rowHeight * TEXT_TO_ROW_RATIO,
+        body: PanelBuilder.() -> Unit,
+    ) {
+        val s = ui.scale
+        val fullW = ui.resWidth
+        val fullH = ui.resHeight
+        val sheetH = fullH * heightFraction.coerceIn(0.2f, 1f)
+        val top = fullH - sheetH
+        val marginPx = margin * s
+        val titlePx = titleBar * s
+        val textH = textSize * s
+
+        // Scrim: dims + dismisses on tap.
+        ui.emitRect(0f, 0f, fullW, fullH, scrim)
+        ui.emitClick(0f, 0f, fullW, fullH, label = "scrim", onClick = onDismiss)
+        // Sheet surface + a tap-swallow so a press on the sheet body doesn't reach the scrim behind it.
+        ui.emitRect(0f, top, fullW, sheetH, background)
+        ui.emitClick(0f, top, fullW, sheetH) {}
+        // Title bar with a close affordance.
+        ui.emitRect(0f, top, fullW, titlePx, barColor)
+        val ty = top + (titlePx - textH) * 0.5f
+        ui.emitTextLeft(title, marginPx, ty, textH, 0xFFFFFFFFL)
+        ui.emitTextLeft("X", fullW - marginPx - textH, ty, textH, 0xAACCFFFFL)
+        ui.emitClick(fullW - titlePx, top, titlePx, titlePx, label = "close", onClick = onDismiss)
+        // Scrolling body.
+        scrollArea(id, 0f, top + titlePx, fullW, sheetH - titlePx, padding = margin, rowHeight = rowHeight, textSize = textSize, block = body)
     }
 
     fun scrollArea(
