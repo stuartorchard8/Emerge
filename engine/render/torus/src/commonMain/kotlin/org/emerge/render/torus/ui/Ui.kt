@@ -492,6 +492,81 @@ class UiBuilder internal constructor(private val ui: Ui) {
      * Sizes are dp (scaled by [Ui.scale]); the viewport rect is raw px, since callers derive it from the
      * screen. Needed because genome length is unbounded — see `apps/cyto/UI_REDESIGN.md` §2.3.
      */
+    /**
+     * A **full-screen modal** — the narrow-layout host for L3 (`apps/cyto/UI_REDESIGN.md` §3): a fixed
+     * title bar (back chevron + title + optional `...` overflow), a fixed bottom bar of [actions], and a
+     * **scrolling body** clipped between them. The body is a [scrollArea], so a gene taller than the screen
+     * scrolls under the bars rather than running off the bottom (the mock proved the worst-case gene
+     * overflows by ~1 row — §5.1).
+     *
+     * Draw order makes the bars occlude scrolled content: the backdrop fills first (behind), the body next
+     * (clipped to the viewport), the bars last (on top, at the edges). [id] keys the body's scroll offset.
+     *
+     * All sizes are dp (× [Ui.scale]); [statusBar] reserves the notch/status inset a phone host passes.
+     */
+    fun modal(
+        id: String,
+        title: String,
+        onBack: () -> Unit,
+        actions: List<Triple<String, Long, () -> Unit>> = emptyList(),
+        onOverflow: (() -> Unit)? = null,
+        statusBar: Float = 0f,
+        titleBar: Float = 56f,
+        bottomBar: Float = 72f,
+        margin: Float = 16f,
+        background: Long = 0x0B0E14FFL,
+        barColor: Long = 0x1B2230FFL,
+        padding: Float = 8f,
+        rowHeight: Float = 18f,
+        textSize: Float = rowHeight * TEXT_TO_ROW_RATIO,
+        body: PanelBuilder.() -> Unit,
+    ) {
+        val s = ui.scale
+        val statusPx = statusBar * s
+        val titlePx = titleBar * s
+        val bottomPx = if (actions.isEmpty()) 0f else bottomBar * s
+        val marginPx = margin * s
+        val textH = textSize * s
+        val fullW = ui.resWidth
+        val fullH = ui.resHeight
+
+        // Backdrop: fills + swallows any tap that misses a widget, so the scene behind stays inert.
+        ui.emitRect(0f, 0f, fullW, fullH, background)
+        ui.emitClick(0f, 0f, fullW, fullH) {}
+
+        // Body viewport, between the bars — emitted before the chrome so the bars draw over it.
+        val viewTop = statusPx + titlePx
+        val viewH = fullH - viewTop - bottomPx
+        scrollArea(id, 0f, viewTop, fullW, viewH, padding = margin, rowHeight = rowHeight, textSize = textSize, block = body)
+
+        // Title bar (drawn on top of the body).
+        ui.emitRect(0f, statusPx, fullW, titlePx, barColor)
+        val titleMid = statusPx + (titlePx - textH) * 0.5f
+        ui.emitTextLeft("<", marginPx, titleMid, textH, 0xAACCFFFFL)
+        ui.emitClick(0f, statusPx, titlePx, titlePx, label = "back", onClick = onBack)
+        ui.emitTextLeft(title, marginPx + textH * 1.6f, titleMid, textH, 0xFFFFFFFFL)
+        if (onOverflow != null) {
+            ui.emitTextLeft("...", fullW - marginPx - textH * 1.5f, titleMid, textH, 0xAACCFFFFL)
+            ui.emitClick(fullW - titlePx, statusPx, titlePx, titlePx, label = "overflow", onClick = onOverflow)
+        }
+
+        // Bottom action bar.
+        if (actions.isNotEmpty()) {
+            val by = fullH - bottomPx
+            ui.emitRect(0f, by, fullW, bottomPx, barColor)
+            val n = actions.size
+            val btnH = (bottomPx - marginPx).coerceAtLeast(textH * 1.5f)
+            val btnY = by + (bottomPx - btnH) * 0.5f
+            val btnW = (fullW - marginPx * (n + 1)) / n
+            for ((i, a) in actions.withIndex()) {
+                val bx = marginPx + i * (btnW + marginPx)
+                ui.emitRect(bx, btnY, btnW, btnH, a.second)
+                ui.emitTextCentered(a.first, bx + btnW * 0.5f, btnY + (btnH - textH) * 0.5f, textH, contrast(a.second))
+                ui.emitClick(bx, btnY, btnW, btnH, label = a.first, onClick = a.third)
+            }
+        }
+    }
+
     fun scrollArea(
         id: String,
         x: Float, y: Float, w: Float, h: Float,
@@ -581,6 +656,15 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
      */
     fun listRow(title: String, description: String = "", selected: Boolean = false, onClick: () -> Unit) =
         items.add(ListRowItem(title, description, selected, rowHeight, onClick))
+
+    /**
+     * One AND-clause as a **single row of three chips** — `[lhs] [cmp] [rhs]` — the core claim of the L3
+     * redesign (`apps/cyto/UI_REDESIGN.md` §3): a clause that today costs ~5 stacked rows (LHS picker, L VAL
+     * stepper, CMP, RHS, R VAL stepper) becomes one. The comparator sits in a narrow centre segment; the two
+     * operands split the rest. Each chip taps into its own picker.
+     */
+    fun clauseRow(lhs: String, cmp: String, rhs: String, onLhs: () -> Unit, onCmp: () -> Unit, onRhs: () -> Unit) =
+        items.add(ClauseRowItem(lhs, cmp, rhs, onLhs, onCmp, onRhs, rowHeight))
 
     internal interface Item {
         val height: Float
@@ -774,6 +858,35 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
                 ui.emitTextLeft(description, x + textH * 0.5f, topY + height * 0.55f, textH * DESC_RATIO, 0x9A9A9AFFL)
             }
             ui.emitClick(x, topY + 1f, contentW, height - 2f, label = title, onClick = onClick)
+        }
+    }
+
+    /** See [clauseRow]. */
+    private class ClauseRowItem(
+        val lhs: String, val cmp: String, val rhs: String,
+        val onLhs: () -> Unit, val onCmp: () -> Unit, val onRhs: () -> Unit, override val height: Float,
+    ) : Item {
+        override fun measureWidth(textH: Float): Float {
+            val side = maxOf(UiTextRenderer.measureWidthPx(lhs, textH), UiTextRenderer.measureWidthPx(rhs, textH)) + textH * 3f
+            return side * 2f + UiTextRenderer.measureWidthPx(cmp, textH) + textH * 2f
+        }
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            val ty = topY + (height - textH) * 0.5f
+            val gap = textH * 0.5f
+            val cmpW = textH * 3f
+            val sideW = (contentW - cmpW - gap * 2f) * 0.5f
+            fun opChip(cx: Float, value: String, onTap: () -> Unit) {
+                ui.emitRect(cx, topY + 1f, sideW, height - 2f, 0x2A3550FFL)
+                ui.emitTextCentered(value, cx + sideW * 0.5f, ty, textH, 0xFFFFFFFFL)
+                ui.emitTextLeft("V", cx + sideW - textH * 0.9f, ty, textH, 0xAACCFFFFL)
+                ui.emitClick(cx, topY + 1f, sideW, height - 2f, label = value, onClick = onTap)
+            }
+            opChip(x, lhs, onLhs)
+            val mx = x + sideW + gap
+            ui.emitRect(mx, topY + 1f, cmpW, height - 2f, 0x35507AFFL)
+            ui.emitTextCentered(cmp, mx + cmpW * 0.5f, ty, textH, 0xFFFFFFFFL)
+            ui.emitClick(mx, topY + 1f, cmpW, height - 2f, label = "cmp", onClick = onCmp)
+            opChip(mx + cmpW + gap, rhs, onRhs)
         }
     }
 
