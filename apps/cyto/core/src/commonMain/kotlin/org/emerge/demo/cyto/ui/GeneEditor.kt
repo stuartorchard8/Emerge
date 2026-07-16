@@ -37,12 +37,18 @@ class GeneEditor {
         const val CELL_PANEL_DP = 380f       // wide: dockRight cell-panel width
         const val PANEL_MARGIN_DP = 12f      // wide: dockRight / editor-column margin
         const val EDIT_COL_DP = 440f         // wide: max gene-editor column width
-        const val SHEET_FRACTION = 0.58f     // narrow: dockBottom cell-sheet height fraction
+        const val SHEET_FRACTION = 0.58f     // narrow: dockBottom cell-sheet full (L2) height fraction
+        const val PEEK_FRACTION = 0.17f      // narrow: dockBottom cell-sheet collapsed peek (L1) height
     }
 
     private var editingId: EntityId? = null
     private var editingIndex: Int? = null
     private var draft: Gene? = null
+
+    // Narrow L1→L2 detent: a freshly selected cell shows a shallow peek (name + biomass); expanding drills to
+    // the full L2 sheet. Reset to the peek whenever the held cell changes ([peekedId] tracks that).
+    private var cellExpanded = false
+    private var peekedId: EntityId? = null
 
     /** Which L4 picker sheet (if any) is open over the narrow L3 modal, and its target (clause index +
      *  side for operand/value pickers). Cross-frame UI state, like the rest of the editor. */
@@ -120,8 +126,11 @@ class GeneEditor {
     fun freeAreaOffsetPx(narrow: Boolean, cellShown: Boolean, resW: Float, resH: Float, scale: Float): Pair<Float, Float> {
         if (!cellShown) return 0f to 0f
         if (narrow) {
-            // A full-screen modal (editing) hides the world entirely; only the L2 bottom sheet leaves a top area.
-            return if (draft != null) 0f to 0f else 0f to -(SHEET_FRACTION * resH) * 0.5f
+            // A full-screen modal (editing) hides the world entirely; otherwise the sheet leaves a top area,
+            // whose size depends on the L1 peek vs full L2 detent.
+            if (draft != null) return 0f to 0f
+            val frac = if (cellExpanded) SHEET_FRACTION else PEEK_FRACTION
+            return 0f to -(frac * resH) * 0.5f
         }
         // Wide: the cell panel docks right; when editing, the gene-editor column docks to its left. The free
         // world area is everything left of the leftmost panel — mirror renderGeneEditor's x0 exactly.
@@ -147,6 +156,7 @@ class GeneEditor {
         val info = controller.heldCellInfo()
         if (info == null) { reset(); return }
         if (editingId != null && editingId != controller.lastHeldId) reset()   // grabbed a different cell
+        if (controller.lastHeldId != peekedId) { peekedId = controller.lastHeldId; cellExpanded = false }   // new cell → peek
 
         // Progressive-disclosure UI everywhere (apps/cyto/UI_REDESIGN.md §8); `narrow` only chooses the
         // container geometry — a bottom sheet + full-screen modal + bottom picker on a phone, a docked right
@@ -174,15 +184,37 @@ class GeneEditor {
         b: UiBuilder, controller: CytoController, info: CytoController.CellInfo,
         grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit, wide: Boolean,
     ): Float {
-        val body: PanelBuilder.() -> Unit = { cellBody(controller, info, grouping, insertableGroups, onExport) }
-        return if (wide) b.dockRight("cell-panel", width = CELL_PANEL_DP, margin = PANEL_MARGIN_DP, rowHeight = 26f, textSize = 15f, block = body)
-        else { b.dockBottom("cell-sheet", heightFraction = SHEET_FRACTION, rowHeight = 44f, textSize = 15f, block = body); 0f }
+        if (wide) {
+            val body: PanelBuilder.() -> Unit = { cellBody(controller, info, grouping, insertableGroups, onExport, narrow = false) }
+            return b.dockRight("cell-panel", width = CELL_PANEL_DP, margin = PANEL_MARGIN_DP, rowHeight = 26f, textSize = 15f, block = body)
+        }
+        // Narrow: a shallow peek (name + biomass) that expands to the full L2 sheet.
+        if (cellExpanded) {
+            b.dockBottom("cell-sheet", heightFraction = SHEET_FRACTION, rowHeight = 44f, textSize = 15f) {
+                cellBody(controller, info, grouping, insertableGroups, onExport, narrow = true)
+            }
+        } else {
+            // Opaque background so the peek fully hides whatever sits behind its short strip.
+            b.dockBottom("cell-peek", heightFraction = PEEK_FRACTION, background = 0x121722FFL, rowHeight = 44f, textSize = 16f) {
+                peekBody(info)
+            }
+        }
+        return 0f
+    }
+
+    /** The **L1 peek** — the shallow bottom sheet a freshly selected cell opens to: just name + biomass. The
+     *  whole strip (title, stat, and the DETAILS bar) expands to the full L2 [cellBody]. */
+    private fun PanelBuilder.peekBody(info: CytoController.CellInfo) {
+        button(listOf("CELL ${info.id}  ${info.type}" to 0xFFFFFFFFL), 0x00000000L) { cellExpanded = true }
+        keyValue("BIOMASS", info.totalBiomass.toString())
+        button(listOf("DETAILS" to 0xBFD0E6FFL), 0x2A3550FFL) { cellExpanded = true }
     }
 
     private fun PanelBuilder.cellBody(
         controller: CytoController, info: CytoController.CellInfo,
-        grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit,
+        grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit, narrow: Boolean,
     ) {
+        if (narrow) button(listOf("v  LESS" to 0x9AA6BCFFL), 0x2A3550FFL) { cellExpanded = false }   // collapse to peek
         title("CELL ${info.id}  ${info.type}")
         // Per-line key/values right-align their value, so the panel reads at any width (a single-line vitals
         // row overflowed the narrow wide-screen column).
