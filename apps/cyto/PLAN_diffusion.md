@@ -30,10 +30,34 @@ Three things this plan got wrong, all caught by measuring rather than reasoning:
    terminate, and **termination is load-bearing** (it is what §4.2 depends on). Stu accepted the ~69% floor:
    the world keeps a permanent faint scar, which is §5's legibility arrived at from the other direction.
 
-**`den` turned out to be a weak knob** — 8 vs 32 settle within 2 units of each other and differ only in the
-opening transient, because the unit-flux term dominates the long tail. **Size-based rate moved into the
-SCHEDULE instead** (Stu's design, replacing §3's per-species `DEN` scale — keeping both would double-count the
-slowness).
+**`den` is weak for the ENDPOINT but strong for VISIBILITY — it is the "can you see it happen" knob.**
+Every value from 8 to 256 settles a 21-wide crater at 84-86/125, because the unit-flux term dominates the long
+tail. But diffusion is a *discrete event* every `MATTER_MAINTAIN_PERIOD` ticks, and `den` sets how big that
+event is. Measured, biggest single-pass change to any texel at a fresh scar rim (a texel takes flux on up to 4
+edges across the H+V sweeps):
+
+| `den` | jump | as % of the 125 seed | endpoint |
+|-------|------|----------------------|----------|
+| 8     | **28** | 22% — a visible pop | 86 |
+| 16    | 14   | 11%                  | 84 |
+| 32    | 6    | 4.8%                 | 84 |
+| **64** ⭐ | **4** | **3.2% — the integer floor** | 84 |
+| 128 / 256 | 4 | identical; nothing left to gain | 84 |
+
+**Shipped at `den = 64`** (Stu: *"I don't want to be able to visually tell — at least not without looking for
+it — that a diffusion event has occurred"*). At 64 the quotient rounds to zero for seed-scale gradients, so
+every edge moves the minimum 1 unit and diffusion becomes an imperceptible creep. Raising it further only
+slows *large* piles (a death dump, Δ in the thousands) — and those should disperse in proportion to how
+conspicuous they are, which the quotient term gives for free. **Costs nothing**: the sweep runs regardless.
+The jump ceiling is regression-gated by `aDiffusionPassIsVisuallyImperceptibleAtSeedScaleGradients`.
+
+**Size-based rate moved into the SCHEDULE** (Stu's design, replacing §3's per-species `DEN` scale — keeping
+both would double-count the slowness).
+
+> ⚠️ **`MATTER_MAINTAIN_PERIOD` is NOT a diffusion-only knob** — `maintain` runs decay *and* diffusion on the
+> same cadence, so halving it to speed diffusion up also **doubles the environmental decay rate**. To change
+> diffusion frequency alone, pair it with a compensating `MATTER_DECAY_PERIOD`, or give diffusion its own
+> cadence first.
 
 ### The schedule: ONE species per pass
 

@@ -78,15 +78,30 @@ object CytoTuning {
     /** Diffusion divisor: each scheduled pass moves ⌊Δ/this⌋ across every texel edge (or one unit, when that
      *  quotient rounds to zero but a gradient remains — see [CytoMatterField.diffuse]). 0 disables diffusion.
      *
-     *  **This is a weak knob, deliberately.** It shapes only the steep opening transient of a fresh scar;
-     *  measured, DEN 8 vs 32 settle a crater within 2 units of each other and differ only in the first few
-     *  thousand ticks, because the unit-flux term dominates the long tail. **Size-based rate lives in the
-     *  SCHEDULE, not here** ([CytoMatterField.diffuse] runs longer molecules on exponentially rarer passes),
-     *  so do not reintroduce a per-species DEN scale — that would double-count the same slowness.
+     *  **This knob sets how VISIBLE a diffusion event is, not how far diffusion gets.** It barely touches the
+     *  endpoint — measured, a 21-wide crater settles at 84-86/125 for every value from 8 to 256 — but it
+     *  sets the size of the single-pass jump, because diffusion is a discrete event every
+     *  [MATTER_MAINTAIN_PERIOD] ticks and a texel takes flux on up to 4 edges across the H and V sweeps:
+     *
+     *  | DEN | biggest single-pass change to a texel, at a fresh scar rim |
+     *  |-----|------------------------------------------------------------|
+     *  | 8   | 28 units — 22% of the 125 seed level, in one instant: a visible pop |
+     *  | 32  | 6 |
+     *  | 64  | 4 — the integer floor |
+     *  | 128+| 4 — identical; nothing left to gain |
+     *
+     *  **64 is the floor value**: at seed-level gradients the quotient rounds to zero, so every edge moves
+     *  the minimum 1 unit and diffusion becomes an imperceptible creep. Raising it further only slows the
+     *  dispersal of *large* piles (a death dump, where Δ is thousands) — and those should disperse at a rate
+     *  proportional to how conspicuous they are, which is what the quotient term gives for free.
+     *
+     *  Rate lives in [MATTER_MAINTAIN_PERIOD]; size-based rate lives in the SCHEDULE
+     *  ([CytoMatterField.scheduledSpecies] runs longer molecules on exponentially rarer passes). Do not
+     *  reintroduce a per-species DEN scale — it would double-count the schedule's slowness.
      *
      *  **Must be ≥ 2**, and the field asserts it rather than clamping: clamping a texel up to zero would
      *  destroy matter and break conservation. ⚙ */
-    const val MATTER_DIFFUSE_DEN = 8
+    const val MATTER_DIFFUSE_DEN = 64
 
     // ── Metabolism / energy (per gene, per tick) ─────────────────────────────────────────────────────
     /** Scale factor for all chemical interactions. Defines the ratio between the minimum cell biomass and the smallest energy unit */

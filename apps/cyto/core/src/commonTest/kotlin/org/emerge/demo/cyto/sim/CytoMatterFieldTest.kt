@@ -305,6 +305,33 @@ class CytoMatterFieldTest {
         assertEquals(t0, f.totalAtoms(), "conserved across the whole recovery")
     }
 
+    /** Diffusion is a discrete event every MATTER_MAINTAIN_PERIOD ticks, so a large per-pass step reads as a
+     *  visible POP rather than as weather: Stu's requirement is that you can't tell an event happened without
+     *  looking for it. At the shipped DEN this must stay at the integer floor — 1 unit per edge, and a texel
+     *  takes flux on at most 4 edges across the H and V sweeps, so 4 in total (~3% of the 125 seed level).
+     *
+     *  DEN=8 pops a rim texel by 28 units (22% of seed) — this test is what stops that regressing. Note the
+     *  ceiling holds only for seed-SCALE gradients; a big deposit (Δ in the thousands) still disperses
+     *  proportionally, which is wanted. */
+    @Test fun aDiffusionPassIsVisuallyImperceptibleAtSeedScaleGradients() {
+        val f = CytoMatterField.seededUniform(125)
+        val col = f.columnOrNull(A)!!
+        val res = f.resolution
+        val c = res / 2
+        for (dy in -10..10) for (dx in -10..10) col[(c + dy) * res + (c + dx)] = 0   // a fresh, maximal scar
+        var prev = col.copyOf()
+        var worst = 0
+        repeat(200) {
+            f.diffuse(den = CytoTuning.MATTER_DIFFUSE_DEN, pass = pA)
+            for (k in col.indices) {
+                val d = if (col[k] > prev[k]) col[k] - prev[k] else prev[k] - col[k]
+                if (d > worst) worst = d
+            }
+            prev = col.copyOf()
+        }
+        assertTrue(worst <= 4, "a single pass moved a texel by $worst units; the floor is 4 (~3% of seed)")
+    }
+
     /** Biological timescale keeps the scar, geological erases it. Pins the SHAPE of the recovery curve, not
      *  just its endpoint: a fresh scar must still read as a scar after a few thousand ticks of maintenance
      *  passes, or diffusion has flattened the world's memory of where life has been. */
