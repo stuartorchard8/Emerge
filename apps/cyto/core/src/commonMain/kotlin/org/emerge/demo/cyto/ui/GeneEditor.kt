@@ -39,6 +39,13 @@ class GeneEditor {
     private var openField: Field? = null
     private var openClause: Int = -1   // which clause's LHS/CMP/RHS dropdown is open (for the AND-conjunction)
 
+    /** Which L4 picker sheet (if any) is open over the narrow L3 modal, and its target (clause index +
+     *  side for operand/value pickers). Cross-frame UI state, like the rest of the editor. */
+    private enum class Pick { None, Action, Source, Group, Operand, SpeciesA, SpeciesB, Eff }
+    private var pick = Pick.None
+    private var pickClause = -1
+    private var pickSide = 0            // 0 = lhs, 1 = rhs (Operand picker)
+
     // In-game group tagging: when the player picks "New group..." the editor captures a typed name into
     // [groupBuffer] (the host routes keystrokes here — see [capturingGroupName]/[typeGroupChar]). Only the
     // draft's tag changes; it commits with DONE like every other field.
@@ -319,7 +326,7 @@ class GeneEditor {
             clauses.forEachIndexed { ci, cl ->
                 clauseRow(
                     operandLabel(cl.lhs), if (cl.cmp == Comparison.Greater) ">" else "<", operandLabel(cl.rhs),
-                    onLhs = {}, onRhs = {},
+                    onLhs = { openPick(Pick.Operand, ci, 0) }, onRhs = { openPick(Pick.Operand, ci, 1) },
                     onCmp = { draft = withClauseAt(d, ci, cl.copy(cmp = if (cl.cmp == Comparison.Greater) Comparison.Less else Comparison.Greater)) },
                 )
             }
@@ -329,21 +336,21 @@ class GeneEditor {
 
             // ── DO: the action, then only the fields this action actually has ──
             row("DO", 0x7A8699FFL)
-            chip("", d.action.type.name, 0x35507AFFL) {}
+            chip("", d.action.type.name, 0x35507AFFL) { openPick(Pick.Action) }
             when (d.action.type) {
                 ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain ->
-                    chip("OPERAND", d.action.a.uppercase().ifEmpty { "(NONE)" }, onTap = {})
+                    chip("OPERAND", d.action.a.uppercase().ifEmpty { "(NONE)" }) { openPick(Pick.SpeciesA) }
                 ActionType.FormBond -> {
-                    chip("LEFT", d.action.a.uppercase().ifEmpty { "(NONE)" }, onTap = {})
+                    chip("LEFT", d.action.a.uppercase().ifEmpty { "(NONE)" }) { openPick(Pick.SpeciesA) }
                     segmented("MATCH L", listOf("EXACT", "ENDS *"), if (d.action.aWild) 1 else 0) { i -> draft = d.copy(action = d.action.copy(aWild = i == 1)) }
-                    chip("RIGHT", d.action.b.uppercase().ifEmpty { "(NONE)" }, onTap = {})
+                    chip("RIGHT", d.action.b.uppercase().ifEmpty { "(NONE)" }) { openPick(Pick.SpeciesB) }
                     segmented("MATCH R", listOf("EXACT", "* STARTS"), if (d.action.bWild) 1 else 0) { i -> draft = d.copy(action = d.action.copy(bWild = i == 1)) }
                 }
                 ActionType.Mitosis -> {
-                    chip("MORPHOGEN", d.action.a.uppercase().ifEmpty { "(NONE)" }, onTap = {})
+                    chip("MORPHOGEN", d.action.a.uppercase().ifEmpty { "(NONE)" }) { openPick(Pick.SpeciesA) }
                     if (d.action.a.isNotEmpty())
                         segmented("KEEP", listOf("DAUGHTER", "MOTHER"), if (d.action.morphogenToMother) 1 else 0) { i -> draft = d.copy(action = d.action.copy(morphogenToMother = i == 1)) }
-                    chip("AXIS", d.action.b.uppercase().ifEmpty { "(NONE)" }, onTap = {})
+                    chip("AXIS", d.action.b.uppercase().ifEmpty { "(NONE)" }) { openPick(Pick.SpeciesB) }
                     if (d.action.b.isNotEmpty())
                         segmented("ORIENT", listOf("ALONG", "ACROSS"), if (d.action.divideAcross) 1 else 0) { i -> draft = d.copy(action = d.action.copy(divideAcross = i == 1)) }
                     segmented("SEVER", listOf("NO", "YES"), if (d.action.rejectMother) 1 else 0) { i -> draft = d.copy(action = d.action.copy(rejectMother = i == 1)) }
@@ -351,16 +358,139 @@ class GeneEditor {
                 else -> {}
             }
             if (d.action.type != ActionType.Mitosis)
-                chip("EFFICIENCY", d.efficiency.toString(), onTap = {})
+                chip("EFFICIENCY", d.efficiency.toString()) { openPick(Pick.Eff) }
             gap(12f)
 
             // ── POWERED BY: the energy source ──
             row("POWERED BY", 0x7A8699FFL)
-            chip("", sourceLabel(d.source).uppercase(), onTap = {})
+            chip("", sourceLabel(d.source).uppercase()) { openPick(Pick.Source) }
             gap(12f)
 
-            chip("GROUP", d.group.uppercase().ifEmpty { "(NONE)" }, onTap = {})
+            chip("GROUP", d.group.uppercase().ifEmpty { "(NONE)" }) { openPick(Pick.Group) }
         }
+        renderPickerSheet(b, controller, d)
+    }
+
+    private fun openPick(p: Pick, clause: Int = -1, side: Int = 0) {
+        pick = p; pickClause = clause; pickSide = side
+    }
+
+    /**
+     * The **L4 field picker** (`apps/cyto/UI_REDESIGN.md` §4), a bottom sheet over the L3 modal. One value,
+     * one sheet, big targets. Four shapes cover every field: a **list** (action — with a one-line
+     * description each, the onboarding win a dropdown never had room for — source, group), an **operand
+     * builder** (kind + value: number stepper or species builder), a **species builder** (atom-by-atom), and
+     * a **number** (efficiency). List picks auto-dismiss; builders stay open so you can keep tapping.
+     */
+    private fun renderPickerSheet(b: UiBuilder, controller: CytoController, d: Gene) {
+        when (pick) {
+            Pick.None -> return
+            Pick.Action -> b.sheet("pick", "DO WHAT?", onDismiss = ::closePick, rowHeight = 48f, textSize = 16f) {
+                for ((i, t) in ActionType.entries.withIndex()) {
+                    listRow(t.name, actionBlurb(t), selected = t == d.action.type) {
+                        val mitosis = t == ActionType.Mitosis
+                        draft = d.copy(action = d.action.copy(type = t, morphogenToMother = d.action.morphogenToMother && mitosis, divideAcross = d.action.divideAcross && mitosis, rejectMother = d.action.rejectMother && mitosis))
+                        closePick()
+                    }
+                    if (i < ActionType.entries.lastIndex) gap(4f)
+                }
+            }
+            Pick.Source -> b.sheet("pick", "POWERED BY?", onDismiss = ::closePick, rowHeight = 48f, textSize = 16f) {
+                sourceLabels.forEachIndexed { i, label ->
+                    listRow(label.uppercase(), selected = label == sourceLabel(d.source)) {
+                        draft = d.copy(source = if (i == 0) EnergySource.Light else EnergySource.BreakBond(bonds[i - 1])); closePick()
+                    }
+                    gap(4f)
+                }
+            }
+            Pick.Group -> b.sheet("pick", "GROUP?", onDismiss = ::closePick, rowHeight = 48f, textSize = 16f) {
+                val existing = controller.heldGenome()?.mapNotNull { it.group.ifBlank { null } }?.distinct() ?: emptyList()
+                listRow("(NONE)", selected = d.group.isEmpty()) { draft = d.copy(group = ""); closePick() }
+                gap(4f)
+                for (g in existing) {
+                    listRow(g.uppercase(), selected = d.group == g) { draft = d.copy(group = g); closePick() }
+                    gap(4f)
+                }
+                listRow("NEW GROUP...", "TYPE A NAME ON THE KEYBOARD") { startGroupCapture(d.group); closePick() }
+            }
+            Pick.Operand -> renderOperandSheet(b, d)
+            Pick.SpeciesA -> b.sheet("pick", "MOLECULE", onDismiss = ::closePick, rowHeight = 48f, textSize = 16f) {
+                speciesBuilder(d.action.a) { draft = d.copy(action = d.action.copy(a = it)) }
+            }
+            Pick.SpeciesB -> b.sheet("pick", "MOLECULE", onDismiss = ::closePick, rowHeight = 48f, textSize = 16f) {
+                speciesBuilder(d.action.b) { draft = d.copy(action = d.action.copy(b = it)) }
+            }
+            Pick.Eff -> b.sheet("pick", "EFFICIENCY GEAR", onDismiss = ::closePick, heightFraction = 0.4f, rowHeight = 48f, textSize = 16f) {
+                numberField(d.efficiency, 0, CytoTuning.EFFICIENCY_MAX_GEAR) { draft = d.copy(efficiency = it) }
+            }
+        }
+    }
+
+    /** The operand picker: a kind list (Const/Chem/Conc/BIO/Touch/Nbrs) then the value editor for whichever
+     *  kind is selected — a number for Const, a species builder for Chem/Conc, nothing for the live readings. */
+    private fun renderOperandSheet(b: UiBuilder, d: Gene) {
+        val ci = pickClause
+        val cl = d.condition.clauses.getOrNull(ci) ?: run { closePick(); return }
+        val op = if (pickSide == 0) cl.lhs else cl.rhs
+        fun setOp(newOp: Operand) { draft = withClauseAt(d, ci, if (pickSide == 0) cl.copy(lhs = newOp) else cl.copy(rhs = newOp)) }
+        b.sheet("pick", if (pickSide == 0) "LEFT SIDE" else "RIGHT SIDE", onDismiss = ::closePick, rowHeight = 48f, textSize = 16f) {
+            row("KIND", 0x7A8699FFL)
+            operandKindLabels.forEachIndexed { i, label ->
+                listRow(label.uppercase(), operandKindBlurb(i), selected = operandKind(op) == i) { setOp(operandOfKind(i, op)) }
+                gap(4f)
+            }
+            gap(8f)
+            when (op) {
+                is Operand.Constant -> { row("VALUE", 0x7A8699FFL); numberField(op.value, 0, 1_000_000) { setOp(Operand.Constant(it)) } }
+                is Operand.Chem -> { row("MOLECULE", 0x7A8699FFL); speciesBuilder(op.species) { setOp(Operand.Chem(it)) } }
+                is Operand.Conc -> { row("MOLECULE", 0x7A8699FFL); speciesBuilder(op.species) { setOp(Operand.Conc(it)) } }
+                else -> {}
+            }
+        }
+    }
+
+    /** A number editor: a hold-to-repeat ± stepper (accelerating 1→10→100→1000, the desktop 2000-tap fix)
+     *  plus coarse presets. */
+    private fun PanelBuilder.numberField(value: Int, min: Int, max: Int, onSet: (Int) -> Unit) {
+        stepper("", value.toString()) { delta -> onSet((value + delta).coerceIn(min, max)) }
+        val presets = if (max <= 32) listOf(min, (min + max) / 2, max) else listOf(0, 100, 500, 1000, 5000)
+        actionRow(presets.distinct().filter { it in min..max }.map { p ->
+            Triple<String, Long, () -> Unit>(p.toString(), 0x2A3550FFL) { onSet(p) }
+        })
+    }
+
+    /** A species built atom-by-atom: the molecule so far, then `+<atom>` per alphabet atom and a `<`
+     *  backspace. `(NONE)` when empty (a valid no-op / symmetric-division state). */
+    private fun PanelBuilder.speciesBuilder(current: String, onChange: (String) -> Unit) {
+        chip("", current.uppercase().ifEmpty { "(NONE)" }, 0x2A3550FFL) {}
+        gap(6f)
+        actionRow(atoms.map { a -> Triple<String, Long, () -> Unit>("+${a.uppercase()}", 0x32503CFFL) { onChange(current + a) } } +
+            Triple<String, Long, () -> Unit>("<", 0x5A3A3AFFL) { onChange(current.dropLast(1)) })
+    }
+
+    private fun closePick() { pick = Pick.None; pickClause = -1; pickSide = 0 }
+
+    /** One-line gloss of an action, for the L4 list picker (the room a dropdown never had). */
+    private fun actionBlurb(t: ActionType): String = when (t) {
+        ActionType.Import -> "PULL A MOLECULE IN FROM OUTSIDE"
+        ActionType.Export -> "PUSH A MOLECULE OUT TO OUTSIDE"
+        ActionType.FormBond -> "JOIN TWO MOLECULES INTO ONE"
+        ActionType.Convert -> "LOCK A MOLECULE INTO BIOMASS - GROW"
+        ActionType.Contract -> "SHRINK THE RADIUS - A MUSCLE FLEX"
+        ActionType.Mitosis -> "DIVIDE INTO TWO CELLS"
+        ActionType.Repair -> "HEAL THE MOST-DAMAGED WELD"
+        ActionType.Lyse -> "TEAR BIOMASS FROM A TOUCHING CELL"
+        ActionType.Retain -> "SEAL A MOLECULE INSIDE THE CELL"
+    }
+
+    /** One-line gloss of an operand kind, for the L4 operand picker. */
+    private fun operandKindBlurb(i: Int): String = when (i) {
+        0 -> "A FIXED NUMBER"
+        1 -> "COUNT OF A MOLECULE (BIOMASS + CYTO)"
+        2 -> "CONCENTRATION OF A MOLECULE"
+        3 -> "TOTAL BIOMASS"
+        4 -> "CELLS TOUCHING THIS ONE"
+        else -> "WELDED NEIGHBOURS"
     }
 
     /** A compact operand label for an L3 clause chip (see [renderGeneModal]). */
@@ -475,6 +605,9 @@ class GeneEditor {
         metabExpanded = false
         capturingGroup = false
         groupBuffer.setLength(0)
+        pick = Pick.None
+        pickClause = -1
+        pickSide = 0
     }
 
     private fun sourceLabel(s: EnergySource): String = when (s) {

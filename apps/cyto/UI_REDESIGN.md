@@ -317,7 +317,8 @@ Each step ends in something visible at phone size via the harness
    List row**~~ **DONE** (`a73ad823`). All showcased in `ui-gallery`; its snapshot now also captures a
    *scrolled* frame, the only way a static shot proves the clip holds at an offset.
    **Modal** (full-screen: fixed title bar with back + `...`, fixed bottom action bar, a scrolling body
-   between them) landed with step 3. **Still to do: Sheet** (the L4 host), **overflow menu**, **confirm dialog**.
+   between them) landed with step 3; **Sheet** (bottom sheet, the L4 host) landed with step 4. **Still to
+   do: overflow menu** (`⋮` on the modal title bar, for DUP/DELETE/export), **confirm dialog** (DELETE).
 3. ~~**L3 gene detail, vertical slice.**~~ **DONE.** `Ui.modal` + `PanelBuilder.clauseRow` (a clause as
    one row of three chips), and `GeneEditor.render(narrow = true)` — while a gene is open, the whole
    screen becomes the L3 modal instead of the two desktop panels. Wired to the **live draft**: rendered
@@ -328,9 +329,17 @@ Each step ends in something visible at phone size via the harness
    live state but their taps are inert until step 4 supplies the L4 pickers. Desktop (narrow=false) renders
    bit-identically — the wide two-column form is untouched. Coach suppressed behind the modal (§6.1). The
    throwaway `MobileMockRender` is deleted, its job done.
-4. **L4 pickers** (list / number / species / segmented) + the **Sheet** primitive that hosts them. Wires
-   the L3 value chips (operands, action, source, morphogen, group) that currently no-op. Kills the
-   2000-tap bug. **Next up.**
+4. ~~**L4 pickers** (list / number / species / segmented) + the **Sheet** primitive.~~ **DONE.**
+   `Ui.sheet` (bottom sheet: scrim + title bar + scrolling body, stacked over the modal), and the L3 value
+   chips now open pickers: **action** and **operand-kind** lists carry a one-line description each (the
+   onboarding win — `CONVERT — LOCK A MOLECULE INTO BIOMASS`), **source**/**group** are lists, **operand**
+   is a kind list + a value editor (number stepper or species builder), and **efficiency** is a number.
+   List-picks auto-dismiss and mutate the live draft; verified end-to-end at 1080×2400 (action-pick flips
+   the L3 conditional fields). The hold-to-repeat stepper is the 2000-tap fix.
+   **Rendering fix landed here:** the base UI layer is now one insertion-ordered stream (rects + text
+   interleaved), so a later opaque rect occludes earlier text — without it the modal's text bled through
+   the sheet. Proven bit-identical on the ui-gallery snapshot (static + scrolled), so the change is
+   transparent to all existing UI.
 5. **L1/L2 sheets**; retire the current info panel.
 6. **L0 bar + Brush/Layers/Speed sheets**; retire the scattered `CytoControls` buttons.
 7. **Android host**: wire `Ui` + touch routing; then menu/saves/sim-driver (audit Phase 4).
