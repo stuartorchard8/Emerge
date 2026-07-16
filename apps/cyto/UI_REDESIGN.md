@@ -352,8 +352,13 @@ doubles the cost of every future UI feature.
 >   peek / full / dismiss on release; tap still toggles. New `Ui` drag-handle channel + `PanelBuilder.dragHandle`
 >   + harness `drag-ui`. `4e876217`.
 >
-> **TOP OF QUEUE — steps 6–8 below** (L0 bottom bar + Brush/Layers/Speed sheets, Android host, campaign
-> touch/spotlight polish).
+> - ✅ **L0 bar + sheets (narrow)** — `CytoHud` bottom bar (PAUSE · BRUSH · LAYERS · MENU) + three sheets on
+>   the toolkit, driving `CytoControls`; shown at narrow L0. Legacy overlay still the wide surface. `d2af8e42`.
+>
+> **TOP OF QUEUE — finish step 6 + steps 7–8:** retire `CytoControls` on **wide** too (make `CytoHud` the
+> everywhere control surface per §8), then the **Android host** (wire `Ui` + touch routing; menu/saves/
+> sim-driver), then **campaign** polish (coach docking refinements, spotlight-vs-level, and the narrow coach
+> copy overflow flagged in step 6).
 >
 > **Key files:** `apps/cyto/core/.../ui/GeneEditor.kt` (all render paths: `renderCellPanel`/`cellBody`,
 > `renderGeneEditor`/`geneBody`, `renderPickerSheet`/`pickSheet`, `geneButton` ← the card to replace);
@@ -406,7 +411,13 @@ Each step ends in something visible at phone size via the harness
    Tapping a gene raises the L3 modal. Wired into the desktop host: below `NARROW_MAX_PX` the cell view is
    this sheet, not the wide `TopRight` panel. **Still to do:** the L1↔L2 drag detents, and the two-line
    gene card (a one-line 30-char label still overflows a narrow width).
-6. **L0 bar + Brush/Layers/Speed sheets**; retire the scattered `CytoControls` buttons.
+6. **L0 bar + Brush/Layers/Speed sheets** — **NARROW DONE** (`d2af8e42`). `CytoHud` (core, on `UiBuilder`):
+   a four-target bottom bar (PAUSE/PLAY · BRUSH · LAYERS · MENU) whose middle buttons open bottom sheets
+   (Speed = pause + SLOWER/FASTER + TPS/FPS; Brush = genome palette + touch mode; Layers = overlay/colour/
+   mutation/readouts). It drives the same `CytoControls` state model (added public mutators), shown at narrow
+   L0 (nothing selected); the legacy scattered-button overlay is the wide/desktop surface only.
+   **Still to do:** retire `CytoControls` on wide too (make `CytoHud` the everywhere surface per §8); and the
+   narrow coach text overflows 560px (COACH_WRAP=58 is wide-shaped) — a step-8 touch/copy fix.
 7. **Android host**: wire `Ui` + touch routing; then menu/saves/sim-driver (audit Phase 4).
 8. **Campaign**: coach docking, spotlight-vs-level, touch copy pass.
 
