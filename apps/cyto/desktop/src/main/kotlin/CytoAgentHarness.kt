@@ -67,6 +67,8 @@ object CytoAgentHarness {
     // framebuffer — the UI kit lays out in raw pixels, so geometry only tells the truth at the real size.
     private val RES_W = System.getProperty("cyto.agent.w")?.toIntOrNull() ?: 1200
     private val RES_H = System.getProperty("cyto.agent.h")?.toIntOrNull() ?: 900
+    // dp -> px for the UI kit (-Dcyto.agent.density). 1.0 = desktop; ~2.625 reproduces a 420dpi phone.
+    private val DENSITY = System.getProperty("cyto.agent.density")?.toFloatOrNull() ?: 1f
 
     fun run(scriptText: String, outDir: File) {
         outDir.mkdirs()
@@ -118,6 +120,7 @@ object CytoAgentHarness {
             renderer.setResolution(RES_W.toFloat(), RES_H.toFloat())
             controls.setResolution(RES_W.toFloat(), RES_H.toFloat())
             ui.setResolution(RES_W.toFloat(), RES_H.toFloat())
+            ui.setDensity(DENSITY)
             controls.showSimSpeed = true
             controls.showMutation = true
             // Speed buttons have no sim-driver here, but raise the campaign signal so `tap-ui FAST` drives
@@ -273,7 +276,7 @@ object CytoAgentHarness {
             val uiBtns = ui.elements().map { it.label }
             controls.rebuild()
             val ctlBtns = controls.elements()
-            println("[agent] render size: ${RES_W}x$RES_H")
+            println("[agent] render size: ${RES_W}x$RES_H  density: $DENSITY")
             println("[agent] coach/panel buttons: $uiBtns")
             println("[agent] control buttons: $ctlBtns")
             // Geometry, so a touch-target audit can see how big these actually are at this render size.

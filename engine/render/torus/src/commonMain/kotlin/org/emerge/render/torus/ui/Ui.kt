@@ -29,6 +29,7 @@ class Ui {
     private val textRenderer = UiTextRenderer()
     private var resW = 1f
     private var resH = 1f
+    private var densityScale = 1f
 
     // Per-frame accumulated draw commands (pixel coords) + interactive regions. A separate *overlay* layer
     // is drawn (and hit-tested) on top of the base layer — used for dropdown popups.
@@ -70,9 +71,21 @@ class Ui {
     val resWidth: Float get() = resW
     val resHeight: Float get() = resH
 
+    /** **dp → px.** Every size a caller passes ([UiBuilder.panel]'s `margin`/`padding`/`rowHeight`/
+     *  `textSize`, [PanelBuilder.gap]) is a **density-independent** unit, multiplied by this to reach
+     *  framebuffer pixels. Desktop leaves it at 1.0 (dp == px, so nothing changes); a phone host sets it
+     *  from the display density (~2.625 on a 420dpi screen), without which the whole kit lays out at ~6dp
+     *  rows against Android's 48dp minimum target. See `apps/cyto/MOBILE_READINESS.md` §2. */
+    val scale: Float get() = densityScale
+
     fun setResolution(widthPx: Float, heightPx: Float) {
         resW = widthPx.coerceAtLeast(1f)
         resH = heightPx.coerceAtLeast(1f)
+    }
+
+    /** Set the dp → px factor (see [scale]). Hosts feed this from the display's density. */
+    fun setDensity(scale: Float) {
+        densityScale = scale.coerceAtLeast(0.01f)
     }
 
     /** Rebuilds this frame's widget tree (clears the previous frame's geometry; hold state persists). */
@@ -280,42 +293,53 @@ class Ui {
 
 /** Frame-scoped builder: add panels. */
 class UiBuilder internal constructor(private val ui: Ui) {
-    /** An auto-sized panel anchored to a screen [anchor] corner. Panels at the same anchor **stack**
-     *  (each below the previous, [margin] apart). */
+    /**
+     * An auto-sized panel anchored to a screen [anchor] corner. Panels at the same anchor **stack**
+     * (each below the previous, [margin] apart).
+     *
+     * **All sizes here are dp**, scaled to pixels by [Ui.scale] (1.0 on desktop, so dp == px there).
+     * [textSize] defaults to a fixed ratio of [rowHeight] — the historical coupling — but is an
+     * independent knob: touch layouts need a tall row (≥48dp) with *normal* text in it, which the ratio
+     * can't express (a 48dp row would imply 33dp text, wider than a phone screen).
+     */
     fun panel(
         anchor: Anchor,
         margin: Float = 12f,
         padding: Float = 8f,
         background: Long = 0x000000C0,
         rowHeight: Float = 18f,
+        textSize: Float = rowHeight * TEXT_TO_ROW_RATIO,
         newColumn: Boolean = false,
         block: PanelBuilder.() -> Unit,
     ) {
-        val pb = PanelBuilder(rowHeight).apply(block)
+        val s = ui.scale
+        val marginPx = margin * s
+        val paddingPx = padding * s
+        val textH = textSize * s
+        val pb = PanelBuilder(rowHeight * s, s).apply(block)
         if (pb.items.isEmpty()) return
-        val textH = rowHeight * 0.68f
         val contentW = pb.items.maxOf { it.measureWidth(textH) }
         val contentH = pb.items.sumOf { it.height.toDouble() }.toFloat()
-        val w = padding * 2 + contentW
-        val h = padding * 2 + contentH
+        val w = paddingPx * 2 + contentW
+        val h = paddingPx * 2 + contentH
         if (anchor == Anchor.Center) {
             val x = (ui.resWidth - w) * 0.5f
-            val stack = ui.nextPanelOffset(anchor, 0f, h, margin)    // 0 for the first, then h+margin for extras
+            val stack = ui.nextPanelOffset(anchor, 0f, h, marginPx)  // 0 for the first, then h+margin for extras
             val y = (ui.resHeight - h) * 0.5f + stack
-            emitPanel(x, y, w, h, padding, contentW, textH, background, pb)
+            emitPanel(x, y, w, h, paddingPx, contentW, textH, background, pb)
             return
         }
         if (anchor == Anchor.BottomCenter) {
             // Centred horizontally, anchored a [margin] gap above the bottom edge; extra panels stack upward.
             val x = (ui.resWidth - w) * 0.5f
-            val stack = ui.nextPanelOffset(anchor, margin, h, margin)
+            val stack = ui.nextPanelOffset(anchor, marginPx, h, marginPx)
             val y = ui.resHeight - h - stack
-            emitPanel(x, y, w, h, padding, contentW, textH, background, pb)
+            emitPanel(x, y, w, h, paddingPx, contentW, textH, background, pb)
             return
         }
-        if (newColumn) ui.startNewColumn(anchor, margin)             // a fresh column beside the previous one
-        val inset = ui.columnInset(anchor, margin)                   // horizontal base for this column
-        val offset = ui.nextPanelOffset(anchor, margin, h, margin)   // vertical stack distance from the anchored edge
+        if (newColumn) ui.startNewColumn(anchor, marginPx)             // a fresh column beside the previous one
+        val inset = ui.columnInset(anchor, marginPx)                   // horizontal base for this column
+        val offset = ui.nextPanelOffset(anchor, marginPx, h, marginPx) // vertical stack distance from the anchored edge
         val x = when (anchor) {
             Anchor.TopRight, Anchor.BottomRight -> ui.resWidth - inset - w
             else -> inset
@@ -325,7 +349,7 @@ class UiBuilder internal constructor(private val ui: Ui) {
             else -> offset
         }
         ui.growColumn(anchor, inset + w)
-        emitPanel(x, y, w, h, padding, contentW, textH, background, pb)
+        emitPanel(x, y, w, h, paddingPx, contentW, textH, background, pb)
     }
 
     /** Emit a panel's background + click-catcher + rows at an already-resolved (x, y). */
@@ -353,8 +377,13 @@ class UiBuilder internal constructor(private val ui: Ui) {
     }
 }
 
-/** Collects a panel's vertical stack of items, then [UiBuilder.panel] lays them out. */
-class PanelBuilder internal constructor(private val rowHeight: Float) {
+/** The historical [UiBuilder.panel] text-height / row-height ratio, kept as the default so existing
+ *  callers render identically. Touch layouts pass `textSize` explicitly instead. */
+internal const val TEXT_TO_ROW_RATIO = 0.68f
+
+/** Collects a panel's vertical stack of items, then [UiBuilder.panel] lays them out. [rowHeight] arrives
+ *  already scaled to px; [scale] is carried for the items that take their own dp sizes ([gap]). */
+class PanelBuilder internal constructor(private val rowHeight: Float, private val scale: Float = 1f) {
     internal val items = ArrayList<Item>()
 
     fun title(text: String, color: Long = 0xFFFFFFFFL) = items.add(TextItem(text, color, rowHeight))
@@ -367,7 +396,8 @@ class PanelBuilder internal constructor(private val rowHeight: Float) {
      *  colour uses the auto-contrast against the button [color]. The segments render as one centred label
      *  (e.g. to highlight just the blocking parts of a gene in orange). */
     fun button(spans: List<Pair<String, Long?>>, color: Long, onClick: () -> Unit) = items.add(SpanButtonItem(spans, color, rowHeight, onClick))
-    fun gap(height: Float = 6f) = items.add(GapItem(height))
+    /** Vertical space, in dp. */
+    fun gap(height: Float = 6f) = items.add(GapItem(height * scale))
 
     /** A label + a click-to-expand dropdown field showing [value]; when [open], its [options] render in
      *  the overlay layer and a pick calls [onPick]. [onToggle] opens/closes the dropdown. */
