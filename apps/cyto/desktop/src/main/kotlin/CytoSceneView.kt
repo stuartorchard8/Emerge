@@ -132,8 +132,11 @@ object CytoSceneView {
         )
 
         val mouse = MouseState()
+        // Layout override: F2 forces the narrow (phone) gene UI on at any window width, so it can be evaluated
+        // on a desktop-width/HiDPI screen where the automatic width switch (framebuffer px) never trips.
+        val layout = LayoutToggle()
         installMouseHandlers(window, controller, renderer, controls, ui, geneEditor, menu, mouse, signals)
-        installKeyHandlers(window, controller, simDriver, menu, geneEditor, menuCallbacks)
+        installKeyHandlers(window, controller, simDriver, menu, geneEditor, menuCallbacks, layout)
 
         var lastTime = glfwGetTime()
         var fps = 0.0
@@ -236,7 +239,7 @@ object CytoSceneView {
                 // One adaptive UI (UI_REDESIGN.md §8): below NARROW_MAX_PX the gene editor becomes the
                 // full-screen L3 modal + L4 sheets; a full-screen modal owns the screen, so the coach and the
                 // Menu/Save bar are suppressed behind it.
-                val narrow = ui.resWidth < NARROW_MAX_PX
+                val narrow = layout.forceNarrow || ui.resWidth < NARROW_MAX_PX
                 val modalUp = narrow && geneEditor.isEditing
                 // In narrow mode a held cell fills the lower screen (L2 sheet) or the whole screen (L3 modal),
                 // so the coach steps aside until it's dismissed (§6.1 — proper coach docking is later work).
@@ -334,7 +337,7 @@ object CytoSceneView {
      *  feeds printable characters into the name field. */
     private fun installKeyHandlers(
         window: Long, controller: CytoController, simDriver: CytoSimDriver, menu: CytoMenu,
-        geneEditor: GeneEditor, cb: CytoMenu.Callbacks,
+        geneEditor: GeneEditor, cb: CytoMenu.Callbacks, layout: LayoutToggle,
     ) {
         glfwSetKeyCallback(window) { _, key, _, action, _ ->
             if (action != GLFW_PRESS && action != GLFW_REPEAT) return@glfwSetKeyCallback
@@ -370,6 +373,8 @@ object CytoSceneView {
                 GLFW_KEY_SPACE -> simDriver.togglePause()
                 GLFW_KEY_LEFT_BRACKET -> simDriver.slower()
                 GLFW_KEY_RIGHT_BRACKET -> simDriver.faster()
+                // Force the narrow (phone) gene UI on/off regardless of window width.
+                GLFW_KEY_F2 -> layout.forceNarrow = !layout.forceNarrow
             }
         }
         glfwSetCharCallback(window) { _, codepoint ->
@@ -568,6 +573,10 @@ object CytoSceneView {
         fun consumeCameraMoved(): Boolean = cameraMoved.also { cameraMoved = false }
         fun consumeSpeedChanged(): Boolean = speedChanged.also { speedChanged = false }
     }
+
+    /** F2 override to force the narrow gene UI on at any width (glfw callbacks run on the render thread, so a
+     *  plain var is safe). */
+    private class LayoutToggle { var forceNarrow = false }
 
     private class MouseState {
         var dragged = false
