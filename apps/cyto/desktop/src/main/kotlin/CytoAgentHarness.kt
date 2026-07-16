@@ -374,6 +374,19 @@ object CytoAgentHarness {
             renderer.colorMode = controls.colorMode
             renderer.focusedCellId = controller.lastHeldId?.value ?: -1
 
+            // Mirror the host: follow the held cell and recentre it into the space the L2 panel/sheet leaves
+            // free, then snap (no damping) so a single captured frame is deterministic.
+            val held = controller.lastHeldId
+            if (held != null && !controller.isGrabbed) {
+                val (fx, fy) = controller.heldCellPosition() ?: (-1f to -1f)
+                renderer.follow(held.value, fx, fy)
+                val (ox, oy) = geneEditor.freeAreaOffsetPx(NARROW, cellShown = true, RES_W.toFloat(), RES_H.toFloat(), ui.scale)
+                renderer.setFollowOffsetPx(ox, oy)
+                renderer.snapFollow()
+            } else {
+                renderer.setFollowOffsetPx(0f, 0f)
+            }
+
             glViewport(0, 0, RES_W, RES_H)
             renderer.draw(controller.latestFrame())          // scene (fills its own background)
             controls.draw()                                  // bottom toolbar

@@ -31,6 +31,15 @@ class GeneEditor {
      *  its own tags (auto-coloured by name); it just offers no "+ ADD" inserts (those are campaign-authored). */
     private val EMPTY_GROUPING = GenomeGrouping(emptyList())
 
+    private companion object {
+        // Container geometry, shared by the render paths and freeAreaOffsetPx (the source of truth for how
+        // much of the world each layout occludes). dp — multiply by scale for framebuffer px.
+        const val CELL_PANEL_DP = 380f       // wide: dockRight cell-panel width
+        const val PANEL_MARGIN_DP = 12f      // wide: dockRight / editor-column margin
+        const val EDIT_COL_DP = 440f         // wide: max gene-editor column width
+        const val SHEET_FRACTION = 0.58f     // narrow: dockBottom cell-sheet height fraction
+    }
+
     private var editingId: EntityId? = null
     private var editingIndex: Int? = null
     private var draft: Gene? = null
@@ -103,6 +112,28 @@ class GeneEditor {
         pick = Pick.None
     }
 
+    /** The framebuffer-pixel offset from the screen centre to the centre of the *un-obscured* world area,
+     *  given the current layout — so the host can recentre the followed cell into the free space beside/above
+     *  the panel (feed to `CytoRenderer.setFollowOffsetPx`). Returns `(dx right, dy down)`; `(0, 0)` when
+     *  nothing meaningful occludes the world. Uses this editor's live state, so it must be read the same frame
+     *  as [render]. [cellShown] is whether a cell panel/sheet is up at all (host tracks the held cell). */
+    fun freeAreaOffsetPx(narrow: Boolean, cellShown: Boolean, resW: Float, resH: Float, scale: Float): Pair<Float, Float> {
+        if (!cellShown) return 0f to 0f
+        if (narrow) {
+            // A full-screen modal (editing) hides the world entirely; only the L2 bottom sheet leaves a top area.
+            return if (draft != null) 0f to 0f else 0f to -(SHEET_FRACTION * resH) * 0.5f
+        }
+        // Wide: the cell panel docks right; when editing, the gene-editor column docks to its left. The free
+        // world area is everything left of the leftmost panel — mirror renderGeneEditor's x0 exactly.
+        val cellLeftX = resW - (CELL_PANEL_DP + PANEL_MARGIN_DP) * scale
+        val leftEdge = if (draft != null) {
+            val m = PANEL_MARGIN_DP * scale
+            val colW = minOf(EDIT_COL_DP * scale, (cellLeftX - m * 2f).coerceAtLeast(200f))
+            (cellLeftX - m - colW).coerceAtLeast(m)
+        } else cellLeftX
+        return -(resW - leftEdge) * 0.5f to 0f
+    }
+
     /** [onExport] is invoked when the EXPORT button is tapped — the host writes the held cell's genome to a
      *  file (desktop file-I/O lives outside this commonMain kit). No-op default keeps non-desktop hosts simple. */
     fun render(
@@ -144,8 +175,8 @@ class GeneEditor {
         grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit, wide: Boolean,
     ): Float {
         val body: PanelBuilder.() -> Unit = { cellBody(controller, info, grouping, insertableGroups, onExport) }
-        return if (wide) b.dockRight("cell-panel", width = 380f, rowHeight = 26f, textSize = 15f, block = body)
-        else { b.dockBottom("cell-sheet", heightFraction = 0.58f, rowHeight = 44f, textSize = 15f, block = body); 0f }
+        return if (wide) b.dockRight("cell-panel", width = CELL_PANEL_DP, margin = PANEL_MARGIN_DP, rowHeight = 26f, textSize = 15f, block = body)
+        else { b.dockBottom("cell-sheet", heightFraction = SHEET_FRACTION, rowHeight = 44f, textSize = 15f, block = body); 0f }
     }
 
     private fun PanelBuilder.cellBody(
@@ -208,8 +239,8 @@ class GeneEditor {
         val body: PanelBuilder.() -> Unit = { geneBody(controller, d) }
         if (wide) {
             // A docked column to the LEFT of the cell panel — the world stays visible around it.
-            val m = 12f * b.density
-            val colW = minOf(440f * b.density, (rightEdge - m * 2f).coerceAtLeast(200f))
+            val m = PANEL_MARGIN_DP * b.density
+            val colW = minOf(EDIT_COL_DP * b.density, (rightEdge - m * 2f).coerceAtLeast(200f))
             val x0 = (rightEdge - m - colW).coerceAtLeast(m)
             b.modal("gene-editor", title, onBack = { reset() }, actions = actions, onOverflow = { openPick(Pick.Overflow) },
                 boundsX = x0, boundsY = m, boundsW = colW, boundsH = b.screenH - m * 2f,

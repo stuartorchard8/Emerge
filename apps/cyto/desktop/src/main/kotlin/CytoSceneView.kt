@@ -184,6 +184,13 @@ object CytoSceneView {
                 val id = controller.lastHeldId?.value ?: -1
                 renderer.follow(id, fx, fy)
             }
+            // Recentre the followed cell into the space the L2 panel/sheet doesn't cover.
+            run {
+                val narrow = layout.forceNarrow || ui.resWidth < NARROW_MAX_PX
+                val cellShown = geneEditor.isEditing || controller.lastHeldId != null
+                val (offX, offY) = geneEditor.freeAreaOffsetPx(narrow, cellShown, ui.resWidth, ui.resHeight, ui.scale)
+                renderer.setFollowOffsetPx(offX, offY)
+            }
             // The sim advances on its own thread; we render whatever it last published.
             val frame = controller.latestFrame()
 

@@ -145,10 +145,16 @@ class CytoRenderer {
         // target that has wrapped around an edge is chased across the seam, not the long way round.
         val camLX = CytoUnits.toLogical(cameraX)
         val camLY = CytoUnits.toLogical(cameraY)
+        // Offset the target by the free-area pixel shift (see setFollowOffsetPx). worldPerPx = viewHeight/resH
+        // (square scaling). Screen +x = world +x, screen +y (down) = world -y, so camera moves the opposite
+        // way to slide the cell toward the free centre.
+        val worldPerPx = viewHeight / resH
+        val tgtX = followX - followOffPxX * worldPerPx
+        val tgtY = followY + followOffPxY * worldPerPx
         var vx = followVX
         var vy = followVY
-        vx += wrapLogical(followX - camLX) * damping
-        vy += wrapLogical(followY - camLY) * damping
+        vx += wrapLogical(tgtX - camLX) * damping
+        vy += wrapLogical(tgtY - camLY) * damping
         val frac = 1f / 60f
         vx *= frac
         vy *= frac
@@ -294,6 +300,32 @@ class CytoRenderer {
         resW = max(1f, widthPx)
         resH = max(1f, heightPx)
         GPU.setViewport(0, 0, resW.toInt(), resH.toInt())
+    }
+
+    // ── viewport recentre ────────────────────────────────────────────────────────
+    // When a panel/sheet covers an edge (the L2 cell sheet at the bottom, or the wide docked panels on the
+    // right), the followed cell should sit in the middle of the *unobscured* area, not behind the sheet. We
+    // do this by panning the camera target (not the projection) so the whole scene — cells, light/matter
+    // fields, culling and screen<->world mapping — stays consistent; only follow is affected.
+    private var followOffPxX = 0f
+    private var followOffPxY = 0f
+
+    /** Shift the follow target so the followed cell renders offset from the screen centre by this many
+     *  framebuffer pixels ([dxPx] right, [dyPx] down). Pass (0, 0) to centre normally. The camera eases to
+     *  the new target via the usual follow damping, so opening/closing a sheet slides the view smoothly. */
+    fun setFollowOffsetPx(dxPx: Float, dyPx: Float) {
+        followOffPxX = dxPx
+        followOffPxY = dyPx
+    }
+
+    /** Jump the camera straight to the (offset) follow target, skipping the damping — for a deterministic
+     *  single-frame capture (the agent harness). The live game eases instead. */
+    fun snapFollow() {
+        if (followId < 0) return
+        val worldPerPx = viewHeight / resH
+        cameraX = CytoUnits.coord(followX - followOffPxX * worldPerPx)
+        cameraY = CytoUnits.coord(followY + followOffPxY * worldPerPx)
+        followVX = 0f; followVY = 0f
     }
 
     fun panByPixels(dxPx: Float, dyPx: Float) {
