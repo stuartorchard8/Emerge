@@ -18,15 +18,25 @@ import kotlin.math.min
  * `r`, `g`) in *every* leaf — so per-species columns are both small (~1 MB each at the default world) and
  * mostly full. Dense trades the void's laziness for flat sequential reads and index arithmetic.
  *
- * **There is no diffusion.** The field is inert: matter stays exactly where it was last left, and the only
- * thing that ever moves it is life — a cell's footprint balances all its texels toward a common level
- * (mixing *through* the cell), [deposit] returns death/spill, and [decayLeaf] atomises polymers in place.
- * If diffusion returns it should be an explicit, isotropic step, not a side effect of observation.
+ * **Diffusion is explicit, isotropic, and geologically slow** ([diffuse], run from [maintain]). Twice before
+ * it was removed — once because the disc gather had taken over its "feed sessile cells" job, once because
+ * the quad-tree's collapse could only ever mix where no cell was — so it is back on its own terms rather
+ * than as a side effect of observation: an integer edge-flux pass over the whole grid, on the slow
+ * maintenance cadence. Its purpose is **not** to feed cells (the disc gather still does that) but to let the
+ * world return to equilibrium over thousands of ticks, so a depleted crater stays a legible scar on a
+ * biological timescale and is still eventually habitable on a geological one. The other mover of matter is
+ * still life: a footprint balances its texels toward a common level (mixing *through* the cell), [deposit]
+ * returns death/spill, and [decayAll] atomises polymers in place.
  *
  * Geometry is world-size-coupled: [RES] = [BASE_RES]·2^[TILE_SHIFT], and `BASE_RES` tracks the world size
  * so a texel stays a fixed logical size and a cell's matter footprint is world-size-invariant. Memory is
  * therefore quadratic in world size (~17 MB at the default 64-world, ~270 MB at a 256-world) — a deliberate
  * trade against the tree's adaptivity; chunked columns are the escape hatch if a big world ever needs one.
+ *
+ * **The field is written by the sim thread and read by the draw thread, without a lock.** That holds only
+ * because a texel is a single `Int`: the overlay's worst case is a texel one tick stale, which is not
+ * observable. Anything derived for the renderer must therefore be derived *by* the renderer, into its own
+ * buffers ([tallyChannels]) — a destination this class blanks and refills would tear under the reader.
  *
  * All matter ops are **exact integer** (conservation) in a **fixed traversal order** (determinism); only the
  * *geometry* (which texels a disc covers) uses Float — same-platform deterministic, matching the light
@@ -41,24 +51,8 @@ class CytoMatterField private constructor(
 ) {
     private val texels = res * res
 
-    // ── renderer read model ────────────────────────────────────────────────────────────────────────────
-    // Per-channel atom totals per texel, refilled by [maintain] on the same cadence the summary used to be.
-    // The overlay is a straight texel scan of these: no tree, no store deref, no per-leaf normalisation.
-    private var chR = IntArray(texels)
-    private var chG = IntArray(texels)
-    private var chB = IntArray(texels)
-
-    /** Whether [maintain] refreshes the channel read model. Tallying every texel is the one part that is
-     *  NOT free, so a host that isn't drawing the matter overlay can switch it off. */
-    var summaryEnabled = true
-
-    val channelRed: IntArray get() = chR
-    val channelGreen: IntArray get() = chG
-    val channelBlue: IntArray get() = chB
     /** Texels per axis for this field (row-major; index = `iy * resolution + ix`). */
     val resolution: Int get() = res
-
-    init { rebuildChannels() }
 
     // ── build ────────────────────────────────────────────────────────────────────────────────────────
     companion object {
@@ -87,10 +81,7 @@ class CytoMatterField private constructor(
          *  texels that division was always exact, so this is the same field.) */
         fun seededUniform(level: Int): CytoMatterField {
             val f = empty()
-            if (level > 0) {
-                for (m in MONO) f.column(m).fill(level)
-                f.rebuildChannels()   // empty()'s init tallied a field with no columns yet
-            }
+            if (level > 0) for (m in MONO) f.column(m).fill(level)
             return f
         }
 
@@ -104,7 +95,6 @@ class CytoMatterField private constructor(
             for (gy in 0 until BASE_RES) for (gx in 0 until BASE_RES) {
                 f.decodeNodeInto(readByte, readStore, readInt, gx * tileTexels, gy * tileTexels, tileTexels)
             }
-            f.rebuildChannels()
             return f
         }
     }
@@ -384,12 +374,136 @@ class CytoMatterField private constructor(
         fpTexels.clear()
     }
 
-    // ── maintenance: species decay ─────────────────────────────────────────────────────────────────────
-    /** Decay every polymer in place, then refill the renderer's channel read model. The field is otherwise
-     *  inert: nothing here moves matter between texels. */
-    fun maintain(decayPeriod: Int) {
+    // ── maintenance: species decay, then diffusion ─────────────────────────────────────────────────────
+    /** Decay every polymer in place, then let the field relax toward equilibrium. Decay runs FIRST so a
+     *  monomer freed this pass spreads in the same pass rather than waiting for the next one. [pass] is the
+     *  maintenance-pass counter (`tick / MATTER_MAINTAIN_PERIOD`) and drives the diffusion schedule — see
+     *  [diffuse]. Nothing here serves the renderer — the overlay tallies its own channels ([tallyChannels]). */
+    fun maintain(decayPeriod: Int, diffuseDen: Int = 0, pass: Long = 0L) {
         decayAll(decayPeriod)
-        if (summaryEnabled) rebuildChannels()
+        diffuse(diffuseDen, pass)
+    }
+
+    /** Reusable per-species flux accumulator for [diffuse]; allocated on first use and zeroed per species. */
+    private var flux: IntArray? = null
+
+    /** Diffuse the species scheduled for [pass] (see [activeChainLength]): a horizontal sweep, then a
+     *  vertical one, over the whole torus. Across every texel edge, move ⌊Δ/den⌋ from the richer side to the
+     *  poorer — **or a single unit if that quotient rounds to zero but the gradient is still ≥
+     *  [UNIT_FLUX_MIN]**. [den] is [CytoTuning.MATTER_DIFFUSE_DEN]; ≤ 0 disables.
+     *
+     *  **Why the unit-flux term exists — it is the whole feature.** Plain ⌊Δ/den⌋ has a quantisation floor:
+     *  any gradient below `den` moves nothing. That floor is a *slope* limit, not a depth limit, so the
+     *  field freezes into a permanent staircase whose depth scales with the crater's WIDTH — measured, a
+     *  21-texel crater in a 125 field stalls at 44/125 forever at `den=4` and never recovers a single unit
+     *  at `den=8`. It converges to that stalled cone within ~200 passes and then never moves again. A
+     *  "diffusion" that provably cannot heal a wide scar does not serve the purpose it was built for
+     *  (`PLAN_diffusion.md` §2b: depleted ground must become habitable again on a geological timescale), so
+     *  the floor is deliberately broken down to the smallest one that still terminates.
+     *
+     *  **It does NOT reach true equilibrium, and that is a considered trade.** A slope-1 staircase survives:
+     *  measured, a 21-wide crater settles at 86/125 and a 7-wide at 106/125, then holds through 1.5M ticks.
+     *  Going lower is not a tuning question — a threshold of 1 would let two adjacent texels swap a unit back
+     *  and forth forever, so the pass would never settle. **Termination is load-bearing**: a flat region
+     *  produces zero flux and skips its write-back, and any future active-tile skip (`PLAN_diffusion.md`
+     *  §4.2) needs regions to actually stop. So the world keeps a permanent faint scar where life has been,
+     *  which is the legibility `PLAN_diffusion.md` §5 wanted, arrived at from the other direction.
+     *
+     *  The resulting profile: a steep fresh scar heals fast (⌊Δ/den⌋ dominates), then the last stretch creeps
+     *  back one unit per pass over tens of thousands of ticks. A footprint-scale crater is ~40% back by 5k
+     *  ticks and done by 25k; a 21-wide one needs ~100k. Biological blink, geological recovery.
+     *
+     *  **Conservation is exact by construction, not by testing.** Each edge is visited once and contributes
+     *  `-f` to one side and `+f` to the other, so the total is algebraically unchanged: no clamp to
+     *  reconcile, no rounding to leak.
+     *
+     *  **The H/V split is what makes non-negativity hold**, and is not merely a cache optimisation as
+     *  `PLAN_diffusion.md` §3 framed it. Within one sweep a texel gives on at most 2 edges, so its outflow
+     *  is at most `max(2, 2·c/den)`, and an edge only moves at all when `c ≥ UNIT_FLUX_MIN` ≥ 2 — so outflow
+     *  can never exceed the texel's contents. A simultaneous 4-neighbour update with unit flux WOULD go
+     *  negative (c=2 giving 1 unit to each of four empty neighbours), which is why the sweeps are separate.
+     *  No clamp is used: clamping a texel up to zero is exactly the bug that destroys matter.
+     *
+     *  **Order-independent ⇒ parallel == sequential for free.** Integer `+=` into [flux] is commutative,
+     *  associative and exact, so any edge visitation order within a sweep yields the identical field. Unlike
+     *  the exchange there is no cell-owned cytoplasm to race on, so none of that drop-contested machinery
+     *  belongs here.
+     *
+     *  Uses `/`, not `shr`: `shr` rounds toward −∞, so `(-7) shr 3 == -1` while `(-7)/8 == 0` — that would
+     *  make a flux magnitude depend on which neighbour was subtracted first, i.e. an axis-order bias. `/`
+     *  truncates toward zero and is symmetric (`(a-b)/8 == -((b-a)/8)`), and the JIT lowers a constant
+     *  power-of-two division to shift+fixup anyway. This is about isotropy, not leaks. */
+    fun diffuse(den: Int, pass: Long) {
+        if (den <= 0) return
+        require(den >= 2) { "MATTER_DIFFUSE_DEN must be ≥ 2 to keep texel counts non-negative, was $den" }
+        val d = flux ?: IntArray(texels).also { flux = it }
+        val active = activeChainLength(pass)
+        for (sp in columns.indices) {
+            val col = columns[sp] ?: continue
+            // Monomers move every pass; every other length waits for its slot. Both terms of the schedule
+            // are here rather than in a precomputed species list because `columns` is the only authority on
+            // which species actually exist, and it changes as decay allocates fragment columns.
+            val len = SpeciesRegistry.atomCount(sp)
+            if (len != 1 && len != active) continue
+            sweep(col, d, den, vertical = false)
+            sweep(col, d, den, vertical = true)
+        }
+    }
+
+    /** Which polymer chain length gets its diffusion slot on [pass] — the schedule that makes size dampening
+     *  free instead of paying for it with a divisor.
+     *
+     *  Length `n` runs every `2^(n-1)` passes, so a diatom moves half as often as a monomer, a triatom a
+     *  quarter as often, and so on — bigger molecules are more sluggish for the same reason they are across
+     *  a cell wall, but the slowness costs nothing to express. Each length's phase is offset so that
+     *  **exactly one length fires per pass**:
+     *
+     *  ```
+     *  pass:  0   1   2   3   4   5   6   7   8   9  10  11
+     *  len:   2   3   2   4   2   3   2   5   2   3   2   4
+     *  ```
+     *
+     *  That is the ruler sequence, so the closed form is just the count of trailing 1-bits: length `n` wants
+     *  `pass ≡ 2^(n-2) − 1 (mod 2^(n-1))`, i.e. the low `n-2` bits set and the next bit clear. Per-pass work
+     *  is therefore capped at **monomers + one length class**, no matter how many species the field holds —
+     *  which is what keeps the pass's cost flat rather than growing with the registry.
+     *
+     *  When a length's slot comes up, EVERY present species of that length diffuses, so the chemistry stays
+     *  even-handed within a class. Longer chains are thus doubly slow: a rarer slot, shared by combinatorially
+     *  more species. */
+    private fun activeChainLength(pass: Long): Int = pass.inv().countTrailingZeroBits() + 2
+
+    /** A gradient at or above this moves one unit even when ⌊Δ/den⌋ is zero. 2 is the smallest value that
+     *  keeps a sweep non-negative: the giving texel holds ≥ 2 and gives at most 1 on each of its 2 edges. */
+    private val UNIT_FLUX_MIN = 2
+
+    /** One axis of [diffuse]. Accumulates every edge's flux into [d], then applies it — so the sweep reads a
+     *  consistent snapshot of [col] and its result cannot depend on visitation order. */
+    private fun sweep(col: IntArray, d: IntArray, spDen: Int, vertical: Boolean) {
+        var moved = false
+        d.fill(0)
+        for (iy in 0 until res) {
+            val row = iy * res
+            // Each texel owns exactly one edge per sweep — the one to its right (H) or below (V) — so every
+            // edge is visited once, with no double-counting and no seam at the torus wrap.
+            val nextRow = if (vertical) (if (iy + 1 == res) 0 else iy + 1) * res else row
+            for (ix in 0 until res) {
+                val i = row + ix
+                val j = nextRow + (if (vertical) ix else if (ix + 1 == res) 0 else ix + 1)
+                val delta = col[i] - col[j]
+                var f = delta / spDen
+                if (f == 0) {
+                    if (delta >= UNIT_FLUX_MIN) f = 1
+                    else if (delta <= -UNIT_FLUX_MIN) f = -1
+                    else continue
+                }
+                d[i] -= f; d[j] += f; moved = true
+            }
+        }
+        // A settled species produced zero flux everywhere — skip the write-back entirely. A field at rest is
+        // free, not merely cheap, which is what keeps diffusion negligible once the world has relaxed.
+        if (!moved) return
+        for (i in 0 until texels) col[i] += d[i]
     }
 
     /** Atomise ⌊count/period⌋ of each polymer per texel (peel the leftmost bond). Conservation-exact.
@@ -419,11 +533,21 @@ class CytoMatterField private constructor(
         }
     }
 
-    /** Refill the per-channel atom totals from the columns. One tight pass per (species, contributing
+    /** Tally per-texel atom totals per colour channel into the caller's [outR]/[outG]/[outB] (each sized
+     *  [resolution]², row-major), for the matter overlay. One tight pass per (species, contributing
      *  channel): a species contributes to at most 3 channels and usually 1 (a monomer), so this is far
      *  fewer passes than it looks — and each is a branch-free accumulate the JIT can vectorise, which beats
-     *  a single fused loop testing every channel per texel. */
-    private fun rebuildChannels() {
+     *  a single fused loop testing every channel per texel.
+     *
+     *  **The output buffers belong to the caller, deliberately.** The field used to own them and refill
+     *  them from [maintain] on the sim thread, which tore: the refill zeroes before it accumulates, so a
+     *  frame that scanned them mid-refill saw part of the field blanked and flashed. Reading a *column*
+     *  under the sim is fine — an int per texel, so the worst case is one texel one tick stale — but a
+     *  destination that is zeroed underneath a reader is not. Tallying from the reader's thread into the
+     *  reader's own arrays makes that unrepresentable, and moves the cost off the sim thread (per tick, up
+     *  to ~1000/s) onto the frame that actually wants it (~60/s). */
+    fun tallyChannels(outR: IntArray, outG: IntArray, outB: IntArray) {
+        val chR = outR; val chG = outG; val chB = outB
         chR.fill(0); chG.fill(0); chB.fill(0)
         for (sp in columns.indices) {
             val col = columns[sp] ?: continue
@@ -480,7 +604,6 @@ class CytoMatterField private constructor(
             val col = column(sp)
             for (i in 0 until texels) col[i] = readInt()
         }
-        rebuildChannels()
     }
 }
 

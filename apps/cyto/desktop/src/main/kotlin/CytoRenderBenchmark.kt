@@ -134,7 +134,7 @@ object CytoRenderBenchmark {
             b.renderer.showLightField = false
             b.renderer.showMatterField = true
             b.report("MATTER grid (light off)", b.measure(frames))
-            // Split the overlay's cost: the CPU quad-tree walk + texel fill is timed inside the renderer,
+            // Split the overlay's cost: the CPU channel tally + texel fill is timed inside the renderer,
             // so whatever the overlay adds beyond it is texture upload + the full-screen warp shader.
             println(
                 "      ↳ CPU rasterizeMatter = %.2fms over %d texels (rest = upload + warp shader)".format(
@@ -142,34 +142,6 @@ object CytoRenderBenchmark {
                 )
             )
             b.renderer.showMatterField = false
-
-            // ── Sim-side cost of filling the renderer's flat leaf summary ──
-            // maintain() fills it during a walk it already performs, but tallying each leaf's store is real
-            // new sim-thread work. Isolate it: decayPeriod=0 makes maintain a pure, repeatable traversal
-            // (no decay), and the two variants are interleaved in ONE process so thermal drift hits both
-            // equally — cross-process A/B on a throttling laptop is meaningless.
-            println("\n-- sim-side: maintain() with vs without summary fill (interleaved) --")
-            run {
-                val grid = b.controller.latestFrame().state.components
-                    .getTable<CytoMatterGridComponent>().asMap()[GRID_SINGLETON]?.grid
-                if (grid == null) println("  (no grid)") else {
-                    fun once(enabled: Boolean): Long {
-                        grid.summaryEnabled = enabled
-                        val t = System.nanoTime()
-                        grid.maintain(0)
-                        return (System.nanoTime() - t) / 1000
-                    }
-                    repeat(20) { once(true); once(false) }         // warm
-                    val on = ArrayList<Long>(); val off = ArrayList<Long>()
-                    repeat(40) { on.add(once(true)); off.add(once(false)) }
-                    val onMed = on.sorted()[on.size / 2]
-                    val offMed = off.sorted()[off.size / 2]
-                    println("  maintain, summary ON : p50=%6.2fms".format(onMed / 1000.0))
-                    println("  maintain, summary OFF: p50=%6.2fms".format(offMed / 1000.0))
-                    println("  ↳ summary fill costs  %6.2fms/tick".format((onMed - offMed) / 1000.0))
-                    grid.summaryEnabled = true
-                }
-            }
 
             // ── Zoom sweep: the cell pass draws every cell regardless of view, so a flat curve here
             //    means per-cell draw-call overhead, not fill rate. ──

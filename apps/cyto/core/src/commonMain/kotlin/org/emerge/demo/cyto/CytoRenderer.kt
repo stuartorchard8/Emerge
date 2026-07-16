@@ -177,6 +177,11 @@ class CytoRenderer {
     // field's full-screen treatment.
     private val matterField = CytoMatterFieldTexture(MATTER_TEX_RES)
     private val matterPixels = ByteArray(MATTER_TEX_RES * MATTER_TEX_RES * 4)
+    // Draw-thread-owned scratch for the field's per-channel tally — sized to the field on first use (its
+    // resolution tracks the world size, so it isn't known here). See [rasterizeMatter] on why these are ours.
+    private var chRedTmp = IntArray(0)
+    private var chGreenTmp = IntArray(0)
+    private var chBlueTmp = IntArray(0)
 
     // ── metabolic activity fields (LIVING_WORLD_PLAN.md §5) ──────────────────────────────────────
     // Flow 3 (CYT→BIO "building"): a soft species-coloured disc drawn over each building cell, its
@@ -1050,13 +1055,22 @@ class CytoRenderer {
      *  no tree walk, no store deref, no per-leaf normalisation, and nothing to clear. Row 0 = y = −HALF.
      *
      *  The field's resolution tracks the world size while the texture is fixed, so a non-default world is
-     *  point-sampled (they coincide 1:1 at the default 64-world). The sim refreshes the channel arrays on
-     *  its maintain cadence; reading one mid-refresh is fine — the values are per-texel independent and a
-     *  frame that mixes two ticks of matter density is not observable. */
+     *  point-sampled (they coincide 1:1 at the default 64-world).
+     *
+     *  The channel tally lands in buffers this renderer owns, and the sim never touches them. It used to
+     *  own them itself and refill them from maintain(), which flashed: the refill blanks a channel before
+     *  re-accumulating it, so a frame that scanned during one saw a partly-zeroed field — constantly, once
+     *  ticks outpaced frames. Tallying here reads the field's columns live instead, which is benign (a
+     *  texel is one int, so the worst case is one texel one tick stale, and a frame mixing two ticks of
+     *  matter density is not observable). */
     private fun rasterizeMatter(grid: CytoMatterField) {
         val res = MATTER_TEX_RES
         val fres = grid.resolution
-        val chR = grid.channelRed; val chG = grid.channelGreen; val chB = grid.channelBlue
+        if (chRedTmp.size != fres * fres) {
+            chRedTmp = IntArray(fres * fres); chGreenTmp = IntArray(fres * fres); chBlueTmp = IntArray(fres * fres)
+        }
+        grid.tallyChannels(chRedTmp, chGreenTmp, chBlueTmp)
+        val chR = chRedTmp; val chG = chGreenTmp; val chB = chBlueTmp
         // Reciprocal-multiply, not divide: this runs 3x per texel over the whole grid, and a float multiply
         // is a fraction of the cost of a double divide.
         val scale = (255.0 / MATTER_REF_DENSITY).toFloat()

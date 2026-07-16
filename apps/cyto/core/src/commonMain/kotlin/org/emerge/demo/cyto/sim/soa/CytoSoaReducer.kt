@@ -122,11 +122,15 @@ class CytoSoaReducer(
         // interact: interaction (only when there's pointer input) then matter diffusion.
         cur = phaseR("interact") {
             if (input.spawns.isNotEmpty() || input.taps.isNotEmpty()) cur = bridgeInteraction(cur, inputs)
-            // Matter field upkeep: species decay, walking every allocated node (the void is ~free). A slow
-            // background process, so it runs every MATTER_MAINTAIN_PERIOD ticks rather than per-tick,
-            // mutating the field in place. Deterministic on the sim clock; conservation unaffected.
+            // Matter field upkeep: species decay, then diffusion. Both are slow background processes, so
+            // this runs every MATTER_MAINTAIN_PERIOD ticks rather than per-tick, mutating the field in
+            // place. Deterministic on the sim clock; conservation unaffected.
             if (cur.world.tick % CytoTuning.MATTER_MAINTAIN_PERIOD == 0L) {
-                cur.grid.maintain(CytoTuning.MATTER_DECAY_PERIOD)
+                cur.grid.maintain(
+                    CytoTuning.MATTER_DECAY_PERIOD,
+                    CytoTuning.MATTER_DIFFUSE_DEN,
+                    cur.world.tick / CytoTuning.MATTER_MAINTAIN_PERIOD,
+                )
             }
             cur
         }

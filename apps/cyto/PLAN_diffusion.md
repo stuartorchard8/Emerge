@@ -1,8 +1,60 @@
-# Plan — performance-friendly matter diffusion (optional, not scheduled)
+# Plan — performance-friendly matter diffusion
 
-**Status: NOT STARTED. Written 2026-07-15, right after `4d6597f8` made the matter field dense.** This is a
-design sketch to execute from in a later session, not a commitment. Read §1 before §3 — the purpose decides
-the design, and one of the purposes needs no sim work at all.
+**Status: BUILT 2026-07-16 (step 2 of §8 — correct, measured, ON by default). Optimisation (§4.2/§4.3) NOT
+done.** Written 2026-07-15 as a sketch; §§1–3 below are the original design and are kept for the reasoning.
+**Read §0 first — measurement contradicted two of this plan's central claims.**
+
+---
+
+## 0. AS-BUILT (2026-07-16) — where reality diverged from the design
+
+Purpose chosen: **(b) ecological recovery**, with (a) and (c) riding along for free. Stu's framing: *"permanence
+on a biological scale is a blink on geological time scales… depleted areas can eventually become habitable
+again, but only after several thousand ticks."*
+
+Three things this plan got wrong, all caught by measuring rather than reasoning:
+
+1. **§5 is WRONG for purpose (b): the quantisation floor is not merely a "feel knob".** It limits *slope*, not
+   depth, so the field freezes into a permanent staircase whose depth scales with a crater's **width**.
+   Measured on a 125-seed field: a 21-texel crater stalls at **44/125 forever** at `den=4` and **never
+   recovers a single unit** at `den=8`, converging to that stalled cone within ~200 passes and never moving
+   again. §5's "sharp gradients persist" is true; its implication that this is *desirable* only holds for
+   purpose (a). **A unit-flux term was added**: any edge with a gradient ≥ 2 moves ≥ 1 unit.
+2. **The H/V split (§3) is a CORRECTNESS requirement, not a cache optimisation.** With unit flux, a
+   simultaneous 4-neighbour update drives a texel holding 2 to −2 (1 unit to each of four empty neighbours).
+   Split into two sweeps, a texel gives on at most 2 edges and can never overdraw. `den ≥ 2` (not §3's `≥ 4`)
+   is the resulting bound.
+3. **True equilibrium is unreachable, and that is the right trade.** A slope-1 staircase survives: a 21-wide
+   crater settles at **86/125**, a 7-wide at **106/125**, and both hold through 1.5M ticks. Erasing it needs a
+   threshold of 1, which would let adjacent texels swap a unit back and forth forever — the pass would never
+   terminate, and **termination is load-bearing** (it is what §4.2 depends on). Stu accepted the ~69% floor:
+   the world keeps a permanent faint scar, which is §5's legibility arrived at from the other direction.
+
+**`den` turned out to be a weak knob** — 8 vs 32 settle within 2 units of each other and differ only in the
+opening transient, because the unit-flux term dominates the long tail. **Size-based rate moved into the
+SCHEDULE instead** (Stu's design, replacing §3's per-species `DEN` scale — keeping both would double-count the
+slowness): chain length `n` diffuses every `2^(n-1)` passes, phased as a **ruler sequence** so exactly one
+length class fires per pass (`len = trailingOnes(pass) + 2`), with monomers every pass. Per-pass work is thus
+capped at *monomers + one length class* regardless of registry size, and when a class fires, every present
+species of that length moves — so longer chains are doubly slow (rarer slot, more species sharing it).
+
+**Measured cost** (`benchCyto`, 2562-cell save, 1024 ticks): **0.64% of tick** amortized (was 0.82% before the
+schedule), with a **~21 ms spike** on 1 tick in 128 (worst tick 34 → 50 ms). Inside the 1% budget but not
+negligible. Attribution: monomers ~90 µs of the average, polymers ~36 µs, but the two contribute to the spike
+about equally (~11 ms each) — an L=2 pass diffuses *every* present diatom.
+
+> ⚠️ **`benchCyto`'s `share` column understates by ~1.8×** — its denominator is the sum of all phases, and the
+> `bio:*` phases are nested inside `biology`, so the phase sum (~35 ms) nearly doubles the real tick (~19 ms).
+> Use `interact avg / tick avg`. Also: a 1-in-128 spike sits **below p99** (0.78% of ticks), so §4's advice to
+> watch p95/p99 is not enough — **only `max` catches it**.
+
+**Gates** (all green): `checkCytoConservation` exact on all 3 elements over 6000 ticks;
+`parallelMatchesSequential` passed with **no special handling**, as §3 predicted; 3 of 5 goldens re-baselined
+(topology byte-identical on all three, meta on two); population curve keeps its shape (1→44 by tick 1500 vs 41;
+3217 vs 3194 at tick 6000, dipping ~5% mid-curve).
+
+**Next, if the spike proves visible:** §4.2's active-tile bitmap — the one lever that helps average *and*
+spike, and still valid as written.
 
 ---
 

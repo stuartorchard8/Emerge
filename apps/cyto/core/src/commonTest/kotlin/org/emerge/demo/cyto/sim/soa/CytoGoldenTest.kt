@@ -96,12 +96,28 @@ class CytoGoldenTest {
     // reserve. Both are arbitrary either way; row-major is simply the dense field's natural (and
     // cache-friendly) order. "grid" additionally shifts because the digest now enumerates texels, not
     // leaves. parallelMatchesSequential + grownStateRoundTrips + conservation held throughout.
+    // Re-baselined 2026-07-16: the matter field DIFFUSES again (PLAN_diffusion.md §2b). Unlike the dense
+    // port above, this IS a deliberate rule change, not a re-ordering — matter now moves without a cell to
+    // move it, so real divergence is expected and wanted. An integer edge-flux pass runs on the existing
+    // MATTER_MAINTAIN_PERIOD cadence: every texel edge moves ⌊Δ/8⌋, or one unit where that rounds to zero
+    // but a gradient remains. Purpose is ecological recovery — a depleted crater stays a legible scar on a
+    // biological timescale and returns to ~69% of seed on a geological one (it never fully equalises; a
+    // slope-1 staircase survives, which is what lets the pass terminate). Only the three light-driven
+    // trajectory goldens move; the weld/sticky goldens are unaffected (their runs are too short for a
+    // maintenance pass to matter). topology is byte-identical on all three — diffusion moves matter, not
+    // connectivity — and meta is byte-identical on mutation + interact.
+    // ECOLOGY VERIFIED before re-baselining: the founder's population curve keeps its shape, lag and
+    // take-off (1→44 by tick 1500 vs 41 without; 3217 vs 3194 by tick 6000, +0.7%), dipping ~5% mid-curve
+    // around ticks 3500-4500 as diffusion bleeds matter out of the colony's rich patch before converging.
+    // checkCytoConservation is exact on all 3 elements over 6000 ticks (the flux is edge-symmetric, so
+    // conservation is exact by construction), and parallelMatchesSequential held with NO special handling —
+    // integer += into the flux accumulator is order-independent, so any edge visitation order is identical.
     private val GROWTH = mapOf(
-        "meta" to "873a0eee26c7ffde",
-        "physics" to "5c1317d587a1aede",
-        "biology" to "8ad841ffa73d9aad",
+        "meta" to "cbed7de57f2b67e2",
+        "physics" to "175c51049caa130e",
+        "biology" to "dc10312ffdbecda",
         "topology" to "cbf29ce484222325",
-        "grid" to "787452dba8dde9fa",
+        "grid" to "72b267dc174470e7",
     )
     // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
     // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
@@ -180,12 +196,15 @@ class CytoGoldenTest {
     // replaced the single shared LCG stream, so the write-back loop parallelises (order-independent draws).
     // A different-but-equivalent PRNG stream ⇒ the whole mutation-on trajectory moves; growth/interact
     // (rateDenom 0, never draw) are untouched. parallelMatchesSequential + all invariants held.
+    // Re-baselined 2026-07-16: matter diffusion returns (see GROWTH). meta + topology are byte-identical
+    // here — same population and spring structure — so the drift is pure microstate: physics/biology/grid
+    // shift as the relaxing field feeds the junction slightly differently.
     private val MUTATION = mapOf(
         "meta" to "187ed166f49aa1ee",
-        "physics" to "546c1052b9bf32a1",
-        "biology" to "7cf59cd62f48b956",
+        "physics" to "5adc94228f28846c",
+        "biology" to "4381d82f36858b98",
         "topology" to "cbf29ce484222325",
-        "grid" to "25a3500d9428ce06",
+        "grid" to "fc7129202bea8252",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     // Re-baselined 2026-07-05: restored LIGHT_QUANTA_SCALE 60k→120k (matter viability) +
@@ -208,12 +227,14 @@ class CytoGoldenTest {
     // that one cell and physics/biology/grid follow; topology unchanged.
     // Re-baselined 2026-07-14: round-robin gene evaluation removed (see GROWTH). physics/biology/grid shift
     // with the more-responsive gene trajectories; meta + topology unchanged.
+    // Re-baselined 2026-07-16: matter diffusion returns (see GROWTH). meta + topology byte-identical (the
+    // scripted population is unchanged); physics/biology/grid shift with the relaxing field.
     private val INTERACT = mapOf(
         "meta" to "2f287e9ca4c65e66",
-        "physics" to "4dbbdf7d9a45b73c",
-        "biology" to "358447f445151035",
+        "physics" to "2b4739a8a223bee2",
+        "biology" to "3f63421956e05a5c",
         "topology" to "cbf29ce484222325",
-        "grid" to "17ae6b8a8f8f89f7",
+        "grid" to "4eabc6f232230a06",
     )
 
     @Test

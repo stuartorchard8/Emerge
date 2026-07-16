@@ -491,7 +491,8 @@ class CytoSoaSpecTest {
         // be a bond): no gene metabolises OR senses it, so it is `!canHold`, and the canHold-gated cell↔cell
         // diffusion and env-uptake can therefore never move it. The single Mitosis gene names `gb` as its
         // morphogen, so on division `gb` goes WHOLE to the daughter and the mother keeps none.
-        // Because `gb` is trace, the mother can never re-acquire it (no uptake, no diffusion in) — so the
+        // Because `gb` is trace, the mother can never re-acquire it (no uptake, and env diffusion moves
+        // matter only BETWEEN texels, never across a cell wall — the junction alone does that) — so the
         // asymmetry the split establishes PERSISTS. That persistent positional difference between two
         // clones from one founder is the substrate for differentiation. A gene that *gates* on `Chem(gb)`
         // to act on the difference keeps `gb` trace too — sensing doesn't grant permeability (handleableOf)
@@ -881,8 +882,11 @@ class CytoSoaSpecTest {
         }
         val total0 = grid(initial).totalAtoms()
         val g = grid(run(initial, ticks = 200))
-        assertEquals(1000, near(g, aId, 8f, 8f, 4f), "with diffusion gone an undisturbed deposit must stay put")
-        assertEquals(0, near(g, aId, -24f, -24f, 4f), "matter must NOT spread to a distant point (no diffusion)")
+        // Diffusion returned 2026-07-16, so a deposit is no longer strictly frozen — but it is LOCAL and
+        // geologically slow: over 200 ticks only one maintenance pass fires, which nudges the spike by a
+        // texel or two, far inside this 4-cell-diam radius. Locality is the invariant, not inertness.
+        assertEquals(1000, near(g, aId, 8f, 8f, 4f), "an undisturbed deposit must stay within its own neighbourhood")
+        assertEquals(0, near(g, aId, -24f, -24f, 4f), "matter must never teleport: diffusion is strictly local")
         assertEquals(total0, g.totalAtoms(), "matter conserved")
     }
 

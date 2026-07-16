@@ -64,12 +64,24 @@ object CytoTuning {
     val LIGHT_ORBIT_PERIOD: Long get() = CytoWorldConfig.orbitPeriod
 
     // ── Matter dynamics (the conserved resource's per-tick law; its *seed* is in CytoSeed) ────────────
-    /** Cadence of the matter field's maintenance pass (decay). There is no diffusion — the field is inert
-     *  and only cells move matter — so this is a slow background process; per-tick would be wasted work. ⚙ */
+    /** Cadence of the matter field's maintenance pass (decay, then diffusion). Both are slow background
+     *  processes — per-tick would be wasted work — and diffusion's cost is amortised over this period. ⚙ */
     const val MATTER_MAINTAIN_PERIOD = 128L
     /** Environmental decay: free molecules break their leftmost bond at rate 1/this per decay step (run on
      *  the maintenance cadence). Returns matter stranded by selective uptake toward monomers. Higher = slower decay; 0 disables. ⚙ */
     const val MATTER_DECAY_PERIOD = 8000
+    /** Diffusion divisor: each scheduled pass moves ⌊Δ/this⌋ across every texel edge (or one unit, when that
+     *  quotient rounds to zero but a gradient remains — see [CytoMatterField.diffuse]). 0 disables diffusion.
+     *
+     *  **This is a weak knob, deliberately.** It shapes only the steep opening transient of a fresh scar;
+     *  measured, DEN 8 vs 32 settle a crater within 2 units of each other and differ only in the first few
+     *  thousand ticks, because the unit-flux term dominates the long tail. **Size-based rate lives in the
+     *  SCHEDULE, not here** ([CytoMatterField.diffuse] runs longer molecules on exponentially rarer passes),
+     *  so do not reintroduce a per-species DEN scale — that would double-count the same slowness.
+     *
+     *  **Must be ≥ 2**, and the field asserts it rather than clamping: clamping a texel up to zero would
+     *  destroy matter and break conservation. ⚙ */
+    const val MATTER_DIFFUSE_DEN = 8
 
     // ── Metabolism / energy (per gene, per tick) ─────────────────────────────────────────────────────
     /** Scale factor for all chemical interactions. Defines the ratio between the minimum cell biomass and the smallest energy unit */

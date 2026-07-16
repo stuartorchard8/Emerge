@@ -64,12 +64,13 @@ private fun drawMatter(
     fun sy(ly: Float) = (ly - centreY + halfWindow) * pxPerLogical
 
     // Fill = the texel's r/g/b atom density as raw RGB, normalised so a full base-density texel is white —
-    // the same rule CytoRenderer's overlay uses, read from the same per-channel arrays.
+    // the same rule CytoRenderer's overlay uses, from the same per-channel tally.
     val refDensity = org.emerge.demo.cyto.sim.CytoSeed.MATTER_UNIFORM_LEVEL.toDouble() * 4.0
     val fres = grid.resolution
     val texel = org.emerge.demo.cyto.sim.CytoMatterField.SPAN / fres
     val half = org.emerge.demo.cyto.sim.CytoLightField.HALF
-    val chR = grid.channelRed; val chG = grid.channelGreen; val chB = grid.channelBlue
+    val chR = IntArray(fres * fres); val chG = IntArray(fres * fres); val chB = IntArray(fres * fres)
+    grid.tallyChannels(chR, chG, chB)
     for (iy in 0 until fres) {
         val y = -half + iy * texel
         val y0 = sy(y); val wpx = texel * pxPerLogical

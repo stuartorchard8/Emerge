@@ -29,14 +29,25 @@ Draw thread, `squish.bin` @ 1920×1080 (`rasterizeMatter`, measured directly —
 ```
 quad-tree walk, per frame        12.5 ms
 + flat MatterLeafSummary          3.1 ms   (cost 2.08 ms/tick on the SIM thread to fill)
-dense columns                     1.0 ms   (cost 0.70 ms/tick to fill the channel read model)
+dense columns                     1.0 ms   (+ 0.70 ms to tally the channels — see below)
 ```
 
-The summary is **gone**: the renderer reads three dense per-channel `IntArray`s that `maintain` refills.
-Two traps found while landing it, both worth remembering:
+The summary is **gone**: the renderer tallies three per-channel `IntArray`s from the columns itself, via
+`tallyChannels`, into buffers **it owns**.
+
+That ownership is load-bearing, not a detail. The dense cut first had the *field* own those arrays and
+refill them from `maintain()` on the sim thread — which tore visibly: the refill zeroes each channel before
+re-accumulating it, so any frame that scanned mid-refill drew a half-blanked field. It flashed green
+whenever ticks outpaced frames (~1000 TPS up), and no single-threaded test could see it — a tear needs a
+concurrent reader (`CytoMatterFieldConcurrencyTest` is that reader now). Reading a *column* under the sim
+stays fine and unlocked: a texel is one `Int`, so the worst case is one texel one tick stale. **The rule:
+anything derived for the renderer gets derived by the renderer.** The 0.70 ms moves off the sim thread
+(per tick, up to 1000/s) onto the frame that wants it (~60/s) — a win in its own right.
+
+Two traps found while landing dense, both worth remembering:
 - **Divides.** The first dense cut was *4.26 ms* — SLOWER than the summary — purely from 3 double divisions
   per texel × 262k. Hoisting to a float reciprocal-multiply: 4.26 → **1.00 ms**.
-- **Branch-per-texel.** `rebuildChannels` fused all 3 channels into one loop with a test each. Splitting
+- **Branch-per-texel.** The channel tally fused all 3 channels into one loop with a test each. Splitting
   into one branch-free accumulate per (species, contributing channel) — usually 1, a species contributes to
   ≤3 — cut 2.55 → **0.70 ms/tick**.
 
@@ -51,8 +62,8 @@ tick avg     20925us   19552us   -6.6%
 
 Exchange also lost a whole pass: the old 3-pass drop-contested dance opened with a tile-partitioned
 **refine** (roots bucketed so `splitLeaf` never crossed a boundary). A dense grid has nothing to refine, so
-it's 2 passes — serial touch-count, then parallel-by-cell balance. `maintain` with the read model off is now
-**0.00 ms** (was a full tree walk). `parallelMatchesSequential` + conservation held throughout; goldens
+it's 2 passes — serial touch-count, then parallel-by-cell balance. `maintain` is now **0.00 ms** beyond
+decay (was a full tree walk), since it no longer serves the renderer at all. `parallelMatchesSequential` + conservation held throughout; goldens
 re-baselined for iteration order (DFS/Z → row-major), population curve identical for 1500 ticks and −2.8% at
 6000. See the `CytoMatterField` KDoc for the design (`QUADTREE.md` is deleted — it described the old tree).
 
@@ -82,6 +93,8 @@ after the flat leaf snapshot       ~9 ms   ~115 FPS   ← rasterizeMatter = 3.1 
   Also removes a real race: `toSimState` publishes the grid **by reference**, so the draw thread was walking
   the tree as the sim mutated it — what `leafWalk`'s `catch (NullPointerException)` guards were absorbing.
   The tally is **not** free: **+2.08ms/tick**; `summaryEnabled` can gate it (overlay defaults off).
+  *(Superseded — the summary and `summaryEnabled` are both gone; see the dense-columns section above. Note
+  the summary was **double-buffered**, which is what kept this safe; the dense cut dropped that and tore.)*
 - **Next FPS lever (untouched):** the cell pass issues **one non-instanced draw call per cell** (~2642) with
   **no off-screen culling** — flat across the zoom sweep, ~5ms. `CytoCellShader` already flags it:
   "instancing is a later optimization". Fine today; the wall if cell counts grow.
