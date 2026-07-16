@@ -284,6 +284,24 @@ Plus wiring `Ui` + touch routing into `CytoAndroidView` (audit §4), which today
 
 ## 8. Desktop: one adaptive UI, or two front-ends?
 
+**DECIDED (2026-07-17): new UI everywhere, with wide inline variants — the old dense form is retired.**
+The sentence-model content is one shared builder (`geneBody`, `cellBody`); only the *container geometry*
+switches on width. The `modal` and `sheet` primitives take explicit bounds, so:
+
+| | Narrow (phone) | Wide (desktop) |
+|---|---|---|
+| L2 | `dockBottom` (bottom sheet) | `dockRight` (docked right panel) |
+| L3 | full-screen `modal` | `modal` bounded to a column left of the L2 panel |
+| L4 | bottom `sheet` | `sheet` bounded to a centred popover |
+
+Built and rendering on both widths (harness: wide at 1400×900, narrow at 560×1000). **Follow-ups:** the
+gene-row one-liner still overflows a narrow column (needs the two-line card); the campaign coach is
+suppressed while a gene is open rather than docked (§6.1).
+
+---
+
+### Original recommendation (kept for context)
+
 **Recommendation: one widget tree, two layouts, switched on width.** The level model is the same;
 only its *presentation* changes:
 

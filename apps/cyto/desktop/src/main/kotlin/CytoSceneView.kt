@@ -241,9 +241,10 @@ object CytoSceneView {
                 // Menu/Save bar are suppressed behind it.
                 val narrow = layout.forceNarrow || ui.resWidth < NARROW_MAX_PX
                 val modalUp = narrow && geneEditor.isEditing
-                // In narrow mode a held cell fills the lower screen (L2 sheet) or the whole screen (L3 modal),
-                // so the coach steps aside until it's dismissed (§6.1 — proper coach docking is later work).
-                val cellUp = narrow && controller.lastHeldId != null
+                // The coach would collide with the gene editor (a full-screen modal on a phone, a docked
+                // column on a wide screen) or the narrow L2 sheet, so it steps aside while either is up
+                // (§6.1 — proper coach docking is later work).
+                val cellUp = geneEditor.isEditing || (narrow && controller.lastHeldId != null)
                 // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
                 ui.frame {
                     if (mask.allows(Control.GeneEditor)) {

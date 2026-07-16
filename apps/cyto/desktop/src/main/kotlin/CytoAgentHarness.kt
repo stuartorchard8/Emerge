@@ -331,7 +331,7 @@ object CytoAgentHarness {
             val mask = director.controlMask
             ui.frame {
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW) {}
-                if (director.active && !(NARROW && controller.lastHeldId != null)) director.render(this, controller)
+                if (director.active && !(geneEditor.isEditing || (NARROW && controller.lastHeldId != null))) director.render(this, controller)
             }
         }
 
@@ -375,7 +375,7 @@ object CytoAgentHarness {
             controls.draw()                                  // bottom toolbar
             ui.frame {                                        // info panel + coach overlay
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW) {}
-                if (director.active && !(NARROW && controller.lastHeldId != null)) director.render(this, controller)
+                if (director.active && !(geneEditor.isEditing || (NARROW && controller.lastHeldId != null))) director.render(this, controller)
             }
             ui.draw()
             glFinish()

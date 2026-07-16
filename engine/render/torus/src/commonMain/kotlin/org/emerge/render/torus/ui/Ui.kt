@@ -443,6 +443,12 @@ class Ui {
 
 /** Frame-scoped builder: add panels. */
 class UiBuilder internal constructor(private val ui: Ui) {
+    /** Framebuffer size (px) and the dp→px scale, so callers can compute wide-layout container bounds
+     *  (a docked column, a centred popover) from the screen. */
+    val screenW: Float get() = ui.resWidth
+    val screenH: Float get() = ui.resHeight
+    val density: Float get() = ui.scale
+
     /**
      * An auto-sized panel anchored to a screen [anchor] corner. Panels at the same anchor **stack**
      * (each below the previous, [margin] apart).
@@ -539,16 +545,14 @@ class UiBuilder internal constructor(private val ui: Ui) {
      * screen. Needed because genome length is unbounded — see `apps/cyto/UI_REDESIGN.md` §2.3.
      */
     /**
-     * A **full-screen modal** — the narrow-layout host for L3 (`apps/cyto/UI_REDESIGN.md` §3): a fixed
-     * title bar (back chevron + title + optional `...` overflow), a fixed bottom bar of [actions], and a
-     * **scrolling body** clipped between them. The body is a [scrollArea], so a gene taller than the screen
-     * scrolls under the bars rather than running off the bottom (the mock proved the worst-case gene
-     * overflows by ~1 row — §5.1).
+     * A **modal** — the host for L3 (`apps/cyto/UI_REDESIGN.md` §3): a fixed title bar (back chevron + title +
+     * optional `...` overflow), a fixed bottom bar of [actions], and a **scrolling body** clipped between
+     * them. The body is a [scrollArea], so content taller than the box scrolls under the bars.
      *
-     * Draw order makes the bars occlude scrolled content: the backdrop fills first (behind), the body next
-     * (clipped to the viewport), the bars last (on top, at the edges). [id] keys the body's scroll offset.
-     *
-     * All sizes are dp (× [Ui.scale]); [statusBar] reserves the notch/status inset a phone host passes.
+     * Fills its **bounds** — full-screen by default (narrow layout), or an explicit ([boundsX],[boundsY],
+     * [boundsW],[boundsH]) box (wide layout: a docked column beside the cell panel, with the world still
+     * visible around it). Draw order makes the bars occlude scrolled content. [id] keys the scroll offset;
+     * all dp sizes × [Ui.scale]. [statusBar] reserves a phone's notch inset (full-screen only).
      */
     fun modal(
         id: String,
@@ -556,6 +560,7 @@ class UiBuilder internal constructor(private val ui: Ui) {
         onBack: () -> Unit,
         actions: List<Triple<String, Long, () -> Unit>> = emptyList(),
         onOverflow: (() -> Unit)? = null,
+        boundsX: Float = Float.NaN, boundsY: Float = Float.NaN, boundsW: Float = Float.NaN, boundsH: Float = Float.NaN,
         statusBar: Float = 0f,
         titleBar: Float = 56f,
         bottomBar: Float = 72f,
@@ -573,39 +578,42 @@ class UiBuilder internal constructor(private val ui: Ui) {
         val bottomPx = if (actions.isEmpty()) 0f else bottomBar * s
         val marginPx = margin * s
         val textH = textSize * s
-        val fullW = ui.resWidth
-        val fullH = ui.resHeight
+        val x0 = if (boundsX.isNaN()) 0f else boundsX
+        val y0 = if (boundsY.isNaN()) 0f else boundsY
+        val bw = if (boundsW.isNaN()) ui.resWidth else boundsW
+        val bh = if (boundsH.isNaN()) ui.resHeight else boundsH
 
-        // Backdrop: fills + swallows any tap that misses a widget, so the scene behind stays inert.
-        ui.emitRect(0f, 0f, fullW, fullH, background)
-        ui.emitClick(0f, 0f, fullW, fullH) {}
+        // Backdrop: fills the bounds + swallows any tap that misses a widget.
+        ui.emitRect(x0, y0, bw, bh, background)
+        ui.emitClick(x0, y0, bw, bh) {}
 
         // Body viewport, between the bars — emitted before the chrome so the bars draw over it.
-        val viewTop = statusPx + titlePx
-        val viewH = fullH - viewTop - bottomPx
-        scrollArea(id, 0f, viewTop, fullW, viewH, padding = margin, rowHeight = rowHeight, textSize = textSize, block = body)
+        val viewTop = y0 + statusPx + titlePx
+        val viewH = bh - statusPx - titlePx - bottomPx
+        scrollArea(id, x0, viewTop, bw, viewH, padding = margin, rowHeight = rowHeight, textSize = textSize, block = body)
 
         // Title bar (drawn on top of the body).
-        ui.emitRect(0f, statusPx, fullW, titlePx, barColor)
-        val titleMid = statusPx + (titlePx - textH) * 0.5f
-        ui.emitTextLeft("<", marginPx, titleMid, textH, 0xAACCFFFFL)
-        ui.emitClick(0f, statusPx, titlePx, titlePx, label = "back", onClick = onBack)
-        ui.emitTextLeft(title, marginPx + textH * 1.6f, titleMid, textH, 0xFFFFFFFFL)
+        val titleY = y0 + statusPx
+        ui.emitRect(x0, titleY, bw, titlePx, barColor)
+        val titleMid = titleY + (titlePx - textH) * 0.5f
+        ui.emitTextLeft("<", x0 + marginPx, titleMid, textH, 0xAACCFFFFL)
+        ui.emitClick(x0, titleY, titlePx, titlePx, label = "back", onClick = onBack)
+        ui.emitTextLeft(title, x0 + marginPx + textH * 1.6f, titleMid, textH, 0xFFFFFFFFL)
         if (onOverflow != null) {
-            ui.emitTextLeft("...", fullW - marginPx - textH * 1.5f, titleMid, textH, 0xAACCFFFFL)
-            ui.emitClick(fullW - titlePx, statusPx, titlePx, titlePx, label = "overflow", onClick = onOverflow)
+            ui.emitTextLeft("...", x0 + bw - marginPx - textH * 1.5f, titleMid, textH, 0xAACCFFFFL)
+            ui.emitClick(x0 + bw - titlePx, titleY, titlePx, titlePx, label = "overflow", onClick = onOverflow)
         }
 
         // Bottom action bar.
         if (actions.isNotEmpty()) {
-            val by = fullH - bottomPx
-            ui.emitRect(0f, by, fullW, bottomPx, barColor)
+            val by = y0 + bh - bottomPx
+            ui.emitRect(x0, by, bw, bottomPx, barColor)
             val n = actions.size
             val btnH = (bottomPx - marginPx).coerceAtLeast(textH * 1.5f)
             val btnY = by + (bottomPx - btnH) * 0.5f
-            val btnW = (fullW - marginPx * (n + 1)) / n
+            val btnW = (bw - marginPx * (n + 1)) / n
             for ((i, a) in actions.withIndex()) {
-                val bx = marginPx + i * (btnW + marginPx)
+                val bx = x0 + marginPx + i * (btnW + marginPx)
                 ui.emitRect(bx, btnY, btnW, btnH, a.second)
                 ui.emitTextCentered(a.first, bx + btnW * 0.5f, btnY + (btnH - textH) * 0.5f, textH, contrast(a.second))
                 ui.emitClick(bx, btnY, btnW, btnH, label = a.first, onClick = a.third)
@@ -627,6 +635,7 @@ class UiBuilder internal constructor(private val ui: Ui) {
         title: String,
         onDismiss: () -> Unit,
         heightFraction: Float = 0.6f,
+        boxX: Float = Float.NaN, boxY: Float = Float.NaN, boxW: Float = Float.NaN, boxH: Float = Float.NaN,
         titleBar: Float = 56f,
         margin: Float = 16f,
         scrim: Long = 0x000000AAL,
@@ -640,26 +649,29 @@ class UiBuilder internal constructor(private val ui: Ui) {
         val s = ui.scale
         val fullW = ui.resWidth
         val fullH = ui.resHeight
-        val sheetH = fullH * heightFraction.coerceIn(0.2f, 1f)
-        val top = fullH - sheetH
         val marginPx = margin * s
         val titlePx = titleBar * s
         val textH = textSize * s
+        // Box: bottom-anchored full width by default (narrow); or an explicit box (wide: a centred popover).
+        val bw = if (boxW.isNaN()) fullW else boxW
+        val bh = if (boxH.isNaN()) fullH * heightFraction.coerceIn(0.2f, 1f) else boxH
+        val bx = if (boxX.isNaN()) 0f else boxX
+        val by = if (boxY.isNaN()) fullH - bh else boxY
 
-        // Scrim: dims + dismisses on tap.
+        // Scrim over the whole screen: dims + dismisses on tap.
         ui.emitRect(0f, 0f, fullW, fullH, scrim)
         ui.emitClick(0f, 0f, fullW, fullH, label = "scrim", onClick = onDismiss)
         // Sheet surface + a tap-swallow so a press on the sheet body doesn't reach the scrim behind it.
-        ui.emitRect(0f, top, fullW, sheetH, background)
-        ui.emitClick(0f, top, fullW, sheetH) {}
+        ui.emitRect(bx, by, bw, bh, background)
+        ui.emitClick(bx, by, bw, bh) {}
         // Title bar with a close affordance.
-        ui.emitRect(0f, top, fullW, titlePx, barColor)
-        val ty = top + (titlePx - textH) * 0.5f
-        ui.emitTextLeft(title, marginPx, ty, textH, 0xFFFFFFFFL)
-        ui.emitTextLeft("X", fullW - marginPx - textH, ty, textH, 0xAACCFFFFL)
-        ui.emitClick(fullW - titlePx, top, titlePx, titlePx, label = "close", onClick = onDismiss)
+        ui.emitRect(bx, by, bw, titlePx, barColor)
+        val ty = by + (titlePx - textH) * 0.5f
+        ui.emitTextLeft(title, bx + marginPx, ty, textH, 0xFFFFFFFFL)
+        ui.emitTextLeft("X", bx + bw - marginPx - textH, ty, textH, 0xAACCFFFFL)
+        ui.emitClick(bx + bw - titlePx, by, titlePx, titlePx, label = "close", onClick = onDismiss)
         // Scrolling body.
-        scrollArea(id, 0f, top + titlePx, fullW, sheetH - titlePx, padding = margin, rowHeight = rowHeight, textSize = textSize, block = body)
+        scrollArea(id, bx, by + titlePx, bw, bh - titlePx, padding = margin, rowHeight = rowHeight, textSize = textSize, block = body)
     }
 
     /**
@@ -682,6 +694,28 @@ class UiBuilder internal constructor(private val ui: Ui) {
         val fullH = ui.resHeight
         val h = fullH * heightFraction.coerceIn(0.15f, 1f)
         scrollArea(id, 0f, fullH - h, fullW, h, padding = padding, rowHeight = rowHeight, textSize = textSize, background = background, block = block)
+    }
+
+    /** A **right-docked panel** — the wide-layout host for the L2 cell view: a fixed-[width] (dp) scrollable
+     *  column pinned to the right edge, full height minus [margin] (dp), over the live world. The
+     *  wide-screen counterpart of [dockBottom]. Returns the panel's left x (px) so a caller can dock a second
+     *  column (the L3 gene editor) beside it. */
+    fun dockRight(
+        id: String,
+        width: Float = 300f,
+        margin: Float = 12f,
+        background: Long = 0x121722F2L,
+        padding: Float = 10f,
+        rowHeight: Float = 18f,
+        textSize: Float = rowHeight * TEXT_TO_ROW_RATIO,
+        block: PanelBuilder.() -> Unit,
+    ): Float {
+        val s = ui.scale
+        val m = margin * s
+        val w = width * s
+        val x = ui.resWidth - w - m
+        scrollArea(id, x, m, w, ui.resHeight - m * 2f, padding = padding, rowHeight = rowHeight, textSize = textSize, background = background, block = block)
+        return x
     }
 
     fun scrollArea(
