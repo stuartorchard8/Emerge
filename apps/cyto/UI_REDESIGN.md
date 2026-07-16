@@ -338,13 +338,16 @@ doubles the cost of every future UI feature.
 >   scroll scissor, right edge only. Wide cell dock widened 330→380dp. `5dbb2105`.
 > - ✅ **Delete confirm** — overflow DELETE now arms a "DELETE GENE?" step (DELETE GENE / KEEP IT) via
 >   `confirmingDelete`; only the second tap removes. `21e938fd`.
+> - ✅ **Coach docking** (§6.1) — `CampaignDirector.render(collapsed=)` draws a top-left `STEP N/M` + hint
+>   pill instead of the full bottom panel when a cell/gene editor is up (hidden only behind a full-screen
+>   narrow modal). Onboarding stays visible while editing. `5889467e`.
 >
-> **TOP OF QUEUE — Coach docking** (§6.1): today the coach is *suppressed* whenever a gene is open (host +
-> harness) so it doesn't collide with the modal/column — it should instead dock to a one-line pill. Campaign
-> onboarding is invisible while editing until this lands.
+> **TOP OF QUEUE — L1 collapsed-peek detent** for the narrow L2 sheet: today selecting a cell opens the
+> sheet fully; §3's L1 wants a shallow peek first (name + one stat) that drags up to full L2. This is a
+> drag-gesture feature (needs sheet drag state + detent snapping in `dockBottom`/the host input) and is best
+> validated by a live touch playtest, not the static harness — worth a quick sync with Stu on the feel first.
 >
 > **Then, in rough priority:**
-> - **L1 collapsed-peek detent** for the narrow L2 sheet (drag up L1→L2); today it opens fully.
 > - Steps 6–8 below (L0 bar, Android host, campaign polish).
 >
 > **Key files:** `apps/cyto/core/.../ui/GeneEditor.kt` (all render paths: `renderCellPanel`/`cellBody`,
