@@ -25,6 +25,9 @@ tasks.register<JavaExec>("cytoAgent") {
     mainClass = "org.emerge.desktop.CytoAgentHarnessKt"
     classpath = sourceSets["main"].runtimeClasspath
     workingDir = rootDir   // so cyto-genomes/, saves, and agent-out resolve from the repo root
+    // Let -Dcyto.agent.w/h reach the harness (e.g. to reproduce a phone framebuffer).
+    for (key in listOf("cyto.agent.w", "cyto.agent.h"))
+        providers.systemProperty(key).orNull?.let { systemProperty(key, it) }
 }
 
 tasks.register<JavaExec>("renderCyto") {

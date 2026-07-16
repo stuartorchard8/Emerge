@@ -63,8 +63,10 @@ import javax.imageio.ImageIO
  */
 object CytoAgentHarness {
 
-    private const val RES_W = 1200
-    private const val RES_H = 900
+    // Render size. Overridable (-Dcyto.agent.w / -Dcyto.agent.h) so the harness can reproduce a phone's
+    // framebuffer — the UI kit lays out in raw pixels, so geometry only tells the truth at the real size.
+    private val RES_W = System.getProperty("cyto.agent.w")?.toIntOrNull() ?: 1200
+    private val RES_H = System.getProperty("cyto.agent.h")?.toIntOrNull() ?: 900
 
     fun run(scriptText: String, outDir: File) {
         outDir.mkdirs()
@@ -271,8 +273,12 @@ object CytoAgentHarness {
             val uiBtns = ui.elements().map { it.label }
             controls.rebuild()
             val ctlBtns = controls.elements()
+            println("[agent] render size: ${RES_W}x$RES_H")
             println("[agent] coach/panel buttons: $uiBtns")
             println("[agent] control buttons: $ctlBtns")
+            // Geometry, so a touch-target audit can see how big these actually are at this render size.
+            for (e in ui.elements())
+                println("[agent]   ui '${e.label}' x=${e.x.toInt()} y=${e.y.toInt()} w=${e.w.toInt()} h=${e.h.toInt()}")
         }
 
         private fun dumpRaw() {
