@@ -233,6 +233,11 @@ object CytoSceneView {
             if (menu.inGame) {
                 drawReadouts(controller, renderer, controls)
                 controls.draw()
+                // One adaptive UI (UI_REDESIGN.md §8): below NARROW_MAX_PX the gene editor becomes the
+                // full-screen L3 modal + L4 sheets; a full-screen modal owns the screen, so the coach and the
+                // Menu/Save bar are suppressed behind it.
+                val narrow = ui.resWidth < NARROW_MAX_PX
+                val modalUp = narrow && geneEditor.isEditing
                 // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
                 ui.frame {
                     if (mask.allows(Control.GeneEditor)) {
@@ -240,6 +245,7 @@ object CytoSceneView {
                             this, controller,
                             grouping = director.activeChapter?.grouping,
                             insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
+                            narrow = narrow,
                         ) {
                             val g = controller.heldGenome()
                             if (g != null) {
@@ -249,14 +255,16 @@ object CytoSceneView {
                             }
                         }
                     }
-                    panel(org.emerge.render.torus.ui.Anchor.TopLeft, background = 0x00000000) {
-                        actionRow(listOf(
-                            Triple("Menu", 0x2A3550FFL) { menu.openTitle(); simDriver.setPaused(true) },
-                            Triple("Save", 0x2E6E5EFFL) { menu.openSave(defaultSaveName(controller)); simDriver.setPaused(true) },
-                        ))
+                    if (!modalUp) {
+                        panel(org.emerge.render.torus.ui.Anchor.TopLeft, background = 0x00000000) {
+                            actionRow(listOf(
+                                Triple("Menu", 0x2A3550FFL) { menu.openTitle(); simDriver.setPaused(true) },
+                                Triple("Save", 0x2E6E5EFFL) { menu.openSave(defaultSaveName(controller)); simDriver.setPaused(true) },
+                            ))
+                        }
+                        // The campaign coach overlay (bottom-centre), on top of the controls.
+                        director.render(this, controller)
                     }
-                    // The campaign coach overlay (bottom-centre), on top of the controls.
-                    director.render(this, controller)
                 }
             } else {
                 // Front-end shell over the (paused) world.
@@ -479,7 +487,9 @@ object CytoSceneView {
                 state.panLastX = px.first
                 state.panLastY = px.second
             }
-            if (state.uiConsumed) return@glfwSetCursorPosCallback
+            // A press the UI claimed may be a drag *inside a scroll area* (L4 sheet / long genome): route it
+            // to the toolkit, which scrolls and cancels the click past its slop.
+            if (state.uiConsumed) { ui.dragTo(px.first, px.second); return@glfwSetCursorPosCallback }
             // Left drag only ever moves a grabbed cell; on empty space it does nothing (reserved for a
             // future area-select).
             if (!isPrimaryDown(win)) return@glfwSetCursorPosCallback
@@ -500,8 +510,11 @@ object CytoSceneView {
         glfwSetScrollCallback(window) { win, _, yoffset ->
             if (!menu.inGame) return@glfwSetScrollCallback
             if (yoffset == 0.0) return@glfwSetScrollCallback
-            val steps = yoffset.coerceIn(-24.0, 24.0)
             val px = cursorPixel(win)
+            // The wheel scrolls a UI list (L4 sheet / genome) when it's over one; otherwise it zooms the world.
+            val area = ui.scrollAreaAt(px.first, px.second)
+            if (area != null) { ui.scrollBy(area, (-yoffset * WHEEL_SCROLL_PX).toFloat()); return@glfwSetScrollCallback }
+            val steps = yoffset.coerceIn(-24.0, 24.0)
             renderer.zoomAtScreen(px.first, px.second, 1.1.pow(steps).toFloat())
             signals.cameraMoved = true
         }
@@ -565,6 +578,12 @@ object CytoSceneView {
         var panLastX = 0f
         var panLastY = 0f
     }
+
+    // Below this framebuffer width the UI switches to the narrow (phone) layout — the gene editor becomes a
+    // full-screen modal + sheets. Resize the window narrow to see it; a phone host sets density instead.
+    private const val NARROW_MAX_PX = 600f
+    // Framebuffer px scrolled per wheel notch over a UI list.
+    private const val WHEEL_SCROLL_PX = 48f
 
     private const val DRAG_THRESHOLD_PX = 4f
     // WASD camera pan rate, in pixels/second (fed to panByPixels, so it scales with zoom just like a drag).
