@@ -123,8 +123,19 @@ class CytoGoldenTest {
     // gets — a 21-wide crater settles at 84 vs 86 — it only removes the conspicuous opening transient, which
     // is precisely the thing being paid for. Large piles (a death dump, Δ in the thousands) still disperse
     // proportionally via the quotient term, which is wanted. Cost is unchanged (the sweep runs regardless).
-    // ECOLOGY VERIFIED before re-baselining: the founder's population curve keeps its shape, lag and
-    // take-off (1→40 by tick 1500 vs 41 with diffusion off; 3037 vs 3194 by tick 6000, -4.9%).
+    // Re-baselined 2026-07-16 (#4): degraded biomass is shed into the cell's OWN exchange footprint (same
+    // centre + radius as passiveEnvExchange), replacing `9b7ab254`, which deposited at the touching cell
+    // nearest the centroid of all touching cells to "keep shed matter in the body". That offset the deposit
+    // by up to a cell diameter while still using the DEGRADING cell's radius, so the two discs only
+    // partially overlapped and a cell could shed matter it was then unable to reclaim. The drift set is the
+    // proof this lands exactly where intended and nowhere else: growth + interact shift ONLY in "grid"
+    // (meta/physics/biology/topology byte-identical — the cells' trajectory is bit-for-bit unchanged, just
+    // matter sitting in different texels), while weldHeal shifts in every dimension because it is the one
+    // scenario built from deeply-overlapping TOUCHING cells, i.e. the only place the old offset ever fired.
+    // mutation is untouched (its cells never touch). Growth's population curve is IDENTICAL at every sample
+    // to before the change (1→40 by tick 1500; 3037 at tick 6000); conservation exact over 6000 ticks.
+    // ECOLOGY VERIFIED before the diffusion re-baselines above: the founder's population curve keeps its
+    // shape, lag and take-off (1→40 by tick 1500 vs 41 with diffusion off; 3037 vs 3194 by tick 6000, -4.9%).
     // checkCytoConservation is exact on all 3 elements over 6000 ticks (the flux is edge-symmetric, so
     // conservation is exact by construction), and parallelMatchesSequential held with NO special handling —
     // integer += into the flux accumulator is order-independent, so any edge visitation order is identical.
@@ -133,7 +144,7 @@ class CytoGoldenTest {
         "physics" to "519b154d179ac49d",
         "biology" to "f5701ce4adf00b07",
         "topology" to "cbf29ce484222325",
-        "grid" to "3a7e3ea4bad8abfc",
+        "grid" to "9033d7c759fc105b",
     )
     // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
     // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
@@ -250,7 +261,7 @@ class CytoGoldenTest {
         "physics" to "77ffe2337d72fa66",
         "biology" to "edb36956a9d67d7",
         "topology" to "cbf29ce484222325",
-        "grid" to "1529d2d348df896d",
+        "grid" to "f0459eeae308b5d6",
     )
 
     @Test
@@ -313,7 +324,7 @@ class CytoGoldenTest {
         "physics" to "b47e91853a3c8a02",
         "biology" to "999427a698b3b417",
         "topology" to "9bfc123c376c0371",
-        "grid" to "7019020475aa5760",
+        "grid" to "22a8b2d6771fc9d5",
     )
     private val STICKY_WELD = mapOf(
         "meta" to "350eaa4577a67db5",

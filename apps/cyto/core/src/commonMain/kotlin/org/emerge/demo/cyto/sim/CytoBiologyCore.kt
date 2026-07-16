@@ -845,31 +845,18 @@ object CytoBiologyCore {
             if (targetId >= 0) {
                 val count = minOf(broken, work.biomass.count(targetId))
                 work.biomass.add(targetId, -count)
-                // Deposit at center-most touching cell, or the cell's own position if none.
-                val depositX: Float
-                val depositY: Float
-                if (work._touchingCellN > 0) {
-                    val cxSum = work._touchingCellCx.slice(0 until work._touchingCellN).sum()
-                    val cySum = work._touchingCellCy.slice(0 until work._touchingCellN).sum()
-                    val centroidX = cxSum / work._touchingCellN
-                    val centroidY = cySum / work._touchingCellN
-                    var bestDist = Float.MAX_VALUE
-                    var bestX = 0f
-                    var bestY = 0f
-                    for (i in 0 until work._touchingCellN) {
-                        val dx = work._touchingCellCx[i] - centroidX
-                        val dy = work._touchingCellCy[i] - centroidY
-                        val dist = dx * dx + dy * dy
-                        if (dist < bestDist) { bestDist = dist; bestX = work._touchingCellCx[i]; bestY = work._touchingCellCy[i] }
-                    }
-                    depositX = bestX
-                    depositY = bestY
-                } else {
-                    depositX = work.cx
-                    depositY = work.cy
-                }
-                work.degradeDepositX = depositX
-                work.degradeDepositY = depositY
+                // Shed into EXACTLY the disc the cell exchanges over — same centre, same radius as
+                // passiveEnvExchange's footprint (see countFootprint). Matter a cell drops is therefore
+                // matter it can still reach, and `deposit` spreads it evenly across those texels.
+                //
+                // This deliberately replaces `9b7ab254`, which deposited at the touching cell nearest the
+                // centroid of all touching cells to "keep shed matter in the body" for colonies. That
+                // offsets the deposit by up to a cell diameter while still using the DEGRADING cell's
+                // radius, so the two footprints only partially overlap — a cell could shed matter outside
+                // its own reach and be unable to take it back. Depositing under itself keeps shed matter
+                // in the body too (a colony's cells collectively cover the body), without the mismatch.
+                work.degradeDepositX = work.cx
+                work.degradeDepositY = work.cy
                 work.degradeDepositRadius = work.logicalRadius.toFloat()
                 work.degradeDepositTargetId = targetId
                 work.degradeDepositCount = count
