@@ -341,14 +341,18 @@ doubles the cost of every future UI feature.
 > - ✅ **Coach docking** (§6.1) — `CampaignDirector.render(collapsed=)` draws a top-left `STEP N/M` + hint
 >   pill instead of the full bottom panel when a cell/gene editor is up (hidden only behind a full-screen
 >   narrow modal). Onboarding stays visible while editing. `5889467e`.
+> - ✅ **Camera recentre** — a selected cell now eases into the middle of the *un-obscured* world area (top
+>   above the narrow sheet, left of the wide docked panels) instead of parking behind the panel. Done by
+>   offsetting the follow *target* (a real pan, so light/matter fields stay aligned);
+>   `GeneEditor.freeAreaOffsetPx` → `CytoRenderer.setFollowOffsetPx`; `snapFollow()` for harness capture.
+>   `4399847e`.
+> - ✅ **L1 peek detent** — narrow selection opens a shallow peek (name + biomass + DETAILS) that expands to
+>   full L2 on tap ("v LESS" collapses); recentre tracks the detent height. Tap-toggle for now. `54d996f6`.
 >
-> **TOP OF QUEUE — L1 collapsed-peek detent** for the narrow L2 sheet: today selecting a cell opens the
-> sheet fully; §3's L1 wants a shallow peek first (name + one stat) that drags up to full L2. This is a
-> drag-gesture feature (needs sheet drag state + detent snapping in `dockBottom`/the host input) and is best
-> validated by a live touch playtest, not the static harness — worth a quick sync with Stu on the feel first.
->
-> **Then, in rough priority:**
-> - Steps 6–8 below (L0 bar, Android host, campaign polish).
+> **TOP OF QUEUE — steps 6–8 below** (L0 bottom bar + Brush/Layers/Speed sheets, Android host, campaign
+> touch/spotlight polish). Also outstanding as a *refinement*: make the L1↔L2 peek a real **drag** with
+> detent snapping (today it's a tap-toggle) — wants a sheet-height drag channel the toolkit lacks + a live
+> touch playtest.
 >
 > **Key files:** `apps/cyto/core/.../ui/GeneEditor.kt` (all render paths: `renderCellPanel`/`cellBody`,
 > `renderGeneEditor`/`geneBody`, `renderPickerSheet`/`pickSheet`, `geneButton` ← the card to replace);
