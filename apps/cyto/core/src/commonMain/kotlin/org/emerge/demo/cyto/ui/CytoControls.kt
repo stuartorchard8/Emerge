@@ -65,10 +65,18 @@ class CytoControls {
     var colorMode: CellColorMode = CellColorMode.Bio
         private set
 
-    private fun cycleColorMode() {
+    fun cycleColorMode() {
         val modes = CellColorMode.entries
         colorMode = modes[(colorMode.ordinal + 1) % modes.size]
     }
+
+    // ── Public mutators for the Ui-based L0 HUD (CytoHud), which drives the same state model this class
+    //    owns — so the new bottom bar and the legacy overlay stay in sync while both exist. ──
+    fun setTouchMode(mode: TouchMode) { touchMode = mode }
+    fun setColorMode(mode: CellColorMode) { colorMode = mode }
+    /** Toggle the matter overlay; the light heatmap is its mutually-exclusive counterpart (as the grid button). */
+    fun toggleMatterField() { showMatterField = !showMatterField; showLightField = !showMatterField }
+    fun toggleChemicals() { showChemicals = !showChemicals }
 
     /** Host action for the "Load Genome" button — (re)load the brush genome from its file. File IO
      *  lives in the host (this class is cross-platform), so the host wires this up. */

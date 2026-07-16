@@ -8,6 +8,7 @@ import org.emerge.demo.cyto.campaign.Control
 import org.emerge.demo.cyto.campaign.PlayerAction
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
+import org.emerge.demo.cyto.ui.CytoHud
 import org.emerge.demo.cyto.ui.GeneEditor
 import org.emerge.render.torus.ui.Ui
 import org.emerge.sim.core.EntityId
@@ -49,6 +50,7 @@ object CytoSceneView {
 
         val renderer = CytoRenderer()
         val controls = CytoControls()
+        val hud = CytoHud()   // narrow-layout L0 bottom bar + sheets (drives `controls`)
         // The bottom-left brush palette is driven by the genome library (cyto-genomes/, seeded on first use).
         // Selecting a swatch sets the brush genome; `genomes`/`selectedGenome` are refreshed on save/delete.
         var genomes = CytoGenomes.list()
@@ -241,17 +243,23 @@ object CytoSceneView {
 
             renderer.draw(frame) // renderer fills its own background (also the backdrop behind the menu)
             if (menu.inGame) {
-                drawReadouts(controller, renderer, controls)
-                controls.draw()
                 // One adaptive UI (UI_REDESIGN.md §8): below NARROW_MAX_PX the gene editor becomes the
                 // full-screen L3 modal + L4 sheets; a full-screen modal owns the screen, so the coach and the
                 // Menu/Save bar are suppressed behind it.
                 val narrow = layout.forceNarrow || ui.resWidth < NARROW_MAX_PX
+                drawReadouts(controller, renderer, controls)
+                // Narrow (phone) uses the Ui-based L0 HUD below; the legacy scattered-button overlay is the
+                // wide/desktop control surface only (UI_REDESIGN.md §3 / step 6).
+                if (!narrow) controls.draw()
                 val modalUp = narrow && geneEditor.isEditing
                 // A cell/gene editor owns the bottom of the screen, so the coach collapses to a top-left pill
                 // instead of its full bottom-centre panel (§6.1). Behind a full-screen narrow modal there's no
                 // room even for the pill, so it hides entirely there.
                 val cellUp = geneEditor.isEditing || (narrow && controller.lastHeldId != null)
+                // L0 world level (narrow, nothing selected): the HUD owns the bottom bar. Leaving it closes any
+                // open sheet so it doesn't reappear when we return.
+                val worldLevel = narrow && !geneEditor.isEditing && controller.lastHeldId == null
+                if (!worldLevel) hud.close()
                 // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
                 ui.frame {
                     if (mask.allows(Control.GeneEditor)) {
@@ -269,7 +277,11 @@ object CytoSceneView {
                             }
                         }
                     }
-                    if (!modalUp) {
+                    // Narrow: the L0 HUD owns the bottom bar (incl. MENU); wide keeps the TopLeft Menu/Save bar.
+                    if (worldLevel) {
+                        hud.render(this, controls) { menu.openTitle(); simDriver.setPaused(true) }
+                    }
+                    if (!modalUp && !narrow) {
                         panel(org.emerge.render.torus.ui.Anchor.TopLeft, background = 0x00000000) {
                             actionRow(listOf(
                                 Triple("Menu", 0x2A3550FFL) { menu.openTitle(); simDriver.setPaused(true) },

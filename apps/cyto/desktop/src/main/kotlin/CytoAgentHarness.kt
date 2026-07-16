@@ -15,6 +15,7 @@ import org.emerge.demo.cyto.sim.FounderSpec
 import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
+import org.emerge.demo.cyto.ui.CytoHud
 import org.emerge.demo.cyto.ui.GeneEditor
 import org.emerge.render.torus.ui.Ui
 import org.emerge.sim.core.EntityId
@@ -99,6 +100,7 @@ object CytoAgentHarness {
         private lateinit var controls: CytoControls
         private lateinit var ui: Ui
         private lateinit var geneEditor: GeneEditor
+        private val hud = CytoHud()
         private val pendingActions = HashSet<PlayerAction>()
 
         fun init() {
@@ -345,8 +347,10 @@ object CytoAgentHarness {
          *  enumeration + tap-by-label. */
         private fun buildOverlay() {
             val mask = director.controlMask
+            val worldLevel = NARROW && !geneEditor.isEditing && controller.lastHeldId == null
             ui.frame {
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW) {}
+                if (worldLevel) hud.render(this, controls) {}
                 if (director.active) {
                     val modalUp = NARROW && geneEditor.isEditing
                     val cellUp = geneEditor.isEditing || (NARROW && controller.lastHeldId != null)
@@ -405,9 +409,11 @@ object CytoAgentHarness {
 
             glViewport(0, 0, RES_W, RES_H)
             renderer.draw(controller.latestFrame())          // scene (fills its own background)
-            controls.draw()                                  // bottom toolbar
-            ui.frame {                                        // info panel + coach overlay
+            if (!NARROW) controls.draw()                     // legacy overlay is the wide control surface only
+            val worldLevel = NARROW && !geneEditor.isEditing && controller.lastHeldId == null
+            ui.frame {                                        // info panel + coach overlay + narrow L0 HUD
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW) {}
+                if (worldLevel) hud.render(this, controls) {}
                 if (director.active) {
                     val modalUp = NARROW && geneEditor.isEditing
                     val cellUp = geneEditor.isEditing || (NARROW && controller.lastHeldId != null)
