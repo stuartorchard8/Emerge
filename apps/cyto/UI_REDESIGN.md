@@ -323,6 +323,38 @@ doubles the cost of every future UI feature.
 
 ## 9. Proposed build order
 
+> ### ⏸ SESSION STATE — 2026-07-17 (resume here)
+>
+> **The new sentence-model UI is live on every width and is the only gene UI** (old dense form deleted, §8).
+> In the desktop host it's the default at normal width (no toggle needed); **F2** forces the narrow phone
+> containers on at any width (the auto width-switch uses framebuffer px, which HiDPI doubles, so it rarely
+> trips on its own). Steps 1–5 are done; L4 pickers, L2/L3, wide + narrow all verified via the harness.
+> Core tests green.
+>
+> **TOP OF QUEUE — the bug Stu saw: gene sentences clip.** The gene-row label in the L2 panel/sheet is
+> still the old ~30-char one-liner (`geneButton` → a centred span button), so it overflows a narrow column
+> (docked right panel on desktop, bottom sheet on phone) and clips on both sides. **Fix: a two-line,
+> left-aligned gene card** — line 1 `WHEN <cond>`, line 2 `→ <ACTION>` — per §3's L2 wireframe, keeping the
+> active/blocking orange spans. Needs a new left-aligned two-line `PanelBuilder` item (the current
+> `SpanButtonItem` centres a single line). This is the last thing making the cell view look broken.
+>
+> **Then, in rough priority:**
+> - **Confirm dialog** for DELETE (overflow `⋮` → DELETE currently deletes immediately; §9 step-2 leftover).
+> - **Coach docking** (§6.1): today the coach is *suppressed* whenever a gene is open (host + harness) so it
+>   doesn't collide with the modal/column — it should instead dock to a one-line pill. Campaign onboarding
+>   is invisible while editing until this lands.
+> - **L1 collapsed-peek detent** for the narrow L2 sheet (drag up L1→L2); today it opens fully.
+> - Steps 6–8 below (L0 bar, Android host, campaign polish).
+>
+> **Key files:** `apps/cyto/core/.../ui/GeneEditor.kt` (all render paths: `renderCellPanel`/`cellBody`,
+> `renderGeneEditor`/`geneBody`, `renderPickerSheet`/`pickSheet`, `geneButton` ← the card to replace);
+> `engine/render/torus/.../ui/Ui.kt` (`modal`/`sheet` take bounds, `dockRight`/`dockBottom`, the
+> insertion-ordered base layer); `apps/cyto/desktop/.../CytoSceneView.kt` (width switch, F2, coach
+> suppression, scroll/drag input); harness flags `-Dcyto.agent.narrow` + `w/h/density`.
+> **Verify wide:** `:apps:cyto:desktop:cytoAgent -Dcyto.agent.w=1400 -Dcyto.agent.h=900` with a script that
+> selects a cell, expands a group, taps a gene. **Verify narrow:** add `-Dcyto.agent.narrow=true` at
+> `w=560 h=1000`. (Harness label-taps can't reach rows scrolled off-screen — that's not a UI bug.)
+
 Each step ends in something visible at phone size via the harness
 (`-Dcyto.agent.w=1080 -Dcyto.agent.h=2400`, `6f5c2ace`).
 
