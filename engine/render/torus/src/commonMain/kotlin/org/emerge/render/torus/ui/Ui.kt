@@ -769,6 +769,13 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
      *  colour uses the auto-contrast against the button [color]. The segments render as one centred label
      *  (e.g. to highlight just the blocking parts of a gene in orange). */
     fun button(spans: List<Pair<String, Long?>>, color: Long, onClick: () -> Unit) = items.add(SpanButtonItem(spans, color, rowHeight, onClick))
+
+    /** A **two-line, left-aligned gene card** (`apps/cyto/UI_REDESIGN.md` §3, L2): [line1] on top,
+     *  [line2] below, each a list of (text, colour-or-null) segments (null → auto-contrast against [color]).
+     *  Unlike [button] it never centres and never widens the panel — long sentences clip at the panel's
+     *  scissor rather than pushing it past the screen (the bug this replaces). */
+    fun geneCard(line1: List<Pair<String, Long?>>, line2: List<Pair<String, Long?>>, color: Long, onClick: () -> Unit) =
+        items.add(GeneCardItem(line1, line2, color, rowHeight * 2f, onClick))
     /** Vertical space, in dp. */
     fun gap(height: Float = 6f) = items.add(GapItem(height * scale))
 
@@ -863,6 +870,32 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
                 sx += UiTextRenderer.measureWidthPx(text, textH)
             }
             ui.emitClick(x, topY + inset, contentW, height - inset * 2f, label = spans.joinToString("") { it.first }, onClick = onClick)
+        }
+    }
+
+    private class GeneCardItem(
+        val line1: List<Pair<String, Long?>>, val line2: List<Pair<String, Long?>>,
+        val color: Long, override val height: Float, val onClick: () -> Unit,
+    ) : Item {
+        private fun lineW(line: List<Pair<String, Long?>>, textH: Float) =
+            line.fold(0f) { acc, s -> acc + UiTextRenderer.measureWidthPx(s.first, textH) }
+        override fun measureWidth(textH: Float) = maxOf(lineW(line1, textH), lineW(line2, textH)) + textH * 1.5f
+        private fun emitLine(ui: Ui, line: List<Pair<String, Long?>>, x: Float, ty: Float, textH: Float) {
+            var sx = x
+            for ((text, c) in line) {
+                ui.emitTextLeft(text, sx, ty, textH, c ?: contrast(color))
+                sx += UiTextRenderer.measureWidthPx(text, textH)
+            }
+        }
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            val inset = 1f
+            ui.emitRect(x, topY + inset, contentW, height - inset * 2f, color)
+            val lineH = (height - inset * 2f) * 0.5f
+            val pad = textH * 0.6f
+            emitLine(ui, line1, x + pad, topY + inset + (lineH - textH) * 0.5f, textH)
+            emitLine(ui, line2, x + pad, topY + inset + lineH + (lineH - textH) * 0.5f, textH)
+            val lbl = (line1 + line2).joinToString("") { it.first }
+            ui.emitClick(x, topY + inset, contentW, height - inset * 2f, label = lbl, onClick = onClick)
         }
     }
 

@@ -143,7 +143,7 @@ class GeneEditor {
         grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit, wide: Boolean,
     ): Float {
         val body: PanelBuilder.() -> Unit = { cellBody(controller, info, grouping, insertableGroups, onExport) }
-        return if (wide) b.dockRight("cell-panel", width = 330f, rowHeight = 26f, textSize = 15f, block = body)
+        return if (wide) b.dockRight("cell-panel", width = 380f, rowHeight = 26f, textSize = 15f, block = body)
         else { b.dockBottom("cell-sheet", heightFraction = 0.58f, rowHeight = 44f, textSize = 15f, block = body); 0f }
     }
 
@@ -434,7 +434,31 @@ class GeneEditor {
             g.active -> 0x2E8B40FFL
             else -> 0x3C3C3CFFL
         }
-        button(g.spans.map { it.text to (if (it.blocking) 0xC8963CFFL else null) }, bg) { open(controller, i) }
+        // Split the one-line span sentence — `ACTION IF clause & clause (source) eN` — into a two-line
+        // card: line 1 "WHEN <clauses>", line 2 "→ <ACTION> (source) eN". The markers " IF " and " ("
+        // are emitted verbatim by describeGeneSpans, so we partition on them. Blocking spans stay orange.
+        val ORANGE = 0xC8963CFFL
+        val GREY = 0x9A9A9AFFL
+        val spans = g.spans
+        val ifIdx = spans.indexOfFirst { it.text == " IF " }
+        val parenIdx = spans.indexOfFirst { it.text == " (" }
+        fun seg(from: Int, to: Int) = spans.subList(from, to).map { it.text to (if (it.blocking) ORANGE else null) }
+        val line1: List<Pair<String, Long?>>
+        val line2: List<Pair<String, Long?>>
+        if (ifIdx < 0 || parenIdx < 0) {
+            // Fallback: shape not recognised — show the raw sentence on one line.
+            line1 = spans.map { it.text to (if (it.blocking) ORANGE else null) }
+            line2 = emptyList()
+        } else {
+            val clauses = seg(ifIdx + 1, parenIdx)
+            line1 = listOf<Pair<String, Long?>>("WHEN " to GREY) +
+                (if (clauses.isEmpty()) listOf("always" to GREY) else clauses)
+            // action = spans[0], then source group from parenIdx to end.
+            line2 = listOf<Pair<String, Long?>>("→ " to GREY) +
+                (spans[0].text to (if (spans[0].blocking) ORANGE else null)) +
+                seg(parenIdx, spans.size).map { it.first to (it.second ?: GREY) }
+        }
+        geneCard(line1, line2, bg) { open(controller, i) }
     }
 
     /** A dark tint of a group's [color] (40% brightness, full alpha) for its collapsible header background. */
