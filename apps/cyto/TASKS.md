@@ -66,11 +66,13 @@ diffusion flattens any self-dug gradient. Fix, in order:
    Matter grid cell now 4 cell-diam (was 32). **Caught + fixed a real torus bug:** `springSolve` widened
    positions to Long and subtracted non-modularly → a weld across the seam exploded; now Int-modular. New
    `CytoTorusTest` locks down boundary≡centre (homogeneity + field periodicity).
-2. [ ] **Matter field: fine static grid + Gaussian local gather, NO diffusion** (`PLAN_taxis_substrate.md`).
-   `MATTER_GRID_RES` (fine, ≈1 cell-diam) decoupled from coarse light; cells pull from a precomputed integer
-   Gaussian/disc stencil (conservative apportionment) — feeds sessile cells, IS the intake-density sensor,
-   lets self-dug craters persist, and is a perf win (O(cells×kernel) not O(RES²)+alloc). Deposit stays local
-   (carcass food patches).
+2. [x] **Matter field: fine static grid + local disc gather** (`PLAN_taxis_substrate.md`). DONE — the field
+   is a flat dense per-species texel grid (`4d6597f8`), sub-cell texels, disc gather feeding sessile cells and
+   acting as the intake-density sensor; deposit stays local (carcass food patches).
+   **The "NO diffusion" half of this item is SUPERSEDED (2026-07-16, `e4d622c6`+`e171016d`+`27a33262`):** the
+   field diffuses again, for **ecological recovery** rather than the feed-immobile role the gather replaced.
+   Craters stay legible for thousands of ticks, then relax to ~69% of seed over geological time. One species
+   per pass, ~0.10% of tick. See `PLAN_diffusion.md` §0.
 3. [ ] **Resume the controller as taxis:** swap the bend's lateralising signal from the fixed `cc` organizer
    to an environment-driven matter-sensitive metabolite → bend toward food. Size cap NOT needed.
 
@@ -191,7 +193,12 @@ The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (
   fixed (`60efe400`); AoS fully retired, goldens are the sole gate.
 - [x] **Weld fixes** — auto-weld on overlap disabled (`fd9ebafb`); repair welds can form the first connection
   when `weldedDegree == 0` (`fd9ebafb`); `AUTO_WELD_ON_OVERLAP = false` added to `CytoTuning` (`fd9ebafb`).
-- [x] **Degrade deposit** — now goes to center-most touching cell, not arbitrary (`9b7ab254`).
+- [x] **Degrade deposit** — ~~goes to center-most touching cell~~ (`9b7ab254`). **REPLACED 2026-07-16**
+  (`5787a05d`): a cell now sheds into its OWN exchange footprint (same centre + radius as
+  `passiveEnvExchange`), so shed matter is always still within reach. The touching-cell offset moved the
+  deposit by up to a cell diameter while keeping the *degrading* cell's radius, so the discs only
+  partially overlapped and a cell could shed matter it couldn't reclaim. Radius was never the problem —
+  it already matched; only the centre differed.
 - [x] **Round-robin gene eval** — fixed to gate condition evaluation, not gene execution (`716c2966`). **REMOVED 2026-07-14** (`d45570df`): all non-division genes now re-check every tick; parallelism absorbs the cost. Killed the stale-cache bug class (Retain flicker, post-mitosis stale flags).
 - [x] **Life viability / overpopulation** — reduced both via tuning changes (`2de08043`).
 - [x] **Oriented division timeout** — `acrossOrientedDivisionGrowsA2DSheetNotAThread` test timeout fixed

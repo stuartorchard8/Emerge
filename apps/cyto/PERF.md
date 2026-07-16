@@ -9,6 +9,57 @@ golden + parallel==sequential gates, optimise from profiles. CytoBench probe via
 > `benchCyto` — which is blind to frame rate. For the **draw thread (FPS)** use `benchCytoRender` (see the
 > 2026-07-15 entry). Establish *which one* is actually slow before profiling either.
 
+## 2026-07-16 — diffusion returned at ~0.10% of tick; a sweep costs the same whether matter moves or not
+
+Matter diffuses again (`e4d622c6` → `e171016d` → `27a33262`). Budget was **<1% of tick, smaller is better**;
+it landed at **~0.10%** with no measurable spike. The route there is the interesting part.
+
+**THE finding — cost tracks COLUMNS SWEPT, not gradient.** Per species column, per pass (`RES`=512, 1 MB/col):
+
+```
+1 column, uniform (zero flux, write-back skipped)    885us   <- a SETTLED column costs 81% of an active one
+1 column, one crater (write-back runs)             1,091us
+1 column, noise everywhere (max flux)                997us
+(reference) bare 1MB read scan                        65us
+(reference) IntArray.fill(0)                          13us
+```
+
+We pay to *discover* nothing needs doing. Cost is dead-linear in columns swept (1/3/8/12 cols =
+986/2,979/8,006/12,101µs), so the only lever is **how many columns a pass touches**. The schedule below caps
+that at **one**, which is why `PLAN_diffusion.md` §4.2's active-tile bitmap was never needed — ~15 lines beat
+it. Where the 885µs goes: ~40% memory traffic (each sweep zeroes a 1 MB scratch and streams a 1 MB column),
+~40% per-edge control flow (the inner loop branches on `vertical` and the torus wrap **per texel** — both
+hoistable, worth maybe 30-40% if ever needed), ~20% the integer divide.
+
+**Two plan assumptions that measurement killed** (see `PLAN_diffusion.md` §0 for the behavioural two):
+- *"`/` by a constant costs nothing, the JIT strength-reduces it"* — **wrong both ways.** `den` is a runtime
+  parameter, so a real `idiv` IS emitted; but forcing a compile-time constant bought only **20%**
+  (885→703µs), so it was never the story either.
+- *"Species subsetting is 8-16× and free"* — the first schedule (all monomers + one whole length class,
+  ~4-12 columns/pass) only got 0.82% → 0.64%. The polymer columns were never the cost; the always-on
+  monomers were. One-species-per-pass got the rest: **0.64% → 0.10%**, spike ~21ms → gone.
+
+```
+                         interact avg   interact max   worst tick (seq/par)
+diffusion OFF (decay only)      24us          3.2ms      34.0 / 35.1 ms
+all species, no schedule       184us         25.5ms      50.5 / 48.2 ms   0.82% of tick
+monomers + one length class    150us         24.6ms                       0.64%
+ONE species per pass            43us          8.1ms      39.7 / 31.4 ms   0.10%  <- shipped
+```
+
+**Two benchmarking traps, both cost me real time:**
+- ⚠️ **`benchCyto`'s `share` column understates by ~1.8×.** Its denominator is the sum of all phases, and the
+  `bio:*` phases are **nested inside `biology`** — the phase sum (~35ms) nearly doubles the real tick (~19ms).
+  Use `interact avg / tick avg`. I reported 0.5% from that column before catching it.
+- ⚠️ **A 1-in-128 spike hides BELOW p99** (it is 0.78% of ticks). `PLAN_diffusion.md` §4 says watch p95/p99 —
+  not enough. **Only `max` catches it.** p95/p99 moved 1-5% while `max` moved 34→50ms.
+
+Also `0328713b`: the matter footprint now clamps to `MAX_COLLISION_RADIUS` like the collider does (it was
+bounded only by `MAX_DISC_RADIUS` = 4.0, i.e. 4× the cap = **16× the area**). Zero measured effect — no cell
+in a real save gets near the cap (p50 0.4999, max 0.5000 at both tick 0 and 6000; cells divide long before
+growing toward 1.0). It is a latent guard, and it makes big-cell exchange cheaper *if* a hoarding genome ever
+appears.
+
 ## 2026-07-15 (#2) — the matter field went dense; the overlay is now 1.0ms and exchange -31%
 
 `CytoMatterField` was an adaptive quad-tree; it is now a flat `RES`² texel grid stored as one dense

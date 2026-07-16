@@ -132,7 +132,14 @@ is weak and the schedule is fixed — so it is the dial to turn if recovery feel
 
 ## 1. Read this first: diffusion has been removed TWICE, for good reasons
 
-The field has no diffusion today. That is not an oversight, it is a conclusion reached twice:
+> **HISTORICAL from here down (§§1–8 are the 2026-07-15 design as written).** Present tense below means
+> "as of 2026-07-15", before the build. §0 is the as-built record and wins on every point of conflict —
+> notably §5, which measurement disproved. The reasoning in this section still stands and is why the
+> purpose had to be settled first: the answer was **(b) ecological recovery**, which the disc gather
+> genuinely cannot serve.
+
+The field had no diffusion at the time of writing. That was not an oversight, it was a conclusion reached
+twice:
 
 - **`100addd2`** removed the flat grid's diffusion because **the disc gather replaced its "feed sessile
   cells" role**. A cell reaches across a footprint of texels and balances them all toward a common level, so

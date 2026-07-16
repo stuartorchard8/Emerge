@@ -8,6 +8,17 @@ determinism gates green. NEXT: resume the locomotion controller as taxis (env-dr
 lateralising signal).**
 Written 2026-06-21.
 
+> ⚠️ **SUPERSEDED 2026-07-16 — "no diffusion" is no longer true.** The field diffuses again (`e4d622c6`,
+> `e171016d`, `27a33262`): an integer edge-flux pass on the maintenance cadence, one species per pass, ~0.10%
+> of tick. The purpose is **ecological recovery**, NOT the feed-immobile role this doc's disc gather replaced
+> — that reasoning still holds, and the gather still feeds cells. Craters no longer persist forever: they
+> stay legible for thousands of ticks and relax to ~69% of seed over geological time (a slope-1 staircase
+> survives, which is what lets the pass terminate). This doc's §"Decided substrate" bullet on diffusion, and
+> the §"The shift" heading below, are historical. See `PLAN_diffusion.md` §0 for as-built.
+>
+> Also superseded: the **progressive collapse** noted in the status above was removed (`66e6c37c`) and the
+> **quad-tree** with it (`4d6597f8`) — the field is a flat dense grid now.
+
 ## Decided substrate (2026-06-21): RES=1024, dense per-species, disc gather, no diffusion
 - **MATTER_GRID_RES = 1024** (decoupled from the coarse light grid): grid cell = 0.25 cell-diam (SUB-CELL).
   A cell's radius spans ~2 grid cells → a ~13-grid-cell circular footprint. (RES=2048 = smoother circle but

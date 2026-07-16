@@ -191,6 +191,23 @@ wires up — none of it is hardcoded.
   primitives, conservation invariant, AoS↔SoA byte-identity, and save round-trip — but a multi-species
   integer-count store instead of a single energy scalar.
 
+  > **AS-BUILT (2026-07-16).** Three things above are stale; the code is authoritative
+  > (`CytoMatterField` KDoc, `CytoTuning`):
+  > - *"active-only — no passive flux"* was overtaken long ago by **`passiveEnvExchange`**, the passive
+  >   bidirectional junction — as §"Three mechanisms" (A) already says. A cell balances every transferable
+  >   species over its footprint **disc**, not the single grid-cell it sits in; Import/Export genes only
+  >   *bias* and one-way-gate that flux.
+  > - **The environment diffuses** (`e4d622c6`, `e171016d`, `27a33262`). Integer edge-flux on the
+  >   `MATTER_MAINTAIN_PERIOD` cadence, one species per pass, ~0.10% of tick. Its purpose is **ecological
+  >   recovery, not feeding** — the disc gather still feeds cells. A depleted crater stays a legible scar
+  >   for thousands of ticks and relaxes to ~69% of seed over geological time. Conservation is exact by
+  >   construction (each edge moves `-f`/`+f`), so the invariant below is unaffected. See
+  >   `PLAN_diffusion.md` §0.
+  > - **Everything a cell touches shares one radius**, capped at `MAX_COLLISION_RADIUS` via
+  >   `CytoTuning.physicalRadius()` (`0328713b`): collider, weld, render, *and* the matter footprint.
+  >   Metabolic size stays emergent and uncapped. Degraded biomass is shed into that same disc
+  >   (`5787a05d`), so a cell drops matter exactly where it can pick matter up.
+
 ## Mitosis
 
 - **The gate is the whole control** — no charge accumulator / threshold (the old `divideCharge` /

@@ -825,8 +825,9 @@ object CytoBiologyCore {
 
     /** Spontaneous decay: shed `wear / DEGRADE_PERIOD` whole biomass molecules to the environment
       *  at a rate ∝ total cell mass (biomass bonds + cytoplasm molecule count). Each tick the cell's
-      *  **most-abundant** biomass molecule loses one copy, dropped at the center-most touching cell's
-      *  position (like shed skin — no splitting, no cytoplasm intermediate). The molecule then decays at
+      *  **most-abundant** biomass molecule loses one copy, spread evenly over the cell's OWN footprint —
+      *  the same disc [passiveEnvExchange] draws from, so a cell drops matter exactly where it can pick
+      *  matter up (like shed skin — no splitting, no cytoplasm intermediate). The molecule then decays at
       *  the environment's own rate. This is a real matter LEAK — a maintenance cost the cell must keep
       *  importing against (selection for efficient builders) and a steady feed for the food web.
       *  Cytoplasm count adds a hoarding tax: more cytoplasm → more wear → faster biomass drain. */
