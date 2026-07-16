@@ -114,10 +114,14 @@ class CampaignDirector {
         }
     }
 
-    /** Draw the coach panel. Call inside the host's `ui.frame { }` after the other overlays. */
-    fun render(ui: UiBuilder, controller: CytoController) {
+    /** Draw the coach panel. Call inside the host's `ui.frame { }` after the other overlays. When
+     *  [collapsed] (a cell/gene editor owns the bottom of the screen), the coach shrinks to a single-line
+     *  pill in the top-left — progress + the current step's actionable hint — so onboarding stays visible
+     *  while editing instead of disappearing (UI_REDESIGN.md §6.1). */
+    fun render(ui: UiBuilder, controller: CytoController, collapsed: Boolean = false) {
         val ch = chapter ?: return
         val step = currentStep ?: return
+        if (collapsed) { renderPill(ui, ch, step); return }
         val query = lastQuery
         val gate = step.gate
         val nextEnabled = gate is Gate.Next || gateMet
@@ -155,6 +159,18 @@ class CampaignDirector {
         }
     }
 
+    /** The collapsed coach — a top-left pill: `▸ N/M` progress + the step's hint (or its first text line),
+     *  clipped to fit. Non-interactive; the full coach returns as soon as the editor closes. */
+    private fun renderPill(ui: UiBuilder, ch: Chapter, step: Step) {
+        val hint = step.spotlight?.hint ?: step.text
+        val progress = "${stepIndex + 1}/${ch.steps.size}"
+        ui.panel(Anchor.TopLeft, margin = 12f, padding = 10f, background = 0x11182AF2L, rowHeight = 22f) {
+            title("STEP $progress", 0x6FD6C4FFL)
+            gap(2f)
+            row("→ ${clip(hint, PILL_WRAP)}", 0xFFD86EFFL)
+        }
+    }
+
     /** Read-only view of the coach state, for headless/agent observation. */
     class CoachSnapshot(
         val chapterId: String, val chapterTitle: String,
@@ -165,6 +181,11 @@ class CampaignDirector {
 
     companion object {
         private const val COACH_WRAP = 58   // approx chars per coach line before wrapping
+        private const val PILL_WRAP = 42    // the collapsed pill is one line; clip the hint to this
+
+        /** Truncate to [maxChars], appending an ellipsis when cut. */
+        internal fun clip(text: String, maxChars: Int): String =
+            if (text.length <= maxChars) text else text.take(maxChars - 1).trimEnd() + "…"
 
         /** Greedy word-wrap to [maxChars]-wide lines (the toolkit's rows are single-line). */
         internal fun wrap(text: String, maxChars: Int): List<String> {

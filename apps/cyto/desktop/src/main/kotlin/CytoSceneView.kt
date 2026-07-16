@@ -241,9 +241,9 @@ object CytoSceneView {
                 // Menu/Save bar are suppressed behind it.
                 val narrow = layout.forceNarrow || ui.resWidth < NARROW_MAX_PX
                 val modalUp = narrow && geneEditor.isEditing
-                // The coach would collide with the gene editor (a full-screen modal on a phone, a docked
-                // column on a wide screen) or the narrow L2 sheet, so it steps aside while either is up
-                // (§6.1 — proper coach docking is later work).
+                // A cell/gene editor owns the bottom of the screen, so the coach collapses to a top-left pill
+                // instead of its full bottom-centre panel (§6.1). Behind a full-screen narrow modal there's no
+                // room even for the pill, so it hides entirely there.
                 val cellUp = geneEditor.isEditing || (narrow && controller.lastHeldId != null)
                 // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
                 ui.frame {
@@ -270,8 +270,9 @@ object CytoSceneView {
                             ))
                         }
                     }
-                    // The campaign coach overlay (bottom-centre), on top of the controls.
-                    if (!cellUp) director.render(this, controller)
+                    // The campaign coach overlay: full bottom-centre panel normally, a top-left pill when a
+                    // cell/gene editor is up, nothing behind a full-screen narrow modal.
+                    if (!modalUp) director.render(this, controller, collapsed = cellUp)
                 }
             } else {
                 // Front-end shell over the (paused) world.

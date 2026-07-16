@@ -331,7 +331,11 @@ object CytoAgentHarness {
             val mask = director.controlMask
             ui.frame {
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW) {}
-                if (director.active && !(geneEditor.isEditing || (NARROW && controller.lastHeldId != null))) director.render(this, controller)
+                if (director.active) {
+                    val modalUp = NARROW && geneEditor.isEditing
+                    val cellUp = geneEditor.isEditing || (NARROW && controller.lastHeldId != null)
+                    if (!modalUp) director.render(this, controller, collapsed = cellUp)
+                }
             }
         }
 
@@ -375,7 +379,11 @@ object CytoAgentHarness {
             controls.draw()                                  // bottom toolbar
             ui.frame {                                        // info panel + coach overlay
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW) {}
-                if (director.active && !(geneEditor.isEditing || (NARROW && controller.lastHeldId != null))) director.render(this, controller)
+                if (director.active) {
+                    val modalUp = NARROW && geneEditor.isEditing
+                    val cellUp = geneEditor.isEditing || (NARROW && controller.lastHeldId != null)
+                    if (!modalUp) director.render(this, controller, collapsed = cellUp)
+                }
             }
             ui.draw()
             glFinish()

@@ -331,18 +331,19 @@ doubles the cost of every future UI feature.
 > trips on its own). Steps 1–5 are done; L4 pickers, L2/L3, wide + narrow all verified via the harness.
 > Core tests green.
 >
-> **TOP OF QUEUE — the bug Stu saw: gene sentences clip.** The gene-row label in the L2 panel/sheet is
-> still the old ~30-char one-liner (`geneButton` → a centred span button), so it overflows a narrow column
-> (docked right panel on desktop, bottom sheet on phone) and clips on both sides. **Fix: a two-line,
-> left-aligned gene card** — line 1 `WHEN <cond>`, line 2 `→ <ACTION>` — per §3's L2 wireframe, keeping the
-> active/blocking orange spans. Needs a new left-aligned two-line `PanelBuilder` item (the current
-> `SpanButtonItem` centres a single line). This is the last thing making the cell view look broken.
+> **DONE 2026-07-17 (this session):**
+> - ✅ **Two-line left-aligned gene card** — new `PanelBuilder.geneCard` primitive (`Ui.kt`); `geneButton`
+>   splits the span sentence on the verbatim " IF "/" (" markers into line 1 `WHEN <cond>`, line 2
+>   `→ <ACTION> (source) eN`, keeping orange blocking spans. Never widens the panel — overflow clips at the
+>   scroll scissor, right edge only. Wide cell dock widened 330→380dp. `5dbb2105`.
+> - ✅ **Delete confirm** — overflow DELETE now arms a "DELETE GENE?" step (DELETE GENE / KEEP IT) via
+>   `confirmingDelete`; only the second tap removes. `21e938fd`.
+>
+> **TOP OF QUEUE — Coach docking** (§6.1): today the coach is *suppressed* whenever a gene is open (host +
+> harness) so it doesn't collide with the modal/column — it should instead dock to a one-line pill. Campaign
+> onboarding is invisible while editing until this lands.
 >
 > **Then, in rough priority:**
-> - **Confirm dialog** for DELETE (overflow `⋮` → DELETE currently deletes immediately; §9 step-2 leftover).
-> - **Coach docking** (§6.1): today the coach is *suppressed* whenever a gene is open (host + harness) so it
->   doesn't collide with the modal/column — it should instead dock to a one-line pill. Campaign onboarding
->   is invisible while editing until this lands.
 > - **L1 collapsed-peek detent** for the narrow L2 sheet (drag up L1→L2); today it opens fully.
 > - Steps 6–8 below (L0 bar, Android host, campaign polish).
 >
