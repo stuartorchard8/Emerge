@@ -30,6 +30,15 @@ tasks.register<JavaExec>("cytoAgent") {
         providers.systemProperty(key).orNull?.let { systemProperty(key, it) }
 }
 
+// THROWAWAY: renders the UI_REDESIGN.md L3 mock at a phone size. Delete with MobileMockRender.kt.
+tasks.register<JavaExec>("mobileMock") {
+    group = "application"
+    description = "Render the proposed mobile gene-detail screen (design mock) to agent-out/mock-l3-*.png."
+    mainClass = "org.emerge.desktop.MobileMockRenderKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootDir
+}
+
 tasks.register<JavaExec>("renderCyto") {
     group = "application"
     description = "Render the Cyto world headlessly (light-field heatmap + cells) to a PNG. " +

@@ -223,6 +223,25 @@ Compare today's numbers: the same worst-case gene is **2.3× wider than the scre
 The design's worst case overflows by *one row* and scrolls. That's the difference between "doesn't
 fit" and "fits with a scroll".
 
+### 5.1 Verified against a real render
+
+`MobileMockRender.kt` (throwaway; `./gradlew :apps:cyto:desktop:mobileMock`) draws L3 at 1080×2400
+using the **real** rect shader + bitmap font, so glyph widths and colours are exactly what the game
+would draw. Output: `agent-out/mock-l3-{typical,worst}.png`. What it settled:
+
+- **The sentence reads.** `WHEN BIO > 2000` / `DO DIVIDE (MITOSIS)` / `POWERED BY BREAK RG` scans
+  top-to-bottom as prose. The framing survives contact with the real font.
+- **The clause-as-one-row claim holds.** `[BIO] [>] [2000]` at 48dp across 387dp is comfortable;
+  4 clauses cost 4 rows, against ~24 today.
+- **The dp budget was right.** Typical leaves ~40% of the screen empty; worst case clips under the
+  bottom bar exactly as predicted — **so the scroll container is mandatory, not a nice-to-have.**
+- **Scissor clipping works** on this GL path (the mock clips content mid-row while chrome stays
+  fixed). That de-risks the scroll primitive — the mechanism is proven before the primitive is built.
+- **Corrected by the render:** segmented controls **cannot use a fixed width** — `DAUGHTER` overflows
+  a 95dp segment. Segments must size to their widest label (monospace ⇒ exact).
+- **Open:** the typical screen's empty lower half is an opportunity — a plain-English restatement of
+  the gene, or live "firing / blocked, because X" state, would fill it usefully. Not yet designed.
+
 ---
 
 ## 6. Known tensions (flagging, not hiding)
