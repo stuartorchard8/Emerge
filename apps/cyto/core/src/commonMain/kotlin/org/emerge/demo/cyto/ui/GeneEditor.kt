@@ -41,6 +41,7 @@ class GeneEditor {
     private var pick = Pick.None
     private var pickClause = -1
     private var pickSide = 0            // 0 = lhs, 1 = rhs (Operand picker)
+    private var confirmingDelete = false   // Overflow sheet is showing the "delete this gene?" confirm step.
 
     // In-game group tagging: when the player picks "New group..." the editor captures a typed name into
     // [groupBuffer] (the host routes keystrokes here — see [capturingGroupName]/[typeGroupChar]). Only the
@@ -322,12 +323,20 @@ class GeneEditor {
             Pick.Eff -> pickSheet(b, "EFFICIENCY GEAR", wide, heightFraction = 0.4f) {
                 numberField(d.efficiency, 0, CytoTuning.EFFICIENCY_MAX_GEAR) { draft = d.copy(efficiency = it) }
             }
-            Pick.Overflow -> pickSheet(b, "GENE", wide, heightFraction = 0.35f) {
+            Pick.Overflow -> pickSheet(b, if (confirmingDelete) "DELETE GENE?" else "GENE", wide, heightFraction = 0.35f) {
                 val idx = editingIndex ?: return@pickSheet
-                listRow("DUPLICATE", "ADD A COPY OF THIS GENE") { controller.duplicateHeldGene(idx); closePick() }
-                gap(4f)
-                // TODO: a confirm dialog (UI_REDESIGN.md §9 still-to-do) before the destructive delete.
-                listRow("DELETE", "REMOVE THIS GENE") { controller.deleteHeldGene(idx); closePick(); reset() }
+                if (confirmingDelete) {
+                    // Two-step guard: DELETE only arms the confirm; this second tap actually removes it.
+                    row("THIS CAN'T BE UNDONE.", 0x9A9A9AFFL)
+                    gap(6f)
+                    listRow("DELETE GENE", "REMOVE IT PERMANENTLY") { controller.deleteHeldGene(idx); closePick(); reset() }
+                    gap(4f)
+                    listRow("KEEP IT", "GO BACK") { confirmingDelete = false }
+                } else {
+                    listRow("DUPLICATE", "ADD A COPY OF THIS GENE") { controller.duplicateHeldGene(idx); closePick() }
+                    gap(4f)
+                    listRow("DELETE", "REMOVE THIS GENE") { confirmingDelete = true }
+                }
             }
         }
     }
@@ -390,7 +399,7 @@ class GeneEditor {
             Triple<String, Long, () -> Unit>("<", 0x5A3A3AFFL) { onChange(current.dropLast(1)) })
     }
 
-    private fun closePick() { pick = Pick.None; pickClause = -1; pickSide = 0 }
+    private fun closePick() { pick = Pick.None; pickClause = -1; pickSide = 0; confirmingDelete = false }
 
     /** One-line gloss of an action, for the L4 list picker (the room a dropdown never had). */
     private fun actionBlurb(t: ActionType): String = when (t) {
@@ -536,6 +545,7 @@ class GeneEditor {
         pick = Pick.None
         pickClause = -1
         pickSide = 0
+        confirmingDelete = false
     }
 
     private fun sourceLabel(s: EnergySource): String = when (s) {
