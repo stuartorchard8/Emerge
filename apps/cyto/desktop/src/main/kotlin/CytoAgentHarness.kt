@@ -222,6 +222,7 @@ object CytoAgentHarness {
                 }
                 "elements" -> listElements()
                 "tap-ui" -> tapUi(line.removePrefix("tap-ui").trim())
+                "drag-ui" -> dragUi(t[1], t[2].toFloat())
                 "overlay" -> {
                     val matter = t[1] == "matter"
                     controls.rebuild()
@@ -317,6 +318,21 @@ object CytoAgentHarness {
         }
 
         private fun totalBiomassBonds(biomass: Map<String, Int>): Int = biomass.values.sum()
+
+        /** Simulate a vertical drag on a labelled region ([dyPx] > 0 down): press at its centre, feed
+         *  incremental moves through the toolkit's real drag path, then release (which snaps a sheet detent). */
+        private fun dragUi(label: String, dyPx: Float) {
+            buildOverlay()
+            val el = ui.elements().firstOrNull { it.label.contains(label, ignoreCase = true) }
+            if (el == null) { println("[agent] drag-ui '$label' -> no match"); return }
+            val cx = el.x + el.w * 0.5f; val cy = el.y + el.h * 0.5f
+            ui.hitTestDown(cx, cy)
+            val steps = 10
+            for (i in 1..steps) ui.dragTo(cx, cy + dyPx * i / steps)
+            ui.hitTestUp(cx, cy + dyPx)
+            println("[agent] drag-ui '$label' dy=$dyPx -> done")
+            sync()
+        }
 
         private fun tapUi(label: String) {
             buildOverlay()

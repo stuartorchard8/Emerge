@@ -90,6 +90,20 @@ class Ui {
     /** Set once a press turns into a scroll drag — suppresses the click on release, like a desktop drag. */
     private var scrolled = false
 
+    // ── Drag handles ─────────────────────────────────────────────────────────────────────────────────────
+    // A drag handle resizes something (today: the L2 bottom sheet's height). A press on it takes priority
+    // over scroll; a short movement is still a tap (onTap), a longer one becomes a drag (onDrag per move,
+    // onRelease to snap). The active handle persists across frames for the duration of the gesture.
+    private class DragHandleRegion(
+        val id: String, val x: Float, val y: Float, val w: Float, val h: Float,
+        val onTap: () -> Unit, val onDrag: (Float) -> Unit, val onRelease: () -> Unit,
+    )
+    private val dragHandles = ArrayList<DragHandleRegion>()
+    private var activeHandle: DragHandleRegion? = null
+    private var handleStartY = 0f
+    private var handleLastY = 0f
+    private var handleDragged = false
+
     val resWidth: Float get() = resW
     val resHeight: Float get() = resH
 
@@ -116,6 +130,7 @@ class Ui {
         overlayRects.clear(); overlayTexts.clear(); overlayClicks.clear()
         anchorCursor.clear(); anchorInset.clear(); anchorColumnExtent.clear()
         clipRects.clear(); scrollRegions.clear(); currentClip = -1
+        dragHandles.clear()
         UiBuilder(this).block()
     }
 
@@ -236,21 +251,42 @@ class Ui {
         // doesn't consume: the same press may still be a button tap — [dragTo] decides which it became.
         activeScroll = null
         scrolled = false
-        for (r in scrollRegions) {
-            if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
-                activeScroll = r.id
-                scrollLastY = py
-                break
+        // A drag handle wins over scroll: a press on it arms a resize, not a content scroll.
+        activeHandle = null
+        handleDragged = false
+        for (i in dragHandles.indices.reversed()) {
+            val hnd = dragHandles[i]
+            if (px >= hnd.x && px <= hnd.x + hnd.w && py >= hnd.y && py <= hnd.y + hnd.h) {
+                activeHandle = hnd; handleStartY = py; handleLastY = py; break
+            }
+        }
+        if (activeHandle == null) {
+            for (r in scrollRegions) {
+                if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
+                    activeScroll = r.id
+                    scrollLastY = py
+                    break
+                }
             }
         }
         for (i in overlayClicks.indices.reversed()) if (regionHitTestDown(overlayClicks[i], px, py)) return true
         for (i in clicks.indices.reversed()) if (regionHitTestDown(clicks[i], px, py)) return true
-        return activeScroll != null
+        return activeScroll != null || activeHandle != null
     }
 
     /** Feed pointer movement while held. If the press began in a scroll area, this scrolls it and (past
      *  [SCROLL_SLOP]) cancels the pending click, exactly as a drag does elsewhere. Returns true if it scrolled. */
     fun dragTo(px: Float, py: Float): Boolean {
+        val hnd = activeHandle
+        if (hnd != null) {
+            val dy = py - handleLastY
+            handleLastY = py
+            if (!handleDragged && abs(py - handleStartY) < SCROLL_SLOP) return false
+            handleDragged = true
+            heldRegion = null   // committed to a drag, so no tap fires on release
+            hnd.onDrag(dy)
+            return true
+        }
         val id = activeScroll ?: return false
         val dy = py - scrollLastY
         scrollLastY = py
@@ -284,6 +320,13 @@ class Ui {
 
     /** Routes a pointer-up: invokes the topmost interactive region (overlay first) containing the point. */
     fun hitTestUp(px: Float, py: Float): Boolean {
+        // A drag handle: a committed drag snaps (onRelease) and swallows the click; a mere tap on it falls
+        // through to onTap via the normal click scan below (the handle also registers a click region).
+        val hnd = activeHandle
+        if (hnd != null) {
+            activeHandle = null
+            if (handleDragged) { handleDragged = false; hnd.onRelease(); return true }
+        }
         // A press that turned into a scroll is not a click.
         if (scrolled) { activeScroll = null; scrolled = false; return true }
         activeScroll = null
@@ -352,6 +395,16 @@ class Ui {
     }
     internal fun emitClick(x: Float, y: Float, w: Float, h: Float, label: String? = null, onClick: () -> Unit) {
         clicks.add(ClickRegion(x, y, w, h, onClick, label = label, clip = currentClip))
+    }
+
+    /** Register a resize drag handle plus a co-located click region (so a tap on it fires [onTap] via the
+     *  normal click path, while a drag routes through [onDrag]/[onRelease]). */
+    internal fun emitDragHandle(
+        x: Float, y: Float, w: Float, h: Float, id: String,
+        onTap: () -> Unit, onDrag: (Float) -> Unit, onRelease: () -> Unit,
+    ) {
+        dragHandles.add(DragHandleRegion(id, x, y, w, h, onTap, onDrag, onRelease))
+        clicks.add(ClickRegion(x, y, w, h, onTap, label = id, clip = currentClip))
     }
 
     /** Open a clip + scroll viewport; returns the scroll offset to lay content out against. */
@@ -824,6 +877,12 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     fun clauseRow(lhs: String, cmp: String, rhs: String, onLhs: () -> Unit, onCmp: () -> Unit, onRhs: () -> Unit) =
         items.add(ClauseRowItem(lhs, cmp, rhs, onLhs, onCmp, onRhs, rowHeight))
 
+    /** A **grab handle** — a centred pill that resizes its container by dragging: [onDrag] gets the vertical
+     *  pixel delta per move, [onRelease] fires once the gesture ends (snap to a detent there), and a mere tap
+     *  fires [onTap]. Used for the L2 sheet's peek↔full drag. [id] identifies the gesture + labels the tap. */
+    fun dragHandle(id: String, onTap: () -> Unit, onDrag: (Float) -> Unit, onRelease: () -> Unit) =
+        items.add(DragHandleItem(id, rowHeight * 0.7f, onTap, onDrag, onRelease))
+
     internal interface Item {
         val height: Float
         fun measureWidth(textH: Float): Float
@@ -896,6 +955,19 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
             emitLine(ui, line2, x + pad, topY + inset + lineH + (lineH - textH) * 0.5f, textH)
             val lbl = (line1 + line2).joinToString("") { it.first }
             ui.emitClick(x, topY + inset, contentW, height - inset * 2f, label = lbl, onClick = onClick)
+        }
+    }
+
+    private class DragHandleItem(
+        val id: String, override val height: Float,
+        val onTap: () -> Unit, val onDrag: (Float) -> Unit, val onRelease: () -> Unit,
+    ) : Item {
+        override fun measureWidth(textH: Float) = textH * 6f
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            val pillW = maxOf(contentW * 0.16f, textH * 3f)
+            val pillH = maxOf(3f, height * 0.28f)
+            ui.emitRect(x + (contentW - pillW) * 0.5f, topY + (height - pillH) * 0.5f, pillW, pillH, 0x66748AFFL)
+            ui.emitDragHandle(x, topY, contentW, height, id, onTap, onDrag, onRelease)
         }
     }
 

@@ -49,6 +49,9 @@ class GeneEditor {
     // the full L2 sheet. Reset to the peek whenever the held cell changes ([peekedId] tracks that).
     private var cellExpanded = false
     private var peekedId: EntityId? = null
+    /** Live sheet height fraction while dragging the grab handle (null when not dragging); snapped to a
+     *  detent on release. Lets the peek↔full transition track the finger instead of jumping. */
+    private var sheetDragFrac: Float? = null
 
     /** Which L4 picker sheet (if any) is open over the narrow L3 modal, and its target (clause index +
      *  side for operand/value pickers). Cross-frame UI state, like the rest of the editor. */
@@ -129,7 +132,7 @@ class GeneEditor {
             // A full-screen modal (editing) hides the world entirely; otherwise the sheet leaves a top area,
             // whose size depends on the L1 peek vs full L2 detent.
             if (draft != null) return 0f to 0f
-            val frac = if (cellExpanded) SHEET_FRACTION else PEEK_FRACTION
+            val frac = sheetDragFrac ?: (if (cellExpanded) SHEET_FRACTION else PEEK_FRACTION)
             return 0f to -(frac * resH) * 0.5f
         }
         // Wide: the cell panel docks right; when editing, the gene-editor column docks to its left. The free
@@ -156,7 +159,7 @@ class GeneEditor {
         val info = controller.heldCellInfo()
         if (info == null) { reset(); return }
         if (editingId != null && editingId != controller.lastHeldId) reset()   // grabbed a different cell
-        if (controller.lastHeldId != peekedId) { peekedId = controller.lastHeldId; cellExpanded = false }   // new cell → peek
+        if (controller.lastHeldId != peekedId) { peekedId = controller.lastHeldId; cellExpanded = false; sheetDragFrac = null }   // new cell → peek
 
         // Progressive-disclosure UI everywhere (apps/cyto/UI_REDESIGN.md §8); `narrow` only chooses the
         // container geometry — a bottom sheet + full-screen modal + bottom picker on a phone, a docked right
@@ -185,19 +188,33 @@ class GeneEditor {
         grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit, wide: Boolean,
     ): Float {
         if (wide) {
-            val body: PanelBuilder.() -> Unit = { cellBody(controller, info, grouping, insertableGroups, onExport, narrow = false) }
+            val body: PanelBuilder.() -> Unit = { cellBody(controller, info, grouping, insertableGroups, onExport) }
             return b.dockRight("cell-panel", width = CELL_PANEL_DP, margin = PANEL_MARGIN_DP, rowHeight = 26f, textSize = 15f, block = body)
         }
-        // Narrow: a shallow peek (name + biomass) that expands to the full L2 sheet.
-        if (cellExpanded) {
-            b.dockBottom("cell-sheet", heightFraction = SHEET_FRACTION, rowHeight = 44f, textSize = 15f) {
-                cellBody(controller, info, grouping, insertableGroups, onExport, narrow = true)
-            }
-        } else {
-            // Opaque background so the peek fully hides whatever sits behind its short strip.
-            b.dockBottom("cell-peek", heightFraction = PEEK_FRACTION, background = 0x121722FFL, rowHeight = 44f, textSize = 16f) {
-                peekBody(info)
-            }
+        // Narrow: a shallow peek (name + biomass) that drags up to the full L2 sheet. While dragging, the
+        // height tracks the finger (sheetDragFrac) and the body switches at the midpoint; a tap on the handle
+        // toggles; a hard drag down dismisses. Opaque background so the short peek fully hides what's behind it.
+        val screenH = b.screenH
+        val midFrac = (PEEK_FRACTION + SHEET_FRACTION) * 0.5f
+        val liveFrac = sheetDragFrac ?: (if (cellExpanded) SHEET_FRACTION else PEEK_FRACTION)
+        val showFull = sheetDragFrac?.let { it > midFrac } ?: cellExpanded
+        b.dockBottom("cell-sheet", heightFraction = liveFrac, background = 0x121722FFL, rowHeight = 44f, textSize = if (showFull) 15f else 16f) {
+            dragHandle(
+                "cell-grab",
+                onTap = { cellExpanded = !cellExpanded; sheetDragFrac = null },
+                onDrag = { dy -> sheetDragFrac = ((sheetDragFrac ?: liveFrac) - dy / screenH).coerceIn(0f, SHEET_FRACTION) },
+                onRelease = {
+                    val f = sheetDragFrac
+                    sheetDragFrac = null
+                    if (f != null) cellExpanded = when {
+                        f < PEEK_FRACTION * 0.55f -> { controller.clearSelection(); false }   // dragged down to dismiss
+                        f > midFrac -> true
+                        else -> false
+                    }
+                },
+            )
+            if (showFull) cellBody(controller, info, grouping, insertableGroups, onExport)
+            else peekBody(info)
         }
         return 0f
     }
@@ -212,9 +229,8 @@ class GeneEditor {
 
     private fun PanelBuilder.cellBody(
         controller: CytoController, info: CytoController.CellInfo,
-        grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit, narrow: Boolean,
+        grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit,
     ) {
-        if (narrow) button(listOf("v  LESS" to 0x9AA6BCFFL), 0x2A3550FFL) { cellExpanded = false }   // collapse to peek
         title("CELL ${info.id}  ${info.type}")
         // Per-line key/values right-align their value, so the panel reads at any width (a single-line vitals
         // row overflowed the narrow wide-screen column).
