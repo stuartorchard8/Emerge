@@ -22,9 +22,11 @@ import kotlin.math.pow
 /**
  * Desktop host for the native Cyto demo. Drives a [CytoController] + [CytoRenderer] and
  * draws the on-screen [CytoControls] overlay (the faithful Cyto control UI). Pointer-down
- * goes to the UI first; if it misses, a press on a cell grabs it (Sticky/Detach hold-mode
- * effects applied), a press on empty space pans, scroll zooms, and a click spawns/acts per
- * the controls' current mode + cell type. F5/F9 save/load.
+ * goes to the UI first; if it misses, a left press on a cell grabs it (Sticky/Detach hold-mode
+ * effects applied) and a left click spawns/acts per the controls' current mode + cell type.
+ * The right button owns the camera: drag pans, and a click that didn't pan deselects (as Esc
+ * does). Scroll zooms. Left-dragging empty space is reserved for a future area-select and does
+ * nothing today. F5/F9 save/load.
  */
 object CytoSceneView {
 
@@ -153,9 +155,8 @@ object CytoSceneView {
                 ui.updateHold(cx, cy, delta)
             }
 
-            // WASD free camera pan. Held keys pan the camera each frame (delta-scaled); taking manual
-            // control clears any cell-follow, exactly as dragging empty space does. Suppressed while a name
-            // field is capturing keystrokes so typing W/A/S/D doesn't move the camera.
+            // WASD free camera pan. Held keys pan the camera each frame (delta-scaled). Suppressed while a
+            // name field is capturing keystrokes so typing W/A/S/D doesn't move the camera.
             if (menu.inGame && !menu.capturingName && !geneEditor.capturingGroupName) {
                 var kx = 0f; var ky = 0f
                 if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) kx -= 1f   // move camera right
@@ -383,16 +384,36 @@ object CytoSceneView {
         signals: CampaignSignals,
     ) {
         glfwSetMouseButtonCallback(window) { win, button, action, _ ->
-            if (button != GLFW_MOUSE_BUTTON_LEFT) return@glfwSetMouseButtonCallback
+            if (button != GLFW_MOUSE_BUTTON_LEFT && button != GLFW_MOUSE_BUTTON_RIGHT)
+                return@glfwSetMouseButtonCallback
             val px = cursorPixel(win)
             // While the front-end shell is up, clicks only route to its widgets — no world interaction.
             if (!menu.inGame) {
+                if (button != GLFW_MOUSE_BUTTON_LEFT) return@glfwSetMouseButtonCallback
                 if (action == GLFW_PRESS) {
                     ui.hitTestDown(px.first, px.second)
                 }
                 else {
                     ui.hitTestUp(px.first, px.second)
                     ui.releaseHold()
+                }
+                return@glfwSetMouseButtonCallback
+            }
+            // Right button owns the camera: drag pans, and a click that didn't pan clears the selection
+            // (the same thing Esc does). It never touches the UI or the world.
+            if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+                when (action) {
+                    GLFW_PRESS -> {
+                        state.panning = true
+                        state.panned = false
+                        state.panLastX = px.first
+                        state.panLastY = px.second
+                    }
+                    GLFW_RELEASE -> {
+                        if (state.panning && !state.panned) controller.clearSelection()
+                        state.panning = false
+                        state.panned = false
+                    }
                 }
                 return@glfwSetMouseButtonCallback
             }
@@ -447,27 +468,30 @@ object CytoSceneView {
 
         glfwSetCursorPosCallback(window) { win, _, _ ->
             if (!menu.inGame) return@glfwSetCursorPosCallback
-            if (state.uiConsumed) return@glfwSetCursorPosCallback
-            // Only react while the primary button is held (grabId set on a cell, else pan).
-            if (!isPrimaryDown(win)) return@glfwSetCursorPosCallback
             val px = cursorPixel(win)
+            if (state.panning && isRightDown(win)) {
+                val dx = px.first - state.panLastX
+                val dy = px.second - state.panLastY
+                if (!state.panned && (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX))
+                    state.panned = true
+                renderer.panByPixels(dx, dy)
+                signals.cameraMoved = true
+                state.panLastX = px.first
+                state.panLastY = px.second
+            }
+            if (state.uiConsumed) return@glfwSetCursorPosCallback
+            // Left drag only ever moves a grabbed cell; on empty space it does nothing (reserved for a
+            // future area-select).
+            if (!isPrimaryDown(win)) return@glfwSetCursorPosCallback
             val dx = px.first - state.lastX
             val dy = px.second - state.lastY
-            if (!state.dragged && (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX)) {
+            if (!state.dragged && (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX))
                 state.dragged = true
-                val grabId = state.grabId
-                if (grabId == null) {
-                    controller.clearSelection()
-                }
-            }
 
             val grabId = state.grabId
             if (grabId != null) {
                 val world = renderer.screenToWorld(px.first, px.second)
                 controller.grab(grabId, world[0], world[1], sticky = controls.touchMode == TouchMode.Sticky)
-            } else {
-                renderer.panByPixels(dx, dy)
-                signals.cameraMoved = true
             }
             state.lastX = px.first
             state.lastY = px.second
@@ -485,6 +509,9 @@ object CytoSceneView {
 
     private fun isPrimaryDown(win: Long): Boolean =
         glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS
+
+    private fun isRightDown(win: Long): Boolean =
+        glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS
 
     private fun updateResolution(window: Long, renderer: CytoRenderer, controls: CytoControls, ui: Ui) {
         MemoryStack.stackPush().use { st ->
@@ -532,6 +559,11 @@ object CytoSceneView {
         var lastX = 0f
         var lastY = 0f
         var grabId: EntityId? = null
+        // Right button: camera pan. `panned` distinguishes a pan from a click (which deselects).
+        var panning = false
+        var panned = false
+        var panLastX = 0f
+        var panLastY = 0f
     }
 
     private const val DRAG_THRESHOLD_PX = 4f

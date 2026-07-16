@@ -94,7 +94,8 @@ Break rg : Biomass > 2000 : Mitosis
 
 Drop that in `cyto-genomes/`, restart (or re-open the menu), and it's a swatch you can paint.
 
-**Other controls.** Scroll to zoom, drag empty space to pan, drag a cell to move it. **Space**
+**Other controls.** Scroll to zoom, right-click and drag to pan, drag a cell to move it. Left-click
+is world interaction, right-click is the camera: a right-click that didn't pan deselects. **Space**
 pauses, **`[` / `]`** slow down / speed up the sim, **Esc** deselects (or opens the menu). The
 **Mut** button cycles the mutation rate (off → 1/1M → … → 1/1k) — keep it **off** while you're
 hand-authoring, or your careful genome will drift. **Light** and **Matter** buttons overlay the

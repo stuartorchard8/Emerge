@@ -364,7 +364,7 @@ object CampaignContent {
                 allow = LOOK,
             ),
             Step(
-                text = "Drag empty space to move around, and scroll to zoom. Try it - get a good look at the cell.",
+                text = "Right-click and drag to move around, and scroll to zoom. Try it - get a good look at the cell.",
                 gate = Gate.Did(PlayerAction.MovedCamera, "Pan or zoom the view"),
                 allow = LOOK,
             ),
