@@ -308,11 +308,18 @@ doubles the cost of every future UI feature.
 Each step ends in something visible at phone size via the harness
 (`-Dcyto.agent.w=1080 -Dcyto.agent.h=2400`, `6f5c2ace`).
 
-1. **Density + text decoupling** in `Ui`. Gate: desktop screenshots unchanged; ui-gallery is the surface.
-2. **Scroll container + Modal + Chip + Segmented + List row.** Showcase each in `ui-gallery` first —
-   that's what it's for, and it's cheaper than debugging them inside the game.
+1. ~~**Density + text decoupling** in `Ui`.~~ **DONE** (`4f606890`). Sizes callers pass are dp × `Ui.scale`;
+   `textSize` is its own knob defaulting to the old ratio. Gate held: ui-gallery + cyto's panel, editor
+   and coach all render **bit-identical** at 1200×900; at `-Dcyto.agent.density=2.625` rows go 16px → 45px.
+2. ~~**Scroll container**~~ **DONE** (`dc76cdcd`) — `scrollArea`, clip index per draw command, same-clip
+   runs batched between scissors; clipped rows are neither drawn nor hit-testable; a press that becomes a
+   scroll cancels its click. `GPU.setScissor` already existed on JVM/Android/JS. ~~**Chip + Segmented +
+   List row**~~ **DONE** (`a73ad823`). All showcased in `ui-gallery`; its snapshot now also captures a
+   *scrolled* frame, the only way a static shot proves the clip holds at an offset.
+   **Still to do: Modal** (full-screen, title bar + back, stacked over a sheet), **Sheet**, **overflow
+   menu**, **confirm dialog**.
 3. **L3 gene detail, vertical slice.** The densest, highest-risk screen — proving it here de-risks
-   the rest. Render at 1080×2400 and compare against §3's wireframe.
+   the rest. Render at 1080×2400 and compare against §3's wireframe. **Next up.**
 4. **L4 pickers** (list / number / species / segmented). Kills the 2000-tap bug.
 5. **L1/L2 sheets**; retire the current info panel.
 6. **L0 bar + Brush/Layers/Speed sheets**; retire the scattered `CytoControls` buttons.
