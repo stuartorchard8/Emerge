@@ -14,7 +14,7 @@ fun main() {
 }
 
 /** Initial window size, shared with the PNG snapshot so both show the same layout. */
-const val GALLERY_WIDTH = 1440
+const val GALLERY_WIDTH = 1800
 const val GALLERY_HEIGHT = 900
 
 /** Scroll-offset key for the scroll-area demo (the widget tree is rebuilt each frame, so scroll state
@@ -37,17 +37,19 @@ object UIGallery {
             panel(Anchor.TopLeft, newColumn = true) { buttons(state) }
             panel(Anchor.TopLeft, newColumn = true) { pickers(state) }
             panel(Anchor.TopLeft) { steppers(state) }
+            panel(Anchor.TopLeft, newColumn = true) { chipsAndSegments(state) }
+            panel(Anchor.TopLeft) { listRows(state) }
             // Right side: everything the widgets mutate, in one place.
             panel(Anchor.TopRight) { statePanel(state, fps) }
             // A scrolling, clipped viewport — content taller than its box. Drag inside it or wheel over it;
             // rows clipped out of view are neither drawn nor clickable.
             scrollArea(
                 SCROLL_DEMO_ID,
-                x = GALLERY_WIDTH - 380f, y = 340f, w = 360f, h = 420f,
+                x = GALLERY_WIDTH - 380f, y = 415f, w = 360f, h = 345f,
                 background = 0x10182CF0L,
             ) {
                 title("SCROLL AREA (drag / wheel)")
-                row("40 rows in a 420px viewport", 0x9A9A9AFFL)
+                row("40 rows in a 345px viewport", 0x9A9A9AFFL)
                 gap(6f)
                 for (i in 1..40) {
                     button("Row $i" + if (state.scrollPick == i) "  <" else "", if (state.scrollPick == i) 0x3A6EA5FFL else 0x2A3550FFL) {
@@ -132,6 +134,30 @@ object UIGallery {
         row("Hold +/- to see accelerating repeat")
     }
 
+    /** Chips + segmented controls — the progressive-disclosure widgets: a chip shows a value and opens its
+     *  editor; a segmented control picks between 2-3 options with no drill-down at all. */
+    private fun PanelBuilder.chipsAndSegments(state: GalleryState) {
+        title("CHIPS")
+        chip("", "DIVIDE (MITOSIS)", 0x35507AFFL) { state.chipTaps++ }
+        chip("MORPHOGEN", state.morphogen) { state.chipTaps++ }
+        chip("GROUP", "DIVISION") { state.chipTaps++ }
+        gap()
+        title("SEGMENTED")
+        segmented("CMP", listOf(">", "<"), state.cmp) { state.cmp = it }
+        segmented("ORIENT", listOf("ALONG", "ACROSS"), state.orient) { state.orient = it }
+        // Deliberately long: segments size to their widest label rather than clipping it.
+        segmented("KEEP", listOf("MOTHER", "DAUGHTER"), state.keep) { state.keep = it }
+    }
+
+    /** List rows — a picker sheet's options, each able to explain itself. */
+    private fun PanelBuilder.listRows(state: GalleryState) {
+        title("LIST ROWS (picker sheet)")
+        listRow("MITOSIS", "Divide into two cells", state.action == 0) { state.action = 0 }
+        listRow("LYSE", "Tear biomass from a neighbour", state.action == 1) { state.action = 1 }
+        listRow("CONVERT", "Lock cytoplasm into biomass", state.action == 2) { state.action = 2 }
+        listRow("Plain row, no description", selected = state.action == 3) { state.action = 3 }
+    }
+
     private fun PanelBuilder.gapDemo() {
         title("GAP / SPACING")
         row("Small gap (6px) below:", 0x9A9A9AFFL)
@@ -163,6 +189,11 @@ object UIGallery {
         keyValue("rate", state.rate.toString())
         gap()
         keyValue("bottom-right", state.brBtn.toString())
+        gap()
+        keyValue("chip taps", state.chipTaps.toString())
+        keyValue("cmp / orient / keep", "${state.cmp} / ${state.orient} / ${state.keep}")
+        keyValue("action row", state.action.toString())
+        keyValue("scroll pick", state.scrollPick.toString())
     }
 
     private fun PanelBuilder.bottomLeft() {
@@ -324,4 +355,12 @@ class GalleryState {
 
     /** Which row of the scroll-area demo was last clicked (proves clipped rows aren't clickable). */
     var scrollPick = 0
+
+    // Chips / segmented / list rows.
+    var chipTaps = 0
+    var morphogen = "(NONE)"
+    var cmp = 0
+    var orient = 0
+    var keep = 1
+    var action = 0
 }

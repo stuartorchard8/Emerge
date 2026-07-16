@@ -558,6 +558,30 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     /** A horizontal row of small buttons. */
     fun actionRow(buttons: List<Triple<String, Long, () -> Unit>>) = items.add(ActionRowItem(buttons, rowHeight))
 
+    /**
+     * A **chip** — a tappable current value, the workhorse of a progressive-disclosure screen: it *shows*
+     * the value and *opens* the editor for it (`apps/cyto/UI_REDESIGN.md` §3). An empty [label] makes it
+     * full-width (`[ DIVIDE (MITOSIS) v ]`); otherwise it's `LABEL        [ value v ]`.
+     */
+    fun chip(label: String, value: String, color: Long = 0x2A3550FFL, onTap: () -> Unit) =
+        items.add(ChipItem(label, value, color, rowHeight, onTap))
+
+    /**
+     * A **segmented control** — 2–3 exclusive options, chosen inline with no drill-down (`> / <`,
+     * `along / across`, `yes / no`). Segments size to the widest option: a fixed width silently clips
+     * longer labels ("DAUGHTER"), which the design mock caught.
+     */
+    fun segmented(label: String, options: List<String>, selected: Int, onSelect: (Int) -> Unit) =
+        items.add(SegmentedItem(label, options, selected, onSelect, rowHeight))
+
+    /**
+     * A **list row** — full-width, for a picker sheet: a title plus an optional one-line description, so
+     * an option can explain itself (what `Lyse` *does*), which a dropdown never had room for. Taller when
+     * described.
+     */
+    fun listRow(title: String, description: String = "", selected: Boolean = false, onClick: () -> Unit) =
+        items.add(ListRowItem(title, description, selected, rowHeight, onClick))
+
     internal interface Item {
         val height: Float
         fun measureWidth(textH: Float): Float
@@ -682,6 +706,80 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     private class GapItem(override val height: Float) : Item {
         override fun measureWidth(textH: Float) = 0f
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) = Unit
+    }
+
+    /** See [chip]. */
+    private class ChipItem(
+        val label: String, val value: String, val color: Long, override val height: Float, val onTap: () -> Unit,
+    ) : Item {
+        private fun chipW(textH: Float) = UiTextRenderer.measureWidthPx(value, textH) + textH * 3f  // padding + arrow
+        override fun measureWidth(textH: Float): Float =
+            if (label.isEmpty()) chipW(textH)
+            else UiTextRenderer.measureWidthPx(label, textH) + textH * 2f + chipW(textH)
+
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            val ty = topY + (height - textH) * 0.5f
+            val cw = if (label.isEmpty()) contentW else chipW(textH)
+            val cx = x + contentW - cw
+            if (label.isNotEmpty()) ui.emitTextLeft(label, x, ty, textH, 0x9A9A9AFFL)
+            ui.emitRect(cx, topY + 1f, cw, height - 2f, color)
+            ui.emitTextCentered(value, cx + cw * 0.5f, ty, textH, 0xFFFFFFFFL)
+            ui.emitTextLeft("V", cx + cw - textH * 0.9f, ty, textH, 0xAACCFFFFL)
+            ui.emitClick(cx, topY + 1f, cw, height - 2f, label = if (label.isEmpty()) value else "$label $value", onClick = onTap)
+        }
+    }
+
+    /** See [segmented]. */
+    private class SegmentedItem(
+        val label: String, val options: List<String>, val selected: Int,
+        val onSelect: (Int) -> Unit, override val height: Float,
+    ) : Item {
+        private fun segW(textH: Float) =
+            (options.maxOfOrNull { UiTextRenderer.measureWidthPx(it, textH) } ?: 0f) + textH * 1.2f
+        override fun measureWidth(textH: Float) =
+            (if (label.isEmpty()) 0f else UiTextRenderer.measureWidthPx(label, textH) + textH) + segW(textH) * options.size
+
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            val ty = topY + (height - textH) * 0.5f
+            if (label.isNotEmpty()) ui.emitTextLeft(label, x, ty, textH, 0x9A9A9AFFL)
+            val sw = segW(textH)
+            var sx = x + contentW - sw * options.size
+            for ((i, opt) in options.withIndex()) {
+                val on = i == selected
+                ui.emitRect(sx, topY + 1f, sw - 2f, height - 2f, if (on) 0x3A6EA5FFL else 0x252C3AFFL)
+                ui.emitTextCentered(opt, sx + (sw - 2f) * 0.5f, ty, textH, if (on) 0xFFFFFFFFL else 0x9A9A9AFFL)
+                ui.emitClick(sx, topY + 1f, sw - 2f, height - 2f, label = opt) { onSelect(i) }
+                sx += sw
+            }
+        }
+    }
+
+    /** See [listRow]. */
+    private class ListRowItem(
+        val title: String, val description: String, val selected: Boolean,
+        rowHeight: Float, val onClick: () -> Unit,
+    ) : Item {
+        override val height = if (description.isEmpty()) rowHeight else rowHeight * 1.6f
+        override fun measureWidth(textH: Float) = maxOf(
+            UiTextRenderer.measureWidthPx(title, textH),
+            UiTextRenderer.measureWidthPx(description, textH * DESC_RATIO),
+        ) + textH * 2f
+
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            ui.emitRect(x, topY + 1f, contentW, height - 2f, if (selected) 0x35507AFFL else 0x252C3AFFL)
+            if (description.isEmpty()) {
+                ui.emitTextLeft(title, x + textH * 0.5f, topY + (height - textH) * 0.5f, textH, 0xFFFFFFFFL)
+            } else {
+                ui.emitTextLeft(title, x + textH * 0.5f, topY + height * 0.16f, textH, 0xFFFFFFFFL)
+                ui.emitTextLeft(description, x + textH * 0.5f, topY + height * 0.55f, textH * DESC_RATIO, 0x9A9A9AFFL)
+            }
+            ui.emitClick(x, topY + 1f, contentW, height - 2f, label = title, onClick = onClick)
+        }
+    }
+
+    private companion object {
+        /** A list row's description text, relative to its title. */
+        const val DESC_RATIO = 0.78f
     }
 }
 
