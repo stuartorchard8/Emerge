@@ -106,18 +106,26 @@ class CytoGoldenTest {
     // trajectory goldens move; the weld/sticky goldens are unaffected (their runs are too short for a
     // maintenance pass to matter). topology is byte-identical on all three — diffusion moves matter, not
     // connectivity — and meta is byte-identical on mutation + interact.
+    // Re-baselined 2026-07-16 (#2): the diffusion SCHEDULE became one species per pass (was: all 3 monomers
+    // plus every present species of one chain length). Even passes take a monomer, round-robin b→g→r; odd
+    // passes take a polymer, its length picked by the ruler sequence and its identity round-robined within
+    // that length. Same flux law, so this is purely a re-rating of who moves when — but it is a big one:
+    // each monomer now diffuses every 6th pass rather than every pass, so recovery stretches ~6x deeper into
+    // geological time, and cost fell from 0.64% of tick to ~0.10% with the 21ms spike gone (a sweep costs
+    // the same whether or not matter moves, so cost tracks columns-swept; capping that at one is the whole
+    // trick). Only the three light-driven trajectory goldens move; topology is byte-identical on all three
+    // and meta on mutation + interact.
     // ECOLOGY VERIFIED before re-baselining: the founder's population curve keeps its shape, lag and
-    // take-off (1→44 by tick 1500 vs 41 without; 3217 vs 3194 by tick 6000, +0.7%), dipping ~5% mid-curve
-    // around ticks 3500-4500 as diffusion bleeds matter out of the colony's rich patch before converging.
+    // take-off (1→43 by tick 1500 vs 41 with diffusion off; 3099 vs 3194 by tick 6000, -3.0%).
     // checkCytoConservation is exact on all 3 elements over 6000 ticks (the flux is edge-symmetric, so
     // conservation is exact by construction), and parallelMatchesSequential held with NO special handling —
     // integer += into the flux accumulator is order-independent, so any edge visitation order is identical.
     private val GROWTH = mapOf(
-        "meta" to "cbed7de57f2b67e2",
-        "physics" to "175c51049caa130e",
-        "biology" to "dc10312ffdbecda",
+        "meta" to "85c1623fc3ed5fa6",
+        "physics" to "36ed5ef5e9c4c01a",
+        "biology" to "2203279329f095de",
         "topology" to "cbf29ce484222325",
-        "grid" to "72b267dc174470e7",
+        "grid" to "e6b2bcb9c87d5bc",
     )
     // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
     // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
@@ -201,10 +209,10 @@ class CytoGoldenTest {
     // shift as the relaxing field feeds the junction slightly differently.
     private val MUTATION = mapOf(
         "meta" to "187ed166f49aa1ee",
-        "physics" to "5adc94228f28846c",
-        "biology" to "4381d82f36858b98",
+        "physics" to "b6a5e911ac537c23",
+        "biology" to "f8ffe14a73b2917d",
         "topology" to "cbf29ce484222325",
-        "grid" to "fc7129202bea8252",
+        "grid" to "d29000398ec062a2",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     // Re-baselined 2026-07-05: restored LIGHT_QUANTA_SCALE 60k→120k (matter viability) +
@@ -231,10 +239,10 @@ class CytoGoldenTest {
     // scripted population is unchanged); physics/biology/grid shift with the relaxing field.
     private val INTERACT = mapOf(
         "meta" to "2f287e9ca4c65e66",
-        "physics" to "2b4739a8a223bee2",
-        "biology" to "3f63421956e05a5c",
+        "physics" to "d6f308fa4a7e7350",
+        "biology" to "4ef2b90c1cc9e83b",
         "topology" to "cbf29ce484222325",
-        "grid" to "4eabc6f232230a06",
+        "grid" to "c576d6ec376c414c",
     )
 
     @Test

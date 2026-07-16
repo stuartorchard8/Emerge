@@ -33,15 +33,61 @@ Three things this plan got wrong, all caught by measuring rather than reasoning:
 **`den` turned out to be a weak knob** — 8 vs 32 settle within 2 units of each other and differ only in the
 opening transient, because the unit-flux term dominates the long tail. **Size-based rate moved into the
 SCHEDULE instead** (Stu's design, replacing §3's per-species `DEN` scale — keeping both would double-count the
-slowness): chain length `n` diffuses every `2^(n-1)` passes, phased as a **ruler sequence** so exactly one
-length class fires per pass (`len = trailingOnes(pass) + 2`), with monomers every pass. Per-pass work is thus
-capped at *monomers + one length class* regardless of registry size, and when a class fires, every present
-species of that length moves — so longer chains are doubly slow (rarer slot, more species sharing it).
+slowness).
 
-**Measured cost** (`benchCyto`, 2562-cell save, 1024 ticks): **0.64% of tick** amortized (was 0.82% before the
-schedule), with a **~21 ms spike** on 1 tick in 128 (worst tick 34 → 50 ms). Inside the 1% budget but not
-negligible. Attribution: monomers ~90 µs of the average, polymers ~36 µs, but the two contribute to the spike
-about equally (~11 ms each) — an L=2 pass diffuses *every* present diatom.
+### The schedule: ONE species per pass
+
+This is the whole performance story, and it rests on a measurement (§0.1 below): **a sweep costs the same
+whether or not any matter moves**, so cost tracks *columns swept*, not gradient. Capping that at one column per
+pass is what makes diffusion negligible.
+
+- **Even passes → a monomer**, round-robin `b → g → r`. Monomers do essentially all the ecological recovery,
+  so they take half of all passes.
+- **Odd passes → a polymer.** With `q = pass/2`, `length = trailingOnes(q) + 2` (the ruler sequence), so
+  length `n` claims `1/2^n` of passes and lengths never collide; within a length, `q shr (n-1)` round-robins
+  over every legal molecule of that size.
+
+Longer chains are therefore **doubly slow** — rarer slot, more molecules sharing it — the environmental echo
+of the junction's size dampening, for free. A length-`n` species moves every `2^n · count(n)` passes:
+
+| length | count | slot every | ≈ ticks |
+|--------|-------|------------|---------|
+| 1      | 3     | 6          | 770     |
+| 2      | 9     | 36         | 4.6k    |
+| 3      | 24    | 192        | 25k     |
+| 4      | 60    | 960        | 123k    |
+
+⚠️ Counts are **not `3^n`**: [SpeciesRegistry] forbids a repeated ordered bond, so `bbb` is not a molecule and
+length 3 has **24** members, not 27. Lengths run 1..10 (9 ordered bonds, each usable once); slots past that
+are idle. Ids are lexicographic across *all* lengths at once (`b` < `bb` < `bbg` < `bg`), so a length's
+members are scattered — hence the `BY_LENGTH` bucket index. An **absent species spends its slot** rather than
+yielding it, keeping the schedule a pure function of `pass` (a decay allocating a column mid-run can't shift
+anyone's phase).
+
+**Measured cost** (`benchCyto`, 2562-cell save, 1024 ticks): **~0.10% of tick**, spike gone — worst tick
+39.7/31.4 ms (seq/par) vs a diffusion-OFF baseline of 34.0/35.1 ms, i.e. inside baseline noise. The earlier
+class-at-a-time schedule cost 0.64% with a ~21 ms spike; before any schedule, 0.82%.
+
+### 0.1 What is actually expensive (measured, and NOT what §3/§4 assumed)
+
+Per column, per pass (`RES=512`, 1 MB/column):
+
+| | µs |
+|---|---|
+| uniform column — zero flux, write-back skipped | **885** |
+| one crater — write-back runs | 1091 |
+| noise everywhere — max flux | 997 |
+| *(reference)* bare 1 MB read scan | 65 |
+| *(reference)* `IntArray.fill(0)` | 13 |
+
+**A settled column costs 81% of an active one** — we pay to *discover* nothing needs doing. Cost is linear in
+columns swept (1→986, 3→2979, 8→8006, 12→12101 µs), which is why the schedule works and why nothing else does.
+
+§3's claim that `/` "costs nothing because the JIT strength-reduces it" is **wrong in both directions**: `den`
+is a runtime parameter, so a real `idiv` is emitted — but forcing a compile-time constant only bought 20%
+(885→703 µs). The rest is ~40% memory traffic (each sweep zeroes a 1 MB scratch and streams a 1 MB column) and
+~40% per-edge control flow (the inner loop branches on `vertical` and on the torus wrap for every texel — both
+hoistable, worth maybe 30-40% for a few lines if ever needed).
 
 > ⚠️ **`benchCyto`'s `share` column understates by ~1.8×** — its denominator is the sum of all phases, and the
 > `bio:*` phases are nested inside `biology`, so the phase sum (~35 ms) nearly doubles the real tick (~19 ms).
@@ -50,11 +96,13 @@ about equally (~11 ms each) — an L=2 pass diffuses *every* present diatom.
 
 **Gates** (all green): `checkCytoConservation` exact on all 3 elements over 6000 ticks;
 `parallelMatchesSequential` passed with **no special handling**, as §3 predicted; 3 of 5 goldens re-baselined
-(topology byte-identical on all three, meta on two); population curve keeps its shape (1→44 by tick 1500 vs 41;
-3217 vs 3194 at tick 6000, dipping ~5% mid-curve).
+(topology byte-identical on all three, meta on two); population curve keeps its shape (1→43 by tick 1500 vs 41
+with diffusion off; 3099 vs 3194 at tick 6000, −3.0%).
 
-**Next, if the spike proves visible:** §4.2's active-tile bitmap — the one lever that helps average *and*
-spike, and still valid as written.
+**§4.2's active-tile bitmap is now unnecessary** — the schedule got the same job done for ~15 lines and no
+bookkeeping. Revisit only if diffusion is ever wanted much faster (i.e. if `MATTER_MAINTAIN_PERIOD` drops far
+enough that per-pass cost matters again). **`MATTER_MAINTAIN_PERIOD` is now the only real rate knob** — `den`
+is weak and the schedule is fixed — so it is the dial to turn if recovery feels too slow.
 
 ---
 

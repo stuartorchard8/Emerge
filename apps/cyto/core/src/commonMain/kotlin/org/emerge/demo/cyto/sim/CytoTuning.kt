@@ -65,7 +65,12 @@ object CytoTuning {
 
     // ── Matter dynamics (the conserved resource's per-tick law; its *seed* is in CytoSeed) ────────────
     /** Cadence of the matter field's maintenance pass (decay, then diffusion). Both are slow background
-     *  processes — per-tick would be wasted work — and diffusion's cost is amortised over this period. ⚙ */
+     *  processes — per-tick would be wasted work — and diffusion's cost is amortised over this period.
+     *
+     *  **This is the primary rate knob for diffusion.** [MATTER_DIFFUSE_DEN] is weak and the size schedule
+     *  is fixed, so this is the dial to turn if ecological recovery feels too slow. One pass diffuses
+     *  exactly one species (~1 ms), so halving this doubles both recovery speed and diffusion's ~0.10%
+     *  share of the tick — the two are directly coupled. ⚙ */
     const val MATTER_MAINTAIN_PERIOD = 128L
     /** Environmental decay: free molecules break their leftmost bond at rate 1/this per decay step (run on
      *  the maintenance cadence). Returns matter stranded by selective uptake toward monomers. Higher = slower decay; 0 disables. ⚙ */

@@ -12,6 +12,10 @@ class CytoMatterFieldTest {
     private val A = SpeciesRegistry.id("r")
     private val AB = SpeciesRegistry.id("rg")
 
+    /** The diffusion tests below each drive ONE species ('r') and repeat a single pass, so they must use a
+     *  pass that actually schedules it — only one species moves per pass, and pass 0 belongs to 'b'. */
+    private val pA: Long get() = passFor(A)
+
     private fun occupiedTexels(f: CytoMatterField): Int { var n = 0; f.forEachTexel { _, _, _, _ -> n++ }; return n }
     private fun digest(f: CytoMatterField): String {
         val sb = StringBuilder()
@@ -83,37 +87,80 @@ class CytoMatterFieldTest {
 
     // ── diffusion: the size schedule ─────────────────────────────────────────────────────────────────
 
-    /** Per-pass work is capped at "monomers + exactly one chain length" — the property the whole schedule
-     *  exists for, since it is what stops the pass's cost growing with the species registry. Verified by
-     *  observing which lengths actually MOVE, not by reaching into the schedule's arithmetic. */
-    @Test fun eachPassDiffusesMonomersPlusExactlyOneChainLength() {
-        val lengths = intArrayOf(2, 3, 4, 5, 6)
-        val firedAt = HashMap<Int, MutableList<Int>>()
-        for (p in 0 until 16) {
-            val moved = lengths.filter { len -> movesOnPass(speciesOfLength(len), p.toLong()) }
-            assertEquals(1, moved.size, "pass $p moved lengths $moved; want exactly one")
-            firedAt.getOrPut(moved[0]) { mutableListOf() }.add(p)
-            assertTrue(movesOnPass(A, p.toLong()), "monomers must diffuse on every pass, including $p")
+    /** EXACTLY ONE column moves per pass — the property the whole schedule exists for. A sweep costs the
+     *  same whether or not matter moves, so cost tracks columns-swept; capping that at one is what makes
+     *  diffusion negligible. Verified end-to-end by observing which species actually MOVE, not by trusting
+     *  the schedule's arithmetic. */
+    @Test fun exactlyOneSpeciesDiffusesPerPass() {
+        for (p in 0 until 24) {
+            val scheduled = CytoMatterField.empty().scheduledSpecies(p.toLong())
+            val movers = (0 until SpeciesRegistry.size).filter { movesOnPass(it, p.toLong()) }
+            assertEquals(1, movers.size, "pass $p moved ${movers.size} species; want exactly one")
+            assertEquals(scheduled, movers[0], "pass $p: scheduledSpecies disagrees with what actually moved")
         }
-        // The ruler sequence: length n runs every 2^(n-1) passes, phased so classes never collide. Note the
-        // doubling continues past the table's edge — pass 15 belongs to length 6, not to length 5.
-        assertEquals(listOf(0, 2, 4, 6, 8, 10, 12, 14), firedAt.getValue(2), "diatoms: every 2nd pass")
-        assertEquals(listOf(1, 5, 9, 13), firedAt.getValue(3), "triatoms: every 4th pass")
-        assertEquals(listOf(3, 11), firedAt.getValue(4), "quad-atoms: every 8th pass")
-        assertEquals(listOf(7), firedAt.getValue(5), "penta-atoms: every 16th pass")
-        assertEquals(listOf(15), firedAt.getValue(6), "hexa-atoms: every 32nd pass")
     }
 
-    /** A whole length class moves together, so the chemistry stays even-handed within a class rather than
-     *  privileging whichever species the registry happens to order first. */
-    @Test fun everySpeciesOfALengthDiffusesOnThatLengthsPass() {
-        val diatoms = intArrayOf(SpeciesRegistry.id("rg"), SpeciesRegistry.id("gb"), SpeciesRegistry.id("rr"))
-        for (sp in diatoms) assertTrue(movesOnPass(sp, 0L), "${SpeciesRegistry.string(sp)} must move on a diatom pass")
-        for (sp in diatoms) assertTrue(!movesOnPass(sp, 1L), "${SpeciesRegistry.string(sp)} must wait on a triatom pass")
+    /** Even passes are monomers, round-robin in lex order — they carry essentially all of the ecological
+     *  recovery, so they get half of every pass. Odd passes belong to polymers. */
+    @Test fun monomersTakeEveryOtherPassInRoundRobin() {
+        val f = CytoMatterField.empty()
+        val expected = listOf("b", "g", "r", "b", "g", "r")
+        val actual = (0 until 12 step 2).map { SpeciesRegistry.string(f.scheduledSpecies(it.toLong())) }
+        assertEquals(expected, actual, "even passes must cycle b -> g -> r")
+        for (p in 1 until 12 step 2) {
+            assertTrue(SpeciesRegistry.atomCount(f.scheduledSpecies(p.toLong())) >= 2, "pass $p must be a polymer")
+        }
     }
 
-    private fun speciesOfLength(len: Int): Int =
-        (0 until SpeciesRegistry.size).first { SpeciesRegistry.atomCount(it) == len }
+    /** The ruler sequence: length n claims 1/2^n of all passes and no two lengths ever collide. Combined
+     *  with the round-robin, a species of length n moves once every `2^n · count(n)` passes — longer chains
+     *  are doubly slow (rarer slot, more molecules sharing it), which is the point. */
+    @Test fun chainLengthClaimsAnExponentiallyRarerShareOfPasses() {
+        val f = CytoMatterField.empty()
+        val seen = HashMap<Int, Int>()
+        val n = 1 shl 12
+        // 0 = an idle slot: the ruler sequence keeps doubling past length 10, but a molecule can hold each
+        // of the 9 ordered bonds at most once, so there is nothing there to diffuse.
+        for (p in 0 until n) {
+            val sp = f.scheduledSpecies(p.toLong())
+            seen.merge(if (sp < 0) 0 else SpeciesRegistry.atomCount(sp), 1, Int::plus)
+        }
+        assertEquals(n / 2, seen.getValue(1), "monomers: half of all passes")
+        assertEquals(n / 4, seen.getValue(2), "diatoms: a quarter")
+        assertEquals(n / 8, seen.getValue(3), "triatoms: an eighth")
+        assertEquals(n / 16, seen.getValue(4), "4-chains: a sixteenth")
+        assertEquals(n / 1024, seen.getValue(10), "10-chains: the longest legal molecule still gets its share")
+        assertEquals(n / 1024, seen.getValue(0), "idle slots are only the 1/2^11 tail past length 10")
+    }
+
+    /** Fairness: every legal molecule of a length gets a slot, so no species is privileged by registry
+     *  order. Length 3 has 24 members, NOT 27 — SpeciesRegistry forbids a repeated ordered bond, so `bbb`
+     *  is not a molecule. */
+    @Test fun everyLegalMoleculeOfALengthEventuallyGetsASlot() {
+        val f = CytoMatterField.empty()
+        for (len in 1..3) {
+            val all = (0 until SpeciesRegistry.size).filter { SpeciesRegistry.atomCount(it) == len }.toSet()
+            val period = (1 shl len) * all.size
+            val hit = (0 until period * 2).map { f.scheduledSpecies(it.toLong()) }
+                .filter { it >= 0 && SpeciesRegistry.atomCount(it) == len }.toSet()
+            assertEquals(all, hit, "every length-$len molecule must get a slot within its period")
+        }
+        assertEquals(3, (0 until SpeciesRegistry.size).count { SpeciesRegistry.atomCount(it) == 1 })
+        assertEquals(9, (0 until SpeciesRegistry.size).count { SpeciesRegistry.atomCount(it) == 2 })
+        assertEquals(24, (0 until SpeciesRegistry.size).count { SpeciesRegistry.atomCount(it) == 3 })
+    }
+
+    /** An absent species SPENDS its slot rather than handing it on — the schedule stays a pure function of
+     *  `pass`, so a decay that allocates a new column mid-run cannot shift everything else's phase. */
+    @Test fun anAbsentSpeciesSpendsItsSlot() {
+        val f = CytoMatterField.empty()                  // no columns at all
+        val rg = SpeciesRegistry.id("rg")
+        val p = (0L until 200L).first { f.scheduledSpecies(it) == rg }
+        f.deposit(0f, 0f, 0.3f, A, 1_000)                // only 'r' exists
+        val before = digest(f)
+        f.diffuse(den = 8, pass = p)                     // 'rg' slot, but 'rg' has no column
+        assertEquals(before, digest(f), "an absent species' slot must be a no-op, not a fallback to another")
+    }
 
     /** Seed a lone spike of [sp] in a void and report whether one diffusion pass moved any of it. */
     private fun movesOnPass(sp: Int, pass: Long): Boolean {
@@ -127,6 +174,11 @@ class CytoMatterFieldTest {
         return col[i] != 1_000_000
     }
 
+    /** The first pass that schedules [sp] — the diffusion tests below each drive a single species, so they
+     *  pin that species' pass rather than assuming pass 0 belongs to it (it belongs to `b`). */
+    private fun passFor(sp: Int): Long =
+        (0L until 100_000L).first { CytoMatterField.empty().scheduledSpecies(it) == sp }
+
     // ── diffusion ────────────────────────────────────────────────────────────────────────────────────
 
     /** A uniform field has zero gradient ⇒ zero flux ⇒ diffusion is a bit-exact no-op. This is the property
@@ -135,7 +187,7 @@ class CytoMatterFieldTest {
     @Test fun diffusingAUniformFieldIsABitExactNoOp() {
         val f = CytoMatterField.seededUniform(125)
         val d0 = digest(f)
-        repeat(50) { f.diffuse(den = 8, pass = 0L) }
+        repeat(50) { f.diffuse(den = 8, pass = pA) }
         assertEquals(d0, digest(f), "a uniform field must not move under diffusion, ever")
     }
 
@@ -143,7 +195,7 @@ class CytoMatterFieldTest {
         val f = CytoMatterField.empty()
         f.deposit(0f, 0f, 0.6f, A, amount = 1_000_000)
         val t0 = f.totalAtoms()
-        repeat(200) { f.diffuse(den = 8, pass = 0L) }
+        repeat(200) { f.diffuse(den = 8, pass = pA) }
         assertEquals(t0, f.totalAtoms(), "diffusion is conservation-exact by construction")
     }
 
@@ -152,7 +204,7 @@ class CytoMatterFieldTest {
         f.deposit(10f, -10f, 0.9f, A, amount = 500_000)
         f.deposit(-4f, 6f, 0.5f, AB, amount = 80_000)
         val t0 = f.totalAtoms()
-        repeat(100) { f.diffuse(den = 8, pass = 0L) }
+        repeat(100) { f.diffuse(den = 8, pass = pA) }
         assertEquals(t0, f.totalAtoms(), "conserved with several species and a non-trivial gradient")
     }
 
@@ -171,14 +223,14 @@ class CytoMatterFieldTest {
         col[f.texelIndex(4f, 4f)] = 2
         col[f.texelIndex(-4f, -4f)] = 1
         val t0 = f.totalAtoms()
-        repeat(300) { f.diffuse(den = 2, pass = 0L) }
+        repeat(300) { f.diffuse(den = 2, pass = pA) }
         for (i in col.indices) assertTrue(col[i] >= 0, "texel $i went negative: ${col[i]}")
         assertEquals(t0, f.totalAtoms(), "still conserved at the non-negativity boundary")
     }
 
     @Test fun diffusionRejectsADivisorThatCouldGoNegative() {
         val f = CytoMatterField.seededUniform(10)
-        assertFailsWith<IllegalArgumentException> { f.diffuse(den = 1, pass = 0L) }
+        assertFailsWith<IllegalArgumentException> { f.diffuse(den = 1, pass = pA) }
     }
 
     /** A point source must spread equally in ±x and ±y. Catches the `shr`-vs-`/` sign bias (which favours
@@ -193,7 +245,7 @@ class CytoMatterFieldTest {
         val res = f.resolution
         val cx = res / 2; val cy = res / 2
         col[cy * res + cx] = 4_000_000
-        repeat(60) { f.diffuse(den = 8, pass = 0L) }
+        repeat(60) { f.diffuse(den = 8, pass = pA) }
         for (r in 1..6) {
             val right = col[cy * res + cx + r]; val left = col[cy * res + cx - r]
             val down = col[(cy + r) * res + cx]; val up = col[(cy - r) * res + cx]
@@ -212,9 +264,9 @@ class CytoMatterFieldTest {
         val f = CytoMatterField.seededUniform(125)
         val col = f.columnOrNull(A)!!
         for (i in 0 until 40) col[f.texelIndex(-2f + i * 0.05f, 3f)] = 0   // gouge a crater
-        repeat(3_000) { f.diffuse(den = 8, pass = 0L) }                    // settles by ~800; 3k is slack
+        repeat(3_000) { f.diffuse(den = 8, pass = pA) }                    // settles by ~800; 3k is slack
         val settled = digest(f)
-        repeat(500) { f.diffuse(den = 8, pass = 0L) }
+        repeat(500) { f.diffuse(den = 8, pass = pA) }
         assertEquals(settled, digest(f), "a settled field must produce exactly zero further flux")
     }
 
@@ -223,7 +275,7 @@ class CytoMatterFieldTest {
             val f = CytoMatterField.seededUniform(125)
             f.deposit(2f, -7f, 0.7f, A, 300_000)
             f.deposit(-9f, 1f, 0.4f, AB, 50_000)
-            repeat(80) { p -> f.maintain(decayPeriod = 2000, diffuseDen = 8, pass = p.toLong()) }
+            repeat(240) { p -> f.maintain(decayPeriod = 2000, diffuseDen = 8, pass = p.toLong()) }
             return digest(f)
         }
         assertEquals(run(), run(), "same op sequence ⇒ same field")
@@ -247,7 +299,7 @@ class CytoMatterFieldTest {
         val c = res / 2
         for (dy in -10..10) for (dx in -10..10) col[(c + dy) * res + (c + dx)] = 0
         val t0 = f.totalAtoms()
-        repeat(3_000) { f.diffuse(den = 8, pass = 0L) }
+        repeat(3_000) { f.diffuse(den = 8, pass = pA) }
         val centre = col[c * res + c]
         assertTrue(centre in 80..95, "a 21-wide crater must recover to its ~86/125 floor, was $centre")
         assertEquals(t0, f.totalAtoms(), "conserved across the whole recovery")
@@ -263,7 +315,7 @@ class CytoMatterFieldTest {
         val c = res / 2
         for (dy in -10..10) for (dx in -10..10) col[(c + dy) * res + (c + dx)] = 0
         // ~5000 ticks of world time at the MATTER_MAINTAIN_PERIOD = 128 cadence.
-        repeat(5000 / 128) { f.diffuse(den = 8, pass = 0L) }
+        repeat(5000 / 128) { f.diffuse(den = 8, pass = pA) }
         assertTrue(col[c * res + c] < 40, "the scar must still be obvious, was ${col[c * res + c]}")
     }
 

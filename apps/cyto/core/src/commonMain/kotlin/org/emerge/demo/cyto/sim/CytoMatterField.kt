@@ -74,6 +74,21 @@ class CytoMatterField private constructor(
         val A = SpeciesRegistry.id("r"); val B = SpeciesRegistry.id("g"); val C = SpeciesRegistry.id("b")
         private val MONO = intArrayOf(A, B, C)
 
+        /** Species ids bucketed by chain length (index = length, `[0]` empty), ascending id — i.e. lex
+         *  order — within a bucket. The diffusion schedule's round-robin needs "the k-th molecule of length
+         *  n", which ids alone can't answer: they are lexicographic across ALL lengths at once (`b` < `bb`
+         *  < `bbg` < `bg`), so a length's members are scattered, not contiguous. Built once. */
+        private val BY_LENGTH: Array<IntArray> = run {
+            var maxLen = 0
+            for (sp in 0 until SpeciesRegistry.size) {
+                val n = SpeciesRegistry.atomCount(sp)
+                if (n > maxLen) maxLen = n
+            }
+            val buckets = Array(maxLen + 1) { mutableListOf<Int>() }
+            for (sp in 0 until SpeciesRegistry.size) buckets[SpeciesRegistry.atomCount(sp)].add(sp)
+            Array(maxLen + 1) { buckets[it].toIntArray() }
+        }
+
         fun empty(): CytoMatterField = CytoMatterField(RES, arrayOfNulls(SpeciesRegistry.size))
 
         /** Uniform larder: `level` of each monomer in every texel. (The quad-tree seeded `level · texels`
@@ -410,8 +425,10 @@ class CytoMatterField private constructor(
      *  which is the legibility `PLAN_diffusion.md` §5 wanted, arrived at from the other direction.
      *
      *  The resulting profile: a steep fresh scar heals fast (⌊Δ/den⌋ dominates), then the last stretch creeps
-     *  back one unit per pass over tens of thousands of ticks. A footprint-scale crater is ~40% back by 5k
-     *  ticks and done by 25k; a 21-wide one needs ~100k. Biological blink, geological recovery.
+     *  back one unit per pass. Biological blink, geological recovery. (Those figures were measured with a
+     *  species diffusing EVERY pass; under [scheduledSpecies] a monomer gets every 6th, so multiply by ~6 —
+     *  a footprint-scale crater is ~40% back by ~30k ticks. [CytoTuning.MATTER_MAINTAIN_PERIOD] is the dial
+     *  if that is too slow.)
      *
      *  **Conservation is exact by construction, not by testing.** Each edge is visited once and contributes
      *  `-f` to one side and `+f` to the other, so the total is algebraically unchanged: no clamp to
@@ -436,42 +453,64 @@ class CytoMatterField private constructor(
     fun diffuse(den: Int, pass: Long) {
         if (den <= 0) return
         require(den >= 2) { "MATTER_DIFFUSE_DEN must be ≥ 2 to keep texel counts non-negative, was $den" }
+        val sp = scheduledSpecies(pass)
+        if (sp < 0) return
+        // An absent species SPENDS its slot rather than yielding it to the next candidate. That keeps the
+        // schedule a pure function of `pass` — independent of which species happen to exist, and so
+        // unchanged by a decay that allocates a new column mid-run.
+        val col = columns[sp] ?: return
         val d = flux ?: IntArray(texels).also { flux = it }
-        val active = activeChainLength(pass)
-        for (sp in columns.indices) {
-            val col = columns[sp] ?: continue
-            // Monomers move every pass; every other length waits for its slot. Both terms of the schedule
-            // are here rather than in a precomputed species list because `columns` is the only authority on
-            // which species actually exist, and it changes as decay allocates fragment columns.
-            val len = SpeciesRegistry.atomCount(sp)
-            if (len != 1 && len != active) continue
-            sweep(col, d, den, vertical = false)
-            sweep(col, d, den, vertical = true)
-        }
+        sweep(col, d, den, vertical = false)
+        sweep(col, d, den, vertical = true)
     }
 
-    /** Which polymer chain length gets its diffusion slot on [pass] — the schedule that makes size dampening
-     *  free instead of paying for it with a divisor.
+    /** The ONE species with a diffusion slot on [pass], or -1 if the slot falls on a chain length the
+     *  chemistry has no molecules for. This is where size-based rate lives — not in a divisor.
      *
-     *  Length `n` runs every `2^(n-1)` passes, so a diatom moves half as often as a monomer, a triatom a
-     *  quarter as often, and so on — bigger molecules are more sluggish for the same reason they are across
-     *  a cell wall, but the slowness costs nothing to express. Each length's phase is offset so that
-     *  **exactly one length fires per pass**:
+     *  **Exactly one column moves per pass**, so the cost of a pass is flat (~1 ms) no matter how many
+     *  species the field holds. That matters more than it sounds: a sweep costs the same whether or not any
+     *  matter actually moves (a settled column measured at 81% of an active one), so cost tracks *columns
+     *  swept*, and capping that at one is what makes diffusion negligible.
+     *
+     *  Two interleaved round-robins, halving by chain length:
+     *  - **Even passes → a monomer**, cycling `b → g → r`. Monomers do essentially all of the ecological
+     *    recovery, so they get half of all passes.
+     *  - **Odd passes → a polymer.** Let `q = pass/2`; then `length = trailingOnes(q) + 2` — the ruler
+     *    sequence, so length `n` claims `1/2^n` of all passes and no two lengths ever collide. Within a
+     *    length, `q shr (n-1)` counts that length's firings and round-robins over every legal molecule of
+     *    that size.
      *
      *  ```
      *  pass:  0   1   2   3   4   5   6   7   8   9  10  11
-     *  len:   2   3   2   4   2   3   2   5   2   3   2   4
+     *         b  bb   g bbg   r  bg   b bbgb   g  br   r bgb
      *  ```
      *
-     *  That is the ruler sequence, so the closed form is just the count of trailing 1-bits: length `n` wants
-     *  `pass ≡ 2^(n-2) − 1 (mod 2^(n-1))`, i.e. the low `n-2` bits set and the next bit clear. Per-pass work
-     *  is therefore capped at **monomers + one length class**, no matter how many species the field holds —
-     *  which is what keeps the pass's cost flat rather than growing with the registry.
+     *  **Longer chains are therefore doubly slow** — a rarer slot, shared by combinatorially more molecules —
+     *  which is the environmental echo of the junction's size dampening, for free. A species of length `n`
+     *  diffuses once every `2^n · |species of length n|` passes:
      *
-     *  When a length's slot comes up, EVERY present species of that length diffuses, so the chemistry stays
-     *  even-handed within a class. Longer chains are thus doubly slow: a rarer slot, shared by combinatorially
-     *  more species. */
-    private fun activeChainLength(pass: Long): Int = pass.inv().countTrailingZeroBits() + 2
+     *  | length | count | slot every | ≈ ticks |
+     *  |--------|-------|------------|---------|
+     *  | 1      | 3     | 6          | 770     |
+     *  | 2      | 9     | 36         | 4.6k    |
+     *  | 3      | 24    | 192        | 25k     |
+     *  | 4      | 60    | 960        | 123k    |
+     *
+     *  Note the counts are NOT `3^n`: [SpeciesRegistry] forbids a repeated ordered bond, so `bbb` is not a
+     *  molecule and length 3 has 24 members, not 27. Lengths run 1..10 (a molecule can hold each of the 9
+     *  ordered bonds at most once), and a slot landing past that is simply idle. */
+    fun scheduledSpecies(pass: Long): Int {
+        if (pass and 1L == 0L) {
+            val mono = BY_LENGTH[1]
+            return mono[((pass shr 1) % mono.size).toInt()]
+        }
+        val q = pass shr 1
+        val len = q.inv().countTrailingZeroBits() + 2
+        if (len >= BY_LENGTH.size) return -1
+        val cls = BY_LENGTH[len]
+        if (cls.isEmpty()) return -1
+        return cls[((q ushr (len - 1)) % cls.size).toInt()]
+    }
 
     /** A gradient at or above this moves one unit even when ⌊Δ/den⌋ is zero. 2 is the smallest value that
      *  keeps a sweep non-negative: the giving texel holds ≥ 2 and gives at most 1 on each of its 2 edges. */
