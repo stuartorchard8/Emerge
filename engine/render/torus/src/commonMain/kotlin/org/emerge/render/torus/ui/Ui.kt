@@ -529,13 +529,13 @@ class UiBuilder internal constructor(private val ui: Ui) {
         newColumn: Boolean = false,
         fillWidth: Boolean = false,
         block: PanelBuilder.() -> Unit,
-    ) {
+    ): Float {
         val s = ui.scale
         val marginPx = margin * s
         val paddingPx = padding * s
         val textH = textSize * s
         val pb = PanelBuilder(rowHeight * s, s).apply(block)
-        if (pb.items.isEmpty()) return
+        if (pb.items.isEmpty()) return 0f
         // Panels never grow past the screen (minus a margin each side): auto-sized to content, or [fillWidth]
         // to span the whole width. Content wider than that is clipped in [emitPanel].
         val maxW = (ui.resWidth - marginPx * 2f).coerceAtLeast(paddingPx * 2f)
@@ -548,7 +548,7 @@ class UiBuilder internal constructor(private val ui: Ui) {
             val stack = ui.nextPanelOffset(anchor, 0f, h, marginPx)  // 0 for the first, then h+margin for extras
             val y = (ui.resHeight - h) * 0.5f + stack
             emitPanel(x, y, w, h, paddingPx, contentW, textH, background, pb)
-            return
+            return h
         }
         if (anchor == Anchor.BottomCenter) {
             // Centred horizontally, anchored a [margin] gap above the bottom edge; extra panels stack upward.
@@ -556,7 +556,7 @@ class UiBuilder internal constructor(private val ui: Ui) {
             val stack = ui.nextPanelOffset(anchor, marginPx, h, marginPx)
             val y = ui.resHeight - h - stack
             emitPanel(x, y, w, h, paddingPx, contentW, textH, background, pb)
-            return
+            return h
         }
         if (newColumn) ui.startNewColumn(anchor, marginPx)             // a fresh column beside the previous one
         val inset = ui.columnInset(anchor, marginPx)                   // horizontal base for this column
@@ -571,6 +571,7 @@ class UiBuilder internal constructor(private val ui: Ui) {
         }
         ui.growColumn(anchor, inset + w)
         emitPanel(x, y, w, h, paddingPx, contentW, textH, background, pb)
+        return h
     }
 
     /** Emit a panel's background + click-catcher + rows at an already-resolved (x, y). */
