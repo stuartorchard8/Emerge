@@ -378,7 +378,7 @@ object CampaignContent {
                 text = "This panel is the cell's dossier: its size, its chemistry, and its genes. You'll live in here.",
                 gate = Gate.Next,
                 allow = LOOK,
-                spotlight = Spotlight(hint = "See the info panel, top-right"),
+                spotlight = Spotlight(hint = "the cell's panel"),
             ),
             Step(
                 text = "One last thing: the world wraps around. Walk off one edge and you arrive at the other - it's a doughnut, with no walls.",
@@ -410,7 +410,7 @@ object CampaignContent {
                 text = "Its genome is shown by FUNCTION. Right now there's just one job: GROW. That single label sums up everything this organism does.",
                 gate = Gate.Next,
                 allow = LOOK,
-                spotlight = Spotlight(hint = "the GROW group, in the panel top-right"),
+                spotlight = Spotlight(hint = "the GROW group, in the cell's panel"),
                 detail = "A genome is a set of subsystems, each doing one job. Grouping them this way turns a wall of rules into a handful of purposes you can read at a glance.",
             ),
             Step(
@@ -561,10 +561,10 @@ object CampaignContent {
                 allow = WATCH,
                 world = WorldRun.Live,
                 spotlight = Spotlight(hint = "Press and drag a cell to tow the body"),
-                detail = "It only builds in daylight, so if it stalls mid-tow you may have towed it into night. The matter grid hides the day/night light while it's on - tap the grid button back to LIGHT to see where the sun is, then carry on.",
+                detail = "It only builds in daylight, so if it stalls mid-tow you may have towed it into night. Daylight is the brighter stripe sweeping across the ground - keep the body in it, and watch the matter it eats darken the ground underneath as it feeds.",
             ),
             Step(
-                text = "You're towing a living, connected body - one toggled field turned a scattering swarm into this. But drag it hard and you'll see the welds strain, and snap. Holding together under stress is next.",
+                text = "You're towing a living, connected body - flipping SEVER to no turned a scattering swarm into this. But drag it hard and you'll see the welds strain, and snap. Holding together under stress is next.",
                 gate = Gate.Next,
                 allow = WATCH,
                 world = WorldRun.Live,
@@ -622,7 +622,7 @@ object CampaignContent {
                 spotlight = Spotlight(hint = "Drag it - it holds together far better now"),
             ),
             Step(
-                text = "Grow, reproduce, cohere, and now mend under stress. Your single cell has become a tough, mobile body that repairs its own damage - a real creature.",
+                text = "Grow, reproduce, cohere, and now mend under stress. That one cell is now a tough, mobile body that repairs its own damage as it goes.",
                 gate = Gate.Next,
                 allow = WATCH,
                 world = WorldRun.Live,
@@ -736,8 +736,8 @@ object CampaignContent {
                 gate = Gate.Did(PlayerAction.ChangedSpeed, "Change the sim speed"),
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "SLOW / PAUSE / FAST, top-left"),
-                detail = "This is why the time controls appear now: locomotion plays out over whole day-night cycles - too slow to sit and watch in real time.",
+                spotlight = Spotlight(hint = "PAUSE in the bottom bar opens the speed controls"),
+                detail = "This is why the speed controls matter now: locomotion plays out over whole day-night cycles - too slow to sit and watch in real time.",
             ),
             Step(
                 text = "From a cell that only pulsed in place, you have a creature that SWIMS - just because its cells took on different roles. That's differentiation: one genome, read differently depending on where a cell sits.",
@@ -818,14 +818,14 @@ object CampaignContent {
                 spotlight = Spotlight(hint = "Drag to push, then FAST - watch it swim past nightfall"),
             ),
             Step(
-                text = "One more change makes a far better swimmer. Right now the BARE cells pull while the MARKED cell holds still. Tap out another fresh copy - it carries your night-swimmer genome - and select it.",
+                text = "One more change to try. Right now the BARE cells pull while the MARKED cell holds still. Tap out another fresh copy - it carries your night-swimmer genome - and select it.",
                 gate = Gate.Did(PlayerAction.SelectedCell, "Tap out another copy and select it"),
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
                 spotlight = Spotlight(hint = "Tap empty space, then click the new cell"),
             ),
             Step(
-                text = "In its MOVE muscle, flip the marker test: change BB < 1 to BB > 0, so the MARKED cells drive the stroke instead of the bare ones. One flipped test, a different, stronger swim.",
+                text = "In its MOVE muscle, flip the marker test: change BB < 1 to BB > 0, so the MARKED cells drive the stroke instead of the bare ones. One flipped test, a different stroke.",
                 gate = Gate.World("Flip the muscle to BB > 0", met = { it.focused?.contractOnMarked == true }),
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
@@ -833,7 +833,7 @@ object CampaignContent {
                 detail = "In the editor, find the muscle's BB clause: set its comparator to > and step its value down to 0. That hands the driving role to the other cell type.",
             ),
             Step(
-                text = "Push it off among the others. Now three of your lineage share one world - the day-only original, the night-runner, and this newest one - and you can watch the newest out-swim them both.",
+                text = "Push it off among the others. Now three of your lineage share one world - the day-only original, the night-runner, and this newest one. Speed up and compare how they swim.",
                 gate = Gate.Next,
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
@@ -928,7 +928,7 @@ object CampaignContent {
                 gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = WATCH,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "LIGHT, in the panel top-right"),
+                spotlight = Spotlight(hint = "the cell's LIGHT reading"),
                 detail = "Watch SIZE too: it barely moves. Each spell of daylight rebuilds whatever the slow decay of living wears away, topping the cell back up to full - but never past it. A quiet, stable loop.",
             ),
             Step(
