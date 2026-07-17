@@ -500,13 +500,26 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
 
     /** Both fingers moved: zoom by the change in their separation about the previous midpoint, then pan by
      *  the midpoint's movement. With no camera rotation this pins both fingers to their world points (the
-     *  original rotated too; emerge's toroidal camera can't, so that DOF is dropped). */
+     *  original rotated too; emerge's toroidal camera can't, so that DOF is dropped).
+     *
+     *  While a cell is camera-focused the pan is dropped and the zoom anchors on the cell instead, so pinching
+     *  can't shake it loose — matching the desktop host, where the wheel zooms without clearing the focus and
+     *  only a manual pan releases it. One-finger empty-space drag is still the way to let a cell go. */
     private fun onTwoFingerMove(mx: Float, my: Float, sp: Float) {
         val r = renderer
         if (!twoFinger || menu?.inGame != true || r == null) { prevMidX = mx; prevMidY = my; prevSpan = sp; return }
-        if (prevSpan > 0f && sp > 0f) r.zoomAtScreen(prevMidX, prevMidY, sp / prevSpan)
-        r.panByPixels(mx - prevMidX, my - prevMidY)
-        controller.clearCameraFocus()
+        val scale = if (prevSpan > 0f && sp > 0f) sp / prevSpan else 1f
+        val focusPos = controller.cameraFocusPosition()
+        if (focusPos != null) {
+            // A cell is camera-focused: keep it focused — zoom about the cell (the follow re-centres it each
+            // frame, so panning would just fight it) and leave the focus + selection untouched.
+            val s = r.worldToScreen(focusPos.first, focusPos.second)
+            r.zoomAtScreen(s[0], s[1], scale)
+        } else {
+            // Free camera: zoom about the midpoint and pan with it (pins both fingers to their world points).
+            r.zoomAtScreen(prevMidX, prevMidY, scale)
+            r.panByPixels(mx - prevMidX, my - prevMidY)
+        }
         cameraMovedSignal = true
         prevMidX = mx; prevMidY = my; prevSpan = sp
     }
