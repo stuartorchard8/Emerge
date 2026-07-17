@@ -407,6 +407,14 @@ class Ui {
         clicks.add(ClickRegion(x, y, w, h, onTap, label = id, clip = currentClip))
     }
 
+    /** Push a plain clip rect (no scrolling) so following emissions are bounded to it; pair with [clearClip].
+     *  Used by [UiBuilder.panel] to keep a panel's rows from spilling past its (screen-clamped) width. */
+    internal fun pushClip(x: Float, y: Float, w: Float, h: Float) {
+        clipRects.add(floatArrayOf(x, y, w, h))
+        currentClip = clipRects.size - 1
+    }
+    internal fun clearClip() { currentClip = -1 }
+
     /** Open a clip + scroll viewport; returns the scroll offset to lay content out against. */
     internal fun beginScroll(id: String, x: Float, y: Float, w: Float, h: Float): Float {
         clipRects.add(floatArrayOf(x, y, w, h))
@@ -519,6 +527,7 @@ class UiBuilder internal constructor(private val ui: Ui) {
         rowHeight: Float = 18f,
         textSize: Float = rowHeight * TEXT_TO_ROW_RATIO,
         newColumn: Boolean = false,
+        fillWidth: Boolean = false,
         block: PanelBuilder.() -> Unit,
     ) {
         val s = ui.scale
@@ -527,9 +536,12 @@ class UiBuilder internal constructor(private val ui: Ui) {
         val textH = textSize * s
         val pb = PanelBuilder(rowHeight * s, s).apply(block)
         if (pb.items.isEmpty()) return
-        val contentW = pb.items.maxOf { it.measureWidth(textH) }
+        // Panels never grow past the screen (minus a margin each side): auto-sized to content, or [fillWidth]
+        // to span the whole width. Content wider than that is clipped in [emitPanel].
+        val maxW = (ui.resWidth - marginPx * 2f).coerceAtLeast(paddingPx * 2f)
         val contentH = pb.items.sumOf { it.height.toDouble() }.toFloat()
-        val w = paddingPx * 2 + contentW
+        val w = if (fillWidth) maxW else minOf(paddingPx * 2 + pb.items.maxOf { it.measureWidth(textH) }, maxW)
+        val contentW = w - paddingPx * 2
         val h = paddingPx * 2 + contentH
         if (anchor == Anchor.Center) {
             val x = (ui.resWidth - w) * 0.5f
@@ -571,11 +583,14 @@ class UiBuilder internal constructor(private val ui: Ui) {
         // through to the world behind it. Registered BEFORE the items, so each button — added after — still
         // wins in hitTest's reverse-order scan; this no-op only catches presses on the empty panel area.
         ui.emitClick(x, y, w, h) {}
+        // Clip the rows to the panel so content wider than the (screen-clamped) width can't spill off-screen.
+        ui.pushClip(x, y, w, h)
         var rowY = y + padding
         for (item in pb.items) {
             item.emit(ui, x + padding, rowY, contentW, textH)
             rowY += item.height
         }
+        ui.clearClip()
     }
 
     /** A full-screen fill — a backdrop for a title screen / modal menu. Emit it **first** (it draws behind
