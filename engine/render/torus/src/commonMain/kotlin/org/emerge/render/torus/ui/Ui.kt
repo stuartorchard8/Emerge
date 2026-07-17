@@ -883,6 +883,13 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     fun dragHandle(id: String, onTap: () -> Unit, onDrag: (Float) -> Unit, onRelease: () -> Unit) =
         items.add(DragHandleItem(id, rowHeight * 0.7f, onTap, onDrag, onRelease))
 
+    /** A **drag card** — a fixed-[heightPx] surface that is entirely a [dragHandle]: a grab pill on top plus a
+     *  few centred info [lines], and the whole rect drags ([onDrag]/[onRelease]) or taps ([onTap]). Sized to
+     *  fill its container so nothing scrolls — the collapsed L1 peek, where the tiny content shouldn't scroll
+     *  and a drag anywhere (not just the pill) should expand the sheet. [heightPx] is already in pixels. */
+    fun dragCard(id: String, heightPx: Float, lines: List<Pair<String, Long>>, onTap: () -> Unit, onDrag: (Float) -> Unit, onRelease: () -> Unit) =
+        items.add(DragCardItem(id, heightPx, lines, onTap, onDrag, onRelease))
+
     internal interface Item {
         val height: Float
         fun measureWidth(textH: Float): Float
@@ -967,6 +974,24 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
             val pillW = maxOf(contentW * 0.16f, textH * 3f)
             val pillH = maxOf(3f, height * 0.28f)
             ui.emitRect(x + (contentW - pillW) * 0.5f, topY + (height - pillH) * 0.5f, pillW, pillH, 0x66748AFFL)
+            ui.emitDragHandle(x, topY, contentW, height, id, onTap, onDrag, onRelease)
+        }
+    }
+
+    private class DragCardItem(
+        val id: String, override val height: Float, val lines: List<Pair<String, Long>>,
+        val onTap: () -> Unit, val onDrag: (Float) -> Unit, val onRelease: () -> Unit,
+    ) : Item {
+        override fun measureWidth(textH: Float) =
+            (lines.maxOfOrNull { UiTextRenderer.measureWidthPx(it.first, textH) } ?: (textH * 6f)) + textH
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            val pillW = maxOf(contentW * 0.16f, textH * 3f)
+            val pillH = maxOf(3f, textH * 0.3f)
+            ui.emitRect(x + (contentW - pillW) * 0.5f, topY + textH * 0.5f, pillW, pillH, 0x66748AFFL)
+            // Info lines, stacked below the pill.
+            val top = topY + textH * 1.6f
+            val gap = textH * 1.5f
+            for ((i, ln) in lines.withIndex()) ui.emitTextLeft(ln.first, x, top + i * gap, textH, ln.second)
             ui.emitDragHandle(x, topY, contentW, height, id, onTap, onDrag, onRelease)
         }
     }
