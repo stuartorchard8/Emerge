@@ -64,6 +64,8 @@ class CytoMenu {
         val onContinue: () -> Unit,
         /** Load the named on-disk save into the world. */
         val onLoadNamed: (String) -> Unit,
+        /** Open the Save-name screen for the current world (host pre-fills the default name). */
+        val onOpenSave: () -> Unit,
         /** Write the current world to a named save. */
         val onSave: (String) -> Unit,
         /** Delete a named save. */
@@ -143,6 +145,7 @@ class CytoMenu {
             gap(14f)
             button("Campaign", MENU_ACCENT) { page = Page.Campaign }
             button("Continue", MENU_BTN) { cb.onContinue() }
+            button("Save", MENU_BTN) { cb.onOpenSave() }
             if (hasSave) button("Load", MENU_BTN) { page = Page.Load }
             button("New (Sandbox)", MENU_BTN) { page = Page.New }
             gap(6f)

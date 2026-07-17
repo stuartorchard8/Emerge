@@ -3,6 +3,7 @@ package org.emerge.demo.cyto.ui
 import org.emerge.demo.cyto.CellColorMode
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.render.torus.ui.Anchor
+import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.UiBuilder
 
 /**
@@ -25,18 +26,31 @@ class CytoHud {
     /** Close any open sheet (e.g. when a cell is selected and the L0 view is left). */
     fun close() { open = Sheet.None }
 
-    /** Draw the bar + any open sheet. [onMenu] opens the host's full-screen menu (title/new/load/save). */
-    fun render(b: UiBuilder, controls: CytoControls, onMenu: () -> Unit) {
+    /** Draw the bar + any open sheet. [onMenu] opens the host's full-screen menu (title/new/load/save).
+     *  [wide] chooses the sheet container: a bottom sheet on a phone, a centred popover on desktop (matching
+     *  the gene editor's wide treatment). */
+    fun render(b: UiBuilder, controls: CytoControls, wide: Boolean, onMenu: () -> Unit) {
         bar(b, controls, onMenu)
         when (open) {
             Sheet.None -> {}
-            Sheet.Speed -> speedSheet(b, controls)
-            Sheet.Brush -> brushSheet(b, controls)
-            Sheet.Layers -> layersSheet(b, controls)
+            Sheet.Speed -> speedSheet(b, controls, wide)
+            Sheet.Brush -> brushSheet(b, controls, wide)
+            Sheet.Layers -> layersSheet(b, controls, wide)
         }
     }
 
     private fun toggle(s: Sheet) { open = if (open == s) Sheet.None else s }
+
+    /** Chooses the sheet container by width: a bottom sheet on a phone, a centred popover on desktop. */
+    private fun sheetHost(b: UiBuilder, id: String, title: String, wide: Boolean, heightFraction: Float, body: PanelBuilder.() -> Unit) {
+        if (wide) {
+            val w = minOf(460f * b.density, b.screenW * 0.5f)
+            val h = minOf(b.screenH * 0.85f, b.screenH * maxOf(heightFraction, 0.35f))
+            b.sheet(id, title, onDismiss = ::close, boxX = (b.screenW - w) * 0.5f, boxY = (b.screenH - h) * 0.5f, boxW = w, boxH = h, rowHeight = 34f, textSize = 15f, body = body)
+        } else {
+            b.sheet(id, title, onDismiss = ::close, heightFraction = heightFraction, rowHeight = 48f, textSize = 16f, body = body)
+        }
+    }
 
     private fun bar(b: UiBuilder, controls: CytoControls, onMenu: () -> Unit) {
         val playLabel = if (controls.simPaused) "PLAY" else "PAUSE"
@@ -51,8 +65,8 @@ class CytoHud {
         }
     }
 
-    private fun speedSheet(b: UiBuilder, controls: CytoControls) {
-        b.sheet("hud-speed", "SPEED", onDismiss = ::close, heightFraction = 0.34f, rowHeight = 48f, textSize = 16f) {
+    private fun speedSheet(b: UiBuilder, controls: CytoControls, wide: Boolean) {
+        sheetHost(b, "hud-speed", "SPEED", wide, heightFraction = 0.34f) {
             if (controls.simStatus.isNotEmpty()) { row(controls.simStatus, 0x8FE39AFFL); gap(6f) }
             actionRow(listOf(
                 Triple("<<  SLOWER", 0x3A6EA5FFL) { controls.onSlower() },
@@ -62,8 +76,8 @@ class CytoHud {
         }
     }
 
-    private fun brushSheet(b: UiBuilder, controls: CytoControls) {
-        b.sheet("hud-brush", "BRUSH", onDismiss = ::close, heightFraction = 0.6f, rowHeight = 44f, textSize = 16f) {
+    private fun brushSheet(b: UiBuilder, controls: CytoControls, wide: Boolean) {
+        sheetHost(b, "hud-brush", "BRUSH", wide, heightFraction = 0.6f) {
             row("PAINT", 0x7A8699FFL)
             val palette = controls.genomePalette
             if (palette.isNotEmpty()) {
@@ -83,8 +97,8 @@ class CytoHud {
         }
     }
 
-    private fun layersSheet(b: UiBuilder, controls: CytoControls) {
-        b.sheet("hud-layers", "LAYERS", onDismiss = ::close, heightFraction = 0.5f, rowHeight = 48f, textSize = 16f) {
+    private fun layersSheet(b: UiBuilder, controls: CytoControls, wide: Boolean) {
+        sheetHost(b, "hud-layers", "LAYERS", wide, heightFraction = 0.5f) {
             listRow(if (controls.showMatterField) "OVERLAY:  MATTER" else "OVERLAY:  LIGHT") { controls.toggleMatterField() }
             listRow("CELL COLOUR:  ${controls.colorMode.label}") { controls.cycleColorMode() }
             if (controls.showMutation) listRow("MUTATION:  ${controls.mutationLabel}") { controls.onCycleMutation() }
