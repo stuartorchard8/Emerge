@@ -361,13 +361,15 @@ doubles the cost of every future UI feature.
 > miss grabs cell / pans (clears camera focus), tap = select + `cameraFocus`, pinch zooms, inline speed/pause,
 > `setDensity` from displayMetrics. Compiles; not emulator-verified (harness can't drive the Android host, but
 > the UI it draws is the already-verified shared stack).
-> **TOP OF QUEUE — step 7 SLICE 2, the host shell:** move the front-end **menu, named saves, genome-brush
-> library, campaign** from `apps/cyto/desktop` into `apps/cyto/core` so Android reaches them — `CytoMenu`/
-> `CampaignContent` are pure `Ui`/data → `commonMain`; `CytoSaves`/`CytoGenomes`/`CampaignProgress`
-> (`java.nio.file`) + `CytoSimDriver` (`java.util.concurrent`) are Android-safe by API → shared jvm+android
-> set or expect/actual. Then both hosts build thin shells; wire Android MENU (currently a no-op) + boot into
-> the menu. Then **step 8** — campaign polish (coach docking refinements, spotlight-vs-level, and the narrow
-> coach copy overflow: COACH_WRAP=58 is wide-shaped, clips at 560px).
+> **step 7 SLICE 2 — DONE (`26c56892`+`4197fed6`+`b04480c0`):** host shell moved into core and wired on
+> Android. `CytoMenu`+`CampaignContent` → `commonMain` `org.emerge.demo.cyto.host`; `CytoSaves`/`CytoGenomes`/
+> `CampaignProgress` → a `jvmAndAndroidMain` intermediate source set, storage root via `CytoStorage.baseDir`
+> (Android = `filesDir`). `CytoSimDriver` stayed desktop-only (Android ticks inline). `CytoAndroidView` boots
+> into the menu + campaign + saves; MENU works; name entry is a native `AlertDialog`. Gotcha: `Files.write/
+> readString` are API 33+ (minSdk 26) — used byte forms. `assembleDebug` builds an APK.
+> **TOP OF QUEUE — step 8, campaign polish:** coach docking refinements, spotlight-vs-level, and the narrow
+> coach copy overflow (COACH_WRAP=58 is wide-shaped, clips at 560px). Optional follow-ups: port the web host
+> off the legacy `CytoControls` overlay too; on-device pass of the Android campaign coach at phone width.
 >
 > **Key files:** `apps/cyto/core/.../ui/GeneEditor.kt` (all render paths: `renderCellPanel`/`cellBody`,
 > `renderGeneEditor`/`geneBody`, `renderPickerSheet`/`pickSheet`, `geneButton` ← the card to replace);
