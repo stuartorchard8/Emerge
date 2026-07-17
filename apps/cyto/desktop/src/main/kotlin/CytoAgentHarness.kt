@@ -348,6 +348,10 @@ object CytoAgentHarness {
             buildOverlay()
             val hit = ui.tapLabel(label) || run { controls.rebuild(); controls.tap(label) }
             println("[agent] tap-ui '$label' -> ${if (hit) "clicked" else "no match"}")
+            // A tap may have queued a world edit (a gene edit, the mutation ladder). The harness runs no sim
+            // thread, so nothing else would drain it: publish here, or a following `shot`/`elements` with no
+            // `run` between would observe the pre-edit world. See CytoController.pendingWorldEdits.
+            controller.publish()
             sync()
         }
 

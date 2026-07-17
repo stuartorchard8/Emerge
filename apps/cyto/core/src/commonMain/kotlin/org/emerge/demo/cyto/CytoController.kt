@@ -77,8 +77,13 @@ class CytoController(
     private var publishedFrame: CytoFrame = CytoFrame(currentState, 0)
 
     /** Guards world advancement ([stepOnce]/[tick]) against [publish]/[restoreSnapshot] so a draw-thread
-     *  save/load can't swap [world] mid-step. Coarse (held across a whole tick) but only contended on the
-     *  rare load. */
+     *  save/load can't swap [world] mid-step. Coarse — held across a WHOLE tick.
+     *
+     *  **Never take this on the draw thread outside a rare, user-initiated action like save/load.** It is a
+     *  non-fair `synchronized` monitor, and at a high tick rate the sim thread releases and re-acquires it in
+     *  a tight loop, so a draw-thread waiter starves for many ticks — a visible window freeze, since the host
+     *  acquires it from inside a GLFW callback. Frequent UI writes belong in [pendingWorldEdits]; that
+     *  guarantee is pinned by `CytoEditLatencyTest`. Gene edits took this lock and caused exactly that. */
     private val stepLock = Any()
     /** Guards the pointer-input buffers — appended from the UI/draw thread, drained on the sim thread.
      *  Separate from [stepLock] so input is never blocked behind a heavy tick. */
@@ -88,6 +93,24 @@ class CytoController(
     private val pendingTaps = ArrayList<CytoInput.Tap>()
     private val pendingDetaches = ArrayList<EntityId>()
     private var currentGrab: CytoInput.Grab? = null
+
+    /**
+     * World mutations issued from the UI/draw thread (gene edits, the mutation-rate ladder), queued like
+     * pointer input and applied by the sim thread at a safe point. Each returns true if it changed anything.
+     *
+     * They are **queued rather than applied in place** because doing the latter meant taking [stepLock] on the
+     * draw thread — the lock the sim thread holds for a whole [stepOnce]. At a high tick rate the sim releases
+     * and re-acquires it in a tight loop, and `withLock` is a non-fair `synchronized` monitor on the JVM, so
+     * the hot sim thread barges back in and the editing thread starves. Since the desktop host issues edits
+     * from inside a GLFW callback, that stalled `glfwPollEvents` and froze the window for as long as the
+     * starvation lasted, while the sim ran on — Stu's "edit a gene at high speed and the sim grinds to a halt,
+     * then comes back thousands of ticks later". Pinned by `CytoEditLatencyTest`.
+     *
+     * They can't simply be applied lock-free either: [CytoWorld.slotOf] is only stable while the sim isn't
+     * mid-tick, so a racing write could land a genome on the wrong cell after a division or death compacts
+     * the columns.
+     */
+    private val pendingWorldEdits = ArrayList<(CytoWorld) -> Boolean>()
 
     /** True while the user is actively dragging/grabbing a cell. */
     val isGrabbed: Boolean get() = currentGrab != null
@@ -102,6 +125,9 @@ class CytoController(
      *  [STEP] rate, materializing one SimState per frame. Desktop instead drives [stepOnce]/[publish] on
      *  a dedicated sim thread (see CytoSimDriver) and reads [latestFrame]. */
     fun tick(deltaSeconds: Float): CytoFrame {
+        // This host is single-threaded, so an edit could apply in place — but it goes through the same queue
+        // so there is one code path, and so a paused inline host (no steps running) still applies edits.
+        val edited = applyPendingWorldEdits()
         accumulator += deltaSeconds.coerceIn(0f, 0.25f)
         var firstStep = true
         var stepped = false
@@ -112,9 +138,10 @@ class CytoController(
             firstStep = false
             stepped = true
         }
-        // Materialize once per frame (only when a step ran) — multiple steps in a heavy frame share one
-        // materialize, so the per-step SoA win is preserved.
-        if (stepped) currentState = world.toSimState()
+        // Materialize once per frame (only when a step ran, or an edit changed the world without one —
+        // otherwise a gene edit on a paused inline host would never reach the panel). Multiple steps in a
+        // heavy frame share one materialize, so the per-step SoA win is preserved.
+        if (stepped || edited) currentState = world.toSimState()
         return CytoFrame(currentState, tickCount, world.getSpringData()).also { publishedFrame = it }
     }
 
@@ -141,6 +168,7 @@ class CytoController(
      *  a fast sim isn't taxed by per-tick materialize). Thread-safe vs [publish]/[restoreSnapshot]. */
     fun stepOnce() {
         withLock(stepLock) {
+            applyPendingWorldEdits()   // UI edits land at the top of a tick, where slots are stable
             world = reducer.tick(world, drainInput(firstStep = true))
             tickCount++
         }
@@ -150,6 +178,9 @@ class CytoController(
      *  Call at display cadence, not every [stepOnce]. */
     fun publish() {
         withLock(stepLock) {
+            // Also the drain point while PAUSED: the sim thread stops calling stepOnce but keeps publishing at
+            // display cadence, so a gene edit made on a paused world still lands (and shows) within a frame.
+            applyPendingWorldEdits()
             currentState = world.toSimState()
             publishedFrame = CytoFrame(currentState, tickCount)
         }
@@ -175,6 +206,7 @@ class CytoController(
             reducer.noMutateEntityId = -1
             withLock(inputLock) {
                 pendingSpawns.clear(); pendingTaps.clear(); pendingDetaches.clear(); currentGrab = null
+                pendingWorldEdits.clear()   // an edit aimed at the old world must not land on the new one
             }
         }
     }
@@ -580,18 +612,39 @@ class CytoController(
         return bioSwatchColor(cell.biomass)
     }
 
-    /** Apply [transform] to the held cell's genome (returning null = no change), then republish. */
+    /**
+     * Apply [transform] to the held cell's genome (returning null = no change).
+     *
+     * **Queued, not immediate** — see [pendingWorldEdits] for why (it must never block the draw thread on a
+     * tick). The sim thread applies it at the top of the next [stepOnce]/[tick], or [publish] picks it up if
+     * the sim is paused, so it lands within a frame either way — invisible to the user, but it does mean a
+     * read-back via [heldGenome] right after this call can still return the old genome.
+     *
+     * The target cell is captured **now**, so an edit always lands on the cell that was held when the user
+     * clicked, even if the selection changes before it applies.
+     */
     private fun editHeldGenome(transform: (List<Gene>) -> List<Gene>?) {
         val id = lastHeldId ?: return
-        withLock(stepLock) {
-            val slot = world.slotOf(id.value)
-            val next = if (slot < 0) null else transform(world.cell.genome[slot] ?: emptyList())
-            if (next != null) {
-                world.cell.genome[slot] = next
-                currentState = world.toSimState()
-                publishedFrame = CytoFrame(currentState, tickCount)
+        withLock(inputLock) {
+            pendingWorldEdits.add { w ->
+                val slot = w.slotOf(id.value)
+                val next = if (slot < 0) null else transform(w.cell.genome[slot] ?: emptyList())
+                if (next != null) { w.cell.genome[slot] = next; true } else false
             }
         }
+    }
+
+    /** Drain [pendingWorldEdits] into the live world. **Sim-thread only**: the caller must hold [stepLock]
+     *  (or be a single-threaded host in [tick]). Returns true if any edit changed the world, so the caller
+     *  knows to re-materialize. */
+    private fun applyPendingWorldEdits(): Boolean {
+        val batch = withLock(inputLock) {
+            if (pendingWorldEdits.isEmpty()) emptyList() else pendingWorldEdits.toList().also { pendingWorldEdits.clear() }
+        }
+        if (batch.isEmpty()) return false
+        var changed = false
+        for (edit in batch) if (edit(world)) changed = true
+        return changed
     }
 
     /** Replace the gene at [index] (commit a finished edit). */
@@ -620,13 +673,15 @@ class CytoController(
     fun mutationRateDenom(): Int = world.mutationRateDenom.let { if (it >= 0) it else cfg.mutationRateDenom }
 
     /** Cycle the mutation rate through [mutationLadder] (wrapping), set it explicitly on the world so it
-     *  saves, and republish so the change shows even while paused. */
+     *  saves. Queued like a gene edit — it's the same HUD-thread write, and took [stepLock] the same way
+     *  (see [pendingWorldEdits]). */
     fun cycleMutationRate() {
-        withLock(stepLock) {
-            val i = mutationLadder.indexOf(mutationRateDenom())
-            world.mutationRateDenom = mutationLadder[if (i < 0) 0 else (i + 1) % mutationLadder.size]
-            currentState = world.toSimState()
-            publishedFrame = CytoFrame(currentState, tickCount)
+        withLock(inputLock) {
+            pendingWorldEdits.add { w ->
+                val i = mutationLadder.indexOf(if (w.mutationRateDenom >= 0) w.mutationRateDenom else cfg.mutationRateDenom)
+                w.mutationRateDenom = mutationLadder[if (i < 0) 0 else (i + 1) % mutationLadder.size]
+                true
+            }
         }
     }
 
@@ -701,6 +756,7 @@ class CytoController(
                 pendingTaps.clear()
                 pendingDetaches.clear()
                 currentGrab = null
+                pendingWorldEdits.clear()   // an edit aimed at the old world must not land on the loaded one
             }
         }
     }
