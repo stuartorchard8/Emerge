@@ -198,14 +198,19 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         }
         val dx = x - lastX
         val dy = y - lastY
-        if (!dragged && (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX)) dragged = true
         val held = grabId
+        if (!dragged && (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX)) {
+            dragged = true
+            // A drag that starts on empty space (no cell grabbed) fully deselects. Unlike desktop — which
+            // keeps the info-panel selection because it has a separate right-click camera — a phone has one
+            // pointer, so an empty-space drag is the natural "put the cell down" gesture.
+            if (held == null) { controller.clearSelection(); controller.clearCameraFocus() }
+        }
         if (held != null) {
             val world = r.screenToWorld(x, y)
             controller.grab(held, world[0], world[1], sticky = c.touchMode == TouchMode.Sticky)
         } else {
             r.panByPixels(dx, dy)
-            controller.clearCameraFocus()   // a manual pan takes the camera off any followed cell
         }
         lastX = x
         lastY = y
