@@ -267,7 +267,12 @@ object CytoSceneView {
                 if (!showHud) hud.close()
                 // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
                 ui.frame {
-                    // Coach first so the (expanded) narrow cell sheet draws over it; the short peek never
+                    // The bar claims the bottom edge before the coach: BottomCenter panels stack in draw order,
+                    // so the coach going first would strand the bar above it in mid-screen. Its sheets come last.
+                    if (showHud) {
+                        hud.renderBar(this, controls) { menu.openTitle(); simDriver.setPaused(true) }
+                    }
+                    // Coach next so the (expanded) narrow cell sheet draws over it; the short peek never
                     // reaches it. On wide the coach is bottom-centre and the panel docks right — no overlap.
                     // Full bottom-centre panel normally; a top-left pill while editing (wide); nothing behind a
                     // full-screen narrow modal; a top-docked full coach on narrow.
@@ -287,10 +292,8 @@ object CytoSceneView {
                             }
                         }
                     }
-                    // The L0 HUD owns the bottom bar (incl. MENU) on both widths.
-                    if (showHud) {
-                        hud.render(this, controls, wide = !narrow) { menu.openTitle(); simDriver.setPaused(true) }
-                    }
+                    // Sheets last: the topmost layer, over the coach and the docked cell panel alike.
+                    if (showHud) hud.renderSheets(this, controls, wide = !narrow)
                 }
             } else {
                 // Front-end shell over the (paused) world.

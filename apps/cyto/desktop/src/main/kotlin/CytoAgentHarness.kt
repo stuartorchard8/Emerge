@@ -357,13 +357,15 @@ object CytoAgentHarness {
             val mask = director.controlMask
             val showHud = if (NARROW) (!geneEditor.isEditing && controller.lastHeldId == null) else !geneEditor.isEditing
             ui.frame {
+                // Bar before the coach (BottomCenter stacks in draw order); its sheets go last.
+                if (showHud) hud.renderBar(this, controls) {}
                 if (director.active) {
                     val modalUp = NARROW && geneEditor.isEditing
                     val cellUp = geneEditor.isEditing || (NARROW && controller.lastHeldId != null)
                     if (!modalUp) director.render(this, controller, collapsed = cellUp, narrow = NARROW)
                 }
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW) {}
-                if (showHud) hud.render(this, controls, wide = !NARROW) {}
+                if (showHud) hud.renderSheets(this, controls, wide = !NARROW)
             }
         }
 
@@ -422,13 +424,15 @@ object CytoAgentHarness {
             renderer.draw(controller.latestFrame())          // scene (fills its own background)
             val showHud = if (NARROW) (!geneEditor.isEditing && controller.lastHeldId == null) else !geneEditor.isEditing
             ui.frame {                                        // info panel + coach overlay + L0 HUD (both widths)
+                // Bar before the coach (BottomCenter stacks in draw order); its sheets go last.
+                if (showHud) hud.renderBar(this, controls) {}
                 if (director.active) {
                     val modalUp = NARROW && geneEditor.isEditing
                     val cellUp = geneEditor.isEditing || (NARROW && controller.lastHeldId != null)
                     if (!modalUp) director.render(this, controller, collapsed = cellUp, narrow = NARROW)
                 }
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW) {}
-                if (showHud) hud.render(this, controls, wide = !NARROW) {}
+                if (showHud) hud.renderSheets(this, controls, wide = !NARROW)
             }
             ui.draw()
             glFinish()

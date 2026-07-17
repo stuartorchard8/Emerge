@@ -144,7 +144,9 @@ class CampaignDirector {
             return
         }
         if (collapsed) { renderPill(ui, ch, step); return }
-        renderFull(ui, ch, step, controller, "${ch.title}  $counter", Anchor.BottomCenter, margin = 180f, wrapChars = COACH_WRAP, textSize = BOTTOM_TEXT_DP, fillWidth = false)
+        // BOTTOM_MARGIN_DP, not a hand-tuned gap: the host draws the HUD bar first, so this panel stacks
+        // directly above it and only needs the same edge gap the bar uses.
+        renderFull(ui, ch, step, controller, "${ch.title}  $counter", Anchor.BottomCenter, margin = BOTTOM_MARGIN_DP, wrapChars = COACH_WRAP, textSize = BOTTOM_TEXT_DP, fillWidth = false)
     }
 
     /** The full coach body — title, wrapped step text, spotlight hint, objective, optional detail, and the
@@ -218,6 +220,7 @@ class CampaignDirector {
     )
 
     companion object {
+        private const val BOTTOM_MARGIN_DP = 10f  // desktop coach's gap from the bottom edge — matches CytoHud's bar
         private const val COACH_WRAP = 58   // approx chars per coach line before wrapping (desktop cap)
         private const val PILL_WRAP = 42    // the collapsed pill is one line; clip the hint to this
         private const val PAD_DP = 14f      // coach panel padding

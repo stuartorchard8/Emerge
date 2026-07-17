@@ -28,9 +28,24 @@ class CytoHud {
 
     /** Draw the bar + any open sheet. [onMenu] opens the host's full-screen menu (title/new/load/save).
      *  [wide] chooses the sheet container: a bottom sheet on a phone, a centred popover on desktop (matching
-     *  the gene editor's wide treatment). */
+     *  the gene editor's wide treatment).
+     *
+     *  Hosts that also draw a bottom-centre panel (the desktop campaign coach) must call [renderBar] and
+     *  [renderSheets] instead — see [renderBar] for why. */
     fun render(b: UiBuilder, controls: CytoControls, wide: Boolean, onMenu: () -> Unit) {
-        bar(b, controls, onMenu)
+        renderBar(b, controls, onMenu)
+        renderSheets(b, controls, wide)
+    }
+
+    /** Draw just the bottom bar. Call this **before** any other `Anchor.BottomCenter` panel: that anchor's
+     *  panels stack in *draw* order (the first to claim it sits on the bottom edge, later ones pile upward),
+     *  so drawing the bar late strands it in mid-screen above the coach. Pair with [renderSheets], drawn last
+     *  so an open sheet layers over everything rather than under the coach. */
+    fun renderBar(b: UiBuilder, controls: CytoControls, onMenu: () -> Unit) = bar(b, controls, onMenu)
+
+    /** Draw whichever sheet is open (none by default). Call **last** in the frame — sheets are the topmost
+     *  layer, and the wide popover overlaps whatever sits beneath it. */
+    fun renderSheets(b: UiBuilder, controls: CytoControls, wide: Boolean) {
         when (open) {
             Sheet.None -> {}
             Sheet.Speed -> speedSheet(b, controls, wide)
