@@ -70,7 +70,22 @@ class UiTextRenderer {
     }
 
     /** Populates the glyph arrays; [lineStartX] gives the left pixel of a line from its pixel width.
-     *  Returns the glyph count. [topYpx] is the top of the first line. */
+     *  Returns the glyph count. [topYpx] is the top of the first line.
+     *
+     *  **Every glyph quad is snapped to whole pixels**, and this is load-bearing, not a nicety. The atlas is
+     *  sampled `GL_NEAREST` with the UV rect running edge-to-edge along the cell's texel boundaries, so output
+     *  pixel `i` of a `P`-pixel-tall quad reads texel `floor(t * 8)` for `t = (i + 0.5) / P`. With integer
+     *  edges `t` is strictly inside `(0, 1)`, so the texel is always inside the cell — provably, on any GPU.
+     *  Let the quad land on a fractional pixel (and it would: sizes are dp x scale, and centred panels sit at
+     *  `(resW - w) * 0.5`) and `t` can hit 0 or pass 1, sampling exactly ON a cell boundary, where rounding
+     *  decides whether you get this cell or its neighbour. Read one texel low and the glyph loses its top row
+     *  and picks up the next cell's row 0 — the top row of the glyph BELOW it in the atlas. The artifact is
+     *  directional (each cell has a blank gutter below its 5x7 glyph but none above), so drifting up is
+     *  invisible while drifting down is glaringly wrong, and whether it bites at all depends on the GPU's
+     *  rounding — it showed on a playtester's machine and not on Stu's.
+     *
+     *  Positions still ADVANCE in float (the cursor and line top are unrounded) so that snapping can't
+     *  accumulate drift across a line or push text out of its panel; only the emitted quad is rounded. */
     private inline fun layoutGlyphs(
         lines: List<String>, glyphW: Float, lineGap: Float, pixelHeight: Float, topYpx: Float,
         resW: Float, resH: Float, lineStartX: (lineW: Float) -> Float,
@@ -81,16 +96,20 @@ class UiTextRenderer {
         var lineTop = topYpx
         for (line in lines) {
             var cursorX = lineStartX(line.length * glyphW)
-            val baseY = lineTop + pixelHeight * 0.5f
+            // Snap the line's pixel band once, so every glyph on it shares identical top/bottom edges.
+            val yTop = snap(lineTop)
+            val hPx = maxOf(1f, snap(lineTop + pixelHeight) - yTop)
             for (ch in line) {
                 if (count >= MAX_GLYPHS) break
                 val idx = CHAR_TO_INDEX[ch] ?: CHAR_TO_INDEX['?'] ?: 0
                 val col = idx % FONT_COLS
                 val row = idx / FONT_COLS
-                centers[count * 2] = (cursorX + glyphW * 0.5f) / resW * 2f - 1f
-                centers[count * 2 + 1] = 1f - baseY / resH * 2f
-                halfSizes[count * 2] = glyphW / resW
-                halfSizes[count * 2 + 1] = pixelHeight / resH
+                val xL = snap(cursorX)
+                val wPx = maxOf(1f, snap(cursorX + glyphW) - xL)
+                centers[count * 2] = (xL + wPx * 0.5f) / resW * 2f - 1f
+                centers[count * 2 + 1] = 1f - (yTop + hPx * 0.5f) / resH * 2f
+                halfSizes[count * 2] = wPx / resW
+                halfSizes[count * 2 + 1] = hPx / resH
                 uvRects[count * 4] = col * uvW
                 uvRects[count * 4 + 1] = row * uvH
                 uvRects[count * 4 + 2] = uvW
@@ -102,6 +121,10 @@ class UiTextRenderer {
         }
         return count
     }
+
+    /** Round a pixel coordinate to the pixel grid (see [layoutGlyphs] — glyph quads must have integer edges).
+     *  `kotlin.math.round` halves-to-even; plain `floor(x + 0.5)` is what we want and is platform-identical. */
+    private fun snap(px: Float): Float = kotlin.math.floor(px + 0.5f)
 
     private fun flush(count: Int, r: Float, g: Float, b: Float) {
         if (count == 0) return
