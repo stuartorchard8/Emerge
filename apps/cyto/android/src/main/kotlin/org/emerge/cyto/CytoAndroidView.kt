@@ -90,7 +90,13 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
     private var pointerDown = false
     private var lastX = 0f
     private var lastY = 0f
-    private var pinchSpan = 0f
+    // Two-finger transform gesture (port of the original cyto anchor model): the pinch pans by the
+    // midpoint's movement and zooms by the ratio of the two fingers' separation, applied about the
+    // previous midpoint. With no camera rotation that pins both fingers to their world points exactly.
+    private var twoFinger = false
+    private var prevMidX = 0f
+    private var prevMidY = 0f
+    private var prevSpan = 0f
 
     init {
         setEGLContextClientVersion(3)
@@ -347,18 +353,43 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
     // ── Touch (marshalled onto the GL thread) ────────────────────────────────────
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.pointerCount >= 2) {
-            handlePinch(event)
-            return true
-        }
-        val x = event.x
-        val y = event.y
+        // Read pointer coords now — the MotionEvent is recycled before the queued GL-thread work runs.
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> queueEvent { onDown(x, y) }
-            MotionEvent.ACTION_MOVE -> queueEvent { onMove(x, y) }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> queueEvent { onUp(x, y) }
+            MotionEvent.ACTION_DOWN -> {
+                val x = event.getX(0); val y = event.getY(0)
+                queueEvent { onDown(x, y) }
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> if (event.pointerCount >= 2) {
+                val (mx, my, sp) = midSpan(event)
+                queueEvent { beginTwoFinger(mx, my, sp) }
+            }
+            MotionEvent.ACTION_MOVE -> if (event.pointerCount >= 2) {
+                val (mx, my, sp) = midSpan(event)
+                queueEvent { onTwoFingerMove(mx, my, sp) }
+            } else {
+                val x = event.getX(0); val y = event.getY(0)
+                queueEvent { onMove(x, y) }
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                // A finger lifted while ≥2 were down; hand the gesture back to the finger that remains.
+                val remain = if (event.actionIndex == 0) 1 else 0
+                val x = event.getX(remain); val y = event.getY(remain)
+                queueEvent { endTwoFinger(x, y) }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val x = event.getX(0); val y = event.getY(0)
+                queueEvent { onUp(x, y) }
+            }
         }
         return true
+    }
+
+    /** Midpoint + separation of the first two pointers (screen px). */
+    private fun midSpan(event: MotionEvent): Triple<Float, Float, Float> {
+        val mx = (event.getX(0) + event.getX(1)) * 0.5f
+        val my = (event.getY(0) + event.getY(1)) * 0.5f
+        val sp = hypot(event.getX(1) - event.getX(0), event.getY(1) - event.getY(0))
+        return Triple(mx, my, sp)
     }
 
     private fun onDown(x: Float, y: Float) {
@@ -370,7 +401,6 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         pointerDown = true
         lastX = x
         lastY = y
-        pinchSpan = 0f
         // Front-end shell: taps route to the menu only, no world interaction.
         if (menu?.inGame != true) {
             uiConsumed = true
@@ -453,26 +483,43 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         uiConsumed = false
     }
 
-    private fun handlePinch(event: MotionEvent) {
-        val dx = event.getX(1) - event.getX(0)
-        val dy = event.getY(1) - event.getY(0)
-        val span = hypot(dx, dy)
-        val midX = (event.getX(0) + event.getX(1)) * 0.5f
-        val midY = (event.getY(0) + event.getY(1)) * 0.5f
-        when (event.actionMasked) {
-            MotionEvent.ACTION_POINTER_DOWN -> queueEvent {
-                pinchSpan = span; grabId = null; uiConsumed = true; pointerDown = false
-            }
-            MotionEvent.ACTION_MOVE -> queueEvent {
-                if (menu?.inGame == true && pinchSpan > 0f && span > 0f) {
-                    renderer?.zoomAtScreen(midX, midY, span / pinchSpan)
-                    cameraMovedSignal = true
-                }
-                pinchSpan = span
-            }
-            MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
-                queueEvent { pinchSpan = 0f; uiConsumed = false }
-        }
+    // ── Two-finger transform (port of the original cyto anchor model) ────────────
+
+    /** Second finger down: start the gesture and cancel any single-finger interaction so it neither taps
+     *  nor grabs a cell. */
+    private fun beginTwoFinger(mx: Float, my: Float, sp: Float) {
+        twoFinger = true
+        prevMidX = mx; prevMidY = my; prevSpan = sp
+        ui?.releaseHold()
+        controller.releaseGrab()
+        grabId = null
+        uiConsumed = false
+        dragged = true       // suppress a tap when the fingers eventually lift
+        pointerDown = false  // no hold-to-repeat mid-pinch
+    }
+
+    /** Both fingers moved: zoom by the change in their separation about the previous midpoint, then pan by
+     *  the midpoint's movement. With no camera rotation this pins both fingers to their world points (the
+     *  original rotated too; emerge's toroidal camera can't, so that DOF is dropped). */
+    private fun onTwoFingerMove(mx: Float, my: Float, sp: Float) {
+        val r = renderer
+        if (!twoFinger || menu?.inGame != true || r == null) { prevMidX = mx; prevMidY = my; prevSpan = sp; return }
+        if (prevSpan > 0f && sp > 0f) r.zoomAtScreen(prevMidX, prevMidY, sp / prevSpan)
+        r.panByPixels(mx - prevMidX, my - prevMidY)
+        controller.clearCameraFocus()
+        cameraMovedSignal = true
+        prevMidX = mx; prevMidY = my; prevSpan = sp
+    }
+
+    /** A finger lifted: end the gesture and re-anchor single-finger panning at the finger that remains, so
+     *  dropping to one finger doesn't jump the camera. */
+    private fun endTwoFinger(x: Float, y: Float) {
+        twoFinger = false
+        prevSpan = 0f
+        lastX = x; lastY = y
+        dragged = true       // the remaining finger continues a pan, never a tap
+        grabId = null
+        uiConsumed = false
     }
 
     companion object {
