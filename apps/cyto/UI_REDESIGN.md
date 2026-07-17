@@ -356,10 +356,18 @@ doubles the cost of every future UI feature.
 >   on the toolkit, driving `CytoControls`; bottom sheets narrow, centred popovers wide. Legacy button overlay
 >   retired (not drawn); MENU→title menu gained a Save entry. `d2af8e42` (narrow) + `384cbc91` (wide).
 >
-> **TOP OF QUEUE — step 7, the Android host:** wire `Ui` + touch routing (single-pointer press/drag/release
-> through `hitTestDown`/`dragTo`/`hitTestUp`, wheel-less), then menu/saves/sim-driver (`CytoAndroidView`
-> currently builds none of it). Then **step 8** — campaign polish (coach docking refinements, spotlight-vs-
-> level, and the narrow coach copy overflow: COACH_WRAP=58 is wide-shaped, clips at 560px).
+> **step 7, the Android host — SLICE 1 DONE (`2c0c9e13`):** `CytoAndroidView` rewritten onto the shared
+> `Ui`+`CytoHud`+`GeneEditor` stack (always narrow); single-pointer `hitTestDown`/`dragTo`/`hitTestUp` first,
+> miss grabs cell / pans (clears camera focus), tap = select + `cameraFocus`, pinch zooms, inline speed/pause,
+> `setDensity` from displayMetrics. Compiles; not emulator-verified (harness can't drive the Android host, but
+> the UI it draws is the already-verified shared stack).
+> **TOP OF QUEUE — step 7 SLICE 2, the host shell:** move the front-end **menu, named saves, genome-brush
+> library, campaign** from `apps/cyto/desktop` into `apps/cyto/core` so Android reaches them — `CytoMenu`/
+> `CampaignContent` are pure `Ui`/data → `commonMain`; `CytoSaves`/`CytoGenomes`/`CampaignProgress`
+> (`java.nio.file`) + `CytoSimDriver` (`java.util.concurrent`) are Android-safe by API → shared jvm+android
+> set or expect/actual. Then both hosts build thin shells; wire Android MENU (currently a no-op) + boot into
+> the menu. Then **step 8** — campaign polish (coach docking refinements, spotlight-vs-level, and the narrow
+> coach copy overflow: COACH_WRAP=58 is wide-shaped, clips at 560px).
 >
 > **Key files:** `apps/cyto/core/.../ui/GeneEditor.kt` (all render paths: `renderCellPanel`/`cellBody`,
 > `renderGeneEditor`/`geneBody`, `renderPickerSheet`/`pickSheet`, `geneButton` ← the card to replace);
