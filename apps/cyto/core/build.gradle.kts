@@ -35,6 +35,11 @@ kotlin {
                 api(project(":engine:sim:sync"))
             }
         }
+        // Host-shell code that needs java.nio.file / java.util.concurrent — available on both the
+        // desktop JVM and Android (minSdk 26). Shared here so saves/genomes/progress live in one copy.
+        val jvmAndAndroidMain by creating { dependsOn(commonMain.get()) }
+        jvmMain.get().dependsOn(jvmAndAndroidMain)
+        androidMain.get().dependsOn(jvmAndAndroidMain)
         commonTest {
             dependencies {
                 implementation(kotlin("test"))

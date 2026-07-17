@@ -1,4 +1,4 @@
-package org.emerge.desktop
+package org.emerge.demo.cyto.host
 
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.sim.CytoWorldConfig
@@ -12,7 +12,7 @@ import kotlin.io.path.nameWithoutExtension
  * Pure file IO + the geometry-apply-before-restore dance; the menu drives it via [CytoMenu.Callbacks].
  */
 object CytoSaves {
-    private val DIR: Path = Path.of("cyto-saves")
+    private val DIR: Path get() = CytoStorage.baseDir.resolve("cyto-saves")
 
     /** Save names, newest first (by last-modified). */
     fun list(): List<String> {
@@ -42,7 +42,7 @@ object CytoSaves {
         Files.createDirectories(DIR)
         Files.write(binPath(name), controller.snapshotBytes())
         val c = CytoWorldConfig
-        Files.writeString(worldPath(name), "${c.cellsPerAxis} ${c.orbitPeriod} ${c.dayFraction}")
+        Files.write(worldPath(name), "${c.cellsPerAxis} ${c.orbitPeriod} ${c.dayFraction}".toByteArray())
         println("[cyto] saved '$name'")
         return name
     }
@@ -67,7 +67,7 @@ object CytoSaves {
         val p = worldPath(name)
         if (!Files.exists(p)) return
         runCatching {
-            val parts = Files.readString(p).trim().split(Regex("\\s+"))
+            val parts = Files.readAllBytes(p).decodeToString().trim().split(Regex("\\s+"))
             if (parts.size >= 3) CytoWorldConfig.applyFrom(parts[0].toInt(), parts[1].toLong(), parts[2].toFloat())
         }
     }

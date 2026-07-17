@@ -1,4 +1,4 @@
-package org.emerge.desktop
+package org.emerge.demo.cyto.host
 
 import java.nio.file.Files
 import java.nio.file.Path
@@ -24,11 +24,11 @@ class CampaignProgress private constructor(private val completed: MutableSet<Str
     }
 
     private fun save() {
-        runCatching { Files.writeString(FILE, completed.joinToString("\n")) }
+        runCatching { Files.write(FILE, completed.joinToString("\n").toByteArray()) }
     }
 
     companion object {
-        private val FILE: Path = Path.of("campaign-progress")
+        private val FILE: Path get() = CytoStorage.baseDir.resolve("campaign-progress")
 
         fun load(): CampaignProgress {
             val set = runCatching {

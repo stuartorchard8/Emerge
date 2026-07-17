@@ -1,4 +1,7 @@
 package org.emerge.desktop
+import org.emerge.demo.cyto.host.CampaignProgress
+import org.emerge.demo.cyto.host.CytoGenomes
+import org.emerge.demo.cyto.host.CytoSaves
 import org.emerge.demo.cyto.host.CampaignContent
 import org.emerge.demo.cyto.host.CytoMenu
 

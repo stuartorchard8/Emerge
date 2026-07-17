@@ -1,4 +1,4 @@
-package org.emerge.desktop
+package org.emerge.demo.cyto.host
 
 import org.emerge.demo.cyto.sim.AUTOTROPH_GENES
 import org.emerge.demo.cyto.sim.Gene
@@ -20,7 +20,7 @@ class GenomeEntry(val name: String, val color: Long, val genome: List<Gene>)
  * (Named "genomes", not "blueprints" — a blueprint here is reserved for a future whole-organism save.)
  */
 object CytoGenomes {
-    private val DIR: Path = Path.of("cyto-genomes")
+    private val DIR: Path get() = CytoStorage.baseDir.resolve("cyto-genomes")
 
     /** All saved genomes, alphabetical by name. Seeds the defaults if the library is empty. */
     fun list(): List<GenomeEntry> {
@@ -46,7 +46,7 @@ object CytoGenomes {
             appendLine("# color: ${color.toString(16).padStart(8, '0')}")
             appendLine(GeneCodec.serialize(genome))
         }
-        Files.writeString(path(name), text)
+        Files.write(path(name), text.toByteArray())
         println("[cyto] saved genome '$name' (${genome.size} gene(s))")
         return name
     }
@@ -57,7 +57,7 @@ object CytoGenomes {
     }
 
     private fun read(name: String): GenomeEntry? = runCatching {
-        val body = Files.readString(path(name))
+        val body = Files.readAllBytes(path(name)).decodeToString()
         var color = 0x888888FFL
         for (line in body.lineSequence()) {
             val m = Regex("^#\\s*color:\\s*([0-9a-fA-F]{6,8})").find(line.trim())
