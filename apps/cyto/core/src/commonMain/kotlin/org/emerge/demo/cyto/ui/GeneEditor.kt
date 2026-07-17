@@ -126,14 +126,15 @@ class GeneEditor {
      *  the panel (feed to `CytoRenderer.setFollowOffsetPx`). Returns `(dx right, dy down)`; `(0, 0)` when
      *  nothing meaningful occludes the world. Uses this editor's live state, so it must be read the same frame
      *  as [render]. [cellShown] is whether a cell panel/sheet is up at all (host tracks the held cell). */
-    fun freeAreaOffsetPx(narrow: Boolean, cellShown: Boolean, resW: Float, resH: Float, scale: Float): Pair<Float, Float> {
+    fun freeAreaOffsetPx(narrow: Boolean, cellShown: Boolean, resW: Float, resH: Float, scale: Float, topObscuredPx: Float = 0f): Pair<Float, Float> {
         if (!cellShown) return 0f to 0f
         if (narrow) {
-            // A full-screen modal (editing) hides the world entirely; otherwise the sheet leaves a top area,
-            // whose size depends on the L1 peek vs full L2 detent.
+            // A full-screen modal (editing) hides the world entirely; otherwise the world shows in the band
+            // between the top-docked campaign coach ([topObscuredPx] down from the top) and the cell sheet
+            // (its height set by the L1 peek vs full L2 detent). Centre the cell in that band.
             if (draft != null) return 0f to 0f
             val frac = sheetDragFrac ?: (if (cellExpanded) SHEET_FRACTION else PEEK_FRACTION)
-            return 0f to -(frac * resH) * 0.5f
+            return 0f to (topObscuredPx - frac * resH) * 0.5f
         }
         // Wide: the cell panel docks right; when editing, the gene-editor column docks to its left. The free
         // world area is everything left of the leftmost panel — mirror renderGeneEditor's x0 exactly.

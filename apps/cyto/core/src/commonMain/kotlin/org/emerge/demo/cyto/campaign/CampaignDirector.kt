@@ -119,7 +119,15 @@ class CampaignDirector {
      *  [collapsed] (a cell/gene editor owns the bottom of the screen), the coach shrinks to a single-line
      *  pill in the top-left — progress + the current step's actionable hint — so onboarding stays visible
      *  while editing instead of disappearing (UI_REDESIGN.md §6.1). */
+    /** Pixels the narrow top-docked coach occupies down from the screen top (its bottom edge), 0 when it isn't
+     *  showing. The host feeds this to the camera recentre so a selected cell centres in the band between the
+     *  coach and the cell sheet, not behind the coach. Reflects the last [render] (one frame stale — fine for a
+     *  damped follow). */
+    var coachTopInsetPx: Float = 0f
+        private set
+
     fun render(ui: UiBuilder, controller: CytoController, collapsed: Boolean = false, narrow: Boolean = false) {
+        coachTopInsetPx = 0f
         val ch = chapter ?: return
         val step = currentStep ?: return
         // On a phone the coach is a single top-docked panel (the only campaign modal there): it clears the
@@ -131,7 +139,8 @@ class CampaignDirector {
             val budget = wrapBudget(ui, TOP_TEXT_DP, PAD_DP, TOP_MARGIN_DP)
             // Counter first so it survives a title clip on a very narrow screen. Fill the width (a top banner
             // with padding) so it reads as a phone app bar, not a left-hugging box.
-            renderFull(ui, ch, step, controller, "$counter ${ch.title}", Anchor.TopLeft, margin = TOP_MARGIN_DP, wrapChars = budget, textSize = TOP_TEXT_DP, fillWidth = true)
+            val h = renderFull(ui, ch, step, controller, "$counter ${ch.title}", Anchor.TopLeft, margin = TOP_MARGIN_DP, wrapChars = budget, textSize = TOP_TEXT_DP, fillWidth = true)
+            coachTopInsetPx = TOP_MARGIN_DP * ui.density + h   // the coach's bottom edge, for the camera recentre
             return
         }
         if (collapsed) { renderPill(ui, ch, step); return }
@@ -144,11 +153,11 @@ class CampaignDirector {
     private fun renderFull(
         ui: UiBuilder, ch: Chapter, step: Step, controller: CytoController,
         header: String, anchor: Anchor, margin: Float, wrapChars: Int, textSize: Float, fillWidth: Boolean,
-    ) {
+    ): Float {
         val query = lastQuery
         val gate = step.gate
         val nextEnabled = gate is Gate.Next || gateMet
-        ui.panel(anchor, margin = margin, padding = PAD_DP, background = 0x11182AF2L, rowHeight = 22f, textSize = textSize, fillWidth = fillWidth) {
+        return ui.panel(anchor, margin = margin, padding = PAD_DP, background = 0x11182AF2L, rowHeight = 22f, textSize = textSize, fillWidth = fillWidth) {
             title(clip(header, wrapChars), 0x6FD6C4FFL)
             gap(4f)
             for (line in wrap(step.text, wrapChars)) row(line, 0xEAEEF6FFL)

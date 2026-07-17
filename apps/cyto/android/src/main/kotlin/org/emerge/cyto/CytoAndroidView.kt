@@ -223,7 +223,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
             }
             run {
                 val cellShown = geneEditor.isEditing || controller.lastHeldId != null
-                val (offX, offY) = geneEditor.freeAreaOffsetPx(narrow = true, cellShown, ui.resWidth, ui.resHeight, ui.scale)
+                val (offX, offY) = geneEditor.freeAreaOffsetPx(narrow = true, cellShown, ui.resWidth, ui.resHeight, ui.scale, topObscuredPx = director.coachTopInsetPx)
                 r.setFollowOffsetPx(offX, offY)
             }
         }

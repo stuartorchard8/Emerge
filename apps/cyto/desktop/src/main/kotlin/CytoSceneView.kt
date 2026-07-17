@@ -196,7 +196,7 @@ object CytoSceneView {
             run {
                 val narrow = layout.forceNarrow || ui.resWidth < NARROW_MAX_PX
                 val cellShown = geneEditor.isEditing || controller.lastHeldId != null
-                val (offX, offY) = geneEditor.freeAreaOffsetPx(narrow, cellShown, ui.resWidth, ui.resHeight, ui.scale)
+                val (offX, offY) = geneEditor.freeAreaOffsetPx(narrow, cellShown, ui.resWidth, ui.resHeight, ui.scale, topObscuredPx = director.coachTopInsetPx)
                 renderer.setFollowOffsetPx(offX, offY)
             }
             // The sim advances on its own thread; we render whatever it last published.

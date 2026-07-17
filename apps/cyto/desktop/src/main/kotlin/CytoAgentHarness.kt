@@ -411,7 +411,7 @@ object CytoAgentHarness {
                 val pos = controller.cameraFocusPosition()
                 renderer.follow(focus.value, pos?.first ?: -1f, pos?.second ?: -1f)
                 val panelUp = geneEditor.isEditing || controller.lastHeldId != null
-                val (ox, oy) = geneEditor.freeAreaOffsetPx(NARROW, cellShown = panelUp, RES_W.toFloat(), RES_H.toFloat(), ui.scale)
+                val (ox, oy) = geneEditor.freeAreaOffsetPx(NARROW, cellShown = panelUp, RES_W.toFloat(), RES_H.toFloat(), ui.scale, topObscuredPx = director.coachTopInsetPx)
                 renderer.setFollowOffsetPx(ox, oy)
                 renderer.snapFollow()
             } else {
