@@ -267,6 +267,11 @@ object CytoSceneView {
                 if (!showHud) hud.close()
                 // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
                 ui.frame {
+                    // Coach first so the (expanded) narrow cell sheet draws over it; the short peek never
+                    // reaches it. On wide the coach is bottom-centre and the panel docks right — no overlap.
+                    // Full bottom-centre panel normally; a top-left pill while editing (wide); nothing behind a
+                    // full-screen narrow modal; a top-docked full coach on narrow.
+                    if (!modalUp) director.render(this, controller, collapsed = cellUp, narrow = narrow)
                     if (mask.allows(Control.GeneEditor)) {
                         geneEditor.render(
                             this, controller,
@@ -286,9 +291,6 @@ object CytoSceneView {
                     if (showHud) {
                         hud.render(this, controls, wide = !narrow) { menu.openTitle(); simDriver.setPaused(true) }
                     }
-                    // The campaign coach overlay: full bottom-centre panel normally, a top-left pill when a
-                    // cell/gene editor is up, nothing behind a full-screen narrow modal.
-                    if (!modalUp) director.render(this, controller, collapsed = cellUp)
                 }
             } else {
                 // Front-end shell over the (paused) world.

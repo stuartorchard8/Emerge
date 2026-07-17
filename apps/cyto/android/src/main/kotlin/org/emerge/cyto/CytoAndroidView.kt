@@ -276,6 +276,8 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                 val modalUp = geneEditor.isEditing
                 val showHud = !geneEditor.isEditing && controller.lastHeldId == null
                 if (!showHud) hud.close()
+                // Coach first so the (expanded) cell sheet draws over it; the short peek never reaches it.
+                if (!modalUp) director.render(this, controller, collapsed = cellUp, narrow = true)
                 if (mask.allows(Control.GeneEditor)) {
                     geneEditor.render(
                         this, controller,
@@ -291,7 +293,6 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                     }
                 }
                 if (showHud) hud.render(this, c, wide = false) { menu.openTitle(); paused = true }
-                if (!modalUp) director.render(this, controller, collapsed = cellUp)
             } else {
                 menu.render(this, CytoSaves.list(), cb)
             }
