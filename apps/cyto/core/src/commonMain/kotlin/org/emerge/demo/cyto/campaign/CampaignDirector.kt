@@ -25,8 +25,22 @@ class CampaignDirector {
     private var lastQuery: CampaignQuery? = null
     private var showDetail: Boolean = false
 
-    /** Called with the chapter id when its final step is advanced past (host unlocks the next chapter). */
-    var onChapterComplete: (String) -> Unit = {}
+    /** The ordered campaign. The director walks this itself so completing a chapter segues straight into the
+     *  next (a single continuous world) instead of returning the host to the chapter selector. The host sets
+     *  it once. Empty ⇒ single-chapter mode (advancing past the last step just ends via [onCampaignComplete]). */
+    var chapters: List<Chapter> = emptyList()
+
+    /** Called with a chapter id the moment its final step is passed — the host persists it as completed
+     *  (unlocking the next). Fires whether or not another chapter follows. */
+    var onChapterCompleted: (String) -> Unit = {}
+
+    /** The whole campaign is finished (the last chapter's final step was passed) — the host returns to the
+     *  menu. This is the ONLY path back to the selector now; mid-campaign, chapters flow into each other. */
+    var onCampaignComplete: () -> Unit = {}
+
+    /** Rebuild the world for [Chapter] from its [Chapter.scenario] (the host does `newGame` + resets the
+     *  camera). Called when entering a [Chapter.startsFreshWorld] chapter and by [resetChapter]. */
+    var onWorldReset: (Chapter) -> Unit = {}
 
     /** Invoked whenever a new step becomes current (chapter start + each advance). The host applies the
      *  step's [WorldRun] here (pause/resume the sim). */
@@ -38,11 +52,23 @@ class CampaignDirector {
     /** Which controls the host should keep live this step (ALL when no chapter is active). */
     val controlMask: ControlMask get() = if (active) currentStep?.allow ?: ControlMask.ALL else ControlMask.ALL
 
-    /** Begin a chapter. The host has already rebuilt the world from [Chapter.scenario]. */
+    /** Begin a chapter, the world already built (the menu/host rebuilt it from [Chapter.scenario] before
+     *  calling — the selector's explicit "start this chapter" path). Mid-campaign advances instead go through
+     *  [advance], which carries the world forward unless the next chapter is [Chapter.startsFreshWorld]. */
     fun start(chapter: Chapter, controller: CytoController) {
         this.chapter = chapter
         stepIndex = 0
         active = true
+        enterStep(controller)
+    }
+
+    /** Reload the current chapter's authored world and restart it at step 1 — the coach's always-available
+     *  "Reset" control. The escape hatch for a world that has drifted off the script (a colony sprawled, the
+     *  founders died), and how the player pulls a [Chapter.startsFreshWorld] substrate back in. */
+    fun resetChapter(controller: CytoController) {
+        val ch = chapter ?: return
+        onWorldReset(ch)
+        stepIndex = 0
         enterStep(controller)
     }
 
@@ -105,10 +131,22 @@ class CampaignDirector {
     private fun advance(controller: CytoController) {
         val ch = chapter ?: return
         if (stepIndex >= ch.steps.lastIndex) {
-            active = false
-            val id = ch.id
-            chapter = null
-            onChapterComplete(id)
+            onChapterCompleted(ch.id)
+            // Segue into the next chapter in the SAME world — no drop to the selector. Only rebuild the world
+            // when the next chapter marks itself a fresh start (Ch8's swimmer); otherwise the player's living
+            // world, which the coaching just walked them into being the next chapter's starting point, carries
+            // straight on.
+            val next = chapters.getOrNull(chapters.indexOfFirst { it.id == ch.id } + 1)
+            if (next == null) {
+                active = false
+                chapter = null
+                onCampaignComplete()
+            } else {
+                if (next.startsFreshWorld) onWorldReset(next)
+                chapter = next
+                stepIndex = 0
+                enterStep(controller)
+            }
         } else {
             stepIndex++
             enterStep(controller)
@@ -184,6 +222,9 @@ class CampaignDirector {
             gap(6f)
             val buttons = ArrayList<Triple<String, Long, () -> Unit>>()
             if (step.detail != null) buttons.add(Triple(if (showDetail) "Less" else "More", 0x2A3550FFL) { showDetail = !showDetail })
+            // Reset: reload this chapter's clean starting world. Always available — the escape hatch for a
+            // continuous world that has drifted off-script (see [resetChapter]).
+            buttons.add(Triple("Reset", 0x4A3A2AFFL) { resetChapter(controller) })
             buttons.add(Triple("Skip", 0x53384AFFL) { advance(controller) })
             buttons.add(Triple("Next >", if (nextEnabled) 0x2E6E5EFFL else 0x2A3040FFL) { if (nextEnabled) advance(controller) })
             actionRow(buttons)

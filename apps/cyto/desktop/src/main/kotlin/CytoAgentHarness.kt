@@ -106,6 +106,11 @@ object CytoAgentHarness {
 
         fun init() {
             director.onStepEnter = {}
+            // Continuous campaign: `next` past a chapter's last step segues into the next chapter in-world,
+            // and `reset` reloads the current chapter — same as the real hosts.
+            director.chapters = CampaignContent.CHAPTERS
+            director.onWorldReset = { ch -> controller.newGame(ch.scenario); renderer.resetView() }
+            director.onCampaignComplete = { println("[agent] campaign complete") }
             if (!glfwInit()) error("GLFW init failed")
             glfwDefaultWindowHints()
             glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE)
@@ -241,6 +246,7 @@ object CytoAgentHarness {
                 }
                 "did" -> { pendingActions.add(PlayerAction.valueOf(t[1])); sync() }
                 "next" -> { sync(); println("[agent] next -> ${if (director.tryAdvance(controller)) "advanced" else "blocked (goal not met)"}") }
+                "reset" -> { director.resetChapter(controller); sync(); println("[agent] reset -> ${director.snapshot()?.chapterId} step ${(director.snapshot()?.stepIndex ?: 0) + 1}") }
                 "shot" -> { sync(); shot(t.getOrElse(1) { "shot" }) }
                 "state" -> { sync(); dumpState(t.getOrElse(1) { "state" }) }
                 "dumpraw" -> dumpRaw()

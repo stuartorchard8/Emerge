@@ -22,7 +22,8 @@ class CampaignDirectorTest {
         val ctrl = CytoController()
         val dir = CampaignDirector()
         var completed: String? = null
-        dir.onChapterComplete = { completed = it }
+        dir.onChapterCompleted = { completed = it }
+        dir.onCampaignComplete = { completed = "CAMPAIGN" }
         dir.start(chapter(
             Step("reach 4", Gate.World("Reach 4 cells", met = { it.cellCount >= 4 })),
         ), ctrl)
@@ -37,6 +38,50 @@ class CampaignDirectorTest {
         //  single-step chapter that completes on the World gate by simulating an advance.)
         dir.update(query(cellCount = 5), emptySet())
         assertTrue(dir.active)   // still active until the player confirms with Next
+    }
+
+    @Test fun completingAChapterSeguesIntoTheNextInTheSameWorld() {
+        val ctrl = CytoController()
+        val dir = CampaignDirector()
+        val a = Chapter("a", 1, "A", "", CytoScenario.DEFAULT, listOf(Step("a1", Gate.Next)))
+        val b = Chapter("b", 1, "B", "", CytoScenario.DEFAULT, listOf(Step("b1", Gate.Next)))
+        val completed = mutableListOf<String>()
+        var worldResets = 0
+        var campaignDone = false
+        dir.chapters = listOf(a, b)
+        dir.onChapterCompleted = { completed.add(it) }
+        dir.onWorldReset = { worldResets++ }
+        dir.onCampaignComplete = { campaignDone = true }
+
+        dir.start(a, ctrl)
+        assertTrue(dir.tryAdvance(ctrl))                 // past A's last step
+        assertEquals(listOf("a"), completed)
+        assertEquals("b", dir.currentStep?.let { dir.activeChapter?.id })
+        assertEquals(0, worldResets, "B is not startsFreshWorld, so its world must carry forward")
+        assertFalse(campaignDone)
+
+        assertTrue(dir.tryAdvance(ctrl))                 // past B's last step = end of campaign
+        assertEquals(listOf("a", "b"), completed)
+        assertTrue(campaignDone)
+        assertFalse(dir.active)
+    }
+
+    @Test fun aFreshWorldChapterRebuildsOnEntryAndResetAlwaysDoes() {
+        val ctrl = CytoController()
+        val dir = CampaignDirector()
+        val a = Chapter("a", 1, "A", "", CytoScenario.DEFAULT, listOf(Step("a1", Gate.Next)))
+        val b = Chapter("b", 1, "B", "", CytoScenario.DEFAULT, listOf(Step("b1", Gate.Next)), startsFreshWorld = true)
+        val resets = mutableListOf<String>()
+        dir.chapters = listOf(a, b)
+        dir.onWorldReset = { resets.add(it.id) }
+
+        dir.start(a, ctrl)
+        dir.tryAdvance(ctrl)
+        assertEquals(listOf("b"), resets, "entering a startsFreshWorld chapter rebuilds its world")
+
+        dir.resetChapter(ctrl)                           // the always-available Reset button
+        assertEquals(listOf("b", "b"), resets)
+        assertEquals("b1", dir.currentStep?.text, "reset returns to the chapter's first step")
     }
 
     @Test fun didGateLatchesAcrossFrames() {

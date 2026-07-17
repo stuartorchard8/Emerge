@@ -152,10 +152,11 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         menu.campaignChapters = CampaignContent.CHAPTERS
         menu.campaignUnlocked = { progress.isUnlocked(it, CampaignContent.ORDER) }
         menu.campaignCompleted = { progress.isCompleted(it) }
-        director.onChapterComplete = { id ->
-            progress.complete(id)
-            menu.openCampaign(); paused = true
-        }
+        // One continuous world: the director segues between chapters itself (see the desktop host).
+        director.chapters = CampaignContent.CHAPTERS
+        director.onChapterCompleted = { id -> progress.complete(id) }
+        director.onWorldReset = { ch -> controller.newGame(ch.scenario); renderer.resetView() }
+        director.onCampaignComplete = { menu.openCampaign(); paused = true }
         director.onStepEnter = { step -> paused = step.world == WorldRun.Frozen }
 
         callbacks = CytoMenu.Callbacks(

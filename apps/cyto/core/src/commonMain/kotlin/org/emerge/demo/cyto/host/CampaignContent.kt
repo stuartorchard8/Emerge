@@ -356,6 +356,7 @@ object CampaignContent {
         title = "First Contact",
         blurb = "Meet a single living cell, and learn to look at it.",
         scenario = GROW_ONLY,
+        startsFreshWorld = true,   // the campaign begins here; nothing precedes it
         grouping = CAMPAIGN_GROUPING,
         steps = listOf(
             Step(
@@ -695,6 +696,7 @@ object CampaignContent {
         title = "A Sense of Place",
         blurb = "An even squeeze goes nowhere. Teach the cells which side they're on.",
         scenario = CH8_SUBSTRATE,
+        startsFreshWorld = true,   // the only mid-campaign break: the autotroph gives way to the swimmer lineage
         grouping = CH8_GROUPING,
         insertableGroups = setOf(GROUP_POLARIZE),
         spawnGenome = CH8_FULL_GENES,

@@ -45,6 +45,15 @@ class Chapter(
      *  those edits, so they iterate a lineage in place (and can go off-script if they choose). Falls back to
      *  [spawnGenome] when no cell is selected. */
     val spawnCopiesHeldCell: Boolean = false,
+    /**
+     * Whether entering this chapter rebuilds the world from [scenario] instead of carrying the previous
+     * chapter's world forward. The campaign is a single continuous world (CAMPAIGN_PLAN.md): completing a
+     * chapter segues straight into the next in the SAME world, because each chapter's authored end-state is
+     * the next chapter's starting point. Set this only where that chain genuinely breaks — the first chapter
+     * (nothing precedes it) and Ch8 (the autotroph gives way to the bespoke swimmer lineage). Elsewhere the
+     * player's living world continues, and the always-available Reset is how they realign it to [scenario].
+     */
+    val startsFreshWorld: Boolean = false,
 )
 
 /** One coaching beat: the instruction, how it advances ([gate]), which controls are live ([allow]), an

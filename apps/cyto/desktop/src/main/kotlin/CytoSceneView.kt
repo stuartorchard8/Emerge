@@ -92,10 +92,13 @@ object CytoSceneView {
         menu.campaignChapters = CampaignContent.CHAPTERS
         menu.campaignUnlocked = { campaignProgress.isUnlocked(it, CampaignContent.ORDER) }
         menu.campaignCompleted = { campaignProgress.isCompleted(it) }
-        director.onChapterComplete = { id ->
-            campaignProgress.complete(id)
-            menu.openCampaign(); simDriver.setPaused(true)
-        }
+        // The campaign is one continuous world: the director walks the chapter list itself, seguing from one
+        // chapter into the next in the same world (rebuilding only at a startsFreshWorld chapter). The host
+        // just persists progress, rebuilds the world when asked, and returns to the menu when the whole arc ends.
+        director.chapters = CampaignContent.CHAPTERS
+        director.onChapterCompleted = { id -> campaignProgress.complete(id) }
+        director.onWorldReset = { ch -> controller.newGame(ch.scenario); renderer.resetView() }
+        director.onCampaignComplete = { menu.openCampaign(); simDriver.setPaused(true) }
         // Each step chooses whether the world runs or holds still (so a slow reader isn't overtaken by a
         // later concept). Applied on step entry; the player keeps manual pause/speed control within a step.
         director.onStepEnter = { step -> simDriver.setPaused(step.world == org.emerge.demo.cyto.campaign.WorldRun.Frozen) }
