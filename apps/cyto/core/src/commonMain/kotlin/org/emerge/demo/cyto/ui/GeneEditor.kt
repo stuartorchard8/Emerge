@@ -7,6 +7,7 @@ import org.emerge.demo.cyto.sim.Comparison
 import org.emerge.demo.cyto.sim.CytoSeed
 import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.EnergySource
+import org.emerge.demo.cyto.sim.GeneAction
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.GeneCondition
 import org.emerge.demo.cyto.sim.Operand
@@ -560,14 +561,60 @@ class GeneEditor {
                     out.add(listOf<Pair<String, Long?>>((if (ci == 0) "WHEN " else " AND ") to GREY) + cl)
                 }
             }
-            // Action line: action span, then the source group from " (" to the end.
-            out.add(
-                listOf<Pair<String, Long?>>("→ " to GREY, spanPair(spans[0])) +
-                    spans.subList(parenIdx, spans.size).map { it.text to (if (it.blocking) ORANGE else GREY) },
-            )
+            // Fuel FIRST, on its own line, then the action, then its modifiers indented — so a long action
+            // (a DIVIDE with a morphogen + axis) no longer overflows the panel. Blocking parts stay orange:
+            // the source line when there's no fuel, the action line when its input is missing.
+            val gene = g.gene
+            val energyBlocked = spans.getOrNull(parenIdx + 1)?.blocking == true
+            val inputBlocked = spans[0].blocking
+            out.add(listOf(sourceProse(gene.source) to (if (energyBlocked) ORANGE else GREY)))
+            val (actionMain, mods) = actionProse(gene.action)
+            val actionText = actionMain + if (gene.efficiency != 0) " e${gene.efficiency}" else ""
+            out.add(listOf(actionText to (if (inputBlocked) ORANGE else null)))
+            for (m in mods) out.add(listOf<Pair<String, Long?>>(" $m" to GREY))
             lines = out
         }
         geneCard(lines, bg) { open(controller, i) }
+    }
+
+    /** The gene's power source as its own prose line, shown BEFORE the action (Stu's format) so a long
+     *  action doesn't overflow. Break-bond fuel names the two atoms it frees; light is just light.
+     *  NOTE: this wording is the placeholder the deeper energy-source rework will replace. */
+    private fun sourceProse(s: EnergySource): String = when (s) {
+        EnergySource.Light -> "USING LIGHT TO POWER"
+        is EnergySource.BreakBond -> {
+            val bond = s.bond.uppercase()
+            val atoms = if (s.bond.length == 2) "${s.bond[0].uppercaseChar()} AND ${s.bond[1].uppercaseChar()}" else bond
+            "BREAK $bond INTO $atoms TO POWER"
+        }
+    }
+
+    /** The action as a main line plus any modifier lines (the caller indents the modifiers). Only Mitosis
+     *  carries modifiers — the morphogen it hands to a daughter/mother, and a sever. */
+    private fun actionProse(a: GeneAction): Pair<String, List<String>> {
+        val av = a.a.uppercase(); val bv = a.b.uppercase()
+        return when (a.type) {
+            ActionType.Import -> "IMPORT $av" to emptyList()
+            ActionType.Export -> "EXPORT $av" to emptyList()
+            ActionType.FormBond -> {
+                val la = if (a.aWild && a.a.isNotEmpty()) "*$av" else av
+                val lb = if (a.bWild && a.b.isNotEmpty()) "$bv*" else bv
+                "BOND $la AND $lb" to emptyList()
+            }
+            ActionType.Convert -> "CONVERT $av INTO BODY MASS" to emptyList()
+            ActionType.Contract -> "CONTRACT" to emptyList()
+            ActionType.Repair -> "REPAIR WELDS" to emptyList()
+            ActionType.Lyse -> "LYSE" to emptyList()
+            ActionType.Retain -> "RETAIN $av" to emptyList()
+            ActionType.Mitosis -> {
+                val main = "DIVIDE" + if (a.b.isEmpty()) "" else " ${if (a.divideAcross) "ACROSS" else "ALONG"} $bv GRADIENT"
+                val mods = buildList {
+                    if (a.a.isNotEmpty()) add(if (a.morphogenToMother) "RETAINING $av IN THE MOTHER CELL" else "GIVING $av TO ONE DAUGHTER")
+                    if (a.rejectMother) add("SEVERING THE DAUGHTER FREE")
+                }
+                main to mods
+            }
+        }
     }
 
     /** A dark tint of a group's [color] (40% brightness, full alpha) for its collapsible header background. */
