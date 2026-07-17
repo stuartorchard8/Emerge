@@ -529,31 +529,45 @@ class GeneEditor {
             g.active -> 0x2E8B40FFL
             else -> 0x3C3C3CFFL
         }
-        // Split the one-line span sentence — `ACTION IF clause & clause (source) eN` — into a two-line
-        // card: line 1 "WHEN <clauses>", line 2 "→ <ACTION> (source) eN". The markers " IF " and " ("
-        // are emitted verbatim by describeGeneSpans, so we partition on them. Blocking spans stay orange.
+        // Split the one-line span sentence — `ACTION IF clause & clause (source) eN` — into a card with the
+        // condition clauses ONE PER LINE, then an action line: `WHEN <clause>` / ` AND <clause>` / ... /
+        // `→ <ACTION> (source) eN`. The markers " IF ", " (" and the " & " clause separator are emitted
+        // verbatim by describeGeneSpans, so we partition on them. Blocking spans stay orange.
         val ORANGE = 0xC8963CFFL
         val GREY = 0x9A9A9AFFL
         val spans = g.spans
         val ifIdx = spans.indexOfFirst { it.text == " IF " }
         val parenIdx = spans.indexOfFirst { it.text == " (" }
-        fun seg(from: Int, to: Int) = spans.subList(from, to).map { it.text to (if (it.blocking) ORANGE else null) }
-        val line1: List<Pair<String, Long?>>
-        val line2: List<Pair<String, Long?>>
+        fun spanPair(s: CytoController.CellInfo.Span) = s.text to (if (s.blocking) ORANGE else null as Long?)
+        val lines: List<List<Pair<String, Long?>>>
         if (ifIdx < 0 || parenIdx < 0) {
             // Fallback: shape not recognised — show the raw sentence on one line.
-            line1 = spans.map { it.text to (if (it.blocking) ORANGE else null) }
-            line2 = emptyList()
+            lines = listOf(spans.map { spanPair(it) })
         } else {
-            val clauses = seg(ifIdx + 1, parenIdx)
-            line1 = listOf<Pair<String, Long?>>("WHEN " to GREY) +
-                (if (clauses.isEmpty()) listOf("always" to GREY) else clauses)
-            // action = spans[0], then source group from parenIdx to end.
-            line2 = listOf<Pair<String, Long?>>("→ " to GREY) +
-                (spans[0].text to (if (spans[0].blocking) ORANGE else null)) +
-                seg(parenIdx, spans.size).map { it.first to (it.second ?: GREY) }
+            // The clause span run is "clause & clause & ..." between " IF " and " (". Break it at each " & "
+            // so every AND-clause becomes its own line, keeping its blocking colour.
+            val clauseSpans = spans.subList(ifIdx + 1, parenIdx)
+            val clauseLines = mutableListOf<MutableList<Pair<String, Long?>>>()
+            for (s in clauseSpans) {
+                if (s.text == " & " || clauseLines.isEmpty()) clauseLines.add(mutableListOf())
+                if (s.text != " & ") clauseLines.last().add(spanPair(s))
+            }
+            val out = mutableListOf<List<Pair<String, Long?>>>()
+            if (clauseLines.isEmpty() || clauseLines.all { it.isEmpty() }) {
+                out.add(listOf("WHEN " to GREY, "always" to GREY))
+            } else {
+                clauseLines.forEachIndexed { ci, cl ->
+                    out.add(listOf<Pair<String, Long?>>((if (ci == 0) "WHEN " else " AND ") to GREY) + cl)
+                }
+            }
+            // Action line: action span, then the source group from " (" to the end.
+            out.add(
+                listOf<Pair<String, Long?>>("→ " to GREY, spanPair(spans[0])) +
+                    spans.subList(parenIdx, spans.size).map { it.text to (if (it.blocking) ORANGE else GREY) },
+            )
+            lines = out
         }
-        geneCard(line1, line2, bg) { open(controller, i) }
+        geneCard(lines, bg) { open(controller, i) }
     }
 
     /** A dark tint of a group's [color] (40% brightness, full alpha) for its collapsible header background. */
