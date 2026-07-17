@@ -193,6 +193,13 @@ object CytoAgentHarness {
                     val (x, y) = world(t[1].toFloat(), t[2].toFloat())
                     controller.cellAt(x, y)?.let { controller.focus(it); pendingActions.add(PlayerAction.SelectedCell) }
                 }
+                // Right-click equivalent: give the cell under (u,v) camera focus (or release it on empty space).
+                "camerafocus" -> {
+                    val (x, y) = world(t[1].toFloat(), t[2].toFloat())
+                    val hit = controller.cellAt(x, y)
+                    if (hit != null) controller.cameraFocus(hit) else controller.clearCameraFocus()
+                    pendingActions.add(PlayerAction.MovedCamera)
+                }
                 "spawn" -> {
                     val (x, y) = world(t[1].toFloat(), t[2].toFloat())
                     controller.spawn(x, y, CellType.Collector); advance(1); pendingActions.add(PlayerAction.PaintedCell)
@@ -394,13 +401,16 @@ object CytoAgentHarness {
             renderer.colorMode = controls.colorMode
             renderer.focusedCellId = controller.lastHeldId?.value ?: -1
 
-            // Mirror the host: follow the held cell and recentre it into the space the L2 panel/sheet leaves
-            // free, then snap (no damping) so a single captured frame is deterministic.
-            val held = controller.lastHeldId
-            if (held != null && !controller.isGrabbed) {
-                val (fx, fy) = controller.heldCellPosition() ?: (-1f to -1f)
-                renderer.follow(held.value, fx, fy)
-                val (ox, oy) = geneEditor.freeAreaOffsetPx(NARROW, cellShown = true, RES_W.toFloat(), RES_H.toFloat(), ui.scale)
+            // Mirror the host's split: the CAMERA follows cameraFocusId (the `camerafocus` command / right-click),
+            // NOT the selection. When it's set, recentre it into the space the panel/sheet leaves free and snap
+            // (no damping) so a single captured frame is deterministic.
+            controller.pruneDeadSelection()
+            val focus = controller.cameraFocusId
+            if (focus != null && !controller.isGrabbed) {
+                val pos = controller.cameraFocusPosition()
+                renderer.follow(focus.value, pos?.first ?: -1f, pos?.second ?: -1f)
+                val panelUp = geneEditor.isEditing || controller.lastHeldId != null
+                val (ox, oy) = geneEditor.freeAreaOffsetPx(NARROW, cellShown = panelUp, RES_W.toFloat(), RES_H.toFloat(), ui.scale)
                 renderer.setFollowOffsetPx(ox, oy)
                 renderer.snapFollow()
             } else {

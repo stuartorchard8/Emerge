@@ -240,6 +240,33 @@ class CytoController(
         reducer.noMutateEntityId = entity.value
     }
 
+    /** The cell the **camera** follows, independent of the inspected/selected cell ([lastHeldId]). Split so
+     *  left-click can select+inspect while right-click drives the camera (see the desktop host). */
+    var cameraFocusId: EntityId? = null
+        private set
+
+    /** Make the camera follow [entity] (right-click). Does not touch the selection/info panel. */
+    fun cameraFocus(entity: EntityId) { cameraFocusId = entity }
+
+    /** Release the camera (right-click on empty space, or a manual pan). Leaves the selection intact. */
+    fun clearCameraFocus() { cameraFocusId = null }
+
+    /** Drop the selection if its cell has died — so a recycled [EntityId] can't silently re-point the info
+     *  panel (and the mutation freeze) onto an unrelated new cell. Cheap; call once per frame. (Hosts that
+     *  follow the selection get this for free via [heldCellPosition]; the desktop split needs it explicitly.) */
+    fun pruneDeadSelection() {
+        val id = lastHeldId ?: return
+        if (currentState.components.getTable<CytoCellComponent>().asMap()[id] == null) clearSelection()
+    }
+
+    /** The camera-focus cell's logical position, or null if none is set (or it has died — self-clears). */
+    fun cameraFocusPosition(): Pair<Float, Float>? {
+        val id = cameraFocusId ?: return null
+        val transform = currentState.components.getTable<TransformComponent>()[id]
+        if (transform == null) { cameraFocusId = null; return null }
+        return CytoUnits.toLogical(transform.pos.x) to CytoUnits.toLogical(transform.pos.y)
+    }
+
     /** Clear the selection: the info panel closes and the previously-focused cell resumes mutating.
      *  Unlike [releaseGrab] (which only ends the current drag), this drops [lastHeldId] entirely. */
     fun clearSelection() {

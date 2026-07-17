@@ -172,7 +172,7 @@ object CytoSceneView {
                 if (kx != 0f || ky != 0f) {
                     val step = CAMERA_KEY_PAN_PX_PER_SEC * delta
                     renderer.panByPixels(kx * step, ky * step)
-                    controller.clearSelection()
+                    controller.clearCameraFocus()   // manual pan wins; the info-panel selection is unaffected
                     signals.cameraMoved = true
                 }
             }
@@ -180,12 +180,12 @@ object CytoSceneView {
             renderer.showLightField = controls.showLightField   // Light button → renderer
             renderer.showMatterField = controls.showMatterField // Matter button → renderer
             renderer.colorMode = controls.colorMode             // Color button → renderer
-            renderer.focusedCellId = controller.lastHeldId?.value ?: -1   // full-value highlight on the inspected cell
-            // Only follow when a cell is focused but NOT being grabbed.
+            controller.pruneDeadSelection()   // the selection no longer rides on the follow path, so prune here
+            renderer.focusedCellId = controller.lastHeldId?.value ?: -1   // highlight = the inspected cell (left-click)
+            // The camera follows a SEPARATE target (right-click), not the selection — unless it's being grabbed.
             if (!controller.isGrabbed) {
-                val (fx, fy) = controller.heldCellPosition() ?: (-1f to -1f)
-                val id = controller.lastHeldId?.value ?: -1
-                renderer.follow(id, fx, fy)
+                val pos = controller.cameraFocusPosition()
+                renderer.follow(controller.cameraFocusId?.value ?: -1, pos?.first ?: -1f, pos?.second ?: -1f)
             }
             // Recentre the followed cell into the space the L2 panel/sheet doesn't cover.
             run {
@@ -428,8 +428,8 @@ object CytoSceneView {
                 }
                 return@glfwSetMouseButtonCallback
             }
-            // Right button owns the camera: drag pans, and a click that didn't pan clears the selection
-            // (the same thing Esc does). It never touches the UI or the world.
+            // Right button owns the camera: drag pans; a click that didn't pan gives the cell under it CAMERA
+            // FOCUS (or releases the camera on empty space). It never touches the UI, selection, or the world.
             if (button == GLFW_MOUSE_BUTTON_RIGHT) {
                 when (action) {
                     GLFW_PRESS -> {
@@ -439,7 +439,11 @@ object CytoSceneView {
                         state.panLastY = px.second
                     }
                     GLFW_RELEASE -> {
-                        if (state.panning && !state.panned) controller.clearSelection()
+                        if (state.panning && !state.panned) {
+                            val world = renderer.screenToWorld(px.first, px.second)
+                            val hit = controller.cellAt(world[0], world[1])
+                            if (hit != null) controller.cameraFocus(hit) else controller.clearCameraFocus()
+                        }
                         state.panning = false
                         state.panned = false
                     }
@@ -501,8 +505,10 @@ object CytoSceneView {
             if (state.panning && isRightDown(win)) {
                 val dx = px.first - state.panLastX
                 val dy = px.second - state.panLastY
-                if (!state.panned && (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX))
+                if (!state.panned && (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX)) {
                     state.panned = true
+                    controller.clearCameraFocus()   // a manual pan takes the camera off any followed cell
+                }
                 renderer.panByPixels(dx, dy)
                 signals.cameraMoved = true
                 state.panLastX = px.first
