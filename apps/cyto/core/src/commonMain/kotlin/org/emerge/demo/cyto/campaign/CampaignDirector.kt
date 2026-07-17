@@ -129,12 +129,13 @@ class CampaignDirector {
         val counter = "(${stepIndex + 1}/${ch.steps.size})"
         if (narrow) {
             val budget = wrapBudget(ui, TOP_TEXT_DP, PAD_DP, TOP_MARGIN_DP)
-            // Counter first so it survives a title clip on a very narrow screen.
-            renderFull(ui, ch, step, controller, "$counter ${ch.title}", Anchor.TopLeft, margin = TOP_MARGIN_DP, wrapChars = budget, textSize = TOP_TEXT_DP)
+            // Counter first so it survives a title clip on a very narrow screen. Fill the width (a top banner
+            // with padding) so it reads as a phone app bar, not a left-hugging box.
+            renderFull(ui, ch, step, controller, "$counter ${ch.title}", Anchor.TopLeft, margin = TOP_MARGIN_DP, wrapChars = budget, textSize = TOP_TEXT_DP, fillWidth = true)
             return
         }
         if (collapsed) { renderPill(ui, ch, step); return }
-        renderFull(ui, ch, step, controller, "${ch.title}  $counter", Anchor.BottomCenter, margin = 180f, wrapChars = COACH_WRAP, textSize = BOTTOM_TEXT_DP)
+        renderFull(ui, ch, step, controller, "${ch.title}  $counter", Anchor.BottomCenter, margin = 180f, wrapChars = COACH_WRAP, textSize = BOTTOM_TEXT_DP, fillWidth = false)
     }
 
     /** The full coach body — title, wrapped step text, spotlight hint, objective, optional detail, and the
@@ -142,12 +143,12 @@ class CampaignDirector {
      *  auto-sized panel never grows past the screen (the phone's top-docked coach relies on this). */
     private fun renderFull(
         ui: UiBuilder, ch: Chapter, step: Step, controller: CytoController,
-        header: String, anchor: Anchor, margin: Float, wrapChars: Int, textSize: Float,
+        header: String, anchor: Anchor, margin: Float, wrapChars: Int, textSize: Float, fillWidth: Boolean,
     ) {
         val query = lastQuery
         val gate = step.gate
         val nextEnabled = gate is Gate.Next || gateMet
-        ui.panel(anchor, margin = margin, padding = PAD_DP, background = 0x11182AF2L, rowHeight = 22f, textSize = textSize) {
+        ui.panel(anchor, margin = margin, padding = PAD_DP, background = 0x11182AF2L, rowHeight = 22f, textSize = textSize, fillWidth = fillWidth) {
             title(clip(header, wrapChars), 0x6FD6C4FFL)
             gap(4f)
             for (line in wrap(step.text, wrapChars)) row(line, 0xEAEEF6FFL)
