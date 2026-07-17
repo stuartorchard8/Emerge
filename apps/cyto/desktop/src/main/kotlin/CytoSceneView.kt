@@ -1,4 +1,6 @@
 package org.emerge.desktop
+import org.emerge.demo.cyto.host.CampaignContent
+import org.emerge.demo.cyto.host.CytoMenu
 
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.CytoRenderer

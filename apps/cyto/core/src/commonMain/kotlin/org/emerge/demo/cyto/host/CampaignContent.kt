@@ -1,4 +1,4 @@
-package org.emerge.desktop
+package org.emerge.demo.cyto.host
 
 import org.emerge.demo.cyto.campaign.Chapter
 import org.emerge.demo.cyto.campaign.Control
