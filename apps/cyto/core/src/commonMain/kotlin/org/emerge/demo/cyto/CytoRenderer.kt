@@ -87,10 +87,20 @@ class CytoRenderer {
     private val BG_HALF_SIZE = floatArrayOf(1f, 1f)
     private val BG_COLOR = floatArrayOf(0f, 0f, 0f, 1f)
 
-    // ── light-field heatmap (the energy landscape, drawn as the background) ──────────────
-    // Reuses the proven instanced-rect shader: the static field grid (one torus tile) baked to
-    // heat colours once, projected to NDC + culled to the visible region each frame. Toggle with L.
-    var showLightField = true
+    // ── daylight (the energy landscape, applied as a white multiply over the finished scene) ──────────────
+    // Not a layer of its own: the ground (matter) and the cells draw in their own pigment colours, then one
+    // full-screen pass multiplies the lot by the band's level. So light and matter share every pixel — hue is
+    // pigment, brightness is light — and neither has to be toggled off to see the other.
+
+    /**
+     * How much light the world gets at full night, as a multiplier on the whole scene; the daylight band's
+     * peak is always 1.0. So 0.5 = night is half as bright as noon, and 1.0 = no day/night contrast at all
+     * (a flat, always-lit world). Player-facing: this is the dial that replaces the old light/matter overlay
+     * toggle — instead of swapping which field you can see, you choose how strongly day reads against night,
+     * with both fields visible the whole time. The host overwrites this each frame from
+     * `CytoControls.nightLevel`, whose ladder is the source of truth for the values a player can pick.
+     */
+    var nightLevel = 0.25f
     /** Per-gene specks inside each cell ([drawGeneParticles]). Off is a pure visual subtraction — used by
      *  the render benchmark to attribute their cost, and available as a host-side quality knob. */
     var showGeneParticles = true
@@ -175,8 +185,6 @@ class CytoRenderer {
     // Each visible leaf → a 2px-bordered square: fill is the leaf's per-area a/b/c atom DENSITY as raw RGB,
     // normalised so a full base-density leaf is white and depletion darkens + discolours it (the channel the
     // cells drained drops out). Borders are drawn first, fills (inset by the border width) painted on top,
-    // leaving a 2px frame. Toggle "Matter".
-    var showMatterField = false
     // The matter field is rasterised (quad-tree → a fixed-res RGBA density texture) each frame, then drawn as
     // one full-screen triangle sampling it with GL_REPEAT + linear filtering — so it reads as a smooth,
     // torus-wrapped density cloud covering the whole screen (no tile edge, no leaf cap). Matches the light
@@ -382,8 +390,8 @@ class CytoRenderer {
         // Background fill (opaque) — clears the frame.
         GPU.disableBlend()
         bgShader.drawInstanced(1, BG_CENTER, BG_HALF_SIZE, BG_COLOR)
-        // Light-field heatmap over the world (opaque, on top of the clear, under the cells).
-        drawLightField(frame.tick)
+        // The GROUND is the matter field, in its own pigment colours and unlit — the nutrient topology.
+        // Daylight is not a layer here; it lands at the end of the pass as a multiply over everything.
         drawMatterField(frame)
 
         val components = frame.state.components
@@ -581,6 +589,12 @@ class CytoRenderer {
 
         // One speck per gene, drifting in each cell's hollow centre.
         if (showGeneParticles) drawGeneParticles(cells, transforms, colliders)
+
+        // Daylight, LAST: a flat white multiply over the finished world — ground, cells, particles and all.
+        // The band is light falling on the scene, not a layer of its own, so the pigments underneath keep
+        // their hue and just grow more vibrant under it; nothing is hidden, which is why the matter topology
+        // and the light band can share every pixel. The host draws the UI after this, so the UI is unaffected.
+        drawLightMultiply(frame.tick)
 
         GPU.disableBlend()
     }
@@ -1045,11 +1059,13 @@ class CytoRenderer {
     /** Draw the light field as a single full-screen triangle: its fragment shader evaluates the moving
      *  daylight band analytically per pixel, so the field is continuous and covers the whole screen (torus-
      *  wrapped, no tile edge). Passes the camera→world mapping + the band position for sim-time [tick]. */
-    private fun drawLightField(tick: Long) {
-        if (!showLightField) return
+    private fun drawLightMultiply(tick: Long) {
+        if (nightLevel >= 1f) return   // a flat, always-lit world: the multiply would be an identity pass
         val aspect = resW / resH
         val hwx = viewHeight * aspect * 0.5f
         if (hwx <= 0f) return
+        GPU.enableBlend()
+        GPU.setBlendFuncDstColorZero()   // scene *= light
         lightFieldShader.draw(
             centerX = camLogX,
             halfViewX = hwx,
@@ -1057,14 +1073,16 @@ class CytoRenderer {
             falloff = CytoLightField.FALLOFF,
             half = CytoLightField.HALF,
             span = CytoLightField.SPAN,
+            night = nightLevel,
         )
+        GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()   // leave the shared blend state as we found it
     }
 
     /** Draw the matter field: rasterise the quad-tree into the density texture (one torus tile) and draw one
      *  full-screen triangle sampling it with GL_REPEAT + linear filtering, so it reads as a smooth, wrapped
      *  density cloud over the whole screen (the fragment maps each pixel → world → texcoord). */
     private fun drawMatterField(frame: CytoFrame) {
-        if (!showMatterField) return
+        // No showMatterField guard: matter IS the ground now, not an optional overlay layered on top of it.
         val grid = frame.state.components.getTable<CytoMatterGridComponent>().asMap()[GRID_SINGLETON]?.grid ?: return
         val aspect = resW / resH
         val hwx = viewHeight * aspect * 0.5f

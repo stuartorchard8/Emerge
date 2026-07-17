@@ -114,7 +114,7 @@ class CytoHud {
 
     private fun layersSheet(b: UiBuilder, controls: CytoControls, wide: Boolean) {
         sheetHost(b, "hud-layers", "LAYERS", wide, heightFraction = 0.5f) {
-            listRow(if (controls.showMatterField) "OVERLAY:  MATTER" else "OVERLAY:  LIGHT") { controls.toggleMatterField() }
+            listRow("NIGHT LIGHT:  ${controls.nightLabel}") { controls.cycleNightLevel() }
             listRow("CELL COLOUR:  ${controls.colorMode.label}") { controls.cycleColorMode() }
             if (controls.showMutation) listRow("MUTATION:  ${controls.mutationLabel}") { controls.onCycleMutation() }
             listRow(if (controls.showChemicals) "READOUTS:  ON" else "READOUTS:  OFF") { controls.toggleChemicals() }

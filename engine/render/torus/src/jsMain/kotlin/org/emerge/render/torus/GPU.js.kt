@@ -311,6 +311,10 @@ actual object GPU {
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE)
     }
 
+    actual fun setBlendFuncDstColorZero() {
+        gl.blendFunc(gl.DST_COLOR, gl.ZERO)
+    }
+
     // -- Scissor --
 
     actual fun enableScissorTest() {

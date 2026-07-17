@@ -52,12 +52,16 @@ class CytoControls {
      *  (Control.Spawn). Ch8's focused "tap to add a cell" re-seed, without exposing the full paint toolkit. */
     var worldSpawnEnabled: Boolean = false
 
-    /** Whether to draw the light-field heatmap (the host reads this and applies it to the renderer). */
-    var showLightField: Boolean = true
-        private set
-
-    /** Whether to draw the matter-field overlay (bordered leaf squares; host applies it to the renderer). */
-    var showMatterField: Boolean = false
+    /**
+     * How lit the world is at full night, as a multiplier on the whole scene (the daylight band's peak is
+     * always 1.0). The host reads this and applies it to the renderer.
+     *
+     * This replaced the old light/matter overlay toggle. Matter and light no longer compete for the screen:
+     * the ground draws matter's own pigment colours and daylight multiplies over the top, so both are always
+     * visible and there is nothing to swap between. What's left to choose is how hard night bites — low is
+     * dramatic and makes the moving band obvious, high flattens it out for reading the nutrient map at night.
+     */
+    var nightLevel: Float = NIGHT_LADDER[0]
         private set
 
     /** Cell display colour mode (the host reads this and applies it to the renderer). Cycled by the
@@ -74,8 +78,14 @@ class CytoControls {
     //    owns — so the new bottom bar and the legacy overlay stay in sync while both exist. ──
     fun setTouchMode(mode: TouchMode) { touchMode = mode }
     fun setColorMode(mode: CellColorMode) { colorMode = mode }
-    /** Toggle the matter overlay; the light heatmap is its mutually-exclusive counterpart (as the grid button). */
-    fun toggleMatterField() { showMatterField = !showMatterField; showLightField = !showMatterField }
+    /** Step the night-light ladder (wrapping) — the LAYERS sheet's replacement for the old overlay toggle. */
+    fun cycleNightLevel() {
+        val i = NIGHT_LADDER.indexOfFirst { it >= nightLevel - 0.001f }
+        nightLevel = NIGHT_LADDER[if (i < 0) 0 else (i + 1) % NIGHT_LADDER.size]
+    }
+
+    /** The night-light dial as a percentage, for the LAYERS row. */
+    val nightLabel: String get() = "${(nightLevel * 100f + 0.5f).toInt()}%"
     fun toggleChemicals() { showChemicals = !showChemicals }
 
     /** Host action for the "Load Genome" button — (re)load the brush genome from its file. File IO
@@ -306,14 +316,8 @@ class CytoControls {
             x -= bs + gap
         }
 
-        val gridButtonColor = if (showMatterField) MATTER_COLOR else LIGHT_COLOR
-        val gridButtonLabel = "${if (showMatterField) "MATTER" else "LIGHT"}\nGRID"
-        buttons.add(
-            Btn(x, bottomY, bs, bs, gridButtonColor, gridButtonLabel) {
-                showMatterField = !showMatterField
-                showLightField = !showMatterField
-            }
-        )
+        // (The LIGHT/MATTER GRID button is gone: there are no longer two mutually-exclusive fields to swap
+        // between — see [nightLevel]. The night-light dial lives in the HUD's LAYERS sheet.)
         // Mutation-rate cycle (tap to step the ladder); desktop-gated like the sim-speed row.
         x -= bs + gap
         if (showMutation) buttons.add(
@@ -364,10 +368,13 @@ class CytoControls {
     }
 
     companion object {
+        /** Night-light steps for [cycleNightLevel], darkest first: 25% is the default (the moving band reads
+         *  as a spotlight); 100% is a flat, always-lit world for players who want the nutrient map legible
+         *  everywhere. */
+        private val NIGHT_LADDER = floatArrayOf(0.25f, 0.5f, 0.75f, 1f)
+
         private const val DEBUG_COLOR = 0x606060FFL
-        private const val LIGHT_COLOR = 0xEFD040FFL   // warm — the light field
         private const val SIM_COLOR = 0x3A6EA5FFL     // blue — the sim-speed controls
         private const val COLOR_MODE_COLOR = 0x8A5BC0FFL // purple — the cell colour-mode cycle
-        private const val MATTER_COLOR = 0x35A0A0FFL      // teal — the matter-field overlay toggle
     }
 }

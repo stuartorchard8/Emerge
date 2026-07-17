@@ -145,6 +145,7 @@ actual object GPU {
     actual fun disableBlend() = GLES30.glDisable(GLES30.GL_BLEND)
     actual fun setBlendFuncSrcAlphaOneMinusSrcAlpha() = GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
     actual fun setBlendFuncSrcAlphaOne() = GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE)
+    actual fun setBlendFuncDstColorZero() = GLES30.glBlendFunc(GLES30.GL_DST_COLOR, GLES30.GL_ZERO)
 
     actual fun enableScissorTest() = GLES30.glEnable(GLES30.GL_SCISSOR_TEST)
     actual fun disableScissorTest() = GLES30.glDisable(GLES30.GL_SCISSOR_TEST)

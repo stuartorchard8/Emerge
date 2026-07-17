@@ -478,11 +478,10 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "One gene turned a static cell into a spreading colony - small genetic change, huge behaviour. But it won't fill the world forever. Turn on the matter grid to see the limit.",
-                gate = Gate.Did(PlayerAction.ToggledMatterOverlay, "Show the matter grid"),
+                text = "One gene turned a static cell into a spreading colony. It won't fill the world forever, though. Look at the ground the colony has crossed: it's darker than the ground ahead of it.",
+                gate = Gate.Next,
                 allow = WATCH,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "LIGHT/MATTER GRID button, bottom-right"),
             ),
             Step(
                 text = "See the dark patch? That's matter the colony has already used up. Cells stuck in that exhausted zone can't divide - only the frontier, reaching fresh matter, keeps spreading.",
@@ -545,11 +544,10 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "Why has it stalled? Turn on the matter grid. See the dark patch right under the pair - that's matter they've already eaten. Stuck in their own used-up ground, they've nothing left to build a daughter from.",
-                gate = Gate.Did(PlayerAction.ToggledMatterOverlay, "Show the matter grid"),
+                text = "Why has it stalled? Look at the ground right under the pair - it's darker than the ground around them. That's matter they've already eaten. Stuck in their own used-up patch, they've nothing left to build a daughter from.",
+                gate = Gate.Next,
                 allow = WATCH,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "LIGHT/MATTER GRID button, bottom-right"),
                 detail = "The bright ground all around them is fresh matter they can't reach - welded in place, they can't cross to it on their own.",
             ),
             Step(

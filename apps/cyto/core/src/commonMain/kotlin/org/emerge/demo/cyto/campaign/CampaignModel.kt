@@ -91,7 +91,6 @@ sealed interface Gate {
  *  between frames) and passes the set that occurred this frame to [CampaignDirector.update]. */
 enum class PlayerAction {
     SelectedCell,
-    ToggledMatterOverlay,
     ChangedSpeed,
     MovedCamera,
     PaintedCell,

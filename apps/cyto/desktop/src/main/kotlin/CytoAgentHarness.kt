@@ -233,12 +233,11 @@ object CytoAgentHarness {
                 "elements" -> listElements()
                 "tap-ui" -> tapUi(line.removePrefix("tap-ui").trim())
                 "drag-ui" -> dragUi(t[1], t[2].toFloat())
-                "overlay" -> {
-                    val matter = t[1] == "matter"
-                    controls.rebuild()
-                    if (controls.showMatterField != matter) controls.tap("GRID")   // single toggle button
-                    if (matter) pendingActions.add(PlayerAction.ToggledMatterOverlay)
-                    sync()
+                // The matter ground and the daylight multiply are both always on now; what's left to vary is
+                // how dark night gets. `night 1` flattens the light out entirely (handy for reading matter).
+                "night" -> {
+                    renderer.nightLevel = t[1].toFloat()
+                    println("[agent] night level -> ${renderer.nightLevel}")
                 }
                 "did" -> { pendingActions.add(PlayerAction.valueOf(t[1])); sync() }
                 "next" -> { sync(); println("[agent] next -> ${if (director.tryAdvance(controller)) "advanced" else "blocked (goal not met)"}") }
@@ -257,7 +256,7 @@ object CytoAgentHarness {
 
         private fun sync() {
             if (!director.active) { pendingActions.clear(); return }
-            val q = CampaignQuery(controller.worldStats(), controls.showMatterField, paused = false, selectedGenome = null)
+            val q = CampaignQuery(controller.worldStats(), paused = false, selectedGenome = null)
             director.update(q, pendingActions.toSet()); pendingActions.clear()
         }
 
@@ -378,7 +377,7 @@ object CytoAgentHarness {
             val sb = StringBuilder("{\n")
             sb.append("  \"tick\": ${w.tick},\n  \"cellCount\": ${w.cellCount},\n  \"maxBiomass\": ${w.maxBiomass},\n")
             sb.append("  \"countByType\": {${w.countByType.entries.joinToString(", ") { "\"${it.key.name}\": ${it.value}" }}},\n")
-            sb.append("  \"overlayMatter\": ${controls.showMatterField},\n")
+            sb.append("  \"nightLevel\": ${renderer.nightLevel},\n")
             val f = w.focused
             if (f != null) {
                 sb.append("  \"focused\": {\"type\": \"${f.type.name}\", \"biomass\": ${f.biomass}, \"genes\": ${f.geneCount}, ")
@@ -403,8 +402,6 @@ object CytoAgentHarness {
             controls.showTouchModes = mask.allows(Control.Brush)
             controls.showSimSpeed = mask.allows(Control.Speed)
             controls.showMutation = mask.allows(Control.Mutation)
-            renderer.showLightField = controls.showLightField
-            renderer.showMatterField = controls.showMatterField
             renderer.colorMode = controls.colorMode
             renderer.focusedCellId = controller.lastHeldId?.value ?: -1
 

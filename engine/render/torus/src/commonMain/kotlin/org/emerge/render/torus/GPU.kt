@@ -71,6 +71,11 @@ expect object GPU {
     /** Additive blend (src·srcAlpha + dst): for glows/particles that should only ever brighten. */
     fun setBlendFuncSrcAlphaOne()
 
+    /** Multiply blending (`GL_DST_COLOR, GL_ZERO`): the drawn fragment scales what is already in the
+     *  framebuffer instead of layering over it. A full-screen pass in this mode acts as a light term over the
+     *  whole scene — every pixel already drawn gets multiplied, so one pass lights ground and cells alike. */
+    fun setBlendFuncDstColorZero()
+
     fun enableScissorTest()
     fun disableScissorTest()
     fun setScissor(x: Int, y: Int, width: Int, height: Int)

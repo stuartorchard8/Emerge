@@ -150,7 +150,6 @@ object CytoSceneView {
         var fps = 0.0
         // Campaign interaction tracking (diffed frame-to-frame to raise PlayerActions).
         var prevHeldId: Int? = null
-        var prevMatterOverlay = controls.showMatterField
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents()
             updateResolution(window, renderer, controls, ui)
@@ -182,8 +181,7 @@ object CytoSceneView {
                 }
             }
 
-            renderer.showLightField = controls.showLightField   // Light button → renderer
-            renderer.showMatterField = controls.showMatterField // Matter button → renderer
+            renderer.nightLevel = controls.nightLevel           // LAYERS night dial → renderer
             renderer.colorMode = controls.colorMode             // Color button → renderer
             controller.pruneDeadSelection()   // the selection no longer rides on the follow path, so prune here
             renderer.focusedCellId = controller.lastHeldId?.value ?: -1   // highlight = the inspected cell (left-click)
@@ -209,16 +207,13 @@ object CytoSceneView {
                 if (signals.consumeSpeedChanged()) actions.add(PlayerAction.ChangedSpeed)
                 val heldNow = controller.lastHeldId?.value
                 if (heldNow != null && heldNow != prevHeldId) actions.add(PlayerAction.SelectedCell)
-                if (controls.showMatterField && !prevMatterOverlay) actions.add(PlayerAction.ToggledMatterOverlay)
                 val query = CampaignQuery(
                     controller.worldStats(),
-                    matterOverlayOn = controls.showMatterField,
                     paused = simDriver.paused,
                     selectedGenome = genomes.getOrNull(selectedGenome)?.name,
                 )
                 director.update(query, actions)
                 prevHeldId = heldNow
-                prevMatterOverlay = controls.showMatterField
             }
             // Control masking: an active chapter restricts the toolbar to what the current step allows.
             val mask = director.controlMask

@@ -76,7 +76,6 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
 
     // Campaign interaction tracking (diffed frame-to-frame) + one-shot signals.
     private var prevHeldId: Int? = null
-    private var prevMatterOverlay = false
     private var cameraMovedSignal = false
     private var speedChangedSignal = false
 
@@ -215,8 +214,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         val simDelta = if (paused || !menu.inGame) 0f else delta * SPEEDS[speedIdx]
         val frame = controller.tick(simDelta)
 
-        r.showLightField = c.showLightField
-        r.showMatterField = c.showMatterField
+        r.nightLevel = c.nightLevel
         r.colorMode = c.colorMode
 
         if (menu.inGame) {
@@ -243,18 +241,15 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
             if (speedChangedSignal) { actions.add(PlayerAction.ChangedSpeed); speedChangedSignal = false }
             val heldNow = controller.lastHeldId?.value
             if (heldNow != null && heldNow != prevHeldId) actions.add(PlayerAction.SelectedCell)
-            if (c.showMatterField && !prevMatterOverlay) actions.add(PlayerAction.ToggledMatterOverlay)
             director.update(
                 CampaignQuery(
                     controller.worldStats(),
-                    matterOverlayOn = c.showMatterField,
                     paused = paused,
                     selectedGenome = genomes.getOrNull(selectedGenome)?.name,
                 ),
                 actions,
             )
             prevHeldId = heldNow
-            prevMatterOverlay = c.showMatterField
         }
 
         // Control masking: an active chapter restricts the toolbar to what the current step allows.

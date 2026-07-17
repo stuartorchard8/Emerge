@@ -12,7 +12,7 @@ class CampaignDirectorTest {
 
     private fun query(cellCount: Int = 1, maxBiomass: Int = 0) = CampaignQuery(
         WorldStats(0L, cellCount, mapOf(CellType.Collector to cellCount), maxBiomass, emptySet(), null),
-        matterOverlayOn = false, paused = false, selectedGenome = null,
+        paused = false, selectedGenome = null,
     )
 
     private fun chapter(vararg steps: Step) =

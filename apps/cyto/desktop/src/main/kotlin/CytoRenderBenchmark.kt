@@ -119,34 +119,29 @@ object CytoRenderBenchmark {
 
             // ── Feature attribution (default view: whole world) ──
             println("-- feature attribution (fit-world view) --")
-            b.renderer.showLightField = true; b.renderer.showMatterField = false; b.renderer.showGeneParticles = true
-            b.report("default (light, genes)", b.measure(frames))
+            // The matter ground + the daylight multiply are both unconditional now (there is no overlay
+            // toggle), so "default" includes them and the subtractions below attribute their cost.
+            val defaultNight = b.renderer.nightLevel   // whatever the renderer ships with
+            b.renderer.showGeneParticles = true
+            b.report("default (matter ground, daylight, genes)", b.measure(frames))
 
             b.renderer.showGeneParticles = false
             b.report("  − gene particles", b.measure(frames))
 
-            b.renderer.showLightField = false
-            b.report("  − gene, − light field", b.measure(frames))
-
-            // The MATTER/LIGHT grid button is one mutually-exclusive toggle (CytoControls), so matter-on
-            // means light-off — mirror that rather than stacking both.
-            b.renderer.showGeneParticles = true
-            b.renderer.showLightField = false
-            b.renderer.showMatterField = true
-            b.report("MATTER grid (light off)", b.measure(frames))
-            // Split the overlay's cost: the CPU channel tally + texel fill is timed inside the renderer,
-            // so whatever the overlay adds beyond it is texture upload + the full-screen warp shader.
+            b.renderer.nightLevel = 1f   // skips the multiply pass entirely
+            b.report("  − gene, − daylight", b.measure(frames))
+            // Split the matter ground's cost: the CPU channel tally + texel fill is timed inside the
+            // renderer, so whatever it adds beyond that is texture upload + the full-screen warp shader.
             println(
                 "      ↳ CPU rasterizeMatter = %.2fms over %d texels (rest = upload + warp shader)".format(
                     b.renderer.lastRasterizeUs / 1000.0, b.renderer.lastTexelCount,
                 )
             )
-            b.renderer.showMatterField = false
 
             // ── Zoom sweep: the cell pass draws every cell regardless of view, so a flat curve here
             //    means per-cell draw-call overhead, not fill rate. ──
             println("\n-- zoom sweep (default config; cell pass is unculled) --")
-            b.renderer.showGeneParticles = true; b.renderer.showLightField = true
+            b.renderer.showGeneParticles = true; b.renderer.nightLevel = defaultNight
             for (zoom in listOf(1f, 4f, 16f, 64f)) {
                 b.renderer.resetView()
                 b.renderer.zoomByFactor(zoom)

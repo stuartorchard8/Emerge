@@ -9,7 +9,6 @@ import org.emerge.demo.cyto.cells.CellType
  */
 class CampaignQuery(
     val stats: WorldStats,
-    val matterOverlayOn: Boolean,
     val paused: Boolean,
     val selectedGenome: String?,
 ) {

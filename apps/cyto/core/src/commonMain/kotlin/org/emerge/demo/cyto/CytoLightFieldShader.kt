@@ -7,11 +7,13 @@ import org.emerge.render.torus.put
 import org.emerge.render.torus.shader.ShaderFactory
 
 /**
- * Draws the light-field heatmap as a single full-screen triangle whose fragment shader evaluates the
- * moving daylight band analytically per pixel (see `field.frag`). Continuous by construction — no mesh, no
- * per-frame CPU baking, and (unlike the old grid) defined across the whole screen, torus-wrapped, so there
- * is no tile edge. The band formula mirrors [org.emerge.demo.cyto.sim.CytoLightField]'s moving-band branch;
- * keep the two in sync. Cyto-specific. Caller wraps blend state (drawn opaque).
+ * Draws the daylight band as a single full-screen triangle whose fragment shader evaluates the moving band
+ * analytically per pixel (see `field.frag`). Continuous by construction — no mesh, no per-frame CPU baking,
+ * and defined across the whole screen, torus-wrapped, so there is no tile edge. The band formula mirrors
+ * [org.emerge.demo.cyto.sim.CytoLightField]'s moving-band branch; keep the two in sync. Cyto-specific.
+ *
+ * This is a **white multiply over the finished scene**, so the caller must draw it LAST in the world pass
+ * with [GPU.setBlendFuncDstColorZero] — never opaque, and never before the cells, or it would erase them.
  */
 internal class CytoLightFieldShader {
     private val program = ShaderFactory.createProgram(
@@ -28,14 +30,16 @@ internal class CytoLightFieldShader {
     private val locFalloff = GPU.getUniformLocation(program, "uFalloff")
     private val locHalf = GPU.getUniformLocation(program, "uHalf")
     private val locSpan = GPU.getUniformLocation(program, "uSpan")
+    private val locNight = GPU.getUniformLocation(program, "uNight")
 
     init {
         uploadTriangle()
     }
 
     /** Draw the field for the given camera + band state. [halfViewX]/[centerX] map clip-space x → world x;
-     *  [bandX] is the daylight band centre; [falloff]/[half]/[span] are the field's torus constants. */
-    fun draw(centerX: Float, halfViewX: Float, bandX: Float, falloff: Float, half: Float, span: Float) {
+     *  [bandX] is the daylight band centre; [falloff]/[half]/[span] are the field's torus constants.
+     *  [night] is the scene multiplier at full night (1.0 = no day/night contrast at all). */
+    fun draw(centerX: Float, halfViewX: Float, bandX: Float, falloff: Float, half: Float, span: Float, night: Float) {
         GPU.bindVertexArray(vao)
         GPU.useProgram(program)
         GPU.putUniform1f(locCenterX, centerX)
@@ -44,6 +48,7 @@ internal class CytoLightFieldShader {
         GPU.putUniform1f(locFalloff, falloff)
         GPU.putUniform1f(locHalf, half)
         GPU.putUniform1f(locSpan, span)
+        GPU.putUniform1f(locNight, night)
         GPU.drawTriangles(0, 3)
     }
 
