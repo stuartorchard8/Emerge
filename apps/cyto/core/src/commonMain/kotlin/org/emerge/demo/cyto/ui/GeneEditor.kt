@@ -38,7 +38,7 @@ class GeneEditor {
         const val PANEL_MARGIN_DP = 12f      // wide: dockRight / editor-column margin
         const val EDIT_COL_DP = 440f         // wide: max gene-editor column width
         const val SHEET_FRACTION = 0.58f     // narrow: dockBottom cell-sheet full (L2) height fraction
-        const val PEEK_FRACTION = 0.17f      // narrow: dockBottom cell-sheet collapsed peek (L1) height
+        const val PEEK_FRACTION = 0.2f       // narrow: dockBottom cell-sheet collapsed peek (L1) height
     }
 
     private var editingId: EntityId? = null
@@ -195,36 +195,42 @@ class GeneEditor {
         // height tracks the finger (sheetDragFrac) and the body switches at the midpoint; a tap on the handle
         // toggles; a hard drag down dismisses. Opaque background so the short peek fully hides what's behind it.
         val screenH = b.screenH
+        val padDp = 12f
         val midFrac = (PEEK_FRACTION + SHEET_FRACTION) * 0.5f
         val liveFrac = sheetDragFrac ?: (if (cellExpanded) SHEET_FRACTION else PEEK_FRACTION)
         val showFull = sheetDragFrac?.let { it > midFrac } ?: cellExpanded
-        b.dockBottom("cell-sheet", heightFraction = liveFrac, background = 0x121722FFL, rowHeight = 44f, textSize = if (showFull) 15f else 16f) {
-            dragHandle(
-                "cell-grab",
-                onTap = { cellExpanded = !cellExpanded; sheetDragFrac = null },
-                onDrag = { dy -> sheetDragFrac = ((sheetDragFrac ?: liveFrac) - dy / screenH).coerceIn(0f, SHEET_FRACTION) },
-                onRelease = {
-                    val f = sheetDragFrac
-                    sheetDragFrac = null
-                    if (f != null) cellExpanded = when {
-                        f < PEEK_FRACTION * 0.55f -> { controller.clearSelection(); false }   // dragged down to dismiss
-                        f > midFrac -> true
-                        else -> false
-                    }
-                },
-            )
-            if (showFull) cellBody(controller, info, grouping, insertableGroups, onExport)
-            else peekBody(info)
+        // Shared drag behaviour: the finger sets the live height, release snaps to dismiss / peek / full.
+        val onDrag: (Float) -> Unit = { dy -> sheetDragFrac = ((sheetDragFrac ?: liveFrac) - dy / screenH).coerceIn(0f, SHEET_FRACTION) }
+        val onRelease: () -> Unit = {
+            val f = sheetDragFrac
+            sheetDragFrac = null
+            if (f != null) cellExpanded = when {
+                f < PEEK_FRACTION * 0.55f -> { controller.clearSelection(); false }   // dragged down to dismiss
+                f > midFrac -> true
+                else -> false
+            }
+        }
+        b.dockBottom("cell-sheet", heightFraction = liveFrac, background = 0x121722FFL, padding = padDp, rowHeight = 44f, textSize = if (showFull) 15f else 16f) {
+            if (showFull) {
+                dragHandle("cell-grab", onTap = { cellExpanded = false; sheetDragFrac = null }, onDrag = onDrag, onRelease = onRelease)
+                cellBody(controller, info, grouping, insertableGroups, onExport)
+            } else {
+                // The collapsed peek is one non-scrolling card filling the sheet: a drag anywhere on it (not
+                // just a top handle) expands, and its tiny content can't scroll. Height = sheet minus padding.
+                val cardH = screenH * liveFrac - padDp * b.density * 2f
+                dragCard(
+                    "cell-grab", cardH,
+                    listOf(
+                        "CELL ${info.id}  ${info.type}" to 0xFFFFFFFFL,
+                        "BIOMASS ${info.totalBiomass}" to 0xBFD0E6FFL,
+                    ),
+                    onTap = { cellExpanded = true; sheetDragFrac = null },
+                    onDrag = onDrag,
+                    onRelease = onRelease,
+                )
+            }
         }
         return 0f
-    }
-
-    /** The **L1 peek** — the shallow bottom sheet a freshly selected cell opens to: just name + biomass. The
-     *  whole strip (title, stat, and the DETAILS bar) expands to the full L2 [cellBody]. */
-    private fun PanelBuilder.peekBody(info: CytoController.CellInfo) {
-        button(listOf("CELL ${info.id}  ${info.type}" to 0xFFFFFFFFL), 0x00000000L) { cellExpanded = true }
-        keyValue("BIOMASS", info.totalBiomass.toString())
-        button(listOf("DETAILS" to 0xBFD0E6FFL), 0x2A3550FFL) { cellExpanded = true }
     }
 
     private fun PanelBuilder.cellBody(
