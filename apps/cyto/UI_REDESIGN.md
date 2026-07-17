@@ -340,7 +340,8 @@ doubles the cost of every future UI feature.
 >   `confirmingDelete`; only the second tap removes. `21e938fd`.
 > - ✅ **Coach docking** (§6.1) — `CampaignDirector.render(collapsed=)` draws a top-left `STEP N/M` + hint
 >   pill instead of the full bottom panel when a cell/gene editor is up (hidden only behind a full-screen
->   narrow modal). Onboarding stays visible while editing. `5889467e`.
+>   narrow modal). Onboarding stays visible while editing. `5889467e`. **Superseded on narrow** by the top
+>   banner below — the pill is now the desktop-only collapse.
 > - ✅ **Camera recentre** — a selected cell now eases into the middle of the *un-obscured* world area (top
 >   above the narrow sheet, left of the wide docked panels) instead of parking behind the panel. Done by
 >   offsetting the follow *target* (a real pan, so light/matter fields stay aligned);
@@ -358,21 +359,51 @@ doubles the cost of every future UI feature.
 >
 > **step 7, the Android host — SLICE 1 DONE (`2c0c9e13`):** `CytoAndroidView` rewritten onto the shared
 > `Ui`+`CytoHud`+`GeneEditor` stack (always narrow); single-pointer `hitTestDown`/`dragTo`/`hitTestUp` first,
-> miss grabs cell / pans (clears camera focus), tap = select + `cameraFocus`, pinch zooms, inline speed/pause,
-> `setDensity` from displayMetrics. Compiles; not emulator-verified (harness can't drive the Android host, but
-> the UI it draws is the already-verified shared stack).
+> miss grabs cell / pans (clears camera focus), tap = select + `cameraFocus`, inline speed/pause,
+> `setDensity` from displayMetrics. (Camera gestures since reworked — see slice 3.) Compiles; not
+> emulator-verified (harness can't drive the Android host, but the UI it draws is the already-verified
+> shared stack).
 > **step 7 SLICE 2 — DONE (`26c56892`+`4197fed6`+`b04480c0`):** host shell moved into core and wired on
 > Android. `CytoMenu`+`CampaignContent` → `commonMain` `org.emerge.demo.cyto.host`; `CytoSaves`/`CytoGenomes`/
 > `CampaignProgress` → a `jvmAndAndroidMain` intermediate source set, storage root via `CytoStorage.baseDir`
 > (Android = `filesDir`). `CytoSimDriver` stayed desktop-only (Android ticks inline). `CytoAndroidView` boots
 > into the menu + campaign + saves; MENU works; name entry is a native `AlertDialog`. Gotcha: `Files.write/
 > readString` are API 33+ (minSdk 26) — used byte forms. `assembleDebug` builds an APK.
-> **TOP OF QUEUE — step 8, campaign polish:** coach docking refinements, spotlight-vs-level, and the narrow
-> coach copy overflow (COACH_WRAP=58 is wide-shaped, clips at 560px). Optional follow-ups: port the web host
-> off the legacy `CytoControls` overlay too; on-device pass of the Android campaign coach at phone width.
+> **step 7 SLICE 3 — two-finger camera (`43bc3526`+`67bf93d9`):** ported the original cyto pinch model —
+> zoom about the midpoint + pan by the midpoint's movement, which pins both fingers to their world points
+> (rotation dropped; the toroidal camera has no such DOF). **While a cell is camera-focused the pan is
+> dropped and the zoom anchors on the cell**, so a pinch can't shake it loose — matching desktop, where the
+> wheel zooms without clearing focus and only a manual pan releases it. Releasing on a phone = one-finger
+> empty-space drag (`be651628`). Verified on-device by Stu.
+>
+> **DONE 2026-07-17 (later) — step 8, campaign polish (the narrow coach):**
+> - ✅ **Coach copy overflow FIXED** — the old `COACH_WRAP = 58` fixed wrap was wide-shaped and clipped at
+>   560px. `CampaignDirector.wrapBudget` now *measures* the font (`UiTextRenderer.measureWidthPx` of a sample
+>   ÷ length) against `screenW − padding − margin`, so the wrap adapts to width×density; 58 survives only as
+>   the desktop cap. `2ea4d999`.
+> - ✅ **Phone coach = one top-docked full-width banner** — `render(narrow = true)` draws a single top-left
+>   panel with `fillWidth` (reads as an app bar, not a left-hugging box), counter *before* the title so it
+>   survives a clip, and keeps the full Skip/More/Next controls. It never collapses to the pill on narrow —
+>   it clears the bottom sheet by construction. `9c8b0539`.
+> - ✅ **Toolkit support** — `Ui.panel` clamps to the screen (minus margins), takes `fillWidth`, and clips
+>   overflow (`a47017fc`); `panel()` now returns its height in px (`8203674b`), which feeds…
+> - ✅ **Camera recentre accounts for the coach** — `CampaignDirector.coachTopInsetPx` (the banner's bottom
+>   edge, one frame stale — fine for a damped follow) → `freeAreaOffsetPx(topObscuredPx =)`, so a selected
+>   cell centres in the band *between* coach and sheet, not behind the coach. Wired in all three hosts
+>   (desktop, harness, Android). `c7287530`.
+> - ✅ **Collapsed peek is a drag-anywhere card** — new `PanelBuilder.dragCard` (`6d51d216`); the L1 peek is
+>   now a non-scrolling full-height drag surface, so the whole card drags rather than just a handle
+>   (`2e5b8ead`).
+>
+> **TOP OF QUEUE — finish step 8, campaign polish:** spotlight-vs-level, and coach docking refinements
+> beyond the narrow banner. Optional follow-ups: port the web host off the legacy `CytoControls` overlay;
+> on-device pass of the Android campaign coach at phone width (the banner is harness-verified at narrow, but
+> only Stu's device exercises real density).
 >
 > **Key files:** `apps/cyto/core/.../ui/GeneEditor.kt` (all render paths: `renderCellPanel`/`cellBody`,
-> `renderGeneEditor`/`geneBody`, `renderPickerSheet`/`pickSheet`, `geneButton` ← the card to replace);
+> `renderGeneEditor`/`geneBody`, `renderPickerSheet`/`pickSheet`, `geneButton` → `Ui.geneCard`);
+> `apps/cyto/core/.../campaign/CampaignDirector.kt` (`render(narrow=/collapsed=)`, `wrapBudget`,
+> `coachTopInsetPx`); `apps/cyto/android/.../CytoAndroidView.kt` (the phone host: touch → shared stack);
 > `engine/render/torus/.../ui/Ui.kt` (`modal`/`sheet` take bounds, `dockRight`/`dockBottom`, the
 > insertion-ordered base layer); `apps/cyto/desktop/.../CytoSceneView.kt` (width switch, F2, coach
 > suppression, scroll/drag input); harness flags `-Dcyto.agent.narrow` + `w/h/density`.
