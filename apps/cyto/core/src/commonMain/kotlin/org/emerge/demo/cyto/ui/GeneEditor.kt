@@ -581,7 +581,7 @@ class GeneEditor {
      *  action doesn't overflow. Break-bond fuel names the two atoms it frees; light is just light.
      *  NOTE: this wording is the placeholder the deeper energy-source rework will replace. */
     private fun sourceProse(s: EnergySource): String = when (s) {
-        EnergySource.Light -> "USING LIGHT TO POWER"
+        EnergySource.Light -> "USE LIGHT TO POWER"
         is EnergySource.BreakBond -> {
             val bond = s.bond.uppercase()
             val atoms = if (s.bond.length == 2) "${s.bond[0].uppercaseChar()} AND ${s.bond[1].uppercaseChar()}" else bond
