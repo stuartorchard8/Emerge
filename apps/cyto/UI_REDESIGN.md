@@ -448,6 +448,10 @@ Grounded in the current control surface (`geneBody` + the picker sheets). These 
    at the genome's end only while a gene is in flight — to open a name-entry dialog for that gene. A ghost
    trails the cursor, the source dims, the hovered target lights up, and the destination auto-expands. Harness:
    `dragto <src> >> <dst>` / `draghover`. All verified via harness shots.
+7. ✅ **Duplicate/delete by drag-and-drop** (`61bcf742`). The genome-end dropzones grow two more below NEW
+   GROUP — **DUPLICATE GENE** (instant, inserts a copy after) and **DELETE GENE** (red; a drop arms it, a
+   confirm dialog settles it, since there's no undo). Retires the card's hover `...` overflow menu on desktop
+   (the clause +/× hovers stay; the narrow modal keeps its own overflow). Harness-verified.
 
 Each step verifies through the harness at 1400×900 (`tap-ui <label>` already reaches the inline controls —
 gene cards register their sentence as a label; a new `hover-xy <u> <v>` command drives the hover pass).
