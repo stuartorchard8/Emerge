@@ -423,18 +423,20 @@ Grounded in the current control surface (`geneBody` + the picker sheets). These 
 2. ✅ **Inline dropdown primitive** (`1487048f`). `PanelBuilder.dropdown` drops its list into the overlay
    layer anchored to the field, flips **up** when it won't fit below (`Ui.isWithinClip` suppresses it when
    the row scrolls out of view). Proven in the `-dropdown.png` snapshot.
-3. **Live editing path.** 3a ✅ (`e39d23e5`): the shared prose always emits every modifier slot with default
+3. ✅ **Live editing path.** 3a (`e39d23e5`): the shared prose always emits every modifier slot with default
    wording so each has a token (`DIVIDE`/`ALONG NO GRADIENT`/`RETAINING NOTHING`/`AND STICK`, efficiency
-   `e0`). **3b (next):** a NEW **inline token row** primitive — mixed static-text + dropdown/segmented tokens
-   sharing a wrapping line (Stu chose WRAP over clip, 2026-07-19), which nothing does today. Immediate-mode
-   wrinkle: item height is summed before emit but wrap depends on emit-time width — resolve like
-   `GeneCardItem` (caller pre-splits lines) or pass the dock's fixed width. Then a desktop `geneCardInline`
-   emits the 3a token structure with interactive variants writing **live** to the gene (no draft); narrow
-   keeps its modal.
-4. **Hover affordances.** Per-clause `+`/`×` (with confirm) and the gene `⋮` → centred copy/delete/group
-   modal.
-5. **Cascades + re-section.** Action-type re-layout, group-change auto-expand, clause caps, live blocked
-   colouring.
+   `e0`). 3b (`84965902` toolkit + `73150da9` cyto): `PanelBuilder.tokenLines` + `UiTok` (Text/Toggle/Menu)
+   — an inline sentence that wraps at construction against the dock's fixed width (the height-before-width
+   resolution). `GeneEditor.geneTokenCard` renders each gene as that sentence on desktop; inline-native slots
+   (comparator, orient, sever, keep, action, source, efficiency) edit live via `setHeldGene`, builder/keyboard
+   slots (operand, species, group) open the shared pick sheet as a popover. `inlineLive` flushes every change
+   straight to the genome (no draft/DONE); narrow keeps its modal. Harness-verified (tokens render, sever
+   flips `rejectMother` live, action Menu drops inline, operand popover opens).
+4. **Hover affordances (next).** Per-clause `+`/`×` (with confirm) and the gene `⋮` → centred copy/delete/group
+   modal. (The `hoverRow`/`HoverAction` primitive from step 1 is ready; wire it into `geneTokenCard`.)
+5. **Cascades + re-section.** Action-type re-layout (already sanitises on action change), group-change
+   auto-expand, clause caps, live blocked (orange) colouring, and per-gene active/blocked card background
+   (the interactive card currently has none). Also: retire the now-dead wide branch of `renderGeneEditor`.
 
 Each step verifies through the harness at 1400×900 (`tap-ui <label>` already reaches the inline controls —
 gene cards register their sentence as a label; a new `hover-xy <u> <v>` command drives the hover pass).
