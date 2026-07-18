@@ -241,6 +241,8 @@ object CytoAgentHarness {
                 }
                 "elements" -> listElements()
                 "tap-ui" -> tapUi(line.removePrefix("tap-ui").trim())
+                "hover-ui" -> hoverUi(line.removePrefix("hover-ui").trim())
+                "hover-clear" -> { ui.clearHover(); println("[agent] hover cleared") }
                 "drag-ui" -> dragUi(t[1], t[2].toFloat())
                 // The matter ground and the daylight multiply are both always on now; what's left to vary is
                 // how dark night gets. `night 1` flattens the light out entirely (handy for reading matter).
@@ -351,6 +353,16 @@ object CytoAgentHarness {
             ui.hitTestUp(cx, cy + dyPx)
             println("[agent] drag-ui '$label' dy=$dyPx -> done")
             sync()
+        }
+
+        /** Park the persistent hover cursor over a labelled region's centre so a following `shot` captures
+         *  hover-revealed affordances (clause +/X, the gene card overflow button). */
+        private fun hoverUi(label: String) {
+            buildOverlay()
+            val el = ui.elements().firstOrNull { it.label.contains(label, ignoreCase = true) }
+            if (el == null) { println("[agent] hover-ui '$label' -> no match"); return }
+            ui.hover(el.x + el.w * 0.5f, el.y + el.h * 0.5f)
+            println("[agent] hover-ui '$label' -> (${(el.x + el.w * 0.5f).toInt()}, ${(el.y + el.h * 0.5f).toInt()})")
         }
 
         private fun tapUi(label: String) {

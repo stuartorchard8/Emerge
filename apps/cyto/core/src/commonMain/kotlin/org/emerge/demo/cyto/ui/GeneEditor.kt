@@ -15,6 +15,7 @@ import org.emerge.demo.cyto.sim.Operand
 import org.emerge.demo.cyto.sim.SpeciesNames
 import org.emerge.sim.core.EntityId
 import org.emerge.render.torus.ui.Anchor
+import org.emerge.render.torus.ui.HoverAction
 import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.UiBuilder
 import org.emerge.render.torus.ui.UiTok
@@ -77,6 +78,7 @@ class GeneEditor {
     private var inlineLive = false
     private var openMenu: String? = null
     private var lastFlush: Gene? = null
+    private var armedClauseDelete: String? = null   // "<geneIndex>:<clauseIndex>" armed for a second-tap delete
 
     // In-game group tagging: when the player picks "New group..." the editor captures a typed name into
     // [groupBuffer] (the host routes keystrokes here — see [capturingGroupName]/[typeGroupChar]). Only the
@@ -564,22 +566,34 @@ class GeneEditor {
         val gene = g.gene
         val grey = 0x9A9A9AFFL
         val ctl = 0x35507AFFL
+        val orange = 0xB56A1EFFL   // a control-box tint of the read card's blocking orange
+        // Read the blocking flags the sim already computed (CytoController.describeGeneSpans): span[0] = the
+        // action (input-blocked), the clause spans between " IF "/" (", and the source span after " (" =
+        // energy-blocked. Colour the offending token so an inactive gene shows *why* — as the read card did.
+        val ifIdx = g.spans.indexOfFirst { it.text == " IF " }
+        val parenIdx = g.spans.indexOfFirst { it.text == " (" }
+        val inputBlocked = g.spans.firstOrNull()?.blocking == true
+        val energyBlocked = if (parenIdx >= 0) g.spans.getOrNull(parenIdx + 1)?.blocking == true else false
+        val clauseBlocks = if (ifIdx in 0 until parenIdx)
+            g.spans.subList(ifIdx + 1, parenIdx).filter { it.text != " & " }.map { it.blocking } else emptyList()
+        fun ctlIf(blocked: Boolean) = if (blocked) orange else ctl
         val lines = ArrayList<List<UiTok>>()
 
         // WHEN <lhs> <cmp> <rhs>, one clause per line.
         gene.condition.clauses.forEachIndexed { ci, cl ->
+            val c = ctlIf(clauseBlocks.getOrElse(ci) { false })
             lines.add(listOf(
                 UiTok.Text(if (ci == 0) "WHEN " else " AND ", grey),
-                UiTok.Toggle(operandLabel(cl.lhs), ctl) { openInlinePick(controller, i, Pick.Operand, ci, 0) },
+                UiTok.Toggle(operandLabel(cl.lhs), c) { openInlinePick(controller, i, Pick.Operand, ci, 0) },
                 UiTok.Text(" ", grey),
-                UiTok.Toggle(if (cl.cmp == Comparison.Greater) ">" else "<", ctl) {
+                UiTok.Toggle(if (cl.cmp == Comparison.Greater) ">" else "<", c) {
                     inlineEdit(controller, i) { g2 ->
-                        val c = g2.condition.clauses[ci]
-                        withClauseAt(g2, ci, c.copy(cmp = if (c.cmp == Comparison.Greater) Comparison.Less else Comparison.Greater))
+                        val cc = g2.condition.clauses[ci]
+                        withClauseAt(g2, ci, cc.copy(cmp = if (cc.cmp == Comparison.Greater) Comparison.Less else Comparison.Greater))
                     }
                 },
                 UiTok.Text(" ", grey),
-                UiTok.Toggle(operandLabel(cl.rhs), ctl) { openInlinePick(controller, i, Pick.Operand, ci, 1) },
+                UiTok.Toggle(operandLabel(cl.rhs), c) { openInlinePick(controller, i, Pick.Operand, ci, 1) },
             ))
         }
 
@@ -587,7 +601,7 @@ class GeneEditor {
         val srcKey = "$i:src"
         val srcOpts = listOf("LIGHT") + bonds.map { "BREAK ${sp(it)}" }
         lines.add(listOf(
-            UiTok.Menu(sourceLabel(gene.source), ctl, srcOpts, openMenu == srcKey,
+            UiTok.Menu(sourceLabel(gene.source), ctlIf(energyBlocked), srcOpts, openMenu == srcKey,
                 onToggle = { openMenu = if (openMenu == srcKey) null else srcKey },
                 onPick = { idx -> inlineEdit(controller, i) { it.copy(source = if (idx == 0) EnergySource.Light else EnergySource.BreakBond(bonds[idx - 1])) }; openMenu = null }),
             UiTok.Text(" TO POWER", grey),
@@ -596,7 +610,7 @@ class GeneEditor {
         // DO: action Menu, its operand token(s), and efficiency (non-Mitosis).
         val actKey = "$i:act"
         val actLine = ArrayList<UiTok>()
-        actLine.add(UiTok.Menu(gene.action.type.name, ctl, ActionType.entries.map { it.name }, openMenu == actKey,
+        actLine.add(UiTok.Menu(gene.action.type.name, ctlIf(inputBlocked), ActionType.entries.map { it.name }, openMenu == actKey,
             onToggle = { openMenu = if (openMenu == actKey) null else actKey },
             onPick = { idx ->
                 val t = ActionType.entries[idx]; val m = t == ActionType.Mitosis
@@ -657,7 +671,28 @@ class GeneEditor {
             UiTok.Toggle(gene.group.uppercase().ifEmpty { "(NONE)" }, ctl) { openInlinePick(controller, i, Pick.Group) },
         ))
 
-        tokenLines(lines, wrapWidth = 356f, textSize = 15f)
+        // Hover affordances (§8a step 4): each clause line reveals a + (duplicate this clause) and, when the
+        // gene has more than one, an × (arm-then-delete); the whole card reveals a ... menu (duplicate/delete
+        // the gene) via the shared Overflow sheet. lineActions align with `lines`; clauses are the first N.
+        val green = 0x32503CFFL; val red = 0x5A2A2AFFL
+        val clauseCount = gene.condition.clauses.size
+        val lineActions = (0 until clauseCount).map { ci ->
+            buildList {
+                if (clauseCount < CytoTuning.GENOME_MAX_CLAUSES)
+                    add(HoverAction("+", green, "clause-dup-$ci") { dupClause(controller, i, ci) })
+                if (clauseCount > 1) {
+                    val armed = armedClauseDelete == "$i:$ci"
+                    add(HoverAction(if (armed) "!" else "X", if (armed) 0xB03030FFL else red, "clause-del-$ci") { deleteClauseArmed(controller, i, ci) })
+                }
+            }
+        }
+        val cardActions = listOf(HoverAction("...", 0x3A4150FFL, "gene-menu-$i") { openInlinePick(controller, i, Pick.Overflow) })
+
+        // Card background carries the read card's state cue: active = green glow, inactive = dark grey. The
+        // read card (geneButton) used a solid bright green; here the token controls sit on top, so this is a
+        // clearly-green but muted tint that still keeps the blue/orange control boxes legible.
+        val bg = if (g.active) 0x25522FFFL else 0x20242EFFL
+        tokenLines(lines, wrapWidth = 356f, textSize = 15f, background = bg, lineActions = lineActions, cardActions = cardActions)
         gap(8f)
     }
 
@@ -877,6 +912,20 @@ class GeneEditor {
         beginInline(controller, i)
         openMenu = null
         openPick(p, clause, side)
+    }
+
+    /** Insert a copy of clause [ci] right after it (hover `+`), capped at [CytoTuning.GENOME_MAX_CLAUSES]. */
+    private fun dupClause(controller: CytoController, i: Int, ci: Int) = inlineEdit(controller, i) { g ->
+        val cs = g.condition.clauses
+        if (cs.size >= CytoTuning.GENOME_MAX_CLAUSES || ci !in cs.indices) g
+        else g.copy(condition = GeneCondition(cs.subList(0, ci + 1) + cs[ci] + cs.subList(ci + 1, cs.size)))
+    }
+
+    /** Hover `×`: first tap arms, second tap on the same clause deletes it (never the last clause). */
+    private fun deleteClauseArmed(controller: CytoController, i: Int, ci: Int) {
+        val key = "$i:$ci"
+        if (armedClauseDelete == key) { inlineEdit(controller, i) { removeClauseAt(it, ci) }; armedClauseDelete = null }
+        else armedClauseDelete = key
     }
 
     private fun sourceLabel(s: EnergySource): String = when (s) {

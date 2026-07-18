@@ -921,8 +921,11 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
      *  tokens), wrapping within [wrapWidth] dp so a long clause never clips (`apps/cyto/UI_REDESIGN.md`
      *  §8a — the desktop interactive gene card). [wrapWidth] is the caller's known content width (e.g. a
      *  fixed-width dock); [textSize] is dp. Continuation rows indent by [indent] dp. */
-    fun tokenLines(lines: List<List<UiTok>>, wrapWidth: Float, textSize: Float, indent: Float = 10f) =
-        items.add(TokenRowItem(lines, wrapWidth * scale, textSize * scale, rowHeight, indent * scale))
+    fun tokenLines(
+        lines: List<List<UiTok>>, wrapWidth: Float, textSize: Float, indent: Float = 10f,
+        background: Long = 0x00000000L,
+        lineActions: List<List<HoverAction>> = emptyList(), cardActions: List<HoverAction> = emptyList(),
+    ) = items.add(TokenRowItem(lines, wrapWidth * scale, textSize * scale, rowHeight, indent * scale, background, lineActions, cardActions))
 
     /** Vertical space, in dp. */
     fun gap(height: Float = 6f) = items.add(GapItem(height * scale))
@@ -1101,63 +1104,92 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
      *  edge-aware option list into the overlay layer. */
     private class TokenRowItem(
         val lines: List<List<UiTok>>, val wrapPx: Float, val textH: Float, val rowH: Float, val indentPx: Float,
+        val background: Long, val lineActions: List<List<HoverAction>>, val cardActions: List<HoverAction>,
     ) : Item {
         private class Placed(val tok: UiTok, val dx: Float, val w: Float)
+        private class VLine(val rows: List<List<Placed>>, val actions: List<HoverAction>)
         private val gap = textH * 0.15f
         private fun tokW(t: UiTok): Float = when (t) {
             is UiTok.Text -> UiTextRenderer.measureWidthPx(t.text, textH)
             is UiTok.Toggle -> UiTextRenderer.measureWidthPx(t.value, textH) + textH * 0.8f
             is UiTok.Menu -> UiTextRenderer.measureWidthPx(t.value, textH) + textH * 1.4f
         }
-        private val visual: List<List<Placed>> = buildList {
-            for (line in lines) {
-                var cur = ArrayList<Placed>()
-                var cx = 0f
-                for (tok in line) {
-                    val w = tokW(tok)
-                    if (cur.isNotEmpty() && cx + w > wrapPx) { add(cur); cur = ArrayList(); cx = indentPx }
-                    cur.add(Placed(tok, cx, w)); cx += w + gap
-                }
-                if (cur.isNotEmpty()) add(cur)
+        private val vlines: List<VLine> = lines.mapIndexed { li, line ->
+            val rows = ArrayList<List<Placed>>()
+            var cur = ArrayList<Placed>()
+            var cx = 0f
+            for (tok in line) {
+                val w = tokW(tok)
+                if (cur.isNotEmpty() && cx + w > wrapPx) { rows.add(cur); cur = ArrayList(); cx = indentPx }
+                cur.add(Placed(tok, cx, w)); cx += w + gap
             }
+            if (cur.isNotEmpty()) rows.add(cur)
+            VLine(rows, lineActions.getOrElse(li) { emptyList() })
         }
-        override val height = visual.size * rowH
+        override val height = vlines.sumOf { it.rows.size } * rowH
         override fun measureWidth(textH: Float) = wrapPx
-        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textHIgnored: Float) {
-            var ry = topY
-            for (row in visual) {
-                val ty = ry + (rowH - textH) * 0.5f
-                for (p in row) {
-                    val px = x + p.dx
-                    when (val t = p.tok) {
-                        is UiTok.Text -> ui.emitTextLeft(t.text, px, ty, textH, t.color)
-                        is UiTok.Toggle -> {
-                            ui.emitRect(px, ry + 1f, p.w, rowH - 2f, t.color)
-                            ui.emitTextCentered(t.value, px + p.w * 0.5f, ty, textH, contrast(t.color))
-                            ui.emitClick(px, ry + 1f, p.w, rowH - 2f, label = t.value, onClick = t.onClick)
-                        }
-                        is UiTok.Menu -> {
-                            ui.emitRect(px, ry + 1f, p.w, rowH - 2f, t.color)
-                            ui.emitTextLeft(t.value, px + textH * 0.35f, ty, textH, contrast(t.color))
-                            ui.emitTextLeft("v", px + p.w - textH * 0.8f, ty, textH, 0xAACCFFFFL)
-                            ui.emitClick(px, ry + 1f, p.w, rowH - 2f, label = t.value, onClick = t.onToggle)
-                            if (t.open && ui.isWithinClip(px, ry, p.w, rowH)) {
-                                val ow = maxOf(p.w, (t.options.maxOfOrNull { UiTextRenderer.measureWidthPx(it, textH) } ?: 0f) + textH * 0.8f)
-                                val listH = t.options.size * rowH
-                                val below = ui.resHeight - (ry + rowH)
-                                val flipUp = listH > below && ry > below
-                                var oy = if (flipUp) ry - listH else ry + rowH
-                                for ((i, opt) in t.options.withIndex()) {
-                                    ui.emitOverlayRect(px, oy, ow, rowH, 0x1A2233FFL)
-                                    ui.emitOverlayTextLeft(opt, px + textH * 0.35f, oy + (rowH - textH) * 0.5f, textH, if (opt == t.value) 0xFFE070FFL else 0xCFE0FFFFL)
-                                    ui.emitOverlayClick(px, oy, ow, rowH) { t.onPick(i) }
-                                    oy += rowH
-                                }
-                            }
-                        }
+
+        private fun drawTok(ui: Ui, p: Placed, px: Float, ry: Float, ty: Float) { when (val t = p.tok) {
+            is UiTok.Text -> ui.emitTextLeft(t.text, px, ty, textH, t.color)
+            is UiTok.Toggle -> {
+                ui.emitRect(px, ry + 1f, p.w, rowH - 2f, t.color)
+                ui.emitTextCentered(t.value, px + p.w * 0.5f, ty, textH, contrast(t.color))
+                ui.emitClick(px, ry + 1f, p.w, rowH - 2f, label = t.value, onClick = t.onClick)
+            }
+            is UiTok.Menu -> {
+                ui.emitRect(px, ry + 1f, p.w, rowH - 2f, t.color)
+                ui.emitTextLeft(t.value, px + textH * 0.35f, ty, textH, contrast(t.color))
+                ui.emitTextLeft("v", px + p.w - textH * 0.8f, ty, textH, 0xAACCFFFFL)
+                ui.emitClick(px, ry + 1f, p.w, rowH - 2f, label = t.value, onClick = t.onToggle)
+                if (t.open && ui.isWithinClip(px, ry, p.w, rowH)) {
+                    val ow = maxOf(p.w, (t.options.maxOfOrNull { UiTextRenderer.measureWidthPx(it, textH) } ?: 0f) + textH * 0.8f)
+                    val listH = t.options.size * rowH
+                    val below = ui.resHeight - (ry + rowH)
+                    val flipUp = listH > below && ry > below
+                    var oy = if (flipUp) ry - listH else ry + rowH
+                    for ((i, opt) in t.options.withIndex()) {
+                        ui.emitOverlayRect(px, oy, ow, rowH, 0x1A2233FFL)
+                        ui.emitOverlayTextLeft(opt, px + textH * 0.35f, oy + (rowH - textH) * 0.5f, textH, if (opt == t.value) 0xFFE070FFL else 0xCFE0FFFFL)
+                        ui.emitOverlayClick(px, oy, ow, rowH) { t.onPick(i) }
+                        oy += rowH
                     }
                 }
-                ry += rowH
+            }
+        } }
+
+        /** Draw hover-reveal glyph buttons left-to-right starting at [startX], on the row at [ry]. */
+        private fun drawActions(ui: Ui, actions: List<HoverAction>, startX: Float, ry: Float) {
+            val btn = rowH - 2f
+            var bx = startX
+            for (a in actions) {
+                ui.emitRect(bx, ry + 1f, btn, btn, a.color)
+                ui.emitTextCentered(a.glyph, bx + btn * 0.5f, ry + 1f + (btn - textH) * 0.5f, textH, contrast(a.color))
+                ui.emitClick(bx, ry + 1f, btn, btn, label = a.label, onClick = a.onClick)
+                bx += btn + gap
+            }
+        }
+
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textHIgnored: Float) {
+            if (background != 0x00000000L) ui.emitRect(x, topY + 1f, contentW, height - 2f, background)
+            val cardHovered = cardActions.isNotEmpty() && ui.isHovered(x, topY, contentW, height)
+            var ry = topY
+            for (vl in vlines) {
+                val lineTop = ry
+                var lastEndX = x
+                for (row in vl.rows) {
+                    val ty = ry + (rowH - textH) * 0.5f
+                    for (p in row) drawTok(ui, p, x + p.dx, ry, ty)
+                    row.lastOrNull()?.let { lastEndX = x + it.dx + it.w }
+                    ry += rowH
+                }
+                // Per-line affordances (the clause +/×) reveal right after the line's last token on hover.
+                if (vl.actions.isNotEmpty() && ui.isHovered(x, lineTop, contentW, ry - lineTop))
+                    drawActions(ui, vl.actions, lastEndX + gap * 2f, ry - rowH)
+            }
+            // The card-level ⋮ sits at the top-right corner while any part of the card is hovered.
+            if (cardHovered) {
+                val btn = rowH - 2f
+                drawActions(ui, cardActions, x + contentW - cardActions.size * (btn + gap), topY)
             }
         }
     }
