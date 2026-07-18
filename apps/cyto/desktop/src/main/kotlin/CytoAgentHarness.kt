@@ -374,7 +374,7 @@ object CytoAgentHarness {
             // Rebuild: activeDrag persists across frames, so this pass sees draggingId set and registers the
             // drag-only targets (the new-group placeholder + highlightable group headers).
             buildOverlay()
-            val dst = ui.elements().firstOrNull { it.label.contains(parts[1], ignoreCase = true) }
+            val dst = (ui.elements() + ui.dropTargetElements()).firstOrNull { it.label.contains(parts[1], ignoreCase = true) }
             if (dst == null) { println("[agent] dragto dst '${parts[1]}' -> no match"); ui.hitTestUp(sx, sy); return }
             val dx = dst.x + dst.w * 0.5f; val dy = dst.y + dst.h * 0.5f
             ui.dragTo(dx, dy)
@@ -399,7 +399,7 @@ object CytoAgentHarness {
             ui.hitTestDown(src.x + src.w * 0.5f, src.y + src.h * 0.5f)
             ui.dragTo(src.x + src.w * 0.5f, src.y + src.h * 0.5f + 30f)
             buildOverlay()
-            val dst = ui.elements().firstOrNull { it.label.contains(parts[1], ignoreCase = true) }
+            val dst = (ui.elements() + ui.dropTargetElements()).firstOrNull { it.label.contains(parts[1], ignoreCase = true) }
             if (dst == null) { println("[agent] draghover dst '${parts[1]}' -> no match"); return }
             ui.dragTo(dst.x + dst.w * 0.5f, dst.y + dst.h * 0.5f)
             println("[agent] draghover '${parts[0]}' >> '${parts[1]}' -> holding (shot to capture)")

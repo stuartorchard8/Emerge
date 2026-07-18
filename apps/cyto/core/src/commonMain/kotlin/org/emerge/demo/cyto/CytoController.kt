@@ -675,6 +675,21 @@ class CytoController(
     fun duplicateHeldGene(index: Int) =
         editHeldGenome { g -> if (index in g.indices) g.toMutableList().also { it.add(index + 1, g[index]) } else null }
 
+    /** Reorder the gene at [from] to rank [toRank] **within its own group**, permuting only the genes that
+     *  share its group tag and leaving every other gene (and thus the group section order) in place. [toRank]
+     *  is the target position among the group's members (0..memberCount). Desktop drag-and-drop reorder. */
+    fun reorderHeldGeneInGroup(from: Int, toRank: Int) = editHeldGenome { g ->
+        if (from !in g.indices) return@editHeldGenome null
+        val group = g[from].group
+        val positions = g.indices.filter { g[it].group == group }   // this group's global slots, ascending
+        val fromRank = positions.indexOf(from)
+        if (fromRank < 0) return@editHeldGenome null
+        val ordered = positions.map { g[it] }.toMutableList()
+        val moved = ordered.removeAt(fromRank)
+        ordered.add((if (toRank > fromRank) toRank - 1 else toRank).coerceIn(0, ordered.size), moved)
+        g.toMutableList().also { m -> positions.forEachIndexed { k, pos -> m[pos] = ordered[k] } }
+    }
+
     /** Append [genes] to the held cell's genome (skipping any it already has, by value). The campaign's
      *  "insert a functional group" op — adds a ready-made subsystem to a cell in one action. Appends at the
      *  end so existing gene order (behaviourally significant under round-robin) is untouched. */

@@ -51,9 +51,11 @@ class GeneEditor {
         const val GENE_DRAG_PREFIX = "gene-drag-"
         const val GROUP_DROP_PREFIX = "group-drop:"
         const val GROUP_DROP_NEW = "group-drop-new"
-        // Drag-only action dropzones (below the group zones): duplicate is instant, delete opens a confirm.
+        // Drag-only action dropzones: duplicate sits at the origin group's end (instant); delete is in the
+        // bottom stack (opens a confirm). Reorder slots between same-group genes carry the target index.
         const val GENE_DROP_DUP = "gene-drop-dup"
         const val GENE_DROP_DEL = "gene-drop-del"
+        const val GENE_REORDER_PREFIX = "gene-reorder:"
     }
 
     private var editingId: EntityId? = null
@@ -286,6 +288,20 @@ class GeneEditor {
         // open the full-screen modal.
         fun PanelBuilder.gene(g: CytoController.CellInfo.GeneRow, i: Int) =
             if (wide) geneTokenCard(controller, g, i) else geneButton(controller, g, i)
+        // Render the genes at [indices] (global genome positions, in group order). When [isOrigin] (the
+        // section the dragged gene belongs to), interleave thin reorder drop slots — one before each gene and
+        // one after the last, keyed by the target *rank* within the group — and cap the run with the DUPLICATE
+        // zone. A drop on a slot reorders within the group; a drop on DUPLICATE inserts a copy (handleGeneDrop).
+        fun PanelBuilder.geneRun(indices: List<Int>, isOrigin: Boolean) {
+            indices.forEachIndexed { rank, idx ->
+                if (isOrigin) dropSlot("$GENE_REORDER_PREFIX$rank")
+                gene(info.genes[idx], idx)
+            }
+            if (isOrigin) {
+                dropSlot("$GENE_REORDER_PREFIX${indices.size}")
+                button("DUPLICATE GENE", 0x2E5A38FFL, dropTargetId = GENE_DROP_DUP) {}
+            }
+        }
         title("CELL ${info.id}  ${info.type}")
         // Per-line key/values right-align their value, so the panel reads at any width (a single-line vitals
         // row overflowed the narrow wide-screen column).
@@ -303,6 +319,10 @@ class GeneEditor {
             val liveGenes = info.genes.map { it.gene }
             val effectiveGrouping = grouping ?: if (liveGenes.any { it.group.isNotEmpty() }) EMPTY_GROUPING else null
             val sections = effectiveGrouping?.sections(liveGenes)
+            // The group a dragged gene came from, so its own section can show the reorder slots (drop between
+            // same-group genes to re-order) and the DUPLICATE zone at its end. Reorder is within-group only;
+            // dropping on a *different* group's header re-tags instead.
+            val dragGroup = draggingGene?.let { info.genes.getOrNull(it)?.gene?.group }
             if (sections != null) {
                 for (sec in sections) {
                     val label = sec.name ?: "OTHER"
@@ -313,23 +333,23 @@ class GeneEditor {
                     button("${if (open) "-" else "+"} $label (${sec.items.size})", groupHeaderBg(sec.color), dropTargetId = dropId) {
                         if (open) expandedGroups.remove(label) else expandedGroups.add(label)
                     }
-                    if (open) for (item in sec.items) gene(info.genes[item.index], item.index)
+                    val isOrigin = wide && dragGroup != null && (sec.name ?: "") == dragGroup
+                    if (open) geneRun(sec.items.map { it.index }, isOrigin)
                 }
                 for (grp in effectiveGrouping.groups) {
                     if (grp.name in insertableGroups && grp.insert.isNotEmpty() && liveGenes.none { it.group == grp.name })
                         button("+ ADD ${grp.name.uppercase()}", 0x2A3F5AFFL) { controller.addHeldGenes(grp.insert) }
                 }
             } else {
-                info.genes.forEachIndexed { i, g -> gene(g, i) }
+                // Flat (ungrouped) genome: one implicit group, so reorder + duplicate apply to the whole list.
+                geneRun(info.genes.indices.toList(), isOrigin = wide && draggingGene != null)
             }
-            // While a gene is in flight (desktop drag), the genome's end grows a set of drop targets: a "new
-            // group" zone (opens the typed-name dialog — also the only re-group target when nothing is grouped
-            // yet), then the two gene actions that used to live behind the card's "..." menu. Duplicate is
-            // instant; delete opens a confirm dialog (handleGeneDrop).
+            // The bottom stack of drag-only zones (shown only while a gene is in flight): a "new group" zone
+            // (opens the typed-name dialog — also the only re-group target when nothing is grouped yet) and the
+            // delete zone (a drop arms a confirm dialog). Duplicate lives at the origin group's end (geneRun).
             if (wide && draggingGene != null) {
                 gap(6f)
                 button("+ NEW GROUP", 0x2E4A6EFFL, dropTargetId = GROUP_DROP_NEW) {}
-                button("DUPLICATE GENE", 0x2E5A38FFL, dropTargetId = GENE_DROP_DUP) {}
                 button("DELETE GENE", 0x6E2A2AFFL, dropTargetId = GENE_DROP_DEL) {}
             }
             gap(6f)
@@ -1016,6 +1036,8 @@ class GeneEditor {
             targetId == GROUP_DROP_NEW -> { beginInline(controller, i); startGroupCapture("") }
             targetId == GENE_DROP_DUP -> controller.duplicateHeldGene(i)
             targetId == GENE_DROP_DEL -> pendingDeleteGene = i   // opens the confirm dialog next frame
+            targetId.startsWith(GENE_REORDER_PREFIX) ->
+                targetId.removePrefix(GENE_REORDER_PREFIX).toIntOrNull()?.let { controller.reorderHeldGeneInGroup(i, it) }
             targetId.startsWith(GROUP_DROP_PREFIX) -> {
                 val name = targetId.removePrefix(GROUP_DROP_PREFIX)
                 inlineEdit(controller, i) { it.copy(group = name) }
