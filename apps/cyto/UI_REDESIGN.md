@@ -395,10 +395,18 @@ doubles the cost of every future UI feature.
 >   now a non-scrolling full-height drag surface, so the whole card drags rather than just a handle
 >   (`2e5b8ead`).
 >
-> **TOP OF QUEUE — finish step 8, campaign polish:** spotlight-vs-level, and coach docking refinements
-> beyond the narrow banner. Optional follow-ups: port the web host off the legacy `CytoControls` overlay;
-> on-device pass of the Android campaign coach at phone width (the banner is harness-verified at narrow, but
-> only Stu's device exercises real density).
+> **DONE 2026-07-18 — step 8, coach copy pass (`2d753bb1`):** fixed species references broken by the
+> fuel/marker rename (Ch9 muscle steps: BREAK RG→BREAK FUEL, BB→MARKER across text/gate/hint/detail), and
+> neutralised `Click the cell` → `Select the cell` (~8 spots) so the copy reads on touch. **spotlight-vs-level
+> (§6.3) is MOOT** — `Spotlight` was already reduced to a text-only hint (`class Spotlight(hint: String?)`),
+> so there is no widget-targeting to redesign; what remained of that tension was this copy pass.
+>
+> **TOP OF QUEUE — remaining step-8 threads:** (1) Ch1's `Right-click and drag … scroll to zoom` camera
+> primer is the one un-neutralised mouse-ism — genuinely host-specific (desktop left-drag grabs a cell), so it
+> needs **host-conditional copy** (a mechanism for the host to inject platform input hints), not a wording
+> swap. (2) coach docking refinements beyond the narrow banner. Optional follow-ups: port the web host off the
+> legacy `CytoControls` overlay; on-device pass of the Android campaign coach at phone width (the banner is
+> harness-verified at narrow, but only Stu's device exercises real density).
 >
 > **Key files:** `apps/cyto/core/.../ui/GeneEditor.kt` (all render paths: `renderCellPanel`/`cellBody`,
 > `renderGeneEditor`/`geneBody`, `renderPickerSheet`/`pickSheet`, `geneButton` → `Ui.geneCard`);
