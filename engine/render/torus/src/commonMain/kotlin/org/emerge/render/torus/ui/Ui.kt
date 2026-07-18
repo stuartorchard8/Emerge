@@ -104,6 +104,24 @@ class Ui {
     private var handleLastY = 0f
     private var handleDragged = false
 
+    // ── Drag-and-drop (free 2-D) ───────────────────────────────────────────────────────────────────────────
+    // Pick up a card (a DragSource covering its rect) and drop it on a DropTarget. Distinct from a drag handle
+    // (which is a 1-D resize): here the pointer travels freely and the RELEASE point picks the target. A press
+    // on a source arms it but doesn't cancel a co-located click — a short press is still a tap (so the card's
+    // own token controls stay clickable); movement past the slop commits to the drag. The active source
+    // persists across frames for the gesture's life; targets are re-registered each frame and only consulted
+    // on drop. Used by the desktop genome card to re-group a gene by dragging it onto a group (§8a).
+    private class DragSource(val id: String, val x: Float, val y: Float, val w: Float, val h: Float, val onDrop: (String?) -> Unit)
+    private class DropTargetRegion(val id: String, val x: Float, val y: Float, val w: Float, val h: Float)
+    private val dragSources = ArrayList<DragSource>()
+    private val dropTargets = ArrayList<DropTargetRegion>()
+    private var activeDrag: DragSource? = null
+    private var dragStartX = 0f
+    private var dragStartY = 0f
+    private var dragCurX = 0f
+    private var dragCurY = 0f
+    private var dragCommitted = false
+
     // ── Hover ────────────────────────────────────────────────────────────────────────────────────────────
     // The last cursor position (px), persisted across frames (like hold/scroll state) so a widget rebuilt
     // each frame can ask whether the pointer is over it — the basis for desktop hover-reveal affordances
@@ -171,6 +189,7 @@ class Ui {
         anchorCursor.clear(); anchorInset.clear(); anchorColumnExtent.clear()
         clipRects.clear(); scrollRegions.clear(); currentClip = -1
         dragHandles.clear()
+        dragSources.clear(); dropTargets.clear()
         UiBuilder(this).block()
     }
 
@@ -300,7 +319,20 @@ class Ui {
                 activeHandle = hnd; handleStartY = py; handleLastY = py; break
             }
         }
+        // A press on a drag source arms a potential card drag; like a handle it wins over scroll (so a genome
+        // list doesn't scroll out from under a gene you're dragging). It does NOT consume — the same press may
+        // still be a tap on a token inside the card; [dragTo] decides which it became once the pointer moves.
+        activeDrag = null
+        dragCommitted = false
         if (activeHandle == null) {
+            for (i in dragSources.indices.reversed()) {
+                val s = dragSources[i]
+                if (px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h) {
+                    activeDrag = s; dragStartX = px; dragStartY = py; dragCurX = px; dragCurY = py; break
+                }
+            }
+        }
+        if (activeHandle == null && activeDrag == null) {
             for (r in scrollRegions) {
                 if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
                     activeScroll = r.id
@@ -311,12 +343,20 @@ class Ui {
         }
         for (i in overlayClicks.indices.reversed()) if (regionHitTestDown(overlayClicks[i], px, py)) return true
         for (i in clicks.indices.reversed()) if (regionHitTestDown(clicks[i], px, py)) return true
-        return activeScroll != null || activeHandle != null
+        return activeScroll != null || activeHandle != null || activeDrag != null
     }
 
     /** Feed pointer movement while held. If the press began in a scroll area, this scrolls it and (past
      *  [SCROLL_SLOP]) cancels the pending click, exactly as a drag does elsewhere. Returns true if it scrolled. */
     fun dragTo(px: Float, py: Float): Boolean {
+        val src = activeDrag
+        if (src != null) {
+            dragCurX = px; dragCurY = py
+            if (!dragCommitted && abs(px - dragStartX) < SCROLL_SLOP && abs(py - dragStartY) < SCROLL_SLOP) return false
+            dragCommitted = true
+            heldRegion = null   // committed to a drag, so a co-located token tap no longer fires on release
+            return true
+        }
         val hnd = activeHandle
         if (hnd != null) {
             val dy = py - handleLastY
@@ -360,6 +400,19 @@ class Ui {
 
     /** Routes a pointer-up: invokes the topmost interactive region (overlay first) containing the point. */
     fun hitTestUp(px: Float, py: Float): Boolean {
+        // A card drag: a committed drag drops on the target under the release point (or null = no target) and
+        // swallows the click; an un-committed press was really a tap, so fall through to the normal click scan
+        // (the card's token controls fire). See [dragTo].
+        val src = activeDrag
+        if (src != null) {
+            activeDrag = null
+            if (dragCommitted) {
+                dragCommitted = false
+                val target = dropTargets.lastOrNull { px >= it.x && px <= it.x + it.w && py >= it.y && py <= it.y + it.h }
+                src.onDrop(target?.id)
+                return true
+            }
+        }
         // A drag handle: a committed drag snaps (onRelease) and swallows the click; a mere tap on it falls
         // through to onTap via the normal click scan below (the handle also registers a click region).
         val hnd = activeHandle
@@ -445,6 +498,44 @@ class Ui {
     ) {
         dragHandles.add(DragHandleRegion(id, x, y, w, h, onTap, onDrag, onRelease))
         clicks.add(ClickRegion(x, y, w, h, onTap, label = id, clip = currentClip))
+    }
+
+    /** Register a free-2-D **drag source** over [x],[y],[w],[h]: a press here can be picked up and dropped on
+     *  a [emitDropTarget]; [onDrop] gets the target id under the release point (or null). Does not consume a
+     *  co-located click — a short press is still a tap. */
+    internal fun emitDragSource(id: String, x: Float, y: Float, w: Float, h: Float, onDrop: (String?) -> Unit) {
+        dragSources.add(DragSource(id, x, y, w, h, onDrop))
+    }
+
+    /** Register a **drop target** [id] over [x],[y],[w],[h]. Only consulted at the moment of a drop. */
+    internal fun emitDropTarget(id: String, x: Float, y: Float, w: Float, h: Float) {
+        dropTargets.add(DropTargetRegion(id, x, y, w, h))
+    }
+
+    /** True while a drag source has been picked up and moved past the slop (a live drag is in progress). */
+    val isDragging: Boolean get() = activeDrag != null && dragCommitted
+    /** The id of the source being dragged (null when no committed drag). */
+    val draggingId: String? get() = if (dragCommitted) activeDrag?.id else null
+    /** Current pointer position (px) during a drag — for drawing the ghost / highlighting the hovered target. */
+    val dragX: Float get() = dragCurX
+    val dragY: Float get() = dragCurY
+    /** The drop-target id currently under the drag pointer, or null. Lets the caller highlight it. */
+    fun hoveredDropTarget(): String? =
+        if (!dragCommitted) null
+        else dropTargets.lastOrNull { dragCurX >= it.x && dragCurX <= it.x + it.w && dragCurY >= it.y && dragCurY <= it.y + it.h }?.id
+
+    /** Draw a floating ghost chip at the current drag pointer, on the overlay layer (drawn on top of
+     *  everything, unclipped so it can follow the cursor anywhere). No-op when no drag is live. */
+    internal fun drawDragGhost(label: String, color: Long) {
+        if (!isDragging) return
+        val textH = 14f * densityScale
+        val h = textH + 8f * densityScale
+        val pad = 8f * densityScale
+        val w = UiTextRenderer.measureWidthPx(label, textH) + pad * 2f
+        val x = dragCurX + 12f * densityScale   // offset so the chip trails the cursor rather than hiding under it
+        val y = dragCurY - h * 0.5f
+        emitOverlayRect(x, y, w, h, color)
+        emitOverlayTextLeft(label, x + pad, y + (h - textH) * 0.5f, textH, 0xFFFFFFFFL)
     }
 
     /** Push a plain clip rect (no scrolling) so following emissions are bounded to it; pair with [clearClip].
@@ -574,6 +665,15 @@ class UiBuilder internal constructor(private val ui: Ui) {
     /** Whether the cursor is over [x],[y],[w],[h] this frame (see [Ui.isHovered]) — for call-site
      *  hover-reveal. Always false on touch hosts. */
     fun isHovered(x: Float, y: Float, w: Float, h: Float): Boolean = ui.isHovered(x, y, w, h)
+
+    /** Whether a card drag (drag-and-drop) is live this frame (see [Ui.isDragging]). */
+    val isDragging: Boolean get() = ui.isDragging
+    /** The id of the drag source being dragged, or null when no committed drag. */
+    val draggingId: String? get() = ui.draggingId
+    /** The drop-target id currently under the drag pointer, or null — for highlighting. */
+    fun hoveredDropTarget(): String? = ui.hoveredDropTarget()
+    /** Draw a floating ghost chip [label] at the drag pointer (overlay layer). Call while [isDragging]. */
+    fun dragGhost(label: String, color: Long = 0x2E4A6EFFL) = ui.drawDragGhost(label, color)
 
     /**
      * An auto-sized panel anchored to a screen [anchor] corner. Panels at the same anchor **stack**
@@ -897,7 +997,8 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     fun row(text: String, color: Long = 0xC8C8C8FFL) = items.add(TextItem(text, color, rowHeight))
     fun keyValue(key: String, value: String, keyColor: Long = 0x9A9A9AFFL, valueColor: Long = 0xFFFFFFFFL) =
         items.add(KeyValueItem(key, value, keyColor, valueColor, rowHeight))
-    fun button(label: String, color: Long, onClick: () -> Unit) = items.add(ButtonItem(label, color, rowHeight, onClick))
+    fun button(label: String, color: Long, dropTargetId: String? = null, onClick: () -> Unit) =
+        items.add(ButtonItem(label, color, rowHeight, dropTargetId, onClick))
 
     /** A button whose label is coloured **per segment**: each pair is (text, colour-or-null); a null
      *  colour uses the auto-contrast against the button [color]. The segments render as one centred label
@@ -925,7 +1026,8 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
         lines: List<List<UiTok>>, wrapWidth: Float, textSize: Float, indent: Float = 10f,
         background: Long = 0x00000000L,
         lineActions: List<List<HoverAction>> = emptyList(), cardActions: List<HoverAction> = emptyList(),
-    ) = items.add(TokenRowItem(lines, wrapWidth * scale, textSize * scale, rowHeight, indent * scale, background, lineActions, cardActions))
+        dragId: String? = null, onDrop: ((String?) -> Unit)? = null,
+    ) = items.add(TokenRowItem(lines, wrapWidth * scale, textSize * scale, rowHeight, indent * scale, background, lineActions, cardActions, dragId, onDrop))
 
     /** Vertical space, in dp. */
     fun gap(height: Float = 6f) = items.add(GapItem(height * scale))
@@ -1016,11 +1118,16 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
         }
     }
 
-    private class ButtonItem(val label: String, val color: Long, override val height: Float, val onClick: () -> Unit) : Item {
+    private class ButtonItem(val label: String, val color: Long, override val height: Float, val dropTargetId: String?, val onClick: () -> Unit) : Item {
         override fun measureWidth(textH: Float) = UiTextRenderer.measureWidthPx(label, textH) + textH * 2f
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
             val inset = 1f
+            // A drop target (drag-and-drop): register the button's rect and, when the drag pointer is over it,
+            // lighten it so the player sees where the drop will land.
+            val highlit = dropTargetId != null && ui.hoveredDropTarget() == dropTargetId
+            if (dropTargetId != null) ui.emitDropTarget(dropTargetId, x, topY + inset, contentW, height - inset * 2f)
             ui.emitRect(x, topY + inset, contentW, height - inset * 2f, color)
+            if (highlit) ui.emitRect(x, topY + inset, contentW, height - inset * 2f, 0xFFFFFF44L)   // drop-hover tint
             ui.emitTextCentered(label, x + contentW * 0.5f, topY + (height - textH) * 0.5f, textH, contrast(color))
             ui.emitClick(x, topY + inset, contentW, height - inset * 2f, label = label, onClick = onClick)
         }
@@ -1105,6 +1212,7 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     private class TokenRowItem(
         val lines: List<List<UiTok>>, val wrapPx: Float, val textH: Float, val rowH: Float, val indentPx: Float,
         val background: Long, val lineActions: List<List<HoverAction>>, val cardActions: List<HoverAction>,
+        val dragId: String? = null, val onDrop: ((String?) -> Unit)? = null,
     ) : Item {
         private class Placed(val tok: UiTok, val dx: Float, val w: Float)
         private class VLine(val rows: List<List<Placed>>, val actions: List<HoverAction>)
@@ -1171,6 +1279,10 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
 
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textHIgnored: Float) {
             if (background != 0x00000000L) ui.emitRect(x, topY + 1f, contentW, height - 2f, background)
+            // Whole-card drag source (drag-and-drop re-group): registered under the card rect. It doesn't
+            // consume token clicks — a press that doesn't move is still a tap on whatever token it hit.
+            if (dragId != null && onDrop != null) ui.emitDragSource(dragId, x, topY, contentW, height, onDrop)
+            val beingDragged = dragId != null && ui.draggingId == dragId
             val cardHovered = cardActions.isNotEmpty() && ui.isHovered(x, topY, contentW, height)
             var ry = topY
             for (vl in vlines) {
@@ -1187,10 +1299,12 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
                     drawActions(ui, vl.actions, lastEndX + gap * 2f, ry - rowH)
             }
             // The card-level ⋮ sits at the top-right corner while any part of the card is hovered.
-            if (cardHovered) {
+            if (cardHovered && !beingDragged) {
                 val btn = rowH - 2f
                 drawActions(ui, cardActions, x + contentW - cardActions.size * (btn + gap), topY)
             }
+            // Dim the source card while it's being dragged (the ghost is the thing that moves).
+            if (beingDragged) ui.emitRect(x, topY + 1f, contentW, height - 2f, 0x0E1420AAL)
         }
     }
 
