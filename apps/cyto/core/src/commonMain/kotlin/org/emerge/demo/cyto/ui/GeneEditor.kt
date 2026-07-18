@@ -51,6 +51,9 @@ class GeneEditor {
         const val GENE_DRAG_PREFIX = "gene-drag-"
         const val GROUP_DROP_PREFIX = "group-drop:"
         const val GROUP_DROP_NEW = "group-drop-new"
+        // Drag-only action dropzones (below the group zones): duplicate is instant, delete opens a confirm.
+        const val GENE_DROP_DUP = "gene-drop-dup"
+        const val GENE_DROP_DEL = "gene-drop-del"
     }
 
     private var editingId: EntityId? = null
@@ -86,6 +89,7 @@ class GeneEditor {
     private var openMenu: String? = null
     private var lastFlush: Gene? = null
     private var armedClauseDelete: String? = null   // "<geneIndex>:<clauseIndex>" armed for a second-tap delete
+    private var pendingDeleteGene: Int? = null       // a gene dropped on DELETE, awaiting the confirm dialog
 
     // In-game group tagging: when the player picks "New group..." the editor captures a typed name into
     // [groupBuffer] (the host routes keystrokes here — see [capturingGroupName]/[typeGroupChar]). Only the
@@ -207,6 +211,7 @@ class GeneEditor {
         }
         draft?.let { renderPickerSheet(b, controller, it, wide) }
         if (capturingGroup) renderGroupCaptureDialog(b, wide)
+        if (pendingDeleteGene != null) renderDeleteConfirmDialog(b, controller, info, wide)
         // Desktop inline is live: the pick sheet / token controls mutate `draft`; flush each change straight
         // to the genome (no DONE step). The narrow modal leaves `inlineLive` false and commits on DONE.
         if (inlineLive) {
@@ -317,11 +322,16 @@ class GeneEditor {
             } else {
                 info.genes.forEachIndexed { i, g -> gene(g, i) }
             }
-            // While a gene is in flight (desktop drag), offer a "new group" drop target at the end of the
-            // genome; a drop there opens the typed-name dialog for that gene (the first-group-creation path,
-            // and the only re-group target when nothing is grouped yet).
-            if (wide && draggingGene != null)
+            // While a gene is in flight (desktop drag), the genome's end grows a set of drop targets: a "new
+            // group" zone (opens the typed-name dialog — also the only re-group target when nothing is grouped
+            // yet), then the two gene actions that used to live behind the card's "..." menu. Duplicate is
+            // instant; delete opens a confirm dialog (handleGeneDrop).
+            if (wide && draggingGene != null) {
+                gap(6f)
                 button("+ NEW GROUP", 0x2E4A6EFFL, dropTargetId = GROUP_DROP_NEW) {}
+                button("DUPLICATE GENE", 0x2E5A38FFL, dropTargetId = GENE_DROP_DUP) {}
+                button("DELETE GENE", 0x6E2A2AFFL, dropTargetId = GENE_DROP_DEL) {}
+            }
             gap(6f)
             button("EXPORT GENOME", 0x3A6EA5FFL) { onExport() }
         }
@@ -505,6 +515,30 @@ class GeneEditor {
             b.sheet("group-name", "NEW GROUP", onDismiss = ::cancelGroupName, boxX = (b.screenW - w) * 0.5f, boxY = (b.screenH - h) * 0.5f, boxW = w, boxH = h, rowHeight = 34f, textSize = 15f, body = body)
         } else {
             b.sheet("group-name", "NEW GROUP", onDismiss = ::cancelGroupName, heightFraction = 0.4f, rowHeight = 48f, textSize = 16f, body = body)
+        }
+    }
+
+    /** The **delete-gene confirm** dialog (§8a drag-and-drop): shown after a gene is dropped on the DELETE
+     *  zone. The gesture is deliberate but there's no undo, so a drop only *arms* the delete — this confirms
+     *  it. Cancelling (or dismissing) leaves the gene untouched. */
+    private fun renderDeleteConfirmDialog(b: UiBuilder, controller: CytoController, info: CytoController.CellInfo, wide: Boolean) {
+        val idx = pendingDeleteGene ?: return
+        val summary = info.genes.getOrNull(idx)?.desc?.uppercase() ?: "GENE ${idx + 1}"
+        val body: PanelBuilder.() -> Unit = {
+            row("THIS CAN'T BE UNDONE.", 0x9A9A9AFFL)
+            gap(6f)
+            row(summary, 0xE0E6F0FFL)
+            gap(10f)
+            listRow("DELETE GENE", "REMOVE IT PERMANENTLY") { controller.deleteHeldGene(idx); pendingDeleteGene = null }
+            gap(4f)
+            listRow("CANCEL", "KEEP THE GENE") { pendingDeleteGene = null }
+        }
+        if (wide) {
+            val w = minOf(460f * b.density, b.screenW * 0.6f)
+            val h = minOf(b.screenH * 0.85f, b.screenH * 0.4f)
+            b.sheet("gene-delete", "DELETE GENE?", onDismiss = { pendingDeleteGene = null }, boxX = (b.screenW - w) * 0.5f, boxY = (b.screenH - h) * 0.5f, boxW = w, boxH = h, rowHeight = 34f, textSize = 15f, body = body)
+        } else {
+            b.sheet("gene-delete", "DELETE GENE?", onDismiss = { pendingDeleteGene = null }, heightFraction = 0.4f, rowHeight = 48f, textSize = 16f, body = body)
         }
     }
 
@@ -722,8 +756,9 @@ class GeneEditor {
         ))
 
         // Hover affordances (§8a step 4): each clause line reveals a + (duplicate this clause) and, when the
-        // gene has more than one, an × (arm-then-delete); the whole card reveals a ... menu (duplicate/delete
-        // the gene) via the shared Overflow sheet. lineActions align with `lines`; clauses are the first N.
+        // gene has more than one, an × (arm-then-delete). Whole-gene duplicate/delete are no longer a card ...
+        // menu — they're drag targets at the genome's end (see cellBody + handleGeneDrop). lineActions align
+        // with `lines`; clauses are the first N.
         val green = 0x32503CFFL; val red = 0x5A2A2AFFL
         val clauseCount = gene.condition.clauses.size
         val lineActions = (0 until clauseCount).map { ci ->
@@ -736,13 +771,12 @@ class GeneEditor {
                 }
             }
         }
-        val cardActions = listOf(HoverAction("...", 0x3A4150FFL, "gene-menu-$i") { openInlinePick(controller, i, Pick.Overflow) })
 
         // Card background carries the read card's state cue: active = green glow, inactive = dark grey. The
         // read card (geneButton) used a solid bright green; here the token controls sit on top, so this is a
         // clearly-green but muted tint that still keeps the blue/orange control boxes legible.
         val bg = if (g.active) 0x25522FFFL else 0x20242EFFL
-        tokenLines(lines, wrapWidth = 356f, textSize = 15f, background = bg, lineActions = lineActions, cardActions = cardActions,
+        tokenLines(lines, wrapWidth = 356f, textSize = 15f, background = bg, lineActions = lineActions,
             dragId = "$GENE_DRAG_PREFIX$i", onDrop = { tid -> handleGeneDrop(controller, i, tid) })
         gap(8f)
     }
@@ -937,6 +971,7 @@ class GeneEditor {
         inlineLive = false
         openMenu = null
         lastFlush = null
+        pendingDeleteGene = null
     }
 
     // ── Desktop inline live-edit plumbing (§8a step 3b) ──
@@ -979,6 +1014,8 @@ class GeneEditor {
         when {
             targetId == null -> {}
             targetId == GROUP_DROP_NEW -> { beginInline(controller, i); startGroupCapture("") }
+            targetId == GENE_DROP_DUP -> controller.duplicateHeldGene(i)
+            targetId == GENE_DROP_DEL -> pendingDeleteGene = i   // opens the confirm dialog next frame
             targetId.startsWith(GROUP_DROP_PREFIX) -> {
                 val name = targetId.removePrefix(GROUP_DROP_PREFIX)
                 inlineEdit(controller, i) { it.copy(group = name) }
