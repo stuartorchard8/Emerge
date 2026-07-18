@@ -438,8 +438,16 @@ Grounded in the current control surface (`geneBody` + the picker sheets). These 
    active(green)/inactive(grey) card background restored from `describeGeneSpans` flags in the same commit
    (they had been dropped in the 3b token rewrite). Harness: `hover-ui <label>`/`hover-clear` park the cursor;
    verified `+` reveals after a clause and `...` at the card corner.
-5. **Cascades + re-section (next).** Action-type re-layout (already sanitises on action change), group-change
-   auto-expand, clause caps enforcement in the UI. Also: retire the now-dead wide branch of `renderGeneEditor`.
+5. ✅ **Cascades + re-section** (`2d27a0c4`). Group-change auto-expands the target section; the dead wide
+   branch of `renderGeneEditor` is retired (the L3 modal is narrow-only). Clause caps already enforced.
+6. ✅ **Re-group by drag-and-drop** (toolkit `96d6c0eb` + cyto `2a1fe571`). New toolkit primitive: a free
+   2-D `DragSource`/`DropTarget` (`tokenLines(dragId, onDrop)`, `button(dropTargetId)`, `UiBuilder.dragGhost`).
+   The desktop grouping mechanic is now a **drag**, not a click on the GROUP token (which became a display-only
+   readout): grab a gene card body (its tokens stay clickable — a short press is a tap, movement past the slop
+   commits the drag) and drop it on a group header to re-tag it, or on a **"+ NEW GROUP"** placeholder — shown
+   at the genome's end only while a gene is in flight — to open a name-entry dialog for that gene. A ghost
+   trails the cursor, the source dims, the hovered target lights up, and the destination auto-expands. Harness:
+   `dragto <src> >> <dst>` / `draghover`. All verified via harness shots.
 
 Each step verifies through the harness at 1400×900 (`tap-ui <label>` already reaches the inline controls —
 gene cards register their sentence as a label; a new `hover-xy <u> <v>` command drives the hover pass).
