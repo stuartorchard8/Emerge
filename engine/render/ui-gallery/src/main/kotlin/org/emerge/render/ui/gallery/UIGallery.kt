@@ -1,6 +1,7 @@
 package org.emerge.render.ui.gallery
 
 import org.emerge.render.torus.ui.Anchor
+import org.emerge.render.torus.ui.HoverAction
 import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.Ui
 import org.lwjgl.glfw.GLFW.*
@@ -34,6 +35,7 @@ object UIGallery {
             // Left side: three columns of widget demos (stacked pairs so they fit beside the state panel).
             panel(Anchor.TopLeft) { textWidgets() }
             panel(Anchor.TopLeft) { gapDemo() }
+            panel(Anchor.TopLeft) { hoverRows(state) }
             panel(Anchor.TopLeft, newColumn = true) { buttons(state) }
             panel(Anchor.TopLeft, newColumn = true) { pickers(state) }
             panel(Anchor.TopLeft) { steppers(state) }
@@ -158,6 +160,22 @@ object UIGallery {
         listRow("Plain row, no description", selected = state.action == 3) { state.action = 3 }
     }
 
+    private fun PanelBuilder.hoverRows(state: GalleryState) {
+        title("HOVER ROWS (desktop reveal)")
+        row("hover a row -> +/X appear", 0x9A9A9AFFL)
+        for (i in 1..3) {
+            hoverRow(
+                "Clause $i",
+                actions = listOf(
+                    HoverAction("+", 0x32503CFFL, "hover-plus-$i") { state.hoverPlus++ },
+                    HoverAction("X", 0x5A2A2AFFL, "hover-close-$i") { state.hoverClose++ },
+                ),
+            )
+        }
+        gap(4f)
+        row("+ taps: ${state.hoverPlus}   X taps: ${state.hoverClose}", 0x7A8699FFL)
+    }
+
     private fun PanelBuilder.gapDemo() {
         title("GAP / SPACING")
         row("Small gap (6px) below:", 0x9A9A9AFFL)
@@ -245,10 +263,12 @@ object UIGallery {
             }
         }
 
-        // Drag inside a scroll area scrolls it (and cancels the pending click).
+        // Drag inside a scroll area scrolls it (and cancels the pending click). Hover is fed on every move
+        // (button down or not) so the hover-reveal rows work.
         glfwSetCursorPosCallback(window) { _, _, _ ->
-            if (!mouseDown) return@glfwSetCursorPosCallback
             val (px, py) = cursorPixel(window)
+            ui.hover(px, py)
+            if (!mouseDown) return@glfwSetCursorPosCallback
             ui.dragTo(px, py)
         }
 
@@ -363,4 +383,9 @@ class GalleryState {
     var orient = 0
     var keep = 1
     var action = 0
+
+    // Hover-reveal rows: count of +/x taps, so the snapshot proves the buttons are real (clickable), not
+    // just drawn.
+    var hoverPlus = 0
+    var hoverClose = 0
 }

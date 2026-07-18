@@ -104,6 +104,14 @@ class Ui {
     private var handleLastY = 0f
     private var handleDragged = false
 
+    // ── Hover ────────────────────────────────────────────────────────────────────────────────────────────
+    // The last cursor position (px), persisted across frames (like hold/scroll state) so a widget rebuilt
+    // each frame can ask whether the pointer is over it — the basis for desktop hover-reveal affordances
+    // (`apps/cyto/UI_REDESIGN.md` §8a). Off-screen (< 0) means "no hover": touch hosts never call [hover],
+    // so their frames report nothing hovered and pay nothing. See [isHovered].
+    private var cursorX = -1f
+    private var cursorY = -1f
+
     val resWidth: Float get() = resW
     val resHeight: Float get() = resH
 
@@ -122,6 +130,28 @@ class Ui {
     /** Set the dp → px factor (see [scale]). Hosts feed this from the display's density. */
     fun setDensity(scale: Float) {
         densityScale = scale.coerceAtLeast(0.01f)
+    }
+
+    /** Feed the current cursor position (px), for desktop **hover** affordances (`apps/cyto/UI_REDESIGN.md`
+     *  §8a). Persists across frames, so the host calls it on every pointer move — *including* moves with no
+     *  button down, unlike [hitTestDown]. Touch hosts never call it (there is no hover on touch). */
+    fun hover(px: Float, py: Float) { cursorX = px; cursorY = py }
+
+    /** Clear the hover position (pointer left the window) so nothing reports as hovered. */
+    fun clearHover() { cursorX = -1f; cursorY = -1f }
+
+    /** Whether the persisted cursor ([hover]) is inside [x],[y],[w],[h] **and** the currently-active clip
+     *  (a row scrolled out of its viewport is not hovered, mirroring [pointInBounds]). Widgets call this at
+     *  emit time — when their row rect is known — to reveal hover-only affordances. Always false on a host
+     *  that never fed a cursor. */
+    fun isHovered(x: Float, y: Float, w: Float, h: Float): Boolean {
+        if (cursorX < 0f) return false
+        if (cursorX < x || cursorX > x + w || cursorY < y || cursorY > y + h) return false
+        if (currentClip >= 0) {
+            val c = clipRects[currentClip]
+            if (cursorX < c[0] || cursorX > c[0] + c[2] || cursorY < c[1] || cursorY > c[1] + c[3]) return false
+        }
+        return true
     }
 
     /** Rebuilds this frame's widget tree (clears the previous frame's geometry; hold state persists). */
@@ -503,12 +533,20 @@ class Ui {
 }
 
 /** Frame-scoped builder: add panels. */
+/** A trailing hover-reveal action on a [PanelBuilder.hoverRow] — a small glyph button (e.g. `+`, `X`) that
+ *  appears only while the row is hovered. [label] is for headless targeting ([Ui.tapLabel]). */
+class HoverAction(val glyph: String, val color: Long, val label: String, val onClick: () -> Unit)
+
 class UiBuilder internal constructor(private val ui: Ui) {
     /** Framebuffer size (px) and the dp→px scale, so callers can compute wide-layout container bounds
      *  (a docked column, a centred popover) from the screen. */
     val screenW: Float get() = ui.resWidth
     val screenH: Float get() = ui.resHeight
     val density: Float get() = ui.scale
+
+    /** Whether the cursor is over [x],[y],[w],[h] this frame (see [Ui.isHovered]) — for call-site
+     *  hover-reveal. Always false on touch hosts. */
+    fun isHovered(x: Float, y: Float, w: Float, h: Float): Boolean = ui.isHovered(x, y, w, h)
 
     /**
      * An auto-sized panel anchored to a screen [anchor] corner. Panels at the same anchor **stack**
@@ -845,6 +883,13 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
      *  the panel — long lines clip at the panel's scissor rather than pushing it past the screen. */
     fun geneCard(lines: List<List<Pair<String, Long?>>>, color: Long, onClick: () -> Unit) =
         items.add(GeneCardItem(lines, color, rowHeight * lines.size.coerceAtLeast(1), onClick))
+
+    /** A left-aligned label row that reveals trailing [actions] (glyph buttons) **only while the cursor is
+     *  over it** — desktop hover-reveal (`apps/cyto/UI_REDESIGN.md` §8a). On touch (no hover) the actions
+     *  never show, so the row reads as plain text. */
+    fun hoverRow(text: String, textColor: Long = 0xE0E6F0FFL, actions: List<HoverAction>) =
+        items.add(HoverRowItem(text, textColor, rowHeight, actions))
+
     /** Vertical space, in dp. */
     fun gap(height: Float = 6f) = items.add(GapItem(height * scale))
 
@@ -980,6 +1025,31 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
             }
             val lbl = lines.flatten().joinToString("") { it.first }
             ui.emitClick(x, topY + inset, contentW, height - inset * 2f, label = lbl, onClick = onClick)
+        }
+    }
+
+    /** A left-aligned label row that reveals trailing action buttons **only while hovered** (desktop
+     *  hover-reveal, `apps/cyto/UI_REDESIGN.md` §8a — the per-clause `+`/`×`). Each action is (glyph, colour,
+     *  label, onClick); the buttons lay out right-to-left at the row's right edge. On a touch host (no
+     *  hover) the buttons never appear, so this row is desktop-only by construction. */
+    private class HoverRowItem(
+        val text: String, val textColor: Long, override val height: Float,
+        val actions: List<HoverAction>,
+    ) : Item {
+        override fun measureWidth(textH: Float) =
+            UiTextRenderer.measureWidthPx(text, textH) + textH * (1f + actions.size * 1.6f)
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            val ty = topY + (height - textH) * 0.5f
+            ui.emitTextLeft(text, x, ty, textH, textColor)
+            if (!ui.isHovered(x, topY, contentW, height)) return
+            val btn = height - 2f          // square, inset 1px top/bottom
+            var bx = x + contentW - btn    // pack right-to-left
+            for (a in actions) {
+                ui.emitRect(bx, topY + 1f, btn, btn, a.color)
+                ui.emitTextCentered(a.glyph, bx + btn * 0.5f, topY + 1f + (btn - textH) * 0.5f, textH, contrast(a.color))
+                ui.emitClick(bx, topY + 1f, btn, btn, label = a.label, onClick = a.onClick)
+                bx -= btn + textH * 0.4f
+            }
         }
     }
 

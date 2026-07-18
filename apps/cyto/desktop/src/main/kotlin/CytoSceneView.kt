@@ -511,6 +511,9 @@ object CytoSceneView {
         glfwSetCursorPosCallback(window) { win, _, _ ->
             if (!menu.inGame) return@glfwSetCursorPosCallback
             val px = cursorPixel(win)
+            // Feed hover on every move (button down or not) so desktop hover-reveal affordances work
+            // (UI_REDESIGN.md §8a). Independent of the drag/pan routing below.
+            ui.hover(px.first, px.second)
             if (state.panning && isRightDown(win)) {
                 val dx = px.first - state.panLastX
                 val dy = px.second - state.panLastY

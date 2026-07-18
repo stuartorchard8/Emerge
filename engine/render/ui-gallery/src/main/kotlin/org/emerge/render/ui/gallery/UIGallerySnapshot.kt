@@ -73,6 +73,13 @@ fun main(args: Array<String>) {
     UIGallery.buildGalleryFrame(ui, state, fps = 60f)
     capture(File(out.parentFile, out.nameWithoutExtension + "-scrolled.png"))
 
+    // Third capture, hovered: park the cursor over the hover-rows panel so its +/X buttons reveal — the
+    // only way a static shot proves the hover channel. The panel is the second TopLeft column, ~y of the
+    // first "Clause" row; hover is persisted state, so set it, rebuild, and capture.
+    ui.hover(100f, 434f)
+    UIGallery.buildGalleryFrame(ui, state, fps = 60f)
+    capture(File(out.parentFile, out.nameWithoutExtension + "-hover.png"))
+
     ui.cleanup()
     glfwDestroyWindow(window)
     glfwTerminate()
