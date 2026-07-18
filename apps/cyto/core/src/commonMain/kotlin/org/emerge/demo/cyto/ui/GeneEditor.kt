@@ -583,7 +583,8 @@ class GeneEditor {
             val inputBlocked = spans[0].blocking
             out.add(listOf(sourceProse(gene.source) to (if (energyBlocked) ORANGE else GREY)))
             val (actionMain, mods) = actionProse(gene.action)
-            val actionText = actionMain + if (gene.efficiency != 0) " e${gene.efficiency}" else ""
+            // Efficiency is always shown as a token (even e0) for actions that have one — Mitosis has none.
+            val actionText = actionMain + if (gene.action.type != ActionType.Mitosis) " e${gene.efficiency}" else ""
             out.add(listOf(actionText to (if (inputBlocked) ORANGE else null)))
             for (m in mods) out.add(listOf<Pair<String, Long?>>(" $m" to GREY))
             lines = out
@@ -632,12 +633,15 @@ class GeneEditor {
             ActionType.Lyse -> "LYSE" to emptyList()
             ActionType.Retain -> "RETAIN $av" to emptyList()
             ActionType.Mitosis -> {
-                val main = "DIVIDE" + if (a.b.isEmpty()) "" else " ${if (a.divideAcross) "ACROSS" else "ALONG"} $bv GRADIENT"
-                val mods = buildList {
-                    if (a.a.isNotEmpty()) add(if (a.morphogenToMother) "RETAINING $av IN CELL 1" else "GIVING $av TO CELL 2")
-                    if (a.rejectMother) add("SEVERING CELL 2 FREE")
-                }
-                main to mods
+                // Every modifier slot is ALWAYS shown, with default wording when unset, so each is a token
+                // to click (UI_REDESIGN.md §8a): a bare divide reads DIVIDE / ALONG NO GRADIENT / RETAINING
+                // NOTHING / AND STICK rather than collapsing to just DIVIDE.
+                val orient = if (a.divideAcross) "ACROSS" else "ALONG"
+                val axisLine = "$orient ${if (a.b.isEmpty()) "NO GRADIENT" else "$bv GRADIENT"}"
+                val keepLine = if (a.a.isEmpty()) "RETAINING NOTHING"
+                    else if (a.morphogenToMother) "RETAINING $av IN CELL 1" else "GIVING $av TO CELL 2"
+                val severLine = if (a.rejectMother) "SEVERING CELL 2 FREE" else "AND STICK"
+                "DIVIDE" to listOf(axisLine, keepLine, severLine)
             }
         }
     }
