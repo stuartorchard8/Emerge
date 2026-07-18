@@ -344,7 +344,7 @@ class GeneEditor {
             ActionType.Mitosis -> {
                 chip("MORPHOGEN", sp(d.action.a)) { openPick(Pick.SpeciesA) }
                 if (d.action.a.isNotEmpty())
-                    segmented("KEEP", listOf("DAUGHTER", "MOTHER"), if (d.action.morphogenToMother) 1 else 0) { i -> draft = d.copy(action = d.action.copy(morphogenToMother = i == 1)) }
+                    segmented("KEEP", listOf("CELL 2", "CELL 1"), if (d.action.morphogenToMother) 1 else 0) { i -> draft = d.copy(action = d.action.copy(morphogenToMother = i == 1)) }
                 chip("AXIS", sp(d.action.b)) { openPick(Pick.SpeciesB) }
                 if (d.action.b.isNotEmpty())
                     segmented("ORIENT", listOf("ALONG", "ACROSS"), if (d.action.divideAcross) 1 else 0) { i -> draft = d.copy(action = d.action.copy(divideAcross = i == 1)) }
@@ -606,7 +606,8 @@ class GeneEditor {
     }
 
     /** The action as a main line plus any modifier lines (the caller indents the modifiers). Only Mitosis
-     *  carries modifiers — the morphogen it hands to a daughter/mother, and a sever. */
+     *  carries modifiers — the morphogen it keeps in cell 1 / hands to cell 2, and a sever. (Both offspring
+     *  are technically daughters; "cell 1" is the retaining side, "cell 2" the split-off side.) */
     private fun actionProse(a: GeneAction): Pair<String, List<String>> {
         val av = sp(a.a); val bv = sp(a.b)
         return when (a.type) {
@@ -633,8 +634,8 @@ class GeneEditor {
             ActionType.Mitosis -> {
                 val main = "DIVIDE" + if (a.b.isEmpty()) "" else " ${if (a.divideAcross) "ACROSS" else "ALONG"} $bv GRADIENT"
                 val mods = buildList {
-                    if (a.a.isNotEmpty()) add(if (a.morphogenToMother) "RETAINING $av IN THE MOTHER CELL" else "GIVING $av TO ONE DAUGHTER")
-                    if (a.rejectMother) add("SEVERING THE DAUGHTER FREE")
+                    if (a.a.isNotEmpty()) add(if (a.morphogenToMother) "RETAINING $av IN CELL 1" else "GIVING $av TO CELL 2")
+                    if (a.rejectMother) add("SEVERING CELL 2 FREE")
                 }
                 main to mods
             }
