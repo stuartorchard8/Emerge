@@ -417,12 +417,19 @@ Grounded in the current control surface (`geneBody` + the picker sheets). These 
 
 ### Build order (desktop inline editor)
 
-1. **Toolkit: hover.** `Ui.hover(px, py)` + a hovered-element/part channel; feed cursor moves from the
-   desktop host. Prove it in `ui-gallery` (a row that reveals a `+`/`×` on hover).
-2. **Inline dropdown primitive.** An overlay dropdown anchored to a chip, edge-aware (flip left/up), that
-   closes on scroll — the desktop analogue of the L4 sheet, reusing the existing overlay layer.
-3. **Live editing path.** A desktop `geneBodyInline` that renders each part as a live control writing
-   straight to the gene (no draft), replacing the open-a-column flow. Delete the desktop drill-down; narrow
+1. ✅ **Toolkit: hover** (`8f0b3101`). `Ui.hover`/`clearHover` persist the cursor; `Ui.isHovered(rect)` is a
+   clip-aware emit-time query; `PanelBuilder.hoverRow` + `HoverAction` reveal `+`/`×` only while hovered;
+   desktop host feeds hover on every move. Proven in the ui-gallery `-hover.png` snapshot.
+2. ✅ **Inline dropdown primitive** (`1487048f`). `PanelBuilder.dropdown` drops its list into the overlay
+   layer anchored to the field, flips **up** when it won't fit below (`Ui.isWithinClip` suppresses it when
+   the row scrolls out of view). Proven in the `-dropdown.png` snapshot.
+3. **Live editing path.** 3a ✅ (`e39d23e5`): the shared prose always emits every modifier slot with default
+   wording so each has a token (`DIVIDE`/`ALONG NO GRADIENT`/`RETAINING NOTHING`/`AND STICK`, efficiency
+   `e0`). **3b (next):** a NEW **inline token row** primitive — mixed static-text + dropdown/segmented tokens
+   sharing a wrapping line (Stu chose WRAP over clip, 2026-07-19), which nothing does today. Immediate-mode
+   wrinkle: item height is summed before emit but wrap depends on emit-time width — resolve like
+   `GeneCardItem` (caller pre-splits lines) or pass the dock's fixed width. Then a desktop `geneCardInline`
+   emits the 3a token structure with interactive variants writing **live** to the gene (no draft); narrow
    keeps its modal.
 4. **Hover affordances.** Per-clause `+`/`×` (with confirm) and the gene `⋮` → centred copy/delete/group
    modal.
