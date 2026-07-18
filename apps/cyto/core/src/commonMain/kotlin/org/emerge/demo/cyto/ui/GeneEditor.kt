@@ -47,6 +47,10 @@ class GeneEditor {
     private var editingIndex: Int? = null
     private var draft: Gene? = null
 
+    /** The current world's chemical aliases, refreshed from the controller at the top of every [render] so
+     *  the species formatter ([sp]) names molecules the campaign's way. */
+    private var activeAliases: Map<String, String> = emptyMap()
+
     // Narrow L1→L2 detent: a freshly selected cell shows a shallow peek (name + biomass); expanding drills to
     // the full L2 sheet. Reset to the peek whenever the held cell changes ([peekedId] tracks that).
     private var cellExpanded = false
@@ -160,6 +164,7 @@ class GeneEditor {
     ) {
         val info = controller.heldCellInfo()
         if (info == null) { reset(); return }
+        activeAliases = controller.speciesAliases
         if (editingId != null && editingId != controller.lastHeldId) reset()   // grabbed a different cell
         if (controller.lastHeldId != peekedId) { peekedId = controller.lastHeldId; cellExpanded = false; sheetDragFrac = null }   // new cell → peek
 
@@ -517,7 +522,7 @@ class GeneEditor {
 
     /** A molecule's display name (built-in flavour name / raw token), upper-cased for the caps UI. Empty
      *  reads as "(NONE)". Genome aliases (Layer 2) will thread through here later. */
-    private fun sp(species: String): String = SpeciesNames.name(species).uppercase()
+    private fun sp(species: String): String = SpeciesNames.name(species, activeAliases).uppercase()
 
     /** A compact operand label for an L3 clause chip (see [renderGeneModal]). */
     private fun operandLabel(op: Operand): String = when (op) {
@@ -611,7 +616,7 @@ class GeneEditor {
                 val lb = if (a.bWild && a.b.isNotEmpty()) "$bv*" else bv
                 "BOND $la AND $lb" to emptyList()
             }
-            ActionType.Convert -> "CONVERT $av INTO BODY MASS" to emptyList()
+            ActionType.Convert -> "CONVERT $av TO MASS" to emptyList()
             ActionType.Contract -> "CONTRACT" to emptyList()
             ActionType.Repair -> "REPAIR WELDS" to emptyList()
             ActionType.Lyse -> "LYSE" to emptyList()

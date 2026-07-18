@@ -17,6 +17,19 @@ class GeneCodecTest {
         }
     }
 
+    /** Chemical aliases round-trip through `# alias` header lines, and [parse] treats them as comments
+     *  (ignores them) so a genome parses to the same genes whether or not the aliases are present. */
+    @Test
+    fun roundTripsAliases() {
+        val genome = genomeForType(CellType.Collector)
+        val aliases = mapOf("rg" to "fuel", "bb" to "marker")
+        val text = GeneCodec.serialize(genome, aliases)
+        assertEquals(aliases, GeneCodec.parseAliases(text), "aliases survive serialize → parseAliases")
+        assertEquals(genome, GeneCodec.parse(text), "the `# alias` headers don't disturb gene parsing")
+        // A genome with no aliases declares none.
+        assertEquals(emptyMap(), GeneCodec.parseAliases(GeneCodec.serialize(genome)))
+    }
+
     /** The functional-group tag ([Gene.group]) round-trips as the optional 4th `:`-part, so grouping survives
      *  save/load (the world save codec serializes through GeneCodec). Untagged genes stay 3-part; a tag with a
      *  space is preserved verbatim. */

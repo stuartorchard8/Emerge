@@ -33,6 +33,11 @@ data class CytoScenario(
     val matterLevel: Int = CytoSeed.MATTER_UNIFORM_LEVEL,
     val founders: List<FounderSpec> = listOf(FounderSpec(CellType.Collector, 1)),
     val distribution: Distribution = Distribution.Clustered,
+    /** **Chemical aliases** for this world's curated genome (species token → display name, e.g. `rg` →
+     *  "fuel"). Purely a readability aid layered over the built-in [SpeciesNames]; the sim never sees it.
+     *  The campaign authors these so its molecules read as what they *do* in that genome. Empty = built-in
+     *  names only. */
+    val aliases: Map<String, String> = emptyMap(),
 ) {
     /** Total founders across all species — the count the layout scatters. */
     val founderCount: Int get() = founders.sumOf { it.count }

@@ -196,6 +196,7 @@ class CytoController(
     fun newGame(scenario: org.emerge.demo.cyto.sim.CytoScenario) {
         withLock(stepLock) {
             org.emerge.demo.cyto.sim.CytoWorldConfig.applyFrom(scenario)
+            speciesAliases = scenario.aliases
             reducer = CytoSoaReducer(cfg, executor = executor)
             world = CytoWorld.fromSimState(createCytoInitialState(scenario))
             tickCount = 0L
@@ -212,6 +213,17 @@ class CytoController(
     }
 
     // ── Pointer interaction (logical Cyto coordinates) ──────────────────────────
+
+    /** The current world's **chemical aliases** (species token → display name), authored on the scenario.
+     *  Display-only, read by the gene UI to name molecules; the sim never sees it. Set on [newGame], cleared
+     *  when a save is loaded (aliases aren't persisted in the save yet). */
+    var speciesAliases: Map<String, String> = emptyMap()
+        private set
+
+    /** Push new display aliases without rebuilding the world — the campaign director calls this when it
+     *  segues into a chapter that carries the world forward (no [newGame]), so a later chapter's molecule
+     *  names still take effect. Display-only; the sim is untouched. */
+    fun setSpeciesAliases(map: Map<String, String>) { speciesAliases = map }
 
     /** The authoring "brush" genome loaded from a `.gene` file (null until loaded). */
     var brushGenome: List<Gene>? = null
@@ -348,6 +360,9 @@ class CytoController(
          *  arrow on each boundary. Only metabolically-relevant species (handleable, or stored in biomass). */
         val metabolism: List<MetRow>,
         val genes: List<GeneRow>,
+        /** The world's chemical aliases (species → display name), so the panel's chemistry table names
+         *  molecules the same way the gene cards do. Empty when the world has none. */
+        val aliases: Map<String, String> = emptyMap(),
     ) {
         /** One row of the metabolism table. [dirEnvCyt] is the env↔cytoplasm flow, [dirCytBio] the
          *  cytoplasm↔biomass flow; each is ">>" (toward bio/into cyt), "<<" (out) or "==" (no net flow). */
@@ -525,6 +540,7 @@ class CytoController(
                 val spans = describeGeneSpans(g, cytoMap, envMap, totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass), quanta = capturedQuanta, weldedDegree = weldedDegree)
                 CellInfo.GeneRow(desc = spans.joinToString("") { it.text }, active = spans.none { it.blocking }, spans = spans, gene = g)
             },
+            aliases = speciesAliases,
         )
     }
 
@@ -727,7 +743,7 @@ class CytoController(
 
     /** A molecule's display name for the caps card UI ("?" for an empty operand). */
     private fun spName(species: String): String =
-        if (species.isEmpty()) "?" else org.emerge.demo.cyto.sim.SpeciesNames.name(species).uppercase()
+        if (species.isEmpty()) "?" else org.emerge.demo.cyto.sim.SpeciesNames.name(species, speciesAliases).uppercase()
 
     /** Fixed-point-ish 2dp formatter (multiplatform-safe — no String.format). */
     private fun fmt(v: Float): String {
@@ -746,6 +762,7 @@ class CytoController(
             // Rebuild the reducer: a save from a different world size needs its per-tile buffers re-sized to
             // the current [CytoWorldConfig] (the host applies the saved geometry to the holder before this).
             reducer = CytoSoaReducer(cfg, executor = executor)
+            speciesAliases = emptyMap()   // aliases aren't persisted in the save; a loaded world has none
             world = CytoWorld.fromSimState(CytoSaveCodec.decode(bytes))
             // Resume the sim clock from the save (the codec persists it) rather than zeroing it — the clock
             // drives the moving day/night band, both in the sim (reducer samples world.tick) and on screen

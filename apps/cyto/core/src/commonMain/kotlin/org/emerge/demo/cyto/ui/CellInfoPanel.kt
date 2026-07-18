@@ -42,7 +42,7 @@ fun PanelBuilder.metabolismTable(info: CytoController.CellInfo) {
             r.dirEnvCyt == "<<" || r.dirCytBio == "<<" -> 0xCC8855FFL
             else -> 0xC8C8C8FFL
         }
-        row(metabRow(r), color)
+        row(metabRow(r, info.aliases), color)
     }
 }
 
@@ -52,8 +52,9 @@ private const val SP_COL = 9
 private val METAB_HEADER =
     "".padEnd(SP_COL) + "ENV".padStart(6) + "    " + "CYT".padStart(6) + "    " + "BIO".padStart(6)
 
-private fun spName(species: String): String = SpeciesNames.name(species).uppercase().take(SP_COL)
+private fun spName(species: String, aliases: Map<String, String>): String =
+    SpeciesNames.name(species, aliases).uppercase().take(SP_COL)
 
-private fun metabRow(r: CytoController.CellInfo.MetRow): String =
-    spName(r.species).padEnd(SP_COL) + r.env.toString().padStart(6) + " " + r.dirEnvCyt + " " +
+private fun metabRow(r: CytoController.CellInfo.MetRow, aliases: Map<String, String>): String =
+    spName(r.species, aliases).padEnd(SP_COL) + r.env.toString().padStart(6) + " " + r.dirEnvCyt + " " +
         r.cyto.toString().padStart(6) + " " + r.dirCytBio + " " + r.bio.toString().padStart(6)

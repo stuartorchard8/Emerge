@@ -27,6 +27,23 @@ package org.emerge.demo.cyto.sim
  */
 object GeneCodec {
 
+    /** Header line marking a chemical alias: `# alias <species> <name>` (a special comment, so files without
+     *  it — every legacy `.gene` — are unaffected). Display-only; see [CytoScenario.aliases]. */
+    private val ALIAS = Regex("^#\\s*alias\\s+(\\S+)\\s+(\\S+)\\s*$", RegexOption.IGNORE_CASE)
+
+    /** The chemical aliases declared by `# alias <species> <name>` header lines (species token → name).
+     *  Empty when the text declares none. Independent of [parse], which ignores these as comments. */
+    fun parseAliases(text: String): Map<String, String> =
+        text.lines().mapNotNull { line -> ALIAS.matchEntire(line.trim())?.let { it.groupValues[1] to it.groupValues[2] } }
+            .toMap()
+
+    /** [genome] plus optional [aliases] emitted as `# alias` header lines (so a curated genome round-trips
+     *  its names). Aliases come first, then the genes. */
+    fun serialize(genome: List<Gene>, aliases: Map<String, String>): String {
+        val header = aliases.entries.joinToString("") { "# alias ${it.key} ${it.value}\n" }
+        return header + serialize(genome)
+    }
+
     fun serialize(genome: List<Gene>): String = genome.joinToString("\n") { gene ->
         val effSuffix = if (gene.efficiency != 0) " @${gene.efficiency}" else ""   // efficiency gear, omitted when 0
         // The functional-group tag is an optional 4th `:`-part, omitted when ungrouped so untagged genomes

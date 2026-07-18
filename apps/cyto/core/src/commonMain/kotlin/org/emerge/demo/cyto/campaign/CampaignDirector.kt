@@ -57,6 +57,7 @@ class CampaignDirector {
      *  [advance], which carries the world forward unless the next chapter is [Chapter.startsFreshWorld]. */
     fun start(chapter: Chapter, controller: CytoController) {
         this.chapter = chapter
+        controller.setSpeciesAliases(chapter.scenario.aliases)
         stepIndex = 0
         active = true
         enterStep(controller)
@@ -144,6 +145,7 @@ class CampaignDirector {
             } else {
                 if (next.startsFreshWorld) onWorldReset(next)
                 chapter = next
+                controller.setSpeciesAliases(next.scenario.aliases)
                 stepIndex = 0
                 enterStep(controller)
             }

@@ -84,9 +84,18 @@ object CampaignContent {
      *  [AUTOTROPH_GROW_ONLY_GENES]). The player watches this calm, easy-to-reason-about organism, reads its two
      *  grow genes, then *adds* reproduction to bring it to life. Frames the world as a substrate to author,
      *  not a busy ecosystem to catch up on. */
+    // Chemical aliases (see [CytoScenario.aliases]): name the campaign's molecules by what they DO in the
+    // genome, so a gene card reads "BREAK FUEL (R/G) TO POWER" instead of "BREAK REDREEN…". `rg` is the
+    // energy store every genome burns; `bb` the polarity marker one daughter keeps; `gb` the clock signal the
+    // muscle waits on. Built-in names still cover everything unaliased.
+    private val FUEL_ALIASES = mapOf("rg" to "fuel")
+    private val SWIMMER_ALIASES = FUEL_ALIASES + mapOf("bb" to "marker")
+    private val CLOCKED_ALIASES = SWIMMER_ALIASES + mapOf("gb" to "beat")
+
     private val GROW_ONLY = CytoScenario.DEFAULT.copy(
         name = "Campaign",
         founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GROW_ONLY_GENES.tagged(GROUP_GROW))),
+        aliases = FUEL_ALIASES,
     )
 
     /** Ch5 substrate: the grow+reproduce autotroph the player built in Ch4 (the full [AUTOTROPH_GENES], tagged
@@ -95,6 +104,7 @@ object CampaignContent {
     private val GROW_REPRODUCE = CytoScenario.DEFAULT.copy(
         name = "Campaign",
         founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GENES.map { it.taggedByRole() })),
+        aliases = FUEL_ALIASES,
     )
 
     /** Ch6 substrate: the Ch5 end-state — a *welded* grow+reproduce autotroph (divide gene's SEVER already
@@ -105,6 +115,7 @@ object CampaignContent {
         founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GENES.map { g ->
             g.taggedByRole().let { if (it.action.type == ActionType.Mitosis) it.copy(action = it.action.copy(rejectMother = false)) else it }
         })),
+        aliases = FUEL_ALIASES,
     )
 
     /** Functional grouping for the campaign autotroph, over the Act II arc: two grow genes read as one "Grow"
@@ -128,6 +139,7 @@ object CampaignContent {
         founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GENES.map { g ->
             g.taggedByRole().let { if (it.action.type == ActionType.Mitosis) it.copy(action = it.action.copy(rejectMother = false)) else it }
         } + HOLD_TOGETHER_GENES)),
+        aliases = FUEL_ALIASES,
     )
 
     // ── Ch8: the Polarise / differentiation genome (Stu's world-8 swimmer lineage) ──────────────────────
@@ -174,6 +186,7 @@ object CampaignContent {
     private val CH8_SUBSTRATE = CytoScenario.DEFAULT.copy(
         name = "Campaign",
         founders = listOf(FounderSpec(CellType.Stem, 1, genome = CH8_INIT_GENES)),
+        aliases = SWIMMER_ALIASES,
     )
 
     /** Ch8's grouping - the swimmer's functional subsystems. Only POLARIZE is offered as an insert (the rest
@@ -239,6 +252,7 @@ object CampaignContent {
     private val CH9_SUBSTRATE = CytoScenario.DEFAULT.copy(
         name = "Campaign",
         founders = listOf(FounderSpec(CellType.Stem, 1, genome = CH9_INIT_GENES)),
+        aliases = CLOCKED_ALIASES,
     )
 
     /** Ch9's grouping - the swimmer's subsystems, with CLOCK offered as the insert (the rest are the substrate
@@ -304,6 +318,7 @@ object CampaignContent {
     private val CH10_SUBSTRATE = CytoScenario.DEFAULT.copy(
         name = "Campaign",
         founders = listOf(FounderSpec(CellType.Stem, 1, genome = CH10_INIT_GENES)),
+        aliases = CLOCKED_ALIASES,
     )
 
     /** Ch10's grouping - the full swimmer's subsystems, with REPRODUCE offered as the insert (the rest are
