@@ -126,7 +126,7 @@ class GeneEditor {
     fun confirmGroupName() {
         if (!capturingGroup) return
         val name = groupBuffer.toString().trim()
-        if (name.isNotEmpty()) draft = draft?.copy(group = name)
+        if (name.isNotEmpty()) { draft = draft?.copy(group = name); expandedGroups.add(name) }
         capturingGroup = false
     }
 
@@ -191,7 +191,7 @@ class GeneEditor {
             // slot (operand / species / group) opens the pick sheet as a centred popover, also editing live.
             renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, wide = true)
         } else {
-            if (draft != null) renderGeneEditor(b, controller, wide = false, rightEdge = 0f)
+            if (draft != null) renderGeneEditor(b, controller)
             else renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, wide = false)
         }
         draft?.let { renderPickerSheet(b, controller, it, wide) }
@@ -312,7 +312,9 @@ class GeneEditor {
      * drill-down. Chip taps that need a value list (operands, action, source, morphogen, group) will open L4
      * sheets in the next step; here they lay out and read live draft state.
      */
-    private fun renderGeneEditor(b: UiBuilder, controller: CytoController, wide: Boolean, rightEdge: Float) {
+    /** The narrow (phone) full-screen gene editor: a draft-backed modal committed on DONE. Desktop no longer
+     *  uses this — its genome card edits live in place (§8a) — so there is only the one container geometry. */
+    private fun renderGeneEditor(b: UiBuilder, controller: CytoController) {
         val d = draft ?: return
         val idx = editingIndex ?: return
         val title = "GENE ${idx + 1}" + if (d.group.isEmpty()) "" else " · ${d.group.uppercase()}"
@@ -321,18 +323,8 @@ class GeneEditor {
             Triple("DONE", 0x33AA33FFL) { commit(controller) },
         )
         val body: PanelBuilder.() -> Unit = { geneBody(controller, d) }
-        if (wide) {
-            // A docked column to the LEFT of the cell panel — the world stays visible around it.
-            val m = PANEL_MARGIN_DP * b.density
-            val colW = minOf(EDIT_COL_DP * b.density, (rightEdge - m * 2f).coerceAtLeast(200f))
-            val x0 = (rightEdge - m - colW).coerceAtLeast(m)
-            b.modal("gene-editor", title, onBack = { reset() }, actions = actions, onOverflow = { openPick(Pick.Overflow) },
-                boundsX = x0, boundsY = m, boundsW = colW, boundsH = b.screenH - m * 2f,
-                titleBar = 34f, bottomBar = 46f, margin = 12f, rowHeight = 30f, textSize = 15f, body = body)
-        } else {
-            b.modal("gene-editor", title, onBack = { reset() }, actions = actions, onOverflow = { openPick(Pick.Overflow) },
-                statusBar = 24f, titleBar = 56f, bottomBar = 72f, rowHeight = 48f, textSize = 16f, body = body)
-        }
+        b.modal("gene-editor", title, onBack = { reset() }, actions = actions, onOverflow = { openPick(Pick.Overflow) },
+            statusBar = 24f, titleBar = 56f, bottomBar = 72f, rowHeight = 48f, textSize = 16f, body = body)
     }
 
     /** The gene-as-a-sentence body (WHEN / DO / POWERED BY / GROUP), shared by both container geometries. */
@@ -390,6 +382,14 @@ class GeneEditor {
         pick = p; pickClause = clause; pickSide = side
     }
 
+    /** Move the edited gene to group [g] (blank = untagged) and auto-expand its target section, so a gene
+     *  re-tagged into a collapsed group on the desktop inline card doesn't vanish from view. */
+    private fun setGroup(d: Gene, g: String) {
+        draft = d.copy(group = g)
+        expandedGroups.add(g.ifEmpty { "OTHER" })
+        closePick()
+    }
+
     /**
      * The **L4 field picker** (`apps/cyto/UI_REDESIGN.md` §4), a bottom sheet over the L3 modal. One value,
      * one sheet, big targets. Four shapes cover every field: a **list** (action — with a one-line
@@ -424,10 +424,10 @@ class GeneEditor {
             }
             Pick.Group -> pickSheet(b, "GROUP?", wide) {
                 val existing = controller.heldGenome()?.mapNotNull { it.group.ifBlank { null } }?.distinct() ?: emptyList()
-                listRow("(NONE)", selected = d.group.isEmpty()) { draft = d.copy(group = ""); closePick() }
+                listRow("(NONE)", selected = d.group.isEmpty()) { setGroup(d, "") }
                 gap(4f)
                 for (g in existing) {
-                    listRow(g.uppercase(), selected = d.group == g) { draft = d.copy(group = g); closePick() }
+                    listRow(g.uppercase(), selected = d.group == g) { setGroup(d, g) }
                     gap(4f)
                 }
                 listRow("NEW GROUP...", "TYPE A NAME ON THE KEYBOARD") { startGroupCapture(d.group); closePick() }

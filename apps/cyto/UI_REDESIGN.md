@@ -432,11 +432,14 @@ Grounded in the current control surface (`geneBody` + the picker sheets). These 
    slots (operand, species, group) open the shared pick sheet as a popover. `inlineLive` flushes every change
    straight to the genome (no draft/DONE); narrow keeps its modal. Harness-verified (tokens render, sever
    flips `rejectMother` live, action Menu drops inline, operand popover opens).
-4. **Hover affordances (next).** Per-clause `+`/`×` (with confirm) and the gene `⋮` → centred copy/delete/group
-   modal. (The `hoverRow`/`HoverAction` primitive from step 1 is ready; wire it into `geneTokenCard`.)
-5. **Cascades + re-section.** Action-type re-layout (already sanitises on action change), group-change
-   auto-expand, clause caps, live blocked (orange) colouring, and per-gene active/blocked card background
-   (the interactive card currently has none). Also: retire the now-dead wide branch of `renderGeneEditor`.
+4. ✅ **Hover affordances** (`8b7497d9`). `TokenRowItem` groups visual rows by semantic line; per-clause `+`
+   (duplicate) and `×` (arm-then-delete, shows `!` when armed) reveal on line hover, and the card-level `...`
+   → shared Overflow pick sheet reveals on card hover. Live blocked (orange) colouring + per-gene
+   active(green)/inactive(grey) card background restored from `describeGeneSpans` flags in the same commit
+   (they had been dropped in the 3b token rewrite). Harness: `hover-ui <label>`/`hover-clear` park the cursor;
+   verified `+` reveals after a clause and `...` at the card corner.
+5. **Cascades + re-section (next).** Action-type re-layout (already sanitises on action change), group-change
+   auto-expand, clause caps enforcement in the UI. Also: retire the now-dead wide branch of `renderGeneEditor`.
 
 Each step verifies through the harness at 1400×900 (`tap-ui <label>` already reaches the inline controls —
 gene cards register their sentence as a label; a new `hover-xy <u> <v>` command drives the hover pass).
