@@ -718,12 +718,16 @@ class CytoController(
      *  or the species token for a cytoplasm count. */
     private fun operandLabel(op: org.emerge.demo.cyto.sim.Operand): String = when (op) {
         is org.emerge.demo.cyto.sim.Operand.Constant -> op.value.toString()
-        is org.emerge.demo.cyto.sim.Operand.Chem -> op.species.ifEmpty { "?" }
-        is org.emerge.demo.cyto.sim.Operand.Conc -> "[${op.species.ifEmpty { "?" }}]"
+        is org.emerge.demo.cyto.sim.Operand.Chem -> spName(op.species)
+        is org.emerge.demo.cyto.sim.Operand.Conc -> "[${spName(op.species)}]"
         org.emerge.demo.cyto.sim.Operand.Biomass -> "BIO"
         org.emerge.demo.cyto.sim.Operand.Touching -> "TOUCH"
         org.emerge.demo.cyto.sim.Operand.Neighbours -> "NBRS"
     }
+
+    /** A molecule's display name for the caps card UI ("?" for an empty operand). */
+    private fun spName(species: String): String =
+        if (species.isEmpty()) "?" else org.emerge.demo.cyto.sim.SpeciesNames.name(species).uppercase()
 
     /** Fixed-point-ish 2dp formatter (multiplatform-safe — no String.format). */
     private fun fmt(v: Float): String {

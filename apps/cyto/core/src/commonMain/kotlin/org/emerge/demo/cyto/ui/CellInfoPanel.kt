@@ -1,6 +1,7 @@
 package org.emerge.demo.cyto.ui
 
 import org.emerge.demo.cyto.CytoController
+import org.emerge.demo.cyto.sim.SpeciesNames
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.UiBuilder
@@ -45,10 +46,14 @@ fun PanelBuilder.metabolismTable(info: CytoController.CellInfo) {
     }
 }
 
-// Column layout (monospace): species[6] env[6] ' ' dirEC[2] ' ' cyto[6] ' ' dirCB[2] ' ' bio[6].
+// Column layout (monospace): species[9] env[6] ' ' dirEC[2] ' ' cyto[6] ' ' dirCB[2] ' ' bio[6].
+// The species column is 9 wide to fit the built-in flavour names (e.g. GREENIUM); longer fallbacks are clipped.
+private const val SP_COL = 9
 private val METAB_HEADER =
-    "".padEnd(6) + "ENV".padStart(6) + "    " + "CYT".padStart(6) + "    " + "BIO".padStart(6)
+    "".padEnd(SP_COL) + "ENV".padStart(6) + "    " + "CYT".padStart(6) + "    " + "BIO".padStart(6)
+
+private fun spName(species: String): String = SpeciesNames.name(species).uppercase().take(SP_COL)
 
 private fun metabRow(r: CytoController.CellInfo.MetRow): String =
-    r.species.padEnd(6) + r.env.toString().padStart(6) + " " + r.dirEnvCyt + " " +
+    spName(r.species).padEnd(SP_COL) + r.env.toString().padStart(6) + " " + r.dirEnvCyt + " " +
         r.cyto.toString().padStart(6) + " " + r.dirCytBio + " " + r.bio.toString().padStart(6)

@@ -11,6 +11,7 @@ import org.emerge.demo.cyto.sim.GeneAction
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.GeneCondition
 import org.emerge.demo.cyto.sim.Operand
+import org.emerge.demo.cyto.sim.SpeciesNames
 import org.emerge.sim.core.EntityId
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.PanelBuilder
@@ -82,7 +83,6 @@ class GeneEditor {
     // reachable — the old monomer+dimer dropdown couldn't express them.
     private val atoms: List<String> = CytoSeed.SEED_MONOMERS
     private val bonds: List<String> = atoms.flatMap { x -> atoms.map { y -> x + y } }
-    private val sourceLabels: List<String> = listOf("Light") + bonds.map { "Brk $it" }
 
     /** The four operand kinds, in picker order: a constant value, a cytoplasm count, total biomass, or
      *  the contact count. */
@@ -328,18 +328,18 @@ class GeneEditor {
         chip("", d.action.type.name, 0x35507AFFL) { openPick(Pick.Action) }
         when (d.action.type) {
             ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain ->
-                chip("OPERAND", d.action.a.uppercase().ifEmpty { "(NONE)" }) { openPick(Pick.SpeciesA) }
+                chip("OPERAND", sp(d.action.a)) { openPick(Pick.SpeciesA) }
             ActionType.FormBond -> {
-                chip("LEFT", d.action.a.uppercase().ifEmpty { "(NONE)" }) { openPick(Pick.SpeciesA) }
+                chip("LEFT", sp(d.action.a)) { openPick(Pick.SpeciesA) }
                 segmented("MATCH L", listOf("EXACT", "ENDS *"), if (d.action.aWild) 1 else 0) { i -> draft = d.copy(action = d.action.copy(aWild = i == 1)) }
-                chip("RIGHT", d.action.b.uppercase().ifEmpty { "(NONE)" }) { openPick(Pick.SpeciesB) }
+                chip("RIGHT", sp(d.action.b)) { openPick(Pick.SpeciesB) }
                 segmented("MATCH R", listOf("EXACT", "* STARTS"), if (d.action.bWild) 1 else 0) { i -> draft = d.copy(action = d.action.copy(bWild = i == 1)) }
             }
             ActionType.Mitosis -> {
-                chip("MORPHOGEN", d.action.a.uppercase().ifEmpty { "(NONE)" }) { openPick(Pick.SpeciesA) }
+                chip("MORPHOGEN", sp(d.action.a)) { openPick(Pick.SpeciesA) }
                 if (d.action.a.isNotEmpty())
                     segmented("KEEP", listOf("DAUGHTER", "MOTHER"), if (d.action.morphogenToMother) 1 else 0) { i -> draft = d.copy(action = d.action.copy(morphogenToMother = i == 1)) }
-                chip("AXIS", d.action.b.uppercase().ifEmpty { "(NONE)" }) { openPick(Pick.SpeciesB) }
+                chip("AXIS", sp(d.action.b)) { openPick(Pick.SpeciesB) }
                 if (d.action.b.isNotEmpty())
                     segmented("ORIENT", listOf("ALONG", "ACROSS"), if (d.action.divideAcross) 1 else 0) { i -> draft = d.copy(action = d.action.copy(divideAcross = i == 1)) }
                 segmented("SEVER", listOf("NO", "YES"), if (d.action.rejectMother) 1 else 0) { i -> draft = d.copy(action = d.action.copy(rejectMother = i == 1)) }
@@ -352,7 +352,7 @@ class GeneEditor {
 
         // ── POWERED BY: the energy source ──
         row("POWERED BY", 0x7A8699FFL)
-        chip("", sourceLabel(d.source).uppercase()) { openPick(Pick.Source) }
+        chip("", sourceLabel(d.source)) { openPick(Pick.Source) }
         gap(12f)
 
         chip("GROUP", d.group.uppercase().ifEmpty { "(NONE)" }) { openPick(Pick.Group) }
@@ -383,9 +383,13 @@ class GeneEditor {
                 }
             }
             Pick.Source -> pickSheet(b, "POWERED BY?", wide) {
-                sourceLabels.forEachIndexed { i, label ->
-                    listRow(label.uppercase(), selected = label == sourceLabel(d.source)) {
-                        draft = d.copy(source = if (i == 0) EnergySource.Light else EnergySource.BreakBond(bonds[i - 1])); closePick()
+                listRow("LIGHT", selected = d.source is EnergySource.Light) {
+                    draft = d.copy(source = EnergySource.Light); closePick()
+                }
+                gap(4f)
+                for (bond in bonds) {
+                    listRow("BREAK ${sp(bond)}", selected = (d.source as? EnergySource.BreakBond)?.bond == bond) {
+                        draft = d.copy(source = EnergySource.BreakBond(bond)); closePick()
                     }
                     gap(4f)
                 }
@@ -480,7 +484,7 @@ class GeneEditor {
     /** A species built atom-by-atom: the molecule so far, then `+<atom>` per alphabet atom and a `<`
      *  backspace. `(NONE)` when empty (a valid no-op / symmetric-division state). */
     private fun PanelBuilder.speciesBuilder(current: String, onChange: (String) -> Unit) {
-        chip("", current.uppercase().ifEmpty { "(NONE)" }, 0x2A3550FFL) {}
+        chip("", sp(current), 0x2A3550FFL) {}
         gap(6f)
         actionRow(atoms.map { a -> Triple<String, Long, () -> Unit>("+${a.uppercase()}", 0x32503CFFL) { onChange(current + a) } } +
             Triple<String, Long, () -> Unit>("<", 0x5A3A3AFFL) { onChange(current.dropLast(1)) })
@@ -511,11 +515,15 @@ class GeneEditor {
         else -> "WELDED NEIGHBOURS"
     }
 
+    /** A molecule's display name (built-in flavour name / raw token), upper-cased for the caps UI. Empty
+     *  reads as "(NONE)". Genome aliases (Layer 2) will thread through here later. */
+    private fun sp(species: String): String = SpeciesNames.name(species).uppercase()
+
     /** A compact operand label for an L3 clause chip (see [renderGeneModal]). */
     private fun operandLabel(op: Operand): String = when (op) {
         is Operand.Constant -> op.value.toString()
-        is Operand.Chem -> "CHEM ${op.species.uppercase()}"
-        is Operand.Conc -> "CONC ${op.species.uppercase()}"
+        is Operand.Chem -> "CHEM ${sp(op.species)}"
+        is Operand.Conc -> "CONC ${sp(op.species)}"
         Operand.Biomass -> "BIO"
         Operand.Touching -> "TOUCH"
         Operand.Neighbours -> "NBRS"
@@ -583,8 +591,8 @@ class GeneEditor {
     private fun sourceProse(s: EnergySource): String = when (s) {
         EnergySource.Light -> "USE LIGHT TO POWER"
         is EnergySource.BreakBond -> {
-            val bond = s.bond.uppercase()
-            val atoms = if (s.bond.length == 2) "${s.bond[0].uppercaseChar()} AND ${s.bond[1].uppercaseChar()}" else bond
+            val bond = sp(s.bond)
+            val atoms = if (s.bond.length == 2) "${sp(s.bond[0].toString())} AND ${sp(s.bond[1].toString())}" else bond
             "BREAK $bond INTO $atoms TO POWER"
         }
     }
@@ -592,7 +600,7 @@ class GeneEditor {
     /** The action as a main line plus any modifier lines (the caller indents the modifiers). Only Mitosis
      *  carries modifiers — the morphogen it hands to a daughter/mother, and a sever. */
     private fun actionProse(a: GeneAction): Pair<String, List<String>> {
-        val av = a.a.uppercase(); val bv = a.b.uppercase()
+        val av = sp(a.a); val bv = sp(a.b)
         return when (a.type) {
             ActionType.Import -> "IMPORT $av" to emptyList()
             ActionType.Export -> "EXPORT $av" to emptyList()
@@ -696,7 +704,7 @@ class GeneEditor {
     }
 
     private fun sourceLabel(s: EnergySource): String = when (s) {
-        EnergySource.Light -> "Light"
-        is EnergySource.BreakBond -> "Brk ${s.bond}"
+        EnergySource.Light -> "LIGHT"
+        is EnergySource.BreakBond -> "BREAK ${sp(s.bond)}"
     }
 }
