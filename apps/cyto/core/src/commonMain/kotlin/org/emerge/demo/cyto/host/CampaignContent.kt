@@ -385,7 +385,7 @@ object CampaignContent {
                 allow = LOOK,
             ),
             Step(
-                text = "Now click the cell to select it.",
+                text = "Now select the cell.",
                 gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = LOOK,
             ),
@@ -416,10 +416,10 @@ object CampaignContent {
         grouping = CAMPAIGN_GROUPING,
         steps = listOf(
             Step(
-                text = "You've watched this cell hold steady. Now let's read why it does what it does. Click it to open its dossier.",
+                text = "You've watched this cell hold steady. Now let's read why it does what it does. Select it to open its dossier.",
                 gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "Click the cell"),
+                spotlight = Spotlight(hint = "Select the cell"),
             ),
             Step(
                 text = "Its genome is shown by FUNCTION. Right now there's just one job: GROW. That single label sums up everything this organism does.",
@@ -471,7 +471,7 @@ object CampaignContent {
                 text = "This organism grows but can't reproduce - on its own it's a dead end. Let's fix that. Select the cell to open its genome.",
                 gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "Click the cell"),
+                spotlight = Spotlight(hint = "Select the cell"),
             ),
             Step(
                 text = "Below its GROW group is a ready-made subsystem it's missing: ADD REPRODUCE. Tap it to give the cell a reproduction gene.",
@@ -538,7 +538,7 @@ object CampaignContent {
                 text = "Select the cell, open its REPRODUCE group, and tap the divide gene inside to edit it.",
                 gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "Click the cell, then + REPRODUCE, then the gene"),
+                spotlight = Spotlight(hint = "Select the cell, then + REPRODUCE, then the gene"),
             ),
             Step(
                 text = "In the gene's fields, find SEVER: yes - that's what cuts each daughter loose. Switch it to SEVER: no, then press DONE.",
@@ -725,7 +725,7 @@ object CampaignContent {
                 text = "Here's a body built for it. Select it and open its genome - FEED, MAINTAIN, GROW, and a MOVE muscle like before. But it's still missing the one thing that makes its cells DIFFER from each other.",
                 gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "Click the cell"),
+                spotlight = Spotlight(hint = "Select the cell"),
             ),
             Step(
                 text = "Add the POLARIZE group. It builds a chemical marker and, on every division, hands it to just ONE of the two daughters - so one cell ends up marked and the other bare. That difference is a sense of place.",
@@ -789,7 +789,7 @@ object CampaignContent {
                 text = "Here's that swimmer - almost. Select it and open its genome. FEED, POLARIZE, MOVE, GROW are all here, yet it sits perfectly still. Its muscle has been wired to wait on a beat it doesn't have yet.",
                 gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "Click the cell"),
+                spotlight = Spotlight(hint = "Select the cell"),
             ),
             Step(
                 text = "Add the CLOCK group. It builds a chemical that rises and falls on a loop of its own - an oscillator, ticking inside the cell whether or not the sun is up.",
@@ -814,15 +814,15 @@ object CampaignContent {
                 gate = Gate.Did(PlayerAction.SelectedCell, "Tap out a fresh copy and select it"),
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "Tap empty space, then click the new cell"),
+                spotlight = Spotlight(hint = "Tap empty space, then select the new cell"),
                 detail = "Every cell you tap out now copies whatever genome your selected cell carries - so this fresh one already has the clock. You'll change just one thing about it.",
             ),
             Step(
-                text = "Open its MOVE muscle and switch its power SOURCE from LIGHT to BREAK RG. Now it burns a stored reserve instead of sunlight - fuel it carries with it, day or night.",
-                gate = Gate.World("Switch the muscle to Break RG", met = { it.focused?.contractOnBreak == true }),
+                text = "Open its MOVE muscle and switch its power SOURCE from LIGHT to BREAK FUEL. Now it burns a stored reserve instead of sunlight - fuel it carries with it, day or night.",
+                gate = Gate.World("Switch the muscle to BREAK FUEL", met = { it.focused?.contractOnBreak == true }),
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "MOVE -> the muscle gene -> SOURCE -> Brk rg"),
+                spotlight = Spotlight(hint = "MOVE -> the muscle gene -> SOURCE -> BREAK FUEL"),
                 detail = "Change only its fuel and leave the rest. The clock keeps ticking - the muscle just draws on reserves now instead of waiting for daylight.",
             ),
             Step(
@@ -837,15 +837,15 @@ object CampaignContent {
                 gate = Gate.Did(PlayerAction.SelectedCell, "Tap out another copy and select it"),
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "Tap empty space, then click the new cell"),
+                spotlight = Spotlight(hint = "Tap empty space, then select the new cell"),
             ),
             Step(
-                text = "In its MOVE muscle, flip the marker test: change BB < 1 to BB > 0, so the MARKED cells drive the stroke instead of the bare ones. One flipped test, a different stroke.",
-                gate = Gate.World("Flip the muscle to BB > 0", met = { it.focused?.contractOnMarked == true }),
+                text = "In its MOVE muscle, flip the marker test: change MARKER < 1 to MARKER > 0, so the MARKED cells drive the stroke instead of the bare ones. One flipped test, a different stroke.",
+                gate = Gate.World("Flip the muscle to MARKER > 0", met = { it.focused?.contractOnMarked == true }),
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "MOVE -> the muscle gene -> set BB's test to > and its value to 0"),
-                detail = "In the editor, find the muscle's BB clause: set its comparator to > and step its value down to 0. That hands the driving role to the other cell type.",
+                spotlight = Spotlight(hint = "MOVE -> the muscle gene -> set MARKER's test to > and its value to 0"),
+                detail = "In the editor, find the muscle's MARKER clause: set its comparator to > and step its value down to 0. That hands the driving role to the other cell type.",
             ),
             Step(
                 text = "Push it off among the others. Now three of your lineage share one world - the day-only original, the night-runner, and this newest one. Speed up and compare how they swim.",
@@ -888,7 +888,7 @@ object CampaignContent {
                 text = "A lineage can't live in one body. It has to SPREAD - throw off new founders that swim away and start colonies of their own. Select the swimmer and open its genome.",
                 gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "Click the cell"),
+                spotlight = Spotlight(hint = "Select the cell"),
             ),
             Step(
                 text = "Add the REPRODUCE group. It's a division that SEVERS: once the body is large enough, it buds a daughter that breaks FREE - no weld holding it back - as its own single cell.",
@@ -939,7 +939,7 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "Now click the cell and watch its LIGHT reading in the panel. When daylight covers it the number climbs - that's it feeding. When night passes over, it drops back to zero.",
+                text = "Now select the cell and watch its LIGHT reading in the panel. When daylight covers it the number climbs - that's it feeding. When night passes over, it drops back to zero.",
                 gate = Gate.World("Select the cell", { it.focused != null }),
                 allow = WATCH,
                 world = WorldRun.Live,
