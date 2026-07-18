@@ -10,6 +10,7 @@ import org.emerge.demo.cyto.sim.EnergySource
 import org.emerge.demo.cyto.sim.GeneAction
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.GeneCondition
+import org.emerge.demo.cyto.sim.Molecules
 import org.emerge.demo.cyto.sim.Operand
 import org.emerge.demo.cyto.sim.SpeciesNames
 import org.emerge.sim.core.EntityId
@@ -612,9 +613,17 @@ class GeneEditor {
             ActionType.Import -> "IMPORT $av" to emptyList()
             ActionType.Export -> "EXPORT $av" to emptyList()
             ActionType.FormBond -> {
-                val la = if (a.aWild && a.a.isNotEmpty()) "*$av" else av
-                val lb = if (a.bWild && a.b.isNotEmpty()) "$bv*" else bv
-                "BOND $la AND $lb" to emptyList()
+                // Mirror the break-bond line: name the PRODUCT, show the two reactants in parens.
+                // BOND FUEL (R/G) reads as the inverse of BREAK FUEL (R/G). Wildcard/illegal joins have no
+                // single product, so fall back to the reactant form with `*` markers.
+                val product = if (!a.aWild && !a.bWild && a.a.isNotEmpty() && a.b.isNotEmpty()) Molecules.join(a.a, a.b) else null
+                if (product != null) {
+                    "BOND ${sp(product)} (${a.a.uppercase()}/${a.b.uppercase()})" to emptyList()
+                } else {
+                    val la = if (a.aWild && a.a.isNotEmpty()) "*$av" else av
+                    val lb = if (a.bWild && a.b.isNotEmpty()) "$bv*" else bv
+                    "BOND $la AND $lb" to emptyList()
+                }
             }
             ActionType.Convert -> "CONVERT $av TO MASS" to emptyList()
             ActionType.Contract -> "CONTRACT" to emptyList()
