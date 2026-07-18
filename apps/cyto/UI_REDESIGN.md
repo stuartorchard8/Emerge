@@ -321,6 +321,103 @@ doubles the cost of every future UI feature.
 
 ---
 
+## 8a. Desktop inline gene editor — the re-fork (DECIDED 2026-07-18)
+
+**The §8 decision is reversed *for the gene editor only*.** Shipping the shared sentence-model on both
+widths surfaced a real asymmetry: on desktop the L3 detail view is a second docked column, which forces
+the campaign coach out of its bottom slot and up into a cramped top-left pill (§6.1) whenever a gene is
+open — and, more importantly, it makes editing a gene a *drill-down* on a machine that has the pixels and
+the pointer precision to edit in place. Mobile has the opposite constraints: limited width and fat-finger
+targets push it toward **larger** elements and fewer simultaneous hit targets, so a full-screen modal with
+one field at a time is right there and clunky inline would be wrong.
+
+So the two hosts fork deliberately:
+
+| | Narrow (phone) — unchanged | Wide (desktop) — new |
+|---|---|---|
+| Editing a gene | tap → full-screen L3 `modal`, one field, CANCEL/DONE | **inline on the card** in the genome panel; no second column, no modal |
+| A gene "part" | chip → L4 sheet | **inline dropdown** anchored to the part |
+| Edit contract | draft; commit on DONE, revert on CANCEL | **live** — every change mutates the gene immediately (no draft, no cancel) |
+| Per-clause / per-gene actions | inside the modal + its `⋮` | **hover affordances** on the card |
+
+`geneBody` stays the shared *read* model (the two-line card). The desktop **edit** path becomes its own
+builder; narrow keeps the modal. We accept the re-fork: the hosts have fundamentally different constraints
+and bespoke UI per standpoint is the point. (This does not re-fork L0/L1/L2 or the cell panel — only how a
+gene is edited.)
+
+### The interaction
+
+On desktop the genome panel is the editor. There is no "open the gene" step:
+
+- **Every part of the gene is a live inline control.** The condition operands, comparator, action type,
+  each action sub-field (operand/morphogen/axis/efficiency…), the power source, and the group each render
+  as a chip that, on click, opens a dropdown **in place** (overlay layer, anchored to the chip). Binary
+  choices (comparator, KEEP, ORIENT, SEVER, MATCH) stay inline segmented — no dropdown at all.
+- **Hovering a gene reveals per-part and per-gene affordances:**
+  - after each **condition clause**, a `+` (duplicate *this* clause) and an `×` (delete this clause, with
+    confirm);
+  - a `⋮` on the gene, opening a **centred modal** with copy / delete / group (the gene-level actions that
+    don't belong on the inline surface).
+- **Live, no draft.** Changes hit the real genome as you make them. Undo is explicitly *not* in scope for
+  this pass — noted as a future want, not a blocker.
+
+### Special cases this has to handle
+
+Grounded in the current control surface (`geneBody` + the picker sheets). These are the things that do
+**not** fall out of "every part is a dropdown," roughly in order of how much they shape the work:
+
+1. **Hover is net-new toolkit surface.** The immediate-mode `Ui` kit has no hover concept — only
+   `hitTestDown`/`dragTo`/`hitTestUp` — and the desktop host only feeds cursor position while the primary
+   button is held. Needs: a `hover(px, py)` pass in `Ui` that marks the hovered element (and its part),
+   plus a cursor-move feed from `CytoSceneView` when *not* dragging. Touch never calls it, so the narrow
+   path is unaffected.
+2. **Some "parts" aren't dropdowns.**
+   - **Species/molecule builder** — building `abcb` is atom-append (`+A +B …`), a mini-editor, not a
+     single select. It's the most common inline control (every operand / FormBond side / morphogen / axis)
+     and the least dropdown-shaped. This is §6.5's flagged "text field in disguise"; the inline popover has
+     to host the builder, not a list.
+   - **Numeric fields** (efficiency, numeric clause operands) — stepper + presets; on desktop, also allow
+     typed entry.
+   - **New-group naming** needs keyboard text capture (`startGroupCapture`) with focus handling — lives in
+     the `⋮` modal, not an inline dropdown.
+3. **Action-type change cascades.** Switching the action reveals/hides sub-fields *and* clears now-invalid
+   modifiers (morphogen / KEEP / axis / ORIENT / SEVER exist only for Mitosis; the picker already sanitizes
+   them on change). The card re-lays-out and changes height live — Mitosis is the worst case.
+4. **Group change re-sections the genome view.** Genes render under collapsible group headers; changing a
+   gene's group moves its card to another section — possibly a collapsed one. Rule: auto-expand the target
+   group and keep the gene selected/scrolled-into-view, so it never appears to vanish.
+5. **Clause +/× rules.** Can't delete the last clause (gene keeps ≥1); add is capped at
+   `GENOME_MAX_CLAUSES` so the `+` disables at the cap; the `×` confirms. Note the hover `+` = *duplicate
+   this clause*, distinct from the current "+ AND CLAUSE" (which copies the **last** clause).
+6. **Two copy semantics coexist** — duplicate-clause (hover `+`) vs duplicate-gene (`⋮` modal). Keep them
+   visually distinct so they don't read as the same control.
+7. **Inline dropdown positioning.** The genome panel is docked against the right screen edge and scrolls, so
+   an anchored dropdown must flip left/up to avoid clipping and close (or reposition) on scroll.
+8. **Live validity colouring.** The orange "blocked" spans (no fuel / missing input) must keep updating as
+   you edit — that feedback is what makes the card worth reading.
+
+### Build order (desktop inline editor)
+
+1. **Toolkit: hover.** `Ui.hover(px, py)` + a hovered-element/part channel; feed cursor moves from the
+   desktop host. Prove it in `ui-gallery` (a row that reveals a `+`/`×` on hover).
+2. **Inline dropdown primitive.** An overlay dropdown anchored to a chip, edge-aware (flip left/up), that
+   closes on scroll — the desktop analogue of the L4 sheet, reusing the existing overlay layer.
+3. **Live editing path.** A desktop `geneBodyInline` that renders each part as a live control writing
+   straight to the gene (no draft), replacing the open-a-column flow. Delete the desktop drill-down; narrow
+   keeps its modal.
+4. **Hover affordances.** Per-clause `+`/`×` (with confirm) and the gene `⋮` → centred copy/delete/group
+   modal.
+5. **Cascades + re-section.** Action-type re-layout, group-change auto-expand, clause caps, live blocked
+   colouring.
+
+Each step verifies through the harness at 1400×900 (`tap-ui <label>` already reaches the inline controls —
+gene cards register their sentence as a label; a new `hover-xy <u> <v>` command drives the hover pass).
+Since the coach no longer collapses to the pill on desktop (the gene editor stops stealing the
+bottom), §6.1's desktop tension dissolves — the pill stays only as a fallback for any other bottom-owning
+panel.
+
+---
+
 ## 9. Proposed build order
 
 > ### ⏸ SESSION STATE — 2026-07-17 (resume here)
@@ -406,6 +503,12 @@ doubles the cost of every future UI feature.
 > the host's table (MOUSE default) and expands every coach string. Hosts set it once (desktop=MOUSE,
 > Android=TOUCH, harness=`-Dcyto.agent.touch`). Ch1's camera primer is now token-authored and renders
 > correctly on both (harness-verified mouse + touch). `validateGlyphs` expands both modalities before scanning.
+>
+> **NEW TRACK (queued 2026-07-18) — §8a desktop inline gene editor.** Decided: re-fork desktop from
+> narrow for gene *editing*. Desktop edits inline on the genome card (live, no draft; hover reveals
+> per-clause `+`/`×` and a gene `⋮` modal); narrow keeps the full-screen modal. This dissolves §6.1's
+> desktop coach-pill tension. Build order + special cases in §8a. Start at step 1 (toolkit hover). This
+> supersedes the coach-docking-refinement thread below for desktop.
 >
 > **TOP OF QUEUE — remaining step-8 threads:** (1) coach docking refinements beyond the narrow banner.
 > Optional follow-ups: port the web host off the legacy `CytoControls` overlay; on-device pass of the Android
