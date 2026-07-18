@@ -44,6 +44,13 @@ class GeneEditor {
         const val EDIT_COL_DP = 440f         // wide: max gene-editor column width
         const val SHEET_FRACTION = 0.58f     // narrow: dockBottom cell-sheet full (L2) height fraction
         const val PEEK_FRACTION = 0.2f       // narrow: dockBottom cell-sheet collapsed peek (L1) height
+
+        // Drag-and-drop re-grouping (desktop, §8a): a gene card is a drag source "gene-drag-<i>"; group
+        // section headers are drop targets "group-drop:<name>" ("" = the untagged OTHER bucket); a drop on the
+        // drag-only "new group" placeholder opens the typed-name dialog for that gene.
+        const val GENE_DRAG_PREFIX = "gene-drag-"
+        const val GROUP_DROP_PREFIX = "group-drop:"
+        const val GROUP_DROP_NEW = "group-drop-new"
     }
 
     private var editingId: EntityId? = null
@@ -189,12 +196,17 @@ class GeneEditor {
         if (wide) {
             // §8a: the genome card IS the editor — its tokens edit live in place, no L3 column. A sheet-backed
             // slot (operand / species / group) opens the pick sheet as a centred popover, also editing live.
-            renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, wide = true)
+            // A gene card can also be *dragged* onto a group header (or the "new group" placeholder) to re-tag
+            // it; the drag id encodes the gene index, so the panel knows which gene is in flight.
+            val draggingGene = b.draggingId?.removePrefix(GENE_DRAG_PREFIX)?.toIntOrNull()
+            renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, wide = true, draggingGene = draggingGene)
+            if (draggingGene != null) b.dragGhost("GENE ${draggingGene + 1}")
         } else {
             if (draft != null) renderGeneEditor(b, controller)
             else renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, wide = false)
         }
         draft?.let { renderPickerSheet(b, controller, it, wide) }
+        if (capturingGroup) renderGroupCaptureDialog(b, wide)
         // Desktop inline is live: the pick sheet / token controls mutate `draft`; flush each change straight
         // to the genome (no DONE step). The narrow modal leaves `inlineLive` false and commits on DONE.
         if (inlineLive) {
@@ -212,9 +224,10 @@ class GeneEditor {
     private fun renderCellPanel(
         b: UiBuilder, controller: CytoController, info: CytoController.CellInfo,
         grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit, wide: Boolean,
+        draggingGene: Int? = null,
     ): Float {
         if (wide) {
-            val body: PanelBuilder.() -> Unit = { cellBody(controller, info, grouping, insertableGroups, onExport, wide = true) }
+            val body: PanelBuilder.() -> Unit = { cellBody(controller, info, grouping, insertableGroups, onExport, wide = true, draggingGene = draggingGene) }
             return b.dockRight("cell-panel", width = CELL_PANEL_DP, margin = PANEL_MARGIN_DP, rowHeight = 26f, textSize = 15f, block = body)
         }
         // Narrow: a shallow peek (name + biomass) that drags up to the full L2 sheet. While dragging, the
@@ -262,6 +275,7 @@ class GeneEditor {
     private fun PanelBuilder.cellBody(
         controller: CytoController, info: CytoController.CellInfo,
         grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit, wide: Boolean = false,
+        draggingGene: Int? = null,
     ) {
         // Desktop edits each gene inline as an interactive sentence (§8a step 3b); narrow taps a read card to
         // open the full-screen modal.
@@ -288,7 +302,10 @@ class GeneEditor {
                 for (sec in sections) {
                     val label = sec.name ?: "OTHER"
                     val open = expandedGroups.contains(label)
-                    button("${if (open) "-" else "+"} $label (${sec.items.size})", groupHeaderBg(sec.color)) {
+                    // Desktop: the header doubles as a drop target — drag a gene onto it to re-tag the gene
+                    // into this group (§8a). Dropping a gene already in this group is a no-op.
+                    val dropId = if (wide) "$GROUP_DROP_PREFIX${sec.name ?: ""}" else null
+                    button("${if (open) "-" else "+"} $label (${sec.items.size})", groupHeaderBg(sec.color), dropTargetId = dropId) {
                         if (open) expandedGroups.remove(label) else expandedGroups.add(label)
                     }
                     if (open) for (item in sec.items) gene(info.genes[item.index], item.index)
@@ -300,6 +317,11 @@ class GeneEditor {
             } else {
                 info.genes.forEachIndexed { i, g -> gene(g, i) }
             }
+            // While a gene is in flight (desktop drag), offer a "new group" drop target at the end of the
+            // genome; a drop there opens the typed-name dialog for that gene (the first-group-creation path,
+            // and the only re-group target when nothing is grouped yet).
+            if (wide && draggingGene != null)
+                button("+ NEW GROUP", 0x2E4A6EFFL, dropTargetId = GROUP_DROP_NEW) {}
             gap(6f)
             button("EXPORT GENOME", 0x3A6EA5FFL) { onExport() }
         }
@@ -457,6 +479,32 @@ class GeneEditor {
                     listRow("DELETE", "REMOVE THIS GENE") { confirmingDelete = true }
                 }
             }
+        }
+    }
+
+    /** The **new-group name dialog** (§8a drag-and-drop): after a gene is dropped on the "new group"
+     *  placeholder, this shows the live typed name (host routes keystrokes via [typeGroupChar]) with an
+     *  in-field cursor, plus CREATE / CANCEL. ENTER/ESC also work through the host. */
+    private fun renderGroupCaptureDialog(b: UiBuilder, wide: Boolean) {
+        val typed = groupBuffer.toString()
+        val shown = (typed.uppercase().ifEmpty { "" }) + "_"   // trailing cursor, all-caps font
+        val body: PanelBuilder.() -> Unit = {
+            row("TYPE A NAME, THEN ENTER.", 0x9A9A9AFFL)
+            gap(6f)
+            row(shown, 0xFFFFFFFFL)
+            gap(10f)
+            listRow("CREATE GROUP", if (typed.isBlank()) "TYPE A NAME FIRST" else "TAG THE GENE '${typed.uppercase()}'") {
+                if (typed.isNotBlank()) confirmGroupName()
+            }
+            gap(4f)
+            listRow("CANCEL", "LEAVE THE GENE WHERE IT WAS") { cancelGroupName() }
+        }
+        if (wide) {
+            val w = minOf(460f * b.density, b.screenW * 0.6f)
+            val h = minOf(b.screenH * 0.85f, b.screenH * 0.4f)
+            b.sheet("group-name", "NEW GROUP", onDismiss = ::cancelGroupName, boxX = (b.screenW - w) * 0.5f, boxY = (b.screenH - h) * 0.5f, boxW = w, boxH = h, rowHeight = 34f, textSize = 15f, body = body)
+        } else {
+            b.sheet("group-name", "NEW GROUP", onDismiss = ::cancelGroupName, heightFraction = 0.4f, rowHeight = 48f, textSize = 16f, body = body)
         }
     }
 
@@ -665,10 +713,12 @@ class GeneEditor {
             ))
         }
 
-        // GROUP.
+        // GROUP: display-only on the desktop card. Re-grouping is now a drag-and-drop gesture (drag the card
+        // onto a group header, or the "new group" placeholder) — see cellBody + handleGeneDrop — so this line
+        // just reports the current tag rather than opening a picker.
         lines.add(listOf(
             UiTok.Text("GROUP ", grey),
-            UiTok.Toggle(gene.group.uppercase().ifEmpty { "(NONE)" }, ctl) { openInlinePick(controller, i, Pick.Group) },
+            UiTok.Text(gene.group.uppercase().ifEmpty { "(NONE)" }, 0x8FA4C8FFL),
         ))
 
         // Hover affordances (§8a step 4): each clause line reveals a + (duplicate this clause) and, when the
@@ -692,7 +742,8 @@ class GeneEditor {
         // read card (geneButton) used a solid bright green; here the token controls sit on top, so this is a
         // clearly-green but muted tint that still keeps the blue/orange control boxes legible.
         val bg = if (g.active) 0x25522FFFL else 0x20242EFFL
-        tokenLines(lines, wrapWidth = 356f, textSize = 15f, background = bg, lineActions = lineActions, cardActions = cardActions)
+        tokenLines(lines, wrapWidth = 356f, textSize = 15f, background = bg, lineActions = lineActions, cardActions = cardActions,
+            dragId = "$GENE_DRAG_PREFIX$i", onDrop = { tid -> handleGeneDrop(controller, i, tid) })
         gap(8f)
     }
 
@@ -919,6 +970,21 @@ class GeneEditor {
         val cs = g.condition.clauses
         if (cs.size >= CytoTuning.GENOME_MAX_CLAUSES || ci !in cs.indices) g
         else g.copy(condition = GeneCondition(cs.subList(0, ci + 1) + cs[ci] + cs.subList(ci + 1, cs.size)))
+    }
+
+    /** Resolve a gene [i] drop (§8a drag-and-drop re-group). A null target = dropped on empty space (no-op).
+     *  The "new group" placeholder opens the typed-name dialog bound to this gene; a group header re-tags the
+     *  gene live and auto-expands the destination so it doesn't vanish into a collapsed group. */
+    private fun handleGeneDrop(controller: CytoController, i: Int, targetId: String?) {
+        when {
+            targetId == null -> {}
+            targetId == GROUP_DROP_NEW -> { beginInline(controller, i); startGroupCapture("") }
+            targetId.startsWith(GROUP_DROP_PREFIX) -> {
+                val name = targetId.removePrefix(GROUP_DROP_PREFIX)
+                inlineEdit(controller, i) { it.copy(group = name) }
+                expandedGroups.add(name.ifEmpty { "OTHER" })
+            }
+        }
     }
 
     /** Hover `×`: first tap arms, second tap on the same clause deletes it (never the last clause). */

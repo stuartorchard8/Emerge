@@ -244,6 +244,8 @@ object CytoAgentHarness {
                 "hover-ui" -> hoverUi(line.removePrefix("hover-ui").trim())
                 "hover-clear" -> { ui.clearHover(); println("[agent] hover cleared") }
                 "drag-ui" -> dragUi(t[1], t[2].toFloat())
+                "dragto" -> dragToUi(line.removePrefix("dragto").trim())
+                "draghover" -> dragHoverUi(line.removePrefix("draghover").trim())
                 // The matter ground and the daylight multiply are both always on now; what's left to vary is
                 // how dark night gets. `night 1` flattens the light out entirely (handy for reading matter).
                 "night" -> {
@@ -353,6 +355,54 @@ object CytoAgentHarness {
             ui.hitTestUp(cx, cy + dyPx)
             println("[agent] drag-ui '$label' dy=$dyPx -> done")
             sync()
+        }
+
+        /** Simulate a **drag-and-drop**: `dragto <src> >> <dst>`. Press at the source label's centre, commit
+         *  the drag (moving past the toolkit's slop), then rebuild the overlay so drag-only drop targets (the
+         *  "+ NEW GROUP" placeholder) exist, locate the destination label, move onto it, and release — the
+         *  real toolkit path a mouse drag would drive. The source can be any label inside the dragged card
+         *  (e.g. a token like "MITOSIS"), since the whole card is the drag source. */
+        private fun dragToUi(arg: String) {
+            val parts = arg.split(">>").map { it.trim() }
+            if (parts.size != 2) { println("[agent] usage: dragto <src> >> <dst>"); return }
+            buildOverlay()
+            val src = ui.elements().firstOrNull { it.label.contains(parts[0], ignoreCase = true) }
+            if (src == null) { println("[agent] dragto src '${parts[0]}' -> no match"); return }
+            val sx = src.x + src.w * 0.5f; val sy = src.y + src.h * 0.5f
+            ui.hitTestDown(sx, sy)
+            ui.dragTo(sx, sy + 30f)   // one move past the slop commits the drag
+            // Rebuild: activeDrag persists across frames, so this pass sees draggingId set and registers the
+            // drag-only targets (the new-group placeholder + highlightable group headers).
+            buildOverlay()
+            val dst = ui.elements().firstOrNull { it.label.contains(parts[1], ignoreCase = true) }
+            if (dst == null) { println("[agent] dragto dst '${parts[1]}' -> no match"); ui.hitTestUp(sx, sy); return }
+            val dx = dst.x + dst.w * 0.5f; val dy = dst.y + dst.h * 0.5f
+            ui.dragTo(dx, dy)
+            ui.hitTestUp(dx, dy)
+            // The drop set an inline edit; that flushes to a queued world edit inside render(), so rebuild once
+            // to run the flush, then publish to apply it (same ordering as tapUi). See pendingWorldEdits.
+            buildOverlay()
+            controller.publish()
+            println("[agent] dragto '${parts[0]}' >> '${parts[1]}' -> dropped")
+            sync()
+        }
+
+        /** Like [dragToUi] but **holds** the drag over the destination without releasing, so a following
+         *  `shot` captures the mid-drag visuals (the floating ghost + the highlighted drop target). Leaves the
+         *  drag live — intended as the last gesture before a shot in a throwaway script. */
+        private fun dragHoverUi(arg: String) {
+            val parts = arg.split(">>").map { it.trim() }
+            if (parts.size != 2) { println("[agent] usage: draghover <src> >> <dst>"); return }
+            buildOverlay()
+            val src = ui.elements().firstOrNull { it.label.contains(parts[0], ignoreCase = true) }
+            if (src == null) { println("[agent] draghover src '${parts[0]}' -> no match"); return }
+            ui.hitTestDown(src.x + src.w * 0.5f, src.y + src.h * 0.5f)
+            ui.dragTo(src.x + src.w * 0.5f, src.y + src.h * 0.5f + 30f)
+            buildOverlay()
+            val dst = ui.elements().firstOrNull { it.label.contains(parts[1], ignoreCase = true) }
+            if (dst == null) { println("[agent] draghover dst '${parts[1]}' -> no match"); return }
+            ui.dragTo(dst.x + dst.w * 0.5f, dst.y + dst.h * 0.5f)
+            println("[agent] draghover '${parts[0]}' >> '${parts[1]}' -> holding (shot to capture)")
         }
 
         /** Park the persistent hover cursor over a labelled region's centre so a following `shot` captures
