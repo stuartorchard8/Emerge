@@ -10,6 +10,7 @@ import org.emerge.demo.cyto.CytoRenderer
 import org.emerge.demo.cyto.campaign.CampaignDirector
 import org.emerge.demo.cyto.campaign.CampaignQuery
 import org.emerge.demo.cyto.campaign.Control
+import org.emerge.demo.cyto.campaign.InputHints
 import org.emerge.demo.cyto.campaign.PlayerAction
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
@@ -84,7 +85,7 @@ object CytoSceneView {
         val geneEditor = GeneEditor()
 
         // Campaign / story mode: the director drives the coach overlay; progress persists across runs.
-        val director = CampaignDirector()
+        val director = CampaignDirector().apply { inputHints = InputHints.MOUSE }   // desktop = pointer controls
         val campaignProgress = CampaignProgress.load()
 
         // Front-end shell (title / new / custom / about). Boot into the menu with the sim paused behind it.

@@ -46,6 +46,14 @@ class CampaignDirector {
      *  step's [WorldRun] here (pause/resume the sim). */
     var onStepEnter: (Step) -> Unit = {}
 
+    /** The host's input phrasing, interpolated into coach copy so a `{pan}`/`{zoom}` gesture reads correctly
+     *  for this platform — [InputHints.MOUSE] on desktop, [InputHints.TOUCH] on a phone. The host sets it once
+     *  at construction; defaults to MOUSE. */
+    var inputHints: InputHints = InputHints.MOUSE
+
+    /** Expand a coach string's input tokens for this host. */
+    private fun copy(s: String) = inputHints.expand(s)
+
     val activeChapter: Chapter? get() = chapter
     val currentStep: Step? get() = chapter?.steps?.getOrNull(stepIndex)
 
@@ -101,7 +109,7 @@ class CampaignDirector {
         return CoachSnapshot(
             chapterId = ch.id, chapterTitle = ch.title,
             stepIndex = stepIndex, stepCount = ch.steps.size,
-            text = step.text, goal = goalText(step.gate),
+            text = copy(step.text), goal = goalText(step.gate)?.let { copy(it) },
             gateReady = gateReady, world = step.world,
         )
     }
@@ -202,23 +210,23 @@ class CampaignDirector {
         return ui.panel(anchor, margin = margin, padding = PAD_DP, background = 0x11182AF2L, rowHeight = 22f, textSize = textSize, fillWidth = fillWidth) {
             title(clip(header, wrapChars), 0x6FD6C4FFL)
             gap(4f)
-            for (line in wrap(step.text, wrapChars)) row(line, 0xEAEEF6FFL)
-            step.spotlight?.hint?.let { gap(2f); for (line in wrap("→ $it", wrapChars)) row(line, 0xFFD86EFFL) }
+            for (line in wrap(copy(step.text), wrapChars)) row(line, 0xEAEEF6FFL)
+            step.spotlight?.hint?.let { gap(2f); for (line in wrap(copy("→ $it"), wrapChars)) row(line, 0xFFD86EFFL) }
 
             // Objective line + progress for a World / Did gate.
             if (gate is Gate.World) {
                 gap(4f)
                 val prog = query?.let { gate.progress?.invoke(it) }
                 val suffix = if (prog != null) "   ${prog.first}/${prog.second}" else ""
-                for (line in wrap("GOAL: ${gate.desc}$suffix", wrapChars)) row(line, if (gateMet) 0x8FE39AFFL else 0x9AA6BCFFL)
+                for (line in wrap(copy("GOAL: ${gate.desc}$suffix"), wrapChars)) row(line, if (gateMet) 0x8FE39AFFL else 0x9AA6BCFFL)
             } else if (gate is Gate.Did) {
                 gap(4f)
-                for (line in wrap("GOAL: ${gate.desc}", wrapChars)) row(line, if (gateMet) 0x8FE39AFFL else 0x9AA6BCFFL)
+                for (line in wrap(copy("GOAL: ${gate.desc}"), wrapChars)) row(line, if (gateMet) 0x8FE39AFFL else 0x9AA6BCFFL)
             }
 
             if (showDetail && step.detail != null) {
                 gap(4f)
-                for (line in wrap(step.detail, wrapChars)) row(line, 0xB6C0D4FFL)
+                for (line in wrap(copy(step.detail), wrapChars)) row(line, 0xB6C0D4FFL)
             }
 
             gap(6f)
@@ -245,7 +253,7 @@ class CampaignDirector {
     /** The collapsed coach — a top-left pill: `▸ N/M` progress + the step's hint (or its first text line),
      *  clipped to fit. Non-interactive; the full coach returns as soon as the editor closes. */
     private fun renderPill(ui: UiBuilder, ch: Chapter, step: Step) {
-        val hint = step.spotlight?.hint ?: step.text
+        val hint = copy(step.spotlight?.hint ?: step.text)
         val progress = "${stepIndex + 1}/${ch.steps.size}"
         ui.panel(Anchor.TopLeft, margin = 12f, padding = 10f, background = 0x11182AF2L, rowHeight = 22f) {
             title("STEP $progress", 0x6FD6C4FFL)

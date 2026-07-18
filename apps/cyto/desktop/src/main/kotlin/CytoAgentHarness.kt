@@ -7,6 +7,7 @@ import org.emerge.demo.cyto.CytoSaveCodec
 import org.emerge.demo.cyto.campaign.CampaignDirector
 import org.emerge.demo.cyto.campaign.CampaignQuery
 import org.emerge.demo.cyto.campaign.Control
+import org.emerge.demo.cyto.campaign.InputHints
 import org.emerge.demo.cyto.campaign.PlayerAction
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
@@ -73,6 +74,9 @@ object CytoAgentHarness {
     private val DENSITY = System.getProperty("cyto.agent.density")?.toFloatOrNull() ?: 1f
     // Narrow/phone layout: an open gene renders as the full-screen L3 modal (UI_REDESIGN.md §3).
     private val NARROW = System.getProperty("cyto.agent.narrow")?.toBoolean() ?: false
+    // Which input phrasing the coach copy renders with. Defaults to MOUSE (emulating the desktop host);
+    // -Dcyto.agent.touch verifies the phone wording headlessly.
+    private val TOUCH = System.getProperty("cyto.agent.touch")?.toBoolean() ?: false
 
     fun run(scriptText: String, outDir: File) {
         outDir.mkdirs()
@@ -94,7 +98,7 @@ object CytoAgentHarness {
 
     private class Session(val outDir: File) {
         val controller = CytoController()
-        val director = CampaignDirector()
+        val director = CampaignDirector().apply { inputHints = if (TOUCH) InputHints.TOUCH else InputHints.MOUSE }
 
         private var window: Long = NULL
         private lateinit var renderer: CytoRenderer

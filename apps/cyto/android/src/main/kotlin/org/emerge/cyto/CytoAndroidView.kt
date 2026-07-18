@@ -13,6 +13,7 @@ import org.emerge.demo.cyto.CytoRenderer
 import org.emerge.demo.cyto.campaign.CampaignDirector
 import org.emerge.demo.cyto.campaign.CampaignQuery
 import org.emerge.demo.cyto.campaign.Control
+import org.emerge.demo.cyto.campaign.InputHints
 import org.emerge.demo.cyto.campaign.PlayerAction
 import org.emerge.demo.cyto.campaign.WorldRun
 import org.emerge.demo.cyto.host.CampaignContent
@@ -131,7 +132,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         geneEditor = GeneEditor()
         val ui = Ui().also { it.setDensity(displayDensity); ui = it }
         val menu = CytoMenu().also { menu = it }
-        val director = CampaignDirector().also { director = it }
+        val director = CampaignDirector().also { it.inputHints = InputHints.TOUCH; director = it }   // phone = touch controls
         val progress = CampaignProgress.load().also { campaignProgress = it }
 
         // Brush palette from the genome library (seeded on first use).

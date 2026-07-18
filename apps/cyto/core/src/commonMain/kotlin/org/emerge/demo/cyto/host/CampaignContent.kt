@@ -3,6 +3,7 @@ package org.emerge.demo.cyto.host
 import org.emerge.demo.cyto.campaign.Chapter
 import org.emerge.demo.cyto.campaign.Control
 import org.emerge.demo.cyto.campaign.ControlMask
+import org.emerge.demo.cyto.campaign.InputHints
 import org.emerge.demo.cyto.campaign.Gate
 import org.emerge.demo.cyto.campaign.PlayerAction
 import org.emerge.demo.cyto.campaign.Spotlight
@@ -353,7 +354,13 @@ object CampaignContent {
      *  headlessly rather than only spotted in the GL window. */
     fun validateGlyphs(): List<Char> {
         val bad = LinkedHashSet<Char>()
-        fun scan(s: String?) { s?.forEach { if (it != '\n' && !UiTextRenderer.supports(it)) bad.add(it) } }
+        // Scan the RENDERED copy of every modality: input `{tokens}` are expanded first, so the `{`/`}`
+        // delimiters (which the font lacks) don't false-positive and the actual on-screen phrases are checked.
+        val modalities = listOf(InputHints.MOUSE, InputHints.TOUCH)
+        fun scan(s: String?) {
+            s ?: return
+            for (hints in modalities) hints.expand(s).forEach { if (it != '\n' && !UiTextRenderer.supports(it)) bad.add(it) }
+        }
         for (ch in CHAPTERS) {
             scan(ch.title); scan(ch.blurb)
             for (st in ch.steps) {
@@ -380,7 +387,7 @@ object CampaignContent {
                 allow = LOOK,
             ),
             Step(
-                text = "Right-click and drag to move around, and scroll to zoom. Try it - get a good look at the cell.",
+                text = "{pan} to move around, and {zoom} to zoom. Try it - get a good look at the cell.",
                 gate = Gate.Did(PlayerAction.MovedCamera, "Pan or zoom the view"),
                 allow = LOOK,
             ),
