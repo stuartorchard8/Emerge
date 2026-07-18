@@ -27,13 +27,14 @@ fun createCytoInitialState(scenario: CytoScenario = CytoScenario.DEFAULT): SimSt
     // tick 1. A fixed non-zero seed keeps the sim deterministic without that artifact.
     val builder = SimBuilder(SimState(randomSeed = 0x9E3779B97F4A7C15uL.toLong()))
     for (p in founderPlacements(scenario)) {
+        val genome = p.genome ?: genomeForType(p.type)
         builder.spawnCell(
             pos = p.pos,
             vel = Coord2.zero,
             type = p.type,
-            biomass = CytoSeed.STARTER_BIOMASS,
+            biomass = starterBiomassFor(genome),   // biomass made of a chemical this genome can actually produce
             logicalRadius = MIN_RADIUS,
-            genome = p.genome ?: genomeForType(p.type),
+            genome = genome,
         )
     }
     builder.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(scenario.matterLevel)) }

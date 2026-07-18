@@ -139,12 +139,23 @@ class CytoGoldenTest {
     // checkCytoConservation is exact on all 3 elements over 6000 ticks (the flux is edge-symmetric, so
     // conservation is exact by construction), and parallelMatchesSequential held with NO special handling —
     // integer += into the flux accumulator is order-independent, so any edge visitation order is identical.
+    // Re-baselined 2026-07-18: GENOME-RELEVANT STARTER BIOMASS. A founder now begins with biomass made of the
+    // chemical its FIRST Convert gene produces (filled to the same total bond count as the old seed), instead
+    // of the fixed {rg,gb,br} mix — so a cell no longer starts holding gb/br it has no gene to make (see
+    // starterBiomassFor). A deliberate starting-condition change, so real divergence is expected. The default
+    // autotroph converts `rg`, so its seed becomes pure `rg` (same total bonds, same total atoms ⇒ mass
+    // unchanged). ECOLOGY VERIFIED unchanged: the founder's population curve keeps its shape/lag/take-off
+    // (1→2 by tick 1000, first division still ~988; 43 by 1500 vs the old 41; 3135 by 6000 vs the old 3037,
+    // +3.2% — marginally faster because the seed is now exactly the molecule it grows on). growth shifts in
+    // every dimension but topology (still no welds); mutation keeps meta/physics/topology (its lone founder
+    // doesn't divide within 1500 ticks, so only its chemistry — biology/grid — moves); interact keeps
+    // meta/topology (scripted population unchanged). weld/sticky goldens pass biomass explicitly, so untouched.
     private val GROWTH = mapOf(
-        "meta" to "6690f1e62190d995",
-        "physics" to "519b154d179ac49d",
-        "biology" to "f5701ce4adf00b07",
+        "meta" to "85c1623fc3ed5fa6",
+        "physics" to "1250756c98cb84be",
+        "biology" to "103f1663032593f1",
         "topology" to "cbf29ce484222325",
-        "grid" to "9033d7c759fc105b",
+        "grid" to "7f9f70ac15bc637",
     )
     // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
     // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
@@ -226,12 +237,15 @@ class CytoGoldenTest {
     // Re-baselined 2026-07-16: matter diffusion returns (see GROWTH). meta + topology are byte-identical
     // here — same population and spring structure — so the drift is pure microstate: physics/biology/grid
     // shift as the relaxing field feeds the junction slightly differently.
+    // Re-baselined 2026-07-18: genome-relevant starter biomass (see GROWTH). meta/physics/topology are
+    // byte-identical here — the lone mutating founder doesn't divide inside 1500 ticks, so its count + position
+    // are unchanged — and only its chemistry moves (biology = the seed composition itself; grid = what it sheds).
     private val MUTATION = mapOf(
         "meta" to "187ed166f49aa1ee",
         "physics" to "e9629ee5366336d2",
-        "biology" to "cdf3a8bb4e7874ab",
+        "biology" to "a61a1e83103920cb",
         "topology" to "cbf29ce484222325",
-        "grid" to "69c8b06bea4e72ad",
+        "grid" to "1d6e8259dc810850",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     // Re-baselined 2026-07-05: restored LIGHT_QUANTA_SCALE 60k→120k (matter viability) +
@@ -256,12 +270,15 @@ class CytoGoldenTest {
     // with the more-responsive gene trajectories; meta + topology unchanged.
     // Re-baselined 2026-07-16: matter diffusion returns (see GROWTH). meta + topology byte-identical (the
     // scripted population is unchanged); physics/biology/grid shift with the relaxing field.
+    // Re-baselined 2026-07-18: genome-relevant starter biomass (see GROWTH). meta + topology byte-identical
+    // (the scripted colony's population + spring structure are unchanged); physics/biology/grid shift with the
+    // pure-rg seed chemistry.
     private val INTERACT = mapOf(
         "meta" to "2f287e9ca4c65e66",
-        "physics" to "77ffe2337d72fa66",
-        "biology" to "edb36956a9d67d7",
+        "physics" to "81d184dd7fc83cc3",
+        "biology" to "794eee2d1dd18",
         "topology" to "cbf29ce484222325",
-        "grid" to "f0459eeae308b5d6",
+        "grid" to "c9a80caa389ad7b7",
     )
 
     @Test

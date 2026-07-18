@@ -48,11 +48,12 @@ fun SimBuilder.spawnCell(
     vel: Coord2,
     type: CellType,
     cytoplasm: Map<String, Int> = emptyMap(),
-    biomass: Map<String, Int> = STARTER_BIOMASS,
+    biomass: Map<String, Int>? = null,
     logicalRadius: Frac = MIN_RADIUS,
     sticky: Boolean = false,
     genome: List<Gene> = genomeForType(type),
 ): EntityId {
+    val biomass = biomass ?: starterBiomassFor(genome)
     val radius = logicalRadius.coerceAtLeast(MIN_RADIUS)
     val id = spawnBody(
         pos = pos,
@@ -80,3 +81,20 @@ fun SimBuilder.spawnCell(
 
 /** Default biomass for a freshly-spawned cell — value in [CytoSeed.STARTER_BIOMASS] (initial data). */
 val STARTER_BIOMASS: Map<String, Int> = CytoSeed.STARTER_BIOMASS
+
+/**
+ * The starting biomass for a cell with this [genome], made of a chemical the genome can actually produce so
+ * a founder doesn't begin with molecules it has no gene to make (which used to seed `gb`/`br` into cells that
+ * never touch them). We take the genome's **first Convert gene** — the reaction that locks a molecule into
+ * biomass — and fill to the same total bond count as [STARTER_BIOMASS] with that molecule. Falls back to
+ * [STARTER_BIOMASS] when the genome has no Convert gene, or converts a bondless monomer (nothing to structure).
+ */
+fun starterBiomassFor(genome: List<Gene>): Map<String, Int> {
+    val chem = genome.firstOrNull { it.action.type == ActionType.Convert }?.action?.a
+        ?.takeIf { it.isNotEmpty() } ?: return STARTER_BIOMASS
+    val bondsPerMolecule = chem.length - 1
+    if (bondsPerMolecule < 1) return STARTER_BIOMASS
+    val targetBonds = totalBiomassBonds(STARTER_BIOMASS)
+    val count = (targetBonds / bondsPerMolecule).coerceAtLeast(1)
+    return mapOf(chem to count)
+}
