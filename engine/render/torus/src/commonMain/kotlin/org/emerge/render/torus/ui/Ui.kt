@@ -547,6 +547,23 @@ class Ui {
  *  appears only while the row is hovered. [label] is for headless targeting ([Ui.tapLabel]). */
 class HoverAction(val glyph: String, val color: Long, val label: String, val onClick: () -> Unit)
 
+/** A token in an inline sentence row ([PanelBuilder.tokenLines], `apps/cyto/UI_REDESIGN.md` §8a): either
+ *  static prose or an interactive control that reads as a word. Spacing lives in the [Text] tokens (their
+ *  leading/trailing spaces), so a control sits flush against the words around it. */
+sealed class UiTok {
+    /** Static prose. Include the surrounding spaces here (e.g. `"WHEN "`, `" GRADIENT"`). */
+    class Text(val text: String, val color: Long = 0x9A9A9AFFL) : UiTok()
+    /** A boxed word that fires [onClick] on click (the caller cycles a binary/small choice) — comparator,
+     *  orient, sever, keep. Reads as an editable word; no dropdown. */
+    class Toggle(val value: String, val color: Long, val onClick: () -> Unit) : UiTok()
+    /** A boxed word + `v` that opens an inline dropdown (overlay, edge-aware) of [options] — action, operand,
+     *  source, morphogen, efficiency, group. [open]/[onToggle] drive the list; [onPick] selects. */
+    class Menu(
+        val value: String, val color: Long, val options: List<String>, val open: Boolean,
+        val onToggle: () -> Unit, val onPick: (Int) -> Unit,
+    ) : UiTok()
+}
+
 class UiBuilder internal constructor(private val ui: Ui) {
     /** Framebuffer size (px) and the dp→px scale, so callers can compute wide-layout container bounds
      *  (a docked column, a centred popover) from the screen. */
@@ -900,6 +917,13 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     fun hoverRow(text: String, textColor: Long = 0xE0E6F0FFL, actions: List<HoverAction>) =
         items.add(HoverRowItem(text, textColor, rowHeight, actions))
 
+    /** An **inline sentence** of [lines], each a run of [UiTok]s (static prose + interactive Toggle/Menu
+     *  tokens), wrapping within [wrapWidth] dp so a long clause never clips (`apps/cyto/UI_REDESIGN.md`
+     *  §8a — the desktop interactive gene card). [wrapWidth] is the caller's known content width (e.g. a
+     *  fixed-width dock); [textSize] is dp. Continuation rows indent by [indent] dp. */
+    fun tokenLines(lines: List<List<UiTok>>, wrapWidth: Float, textSize: Float, indent: Float = 10f) =
+        items.add(TokenRowItem(lines, wrapWidth * scale, textSize * scale, rowHeight, indent * scale))
+
     /** Vertical space, in dp. */
     fun gap(height: Float = 6f) = items.add(GapItem(height * scale))
 
@@ -1065,6 +1089,75 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
                 ui.emitTextCentered(a.glyph, bx + btn * 0.5f, topY + 1f + (btn - textH) * 0.5f, textH, contrast(a.color))
                 ui.emitClick(bx, topY + 1f, btn, btn, label = a.label, onClick = a.onClick)
                 bx -= btn + textH * 0.4f
+            }
+        }
+    }
+
+    /** Renders [lines] of [UiTok]s as an inline sentence, **wrapping** within [wrapPx] (continuation rows
+     *  indented by [indentPx]) so a long clause never clips (`apps/cyto/UI_REDESIGN.md` §8a). The wrap is
+     *  computed at construction against the caller's known content width, so [height] is fixed before
+     *  layout — the immediate-mode height-before-width constraint. Interactive tokens ([UiTok.Toggle]/
+     *  [UiTok.Menu]) draw as boxed words with their own click regions; an open [UiTok.Menu] drops an
+     *  edge-aware option list into the overlay layer. */
+    private class TokenRowItem(
+        val lines: List<List<UiTok>>, val wrapPx: Float, val textH: Float, val rowH: Float, val indentPx: Float,
+    ) : Item {
+        private class Placed(val tok: UiTok, val dx: Float, val w: Float)
+        private val gap = textH * 0.15f
+        private fun tokW(t: UiTok): Float = when (t) {
+            is UiTok.Text -> UiTextRenderer.measureWidthPx(t.text, textH)
+            is UiTok.Toggle -> UiTextRenderer.measureWidthPx(t.value, textH) + textH * 0.8f
+            is UiTok.Menu -> UiTextRenderer.measureWidthPx(t.value, textH) + textH * 1.4f
+        }
+        private val visual: List<List<Placed>> = buildList {
+            for (line in lines) {
+                var cur = ArrayList<Placed>()
+                var cx = 0f
+                for (tok in line) {
+                    val w = tokW(tok)
+                    if (cur.isNotEmpty() && cx + w > wrapPx) { add(cur); cur = ArrayList(); cx = indentPx }
+                    cur.add(Placed(tok, cx, w)); cx += w + gap
+                }
+                if (cur.isNotEmpty()) add(cur)
+            }
+        }
+        override val height = visual.size * rowH
+        override fun measureWidth(textH: Float) = wrapPx
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textHIgnored: Float) {
+            var ry = topY
+            for (row in visual) {
+                val ty = ry + (rowH - textH) * 0.5f
+                for (p in row) {
+                    val px = x + p.dx
+                    when (val t = p.tok) {
+                        is UiTok.Text -> ui.emitTextLeft(t.text, px, ty, textH, t.color)
+                        is UiTok.Toggle -> {
+                            ui.emitRect(px, ry + 1f, p.w, rowH - 2f, t.color)
+                            ui.emitTextCentered(t.value, px + p.w * 0.5f, ty, textH, contrast(t.color))
+                            ui.emitClick(px, ry + 1f, p.w, rowH - 2f, label = t.value, onClick = t.onClick)
+                        }
+                        is UiTok.Menu -> {
+                            ui.emitRect(px, ry + 1f, p.w, rowH - 2f, t.color)
+                            ui.emitTextLeft(t.value, px + textH * 0.35f, ty, textH, contrast(t.color))
+                            ui.emitTextLeft("v", px + p.w - textH * 0.8f, ty, textH, 0xAACCFFFFL)
+                            ui.emitClick(px, ry + 1f, p.w, rowH - 2f, label = t.value, onClick = t.onToggle)
+                            if (t.open && ui.isWithinClip(px, ry, p.w, rowH)) {
+                                val ow = maxOf(p.w, (t.options.maxOfOrNull { UiTextRenderer.measureWidthPx(it, textH) } ?: 0f) + textH * 0.8f)
+                                val listH = t.options.size * rowH
+                                val below = ui.resHeight - (ry + rowH)
+                                val flipUp = listH > below && ry > below
+                                var oy = if (flipUp) ry - listH else ry + rowH
+                                for ((i, opt) in t.options.withIndex()) {
+                                    ui.emitOverlayRect(px, oy, ow, rowH, 0x1A2233FFL)
+                                    ui.emitOverlayTextLeft(opt, px + textH * 0.35f, oy + (rowH - textH) * 0.5f, textH, if (opt == t.value) 0xFFE070FFL else 0xCFE0FFFFL)
+                                    ui.emitOverlayClick(px, oy, ow, rowH) { t.onPick(i) }
+                                    oy += rowH
+                                }
+                            }
+                        }
+                    }
+                }
+                ry += rowH
             }
         }
     }

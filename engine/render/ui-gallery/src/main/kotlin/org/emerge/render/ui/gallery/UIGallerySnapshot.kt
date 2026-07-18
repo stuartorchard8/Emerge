@@ -86,6 +86,7 @@ fun main(args: Array<String>) {
     ui.clearHover()
     state.ddTopOpen = true
     state.ddBottomOpen = true
+    state.tokActionOpen = true   // prove the inline-token Menu drops its list too
     UIGallery.buildGalleryFrame(ui, state, fps = 60f)
     capture(File(out.parentFile, out.nameWithoutExtension + "-dropdown.png"))
 

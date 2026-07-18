@@ -3,6 +3,7 @@ package org.emerge.render.ui.gallery
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.HoverAction
 import org.emerge.render.torus.ui.PanelBuilder
+import org.emerge.render.torus.ui.UiTok
 import org.emerge.render.torus.ui.Ui
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.opengl.GL11.*
@@ -36,6 +37,7 @@ object UIGallery {
             panel(Anchor.TopLeft) { textWidgets() }
             panel(Anchor.TopLeft) { gapDemo() }
             panel(Anchor.TopLeft) { hoverRows(state) }
+            panel(Anchor.TopLeft) { tokenSentence(state) }
             panel(Anchor.TopLeft, newColumn = true) { buttons(state) }
             panel(Anchor.TopLeft, newColumn = true) { pickers(state) }
             panel(Anchor.TopLeft) { steppers(state) }
@@ -180,6 +182,32 @@ object UIGallery {
         dropdown("ACTION", state.ddTop, state.ddOptions, state.ddTopOpen,
             onToggle = { state.ddTopOpen = !state.ddTopOpen },
             onPick = { state.ddTop = state.ddOptions[it]; state.ddTopOpen = false })
+    }
+
+    private fun PanelBuilder.tokenSentence(state: GalleryState) {
+        title("INLINE TOKEN SENTENCE")
+        val grey = 0x9A9A9AFFL
+        val ctl = 0x35507AFFL
+        val orients = listOf("ALONG", "ACROSS")
+        val actionOpts = listOf("DIVIDE", "CONVERT", "LYSE", "SECRETE")
+        tokenLines(
+            listOf(
+                listOf(UiTok.Text("WHEN ", grey), UiTok.Text("BIO", 0xC8963CFFL), UiTok.Text(">3500", grey)),
+                listOf(
+                    UiTok.Menu(state.tokAction, ctl, actionOpts, state.tokActionOpen,
+                        onToggle = { state.tokActionOpen = !state.tokActionOpen },
+                        onPick = { state.tokAction = actionOpts[it]; state.tokActionOpen = false }),
+                    UiTok.Text(" ", grey),
+                    UiTok.Toggle(orients[state.tokOrient], ctl) { state.tokOrient = 1 - state.tokOrient },
+                    UiTok.Text(" NO GRADIENT", grey),
+                ),
+                listOf(
+                    UiTok.Text(" ", grey),
+                    UiTok.Toggle(if (state.tokSever == 0) "AND STICK" else "SEVERING CELL 2 FREE", ctl) { state.tokSever = 1 - state.tokSever },
+                ),
+            ),
+            wrapWidth = 250f, textSize = 15f,
+        )
     }
 
     private fun PanelBuilder.dropdownFlip(state: GalleryState) {
@@ -409,4 +437,10 @@ class GalleryState {
     var ddTopOpen = false
     var ddBottom = "GROW"
     var ddBottomOpen = false
+
+    // Inline token sentence (interactive gene card).
+    var tokAction = "DIVIDE"
+    var tokActionOpen = false
+    var tokOrient = 0        // ALONG / ACROSS
+    var tokSever = 0         // AND STICK / SEVERING CELL 2 FREE
 }
