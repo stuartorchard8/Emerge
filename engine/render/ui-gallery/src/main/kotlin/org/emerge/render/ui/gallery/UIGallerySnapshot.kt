@@ -80,6 +80,15 @@ fun main(args: Array<String>) {
     UIGallery.buildGalleryFrame(ui, state, fps = 60f)
     capture(File(out.parentFile, out.nameWithoutExtension + "-hover.png"))
 
+    // Fourth capture, dropdowns open: the top one opens downward, the bottom-anchored one flips up (it has
+    // no room below). Proves the edge-aware inline dropdown (§8a step 2). Reset the hover so its reveal
+    // doesn't clutter the shot.
+    ui.clearHover()
+    state.ddTopOpen = true
+    state.ddBottomOpen = true
+    UIGallery.buildGalleryFrame(ui, state, fps = 60f)
+    capture(File(out.parentFile, out.nameWithoutExtension + "-dropdown.png"))
+
     ui.cleanup()
     glfwDestroyWindow(window)
     glfwTerminate()

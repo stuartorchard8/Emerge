@@ -154,6 +154,16 @@ class Ui {
         return true
     }
 
+    /** Whether [x],[y],[w],[h] is (partly) inside the currently-active clip. An inline dropdown uses this to
+     *  suppress its overlay option list when the anchor row has scrolled out of its viewport (the overlay
+     *  layer is otherwise unclipped) — the "close on scroll" behaviour, done by not drawing rather than by
+     *  mutating caller state. True when there is no active clip. */
+    fun isWithinClip(x: Float, y: Float, w: Float, h: Float): Boolean {
+        if (currentClip < 0) return true
+        val c = clipRects[currentClip]
+        return x + w > c[0] && x < c[0] + c[2] && y + h > c[1] && y < c[1] + c[3]
+    }
+
     /** Rebuilds this frame's widget tree (clears the previous frame's geometry; hold state persists). */
     fun frame(block: UiBuilder.() -> Unit) {
         cmds.clear(); clicks.clear()
@@ -898,6 +908,12 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     fun picker(label: String, value: String, options: List<String>, open: Boolean, onToggle: () -> Unit, onPick: (Int) -> Unit) =
         items.add(PickerItem(label, value, options, open, onToggle, onPick, rowHeight))
 
+    /** A **chip-styled inline dropdown** for the desktop inline editor (`apps/cyto/UI_REDESIGN.md` §8a): like
+     *  [chip] but the value list drops in place (overlay layer), flipping up near the screen bottom and
+     *  hidden when scrolled out of view. An empty [label] makes the field full-width. */
+    fun dropdown(label: String, value: String, options: List<String>, open: Boolean, onToggle: () -> Unit, onPick: (Int) -> Unit) =
+        items.add(DropdownItem(label, value, options, open, onToggle, onPick, rowHeight))
+
     /** A label + `[-] value [+]` where ± are hold-to-repeat steppers calling [onStep] with a signed,
      *  accelerating magnitude. */
     fun stepper(label: String, value: String, onStep: (Int) -> Unit) = items.add(StepperItem(label, value, onStep, rowHeight))
@@ -1179,6 +1195,49 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
             ui.emitTextCentered(value, cx + cw * 0.5f, ty, textH, 0xFFFFFFFFL)
             ui.emitTextLeft("V", cx + cw - textH * 0.9f, ty, textH, 0xAACCFFFFL)
             ui.emitClick(cx, topY + 1f, cw, height - 2f, label = if (label.isEmpty()) value else "$label $value", onClick = onTap)
+        }
+    }
+
+    /** A **chip-styled inline dropdown** (`apps/cyto/UI_REDESIGN.md` §8a): a field showing [value] that, when
+     *  [open], drops its [options] into the overlay layer anchored to the field. **Edge-aware** — the list
+     *  flips *up* when it wouldn't fit below — and **scroll-aware** — it isn't drawn when the field has
+     *  scrolled out of its clip viewport (the desktop analogue of the L4 sheet, reusing the same overlay
+     *  plumbing as [picker]). */
+    private class DropdownItem(
+        val label: String, val value: String, val options: List<String>, val open: Boolean,
+        val onToggle: () -> Unit, val onPick: (Int) -> Unit, override val height: Float,
+    ) : Item {
+        private fun fieldW(textH: Float): Float {
+            var w = UiTextRenderer.measureWidthPx(value, textH)
+            for (o in options) w = maxOf(w, UiTextRenderer.measureWidthPx(o, textH))
+            return w + textH * 3f
+        }
+        override fun measureWidth(textH: Float) =
+            (if (label.isEmpty()) 0f else UiTextRenderer.measureWidthPx(label, textH) + textH * 2f) + fieldW(textH)
+
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            val ty = topY + (height - textH) * 0.5f
+            val fw = if (label.isEmpty()) contentW else fieldW(textH)
+            val fx = x + contentW - fw
+            if (label.isNotEmpty()) ui.emitTextLeft(label, x, ty, textH, 0x9A9A9AFFL)
+            ui.emitRect(fx, topY + 1f, fw, height - 2f, if (open) 0x2A4A6AFFL else 0x2A3550FFL)
+            ui.emitTextCentered(value, fx + fw * 0.5f, ty, textH, 0xFFFFFFFFL)
+            ui.emitTextLeft("V", fx + fw - textH * 0.9f, ty, textH, 0xAACCFFFFL)
+            ui.emitClick(fx, topY + 1f, fw, height - 2f, label = if (label.isEmpty()) value else "$label $value", onClick = onToggle)
+            if (!open) return
+            // Suppress the list if the field scrolled out of its viewport (overlay layer is unclipped).
+            if (!ui.isWithinClip(fx, topY, fw, height)) return
+            val listH = options.size * height
+            // Flip up when the list wouldn't fit below the field and there's more room above.
+            val spaceBelow = ui.resHeight - (topY + height)
+            val flipUp = listH > spaceBelow && topY > spaceBelow
+            var oy = if (flipUp) topY - listH else topY + height
+            for ((i, opt) in options.withIndex()) {
+                ui.emitOverlayRect(fx, oy, fw, height, 0x1A2233FFL)
+                ui.emitOverlayTextLeft(opt, fx + textH * 0.4f, oy + (height - textH) * 0.5f, textH, if (opt == value) 0xFFE070FFL else 0xCFE0FFFFL)
+                ui.emitOverlayClick(fx, oy, fw, height) { onPick(i) }
+                oy += height
+            }
         }
     }
 

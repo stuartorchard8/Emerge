@@ -61,6 +61,7 @@ object UIGallery {
             }
             // Bottom corners: anchor/stacking demo.
             panel(Anchor.BottomLeft) { bottomLeft() }
+            panel(Anchor.BottomLeft, newColumn = true) { dropdownFlip(state) }
             panel(Anchor.BottomRight) { bottomRight(state) }
         }
     }
@@ -174,6 +175,19 @@ object UIGallery {
         }
         gap(4f)
         row("+ taps: ${state.hoverPlus}   X taps: ${state.hoverClose}", 0x7A8699FFL)
+        gap(8f)
+        row("INLINE DROPDOWN (opens down):", 0x9A9A9AFFL)
+        dropdown("ACTION", state.ddTop, state.ddOptions, state.ddTopOpen,
+            onToggle = { state.ddTopOpen = !state.ddTopOpen },
+            onPick = { state.ddTop = state.ddOptions[it]; state.ddTopOpen = false })
+    }
+
+    private fun PanelBuilder.dropdownFlip(state: GalleryState) {
+        title("EDGE-AWARE DROPDOWN")
+        row("near screen bottom -> flips UP:", 0x9A9A9AFFL)
+        dropdown("ACTION", state.ddBottom, state.ddOptions, state.ddBottomOpen,
+            onToggle = { state.ddBottomOpen = !state.ddBottomOpen },
+            onPick = { state.ddBottom = state.ddOptions[it]; state.ddBottomOpen = false })
     }
 
     private fun PanelBuilder.gapDemo() {
@@ -388,4 +402,11 @@ class GalleryState {
     // just drawn.
     var hoverPlus = 0
     var hoverClose = 0
+
+    // Inline dropdown (edge-aware). One near the top (opens down) and one near the bottom (flips up).
+    val ddOptions = listOf("MITOSIS", "LYSE", "CONVERT", "GROW", "SECRETE")
+    var ddTop = "CONVERT"
+    var ddTopOpen = false
+    var ddBottom = "GROW"
+    var ddBottomOpen = false
 }
