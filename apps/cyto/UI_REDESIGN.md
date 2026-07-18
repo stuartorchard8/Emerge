@@ -452,6 +452,13 @@ Grounded in the current control surface (`geneBody` + the picker sheets). These 
    GROUP — **DUPLICATE GENE** (instant, inserts a copy after) and **DELETE GENE** (red; a drop arms it, a
    confirm dialog settles it, since there's no undo). Retires the card's hover `...` overflow menu on desktop
    (the clause +/× hovers stay; the narrow modal keeps its own overflow). Harness-verified.
+8. ✅ **Reorder within a group + duplicate-at-group** (toolkit `358fc54a` + cyto `5d03cf56`). DUPLICATE moves
+   to the end of the dragged gene's own group section (NEW GROUP/DELETE stay in the bottom stack). New toolkit
+   `dropSlot(id)` (a thin insertion line that brightens under the pointer): while a gene is in flight, slots
+   appear between its group-mates keyed by target rank, and `reorderHeldGeneInGroup` permutes only same-tag
+   genes so the group section order is untouched (a naive global list-move flipped sections — rejected). Works
+   for the flat/ungrouped genome (one implicit group). Harness `dragto`/`draghover` resolve label-less slots
+   via `Ui.dropTargetElements()`.
 
 Each step verifies through the harness at 1400×900 (`tap-ui <label>` already reaches the inline controls —
 gene cards register their sentence as a label; a new `hover-xy <u> <v>` command drives the hover pass).
