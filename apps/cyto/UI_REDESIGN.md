@@ -401,12 +401,16 @@ doubles the cost of every future UI feature.
 > (§6.3) is MOOT** — `Spotlight` was already reduced to a text-only hint (`class Spotlight(hint: String?)`),
 > so there is no widget-targeting to redesign; what remained of that tension was this copy pass.
 >
-> **TOP OF QUEUE — remaining step-8 threads:** (1) Ch1's `Right-click and drag … scroll to zoom` camera
-> primer is the one un-neutralised mouse-ism — genuinely host-specific (desktop left-drag grabs a cell), so it
-> needs **host-conditional copy** (a mechanism for the host to inject platform input hints), not a wording
-> swap. (2) coach docking refinements beyond the narrow banner. Optional follow-ups: port the web host off the
-> legacy `CytoControls` overlay; on-device pass of the Android campaign coach at phone width (the banner is
-> harness-verified at narrow, but only Stu's device exercises real density).
+> **DONE 2026-07-18 — host-injected input hints (`abcc7ac8`):** the host-conditional copy mechanism. New
+> `InputHints` (commonMain) interpolates `{pan}`/`{zoom}`/`{grab}` tokens; `CampaignDirector.inputHints` holds
+> the host's table (MOUSE default) and expands every coach string. Hosts set it once (desktop=MOUSE,
+> Android=TOUCH, harness=`-Dcyto.agent.touch`). Ch1's camera primer is now token-authored and renders
+> correctly on both (harness-verified mouse + touch). `validateGlyphs` expands both modalities before scanning.
+>
+> **TOP OF QUEUE — remaining step-8 threads:** (1) coach docking refinements beyond the narrow banner.
+> Optional follow-ups: port the web host off the legacy `CytoControls` overlay; on-device pass of the Android
+> campaign coach at phone width (the banner is harness-verified at narrow, but only Stu's device exercises real
+> density). Any *future* per-host gesture copy just needs a `{token}` + an entry in `InputHints.MOUSE/TOUCH`.
 >
 > **Key files:** `apps/cyto/core/.../ui/GeneEditor.kt` (all render paths: `renderCellPanel`/`cellBody`,
 > `renderGeneEditor`/`geneBody`, `renderPickerSheet`/`pickSheet`, `geneButton` → `Ui.geneCard`);
