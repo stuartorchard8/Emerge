@@ -591,9 +591,11 @@ class GeneEditor {
     private fun sourceProse(s: EnergySource): String = when (s) {
         EnergySource.Light -> "USE LIGHT TO POWER"
         is EnergySource.BreakBond -> {
-            val bond = sp(s.bond)
-            val atoms = if (s.bond.length == 2) "${sp(s.bond[0].toString())} AND ${sp(s.bond[1].toString())}" else bond
-            "BREAK $bond INTO $atoms TO POWER"
+            // The duomer name already carries the identity, so the yielded atoms stay compact — their raw
+            // single-letter symbols joined by `/` (e.g. GREBLU (G/B)) — to keep the fuel line inside the panel.
+            // (The bitmap font has no `|` glyph, so `/` stands in for the separator.)
+            val atoms = if (s.bond.length == 2) " (${s.bond.uppercase().toCharArray().joinToString("/")})" else ""
+            "BREAK ${sp(s.bond)}$atoms TO POWER"
         }
     }
 
