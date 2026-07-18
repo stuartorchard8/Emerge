@@ -17,6 +17,7 @@ import org.emerge.sim.core.EntityId
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.UiBuilder
+import org.emerge.render.torus.ui.UiTok
 
 /**
  * The in-game **gene-editor kit**. Renders the last-held cell's info panel with a tappable gene list;
@@ -67,6 +68,15 @@ class GeneEditor {
     private var pickClause = -1
     private var pickSide = 0            // 0 = lhs, 1 = rhs (Operand picker)
     private var confirmingDelete = false   // Overflow sheet is showing the "delete this gene?" confirm step.
+
+    // ── Desktop inline editor (apps/cyto/UI_REDESIGN.md §8a step 3b) ──
+    // The wide gene card IS the editor: its tokens edit the gene live, no draft/commit. `inlineLive` marks
+    // that the pick sheet (operand/species/group — the builder/keyboard slots) is serving the inline card
+    // rather than the narrow modal, so every change flushes straight to the genome. `openMenu` keys the one
+    // open inline dropdown (action/source/efficiency) as "<geneIndex>:<slot>". `lastFlush` de-dupes the flush.
+    private var inlineLive = false
+    private var openMenu: String? = null
+    private var lastFlush: Gene? = null
 
     // In-game group tagging: when the player picks "New group..." the editor captures a typed name into
     // [groupBuffer] (the host routes keystrokes here — see [capturingGroupName]/[typeGroupChar]). Only the
@@ -175,14 +185,20 @@ class GeneEditor {
         // identical in both.
         val wide = !narrow
         if (wide) {
-            // L2 cell panel docked right; when a gene is open, the L3 editor docks as a column to its left.
-            val cellLeftX = renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, wide = true)
-            if (draft != null) renderGeneEditor(b, controller, wide = true, rightEdge = cellLeftX)
+            // §8a: the genome card IS the editor — its tokens edit live in place, no L3 column. A sheet-backed
+            // slot (operand / species / group) opens the pick sheet as a centred popover, also editing live.
+            renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, wide = true)
         } else {
             if (draft != null) renderGeneEditor(b, controller, wide = false, rightEdge = 0f)
             else renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, wide = false)
         }
         draft?.let { renderPickerSheet(b, controller, it, wide) }
+        // Desktop inline is live: the pick sheet / token controls mutate `draft`; flush each change straight
+        // to the genome (no DONE step). The narrow modal leaves `inlineLive` false and commits on DONE.
+        if (inlineLive) {
+            val d = draft; val idx = editingIndex
+            if (d != null && idx != null && d != lastFlush) { controller.setHeldGene(idx, d); lastFlush = d }
+        }
     }
 
     /**
@@ -196,7 +212,7 @@ class GeneEditor {
         grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit, wide: Boolean,
     ): Float {
         if (wide) {
-            val body: PanelBuilder.() -> Unit = { cellBody(controller, info, grouping, insertableGroups, onExport) }
+            val body: PanelBuilder.() -> Unit = { cellBody(controller, info, grouping, insertableGroups, onExport, wide = true) }
             return b.dockRight("cell-panel", width = CELL_PANEL_DP, margin = PANEL_MARGIN_DP, rowHeight = 26f, textSize = 15f, block = body)
         }
         // Narrow: a shallow peek (name + biomass) that drags up to the full L2 sheet. While dragging, the
@@ -243,8 +259,12 @@ class GeneEditor {
 
     private fun PanelBuilder.cellBody(
         controller: CytoController, info: CytoController.CellInfo,
-        grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit,
+        grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit, wide: Boolean = false,
     ) {
+        // Desktop edits each gene inline as an interactive sentence (§8a step 3b); narrow taps a read card to
+        // open the full-screen modal.
+        fun PanelBuilder.gene(g: CytoController.CellInfo.GeneRow, i: Int) =
+            if (wide) geneTokenCard(controller, g, i) else geneButton(controller, g, i)
         title("CELL ${info.id}  ${info.type}")
         // Per-line key/values right-align their value, so the panel reads at any width (a single-line vitals
         // row overflowed the narrow wide-screen column).
@@ -269,14 +289,14 @@ class GeneEditor {
                     button("${if (open) "-" else "+"} $label (${sec.items.size})", groupHeaderBg(sec.color)) {
                         if (open) expandedGroups.remove(label) else expandedGroups.add(label)
                     }
-                    if (open) for (item in sec.items) geneButton(controller, info.genes[item.index], item.index)
+                    if (open) for (item in sec.items) gene(info.genes[item.index], item.index)
                 }
                 for (grp in effectiveGrouping.groups) {
                     if (grp.name in insertableGroups && grp.insert.isNotEmpty() && liveGenes.none { it.group == grp.name })
                         button("+ ADD ${grp.name.uppercase()}", 0x2A3F5AFFL) { controller.addHeldGenes(grp.insert) }
                 }
             } else {
-                info.genes.forEachIndexed { i, g -> geneButton(controller, g, i) }
+                info.genes.forEachIndexed { i, g -> gene(g, i) }
             }
             gap(6f)
             button("EXPORT GENOME", 0x3A6EA5FFL) { onExport() }
@@ -535,6 +555,112 @@ class GeneEditor {
         Operand.Neighbours -> "NBRS"
     }
 
+    /** The **desktop inline gene editor** (`apps/cyto/UI_REDESIGN.md` §8a step 3b): the read sentence with its
+     *  words swapped for live controls. Inline-native slots (comparator, orient, sever, keep, action, source,
+     *  efficiency) edit the gene in place via [inlineEdit]; the builder/keyboard slots (operand, species,
+     *  group) open the shared pick sheet as a popover via [openInlinePick]. Every change flushes straight to
+     *  the genome (see [render]) — no draft/DONE. */
+    private fun PanelBuilder.geneTokenCard(controller: CytoController, g: CytoController.CellInfo.GeneRow, i: Int) {
+        val gene = g.gene
+        val grey = 0x9A9A9AFFL
+        val ctl = 0x35507AFFL
+        val lines = ArrayList<List<UiTok>>()
+
+        // WHEN <lhs> <cmp> <rhs>, one clause per line.
+        gene.condition.clauses.forEachIndexed { ci, cl ->
+            lines.add(listOf(
+                UiTok.Text(if (ci == 0) "WHEN " else " AND ", grey),
+                UiTok.Toggle(operandLabel(cl.lhs), ctl) { openInlinePick(controller, i, Pick.Operand, ci, 0) },
+                UiTok.Text(" ", grey),
+                UiTok.Toggle(if (cl.cmp == Comparison.Greater) ">" else "<", ctl) {
+                    inlineEdit(controller, i) { g2 ->
+                        val c = g2.condition.clauses[ci]
+                        withClauseAt(g2, ci, c.copy(cmp = if (c.cmp == Comparison.Greater) Comparison.Less else Comparison.Greater))
+                    }
+                },
+                UiTok.Text(" ", grey),
+                UiTok.Toggle(operandLabel(cl.rhs), ctl) { openInlinePick(controller, i, Pick.Operand, ci, 1) },
+            ))
+        }
+
+        // POWERED BY: an inline Menu (LIGHT or a broken bond).
+        val srcKey = "$i:src"
+        val srcOpts = listOf("LIGHT") + bonds.map { "BREAK ${sp(it)}" }
+        lines.add(listOf(
+            UiTok.Menu(sourceLabel(gene.source), ctl, srcOpts, openMenu == srcKey,
+                onToggle = { openMenu = if (openMenu == srcKey) null else srcKey },
+                onPick = { idx -> inlineEdit(controller, i) { it.copy(source = if (idx == 0) EnergySource.Light else EnergySource.BreakBond(bonds[idx - 1])) }; openMenu = null }),
+            UiTok.Text(" TO POWER", grey),
+        ))
+
+        // DO: action Menu, its operand token(s), and efficiency (non-Mitosis).
+        val actKey = "$i:act"
+        val actLine = ArrayList<UiTok>()
+        actLine.add(UiTok.Menu(gene.action.type.name, ctl, ActionType.entries.map { it.name }, openMenu == actKey,
+            onToggle = { openMenu = if (openMenu == actKey) null else actKey },
+            onPick = { idx ->
+                val t = ActionType.entries[idx]; val m = t == ActionType.Mitosis
+                inlineEdit(controller, i) { it.copy(action = it.action.copy(type = t, morphogenToMother = it.action.morphogenToMother && m, divideAcross = it.action.divideAcross && m, rejectMother = it.action.rejectMother && m)) }
+                openMenu = null
+            }))
+        when (gene.action.type) {
+            ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain -> {
+                actLine.add(UiTok.Text(" ", grey))
+                actLine.add(UiTok.Toggle(sp(gene.action.a).ifEmpty { "NOTHING" }, ctl) { openInlinePick(controller, i, Pick.SpeciesA) })
+            }
+            ActionType.FormBond -> {
+                actLine.add(UiTok.Text(" ", grey)); actLine.add(UiTok.Toggle(sp(gene.action.a).ifEmpty { "?" }, ctl) { openInlinePick(controller, i, Pick.SpeciesA) })
+                actLine.add(UiTok.Text(" + ", grey)); actLine.add(UiTok.Toggle(sp(gene.action.b).ifEmpty { "?" }, ctl) { openInlinePick(controller, i, Pick.SpeciesB) })
+            }
+            else -> {}
+        }
+        if (gene.action.type != ActionType.Mitosis) {
+            val effKey = "$i:eff"
+            actLine.add(UiTok.Text(" ", grey))
+            actLine.add(UiTok.Menu("E${gene.efficiency}", ctl, (0..CytoTuning.EFFICIENCY_MAX_GEAR).map { "E$it" }, openMenu == effKey,
+                onToggle = { openMenu = if (openMenu == effKey) null else effKey },
+                onPick = { idx -> inlineEdit(controller, i) { it.copy(efficiency = idx) }; openMenu = null }))
+        }
+        lines.add(actLine)
+
+        // Mitosis modifiers — always shown (§8a step 3a wording), each token live.
+        if (gene.action.type == ActionType.Mitosis) {
+            val a = gene.action
+            lines.add(listOf(
+                UiTok.Text(" ", grey),
+                UiTok.Toggle(if (a.divideAcross) "ACROSS" else "ALONG", ctl) { inlineEdit(controller, i) { it.copy(action = it.action.copy(divideAcross = !it.action.divideAcross)) } },
+                UiTok.Text(" ", grey),
+                UiTok.Toggle(if (a.b.isEmpty()) "NO" else sp(a.b), ctl) { openInlinePick(controller, i, Pick.SpeciesB) },
+                UiTok.Text(" GRADIENT", grey),
+            ))
+            val keep = ArrayList<UiTok>()
+            keep.add(UiTok.Text(" ", grey))
+            if (a.a.isEmpty()) {
+                keep.add(UiTok.Text("RETAINING ", grey))
+                keep.add(UiTok.Toggle("NOTHING", ctl) { openInlinePick(controller, i, Pick.SpeciesA) })
+            } else {
+                keep.add(UiTok.Toggle(if (a.morphogenToMother) "RETAINING" else "GIVING", ctl) { inlineEdit(controller, i) { it.copy(action = it.action.copy(morphogenToMother = !it.action.morphogenToMother)) } })
+                keep.add(UiTok.Text(" ", grey))
+                keep.add(UiTok.Toggle(sp(a.a), ctl) { openInlinePick(controller, i, Pick.SpeciesA) })
+                keep.add(UiTok.Text(if (a.morphogenToMother) " IN CELL 1" else " TO CELL 2", grey))
+            }
+            lines.add(keep)
+            lines.add(listOf(
+                UiTok.Text(" ", grey),
+                UiTok.Toggle(if (a.rejectMother) "SEVERING CELL 2 FREE" else "AND STICK", ctl) { inlineEdit(controller, i) { it.copy(action = it.action.copy(rejectMother = !it.action.rejectMother)) } },
+            ))
+        }
+
+        // GROUP.
+        lines.add(listOf(
+            UiTok.Text("GROUP ", grey),
+            UiTok.Toggle(gene.group.uppercase().ifEmpty { "(NONE)" }, ctl) { openInlinePick(controller, i, Pick.Group) },
+        ))
+
+        tokenLines(lines, wrapWidth = 356f, textSize = 15f)
+        gap(8f)
+    }
+
     /** One gene as a tappable button: editing = blue, active = green, inactive = grey; the parts of an
      *  inactive gene that block it (failed clause / energy / input) draw orange inline. [i] is its live
      *  genome index, used to open it for editing. */
@@ -722,6 +848,35 @@ class GeneEditor {
         pickClause = -1
         pickSide = 0
         confirmingDelete = false
+        inlineLive = false
+        openMenu = null
+        lastFlush = null
+    }
+
+    // ── Desktop inline live-edit plumbing (§8a step 3b) ──
+    /** Point `draft` at the live gene [i] (fresh, unless we're already editing it) so the shared edit
+     *  logic + the render-loop flush write changes straight to the genome. No commit/DONE. */
+    private fun beginInline(controller: CytoController, i: Int) {
+        if (inlineLive && editingIndex == i && draft != null) return
+        val g = controller.heldGenome()?.getOrNull(i) ?: return
+        editingId = controller.lastHeldId
+        editingIndex = i
+        draft = g
+        lastFlush = g
+        inlineLive = true
+    }
+
+    /** Apply a live edit to gene [i] via `draft` (flushed next frame). */
+    private fun inlineEdit(controller: CytoController, i: Int, transform: (Gene) -> Gene) {
+        beginInline(controller, i)
+        draft = draft?.let(transform)
+    }
+
+    /** Open the pick sheet for a sheet-backed slot (operand / species / group) on the inline card. */
+    private fun openInlinePick(controller: CytoController, i: Int, p: Pick, clause: Int = -1, side: Int = 0) {
+        beginInline(controller, i)
+        openMenu = null
+        openPick(p, clause, side)
     }
 
     private fun sourceLabel(s: EnergySource): String = when (s) {
