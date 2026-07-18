@@ -519,6 +519,10 @@ class Ui {
     /** Current pointer position (px) during a drag — for drawing the ghost / highlighting the hovered target. */
     val dragX: Float get() = dragCurX
     val dragY: Float get() = dragCurY
+    /** This frame's registered drop targets as (id, rect) elements — for headless drivers to locate targets
+     *  that carry no clickable label (e.g. the thin reorder slots). */
+    fun dropTargetElements(): List<UiElement> = dropTargets.map { UiElement(it.id, it.x, it.y, it.w, it.h) }
+
     /** The drop-target id currently under the drag pointer, or null. Lets the caller highlight it. */
     fun hoveredDropTarget(): String? =
         if (!dragCommitted) null
@@ -1032,6 +1036,11 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     /** Vertical space, in dp. */
     fun gap(height: Float = 6f) = items.add(GapItem(height * scale))
 
+    /** A thin **insertion drop slot** [id] (drag-and-drop reorder): a small-height drop target that draws a
+     *  faint line, brightening when the drag pointer is over it — the "drop here to place it between these
+     *  two" affordance. [height] is dp. */
+    fun dropSlot(id: String, height: Float = 10f) = items.add(DropSlotItem(id, height * scale))
+
     /** A label + a click-to-expand dropdown field showing [value]; when [open], its [options] render in
      *  the overlay layer and a pick calls [onPick]. [onToggle] opens/closes the dropdown. */
     fun picker(label: String, value: String, options: List<String>, open: Boolean, onToggle: () -> Unit, onPick: (Int) -> Unit) =
@@ -1414,6 +1423,17 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     private class GapItem(override val height: Float) : Item {
         override fun measureWidth(textH: Float) = 0f
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) = Unit
+    }
+
+    private class DropSlotItem(val id: String, override val height: Float) : Item {
+        override fun measureWidth(textH: Float) = 0f
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            ui.emitDropTarget(id, x, topY, contentW, height)
+            val hot = ui.hoveredDropTarget() == id
+            val lineH = if (hot) 3f else 2f
+            val cy = topY + (height - lineH) * 0.5f
+            ui.emitRect(x, cy, contentW, lineH, if (hot) 0x66AAFFFFL else 0x33415577L)
+        }
     }
 
     /** See [chip]. */
