@@ -347,12 +347,31 @@ gene is edited.)
 
 ### The interaction
 
-On desktop the genome panel is the editor. There is no "open the gene" step:
+On desktop the genome panel is the editor. There is no "open the gene" step. **The read-only sentence card
+*is* the editor — its words and symbols become the controls in place** (Stu, 2026-07-18); we do not build a
+separate editing form. A divide gene reads, and edits, as:
 
-- **Every part of the gene is a live inline control.** The condition operands, comparator, action type,
-  each action sub-field (operand/morphogen/axis/efficiency…), the power source, and the group each render
-  as a chip that, on click, opens a dropdown **in place** (overlay layer, anchored to the chip). Binary
-  choices (comparator, KEEP, ORIENT, SEVER, MATCH) stay inline segmented — no dropdown at all.
+```
+WHEN BIO>3500              WHEN [BIO]>[3500]          ([BIO] operand, [>] cmp, [3500] value)
+ AND GREED>1000       →     AND [GREED]>[1000]
+BREAK FUEL (R/G) TO POWER   [BREAK FUEL] TO POWER     (power source dropdown)
+DIVIDE ALONG GREED GRADIENT [DIVIDE] [ALONG] [GREED] GRADIENT
+ RETAINING GREED IN CELL 1   RETAINING [GREED] IN [CELL 1]
+ SEVERING CELL 2 FREE        [AND STICK / SEVERING CELL 2 FREE]
+```
+
+Each bracketed token is a live control: `DIVIDE`→action dropdown, `ALONG`→orientation segmented,
+`GREED`(axis)→morphogen dropdown, the retain `GREED`→keep-morphogen dropdown (and only once a keep
+morphogen is set does the `CELL 1`/`CELL 2` side control appear), sever→a segmented `AND STICK` ↔
+`SEVERING CELL 2 FREE`, efficiency→a `Ex` dropdown. Binary choices stay inline segmented; value lists use
+the §8a step-2 `dropdown`.
+
+- **Resolved — hidden-modifier tokens (the case Stu asked me to raise).** The current prose *omits* a
+  modifier when it's at its default (a bare divide collapses to just `DIVIDE`), which leaves nothing to
+  click to turn it on. **Fix: the prose generator always emits every modifier slot with natural default
+  wording** — `DIVIDE AND STICK`, `ACROSS NO GRADIENT`, `RETAINING NOTHING`, `Ex` — so every editable slot
+  always has a token. This makes the *read* card (mobile included) more complete, not just the desktop edit
+  view; it's the same sentence, always showing all its slots. (`actionProse`/`geneRow` change accordingly.)
 - **Hovering a gene reveals per-part and per-gene affordances:**
   - after each **condition clause**, a `+` (duplicate *this* clause) and an `×` (delete this clause, with
     confirm);
