@@ -696,6 +696,16 @@ class CytoController(
      *  gene lands at the end, so its index is the genome's prior size (the UI opens it inline on that index). */
     fun appendHeldGene(gene: Gene) = editHeldGenome { g -> g + gene }
 
+    /** Append [genes] to the held cell's genome **unconditionally** (no value-dedupe). Pasting a banked
+     *  gene-group snippet: the genes carry their own group tag, so they land back in their named group. Also
+     *  the "insert duplicate" resolution when a snippet's group already exists — every gene is added on top. */
+    fun appendHeldGenes(genes: List<Gene>) = editHeldGenome { g -> if (genes.isEmpty()) null else g + genes }
+
+    /** Replace the held cell's [group] wholesale: drop every gene currently tagged [group], then append
+     *  [genes] (a banked snippet). The "replace" resolution for a snippet whose group already exists. */
+    fun replaceHeldGroup(group: String, genes: List<Gene>) =
+        editHeldGenome { g -> g.filter { it.group != group } + genes }
+
     /** Append [genes] to the held cell's genome (skipping any it already has, by value). The campaign's
      *  "insert a functional group" op — adds a ready-made subsystem to a cell in one action. Appends at the
      *  end so existing gene order (behaviourally significant under round-robin) is untouched. */

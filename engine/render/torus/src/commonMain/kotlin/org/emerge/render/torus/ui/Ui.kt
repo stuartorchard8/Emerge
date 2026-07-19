@@ -579,6 +579,11 @@ class Ui {
      *  one fired. Overlay regions (open dropdowns) win, then the base layer. */
     fun tapLabel(label: String): Boolean {
         val q = label.lowercase()
+        // Prefer an *exact* label match (over any element whose label merely contains the query) so a driver
+        // can target e.g. a picker row "FEED" without a co-visible "+ FEED (1)" header stealing the tap; then
+        // fall back to the first substring match. Overlay (sheet/dialog) clicks win over base-panel clicks.
+        for (c in overlayClicks) if (c.label?.lowercase() == q) { c.onClick(); return true }
+        for (c in clicks) if (c.label?.lowercase() == q) { c.onClick(); return true }
         for (c in overlayClicks) if (c.label?.lowercase()?.contains(q) == true) { c.onClick(); return true }
         for (c in clicks) if (c.label?.lowercase()?.contains(q) == true) { c.onClick(); return true }
         return false

@@ -31,6 +31,10 @@ import org.emerge.render.torus.ui.UiTok
  * Immediate-mode: [render] is called inside `ui.frame { }` every frame; this object holds the cross-frame
  * editor state (which gene, the draft, which dropdown is open).
  */
+/** A banked gene-group as the editor sees it: a [name] and its [genes] (all tagged with that group). The host
+ *  supplies these from its on-disk gene bank; commonMain stays file-I/O-free. */
+class GeneSnippet(val name: String, val genes: List<Gene>)
+
 class GeneEditor {
     /** A registry-less grouping used in free play: [GenomeGrouping.sections] still buckets a tagged genome by
      *  its own tags (auto-coloured by name); it just offers no "+ ADD" inserts (those are campaign-authored). */
@@ -74,6 +78,17 @@ class GeneEditor {
     /** The current world's chemical aliases, refreshed from the controller at the top of every [render] so
      *  the species formatter ([sp]) names molecules the campaign's way. */
     private var activeAliases: Map<String, String> = emptyMap()
+
+    /** The gene bank (banked group snippets) + the "save this group" sink, refreshed from the host at the top
+     *  of every [render] (like [activeAliases]) so the paste picker + SAVE buttons see the current bank without
+     *  threading them through every panel helper. Empty list / no-op default = a host that hasn't wired a bank
+     *  (the feature simply doesn't appear). */
+    private var activeSnippets: List<GeneSnippet> = emptyList()
+    private var onSaveGroupCb: (String, List<Gene>) -> Unit = { _, _ -> }
+    /** Paste UI state: the snippet picker sheet is open; and (if a paste hit a group-name clash) the snippet
+     *  awaiting a Replace / Insert-duplicate / Cancel choice. */
+    private var pastePicking = false
+    private var pasteConflict: GeneSnippet? = null
 
     // Narrow L1→L2 detent: a freshly selected cell shows a shallow peek (name + biomass); expanding drills to
     // the full L2 sheet. Reset to the peek whenever the held cell changes ([peekedId] tracks that).
@@ -196,10 +211,14 @@ class GeneEditor {
         insertableGroups: Set<String> = emptySet(),
         narrow: Boolean = false,
         onExport: () -> Unit = {},
+        savedSnippets: List<GeneSnippet> = emptyList(),
+        onSaveGroup: (String, List<Gene>) -> Unit = { _, _ -> },
     ) {
         val info = controller.heldCellInfo()
         if (info == null) { reset(); return }
         activeAliases = controller.speciesAliases
+        activeSnippets = savedSnippets
+        onSaveGroupCb = onSaveGroup
         if (editingId != null && editingId != controller.lastHeldId) reset()   // grabbed a different cell
         if (controller.lastHeldId != peekedId) { peekedId = controller.lastHeldId; cellExpanded = false; sheetDragFrac = null }   // new cell → peek
 
@@ -223,6 +242,8 @@ class GeneEditor {
         draft?.let { renderPickerSheet(b, controller, it, wide) }
         if (capturingGroup) renderGroupCaptureDialog(b, wide)
         if (pendingDeleteGene != null) renderDeleteConfirmDialog(b, controller, info, wide)
+        if (pastePicking) renderPastePicker(b, controller, info, wide)
+        pasteConflict?.let { renderPasteConflictDialog(b, controller, it, wide) }
         // Desktop inline is live: the pick sheet / token controls mutate `draft`; flush each change straight
         // to the genome (no DONE step). The narrow modal leaves `inlineLive` false and commits on DONE.
         if (inlineLive) {
@@ -314,6 +335,11 @@ class GeneEditor {
                 // the group (during a drag this slot is the DUPLICATE zone instead). Appends a blank gene tagged
                 // to this group. The empty-genome case is handled by the bottom-stack "+ NEW GENE" instead.
                 button("+ NEW GENE", 0x2E5A38FFL) { createGene(controller, group) }
+                // Bank this whole group as a named snippet (the gene bank). Only a real (named) group can be
+                // banked — the untagged OTHER bucket isn't a reusable subsystem.
+                if (group.isNotEmpty()) button("SAVE $group TO BANK", 0x3A5A6EFFL) {
+                    onSaveGroupCb(group, indices.map { info.genes[it].gene })
+                }
             }
         }
         title("CELL ${info.id}  ${info.type}")
@@ -374,6 +400,8 @@ class GeneEditor {
                 gap(6f)
                 if (info.genes.isEmpty()) button("+ NEW GENE", 0x2E5A38FFL) { createGene(controller, "") }
                 button("+ NEW GROUP", 0x2E4A6EFFL) { createGeneInNewGroup(controller) }
+                // Paste a banked group from the gene bank into this cell (only when the bank has something).
+                if (activeSnippets.isNotEmpty()) button("PASTE GROUP FROM BANK (${activeSnippets.size})", 0x3A5A6EFFL) { pastePicking = true }
             }
             if (info.genes.isNotEmpty()) {
                 gap(6f)
@@ -584,6 +612,64 @@ class GeneEditor {
             b.sheet("gene-delete", "DELETE GENE?", onDismiss = { pendingDeleteGene = null }, boxX = (b.screenW - w) * 0.5f, boxY = (b.screenH - h) * 0.5f, boxW = w, boxH = h, rowHeight = 34f, textSize = 15f, body = body)
         } else {
             b.sheet("gene-delete", "DELETE GENE?", onDismiss = { pendingDeleteGene = null }, heightFraction = 0.4f, rowHeight = 48f, textSize = 16f, body = body)
+        }
+    }
+
+    /** The **gene-bank paste picker**: lists every banked group; a tap pastes it into the held cell (via
+     *  [tryPaste], which routes a name clash to the conflict dialog). */
+    private fun renderPastePicker(b: UiBuilder, controller: CytoController, info: CytoController.CellInfo, wide: Boolean) {
+        val body: PanelBuilder.() -> Unit = {
+            if (activeSnippets.isEmpty()) row("THE BANK IS EMPTY.", 0x9A9A9AFFL)
+            for (snip in activeSnippets) {
+                listRow(snip.name.uppercase(), "${snip.genes.size} GENE(S)") { tryPaste(controller, info, snip) }
+                gap(4f)
+            }
+            gap(8f)
+            listRow("CANCEL", "DON'T PASTE ANYTHING") { pastePicking = false }
+        }
+        if (wide) {
+            val w = minOf(460f * b.density, b.screenW * 0.6f)
+            val h = minOf(b.screenH * 0.85f, b.screenH * 0.55f)
+            b.sheet("paste-pick", "PASTE FROM BANK", onDismiss = { pastePicking = false }, boxX = (b.screenW - w) * 0.5f, boxY = (b.screenH - h) * 0.5f, boxW = w, boxH = h, rowHeight = 34f, textSize = 15f, body = body)
+        } else {
+            b.sheet("paste-pick", "PASTE FROM BANK", onDismiss = { pastePicking = false }, heightFraction = 0.55f, rowHeight = 48f, textSize = 16f, body = body)
+        }
+    }
+
+    /** Paste [snip] into the held cell. No name clash → drop its genes straight in (they carry their group
+     *  tag). A clash (the cell already has a group named the same) → raise the Replace / Add-on-top / Cancel
+     *  conflict dialog instead. */
+    private fun tryPaste(controller: CytoController, info: CytoController.CellInfo, snip: GeneSnippet) {
+        if (info.genes.any { it.gene.group == snip.name }) {
+            pasteConflict = snip; pastePicking = false
+        } else {
+            controller.appendHeldGenes(snip.genes); expandedGroups.add(snip.name); pastePicking = false
+        }
+    }
+
+    /** The **paste name-clash** dialog: the pasted group already exists on this cell, so the player picks
+     *  whether to replace it wholesale, add these genes on top of the existing group, or cancel. */
+    private fun renderPasteConflictDialog(b: UiBuilder, controller: CytoController, snip: GeneSnippet, wide: Boolean) {
+        val name = snip.name
+        val body: PanelBuilder.() -> Unit = {
+            row("THIS CELL ALREADY HAS A '${name.uppercase()}' GROUP.", 0x9A9A9AFFL)
+            gap(10f)
+            listRow("REPLACE", "SWAP THE EXISTING '${name.uppercase()}' FOR THE BANKED ONE") {
+                controller.replaceHeldGroup(name, snip.genes); expandedGroups.add(name); pasteConflict = null
+            }
+            gap(4f)
+            listRow("ADD ON TOP", "KEEP BOTH - ADD THESE ${snip.genes.size} GENE(S) INTO '${name.uppercase()}'") {
+                controller.appendHeldGenes(snip.genes); expandedGroups.add(name); pasteConflict = null
+            }
+            gap(4f)
+            listRow("CANCEL", "LEAVE THIS CELL UNCHANGED") { pasteConflict = null }
+        }
+        if (wide) {
+            val w = minOf(460f * b.density, b.screenW * 0.6f)
+            val h = minOf(b.screenH * 0.85f, b.screenH * 0.45f)
+            b.sheet("paste-clash", "GROUP EXISTS", onDismiss = { pasteConflict = null }, boxX = (b.screenW - w) * 0.5f, boxY = (b.screenH - h) * 0.5f, boxW = w, boxH = h, rowHeight = 34f, textSize = 15f, body = body)
+        } else {
+            b.sheet("paste-clash", "GROUP EXISTS", onDismiss = { pasteConflict = null }, heightFraction = 0.45f, rowHeight = 48f, textSize = 16f, body = body)
         }
     }
 
@@ -1013,6 +1099,8 @@ class GeneEditor {
         openMenu = null
         lastFlush = null
         pendingDeleteGene = null
+        pastePicking = false
+        pasteConflict = null
     }
 
     // ── Desktop inline live-edit plumbing (§8a step 3b) ──

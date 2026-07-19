@@ -1,6 +1,7 @@
 package org.emerge.desktop
 import org.emerge.demo.cyto.host.CampaignProgress
 import org.emerge.demo.cyto.host.CytoGenomes
+import org.emerge.demo.cyto.host.CytoSnippets
 import org.emerge.demo.cyto.host.CytoSaves
 import org.emerge.demo.cyto.host.CampaignContent
 import org.emerge.demo.cyto.host.CytoMenu
@@ -16,6 +17,7 @@ import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
 import org.emerge.demo.cyto.ui.CytoHud
 import org.emerge.demo.cyto.ui.GeneEditor
+import org.emerge.demo.cyto.ui.GeneSnippet
 import org.emerge.render.torus.ui.Ui
 import org.emerge.sim.core.EntityId
 import org.lwjgl.glfw.GLFW.*
@@ -60,6 +62,9 @@ object CytoSceneView {
         // The bottom-left brush palette is driven by the genome library (cyto-genomes/, seeded on first use).
         // Selecting a swatch sets the brush genome; `genomes`/`selectedGenome` are refreshed on save/delete.
         var genomes = CytoGenomes.list()
+        // The gene bank (banked group snippets), refreshed whenever a group is saved. Fed to the gene editor's
+        // paste picker; a SAVE button banks the group and re-lists.
+        var snippets = CytoSnippets.list()
         var selectedGenome = 0
         controller.brushGenome = genomes.getOrNull(selectedGenome)?.genome
         controls.onSelectGenome = { i ->
@@ -282,14 +287,20 @@ object CytoSceneView {
                             grouping = director.activeChapter?.grouping,
                             insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                             narrow = narrow,
-                        ) {
-                            val g = controller.heldGenome()
-                            if (g != null) {
-                                val default = genomes.getOrNull(selectedGenome)?.name ?: "genome"
-                                menu.openGenomeSave(default, g, controller.heldBioColorRgba() ?: 0x888888FFL)
-                                simDriver.setPaused(true)
-                            }
-                        }
+                            savedSnippets = snippets.map { GeneSnippet(it.name, it.genes) },
+                            onSaveGroup = { name, genes ->
+                                CytoSnippets.save(name, genes)
+                                snippets = CytoSnippets.list()
+                            },
+                            onExport = {
+                                val g = controller.heldGenome()
+                                if (g != null) {
+                                    val default = genomes.getOrNull(selectedGenome)?.name ?: "genome"
+                                    menu.openGenomeSave(default, g, controller.heldBioColorRgba() ?: 0x888888FFL)
+                                    simDriver.setPaused(true)
+                                }
+                            },
+                        )
                     }
                     // Sheets last: the topmost layer, over the coach and the docked cell panel alike.
                     if (showHud) hud.renderSheets(this, controls, wide = !narrow)

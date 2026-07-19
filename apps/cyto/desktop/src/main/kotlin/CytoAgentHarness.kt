@@ -18,7 +18,9 @@ import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
 import org.emerge.demo.cyto.ui.CytoHud
+import org.emerge.demo.cyto.host.CytoSnippets
 import org.emerge.demo.cyto.ui.GeneEditor
+import org.emerge.demo.cyto.ui.GeneSnippet
 import org.emerge.render.torus.ui.Ui
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -439,7 +441,7 @@ object CytoAgentHarness {
                     val cellUp = geneEditor.isEditing || (NARROW && controller.lastHeldId != null)
                     if (!modalUp) director.render(this, controller, collapsed = cellUp, narrow = NARROW)
                 }
-                if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW) {}
+                if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW, savedSnippets = CytoSnippets.list().map { GeneSnippet(it.name, it.genes) }, onSaveGroup = { name, genes -> CytoSnippets.save(name, genes) })
                 if (showHud) hud.renderSheets(this, controls, wide = !NARROW)
             }
         }
@@ -504,7 +506,7 @@ object CytoAgentHarness {
                     val cellUp = geneEditor.isEditing || (NARROW && controller.lastHeldId != null)
                     if (!modalUp) director.render(this, controller, collapsed = cellUp, narrow = NARROW)
                 }
-                if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW) {}
+                if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW, savedSnippets = CytoSnippets.list().map { GeneSnippet(it.name, it.genes) }, onSaveGroup = { name, genes -> CytoSnippets.save(name, genes) })
                 if (showHud) hud.renderSheets(this, controls, wide = !NARROW)
             }
             ui.draw()
