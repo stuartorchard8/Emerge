@@ -131,7 +131,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         hud = CytoHud()
         geneEditor = GeneEditor()
         val ui = Ui().also { it.setDensity(displayDensity); ui = it }
-        val menu = CytoMenu().also { menu = it }
+        val menu = CytoMenu().also { menu = it; it.hasMouse = false }   // touch host: hide pointer-only settings
         val director = CampaignDirector().also { it.inputHints = InputHints.TOUCH; director = it }   // phone = touch controls
         val progress = CampaignProgress.load().also { campaignProgress = it }
 
@@ -287,13 +287,14 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                         grouping = director.activeChapter?.grouping,
                         insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                         narrow = true,
-                    ) {
-                        val g = controller.heldGenome()
-                        if (g != null) {
-                            val default = genomes.getOrNull(selectedGenome)?.name ?: "genome"
-                            menu.openGenomeSave(default, g, controller.heldBioColorRgba() ?: 0x888888FFL)
-                        }
-                    }
+                        onExport = {
+                            val g = controller.heldGenome()
+                            if (g != null) {
+                                val default = genomes.getOrNull(selectedGenome)?.name ?: "genome"
+                                menu.openGenomeSave(default, g, controller.heldBioColorRgba() ?: 0x888888FFL)
+                            }
+                        },
+                    )
                 }
                 if (showHud) hud.render(this, c, wide = false) { menu.openTitle(); paused = true }
             } else {

@@ -21,6 +21,9 @@ class CytoMenu {
     enum class Page { Title, Campaign, New, Custom, Load, Save, SaveGenome, About, Settings }
 
     /** Campaign chapter list + unlock predicate, host-set each frame (drives the Campaign page). */
+    /** Whether this host has a mouse (desktop) vs a touchscreen (android). Gates pointer-only settings like the
+     *  right-click-camera toggle, which is meaningless on a touch device (two-finger camera there). */
+    var hasMouse = true
     var campaignChapters: List<Chapter> = emptyList()
     var campaignUnlocked: (String) -> Boolean = { true }
     var campaignCompleted: (String) -> Boolean = { false }
@@ -296,17 +299,20 @@ class CytoMenu {
         ui.panel(Anchor.Center, padding = 20f, background = 0x141C2CF0, rowHeight = 24f) {
             title("Settings", 0x6FD6C4FFL)
             gap(6f)
-            row("CONTROLS", 0x8FA4C8FFL)
-            row("Left-drag empty space pans the camera.", 0xC8C8C8FFL)
-            gap(4f)
-            val rcc = cb.rightClickCamera()
-            // Left-drag always pans; the right button is an opt-in second camera control. The label shows the
-            // live state; tapping flips + persists it.
-            button(if (rcc) "Right-click camera: ON" else "Right-click camera: OFF", if (rcc) MENU_ACCENT else MENU_BTN) {
-                cb.onSetRightClickCamera(!rcc)
+            // Pointer-only controls (a touch host has no mouse buttons — its camera is two-finger).
+            if (hasMouse) {
+                row("CONTROLS", 0x8FA4C8FFL)
+                row("Left-drag empty space pans the camera.", 0xC8C8C8FFL)
+                gap(4f)
+                val rcc = cb.rightClickCamera()
+                // Left-drag always pans; the right button is an opt-in second camera control. The label shows
+                // the live state; tapping flips + persists it.
+                button(if (rcc) "Right-click camera: ON" else "Right-click camera: OFF", if (rcc) MENU_ACCENT else MENU_BTN) {
+                    cb.onSetRightClickCamera(!rcc)
+                }
+                row(if (rcc) "The RIGHT button also pans/focuses." else "The RIGHT button does nothing (turn on to enable).", 0xC8C8C8FFL)
+                gap(8f)
             }
-            row(if (rcc) "The RIGHT button also pans/focuses." else "The RIGHT button does nothing (turn on to enable).", 0xC8C8C8FFL)
-            gap(8f)
             row("World tuning lives under New > Custom.", 0x8A8A8AFFL)
             gap(8f)
             button("Back", MENU_QUIT) { page = Page.Title }
