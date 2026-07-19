@@ -1279,7 +1279,9 @@ class CytoRenderer {
         const val DECAY_MAX_SCALE = 1.5f
 
         // ── Gene particles tuning. ──
-        const val GENE_MAX = 20000                    // hard cap on gene specks drawn in one frame
+        // Hard cap on gene specks drawn in one frame. Must not exceed BUILD_MAX: the specks share the
+        // build* instance buffers, so a larger cap overflows buildMatrices (ArrayIndexOutOfBounds).
+        const val GENE_MAX = BUILD_MAX
         const val GENE_INACTIVE_VALUE = 0.25f         // colour value of a gene that failed its condition
         const val GENE_EASE = 0.08f                   // per-frame ease toward the active/inactive value
         const val GENE_SIZE_FRAC = 0.07f              // speck radius as a fraction of the cell radius
