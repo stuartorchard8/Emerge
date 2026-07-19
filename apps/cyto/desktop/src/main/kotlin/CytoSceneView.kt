@@ -147,8 +147,8 @@ object CytoSceneView {
                 menu.enterGame(); simDriver.setPaused(false)
             },
             onQuit = { glfwSetWindowShouldClose(window, true) },
-            leftClickCamera = { CytoPrefs.leftClickCamera },
-            onSetLeftClickCamera = { CytoPrefs.leftClickCamera = it },
+            rightClickCamera = { CytoPrefs.rightClickCamera },
+            onSetRightClickCamera = { CytoPrefs.rightClickCamera = it },
         )
 
         val mouse = MouseState()
@@ -451,9 +451,11 @@ object CytoSceneView {
                 }
                 return@glfwSetMouseButtonCallback
             }
-            // Right button owns the camera: drag pans; a click that didn't pan gives the cell under it CAMERA
-            // FOCUS (or releases the camera on empty space). It never touches the UI, selection, or the world.
+            // Right button is an OPT-IN second camera control (default off — left-drag pans out of the box).
+            // When on: drag pans; a click that didn't pan gives the cell under it CAMERA FOCUS (or releases the
+            // camera on empty space). It never touches the UI, selection, or the world. When off, it's inert.
             if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+                if (!CytoPrefs.rightClickCamera) return@glfwSetMouseButtonCallback
                 when (action) {
                     GLFW_PRESS -> {
                         state.panning = true
@@ -543,23 +545,22 @@ object CytoSceneView {
             // A press the UI claimed may be a drag *inside a scroll area* (L4 sheet / long genome): route it
             // to the toolkit, which scrolls and cancels the click past its slop.
             if (state.uiConsumed) { ui.dragTo(px.first, px.second); return@glfwSetCursorPosCallback }
-            // Left drag moves a grabbed cell. On empty space it does nothing by default (reserved for a future
-            // area-select) — but with the "left-click camera" preference on, it pans the camera instead, so the
-            // player never needs the right button to move around (friend feedback: right-click camera felt
-            // unintuitive).
+            // Left drag moves a grabbed cell; on empty space it pans the camera (and clears follow). This is the
+            // default camera control — the right button is opt-in (friend feedback: mandatory right-click camera
+            // felt unintuitive).
             if (!isPrimaryDown(win)) return@glfwSetCursorPosCallback
             val dx = px.first - state.lastX
             val dy = px.second - state.lastY
             if (!state.dragged && (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX)) {
                 state.dragged = true
-                if (state.grabId == null && CytoPrefs.leftClickCamera) controller.clearCameraFocus()
+                if (state.grabId == null) controller.clearCameraFocus()
             }
 
             val grabId = state.grabId
             if (grabId != null) {
                 val world = renderer.screenToWorld(px.first, px.second)
                 controller.grab(grabId, world[0], world[1], sticky = controls.touchMode == TouchMode.Sticky)
-            } else if (state.dragged && CytoPrefs.leftClickCamera) {
+            } else if (state.dragged) {
                 renderer.panByPixels(dx, dy)
                 signals.cameraMoved = true
             }

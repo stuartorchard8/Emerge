@@ -13,11 +13,12 @@ object CytoPrefs {
 
     private val values: MutableMap<String, String> by lazy { load() }
 
-    /** Left-click drives the camera: left-drag on empty space pans (and clears follow), so the player never
-     *  needs the right button to move around. Default off = the classic right-button camera. */
-    var leftClickCamera: Boolean
-        get() = values["leftClickCamera"] == "true"
-        set(v) { put("leftClickCamera", v.toString()) }
+    /** Right button also drives the camera (drag pans, click focuses/clears follow). **Opt-in** — off by
+     *  default, because left-drag on empty space now pans out of the box (the friend found the mandatory
+     *  right-button camera unintuitive). Turn this on to get the classic right-button camera back alongside it. */
+    var rightClickCamera: Boolean
+        get() = values["rightClickCamera"] == "true"
+        set(v) { put("rightClickCamera", v.toString()) }
 
     private fun put(key: String, value: String) {
         if (values[key] == value) return
