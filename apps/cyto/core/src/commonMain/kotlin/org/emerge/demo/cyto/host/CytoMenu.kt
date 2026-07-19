@@ -75,6 +75,10 @@ class CytoMenu {
         /** Start the given campaign chapter (rebuilds the world + activates the director). */
         val onStartChapter: (Chapter) -> Unit,
         val onQuit: () -> Unit,
+        /** Current value of the "left-click drives the camera" preference (host-persisted). */
+        val leftClickCamera: () -> Boolean = { false },
+        /** Set the "left-click drives the camera" preference (host persists it). */
+        val onSetLeftClickCamera: (Boolean) -> Unit = {},
     )
 
     /** Open the campaign chapter-select page (e.g. after finishing a chapter). */
@@ -135,7 +139,7 @@ class CytoMenu {
             Page.Save -> save(ui, cb)
             Page.SaveGenome -> saveGenome(ui, cb)
             Page.About -> about(ui)
-            Page.Settings -> settings(ui)
+            Page.Settings -> settings(ui, cb)
         }
     }
 
@@ -288,12 +292,20 @@ class CytoMenu {
         }
     }
 
-    private fun settings(ui: UiBuilder) {
+    private fun settings(ui: UiBuilder, cb: Callbacks) {
         ui.panel(Anchor.Center, padding = 20f, background = 0x141C2CF0, rowHeight = 24f) {
             title("Settings", 0x6FD6C4FFL)
             gap(6f)
-            row("No global settings yet — world tuning lives", 0xC8C8C8FFL)
-            row("under New > Custom.", 0xC8C8C8FFL)
+            row("CONTROLS", 0x8FA4C8FFL)
+            val lcc = cb.leftClickCamera()
+            // A toggle: left-click drives the camera (left-drag on empty space pans) vs the classic
+            // right-button camera. The label shows the live state; tapping flips + persists it.
+            button(if (lcc) "Left-click camera: ON" else "Left-click camera: OFF", if (lcc) MENU_ACCENT else MENU_BTN) {
+                cb.onSetLeftClickCamera(!lcc)
+            }
+            row(if (lcc) "Drag empty space with the LEFT button to pan." else "Camera pans with the RIGHT button (drag).", 0xC8C8C8FFL)
+            gap(8f)
+            row("World tuning lives under New > Custom.", 0x8A8A8AFFL)
             gap(8f)
             button("Back", MENU_QUIT) { page = Page.Title }
         }

@@ -1,6 +1,7 @@
 package org.emerge.desktop
 import org.emerge.demo.cyto.host.CampaignProgress
 import org.emerge.demo.cyto.host.CytoGenomes
+import org.emerge.demo.cyto.host.CytoPrefs
 import org.emerge.demo.cyto.host.CytoSnippets
 import org.emerge.demo.cyto.host.CytoSaves
 import org.emerge.demo.cyto.host.CampaignContent
@@ -146,6 +147,8 @@ object CytoSceneView {
                 menu.enterGame(); simDriver.setPaused(false)
             },
             onQuit = { glfwSetWindowShouldClose(window, true) },
+            leftClickCamera = { CytoPrefs.leftClickCamera },
+            onSetLeftClickCamera = { CytoPrefs.leftClickCamera = it },
         )
 
         val mouse = MouseState()
@@ -540,18 +543,25 @@ object CytoSceneView {
             // A press the UI claimed may be a drag *inside a scroll area* (L4 sheet / long genome): route it
             // to the toolkit, which scrolls and cancels the click past its slop.
             if (state.uiConsumed) { ui.dragTo(px.first, px.second); return@glfwSetCursorPosCallback }
-            // Left drag only ever moves a grabbed cell; on empty space it does nothing (reserved for a
-            // future area-select).
+            // Left drag moves a grabbed cell. On empty space it does nothing by default (reserved for a future
+            // area-select) — but with the "left-click camera" preference on, it pans the camera instead, so the
+            // player never needs the right button to move around (friend feedback: right-click camera felt
+            // unintuitive).
             if (!isPrimaryDown(win)) return@glfwSetCursorPosCallback
             val dx = px.first - state.lastX
             val dy = px.second - state.lastY
-            if (!state.dragged && (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX))
+            if (!state.dragged && (abs(dx) > DRAG_THRESHOLD_PX || abs(dy) > DRAG_THRESHOLD_PX)) {
                 state.dragged = true
+                if (state.grabId == null && CytoPrefs.leftClickCamera) controller.clearCameraFocus()
+            }
 
             val grabId = state.grabId
             if (grabId != null) {
                 val world = renderer.screenToWorld(px.first, px.second)
                 controller.grab(grabId, world[0], world[1], sticky = controls.touchMode == TouchMode.Sticky)
+            } else if (state.dragged && CytoPrefs.leftClickCamera) {
+                renderer.panByPixels(dx, dy)
+                signals.cameraMoved = true
             }
             state.lastX = px.first
             state.lastY = px.second
