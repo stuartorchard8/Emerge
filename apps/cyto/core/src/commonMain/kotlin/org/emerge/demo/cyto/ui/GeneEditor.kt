@@ -56,6 +56,15 @@ class GeneEditor {
         const val GENE_DROP_DUP = "gene-drop-dup"
         const val GENE_DROP_DEL = "gene-drop-del"
         const val GENE_REORDER_PREFIX = "gene-reorder:"
+
+        // The starting gene for "+ NEW GENE" / "+ NEW GROUP" — a benign, always-firing placeholder that reads
+        // as a complete sentence (WHEN BIOMASS > 0 -> CONVERT FUEL, POWERED BY LIGHT) so the freshly-created
+        // card is immediately legible and editable rather than empty. The group tag is filled in by the caller.
+        val BLANK_GENE = Gene(
+            EnergySource.Light,
+            GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)),
+            GeneAction(ActionType.Convert, "rg"),
+        )
     }
 
     private var editingId: EntityId? = null
@@ -292,7 +301,7 @@ class GeneEditor {
         // section the dragged gene belongs to), interleave thin reorder drop slots — one before each gene and
         // one after the last, keyed by the target *rank* within the group — and cap the run with the DUPLICATE
         // zone. A drop on a slot reorders within the group; a drop on DUPLICATE inserts a copy (handleGeneDrop).
-        fun PanelBuilder.geneRun(indices: List<Int>, isOrigin: Boolean) {
+        fun PanelBuilder.geneRun(indices: List<Int>, isOrigin: Boolean, group: String) {
             indices.forEachIndexed { rank, idx ->
                 if (isOrigin) dropSlot("$GENE_REORDER_PREFIX$rank")
                 gene(info.genes[idx], idx)
@@ -300,6 +309,11 @@ class GeneEditor {
             if (isOrigin) {
                 dropSlot("$GENE_REORDER_PREFIX${indices.size}")
                 button("DUPLICATE GENE", 0x2E5A38FFL, dropTargetId = GENE_DROP_DUP) {}
+            } else if (wide && draggingGene == null && indices.isNotEmpty()) {
+                // Not dragging (and this group has genes): offer a create-from-scratch affordance at the end of
+                // the group (during a drag this slot is the DUPLICATE zone instead). Appends a blank gene tagged
+                // to this group. The empty-genome case is handled by the bottom-stack "+ NEW GENE" instead.
+                button("+ NEW GENE", 0x2E5A38FFL) { createGene(controller, group) }
             }
         }
         title("CELL ${info.id}  ${info.type}")
@@ -313,9 +327,12 @@ class GeneEditor {
             button("${if (metabExpanded) "-" else "+"} CHEMISTRY (${info.metabolism.size})", 0x2A3550FFL) { metabExpanded = !metabExpanded }
             if (metabExpanded) metabolismTable(info)
         }
-        if (info.genes.isNotEmpty()) {
+        // Show the genome section whenever there are genes, and — on desktop — even when there are none, so an
+        // empty cell still offers the create-from-scratch buttons (there'd otherwise be no way to author a
+        // first gene without duplicating one).
+        if (info.genes.isNotEmpty() || wide) {
             gap(8f)
-            row("GENOME  (TAP A GENE TO EDIT)", 0x7A8699FFL)
+            row(if (info.genes.isEmpty()) "GENOME  (EMPTY)" else "GENOME  (TAP A GENE TO EDIT)", 0x7A8699FFL)
             val liveGenes = info.genes.map { it.gene }
             val effectiveGrouping = grouping ?: if (liveGenes.any { it.group.isNotEmpty() }) EMPTY_GROUPING else null
             val sections = effectiveGrouping?.sections(liveGenes)
@@ -334,7 +351,7 @@ class GeneEditor {
                         if (open) expandedGroups.remove(label) else expandedGroups.add(label)
                     }
                     val isOrigin = wide && dragGroup != null && (sec.name ?: "") == dragGroup
-                    if (open) geneRun(sec.items.map { it.index }, isOrigin)
+                    if (open) geneRun(sec.items.map { it.index }, isOrigin, sec.name ?: "")
                 }
                 for (grp in effectiveGrouping.groups) {
                     if (grp.name in insertableGroups && grp.insert.isNotEmpty() && liveGenes.none { it.group == grp.name })
@@ -342,18 +359,26 @@ class GeneEditor {
                 }
             } else {
                 // Flat (ungrouped) genome: one implicit group, so reorder + duplicate apply to the whole list.
-                geneRun(info.genes.indices.toList(), isOrigin = wide && draggingGene != null)
+                geneRun(info.genes.indices.toList(), isOrigin = wide && draggingGene != null, group = "")
             }
-            // The bottom stack of drag-only zones (shown only while a gene is in flight): a "new group" zone
-            // (opens the typed-name dialog — also the only re-group target when nothing is grouped yet) and the
-            // delete zone (a drop arms a confirm dialog). Duplicate lives at the origin group's end (geneRun).
+            // Bottom stack. While a gene is in flight, the drag-only drop zones (new-group + delete); otherwise
+            // the persistent create-from-scratch affordances. "+ NEW GROUP" names a brand-new group and drops a
+            // blank gene into it; the top-level "+ NEW GENE" only appears for an empty genome (a non-empty one
+            // gets a per-group "+ NEW GENE" at the end of each section's run — see geneRun). Duplicate lives at
+            // the origin group's end during a drag.
             if (wide && draggingGene != null) {
                 gap(6f)
                 button("+ NEW GROUP", 0x2E4A6EFFL, dropTargetId = GROUP_DROP_NEW) {}
                 button("DELETE GENE", 0x6E2A2AFFL, dropTargetId = GENE_DROP_DEL) {}
+            } else if (wide) {
+                gap(6f)
+                if (info.genes.isEmpty()) button("+ NEW GENE", 0x2E5A38FFL) { createGene(controller, "") }
+                button("+ NEW GROUP", 0x2E4A6EFFL) { createGeneInNewGroup(controller) }
             }
-            gap(6f)
-            button("EXPORT GENOME", 0x3A6EA5FFL) { onExport() }
+            if (info.genes.isNotEmpty()) {
+                gap(6f)
+                button("EXPORT GENOME", 0x3A6EA5FFL) { onExport() }
+            }
         }
     }
 
@@ -1001,6 +1026,31 @@ class GeneEditor {
         draft = g
         lastFlush = g
         inlineLive = true
+    }
+
+    /** Create a fresh [BLANK_GENE] tagged [group] at the end of the genome and open it inline immediately.
+     *  The authoring "+ NEW GENE" path (create-from-scratch, not duplicate). The append is queued, so the new
+     *  gene isn't in `heldGenome()` this frame — point the editor straight at its slot (prior genome size)
+     *  rather than via [beginInline], which reads the live genome; the next-frame flush writes `draft` once
+     *  the append lands (until then setHeldGene on that slot is a harmless out-of-range no-op). */
+    private fun createGene(controller: CytoController, group: String) {
+        val newIdx = controller.heldGenome()?.size ?: return
+        val g = BLANK_GENE.copy(group = group)
+        controller.appendHeldGene(g)
+        editingId = controller.lastHeldId
+        editingIndex = newIdx
+        draft = g
+        lastFlush = g
+        inlineLive = true
+        expandedGroups.add(group.ifEmpty { "OTHER" })
+    }
+
+    /** Create a fresh blank gene, open it inline, and immediately raise the typed-name dialog so the player
+     *  names a brand-new group in one gesture. Mirrors the GROUP_DROP_NEW drag flow but for a new gene —
+     *  [confirmGroupName] writes the typed name onto `draft` (the just-created gene). */
+    private fun createGeneInNewGroup(controller: CytoController) {
+        createGene(controller, "")
+        startGroupCapture("")
     }
 
     /** Apply a live edit to gene [i] via `draft` (flushed next frame). */

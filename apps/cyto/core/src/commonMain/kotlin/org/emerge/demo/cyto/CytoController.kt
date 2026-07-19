@@ -690,6 +690,12 @@ class CytoController(
         g.toMutableList().also { m -> positions.forEachIndexed { k, pos -> m[pos] = ordered[k] } }
     }
 
+    /** Append a single [gene] to the held cell's genome **unconditionally** (unlike [addHeldGenes], no
+     *  value-dedupe). The authoring "+ NEW GENE" / "+ NEW GROUP" primitive: two freshly-created blank genes
+     *  are value-identical, so the dedupe would silently swallow the second — this path never does. The new
+     *  gene lands at the end, so its index is the genome's prior size (the UI opens it inline on that index). */
+    fun appendHeldGene(gene: Gene) = editHeldGenome { g -> g + gene }
+
     /** Append [genes] to the held cell's genome (skipping any it already has, by value). The campaign's
      *  "insert a functional group" op — adds a ready-made subsystem to a cell in one action. Appends at the
      *  end so existing gene order (behaviourally significant under round-robin) is untouched. */
