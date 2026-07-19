@@ -767,13 +767,9 @@ class GeneEditor {
             ))
         }
 
-        // GROUP: display-only on the desktop card. Re-grouping is now a drag-and-drop gesture (drag the card
-        // onto a group header, or the "new group" placeholder) — see cellBody + handleGeneDrop — so this line
-        // just reports the current tag rather than opening a picker.
-        lines.add(listOf(
-            UiTok.Text("GROUP ", grey),
-            UiTok.Text(gene.group.uppercase().ifEmpty { "(NONE)" }, 0x8FA4C8FFL),
-        ))
+        // (No GROUP line: the section header already names the gene's group, so a per-card readout is
+        // redundant. Re-grouping is the drag-and-drop gesture — drag the card onto a header / the new-group
+        // placeholder; see cellBody + handleGeneDrop.)
 
         // Hover affordances (§8a step 4): each clause line reveals a + (duplicate this clause) and, when the
         // gene has more than one, an × (arm-then-delete). Whole-gene duplicate/delete are no longer a card ...
