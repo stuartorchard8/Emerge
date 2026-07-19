@@ -123,6 +123,14 @@ class GeneEditor {
     private var capturingGroup = false
     private val groupBuffer = StringBuilder()
 
+    // Direct text entry for a numeric constant (efficiency gear, gene-condition VALUE): tapping the number
+    // in [numberField] captures digit keystrokes into [constantBuffer] the same way group-name capture works.
+    private var capturingConstant = false
+    private val constantBuffer = StringBuilder()
+    private var constantMin = 0
+    private var constantMax = 0
+    private var constantSet: ((Int) -> Unit)? = null
+
     /** Which functional groups are expanded (by name) when a [GenomeGrouping] overlay is showing. Collapsed
      *  by default so the genome reads as a few named subsystems, not a wall of genes; the player opens the
      *  one they care about. Cross-frame UI state, like the rest of the editor. */
@@ -174,6 +182,34 @@ class GeneEditor {
         capturingGroup = true
         groupBuffer.setLength(0); groupBuffer.append(initial)
         pick = Pick.None
+    }
+
+    /** True while the editor is capturing typed digits for a numeric constant — the host routes keystrokes
+     *  here instead of its global shortcuts (mirrors [capturingGroupName]). */
+    val capturingConstantValue: Boolean get() = capturingConstant
+
+    /** Append a typed digit to the constant being entered (host char-callback). Digits only, capped at 7
+     *  characters (comfortably covers the 0..1_000_000 range fields use). */
+    fun typeConstantChar(c: Char) { if (capturingConstant && constantBuffer.length < 7 && c.isDigit()) constantBuffer.append(c) }
+
+    /** Delete the last typed digit (host BACKSPACE). */
+    fun constantBackspace() { if (capturingConstant && constantBuffer.isNotEmpty()) constantBuffer.setLength(constantBuffer.length - 1) }
+
+    /** Commit the typed value, clamped to the field's range (host ENTER); a blank/unparsable buffer leaves
+     *  the value unchanged. */
+    fun confirmConstantValue() {
+        if (!capturingConstant) return
+        constantBuffer.toString().toIntOrNull()?.let { constantSet?.invoke(it.coerceIn(constantMin, constantMax)) }
+        capturingConstant = false; constantSet = null
+    }
+
+    /** Abandon the typed value unchanged (host ESC). */
+    fun cancelConstantValue() { capturingConstant = false; constantSet = null }
+
+    private fun startConstantCapture(current: Int, min: Int, max: Int, onSet: (Int) -> Unit) {
+        capturingConstant = true
+        constantBuffer.setLength(0); constantBuffer.append(current.toString())
+        constantMin = min; constantMax = max; constantSet = onSet
     }
 
     /** The framebuffer-pixel offset from the screen centre to the centre of the *un-obscured* world area,
@@ -241,6 +277,7 @@ class GeneEditor {
         }
         draft?.let { renderPickerSheet(b, controller, it, wide) }
         if (capturingGroup) renderGroupCaptureDialog(b, wide)
+        if (capturingConstant) renderConstantCaptureDialog(b, wide)
         if (pendingDeleteGene != null) renderDeleteConfirmDialog(b, controller, info, wide)
         if (pastePicking) renderPastePicker(b, controller, info, wide)
         pasteConflict?.let { renderPasteConflictDialog(b, controller, it, wide) }
@@ -591,6 +628,32 @@ class GeneEditor {
         }
     }
 
+    /** The **numeric constant entry dialog** (mirrors [renderGroupCaptureDialog]): tapping a [numberField]'s
+     *  value starts this, and the host routes keystrokes into [constantBuffer] via [typeConstantChar]. */
+    private fun renderConstantCaptureDialog(b: UiBuilder, wide: Boolean) {
+        val typed = constantBuffer.toString()
+        val shown = typed.ifEmpty { "" } + "_"   // trailing cursor
+        val body: PanelBuilder.() -> Unit = {
+            row("TYPE A NUMBER ($constantMin-$constantMax), THEN ENTER.", 0x9A9A9AFFL)
+            gap(6f)
+            row(shown, 0xFFFFFFFFL)
+            gap(10f)
+            val parsed = typed.toIntOrNull()
+            listRow("SET VALUE", if (parsed == null) "TYPE A NUMBER FIRST" else "USE ${parsed.coerceIn(constantMin, constantMax)}") {
+                if (parsed != null) confirmConstantValue()
+            }
+            gap(4f)
+            listRow("CANCEL", "LEAVE THE VALUE AS IT WAS") { cancelConstantValue() }
+        }
+        if (wide) {
+            val w = minOf(460f * b.density, b.screenW * 0.6f)
+            val h = minOf(b.screenH * 0.85f, b.screenH * 0.4f)
+            b.sheet("constant-value", "ENTER VALUE", onDismiss = ::cancelConstantValue, boxX = (b.screenW - w) * 0.5f, boxY = (b.screenH - h) * 0.5f, boxW = w, boxH = h, rowHeight = 34f, textSize = 15f, body = body)
+        } else {
+            b.sheet("constant-value", "ENTER VALUE", onDismiss = ::cancelConstantValue, heightFraction = 0.4f, rowHeight = 48f, textSize = 16f, body = body)
+        }
+    }
+
     /** The **delete-gene confirm** dialog (§8a drag-and-drop): shown after a gene is dropped on the DELETE
      *  zone. The gesture is deliberate but there's no undo, so a drop only *arms* the delete — this confirms
      *  it. Cancelling (or dismissing) leaves the gene untouched. */
@@ -712,9 +775,12 @@ class GeneEditor {
         }
     }
 
-    /** A number editor: a hold-to-repeat ± stepper (accelerating 1→10→100→1000, the desktop 2000-tap fix)
-     *  plus coarse presets. */
+    /** A number editor: the value itself is a tappable row that opens direct text entry ([startConstantCapture]),
+     *  plus a hold-to-repeat ± stepper (accelerating 1→10→100→1000, the desktop 2000-tap fix) for quick nudges
+     *  and coarse presets. */
     private fun PanelBuilder.numberField(value: Int, min: Int, max: Int, onSet: (Int) -> Unit) {
+        listRow(value.toString(), "TAP TO TYPE A NUMBER") { startConstantCapture(value, min, max, onSet) }
+        gap(6f)
         stepper("", value.toString()) { delta -> onSet((value + delta).coerceIn(min, max)) }
         val presets = if (max <= 32) listOf(min, (min + max) / 2, max) else listOf(0, 100, 500, 1000, 5000)
         actionRow(presets.distinct().filter { it in min..max }.map { p ->
