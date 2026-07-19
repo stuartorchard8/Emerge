@@ -113,6 +113,11 @@ class CytoControls {
     var simStatus: String = ""
     var simPaused: Boolean = false
     var simBehind: Boolean = false
+    /** Host-set each frame: the current target TPS (shown on the middle play/pause button) and whether the
+     *  SLOW / FAST controls are currently available (dimmed when not — see the driver's canSlower/canFaster). */
+    var simTps: Int = 64
+    var slowEnabled: Boolean = true
+    var fastEnabled: Boolean = true
     private var simStatusX = 0f
     private var simStatusY = 0f
     private var simStatusH = 0f

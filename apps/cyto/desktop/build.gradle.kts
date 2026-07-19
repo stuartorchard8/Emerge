@@ -75,6 +75,15 @@ tasks.register<JavaExec>("benchCytoRender") {
     workingDir = rootDir
 }
 
+tasks.register<JavaExec>("checkSpeedLadder") {
+    group = "verification"
+    description = "Self-check the CytoSimDriver speed ladder + auto-drop policy (bounds, enable predicates, " +
+        "auto-drop rule) against the spec's worked examples. Exits non-zero on failure."
+    mainClass = "org.emerge.desktop.CytoSpeedLadderCheckKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootDir
+}
+
 tasks.register<JavaExec>("benchCytoThrottle") {
     group = "verification"
     description = "Measure the CytoSimDriver throttle: drives the real sim thread over the speed ladder on a " +

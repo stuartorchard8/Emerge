@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.ui
 
 import org.emerge.demo.cyto.CellColorMode
 import org.emerge.demo.cyto.sim.TouchMode
+import org.emerge.render.torus.ui.ActionButton
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.UiBuilder
@@ -33,15 +34,35 @@ class CytoHud {
      *  Hosts that also draw a bottom-centre panel (the desktop campaign coach) must call [renderBar] and
      *  [renderSheets] instead — see [renderBar] for why. */
     fun render(b: UiBuilder, controls: CytoControls, wide: Boolean, onMenu: () -> Unit) {
-        renderBar(b, controls, onMenu)
+        renderBar(b, controls, onMenu = onMenu)
         renderSheets(b, controls, wide)
+    }
+
+    /** The **top-left sim-speed cluster** (desktop): `<< · N TPS/PAUSED · >>`. SLOW halves / FAST doubles the
+     *  target TPS (bounds + auto-drop live in the driver); the middle button toggles pause and reads the live
+     *  target. SLOW/FAST dim when unavailable ([CytoControls.slowEnabled]/[fastEnabled]). Gated by
+     *  [CytoControls.showSimSpeed] so single-threaded hosts (which have no TPS target) don't show it. */
+    fun renderSpeed(b: UiBuilder, controls: CytoControls) {
+        if (!controls.showSimSpeed) return
+        val mid = if (controls.simPaused) "PAUSED" else "${controls.simTps} TPS"
+        val midColor = if (controls.simBehind) 0xEFB000FFL else 0x2E6E5EFFL
+        b.panel(Anchor.TopLeft, margin = 10f, padding = 8f, background = 0x11182AF2L, rowHeight = 30f, textSize = 14f) {
+            controlRow(listOf(
+                ActionButton("<<", 0x3A6EA5FFL, enabled = controls.slowEnabled) { controls.onSlower() },
+                ActionButton(mid, midColor) { controls.onTogglePause() },
+                ActionButton(">>", 0x3A6EA5FFL, enabled = controls.fastEnabled) { controls.onFaster() },
+            ))
+            if (controls.simStatus.isNotEmpty()) row(controls.simStatus, 0x8FA4C8FFL)
+        }
     }
 
     /** Draw just the bottom bar. Call this **before** any other `Anchor.BottomCenter` panel: that anchor's
      *  panels stack in *draw* order (the first to claim it sits on the bottom edge, later ones pile upward),
      *  so drawing the bar late strands it in mid-screen above the coach. Pair with [renderSheets], drawn last
      *  so an open sheet layers over everything rather than under the coach. */
-    fun renderBar(b: UiBuilder, controls: CytoControls, onMenu: () -> Unit) = bar(b, controls, onMenu)
+    /** [showPause] draws the play/pause target in the bar (single-threaded hosts, whose speed lives in the
+     *  Speed sheet). Desktop passes false — its pause + speed live in the top-left [renderSpeed] cluster. */
+    fun renderBar(b: UiBuilder, controls: CytoControls, showPause: Boolean = true, onMenu: () -> Unit) = bar(b, controls, showPause, onMenu)
 
     /** Draw whichever sheet is open (none by default). Call **last** in the frame — sheets are the topmost
      *  layer, and the wide popover overlaps whatever sits beneath it. */
@@ -67,16 +88,17 @@ class CytoHud {
         }
     }
 
-    private fun bar(b: UiBuilder, controls: CytoControls, onMenu: () -> Unit) {
+    private fun bar(b: UiBuilder, controls: CytoControls, showPause: Boolean, onMenu: () -> Unit) {
         val playLabel = if (controls.simPaused) "PLAY" else "PAUSE"
         val playColor = if (controls.simBehind) 0xEFB000FFL else 0x3A6EA5FFL
         b.panel(Anchor.BottomCenter, margin = 10f, padding = 8f, background = 0x11182AF2L, rowHeight = 46f, textSize = 15f) {
-            actionRow(listOf(
-                Triple(playLabel, playColor) { controls.onTogglePause(); toggle(Sheet.Speed) },
-                Triple("BRUSH", 0x2E6E5EFFL) { toggle(Sheet.Brush) },
-                Triple("LAYERS", 0x5A4A8AFFL) { toggle(Sheet.Layers) },
-                Triple("MENU", 0x2A3550FFL) { open = Sheet.None; onMenu() },
-            ))
+            val row = buildList {
+                if (showPause) add(Triple(playLabel, playColor) { controls.onTogglePause(); toggle(Sheet.Speed) })
+                add(Triple("BRUSH", 0x2E6E5EFFL) { toggle(Sheet.Brush) })
+                add(Triple("LAYERS", 0x5A4A8AFFL) { toggle(Sheet.Layers) })
+                add(Triple("MENU", 0x2A3550FFL) { open = Sheet.None; onMenu() })
+            }
+            actionRow(row)
         }
     }
 

@@ -248,6 +248,9 @@ object CytoSceneView {
             controls.simPaused = simDriver.paused
             controls.simBehind = simDriver.behind()
             controls.simStatus = "${simDriver.status()}   ${fps.toInt()} FPS"
+            controls.simTps = simDriver.targetTps
+            controls.slowEnabled = simDriver.canSlower()
+            controls.fastEnabled = simDriver.canFaster()
             controls.mutationLabel = formatMutationRate(controller.mutationRateDenom())
 
             // Feed the genome library into the brush palette (reflects any just-saved genome).
@@ -277,7 +280,8 @@ object CytoSceneView {
                     // The bar claims the bottom edge before the coach: BottomCenter panels stack in draw order,
                     // so the coach going first would strand the bar above it in mid-screen. Its sheets come last.
                     if (showHud) {
-                        hud.renderBar(this, controls) { menu.openTitle(); simDriver.setPaused(true) }
+                        hud.renderBar(this, controls, showPause = false) { menu.openTitle(); simDriver.setPaused(true) }
+                        hud.renderSpeed(this, controls)   // top-left << · N TPS/PAUSED · >> cluster (desktop)
                     }
                     // Coach next so the (expanded) narrow cell sheet draws over it; the short peek never
                     // reaches it. On wide the coach is bottom-centre and the panel docks right — no overlap.

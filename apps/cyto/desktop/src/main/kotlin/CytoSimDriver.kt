@@ -30,8 +30,15 @@ class CytoSimDriver(private val controller: CytoController) {
 
     fun togglePause() { paused = !paused }
     fun setPaused(p: Boolean) { paused = p }
-    fun faster() { targetTps = if (targetTps == UNLIMITED) UNLIMITED else (targetTps * 2).let { if (it > MAX_TPS) UNLIMITED else it } }
-    fun slower() { targetTps = if (targetTps == UNLIMITED) MAX_TPS else (targetTps / 2).coerceAtLeast(MIN_TPS) }
+    fun faster() { targetTps = (targetTps * 2).coerceAtMost(MAX_TPS) }
+    fun slower() { targetTps = (targetTps / 2).coerceAtLeast(MIN_TPS) }
+
+    /** Whether the SLOW / FAST controls should be offered. SLOW bottoms out at [MIN_TPS]. FAST tops out at
+     *  [MAX_TPS] and is also withheld while the world is falling short of the target (achieved < half target):
+     *  raising the ceiling then just wastes spin, and the auto-drop would claw it back anyway. Paused counts as
+     *  "not behind" so the player can preset a higher speed before resuming. */
+    fun canSlower(): Boolean = targetTps > MIN_TPS
+    fun canFaster(): Boolean = targetTps < MAX_TPS && (paused || actualTps >= targetTps / 2.0)
 
     /** True when throttled and the achieved rate is well short of the target (the world is the bottleneck). */
     fun behind(): Boolean = targetTps != UNLIMITED && !paused && actualTps < targetTps * 0.9
@@ -71,6 +78,13 @@ class CytoSimDriver(private val controller: CytoController) {
             if (now - windowStartNs >= TPS_WINDOW_NS) {
                 actualTps = ticksInWindow * 1e9 / (now - windowStartNs)
                 windowStartNs = now; ticksInWindow = 0
+                // Auto-drop an over-ambitious ceiling: if the world is realizing two full ladder rungs (or more)
+                // below the target, lower the target to two increments (×4) above the realized rate's rung — so
+                // it hovers just above what the world can actually do instead of spinning for a rate it can't
+                // hit. Only ever lowers (raising is the FAST button); measured over a real running window here,
+                // so it never fires while paused (that branch continues above).
+                val ceiling = autoDropTarget(actualTps, targetTps)
+                if (ceiling != targetTps) { targetTps = ceiling; nextTickNs = now }
             }
             // Throttle to the target rate (unless unlimited) against an absolute deadline that advances by
             // exactly one slice per tick. parkNanos overshoots by a fixed ~60us; sleeping off "the rest of
@@ -118,8 +132,24 @@ class CytoSimDriver(private val controller: CytoController) {
     companion object {
         const val UNLIMITED = Int.MAX_VALUE
         const val REALTIME_TPS = 64
-        private const val MIN_TPS = 4
-        private const val MAX_TPS = 8192           // doubling past this → UNLIMITED
+        const val MIN_TPS = 1                      // SLOW floor
+        const val MAX_TPS = 65_536                 // FAST ceiling (doubling stops here)
+
+        /** Largest power-of-two ladder rung ≤ [v], floored at [MIN_TPS] (the ladder never dips below 1). */
+        fun floorPow2(v: Double): Int {
+            if (v < MIN_TPS) return MIN_TPS
+            var r = MIN_TPS
+            while (r <= MAX_TPS / 2 && r * 2 <= v) r *= 2
+            return r
+        }
+
+        /** Pure auto-drop rule (see the call site): the new target given a realized [actual] and
+         *  [currentTarget] — two rungs (×4) above [actual]'s ladder rung, but only when that's lower than the
+         *  current target (never raises). e.g. target 256 realizing < 64 → 128. Extracted so it's testable. */
+        fun autoDropTarget(actual: Double, currentTarget: Int): Int {
+            val ceiling = (floorPow2(actual) * 4).coerceIn(MIN_TPS, MAX_TPS)
+            return if (ceiling < currentTarget) ceiling else currentTarget
+        }
         private const val PUBLISH_INTERVAL_NS = 1_000_000_000L / 100   // publish ≤100 Hz (display cadence)
         private const val TPS_WINDOW_NS = 500_000_000L                 // 0.5 s trailing window for actualTps
         private const val MAX_LAG_NS = 25_000_000L                     // lag past this → resync, don't catch up

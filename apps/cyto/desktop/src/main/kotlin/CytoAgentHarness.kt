@@ -144,6 +144,10 @@ object CytoAgentHarness {
             controls.onSlower = { pendingActions.add(PlayerAction.ChangedSpeed) }
             controls.onFaster = { pendingActions.add(PlayerAction.ChangedSpeed) }
             controls.onTogglePause = { pendingActions.add(PlayerAction.ChangedSpeed) }
+            // No sim-driver here, so seed the speed-cluster display so it renders for screenshots; the
+            // `simspeed` command overrides these to exercise the disabled/paused visuals.
+            controls.simTps = 256
+            controls.simStatus = "256/256 TPS   60 FPS"
         }
 
         fun cleanup() {
@@ -253,6 +257,15 @@ object CytoAgentHarness {
                 "night" -> {
                     renderer.nightLevel = t[1].toFloat()
                     println("[agent] night level -> ${renderer.nightLevel}")
+                }
+                // Set the speed-cluster display for screenshots: `simspeed <tps> <slow0|1> <fast0|1> <paused0|1>`.
+                "simspeed" -> {
+                    controls.simTps = t.getOrElse(1) { "256" }.toInt()
+                    controls.slowEnabled = t.getOrElse(2) { "1" } == "1"
+                    controls.fastEnabled = t.getOrElse(3) { "1" } == "1"
+                    controls.simPaused = t.getOrElse(4) { "0" } == "1"
+                    controls.simStatus = "${controls.simTps}/${controls.simTps} TPS   60 FPS"
+                    println("[agent] simspeed -> ${controls.simTps} slow=${controls.slowEnabled} fast=${controls.fastEnabled} paused=${controls.simPaused}")
                 }
                 "did" -> { pendingActions.add(PlayerAction.valueOf(t[1])); sync() }
                 "next" -> { sync(); println("[agent] next -> ${if (director.tryAdvance(controller)) "advanced" else "blocked (goal not met)"}") }
@@ -435,7 +448,10 @@ object CytoAgentHarness {
             val showHud = if (NARROW) (!geneEditor.isEditing && controller.lastHeldId == null) else !geneEditor.isEditing
             ui.frame {
                 // Bar before the coach (BottomCenter stacks in draw order); its sheets go last.
-                if (showHud) hud.renderBar(this, controls) {}
+                if (showHud) {
+                    hud.renderBar(this, controls, showPause = NARROW) {}
+                    if (!NARROW) hud.renderSpeed(this, controls)
+                }
                 if (director.active) {
                     val modalUp = NARROW && geneEditor.isEditing
                     val cellUp = geneEditor.isEditing || (NARROW && controller.lastHeldId != null)
@@ -500,7 +516,10 @@ object CytoAgentHarness {
             val showHud = if (NARROW) (!geneEditor.isEditing && controller.lastHeldId == null) else !geneEditor.isEditing
             ui.frame {                                        // info panel + coach overlay + L0 HUD (both widths)
                 // Bar before the coach (BottomCenter stacks in draw order); its sheets go last.
-                if (showHud) hud.renderBar(this, controls) {}
+                if (showHud) {
+                    hud.renderBar(this, controls, showPause = NARROW) {}
+                    if (!NARROW) hud.renderSpeed(this, controls)
+                }
                 if (director.active) {
                     val modalUp = NARROW && geneEditor.isEditing
                     val cellUp = geneEditor.isEditing || (NARROW && controller.lastHeldId != null)

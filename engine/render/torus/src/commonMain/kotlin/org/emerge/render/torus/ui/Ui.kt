@@ -7,6 +7,10 @@ import kotlin.math.abs
  *  menus); multiple [Center] panels stack downward from the centre of the first. */
 enum class Anchor { TopLeft, TopRight, BottomLeft, BottomRight, Center, BottomCenter }
 
+/** One button in a horizontal [PanelBuilder.controlRow]. [enabled] = false renders it dimmed and inert (no
+ *  click registered) so a control can be visibly unavailable (e.g. FAST at the max speed). */
+class ActionButton(val label: String, val color: Long, val enabled: Boolean = true, val onClick: () -> Unit)
+
 /**
  * A tiny **immediate-mode** in-game UI toolkit, shared across games. Rebuild the widget tree every
  * frame, then draw + route input:
@@ -1062,7 +1066,12 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     fun stepper(label: String, value: String, onStep: (Int) -> Unit) = items.add(StepperItem(label, value, onStep, rowHeight))
 
     /** A horizontal row of small buttons. */
-    fun actionRow(buttons: List<Triple<String, Long, () -> Unit>>) = items.add(ActionRowItem(buttons, rowHeight))
+    fun actionRow(buttons: List<Triple<String, Long, () -> Unit>>) =
+        items.add(ActionRowItem(buttons.map { ActionButton(it.first, it.second, onClick = it.third) }, rowHeight))
+
+    /** A horizontal row of [ActionButton]s — like [actionRow] but each button may be individually disabled
+     *  (dimmed + non-interactive). */
+    fun controlRow(buttons: List<ActionButton>) = items.add(ActionRowItem(buttons, rowHeight))
 
     /**
      * A **chip** — a tappable current value, the workhorse of a progressive-disclosure screen: it *shows*
@@ -1410,19 +1419,22 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
         }
     }
 
-    private class ActionRowItem(val buttons: List<Triple<String, Long, () -> Unit>>, override val height: Float) : Item {
+    private class ActionRowItem(val buttons: List<ActionButton>, override val height: Float) : Item {
         private fun bw(label: String, textH: Float) = UiTextRenderer.measureWidthPx(label, textH) + textH * 1.6f
-        override fun measureWidth(textH: Float) = buttons.sumOf { bw(it.first, textH).toDouble() }.toFloat() + (buttons.size - 1) * textH * 0.5f
+        override fun measureWidth(textH: Float) = buttons.sumOf { bw(it.label, textH).toDouble() }.toFloat() + (buttons.size - 1) * textH * 0.5f
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
             var bx = x
-            for ((label, color, onClick) in buttons) {
-                val w = bw(label, textH)
-                ui.emitRect(bx, topY + 1f, w, height - 2f, color)
-                ui.emitTextCentered(label, bx + w * 0.5f, topY + (height - textH) * 0.5f, textH, contrast(color))
-                ui.emitClick(bx, topY + 1f, w, height - 2f, label = label, onClick = onClick)
+            for (b in buttons) {
+                val w = bw(b.label, textH)
+                val bg = if (b.enabled) b.color else DISABLED_BG
+                val fg = if (b.enabled) contrast(b.color) else DISABLED_FG
+                ui.emitRect(bx, topY + 1f, w, height - 2f, bg)
+                ui.emitTextCentered(b.label, bx + w * 0.5f, topY + (height - textH) * 0.5f, textH, fg)
+                if (b.enabled) ui.emitClick(bx, topY + 1f, w, height - 2f, label = b.label, onClick = b.onClick)
                 bx += w + textH * 0.5f
             }
         }
+        companion object { const val DISABLED_BG = 0x1E2430FFL; const val DISABLED_FG = 0x5A6272FFL }
     }
 
     private class GapItem(override val height: Float) : Item {
