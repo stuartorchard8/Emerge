@@ -315,8 +315,22 @@ object CytoBiologyCore {
             fragLId = SpeciesRegistry.breakLeft(breakSpId, bondIdx); fragRId = SpeciesRegistry.breakRight(breakSpId, bondIdx)
             if (fragLId < 0) return
         }
+        // FormBond-as-source fuel (hydrothermal chemosynthesis, HYDROTHERMAL_CHEMISTRY_PLAN.md): join the
+        // two reactant monomers, releasing a quantum and depositing the product as a byproduct — the mirror
+        // of BreakBond fuel above (join instead of split). Kept OUT of the action-consume scan for the same
+        // reason: it's spent at the bonds-formed rate ⌈k/gP1⌉, not 1/op.
+        var formLeftId = -1; var formRightId = -1; var formProductId = -1
+        if (src is EnergySource.FormBond) {
+            formLeftId = src.leftId; formRightId = src.rightId; formProductId = src.productId
+            if (formLeftId < 0 || formRightId < 0 || formProductId < 0) return
+            if (snap.count(formLeftId) <= 0 || snap.count(formRightId) <= 0) return
+        }
         var productId = -1
         var convertId = -1
+        // BreakBond-as-action target (the mirror of the FormBond action below): the richest molecule
+        // holding the gene's target bond, split into fragments — an explicit, ENERGY-COSTED digestion step
+        // (unlike EnergySource.BreakBond's free fuel-harvesting side effect).
+        var breakActId = -1; var breakActFragL = -1; var breakActFragR = -1
         when (act.type) {
             ActionType.Convert -> { convertId = act.aId; cn = addConsume(ids, per, cn, convertId) }
             ActionType.FormBond -> {
@@ -332,6 +346,13 @@ object CytoBiologyCore {
                 productId = SpeciesRegistry.join(endAId, startBId); if (productId < 0) return   // forbidden (polymerisation) ⇒ no-op
                 cn = addConsume(ids, per, cn, endAId)
                 cn = addConsume(ids, per, cn, startBId)
+            }
+            ActionType.BreakBond -> {
+                val bondIdx = SpeciesRegistry.bondIndexOf(act.a); if (bondIdx < 0) return
+                breakActId = richestWithBond(snap, bondIdx); if (breakActId < 0) return
+                breakActFragL = SpeciesRegistry.breakLeft(breakActId, bondIdx); breakActFragR = SpeciesRegistry.breakRight(breakActId, bondIdx)
+                if (breakActFragL < 0) return
+                cn = addConsume(ids, per, cn, breakActId)
             }
             else -> {}   // Import draws from the grid; Repair/Expand/Contract/Mitosis consume no cytoplasm
         }
@@ -353,13 +374,18 @@ object CytoBiologyCore {
         // (MORPHOGENESIS.md §Morphogens for shape — caps consumption rate k ⇒ reach λ≈√(D/k)). Mitosis stays
         // exempt (fixed biomass/4 bulk cost). g=0 ⇒ uncapped ⇒ existing FormBond genes are byte-identical.
         val capGear = when (act.type) {
-            ActionType.Convert, ActionType.Import, ActionType.Export, ActionType.Repair, ActionType.FormBond, ActionType.Contract -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
+            ActionType.Convert, ActionType.Import, ActionType.Export, ActionType.Repair, ActionType.FormBond, ActionType.BreakBond, ActionType.Contract -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
             else -> 0
         }
         val energyCap = if (capGear == 0) Int.MAX_VALUE else CytoTuning.EFFICIENCY_REF ushr capGear
-        // Energy units available: Light = the cell's quanta share; BreakBond = bonds it can break (one
-        // quantum each), from the fuel's 1/n share. Op budget = min(units, cap) × gP1.
-        val energyUnits = if (src is EnergySource.Light) quantaShare else snap.count(breakSpId) / n
+        // Energy units available: Light = the cell's quanta share; BreakBond-source = bonds it can break;
+        // FormBond-source = monomer pairs it can join (one quantum each), from the fuel's 1/n share. Op
+        // budget = min(units, cap) × gP1.
+        val energyUnits = when (src) {
+            is EnergySource.Light -> quantaShare
+            is EnergySource.BreakBond -> snap.count(breakSpId) / n
+            is EnergySource.FormBond -> minOf(snap.count(formLeftId), snap.count(formRightId)) / n
+        }
         var k = (minOf(energyUnits.toLong(), energyCap.toLong()) * gP1).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         // Metabolic slowdown with size: every op (except Mitosis, which has its own size-scaling cost above)
         // runs at `k × SCALE/(SCALE+biomass)`. A bigger cell spreads its metabolic capacity over more
@@ -369,7 +395,7 @@ object CytoBiologyCore {
             val bio = totalBiomassBonds(work.biomass)
             k = (k.toLong() * CytoTuning.METABOLIC_BIOMASS_SCALE / (CytoTuning.METABOLIC_BIOMASS_SCALE + bio)).toInt()
         }
-        // BreakBond: the fuel is also broken (⌈k/gP1⌉ bonds) and may double as an action input (pBreak/op);
+        // BreakBond-source: the fuel is also broken (⌈k/gP1⌉ bonds) and may double as an action input (pBreak/op);
         // cap k so action-use + bonds-broken fit the fuel's share:  pBreak·k + ⌈k/gP1⌉ ≤ fuelShare.
         if (breakSpId >= 0) {
             var pBreak = 0
@@ -377,7 +403,23 @@ object CytoBiologyCore {
             val fuelShare = snap.count(breakSpId) / n
             k = minOf(k, (fuelShare.toLong() * gP1 / (pBreak.toLong() * gP1 + 1L)).toInt())
         }
-        // action-substrate caps (action inputs' 1/n share; the BreakBond fuel is handled above)
+        // FormBond-source: the mirror of the BreakBond-source cap above — the fuel is also formed (⌈k/gP1⌉
+        // joins) and either reactant monomer may double as an action input; cap k against EACH reactant's
+        // own 1/n share the same way. (Simplification: if leftId==rightId — a same-atom bond like "rr" —
+        // one join consumes TWO copies of it, so the combined budget is halved.)
+        if (formProductId >= 0) {
+            var pLeft = 0; var pRight = 0
+            for (i in 0 until cn) {
+                if (ids[i] == formLeftId) pLeft = per[i]
+                if (ids[i] == formRightId) pRight = per[i]
+            }
+            val leftShare = snap.count(formLeftId) / n
+            val rightShare = snap.count(formRightId) / n
+            k = minOf(k, (leftShare.toLong() * gP1 / (pLeft.toLong() * gP1 + 1L)).toInt())
+            k = minOf(k, (rightShare.toLong() * gP1 / (pRight.toLong() * gP1 + 1L)).toInt())
+            if (formLeftId == formRightId) k /= 2
+        }
+        // action-substrate caps (action inputs' 1/n share; the BreakBond/FormBond fuel is handled above)
         for (i in 0 until cn) k = minOf(k, (snap.count(ids[i]) / n) / per[i])
         when (act.type) {
             // Division is a BULK, size-scaling cost: it needs `biomass/4` energy THIS tick. Energy can't be
@@ -397,16 +439,23 @@ object CytoBiologyCore {
             // perOp 0 (an unresolved/mutated species id) disables the cap rather than indexing by -1.
             ActionType.Convert -> k = minOf(k, selfGateCap(gene.condition, qBiomass = true, qSpeciesId = -1, snapQ = snapBiomass, perOp = if (convertId >= 0) SpeciesRegistry.bondCount(convertId) else 0, snap = snap, snapBiomass = snapBiomass, work = work))
             ActionType.FormBond -> k = minOf(k, selfGateCap(gene.condition, qBiomass = false, qSpeciesId = productId, snapQ = snap.count(productId), perOp = 1, snap = snap, snapBiomass = snapBiomass, work = work))
+            ActionType.BreakBond -> {} // No sub-tick cap — the action-substrate cap loop above already bounds it by breakActId's availability
             ActionType.Lyse -> {} // No sub-tick cap — damage is capped by available biomass in the attack phase
         }
         if (k <= 0) return
         // Apply: action-input consumption, then the broken fuel + its fragments, then the action's output.
         // The fuel is broken at ⌈k/gP1⌉ (each broken bond powers gP1 actions); at g=0 that's k (1:1, as before).
         val bondsBroken = if (breakSpId >= 0) (k + gP1 - 1) / gP1 else 0
+        // Bonds formed by the FormBond-source fuel (mirrors bondsBroken above).
+        val bondsFormed = if (formProductId >= 0) (k + gP1 - 1) / gP1 else 0
         for (i in 0 until cn) work.cytoplasm.add(ids[i], -k * per[i])
         if (breakSpId >= 0) {
             work.cytoplasm.add(breakSpId, -bondsBroken)
             work.cytoplasm.inc(fragLId, bondsBroken); work.cytoplasm.inc(fragRId, bondsBroken)
+        }
+        if (formProductId >= 0) {
+            work.cytoplasm.add(formLeftId, -bondsFormed); work.cytoplasm.add(formRightId, -bondsFormed)
+            work.cytoplasm.inc(formProductId, bondsFormed)
         }
         when (act.type) {
             ActionType.Convert -> {
@@ -416,6 +465,11 @@ object CytoBiologyCore {
             ActionType.FormBond -> {
                 work.cytoplasm.inc(productId, k)
                 work.cytToBio.inc(productId, k)
+            }
+            ActionType.BreakBond -> {
+                // Digestion: breakActId is already consumed via the generic ids/per loop above (it was
+                // addConsume'd as the action's substrate); credit the fragments back to cytoplasm.
+                work.cytoplasm.inc(breakActFragL, k); work.cytoplasm.inc(breakActFragR, k)
             }
             ActionType.Import -> {
                 // Active uptake is now a BIAS on the passive diffusion junction: the gene's k

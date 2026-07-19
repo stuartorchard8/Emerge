@@ -565,6 +565,9 @@ class CytoController(
         }
         val energyBlocked = when (val s = g.source) {
             EnergySource.Light -> quanta <= 0
+            // Blocked unless both reactant monomers are present in cytoplasm (the hydrothermal fuel).
+            is EnergySource.FormBond -> s.bond.length != 2 ||
+                (cyto[s.bond.substring(0, 1)] ?: 0) <= 0 || (cyto[s.bond.substring(1, 2)] ?: 0) <= 0
             is EnergySource.BreakBond -> cyto.none { (sp, n) -> n > 0 && sp.contains(s.bond) }
         }
         val a = g.action
@@ -579,6 +582,8 @@ class CytoController(
                     else -> false
                 }
             }
+            // Blocked unless some cytoplasm molecule still contains the bond to split.
+            ActionType.BreakBond -> a.a.length != 2 || cyto.none { (sp, n) -> n > 0 && sp.contains(a.a) }
             ActionType.Convert -> (cyto[a.a] ?: 0) <= 0
             ActionType.Import -> (env[a.a] ?: 0) <= 0
             ActionType.Export -> (cyto[a.a] ?: 0) <= 0
@@ -739,6 +744,7 @@ class CytoController(
         ActionType.Export -> "EXPORT ${a.a}"
         ActionType.FormBond ->
             "BOND ${if (a.aWild && a.a.isNotEmpty()) "*${a.a}" else a.a}·${if (a.bWild && a.b.isNotEmpty()) "${a.b}*" else a.b}"
+        ActionType.BreakBond -> "BREAK ${a.a}"
         ActionType.Convert -> "CONVERT ${a.a}"
         ActionType.Contract -> "CONTRACT"
         ActionType.Mitosis -> {
@@ -758,6 +764,7 @@ class CytoController(
     /** The energy-source part (`LIGHT` / `BRK ab`). */
     private fun srcLabel(s: EnergySource): String = when (s) {
         EnergySource.Light -> "LIGHT"
+        is EnergySource.FormBond -> "BND ${s.bond}"
         is EnergySource.BreakBond -> "BRK ${s.bond}"
     }
 

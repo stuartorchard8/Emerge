@@ -3,6 +3,7 @@ package org.emerge.demo.cyto.sim
 import org.emerge.demo.cyto.cells.CellType
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class GeneCodecTest {
 
@@ -197,6 +198,26 @@ class GeneCodecTest {
         for (g in listOf(exact, leftWild, rightWild, bothWild)) {
             assertEquals(listOf(g), GeneCodec.parse(GeneCodec.serialize(listOf(g))), "round-trip $g")
         }
+    }
+
+    /** HYDROTHERMAL_CHEMISTRY_PLAN.md: [EnergySource.FormBond] (`Bond <bond>`, energy source position) and
+     *  [ActionType.BreakBond] (`Break <bond>`, action position) are the mirror images of the pre-existing
+     *  [EnergySource.BreakBond] (`Break <bond>`, source position) and [ActionType.FormBond] — same two
+     *  DSL keywords, disambiguated purely by which `:`-part they land in. */
+    @Test
+    fun roundTripsHydrothermalBondSourceAndBreakAction() {
+        val hydrothermal = HYDROTHERMAL_AUTOTROPH_GENES
+        assertEquals(hydrothermal, GeneCodec.parse(GeneCodec.serialize(hydrothermal)), "hydrothermal preset round-trip")
+        assertTrue(GeneCodec.serialize(hydrothermal).lines().all { it.startsWith("Bond rg") }, "every hydrothermal gene sources from Bond rg")
+
+        val gate = GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0))
+        val digest = Gene(EnergySource.Light, gate, GeneAction(ActionType.BreakBond, "rg"))
+        assertEquals("Light : rg > 0 : Break rg", GeneCodec.serialize(listOf(digest)), "Break in action position")
+        assertEquals(listOf(digest), GeneCodec.parse(GeneCodec.serialize(listOf(digest))), "Break-action round-trip")
+
+        val vent = Gene(EnergySource.FormBond("rg"), gate, GeneAction(ActionType.Repair))
+        assertEquals("Bond rg : rg > 0 : Repair", GeneCodec.serialize(listOf(vent)), "Bond in source position")
+        assertEquals(listOf(vent), GeneCodec.parse(GeneCodec.serialize(listOf(vent))), "Bond-source round-trip")
     }
 
     /** Lysis (MORPHOGENESIS.md §B): `Lyse` steals all species from touching cells.

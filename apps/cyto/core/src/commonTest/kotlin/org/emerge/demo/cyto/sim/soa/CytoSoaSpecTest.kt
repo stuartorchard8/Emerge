@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.sim.soa
 
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.AUTOTROPH_GENES
+import org.emerge.demo.cyto.sim.HYDROTHERMAL_AUTOTROPH_GENES
 import org.emerge.demo.cyto.sim.Comparison
 import org.emerge.demo.cyto.sim.ConnectionStateComponent
 import org.emerge.demo.cyto.sim.CytoCellComponent
@@ -205,6 +206,32 @@ class CytoSoaSpecTest {
         // welds now form only via the Repair gene (kept off the seed autotroph for single-cell viability +
         // motility under mutation), so daughters do NOT weld by design. See overlappingCellsWeld /
         // repairGeneWeldsATouchingCell for the welding path.
+    }
+
+    // The hydrothermal-vent POC organism (HYDROTHERMAL_CHEMISTRY_PLAN.md): EnergySource.FormBond replaces
+    // Light entirely — no light field needed, it colonises directly off the ambient monomer field
+    // (CytoMatterField.seededUniform). Not wired into genomeForType (that stays the light-fed pair the
+    // campaign depends on); this scenario override is the only way to exercise it end-to-end.
+    // The hydrothermal founder needs a real monomer STARTER RESERVE to be self-sufficient — passive
+    // diffusion alone only trickles a couple of units of 'r'/'g' into cytoplasm per tick (nowhere near
+    // enough to outpace decay from a bare spawn), exactly as HETEROTROPH_GENES needs a starter 'rg'
+    // reserve (its own kdoc: "received by diffusion... or its starter reserve"). This is a tuning
+    // question for the founder's starting cytoplasm, not a defect in the FormBond/BreakBond mechanism.
+    @Test
+    fun hydrothermalAutotrophGrowsOffAMonomerReserve() {
+        val initial = run {
+            val b = SimBuilder(SimState())
+            b.spawnCell(
+                CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Collector,
+                cytoplasm = mapOf("r" to 20000, "g" to 20000), biomass = mapOf("rg" to 4000),
+                genome = HYDROTHERMAL_AUTOTROPH_GENES,
+            )
+            b.build()
+        }
+        val start = cellCount(initial)
+        val total0 = totalAtoms(initial)
+        val state = run(initial, ticks = 3000) { s, t -> assertEquals(total0, totalAtoms(s), "atoms not conserved at step $t") }
+        assertTrue(cellCount(state) > start, "hydrothermal autotroph should grow + divide off its monomer reserve; got ${cellCount(state)} from $start")
     }
 
     // The heterotroph builds biomass off its stored `ab` and divides a few times before the reserve runs

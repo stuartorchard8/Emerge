@@ -16,12 +16,28 @@ import org.emerge.sim.core.physics.primitives.Frac
  */
 
 /** Where a gene gets the energy that powers its action this tick — one quantum per op:
- *  [Light] (autotrophy — free environmental flux scaled by surface exposure) or [BreakBond]
- *  (heterotrophy — break a stored bond, releasing its quantum and splitting the molecule back to
- *  fragments). */
+ *  [Light] (autotrophy — free environmental flux scaled by surface exposure), [FormBond]
+ *  (hydrothermal chemosynthesis — join two monomers into a bond, releasing its quantum as a
+ *  byproduct of synthesis), or [BreakBond] (heterotrophy — break a stored bond, releasing its
+ *  quantum and splitting the molecule back to fragments). */
 sealed class EnergySource {
     /** Environmental light: up to `floor(field × exposure × scale)` quanta this tick. */
     object Light : EnergySource()
+
+    /** Join the two monomers of [bond] (a 2-atom pair, e.g. `"rg"` → monomer `r` + monomer `g`) per
+     *  op, releasing a quantum and depositing the joined molecule into cytoplasm as a byproduct — the
+     *  hydrothermal-vent energy source (HYDROTHERMAL_CHEMISTRY_PLAN.md): monomers are the high-energy
+     *  feedstock, and forming a bond is exothermic. Unlike [BreakBond] (which can harvest from any
+     *  molecule containing the bond), this v1 only joins the literal monomer pair — a "spark" reaction,
+     *  not general synthesis. */
+    data class FormBond(val bond: String) : EnergySource() {
+        /** The two reactant monomer ids and the joined product id, resolved once at construction (pure
+         *  functions of the immutable [bond] string) so the per-gene apply path reads ints. -1 if [bond]
+         *  isn't a legal 2-atom species of this alphabet. */
+        val leftId: Int = if (bond.length == 2) SpeciesRegistry.id(bond.substring(0, 1)) else -1
+        val rightId: Int = if (bond.length == 2) SpeciesRegistry.id(bond.substring(1, 2)) else -1
+        val productId: Int = SpeciesRegistry.id(bond)
+    }
 
     /** Break one instance of [bond] (a 2-atom pair, e.g. `"rg"`) in a cytoplasm molecule per op,
      *  releasing its quantum; the molecule splits into two fragments returned to the cytoplasm. */
@@ -102,6 +118,11 @@ enum class ActionType {
     Export,
     /** Join a cytoplasm molecule ending in atom [GeneAction.a] with one starting in atom [GeneAction.b]. */
     FormBond,
+    /** Break one instance of bond [GeneAction.a] (a 2-atom pair, e.g. `"rg"`) in the richest cytoplasm
+     *  molecule containing it, costing energy — the mirror image of [FormBond]: instead of a free
+     *  fuel-harvesting side effect ([EnergySource.BreakBond]), this is an explicit, funded action for
+     *  actively digesting stored structure back into transportable fragments (HYDROTHERMAL_CHEMISTRY_PLAN.md). */
+    BreakBond,
     /** Lock molecules of [GeneAction.a] from cytoplasm into biomass (structure → size). */
     Convert,
     /** Push the cell's radius **below** its biomass baseline, down to [MIN_RADIUS] (operands unused). Each
@@ -220,9 +241,9 @@ data class Gene(
         else -> false
     }
 
-    /** Pre-computed: whether this gene's action has the energy cap (Convert/Import/Export/Repair/FormBond/Contract). */
+    /** Pre-computed: whether this gene's action has the energy cap (Convert/Import/Export/Repair/FormBond/BreakBond/Contract). */
     val actionHasCap: Boolean get() = when (action.type) {
-        ActionType.Convert, ActionType.Import, ActionType.Export, ActionType.Repair, ActionType.FormBond, ActionType.Contract -> true
+        ActionType.Convert, ActionType.Import, ActionType.Export, ActionType.Repair, ActionType.FormBond, ActionType.BreakBond, ActionType.Contract -> true
         else -> false
     }
 
@@ -333,6 +354,9 @@ fun handleableOf(genome: List<Gene>): Handleable {
     }
     for (g in genome) {
         (g.source as? EnergySource.BreakBond)?.let { addSpecies(it.bond, dir = 0) }   // catabolism consumes the bond (bidirectional)
+        // FormBond-as-source (hydrothermal chemosynthesis): the cell consumes the two reactant monomers
+        // and metabolises the joined bond — bidirectional, same as BreakBond-as-source's catabolic reach.
+        (g.source as? EnergySource.FormBond)?.let { addSpecies(it.bond, dir = 0) }
         // NB: condition (Operand.Chem/Conc) operands are NOT added — sensing a species doesn't make it
         // transportable (see the kdoc: this keeps a gated morphogen a trace species).
         when (g.action.type) {
@@ -344,6 +368,8 @@ fun handleableOf(genome: List<Gene>): Handleable {
                 val a = g.action.a; val b = g.action.b
                 if (a.isNotEmpty() && b.isNotEmpty()) { addSpecies(a, dir = null); addSpecies(b, dir = null); addBond("${a.last()}${b.first()}", dir = null) }
             }
+            // BreakBond-as-action: mirrors BreakBond-as-source (catabolism consumes the bond, bidirectional).
+            ActionType.BreakBond -> addSpecies(g.action.a, dir = 0)
             ActionType.Convert -> addSpecies(g.action.a, dir = 0)      // consumes internally ⇒ bidirectional
             ActionType.Import -> addSpecies(g.action.a, dir = +1)      // one-way inward gate
             ActionType.Export -> addSpecies(g.action.a, dir = -1)      // one-way outward gate
@@ -732,6 +758,23 @@ val HETEROTROPH_GENES: List<Gene> = listOf(
     Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(HET_DIVIDE)), GeneAction(ActionType.Mitosis)),
     // Hold together by burning stored 'rg' for repair — a real matter cost; frays once 'rg' runs out.
     Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
+)
+
+/**
+ * The **hydrothermal-vent autotroph** (HYDROTHERMAL_CHEMISTRY_PLAN.md POC): [AUTOTROPH_GENES] with every
+ * `Light` source replaced by [EnergySource.FormBond]`("rg")` — monomers are the high-energy feedstock and
+ * *forming* the `rg` bond is the exothermic reaction that funds metabolism, mirroring [HETEROTROPH_GENES]'s
+ * break-powered structure but inverted (join instead of split). The world already seeds as pure monomer
+ * (`CytoMatterField.seededUniform`), so this organism needs no light field at all — it colonises directly off
+ * ambient `r`/`g`. Division is funded the same bulk way as the original ([Mitosis] needs `biomass/4` energy in
+ * one tick, only reachable by a hoarded reserve — here, a burst of joining). Not wired into [genomeForType]
+ * (that stays the light-fed [AUTOTROPH_GENES]/[HETEROTROPH_GENES] pair the campaign and sandbox depend on) —
+ * supplied explicitly via `FounderSpec.genome`, same as [AUTOTROPH_GROW_ONLY_GENES].
+ */
+val HYDROTHERMAL_AUTOTROPH_GENES: List<Gene> = listOf(
+    Gene(EnergySource.FormBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Mitosis, rejectMother = true)),
+    Gene(EnergySource.FormBond("rg"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.Convert, "rg")),
+    Gene(EnergySource.FormBond("rg"), GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.FormBond, "r", "g")),
 )
 
 /** The authored preset genome for a cell type — seeds a freshly-spawned cell; afterwards the genome

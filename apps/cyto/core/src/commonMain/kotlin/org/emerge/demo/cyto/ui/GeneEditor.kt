@@ -491,6 +491,8 @@ class GeneEditor {
         when (d.action.type) {
             ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain ->
                 chip("OPERAND", sp(d.action.a)) { openPick(Pick.SpeciesA) }
+            ActionType.BreakBond ->
+                chip("BOND", sp(d.action.a)) { openPick(Pick.SpeciesA) }
             ActionType.FormBond -> {
                 chip("LEFT", sp(d.action.a)) { openPick(Pick.SpeciesA) }
                 segmented("MATCH L", listOf("EXACT", "ENDS *"), if (d.action.aWild) 1 else 0) { i -> draft = d.copy(action = d.action.copy(aWild = i == 1)) }
@@ -557,6 +559,12 @@ class GeneEditor {
                     draft = d.copy(source = EnergySource.Light); closePick()
                 }
                 gap(4f)
+                for (bond in bonds) {
+                    listRow("BOND ${sp(bond)}", selected = (d.source as? EnergySource.FormBond)?.bond == bond) {
+                        draft = d.copy(source = EnergySource.FormBond(bond)); closePick()
+                    }
+                    gap(4f)
+                }
                 for (bond in bonds) {
                     listRow("BREAK ${sp(bond)}", selected = (d.source as? EnergySource.BreakBond)?.bond == bond) {
                         draft = d.copy(source = EnergySource.BreakBond(bond)); closePick()
@@ -804,6 +812,7 @@ class GeneEditor {
         ActionType.Import -> "PULL A MOLECULE IN FROM OUTSIDE"
         ActionType.Export -> "PUSH A MOLECULE OUT TO OUTSIDE"
         ActionType.FormBond -> "JOIN TWO MOLECULES INTO ONE"
+        ActionType.BreakBond -> "SPLIT A BOND - COSTS ENERGY"
         ActionType.Convert -> "LOCK A MOLECULE INTO BIOMASS - GROW"
         ActionType.Contract -> "SHRINK THE RADIUS - A MUSCLE FLEX"
         ActionType.Mitosis -> "DIVIDE INTO TWO CELLS"
@@ -876,13 +885,20 @@ class GeneEditor {
             ))
         }
 
-        // POWERED BY: an inline Menu (LIGHT or a broken bond).
+        // POWERED BY: an inline Menu (LIGHT, a formed bond, or a broken bond).
         val srcKey = "$i:src"
-        val srcOpts = listOf("LIGHT") + bonds.map { "BREAK ${sp(it)}" }
+        val srcOpts = listOf("LIGHT") + bonds.map { "BOND ${sp(it)}" } + bonds.map { "BREAK ${sp(it)}" }
         lines.add(listOf(
             UiTok.Menu(sourceLabel(gene.source), ctlIf(energyBlocked), srcOpts, openMenu == srcKey,
                 onToggle = { openMenu = if (openMenu == srcKey) null else srcKey },
-                onPick = { idx -> inlineEdit(controller, i) { it.copy(source = if (idx == 0) EnergySource.Light else EnergySource.BreakBond(bonds[idx - 1])) }; openMenu = null }),
+                onPick = { idx ->
+                    val newSource = when {
+                        idx == 0 -> EnergySource.Light
+                        idx <= bonds.size -> EnergySource.FormBond(bonds[idx - 1])
+                        else -> EnergySource.BreakBond(bonds[idx - 1 - bonds.size])
+                    }
+                    inlineEdit(controller, i) { it.copy(source = newSource) }; openMenu = null
+                }),
             UiTok.Text(" TO POWER", grey),
         ))
 
@@ -897,7 +913,7 @@ class GeneEditor {
                 openMenu = null
             }))
         when (gene.action.type) {
-            ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain -> {
+            ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain, ActionType.BreakBond -> {
                 actLine.add(UiTok.Text(" ", grey))
                 actLine.add(UiTok.Toggle(sp(gene.action.a).ifEmpty { "NOTHING" }, ctl) { openInlinePick(controller, i, Pick.SpeciesA) })
             }
@@ -1036,6 +1052,11 @@ class GeneEditor {
      *  NOTE: this wording is the placeholder the deeper energy-source rework will replace. */
     private fun sourceProse(s: EnergySource): String = when (s) {
         EnergySource.Light -> "USE LIGHT TO POWER"
+        is EnergySource.FormBond -> {
+            // The hydrothermal mirror of BreakBond below: joining the two monomers releases the quantum.
+            val atoms = if (s.bond.length == 2) " (${s.bond.uppercase().toCharArray().joinToString("/")})" else ""
+            "BOND ${sp(s.bond)}$atoms TO POWER"
+        }
         is EnergySource.BreakBond -> {
             // The duomer name already carries the identity, so the yielded atoms stay compact — their raw
             // single-letter symbols joined by `/` (e.g. GREBLU (G/B)) — to keep the fuel line inside the panel.
@@ -1065,6 +1086,11 @@ class GeneEditor {
                     val lb = if (a.bWild && a.b.isNotEmpty()) "$bv*" else bv
                     "BOND $la AND $lb" to emptyList()
                 }
+            }
+            ActionType.BreakBond -> {
+                // Mirror of FormBond's prose above: name the bond being split, atoms in parens.
+                val atoms = if (a.a.length == 2) " (${a.a.uppercase().toCharArray().joinToString("/")})" else ""
+                "BREAK $av$atoms" to emptyList()
             }
             ActionType.Convert -> "CONVERT $av TO MASS" to emptyList()
             ActionType.Contract -> "CONTRACT" to emptyList()
@@ -1255,6 +1281,7 @@ class GeneEditor {
 
     private fun sourceLabel(s: EnergySource): String = when (s) {
         EnergySource.Light -> "LIGHT"
+        is EnergySource.FormBond -> "BOND ${sp(s.bond)}"
         is EnergySource.BreakBond -> "BREAK ${sp(s.bond)}"
     }
 }

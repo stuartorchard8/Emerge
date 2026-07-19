@@ -11,12 +11,15 @@ package org.emerge.demo.cyto.sim
  *     Light : rg > 0 : Convert rg         # lock 'rg' into biomass
  *     Light : Biomass > 8 : Mitosis       # divide once biomass exceeds 8 bonds
  *     Break rg : Biomass < rg : Convert rg  # grow only while biomass is below the stored 'rg' reserve
+ *     Bond rg : Biomass < 8 : Convert rg   # hydrothermal: join monomers r+g, releasing a quantum
  *
  * Condition is one or more `<operand> <>|<> <operand>` clauses joined by ` & ` — the gene fires iff **all**
  * hold (e.g. `b > 50 & b < 200` = a concentration band). Each operand is one of: an integer (a constant),
  * `Biomass`, `Touching`, `Neighbours`, a species token (its cytoplasm count), or `Conc(<species>)` (its size-normalised
  * concentration) — and a species token may be any length (`r`, `rg`, `rgg`, …), not just a monomer/dimer.
- *  Action is `Import <species>`, `FormBond <a> <b>`, `Convert <species>`,
+ *  Action is `Import <species>`, `FormBond <a> <b>`, `Break <bond>` *(energy-costed digestion — the mirror
+ *  of the `Break <bond>` energy source; detectable only by DSL position: source-position vs. action-position)*,
+ *  `Convert <species>`,
  *  `Contract`, `Mitosis` *(or `Mitosis <morphogen>` for asymmetric division — the morphogen is allocated whole
  *  to one side, MORPHOGENESIS.md §C; append `mother` to keep it in the mother = centred source, vs the default
  *  daughter = edge source; append `sever` so the daughter rejects all mother welds → splits off as a separate
@@ -74,11 +77,16 @@ object GeneCodec {
 
     private fun source(s: EnergySource): String = when (s) {
         is EnergySource.Light -> "Light"
+        is EnergySource.FormBond -> "Bond ${s.bond}"
         is EnergySource.BreakBond -> "Break ${s.bond}"
     }
 
     private fun parseSource(t: List<String>): EnergySource = when (t[0]) {
         "Light" -> EnergySource.Light
+        "Bond" -> {
+            require(t.size == 2) { "Bond needs 'Bond <bond>': ${t.joinToString(" ")}" }
+            EnergySource.FormBond(t[1])
+        }
         "Break" -> {
             require(t.size == 2) { "Break needs 'Break <bond>': ${t.joinToString(" ")}" }
             EnergySource.BreakBond(t[1])
@@ -128,6 +136,9 @@ object GeneCodec {
         // Exact species by default; a wildcard operand is marked with `*` on the outer (non-junction) side:
         // `*a` = any molecule ENDING with a (left), `a*` = any STARTING with a (right). See GeneAction.aWild.
         ActionType.FormBond -> "FormBond ${tok(wildLeft(a.a, a.aWild))} ${tok(wildRight(a.b, a.bWild))}"
+        // BreakBond action: the mirror of FormBond above — [GeneAction.a] is the 2-atom bond to break
+        // (an energy-costed digestion step, vs the free fuel-harvesting EnergySource.BreakBond).
+        ActionType.BreakBond -> "Break ${tok(a.a)}"
         ActionType.Convert -> "Convert ${tok(a.a)}"
         ActionType.Contract -> "Contract"
         // Mitosis: optional morphogen ([GeneAction.a], allocated whole to one side — §C) with a trailing
@@ -154,6 +165,7 @@ object GeneCodec {
             val (b, bWild) = unwildRight(untok(t[2]))
             GeneAction(ActionType.FormBond, a, b, aWild = aWild, bWild = bWild)
         }
+        "Break" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.BreakBond, untok(t[1])) }
         "Convert" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Convert, untok(t[1])) }
         "Retain" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Retain, untok(t[1])) }
         // Expand was banned (it raised a cell's radius above the biomass soft-cap, coarsening the broadphase

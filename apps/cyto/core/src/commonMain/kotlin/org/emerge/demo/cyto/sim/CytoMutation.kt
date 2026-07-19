@@ -162,7 +162,11 @@ object CytoMutation {
 
     private fun flip(c: Comparison) = if (c == Comparison.Greater) Comparison.Less else Comparison.Greater
     private fun flipSource(s: EnergySource, nextInt: (Int) -> Int): EnergySource = when (s) {
-        EnergySource.Light -> EnergySource.BreakBond(pick(ATOMS, nextInt) + pick(ATOMS, nextInt))
+        // From Light, mutate into one of the two bond-based sources (chosen at random) — the mirror pair
+        // added by HYDROTHERMAL_CHEMISTRY_PLAN.md. From either bond source, mutate back to Light.
+        EnergySource.Light -> if (nextInt(2) == 0) EnergySource.FormBond(pick(ATOMS, nextInt) + pick(ATOMS, nextInt))
+                              else EnergySource.BreakBond(pick(ATOMS, nextInt) + pick(ATOMS, nextInt))
+        is EnergySource.FormBond -> EnergySource.Light
         is EnergySource.BreakBond -> EnergySource.Light
     }
 
