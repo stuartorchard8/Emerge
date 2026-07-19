@@ -19,7 +19,9 @@ class InputHints(private val map: Map<String, String>) {
     fun expand(s: String): String = TOKEN.replace(s) { m -> map[m.groupValues[1]] ?: m.value }
 
     companion object {
-        private val TOKEN = Regex("\\{(\\w+)}")
+        // The closing brace must be escaped: Android's ICU regex engine rejects a bare `}` here (stricter than
+        // the JVM, which tolerates it), crashing at class-init on device.
+        private val TOKEN = Regex("\\{(\\w+)\\}")
 
         /** Desktop pointer controls: right-drag pans (left-drag grabs a cell), the wheel zooms. */
         val MOUSE = InputHints(mapOf(
