@@ -560,6 +560,15 @@ panel.
 > desktop coach-pill tension. Build order + special cases in §8a. Start at step 1 (toolkit hover). This
 > supersedes the coach-docking-refinement thread below for desktop.
 >
+> **DONE 2026-07-19 — authoring cluster (friend's Friday-build feedback).** (a) `e785d113` dropped the
+> tautological per-card GROUP readout (the section header names the group). (b) `645ce8d6` **create genes /
+> groups from scratch** (not just duplicate): `BLANK_GENE` template; "+ NEW GENE" at each open group's end,
+> "+ NEW GROUP" (bottom) drops a blank + raises the name dialog; genome section renders for an empty genome;
+> `CytoController.appendHeldGene` (unconditional append). (c) `13e7be45` **gene bank / blueprints**:
+> `CytoSnippets` store (`cyto-snippets/`), "SAVE <group> TO BANK", "PASTE GROUP FROM BANK" picker, name-clash
+> Replace/Add-on-top/Cancel dialog (`replaceHeldGroup`/`appendHeldGenes`); `GeneSnippet` commonMain view,
+> wired desktop + harness (Android on no-op defaults, follow-up). `Ui.tapLabel` now prefers exact match.
+>
 > **TOP OF QUEUE — remaining step-8 threads:** (1) coach docking refinements beyond the narrow banner.
 > Optional follow-ups: port the web host off the legacy `CytoControls` overlay; on-device pass of the Android
 > campaign coach at phone width (the banner is harness-verified at narrow, but only Stu's device exercises real
