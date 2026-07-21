@@ -19,7 +19,7 @@ import org.emerge.demo.cyto.sim.Operand
 import org.emerge.demo.cyto.sim.Molecules
 import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.demo.cyto.sim.handleableOf
-import org.emerge.demo.cyto.sim.totalBiomassBonds
+import org.emerge.demo.cyto.sim.totalBiomass
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.campaign.WorldStats
 import org.emerge.demo.cyto.campaign.FocusedCell
@@ -394,7 +394,7 @@ class CytoController(
         for ((_, cell) in cells) {
             count++
             byType[cell.type] = (byType[cell.type] ?: 0) + 1
-            val bio = totalBiomassBonds(cell.biomass)
+            val bio = totalBiomass(cell.biomass)
             if (bio > maxBio) maxBio = bio
             for (s in cell.cytoplasm.keys) species.add(s)
             for (s in cell.biomass.keys) species.add(s)
@@ -413,7 +413,7 @@ class CytoController(
                     }
                 }
                 FocusedCell(
-                    c.type, totalBiomassBonds(c.biomass), c.genome.size, c.cytoplasm,
+                    c.type, totalBiomass(c.biomass), c.genome.size, c.cytoplasm,
                     divideWelds, contractOnChem, contractOnMarked,
                 )
             }
@@ -441,7 +441,7 @@ class CytoController(
                     y = CytoUnits.toLogical(t.pos.y),
                     radius = CytoUnits.toLogical(radiusFrac),
                     type = cell.type,
-                    biomass = totalBiomassBonds(cell.biomass),
+                    biomass = totalBiomass(cell.biomass),
                     selected = id == selId,
                 ),
             )
@@ -500,10 +500,10 @@ class CytoController(
         val degradeSplit = degradeTarget?.let { Molecules.splitLeftmost(it) }
         val degradeMono = degradeSplit?.first       // ejected to the reservoir
         val degradeRest = degradeSplit?.second       // returned to cytoplasm
-        // Approx degradation rate (broken bonds / tick) — wear gains total-biomass-bonds each tick and breaks
+        // Approx degradation rate (broken bonds / tick) — wear gains total biomass (atoms) each tick and breaks
         // one per DEGRADE_PERIOD, so steady-state ≈ bonds / period; ≥1 while there's anything to degrade.
         val degRate = if (degradeTarget == null) 0
-            else maxOf(1, org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass) / CytoTuning.DEGRADE_PERIOD)
+            else maxOf(1, org.emerge.demo.cyto.sim.totalBiomass(cell.biomass) / CytoTuning.DEGRADE_PERIOD)
         val metabolism = (cytoMap.keys + bioMap.keys + envMap.keys).sorted().mapNotNull { s ->
             val env = envMap[s] ?: 0; val cyto = cytoMap[s] ?: 0; val bio = bioMap[s] ?: 0
             val canHold = handleable.canHold(SpeciesRegistry.id(s))
@@ -535,11 +535,11 @@ class CytoController(
             // Capped to the collision radius (what the cell physically is); biomass can drive logicalRadius
             // past this but the footprint doesn't grow — so SIZE matches what's rendered/collides.
             radius = fmt(CytoTuning.physicalRadius(cell.logicalRadius).toFloat()),
-            totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass),
+            totalBiomass = org.emerge.demo.cyto.sim.totalBiomass(cell.biomass),
             light = light,
             metabolism = metabolism,
             genes = cell.genome.map { g ->
-                val spans = describeGeneSpans(g, cytoMap, envMap, totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass), quanta = capturedQuanta, weldedDegree = weldedDegree, touch = cell.touchCount)
+                val spans = describeGeneSpans(g, cytoMap, envMap, totalBiomass = org.emerge.demo.cyto.sim.totalBiomass(cell.biomass), quanta = capturedQuanta, weldedDegree = weldedDegree, touch = cell.touchCount)
                 CellInfo.GeneRow(desc = spans.joinToString("") { it.text }, active = spans.none { it.blocking }, spans = spans, gene = g)
             },
             aliases = speciesAliases,

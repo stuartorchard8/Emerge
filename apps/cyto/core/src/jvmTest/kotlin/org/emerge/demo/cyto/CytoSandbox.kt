@@ -14,7 +14,7 @@ import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.demo.cyto.sim.handleableOf
 import org.emerge.demo.cyto.sim.spawnCell
-import org.emerge.demo.cyto.sim.totalBiomassBonds
+import org.emerge.demo.cyto.sim.totalBiomass
 import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
 import org.emerge.demo.cyto.sim.soa.CytoWorld
 import org.emerge.sim.core.physics.components.SpringConstraintComponent
@@ -101,7 +101,7 @@ class CytoSandbox {
             val orgPos = orgId?.let { transforms[it]?.let { tr -> CytoUnits.toLogical(tr.pos.x).toDouble() to CytoUnits.toLogical(tr.pos.y).toDouble() } }
             val halfExtent = (if (xs.isEmpty()) 1.0 else maxOf(xs.max() - xs.min(), ys.max() - ys.min())).coerceAtLeast(1.0) / 2
             val orgOff = if (orgPos == null) 0.0 else kotlin.math.hypot(orgPos.first - com.first, orgPos.second - com.second) / halfExtent
-            fun conc(sp: String) = spread(cells.map { c -> val bio = totalBiomassBonds(c.biomass); if (bio <= 0) 0 else (c.cytoplasm[sp] ?: 0) * 1000 / bio })
+            fun conc(sp: String) = spread(cells.map { c -> val bio = totalBiomass(c.biomass); if (bio <= 0) 0 else (c.cytoplasm[sp] ?: 0) * 1000 / bio })
             sb.appendLine("$t\t${cells.size}\t(${com.first.toInt()},${com.second.toInt()})\t${(drift * 100).toInt() / 100.0}\t$shape\t${(orgOff * 100).toInt() / 100.0}\t${conc(watch[0])}\t${if (watch.size > 1) conc(watch[1]) else "-"}")
         }
         report(0, initial)

@@ -372,7 +372,7 @@ object CytoAgentHarness {
                 val t = xforms[id]
                 sb.append("  {\n")
                 sb.append("    \"id\": ${id.value}, \"type\": \"${cell.type.name}\", ")
-                sb.append("\"biomass\": ${totalBiomassBonds(cell.biomass)}, ")
+                sb.append("\"biomass\": ${totalBiomass(cell.biomass)}, ")
                 sb.append("\"pos\": ${t?.let { "${"%.3f".format(CytoUnits.toLogical(t.pos.x))},${"%.3f".format(CytoUnits.toLogical(t.pos.y))}" } ?: "null"},\n")
                 sb.append("    \"cytoplasm\": {")
                 sb.append(cell.cytoplasm.entries.joinToString(", ") { "\"${it.key}\": ${it.value}" })
@@ -393,7 +393,7 @@ object CytoAgentHarness {
             File(outDir, "dumpraw.json").writeText(sb.toString())
         }
 
-        private fun totalBiomassBonds(biomass: Map<String, Int>): Int = biomass.values.sum()
+        private fun totalBiomass(biomass: Map<String, Int>): Int = biomass.values.sum()
 
         /** Simulate a vertical drag on a labelled region ([dyPx] > 0 down): press at its centre, feed
          *  incremental moves through the toolkit's real drag path, then release (which snaps a sheet detent). */

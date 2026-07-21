@@ -150,12 +150,30 @@ class CytoGoldenTest {
     // every dimension but topology (still no welds); mutation keeps meta/physics/topology (its lone founder
     // doesn't divide within 1500 ticks, so only its chemistry — biology/grid — moves); interact keeps
     // meta/topology (scripted population unchanged). weld/sticky goldens pass biomass explicitly, so untouched.
+    //
+    // Re-baselined 2026-07-22: BIOMASS NOW COUNTS ATOMS, NOT BONDS (totalBiomass = Σ count × atomCount).
+    // A deliberate, fundamental rule change — a molecule's biomass value is its length, so a monomer is worth
+    // 1 (it was worth 0 under the old bond measure), which is what makes a monomer-only collector viable.
+    // Energy is untouched (still 1 quantum/bond). ALL FIVE goldens shift, and the drift is large because every
+    // cell's mass/radius/death-margin/metabolic-rate now reads off a ~2× larger number (dimers double).
+    // ECOLOGY VERIFIED via stash-and-compare on the growth founder (mutation off, 6000 ticks):
+    //   OLD (bonds):  pop 7@500, 34@1500, 160@3000, 919@6000   (first division ~tick 500)
+    //   NEW (atoms):  pop 1@500,  1@1500,   5@3000, 1343@6000   (first division after tick 1500)
+    // Healthy and deterministic, but a very different curve: heavier cells hoard far longer before the first
+    // division (Mitosis cost = biomass/4 ~doubled; the METABOLIC_BIOMASS_SCALE slowdown bites harder), then
+    // settle at a HIGHER carrying capacity. The default autotroph's 1500-tick lag is a TUNING artifact — its
+    // GROW/DIVIDE_BIOMASS thresholds and the Mitosis divisor now measure atoms and want retuning as part of
+    // re-authoring the genomes for this chemistry; the mechanism is what's being landed here, not the tune.
+    // growth+mutation now share meta/physics/grid (both a lone founder at pop 1 through 1500); interact keeps
+    // topology empty (its post-script colony still doesn't weld); weld/sticky keep META byte-identical (fixed
+    // cell count) and still WELD (topology non-empty ≠ the empty-hash basis) — only mass-driven physics/
+    // biology/topology-state/grid move. Determinism (parallel==sequential) + round-trip both still pass.
     private val GROWTH = mapOf(
-        "meta" to "8270c9ac089d6c6c",
-        "physics" to "f64ba82e9ed114f1",
-        "biology" to "424b72d764e8a6cc",
+        "meta" to "187ed166f49aa1ee",
+        "physics" to "d22c5023234419b1",
+        "biology" to "77cc152dde927138",
         "topology" to "cbf29ce484222325",
-        "grid" to "3fc30c14cabc11fe",
+        "grid" to "898ba68c2dc4fdc",
     )
     // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
     // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
@@ -241,11 +259,11 @@ class CytoGoldenTest {
     // byte-identical here — the lone mutating founder doesn't divide inside 1500 ticks, so its count + position
     // are unchanged — and only its chemistry moves (biology = the seed composition itself; grid = what it sheds).
     private val MUTATION = mapOf(
-        "meta" to "850e718cb8210f58",
-        "physics" to "54148923f71f8795",
-        "biology" to "f4b563c9aca29474",
+        "meta" to "187ed166f49aa1ee",
+        "physics" to "d22c5023234419b1",
+        "biology" to "6ef4d74a3fb0728e",
         "topology" to "cbf29ce484222325",
-        "grid" to "e6588798244ab985",
+        "grid" to "898ba68c2dc4fdc",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     // Re-baselined 2026-07-05: restored LIGHT_QUANTA_SCALE 60k→120k (matter viability) +
@@ -274,11 +292,11 @@ class CytoGoldenTest {
     // (the scripted colony's population + spring structure are unchanged); physics/biology/grid shift with the
     // pure-rg seed chemistry.
     private val INTERACT = mapOf(
-        "meta" to "405f0d6c2c18baf3",
-        "physics" to "1f17629e81ea5a0b",
-        "biology" to "a6d6ab81bec68f53",
+        "meta" to "401171aa714fe2d8",
+        "physics" to "f08d7055a1ff9ea8",
+        "biology" to "c0be05b0b4eb5763",
         "topology" to "cbf29ce484222325",
-        "grid" to "716891e015491026",
+        "grid" to "c8da804d86f6cca6",
     )
 
     @Test
@@ -339,17 +357,17 @@ class CytoGoldenTest {
     // gate is byte-identical (the sandbox autotroph severs, so its colonisation doesn't depend on welds).
     private val WELD_HEAL = mapOf(
         "meta" to "bb3fa685a6d77664",
-        "physics" to "2fd48d231d16aaa3",
-        "biology" to "706ede9ac11b727a",
-        "topology" to "9c89edfb32bf6f49",
-        "grid" to "d564d0a3f3801685",
+        "physics" to "115c771a1c5f208d",
+        "biology" to "4f33f4306872f922",
+        "topology" to "35fd556dbc66d23d",
+        "grid" to "1a50437f70e3c3da",
     )
     private val STICKY_WELD = mapOf(
         "meta" to "350eaa4577a67db5",
-        "physics" to "189e03d633ecc934",
-        "biology" to "3cedab58919c4384",
-        "topology" to "3102d5c4d5143e24",
-        "grid" to "b04a98ad6ac16eb8",
+        "physics" to "4c69fa196176b924",
+        "biology" to "13544c0707f2612c",
+        "topology" to "74878a5136f27426",
+        "grid" to "f2421671f79dc41c",
     )
 
     @Test

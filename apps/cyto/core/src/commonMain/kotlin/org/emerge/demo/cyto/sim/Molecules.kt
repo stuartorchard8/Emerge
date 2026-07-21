@@ -4,8 +4,12 @@ package org.emerge.demo.cyto.sim
  * The chemistry primitives for the matter model (MORPHOGENESIS.md): a **molecule** is a string of
  * **atoms** over a small alphabet (e.g. `"ab"`, `"aba"`), its **bonds** are the adjacent atom pairs
  * (`"aba"` → `ab`, `ba`), and a chain of length *L* has *L−1* bonds. One bond stores one fixed energy
- * quantum and contributes one unit of biomass value, so [bondCount] is both a molecule's energy content
- * and its structural worth.
+ * quantum, so [bondCount] is a molecule's **energy content**.
+ *
+ * A molecule's **biomass value is its [atomCount]** (its length), *not* its bond count — biomass counts
+ * mass locked into structure, and a lone atom is still one unit of mass even though it stores no energy.
+ * The two measures were once conflated on [bondCount]; keeping them distinct is what lets a monomer-only
+ * collector (imports + Converts monomers, forms no bonds) gain biomass at all.
  *
  * **Polymerisation is forbidden:** a molecule may contain at most one of each ordered bond type, which
  * bounds the whole species set (with a *k*-atom alphabet, length ≤ *k²*+1). [join] enforces this.
@@ -15,8 +19,12 @@ package org.emerge.demo.cyto.sim
  */
 object Molecules {
 
-    /** Number of bonds in [m] (= biomass value = stored energy quanta): `length − 1`, floored at 0. */
+    /** Number of bonds in [m] = its stored energy quanta: `length − 1`, floored at 0. (Biomass value is
+     *  [atomCount], not this.) */
     fun bondCount(m: String): Int = if (m.length <= 1) 0 else m.length - 1
+
+    /** Number of atoms in [m] = its **biomass value**: `length`. A lone atom is 1 (one unit of mass). */
+    fun atomCount(m: String): Int = m.length
 
     /** True if [m] has no repeated ordered bond (adjacent pair) — the legality invariant every
      *  molecule must satisfy. A single atom (no bonds) is trivially legal. */

@@ -142,15 +142,15 @@ object CytoTuning {
     const val IMPORT_GRADIENT_SCALE = 4_000
 
     // ── Growth, size & death ─────────────────────────────────────────────────────────────────────────
-    /** Biomass bonds for a full-size (radius 1.0) cell — `radius = sqrt(bonds / BONDS_PER_FULL)`. */
-    const val BONDS_PER_FULL = 16 * CHEMISTRY_SCALE
+    /** Biomass (atoms) for a full-size (radius 1.0) cell — `radius = sqrt(atoms / ATOMS_PER_FULL)`. */
+    const val ATOMS_PER_FULL = 16 * CHEMISTRY_SCALE
     /** Metabolic slowdown scale: every gene op **except Mitosis** is throttled by `SCALE/(SCALE+biomass)`,
      *  so metabolism runs at half speed when biomass = this. A bigger cell builds (and acquires) slower
      *  while size-proportional decay (degrade) keeps rising, so growth can't outpace decay above an
      *  EMERGENT size — a soft, strength-dependent limit (stronger cells settle larger), not a hard cap.
      *  Lower = an earlier/tighter plateau. ⚙ */
     const val METABOLIC_BIOMASS_SCALE = 32 * CHEMISTRY_SCALE
-    /** Degradation: a cell's wear accumulator gains its total biomass bonds each tick; every
+    /** Degradation: a cell's wear accumulator gains its total biomass (atoms) each tick; every
      *  DEGRADE_PERIOD of accumulated wear breaks one bond (so decay rate ∝ size). ⚙ */
     const val DEGRADE_PERIOD = 18000
     /** Cell dies when total biomass falls below this. */

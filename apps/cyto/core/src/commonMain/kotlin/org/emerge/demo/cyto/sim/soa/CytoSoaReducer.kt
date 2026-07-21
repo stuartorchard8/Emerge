@@ -15,7 +15,7 @@ import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.demo.cyto.sim.cellMass
 import org.emerge.demo.cyto.sim.atomCount
-import org.emerge.demo.cyto.sim.totalBiomassBonds
+import org.emerge.demo.cyto.sim.totalBiomass
 import org.emerge.demo.cyto.sim.systems.CellDestroyIntent
 import org.emerge.demo.cyto.sim.systems.CytoInteractionSystem
 import org.emerge.demo.cyto.sim.systems.LyseAttackIntent
@@ -369,7 +369,7 @@ class CytoSoaReducer(
         val splitNormal: Norm = run {
             if (axisMorphogen.isEmpty()) return@run neighbourNormal
             fun conc(c: CytoCellComponent): Int {
-                val b = totalBiomassBonds(c.biomass); return if (b <= 0) 0 else (c.cytoplasm[axisMorphogen] ?: 0) * CytoTuning.CONC_SCALE / b
+                val b = totalBiomass(c.biomass); return if (b <= 0) 0 else (c.cytoplasm[axisMorphogen] ?: 0) * CytoTuning.CONC_SCALE / b
             }
             var maxC = conc(cell); var minC = maxC; var maxPos = motherPos; var minPos = motherPos
             for (n in neighbours) {
@@ -461,7 +461,7 @@ class CytoSoaReducer(
     }
 
     private fun radiusForBiomassSoa(biomass: Map<String, Int>): Frac =
-        Frac(totalBiomassBonds(biomass).toLong(), CytoBiologyCore.BONDS_PER_FULL).sqrt().coerceAtLeast(MIN_RADIUS)
+        Frac(totalBiomass(biomass).toLong(), CytoBiologyCore.ATOMS_PER_FULL).sqrt().coerceAtLeast(MIN_RADIUS)
 
     // ── interaction bridge (only when there's pointer input) ─────────────────────
     private fun bridgeInteraction(w: CytoWorld, inputs: Map<PlayerId, CytoInput>): CytoWorld {

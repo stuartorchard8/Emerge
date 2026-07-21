@@ -43,8 +43,8 @@ class InspectCell {
         sb.appendLine("logicalRadius=${cell.logicalRadius.raw} wear=${cell.wear}")
         sb.appendLine("cytoplasm=${cell.cytoplasm}")
         sb.appendLine("biomass=${cell.biomass}")
-        val bioBonds = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass)
-        sb.appendLine("totalBiomassBonds (what the Biomass gate reads) = $bioBonds")
+        val bioBonds = org.emerge.demo.cyto.sim.totalBiomass(cell.biomass)
+        sb.appendLine("totalBiomass (what the Biomass gate reads) = $bioBonds")
         sb.appendLine("  (note: monomers like c have 0 bonds, so they don't count toward Biomass)")
         sb.appendLine("genome (gate evaluated against this cell's current state):")
         fun opVal(o: org.emerge.demo.cyto.sim.Operand): Int = when (o) {
@@ -120,7 +120,7 @@ class InspectCell {
             val sib = cells[s.other] ?: continue
             val has = sib.genome.any { it.action.type == org.emerge.demo.cyto.sim.ActionType.Mitosis && it.source is org.emerge.demo.cyto.sim.EnergySource.Light }
             if (has) lightMito++
-            sb.appendLine("  ${s.other.value}: Light-Mitosis=${has}  biomass=${org.emerge.demo.cyto.sim.totalBiomassBonds(sib.biomass)}")
+            sb.appendLine("  ${s.other.value}: Light-Mitosis=${has}  biomass=${org.emerge.demo.cyto.sim.totalBiomass(sib.biomass)}")
         }
         sb.appendLine("→ $lightMito/${springs2.size} connected siblings carry a Light-powered Mitosis gene")
         java.io.File("/tmp/inspectcell.txt").writeText(sb.toString())

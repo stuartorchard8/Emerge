@@ -13,7 +13,7 @@ import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.sim.MIN_RADIUS
 import org.emerge.demo.cyto.sim.spawnCell
-import org.emerge.demo.cyto.sim.totalBiomassBonds
+import org.emerge.demo.cyto.sim.totalBiomass
 import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
 import org.emerge.demo.cyto.sim.soa.CytoWorld
 import org.emerge.sim.core.physics.primitives.Coord2
@@ -148,7 +148,7 @@ class ClockProbe {
             val c = cells.firstOrNull() ?: return
             alive[t] = true
             for (sp in watch) series.getValue(sp)[t] = c.cytoplasm[sp] ?: 0
-            rad[t] = c.logicalRadius.raw; bio[t] = totalBiomassBonds(c.biomass)
+            rad[t] = c.logicalRadius.raw; bio[t] = totalBiomass(c.biomass)
         }
         sample(0, initial)
         for (t in 1..ticks) { w = soa.tick(w, CytoInput.EMPTY); sample(t, w.toSimState()) }

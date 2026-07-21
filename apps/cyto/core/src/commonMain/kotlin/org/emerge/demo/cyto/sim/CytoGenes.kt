@@ -117,7 +117,7 @@ sealed class Operand(
         val speciesId: Int = SpeciesRegistry.id(species)
     }
 
-    /** Total biomass — Σ count × bond-count (also drives cell size + the death threshold). */
+    /** Total biomass — Σ count × atom-count (also drives cell size + the death threshold). */
     object Biomass : Operand(OperandKind.BIOMASS)
 
     /** Number of **un-connected** cells this cell is in physical contact with this tick — i.e.
@@ -753,17 +753,22 @@ class CellWork(
     }
 }
 
-/** Total biomass of a [biomass] map: Σ count × bond-count. Drives cell size and the death threshold. */
-fun totalBiomassBonds(biomass: Map<String, Int>): Int {
+/** Total biomass of a [biomass] map: **Σ count × atom-count**. Drives cell size and the death threshold.
+ *
+ *  Biomass is the count of **atoms** locked into structure, not bonds. A monomer therefore contributes 1
+ *  (it did *nothing* under the old bond-count measure), which is what lets a super-simple collector — one
+ *  that only imports and Converts monomers, forming no bonds — be short-term viable. Energy is a separate
+ *  currency and stays bond-based (`bondCount`, one quantum per bond); this counts mass, not stored energy. */
+fun totalBiomass(biomass: Map<String, Int>): Int {
     var sum = 0
-    for ((species, count) in biomass) sum += count * Molecules.bondCount(species)
+    for ((species, count) in biomass) sum += count * Molecules.atomCount(species)
     return sum
 }
 
-/** Total biomass of an id-keyed [biomass] store (the hot-path form of [totalBiomassBonds]). */
-fun totalBiomassBonds(biomass: MoleculeStore): Int {
+/** Total biomass of an id-keyed [biomass] store (the hot-path form of [totalBiomass]). */
+fun totalBiomass(biomass: MoleculeStore): Int {
     var sum = 0
-    for (i in 0 until biomass.size) sum += biomass.countAt(i) * SpeciesRegistry.bondCount(biomass.idAt(i))
+    for (i in 0 until biomass.size) sum += biomass.countAt(i) * SpeciesRegistry.atomCount(biomass.idAt(i))
     return sum
 }
 

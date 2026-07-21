@@ -19,7 +19,7 @@ import org.emerge.demo.cyto.sim.CellWork
 import org.emerge.demo.cyto.sim.Clause
 import org.emerge.demo.cyto.sim.CytoBiologyCore
 import org.emerge.demo.cyto.sim.MoleculeStore
-import org.emerge.demo.cyto.sim.totalBiomassBonds
+import org.emerge.demo.cyto.sim.totalBiomass
 import org.emerge.demo.cyto.sim.EnergySource
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.Gene
@@ -472,7 +472,7 @@ class CytoSoaSpecTest {
         // THEN evolve the colony under mutation — exercising the save codec on a real,
         // multi-cell, genetically-diverged world. (Mutation-on from tick 0 wouldn't colonise here: the lone
         // founder mutates before its first division. The LIVE world mutates slower than the stress fixture.)
-        val grown = run(createCytoInitialState(), ticks = 1500)
+        val grown = run(createCytoInitialState(), ticks = 3000)   // atom-biomass slows the default founder's first division; grow further for a real colony
         val state = run(grown, cfg.copy(mutationRateDenom = 200), ticks = 400)
 
         val bytes = org.emerge.demo.cyto.CytoSaveCodec.encode(state)
@@ -546,7 +546,7 @@ class CytoSoaSpecTest {
             val b = SimBuilder(SimState())
             b.spawnCell(
                 CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Blank,
-                cytoplasm = mapOf("rg" to 50_000, "gb" to 2_000, "r" to 50_000, "g" to 50_000), biomass = mapOf("rg" to 8_000),
+                cytoplasm = mapOf("rg" to 50_000, "gb" to 2_000, "r" to 50_000, "g" to 50_000), biomass = mapOf("rg" to 4_000),   // atom-biomass 8000 (biomass now counts atoms): founder > 7900 divides once, each daughter ~4000 < 7900 can't
                 genome = listOf(mitosis),
             )
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.empty()) }
@@ -586,7 +586,7 @@ class CytoSoaSpecTest {
             val b = SimBuilder(SimState())
             b.spawnCell(
                 CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Blank,
-                cytoplasm = mapOf("rg" to 80_000, "gb" to 2_000, "r" to 80_000, "g" to 80_000), biomass = mapOf("rg" to 8_000),
+                cytoplasm = mapOf("rg" to 80_000, "gb" to 2_000, "r" to 80_000, "g" to 80_000), biomass = mapOf("rg" to 4_000),   // atom-biomass 8000: divides once, daughters below the 7900 re-divide gate
                 genome = listOf(mitosis, contractIfMorphogen),
             )
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.empty()) }
@@ -642,9 +642,9 @@ class CytoSoaSpecTest {
                 genome = listOf(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(1_000_000_000)), GeneAction(ActionType.Convert, "rg"), efficiency = g)),
                 quanta = quanta, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
             )
-            val before = totalBiomassBonds(work.biomass)
+            val before = totalBiomass(work.biomass)
             CytoBiologyCore.runGenes(work)
-            return totalBiomassBonds(work.biomass) - before
+            return totalBiomass(work.biomass) - before
         }
         // Energy-poor: a high gear squeezes ~(g+1)× more actions out of the same quanta.
         val poor0 = biomassGain(0, 100)

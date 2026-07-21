@@ -60,7 +60,7 @@ private fun clearDiffScratch() {
 object CytoBiologyCore {
 
     // ── tunable knobs — VALUES LIVE IN CytoTuning (the single tuning sheet); these are local references ──
-    const val BONDS_PER_FULL = CytoTuning.BONDS_PER_FULL      // also read by CytoLifecycleSystem
+    const val ATOMS_PER_FULL = CytoTuning.ATOMS_PER_FULL      // also read by CytoLifecycleSystem
     private const val DEGRADE_PERIOD = CytoTuning.DEGRADE_PERIOD
     private const val DEATH_BIOMASS = CytoTuning.DEATH_BIOMASS
     private const val REPAIR_PER_OP = CytoTuning.REPAIR_PER_OP
@@ -214,7 +214,7 @@ object CytoBiologyCore {
         // Tick-start biomass — constant through the whole isActive scan AND equal to the 1/n snapshot's
         // biomass (no gene has applied yet), so compute the O(species) sum ONCE and reuse it for every
         // clause of every gate (was re-summed per Biomass/Conc operand) and for snapBiomass below.
-        val bioBonds = totalBiomassBonds(work.biomass)
+        val bio = totalBiomass(work.biomass)
         var n = 0
 
         // Every non-division gene re-evaluates its condition every tick. The gene phase is already
@@ -224,7 +224,7 @@ object CytoBiologyCore {
         var activeMask = 0L
         for (i in genome.indices) {
             val g = genome[i]
-            if (g.action.type != ActionType.Mitosis && isActive(g, work, bioBonds)) {
+            if (g.action.type != ActionType.Mitosis && isActive(g, work, bio)) {
                 active[n++] = i
                 if (i < 64) activeMask = activeMask or (1L shl i)
             }
@@ -236,7 +236,7 @@ object CytoBiologyCore {
         if (n > 0) {
             val snap = work.snapScratch.also { it.copyFrom(work.cytoplasm) }   // reused; immutable 1/n source
             val quantaShare = work.quanta / n
-            for (j in 0 until n) applyGene(genome[active[j]], work, snap, bioBonds, n, quantaShare, stats)
+            for (j in 0 until n) applyGene(genome[active[j]], work, snap, bio, n, quantaShare, stats)
         }
         if (stats != null) stats.genesApplyNanos += tApply!!.elapsedNow().inWholeNanoseconds
 
@@ -249,17 +249,17 @@ object CytoBiologyCore {
         if (!work.dividing && work.mitosisCooldown <= 0 && genomeSize > 0) {
             // Post-phase-1 biomass — constant through the Mitosis re-checks (a Mitosis gene either divides
             // and breaks the loop, or no-ops; neither mutates biomass here), so sum it once for all gates.
-            val bioBondsNow = totalBiomassBonds(work.biomass)
+            val bioNow = totalBiomass(work.biomass)
             var dn = 0
             for (i in genome.indices) {
                 val g = genome[i]
-                if (g.action.type == ActionType.Mitosis && gate(g.condition, work, bioBondsNow)) active[dn++] = i
+                if (g.action.type == ActionType.Mitosis && gate(g.condition, work, bioNow)) active[dn++] = i
             }
             if (dn > 0) {
                 val snap = work.snapScratch.also { it.copyFrom(work.cytoplasm) }
                 val quantaShare = work.quanta / dn
                 for (j in 0 until dn) {
-                    applyGene(genome[active[j]], work, snap, totalBiomassBonds(work.biomass), dn, quantaShare, stats)
+                    applyGene(genome[active[j]], work, snap, totalBiomass(work.biomass), dn, quantaShare, stats)
                     // Set mitosis cooldown on first successful division — prevents re-division this tick
                     // even if multiple mitosis genes fire (though work.dividing guards against that).
                     if (work.dividing) { work.mitosisCooldown = genomeSize; break }
@@ -272,8 +272,8 @@ object CytoBiologyCore {
      *  action isn't a guaranteed no-op this tick. So an always-on Repair gene with nothing damaged, or a
      *  flex gene already at its limit, costs the cell (and its neighbours' share of the genome) nothing.
      *  Uses [work._cachedHasDamage] and [work._cachedCanContract] for O(1) action checks. */
-    private fun isActive(gene: Gene, work: CellWork, bioBonds: Int): Boolean {
-        if (!gate(gene.condition, work, bioBonds)) return false
+    private fun isActive(gene: Gene, work: CellWork, bio: Int): Boolean {
+        if (!gate(gene.condition, work, bio)) return false
         return when (gene.action.type) {
             ActionType.Repair -> work._cachedHasDamage
             ActionType.Contract -> work._cachedCanContract
@@ -372,7 +372,7 @@ object CytoBiologyCore {
         // structure, so its build/acquire rate falls while size-proportional decay keeps rising — they cross
         // at an EMERGENT size the cell can't outgrow. No hard cap: a stronger cell settles larger.
         if (act.type != ActionType.Mitosis && act.type != ActionType.Retain) {
-            val bio = totalBiomassBonds(work.biomass)
+            val bio = totalBiomass(work.biomass)
             k = (k.toLong() * CytoTuning.METABOLIC_BIOMASS_SCALE / (CytoTuning.METABOLIC_BIOMASS_SCALE + bio)).toInt()
         }
         // FormBond-source: the reactants are consumed at the bonds-formed rate (⌈k/gP1⌉ joins) and either one
@@ -414,14 +414,14 @@ object CytoBiologyCore {
             // divide size, so a Light-sourced Mitosis just never reaches the cost (k < cost ⇒ 0). The "charge
             // up to divide" comes for free — only a hoarded reserve broken in one tick clears the bar. The
             // gate may hold below the cost; it then does nothing (no accumulation toward it).
-            ActionType.Mitosis -> { val cost = totalBiomassBonds(work.biomass) / 4; k = if (k >= cost) cost else 0 }
+            ActionType.Mitosis -> { val cost = totalBiomass(work.biomass) / 4; k = if (k >= cost) cost else 0 }
             ActionType.Import, ActionType.Export -> {}   // k energy units become a junction bias (applied in passiveEnvExchange)
             ActionType.Repair -> k = minOf(k, repairOpsNeeded(work))
             ActionType.Contract -> k = minOf(k, flexOps(MIN_RADIUS, work.logicalRadius))
             ActionType.Retain -> k = minOf(k, 1)   // a flat 1-energy/tick membrane seal (no throughput scaling)
             // Sub-tick interpolation: a growth gene fills only up to its OWN gate threshold, never past it.
             // perOp 0 (an unresolved/mutated species id) disables the cap rather than indexing by -1.
-            ActionType.Convert -> k = minOf(k, selfGateCap(gene.condition, qBiomass = true, qSpeciesId = -1, snapQ = snapBiomass, perOp = if (convertId >= 0) SpeciesRegistry.bondCount(convertId) else 0, snap = snap, snapBiomass = snapBiomass, work = work))
+            ActionType.Convert -> k = minOf(k, selfGateCap(gene.condition, qBiomass = true, qSpeciesId = -1, snapQ = snapBiomass, perOp = if (convertId >= 0) SpeciesRegistry.atomCount(convertId) else 0, snap = snap, snapBiomass = snapBiomass, work = work))
             // No sub-tick cap: the action-substrate loop above already bounds digestion by how much of
             // breakActId the cell holds. selfGateCap only models filling *toward* a ceiling (`Q < rhs`), and
             // BreakBond drains its substrate rather than accumulating it, so it has nothing to interpolate —
@@ -692,7 +692,7 @@ object CytoBiologyCore {
       *  divide/destroy list appends are replayed serially afterwards in the reducer's finish-apply pass. */
     fun finishCompute(work: CellWork) {
         degrade(work)
-        val bonds = totalBiomassBonds(work.biomass)
+        val bonds = totalBiomass(work.biomass)
         if (bonds < DEATH_BIOMASS) {
             work.dying = true
             return
@@ -713,17 +713,17 @@ object CytoBiologyCore {
     }
 
     // ── gates ────────────────────────────────────────────────────────────────
-    /** The gate is a conjunction: the gene fires iff **every** clause holds (empty ⇒ true). [bioBonds] is the
-      *  caller-computed total biomass for this evaluation (constant across the gate), so Biomass/Conc operands
-      *  read it instead of re-summing the biomass store per clause. */
-    private fun gate(c: GeneCondition, work: CellWork, bioBonds: Int): Boolean {
-        for (clause in c.clauses) if (!clauseHolds(clause, work, bioBonds)) return false
+    /** The gate is a conjunction: the gene fires iff **every** clause holds (empty ⇒ true). [bio] is the
+      *  caller-computed total biomass for this evaluation (constant across the gate), so a Biomass operand
+      *  reads it instead of re-summing the biomass store per clause. */
+    private fun gate(c: GeneCondition, work: CellWork, bio: Int): Boolean {
+        for (clause in c.clauses) if (!clauseHolds(clause, work, bio)) return false
         return true
     }
 
-    private fun clauseHolds(clause: Clause, work: CellWork, bioBonds: Int): Boolean {
-        val l = operand(clause.lhs, work, bioBonds)
-        val r = operand(clause.rhs, work, bioBonds)
+    private fun clauseHolds(clause: Clause, work: CellWork, bio: Int): Boolean {
+        val l = operand(clause.lhs, work, bio)
+        val r = operand(clause.rhs, work, bio)
         return when (clause.cmp) {
             Comparison.Greater -> l > r
             Comparison.Less -> l < r
@@ -737,10 +737,10 @@ object CytoBiologyCore {
       * cell, per tick, so the difference between a jump table and a sequential `instanceof` chain is
       * multiplied by genome size × population. The casts are checkcasts against final classes, and only
       * the three data-carrying kinds need one at all. */
-    private fun operand(op: Operand, work: CellWork, bioBonds: Int): Int = when (op.kind) {
+    private fun operand(op: Operand, work: CellWork, bio: Int): Int = when (op.kind) {
         OperandKind.CONSTANT -> (op as Operand.Constant).value
         OperandKind.CHEM -> work.cachedCount((op as Operand.Chem).speciesId)
-        OperandKind.BIOMASS -> bioBonds
+        OperandKind.BIOMASS -> bio
         OperandKind.TOUCHING -> work.touchCount
         OperandKind.NEIGHBOURS -> work.weldedDegree
         // A `when` over Int can't be exhaustive, so a new operand kind can't fail to compile here the way
@@ -792,9 +792,9 @@ object CytoBiologyCore {
     private fun hasConnectionDamage(work: CellWork): Boolean = work.connectionDamage.values.any { it > 0f }
 
     /** The biomass-derived baseline radius (the size the cell relaxes toward): `sqrt(bonds /
-     *  BONDS_PER_FULL)`, floored at [MIN_RADIUS]. Flex actions bound their deviation around this. */
+     *  ATOMS_PER_FULL)`, floored at [MIN_RADIUS]. Flex actions bound their deviation around this. */
     private fun biomassRadius(bonds: Int): Frac =
-        Frac(bonds.toLong(), BONDS_PER_FULL).sqrt().coerceAtLeast(MIN_RADIUS)
+        Frac(bonds.toLong(), ATOMS_PER_FULL).sqrt().coerceAtLeast(MIN_RADIUS)
 
     /** Can a Contract op still move the radius (not yet at MIN_RADIUS)? Checked before spending energy so a
      *  fully-contracted gene stops drawing quanta (mirrors the Repair pre-check). */
@@ -816,7 +816,7 @@ object CytoBiologyCore {
         val bonus = 1 shl work.weldedDegree.coerceAtMost(20)
         var totalCytChem = 0
         for (i in 0 until work.cytoplasm.size) totalCytChem += work.cytoplasm.countAt(i)
-        work.wear += (totalCytChem + totalBiomassBonds(work.biomass)) / bonus
+        work.wear += (totalCytChem + totalBiomass(work.biomass)) / bonus
         val broken = work.wear / DEGRADE_PERIOD
         work.wear %= DEGRADE_PERIOD
         if (broken > 0) {

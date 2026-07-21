@@ -86,15 +86,16 @@ val STARTER_BIOMASS: Map<String, Int> = CytoSeed.STARTER_BIOMASS
  * The starting biomass for a cell with this [genome], made of a chemical the genome can actually produce so
  * a founder doesn't begin with molecules it has no gene to make (which used to seed `gb`/`br` into cells that
  * never touch them). We take the genome's **first Convert gene** — the reaction that locks a molecule into
- * biomass — and fill to the same total bond count as [STARTER_BIOMASS] with that molecule. Falls back to
- * [STARTER_BIOMASS] when the genome has no Convert gene, or converts a bondless monomer (nothing to structure).
+ * biomass — and fill to the same total **atom count** as [STARTER_BIOMASS] with that molecule. Falls back
+ * to [STARTER_BIOMASS] only when the genome has no Convert gene. A monomer Convert is now a valid founder
+ * (biomass counts atoms, so a monomer collector has real mass), so it is seeded with monomers rather than
+ * rejected as it was under the old bond-count measure.
  */
 fun starterBiomassFor(genome: List<Gene>): Map<String, Int> {
     val chem = genome.firstOrNull { it.action.type == ActionType.Convert }?.action?.a
         ?.takeIf { it.isNotEmpty() } ?: return STARTER_BIOMASS
-    val bondsPerMolecule = chem.length - 1
-    if (bondsPerMolecule < 1) return STARTER_BIOMASS
-    val targetBonds = totalBiomassBonds(STARTER_BIOMASS)
-    val count = (targetBonds / bondsPerMolecule).coerceAtLeast(1)
+    val atomsPerMolecule = chem.length
+    val targetAtoms = totalBiomass(STARTER_BIOMASS)
+    val count = (targetAtoms / atomsPerMolecule).coerceAtLeast(1)
     return mapOf(chem to count)
 }
