@@ -334,3 +334,42 @@ This would change simulation behavior → reverted.
 **Status:** 3 pre-existing test failures unchanged (golden + spec). No behavioral regressions.
 Overall tick: ~13ms at 4145 cells — modest progress toward 2x improvement target.
 
+
+---
+
+## 2026-07-22 — Operand dispatch: int tag instead of type-switch (GENE_OPERANDS_PLAN §3.3/§3.4)
+
+Two changes, both in the gate path (`CytoBiologyCore.operand` / `operandSnap`):
+
+1. **Deleted `operandFast`.** It was defined but called from nowhere, and `clauseHoldsFast` — which
+   its doc comment named as the caller — never existed. Its comment claimed it "avoids the
+   when-dispatch and cachedCount calls"; it did neither. It was itself a `when` over the same sealed
+   type, and on the lookup-free clauses it applied to, `operand()` never called `cachedCount` either.
+   Wiring it in would have gained ~nothing. Golden stayed byte-identical, confirming it was dead.
+2. **Dispatch on `Operand.kind: Int`** instead of on type.
+
+**The result that matters — HOW the tag is stored dominates the change:**
+
+| tag storage | median delta vs type-switch |
+|---|---|
+| `abstract val kind` overridden per subclass | **−32% (SLOWER)** |
+| `@JvmField val kind` on the sealed base class | **+56% (faster)** |
+
+Same `when`, same call sites, same values — only the declaration differs. An `abstract val` makes
+reading the tag a *virtual call*, which goes megamorphic across the six subclasses and costs more
+than the `instanceof` chain it replaces. You never reach the jump table cheaply. As a base-class
+field it's a plain load with no dispatch.
+
+**This inverts the plan's premise.** §3.4 treats "precompute an int and switch on it" as sufficient,
+citing `Chem.speciesId` as precedent. But `speciesId` is read *after* the type is known, so it's
+always a direct field load; a polymorphic tag read is a different problem. Anyone repeating this
+trick elsewhere must put the field on the base class or it is a pessimisation.
+
+**Scale honestly.** The +56% is a tight-loop microbenchmark (`OperandDispatchBench`, gated on
+`-Doperandbench=1`, interleaved A/B in one process, median of per-round deltas). It measures dispatch
+only. In a real tick `genes=2196us` of a `12.86ms` SEQ tick (~17%), and dispatch is a fraction of
+that — the rest is `cachedCount` scans, action application, self-gate caps. **Real-tick gain is not
+measured here** and is bounded well below the microbenchmark figure. The change was taken because it
+is free and makes operand-set size stop mattering, not for a headline tick number.
+
+Bench context: 3899 cells, 8 cores, SEQ tick 12.86ms / PAR 12.75ms.

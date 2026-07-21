@@ -76,6 +76,7 @@ tasks.withType<Test>().configureEach {
     System.getProperty("cytospringthresh")?.let { systemProperty("cytospringthresh", it) }
     System.getProperty("cytosave")?.let { systemProperty("cytosave", it) }
     System.getProperty("cytorepro")?.let { systemProperty("cytorepro", it) }
+    System.getProperty("operandbench")?.let { systemProperty("operandbench", it) }
     System.getProperty("inspectcell")?.let { systemProperty("inspectcell", it) }
     System.getProperty("geneprobe")?.let { systemProperty("geneprobe", it) }
     System.getProperty("savefile")?.let { systemProperty("savefile", it) }
