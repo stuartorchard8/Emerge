@@ -163,10 +163,6 @@ class CampaignDirector {
         }
     }
 
-    /** Draw the coach panel. Call inside the host's `ui.frame { }` after the other overlays. When
-     *  [collapsed] (a cell/gene editor owns the bottom of the screen), the coach shrinks to a single-line
-     *  pill in the top-left — progress + the current step's actionable hint — so onboarding stays visible
-     *  while editing instead of disappearing (UI_REDESIGN.md §6.1). */
     /** Pixels the narrow top-docked coach occupies down from the screen top (its bottom edge), 0 when it isn't
      *  showing. The host feeds this to the camera recentre so a selected cell centres in the band between the
      *  coach and the cell sheet, not behind the coach. Reflects the last [render] (one frame stale — fine for a
@@ -174,14 +170,17 @@ class CampaignDirector {
     var coachTopInsetPx: Float = 0f
         private set
 
-    fun render(ui: UiBuilder, controller: CytoController, collapsed: Boolean = false, narrow: Boolean = false) {
+    /** Draw the coach panel — a top-docked banner when [narrow], a bottom-centre panel stacked above the HUD
+     *  bar otherwise. Call inside the host's `ui.frame { }` after the other overlays. */
+    fun render(ui: UiBuilder, controller: CytoController, narrow: Boolean = false) {
         coachTopInsetPx = 0f
         val ch = chapter ?: return
         val step = currentStep ?: return
         // On a phone the coach is a single top-docked panel (the only campaign modal there): it clears the
         // bottom controls + the cell info sheet, and keeps the full Skip/More/Next controls. It bounds its
         // width to the screen (wrapping/clipping every row) since a phone can't afford the desktop's 58-col
-        // lines. On desktop it stays a bottom-centre panel that collapses to a top-left pill while editing.
+        // lines. On desktop it is a bottom-centre panel that stacks above the HUD bar and clears the
+        // right-docked cell panel, so it always shows in full — nothing on that width needs the room.
         val counter = "(${stepIndex + 1}/${ch.steps.size})"
         if (narrow) {
             val budget = wrapBudget(ui, TOP_TEXT_DP, PAD_DP, TOP_MARGIN_DP)
@@ -191,7 +190,6 @@ class CampaignDirector {
             coachTopInsetPx = TOP_MARGIN_DP * ui.density + h   // the coach's bottom edge, for the camera recentre
             return
         }
-        if (collapsed) { renderPill(ui, ch, step); return }
         // BOTTOM_MARGIN_DP, not a hand-tuned gap: the host draws the HUD bar first, so this panel stacks
         // directly above it and only needs the same edge gap the bar uses.
         renderFull(ui, ch, step, controller, "${ch.title}  $counter", Anchor.BottomCenter, margin = BOTTOM_MARGIN_DP, wrapChars = COACH_WRAP, textSize = BOTTOM_TEXT_DP, fillWidth = false)
@@ -250,17 +248,6 @@ class CampaignDirector {
         return (avail / avgChar).toInt().coerceIn(16, COACH_WRAP)
     }
 
-    /** The collapsed coach — a top-left pill: `▸ N/M` progress + the step's hint (or its first text line),
-     *  clipped to fit. Non-interactive; the full coach returns as soon as the editor closes. */
-    private fun renderPill(ui: UiBuilder, ch: Chapter, step: Step) {
-        val hint = copy(step.spotlight?.hint ?: step.text)
-        val progress = "${stepIndex + 1}/${ch.steps.size}"
-        ui.panel(Anchor.TopLeft, margin = 12f, padding = 10f, background = 0x11182AF2L, rowHeight = 22f) {
-            title("STEP $progress", 0x6FD6C4FFL)
-            gap(2f)
-            row("→ ${clip(hint, PILL_WRAP)}", 0xFFD86EFFL)
-        }
-    }
 
     /** Read-only view of the coach state, for headless/agent observation. */
     class CoachSnapshot(
@@ -273,7 +260,6 @@ class CampaignDirector {
     companion object {
         private const val BOTTOM_MARGIN_DP = 10f  // desktop coach's gap from the bottom edge — matches CytoHud's bar
         private const val COACH_WRAP = 58   // approx chars per coach line before wrapping (desktop cap)
-        private const val PILL_WRAP = 42    // the collapsed pill is one line; clip the hint to this
         private const val PAD_DP = 14f      // coach panel padding
         private const val TOP_MARGIN_DP = 12f    // phone top-docked coach inset from the top-left corner
         private const val TOP_TEXT_DP = 12f      // phone coach text size (smaller than desktop, to fit)

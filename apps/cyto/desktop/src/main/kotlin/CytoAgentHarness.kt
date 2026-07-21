@@ -497,13 +497,7 @@ object CytoAgentHarness {
                 }
                 if (director.active) {
                     val modalUp = NARROW && geneEditor.isEditing
-                    // Wide never collapses the coach: it sits bottom-centre, clear of the right-docked cell panel
-                // and stacked above the HUD bar, so there is nothing to make room for. Collapsing dates from
-                // the retired side-by-side editor, and since `isEditing` on wide means "a draft is parked"
-                // it stuck permanently after the first gene edit — leaving only the pill, which carries NO
-                // Skip/Next/Reset controls, so a Gate.Next step became impossible to advance.
-                val cellUp = NARROW && (geneEditor.isEditing || controller.lastHeldId != null)
-                    if (!modalUp) director.render(this, controller, collapsed = cellUp, narrow = NARROW)
+                    if (!modalUp) director.render(this, controller, narrow = NARROW)
                 }
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW, savedSnippets = CytoSnippets.list().map { GeneSnippet(it.name, it.genes) }, onSaveGroup = { name, genes -> CytoSnippets.save(name, genes) })
                 if (showHud) hud.renderSheets(this, controls, wide = !NARROW)
@@ -575,13 +569,7 @@ object CytoAgentHarness {
                 }
                 if (director.active) {
                     val modalUp = NARROW && geneEditor.isEditing
-                    // Wide never collapses the coach: it sits bottom-centre, clear of the right-docked cell panel
-                // and stacked above the HUD bar, so there is nothing to make room for. Collapsing dates from
-                // the retired side-by-side editor, and since `isEditing` on wide means "a draft is parked"
-                // it stuck permanently after the first gene edit — leaving only the pill, which carries NO
-                // Skip/Next/Reset controls, so a Gate.Next step became impossible to advance.
-                val cellUp = NARROW && (geneEditor.isEditing || controller.lastHeldId != null)
-                    if (!modalUp) director.render(this, controller, collapsed = cellUp, narrow = NARROW)
+                    if (!modalUp) director.render(this, controller, narrow = NARROW)
                 }
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW, savedSnippets = CytoSnippets.list().map { GeneSnippet(it.name, it.genes) }, onSaveGroup = { name, genes -> CytoSnippets.save(name, genes) })
                 if (showHud) hud.renderSheets(this, controls, wide = !NARROW)

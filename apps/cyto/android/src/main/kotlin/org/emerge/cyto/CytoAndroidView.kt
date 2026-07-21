@@ -275,12 +275,11 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
 
         ui.frame {
             if (menu.inGame) {
-                val cellUp = geneEditor.isEditing || controller.lastHeldId != null
                 val modalUp = geneEditor.isEditing
                 val showHud = !geneEditor.isEditing && controller.lastHeldId == null
                 if (!showHud) hud.close()
                 // Coach first so the (expanded) cell sheet draws over it; the short peek never reaches it.
-                if (!modalUp) director.render(this, controller, collapsed = cellUp, narrow = true)
+                if (!modalUp) director.render(this, controller, narrow = true)
                 if (mask.allows(Control.GeneEditor)) {
                     geneEditor.render(
                         this, controller,

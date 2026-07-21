@@ -266,18 +266,8 @@ object CytoSceneView {
                 drawReadouts(controller, renderer, controls)
                 // The Ui-based L0 HUD (CytoHud) is now the control surface on BOTH widths (UI_REDESIGN.md §8);
                 // the legacy scattered-button overlay is retired (CytoControls is kept as the state model only).
+                // A full-screen narrow modal owns the screen, so the coach hides entirely behind it.
                 val modalUp = narrow && geneEditor.isEditing
-                // A cell/gene editor owns the bottom of the screen, so the coach collapses to a top-left pill
-                // instead of its full bottom-centre panel (§6.1). Behind a full-screen narrow modal there's no
-                // room even for the pill, so it hides entirely there.
-                // Wide never collapses the coach: it sits bottom-centre, clear of the right-docked cell panel
-                // and stacked above the HUD bar, so there is nothing to make room for. Collapsing dates from
-                // the retired side-by-side editor, and since `isEditing` on wide means "a draft is parked"
-                // it stuck permanently after the first gene edit — leaving only the pill, which carries NO
-                // Skip/Next/Reset controls, so a Gate.Next step became impossible to advance.
-                val cellUp = narrow && (geneEditor.isEditing || controller.lastHeldId != null)
-                // The HUD bar shows whenever the bottom is free: on wide that's any time no gene editor is up
-                // (the cell panel docks right, not bottom); on narrow only at L0 (the cell sheet owns the bottom).
                 // Wide always keeps the HUD: nothing on this width claims the bottom bar — the cell panel docks
                 // right and every sheet is a centred, scrimmed popover — so there is nothing to make room for.
                 // (It used to hide on `isEditing`, left over from the retired side-by-side editor column. That
@@ -295,9 +285,9 @@ object CytoSceneView {
                     }
                     // Coach next so the (expanded) narrow cell sheet draws over it; the short peek never
                     // reaches it. On wide the coach is bottom-centre and the panel docks right — no overlap.
-                    // Full bottom-centre panel normally; a top-left pill while editing (wide); nothing behind a
-                    // full-screen narrow modal; a top-docked full coach on narrow.
-                    if (!modalUp) director.render(this, controller, collapsed = cellUp, narrow = narrow)
+                    // Bottom-centre panel on wide, top-docked banner on narrow, nothing behind a full-screen
+                    // narrow modal.
+                    if (!modalUp) director.render(this, controller, narrow = narrow)
                     if (mask.allows(Control.GeneEditor)) {
                         geneEditor.render(
                             this, controller,
