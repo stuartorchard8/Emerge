@@ -13,6 +13,7 @@ import org.emerge.demo.cyto.sim.GeneCondition
 import org.emerge.demo.cyto.sim.Molecules
 import org.emerge.demo.cyto.sim.Operand
 import org.emerge.demo.cyto.sim.SpeciesNames
+import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.sim.core.EntityId
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.HoverAction
@@ -126,6 +127,24 @@ class GeneEditor {
     private var capturingGroup = false
     private val groupBuffer = StringBuilder()
 
+    // Direct text entry for a SPECIES operand (the molecule fields in the BOND/BREAK sheets, Convert/Import
+    // operands, condition molecules). Unlike group-name and constant capture there is deliberately **no
+    // buffer**: the field's content IS the operand, so each keystroke writes straight through to the draft
+    // and every derived readout — the operand's own name, and the BOND/BREAK target it feeds — updates as
+    // you type.
+    //
+    // Focus holds a LENS over the draft rather than a captured value, and that is load-bearing: a host
+    // delivers every character of a frame before the next render (GLFW drains its char queue inside
+    // glfwPollEvents), so closures capturing the render-time draft would have every keystroke in a frame
+    // rebuild from the same stale gene — typing "gb" onto "r" yielded "rb", silently dropping the "g".
+    // Reading and writing through [draft] on each keystroke is what makes fast typing and key-repeat safe.
+    private var speciesFocusKey: String? = null
+    private var speciesLens: SpeciesLens? = null
+
+    /** Read/write access to one species operand of a [Gene]. Both halves are pure functions of the gene, so
+     *  keyboard input always acts on the CURRENT draft — see [speciesFocusKey]. */
+    private class SpeciesLens(val get: (Gene) -> String, val set: (Gene, String) -> Gene)
+
     // Direct text entry for a numeric constant (efficiency gear, gene-condition VALUE): tapping the number
     // in [numberField] captures digit keystrokes into [constantBuffer] the same way group-name capture works.
     private var capturingConstant = false
@@ -186,6 +205,45 @@ class GeneEditor {
         groupBuffer.setLength(0); groupBuffer.append(initial)
         pick = Pick.None
     }
+
+    /** True while a species operand field has keyboard focus — the host routes keystrokes here instead of its
+     *  global shortcuts (mirrors [capturingGroupName]/[capturingConstantValue]). */
+    val capturingSpeciesOperand: Boolean get() = speciesFocusKey != null
+
+    /** Append a typed atom to the focused species operand (host char-callback). **Only alphabet atoms are
+     *  accepted** — R/G/B for the seeded alphabet — so the field can't be driven into a token that isn't
+     *  chemistry at all; anything else is silently ignored rather than beeping or inserting junk. Case
+     *  doesn't matter: species are stored lowercase and displayed uppercase.
+     *
+     *  A legal *string* is still not necessarily a legal *molecule* — the registry enumerates walks that
+     *  never repeat a bond, so `rrr` is typeable but nonexistent. That is surfaced in the field itself
+     *  (see [speciesFieldHint]) rather than blocked, because a half-typed molecule is legitimately invalid
+     *  on the way to a valid one. */
+    fun typeSpeciesChar(c: Char) {
+        val atom = c.lowercaseChar().toString()
+        if (atom !in atoms) return
+        editFocusedSpecies { cur ->
+            // Cap at the longest molecule the alphabet can express (a bond-non-repeating walk visits at most
+            // k²+1 atoms), so held keys can't grow an unbounded string.
+            if (cur.length >= atoms.size * atoms.size + 1) cur else cur + atom
+        }
+    }
+
+    /** Delete the last atom of the focused species operand (host BACKSPACE). */
+    fun speciesBackspace() = editFocusedSpecies { it.dropLast(1) }
+
+    /** Apply [edit] to the focused operand, reading and writing through the LIVE draft so consecutive
+     *  keystrokes within one frame compose instead of overwriting each other. */
+    private fun editFocusedSpecies(edit: (String) -> String) {
+        val lens = speciesLens ?: return
+        val g = draft ?: return
+        draft = lens.set(g, edit(lens.get(g)))
+    }
+
+    /** Release keyboard focus (host ENTER/ESC). There is nothing to commit or revert — every keystroke was
+     *  already applied to the draft — so both keys do the same thing, and the draft still commits with DONE
+     *  like every other field. */
+    fun blurSpeciesOperand() { speciesFocusKey = null; speciesLens = null }
 
     /** True while the editor is capturing typed digits for a numeric constant — the host routes keystrokes
      *  here instead of its global shortcuts (mirrors [capturingGroupName]). */
@@ -581,10 +639,10 @@ class GeneEditor {
             }
             Pick.Operand -> renderOperandSheet(b, d, wide)
             Pick.SpeciesA -> pickSheet(b, "MOLECULE", wide) {
-                speciesBuilder(d.action.a) { draft = d.copy(action = d.action.copy(a = it)) }
+                speciesBuilder("act-a", actionLens(left = true))
             }
             Pick.SpeciesB -> pickSheet(b, "MOLECULE", wide) {
-                speciesBuilder(d.action.b) { draft = d.copy(action = d.action.copy(b = it)) }
+                speciesBuilder("act-b", actionLens(left = false))
             }
             // Both reactants in one sheet, with a live MAKES readout underneath: the whole point of a
             // synthesis gene is its product, and building the pair blind (one operand per sheet) means you
@@ -594,10 +652,10 @@ class GeneEditor {
             Pick.Break -> pickSheet(b, "BREAK WHAT?", wide, heightFraction = 0.5f) {
                 val act = d.action
                 row("INTO", 0x7A8699FFL)
-                speciesBuilder(act.a) { draft = d.copy(action = act.copy(a = it)) }
+                speciesBuilder("brk-a", actionLens(left = true))
                 gap(10f)
                 row("AND", 0x7A8699FFL)
-                speciesBuilder(act.b) { draft = d.copy(action = act.copy(b = it)) }
+                speciesBuilder("brk-b", actionLens(left = false))
                 gap(10f)
                 row("SPLITS", 0x7A8699FFL)
                 row(breakLabel(act), if (act.breakTarget.isEmpty()) 0xC8963CFFL else 0x8FCF9FFFL)
@@ -605,10 +663,10 @@ class GeneEditor {
             Pick.Bond -> pickSheet(b, "BOND WHAT?", wide, heightFraction = 0.5f) {
                 val s = d.source as? EnergySource.FormBond ?: return@pickSheet
                 row("JOIN", 0x7A8699FFL)
-                speciesBuilder(s.a) { draft = d.copy(source = s.copy(a = it)) }
+                speciesBuilder("bond-a", sourceLens(left = true))
                 gap(10f)
                 row("TO", 0x7A8699FFL)
-                speciesBuilder(s.b) { draft = d.copy(source = s.copy(b = it)) }
+                speciesBuilder("bond-b", sourceLens(left = false))
                 gap(10f)
                 // A READOUT, not a control — plain text rather than a chip, because a chip draws a dropdown
                 // chevron and would promise an interaction that doesn't exist. Orange when the pair can't
@@ -798,8 +856,8 @@ class GeneEditor {
             gap(8f)
             when (op) {
                 is Operand.Constant -> { row("VALUE", 0x7A8699FFL); numberField(op.value, 0, 1_000_000) { setOp(Operand.Constant(it)) } }
-                is Operand.Chem -> { row("MOLECULE", 0x7A8699FFL); speciesBuilder(op.species) { setOp(Operand.Chem(it)) } }
-                is Operand.Conc -> { row("MOLECULE", 0x7A8699FFL); speciesBuilder(op.species) { setOp(Operand.Conc(it)) } }
+                is Operand.Chem -> { row("MOLECULE", 0x7A8699FFL); speciesBuilder("op-chem", clauseSpeciesLens(conc = false)) }
+                is Operand.Conc -> { row("MOLECULE", 0x7A8699FFL); speciesBuilder("op-conc", clauseSpeciesLens(conc = true)) }
                 else -> {}
             }
             // Remove-clause parity with the old form: only when more than one AND-clause remains.
@@ -823,16 +881,83 @@ class GeneEditor {
         })
     }
 
-    /** A species built atom-by-atom: the molecule so far, then `+<atom>` per alphabet atom and a `<`
-     *  backspace. `(NONE)` when empty (a valid no-op / symmetric-division state). */
-    private fun PanelBuilder.speciesBuilder(current: String, onChange: (String) -> Unit) {
-        chip("", sp(current), 0x2A3550FFL) {}
+    /**
+     * A species operand field. Tap it to take keyboard focus and **type the molecule directly** (R/G/B only);
+     * the `+<atom>` / `<` buttons below remain the whole input path on touch, where there is no key routing.
+     *
+     * [key] identifies the field across frames so focus survives re-renders. While focused it re-registers
+     * the accessors each frame, which is how typing reads and writes the CURRENT draft rather than a stale
+     * capture — see [speciesFocusKey].
+     */
+    private fun PanelBuilder.speciesBuilder(key: String, lens: SpeciesLens) {
+        val current = draft?.let(lens.get) ?: ""
+        val focused = speciesFocusKey == key
+        fun apply(edit: (String) -> String) { draft?.let { draft = lens.set(it, edit(lens.get(it))) } }
+        val shown = (if (current.isEmpty()) "" else current.uppercase()) + if (focused) "_" else ""
+        listRow(shown.ifEmpty { "(NONE)" }, speciesFieldHint(current), selected = focused) {
+            speciesFocusKey = key; speciesLens = lens
+        }
         gap(6f)
-        actionRow(atoms.map { a -> Triple<String, Long, () -> Unit>("+${a.uppercase()}", 0x32503CFFL) { onChange(current + a) } } +
-            Triple<String, Long, () -> Unit>("<", 0x5A3A3AFFL) { onChange(current.dropLast(1)) })
+        // The atom buttons go through the same lens as typing, so touch and keyboard can be interleaved
+        // freely and neither can act on a stale value.
+        actionRow(atoms.map { a -> Triple<String, Long, () -> Unit>("+${a.uppercase()}", 0x32503CFFL) { apply { it + a } } } +
+            Triple<String, Long, () -> Unit>("<", 0x5A3A3AFFL) { apply { it.dropLast(1) } })
     }
 
-    private fun closePick() { pick = Pick.None; pickClause = -1; pickSide = 0; confirmingDelete = false }
+    /** Lens onto a synthesis source's left/right reactant. A no-op on a Light gene (the field isn't shown). */
+    private fun sourceLens(left: Boolean) = SpeciesLens(
+        { g -> (g.source as? EnergySource.FormBond)?.let { if (left) it.a else it.b } ?: "" },
+        { g, v -> (g.source as? EnergySource.FormBond)?.let { g.copy(source = if (left) it.copy(a = v) else it.copy(b = v)) } ?: g },
+    )
+
+    /** Lens onto an action's `a`/`b` operand (BREAK's two fragments, Convert/Import/Retain's species). */
+    private fun actionLens(left: Boolean) = SpeciesLens(
+        { g -> if (left) g.action.a else g.action.b },
+        { g, v -> g.copy(action = if (left) g.action.copy(a = v) else g.action.copy(b = v)) },
+    )
+
+    /** Lens onto the species inside a condition operand, addressed by the picker's stored clause + side —
+     *  so it stays valid across frames exactly like the other two. [conc] picks which operand kind to
+     *  rebuild, since Chem and Conc both carry a species. */
+    private fun clauseSpeciesLens(conc: Boolean) = SpeciesLens(
+        { g ->
+            val cl = g.condition.clauses.getOrNull(pickClause) ?: return@SpeciesLens ""
+            when (val op = if (pickSide == 0) cl.lhs else cl.rhs) {
+                is Operand.Chem -> op.species
+                is Operand.Conc -> op.species
+                else -> ""
+            }
+        },
+        { g, v ->
+            val cl = g.condition.clauses.getOrNull(pickClause) ?: return@SpeciesLens g
+            val op: Operand = if (conc) Operand.Conc(v) else Operand.Chem(v)
+            withClauseAt(g, pickClause, if (pickSide == 0) cl.copy(lhs = op) else cl.copy(rhs = op))
+        },
+    )
+
+    /**
+     * The helper line under a species field: the molecule's **live name**, or why it isn't one.
+     *
+     * The name is only worth showing when it actually says something the token doesn't. [SpeciesNames] names
+     * monomers and duomers, plus whatever the current genome aliases; everything else falls back to the raw
+     * token, so printing it would just echo the field back at the player. Hence the `!= uppercase` check
+     * rather than always rendering it.
+     *
+     * Invalid tokens are reported, not blocked: the registry only contains walks that never repeat a bond, so
+     * `rrr` is typeable but is no molecule at all. Blocking the keystroke would also block legitimate
+     * half-typed states, so the field says so instead and the gene stays inert until it's a real species.
+     */
+    private fun speciesFieldHint(current: String): String {
+        if (current.isEmpty()) return "TYPE ${atoms.joinToString("/") { it.uppercase() }}, OR TAP AN ATOM BELOW"
+        if (SpeciesRegistry.id(current) < 0) return "NOT A MOLECULE - THAT BOND REPEATS"
+        val name = sp(current)
+        return if (name == current.uppercase()) "" else name
+    }
+
+    private fun closePick() {
+        pick = Pick.None; pickClause = -1; pickSide = 0; confirmingDelete = false
+        blurSpeciesOperand()   // the focused field lived in the sheet being closed
+    }
 
     /** One-line gloss of an action, for the L4 list picker (the room a dropdown never had). */
     private fun actionBlurb(t: ActionType): String = when (t) {

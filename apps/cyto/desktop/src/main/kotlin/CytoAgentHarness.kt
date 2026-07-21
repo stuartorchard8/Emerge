@@ -183,13 +183,17 @@ object CytoAgentHarness {
                     // Spawn a single founder from a .gene file — for testing hand-authored / campaign-stage
                     // genomes (viability, differentiation, locomotion). Push it with `dragcell` to bootstrap.
                     val path = line.removePrefix("genome").trim().trim('"')
-                    val genes = GeneCodec.parse(File(path).readText())
+                    val text = File(path).readText()
+                    val genes = GeneCodec.parse(text)
+                    // Carry the file's `# alias` headers into the scenario too, so a probe genome displays
+                    // its chemical names the way the curated campaign genomes do.
                     val scn = CytoScenario.DEFAULT.copy(
                         name = "Probe",
                         founders = listOf(FounderSpec(CellType.Collector, 1, genome = genes)),
+                        aliases = GeneCodec.parseAliases(text),
                     )
                     director.stop(); controller.newGame(scn); renderer.resetView()
-                    println("[agent] genome loaded: ${genes.size} genes from $path")
+                    println("[agent] genome loaded: ${genes.size} genes, ${scn.aliases.size} aliases from $path")
                 }
                 "run" -> advance(t[1].toInt())
                 "runs" -> advance((t[1].toFloat() * 64f).toInt())
@@ -246,6 +250,40 @@ object CytoAgentHarness {
                     }
                 }
                 "elements" -> listElements()
+                // Type into whichever gene-editor field currently has keyboard focus, routed exactly as
+                // CytoSceneView routes the real char-callback — so a script exercises the same path a player
+                // does. Without this, keyboard-driven UI is the one thing the harness can't reach.
+                "type" -> {
+                    val text = line.removePrefix("type").trim()
+                    for (c in text) when {
+                        geneEditor.capturingSpeciesOperand -> geneEditor.typeSpeciesChar(c)
+                        geneEditor.capturingGroupName -> geneEditor.typeGroupChar(c)
+                        geneEditor.capturingConstantValue -> geneEditor.typeConstantChar(c)
+                    }
+                    println("[agent] typed '$text' (species=${geneEditor.capturingSpeciesOperand})")
+                }
+                // Editing keys for the focused field: `key backspace` / `key enter` / `key esc`.
+                "key" -> {
+                    when (t.getOrNull(1)?.lowercase()) {
+                        "backspace" -> when {
+                            geneEditor.capturingSpeciesOperand -> geneEditor.speciesBackspace()
+                            geneEditor.capturingGroupName -> geneEditor.groupBackspace()
+                            geneEditor.capturingConstantValue -> geneEditor.constantBackspace()
+                        }
+                        "enter" -> when {
+                            geneEditor.capturingSpeciesOperand -> geneEditor.blurSpeciesOperand()
+                            geneEditor.capturingGroupName -> geneEditor.confirmGroupName()
+                            geneEditor.capturingConstantValue -> geneEditor.confirmConstantValue()
+                        }
+                        "esc" -> when {
+                            geneEditor.capturingSpeciesOperand -> geneEditor.blurSpeciesOperand()
+                            geneEditor.capturingGroupName -> geneEditor.cancelGroupName()
+                            geneEditor.capturingConstantValue -> geneEditor.cancelConstantValue()
+                        }
+                        else -> println("[agent] unknown key: ${t.getOrNull(1)}")
+                    }
+                    println("[agent] key ${t.getOrNull(1)}")
+                }
                 "tap-ui" -> tapUi(line.removePrefix("tap-ui").trim())
                 "hover-ui" -> hoverUi(line.removePrefix("hover-ui").trim())
                 "hover-clear" -> { ui.clearHover(); println("[agent] hover cleared") }

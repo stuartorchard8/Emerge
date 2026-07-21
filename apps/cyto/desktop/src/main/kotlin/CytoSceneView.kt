@@ -179,7 +179,7 @@ object CytoSceneView {
 
             // WASD free camera pan. Held keys pan the camera each frame (delta-scaled). Suppressed while a
             // name field is capturing keystrokes so typing W/A/S/D doesn't move the camera.
-            if (menu.inGame && !menu.capturingName && !geneEditor.capturingGroupName && !geneEditor.capturingConstantValue) {
+            if (menu.inGame && !menu.capturingName && !geneEditor.capturingGroupName && !geneEditor.capturingConstantValue && !geneEditor.capturingSpeciesOperand) {
                 var kx = 0f; var ky = 0f
                 if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) kx -= 1f   // move camera right
                 if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) kx += 1f   // move camera left
@@ -391,6 +391,16 @@ object CytoSceneView {
                 }
                 return@glfwSetKeyCallback
             }
+            // A focused species operand field (BOND/BREAK molecules, Convert/Import operands) — same routing
+            // as group-name capture above. ENTER and ESC both just release focus: keystrokes were applied to
+            // the draft as they were typed, so there is nothing to commit or revert here.
+            if (geneEditor.capturingSpeciesOperand) {
+                when (key) {
+                    GLFW_KEY_BACKSPACE -> geneEditor.speciesBackspace()
+                    GLFW_KEY_ENTER, GLFW_KEY_KP_ENTER, GLFW_KEY_ESCAPE -> geneEditor.blurSpeciesOperand()
+                }
+                return@glfwSetKeyCallback
+            }
             // Direct text entry for a numeric constant (VALUE field, efficiency gear) — same routing as
             // group-name capture above.
             if (geneEditor.capturingConstantValue) {
@@ -431,6 +441,7 @@ object CytoSceneView {
             if (codepoint in 32..126) {
                 if (menu.capturingName) menu.typeChar(codepoint.toChar())
                 else if (geneEditor.capturingGroupName) geneEditor.typeGroupChar(codepoint.toChar())
+                else if (geneEditor.capturingSpeciesOperand) geneEditor.typeSpeciesChar(codepoint.toChar())
                 else if (geneEditor.capturingConstantValue) geneEditor.typeConstantChar(codepoint.toChar())
             }
         }
