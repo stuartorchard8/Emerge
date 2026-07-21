@@ -20,7 +20,6 @@ class OperandDispatchBench {
     private fun byType(op: Operand, counts: IntArray, bio: Int): Int = when (op) {
         is Operand.Constant -> op.value
         is Operand.Chem -> counts[op.speciesId and 31]
-        is Operand.Conc -> if (bio <= 0) 0 else (counts[op.speciesId and 31].toLong() * 1000 / bio).toInt()
         Operand.Biomass -> bio
         Operand.Touching -> 3
         Operand.Neighbours -> 4
@@ -29,9 +28,6 @@ class OperandDispatchBench {
     private fun byKind(op: Operand, counts: IntArray, bio: Int): Int = when (op.kind) {
         OperandKind.CONSTANT -> (op as Operand.Constant).value
         OperandKind.CHEM -> counts[(op as Operand.Chem).speciesId and 31]
-        OperandKind.CONC -> (op as Operand.Conc).let {
-            if (bio <= 0) 0 else (counts[it.speciesId and 31].toLong() * 1000 / bio).toInt()
-        }
         OperandKind.BIOMASS -> bio
         OperandKind.TOUCHING -> 3
         OperandKind.NEIGHBOURS -> 4
@@ -42,14 +38,13 @@ class OperandDispatchBench {
     fun abDispatch() {
         if (System.getProperty("operandbench") == null) return
 
-        // A mix weighted like real genomes: mostly Constant/Chem/Biomass, Conc rare, sensors occasional.
+        // A mix weighted like real genomes: mostly Constant/Chem/Biomass, sensors occasional.
         val ops: List<Operand> = buildList {
             repeat(8) { add(Operand.Constant(it * 37)) }
             repeat(8) { add(Operand.Chem("rg")) }
             repeat(4) { add(Operand.Biomass) }
             repeat(2) { add(Operand.Touching) }
             repeat(2) { add(Operand.Neighbours) }
-            repeat(1) { add(Operand.Conc("gb")) }
         }.let { base -> List(4096) { base[(it * 7 + it / 3) % base.size] } }   // deterministic shuffle
 
         val counts = IntArray(32) { it * 13 }

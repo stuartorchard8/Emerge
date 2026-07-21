@@ -31,7 +31,7 @@ import kotlin.test.Test
  * test. Properties (all forwarded in build.gradle.kts):
  *   -Dsandboxgenome=<file>   GeneCodec genome (default: cell 1872)
  *   -Dsandboxseed=r:500,b:200 founder cytoplasm (default: CytoSeed.SEED_CYTOPLASM)
- *   -Dsandboxwatch=bb,gb     two species to report Conc of (default rr,rg)
+ *   -Dsandboxwatch=bb,gb     two species to report counts of (default rr,rg)
  *   -Dsandboxticks=8000
  *   → /tmp/cytosandbox.txt
  */
@@ -43,7 +43,7 @@ class CytoSandbox {
         Break bg : rg < 900 & g > bg & rr < bg & g > rg : FormBond g g
         Break bg : Biomass < 2100 : Convert bg @12
         Break bg : bg > 5000 & gg < 200 & r > 1000 & g > 1000 : Mitosis rg
-        Light : Conc(g) > gg : FormBond b g
+        Light : g > gg : FormBond b g
         Light : rr < 20 & rg < 1000 : FormBond r g @15
         Light : rr > 100 : Repair
     """.trimIndent()
@@ -82,7 +82,7 @@ class CytoSandbox {
             "$it: canDiffuse=${h.canDiffuse(SpeciesRegistry.id(it))} canHold=${h.canHold(SpeciesRegistry.id(it))}"
         })
         sb.appendLine()
-        sb.appendLine("tick\tpop\tCOM(x,y)\tdrift\tshape WxH\torgOff\t${watch[0]} Conc\t${watch.getOrElse(1){"-"}} Conc")
+        sb.appendLine("tick\tpop\tCOM(x,y)\tdrift\tshape WxH\torgOff\t${watch[0]} count\t${watch.getOrElse(1){"-"}} Conc")
 
         var com0: Pair<Double, Double>? = null
         fun report(t: Int, s: SimState) {

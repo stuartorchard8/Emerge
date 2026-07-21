@@ -33,7 +33,7 @@ import kotlin.test.Test
 class ClockProbe {
     private val baseline = listOf(
         "Break rr : Biomass < 2400 : Convert rr @15",        // 1 metabolism: rr -> biomass
-        "Light : Conc(r) > 0 : FormBond r r",                // 2 metabolism: light -> rr (fuel)
+        "Light : r > 0 : FormBond r r",                // 2 metabolism: light -> rr (fuel)
         "Break rr : gg < 220 & gb < 200 : FormBond g g @10", // 3 clock START+maintain (gg producer from fuel)
         "Break gb : gg < gb & gg < 200 : FormBond g r @15",  // 4 cycle: gb -> gr
         "Break gr : gb < gr & gb < 200 : FormBond g g @15",  // 5 cycle: gr -> gg

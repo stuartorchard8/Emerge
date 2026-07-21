@@ -50,7 +50,7 @@ object GeneCodec {
      *  - 3: `Break` became the exact mirror of `Bond` — `Break <a> <b>` names the two FRAGMENTS and splits
      *       the molecule they would join into, so a digestion gene names its own substrate instead of
      *       depending on what the cell happens to hold. */
-    const val GENOME_VERSION = 3
+    const val GENOME_VERSION = 4
 
     /** The version assumed for text with no `# genome` header — i.e. everything written before versioning
      *  existed, which is by definition the pre-inversion model. */
@@ -185,21 +185,27 @@ object GeneCodec {
     private fun operand(op: Operand): String = when (op) {
         is Operand.Constant -> op.value.toString()
         is Operand.Chem -> tok(op.species)
-        is Operand.Conc -> "Conc(${tok(op.species)})"
         Operand.Biomass -> "Biomass"
         Operand.Touching -> "Touching"
         Operand.Neighbours -> "Neighbours"
     }
 
-    // A token is `Biomass`/`Touching`/`Neighbours` (live readings), `Conc(<species>)` (concentration), an integer (a
-    // constant), or a species token (its cytoplasm count). Species are lowercase letters, so they never
-    // collide with an integer or a keyword.
+    // A token is `Biomass`/`Touching`/`Neighbours` (live readings), an integer (a constant), or a species
+    // token (its cytoplasm count). Species are lowercase letters, so they never collide with an integer or
+    // a keyword.
+    //
+    // `Conc(<species>)` is the retired v3 concentration operand, kept here as a MIGRATION branch only (see
+    // GENOME_VERSION 4 and [GenomeMigration]). It must stay ahead of the species fallback: without it,
+    // `Conc(gb)` does not fail to parse, it silently becomes a species literally NAMED "Conc(gb)", giving a
+    // genome that loads looking correct and never fires. Mapping it to the raw count is exact for the only
+    // form that survived in practice (`Conc(x) > 0`, since a positive count over positive biomass floors
+    // above zero) and coherent-but-different otherwise, which is [GenomeMigration]'s stated contract.
     private val CONC = Regex("^Conc\\((.*)\\)$")
     private fun parseOperand(s: String): Operand = when {
         s == "Biomass" -> Operand.Biomass
         s == "Touching" -> Operand.Touching
         s == "Neighbours" -> Operand.Neighbours
-        CONC.matchEntire(s) != null -> Operand.Conc(untok(CONC.matchEntire(s)!!.groupValues[1]))
+        CONC.matchEntire(s) != null -> Operand.Chem(untok(CONC.matchEntire(s)!!.groupValues[1]))
         else -> s.toIntOrNull()?.let { Operand.Constant(it) } ?: Operand.Chem(untok(s))
     }
 

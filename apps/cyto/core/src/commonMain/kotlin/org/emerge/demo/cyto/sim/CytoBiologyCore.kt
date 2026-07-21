@@ -740,7 +740,6 @@ object CytoBiologyCore {
     private fun operand(op: Operand, work: CellWork, bioBonds: Int): Int = when (op.kind) {
         OperandKind.CONSTANT -> (op as Operand.Constant).value
         OperandKind.CHEM -> work.cachedCount((op as Operand.Chem).speciesId)
-        OperandKind.CONC -> conc(work.cachedCount((op as Operand.Conc).speciesId), bioBonds)
         OperandKind.BIOMASS -> bioBonds
         OperandKind.TOUCHING -> work.touchCount
         OperandKind.NEIGHBOURS -> work.weldedDegree
@@ -755,25 +754,18 @@ object CytoBiologyCore {
     private fun operandSnap(op: Operand, snap: MoleculeStore, snapBiomass: Int, work: CellWork): Int = when (op.kind) {
         OperandKind.CONSTANT -> (op as Operand.Constant).value
         OperandKind.CHEM -> work.cachedCount((op as Operand.Chem).speciesId)
-        OperandKind.CONC -> conc(work.cachedCount((op as Operand.Conc).speciesId), snapBiomass)
         OperandKind.BIOMASS -> snapBiomass
         OperandKind.TOUCHING -> work.touchCount
         OperandKind.NEIGHBOURS -> work.weldedDegree
         else -> error("unhandled operand kind ${op.kind}")
     }
 
-    /** Size-normalised concentration (CytoTuning.CONC_SCALE units): molecules per unit biomass-bond. Long
-     *  intermediate (count·SCALE can exceed Int for a hoarding cell); 0 when biomass is 0. Integer floor ⇒
-     *  deterministic across platforms. */
-    private fun conc(count: Int, biomass: Int): Int =
-        if (biomass <= 0) 0 else (count.toLong() * CytoTuning.CONC_SCALE / biomass).toInt()
-
     /** Sub-tick interpolation cap: the max ops a growth action may do before the quantity it INCREASES
      *  (biomass, when [qBiomass]; else cytoplasm species [qSpeciesId]) crosses a threshold of THIS gene's
      *  own gate — i.e. the portion of the tick before the action would flip its own condition false. Each
      *  AND-clause that the increase would break bounds it (`Q < limit`, or `limit > Q`); the gene's cap is
-     *  the **tightest** (min) over all clauses. A clause not reading Q (incl. any [Operand.Conc] — its ratio
-     *  isn't linear in Q, so it's left uncapped) imposes none. Reads the snapshot so it's order-independent. */
+     *  the **tightest** (min) over all clauses. A clause not reading Q imposes none. Reads the snapshot so
+     *  it's order-independent. */
     private fun selfGateCap(
         cond: GeneCondition, qBiomass: Boolean, qSpeciesId: Int, snapQ: Int, perOp: Int,
         snap: MoleculeStore, snapBiomass: Int, work: CellWork,

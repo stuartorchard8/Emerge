@@ -50,8 +50,6 @@ class InspectCell {
         fun opVal(o: org.emerge.demo.cyto.sim.Operand): Int = when (o) {
             is org.emerge.demo.cyto.sim.Operand.Constant -> o.value
             is org.emerge.demo.cyto.sim.Operand.Chem -> cell.cytoplasm[o.species] ?: 0
-            is org.emerge.demo.cyto.sim.Operand.Conc ->
-                if (bioBonds <= 0) 0 else ((cell.cytoplasm[o.species] ?: 0).toLong() * org.emerge.demo.cyto.sim.CytoTuning.CONC_SCALE / bioBonds).toInt()
             org.emerge.demo.cyto.sim.Operand.Biomass -> bioBonds
             org.emerge.demo.cyto.sim.Operand.Touching -> 0
             org.emerge.demo.cyto.sim.Operand.Neighbours -> 0

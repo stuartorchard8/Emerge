@@ -556,7 +556,6 @@ class CytoController(
         fun eval(op: Operand): Int = when (op) {
             is Operand.Constant -> op.value
             is Operand.Chem -> cyto[op.species] ?: 0
-            is Operand.Conc -> if (totalBiomass > 0) ((cyto[op.species] ?: 0).toLong() * CytoTuning.CONC_SCALE / totalBiomass).toInt() else 0
             Operand.Biomass -> totalBiomass
             Operand.Touching -> touch
             Operand.Neighbours -> weldedDegree
@@ -765,7 +764,6 @@ class CytoController(
     private fun operandLabel(op: org.emerge.demo.cyto.sim.Operand): String = when (op) {
         is org.emerge.demo.cyto.sim.Operand.Constant -> op.value.toString()
         is org.emerge.demo.cyto.sim.Operand.Chem -> spName(op.species)
-        is org.emerge.demo.cyto.sim.Operand.Conc -> "[${spName(op.species)}]"
         org.emerge.demo.cyto.sim.Operand.Biomass -> "BIO"
         org.emerge.demo.cyto.sim.Operand.Touching -> "TOUCH"
         org.emerge.demo.cyto.sim.Operand.Neighbours -> "NBRS"

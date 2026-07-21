@@ -169,7 +169,7 @@ class GeneEditor {
 
     /** The four operand kinds, in picker order: a constant value, a cytoplasm count, total biomass, or
      *  the contact count. */
-    private val operandKindLabels: List<String> = listOf("Const", "Chem", "Conc", "BIO", "Touch", "Nbrs")
+    private val operandKindLabels: List<String> = listOf("Const", "Chem", "BIO", "Touch", "Nbrs")
 
     /** True while a gene is open for editing. In the narrow layout the L3 modal is full-screen, so the host
      *  suppresses other overlays (the campaign coach) behind it — see `apps/cyto/UI_REDESIGN.md` §6.1. */
@@ -853,8 +853,7 @@ class GeneEditor {
             gap(8f)
             when (op) {
                 is Operand.Constant -> { row("VALUE", 0x7A8699FFL); numberField(op.value, 0, 1_000_000) { setOp(Operand.Constant(it)) } }
-                is Operand.Chem -> { row("MOLECULE", 0x7A8699FFL); speciesBuilder("op-chem", clauseSpeciesLens(conc = false)) }
-                is Operand.Conc -> { row("MOLECULE", 0x7A8699FFL); speciesBuilder("op-conc", clauseSpeciesLens(conc = true)) }
+                is Operand.Chem -> { row("MOLECULE", 0x7A8699FFL); speciesBuilder("op-chem", clauseSpeciesLens()) }
                 else -> {}
             }
             // Remove-clause parity with the old form: only when more than one AND-clause remains.
@@ -914,20 +913,18 @@ class GeneEditor {
     )
 
     /** Lens onto the species inside a condition operand, addressed by the picker's stored clause + side —
-     *  so it stays valid across frames exactly like the other two. [conc] picks which operand kind to
-     *  rebuild, since Chem and Conc both carry a species. */
-    private fun clauseSpeciesLens(conc: Boolean) = SpeciesLens(
+     *  so it stays valid across frames exactly like the other two. */
+    private fun clauseSpeciesLens() = SpeciesLens(
         { g ->
             val cl = g.condition.clauses.getOrNull(pickClause) ?: return@SpeciesLens ""
             when (val op = if (pickSide == 0) cl.lhs else cl.rhs) {
                 is Operand.Chem -> op.species
-                is Operand.Conc -> op.species
                 else -> ""
             }
         },
         { g, v ->
             val cl = g.condition.clauses.getOrNull(pickClause) ?: return@SpeciesLens g
-            val op: Operand = if (conc) Operand.Conc(v) else Operand.Chem(v)
+            val op: Operand = Operand.Chem(v)
             withClauseAt(g, pickClause, if (pickSide == 0) cl.copy(lhs = op) else cl.copy(rhs = op))
         },
     )
@@ -1019,7 +1016,6 @@ class GeneEditor {
     private fun operandLabel(op: Operand): String = when (op) {
         is Operand.Constant -> op.value.toString()
         is Operand.Chem -> "CHEM ${sp(op.species)}"
-        is Operand.Conc -> "CONC ${sp(op.species)}"
         Operand.Biomass -> "BIO"
         Operand.Touching -> "TOUCH"
         Operand.Neighbours -> "NBRS"
@@ -1313,10 +1309,9 @@ class GeneEditor {
     private fun operandKind(op: Operand): Int = when (op) {
         is Operand.Constant -> 0
         is Operand.Chem -> 1
-        is Operand.Conc -> 2
-        Operand.Biomass -> 3
-        Operand.Touching -> 4
-        Operand.Neighbours -> 5
+        Operand.Biomass -> 2
+        Operand.Touching -> 3
+        Operand.Neighbours -> 4
     }
 
     /** Build an operand of the picked [kind], carrying [prev]'s value/species when the kind is unchanged
@@ -1324,9 +1319,8 @@ class GeneEditor {
     private fun operandOfKind(kind: Int, prev: Operand): Operand = when (kind) {
         0 -> Operand.Constant((prev as? Operand.Constant)?.value ?: 0)
         1 -> Operand.Chem((prev as? Operand.Chem)?.species ?: atoms.first())
-        2 -> Operand.Conc((prev as? Operand.Conc)?.species ?: atoms.first())
-        3 -> Operand.Biomass
-        4 -> Operand.Touching
+        2 -> Operand.Biomass
+        3 -> Operand.Touching
         else -> Operand.Neighbours
     }
 

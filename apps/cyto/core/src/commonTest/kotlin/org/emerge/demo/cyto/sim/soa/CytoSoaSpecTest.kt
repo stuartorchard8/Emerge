@@ -262,18 +262,19 @@ class CytoSoaSpecTest {
     // activeUptakeYieldsLessAgainstASteeperGradient (Import is now a flat C_eff bias on the diffusion
     // junction, no gradient-cost diminishing returns).
     @Test
-    fun concBandAndGateFiresOnlyInRange() {
-        // Conc operand + AND-conjunction (MORPHOGENESIS.md §Morphogens for shape): a Convert gene gated
-        // `Conc(ab) > 50 & Conc(ab) < 200` locks ab into biomass only when the size-normalised ab
-        // concentration is in-band. With CONC_SCALE=1000 and biomass=1000 bonds, Conc(ab) == count(ab), so
-        // count 100 is in-band and 500 is above it. The above-band cell does NOT grow — which can only be the
+    fun bandGateFiresOnlyInRange() {
+        // AND-conjunction (MORPHOGENESIS.md §Morphogens for shape): a Convert gene gated `rg > 50 & rg < 200`
+        // locks rg into biomass only when the rg count is in-band, so count 100 is in-band and 500 is above it.
+        // This was authored against the retired `Conc` operand; because biomass is pinned at 1000 bonds here
+        // and CONC_SCALE is 1000, `Conc(rg)` evaluated to exactly `count(rg)`, so the migration to a raw count
+        // is exact and the thresholds and assertions are unchanged. The above-band cell does NOT grow — which can only be the
         // SECOND clause (the upper bound) being ANDed in (a lone `> 50` would fire at 500 too), proving the
         // conjunction is enforced. cc is the (light-independent) BreakBond fuel.
         val convert = Gene(
             EnergySource.FormBond("b", "b"),
             GeneCondition(listOf(
-                Clause(Operand.Conc("rg"), Comparison.Greater, Operand.Constant(50)),
-                Clause(Operand.Conc("rg"), Comparison.Less, Operand.Constant(200)),
+                Clause(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(50)),
+                Clause(Operand.Chem("rg"), Comparison.Less, Operand.Constant(200)),
             )),
             GeneAction(ActionType.Convert, "rg"),
         )
@@ -288,8 +289,8 @@ class CytoSoaSpecTest {
             }
             return run(initial, ticks = 1).components.getTable<CytoCellComponent>().asMap().values.first().biomass["rg"] ?: 0
         }
-        assertTrue(bioAbAfterTick(100) > 1000, "in-band (Conc 100) Converts → biomass grows; got ${bioAbAfterTick(100)}")
-        assertEquals(1000, bioAbAfterTick(500), "above-band (Conc 500) fails the upper clause → no Convert")
+        assertTrue(bioAbAfterTick(100) > 1000, "in-band (100) Converts → biomass grows; got ${bioAbAfterTick(100)}")
+        assertEquals(1000, bioAbAfterTick(500), "above-band (500) fails the upper clause → no Convert")
     }
 
     @Test
@@ -338,9 +339,9 @@ class CytoSoaSpecTest {
                 Bond r g : rg < 4000 : Import r
                 Bond r g : Biomass < 4500 : Convert rg
                 $divideGene
-                Bond b b : Conc(bb) > 0 : Import b
-                Bond g b : Conc(bb) > 0 : Import g
-                Bond g b : Conc(gb) > 30 : Convert gb
+                Bond b b : bb > 0 : Import b
+                Bond g b : bb > 0 : Import g
+                Bond g b : gb > 30 : Convert gb
                 Bond r g : Biomass > 0 : Repair
                 """.trimIndent(),
             )

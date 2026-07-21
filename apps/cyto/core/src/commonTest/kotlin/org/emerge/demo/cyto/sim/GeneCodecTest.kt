@@ -77,11 +77,11 @@ class GeneCodecTest {
     }
 
     /** Every operand kind round-trips on either side of the gate — the exhaustive backstop for the
-     *  operand tokens (constant / species / concentration / Biomass / Touching / Neighbours) now that both
+     *  operand tokens (constant / species / Biomass / Touching / Neighbours) now that both
      *  sides are operands. */
     @Test
     fun roundTripsEveryOperandKindOnBothSides() {
-        val kinds = listOf(Operand.Constant(7), Operand.Chem("rg"), Operand.Conc("rgg"), Operand.Biomass, Operand.Touching, Operand.Neighbours)
+        val kinds = listOf(Operand.Constant(7), Operand.Chem("rg"), Operand.Biomass, Operand.Touching, Operand.Neighbours)
         for (op in kinds) {
             val asLhs = Gene(EnergySource.Light, GeneCondition(op, Comparison.Greater, Operand.Constant(2)), GeneAction(ActionType.Mitosis))
             assertEquals(listOf(asLhs), GeneCodec.parse(body(listOf(asLhs))), "$op as lhs")
@@ -119,21 +119,46 @@ class GeneCodecTest {
         assertEquals(listOf(symmetric), GeneCodec.parse("Light : Biomass > 8 : Mitosis"), "bare Mitosis stays symmetric")
     }
 
-    /** A `Conc` (concentration) operand and a multi-clause AND condition round-trip + parse — the
-     *  positional-band readout the morphogen-for-shape work relies on (MORPHOGENESIS.md §Morphogens for
-     *  shape). A bare single-clause condition still parses (backward compatible). */
+    /**
+     * A retired-v3 `Conc(x)` operand migrates to the raw count `x` — it must NOT fall through to the
+     * species fallback.
+     *
+     * This is the one hazard that made dropping `Conc` more than a deletion (GENE_OPERANDS_PLAN §1.4).
+     * `parseOperand` ends in `Operand.Chem(untok(s))` for anything unrecognised, so with no explicit branch
+     * `Conc(gb)` does not fail to parse — it silently becomes a species literally NAMED "Conc(gb)", which no
+     * cell ever holds. The genome loads looking correct and the gene simply never fires. Assert on the
+     * parsed species, not just that parsing succeeded, because the corrupt form parses "fine".
+     */
     @Test
-    fun roundTripsConcBandAndMultiClause() {
+    fun migratesRetiredConcOperandToRawCount() {
+        val parsed = GeneCodec.parse("Light : Conc(gb) > 30 : Convert rg")
+        val lhs = parsed.single().condition.clauses.single().lhs
+        assertEquals(Operand.Chem("gb"), lhs, "Conc(gb) must migrate to the gb count, not a species named \"Conc(gb)\"")
+
+        // `Conc(x) > 0` is the form that actually survived in the genome library, and it migrates EXACTLY:
+        // a positive count over positive biomass always floors above zero, so the gate is unchanged.
+        val zero = GeneCodec.parse("Light : Conc(r) > 0 : Repair").single().condition.clauses.single()
+        assertEquals(Operand.Chem("r"), zero.lhs, "Conc(r) > 0 migrates to r > 0")
+
+        // And it is gone from the output: nothing re-serialises as Conc(...).
+        assertEquals("Light : gb > 30 : Convert rg", body(parsed), "migrated genome serialises without Conc")
+    }
+
+    /** A multi-clause AND condition round-trips — the positional-band readout the morphogen-for-shape work
+     *  relies on (MORPHOGENESIS.md §Morphogens for shape). A bare single-clause condition still parses
+     *  (backward compatible). */
+    @Test
+    fun roundTripsBandAndMultiClause() {
         val band = Gene(
             EnergySource.Light,
             GeneCondition(listOf(
-                Clause(Operand.Conc("rb"), Comparison.Greater, Operand.Constant(50)),
-                Clause(Operand.Conc("rb"), Comparison.Less, Operand.Constant(200)),
+                Clause(Operand.Chem("rb"), Comparison.Greater, Operand.Constant(50)),
+                Clause(Operand.Chem("rb"), Comparison.Less, Operand.Constant(200)),
             )),
             GeneAction(ActionType.Convert, "rg"),
         )
-        assertEquals("Light : Conc(rb) > 50 & Conc(rb) < 200 : Convert rg", body(listOf(band)), "serialized band")
-        assertEquals(listOf(band), GeneCodec.parse(body(listOf(band))), "Conc band round-trip")
+        assertEquals("Light : rb > 50 & rb < 200 : Convert rg", body(listOf(band)), "serialized band")
+        assertEquals(listOf(band), GeneCodec.parse(body(listOf(band))), "band round-trip")
 
         // A hand-written multi-clause gate parses into ordered clauses; a single-clause one still works.
         assertEquals(

@@ -96,7 +96,7 @@ sealed class Operand(
     /**
      * This operand's [OperandKind] tag — a **plain `@JvmField` on the base class**, deliberately not an
      * `abstract val` each subclass overrides. That distinction is the entire point: an abstract val makes
-     * reading the tag a virtual call which goes megamorphic across the six subclasses, costing more than
+     * reading the tag a virtual call which goes megamorphic across the subclasses, costing more than
      * the `instanceof` chain it was meant to replace (measured at −32% in `OperandDispatchBench`). As a
      * base-class field it is a plain load with no dispatch, which is what lets the hot-path `when` over it
      * beat the type-switch.
@@ -134,16 +134,6 @@ sealed class Operand(
      *  sensor. */
     object Neighbours : Operand(OperandKind.NEIGHBOURS)
 
-    /** **Concentration** of [species] — `count(species) · CytoTuning.CONC_SCALE / totalBiomass`, the
-     *  size-normalised counterpart of [Chem] (which is the raw count). 0 when biomass is 0 or the species is
-     *  absent. Because it divides by body size, a *fixed* morphogen bolus reads lower as the cell grows — a
-     *  developmental clock for free — and a positional gradient reads as concentration *bands* independent of
-     *  cell size. The morphogen-for-shape readout (MORPHOGENESIS.md §Morphogens for shape). Like [Chem] it is
-     *  a *sensor*, never added to the metabolic reach (sensing ≠ permeability — see [handleableOf]). */
-    data class Conc(val species: String) : Operand(OperandKind.CONC) {
-        /** [species] resolved to its [SpeciesRegistry] id once at construction (see [Chem.speciesId]). */
-        val speciesId: Int = SpeciesRegistry.id(species)
-    }
 }
 
 /** [Operand.kind] tags. Values must stay **dense and zero-based** so the hot-path `when` over them
@@ -153,12 +143,11 @@ sealed class Operand(
 object OperandKind {
     const val CONSTANT = 0
     const val CHEM = 1
-    const val CONC = 2
-    const val BIOMASS = 3
-    const val TOUCHING = 4
-    const val NEIGHBOURS = 5
+    const val BIOMASS = 2
+    const val TOUCHING = 3
+    const val NEIGHBOURS = 4
     /** Number of distinct kinds — the exhaustiveness check for any `when` over them. */
-    const val COUNT = 6
+    const val COUNT = 5
 }
 
 /** One AND-clause of a gene's gate: `lhs cmp rhs`, each side an [Operand]. */
@@ -405,8 +394,8 @@ class Handleable(
  *  are accumulated as [SpeciesRegistry]-indexed bitmasks (the alphabet is ≤ k=3 atoms, k²=9 bonds, so each
  *  fits an Int).
  *
- *  **Sensing ≠ permeability:** a species a gene only *reads* in a [GeneCondition] (an [Operand.Chem] or
- *  [Operand.Conc] gate) is deliberately **not** added — a sensor is not a channel. This is what lets a **morphogen** stay a
+ *  **Sensing ≠ permeability:** a species a gene only *reads* in a [GeneCondition] (an [Operand.Chem]
+ *  gate) is deliberately **not** added — a sensor is not a channel. This is what lets a **morphogen** stay a
  *  *trace* species: a fate gene can gate on `Chem(m)` to differentiate without thereby making `m`
  *  metabolisable, so the canHold-gated passive exchange + cell↔cell diffusion can't equilibrate it across a
  *  colony. The morphogen difference an asymmetric division establishes (MORPHOGENESIS.md §C) therefore
