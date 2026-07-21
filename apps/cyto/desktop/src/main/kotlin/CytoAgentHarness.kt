@@ -483,7 +483,12 @@ object CytoAgentHarness {
          *  enumeration + tap-by-label. */
         private fun buildOverlay() {
             val mask = director.controlMask
-            val showHud = if (NARROW) (!geneEditor.isEditing && controller.lastHeldId == null) else !geneEditor.isEditing
+            // Wide always keeps the HUD: nothing on this width claims the bottom bar — the cell panel docks
+                // right and every sheet is a centred, scrimmed popover — so there is nothing to make room for.
+                // (It used to hide on `isEditing`, left over from the retired side-by-side editor column. That
+                // also never came back, because on wide `isEditing` means "a draft is parked", which inline
+                // editing leaves set indefinitely rather than only while a modal is up.)
+                val showHud = if (NARROW) (!geneEditor.isEditing && controller.lastHeldId == null) else true
             ui.frame {
                 // Bar before the coach (BottomCenter stacks in draw order); its sheets go last.
                 if (showHud) {
@@ -551,7 +556,12 @@ object CytoAgentHarness {
 
             glViewport(0, 0, RES_W, RES_H)
             renderer.draw(controller.latestFrame())          // scene (fills its own background)
-            val showHud = if (NARROW) (!geneEditor.isEditing && controller.lastHeldId == null) else !geneEditor.isEditing
+            // Wide always keeps the HUD: nothing on this width claims the bottom bar — the cell panel docks
+                // right and every sheet is a centred, scrimmed popover — so there is nothing to make room for.
+                // (It used to hide on `isEditing`, left over from the retired side-by-side editor column. That
+                // also never came back, because on wide `isEditing` means "a draft is parked", which inline
+                // editing leaves set indefinitely rather than only while a modal is up.)
+                val showHud = if (NARROW) (!geneEditor.isEditing && controller.lastHeldId == null) else true
             ui.frame {                                        // info panel + coach overlay + L0 HUD (both widths)
                 // Bar before the coach (BottomCenter stacks in draw order); its sheets go last.
                 if (showHud) {

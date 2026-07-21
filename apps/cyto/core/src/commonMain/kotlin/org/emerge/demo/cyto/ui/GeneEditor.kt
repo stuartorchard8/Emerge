@@ -46,8 +46,7 @@ class GeneEditor {
         // much of the world each layout occludes). dp — multiply by scale for framebuffer px.
         const val CELL_PANEL_DP = 380f       // wide: dockRight cell-panel width
         const val PANEL_MARGIN_DP = 12f      // wide: dockRight / editor-column margin
-        const val EDIT_COL_DP = 440f         // wide: max gene-editor column width
-        const val SHEET_FRACTION = 0.58f     // narrow: dockBottom cell-sheet full (L2) height fraction
+            const val SHEET_FRACTION = 0.58f     // narrow: dockBottom cell-sheet full (L2) height fraction
         const val PEEK_FRACTION = 0.2f       // narrow: dockBottom cell-sheet collapsed peek (L1) height
 
         // Drag-and-drop re-grouping (desktop, §8a): a gene card is a drag source "gene-drag-<i>"; group
@@ -288,15 +287,13 @@ class GeneEditor {
             val frac = sheetDragFrac ?: (if (cellExpanded) SHEET_FRACTION else PEEK_FRACTION)
             return 0f to (topObscuredPx - frac * resH) * 0.5f
         }
-        // Wide: the cell panel docks right; when editing, the gene-editor column docks to its left. The free
-        // world area is everything left of the leftmost panel — mirror renderGeneEditor's x0 exactly.
+        // Wide: the cell panel docks right and NOTHING docks beside it — the genome card is itself the editor
+        // (§8a), and every sheet is a centred popover. So the free world area is just everything left of the
+        // cell panel, whether or not a gene is being edited. (This used to widen for an L3 editor column that
+        // docked to the panel's left; that column is gone, and reserving space for it shifted the followed
+        // cell off-centre whenever a draft was parked.)
         val cellLeftX = resW - (CELL_PANEL_DP + PANEL_MARGIN_DP) * scale
-        val leftEdge = if (draft != null) {
-            val m = PANEL_MARGIN_DP * scale
-            val colW = minOf(EDIT_COL_DP * scale, (cellLeftX - m * 2f).coerceAtLeast(200f))
-            (cellLeftX - m - colW).coerceAtLeast(m)
-        } else cellLeftX
-        return -(resW - leftEdge) * 0.5f to 0f
+        return -(resW - cellLeftX) * 0.5f to 0f
     }
 
     /** [onExport] is invoked when the EXPORT button is tapped — the host writes the held cell's genome to a

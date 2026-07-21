@@ -273,7 +273,12 @@ object CytoSceneView {
                 val cellUp = geneEditor.isEditing || (narrow && controller.lastHeldId != null)
                 // The HUD bar shows whenever the bottom is free: on wide that's any time no gene editor is up
                 // (the cell panel docks right, not bottom); on narrow only at L0 (the cell sheet owns the bottom).
-                val showHud = if (narrow) (!geneEditor.isEditing && controller.lastHeldId == null) else !geneEditor.isEditing
+                // Wide always keeps the HUD: nothing on this width claims the bottom bar — the cell panel docks
+                // right and every sheet is a centred, scrimmed popover — so there is nothing to make room for.
+                // (It used to hide on `isEditing`, left over from the retired side-by-side editor column. That
+                // also never came back, because on wide `isEditing` means "a draft is parked", which inline
+                // editing leaves set indefinitely rather than only while a modal is up.)
+                val showHud = if (narrow) (!geneEditor.isEditing && controller.lastHeldId == null) else true
                 if (!showHud) hud.close()
                 // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
                 ui.frame {
