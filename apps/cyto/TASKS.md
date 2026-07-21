@@ -112,6 +112,17 @@ Parked until shape is cracked (then re-introduce one axis per campaign — see `
 
 ## Later
 
+### Chemistry & decay
+- [ ] **Normalize shedding so monomers decay at least as fast as dimers, ideally faster.** Decay sheds one
+  whole biomass molecule per break (`degrade` → `richest`), so a monomer sheds 1 atom of biomass where a
+  dimer sheds 2 — monomer-built cells currently decay *more slowly* per shed event, the opposite of what we
+  want (simple/cheap builders should not also be the most decay-resistant). Options to weigh: shed by atom
+  budget rather than whole-molecule count (break enough molecules to shed N atoms), or bias the shed target
+  toward smaller molecules, or make wear scale super-linearly for monomer-heavy biomass. Keep it golden-safe
+  where scenario cells are dimer-built (they have no monomer biomass, so an atom-budget rule leaves them
+  unchanged). Context: this fell out of the biomass=atoms change (`8d4e6256`) which first made monomer
+  biomass decay at all. Design source: `MORPHOGENESIS.md` §decay/maintenance.
+
 ### Tooling & interaction
 Stu's stated direction: improve ability to **test & interact**. (Done so far: content-coloring,
 focused-cell mutation freeze.)
