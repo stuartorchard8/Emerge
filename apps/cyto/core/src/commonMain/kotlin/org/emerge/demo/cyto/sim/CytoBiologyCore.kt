@@ -801,7 +801,7 @@ object CytoBiologyCore {
     private fun canContract(work: CellWork): Boolean = work.logicalRadius > MIN_RADIUS
 
     /** Spontaneous decay: shed `wear / DEGRADE_PERIOD` whole biomass molecules to the environment
-      *  at a rate ∝ total cell mass (biomass bonds + cytoplasm molecule count). Each tick the cell's
+      *  at a rate ∝ total cell mass (biomass atoms + cytoplasm molecule count). Each tick the cell's
       *  **most-abundant** biomass molecule loses one copy, spread evenly over the cell's OWN footprint —
       *  the same disc [passiveEnvExchange] draws from, so a cell drops matter exactly where it can pick
       *  matter up (like shed skin — no splitting, no cytoplasm intermediate). The molecule then decays at
@@ -820,7 +820,7 @@ object CytoBiologyCore {
         val broken = work.wear / DEGRADE_PERIOD
         work.wear %= DEGRADE_PERIOD
         if (broken > 0) {
-            val targetId = richestMultiAtom(work.biomass)   // most-abundant molecule with a bond to break
+            val targetId = richest(work.biomass)   // most-abundant biomass molecule (monomer or not) to shed
             if (targetId >= 0) {
                 val count = minOf(broken, work.biomass.count(targetId))
                 work.biomass.add(targetId, -count)
@@ -846,12 +846,17 @@ object CytoBiologyCore {
         }
     }
 
-    /** Most-abundant biomass species with at least one bond (length ≥ 2), ties → lowest id, or -1 if none. */
-    private fun richestMultiAtom(biomass: MoleculeStore): Int {
+    /** Most-abundant biomass species, ties → lowest id, or -1 if biomass is empty.
+     *
+     *  Deliberately **not** restricted to bonded (length ≥ 2) molecules. Biomass now counts atoms, so a
+     *  monomer is real mass a cell can be built entirely from (a simple collector). The shed step drops a
+     *  whole molecule with no splitting, so a monomer is a perfectly valid thing to shed — and it MUST be,
+     *  or an all-monomer cell accrues wear that can never break anything and becomes immortal (it never
+     *  reaches DEATH_BIOMASS). The old length ≥ 2 guard assumed biomass was always bonded structure. */
+    private fun richest(biomass: MoleculeStore): Int {
         var best = -1; var bestCount = 0
         for (i in 0 until biomass.size) {
-            val id = biomass.idAt(i)
-            if (SpeciesRegistry.atomCount(id) >= 2) { val c = biomass.countAt(i); if (c > bestCount) { bestCount = c; best = id } }
+            val c = biomass.countAt(i); if (c > bestCount) { bestCount = c; best = biomass.idAt(i) }
         }
         return best
     }
