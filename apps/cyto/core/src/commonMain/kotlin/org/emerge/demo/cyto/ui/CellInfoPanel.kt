@@ -46,15 +46,27 @@ fun PanelBuilder.metabolismTable(info: CytoController.CellInfo) {
     }
 }
 
-// Column layout (monospace): species[9] env[6] ' ' dirEC[2] ' ' cyto[6] ' ' dirCB[2] ' ' bio[6].
+// Column layout (monospace): species[9] env[5] ' ' dirEC[2] ' ' cyto[5] ' ' dirCB[2] ' ' bio[5] = 32 chars,
+// which fits the fixed-width cell dock (GeneEditor.CELL_PANEL_DP). The value columns are 5 wide and values
+// are compacted ([fmt]) so they never overflow: since biomass counts atoms these run to 6+ digits on a
+// hoarder (e.g. 292084), which overran the old 6-wide raw columns and clipped the BIO column off-screen.
 // The species column is 9 wide to fit the built-in flavour names (e.g. GREENIUM); longer fallbacks are clipped.
 private const val SP_COL = 9
+private const val NUM_COL = 5
 private val METAB_HEADER =
-    "".padEnd(SP_COL) + "ENV".padStart(6) + "    " + "CYT".padStart(6) + "    " + "BIO".padStart(6)
+    "".padEnd(SP_COL) + "ENV".padStart(NUM_COL) + "    " + "CYT".padStart(NUM_COL) + "    " + "BIO".padStart(NUM_COL)
 
 private fun spName(species: String, aliases: Map<String, String>): String =
     SpeciesNames.name(species, aliases).uppercase().take(SP_COL)
 
+/** Compact a molecule count to at most [NUM_COL] chars: exact below 100k, then `k` (thousands) up to
+ *  10M, then `M` (millions). Keeps the metabolism columns fixed-width whatever the hoard size. */
+private fun fmt(n: Int): String = when {
+    n < 100_000 -> n.toString()          // 0..99999 — up to 5 digits, exact
+    n < 10_000_000 -> "${n / 1_000}k"    // 100k..9999k
+    else -> "${n / 1_000_000}M"          // 10M..2147M (Int.MAX)
+}
+
 private fun metabRow(r: CytoController.CellInfo.MetRow, aliases: Map<String, String>): String =
-    spName(r.species, aliases).padEnd(SP_COL) + r.env.toString().padStart(6) + " " + r.dirEnvCyt + " " +
-        r.cyto.toString().padStart(6) + " " + r.dirCytBio + " " + r.bio.toString().padStart(6)
+    spName(r.species, aliases).padEnd(SP_COL) + fmt(r.env).padStart(NUM_COL) + " " + r.dirEnvCyt + " " +
+        fmt(r.cyto).padStart(NUM_COL) + " " + r.dirCytBio + " " + fmt(r.bio).padStart(NUM_COL)
