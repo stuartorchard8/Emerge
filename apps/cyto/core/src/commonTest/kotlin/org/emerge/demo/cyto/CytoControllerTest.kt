@@ -53,6 +53,21 @@ class CytoControllerTest {
         )
     }
 
+    @Test
+    fun panelReportsTheRealTouchCountNotAStub() {
+        // Regression: describeGeneSpans hardcoded `val touch = 0`, so a TOUCH clause could never read
+        // anything but zero — the panel greyed out TOUCH-gated genes that the sim was actually firing.
+        // Drive a crowded colony until some cell is in un-welded contact, then read the panel's own view.
+        val c = CytoController()
+        var frame = c.tick(0f)
+        repeat(400) { frame = c.tick(1f) }
+        val cells = frame.state.components.getTable<CytoCellComponent>().asMap()
+        // The panel reads the materialized SimState, so the count must survive SoA → SimState — that
+        // round-trip is the link the stub used to hide.
+        val touching = cells.entries.filter { it.value.touchCount > 0 }
+        assertTrue(touching.isNotEmpty(), "a grown colony should surface cells in contact through the live controller path")
+    }
+
     /**
      * Near a world edge the camera is on one side of the seam and a cell can be on the other, yet it still
      * renders under the cursor (the renderer draws every object at its shortest torus delta from the

@@ -984,6 +984,28 @@ class CytoSoaSpecTest {
     }
 
     @Test
+    fun touchCountIsPublishedForThePanelNotJustReadByTheGate() {
+        // Regression: the gate read the real contact count, but CytoCellComponent published nothing, so the
+        // info panel evaluated every TOUCH clause against a hardcoded 0 and greyed out genes that were in fact
+        // firing. Same geometry as the gating test — two shallow-overlapping cells plus a lone control.
+        fun cell(b: SimBuilder, x: Float) =
+            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("rg" to 100000), biomass = mapOf("rg" to 8000), logicalRadius = org.emerge.sim.core.physics.primitives.Frac(7, 10))
+        val initial = run {
+            val b = SimBuilder(SimState())
+            cell(b, -0.6f); cell(b, 0.6f)   // touching, not welded
+            cell(b, 20f)                     // lone control
+            b.build()
+        }
+        val ids = initial.components.getTable<CytoCellComponent>().asMap().keys.sortedBy { it.value }
+        val (aId, bId, controlId) = ids
+        val state = run(initial, ticks = 2)
+        fun touch(id: org.emerge.sim.core.EntityId) = state.components.getTable<CytoCellComponent>()[id]!!.touchCount
+        assertTrue(touch(aId) > 0, "a touching cell must publish a non-zero touchCount (got ${touch(aId)})")
+        assertTrue(touch(bId) > 0, "both touching cells must publish it (got ${touch(bId)})")
+        assertEquals(0, touch(controlId), "a lone cell touches nothing")
+    }
+
+    @Test
     fun neighboursConditionGatesAGeneOnWeldedDegree() {
         // The Operand.Neighbours gate reads the cell's welded (connected) degree. Two deeply overlapping cells
         // Repair-weld into a connected pair (weldedDegree ⇒ 1); each also carries a Neighbours-gated Contract,

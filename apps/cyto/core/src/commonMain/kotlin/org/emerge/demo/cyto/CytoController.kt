@@ -539,7 +539,7 @@ class CytoController(
             light = light,
             metabolism = metabolism,
             genes = cell.genome.map { g ->
-                val spans = describeGeneSpans(g, cytoMap, envMap, totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass), quanta = capturedQuanta, weldedDegree = weldedDegree)
+                val spans = describeGeneSpans(g, cytoMap, envMap, totalBiomass = org.emerge.demo.cyto.sim.totalBiomassBonds(cell.biomass), quanta = capturedQuanta, weldedDegree = weldedDegree, touch = cell.touchCount)
                 CellInfo.GeneRow(desc = spans.joinToString("") { it.text }, active = spans.none { it.blocking }, spans = spans, gene = g)
             },
             aliases = speciesAliases,
@@ -549,10 +549,10 @@ class CytoController(
     /** The gene's panel description as coloured [CellInfo.Span]s — action, condition clauses, energy source —
      *  with each part flagged [CellInfo.Span.blocking] when it's what stops the gene firing this tick (a failed
      *  clause, no energy, or a missing action input). Mirrors [org.emerge.demo.cyto.sim.CytoBiologyCore]'s
-     *  gating read from the panel snapshot — approximate: `Touching` is transient (read as 0) and the per-gene
-     *  1/N energy split isn't modelled, so it shows *what's* blocking, not the exact op count. */
-    private fun describeGeneSpans(g: Gene, cyto: Map<String, Int>, env: Map<String, Int>, totalBiomass: Int, quanta: Int, weldedDegree: Int): List<CellInfo.Span> {
-        val touch = 0
+     *  gating read from the panel snapshot — approximate: the per-gene 1/N energy split isn't modelled, so it
+     *  shows *what's* blocking, not the exact op count. `Touching` is the real per-tick reading published by
+     *  the contact phase, so it flickers as cells jostle — that's the gate's own behaviour, not a display bug. */
+    private fun describeGeneSpans(g: Gene, cyto: Map<String, Int>, env: Map<String, Int>, totalBiomass: Int, quanta: Int, weldedDegree: Int, touch: Int): List<CellInfo.Span> {
         fun eval(op: Operand): Int = when (op) {
             is Operand.Constant -> op.value
             is Operand.Chem -> cyto[op.species] ?: 0

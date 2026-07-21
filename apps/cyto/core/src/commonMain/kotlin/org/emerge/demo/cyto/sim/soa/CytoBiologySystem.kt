@@ -321,6 +321,8 @@ class BiologySystem(
                 ?: MoleculeStore(CytoTuning.CELL_CHEM_CAP).also { world.cell.weldOut[slot] = it }
             wo.copyFrom(work.weldOut)
             world.cell.activeMask[slot] = work.activeMask
+            // Read-model: the contact count this tick's gates actually read, for the info panel's TOUCH clauses.
+            world.cell.touchCount[slot] = work.touchCount
             if (work.repaired) {
                 for (k in world.csr.offset[slot] until world.csr.offset[slot + 1]) {
                     world.csr.edgeAux[k] = work.connectionDamage[EntityId(world.csr.otherId[k])] ?: 0f

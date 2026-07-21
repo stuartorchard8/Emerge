@@ -45,6 +45,11 @@ data class CytoCellComponent(
      *  active/inactive brightness. Derived per-tick state — rebuilt by the gene phase every tick, so it is
      *  neither saved nor restored; genes past bit 63 are unrepresented and read inactive. */
     val activeMask: Long = 0L,
+    /** Read-model: the contact count the [Operand.Touching] gate read this tick — un-welded cells this cell
+     *  was bumping. Published so the info panel can evaluate `TOUCH` clauses against the real reading instead
+     *  of a stub; the gate itself reads `CellWork.touchCount` directly. Transient like [activeMask] — rebuilt
+     *  every tick by the contact phase, so it is neither saved nor restored nor part of the golden digest. */
+    val touchCount: Int = 0,
 )
 
 /**
