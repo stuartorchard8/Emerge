@@ -153,7 +153,7 @@ class CytoGoldenTest {
     private val GROWTH = mapOf(
         "meta" to "8270c9ac089d6c6c",
         "physics" to "f64ba82e9ed114f1",
-        "biology" to "51119cbd0cddbab0",
+        "biology" to "424b72d764e8a6cc",
         "topology" to "cbf29ce484222325",
         "grid" to "3fc30c14cabc11fe",
     )
@@ -243,7 +243,7 @@ class CytoGoldenTest {
     private val MUTATION = mapOf(
         "meta" to "850e718cb8210f58",
         "physics" to "54148923f71f8795",
-        "biology" to "d5e1d70f5989da66",
+        "biology" to "f4b563c9aca29474",
         "topology" to "cbf29ce484222325",
         "grid" to "e6588798244ab985",
     )
@@ -276,7 +276,7 @@ class CytoGoldenTest {
     private val INTERACT = mapOf(
         "meta" to "405f0d6c2c18baf3",
         "physics" to "1f17629e81ea5a0b",
-        "biology" to "2c053a04c9823903",
+        "biology" to "a6d6ab81bec68f53",
         "topology" to "cbf29ce484222325",
         "grid" to "716891e015491026",
     )
@@ -340,14 +340,14 @@ class CytoGoldenTest {
     private val WELD_HEAL = mapOf(
         "meta" to "bb3fa685a6d77664",
         "physics" to "2fd48d231d16aaa3",
-        "biology" to "be67d058dcaa3704",
+        "biology" to "706ede9ac11b727a",
         "topology" to "9c89edfb32bf6f49",
         "grid" to "d564d0a3f3801685",
     )
     private val STICKY_WELD = mapOf(
         "meta" to "350eaa4577a67db5",
         "physics" to "189e03d633ecc934",
-        "biology" to "4189dfc063a23570",
+        "biology" to "3cedab58919c4384",
         "topology" to "3102d5c4d5143e24",
         "grid" to "b04a98ad6ac16eb8",
     )
@@ -518,7 +518,11 @@ class CytoGoldenTest {
             val c = cells.getValue(id)
             biology.append(id.value).append(':').append(c.type.name).append('|')
                 .append(c.logicalRadius.raw).append('|').append(c.wear).append('|')
-                .append(GeneCodec.serialize(c.genome)).append('|')
+                // Gene LINES only — drop GeneCodec's `# genome <n>` header. This digest is a trajectory
+                // fingerprint, and the header is a property of the serialisation format, not of the sim:
+                // bumping the gene-model version would otherwise "drift" every golden while the simulation
+                // was byte-identical, training us to re-baseline over a change that never happened.
+                .append(GeneCodec.serialize(c.genome).substringAfter('\n')).append('|')
                 .append(mapStr(c.cytoplasm)).append('|').append(mapStr(c.biomass)).append(';')
         }
 

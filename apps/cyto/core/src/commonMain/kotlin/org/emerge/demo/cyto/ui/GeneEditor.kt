@@ -103,7 +103,7 @@ class GeneEditor {
     // Bond edits BOTH reactants of a synthesis energy source in one sheet, because they are only meaningful
     // together — what a gene builds is a property of the pair, so picking them separately means editing
     // blind through an intermediate state that makes nothing.
-    private enum class Pick { None, Action, Source, Group, Operand, SpeciesA, SpeciesB, Bond, Eff, Overflow }
+    private enum class Pick { None, Action, Source, Group, Operand, SpeciesA, SpeciesB, Bond, Break, Eff, Overflow }
     private var pick = Pick.None
     private var pickClause = -1
     private var pickSide = 0            // 0 = lhs, 1 = rhs (Operand picker)
@@ -490,12 +490,12 @@ class GeneEditor {
 
         // ── DO: the action, then only the fields this action actually has ──
         row("DO", 0x7A8699FFL)
-        chip("", d.action.type.name, 0x35507AFFL) { openPick(Pick.Action) }
+        chip("", actionTypeLabel(d.action.type), 0x35507AFFL) { openPick(Pick.Action) }
         when (d.action.type) {
             ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain ->
                 chip("OPERAND", sp(d.action.a)) { openPick(Pick.SpeciesA) }
             ActionType.BreakBond ->
-                chip("BOND", sp(d.action.a)) { openPick(Pick.SpeciesA) }
+                chip("", breakLabel(d.action), 0x35507AFFL) { openPick(Pick.Break) }
             ActionType.Mitosis -> {
                 chip("MORPHOGEN", sp(d.action.a)) { openPick(Pick.SpeciesA) }
                 if (d.action.a.isNotEmpty())
@@ -547,7 +547,7 @@ class GeneEditor {
             Pick.None -> return
             Pick.Action -> pickSheet(b, "DO WHAT?", wide) {
                 for ((i, t) in ActionType.entries.withIndex()) {
-                    listRow(t.name, actionBlurb(t), selected = t == d.action.type) {
+                    listRow(actionTypeLabel(t), actionBlurb(t), selected = t == d.action.type) {
                         val mitosis = t == ActionType.Mitosis
                         draft = d.copy(action = d.action.copy(type = t, morphogenToMother = d.action.morphogenToMother && mitosis, divideAcross = d.action.divideAcross && mitosis, rejectMother = d.action.rejectMother && mitosis))
                         closePick()
@@ -589,6 +589,19 @@ class GeneEditor {
             // Both reactants in one sheet, with a live MAKES readout underneath: the whole point of a
             // synthesis gene is its product, and building the pair blind (one operand per sheet) means you
             // can't see what you're making until you've committed to both.
+            // The mirror of Pick.Bond: same two builders, same live readout, opposite direction. BREAK names
+            // the FRAGMENTS and the substrate is derived, so the reaction is chosen the same way either way.
+            Pick.Break -> pickSheet(b, "BREAK WHAT?", wide, heightFraction = 0.5f) {
+                val act = d.action
+                row("INTO", 0x7A8699FFL)
+                speciesBuilder(act.a) { draft = d.copy(action = act.copy(a = it)) }
+                gap(10f)
+                row("AND", 0x7A8699FFL)
+                speciesBuilder(act.b) { draft = d.copy(action = act.copy(b = it)) }
+                gap(10f)
+                row("SPLITS", 0x7A8699FFL)
+                row(breakLabel(act), if (act.breakTarget.isEmpty()) 0xC8963CFFL else 0x8FCF9FFFL)
+            }
             Pick.Bond -> pickSheet(b, "BOND WHAT?", wide, heightFraction = 0.5f) {
                 val s = d.source as? EnergySource.FormBond ?: return@pickSheet
                 row("JOIN", 0x7A8699FFL)
@@ -849,21 +862,32 @@ class GeneEditor {
     private fun sp(species: String): String = SpeciesNames.name(species, activeAliases).uppercase()
 
     /**
-     * Box 2 of the POWERED BY row: **what this synthesis builds**, with the pair that builds it in brackets —
-     * `REDREEN (R+G)`, `RGB (R+GB)`.
+     * Box 2 of a BOND or BREAK row: **the whole molecule**, with the pair it splits into / joins from in
+     * brackets — `REDREEN (R+G)`, `RGB (R+GB)`.
      *
-     * The product leads because that is the gene's purpose; the bracket keeps the dense reactant form visible
-     * because the product alone is ambiguous — `R+GB` and `RG+B` both build `RGB` but are different genes
-     * that consume different molecules. Naming the product at all is only possible because operands are
-     * exact (see [EnergySource.FormBond]); a wildcard reaction would have no single answer here.
+     * One function for both because they are the *same reaction read in opposite directions*: BOND joins the
+     * pair into the molecule, BREAK splits the molecule into the pair. The molecule leads because that is
+     * what the gene is about; the bracket stays because the molecule alone is ambiguous — `R+GB` and `RG+B`
+     * are the same `RGB` but different genes, consuming (or producing) different things. Naming it at all is
+     * only possible because operands are exact species; a wildcard reaction has no single answer here.
+     *
+     * [noJoin] is the wording when the pair can't combine at all, which means opposite things on each side:
+     * for BOND the reaction is forbidden, for BREAK there is no such molecule to split.
      */
-    private fun synthesisLabel(s: EnergySource.FormBond): String {
-        if (s.a.isEmpty() || s.b.isEmpty()) return "SET REACTANTS"
-        val pair = "(${s.a.uppercase()}+${s.b.uppercase()})"
-        // No product ⇒ the join repeats a bond (polymerisation-forbidden), so the gene is inert. Say so here
-        // rather than silently showing a pair that never reacts.
-        return if (s.product.isEmpty()) "$pair WON'T BOND" else "${sp(s.product)} $pair"
+    private fun reactionLabel(a: String, b: String, noJoin: String): String {
+        if (a.isEmpty() || b.isEmpty()) return "SET MOLECULES"
+        val pair = "(${a.uppercase()}+${b.uppercase()})"
+        val joined = Molecules.join(a, b) ?: return "$pair $noJoin"
+        return "${sp(joined)} $pair"
     }
+
+    /** How an action reads in the UI. Only [ActionType.BreakBond] differs from its enum name: it shows as
+     *  **BREAK**, so the digestion row mirrors the synthesis row's **BOND** word-for-word rather than
+     *  reading `BreakBond` next to `BOND`. */
+    private fun actionTypeLabel(t: ActionType) = if (t == ActionType.BreakBond) "BREAK" else t.name
+
+    private fun synthesisLabel(s: EnergySource.FormBond) = reactionLabel(s.a, s.b, "WON'T BOND")
+    private fun breakLabel(a: GeneAction) = reactionLabel(a.a, a.b, "NO SUCH MOLECULE")
 
     /** A sensible starting reaction when a gene is switched from Light to synthesis: the first two atoms of
      *  the alphabet, which always form a legal bond. */
@@ -946,7 +970,7 @@ class GeneEditor {
         // DO: action Menu, its operand token(s), and efficiency (non-Mitosis).
         val actKey = "$i:act"
         val actLine = ArrayList<UiTok>()
-        actLine.add(UiTok.Menu(gene.action.type.name, ctlIf(inputBlocked), ActionType.entries.map { it.name }, openMenu == actKey,
+        actLine.add(UiTok.Menu(actionTypeLabel(gene.action.type), ctlIf(inputBlocked), ActionType.entries.map { actionTypeLabel(it) }, openMenu == actKey,
             onToggle = { openMenu = if (openMenu == actKey) null else actKey },
             onPick = { idx ->
                 val t = ActionType.entries[idx]; val m = t == ActionType.Mitosis
@@ -954,9 +978,14 @@ class GeneEditor {
                 openMenu = null
             }))
         when (gene.action.type) {
-            ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain, ActionType.BreakBond -> {
+            ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain -> {
                 actLine.add(UiTok.Text(" ", grey))
                 actLine.add(UiTok.Toggle(sp(gene.action.a).ifEmpty { "NOTHING" }, ctl) { openInlinePick(controller, i, Pick.SpeciesA) })
+            }
+            // One control for the whole reaction, exactly like the BOND source row above.
+            ActionType.BreakBond -> {
+                actLine.add(UiTok.Text(" ", grey))
+                actLine.add(UiTok.Toggle(breakLabel(gene.action), ctl) { openInlinePick(controller, i, Pick.Break) })
             }
             else -> {}
         }
@@ -1100,12 +1129,8 @@ class GeneEditor {
         return when (a.type) {
             ActionType.Import -> "IMPORT $av" to emptyList()
             ActionType.Export -> "EXPORT $av" to emptyList()
-            ActionType.BreakBond -> {
-                // Name the bond being split, its two atoms compact in parens — the mirror of the synthesis
-                // line in [sourceProse], which is where the joining half of the chemistry now reads from.
-                val atoms = if (a.a.length == 2) " (${a.a.uppercase().toCharArray().joinToString("/")})" else ""
-                "BREAK $av$atoms" to emptyList()
-            }
+            // The mirror of [sourceProse]'s BOND line: name the molecule split, its two fragments in parens.
+            ActionType.BreakBond -> "BREAK ${breakLabel(a)}" to emptyList()
             ActionType.Convert -> "CONVERT $av TO MASS" to emptyList()
             ActionType.Contract -> "CONTRACT" to emptyList()
             ActionType.Repair -> "REPAIR WELDS" to emptyList()

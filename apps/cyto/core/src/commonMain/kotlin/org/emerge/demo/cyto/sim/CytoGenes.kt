@@ -156,13 +156,22 @@ enum class ActionType {
      *  never back in, and the gene biases the passive junction to expel it below ambient. The polar
      *  opposite of [Import] — a secretion / waste-dumping actuator. */
     Export,
-    /** Break one instance of bond [GeneAction.a] (a 2-atom pair, e.g. `"rg"`) in the richest cytoplasm
-     *  molecule containing it, splitting it into two fragments returned to the cytoplasm. **Endothermic**:
-     *  one quantum per bond destroyed, and deliberately excluded from the efficiency-gear multiplier so
-     *  that cost can never be diluted below 1:1 (see [EnergySource] for why that closes the loop). This is
-     *  digestion as a funded, deliberate act — breaking structure back into transportable fragments — and
-     *  it is the *only* way a genome destroys a bond on purpose. There is no `FormBond` action: synthesis
-     *  is the energy source ([EnergySource.FormBond]), not something a gene spends energy on. */
+    /**
+     * Split a molecule into the two fragments [GeneAction.a] and [GeneAction.b] — the exact mirror of
+     * [EnergySource.FormBond], which joins those same two into one. The operands name the **products**, and
+     * the molecule actually consumed is whatever they would join into (`Break r gb` splits `rgb` into `r` and
+     * `gb`); the bond broken is the junction `a.last·b.first`.
+     *
+     * Naming the products rather than a bond is what makes digestion legible. `Break rg` used to mean "split
+     * the richest molecule that happens to contain an `rg` bond", so what a gene produced depended on the
+     * cytoplasm that tick — the same unreadability that removed wildcards from synthesis. Here the reaction is
+     * fully determined by the gene: one named substrate, two named fragments.
+     *
+     * **Endothermic**: one quantum per bond destroyed, deliberately excluded from the efficiency-gear
+     * multiplier so that cost can never be diluted below 1:1 (see [EnergySource] for why that closes the
+     * loop). This is digestion as a funded, deliberate act, and the *only* way a genome destroys a bond on
+     * purpose. There is no `FormBond` action: synthesis is the energy source, not something a gene pays for.
+     */
     BreakBond,
     /** Lock molecules of [GeneAction.a] from cytoplasm into biomass (structure → size). */
     Convert,
@@ -213,8 +222,8 @@ enum class ActionType {
  *  unoriented (today's free-space placement). [divideAcross] is only ever `true` when [type] is Mitosis.
  *
  *  Reactant matching moved to [EnergySource.FormBond] when the chemistry was inverted and synthesis became
- *  the energy source, so no action carries operand-matching flags. For [ActionType.BreakBond], [a] is the
- *  2-atom bond to split. */
+ *  the energy source, so no action carries operand-matching flags. For [ActionType.BreakBond], [a]/[b] are
+ *  the two fragments to split a molecule INTO — see [breakTarget]. */
  data class GeneAction(
     val type: ActionType,
     val a: String = "",
@@ -230,6 +239,17 @@ enum class ActionType {
      *  Retain) read an int instead of re-hashing. Not constructor params ⇒ no effect on data-class equality. */
     val aId: Int = SpeciesRegistry.id(a)
     val bId: Int = SpeciesRegistry.id(b)
+
+    /** For [ActionType.BreakBond]: the species this gene splits — the molecule [a] and [b] would join into.
+     *  "" when either operand is empty, or when they can't join at all (so no molecule could be split into
+     *  exactly those two fragments), which makes the gene inert. The exact mirror of
+     *  [EnergySource.FormBond.product]: synthesis names its reactants and derives the product, digestion
+     *  names its products and derives the substrate. */
+    val breakTarget: String get() = if (a.isEmpty() || b.isEmpty()) "" else Molecules.join(a, b) ?: ""
+
+    /** [breakTarget] resolved to a [SpeciesRegistry] id (-1 when there is none), so the apply path reads an
+     *  int. Not a constructor param ⇒ no effect on data-class equality. */
+    val breakTargetId: Int = if (type == ActionType.BreakBond) SpeciesRegistry.id(breakTarget) else -1
 }
 
 /**
@@ -284,11 +304,13 @@ data class Gene(
         else -> false
     }
 
-    /** Pre-computed bond-index of an [ActionType.BreakBond] action's target bond (-1 otherwise). The
-     *  molecule actually split is chosen from the snapshot at apply time (it depends on what the cell
-     *  holds); only the bond index is a pure function of the gene. */
-    val preBondIdx: Int get() =
-        if (action.type == ActionType.BreakBond) SpeciesRegistry.bondIndexOf(action.a) else -1
+    /** Pre-computed bond-index of the bond an [ActionType.BreakBond] gene severs — the junction between its
+     *  two named fragments (-1 otherwise). Now a pure function of the gene, since the substrate is named
+     *  rather than picked from the snapshot. */
+    val preBondIdx: Int get() = when {
+        action.type != ActionType.BreakBond || action.a.isEmpty() || action.b.isEmpty() -> -1
+        else -> SpeciesRegistry.bondIndexOf("${action.a.last()}${action.b.first()}")
+    }
 }
 
 /**
@@ -407,9 +429,15 @@ fun handleableOf(genome: List<Gene>): Handleable {
         // NB: condition (Operand.Chem/Conc) operands are NOT added — sensing a species doesn't make it
         // transportable (see the kdoc: this keeps a gated morphogen a trace species).
         when (g.action.type) {
-            // Digestion consumes the bond ⇒ bidirectional, the same reach the pre-inversion BreakBond
-            // energy source granted (it split the same molecules, just for a yield instead of a cost).
-            ActionType.BreakBond -> addSpecies(g.action.a, dir = 0)
+            // Digestion consumes the joined substrate and emits both fragments, so the cell must be able to
+            // handle all three — the fragments bidirectionally (it genuinely holds them), and the junction
+            // bond it severs, which is the bond the substrate is handled through.
+            ActionType.BreakBond -> {
+                val a = g.action.a; val b = g.action.b
+                if (a.isNotEmpty() && b.isNotEmpty()) {
+                    addSpecies(a, dir = 0); addSpecies(b, dir = 0); addBond("${a.last()}${b.first()}", dir = 0)
+                }
+            }
             ActionType.Convert -> addSpecies(g.action.a, dir = 0)      // consumes internally ⇒ bidirectional
             ActionType.Import -> addSpecies(g.action.a, dir = +1)      // one-way inward gate
             ActionType.Export -> addSpecies(g.action.a, dir = -1)      // one-way outward gate
@@ -814,7 +842,7 @@ private const val HET_DIVIDE = CytoSeed.HETEROTROPH_DIVIDE_BIOMASS
 val HETEROTROPH_GENES: List<Gene> = listOf(
     Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Touching, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Lyse)),
     // Digest the spoils: split what was torn off back down into transportable 'rg' — a real energy cost.
-    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(HET_GROW)), GeneAction(ActionType.BreakBond, "gb")),
+    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(HET_GROW)), GeneAction(ActionType.BreakBond, "g", "b")),
     Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(HET_GROW)), GeneAction(ActionType.Convert, "rg")),
     Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(HET_DIVIDE)), GeneAction(ActionType.Mitosis)),
     // Hold together under the strain of attacking; damage-gated, so it costs nothing on a calm body.

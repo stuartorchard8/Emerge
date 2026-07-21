@@ -694,22 +694,39 @@ class CytoSoaSpecTest {
     }
 
     @Test
-    fun breakBondActionPicksMostAbundantSubstrateNotLexSmallest() {
-        // The BreakBond ACTION likewise splits the molecule it has most of that holds the target bond. "rgb"
-        // holds bond "gb" and sorts before "gb", but the abundant substrate is the dimer "gb"; breaking must
-        // consume that and yield g + b, not split the rare "rgb". (Pre-inversion this same richest-match rule
-        // lived on the BreakBond energy SOURCE; breaking is a costed action now, so it is exercised there.)
+    fun breakSplitsExactlyTheMoleculeItsFragmentsName() {
+        // BREAK is the exact mirror of BOND: the gene names the two FRAGMENTS, and the molecule consumed is
+        // the one they would join into. `Break g b` therefore takes `gb` — not `rgb`, even though `rgb` also
+        // contains a `gb` bond and even when the cell holds more of it. That richest-molecule-containing-the-
+        // bond rule was the old behaviour, and it meant a digestion gene's products depended on the cytoplasm
+        // rather than on the gene; naming the fragments makes the whole reaction a property of the genome.
         val sid = { s: String -> org.emerge.demo.cyto.sim.SpeciesRegistry.id(s) }
         val work = CellWork(
-            cytoplasm = MoleculeStore.of(mapOf("rgb" to 1, "gb" to 1000, "r" to 1000, "g" to 1000)),
+            cytoplasm = MoleculeStore.of(mapOf("rgb" to 5000, "gb" to 1000, "r" to 1000, "g" to 1000)),
             biomass = MoleculeStore.of(mapOf("bg" to 1000)),
             logicalRadius = MIN_RADIUS, type = CellType.Collector,
-            genome = listOf(Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.BreakBond, "gb"))),
+            genome = listOf(Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.BreakBond, "g", "b"))),
             quanta = 0, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
         )
         CytoBiologyCore.runGenes(work)
-        assertEquals(1, work.cytoplasm.count(sid("rgb")), "the rare lex-smallest match 'rgb' must be left alone")
-        assertTrue(work.cytoplasm.count(sid("gb")) < 1000, "the abundant 'gb' should have been the one split")
+        assertEquals(5000, work.cytoplasm.count(sid("rgb")), "`rgb` is untouched — it is not what `g`+`b` join into, however abundant")
+        assertTrue(work.cytoplasm.count(sid("gb")) < 1000, "`gb` is the named substrate and must be the one split")
+    }
+
+    @Test
+    fun breakIsInertWhenItsFragmentsCannotJoin() {
+        // No molecule joins `rg`+`rg` (it would repeat the `rg` bond), so no molecule can split into them and
+        // the gene has nothing to act on. It must be a clean no-op rather than picking something approximate.
+        val sid = { s: String -> org.emerge.demo.cyto.sim.SpeciesRegistry.id(s) }
+        val work = CellWork(
+            cytoplasm = MoleculeStore.of(mapOf("rg" to 5000, "r" to 1000, "g" to 1000)),
+            biomass = MoleculeStore.of(mapOf("bg" to 1000)),
+            logicalRadius = MIN_RADIUS, type = CellType.Collector,
+            genome = listOf(Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.BreakBond, "rg", "rg"))),
+            quanta = 0, touchCount = 0, wear = 0, gridIndex = -1, connectionDamage = HashMap(),
+        )
+        CytoBiologyCore.runGenes(work)
+        assertEquals(5000, work.cytoplasm.count(sid("rg")), "an unjoinable fragment pair names no substrate ⇒ the gene does nothing")
     }
 
     private fun damagedPair(genome: List<Gene>, damage: Float): SimState {

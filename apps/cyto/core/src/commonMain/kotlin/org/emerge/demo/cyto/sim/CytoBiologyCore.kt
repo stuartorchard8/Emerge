@@ -47,7 +47,7 @@ private fun clearDiffScratch() {
  *
  * Chemistry is **dense and id-keyed**: a cell's mobile cytoplasm and locked biomass are [MoleculeStore]s
  * (id→count, held sorted ascending by [SpeciesRegistry] id). When a gene must pick *which* molecule to act
- * on among several matches (a substrate holding a bond, a degradation target), it
+ * on among several matches (a degradation target), it
  * picks the **most abundant** one — the substrate the cell actually has most of — with the lowest id (lex
  * rank) kept only as the deterministic tie-break. Each selection is a `forward scan` tracking the max count,
  * a pure function of the snapshot, so it stays order-independent with no per-tick hashing or boxing.
@@ -325,11 +325,14 @@ object CytoBiologyCore {
         when (act.type) {
             ActionType.Convert -> { convertId = act.aId; cn = addConsume(ids, per, cn, convertId) }
             ActionType.BreakBond -> {
-                val bondIdx = SpeciesRegistry.bondIndexOf(act.a); if (bondIdx < 0) return
-                if (stats != null) stats.richestBondCalls++
-                breakActId = richestWithBond(snap, bondIdx); if (breakActId < 0) return
-                breakActFragL = SpeciesRegistry.breakLeft(breakActId, bondIdx); breakActFragR = SpeciesRegistry.breakRight(breakActId, bondIdx)
-                if (breakActFragL < 0) return
+                // The exact mirror of the synthesis source above: the gene names the two FRAGMENTS, and the
+                // substrate is the molecule they would join into. Fully determined by the gene — no scan for
+                // "richest molecule containing this bond", so what a digestion gene produces no longer
+                // depends on what the cell happens to be holding.
+                if (act.a.isEmpty() || act.b.isEmpty()) return
+                breakActId = exactPresent(snap, act.breakTargetId); if (breakActId < 0) return
+                breakActFragL = act.aId; breakActFragR = act.bId
+                if (breakActFragL < 0 || breakActFragR < 0) return
                 cn = addConsume(ids, per, cn, breakActId)
             }
             else -> {}   // Import draws from the grid; Repair/Expand/Contract/Mitosis consume no cytoplasm
@@ -491,19 +494,6 @@ object CytoBiologyCore {
         }
     }
 
-    /** Most-abundant species in [snap] that contains bond [bondIdx] (ties → lowest id / lex-smallest),
-     *  or -1 if none. Selecting by **count** means a gene draws on the substrate it actually has the most
-     *  of, instead of whichever happens to sort first; lex is kept only as the deterministic tie-break so
-     *  the choice stays a pure function of the snapshot (order-independent). */
-    private fun richestWithBond(snap: MoleculeStore, bondIdx: Int): Int {
-        if (bondIdx < 0 || !snap.hasBond(bondIdx)) return -1
-        var best = -1; var bestCount = 0
-        for (i in 0 until snap.size) {
-            val id = snap.idAt(i)
-            if (SpeciesRegistry.containsBond(id, bondIdx)) { val c = snap.countAt(i); if (c > bestCount) { bestCount = c; best = id } }
-        }
-        return best
-    }
 
     /** The exact species [id] (precomputed on the [GeneAction]), iff present in [snap] (count > 0), else -1 —
      *  the default FormBond reactant match (MORPHOGENESIS.md §2026-06-18). The present-check mirrors the

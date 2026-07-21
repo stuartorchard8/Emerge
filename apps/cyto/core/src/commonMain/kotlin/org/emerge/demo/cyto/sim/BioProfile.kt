@@ -33,7 +33,6 @@ class BioProfile {
     var genesActive = 0L          // Σ applyGene calls (active genes)
     var genesIsActiveNanos = 0L   // time in the isActive gating scan
     var genesApplyNanos = 0L      // time in the applyGene loop
-    var richestBondCalls = 0L     // Σ richestWithBond scans (BreakBond fuel pick)
 
     fun reset() {
         ticks = 0L
@@ -43,7 +42,6 @@ class BioProfile {
         exchPass0Nanos = 0L; exchPass1Nanos = 0L; exchPass2Nanos = 0L
         genesCells = 0L; genesScanned = 0L; genesActive = 0L
         genesIsActiveNanos = 0L; genesApplyNanos = 0L
-        richestBondCalls = 0L
     }
 
     fun summary(): String {
@@ -55,7 +53,7 @@ class BioProfile {
             appendLine("              gridCells=${exchGridCells / t}  speciesCalls=${exchSpeciesCalls / t}  cellIters=${exchCellIters / t}  maxCellsPerGridCell=$exchMaxCellsInCell")
             appendLine("              useful=${exchUseful / t}  noop=${exchNoop / t}  gridSpecies=${exchGridSpecies / t}  (cytoOnlySpeciesCalls=${(exchSpeciesCalls - exchGridSpecies) / t})")
             appendLine("    genes:    isActiveScan=${us(genesIsActiveNanos)}us apply=${us(genesApplyNanos)}us")
-            appendLine("              cells=${genesCells / t}  genesScanned=${genesScanned / t}  active(applyGene)=${genesActive / t}  richestBond=${richestBondCalls / t}")
+            appendLine("              cells=${genesCells / t}  genesScanned=${genesScanned / t}  active(applyGene)=${genesActive / t}")
         }
     }
 }

@@ -576,8 +576,10 @@ class CytoController(
         }
         val a = g.action
         val inputBlocked = when (a.type) {
-            // Blocked unless some cytoplasm molecule still contains the bond to split.
-            ActionType.BreakBond -> a.a.length != 2 || cyto.none { (sp, n) -> n > 0 && sp.contains(a.a) }
+            // Blocked unless the exact molecule the two fragments name is in the cytoplasm (the mirror of
+            // the synthesis check above: there both reactants must be present, here their join must be).
+            ActionType.BreakBond -> a.a.isEmpty() || a.b.isEmpty() ||
+                Molecules.join(a.a, a.b).let { it == null || (cyto[it] ?: 0) <= 0 }
             ActionType.Convert -> (cyto[a.a] ?: 0) <= 0
             ActionType.Import -> (env[a.a] ?: 0) <= 0
             ActionType.Export -> (cyto[a.a] ?: 0) <= 0
@@ -735,7 +737,7 @@ class CytoController(
     private fun actionLabel(a: org.emerge.demo.cyto.sim.GeneAction): String = when (a.type) {
         ActionType.Import -> "IMPORT ${a.a}"
         ActionType.Export -> "EXPORT ${a.a}"
-        ActionType.BreakBond -> "BREAK ${a.a}"
+        ActionType.BreakBond -> "BREAK ${a.a}·${a.b}"
         ActionType.Convert -> "CONVERT ${a.a}"
         ActionType.Contract -> "CONTRACT"
         ActionType.Mitosis -> {

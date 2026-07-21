@@ -26,9 +26,9 @@ package org.emerge.demo.cyto.sim
  *
  * | v1 gene | v2 gene | preserved |
  * |---|---|---|
- * | 1. `Light → FormBond XY` | `Light → Break XY` | the bond acted on, and light as the funding source |
+ * | 1. `Light → FormBond X Y` | `Light → Break X Y` | the molecules acted on, and light as the funding source |
  * | 2. `Break XY → <action>` | `Bond X Y → <action>` | the action, and the bond the organism runs on |
- * | 3. `Break XY → FormBond ZW` | `Bond Z W → Break XY` | **the direction of each reaction** |
+ * | 3. `Break XY → FormBond Z W` | `Bond Z W → Break X Y` | **the direction of each reaction** |
  *
  * Rule 3 is the interesting one and is *not* a straight per-slot inversion: the gene built `ZW` and broke
  * `XY`, and after migration it still builds `ZW` and breaks `XY` — only which side pays has flipped. Under
@@ -55,8 +55,10 @@ object GenomeMigration {
         // isolation, both wrong together. Swap the two bonds: synthesise what the gene built, break what it
         // broke. The old FormBond's operands (including wildcards) carry over verbatim, so the reaction
         // resolves the same reactants it always did.
-        val brokenBond = (gene.source as? EnergySource.FormBond)?.bond ?: return gene
+        val broken = gene.source as? EnergySource.FormBond ?: return gene
         if (legacySynthesis.bond.isEmpty()) return gene   // inert no-op synthesis: nothing to pair with
-        return gene.copy(source = legacySynthesis, action = GeneAction(ActionType.BreakBond, brokenBond))
+        // `Break` mirrors `Bond` operand-for-operand, so the bond the gene used to break is expressed as the
+        // two halves it breaks into — exactly the pair the legacy source named.
+        return gene.copy(source = legacySynthesis, action = GeneAction(ActionType.BreakBond, broken.a, broken.b))
     }
 }

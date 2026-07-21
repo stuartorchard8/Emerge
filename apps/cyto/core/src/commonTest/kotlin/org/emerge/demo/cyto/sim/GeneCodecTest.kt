@@ -221,9 +221,16 @@ class GeneCodecTest {
         assertTrue(body(preset).lines().all { it.startsWith("Bond r g") }, "every autotroph gene sources from Bond r g")
 
         val gate = GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0))
-        val digest = Gene(EnergySource.Light, gate, GeneAction(ActionType.BreakBond, "rg"))
-        assertEquals("Light : rg > 0 : Break rg", body(listOf(digest)), "Break in action position")
-        assertEquals(listOf(digest), GeneCodec.parse(GeneCodec.serialize(digest.let(::listOf))), "Break-action round-trip")
+        // `Break <a> <b>` mirrors `Bond <a> <b>`: it names the two FRAGMENTS and splits what they join into.
+        val digest = Gene(EnergySource.Light, gate, GeneAction(ActionType.BreakBond, "r", "gb"))
+        assertEquals("Light : rg > 0 : Break r gb", body(listOf(digest)), "Break in action position")
+        assertEquals(listOf(digest), GeneCodec.parse(GeneCodec.serialize(listOf(digest))), "Break-action round-trip")
+        assertEquals("rgb", digest.action.breakTarget, "the substrate is derived from the two fragments")
+
+        // v2 wrote `Break <bond>`, meaning "split the richest molecule holding this bond". It reads as
+        // splitting that bond's own two halves — what it meant whenever the richest match was the bare dimer.
+        val fromV2 = GeneCodec.parse("# genome 2\nLight : rg > 0 : Break gb").single()
+        assertEquals(GeneAction(ActionType.BreakBond, "g", "b"), fromV2.action, "v2 single-operand Break widens to its two halves")
 
         val vent = Gene(EnergySource.FormBond("r", "g"), gate, GeneAction(ActionType.Repair))
         assertEquals("Bond r g : rg > 0 : Repair", body(listOf(vent)), "Bond in source position")
@@ -247,10 +254,11 @@ class GeneCodecTest {
     fun migratesPreInversionGenomes() {
         fun one(legacy: String): Gene = GeneCodec.parse(legacy).single()
 
-        // Rule 1: Light → FormBond XY  ⇒  Light → Break XY. Light still funds it; it acts on the same bond.
+        // Rule 1: Light → FormBond X Y  ⇒  Light → Break X Y. Light still funds it, and because Break mirrors
+        // Bond operand-for-operand the two molecules carry over verbatim: it now splits what it used to join.
         val r1 = one("Light : Biomass > 0 : FormBond r g")
         assertEquals(EnergySource.Light, r1.source, "rule 1 keeps Light as the source")
-        assertEquals(GeneAction(ActionType.BreakBond, "rg"), r1.action, "rule 1 acts on the bond it used to build")
+        assertEquals(GeneAction(ActionType.BreakBond, "r", "g"), r1.action, "rule 1 splits what the gene used to build")
 
         // Rule 2: Break XY → <action>  ⇒  Bond X Y → <action>. The action is untouched; the organism keeps
         // running on the same bond, now by forming it rather than breaking it.
@@ -263,12 +271,13 @@ class GeneCodecTest {
         // Break bg) would invert the organism's chemistry a second time.
         val r3 = one("Break rg : Biomass > 0 : FormBond b g")
         assertEquals(EnergySource.FormBond("b", "g"), r3.source, "rule 3 synthesises what the gene used to build")
-        assertEquals(GeneAction(ActionType.BreakBond, "rg"), r3.action, "rule 3 breaks what the gene used to break")
+        assertEquals(GeneAction(ActionType.BreakBond, "r", "g"), r3.action, "rule 3 breaks what the gene used to break")
 
         // Rule 3 carries the reaction across; a legacy wildcard operand keeps the species it named, minus
         // the marker (wildcards no longer exist — see EnergySource.FormBond).
         val wild = one("Break rg : Biomass > 0 : FormBond *rg b*")
         assertEquals(EnergySource.FormBond("rg", "b"), wild.source, "rule 3 preserves the reaction, dropping the wildcard markers")
+        assertEquals(GeneAction(ActionType.BreakBond, "r", "g"), wild.action, "and still breaks what it broke")
 
         // Migrated text re-serializes as v2 and is then stable (the migration runs once).
         val migrated = GeneCodec.parse("Break rg : Biomass > 0 : FormBond b g")

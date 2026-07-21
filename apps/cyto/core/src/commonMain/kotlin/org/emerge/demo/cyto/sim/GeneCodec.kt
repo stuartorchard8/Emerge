@@ -10,7 +10,7 @@ package org.emerge.demo.cyto.sim
  *     Light : rg > 0 : Convert rg         # lock 'rg' into biomass
  *     Light : Biomass > 8 : Mitosis       # divide once biomass exceeds 8 bonds
  *     Bond r g : Biomass < 8 : Convert rg # join r+g for energy (and 'rg'), spend it locking 'rg' into biomass
- *     Bond r g : rg > 0 : Break gb        # ...and spend it splitting 'gb' apart instead (digestion)
+ *     Bond r g : rg > 0 : Break g b        # ...and spend it splitting 'gb' back into 'g' + 'b' (digestion)
  *
  * ## Genome versioning
  *
@@ -28,7 +28,8 @@ package org.emerge.demo.cyto.sim
  *  The energy source is `Light` or `Bond <a> <b>` (synthesis — join the molecule `<a>` to the molecule
  *  `<b>`, releasing a quantum. Both operands are exact whole species and the pair is ordered, so
  *  `Bond rg b` and `Bond r gb` are different reactions that both build `rgb`).
- *  Action is `Import <species>`, `Break <bond>` *(energy-costed digestion)*, `Convert <species>`,
+ *  Action is `Import <species>`, `Break <a> <b>` *(energy-costed digestion — the mirror of the `Bond`
+ *  source: names the two fragments, splits the molecule they would join into)*, `Convert <species>`,
  *  `Contract`, `Mitosis` *(or `Mitosis <morphogen>` for asymmetric division — the morphogen is allocated whole
  *  to one side, MORPHOGENESIS.md §C; append `mother` to keep it in the mother = centred source, vs the default
  *  daughter = edge source; append `sever` so the daughter rejects all mother welds → splits off as a separate
@@ -44,8 +45,12 @@ object GeneCodec {
      *  - 1: the pre-inversion model — `Break <bond>` in source position was an energy *yield*, `FormBond
      *       <a> <b>` in action position was an energy *cost*.
      *  - 2: the inverted chemistry (HYDROTHERMAL_CHEMISTRY_PLAN.md) — synthesis is the energy source
-     *       (`Bond <a> <b>`), breaking is a costed action (`Break <bond>`). */
-    const val GENOME_VERSION = 2
+     *       (`Bond <a> <b>`), breaking is a costed action (`Break <bond>`, splitting the richest molecule
+     *       holding that bond).
+     *  - 3: `Break` became the exact mirror of `Bond` — `Break <a> <b>` names the two FRAGMENTS and splits
+     *       the molecule they would join into, so a digestion gene names its own substrate instead of
+     *       depending on what the cell happens to hold. */
+    const val GENOME_VERSION = 3
 
     /** The version assumed for text with no `# genome` header — i.e. everything written before versioning
      *  existed, which is by definition the pre-inversion model. */
@@ -201,8 +206,9 @@ object GeneCodec {
     private fun action(a: GeneAction): String = when (a.type) {
         ActionType.Import -> "Import ${tok(a.a)}"
         ActionType.Export -> "Export ${tok(a.a)}"
-        // [GeneAction.a] is the 2-atom bond to split — an energy-costed digestion step.
-        ActionType.BreakBond -> "Break ${tok(a.a)}"
+        // The mirror of `Bond <a> <b>`: [a]/[b] are the two fragments, and the molecule split is the one
+        // they would join into (an energy-costed digestion step).
+        ActionType.BreakBond -> "Break ${tok(a.a)} ${tok(a.b)}"
         ActionType.Convert -> "Convert ${tok(a.a)}"
         ActionType.Contract -> "Contract"
         // Mitosis: optional morphogen ([GeneAction.a], allocated whole to one side — §C) with a trailing
@@ -224,15 +230,19 @@ object GeneCodec {
         "Import" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Import, untok(t[1])) }
         "Export" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Export, untok(t[1])) }
         // PRE-INVERSION `FormBond <a> <b>` in ACTION position: building used to be what you spent energy on.
-        // Its modern counterpart is splitting the bond it would have created (migration rule 1) — the gene
-        // keeps operating on the same bond, on the other side of the reaction. When the gene's SOURCE was
-        // also legacy, `reconcilePreInversion` applies rule 3 instead. An empty-operand FormBond (an inert
-        // no-op left by a mutation) has no bond to derive, so it stays inert.
-        "FormBond" -> {
-            val synth = parseSynthesis(t)
-            GeneAction(ActionType.BreakBond, synth.bond)
+        // Its modern counterpart is splitting what it would have built (migration rule 1) — and because
+        // `Break` is now the exact mirror of `Bond`, the two operands carry over VERBATIM: a gene that joined
+        // `a`+`b` becomes one that splits them back apart. When the gene's SOURCE was also legacy,
+        // `reconcilePreInversion` applies rule 3 instead.
+        "FormBond" -> parseSynthesis(t).let { GeneAction(ActionType.BreakBond, it.a, it.b) }
+        // `Break <a> <b>` (current). The 2-token form is the v2 shape, where the operand was the 2-atom
+        // BOND to break rather than the fragments: read it as splitting that bond's own two halves, which is
+        // what it meant whenever the cell's richest match was the bare dimer.
+        "Break" -> when (t.size) {
+            3 -> GeneAction(ActionType.BreakBond, untok(t[1]), untok(t[2]))
+            2 -> untok(t[1]).let { GeneAction(ActionType.BreakBond, it.take(1), it.drop(1)) }
+            else -> throw IllegalArgumentException(fmt(t))
         }
-        "Break" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.BreakBond, untok(t[1])) }
         "Convert" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Convert, untok(t[1])) }
         "Retain" -> { require(t.size == 2) { fmt(t) }; GeneAction(ActionType.Retain, untok(t[1])) }
         // Expand was banned (it raised a cell's radius above the biomass soft-cap, coarsening the broadphase
