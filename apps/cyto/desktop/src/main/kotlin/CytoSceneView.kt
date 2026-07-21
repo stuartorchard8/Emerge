@@ -270,7 +270,12 @@ object CytoSceneView {
                 // A cell/gene editor owns the bottom of the screen, so the coach collapses to a top-left pill
                 // instead of its full bottom-centre panel (§6.1). Behind a full-screen narrow modal there's no
                 // room even for the pill, so it hides entirely there.
-                val cellUp = geneEditor.isEditing || (narrow && controller.lastHeldId != null)
+                // Wide never collapses the coach: it sits bottom-centre, clear of the right-docked cell panel
+                // and stacked above the HUD bar, so there is nothing to make room for. Collapsing dates from
+                // the retired side-by-side editor, and since `isEditing` on wide means "a draft is parked"
+                // it stuck permanently after the first gene edit — leaving only the pill, which carries NO
+                // Skip/Next/Reset controls, so a Gate.Next step became impossible to advance.
+                val cellUp = narrow && (geneEditor.isEditing || controller.lastHeldId != null)
                 // The HUD bar shows whenever the bottom is free: on wide that's any time no gene editor is up
                 // (the cell panel docks right, not bottom); on narrow only at L0 (the cell sheet owns the bottom).
                 // Wide always keeps the HUD: nothing on this width claims the bottom bar — the cell panel docks
