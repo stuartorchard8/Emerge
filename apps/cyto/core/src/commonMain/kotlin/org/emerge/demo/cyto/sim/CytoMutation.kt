@@ -81,17 +81,16 @@ object CytoMutation {
             2 -> { val ci = nextInt(cs.size); withClause(g, ci, cs[ci].copy(rhs = mutateOperand(cs[ci].rhs, nextInt))) }
             3 -> g.copy(action = g.action.copy(a = mutateSpecies(g.action.a, nextInt)))
             4 -> g.copy(action = g.action.copy(b = mutateSpecies(g.action.b, nextInt)))
-            5 -> {  // re-roll the action type; clear the Mitosis/FormBond-only flags if it no longer applies (keeps the invariant + codec round-trip)
+            5 -> {  // re-roll the action type; clear the Mitosis-only flags if it no longer applies (keeps the invariant + codec round-trip)
                 val newType = ActionType.entries[nextInt(ActionType.entries.size)]
                 val mitosis = newType == ActionType.Mitosis
-                val formBond = newType == ActionType.FormBond
-                g.copy(action = g.action.copy(type = newType, morphogenToMother = g.action.morphogenToMother && mitosis, divideAcross = g.action.divideAcross && mitosis, rejectMother = g.action.rejectMother && mitosis, aWild = g.action.aWild && formBond, bWild = g.action.bWild && formBond))
+                g.copy(action = g.action.copy(type = newType, morphogenToMother = g.action.morphogenToMother && mitosis, divideAcross = g.action.divideAcross && mitosis, rejectMother = g.action.rejectMother && mitosis))
             }
             6 -> g.copy(efficiency = (g.efficiency + if (nextInt(2) == 0) -1 else 1).coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR))  // nudge the efficiency gear ±1
             7 -> g.copy(source = flipSource(g.source, nextInt))
             8 -> addClause(g, nextInt)
             9 -> dropClause(g, nextInt)
-            else -> toggleFormBondWild(g, nextInt)   // flip a FormBond operand exact↔wildcard (so evolution can discover generalists)
+            else -> mutateSynthesisOperand(g, nextInt)   // perturb one of the two synthesis reactants
         }
     }
 
@@ -149,25 +148,31 @@ object CytoMutation {
         return s.substring(0, i) + pick(ATOMS, nextInt) + s.substring(i + 1)
     }
 
-    /** Flip one FormBond operand between exact and wildcard (MORPHOGENESIS.md §2026-06-18). The side (a/b) is
-     *  drawn regardless of action type — so PRNG advancement is independent of gene content — but the flip is
-     *  a no-op on a non-FormBond gene (the flags are meaningless there + an invariant: only FormBond holds
-     *  them). */
-    private fun toggleFormBondWild(g: Gene, nextInt: (Int) -> Int): Gene {
+    /** Perturb one of a synthesis gene's two reactants. This slot used to flip an operand between exact and
+     *  wildcard (MORPHOGENESIS.md §2026-06-18); wildcards were removed with the chemistry inversion (see
+     *  [EnergySource.FormBond]), so it now does the thing that still matters for evolving chemistry —
+     *  changing *which* molecules a lineage joins. The side (a/b) is drawn regardless of source type, so PRNG
+     *  advancement stays independent of gene content, but it is a no-op on a Light gene. */
+    private fun mutateSynthesisOperand(g: Gene, nextInt: (Int) -> Int): Gene {
         val side = nextInt(2)
-        if (g.action.type != ActionType.FormBond) return g
-        return if (side == 0) g.copy(action = g.action.copy(aWild = !g.action.aWild))
-        else g.copy(action = g.action.copy(bWild = !g.action.bWild))
+        val s = g.source as? EnergySource.FormBond ?: return g
+        return if (side == 0) g.copy(source = s.copy(a = mutateSpecies(s.a, nextInt)))
+        else g.copy(source = s.copy(b = mutateSpecies(s.b, nextInt)))
     }
 
     private fun flip(c: Comparison) = if (c == Comparison.Greater) Comparison.Less else Comparison.Greater
+
+    /** Mutate the energy source. Light flips to a randomly-drawn synthesis reaction; a synthesis reaction
+     *  either flips back to Light or has one of its two reactants perturbed. That second branch matters:
+     *  synthesis operands used to live on the action (where mutations 3/4 reached them), so without it the
+     *  reactants a lineage runs on would be frozen for good and evolution could never retune its chemistry. */
     private fun flipSource(s: EnergySource, nextInt: (Int) -> Int): EnergySource = when (s) {
-        // From Light, mutate into one of the two bond-based sources (chosen at random) — the mirror pair
-        // added by HYDROTHERMAL_CHEMISTRY_PLAN.md. From either bond source, mutate back to Light.
-        EnergySource.Light -> if (nextInt(2) == 0) EnergySource.FormBond(pick(ATOMS, nextInt) + pick(ATOMS, nextInt))
-                              else EnergySource.BreakBond(pick(ATOMS, nextInt) + pick(ATOMS, nextInt))
-        is EnergySource.FormBond -> EnergySource.Light
-        is EnergySource.BreakBond -> EnergySource.Light
+        EnergySource.Light -> EnergySource.FormBond(pick(ATOMS, nextInt), pick(ATOMS, nextInt))
+        is EnergySource.FormBond -> when (nextInt(3)) {
+            0 -> EnergySource.Light
+            1 -> s.copy(a = mutateSpecies(s.a, nextInt))
+            else -> s.copy(b = mutateSpecies(s.b, nextInt))
+        }
     }
 
     private fun pick(options: List<String>, nextInt: (Int) -> Int) = options[nextInt(options.size)]

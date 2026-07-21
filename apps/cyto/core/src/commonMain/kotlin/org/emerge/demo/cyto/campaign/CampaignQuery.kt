@@ -58,7 +58,7 @@ class FocusedCell(
     /** True if the cell has a Contract ("muscle") gene powered by breaking a bond rather than by Light —
      *  i.e. the player has switched its fuel from sunlight to a stored reserve. Lets Ch9 gate on that edit
      *  (day-only muscle → runs on reserves, so it swims at night too). */
-    val contractOnBreak: Boolean = false,
+    val contractOnChem: Boolean = false,
     /** True if the cell has a Contract gene that fires while the `bb` morphogen is PRESENT (a `bb > n`
      *  clause) rather than absent (`bb < n`) — i.e. the player has flipped which side of the differentiated
      *  body drives the stroke. Lets Ch9 gate on the marked-cell muscle edit (the more adept swimmer). */

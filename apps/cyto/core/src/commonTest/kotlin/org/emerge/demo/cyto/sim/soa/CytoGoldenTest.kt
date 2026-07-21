@@ -151,11 +151,11 @@ class CytoGoldenTest {
     // doesn't divide within 1500 ticks, so only its chemistry — biology/grid — moves); interact keeps
     // meta/topology (scripted population unchanged). weld/sticky goldens pass biomass explicitly, so untouched.
     private val GROWTH = mapOf(
-        "meta" to "85c1623fc3ed5fa6",
-        "physics" to "1250756c98cb84be",
-        "biology" to "103f1663032593f1",
+        "meta" to "8270c9ac089d6c6c",
+        "physics" to "f64ba82e9ed114f1",
+        "biology" to "51119cbd0cddbab0",
         "topology" to "cbf29ce484222325",
-        "grid" to "7f9f70ac15bc637",
+        "grid" to "3fc30c14cabc11fe",
     )
     // Re-baselined 2026-07-05: CYTOPLASM_DIFFUSE_PERIOD=2 — cytoplasm diffusion runs every 2nd tick,
     // halving the diffuse cost. Changes inter-cell nutrient sharing dynamics.
@@ -241,11 +241,11 @@ class CytoGoldenTest {
     // byte-identical here — the lone mutating founder doesn't divide inside 1500 ticks, so its count + position
     // are unchanged — and only its chemistry moves (biology = the seed composition itself; grid = what it sheds).
     private val MUTATION = mapOf(
-        "meta" to "187ed166f49aa1ee",
-        "physics" to "e9629ee5366336d2",
-        "biology" to "a61a1e83103920cb",
+        "meta" to "850e718cb8210f58",
+        "physics" to "54148923f71f8795",
+        "biology" to "d5e1d70f5989da66",
         "topology" to "cbf29ce484222325",
-        "grid" to "1d6e8259dc810850",
+        "grid" to "e6588798244ab985",
     )
     // grow then a scripted player-interaction sequence (delete / spawn / set / detach / grab).
     // Re-baselined 2026-07-05: restored LIGHT_QUANTA_SCALE 60k→120k (matter viability) +
@@ -274,11 +274,11 @@ class CytoGoldenTest {
     // (the scripted colony's population + spring structure are unchanged); physics/biology/grid shift with the
     // pure-rg seed chemistry.
     private val INTERACT = mapOf(
-        "meta" to "2f287e9ca4c65e66",
-        "physics" to "81d184dd7fc83cc3",
-        "biology" to "794eee2d1dd18",
+        "meta" to "405f0d6c2c18baf3",
+        "physics" to "1f17629e81ea5a0b",
+        "biology" to "2c053a04c9823903",
         "topology" to "cbf29ce484222325",
-        "grid" to "c9a80caa389ad7b7",
+        "grid" to "716891e015491026",
     )
 
     @Test
@@ -320,10 +320,11 @@ class CytoGoldenTest {
         assertGolden("interact", INTERACT, state, sd)
     }
 
-    // Repair gene: burn the stored `rg` reserve for repair energy (light-independent). A touching pair
-    // both repairing the same tick welds via gene-driven adhesion (the weld-heal path).
+    // Repair gene: join the stored `r`+`g` reserve for repair energy (light-independent, so the moving
+    // daylight band can't decide the outcome). A touching pair both repairing the same tick welds via
+    // gene-driven adhesion (the weld-heal path).
     private val repairOnly = listOf(
-        Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
+        Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
     )
 
     // Weld-heal + sticky-weld goldens: the default GROWTH/INTERACT/MUTATION scenarios use the non-sticky,
@@ -338,17 +339,17 @@ class CytoGoldenTest {
     // gate is byte-identical (the sandbox autotroph severs, so its colonisation doesn't depend on welds).
     private val WELD_HEAL = mapOf(
         "meta" to "bb3fa685a6d77664",
-        "physics" to "b47e91853a3c8a02",
-        "biology" to "999427a698b3b417",
-        "topology" to "9bfc123c376c0371",
-        "grid" to "22a8b2d6771fc9d5",
+        "physics" to "2fd48d231d16aaa3",
+        "biology" to "be67d058dcaa3704",
+        "topology" to "9c89edfb32bf6f49",
+        "grid" to "d564d0a3f3801685",
     )
     private val STICKY_WELD = mapOf(
         "meta" to "350eaa4577a67db5",
-        "physics" to "f7edf29a779a21ca",
-        "biology" to "ca5045ab30a68078",
-        "topology" to "8f9ae79f7f29791a",
-        "grid" to "571fec754e148c01",
+        "physics" to "189e03d633ecc934",
+        "biology" to "4189dfc063a23570",
+        "topology" to "3102d5c4d5143e24",
+        "grid" to "b04a98ad6ac16eb8",
     )
 
     @Test
@@ -360,9 +361,9 @@ class CytoGoldenTest {
         val initial = run {
             val b = SimBuilder(SimState(randomSeed = 1))
             val r = Frac(1, 2)
-            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
-            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
-            b.spawnCell(CytoUnits.coord2(0f, 0.15f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
+            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000, "r" to 50000, "g" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
+            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000, "r" to 50000, "g" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
+            b.spawnCell(CytoUnits.coord2(0f, 0.15f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000, "r" to 50000, "g" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, genome = repairOnly)
             b.build()
         }
         var w = CytoWorld.fromSimState(initial)
@@ -383,8 +384,8 @@ class CytoGoldenTest {
         val initial = run {
             val b = SimBuilder(SimState(randomSeed = 1))
             val r = Frac(1, 2)
-            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, sticky = true, genome = emptyList())
-            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, sticky = true, genome = emptyList())
+            b.spawnCell(CytoUnits.coord2(-0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000, "r" to 50000, "g" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, sticky = true, genome = emptyList())
+            b.spawnCell(CytoUnits.coord2(0.1f, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 50000, "r" to 50000, "g" to 50000), biomass = mapOf("rg" to 4000), logicalRadius = r, sticky = true, genome = emptyList())
             b.build()
         }
         var w = CytoWorld.fromSimState(initial)
@@ -436,7 +437,7 @@ class CytoGoldenTest {
                 val vx = (gy - 2) * 0.02f
                 b.spawnCell(
                     CytoUnits.coord2((gx - 2) * spacing, (gy - 2) * spacing), CytoUnits.coord2(vx, 0f),
-                    CellType.Collector, cytoplasm = mapOf("rg" to 50000), biomass = mapOf("rg" to 4000),
+                    CellType.Collector, cytoplasm = mapOf("rg" to 50000, "r" to 50000, "g" to 50000), biomass = mapOf("rg" to 4000),
                     logicalRadius = r, sticky = true, genome = emptyList())
             }
             b.build()

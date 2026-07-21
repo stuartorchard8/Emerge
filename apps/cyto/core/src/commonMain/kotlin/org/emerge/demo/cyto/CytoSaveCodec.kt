@@ -39,12 +39,14 @@ object CytoSaveCodec {
     // v5: persist the PRNG randomSeed (mutation continuity + avoids the seed-0 LCG degeneracy on load).
     // v6: persist the sim clock (state.tick) so the moving light field resumes at the right phase on load.
     // v7: persist the runtime mutation rate-denominator (-1 = inherit the cfg default).
-    // v8: FormBond flipped wildcard-default → exact-default (MORPHOGENESIS.md §2026-06-18); pre-v8 genomes are
-    // migrated to explicit wildcard on load (see [migrateFormBondToWildcard]) so they behave byte-for-byte.
-    // v11: HYDROTHERMAL_CHEMISTRY_PLAN.md added EnergySource.FormBond + ActionType.BreakBond, the mirror
-    // images of the pre-existing EnergySource.BreakBond + ActionType.FormBond; pre-v11 genomes are migrated
-    // to their mirror on load (see [migrateInvertedChemistry]) so their metabolic niche carries over inverted.
-    private const val FORMAT_VERSION = 11
+    // v8: FormBond flipped wildcard-default → exact-default (MORPHOGENESIS.md §2026-06-18). The migration
+    // that preserved pre-v8 wildcard behaviour is gone — wildcards themselves were removed with the
+    // chemistry inversion, so those operands now load as the exact species they name.
+    // v12: HYDROTHERMAL_CHEMISTRY_PLAN.md inverted the chemistry — synthesis became the energy source and
+    // breaking a costed action. Genome text is now itself versioned (GeneCodec's `# genome <n>` header), so
+    // gene-model migration lives in [GenomeMigration] and applies to loose `.gene` files too, not only saves;
+    // a pre-v12 save simply contains headerless (= pre-inversion) genome text and upgrades on parse.
+    private const val FORMAT_VERSION = 12
     private val cfg = CytoConfig()
 
     fun encode(state: SimState): ByteArray {
@@ -126,9 +128,11 @@ object CytoSaveCodec {
             val sticky = c.readByte().toInt() != 0
             val cytoplasm = readCounts(c)
             val biomass = readCounts(c)
+            // GeneCodec is version-aware: pre-v12 saves hold headerless genome text, which it reads as the
+            // pre-inversion gene model and upgrades via GenomeMigration. The v8 wildcard migration that used
+            // to run here is gone with wildcards themselves — a pre-v8 genome's operands are now simply read
+            // as the exact species they name (see GeneCodec.parseSynthesis).
             val genome = GeneCodec.parse(c.readString())
-                .let { if (version < 8) migrateFormBondToWildcard(it) else it }
-                .let { if (version < 11) migrateInvertedChemistry(it) else it }
 
             val newId = builder.spawnCell(pos, vel, type, cytoplasm, biomass, radius, sticky, genome)
             builder.update<CytoCellComponent>(newId) { current -> (current ?: error("spawn")).copy(wear = wear) }
@@ -162,33 +166,6 @@ object CytoSaveCodec {
         return builder.build()
     }
 
-    /** v8 migration (MORPHOGENESIS.md §2026-06-18): FormBond went from wildcard-by-default (richest molecule
-     *  ending/starting with the operand) to **exact-species** by default. Pre-v8 genomes were authored/evolved
-     *  under the wildcard meaning, so mark every FormBond gene's operands as explicit wildcards — preserving
-     *  their behaviour byte-for-byte. Re-saving then stores them as v8 with the `*` markers, so the migration
-     *  runs once. (Empty operands stay no-ops; the flag is inert on them.) */
-    private fun migrateFormBondToWildcard(genome: List<Gene>): List<Gene> = genome.map { g ->
-        if (g.action.type == ActionType.FormBond) g.copy(action = g.action.copy(aWild = true, bWild = true)) else g
-    }
-
-    /** v11 migration (HYDROTHERMAL_CHEMISTRY_PLAN.md): the engine gained the inverted-chemistry primitives —
-     *  [EnergySource.FormBond] (energy from JOINING monomers) and [ActionType.BreakBond] (an energy-COSTED
-     *  action that splits a stored bond) — as the mirror images of the pre-existing [EnergySource.BreakBond]
-     *  (free fuel-harvesting by breaking) and [ActionType.FormBond] (energy-costed building). Pre-v11 genomes
-     *  were authored/evolved entirely within the old pair, so on load every gene is reinterpreted into its
-     *  mirror: a BreakBond ENERGY SOURCE becomes a FormBond energy source (same bond string), and a FormBond
-     *  ACTION becomes a BreakBond action (bond = `a.last + b.first`, the junction bond FormBond would have
-     *  created). Detectable purely by DSL **position** (source vs. action) — every legacy save only ever put
-     *  BreakBond in source position and FormBond in action position, so the swap is unambiguous, no new
-     *  keyword needed. An empty-operand FormBond action (an inert no-op gene) is left alone — there's no bond
-     *  to derive. Re-saving upgrades the file to v11, so the migration runs once. */
-    private fun migrateInvertedChemistry(genome: List<Gene>): List<Gene> = genome.map { g ->
-        val newSource = (g.source as? EnergySource.BreakBond)?.let { EnergySource.FormBond(it.bond) } ?: g.source
-        val newAction = if (g.action.type == ActionType.FormBond && g.action.a.isNotEmpty() && g.action.b.isNotEmpty()) {
-            GeneAction(ActionType.BreakBond, a = "${g.action.a.last()}${g.action.b.first()}")
-        } else g.action
-        g.copy(source = newSource, action = newAction)
-    }
 
     private fun writeCounts(w: ByteWriter, counts: Map<String, Int>) {
         w.writeInt(counts.size)

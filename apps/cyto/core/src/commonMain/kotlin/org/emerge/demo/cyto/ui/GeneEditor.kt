@@ -100,7 +100,10 @@ class GeneEditor {
 
     /** Which L4 picker sheet (if any) is open over the narrow L3 modal, and its target (clause index +
      *  side for operand/value pickers). Cross-frame UI state, like the rest of the editor. */
-    private enum class Pick { None, Action, Source, Group, Operand, SpeciesA, SpeciesB, Eff, Overflow }
+    // Bond edits BOTH reactants of a synthesis energy source in one sheet, because they are only meaningful
+    // together — what a gene builds is a property of the pair, so picking them separately means editing
+    // blind through an intermediate state that makes nothing.
+    private enum class Pick { None, Action, Source, Group, Operand, SpeciesA, SpeciesB, Bond, Eff, Overflow }
     private var pick = Pick.None
     private var pickClause = -1
     private var pickSide = 0            // 0 = lhs, 1 = rhs (Operand picker)
@@ -493,12 +496,6 @@ class GeneEditor {
                 chip("OPERAND", sp(d.action.a)) { openPick(Pick.SpeciesA) }
             ActionType.BreakBond ->
                 chip("BOND", sp(d.action.a)) { openPick(Pick.SpeciesA) }
-            ActionType.FormBond -> {
-                chip("LEFT", sp(d.action.a)) { openPick(Pick.SpeciesA) }
-                segmented("MATCH L", listOf("EXACT", "ENDS *"), if (d.action.aWild) 1 else 0) { i -> draft = d.copy(action = d.action.copy(aWild = i == 1)) }
-                chip("RIGHT", sp(d.action.b)) { openPick(Pick.SpeciesB) }
-                segmented("MATCH R", listOf("EXACT", "* STARTS"), if (d.action.bWild) 1 else 0) { i -> draft = d.copy(action = d.action.copy(bWild = i == 1)) }
-            }
             ActionType.Mitosis -> {
                 chip("MORPHOGEN", sp(d.action.a)) { openPick(Pick.SpeciesA) }
                 if (d.action.a.isNotEmpty())
@@ -514,9 +511,13 @@ class GeneEditor {
             chip("EFFICIENCY", d.efficiency.toString()) { openPick(Pick.Eff) }
         gap(12f)
 
-        // ── POWERED BY: the energy source ──
+        // ── POWERED BY: two boxes — the source TYPE, then (synthesis only) what it builds. Forming a bond is
+        // what pays now, so a synthesis gene's reaction belongs here rather than in the action. ──
         row("POWERED BY", 0x7A8699FFL)
         chip("", sourceLabel(d.source)) { openPick(Pick.Source) }
+        (d.source as? EnergySource.FormBond)?.let { s ->
+            chip("", synthesisLabel(s), 0x35507AFFL) { openPick(Pick.Bond) }
+        }
         gap(12f)
 
         chip("GROUP", d.group.uppercase().ifEmpty { "(NONE)" }) { openPick(Pick.Group) }
@@ -554,22 +555,18 @@ class GeneEditor {
                     if (i < ActionType.entries.lastIndex) gap(4f)
                 }
             }
-            Pick.Source -> pickSheet(b, "POWERED BY?", wide) {
-                listRow("LIGHT", selected = d.source is EnergySource.Light) {
+            // Only the source TYPE — which reaction a BOND gene runs is picked in [Pick.Bond], so this list
+            // no longer enumerates every bond (it couldn't anyway: reactants can be arbitrary molecules).
+            Pick.Source -> pickSheet(b, "POWERED BY?", wide, heightFraction = 0.35f) {
+                listRow("USE LIGHT", "FREE, BUT ONLY IN DAYLIGHT", selected = d.source is EnergySource.Light) {
                     draft = d.copy(source = EnergySource.Light); closePick()
                 }
                 gap(4f)
-                for (bond in bonds) {
-                    listRow("BOND ${sp(bond)}", selected = (d.source as? EnergySource.FormBond)?.bond == bond) {
-                        draft = d.copy(source = EnergySource.FormBond(bond)); closePick()
-                    }
-                    gap(4f)
-                }
-                for (bond in bonds) {
-                    listRow("BREAK ${sp(bond)}", selected = (d.source as? EnergySource.BreakBond)?.bond == bond) {
-                        draft = d.copy(source = EnergySource.BreakBond(bond)); closePick()
-                    }
-                    gap(4f)
+                listRow("BOND", "JOIN TWO MOLECULES - RELEASES ENERGY", selected = d.source is EnergySource.FormBond) {
+                    if (d.source !is EnergySource.FormBond) draft = d.copy(source = defaultSynthesis())
+                    // Straight on to picking the reaction: a bare "BOND" with default reactants isn't an
+                    // answer to anything, so switching source type flows into choosing what it makes.
+                    openPick(Pick.Bond)
                 }
             }
             Pick.Group -> pickSheet(b, "GROUP?", wide) {
@@ -588,6 +585,23 @@ class GeneEditor {
             }
             Pick.SpeciesB -> pickSheet(b, "MOLECULE", wide) {
                 speciesBuilder(d.action.b) { draft = d.copy(action = d.action.copy(b = it)) }
+            }
+            // Both reactants in one sheet, with a live MAKES readout underneath: the whole point of a
+            // synthesis gene is its product, and building the pair blind (one operand per sheet) means you
+            // can't see what you're making until you've committed to both.
+            Pick.Bond -> pickSheet(b, "BOND WHAT?", wide, heightFraction = 0.5f) {
+                val s = d.source as? EnergySource.FormBond ?: return@pickSheet
+                row("JOIN", 0x7A8699FFL)
+                speciesBuilder(s.a) { draft = d.copy(source = s.copy(a = it)) }
+                gap(10f)
+                row("TO", 0x7A8699FFL)
+                speciesBuilder(s.b) { draft = d.copy(source = s.copy(b = it)) }
+                gap(10f)
+                // A READOUT, not a control — plain text rather than a chip, because a chip draws a dropdown
+                // chevron and would promise an interaction that doesn't exist. Orange when the pair can't
+                // react, matching how the panel colours a gene that can't fire.
+                row("MAKES", 0x7A8699FFL)
+                row(synthesisLabel(s), if (s.product.isEmpty()) 0xC8963CFFL else 0x8FCF9FFFL)
             }
             Pick.Eff -> pickSheet(b, "EFFICIENCY GEAR", wide, heightFraction = 0.4f) {
                 numberField(d.efficiency, 0, CytoTuning.EFFICIENCY_MAX_GEAR) { draft = d.copy(efficiency = it) }
@@ -811,8 +825,7 @@ class GeneEditor {
     private fun actionBlurb(t: ActionType): String = when (t) {
         ActionType.Import -> "PULL A MOLECULE IN FROM OUTSIDE"
         ActionType.Export -> "PUSH A MOLECULE OUT TO OUTSIDE"
-        ActionType.FormBond -> "JOIN TWO MOLECULES INTO ONE"
-        ActionType.BreakBond -> "SPLIT A BOND - COSTS ENERGY"
+        ActionType.BreakBond -> "SPLIT A BOND APART - COSTS ENERGY"
         ActionType.Convert -> "LOCK A MOLECULE INTO BIOMASS - GROW"
         ActionType.Contract -> "SHRINK THE RADIUS - A MUSCLE FLEX"
         ActionType.Mitosis -> "DIVIDE INTO TWO CELLS"
@@ -834,6 +847,27 @@ class GeneEditor {
     /** A molecule's display name (built-in flavour name / raw token), upper-cased for the caps UI. Empty
      *  reads as "(NONE)". Genome aliases (Layer 2) will thread through here later. */
     private fun sp(species: String): String = SpeciesNames.name(species, activeAliases).uppercase()
+
+    /**
+     * Box 2 of the POWERED BY row: **what this synthesis builds**, with the pair that builds it in brackets —
+     * `REDREEN (R+G)`, `RGB (R+GB)`.
+     *
+     * The product leads because that is the gene's purpose; the bracket keeps the dense reactant form visible
+     * because the product alone is ambiguous — `R+GB` and `RG+B` both build `RGB` but are different genes
+     * that consume different molecules. Naming the product at all is only possible because operands are
+     * exact (see [EnergySource.FormBond]); a wildcard reaction would have no single answer here.
+     */
+    private fun synthesisLabel(s: EnergySource.FormBond): String {
+        if (s.a.isEmpty() || s.b.isEmpty()) return "SET REACTANTS"
+        val pair = "(${s.a.uppercase()}+${s.b.uppercase()})"
+        // No product ⇒ the join repeats a bond (polymerisation-forbidden), so the gene is inert. Say so here
+        // rather than silently showing a pair that never reacts.
+        return if (s.product.isEmpty()) "$pair WON'T BOND" else "${sp(s.product)} $pair"
+    }
+
+    /** A sensible starting reaction when a gene is switched from Light to synthesis: the first two atoms of
+     *  the alphabet, which always form a legal bond. */
+    private fun defaultSynthesis() = EnergySource.FormBond(atoms.first(), atoms.getOrElse(1) { atoms.first() })
 
     /** A compact operand label for an L3 clause chip (see [renderGeneModal]). */
     private fun operandLabel(op: Operand): String = when (op) {
@@ -885,22 +919,29 @@ class GeneEditor {
             ))
         }
 
-        // POWERED BY: an inline Menu (LIGHT, a formed bond, or a broken bond).
+        // POWERED BY: an inline Menu (LIGHT, or forming one of the bonds). Forming a bond is what *pays*
+        // now, so there is no "break for fuel" entry — breaking is an action that costs (see EnergySource).
         val srcKey = "$i:src"
-        val srcOpts = listOf("LIGHT") + bonds.map { "BOND ${sp(it)}" } + bonds.map { "BREAK ${sp(it)}" }
-        lines.add(listOf(
-            UiTok.Menu(sourceLabel(gene.source), ctlIf(energyBlocked), srcOpts, openMenu == srcKey,
-                onToggle = { openMenu = if (openMenu == srcKey) null else srcKey },
-                onPick = { idx ->
-                    val newSource = when {
-                        idx == 0 -> EnergySource.Light
-                        idx <= bonds.size -> EnergySource.FormBond(bonds[idx - 1])
-                        else -> EnergySource.BreakBond(bonds[idx - 1 - bonds.size])
-                    }
-                    inlineEdit(controller, i) { it.copy(source = newSource) }; openMenu = null
-                }),
-            UiTok.Text(" TO POWER", grey),
-        ))
+        // TWO controls: the source TYPE, then — synthesis only — what it builds. The reaction is one idea, so
+        // it is one button that opens one sheet, rather than two operand tokens edited independently.
+        val srcOpts = listOf("USE LIGHT", "BOND")
+        val srcLine = ArrayList<UiTok>()
+        srcLine.add(UiTok.Menu(sourceTypeLabel(gene.source), ctlIf(energyBlocked), srcOpts, openMenu == srcKey,
+            onToggle = { openMenu = if (openMenu == srcKey) null else srcKey },
+            onPick = { idx ->
+                openMenu = null
+                if (idx == 0) inlineEdit(controller, i) { it.copy(source = EnergySource.Light) }
+                else {
+                    inlineEdit(controller, i) { g -> if (g.source is EnergySource.FormBond) g else g.copy(source = defaultSynthesis()) }
+                    openInlinePick(controller, i, Pick.Bond)   // straight on to "bond what?"
+                }
+            }))
+        (gene.source as? EnergySource.FormBond)?.let { s ->
+            srcLine.add(UiTok.Text(" ", grey))
+            srcLine.add(UiTok.Toggle(synthesisLabel(s), ctl) { openInlinePick(controller, i, Pick.Bond) })
+        }
+        srcLine.add(UiTok.Text(" TO POWER", grey))
+        lines.add(srcLine)
 
         // DO: action Menu, its operand token(s), and efficiency (non-Mitosis).
         val actKey = "$i:act"
@@ -916,10 +957,6 @@ class GeneEditor {
             ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain, ActionType.BreakBond -> {
                 actLine.add(UiTok.Text(" ", grey))
                 actLine.add(UiTok.Toggle(sp(gene.action.a).ifEmpty { "NOTHING" }, ctl) { openInlinePick(controller, i, Pick.SpeciesA) })
-            }
-            ActionType.FormBond -> {
-                actLine.add(UiTok.Text(" ", grey)); actLine.add(UiTok.Toggle(sp(gene.action.a).ifEmpty { "?" }, ctl) { openInlinePick(controller, i, Pick.SpeciesA) })
-                actLine.add(UiTok.Text(" + ", grey)); actLine.add(UiTok.Toggle(sp(gene.action.b).ifEmpty { "?" }, ctl) { openInlinePick(controller, i, Pick.SpeciesB) })
             }
             else -> {}
         }
@@ -1048,22 +1085,11 @@ class GeneEditor {
     }
 
     /** The gene's power source as its own prose line, shown BEFORE the action (Stu's format) so a long
-     *  action doesn't overflow. Break-bond fuel names the two atoms it frees; light is just light.
-     *  NOTE: this wording is the placeholder the deeper energy-source rework will replace. */
+     *  action doesn't overflow. The narrow read card's flat form of the same two boxes the interactive
+     *  cards show — `USE LIGHT` / `BOND REDREEN (R+G)`. Tapping the card opens the full editor. */
     private fun sourceProse(s: EnergySource): String = when (s) {
-        EnergySource.Light -> "USE LIGHT TO POWER"
-        is EnergySource.FormBond -> {
-            // The hydrothermal mirror of BreakBond below: joining the two monomers releases the quantum.
-            val atoms = if (s.bond.length == 2) " (${s.bond.uppercase().toCharArray().joinToString("/")})" else ""
-            "BOND ${sp(s.bond)}$atoms TO POWER"
-        }
-        is EnergySource.BreakBond -> {
-            // The duomer name already carries the identity, so the yielded atoms stay compact — their raw
-            // single-letter symbols joined by `/` (e.g. GREBLU (G/B)) — to keep the fuel line inside the panel.
-            // (The bitmap font has no `|` glyph, so `/` stands in for the separator.)
-            val atoms = if (s.bond.length == 2) " (${s.bond.uppercase().toCharArray().joinToString("/")})" else ""
-            "BREAK ${sp(s.bond)}$atoms TO POWER"
-        }
+        EnergySource.Light -> "USE LIGHT"
+        is EnergySource.FormBond -> "BOND ${synthesisLabel(s)}"
     }
 
     /** The action as a main line plus any modifier lines (the caller indents the modifiers). Only Mitosis
@@ -1074,21 +1100,9 @@ class GeneEditor {
         return when (a.type) {
             ActionType.Import -> "IMPORT $av" to emptyList()
             ActionType.Export -> "EXPORT $av" to emptyList()
-            ActionType.FormBond -> {
-                // Mirror the break-bond line: name the PRODUCT, show the two reactants in parens.
-                // BOND FUEL (R/G) reads as the inverse of BREAK FUEL (R/G). Wildcard/illegal joins have no
-                // single product, so fall back to the reactant form with `*` markers.
-                val product = if (!a.aWild && !a.bWild && a.a.isNotEmpty() && a.b.isNotEmpty()) Molecules.join(a.a, a.b) else null
-                if (product != null) {
-                    "BOND ${sp(product)} (${a.a.uppercase()}/${a.b.uppercase()})" to emptyList()
-                } else {
-                    val la = if (a.aWild && a.a.isNotEmpty()) "*$av" else av
-                    val lb = if (a.bWild && a.b.isNotEmpty()) "$bv*" else bv
-                    "BOND $la AND $lb" to emptyList()
-                }
-            }
             ActionType.BreakBond -> {
-                // Mirror of FormBond's prose above: name the bond being split, atoms in parens.
+                // Name the bond being split, its two atoms compact in parens — the mirror of the synthesis
+                // line in [sourceProse], which is where the joining half of the chemistry now reads from.
                 val atoms = if (a.a.length == 2) " (${a.a.uppercase().toCharArray().joinToString("/")})" else ""
                 "BREAK $av$atoms" to emptyList()
             }
@@ -1279,9 +1293,12 @@ class GeneEditor {
         else armedClauseDelete = key
     }
 
-    private fun sourceLabel(s: EnergySource): String = when (s) {
-        EnergySource.Light -> "LIGHT"
-        is EnergySource.FormBond -> "BOND ${sp(s.bond)}"
-        is EnergySource.BreakBond -> "BREAK ${sp(s.bond)}"
+    /** Box 1 of the POWERED BY row: the source TYPE alone. What a BOND gene actually makes is box 2
+     *  ([synthesisLabel]), so this never names a molecule. */
+    private fun sourceTypeLabel(s: EnergySource): String = when (s) {
+        EnergySource.Light -> "USE LIGHT"
+        is EnergySource.FormBond -> "BOND"
     }
+
+    private fun sourceLabel(s: EnergySource): String = sourceTypeLabel(s)
 }

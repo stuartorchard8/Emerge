@@ -63,6 +63,12 @@ android {
 // Forward -Dcytobench to the JVM test JVM so the (otherwise-skipped) CytoBench perf probe can be run with
 //   ./gradlew :apps:cyto:core:jvmTest --tests "*CytoBench*" -Dcytobench=1
 tasks.withType<Test>().configureEach {
+    // The sim fixtures grow real colonies and materialise a full SimState per sampled tick. Since the
+    // chemistry inversion (HYDROTHERMAL_CHEMISTRY_PLAN.md) they run on ambient monomer rather than
+    // day/night-limited light, so the same fixtures reach ~1000 cells where they used to reach ~100 —
+    // enough to exhaust Gradle's default test heap (512m) partway through a growth scenario.
+    maxHeapSize = "2g"
+
     System.getProperty("cytobench")?.let { systemProperty("cytobench", it) }
     System.getProperty("cytocells")?.let { systemProperty("cytocells", it) }
     System.getProperty("cytovariant")?.let { systemProperty("cytovariant", it) }

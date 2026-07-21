@@ -709,10 +709,11 @@ class CytoRenderer {
         }
     }
 
-    /** A gene's particle hue: white for Light (autotrophy has no species), else the broken bond's colour.
+    /** A gene's particle hue: white for Light (which has no species), else the colour of the bond the gene's
+     *  synthesis forms — the molecule its metabolism is actually built around.
      *  [speciesColorInto] already yields white for a token with no colour channels. */
     private fun geneColorInto(source: EnergySource, out: FloatArray) =
-        speciesColorInto(if (source is EnergySource.BreakBond) source.bond else "", out)
+        speciesColorInto(if (source is EnergySource.FormBond) source.bond else "", out)
 
     /** Phase in radians from 8 bits of [h] starting at [shift]. */
     private fun phaseOf(h: Int, shift: Int): Float = ((h ushr shift) and 0xFF) * (TAU / 256f)

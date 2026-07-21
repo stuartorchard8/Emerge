@@ -1,5 +1,43 @@
 # Hydrothermal Chemistry: Inverting Cyto's Energy Model (POC Plan)
 
+> ## STATUS: BUILT 2026-07-21 — and §3c below was WRONG. Read this first.
+>
+> The inversion is implemented. **§3c ("keep `EnergySource.BreakBond` and `ActionType.FormBond` as-is…
+> This is additive, not a rip-and-replace") is the one part of this plan that must not be followed**, and
+> following it is what broke thermodynamics on the first attempt: keeping either old primitive alongside its
+> new mirror means both directions of the same bond pay energy, so a genome can form a bond for +1 and break
+> it for +1, returning to its exact starting state having minted 2 quanta from nothing. §5 warned about
+> asymmetric *tuning* but missed that mere coexistence is itself the loop.
+>
+> ### As built
+> - `EnergySource.BreakBond` and `ActionType.FormBond` are **gone**. Sources are `Light` and `FormBond`;
+>   breaking exists only as the costed `ActionType.BreakBond`.
+> - `EnergySource.FormBond` carries the **full reactant pair** (`a`, `b`), not a bond string — it absorbed
+>   everything the old FormBond *action* could express, so genomes keep the ability to build arbitrary
+>   molecules and morphogenesis still works.
+> - **Wildcard operands are gone** (2026-07-21). Synthesis is now the energy source, so a gene has to be
+>   readable as "makes X" — and a wildcard reaction has no single product, because what it builds depends on
+>   the cytoplasm that tick rather than on the gene. Operands are always exact whole species, and the pair is
+>   ordered (`Bond rg b` and `Bond r gb` both build `rgb` but consume different molecules). Legacy `*`
+>   markers still parse, dropping the marker and keeping the species. **`ActionType.BreakBond` is still
+>   effectively wildcarded** — it splits the richest molecule *containing* the named bond — and de-wildcarding
+>   it is the next phase.
+> - **No new tuning constant** (§7's `CytoTuning` row is moot). Both directions are pinned at exactly one
+>   quantum per bond by construction, and `BreakBond` is excluded from the efficiency-gear multiplier so a
+>   single formed bond can never fund `g+1` breaks. The invariant and its proof live on the `EnergySource`
+>   kdoc; `ThermodynamicsTest` pins it.
+> - Genomes are now **versioned** (`# genome <n>`, `GeneCodec.GENOME_VERSION`). Pre-inversion genomes —
+>   saves and loose `.gene` files alike — upgrade on load via `GenomeMigration`, per Stu's three rules
+>   (rule 3 conserves the *direction* of each reaction rather than inverting per-slot). Save format v12.
+> - Golden gate re-baselined (§6 anticipated this). Trajectory verified first: the world booms to ~4400
+>   cells around tick 15k, then declines as ambient monomer is drawn down faster than diffusion recharges
+>   it — a carrying-capacity curve, not a runaway. **Whether that decline settles or crashes to zero is an
+>   open tuning question**, not a correctness one.
+> - Campaign genomes are still authored as pre-inversion text and migrate on load. They are coherent but
+>   behave differently (e.g. the Ch8 swimmer's `Light : FormBond r g` feed gene became `Light : Break rg`),
+>   and the coach copy still says "BOND". **Re-authoring the campaign is outstanding.**
+
+
 ## 1. The idea
 
 Today, energy flows **light → bond**. Autotrophs spend light quanta to fuel

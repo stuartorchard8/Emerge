@@ -403,7 +403,9 @@ class CytoController(
             cells[id]?.let { c ->
                 val divideWelds = c.genome.any { it.action.type == ActionType.Mitosis && !it.action.rejectMother }
                 val contractGenes = c.genome.filter { it.action.type == ActionType.Contract }
-                val contractOnBreak = contractGenes.any { it.source is EnergySource.BreakBond }
+                // "Runs on chemistry, not daylight" — the muscle keeps beating through the night. Since the
+                // chemistry inversion that means a synthesis-powered source rather than a break-powered one.
+                val contractOnChem = contractGenes.any { it.source is EnergySource.FormBond }
                 val contractOnMarked = contractGenes.any { g ->
                     g.condition.clauses.any { cl ->
                         val lhs = cl.lhs
@@ -412,7 +414,7 @@ class CytoController(
                 }
                 FocusedCell(
                     c.type, totalBiomassBonds(c.biomass), c.genome.size, c.cytoplasm,
-                    divideWelds, contractOnBreak, contractOnMarked,
+                    divideWelds, contractOnChem, contractOnMarked,
                 )
             }
         }
@@ -565,23 +567,15 @@ class CytoController(
         }
         val energyBlocked = when (val s = g.source) {
             EnergySource.Light -> quanta <= 0
-            // Blocked unless both reactant monomers are present in cytoplasm (the hydrothermal fuel).
-            is EnergySource.FormBond -> s.bond.length != 2 ||
-                (cyto[s.bond.substring(0, 1)] ?: 0) <= 0 || (cyto[s.bond.substring(1, 2)] ?: 0) <= 0
-            is EnergySource.BreakBond -> cyto.none { (sp, n) -> n > 0 && sp.contains(s.bond) }
+            // Synthesis is the energy source now: blocked unless both reactants are in the cytoplasm and
+            // their product is a legal molecule (the same resolution CytoBiologyCore's apply path does).
+            is EnergySource.FormBond -> s.a.isEmpty() || s.b.isEmpty() ||
+                Molecules.join(s.a, s.b) == null ||                        // product repeats a bond ⇒ forbidden
+                if (s.a == s.b) (cyto[s.a] ?: 0) < 2                       // a self-join needs two copies
+                else (cyto[s.a] ?: 0) <= 0 || (cyto[s.b] ?: 0) <= 0
         }
         val a = g.action
         val inputBlocked = when (a.type) {
-            ActionType.FormBond -> a.a.isNotEmpty() && a.b.isNotEmpty() && run {
-                val haveA = if (a.aWild) cyto.any { (sp, n) -> n > 0 && sp.endsWith(a.a) } else (cyto[a.a] ?: 0) > 0
-                val haveB = if (a.bWild) cyto.any { (sp, n) -> n > 0 && sp.startsWith(a.b) } else (cyto[a.b] ?: 0) > 0
-                when {
-                    !a.aWild && !a.bWild && a.a == a.b -> (cyto[a.a] ?: 0) < 2 || Molecules.join(a.a, a.b) == null  // homodimer needs 2 + a legal product
-                    !haveA || !haveB -> true
-                    !a.aWild && !a.bWild -> Molecules.join(a.a, a.b) == null                                       // both present but the product repeats a bond
-                    else -> false
-                }
-            }
             // Blocked unless some cytoplasm molecule still contains the bond to split.
             ActionType.BreakBond -> a.a.length != 2 || cyto.none { (sp, n) -> n > 0 && sp.contains(a.a) }
             ActionType.Convert -> (cyto[a.a] ?: 0) <= 0
@@ -737,13 +731,10 @@ class CytoController(
         }
     }
 
-    /** The action part of a gene's description (`BOND a·a`, `CONVERT ab`, `DIVIDE →m`, …). FormBond shows the
-     *  `*` wildcard markers (MORPHOGENESIS.md §2026-06-18) — `*a` ends-with, `a*` starts-with — like the codec. */
+    /** The action part of a gene's description (`BREAK ab`, `CONVERT ab`, `DIVIDE →m`, …). */
     private fun actionLabel(a: org.emerge.demo.cyto.sim.GeneAction): String = when (a.type) {
         ActionType.Import -> "IMPORT ${a.a}"
         ActionType.Export -> "EXPORT ${a.a}"
-        ActionType.FormBond ->
-            "BOND ${if (a.aWild && a.a.isNotEmpty()) "*${a.a}" else a.a}·${if (a.bWild && a.b.isNotEmpty()) "${a.b}*" else a.b}"
         ActionType.BreakBond -> "BREAK ${a.a}"
         ActionType.Convert -> "CONVERT ${a.a}"
         ActionType.Contract -> "CONTRACT"
@@ -761,11 +752,10 @@ class CytoController(
     private fun clauseStr(c: org.emerge.demo.cyto.sim.Clause): String =
         "${operandLabel(c.lhs)}${if (c.cmp == Comparison.Greater) ">" else "<"}${operandLabel(c.rhs)}"
 
-    /** The energy-source part (`LIGHT` / `BRK ab`). */
+    /** The energy-source part (`LIGHT` / `BND a·b`). */
     private fun srcLabel(s: EnergySource): String = when (s) {
         EnergySource.Light -> "LIGHT"
-        is EnergySource.FormBond -> "BND ${s.bond}"
-        is EnergySource.BreakBond -> "BRK ${s.bond}"
+        is EnergySource.FormBond -> "BND ${s.a}·${s.b}"
     }
 
     /** Panel label for one condition operand: a constant's number, `BIO`/`TOUCH`/`NBRS` for the live readings,

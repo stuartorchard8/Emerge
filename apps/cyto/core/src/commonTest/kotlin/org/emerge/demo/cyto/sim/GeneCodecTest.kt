@@ -7,6 +7,10 @@ import kotlin.test.assertTrue
 
 class GeneCodecTest {
 
+    /** The gene lines of a serialized genome, without the leading `# genome <n>` header — so an assertion
+     *  can name the DSL text it cares about without restating the version on every line. */
+    private fun body(genome: List<Gene>): String = GeneCodec.serialize(genome).substringAfter("\n")
+
     /** Every preset genome survives serialize → parse with identical structure (Gene is a data class,
      *  so == is structural). */
     @Test
@@ -38,8 +42,8 @@ class GeneCodecTest {
     fun roundTripsGroupTag() {
         val genome = listOf(
             Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(3000)), GeneAction(ActionType.Convert, "rg"), group = "Grow"),
-            Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(2000)), GeneAction(ActionType.Mitosis, rejectMother = true), group = "Hold Together"),
-            Gene(EnergySource.Light, GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(3000)), GeneAction(ActionType.FormBond, "r", "g")),  // untagged
+            Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(2000)), GeneAction(ActionType.Mitosis, rejectMother = true), group = "Hold Together"),
+            Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(3000)), GeneAction(ActionType.Convert, "rg")),  // untagged
         )
         val text = GeneCodec.serialize(genome)
         assertEquals(genome, GeneCodec.parse(text), "tagged genome round-trip")
@@ -52,7 +56,7 @@ class GeneCodecTest {
     fun roundTripsEmptyOperandsAndSpecies() {
         val genome = listOf(
             Gene(EnergySource.Light, GeneCondition(Operand.Chem(""), Comparison.Less, Operand.Constant(9)), GeneAction(ActionType.Import, "")),
-            Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(3)), GeneAction(ActionType.FormBond, "", "")),
+            Gene(EnergySource.FormBond("", ""), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(3)), GeneAction(ActionType.Import, "")),
         )
         assertEquals(genome, GeneCodec.parse(GeneCodec.serialize(genome)), "empty operand/species genome")
     }
@@ -67,7 +71,7 @@ class GeneCodecTest {
             // actions alike — the point is that the action token itself survives. (Mitosis with a
             // morphogen operand is covered by roundTripsAsymmetricMitosisMorphogen below.)
             val gene = Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(action))
-            val back = GeneCodec.parse(GeneCodec.serialize(listOf(gene)))
+            val back = GeneCodec.parse(body(listOf(gene)))
             assertEquals(listOf(gene), back, "$action")
         }
     }
@@ -80,9 +84,9 @@ class GeneCodecTest {
         val kinds = listOf(Operand.Constant(7), Operand.Chem("rg"), Operand.Conc("rgg"), Operand.Biomass, Operand.Touching, Operand.Neighbours)
         for (op in kinds) {
             val asLhs = Gene(EnergySource.Light, GeneCondition(op, Comparison.Greater, Operand.Constant(2)), GeneAction(ActionType.Mitosis))
-            assertEquals(listOf(asLhs), GeneCodec.parse(GeneCodec.serialize(listOf(asLhs))), "$op as lhs")
+            assertEquals(listOf(asLhs), GeneCodec.parse(body(listOf(asLhs))), "$op as lhs")
             val asRhs = Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, op), GeneAction(ActionType.Mitosis))
-            assertEquals(listOf(asRhs), GeneCodec.parse(GeneCodec.serialize(listOf(asRhs))), "$op as rhs")
+            assertEquals(listOf(asRhs), GeneCodec.parse(body(listOf(asRhs))), "$op as rhs")
         }
     }
 
@@ -90,8 +94,8 @@ class GeneCodecTest {
      *  generalisation — and that round-trips too. */
     @Test
     fun roundTripsAVariableVsVariableCondition() {
-        val gene = Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Chem("rg")), GeneAction(ActionType.Convert, "rg"))
-        assertEquals(listOf(gene), GeneCodec.parse(GeneCodec.serialize(listOf(gene))), "biomass < stored rg reserve")
+        val gene = Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Chem("rg")), GeneAction(ActionType.Convert, "rg"))
+        assertEquals(listOf(gene), GeneCodec.parse(body(listOf(gene))), "biomass < stored rg reserve")
     }
 
     /** Asymmetric mitosis (MORPHOGENESIS.md §C) names a morphogen that must round-trip — this is the
@@ -99,15 +103,15 @@ class GeneCodecTest {
      *  parses to an empty operand, so existing genomes are unaffected. */
     @Test
     fun roundTripsAsymmetricMitosisMorphogen() {
-        val asymmetric = Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Mitosis, "m"))
-        assertEquals("Break rg : Biomass > 8 : Mitosis m", GeneCodec.serialize(listOf(asymmetric)), "serialized form")
-        assertEquals(listOf(asymmetric), GeneCodec.parse(GeneCodec.serialize(listOf(asymmetric))), "asymmetric mitosis morphogen")
+        val asymmetric = Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Mitosis, "m"))
+        assertEquals("Bond r g : Biomass > 8 : Mitosis m", body(listOf(asymmetric)), "serialized form")
+        assertEquals(listOf(asymmetric), GeneCodec.parse(body(listOf(asymmetric))), "asymmetric mitosis morphogen")
 
         // Retain-side (MORPHOGENESIS.md §Source placement): `mother` keeps the morphogen in the mother
         // (centred source); default/`daughter` hands it out (edge source).
-        val toMother = Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Mitosis, "m", morphogenToMother = true))
-        assertEquals("Break rg : Biomass > 8 : Mitosis m mother", GeneCodec.serialize(listOf(toMother)), "serialized mother-retention")
-        assertEquals(listOf(toMother), GeneCodec.parse(GeneCodec.serialize(listOf(toMother))), "mother-retention round-trip")
+        val toMother = Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Mitosis, "m", morphogenToMother = true))
+        assertEquals("Bond r g : Biomass > 8 : Mitosis m mother", body(listOf(toMother)), "serialized mother-retention")
+        assertEquals(listOf(toMother), GeneCodec.parse(body(listOf(toMother))), "mother-retention round-trip")
         assertEquals(listOf(asymmetric), GeneCodec.parse("Break rg : Biomass > 8 : Mitosis m daughter"), "explicit 'daughter' = default")
 
         // A bare `Mitosis` token (no operand) still decodes to a symmetric, daughter-side split — backward compatibility.
@@ -128,8 +132,8 @@ class GeneCodecTest {
             )),
             GeneAction(ActionType.Convert, "rg"),
         )
-        assertEquals("Light : Conc(rb) > 50 & Conc(rb) < 200 : Convert rg", GeneCodec.serialize(listOf(band)), "serialized band")
-        assertEquals(listOf(band), GeneCodec.parse(GeneCodec.serialize(listOf(band))), "Conc band round-trip")
+        assertEquals("Light : Conc(rb) > 50 & Conc(rb) < 200 : Convert rg", body(listOf(band)), "serialized band")
+        assertEquals(listOf(band), GeneCodec.parse(body(listOf(band))), "Conc band round-trip")
 
         // A hand-written multi-clause gate parses into ordered clauses; a single-clause one still works.
         assertEquals(
@@ -149,12 +153,12 @@ class GeneCodecTest {
         val gate = GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8))
         // axis only (no asymmetric morphogen): `along`/`across <axis>`.
         val along = Gene(EnergySource.Light, gate, GeneAction(ActionType.Mitosis, b = "gb"))
-        assertEquals("Light : Biomass > 8 : Mitosis along gb", GeneCodec.serialize(listOf(along)), "along, axis only")
-        assertEquals(listOf(along), GeneCodec.parse(GeneCodec.serialize(listOf(along))))
+        assertEquals("Light : Biomass > 8 : Mitosis along gb", body(listOf(along)), "along, axis only")
+        assertEquals(listOf(along), GeneCodec.parse(body(listOf(along))))
         // all four Mitosis params at once: asym morphogen → mother, oriented across an axis.
-        val full = Gene(EnergySource.BreakBond("rg"), gate, GeneAction(ActionType.Mitosis, a = "rb", b = "gb", morphogenToMother = true, divideAcross = true))
-        assertEquals("Break rg : Biomass > 8 : Mitosis rb mother across gb", GeneCodec.serialize(listOf(full)), "asym+mother+across")
-        assertEquals(listOf(full), GeneCodec.parse(GeneCodec.serialize(listOf(full))))
+        val full = Gene(EnergySource.FormBond("r", "g"), gate, GeneAction(ActionType.Mitosis, a = "rb", b = "gb", morphogenToMother = true, divideAcross = true))
+        assertEquals("Bond r g : Biomass > 8 : Mitosis rb mother across gb", body(listOf(full)), "asym+mother+across")
+        assertEquals(listOf(full), GeneCodec.parse(body(listOf(full))))
     }
 
     /** Mitosis with `sever` — the daughter rejects all mother welds, splitting off as a separate 1-celled
@@ -164,60 +168,122 @@ class GeneCodecTest {
         val gate = GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8))
         // bare sever: `sever` alone
         val sever = Gene(EnergySource.Light, gate, GeneAction(ActionType.Mitosis, rejectMother = true))
-        assertEquals("Light : Biomass > 8 : Mitosis sever", GeneCodec.serialize(listOf(sever)))
-        assertEquals(listOf(sever), GeneCodec.parse(GeneCodec.serialize(listOf(sever))), "sever round-trip")
+        assertEquals("Light : Biomass > 8 : Mitosis sever", body(listOf(sever)))
+        assertEquals(listOf(sever), GeneCodec.parse(body(listOf(sever))), "sever round-trip")
 
         // sever + asymmetric morphogen to mother
-        val fullSever = Gene(EnergySource.BreakBond("rg"), gate, GeneAction(ActionType.Mitosis, a = "x", morphogenToMother = true, rejectMother = true))
-        assertEquals("Break rg : Biomass > 8 : Mitosis x mother sever", GeneCodec.serialize(listOf(fullSever)))
-        assertEquals(listOf(fullSever), GeneCodec.parse(GeneCodec.serialize(listOf(fullSever))), "sever+mother round-trip")
+        val fullSever = Gene(EnergySource.FormBond("r", "g"), gate, GeneAction(ActionType.Mitosis, a = "x", morphogenToMother = true, rejectMother = true))
+        assertEquals("Bond r g : Biomass > 8 : Mitosis x mother sever", body(listOf(fullSever)))
+        assertEquals(listOf(fullSever), GeneCodec.parse(body(listOf(fullSever))), "sever+mother round-trip")
 
         // sever + oriented division
         val orientedSever = Gene(EnergySource.Light, gate, GeneAction(ActionType.Mitosis, b = "gb", divideAcross = true, rejectMother = true))
         assertEquals(orientedSever, GeneCodec.parse("Light : Biomass > 8 : Mitosis sever across gb").single())
     }
 
-    /** FormBond reactant matching (MORPHOGENESIS.md §2026-06-18): exact by default, `*` opts into a
-     *  wildcard (`*a` left = ends-with, `a*` right = starts-with). All four exact/wildcard combinations
-     *  round-trip, and the serialized text is the documented form. */
+    /** Synthesis operands are exact whole species and the pair is ordered, so `Bond rg b` and `Bond r gb`
+     *  are different genes that both build `rgb`. The `*` wildcard markers (MORPHOGENESIS.md §2026-06-18)
+     *  are gone: legacy text carrying them still parses — dropping the marker and keeping the species it
+     *  named — but nothing ever emits one again. */
     @Test
-    fun roundTripsFormBondExactAndWildcard() {
+    fun roundTripsSynthesisAndDropsLegacyWildcards() {
         val gate = GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0))
-        val exact = Gene(EnergySource.Light, gate, GeneAction(ActionType.FormBond, "r", "g"))
-        assertEquals("Light : Biomass > 0 : FormBond r g", GeneCodec.serialize(listOf(exact)), "exact form")
+        val act = GeneAction(ActionType.Convert, "rg")
 
-        val leftWild = Gene(EnergySource.Light, gate, GeneAction(ActionType.FormBond, "r", "g", aWild = true))
-        assertEquals("Light : Biomass > 0 : FormBond *r g", GeneCodec.serialize(listOf(leftWild)), "left wildcard")
+        val exact = Gene(EnergySource.FormBond("r", "g"), gate, act)
+        assertEquals("Bond r g : Biomass > 0 : Convert rg", body(listOf(exact)), "exact form")
 
-        val rightWild = Gene(EnergySource.Light, gate, GeneAction(ActionType.FormBond, "r", "g", bWild = true))
-        assertEquals("Light : Biomass > 0 : FormBond r g*", GeneCodec.serialize(listOf(rightWild)), "right wildcard")
+        // Ordered pair: same product, different reaction, and both round-trip distinctly.
+        val leftHeavy = Gene(EnergySource.FormBond("rg", "b"), gate, act)
+        val rightHeavy = Gene(EnergySource.FormBond("r", "gb"), gate, act)
+        assertEquals("Bond rg b : Biomass > 0 : Convert rg", body(listOf(leftHeavy)), "multi-atom left operand")
+        assertEquals("Bond r gb : Biomass > 0 : Convert rg", body(listOf(rightHeavy)), "multi-atom right operand")
+        assertTrue(leftHeavy != rightHeavy, "rg+b and r+gb build the same product but are different genes")
 
-        val bothWild = Gene(EnergySource.Light, gate, GeneAction(ActionType.FormBond, "rg", "b", aWild = true, bWild = true))
-        assertEquals("Light : Biomass > 0 : FormBond *rg b*", GeneCodec.serialize(listOf(bothWild)), "both wildcard, multi-atom")
-
-        for (g in listOf(exact, leftWild, rightWild, bothWild)) {
+        for (g in listOf(exact, leftHeavy, rightHeavy)) {
             assertEquals(listOf(g), GeneCodec.parse(GeneCodec.serialize(listOf(g))), "round-trip $g")
         }
+
+        // Legacy wildcard markers: parsed, stripped, never re-emitted.
+        val fromWild = GeneCodec.parse("Bond *rg b* : Biomass > 0 : Convert rg").single()
+        assertEquals(EnergySource.FormBond("rg", "b"), fromWild.source, "`*` markers are dropped, the species kept")
+        assertTrue(!body(listOf(fromWild)).contains("*"), "nothing re-emits a wildcard marker")
     }
 
-    /** HYDROTHERMAL_CHEMISTRY_PLAN.md: [EnergySource.FormBond] (`Bond <bond>`, energy source position) and
-     *  [ActionType.BreakBond] (`Break <bond>`, action position) are the mirror images of the pre-existing
-     *  [EnergySource.BreakBond] (`Break <bond>`, source position) and [ActionType.FormBond] — same two
-     *  DSL keywords, disambiguated purely by which `:`-part they land in. */
+    /** The inverted chemistry (HYDROTHERMAL_CHEMISTRY_PLAN.md): synthesis is the energy source
+     *  (`Bond <a> <b>`) and breaking is a costed action (`Break <bond>`). Their pre-inversion mirrors —
+     *  `Break` in source position, `FormBond` in action position — no longer exist as gene shapes, so each
+     *  keyword now belongs to exactly one `:`-part. */
     @Test
-    fun roundTripsHydrothermalBondSourceAndBreakAction() {
-        val hydrothermal = HYDROTHERMAL_AUTOTROPH_GENES
-        assertEquals(hydrothermal, GeneCodec.parse(GeneCodec.serialize(hydrothermal)), "hydrothermal preset round-trip")
-        assertTrue(GeneCodec.serialize(hydrothermal).lines().all { it.startsWith("Bond rg") }, "every hydrothermal gene sources from Bond rg")
+    fun roundTripsSynthesisSourceAndBreakAction() {
+        val preset = AUTOTROPH_GENES
+        assertEquals(preset, GeneCodec.parse(GeneCodec.serialize(preset)), "autotroph preset round-trip")
+        assertTrue(body(preset).lines().all { it.startsWith("Bond r g") }, "every autotroph gene sources from Bond r g")
 
         val gate = GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0))
         val digest = Gene(EnergySource.Light, gate, GeneAction(ActionType.BreakBond, "rg"))
-        assertEquals("Light : rg > 0 : Break rg", GeneCodec.serialize(listOf(digest)), "Break in action position")
-        assertEquals(listOf(digest), GeneCodec.parse(GeneCodec.serialize(listOf(digest))), "Break-action round-trip")
+        assertEquals("Light : rg > 0 : Break rg", body(listOf(digest)), "Break in action position")
+        assertEquals(listOf(digest), GeneCodec.parse(GeneCodec.serialize(digest.let(::listOf))), "Break-action round-trip")
 
-        val vent = Gene(EnergySource.FormBond("rg"), gate, GeneAction(ActionType.Repair))
-        assertEquals("Bond rg : rg > 0 : Repair", GeneCodec.serialize(listOf(vent)), "Bond in source position")
-        assertEquals(listOf(vent), GeneCodec.parse(GeneCodec.serialize(listOf(vent))), "Bond-source round-trip")
+        val vent = Gene(EnergySource.FormBond("r", "g"), gate, GeneAction(ActionType.Repair))
+        assertEquals("Bond r g : rg > 0 : Repair", body(listOf(vent)), "Bond in source position")
+        assertEquals(listOf(vent), GeneCodec.parse(body(listOf(vent))), "Bond-source round-trip")
+    }
+
+    /** Serialized genomes declare their gene model, and text without the header is read as pre-inversion
+     *  (which is what every genome written before versioning existed actually is). */
+    @Test
+    fun declaresAndReadsTheGenomeVersion() {
+        assertEquals(GeneCodec.GENOME_VERSION, GeneCodec.parseVersion(GeneCodec.serialize(AUTOTROPH_GENES)), "serialize declares the current model")
+        assertEquals(GeneCodec.GENOME_VERSION_PRE_INVERSION, GeneCodec.parseVersion("Light : Biomass > 0 : Mitosis"), "headerless text is pre-inversion")
+        assertEquals(7, GeneCodec.parseVersion("# genome 7\nLight : Biomass > 0 : Mitosis"), "explicit header wins")
+    }
+
+    /**
+     * The v1 → v2 migration ([GenomeMigration]), one case per rule. A pre-inversion genome must load and be
+     * coherent — every gene still names a real reaction and the organism keeps the bonds it ran on.
+     */
+    @Test
+    fun migratesPreInversionGenomes() {
+        fun one(legacy: String): Gene = GeneCodec.parse(legacy).single()
+
+        // Rule 1: Light → FormBond XY  ⇒  Light → Break XY. Light still funds it; it acts on the same bond.
+        val r1 = one("Light : Biomass > 0 : FormBond r g")
+        assertEquals(EnergySource.Light, r1.source, "rule 1 keeps Light as the source")
+        assertEquals(GeneAction(ActionType.BreakBond, "rg"), r1.action, "rule 1 acts on the bond it used to build")
+
+        // Rule 2: Break XY → <action>  ⇒  Bond X Y → <action>. The action is untouched; the organism keeps
+        // running on the same bond, now by forming it rather than breaking it.
+        val r2 = one("Break rg : Biomass > 0 : Convert rg")
+        assertEquals(EnergySource.FormBond("r", "g"), r2.source, "rule 2 powers the gene by forming the bond it used to break")
+        assertEquals(GeneAction(ActionType.Convert, "rg"), r2.action, "rule 2 leaves the action alone")
+
+        // Rule 3: Break XY → FormBond ZW  ⇒  Bond Z W → Break XY. NOT a per-slot inversion — the gene still
+        // BUILDS zw and still BREAKS rg, only which side pays has flipped. Getting this backwards (Bond r g →
+        // Break bg) would invert the organism's chemistry a second time.
+        val r3 = one("Break rg : Biomass > 0 : FormBond b g")
+        assertEquals(EnergySource.FormBond("b", "g"), r3.source, "rule 3 synthesises what the gene used to build")
+        assertEquals(GeneAction(ActionType.BreakBond, "rg"), r3.action, "rule 3 breaks what the gene used to break")
+
+        // Rule 3 carries the reaction across; a legacy wildcard operand keeps the species it named, minus
+        // the marker (wildcards no longer exist — see EnergySource.FormBond).
+        val wild = one("Break rg : Biomass > 0 : FormBond *rg b*")
+        assertEquals(EnergySource.FormBond("rg", "b"), wild.source, "rule 3 preserves the reaction, dropping the wildcard markers")
+
+        // Migrated text re-serializes as v2 and is then stable (the migration runs once).
+        val migrated = GeneCodec.parse("Break rg : Biomass > 0 : FormBond b g")
+        assertEquals(migrated, GeneCodec.parse(GeneCodec.serialize(migrated)), "migration is idempotent once re-serialized")
+
+        // A whole pre-inversion genome loads, and nothing is dropped.
+        val legacyGenome = GeneCodec.parse(
+            """
+            Light : r < 4 : Import r
+            Break rg : Biomass > 8 : Mitosis
+            Break rg : bb < 5 : FormBond b r
+            """.trimIndent()
+        )
+        assertEquals(3, legacyGenome.size, "every legacy gene survives the upgrade")
+        assertTrue(legacyGenome.all { it.source is EnergySource.Light || it.source is EnergySource.FormBond }, "no legacy source shape survives")
     }
 
     /** Lysis (MORPHOGENESIS.md §B): `Lyse` steals all species from touching cells.
@@ -226,19 +292,19 @@ class GeneCodecTest {
     fun roundTripsLyseAction() {
         val gate = GeneCondition(Operand.Touching, Comparison.Greater, Operand.Constant(0))
         // Bare lyse (steal all species)
-        val lyse = Gene(EnergySource.BreakBond("rg"), gate, GeneAction(ActionType.Lyse))
-        assertEquals("Break rg : Touching > 0 : Lyse", GeneCodec.serialize(listOf(lyse)), "lyse")
-        assertEquals(listOf(lyse), GeneCodec.parse(GeneCodec.serialize(listOf(lyse))), "lyse round-trip")
+        val lyse = Gene(EnergySource.FormBond("r", "g"), gate, GeneAction(ActionType.Lyse))
+        assertEquals("Bond r g : Touching > 0 : Lyse", body(listOf(lyse)), "lyse")
+        assertEquals(listOf(lyse), GeneCodec.parse(body(listOf(lyse))), "lyse round-trip")
 
         // With efficiency gear
-        val lyseGear = Gene(EnergySource.BreakBond("rg"), gate, GeneAction(ActionType.Lyse), efficiency = 3)
-        assertEquals("Break rg : Touching > 0 : Lyse @3", GeneCodec.serialize(listOf(lyseGear)), "lyse with gear")
-        assertEquals(listOf(lyseGear), GeneCodec.parse(GeneCodec.serialize(listOf(lyseGear))), "lyse+gear round-trip")
+        val lyseGear = Gene(EnergySource.FormBond("r", "g"), gate, GeneAction(ActionType.Lyse), efficiency = 3)
+        assertEquals("Bond r g : Touching > 0 : Lyse @3", body(listOf(lyseGear)), "lyse with gear")
+        assertEquals(listOf(lyseGear), GeneCodec.parse(body(listOf(lyseGear))), "lyse+gear round-trip")
 
         // Light-powered lyse
         val lyseLight = Gene(EnergySource.Light, gate, GeneAction(ActionType.Lyse), efficiency = 0)
-        assertEquals("Light : Touching > 0 : Lyse", GeneCodec.serialize(listOf(lyseLight)), "lyse with light")
-        assertEquals(listOf(lyseLight), GeneCodec.parse(GeneCodec.serialize(listOf(lyseLight))), "lyse light round-trip")
+        assertEquals("Light : Touching > 0 : Lyse", body(listOf(lyseLight)), "lyse with light")
+        assertEquals(listOf(lyseLight), GeneCodec.parse(body(listOf(lyseLight))), "lyse light round-trip")
     }
 
     /** A hand-authored genome parses to exactly the genes intended (the author-by-text workflow). */
@@ -256,6 +322,6 @@ class GeneCodecTest {
         assertEquals(Gene(EnergySource.Light, GeneCondition(Operand.Chem("r"), Comparison.Less, Operand.Constant(4)), GeneAction(ActionType.Import, "r")), genome[0])
         assertEquals(Gene(EnergySource.Light, GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Convert, "rg")), genome[1])
         assertEquals(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Mitosis)), genome[2])
-        assertEquals(Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Chem("rg")), GeneAction(ActionType.Convert, "rg")), genome[3])
+        assertEquals(Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Chem("rg")), GeneAction(ActionType.Convert, "rg")), genome[3])
     }
 }

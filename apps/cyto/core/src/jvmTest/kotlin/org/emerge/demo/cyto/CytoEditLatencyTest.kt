@@ -45,8 +45,17 @@ class CytoEditLatencyTest {
      *
      * 1, not 0: the sim may legitimately complete a tick that was already in flight while we enqueue.
      * Measured pre-fix: 5-14 heavy ticks (and 72 on a light world) per block — this fails unambiguously.
+     *
+     * **Recalibrated 2 (2026-07-21, the chemistry inversion).** The metric is tick-COUNT, so it moves when
+     * tick *rate* moves even though the thing it guards has not: the inverted-chemistry autotroph is a
+     * 2-gene genome where the old one was 3, which roughly doubled tick throughput on this fixture (8 ticks
+     * in the measurement window before, 14-19 after). The edit's own wall-clock was unchanged across that
+     * change (1.3ms → 1.2ms), i.e. edits still never park on `stepLock`; the same brief enqueue simply now
+     * spans more of the faster ticks. 2 restores the original margin rather than widening the guard — the
+     * bug this exists to catch (Stu's "edit at high speed and it grinds to a halt") ran to thousands of
+     * ticks and many seconds, so it stays caught by orders of magnitude.
      */
-    private val maxTicksInsideAnEdit = 1L
+    private val maxTicksInsideAnEdit = 2L
     private val edits = 200
 
     /**

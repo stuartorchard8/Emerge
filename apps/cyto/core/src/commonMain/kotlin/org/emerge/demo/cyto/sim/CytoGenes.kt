@@ -15,33 +15,73 @@ import org.emerge.sim.core.physics.primitives.Frac
  * [CytoBiologyCore].
  */
 
-/** Where a gene gets the energy that powers its action this tick — one quantum per op:
- *  [Light] (autotrophy — free environmental flux scaled by surface exposure), [FormBond]
- *  (hydrothermal chemosynthesis — join two monomers into a bond, releasing its quantum as a
- *  byproduct of synthesis), or [BreakBond] (heterotrophy — break a stored bond, releasing its
- *  quantum and splitting the molecule back to fragments). */
+/**
+ * Where a gene gets the energy that powers its action this tick — one quantum per op.
+ *
+ * **The chemistry is inverted** (HYDROTHERMAL_CHEMISTRY_PLAN.md): monomers are the high-energy state
+ * and *forming* a bond is the exothermic reaction, like a hydrothermal-vent redox couple rather than
+ * photosynthesis. So [FormBond] is the only chemical energy source, and breaking a bond is a *cost*
+ * ([ActionType.BreakBond]) rather than a yield. There is deliberately no `BreakBond` energy source and
+ * no `FormBond` action: those were the pre-inversion pair, and keeping either alongside its mirror
+ * opens a perpetual-motion loop (form a bond for +1, break it for +1, repeat).
+ *
+ * ### The thermodynamic invariant
+ * Chemical energy is minted **only** by [FormBond], at exactly **1 quantum per bond created**; bonds are
+ * destroyed **only** by [ActionType.BreakBond], at exactly **1 quantum per bond destroyed** (which is why
+ * BreakBond is excluded from the efficiency-gear `g+1` op multiplier — see [Gene.actionHasEfficiency];
+ * a multiplier there would let one formed bond fund `g+1` breaks), or for free by background entropy
+ * (environmental `CytoMatterField.decayAll` and per-cell wear `degrade`, which credit no energy — the
+ * bond's energy is treated as dissipated as heat, not recovered). Therefore **any closed cycle in
+ * bond-space nets ≤ 0 energy**, and no genome can farm energy from a monomer→bond→monomer loop.
+ *
+ * [Light] remains as a second, non-chemical tap: it mints quanta without touching any bond, so it can
+ * fund a [ActionType.BreakBond] (a genuine light-driven digestion) without opening a loop — that is
+ * energy *entering* the system from outside, which is the one thing that is supposed to be free.
+ */
 sealed class EnergySource {
     /** Environmental light: up to `floor(field × exposure × scale)` quanta this tick. */
     object Light : EnergySource()
 
-    /** Join the two monomers of [bond] (a 2-atom pair, e.g. `"rg"` → monomer `r` + monomer `g`) per
-     *  op, releasing a quantum and depositing the joined molecule into cytoplasm as a byproduct — the
-     *  hydrothermal-vent energy source (HYDROTHERMAL_CHEMISTRY_PLAN.md): monomers are the high-energy
-     *  feedstock, and forming a bond is exothermic. Unlike [BreakBond] (which can harvest from any
-     *  molecule containing the bond), this v1 only joins the literal monomer pair — a "spark" reaction,
-     *  not general synthesis. */
-    data class FormBond(val bond: String) : EnergySource() {
-        /** The two reactant monomer ids and the joined product id, resolved once at construction (pure
-         *  functions of the immutable [bond] string) so the per-gene apply path reads ints. -1 if [bond]
-         *  isn't a legal 2-atom species of this alphabet. */
-        val leftId: Int = if (bond.length == 2) SpeciesRegistry.id(bond.substring(0, 1)) else -1
-        val rightId: Int = if (bond.length == 2) SpeciesRegistry.id(bond.substring(1, 2)) else -1
-        val productId: Int = SpeciesRegistry.id(bond)
-    }
+    /**
+     * **Synthesis as the energy source**: join a cytoplasm molecule ending in [a] to one starting with
+     * [b], releasing one quantum per bond formed and depositing the joined product into cytoplasm.
+     *
+     * This carries the *full* reactant pair (not just a bond string) because it is the sole synthesis
+     * primitive in the inverted model — it absorbed everything the pre-inversion `ActionType.FormBond`
+     * could express, so genomes keep the ability to build arbitrary molecules (`rg` + `b` → `rgb`), not
+     * merely to spark a monomer pair.
+     *
+     * [a]/[b] name the two reactants by **exact species** — the whole molecule, not an atom, and the pair
+     * is ordered: `Bond rg b` and `Bond r gb` both make `rgb` but are different reactions. There is
+     * deliberately **no wildcard match** any more (the pre-inversion action had suffix/prefix wildcards —
+     * MORPHOGENESIS.md §2026-06-18). A wildcard reaction has no single product: `Bond *r g` joins whatever
+     * molecule happens to end in `r` this tick, so what it builds depends on the cytoplasm rather than on
+     * the gene. That made synthesis unreadable now that it is the energy source — a gene could not be
+     * shown as "makes X" — so operands are always exact and every synthesis gene names one product.
+     *
+     * The junction bond is always `a.last·b.first`, which is the single bond this reaction creates —
+     * hence exactly one quantum per op, the numerator of the invariant documented on [EnergySource].
+     */
+    data class FormBond(
+        val a: String,
+        val b: String,
+    ) : EnergySource() {
+        /** [a]/[b] resolved to [SpeciesRegistry] ids once at construction (pure functions of the immutable
+         *  operand strings; -1 when empty/unknown), so the exact-match apply path reads ints instead of
+         *  re-hashing. Not constructor params ⇒ no effect on data-class equality. */
+        val aId: Int = SpeciesRegistry.id(a)
+        val bId: Int = SpeciesRegistry.id(b)
 
-    /** Break one instance of [bond] (a 2-atom pair, e.g. `"rg"`) in a cytoplasm molecule per op,
-     *  releasing its quantum; the molecule splits into two fragments returned to the cytoplasm. */
-    data class BreakBond(val bond: String) : EnergySource()
+        /** The junction bond this reaction creates (`a.last + b.first`), or "" if either operand is empty
+         *  (an inert no-op gene, e.g. left behind by a mutation that cleared an operand). */
+        val bond: String get() = if (a.isEmpty() || b.isEmpty()) "" else "${a.last()}${b.first()}"
+
+        /** The species this reaction builds, or "" when it builds nothing — either operand empty, or the
+         *  join is forbidden because it would repeat a bond (polymerisation). Because operands are exact,
+         *  every viable synthesis gene has exactly one product, which is what the gene editor names. */
+        val product: String get() =
+            if (a.isEmpty() || b.isEmpty()) "" else Molecules.join(a, b) ?: ""
+    }
 }
 
 /** A binary gate comparator. */
@@ -116,12 +156,13 @@ enum class ActionType {
      *  never back in, and the gene biases the passive junction to expel it below ambient. The polar
      *  opposite of [Import] — a secretion / waste-dumping actuator. */
     Export,
-    /** Join a cytoplasm molecule ending in atom [GeneAction.a] with one starting in atom [GeneAction.b]. */
-    FormBond,
     /** Break one instance of bond [GeneAction.a] (a 2-atom pair, e.g. `"rg"`) in the richest cytoplasm
-     *  molecule containing it, costing energy — the mirror image of [FormBond]: instead of a free
-     *  fuel-harvesting side effect ([EnergySource.BreakBond]), this is an explicit, funded action for
-     *  actively digesting stored structure back into transportable fragments (HYDROTHERMAL_CHEMISTRY_PLAN.md). */
+     *  molecule containing it, splitting it into two fragments returned to the cytoplasm. **Endothermic**:
+     *  one quantum per bond destroyed, and deliberately excluded from the efficiency-gear multiplier so
+     *  that cost can never be diluted below 1:1 (see [EnergySource] for why that closes the loop). This is
+     *  digestion as a funded, deliberate act — breaking structure back into transportable fragments — and
+     *  it is the *only* way a genome destroys a bond on purpose. There is no `FormBond` action: synthesis
+     *  is the energy source ([EnergySource.FormBond]), not something a gene spends energy on. */
     BreakBond,
     /** Lock molecules of [GeneAction.a] from cytoplasm into biomass (structure → size). */
     Convert,
@@ -171,12 +212,9 @@ enum class ActionType {
  *  *along* ∇ (project → extends a thread), `true` = *across* ∇ (slice → widens into a 2D sheet). Empty [b] ⇒
  *  unoriented (today's free-space placement). [divideAcross] is only ever `true` when [type] is Mitosis.
  *
- *  **FormBond reactant matching** (MORPHOGENESIS.md §2026-06-18): for [ActionType.FormBond], [a]/[b] name the
- *  two reactants by **exact species** (`r`+`g` → monomer `r` joined to monomer `g` → `rg`). [aWild] makes
- *  [a] a **suffix wildcard** (match the most-abundant molecule *ending* with [a], the legacy behaviour);
- *  [bWild] makes [b] a **prefix wildcard** (most-abundant *starting* with [b]). The bare atoms always live in
- *  [a]/[b] (the flags only switch exact↔wildcard), so [handleableOf] reads them unchanged. Both flags are
- *  only ever `true` when [type] is FormBond. */
+ *  Reactant matching moved to [EnergySource.FormBond] when the chemistry was inverted and synthesis became
+ *  the energy source, so no action carries operand-matching flags. For [ActionType.BreakBond], [a] is the
+ *  2-atom bond to split. */
  data class GeneAction(
     val type: ActionType,
     val a: String = "",
@@ -186,13 +224,10 @@ enum class ActionType {
     /** When true (Mitosis only): the daughter rejects all welds from the mother, splitting off as a
      *  separate 1-celled organism. The mother keeps its connections intact. */
     val rejectMother: Boolean = false,
-    val aWild: Boolean = false,
-    val bWild: Boolean = false,
 ) {
     /** [a]/[b] resolved to [SpeciesRegistry] ids once at construction (pure functions of the immutable
      *  operand strings; -1 when empty/not a species), so applyGene's exact-species paths (Convert / Import /
-     *  exact FormBond) read an int instead of re-hashing. Not constructor params ⇒ no effect on data-class
-     *  equality. The wildcard FormBond paths still match on the [a]/[b] strings. */
+     *  Retain) read an int instead of re-hashing. Not constructor params ⇒ no effect on data-class equality. */
     val aId: Int = SpeciesRegistry.id(a)
     val bId: Int = SpeciesRegistry.id(b)
 }
@@ -204,11 +239,13 @@ enum class ActionType {
  * higher g = more output per scarce energy), but the energy it may spend this tick is capped at
  * `EFFICIENCY_REF >> g` (so higher g = a lower throughput ceiling). For **Contract** this is the muscle-fibre
  * axis: low g = fast-twitch (1 flex step/quantum, burns energy hard for max per-tick travel), high g =
- * slow-twitch (g+1 steps/quantum so contraction sips fuel — fewer BreakBond bonds per step — but the cap
- * rate-limits per-tick travel). **FormBond gets the *cap* but not the
- * `g+1` multiplier** (it's a lossless 1:1 conversion — a multiplier would mint bonds): there the gear is pure
- * potency-limiting, used e.g. to set how far a morphogen spreads from a source/sink loop. **Mitosis is
- * exempt** (a fixed `biomass/4` bulk event). The optimum gear is niche-dependent —
+ * slow-twitch (g+1 steps/quantum so contraction sips fuel — fewer formed bonds per step — but the cap
+ * rate-limits per-tick travel). **[ActionType.BreakBond] gets the *cap* but not the
+ * `g+1` multiplier** — this is load-bearing, not a nicety: breaking must cost exactly one quantum per bond
+ * to mirror the one quantum [EnergySource.FormBond] pays per bond, and a `g+1` multiplier would let a single
+ * formed bond fund `g+1` breaks, which is the perpetual-motion loop the inversion exists to close (see
+ * [EnergySource]). There the gear is pure potency-limiting, used e.g. to set how far a morphogen spreads
+ * from a source/sink loop. **Mitosis is exempt** (a fixed `biomass/4` bulk event). The optimum gear is niche-dependent —
  * energy-poor cells favour high g (squeeze every quantum), energy-rich cells favour low g (burn surplus for
  * raw throughput) — and a low-g gene is *always* less efficient (1 action/energy), even when its high
  * ceiling goes unused, which is the cost that makes high throughput a niche adaptation, not a free bonus.
@@ -241,17 +278,17 @@ data class Gene(
         else -> false
     }
 
-    /** Pre-computed: whether this gene's action has the energy cap (Convert/Import/Export/Repair/FormBond/BreakBond/Contract). */
+    /** Pre-computed: whether this gene's action has the energy cap (Convert/Import/Export/Repair/BreakBond/Contract). */
     val actionHasCap: Boolean get() = when (action.type) {
-        ActionType.Convert, ActionType.Import, ActionType.Export, ActionType.Repair, ActionType.FormBond, ActionType.BreakBond, ActionType.Contract -> true
+        ActionType.Convert, ActionType.Import, ActionType.Export, ActionType.Repair, ActionType.BreakBond, ActionType.Contract -> true
         else -> false
     }
 
-    // Note: breakSpId, fragLId, fragRId are computed at apply time because they depend on snap.
-    // But bondIndexOf is pre-computable.
-    val preBondIdx: Int get() = (source as? EnergySource.BreakBond)?.let {
-        SpeciesRegistry.bondIndexOf(it.bond)
-    } ?: -1
+    /** Pre-computed bond-index of an [ActionType.BreakBond] action's target bond (-1 otherwise). The
+     *  molecule actually split is chosen from the snapshot at apply time (it depends on what the cell
+     *  holds); only the bond index is a pure function of the gene. */
+    val preBondIdx: Int get() =
+        if (action.type == ActionType.BreakBond) SpeciesRegistry.bondIndexOf(action.a) else -1
 }
 
 /**
@@ -353,22 +390,25 @@ fun handleableOf(genome: List<Gene>): Handleable {
         for (i in 0 until s.length - 1) addBond(s.substring(i, i + 2), dir)
     }
     for (g in genome) {
-        (g.source as? EnergySource.BreakBond)?.let { addSpecies(it.bond, dir = 0) }   // catabolism consumes the bond (bidirectional)
-        // FormBond-as-source (hydrothermal chemosynthesis): the cell consumes the two reactant monomers
-        // and metabolises the joined bond — bidirectional, same as BreakBond-as-source's catabolic reach.
-        (g.source as? EnergySource.FormBond)?.let { addSpecies(it.bond, dir = 0) }
+        // SYNTHESIS-as-energy-source — the cell draws in the two reactants and produces the joined molecule
+        // (handling the operand fragments + the junction bond suffix.last–prefix.first). The REACTANTS are
+        // bidirectional (dir = 0): the cell genuinely consumes them, so it must be able to take them up —
+        // this is what lets a hydrothermal organism feed on ambient monomer. The PRODUCT is dir = null:
+        // producing a species lets the cell HOLD it but doesn't make it diffusible, so a synthesised-but-
+        // never-consumed species stays intracellular. (If some gene also metabolises it, that ref flips it
+        // diffusible.) Pre-inversion this reach came half from the BreakBond source and half from the
+        // FormBond action; it now all hangs off the one source, and is deliberately the UNION of both so a
+        // migrated genome keeps exactly the metabolic reach it had.
+        (g.source as? EnergySource.FormBond)?.let { s ->
+            if (s.a.isNotEmpty() && s.b.isNotEmpty()) {
+                addSpecies(s.a, dir = 0); addSpecies(s.b, dir = 0); addBond(s.bond, dir = null)
+            }
+        }
         // NB: condition (Operand.Chem/Conc) operands are NOT added — sensing a species doesn't make it
         // transportable (see the kdoc: this keeps a gated morphogen a trace species).
         when (g.action.type) {
-            ActionType.FormBond -> {
-                // SYNTHESIS — the cell produces the joined molecule (and handles the operand fragments + the
-                // junction bond suffix.last–prefix.first). Production lets it HOLD the species, but does NOT
-                // make it diffusible (dir = null): a synthesised-but-never-consumed species stays
-                // intracellular. (If some gene also metabolises it, that ref flips it diffusible.)
-                val a = g.action.a; val b = g.action.b
-                if (a.isNotEmpty() && b.isNotEmpty()) { addSpecies(a, dir = null); addSpecies(b, dir = null); addBond("${a.last()}${b.first()}", dir = null) }
-            }
-            // BreakBond-as-action: mirrors BreakBond-as-source (catabolism consumes the bond, bidirectional).
+            // Digestion consumes the bond ⇒ bidirectional, the same reach the pre-inversion BreakBond
+            // energy source granted (it split the same molecules, just for a yield instead of a cost).
             ActionType.BreakBond -> addSpecies(g.action.a, dir = 0)
             ActionType.Convert -> addSpecies(g.action.a, dir = 0)      // consumes internally ⇒ bidirectional
             ActionType.Import -> addSpecies(g.action.a, dir = +1)      // one-way inward gate
@@ -688,31 +728,42 @@ private const val GROW_BIOMASS = CytoSeed.AUTOTROPH_GROW_BIOMASS
 private const val DIVIDE_BIOMASS = CytoSeed.AUTOTROPH_DIVIDE_BIOMASS
 
 /**
- * The hand-authored **autotroph** (the v1 creature), built around **break-powered division**. Under light
- * it bonds the monomers r+g into `rg` ([FormBond], topping the cytoplasm `rg` reserve up to GROW) and
- * locks `rg` into biomass to grow ([Convert]) while biomass < GROW. Sub-tick interpolation
- * (CytoBiologyCore.selfGateCap) stops each growth gene exactly at GROW rather than overshooting. Division
- * is a *bulk* cost (≈ biomass/4 energy, which a per-tick light flux can't fund), so it's paid by
- * **breaking** the stored `rg`: once biomass > DIVIDE, the BreakBond-powered [Mitosis] (resolved at end of
- * tick) burns ~biomass/4 of the reserve to split. DIVIDE < GROW so the self-capped grower still crosses the
- * divide line; the reserve (held to GROW ≈ 4× the cost) keeps division affordable. r and g are absorbed for
- * free by passive uptake near light. At the live mutation rate (CytoTuning.MUTATION_RATE_DENOM) the first
- * division lands long before any mutation, so the lineage colonises reliably.
+ * The hand-authored **chemoautotroph** (the v1 creature) under the inverted chemistry: it lives directly off
+ * the world's ambient monomer soup (`CytoMatterField.seededUniform` seeds only monomer columns — the world
+ * has always started as the "maximally energetic" state this model wants).
+ *
+ * Every gene is powered by joining `r`+`g`, which is now the exothermic reaction: each op forms one `rg`
+ * bond, banks its quantum, and deposits the `rg` into cytoplasm. So the growth gene is self-funding — it
+ * forms an `rg` and immediately [Convert]s an `rg` into biomass, one for one, turning ambient monomer into
+ * structure with no external energy at all. The reserve it starts with (CytoSeed.STARTER_CYTOPLASM) is
+ * therefore *preserved* rather than drawn down, because the cap loop bounds Convert by the `rg` already in
+ * hand and the source tops it back up in the same bulk step. Sub-tick interpolation
+ * (CytoBiologyCore.selfGateCap) stops the grower exactly at GROW rather than overshooting.
+ *
+ * Division stays a *bulk* cost (≈ biomass/4 energy in one tick), now paid by a **burst of joining**: once
+ * biomass > DIVIDE the [Mitosis] gene forms as much `rg` as its monomer share allows and spends the quanta
+ * to split. DIVIDE < GROW so the self-capped grower still crosses the divide line. At the live mutation rate
+ * (CytoTuning.MUTATION_RATE_DENOM) the first division lands long before any mutation, so the lineage
+ * colonises reliably.
+ *
+ * Note there is no longer a separate "build the reserve" gene: pre-inversion that was a Light-powered
+ * `FormBond r g` action, and under the inversion synthesis *is* the source, so it folded into the two genes
+ * that spend it.
  */
 val AUTOTROPH_GENES: List<Gene> = listOf(
-    Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Mitosis, rejectMother = true)),
-    Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.Convert, "rg")),
-    Gene(EnergySource.Light, GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.FormBond, "r", "g")),
+    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Mitosis, rejectMother = true)),
+    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.Convert, "rg")),
 )
 
-/** A **cohesion / weld-maintenance** gene for the autotroph: while it has any stored `rg`, burn some to
+/** A **cohesion / weld-maintenance** gene for the autotroph: while it holds any `rg` at all (a proxy for
+ *  "this cell is metabolising, not starved"), join more `r`+`g` and spend the quanta on
  *  [ActionType.Repair]. Repair is damage-gated (a no-op with nothing to heal — CytoBiologyCore), so it costs
  *  nothing on a calm body and only fires under strain: physical stress (e.g. the player dragging the colony)
  *  accrues weld damage, and Repair heals it each tick — plus welds touching neighbours that share a
  *  connection. Without it, strained welds snap and cells shed; with it, the body holds together while it
  *  moves. The campaign's "Hold Together" subsystem, inserted in Ch6. */
 val AUTOTROPH_REPAIR_GENE: Gene =
-    Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair))
+    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair))
 
 /** A **muscle** gene for the autotroph — the campaign's first taste of locomotion. Under light, while the
  *  cell has real size, [ActionType.Contract] clenches it smaller. It's **light-powered** (not break-powered)
@@ -730,15 +781,15 @@ val AUTOTROPH_MOVE_GENE: Gene =
 
 /**
  * The autotroph with its **reproduction gene removed** — a self-sustaining organism that grows to full size
- * and then holds there, but never divides or spreads. It bonds r+g into `rg` under light and locks `rg` into
- * body mass up to GROW; size-proportional decay is repaired by the same Convert gene re-firing when biomass
- * dips, so it sits at a stable equilibrium. Used by the campaign as a calm, easy-to-reason-about **substrate**:
+ * and then holds there, but never divides or spreads. It joins r+g into `rg` (banking the quantum that funds
+ * the same op) and locks `rg` into body mass up to GROW; size-proportional decay is repaired by the same
+ * Convert gene re-firing when biomass dips, so it sits at a stable equilibrium. Used by the campaign as a
+ * calm, easy-to-reason-about **substrate**:
  * the player watches it obey its two grow genes, then *adds* the Mitosis gene (see [AUTOTROPH_GENES]) to make
  * it reproduce. Not seeded by any sandbox scenario — supplied explicitly via [FounderSpec.genome].
  */
 val AUTOTROPH_GROW_ONLY_GENES: List<Gene> = listOf(
-    Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.Convert, "rg")),
-    Gene(EnergySource.Light, GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.FormBond, "r", "g")),
+    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.Convert, "rg")),
 )
 
 // Heterotroph seed thresholds — values in CytoSeed (initial data; evolve under mutation).
@@ -746,35 +797,28 @@ private const val HET_GROW = CytoSeed.HETEROTROPH_GROW_BIOMASS
 private const val HET_DIVIDE = CytoSeed.HETEROTROPH_DIVIDE_BIOMASS
 
 /**
- * A hand-authored **heterotroph**: it has no light genes — it lives on `rg` molecules already in its
- * cytoplasm (received by diffusion from autotroph neighbours, or its starter reserve), **breaking** some
- * `rg` to power both converting more `rg` into biomass (grow up to GROW, sub-tick-capped so it stops there
- * instead of overshooting and stranding the reserve) and dividing (Mitosis once biomass > DIVIDE < GROW,
- * funded by breaking the reserve it kept). Closes the food web: autotroph light → `rg` → (diffusion /
- * death) → heterotroph biomass. Starves (and recycles its matter) once the `rg` runs out.
+ * A hand-authored **heterotroph** — a predator, which is what heterotrophy *becomes* under the inverted
+ * chemistry. Pre-inversion its niche was "burn the `rg` reserve autotrophs leak to you"; that no longer
+ * exists as an energy source, because breaking a bond costs rather than pays. What it instead has that the
+ * [AUTOTROPH_GENES] does not is [ActionType.Lyse]: it tears biomass out of touching cells and assimilates
+ * it, so it feeds on the *matter* its neighbours concentrated rather than on the world's dilute ambient
+ * monomer. It still runs its own hydrothermal metabolism (joining `r`+`g`) to pay for the attack, the
+ * digestion, and division — but stolen structure is far denser than ambient soup, so predation is the
+ * throughput advantage.
+ *
+ * The [ActionType.BreakBond] gene is what makes the stolen goods usable: torn-off biomass arrives as whole
+ * molecules, and splitting them back to `rg` is an energy-costed digestion step (this is the mirror of the
+ * old free "breaking is fuel" and the reason predation is no longer a free lunch). Closes the food web:
+ * ambient monomer → autotroph biomass → (lysis) → heterotroph biomass.
  */
 val HETEROTROPH_GENES: List<Gene> = listOf(
-    Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(HET_GROW)), GeneAction(ActionType.Convert, "rg")),
-    Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(HET_DIVIDE)), GeneAction(ActionType.Mitosis)),
-    // Hold together by burning stored 'rg' for repair — a real matter cost; frays once 'rg' runs out.
-    Gene(EnergySource.BreakBond("rg"), GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
-)
-
-/**
- * The **hydrothermal-vent autotroph** (HYDROTHERMAL_CHEMISTRY_PLAN.md POC): [AUTOTROPH_GENES] with every
- * `Light` source replaced by [EnergySource.FormBond]`("rg")` — monomers are the high-energy feedstock and
- * *forming* the `rg` bond is the exothermic reaction that funds metabolism, mirroring [HETEROTROPH_GENES]'s
- * break-powered structure but inverted (join instead of split). The world already seeds as pure monomer
- * (`CytoMatterField.seededUniform`), so this organism needs no light field at all — it colonises directly off
- * ambient `r`/`g`. Division is funded the same bulk way as the original ([Mitosis] needs `biomass/4` energy in
- * one tick, only reachable by a hoarded reserve — here, a burst of joining). Not wired into [genomeForType]
- * (that stays the light-fed [AUTOTROPH_GENES]/[HETEROTROPH_GENES] pair the campaign and sandbox depend on) —
- * supplied explicitly via `FounderSpec.genome`, same as [AUTOTROPH_GROW_ONLY_GENES].
- */
-val HYDROTHERMAL_AUTOTROPH_GENES: List<Gene> = listOf(
-    Gene(EnergySource.FormBond("rg"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Mitosis, rejectMother = true)),
-    Gene(EnergySource.FormBond("rg"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.Convert, "rg")),
-    Gene(EnergySource.FormBond("rg"), GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.FormBond, "r", "g")),
+    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Touching, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Lyse)),
+    // Digest the spoils: split what was torn off back down into transportable 'rg' — a real energy cost.
+    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(HET_GROW)), GeneAction(ActionType.BreakBond, "gb")),
+    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(HET_GROW)), GeneAction(ActionType.Convert, "rg")),
+    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(HET_DIVIDE)), GeneAction(ActionType.Mitosis)),
+    // Hold together under the strain of attacking; damage-gated, so it costs nothing on a calm body.
+    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
 )
 
 /** The authored preset genome for a cell type — seeds a freshly-spawned cell; afterwards the genome

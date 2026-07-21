@@ -826,7 +826,7 @@ object CampaignContent {
             ),
             Step(
                 text = "Open its MOVE muscle and switch its power SOURCE from LIGHT to BREAK FUEL. Now it burns a stored reserve instead of sunlight - fuel it carries with it, day or night.",
-                gate = Gate.World("Switch the muscle to BREAK FUEL", met = { it.focused?.contractOnBreak == true }),
+                gate = Gate.World("Switch the muscle to CHEMICAL FUEL", met = { it.focused?.contractOnChem == true }),
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
                 spotlight = Spotlight(hint = "MOVE -> the muscle gene -> SOURCE -> BREAK FUEL"),

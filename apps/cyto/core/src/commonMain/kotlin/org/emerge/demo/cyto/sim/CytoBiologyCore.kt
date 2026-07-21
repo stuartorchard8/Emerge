@@ -47,7 +47,7 @@ private fun clearDiffScratch() {
  *
  * Chemistry is **dense and id-keyed**: a cell's mobile cytoplasm and locked biomass are [MoleculeStore]s
  * (id→count, held sorted ascending by [SpeciesRegistry] id). When a gene must pick *which* molecule to act
- * on among several matches (a substrate holding a bond, a FormBond suffix/prefix, a degradation target), it
+ * on among several matches (a substrate holding a bond, a degradation target), it
  * picks the **most abundant** one — the substrate the cell actually has most of — with the lowest id (lex
  * rank) kept only as the deterministic tie-break. Each selection is a `forward scan` tracking the max count,
  * a pure function of the snapshot, so it stays order-independent with no per-tick hashing or boxing.
@@ -283,8 +283,8 @@ object CytoBiologyCore {
 
     /** Apply one active gene's whole action for the tick in a single bulk step (see [runGenes]). Each
      *  cytoplasm species the gene touches is capped at its 1/[n] share of the [snap]shot; a Light gene's
-     *  energy is its [quantaShare], a BreakBond gene's energy is the bonds it cleaves (which also consume
-     *  substrate and yield fragments). The op count [k] is computed up front from those caps and applied
+     *  energy is its [quantaShare], a FormBond gene's energy is the bonds it forms (which also consume the
+     *  reactants and deposit the product). The op count [k] is computed up front from those caps and applied
      *  once — no loop. Matter-conserving: every per-op effect is the bulk of a conservative single op, and
      *  `k` never exceeds the snapshot share, so no pool goes negative. */
     /** Accumulate one consumed species [id] (one unit/op) into the [ids]/[per] scratch holding [cn] distinct
@@ -304,51 +304,29 @@ object CytoBiologyCore {
         // (largest count wins; ties → lowest id) — a pure function of the snapshot, so order-independent.
         val ids = work.consumeIds; val per = work.consumePer
         var cn = 0
-        // BreakBond fuel: the most-abundant molecule holding the bond, broken to release its quanta. Kept OUT
-        // of the action-consume scan (tracked as [breakSpId]) because efficiency consumes it at the
-        // bonds-broken rate ⌈k/gP1⌉, not 1/op; its overlap with an action input is summed back in below.
-        var breakSpId = -1; var fragLId = -1; var fragRId = -1
-        if (src is EnergySource.BreakBond) {
-            val bondIdx = SpeciesRegistry.bondIndexOf(src.bond)
-            if (stats != null) stats.richestBondCalls++
-            breakSpId = richestWithBond(snap, bondIdx); if (breakSpId < 0) return
-            fragLId = SpeciesRegistry.breakLeft(breakSpId, bondIdx); fragRId = SpeciesRegistry.breakRight(breakSpId, bondIdx)
-            if (fragLId < 0) return
-        }
-        // FormBond-as-source fuel (hydrothermal chemosynthesis, HYDROTHERMAL_CHEMISTRY_PLAN.md): join the
-        // two reactant monomers, releasing a quantum and depositing the product as a byproduct — the mirror
-        // of BreakBond fuel above (join instead of split). Kept OUT of the action-consume scan for the same
-        // reason: it's spent at the bonds-formed rate ⌈k/gP1⌉, not 1/op.
+        // SYNTHESIS FUEL (EnergySource.FormBond): join the molecule src.a to the molecule src.b, releasing one
+        // quantum per bond formed and depositing the product. Operands are EXACT whole species — `Bond r r`
+        // joins the monomer r to the monomer r, and there is no wildcard variant (see [EnergySource.FormBond]:
+        // a wildcard reaction has no single product, which synthesis needs now that it is the energy source).
+        // Kept OUT of the action-consume scan (tracked separately) because efficiency consumes the reactants
+        // at the bonds-formed rate ⌈k/gP1⌉, not 1/op; their overlap with an action input is summed back in below.
         var formLeftId = -1; var formRightId = -1; var formProductId = -1
         if (src is EnergySource.FormBond) {
-            formLeftId = src.leftId; formRightId = src.rightId; formProductId = src.productId
-            if (formLeftId < 0 || formRightId < 0 || formProductId < 0) return
-            if (snap.count(formLeftId) <= 0 || snap.count(formRightId) <= 0) return
+            if (src.a.isEmpty() || src.b.isEmpty()) return
+            formLeftId = exactPresent(snap, src.aId); if (formLeftId < 0) return
+            formRightId = exactPresent(snap, src.bId); if (formRightId < 0) return
+            formProductId = SpeciesRegistry.join(formLeftId, formRightId); if (formProductId < 0) return   // forbidden (polymerisation) ⇒ no-op
         }
-        var productId = -1
         var convertId = -1
-        // BreakBond-as-action target (the mirror of the FormBond action below): the richest molecule
-        // holding the gene's target bond, split into fragments — an explicit, ENERGY-COSTED digestion step
-        // (unlike EnergySource.BreakBond's free fuel-harvesting side effect).
+        // DIGESTION TARGET (ActionType.BreakBond): the richest molecule holding the gene's target bond, split
+        // into fragments. This is an ENERGY-COSTED action, funded by the gene's source — the inversion's whole
+        // point (see [EnergySource]): breaking never pays, so it can't close a loop against the source above.
         var breakActId = -1; var breakActFragL = -1; var breakActFragR = -1
         when (act.type) {
             ActionType.Convert -> { convertId = act.aId; cn = addConsume(ids, per, cn, convertId) }
-            ActionType.FormBond -> {
-                // Join a molecule ending in act.a to one starting with act.b. EXACT by default — act.a/act.b
-                // name the whole reactant species (MORPHOGENESIS.md §2026-06-18); so `FormBond r r` joins the
-                // monomer r to the monomer r (not the richest r-ender, which self-stalls once `rr` piles up).
-                // act.aWild / act.bWild opt into the legacy WILDCARD match (most-abundant molecule ending/
-                // starting with the operand). The junction bond is act.a.last–act.b.first either way.
-                if (act.a.isEmpty() || act.b.isEmpty()) return
-                if (stats != null) { if (act.aWild) stats.wildcardCalls++; if (act.bWild) stats.wildcardCalls++ }
-                val endAId = if (act.aWild) richestEndingWith(snap, act.a) else exactPresent(snap, act.aId); if (endAId < 0) return
-                val startBId = if (act.bWild) richestStartingWith(snap, act.b) else exactPresent(snap, act.bId); if (startBId < 0) return
-                productId = SpeciesRegistry.join(endAId, startBId); if (productId < 0) return   // forbidden (polymerisation) ⇒ no-op
-                cn = addConsume(ids, per, cn, endAId)
-                cn = addConsume(ids, per, cn, startBId)
-            }
             ActionType.BreakBond -> {
                 val bondIdx = SpeciesRegistry.bondIndexOf(act.a); if (bondIdx < 0) return
+                if (stats != null) stats.richestBondCalls++
                 breakActId = richestWithBond(snap, bondIdx); if (breakActId < 0) return
                 breakActFragL = SpeciesRegistry.breakLeft(breakActId, bondIdx); breakActFragR = SpeciesRegistry.breakRight(breakActId, bondIdx)
                 if (breakActFragL < 0) return
@@ -368,22 +346,21 @@ object CytoBiologyCore {
             else -> 0
         }
         val gP1 = eff + 1
-        // The per-tick CAP also applies to FormBond — but WITHOUT the gP1 multiplier (FormBond is a lossless
-        // 1:1 bond conversion; a multiplier would mint bonds). So on a FormBond gene the gear is pure
-        // potency-limiting: capping a morphogen source/sink's rate is the gradient-spread dial
-        // (MORPHOGENESIS.md §Morphogens for shape — caps consumption rate k ⇒ reach λ≈√(D/k)). Mitosis stays
-        // exempt (fixed biomass/4 bulk cost). g=0 ⇒ uncapped ⇒ existing FormBond genes are byte-identical.
+        // The per-tick CAP also applies to BreakBond — but WITHOUT the gP1 multiplier (see the `eff` block
+        // above and [EnergySource]: breaking is a lossless 1:1 bond conversion whose cost must stay pinned at
+        // one quantum per bond, or a single formed bond could fund gP1 breaks and the loop reopens). So on a
+        // BreakBond gene the gear is pure potency-limiting: capping a morphogen source/sink's rate is the
+        // gradient-spread dial (MORPHOGENESIS.md §Morphogens for shape — caps consumption rate k ⇒ reach
+        // λ≈√(D/k)). Mitosis stays exempt (fixed biomass/4 bulk cost).
         val capGear = when (act.type) {
-            ActionType.Convert, ActionType.Import, ActionType.Export, ActionType.Repair, ActionType.FormBond, ActionType.BreakBond, ActionType.Contract -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
+            ActionType.Convert, ActionType.Import, ActionType.Export, ActionType.Repair, ActionType.BreakBond, ActionType.Contract -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
             else -> 0
         }
         val energyCap = if (capGear == 0) Int.MAX_VALUE else CytoTuning.EFFICIENCY_REF ushr capGear
-        // Energy units available: Light = the cell's quanta share; BreakBond-source = bonds it can break;
-        // FormBond-source = monomer pairs it can join (one quantum each), from the fuel's 1/n share. Op
-        // budget = min(units, cap) × gP1.
+        // Energy units available: Light = the cell's quanta share; FormBond-source = the reactant pairs it can
+        // join (one quantum per bond formed), from each reactant's 1/n share. Op budget = min(units, cap) × gP1.
         val energyUnits = when (src) {
             is EnergySource.Light -> quantaShare
-            is EnergySource.BreakBond -> snap.count(breakSpId) / n
             is EnergySource.FormBond -> minOf(snap.count(formLeftId), snap.count(formRightId)) / n
         }
         var k = (minOf(energyUnits.toLong(), energyCap.toLong()) * gP1).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
@@ -395,18 +372,11 @@ object CytoBiologyCore {
             val bio = totalBiomassBonds(work.biomass)
             k = (k.toLong() * CytoTuning.METABOLIC_BIOMASS_SCALE / (CytoTuning.METABOLIC_BIOMASS_SCALE + bio)).toInt()
         }
-        // BreakBond-source: the fuel is also broken (⌈k/gP1⌉ bonds) and may double as an action input (pBreak/op);
-        // cap k so action-use + bonds-broken fit the fuel's share:  pBreak·k + ⌈k/gP1⌉ ≤ fuelShare.
-        if (breakSpId >= 0) {
-            var pBreak = 0
-            for (i in 0 until cn) if (ids[i] == breakSpId) pBreak = per[i]
-            val fuelShare = snap.count(breakSpId) / n
-            k = minOf(k, (fuelShare.toLong() * gP1 / (pBreak.toLong() * gP1 + 1L)).toInt())
-        }
-        // FormBond-source: the mirror of the BreakBond-source cap above — the fuel is also formed (⌈k/gP1⌉
-        // joins) and either reactant monomer may double as an action input; cap k against EACH reactant's
-        // own 1/n share the same way. (Simplification: if leftId==rightId — a same-atom bond like "rr" —
-        // one join consumes TWO copies of it, so the combined budget is halved.)
+        // FormBond-source: the reactants are consumed at the bonds-formed rate (⌈k/gP1⌉ joins) and either one
+        // may ALSO double as an action input (pLeft/pRight per op); cap k against EACH reactant's own 1/n
+        // share so action-use + joins fit inside it:  p·k + ⌈k/gP1⌉ ≤ share.
+        // (Simplification: if leftId==rightId — a self-join like `Bond r r` — one join consumes TWO copies of
+        // it, so the combined budget is halved.)
         if (formProductId >= 0) {
             var pLeft = 0; var pRight = 0
             for (i in 0 until cn) {
@@ -418,14 +388,25 @@ object CytoBiologyCore {
             k = minOf(k, (leftShare.toLong() * gP1 / (pLeft.toLong() * gP1 + 1L)).toInt())
             k = minOf(k, (rightShare.toLong() * gP1 / (pRight.toLong() * gP1 + 1L)).toInt())
             if (formLeftId == formRightId) k /= 2
+            // GATE CAP ON THE SOURCE'S PRODUCT. Synthesis is now a side effect of *paying* for the action, so
+            // a gene whose gate reads the product (`Chem(rg) < GROW : Bond r g : Convert rg` — the shape every
+            // migrated grower has) would otherwise blow straight past its own threshold, because the old cap
+            // only ever looked at the ACTION's output. Headroom H is in bonds, and ⌈k/gP1⌉ bonds are formed,
+            // so the op budget it permits is H×gP1. Only bites when the gate actually reads the product.
+            val headroomOps = selfGateCap(
+                gene.condition, qBiomass = false, qSpeciesId = formProductId, snapQ = snap.count(formProductId),
+                perOp = 1, snap = snap, snapBiomass = snapBiomass, work = work,
+            )
+            if (headroomOps != Int.MAX_VALUE) k = minOf(k, (headroomOps.toLong() * gP1).coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
         }
-        // action-substrate caps (action inputs' 1/n share; the BreakBond/FormBond fuel is handled above)
+        // action-substrate caps (action inputs' 1/n share; the FormBond reactants are handled above)
         for (i in 0 until cn) k = minOf(k, (snap.count(ids[i]) / n) / per[i])
         when (act.type) {
             // Division is a BULK, size-scaling cost: it needs `biomass/4` energy THIS tick. Energy can't be
-            // accumulated (quanta are use-or-lose; bonds are spent the tick they're broken), so it can only
-            // be paid by breaking a big chunk of stored bonds in one tick — a BreakBond-powered mitosis. ANY
-            // energy source is accepted here; light-division is non-viable **emergently, not by rule**: the
+            // accumulated (quanta are use-or-lose; a formed bond's quantum is spent the tick it forms), so it
+            // can only be paid by a big burst of synthesis in one tick — which needs a correspondingly big
+            // reactant pool on hand. ANY energy source is accepted here; light-division is non-viable
+            // **emergently, not by rule**: the
             // light scale is tuned so a cell's peak per-tick quanta stays well below biomass/4 for any real
             // divide size, so a Light-sourced Mitosis just never reaches the cost (k < cost ⇒ 0). The "charge
             // up to divide" comes for free — only a hoarded reserve broken in one tick clears the bar. The
@@ -438,37 +419,34 @@ object CytoBiologyCore {
             // Sub-tick interpolation: a growth gene fills only up to its OWN gate threshold, never past it.
             // perOp 0 (an unresolved/mutated species id) disables the cap rather than indexing by -1.
             ActionType.Convert -> k = minOf(k, selfGateCap(gene.condition, qBiomass = true, qSpeciesId = -1, snapQ = snapBiomass, perOp = if (convertId >= 0) SpeciesRegistry.bondCount(convertId) else 0, snap = snap, snapBiomass = snapBiomass, work = work))
-            ActionType.FormBond -> k = minOf(k, selfGateCap(gene.condition, qBiomass = false, qSpeciesId = productId, snapQ = snap.count(productId), perOp = 1, snap = snap, snapBiomass = snapBiomass, work = work))
-            ActionType.BreakBond -> {} // No sub-tick cap — the action-substrate cap loop above already bounds it by breakActId's availability
+            // No sub-tick cap: the action-substrate loop above already bounds digestion by how much of
+            // breakActId the cell holds. selfGateCap only models filling *toward* a ceiling (`Q < rhs`), and
+            // BreakBond drains its substrate rather than accumulating it, so it has nothing to interpolate —
+            // same as Convert's own substrate draw.
+            ActionType.BreakBond -> {}
             ActionType.Lyse -> {} // No sub-tick cap — damage is capped by available biomass in the attack phase
         }
         if (k <= 0) return
-        // Apply: action-input consumption, then the broken fuel + its fragments, then the action's output.
-        // The fuel is broken at ⌈k/gP1⌉ (each broken bond powers gP1 actions); at g=0 that's k (1:1, as before).
-        val bondsBroken = if (breakSpId >= 0) (k + gP1 - 1) / gP1 else 0
-        // Bonds formed by the FormBond-source fuel (mirrors bondsBroken above).
+        // Apply: action-input consumption, then the synthesis that funded it, then the action's own output.
+        // The reactants are joined at ⌈k/gP1⌉ (each formed bond powers gP1 actions); at g=0 that's k (1:1).
+        // This is the sole mint of chemical energy in the model, and it is exactly one quantum per bond.
         val bondsFormed = if (formProductId >= 0) (k + gP1 - 1) / gP1 else 0
         for (i in 0 until cn) work.cytoplasm.add(ids[i], -k * per[i])
-        if (breakSpId >= 0) {
-            work.cytoplasm.add(breakSpId, -bondsBroken)
-            work.cytoplasm.inc(fragLId, bondsBroken); work.cytoplasm.inc(fragRId, bondsBroken)
-        }
         if (formProductId >= 0) {
             work.cytoplasm.add(formLeftId, -bondsFormed); work.cytoplasm.add(formRightId, -bondsFormed)
             work.cytoplasm.inc(formProductId, bondsFormed)
+            // Synthesis feeds the living-world "built something" flow the same way the FormBond action used to.
+            work.cytToBio.inc(formProductId, bondsFormed)
         }
         when (act.type) {
             ActionType.Convert -> {
                 work.biomass.inc(convertId, k)
                 work.cytToBio.inc(convertId, k)
             }
-            ActionType.FormBond -> {
-                work.cytoplasm.inc(productId, k)
-                work.cytToBio.inc(productId, k)
-            }
             ActionType.BreakBond -> {
                 // Digestion: breakActId is already consumed via the generic ids/per loop above (it was
-                // addConsume'd as the action's substrate); credit the fragments back to cytoplasm.
+                // addConsume'd as the action's substrate); credit the fragments back to cytoplasm. Exactly
+                // one bond destroyed per op, paid for by one quantum — the cost side of the invariant.
                 work.cytoplasm.inc(breakActFragL, k); work.cytoplasm.inc(breakActFragR, k)
             }
             ActionType.Import -> {
@@ -534,42 +512,7 @@ object CytoBiologyCore {
     private fun exactPresent(snap: MoleculeStore, id: Int): Int =
         if (id >= 0 && snap.count(id) > 0) id else -1
 
-    /** Most-abundant species in [snap] whose string ENDS WITH [suffix] (the FormBond end-A wildcard match;
-     *  ties → lowest id), or -1. A single-atom suffix == "ends in that atom"; a longer one is a specific tail. */
-    private fun richestEndingWith(snap: MoleculeStore, suffix: String): Int {
-        if (suffix.isEmpty()) return -1
-        // Fast path: a single-atom suffix == "ends in that atom", matched on the precomputed last-atom id
-        // (an int compare) instead of an O(len) string endsWith per species. Bit-identical: an unknown atom
-        // (atomIndexOf < 0) matches nothing, exactly as no species string ends with it.
-        val atom = if (suffix.length == 1) SpeciesRegistry.atomIndexOf(suffix[0]) else -1
-        if (atom >= 0 && !snap.hasLastAtom(atom)) return -1
-        var best = -1; var bestCount = 0
-        for (i in 0 until snap.size) {
-            val id = snap.idAt(i)
-            val match = if (suffix.length == 1) SpeciesRegistry.lastAtom(id) == atom
-                        else SpeciesRegistry.string(id).endsWith(suffix)
-            if (match) { val c = snap.countAt(i); if (c > bestCount) { bestCount = c; best = id } }
-        }
-        return best
-    }
 
-    /** Most-abundant species in [snap] whose string STARTS WITH [prefix] (the FormBond start-B match; ties
-     *  → lowest id), or -1. */
-    private fun richestStartingWith(snap: MoleculeStore, prefix: String): Int {
-        if (prefix.isEmpty()) return -1
-        // Fast path: single-atom prefix == "starts with that atom", matched on the precomputed first-atom id
-        // (see [richestEndingWith]). Bit-identical.
-        val atom = if (prefix.length == 1) SpeciesRegistry.atomIndexOf(prefix[0]) else -1
-        if (atom >= 0 && !snap.hasFirstAtom(atom)) return -1
-        var best = -1; var bestCount = 0
-        for (i in 0 until snap.size) {
-            val id = snap.idAt(i)
-            val match = if (prefix.length == 1) SpeciesRegistry.firstAtom(id) == atom
-                        else SpeciesRegistry.string(id).startsWith(prefix)
-            if (match) { val c = snap.countAt(i); if (c > bestCount) { bestCount = c; best = id } }
-        }
-        return best
-    }
 
     /** Flex steps to move the radius from [lo] up to [hi] (ceil of the gap / [FLEX_STEP]); 0 if none. */
     private fun flexOps(lo: Frac, hi: Frac): Int {
