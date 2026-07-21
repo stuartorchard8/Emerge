@@ -67,13 +67,17 @@ object CytoSceneView {
         // paste picker; a SAVE button banks the group and re-lists.
         var snippets = CytoSnippets.list()
         var selectedGenome = 0
+        // The name of the save last loaded or written this session — the Save dialog pre-fills with it so
+        // re-saving over the world you're playing is one keystroke, falling back to a tick-stamped default
+        // (defaultSaveName) only when nothing has been loaded/saved yet.
+        var lastSaveName: String? = null
         controller.brushGenome = genomes.getOrNull(selectedGenome)?.genome
         controls.onSelectGenome = { i ->
             selectedGenome = i
             controller.brushGenome = genomes.getOrNull(i)?.genome
         }
         // Resume the most recent named save at boot so Continue picks up where you left off.
-        CytoSaves.mostRecent()?.let { CytoSaves.load(controller, it) }
+        CytoSaves.mostRecent()?.let { CytoSaves.load(controller, it); lastSaveName = it }
 
         // Run the sim on its own thread, decoupled from this (vsync-paced) draw loop, with on-screen
         // SLOW/PAUSE/FAST controls + a TPS/FPS readout (also bound to Space / [ / ] — see initWindow).
@@ -123,6 +127,7 @@ object CytoSceneView {
                 simDriver.setPaused(true)
                 director.stop()
                 CytoSaves.load(controller, name)
+                lastSaveName = name
                 renderer.resetView()
                 menu.enterGame(); simDriver.setPaused(false)
             },
@@ -133,9 +138,9 @@ object CytoSceneView {
                 director.start(ch, controller)
                 menu.enterGame(); simDriver.setPaused(false)
             },
-            onOpenSave = { menu.openSave(defaultSaveName(controller)); simDriver.setPaused(true) },
+            onOpenSave = { menu.openSave(lastSaveName ?: defaultSaveName(controller)); simDriver.setPaused(true) },
             onSave = { name ->
-                CytoSaves.save(controller, name)
+                lastSaveName = CytoSaves.save(controller, name)   // returns the sanitized name actually written
                 menu.enterGame(); simDriver.setPaused(false)
             },
             onDelete = { name -> CytoSaves.delete(name) },   // stays on the Load page; list refreshes next frame

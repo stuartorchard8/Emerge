@@ -70,6 +70,8 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
     // Brush genome library (drives the palette).
     private var genomes: List<GenomeEntry> = emptyList()
     private var selectedGenome = 0
+    // Name of the save last loaded or written this session — pre-fills the Save dialog (see onOpenSave).
+    private var lastSaveName: String? = null
 
     // Inline sim speed/pause (no threaded driver on this host).
     private var paused = true   // boot paused behind the menu
@@ -169,7 +171,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
             onContinue = { menu.enterGame(); paused = false },
             onLoadNamed = { name ->
                 director.stop()
-                CytoSaves.load(controller, name); renderer.resetView()
+                CytoSaves.load(controller, name); lastSaveName = name; renderer.resetView()
                 menu.enterGame(); paused = false
             },
             onStartChapter = { ch ->
@@ -177,8 +179,8 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                 director.start(ch, controller)
                 menu.enterGame(); paused = false
             },
-            onOpenSave = { menu.openSave("world ${controller.tick}") },
-            onSave = { name -> CytoSaves.save(controller, name); menu.enterGame(); paused = false },
+            onOpenSave = { menu.openSave(lastSaveName ?: "world ${controller.tick}") },
+            onSave = { name -> lastSaveName = CytoSaves.save(controller, name); menu.enterGame(); paused = false },
             onDelete = { name -> CytoSaves.delete(name) },
             onSaveGenome = { name, color, genome ->
                 CytoGenomes.save(name, color, genome)
@@ -191,7 +193,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         )
 
         // Resume the most recent save at boot so Continue picks up where you left off.
-        CytoSaves.mostRecent()?.let { CytoSaves.load(controller, it) }
+        CytoSaves.mostRecent()?.let { CytoSaves.load(controller, it); lastSaveName = it }
 
         lastTimeNanos = System.nanoTime()
     }
