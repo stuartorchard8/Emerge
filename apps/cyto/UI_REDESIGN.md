@@ -466,6 +466,21 @@ Since the coach no longer collapses to the pill on desktop (the gene editor stop
 bottom), §6.1's desktop tension dissolves — the pill stays only as a fallback for any other bottom-owning
 panel.
 
+> **2026-07-21 — the pill is DELETED, and so is the wide HUD hide.** The "fallback for any other
+> bottom-owning panel" never arrived: nothing on wide owns the bottom, so `collapsed` was false wherever it
+> was read and `renderPill` became unreachable. Both it and `CampaignDirector.render`'s `collapsed`
+> parameter are gone.
+>
+> Worth recording *why* it lingered, because the same trap is still live elsewhere: the hosts gated both the
+> coach collapse and the whole L0 HUD (speed cluster + BRUSH/LAYERS/MENU) on `GeneEditor.isEditing`, which
+> means **"a draft is parked", not "a modal is up"**. Wide edits inline with no DONE step, so the draft is
+> never cleared — one gene edit hid the HUD and collapsed the coach *for the rest of the session*. The coach
+> case was a progress blocker, not a cosmetic one: the pill carried no Skip/Next/Reset, so a `Gate.Next`
+> step became unadvanceable. Wide now shows both unconditionally (a sheet's scrim already blocks
+> interaction); narrow is unchanged, since its full-screen modal genuinely does own the screen. **If more
+> occlusion bugs turn up, the durable fix is a real "something covers the screen" predicate on `GeneEditor`
+> rather than more call sites keyed on `isEditing`.**
+
 ---
 
 ## 9. Proposed build order

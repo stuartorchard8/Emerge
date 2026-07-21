@@ -72,6 +72,27 @@ settled design we build toward; it is the contract, not a status log.
 > (the evolving config genuinely explores exact species now, and the mutation operator draws an extra PRNG
 > int for the new toggle).
 
+
+> **2026-07-21 — the chemistry is INVERTED; synthesis is the energy source; wildcards are gone.** Forming a
+> bond is now the *exothermic* reaction (HYDROTHERMAL_CHEMISTRY_PLAN.md): monomers are the high-energy state,
+> `EnergySource.FormBond a b` releases one quantum per bond formed and deposits the product, and breaking is
+> a **costed action** `ActionType.BreakBond a b`. The pre-inversion pair — `BreakBond` as an energy source,
+> `FormBond` as an action — **no longer exists**: keeping either alongside its mirror lets a genome form a
+> bond for +1 and break it for +1, minting energy from nothing. Everything the FormBond *action* could
+> express moved onto the source (it carries the full reactant pair), so arbitrary-molecule synthesis and
+> therefore the morphogen source/sink loop above are unchanged in reach — a morphogen source gene is now
+> `Bond X Y : <gate> : <spend>` rather than a Light-funded FormBond.
+>
+> **This supersedes the 2026-06-18 entry's wildcard half.** Operands are *always* exact; `*a`/`a*` are gone,
+> along with `GeneAction.aWild`/`bWild` and the mutation toggle. The reason is the one that entry half-saw:
+> a wildcard reaction has no single product, so once synthesis became the energy source a gene could no
+> longer be *read* as "makes X" — and the homodimer stall it diagnosed is precisely the failure mode
+> wildcards keep producing. Exact-by-default was the right call; exact-only is the same call finished.
+> Legacy `*` markers still parse (marker dropped, species kept). `BreakBond` likewise stopped matching a
+> *bond* against the richest molecule holding it: it now names its two **fragments** and consumes the
+> molecule they would join into, so digestion is determined by the genome rather than by the cytoplasm.
+> **Compatibility:** genomes are versioned (`# genome <n>`, currently 3) and upgraded on load by
+> `GenomeMigration`; all 24 of Stu's saved `.gene` files parse with every gene preserved.
 ## The central principle: matter is closed, energy is open
 
 Like a real ecosystem (sunlight pours in for free; nutrients are finite and recycled):
