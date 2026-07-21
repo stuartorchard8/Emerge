@@ -92,12 +92,25 @@ enum class Comparison { Greater, Less }
  *  a cytoplasm [Chem] count, total [Biomass], or the [Touching] contact count. Because *both* sides of a
  *  condition are operands, a gene can gate on a relationship between two live quantities — e.g.
  *  `Biomass < Chem("rg")` ("while I'm smaller than my stored `rg` reserve") — not only variable-vs-constant. */
-sealed class Operand {
+sealed class Operand(
+    /**
+     * This operand's [OperandKind] tag — a **plain `@JvmField` on the base class**, deliberately not an
+     * `abstract val` each subclass overrides. That distinction is the entire point: an abstract val makes
+     * reading the tag a virtual call which goes megamorphic across the six subclasses, costing more than
+     * the `instanceof` chain it was meant to replace (measured at −32% in `OperandDispatchBench`). As a
+     * base-class field it is a plain load with no dispatch, which is what lets the hot-path `when` over it
+     * beat the type-switch.
+     *
+     * Each subclass passes a literal, so it never appears in a data-class `equals`/`hashCode`/`copy` (those
+     * cover the subclass's own constructor params only) and is never serialised.
+     */
+    @JvmField val kind: Int,
+) {
     /** A fixed integer compared against (the former gate threshold). */
-    data class Constant(val value: Int) : Operand()
+    data class Constant(val value: Int) : Operand(OperandKind.CONSTANT)
 
     /** Count of [species] in the cytoplasm (0 for an absent / unknown species). */
-    data class Chem(val species: String) : Operand() {
+    data class Chem(val species: String) : Operand(OperandKind.CHEM) {
         /** [species] resolved to its [SpeciesRegistry] id once at construction (a pure function of the
          *  immutable [species] string), so the per-tick gate path reads an int instead of re-hashing the
          *  string every evaluation. Not a constructor param ⇒ untouched by equals/hashCode/copy. */
@@ -105,13 +118,13 @@ sealed class Operand {
     }
 
     /** Total biomass — Σ count × bond-count (also drives cell size + the death threshold). */
-    object Biomass : Operand()
+    object Biomass : Operand(OperandKind.BIOMASS)
 
     /** Number of **un-connected** cells this cell is in physical contact with this tick — i.e.
      *  `Touching > 0` fires while the cell is bumping a neighbour it isn't welded to. The matter-model
      *  port of old Cyto's `Touch` gene input (a cell sensing collision pressure); welded neighbours don't
      *  count (they're structure, not a touch event). A reactive, contact-driven gate. */
-    object Touching : Operand()
+    object Touching : Operand(OperandKind.TOUCHING)
 
     /** Number of **welded (connected) neighbours** this cell has this tick — its structural degree
      *  (`CellWork.weldedDegree`, the count already driving the upkeep discount). Unlike [Touching] (transient,
@@ -119,7 +132,7 @@ sealed class Operand {
      *  cell reads low. Lets a gene gate on POSITION-IN-BODY — e.g. `Neighbours < 1` fires only on a lone or
      *  just-severed founder, `Neighbours > 2` only deep inside a cluster. A differentiation-by-connectivity
      *  sensor. */
-    object Neighbours : Operand()
+    object Neighbours : Operand(OperandKind.NEIGHBOURS)
 
     /** **Concentration** of [species] — `count(species) · CytoTuning.CONC_SCALE / totalBiomass`, the
      *  size-normalised counterpart of [Chem] (which is the raw count). 0 when biomass is 0 or the species is
@@ -127,10 +140,25 @@ sealed class Operand {
      *  developmental clock for free — and a positional gradient reads as concentration *bands* independent of
      *  cell size. The morphogen-for-shape readout (MORPHOGENESIS.md §Morphogens for shape). Like [Chem] it is
      *  a *sensor*, never added to the metabolic reach (sensing ≠ permeability — see [handleableOf]). */
-    data class Conc(val species: String) : Operand() {
+    data class Conc(val species: String) : Operand(OperandKind.CONC) {
         /** [species] resolved to its [SpeciesRegistry] id once at construction (see [Chem.speciesId]). */
         val speciesId: Int = SpeciesRegistry.id(species)
     }
+}
+
+/** [Operand.kind] tags. Values must stay **dense and zero-based** so the hot-path `when` over them
+ *  compiles to a jump table rather than a comparison chain — that density is the whole point, so a new
+ *  operand takes the next free int and none are ever skipped or reordered. Purely an in-memory dispatch
+ *  detail: never serialised (see `GeneCodec`), so these are free to renumber. */
+object OperandKind {
+    const val CONSTANT = 0
+    const val CHEM = 1
+    const val CONC = 2
+    const val BIOMASS = 3
+    const val TOUCHING = 4
+    const val NEIGHBOURS = 5
+    /** Number of distinct kinds — the exhaustiveness check for any `when` over them. */
+    const val COUNT = 6
 }
 
 /** One AND-clause of a gene's gate: `lhs cmp rhs`, each side an [Operand]. */

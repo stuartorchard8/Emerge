@@ -731,37 +731,35 @@ object CytoBiologyCore {
     }
 
     /** Evaluate one side of a [Clause] to an integer. Reads species counts from [CellWork.cachedCount]
-      *  (a linear scan of the pre-populated, ≤32-entry species cache). */
-    private fun operand(op: Operand, work: CellWork, bioBonds: Int): Int = when (op) {
-        is Operand.Constant -> op.value
-        is Operand.Chem -> work.cachedCount(op.speciesId)
-        is Operand.Conc -> conc(work.cachedCount(op.speciesId), bioBonds)
-        Operand.Biomass -> bioBonds
-        Operand.Touching -> work.touchCount
-        Operand.Neighbours -> work.weldedDegree
-    }
-
-    /** Fast-path variant of [operand] for clauses without Chem/Conc operands. Avoids the when-dispatch
-     *  and cachedCount calls — just compares pre-loaded values. Called from [clauseHoldsFast] when both
-     *  operands are non-lookup types. */
-    private fun operandFast(op: Operand, work: CellWork, bioBonds: Int): Int = when (op) {
-        is Operand.Constant -> op.value
-        Operand.Biomass -> bioBonds
-        Operand.Touching -> work.touchCount
-        Operand.Neighbours -> work.weldedDegree
-        else -> throw IllegalStateException("operandFast called with lookup operand")
+      *  (a linear scan of the pre-populated, ≤32-entry species cache).
+      *
+      * Dispatches on [Operand.kind] rather than on type: this runs per operand, per clause, per gene, per
+      * cell, per tick, so the difference between a jump table and a sequential `instanceof` chain is
+      * multiplied by genome size × population. The casts are checkcasts against final classes, and only
+      * the three data-carrying kinds need one at all. */
+    private fun operand(op: Operand, work: CellWork, bioBonds: Int): Int = when (op.kind) {
+        OperandKind.CONSTANT -> (op as Operand.Constant).value
+        OperandKind.CHEM -> work.cachedCount((op as Operand.Chem).speciesId)
+        OperandKind.CONC -> conc(work.cachedCount((op as Operand.Conc).speciesId), bioBonds)
+        OperandKind.BIOMASS -> bioBonds
+        OperandKind.TOUCHING -> work.touchCount
+        OperandKind.NEIGHBOURS -> work.weldedDegree
+        // A `when` over Int can't be exhaustive, so a new operand kind can't fail to compile here the way
+        // it would over the sealed type. Throw rather than fall through to a plausible-looking default.
+        else -> error("unhandled operand kind ${op.kind}")
     }
 
     /** [operand], but reading the tick-start [snap]shot (cytoplasm + [snapBiomass]) instead of live state,
      *  so a threshold derived from it is order-independent. Touching is transient (fixed for the tick).
      *  Uses [work.cachedCount] (population from snap) so gate evaluation also benefits. */
-    private fun operandSnap(op: Operand, snap: MoleculeStore, snapBiomass: Int, work: CellWork): Int = when (op) {
-        is Operand.Constant -> op.value
-        is Operand.Chem -> work.cachedCount(op.speciesId)
-        is Operand.Conc -> conc(work.cachedCount(op.speciesId), snapBiomass)
-        Operand.Biomass -> snapBiomass
-        Operand.Touching -> work.touchCount
-        Operand.Neighbours -> work.weldedDegree
+    private fun operandSnap(op: Operand, snap: MoleculeStore, snapBiomass: Int, work: CellWork): Int = when (op.kind) {
+        OperandKind.CONSTANT -> (op as Operand.Constant).value
+        OperandKind.CHEM -> work.cachedCount((op as Operand.Chem).speciesId)
+        OperandKind.CONC -> conc(work.cachedCount((op as Operand.Conc).speciesId), snapBiomass)
+        OperandKind.BIOMASS -> snapBiomass
+        OperandKind.TOUCHING -> work.touchCount
+        OperandKind.NEIGHBOURS -> work.weldedDegree
+        else -> error("unhandled operand kind ${op.kind}")
     }
 
     /** Size-normalised concentration (CytoTuning.CONC_SCALE units): molecules per unit biomass-bond. Long
