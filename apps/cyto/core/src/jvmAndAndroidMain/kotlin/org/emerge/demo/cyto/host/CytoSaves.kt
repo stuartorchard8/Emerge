@@ -32,10 +32,17 @@ object CytoSaves {
     /** The most recently modified save name, or null if none. */
     fun mostRecent(): String? = list().firstOrNull()
 
-    /** Trim a user-typed name to a safe, non-empty filename stem. */
+    /** Trim a user-typed name to a safe, non-empty filename stem.
+     *
+     *  **Always lowercase.** Filenames are the identity of a save/genome/snippet (there is no separate
+     *  display name — [list] shows the on-disk stem), and this is the single chokepoint every path goes
+     *  through, so lowercasing here keeps the library case-uniform and makes name lookup case-insensitive
+     *  (loading "Swimmer" finds `swimmer.gene`). Any pre-existing mixed-case files must be renamed to their
+     *  lowercase stem or they stop resolving — [list] reads their true case off disk but every load
+     *  re-sanitizes to lowercase. */
     fun sanitize(raw: String): String =
         raw.trim().map { if (it.isLetterOrDigit() || it == ' ' || it == '-' || it == '_') it else '_' }
-            .joinToString("").trim().take(40).ifEmpty { "save" }
+            .joinToString("").lowercase().trim().take(40).ifEmpty { "save" }
 
     fun save(controller: CytoController, rawName: String): String {
         val name = sanitize(rawName)
