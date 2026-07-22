@@ -222,6 +222,7 @@ object CytoSceneView {
                 val actions = HashSet<PlayerAction>()
                 if (signals.consumeCameraMoved()) actions.add(PlayerAction.MovedCamera)
                 if (signals.consumeSpeedChanged()) actions.add(PlayerAction.ChangedSpeed)
+                if (signals.consumeCellMoved()) actions.add(PlayerAction.MovedCell)
                 val heldNow = controller.lastHeldId?.value
                 if (heldNow != null && heldNow != prevHeldId) actions.add(PlayerAction.SelectedCell)
                 val query = CampaignQuery(
@@ -247,6 +248,7 @@ object CytoSceneView {
                 controller.brushGenome =
                     if (chapter?.spawnCopiesHeldCell == true) controller.heldGenome() ?: chapter.spawnGenome
                     else chapter?.spawnGenome
+                controller.spawnBiomass = chapter?.spawnBiomass
             }
             controls.showSimSpeed = mask.allows(Control.Speed)
             controls.showMutation = mask.allows(Control.Mutation)
@@ -591,6 +593,7 @@ object CytoSceneView {
             if (grabId != null) {
                 val world = renderer.screenToWorld(px.first, px.second)
                 controller.grab(grabId, world[0], world[1], sticky = controls.touchMode == TouchMode.Sticky)
+                if (state.dragged) signals.cellMoved = true
             } else if (state.dragged) {
                 renderer.panByPixels(dx, dy)
                 signals.cameraMoved = true
@@ -654,8 +657,10 @@ object CytoSceneView {
     private class CampaignSignals {
         var cameraMoved = false
         var speedChanged = false
+        var cellMoved = false
         fun consumeCameraMoved(): Boolean = cameraMoved.also { cameraMoved = false }
         fun consumeSpeedChanged(): Boolean = speedChanged.also { speedChanged = false }
+        fun consumeCellMoved(): Boolean = cellMoved.also { cellMoved = false }
     }
 
     /** F2 override to force the narrow gene UI on at any width (glfw callbacks run on the render thread, so a

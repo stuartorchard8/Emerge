@@ -81,6 +81,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
     private var prevHeldId: Int? = null
     private var cameraMovedSignal = false
     private var speedChangedSignal = false
+    private var cellMovedSignal = false
 
     // A native name dialog is up (guards re-posting while the menu sits on a name page).
     private var nameDialogShown = false
@@ -246,6 +247,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
             val actions = HashSet<PlayerAction>()
             if (cameraMovedSignal) { actions.add(PlayerAction.MovedCamera); cameraMovedSignal = false }
             if (speedChangedSignal) { actions.add(PlayerAction.ChangedSpeed); speedChangedSignal = false }
+            if (cellMovedSignal) { actions.add(PlayerAction.MovedCell); cellMovedSignal = false }
             val heldNow = controller.lastHeldId?.value
             if (heldNow != null && heldNow != prevHeldId) actions.add(PlayerAction.SelectedCell)
             director.update(
@@ -269,6 +271,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
             controller.brushGenome =
                 if (chapter?.spawnCopiesHeldCell == true) controller.heldGenome() ?: chapter.spawnGenome
                 else chapter?.spawnGenome
+            controller.spawnBiomass = chapter?.spawnBiomass
         }
         c.showSimSpeed = mask.allows(Control.Speed)
         c.showMutation = mask.allows(Control.Mutation)
@@ -489,6 +492,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         if (held != null) {
             val world = r.screenToWorld(x, y)
             controller.grab(held, world[0], world[1], sticky = c.touchMode == TouchMode.Sticky)
+            if (dragged) cellMovedSignal = true
         } else {
             r.panByPixels(dx, dy)
             cameraMovedSignal = true

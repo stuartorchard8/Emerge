@@ -228,14 +228,19 @@ class CytoController(
     /** The authoring "brush" genome loaded from a `.gene` file (null until loaded). */
     var brushGenome: List<Gene>? = null
 
+    /** Overrides the genome-derived starter biomass for cells this controller spawns/taps into being. The
+     *  campaign sets it so a hand-authored starter cell holds a fixed reserve (e.g. 2000 each of r/g/b);
+     *  null ⇒ the usual [starterBiomassFor] default. Paired with [brushGenome] by the host. */
+    var spawnBiomass: Map<String, Int>? = null
+
     private fun activeBrush() = brushGenome
 
     fun spawn(x: Float, y: Float, type: CellType) {
-        withLock(inputLock) { pendingSpawns.add(CytoInput.Spawn(x, y, type, activeBrush())) }
+        withLock(inputLock) { pendingSpawns.add(CytoInput.Spawn(x, y, type, activeBrush(), spawnBiomass)) }
     }
 
     fun tap(x: Float, y: Float, mode: TouchMode, type: CellType) {
-        withLock(inputLock) { pendingTaps.add(CytoInput.Tap(x, y, mode, type, activeBrush())) }
+        withLock(inputLock) { pendingTaps.add(CytoInput.Tap(x, y, mode, type, activeBrush(), spawnBiomass)) }
     }
 
     /**

@@ -39,6 +39,10 @@ class Chapter(
      *  founder dies before it gets going). Null ⇒ no world-spawn even if a step allowed it. The host sets this
      *  as the brush genome and permits empty-space taps *without* surfacing the full brush palette. */
     val spawnGenome: List<Gene>? = null,
+    /** The biomass a [Control.Spawn] tap gives the cell it drops in, overriding the genome-derived default.
+     *  Lets a chapter place a hand-authored starter — the opening chapter drops a gene-less cell holding a
+     *  fixed reserve (2000 each of r/g/b) so it can be watched slowly decaying to death. Null ⇒ default. */
+    val spawnBiomass: Map<String, Int>? = null,
     /** When true, an empty-space tap during a [Control.Spawn] step drops a **live copy of the currently
      *  selected cell's genome** instead of the fixed [spawnGenome] — a "last-modified brush". Ch9 leans on
      *  this: each time the player edits the muscle on their selected cell, the next cell they tap out carries
@@ -104,6 +108,9 @@ enum class PlayerAction {
     MovedCamera,
     PaintedCell,
     OpenedGeneEditor,
+    /** The player dragged a cell around the world (grab + move). Lets the opening chapter teach "you can
+     *  push cells about" as its own beat. */
+    MovedCell,
 }
 
 /** A hint about where to point the player's attention. v1 is intentionally lightweight: an optional text
