@@ -31,6 +31,11 @@ data class CytoScenario(
     val dayTicks: Long = 900L,
     val nightTicks: Long = 2700L,
     val matterLevel: Int = CytoSeed.MATTER_UNIFORM_LEVEL,
+    /** Fractional amplitude of a low-frequency Perlin variation layered over the uniform [matterLevel] soup
+     *  (0 = perfectly uniform, the default — every golden scenario keeps this). Small values (~0.1) give the
+     *  world subtle regional richness without materially favouring any spot; the field is mean-normalised so
+     *  the average texel stays [matterLevel]. See [CytoMatterField.seededPerlin]. */
+    val matterNoise: Float = 0f,
     val founders: List<FounderSpec> = listOf(FounderSpec(CellType.Collector, 1)),
     val distribution: Distribution = Distribution.Clustered,
     /** **Chemical aliases** for this world's curated genome (species token → display name, e.g. `rg` →

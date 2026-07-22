@@ -37,7 +37,11 @@ fun createCytoInitialState(scenario: CytoScenario = CytoScenario.DEFAULT): SimSt
             genome = genome,
         )
     }
-    builder.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(scenario.matterLevel)) }
+    builder.update<CytoMatterGridComponent>(GRID_SINGLETON) {
+        val field = if (scenario.matterNoise > 0f) CytoMatterField.seededPerlin(scenario.matterLevel, scenario.matterNoise)
+        else CytoMatterField.seededUniform(scenario.matterLevel)
+        CytoMatterGridComponent(field)
+    }
     return builder.build()
 }
 

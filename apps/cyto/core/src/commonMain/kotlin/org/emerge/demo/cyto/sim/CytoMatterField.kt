@@ -1,7 +1,11 @@
 package org.emerge.demo.cyto.sim
 
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * The environment **matter field**: a flat, dense grid of [RES]² texels, stored as one contiguous
@@ -98,6 +102,68 @@ class CytoMatterField private constructor(
             val f = empty()
             if (level > 0) for (m in MONO) f.column(m).fill(level)
             return f
+        }
+
+        /**
+         * A **gently non-uniform** larder: the same monomer soup as [seededUniform], but each texel's base is
+         * scaled by a low-frequency, **toroidally-seamless** Perlin field so the world reads as soft regional
+         * variation rather than a flat grey. R/G/B are held **equal within every texel** (one noise value
+         * drives all three), and the whole field is **mean-normalised** so the average texel is exactly
+         * [level] — i.e. a cell placed anywhere draws, on average, what it does under [seededUniform], and
+         * [amp] is kept small so no single spot is materially richer or poorer.
+         *
+         * [amp] is the fractional swing (≈ ±`amp` around [level] at the noise extremes, since 2-D Perlin
+         * peaks near ±0.7); [periods] is how many noise cells span the torus (low ⇒ large, smooth blobs). The
+         * lattice wraps at [periods], so the pattern tiles the torus with no seam. Deterministic in [seed].
+         */
+        fun seededPerlin(level: Int, amp: Float, periods: Int = 6, seed: Int = 1337): CytoMatterField {
+            val f = empty()
+            if (level <= 0) return f
+            val res = RES
+            // One noise sample per texel (kept in a temp so the mean-normalisation is a single extra pass, not
+            // a re-evaluation of the noise). Accumulate the mean so we can subtract it and land the average
+            // exactly on [level] regardless of the finite grid's residual bias.
+            val noise = FloatArray(res * res)
+            var sum = 0.0
+            for (iy in 0 until res) for (ix in 0 until res) {
+                val v = perlin2(ix.toFloat() / res * periods, iy.toFloat() / res * periods, periods, seed)
+                noise[iy * res + ix] = v
+                sum += v
+            }
+            val mean = (sum / (res.toDouble() * res)).toFloat()
+            for (m in MONO) {
+                val col = f.column(m)
+                for (i in col.indices) col[i] = (level * (1f + amp * (noise[i] - mean))).roundToInt().coerceAtLeast(0)
+            }
+            return f
+        }
+
+        // ── toroidal 2-D Perlin (value in ≈[-0.7, 0.7]) ─────────────────────────────────────────────────
+        // A compact, allocation-free gradient noise: hash each integer lattice corner (wrapped at [period]
+        // for seamlessness) to a unit gradient, dot with the offset, and fade-interpolate. Deterministic and
+        // multiplatform (pure Float math, no platform RNG) — the seeding is one-shot, so speed is a non-issue.
+        private fun perlin2(x: Float, y: Float, period: Int, seed: Int): Float {
+            val x0 = floor(x).toInt(); val y0 = floor(y).toInt()
+            val dx = x - x0; val dy = y - y0
+            fun corner(cx: Int, cy: Int, ox: Float, oy: Float): Float {
+                val h = hash2(cx.mod(period), cy.mod(period), seed)
+                val ang = (h and 0xFFFF) / 65536f * (2f * PI.toFloat())
+                return cos(ang) * ox + sin(ang) * oy
+            }
+            val n00 = corner(x0, y0, dx, dy)
+            val n10 = corner(x0 + 1, y0, dx - 1f, dy)
+            val n01 = corner(x0, y0 + 1, dx, dy - 1f)
+            val n11 = corner(x0 + 1, y0 + 1, dx - 1f, dy - 1f)
+            val u = fade(dx); val v = fade(dy)
+            return lerp(lerp(n00, n10, u), lerp(n01, n11, u), v)
+        }
+
+        private fun fade(t: Float): Float = t * t * t * (t * (t * 6f - 15f) + 10f)
+        private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
+        private fun hash2(x: Int, y: Int, seed: Int): Int {
+            var h = x * 374761393 + y * 668265263 + seed * 1274126177
+            h = (h xor (h ushr 13)) * 1274126177
+            return h xor (h ushr 16)
         }
 
         /** Migration reader for the v9 quad-tree save format: walk the encoded tree and splat each leaf's

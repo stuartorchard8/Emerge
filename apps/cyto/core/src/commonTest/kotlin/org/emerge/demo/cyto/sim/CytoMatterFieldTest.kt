@@ -35,6 +35,33 @@ class CytoMatterFieldTest {
         assertEquals(3L * 10 * res * res, f.totalAtoms())
     }
 
+    @Test fun seededPerlinIsSubtleEqualRgbAndMeanNormalised() {
+        val level = 125
+        val amp = 0.12f
+        val g = SpeciesRegistry.id("g"); val b = SpeciesRegistry.id("b")
+        val f = CytoMatterField.seededPerlin(level, amp)
+        val res = f.resolution
+        fun countIn(s: MoleculeStore, id: Int): Int {
+            for (i in 0 until s.size) if (s.idAt(i) == id) return s.countAt(i)
+            return 0
+        }
+        var sum = 0L; var min = Int.MAX_VALUE; var max = Int.MIN_VALUE
+        f.forEachTexel { _, _, _, s ->
+            val r = countIn(s, A)
+            // R/G/B are equal within every texel (one noise value drives all three).
+            assertEquals(r, countIn(s, g), "R == G in a texel")
+            assertEquals(r, countIn(s, b), "R == B in a texel")
+            sum += r; if (r < min) min = r; if (r > max) max = r
+        }
+        // Reaches every texel (like the uniform seed), so the mean is over the whole grid.
+        val mean = sum.toDouble() / (res.toDouble() * res)
+        assertTrue(kotlin.math.abs(mean - level) <= 1.0, "mean-normalised to the base level (got $mean)")
+        // There IS variation...
+        assertTrue(max > min, "the field is not flat (min=$min max=$max)")
+        // ...but it's subtle: 2-D Perlin peaks near ±0.7, so no texel strays beyond ~amp of the base.
+        assertTrue(min >= level - 20 && max <= level + 20, "variation stays subtle (min=$min max=$max, base=$level)")
+    }
+
     @Test fun footprintCoversTexelsAndConserves() {
         val f = CytoMatterField.seededUniform(10)
         val t0 = f.totalAtoms()

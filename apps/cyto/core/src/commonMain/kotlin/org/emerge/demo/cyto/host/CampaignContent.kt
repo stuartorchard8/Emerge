@@ -360,6 +360,9 @@ object CampaignContent {
      *  is placed, instead of stalling when a narrow day-band sweeps off it. */
     private val EMPTY_WORLD = CytoScenario.DEFAULT.copy(
         name = "Genesis", founders = emptyList(), dayTicks = 4000L, nightTicks = 0L,
+        // A whisper of Perlin variation over the monomer soup, so the empty world reads as a living place with
+        // subtle regional richness rather than a flat grey — mean-normalised, so no spot is a better start.
+        matterNoise = 0.12f,
     )
 
     /** The hand-authored starter cell: **no genes**, a body of 2000 each of r/g/b (6000 atoms of biomass).
@@ -389,13 +392,14 @@ object CampaignContent {
         steps = listOf(
             // 1. Camera.
             Step(
-                text = "An empty world - nothing alive in it yet. {pan} to move around and {zoom} to zoom. Have a look.",
+                text = "Welcome to Cyto. This is an empty world with nothing alive in it - yet. {pan} to move around and {zoom} to zoom.",
                 gate = Gate.Did(PlayerAction.MovedCamera, "Pan or zoom the view"),
                 allow = LOOK,
             ),
             // 2. Place a cell.
             Step(
-                text = "Now tap an empty spot to place a cell. It's just a body of raw matter - it has no genes at all.",
+                text = "Now tap anywhere to place an empty cell - a small pocket that independently stores and processes chemicals",
+                detail = "If you look closely after you place it, you'll see it exchange its contents with the environment until it reaches equilibrium.",
                 gate = Gate.World("Place a cell", met = { it.cellCount >= 1 }),
                 allow = SPAWN,
                 world = WorldRun.Live,
