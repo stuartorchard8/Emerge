@@ -422,7 +422,7 @@ object CampaignContent {
             ),
             // 5. Watch it die.
             Step(
-                text = "Can you see the cell getting smaller? With no genes, a cell has no way to maintain itself. Its slowly degrades into the environment, rupturing when its biomass goes below 1000 units.",
+                text = "Can you see the cell getting smaller? With no genes, a cell has no way to maintain itself. It slowly degrades into the environment, rupturing when its biomass goes below 1000 units.",
                 gate = Gate.World("The cell dies", met = { it.cellCount == 0 }),
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
@@ -438,7 +438,7 @@ object CampaignContent {
             // player makes their organism's first real choice. Frozen so the cell waits, un-decaying, while
             // they author it. The gate fires once the genome holds a CONVERT gene (any chemical).
             Step(
-                text = "Tap [+ NEW GENE] to add an empty gene. Note that the new gene has no conditions, so it's always active, and it uses light as its energy source.",
+                text = "Tap [+ NEW GENE] to add an empty gene. Note that the new gene has no conditions, so it's always active. Also it uses light as its energy source.",
                 gate = Gate.World("Give the cell a new gene", met = { it.focused?.geneCount == 1 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
@@ -495,16 +495,15 @@ object CampaignContent {
         steps = listOf(
             // 1. Frame the dead end. Live, so the cell is visibly still growing while they read.
             Step(
-                text = "Your cell feeds itself now, and it will keep growing while the light holds. But it is still one cell. When it finally ruptures, that is the end of it - everything you built goes back into the soup.",
-                detail = "Growth alone is not survival. A lineage that cannot copy itself is only ever one bad night from gone.",
+                text = "Now your cell can sustain itself, but it is still only one cell. Its your new gene's only host, and if it ruptures then your new species will go extinct.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
             ),
             // 2. Add the DIVIDE gene. Frozen while they author.
             Step(
-                text = "Give it a way to carry on. Tap [+ NEW GENE] again, then set the new gene's action to (DIVIDE) - it splits the cell into two daughters, each taking half of the mother's biomass.",
-                gate = Gate.World("Add a DIVIDE gene", met = { it.focused?.hasMitosis == true }),
+                text = "Give it a way to carry on. Tap [+ NEW GENE] again, then set the new gene's action to (MITOSIS) - it divides the cell into two daughters, each taking half of the mother's biomass and cytoplasm.",
+                gate = Gate.World("Add a MITOSIS gene", met = { it.focused?.hasMitosis == true }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
