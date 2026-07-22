@@ -359,7 +359,7 @@ object CampaignContent {
      *  cover ~the whole torus, so the tutorial's light-powered CONVERT reliably has energy wherever the cell
      *  is placed, instead of stalling when a narrow day-band sweeps off it. */
     private val EMPTY_WORLD = CytoScenario.DEFAULT.copy(
-        name = "Genesis", founders = emptyList(), dayTicks = 4000L, nightTicks = 0L,
+        name = "Genesis", founders = emptyList(), dayTicks = 900L, nightTicks = 2700L,
         // A whisper of Perlin variation over the monomer soup, so the empty world reads as a living place with
         // subtle regional richness rather than a flat grey — mean-normalised, so no spot is a better start.
         matterNoise = 0.12f,
@@ -406,7 +406,7 @@ object CampaignContent {
             ),
             // 3.5 Inspect it.
             Step(
-                text = "Tap the chemistry section to view the detailed chemistry readouts. This cell is floating in a soup of three raw elements - REDOGEN, GREENUM and BLUEON, and started with all three contributing equally to its biomass.",
+                text = "Tap the chemistry section to view the detailed chemistry readouts. This cell is floating in a soup of three raw elements - REDOGEN, GREENUM and BLUEON. It also started with all three contributing equally to its biomass.",
                 gate = Gate.Did(PlayerAction.OpenedChemistryTable, "View the chemistry details"),
                 allow = LOOK,
             ),
@@ -426,7 +426,7 @@ object CampaignContent {
             ),
             // 6. Place YOUR cell — a fresh start, this one gets a gene.
             Step(
-                text = "That cell couldn't rebuild itself. Let's fix that. Tap an empty spot to place a fresh cell. Then select it and open its genome.",
+                text = "That cell couldn't rebuild itself. Let's fix that. Tap an empty spot to place a fresh cell. Then select it to view its genome.",
                 gate = Gate.World("Place and select a cell", met = { it.focused != null }),
                 allow = SPAWN,
                 world = WorldRun.Live,
@@ -456,7 +456,7 @@ object CampaignContent {
             // 8. Reaction + payoff. {chem} names the player's own pick (see CampaignDirector.copy), so the
             // coach speaks their choice back to them. Live + speed controls so they can watch it climb.
             Step(
-                text = "{chem} it is. Now watch: your cell locks {chem} into biomass, so its size stops falling and starts to climb. Your cell is now able to sustain itself indefinitely.",
+                text = "{chem} it is. Now watch: when exposed to light, your cell locks {chem} into biomass. Its size stops falling and starts to climb - your cell is now able to use sunlight and raw materials to sustain itself indefinitely.",
                 altText = "Nothing it is. Now watch: your cell locks nothing into biomass, so its size continues falling and the cell dies. Try again.",
                 detail = "See the white particle wandering around inside your cell? That's the convert gene you added. It's white because it's powered by light.",
                 gate = Gate.Next,
