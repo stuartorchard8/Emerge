@@ -416,7 +416,7 @@ class GeneEditor {
                 dragCard(
                     "cell-grab", cardH,
                     listOf(
-                        "CELL ${info.id}  ${info.type}" to 0xFFFFFFFFL,
+                        "CELL ${info.id}" to 0xFFFFFFFFL,
                         "BIOMASS ${info.totalBiomass}" to 0xBFD0E6FFL,
                     ),
                     onTap = { cellExpanded = true; sheetDragFrac = null },
@@ -461,7 +461,9 @@ class GeneEditor {
                 }
             }
         }
-        title("CELL ${info.id}  ${info.type}")
+        // Cell type is intentionally NOT shown: in the matter model behaviour is entirely genome-driven, so
+        // the type is a non-functional label that only distracts (front-and-centre in the campaign panel).
+        title("CELL ${info.id}")
         // Per-line key/values right-align their value, so the panel reads at any width (a single-line vitals
         // row overflowed the narrow wide-screen column).
         keyValue("SIZE", info.radius)
