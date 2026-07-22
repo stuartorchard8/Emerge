@@ -53,24 +53,34 @@ class CampaignDirector {
     var inputHints: InputHints = InputHints.MOUSE
 
     /** Expand a coach string's input tokens for this host. */
-    /** Expand a coach string: platform gesture tokens ([InputHints]) plus the dynamic **`{chem}`** token,
-     *  which resolves to the display name of the selected cell's chosen CONVERT chemical (its first CONVERT
-     *  gene's operand). That is what lets Genesis react to the player's "starter" pick — "{chem} it is." —
-     *  and falls back to "your chemical" before they've chosen one. Named the world's way (chapter aliases
-     *  over the built-in [SpeciesNames]); the whole coach renders upper-case, so its casing is irrelevant. */
+    /** Expand a coach string: platform gesture tokens ([InputHints]) plus two dynamic chemistry tokens that
+     *  let the coach speak the player's own choices back to them.
+     *
+     *  - **`{chem}`** - the selected cell's chosen CONVERT chemical (its first CONVERT gene's operand),
+     *    which is how Genesis reacts to the "starter" pick: "{chem} it is." Falls back to "nothing".
+     *  - **`{bond}`** - what the cell's DIVIDE gene synthesises for energy, for the chapter where the player
+     *    picks a reaction to power division. Falls back to "nothing".
+     *
+     *  Both are named the world's way (chapter aliases over the built-in [SpeciesNames]); the whole coach
+     *  renders upper-case, so their casing is irrelevant. [alt] is the "you skipped the choice" variant and
+     *  keys off `{chem}` alone, which is the only token Genesis authored it for. */
     private fun copy(s: String, alt: String? = null): String {
-        val expanded = inputHints.expand(s)
-        if (!expanded.contains("{chem}")) return expanded
-        val token = lastQuery?.focused?.convertChem
-        val named = if (token.isNullOrEmpty()) "nothing"
-            else SpeciesNames.name(token, chapter?.scenario?.aliases ?: emptyMap())
-        if (alt != null && token.isNullOrEmpty()) {
+        var expanded = inputHints.expand(s)
+        if (!expanded.contains("{chem}") && !expanded.contains("{bond}")) return expanded
+        val chem = lastQuery?.focused?.convertChem
+        if (alt != null && chem.isNullOrEmpty() && expanded.contains("{chem}")) {
             // Cheeky alt text for people who skip
-            val expandedAlt = inputHints.expand(alt)
-            return expandedAlt.replace("{chem}", named)
+            expanded = inputHints.expand(alt)
         }
-        return expanded.replace("{chem}", named)
+        return expanded
+            .replace("{chem}", named(chem))
+            .replace("{bond}", named(lastQuery?.focused?.mitosisProduct))
     }
+
+    /** A species token as the world names it, or "nothing" when it's absent/unset. */
+    private fun named(token: String?): String =
+        if (token.isNullOrEmpty()) "nothing"
+        else SpeciesNames.name(token, chapter?.scenario?.aliases ?: emptyMap())
 
     val activeChapter: Chapter? get() = chapter
     val currentStep: Step? get() = chapter?.steps?.getOrNull(stepIndex)

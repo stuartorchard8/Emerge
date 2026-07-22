@@ -466,9 +466,87 @@ object CampaignContent {
         ),
     )
 
+    /**
+     * Genesis part two: the cell can feed itself, so now it has to copy itself.
+     *
+     * The chapter is built around one obstacle the player has to be *told*, because the world will not
+     * explain it: division is a bulk cost, `biomass/4` energy in a **single tick**, and energy quanta are
+     * use-or-lose (`CytoBiologyCore`, the `ActionType.Mitosis` branch). Light trickles in far below that
+     * bar at any real divide size, so a Light-powered DIVIDE gene sits there doing nothing forever - it
+     * never accumulates toward the cost. The way through is synthesis: bonding two molecules releases one
+     * energy quantum per bond, and the world is full of loose monomers, so a bonding gene can mint the
+     * whole burst at once.
+     *
+     * Continuous with Genesis - no fresh world, no new founders. The player arrives holding the cell they
+     * authored, still converting the chemical they picked.
+     */
+    private fun chapterDivideScratch() = Chapter(
+        id = "ch01-divide",
+        act = 1,
+        title = "Divide",
+        blurb = "One cell that feeds itself is a dead end. Teach it to make another.",
+        scenario = EMPTY_WORLD,
+        startsFreshWorld = false,          // segue in place - this is the world Genesis left behind
+        spawnGenome = emptyList(),
+        spawnBiomass = STARTER_CELL_BIOMASS,
+        steps = listOf(
+            // 1. Frame the dead end. Live, so the cell is visibly still growing while they read.
+            Step(
+                text = "Your cell feeds itself now, and it will keep growing while the light holds. But it is still one cell. When it finally ruptures, that is the end of it - everything you built goes back into the soup.",
+                detail = "Growth alone is not survival. A lineage that cannot copy itself is only ever one bad night from gone.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+            // 2. Add the DIVIDE gene. Frozen while they author.
+            Step(
+                text = "Give it a way to carry on. Tap [+ NEW GENE] again, then set the new gene's action to (DIVIDE) - it splits the cell into two daughters, each taking half of the mother's biomass.",
+                gate = Gate.World("Add a DIVIDE gene", met = { it.focused?.hasMitosis == true }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            // 3. Let them watch it NOT work. This beat only lands if the world runs.
+            Step(
+                text = "Nothing happens. The gene is there, it is active, and still your cell will not divide.",
+                detail = "Splitting in two is not a nudge, it is one enormous shove: it costs a quarter of the cell's biomass in energy, and the whole bill falls due in a single moment. Energy cannot be saved up for it - whatever a cell makes this instant is gone the next.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+            // 4. The pivot: off Light, onto chemistry. Selecting BOND opens the reaction sheet straight away
+            // (GeneEditor.Pick.Bond), so switching the source and choosing the pair is one continuous move -
+            // hence one step, gated on a COMPLETE reaction (a product, not just a source type).
+            Step(
+                text = "Sunlight will never pay that bill. It arrives in a steady trickle, and this needs a lump sum. So use chemistry instead: change the DIVIDE gene's energy source from (LIGHT) to (BOND), then choose two chemicals to join together.",
+                detail = "Joining two molecules releases energy - one unit per bond made - and this world is a soup of loose atoms to join. Any pair works, so pick whichever you like.",
+                gate = Gate.World("Power DIVIDE by bonding", met = { !it.focused?.mitosisProduct.isNullOrEmpty() }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            // 5. Payoff. {bond} names the reaction they chose, the way {chem} named their starter element.
+            Step(
+                text = "{bond} it is. Every one your cell makes releases a unit of energy, and once it can make a quarter of its own biomass worth in one moment, it splits. Watch for it.",
+                altText = "Your gene has no reaction to run, so it makes no energy and the cell cannot divide. Go back and give it two chemicals to join.",
+                gate = Gate.World("Divide into two cells", met = { it.cellCount >= 2 }),
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+            // 6. Segue to the next chapter: the reaction that bought division is also filling the cell with
+            // something it has no use for.
+            Step(
+                text = "Two cells, from one. Both carry your genome, so both will do this again.",
+                detail = "Keep an eye on the {bond} piling up inside them, though. Your cells make it for the energy and then have no use for it, and it is taking up room they need.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+        ),
+    )
+
     /** Chapters that are launchable by id (agent harness / direct start) but deliberately kept OUT of the
-     *  main [CHAPTERS]/[ORDER] campaign flow while they're being built. */
-    val SCRATCH_CHAPTERS: List<Chapter> = listOf(chapterGenesisScratch())
+     *  main [CHAPTERS]/[ORDER] campaign flow while they're being built. Order matters: the director segues
+     *  from one to the next in place, so Genesis runs straight into Divide. */
+    val SCRATCH_CHAPTERS: List<Chapter> = listOf(chapterGenesisScratch(), chapterDivideScratch())
 
     /** The chapter list the **real game** surfaces (menu + director) while the campaign is being reworked:
      *  the WIP [SCRATCH_CHAPTERS] first (Genesis is the new opening), then the pre-inversion [CHAPTERS]. This
