@@ -837,8 +837,8 @@ class GeneEditor {
         }
     }
 
-    /** The operand picker: a kind list (Const/Chem/Conc/BIO/Touch/Nbrs) then the value editor for whichever
-     *  kind is selected — a number for Const, a species builder for Chem/Conc, nothing for the live readings. */
+    /** The operand picker: a kind list (Const/Chem/BIO/Touch/Nbrs) then the value editor for whichever
+     *  kind is selected — a number for Const, a species builder for Chem, nothing for the live readings. */
     private fun renderOperandSheet(b: UiBuilder, d: Gene, wide: Boolean) {
         val ci = pickClause
         val cl = d.condition.clauses.getOrNull(ci) ?: run { closePick(); return }
@@ -966,13 +966,13 @@ class GeneEditor {
         ActionType.Retain -> "SEAL A MOLECULE INSIDE THE CELL"
     }
 
-    /** One-line gloss of an operand kind, for the L4 operand picker. */
+    /** One-line gloss of an operand kind, for the L4 operand picker. Index-aligned with [operandKindLabels]
+     *  (Const/Chem/BIO/Touch/Nbrs) — keep them in lockstep when the operand set changes. */
     private fun operandKindBlurb(i: Int): String = when (i) {
         0 -> "A FIXED NUMBER"
         1 -> "COUNT OF A MOLECULE (BIOMASS + CYTO)"
-        2 -> "CONCENTRATION OF A MOLECULE"
-        3 -> "TOTAL BIOMASS"
-        4 -> "CELLS TOUCHING THIS ONE"
+        2 -> "TOTAL BIOMASS"
+        3 -> "CELLS TOUCHING THIS ONE"
         else -> "WELDED NEIGHBOURS"
     }
 
