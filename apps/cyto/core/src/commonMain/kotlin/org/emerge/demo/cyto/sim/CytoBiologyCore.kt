@@ -277,6 +277,7 @@ object CytoBiologyCore {
         return when (gene.action.type) {
             ActionType.Repair -> work._cachedHasDamage
             ActionType.Contract -> work._cachedCanContract
+            ActionType.None -> false   // the authoring blank does nothing — never runs, reads inactive
             else -> true
         }
     }
@@ -428,6 +429,7 @@ object CytoBiologyCore {
             // same as Convert's own substrate draw.
             ActionType.BreakBond -> {}
             ActionType.Lyse -> {} // No sub-tick cap — damage is capped by available biomass in the attack phase
+            ActionType.None -> {} // inert — isActive gates it out before here; branch kept for exhaustiveness
         }
         if (k <= 0) return
         // Apply: action-input consumption, then the synthesis that funded it, then the action's own output.
@@ -491,6 +493,7 @@ object CytoBiologyCore {
                     }
                 }
             }
+            ActionType.None -> {} // inert — gated out by isActive; branch kept for exhaustiveness
         }
     }
 

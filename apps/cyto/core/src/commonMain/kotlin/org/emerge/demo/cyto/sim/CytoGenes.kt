@@ -222,6 +222,13 @@ enum class ActionType {
      *  happens to metabolise it. Adds no metabolic reach. If the cell can't pay the 1 energy, the seal drops
      *  that tick and the species diffuses normally — memory costs energy. */
     Retain,
+    /** **No action** — a deliberately inert gene. The authoring blank: a freshly-created gene starts here so
+     *  it does nothing until the player picks a real action (mirrors an empty condition reading as ALWAYS).
+     *  The sim never runs it ([CytoBiologyCore.isActive] reports it inactive), it consumes nothing, and it
+     *  adds no metabolic reach. **Must stay the LAST entry**: [CytoMutation] draws a mutated action type from
+     *  `entries.size - 1` to exclude it (a mutation should never blank a gene), which relies on None being the
+     *  final ordinal. */
+    None,
 }
 
 /** A gene's action plus its (action-dependent) operands — single atoms for [ActionType.FormBond],

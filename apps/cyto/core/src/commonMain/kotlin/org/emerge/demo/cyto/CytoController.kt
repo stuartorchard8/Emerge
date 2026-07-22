@@ -587,6 +587,9 @@ class CytoController(
             ActionType.Convert -> (cyto[a.a] ?: 0) <= 0
             ActionType.Import -> (env[a.a] ?: 0) <= 0
             ActionType.Export -> (cyto[a.a] ?: 0) <= 0
+            // The authoring blank does nothing — flag it "blocked" so the gene reads inactive (grey), matching
+            // CytoBiologyCore.isActive, rather than glowing active while it accomplishes nothing.
+            ActionType.None -> true
             else -> false
         }
         val spans = mutableListOf<CellInfo.Span>()
@@ -752,6 +755,7 @@ class CytoController(
         ActionType.Repair -> "REPAIR"
         ActionType.Lyse -> "LYSE"
         ActionType.Retain -> "RETAIN ${a.a}"
+        ActionType.None -> "NOTHING"
     }
 
     /** One condition clause as `lhs<cmp>rhs` (e.g. `ab<800`). */

@@ -167,18 +167,22 @@ object GeneCodec {
         return EnergySource.FormBond(stripWild(untok(t[1])), stripWild(untok(t[2])))
     }
 
-    // Whole condition: clauses joined by ` & ` (an AND-conjunction).
-    private fun condition(c: GeneCondition): String = c.clauses.joinToString(" & ") { clause ->
-        "${operand(clause.lhs)} ${cmp(clause.cmp)} ${operand(clause.rhs)}"
-    }
+    // Whole condition: clauses joined by ` & ` (an AND-conjunction). An empty (unconditional) gate — which
+    // fires ALWAYS — has no clauses to print, so it round-trips as the keyword `Always`.
+    private fun condition(c: GeneCondition): String =
+        if (c.clauses.isEmpty()) "Always"
+        else c.clauses.joinToString(" & ") { clause ->
+            "${operand(clause.lhs)} ${cmp(clause.cmp)} ${operand(clause.rhs)}"
+        }
 
     private fun parseCondition(raw: String): GeneCondition {
+        // `Always` (or a bare empty part) = the unconditional gate — a gene with no clauses, vacuously true.
+        if (raw.trim().equals("Always", ignoreCase = true) || raw.isBlank()) return GeneCondition(emptyList())
         val clauses = raw.split("&").map { part ->
             val t = part.trim().split(WS)
             require(t.size == 3) { "clause needs '<operand> <>|<> <operand>': \"$part\"" }
             Clause(parseOperand(t[0]), cmp(t[1]), parseOperand(t[2]))
         }
-        require(clauses.isNotEmpty()) { "condition needs at least one clause: \"$raw\"" }
         return GeneCondition(clauses)
     }
 
@@ -230,6 +234,8 @@ object GeneCodec {
         ActionType.Repair -> "Repair"
         ActionType.Lyse -> "Lyse"
         ActionType.Retain -> "Retain ${tok(a.a)}"
+        // The authoring blank — an inert gene with no action chosen yet. Round-trips as the keyword `None`.
+        ActionType.None -> "None"
     }
 
     private fun parseAction(t: List<String>): GeneAction = when (t[0]) {
@@ -274,6 +280,9 @@ object GeneCodec {
         }
         "Repair" -> GeneAction(ActionType.Repair)
         "Lyse" -> GeneAction(ActionType.Lyse)
+        // The authoring blank (an inert, action-less gene). `_` is the empty-token spelling a mutation can
+        // also leave behind when it clears an operand-less action's tokens, so decode it here too.
+        "None", "_" -> GeneAction(ActionType.None)
         else -> throw IllegalArgumentException("unknown action: ${t[0]}")
     }
 

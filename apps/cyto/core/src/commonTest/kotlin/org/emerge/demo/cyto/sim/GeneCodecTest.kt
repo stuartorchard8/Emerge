@@ -61,6 +61,20 @@ class GeneCodecTest {
         assertEquals(genome, GeneCodec.parse(GeneCodec.serialize(genome)), "empty operand/species genome")
     }
 
+    /** An **unconditional** gate (no clauses — reads ALWAYS in the editor) and a fully-**blank** gene (no
+     *  condition, [ActionType.None] action) both round-trip: the empty gate serializes as `Always` and the
+     *  blank action as `None`, and each decodes back to the same structure. Guards the authoring blank the
+     *  in-game "+ NEW GENE" now creates through the save path. */
+    @Test
+    fun roundTripsUnconditionalAndBlankGene() {
+        val always = Gene(EnergySource.Light, GeneCondition(emptyList()), GeneAction(ActionType.Convert, "rg"))
+        assertEquals(listOf(always), GeneCodec.parse(body(listOf(always))), "unconditional (ALWAYS) gate")
+        assertTrue(body(listOf(always)).contains("Always"), "empty gate serializes as `Always`")
+
+        val blank = Gene(EnergySource.Light, GeneCondition(emptyList()), GeneAction(ActionType.None))
+        assertEquals(listOf(blank), GeneCodec.parse(body(listOf(blank))), "fully-blank authoring gene")
+    }
+
     /** Every action type round-trips — so a newly-added action can't silently fail to serialize (the
      *  KDoc promises every representable gene round-trips; this is the enum-exhaustive backstop). */
     @Test
