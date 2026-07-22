@@ -19,7 +19,7 @@ class SpeciesNamesTest {
         assertNotEquals(SpeciesNames.name("b"), SpeciesNames.name("bb"))
         assertEquals("Redreen", SpeciesNames.name("rg"))
         assertEquals("Greed", SpeciesNames.name("gr"))
-        assertEquals("Blub", SpeciesNames.name("bb"))
+        assertEquals("Bluble", SpeciesNames.name("bb"))
     }
 
     @Test fun allNineDuomersAreDistinct() {

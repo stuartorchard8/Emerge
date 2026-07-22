@@ -13,7 +13,7 @@ package org.emerge.demo.cyto.sim
  *        (`r` → Redogen, `g` → Greenum, `b` → Blueon);
  *      - the nine **duomers** get distinct portmanteaus ([DUOMERS]) — the point being that `rg` and `gr`
  *        (same atoms, indistinguishable by colour) read as *Redreen* vs *Greed*, and `b` vs `bb` as
- *        *Blueon* vs *Blub*, which the bare tokens and the pigment colour can't separate;
+ *        *Blueon* vs *Bluble*, which the bare tokens and the pigment colour can't separate;
  *      - **3+ length** molecules fall back to their raw token unless a genome alias overrides them.
  *
  * These are deliberately playful placeholders — cheap to rename, since nothing keys off them.

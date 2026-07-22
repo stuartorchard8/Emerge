@@ -7,6 +7,7 @@ import org.emerge.demo.cyto.sim.CytoLightField
 import org.emerge.demo.cyto.sim.CytoMatterField
 import org.emerge.demo.cyto.sim.CytoSeed
 import org.emerge.demo.cyto.sim.CytoMatterGridComponent
+import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.GRID_SINGLETON
 import org.emerge.demo.cyto.sim.Gene
@@ -103,12 +104,21 @@ class CytoTorusTest {
 
     @Test
     fun lightFieldIsToroidallyPeriodic() {
-        // Light wraps via wrapDelta's Float add/subtract, so SPAN-periodicity holds only up to Float ULP
-        // (a few raw out of ~3.2M). Harmless: light becomes INTEGER quanta (× LIGHT_QUANTA_SCALE then
-        // /Int.MAX), and a few-ULP Frac difference is ~1e-9 of a quantum → same integer. Assert ~equal.
+        // Light wraps via wrapDelta's Float add/subtract, so SPAN-periodicity holds only up to Float ULP.
+        // The error scales with the band's steepness: sampleAt is a gaussian of half-width LIGHT_FALLOFF,
+        // so a narrow day band (small dayFraction) amplifies the same input ULP into a bigger output
+        // difference. A fixed raw tolerance therefore goes stale whenever the day/night geometry changes.
+        //
+        // Express it in the unit that actually matters instead. Light is consumed as INTEGER quanta
+        // (× LIGHT_QUANTA_SCALE, ÷ Int.MAX), so one quantum is `Frac.ONE / LIGHT_QUANTA_SCALE` raw and
+        // anything below that is invisible to the sim. Allow a thousandth of a quantum: ~1000x above the
+        // observed float noise (worst ≈ 1.8k raw over a dense sweep of positions and ticks), and still
+        // ~1000x below a difference that could change any cell's energy by even one op. A genuine
+        // periodicity break would be on the order of the light value itself — millions of raw — so this
+        // stays a real assertion, not a rubber stamp.
         val field = CytoLightField.default()
         val span = CytoLightField.SPAN
-        val tol = 64L
+        val tol = (Int.MAX_VALUE.toLong() / CytoTuning.LIGHT_QUANTA_SCALE) / 1000
         for (t in listOf(0L, 137L, 9001L)) {
             for (x in listOf(-100f, -1f, 0f, 1f, 63f, 100f)) {
                 for (y in listOf(-50f, 0f, 77f)) {

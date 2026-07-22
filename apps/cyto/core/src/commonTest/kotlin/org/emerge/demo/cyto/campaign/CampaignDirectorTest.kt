@@ -24,6 +24,16 @@ class CampaignDirectorTest {
         paused = false, selectedGenome = null,
     )
 
+    /** A query whose selected cell has a division gene synthesising [mitosisProduct] for energy (null = no
+     *  division gene, or one still on Light; "" = switched to bonding but the reactants aren't both chosen)
+     *  — for the Divide chapter's gate + `{bond}` reaction copy. */
+    private fun mitosisQuery(mitosisProduct: String?) = CampaignQuery(
+        WorldStats(0L, 1, mapOf(CellType.Collector to 1), 100, emptySet(),
+            FocusedCell(CellType.Collector, 100, 2, emptyMap(),
+                hasMitosis = true, mitosisProduct = mitosisProduct)),
+        paused = false, selectedGenome = null,
+    )
+
     private fun chapter(vararg steps: Step) =
         Chapter("test", 1, "Test", "", CytoScenario.DEFAULT, steps.toList())
 
@@ -119,12 +129,29 @@ class CampaignDirectorTest {
     @Test fun chemTokenReflectsThePlayersConvertChoice() {
         val dir = CampaignDirector()
         dir.start(chapter(Step("{chem} it is.", Gate.Next)), CytoController())
-        // No CONVERT gene yet: the token falls back to a generic phrase.
+        // No CONVERT gene yet: the token falls back to "nothing", which the authored copy leans on - Genesis
+        // pairs it with an altText that reads "Nothing it is. Now watch: your cell locks nothing into
+        // biomass, so its size continues falling", i.e. the fallback is a deliberate joke at the expense of
+        // players who skip the choice, not a generic placeholder.
         dir.update(focusedQuery(null), emptySet())
-        assertEquals("your chemical it is.", dir.snapshot()?.text)
+        assertEquals("nothing it is.", dir.snapshot()?.text)
         // Once the player's cell converts 'r', the coach speaks their pick back by its display name.
         dir.update(focusedQuery("r"), emptySet())
         assertEquals("${SpeciesNames.name("r", emptyMap())} it is.", dir.snapshot()?.text)
+    }
+
+    @Test fun bondTokenReflectsTheReactionChosenToPowerDivision() {
+        val dir = CampaignDirector()
+        dir.start(chapter(Step("{bond} it is.", Gate.Next)), CytoController())
+        // Still on Light, so there is no reaction to name.
+        dir.update(mitosisQuery(null), emptySet())
+        assertEquals("nothing it is.", dir.snapshot()?.text)
+        // Switched to bonding, but with an operand missing it builds nothing - still no reaction to name.
+        dir.update(mitosisQuery(""), emptySet())
+        assertEquals("nothing it is.", dir.snapshot()?.text)
+        // A complete reaction: the coach names its product the way the world names it.
+        dir.update(mitosisQuery("rg"), emptySet())
+        assertEquals("${SpeciesNames.name("rg", emptyMap())} it is.", dir.snapshot()?.text)
     }
 
     @Test fun convertGateFiresOnceTheCellHasAConvertGene() {
