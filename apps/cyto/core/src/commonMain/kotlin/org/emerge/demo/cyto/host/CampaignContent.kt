@@ -349,6 +349,79 @@ object CampaignContent {
 
     val ORDER: List<String> = CHAPTERS.map { it.id }
 
+    // ── Campaign rework (WIP) — a standalone scratch chapter, NOT in ORDER yet ────────────────────────────
+    // The new campaign starts far more basic than the old autotroph opening: an empty world the player seeds
+    // by hand, one primitive at a time. Kept off the main ORDER so it can be iterated in isolation (launch it
+    // directly: `campaign ch00-genesis` in the agent harness) without disturbing the pre-inversion ch1-10.
+
+    /** An empty world — no founders. The player places the first cell themselves. */
+    private val EMPTY_WORLD = CytoScenario.DEFAULT.copy(name = "Genesis", founders = emptyList())
+
+    /** The hand-authored starter cell: **no genes**, a body of 2000 each of r/g/b (6000 atoms of biomass).
+     *  With no maintenance gene it can only decay, so it's the vehicle for teaching why a cell needs genes. */
+    private val STARTER_CELL_BIOMASS = mapOf("r" to 2000, "g" to 2000, "b" to 2000)
+
+    /** Step 5 mask: watch + the SLOW/PAUSE/FAST controls, so the player can fast-forward the (slow) death. */
+    private val WATCH_DEATH = ControlMask.of(
+        Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Menu, Control.Speed,
+    )
+
+    private fun chapterGenesisScratch() = Chapter(
+        id = "ch00-genesis",
+        act = 1,
+        title = "Genesis",
+        blurb = "An empty world. Place a cell, look it over, and watch it live and die.",
+        scenario = EMPTY_WORLD,
+        startsFreshWorld = true,
+        spawnGenome = emptyList(),                 // the placed cell has NO genes
+        spawnBiomass = STARTER_CELL_BIOMASS,       // 2000 each of r/g/b = 6000 biomass
+        steps = listOf(
+            // 1. Camera.
+            Step(
+                text = "An empty world - nothing alive in it yet. {pan} to move around and {zoom} to zoom. Have a look.",
+                gate = Gate.Did(PlayerAction.MovedCamera, "Pan or zoom the view"),
+                allow = LOOK,
+            ),
+            // 2. Place a cell.
+            Step(
+                text = "Now tap an empty spot to place a cell. It's just a body of raw matter - it has no genes at all.",
+                gate = Gate.World("Place a cell", met = { it.cellCount >= 1 }),
+                allow = SPAWN,
+                world = WorldRun.Live,
+            ),
+            // 3. Inspect it.
+            Step(
+                text = "Tap the cell to select it. Its panel shows its size, its biomass, and an empty genome.",
+                gate = Gate.Did(PlayerAction.SelectedCell, "Select the cell"),
+                allow = LOOK,
+            ),
+            // 4. Move it.
+            Step(
+                text = "Drag the cell around - you can nudge cells wherever you like.",
+                gate = Gate.Did(PlayerAction.MovedCell, "Drag the cell"),
+                allow = LOOK,
+                world = WorldRun.Live,
+            ),
+            // 5. Watch it die.
+            Step(
+                text = "With no genes, the cell has no way to maintain itself. Watch its biomass fall as it slowly breaks down - and dies.",
+                gate = Gate.World("The cell dies", met = { it.cellCount == 0 }),
+                allow = WATCH_DEATH,
+                world = WorldRun.Live,
+            ),
+            // 6. Segue to the first gene (built next increment).
+            Step(
+                text = "It needed a way to rebuild itself. Next: place another cell and give it a gene that turns matter into biomass. (Coming soon.)",
+                gate = Gate.Next,
+                allow = LOOK,
+            ),
+        ),
+    )
+
+    /** Chapters that are launchable by id (agent harness / direct start) but deliberately kept OUT of the
+     *  main [CHAPTERS]/[ORDER] campaign flow while they're being built. */
+    val SCRATCH_CHAPTERS: List<Chapter> = listOf(chapterGenesisScratch())
+
     /** Distinct characters in the chapters' player-facing copy that the bitmap font can't render (would
      *  show as `?`). Empty = all copy is safe. The harness runs this as a guard so a bad glyph is caught
      *  headlessly rather than only spotted in the GL window. */

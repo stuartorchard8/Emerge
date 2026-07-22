@@ -175,8 +175,8 @@ object CytoAgentHarness {
                     println("[agent] loaded $path, tick ${controller.tick}, cells ${controller.worldStats().cellCount}")
                 }
                 "campaign" -> {
-                    val ch = CampaignContent.CHAPTERS.firstOrNull { it.id == t.getOrNull(1) }
-                        ?: error("unknown chapter '${t.getOrNull(1)}' (have ${CampaignContent.ORDER})")
+                    val ch = (CampaignContent.CHAPTERS + CampaignContent.SCRATCH_CHAPTERS).firstOrNull { it.id == t.getOrNull(1) }
+                        ?: error("unknown chapter '${t.getOrNull(1)}' (have ${CampaignContent.ORDER} + ${CampaignContent.SCRATCH_CHAPTERS.map { it.id }})")
                     controller.newGame(ch.scenario); director.start(ch, controller); renderer.resetView()
                 }
                 "genome" -> {
@@ -230,7 +230,7 @@ object CytoAgentHarness {
                     val id = EntityId(t[1].toInt()); val (x, y) = world(t[2].toFloat(), t[3].toFloat())
                     val ticks = t.getOrNull(4)?.toIntOrNull() ?: error("${t[0]} <id> <u> <v> <ticks> (explicit duration)")
                     repeat(ticks.coerceAtLeast(1)) { controller.grab(id, x, y, sticky); controller.stepOnce() }
-                    controller.releaseGrab(); controller.publish(); sync()
+                    controller.releaseGrab(); pendingActions.add(PlayerAction.MovedCell); controller.publish(); sync()
                 }
                 "save" -> {
                     val path = line.removePrefix("save").trim().trim('"')
@@ -323,12 +323,25 @@ object CytoAgentHarness {
 
         private fun sync() {
             if (!director.active) { pendingActions.clear(); return }
+            applyChapterSpawn()
             val q = CampaignQuery(controller.worldStats(), paused = false, selectedGenome = null)
             director.update(q, pendingActions.toSet()); pendingActions.clear()
         }
 
+        /** Mirror the host: while the current step permits world-spawning, brush + biomass follow the chapter
+         *  so a `tap`/`spawn` drops the chapter's authored cell (e.g. the gene-less 2000-r/g/b starter). Called
+         *  in [sync] and right before a spawn action, since a `next` advances the step after its own sync. */
+        private fun applyChapterSpawn() {
+            val ch = director.activeChapter ?: return
+            if (director.controlMask.allows(Control.Spawn)) {
+                controller.brushGenome = ch.spawnGenome
+                controller.spawnBiomass = ch.spawnBiomass
+            }
+        }
+
         private fun tapWorld(x: Float, y: Float) {
             controller.cellAt(x, y)?.let { controller.focus(it); pendingActions.add(PlayerAction.SelectedCell) }
+            applyChapterSpawn()   // the current step may spawn the chapter's authored cell (brush + biomass)
             controller.tap(x, y, TouchMode.Base, CellType.Stem); advance(1)
         }
 
