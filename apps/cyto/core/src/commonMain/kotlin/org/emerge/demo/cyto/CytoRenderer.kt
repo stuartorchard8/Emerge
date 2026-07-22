@@ -225,9 +225,21 @@ class CytoRenderer {
      *  switches which species it's building/shedding cross-fades. Evicted alongside the intensity maps. */
     private val buildColor = HashMap<Int, FloatArray>()
     private val decayColor = HashMap<Int, FloatArray>()
-    /** Global pulse phase [0,1), advanced once per rendered frame — the expansion clock for the build
-     *  glow (per-cell it's offset so cells don't pulse in lockstep). Frame-driven, not tick-driven. */
+    /** Global pulse phase [0,1) — the expansion clock for the build glow (per-cell it's offset so cells
+     *  don't pulse in lockstep). Advanced by [animDt], so it stops dead when the world is paused. */
     private var pulsePhase = 0f
+
+    // ── Perceived-time clock ────────────────────────────────────────────────────────────────────
+    // Every cosmetic animation in here (pulses, gene drift, particle life, the intensity/colour eases)
+    // used to advance once per *rendered frame*. That made the world look alive while it was paused —
+    // specks still wandering, discs still breathing — so "paused" stopped reading as paused. They now
+    // advance by [animDt]: how much SIM time passed since the last draw, measured in units of "one frame
+    // at realtime speed", so the tuning constants below keep their old meaning at 64 TPS / 60 FPS, the
+    // visuals speed up and slow down with the speed control, and they freeze when the sim does.
+    /** frame.tick at the previous draw; negative until the first frame. */
+    private var lastAnimTick = -1L
+    /** Sim time elapsed since the last draw, in nominal frames. 0 while paused. */
+    private var animDt = 0f
 
     // ── Gene particles ──────────────────────────────────────────────────────────────────────────
     /** Per-cell eased gene brightness (one entry per gene), keyed by EntityId.value and evicted like
@@ -235,8 +247,8 @@ class CytoRenderer {
      *  [drawGeneParticles]). */
     private val geneBright = HashMap<Int, FloatArray>()
     private val geneSeen = HashSet<Int>()
-    /** Drift clock for the gene specks, advanced once per rendered frame (frame-driven, like [pulsePhase],
-     *  so the wander is smooth regardless of tick rate — and keeps drifting while paused). */
+    /** Drift clock for the gene specks, advanced by [animDt] like [pulsePhase] — the wander tracks the
+     *  world's speed and stops with it. */
     private var geneTime = 0f
 
     // ── ENV↔CYT transfer particles (flows 1 & 2) ────────────────────────────────────────────────
@@ -384,6 +396,7 @@ class CytoRenderer {
     }
 
     fun draw(frame: CytoFrame) {
+        advanceAnimClock(frame.tick)
         applyFollow()
         computeProjection()
 
@@ -399,8 +412,8 @@ class CytoRenderer {
         val transforms = components.getTable<TransformComponent>()
         val colliders = components.getTable<ColliderComponent>()
 
-        // One pulse-clock tick per rendered frame, shared by the metabolic fields (flows 3 & 4).
-        pulsePhase += BUILD_PULSE_SPEED
+        // Advance the pulse clock shared by the metabolic fields (flows 3 & 4).
+        pulsePhase += BUILD_PULSE_SPEED * animDt
         if (pulsePhase >= 1f) pulsePhase -= 1f
 
         GPU.enableBlend()
@@ -465,7 +478,7 @@ class CytoRenderer {
             // then stage a soft disc if it's building enough to see. Keyed by EntityId; evicted below.
             val eid = id.value
             val buildTarget = buildTargetFor(cell)
-            val inten = ((buildIntensity[eid] ?: 0f) + (buildTarget - (buildIntensity[eid] ?: 0f)) * BUILD_EASE)
+            val inten = easeToward(buildIntensity[eid] ?: 0f, buildTarget, BUILD_EASE)
             buildIntensity[eid] = inten
             buildSeen.add(eid)
             // Drift the disc hue toward the species currently being built (only while there IS a transfer;
@@ -621,7 +634,7 @@ class CytoRenderer {
         transforms: ComponentTable<TransformComponent>,
         colliders: ComponentTable<ColliderComponent>,
     ) {
-        geneTime += GENE_TIME_STEP
+        geneTime += GENE_TIME_STEP * animDt
         geneSeen.clear()
         val pxPerUnit = resH / viewHeight
         // Half-extents of the view in logical units, for the off-screen test.
@@ -660,7 +673,7 @@ class CytoRenderer {
                 if (inst >= GENE_MAX) break
                 val active = i < 64 && (cell.activeMask ushr i) and 1L == 1L
                 val target = if (active) 1f else GENE_INACTIVE_VALUE
-                bright[i] += (target - bright[i]) * GENE_EASE
+                bright[i] = easeToward(bright[i], target, GENE_EASE)
                 val v = bright[i]
 
                 val h = hash32(id.value * 31 + i)
@@ -865,7 +878,7 @@ class CytoRenderer {
         var w = 0
         var inst = 0
         for (i in 0 until partCount) {
-            val prog = partProg[i] + PARTICLE_PROG_SPEED
+            val prog = partProg[i] + PARTICLE_PROG_SPEED * animDt
             if (prog >= 1f) continue                          // expired → drop (not compacted forward)
             // Refresh the anchor cell's centre so the speck rides the moving cell; if the cell died, the
             // base stays frozen at its last known centre (the speck ages out in place).
@@ -950,9 +963,9 @@ class CytoRenderer {
             val prev = decayIntensity[eid] ?: 0f
             val inten: Float
             if (prev < goal * DECAY_ATTACK_REACHED) {
-                inten = prev + (goal - prev) * BUILD_EASE      // attack: soft eased rise
+                inten = easeToward(prev, goal, BUILD_EASE)     // attack: soft eased rise
             } else {
-                inten = prev * DECAY_COOL                      // release: cool down
+                inten = easeToward(prev, 0f, 1f - DECAY_COOL)  // release: cool down toward zero
                 goal = 0f                                      // consume the latch (a new shed re-arms it)
             }
             decayGoal[eid] = goal
@@ -1033,15 +1046,37 @@ class CytoRenderer {
      *  [target] for the caller to use). First sighting snaps to [target] so a cell's first pulse shows its
      *  true hue rather than drifting up from an arbitrary default. Call only when there IS a transfer this
      *  tick; while cooling down (no transfer) the caller holds the last colour instead of fading to grey. */
+    /**
+     * Refresh [animDt] from the sim clock: sim ticks since the last draw, expressed in nominal frames
+     * (one nominal frame = [REALTIME_TPS] / [NOMINAL_FPS] ticks), so every per-frame constant in here
+     * keeps the value it was tuned at while becoming a rate in *perceived* time.
+     *
+     * Paused (or a repeated snapshot between ticks) gives 0 — the visuals hold still, which is the point.
+     * A fast world gives >1, but capped at [ANIM_DT_MAX]: past a few multiples the pulses alias into
+     * strobing and the specks smear, and the reading "everything is faster" is already delivered. The
+     * first-ever frame also gives 0 (there is no previous tick to difference against), and a rewind —
+     * loading a save, or a chapter restarting the world — is clamped to 0 rather than run backwards.
+     */
+    private fun advanceAnimClock(tick: Long) {
+        val elapsed = if (lastAnimTick < 0L) 0L else (tick - lastAnimTick).coerceAtLeast(0L)
+        lastAnimTick = tick
+        animDt = (elapsed / TICKS_PER_NOMINAL_FRAME).coerceAtMost(ANIM_DT_MAX)
+    }
+
+    /** Ease [cur] toward [target] at per-nominal-frame [rate], scaled to perceived time. The coerce keeps
+     *  a long frame (or a fast world) from overshooting past the target into oscillation. */
+    private fun easeToward(cur: Float, target: Float, rate: Float): Float =
+        cur + (target - cur) * (rate * animDt).coerceAtMost(1f)
+
     private fun easeFlowColor(store: HashMap<Int, FloatArray>, eid: Int, target: FloatArray, ease: Float) {
         val c = store[eid]
         if (c == null) {
             store[eid] = floatArrayOf(target[0], target[1], target[2])
             return
         }
-        c[0] += (target[0] - c[0]) * ease
-        c[1] += (target[1] - c[1]) * ease
-        c[2] += (target[2] - c[2]) * ease
+        c[0] = easeToward(c[0], target[0], ease)
+        c[1] = easeToward(c[1], target[1], ease)
+        c[2] = easeToward(c[2], target[2], ease)
         target[0] = c[0]; target[1] = c[1]; target[2] = c[2]
     }
 
@@ -1248,6 +1283,17 @@ class CytoRenderer {
         // Leaf counts scale with area; normalise by the finest leaf size + the seed density so a full
         // base-density leaf reads as white (1,1,1) regardless of how merged it is.
         const val MATTER_REF_DENSITY = CytoSeed.MATTER_UNIFORM_LEVEL.toDouble()*4.0
+
+        // ── Perceived-time clock (see [advanceAnimClock]) ──
+        // Nominal display rate the per-frame constants below were tuned against (vsync on Stu's machine).
+        const val NOMINAL_FPS = 60f
+        // Sim ticks in one nominal frame at realtime speed. CytoController.STEP is the sim's seconds-per-tick,
+        // so 1/STEP is its realtime rate (64 TPS) — derived rather than repeated so the two can't drift apart.
+        const val TICKS_PER_NOMINAL_FRAME = 1f / CytoController.STEP / NOMINAL_FPS
+        // Ceiling on one frame's animation advance, in nominal frames. The speed control reaches thousands of
+        // TPS; unclamped, a frame would advance the pulse clock dozens of steps and read as strobing rather
+        // than as fast. 6 ⇒ visuals top out at ~6x realtime while the sim keeps climbing.
+        const val ANIM_DT_MAX = 6f
 
         // ── Flow 3 (CYT→BIO "building") tuning — iterate via the agent harness. ──
         const val BUILD_MAX = CircleShader.MAX_INSTANCES
