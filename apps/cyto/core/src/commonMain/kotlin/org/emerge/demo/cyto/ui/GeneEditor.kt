@@ -69,6 +69,16 @@ class GeneEditor {
             GeneCondition(emptyList()),
             GeneAction(ActionType.None),
         )
+
+        /** What an action's chemical slot reads when nothing is picked yet. Deliberately NOT "NOTHING" — that
+         *  is the label of the blank *action* ([ActionType.None]); this is a blank *target*. */
+        const val NO_SPECIES = "NONE"
+
+        /** Actions whose blocking is really their chemical's: they name a molecule, and it is that molecule
+         *  being unset or absent that stops them — the verb itself never blocks (see [geneTokenCard]). */
+        val OPERAND_ACTIONS = setOf(
+            ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain, ActionType.BreakBond,
+        )
     }
 
     private var editingId: EntityId? = null
@@ -1187,9 +1197,14 @@ class GeneEditor {
         lines.add(srcLine)
 
         // DO: action Menu, its operand token(s), and efficiency (non-Mitosis).
+        // An action is never blocked by *itself* — CONVERT has no biomass ceiling, IMPORT no import quota.
+        // What blocks it is always the chemical it names: unset, or absent from the cytoplasm/environment.
+        // So the orange lands on the operand token, and only falls back to the verb for actions that have no
+        // operand to carry it (NOTHING, whose whole point is that it is unset).
         val actKey = "$i:act"
+        val hasOperandTok = gene.action.type in OPERAND_ACTIONS
         val actLine = ArrayList<UiTok>()
-        actLine.add(UiTok.Menu(actionTypeLabel(gene.action.type), ctlIf(inputBlocked), actionChoices.map { actionTypeLabel(it) }, openMenu == actKey,
+        actLine.add(UiTok.Menu(actionTypeLabel(gene.action.type), ctlIf(inputBlocked && !hasOperandTok), actionChoices.map { actionTypeLabel(it) }, openMenu == actKey,
             onToggle = { openMenu = if (openMenu == actKey) null else actKey },
             onPick = { idx ->
                 val t = actionChoices[idx]; val m = t == ActionType.Mitosis
@@ -1199,12 +1214,12 @@ class GeneEditor {
         when (gene.action.type) {
             ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain -> {
                 actLine.add(UiTok.Text(" ", grey))
-                actLine.add(UiTok.Toggle(sp(gene.action.a).ifEmpty { "NOTHING" }, ctl) { openInlinePick(controller, i, Pick.SpeciesA) })
+                actLine.add(UiTok.Toggle(sp(gene.action.a).ifEmpty { NO_SPECIES }, ctlIf(inputBlocked)) { openInlinePick(controller, i, Pick.SpeciesA) })
             }
             // One control for the whole reaction, exactly like the BOND source row above.
             ActionType.BreakBond -> {
                 actLine.add(UiTok.Text(" ", grey))
-                actLine.add(UiTok.Toggle(breakLabel(gene.action), ctl) { openInlinePick(controller, i, Pick.Break) })
+                actLine.add(UiTok.Toggle(breakLabel(gene.action), ctlIf(inputBlocked)) { openInlinePick(controller, i, Pick.Break) })
             }
             else -> {}
         }
@@ -1323,10 +1338,20 @@ class GeneEditor {
             val energyBlocked = spans.getOrNull(parenIdx + 1)?.blocking == true
             val inputBlocked = spans[0].blocking
             out.add(listOf(sourceProse(gene.source) to (if (energyBlocked) ORANGE else GREY)))
-            val (actionMain, mods) = actionProse(gene.action)
+            val (verb, operand, suffix, mods) = actionProse(gene.action)
+            // The verb never blocks on its own (no biomass ceiling, no import quota) — only the chemical it
+            // names does, so the orange goes on the operand and falls back to the verb when there is none.
+            val operandBlocked = inputBlocked && operand.isNotEmpty()
             // Efficiency is always shown as a token (even e0) for actions that have one — Mitosis has none.
-            val actionText = actionMain + if (gene.action.type != ActionType.Mitosis) " e${gene.efficiency}" else ""
-            out.add(listOf(actionText to (if (inputBlocked) ORANGE else null)))
+            val eff = if (gene.action.type != ActionType.Mitosis) " e${gene.efficiency}" else ""
+            out.add(
+                listOfNotNull(
+                    verb to (if (inputBlocked && !operandBlocked) ORANGE else null),
+                    if (operand.isEmpty()) null else " $operand" to (if (operandBlocked) ORANGE else null),
+                    if (suffix.isEmpty()) null else suffix to GREY,
+                    if (eff.isEmpty()) null else eff to null,
+                )
+            )
             for (m in mods) out.add(listOf<Pair<String, Long?>>(" $m" to GREY))
             lines = out
         }
@@ -1344,19 +1369,19 @@ class GeneEditor {
     /** The action as a main line plus any modifier lines (the caller indents the modifiers). Only Mitosis
      *  carries modifiers — the morphogen it keeps in cell 1 / hands to cell 2, and a sever. (Both offspring
      *  are technically daughters; "cell 1" is the retaining side, "cell 2" the split-off side.) */
-    private fun actionProse(a: GeneAction): Pair<String, List<String>> {
-        val av = sp(a.a); val bv = sp(a.b)
+    private fun actionProse(a: GeneAction): ActionProse {
+        val av = sp(a.a).ifEmpty { NO_SPECIES }; val bv = sp(a.b)
         return when (a.type) {
-            ActionType.Import -> "IMPORT $av" to emptyList()
-            ActionType.Export -> "EXPORT $av" to emptyList()
+            ActionType.Import -> ActionProse("IMPORT", av)
+            ActionType.Export -> ActionProse("EXPORT", av)
             // The mirror of [sourceProse]'s BOND line: name the molecule split, its two fragments in parens.
-            ActionType.BreakBond -> "BREAK ${breakLabel(a)}" to emptyList()
-            ActionType.Convert -> "CONVERT $av TO MASS" to emptyList()
-            ActionType.Contract -> "CONTRACT" to emptyList()
-            ActionType.Repair -> "REPAIR WELDS" to emptyList()
-            ActionType.Lyse -> "LYSE" to emptyList()
-            ActionType.Retain -> "RETAIN $av" to emptyList()
-            ActionType.None -> "NOTHING" to emptyList()
+            ActionType.BreakBond -> ActionProse("BREAK", breakLabel(a))
+            ActionType.Convert -> ActionProse("CONVERT", av, " TO MASS")
+            ActionType.Contract -> ActionProse("CONTRACT")
+            ActionType.Repair -> ActionProse("REPAIR", "", " WELDS")
+            ActionType.Lyse -> ActionProse("LYSE")
+            ActionType.Retain -> ActionProse("RETAIN", av)
+            ActionType.None -> ActionProse("NOTHING")
             ActionType.Mitosis -> {
                 // Every modifier slot is ALWAYS shown, with default wording when unset, so each is a token
                 // to click (UI_REDESIGN.md §8a): a bare divide reads DIVIDE / ALONG NO GRADIENT / RETAINING
@@ -1366,10 +1391,20 @@ class GeneEditor {
                 val keepLine = if (a.a.isEmpty()) "RETAINING NOTHING"
                     else if (a.morphogenToMother) "RETAINING $av IN CELL 1" else "GIVING $av TO CELL 2"
                 val severLine = if (a.rejectMother) "SEVERING CELL 2 FREE" else "AND STICK"
-                "DIVIDE" to listOf(axisLine, keepLine, severLine)
+                ActionProse("DIVIDE", mods = listOf(axisLine, keepLine, severLine))
             }
         }
     }
+
+    /** The action line split into its parts so the read card can colour them independently: the [verb] (which
+     *  never blocks on its own), the chemical [operand] it targets (which is what actually blocks it), a grey
+     *  [suffix] that just completes the sentence, and any [mods] the caller indents beneath. */
+    private data class ActionProse(
+        val verb: String,
+        val operand: String = "",
+        val suffix: String = "",
+        val mods: List<String> = emptyList(),
+    )
 
     /** A dark tint of a group's [color] (40% brightness, full alpha) for its collapsible header background. */
     private fun groupHeaderBg(color: Long): Long {
