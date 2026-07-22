@@ -423,9 +423,14 @@ class CytoController(
                     }
                 }
                 val convertChem = c.genome.firstOrNull { it.action.type == ActionType.Convert }?.action?.a
+                val mitosisGene = c.genome.firstOrNull { it.action.type == ActionType.Mitosis }
+                // Light-powered division reads as "not chemistry-powered yet" (null), not as a half-done
+                // reaction — the chapter's job is to move the gene off Light entirely.
+                val mitosisProduct = (mitosisGene?.source as? EnergySource.FormBond)?.product
                 FocusedCell(
                     c.type, totalBiomass(c.biomass), c.genome.size, c.cytoplasm,
                     divideWelds, contractOnChem, contractOnMarked, convertChem,
+                    hasMitosis = mitosisGene != null, mitosisProduct = mitosisProduct,
                 )
             }
         }
