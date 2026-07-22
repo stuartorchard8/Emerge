@@ -100,13 +100,13 @@ object CytoSceneView {
 
         // Front-end shell (title / new / custom / about). Boot into the menu with the sim paused behind it.
         val menu = CytoMenu()
-        menu.campaignChapters = CampaignContent.CHAPTERS
+        menu.campaignChapters = CampaignContent.PLAYABLE_CHAPTERS   // includes the WIP scratch chapters
         menu.campaignUnlocked = { campaignProgress.isUnlocked(it, CampaignContent.ORDER) }
         menu.campaignCompleted = { campaignProgress.isCompleted(it) }
         // The campaign is one continuous world: the director walks the chapter list itself, seguing from one
         // chapter into the next in the same world (rebuilding only at a startsFreshWorld chapter). The host
         // just persists progress, rebuilds the world when asked, and returns to the menu when the whole arc ends.
-        director.chapters = CampaignContent.CHAPTERS
+        director.chapters = CampaignContent.PLAYABLE_CHAPTERS   // scratch chapters segue into the main flow
         director.onChapterCompleted = { id -> campaignProgress.complete(id) }
         director.onWorldReset = { ch -> controller.newGame(ch.scenario); renderer.resetView() }
         director.onCampaignComplete = { menu.openCampaign(); simDriver.setPaused(true) }

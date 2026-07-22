@@ -422,6 +422,13 @@ object CampaignContent {
      *  main [CHAPTERS]/[ORDER] campaign flow while they're being built. */
     val SCRATCH_CHAPTERS: List<Chapter> = listOf(chapterGenesisScratch())
 
+    /** The chapter list the **real game** surfaces (menu + director) while the campaign is being reworked:
+     *  the WIP [SCRATCH_CHAPTERS] first (Genesis is the new opening), then the pre-inversion [CHAPTERS]. This
+     *  is what makes a scratch chapter reachable/testable in the actual menu, not just the agent harness.
+     *  Unlock still keys off [ORDER] (the main flow) — a scratch id isn't in ORDER, so [CampaignProgress.isUnlocked]
+     *  treats it as always-unlocked, which is exactly what a WIP chapter wants. */
+    val PLAYABLE_CHAPTERS: List<Chapter> = SCRATCH_CHAPTERS + CHAPTERS
+
     /** Distinct characters in the chapters' player-facing copy that the bitmap font can't render (would
      *  show as `?`). Empty = all copy is safe. The harness runs this as a guard so a bad glyph is caught
      *  headlessly rather than only spotted in the GL window. */
