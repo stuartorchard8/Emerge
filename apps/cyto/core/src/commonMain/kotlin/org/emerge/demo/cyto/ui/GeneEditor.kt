@@ -662,8 +662,7 @@ class GeneEditor {
             Pick.Action -> pickSheet(b, "DO WHAT?", wide) {
                 for ((i, t) in actionChoices.withIndex()) {
                     listRow(actionTypeLabel(t), actionBlurb(t), selected = t == d.action.type) {
-                        val mitosis = t == ActionType.Mitosis
-                        draft = d.copy(action = d.action.copy(type = t, morphogenToMother = d.action.morphogenToMother && mitosis, divideAcross = d.action.divideAcross && mitosis, rejectMother = d.action.rejectMother && mitosis))
+                        draft = d.copy(action = retype(d.action, t))
                         closePick()
                     }
                     if (i < actionChoices.lastIndex) gap(4f)
@@ -1207,8 +1206,8 @@ class GeneEditor {
         actLine.add(UiTok.Menu(actionTypeLabel(gene.action.type), ctlIf(inputBlocked && !hasOperandTok), actionChoices.map { actionTypeLabel(it) }, openMenu == actKey,
             onToggle = { openMenu = if (openMenu == actKey) null else actKey },
             onPick = { idx ->
-                val t = actionChoices[idx]; val m = t == ActionType.Mitosis
-                inlineEdit(controller, i) { it.copy(action = it.action.copy(type = t, morphogenToMother = it.action.morphogenToMother && m, divideAcross = it.action.divideAcross && m, rejectMother = it.action.rejectMother && m)) }
+                val t = actionChoices[idx]
+                inlineEdit(controller, i) { it.copy(action = retype(it.action, t)) }
                 openMenu = null
             }))
         when (gene.action.type) {
@@ -1364,6 +1363,26 @@ class GeneEditor {
     private fun sourceProse(s: EnergySource): String = when (s) {
         EnergySource.Light -> "USE LIGHT"
         is EnergySource.FormBond -> "BOND ${synthesisLabel(s)}"
+    }
+
+    /**
+     * Switch an action to type [t], keeping only the modifiers that still mean anything (they are all
+     * Mitosis-only, so a move away from Mitosis clears them).
+     *
+     * Switching **to** Mitosis defaults to SEVER rather than STICK. A player picking DIVIDE without having
+     * thought about welds — which is exactly the campaign's case, and near enough the only time it happens —
+     * means "make another one of these", and a daughter that stays welded to its mother reads as a growing
+     * blob, not as reproduction. Re-picking Mitosis on a gene that already has it keeps whatever the player
+     * chose.
+     */
+    private fun retype(a: GeneAction, t: ActionType): GeneAction {
+        val m = t == ActionType.Mitosis
+        return a.copy(
+            type = t,
+            morphogenToMother = a.morphogenToMother && m,
+            divideAcross = a.divideAcross && m,
+            rejectMother = if (!m) false else if (a.type == ActionType.Mitosis) a.rejectMother else true,
+        )
     }
 
     /** The action as a main line plus any modifier lines (the caller indents the modifiers). Only Mitosis
