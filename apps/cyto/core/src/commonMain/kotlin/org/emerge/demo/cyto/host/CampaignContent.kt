@@ -365,8 +365,11 @@ object CampaignContent {
         matterNoise = 0.12f,
     )
 
-    /** The hand-authored starter cell: **no genes**, a body of 2000 each of r/g/b (6000 atoms of biomass).
-     *  With no maintenance gene it can only decay, so it's the vehicle for teaching why a cell needs genes. */
+    /** The hand-authored starter cell: **no genes**, a body of 1000 each of r/g/b (3000 atoms of biomass).
+     *  With no maintenance gene it can only decay, so it's the vehicle for teaching why a cell needs genes -
+     *  and 3000 is deliberately lean, because the player has to *watch* it decay to the 1000-atom rupture
+     *  floor and a bigger body just makes that beat longer. It gets no starting cytoplasm: monomers diffuse
+     *  in from the environment on their own, so seeding a reserve would only mask where matter comes from. */
     private val STARTER_CELL_BIOMASS = mapOf("r" to 1000, "g" to 1000, "b" to 1000)
 
     /** Watch mask WITH the SLOW/PAUSE/FAST controls, so the player can fast-forward the slow beats (the
