@@ -80,6 +80,13 @@ class GeneEditor {
      *  the species formatter ([sp]) names molecules the campaign's way. */
     private var activeAliases: Map<String, String> = emptyMap()
 
+    /** The held cell's current cytoplasm / environment species counts (species token → count), refreshed each
+     *  [render] like [activeAliases]. The molecule pickers read these to warn — non-blocking — when a gene
+     *  names a chemical the cell can't currently supply (e.g. a CONVERT of something not in the cytoplasm),
+     *  so an inexperienced player sees WHY a freshly-authored gene does nothing yet. */
+    private var cellCytoplasm: Map<String, Int> = emptyMap()
+    private var cellEnv: Map<String, Int> = emptyMap()
+
     /** The gene bank (banked group snippets) + the "save this group" sink, refreshed from the host at the top
      *  of every [render] (like [activeAliases]) so the paste picker + SAVE buttons see the current bank without
      *  threading them through every panel helper. Empty list / no-op default = a host that hasn't wired a bank
@@ -336,6 +343,8 @@ class GeneEditor {
         val info = controller.heldCellInfo()
         if (info == null) { reset(); return }
         activeAliases = controller.speciesAliases
+        cellCytoplasm = info.metabolism.filter { it.cyto > 0 }.associate { it.species to it.cyto }
+        cellEnv = info.metabolism.filter { it.env > 0 }.associate { it.species to it.env }
         activeSnippets = savedSnippets
         onSaveGroupCb = onSaveGroup
         if (editingId != null && editingId != controller.lastHeldId) reset()   // grabbed a different cell
@@ -670,6 +679,7 @@ class GeneEditor {
             Pick.Operand -> renderOperandSheet(b, d, wide)
             Pick.SpeciesA -> pickSheet(b, "MOLECULE", wide) {
                 speciesBuilder("act-a", actionLens(left = true))
+                actionSupplyWarning(d, d.action.a)
             }
             Pick.SpeciesB -> pickSheet(b, "MOLECULE", wide) {
                 speciesBuilder("act-b", actionLens(left = false))
@@ -689,6 +699,9 @@ class GeneEditor {
                 gap(10f)
                 row("SPLITS", 0x7A8699FFL)
                 row(breakLabel(act), if (act.breakTarget.isEmpty()) 0xC8963CFFL else 0x8FCF9FFFL)
+                // BreakBond consumes the JOINED substrate from the cytoplasm, so warn on that molecule, not the
+                // two fragments the gene names.
+                supplyWarning(act.breakTarget, fromEnv = false)
             }
             Pick.Bond -> pickSheet(b, "BOND WHAT?", wide, heightFraction = 0.5f) {
                 val s = d.source as? EnergySource.FormBond ?: return@pickSheet
@@ -703,6 +716,9 @@ class GeneEditor {
                 // react, matching how the panel colours a gene that can't fire.
                 row("MAKES", 0x7A8699FFL)
                 row(synthesisLabel(s), if (s.product.isEmpty()) 0xC8963CFFL else 0x8FCF9FFFL)
+                // Synthesis draws BOTH reactants from the cytoplasm; warn on whichever the cell doesn't hold.
+                supplyWarning(s.a, fromEnv = false)
+                supplyWarning(s.b, fromEnv = false)
             }
             Pick.Eff -> pickSheet(b, "EFFICIENCY GEAR", wide, heightFraction = 0.4f) {
                 numberField(d.efficiency, 0, CytoTuning.EFFICIENCY_MAX_GEAR) { draft = d.copy(efficiency = it) }
@@ -986,6 +1002,34 @@ class GeneEditor {
     private fun closePick() {
         pick = Pick.None; pickClause = -1; pickSide = 0; confirmingDelete = false
         blurSpeciesOperand()   // the focused field lived in the sheet being closed
+    }
+
+    /** A **non-blocking** heads-up shown under a molecule field when the held cell can't currently supply what
+     *  the gene names — a CONVERT/BREAK/BOND of a chemical that isn't in the cytoplasm (or an IMPORT of one
+     *  that isn't in the surrounding environment) is valid, but does nothing until the chemical is there. Draws
+     *  in the panel's advisory orange (never blocks the pick): the gene is fine, it's just waiting on supply.
+     *  [fromEnv] picks which pool the species must be in — the environment (Import) vs the cytoplasm (the rest). */
+    private fun PanelBuilder.supplyWarning(species: String, fromEnv: Boolean) {
+        if (species.isEmpty() || SpeciesRegistry.id(species) < 0) return   // empty / not-a-molecule is its own hint
+        val pool = if (fromEnv) cellEnv else cellCytoplasm
+        if ((pool[species] ?: 0) > 0) return
+        val where = if (fromEnv) "OUTSIDE THE CELL" else "IN THE CYTOPLASM"
+        // Two short lines rather than one long one: the popover is narrow, and a single sentence clips. Orange
+        // (the panel's advisory colour) carries the "heads up" — no leading glyph (the bitmap font has no `!`).
+        gap(6f)
+        row("NO ${sp(species)} $where YET.", 0xC8963CFFL)
+        row("THE GENE WON'T ACT UNTIL THERE IS.", 0x9A9A9AFFL)
+    }
+
+    /** The [supplyWarning] appropriate to an action's own operand: the cytoplasm-consuming actions
+     *  (Convert / Export / Retain) warn on the cytoplasm, Import warns on the environment it draws from, and
+     *  everything else (Mitosis morphogen, the operand-less actions) has no supply precondition to warn about. */
+    private fun PanelBuilder.actionSupplyWarning(d: Gene, species: String) {
+        when (d.action.type) {
+            ActionType.Convert, ActionType.Export, ActionType.Retain -> supplyWarning(species, fromEnv = false)
+            ActionType.Import -> supplyWarning(species, fromEnv = true)
+            else -> {}
+        }
     }
 
     /** One-line gloss of an action, for the L4 list picker (the room a dropdown never had). */
