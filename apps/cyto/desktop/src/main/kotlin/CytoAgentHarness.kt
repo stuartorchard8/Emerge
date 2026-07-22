@@ -113,8 +113,14 @@ object CytoAgentHarness {
             director.onStepEnter = {}
             // Continuous campaign: `next` past a chapter's last step segues into the next chapter in-world,
             // and `reset` reloads the current chapter — same as the real hosts.
-            director.chapters = CampaignContent.CHAPTERS
+            director.chapters = CampaignContent.PLAYABLE_CHAPTERS   // match the real hosts: scratch chapters segue too
             director.onWorldReset = { ch -> controller.newGame(ch.scenario); renderer.resetView() }
+            // ...then put the player's OWN lineage back, under the middle of the camera. Only fires for a
+            // chapter that seeds no founders of its own (see CampaignDirector.resetChapter).
+            director.onReseedLineage = { ch, genome ->
+                val c = renderer.cameraCentreWorld()
+                controller.reseedLineage(genome, c[0], c[1], ch.spawnBiomass, ch.spawnCytoplasm)
+            }
             director.onCampaignComplete = { println("[agent] campaign complete") }
             if (!glfwInit()) error("GLFW init failed")
             glfwDefaultWindowHints()

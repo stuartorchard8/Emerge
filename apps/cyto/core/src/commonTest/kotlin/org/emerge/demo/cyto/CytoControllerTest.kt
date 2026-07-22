@@ -3,6 +3,8 @@ package org.emerge.demo.cyto
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoLightField
+import org.emerge.demo.cyto.sim.CytoScenario
+import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.sim.core.physics.components.TransformComponent
@@ -134,5 +136,21 @@ class CytoControllerTest {
         var frame = restored.tick(0f)
         repeat(2) { frame = restored.tick(1f) }
         assertTrue(cells(frame) >= 1, "restored colony should keep living")
+    }
+
+    @Test
+    fun reseedLineagePlacesTheCarriedGenomeImmediately() {
+        // The campaign Reset's second half: after the world is emptied, put one cell carrying the player's
+        // own genome under the camera. It must exist as soon as the call returns - a Reset commonly lands on
+        // a Frozen step where no tick is coming, and a world that looks empty until you unpause reads as a
+        // broken reset.
+        val genes = GeneCodec.parse("Light : Biomass > 0 : Convert r")
+        val c = CytoController()
+        c.newGame(CytoScenario.DEFAULT.copy(founders = emptyList()))
+        assertEquals(0, cells(c.tick(0f)), "a founder-less scenario starts empty")
+
+        c.reseedLineage(genes, 0f, 0f, biomass = mapOf("r" to 1000, "g" to 1000, "b" to 1000))
+        assertEquals(1, cells(c.tick(0f)), "the re-seeded cell exists without waiting for a tick")
+        assertEquals(genes, c.representativeGenome(), "and it carries the genome it was given")
     }
 }

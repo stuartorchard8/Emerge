@@ -229,7 +229,7 @@ class CytoController(
     var brushGenome: List<Gene>? = null
 
     /** Overrides the genome-derived starter biomass for cells this controller spawns/taps into being. The
-     *  campaign sets it so a hand-authored starter cell holds a fixed reserve (e.g. 2000 each of r/g/b);
+     *  campaign sets it so a hand-authored starter cell holds a fixed reserve (e.g. 1000 each of r/g/b);
      *  null ⇒ the usual [starterBiomassFor] default. Paired with [brushGenome] by the host. */
     var spawnBiomass: Map<String, Int>? = null
 
@@ -239,6 +239,34 @@ class CytoController(
     var spawnCytoplasm: Map<String, Int>? = null
 
     private fun activeBrush() = brushGenome
+
+    /**
+     * Drop a single cell carrying [genome] at logical ([x], [y]) with the chapter's starting [biomass] and
+     * [cytoplasm] — the campaign Reset's "put the player's lineage back" step.
+     *
+     * Steps the sim once so the cell actually exists when this returns, then publishes so it is visible:
+     * spawns are queued and materialised by the reducer, and a Reset commonly lands on a [WorldRun.Frozen]
+     * step where no tick is coming. [stepOnce] alone advances `world` but leaves `currentState` stale, so
+     * without the [publish] the cell would exist in the sim while every reader — the panel, the campaign
+     * gates, the renderer — still saw an empty world.
+     *
+     * The brush fields are restored afterwards: they are host-owned UI state (the tap-to-place genome), and
+     * a Reset shouldn't silently rebind the player's brush as a side effect.
+     */
+    fun reseedLineage(
+        genome: List<Gene>,
+        x: Float,
+        y: Float,
+        biomass: Map<String, Int>? = null,
+        cytoplasm: Map<String, Int>? = null,
+    ) {
+        val prevGenome = brushGenome; val prevBiomass = spawnBiomass; val prevCytoplasm = spawnCytoplasm
+        brushGenome = genome; spawnBiomass = biomass; spawnCytoplasm = cytoplasm
+        spawn(x, y, CellType.Collector)
+        stepOnce()
+        publish()
+        brushGenome = prevGenome; spawnBiomass = prevBiomass; spawnCytoplasm = prevCytoplasm
+    }
 
     fun spawn(x: Float, y: Float, type: CellType) {
         withLock(inputLock) { pendingSpawns.add(CytoInput.Spawn(x, y, type, activeBrush(), spawnBiomass, spawnCytoplasm)) }
@@ -435,6 +463,22 @@ class CytoController(
             }
         }
         return WorldStats(tickCount, count, byType, maxBio, species, focused)
+    }
+
+    /**
+     * The genome that best stands for "what the player's lineage currently is" — the selected cell's if
+     * there is one, otherwise the biggest cell's (the most established member of the lineage, and a better
+     * stand-in than an arbitrary map-order pick). Null when the world holds no cells.
+     *
+     * The campaign snapshots this at a chapter boundary so a mid-chapter Reset can put the player's own
+     * authored genome back into an emptied world, rather than the chapter's canned starting recipe. See
+     * [org.emerge.demo.cyto.campaign.CampaignDirector.carriedGenome].
+     */
+    fun representativeGenome(): List<Gene>? {
+        val cells = currentState.components.getTable<CytoCellComponent>().asMap()
+        if (cells.isEmpty()) return null
+        lastHeldId?.let { id -> cells[id]?.let { return it.genome } }
+        return cells.values.maxByOrNull { totalBiomass(it.biomass) }?.genome
     }
 
     /** All cells as logical-space render primitives for a headless (CPU) view — the agent harness draws

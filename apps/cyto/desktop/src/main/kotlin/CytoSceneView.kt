@@ -109,6 +109,12 @@ object CytoSceneView {
         director.chapters = CampaignContent.PLAYABLE_CHAPTERS   // scratch chapters segue into the main flow
         director.onChapterCompleted = { id -> campaignProgress.complete(id) }
         director.onWorldReset = { ch -> controller.newGame(ch.scenario); renderer.resetView() }
+        // ...then put the player's OWN lineage back, under the middle of the camera. Only fires for a
+        // chapter that seeds no founders of its own (see CampaignDirector.resetChapter).
+        director.onReseedLineage = { ch, genome ->
+            val c = renderer.cameraCentreWorld()
+            controller.reseedLineage(genome, c[0], c[1], ch.spawnBiomass, ch.spawnCytoplasm)
+        }
         director.onCampaignComplete = { menu.openCampaign(); simDriver.setPaused(true) }
         // Each step chooses whether the world runs or holds still (so a slow reader isn't overtaken by a
         // later concept). Applied on step entry; the player keeps manual pause/speed control within a step.

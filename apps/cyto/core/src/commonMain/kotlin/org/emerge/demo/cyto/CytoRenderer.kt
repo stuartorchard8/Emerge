@@ -382,6 +382,12 @@ class CytoRenderer {
         )
     }
 
+    /** The logical world position `[x, y]` the camera is centred on — i.e. what the player is looking at.
+     *  The campaign's Reset drops the re-seeded cell here, so it lands under their eye rather than at a
+     *  world origin that may be off-screen. Every host asks the same question, so it lives here rather than
+     *  each one re-deriving its own framebuffer midpoint. */
+    fun cameraCentreWorld(): FloatArray = screenToWorld(resW * 0.5f, resH * 0.5f)
+
     /** Logical world (x, y) -> framebuffer pixel `[px, py]` (inverse of [screenToWorld]). Uses the shortest
      *  torus delta to the camera, so a point that has wrapped past an edge maps to the near side of the view. */
     fun worldToScreen(worldX: Float, worldY: Float): FloatArray {

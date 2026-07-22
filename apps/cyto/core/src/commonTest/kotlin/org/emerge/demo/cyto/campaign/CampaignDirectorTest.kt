@@ -3,10 +3,14 @@ package org.emerge.demo.cyto.campaign
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoScenario
+import org.emerge.demo.cyto.sim.FounderSpec
+import org.emerge.demo.cyto.sim.Gene
+import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.sim.SpeciesNames
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CampaignDirectorTest {
@@ -152,6 +156,56 @@ class CampaignDirectorTest {
         // A complete reaction: the coach names its product the way the world names it.
         dir.update(mitosisQuery("rg"), emptySet())
         assertEquals("${SpeciesNames.name("rg", emptyMap())} it is.", dir.snapshot()?.text)
+    }
+
+    @Test fun resetPutsThePlayersOwnLineageBackIntoAFounderlessWorld() {
+        // The rework's Reset contract: empty the world, rebuild its matter, then re-seed the genome the
+        // PLAYER authored rather than a canned starter - the campaign is a continuous world they seeded by
+        // hand, so discarding their genome would throw away the thing the chapters are about.
+        val genes = GeneCodec.parse("Light : Biomass > 0 : Convert r")
+        val ctrl = CytoController()
+        ctrl.newGame(CytoScenario.DEFAULT.copy(
+            founders = listOf(FounderSpec(CellType.Collector, 1, genome = genes))))
+        val emptyWorld = CytoScenario.DEFAULT.copy(founders = emptyList())
+        val a = Chapter("a", 1, "A", "", emptyWorld, listOf(Step("a1", Gate.Next)))
+        val b = Chapter("b", 1, "B", "", emptyWorld, listOf(Step("b1", Gate.Next)))
+        val dir = CampaignDirector()
+        dir.chapters = listOf(a, b)
+        var reseeded: List<Gene>? = null
+        dir.onReseedLineage = { _, g -> reseeded = g }
+
+        dir.start(a, ctrl)
+        // The opening chapter is where the genome gets authored, so there is nothing carried yet and a
+        // reset correctly leaves an empty world for the player to seed by hand.
+        dir.resetChapter(ctrl)
+        assertNull(reseeded, "nothing to re-seed before the first handover")
+
+        dir.tryAdvance(ctrl)                     // segue a -> b snapshots the living lineage
+        assertEquals(genes, dir.carriedGenome)
+        dir.resetChapter(ctrl)
+        assertEquals(genes, reseeded, "reset re-seeds the genome the player carried in")
+    }
+
+    @Test fun resetLeavesAChapterWithItsOwnFoundersAlone() {
+        // A chapter whose scenario seeds founders already has a lineage in its recipe; re-seeding would
+        // hand it a spurious extra cell.
+        val genes = GeneCodec.parse("Light : Biomass > 0 : Convert r")
+        val ctrl = CytoController()
+        ctrl.newGame(CytoScenario.DEFAULT.copy(
+            founders = listOf(FounderSpec(CellType.Collector, 1, genome = genes))))
+        val a = Chapter("a", 1, "A", "", CytoScenario.DEFAULT.copy(founders = emptyList()),
+            listOf(Step("a1", Gate.Next)))
+        val b = Chapter("b", 1, "B", "", CytoScenario.DEFAULT, listOf(Step("b1", Gate.Next)))
+        val dir = CampaignDirector()
+        dir.chapters = listOf(a, b)
+        var reseeded = false
+        dir.onReseedLineage = { _, _ -> reseeded = true }
+
+        dir.start(a, ctrl)
+        dir.tryAdvance(ctrl)
+        assertEquals(genes, dir.carriedGenome, "the lineage is still carried, it just isn't re-seeded")
+        dir.resetChapter(ctrl)
+        assertFalse(reseeded)
     }
 
     @Test fun convertGateFiresOnceTheCellHasAConvertGene() {

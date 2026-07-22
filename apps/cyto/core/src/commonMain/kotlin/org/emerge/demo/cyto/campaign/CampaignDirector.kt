@@ -1,6 +1,7 @@
 package org.emerge.demo.cyto.campaign
 
 import org.emerge.demo.cyto.CytoController
+import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.SpeciesNames
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.UiBuilder
@@ -46,6 +47,25 @@ class CampaignDirector {
     /** Invoked whenever a new step becomes current (chapter start + each advance). The host applies the
      *  step's [WorldRun] here (pause/resume the sim). */
     var onStepEnter: (Step) -> Unit = {}
+
+    /**
+     * Put the player's own lineage back into a just-emptied world: spawn one cell carrying [carriedGenome]
+     * under the middle of the camera. Invoked by [resetChapter] after [onWorldReset], and only for a chapter
+     * whose scenario seeds no founders of its own (see [resetChapter] for why).
+     *
+     * The host owns this because only it knows where the camera is pointing.
+     */
+    var onReseedLineage: (Chapter, List<Gene>) -> Unit = { _, _ -> }
+
+    /**
+     * The genome the player's lineage carries into the current chapter — snapshotted from the living world
+     * at the moment the previous chapter handed over, so it is *their* authored genome, not a canned one.
+     *
+     * Null in the very first chapter, which is where the genome gets authored in the first place; there a
+     * Reset correctly returns an empty world for the player to seed by hand.
+     */
+    var carriedGenome: List<Gene>? = null
+        private set
 
     /** The host's input phrasing, interpolated into coach copy so a `{pan}`/`{zoom}` gesture reads correctly
      *  for this platform — [InputHints.MOUSE] on desktop, [InputHints.TOUCH] on a phone. The host sets it once
@@ -99,18 +119,30 @@ class CampaignDirector {
         enterStep(controller)
     }
 
-    /** Reload the current chapter's authored world and restart it at step 1 — the coach's always-available
-     *  "Reset" control. The escape hatch for a world that has drifted off the script (a colony sprawled, the
-     *  founders died), and how the player pulls a [Chapter.startsFreshWorld] substrate back in. */
+    /**
+     * Reload the current chapter's authored world and restart it at step 1 — the coach's always-available
+     * "Reset" control. The escape hatch for a world that has drifted off the script (a colony sprawled, the
+     * founders died), and how the player pulls a [Chapter.startsFreshWorld] substrate back in.
+     *
+     * A chapter whose scenario seeds **no founders of its own** gets its lineage back instead of a canned
+     * one: the world is emptied and its matter rebuilt as usual, then a single cell carrying [carriedGenome]
+     * is placed under the camera ([onReseedLineage]). The campaign is a continuous world the player seeded
+     * by hand, so a reset that discarded the genome they authored would throw away the very thing the
+     * chapters are about, and the founder-less scenarios are exactly the ones with no other lineage to fall
+     * back on. Chapters that *do* declare founders already carry a lineage in their recipe and are left
+     * alone.
+     */
     fun resetChapter(controller: CytoController) {
         val ch = chapter ?: return
         onWorldReset(ch)
+        val genome = carriedGenome
+        if (genome != null && ch.scenario.founders.isEmpty()) onReseedLineage(ch, genome)
         stepIndex = 0
         enterStep(controller)
     }
 
     /** Leave the campaign (host returns to the menu). */
-    fun stop() { active = false; chapter = null; lastQuery = null }
+    fun stop() { active = false; chapter = null; lastQuery = null; carriedGenome = null }
 
     private fun enterStep(controller: CytoController) {
         satisfiedDid.clear()
@@ -179,6 +211,10 @@ class CampaignDirector {
                 chapter = null
                 onCampaignComplete()
             } else {
+                // Snapshot the lineage BEFORE the handover, while the finished chapter's world is still
+                // standing: this is the genome the player authored, and it is what a Reset in the next
+                // chapter restores. Keep the previous snapshot if the world is empty (nothing to read).
+                controller.representativeGenome()?.let { carriedGenome = it }
                 if (next.startsFreshWorld) onWorldReset(next)
                 chapter = next
                 controller.setSpeciesAliases(next.scenario.aliases)

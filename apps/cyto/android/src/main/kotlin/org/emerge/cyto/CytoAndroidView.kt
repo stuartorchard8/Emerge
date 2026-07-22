@@ -163,6 +163,12 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         director.chapters = CampaignContent.PLAYABLE_CHAPTERS   // scratch chapters segue into the main flow
         director.onChapterCompleted = { id -> progress.complete(id) }
         director.onWorldReset = { ch -> controller.newGame(ch.scenario); renderer.resetView() }
+        // ...then put the player's OWN lineage back, under the middle of the camera. Only fires for a
+        // chapter that seeds no founders of its own (see CampaignDirector.resetChapter).
+        director.onReseedLineage = { ch, genome ->
+            val c = renderer.cameraCentreWorld()
+            controller.reseedLineage(genome, c[0], c[1], ch.spawnBiomass, ch.spawnCytoplasm)
+        }
         director.onCampaignComplete = { menu.openCampaign(); paused = true }
         director.onStepEnter = { step -> paused = step.world == WorldRun.Frozen }
 
