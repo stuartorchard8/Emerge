@@ -36,6 +36,7 @@ object CytoInteractionSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
                 CytoUnits.coord2(spawn.x, spawn.y), Coord2.zero, spawn.type, logicalRadius = MIN_RADIUS,
                 genome = spawn.genome ?: genomeForType(spawn.type),
                 biomass = spawn.biomass,
+                cytoplasm = spawn.cytoplasm ?: emptyMap(),
             )
         }
 
@@ -51,6 +52,7 @@ object CytoInteractionSystem : EcsSystem<CytoConfig, SimState, CytoInput> {
                     CytoUnits.coord2(tap.x, tap.y), Coord2.zero, tap.type, logicalRadius = MIN_RADIUS,
                     genome = tap.genome ?: genomeForType(tap.type),
                     biomass = tap.biomass,
+                    cytoplasm = tap.cytoplasm ?: emptyMap(),
                 )
                 continue
             }

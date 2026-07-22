@@ -21,9 +21,12 @@ data class CytoInput(
     /** [genome] (if non-null) is the authoring "brush" genome to give the cell instead of the type's
      *  preset — how a loaded `.gene` file / the editor paints cells with a custom genome. [biomass] (if
      *  non-null) overrides the genome-derived starter biomass — the campaign uses it to place a cell with a
-     *  fixed hand-authored reserve (e.g. a gene-less starter holding 2000 each of r/g/b). */
-    data class Spawn(val x: Float, val y: Float, val type: CellType, val genome: List<Gene>? = null, val biomass: Map<String, Int>? = null)
-    data class Tap(val x: Float, val y: Float, val mode: TouchMode, val type: CellType, val genome: List<Gene>? = null, val biomass: Map<String, Int>? = null)
+     *  fixed hand-authored reserve (e.g. a gene-less starter holding 2000 each of r/g/b). [cytoplasm] (if
+     *  non-null) seeds the placed cell's mobile cytoplasm — normally empty on a brush-placed cell (only
+     *  scenario founders get a reserve), so the Genesis chapter uses it to hand the player's first cell a
+     *  pool of raw elements its first CONVERT gene can lock into biomass. */
+    data class Spawn(val x: Float, val y: Float, val type: CellType, val genome: List<Gene>? = null, val biomass: Map<String, Int>? = null, val cytoplasm: Map<String, Int>? = null)
+    data class Tap(val x: Float, val y: Float, val mode: TouchMode, val type: CellType, val genome: List<Gene>? = null, val biomass: Map<String, Int>? = null, val cytoplasm: Map<String, Int>? = null)
     /** [sticky] makes the held cell weld to whatever it touches while dragged (Sticky mode). */
     data class Grab(val entity: EntityId, val x: Float, val y: Float, val sticky: Boolean = false)
 

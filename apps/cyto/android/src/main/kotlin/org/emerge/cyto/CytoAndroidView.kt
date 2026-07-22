@@ -272,6 +272,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                 if (chapter?.spawnCopiesHeldCell == true) controller.heldGenome() ?: chapter.spawnGenome
                 else chapter?.spawnGenome
             controller.spawnBiomass = chapter?.spawnBiomass
+            controller.spawnCytoplasm = chapter?.spawnCytoplasm
         }
         c.showSimSpeed = mask.allows(Control.Speed)
         c.showMutation = mask.allows(Control.Mutation)

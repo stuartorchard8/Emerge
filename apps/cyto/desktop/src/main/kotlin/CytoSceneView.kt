@@ -249,6 +249,7 @@ object CytoSceneView {
                     if (chapter?.spawnCopiesHeldCell == true) controller.heldGenome() ?: chapter.spawnGenome
                     else chapter?.spawnGenome
                 controller.spawnBiomass = chapter?.spawnBiomass
+                controller.spawnCytoplasm = chapter?.spawnCytoplasm
             }
             controls.showSimSpeed = mask.allows(Control.Speed)
             controls.showMutation = mask.allows(Control.Mutation)

@@ -43,6 +43,10 @@ class Chapter(
      *  Lets a chapter place a hand-authored starter — the opening chapter drops a gene-less cell holding a
      *  fixed reserve (2000 each of r/g/b) so it can be watched slowly decaying to death. Null ⇒ default. */
     val spawnBiomass: Map<String, Int>? = null,
+    /** The mobile **cytoplasm** a [Control.Spawn] tap seeds the cell with (brush-placed cells otherwise start
+     *  with none — only scenario founders get a reserve). Genesis hands the player's first cell a pool of raw
+     *  elements (r/g/b) so its very first CONVERT gene has something to lock into biomass. Null ⇒ empty. */
+    val spawnCytoplasm: Map<String, Int>? = null,
     /** When true, an empty-space tap during a [Control.Spawn] step drops a **live copy of the currently
      *  selected cell's genome** instead of the fixed [spawnGenome] — a "last-modified brush". Ch9 leans on
      *  this: each time the player edits the muscle on their selected cell, the next cell they tap out carries

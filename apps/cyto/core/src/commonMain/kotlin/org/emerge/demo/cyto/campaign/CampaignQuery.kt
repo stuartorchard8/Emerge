@@ -63,4 +63,8 @@ class FocusedCell(
      *  clause) rather than absent (`bb < n`) — i.e. the player has flipped which side of the differentiated
      *  body drives the stroke. Lets Ch9 gate on the marked-cell muscle edit (the more adept swimmer). */
     val contractOnMarked: Boolean = false,
+    /** The species token the cell's first CONVERT gene locks into biomass (its `action.a`), or null if the
+     *  cell has no CONVERT gene yet. Genesis gates on this (the player authored their first gene) AND reflects
+     *  the chosen chemical back into the coach copy — the "you picked your starter" beat. */
+    val convertChem: String? = null,
 )

@@ -233,14 +233,19 @@ class CytoController(
      *  null ⇒ the usual [starterBiomassFor] default. Paired with [brushGenome] by the host. */
     var spawnBiomass: Map<String, Int>? = null
 
+    /** Seeds the mobile cytoplasm of cells this controller spawns/taps into being (normally empty on a
+     *  brush-placed cell). The campaign sets it so the player's first cell holds a pool of raw elements its
+     *  first CONVERT gene can lock into biomass; null ⇒ empty cytoplasm. Paired with [spawnBiomass]. */
+    var spawnCytoplasm: Map<String, Int>? = null
+
     private fun activeBrush() = brushGenome
 
     fun spawn(x: Float, y: Float, type: CellType) {
-        withLock(inputLock) { pendingSpawns.add(CytoInput.Spawn(x, y, type, activeBrush(), spawnBiomass)) }
+        withLock(inputLock) { pendingSpawns.add(CytoInput.Spawn(x, y, type, activeBrush(), spawnBiomass, spawnCytoplasm)) }
     }
 
     fun tap(x: Float, y: Float, mode: TouchMode, type: CellType) {
-        withLock(inputLock) { pendingTaps.add(CytoInput.Tap(x, y, mode, type, activeBrush(), spawnBiomass)) }
+        withLock(inputLock) { pendingTaps.add(CytoInput.Tap(x, y, mode, type, activeBrush(), spawnBiomass, spawnCytoplasm)) }
     }
 
     /**
@@ -417,9 +422,10 @@ class CytoController(
                         lhs is Operand.Chem && lhs.species == "bb" && cl.cmp == Comparison.Greater
                     }
                 }
+                val convertChem = c.genome.firstOrNull { it.action.type == ActionType.Convert && it.action.a.isNotEmpty() }?.action?.a
                 FocusedCell(
                     c.type, totalBiomass(c.biomass), c.genome.size, c.cytoplasm,
-                    divideWelds, contractOnChem, contractOnMarked,
+                    divideWelds, contractOnChem, contractOnMarked, convertChem,
                 )
             }
         }

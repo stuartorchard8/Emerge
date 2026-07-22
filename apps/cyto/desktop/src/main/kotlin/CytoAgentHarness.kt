@@ -336,6 +336,7 @@ object CytoAgentHarness {
             if (director.controlMask.allows(Control.Spawn)) {
                 controller.brushGenome = ch.spawnGenome
                 controller.spawnBiomass = ch.spawnBiomass
+                controller.spawnCytoplasm = ch.spawnCytoplasm
             }
         }
 
