@@ -208,7 +208,7 @@ class CytoRenderer {
     private val circleVbo = GPU.genBuffers()
     private val buildMatrices = FloatArray(BUILD_MAX * Mat4.FLOATS)
     private val buildPrimaryIds = FloatArray(BUILD_MAX)
-    private val buildShapes = FloatArray(BUILD_MAX)      // all 0 ⇒ soft disc
+    private val buildShapes = FloatArray(BUILD_MAX)      // soft discs, except the decay haloes (annuli)
     private val buildAlphas = FloatArray(BUILD_MAX)
     private val buildTints = FloatArray(BUILD_MAX * 3)
     /** Per-cell eased build intensity, keyed by EntityId.value; evicted when the cell is absent. */
@@ -940,8 +940,9 @@ class CytoRenderer {
 
     /**
      * Flow 4 (BIO→ENV decay): a species-coloured halo that pulses outward from each decaying cell's rim
-     * into the surrounding environment, drawn **behind** the cell discs (so only the annulus past the cell
-     * radius shows) and additively (a faint dispersing haze against the dark background / light field).
+     * into the surrounding environment — an actual annulus with the cell-sized hole punched out, so
+     * nothing shows through the membrane's transparent middle — drawn **behind** the cell discs and
+     * additively (a faint dispersing haze against the dark background / light field).
      * Same eased warm-up/cool-down envelope and staggered-pulse machinery as flow 3.
      */
     private fun drawDecayField(
@@ -993,13 +994,17 @@ class CytoRenderer {
                 val a = inten * (1f - frac) * DECAY_MAX_ALPHA
                 if (a <= 0.003f) continue
                 val r = radius * (1f + frac * (DECAY_MAX_SCALE - 1f))   // grow from the rim outward
+                // Punch the cell-sized hole out of the middle. The cell disc is a hollow membrane now, so a
+                // filled pulse shows straight through its transparent centre — the halo has to be an annulus
+                // that starts at the rim, not a disc the cell happens to cover. `radius / r` is that rim
+                // expressed in the pulse's own local units, so the hole tracks the pulse as it expands.
                 matCircS.setScale(r, r)
                 matCircT.setTranslation(viewX(cx), viewY(cy))
                 matCircM.setProduct(matCircT, matCircS)
                 mvpCirc.setProduct(matP, matCircM)
                 mvpCirc.copyInto(buildMatrices, count * Mat4.FLOATS)
-                buildPrimaryIds[count] = 0f
-                buildShapes[count] = 0f
+                buildPrimaryIds[count] = radius / r
+                buildShapes[count] = CircleShader.SHAPE_ANNULUS
                 buildAlphas[count] = a.coerceIn(0f, 1f)
                 val tb = count * 3
                 buildTints[tb] = speciesTmp[0]; buildTints[tb + 1] = speciesTmp[1]; buildTints[tb + 2] = speciesTmp[2]

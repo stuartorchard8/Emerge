@@ -5,9 +5,15 @@ import org.emerge.render.torus.GpuFloatBuffer
 import org.emerge.render.torus.Mat4
 
 /**
- * Generic instanced primitive shader: a soft tinted disc or a flat tinted triangle,
- * selected per-instance by the `shapes` attribute. Game-specific looks (e.g. rocket
- * bodies, procedural planets) live in their own shaders in the owning demo module.
+ * Generic instanced primitive shader: a soft tinted disc, a flat tinted triangle, or a soft tinted
+ * annulus, selected per-instance by the `shapes` attribute ([SHAPE_DISC] / [SHAPE_TRIANGLE] /
+ * [SHAPE_ANNULUS]). Game-specific looks (e.g. rocket bodies, procedural planets) live in their own
+ * shaders in the owning demo module.
+ *
+ * [SHAPE_ANNULUS] needs one number the other two don't — the hole's radius — and takes it from the
+ * `primaryIds` slot, which this shader's fragment stage otherwise ignores (it stopped hashing ids into
+ * hues long ago). Callers drawing discs or triangles can keep passing whatever they pass today; the
+ * slot is only read when the shape is an annulus.
  */
 class CircleShader {
     private val vSrc = CircleShaderSources.vertex()
@@ -113,5 +119,11 @@ class CircleShader {
         private const val INSTANCE_ALPHA_ATTR = 7
         private const val INSTANCE_TINT_COLOR_ATTR = 8
         const val MAX_INSTANCES = 10000
+
+        /** `shapes` values. See the class doc — [SHAPE_ANNULUS] also reads the `primaryIds` slot, as its
+         *  hole radius in local units (0 = solid, →1 = a hairline ring at the outer edge). */
+        const val SHAPE_DISC = 0f
+        const val SHAPE_TRIANGLE = 1f
+        const val SHAPE_ANNULUS = 2f
     }
 }
