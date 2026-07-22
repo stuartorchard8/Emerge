@@ -58,6 +58,16 @@ class CampaignDirector {
     var onReseedLineage: (Chapter, List<Gene>) -> Unit = { _, _ -> }
 
     /**
+     * Restore the world exactly as this chapter began, from the entry state the host persisted on
+     * [onChapterEntered]. Returns false if there is none (a chapter never entered on this install), leaving
+     * the world untouched so the caller can fall back.
+     *
+     * The counterpart to [resetChapter]: this one puts back *the world the player had*, mid-experiment and
+     * all, where the other builds a clean scripted one.
+     */
+    var onRestoreEntryState: (Chapter) -> Boolean = { false }
+
+    /**
      * The genome the player's lineage carries into the current chapter — snapshotted from the living world
      * at the moment the previous chapter handed over, so it is *their* authored genome, not a canned one.
      *
@@ -167,6 +177,27 @@ class CampaignDirector {
      * back on. Chapters that *do* declare founders already carry a lineage in their recipe and are left
      * alone.
      */
+    /**
+     * The **other** way back: restore the world exactly as this chapter began — the player's own world,
+     * their part-built experiment and all — and return to step 1.
+     *
+     * This is the non-destructive escape hatch, for "I have made a mess of this, put it back how it was".
+     * [resetChapter] is the destructive one, for "start me over with a clean substrate". Neither rewrites
+     * the stored entry state, so a clean reset never costs the player the ability to come back here.
+     *
+     * Falls back to [resetChapter] when nothing was ever stored (a chapter reached before entry states
+     * existed, or a wiped store), so the control is never a dead button.
+     */
+    fun restartFromEntryState(controller: CytoController) {
+        val ch = chapter ?: return
+        if (!onRestoreEntryState(ch)) { resetChapter(controller); return }
+        // The restored world is this chapter's starting state, so re-read the lineage a later clean reset
+        // would re-seed — otherwise it would still hold whatever the player had drifted to.
+        controller.representativeGenome()?.let { carriedGenome = it }
+        stepIndex = 0
+        enterStep(controller)
+    }
+
     fun resetChapter(controller: CytoController) {
         val ch = chapter ?: return
         onWorldReset(ch)
@@ -333,9 +364,11 @@ class CampaignDirector {
             gap(6f)
             val buttons = ArrayList<Triple<String, Long, () -> Unit>>()
             if (step.detail != null) buttons.add(Triple(if (showDetail) "Less" else "More", 0x2A3550FFL) { showDetail = !showDetail })
-            // Reset: reload this chapter's clean starting world. Always available — the escape hatch for a
-            // continuous world that has drifted off-script (see [resetChapter]).
-            buttons.add(Triple("Reset", 0x4A3A2AFFL) { resetChapter(controller) })
+            // Two ways back, both always available (see [restartFromEntryState] / [resetChapter]):
+            // "Restart" puts the player's OWN world back as this chapter began; "Clean" wipes to a scripted
+            // start carrying their genome. Neither costs them the stored entry state.
+            buttons.add(Triple("Restart", 0x2A4055FFL) { restartFromEntryState(controller) })
+            buttons.add(Triple("Clean", 0x4A3A2AFFL) { resetChapter(controller) })
             buttons.add(Triple("Skip", 0x53384AFFL) { advance(controller) })
             buttons.add(Triple("Next >", if (nextEnabled) 0x2E6E5EFFL else 0x2A3040FFL) { if (nextEnabled) advance(controller) })
             actionRow(buttons)

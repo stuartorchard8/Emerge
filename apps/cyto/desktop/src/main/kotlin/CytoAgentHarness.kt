@@ -115,6 +115,9 @@ object CytoAgentHarness {
             // and `reset` reloads the current chapter — same as the real hosts.
             director.chapters = CampaignContent.PLAYABLE_CHAPTERS   // match the real hosts: scratch chapters segue too
             director.onWorldReset = { ch -> controller.newGame(ch.scenario); renderer.resetView() }
+            // Deliberately NO onRestoreEntryState here: the harness never writes entry states (so scripted
+            // runs stay reproducible), and reading the real game's would make a run depend on how Stu last
+            // played. "Restart" falls back to the clean reset, which is what this tool wants anyway.
             // ...then put the player's OWN lineage back, under the middle of the camera. Only fires for a
             // chapter that seeds no founders of its own (see CampaignDirector.resetChapter).
             director.onReseedLineage = { ch, genome ->

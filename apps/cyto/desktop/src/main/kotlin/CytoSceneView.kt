@@ -112,6 +112,10 @@ object CytoSceneView {
         // chapter from the menu resumes the player's own world instead of a rebuilt canned one.
         director.onChapterEntered = { ch, path -> CytoSaves.saveCampaignEntry(controller, ch.id, path) }
         director.onWorldReset = { ch -> controller.newGame(ch.scenario); renderer.resetView() }
+        // The non-destructive counterpart: put the player's OWN world back as this chapter began.
+        director.onRestoreEntryState = { ch ->
+            CytoSaves.loadCampaignEntry(controller, ch.id).also { if (it) renderer.resetView() }
+        }
         // ...then put the player's OWN lineage back, under the middle of the camera. Only fires for a
         // chapter that seeds no founders of its own (see CampaignDirector.resetChapter).
         director.onReseedLineage = { ch, genome ->

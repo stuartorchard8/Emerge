@@ -255,6 +255,60 @@ class CampaignDirectorTest {
         assertEquals(listOf("a", "b"), dir.path)
     }
 
+    @Test fun resetOffersBothARestoreAndACleanStart() {
+        // Two ways back, deliberately different: Restart puts the player's OWN world back as the chapter
+        // began; Clean wipes to a scripted start carrying their genome. Neither may cost them the stored
+        // entry state, or a clean reset would strand them.
+        val genes = GeneCodec.parse("Light : Biomass > 0 : Convert r")
+        val emptyWorld = CytoScenario.DEFAULT.copy(founders = emptyList())
+        val ctrl = CytoController()
+        ctrl.newGame(CytoScenario.DEFAULT.copy(
+            founders = listOf(FounderSpec(CellType.Collector, 1, genome = genes))))
+        val a = Chapter("a", 1, "A", "", emptyWorld, listOf(Step("a1", Gate.Next), Step("a2", Gate.Next)))
+        val dir = CampaignDirector()
+        dir.chapters = listOf(a)
+        var restores = 0
+        var cleans = 0
+        var entryStatesWritten = 0
+        dir.onRestoreEntryState = { restores++; true }
+        dir.onWorldReset = { cleans++ }
+        dir.onChapterEntered = { _, _ -> entryStatesWritten++ }
+
+        dir.start(a, ctrl)
+        assertEquals(1, entryStatesWritten)
+        dir.tryAdvance(ctrl)                                   // move off step 1
+        assertEquals("a2", dir.currentStep?.text)
+
+        dir.restartFromEntryState(ctrl)
+        assertEquals(1, restores)
+        assertEquals(0, cleans, "a restore must not rebuild the world from the scenario")
+        assertEquals("a1", dir.currentStep?.text, "restore returns to the chapter's first step")
+
+        dir.tryAdvance(ctrl)
+        dir.resetChapter(ctrl)
+        assertEquals(1, cleans)
+        assertEquals("a1", dir.currentStep?.text)
+        assertEquals(1, entryStatesWritten,
+            "neither path rewrites the entry state - a clean reset must not cost the player their world")
+    }
+
+    @Test fun restartFallsBackToACleanStartWhenNothingWasStored() {
+        // A chapter reached before entry states existed, or a wiped store: the control must still do
+        // something rather than sit there dead.
+        val ctrl = CytoController()
+        val dir = CampaignDirector()
+        val a = Chapter("a", 1, "A", "", CytoScenario.DEFAULT.copy(founders = emptyList()),
+            listOf(Step("a1", Gate.Next)))
+        var cleans = 0
+        dir.chapters = listOf(a)
+        dir.onRestoreEntryState = { false }                    // nothing stored
+        dir.onWorldReset = { cleans++ }
+
+        dir.start(a, ctrl)
+        dir.restartFromEntryState(ctrl)
+        assertEquals(1, cleans, "no stored entry state ⇒ fall back to the clean start")
+    }
+
     @Test fun convertGateFiresOnceTheCellHasAConvertGene() {
         val ctrl = CytoController()
         val dir = CampaignDirector()
