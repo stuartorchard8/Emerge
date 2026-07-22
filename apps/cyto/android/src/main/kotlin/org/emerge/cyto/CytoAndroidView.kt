@@ -162,6 +162,9 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         // One continuous world: the director segues between chapters itself (see the desktop host).
         director.chapters = CampaignContent.PLAYABLE_CHAPTERS   // scratch chapters segue into the main flow
         director.onChapterCompleted = { id -> progress.complete(id) }
+        // Persist the world as each chapter BEGINS, with the route that led here, so returning to a
+        // chapter from the menu resumes the player's own world instead of a rebuilt canned one.
+        director.onChapterEntered = { ch, path -> CytoSaves.saveCampaignEntry(controller, ch.id, path) }
         director.onWorldReset = { ch -> controller.newGame(ch.scenario); renderer.resetView() }
         // ...then put the player's OWN lineage back, under the middle of the camera. Only fires for a
         // chapter that seeds no founders of its own (see CampaignDirector.resetChapter).
@@ -185,8 +188,11 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                 menu.enterGame(); paused = false
             },
             onStartChapter = { ch ->
-                controller.newGame(ch.scenario); renderer.resetView()
-                director.start(ch, controller)
+                // Resume the world as this chapter actually began - the player's own lineage and spent
+                // matter - falling back to the canned scenario only on a cold start (see CytoSaves).
+                if (!CytoSaves.loadCampaignEntry(controller, ch.id)) controller.newGame(ch.scenario)
+                renderer.resetView()
+                director.start(ch, controller, CytoSaves.campaignEntryPath(ch.id))
                 menu.enterGame(); paused = false
             },
             onOpenSave = { menu.openSave(lastSaveName ?: "world ${controller.tick}") },

@@ -163,9 +163,6 @@ class CampaignDirectorTest {
         // PLAYER authored rather than a canned starter - the campaign is a continuous world they seeded by
         // hand, so discarding their genome would throw away the thing the chapters are about.
         val genes = GeneCodec.parse("Light : Biomass > 0 : Convert r")
-        val ctrl = CytoController()
-        ctrl.newGame(CytoScenario.DEFAULT.copy(
-            founders = listOf(FounderSpec(CellType.Collector, 1, genome = genes))))
         val emptyWorld = CytoScenario.DEFAULT.copy(founders = emptyList())
         val a = Chapter("a", 1, "A", "", emptyWorld, listOf(Step("a1", Gate.Next)))
         val b = Chapter("b", 1, "B", "", emptyWorld, listOf(Step("b1", Gate.Next)))
@@ -174,16 +171,31 @@ class CampaignDirectorTest {
         var reseeded: List<Gene>? = null
         dir.onReseedLineage = { _, g -> reseeded = g }
 
+        // The opening chapter starts from an EMPTY world - it is where the genome gets authored by hand -
+        // so there is nothing to carry and a reset correctly leaves it empty to seed again.
+        val ctrl = CytoController()
+        ctrl.newGame(emptyWorld)
         dir.start(a, ctrl)
-        // The opening chapter is where the genome gets authored, so there is nothing carried yet and a
-        // reset correctly leaves an empty world for the player to seed by hand.
         dir.resetChapter(ctrl)
-        assertNull(reseeded, "nothing to re-seed before the first handover")
+        assertNull(reseeded, "nothing to re-seed before the player has authored anything")
 
-        dir.tryAdvance(ctrl)                     // segue a -> b snapshots the living lineage
+        // The player authors their lineage over the course of chapter A (stood in for here by the world
+        // gaining their cell), and the handover into B snapshots it.
+        ctrl.newGame(CytoScenario.DEFAULT.copy(
+            founders = listOf(FounderSpec(CellType.Collector, 1, genome = genes))))
+        dir.tryAdvance(ctrl)
         assertEquals(genes, dir.carriedGenome)
         dir.resetChapter(ctrl)
         assertEquals(genes, reseeded, "reset re-seeds the genome the player carried in")
+
+        // Entering a chapter afresh from the menu reads the lineage straight off the restored world, so a
+        // reset after resuming mid-campaign still gives the player their own genome back.
+        val resumed = CampaignDirector().apply { onReseedLineage = { _, g -> reseeded = g } }
+        reseeded = null
+        resumed.start(b, ctrl, priorPath = listOf("a", "b"))
+        assertEquals(genes, resumed.carriedGenome, "the restored world IS the chapter's starting lineage")
+        resumed.resetChapter(ctrl)
+        assertEquals(genes, reseeded)
     }
 
     @Test fun resetLeavesAChapterWithItsOwnFoundersAlone() {
@@ -206,6 +218,41 @@ class CampaignDirectorTest {
         assertEquals(genes, dir.carriedGenome, "the lineage is still carried, it just isn't re-seeded")
         dir.resetChapter(ctrl)
         assertFalse(reseeded)
+    }
+
+    @Test fun theRouteIsRecordedAndAnnouncedAtEveryChapterEntry() {
+        // "Where we are and how we got here": the host persists the world on each entry, keyed by chapter,
+        // with the route attached — so a branch stays explicit instead of being guessed at from the genome.
+        val ctrl = CytoController()
+        val dir = CampaignDirector()
+        val a = Chapter("a", 1, "A", "", CytoScenario.DEFAULT, listOf(Step("a1", Gate.Next)))
+        val b = Chapter("b", 1, "B", "", CytoScenario.DEFAULT, listOf(Step("b1", Gate.Next)))
+        val entries = mutableListOf<Pair<String, List<String>>>()
+        dir.chapters = listOf(a, b)
+        dir.onChapterEntered = { ch, path -> entries.add(ch.id to path.toList()) }
+
+        dir.start(a, ctrl)
+        assertEquals(listOf("a"), dir.path)
+        dir.tryAdvance(ctrl)                              // segue a -> b
+        assertEquals(listOf("a", "b"), dir.path)
+        assertEquals(listOf("a" to listOf("a"), "b" to listOf("a", "b")), entries,
+            "every entry is announced, with the route as it stood at that moment")
+    }
+
+    @Test fun resumingFromTheMenuKeepsTheRouteThatLedThere() {
+        // The menu restores a chapter's saved entry state and hands back the route stored beside it; without
+        // that, re-entering mid-campaign would look like the player had started at that chapter.
+        val ctrl = CytoController()
+        val dir = CampaignDirector()
+        val b = Chapter("b", 1, "B", "", CytoScenario.DEFAULT, listOf(Step("b1", Gate.Next)))
+        dir.chapters = listOf(b)
+
+        dir.start(b, ctrl, priorPath = listOf("a", "b"))
+        assertEquals(listOf("a", "b"), dir.path, "history survives a menu re-entry")
+
+        // A path that omits the chapter being started still ends at it (tolerant of a truncated record).
+        dir.start(b, ctrl, priorPath = listOf("a"))
+        assertEquals(listOf("a", "b"), dir.path)
     }
 
     @Test fun convertGateFiresOnceTheCellHasAConvertGene() {

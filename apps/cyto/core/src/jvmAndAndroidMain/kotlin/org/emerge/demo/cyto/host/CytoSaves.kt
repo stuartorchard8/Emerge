@@ -10,12 +10,21 @@ import kotlin.io.path.nameWithoutExtension
  * Named-save store: each save is a `<name>.bin` snapshot plus a `<name>.world` geometry sidecar (world size +
  * day/night, which the `.bin` codec doesn't carry) under [DIR]. Replaces the old single `cyto-save.bin`.
  * Pure file IO + the geometry-apply-before-restore dance; the menu drives it via [CytoMenu.Callbacks].
+ *
+ * Campaign entry states add a third, optional `<name>.campaign` sidecar (chapter id + the route taken to
+ * reach it) — see the section at the bottom of this file. Sidecars rather than save-format fields so the
+ * versioned `.bin` codec, and the golden trajectories that depend on it, stay untouched.
  */
 object CytoSaves {
     private val DIR: Path get() = CytoStorage.baseDir.resolve("cyto-saves")
 
-    /** Save names, newest first (by last-modified). */
-    fun list(): List<String> {
+    /** Save names, newest first (by last-modified). Campaign entry states are excluded: they are written by
+     *  the director on the player's behalf, not chosen by them, and listing a `campaign-*` snapshot per
+     *  chapter would bury their own saves (see [campaignSaveName]). [allNames] includes them. */
+    fun list(): List<String> = allNames().filterNot { it.startsWith(CAMPAIGN_PREFIX) }
+
+    /** Every save on disk, campaign entry states included — the raw listing [list] filters. */
+    fun allNames(): List<String> {
         if (!Files.isDirectory(DIR)) return emptyList()
         return runCatching {
             Files.list(DIR).use { stream ->
@@ -66,7 +75,10 @@ object CytoSaves {
     }
 
     fun delete(name: String) {
-        runCatching { Files.deleteIfExists(binPath(name)); Files.deleteIfExists(worldPath(name)) }
+        runCatching {
+            Files.deleteIfExists(binPath(name)); Files.deleteIfExists(worldPath(name))
+            Files.deleteIfExists(campaignPath(name))
+        }
         println("[cyto] deleted '$name'")
     }
 
@@ -81,4 +93,51 @@ object CytoSaves {
 
     private fun binPath(name: String): Path = DIR.resolve("${sanitize(name)}.bin")
     private fun worldPath(name: String): Path = DIR.resolve("${sanitize(name)}.world")
+
+    // ── Campaign entry states ───────────────────────────────────────────────────────────────────────
+    // The campaign persists the world at the START of each chapter, under a reserved name, so returning to
+    // a chapter from the menu resumes the player's actual world - their authored genome, their lineage, the
+    // matter they have used up - instead of rebuilding a canned one from Chapter.scenario and discarding it.
+    //
+    // Alongside the usual .bin/.world pair, a `.campaign` sidecar records WHERE we are and HOW WE GOT HERE:
+    // the chapter id plus the ordered route taken to reach it. That route is only reconstructible from a
+    // genome by guesswork once a branch exists (and not at all once the player edits the evidence away), so
+    // it is written down rather than inferred. Redundant with the chapter id while the campaign is linear;
+    // it stops being redundant the moment two routes can reach the same chapter.
+
+    /** Prefix reserving a save name for the campaign's own use (filtered out of [list]). */
+    const val CAMPAIGN_PREFIX = "campaign-"
+
+    /** Reserved save name holding the world as chapter [chapterId] began. */
+    fun campaignSaveName(chapterId: String): String = sanitize("$CAMPAIGN_PREFIX$chapterId")
+
+    /** Persist the world as this chapter starts, plus the [path] that led here. */
+    fun saveCampaignEntry(controller: CytoController, chapterId: String, path: List<String>) {
+        val name = campaignSaveName(chapterId)
+        runCatching {
+            save(controller, name)
+            Files.write(campaignPath(name), "chapter=$chapterId\npath=${path.joinToString(",")}\n".toByteArray())
+        }.onFailure { println("[cyto] campaign save for '$chapterId' failed: ${it.message}") }
+    }
+
+    /** True if [chapterId] has a stored entry state to resume from. */
+    fun hasCampaignEntry(chapterId: String): Boolean = exists(campaignSaveName(chapterId))
+
+    /** Restore the world as [chapterId] began. False (nothing touched) if there is no stored entry state,
+     *  which is the cold-start case - the caller then builds from the chapter's scenario as before. */
+    fun loadCampaignEntry(controller: CytoController, chapterId: String): Boolean =
+        hasCampaignEntry(chapterId) && load(controller, campaignSaveName(chapterId))
+
+    /** The recorded route to [chapterId], or empty if none is stored. */
+    fun campaignEntryPath(chapterId: String): List<String> {
+        val p = campaignPath(campaignSaveName(chapterId))
+        if (!Files.exists(p)) return emptyList()
+        return runCatching {
+            Files.readAllLines(p).firstOrNull { it.startsWith("path=") }
+                ?.removePrefix("path=")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+                ?: emptyList()
+        }.getOrDefault(emptyList())
+    }
+
+    private fun campaignPath(name: String): Path = DIR.resolve("${sanitize(name)}.campaign")
 }

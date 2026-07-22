@@ -67,6 +67,26 @@ class CampaignDirector {
     var carriedGenome: List<Gene>? = null
         private set
 
+    /**
+     * Fired the moment a chapter becomes current — on [start] and on every segue — with the route that led
+     * here ([path]). The host persists the world at this point, so the state at the *beginning* of a chapter
+     * can be reloaded as-is when the player comes back to it from the menu, instead of the world being
+     * rebuilt from the chapter's canned [Chapter.scenario] and their authored lineage thrown away.
+     *
+     * Entry rather than exit is deliberate: it is the same instant for a linear campaign, but when a chapter
+     * fans out into a branch each destination records its own entry state under its own name, so "the state
+     * this chapter starts from" needs no reasoning about predecessors.
+     */
+    var onChapterEntered: (Chapter, List<String>) -> Unit = { _, _ -> }
+
+    /**
+     * The chapters visited to get here, in order, ending with the current one — "where we are and how we got
+     * here". Persisted alongside the world so a branch the player took stays explicit rather than being
+     * re-derived from whatever their genome happens to look like later.
+     */
+    val path: List<String> get() = pathInternal
+    private val pathInternal = mutableListOf<String>()
+
     /** The host's input phrasing, interpolated into coach copy so a `{pan}`/`{zoom}` gesture reads correctly
      *  for this platform — [InputHints.MOUSE] on desktop, [InputHints.TOUCH] on a phone. The host sets it once
      *  at construction; defaults to MOUSE. */
@@ -108,15 +128,30 @@ class CampaignDirector {
     /** Which controls the host should keep live this step (ALL when no chapter is active). */
     val controlMask: ControlMask get() = if (active) currentStep?.allow ?: ControlMask.ALL else ControlMask.ALL
 
-    /** Begin a chapter, the world already built (the menu/host rebuilt it from [Chapter.scenario] before
-     *  calling — the selector's explicit "start this chapter" path). Mid-campaign advances instead go through
-     *  [advance], which carries the world forward unless the next chapter is [Chapter.startsFreshWorld]. */
-    fun start(chapter: Chapter, controller: CytoController) {
+    /**
+     * Begin a chapter, the world already standing — the host either restored this chapter's saved entry
+     * state or built it from [Chapter.scenario] before calling (the selector's explicit "start this chapter"
+     * path). Mid-campaign advances instead go through [advance], which carries the world forward unless the
+     * next chapter is [Chapter.startsFreshWorld].
+     *
+     * [priorPath] is the route recorded against the world the host just restored, so resuming from the menu
+     * keeps the branch history instead of restarting it. Empty (a cold start) ⇒ the path is just this
+     * chapter. The current chapter is appended if the caller didn't already include it, so both a bare
+     * `listOf()` and a full persisted path behave.
+     */
+    fun start(chapter: Chapter, controller: CytoController, priorPath: List<String> = emptyList()) {
         this.chapter = chapter
         controller.setSpeciesAliases(chapter.scenario.aliases)
         stepIndex = 0
         active = true
+        pathInternal.clear()
+        pathInternal.addAll(priorPath)
+        if (pathInternal.lastOrNull() != chapter.id) pathInternal.add(chapter.id)
+        // The world here IS this chapter's starting state, so it also carries the lineage a Reset restores.
+        // Matters most on a menu re-entry, where nothing else would have populated it.
+        controller.representativeGenome()?.let { carriedGenome = it }
         enterStep(controller)
+        onChapterEntered(chapter, path)
     }
 
     /**
@@ -142,7 +177,9 @@ class CampaignDirector {
     }
 
     /** Leave the campaign (host returns to the menu). */
-    fun stop() { active = false; chapter = null; lastQuery = null; carriedGenome = null }
+    fun stop() {
+        active = false; chapter = null; lastQuery = null; carriedGenome = null; pathInternal.clear()
+    }
 
     private fun enterStep(controller: CytoController) {
         satisfiedDid.clear()
@@ -219,7 +256,9 @@ class CampaignDirector {
                 chapter = next
                 controller.setSpeciesAliases(next.scenario.aliases)
                 stepIndex = 0
+                pathInternal.add(next.id)
                 enterStep(controller)
+                onChapterEntered(next, path)
             }
         } else {
             stepIndex++
