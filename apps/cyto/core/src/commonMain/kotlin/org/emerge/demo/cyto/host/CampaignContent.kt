@@ -372,6 +372,17 @@ object CampaignContent {
      *  in from the environment on their own, so seeding a reserve would only mask where matter comes from. */
     private val STARTER_CELL_BIOMASS = mapOf("r" to 1000, "g" to 1000, "b" to 1000)
 
+    /**
+     * The loosest growth cap `ch01-divide` will accept on the player's CONVERT gene.
+     *
+     * Division needs `biomass/4` energy in one tick, and in this world's soup a cell's cytoplasm settles
+     * near 900 of each monomer however big the body gets — so a bond-powered divide can fund a body of
+     * roughly 4 x 900 and no more. Measured: a cell capped at 3000 divides within ~2500 ticks; one capped
+     * at 4000 never does. 3500 is the accept-threshold (the coach asks for 3000, and a player who nudges it
+     * a little higher should not be told they are wrong), and anything above it genuinely does not work.
+     */
+    private const val GROWTH_CAP_MAX = 3500
+
     /** Watch mask WITH the SLOW/PAUSE/FAST controls, so the player can fast-forward the slow beats (the
      *  gene-less cell's death; the first gene's biomass climbing back). */
     private val WATCH_SPEED = ControlMask.of(
@@ -502,24 +513,43 @@ object CampaignContent {
             ),
             // 2. Add the DIVIDE gene. Frozen while they author.
             Step(
-                text = "Give it a way to carry on. Tap [+ NEW GENE] again, then set the new gene's action to (MITOSIS) - it divides the cell into two daughters, each taking half of the mother's biomass and cytoplasm.",
+                text = "Give it a way to carry on. Tap [+ NEW GENE] again, then change the new gene's action from (NOTHING) to (MITOSIS) - it divides the cell into two daughters, each taking half of the mother's biomass and cytoplasm.",
                 gate = Gate.World("Add a MITOSIS gene", met = { it.focused?.hasMitosis == true }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
-            // 3. Let them watch it NOT work. This beat only lands if the world runs.
+            // 3. Let them watch it NOT work — and pin the blame on SIZE, not on the energy source. This is the
+            // first of the two reasons the gene is inert, and it has to come first: a cell that has outgrown
+            // its own cytoplasm cannot divide no matter what powers it, so teaching the chemistry switch first
+            // leaves the player making the "right" edit and watching nothing happen. Live, so they can see the
+            // size climbing while they read.
             Step(
-                text = "Nothing happens. The gene is there, it is active, and still your cell will not divide.",
-                detail = "Splitting in two is not a nudge, it is one enormous shove: it costs a quarter of the cell's biomass in energy, and the whole bill falls due in a single moment. Energy cannot be saved up for it - whatever a cell makes this instant is gone the next.",
+                text = "Nothing happens. The gene is there, but your cell will not divide - and watch the BIOMASS readout while you wait. It is still climbing.",
+                detail = "Division costs a quarter of the cell's biomass in energy, all of it due in a single moment. The bigger the cell, the bigger that bill - and a cell holds only so much cytoplasm to pay it with, however large it grows. Keep growing and the bill outruns the purse.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
             ),
-            // 4. The pivot: off Light, onto chemistry. Selecting BOND opens the reaction sheet straight away
-            // (GeneEditor.Pick.Bond), so switching the source and choosing the pair is one continuous move -
-            // hence one step, gated on a COMPLETE reaction (a product, not just a source type).
+            // 3.5. Cap the growth. The FIRST condition the player ever authors, so the copy walks the taps:
+            // the blank clause the ALWAYS token drops in is `CHEM (NONE) > 0`, which needs all three parts
+            // changed. Frozen while they author. Gated on the cap being one the cell can actually divide
+            // under - see GROWTH_CAP_MAX.
             Step(
-                text = "Sunlight will never pay that bill. It arrives in a steady trickle, and this needs a lump sum. So use chemistry instead: change the DIVIDE gene's energy source from (LIGHT) to (BOND), then choose two chemicals to join together.",
+                text = "So stop it growing. Tap (ALWAYS) on your CONVERT gene to give it a condition, set the left side to (BIO), flip the (>) to (<), and set the number to 3000. Now it only feeds while it is smaller than that.",
+                detail = "A gene with no condition runs whenever it can. A condition is the cell asking itself a question first - here, \"am I still small enough to be worth growing?\" - and only acting when the answer is yes.",
+                gate = Gate.World("Cap the CONVERT gene's growth", met = {
+                    val cap = it.focused?.convertBiomassCap
+                    cap != null && cap <= GROWTH_CAP_MAX
+                }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            // 4. NOW the second reason, with the first one out of the way: the pivot off Light onto chemistry.
+            // Selecting BOND opens the reaction sheet straight away (GeneEditor.Pick.Bond), so switching the
+            // source and choosing the pair is one continuous move - hence one step, gated on a COMPLETE
+            // reaction (a product, not just a source type).
+            Step(
+                text = "Its size holds steady now, and so does the bill. Sunlight still cannot pay it though - light arrives in a steady trickle, and mitosis needs a lump sum. Fortunately for your cell, there is another abundant energy source in this environment: chemistry. Change the DIVIDE gene's energy source from (LIGHT) to (BOND), then choose two chemicals to join together.",
                 detail = "Joining two molecules releases energy - one unit per bond made - and this world is a soup of loose atoms to join. Any pair works, so pick whichever you like.",
                 gate = Gate.World("Power DIVIDE by bonding", met = { !it.focused?.mitosisProduct.isNullOrEmpty() }),
                 allow = LOOK,
@@ -527,7 +557,7 @@ object CampaignContent {
             ),
             // 5. Payoff. {bond} names the reaction they chose, the way {chem} named their starter element.
             Step(
-                text = "{bond} it is. Every one your cell makes releases a unit of energy, and once it can make a quarter of its own biomass worth in one moment, it splits. Watch for it.",
+                text = "Progress! For every unit of {bond} your cell makes, it releases a unit of energy. As long as your cells have enough chemical ingredients - and stay small enough to afford the split - they'll continue to divide.",
                 altText = "Your gene has no reaction to run, so it makes no energy and the cell cannot divide. Go back and give it two chemicals to join.",
                 gate = Gate.World("Divide into two cells", met = { it.cellCount >= 2 }),
                 allow = WATCH_SPEED,

@@ -451,6 +451,16 @@ class CytoController(
                     }
                 }
                 val convertChem = c.genome.firstOrNull { it.action.type == ActionType.Convert }?.action?.a
+                // The tightest `Biomass < N` any CONVERT gene runs under — the cell's growth ceiling. All
+                // such clauses have to hold, so the smallest is the one that actually bites.
+                val convertBiomassCap = c.genome
+                    .filter { it.action.type == ActionType.Convert }
+                    .flatMap { it.condition.clauses }
+                    .mapNotNull { cl ->
+                        val rhs = cl.rhs
+                        if (cl.lhs == Operand.Biomass && cl.cmp == Comparison.Less && rhs is Operand.Constant) rhs.value else null
+                    }
+                    .minOrNull()
                 val mitosisGene = c.genome.firstOrNull { it.action.type == ActionType.Mitosis }
                 // Light-powered division reads as "not chemistry-powered yet" (null), not as a half-done
                 // reaction — the chapter's job is to move the gene off Light entirely.
@@ -458,6 +468,7 @@ class CytoController(
                 FocusedCell(
                     c.type, totalBiomass(c.biomass), c.genome.size, c.cytoplasm,
                     divideWelds, contractOnChem, contractOnMarked, convertChem,
+                    convertBiomassCap = convertBiomassCap,
                     hasMitosis = mitosisGene != null, mitosisProduct = mitosisProduct,
                 )
             }

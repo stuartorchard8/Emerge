@@ -67,6 +67,18 @@ class FocusedCell(
      *  cell has no CONVERT gene yet. Empty string if chem is unspecified. Genesis gates on this AND reflects
      *  the chosen chemical back into the coach copy — the "you picked your starter" beat. */
     val convertChem: String? = null,
+    /**
+     * The biomass ceiling the cell's CONVERT gene grows to — the RHS of a `Biomass < N` clause on it, or
+     * null if it has no such clause (so it grows without limit). The smallest one wins when there are
+     * several, since they all have to hold.
+     *
+     * The divide chapter gates on this. Division costs `biomass/4` **in a single tick**, while the fuel a
+     * cell can raise in a tick is bounded by its cytoplasm, which does NOT scale with body size — so an
+     * uncapped grower eventually outruns its own ability to divide and can never split again, whatever it
+     * is powered by. Capping growth is the fix, and has to be taught BEFORE the switch to chemistry or the
+     * switch appears not to work.
+     */
+    val convertBiomassCap: Int? = null,
     /** True once the cell carries a division gene at all, whatever powers it. The Genesis follow-up gates
      *  its "add MITOSIS" beat on this before saying anything about what it costs. */
     val hasMitosis: Boolean = false,

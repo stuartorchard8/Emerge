@@ -115,19 +115,22 @@ class CampaignDirector {
      *    picks a reaction to power division. Falls back to "nothing".
      *
      *  Both are named the world's way (chapter aliases over the built-in [SpeciesNames]); the whole coach
-     *  renders upper-case, so their casing is irrelevant. [alt] is the "you skipped the choice" variant and
-     *  keys off `{chem}` alone, which is the only token Genesis authored it for. */
+     *  renders upper-case, so their casing is irrelevant. [alt] is the "you skipped the choice" variant, shown
+     *  whenever a token the copy is built on has nothing to name. */
     private fun copy(s: String, alt: String? = null): String {
         var expanded = inputHints.expand(s)
         if (!expanded.contains("{chem}") && !expanded.contains("{bond}")) return expanded
         val chem = lastQuery?.focused?.convertChem
-        if (alt != null && chem.isNullOrEmpty() && expanded.contains("{chem}")) {
-            // Cheeky alt text for people who skip
-            expanded = inputHints.expand(alt)
-        }
+        val bond = lastQuery?.focused?.mitosisProduct
+        // Cheeky alt text for people who skip — fires when the token the copy is BUILT ON has nothing to
+        // name, whichever token that is. (It used to key off {chem} alone, which left the divide chapter's
+        // "you never picked a reaction" line unreachable on a step whose text is about {bond}.)
+        val unnamed = (expanded.contains("{chem}") && chem.isNullOrEmpty()) ||
+            (expanded.contains("{bond}") && bond.isNullOrEmpty())
+        if (alt != null && unnamed) expanded = inputHints.expand(alt)
         return expanded
             .replace("{chem}", named(chem))
-            .replace("{bond}", named(lastQuery?.focused?.mitosisProduct))
+            .replace("{bond}", named(bond))
     }
 
     /** A species token as the world names it, or "nothing" when it's absent/unset. */
