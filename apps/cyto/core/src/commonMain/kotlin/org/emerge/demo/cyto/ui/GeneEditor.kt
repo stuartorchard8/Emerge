@@ -199,6 +199,18 @@ class GeneEditor {
     /** Abandon the typed group name unchanged (host ESC). */
     fun cancelGroupName() { capturingGroup = false }
 
+    /** The group name captured so far — a soft-keyboard host (Android) reads this to pre-fill its dialog. */
+    val capturedGroupName: String get() = groupBuffer.toString()
+
+    /** Submit a whole group name at once (a soft-keyboard host's dialog result, vs desktop's per-char
+     *  [typeGroupChar]). Filters through the same rules, then commits. */
+    fun submitGroupName(text: String) {
+        if (!capturingGroup) return
+        groupBuffer.setLength(0)
+        for (c in text) typeGroupChar(c)
+        confirmGroupName()
+    }
+
     private fun startGroupCapture(initial: String) {
         capturingGroup = true
         groupBuffer.setLength(0); groupBuffer.append(initial)
@@ -265,6 +277,18 @@ class GeneEditor {
 
     /** Abandon the typed value unchanged (host ESC). */
     fun cancelConstantValue() { capturingConstant = false; constantSet = null }
+
+    /** The digits captured so far — a soft-keyboard host (Android) reads this to pre-fill its dialog. */
+    val capturedConstantValue: String get() = constantBuffer.toString()
+
+    /** Submit a whole numeric value at once (a soft-keyboard host's dialog result, vs desktop's per-char
+     *  [typeConstantChar]). Filters to digits, then commits with the field's range clamp. */
+    fun submitConstantValue(text: String) {
+        if (!capturingConstant) return
+        constantBuffer.setLength(0)
+        for (c in text) typeConstantChar(c)
+        confirmConstantValue()
+    }
 
     private fun startConstantCapture(current: Int, min: Int, max: Int, onSet: (Int) -> Unit) {
         capturingConstant = true

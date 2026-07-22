@@ -84,6 +84,9 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
 
     // A native name dialog is up (guards re-posting while the menu sits on a name page).
     private var nameDialogShown = false
+    // A native text dialog for an in-editor field (group name / constant value) is up — same guard role as
+    // nameDialogShown, for the GeneEditor capture states that route to a physical keyboard on desktop.
+    private var editorDialogShown = false
 
     // Touch state, mutated only inside queueEvent (GL thread).
     private var grabId: EntityId? = null
@@ -311,6 +314,29 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
             val default = menu.currentName()
             mainHandler.post { showNameDialog(forGenome, default) }
         }
+
+        // The in-editor text fields (gene group name, numeric constant) route keystrokes to a physical
+        // keyboard on desktop; on a phone each pops the same native dialog. Species operands don't need one —
+        // their atom buttons are the whole touch input path (GeneEditor.speciesBuilder).
+        if (!editorDialogShown) {
+            if (geneEditor.capturingGroupName) {
+                editorDialogShown = true
+                val default = geneEditor.capturedGroupName
+                mainHandler.post {
+                    showEditorTextDialog("Group Name", default, numeric = false,
+                        onSubmit = { s -> queueEvent { this.geneEditor?.submitGroupName(s); editorDialogShown = false } },
+                        onCancel = { queueEvent { this.geneEditor?.cancelGroupName(); editorDialogShown = false } })
+                }
+            } else if (geneEditor.capturingConstantValue) {
+                editorDialogShown = true
+                val default = geneEditor.capturedConstantValue
+                mainHandler.post {
+                    showEditorTextDialog("Value", default, numeric = true,
+                        onSubmit = { s -> queueEvent { this.geneEditor?.submitConstantValue(s); editorDialogShown = false } },
+                        onCancel = { queueEvent { this.geneEditor?.cancelConstantValue(); editorDialogShown = false } })
+                }
+            }
+        }
     }
 
     // ── Native name dialog (main thread) ─────────────────────────────────────────
@@ -338,6 +364,26 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
             .setOnCancelListener {
                 queueEvent { menu?.enterGame(); paused = false; nameDialogShown = false }
             }
+            .show()
+    }
+
+    /** Native text dialog for an in-editor field (gene group name, numeric constant) — the soft-keyboard
+     *  stand-in for desktop's physical-keyboard capture. [onSubmit]/[onCancel] marshal back onto the GL
+     *  thread themselves (they call into the editor's capture API). */
+    private fun showEditorTextDialog(
+        title: String, default: String, numeric: Boolean,
+        onSubmit: (String) -> Unit, onCancel: () -> Unit,
+    ) {
+        val input = EditText(context).apply {
+            if (numeric) inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(default); setSelection(text.length)
+        }
+        AlertDialog.Builder(context)
+            .setTitle(title)
+            .setView(input)
+            .setPositiveButton("OK") { _, _ -> onSubmit(input.text.toString().trim()) }
+            .setNegativeButton("Cancel") { _, _ -> onCancel() }
+            .setOnCancelListener { onCancel() }
             .show()
     }
 
