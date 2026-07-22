@@ -846,3 +846,38 @@ Gene groups slot into the plan as follows:
   their genes don't partition into curated-style purposes, so auto-grouping would produce misleading
   categories — grouping is a deliberate act a *human author* performs on a *curated* genome, and the UI
   treats it that way.
+
+---
+
+## 11. Note for when multicellular reproduction returns — DIVIDE energy contention
+
+> **Written 2026-07-23, alongside `0cf82847`.** Nothing to do now; read this before authoring a chapter
+> in which a cell carries **more than one DIVIDE gene**.
+
+Division is the one all-or-nothing action: it needs `biomass/4` energy units in a **single tick**, and
+energy can't be banked (`CytoBiologyCore`, `ActionType.Mitosis` — `k = if (k >= cost) cost else 0`). The
+division phase then splits the cell's means across **every Mitosis gene whose gate is open that tick**
+(`quantaShare = work.quanta / dn`, each reactant's share `count / n`).
+
+So two DIVIDE genes that would each fire alone can both be unfunded together. That has always been true;
+what changed is that the panel now **says so** — the fuel token on such a gene reads orange rather than
+letting the gene glow active while never once dividing.
+
+The campaign has never had to think about this, because every chapter to date runs exactly one DIVIDE
+gene at a time. The moment a chapter hands the player two, two things follow:
+
+1. **Prefer mutually-exclusive gates.** If two divides are meant to be alternatives (a symmetric growth
+   split vs a sever-off-a-swimmer split, say), gate them so only one is ever open on a given tick. Then
+   `dn == 1` and there is no contention to explain.
+2. **Otherwise the copy owes the player an explanation.** A player who authors two sensible divides and
+   watches both go orange has been told the truth by the UI and nothing by the coach. Either a step
+   teaches "divisions compete for one tick's energy — stagger them", or the chapter's genome avoids the
+   situation. Silence is the one option that isn't available.
+
+Also worth re-checking at that point: the cost scales with **biomass** while the fuel pool doesn't, so
+big cells need a correspondingly big hoarded reserve to divide at all. A chapter that grows the organism
+before asking it to reproduce may need to teach hoarding first (this is what `Ch10 Spread` does via the
+swimmer's reserve; a from-scratch multicellular chapter would need its own version).
+
+Relevant code: `CytoController.energyUnits` / `describeGeneSpans` (the affordance), pinned by
+`GeneEnergyUnitsTest`.
