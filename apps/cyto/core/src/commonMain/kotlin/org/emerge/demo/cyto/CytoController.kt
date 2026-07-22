@@ -589,41 +589,59 @@ class CytoController(
             }
             CellInfo.MetRow(s, env, cyto, bio, dirEnvCyt, dirCytBio)
         }
+        val bioTotal = org.emerge.demo.cyto.sim.totalBiomass(cell.biomass)
+        // How many Mitosis genes are contending for this tick's energy. The division phase splits the cell's
+        // means by exactly this count (CytoBiologyCore: `quantaShare = work.quanta / dn`, and each reactant's
+        // share is `count / n`), so it is what a DIVIDE gene can really draw on — not the whole pool.
+        val divideShare = cell.genome.count { g ->
+            g.action.type == ActionType.Mitosis &&
+                g.condition.clauses.none { clauseFails(it, cytoMap, bioTotal, weldedDegree, cell.touchCount) }
+        }
         return CellInfo(
             id = id.value,
             type = cell.type.name,
             // Capped to the collision radius (what the cell physically is); biomass can drive logicalRadius
             // past this but the footprint doesn't grow — so SIZE matches what's rendered/collides.
             radius = fmt(CytoTuning.physicalRadius(cell.logicalRadius).toFloat()),
-            totalBiomass = org.emerge.demo.cyto.sim.totalBiomass(cell.biomass),
+            totalBiomass = bioTotal,
             light = light,
             metabolism = metabolism,
             genes = cell.genome.map { g ->
-                val spans = describeGeneSpans(g, cytoMap, envMap, totalBiomass = org.emerge.demo.cyto.sim.totalBiomass(cell.biomass), quanta = capturedQuanta, weldedDegree = weldedDegree, touch = cell.touchCount)
+                val spans = describeGeneSpans(g, cytoMap, envMap, totalBiomass = bioTotal, quanta = capturedQuanta, weldedDegree = weldedDegree, touch = cell.touchCount, divideShare = divideShare)
                 CellInfo.GeneRow(desc = spans.joinToString("") { it.text }, active = spans.none { it.blocking }, spans = spans, gene = g)
             },
             aliases = speciesAliases,
         )
     }
 
+    /** One condition operand read against the panel snapshot — a constant, a cytoplasm count, or one of the
+     *  live cell readings. */
+    private fun operandValue(op: Operand, cyto: Map<String, Int>, totalBiomass: Int, weldedDegree: Int, touch: Int): Int = when (op) {
+        is Operand.Constant -> op.value
+        is Operand.Chem -> cyto[op.species] ?: 0
+        Operand.Biomass -> totalBiomass
+        Operand.Touching -> touch
+        Operand.Neighbours -> weldedDegree
+    }
+
+    /** True when [c] does NOT hold — i.e. this clause is what's keeping its gene shut. */
+    private fun clauseFails(c: org.emerge.demo.cyto.sim.Clause, cyto: Map<String, Int>, totalBiomass: Int, weldedDegree: Int, touch: Int): Boolean {
+        val l = operandValue(c.lhs, cyto, totalBiomass, weldedDegree, touch)
+        val r = operandValue(c.rhs, cyto, totalBiomass, weldedDegree, touch)
+        return if (c.cmp == Comparison.Greater) l <= r else l >= r
+    }
+
     /** The gene's panel description as coloured [CellInfo.Span]s — action, condition clauses, energy source —
      *  with each part flagged [CellInfo.Span.blocking] when it's what stops the gene firing this tick (a failed
      *  clause, no energy, or a missing action input). Mirrors [org.emerge.demo.cyto.sim.CytoBiologyCore]'s
-     *  gating read from the panel snapshot — approximate: the per-gene 1/N energy split isn't modelled, so it
-     *  shows *what's* blocking, not the exact op count. `Touching` is the real per-tick reading published by
+     *  gating read from the panel snapshot — approximate: for the throughput actions it shows *what's*
+     *  blocking, not the exact op count, since the per-gene 1/N energy split isn't modelled there (they all
+     *  simply do fewer ops when energy is short). Division is the exception — it either affords the whole
+     *  cost or does nothing at all, so [divideShare] models the split exactly for it, and the flag is a
+     *  faithful "this will not divide". `Touching` is the real per-tick reading published by
      *  the contact phase, so it flickers as cells jostle — that's the gate's own behaviour, not a display bug. */
-    private fun describeGeneSpans(g: Gene, cyto: Map<String, Int>, env: Map<String, Int>, totalBiomass: Int, quanta: Int, weldedDegree: Int, touch: Int): List<CellInfo.Span> {
-        fun eval(op: Operand): Int = when (op) {
-            is Operand.Constant -> op.value
-            is Operand.Chem -> cyto[op.species] ?: 0
-            Operand.Biomass -> totalBiomass
-            Operand.Touching -> touch
-            Operand.Neighbours -> weldedDegree
-        }
-        fun clauseFails(c: org.emerge.demo.cyto.sim.Clause): Boolean {
-            val l = eval(c.lhs); val r = eval(c.rhs)
-            return if (c.cmp == Comparison.Greater) l <= r else l >= r
-        }
+    private fun describeGeneSpans(g: Gene, cyto: Map<String, Int>, env: Map<String, Int>, totalBiomass: Int, quanta: Int, weldedDegree: Int, touch: Int, divideShare: Int): List<CellInfo.Span> {
+        fun clauseFails(c: org.emerge.demo.cyto.sim.Clause) = clauseFails(c, cyto, totalBiomass, weldedDegree, touch)
         val energyBlocked = when (val s = g.source) {
             EnergySource.Light -> quanta <= 0
             // Synthesis is the energy source now: blocked unless both reactants are in the cytoplasm and
@@ -640,10 +658,11 @@ class CytoController(
         // active while never once dividing, which is the least legible state in the game. Flag it — on the
         // SOURCE span, because what falls short is the chemical the source names, not the DIVIDE itself.
         //
-        // Approximate in the same direction as the rest of this function: the per-gene 1/n energy split isn't
-        // modelled, so this over-estimates what's available and under-reports the block. It never cries wolf.
+        // [divideShare] is how many DIVIDE genes are gated open and therefore splitting the pool with this
+        // one — the sim's `dn`. Two divides that would each fire alone can both be unfunded together, and
+        // that is exactly what the cell does, so the panel says it.
         val divideUnfunded = a.type == ActionType.Mitosis && !energyBlocked &&
-            energyUnits(g.source, cyto, quanta) < totalBiomass / 4
+            energyUnits(g.source, cyto, quanta, divideShare) < totalBiomass / 4
         val inputBlocked = when (a.type) {
             // Blocked unless the exact molecule the two fragments name is in the cytoplasm (the mirror of
             // the synthesis check above: there both reactants must be present, here their join must be).
@@ -827,14 +846,22 @@ class CytoController(
     private fun clauseStr(c: org.emerge.demo.cyto.sim.Clause): String =
         "${operandLabel(c.lhs)}${if (c.cmp == Comparison.Greater) ">" else "<"}${operandLabel(c.rhs)}"
 
-    /** Energy units the source can raise this tick: a light-powered gene gets the cell's quanta, a synthesis
-     *  one gets a unit per bond it can form — so it is bounded by the scarcer reactant, halved for a self-join
-     *  (which consumes two copies per bond). Mirrors [org.emerge.demo.cyto.sim.CytoBiologyCore]'s `energyUnits`
-     *  with the per-gene 1/n split left out (see [describeGeneSpans]). */
-    private fun energyUnits(s: EnergySource, cyto: Map<String, Int>, quanta: Int): Int = when (s) {
-        EnergySource.Light -> quanta
-        is EnergySource.FormBond ->
-            if (s.a == s.b) (cyto[s.a] ?: 0) / 2 else minOf(cyto[s.a] ?: 0, cyto[s.b] ?: 0)
+    /**
+     * Energy units one gene can raise this tick, out of [share] genes splitting the cell's means: a
+     * light-powered gene gets its cut of the quanta, a synthesis one gets a unit per bond it can form from
+     * its cut of each reactant — so it is bounded by the scarcer one, halved for a self-join (two copies per
+     * bond). Mirrors [org.emerge.demo.cyto.sim.CytoBiologyCore]'s `energyUnits` including the 1/n split, and
+     * in the same integer order (divide by n first, then halve), so it agrees on the boundary rather than
+     * near it.
+     */
+    internal fun energyUnits(s: EnergySource, cyto: Map<String, Int>, quanta: Int, share: Int): Int {
+        val n = share.coerceAtLeast(1)
+        return when (s) {
+            EnergySource.Light -> quanta / n
+            is EnergySource.FormBond ->
+                if (s.a == s.b) ((cyto[s.a] ?: 0) / n) / 2
+                else minOf((cyto[s.a] ?: 0) / n, (cyto[s.b] ?: 0) / n)
+        }
     }
 
     /** The energy-source part (`LIGHT` / `BND a·b`). */
