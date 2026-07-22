@@ -70,6 +70,7 @@ class Chapter(
 class Step(
     val text: String,
     val gate: Gate,
+    val altText: String? = null,
     val allow: ControlMask = ControlMask.ALL,
     val spotlight: Spotlight? = null,
     val detail: String? = null,
@@ -111,6 +112,7 @@ enum class PlayerAction {
     ChangedSpeed,
     MovedCamera,
     PaintedCell,
+    OpenedChemistryTable,
     OpenedGeneEditor,
     /** The player dragged a cell around the world (grab + move). Lets the opening chapter teach "you can
      *  push cells about" as its own beat. */

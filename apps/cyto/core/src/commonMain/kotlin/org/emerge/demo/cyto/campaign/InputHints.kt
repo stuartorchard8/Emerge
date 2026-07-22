@@ -25,7 +25,7 @@ class InputHints(private val map: Map<String, String>) {
 
         /** Desktop pointer controls: right-drag pans (left-drag grabs a cell), the wheel zooms. */
         val MOUSE = InputHints(mapOf(
-            "pan" to "Right-click and drag",
+            "pan" to "Click and drag",
             "zoom" to "scroll",
             "grab" to "drag",
         ))

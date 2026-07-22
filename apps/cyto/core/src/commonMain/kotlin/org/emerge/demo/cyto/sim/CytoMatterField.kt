@@ -116,7 +116,7 @@ class CytoMatterField private constructor(
          * peaks near ±0.7); [periods] is how many noise cells span the torus (low ⇒ large, smooth blobs). The
          * lattice wraps at [periods], so the pattern tiles the torus with no seam. Deterministic in [seed].
          */
-        fun seededPerlin(level: Int, amp: Float, periods: Int = 6, seed: Int = 1337): CytoMatterField {
+        fun seededPerlin(level: Int, amp: Float, periods: Int = 2, seed: Int = 1337): CytoMatterField {
             val f = empty()
             if (level <= 0) return f
             val res = RES

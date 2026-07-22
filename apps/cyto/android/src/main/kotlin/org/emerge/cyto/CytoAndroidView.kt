@@ -292,6 +292,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                 if (mask.allows(Control.GeneEditor)) {
                     geneEditor.render(
                         this, controller,
+                        onChemistryOpened = { TODO("Support campaign signals on android") },
                         grouping = director.activeChapter?.grouping,
                         insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                         narrow = true,

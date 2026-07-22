@@ -223,6 +223,7 @@ object CytoSceneView {
                 if (signals.consumeCameraMoved()) actions.add(PlayerAction.MovedCamera)
                 if (signals.consumeSpeedChanged()) actions.add(PlayerAction.ChangedSpeed)
                 if (signals.consumeCellMoved()) actions.add(PlayerAction.MovedCell)
+                if (signals.consumeChemistryOpened()) actions.add(PlayerAction.OpenedChemistryTable)
                 val heldNow = controller.lastHeldId?.value
                 if (heldNow != null && heldNow != prevHeldId) actions.add(PlayerAction.SelectedCell)
                 val query = CampaignQuery(
@@ -299,6 +300,7 @@ object CytoSceneView {
                     if (mask.allows(Control.GeneEditor)) {
                         geneEditor.render(
                             this, controller,
+                            onChemistryOpened = { signals.chemistryOpened = true },
                             grouping = director.activeChapter?.grouping,
                             insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                             narrow = narrow,
@@ -659,9 +661,11 @@ object CytoSceneView {
         var cameraMoved = false
         var speedChanged = false
         var cellMoved = false
+        var chemistryOpened = false
         fun consumeCameraMoved(): Boolean = cameraMoved.also { cameraMoved = false }
         fun consumeSpeedChanged(): Boolean = speedChanged.also { speedChanged = false }
         fun consumeCellMoved(): Boolean = cellMoved.also { cellMoved = false }
+        fun consumeChemistryOpened(): Boolean = chemistryOpened.also { chemistryOpened = false }
     }
 
     /** F2 override to force the narrow gene UI on at any width (glfw callbacks run on the render thread, so a

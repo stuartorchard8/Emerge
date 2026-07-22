@@ -24,7 +24,6 @@ import org.emerge.demo.cyto.ui.GeneSnippet
 import org.emerge.render.torus.ui.Ui
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.components.TransformComponent
-import org.emerge.sim.core.sim.SimState
 import org.lwjgl.BufferUtils
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.opengl.GL11.*
@@ -513,7 +512,16 @@ object CytoAgentHarness {
                     val modalUp = NARROW && geneEditor.isEditing
                     if (!modalUp) director.render(this, controller, narrow = NARROW)
                 }
-                if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW, savedSnippets = CytoSnippets.list().map { GeneSnippet(it.name, it.genes) }, onSaveGroup = { name, genes -> CytoSnippets.save(name, genes) })
+                if (mask.allows(Control.GeneEditor)) geneEditor.render(
+                    this,
+                    controller,
+                    onChemistryOpened = { TODO("Support campaign signals on harness") },
+                    grouping = director.activeChapter?.grouping,
+                    insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
+                    narrow = NARROW,
+                    savedSnippets = CytoSnippets.list().map { GeneSnippet(it.name, it.genes) },
+                    onSaveGroup = { name, genes -> CytoSnippets.save(name, genes) },
+                )
                 if (showHud) hud.renderSheets(this, controls, wide = !NARROW)
             }
         }
@@ -585,7 +593,16 @@ object CytoAgentHarness {
                     val modalUp = NARROW && geneEditor.isEditing
                     if (!modalUp) director.render(this, controller, narrow = NARROW)
                 }
-                if (mask.allows(Control.GeneEditor)) geneEditor.render(this, controller, grouping = director.activeChapter?.grouping, insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(), narrow = NARROW, savedSnippets = CytoSnippets.list().map { GeneSnippet(it.name, it.genes) }, onSaveGroup = { name, genes -> CytoSnippets.save(name, genes) })
+                if (mask.allows(Control.GeneEditor)) geneEditor.render(
+                    this,
+                    controller,
+                    onChemistryOpened = { TODO("Support campaign signals on harness") },
+                    grouping = director.activeChapter?.grouping,
+                    insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
+                    narrow = NARROW,
+                    savedSnippets = CytoSnippets.list().map { GeneSnippet(it.name, it.genes) },
+                    onSaveGroup = { name, genes -> CytoSnippets.save(name, genes) },
+                )
                 if (showHud) hud.renderSheets(this, controls, wide = !NARROW)
             }
             ui.draw()

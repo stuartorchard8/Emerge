@@ -422,7 +422,7 @@ class CytoController(
                         lhs is Operand.Chem && lhs.species == "bb" && cl.cmp == Comparison.Greater
                     }
                 }
-                val convertChem = c.genome.firstOrNull { it.action.type == ActionType.Convert && it.action.a.isNotEmpty() }?.action?.a
+                val convertChem = c.genome.firstOrNull { it.action.type == ActionType.Convert }?.action?.a
                 FocusedCell(
                     c.type, totalBiomass(c.biomass), c.genome.size, c.cytoplasm,
                     divideWelds, contractOnChem, contractOnMarked, convertChem,

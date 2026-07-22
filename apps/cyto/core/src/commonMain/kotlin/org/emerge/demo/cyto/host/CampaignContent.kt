@@ -367,11 +367,7 @@ object CampaignContent {
 
     /** The hand-authored starter cell: **no genes**, a body of 2000 each of r/g/b (6000 atoms of biomass).
      *  With no maintenance gene it can only decay, so it's the vehicle for teaching why a cell needs genes. */
-    private val STARTER_CELL_BIOMASS = mapOf("r" to 2000, "g" to 2000, "b" to 2000)
-
-    /** The starter cell's mobile **cytoplasm** — a reserve of all three raw elements, so whichever one the
-     *  player picks for their first CONVERT gene, the cell is already holding it to lock into biomass. */
-    private val STARTER_CELL_CYTOPLASM = mapOf("r" to 2000, "g" to 2000, "b" to 2000)
+    private val STARTER_CELL_BIOMASS = mapOf("r" to 1000, "g" to 1000, "b" to 1000)
 
     /** Watch mask WITH the SLOW/PAUSE/FAST controls, so the player can fast-forward the slow beats (the
      *  gene-less cell's death; the first gene's biomass climbing back). */
@@ -388,46 +384,50 @@ object CampaignContent {
         startsFreshWorld = true,
         spawnGenome = emptyList(),                 // the placed cell has NO genes
         spawnBiomass = STARTER_CELL_BIOMASS,       // 2000 each of r/g/b = 6000 biomass
-        spawnCytoplasm = STARTER_CELL_CYTOPLASM,   // a reserve of raw elements for the first CONVERT gene
         steps = listOf(
             // 1. Camera.
             Step(
-                text = "Welcome to Cyto. This is an empty world with nothing alive in it - yet. {pan} to move around and {zoom} to zoom.",
+                text = "Welcome to Cyto. This is an empty world with nothing alive in it... yet. {pan} to move around and {zoom} to zoom.",
                 gate = Gate.Did(PlayerAction.MovedCamera, "Pan or zoom the view"),
                 allow = LOOK,
             ),
             // 2. Place a cell.
             Step(
                 text = "Now tap anywhere to place an empty cell - a small pocket that independently stores and processes chemicals",
-                detail = "If you look closely after you place it, you'll see it exchange its contents with the environment until it reaches equilibrium.",
                 gate = Gate.World("Place a cell", met = { it.cellCount >= 1 }),
                 allow = SPAWN,
                 world = WorldRun.Live,
             ),
             // 3. Inspect it.
             Step(
-                text = "Tap the cell to select it. Its panel shows its size, its biomass, and an empty genome.",
+                text = "Tap the cell to select it, revealing its info panel. This shows its size, its biomass, light exposure, and an empty genome.",
                 gate = Gate.Did(PlayerAction.SelectedCell, "Select the cell"),
+                allow = LOOK,
+            ),
+            // 3.5 Inspect it.
+            Step(
+                text = "Tap the chemistry section to view the detailed chemistry readouts. This cell is floating in a soup of three raw elements - REDOGEN, GREENUM and BLUEON, and started with all three contributing equally to its biomass.",
+                gate = Gate.Did(PlayerAction.OpenedChemistryTable, "View the chemistry details"),
                 allow = LOOK,
             ),
             // 4. Move it.
             Step(
-                text = "Drag the cell around - you can nudge cells wherever you like.",
+                text = "Drag the cell around - you can move cells wherever you like. If you look closely as you move it, you'll see it exchange its contents with the environment to reach equilibrium.",
                 gate = Gate.Did(PlayerAction.MovedCell, "Drag the cell"),
                 allow = LOOK,
                 world = WorldRun.Live,
             ),
             // 5. Watch it die.
             Step(
-                text = "With no genes, the cell has no way to maintain itself. Watch its biomass fall as it slowly breaks down - and dies.",
+                text = "Can you see the cell getting smaller? With no genes, a cell has no way to maintain itself. Its slowly degrades into the environment, rupturing when its biomass goes below 1000 units.",
                 gate = Gate.World("The cell dies", met = { it.cellCount == 0 }),
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
             ),
             // 6. Place YOUR cell — a fresh start, this one gets a gene.
             Step(
-                text = "That cell faded because it couldn't rebuild itself. Let's fix that. Tap an empty spot to place a fresh cell - this one is yours to shape.",
-                gate = Gate.World("Place a cell", met = { it.cellCount >= 1 }),
+                text = "That cell couldn't rebuild itself. Let's fix that. Tap an empty spot to place a fresh cell. Then select it and open its genome.",
+                gate = Gate.World("Place and select a cell", met = { it.focused != null }),
                 allow = SPAWN,
                 world = WorldRun.Live,
             ),
@@ -435,17 +435,30 @@ object CampaignContent {
             // player makes their organism's first real choice. Frozen so the cell waits, un-decaying, while
             // they author it. The gate fires once the genome holds a CONVERT gene (any chemical).
             Step(
-                text = "Select your cell and open its genome. It's floating in a soup of three raw elements - REDOGEN, GREENUM and BLUEON. Add a gene, set it to CONVERT one of the elements - they're interchangeable, so pick whichever you like. The cell will lock it into biomass to rebuild itself.",
-                detail = "Tap + NEW GENE, tap NOTHING and choose CONVERT, then pick your element. The picker gives you a harmless heads-up if you name something the cell isn't holding.",
-                gate = Gate.World("Give the cell a CONVERT gene", met = { it.focused?.convertChem != null }),
+                text = "Tap [+ NEW GENE] to add an empty gene. Note that the new gene has no conditions, so it's always active, and it uses light as its energy source.",
+                gate = Gate.World("Give the cell a new gene", met = { it.focused?.geneCount == 1 }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Change your new gene's action from (NOTHING) to (CONVERT). CONVERT genes transform their specified chemical target from their cytoplasm [CYT] to their biomass [BIO].",
+                gate = Gate.World("Set the new gene to CONVERT", met = { it.focused?.convertChem == "" }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Tap (NONE) to change your convert gene's chemical target to either REDOGEN, GREENUM or BLUEON - they're interchangeable, so pick whichever you like.",
+                detail = "The picker gives you a harmless heads-up if you name something the cell isn't holding. The gene will show itself as active once it's set up correctly.",
+                gate = Gate.World("Complete the CONVERT gene", met = { it.focused?.convertChem != null && it.focused?.convertChem != "" }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
             // 8. Reaction + payoff. {chem} names the player's own pick (see CampaignDirector.copy), so the
             // coach speaks their choice back to them. Live + speed controls so they can watch it climb.
             Step(
-                text = "{chem} it is - a fine starter. Watch: your cell locks {chem} into biomass, so its size stops falling and starts to climb. You've made a cell that builds itself.",
-                detail = "It's living off the {chem} it began with. When that reserve runs low the climb will stall - and the next thing to learn is how a cell pulls more in from the world around it.",
+                text = "{chem} it is. Now watch: your cell locks {chem} into biomass, so its size stops falling and starts to climb. Your cell is now able to sustain itself indefinitely.",
+                altText = "Nothing it is. Now watch: your cell locks nothing into biomass, so its size continues falling and the cell dies. Try again.",
+                detail = "See the white particle wandering around inside your cell? That's the convert gene you added. It's white because it's powered by light.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,

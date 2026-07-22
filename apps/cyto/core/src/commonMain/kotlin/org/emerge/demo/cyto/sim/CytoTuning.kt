@@ -36,7 +36,7 @@ object CytoTuning {
     // ── Light field (the open energy source) ─────────────────────────────────────────────────────────
     /** Peak light at a source (≈ quanta/tick a fully-exposed cell sitting on it harvests, before the
      *  LIGHT_QUANTA_SCALE conversion). In Frac's [0,1] range. */
-    val LIGHT_STRENGTH = Frac(1, 200)
+    val LIGHT_STRENGTH = Frac(1,1)
     /** Gaussian falloff radius of a light source (logical units): light is strong within ~σ and ~0 well
      *  before the midpoint between sources, leaving dark contested zones. In moving mode it's the
      *  half-width of the daylight band (how much of the world is "day" at once). **Scales with the world**
@@ -113,7 +113,7 @@ object CytoTuning {
     /** light → quanta: `quanta = ⌊field × exposure × SCALE⌋` (a fully-exposed cell on a source gets
      *  ~`STRENGTH·SCALE` ops/tick). 1 quantum = 1 op. The peak per-tick budget scales with LIGHT_QUANTA_SCALE
      *  to meter cell growth and charge-up rates. Tune by watching the cell panel's quanta. ⚙ */
-    const val LIGHT_QUANTA_SCALE = 120 * CHEMISTRY_SCALE
+    const val LIGHT_QUANTA_SCALE = CHEMISTRY_SCALE/4
     /** Per-gene efficiency gear (Gene.efficiency, g): a throughput action does `g+1` actions per energy unit
      *  but may spend at most `EFFICIENCY_REF shr g` energy/tick. g=0 is the uncapped neutral default;
      *  higher values increase actions/energy but cap the energy budget, trading throughput rate for fuel

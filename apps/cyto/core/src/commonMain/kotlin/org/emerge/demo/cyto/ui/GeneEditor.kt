@@ -15,7 +15,6 @@ import org.emerge.demo.cyto.sim.Operand
 import org.emerge.demo.cyto.sim.SpeciesNames
 import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.sim.core.EntityId
-import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.HoverAction
 import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.UiBuilder
@@ -333,6 +332,7 @@ class GeneEditor {
     fun render(
         b: UiBuilder,
         controller: CytoController,
+        onChemistryOpened: () -> Unit,
         grouping: GenomeGrouping? = null,
         insertableGroups: Set<String> = emptySet(),
         narrow: Boolean = false,
@@ -361,11 +361,11 @@ class GeneEditor {
             // A gene card can also be *dragged* onto a group header (or the "new group" placeholder) to re-tag
             // it; the drag id encodes the gene index, so the panel knows which gene is in flight.
             val draggingGene = b.draggingId?.removePrefix(GENE_DRAG_PREFIX)?.toIntOrNull()
-            renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, wide = true, draggingGene = draggingGene)
+            renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, onChemistryOpened, wide = true, draggingGene = draggingGene)
             if (draggingGene != null) b.dragGhost("GENE ${draggingGene + 1}")
         } else {
             if (draft != null) renderGeneEditor(b, controller)
-            else renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, wide = false)
+            else renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, onChemistryOpened, wide = false)
         }
         draft?.let { renderPickerSheet(b, controller, it, wide) }
         if (capturingGroup) renderGroupCaptureDialog(b, wide)
@@ -389,11 +389,13 @@ class GeneEditor {
      */
     private fun renderCellPanel(
         b: UiBuilder, controller: CytoController, info: CytoController.CellInfo,
-        grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit, wide: Boolean,
+        grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit,
+        onChemistryOpened: () -> Unit,
+        wide: Boolean,
         draggingGene: Int? = null,
     ): Float {
         if (wide) {
-            val body: PanelBuilder.() -> Unit = { cellBody(controller, info, grouping, insertableGroups, onExport, wide = true, draggingGene = draggingGene) }
+            val body: PanelBuilder.() -> Unit = { cellBody(controller, info, grouping, insertableGroups, onExport, onChemistryOpened, wide = true, draggingGene = draggingGene) }
             return b.dockRight("cell-panel", width = CELL_PANEL_DP, margin = PANEL_MARGIN_DP, rowHeight = 26f, textSize = 15f, block = body)
         }
         // Narrow: a shallow peek (name + biomass) that drags up to the full L2 sheet. While dragging, the
@@ -418,7 +420,7 @@ class GeneEditor {
         b.dockBottom("cell-sheet", heightFraction = liveFrac, background = 0x121722FFL, padding = padDp, rowHeight = 44f, textSize = if (showFull) 15f else 16f) {
             if (showFull) {
                 dragHandle("cell-grab", onTap = { cellExpanded = false; sheetDragFrac = null }, onDrag = onDrag, onRelease = onRelease)
-                cellBody(controller, info, grouping, insertableGroups, onExport)
+                cellBody(controller, info, grouping, insertableGroups, onExport, onChemistryOpened, wide=false)
             } else {
                 // The collapsed peek is one non-scrolling card filling the sheet: a drag anywhere on it (not
                 // just a top handle) expands, and its tiny content can't scroll. Height = sheet minus padding.
@@ -440,7 +442,9 @@ class GeneEditor {
 
     private fun PanelBuilder.cellBody(
         controller: CytoController, info: CytoController.CellInfo,
-        grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit, wide: Boolean = false,
+        grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit,
+        onChemistryOpened: () -> Unit,
+        wide: Boolean = false,
         draggingGene: Int? = null,
     ) {
         // Desktop edits each gene inline as an interactive sentence (§8a step 3b); narrow taps a read card to
@@ -481,7 +485,10 @@ class GeneEditor {
         keyValue("LIGHT", info.light)
         if (info.metabolism.isNotEmpty()) {
             gap(6f)
-            button("${if (metabExpanded) "-" else "+"} CHEMISTRY (${info.metabolism.size})", 0x2A3550FFL) { metabExpanded = !metabExpanded }
+            button("${if (metabExpanded) "-" else "+"} CHEMISTRY (${info.metabolism.size})", 0x2A3550FFL) {
+                metabExpanded = !metabExpanded
+                onChemistryOpened()
+            }
             if (metabExpanded) metabolismTable(info)
         }
         // Show the genome section whenever there are genes, and — on desktop — even when there are none, so an

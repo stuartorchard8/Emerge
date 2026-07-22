@@ -29,9 +29,9 @@ object SpeciesNames {
 
     /** The nine ordered atom pairs → distinct portmanteaus. Order matters: `rg` ≠ `gr`. */
     val DUOMERS: Map<String, String> = mapOf(
-        "rr" to "Ruddle", "rg" to "Redreen", "rb" to "Ruble",
-        "gr" to "Greed", "gg" to "Greeble", "gb" to "Greblu",
-        "br" to "Blured", "bg" to "Blugre", "bb" to "Blub",
+        "rr" to "Redrum", "rg" to "Redreen", "rb" to "Reuble",
+        "gr" to "Greed",  "gg" to "Grogram", "gb" to "Greble",
+        "br" to "Blured", "bg" to "Blugram", "bb" to "Bluble",
     )
 
     /**

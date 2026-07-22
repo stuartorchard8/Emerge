@@ -58,12 +58,17 @@ class CampaignDirector {
      *  gene's operand). That is what lets Genesis react to the player's "starter" pick — "{chem} it is." —
      *  and falls back to "your chemical" before they've chosen one. Named the world's way (chapter aliases
      *  over the built-in [SpeciesNames]); the whole coach renders upper-case, so its casing is irrelevant. */
-    private fun copy(s: String): String {
+    private fun copy(s: String, alt: String? = null): String {
         val expanded = inputHints.expand(s)
         if (!expanded.contains("{chem}")) return expanded
         val token = lastQuery?.focused?.convertChem
-        val named = if (token.isNullOrEmpty()) "your chemical"
+        val named = if (token.isNullOrEmpty()) "nothing"
             else SpeciesNames.name(token, chapter?.scenario?.aliases ?: emptyMap())
+        if (alt != null && token.isNullOrEmpty()) {
+            // Cheeky alt text for people who skip
+            val expandedAlt = inputHints.expand(alt)
+            return expandedAlt.replace("{chem}", named)
+        }
         return expanded.replace("{chem}", named)
     }
 
@@ -122,7 +127,7 @@ class CampaignDirector {
         return CoachSnapshot(
             chapterId = ch.id, chapterTitle = ch.title,
             stepIndex = stepIndex, stepCount = ch.steps.size,
-            text = copy(step.text), goal = goalText(step.gate)?.let { copy(it) },
+            text = copy(step.text, step.altText), goal = goalText(step.gate)?.let { copy(it) },
             gateReady = gateReady, world = step.world,
         )
     }
@@ -221,7 +226,7 @@ class CampaignDirector {
         return ui.panel(anchor, margin = margin, padding = PAD_DP, background = 0x11182AF2L, rowHeight = 22f, textSize = textSize, fillWidth = fillWidth) {
             title(clip(header, wrapChars), 0x6FD6C4FFL)
             gap(4f)
-            for (line in wrap(copy(step.text), wrapChars)) row(line, 0xEAEEF6FFL)
+            for (line in wrap(copy(step.text, step.altText), wrapChars)) row(line, 0xEAEEF6FFL)
             step.spotlight?.hint?.let { gap(2f); for (line in wrap(copy("→ $it"), wrapChars)) row(line, 0xFFD86EFFL) }
 
             // Objective line + progress for a World / Did gate.
