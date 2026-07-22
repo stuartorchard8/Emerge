@@ -151,8 +151,9 @@ object CytoTuning {
      *  Lower = an earlier/tighter plateau. ⚙ */
     const val METABOLIC_BIOMASS_SCALE = 32 * CHEMISTRY_SCALE
     /** Degradation: a cell's wear accumulator gains its total biomass (atoms) each tick; every
-     *  DEGRADE_PERIOD of accumulated wear breaks one bond (so decay rate ∝ size). ⚙ */
-    const val DEGRADE_PERIOD = 18000
+     *  DEGRADE_PERIOD of accumulated wear sheds one molecule (so decay rate ∝ size). Lower = faster decay
+     *  = a stiffer maintenance cost = more selection pressure for genomes that rebuild efficiently. ⚙ */
+    const val DEGRADE_PERIOD = 6000
     /** Cell dies when total biomass falls below this. */
     const val DEATH_BIOMASS = 1 * CHEMISTRY_SCALE
     /** Min cell radius (logical), from the original Cyto `Cell`. */
