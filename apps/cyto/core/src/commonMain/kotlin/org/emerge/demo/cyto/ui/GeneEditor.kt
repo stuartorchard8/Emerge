@@ -61,13 +61,14 @@ class GeneEditor {
         const val GENE_DROP_DEL = "gene-drop-del"
         const val GENE_REORDER_PREFIX = "gene-reorder:"
 
-        // The starting gene for "+ NEW GENE" / "+ NEW GROUP" — a benign, always-firing placeholder that reads
-        // as a complete sentence (WHEN BIOMASS > 0 -> CONVERT FUEL, POWERED BY LIGHT) so the freshly-created
-        // card is immediately legible and editable rather than empty. The group tag is filled in by the caller.
+        // The starting gene for "+ NEW GENE" / "+ NEW GROUP" — a genuinely BLANK slate: no condition (reads
+        // ALWAYS) and no action (reads NOTHING), so it is inert until the player authors it. The player fills
+        // in the two blanks — tapping ALWAYS adds a first (blank) clause, tapping NOTHING picks an action —
+        // rather than deleting a plausible-but-wrong placeholder. The group tag is filled in by the caller.
         val BLANK_GENE = Gene(
             EnergySource.Light,
-            GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)),
-            GeneAction(ActionType.Convert, "rg"),
+            GeneCondition(emptyList()),
+            GeneAction(ActionType.None),
         )
     }
 
@@ -555,18 +556,23 @@ class GeneEditor {
 
     /** The gene-as-a-sentence body (WHEN / DO / POWERED BY / GROUP), shared by both container geometries. */
     private fun PanelBuilder.geneBody(controller: CytoController, d: Gene) {
-        // ── WHEN: the condition, one row of three chips per AND-clause ──
+        // ── WHEN: the condition, one row of three chips per AND-clause. An empty gate reads ALWAYS; tapping
+        // it drops in a first (blank) clause to start authoring the condition. ──
         row("WHEN", 0x7A8699FFL)
         val clauses = d.condition.clauses
-        clauses.forEachIndexed { ci, cl ->
-            clauseRow(
-                operandLabel(cl.lhs), if (cl.cmp == Comparison.Greater) ">" else "<", operandLabel(cl.rhs),
-                onLhs = { openPick(Pick.Operand, ci, 0) }, onRhs = { openPick(Pick.Operand, ci, 1) },
-                onCmp = { draft = withClauseAt(d, ci, cl.copy(cmp = if (cl.cmp == Comparison.Greater) Comparison.Less else Comparison.Greater)) },
-            )
+        if (clauses.isEmpty()) {
+            chip("", "ALWAYS", 0x1E2634FFL) { draft = addFirstClause(d) }
+        } else {
+            clauses.forEachIndexed { ci, cl ->
+                clauseRow(
+                    operandLabel(cl.lhs), if (cl.cmp == Comparison.Greater) ">" else "<", operandLabel(cl.rhs),
+                    onLhs = { openPick(Pick.Operand, ci, 0) }, onRhs = { openPick(Pick.Operand, ci, 1) },
+                    onCmp = { draft = withClauseAt(d, ci, cl.copy(cmp = if (cl.cmp == Comparison.Greater) Comparison.Less else Comparison.Greater)) },
+                )
+            }
+            if (clauses.size < CytoTuning.GENOME_MAX_CLAUSES)
+                chip("", "+ AND CLAUSE", 0x1E2634FFL) { draft = addClauseUi(d) }
         }
-        if (clauses.size < CytoTuning.GENOME_MAX_CLAUSES)
-            chip("", "+ AND CLAUSE", 0x1E2634FFL) { draft = addClauseUi(d) }
         gap(12f)
 
         // ── DO: the action, then only the fields this action actually has ──
@@ -627,13 +633,13 @@ class GeneEditor {
         when (pick) {
             Pick.None -> return
             Pick.Action -> pickSheet(b, "DO WHAT?", wide) {
-                for ((i, t) in ActionType.entries.withIndex()) {
+                for ((i, t) in actionChoices.withIndex()) {
                     listRow(actionTypeLabel(t), actionBlurb(t), selected = t == d.action.type) {
                         val mitosis = t == ActionType.Mitosis
                         draft = d.copy(action = d.action.copy(type = t, morphogenToMother = d.action.morphogenToMother && mitosis, divideAcross = d.action.divideAcross && mitosis, rejectMother = d.action.rejectMother && mitosis))
                         closePick()
                     }
-                    if (i < ActionType.entries.lastIndex) gap(4f)
+                    if (i < actionChoices.lastIndex) gap(4f)
                 }
             }
             // Only the source TYPE — which reaction a BOND gene runs is picked in [Pick.Bond], so this list
@@ -882,10 +888,12 @@ class GeneEditor {
                 is Operand.Chem -> { row("MOLECULE", 0x7A8699FFL); speciesBuilder("op-chem", clauseSpeciesLens()) }
                 else -> {}
             }
-            // Remove-clause parity with the old form: only when more than one AND-clause remains.
-            if (d.condition.clauses.size > 1) {
+            // Any clause is removable — dropping the last one restores the gene to the unconditional ALWAYS
+            // state (the last clause reads "back to ALWAYS" to make that consequence explicit).
+            if (d.condition.clauses.isNotEmpty()) {
                 gap(8f)
-                listRow("REMOVE THIS CLAUSE", "DROP THIS CONDITION FROM THE GENE") { draft = removeClauseAt(d, ci); closePick() }
+                val last = d.condition.clauses.size == 1
+                listRow("REMOVE THIS CLAUSE", if (last) "BACK TO ALWAYS (NO CONDITION)" else "DROP THIS CONDITION FROM THE GENE") { draft = removeClauseAt(d, ci); closePick() }
             }
         }
     }
@@ -990,6 +998,7 @@ class GeneEditor {
         ActionType.Repair -> "HEAL THE MOST-DAMAGED WELD"
         ActionType.Lyse -> "TEAR BIOMASS FROM A TOUCHING CELL"
         ActionType.Retain -> "SEAL A MOLECULE INSIDE THE CELL"
+        ActionType.None -> "DO NOTHING - PICK AN ACTION"
     }
 
     /** One-line gloss of an operand kind, for the L4 operand picker. Index-aligned with [operandKindLabels]
@@ -1026,10 +1035,18 @@ class GeneEditor {
         return "${sp(joined)} $pair"
     }
 
-    /** How an action reads in the UI. Only [ActionType.BreakBond] differs from its enum name: it shows as
-     *  **BREAK**, so the digestion row mirrors the synthesis row's **BOND** word-for-word rather than
-     *  reading `BreakBond` next to `BOND`. */
-    private fun actionTypeLabel(t: ActionType) = if (t == ActionType.BreakBond) "BREAK" else t.name
+    /** How an action reads in the UI. [ActionType.BreakBond] shows as **BREAK** (so the digestion row mirrors
+     *  the synthesis row's **BOND**); [ActionType.None] — the authoring blank — shows as **NOTHING**, an
+     *  invitation to pick a real action rather than the enum's bare `None`. */
+    private fun actionTypeLabel(t: ActionType) = when (t) {
+        ActionType.BreakBond -> "BREAK"
+        ActionType.None -> "NOTHING"
+        else -> t.name
+    }
+
+    /** The real, player-choosable actions — every [ActionType] except the inert [ActionType.None] authoring
+     *  blank, which is a starting state rather than something you'd deliberately select. */
+    private val actionChoices: List<ActionType> = ActionType.entries.filter { it != ActionType.None }
 
     private fun synthesisLabel(s: EnergySource.FormBond) = reactionLabel(s.a, s.b, "WON'T BOND")
     private fun breakLabel(a: GeneAction) = reactionLabel(a.a, a.b, "NO SUCH MOLECULE")
@@ -1069,7 +1086,14 @@ class GeneEditor {
         fun ctlIf(blocked: Boolean) = if (blocked) orange else ctl
         val lines = ArrayList<List<UiTok>>()
 
-        // WHEN <lhs> <cmp> <rhs>, one clause per line.
+        // WHEN <lhs> <cmp> <rhs>, one clause per line. An empty gate reads WHEN ALWAYS; tapping ALWAYS drops
+        // in a first (blank) clause so the condition can be authored.
+        if (gene.condition.clauses.isEmpty()) {
+            lines.add(listOf(
+                UiTok.Text("WHEN ", grey),
+                UiTok.Toggle("ALWAYS", ctl) { inlineEdit(controller, i) { addFirstClause(it) } },
+            ))
+        }
         gene.condition.clauses.forEachIndexed { ci, cl ->
             val c = ctlIf(clauseBlocks.getOrElse(ci) { false })
             lines.add(listOf(
@@ -1114,10 +1138,10 @@ class GeneEditor {
         // DO: action Menu, its operand token(s), and efficiency (non-Mitosis).
         val actKey = "$i:act"
         val actLine = ArrayList<UiTok>()
-        actLine.add(UiTok.Menu(actionTypeLabel(gene.action.type), ctlIf(inputBlocked), ActionType.entries.map { actionTypeLabel(it) }, openMenu == actKey,
+        actLine.add(UiTok.Menu(actionTypeLabel(gene.action.type), ctlIf(inputBlocked), actionChoices.map { actionTypeLabel(it) }, openMenu == actKey,
             onToggle = { openMenu = if (openMenu == actKey) null else actKey },
             onPick = { idx ->
-                val t = ActionType.entries[idx]; val m = t == ActionType.Mitosis
+                val t = actionChoices[idx]; val m = t == ActionType.Mitosis
                 inlineEdit(controller, i) { it.copy(action = it.action.copy(type = t, morphogenToMother = it.action.morphogenToMother && m, divideAcross = it.action.divideAcross && m, rejectMother = it.action.rejectMother && m)) }
                 openMenu = null
             }))
@@ -1184,7 +1208,8 @@ class GeneEditor {
             buildList {
                 if (clauseCount < CytoTuning.GENOME_MAX_CLAUSES)
                     add(HoverAction("+", green, "clause-dup-$ci") { dupClause(controller, i, ci) })
-                if (clauseCount > 1) {
+                // Any clause is deletable — removing the last one restores the unconditional ALWAYS gate.
+                run {
                     val armed = armedClauseDelete == "$i:$ci"
                     add(HoverAction(if (armed) "!" else "X", if (armed) 0xB03030FFL else red, "clause-del-$ci") { deleteClauseArmed(controller, i, ci) })
                 }
@@ -1234,7 +1259,7 @@ class GeneEditor {
             }
             val out = mutableListOf<List<Pair<String, Long?>>>()
             if (clauseLines.isEmpty() || clauseLines.all { it.isEmpty() }) {
-                out.add(listOf("WHEN " to GREY, "always" to GREY))
+                out.add(listOf("WHEN " to GREY, "ALWAYS" to GREY))
             } else {
                 clauseLines.forEachIndexed { ci, cl ->
                     out.add(listOf<Pair<String, Long?>>((if (ci == 0) "WHEN " else " AND ") to GREY) + cl)
@@ -1280,6 +1305,7 @@ class GeneEditor {
             ActionType.Repair -> "REPAIR WELDS" to emptyList()
             ActionType.Lyse -> "LYSE" to emptyList()
             ActionType.Retain -> "RETAIN $av" to emptyList()
+            ActionType.None -> "NOTHING" to emptyList()
             ActionType.Mitosis -> {
                 // Every modifier slot is ALWAYS shown, with default wording when unset, so each is a token
                 // to click (UI_REDESIGN.md §8a): a bare divide reads DIVIDE / ALONG NO GRADIENT / RETAINING
@@ -1317,12 +1343,19 @@ class GeneEditor {
         return d.copy(condition = GeneCondition(cs))
     }
 
-    /** Drop clause [ci] (never empties the gate — a gene keeps ≥1 clause). */
+    /** Drop clause [ci]. Removing the LAST clause is allowed — it empties the gate, restoring the gene to the
+     *  unconditional ALWAYS state (the mirror of [addFirstClause]). */
     private fun removeClauseAt(d: Gene, ci: Int): Gene {
         val cs = d.condition.clauses
-        if (cs.size <= 1) return d
+        if (ci !in cs.indices) return d
         return d.copy(condition = GeneCondition(cs.filterIndexed { i, _ -> i != ci }))
     }
+
+    /** A fresh, deliberately **blank** first clause — `CHEM (nothing) > 0`. It reads as a real condition but
+     *  never fires (a blank species counts 0), so it keeps the gene inert until the player names the molecule,
+     *  matching how the blank ACTION keeps it inert until one is chosen. */
+    private fun addFirstClause(d: Gene): Gene =
+        d.copy(condition = GeneCondition(listOf(Clause(Operand.Chem(""), Comparison.Greater, Operand.Constant(0)))))
 
     /** Append a fresh AND-clause copied from the LAST clause (so a near-duplicate is one tweak away),
      *  capped at [CytoTuning.GENOME_MAX_CLAUSES]. (Clause is immutable, so reusing the value is a copy.) */
