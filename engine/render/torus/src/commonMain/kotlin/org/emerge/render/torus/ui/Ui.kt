@@ -337,7 +337,13 @@ class Ui {
             }
         }
         if (activeHandle == null && activeDrag == null) {
-            for (r in scrollRegions) {
+            // Reverse order so the TOPMOST scroll region under the point wins — same convention as the click
+            // scan below. Regions are appended in render order, so a modal sheet's scroll area (registered
+            // last) must take the drag over a full-screen scroll region behind it (e.g. the L3 gene modal
+            // under the L4 operand sheet); forward order armed the background region and the sheet, clipped
+            // past the screen edge, could not be scrolled.
+            for (i in scrollRegions.indices.reversed()) {
+                val r = scrollRegions[i]
                 if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
                     activeScroll = r.id
                     scrollLastY = py
