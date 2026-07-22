@@ -354,10 +354,10 @@ object CampaignContent {
     // by hand, one primitive at a time. Kept off the main ORDER so it can be iterated in isolation (launch it
     // directly: `campaign ch00-genesis` in the agent harness) without disturbing the pre-inversion ch1-10.
 
-    /** An empty world — no founders (the player places the first cell themselves) — under **near-perpetual
-     *  daylight**. Light is a band whose width is `dayTicks / (day+night)`; `nightTicks = 0` widens it to
-     *  cover ~the whole torus, so the tutorial's light-powered CONVERT reliably has energy wherever the cell
-     *  is placed, instead of stalling when a narrow day-band sweeps off it. */
+    /** An empty world — no founders (the player places the first cell themselves) — on a **real day/night
+     *  cycle**. Light is a band whose width is `dayTicks / (day+night)`, so 900/2700 is a quarter-torus day
+     *  sweeping past: a light-powered CONVERT gene feeds while the band is over the cell and stalls when it
+     *  passes, which is the pressure the chapters after Genesis are built on. */
     private val EMPTY_WORLD = CytoScenario.DEFAULT.copy(
         name = "Genesis", founders = emptyList(), dayTicks = 900L, nightTicks = 2700L,
         // A whisper of Perlin variation over the monomer soup, so the empty world reads as a living place with
