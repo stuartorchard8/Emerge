@@ -431,7 +431,7 @@ object CampaignContent {
             // player makes their organism's first real choice. Frozen so the cell waits, un-decaying, while
             // they author it. The gate fires once the genome holds a CONVERT gene (any chemical).
             Step(
-                text = "Select your cell and open its genome. It's floating in a soup of three raw elements - RED, GREEN and BLUE - and they're all interchangeable, so pick whichever you like as your starter. Add a gene, set it to CONVERT that element, and the cell will lock it into biomass: it rebuilds itself.",
+                text = "Select your cell and open its genome. It's floating in a soup of three raw elements - REDOGEN, GREENUM and BLUEON. Add a gene, set it to CONVERT one of the elements - they're interchangeable, so pick whichever you like. The cell will lock it into biomass to rebuild itself.",
                 detail = "Tap + NEW GENE, tap NOTHING and choose CONVERT, then pick your element. The picker gives you a harmless heads-up if you name something the cell isn't holding.",
                 gate = Gate.World("Give the cell a CONVERT gene", met = { it.focused?.convertChem != null }),
                 allow = LOOK,

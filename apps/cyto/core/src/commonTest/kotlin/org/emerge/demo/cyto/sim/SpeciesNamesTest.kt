@@ -9,7 +9,7 @@ class SpeciesNamesTest {
 
     @Test fun atomsGetFlavourNames() {
         assertEquals("Redogen", SpeciesNames.name("r"))
-        assertEquals("Greenium", SpeciesNames.name("g"))
+        assertEquals("Greenum", SpeciesNames.name("g"))
         assertEquals("Blueon", SpeciesNames.name("b"))
     }
 

@@ -50,7 +50,7 @@ fun PanelBuilder.metabolismTable(info: CytoController.CellInfo) {
 // which fits the fixed-width cell dock (GeneEditor.CELL_PANEL_DP). The value columns are 5 wide and values
 // are compacted ([fmt]) so they never overflow: since biomass counts atoms these run to 6+ digits on a
 // hoarder (e.g. 292084), which overran the old 6-wide raw columns and clipped the BIO column off-screen.
-// The species column is 9 wide to fit the built-in flavour names (e.g. GREENIUM); longer fallbacks are clipped.
+// The species column is 9 wide to fit the built-in flavour names (e.g. GREENUM); longer fallbacks are clipped.
 private const val SP_COL = 9
 private const val NUM_COL = 5
 private val METAB_HEADER =

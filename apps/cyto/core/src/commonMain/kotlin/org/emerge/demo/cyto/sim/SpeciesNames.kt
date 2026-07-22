@@ -10,7 +10,7 @@ package org.emerge.demo.cyto.sim
  *     `aliases` param. Layer 2, authored per genome.
  *  2. **built-in names** — the same for every genome, on by default in the sandbox too:
  *      - the three **atoms** get flavour names ([ATOMS]) that read as colour-based chemicals
- *        (`r` → Redogen, `g` → Greenium, `b` → Blueon);
+ *        (`r` → Redogen, `g` → Greenum, `b` → Blueon);
  *      - the nine **duomers** get distinct portmanteaus ([DUOMERS]) — the point being that `rg` and `gr`
  *        (same atoms, indistinguishable by colour) read as *Redreen* vs *Greed*, and `b` vs `bb` as
  *        *Blueon* vs *Blub*, which the bare tokens and the pigment colour can't separate;
@@ -23,7 +23,7 @@ object SpeciesNames {
     /** Atom → flavour name. Keyed by the single-char monomer token. */
     val ATOMS: Map<String, String> = mapOf(
         "r" to "Redogen",
-        "g" to "Greenium",
+        "g" to "Greenum",
         "b" to "Blueon",
     )
 
