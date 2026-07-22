@@ -4,6 +4,7 @@ import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.SpeciesNames
 import org.emerge.render.torus.ui.Anchor
+import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.UiBuilder
 import org.emerge.render.torus.ui.UiTextRenderer
 
@@ -26,6 +27,8 @@ class CampaignDirector {
     private var gateMet: Boolean = false
     private var lastQuery: CampaignQuery? = null
     private var showDetail: Boolean = false
+    /** The Reset sheet is open (the two ways back). Cleared on every step entry, like [showDetail]. */
+    private var resetMenuOpen: Boolean = false
 
     /** The ordered campaign. The director walks this itself so completing a chapter segues straight into the
      *  next (a single continuous world) instead of returning the host to the chapter selector. The host sets
@@ -216,6 +219,7 @@ class CampaignDirector {
         satisfiedDid.clear()
         gateMet = false
         showDetail = false
+        resetMenuOpen = false
         currentStep?.let { it.onEnter(controller); onStepEnter(it) }
     }
 
@@ -322,11 +326,45 @@ class CampaignDirector {
             // with padding) so it reads as a phone app bar, not a left-hugging box.
             val h = renderFull(ui, ch, step, controller, "$counter ${ch.title}", Anchor.TopLeft, margin = TOP_MARGIN_DP, wrapChars = budget, textSize = TOP_TEXT_DP, fillWidth = true)
             coachTopInsetPx = TOP_MARGIN_DP * ui.density + h   // the coach's bottom edge, for the camera recentre
-            return
+        } else {
+            // BOTTOM_MARGIN_DP, not a hand-tuned gap: the host draws the HUD bar first, so this panel stacks
+            // directly above it and only needs the same edge gap the bar uses.
+            renderFull(ui, ch, step, controller, "${ch.title}  $counter", Anchor.BottomCenter, margin = BOTTOM_MARGIN_DP, wrapChars = COACH_WRAP, textSize = BOTTOM_TEXT_DP, fillWidth = false)
         }
-        // BOTTOM_MARGIN_DP, not a hand-tuned gap: the host draws the HUD bar first, so this panel stacks
-        // directly above it and only needs the same edge gap the bar uses.
-        renderFull(ui, ch, step, controller, "${ch.title}  $counter", Anchor.BottomCenter, margin = BOTTOM_MARGIN_DP, wrapChars = COACH_WRAP, textSize = BOTTOM_TEXT_DP, fillWidth = false)
+        // Drawn last on both widths so its scrim covers the coach itself.
+        if (resetMenuOpen) renderResetSheet(ui, controller, narrow)
+    }
+
+    /**
+     * The two ways back, behind the coach's single Reset button. Each gets a line saying what it will
+     * actually do, because one of them throws the player's world away and the labels alone don't carry
+     * that. Dismissing (scrim/back) is a third, silent option: changing your mind is the common case.
+     *
+     * Geometry mirrors the gene editor's picker ([GeneEditor.pickSheet]): a bounded centre box on desktop,
+     * a bottom sheet with phone-sized rows on a narrow screen.
+     */
+    private fun renderResetSheet(ui: UiBuilder, controller: CytoController, narrow: Boolean) {
+        val body: PanelBuilder.() -> Unit = {
+            // Descriptions are kept short deliberately: listRow CLIPS rather than wraps, and the phone's
+            // sheet only fits ~36 characters at this row size (verified on a 1080x2160 shot).
+            listRow("RESTART", "BACK TO HOW THIS CHAPTER BEGAN") {
+                resetMenuOpen = false; restartFromEntryState(controller)
+            }
+            listRow("CLEAN", "WIPE IT ALL, KEEP YOUR GENOME") {
+                resetMenuOpen = false; resetChapter(controller)
+            }
+        }
+        val dismiss = { resetMenuOpen = false }
+        if (narrow) {
+            ui.sheet("coach-reset", "RESET", onDismiss = dismiss, heightFraction = 0.34f,
+                rowHeight = 48f, textSize = 16f, body = body)
+        } else {
+            val w = minOf(520f * ui.density, ui.screenW * 0.6f)
+            val h = minOf(ui.screenH * 0.5f, 240f * ui.density)
+            ui.sheet("coach-reset", "RESET", onDismiss = dismiss,
+                boxX = (ui.screenW - w) * 0.5f, boxY = (ui.screenH - h) * 0.5f, boxW = w, boxH = h,
+                rowHeight = 34f, textSize = 15f, body = body)
+        }
     }
 
     /** The full coach body — title, wrapped step text, spotlight hint, objective, optional detail, and the
@@ -364,11 +402,11 @@ class CampaignDirector {
             gap(6f)
             val buttons = ArrayList<Triple<String, Long, () -> Unit>>()
             if (step.detail != null) buttons.add(Triple(if (showDetail) "Less" else "More", 0x2A3550FFL) { showDetail = !showDetail })
-            // Two ways back, both always available (see [restartFromEntryState] / [resetChapter]):
-            // "Restart" puts the player's OWN world back as this chapter began; "Clean" wipes to a scripted
-            // start carrying their genome. Neither costs them the stored entry state.
-            buttons.add(Triple("Restart", 0x2A4055FFL) { restartFromEntryState(controller) })
-            buttons.add(Triple("Clean", 0x4A3A2AFFL) { resetChapter(controller) })
+            // One button, two ways back — the choice lives in a sheet ([renderResetSheet]) rather than a
+            // fourth and fifth control, because the coach row is shared with More/Skip/Next and is tight on
+            // a phone. It also gives each option room for a line explaining what it will do, which matters
+            // when one of them is destructive.
+            buttons.add(Triple("Reset", 0x4A3A2AFFL) { resetMenuOpen = true })
             buttons.add(Triple("Skip", 0x53384AFFL) { advance(controller) })
             buttons.add(Triple("Next >", if (nextEnabled) 0x2E6E5EFFL else 0x2A3040FFL) { if (nextEnabled) advance(controller) })
             actionRow(buttons)
