@@ -354,15 +354,25 @@ object CampaignContent {
     // by hand, one primitive at a time. Kept off the main ORDER so it can be iterated in isolation (launch it
     // directly: `campaign ch00-genesis` in the agent harness) without disturbing the pre-inversion ch1-10.
 
-    /** An empty world — no founders. The player places the first cell themselves. */
-    private val EMPTY_WORLD = CytoScenario.DEFAULT.copy(name = "Genesis", founders = emptyList())
+    /** An empty world — no founders (the player places the first cell themselves) — under **near-perpetual
+     *  daylight**. Light is a band whose width is `dayTicks / (day+night)`; `nightTicks = 0` widens it to
+     *  cover ~the whole torus, so the tutorial's light-powered CONVERT reliably has energy wherever the cell
+     *  is placed, instead of stalling when a narrow day-band sweeps off it. */
+    private val EMPTY_WORLD = CytoScenario.DEFAULT.copy(
+        name = "Genesis", founders = emptyList(), dayTicks = 4000L, nightTicks = 0L,
+    )
 
     /** The hand-authored starter cell: **no genes**, a body of 2000 each of r/g/b (6000 atoms of biomass).
      *  With no maintenance gene it can only decay, so it's the vehicle for teaching why a cell needs genes. */
     private val STARTER_CELL_BIOMASS = mapOf("r" to 2000, "g" to 2000, "b" to 2000)
 
-    /** Step 5 mask: watch + the SLOW/PAUSE/FAST controls, so the player can fast-forward the (slow) death. */
-    private val WATCH_DEATH = ControlMask.of(
+    /** The starter cell's mobile **cytoplasm** — a reserve of all three raw elements, so whichever one the
+     *  player picks for their first CONVERT gene, the cell is already holding it to lock into biomass. */
+    private val STARTER_CELL_CYTOPLASM = mapOf("r" to 2000, "g" to 2000, "b" to 2000)
+
+    /** Watch mask WITH the SLOW/PAUSE/FAST controls, so the player can fast-forward the slow beats (the
+     *  gene-less cell's death; the first gene's biomass climbing back). */
+    private val WATCH_SPEED = ControlMask.of(
         Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Menu, Control.Speed,
     )
 
@@ -375,6 +385,7 @@ object CampaignContent {
         startsFreshWorld = true,
         spawnGenome = emptyList(),                 // the placed cell has NO genes
         spawnBiomass = STARTER_CELL_BIOMASS,       // 2000 each of r/g/b = 6000 biomass
+        spawnCytoplasm = STARTER_CELL_CYTOPLASM,   // a reserve of raw elements for the first CONVERT gene
         steps = listOf(
             // 1. Camera.
             Step(
@@ -406,14 +417,34 @@ object CampaignContent {
             Step(
                 text = "With no genes, the cell has no way to maintain itself. Watch its biomass fall as it slowly breaks down - and dies.",
                 gate = Gate.World("The cell dies", met = { it.cellCount == 0 }),
-                allow = WATCH_DEATH,
+                allow = WATCH_SPEED,
                 world = WorldRun.Live,
             ),
-            // 6. Segue to the first gene (built next increment).
+            // 6. Place YOUR cell — a fresh start, this one gets a gene.
             Step(
-                text = "It needed a way to rebuild itself. Next: place another cell and give it a gene that turns matter into biomass. (Coming soon.)",
-                gate = Gate.Next,
+                text = "That cell faded because it couldn't rebuild itself. Let's fix that. Tap an empty spot to place a fresh cell - this one is yours to shape.",
+                gate = Gate.World("Place a cell", met = { it.cellCount >= 1 }),
+                allow = SPAWN,
+                world = WorldRun.Live,
+            ),
+            // 7. Choose a starter element and author the first CONVERT gene. This is the pivotal beat: the
+            // player makes their organism's first real choice. Frozen so the cell waits, un-decaying, while
+            // they author it. The gate fires once the genome holds a CONVERT gene (any chemical).
+            Step(
+                text = "Select your cell and open its genome. It's floating in a soup of three raw elements - RED, GREEN and BLUE - and they're all interchangeable, so pick whichever you like as your starter. Add a gene, set it to CONVERT that element, and the cell will lock it into biomass: it rebuilds itself.",
+                detail = "Tap + NEW GENE, tap NOTHING and choose CONVERT, then pick your element. The picker gives you a harmless heads-up if you name something the cell isn't holding.",
+                gate = Gate.World("Give the cell a CONVERT gene", met = { it.focused?.convertChem != null }),
                 allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            // 8. Reaction + payoff. {chem} names the player's own pick (see CampaignDirector.copy), so the
+            // coach speaks their choice back to them. Live + speed controls so they can watch it climb.
+            Step(
+                text = "{chem} it is - a fine starter. Watch: your cell locks {chem} into biomass, so its size stops falling and starts to climb. You've made a cell that builds itself.",
+                detail = "It's living off the {chem} it began with. When that reserve runs low the climb will stall - and the next thing to learn is how a cell pulls more in from the world around it.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
             ),
         ),
     )
@@ -437,11 +468,16 @@ object CampaignContent {
         // Scan the RENDERED copy of every modality: input `{tokens}` are expanded first, so the `{`/`}`
         // delimiters (which the font lacks) don't false-positive and the actual on-screen phrases are checked.
         val modalities = listOf(InputHints.MOUSE, InputHints.TOUCH)
+        // Runtime tokens the director resolves (e.g. `{chem}` -> a chemical name) aren't known to InputHints,
+        // so strip any leftover `{token}` after expansion — otherwise the `{`/`}` delimiters (which the font
+        // lacks) false-positive. The `}` MUST be escaped for Android's stricter ICU regex (see the memory).
+        val runtimeToken = Regex("\\{\\w+\\}")
         fun scan(s: String?) {
             s ?: return
-            for (hints in modalities) hints.expand(s).forEach { if (it != '\n' && !UiTextRenderer.supports(it)) bad.add(it) }
+            for (hints in modalities) hints.expand(s).replace(runtimeToken, "").forEach { if (it != '\n' && !UiTextRenderer.supports(it)) bad.add(it) }
         }
-        for (ch in CHAPTERS) {
+        // Include the WIP scratch chapters — they're player-facing now (wired into the menu via PLAYABLE_CHAPTERS).
+        for (ch in PLAYABLE_CHAPTERS) {
             scan(ch.title); scan(ch.blurb)
             for (st in ch.steps) {
                 scan(st.text); scan(st.detail); scan(st.spotlight?.hint)
