@@ -634,6 +634,16 @@ class CytoController(
                 else (cyto[s.a] ?: 0) <= 0 || (cyto[s.b] ?: 0) <= 0
         }
         val a = g.action
+        // Division is the one all-or-nothing action: it needs `biomass/4` energy units IN ONE TICK
+        // (CytoBiologyCore's Mitosis branch — `k = if (k >= cost) cost else 0`), and energy can't be banked.
+        // A DIVIDE gene whose gate passes but whose fuel pool can't clear the bar therefore reads perfectly
+        // active while never once dividing, which is the least legible state in the game. Flag it — on the
+        // SOURCE span, because what falls short is the chemical the source names, not the DIVIDE itself.
+        //
+        // Approximate in the same direction as the rest of this function: the per-gene 1/n energy split isn't
+        // modelled, so this over-estimates what's available and under-reports the block. It never cries wolf.
+        val divideUnfunded = a.type == ActionType.Mitosis && !energyBlocked &&
+            energyUnits(g.source, cyto, quanta) < totalBiomass / 4
         val inputBlocked = when (a.type) {
             // Blocked unless the exact molecule the two fragments name is in the cytoplasm (the mirror of
             // the synthesis check above: there both reactants must be present, here their join must be).
@@ -655,7 +665,7 @@ class CytoController(
             spans += CellInfo.Span(clauseStr(c), clauseFails(c))
         }
         spans += CellInfo.Span(" (", false)
-        spans += CellInfo.Span(srcLabel(g.source), energyBlocked)
+        spans += CellInfo.Span(srcLabel(g.source), energyBlocked || divideUnfunded)
         spans += CellInfo.Span(")", false)
         if (g.efficiency != 0) spans += CellInfo.Span(" e${g.efficiency}", false)
         return spans
@@ -816,6 +826,16 @@ class CytoController(
     /** One condition clause as `lhs<cmp>rhs` (e.g. `ab<800`). */
     private fun clauseStr(c: org.emerge.demo.cyto.sim.Clause): String =
         "${operandLabel(c.lhs)}${if (c.cmp == Comparison.Greater) ">" else "<"}${operandLabel(c.rhs)}"
+
+    /** Energy units the source can raise this tick: a light-powered gene gets the cell's quanta, a synthesis
+     *  one gets a unit per bond it can form — so it is bounded by the scarcer reactant, halved for a self-join
+     *  (which consumes two copies per bond). Mirrors [org.emerge.demo.cyto.sim.CytoBiologyCore]'s `energyUnits`
+     *  with the per-gene 1/n split left out (see [describeGeneSpans]). */
+    private fun energyUnits(s: EnergySource, cyto: Map<String, Int>, quanta: Int): Int = when (s) {
+        EnergySource.Light -> quanta
+        is EnergySource.FormBond ->
+            if (s.a == s.b) (cyto[s.a] ?: 0) / 2 else minOf(cyto[s.a] ?: 0, cyto[s.b] ?: 0)
+    }
 
     /** The energy-source part (`LIGHT` / `BND a·b`). */
     private fun srcLabel(s: EnergySource): String = when (s) {

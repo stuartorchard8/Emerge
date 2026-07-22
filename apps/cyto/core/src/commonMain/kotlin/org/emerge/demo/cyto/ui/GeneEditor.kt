@@ -1186,9 +1186,13 @@ class GeneEditor {
         val srcKey = "$i:src"
         // TWO controls: the source TYPE, then — synthesis only — what it builds. The reaction is one idea, so
         // it is one button that opens one sheet, rather than two operand tokens edited independently.
+        // Same rule as the action row below: BOND doesn't fail, the molecules it names do (absent, or — for a
+        // DIVIDE — too thin on the ground to fund the split), so the orange rides the reaction token. LIGHT
+        // has no chemical to carry it, so there it stays on the type.
         val srcOpts = listOf("USE LIGHT", "BOND")
+        val hasReactionTok = gene.source is EnergySource.FormBond
         val srcLine = ArrayList<UiTok>()
-        srcLine.add(UiTok.Menu(sourceTypeLabel(gene.source), ctlIf(energyBlocked), srcOpts, openMenu == srcKey,
+        srcLine.add(UiTok.Menu(sourceTypeLabel(gene.source), ctlIf(energyBlocked && !hasReactionTok), srcOpts, openMenu == srcKey,
             onToggle = { openMenu = if (openMenu == srcKey) null else srcKey },
             onPick = { idx ->
                 openMenu = null
@@ -1200,7 +1204,7 @@ class GeneEditor {
             }))
         (gene.source as? EnergySource.FormBond)?.let { s ->
             srcLine.add(UiTok.Text(" ", grey))
-            srcLine.add(UiTok.Toggle(synthesisLabel(s), ctl) { openInlinePick(controller, i, Pick.Bond) })
+            srcLine.add(UiTok.Toggle(synthesisLabel(s), ctlIf(energyBlocked)) { openInlinePick(controller, i, Pick.Bond) })
         }
         srcLine.add(UiTok.Text(" TO POWER", grey))
         lines.add(srcLine)
@@ -1343,7 +1347,15 @@ class GeneEditor {
             val gene = g.gene
             val energyBlocked = spans.getOrNull(parenIdx + 1)?.blocking == true
             val inputBlocked = spans[0].blocking
-            out.add(listOf(sourceProse(gene.source) to (if (energyBlocked) ORANGE else GREY)))
+            // Split for the same reason the action line below is: on a synthesis source the molecule is what
+            // falls short, so it takes the orange and the bare verb stays grey.
+            out.add(when (val src = gene.source) {
+                EnergySource.Light -> listOf("USE LIGHT" to (if (energyBlocked) ORANGE else GREY))
+                is EnergySource.FormBond -> listOf(
+                    "BOND " to GREY,
+                    synthesisLabel(src) to (if (energyBlocked) ORANGE else GREY),
+                )
+            })
             val (verb, operand, suffix, mods) = actionProse(gene.action)
             // The verb never blocks on its own (no biomass ceiling, no import quota) — only the chemical it
             // names does, so the orange goes on the operand and falls back to the verb when there is none.
@@ -1362,14 +1374,6 @@ class GeneEditor {
             lines = out
         }
         geneCard(lines, bg) { open(controller, i) }
-    }
-
-    /** The gene's power source as its own prose line, shown BEFORE the action (Stu's format) so a long
-     *  action doesn't overflow. The narrow read card's flat form of the same two boxes the interactive
-     *  cards show — `USE LIGHT` / `BOND REDREEN (R+G)`. Tapping the card opens the full editor. */
-    private fun sourceProse(s: EnergySource): String = when (s) {
-        EnergySource.Light -> "USE LIGHT"
-        is EnergySource.FormBond -> "BOND ${synthesisLabel(s)}"
     }
 
     /**
@@ -1440,7 +1444,7 @@ class GeneEditor {
         return when (a.type) {
             ActionType.Import -> ActionProse("IMPORT", av)
             ActionType.Export -> ActionProse("EXPORT", av)
-            // The mirror of [sourceProse]'s BOND line: name the molecule split, its two fragments in parens.
+            // The mirror of the read card's BOND line: name the molecule split, its two fragments in parens.
             ActionType.BreakBond -> ActionProse("BREAK", breakLabel(a))
             ActionType.Convert -> ActionProse("CONVERT", av, " TO MASS")
             ActionType.Contract -> ActionProse("CONTRACT")
