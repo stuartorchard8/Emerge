@@ -3,6 +3,7 @@ package org.emerge.demo.cyto.campaign
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoScenario
+import org.emerge.demo.cyto.sim.SpeciesNames
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -12,6 +13,14 @@ class CampaignDirectorTest {
 
     private fun query(cellCount: Int = 1, maxBiomass: Int = 0) = CampaignQuery(
         WorldStats(0L, cellCount, mapOf(CellType.Collector to cellCount), maxBiomass, emptySet(), null),
+        paused = false, selectedGenome = null,
+    )
+
+    /** A query whose selected cell reports [convertChem] as the chemical of its first CONVERT gene (null =
+     *  no CONVERT gene yet) — for the Genesis "author your first gene" gate + `{chem}` reaction copy. */
+    private fun focusedQuery(convertChem: String?) = CampaignQuery(
+        WorldStats(0L, 1, mapOf(CellType.Collector to 1), 100, emptySet(),
+            FocusedCell(CellType.Collector, 100, 1, emptyMap(), convertChem = convertChem)),
         paused = false, selectedGenome = null,
     )
 
@@ -105,6 +114,31 @@ class CampaignDirectorTest {
         assertFalse(dir.active)
         assertTrue(dir.controlMask.allows(Control.Brush))
         assertTrue(dir.controlMask.allows(Control.Speed))
+    }
+
+    @Test fun chemTokenReflectsThePlayersConvertChoice() {
+        val dir = CampaignDirector()
+        dir.start(chapter(Step("{chem} it is.", Gate.Next)), CytoController())
+        // No CONVERT gene yet: the token falls back to a generic phrase.
+        dir.update(focusedQuery(null), emptySet())
+        assertEquals("your chemical it is.", dir.snapshot()?.text)
+        // Once the player's cell converts 'r', the coach speaks their pick back by its display name.
+        dir.update(focusedQuery("r"), emptySet())
+        assertEquals("${SpeciesNames.name("r", emptyMap())} it is.", dir.snapshot()?.text)
+    }
+
+    @Test fun convertGateFiresOnceTheCellHasAConvertGene() {
+        val ctrl = CytoController()
+        val dir = CampaignDirector()
+        dir.start(chapter(
+            Step("author", Gate.World("Give it a CONVERT gene", met = { it.focused?.convertChem != null })),
+            Step("done", Gate.Next),
+        ), ctrl)
+        dir.update(focusedQuery(null), emptySet())
+        assertFalse(dir.tryAdvance(ctrl), "no CONVERT gene yet -> gate closed")
+        dir.update(focusedQuery("g"), emptySet())
+        assertTrue(dir.tryAdvance(ctrl), "CONVERT gene present -> gate open")
+        assertEquals("done", dir.currentStep?.text)
     }
 
     @Test fun wrapBreaksLongTextIntoBoundedLines() {
