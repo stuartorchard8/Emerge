@@ -70,9 +70,9 @@ class GeneEditor {
             GeneAction(ActionType.None),
         )
 
-        /** What an action's chemical slot reads when nothing is picked yet. Deliberately NOT "NOTHING" — that
-         *  is the label of the blank *action* ([ActionType.None]); this is a blank *target*. */
-        const val NO_SPECIES = "NONE"
+        /** Averaging window for the gene activity glow, in **sim ticks** (not frames — the panel is drawn far
+         *  more often than the world steps, and at FAST far less). See [glow]. */
+        const val GLOW_TICKS = 12
 
         /** Actions whose blocking is really their chemical's: they name a molecule, and it is that molecule
          *  being unset or absent that stops them — the verb itself never blocks (see [geneTokenCard]). */
@@ -135,6 +135,15 @@ class GeneEditor {
     private var openMenu: String? = null
     private var lastFlush: Gene? = null
     private var armedClauseDelete: String? = null   // "<geneIndex>:<clauseIndex>" armed for a second-tap delete
+
+    // ── Gene activity glow ──
+    // A gene's "would fire this tick" flag is genuinely twitchy: a gate like `TOUCH > 0` flips as cells
+    // jostle, and a Convert that empties its cytoplasm alternates on/off tick by tick. Colouring the card
+    // straight off that flag strobes. Instead each gene carries a rolling average of the flag over
+    // GLOW_TICKS sim ticks, so a gene that fires half the time sits half-lit — a dimmer, not a flash.
+    private var glow = FloatArray(0)
+    private var glowCellId = -1
+    private var glowTick = 0L
     private var pendingDeleteGene: Int? = null       // a gene dropped on DELETE, awaiting the confirm dialog
 
     // In-game group tagging: when the player picks "New group..." the editor captures a typed name into
@@ -352,6 +361,7 @@ class GeneEditor {
     ) {
         val info = controller.heldCellInfo()
         if (info == null) { reset(); return }
+        updateGlow(controller, info)
         activeAliases = controller.speciesAliases
         cellCytoplasm = info.metabolism.filter { it.cyto > 0 }.associate { it.species to it.cyto }
         cellEnv = info.metabolism.filter { it.env > 0 }.associate { it.species to it.env }
@@ -1213,7 +1223,7 @@ class GeneEditor {
         when (gene.action.type) {
             ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain -> {
                 actLine.add(UiTok.Text(" ", grey))
-                actLine.add(UiTok.Toggle(sp(gene.action.a).ifEmpty { NO_SPECIES }, ctlIf(inputBlocked)) { openInlinePick(controller, i, Pick.SpeciesA) })
+                actLine.add(UiTok.Toggle(sp(gene.action.a), ctlIf(inputBlocked)) { openInlinePick(controller, i, Pick.SpeciesA) })
             }
             // One control for the whole reaction, exactly like the BOND source row above.
             ActionType.BreakBond -> {
@@ -1284,21 +1294,18 @@ class GeneEditor {
         // Card background carries the read card's state cue: active = green glow, inactive = dark grey. The
         // read card (geneButton) used a solid bright green; here the token controls sit on top, so this is a
         // clearly-green but muted tint that still keeps the blue/orange control boxes legible.
-        val bg = if (g.active) 0x25522FFFL else 0x20242EFFL
+        val bg = mixRgba(0x20242EFFL, 0x25522FFFL, glowOf(i))
         tokenLines(lines, wrapWidth = 356f, textSize = 15f, background = bg, lineActions = lineActions,
             dragId = "$GENE_DRAG_PREFIX$i", onDrop = { tid -> handleGeneDrop(controller, i, tid) })
         gap(8f)
     }
 
-    /** One gene as a tappable button: editing = blue, active = green, inactive = grey; the parts of an
+    /** One gene as a tappable button: editing = blue, otherwise grey→green by how much of the last
+     *  [GLOW_TICKS] ticks it fired for (see [updateGlow]); the parts of an
      *  inactive gene that block it (failed clause / energy / input) draw orange inline. [i] is its live
      *  genome index, used to open it for editing. */
     private fun PanelBuilder.geneButton(controller: CytoController, g: CytoController.CellInfo.GeneRow, i: Int) {
-        val bg = when {
-            editingIndex == i -> 0x4488CCFFL
-            g.active -> 0x2E8B40FFL
-            else -> 0x3C3C3CFFL
-        }
+        val bg = if (editingIndex == i) 0x4488CCFFL else mixRgba(0x3C3C3CFFL, 0x2E8B40FFL, glowOf(i))
         // Split the one-line span sentence — `ACTION IF clause & clause (source) eN` — into a card with the
         // condition clauses ONE PER LINE, then an action line: `WHEN <clause>` / ` AND <clause>` / ... /
         // `→ <ACTION> (source) eN`. The markers " IF ", " (" and the " & " clause separator are emitted
@@ -1366,6 +1373,46 @@ class GeneEditor {
     }
 
     /**
+     * Fold this frame's activity flags into the rolling [glow], advancing it by however many **sim ticks**
+     * have passed since the last fold. Drawn frames and sim ticks run at unrelated rates, so weighting by
+     * elapsed ticks is what makes the window mean 12 ticks at any speed: a paused world folds nothing (the
+     * glow holds), and at FAST a single frame can carry the whole window.
+     *
+     * A different cell — or a genome that changed length — starts fresh at the current flags rather than
+     * fading in from whatever the last cell was doing.
+     */
+    private fun updateGlow(controller: CytoController, info: CytoController.CellInfo) {
+        fun flag(i: Int) = if (info.genes[i].active) 1f else 0f
+        if (glowCellId != info.id || glow.size != info.genes.size) {
+            glowCellId = info.id
+            glow = FloatArray(info.genes.size) { flag(it) }
+            glowTick = controller.tick
+            return
+        }
+        val elapsed = (controller.tick - glowTick).coerceIn(0L, GLOW_TICKS.toLong()).toInt()
+        glowTick = controller.tick
+        if (elapsed == 0) return
+        val w = elapsed.toFloat() / GLOW_TICKS
+        for (i in glow.indices) glow[i] += (flag(i) - glow[i]) * w
+    }
+
+    /** How lit gene [i]'s card should be, 0 (dark) to 1 (firing every tick). */
+    private fun glowOf(i: Int): Float = glow.getOrElse(i) { 0f }
+
+    /** [inactive]→[active] blended by [t], both packed RGBA. The card's state cue is this blend rather than
+     *  a switch, so a gene that fires intermittently reads as dimmed instead of strobing. */
+    private fun mixRgba(inactive: Long, active: Long, t: Float): Long {
+        val f = t.coerceIn(0f, 1f)
+        var out = 0L
+        for (shift in intArrayOf(24, 16, 8, 0)) {
+            val lo = (inactive ushr shift) and 0xFF
+            val hi = (active ushr shift) and 0xFF
+            out = out or (((lo + (hi - lo) * f).toLong() and 0xFF) shl shift)
+        }
+        return out
+    }
+
+    /**
      * Switch an action to type [t], keeping only the modifiers that still mean anything (they are all
      * Mitosis-only, so a move away from Mitosis clears them).
      *
@@ -1389,7 +1436,7 @@ class GeneEditor {
      *  carries modifiers — the morphogen it keeps in cell 1 / hands to cell 2, and a sever. (Both offspring
      *  are technically daughters; "cell 1" is the retaining side, "cell 2" the split-off side.) */
     private fun actionProse(a: GeneAction): ActionProse {
-        val av = sp(a.a).ifEmpty { NO_SPECIES }; val bv = sp(a.b)
+        val av = sp(a.a); val bv = sp(a.b)
         return when (a.type) {
             ActionType.Import -> ActionProse("IMPORT", av)
             ActionType.Export -> ActionProse("EXPORT", av)
