@@ -556,13 +556,14 @@ class GeneEditor {
 
     /** The gene-as-a-sentence body (WHEN / DO / POWERED BY / GROUP), shared by both container geometries. */
     private fun PanelBuilder.geneBody(controller: CytoController, d: Gene) {
-        // ── WHEN: the condition, one row of three chips per AND-clause. An empty gate reads ALWAYS; tapping
-        // it drops in a first (blank) clause to start authoring the condition. ──
-        row("WHEN", 0x7A8699FFL)
+        // ── The condition. An empty gate is the special ALWAYS case: no "WHEN" label, just the ALWAYS chip
+        // (tapping it drops in a first blank clause to start authoring). Otherwise WHEN + one row of three
+        // chips per AND-clause. ──
         val clauses = d.condition.clauses
         if (clauses.isEmpty()) {
             chip("", "ALWAYS", 0x1E2634FFL) { draft = addFirstClause(d) }
         } else {
+            row("WHEN", 0x7A8699FFL)
             clauses.forEachIndexed { ci, cl ->
                 clauseRow(
                     operandLabel(cl.lhs), if (cl.cmp == Comparison.Greater) ">" else "<", operandLabel(cl.rhs),
@@ -1086,11 +1087,10 @@ class GeneEditor {
         fun ctlIf(blocked: Boolean) = if (blocked) orange else ctl
         val lines = ArrayList<List<UiTok>>()
 
-        // WHEN <lhs> <cmp> <rhs>, one clause per line. An empty gate reads WHEN ALWAYS; tapping ALWAYS drops
-        // in a first (blank) clause so the condition can be authored.
+        // WHEN <lhs> <cmp> <rhs>, one clause per line. An empty gate is the special ALWAYS case — no "WHEN"
+        // prefix, just the ALWAYS token; tapping it drops in a first (blank) clause to author the condition.
         if (gene.condition.clauses.isEmpty()) {
             lines.add(listOf(
-                UiTok.Text("WHEN ", grey),
                 UiTok.Toggle("ALWAYS", ctl) { inlineEdit(controller, i) { addFirstClause(it) } },
             ))
         }
@@ -1259,7 +1259,7 @@ class GeneEditor {
             }
             val out = mutableListOf<List<Pair<String, Long?>>>()
             if (clauseLines.isEmpty() || clauseLines.all { it.isEmpty() }) {
-                out.add(listOf("WHEN " to GREY, "ALWAYS" to GREY))
+                out.add(listOf("ALWAYS" to GREY))
             } else {
                 clauseLines.forEachIndexed { ci, cl ->
                     out.add(listOf<Pair<String, Long?>>((if (ci == 0) "WHEN " else " AND ") to GREY) + cl)
