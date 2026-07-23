@@ -13,14 +13,12 @@
 | # | item | state |
 |---|------|-------|
 | 1 | harness cannot reach the UI it tests | **open** — the big one, untouched |
-| 2 | no cheap way to construct a world state | **open** — but see the note below; two of this session's fixes were exactly this problem |
+| 2 | no cheap way to construct a world state | **DONE** `95b97bdc` |
 | 3 | coach copy names UI tokens unchecked | **DONE** `80345934` |
 | 4 | `CytoEditLatencyTest` is a noisy metric | **DONE** `f402435b` |
 | 5 | the test suite took 6m27 | **DONE** `25af3af7` — added this session, see below |
 
-Item 2 is now the top of the list by payback. It kept surfacing while fixing 5: the touch-count test grew a
-400-tick colony to find one cell in contact, and `parallelMatchesSequential` seeds a world that never
-divides. Both are "I need a specific world state and the only tool is to grow one and hope".
+**Item 1 is the only one left**, and it is the biggest. Everything else on the original list is built.
 
 ---
 
@@ -56,7 +54,7 @@ choices. That script is the regression test for every future campaign edit.
 
 ---
 
-## 2. No cheap way to construct a specific world state
+## 2. No cheap way to construct a specific world state — **DONE** (`95b97bdc`)
 
 **Evidence.** Most of the session's wasted runs were hunts for conditions, not tests of behaviour: a cell
 in daylight; a gene that flickers on and off; a cell that can *just* afford to divide (fuel pool between
@@ -79,6 +77,27 @@ CytoTestWorld.of(scenario)
 
 **Done when:** the discriminating case for the DIVIDE affordance (one gene funded, two contending genes
 not) is expressible as a test, and the harness can reach an arbitrary named state in one command.
+
+**As built.** `CytoTestWorld` (commonMain — `commonTest` and the desktop harness are different Gradle
+modules and both need it), `CytoFixtures` for the named states they share, and `fixture <name>` in the
+harness. Fixtures install through the **save path**, so the controller gains no test-only world-setter and
+a fixture can't depend on state the game itself can't persist.
+
+Two things the sketch didn't anticipate:
+
+- **`light(quanta =)` isn't a thing you can set.** `CytoLightField` is a pure function of x and tick — a
+  band sweeping the torus — so `Light.Full`/`None`/`Of(f)` *place* the cell where that holds at tick 0, and
+  cells sharing an x are spread along y (which light ignores). `Light.None` is ~1e-7 of peak, not a true
+  zero (a gaussian on a finite torus); it floors to zero quanta, so assert on **quanta**, the energy a cell
+  can actually spend, never on the raw field value.
+- **The panel and the sim are separate implementations.** `describeGeneSpans` *mirrors* `CytoBiologyCore`'s
+  gating rather than calling it, so `DivideAffordanceTest` checks both — the funded fixture really divides
+  on tick 1 and the contended one really doesn't. Testing only the panel would have pinned its own
+  arithmetic.
+
+The DIVIDE case: 4000 atoms of biomass (cost 1000), 1500 each of `r`/`g`. One open DIVIDE gene draws
+`min(1500,1500)` ≥ 1000 and divides; two each draw 750 < 1000 and **neither** does, while both read active.
+Numbers sit at 1.5×/0.75× of cost so it isn't a rounding test.
 
 ---
 
