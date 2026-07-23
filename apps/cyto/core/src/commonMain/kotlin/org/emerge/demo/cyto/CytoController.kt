@@ -122,6 +122,20 @@ class CytoController(
     var lastHeldId: EntityId? = null
 
     /**
+     * The cell the player was last watching has left the world — it died, rather than being deselected.
+     *
+     * Recorded here because it cannot be recovered afterwards: [heldCellPosition] drops [lastHeldId] the
+     * moment the cell is gone and the hosts call it every frame, so by the time anything else looks, a death
+     * and a deselection are the same null. A campaign beat about *this* cell dying needs to tell them apart —
+     * an empty world is the wrong question once the lineage is hundreds of cells strong.
+     *
+     * Cleared when the player picks another cell (or the world is rebuilt), so it always refers to the
+     * selection that was current when it was set.
+     */
+    var heldCellDied: Boolean = false
+        private set
+
+    /**
      * The genome as the player last **authored** it — captured every time an edit lands, not when a cell is
      * selected, so it is the shape of their intent rather than of whatever happens to be clicked.
      *
@@ -255,6 +269,7 @@ class CytoController(
             publishedAuthoredGenome = authoredGenome
             publishedFrame = CytoFrame(currentState, tickCount)
             lastHeldId = null
+            heldCellDied = false
             reducer.noMutateEntityId = -1
             withLock(inputLock) {
                 pendingSpawns.clear(); pendingTaps.clear(); pendingDetaches.clear(); currentGrab = null
@@ -359,6 +374,7 @@ class CytoController(
     fun grab(entity: EntityId, x: Float, y: Float, sticky: Boolean = false) {
         withLock(inputLock) { currentGrab = CytoInput.Grab(entity, x, y, sticky) }
         lastHeldId = entity
+        heldCellDied = false
         reducer.noMutateEntityId = entity.value   // freeze the focused (inspected) cell against mutation
     }
 
@@ -370,6 +386,7 @@ class CytoController(
      *  can display it. Used when the user clicks (not drags) a cell. */
     fun focus(entity: EntityId) {
         lastHeldId = entity
+        heldCellDied = false
         reducer.noMutateEntityId = entity.value
     }
 
@@ -404,6 +421,7 @@ class CytoController(
      *  Unlike [releaseGrab] (which only ends the current drag), this drops [lastHeldId] entirely. */
     fun clearSelection() {
         lastHeldId = null
+        heldCellDied = false
         reducer.noMutateEntityId = -1   // unfreeze: no cell is exempt from natural mutation
     }
 
@@ -498,7 +516,10 @@ class CytoController(
             ?: lastAuthoredGenome
             ?: cells.values.maxByOrNull { totalBiomass(it.biomass) }?.genome
         val lineage = lineageGenome?.let { lineageOf(it) }
-        return WorldStats(tickCount, count, byType, maxBio, species, focused, lineage)
+        // Either route to the same fact: the flag, set by whichever host called [heldCellPosition] first, or
+        // a held id with nothing behind it (the headless path, where nothing calls that at all).
+        val watchedDied = heldCellDied || (lastHeldId != null && focusedCell == null)
+        return WorldStats(tickCount, count, byType, maxBio, species, focused, lineage, watchedDied)
     }
 
     /**
@@ -738,6 +759,7 @@ class CytoController(
         val transform = currentState.components.getTable<TransformComponent>()[id]
         if (transform == null) {
             lastHeldId = null
+            heldCellDied = true
             reducer.noMutateEntityId = -1
             return null
         }

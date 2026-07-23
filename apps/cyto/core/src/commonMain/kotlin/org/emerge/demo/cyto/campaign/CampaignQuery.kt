@@ -27,6 +27,11 @@ class CampaignQuery(
      *  outlives their cells ([Lineage]), so the coach can offer to put it back. */
     val extinct: Boolean get() = stats.cellCount == 0
 
+    /** The cell the player was watching died. Use this, not [extinct], for a beat that told them to watch
+     *  one cell do something — by the time a lineage is thriving, that cell can fail while hundreds of its
+     *  siblings carry on, and an empty-world gate would simply never fire. */
+    val watchedCellDied: Boolean get() = stats.watchedCellDied
+
     fun countOf(type: CellType): Int = stats.countByType[type] ?: 0
 }
 
@@ -40,6 +45,10 @@ class WorldStats(
     val speciesPresent: Set<String>,
     val focused: FocusedCell?,
     val lineage: Lineage? = null,
+    /** The cell the player was watching has left the world — died, as opposed to being deselected. Lets a
+     *  beat about *this* cell failing gate on the thing it actually described, which an empty-world check
+     *  cannot do once the lineage is hundreds of cells strong. See `CytoController.heldCellDied`. */
+    val watchedCellDied: Boolean = false,
 ) {
     companion object {
         val EMPTY = WorldStats(0L, 0, emptyMap(), 0, emptySet(), null)

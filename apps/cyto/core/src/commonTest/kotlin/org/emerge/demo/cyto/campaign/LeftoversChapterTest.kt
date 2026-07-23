@@ -73,7 +73,7 @@ class LeftoversChapterTest {
      */
     @Test
     fun theReserveGoalAcceptsAnyWorkingReserve() {
-        val g = gate("Leave the BREAK gene a reserve")
+        val g = gate("Block the BREAK gene")
         assertFalse(g.met(query("gb", reserve = null)), "no condition at all is the state they start in")
         assertFalse(g.met(query("gb", reserve = 0)), "> 0 still takes the lot")
         assertTrue(g.met(query("gb", reserve = 100)), "the value the copy suggests")

@@ -890,7 +890,7 @@ object CampaignContent {
         spawnBiomass = STARTER_CELL_BIOMASS,
         steps = listOf(
             Step(
-                text = "Look at what your cells are built out of. {chem} is a single atom. {bond} is two of them already joined together, and your cells make it themselves every time they pay for anything. Longer chemicals contribute more to biomass than shorter ones, so they are growing on the cheaper of the two.",
+                text = "Look at what your cells are built out of. {chem} is a single atom. {bond} is two of them already joined together, and your cells make it themselves every time they pay for anything. Longer chemicals contribute more to biomass than shorter ones, so they are growing on the weaker of the two.",
                 gate = Gate.Next,
                 allow = LOOK,
                 world = WorldRun.Frozen,
@@ -908,23 +908,26 @@ object CampaignContent {
                 world = WorldRun.Frozen,
             ),
             // The die-off. Measured: CONVERT goes inert immediately and the cell ruptures ~4,200 ticks later.
-            // autoAdvance for the same reason ch01's does - the instruction stops being true the moment the
-            // gate fires, and the next beat is about the empty world.
+            //
+            // Gated on the WATCHED cell, not on an empty world. The edit lands on one cell, and its siblings
+            // carry on running the genome they already had - so by this point in a healthy chapter there are
+            // hundreds of them and `cellCount == 0` would simply never fire. autoAdvance for the same reason
+            // ch01's die-off has it: the instruction stops being true the moment the gate does.
             Step(
-                text = "Now let it run.",
-                gate = Gate.World("Watch what happens", met = { it.cellCount == 0 }),
+                text = "Now let it run, and keep your eye on the cell you just edited.",
+                gate = Gate.World("Watch what happens to it", met = { it.watchedCellDied }),
                 allow = SPAWN,
                 world = WorldRun.Live,
                 autoAdvance = true,
             ),
             Step(
-                text = "Worse, not better. Drop another cell into the world and select it, and we will work out why.",
-                gate = Gate.World("Place and select a cell", met = { it.focused != null }),
+                text = "Worse, not better. That cell starved with food all around it. Select another one and we will work out why.",
+                gate = Gate.World("Select a cell", met = { it.focused != null }),
                 allow = SPAWN,
                 world = WorldRun.Live,
             ),
             Step(
-                text = "A gene can only work with what is already in the cytoplasm when the tick starts. Your CONVERT gene wants {bond} to build from - and your BREAK gene spends every morning clearing out every last unit of it. Both genes are doing exactly what you told them to, and between them the cell never gets to grow.",
+                text = "A gene can only work with what is already in the cytoplasm. Your CONVERT gene wants {bond} to build from - and your BREAK gene spends every morning clearing out every last unit of it. Both genes are doing exactly what you told them to, but between them the cell never gets to grow.",
                 detail = "This is the same shape of problem the {chem} reserve had two chapters ago. One gene's output is another gene's input, and neither of them knows the other exists.",
                 gate = Gate.Next,
                 allow = LOOK,
@@ -935,9 +938,9 @@ object CampaignContent {
             // takes anything in a sane band rather than the exact number, so a player who reasons their own
             // way to 150 is not told they are wrong.
             Step(
-                text = "Lets give the BREAK gene a condition so it only clears the surplus. Tap (ALWAYS) on the BREAK gene, set the left side to {bond}, and set the number to 100. Now it leaves a working reserve behind instead of taking the lot.",
+                text = "Lets give the BREAK gene a condition so it only clears the surplus. Tap (ALWAYS) on the BREAK gene, set the left side to {bond}, and set the right side to 100. Now it leaves a working reserve behind instead of taking the lot.",
                 gate = Gate.World(
-                    "Leave the BREAK gene a reserve of {bond}",
+                    "Block the BREAK gene when {bond} is low",
                     met = { q -> q.lineage?.recycleReserve?.let { it in 1..1000 } == true },
                 ),
                 allow = LOOK,
@@ -951,12 +954,6 @@ object CampaignContent {
                     met = { q -> (q.focused?.biomass ?: 0) >= 2800 },
                 ),
                 allow = LOOK,
-                world = WorldRun.Live,
-            ),
-            Step(
-                text = "Neither change was any good on its own. The first one starved your cells and the second one would have done nothing without it. Genes are like that here - you are not writing instructions so much as arranging things that have to get along.",
-                gate = Gate.Next,
-                allow = WATCH_SPEED,
                 world = WorldRun.Live,
             ),
         ),
@@ -1019,7 +1016,9 @@ object CampaignContent {
             ),
             Step(
                 text = "This solves three problems at once: 1. It removes internal genetic competition for {chem}. 2. It deals with the {bond} byproduct of mitosis. 3. It upgrades the biomass to use a more efficient chemical.",
-                gate = Gate.World("What could go wrong?", met = { it.cellCount == 0 }),
+                // Same reason as Leftovers' die-off: the edit lands on ONE cell, and an empty-world gate does
+                // not fire while its unedited siblings are still going.
+                gate = Gate.World("What could go wrong?", met = { it.watchedCellDied }),
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
                 autoAdvance = true,
