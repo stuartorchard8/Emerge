@@ -4,6 +4,8 @@ import org.emerge.demo.cyto.host.CampaignContent
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.CytoRenderer
 import org.emerge.demo.cyto.CytoSaveCodec
+import org.emerge.demo.cyto.fixtureCell
+import org.emerge.demo.cyto.loadFixture
 import org.emerge.demo.cyto.campaign.CampaignDirector
 import org.emerge.demo.cyto.campaign.CampaignQuery
 import org.emerge.demo.cyto.campaign.Control
@@ -11,6 +13,7 @@ import org.emerge.demo.cyto.campaign.InputHints
 import org.emerge.demo.cyto.campaign.PlayerAction
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoCellComponent
+import org.emerge.demo.cyto.sim.CytoFixtures
 import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.FounderSpec
@@ -47,6 +50,7 @@ import javax.imageio.ImageIO
  * ```
  * scenario <name>            # new sandbox world from a preset (Genesis, Twin Colonies, ...)
  * campaign <chapterId>       # start a campaign chapter (e.g. ch01-first-contact)
+ * fixture [name]            # load a named CytoFixtures world state (no name = list them)
  * run <ticks> | runs <sec>   # advance the sim
  * camera reset|zoom <f>|pan <dx> <dy>|follow <cellId>
  * tap <u> <v> | select <u> <v> | spawn <u> <v>   # pointer at normalised screen coords (0..1)
@@ -181,6 +185,24 @@ object CytoAgentHarness {
                     controller.restoreSnapshot(bytes)
                     renderer.resetView()
                     println("[agent] loaded $path, tick ${controller.tick}, cells ${controller.worldStats().cellCount}")
+                }
+                // Load a named world state from CytoFixtures — the same states the tests assert against, so
+                // "why does the test say that?" is answerable by looking at the thing. `fixture` with no
+                // name lists what's available. The named cell is selected, so the panel is already on it.
+                "fixture" -> {
+                    val name = t.getOrNull(1)
+                    if (name == null) {
+                        println("[agent] fixtures: ${CytoFixtures.BY_NAME.keys.joinToString(", ")}")
+                    } else {
+                        val make = CytoFixtures.BY_NAME[name]
+                            ?: error("unknown fixture '$name' (have ${CytoFixtures.BY_NAME.keys})")
+                        director.stop()
+                        val f = make()
+                        controller.loadFixture(f)
+                        f.names.firstOrNull()?.let { controller.focus(controller.fixtureCell(f, it)) }
+                        controller.publish(); renderer.resetView()
+                        println("[agent] fixture '$name' loaded: cells ${f.names.joinToString(", ")}")
+                    }
                 }
                 "campaign" -> {
                     val ch = (CampaignContent.CHAPTERS + CampaignContent.SCRATCH_CHAPTERS).firstOrNull { it.id == t.getOrNull(1) }
