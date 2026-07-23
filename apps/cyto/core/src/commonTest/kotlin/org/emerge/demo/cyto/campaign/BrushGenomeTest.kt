@@ -94,7 +94,34 @@ class BrushGenomeTest {
         assertTrue(d.brushGenome(c)!!.any { it.action.type == ActionType.Mitosis })
     }
 
-    /** A live selection is fresher still — Ch9's "last-modified brush". */
+    /**
+     * What they authored outranks what they have clicked on. `lastAuthoredGenome` is recorded on an edit and
+     * not on a selection exactly so it means their intent, and the brush has to honour that — otherwise
+     * clicking a passing cell silently re-points it. The gene-less case is the sharp one: an empty genome is
+     * a perfectly good non-null answer, so a selection-first order hands out blank cells.
+     */
+    @Test
+    fun lastAuthoredOutranksWhateverIsSelected() {
+        // Two gene-less founders: author onto one, then click the other.
+        val c = CytoController()
+        // `genome = null` on a FounderSpec means "the seeder's default starter", which is NOT empty - name it.
+        c.newGame(CytoScenario.DEFAULT.copy(founders = listOf(FounderSpec(CellType.Collector, 2, genome = emptyList()))))
+        c.tick(0f)
+        val d = CampaignDirector()
+        d.start(chapter("scratch"), c)
+
+        val ids = c.tick(0f).state.components.getTable<CytoCellComponent>().asMap().keys.toList()
+        c.focus(ids[0])
+        c.addHeldGenes(listOf(convert, mitosis))
+        c.tick(0f)
+        val authored = c.lastAuthoredGenome!!.size
+
+        c.focus(ids[1])
+        assertTrue(c.heldGenome()!!.isEmpty(), "the newly selected cell really is gene-less")
+        assertEquals(authored, d.brushGenome(c)?.size, "the brush still carries what they authored")
+    }
+
+    /** A live selection wins only where the chapter asks for it — Ch9's "last-modified brush". */
     @Test
     fun aSelectedCellsGenomeIsFreshest() {
         val ch = chapter("copies", copiesHeld = true)

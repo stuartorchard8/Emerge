@@ -281,11 +281,18 @@ class CampaignDirector {
      */
     fun brushGenome(controller: CytoController): List<Gene>? {
         val ch = activeChapter
-        val mine = { controller.heldGenome() ?: controller.lastAuthoredGenome ?: carriedGenome }
+        // LAST AUTHORED FIRST. `CytoController.lastAuthoredGenome` is captured when an edit lands and not
+        // when a cell is clicked, precisely so it means the shape of the player's intent rather than whatever
+        // they happen to have selected — so it has to outrank the selection here too. Putting `heldGenome()`
+        // first (as this briefly did) meant clicking any passing cell silently re-pointed the brush, and
+        // clicking a GENE-LESS one re-pointed it at nothing: an empty genome is a non-null answer, so it won.
+        val mine = { controller.lastAuthoredGenome ?: controller.heldGenome() ?: carriedGenome }
         return when {
+            // Ch9's "last-modified brush" is the one case that genuinely wants the selection: the chapter
+            // asks for it by name so the player can iterate a lineage cell by cell.
+            ch?.spawnCopiesHeldCell == true -> controller.heldGenome() ?: mine() ?: ch.spawnGenome
             // The extinction offer exists to hand their work back, so it always prefers theirs.
             extinctionOffer -> mine() ?: ch?.spawnGenome
-            ch?.spawnCopiesHeldCell == true -> mine() ?: ch.spawnGenome
             !ch?.spawnGenome.isNullOrEmpty() -> ch?.spawnGenome
             else -> mine() ?: ch?.spawnGenome
         }
