@@ -777,7 +777,9 @@ object CampaignContent {
         blurb = "Your cells only earn a living in daylight. Most of this world is night.",
         scenario = EMPTY_WORLD,
         startsFreshWorld = false,
-        branchesTo = emptyList(),   // leads nowhere yet - Act II is still the pre-inversion campaign
+        // Declared, not left to list order - the conversion branch sits further down the same list.
+        branchesTo = listOf(LEFTOVERS),
+        next = { LEFTOVERS },
         spawnGenome = emptyList(),
         spawnBiomass = STARTER_CELL_BIOMASS,
         steps = listOf(
@@ -844,7 +846,115 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "Three genes, and between them a cell that grows around the clock, pays for its own division, and cleans up after itself. That is as far as a single cell goes on its own - what comes next needs more than one.",
+                text = "Three genes, and between them a cell that grows around the clock, pays for its own division, and clears up after itself. There is one thing left that it is still throwing away.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+        ),
+    )
+
+    const val LEFTOVERS = "ch04-leftovers"
+
+    /**
+     * **Leftovers** — the photosynthesis path's last chapter, and where it converges on the shape the
+     * competition path already reached: a CONVERT gene growing on the two-atom molecule the rest of the
+     * genome runs on, rather than on a bare monomer.
+     *
+     * Built as the same kind of arc the competition players walked: a change that is strictly worse on its
+     * own, and only pays once a second change lands beside it.
+     *
+     *  1. Point CONVERT at {bond}. Two atoms per op instead of one.
+     *  2. Watch the lineage die. An action reads its input from the tick-start snapshot, so CONVERT needs
+     *     {bond} already sitting in the cytoplasm - and the recycling gene added two chapters ago clears the
+     *     cytoplasm right out every morning. Both genes are doing exactly what they were told, and between
+     *     them the cell never gets to grow at all. Measured: CONVERT goes inert on the spot and the cell
+     *     ruptures about 4,200 ticks later.
+     *  3. Put a floor under the recycler so it only sheds the surplus, and the same two genes cooperate.
+     *     Measured with a floor of 100, biomass comes back to its 3000 cap and holds there.
+     *
+     * ⚠️ It holds for about 2,100 ticks and then declines: every CONVERT op locks a whole {bond} into
+     * biomass, and biomass is not something the recycler can reach, so the pair drains out of circulation
+     * faster than the membrane brings it back. A lower growth cap or a richer world would both buy it back.
+     * The chapter's own beats are all measured and reachable - it is the long tail that is unfinished.
+     */
+    private fun chapterLeftoversScratch() = Chapter(
+        id = LEFTOVERS,
+        act = 1,
+        title = "Leftovers",
+        blurb = "Your cells throw away the best thing they make.",
+        scenario = EMPTY_WORLD,
+        startsFreshWorld = false,
+        branchesTo = emptyList(),   // leads nowhere yet - Act II is still the pre-inversion campaign
+        spawnGenome = emptyList(),
+        spawnBiomass = STARTER_CELL_BIOMASS,
+        steps = listOf(
+            Step(
+                text = "Look at what your cells are built out of. {chem} is a single atom. {bond} is two of them already joined together, and your cells make it themselves every time they pay for anything. Longer chemicals contribute more to biomass than shorter ones, so they are growing on the cheaper of the two.",
+                gate = Gate.Next,
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Update the CONVERT gene to change its target chemical from {chem} to {bond}.",
+                gate = Gate.World(
+                    "Point the CONVERT gene at {bond}",
+                    met = { q ->
+                        val target = q.lineage?.convertChem
+                        !target.isNullOrEmpty() && target == q.lineage?.mitosisProduct
+                    },
+                ),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            // The die-off. Measured: CONVERT goes inert immediately and the cell ruptures ~4,200 ticks later.
+            // autoAdvance for the same reason ch01's does - the instruction stops being true the moment the
+            // gate fires, and the next beat is about the empty world.
+            Step(
+                text = "Now let it run.",
+                gate = Gate.World("Watch what happens", met = { it.cellCount == 0 }),
+                allow = SPAWN,
+                world = WorldRun.Live,
+                autoAdvance = true,
+            ),
+            Step(
+                text = "Worse, not better. Drop another cell into the world and select it, and we will work out why.",
+                gate = Gate.World("Place and select a cell", met = { it.focused != null }),
+                allow = SPAWN,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "A gene can only work with what is already in the cytoplasm when the tick starts. Your CONVERT gene wants {bond} to build from - and your BREAK gene spends every morning clearing out every last unit of it. Both genes are doing exactly what you told them to, and between them the cell never gets to grow.",
+                detail = "This is the same shape of problem the {chem} reserve had two chapters ago. One gene's output is another gene's input, and neither of them knows the other exists.",
+                gate = Gate.Next,
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            // The fix. 100 is what the sweep landed on: high enough that CONVERT always finds something to
+            // work with, low enough that the recycler still frees up most of the pair each morning. The gate
+            // takes anything in a sane band rather than the exact number, so a player who reasons their own
+            // way to 150 is not told they are wrong.
+            Step(
+                text = "Lets give the BREAK gene a condition so it only clears the surplus. Tap (ALWAYS) on the BREAK gene, set the left side to {bond}, and set the number to 100. Now it leaves a working reserve behind instead of taking the lot.",
+                gate = Gate.World(
+                    "Leave the BREAK gene a reserve of {bond}",
+                    met = { q -> q.lineage?.recycleReserve?.let { it in 1..1000 } == true },
+                ),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            // The payoff: measured, a capped cell comes back to 2999 and holds. 2800 is inside that.
+            Step(
+                text = "Watch it come back. The same two genes, and now the one feeds the other - the day's recycling leaves enough behind for the night's growth to build on.",
+                gate = Gate.World(
+                    "Grow the cell back",
+                    met = { q -> (q.focused?.biomass ?: 0) >= 2800 },
+                ),
+                allow = LOOK,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "Neither change was any good on its own. The first one starved your cells and the second one would have done nothing without it. Genes are like that here - you are not writing instructions so much as arranging things that have to get along.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
@@ -949,6 +1059,7 @@ object CampaignContent {
         chapterDivideScratch(),
         chapterPhotosynthesisScratch(),
         chapterNightShiftScratch(),
+        chapterLeftoversScratch(),
         chapterConversionScratch(),
     )
 

@@ -73,6 +73,11 @@ class Lineage(
     val hasDivide: Boolean = false,
     /** Carries a light powered bond break for the campaign waste chemical. */
     val hasPhotosynthesis: Boolean = false,
+    /** The reserve the recycling gene is told to leave behind — the largest `<waste> > N` clause gating it.
+     *  Null = it runs whenever there is any waste at all, and so clears the cytoplasm right out. Matters once
+     *  the CONVERT gene grows on that same waste: an action needs its input present at the START of a tick,
+     *  so a lineage that recycles down to nothing leaves its own growth gene with nothing to work on. */
+    val recycleReserve: Int? = null,
     /** True if a division gene leaves its daughters **welded** (sever off). */
     val divideWelds: Boolean = false,
     /** What the division gene synthesises for energy: null = none, or still on Light; "" = bonding but the

@@ -55,6 +55,23 @@ fun lineageOf(genome: List<Gene>): Lineage {
             g.source is EnergySource.Light &&
             g.action.a + g.action.b == product
     }
+    // What the recycling gene is told to leave behind: the largest `<waste> > N` clause gating it. All clauses
+    // have to hold, so the largest is the one that bites. Read off the SAME gene `breaksExhaust` found, so a
+    // threshold on some unrelated break doesn't read as a reserve.
+    val reserve = if (product.isNullOrEmpty()) null else genome
+        .filter { g ->
+            g.action.type == ActionType.BreakBond &&
+                g.source is EnergySource.Light &&
+                g.action.a + g.action.b == product
+        }
+        .flatMap { it.condition.clauses }
+        .mapNotNull { cl ->
+            val lhs = cl.lhs
+            val rhs = cl.rhs
+            if (lhs is Operand.Chem && lhs.species == product && cl.cmp == Comparison.Greater && rhs is Operand.Constant)
+                rhs.value else null
+        }
+        .maxOrNull()
     val contract = genome.filter { it.action.type == ActionType.Contract }
     return Lineage(
         geneCount = genome.size,
@@ -64,6 +81,7 @@ fun lineageOf(genome: List<Gene>): Lineage {
         divideBiomassMinimum = divideMin,
         hasDivide = mitosis != null,
         hasPhotosynthesis = breaksExhaust,
+        recycleReserve = if (breaksExhaust) reserve else null,
         divideWelds = genome.any { it.action.type == ActionType.Mitosis && !it.action.rejectMother },
         mitosisProduct = product,
         divideFuelConflicts = conflicts,

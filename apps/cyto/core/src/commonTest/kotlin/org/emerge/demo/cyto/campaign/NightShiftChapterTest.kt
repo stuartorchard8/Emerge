@@ -112,13 +112,17 @@ class NightShiftChapterTest {
         )
     }
 
-    /** Night Shift declares an EMPTY branch list rather than none: it leads nowhere yet, and a null would
-     *  make the chapter that happens to sit after it in the list its successor. */
+    /** Night Shift names its successor rather than falling through to list order — the conversion branch is
+     *  further down the same list, and a photosynthesis player must never land in it. */
     @Test
-    fun itDoesNotYetUnlockItsListNeighbour() {
-        assertEquals(emptyList(), chapter.branchesTo)
+    fun itNamesItsSuccessorRatherThanFallingThrough() {
+        assertEquals(listOf(CampaignContent.LEFTOVERS), chapter.branchesTo)
         val flow = CampaignContent.PLAYABLE_CHAPTERS
         val after = flow[flow.indexOfFirst { it.id == CampaignContent.NIGHT_SHIFT } + 1]
-        assertTrue(CampaignContent.NIGHT_SHIFT !in CampaignContent.predecessorsOf(after.id, flow))
+        assertTrue(
+            after.id == CampaignContent.LEFTOVERS ||
+                CampaignContent.NIGHT_SHIFT !in CampaignContent.predecessorsOf(after.id, flow),
+            "${after.id} follows Night Shift in list order but is not where it leads",
+        )
     }
 }

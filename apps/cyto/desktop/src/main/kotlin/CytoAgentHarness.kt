@@ -65,8 +65,8 @@ import javax.imageio.ImageIO
  * overlay matter|light       # toggle the light/matter overlay
  * next                       # click the coach "Next" (advances the chapter if its goal is met)
  * expect <field> <value>     # assert a reading (chapter/step/goal/cells/genes/convertChem/
- *                            # growthCap/divideFloor/hasDivide/recyclesExhaust/bond/
- *                            # fuelConflicts); non-zero exit if any fail
+ *                            # growthCap/divideFloor/hasDivide/recyclesExhaust/recycleReserve/
+ *                            # bond/fuelConflicts); non-zero exit if any fail
  * shot <name> | state [name] | echo <text>
  * ```
  *
@@ -688,6 +688,7 @@ object CytoAgentHarness {
                 "hasDivide" -> lin?.hasDivide?.toString()
                 "divideFloor" -> lin?.divideBiomassMinimum?.toString()
                 "recyclesExhaust" -> lin?.hasPhotosynthesis?.toString()
+                "recycleReserve" -> lin?.recycleReserve?.toString()
                 "bond" -> lin?.mitosisProduct
                 "fuelConflicts" -> lin?.divideFuelConflicts?.toString()
                 else -> { failures.add("expect: unknown field '$field'"); println("[agent] EXPECT ?? unknown field '$field'"); return }
@@ -716,7 +717,7 @@ object CytoAgentHarness {
             if (lin != null) {
                 sb.append("  \"lineage\": {\"genes\": ${lin.geneCount}, \"convertChem\": ${jsonStr(lin.convertChem)}, ")
                 sb.append("\"growthCap\": ${lin.convertBiomassCap}, \"divideFloor\": ${lin.divideBiomassMinimum}, ")
-                sb.append("\"hasDivide\": ${lin.hasDivide}, \"recyclesExhaust\": ${lin.hasPhotosynthesis}, ")
+                sb.append("\"hasDivide\": ${lin.hasDivide}, \"recyclesExhaust\": ${lin.hasPhotosynthesis}, \"recycleReserve\": ${lin.recycleReserve}, ")
                 sb.append("\"bond\": ${jsonStr(lin.mitosisProduct)}, \"fuelConflicts\": ${lin.divideFuelConflicts}},\n")
             } else sb.append("  \"lineage\": null,\n")
             val c = director.snapshot()
