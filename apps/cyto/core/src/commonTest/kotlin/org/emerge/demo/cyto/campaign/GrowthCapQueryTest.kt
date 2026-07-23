@@ -15,7 +15,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * [FocusedCell.convertBiomassCap] — the reading `ch01-divide` gates its growth-limiting step on. It has to
+ * [Lineage.convertBiomassCap] — the reading `ch01-divide` gates its growth-limiting step on. It has to
  * come off the *live* genome through the same path the coach reads (`worldStats`), because the whole point
  * of the step is that the player's own edit satisfies it.
  */
@@ -29,7 +29,7 @@ class GrowthCapQueryTest {
     private fun bioUnder(n: Int) = Clause(Operand.Biomass, Comparison.Less, Operand.Constant(n))
 
     /** Focus the founder and give it [genome], then read the campaign's view of it. */
-    private fun focusedWith(genome: List<Gene>): FocusedCell {
+    private fun focusedWith(genome: List<Gene>): Lineage {
         val c = CytoController()
         val frame = c.tick(0f)
         val id = frame.state.components.getTable<CytoCellComponent>().asMap().keys.first()
@@ -40,7 +40,7 @@ class GrowthCapQueryTest {
         repeat(c.heldGenome()!!.size) { c.deleteHeldGene(0); c.tick(0f) }
         c.addHeldGenes(genome)
         c.tick(0f)
-        return c.worldStats().focused!!
+        return c.worldStats().lineage!!
     }
 
     @Test

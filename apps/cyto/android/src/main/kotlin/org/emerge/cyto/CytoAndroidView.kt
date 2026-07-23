@@ -284,9 +284,13 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         c.worldSpawnEnabled = director.active && mask.allows(Control.Spawn)
         if (c.worldSpawnEnabled) {
             val chapter = director.activeChapter
-            controller.brushGenome =
-                if (chapter?.spawnCopiesHeldCell == true) controller.heldGenome() ?: chapter.spawnGenome
-                else chapter?.spawnGenome
+            // See CytoSceneView: an extinction re-seed hands back the player's own last authored genome.
+            controller.brushGenome = when {
+                director.extinctionOffer -> controller.lastAuthoredGenome ?: chapter?.spawnGenome
+                chapter?.spawnCopiesHeldCell == true ->
+                    controller.heldGenome() ?: controller.lastAuthoredGenome ?: chapter.spawnGenome
+                else -> chapter?.spawnGenome
+            }
             controller.spawnBiomass = chapter?.spawnBiomass
             controller.spawnCytoplasm = chapter?.spawnCytoplasm
         }

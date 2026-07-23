@@ -463,20 +463,20 @@ object CampaignContent {
             // they author it. The gate fires once the genome holds a CONVERT gene (any chemical).
             Step(
                 text = "Tap [+ NEW GENE] to add an empty gene. Note that the new gene has no conditions, so it's always active. Also it uses light as its energy source.",
-                gate = Gate.World("Give the cell a new gene", met = { it.focused?.geneCount == 1 }),
+                gate = Gate.World("Give the cell a new gene", met = { it.lineage?.geneCount == 1 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
             Step(
                 text = "Change your new gene's action from (NOTHING) to (CONVERT). CONVERT genes transform their specified chemical target from their cytoplasm [CYT] to their biomass [BIO].",
-                gate = Gate.World("Set the new gene to CONVERT", met = { it.focused?.convertChem == "" }),
+                gate = Gate.World("Set the new gene to CONVERT", met = { it.lineage?.convertChem == "" }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
             Step(
                 text = "Tap (NONE) to change your convert gene's chemical target to either REDOGEN, GREENUM or BLUEON - they're interchangeable, so pick whichever you like.",
                 detail = "The picker gives you a harmless heads-up if you name something the cell isn't holding. The gene will show itself as active once it's set up correctly.",
-                gate = Gate.World("Complete the CONVERT gene", met = { it.focused?.convertChem != null && it.focused?.convertChem != "" }),
+                gate = Gate.World("Complete the CONVERT gene", met = { it.lineage?.convertChem != null && it.lineage?.convertChem != "" }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
@@ -527,7 +527,7 @@ object CampaignContent {
             // 2. Add the DIVIDE gene. Frozen while they author.
             Step(
                 text = "Give it a way to carry on. Tap [+ NEW GENE] again, then change the new gene's action from (NOTHING) to (MITOSIS) - it divides the cell into two daughters, each taking half of the mother's biomass and cytoplasm.",
-                gate = Gate.World("Add a MITOSIS gene", met = { it.focused?.hasMitosis == true }),
+                gate = Gate.World("Add a MITOSIS gene", met = { it.lineage?.hasMitosis == true }),
                 allow = LOOK,
                 world = WorldRun.Live,
             ),
@@ -549,7 +549,7 @@ object CampaignContent {
             Step(
                 text = "Let's add condition on the CONVERT gene to limit the cell's growth. Tap (ALWAYS) on the CONVERT gene to give it a condition, set the left side to (BIO), flip the (>) to (<), and set the number to 3000.",
                 gate = Gate.World("Cap the CONVERT gene's growth", met = {
-                    val cap = it.focused?.convertBiomassCap
+                    val cap = it.lineage?.convertBiomassCap
                     cap != null && cap <= GROWTH_CAP_MAX
                 }),
                 allow = LOOK,
@@ -568,7 +568,7 @@ object CampaignContent {
             Step(
                 text = "Fortunately for your cell, there is another abundant energy source in this environment: chemistry. Change the DIVIDE gene's energy source from (LIGHT) to (BOND), then choose two chemicals to join together.",
                 detail = "Joining two molecules releases energy - one unit per bond made - and this world is full of loose atoms to join. Any pair works, so pick whichever you like.",
-                gate = Gate.World("Power DIVIDE by bonding", met = { !it.focused?.mitosisProduct.isNullOrEmpty() }),
+                gate = Gate.World("Power DIVIDE by bonding", met = { !it.lineage?.mitosisProduct.isNullOrEmpty() }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
@@ -589,10 +589,11 @@ object CampaignContent {
         // in competition for one atom, and that lineage lives a completely different life from one that grows
         // on the monomer it does not burn. Each chapter is about the problem its own build actually has.
         //
-        // No focused cell (they deselected before the last click) falls to the stable path - it is the one
-        // that survives being left alone, so a player who lands there by accident is not stranded.
+        // Read off the LINEAGE, not the selected cell: the player may well have sat and watched their colony
+        // die out before clicking on, and they should still go to the chapter their genome is about. Only a
+        // player who has authored nothing at all falls through to the stable path.
         branchesTo = listOf(BRANCH_PHOTOSYNTHESIS, BRANCH_CONVERSION),
-        next = { q -> if (q.focused?.divideFuelConflicts == true) BRANCH_CONVERSION else BRANCH_PHOTOSYNTHESIS },
+        next = { q -> if (q.lineage?.divideFuelConflicts == true) BRANCH_CONVERSION else BRANCH_PHOTOSYNTHESIS },
     )
 
     /** Chapters that are launchable by id (agent harness / direct start) but deliberately kept OUT of the
@@ -790,7 +791,7 @@ object CampaignContent {
             ),
             Step(
                 text = "Now select the cell.",
-                gate = Gate.World("Select the cell", { it.focused != null }),
+                gate = Gate.World("Select a cell", { it.focused != null }),
                 allow = LOOK,
             ),
             Step(
@@ -821,7 +822,7 @@ object CampaignContent {
         steps = listOf(
             Step(
                 text = "You've watched this cell hold steady. Now let's read why it does what it does. Select it to open its dossier.",
-                gate = Gate.World("Select the cell", { it.focused != null }),
+                gate = Gate.World("Select a cell", { it.focused != null }),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "Select the cell"),
             ),
@@ -873,7 +874,7 @@ object CampaignContent {
         steps = listOf(
             Step(
                 text = "This organism grows but can't reproduce - on its own it's a dead end. Let's fix that. Select the cell to open its genome.",
-                gate = Gate.World("Select the cell", { it.focused != null }),
+                gate = Gate.World("Select a cell", { it.focused != null }),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "Select the cell"),
             ),
@@ -881,7 +882,7 @@ object CampaignContent {
                 text = "Below its GROW group is a ready-made subsystem it's missing: ADD REPRODUCE. Tap it to give the cell a reproduction gene.",
                 gate = Gate.World(
                     "Add the Reproduce group",
-                    met = { (it.focused?.geneCount ?: 0) >= 3 },
+                    met = { (it.lineage?.geneCount ?: 0) >= 3 },
                 ),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "+ ADD REPRODUCE, below the groups"),
@@ -940,7 +941,7 @@ object CampaignContent {
             ),
             Step(
                 text = "Select the cell, open its REPRODUCE group, and tap the divide gene inside to edit it.",
-                gate = Gate.World("Select the cell", { it.focused != null }),
+                gate = Gate.World("Select a cell", { it.focused != null }),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "Select the cell, then + REPRODUCE, then the gene"),
             ),
@@ -948,7 +949,7 @@ object CampaignContent {
                 text = "In the gene's fields, find SEVER: yes - that's what cuts each daughter loose. Switch it to SEVER: no, then press DONE.",
                 gate = Gate.World(
                     "Set SEVER to no",
-                    met = { it.focused?.divideWelds == true },
+                    met = { it.lineage?.divideWelds == true },
                 ),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "SEVER toggle, then DONE"),
@@ -1027,7 +1028,7 @@ object CampaignContent {
                 text = "Select a cell and add the HOLD TOGETHER group. It's a Repair gene: it mends strained welds, and re-attaches neighbours that have drifted back together.",
                 gate = Gate.World(
                     "Add the Hold Together group",
-                    met = { (it.focused?.geneCount ?: 0) >= 4 },
+                    met = { (it.lineage?.geneCount ?: 0) >= 4 },
                 ),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "+ ADD HOLD TOGETHER, below the groups"),
@@ -1074,7 +1075,7 @@ object CampaignContent {
                 text = "Select the cell and add the MOVE group. It's a single Contract gene - a muscle. A contracting cell clenches inward, pulling itself smaller.",
                 gate = Gate.World(
                     "Add the Move group",
-                    met = { (it.focused?.geneCount ?: 0) >= 5 },
+                    met = { (it.lineage?.geneCount ?: 0) >= 5 },
                 ),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "+ ADD MOVE, below the groups"),
@@ -1127,13 +1128,13 @@ object CampaignContent {
             ),
             Step(
                 text = "Here's a body built for it. Select it and open its genome - FEED, MAINTAIN, GROW, and a MOVE muscle like before. But it's still missing the one thing that makes its cells DIFFER from each other.",
-                gate = Gate.World("Select the cell", { it.focused != null }),
+                gate = Gate.World("Select a cell", { it.focused != null }),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "Select the cell"),
             ),
             Step(
                 text = "Add the POLARIZE group. It builds a chemical marker and, on every division, hands it to just ONE of the two daughters - so one cell ends up marked and the other bare. That difference is a sense of place.",
-                gate = Gate.World("Add the Polarise group", met = { (it.focused?.geneCount ?: 0) >= 13 }),
+                gate = Gate.World("Add the Polarise group", met = { (it.lineage?.geneCount ?: 0) >= 13 }),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "+ ADD POLARIZE, below the groups"),
                 detail = "The muscle only fires in cells WITHOUT the marker. So the marked cell holds still while its neighbours clench - the squeeze is now lopsided, and a lopsided squeeze travels.",
@@ -1191,13 +1192,13 @@ object CampaignContent {
             ),
             Step(
                 text = "Here's that swimmer - almost. Select it and open its genome. FEED, POLARIZE, MOVE, GROW are all here, yet it sits perfectly still. Its muscle has been wired to wait on a beat it doesn't have yet.",
-                gate = Gate.World("Select the cell", { it.focused != null }),
+                gate = Gate.World("Select a cell", { it.focused != null }),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "Select the cell"),
             ),
             Step(
                 text = "Add the CLOCK group. It builds a chemical that rises and falls on a loop of its own - an oscillator, ticking inside the cell whether or not the sun is up.",
-                gate = Gate.World("Add the Clock group", met = { (it.focused?.geneCount ?: 0) >= 19 }),
+                gate = Gate.World("Add the Clock group", met = { (it.lineage?.geneCount ?: 0) >= 19 }),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "+ ADD CLOCK, below the groups"),
                 detail = "The muscle only fires when this clock chemical runs high. So instead of one long squeeze through the daylight, the body now PULSES - clench, release, clench - in time with its own beat.",
@@ -1223,7 +1224,7 @@ object CampaignContent {
             ),
             Step(
                 text = "Open its MOVE muscle and switch its power SOURCE from LIGHT to BREAK FUEL. Now it burns a stored reserve instead of sunlight - fuel it carries with it, day or night.",
-                gate = Gate.World("Switch the muscle to CHEMICAL FUEL", met = { it.focused?.contractOnChem == true }),
+                gate = Gate.World("Switch the muscle to CHEMICAL FUEL", met = { it.lineage?.contractOnChem == true }),
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
                 spotlight = Spotlight(hint = "MOVE -> the muscle gene -> SOURCE -> BREAK FUEL"),
@@ -1245,7 +1246,7 @@ object CampaignContent {
             ),
             Step(
                 text = "In its MOVE muscle, flip the marker test: change MARKER < 1 to MARKER > 0, so the MARKED cells drive the stroke instead of the bare ones. One flipped test, a different stroke.",
-                gate = Gate.World("Flip the muscle to MARKER > 0", met = { it.focused?.contractOnMarked == true }),
+                gate = Gate.World("Flip the muscle to MARKER > 0", met = { it.lineage?.contractOnMarked == true }),
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
                 spotlight = Spotlight(hint = "MOVE -> the muscle gene -> set MARKER's test to > and its value to 0"),
@@ -1290,13 +1291,13 @@ object CampaignContent {
             ),
             Step(
                 text = "A lineage can't live in one body. It has to SPREAD - throw off new founders that swim away and start colonies of their own. Select the swimmer and open its genome.",
-                gate = Gate.World("Select the cell", { it.focused != null }),
+                gate = Gate.World("Select a cell", { it.focused != null }),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "Select the cell"),
             ),
             Step(
                 text = "Add the REPRODUCE group. It's a division that SEVERS: once the body is large enough, it buds a daughter that breaks FREE - no weld holding it back - as its own single cell.",
-                gate = Gate.World("Add the Reproduce group", met = { (it.focused?.geneCount ?: 0) >= 21 }),
+                gate = Gate.World("Add the Reproduce group", met = { (it.lineage?.geneCount ?: 0) >= 21 }),
                 allow = LOOK,
                 spotlight = Spotlight(hint = "+ ADD REPRODUCE, below the groups"),
                 detail = "A freed daughter is small again, so it's back under the size cap - free to grow into a whole new swimmer. That's the trick: sever to escape the cap, then regrow. Severing also shoves the two apart, flinging the founder off toward fresh matter.",
@@ -1344,7 +1345,7 @@ object CampaignContent {
             ),
             Step(
                 text = "Now select the cell and watch its LIGHT reading in the panel. When daylight covers it the number climbs - that's it feeding. When night passes over, it drops back to zero.",
-                gate = Gate.World("Select the cell", { it.focused != null }),
+                gate = Gate.World("Select a cell", { it.focused != null }),
                 allow = WATCH,
                 world = WorldRun.Live,
                 spotlight = Spotlight(hint = "the cell's LIGHT reading"),

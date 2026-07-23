@@ -23,6 +23,8 @@ import org.emerge.demo.cyto.sim.totalBiomass
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.campaign.WorldStats
 import org.emerge.demo.cyto.campaign.FocusedCell
+import org.emerge.demo.cyto.campaign.Lineage
+import org.emerge.demo.cyto.campaign.lineageOf
 import org.emerge.demo.cyto.campaign.AgentCell
 import org.emerge.demo.cyto.sim.soa.CytoSoaReducer
 import org.emerge.demo.cyto.sim.soa.CytoWorld
@@ -119,6 +121,39 @@ class CytoController(
      *  until another cell is grabbed (or it dies). Null until the first grab. */
     var lastHeldId: EntityId? = null
 
+    /**
+     * The genome as the player last **authored** it — captured every time an edit lands, not when a cell is
+     * selected, so it is the shape of their intent rather than of whatever happens to be clicked.
+     *
+     * It outlives the cell it was written on, which is the point: a lineage can go extinct while the player
+     * watches, and their work should not go with it. The campaign reads it (so a chapter's goals stay
+     * satisfiable after a die-off) and the hosts brush with it (so tapping an empty world puts the player's
+     * own organism back). Survives [newGame] deliberately — a chapter Reset rebuilds the world underneath a
+     * player whose genome is exactly what we want to hand back to them.
+     *
+     * Written on the sim thread (an edit lands at the top of a tick) and read on the draw thread (the brush,
+     * the campaign query), so `@Volatile` for safe publication — the value is an immutable list, only ever
+     * replaced wholesale.
+     */
+    val lastAuthoredGenome: List<Gene>? get() = publishedAuthoredGenome
+
+    /**
+     * The sim-thread side of [lastAuthoredGenome] — written where an edit is applied, and **deliberately not
+     * `@Volatile`**.
+     *
+     * A volatile store here costs a memory barrier and invalidates this object's cache line on every applied
+     * edit, in the drain that runs inside the sim thread's tick loop. That is measurable: it pushed the
+     * editing thread from ≤2 ticks of latency to 3 and failed `CytoEditLatencyTest` two runs in three. The
+     * lock-free publication contract this class already runs on is that the sim thread's writes become
+     * visible through ONE volatile store per publish ([currentState]), so this joins that rather than paying
+     * its own barrier per edit.
+     */
+    private var authoredGenome: List<Gene>? = null
+
+    /** The draw-thread-visible copy, republished at display cadence with everything else. */
+    @Volatile
+    private var publishedAuthoredGenome: List<Gene>? = null
+
     val tick: Long get() = tickCount
 
     /** Single-threaded host loop (web / android): advance the world from the real frame delta at a fixed
@@ -142,6 +177,7 @@ class CytoController(
         // otherwise a gene edit on a paused inline host would never reach the panel). Multiple steps in a
         // heavy frame share one materialize, so the per-step SoA win is preserved.
         if (stepped || edited) currentState = world.toSimState()
+        publishedAuthoredGenome = authoredGenome   // single-threaded host: same publish point as the frame
         return CytoFrame(currentState, tickCount, world.getSpringData()).also { publishedFrame = it }
     }
 
@@ -182,6 +218,7 @@ class CytoController(
             // display cadence, so a gene edit made on a paused world still lands (and shows) within a frame.
             applyPendingWorldEdits()
             currentState = world.toSimState()
+            publishedAuthoredGenome = authoredGenome
             publishedFrame = CytoFrame(currentState, tickCount)
         }
     }
@@ -202,6 +239,7 @@ class CytoController(
             tickCount = 0L
             accumulator = 0f
             currentState = world.toSimState()
+            publishedAuthoredGenome = authoredGenome
             publishedFrame = CytoFrame(currentState, tickCount)
             lastHeldId = null
             reducer.noMutateEntityId = -1
@@ -437,51 +475,17 @@ class CytoController(
             for (s in cell.cytoplasm.keys) species.add(s)
             for (s in cell.biomass.keys) species.add(s)
         }
-        val focused = lastHeldId?.let { id ->
-            cells[id]?.let { c ->
-                val divideWelds = c.genome.any { it.action.type == ActionType.Mitosis && !it.action.rejectMother }
-                val contractGenes = c.genome.filter { it.action.type == ActionType.Contract }
-                // "Runs on chemistry, not daylight" — the muscle keeps beating through the night. Since the
-                // chemistry inversion that means a synthesis-powered source rather than a break-powered one.
-                val contractOnChem = contractGenes.any { it.source is EnergySource.FormBond }
-                val contractOnMarked = contractGenes.any { g ->
-                    g.condition.clauses.any { cl ->
-                        val lhs = cl.lhs
-                        lhs is Operand.Chem && lhs.species == "bb" && cl.cmp == Comparison.Greater
-                    }
-                }
-                val convertChem = c.genome.firstOrNull { it.action.type == ActionType.Convert }?.action?.a
-                // The tightest `Biomass < N` any CONVERT gene runs under — the cell's growth ceiling. All
-                // such clauses have to hold, so the smallest is the one that actually bites.
-                val convertBiomassCap = c.genome
-                    .filter { it.action.type == ActionType.Convert }
-                    .flatMap { it.condition.clauses }
-                    .mapNotNull { cl ->
-                        val rhs = cl.rhs
-                        if (cl.lhs == Operand.Biomass && cl.cmp == Comparison.Less && rhs is Operand.Constant) rhs.value else null
-                    }
-                    .minOrNull()
-                val mitosisGene = c.genome.firstOrNull { it.action.type == ActionType.Mitosis }
-                // Light-powered division reads as "not chemistry-powered yet" (null), not as a half-done
-                // reaction — the chapter's job is to move the gene off Light entirely.
-                val mitosisProduct = (mitosisGene?.source as? EnergySource.FormBond)?.product
-                // Does the division gene's fuel reaction consume the growth monomer? Only meaningful once
-                // both genes are complete — an unset CONVERT chemical or a Light-powered divide has nothing
-                // to compare, and must not read as "no conflict".
-                val divideFuel = mitosisGene?.source as? EnergySource.FormBond
-                val divideFuelConflicts = if (divideFuel == null || convertChem.isNullOrEmpty() ||
-                    divideFuel.a.isEmpty() || divideFuel.b.isEmpty()
-                ) null else convertChem == divideFuel.a || convertChem == divideFuel.b
-                FocusedCell(
-                    c.type, totalBiomass(c.biomass), c.genome.size, c.cytoplasm,
-                    divideWelds, contractOnChem, contractOnMarked, convertChem,
-                    convertBiomassCap = convertBiomassCap,
-                    hasMitosis = mitosisGene != null, mitosisProduct = mitosisProduct,
-                    divideFuelConflicts = divideFuelConflicts,
-                )
-            }
-        }
-        return WorldStats(tickCount, count, byType, maxBio, species, focused)
+        val focusedCell = lastHeldId?.let { cells[it] }
+        val focused = focusedCell?.let { FocusedCell(it.type, totalBiomass(it.biomass), it.cytoplasm) }
+        // What the player has BUILT, which is a different question from what is clicked (see [Lineage]).
+        // Preference order: the selected cell's genome (they are working on it right now) -> the genome they
+        // last authored (survives the cell dying, and is their intent even if the world has moved on) -> the
+        // largest survivor's (a world they never edited, e.g. a loaded save). Null only if all three are.
+        val lineageGenome = focusedCell?.genome
+            ?: lastAuthoredGenome
+            ?: cells.values.maxByOrNull { totalBiomass(it.biomass) }?.genome
+        val lineage = lineageGenome?.let { lineageOf(it) }
+        return WorldStats(tickCount, count, byType, maxBio, species, focused, lineage)
     }
 
     /**
@@ -756,7 +760,7 @@ class CytoController(
             pendingWorldEdits.add { w ->
                 val slot = w.slotOf(id.value)
                 val next = if (slot < 0) null else transform(w.cell.genome[slot] ?: emptyList())
-                if (next != null) { w.cell.genome[slot] = next; true } else false
+                if (next != null) { w.cell.genome[slot] = next; authoredGenome = next; true } else false
             }
         }
     }
@@ -929,6 +933,7 @@ class CytoController(
             tickCount = world.world.tick
             accumulator = 0f
             currentState = world.toSimState()
+            publishedAuthoredGenome = authoredGenome
             publishedFrame = CytoFrame(currentState, tickCount)
             withLock(inputLock) {
                 pendingSpawns.clear()

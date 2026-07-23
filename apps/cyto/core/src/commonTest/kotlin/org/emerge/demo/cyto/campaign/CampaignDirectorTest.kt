@@ -20,11 +20,12 @@ class CampaignDirectorTest {
         paused = false, selectedGenome = null,
     )
 
-    /** A query whose selected cell reports [convertChem] as the chemical of its first CONVERT gene (null =
+    /** A query whose player LINEAGE reports [convertChem] as the chemical of its first CONVERT gene (null =
      *  no CONVERT gene yet) — for the Genesis "author your first gene" gate + `{chem}` reaction copy. */
     private fun focusedQuery(convertChem: String?) = CampaignQuery(
         WorldStats(0L, 1, mapOf(CellType.Collector to 1), 100, emptySet(),
-            FocusedCell(CellType.Collector, 100, 1, emptyMap(), convertChem = convertChem)),
+            FocusedCell(CellType.Collector, 100, emptyMap()),
+            Lineage(geneCount = 1, convertChem = convertChem)),
         paused = false, selectedGenome = null,
     )
 
@@ -33,8 +34,8 @@ class CampaignDirectorTest {
      *  — for the Divide chapter's gate + `{bond}` reaction copy. */
     private fun mitosisQuery(mitosisProduct: String?) = CampaignQuery(
         WorldStats(0L, 1, mapOf(CellType.Collector to 1), 100, emptySet(),
-            FocusedCell(CellType.Collector, 100, 2, emptyMap(),
-                hasMitosis = true, mitosisProduct = mitosisProduct)),
+            FocusedCell(CellType.Collector, 100, emptyMap()),
+            Lineage(geneCount = 2, hasMitosis = true, mitosisProduct = mitosisProduct)),
         paused = false, selectedGenome = null,
     )
 
@@ -313,7 +314,7 @@ class CampaignDirectorTest {
         val ctrl = CytoController()
         val dir = CampaignDirector()
         dir.start(chapter(
-            Step("author", Gate.World("Give it a CONVERT gene", met = { it.focused?.convertChem != null })),
+            Step("author", Gate.World("Give it a CONVERT gene", met = { it.lineage?.convertChem != null })),
             Step("done", Gate.Next),
         ), ctrl)
         dir.update(focusedQuery(null), emptySet())

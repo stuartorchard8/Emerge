@@ -18,11 +18,10 @@ class CampaignBranchTest {
     private fun query(conflicts: Boolean?, focused: Boolean = true) = CampaignQuery(
         WorldStats(
             0L, 1, mapOf(CellType.Collector to 1), 100, emptySet(),
-            if (!focused) null else FocusedCell(
-                CellType.Collector, 100, 2, emptyMap(),
-                convertChem = "r", convertBiomassCap = 3000,
-                hasMitosis = true, mitosisProduct = "rg",
-                divideFuelConflicts = conflicts,
+            if (!focused) null else FocusedCell(CellType.Collector, 100, emptyMap()),
+            Lineage(
+                geneCount = 2, convertChem = "r", convertBiomassCap = 3000,
+                hasMitosis = true, mitosisProduct = "rg", divideFuelConflicts = conflicts,
             ),
         ),
         paused = false, selectedGenome = null,
@@ -62,18 +61,25 @@ class CampaignBranchTest {
         assertEquals(CampaignContent.BRANCH_PHOTOSYNTHESIS, destinationOf(divide, query(conflicts = false)))
     }
 
-    /** A player who deselected their cell before the final click leaves nothing to read. Fall to the stable
-     *  lineage: it is the one that survives being left alone, so an accident there isn't a dead end. */
+    /**
+     * The whole point of routing off the lineage rather than the selected cell: a player who sat and watched
+     * until their colony died out — or simply clicked away — still goes to the chapter their genome is about.
+     * Nothing is selected here and the conflicting build still routes to its own chapter.
+     */
     @Test
-    fun anUnreadableWorldFallsToTheStablePath() {
-        val built = query(conflicts = true)
+    fun anEmptyWorldStillRoutesByWhatThePlayerBuilt() {
         assertEquals(
-            CampaignContent.BRANCH_PHOTOSYNTHESIS,
-            destinationOf(divide, built, atTheEnd = query(null, focused = false)),
+            CampaignContent.BRANCH_CONVERSION,
+            destinationOf(divide, query(conflicts = true), atTheEnd = query(conflicts = true, focused = false)),
         )
+    }
+
+    /** Only a genome with nothing to compare — no reaction chosen at all — falls to the stable path. */
+    @Test
+    fun anUnreadableGenomeFallsToTheStablePath() {
         assertEquals(
             CampaignContent.BRANCH_PHOTOSYNTHESIS,
-            destinationOf(divide, built, atTheEnd = query(conflicts = null)),
+            destinationOf(divide, query(conflicts = true), atTheEnd = query(conflicts = null)),
         )
     }
 

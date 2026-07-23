@@ -187,6 +187,27 @@ object CytoAgentHarness {
                         ?: error("unknown chapter '${t.getOrNull(1)}' (have ${CampaignContent.ORDER} + ${CampaignContent.SCRATCH_CHAPTERS.map { it.id }})")
                     controller.newGame(ch.scenario); director.start(ch, controller); renderer.resetView()
                 }
+                // Author a genome ONTO the selected cell, the way the player's gene editor does — through
+                // CytoController.addHeldGenes, so it counts as an edit and updates `lastAuthoredGenome`.
+                // The harness cannot drive the editor's pick sheets (synthetic taps don't reach popovers),
+                // so this is how a campaign gate that keys on what the player BUILT gets exercised headlessly.
+                // Delete the cell under a normalised screen point — the brush's Delete mode, which the agent
+                // has no other way to reach. Used to drive a lineage to extinction on purpose.
+                "kill" -> {
+                    val (x, y) = world(t[1].toFloat(), t[2].toFloat())
+                    controller.tap(x, y, TouchMode.Delete, CellType.Stem); advance(1)
+                }
+                "authorgenome" -> {
+                    val path = line.removePrefix("authorgenome").trim().trim('"')
+                    val genes = GeneCodec.parse(File(path).readText())
+                    val held = controller.heldGenome()
+                    if (held == null) println("[agent] authorgenome: no cell selected") else {
+                        repeat(held.size) { controller.deleteHeldGene(0); controller.publish() }
+                        controller.addHeldGenes(genes)
+                        controller.publish()
+                        println("[agent] authored ${genes.size} genes onto the selected cell")
+                    }
+                }
                 "genome" -> {
                     // Spawn a single founder from a .gene file — for testing hand-authored / campaign-stage
                     // genomes (viability, differentiation, locomotion). Push it with `dragcell` to bootstrap.
@@ -342,7 +363,11 @@ object CytoAgentHarness {
         private fun applyChapterSpawn() {
             val ch = director.activeChapter ?: return
             if (director.controlMask.allows(Control.Spawn)) {
-                controller.brushGenome = ch.spawnGenome
+                // Mirror the real hosts (CytoSceneView): an extinction re-seed hands back the player's own
+                // last authored genome rather than the chapter's fixed starter.
+                controller.brushGenome =
+                    if (director.extinctionOffer) controller.lastAuthoredGenome ?: ch.spawnGenome
+                    else ch.spawnGenome
                 controller.spawnBiomass = ch.spawnBiomass
                 controller.spawnCytoplasm = ch.spawnCytoplasm
             }
@@ -543,9 +568,17 @@ object CytoAgentHarness {
             sb.append("  \"nightLevel\": ${renderer.nightLevel},\n")
             val f = w.focused
             if (f != null) {
-                sb.append("  \"focused\": {\"type\": \"${f.type.name}\", \"biomass\": ${f.biomass}, \"genes\": ${f.geneCount}, ")
+                sb.append("  \"focused\": {\"type\": \"${f.type.name}\", \"biomass\": ${f.biomass}, ")
                 sb.append("\"cytoplasm\": {${f.cytoplasm.entries.joinToString(", ") { "\"${it.key}\": ${it.value}" }}}},\n")
             } else sb.append("  \"focused\": null,\n")
+            // The genome as the campaign reads it — survives both deselection and extinction, so it is the
+            // thing to observe when checking a chapter's gates headlessly.
+            val lin = w.lineage
+            if (lin != null) {
+                sb.append("  \"lineage\": {\"genes\": ${lin.geneCount}, \"convertChem\": ${jsonStr(lin.convertChem)}, ")
+                sb.append("\"growthCap\": ${lin.convertBiomassCap}, \"hasMitosis\": ${lin.hasMitosis}, ")
+                sb.append("\"bond\": ${jsonStr(lin.mitosisProduct)}, \"fuelConflicts\": ${lin.divideFuelConflicts}},\n")
+            } else sb.append("  \"lineage\": null,\n")
             val c = director.snapshot()
             if (c != null) {
                 sb.append("  \"coach\": {\"chapter\": \"${c.chapterId}\", \"step\": \"${c.stepIndex + 1}/${c.stepCount}\", ")
@@ -555,6 +588,9 @@ object CytoAgentHarness {
             sb.append("}\n")
             println(sb); File(outDir, "$name.json").writeText(sb.toString())
         }
+
+        private fun jsonStr(v: String?): String = if (v == null) "null" else "\"${esc(v)}\""
+
 
         private fun esc(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
 

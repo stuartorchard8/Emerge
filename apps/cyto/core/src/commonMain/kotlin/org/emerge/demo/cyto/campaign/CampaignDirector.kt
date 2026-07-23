@@ -120,8 +120,8 @@ class CampaignDirector {
     private fun copy(s: String, alt: String? = null): String {
         var expanded = inputHints.expand(s)
         if (!expanded.contains("{chem}") && !expanded.contains("{bond}")) return expanded
-        val chem = lastQuery?.focused?.convertChem
-        val bond = lastQuery?.focused?.mitosisProduct
+        val chem = lastQuery?.lineage?.convertChem
+        val bond = lastQuery?.lineage?.mitosisProduct
         // Cheeky alt text for people who skip — fires when the token the copy is BUILT ON has nothing to
         // name, whichever token that is. (It used to key off {chem} alone, which left the divide chapter's
         // "you never picked a reaction" line unreachable on a step whose text is about {bond}.)
@@ -142,7 +142,30 @@ class CampaignDirector {
     val currentStep: Step? get() = chapter?.steps?.getOrNull(stepIndex)
 
     /** Which controls the host should keep live this step (ALL when no chapter is active). */
-    val controlMask: ControlMask get() = if (active) currentStep?.allow ?: ControlMask.ALL else ControlMask.ALL
+    val controlMask: ControlMask get() = when {
+        !active -> ControlMask.ALL
+        // The extinction offer needs a tap on empty space to be possible, whatever the step was allowing —
+        // a step that masked spawning off did so to keep the player on task, and the task is gone.
+        extinctionOffer -> (currentStep?.allow ?: ControlMask.ALL).plus(Control.Spawn)
+        else -> currentStep?.allow ?: ControlMask.ALL
+    }
+
+    /**
+     * Nothing of the player's is alive, but their genome is — so the coach stops asking for whatever the step
+     * wanted and offers the two ways forward instead (put a cell back, or reset the chapter).
+     *
+     * Extinction used to be an unmarked dead end: every goal keyed on a living cell became unsatisfiable and
+     * the only way on was a Reset the coach never mentioned. It is a normal thing to happen in this game —
+     * two chapters are *about* a lineage failing — so it is handled as a state, not an accident.
+     */
+    val extinctionOffer: Boolean
+        get() = active && lastQuery?.extinct == true && lastQuery?.lineage != null
+
+    /** What the coach says while [extinctionOffer] holds, in place of the step's own text. */
+    private fun extinctionText(): String =
+        "Your cells are all gone - but their genome is not. Tap an empty patch of world to place a new cell " +
+            "carrying the genome you last authored, and carry on from there. Reset will rebuild the chapter " +
+            "around you instead."
 
     /**
      * Begin a chapter, the world already standing — the host either restored this chapter's saved entry
@@ -244,7 +267,11 @@ class CampaignDirector {
         return CoachSnapshot(
             chapterId = ch.id, chapterTitle = ch.title,
             stepIndex = stepIndex, stepCount = ch.steps.size,
-            text = copy(step.text, step.altText), goal = goalText(step.gate)?.let { copy(it) },
+            // The extinction offer REPLACES the step's text on screen, so it has to replace it here too —
+            // a headless observer that still saw the step text would be watching a different coach than the
+            // player is.
+            text = if (extinctionOffer) extinctionText() else copy(step.text, step.altText),
+            goal = goalText(step.gate)?.let { copy(it) },
             gateReady = gateReady, world = step.world,
         )
     }
@@ -388,7 +415,9 @@ class CampaignDirector {
         return ui.panel(anchor, margin = margin, padding = PAD_DP, background = 0x11182AF2L, rowHeight = 22f, textSize = textSize, fillWidth = fillWidth) {
             title(clip(header, wrapChars), 0x6FD6C4FFL)
             gap(4f)
-            for (line in wrap(copy(step.text, step.altText), wrapChars)) row(line, 0xEAEEF6FFL)
+            val extinct = extinctionOffer
+            val body = if (extinct) extinctionText() else copy(step.text, step.altText)
+            for (line in wrap(body, wrapChars)) row(line, if (extinct) 0xFFD86EFFL else 0xEAEEF6FFL)
             step.spotlight?.hint?.let { gap(2f); for (line in wrap(copy("→ $it"), wrapChars)) row(line, 0xFFD86EFFL) }
 
             // Objective line + progress for a World / Did gate.

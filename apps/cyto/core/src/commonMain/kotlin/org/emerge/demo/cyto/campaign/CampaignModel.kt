@@ -153,6 +153,10 @@ class Spotlight(val hint: String? = null)
 class ControlMask private constructor(private val allowed: Set<Control>) {
     fun allows(c: Control): Boolean = c in allowed
 
+    /** This mask plus [cs] — for a permission the *situation* grants rather than the step, like the spawn
+     *  the coach offers when a lineage has gone extinct. */
+    fun plus(vararg cs: Control) = ControlMask(allowed + cs)
+
     companion object {
         val ALL = ControlMask(Control.entries.toSet())
         fun of(vararg cs: Control) = ControlMask(cs.toSet())
