@@ -171,6 +171,51 @@ class LineageSurvivesTest {
         assertTrue(dir.extinctionOffer)
     }
 
+    /**
+     * The case that made the offer go missing in play: a gate that reads the LINEAGE stays satisfied after
+     * the cells are gone (that is the whole point of a lineage), so a player sitting on a met goal — waiting
+     * to click Next — used to watch their world empty out with the coach saying nothing. Only a gate that is
+     * satisfied *by the emptiness* counts as having asked for the death.
+     */
+    @Test
+    fun aDeathWhileSittingOnASatisfiedGoalStillGetsTheOffer() {
+        val (c, id) = oneCell()
+        c.addHeldGenes(listOf(mitosis))
+        c.tick(0f)
+        kill(c, id)
+
+        val dir = CampaignDirector()
+        dir.start(
+            Chapter("t", 1, "T", "", CytoScenario.DEFAULT, listOf(
+                Step("add a divide gene", Gate.World("divide gene", met = { it.lineage?.hasDivide == true })),
+            )),
+            c,
+        )
+        dir.update(CampaignQuery(c.worldStats(), paused = false, selectedGenome = null), emptySet())
+
+        assertTrue(dir.gateReady, "the genome still satisfies the goal")
+        assertTrue(dir.extinctionOffer, "but nothing is alive, and this step never asked for that")
+        assertTrue(dir.controlMask.allows(Control.Spawn))
+    }
+
+    /** The offer also survives a chapter the player has not authored anything in yet: the director's own
+     *  chapter-boundary snapshot is a genome to put back, even when the world holds no cell to read one off. */
+    @Test
+    fun anUnauthoredChapterStillOffersTheCarriedGenome() {
+        val (c, id) = oneCell()
+
+        val dir = CampaignDirector()
+        // Started while the founder is alive, so the boundary snapshot has something in it.
+        dir.start(Chapter("t", 1, "T", "", CytoScenario.DEFAULT, listOf(Step("x", Gate.Next))), c)
+        kill(c, id)
+        dir.update(CampaignQuery(c.worldStats(), paused = false, selectedGenome = null), emptySet())
+
+        assertNull(c.lastAuthoredGenome, "they never wrote anything in this chapter")
+        assertNull(c.worldStats().lineage, "and there is no cell left to read one off")
+        assertTrue(dir.extinctionOffer, "the chapter-boundary snapshot is still theirs to put back")
+        assertNotNull(dir.brushGenome(c), "and the tap the coach offers has something to place")
+    }
+
     /** No genome, no offer: there is nothing to put back, so the coach must not promise one. */
     @Test
     fun extinctionWithoutAGenomeMakesNoOffer() {

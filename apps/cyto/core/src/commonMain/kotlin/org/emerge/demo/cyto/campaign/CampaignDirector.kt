@@ -162,15 +162,30 @@ class CampaignDirector {
      * the only way on was a Reset the coach never mentioned. It is a normal thing to happen in this game —
      * two chapters are *about* a lineage failing — so it is handled as a state, not an accident.
      *
-     * Which is exactly why [gateMet] suppresses it: a step whose OWN goal is satisfied by an empty world
-     * asked for this death (`ch01-divide` has the player watch a lineage divide itself below the rupture
-     * floor). Talking them out of it there would replace the beat's copy with a recovery offer for a
-     * situation that is not a setback, and send them back to fix a world the next step is about to discuss.
-     * Note [gateMet] is false on a [Gate.Next] step, so a lineage that dies while the player is merely
-     * reading still gets the net.
+     * Suppressed only when the step ASKED for this death (`ch01-divide` has the player watch a lineage divide
+     * itself below the rupture floor). Talking them out of it there would replace the beat's copy with a
+     * recovery offer for a situation that is not a setback, and send them back to fix a world the next step is
+     * about to discuss.
+     *
+     * That is a narrower test than "the gate is met", which is what this used to check and why the offer went
+     * missing on so many steps: most gates read the LINEAGE, and a lineage outlives its cells by design — so a
+     * player sitting on a satisfied goal (waiting to click Next, or reading) watched their world empty out with
+     * the coach saying nothing. [goalIsExtinction] asks the gate the question that actually distinguishes the
+     * two: would you still be met if a cell were alive?
      */
     val extinctionOffer: Boolean
-        get() = active && !gateMet && lastQuery?.extinct == true && lastQuery?.lineage != null
+        get() = active && lastQuery?.extinct == true && !goalIsExtinction &&
+            (lastQuery?.lineage != null || carriedGenome != null)
+
+    /** Whether the current step is met BECAUSE the world is empty — a gate that stops being satisfied the
+     *  moment a cell exists ([CampaignQuery.asIfPopulated]). False on a [Gate.Next] step, which has no
+     *  condition, so a lineage that dies while the player is merely reading still gets the net. */
+    private val goalIsExtinction: Boolean
+        get() {
+            if (!gateMet) return false
+            val q = lastQuery ?: return false
+            return !evalGate(currentStep?.gate, q.asIfPopulated())
+        }
 
     /** What the coach says while [extinctionOffer] holds, in place of the step's own text. */
     private fun extinctionText(): String =

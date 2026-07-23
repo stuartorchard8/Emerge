@@ -33,6 +33,20 @@ class CampaignQuery(
     val watchedCellDied: Boolean get() = stats.watchedCellDied
 
     fun countOf(type: CellType): Int = stats.countByType[type] ?: 0
+
+    /** This same world with one cell alive in it — everything else (the lineage, the selection, the counts by
+     *  type) untouched. Used to ask a satisfied gate *why* it is satisfied: a gate that stops being met here
+     *  was met by the emptiness, i.e. the step's own goal was the die-off. See
+     *  [CampaignDirector.extinctionOffer]. */
+    fun asIfPopulated(): CampaignQuery =
+        if (cellCount > 0) this
+        else CampaignQuery(
+            WorldStats(
+                stats.tick, cellCount = 1, stats.countByType, stats.maxBiomass, stats.speciesPresent,
+                stats.focused, stats.lineage, stats.watchedCellDied,
+            ),
+            paused, selectedGenome,
+        )
 }
 
 /** Sim-derived world facts, produced by a single scan of the cell component table (mirrors what
