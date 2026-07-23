@@ -664,16 +664,23 @@ object CampaignContent {
     private fun chapterPhotosynthesisScratch() = Chapter(
         id = BRANCH_PHOTOSYNTHESIS,
         act = 1,
-        // Leads nowhere YET (see the TODO on its last step) — declared explicitly so the flat list doesn't
-        // quietly make the other branch its successor.
         title = "Exhaust",
         blurb = "Your cells divide and divide. Look at what they are leaving behind.",
         scenario = EMPTY_WORLD,
         startsFreshWorld = false,
-        branchesTo = emptyList(),   // leads nowhere yet — see the TODO on the last step
+        // Declared rather than left to list order: the OTHER branch sits next in the flat list, and falling
+        // through to it would hand this player the chapter their genome is not about.
+        branchesTo = listOf(NIGHT_SHIFT),
+        next = { NIGHT_SHIFT },
         spawnGenome = emptyList(),
         spawnBiomass = STARTER_CELL_BIOMASS,
         steps = listOf(
+            Step(
+                text = "Let it run. If division is stalled, move your cell around to give it access to more resources.",
+                gate = Gate.World("Divide into two cells", met = { it.cellCount >= 2 }),
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
             // 1. The payoff that the old ch01 ending used to carry, now where it belongs - after the split,
             // in the chapter that is about what the split costs.
             Step(
@@ -702,7 +709,7 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "Nothing in the genome takes {bond} apart, so let's write something that does. Tap [+ NEW GENE] on the cell you have selected.",
+                text = "Nothing in the genome takes {bond} back apart, so let's write something that does. Tap [+ NEW GENE] on the cell you have selected.",
                 // `>=`, not `==`: a player carrying a spare blank gene from earlier would otherwise be stuck
                 // here with no way to satisfy a goal they have already met.
                 gate = Gate.World("Give a cell a new gene", met = { (it.lineage?.geneCount ?: 0) >= 3 }),
@@ -710,8 +717,8 @@ object CampaignContent {
                 world = WorldRun.Frozen,
             ),
             Step(
-                text = "Set the new gene's action to (BREAK) {bond}, powered by (USE LIGHT). The trickle of sunlight a cell receives in the day could never pay for a division, but taking one small bond apart is well within it.",
-                detail = "This is the mirror of the reaction your division gene runs. That gene joins the pair to release energy; this one spends energy to split it again - and hands both atoms back to the cytoplasm, where the rest of the genome can reach them.",
+                text = "Set the new gene's action to [BREAK] {bond} using light. The trickle of sunlight cells receive in the day could never pay for division, but it can be used to gradually break {bond} waste back into usable atoms.",
+                detail = "This is the mirror of the reaction your division gene runs. That gene joins the pair to release energy, and this one spends energy to split it again.",
                 gate = Gate.World("Update the gene to BREAK {bond}", met = { it.lineage?.hasPhotosynthesis == true }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
@@ -722,7 +729,7 @@ object CampaignContent {
             // falling", not a race to zero.
             Step(
                 text = "Now watch the cell you have selected. Every division still mints a molecule of {bond} - but daylight is pulling them apart again as fast as they appear, and the atoms go straight back into the pool your cells grow from.",
-                detail = "Nothing here is new material. Your lineage is simply using the same atoms twice, which is the only kind of abundance a closed world has to offer.",
+                detail = "Nothing here is new material. Your lineage is simply recycling the same atoms using energy input from the sun.",
                 gate = Gate.World(
                     "Clear the {bond} out of a cell",
                     met = { q ->
@@ -734,8 +741,110 @@ object CampaignContent {
                 allow = LOOK,
                 world = WorldRun.Live,
             ),
+        ),
+    )
+
+    const val NIGHT_SHIFT = "ch03-nightshift"
+
+    /**
+     * **The night shift** — the chapter that gets the lineage off daylight for its growth.
+     *
+     * Everything the player has built so far runs on the sun, and the sun is off for three quarters of this
+     * world's cycle (`EMPTY_WORLD`: 900 ticks of day, 2700 of night). A Light-powered gene earns nothing in
+     * the dark while degradation carries on regardless, so a cell spends most of every cycle going backwards
+     * and the day is merely long enough to undo it. Worse, `quantaShare` divides a cell's light between every
+     * active Light gene — so the recycling gene the last chapter added is now halving the growth gene's
+     * daylight, and vice versa.
+     *
+     * The fix is to move CONVERT onto the same `BOND` reaction that already funds division. The two halves of
+     * the day then do different jobs: overnight the cell burns its monomer pair into {bond} to keep building,
+     * and by day the light gene — now holding the cell's whole quanta share — breaks that {bond} back into
+     * the pair. Measured over one night on this genome (one cell, biomass at its 3000 cap):
+     *
+     *   - CONVERT on Light: 2999 -> 2042 biomass (-32%), and no {bond} ever forms.
+     *   - CONVERT on `BOND`: 2999 -> 2637 (-12%), {bond} climbs to ~767 by dawn and is back to 1 by morning.
+     *
+     * That sawtooth is the chapter's payoff, and both of its world-gates read it directly off the panel.
+     *
+     * It is also where the two branches converge: the competition path arrives at the same shape by its own
+     * route (a CONVERT gene powered by the reaction that used to be its waste), so from here on both lineages
+     * are grow / divide / recycle and Act II can teach subsystems instead of individual genes.
+     */
+    private fun chapterNightShiftScratch() = Chapter(
+        id = NIGHT_SHIFT,
+        act = 1,
+        title = "Night Shift",
+        blurb = "Your cells only earn a living in daylight. Most of this world is night.",
+        scenario = EMPTY_WORLD,
+        startsFreshWorld = false,
+        branchesTo = emptyList(),   // leads nowhere yet - Act II is still the pre-inversion campaign
+        spawnGenome = emptyList(),
+        spawnBiomass = STARTER_CELL_BIOMASS,
+        steps = listOf(
+            // The problem, watched rather than asserted. The gate is the night dip itself: a capped cell sits
+            // at 3000 and bottoms out near 2000 before dawn, so 2500 is comfortably inside the swing whatever
+            // size the player's cell settled at.
             Step(
-                text = "Three genes: one to grow on {chem}, one to divide, and one to clean up after the second. That last one is what makes the first two repeatable - a lineage that only ever adds to itself runs down, and a lineage that puts its own waste back does not.",
+                text = "Keep an eye on the size of your selected cell as night falls. Everything you have built runs on sunlight, and this world spends three quarters of its cycle in the dark - so for most of every cycle your cells are only shrinking.",
+                detail = "Degradation does not stop at night. A cell sheds a little of itself every tick regardless of whether anything is coming in, so a genome that only earns in daylight spends the night paying out.",
+                gate = Gate.World(
+                    "Watch a cell lose ground overnight",
+                    met = { q -> q.focused?.let { it.biomass in 1..2499 } == true },
+                ),
+                allow = LOOK,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "There is a second cost you cannot see. Your two light genes are drawing on the same daylight and splitting it between them - the gene that grows your cell and the gene that clears its waste are each running at half strength.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+            // The edit. `convertProduct == mitosisProduct` is the reconvergence reading: the CONVERT gene is
+            // powered by the same reaction the DIVIDE gene is.
+            Step(
+                text = "Now that daylight can clear {bond} back out of the cytoplasm, it is safe to spend it. Change the CONVERT gene's energy source from (USE LIGHT) to (BOND), and give it the same pair your DIVIDE gene uses - so growth runs on chemistry, at any hour.",
+                detail = "This is the same move you made on the division gene, for the same reason: light arrives when it arrives, and a bond is there whenever the cell has the atoms for it.",
+                gate = Gate.World(
+                    "Power the CONVERT gene with {bond}",
+                    met = { q ->
+                        val fuel = q.lineage?.convertProduct
+                        !fuel.isNullOrEmpty() && fuel == q.lineage?.mitosisProduct
+                    },
+                ),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            // The payoff: the sawtooth. Overnight {bond} piles up (measured ~767 by dawn) because nothing is
+            // breaking it in the dark; the threshold is set well under that so an ordinary night clears it.
+            Step(
+                text = "Watch it through another night. Your cell keeps building in the dark now, and every unit it builds leaves another {bond} behind - so the waste climbs all night with nothing to clear it.",
+                gate = Gate.World(
+                    "Let {bond} build up overnight",
+                    met = { q ->
+                        val waste = q.lineage?.mitosisProduct
+                        !waste.isNullOrEmpty() && (q.focused?.cytoplasm?.get(waste) ?: 0) > 200
+                    },
+                ),
+                allow = LOOK,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "Now wait for morning. The light gene has the whole day's sunlight to itself, and it takes that pile of {bond} apart and hands the atoms back - ready to be spent again the moment it gets dark.",
+                detail = "Your lineage has stopped depending on when the light arrives. It stores the day in a molecule and spends it overnight, which is the same trick living things here have to learn one way or another.",
+                gate = Gate.World(
+                    "Clear the night's {bond} by morning",
+                    met = { q ->
+                        val waste = q.lineage?.mitosisProduct
+                        val held = q.focused?.cytoplasm
+                        !waste.isNullOrEmpty() && held != null && (held[waste] ?: 0) < 100
+                    },
+                ),
+                allow = LOOK,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "Three genes, and between them a cell that grows around the clock, pays for its own division, and cleans up after itself. That is as far as a single cell goes on its own - what comes next needs more than one.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
@@ -839,6 +948,7 @@ object CampaignContent {
         chapterGenesisScratch(),
         chapterDivideScratch(),
         chapterPhotosynthesisScratch(),
+        chapterNightShiftScratch(),
         chapterConversionScratch(),
     )
 
