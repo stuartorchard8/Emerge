@@ -587,17 +587,41 @@ class Ui {
 
     /** Invoke the first button region whose label contains [label] (case-insensitive). Returns true if
      *  one fired. Overlay regions (open dropdowns) win, then the base layer. */
-    fun tapLabel(label: String): Boolean {
+    fun tapLabel(label: String): Boolean = tapLabel(label, 1)
+
+    /**
+     * As [tapLabel], but fires the [occurrence]-th match (1-based) instead of the first.
+     *
+     * Duplicate labels are not an edge case in a genome editor — every gene card carries its own `ALWAYS`
+     * and `USE LIGHT` token, so "the DIVIDE gene's energy source" is simply the *second* `USE LIGHT` on
+     * screen and no label can distinguish it. Matches are ordered exactly as [tapLabel] prioritises them
+     * (overlay before base, exact before substring), which is also the order [elements] lists them in, so a
+     * driver can read the index straight off an `elements` dump.
+     */
+    fun tapLabel(label: String, occurrence: Int): Boolean {
+        val hit = labelMatches(label).getOrNull(occurrence - 1) ?: return false
+        hit.onClick()
+        return true
+    }
+
+    /** Every region matching [label], in tap priority order. */
+    private fun labelMatches(label: String): List<ClickRegion> {
         val q = label.lowercase()
         // Prefer an *exact* label match (over any element whose label merely contains the query) so a driver
         // can target e.g. a picker row "FEED" without a co-visible "+ FEED (1)" header stealing the tap; then
         // fall back to the first substring match. Overlay (sheet/dialog) clicks win over base-panel clicks.
         val reachable = clicks.subList(modalFrom, clicks.size)
-        for (c in overlayClicks) if (c.label?.lowercase() == q) { c.onClick(); return true }
-        for (c in reachable) if (c.label?.lowercase() == q) { c.onClick(); return true }
-        for (c in overlayClicks) if (c.label?.lowercase()?.contains(q) == true) { c.onClick(); return true }
-        for (c in reachable) if (c.label?.lowercase()?.contains(q) == true) { c.onClick(); return true }
-        return false
+        val exact = ArrayList<ClickRegion>()
+        val partial = ArrayList<ClickRegion>()
+        for (c in overlayClicks) when {
+            c.label?.lowercase() == q -> exact.add(c)
+            c.label?.lowercase()?.contains(q) == true -> partial.add(c)
+        }
+        for (c in reachable) when {
+            c.label?.lowercase() == q -> exact.add(c)
+            c.label?.lowercase()?.contains(q) == true -> partial.add(c)
+        }
+        return exact + partial
     }
 
     /**
