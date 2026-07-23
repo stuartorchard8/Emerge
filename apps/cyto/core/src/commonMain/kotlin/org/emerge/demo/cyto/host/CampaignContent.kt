@@ -799,8 +799,8 @@ object CampaignContent {
             // at 3000 and bottoms out near 2000 before dawn, so 2500 is comfortably inside the swing whatever
             // size the player's cell settled at.
             Step(
-                text = "Keep an eye on the size of your selected cell as night falls. Everything you have built runs on sunlight, and this world spends three quarters of its cycle in the dark - so for most of every cycle your cells are only shrinking.",
-                detail = "Degradation does not stop at night. A cell sheds a little of itself every tick regardless of whether anything is coming in, so a genome that only earns in daylight spends the night paying out.",
+                text = "Keep an eye on your cell's size as night falls. Everything you have built runs on sunlight, and this world is dark for three quarters of its cycle. Your cells only earn in the day, but they degrade around the clock.",
+                detail = "Degradation does not stop at night. A cell sheds a little of itself every tick, whether or not anything is coming in.",
                 gate = Gate.World(
                     "Watch a cell lose ground overnight",
                     met = { q -> q.focused?.let { it.biomass in 1..2499 } == true },
@@ -809,7 +809,7 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "There is a second cost you cannot see. Your two light genes are drawing on the same daylight and splitting it between them - the gene that grows your cell and the gene that clears its waste are each running at half strength.",
+                text = "There is a second cost here that you cannot see. Your two light genes draw on the same daylight and split it between them, so the gene that grows your cell and the gene that clears its waste are each running at half strength.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
@@ -817,8 +817,8 @@ object CampaignContent {
             // The edit. `convertProduct == mitosisProduct` is the reconvergence reading: the CONVERT gene is
             // powered by the same reaction the DIVIDE gene is.
             Step(
-                text = "Now that daylight can clear {bond} back out of the cytoplasm, it is safe to spend it. Change the CONVERT gene's energy source from (USE LIGHT) to (BOND), and give it the same pair your DIVIDE gene uses - so growth runs on chemistry, at any hour.",
-                detail = "This is the same move you made on the division gene, for the same reason: light arrives when it arrives, and a bond is there whenever the cell has the atoms for it.",
+                text = "Now that daylight can clear {bond} back out of the cytoplasm, it is safe to spend it. Change the CONVERT gene's energy source from (USE LIGHT) to (BOND), and give it the same pair your DIVIDE gene uses. Growth then runs on chemistry, at any hour.",
+                detail = "Same move you made on the division gene, and for the same reason. Light arrives when it arrives. A bond is there whenever the cell has the atoms for it.",
                 gate = Gate.World(
                     "Power the CONVERT gene with {bond}",
                     met = { q ->
@@ -832,7 +832,7 @@ object CampaignContent {
             // The payoff: the sawtooth. Overnight {bond} piles up (measured ~767 by dawn) because nothing is
             // breaking it in the dark; the threshold is set well under that so an ordinary night clears it.
             Step(
-                text = "Watch it through another night. Your cell keeps building in the dark now, and every unit it builds leaves another {bond} behind - so the waste climbs all night with nothing to clear it.",
+                text = "Watch it through another night. Your cell keeps building in the dark now, and every unit it builds leaves another {bond} behind. Nothing breaks {bond} at night, so it piles up until morning.",
                 gate = Gate.World(
                     "Let {bond} build up overnight",
                     met = { q ->
@@ -844,8 +844,8 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "Now wait for morning. The light gene has the whole day's sunlight to itself, and it takes that pile of {bond} apart and hands the atoms back - ready to be spent again the moment it gets dark.",
-                detail = "Your lineage has stopped depending on when the light arrives. It stores the day in a molecule and spends it overnight, which is the same trick living things here have to learn one way or another.",
+                text = "Now wait for morning. The light gene has the whole day to itself, and it takes that pile of {bond} apart and hands the atoms back.",
+                detail = "Your cells no longer depend on when the light arrives. They store the day as {bond} and spend it overnight.",
                 gate = Gate.World(
                     "Clear the night's {bond} by morning",
                     met = { q ->
@@ -988,7 +988,9 @@ object CampaignContent {
         blurb = "Your cells grow and divide on the same atom. Only one of them can win.",
         scenario = EMPTY_WORLD,
         startsFreshWorld = false,
-        branchesTo = emptyList(),   // leads nowhere yet — see the TODO on the last step
+        // Declared, not left to list order - Supply is the back half of this arc.
+        branchesTo = listOf(BRANCH_SUPPLY),
+        next = { BRANCH_SUPPLY },
         spawnGenome = emptyList(),
         spawnBiomass = STARTER_CELL_BIOMASS,
         steps = listOf(
@@ -1007,10 +1009,6 @@ object CampaignContent {
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
             ),
-            // TODO(campaign): the fix - a second CONVERT gene on {bond}, so the fuel molecule becomes food
-            // rather than exhaust. Needs the same "converts the waste" reading to gate on, and a decision on
-            // what its long-term cost is (see CAMPAIGN_PLAN.md §12 - the recorded "unrecoverable once
-            // degraded" premise does not survive contact with how degradation actually works).
             Step(
                 text = "There is a way out of this, and it is not to undo what you chose - at least not for division. Cells in cyto can use any chemical compound for their biomass, as long as they have a gene to support it. In fact, longer chemicals contribute more to biomass than shorter ones.",
                 gate = Gate.Next,
@@ -1026,6 +1024,8 @@ object CampaignContent {
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
+            // The chapter ends here, on the die-off. It auto-advances, so the collapse itself is the segue
+            // into `ch03-supply` rather than something the player has to click past.
             Step(
                 text = "This solves three problems at once: 1. It removes internal genetic competition for {chem}. 2. It deals with the {bond} byproduct of mitosis. 3. It upgrades the biomass to use a more efficient chemical.",
                 // Same reason as Leftovers' die-off: the edit lands on ONE cell, and an empty-world gate does
@@ -1035,6 +1035,34 @@ object CampaignContent {
                 world = WorldRun.Live,
                 autoAdvance = true,
             ),
+        ),
+    )
+
+    const val BRANCH_SUPPLY = "ch03-supply"
+
+    /**
+     * **Supply** — the back half of the competition arc, split out because it teaches a different thing.
+     *
+     * `ch02-conversion` ends on a lineage that has just been retargeted onto {bond} and immediately died for
+     * it. That is one lesson (growth and division can want the same atom) and this is another: the cell now
+     * depends on a molecule it only ever produced as a byproduct of dividing, so it has to make the stuff on
+     * purpose. The fix puts the same bond reaction underneath the CONVERT gene as its energy source.
+     *
+     * Kept as its own chapter because the die-off is a genuine ending - the player's colony collapses - and
+     * because arriving at "you now depend on your own waste product" as an epilogue to a chapter they thought
+     * they had finished buries the idea.
+     */
+    private fun chapterSupplyScratch() = Chapter(
+        id = BRANCH_SUPPLY,
+        act = 1,
+        title = "Supply",
+        blurb = "Your cells live on a molecule they only make by accident.",
+        scenario = EMPTY_WORLD,
+        startsFreshWorld = false,
+        branchesTo = emptyList(),   // leads nowhere yet - the recycling gene that rejoins the other path
+        spawnGenome = emptyList(),
+        spawnBiomass = STARTER_CELL_BIOMASS,
+        steps = listOf(
             Step(
                 text = "Back to the drawing board. Lets take another look at the genome.",
                 gate = Gate.World("Select a cell", met = { it.focused != null }),
@@ -1072,6 +1100,7 @@ object CampaignContent {
         chapterNightShiftScratch(),
         chapterLeftoversScratch(),
         chapterConversionScratch(),
+        chapterSupplyScratch(),
     )
 
     /** The chapter list the **real game** surfaces (menu + director) while the campaign is being reworked:
