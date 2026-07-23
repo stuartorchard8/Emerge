@@ -83,7 +83,7 @@ hit-test registry that `tap-ui`/`elements` walk. `GeneEditor.renderPickerSheet` 
 coach buttons; `tap-ui "CONVERT"` picks it from an open action menu; and a harness script can author
 `BIO < 3000` on a gene through the same taps the coach tells the player to make.
 
-**Done when:** met. `elements` lists open menu rows; `tap-ui CONVERT` picks from an open action menu; a
+**Met.** `elements` lists open menu rows; `tap-ui CONVERT` picks from an open action menu; a
 coordinate `tap` on a widget is consumed rather than spawning a cell; and `BIO < 3000` is authored by nine
 `tap-ui` commands, the card reading `WHEN BIO < 3000` (orange, since 4000 fails it).
 
