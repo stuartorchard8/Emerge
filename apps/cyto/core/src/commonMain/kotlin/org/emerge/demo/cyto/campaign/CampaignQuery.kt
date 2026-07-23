@@ -62,10 +62,17 @@ class Lineage(
     /** The species the first CONVERT gene locks into biomass, or null if there is no CONVERT gene. Empty
      *  string = the gene exists but its chemical is unset. Also the coach's `{chem}` token. */
     val convertChem: String? = null,
+    /** The chemical product of the first CONVERT gene's energy source, or null if there is no CONVERT gene or the
+     * energy source is Light. Empty string = the gene uses bond but its bond chemical is unset. */
+    val convertProduct: String? = null,
     /** The tightest `Biomass < N` ceiling on a CONVERT gene — the growth cap. Null = grows without limit. */
     val convertBiomassCap: Int? = null,
+    /** The tightest `Biomass > N` floor on a DIVIDE gene — the divide cap. Null = divide uncontrollably. */
+    val divideBiomassMinimum: Int? = null,
     /** Carries a division gene at all, whatever powers it. */
-    val hasMitosis: Boolean = false,
+    val hasDivide: Boolean = false,
+    /** Carries a light powered bond break for the campaign waste chemical. */
+    val hasPhotosynthesis: Boolean = false,
     /** True if a division gene leaves its daughters **welded** (sever off). */
     val divideWelds: Boolean = false,
     /** What the division gene synthesises for energy: null = none, or still on Light; "" = bonding but the

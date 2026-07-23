@@ -65,7 +65,8 @@ import javax.imageio.ImageIO
  * overlay matter|light       # toggle the light/matter overlay
  * next                       # click the coach "Next" (advances the chapter if its goal is met)
  * expect <field> <value>     # assert a reading (chapter/step/goal/cells/genes/convertChem/
- *                            # growthCap/hasMitosis/bond/fuelConflicts); non-zero exit if any fail
+ *                            # growthCap/divideFloor/hasDivide/recyclesExhaust/bond/
+ *                            # fuelConflicts); non-zero exit if any fail
  * shot <name> | state [name] | echo <text>
  * ```
  *
@@ -684,7 +685,9 @@ object CytoAgentHarness {
                 "genes" -> lin?.geneCount?.toString()
                 "convertChem" -> lin?.convertChem
                 "growthCap" -> lin?.convertBiomassCap?.toString()
-                "hasMitosis" -> lin?.hasMitosis?.toString()
+                "hasDivide" -> lin?.hasDivide?.toString()
+                "divideFloor" -> lin?.divideBiomassMinimum?.toString()
+                "recyclesExhaust" -> lin?.hasPhotosynthesis?.toString()
                 "bond" -> lin?.mitosisProduct
                 "fuelConflicts" -> lin?.divideFuelConflicts?.toString()
                 else -> { failures.add("expect: unknown field '$field'"); println("[agent] EXPECT ?? unknown field '$field'"); return }
@@ -712,7 +715,8 @@ object CytoAgentHarness {
             val lin = w.lineage
             if (lin != null) {
                 sb.append("  \"lineage\": {\"genes\": ${lin.geneCount}, \"convertChem\": ${jsonStr(lin.convertChem)}, ")
-                sb.append("\"growthCap\": ${lin.convertBiomassCap}, \"hasMitosis\": ${lin.hasMitosis}, ")
+                sb.append("\"growthCap\": ${lin.convertBiomassCap}, \"divideFloor\": ${lin.divideBiomassMinimum}, ")
+                sb.append("\"hasDivide\": ${lin.hasDivide}, \"recyclesExhaust\": ${lin.hasPhotosynthesis}, ")
                 sb.append("\"bond\": ${jsonStr(lin.mitosisProduct)}, \"fuelConflicts\": ${lin.divideFuelConflicts}},\n")
             } else sb.append("  \"lineage\": null,\n")
             val c = director.snapshot()

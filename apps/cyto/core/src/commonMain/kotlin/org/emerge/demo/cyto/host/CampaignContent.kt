@@ -395,6 +395,7 @@ object CampaignContent {
      * a little higher should not be told they are wrong), and anything above it genuinely does not work.
      */
     private const val GROWTH_CAP_MAX = 3500
+    private const val DIVIDE_BIOMASS_MIN = 2000
 
     /** Watch mask WITH the SLOW/PAUSE/FAST controls, so the player can fast-forward the slow beats (the
      *  gene-less cell's death; the first gene's biomass climbing back). */
@@ -450,6 +451,7 @@ object CampaignContent {
                 gate = Gate.World("The cell dies", met = { it.cellCount == 0 }),
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
+                autoAdvance = true,
             ),
             // 6. Place YOUR cell — a fresh start, this one gets a gene.
             Step(
@@ -457,6 +459,7 @@ object CampaignContent {
                 gate = Gate.World("Place and select a cell", met = { it.focused != null }),
                 allow = SPAWN,
                 world = WorldRun.Live,
+                autoAdvance = true,
             ),
             // 7. Choose a starter element and author the first CONVERT gene. This is the pivotal beat: the
             // player makes their organism's first real choice. Frozen so the cell waits, un-decaying, while
@@ -472,6 +475,7 @@ object CampaignContent {
                 gate = Gate.World("Set the new gene to CONVERT", met = { it.lineage?.convertChem == "" }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                autoAdvance = true,
             ),
             Step(
                 text = "Tap (NONE) to change your convert gene's chemical target to either REDOGEN, GREENUM or BLUEON - they're interchangeable, so pick whichever you like.",
@@ -519,17 +523,18 @@ object CampaignContent {
         steps = listOf(
             // 1. Frame the dead end. Live, so the cell is visibly still growing while they read.
             Step(
-                text = "Now your cell can sustain itself, but it's still only one cell. Your new gene has only one host cell, and if that cell ruptures then your new species will go extinct.",
+                text = "Now your cell can sustain itself, but it's still only one cell. Your new gene has only one host, and if that host cell ruptures then your new species will go extinct.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
             ),
             // 2. Add the DIVIDE gene. Frozen while they author.
             Step(
-                text = "Give it a way to carry on. Tap [+ NEW GENE] again, then change the new gene's action from (NOTHING) to (MITOSIS) - it divides the cell into two daughters, each taking half of the mother's biomass and cytoplasm.",
-                gate = Gate.World("Add a MITOSIS gene", met = { it.lineage?.hasMitosis == true }),
+                text = "Give it a way to spread. Tap [+ NEW GENE] again, then change the new gene's action from (NOTHING) to (DIVIDE) - it splits the cell into two daughters, each taking half of the mother's biomass and cytoplasm.",
+                gate = Gate.World("Add a DIVIDE gene", met = { it.lineage?.hasDivide == true }),
                 allow = LOOK,
                 world = WorldRun.Live,
+                autoAdvance = true,
             ),
             // 3. Let them watch it NOT work — and pin the blame on SIZE, not on the energy source. This is the
             // first of the two reasons the gene is inert, and it has to come first: a cell that has outgrown
@@ -547,13 +552,20 @@ object CampaignContent {
             // changed. Frozen while they author. Gated on the cap being one the cell can actually divide
             // under - see GROWTH_CAP_MAX.
             Step(
-                text = "Let's add condition on the CONVERT gene to limit the cell's growth. Tap (ALWAYS) on the CONVERT gene to give it a condition, set the left side to (BIO), flip the (>) to (<), and set the number to 3000.",
+                text = "Lets investigate why the cost is so high for your cell. Take another look at the genome you've authored. Your first gene always converts {chem} to biomass, resulting in this situation where division is too expensive.",
+                gate = Gate.Next,
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Let's add a condition on the CONVERT gene to limit the cell's growth. Tap (ALWAYS) on the CONVERT gene to give it a condition, set the left side to (BIO), flip the (>) to (<), and set the number to 3000.",
                 gate = Gate.World("Cap the CONVERT gene's growth", met = {
                     val cap = it.lineage?.convertBiomassCap
-                    cap != null && cap <= GROWTH_CAP_MAX
+                    cap != null && cap <= GROWTH_CAP_MAX && cap >= DIVIDE_BIOMASS_MIN
                 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                autoAdvance = true,
             ),
             // 4. NOW the second reason, with the first one out of the way: the pivot off Light onto chemistry.
             // Selecting BOND opens the reaction sheet straight away (GeneEditor.Pick.Bond), so switching the
@@ -566,20 +578,47 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "Fortunately for your cell, there is another abundant energy source in this environment: chemistry. Change the DIVIDE gene's energy source from (USE LIGHT) to (BOND), then choose two chemicals to join together.",
+                text = "Fortunately for your cell, there is another abundant energy source in the environment: chemistry. Change the DIVIDE gene's energy source from (USE LIGHT) to (BOND), then choose two chemicals to join together.",
                 detail = "Joining two molecules releases energy - one unit per bond made - and this world is full of loose atoms to join. Any pair works, so pick whichever you like.",
                 gate = Gate.World("Power DIVIDE by bonding", met = { !it.lineage?.mitosisProduct.isNullOrEmpty() }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
-            // 5. Close the chapter POISED on the split, world still Frozen - the division itself is the next
-            // chapter's opening beat, because which chapter that is depends on the pair just chosen (see
+            // 5. Cells divide, but they do so uncontrollably, resulting in extinction
+            Step(
+                text = "{bond} it is. Every one your cell makes releases a unit of energy, and it can now raise a quarter of its own biomass in a single moment. Give it a push if it refuses to divide - it may need more materials.",
+                altText = "Your gene has no reaction to run, so it makes no energy and the cell cannot divide. Go back and give it two chemicals to join.",
+                gate = Gate.World("Watch and push stalled cells into fresh matter", met = { it.cellCount == 0 }),
+                allow = LOOK,
+                world = WorldRun.Live,
+                // The die-off IS the beat. Waiting for a Next click would leave this instruction on screen
+                // telling the player to push cells that no longer exist, so the extinction moves the coach on
+                // by itself and the next step speaks to the empty world.
+                autoAdvance = true,
+            ),
+            Step(
+                text = "Oops. It looks like we need some more tuning here. Take a look at your genome again.",
+                gate = Gate.World("Select a cell", met = { it.focused != null }),
+                allow = SPAWN,
+                world = WorldRun.Live,
+                autoAdvance = true,
+            ),
+            Step(
+                text = "Remember how cells with less than 1000 biomass rupture? Dividing cells share their biomass between their daughter cells, so if they divide with less than 2000 biomass then both daughters rupture immediately.",
+                gate = Gate.Next,
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            // 6. Close the chapter POISED on the upgraded split, world still Frozen - the division itself is the next
+            // chapter's opening beat, because which chapter that is depends on the pair chosen just before (see
             // `next` below). Ending here also means the player never watches their choice play out before the
             // chapter that is about to be *about* that choice.
             Step(
-                text = "{bond} it is. Every one your cell makes releases a unit of energy, and it can now raise a quarter of its own biomass in a single moment. The next time this world moves, your cell will split.",
-                altText = "Your gene has no reaction to run, so it makes no energy and the cell cannot divide. Go back and give it two chemicals to join.",
-                gate = Gate.Next,
+                text = "Lets fix the over-eager division gene by introducing a condition. Only divide if the cell's biomass is above 2000 units.",
+                gate = Gate.World("Add a BIO>2000 condition to the division gene", met = {
+                    val minimum = it.lineage?.divideBiomassMinimum
+                    minimum != null && minimum >= DIVIDE_BIOMASS_MIN
+                }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
@@ -635,35 +674,46 @@ object CampaignContent {
         spawnGenome = emptyList(),
         spawnBiomass = STARTER_CELL_BIOMASS,
         steps = listOf(
-            // 1. The split ch01 stopped one tick short of. Live at last.
-            Step(
-                text = "Let it run.",
-                gate = Gate.World("Divide into two cells", met = { it.cellCount >= 2 }),
-                allow = WATCH_SPEED,
-                world = WorldRun.Live,
-            ),
-            // 2. The payoff that the old ch01 ending used to carry, now where it belongs - after the split,
+            // 1. The payoff that the old ch01 ending used to carry, now where it belongs - after the split,
             // in the chapter that is about what the split costs.
             Step(
-                text = "Two cells, from one. Both carry your genome, so both will do this again - and their daughters after them. You grew on {chem} and you burn the other two for the energy to split, so nothing your cells do gets in their own way. This lineage will fill the world.",
+                text = "Two stable cells from one. Both carry your genome, so both will do this again - and their daughters after them. You grew on {chem} and you burn the other two for the energy to split, so nothing your cells do gets in their own way. This lineage will fill the world.",
                 gate = Gate.World("Grow the colony", met = { it.cellCount >= 8 }, progress = { it.cellCount to 8 }),
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
             ),
-            // 3. Name the cost. The molecule is IN the cells and visible in the chemistry table, so this is a
+            // 2. Name the cost. The molecule is IN the cells and visible in the chemistry table, so this is a
             // "look at the thing" beat, not a claim the player has to take on trust.
             Step(
-                text = "Now select one and look at what it is holding. Every division your cells have ever paid for has left a molecule of {bond} behind, and they have no use for it. They are filling up with their own exhaust.",
+                text = "Now select one and look at what it is holding. Every division your cells have ever paid for has left a molecule of {bond} behind, and they have no use for it. They are filling up with their own waste products.",
                 detail = "Nothing is destroyed in this world, only rearranged. The atoms in that {bond} are the same atoms your cells started with - they are simply locked into a shape the genome has no gene for.",
                 gate = Gate.Did(PlayerAction.SelectedCell, "Select a cell and read its chemistry"),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
+            Step(
+                text = "Left unchecked, this waste adds to the degradation of cells, eventually making continued life unsustainable.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
             // TODO(campaign): the fix - a Light-powered BREAK gene on {bond}, recycling the pair back to
             // cytoplasm. Needs a FocusedCell reading for "breaks the waste molecule" to gate on. Left for the
             // authoring pass; see CAMPAIGN_PLAN.md §12.
             Step(
-                text = "Sunlight could not pay for a division. It is perfectly good for taking something apart, though - and that is where this goes next.",
+                text = "Lets introduce a new gene to resolve this waste problem.",
+                gate = Gate.World("Give a cell a new gene", met = { it.lineage?.geneCount == 3 }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Set the new gene's action to [BREAK] {bond} using light. The trickle of sunlight cells receive in the day could not pay for division, but it can be used to break waste back into usable atoms.",
+                gate = Gate.World("Update the gene to BREAK {bond}", met = { it.lineage?.hasPhotosynthesis == true }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Now your genome is.....",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
@@ -693,7 +743,7 @@ object CampaignContent {
         spawnBiomass = STARTER_CELL_BIOMASS,
         steps = listOf(
             Step(
-                text = "Let it run.",
+                text = "Let it run. If division is stalled, move your cell around to give it access to more resources.",
                 gate = Gate.World("Divide into two cells", met = { it.cellCount >= 2 }),
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
@@ -701,16 +751,8 @@ object CampaignContent {
             // The choice, named back to them. This is the beat the whole branch exists for: they were never
             // asked a question, so the coach has to show them the answer they gave.
             Step(
-                text = "Two cells, from one. Look closely at what you built, though. Your cells grow by locking {chem} into biomass, and they pay for every division by bonding {bond} - which takes that same {chem} back out of the cytoplasm. Both genes are reaching for the same atom.",
+                text = "Two cells, from one. But look closely at what you built - Your cells grow by locking {chem} into biomass, and they pay for every division by bonding {bond} - which takes that same {chem} back out of the cytoplasm. Both genes are competing for the same {chem} reserve.",
                 detail = "Neither gene is wrong. They simply want the same thing, and there is only so much of it coming in through the membrane.",
-                gate = Gate.Next,
-                allow = WATCH_SPEED,
-                world = WorldRun.Live,
-            ),
-            // Let the consequence land. This lineage does die back - that is the observation the fix answers.
-            Step(
-                text = "Watch what happens to the colony now.",
-                detail = "It will divide a few more times on what is already in the cytoplasm, and then the two genes will have drained it faster than the membrane can refill it.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
@@ -720,9 +762,52 @@ object CampaignContent {
             // what its long-term cost is (see CAMPAIGN_PLAN.md §12 - the recorded "unrecoverable once
             // degraded" premise does not survive contact with how degradation actually works).
             Step(
-                text = "There is a way out of this, and it is not to undo what you chose. The molecule your cells make to pay for dividing is two atoms of food, if you give them a gene that can eat it - and that is where this goes next.",
+                text = "There is a way out of this, and it is not to undo what you chose - at least not for division. Cells in cyto can use any chemical compound for their biomass, as long as they have a gene to support it. In fact, longer chemicals contribute more to biomass than shorter ones.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "Update your convert gene to change its target chemical from {chem} to {bond}. ",
+                gate = Gate.World("Update the first gene to CONVERT {bond}", met = {
+                    it.lineage?.convertChem != null && it.lineage?.convertChem != ""
+                            && it.lineage?.convertChem == it.lineage?.mitosisProduct
+                }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "This solves three problems at once: 1. It removes internal genetic competition for {chem}. 2. It deals with the {bond} byproduct of mitosis. 3. It upgrades the biomass to use a more efficient chemical.",
+                gate = Gate.World("What could go wrong?", met = { it.cellCount == 0 }),
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+                autoAdvance = true,
+            ),
+            Step(
+                text = "Back to the drawing board. Lets take another look at the genome.",
+                gate = Gate.World("Select a cell", met = { it.focused != null }),
+                allow = SPAWN,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "The cell bonds {bond} to divide, but that's its only way of getting more {bond}. Now that the cell relies on {bond} for growth, we need to make a more reliable way to acquire it.",
+                gate = Gate.Next,
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Lets change the energy source of the convert gene to bond {chem}. This way the cell produces the {chem} it needs by using the bond as the energy source for {chem} conversion.",
+                gate = Gate.World("Update the first gene to BOND {bond} as its energy source", met = {
+                    it.lineage?.convertChem != null && it.lineage?.convertChem != ""
+                            && it.lineage?.convertChem == it.lineage?.convertProduct
+                }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Now we're cooking.",
+                gate = Gate.Next,
+                allow = LOOK,
                 world = WorldRun.Live,
             ),
         ),

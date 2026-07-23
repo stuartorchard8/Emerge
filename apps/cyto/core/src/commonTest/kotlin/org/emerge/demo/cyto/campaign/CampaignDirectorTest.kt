@@ -35,7 +35,7 @@ class CampaignDirectorTest {
     private fun mitosisQuery(mitosisProduct: String?) = CampaignQuery(
         WorldStats(0L, 1, mapOf(CellType.Collector to 1), 100, emptySet(),
             FocusedCell(CellType.Collector, 100, emptyMap()),
-            Lineage(geneCount = 2, hasMitosis = true, mitosisProduct = mitosisProduct)),
+            Lineage(geneCount = 2, hasDivide = true, mitosisProduct = mitosisProduct)),
         paused = false, selectedGenome = null,
     )
 

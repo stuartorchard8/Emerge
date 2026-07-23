@@ -26,6 +26,10 @@ class CampaignDirector {
     private val satisfiedDid = HashSet<PlayerAction>()
     private var gateMet: Boolean = false
     private var lastQuery: CampaignQuery? = null
+    /** The controller the host walks this campaign against, remembered from the last step entry. Only so
+     *  [update] can perform a [Step.autoAdvance] transition, which needs the same controller a "Next" click
+     *  would have supplied. Not ownership — every other path still takes one as a parameter. */
+    private var host: CytoController? = null
     private var showDetail: Boolean = false
     /** The Reset sheet is open (the two ways back). Cleared on every step entry, like [showDetail]. */
     private var resetMenuOpen: Boolean = false
@@ -157,9 +161,16 @@ class CampaignDirector {
      * Extinction used to be an unmarked dead end: every goal keyed on a living cell became unsatisfiable and
      * the only way on was a Reset the coach never mentioned. It is a normal thing to happen in this game —
      * two chapters are *about* a lineage failing — so it is handled as a state, not an accident.
+     *
+     * Which is exactly why [gateMet] suppresses it: a step whose OWN goal is satisfied by an empty world
+     * asked for this death (`ch01-divide` has the player watch a lineage divide itself below the rupture
+     * floor). Talking them out of it there would replace the beat's copy with a recovery offer for a
+     * situation that is not a setback, and send them back to fix a world the next step is about to discuss.
+     * Note [gateMet] is false on a [Gate.Next] step, so a lineage that dies while the player is merely
+     * reading still gets the net.
      */
     val extinctionOffer: Boolean
-        get() = active && lastQuery?.extinct == true && lastQuery?.lineage != null
+        get() = active && !gateMet && lastQuery?.extinct == true && lastQuery?.lineage != null
 
     /** What the coach says while [extinctionOffer] holds, in place of the step's own text. */
     private fun extinctionText(): String =
@@ -238,10 +249,11 @@ class CampaignDirector {
 
     /** Leave the campaign (host returns to the menu). */
     fun stop() {
-        active = false; chapter = null; lastQuery = null; carriedGenome = null; pathInternal.clear()
+        active = false; chapter = null; lastQuery = null; carriedGenome = null; host = null; pathInternal.clear()
     }
 
     private fun enterStep(controller: CytoController) {
+        host = controller
         satisfiedDid.clear()
         gateMet = false
         showDetail = false
@@ -289,6 +301,10 @@ class CampaignDirector {
         lastQuery = query
         satisfiedDid.addAll(actions)
         gateMet = evalGate(currentStep?.gate, query)
+        // A step that opted into Step.autoAdvance moves on here rather than waiting for the button. Uses the
+        // controller the host handed over at start/advance: this is the same transition the Next click makes,
+        // just triggered by the world instead of the player.
+        if (gateMet && currentStep?.autoAdvance == true) host?.let { advance(it) }
     }
 
     private fun evalGate(gate: Gate?, query: CampaignQuery): Boolean = when (gate) {

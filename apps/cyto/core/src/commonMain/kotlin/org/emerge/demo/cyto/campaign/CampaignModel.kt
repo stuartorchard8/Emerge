@@ -103,6 +103,17 @@ class Step(
      *  steps whose goal needs the sim to change (growth, division) are [WorldRun.Live]. Applied by the
      *  host on step entry (the player keeps manual pause/speed control within the step). */
     val world: WorldRun = WorldRun.Frozen,
+    /**
+     * Move on the instant [gate] is met, without waiting for a "Next" click.
+     *
+     * For beats where the gate firing IS the event the player was told to watch for, so pausing on a
+     * satisfied goal just leaves stale copy on screen describing something that already happened — the
+     * lineage in `ch01-divide` wiping itself out is the case this exists for. Off by default: most gated
+     * steps want the player to look at what they just achieved before the coach talks again.
+     *
+     * Meaningless on a [Gate.Next] step, which by definition has no condition to fire on.
+     */
+    val autoAdvance: Boolean = false,
     val onEnter: (CytoController) -> Unit = {},
 )
 

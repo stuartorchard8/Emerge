@@ -62,14 +62,14 @@ expect step 11/11
 # Segue into Divide — same world, same cell.
 next
 expect chapter ch01-divide
-expect step 1/7
+expect step 1/11
 
 # 1-2. The dead end, then the DIVIDE gene.
 next
 tap-ui + NEW GENE
 tap-ui NOTHING
 tap-ui Mitosis
-expect hasMitosis true
+expect hasDivide true
 next
 
 # 3. It doesn't fire: the cell has outgrown what it can pay.
@@ -102,8 +102,37 @@ tap-ui close
 expect bond bg
 expect fuelConflicts false
 next
-expect step 7/7
+expect step 8/11
 
-# 5. THE BRANCH. b+g leaves r alone, so this lineage gets the photosynthesis chapter.
+# 5. It divides — and both daughters rupture on the spot. The step auto-advances on the die-off, so
+# there is no Next to click here. A cell splits its biomass in two, so dividing
+# under 2000 leaves each daughter below the 1000 rupture floor. The lineage wipes itself out.
+run 2000
+expect cells 0
+expect step 9/11
+
+# 6. Put the genome back in the world and select it, so the gene card is there to edit.
+tap 0.35 0.5
+select 0.35 0.5
+expect cells 1
 next
+next
+expect step 11/11
+
+# 7. The fix: a BIO > 2000 floor on the DIVIDE gene. The blank clause ALWAYS drops in is already `> 0`,
+# so only the left side and the number change. The DIVIDE gene is the only one still unconditional, so
+# `ALWAYS` needs no @n here.
+tap-ui ALWAYS
+tap-ui CHEM (NONE)
+tap-ui BIO
+tap-ui close
+tap-ui 0
+tap-ui 0
+type 2000
+tap-ui SET VALUE
+tap-ui close
+expect divideFloor 2000
+next
+
+# 8. THE BRANCH. g+b leaves REDOGEN alone, so growth and division never compete.
 expect chapter ch02-photosynthesis

@@ -13,6 +13,10 @@ import org.emerge.demo.cyto.sim.Operand
 fun lineageOf(genome: List<Gene>): Lineage {
     val convert = genome.firstOrNull { it.action.type == ActionType.Convert }
     val convertChem = convert?.action?.a
+    val convertFuel = convert?.source as? EnergySource.FormBond
+    // Light-powered convert reads as "not chemistry-powered yet" (null), not as a half-done reaction — the
+    // competition chapter's job is to move the gene off Light entirely.
+    val convertProduct = convertFuel?.product
     // The tightest `Biomass < N` any CONVERT gene runs under — the growth ceiling. All such clauses have to
     // hold, so the smallest is the one that actually bites.
     val cap = genome
@@ -24,6 +28,17 @@ fun lineageOf(genome: List<Gene>): Lineage {
         }
         .minOrNull()
     val mitosis = genome.firstOrNull { it.action.type == ActionType.Mitosis }
+    // The tightest `Biomass > N` floor any DIVIDE gene runs under. A cell splits its biomass between the
+    // daughters, so without a floor it can divide below the rupture threshold and kill both. All clauses
+    // have to hold, so the LARGEST floor is the one that actually bites (the mirror of the CONVERT cap).
+    val divideMin = genome
+        .filter { it.action.type == ActionType.Mitosis }
+        .flatMap { it.condition.clauses }
+        .mapNotNull { cl ->
+            val rhs = cl.rhs
+            if (cl.lhs == Operand.Biomass && cl.cmp == Comparison.Greater && rhs is Operand.Constant) rhs.value else null
+        }
+        .maxOrNull()
     val fuel = mitosis?.source as? EnergySource.FormBond
     // Light-powered division reads as "not chemistry-powered yet" (null), not as a half-done reaction — the
     // divide chapter's job is to move the gene off Light entirely.
@@ -32,12 +47,23 @@ fun lineageOf(genome: List<Gene>): Lineage {
     // nothing to compare, and must not read as "no conflict".
     val conflicts = if (fuel == null || convertChem.isNullOrEmpty() || fuel.a.isEmpty() || fuel.b.isEmpty()) null
         else convertChem == fuel.a || convertChem == fuel.b
+    // The exhaust-recycling gene: a Light-powered BREAK of the very molecule the division gene's fuel
+    // reaction leaves behind. Both halves matter — a BREAK on some other molecule does not clear the waste,
+    // and a chemistry-powered one would just be another bond to pay for.
+    val breaksExhaust = !product.isNullOrEmpty() && genome.any { g ->
+        g.action.type == ActionType.BreakBond &&
+            g.source is EnergySource.Light &&
+            g.action.a + g.action.b == product
+    }
     val contract = genome.filter { it.action.type == ActionType.Contract }
     return Lineage(
         geneCount = genome.size,
         convertChem = convertChem,
+        convertProduct = convertProduct,
         convertBiomassCap = cap,
-        hasMitosis = mitosis != null,
+        divideBiomassMinimum = divideMin,
+        hasDivide = mitosis != null,
+        hasPhotosynthesis = breaksExhaust,
         divideWelds = genome.any { it.action.type == ActionType.Mitosis && !it.action.rejectMother },
         mitosisProduct = product,
         divideFuelConflicts = conflicts,

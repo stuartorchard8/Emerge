@@ -15,13 +15,19 @@ import kotlin.test.assertTrue
  */
 class CampaignBranchTest {
 
+    /**
+     * A world that satisfies every gate in `ch01-divide` at once, so one query can walk the whole chapter.
+     * That includes `cellCount == 0`: the chapter's own arc runs the lineage to extinction (dividing below
+     * the rupture floor) before the player fixes it, and this test is about the routing, not the arc.
+     */
     private fun query(conflicts: Boolean?, focused: Boolean = true) = CampaignQuery(
         WorldStats(
-            0L, 1, mapOf(CellType.Collector to 1), 100, emptySet(),
+            0L, 0, emptyMap(), 100, emptySet(),
             if (!focused) null else FocusedCell(CellType.Collector, 100, emptyMap()),
             Lineage(
                 geneCount = 2, convertChem = "r", convertBiomassCap = 3000,
-                hasMitosis = true, mitosisProduct = "rg", divideFuelConflicts = conflicts,
+                divideBiomassMinimum = 2000,
+                hasDivide = true, mitosisProduct = "rg", divideFuelConflicts = conflicts,
             ),
         ),
         paused = false, selectedGenome = null,
@@ -40,8 +46,12 @@ class CampaignBranchTest {
         dir.onChapterEntered = { c, _ -> entered = c.id }
         dir.start(ch, ctrl)
         repeat(ch.steps.size) { i ->
+            val before = dir.snapshot()?.stepIndex
             dir.update(if (i == ch.steps.lastIndex) atTheEnd else q, PlayerAction.entries.toSet())
-            assertTrue(dir.tryAdvance(ctrl), "step ${i + 1} of ${ch.id} did not advance")
+            // A Step.autoAdvance beat has already moved on inside update() — clicking Next on top of that
+            // would skip the step it just landed on.
+            val movedItself = dir.snapshot()?.let { it.chapterId == ch.id && it.stepIndex != before } == true
+            if (!movedItself) assertTrue(dir.tryAdvance(ctrl), "step ${i + 1} of ${ch.id} did not advance")
         }
         return entered
     }
