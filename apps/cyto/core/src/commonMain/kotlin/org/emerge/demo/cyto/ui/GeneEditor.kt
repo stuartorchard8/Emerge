@@ -485,7 +485,7 @@ class GeneEditor {
             if (isOrigin) {
                 dropSlot("$GENE_REORDER_PREFIX${indices.size}")
                 button("DUPLICATE GENE", 0x2E5A38FFL, dropTargetId = GENE_DROP_DUP) {}
-            } else if (wide && draggingGene == null && indices.isNotEmpty()) {
+            } else if (draggingGene == null && indices.isNotEmpty()) {
                 // Not dragging (and this group has genes): offer a create-from-scratch affordance at the end of
                 // the group (during a drag this slot is the DUPLICATE zone instead). Appends a blank gene tagged
                 // to this group. The empty-genome case is handled by the bottom-stack "+ NEW GENE" instead.
@@ -512,10 +512,9 @@ class GeneEditor {
             }
             if (metabExpanded) metabolismTable(info)
         }
-        // Show the genome section whenever there are genes, and — on desktop — even when there are none, so an
-        // empty cell still offers the create-from-scratch buttons (there'd otherwise be no way to author a
-        // first gene without duplicating one).
-        if (info.genes.isNotEmpty() || wide) {
+        // The genome section always shows, even for an empty cell, so it still offers the create-from-scratch
+        // buttons (there'd otherwise be no way to author a first gene without duplicating one).
+        run {
             gap(8f)
             row(if (info.genes.isEmpty()) "GENOME  (EMPTY)" else "GENOME  (TAP A GENE TO EDIT)", 0x7A8699FFL)
             val liveGenes = info.genes.map { it.gene }
@@ -555,7 +554,7 @@ class GeneEditor {
                 gap(6f)
                 button("+ NEW GROUP", 0x2E4A6EFFL, dropTargetId = GROUP_DROP_NEW) {}
                 button("DELETE GENE", 0x6E2A2AFFL, dropTargetId = GENE_DROP_DEL) {}
-            } else if (wide) {
+            } else {
                 gap(6f)
                 if (info.genes.isEmpty()) button("+ NEW GENE", 0x2E5A38FFL) { createGene(controller, "") }
                 button("+ NEW GROUP", 0x2E4A6EFFL) { createGeneInNewGroup(controller) }
