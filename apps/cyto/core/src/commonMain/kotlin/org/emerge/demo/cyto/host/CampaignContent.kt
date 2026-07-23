@@ -506,7 +506,7 @@ object CampaignContent {
         steps = listOf(
             // 1. Frame the dead end. Live, so the cell is visibly still growing while they read.
             Step(
-                text = "Now your cell can sustain itself, but it is still only one cell. Its your new gene's only host, and if it ruptures then your new species will go extinct.",
+                text = "Now your cell can sustain itself, but it's still only one cell. Your new gene has only one host cell, and if that cell ruptures then your new species will go extinct.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
@@ -516,7 +516,7 @@ object CampaignContent {
                 text = "Give it a way to carry on. Tap [+ NEW GENE] again, then change the new gene's action from (NOTHING) to (MITOSIS) - it divides the cell into two daughters, each taking half of the mother's biomass and cytoplasm.",
                 gate = Gate.World("Add a MITOSIS gene", met = { it.focused?.hasMitosis == true }),
                 allow = LOOK,
-                world = WorldRun.Frozen,
+                world = WorldRun.Live,
             ),
             // 3. Let them watch it NOT work — and pin the blame on SIZE, not on the energy source. This is the
             // first of the two reasons the gene is inert, and it has to come first: a cell that has outgrown
@@ -524,8 +524,7 @@ object CampaignContent {
             // leaves the player making the "right" edit and watching nothing happen. Live, so they can see the
             // size climbing while they read.
             Step(
-                text = "Nothing happens. The gene is there, but your cell will not divide - and watch the BIOMASS readout while you wait. It is still climbing.",
-                detail = "Division costs a quarter of the cell's biomass in energy, all of it due in a single moment. The bigger the cell, the bigger that bill - and a cell holds only so much cytoplasm to pay it with, however large it grows. Keep growing and the bill outruns the purse.",
+                text = "Nothing happens. The gene is there, but your cell will not divide.  Division costs a quarter of the cell's biomass in energy. Bigger cells pay more, and currently your cell isn't able to cover the bill.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
@@ -535,8 +534,7 @@ object CampaignContent {
             // changed. Frozen while they author. Gated on the cap being one the cell can actually divide
             // under - see GROWTH_CAP_MAX.
             Step(
-                text = "So stop it growing. Tap (ALWAYS) on your CONVERT gene to give it a condition, set the left side to (BIO), flip the (>) to (<), and set the number to 3000. Now it only feeds while it is smaller than that.",
-                detail = "A gene with no condition runs whenever it can. A condition is the cell asking itself a question first - here, \"am I still small enough to be worth growing?\" - and only acting when the answer is yes.",
+                text = "Let's add condition on the CONVERT gene to limit the cell's growth. Tap (ALWAYS) on the CONVERT gene to give it a condition, set the left side to (BIO), flip the (>) to (<), and set the number to 3000.",
                 gate = Gate.World("Cap the CONVERT gene's growth", met = {
                     val cap = it.focused?.convertBiomassCap
                     cap != null && cap <= GROWTH_CAP_MAX
@@ -549,15 +547,21 @@ object CampaignContent {
             // source and choosing the pair is one continuous move - hence one step, gated on a COMPLETE
             // reaction (a product, not just a source type).
             Step(
-                text = "Its size holds steady now, and so does the bill. Sunlight still cannot pay it though - light arrives in a steady trickle, and mitosis needs a lump sum. Fortunately for your cell, there is another abundant energy source in this environment: chemistry. Change the DIVIDE gene's energy source from (LIGHT) to (BOND), then choose two chemicals to join together.",
-                detail = "Joining two molecules releases energy - one unit per bond made - and this world is a soup of loose atoms to join. Any pair works, so pick whichever you like.",
+                text = "Now your cell has an upper-bound to its size, so division is nearly within reach. Sunlight still cannot pay it though - light arrives in a steady trickle, and division requires a lump sum.",
+                gate = Gate.Next,
+                allow = LOOK,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "Fortunately for your cell, there is another abundant energy source in this environment: chemistry. Change the DIVIDE gene's energy source from (LIGHT) to (BOND), then choose two chemicals to join together.",
+                detail = "Joining two molecules releases energy - one unit per bond made - and this world is full of loose atoms to join. Any pair works, so pick whichever you like.",
                 gate = Gate.World("Power DIVIDE by bonding", met = { !it.focused?.mitosisProduct.isNullOrEmpty() }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
             // 5. Payoff. {bond} names the reaction they chose, the way {chem} named their starter element.
             Step(
-                text = "Progress! For every unit of {bond} your cell makes, it releases a unit of energy. As long as your cells have enough chemical ingredients - and stay small enough to afford the split - they'll continue to divide.",
+                text = "Progress. For every unit of {bond} your cell makes, it releases a unit of energy. As long as your cells have enough chemical ingredients - and stay small enough to afford the split - they'll continue to divide.",
                 altText = "Your gene has no reaction to run, so it makes no energy and the cell cannot divide. Go back and give it two chemicals to join.",
                 gate = Gate.World("Divide into two cells", met = { it.cellCount >= 2 }),
                 allow = WATCH_SPEED,
