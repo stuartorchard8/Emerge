@@ -8,6 +8,20 @@
 > Ordered by time bought back per hour spent. Each item states the evidence, the fix, and what "done" looks
 > like, because a cold session shouldn't have to re-derive why it matters.
 
+## Status (2026-07-23, second session)
+
+| # | item | state |
+|---|------|-------|
+| 1 | harness cannot reach the UI it tests | **open** — the big one, untouched |
+| 2 | no cheap way to construct a world state | **open** — but see the note below; two of this session's fixes were exactly this problem |
+| 3 | coach copy names UI tokens unchecked | **DONE** `80345934` |
+| 4 | `CytoEditLatencyTest` is a noisy metric | **DONE** `f402435b` |
+| 5 | the test suite took 6m27 | **DONE** `25af3af7` — added this session, see below |
+
+Item 2 is now the top of the list by payback. It kept surfacing while fixing 5: the touch-count test grew a
+400-tick colony to find one cell in contact, and `parallelMatchesSequential` seeds a world that never
+divides. Both are "I need a specific world state and the only tool is to grow one and hope".
+
 ---
 
 ## 1. The harness cannot reach the UI it exists to test
@@ -68,7 +82,7 @@ not) is expressible as a test, and the harness can reach an arbitrary named stat
 
 ---
 
-## 3. Coach copy names UI tokens as bare strings, unchecked
+## 3. Coach copy names UI tokens as bare strings, unchecked — **DONE** (`80345934`)
 
 **Evidence.** The Divide chapter's new step tells the player to tap `(ALWAYS)`, set the left side to
 `(BIO)`, flip `(>)` to `(<)`, and the Genesis steps name `(NOTHING)`, `(CONVERT)`, `(NONE)`. Nothing
@@ -84,9 +98,15 @@ list, so a new chapter can't quietly opt out.
 **Done when:** renaming a gene-card token label fails a test that names the chapter and step whose copy
 went stale. Cheapest item here — probably an hour — and it guards copy written in this session.
 
+**As built.** `GeneCardLabels` (commonMain) is the single vocabulary, derived from the label functions
+wherever it can be so a new `ActionType` extends it for free; `GeneEditor` delegates to it.
+`CampaignCopyTokensTest` checks every `(TOKEN)` in every playable chapter, skipping dynamic tokens by
+pattern as planned. It found two stale instructions on its first run: `ch01-divide` said `(LIGHT)` where
+the label is `USE LIGHT`, and `ch03-anatomy`'s worked example still described the pre-redesign card.
+
 ---
 
-## 4. `CytoEditLatencyTest` is a good tripwire wrapped in a noisy metric
+## 4. `CytoEditLatencyTest` is a good tripwire wrapped in a noisy metric — **DONE** (`f402435b`)
 
 **Evidence.** It measures **sim ticks elapsed inside one `setHeldGene`**, budget 2. Two different things
 make it fail and the failure message cannot tell them apart:
@@ -106,6 +126,44 @@ the tick-rate proxy stops competing with the rest of the suite for cores.
 
 **Done when:** a failure of this test means exactly one thing, and the message says which.
 
+**As built** — the first option, the real contract. A helper thread takes `stepLock` and *keeps* it (a tick
+that never ends); each draw-thread write runs on its own thread. One that queues through `inputLock` returns
+in microseconds, one that takes `stepLock` cannot return at all. Binary, and the scheduler has no say. The
+timeout is not a budget, so there is nothing left to recalibrate. Verified in both directions: wrapping
+`setHeldGene` in `stepLock` makes it fail. Coverage widened from gene edits to every interactive-rate write
+(spawn, tap, mutation ladder, all the genome ops), with the failure naming which one broke the rule.
+
+---
+
+## 5. The test suite took 6m27, and four tests were 90% of it — **DONE** (`25af3af7`)
+
+Added 2026-07-23 after Stu cancelled a suite run at 5 minutes. Rule set then: **no test may take more than
+5 seconds**; a test that runs long is useless.
+
+**Evidence.** 215 tests, 377s. Median test ~10ms — the suite was not broadly slow, it had a handful of
+whole-ecosystem sims in it. `acrossOrientedDivisionGrowsA2DSheetNotAThread` alone was 268s (71%).
+
+**What was actually wrong** — in every case, a tick/pass count nobody had measured:
+
+| test | before | after | cause |
+|---|---|---|---|
+| `acrossOrientedDivision…2DSheet` | 268s | 0.5s | 2×300-tick colonies to ~1100 cells; separates at tick 20 |
+| `parallelMatchesSequential` | 47s | 2s | materialised + digested both worlds *every* tick |
+| `panelReportsTheRealTouchCount` | 16s | 0.3s | grew 400 ticks, then looked once — contact is transient |
+| `exactlyOneSpeciesDiffusesPerPass` | 9.8s | 0.2s | `SpeciesRegistry.size` is **1884**, so ~45,000 full-grid diffuses |
+| `diffusionSettlesAndThenZeroFlux` | 8.2s | 1.2s | 3,500 passes on a guess; the field stops changing at pass 40 |
+| `diffusionRefillsAWideCrater` | 6.2s | 2.0s | 3,000 passes; the centre stops moving at 497 |
+
+**The pattern, worth keeping:** every replacement number was *measured with a throwaway probe* and the
+measurement written into the comment. The old numbers were all guesses with "slack" on top, and slack
+compounds — 3,000 passes for a 40-pass phenomenon.
+
+**Left open — a coverage gap, not a speed one.** `parallelMatchesSequential` **never grows past one cell**:
+`createCytoInitialState()` with `mutationRateDenom = 0` sits at the founder for all 250 ticks, so with
+`springParallelThreshold = 2` it likely never enters a parallel path at all. Its sibling
+`parallelMatchesSequentialWeldedColony` does the real work (25 welded cells) in 0.49s. Either reseed it or
+delete it — but decide, don't leave a gate that may be asserting nothing.
+
 ---
 
 ## Not debt — recorded so it isn't mistaken for debt
@@ -114,6 +172,9 @@ Three of that session's bigger time sinks were process, and no refactor addresse
 
 - Reading `./gradlew -q --tests X` printing nothing as "passed", when it meant **UP-TO-DATE**. Use
   `--rerun-tasks` whenever a result matters. (Recorded in memory.)
+- Trusting a tick/pass count in a test because a comment justified it. Every one audited in item 5 was
+  wrong by 1-2 orders of magnitude. A throwaway probe that prints when the phenomenon actually settles
+  costs one run and replaces the guess permanently.
 - Reaching for a screenshot to verify logic that is a pure function of state. Renders answer *does this
   read well*; tests answer *is this right*.
 - Writing a behaviour claim into a commit message without checking it (`SpeciesNames.name("")` already
