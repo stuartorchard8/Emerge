@@ -385,18 +385,19 @@ object CampaignContent {
         // the same monomers per unit area; `LIGHT_FALLOFF` is `dayFraction * cellsPerAxis`, so 900/2700
         // keeps the daylight band at the same quarter-of-the-torus it has always been.
         //
-        // ⚠️ IT DOES NOT CAP THE POPULATION, which is what this was reached for. Measured, one founder of
-        // the ch02 genome left to run for 30k ticks:
+        // The population it holds scales with the AREA, which is the point. Measured over five founders of
+        // the ch02 genome, each placed in a freshly rebuilt world at a different spot:
         //
-        //   - worldSize 32: stalls in its own crater and is extinct by tick 15000. It only gets going at all
-        //     because the player drags it into fresh matter, which the chapter's own copy asks them to do.
-        //   - worldSize 16: never has to move — the whole torus is within reach — so it divides continuously,
-        //     peaking near 900 cells around tick 20000 and settling near 500.
+        //   worldSize 32:  2251-2345 cells at tick 10000, 1540-1576 at tick 20000
+        //   worldSize 16:   542-584  cells at tick 10000,  387-423  at tick 20000
         //
-        // So what limited the bloom was SCARCITY, not space, and shrinking the world relaxed it. The lever
-        // that would cap population is `matterLevel` (125 here), but it is knife-edge: at 60 and at 40 the
-        // founder never divides once in 30k ticks. Retuning that band is a campaign-authoring decision, not
-        // a geometry one, so it is deliberately left alone here.
+        // A clean 4x, tight across placements. Density is untouched (see the ratio note above) — there is
+        // simply a quarter as much room, and a quarter as much ground to grow on.
+        //
+        // ⚠️ Measure this with SEVERAL founders if you ever retune it. A single scripted run said size 32
+        // went extinct by tick 15000 while size 16 bloomed to 900, i.e. exactly backwards: that founder had
+        // been dragged to one marginal spot and starved there. One sample of an ecology this stochastic is
+        // worth nothing — the same world size spans "extinct" to "2300 cells" depending on where you land.
         worldSize = 16,
         // A whisper of Perlin variation over the monomer soup, so the empty world reads as a living place with
         // subtle regional richness rather than a flat grey — mean-normalised, so no spot is a better start.
@@ -548,7 +549,7 @@ object CampaignContent {
         steps = listOf(
             // 1. Frame the dead end. Live, so the cell is visibly still growing while they read.
             Step(
-                text = "Now your cell can sustain itself, but it's still only one cell. Your new gene has only one host, and if that host cell ruptures then your new species will go extinct.",
+                text = "Your cell can sustain itself, but it's still only one cell. Your new gene has only one host, and if that host cell ruptures then your new species will go extinct.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
