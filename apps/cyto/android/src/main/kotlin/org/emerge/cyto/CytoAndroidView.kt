@@ -21,12 +21,15 @@ import org.emerge.demo.cyto.host.CampaignProgress
 import org.emerge.demo.cyto.host.CytoGenomes
 import org.emerge.demo.cyto.host.CytoMenu
 import org.emerge.demo.cyto.host.CytoSaves
+import org.emerge.demo.cyto.host.CytoSnippets
 import org.emerge.demo.cyto.host.CytoStorage
+import org.emerge.demo.cyto.host.SnippetEntry
 import org.emerge.demo.cyto.host.GenomeEntry
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
 import org.emerge.demo.cyto.ui.CytoHud
 import org.emerge.demo.cyto.ui.GeneEditor
+import org.emerge.demo.cyto.ui.GeneSnippet
 import org.emerge.render.torus.ui.Ui
 import org.emerge.sim.core.EntityId
 import javax.microedition.khronos.egl.EGLConfig
@@ -69,6 +72,8 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
 
     // Brush genome library (drives the palette).
     private var genomes: List<GenomeEntry> = emptyList()
+    // Banked group snippets (the gene editor's paste picker), refreshed whenever a group is saved.
+    private var snippets: List<SnippetEntry> = emptyList()
     private var selectedGenome = 0
     // Name of the save last loaded or written this session — pre-fills the Save dialog (see onOpenSave).
     private var lastSaveName: String? = null
@@ -82,6 +87,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
     private var cameraMovedSignal = false
     private var speedChangedSignal = false
     private var cellMovedSignal = false
+    private var chemistryOpenedSignal = false
 
     // A native name dialog is up (guards re-posting while the menu sits on a name page).
     private var nameDialogShown = false
@@ -143,6 +149,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
 
         // Brush palette from the genome library (seeded on first use).
         genomes = CytoGenomes.list()
+        snippets = CytoSnippets.list()
         controller.brushGenome = genomes.getOrNull(selectedGenome)?.genome
         controls.onSelectGenome = { i ->
             selectedGenome = i
@@ -267,6 +274,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
             if (cameraMovedSignal) { actions.add(PlayerAction.MovedCamera); cameraMovedSignal = false }
             if (speedChangedSignal) { actions.add(PlayerAction.ChangedSpeed); speedChangedSignal = false }
             if (cellMovedSignal) { actions.add(PlayerAction.MovedCell); cellMovedSignal = false }
+            if (chemistryOpenedSignal) { actions.add(PlayerAction.OpenedChemistryTable); chemistryOpenedSignal = false }
             val heldNow = controller.lastHeldId?.value
             if (heldNow != null && heldNow != prevHeldId) actions.add(PlayerAction.SelectedCell)
             director.update(
@@ -304,12 +312,17 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                 val modalUp = geneEditor.isEditing
                 val showHud = !geneEditor.isEditing && controller.lastHeldId == null
                 if (!showHud) hud.close()
-                // Coach first so the (expanded) cell sheet draws over it; the short peek never reaches it.
+                // Same three-layer order as the desktop host: the bar claims the bottom edge FIRST (its
+                // anchor stacks in draw order), then the coach, then the sheets on top of everything.
+                if (showHud) hud.renderBar(this, c) { menu.openTitle(); paused = true }
+                // Coach next so the (expanded) cell sheet draws over it; the short peek never reaches it.
                 if (!modalUp) director.render(this, controller, narrow = true)
                 if (mask.allows(Control.GeneEditor)) {
                     geneEditor.render(
                         this, controller,
-                        onChemistryOpened = { TODO("Support campaign signals on android") },
+                        // Ch00 gates a step on the chemistry table being opened. This used to be a TODO() —
+                        // which is a THROW: opening the table on a phone crashed the app.
+                        onChemistryOpened = { chemistryOpenedSignal = true },
                         grouping = director.activeChapter?.grouping,
                         insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                         narrow = true,
@@ -320,9 +333,17 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                                 menu.openGenomeSave(default, g, controller.heldBioColorRgba() ?: 0x888888FFL)
                             }
                         },
+                        // The gene bank: banked groups feed the editor's paste picker, and SAVE banks the
+                        // group being edited. Omitted here until now, which left the phone's editor without
+                        // the reuse half of the feature.
+                        savedSnippets = snippets.map { GeneSnippet(it.name, it.genes) },
+                        onSaveGroup = { name, genes ->
+                            CytoSnippets.save(name, genes)
+                            snippets = CytoSnippets.list()
+                        },
                     )
                 }
-                if (showHud) hud.render(this, c, wide = false) { menu.openTitle(); paused = true }
+                if (showHud) hud.renderSheets(this, c, wide = false)
             } else {
                 menu.render(this, CytoSaves.list(), cb)
             }
