@@ -1059,7 +1059,9 @@ object CampaignContent {
         blurb = "Your cells live on a molecule they only make by accident.",
         scenario = EMPTY_WORLD,
         startsFreshWorld = false,
-        branchesTo = emptyList(),   // leads nowhere yet - the recycling gene that rejoins the other path
+        // Declared, not left to list order - Locked Up is where this path rejoins the other one.
+        branchesTo = listOf(BRANCH_LOCKED_UP),
+        next = { BRANCH_LOCKED_UP },
         spawnGenome = emptyList(),
         spawnBiomass = STARTER_CELL_BIOMASS,
         steps = listOf(
@@ -1093,6 +1095,111 @@ object CampaignContent {
         ),
     )
 
+    const val BRANCH_LOCKED_UP = "ch04-lockedup"
+
+    /**
+     * **Locked Up** — the competition path's last chapter, and where it rejoins the other one.
+     *
+     * By the end of `ch03-supply` the lineage makes {bond} and spends {bond}, and the two rates match, so
+     * whatever it happened to be holding at the time just sits there. Those atoms are not lost, they are
+     * unreachable: nothing in the genome takes {bond} apart, and a cell pays maintenance on everything it
+     * carries whether it can use it or not (`CytoBiologyCore.degrade` charges wear on cytoplasm as well as
+     * biomass).
+     *
+     * The fix is the recycling gene the photosynthesis path already has - a light-powered BREAK of {bond},
+     * with a reserve so it does not strip the CONVERT gene of the standing stock it needs to fire at all.
+     * Taught directly here rather than through the die-off arc `ch04-leftovers` uses: that chapter's lesson
+     * is about paired changes, this one's is about reclaiming what is already yours.
+     *
+     * Measured on the Supply end state, same world, from the moment the gene lands:
+     *
+     *   - without it: {bond} frozen at 586 for the rest of the cell's life, dead in ~5,000 ticks.
+     *   - with it:    {bond} 586 -> 95, biomass RECOVERS 2700 -> 2975 before declining, dead in ~6,600.
+     *
+     * Both still decline in the long run, for the reason recorded on [chapterLeftoversScratch]: every CONVERT
+     * op locks a whole pair into biomass, which no recycler can reach.
+     *
+     * After this chapter both lineages are grow / divide / recycle - the same three jobs, differing only in
+     * which chemical each grows on, which is the granularity gene groups care about.
+     */
+    private fun chapterLockedUpScratch() = Chapter(
+        id = BRANCH_LOCKED_UP,
+        act = 1,
+        title = "Locked Up",
+        blurb = "Your cells are carrying atoms they cannot spend.",
+        scenario = EMPTY_WORLD,
+        startsFreshWorld = false,
+        branchesTo = emptyList(),   // leads nowhere yet - Act II is still the pre-inversion campaign
+        spawnGenome = emptyList(),
+        spawnBiomass = STARTER_CELL_BIOMASS,
+        steps = listOf(
+            // Measured: the standing pile sits at 586 and never moves, because the genome makes {bond} and
+            // spends it at the same rate. 300 is comfortably inside that whatever the player's cell settled at.
+            Step(
+                text = "Select one of your cells and look at what it is holding. There is a pile of {bond} in there that never goes down.",
+                gate = Gate.World(
+                    "Find the {bond} your cells are sitting on",
+                    met = { q ->
+                        val waste = q.lineage?.mitosisProduct
+                        !waste.isNullOrEmpty() && (q.focused?.cytoplasm?.get(waste) ?: 0) > 300
+                    },
+                ),
+                allow = LOOK,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "Your cells make {bond} and spend {bond} at the same rate, so whatever they were holding when you made that change is still sitting there. Those atoms are not gone, they are just out of reach - nothing in the genome takes {bond} apart.",
+                detail = "And they are not free to hold. A cell pays maintenance on everything it carries, used or not, so that pile is costing it every tick.",
+                gate = Gate.Next,
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Lets get those atoms back. Tap [+ NEW GENE] on the cell you have selected.",
+                gate = Gate.World("Give a cell a new gene", met = { (it.lineage?.geneCount ?: 0) >= 3 }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Set the new gene's action to [BREAK] {bond} using light. Sunlight could never pay for a division, but it is enough to take one bond apart.",
+                gate = Gate.World("Update the gene to BREAK {bond}", met = { it.lineage?.hasPhotosynthesis == true }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            // Taught up front rather than through a die-off: without a floor this gene strips the cytoplasm
+            // bare, and CONVERT needs {bond} present at the start of a tick to fire at all.
+            Step(
+                text = "It needs a condition, or it will clear out every last unit and leave your CONVERT gene with nothing to build from. Tap (ALWAYS) on the new gene, set the left side to {bond}, and set the right side to 100.",
+                gate = Gate.World(
+                    "Block the BREAK gene when {bond} is low",
+                    met = { q -> q.lineage?.recycleReserve?.let { it in 1..1000 } == true },
+                ),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            // The payoff, measured: the pile drains 586 -> 95 and biomass climbs 2700 -> 2975 on the way.
+            Step(
+                text = "Now watch it. The pile comes down through the day, and every bond it breaks hands two atoms back to the cytoplasm. Your cell gets bigger on nothing but what it was already carrying.",
+                gate = Gate.World(
+                    "Reclaim the {bond}",
+                    met = { q ->
+                        val waste = q.lineage?.mitosisProduct
+                        val held = q.focused?.cytoplasm
+                        !waste.isNullOrEmpty() && held != null && (held[waste] ?: 0) < 200
+                    },
+                ),
+                allow = LOOK,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "Three genes: one to grow, one to divide, and one to put the leftovers back. That is the same shape every lineage that gets this far ends up with, whichever way it got here.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+        ),
+    )
+
     val SCRATCH_CHAPTERS: List<Chapter> = listOf(
         chapterGenesisScratch(),
         chapterDivideScratch(),
@@ -1101,6 +1208,7 @@ object CampaignContent {
         chapterLeftoversScratch(),
         chapterConversionScratch(),
         chapterSupplyScratch(),
+        chapterLockedUpScratch(),
     )
 
     /** The chapter list the **real game** surfaces (menu + director) while the campaign is being reworked:
