@@ -704,6 +704,38 @@ class Ui {
  *  appears only while the row is hovered. [label] is for headless targeting ([Ui.tapLabel]). */
 class HoverAction(val glyph: String, val color: Long, val label: String, val onClick: () -> Unit)
 
+/**
+ * The drawing surface behind [UiBuilder.canvas]: rectangles, centred text and click boxes at absolute pixel
+ * coordinates. Everything is px; scale your own dp sizes by [density].
+ */
+class CanvasBuilder internal constructor(private val ui: Ui) {
+    val screenW: Float get() = ui.resWidth
+    val screenH: Float get() = ui.resHeight
+    val density: Float get() = ui.scale
+
+    fun rect(x: Float, y: Float, w: Float, h: Float, color: Long) = ui.emitRect(x, y, w, h, color)
+
+    /** Text centred horizontally on [centerX], its top at [topY], [height] px tall. */
+    fun label(text: String, centerX: Float, topY: Float, height: Float, color: Long) =
+        ui.emitTextCentered(text, centerX, topY, height, color)
+
+    /** A clickable region with no appearance of its own — pair it with [rect]/[label]. [label] names it for
+     *  the agent harness's `tap-ui` (see `Ui.tapLabel`), so give it the text the player reads. */
+    fun clickable(x: Float, y: Float, w: Float, h: Float, label: String? = null, onClick: () -> Unit) =
+        ui.emitClick(x, y, w, h, label, onClick)
+
+    /** A filled box with centred text, optionally clickable — the common case, in one call. */
+    fun box(
+        x: Float, y: Float, w: Float, h: Float, color: Long,
+        text: String? = null, textColor: Long = 0xFFFFFFFFL, textHeight: Float = h * 0.4f,
+        onClick: (() -> Unit)? = null,
+    ) {
+        rect(x, y, w, h, color)
+        if (text != null) label(text, x + w / 2f, y + (h - textHeight) / 2f, textHeight, textColor)
+        if (onClick != null) clickable(x, y, w, h, text, onClick)
+    }
+}
+
 /** A token in an inline sentence row ([PanelBuilder.tokenLines], `apps/cyto/UI_REDESIGN.md` §8a): either
  *  static prose or an interactive control that reads as a word. Spacing lives in the [Text] tokens (their
  *  leading/trailing spaces), so a control sits flush against the words around it. */
@@ -831,6 +863,22 @@ class UiBuilder internal constructor(private val ui: Ui) {
         ui.emitRect(0f, 0f, ui.resWidth, ui.resHeight, color)
         ui.emitClick(0f, 0f, ui.resWidth, ui.resHeight) {}
     }
+
+    /**
+     * A **free-placement** drawing scope, in raw pixels — the escape hatch from the stacked-row layout every
+     * other widget here is built on.
+     *
+     * For content whose shape is the point rather than a consequence: a graph, a map, a chart. Those cannot be
+     * expressed as a column of rows at all, and faking one out of nested panels puts layout arithmetic in the
+     * caller anyway, only obscured. So the scope is deliberately thin — rectangles, text and click boxes at
+     * coordinates you compute — and everything above it (padding, stacking, hit-slop) stays the row layout's
+     * job.
+     *
+     * Emitted in call order into the same command stream as the panels around it, so draw it BEFORE the panel
+     * that should sit on top. Coordinates are px, not dp: a caller placing things itself needs the real screen,
+     * and [density] is there to scale its own sizes with.
+     */
+    fun canvas(block: CanvasBuilder.() -> Unit) = CanvasBuilder(ui).block()
 
     /**
      * A **scrolling, clipped** vertical stack inside an explicit viewport (px). Content taller than the
