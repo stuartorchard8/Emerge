@@ -226,6 +226,19 @@ class CytoController(
     /** The latest published frame for the draw thread (threaded host). */
     fun latestFrame(): CytoFrame = publishedFrame
 
+    /**
+     * **Test seam.** Run [block] while holding [stepLock], exactly as [stepOnce] does for a whole tick.
+     *
+     * It exists so `CytoEditLatencyTest` can assert the real contract — *a draw-thread write never acquires
+     * [stepLock]* — instead of a proxy for it. Holding the lock open and checking that an edit still
+     * completes is a decision the scheduler cannot influence: an edit that takes the lock blocks until the
+     * block returns, and one that doesn't, doesn't. The proxy this replaced (ticks elapsed inside one edit)
+     * could not tell a lock wait from the editing thread merely being descheduled under load.
+     *
+     * Nothing in the game calls this; the host drives [stepOnce] and [publish].
+     */
+    internal fun <R> underStepLockForTest(block: () -> R): R = withLock(stepLock) { block() }
+
     /** Tear down the current world and build a fresh one from [scenario] — the title-screen *New* path.
      *  Applies the scenario geometry to [org.emerge.demo.cyto.sim.CytoWorldConfig] and rebuilds the reducer
      *  (its per-tile buffers are sized from the world size) and the world. Thread-safe vs the sim thread;

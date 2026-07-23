@@ -5,7 +5,10 @@ import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.CytoWorldConfig
 import org.emerge.demo.cyto.sim.Distribution
 import org.emerge.demo.cyto.sim.FounderSpec
+import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.sim.core.EntityId
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.Test
@@ -28,42 +31,27 @@ import kotlin.test.assertTrue
  * This test pins the guarantee that fixes it: edits go through the input queue (`inputLock`, drained by the
  * sim thread at the top of a tick), so the editing thread never waits on a tick at all.
  *
- * It emulates [CytoSimDriver]'s UNLIMITED rung — literally `while (running) stepOnce()` plus a publish at
- * display cadence — rather than driving the real driver, which lives in the desktop module (GL/LWJGL deps).
- * That loop IS the driver at UNLIMITED, and it's the shape that starves an edit.
- *
- * Failure mode if this regresses: worst-case latency jumps from ~microseconds to hundreds of ms or seconds,
- * and `ticksDuringWorstBlock` shows the world running away underneath the frozen UI.
+ * The guarantee is pinned in three parts, none of them timing-calibrated:
+ *  - [draw_threadWritesNeverAcquireStepLock] — the contract itself, asserted by holding `stepLock` open and
+ *    checking every draw-thread write still completes. Binary; the scheduler has no say in the outcome.
+ *  - [aQueuedEditReachesTheWorld] — the queue isn't a void: an edit lands on both drain paths (paused, via
+ *    `publish`, which is how a player actually edits; and ticking, via `stepOnce`).
+ *  - [anEditIssuedAgainstAHotSimLoopStillLands] — and it lands against a sim looping flat out, which is
+ *    [CytoSimDriver]'s UNLIMITED rung (`while (running) stepOnce()` plus a publish at display cadence,
+ *    emulated here because the real driver lives in the desktop module behind GL/LWJGL deps).
  */
 class CytoEditLatencyTest {
 
     /**
-     * The assertion is **ticks elapsed inside one edit call**, not wall-clock. That is the actual contract —
-     * "an edit never waits for a tick to finish" — and unlike a millisecond budget it doesn't depend on the
-     * machine, and can't be faked by a GC pause (a stop-the-world collection freezes the sim thread too, so
-     * ticks cannot advance during one). Wall-clock is measured and printed, but only as commentary.
-     *
-     * 1, not 0: the sim may legitimately complete a tick that was already in flight while we enqueue.
-     * Measured pre-fix: 5-14 heavy ticks (and 72 on a light world) per block — this fails unambiguously.
-     *
-     * **Recalibrated 2 (2026-07-21, the chemistry inversion).** The metric is tick-COUNT, so it moves when
-     * tick *rate* moves even though the thing it guards has not: the inverted-chemistry autotroph is a
-     * 2-gene genome where the old one was 3, which roughly doubled tick throughput on this fixture (8 ticks
-     * in the measurement window before, 14-19 after). The edit's own wall-clock was unchanged across that
-     * change (1.3ms → 1.2ms), i.e. edits still never park on `stepLock`; the same brief enqueue simply now
-     * spans more of the faster ticks. 2 restores the original margin rather than widening the guard — the
-     * bug this exists to catch (Stu's "edit at high speed and it grinds to a halt") ran to thousands of
-     * ticks and many seconds, so it stays caught by orders of magnitude.
+     * How long to wait for a draw-thread write that must not block. This is **not** a latency budget being
+     * calibrated — the write either takes `stepLock` (and then waits forever, because the test holds it
+     * open) or doesn't (and then returns in microseconds). Nothing lands in between, so the number only has
+     * to be far enough above "a loaded machine schedules a thread" to never fire spuriously.
      */
-    private val maxTicksInsideAnEdit = 2L
-    private val edits = 200
+    private val neverBlocksTimeoutMs = 10_000L
 
-    /**
-     * A *populated* world, not the 1-cell default: what the editing thread waits for is one tick's lock hold,
-     * so the world has to be heavy enough for a tick to cost something — as Stu's does when he hits this. On
-     * the single-founder default the whole effect lands right at the budget and the test flakes. Seeded
-     * directly (not grown) to keep the test fast and deterministic.
-     */
+    /** A populated world, so a tick costs something and the queue drains realistically. Seeded directly
+     *  (not grown) to keep the test fast and deterministic. */
     private val heavyWorld = CytoScenario(
         name = "edit-latency",
         founders = listOf(FounderSpec(CellType.Collector, 200)),
@@ -101,22 +89,93 @@ class CytoEditLatencyTest {
         assertEquals(genome[0], controller.heldGenome()!![0], "a gene edit must apply when the sim steps")
     }
 
-    @Test fun editingAGenomeNeverBlocksBehindTheSimThread() {
+    /**
+     * **The contract, asserted directly.** The sim thread holds `stepLock` for the whole of a tick, so the
+     * rule for every frequent draw-thread write is simply: never acquire it. Here a helper thread takes
+     * `stepLock` and *keeps* it — the pathological case, a tick that never ends — and each write is then run
+     * on its own thread. A write that queues through `inputLock` completes immediately; a write that takes
+     * `stepLock` cannot complete at all. The outcome is binary and the scheduler has no say in it.
+     *
+     * This replaces a proxy metric (sim ticks elapsed inside one `setHeldGene`, budget 2) that measured the
+     * right thing indirectly and could not distinguish a real regression from the editing thread merely
+     * being descheduled under full-suite load. Both looked like "3 ticks / 1.3ms". It cost ~40 minutes to
+     * tell apart once, and the load failures had trained the reflex to call it a flake — which nearly let a
+     * genuine regression through. Its own doc recorded two prior recalibrations; there is nothing left here
+     * to recalibrate.
+     *
+     * Every write the UI issues at interactive rates is covered, not just gene edits — they all share the
+     * one rule, and a new one that breaks it is named by the failure message.
+     */
+    @Test fun draw_threadWritesNeverAcquireStepLock() {
         CytoWorldConfig.applyFrom(heavyWorld)
         val controller = CytoController(scenario = heavyWorld)
 
-        // Select a founder that actually has genes — the edit path needs a held cell with a genome.
         val founder = controller.agentCells().firstOrNull { cell ->
             controller.focus(EntityId(cell.id))
             !controller.heldGenome().isNullOrEmpty()
         }
-        checkNotNull(founder) { "the default scenario must seed a cell with a genome for this test to mean anything" }
+        checkNotNull(founder) { "the scenario must seed a cell with a genome for this test to mean anything" }
         val genome = controller.heldGenome()!!
         assertTrue(genome.isNotEmpty())
 
+        // A tick that never ends. Nothing may wait on it.
+        val held = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val holder = Thread({ controller.underStepLockForTest { held.countDown(); release.await() } }, "step-lock-holder")
+            .apply { isDaemon = true; start() }
+        assertTrue(held.await(5, TimeUnit.SECONDS), "the helper thread never acquired stepLock")
+
+        val writes = listOf<Pair<String, () -> Unit>>(
+            "setHeldGene" to { controller.setHeldGene(0, genome[0]) },
+            "appendHeldGene" to { controller.appendHeldGene(genome[0]) },
+            "duplicateHeldGene" to { controller.duplicateHeldGene(0) },
+            "deleteHeldGene" to { controller.deleteHeldGene(0) },
+            "addHeldGenes" to { controller.addHeldGenes(genome) },
+            "reorderHeldGeneInGroup" to { controller.reorderHeldGeneInGroup(0, 0) },
+            "cycleMutationRate" to { controller.cycleMutationRate() },
+            "spawn" to { controller.spawn(0f, 0f, CellType.Collector) },
+            "tap" to { controller.tap(0f, 0f, TouchMode.Delete, CellType.Collector) },
+        )
+        val blocked = ArrayList<String>()
+        try {
+            for ((name, write) in writes) {
+                val done = CountDownLatch(1)
+                Thread({ write(); done.countDown() }, "draw-$name").apply { isDaemon = true }.start()
+                if (!done.await(neverBlocksTimeoutMs, TimeUnit.MILLISECONDS)) blocked += name
+            }
+        } finally {
+            release.countDown()
+            holder.join(5_000)
+        }
+
+        assertTrue(
+            blocked.isEmpty(),
+            "these draw-thread writes did not complete while the sim thread held stepLock, so they take it: " +
+                "$blocked. The desktop host issues them from a GLFW callback, so taking stepLock stalls " +
+                "glfwPollEvents and freezes the window for as long as the sim keeps barging back in — with " +
+                "the world running away underneath it. Queue the write through inputLock (pendingWorldEdits) " +
+                "and let the sim thread apply it at the top of a tick.",
+        )
+    }
+
+    /**
+     * The companion property: the queue must still drain while the sim is running flat out. A write that is
+     * merely *enqueued* satisfies the lock contract trivially, so this pins that a real edit issued against a
+     * hot sim loop actually lands in the world — the same UNLIMITED loop the desktop driver runs.
+     */
+    @Test fun anEditIssuedAgainstAHotSimLoopStillLands() {
+        CytoWorldConfig.applyFrom(heavyWorld)
+        val controller = CytoController(scenario = heavyWorld)
+        val founder = controller.agentCells().firstOrNull { cell ->
+            controller.focus(EntityId(cell.id))
+            (controller.heldGenome()?.size ?: 0) >= 2
+        }
+        checkNotNull(founder) { "need a founder with >=2 genes to swap one for another" }
+        val genome = controller.heldGenome()!!
+        assertTrue(genome[0] != genome[1], "the two genes must differ for the read-back to prove anything")
+
         val stop = AtomicBoolean(false)
         val ticks = AtomicLong()
-        // CytoSimDriver's UNLIMITED loop: tick flat out, publish at display cadence, never sleep.
         val sim = Thread({
             var lastPublish = System.nanoTime()
             while (!stop.get()) {
@@ -125,41 +184,18 @@ class CytoEditLatencyTest {
                 val now = System.nanoTime()
                 if (now - lastPublish >= 10_000_000L) { controller.publish(); lastPublish = now }
             }
-        }, "test-sim").apply { isDaemon = true }
-        sim.start()
-
-        // Let the sim get hot and start barging before we measure.
-        Thread.sleep(150)
-        assertTrue(ticks.get() > 0, "the sim thread must be ticking for this test to mean anything")
-
-        var worstTicks = 0L
-        var worstNs = 0L
-        repeat(edits) { i ->
-            val ticksBefore = ticks.get()
-            val t0 = System.nanoTime()
-            // Re-set gene 0 to itself: the exact draw-thread edit path, no Gene construction needed.
-            controller.setHeldGene(0, genome[0])
-            val dtNs = System.nanoTime() - t0
-            val ticksInside = ticks.get() - ticksBefore
-            if (ticksInside > worstTicks) worstTicks = ticksInside
-            if (dtNs > worstNs) worstNs = dtNs
-            if (i % 20 == 0) Thread.sleep(1)   // ~a frame apart, like a user clicking
+        }, "test-sim").apply { isDaemon = true; start() }
+        try {
+            Thread.sleep(150)
+            assertTrue(ticks.get() > 0, "the sim thread must be ticking for this test to mean anything")
+            controller.setHeldGene(0, genome[1])
+            // The sim drains at the top of a tick; it is ticking, so this is a matter of microseconds.
+            val deadline = System.nanoTime() + 10_000_000_000L
+            while (controller.heldGenome()?.getOrNull(0) != genome[1] && System.nanoTime() < deadline) Thread.sleep(1)
+            assertEquals(genome[1], controller.heldGenome()!![0], "an edit issued against a running sim must land in the world")
+        } finally {
+            stop.set(true)
+            sim.join(2000)
         }
-        stop.set(true)
-        sim.join(2000)
-
-        println(
-            "[edit-latency] worst %d ticks elapsed inside one edit (budget %d); worst wall-clock %.1fms over %d edits; %d ticks total"
-                .format(worstTicks, maxTicksInsideAnEdit, worstNs / 1_000_000.0, edits, ticks.get())
-        )
-        // The edit must not have waited for the sim: if whole ticks completed while we were inside
-        // setHeldGene, we were parked on stepLock behind them.
-        assertTrue(
-            worstTicks <= maxTicksInsideAnEdit,
-            ("a gene edit waited for %d sim ticks to complete (%.1fms). The desktop host issues edits from a " +
-                "GLFW callback, so that is a %.1fms window freeze with the world running away underneath it. " +
-                "Edits must not take stepLock; queue them through inputLock and let the sim thread apply them.")
-                .format(worstTicks, worstNs / 1_000_000.0, worstNs / 1_000_000.0)
-        )
     }
 }
