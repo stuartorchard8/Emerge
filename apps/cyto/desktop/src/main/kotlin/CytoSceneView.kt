@@ -259,18 +259,9 @@ object CytoSceneView {
             controls.worldSpawnEnabled = director.active && mask.allows(Control.Spawn)
             if (controls.worldSpawnEnabled) {
                 val chapter = director.activeChapter
-                // "Last-modified brush" (Ch9): tap out a live copy of the selected cell's genome, so the
-                // player's just-made muscle edits carry into the next cell. Falls back to the fixed spawn genome.
-                // The genome a placed cell carries. An extinction re-seed hands back the player's own last
-                // authored genome — the whole point of the offer is that their work outlived their cells —
-                // and Ch9's "last-modified brush" wants the same thing for a live lineage. Otherwise the
-                // chapter's fixed starter.
-                controller.brushGenome = when {
-                    director.extinctionOffer -> controller.lastAuthoredGenome ?: chapter?.spawnGenome
-                    chapter?.spawnCopiesHeldCell == true ->
-                        controller.heldGenome() ?: controller.lastAuthoredGenome ?: chapter.spawnGenome
-                    else -> chapter?.spawnGenome
-                }
+                // Which genome a placed cell carries is the director's call — see [brushGenome]. It was
+                // three near-copies of the same precedence across the hosts, and they had drifted.
+                controller.brushGenome = director.brushGenome(controller)
                 controller.spawnBiomass = chapter?.spawnBiomass
                 controller.spawnCytoplasm = chapter?.spawnCytoplasm
             }

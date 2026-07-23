@@ -264,6 +264,33 @@ class CampaignDirector {
     /** Whether the current gate is satisfied (Next-gated steps are always "ready"). */
     val gateReady: Boolean get() = currentStep?.gate is Gate.Next || gateMet
 
+    /**
+     * The genome a cell placed by a [Control.Spawn] tap should carry, in precedence order. Lives here rather
+     * than in each host because all three of them (desktop, Android, the agent harness) need the same answer
+     * and had drifted into three near-copies of it.
+     *
+     *  1. A chapter that names a fixed [Chapter.spawnGenome] means it — Genesis deliberately hands out a
+     *     GENE-LESS cell, which is the whole point of its opening beat, so an empty list is a real answer and
+     *     not a missing one.
+     *  2. Otherwise the player's own lineage, freshest first: the cell they have selected, then the genome
+     *     they last authored, then [carriedGenome] — the snapshot taken at the chapter boundary.
+     *
+     * That last fallback is what makes Skip work. A player who skips a chapter never authors or selects
+     * anything in it, so without it they arrive at the next chapter with an empty brush and place gene-less
+     * cells into a world their lineage is supposed to be living in.
+     */
+    fun brushGenome(controller: CytoController): List<Gene>? {
+        val ch = activeChapter
+        val mine = { controller.heldGenome() ?: controller.lastAuthoredGenome ?: carriedGenome }
+        return when {
+            // The extinction offer exists to hand their work back, so it always prefers theirs.
+            extinctionOffer -> mine() ?: ch?.spawnGenome
+            ch?.spawnCopiesHeldCell == true -> mine() ?: ch.spawnGenome
+            !ch?.spawnGenome.isNullOrEmpty() -> ch?.spawnGenome
+            else -> mine() ?: ch?.spawnGenome
+        }
+    }
+
     /** Advance to the next step if the current gate allows it. Returns true if it advanced (or completed
      *  the chapter). Used by the agent harness to drive "click Next". */
     fun tryAdvance(controller: CytoController): Boolean {

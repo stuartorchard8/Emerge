@@ -406,7 +406,14 @@ class CytoController(
      *  follow the selection get this for free via [heldCellPosition]; the desktop split needs it explicitly.) */
     fun pruneDeadSelection() {
         val id = lastHeldId ?: return
-        if (currentState.components.getTable<CytoCellComponent>().asMap()[id] == null) clearSelection()
+        // Records the death rather than erasing it. This used to route through [clearSelection], which resets
+        // [heldCellDied] because a deliberate deselect is not a death — so the flag was set and then wiped in
+        // the same frame, and a campaign beat waiting on "the cell you were watching died" never fired.
+        if (currentState.components.getTable<CytoCellComponent>().asMap()[id] == null) {
+            lastHeldId = null
+            heldCellDied = true
+            reducer.noMutateEntityId = -1
+        }
     }
 
     /** The camera-focus cell's logical position, or null if none is set (or it has died — self-clears). */

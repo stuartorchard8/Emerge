@@ -401,11 +401,7 @@ object CytoAgentHarness {
         private fun applyChapterSpawn() {
             val ch = director.activeChapter ?: return
             if (director.controlMask.allows(Control.Spawn)) {
-                // Mirror the real hosts (CytoSceneView): an extinction re-seed hands back the player's own
-                // last authored genome rather than the chapter's fixed starter.
-                controller.brushGenome =
-                    if (director.extinctionOffer) controller.lastAuthoredGenome ?: ch.spawnGenome
-                    else ch.spawnGenome
+                controller.brushGenome = director.brushGenome(controller)
                 controller.spawnBiomass = ch.spawnBiomass
                 controller.spawnCytoplasm = ch.spawnCytoplasm
             }

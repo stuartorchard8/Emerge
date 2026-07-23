@@ -67,6 +67,23 @@ class WatchedCellDiedTest {
         assertTrue(stats.watchedCellDied, "but the watched one is gone")
     }
 
+    /**
+     * The hosts call [CytoController.pruneDeadSelection] once a frame, and it used to route through
+     * `clearSelection` — which resets the flag, because a deliberate deselect is not a death. So the death
+     * was recorded and wiped in the same frame, and `Competition 5/5` sat there forever waiting for a cell
+     * that had already died. Prune has to REPORT the death, not erase it.
+     */
+    @Test
+    fun pruningTheDeadSelectionDoesNotEraseTheDeath() {
+        val (c, id) = oneCell()
+        repeat(3) { i -> c.spawn(20f + i * 4f, 20f, CellType.Collector) }
+        repeat(4) { c.tick(1f / 64f) }
+        kill(c, id)
+
+        repeat(3) { c.pruneDeadSelection() }
+        assertTrue(c.worldStats().watchedCellDied, "the death has to survive the per-frame prune")
+    }
+
     /** Deselecting is not a death — both leave nothing focused, and a beat waiting on a death must not be
      *  satisfied by the player simply clicking away. */
     @Test
