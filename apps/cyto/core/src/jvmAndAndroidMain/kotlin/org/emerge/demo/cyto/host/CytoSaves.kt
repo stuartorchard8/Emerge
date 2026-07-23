@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.host
 
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.sim.CytoWorldConfig
+import org.emerge.demo.cyto.sim.GeneCodec
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.nameWithoutExtension
@@ -77,7 +78,7 @@ object CytoSaves {
     fun delete(name: String) {
         runCatching {
             Files.deleteIfExists(binPath(name)); Files.deleteIfExists(worldPath(name))
-            Files.deleteIfExists(campaignPath(name))
+            Files.deleteIfExists(campaignPath(name)); Files.deleteIfExists(brushPath(name))
         }
         println("[cyto] deleted '$name'")
     }
@@ -111,12 +112,16 @@ object CytoSaves {
     /** Reserved save name holding the world as chapter [chapterId] began. */
     fun campaignSaveName(chapterId: String): String = sanitize("$CAMPAIGN_PREFIX$chapterId")
 
-    /** Persist the world as this chapter starts, plus the [path] that led here. */
+    /** Persist the world as this chapter starts, plus the [path] that led here and the brush it started
+     *  with (see [brushPath]). */
     fun saveCampaignEntry(controller: CytoController, chapterId: String, path: List<String>) {
         val name = campaignSaveName(chapterId)
         runCatching {
             save(controller, name)
             Files.write(campaignPath(name), "chapter=$chapterId\npath=${path.joinToString(",")}\n".toByteArray())
+            val brush = controller.lastAuthoredGenome
+            if (brush == null) Files.deleteIfExists(brushPath(name))
+            else Files.write(brushPath(name), GeneCodec.serialize(brush).toByteArray())
         }.onFailure { println("[cyto] campaign save for '$chapterId' failed: ${it.message}") }
     }
 
@@ -125,8 +130,27 @@ object CytoSaves {
 
     /** Restore the world as [chapterId] began. False (nothing touched) if there is no stored entry state,
      *  which is the cold-start case - the caller then builds from the chapter's scenario as before. */
-    fun loadCampaignEntry(controller: CytoController, chapterId: String): Boolean =
-        hasCampaignEntry(chapterId) && load(controller, campaignSaveName(chapterId))
+    fun loadCampaignEntry(controller: CytoController, chapterId: String): Boolean {
+        if (!hasCampaignEntry(chapterId)) return false
+        if (!load(controller, campaignSaveName(chapterId))) return false
+        restoreBrush(controller, campaignSaveName(chapterId))
+        return true
+    }
+
+    /**
+     * Put back the brush this chapter began with — including *no* brush, which is why this always writes.
+     *
+     * Chapters are isolated at the menu boundary: `CytoController.lastAuthoredGenome` outlives a world
+     * rebuild on purpose (a mid-chapter Reset must hand the player's own organism back), so re-entering an
+     * earlier chapter without this leaves the brush pointing at whatever was authored in a *later* one — and
+     * Genesis, which hands out a gene-less cell as its opening beat, would silently place a finished organism.
+     */
+    private fun restoreBrush(controller: CytoController, name: String) {
+        val p = brushPath(name)
+        val genome = if (!Files.exists(p)) null
+        else runCatching { GeneCodec.parse(Files.readAllBytes(p).decodeToString()) }.getOrNull()
+        controller.setAuthoredGenome(genome)
+    }
 
     /** The recorded route to [chapterId], or empty if none is stored. */
     fun campaignEntryPath(chapterId: String): List<String> {
@@ -140,4 +164,7 @@ object CytoSaves {
     }
 
     private fun campaignPath(name: String): Path = DIR.resolve("${sanitize(name)}.campaign")
+
+    /** The brush (last-authored genome) a chapter began with, as `.gene` text. Absent = it began with none. */
+    private fun brushPath(name: String): Path = DIR.resolve("${sanitize(name)}.brush")
 }

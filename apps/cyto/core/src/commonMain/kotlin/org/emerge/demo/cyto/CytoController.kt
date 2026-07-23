@@ -168,6 +168,24 @@ class CytoController(
     @Volatile
     private var publishedAuthoredGenome: List<Gene>? = null
 
+    /**
+     * Set (or clear) the last-authored genome from the host — the ONE thing allowed to write it from outside
+     * an edit, and only at a world boundary: loading a campaign chapter restores the brush that chapter was
+     * saved with, and a chapter with none stored clears it.
+     *
+     * Isolation is the point. [lastAuthoredGenome] deliberately survives [newGame], so without this a player
+     * who opened a later chapter and then went back to Genesis placed their *later* organism into the opening
+     * beat, which hands out a gene-less cell precisely so it can be watched failing.
+     *
+     * No [stepLock]: the callers are the host's own load path, which has just cleared `pendingWorldEdits`
+     * (the only thing the sim thread writes this from), and taking the step lock off the draw thread is
+     * forbidden anyway — see the threading contract on [stepOnce].
+     */
+    fun setAuthoredGenome(genome: List<Gene>?) {
+        authoredGenome = genome
+        publishedAuthoredGenome = genome
+    }
+
     val tick: Long get() = tickCount
 
     /** Single-threaded host loop (web / android): advance the world from the real frame delta at a fixed

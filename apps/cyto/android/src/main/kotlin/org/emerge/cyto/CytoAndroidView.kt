@@ -194,7 +194,11 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
             onStartChapter = { ch ->
                 // Resume the world as this chapter actually began - the player's own lineage and spent
                 // matter - falling back to the canned scenario only on a cold start (see CytoSaves).
-                if (!CytoSaves.loadCampaignEntry(controller, ch.id)) controller.newGame(ch.scenario)
+                // A cold start clears the brush as well as the world - chapters are isolated at this
+                // boundary (see CytoSaves.restoreBrush for the resume path).
+                if (!CytoSaves.loadCampaignEntry(controller, ch.id)) {
+                    controller.newGame(ch.scenario); controller.setAuthoredGenome(null)
+                }
                 renderer.resetView()
                 director.start(ch, controller, CytoSaves.campaignEntryPath(ch.id))
                 menu.enterGame(); paused = false

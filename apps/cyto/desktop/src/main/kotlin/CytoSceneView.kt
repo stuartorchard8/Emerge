@@ -148,7 +148,12 @@ object CytoSceneView {
                 simDriver.setPaused(true)
                 // Resume the world as this chapter actually began - the player's own lineage and spent
                 // matter - falling back to the canned scenario only on a cold start (see CytoSaves).
-                if (!CytoSaves.loadCampaignEntry(controller, ch.id)) controller.newGame(ch.scenario)
+                // A cold start clears the brush as well as the world: chapters are isolated at this
+                // boundary, so a chapter never before visited must not inherit the genome authored in
+                // another one (see CytoSaves.restoreBrush, which does the same on the resume path).
+                if (!CytoSaves.loadCampaignEntry(controller, ch.id)) {
+                    controller.newGame(ch.scenario); controller.setAuthoredGenome(null)
+                }
                 renderer.resetView()
                 director.start(ch, controller, CytoSaves.campaignEntryPath(ch.id))
                 menu.enterGame(); simDriver.setPaused(false)

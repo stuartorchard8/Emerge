@@ -12,6 +12,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -58,6 +59,36 @@ class CytoSavesCampaignTest {
         assertTrue(CytoSaves.loadCampaignEntry(resumed, "ch02-recycle"))
         assertEquals(before, cells(resumed), "the player's own world comes back, not a canned one")
         assertEquals(genes, resumed.representativeGenome(), "including the genome they authored")
+    }
+
+    /**
+     * Chapters are isolated at the menu boundary. `lastAuthoredGenome` outlives a world rebuild on purpose
+     * (a mid-chapter Reset hands the player's own organism back), so the entry state has to carry the brush
+     * too — otherwise opening a later chapter and going back to Genesis places the *later* organism into an
+     * opening beat whose whole point is a gene-less cell.
+     */
+    @Test fun anEntryStateRestoresTheBrushTheChapterBeganWith() {
+        val genes = GeneCodec.parse("Light : Biomass > 0 : Convert r")
+        val saved = CytoController()
+        saved.setAuthoredGenome(genes)
+        CytoSaves.saveCampaignEntry(saved, "ch05-hold", listOf("ch05-hold"))
+
+        val later = CytoController()
+        later.setAuthoredGenome(GeneCodec.parse("Light : Biomass > 0 : Mitosis"))
+        assertTrue(CytoSaves.loadCampaignEntry(later, "ch05-hold"))
+        assertEquals(genes, later.lastAuthoredGenome, "the chapter's own brush comes back")
+    }
+
+    /** ...including *no* brush. A chapter entered before the player had authored anything must hand back an
+     *  empty hand, not the last thing they wrote in some other chapter. */
+    @Test fun aChapterThatBeganWithNoBrushClearsIt() {
+        val saved = CytoController()
+        CytoSaves.saveCampaignEntry(saved, "ch00-genesis", listOf("ch00-genesis"))
+
+        val later = CytoController()
+        later.setAuthoredGenome(GeneCodec.parse("Light : Biomass > 0 : Mitosis"))
+        assertTrue(CytoSaves.loadCampaignEntry(later, "ch00-genesis"))
+        assertNull(later.lastAuthoredGenome, "Genesis hands out a gene-less cell; the brush must be empty")
     }
 
     @Test fun aColdStartReportsNothingAndTouchesNothing() {
