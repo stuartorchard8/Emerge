@@ -691,29 +691,51 @@ object CampaignContent {
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
+            // Not a metaphor: a cell's wear accumulator gains `cytoplasm + biomass` every tick
+            // (CytoBiologyCore.degrade), so hoarded {bond} is charged for exactly like structure is, while
+            // paying for nothing. Measured on this genome, it settles around 700 units per cell and stays
+            // there - roughly a third of what a capped cell is carrying.
             Step(
-                text = "Left unchecked, this waste adds to the degradation of cells, eventually making continued life unsustainable.",
+                text = "And it never leaves. Cells shed a little of themselves every tick just by existing, and the bigger the load they carry the faster that goes - so a cell full of {bond} pays maintenance on a molecule it cannot use. Left alone this only gets heavier.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
             ),
-            // TODO(campaign): the fix - a Light-powered BREAK gene on {bond}, recycling the pair back to
-            // cytoplasm. Needs a FocusedCell reading for "breaks the waste molecule" to gate on. Left for the
-            // authoring pass; see CAMPAIGN_PLAN.md §12.
             Step(
-                text = "Lets introduce a new gene to resolve this waste problem.",
-                gate = Gate.World("Give a cell a new gene", met = { it.lineage?.geneCount == 3 }),
+                text = "Nothing in the genome takes {bond} apart, so let's write something that does. Tap [+ NEW GENE] on the cell you have selected.",
+                // `>=`, not `==`: a player carrying a spare blank gene from earlier would otherwise be stuck
+                // here with no way to satisfy a goal they have already met.
+                gate = Gate.World("Give a cell a new gene", met = { (it.lineage?.geneCount ?: 0) >= 3 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
             Step(
-                text = "Set the new gene's action to [BREAK] {bond} using light. The trickle of sunlight cells receive in the day could not pay for division, but it can be used to break waste back into usable atoms.",
+                text = "Set the new gene's action to (BREAK) {bond}, powered by (USE LIGHT). The trickle of sunlight a cell receives in the day could never pay for a division, but taking one small bond apart is well within it.",
+                detail = "This is the mirror of the reaction your division gene runs. That gene joins the pair to release energy; this one spends energy to split it again - and hands both atoms back to the cytoplasm, where the rest of the genome can reach them.",
                 gate = Gate.World("Update the gene to BREAK {bond}", met = { it.lineage?.hasPhotosynthesis == true }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
+            // The payoff, and the point of gating it on the world rather than a click: the {bond} reading in
+            // the panel visibly drains away. Measured, same genome with and without this gene: ~700 units
+            // held and climbing, against 1. The threshold is deliberately loose - the goal is "visibly
+            // falling", not a race to zero.
             Step(
-                text = "Now your genome is.....",
+                text = "Now watch the cell you have selected. Every division still mints a molecule of {bond} - but daylight is pulling them apart again as fast as they appear, and the atoms go straight back into the pool your cells grow from.",
+                detail = "Nothing here is new material. Your lineage is simply using the same atoms twice, which is the only kind of abundance a closed world has to offer.",
+                gate = Gate.World(
+                    "Clear the {bond} out of a cell",
+                    met = { q ->
+                        val waste = q.lineage?.mitosisProduct
+                        val held = q.focused?.cytoplasm
+                        !waste.isNullOrEmpty() && held != null && (held[waste] ?: 0) < 100
+                    },
+                ),
+                allow = LOOK,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "Three genes: one to grow on {chem}, one to divide, and one to clean up after the second. That last one is what makes the first two repeatable - a lineage that only ever adds to itself runs down, and a lineage that puts its own waste back does not.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
