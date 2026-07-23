@@ -2,6 +2,15 @@
 
 *How to read a cell, write a genome, and grow a body.*
 
+> **⚠️ STALE — PRE-INVERSION (flagged 2026-07-23, not yet re-authored).** This document was written before
+> the chemistry inversion of 2026-07-21, which reversed the thermodynamics: **forming a bond RELEASES
+> energy; breaking one COSTS it.** §5 "Energy sources" therefore teaches the energy model backwards, and
+> **16 code examples use `Break <x>` in the energy-source position**, where a current genome uses `Bond` (or
+> `Light`). The *structure* of everything here — gene grammar, conditions, the actions, morphogens, the
+> worked genomes — is still accurate; it is specifically the energy direction and those examples that lie.
+> Re-authoring is a job of its own and wants a human voice; until then read source-position `Break` as
+> `Bond`. See `HYDROTHERMAL_CHEMISTRY_PLAN.md` and memory `project_cyto_chemistry_inversion`.
+
 Cyto is a god-sim of single-genome development. **One cell carries one genome. It divides into
 copies of itself, and those copies — running the *same* genome but in different local conditions —
 grow, differentiate, and arrange themselves into a body.** Nothing about the body is drawn or
@@ -296,7 +305,19 @@ Light : rg < 500 : Import rg              # actively hoard 'rg' even when the ne
 `Mitosis` splits the cell in two. Biomass and cytoplasm halve (that halving is the natural brake —
 both daughters drop back below any biomass gate, so back-to-back division needs real surplus).
 Division is a *bulk* cost (~a quarter of your biomass in energy), which a per-tick light trickle
-can't fund — so it's almost always powered by **`Break`**, cashing in a reserve you stored:
+can't fund — so it's almost always powered by chemistry, cashing in a reserve you stored:
+
+> **Division is the one all-or-nothing action, and it does not scale with you.** The cost is
+> `biomass/4` and the whole bill falls due in a **single tick** — energy cannot be banked toward it.
+> But the cytoplasm you pay from does *not* grow with your body: it settles at whatever the membrane
+> can draw in. So a cell that keeps growing eventually passes the point where no reaction it can run
+> in one tick covers its own division, and it can never split again — whatever powers it.
+>
+> **A grower that wants to reproduce needs a growth cap**, e.g. `Biomass < 3000` on its `Convert`
+> gene. This is not a nicety; it is the difference between a lineage that colonises and one that
+> becomes a single large cell and stops. (The Divide chapter of the campaign teaches exactly this,
+> and the gene card now shows it: a DIVIDE gene that cannot fund itself draws its **fuel molecule**
+> in blocking orange, even though its gate is passing.)
 
 ```
 Break rg : Biomass > 2000 : Mitosis       # once big enough, break 'rg' to pay for splitting

@@ -151,6 +151,40 @@ sequence + one or more objectives. Difficulty and conceptual load rise monotonic
 Acts I–II are tightly scripted (high hand-holding). Act III loosens (the player is composing, we
 coach less). Act IV is essentially the existing sandbox with an optional challenge list.
 
+### 2.0 The rework spine (Genesis-first) — AS BUILT, and where the campaign actually starts now
+
+> The chapters in §2.1 are the **pre-inversion** spine (Ch1–10, built 2026-07-11…14). They still run and
+> still ship, but the campaign is being re-authored from a far more basic opening: an empty world the
+> player seeds by hand, one primitive at a time. Those rework chapters live in
+> `CampaignContent.SCRATCH_CHAPTERS` and are surfaced ahead of the old ones by `PLAYABLE_CHAPTERS`.
+> **This is the part under active authoring** — read it before §2.1.
+
+- **Genesis** (`ch00-genesis`) ✅. Empty world on a real day/night cycle. The player places a gene-less
+  cell, watches it decay and rupture, places another, and authors their first gene: `+ NEW GENE` →
+  action `CONVERT` → pick a chemical. Payoff: it locks that chemical into biomass and starts to climb.
+  The chosen chemical becomes the coach's `{chem}` token for the rest of the campaign.
+
+- **Divide** (`ch01-divide`) ✅, **restructured 2026-07-23**. Adds MITOSIS, and teaches the two separate
+  reasons it does not fire, **in this order**:
+
+  1. add the MITOSIS gene (inert),
+  2. *the bill scales with the body* — division costs `biomass/4` in one tick while the cytoplasm that
+     pays it does not grow with the body, so an uncapped grower outruns its own ability to divide. The
+     player caps growth with the first condition they ever author (`BIO < 3000`),
+  3. *and light is a trickle, not a lump sum* — switch the energy source to `BOND` and pick a pair.
+
+  **Order matters and is load-bearing**: with the old order the player made the chemistry edit and watched
+  nothing happen, because the cell had already outgrown any reaction. Gated on
+  `Lineage.convertBiomassCap <= GROWTH_CAP_MAX` (3500). Measured: capped at 3000 a cell divides within
+  ~2500 ticks; at 4000 it never does.
+
+  **The chapter ends POISED on the split, not past it.** The first division is the next chapter's opening
+  beat, because which chapter that is depends on the pair just chosen — see §12.
+
+- **The branch** (`ch02-photosynthesis` / `ch02-conversion`) — first-draft opening beats only, ✅ routing,
+  ❌ copy and fixes. Which one the player gets is read off the fuel pair they chose in Divide and nothing
+  else. **See §12** for the mechanism, the table, and the open list.
+
 ### 2.1 Chapter list (spine) — AS BUILT (canonical)
 
 > This is the spine that actually shipped (Ch1–9 built 2026-07-11…14). It **replaces** the original design
@@ -194,7 +228,10 @@ coach less). Act IV is essentially the existing sandbox with an optional challen
 
 ### 2.2 Progression & unlocking
 
-- Chapters unlock in order; completing *N* unlocks *N+1*. Any unlocked chapter is replayable.
+- Chapters unlock from their **predecessors**, not from a list index: a chapter is unlocked once any
+  chapter that can lead to it is completed (`CampaignContent.predecessorsOf` + `CampaignProgress.isUnlocked`,
+  2026-07-23). For a linear chapter that is exactly "completing *N* unlocks *N+1*"; it is the branch (§12)
+  that needed the generalisation. Any unlocked chapter is replayable.
 - Progress persists to a small file (`campaign-progress`, alongside `cyto-saves/` and
   `cyto-genomes/`): highest unlocked chapter + per-chapter completion flags.
 - Genomes the player builds during the campaign can be EXPORTed to the genome library (existing flow),
@@ -904,6 +941,10 @@ who never chooses the conflicting pair never learns the other chapter exists.
 
 ### Still open
 
+0. **Routing, unlock and the extinction fallback are DONE** (`cd86115a`, `3fdc120a`). The branch reads
+   `Lineage.divideFuelConflicts`, so a player who sits and watches their colony die out still lands in the
+   chapter their genome is about (§13) — the earlier "fall to the stable path when nothing is selected"
+   default is gone.
 1. **Both chapters are opening beats only.** Each runs to the point where its fix would be authored and
    stops with a "that is where this goes next" line. The fixes need: a `FocusedCell` reading for "has a
    gene that consumes the waste molecule" (both paths gate on a version of it), and Stu's voice on the copy.
@@ -916,10 +957,58 @@ who never chooses the conflicting pair never learns the other chapter exists.
    no hidden cost as recorded. **Either find the real asymmetry or give the conversion path a different
    drawback** before authoring copy that claims one. (Candidates worth measuring: the shed molecule decays
    in the environment at its own rate, and a two-atom biomass unit changes the wear/upkeep arithmetic.)
-3. **Unlock only bites once the scratch chapters graduate.** `predecessorsOf` defaults to the authored
+3. **Unlock is predecessor-based (done), but only bites once the scratch chapters graduate.** `predecessorsOf` defaults to the authored
    `CHAPTERS`; the branch lives in `SCRATCH_CHAPTERS`, and a scratch id has no predecessors there, so it
    reads as always-unlocked — deliberate while these are WIP and iterated from the menu. The *routing* is
    live regardless; it is only the selector's padlock that waits.
 4. **Merge point undecided.** Both branches currently declare `branchesTo = emptyList()` ("leads nowhere
    yet"). Whether they rejoin a common chapter or stay divergent tech trees is unanswered — §11's
    contention note applies to whichever one first hands the player two DIVIDE genes.
+
+---
+
+## 13. Extinction is a state, not a dead end — as built 2026-07-23
+
+Every campaign goal used to be keyed on the **selected cell**. When that cell died — and two chapters are
+now *about* a lineage failing — `focused` went null, every genome-shaped gate became permanently
+unsatisfiable, and the only way on was a Reset the coach never mentioned.
+
+### The two readings
+
+| | what it answers | who asks |
+|---|---|---|
+| `CampaignQuery.focused` | is a cell selected **right now** (type/biomass/cytoplasm) | the 6 `Select a cell` gates |
+| `CampaignQuery.lineage` | what the player has **built** — a pure function of a gene list | the other 18 gates, the branch, `{chem}`/`{bond}` |
+
+`Lineage` is sourced, in order, from: the selected cell's genome → **the genome the player last authored**
+→ the largest survivor's. A goal about the player's work therefore no longer stops being true because they
+clicked away, or because the cell they wrote it on died.
+
+### The remembered genome
+
+`CytoController.lastAuthoredGenome` is captured **each time an edit lands**, not when a cell is selected —
+so it means their intent rather than wherever the mouse went. It outlives the cell, the chapter and
+`newGame`.
+
+> **⚠️ Do not make it `@Volatile`.** A volatile store in the edit-drain path costs a barrier on the sim
+> thread's tick loop and regresses `CytoEditLatencyTest` (2 failures in 3, in isolation). It is a plain
+> field republished through the one volatile store per publish this class already runs on. See
+> `PLAN_verification_infrastructure.md` §4.
+
+### The offer
+
+`CampaignDirector.extinctionOffer` (nothing alive **and** a genome in hand) replaces the step text with the
+two ways forward, and ORs `Control.Spawn` into whatever the step allowed — a step that masked spawning off
+did so to keep the player on task, and the task is gone. Both hosts and the harness brush that tap with the
+remembered genome. `snapshot()` reports the override too, so a headless observer sees the coach the player
+sees.
+
+With no genome there is no offer: nothing to put back, so the coach must not promise one.
+
+### Consequences for authoring
+
+- **Write gates against `lineage`, not `focused`.** Reach for `focused` only when the step is genuinely
+  teaching selection.
+- New gate readings belong in `lineageOf(genome)` as pure functions — never derived at the call site.
+- A chapter may now assume the player can always get back to a living cell carrying their own genome. A
+  chapter whose lineage is *expected* to die (the conversion branch) can lean on that.

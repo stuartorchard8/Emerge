@@ -485,6 +485,24 @@ panel.
 
 ## 9. Proposed build order
 
+> ### Gene card — blocking affordances + activity glow (2026-07-23)
+>
+> Three changes to the card, all of which campaign copy now leans on:
+>
+> - **Blocking colour belongs to the CHEMICAL, not the verb.** An action never blocks on itself — there is
+>   no biomass ceiling, no import quota — so the orange sits on the operand token (the species chip, the
+>   BREAK/BOND reaction chip) and falls back to the verb only where there is no chemical to carry it
+>   (`NOTHING`, `USE LIGHT`). Same rule on the fuel row.
+> - **A DIVIDE that cannot afford to split says so, on its fuel.** Division needs `biomass/4` in one tick;
+>   the panel checks the source against that cost, counting the per-gene 1/n split across contending
+>   Mitosis genes. This is the affordance the Divide chapter's growth-cap step depends on.
+> - **Cards glow on a 12-sim-tick rolling average** of the "would fire" flag rather than the per-tick flag,
+>   so an intermittent gene reads as dimmed instead of strobing. Folded once per frame, weighted by ticks
+>   actually elapsed, so the window means 12 ticks at any speed and a paused world holds its glow.
+>
+> ⚠️ Campaign copy names these tokens as bare strings and **nothing checks they still exist** — see
+> `PLAN_verification_infrastructure.md` §3.
+
 > ### ⏸ SESSION STATE — 2026-07-17 (resume here)
 >
 > **The new sentence-model UI is live on every width and is the only gene UI** (old dense form deleted, §8).
