@@ -188,7 +188,7 @@ class Ui {
 
     /** Rebuilds this frame's widget tree (clears the previous frame's geometry; hold state persists). */
     fun frame(block: UiBuilder.() -> Unit) {
-        cmds.clear(); clicks.clear()
+        cmds.clear(); clicks.clear(); modalFrom = 0
         overlayRects.clear(); overlayTexts.clear(); overlayClicks.clear()
         anchorCursor.clear(); anchorInset.clear(); anchorColumnExtent.clear()
         clipRects.clear(); scrollRegions.clear(); currentClip = -1
@@ -581,7 +581,7 @@ class Ui {
     fun elements(): List<UiElement> {
         val out = ArrayList<UiElement>()
         for (c in overlayClicks) if (c.label != null) out.add(UiElement(c.label, c.x, c.y, c.w, c.h))
-        for (c in clicks) if (c.label != null) out.add(UiElement(c.label, c.x, c.y, c.w, c.h))
+        for (i in modalFrom until clicks.size) clicks[i].label?.let { out.add(UiElement(it, clicks[i].x, clicks[i].y, clicks[i].w, clicks[i].h)) }
         return out
     }
 
@@ -592,12 +592,29 @@ class Ui {
         // Prefer an *exact* label match (over any element whose label merely contains the query) so a driver
         // can target e.g. a picker row "FEED" without a co-visible "+ FEED (1)" header stealing the tap; then
         // fall back to the first substring match. Overlay (sheet/dialog) clicks win over base-panel clicks.
+        val reachable = clicks.subList(modalFrom, clicks.size)
         for (c in overlayClicks) if (c.label?.lowercase() == q) { c.onClick(); return true }
-        for (c in clicks) if (c.label?.lowercase() == q) { c.onClick(); return true }
+        for (c in reachable) if (c.label?.lowercase() == q) { c.onClick(); return true }
         for (c in overlayClicks) if (c.label?.lowercase()?.contains(q) == true) { c.onClick(); return true }
-        for (c in clicks) if (c.label?.lowercase()?.contains(q) == true) { c.onClick(); return true }
+        for (c in reachable) if (c.label?.lowercase()?.contains(q) == true) { c.onClick(); return true }
         return false
     }
+
+    /**
+     * Index into [clicks] of the topmost modal scrim, or 0. Regions emitted **before** it are covered by a
+     * full-screen scrim and cannot be clicked by a human at all, so [elements] and [tapLabel] must not offer
+     * them either.
+     *
+     * Coordinate hit-testing never needed this — it scans in reverse, so the scrim occludes what's under it
+     * for free. The label path scans forward and had no notion of layering, so an open pick sheet still
+     * exposed the gene card behind it: `tap-ui 0` fired the card's token instead of the sheet's value row
+     * and silently reopened the sheet. Two identically-labelled widgets, one of them unreachable in the
+     * real UI, and the driver picked the wrong one every time.
+     */
+    private var modalFrom = 0
+
+    /** Called by [UiBuilder.sheet] right after its scrim: everything already emitted is now covered. */
+    internal fun markModalBarrier() { modalFrom = (clicks.size - 1).coerceAtLeast(0) }
     /** A hold-to-repeat stepper button: fires `onStep(sign)` on press, then `onStep(sign·magnitude)` while held. */
     internal fun emitStepper(x: Float, y: Float, w: Float, h: Float, sign: Int, onStep: (Int) -> Unit) {
         clicks.add(ClickRegion(x, y, w, h, { onStep(sign) }, holdSign = sign, onStep = onStep))
@@ -607,8 +624,14 @@ class Ui {
     internal fun emitOverlayTextLeft(text: String, x: Float, topY: Float, h: Float, color: Long) {
         overlayTexts.add(TextCmd(text, x, topY, h, color, centered = false, centerX = 0f))
     }
-    internal fun emitOverlayClick(x: Float, y: Float, w: Float, h: Float, onClick: () -> Unit) {
-        overlayClicks.add(ClickRegion(x, y, w, h, onClick))
+    /** An interactive region on the overlay layer (an open dropdown's rows), drawn above every panel.
+     *
+     *  Pass the row's own text as [label] wherever there is one: [elements] and [tapLabel] both key off it,
+     *  so a label-less region is invisible to a headless driver **and untappable by name** — an open menu
+     *  that a human can see and click but an agent cannot reach at all. (That was the case for every
+     *  dropdown row until 2026-07-23.) Null stays allowed for genuine background/scrim catchers. */
+    internal fun emitOverlayClick(x: Float, y: Float, w: Float, h: Float, label: String? = null, onClick: () -> Unit) {
+        overlayClicks.add(ClickRegion(x, y, w, h, onClick, label = label))
     }
 
     /** Starting offset (px from the anchored edge) for the next panel at [anchor], then advance it. */
@@ -914,6 +937,7 @@ class UiBuilder internal constructor(private val ui: Ui) {
         // Scrim over the whole screen: dims + dismisses on tap.
         ui.emitRect(0f, 0f, fullW, fullH, scrim)
         ui.emitClick(0f, 0f, fullW, fullH, label = "scrim", onClick = onDismiss)
+        ui.markModalBarrier()   // the card/panel behind a scrim is unreachable — see [Ui.markModalBarrier]
         // Sheet surface + a tap-swallow so a press on the sheet body doesn't reach the scrim behind it.
         ui.emitRect(bx, by, bw, bh, background)
         ui.emitClick(bx, by, bw, bh) {}
@@ -1287,7 +1311,7 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
                     for ((i, opt) in t.options.withIndex()) {
                         ui.emitOverlayRect(px, oy, ow, rowH, 0x1A2233FFL)
                         ui.emitOverlayTextLeft(opt, px + textH * 0.35f, oy + (rowH - textH) * 0.5f, textH, if (opt == t.value) 0xFFE070FFL else 0xCFE0FFFFL)
-                        ui.emitOverlayClick(px, oy, ow, rowH) { t.onPick(i) }
+                        ui.emitOverlayClick(px, oy, ow, rowH, label = opt) { t.onPick(i) }
                         oy += rowH
                     }
                 }
@@ -1393,7 +1417,7 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
                 for ((i, opt) in options.withIndex()) {
                     ui.emitOverlayRect(fx, oy, fw, height, 0x1A2233FFL)
                     ui.emitOverlayTextLeft(opt, fx + textH * 0.4f, oy + (height - textH) * 0.5f, textH, if (opt == value) 0xFFE070FFL else 0xCFE0FFFFL)
-                    ui.emitOverlayClick(fx, oy, fw, height) { onPick(i) }
+                    ui.emitOverlayClick(fx, oy, fw, height, label = opt) { onPick(i) }
                     oy += height
                 }
             }
@@ -1517,7 +1541,7 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
             for ((i, opt) in options.withIndex()) {
                 ui.emitOverlayRect(fx, oy, fw, height, 0x1A2233FFL)
                 ui.emitOverlayTextLeft(opt, fx + textH * 0.4f, oy + (height - textH) * 0.5f, textH, if (opt == value) 0xFFE070FFL else 0xCFE0FFFFL)
-                ui.emitOverlayClick(fx, oy, fw, height) { onPick(i) }
+                ui.emitOverlayClick(fx, oy, fw, height, label = opt) { onPick(i) }
                 oy += height
             }
         }
