@@ -349,6 +349,19 @@ object CampaignContent {
 
     val ORDER: List<String> = CHAPTERS.map { it.id }
 
+    /**
+     * Which chapters can lead to [id] — every chapter that either names it in `branchesTo` or sits directly
+     * before it in the authored flow. The chapter selector unlocks on this (see `CampaignProgress`).
+     *
+     * A chapter that declares branches does NOT also unlock its list-order neighbour: its successors are
+     * exactly the ones it names, or the flat list would quietly re-open the door the branch just closed.
+     */
+    fun predecessorsOf(id: String, chapters: List<Chapter> = CHAPTERS): List<String> =
+        chapters.filterIndexed { i, ch ->
+            val declared = ch.branchesTo
+            if (declared != null) id in declared else chapters.getOrNull(i + 1)?.id == id
+        }.map { it.id }
+
     // ── Campaign rework (WIP) — a standalone scratch chapter, NOT in ORDER yet ────────────────────────────
     // The new campaign starts far more basic than the old autotroph opening: an empty world the player seeds
     // by hand, one primitive at a time. Kept off the main ORDER so it can be iterated in isolation (launch it
@@ -559,19 +572,97 @@ object CampaignContent {
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
-            // 5. Payoff. {bond} names the reaction they chose, the way {chem} named their starter element.
+            // 5. Close the chapter POISED on the split, world still Frozen - the division itself is the next
+            // chapter's opening beat, because which chapter that is depends on the pair just chosen (see
+            // `next` below). Ending here also means the player never watches their choice play out before the
+            // chapter that is about to be *about* that choice.
             Step(
-                text = "Progress. For every unit of {bond} your cell makes, it releases a unit of energy. As long as your cells have enough chemical ingredients - and stay small enough to afford the split - they'll continue to divide.",
+                text = "{bond} it is. Every one your cell makes releases a unit of energy, and it can now raise a quarter of its own biomass in a single moment. The next time this world moves, your cell will split.",
                 altText = "Your gene has no reaction to run, so it makes no energy and the cell cannot divide. Go back and give it two chemicals to join.",
+                gate = Gate.Next,
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+        ),
+        // THE BRANCH. Which chapter follows is decided by the pair the player just chose, and they were never
+        // asked: a fuel reaction that eats the same monomer the CONVERT gene grows on puts growth and division
+        // in competition for one atom, and that lineage lives a completely different life from one that grows
+        // on the monomer it does not burn. Each chapter is about the problem its own build actually has.
+        //
+        // No focused cell (they deselected before the last click) falls to the stable path - it is the one
+        // that survives being left alone, so a player who lands there by accident is not stranded.
+        branchesTo = listOf(BRANCH_PHOTOSYNTHESIS, BRANCH_CONVERSION),
+        next = { q -> if (q.focused?.divideFuelConflicts == true) BRANCH_CONVERSION else BRANCH_PHOTOSYNTHESIS },
+    )
+
+    /** Chapters that are launchable by id (agent harness / direct start) but deliberately kept OUT of the
+     *  main [CHAPTERS]/[ORDER] campaign flow while they're being built. Order matters: the director segues
+     *  from one to the next in place, so Genesis runs straight into Divide. */
+
+    // ── The branch (WIP) ──────────────────────────────────────────────────────────────────────────────────
+    // Two chapters, one of which the player will never see on a given run. Which one they get is decided by
+    // the fuel pair they chose in `ch01-divide` and nothing else — see its `next`. Both open on the division
+    // that chapter left poised, and then diverge immediately, because the two lineages diverge immediately.
+    //
+    // ⚠️ FIRST DRAFT — the opening beats only, and the voicing wants Stu's ear. Each chapter stops where its
+    // fix would be authored; see CAMPAIGN_PLAN.md §12 for what is still open (including a finding that
+    // changes what the conversion path's cost actually is).
+
+    const val BRANCH_PHOTOSYNTHESIS = "ch02-photosynthesis"
+    const val BRANCH_CONVERSION = "ch02-conversion"
+
+    /**
+     * **The stable lineage** — reached by bonding the two monomers the cell does NOT grow on. Nothing
+     * competes: growth eats one atom, division burns the other two, and the colony spreads into the hundreds
+     * before the world's loose chemistry runs thin. Its only problem is what it leaves behind — every split
+     * mints another molecule of a thing the cell has no use for, and it fills up with its own exhaust.
+     *
+     * The fix this chapter is heading for is photosynthesis: a light-powered gene that breaks the waste back
+     * into the pair it came from, returning both atoms to the cytoplasm. Sunlight cannot fund a division, but
+     * it is perfectly good for taking something apart.
+     */
+    private fun chapterPhotosynthesisScratch() = Chapter(
+        id = BRANCH_PHOTOSYNTHESIS,
+        act = 1,
+        // Leads nowhere YET (see the TODO on its last step) — declared explicitly so the flat list doesn't
+        // quietly make the other branch its successor.
+        title = "Exhaust",
+        blurb = "Your cells divide and divide. Look at what they are leaving behind.",
+        scenario = EMPTY_WORLD,
+        startsFreshWorld = false,
+        branchesTo = emptyList(),   // leads nowhere yet — see the TODO on the last step
+        spawnGenome = emptyList(),
+        spawnBiomass = STARTER_CELL_BIOMASS,
+        steps = listOf(
+            // 1. The split ch01 stopped one tick short of. Live at last.
+            Step(
+                text = "Let it run.",
                 gate = Gate.World("Divide into two cells", met = { it.cellCount >= 2 }),
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
             ),
-            // 6. Segue to the next chapter: the reaction that bought division is also filling the cell with
-            // something it has no use for.
+            // 2. The payoff that the old ch01 ending used to carry, now where it belongs - after the split,
+            // in the chapter that is about what the split costs.
             Step(
-                text = "Two cells, from one. Both carry your genome, so both will do this again.",
-                detail = "Keep an eye on the {bond} piling up inside them, though. Your cells make it for the energy and then have no use for it, and it is taking up room they need.",
+                text = "Two cells, from one. Both carry your genome, so both will do this again - and their daughters after them. You grew on {chem} and you burn the other two for the energy to split, so nothing your cells do gets in their own way. This lineage will fill the world.",
+                gate = Gate.World("Grow the colony", met = { it.cellCount >= 8 }, progress = { it.cellCount to 8 }),
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+            // 3. Name the cost. The molecule is IN the cells and visible in the chemistry table, so this is a
+            // "look at the thing" beat, not a claim the player has to take on trust.
+            Step(
+                text = "Now select one and look at what it is holding. Every division your cells have ever paid for has left a molecule of {bond} behind, and they have no use for it. They are filling up with their own exhaust.",
+                detail = "Nothing is destroyed in this world, only rearranged. The atoms in that {bond} are the same atoms your cells started with - they are simply locked into a shape the genome has no gene for.",
+                gate = Gate.Did(PlayerAction.SelectedCell, "Select a cell and read its chemistry"),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            // TODO(campaign): the fix - a Light-powered BREAK gene on {bond}, recycling the pair back to
+            // cytoplasm. Needs a FocusedCell reading for "breaks the waste molecule" to gate on. Left for the
+            // authoring pass; see CAMPAIGN_PLAN.md §12.
+            Step(
+                text = "Sunlight could not pay for a division. It is perfectly good for taking something apart, though - and that is where this goes next.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
@@ -579,10 +670,69 @@ object CampaignContent {
         ),
     )
 
-    /** Chapters that are launchable by id (agent harness / direct start) but deliberately kept OUT of the
-     *  main [CHAPTERS]/[ORDER] campaign flow while they're being built. Order matters: the director segues
-     *  from one to the next in place, so Genesis runs straight into Divide. */
-    val SCRATCH_CHAPTERS: List<Chapter> = listOf(chapterGenesisScratch(), chapterDivideScratch())
+    /**
+     * **The competing lineage** — reached by choosing a fuel pair that includes the very monomer the CONVERT
+     * gene grows on. Growth and division now bid for the same atom every tick. It works, briefly: the cell
+     * divides, and its daughters divide, and then the colony stalls and dies back as the shared atom runs out
+     * from under both genes at once.
+     *
+     * The fix this chapter is heading for is to stop treating the waste as waste: a second CONVERT gene that
+     * locks the fuel molecule into biomass recovers BOTH its atoms, and a two-atom molecule is worth more per
+     * op than the monomer the cell started on. The conflict becomes the point.
+     */
+    private fun chapterConversionScratch() = Chapter(
+        id = BRANCH_CONVERSION,
+        act = 1,
+        title = "Competition",
+        blurb = "Your cells grow and divide on the same atom. Only one of them can win.",
+        scenario = EMPTY_WORLD,
+        startsFreshWorld = false,
+        branchesTo = emptyList(),   // leads nowhere yet — see the TODO on the last step
+        spawnGenome = emptyList(),
+        spawnBiomass = STARTER_CELL_BIOMASS,
+        steps = listOf(
+            Step(
+                text = "Let it run.",
+                gate = Gate.World("Divide into two cells", met = { it.cellCount >= 2 }),
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+            // The choice, named back to them. This is the beat the whole branch exists for: they were never
+            // asked a question, so the coach has to show them the answer they gave.
+            Step(
+                text = "Two cells, from one. Look closely at what you built, though. Your cells grow by locking {chem} into biomass, and they pay for every division by bonding {bond} - which takes that same {chem} back out of the cytoplasm. Both genes are reaching for the same atom.",
+                detail = "Neither gene is wrong. They simply want the same thing, and there is only so much of it coming in through the membrane.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+            // Let the consequence land. This lineage does die back - that is the observation the fix answers.
+            Step(
+                text = "Watch what happens to the colony now.",
+                detail = "It will divide a few more times on what is already in the cytoplasm, and then the two genes will have drained it faster than the membrane can refill it.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+            // TODO(campaign): the fix - a second CONVERT gene on {bond}, so the fuel molecule becomes food
+            // rather than exhaust. Needs the same "converts the waste" reading to gate on, and a decision on
+            // what its long-term cost is (see CAMPAIGN_PLAN.md §12 - the recorded "unrecoverable once
+            // degraded" premise does not survive contact with how degradation actually works).
+            Step(
+                text = "There is a way out of this, and it is not to undo what you chose. The molecule your cells make to pay for dividing is two atoms of food, if you give them a gene that can eat it - and that is where this goes next.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+        ),
+    )
+
+    val SCRATCH_CHAPTERS: List<Chapter> = listOf(
+        chapterGenesisScratch(),
+        chapterDivideScratch(),
+        chapterPhotosynthesisScratch(),
+        chapterConversionScratch(),
+    )
 
     /** The chapter list the **real game** surfaces (menu + director) while the campaign is being reworked:
      *  the WIP [SCRATCH_CHAPTERS] first (Genesis is the new opening), then the pre-inversion [CHAPTERS]. This

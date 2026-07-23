@@ -94,4 +94,22 @@ class FocusedCell(
      * Doubles as the coach's `{bond}` token, so the copy can name the reaction the player picked.
      */
     val mitosisProduct: String? = null,
+    /**
+     * Whether the cell's division gene burns the very monomer its CONVERT gene grows on — i.e. the reaction
+     * the player chose to power division has [convertChem] as one of its two reactants. Null when there is
+     * nothing to compare yet (no CONVERT gene, or a division gene not yet running on a complete reaction).
+     *
+     * This is the campaign's branch point. The two builds live completely differently:
+     *
+     *  - **No conflict** (grow on one monomer, bond the other two) — the lineage is stable and colonises
+     *    into the hundreds before it exhausts the environment's loose chemistry. Its only problem is the
+     *    waste molecule piling up, which photosynthesis can recycle.
+     *  - **Conflict** (the fuel reaction eats the growth monomer) — growth and division compete for the same
+     *    atom, and the colony dies out a few divisions in. Its way out is to stop treating the waste as
+     *    waste and convert it to biomass, which recovers both atoms and beats the monomer it started on.
+     *
+     * Neither is wrong, and the player is never asked which they want: they pick two chemicals, and the
+     * consequence picks the chapter.
+     */
+    val divideFuelConflicts: Boolean? = null,
 )

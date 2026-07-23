@@ -465,11 +465,19 @@ class CytoController(
                 // Light-powered division reads as "not chemistry-powered yet" (null), not as a half-done
                 // reaction — the chapter's job is to move the gene off Light entirely.
                 val mitosisProduct = (mitosisGene?.source as? EnergySource.FormBond)?.product
+                // Does the division gene's fuel reaction consume the growth monomer? Only meaningful once
+                // both genes are complete — an unset CONVERT chemical or a Light-powered divide has nothing
+                // to compare, and must not read as "no conflict".
+                val divideFuel = mitosisGene?.source as? EnergySource.FormBond
+                val divideFuelConflicts = if (divideFuel == null || convertChem.isNullOrEmpty() ||
+                    divideFuel.a.isEmpty() || divideFuel.b.isEmpty()
+                ) null else convertChem == divideFuel.a || convertChem == divideFuel.b
                 FocusedCell(
                     c.type, totalBiomass(c.biomass), c.genome.size, c.cytoplasm,
                     divideWelds, contractOnChem, contractOnMarked, convertChem,
                     convertBiomassCap = convertBiomassCap,
                     hasMitosis = mitosisGene != null, mitosisProduct = mitosisProduct,
+                    divideFuelConflicts = divideFuelConflicts,
                 )
             }
         }

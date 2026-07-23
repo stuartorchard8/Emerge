@@ -881,3 +881,45 @@ swimmer's reserve; a from-scratch multicellular chapter would need its own versi
 
 Relevant code: `CytoController.energyUnits` / `describeGeneSpans` (the affordance), pinned by
 `GeneEnergyUnitsTest`.
+
+---
+
+## 12. The branch after Divide — as built 2026-07-23, and what is still open
+
+The campaign now branches. `ch01-divide` ends **poised on the split rather than past it**, and which chapter
+follows is read off the world the player leaves behind: `Chapter.next` (a `(CampaignQuery) -> String?`),
+declared statically as `Chapter.branchesTo` so the selector knows what a chapter can unlock.
+
+**The reading is `FocusedCell.divideFuelConflicts`** — does the fuel reaction the player chose to power
+division consume the very monomer their CONVERT gene grows on?
+
+| choice | lineage | chapter |
+|---|---|---|
+| fuel pair excludes the growth monomer | stable; colonises into the hundreds until the world's loose chemistry thins | `ch02-photosynthesis` — recycle the waste |
+| fuel pair includes it | growth and division bid for one atom; dies back a few divisions in | `ch02-conversion` — eat the waste |
+
+The player is never asked. They pick two chemicals and the consequence picks the chapter, which is the
+"secret level reached by going an unconventional way" shape — nothing announces the branch, and a player
+who never chooses the conflicting pair never learns the other chapter exists.
+
+### Still open
+
+1. **Both chapters are opening beats only.** Each runs to the point where its fix would be authored and
+   stops with a "that is where this goes next" line. The fixes need: a `FocusedCell` reading for "has a
+   gene that consumes the waste molecule" (both paths gate on a version of it), and Stu's voice on the copy.
+2. **⚠️ The recorded premise for the conversion path does not survive contact with the code.** The scoping
+   note said converting the waste to biomass is "unrecoverable once degraded into the environment without an
+   Import gene". Checked against `CytoBiologyCore.degrade`: a cell sheds its most-abundant biomass molecule
+   **whole and unsplit** into its own footprint — the disc it also absorbs from. And `canDiffuseIn` admits
+   any molecule the genome *metabolises*, which a `Convert <waste>` gene does by definition. So the cell
+   that can eat the waste can also re-absorb the waste it sheds: the matter is not lost, and that path has
+   no hidden cost as recorded. **Either find the real asymmetry or give the conversion path a different
+   drawback** before authoring copy that claims one. (Candidates worth measuring: the shed molecule decays
+   in the environment at its own rate, and a two-atom biomass unit changes the wear/upkeep arithmetic.)
+3. **Unlock only bites once the scratch chapters graduate.** `predecessorsOf` defaults to the authored
+   `CHAPTERS`; the branch lives in `SCRATCH_CHAPTERS`, and a scratch id has no predecessors there, so it
+   reads as always-unlocked — deliberate while these are WIP and iterated from the menu. The *routing* is
+   live regardless; it is only the selector's padlock that waits.
+4. **Merge point undecided.** Both branches currently declare `branchesTo = emptyList()` ("leads nowhere
+   yet"). Whether they rejoin a common chapter or stay divergent tech trees is unanswered — §11's
+   contention note applies to whichever one first hands the player two DIVIDE genes.

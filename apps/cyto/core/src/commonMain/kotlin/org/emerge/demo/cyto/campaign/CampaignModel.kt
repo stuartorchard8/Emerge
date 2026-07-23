@@ -63,6 +63,29 @@ class Chapter(
      * player's living world continues, and the always-available Reset is how they realign it to [scenario].
      */
     val startsFreshWorld: Boolean = false,
+    /**
+     * Which chapter follows this one, chosen from the world the player leaves behind — the campaign's one
+     * branch point. Returns a chapter id, or null to take the next chapter in the list (what every linear
+     * chapter does, and the default).
+     *
+     * The choice is read from the world rather than recorded as an answer to a question, because the player
+     * never answers a question: they build something, and what they built decides where they go. An id that
+     * isn't in the director's chapter list falls back to list order, so a half-authored branch can't strand
+     * anyone mid-campaign.
+     */
+    val next: ((CampaignQuery) -> String?)? = null,
+    /**
+     * Every chapter [next] may name, declared statically. [next] itself is a function of the finished world,
+     * so nothing can enumerate its outcomes — but the chapter *selector* has to know which chapters this one
+     * can unlock, and a branch destination has no meaningful position in the flat list to be unlocked from.
+     *
+     *  - **null** (the default) — linear: this chapter leads to the next one in the list.
+     *  - **a list** — these and only these. An EMPTY list is therefore meaningful: "leads nowhere", which is
+     *    what a branch destination says while its own continuation is unauthored. Without that distinction a
+     *    dead-end branch would confer list-order succession on whatever happened to sit after it, and
+     *    finishing one branch would unlock the other — re-opening the door the branch just closed.
+     */
+    val branchesTo: List<String>? = null,
 )
 
 /** One coaching beat: the instruction, how it advances ([gate]), which controls are live ([allow]), an

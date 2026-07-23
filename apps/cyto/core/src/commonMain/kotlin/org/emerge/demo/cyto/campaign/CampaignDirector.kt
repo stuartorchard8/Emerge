@@ -275,12 +275,17 @@ class CampaignDirector {
     private fun advance(controller: CytoController) {
         val ch = chapter ?: return
         if (stepIndex >= ch.steps.lastIndex) {
+            val query = lastQuery
             onChapterCompleted(ch.id)
             // Segue into the next chapter in the SAME world — no drop to the selector. Only rebuild the world
             // when the next chapter marks itself a fresh start (Ch8's swimmer); otherwise the player's living
             // world, which the coaching just walked them into being the next chapter's starting point, carries
             // straight on.
-            val next = chapters.getOrNull(chapters.indexOfFirst { it.id == ch.id } + 1)
+            // A chapter may choose its own successor from the finished world (Chapter.next) — the campaign's
+            // branch point. Anything it names must actually be in the list; otherwise, and for every linear
+            // chapter, the successor is simply the next one along.
+            val chosen = query?.let { q -> ch.next?.invoke(q) }?.let { id -> chapters.firstOrNull { it.id == id } }
+            val next = chosen ?: chapters.getOrNull(chapters.indexOfFirst { it.id == ch.id } + 1)
             if (next == null) {
                 active = false
                 chapter = null

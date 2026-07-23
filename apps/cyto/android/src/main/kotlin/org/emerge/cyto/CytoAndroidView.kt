@@ -157,7 +157,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         controls.onCycleMutation = { controller.cycleMutationRate() }
 
         menu.campaignChapters = CampaignContent.PLAYABLE_CHAPTERS   // includes the WIP scratch chapters
-        menu.campaignUnlocked = { progress.isUnlocked(it, CampaignContent.ORDER) }
+        menu.campaignUnlocked = { progress.isUnlocked(it, CampaignContent.predecessorsOf(it)) }
         menu.campaignCompleted = { progress.isCompleted(it) }
         // One continuous world: the director segues between chapters itself (see the desktop host).
         director.chapters = CampaignContent.PLAYABLE_CHAPTERS   // scratch chapters segue into the main flow
