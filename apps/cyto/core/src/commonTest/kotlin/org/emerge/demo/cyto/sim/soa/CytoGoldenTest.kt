@@ -434,12 +434,17 @@ class CytoGoldenTest {
         val par = CytoSoaReducer(cfg, executor = executor, springParallelThreshold = 2, bioParallelThreshold = 2)
         var ws = CytoWorld.fromSimState(createCytoInitialState())
         var wp = CytoWorld.fromSimState(createCytoInitialState())
+        // Compared every 25 ticks, not every tick. Once the two worlds differ they never re-converge, so a
+        // sampled comparison misses nothing but the exact tick of onset (the message says which window).
+        // Materializing + digesting twice per tick was ~90% of this test's runtime — 47s for 250 ticks.
         for (t in 1..250) {
             ws = seq.tick(ws, CytoInput.EMPTY)
             wp = par.tick(wp, CytoInput.EMPTY)
+            if (t % 25 != 0) continue
             val ss = ws.toSimState()
             val sp = wp.toSimState()
-            assertEquals(digest(ss, ws.getSpringData()), digest(sp, wp.getSpringData()), "parallel != sequential at tick=$t")
+            assertEquals(digest(ss, ws.getSpringData()), digest(sp, wp.getSpringData()),
+                "parallel != sequential by tick=$t (diverged somewhere in the preceding 25 ticks)")
         }
         executor.close()
     }

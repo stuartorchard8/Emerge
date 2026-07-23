@@ -59,15 +59,25 @@ class CytoControllerTest {
     fun panelReportsTheRealTouchCountNotAStub() {
         // Regression: describeGeneSpans hardcoded `val touch = 0`, so a TOUCH clause could never read
         // anything but zero — the panel greyed out TOUCH-gated genes that the sim was actually firing.
-        // Drive a crowded colony until some cell is in un-welded contact, then read the panel's own view.
+        // Two cells spawned essentially on top of each other are in contact immediately, so the contact is
+        // CONSTRUCTED rather than waited for: what's under test is that the count survives the SoA →
+        // SimState round-trip, not that a colony eventually crowds itself (which cost 400 ticks to say).
+        // The tiny offset keeps them from being exactly coincident, which is a degenerate physics case.
+        // Un-welded contact is TRANSIENT — cells touch for a tick or two and are pushed apart — so this
+        // scans every tick for a non-zero reading rather than sampling the final frame and hoping. The old
+        // version drove 400 ticks and looked once, which is why it needed so many: it was a lottery.
         val c = CytoController()
-        var frame = c.tick(0f)
-        repeat(400) { frame = c.tick(1f) }
-        val cells = frame.state.components.getTable<CytoCellComponent>().asMap()
-        // The panel reads the materialized SimState, so the count must survive SoA → SimState — that
-        // round-trip is the link the stub used to hide.
-        val touching = cells.entries.filter { it.value.touchCount > 0 }
-        assertTrue(touching.isNotEmpty(), "a grown colony should surface cells in contact through the live controller path")
+        c.tick(0f)
+        c.spawn(0f, 0f, CellType.Collector)
+        c.spawn(0.002f, 0f, CellType.Collector)
+        var seen = 0
+        repeat(60) {
+            // The panel reads the materialized SimState, so the count must survive SoA → SimState — that
+            // round-trip is the link the stub used to hide.
+            val cells = c.tick(1f).state.components.getTable<CytoCellComponent>().asMap()
+            seen = maxOf(seen, cells.values.maxOfOrNull { it.touchCount } ?: 0)
+        }
+        assertTrue(seen > 0, "cells in contact should surface a non-zero touchCount through the live controller path")
     }
 
     /**

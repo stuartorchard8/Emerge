@@ -355,13 +355,12 @@ class CytoSoaSpecTest {
                 b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.seededUniform(2000)) }
                 b.build()
             }
-            // 300 ticks, not the 1500 this ran for pre-inversion. The genome is authored in the current gene
-            // model (see above) and so runs on ambient monomer rather than light, which is not day/night
-            // rate-limited: the colony reaches ~1100 cells by tick 300 where the light-fed version needed the
-            // full 1500 to get comparably far, and it keeps compounding after that (~5500 by tick 500) with
-            // no more shape to show for it. Measured at 300: oriented division reaches y-extent ~28 against
-            // the unoriented thread's 0.0, so the phenomenon is fully developed.
-            val s = run(initial, ticks = 300)
+            // 60 ticks. This ran for 1500 pre-inversion, then 300 — both far past the point the phenomenon
+            // is settled, and the cost is superlinear in population, so the tail was ~70% of the whole test
+            // suite's runtime. MEASURED y-extent (across vs thread): t=20 → 2.8 vs 0.0, t=40 → 8.2 vs 0.0,
+            // t=60 → 16.8 vs 0.0. The thread stays flat at 0.0 throughout, so 60 clears the +1.0 margin by
+            // 16× and the two curves never approach each other again.
+            val s = run(initial, ticks = 60)
             val ts = s.components.getTable<TransformComponent>().asMap()
             val ys = s.components.getTable<CytoCellComponent>().asMap().keys.mapNotNull { ts[it]?.let { tr -> CytoUnits.toLogical(tr.pos.y).toDouble() } }
             return if (ys.isEmpty()) 0.0 else ys.max() - ys.min()

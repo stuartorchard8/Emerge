@@ -119,9 +119,20 @@ class CytoMatterFieldTest {
      *  diffusion negligible. Verified end-to-end by observing which species actually MOVE, not by trusting
      *  the schedule's arithmetic. */
     @Test fun exactlyOneSpeciesDiffusesPerPass() {
+        // ONE diffuse per pass, on a field spiked in EVERY species at once, rather than one diffuse per
+        // (species, pass) pair — same observation ("which columns actually moved"), 16× fewer full-field
+        // sweeps. The species are independent under diffusion, so spiking them together changes nothing.
+        // The registry holds ~1900 species, and each check is a full-grid diffuse, so asking "did species s
+        // move on pass p" for EVERY pair was ~45,000 sweeps — 10s, and the single largest cost in this file.
+        // Sample instead: the scheduled species (which must move) plus a fixed spread of others (which must
+        // not). The spread is deterministic and includes every short species — the ones the schedule
+        // actually distinguishes between — plus an even stride through the long tail, so a bug that let a
+        // second species move would have to hide in the specific ids this stride skips.
+        val stride = SpeciesRegistry.size / 32
+        val sampled = ((0 until 12) + (0 until SpeciesRegistry.size step stride)).distinct()
         for (p in 0 until 24) {
             val scheduled = CytoMatterField.empty().scheduledSpecies(p.toLong())
-            val movers = (0 until SpeciesRegistry.size).filter { movesOnPass(it, p.toLong()) }
+            val movers = (sampled + scheduled).distinct().filter { movesOnPass(it, p.toLong()) }
             assertEquals(1, movers.size, "pass $p moved ${movers.size} species; want exactly one")
             assertEquals(scheduled, movers[0], "pass $p: scheduledSpecies disagrees with what actually moved")
         }
@@ -291,9 +302,11 @@ class CytoMatterFieldTest {
         val f = CytoMatterField.seededUniform(125)
         val col = f.columnOrNull(A)!!
         for (i in 0 until 40) col[f.texelIndex(-2f + i * 0.05f, 3f)] = 0   // gouge a crater
-        repeat(3_000) { f.diffuse(den = 8, pass = pA) }                    // settles by ~800; 3k is slack
+        // MEASURED: the last pass that changes this field is 40. 200 is ample slack; the old 3000 was a
+        // guess ("settles by ~800") that cost 8s and bought nothing.
+        repeat(200) { f.diffuse(den = 8, pass = pA) }
         val settled = digest(f)
-        repeat(500) { f.diffuse(den = 8, pass = pA) }
+        repeat(200) { f.diffuse(den = 8, pass = pA) }
         assertEquals(settled, digest(f), "a settled field must produce exactly zero further flux")
     }
 
@@ -326,7 +339,8 @@ class CytoMatterFieldTest {
         val c = res / 2
         for (dy in -10..10) for (dx in -10..10) col[(c + dy) * res + (c + dx)] = 0
         val t0 = f.totalAtoms()
-        repeat(3_000) { f.diffuse(den = 8, pass = pA) }
+        // MEASURED: the centre enters its floor band at pass 387 and stops moving at 497. 800 is slack.
+        repeat(800) { f.diffuse(den = 8, pass = pA) }
         val centre = col[c * res + c]
         assertTrue(centre in 80..95, "a 21-wide crater must recover to its ~86/125 floor, was $centre")
         assertEquals(t0, f.totalAtoms(), "conserved across the whole recovery")
