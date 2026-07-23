@@ -58,11 +58,14 @@ import javax.imageio.ImageIO
  * clickcell <id> | dragcell <id> <u> <v> <ticks> # target a cell by entity id; drag spans <ticks> ticks
  * cells                      # list cells (id, type, biomass, selected, screen u,v)
  * elements                   # list the visible on-screen buttons (by label)
- * tap-ui <label>             # click a button by (partial, case-insensitive) label. Open dropdown rows
+ * tap-ui <label> [@<n>]      # click a button by (partial, case-insensitive) label; @n picks the n-th
+ *                            # match (a genome shows one ALWAYS / USE LIGHT per gene). Open dropdown rows
  *                            # and pick-sheet rows are both reachable; a sheet's scrim hides whatever
  *                            # is behind it from `elements`/`tap-ui`, as it does from a real click.
  * overlay matter|light       # toggle the light/matter overlay
  * next                       # click the coach "Next" (advances the chapter if its goal is met)
+ * expect <field> <value>     # assert a reading (chapter/step/goal/cells/genes/convertChem/
+ *                            # growthCap/hasMitosis/bond/fuelConflicts); non-zero exit if any fail
  * shot <name> | state [name] | echo <text>
  * ```
  *
@@ -102,6 +105,11 @@ object CytoAgentHarness {
             h.cleanup()
         }
         println("[agent] done -> ${outDir.absolutePath}")
+        if (h.failures.isNotEmpty()) {
+            println("[agent] ${h.failures.size} EXPECT failure(s):")
+            for (f in h.failures) println("[agent]   - $f")
+            throw IllegalStateException("${h.failures.size} expectation(s) failed")
+        }
     }
 
     private class Session(val outDir: File) {
@@ -115,6 +123,9 @@ object CytoAgentHarness {
         private lateinit var geneEditor: GeneEditor
         private val hud = CytoHud()
         private val pendingActions = HashSet<PlayerAction>()
+
+        /** Failed `expect`s, reported (and exited on) at the end of the run. */
+        val failures = ArrayList<String>()
 
         fun init() {
             director.onStepEnter = {}
@@ -364,6 +375,7 @@ object CytoAgentHarness {
                 "reset" -> { director.resetChapter(controller); sync(); println("[agent] reset -> ${director.snapshot()?.chapterId} step ${(director.snapshot()?.stepIndex ?: 0) + 1}") }
                 "shot" -> { sync(); shot(t.getOrElse(1) { "shot" }) }
                 "state" -> { sync(); dumpState(t.getOrElse(1) { "state" }) }
+                "expect" -> expect(line.removePrefix("expect").trim())
                 "dumpraw" -> dumpRaw()
                 "echo" -> println("[agent] ${line.removePrefix("echo").trim()}")
                 else -> error("unknown command '${t[0]}'")
@@ -566,10 +578,20 @@ object CytoAgentHarness {
             println("[agent] hover-ui '$label' -> (${(el.x + el.w * 0.5f).toInt()}, ${(el.y + el.h * 0.5f).toInt()})")
         }
 
-        private fun tapUi(label: String) {
+        /**
+         * `tap-ui <label>`, or `tap-ui <label> @<n>` for the n-th match — a genome shows one `ALWAYS` and one
+         * `USE LIGHT` per gene, so the second gene's source is reachable only by index.
+         *
+         * `@`, not `#`: scripts strip `#` to end-of-line as a comment, so `tap-ui USE LIGHT #2` silently
+         * became `tap-ui USE LIGHT` and edited the FIRST gene — a wrong edit that reported success.
+         */
+        private fun tapUi(arg: String) {
+            val m = Regex("^(.*?)\\s*@(\\d+)$").find(arg)
+            val label = (m?.groupValues?.get(1) ?: arg).trim()
+            val nth = m?.groupValues?.get(2)?.toIntOrNull() ?: 1
             buildOverlay()
-            val hit = ui.tapLabel(label) || run { controls.rebuild(); controls.tap(label) }
-            println("[agent] tap-ui '$label' -> ${if (hit) "clicked" else "no match"}")
+            val hit = ui.tapLabel(label, nth) || (nth == 1 && run { controls.rebuild(); controls.tap(label) })
+            println("[agent] tap-ui '$label'${if (nth > 1) " @$nth" else ""} -> ${if (hit) "clicked" else "no match"}")
             // A tap may have queued a world edit (a gene edit, the mutation ladder) OR merely parked a draft
             // in the gene editor, which needs another render to flush. The harness runs no sim thread, so
             // nothing else would drive either: settle here, or the next command observes a pre-edit world.
@@ -625,7 +647,9 @@ object CytoAgentHarness {
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(
                     this,
                     controller,
-                    onChemistryOpened = { TODO("Support campaign signals on harness") },
+                    // Same signal the host raises (CytoSceneView.consumeChemistryOpened) — ch00-genesis
+                    // gates a step on it, so a TODO here made that step unreachable headlessly.
+                    onChemistryOpened = { pendingActions.add(PlayerAction.OpenedChemistryTable) },
                     grouping = director.activeChapter?.grouping,
                     insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                     narrow = NARROW,
@@ -633,6 +657,42 @@ object CytoAgentHarness {
                     onSaveGroup = { name, genes -> CytoSnippets.save(name, genes) },
                 )
                 if (showHud) hud.renderSheets(this, controls, wide = !NARROW)
+            }
+        }
+
+        /**
+         * `expect <field> <value>` — assert a reading, so a script is a **test** and not just a recording.
+         *
+         * Without this a scripted playthrough can only be checked by a human reading its output, which means
+         * it silently stops being checked. Failures are counted and reported at the end of the run (and the
+         * process exits non-zero), so a campaign edit that breaks the flow is noticed rather than narrated.
+         *
+         * Fields are the campaign-meaningful readings — the same ones the chapter gates use.
+         */
+        private fun expect(arg: String) {
+            val field = arg.substringBefore(' ').trim()
+            val want = arg.substringAfter(' ', "").trim()
+            val c = director.snapshot()
+            val w = controller.worldStats()
+            val lin = w.lineage
+            val got: String? = when (field) {
+                "chapter" -> c?.chapterId
+                "step" -> c?.let { "${it.stepIndex + 1}/${it.stepCount}" }
+                "goal" -> c?.goal
+                "gateReady" -> c?.gateReady?.toString()
+                "cells" -> w.cellCount.toString()
+                "genes" -> lin?.geneCount?.toString()
+                "convertChem" -> lin?.convertChem
+                "growthCap" -> lin?.convertBiomassCap?.toString()
+                "hasMitosis" -> lin?.hasMitosis?.toString()
+                "bond" -> lin?.mitosisProduct
+                "fuelConflicts" -> lin?.divideFuelConflicts?.toString()
+                else -> { failures.add("expect: unknown field '$field'"); println("[agent] EXPECT ?? unknown field '$field'"); return }
+            }
+            if (got == want) println("[agent] EXPECT ok   $field = $want")
+            else {
+                failures.add("$field: wanted '$want', got '$got'")
+                println("[agent] EXPECT FAIL $field: wanted '$want', got '$got'")
             }
         }
 
@@ -717,7 +777,9 @@ object CytoAgentHarness {
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(
                     this,
                     controller,
-                    onChemistryOpened = { TODO("Support campaign signals on harness") },
+                    // Same signal the host raises (CytoSceneView.consumeChemistryOpened) — ch00-genesis
+                    // gates a step on it, so a TODO here made that step unreachable headlessly.
+                    onChemistryOpened = { pendingActions.add(PlayerAction.OpenedChemistryTable) },
                     grouping = director.activeChapter?.grouping,
                     insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                     narrow = NARROW,

@@ -1,0 +1,104 @@
+# ch00-genesis -> ch01-divide, end to end through the UI, taking the CONFLICTING fuel pair.
+#
+# The convert gene grows on REDOGEN (r) and the divide gene is fuelled by bonding r+g, so growth and
+# division compete for the same atom -> ch01-divide branches to ch02-conversion.
+#
+# Every action here is the one the coach copy actually instructs. If a step's wording, gate or a gene-card
+# label changes, this script stops passing — that is the point.
+
+campaign ch00-genesis
+expect chapter ch00-genesis
+expect step 1/11
+
+# 1. Look around.
+camera pan 0.05 0.05
+next
+expect step 2/11
+
+# 2. Place the first, geneless cell.
+tap 0.35 0.5
+expect cells 1
+next
+
+# 3. Select it, 3.5 open the chemistry readout.
+select 0.35 0.5
+next
+tap-ui + CHEMISTRY
+next
+expect step 5/11
+
+# 4. Drag it.
+dragcell 0 0.4 0.55 20
+next
+
+# 5. Watch it starve. No genes means no way to rebuild, so it ruptures below 1000 biomass.
+run 3000
+expect cells 0
+next
+
+# 6. Place a fresh cell and select it — this one gets a genome.
+tap 0.35 0.5
+select 0.35 0.5
+next
+expect step 8/11
+
+# 7. Author the first CONVERT gene: blank gene, then action, then chemical.
+tap-ui + NEW GENE
+expect genes 1
+next
+tap-ui NOTHING
+tap-ui Convert
+expect convertChem
+next
+tap-ui (NONE)
+tap-ui +R
+tap-ui close
+expect convertChem r
+next
+expect step 11/11
+
+# Segue into Divide — same world, same cell.
+next
+expect chapter ch01-divide
+expect step 1/7
+
+# 1-2. The dead end, then the DIVIDE gene.
+next
+tap-ui + NEW GENE
+tap-ui NOTHING
+tap-ui Mitosis
+expect hasMitosis true
+next
+
+# 3. It doesn't fire: the cell has outgrown what it can pay.
+next
+
+# 3.5. Cap growth — the first condition the player ever authors. ALWAYS drops in `CHEM (NONE) > 0`,
+# and all three parts change. The sheet is modal, so close it before touching the card again.
+tap-ui ALWAYS
+tap-ui CHEM (NONE)
+tap-ui BIO
+tap-ui close
+tap-ui >
+tap-ui 0
+tap-ui 0
+type 3000
+tap-ui SET VALUE
+tap-ui close
+expect growthCap 3000
+next
+
+# 4. Light is a trickle; division needs a lump sum. Switch the DIVIDE gene (the SECOND gene, hence @2)
+# onto chemistry. Picking BOND opens the reaction sheet straight away; its default pair is r+g.
+next
+tap-ui USE LIGHT @2
+tap-ui BOND
+tap-ui close
+expect bond rg
+expect fuelConflicts true
+next
+expect step 7/7
+
+# 5. THE BRANCH. r+g eats the monomer CONVERT grows on, so this lineage gets the conversion chapter.
+next
+expect chapter ch02-conversion
