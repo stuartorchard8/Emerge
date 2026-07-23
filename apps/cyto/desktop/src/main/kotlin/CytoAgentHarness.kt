@@ -54,10 +54,13 @@ import javax.imageio.ImageIO
  * run <ticks> | runs <sec>   # advance the sim
  * camera reset|zoom <f>|pan <dx> <dy>|follow <cellId>
  * tap <u> <v> | select <u> <v> | spawn <u> <v>   # pointer at normalised screen coords (0..1)
+ *                            # `tap` runs the host's press pipeline: UI first, world only if unconsumed
  * clickcell <id> | dragcell <id> <u> <v> <ticks> # target a cell by entity id; drag spans <ticks> ticks
  * cells                      # list cells (id, type, biomass, selected, screen u,v)
  * elements                   # list the visible on-screen buttons (by label)
- * tap-ui <label>             # click a button by (partial, case-insensitive) label
+ * tap-ui <label>             # click a button by (partial, case-insensitive) label. Open dropdown rows
+ *                            # and pick-sheet rows are both reachable; a sheet's scrim hides whatever
+ *                            # is behind it from `elements`/`tap-ui`, as it does from a real click.
  * overlay matter|light       # toggle the light/matter overlay
  * next                       # click the coach "Next" (advances the chapter if its goal is met)
  * shot <name> | state [name] | echo <text>
@@ -259,7 +262,7 @@ object CytoAgentHarness {
                     }
                     pendingActions.add(PlayerAction.MovedCamera)
                 }
-                "tap" -> { val (x, y) = world(t[1].toFloat(), t[2].toFloat()); tapWorld(x, y) }
+                "tap" -> tapAt(t[1].toFloat(), t[2].toFloat())
                 "select" -> {
                     val (x, y) = world(t[1].toFloat(), t[2].toFloat())
                     controller.cellAt(x, y)?.let { controller.focus(it); pendingActions.add(PlayerAction.SelectedCell) }
@@ -393,6 +396,32 @@ object CytoAgentHarness {
                 controller.spawnBiomass = ch.spawnBiomass
                 controller.spawnCytoplasm = ch.spawnCytoplasm
             }
+        }
+
+        /**
+         * A press at normalised screen point ([u], [v]) — **the whole host press pipeline**, UI first.
+         *
+         * `CytoSceneView` consults `ui.hitTestDown` and then `controls.hitTest` before it touches the world,
+         * and a hit consumes the press. This did neither: it converted straight to world coordinates and
+         * called `controller.tap`, so a coordinate tap on ANY widget fell through and acted on the world
+         * behind it — tapping the action menu's CONVERT row spawned a cell instead of picking an action,
+         * which read as "synthetic taps can't reach popovers" when the popover was never consulted.
+         */
+        private fun tapAt(u: Float, v: Float) {
+            val px = u * RES_W
+            val py = v * RES_H
+            buildOverlay()   // the regions have to exist (and be current) before they can be hit
+            if (ui.hitTestDown(px, py) || controls.hitTest(px, py)) {
+                ui.hitTestUp(px, py)   // a click is down+up; steppers and toggles fire on one or the other
+                buildOverlay()
+                sync()
+                println("[agent] tap ($u, $v) -> consumed by the UI")
+                return
+            }
+            // Past the UI: a press outside it dismisses any open picker, exactly as the host does.
+            geneEditor.closeDropdown()
+            val (x, y) = world(u, v)
+            tapWorld(x, y)
         }
 
         private fun tapWorld(x: Float, y: Float) {
@@ -541,16 +570,41 @@ object CytoAgentHarness {
             buildOverlay()
             val hit = ui.tapLabel(label) || run { controls.rebuild(); controls.tap(label) }
             println("[agent] tap-ui '$label' -> ${if (hit) "clicked" else "no match"}")
-            // A tap may have queued a world edit (a gene edit, the mutation ladder). The harness runs no sim
-            // thread, so nothing else would drain it: publish here, or a following `shot`/`elements` with no
-            // `run` between would observe the pre-edit world. See CytoController.pendingWorldEdits.
-            controller.publish()
+            // A tap may have queued a world edit (a gene edit, the mutation ladder) OR merely parked a draft
+            // in the gene editor, which needs another render to flush. The harness runs no sim thread, so
+            // nothing else would drive either: settle here, or the next command observes a pre-edit world.
+            // See CytoController.pendingWorldEdits and [buildOverlay].
+            buildOverlay()
             sync()
         }
 
         /** Build the overlay widget tree headlessly (no draw) so [ui]/[controls] regions exist for
          *  enumeration + tap-by-label. */
-        private fun buildOverlay() {
+        /**
+         * Build the widget tree and then **settle it** — run the render → flush → publish cycle until the
+         * world stops changing.
+         *
+         * The inline gene editor is live but not immediate: a token's `onClick` only parks a `draft`, which
+         * `GeneEditor.render` flushes to `CytoController.setHeldGene` at the END of the next render, and
+         * that queues through `pendingWorldEdits` for the next `publish`. The live host renders every frame,
+         * so the round trip is one frame (~16ms) and invisible. The harness renders **once per command**, so
+         * without settling an edit lands two commands late: `tap-ui ALWAYS` looked like a dead click, and a
+         * following `tap-ui` acted on a stale card. That is what made the gene editor look unreachable
+         * headlessly — the taps were arriving all along.
+         *
+         * Two rounds is the normal cost (one to flush and apply, one to observe no further change); the cap
+         * only guards a hypothetical edit that re-triggers itself.
+         */
+        private fun buildOverlay(maxRounds: Int = 4) {
+            repeat(maxRounds) {
+                renderUiOnce()
+                val before = controller.heldGenome()
+                controller.publish()
+                if (controller.heldGenome() == before) return
+            }
+        }
+
+        private fun renderUiOnce() {
             val mask = director.controlMask
             // Wide always keeps the HUD: nothing on this width claims the bottom bar — the cell panel docks
                 // right and every sheet is a centred, scrimmed popover — so there is nothing to make room for.
