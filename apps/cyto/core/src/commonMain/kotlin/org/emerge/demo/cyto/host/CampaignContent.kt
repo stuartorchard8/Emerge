@@ -373,6 +373,18 @@ object CampaignContent {
      *  passes, which is the pressure the chapters after Genesis are built on. */
     private val EMPTY_WORLD = CytoScenario.DEFAULT.copy(
         name = "Genesis", founders = emptyList(), dayTicks = 900L, nightTicks = 2700L,
+        // A quarter of the default world's area. The campaign is a story about ONE cell, and at 64 a healthy
+        // lineage buries it: hundreds of siblings thriving around the cell the coach is talking about, which
+        // is both hard to follow and needlessly expensive to simulate. A smaller torus caps the bloom instead
+        // of asking the copy to apologise for it.
+        //
+        // Nothing else about the world changes with it, which is why this is a one-line knob rather than a
+        // retune. `CytoWorldConfig.matterBaseRes` is `cellsPerAxis / 16`, so the finest matter leaf keeps the
+        // same logical size and a cell's matter footprint (and its exchange dynamics) is invariant;
+        // `matterLevel` is per-leaf, so the ground is still 125 of each monomer. The daylight band is set by
+        // `dayFraction`, derived from the day/night ratio rather than the world size, so 900/2700 keeps it at
+        // the same quarter-of-the-torus it has always been.
+        worldSize = 32,
         // A whisper of Perlin variation over the monomer soup, so the empty world reads as a living place with
         // subtle regional richness rather than a flat grey — mean-normalised, so no spot is a better start.
         matterNoise = 0.12f,
