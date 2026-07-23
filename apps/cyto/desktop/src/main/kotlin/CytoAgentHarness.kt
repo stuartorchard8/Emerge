@@ -1,5 +1,6 @@
 package org.emerge.desktop
 import org.emerge.demo.cyto.host.CampaignContent
+import org.emerge.demo.cyto.host.CytoMenu
 
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.CytoRenderer
@@ -64,6 +65,8 @@ import javax.imageio.ImageIO
  *                            # is behind it from `elements`/`tap-ui`, as it does from a real click.
  * overlay matter|light       # toggle the light/matter overlay
  * next                       # click the coach "Next" (advances the chapter if its goal is met)
+ * menu campaign [done,ids] # open the front-end shell on the campaign MAP with that progress
+ *                            # (`menu off` closes it); tap-ui a chapter to start it
  * expect <field> <value>     # assert a reading (chapter/step/goal/cells/genes/convertChem/
  *                            # growthCap/divideFloor/hasDivide/recyclesExhaust/recycleReserve/
  *                            # bond/fuelConflicts); non-zero exit if any fail
@@ -124,6 +127,18 @@ object CytoAgentHarness {
         private lateinit var geneEditor: GeneEditor
         private val hud = CytoHud()
         private val pendingActions = HashSet<PlayerAction>()
+
+        /**
+         * The front-end shell, when a script has opened it (`menu campaign`) — null the rest of the time,
+         * which is the in-game case every other command assumes.
+         *
+         * Worth having because the campaign MAP lives here: it is the one screen whose whole content is
+         * derived from progress, so it cannot be reviewed by playing (you would have to own the right save)
+         * and could not be seen headlessly at all. [menuCompleted] stands in for the on-disk progress file so
+         * a script can state the progress it wants to look at.
+         */
+        private var menu: CytoMenu? = null
+        private val menuCompleted = HashSet<String>()
 
         /** Failed `expect`s, reported (and exited on) at the end of the run. */
         val failures = ArrayList<String>()
@@ -374,6 +389,10 @@ object CytoAgentHarness {
                 "did" -> { pendingActions.add(PlayerAction.valueOf(t[1])); sync() }
                 "next" -> { sync(); println("[agent] next -> ${if (director.tryAdvance(controller)) "advanced" else "blocked (goal not met)"}") }
                 "reset" -> { director.resetChapter(controller); sync(); println("[agent] reset -> ${director.snapshot()?.chapterId} step ${(director.snapshot()?.stepIndex ?: 0) + 1}") }
+                // `menu campaign [done-id,done-id...]` opens the front-end shell on the campaign map, with the
+                // named chapters marked complete; `menu off` closes it. While it is open the shell owns the
+                // screen, exactly as in the real hosts, so `shot`/`tap-ui`/`elements` all see the map.
+                "menu" -> openMenu(t.getOrElse(1) { "campaign" }, t.getOrElse(2) { "" })
                 "shot" -> { sync(); shot(t.getOrElse(1) { "shot" }) }
                 "state" -> { sync(); dumpState(t.getOrElse(1) { "state" }) }
                 "expect" -> expect(line.removePrefix("expect").trim())
@@ -382,6 +401,32 @@ object CytoAgentHarness {
                 else -> error("unknown command '${t[0]}'")
             }
         }
+
+        /** `menu <campaign|off> [completed,ids]` — see the dispatch comment. */
+        private fun openMenu(page: String, completed: String) {
+            if (page == "off") { menu = null; println("[agent] menu closed"); return }
+            menuCompleted.clear()
+            menuCompleted.addAll(completed.split(",").map { it.trim() }.filter { it.isNotEmpty() })
+            menu = CytoMenu().apply {
+                campaignChapters = CampaignContent.PLAYABLE_CHAPTERS
+                campaignCompleted = { it in menuCompleted }
+                openCampaign()
+            }
+            println("[agent] menu -> $page, completed=${menuCompleted.sorted()}")
+        }
+
+        /** The front-end shell's callbacks. Starting a chapter closes the menu and hands over to the
+         *  director, so a script can walk in through the map the way a player does. */
+        private fun menuCallbacks() = CytoMenu.Callbacks(
+            onStart = {}, onContinue = { menu = null }, onLoadNamed = {}, onOpenSave = {},
+            onSave = {}, onDelete = {}, onSaveGenome = { _, _, _ -> },
+            onStartChapter = { ch ->
+                menu = null
+                controller.newGame(ch.scenario); director.start(ch, controller); renderer.resetView()
+                println("[agent] menu started chapter ${ch.id}")
+            },
+            onQuit = {},
+        )
 
         private fun advance(ticks: Int) {
             repeat(ticks.coerceAtLeast(0)) { controller.stepOnce() }
@@ -632,6 +677,9 @@ object CytoAgentHarness {
                 // editing leaves set indefinitely rather than only while a modal is up.)
                 val showHud = if (NARROW) (!geneEditor.isEditing && controller.lastHeldId == null) else true
             ui.frame {
+                // The front-end shell owns the whole screen when it is open, as in the real hosts.
+                val shell = menu
+                if (shell != null) { shell.render(this, emptyList(), menuCallbacks()); return@frame }
                 // Bar before the coach (BottomCenter stacks in draw order); its sheets go last.
                 if (showHud) {
                     hud.renderBar(this, controls, showPause = NARROW) {}
@@ -766,6 +814,8 @@ object CytoAgentHarness {
                 // editing leaves set indefinitely rather than only while a modal is up.)
                 val showHud = if (NARROW) (!geneEditor.isEditing && controller.lastHeldId == null) else true
             ui.frame {                                        // info panel + coach overlay + L0 HUD (both widths)
+                val shell = menu
+                if (shell != null) { shell.render(this, emptyList(), menuCallbacks()); return@frame }
                 // Bar before the coach (BottomCenter stacks in draw order); its sheets go last.
                 if (showHud) {
                     hud.renderBar(this, controls, showPause = NARROW) {}
