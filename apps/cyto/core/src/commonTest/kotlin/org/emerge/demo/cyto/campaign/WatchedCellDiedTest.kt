@@ -8,6 +8,7 @@ import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.components.TransformComponent
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -106,6 +107,82 @@ class WatchedCellDiedTest {
         val other = c.tick(0f).state.components.getTable<CytoCellComponent>().asMap().keys.first()
         c.focus(other)
         assertFalse(c.worldStats().watchedCellDied, "the new selection is alive")
+    }
+
+    // ── What the coach does about it ─────────────────────────────────────────────────────────────────
+
+    /** A world of [others] cells with a death on the books and nothing selected. */
+    private fun afterADeath(others: Int = 8) = CampaignQuery(
+        WorldStats(0L, others, mapOf(CellType.Collector to others), 3000, emptySet(),
+            focused = null, lineage = Lineage(geneCount = 3), watchedCellDied = true),
+        paused = false, selectedGenome = null,
+    )
+
+    private fun directorOn(step: Step): CampaignDirector {
+        val dir = CampaignDirector()
+        dir.start(
+            Chapter("t", 1, "T", "", org.emerge.demo.cyto.sim.CytoScenario.DEFAULT, listOf(step)),
+            CytoController(),
+        )
+        return dir
+    }
+
+    /** A beat waiting on a reading from the selected cell is stranded by the death, so the coach offers
+     *  another cell. */
+    @Test
+    fun aGoalThatNeedsASelectionGetsTheOffer() {
+        val dir = directorOn(Step("watch it", Gate.World("clear it", met = { (it.focused?.biomass ?: 0) > 100 })))
+        dir.update(afterADeath(), emptySet())
+        assertTrue(dir.watchedCellOffer)
+    }
+
+    /**
+     * ...but a beat that never reads the selection is untouched by the death, and must not be interrupted to
+     * discuss it. This is why the offer probes the gate instead of firing on the death alone: a player whose
+     * long-forgotten selection dies while a colony grows around them is not stuck, and telling them to pick
+     * another cell would be noise over a goal that is going fine.
+     */
+    @Test
+    fun aGoalThatIgnoresTheSelectionDoesNot() {
+        val dir = directorOn(Step("grow", Gate.World("grow to 20", met = { it.cellCount >= 20 })))
+        dir.update(afterADeath(), emptySet())
+        assertFalse(dir.watchedCellOffer, "nothing about this goal has become impossible")
+        assertEquals("grow", dir.snapshot()!!.text)
+    }
+
+    /** A beat whose goal IS the death has just been satisfied by it. Talking the player out of it there
+     *  would replace the payoff copy with a recovery offer for something that went right. */
+    @Test
+    fun aGoalThatWantedTheDeathDoesNot() {
+        val dir = directorOn(Step("it will fail", Gate.World("watch it die", met = { it.watchedCellDied })))
+        dir.update(afterADeath(), emptySet())
+        assertTrue(dir.gateReady)
+        assertFalse(dir.watchedCellOffer)
+    }
+
+    /** An empty world is the bigger problem, and has its own offer with its own way out (place a cell, not
+     *  pick one). Two coaches talking at once would be worse than either. */
+    @Test
+    fun extinctionOutranksIt() {
+        val dir = directorOn(Step("watch it", Gate.World("clear it", met = { (it.focused?.biomass ?: 0) > 100 })))
+        dir.update(afterADeath(others = 0), emptySet())
+        assertTrue(dir.extinctionOffer, "nothing left alive at all")
+        assertFalse(dir.watchedCellOffer, "so the offer is a cell to PLACE, not one to pick")
+    }
+
+    /**
+     * The authored case of the above: Competition's last beat asks the player to watch their upgraded cell
+     * fail, and gates on precisely that death. It is the one place in the campaign where this is the *win*,
+     * so the recovery offer must stay out of its way.
+     */
+    @Test
+    fun competitionsClosingBeatIsStillAllowedToWantTheDeath() {
+        val conversion = org.emerge.demo.cyto.host.CampaignContent.PLAYABLE_CHAPTERS
+            .first { it.id == org.emerge.demo.cyto.host.CampaignContent.BRANCH_CONVERSION }
+        val dir = directorOn(conversion.steps.last())
+        dir.update(afterADeath(), emptySet())
+        assertTrue(dir.gateReady, "the death IS the goal here")
+        assertFalse(dir.watchedCellOffer)
     }
 
     /** A rebuilt world carries no history of the last one. */

@@ -567,7 +567,7 @@ object CampaignContent {
                 text = "Lets investigate why the cost is so high for your cell. Take another look at the genome you've authored. Your first gene always converts {chem} to biomass, resulting in this situation where division is too expensive.",
                 gate = Gate.Next,
                 allow = LOOK,
-                world = WorldRun.Frozen,
+                world = WorldRun.Live,
             ),
             Step(
                 text = "Let's add a condition on the CONVERT gene to limit the cell's growth. Tap (ALWAYS) on the CONVERT gene to give it a condition, set the left side to (BIO), flip the (>) to (<), and set the number to 3000.",

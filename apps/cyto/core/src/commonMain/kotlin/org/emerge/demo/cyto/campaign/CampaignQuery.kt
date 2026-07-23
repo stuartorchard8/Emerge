@@ -34,10 +34,40 @@ class CampaignQuery(
 
     fun countOf(type: CellType): Int = stats.countByType[type] ?: 0
 
+    private companion object {
+        /** A quantity comfortably past any threshold the chapters gate on (the largest is a 3000 biomass
+         *  cap), for the laden probe cell. */
+        const val PROBE_LOAD = 1_000_000
+    }
+
     /** This same world with one cell alive in it — everything else (the lineage, the selection, the counts by
      *  type) untouched. Used to ask a satisfied gate *why* it is satisfied: a gate that stops being met here
      *  was met by the emptiness, i.e. the step's own goal was the die-off. See
      *  [CampaignDirector.extinctionOffer]. */
+    /**
+     * This same world with a **stand-in cell** selected, used to ask an unmet gate whether the missing
+     * selection is what is blocking it — only whether the gate's answer CHANGES is read, never what it is.
+     *
+     * Two of them, because one is not enough to tell. A goal phrased `held < N` answers differently for an
+     * empty cell, and a goal phrased `biomass > N` answers differently for a laden one; probing with either
+     * alone silently misses half the gates in the campaign. [full] fills the stand-in with everything the
+     * world actually contains ([WorldStats.speciesPresent]), so a gate asking after a specific molecule has
+     * one to find. A gate that ignores the selection cannot move under either, so more probes can only find
+     * more dependence, never invent it. See [CampaignDirector.watchedCellOffer].
+     */
+    fun withProbeSelection(full: Boolean): CampaignQuery {
+        val probe =
+            if (!full) FocusedCell(CellType.Collector, 0, emptyMap())
+            else FocusedCell(CellType.Collector, PROBE_LOAD, stats.speciesPresent.associateWith { PROBE_LOAD })
+        return CampaignQuery(
+            WorldStats(
+                stats.tick, stats.cellCount, stats.countByType, stats.maxBiomass, stats.speciesPresent,
+                probe, stats.lineage, stats.watchedCellDied,
+            ),
+            paused, selectedGenome,
+        )
+    }
+
     fun asIfPopulated(): CampaignQuery =
         if (cellCount > 0) this
         else CampaignQuery(

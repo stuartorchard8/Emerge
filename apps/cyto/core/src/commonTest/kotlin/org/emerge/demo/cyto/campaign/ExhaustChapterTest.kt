@@ -1,5 +1,6 @@
 package org.emerge.demo.cyto.campaign
 
+import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.host.CampaignContent
 import kotlin.test.Test
@@ -98,5 +99,68 @@ class ExhaustChapterTest {
     @Test
     fun theWasteGoalIsToldWhichMoleculeToWatch() {
         assertEquals("gb", query(3, loaded).lineage?.mitosisProduct)
+    }
+
+    // ── The watched cell dying on the final beat ─────────────────────────────────────────────────────
+
+    /** The same world, but the cell the player was watching has ruptured — the colony is untouched. */
+    private fun afterTheWatchedCellDied() = CampaignQuery(
+        WorldStats(
+            0L, 8, mapOf(CellType.Collector to 8), 3000, emptySet(),
+            focused = null, lineage = query(3, cleared, recycles = true).lineage, watchedCellDied = true,
+        ),
+        paused = false, selectedGenome = null,
+    )
+
+    /** The real final step, run by the real director, so this is the chapter as played. */
+    private fun directorOnTheFinalStep(): CampaignDirector {
+        val dir = CampaignDirector()
+        dir.start(Chapter("t", 1, "T", "", chapter.scenario, listOf(chapter.steps.last())), CytoController())
+        return dir
+    }
+
+    /**
+     * Stu's bug: on 7/7 the goal is a reading taken off the *selected* cell, so if that cell dies before
+     * dawn the gate can never be satisfied again — while the world carries on looking perfectly healthy,
+     * hundreds of siblings running the genome the player just wrote. Nothing announced it, and there was
+     * nothing to do; the beat simply stopped being winnable.
+     */
+    @Test
+    fun theWatchedCellDyingOnTheFinalBeatIsNotADeadEnd() {
+        val dir = directorOnTheFinalStep()
+        dir.update(afterTheWatchedCellDied(), emptySet())
+
+        assertFalse(dir.gateReady, "the goal is unreachable with nothing selected")
+        assertTrue(dir.watchedCellOffer, "so the coach has to say so")
+        assertTrue(dir.controlMask.allows(Control.Select), "and permit the pick it asks for")
+        assertTrue(
+            dir.snapshot()!!.text.contains("siblings"),
+            "the coach's own words, not the step's — a headless observer sees what the player sees",
+        )
+    }
+
+    /** ...and it goes away the moment they pick one, rather than needing to be dismissed. */
+    @Test
+    fun selectingAnotherCellPutsTheBeatBack() {
+        val dir = directorOnTheFinalStep()
+        dir.update(afterTheWatchedCellDied(), emptySet())
+        assertTrue(dir.watchedCellOffer)
+
+        dir.update(query(3, loaded, recycles = true), emptySet())
+        assertFalse(dir.watchedCellOffer, "they are watching a cell again")
+        assertTrue(dir.snapshot()!!.text.contains("watch the cell"), "and the beat's own copy is back")
+    }
+
+    /** The goal still has to be won on its merits: picking a fresh cell is not itself a pass. */
+    @Test
+    fun theOfferDoesNotSatisfyTheGoal() {
+        val dir = directorOnTheFinalStep()
+        dir.update(afterTheWatchedCellDied(), emptySet())
+        assertFalse(dir.gateReady)
+
+        dir.update(query(3, loaded, recycles = true), emptySet())
+        assertFalse(dir.gateReady, "a cell still full of waste has not cleared it")
+        dir.update(query(3, cleared, recycles = true), emptySet())
+        assertTrue(dir.gateReady)
     }
 }

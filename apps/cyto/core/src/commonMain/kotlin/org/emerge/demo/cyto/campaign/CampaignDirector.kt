@@ -151,6 +151,8 @@ class CampaignDirector {
         // The extinction offer needs a tap on empty space to be possible, whatever the step was allowing —
         // a step that masked spawning off did so to keep the player on task, and the task is gone.
         extinctionOffer -> (currentStep?.allow ?: ControlMask.ALL).plus(Control.Spawn)
+        // Likewise: the coach is asking them to pick another cell, so picking one has to be possible.
+        watchedCellOffer -> (currentStep?.allow ?: ControlMask.ALL).plus(Control.Select)
         else -> currentStep?.allow ?: ControlMask.ALL
     }
 
@@ -187,11 +189,58 @@ class CampaignDirector {
             return !evalGate(currentStep?.gate, q.asIfPopulated())
         }
 
+    /**
+     * The **one cell** the beat was about has died, while the rest of the lineage carries on — so the coach
+     * asks them to pick another instead of leaving them watching a corpse.
+     *
+     * The sibling of [extinctionOffer], for the other half of the campaign's beats. A step like Exhaust 7/7
+     * ("now watch the cell you have selected") gates on a reading taken from the *selected* cell, and the
+     * moment that cell ruptures the reading is null and the gate can never be satisfied again — but the world
+     * is fine, hundreds of its siblings are running the very genome the player just wrote, so nothing about
+     * the situation announces itself. The player is left waiting on a goal that has quietly become impossible.
+     *
+     * [gateWantsASelection] is what keeps this off every other step: a beat that never reads the selection is
+     * unaffected by the death, and must not be interrupted to talk about it.
+     */
+    val watchedCellOffer: Boolean
+        get() = active && !gateMet && !extinctionOffer &&
+            lastQuery?.watchedCellDied == true && lastQuery?.extinct == false && gateWantsASelection
+
+    /**
+     * Whether the unmet gate would answer differently if *something* were selected — i.e. the missing
+     * selection is what is blocking it.
+     *
+     * Probed rather than declared, for the same reason [goalIsExtinction] is: the gates are predicates the
+     * chapters author freely, and asking one what it depends on is more honest than maintaining a flag beside
+     * it that someone has to remember to set. Both stand-ins are tried, since a threshold gate only moves for
+     * one of them — see [CampaignQuery.withProbeSelection].
+     */
+    private val gateWantsASelection: Boolean
+        get() {
+            val q = lastQuery ?: return false
+            if (q.focused != null) return false
+            val gate = currentStep?.gate
+            return evalGate(gate, q.withProbeSelection(full = false)) != gateMet ||
+                evalGate(gate, q.withProbeSelection(full = true)) != gateMet
+        }
+
     /** What the coach says while [extinctionOffer] holds, in place of the step's own text. */
     private fun extinctionText(): String =
         "Your cells are all gone - but their genome is not. Tap an empty patch of world to place a new cell " +
             "carrying the genome you last authored, and carry on from there. Reset will rebuild the chapter " +
             "around you instead."
+
+    /** What the coach says while [watchedCellOffer] holds. */
+    private fun watchedCellText(): String =
+        "The cell you were watching is gone. Its siblings carry the same genome you just wrote, though - " +
+            "select one of them and carry on watching it."
+
+    /** The coach's copy for the situation the player is actually in, or null when that is just the step. */
+    private fun situationText(): String? = when {
+        extinctionOffer -> extinctionText()
+        watchedCellOffer -> watchedCellText()
+        else -> null
+    }
 
     /**
      * Begin a chapter, the world already standing — the host either restored this chapter's saved entry
@@ -328,10 +377,10 @@ class CampaignDirector {
         return CoachSnapshot(
             chapterId = ch.id, chapterTitle = ch.title,
             stepIndex = stepIndex, stepCount = ch.steps.size,
-            // The extinction offer REPLACES the step's text on screen, so it has to replace it here too —
-            // a headless observer that still saw the step text would be watching a different coach than the
+            // A situation offer REPLACES the step's text on screen, so it has to replace it here too — a
+            // headless observer that still saw the step text would be watching a different coach than the
             // player is.
-            text = if (extinctionOffer) extinctionText() else copy(step.text, step.altText),
+            text = situationText() ?: copy(step.text, step.altText),
             goal = goalText(step.gate)?.let { copy(it) },
             gateReady = gateReady, world = step.world,
         )
@@ -480,9 +529,9 @@ class CampaignDirector {
         return ui.panel(anchor, margin = margin, padding = PAD_DP, background = 0x11182AF2L, rowHeight = 22f, textSize = textSize, fillWidth = fillWidth) {
             title(clip(header, wrapChars), 0x6FD6C4FFL)
             gap(4f)
-            val extinct = extinctionOffer
-            val body = if (extinct) extinctionText() else copy(step.text, step.altText)
-            for (line in wrap(body, wrapChars)) row(line, if (extinct) 0xFFD86EFFL else 0xEAEEF6FFL)
+            val situation = situationText()
+            val body = situation ?: copy(step.text, step.altText)
+            for (line in wrap(body, wrapChars)) row(line, if (situation != null) 0xFFD86EFFL else 0xEAEEF6FFL)
             step.spotlight?.hint?.let { gap(2f); for (line in wrap(copy("→ $it"), wrapChars)) row(line, 0xFFD86EFFL) }
 
             // Objective line + progress for a World / Did gate.
