@@ -34,7 +34,10 @@ dragcell 0 0.4 0.55 20
 next
 
 # 5. Watch it starve. No genes means no way to rebuild, so it ruptures below 1000 biomass.
-run 3000
+# 4000, not 3000: measured in the pocket world, the cell is at biomass 1003 on tick 3000 - three
+# units above the rupture floor - and goes shortly after. The player just watches until it dies
+# (the gate is a cell count, not a clock), so only this script needs the margin.
+run 4000
 expect cells 0
 next
 
@@ -107,7 +110,9 @@ expect step 8/11
 # 5. It divides — and both daughters rupture on the spot. The step auto-advances on the die-off, so
 # there is no Next to click here. A cell splits its biomass in two, so dividing
 # under 2000 leaves each daughter below the 1000 rupture floor. The lineage wipes itself out.
-run 2000
+# 4000, not 2000: measured in the pocket world, the founder is still growing toward its divide floor at
+# tick 2000 and the die-off lands between 2000 and 4000. Nothing the player sees is on a clock.
+run 4000
 expect cells 0
 expect step 9/11
 

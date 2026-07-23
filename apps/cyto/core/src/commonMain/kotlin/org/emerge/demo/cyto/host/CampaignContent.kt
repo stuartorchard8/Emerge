@@ -373,18 +373,31 @@ object CampaignContent {
      *  passes, which is the pressure the chapters after Genesis are built on. */
     private val EMPTY_WORLD = CytoScenario.DEFAULT.copy(
         name = "Genesis", founders = emptyList(), dayTicks = 900L, nightTicks = 2700L,
-        // A quarter of the default world's area. The campaign is a story about ONE cell, and at 64 a healthy
-        // lineage buries it: hundreds of siblings thriving around the cell the coach is talking about, which
-        // is both hard to follow and needlessly expensive to simulate. A smaller torus caps the bloom instead
-        // of asking the copy to apologise for it.
+        // A POCKET UNIVERSE — a sixteenth of the default world's area, and the smallest the engine allows
+        // (`CytoWorldConfig.applyFrom` floors at 16). The campaign is a story about ONE cell, and a world
+        // with room to spare buries it: siblings thriving around the cell the coach is talking about, which
+        // is hard to follow while a concept is being explained.
         //
         // Nothing else about the world changes with it, which is why this is a one-line knob rather than a
-        // retune. `CytoWorldConfig.matterBaseRes` is `cellsPerAxis / 16`, so the finest matter leaf keeps the
-        // same logical size and a cell's matter footprint (and its exchange dynamics) is invariant;
-        // `matterLevel` is per-leaf, so the ground is still 125 of each monomer. The daylight band is set by
-        // `dayFraction`, derived from the day/night ratio rather than the world size, so 900/2700 keeps it at
-        // the same quarter-of-the-torus it has always been.
-        worldSize = 32,
+        // retune. Everything size-coupled is expressed as a RATIO of the torus: `matterBaseRes` is
+        // `cellsPerAxis / 16`, so a matter texel keeps the same logical size and a cell's matter footprint
+        // (and its exchange dynamics) is invariant; `matterLevel` is per-texel, so the ground still holds
+        // the same monomers per unit area; `LIGHT_FALLOFF` is `dayFraction * cellsPerAxis`, so 900/2700
+        // keeps the daylight band at the same quarter-of-the-torus it has always been.
+        //
+        // ⚠️ IT DOES NOT CAP THE POPULATION, which is what this was reached for. Measured, one founder of
+        // the ch02 genome left to run for 30k ticks:
+        //
+        //   - worldSize 32: stalls in its own crater and is extinct by tick 15000. It only gets going at all
+        //     because the player drags it into fresh matter, which the chapter's own copy asks them to do.
+        //   - worldSize 16: never has to move — the whole torus is within reach — so it divides continuously,
+        //     peaking near 900 cells around tick 20000 and settling near 500.
+        //
+        // So what limited the bloom was SCARCITY, not space, and shrinking the world relaxed it. The lever
+        // that would cap population is `matterLevel` (125 here), but it is knife-edge: at 60 and at 40 the
+        // founder never divides once in 30k ticks. Retuning that band is a campaign-authoring decision, not
+        // a geometry one, so it is deliberately left alone here.
+        worldSize = 16,
         // A whisper of Perlin variation over the monomer soup, so the empty world reads as a living place with
         // subtle regional richness rather than a flat grey — mean-normalised, so no spot is a better start.
         matterNoise = 0.12f,
