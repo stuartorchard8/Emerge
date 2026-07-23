@@ -1211,12 +1211,16 @@ object CampaignContent {
         chapterLockedUpScratch(),
     )
 
-    /** The chapter list the **real game** surfaces (menu + director) while the campaign is being reworked:
-     *  the WIP [SCRATCH_CHAPTERS] first (Genesis is the new opening), then the pre-inversion [CHAPTERS]. This
-     *  is what makes a scratch chapter reachable/testable in the actual menu, not just the agent harness.
-     *  Unlock still keys off [ORDER] (the main flow) — a scratch id isn't in ORDER, so [CampaignProgress.isUnlocked]
-     *  treats it as always-unlocked, which is exactly what a WIP chapter wants. */
-    val PLAYABLE_CHAPTERS: List<Chapter> = SCRATCH_CHAPTERS + CHAPTERS
+    /**
+     * The chapter list the **real game** surfaces (menu + director): the reworked arc, and only that.
+     *
+     * [CHAPTERS] — the pre-inversion Act I–III campaign — is deliberately **orphaned**: still compiled, still
+     * covered by its tests, but not reachable from the menu or the director's segue chain. It was written
+     * against the old chemistry (bonding cost energy) and reads wrong under the current model, so leaving it
+     * on the map would offer the player a route into a campaign that no longer describes this game. It stays
+     * in the source as the reference for whatever Act II becomes.
+     */
+    val PLAYABLE_CHAPTERS: List<Chapter> = SCRATCH_CHAPTERS
 
     /** Distinct characters in the chapters' player-facing copy that the bitmap font can't render (would
      *  show as `?`). Empty = all copy is safe. The harness runs this as a guard so a bad glyph is caught

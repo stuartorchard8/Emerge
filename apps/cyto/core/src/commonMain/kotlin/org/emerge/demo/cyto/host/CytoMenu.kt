@@ -1,5 +1,6 @@
 package org.emerge.demo.cyto.host
 
+import org.emerge.demo.cyto.campaign.CampaignMap
 import org.emerge.demo.cyto.campaign.Chapter
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.CytoScenario
@@ -20,12 +21,14 @@ import org.emerge.render.torus.ui.UiBuilder
 class CytoMenu {
     enum class Page { Title, Campaign, New, Custom, Load, Save, SaveGenome, About, Settings }
 
-    /** Campaign chapter list + unlock predicate, host-set each frame (drives the Campaign page). */
     /** Whether this host has a mouse (desktop) vs a touchscreen (android). Gates pointer-only settings like the
      *  right-click-camera toggle, which is meaningless on a touch device (two-finger camera there). */
     var hasMouse = true
+
+    /** The campaign, host-set each frame: the authored chapters and which of them are finished. What is
+     *  *unlocked* is derived from those two by [CampaignMap] rather than asked of the host — the map already
+     *  has to walk the graph to lay it out, and two places computing reachability is one too many. */
     var campaignChapters: List<Chapter> = emptyList()
-    var campaignUnlocked: (String) -> Boolean = { true }
     var campaignCompleted: (String) -> Boolean = { false }
 
     /** True once a world is running and the player has dismissed the menu — the host renders the sim instead. */
@@ -167,25 +170,95 @@ class CytoMenu {
         }
     }
 
+    /**
+     * The campaign as a **map** rather than a list: the chapters the player has reached, laid out by depth
+     * with the routes between them drawn in, and one layer of unnamed markers showing where it goes next.
+     *
+     * A list could not say the thing that matters here — the campaign *forks*, and a fork rendered as two
+     * consecutive rows is just a longer corridor. So the connectors are load-bearing, not decoration: they
+     * are how a branch reads as a branch.
+     *
+     * Drawn before the surrounding chrome so the panels sit on top of it.
+     */
     private fun campaign(ui: UiBuilder, cb: Callbacks) {
-        ui.panel(Anchor.Center, padding = 20f, background = 0x141C2CF0, rowHeight = 28f) {
+        val map = CampaignMap.build(campaignChapters, campaignCompleted)
+        drawMap(ui, map, cb)
+        ui.panel(Anchor.TopLeft, padding = 14f, background = 0x141C2CF0, rowHeight = 24f) {
             title("Campaign", 0x6FD6C4FFL)
-            row("Learn the world, one idea at a time.", 0x8B96A8FFL)
-            gap(8f)
             if (campaignChapters.isEmpty()) row("No chapters yet.", 0x8B96A8FFL)
-            for (ch in campaignChapters) {
-                val unlocked = campaignUnlocked(ch.id)
-                val done = campaignCompleted(ch.id)
-                val mark = if (done) "* " else ""
-                if (unlocked) {
-                    button("$mark${ch.title}", if (done) MENU_BTN else MENU_ACCENT) { cb.onStartChapter(ch) }
+            else {
+                // Two short lines rather than one long one: `row` clips rather than wraps, and a phone at
+                // 2.6x density fits about 26 characters across the whole screen.
+                row("Where you have been,", 0x8B96A8FFL)
+                row("and where it leads.", 0x8B96A8FFL)
+            }
+        }
+        ui.panel(Anchor.BottomLeft, padding = 14f, background = 0x141C2CF0, rowHeight = 26f) {
+            button("Back", MENU_QUIT) { page = Page.Title }
+        }
+    }
+
+    /** Place [map]'s nodes on a depth × lane grid and join them with elbow connectors. */
+    private fun drawMap(ui: UiBuilder, map: CampaignMap, cb: Callbacks) {
+        if (map.nodes.isEmpty()) return
+        ui.canvas {
+            val s = density
+            // The map is small and bounded by authoring (the campaign is a handful deep and two wide), so it
+            // is always shown whole: no scrolling, no panning, the shape readable at a glance. The grid is
+            // fitted to the screen but capped, then CENTRED in what's left — a five-node map on a big monitor
+            // should sit in the middle of it, not stranded against the top edge.
+            val top = 92f * s
+            val bottom = 64f * s
+            val rowH = ((screenH - top - bottom) / map.depthCount).coerceAtMost(118f * s)
+            val nodeH = (rowH * 0.44f).coerceAtMost(44f * s)
+            val gridW = (screenW - 80f * s).coerceAtMost(720f * s)
+            val gridX = (screenW - gridW) / 2f
+            val gridY = top + (screenH - top - bottom - rowH * map.depthCount) / 2f
+
+            fun cx(n: CampaignMap.Node): Float = gridX + gridW * n.x
+            fun cy(n: CampaignMap.Node): Float = gridY + rowH * (n.depth + 0.5f)
+            // One node width for every named chapter, so the map reads as a spine rather than as boxes of
+            // assorted importance — narrowed only where a node's band is too tight to fit it. A ghost is
+            // deliberately smaller: it is a marker, not a card.
+            fun w(n: CampaignMap.Node): Float {
+                val band = gridW * n.span - 16f * s
+                return if (n.revealed) band.coerceAtMost(230f * s) else band.coerceAtMost(96f * s)
+            }
+
+            // Connectors first, so the nodes cover their ends. Elbow-routed (down, across, down) because the
+            // rect renderer draws axis-aligned quads only - and an elbow reads as a route on a grid anyway.
+            val line = 2f * s
+            for (e in map.edges) {
+                val a = map.nodes[e.from]
+                val b = map.nodes[e.to]
+                val colour = if (b.revealed) MAP_EDGE else MAP_EDGE_DIM
+                val ax = cx(a); val ay = cy(a) + nodeH / 2f
+                val bx = cx(b); val by = cy(b) - nodeH / 2f
+                val mid = (ay + by) / 2f
+                rect(ax - line / 2f, ay, line, mid - ay, colour)
+                rect(minOf(ax, bx), mid - line / 2f, kotlin.math.abs(bx - ax) + line, line, colour)
+                rect(bx - line / 2f, mid, line, by - mid, colour)
+            }
+            for (n in map.nodes) {
+                val bw = w(n)
+                val x = cx(n) - bw / 2f
+                val y = cy(n) - nodeH / 2f
+                val ch = n.chapter
+                if (ch == null) {
+                    // A ghost says only that something is there. No title, no blurb, no click - the player is
+                    // being shown the shape of the road ahead, not its contents.
+                    box(x, y, bw, nodeH, MAP_GHOST, "???", MAP_GHOST_TEXT, textHeight = nodeH * 0.34f)
                 } else {
-                    // Locked: a non-interactive greyed row.
-                    row("[LOCKED] ${ch.title}", 0x5A6070FFL)
+                    val done = n.state == CampaignMap.State.Completed
+                    box(
+                        x, y, bw, nodeH, if (done) MAP_DONE else MAP_OPEN,
+                        text = ch.title, textColor = if (done) 0xB9C6D8FFL else 0xFFFFFFFFL,
+                        textHeight = nodeH * 0.34f,
+                    ) { cb.onStartChapter(ch) }
+                    // Offset off the node's centre line, which is where its outgoing connector runs.
+                    if (done) label("done", x + bw - 22f * s, y + nodeH + 4f * s, nodeH * 0.24f, 0x6E7A8CFFL)
                 }
             }
-            gap(8f)
-            button("Back", MENU_QUIT) { page = Page.Title }
         }
     }
 
@@ -324,6 +397,14 @@ class CytoMenu {
         private const val MENU_ACCENT = 0x2E6E5EFFL
         private const val MENU_QUIT = 0x53384AFFL
         private const val MENU_DANGER = 0xB03A3AFFL
+
+        // Map palette: a completed chapter recedes, an available one is lit, a ghost is barely there.
+        private const val MAP_DONE = 0x243049FFL
+        private const val MAP_OPEN = 0x2E6E5EFFL
+        private const val MAP_GHOST = 0x161C28FFL
+        private const val MAP_GHOST_TEXT = 0x4E5768FFL
+        private const val MAP_EDGE = 0x35415CFFL
+        private const val MAP_EDGE_DIM = 0x212936FFL
 
         private fun clamp(v: Int, lo: Int, hi: Int) = if (v < lo) lo else if (v > hi) hi else v
         private fun clampL(v: Long, lo: Long, hi: Long) = if (v < lo) lo else if (v > hi) hi else v
