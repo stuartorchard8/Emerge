@@ -12,17 +12,50 @@
 
 | # | item | state |
 |---|------|-------|
-| 1 | harness cannot reach the UI it tests | **open** — the big one, untouched |
+| 1 | harness cannot reach the UI it tests | **DONE** `960876a1` + `65ba39e5` — diagnosis was wrong, see below |
 | 2 | no cheap way to construct a world state | **DONE** `95b97bdc` |
 | 3 | coach copy names UI tokens unchecked | **DONE** `80345934` |
 | 4 | `CytoEditLatencyTest` is a noisy metric | **DONE** `f402435b` |
 | 5 | the test suite took 6m27 | **DONE** `25af3af7` — added this session, see below |
 
-**Item 1 is the only one left**, and it is the biggest. Everything else on the original list is built.
+**Everything on the original list is built.** The one thing still outstanding is the *follow-on* to item 1:
+an end-to-end script that plays `ch00-genesis` → `ch01-divide` through the UI, both branches. That is now
+possible; it wasn't before.
 
 ---
 
-## 1. The harness cannot reach the UI it exists to test
+## 1. The harness cannot reach the UI it exists to test — **DONE** (`960876a1`, `65ba39e5`)
+
+> **The diagnosis below was wrong.** It is kept as written because the *evidence* was real — the four dead
+> ends all happened — but the cause was not "the popup is drawn outside the hit-test registry". The registry
+> was fine. Investigation 2026-07-23, driven entirely through the harness:
+>
+> **Refuted.** `elements` *does* list coach buttons (`Reset, Skip, Next >`) — that note was stale. Pick
+> sheets *were* always reachable by `tap-ui`; they use labelled `emitClick`. And `BIO < 3000` *was*
+> authorable — it just needed pacing nobody had worked out.
+>
+> **Three real causes**, none of them the suspected one:
+>
+> 1. **`tap <u> <v>` never consulted the UI.** The harness converted straight to world coordinates while
+>    the host (`CytoSceneView.kt:542`) runs `ui.hitTestDown || controls.hitTest` first. Every coordinate tap
+>    on a widget fell through — hence "tapping CONVERT spawned a cell". A harness bug, not a UI one.
+> 2. **Overlay (dropdown) click regions carried no label**, so `elements`/`tapLabel` could not see or reach
+>    an open menu — visible on screen, unaddressable.
+> 3. **The real blocker: inline gene edits landed two commands late.** `GeneEditor.render` flushes `draft →
+>    setHeldGene` at the *end* of render, which then queues for the next `publish`. The live host renders
+>    continuously (one frame, invisible); the harness renders once per command. So every probe read the
+>    world from before its own click, and the natural inference was "the tap didn't arrive".
+>
+> **The lesson worth keeping:** three of the four "dead ends" were one observability bug wearing three
+> masks. Before concluding a subsystem is unreachable, check that you are *observing* it after it has
+> settled — the harness's one-render-per-command model is not the host's continuous loop, and anything
+> deferred to "next frame" silently becomes "next command, or the one after".
+>
+> A fourth issue surfaced while fixing these: `tapLabel` had no notion of layering, so with a sheet open it
+> would fire a token *behind* the scrim. Fixed with a modal barrier — a driver is now offered exactly the
+> set a player could click.
+
+### The original diagnosis (kept for the evidence)
 
 **Evidence (four separate dead ends in one session).** Synthetic taps fall *through* popovers and pick
 sheets to the world — tapping the action menu's CONVERT row spawned a cell instead of choosing an action.
@@ -49,8 +82,13 @@ hit-test registry that `tap-ui`/`elements` walk. `GeneEditor.renderPickerSheet` 
 coach buttons; `tap-ui "CONVERT"` picks it from an open action menu; and a harness script can author
 `BIO < 3000` on a gene through the same taps the coach tells the player to make.
 
-**Then:** add a script that plays `ch00-genesis` → `ch01-divide` end-to-end through the UI, both branch
-choices. That script is the regression test for every future campaign edit.
+**Done when:** met. `elements` lists open menu rows; `tap-ui CONVERT` picks from an open action menu; a
+coordinate `tap` on a widget is consumed rather than spawning a cell; and `BIO < 3000` is authored by nine
+`tap-ui` commands, the card reading `WHEN BIO < 3000` (orange, since 4000 fails it).
+
+**Then — still outstanding:** a script that plays `ch00-genesis` → `ch01-divide` end-to-end through the UI,
+both branch choices. That script is the regression test for every future campaign edit, and it is now
+writable.
 
 ---
 
