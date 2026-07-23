@@ -87,7 +87,6 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
     private var cameraMovedSignal = false
     private var speedChangedSignal = false
     private var cellMovedSignal = false
-    private var chemistryOpenedSignal = false
 
     // A native name dialog is up (guards re-posting while the menu sits on a name page).
     private var nameDialogShown = false
@@ -274,7 +273,6 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
             if (cameraMovedSignal) { actions.add(PlayerAction.MovedCamera); cameraMovedSignal = false }
             if (speedChangedSignal) { actions.add(PlayerAction.ChangedSpeed); speedChangedSignal = false }
             if (cellMovedSignal) { actions.add(PlayerAction.MovedCell); cellMovedSignal = false }
-            if (chemistryOpenedSignal) { actions.add(PlayerAction.OpenedChemistryTable); chemistryOpenedSignal = false }
             val heldNow = controller.lastHeldId?.value
             if (heldNow != null && heldNow != prevHeldId) actions.add(PlayerAction.SelectedCell)
             director.update(
@@ -282,6 +280,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                     controller.worldStats(),
                     paused = paused,
                     selectedGenome = genomes.getOrNull(selectedGenome)?.name,
+                    chemistryOpen = geneEditor.chemistryOpen,
                 ),
                 actions,
             )
@@ -320,9 +319,6 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                 if (mask.allows(Control.GeneEditor)) {
                     geneEditor.render(
                         this, controller,
-                        // Ch00 gates a step on the chemistry table being opened. This used to be a TODO() —
-                        // which is a THROW: opening the table on a phone crashed the app.
-                        onChemistryOpened = { chemistryOpenedSignal = true },
                         grouping = director.activeChapter?.grouping,
                         insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                         narrow = true,

@@ -125,15 +125,32 @@ sealed interface Gate {
     /** Manual: the player reads and clicks "Next". */
     object Next : Gate
 
-    /** A live world condition. [desc] is shown as the objective line; [progress] optionally drives a
-     *  progress bar as `current to target`. */
+    /**
+     * A live world condition — **the default**, and what a beat should gate on unless it genuinely cannot.
+     *
+     * State, not event: it asks whether the thing the coach described is *true*, so a player who did it
+     * before being asked has already satisfied it and moves straight on. That is the common case, not an
+     * edge one — people poke at a new game while they read, and Genesis spends its first four beats
+     * teaching interactions the player has very likely already tried.
+     *
+     * [desc] is shown as the objective line; [progress] optionally drives a progress bar as
+     * `current to target`.
+     */
     class World(
         val desc: String,
         val met: (CampaignQuery) -> Boolean,
         val progress: ((CampaignQuery) -> Pair<Int, Int>)? = null,
     ) : Gate
 
-    /** The player performed an interaction (detected by the host and reported to [CampaignDirector.update]). */
+    /**
+     * The player performed an interaction (detected by the host and reported to [CampaignDirector.update]).
+     *
+     * **Prefer [World].** This one only fires while its step is showing, so doing the thing a moment early
+     * does not count and the player is asked to repeat an action they have just performed — sometimes with
+     * no way to tell that the game wanted a *fresh* one. Reach for it only when there is no state to read:
+     * a gesture that leaves no trace (panning the camera, dragging a cell) is the honest case. Anything with
+     * a lasting consequence — a selection, an opened panel, an authored gene — has state, so gate on that.
+     */
     class Did(val action: PlayerAction, val desc: String) : Gate
 
     /** Every sub-gate is satisfied. */
@@ -147,7 +164,6 @@ enum class PlayerAction {
     ChangedSpeed,
     MovedCamera,
     PaintedCell,
-    OpenedChemistryTable,
     OpenedGeneEditor,
     /** The player dragged a cell around the world (grab + move). Lets the opening chapter teach "you can
      *  push cells about" as its own beat. */

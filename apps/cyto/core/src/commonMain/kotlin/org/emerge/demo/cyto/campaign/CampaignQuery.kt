@@ -11,6 +11,10 @@ class CampaignQuery(
     val stats: WorldStats,
     val paused: Boolean,
     val selectedGenome: String?,
+    /** The held cell's chemistry readout is expanded (`GeneEditor.chemistryOpen`) — host-owned UI state, so
+     *  a beat about reading the chemistry can gate on the panel being OPEN rather than on the tap that
+     *  opened it. Defaults false for the callers that have no editor (tests, headless probes). */
+    val chemistryOpen: Boolean = false,
 ) {
     val tick: Long get() = stats.tick
     val cellCount: Int get() = stats.cellCount
@@ -64,7 +68,7 @@ class CampaignQuery(
                 stats.tick, stats.cellCount, stats.countByType, stats.maxBiomass, stats.speciesPresent,
                 probe, stats.lineage, stats.watchedCellDied,
             ),
-            paused, selectedGenome,
+            paused, selectedGenome, chemistryOpen,
         )
     }
 
@@ -75,7 +79,7 @@ class CampaignQuery(
                 stats.tick, cellCount = 1, stats.countByType, stats.maxBiomass, stats.speciesPresent,
                 stats.focused, stats.lineage, stats.watchedCellDied,
             ),
-            paused, selectedGenome,
+            paused, selectedGenome, chemistryOpen,
         )
 }
 

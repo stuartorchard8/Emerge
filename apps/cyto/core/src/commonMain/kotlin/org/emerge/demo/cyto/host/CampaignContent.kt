@@ -442,6 +442,8 @@ object CampaignContent {
             // 1. Camera.
             Step(
                 text = "Welcome to Cyto. This is an empty world with nothing alive in it... yet. {pan} to move around and {zoom} to zoom.",
+                // One of the two beats here that genuinely has to be an EVENT (see Gate.Did): a camera
+                // move leaves no state behind to read, so there is nothing to ask "is it done?" about.
                 gate = Gate.Did(PlayerAction.MovedCamera, "Pan or zoom the view"),
                 allow = LOOK,
             ),
@@ -455,18 +457,20 @@ object CampaignContent {
             // 3. Inspect it.
             Step(
                 text = "Tap the cell to select it, revealing its info panel. This shows its size, its biomass, light exposure, and an empty genome.",
-                gate = Gate.Did(PlayerAction.SelectedCell, "Select the cell"),
+                gate = Gate.World("Select the cell", met = { it.focused != null }),
                 allow = LOOK,
             ),
             // 3.5 Inspect it.
             Step(
                 text = "Tap the chemistry section to view the detailed chemistry readouts. This cell is floating in a soup of three raw elements - REDOGEN, GREENUM and BLUEON. It also started with all three contributing equally to its biomass.",
-                gate = Gate.Did(PlayerAction.OpenedChemistryTable, "View the chemistry details"),
+                gate = Gate.World("View the chemistry details", met = { it.chemistryOpen }),
                 allow = LOOK,
             ),
             // 4. Move it.
             Step(
                 text = "Drag the cell around - you can move cells wherever you like. If you look closely as you move it, you'll see it exchange its contents with the environment to reach equilibrium.",
+                // The other event beat: a dragged cell is where it is, and cells drift on their own, so
+                // "has it been moved?" is not a question the world can answer.
                 gate = Gate.Did(PlayerAction.MovedCell, "Drag the cell"),
                 allow = LOOK,
                 world = WorldRun.Live,
@@ -720,7 +724,7 @@ object CampaignContent {
             Step(
                 text = "Now select one and look at what it is holding. Every division your cells have ever paid for has left a molecule of {bond} behind, and they have no use for it. They are filling up with their own waste products.",
                 detail = "Nothing is destroyed in this world, only rearranged. The atoms in that {bond} are the same atoms your cells started with - they are simply locked into a shape the genome has no gene for.",
-                gate = Gate.Did(PlayerAction.SelectedCell, "Select a cell and read its chemistry"),
+                gate = Gate.World("Select a cell and read its chemistry", met = { it.focused != null }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),

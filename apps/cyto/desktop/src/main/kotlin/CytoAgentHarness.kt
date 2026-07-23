@@ -395,7 +395,10 @@ object CytoAgentHarness {
                 "menu" -> openMenu(t.getOrElse(1) { "campaign" }, t.getOrElse(2) { "" })
                 "shot" -> { sync(); shot(t.getOrElse(1) { "shot" }) }
                 "state" -> { sync(); dumpState(t.getOrElse(1) { "state" }) }
-                "expect" -> expect(line.removePrefix("expect").trim())
+                // sync() first, as `shot` and `state` do: the director re-evaluates its gate there, so an
+                // `expect` straight after a step transition would otherwise read the gate state of the step
+                // BEFORE it — reporting a goal as unmet purely because nothing had asked yet.
+                "expect" -> { sync(); expect(line.removePrefix("expect").trim()) }
                 "dumpraw" -> dumpRaw()
                 "echo" -> println("[agent] ${line.removePrefix("echo").trim()}")
                 else -> error("unknown command '${t[0]}'")
@@ -436,7 +439,10 @@ object CytoAgentHarness {
         private fun sync() {
             if (!director.active) { pendingActions.clear(); return }
             applyChapterSpawn()
-            val q = CampaignQuery(controller.worldStats(), paused = false, selectedGenome = null)
+            val q = CampaignQuery(
+                controller.worldStats(), paused = false, selectedGenome = null,
+                chemistryOpen = geneEditor.chemistryOpen,
+            )
             director.update(q, pendingActions.toSet()); pendingActions.clear()
         }
 
@@ -692,9 +698,6 @@ object CytoAgentHarness {
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(
                     this,
                     controller,
-                    // Same signal the host raises (CytoSceneView.consumeChemistryOpened) — ch00-genesis
-                    // gates a step on it, so a TODO here made that step unreachable headlessly.
-                    onChemistryOpened = { pendingActions.add(PlayerAction.OpenedChemistryTable) },
                     grouping = director.activeChapter?.grouping,
                     insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                     narrow = NARROW,
@@ -828,9 +831,6 @@ object CytoAgentHarness {
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(
                     this,
                     controller,
-                    // Same signal the host raises (CytoSceneView.consumeChemistryOpened) — ch00-genesis
-                    // gates a step on it, so a TODO here made that step unreachable headlessly.
-                    onChemistryOpened = { pendingActions.add(PlayerAction.OpenedChemistryTable) },
                     grouping = director.activeChapter?.grouping,
                     insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                     narrow = NARROW,

@@ -1,0 +1,32 @@
+# THE EAGER PLAYER — does each thing before the coach asks for it.
+#
+# Genesis spends its opening beats teaching interactions the player has very likely already tried while
+# reading, so its goals are STATE ("a cell is selected"), not EVENTS ("a cell got selected just now"). An
+# event gate only fires while its own step is showing, which asked people to repeat what they had just done.
+#
+# This script gets ahead deliberately: it selects the cell and opens the chemistry readout during step 2,
+# then checks that steps 3 and 4 arrive already satisfied.
+
+campaign ch00-genesis
+expect step 1/11
+camera pan 0.05 0.05
+next
+expect step 2/11
+
+# Place the cell, then get ahead: select it AND open its chemistry, all during step 2.
+tap 0.35 0.5
+select 0.35 0.5
+tap-ui + CHEMISTRY
+next
+expect step 3/11
+
+# 3/11 asks for a selection they already made - it must already be satisfied.
+expect gateReady true
+next
+expect step 4/11
+
+# 4/11 asks for the chemistry panel they already opened - likewise.
+expect gateReady true
+next
+expect step 5/11
+echo === the eager player was not asked to repeat themselves ===
