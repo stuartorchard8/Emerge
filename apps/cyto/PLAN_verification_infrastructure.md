@@ -18,9 +18,10 @@
 | 4 | `CytoEditLatencyTest` is a noisy metric | **DONE** `f402435b` |
 | 5 | the test suite took 6m27 | **DONE** `25af3af7` — added this session, see below |
 
-**Everything on the original list is built.** The one thing still outstanding is the *follow-on* to item 1:
-an end-to-end script that plays `ch00-genesis` → `ch01-divide` through the UI, both branches. That is now
-possible; it wasn't before.
+**Everything on this plan is built, including item 1's follow-on** — the campaign now has a regression test
+that plays it (`apps/cyto/agent-scripts/`). What the plan does *not* cover, and what the next session should
+weigh: the campaign's own content debt (chapters 2-10 are still pre-inversion genomes migrated on load) and
+the ch02 branch chapters being opening-beat drafts.
 
 ---
 
@@ -86,9 +87,9 @@ coach buttons; `tap-ui "CONVERT"` picks it from an open action menu; and a harne
 coordinate `tap` on a widget is consumed rather than spawning a cell; and `BIO < 3000` is authored by nine
 `tap-ui` commands, the card reading `WHEN BIO < 3000` (orange, since 4000 fails it).
 
-**Then — still outstanding:** a script that plays `ch00-genesis` → `ch01-divide` end-to-end through the UI,
-both branch choices. That script is the regression test for every future campaign edit, and it is now
-writable.
+**Then — DONE** (`d784ead6`): `apps/cyto/agent-scripts/` holds both playthroughs, one per branch, 19
+assertions each, every action through the real UI. Verified negatively too — renaming `+ NEW GENE` fails
+them with 12 expectations and a non-zero exit.
 
 ---
 
