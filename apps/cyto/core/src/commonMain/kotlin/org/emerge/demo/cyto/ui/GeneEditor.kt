@@ -195,7 +195,7 @@ class GeneEditor {
 
     /** The four operand kinds, in picker order: a constant value, a cytoplasm count, total biomass, or
      *  the contact count. */
-    private val operandKindLabels: List<String> = listOf("Const", "Chem", "BIO", "Touch", "Nbrs")
+    private val operandKindLabels: List<String> = GeneCardLabels.OPERAND_KINDS
 
     /** True while a gene is open for editing. In the narrow layout the L3 modal is full-screen, so the host
      *  suppresses other overlays (the campaign coach) behind it — see `apps/cyto/UI_REDESIGN.md` §6.1. */
@@ -1109,11 +1109,7 @@ class GeneEditor {
     /** How an action reads in the UI. [ActionType.BreakBond] shows as **BREAK** (so the digestion row mirrors
      *  the synthesis row's **BOND**); [ActionType.None] — the authoring blank — shows as **NOTHING**, an
      *  invitation to pick a real action rather than the enum's bare `None`. */
-    private fun actionTypeLabel(t: ActionType) = when (t) {
-        ActionType.BreakBond -> "BREAK"
-        ActionType.None -> "NOTHING"
-        else -> t.name
-    }
+    private fun actionTypeLabel(t: ActionType) = GeneCardLabels.action(t)
 
     /** The real, player-choosable actions — every [ActionType] except the inert [ActionType.None] authoring
      *  blank, which is a starting state rather than something you'd deliberately select. */
@@ -1130,9 +1126,7 @@ class GeneEditor {
     private fun operandLabel(op: Operand): String = when (op) {
         is Operand.Constant -> op.value.toString()
         is Operand.Chem -> "CHEM ${sp(op.species)}"
-        Operand.Biomass -> "BIO"
-        Operand.Touching -> "TOUCH"
-        Operand.Neighbours -> "NBRS"
+        else -> GeneCardLabels.operand(op) ?: op.toString()
     }
 
     /** The **desktop inline gene editor** (`apps/cyto/UI_REDESIGN.md` §8a step 3b): the read sentence with its
@@ -1651,10 +1645,7 @@ class GeneEditor {
 
     /** Box 1 of the POWERED BY row: the source TYPE alone. What a BOND gene actually makes is box 2
      *  ([synthesisLabel]), so this never names a molecule. */
-    private fun sourceTypeLabel(s: EnergySource): String = when (s) {
-        EnergySource.Light -> "USE LIGHT"
-        is EnergySource.FormBond -> "BOND"
-    }
+    private fun sourceTypeLabel(s: EnergySource): String = GeneCardLabels.sourceType(s)
 
     private fun sourceLabel(s: EnergySource): String = sourceTypeLabel(s)
 }

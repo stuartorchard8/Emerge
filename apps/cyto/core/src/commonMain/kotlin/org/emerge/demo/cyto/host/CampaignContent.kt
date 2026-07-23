@@ -566,7 +566,7 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "Fortunately for your cell, there is another abundant energy source in this environment: chemistry. Change the DIVIDE gene's energy source from (LIGHT) to (BOND), then choose two chemicals to join together.",
+                text = "Fortunately for your cell, there is another abundant energy source in this environment: chemistry. Change the DIVIDE gene's energy source from (USE LIGHT) to (BOND), then choose two chemicals to join together.",
                 detail = "Joining two molecules releases energy - one unit per bond made - and this world is full of loose atoms to join. Any pair works, so pick whichever you like.",
                 gate = Gate.World("Power DIVIDE by bonding", met = { !it.lineage?.mitosisProduct.isNullOrEmpty() }),
                 allow = LOOK,
@@ -840,10 +840,10 @@ object CampaignContent {
                 spotlight = Spotlight(hint = "tap + GROW (2) to expand it"),
             ),
             Step(
-                text = "Each gene reads as one sentence: an ACTION, IF a CONDITION holds, powered by a SOURCE shown in brackets.",
+                text = "Each gene reads as one sentence, on three lines: what it DOES, WHEN it does it, and what POWERS it.",
                 gate = Gate.Next,
                 allow = LOOK,
-                detail = "Example: 'CONVERT RG IF BIO<3000 (LIGHT)' means - powered by light, while the cell is still small, lock rg into body mass. What to do, when to do it, and the power for it.",
+                detail = "Example: 'CONVERT FUEL TO MASS / WHEN BIO < 3000 / (USE LIGHT) TO POWER' means - while the cell is still small, lock fuel into body mass, paid for by daylight. What to do, when to do it, and the power for it.",
             ),
             Step(
                 text = "The two GROW genes work together: one bonds raw matter into food, the other locks that food into body mass. That loop keeps the cell fed and repaired.",
