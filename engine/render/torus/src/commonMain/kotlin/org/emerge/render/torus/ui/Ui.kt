@@ -30,8 +30,13 @@ class ActionButton(val label: String, val color: Long, val enabled: Boolean = tr
  * held, [releaseHold] on release.
  */
 class Ui {
-    private val rectRenderer = UiRectRenderer()
-    private val textRenderer = UiTextRenderer()
+    // Built on first draw, not on construction: both compile shaders, so eagerly creating them would mean a
+    // Ui could only exist inside a GL context — and the layout/input half of this class (which is all logic)
+    // could never be tested without one. Every use below is on a draw path, already inside the frame.
+    private val rectRendererLazy = lazy { UiRectRenderer() }
+    private val textRendererLazy = lazy { UiTextRenderer() }
+    private val rectRenderer by rectRendererLazy
+    private val textRenderer by textRendererLazy
     private var resW = 1f
     private var resH = 1f
     private var densityScale = 1f
@@ -125,6 +130,11 @@ class Ui {
     private var dragCurX = 0f
     private var dragCurY = 0f
     private var dragCommitted = false
+    // Long-press pickup ([longPressDrag]): the source under a press that hasn't been held long enough to
+    // become a drag yet. It is NOT [activeDrag] — the press is still an ordinary scroll/tap until the hold
+    // completes, which is the whole point. [updateHold] promotes it; movement past the slop cancels it.
+    private var pendingDrag: DragSource? = null
+    private var pendingSeconds = 0f
 
     // ── Hover ────────────────────────────────────────────────────────────────────────────────────────────
     // The last cursor position (px), persisted across frames (like hold/scroll state) so a widget rebuilt
@@ -153,6 +163,20 @@ class Ui {
     fun setDensity(scale: Float) {
         densityScale = scale.coerceAtLeast(0.01f)
     }
+
+    /**
+     * **Long-press to pick up a draggable card** (off by default = the desktop/mouse behaviour, where a press
+     * on a drag source takes priority over scrolling immediately).
+     *
+     * Turn it on wherever the drag surface *is* the scroll surface — a phone's cell sheet is a scrolling list
+     * made of draggable gene cards, so an immediate pickup would eat every scroll gesture. With this on, a
+     * press arms scroll as usual and only becomes a drag after [INITIAL_DELAY] with the finger held still;
+     * moving first is a scroll, releasing early is a tap.
+     *
+     * Set from the **layout** (narrow), not the input device, so forcing the narrow UI on desktop (Cyto's F2)
+     * reproduces the phone gesture exactly — otherwise it can't be tested without a phone in hand.
+     */
+    var longPressDrag = false
 
     /** Feed the current cursor position (px), for desktop **hover** affordances (`apps/cyto/UI_REDESIGN.md`
      *  §8a). Persists across frames, so the host calls it on every pointer move — *including* moves with no
@@ -328,11 +352,17 @@ class Ui {
         // still be a tap on a token inside the card; [dragTo] decides which it became once the pointer moves.
         activeDrag = null
         dragCommitted = false
+        pendingDrag = null
+        pendingSeconds = 0f
         if (activeHandle == null) {
             for (i in dragSources.indices.reversed()) {
                 val s = dragSources[i]
                 if (px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h) {
-                    activeDrag = s; dragStartX = px; dragStartY = py; dragCurX = px; dragCurY = py; break
+                    // Under [longPressDrag] the source is only *pending*: it must be held still to be picked
+                    // up ([updateHold]), and until then this press falls through to the scroll arm below and
+                    // to the click scan, exactly as if there were no drag source here at all.
+                    if (longPressDrag) { pendingDrag = s } else { activeDrag = s }
+                    dragStartX = px; dragStartY = py; dragCurX = px; dragCurY = py; break
                 }
             }
         }
@@ -359,6 +389,15 @@ class Ui {
     /** Feed pointer movement while held. If the press began in a scroll area, this scrolls it and (past
      *  [SCROLL_SLOP]) cancels the pending click, exactly as a drag does elsewhere. Returns true if it scrolled. */
     fun dragTo(px: Float, py: Float): Boolean {
+        // A pending long-press pickup that MOVES is a scroll, not a drag: drop it and let the scroll arm below
+        // take the gesture. The slop is generous (a fingertip resting on glass jitters far more than the 2px
+        // [SCROLL_SLOP] a mouse does) and is measured from the press point, not per-event.
+        pendingDrag?.let {
+            if (abs(px - dragStartX) > LONG_PRESS_SLOP * densityScale || abs(py - dragStartY) > LONG_PRESS_SLOP * densityScale) {
+                pendingDrag = null
+                pendingSeconds = 0f
+            }
+        }
         val src = activeDrag
         if (src != null) {
             dragCurX = px; dragCurY = py
@@ -396,6 +435,9 @@ class Ui {
         scrollOffsets[id] = ((scrollOffsets[id] ?: 0f) + dy).coerceIn(0f, max)
     }
 
+    /** How far [id] is scrolled (px from the top of its content). */
+    fun scrollOffsetOf(id: String): Float = scrollOffsets[id] ?: 0f
+
     /** The scroll area under a point, or null — lets a host route wheel events. */
     fun scrollAreaAt(px: Float, py: Float): String? =
         scrollRegions.firstOrNull { px >= it.x && px <= it.x + it.w && py >= it.y && py <= it.y + it.h }?.id
@@ -413,6 +455,10 @@ class Ui {
         // A card drag: a committed drag drops on the target under the release point (or null = no target) and
         // swallows the click; an un-committed press was really a tap, so fall through to the normal click scan
         // (the card's token controls fire). See [dragTo].
+        // A long-press pickup that never completed: the press was an ordinary tap after all, so forget it and
+        // let the click scan below run.
+        pendingDrag = null
+        pendingSeconds = 0f
         val src = activeDrag
         if (src != null) {
             activeDrag = null
@@ -452,6 +498,28 @@ class Ui {
     /** While a stepper button is held, repeats its step with an accelerating magnitude. Call each frame
      *  with the current pointer position; repeats pause while the pointer is off the button. */
     fun updateHold(px: Float, py: Float, dtSeconds: Float) {
+        // Long-press pickup: the finger has been still on a drag source for long enough, so take the gesture
+        // away from scroll/tap and start the drag under the finger. Run before the stepper logic below —
+        // a drag source need not sit on a click region at all, and if it does, the region may be a plain
+        // button with no `onStep` (which returns early).
+        pendingDrag?.let { p ->
+            pendingSeconds += dtSeconds
+            if (pendingSeconds >= INITIAL_DELAY) {
+                pendingDrag = null
+                pendingSeconds = 0f
+                activeDrag = p
+                dragCommitted = true      // the hold IS the commitment: the ghost appears without waiting for a move
+                dragStartX = px; dragStartY = py; dragCurX = px; dragCurY = py
+                activeScroll = null       // the press is no longer a scroll...
+                scrolled = false
+                heldRegion = null         // ...nor a tap on the card underneath
+                return                    // picking a card up never also scrolls the list out from under it
+            }
+        }
+        // Edge autoscroll: while dragging near the top/bottom of a scrolling list, keep scrolling it, so a
+        // drop target that starts off-screen can be reached at all. Uses the previous frame's regions (hosts
+        // tick this before rebuilding the tree), which is a frame stale and imperceptible.
+        if (dragCommitted) autoScrollDrag(px, py, dtSeconds)
         val r = heldRegion ?: return
         val step = r.onStep ?: return
         if (px < r.x || px > r.x + r.w || py < r.y || py > r.y + r.h) return
@@ -466,7 +534,23 @@ class Ui {
     }
 
     /** End any in-progress hold (call on pointer release). */
-    fun releaseHold() { heldRegion = null; heldSeconds = 0f; repeatTimer = 0f }
+    fun releaseHold() { heldRegion = null; heldSeconds = 0f; repeatTimer = 0f; pendingDrag = null; pendingSeconds = 0f }
+
+    /** Scroll the list under a dragged card when the pointer nears its top/bottom edge, at a rate that ramps
+     *  from 0 at [AUTOSCROLL_EDGE] to full at the edge itself (so it eases in instead of lurching). Only the
+     *  region under the pointer scrolls — dragging over a different list leaves this one where it was. */
+    private fun autoScrollDrag(px: Float, py: Float, dtSeconds: Float) {
+        val edge = AUTOSCROLL_EDGE * densityScale
+        val region = scrollRegions.lastOrNull { px >= it.x && px <= it.x + it.w && py >= it.y - edge && py <= it.y + it.h + edge } ?: return
+        // Positive = reveal content further down the list (the offset is a distance scrolled from the top).
+        val frac = when {
+            py < region.y + edge -> -(1f - ((py - (region.y - edge)) / (edge * 2f))).coerceIn(0f, 1f)
+            py > region.y + region.h - edge -> ((py - (region.y + region.h - edge)) / (edge * 2f)).coerceIn(0f, 1f)
+            else -> return
+        }
+        val max = maxOf(0f, region.contentH - region.h)
+        scrollOffsets[region.id] = ((scrollOffsets[region.id] ?: 0f) + frac * AUTOSCROLL_PX_PER_SEC * densityScale * dtSeconds).coerceIn(0f, max)
+    }
 
     /** Accelerating step magnitude by how long the button's been held (for ×1000-scale values). */
     private fun magnitude(t: Float): Int = when {
@@ -483,9 +567,11 @@ class Ui {
         else -> 0.50f
     }
 
+    /** Release GPU resources. Nothing to release if this Ui never drew — and asking for them at teardown
+     *  would *create* them, which is exactly what a never-drawn Ui has no context for. */
     fun cleanup() {
-        rectRenderer.deleteProgram()
-        textRenderer.cleanup()
+        if (rectRendererLazy.isInitialized()) rectRenderer.deleteProgram()
+        if (textRendererLazy.isInitialized()) textRenderer.cleanup()
     }
 
     // ── internal emit API (called by the builders) ─ all return Unit (so Item.emit overrides stay Unit) ─
@@ -546,8 +632,10 @@ class Ui {
         val h = textH + 8f * densityScale
         val pad = 8f * densityScale
         val w = UiTextRenderer.measureWidthPx(label, textH) + pad * 2f
-        val x = dragCurX + 12f * densityScale   // offset so the chip trails the cursor rather than hiding under it
-        val y = dragCurY - h * 0.5f
+        // Mouse: trail the cursor to its right. Finger: sit ABOVE the contact point and centred — a chip beside
+        // the pointer is under the hand that put it there, which is the one place it can't be read.
+        val x = if (longPressDrag) dragCurX - w * 0.5f else dragCurX + 12f * densityScale
+        val y = if (longPressDrag) dragCurY - h - 24f * densityScale else dragCurY - h * 0.5f
         emitOverlayRect(x, y, w, h, color)
         emitOverlayTextLeft(label, x + pad, y + (h - textH) * 0.5f, textH, 0xFFFFFFFFL)
     }
@@ -694,8 +782,14 @@ class Ui {
     }
 
     companion object {
-        private const val INITIAL_DELAY = 0.35f   // hold this long before auto-repeat begins
+        private const val INITIAL_DELAY = 0.35f   // hold this long before auto-repeat begins (and before a
+                                                  // [longPressDrag] pickup — sharing the constant keeps the
+                                                  // pickup and the "a long hold is not a click" cutoff at
+                                                  // hitTestUp exactly aligned, so no hold is both)
         private const val SCROLL_SLOP = 2f        // px of movement before a press becomes a scroll
+        private const val LONG_PRESS_SLOP = 12f   // dp a finger may wander and still be "held still"
+        private const val AUTOSCROLL_EDGE = 56f   // dp from a list edge where a drag starts scrolling it
+        private const val AUTOSCROLL_PX_PER_SEC = 700f   // dp/s at the very edge (ramped from 0)
     }
 }
 
@@ -766,6 +860,12 @@ class UiBuilder internal constructor(private val ui: Ui) {
 
     /** Whether a card drag (drag-and-drop) is live this frame (see [Ui.isDragging]). */
     val isDragging: Boolean get() = ui.isDragging
+
+    /** Require a long press to pick up a draggable card (see [Ui.longPressDrag]). Set from the layout at
+     *  build time, so one call site governs every host rather than each deciding for itself. */
+    var longPressDrag: Boolean
+        get() = ui.longPressDrag
+        set(v) { ui.longPressDrag = v }
     /** The id of the drag source being dragged, or null when no committed drag. */
     val draggingId: String? get() = ui.draggingId
     /** The drop-target id currently under the drag pointer, or null — for highlighting. */
@@ -1124,8 +1224,14 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
      *  list of (text, colour-or-null) segments (null → auto-contrast against [color]). Typically the gene's
      *  condition clauses one-per-line plus an action line. Unlike [button] it never centres and never widens
      *  the panel — long lines clip at the panel's scissor rather than pushing it past the screen. */
-    fun geneCard(lines: List<List<Pair<String, Long?>>>, color: Long, onClick: () -> Unit) =
-        items.add(GeneCardItem(lines, color, rowHeight * lines.size.coerceAtLeast(1), onClick))
+    /** A read-only multi-line card (the narrow layout's gene). Give it [dragId]/[onDrop] to make the whole
+     *  card a drag source, as [tokenRow] is on desktop — with [Ui.longPressDrag] on, picking it up takes a
+     *  hold, so a plain tap still opens it and a swipe still scrolls the list. */
+    fun geneCard(
+        lines: List<List<Pair<String, Long?>>>, color: Long,
+        dragId: String? = null, onDrop: ((String?) -> Unit)? = null,
+        onClick: () -> Unit,
+    ) = items.add(GeneCardItem(lines, color, rowHeight * lines.size.coerceAtLeast(1), dragId, onDrop, onClick))
 
     /** A left-aligned label row that reveals trailing [actions] (glyph buttons) **only while the cursor is
      *  over it** — desktop hover-reveal (`apps/cyto/UI_REDESIGN.md` §8a). On touch (no hover) the actions
@@ -1277,7 +1383,9 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
 
     private class GeneCardItem(
         val lines: List<List<Pair<String, Long?>>>,
-        val color: Long, override val height: Float, val onClick: () -> Unit,
+        val color: Long, override val height: Float,
+        val dragId: String? = null, val onDrop: ((String?) -> Unit)? = null,
+        val onClick: () -> Unit,
     ) : Item {
         private fun lineW(line: List<Pair<String, Long?>>, textH: Float) =
             line.fold(0f) { acc, s -> acc + UiTextRenderer.measureWidthPx(s.first, textH) }
@@ -1291,7 +1399,11 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
         }
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
             val inset = 1f
-            ui.emitRect(x, topY + inset, contentW, height - inset * 2f, color)
+            if (dragId != null && onDrop != null) ui.emitDragSource(dragId, x, topY, contentW, height, onDrop)
+            // The card being carried dims in place, so the list still shows where it came from (and where it
+            // will fall back to) while the ghost follows the finger.
+            val bg = if (dragId != null && ui.draggingId == dragId) dim(color, 0.45f) else color
+            ui.emitRect(x, topY + inset, contentW, height - inset * 2f, bg)
             val n = lines.size.coerceAtLeast(1)
             val lineH = (height - inset * 2f) / n
             val pad = textH * 0.6f
@@ -1700,6 +1812,12 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
         /** A list row's description text, relative to its title. */
         const val DESC_RATIO = 0.78f
     }
+}
+
+/** Scale a colour's RGB toward black by [f], keeping its alpha — "this row is inert right now". */
+private fun dim(rgba: Long, f: Float): Long {
+    fun ch(shift: Int) = (((rgba ushr shift) and 0xFF).toFloat() * f).toInt().coerceIn(0, 255).toLong()
+    return (ch(24) shl 24) or (ch(16) shl 16) or (ch(8) shl 8) or (rgba and 0xFF)
 }
 
 private fun contrast(rgba: Long): Long {
