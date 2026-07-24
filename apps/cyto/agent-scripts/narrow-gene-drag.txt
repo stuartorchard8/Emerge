@@ -1,0 +1,39 @@
+# Narrow (phone) layout: a gene card is picked up by LONG PRESS and dropped, the way desktop does it with a
+# mouse drag. Run this one narrow — it is the whole point:
+#
+#   ./gradlew :apps:cyto:desktop:cytoAgent --rerun-tasks \
+#     -Dcyto.agent.narrow=true -Dcyto.agent.w=560 -Dcyto.agent.h=1100 \
+#     --args="apps/cyto/agent-scripts/narrow-gene-drag.txt /tmp/cyto-agent"
+#
+# `dragto` picks the gesture from the layout, so the same line drives a hold here and a mouse drag on wide.
+
+fixture divide-funded
+expect genes 1
+tap-ui cell-grab
+
+# The authoring buttons exist on a phone at all (they were desktop-only until the sheet was un-gated).
+expect-ui + NEW GENE
+expect-ui + NEW GROUP
+
+# Duplicate: the drop zone at the end of the dragged gene's own group.
+dragto BOND >> DUPLICATE
+expect genes 2
+
+# Re-tag: drop on the "new group" placeholder, which raises the name dialog bound to that gene. The new
+# group's header appearing is the proof the tag landed — the world state can't see a grouping.
+dragto BOND >> NEW GROUP
+type MOTOR
+tap-ui CREATE GROUP
+expect-ui MOTOR (1)
+expect genes 2
+
+# Delete: the drop only ARMS the confirm; the gene survives until the dialog's own DELETE GENE.
+dragto BOND >> DELETE GENE
+expect genes 2
+tap-ui DELETE GENE
+expect genes 1
+
+# ...and a plain tap still opens the gene. Making the card draggable must not cost it its tap, which is the
+# failure the long press exists to prevent.
+tap-ui BOND
+expect-ui DONE

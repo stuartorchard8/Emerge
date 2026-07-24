@@ -67,6 +67,9 @@ import javax.imageio.ImageIO
  * next                       # click the coach "Next" (advances the chapter if its goal is met)
  * menu campaign [done,ids] # open the front-end shell on the campaign MAP with that progress
  *                            # (`menu off` closes it); tap-ui a chapter to start it
+ * dragto <src> >> <dst>      # pick a card up and drop it on a target (long-press on narrow; autoscrolls
+ *                            # the list when the target starts off-screen). draghover holds instead.
+ * expect-ui <label>          # assert a (partial) label is on screen; !<label> asserts it is not
  * expect <field> <value>     # assert a reading (chapter/step/goal/cells/genes/convertChem/
  *                            # growthCap/divideFloor/hasDivide/recyclesExhaust/recycleReserve/
  *                            # bond/fuelConflicts); non-zero exit if any fail
@@ -92,6 +95,11 @@ object CytoAgentHarness {
     // Which input phrasing the coach copy renders with. Defaults to MOUSE (emulating the desktop host);
     // -Dcyto.agent.touch verifies the phone wording headlessly.
     private val TOUCH = System.getProperty("cyto.agent.touch")?.toBoolean() ?: false
+    // Comfortably past the UI kit's pickup threshold, so a scripted long press is never a near-miss.
+    private const val LONG_PRESS_SECONDS = 0.5f
+    // Autoscrolling a held card to an off-screen drop target: enough rounds to cross a long genome.
+    private const val AUTOSCROLL_ROUNDS = 40
+    private const val AUTOSCROLL_STEP_SECONDS = 0.1f
 
     fun run(scriptText: String, outDir: File) {
         outDir.mkdirs()
@@ -399,6 +407,7 @@ object CytoAgentHarness {
                 // `expect` straight after a step transition would otherwise read the gate state of the step
                 // BEFORE it — reporting a goal as unmet purely because nothing had asked yet.
                 "expect" -> { sync(); expect(line.removePrefix("expect").trim()) }
+                "expect-ui" -> { sync(); expectUi(line.removePrefix("expect-ui").trim()) }
                 "dumpraw" -> dumpRaw()
                 "echo" -> println("[agent] ${line.removePrefix("echo").trim()}")
                 else -> error("unknown command '${t[0]}'")
@@ -516,6 +525,9 @@ object CytoAgentHarness {
             println("[agent] render size: ${RES_W}x$RES_H  density: $DENSITY")
             println("[agent] coach/panel buttons: $uiBtns")
             println("[agent] control buttons: $ctlBtns")
+            // A live drag changes what the panel offers (drop zones replace the create buttons), so say when
+            // one is in flight — otherwise a mid-drag listing looks identical to a dropped one.
+            ui.draggingId?.let { println("[agent] dragging: '$it' over drop target '${ui.hoveredDropTarget()}'") }
             // Geometry, so a touch-target audit can see how big these actually are at this render size.
             for (e in ui.elements())
                 println("[agent]   ui '${e.label}' x=${e.x.toInt()} y=${e.y.toInt()} w=${e.w.toInt()} h=${e.h.toInt()}")
@@ -580,12 +592,8 @@ object CytoAgentHarness {
             val src = ui.elements().firstOrNull { it.label.contains(parts[0], ignoreCase = true) }
             if (src == null) { println("[agent] dragto src '${parts[0]}' -> no match"); return }
             val sx = src.x + src.w * 0.5f; val sy = src.y + src.h * 0.5f
-            ui.hitTestDown(sx, sy)
-            ui.dragTo(sx, sy + 30f)   // one move past the slop commits the drag
-            // Rebuild: activeDrag persists across frames, so this pass sees draggingId set and registers the
-            // drag-only targets (the new-group placeholder + highlightable group headers).
-            buildOverlay()
-            val dst = (ui.elements() + ui.dropTargetElements()).firstOrNull { it.label.contains(parts[1], ignoreCase = true) }
+            pickUp(sx, sy)
+            val dst = reachDropTarget(parts[1])
             if (dst == null) { println("[agent] dragto dst '${parts[1]}' -> no match"); ui.hitTestUp(sx, sy); return }
             val dx = dst.x + dst.w * 0.5f; val dy = dst.y + dst.h * 0.5f
             ui.dragTo(dx, dy)
@@ -598,6 +606,48 @@ object CytoAgentHarness {
             sync()
         }
 
+        /**
+         * Locate a drop target by (partial) label while a drag is live, **scrolling the list to it** if it
+         * starts off-screen.
+         *
+         * Rows outside their viewport are culled before they emit anything, so on a phone-sized screen half
+         * the genome's targets simply do not exist to look at — the same bind a player is in, and the reason
+         * the toolkit autoscrolls a list while a card is held over its edge. Driving that here (hold near the
+         * bottom edge, rebuild, look again) is what makes those targets reachable in a script at all.
+         */
+        private fun reachDropTarget(label: String): Ui.UiElement? {
+            // Rebuild first: activeDrag persists across frames, so this pass sees draggingId set and registers
+            // the drag-only targets (the new-group placeholder + highlightable group headers).
+            buildOverlay()
+            fun find() = (ui.elements() + ui.dropTargetElements()).firstOrNull { it.label.contains(label, ignoreCase = true) }
+            find()?.let { return it }
+            val px = RES_W * 0.5f
+            val py = RES_H - 2f      // inside the sheet, hard against its bottom edge, where autoscroll is fastest
+            repeat(AUTOSCROLL_ROUNDS) {
+                ui.dragTo(px, py)
+                ui.updateHold(px, py, AUTOSCROLL_STEP_SECONDS)
+                buildOverlay()
+                find()?.let { return it }
+            }
+            return null
+        }
+
+        /**
+         * Press at [sx],[sy] and commit a card drag there — the gesture both drag commands start with.
+         *
+         * Which gesture that is depends on the layout, exactly as it does for a player: on a wide screen a
+         * single move past the slop takes the card, while the narrow sheet requires a **long press** (a
+         * scroll-vs-drag disambiguation it needs because the list is made of draggable cards). Getting this
+         * wrong is silent — a narrow drag driven the wide way just scrolls the genome and reports nothing.
+         */
+        private fun pickUp(sx: Float, sy: Float) {
+            ui.hitTestDown(sx, sy)
+            if (ui.longPressDrag) ui.updateHold(sx, sy, LONG_PRESS_SECONDS) else ui.dragTo(sx, sy + 30f)
+            // A pickup that didn't take is the failure mode worth naming: every later step still "succeeds"
+            // against a card that was never in flight, and the script passes while testing nothing.
+            if (ui.draggingId == null) println("[agent] WARNING: nothing picked up at ($sx, $sy) — not a drag source?")
+        }
+
         /** Like [dragToUi] but **holds** the drag over the destination without releasing, so a following
          *  `shot` captures the mid-drag visuals (the floating ghost + the highlighted drop target). Leaves the
          *  drag live — intended as the last gesture before a shot in a throwaway script. */
@@ -607,10 +657,8 @@ object CytoAgentHarness {
             buildOverlay()
             val src = ui.elements().firstOrNull { it.label.contains(parts[0], ignoreCase = true) }
             if (src == null) { println("[agent] draghover src '${parts[0]}' -> no match"); return }
-            ui.hitTestDown(src.x + src.w * 0.5f, src.y + src.h * 0.5f)
-            ui.dragTo(src.x + src.w * 0.5f, src.y + src.h * 0.5f + 30f)
-            buildOverlay()
-            val dst = (ui.elements() + ui.dropTargetElements()).firstOrNull { it.label.contains(parts[1], ignoreCase = true) }
+            pickUp(src.x + src.w * 0.5f, src.y + src.h * 0.5f)
+            val dst = reachDropTarget(parts[1])
             if (dst == null) { println("[agent] draghover dst '${parts[1]}' -> no match"); return }
             ui.dragTo(dst.x + dst.w * 0.5f, dst.y + dst.h * 0.5f)
             println("[agent] draghover '${parts[0]}' >> '${parts[1]}' -> holding (shot to capture)")
@@ -744,6 +792,25 @@ object CytoAgentHarness {
             else {
                 failures.add("$field: wanted '$want', got '$got'")
                 println("[agent] EXPECT FAIL $field: wanted '$want', got '$got'")
+            }
+        }
+
+        /**
+         * `expect-ui <label>` / `expect-ui !<label>` — assert a (partial) label is, or is not, on screen.
+         *
+         * The counterpart to [expect]'s world readings, for what the UI *offers*: that a re-tagged gene's new
+         * group header appeared, that an affordance shows up on a phone at all. Those are exactly the things
+         * a layout change breaks silently, and nothing in the world state can see them.
+         */
+        private fun expectUi(arg: String) {
+            val want = arg.removePrefix("!").trim()
+            val wantAbsent = arg.trim().startsWith("!")
+            buildOverlay()
+            val present = ui.elements().any { it.label.contains(want, ignoreCase = true) }
+            if (present != wantAbsent) println("[agent] EXPECT ok   ui ${if (wantAbsent) "!" else ""}'$want'")
+            else {
+                failures.add("ui: '$want' ${if (wantAbsent) "present but should not be" else "not on screen"}")
+                println("[agent] EXPECT FAIL ui: '$want' ${if (wantAbsent) "is present" else "is not on screen"}")
             }
         }
 
