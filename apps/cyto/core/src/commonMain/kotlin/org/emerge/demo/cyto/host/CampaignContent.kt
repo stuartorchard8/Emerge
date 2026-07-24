@@ -478,12 +478,13 @@ object CampaignContent {
             // 5. Watch it die.
             Step(
                 text = "Can you see the cell getting smaller? With no genes, a cell has no way to maintain itself. It slowly degrades into the environment, rupturing when its biomass goes below 1000 units.",
-                gate = Gate.World("The cell dies", met = { it.cellCount == 0 }),
+                gate = Gate.World("The cell ruptures", met = { it.cellCount == 0 }),
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
                 autoAdvance = true,
             ),
             // 6. Place YOUR cell — a fresh start, this one gets a gene.
+            // TODO block the coach watchedCellOffer here. It appears after the fresh cell is placed into the world when it shouldn't.
             Step(
                 text = "That cell couldn't rebuild itself. Let's fix that. Tap an empty spot to place a fresh cell. Then select it to view its genome.",
                 gate = Gate.World("Place and select a cell", met = { it.focused != null }),
@@ -626,12 +627,12 @@ object CampaignContent {
                 // by itself and the next step speaks to the empty world.
                 autoAdvance = true,
             ),
+            // TODO block the coach extinctionOffer and watchedCellOffer here, and introduce the copy for adding a new cell into this step.
             Step(
                 text = "Oops. It looks like we need some more tuning here. Take a look at your genome again.",
                 gate = Gate.World("Select a cell", met = { it.focused != null }),
                 allow = SPAWN,
                 world = WorldRun.Live,
-                autoAdvance = true,
             ),
             Step(
                 text = "Remember how cells with less than 1000 biomass rupture? Dividing cells share their biomass between their daughter cells, so if they divide with less than 2000 biomass then both daughters rupture immediately.",
@@ -920,10 +921,16 @@ object CampaignContent {
         spawnBiomass = STARTER_CELL_BIOMASS,
         steps = listOf(
             Step(
-                text = "Look at what your cells are built out of. {chem} is a single-atom-chemical. {bond} is two of them already joined together, and your cells make it themselves every time they pay for anything. Longer chemicals contribute more to biomass than shorter ones, so they are growing on the weaker of the two.",
+                text = "Look at what your cells are built from. {chem} is a single-atom-chemical. {bond} is two of them already joined together, and your cells make it themselves every time they pay for anything.",
                 gate = Gate.Next,
                 allow = LOOK,
-                world = WorldRun.Frozen,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "Longer chemicals contribute more to biomass than shorter ones, so lets make the switch.",
+                gate = Gate.Next,
+                allow = LOOK,
+                world = WorldRun.Live,
             ),
             Step(
                 text = "Update the CONVERT gene to change its target chemical from {chem} to {bond}.",
@@ -951,14 +958,13 @@ object CampaignContent {
                 autoAdvance = true,
             ),
             Step(
-                text = "Worse, not better. That cell starved with food all around it. Select another one and we will work out why.",
+                text = "Worse, not better. That cell starved with food all around it. Let's work out why.",
                 gate = Gate.World("Select a cell", met = { it.focused != null }),
                 allow = SPAWN,
                 world = WorldRun.Live,
             ),
             Step(
-                text = "A gene can only work with what is already in the cytoplasm. Your CONVERT gene wants {bond} to build from - and your BREAK gene spends every morning clearing out every last unit of it. Both genes are doing exactly what you told them to, but between them the cell never gets to grow.",
-                detail = "This is the same shape of problem the {chem} reserve had two chapters ago. One gene's output is another gene's input, and neither of them knows the other exists.",
+                text = "A gene can only work with what is already in the cytoplasm. Your CONVERT gene wants {bond} to build from - and your BREAK gene spends all day clearing out every last unit of it. Both genes are doing their job, but between them the cell can't grow anymore.",
                 gate = Gate.Next,
                 allow = LOOK,
                 world = WorldRun.Frozen,
@@ -968,7 +974,7 @@ object CampaignContent {
             // takes anything in a sane band rather than the exact number, so a player who reasons their own
             // way to 150 is not told they are wrong.
             Step(
-                text = "Lets give the BREAK gene a condition so it only clears the surplus. Tap (ALWAYS) on the BREAK gene, set the left side to {bond}, and set the right side to 100. Now it leaves a working reserve behind instead of taking the lot.",
+                text = "Lets give the BREAK gene a condition so it only clears the surplus. Tap (ALWAYS) on the BREAK gene, set the left side to {bond}, and set the right side to 100. Now it leaves a small reserve behind for the CONVERT gene to use.",
                 gate = Gate.World(
                     "Block the BREAK gene when {bond} is low",
                     met = { q -> q.lineage?.recycleReserve?.let { it in 1..1000 } == true },
@@ -978,11 +984,8 @@ object CampaignContent {
             ),
             // The payoff: measured, a capped cell comes back to 2999 and holds. 2800 is inside that.
             Step(
-                text = "Watch it come back. The same two genes, and now the one feeds the other - the day's recycling leaves enough behind for the night's growth to build on.",
-                gate = Gate.World(
-                    "Grow the cell back",
-                    met = { q -> (q.focused?.biomass ?: 0) >= 2800 },
-                ),
+                text = "Watch it come back. The same two genes, and now the one feeds the other - the day's recycling leaves enough behind for growth.",
+                gate = Gate.Next,
                 allow = LOOK,
                 world = WorldRun.Live,
             ),
@@ -1028,7 +1031,7 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "There is a way out of this, and it is not to undo what you chose - at least not for division. Cells in cyto can use any chemical compound for their biomass, as long as they have a gene to support it. In fact, longer chemicals contribute more to biomass than shorter ones.",
+                text = "There is a way out of this, and it isn't to choose a different bond - at least not for division. Cells in cyto can use any chemical compound for their biomass, as long as they have a gene to support it. In fact, longer chemicals contribute more to biomass than shorter ones.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
@@ -1083,6 +1086,7 @@ object CampaignContent {
         spawnGenome = emptyList(),
         spawnBiomass = STARTER_CELL_BIOMASS,
         steps = listOf(
+            // TODO block the coach extinctionOffer and watchedCellOffer here, and introduce the copy for adding a new cell into this step.
             Step(
                 text = "Back to the drawing board. Lets take another look at the genome.",
                 gate = Gate.World("Select a cell", met = { it.focused != null }),
@@ -1096,7 +1100,7 @@ object CampaignContent {
                 world = WorldRun.Frozen,
             ),
             Step(
-                text = "Lets change the energy source of the convert gene to bond {chem}. This way the cell produces the {chem} it needs by using the bond as the energy source for {chem} conversion.",
+                text = "Lets change the energy source of the convert gene to bond {chem}. This way the cell produces the {chem} it needs by using the bond as both the substrate and the energy source for growth.",
                 gate = Gate.World("Update the first gene to BOND {bond} as its energy source", met = {
                     it.lineage?.convertChem != null && it.lineage?.convertChem != ""
                             && it.lineage?.convertChem == it.lineage?.convertProduct
@@ -1154,7 +1158,7 @@ object CampaignContent {
             // Measured: the standing pile sits at 586 and never moves, because the genome makes {bond} and
             // spends it at the same rate. 300 is comfortably inside that whatever the player's cell settled at.
             Step(
-                text = "Select one of your cells and look at what it is holding. There is a pile of {bond} in there that never goes down.",
+                text = "Select one of your cells and look at what it is holding. There is a pile of {bond} locked in there that never goes down.",
                 gate = Gate.World(
                     "Find the {bond} your cells are sitting on",
                     met = { q ->

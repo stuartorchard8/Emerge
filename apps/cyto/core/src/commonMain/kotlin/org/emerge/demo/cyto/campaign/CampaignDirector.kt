@@ -226,14 +226,15 @@ class CampaignDirector {
 
     /** What the coach says while [extinctionOffer] holds, in place of the step's own text. */
     private fun extinctionText(): String =
-        "Your cells are all gone - but their genome is not. Tap an empty patch of world to place a new cell " +
-            "carrying the genome you last authored, and carry on from there. Reset will rebuild the chapter " +
+        "Your cells are all gone - but their genome is not. Tap anywhere in the world to place a new cell " +
+            "carrying the genome you last authored and carry on from there. Alternatively reset will rebuild the chapter " +
             "around you instead."
 
     /** What the coach says while [watchedCellOffer] holds. */
     private fun watchedCellText(): String =
-        "The cell you were watching is gone. Its siblings carry the same genome you just wrote, though - " +
-            "select one of them and carry on watching it."
+        "The cell you were watching is gone. Tap an empty patch of the world to place a new cell " +
+                "carrying the genome you last authored, and carry on from there. Reset will rebuild the chapter " +
+                "around you instead."
 
     /** The coach's copy for the situation the player is actually in, or null when that is just the step. */
     private fun situationText(): String? = when {
