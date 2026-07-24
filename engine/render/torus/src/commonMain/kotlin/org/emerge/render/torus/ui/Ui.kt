@@ -1243,12 +1243,16 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
      *  tokens), wrapping within [wrapWidth] dp so a long clause never clips (`apps/cyto/UI_REDESIGN.md`
      *  §8a — the desktop interactive gene card). [wrapWidth] is the caller's known content width (e.g. a
      *  fixed-width dock); [textSize] is dp. Continuation rows indent by [indent] dp. */
+    /** [alwaysShowActions] draws [lineActions]/[cardActions] unconditionally instead of on hover — required on
+     *  touch, where there is no hover and a hover-gated affordance simply does not exist. Shown actions also
+     *  reserve their width from the wrap, so tokens never run underneath them. */
     fun tokenLines(
         lines: List<List<UiTok>>, wrapWidth: Float, textSize: Float, indent: Float = 10f,
         background: Long = 0x00000000L,
         lineActions: List<List<HoverAction>> = emptyList(), cardActions: List<HoverAction> = emptyList(),
         dragId: String? = null, onDrop: ((String?) -> Unit)? = null,
-    ) = items.add(TokenRowItem(lines, wrapWidth * scale, textSize * scale, rowHeight, indent * scale, background, lineActions, cardActions, dragId, onDrop))
+        alwaysShowActions: Boolean = false,
+    ) = items.add(TokenRowItem(lines, wrapWidth * scale, textSize * scale, rowHeight, indent * scale, background, lineActions, cardActions, dragId, onDrop, alwaysShowActions))
 
     /** Vertical space, in dp. */
     fun gap(height: Float = 6f) = items.add(GapItem(height * scale))
@@ -1450,26 +1454,35 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
         val lines: List<List<UiTok>>, val wrapPx: Float, val textH: Float, val rowH: Float, val indentPx: Float,
         val background: Long, val lineActions: List<List<HoverAction>>, val cardActions: List<HoverAction>,
         val dragId: String? = null, val onDrop: ((String?) -> Unit)? = null,
+        val alwaysShowActions: Boolean = false,
     ) : Item {
         private class Placed(val tok: UiTok, val dx: Float, val w: Float)
         private class VLine(val rows: List<List<Placed>>, val actions: List<HoverAction>)
         private val gap = textH * 0.15f
+        /** Width a row of glyph buttons occupies, for both placement and the wrap reserve. */
+        private fun actionsW(n: Int) = if (n == 0) 0f else n * (rowH - 2f + gap)
+        /** The card-level buttons sit in the top-right corner, i.e. on the first line — which therefore has to
+         *  yield that much more room than the others, or the two sets of buttons land on each other. */
+        private val cardReserve = if (alwaysShowActions) actionsW(cardActions.size) else 0f
         private fun tokW(t: UiTok): Float = when (t) {
             is UiTok.Text -> UiTextRenderer.measureWidthPx(t.text, textH)
             is UiTok.Toggle -> UiTextRenderer.measureWidthPx(t.value, textH) + textH * 0.8f
             is UiTok.Menu -> UiTextRenderer.measureWidthPx(t.value, textH) + textH * 1.4f
         }
         private val vlines: List<VLine> = lines.mapIndexed { li, line ->
+            val acts = lineActions.getOrElse(li) { emptyList() }
+            // Permanently-visible buttons sit at the right edge, so they are not space the sentence can use.
+            val limit = wrapPx - if (alwaysShowActions) actionsW(acts.size) + (if (li == 0) cardReserve else 0f) else 0f
             val rows = ArrayList<List<Placed>>()
             var cur = ArrayList<Placed>()
             var cx = 0f
             for (tok in line) {
                 val w = tokW(tok)
-                if (cur.isNotEmpty() && cx + w > wrapPx) { rows.add(cur); cur = ArrayList(); cx = indentPx }
+                if (cur.isNotEmpty() && cx + w > limit) { rows.add(cur); cur = ArrayList(); cx = indentPx }
                 cur.add(Placed(tok, cx, w)); cx += w + gap
             }
             if (cur.isNotEmpty()) rows.add(cur)
-            VLine(rows, lineActions.getOrElse(li) { emptyList() })
+            VLine(rows, acts)
         }
         override val height = vlines.sumOf { it.rows.size } * rowH
         override fun measureWidth(textH: Float) = wrapPx
@@ -1520,9 +1533,9 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
             // consume token clicks — a press that doesn't move is still a tap on whatever token it hit.
             if (dragId != null && onDrop != null) ui.emitDragSource(dragId, x, topY, contentW, height, onDrop)
             val beingDragged = dragId != null && ui.draggingId == dragId
-            val cardHovered = cardActions.isNotEmpty() && ui.isHovered(x, topY, contentW, height)
+            val cardHovered = cardActions.isNotEmpty() && (alwaysShowActions || ui.isHovered(x, topY, contentW, height))
             var ry = topY
-            for (vl in vlines) {
+            for ((li, vl) in vlines.withIndex()) {
                 val lineTop = ry
                 var lastEndX = x
                 for (row in vl.rows) {
@@ -1531,9 +1544,14 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
                     row.lastOrNull()?.let { lastEndX = x + it.dx + it.w }
                     ry += rowH
                 }
-                // Per-line affordances (the clause +/×) reveal right after the line's last token on hover.
-                if (vl.actions.isNotEmpty() && ui.isHovered(x, lineTop, contentW, ry - lineTop))
-                    drawActions(ui, vl.actions, lastEndX + gap * 2f, ry - rowH)
+                // Per-line affordances (the clause +/×). On a mouse they reveal on hover, right after the
+                // line's last token; when always shown they pin to the right edge, in the width the wrap
+                // reserved for them, so they hold one column instead of jittering with the sentence.
+                if (vl.actions.isNotEmpty()) {
+                    if (alwaysShowActions)
+                        drawActions(ui, vl.actions, x + contentW - actionsW(vl.actions.size) - (if (li == 0) cardReserve else 0f), ry - rowH)
+                    else if (ui.isHovered(x, lineTop, contentW, ry - lineTop)) drawActions(ui, vl.actions, lastEndX + gap * 2f, ry - rowH)
+                }
             }
             // The card-level ⋮ sits at the top-right corner while any part of the card is hovered.
             if (cardHovered && !beingDragged) {
