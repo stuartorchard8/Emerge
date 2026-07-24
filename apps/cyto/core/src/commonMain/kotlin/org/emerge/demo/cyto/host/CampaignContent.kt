@@ -456,7 +456,7 @@ object CampaignContent {
             ),
             // 3. Inspect it.
             Step(
-                text = "Tap the cell to select it, revealing its info panel. This shows its size, its biomass, light exposure, and an empty genome.",
+                text = "Tap the cell to select it, revealing its info panel {panelLocation}. This shows its size, its biomass, light exposure, and an empty genome.",
                 gate = Gate.World("Select the cell", met = { it.focused != null }),
                 allow = LOOK,
             ),
@@ -495,7 +495,7 @@ object CampaignContent {
             // player makes their organism's first real choice. Frozen so the cell waits, un-decaying, while
             // they author it. The gate fires once the genome holds a CONVERT gene (any chemical).
             Step(
-                text = "Tap [+ NEW GENE] to add an empty gene. Note that the new gene has no conditions, so it's always active. Also it uses light as its energy source.",
+                text = "Tap [+ NEW GENE] on the info panel to add an empty gene. Note that the new gene has no conditions, so it's always active. It currently uses light as its energy source.",
                 gate = Gate.World("Give the cell a new gene", met = { it.lineage?.geneCount == 1 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
@@ -602,13 +602,13 @@ object CampaignContent {
             // source and choosing the pair is one continuous move - hence one step, gated on a COMPLETE
             // reaction (a product, not just a source type).
             Step(
-                text = "Now your cell has an upper-bound to its size, so division is nearly within reach. Sunlight still cannot pay it though - light arrives in a steady trickle, and division requires a lump sum.",
+                text = "Now your cell has an upper-bound to its size, so division is nearly within reach. However, sunlight still cannot pay for it - light arrives in a steady trickle, and division requires a lump sum.",
                 gate = Gate.Next,
                 allow = LOOK,
                 world = WorldRun.Live,
             ),
             Step(
-                text = "Fortunately for your cell, there is another abundant energy source in the environment: chemistry. Change the DIVIDE gene's energy source from (USE LIGHT) to (BOND), then choose two chemicals to join together.",
+                text = "Fortunately for your cell, there is another more abundant energy source available: chemistry. Change the DIVIDE gene's energy source from (USE LIGHT) to (BOND), then choose two chemicals to join together.",
                 detail = "Joining two molecules releases energy - one unit per bond made - and this world is full of loose atoms to join. Any pair works, so pick whichever you like.",
                 gate = Gate.World("Power DIVIDE by bonding", met = { !it.lineage?.mitosisProduct.isNullOrEmpty() }),
                 allow = LOOK,

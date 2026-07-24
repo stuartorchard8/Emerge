@@ -28,6 +28,7 @@ class InputHints(private val map: Map<String, String>) {
             "pan" to "Click and drag",
             "zoom" to "scroll",
             "grab" to "drag",
+            "panelLocation" to "at the top-right of the screen",
         ))
 
         /** Touch controls: a one-finger drag on empty space pans, a two-finger pinch zooms. */
@@ -35,6 +36,7 @@ class InputHints(private val map: Map<String, String>) {
             "pan" to "Drag",
             "zoom" to "pinch",
             "grab" to "drag",
+            "panelLocation" to "at the bottom of the screen. Drag up to expand it.",
         ))
     }
 }
