@@ -483,6 +483,40 @@ panel.
 
 ---
 
+## 8b. The fork is retired — one gene editor at every width (DECIDED 2026-07-24)
+
+**§8a's deliberate fork is reversed.** The gene card built for desktop is now the gene UI on a phone too:
+the card *is* the editor at both widths, every editable word a control that writes straight to the genome.
+The full-screen L3 modal, its chip body (`geneBody`), the read-only card (`geneButton`) and the
+draft/CANCEL/DONE contract are **deleted** — not disabled, deleted.
+
+Why the reversal, when §8a's reasoning was sound? Because what §8a actually established is that *editing in
+place beats drilling down when you can afford it* — and the constraint that said a phone couldn't afford it
+turned out to be about **hit-target size, not about the model**. At phone density the card's tokens come out
+at ~43dp, comfortably over the 48px minimum; the sentence wraps to the narrower column on its own. Nothing
+about the drill-down was buying anything the phone needed. What the fork cost was real: two editors for one
+concept, so every gene feature had to be built, tested and kept honest twice — and in practice the phone's
+copy silently fell behind (that is how it lost the authoring buttons entirely).
+
+What still differs is only the **container**, which is what §8 said all along:
+
+| | Narrow (phone) | Wide (desktop) |
+|---|---|---|
+| The gene | the same token card, wrapping to the screen | the same token card, wrapping to the dock |
+| A token's choices | the L4 **sheet** (big targets, room for the per-action blurbs) | **inline dropdown** under the word |
+| Per-clause `+`/`×` | **always drawn**, pinned right (there is no hover to reveal them) | hover-revealed |
+| Whole-gene DUP / DEL / group | the card's `⋮`, **and** long-press-drag | drag to the zones at the group's end |
+
+Two consequences worth remembering:
+
+- **`isEditing` is gone.** Nothing is full-screen any more, so the hosts no longer suppress the coach or the
+  HUD behind a modal — they key on "is a cell held" alone. This is the "durable predicate" §8a's occlusion
+  note asked for, arrived at by removing the thing that needed predicting.
+- **The sheet is the editor**, so it takes `SHEET_FRACTION` 0.72 rather than 0.58, and a genome still scrolls
+  past the fold on a real phone. That is inherent, not a bug: one gene card is ~250dp.
+
+---
+
 ## 9. Proposed build order
 
 > ### Gene card — blocking affordances + activity glow (2026-07-23)

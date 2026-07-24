@@ -259,7 +259,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                 r.follow(controller.cameraFocusId?.value ?: -1, pos?.first ?: -1f, pos?.second ?: -1f)
             }
             run {
-                val cellShown = geneEditor.isEditing || controller.lastHeldId != null
+                val cellShown = controller.lastHeldId != null
                 val (offX, offY) = geneEditor.freeAreaOffsetPx(narrow = true, cellShown, ui.resWidth, ui.resHeight, ui.scale, topObscuredPx = director.coachTopInsetPx)
                 r.setFollowOffsetPx(offX, offY)
             }
@@ -308,14 +308,13 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
 
         ui.frame {
             if (menu.inGame) {
-                val modalUp = geneEditor.isEditing
-                val showHud = !geneEditor.isEditing && controller.lastHeldId == null
+                val showHud = controller.lastHeldId == null
                 if (!showHud) hud.close()
                 // Same three-layer order as the desktop host: the bar claims the bottom edge FIRST (its
                 // anchor stacks in draw order), then the coach, then the sheets on top of everything.
                 if (showHud) hud.renderBar(this, c) { menu.openTitle(); paused = true }
                 // Coach next so the (expanded) cell sheet draws over it; the short peek never reaches it.
-                if (!modalUp) director.render(this, controller, narrow = true)
+                director.render(this, controller, narrow = true)
                 if (mask.allows(Control.GeneEditor)) {
                     geneEditor.render(
                         this, controller,

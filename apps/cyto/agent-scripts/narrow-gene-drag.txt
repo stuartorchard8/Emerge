@@ -12,8 +12,11 @@ expect genes 1
 tap-ui cell-grab
 
 # The authoring buttons exist on a phone at all (they were desktop-only until the sheet was un-gated).
+# They sit under the genome, so the sheet has to be scrolled to them first — as a player would.
+scroll cell-sheet 400
 expect-ui + NEW GENE
 expect-ui + NEW GROUP
+scroll cell-sheet -400
 
 # Duplicate: the drop zone at the end of the dragged gene's own group.
 dragto BOND >> DUPLICATE
@@ -33,7 +36,7 @@ expect genes 2
 tap-ui DELETE GENE
 expect genes 1
 
-# ...and a plain tap still opens the gene. Making the card draggable must not cost it its tap, which is the
-# failure the long press exists to prevent.
+# ...and a plain tap still edits. Making the card draggable must not cost it its taps, which is the failure
+# the long press exists to prevent. On touch a token opens the L4 sheet rather than an inline dropdown.
 tap-ui BOND
-expect-ui DONE
+expect-ui USE LIGHT

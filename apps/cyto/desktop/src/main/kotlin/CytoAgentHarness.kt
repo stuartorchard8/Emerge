@@ -69,6 +69,7 @@ import javax.imageio.ImageIO
  *                            # (`menu off` closes it); tap-ui a chapter to start it
  * dragto <src> >> <dst>      # pick a card up and drop it on a target (long-press on narrow; autoscrolls
  *                            # the list when the target starts off-screen). draghover holds instead.
+ * scroll <areaId> <dp>       # scroll a list (e.g. cell-sheet) so off-screen rows become reachable
  * expect-ui <label>          # assert a (partial) label is on screen; !<label> asserts it is not
  * expect <field> <value>     # assert a reading (chapter/step/goal/cells/genes/convertChem/
  *                            # growthCap/divideFloor/hasDivide/recyclesExhaust/recycleReserve/
@@ -339,6 +340,14 @@ object CytoAgentHarness {
                     }
                 }
                 "elements" -> listElements()
+                // Scroll a list by dp. A phone's cell sheet holds about two gene cards, so most of a genome
+                // is off-screen — and a row outside its viewport emits nothing, so it is unreachable by
+                // `tap-ui`/`expect-ui` exactly as it is by a finger until the list is moved.
+                "scroll" -> {
+                    buildOverlay()
+                    ui.scrollBy(t[1], t[2].toFloat() * DENSITY)
+                    println("[agent] scroll '${t[1]}' by ${t[2]}dp")
+                }
                 // Type into whichever gene-editor field currently has keyboard focus, routed exactly as
                 // CytoSceneView routes the real char-callback — so a script exercises the same path a player
                 // does. Without this, keyboard-driven UI is the one thing the harness can't reach.
@@ -729,7 +738,7 @@ object CytoAgentHarness {
                 // (It used to hide on `isEditing`, left over from the retired side-by-side editor column. That
                 // also never came back, because on wide `isEditing` means "a draft is parked", which inline
                 // editing leaves set indefinitely rather than only while a modal is up.)
-                val showHud = if (NARROW) (!geneEditor.isEditing && controller.lastHeldId == null) else true
+                val showHud = if (NARROW) controller.lastHeldId == null else true
             ui.frame {
                 // The front-end shell owns the whole screen when it is open, as in the real hosts.
                 val shell = menu
@@ -739,10 +748,7 @@ object CytoAgentHarness {
                     hud.renderBar(this, controls, showPause = NARROW) {}
                     if (!NARROW) hud.renderSpeed(this, controls)
                 }
-                if (director.active) {
-                    val modalUp = NARROW && geneEditor.isEditing
-                    if (!modalUp) director.render(this, controller, narrow = NARROW)
-                }
+                if (director.active) director.render(this, controller, narrow = NARROW)
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(
                     this,
                     controller,
@@ -867,7 +873,7 @@ object CytoAgentHarness {
             if (focus != null && !controller.isGrabbed) {
                 val pos = controller.cameraFocusPosition()
                 renderer.follow(focus.value, pos?.first ?: -1f, pos?.second ?: -1f)
-                val panelUp = geneEditor.isEditing || controller.lastHeldId != null
+                val panelUp = controller.lastHeldId != null
                 val (ox, oy) = geneEditor.freeAreaOffsetPx(NARROW, cellShown = panelUp, RES_W.toFloat(), RES_H.toFloat(), ui.scale, topObscuredPx = director.coachTopInsetPx)
                 renderer.setFollowOffsetPx(ox, oy)
                 renderer.snapFollow()
@@ -882,7 +888,7 @@ object CytoAgentHarness {
                 // (It used to hide on `isEditing`, left over from the retired side-by-side editor column. That
                 // also never came back, because on wide `isEditing` means "a draft is parked", which inline
                 // editing leaves set indefinitely rather than only while a modal is up.)
-                val showHud = if (NARROW) (!geneEditor.isEditing && controller.lastHeldId == null) else true
+                val showHud = if (NARROW) controller.lastHeldId == null else true
             ui.frame {                                        // info panel + coach overlay + L0 HUD (both widths)
                 val shell = menu
                 if (shell != null) { shell.render(this, emptyList(), menuCallbacks()); return@frame }
@@ -891,10 +897,7 @@ object CytoAgentHarness {
                     hud.renderBar(this, controls, showPause = NARROW) {}
                     if (!NARROW) hud.renderSpeed(this, controls)
                 }
-                if (director.active) {
-                    val modalUp = NARROW && geneEditor.isEditing
-                    if (!modalUp) director.render(this, controller, narrow = NARROW)
-                }
+                if (director.active) director.render(this, controller, narrow = NARROW)
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(
                     this,
                     controller,

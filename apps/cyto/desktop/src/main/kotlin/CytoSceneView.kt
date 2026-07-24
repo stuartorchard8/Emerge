@@ -229,7 +229,7 @@ object CytoSceneView {
             // Recentre the followed cell into the space the L2 panel/sheet doesn't cover.
             run {
                 val narrow = layout.forceNarrow || ui.resWidth < NARROW_MAX_PX
-                val cellShown = geneEditor.isEditing || controller.lastHeldId != null
+                val cellShown = controller.lastHeldId != null
                 val (offX, offY) = geneEditor.freeAreaOffsetPx(narrow, cellShown, ui.resWidth, ui.resHeight, ui.scale, topObscuredPx = director.coachTopInsetPx)
                 renderer.setFollowOffsetPx(offX, offY)
             }
@@ -292,14 +292,10 @@ object CytoSceneView {
                 drawReadouts(controller, renderer, controls)
                 // The Ui-based L0 HUD (CytoHud) is now the control surface on BOTH widths (UI_REDESIGN.md §8);
                 // the legacy scattered-button overlay is retired (CytoControls is kept as the state model only).
-                // A full-screen narrow modal owns the screen, so the coach hides entirely behind it.
-                val modalUp = narrow && geneEditor.isEditing
                 // Wide always keeps the HUD: nothing on this width claims the bottom bar — the cell panel docks
                 // right and every sheet is a centred, scrimmed popover — so there is nothing to make room for.
-                // (It used to hide on `isEditing`, left over from the retired side-by-side editor column. That
-                // also never came back, because on wide `isEditing` means "a draft is parked", which inline
-                // editing leaves set indefinitely rather than only while a modal is up.)
-                val showHud = if (narrow) (!geneEditor.isEditing && controller.lastHeldId == null) else true
+                // Narrow hides it for the cell sheet, which does claim the bottom edge.
+                val showHud = if (narrow) controller.lastHeldId == null else true
                 if (!showHud) hud.close()
                 // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
                 ui.frame {
@@ -311,9 +307,9 @@ object CytoSceneView {
                     }
                     // Coach next so the (expanded) narrow cell sheet draws over it; the short peek never
                     // reaches it. On wide the coach is bottom-centre and the panel docks right — no overlap.
-                    // Bottom-centre panel on wide, top-docked banner on narrow, nothing behind a full-screen
-                    // narrow modal.
-                    if (!modalUp) director.render(this, controller, narrow = narrow)
+                    // Bottom-centre panel on wide, top-docked banner on narrow. Nothing is full-screen any
+                    // more — a gene is edited in place in the sheet — so the coach always renders.
+                    director.render(this, controller, narrow = narrow)
                     if (mask.allows(Control.GeneEditor)) {
                         geneEditor.render(
                             this, controller,

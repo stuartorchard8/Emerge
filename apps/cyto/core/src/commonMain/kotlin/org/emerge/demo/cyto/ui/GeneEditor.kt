@@ -45,7 +45,9 @@ class GeneEditor {
         // much of the world each layout occludes). dp — multiply by scale for framebuffer px.
         const val CELL_PANEL_DP = 380f       // wide: dockRight cell-panel width
         const val PANEL_MARGIN_DP = 12f      // wide: dockRight / editor-column margin
-            const val SHEET_FRACTION = 0.58f     // narrow: dockBottom cell-sheet full (L2) height fraction
+        // The sheet is now the gene EDITOR, not a list that opens one, so it earns more of the screen than it
+        // did when a full-screen modal did the editing.
+        const val SHEET_FRACTION = 0.72f     // narrow: dockBottom cell-sheet full (L2) height fraction
         const val PEEK_FRACTION = 0.2f       // narrow: dockBottom cell-sheet collapsed peek (L1) height
 
         // Drag-and-drop re-grouping (desktop, §8a): a gene card is a drag source "gene-drag-<i>"; group
@@ -210,10 +212,6 @@ class GeneEditor {
     /** The four operand kinds, in picker order: a constant value, a cytoplasm count, total biomass, or
      *  the contact count. */
     private val operandKindLabels: List<String> = GeneCardLabels.OPERAND_KINDS
-
-    /** True while a gene is open for editing. In the narrow layout the L3 modal is full-screen, so the host
-     *  suppresses other overlays (the campaign coach) behind it — see `apps/cyto/UI_REDESIGN.md` §6.1. */
-    val isEditing: Boolean get() = draft != null
 
     /** A press outside the UI dismisses any open L4 picker sheet (the host calls this). */
     fun closeDropdown() { closePick() }
@@ -392,9 +390,8 @@ class GeneEditor {
         if (controller.lastHeldId != peekedId) { peekedId = controller.lastHeldId; cellExpanded = false; sheetDragFrac = null }   // new cell → peek
 
         // Progressive-disclosure UI everywhere (apps/cyto/UI_REDESIGN.md §8); `narrow` only chooses the
-        // container geometry — a bottom sheet + full-screen modal + bottom picker on a phone, a docked right
-        // panel + a column beside it + a centred popover on a wide screen. The sentence-model content is
-        // identical in both.
+        // container geometry — a bottom sheet + bottom picker on a phone, a docked right panel + a centred
+        // popover on a wide screen. The gene card itself is the SAME editor at both widths.
         val wide = !narrow
         narrowLayout = narrow
         pendingRetag?.let { (i, name) ->
@@ -413,8 +410,7 @@ class GeneEditor {
             // it; the drag id encodes the gene index, so the panel knows which gene is in flight.
             renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, wide = true, draggingGene = draggingGene)
         } else {
-            if (draft != null) renderGeneEditor(b, controller)
-            else renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, wide = false, draggingGene = draggingGene)
+            renderCellPanel(b, controller, info, grouping, insertableGroups, onExport, wide = false, draggingGene = draggingGene)
         }
         if (draggingGene != null) b.dragGhost("GENE ${draggingGene + 1}")
         draft?.let { renderPickerSheet(b, controller, it, wide) }
@@ -444,7 +440,9 @@ class GeneEditor {
         draggingGene: Int? = null,
     ): Float {
         if (wide) {
-            val body: PanelBuilder.() -> Unit = { cellBody(controller, info, grouping, insertableGroups, onExport, wide = true, draggingGene = draggingGene) }
+            // The dock is a fixed width, so the sentence wraps against it minus the panel's own padding.
+            val wrapDp = CELL_PANEL_DP - PANEL_MARGIN_DP * 2f
+            val body: PanelBuilder.() -> Unit = { cellBody(controller, info, grouping, insertableGroups, onExport, wide = true, wrapDp = wrapDp, draggingGene = draggingGene) }
             return b.dockRight("cell-panel", width = CELL_PANEL_DP, margin = PANEL_MARGIN_DP, rowHeight = 26f, textSize = 15f, block = body)
         }
         // Narrow: a shallow peek (name + biomass) that drags up to the full L2 sheet. While dragging, the
@@ -469,7 +467,9 @@ class GeneEditor {
         b.dockBottom("cell-sheet", heightFraction = liveFrac, background = 0x121722FFL, padding = padDp, rowHeight = 44f, textSize = if (showFull) 15f else 16f) {
             if (showFull) {
                 dragHandle("cell-grab", onTap = { cellExpanded = false; sheetDragFrac = null }, onDrag = onDrag, onRelease = onRelease)
-                cellBody(controller, info, grouping, insertableGroups, onExport, wide = false, draggingGene = draggingGene)
+                // The sheet is full-bleed, so the sentence wraps against the screen (in dp) less its padding.
+                cellBody(controller, info, grouping, insertableGroups, onExport, wide = false,
+                    wrapDp = b.screenW / b.density - padDp * 2f, draggingGene = draggingGene)
             } else {
                 // The collapsed peek is one non-scrolling card filling the sheet: a drag anywhere on it (not
                 // just a top handle) expands, and its tiny content can't scroll. Height = sheet minus padding.
@@ -493,12 +493,13 @@ class GeneEditor {
         controller: CytoController, info: CytoController.CellInfo,
         grouping: GenomeGrouping?, insertableGroups: Set<String>, onExport: () -> Unit,
         wide: Boolean = false,
+        wrapDp: Float = CELL_PANEL_DP - PANEL_MARGIN_DP * 2f,
         draggingGene: Int? = null,
     ) {
-        // Desktop edits each gene inline as an interactive sentence (§8a step 3b); narrow taps a read card to
-        // open the full-screen modal.
+        // ONE gene UI at every width (§8a step 3b): the card is the editor, each editable word a control that
+        // writes straight to the genome. Only the container differs — a docked column or a bottom sheet.
         fun PanelBuilder.gene(g: CytoController.CellInfo.GeneRow, i: Int) =
-            if (wide) geneTokenCard(controller, g, i) else geneButton(controller, g, i)
+            geneTokenCard(controller, g, i, wrapDp = wrapDp, touch = !wide)
         // Render the genes at [indices] (global genome positions, in group order). When [isOrigin] (the
         // section the dragged gene belongs to), interleave thin reorder drop slots — one before each gene and
         // one after the last, keyed by the target *rank* within the group — and cap the run with the DUPLICATE
@@ -545,7 +546,7 @@ class GeneEditor {
         // buttons (there'd otherwise be no way to author a first gene without duplicating one).
         run {
             gap(8f)
-            row(if (info.genes.isEmpty()) "GENOME  (EMPTY)" else "GENOME  (TAP A GENE TO EDIT)", 0x7A8699FFL)
+            row(if (info.genes.isEmpty()) "GENOME  (EMPTY)" else "GENOME  (TAP A WORD TO EDIT)", 0x7A8699FFL)
             val liveGenes = info.genes.map { it.gene }
             val effectiveGrouping = grouping ?: if (liveGenes.any { it.group.isNotEmpty() }) EMPTY_GROUPING else null
             val sections = effectiveGrouping?.sections(liveGenes)
@@ -595,85 +596,6 @@ class GeneEditor {
                 button("EXPORT GENOME", 0x3A6EA5FFL) { onExport() }
             }
         }
-    }
-
-    /**
-     * The **L3 gene-detail modal** (narrow/phone layout — `apps/cyto/UI_REDESIGN.md` §3). The gene reads as a
-     * sentence: **WHEN** <condition> **DO** <action> **POWERED BY** <source>, each phrase a tappable chip that
-     * opens its picker. Inline binary choices (comparator, sever, orient, keep) are segmented controls — no
-     * drill-down. Chip taps that need a value list (operands, action, source, morphogen, group) will open L4
-     * sheets in the next step; here they lay out and read live draft state.
-     */
-    /** The narrow (phone) full-screen gene editor: a draft-backed modal committed on DONE. Desktop no longer
-     *  uses this — its genome card edits live in place (§8a) — so there is only the one container geometry. */
-    private fun renderGeneEditor(b: UiBuilder, controller: CytoController) {
-        val d = draft ?: return
-        val idx = editingIndex ?: return
-        val title = "GENE ${idx + 1}" + if (d.group.isEmpty()) "" else " · ${d.group.uppercase()}"
-        val actions = listOf(
-            Triple("CANCEL", 0x808890FFL) { reset() },
-            Triple("DONE", 0x33AA33FFL) { commit(controller) },
-        )
-        val body: PanelBuilder.() -> Unit = { geneBody(controller, d) }
-        b.modal("gene-editor", title, onBack = { reset() }, actions = actions, onOverflow = { openPick(Pick.Overflow) },
-            statusBar = 24f, titleBar = 56f, bottomBar = 72f, rowHeight = 48f, textSize = 16f, body = body)
-    }
-
-    /** The gene-as-a-sentence body (WHEN / DO / POWERED BY / GROUP), shared by both container geometries. */
-    private fun PanelBuilder.geneBody(controller: CytoController, d: Gene) {
-        // ── The condition. An empty gate is the special ALWAYS case: no "WHEN" label, just the ALWAYS chip
-        // (tapping it drops in a first blank clause to start authoring). Otherwise WHEN + one row of three
-        // chips per AND-clause. ──
-        val clauses = d.condition.clauses
-        if (clauses.isEmpty()) {
-            chip("", "ALWAYS", 0x1E2634FFL) { draft = addFirstClause(d) }
-        } else {
-            row("WHEN", 0x7A8699FFL)
-            clauses.forEachIndexed { ci, cl ->
-                clauseRow(
-                    operandLabel(cl.lhs), if (cl.cmp == Comparison.Greater) ">" else "<", operandLabel(cl.rhs),
-                    onLhs = { openPick(Pick.Operand, ci, 0) }, onRhs = { openPick(Pick.Operand, ci, 1) },
-                    onCmp = { draft = withClauseAt(d, ci, cl.copy(cmp = if (cl.cmp == Comparison.Greater) Comparison.Less else Comparison.Greater)) },
-                )
-            }
-            if (clauses.size < CytoTuning.GENOME_MAX_CLAUSES)
-                chip("", "+ AND CLAUSE", 0x1E2634FFL) { draft = addClauseUi(d) }
-        }
-        gap(12f)
-
-        // ── DO: the action, then only the fields this action actually has ──
-        row("DO", 0x7A8699FFL)
-        chip("", actionTypeLabel(d.action.type), 0x35507AFFL) { openPick(Pick.Action) }
-        when (d.action.type) {
-            ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain ->
-                chip("OPERAND", sp(d.action.a)) { openPick(Pick.SpeciesA) }
-            ActionType.BreakBond ->
-                chip("", breakLabel(d.action), 0x35507AFFL) { openPick(Pick.Break) }
-            ActionType.Mitosis -> {
-                chip("MORPHOGEN", sp(d.action.a)) { openPick(Pick.SpeciesA) }
-                if (d.action.a.isNotEmpty())
-                    segmented("KEEP", listOf("CELL 2", "CELL 1"), if (d.action.morphogenToMother) 1 else 0) { i -> draft = d.copy(action = d.action.copy(morphogenToMother = i == 1)) }
-                chip("AXIS", sp(d.action.b)) { openPick(Pick.SpeciesB) }
-                if (d.action.b.isNotEmpty())
-                    segmented("ORIENT", listOf("ALONG", "ACROSS"), if (d.action.divideAcross) 1 else 0) { i -> draft = d.copy(action = d.action.copy(divideAcross = i == 1)) }
-                segmented("SEVER", listOf("NO", "YES"), if (d.action.rejectMother) 1 else 0) { i -> draft = d.copy(action = d.action.copy(rejectMother = i == 1)) }
-            }
-            else -> {}
-        }
-        if (d.action.type != ActionType.Mitosis)
-            chip("EFFICIENCY", d.efficiency.toString()) { openPick(Pick.Eff) }
-        gap(12f)
-
-        // ── POWERED BY: two boxes — the source TYPE, then (synthesis only) what it builds. Forming a bond is
-        // what pays now, so a synthesis gene's reaction belongs here rather than in the action. ──
-        row("POWERED BY", 0x7A8699FFL)
-        chip("", sourceLabel(d.source)) { openPick(Pick.Source) }
-        (d.source as? EnergySource.FormBond)?.let { s ->
-            chip("", synthesisLabel(s), 0x35507AFFL) { openPick(Pick.Bond) }
-        }
-        gap(12f)
-
-        chip("GROUP", d.group.uppercase().ifEmpty { "(NONE)" }) { openPick(Pick.Group) }
     }
 
     private fun openPick(p: Pick, clause: Int = -1, side: Int = 0) {
@@ -789,6 +711,11 @@ class GeneEditor {
                     listRow("KEEP IT", "GO BACK") { confirmingDelete = false }
                 } else {
                     listRow("DUPLICATE", "ADD A COPY OF THIS GENE") { controller.duplicateHeldGene(idx); closePick() }
+                    gap(4f)
+                    // The tap route to grouping. A mouse re-files a gene by dragging it onto a header, which a
+                    // finger can do too — but only if it thinks to try holding the card, so don't make it the
+                    // only way.
+                    listRow("MOVE TO GROUP", "FILE IT UNDER A SUBSYSTEM") { openPick(Pick.Group) }
                     gap(4f)
                     listRow("DELETE", "REMOVE THIS GENE") { confirmingDelete = true }
                 }
@@ -1163,7 +1090,13 @@ class GeneEditor {
      *  efficiency) edit the gene in place via [inlineEdit]; the builder/keyboard slots (operand, species,
      *  group) open the shared pick sheet as a popover via [openInlinePick]. Every change flushes straight to
      *  the genome (see [render]) — no draft/DONE. */
-    private fun PanelBuilder.geneTokenCard(controller: CytoController, g: CytoController.CellInfo.GeneRow, i: Int) {
+    private fun PanelBuilder.geneTokenCard(
+        controller: CytoController, g: CytoController.CellInfo.GeneRow, i: Int,
+        wrapDp: Float, touch: Boolean,
+    ) {
+        // [touch] changes only where a token's *choices* appear, never the card: a mouse drops an inline
+        // dropdown under the word, a finger gets the same L4 sheet the rest of the phone UI uses — big targets,
+        // and room for the per-action blurbs that made the list worth having.
         val gene = g.gene
         val grey = 0x9A9A9AFFL
         val ctl = 0x35507AFFL
@@ -1216,7 +1149,7 @@ class GeneEditor {
         val hasReactionTok = gene.source is EnergySource.FormBond
         val srcLine = ArrayList<UiTok>()
         srcLine.add(UiTok.Menu(sourceTypeLabel(gene.source), ctlIf(energyBlocked && !hasReactionTok), srcOpts, openMenu == srcKey,
-            onToggle = { openMenu = if (openMenu == srcKey) null else srcKey },
+            onToggle = { if (touch) openInlinePick(controller, i, Pick.Source) else openMenu = if (openMenu == srcKey) null else srcKey },
             onPick = { idx ->
                 openMenu = null
                 if (idx == 0) inlineEdit(controller, i) { it.copy(source = EnergySource.Light) }
@@ -1241,7 +1174,7 @@ class GeneEditor {
         val hasOperandTok = gene.action.type in OPERAND_ACTIONS
         val actLine = ArrayList<UiTok>()
         actLine.add(UiTok.Menu(actionTypeLabel(gene.action.type), ctlIf(inputBlocked && !hasOperandTok), actionChoices.map { actionTypeLabel(it) }, openMenu == actKey,
-            onToggle = { openMenu = if (openMenu == actKey) null else actKey },
+            onToggle = { if (touch) openInlinePick(controller, i, Pick.Action) else openMenu = if (openMenu == actKey) null else actKey },
             onPick = { idx ->
                 val t = actionChoices[idx]
                 inlineEdit(controller, i) { it.copy(action = retype(it.action, t)) }
@@ -1263,7 +1196,7 @@ class GeneEditor {
             val effKey = "$i:eff"
             actLine.add(UiTok.Text(" ", grey))
             actLine.add(UiTok.Menu("E${gene.efficiency}", ctl, (0..CytoTuning.EFFICIENCY_MAX_GEAR).map { "E$it" }, openMenu == effKey,
-                onToggle = { openMenu = if (openMenu == effKey) null else effKey },
+                onToggle = { if (touch) openInlinePick(controller, i, Pick.Eff) else openMenu = if (openMenu == effKey) null else effKey },
                 onPick = { idx -> inlineEdit(controller, i) { it.copy(efficiency = idx) }; openMenu = null }))
         }
         lines.add(actLine)
@@ -1322,85 +1255,14 @@ class GeneEditor {
         // read card (geneButton) used a solid bright green; here the token controls sit on top, so this is a
         // clearly-green but muted tint that still keeps the blue/orange control boxes legible.
         val bg = mixRgba(0x20242EFFL, 0x25522FFFL, glowOf(i))
-        tokenLines(lines, wrapWidth = 356f, textSize = 15f, background = bg, lineActions = lineActions,
+        // Touch has no hover, so the per-clause +/× are drawn permanently — and the whole-gene menu comes back
+        // as a corner button. On a mouse those live on hover and on the drag, which a finger can't discover
+        // and shouldn't have to: duplicate/delete stay one tap away here.
+        val cardActions = if (touch) listOf(HoverAction(":", 0x3A4560FFL, "gene-menu-$i") { openInlinePick(controller, i, Pick.Overflow) }) else emptyList()
+        tokenLines(lines, wrapWidth = wrapDp, textSize = 15f, background = bg, lineActions = lineActions,
+            cardActions = cardActions, alwaysShowActions = touch,
             dragId = "$GENE_DRAG_PREFIX$i", onDrop = { tid -> handleGeneDrop(controller, i, tid) })
         gap(8f)
-    }
-
-    /** One gene as a tappable button: editing = blue, otherwise grey→green by how much of the last
-     *  [GLOW_TICKS] ticks it fired for (see [updateGlow]); the parts of an
-     *  inactive gene that block it (failed clause / energy / input) draw orange inline. [i] is its live
-     *  genome index, used to open it for editing. */
-    private fun PanelBuilder.geneButton(controller: CytoController, g: CytoController.CellInfo.GeneRow, i: Int) {
-        val bg = if (editingIndex == i) 0x4488CCFFL else mixRgba(0x3C3C3CFFL, 0x2E8B40FFL, glowOf(i))
-        // Split the one-line span sentence — `ACTION IF clause & clause (source) eN` — into a card with the
-        // condition clauses ONE PER LINE, then an action line: `WHEN <clause>` / ` AND <clause>` / ... /
-        // `→ <ACTION> (source) eN`. The markers " IF ", " (" and the " & " clause separator are emitted
-        // verbatim by describeGeneSpans, so we partition on them. Blocking spans stay orange.
-        val ORANGE = 0xC8963CFFL
-        val GREY = 0x9A9A9AFFL
-        val spans = g.spans
-        val ifIdx = spans.indexOfFirst { it.text == " IF " }
-        val parenIdx = spans.indexOfFirst { it.text == " (" }
-        fun spanPair(s: CytoController.CellInfo.Span) = s.text to (if (s.blocking) ORANGE else null as Long?)
-        val lines: List<List<Pair<String, Long?>>>
-        if (ifIdx < 0 || parenIdx < 0) {
-            // Fallback: shape not recognised — show the raw sentence on one line.
-            lines = listOf(spans.map { spanPair(it) })
-        } else {
-            // The clause span run is "clause & clause & ..." between " IF " and " (". Break it at each " & "
-            // so every AND-clause becomes its own line, keeping its blocking colour.
-            val clauseSpans = spans.subList(ifIdx + 1, parenIdx)
-            val clauseLines = mutableListOf<MutableList<Pair<String, Long?>>>()
-            for (s in clauseSpans) {
-                if (s.text == " & " || clauseLines.isEmpty()) clauseLines.add(mutableListOf())
-                if (s.text != " & ") clauseLines.last().add(spanPair(s))
-            }
-            val out = mutableListOf<List<Pair<String, Long?>>>()
-            if (clauseLines.isEmpty() || clauseLines.all { it.isEmpty() }) {
-                out.add(listOf("ALWAYS" to GREY))
-            } else {
-                clauseLines.forEachIndexed { ci, cl ->
-                    out.add(listOf<Pair<String, Long?>>((if (ci == 0) "WHEN " else " AND ") to GREY) + cl)
-                }
-            }
-            // Fuel FIRST, on its own line, then the action, then its modifiers indented — so a long action
-            // (a DIVIDE with a morphogen + axis) no longer overflows the panel. Blocking parts stay orange:
-            // the source line when there's no fuel, the action line when its input is missing.
-            val gene = g.gene
-            val energyBlocked = spans.getOrNull(parenIdx + 1)?.blocking == true
-            val inputBlocked = spans[0].blocking
-            // Split for the same reason the action line below is: on a synthesis source the molecule is what
-            // falls short, so it takes the orange and the bare verb stays grey.
-            out.add(when (val src = gene.source) {
-                EnergySource.Light -> listOf("USE LIGHT" to (if (energyBlocked) ORANGE else GREY))
-                is EnergySource.FormBond -> listOf(
-                    "BOND " to GREY,
-                    synthesisLabel(src) to (if (energyBlocked) ORANGE else GREY),
-                )
-            })
-            val (verb, operand, suffix, mods) = actionProse(gene.action)
-            // The verb never blocks on its own (no biomass ceiling, no import quota) — only the chemical it
-            // names does, so the orange goes on the operand and falls back to the verb when there is none.
-            val operandBlocked = inputBlocked && operand.isNotEmpty()
-            // Efficiency is always shown as a token (even e0) for actions that have one — Mitosis has none.
-            val eff = if (gene.action.type != ActionType.Mitosis) " e${gene.efficiency}" else ""
-            out.add(
-                listOfNotNull(
-                    verb to (if (inputBlocked && !operandBlocked) ORANGE else null),
-                    if (operand.isEmpty()) null else " $operand" to (if (operandBlocked) ORANGE else null),
-                    if (suffix.isEmpty()) null else suffix to GREY,
-                    if (eff.isEmpty()) null else eff to null,
-                )
-            )
-            for (m in mods) out.add(listOf<Pair<String, Long?>>(" $m" to GREY))
-            lines = out
-        }
-        // Long-press picks the card up (re-tag / re-order / duplicate / delete, as on desktop); a plain tap
-        // still opens it, and a swipe still scrolls the genome.
-        geneCard(lines, bg, dragId = "$GENE_DRAG_PREFIX$i", onDrop = { tid -> handleGeneDrop(controller, i, tid) }) {
-            open(controller, i)
-        }
     }
 
     /**
@@ -1463,60 +1325,12 @@ class GeneEditor {
         )
     }
 
-    /** The action as a main line plus any modifier lines (the caller indents the modifiers). Only Mitosis
-     *  carries modifiers — the morphogen it keeps in cell 1 / hands to cell 2, and a sever. (Both offspring
-     *  are technically daughters; "cell 1" is the retaining side, "cell 2" the split-off side.) */
-    private fun actionProse(a: GeneAction): ActionProse {
-        val av = sp(a.a); val bv = sp(a.b)
-        return when (a.type) {
-            ActionType.Import -> ActionProse("IMPORT", av)
-            ActionType.Export -> ActionProse("EXPORT", av)
-            // The mirror of the read card's BOND line: name the molecule split, its two fragments in parens.
-            ActionType.BreakBond -> ActionProse("BREAK", breakLabel(a))
-            ActionType.Convert -> ActionProse("CONVERT", av, " TO MASS")
-            ActionType.Contract -> ActionProse("CONTRACT")
-            ActionType.Repair -> ActionProse("REPAIR", "", " WELDS")
-            ActionType.Lyse -> ActionProse("LYSE")
-            ActionType.Retain -> ActionProse("RETAIN", av)
-            ActionType.None -> ActionProse("NOTHING")
-            ActionType.Mitosis -> {
-                // Every modifier slot is ALWAYS shown, with default wording when unset, so each is a token
-                // to click (UI_REDESIGN.md §8a): a bare divide reads DIVIDE / ALONG NO GRADIENT / RETAINING
-                // NOTHING / AND STICK rather than collapsing to just DIVIDE.
-                val orient = if (a.divideAcross) "ACROSS" else "ALONG"
-                val axisLine = "$orient ${if (a.b.isEmpty()) "NO GRADIENT" else "$bv GRADIENT"}"
-                val keepLine = if (a.a.isEmpty()) "RETAINING NOTHING"
-                    else if (a.morphogenToMother) "RETAINING $av IN CELL 1" else "GIVING $av TO CELL 2"
-                val severLine = if (a.rejectMother) "SEVERING CELL 2 FREE" else "AND STICK"
-                ActionProse("DIVIDE", mods = listOf(axisLine, keepLine, severLine))
-            }
-        }
-    }
-
-    /** The action line split into its parts so the read card can colour them independently: the [verb] (which
-     *  never blocks on its own), the chemical [operand] it targets (which is what actually blocks it), a grey
-     *  [suffix] that just completes the sentence, and any [mods] the caller indents beneath. */
-    private data class ActionProse(
-        val verb: String,
-        val operand: String = "",
-        val suffix: String = "",
-        val mods: List<String> = emptyList(),
-    )
-
     /** A dark tint of a group's [color] (40% brightness, full alpha) for its collapsible header background. */
     private fun groupHeaderBg(color: Long): Long {
         val r = ((color ushr 24) and 0xFF) * 40 / 100
         val g = ((color ushr 16) and 0xFF) * 40 / 100
         val b = ((color ushr 8) and 0xFF) * 40 / 100
         return (r shl 24) or (g shl 16) or (b shl 8) or 0xFF
-    }
-
-    private fun open(controller: CytoController, index: Int) {
-        val gene = controller.heldGenome()?.getOrNull(index) ?: return
-        editingId = controller.lastHeldId
-        editingIndex = index
-        draft = gene
-        closePick()
     }
 
     /** Replace clause [ci], preserving the other AND-clauses. */
@@ -1564,13 +1378,6 @@ class GeneEditor {
         2 -> Operand.Biomass
         3 -> Operand.Touching
         else -> Operand.Neighbours
-    }
-
-    private fun commit(controller: CytoController) {
-        val d = draft ?: return
-        val idx = editingIndex ?: return
-        controller.setHeldGene(idx, d)
-        reset()
     }
 
     private fun reset() {
