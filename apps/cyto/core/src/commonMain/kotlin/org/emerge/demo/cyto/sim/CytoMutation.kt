@@ -81,13 +81,13 @@ object CytoMutation {
             2 -> { val ci = nextInt(cs.size); withClause(g, ci, cs[ci].copy(rhs = mutateOperand(cs[ci].rhs, nextInt))) }
             3 -> g.copy(action = g.action.copy(a = mutateSpecies(g.action.a, nextInt)))
             4 -> g.copy(action = g.action.copy(b = mutateSpecies(g.action.b, nextInt)))
-            5 -> {  // re-roll the action type; clear the Mitosis-only flags if it no longer applies (keeps the invariant + codec round-trip)
+            5 -> {  // re-roll the action type; clear the Divide-only flags if it no longer applies (keeps the invariant + codec round-trip)
                 // Draw from all real actions EXCLUDING the trailing ActionType.None (the authoring blank —
                 // a mutation must never blank a gene). None is the last ordinal, so `entries.size - 1` both
                 // excludes it and keeps the PRNG draw range identical to before None existed (golden-stable).
                 val newType = ActionType.entries[nextInt(ActionType.entries.size - 1)]
-                val mitosis = newType == ActionType.Mitosis
-                g.copy(action = g.action.copy(type = newType, morphogenToMother = g.action.morphogenToMother && mitosis, divideAcross = g.action.divideAcross && mitosis, rejectMother = g.action.rejectMother && mitosis))
+                val divide = newType == ActionType.Divide
+                g.copy(action = g.action.copy(type = newType, morphogenToMother = g.action.morphogenToMother && divide, divideAcross = g.action.divideAcross && divide, rejectMother = g.action.rejectMother && divide))
             }
             6 -> g.copy(efficiency = (g.efficiency + if (nextInt(2) == 0) -1 else 1).coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR))  // nudge the efficiency gear ±1
             7 -> g.copy(source = flipSource(g.source, nextInt))

@@ -98,7 +98,7 @@ plain text (the format in this tutorial) with an optional colour header:
 # color: 44cc55ff
 Light : rg < 3000 : FormBond r g
 Light : Biomass < 3000 : Convert rg
-Break rg : Biomass > 2000 : Mitosis
+Break rg : Biomass > 2000 : Divide
 ```
 
 Drop that in `cyto-genomes/`, restart (or re-open the menu), and it's a swatch you can paint.
@@ -147,7 +147,7 @@ Every gene is one line, three colon-separated parts, plus an optional efficiency
 For example:
 
 ```
-Break rg : Biomass > 2000 : Mitosis @4
+Break rg : Biomass > 2000 : Divide @4
 ```
 
 Read it as: *"Powered by breaking an `rg` bond, whenever my biomass exceeds 2000, divide — at
@@ -300,9 +300,9 @@ Both cost energy per op (that's the price of pumping against a gradient).
 Light : rg < 500 : Import rg              # actively hoard 'rg' even when the neighbourhood is poor
 ```
 
-### Mitosis — divide
+### Divide — divide
 
-`Mitosis` splits the cell in two. Biomass and cytoplasm halve (that halving is the natural brake —
+`Divide` splits the cell in two. Biomass and cytoplasm halve (that halving is the natural brake —
 both daughters drop back below any biomass gate, so back-to-back division needs real surplus).
 Division is a *bulk* cost (~a quarter of your biomass in energy), which a per-tick light trickle
 can't fund — so it's almost always powered by chemistry, cashing in a reserve you stored:
@@ -320,13 +320,13 @@ can't fund — so it's almost always powered by chemistry, cashing in a reserve 
 > in blocking orange, even though its gate is passing.)
 
 ```
-Break rg : Biomass > 2000 : Mitosis       # once big enough, break 'rg' to pay for splitting
+Break rg : Biomass > 2000 : Divide       # once big enough, break 'rg' to pay for splitting
 ```
 
-Mitosis has the richest set of options, and they are the whole basis of building a *shaped*,
+Divide has the richest set of options, and they are the whole basis of building a *shaped*,
 *differentiated* body:
 
-- **`Mitosis <morphogen>`** — *asymmetric division*. The named species is handed **whole to one
+- **`Divide <morphogen>`** — *asymmetric division*. The named species is handed **whole to one
   daughter** while everything else halves normally. The two daughters now have different chemistry
   from a single genome — this is the seed of all differentiation (see §12).
 - **`... mother`** — keep the morphogen in the **mother** instead of the daughter. Because the
@@ -340,7 +340,7 @@ Mitosis has the richest set of options, and they are the whole basis of building
   gradient of an axis-morphogen (extend a **thread**) or across it (widen into a **sheet**). This is
   the anisotropy lever that makes limbs and layers instead of blobs.
 
-These four parameters are independent — you can combine them, e.g. `Mitosis m mother across axis`.
+These four parameters are independent — you can combine them, e.g. `Divide m mother across axis`.
 
 ### Repair — hold the body together, and adhere
 
@@ -421,7 +421,7 @@ copies. Here it is:
 ```
 Light : rg < 3000 : FormBond r g          # (1) production
 Light : Biomass < 3000 : Convert rg        # (2) growth
-Break rg : Biomass > 2000 : Mitosis sever  # (3) reproduction
+Break rg : Biomass > 2000 : Divide sever  # (3) reproduction
 ```
 
 - **(1) Production.** Under light, join `r` + `g` into `rg`, topping up the cytoplasm reserve to
@@ -445,7 +445,7 @@ biomass (heterotroph).
 
 Two starter genomes accompany this tutorial in the library, `Tutorial-1-Grower` (production + growth
 only — watch a *single* cell grow and plateau, no division to distract you) and
-`Tutorial-2-Coloniser` (adds a non-severing `Mitosis`, so it grows into a *welded colony* rather
+`Tutorial-2-Coloniser` (adds a non-severing `Divide`, so it grows into a *welded colony* rather
 than budding off singles). Paint them, click them, and read the genes against the notes above.
 
 ---
@@ -555,12 +555,12 @@ morphogen reach" dial.
 ### 12b. Seeding the source: asymmetric division and the determinant
 
 For a gradient you first need *one* cell to be the source and the rest not to be — symmetry has to be
-broken. That's what **asymmetric mitosis** (§8) is for. The founder divides with
-`Mitosis X`, handing a determinant `X` whole to one daughter. Only cells carrying `X` run the source
+broken. That's what **asymmetric divide** (§8) is for. The founder divides with
+`Divide X`, handing a determinant `X` whole to one daughter. Only cells carrying `X` run the source
 gene, so the morphogen is made in one place.
 
 `X` is a **determinant** (§9): synthesised or seeded, sensed, but **never consumed** — so it stays
-*intracellular* and permanent. It doesn't spread; it marks a lineage. `Mitosis X mother` keeps the
+*intracellular* and permanent. It doesn't spread; it marks a lineage. `Divide X mother` keeps the
 source centred (radial body plan); the default (daughter) rides it to the edge (axial body plan).
 
 The killer property, from §9: because *sensing isn't a channel*, a fate gene can gate on `Chem(X)` or
@@ -585,7 +585,7 @@ whether the cell divides — that's differentiation driven by position.
 
 ### 12d. Shaping the body: oriented division
 
-A gradient also gives you a *direction* (which way it points), and `Mitosis ... along/across <M>`
+A gradient also gives you a *direction* (which way it points), and `Divide ... along/across <M>`
 uses it: dividing **along** the gradient extends a **thread/limb**; dividing **across** it widens a
 **sheet/layer**. Consistently-oriented divisions elongate a structure; mixing orientations fills out
 a blob. This is how you get shapes that aren't just round clumps.
@@ -593,8 +593,8 @@ a blob. This is how you get shapes that aren't just round clumps.
 The library's `Swimmer` and `hungry` genomes both use these together — look for lines like:
 
 ```
-Break rb : bb > 0 & br < 10 & Biomass > 2000 : Mitosis bb mother across gr
-Break rb : br > 3000 & gr < 5 & Biomass > 3999 : Mitosis gr mother sever along gr
+Break rb : bb > 0 & br < 10 & Biomass > 2000 : Divide bb mother across gr
+Break rb : br > 3000 & gr < 5 & Biomass > 3999 : Divide gr mother sever along gr
 ```
 
 The first widens the body into a sheet (`across`), keeping the morphogen `bb` centred in the mother;
@@ -628,12 +628,12 @@ Roughly in order of difficulty:
 1. **Watch one cell grow.** Paint `Tutorial-1-Grower` in a bright spot. Click it and watch biomass
    climb and plateau. Move it into shade and watch it stall.
 2. **Colony vs budding.** Paint `Tutorial-2-Coloniser` (welds into a mass) next to `Autotroph`
-   (buds off singles). Same growth, different `Mitosis` — see how one option changes the body.
+   (buds off singles). Same growth, different `Divide` — see how one option changes the body.
 3. **Feed a heterotroph.** Grow an autotroph colony, then paint a `Heterotroph` next to it. Watch it
    live off the leaked `rg`, and starve if you move it away.
 4. **Tune the clock.** Load `simple-clock`, click a cell, and change the `@15` on the `Contract` gene
    to `@10` in the editor. Watch the swim tempo change.
-5. **Build a dilution timer.** Take the coloniser, add an asymmetric `Mitosis m` and a gene gated on
+5. **Build a dilution timer.** Take the coloniser, add an asymmetric `Divide m` and a gene gated on
    `Conc(m) < 200` that changes colour (converts a different molecule). Watch a fate appear a fixed
    time after each division.
 6. **Author a two-band gradient.** The full §12 build — source in a founder, sink everywhere, two
@@ -690,7 +690,7 @@ ACTION  ::=  Import <species>          # one-way inward channel (also hoards vs 
                                        #   *a = wildcard "ends with a"; a* = "starts with a"
            | Convert <species>         # lock into biomass (grow)
            | Contract                  # flex radius inward (muscle)
-           | Mitosis [<morphogen> [mother|daughter]] [sever] [along|across <axis>]
+           | Divide [<morphogen> [mother|daughter]] [sever] [along|across <axis>]
            | Repair                    # heal welds / adhere touching cells
            | Lyse                      # tear biomass off touching prey
 

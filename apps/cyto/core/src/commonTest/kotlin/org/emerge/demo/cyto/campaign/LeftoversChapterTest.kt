@@ -42,7 +42,7 @@ class LeftoversChapterTest {
             if (cells == 0) null else FocusedCell(CellType.Collector, biomass, mapOf("gb" to 100)),
             Lineage(
                 geneCount = 3, convertChem = convertTarget, convertProduct = "gb", convertBiomassCap = 3000,
-                divideBiomassMinimum = 2000, hasDivide = true, mitosisProduct = "gb",
+                divideBiomassMinimum = 2000, hasDivide = true, divideProduct = "gb",
                 hasPhotosynthesis = true, recycleReserve = reserve, divideFuelConflicts = false,
             ),
         ),
@@ -113,7 +113,7 @@ class LeftoversChapterTest {
         Gene(source, GeneCondition(clauses.toList()), GeneAction(ActionType.BreakBond, "g", "b"))
 
     private val divide = Gene(
-        EnergySource.FormBond("g", "b"), GeneCondition(emptyList()), GeneAction(ActionType.Mitosis),
+        EnergySource.FormBond("g", "b"), GeneCondition(emptyList()), GeneAction(ActionType.Divide),
     )
 
     @Test

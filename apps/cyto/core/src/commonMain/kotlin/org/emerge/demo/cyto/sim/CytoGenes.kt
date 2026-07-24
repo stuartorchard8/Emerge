@@ -201,9 +201,9 @@ enum class ActionType {
      *  whole world. Contraction only ever shrinks a cell, so it never coarsens the grid; it's sufficient for
      *  locomotion on its own (a travelling contraction wave). */
     Contract,
-    /** Divide (mitosis). [GeneAction.a] optionally names a **morphogen** allocated *whole to one daughter*
+    /** Divide (divide). [GeneAction.a] optionally names a **morphogen** allocated *whole to one daughter*
      *  (asymmetric division, MORPHOGENESIS.md §C); empty ⇒ symmetric 50/50 split. [GeneAction.b] unused. */
-    Mitosis,
+    Divide,
     /** Repair connection damage: each op heals the cell's most-damaged connection (operands unused).
      *  Holding a body together is therefore genetic + energy-costing — there is no free heal. */
     Repair,
@@ -233,17 +233,17 @@ enum class ActionType {
 
 /** A gene's action plus its (action-dependent) operands — single atoms for [ActionType.FormBond],
  *  a species for [ActionType.Import]/[ActionType.Convert], an optional morphogen species for
- *  [ActionType.Mitosis] (asymmetric division; empty ⇒ symmetric). [morphogenToMother] only applies to
- *  [ActionType.Mitosis] with a non-empty morphogen: it picks **which side keeps the morphogen** — `false`
+ *  [ActionType.Divide] (asymmetric division; empty ⇒ symmetric). [morphogenToMother] only applies to
+ *  [ActionType.Divide] with a non-empty morphogen: it picks **which side keeps the morphogen** — `false`
  *  (default) hands it to the **daughter** (placed outward → an *edge/axial* source as the colony grows),
  *  `true` keeps it in the **mother** (stays embedded → a *centred/radial* source). A body-plan selector
- *  (MORPHOGENESIS.md §Source placement); invariant: only ever `true` when [type] is Mitosis.
+ *  (MORPHOGENESIS.md §Source placement); invariant: only ever `true` when [type] is Divide.
  *
- *  **Oriented division** (MORPHOGENESIS.md §Morphogens for shape): for [ActionType.Mitosis], [b] names an
+ *  **Oriented division** (MORPHOGENESIS.md §Morphogens for shape): for [ActionType.Divide], [b] names an
  *  **axis-morphogen** — if non-empty, the daughter is placed relative to that morphogen's *local gradient*
  *  (computed at division from welded neighbours) instead of toward free space: [divideAcross] `false` =
  *  *along* ∇ (project → extends a thread), `true` = *across* ∇ (slice → widens into a 2D sheet). Empty [b] ⇒
- *  unoriented (today's free-space placement). [divideAcross] is only ever `true` when [type] is Mitosis.
+ *  unoriented (today's free-space placement). [divideAcross] is only ever `true` when [type] is Divide.
  *
  *  Reactant matching moved to [EnergySource.FormBond] when the chemistry was inverted and synthesis became
  *  the energy source, so no action carries operand-matching flags. For [ActionType.BreakBond], [a]/[b] are
@@ -254,7 +254,7 @@ enum class ActionType {
     val b: String = "",
     val morphogenToMother: Boolean = false,
     val divideAcross: Boolean = false,
-    /** When true (Mitosis only): the daughter rejects all welds from the mother, splitting off as a
+    /** When true (Divide only): the daughter rejects all welds from the mother, splitting off as a
      *  separate 1-celled organism. The mother keeps its connections intact. */
     val rejectMother: Boolean = false,
 ) {
@@ -289,7 +289,7 @@ enum class ActionType {
  * to mirror the one quantum [EnergySource.FormBond] pays per bond, and a `g+1` multiplier would let a single
  * formed bond fund `g+1` breaks, which is the perpetual-motion loop the inversion exists to close (see
  * [EnergySource]). There the gear is pure potency-limiting, used e.g. to set how far a morphogen spreads
- * from a source/sink loop. **Mitosis is exempt** (a fixed `biomass/4` bulk event). The optimum gear is niche-dependent —
+ * from a source/sink loop. **Divide is exempt** (a fixed `biomass/4` bulk event). The optimum gear is niche-dependent —
  * energy-poor cells favour high g (squeeze every quantum), energy-rich cells favour low g (burn surplus for
  * raw throughput) — and a low-g gene is *always* less efficient (1 action/energy), even when its high
  * ceiling goes unused, which is the cost that makes high throughput a niche adaptation, not a free bonus.
@@ -517,7 +517,7 @@ class CellWork(
     var handleable: Handleable = handleableOf(genome)
         private set
 
-    /** Set true by a fired Mitosis gene; the lifecycle splits the cell. */
+    /** Set true by a fired Divide gene; the lifecycle splits the cell. */
     var dividing = false
 
     /** Set by [CytoBiologyCore.finishCompute] when this cell's biomass fell below the death threshold —
@@ -550,30 +550,30 @@ class CellWork(
     val weldOut = MoleculeStore(CytoTuning.CELL_CHEM_CAP)
     // Which genes passed their condition this tick: bit i = genome[i] active. Drives the per-gene particle's
     // brightness. Genes past bit 63 are not represented (genomes that long don't occur; the particles for
-    // them simply read inactive). Mitosis genes are resolved in a later phase and never set a bit here.
+    // them simply read inactive). Divide genes are resolved in a later phase and never set a bit here.
     var activeMask = 0L
 
-    /** The fired Mitosis gene's operand (its [GeneAction.a]) — the morphogen species allocated **whole to
-     *  one daughter** on division (asymmetric mitosis, MORPHOGENESIS.md §C). "" ⇒ symmetric 50/50 split. */
+    /** The fired Divide gene's operand (its [GeneAction.a]) — the morphogen species allocated **whole to
+     *  one daughter** on division (asymmetric divide, MORPHOGENESIS.md §C). "" ⇒ symmetric 50/50 split. */
     var divideMorphogen: String = ""
 
-    /** The fired Mitosis gene's [GeneAction.morphogenToMother] — keep [divideMorphogen] in the mother
+    /** The fired Divide gene's [GeneAction.morphogenToMother] — keep [divideMorphogen] in the mother
      *  (centred source) rather than handing it to the daughter (edge source). */
     var divideMorphogenToMother: Boolean = false
 
-    /** The fired Mitosis gene's [GeneAction.b] (axis-morphogen) + [GeneAction.divideAcross] — orient the
+    /** The fired Divide gene's [GeneAction.b] (axis-morphogen) + [GeneAction.divideAcross] — orient the
      *  split along (`false`) / across (`true`) that morphogen's local gradient. Empty ⇒ unoriented. */
     var divideAxisMorphogen: String = ""
     var divideAcross: Boolean = false
 
-    /** The fired Mitosis gene's [GeneAction.rejectMother] — the daughter rejects all mother welds,
+    /** The fired Divide gene's [GeneAction.rejectMother] — the daughter rejects all mother welds,
      *  splitting off as a separate 1-celled organism. */
     var divideRejectMother: Boolean = false
 
-    /** Cooldown ticks remaining before mitosis genes are re-evaluated. Set to [genomeSize] when a
-     *  mitosis fires, preventing the cell from dividing again until its biomass recovers and the
-     *  round-robin cycles past the mitosis gene. Prevents instant re-division cascades. */
-    var mitosisCooldown: Int = 0
+    /** Cooldown ticks remaining before divide genes are re-evaluated. Set to [genomeSize] when a
+     *  divide fires, preventing the cell from dividing again until its biomass recovers and the
+     *  round-robin cycles past the divide gene. Prevents instant re-division cascades. */
+    var divideCooldown: Int = 0
 
     /** True once a Repair gene healed any connection this tick — gates writing [connectionDamage] back. */
     var repaired = false
@@ -798,7 +798,7 @@ private const val DIVIDE_BIOMASS = CytoSeed.AUTOTROPH_DIVIDE_BIOMASS
  * (CytoBiologyCore.selfGateCap) stops the grower exactly at GROW rather than overshooting.
  *
  * Division stays a *bulk* cost (≈ biomass/4 energy in one tick), now paid by a **burst of joining**: once
- * biomass > DIVIDE the [Mitosis] gene forms as much `rg` as its monomer share allows and spends the quanta
+ * biomass > DIVIDE the [Divide] gene forms as much `rg` as its monomer share allows and spends the quanta
  * to split. DIVIDE < GROW so the self-capped grower still crosses the divide line. At the live mutation rate
  * (CytoTuning.MUTATION_RATE_DENOM) the first division lands long before any mutation, so the lineage
  * colonises reliably.
@@ -808,7 +808,7 @@ private const val DIVIDE_BIOMASS = CytoSeed.AUTOTROPH_DIVIDE_BIOMASS
  * that spend it.
  */
 val AUTOTROPH_GENES: List<Gene> = listOf(
-    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Mitosis, rejectMother = true)),
+    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(DIVIDE_BIOMASS)), GeneAction(ActionType.Divide, rejectMother = true)),
     Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(GROW_BIOMASS)), GeneAction(ActionType.Convert, "rg")),
 )
 
@@ -842,7 +842,7 @@ val AUTOTROPH_MOVE_GENE: Gene =
  * the same op) and locks `rg` into body mass up to GROW; size-proportional decay is repaired by the same
  * Convert gene re-firing when biomass dips, so it sits at a stable equilibrium. Used by the campaign as a
  * calm, easy-to-reason-about **substrate**:
- * the player watches it obey its two grow genes, then *adds* the Mitosis gene (see [AUTOTROPH_GENES]) to make
+ * the player watches it obey its two grow genes, then *adds* the Divide gene (see [AUTOTROPH_GENES]) to make
  * it reproduce. Not seeded by any sandbox scenario — supplied explicitly via [FounderSpec.genome].
  */
 val AUTOTROPH_GROW_ONLY_GENES: List<Gene> = listOf(
@@ -873,7 +873,7 @@ val HETEROTROPH_GENES: List<Gene> = listOf(
     // Digest the spoils: split what was torn off back down into transportable 'rg' — a real energy cost.
     Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(HET_GROW)), GeneAction(ActionType.BreakBond, "g", "b")),
     Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(HET_GROW)), GeneAction(ActionType.Convert, "rg")),
-    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(HET_DIVIDE)), GeneAction(ActionType.Mitosis)),
+    Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(HET_DIVIDE)), GeneAction(ActionType.Divide)),
     // Hold together under the strain of attacking; damage-gated, so it costs nothing on a calm body.
     Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Repair)),
 )

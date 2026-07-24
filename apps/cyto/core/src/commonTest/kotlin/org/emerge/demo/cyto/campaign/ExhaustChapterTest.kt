@@ -34,7 +34,7 @@ class ExhaustChapterTest {
             FocusedCell(CellType.Collector, 3000, held),
             Lineage(
                 geneCount = genes, convertChem = "r", convertBiomassCap = 3000,
-                divideBiomassMinimum = 2000, hasDivide = true, mitosisProduct = "gb",
+                divideBiomassMinimum = 2000, hasDivide = true, divideProduct = "gb",
                 hasPhotosynthesis = recycles, divideFuelConflicts = false,
             ),
         ),
@@ -98,7 +98,7 @@ class ExhaustChapterTest {
      *  lineage that never chose one would render the goal as a blank, so the reading has to be there. */
     @Test
     fun theWasteGoalIsToldWhichMoleculeToWatch() {
-        assertEquals("gb", query(3, loaded).lineage?.mitosisProduct)
+        assertEquals("gb", query(3, loaded).lineage?.divideProduct)
     }
 
     // ── The watched cell dying on the final beat ─────────────────────────────────────────────────────

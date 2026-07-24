@@ -6,5 +6,5 @@ Break rr : rb < 1000 : FormBond r g @7
 Break rg : rr < 1000 : FormBond r b @7
 Break rb : rr < 999 & rg < 999 & rb < 999 : FormBond r r
 Break rg : rr < 1000 & rg > 6000 : Contract @15
-Break rg : rr < 1000 & rg > 21500 : Mitosis across r @15
+Break rg : rr < 1000 & rg > 21500 : Divide across r @15
 Break rr : rb < 1000 : Repair @15

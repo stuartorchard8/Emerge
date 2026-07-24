@@ -14,5 +14,5 @@ Break gr : bb < 1 : FormBond r g @14
 Break rb : Biomass < 4000 & gr > 30 : Convert gr @15
 Break rb : bg < 8 & br < 8 : FormBond b r
 Break rb : bg < 16 & rg < 200 & br > 0 : FormBond b g @15
-Break rb : rg < 200 & bg > 15 : Mitosis bb mother along gr
+Break rb : rg < 200 & bg > 15 : Divide bb mother along gr
 Break rb : rg < 500 : Repair @10

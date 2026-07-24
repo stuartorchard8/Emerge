@@ -27,7 +27,7 @@ class CampaignBranchTest {
             Lineage(
                 geneCount = 2, convertChem = "r", convertBiomassCap = 3000,
                 divideBiomassMinimum = 2000,
-                hasDivide = true, mitosisProduct = "rg", divideFuelConflicts = conflicts,
+                hasDivide = true, divideProduct = "rg", divideFuelConflicts = conflicts,
             ),
         ),
         paused = false, selectedGenome = null,

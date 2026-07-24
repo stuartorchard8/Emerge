@@ -139,7 +139,7 @@ class Lineage(
     val divideWelds: Boolean = false,
     /** What the division gene synthesises for energy: null = none, or still on Light; "" = bonding but the
      *  pair is incomplete; else the product. Also the coach's `{bond}` token. */
-    val mitosisProduct: String? = null,
+    val divideProduct: String? = null,
     /** Whether the division gene's fuel reaction consumes the very monomer the CONVERT gene grows on — the
      *  campaign's branch point. Null when there is nothing to compare. */
     val divideFuelConflicts: Boolean? = null,

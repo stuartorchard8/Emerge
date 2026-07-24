@@ -790,7 +790,7 @@ object CytoAgentHarness {
                 "divideFloor" -> lin?.divideBiomassMinimum?.toString()
                 "recyclesExhaust" -> lin?.hasPhotosynthesis?.toString()
                 "recycleReserve" -> lin?.recycleReserve?.toString()
-                "bond" -> lin?.mitosisProduct
+                "bond" -> lin?.divideProduct
                 "fuelConflicts" -> lin?.divideFuelConflicts?.toString()
                 else -> { failures.add("expect: unknown field '$field'"); println("[agent] EXPECT ?? unknown field '$field'"); return }
             }
@@ -838,7 +838,7 @@ object CytoAgentHarness {
                 sb.append("  \"lineage\": {\"genes\": ${lin.geneCount}, \"convertChem\": ${jsonStr(lin.convertChem)}, ")
                 sb.append("\"growthCap\": ${lin.convertBiomassCap}, \"divideFloor\": ${lin.divideBiomassMinimum}, ")
                 sb.append("\"hasDivide\": ${lin.hasDivide}, \"recyclesExhaust\": ${lin.hasPhotosynthesis}, \"recycleReserve\": ${lin.recycleReserve}, ")
-                sb.append("\"bond\": ${jsonStr(lin.mitosisProduct)}, \"fuelConflicts\": ${lin.divideFuelConflicts}},\n")
+                sb.append("\"bond\": ${jsonStr(lin.divideProduct)}, \"fuelConflicts\": ${lin.divideFuelConflicts}},\n")
             } else sb.append("  \"lineage\": null,\n")
             val c = director.snapshot()
             if (c != null) {

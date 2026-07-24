@@ -18,7 +18,7 @@ class GenomeGroupingTest {
 
     private fun grow(group: String = "Grow") = Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(3000)), GeneAction(ActionType.Convert, "rg"), group = group)
     private fun bond(group: String = "Grow") = Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(3000)), GeneAction(ActionType.Convert, "rg"), group = group)
-    private fun divide(group: String = "Reproduce") = Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(2000)), GeneAction(ActionType.Mitosis), group = group)
+    private fun divide(group: String = "Reproduce") = Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(2000)), GeneAction(ActionType.Divide), group = group)
 
     private val grouping = GenomeGrouping(listOf(
         GeneGroup("Grow"),

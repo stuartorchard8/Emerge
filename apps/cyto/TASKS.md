@@ -26,7 +26,7 @@ incidental** (inertia + asymmetric breath, not steered); steering still needs th
 **⚡ Systematic optimization pass — biology ~2× (`2026-07-04`).** Benchmarked at 4145 cells: biology
 81%, contacts 0, lifecycle 415µs. Sub-phases: build=1661µs, quanta=402µs, genes=1994µs, exchange=3579µs,
 diffuse=217µs, finish=3425µs, writeback=241µs. Key wins: round-robin gene eval with tick-based sync +
-mitosis cooldown (`9fe02b14`); spring iterations 4→3 (`889a1962`); cytoplasm diffusion period 2→4 (`2574f788`),
+division cooldown (`9fe02b14`); spring iterations 4→3 (`889a1962`); cytoplasm diffusion period 2→4 (`2574f788`),
 frequency every 2nd tick (`4136a097`); exchange group overhead reduced via binary-search transfer in leaf stores
 (`766da1d7`), scratch flat arrays replacing HashMap in diffuse (`bb7cf7ed`), 64-entry scratch hash table for
 balanceBatched (`2c715421`); presence mask skipping for empty stores (`de969090`), for balanceBatched
@@ -37,11 +37,11 @@ ThreadPoolExecutor with daemon threads (`3d8f28ec`). See `PERF.md` for full brea
 
 **The front line: a differentiated, self-propelling organism (the jellyfish goal).** Substrate is complete:
 `Conc` + AND-gate, retain-side, the metabolic source/sink morphogen loop, produce-without-diffuse
-(intracellular determinants), and **oriented division** (✅ `ce9cede` — Mitosis `along`/`across` a morphogen
+(intracellular determinants), and **oriented division** (✅ `ce9cede` — Divide `along`/`across` a morphogen
 gradient → threads *or* 2D sheets). Demonstrated in the `CytoSandbox`: a single-cell-grown genome forms an
 organizer (isolated `cc` determinant) → `bc` morphogen gradient → light-clocked `Contract` on the high-`bc`
-side → it **swims** (COM drift 37 vs 1.8 unmoving); and `Mitosis cc across bc` widens the body from a thread
-(41x0) to a **2D sheet** (5x6). **✅ THE BELL WORKS (`cyto-brush-jellyfish.gene`):** `Mitosis cc across bc`
+side → it **swims** (COM drift 37 vs 1.8 unmoving); and `Divide cc across bc` widens the body from a thread
+(41x0) to a **2D sheet** (5x6). **✅ THE BELL WORKS (`cyto-brush-jellyfish.gene`):** `Divide cc across bc`
 makes a 2D sheet, the `cc` organizer settles **off-centre** (orgOff ~0.5–0.76) → lateralised `bc` gradient →
 the high-`bc` flank contracts under daylight → **bend → directional drift ~10**. A single-cell-grown,
 genetically-differentiated 2D bend-swimmer. **Remaining = polish, the next frontier:** (1) a **faster
@@ -210,7 +210,7 @@ The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (
   deposit by up to a cell diameter while keeping the *degrading* cell's radius, so the discs only
   partially overlapped and a cell could shed matter it couldn't reclaim. Radius was never the problem —
   it already matched; only the centre differed.
-- [x] **Round-robin gene eval** — fixed to gate condition evaluation, not gene execution (`716c2966`). **REMOVED 2026-07-14** (`d45570df`): all non-division genes now re-check every tick; parallelism absorbs the cost. Killed the stale-cache bug class (Retain flicker, post-mitosis stale flags).
+- [x] **Round-robin gene eval** — fixed to gate condition evaluation, not gene execution (`716c2966`). **REMOVED 2026-07-14** (`d45570df`): all non-division genes now re-check every tick; parallelism absorbs the cost. Killed the stale-cache bug class (Retain flicker, post-d stale flags).
 - [x] **Life viability / overpopulation** — reduced both via tuning changes (`2de08043`).
 - [x] **Oriented division timeout** — `acrossOrientedDivisionGrowsA2DSheetNotAThread` test timeout fixed
   (`586edd46`).
@@ -223,10 +223,10 @@ The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (
   breathing organism now swims ~115 cell-diam/20k ticks; welds gain inertia (damping bleeds the ring), save
   stable. Only the GROWTH `physics` golden moved; determinism gates held. + viability tuning (less-fragile
   welds, stronger drag). Diagnostics `SwimProbe`/`CollisionChannelProbe` (`7197fd2f`). §Physics.
-- [x] **Oriented division** (`ce9cede`) — Mitosis `along`/`across` a named axis-morphogen's gradient
+- [x] **Oriented division** (`ce9cede`) — Divide `along`/`across` a named axis-morphogen's gradient
   (computed at division from welded neighbours) → threads or 2D sheets. Opt-in (empty axis = unoriented),
   byte-identical goldens. Unblocks 2D bodies (the jellyfish bell). The `CytoSandbox` shows the swimmer go
-  thread→sheet with `Mitosis cc across bc`.
+  thread→sheet with `Divide cc across bc`.
 - [x] **Differentiated swimmer (sandbox)** — single-cell-grown organism that propels via light-clocked
   one-side `Contract` + asymmetric drag (COM drift 37 vs 1.8). Organizer determinant + morphogen gradient +
   contraction all genetic. Saved as `cyto-brush*.gene` (needs a `cc` cytoplasm seed to differentiate).
@@ -241,19 +241,19 @@ The ladder targets these (v0 → v2). Recognise them if a hand-authored genome (
   (presets metabolise what they synthesise → all goldens byte-identical, incl. mutationOn).
 - [x] **FormBond efficiency cap** (`a264a79`) — the gear's per-tick cap (not the `g+1` multiplier) now applies
   to FormBond = the morphogen-spread dial; editor shows EFF for FormBond. Additive (g=0 byte-identical).
-- [x] **Asymmetric-mitosis retain-side** (`123c860`) — `Mitosis <m> mother` keeps the morphogen in the
+- [x] **Asymmetric-divide retain-side** (`123c860`) — `Divide <m> mother` keeps the morphogen in the
   mother (centred/radial source) vs the default daughter (edge/axial). Body-plan selector; additive (goldens
   byte-identical). Not yet mutated (deferred).
-- [x] **Gene editor — multi-clause AND + Conc + Mitosis morphogen/retain-side** (`40283c8`) — authors the
+- [x] **Gene editor — multi-clause AND + Conc + Divide morphogen/retain-side** (`40283c8`) — authors the
   full current gene model in-UI (add/remove AND-clauses, Conc fields, MORPHOGEN + KEEP picker). *Needs Stu's
   interactive validation (no headless GLFW).*
 - [x] **`Conc` operand + AND-conjunction gate** — concentration readout (`count·1000/biomass`,
   size-normalised) + a gene gate that's now a list of clauses, all must hold (`lo < Conc(m) & Conc(m) < hi`).
   Mutation adds/drops/mutates clauses (capped at `GENOME_MAX_CLAUSES`); codec `&`-joins; editor edits
   clause 0. Additive (single-clause presets byte-identical) — only `mutationOn` golden re-baselined. ✅ 2026-06-17
-- [x] **Codec — `Mitosis <morphogen>` round-trips** — asymmetric-mitosis (§C) genomes are now
-  hand-authorable / saveable as text (was silently dropped); bare `Mitosis` stays symmetric. ✅ 2026-06-17
-- [x] **(C) Asymmetric mitosis via morphogen concentration** + **sensing ≠ permeability** — persistent
+- [x] **Codec — `Divide <morphogen>` round-trips** — asymmetric-divide (§C) genomes are now
+  hand-authorable / saveable as text (was silently dropped); bare `Divide` stays symmetric. ✅ 2026-06-17
+- [x] **(C) Asymmetric divide via morphogen concentration** + **sensing ≠ permeability** — persistent
   one-genome→many-cell-type differentiation affirmed end-to-end. ✅ 2026-06-17
 - [x] **Sensed-vs-metabolic split** — `handleableOf` ignores condition operands (a sensor is not a
   channel); morphogen fates stay trace and persist. ✅ 2026-06-17

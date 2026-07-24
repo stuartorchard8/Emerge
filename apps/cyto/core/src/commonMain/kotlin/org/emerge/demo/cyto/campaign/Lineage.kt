@@ -27,19 +27,19 @@ fun lineageOf(genome: List<Gene>): Lineage {
             if (cl.lhs == Operand.Biomass && cl.cmp == Comparison.Less && rhs is Operand.Constant) rhs.value else null
         }
         .minOrNull()
-    val mitosis = genome.firstOrNull { it.action.type == ActionType.Mitosis }
+    val divide = genome.firstOrNull { it.action.type == ActionType.Divide }
     // The tightest `Biomass > N` floor any DIVIDE gene runs under. A cell splits its biomass between the
     // daughters, so without a floor it can divide below the rupture threshold and kill both. All clauses
     // have to hold, so the LARGEST floor is the one that actually bites (the mirror of the CONVERT cap).
     val divideMin = genome
-        .filter { it.action.type == ActionType.Mitosis }
+        .filter { it.action.type == ActionType.Divide }
         .flatMap { it.condition.clauses }
         .mapNotNull { cl ->
             val rhs = cl.rhs
             if (cl.lhs == Operand.Biomass && cl.cmp == Comparison.Greater && rhs is Operand.Constant) rhs.value else null
         }
         .maxOrNull()
-    val fuel = mitosis?.source as? EnergySource.FormBond
+    val fuel = divide?.source as? EnergySource.FormBond
     // Light-powered division reads as "not chemistry-powered yet" (null), not as a half-done reaction — the
     // divide chapter's job is to move the gene off Light entirely.
     val product = fuel?.product
@@ -79,11 +79,11 @@ fun lineageOf(genome: List<Gene>): Lineage {
         convertProduct = convertProduct,
         convertBiomassCap = cap,
         divideBiomassMinimum = divideMin,
-        hasDivide = mitosis != null,
+        hasDivide = divide != null,
         hasPhotosynthesis = breaksExhaust,
         recycleReserve = if (breaksExhaust) reserve else null,
-        divideWelds = genome.any { it.action.type == ActionType.Mitosis && !it.action.rejectMother },
-        mitosisProduct = product,
+        divideWelds = genome.any { it.action.type == ActionType.Divide && !it.action.rejectMother },
+        divideProduct = product,
         divideFuelConflicts = conflicts,
         // "Runs on chemistry, not daylight" — the muscle keeps beating through the night. Since the chemistry
         // inversion that means a synthesis-powered source rather than a break-powered one.

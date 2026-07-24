@@ -51,37 +51,37 @@ threshold, commit a determinant.
   proof.**
 - **v1 — size regulation + committed fate + oriented division.** The gradient bounds growth at an intrinsic
   size (not just resources); a fate persists independent of current position (commit a determinant at a
-  threshold → a true germline/core that stays put); a third tissue band; and **oriented division** — a Mitosis
+  threshold → a true germline/core that stays put); a third tissue band; and **oriented division** — a Divide
   `slice`/`project` parameter relative to the gradient axis (`project` extends → `o-o-o`, `slice` branches →
   `o<8`) so the body can elongate into strings/limbs and transition string↔blob, not just grow blobs. ∇m
-  direction is read **once at division** (cheap, not per-tick); the four Mitosis params (asym-morphogen,
+  direction is read **once at division** (cheap, not per-tick); the four Divide params (asym-morphogen,
   retain-side, axis-morphogen, slice/project) are **independent**.
 - **v2 — life cycle.** Programmed apoptosis clears soma; dispersal (chemotaxis via the Contract actuator)
   scatters germline; development restarts. Needs new actions (Apoptosis, a locomotion controller).
 
 ## Gap analysis (vs the gene model as of 2026-06-17)
 
-| Need | Cyto today | Verdict |
-|---|---|---|
-| Persistent determinant (memory) | trace morphogen (no cytoplasm decay) + asymmetric mitosis | **HAVE** (§C) |
-| Binary differentiation | morphogen-gated fate | **HAVE** (§C) |
-| Stop-dividing / block | gate `Mitosis` off | **HAVE** |
-| **Positional gradient (shape)** | source→sink metabolic loop + existing cell↔cell diffuse | **AUTHOR** (no new substrate — decay = metabolism) |
-| **Concentration band readout** | `Conc` operand + AND-conjunction gate | ✅ DONE (`d39dee5`) |
-| Localised source | FormBond exists; localise by gating on a determinant | **HAVE** (compose) |
-| Hand-author asymmetric mitosis in text | ~~`GeneCodec` drops the `Mitosis` morphogen operand~~ | ✅ DONE (`b2ce870`) |
-| Source body-plan (radial vs axial) | daughter spawns outward, mother steps inward → retain-side = drift direction | **PARAM** (default mother-retention = radial; daughter = axial) |
-| Oriented division (strings vs blobs) | placement is "toward free space" only → isotropic blobs | **v1** — Mitosis `slice`/`project` param vs ∇m axis; ∇m read once at division; 4 independent params |
-| Surface vs interior *topology* | `Touching` = un-welded only | optional sidecar: **welded-neighbour count** |
-| One-way commitment (methylation) | fate is soft/position-reactive | v1 (commit a determinant at threshold) |
-| Programmed apoptosis | passive starvation only | **MISSING** — v2 |
-| Directed movement / chemotaxis | `Contract` actuator; no controller/direction | **MISSING** — v2 |
+| Need                                    | Cyto today                                                                   | Verdict                                                                                            |
+|-----------------------------------------|------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------|
+| Persistent determinant (memory)         | trace morphogen (no cytoplasm decay) + asymmetric division                   | **HAVE** (§C)                                                                                      |
+| Binary differentiation                  | morphogen-gated fate                                                         | **HAVE** (§C)                                                                                      |
+| Stop-dividing / block                   | gate `Divide` off                                                            | **HAVE**                                                                                           |
+| **Positional gradient (shape)**         | source→sink metabolic loop + existing cell↔cell diffuse                      | **AUTHOR** (no new substrate — decay = metabolism)                                                 |
+| **Concentration band readout**          | `Conc` operand + AND-conjunction gate                                        | ✅ DONE (`d39dee5`)                                                                                 |
+| Localised source                        | FormBond exists; localise by gating on a determinant                         | **HAVE** (compose)                                                                                 |
+| Hand-author asymmetric division in text | ~~`GeneCodec` drops the `Divide` morphogen operand~~                         | ✅ DONE (`b2ce870`)                                                                                 |
+| Source body-plan (radial vs axial)      | daughter spawns outward, mother steps inward → retain-side = drift direction | **PARAM** (default mother-retention = radial; daughter = axial)                                    |
+| Oriented division (strings vs blobs)    | placement is "toward free space" only → isotropic blobs                      | **v1** — Divide `slice`/`project` param vs ∇m axis; ∇m read once at division; 4 independent params |
+| Surface vs interior *topology*          | `Touching` = un-welded only                                                  | optional sidecar: **welded-neighbour count**                                                       |
+| One-way commitment (methylation)        | fate is soft/position-reactive                                               | v1 (commit a determinant at threshold)                                                             |
+| Programmed apoptosis                    | passive starvation only                                                      | **MISSING** — v2                                                                                   |
+| Directed movement / chemotaxis          | `Contract` actuator; no controller/direction                                 | **MISSING** — v2                                                                                   |
 
 ## Illustrative v0 genome (untuned — tune empirically)
 
 Pseudo-`GeneCodec`, one clonal genome (schematic — `m`/the `FormBond → …` products are placeholders; the
 real `P`/`M` must be chosen so the loop **closes atomically**, see caveats). `f` = founder determinant
-(sensed-only + mitosis-allocated, never produced/metabolised → persistent, isolated). `m` = morphogen, a
+(sensed-only + division-allocated, never produced/metabolised → persistent, isolated). `m` = morphogen, a
 **metabolite** in a source→sink loop. `HI`/`LO`/`GROW`/`DIVIDE` = thresholds to tune.
 
 ```
@@ -96,10 +96,10 @@ Break ab : Conc f > 0 : FormBond → m         # centre synthesises morphogen m
 Break m : Biomass > 0 : FormBond → ab        # consume m; m is canHold-true ⇒ diffuses cell↔cell for free
 
 # --- symmetry break: keep f in one daughter so the source persists as a point ---
-Break ab : Biomass > DIVIDE : Mitosis f      # mother-retention = central source (radial); daughter = edge (axial)
+Break ab : Biomass > DIVIDE : Divide f      # mother-retention = central source (radial); daughter = edge (axial)
 
 # --- positional readout: two tissues by Conc(m) band ---
-Break ab : Conc m > HI : Mitosis             # core (high m): divide → bulk growth
+Break ab : Conc m > HI : Divide              # core (high m): divide → bulk growth
 Light    : Conc m < LO : Repair              # boundary (low m): tough, non-dividing skin
 ```
 
@@ -124,7 +124,7 @@ a gradient, the decay/diffusion rates or the source localisation are wrong — n
 
 ## First moves (see TASKS.md → Now/Next)
 
-1. ✅ **Codec fix** — `Mitosis <morphogen>` round-trips (`b2ce870`).
+1. ✅ **Codec fix** — `Divide <morphogen>` round-trips (`b2ce870`).
 2. ✅ **`Conc` operand + AND-conjunction gate** — the positional-band readout primitive (`d39dee5`).
 3. **Author the v0 metabolic-loop genome + probe the gradient** — source/sink/diffusion (no new substrate;
    decay = metabolism). Pick `P`/`M` so the loop closes atomically. Run mutation-off, calm physics; confirm a

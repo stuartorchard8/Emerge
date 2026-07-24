@@ -8,7 +8,7 @@ package org.emerge.demo.cyto.sim
  *
  *     Light : r < 4 : Import r            # import 'r' while the cytoplasm 'r' count < 4
  *     Light : rg > 0 : Convert rg         # lock 'rg' into biomass
- *     Light : Biomass > 8 : Mitosis       # divide once biomass exceeds 8 bonds
+ *     Light : Biomass > 8 : Divide       # divide once biomass exceeds 8 bonds
  *     Bond r g : Biomass < 8 : Convert rg # join r+g for energy (and 'rg'), spend it locking 'rg' into biomass
  *     Bond r g : rg > 0 : Break g b        # ...and spend it splitting 'gb' back into 'g' + 'b' (digestion)
  *
@@ -30,7 +30,7 @@ package org.emerge.demo.cyto.sim
  *  `Bond rg b` and `Bond r gb` are different reactions that both build `rgb`).
  *  Action is `Import <species>`, `Break <a> <b>` *(energy-costed digestion — the mirror of the `Bond`
  *  source: names the two fragments, splits the molecule they would join into)*, `Convert <species>`,
- *  `Contract`, `Mitosis` *(or `Mitosis <morphogen>` for asymmetric division — the morphogen is allocated whole
+ *  `Contract`, `Divide` *(or `Divide <morphogen>` for asymmetric division — the morphogen is allocated whole
  *  to one side, MORPHOGENESIS.md §C; append `mother` to keep it in the mother = centred source, vs the default
  *  daughter = edge source; append `sever` so the daughter rejects all mother welds → splits off as a separate
  *  1-celled organism)*, `Repair`, or `Lyse` *(steals all species from touching cells — MORPHOGENESIS.md §B)*.
@@ -221,12 +221,12 @@ object GeneCodec {
         ActionType.BreakBond -> "Break ${tok(a.a)} ${tok(a.b)}"
         ActionType.Convert -> "Convert ${tok(a.a)}"
         ActionType.Contract -> "Contract"
-        // Mitosis: optional morphogen ([GeneAction.a], allocated whole to one side — §C) with a trailing
+        // Divide: optional morphogen ([GeneAction.a], allocated whole to one side — §C) with a trailing
         // `mother` (centred source) vs default daughter (edge source); optional oriented division
         // `along|across <axis-morphogen>` ([GeneAction.b]/[divideAcross], §Morphogens for shape). Each part
-        // is omitted when unset, so a bare `Mitosis` (symmetric, unoriented) round-trips unchanged.
-        ActionType.Mitosis -> buildString {
-            append("Mitosis")
+        // is omitted when unset, so a bare `Divide` (symmetric, unoriented) round-trips unchanged.
+        ActionType.Divide -> buildString {
+            append("Divide")
             if (a.a.isNotEmpty()) { append(" ${tok(a.a)}"); if (a.morphogenToMother) append(" mother") }
             if (a.rejectMother) append(" sever")
             if (a.b.isNotEmpty()) append(if (a.divideAcross) " across ${tok(a.b)}" else " along ${tok(a.b)}")
@@ -262,11 +262,11 @@ object GeneCodec {
         // an inert Repair (a no-op while undamaged) rather than crashing on load.
         "Expand" -> GeneAction(ActionType.Repair)
         "Contract" -> GeneAction(ActionType.Contract)
-        // `Mitosis [<morphogen> [mother|daughter]] [along|across <axis-morphogen>]` — optional asymmetric
+        // `Divide [<morphogen> [mother|daughter]] [along|across <axis-morphogen>]` — optional asymmetric
         // morphogen + retain-side (§C/§Source placement), optional oriented-division axis (§Morphogens for
-        // shape). Keyword tokens (mother/daughter/along/across) are recognised positionally; a bare `Mitosis`
+        // shape). Keyword tokens (mother/daughter/along/across) are recognised positionally; a bare `Divide`
         // = symmetric + unoriented.
-        "Mitosis" -> {
+        "Divide" -> {
             val kw = setOf("mother", "daughter", "along", "across", "sever")
             var i = 1; var morph = ""; var toMother = false; var axis = ""; var across = false; var sever = false
             if (i < t.size && t[i] !in kw) { morph = untok(t[i]); i++ }
@@ -276,7 +276,7 @@ object GeneCodec {
                 across = t[i] == "across"; require(i + 1 < t.size) { fmt(t) }; axis = untok(t[i + 1]); i += 2
             }
             require(i == t.size) { fmt(t) }
-            GeneAction(ActionType.Mitosis, morph, axis, morphogenToMother = toMother, divideAcross = across, rejectMother = sever)
+            GeneAction(ActionType.Divide, morph, axis, morphogenToMother = toMother, divideAcross = across, rejectMother = sever)
         }
         "Repair" -> GeneAction(ActionType.Repair)
         "Lyse" -> GeneAction(ActionType.Lyse)

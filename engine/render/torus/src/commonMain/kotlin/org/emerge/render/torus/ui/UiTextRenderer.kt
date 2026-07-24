@@ -210,7 +210,7 @@ class UiTextRenderer {
             '5', '6', '7', '8', '9', '(', ')', ':',
             '.', ',', '-', '_', '/', '\\', '+', '=',
             '<', '>', '*', '&', '[', ']', '%', '?',
-            '→', '·', '\'',   // → (asym-mitosis), · (FormBond junction), ' (apostrophe/contractions)
+            '→', '·', '\'',   // → (asym-divide), · (FormBond junction), ' (apostrophe/contractions)
         )
         private val CHAR_TO_INDEX: Map<Char, Int> = GLYPHS.withIndex().associate { it.value to it.index }
         private val PATTERN: Map<Char, Array<String>> = mapOf(

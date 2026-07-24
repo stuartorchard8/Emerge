@@ -23,7 +23,7 @@ import kotlin.test.assertTrue
  */
 class BrushGenomeTest {
 
-    private val mitosis = Gene(EnergySource.Light, GeneCondition(emptyList()), GeneAction(ActionType.Mitosis))
+    private val divide = Gene(EnergySource.Light, GeneCondition(emptyList()), GeneAction(ActionType.Divide))
     private val convert = Gene(EnergySource.Light, GeneCondition(emptyList()), GeneAction(ActionType.Convert, "r"))
 
     private fun chapter(
@@ -45,7 +45,7 @@ class BrushGenomeTest {
     @Test
     fun anAuthoredSpawnGenomeWins() {
         val (d, c) = started(chapter("fixed", spawn = listOf(convert)))
-        c.addHeldGenes(listOf(mitosis))
+        c.addHeldGenes(listOf(divide))
         c.tick(0f)
         assertEquals(listOf(convert), d.brushGenome(c))
     }
@@ -60,7 +60,7 @@ class BrushGenomeTest {
         val c = CytoController()
         c.newGame(
             CytoScenario.DEFAULT.copy(
-                founders = listOf(FounderSpec(CellType.Collector, 1, genome = listOf(convert, mitosis))),
+                founders = listOf(FounderSpec(CellType.Collector, 1, genome = listOf(convert, divide))),
             ),
         )
         c.tick(0f)
@@ -89,9 +89,9 @@ class BrushGenomeTest {
     @Test
     fun whatTheyAuthoredBeatsAnEmptyChapterGenome() {
         val (d, c) = started(chapter("scratch"))
-        c.addHeldGenes(listOf(mitosis))
+        c.addHeldGenes(listOf(divide))
         c.tick(0f)
-        assertTrue(d.brushGenome(c)!!.any { it.action.type == ActionType.Mitosis })
+        assertTrue(d.brushGenome(c)!!.any { it.action.type == ActionType.Divide })
     }
 
     /**
@@ -112,7 +112,7 @@ class BrushGenomeTest {
 
         val ids = c.tick(0f).state.components.getTable<CytoCellComponent>().asMap().keys.toList()
         c.focus(ids[0])
-        c.addHeldGenes(listOf(convert, mitosis))
+        c.addHeldGenes(listOf(convert, divide))
         c.tick(0f)
         val authored = c.lastAuthoredGenome!!.size
 
@@ -128,7 +128,7 @@ class BrushGenomeTest {
         val (d, c) = started(ch)
         val id = c.tick(0f).state.components.getTable<CytoCellComponent>().asMap().keys.first()
         c.focus(id)
-        c.addHeldGenes(listOf(mitosis))
+        c.addHeldGenes(listOf(divide))
         c.tick(0f)
         assertEquals(c.heldGenome(), d.brushGenome(c))
     }

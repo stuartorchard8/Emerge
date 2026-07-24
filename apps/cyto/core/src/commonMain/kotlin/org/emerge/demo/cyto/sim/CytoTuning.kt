@@ -144,7 +144,7 @@ object CytoTuning {
     // ── Growth, size & death ─────────────────────────────────────────────────────────────────────────
     /** Biomass (atoms) for a full-size (radius 1.0) cell — `radius = sqrt(atoms / ATOMS_PER_FULL)`. */
     const val ATOMS_PER_FULL = 16 * CHEMISTRY_SCALE
-    /** Metabolic slowdown scale: every gene op **except Mitosis** is throttled by `SCALE/(SCALE+biomass)`,
+    /** Metabolic slowdown scale: every gene op **except Divide** is throttled by `SCALE/(SCALE+biomass)`,
      *  so metabolism runs at half speed when biomass = this. A bigger cell builds (and acquires) slower
      *  while size-proportional decay (degrade) keeps rising, so growth can't outpace decay above an
      *  EMERGENT size — a soft, strength-dependent limit (stronger cells settle larger), not a hard cap.

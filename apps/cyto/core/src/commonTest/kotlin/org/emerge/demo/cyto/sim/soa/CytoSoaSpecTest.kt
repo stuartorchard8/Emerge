@@ -239,7 +239,7 @@ class CytoSoaSpecTest {
     // The heterotroph builds biomass off its stored `ab` and divides a few times before the reserve runs
     // out. This works only because of sub-tick interpolation (CytoBiologyCore.selfGateCap): without it the
     // break-powered Convert would dump the whole reserve into biomass in one tick (overshooting its grow
-    // gate) and strand too little `ab` to fund the bulk mitosis. With the cap it stops at GROW, keeping a
+    // gate) and strand too little `ab` to fund the bulk divide. With the cap it stops at GROW, keeping a
     // reserve to break for division.
     @Test
     fun heterotrophLivesOffStoredMatter() {
@@ -294,8 +294,8 @@ class CytoSoaSpecTest {
     }
 
     @Test
-    fun asymmetricMitosisRetainSidePlacesMorphogen() {
-        // Retain-side (MORPHOGENESIS.md §Source placement): `Mitosis ac mother` keeps the morphogen in the
+    fun asymmetricDivideRetainSidePlacesMorphogen() {
+        // Retain-side (MORPHOGENESIS.md §Source placement): `Divide ac mother` keeps the morphogen in the
         // MOTHER (the surviving original entity = a centred source); the default daughter-retention hands it
         // to the new cell. Spawn one cell above the divide threshold with morphogen `ac` + cc fuel; after it
         // divides, the morphogen sits whole on the selected side and the OTHER side has none.
@@ -303,7 +303,7 @@ class CytoSoaSpecTest {
             val gene = Gene(
                 EnergySource.FormBond("b", "b"),
                 GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(1000)),
-                GeneAction(ActionType.Mitosis, "rb", morphogenToMother = toMother),
+                GeneAction(ActionType.Divide, "rb", morphogenToMother = toMother),
             )
             val initial = run {
                 val b = SimBuilder(SimState())
@@ -365,8 +365,8 @@ class CytoSoaSpecTest {
             val ys = s.components.getTable<CytoCellComponent>().asMap().keys.mapNotNull { ts[it]?.let { tr -> CytoUnits.toLogical(tr.pos.y).toDouble() } }
             return if (ys.isEmpty()) 0.0 else ys.max() - ys.min()
         }
-        val across = yExtent("Bond r g : Biomass > 4000 : Mitosis bb across gb")
-        val thread = yExtent("Bond r g : Biomass > 4000 : Mitosis bb")
+        val across = yExtent("Bond r g : Biomass > 4000 : Divide bb across gb")
+        val thread = yExtent("Bond r g : Biomass > 4000 : Divide bb")
         assertTrue(across > thread + 1.0, "across-oriented division should widen into a 2D sheet; across y-extent=$across, thread y-extent=$thread")
     }
 
@@ -506,7 +506,7 @@ class CytoSoaSpecTest {
     fun degenerateDivisionKillsTheCellAndRecyclesMatter() {
         val (sx, sy) = CytoLightField.SOURCES.first()
         val divideNow = listOf(
-            Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Mitosis)),
+            Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Divide)),
         )
         val initial = run {
             val b = SimBuilder(SimState(randomSeed = 1))
@@ -524,11 +524,11 @@ class CytoSoaSpecTest {
     }
 
     @Test
-    fun asymmetricMitosisAllocatesMorphogenToOneDaughterAndItPersists() {
-        // C — asymmetric mitosis (MORPHOGENESIS.md §C). A founder poised to divide carries a *trace*
+    fun asymmetricDivideAllocatesMorphogenToOneDaughterAndItPersists() {
+        // C — asymmetric divide (MORPHOGENESIS.md §C). A founder poised to divide carries a *trace*
         // morphogen `gb` (a MOLECULE — bare atoms are now universally permeable, so a trace determinant must
         // be a bond): no gene metabolises OR senses it, so it is `!canHold`, and the canHold-gated cell↔cell
-        // diffusion and env-uptake can therefore never move it. The single Mitosis gene names `gb` as its
+        // diffusion and env-uptake can therefore never move it. The single Divide gene names `gb` as its
         // morphogen, so on division `gb` goes WHOLE to the daughter and the mother keeps none.
         // Because `gb` is trace, the mother can never re-acquire it (no uptake, and env diffusion moves
         // matter only BETWEEN texels, never across a cell wall — the junction alone does that) — so the
@@ -536,17 +536,17 @@ class CytoSoaSpecTest {
         // clones from one founder is the substrate for differentiation. A gene that *gates* on `Chem(gb)`
         // to act on the difference keeps `gb` trace too — sensing doesn't grant permeability (handleableOf)
         // — so the behavioural fate persists; see morphogenGatedFatePersistsAsBehaviouralDifferentiation.
-        val mitosis = Gene(
+        val divide = Gene(
             EnergySource.FormBond("r", "g"),
             GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(7_900)),
-            GeneAction(ActionType.Mitosis, "gb"),   // morphogen `gb` → whole to the daughter
+            GeneAction(ActionType.Divide, "gb"),   // morphogen `gb` → whole to the daughter
         )
         val initial = run {
             val b = SimBuilder(SimState())
             b.spawnCell(
                 CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Blank,
                 cytoplasm = mapOf("rg" to 50_000, "gb" to 2_000, "r" to 50_000, "g" to 50_000), biomass = mapOf("rg" to 4_000),   // atom-biomass 8000 (biomass now counts atoms): founder > 7900 divides once, each daughter ~4000 < 7900 can't
-                genome = listOf(mitosis),
+                genome = listOf(divide),
             )
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.empty()) }
             b.build()
@@ -571,10 +571,10 @@ class CytoSoaSpecTest {
         // diffuse it in — so only the morphogen-bearing daughter expresses the contract fate, and it holds.
         // Two clones, one genome, a divergent shape that persists. (The trace species must be a molecule now
         // that bare atoms diffuse freely regardless of genome; a monomer morphogen would equilibrate.)
-        val mitosis = Gene(
+        val divide = Gene(
             EnergySource.FormBond("r", "g"),
             GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(7_900)),
-            GeneAction(ActionType.Mitosis, "gb"),
+            GeneAction(ActionType.Divide, "gb"),
         )
         val contractIfMorphogen = Gene(
             EnergySource.FormBond("r", "g"),
@@ -586,7 +586,7 @@ class CytoSoaSpecTest {
             b.spawnCell(
                 CytoUnits.coord2(0f, 0f), Coord2.zero, CellType.Blank,
                 cytoplasm = mapOf("rg" to 80_000, "gb" to 2_000, "r" to 80_000, "g" to 80_000), biomass = mapOf("rg" to 4_000),   // atom-biomass 8000: divides once, daughters below the 7900 re-divide gate
-                genome = listOf(mitosis, contractIfMorphogen),
+                genome = listOf(divide, contractIfMorphogen),
             )
             b.update<CytoMatterGridComponent>(GRID_SINGLETON) { CytoMatterGridComponent(CytoMatterField.empty()) }
             b.build()

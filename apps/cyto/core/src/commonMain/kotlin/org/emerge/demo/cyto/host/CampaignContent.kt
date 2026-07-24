@@ -64,10 +64,10 @@ object CampaignContent {
 
     private fun List<Gene>.tagged(group: String): List<Gene> = map { it.copy(group = group) }
 
-    /** Tag a full-autotroph gene by its role: the two grow genes → Grow, the Mitosis gene → Reproduce. */
+    /** Tag a full-autotroph gene by its role: the two grow genes → Grow, the Divide gene → Reproduce. */
     private fun Gene.taggedByRole(): Gene = copy(group = if (this in AUTOTROPH_GROW_ONLY_GENES) GROUP_GROW else GROUP_REPRODUCE)
 
-    /** The reproduction subsystem the grow-only substrate is missing (the break-powered Mitosis gene) — the
+    /** The reproduction subsystem the grow-only substrate is missing (the break-powered Divide gene) — the
      *  genes Ch4's "+ ADD REPRODUCE" inserts, pre-tagged so they carry their group label from the moment
      *  they're added. */
     private val REPRODUCE_GENES = AUTOTROPH_GENES.filter { it !in AUTOTROPH_GROW_ONLY_GENES }.tagged(GROUP_REPRODUCE)
@@ -86,7 +86,7 @@ object CampaignContent {
      *  grow genes, then *adds* reproduction to bring it to life. Frames the world as a substrate to author,
      *  not a busy ecosystem to catch up on. */
     // Chemical aliases (see [CytoScenario.aliases]): name the campaign's molecules by what they DO in the
-    // genome, so a gene card reads "BREAK FUEL (R/G) TO POWER" instead of "BREAK REDREEN…". `rg` is the
+    // genome, so a gene card reads "BREAK FUEL (R/G)" instead of "BREAK REDREEN…". `rg` is the
     // energy store every genome burns; `bb` the polarity marker one daughter keeps; `gb` the clock signal the
     // muscle waits on. Built-in names still cover everything unaliased.
     private val FUEL_ALIASES = mapOf("rg" to "fuel")
@@ -114,7 +114,7 @@ object CampaignContent {
     private val GROW_REPRODUCE_WELDED = CytoScenario.DEFAULT.copy(
         name = "Campaign",
         founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GENES.map { g ->
-            g.taggedByRole().let { if (it.action.type == ActionType.Mitosis) it.copy(action = it.action.copy(rejectMother = false)) else it }
+            g.taggedByRole().let { if (it.action.type == ActionType.Divide) it.copy(action = it.action.copy(rejectMother = false)) else it }
         })),
         aliases = FUEL_ALIASES,
     )
@@ -138,14 +138,14 @@ object CampaignContent {
     private val GROW_REPRODUCE_WELDED_HOLD = CytoScenario.DEFAULT.copy(
         name = "Campaign",
         founders = listOf(FounderSpec(CellType.Collector, 1, genome = AUTOTROPH_GENES.map { g ->
-            g.taggedByRole().let { if (it.action.type == ActionType.Mitosis) it.copy(action = it.action.copy(rejectMother = false)) else it }
+            g.taggedByRole().let { if (it.action.type == ActionType.Divide) it.copy(action = it.action.copy(rejectMother = false)) else it }
         } + HOLD_TOGETHER_GENES)),
         aliases = FUEL_ALIASES,
     )
 
     // ── Ch8: the Polarise / differentiation genome (Stu's world-8 swimmer lineage) ──────────────────────
     // A bespoke locomotion genome, tagged into functional groups. Unlike the Ch1-7 autotroph it runs a
-    // b/bb/gr/br chemistry: `bb` is a morphogen handed WHOLE to one daughter on division (Mitosis `bb
+    // b/bb/gr/br chemistry: `bb` is a morphogen handed WHOLE to one daughter on division (Divide `bb
     // mother`), so only the marked side carries it. The MOVE muscle (light-powered Contract) fires while
     // `bb < 1`, so the UN-marked cells clench and the marked cell holds still - an ASYMMETRIC squeeze that
     // makes the body travel. Authored as text + parsed via GeneCodec so it reads exactly like the `.gene`
@@ -163,7 +163,7 @@ object CampaignContent {
         Light : bb < 1 : Contract @15 : move
         Break rg : bb < 5 & gr > 0 & br < rg : FormBond b r : grow
         Break br : gr > 9 : FormBond r g @13 : grow
-        Break rg : br < 10 & Biomass > 2000 : Mitosis bb mother across gr : grow
+        Break rg : br < 10 & Biomass > 2000 : Divide bb mother across gr : grow
         """.trimIndent(),
     )
 
@@ -229,7 +229,7 @@ object CampaignContent {
         Light : bb < 1 & gb > 50 : Contract @15 : move
         Break rg : bb < 5 & gr > 0 & br < 200 : FormBond b r : grow
         Break br : gr > 9 : FormBond r g @10 : grow
-        Break rg : br < 20 & gr > 1000 & Biomass > 2000 : Mitosis bb mother across gr : grow
+        Break rg : br < 20 & gr > 1000 & Biomass > 2000 : Divide bb mother across gr : grow
         """.trimIndent(),
     )
 
@@ -270,7 +270,7 @@ object CampaignContent {
     // ── Ch10: reproduction / colonisation (Stu's reproducer genome = SwimmerxX + a sever-division group) ──
     // The Ch9 end-state swimmer (clocked, night-running, marked-cell muscle) is growth-capped by the Ch8
     // morphogen: it grows to a small cluster and holds there - one lone creature. Ch10 adds a REPRODUCE
-    // group whose payload is a SEVER division (`Mitosis gr mother sever` = rejectMother): when the body is
+    // group whose payload is a SEVER division (`Divide gr mother sever` = rejectMother): when the body is
     // big enough it buds a daughter FREE - no weld - as its own single-celled founder, which drifts off,
     // escapes the size cap (it's small again), and grows into a whole new swimmer. A lineage that spreads.
     private const val GROUP_REPRODUCE_SWIMMER = "reproduce"
@@ -298,17 +298,17 @@ object CampaignContent {
         Break gg : gb > 100 : FormBond r g : clock
         Break rg : bb < 5 & gr > 0 & br < 200 : FormBond b r : grow
         Break br : gr > 9 : FormBond r g @10 : grow
-        Break rg : br < 20 & gr > 1000 & Biomass > 2000 : Mitosis bb mother across gr : grow
+        Break rg : br < 20 & gr > 1000 & Biomass > 2000 : Divide bb mother across gr : grow
         """.trimIndent(),
     )
 
     /** The reproduction subsystem Ch10's "+ ADD REPRODUCE" inserts: a reserve-building Convert plus a SEVER
-     *  division (`Mitosis gr mother sever` = rejectMother). Once the body is large it splits off a daughter
+     *  division (`Divide gr mother sever` = rejectMother). Once the body is large it splits off a daughter
      *  that breaks free, unwelded, as its own founder - which then drifts away and grows a new swimmer. */
     private val CH10_REPRODUCE_GENES: List<Gene> = GeneCodec.parse(
         """
         Break br : br > 179 & Biomass < 5000 & rg > 5000 : Convert br : reproduce
-        Break rg : Biomass > 3500 & gr > 1000 : Mitosis gr mother sever along gr : reproduce
+        Break rg : Biomass > 3500 & gr > 1000 : Divide gr mother sever along gr : reproduce
         """.trimIndent(),
     )
 
@@ -532,7 +532,7 @@ object CampaignContent {
      *
      * The chapter is built around one obstacle the player has to be *told*, because the world will not
      * explain it: division is a bulk cost, `biomass/4` energy in a **single tick**, and energy quanta are
-     * use-or-lose (`CytoBiologyCore`, the `ActionType.Mitosis` branch). Light trickles in far below that
+     * use-or-lose (`CytoBiologyCore`, the `ActionType.Divide` branch). Light trickles in far below that
      * bar at any real divide size, so a Light-powered DIVIDE gene sits there doing nothing forever - it
      * never accumulates toward the cost. The way through is synthesis: bonding two molecules releases one
      * energy quantum per bond, and the world is full of loose monomers, so a bonding gene can mint the
@@ -572,7 +572,7 @@ object CampaignContent {
             // leaves the player making the "right" edit and watching nothing happen. Live, so they can see the
             // size climbing while they read.
             Step(
-                text = "Nothing happens. The gene is there, but your cell will not divide.  Division costs a quarter of the cell's biomass in energy. Bigger cells pay more, and currently your cell isn't able to cover the bill.",
+                text = "Nothing happens. The gene is there, but your cell will not divide.  Division costs a quarter of the cell's biomass in energy. Bigger cells pay more, and currently your cell isn't able to cover that cost.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
@@ -610,7 +610,7 @@ object CampaignContent {
             Step(
                 text = "Fortunately for your cell, there is another more abundant energy source available: chemistry. Change the DIVIDE gene's energy source from (USE LIGHT) to (BOND), then choose two chemicals to join together.",
                 detail = "Joining two molecules releases energy - one unit per bond made - and this world is full of loose atoms to join. Any pair works, so pick whichever you like.",
-                gate = Gate.World("Power DIVIDE by bonding", met = { !it.lineage?.mitosisProduct.isNullOrEmpty() }),
+                gate = Gate.World("Power DIVIDE by bonding", met = { !it.lineage?.divideProduct.isNullOrEmpty() }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
@@ -763,7 +763,7 @@ object CampaignContent {
                 gate = Gate.World(
                     "Clear the {bond} out of a cell",
                     met = { q ->
-                        val waste = q.lineage?.mitosisProduct
+                        val waste = q.lineage?.divideProduct
                         val held = q.focused?.cytoplasm
                         !waste.isNullOrEmpty() && held != null && (held[waste] ?: 0) < 100
                     },
@@ -832,7 +832,7 @@ object CampaignContent {
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
             ),
-            // The edit. `convertProduct == mitosisProduct` is the reconvergence reading: the CONVERT gene is
+            // The edit. `convertProduct == divideProduct` is the reconvergence reading: the CONVERT gene is
             // powered by the same reaction the DIVIDE gene is.
             Step(
                 text = "Now that daylight can clear {bond} back out of the cytoplasm, it is safe to spend it. Change the CONVERT gene's energy source from (USE LIGHT) to (BOND), and give it the same pair your DIVIDE gene uses. Growth then runs on chemistry, at any hour.",
@@ -841,7 +841,7 @@ object CampaignContent {
                     "Power the CONVERT gene with {bond}",
                     met = { q ->
                         val fuel = q.lineage?.convertProduct
-                        !fuel.isNullOrEmpty() && fuel == q.lineage?.mitosisProduct
+                        !fuel.isNullOrEmpty() && fuel == q.lineage?.divideProduct
                     },
                 ),
                 allow = LOOK,
@@ -854,7 +854,7 @@ object CampaignContent {
                 gate = Gate.World(
                     "Let {bond} build up overnight",
                     met = { q ->
-                        val waste = q.lineage?.mitosisProduct
+                        val waste = q.lineage?.divideProduct
                         !waste.isNullOrEmpty() && (q.focused?.cytoplasm?.get(waste) ?: 0) > 200
                     },
                 ),
@@ -867,7 +867,7 @@ object CampaignContent {
                 gate = Gate.World(
                     "Clear the night's {bond} by morning",
                     met = { q ->
-                        val waste = q.lineage?.mitosisProduct
+                        val waste = q.lineage?.divideProduct
                         val held = q.focused?.cytoplasm
                         !waste.isNullOrEmpty() && held != null && (held[waste] ?: 0) < 100
                     },
@@ -920,7 +920,7 @@ object CampaignContent {
         spawnBiomass = STARTER_CELL_BIOMASS,
         steps = listOf(
             Step(
-                text = "Look at what your cells are built out of. {chem} is a single atom. {bond} is two of them already joined together, and your cells make it themselves every time they pay for anything. Longer chemicals contribute more to biomass than shorter ones, so they are growing on the weaker of the two.",
+                text = "Look at what your cells are built out of. {chem} is a single-atom-chemical. {bond} is two of them already joined together, and your cells make it themselves every time they pay for anything. Longer chemicals contribute more to biomass than shorter ones, so they are growing on the weaker of the two.",
                 gate = Gate.Next,
                 allow = LOOK,
                 world = WorldRun.Frozen,
@@ -931,7 +931,7 @@ object CampaignContent {
                     "Point the CONVERT gene at {bond}",
                     met = { q ->
                         val target = q.lineage?.convertChem
-                        !target.isNullOrEmpty() && target == q.lineage?.mitosisProduct
+                        !target.isNullOrEmpty() && target == q.lineage?.divideProduct
                     },
                 ),
                 allow = LOOK,
@@ -1037,7 +1037,7 @@ object CampaignContent {
                 text = "Update your convert gene to change its target chemical from {chem} to {bond}. ",
                 gate = Gate.World("Update the first gene to CONVERT {bond}", met = {
                     it.lineage?.convertChem != null && it.lineage?.convertChem != ""
-                            && it.lineage?.convertChem == it.lineage?.mitosisProduct
+                            && it.lineage?.convertChem == it.lineage?.divideProduct
                 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
@@ -1045,7 +1045,7 @@ object CampaignContent {
             // The chapter ends here, on the die-off. It auto-advances, so the collapse itself is the segue
             // into `ch03-supply` rather than something the player has to click past.
             Step(
-                text = "This solves three problems at once: 1. It removes internal genetic competition for {chem}. 2. It deals with the {bond} byproduct of mitosis. 3. It upgrades the biomass to use a more efficient chemical.",
+                text = "This solves three problems at once: 1. It removes internal genetic competition for {chem}. 2. It deals with the {bond} byproduct of divide. 3. It upgrades the biomass to use a more efficient chemical.",
                 // Same reason as Leftovers' die-off: the edit lands on ONE cell, and an empty-world gate does
                 // not fire while its unedited siblings are still going.
                 gate = Gate.World("What could go wrong?", met = { it.watchedCellDied }),
@@ -1158,7 +1158,7 @@ object CampaignContent {
                 gate = Gate.World(
                     "Find the {bond} your cells are sitting on",
                     met = { q ->
-                        val waste = q.lineage?.mitosisProduct
+                        val waste = q.lineage?.divideProduct
                         !waste.isNullOrEmpty() && (q.focused?.cytoplasm?.get(waste) ?: 0) > 300
                     },
                 ),
@@ -1201,7 +1201,7 @@ object CampaignContent {
                 gate = Gate.World(
                     "Reclaim the {bond}",
                     met = { q ->
-                        val waste = q.lineage?.mitosisProduct
+                        val waste = q.lineage?.divideProduct
                         val held = q.focused?.cytoplasm
                         !waste.isNullOrEmpty() && held != null && (held[waste] ?: 0) < 200
                     },
@@ -1341,7 +1341,7 @@ object CampaignContent {
                 text = "Each gene reads as one sentence, on three lines: what it DOES, WHEN it does it, and what POWERS it.",
                 gate = Gate.Next,
                 allow = LOOK,
-                detail = "Example: 'CONVERT FUEL TO MASS / WHEN BIO < 3000 / (USE LIGHT) TO POWER' means - while the cell is still small, lock fuel into body mass, paid for by daylight. What to do, when to do it, and the power for it.",
+                detail = "Example: 'CONVERT FUEL TO MASS / WHEN BIO < 3000 / (USE LIGHT)' means - while the cell is still small, lock fuel into body mass, paid for by daylight. What to do, when to do it, and the power for it.",
             ),
             Step(
                 text = "The two GROW genes work together: one bonds raw matter into food, the other locks that food into body mass. That loop keeps the cell fed and repaired.",
@@ -1359,7 +1359,7 @@ object CampaignContent {
 
     /** Act II, first authoring beat. The player brings the static grow-only organism to life by *inserting*
      *  the ready-made Reproduce subsystem (one tap on "ADD REPRODUCE"), then watches it divide and spread.
-     *  Teaches Mitosis by using it to solve a problem, and the group-insert idea: you build with meaningful
+     *  Teaches Divide by using it to solve a problem, and the group-insert idea: you build with meaningful
      *  units, not raw genes. */
     private fun chapter4Reproduce() = Chapter(
         id = "ch04-reproduce",

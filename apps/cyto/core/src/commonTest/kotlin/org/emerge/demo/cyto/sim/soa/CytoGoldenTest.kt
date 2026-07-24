@@ -160,9 +160,9 @@ class CytoGoldenTest {
     //   OLD (bonds):  pop 7@500, 34@1500, 160@3000, 919@6000   (first division ~tick 500)
     //   NEW (atoms):  pop 1@500,  1@1500,   5@3000, 1343@6000   (first division after tick 1500)
     // Healthy and deterministic, but a very different curve: heavier cells hoard far longer before the first
-    // division (Mitosis cost = biomass/4 ~doubled; the METABOLIC_BIOMASS_SCALE slowdown bites harder), then
+    // division (Divide cost = biomass/4 ~doubled; the METABOLIC_BIOMASS_SCALE slowdown bites harder), then
     // settle at a HIGHER carrying capacity. The default autotroph's 1500-tick lag is a TUNING artifact — its
-    // GROW/DIVIDE_BIOMASS thresholds and the Mitosis divisor now measure atoms and want retuning as part of
+    // GROW/DIVIDE_BIOMASS thresholds and the Divide divisor now measure atoms and want retuning as part of
     // re-authoring the genomes for this chemistry; the mechanism is what's being landed here, not the tune.
     // growth+mutation now share meta/physics/grid (both a lone founder at pop 1 through 1500); interact keeps
     // topology empty (its post-script colony still doesn't weld); weld/sticky keep META byte-identical (fixed
@@ -213,10 +213,10 @@ class CytoGoldenTest {
     // byte-identical. mutation-on moves in every dimension because point-mutation now re-rolls a whole
     // operand (`mutateOperand`, nextInt(4) + maybe a species draw) instead of the old separate species/type
     // draws, re-routing the PRNG stream and thus the whole trajectory.
-    // Re-baselined 2026-06-16 (#2): BREAK-POWERED DIVISION — mitosis is now a bulk `biomass/4` cost (paid by
+    // Re-baselined 2026-06-16 (#2): BREAK-POWERED DIVISION — divide is now a bulk `biomass/4` cost (paid by
     // breaking stored bonds; light can't fund it) and the seed AUTOTROPH was rebuilt around it (BreakBond
-    // mitosis from an `ab` reserve held to N; FormBond/Convert grow below N; no Repair gene — colonies hold
-    // together only by overlap-welding, not active heal). The mitosis rule + preset genome both changed, so
+    // divide from an `ab` reserve held to N; FormBond/Convert grow below N; no Repair gene — colonies hold
+    // together only by overlap-welding, not active heal). The divide rule + preset genome both changed, so
     // ALL three trajectory goldens move in every dimension; determinism gates held. Validated: the founder
     // colonises hard (1→955 by tick 600 under committed dials, mutation off) — dense enough that cells
     // overlap-weld, so the mutation/interact `topology` is non-empty again. At the live
@@ -224,7 +224,7 @@ class CytoGoldenTest {
     // robust in the real world (the mutation-on goldens/specs crank the rate to 200 to exercise divergence).
     // Re-baselined 2026-06-16 (#3): SUB-TICK INTERPOLATION + biomass/4 cost. A continuous growth gene now
     // runs only for the portion of the tick before it crosses its OWN gate threshold (CytoBiologyCore
-    // .selfGateCap), so it fills to its limit instead of overshooting in one bulk step; Mitosis moved to an
+    // .selfGateCap), so it fills to its limit instead of overshooting in one bulk step; Divide moved to an
     // atomic END-OF-TICK pass whose gate is re-checked on the settled state. The autotroph's grow/divide
     // thresholds split (GROW 8000 > DIVIDE 6000) so the now-capped grower still crosses the divide line.
     // All three goldens move again (gene execution order + per-tick magnitudes changed); parallel==sequential

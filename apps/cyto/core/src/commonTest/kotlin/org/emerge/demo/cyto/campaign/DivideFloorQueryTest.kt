@@ -25,7 +25,7 @@ class DivideFloorQueryTest {
     private fun divide(vararg clauses: Clause) = Gene(
         EnergySource.FormBond("g", "b"),
         GeneCondition(clauses.toList()),
-        GeneAction(ActionType.Mitosis),
+        GeneAction(ActionType.Divide),
     )
 
     @Test
@@ -66,7 +66,7 @@ class DivideFloorQueryTest {
     @Test
     fun aLightPoweredBreakOfTheFuelProductIsTheRecyclingGene() {
         val g = lineageOf(listOf(divide(), breakGene(EnergySource.Light, "g", "b")))
-        assertEquals("gb", g.mitosisProduct)
+        assertEquals("gb", g.divideProduct)
         assertTrue(g.hasPhotosynthesis)
     }
 
@@ -87,7 +87,7 @@ class DivideFloorQueryTest {
     /** With no fuel reaction there is no exhaust, so nothing can read as recycling it. */
     @Test
     fun withNoFuelReactionThereIsNoRecyclingGene() {
-        val lightDivide = Gene(EnergySource.Light, GeneCondition(emptyList()), GeneAction(ActionType.Mitosis))
+        val lightDivide = Gene(EnergySource.Light, GeneCondition(emptyList()), GeneAction(ActionType.Divide))
         assertFalse(lineageOf(listOf(lightDivide, breakGene(EnergySource.Light, "g", "b"))).hasPhotosynthesis)
     }
 }

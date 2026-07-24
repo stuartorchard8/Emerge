@@ -29,7 +29,7 @@ class LockedUpChapterTest {
             FocusedCell(CellType.Collector, 2800, mapOf("r" to 1, "g" to 2, "rg" to waste)),
             Lineage(
                 geneCount = genes, convertChem = "rg", convertProduct = "rg", hasDivide = true,
-                mitosisProduct = "rg", hasPhotosynthesis = recycles, recycleReserve = reserve,
+                divideProduct = "rg", hasPhotosynthesis = recycles, recycleReserve = reserve,
                 divideFuelConflicts = true,
             ),
         ),

@@ -42,7 +42,7 @@ class GeneCodecTest {
     fun roundTripsGroupTag() {
         val genome = listOf(
             Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, Operand.Constant(3000)), GeneAction(ActionType.Convert, "rg"), group = "Grow"),
-            Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(2000)), GeneAction(ActionType.Mitosis, rejectMother = true), group = "Hold Together"),
+            Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(2000)), GeneAction(ActionType.Divide, rejectMother = true), group = "Hold Together"),
             Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Chem("rg"), Comparison.Less, Operand.Constant(3000)), GeneAction(ActionType.Convert, "rg")),  // untagged
         )
         val text = GeneCodec.serialize(genome)
@@ -81,9 +81,9 @@ class GeneCodecTest {
     fun roundTripsEveryActionType() {
         for (action in ActionType.entries) {
             // Empty operands serialize as `_` and decode back to empty, so this holds for the
-            // operand-carrying (Import/FormBond/Convert) and the bare-token (Contract/Mitosis/Repair)
-            // actions alike — the point is that the action token itself survives. (Mitosis with a
-            // morphogen operand is covered by roundTripsAsymmetricMitosisMorphogen below.)
+            // operand-carrying (Import/FormBond/Convert) and the bare-token (Contract/Divide/Repair)
+            // actions alike — the point is that the action token itself survives. (Divide with a
+            // morphogen operand is covered by roundTripsAsymmetricDivideMorphogen below.)
             val gene = Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(0)), GeneAction(action))
             val back = GeneCodec.parse(body(listOf(gene)))
             assertEquals(listOf(gene), back, "$action")
@@ -97,9 +97,9 @@ class GeneCodecTest {
     fun roundTripsEveryOperandKindOnBothSides() {
         val kinds = listOf(Operand.Constant(7), Operand.Chem("rg"), Operand.Biomass, Operand.Touching, Operand.Neighbours)
         for (op in kinds) {
-            val asLhs = Gene(EnergySource.Light, GeneCondition(op, Comparison.Greater, Operand.Constant(2)), GeneAction(ActionType.Mitosis))
+            val asLhs = Gene(EnergySource.Light, GeneCondition(op, Comparison.Greater, Operand.Constant(2)), GeneAction(ActionType.Divide))
             assertEquals(listOf(asLhs), GeneCodec.parse(body(listOf(asLhs))), "$op as lhs")
-            val asRhs = Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, op), GeneAction(ActionType.Mitosis))
+            val asRhs = Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Less, op), GeneAction(ActionType.Divide))
             assertEquals(listOf(asRhs), GeneCodec.parse(body(listOf(asRhs))), "$op as rhs")
         }
     }
@@ -112,25 +112,25 @@ class GeneCodecTest {
         assertEquals(listOf(gene), GeneCodec.parse(body(listOf(gene))), "biomass < stored rg reserve")
     }
 
-    /** Asymmetric mitosis (MORPHOGENESIS.md §C) names a morphogen that must round-trip — this is the
-     *  capability that lets §C genomes be hand-authored / saved as text. A bare `Mitosis` (symmetric) still
+    /** Asymmetric divide (MORPHOGENESIS.md §C) names a morphogen that must round-trip — this is the
+     *  capability that lets §C genomes be hand-authored / saved as text. A bare `Divide` (symmetric) still
      *  parses to an empty operand, so existing genomes are unaffected. */
     @Test
-    fun roundTripsAsymmetricMitosisMorphogen() {
-        val asymmetric = Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Mitosis, "m"))
-        assertEquals("Bond r g : Biomass > 8 : Mitosis m", body(listOf(asymmetric)), "serialized form")
-        assertEquals(listOf(asymmetric), GeneCodec.parse(body(listOf(asymmetric))), "asymmetric mitosis morphogen")
+    fun roundTripsAsymmetricDivideMorphogen() {
+        val asymmetric = Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Divide, "m"))
+        assertEquals("Bond r g : Biomass > 8 : Divide m", body(listOf(asymmetric)), "serialized form")
+        assertEquals(listOf(asymmetric), GeneCodec.parse(body(listOf(asymmetric))), "asymmetric divide morphogen")
 
         // Retain-side (MORPHOGENESIS.md §Source placement): `mother` keeps the morphogen in the mother
         // (centred source); default/`daughter` hands it out (edge source).
-        val toMother = Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Mitosis, "m", morphogenToMother = true))
-        assertEquals("Bond r g : Biomass > 8 : Mitosis m mother", body(listOf(toMother)), "serialized mother-retention")
+        val toMother = Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Divide, "m", morphogenToMother = true))
+        assertEquals("Bond r g : Biomass > 8 : Divide m mother", body(listOf(toMother)), "serialized mother-retention")
         assertEquals(listOf(toMother), GeneCodec.parse(body(listOf(toMother))), "mother-retention round-trip")
-        assertEquals(listOf(asymmetric), GeneCodec.parse("Break rg : Biomass > 8 : Mitosis m daughter"), "explicit 'daughter' = default")
+        assertEquals(listOf(asymmetric), GeneCodec.parse("Break rg : Biomass > 8 : Divide m daughter"), "explicit 'daughter' = default")
 
-        // A bare `Mitosis` token (no operand) still decodes to a symmetric, daughter-side split — backward compatibility.
-        val symmetric = Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Mitosis))
-        assertEquals(listOf(symmetric), GeneCodec.parse("Light : Biomass > 8 : Mitosis"), "bare Mitosis stays symmetric")
+        // A bare `Divide` token (no operand) still decodes to a symmetric, daughter-side split — backward compatibility.
+        val symmetric = Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Divide))
+        assertEquals(listOf(symmetric), GeneCodec.parse("Light : Biomass > 8 : Divide"), "bare Divide stays symmetric")
     }
 
     /**
@@ -180,7 +180,7 @@ class GeneCodecTest {
                 Clause(Operand.Biomass, Comparison.Greater, Operand.Constant(8)),
                 Clause(Operand.Chem("rg"), Comparison.Less, Operand.Constant(4)),
             )),
-            GeneCodec.parse("Light : Biomass > 8 & rg < 4 : Mitosis").single().condition,
+            GeneCodec.parse("Light : Biomass > 8 & rg < 4 : Divide").single().condition,
             "multi-clause parse",
         )
     }
@@ -188,36 +188,36 @@ class GeneCodecTest {
     /** Oriented division (MORPHOGENESIS.md §Morphogens for shape): the axis-morphogen + along/across mode
      *  round-trip, composing with the asymmetric morphogen + retain-side. */
     @Test
-    fun roundTripsOrientedMitosis() {
+    fun roundTripsOrientedDivide() {
         val gate = GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8))
         // axis only (no asymmetric morphogen): `along`/`across <axis>`.
-        val along = Gene(EnergySource.Light, gate, GeneAction(ActionType.Mitosis, b = "gb"))
-        assertEquals("Light : Biomass > 8 : Mitosis along gb", body(listOf(along)), "along, axis only")
+        val along = Gene(EnergySource.Light, gate, GeneAction(ActionType.Divide, b = "gb"))
+        assertEquals("Light : Biomass > 8 : Divide along gb", body(listOf(along)), "along, axis only")
         assertEquals(listOf(along), GeneCodec.parse(body(listOf(along))))
-        // all four Mitosis params at once: asym morphogen → mother, oriented across an axis.
-        val full = Gene(EnergySource.FormBond("r", "g"), gate, GeneAction(ActionType.Mitosis, a = "rb", b = "gb", morphogenToMother = true, divideAcross = true))
-        assertEquals("Bond r g : Biomass > 8 : Mitosis rb mother across gb", body(listOf(full)), "asym+mother+across")
+        // all four Divide params at once: asym morphogen → mother, oriented across an axis.
+        val full = Gene(EnergySource.FormBond("r", "g"), gate, GeneAction(ActionType.Divide, a = "rb", b = "gb", morphogenToMother = true, divideAcross = true))
+        assertEquals("Bond r g : Biomass > 8 : Divide rb mother across gb", body(listOf(full)), "asym+mother+across")
         assertEquals(listOf(full), GeneCodec.parse(body(listOf(full))))
     }
 
-    /** Mitosis with `sever` — the daughter rejects all mother welds, splitting off as a separate 1-celled
+    /** Divide with `sever` — the daughter rejects all mother welds, splitting off as a separate 1-celled
      *  organism. Round-trips with and without asymmetric morphogen. */
     @Test
-    fun roundTripsMitosisSever() {
+    fun roundTripsDivideSever() {
         val gate = GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8))
         // bare sever: `sever` alone
-        val sever = Gene(EnergySource.Light, gate, GeneAction(ActionType.Mitosis, rejectMother = true))
-        assertEquals("Light : Biomass > 8 : Mitosis sever", body(listOf(sever)))
+        val sever = Gene(EnergySource.Light, gate, GeneAction(ActionType.Divide, rejectMother = true))
+        assertEquals("Light : Biomass > 8 : Divide sever", body(listOf(sever)))
         assertEquals(listOf(sever), GeneCodec.parse(body(listOf(sever))), "sever round-trip")
 
         // sever + asymmetric morphogen to mother
-        val fullSever = Gene(EnergySource.FormBond("r", "g"), gate, GeneAction(ActionType.Mitosis, a = "x", morphogenToMother = true, rejectMother = true))
-        assertEquals("Bond r g : Biomass > 8 : Mitosis x mother sever", body(listOf(fullSever)))
+        val fullSever = Gene(EnergySource.FormBond("r", "g"), gate, GeneAction(ActionType.Divide, a = "x", morphogenToMother = true, rejectMother = true))
+        assertEquals("Bond r g : Biomass > 8 : Divide x mother sever", body(listOf(fullSever)))
         assertEquals(listOf(fullSever), GeneCodec.parse(body(listOf(fullSever))), "sever+mother round-trip")
 
         // sever + oriented division
-        val orientedSever = Gene(EnergySource.Light, gate, GeneAction(ActionType.Mitosis, b = "gb", divideAcross = true, rejectMother = true))
-        assertEquals(orientedSever, GeneCodec.parse("Light : Biomass > 8 : Mitosis sever across gb").single())
+        val orientedSever = Gene(EnergySource.Light, gate, GeneAction(ActionType.Divide, b = "gb", divideAcross = true, rejectMother = true))
+        assertEquals(orientedSever, GeneCodec.parse("Light : Biomass > 8 : Divide sever across gb").single())
     }
 
     /** Synthesis operands are exact whole species and the pair is ordered, so `Bond rg b` and `Bond r gb`
@@ -281,8 +281,8 @@ class GeneCodecTest {
     @Test
     fun declaresAndReadsTheGenomeVersion() {
         assertEquals(GeneCodec.GENOME_VERSION, GeneCodec.parseVersion(GeneCodec.serialize(AUTOTROPH_GENES)), "serialize declares the current model")
-        assertEquals(GeneCodec.GENOME_VERSION_PRE_INVERSION, GeneCodec.parseVersion("Light : Biomass > 0 : Mitosis"), "headerless text is pre-inversion")
-        assertEquals(7, GeneCodec.parseVersion("# genome 7\nLight : Biomass > 0 : Mitosis"), "explicit header wins")
+        assertEquals(GeneCodec.GENOME_VERSION_PRE_INVERSION, GeneCodec.parseVersion("Light : Biomass > 0 : Divide"), "headerless text is pre-inversion")
+        assertEquals(7, GeneCodec.parseVersion("# genome 7\nLight : Biomass > 0 : Divide"), "explicit header wins")
     }
 
     /**
@@ -326,7 +326,7 @@ class GeneCodecTest {
         val legacyGenome = GeneCodec.parse(
             """
             Light : r < 4 : Import r
-            Break rg : Biomass > 8 : Mitosis
+            Break rg : Biomass > 8 : Divide
             Break rg : bb < 5 : FormBond b r
             """.trimIndent()
         )
@@ -362,14 +362,14 @@ class GeneCodecTest {
             # a little autotroph: import r/g, bond them, grow, divide
             Light : r < 4 : Import r
             Light : rg > 0 : Convert rg
-            Light : Biomass > 8 : Mitosis
+            Light : Biomass > 8 : Divide
             Break rg : Biomass < rg : Convert rg
         """.trimIndent()
         val genome = GeneCodec.parse(text)
         assertEquals(4, genome.size)
         assertEquals(Gene(EnergySource.Light, GeneCondition(Operand.Chem("r"), Comparison.Less, Operand.Constant(4)), GeneAction(ActionType.Import, "r")), genome[0])
         assertEquals(Gene(EnergySource.Light, GeneCondition(Operand.Chem("rg"), Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Convert, "rg")), genome[1])
-        assertEquals(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Mitosis)), genome[2])
+        assertEquals(Gene(EnergySource.Light, GeneCondition(Operand.Biomass, Comparison.Greater, Operand.Constant(8)), GeneAction(ActionType.Divide)), genome[2])
         assertEquals(Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Biomass, Comparison.Less, Operand.Chem("rg")), GeneAction(ActionType.Convert, "rg")), genome[3])
     }
 }

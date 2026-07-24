@@ -43,7 +43,7 @@ class DegenerateWeldProbe {
         Break gr : gb < gr & gb < 1000 : FormBond g g @6
         Break gg : gr < gg & gr < 1000 : FormBond g b @6
         Break gg : gr < gg & gr < 1000 & gg > 6000 : Contract @15
-        Break gg : gr < gg & gr < 1000 & gg > 21500 : Mitosis across r @15
+        Break gg : gr < gg & gr < 1000 & gg > 21500 : Divide across r @15
         Break gg : gr < gg & gr < 1000 : Repair @15
         """.trimIndent()
     )

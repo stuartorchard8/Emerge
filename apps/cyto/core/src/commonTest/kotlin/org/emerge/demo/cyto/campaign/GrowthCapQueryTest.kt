@@ -73,7 +73,7 @@ class GrowthCapQueryTest {
         val cappedDivide = Gene(
             EnergySource.Light,
             GeneCondition(listOf(bioUnder(3000))),
-            GeneAction(ActionType.Mitosis),
+            GeneAction(ActionType.Divide),
         )
         assertNull(focusedWith(listOf(convert(), cappedDivide)).convertBiomassCap)
     }

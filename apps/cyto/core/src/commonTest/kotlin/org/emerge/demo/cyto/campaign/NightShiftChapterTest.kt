@@ -31,7 +31,7 @@ class NightShiftChapterTest {
             FocusedCell(CellType.Collector, biomass, mapOf("r" to 400, "g" to 300, "b" to 300, "gb" to waste)),
             Lineage(
                 geneCount = 3, convertChem = "r", convertProduct = convertFuel, convertBiomassCap = 3000,
-                divideBiomassMinimum = 2000, hasDivide = true, mitosisProduct = "gb",
+                divideBiomassMinimum = 2000, hasDivide = true, divideProduct = "gb",
                 hasPhotosynthesis = true, divideFuelConflicts = false,
             ),
         ),

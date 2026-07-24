@@ -35,7 +35,7 @@ from `find -exec grep`):
 
 | File | Use |
 |---|---|
-| `cyto-swimmer-v1.gene` | `Conc(gb) > 30` Convert, `> 20` Contract, `> 22` Mitosis |
+| `cyto-swimmer-v1.gene` | `Conc(gb) > 30` Convert, `> 20` Contract, `> 22` Divide |
 | `cyto-swimmer-v0.gene` | same three |
 | `cyto-jelly.gene` | `Conc(gb) > 30` Convert, `> 20` Contract |
 | `cyto-genome-clock.gene` | `Conc(r) > 0` |

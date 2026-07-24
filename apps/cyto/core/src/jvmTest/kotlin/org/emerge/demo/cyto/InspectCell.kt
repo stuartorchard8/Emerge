@@ -81,7 +81,7 @@ class InspectCell {
         }
 
         // Replicate the reducer's per-tick LIGHT quanta for this cell (sample × exposure × SCALE), using its
-        // connected neighbours for the exposure weight — to test whether a Light-powered Mitosis can fund the
+        // connected neighbours for the exposure weight — to test whether a Light-powered Divide can fund the
         // biomass/4 cost (the design says it "can't").
         if (pos != null) {
             val springs = state.components.getTable<org.emerge.sim.core.physics.components.SpringConstraintComponent>().asMap()[id]?.springs.orEmpty()
@@ -109,20 +109,20 @@ class InspectCell {
             }
             sb.appendLine("\n--- light energy (exposure=${exposure.toFloat()}, LIGHT_QUANTA_SCALE=${org.emerge.demo.cyto.sim.CytoTuning.LIGHT_QUANTA_SCALE}) ---")
             sb.appendLine("quanta now (tick ${state.tick}) = $nowQ   |   PEAK over the orbit = $peakQ")
-            sb.appendLine("Mitosis cost = biomass/4: $bioBonds/4 = ${bioBonds / 4} now; at the gate (Biomass>6000) = 1500")
+            sb.appendLine("Divide cost = biomass/4: $bioBonds/4 = ${bioBonds / 4} now; at the gate (Biomass>6000) = 1500")
             sb.appendLine("→ at peak daylight a single Light tick gives ~${peakQ} quanta vs a 1500 cost — light ${if (peakQ >= 1500) "EASILY funds" else "cannot fund"} division (${if (peakQ >= 1500) "%.0fx".format(peakQ / 1500.0) else "-"})")
         }
-        // Connected siblings: do they share the Light-Mitosis trait?
+        // Connected siblings: do they share the Light-Divide trait?
         val springs2 = state.components.getTable<org.emerge.sim.core.physics.components.SpringConstraintComponent>().asMap()[id]?.springs.orEmpty()
-        sb.appendLine("\n--- ${springs2.size} connected siblings (does each have a Light-powered Mitosis gene?) ---")
+        sb.appendLine("\n--- ${springs2.size} connected siblings (does each have a Light-powered Divide gene?) ---")
         var lightMito = 0
         for (s in springs2) {
             val sib = cells[s.other] ?: continue
-            val has = sib.genome.any { it.action.type == org.emerge.demo.cyto.sim.ActionType.Mitosis && it.source is org.emerge.demo.cyto.sim.EnergySource.Light }
+            val has = sib.genome.any { it.action.type == org.emerge.demo.cyto.sim.ActionType.Divide && it.source is org.emerge.demo.cyto.sim.EnergySource.Light }
             if (has) lightMito++
-            sb.appendLine("  ${s.other.value}: Light-Mitosis=${has}  biomass=${org.emerge.demo.cyto.sim.totalBiomass(sib.biomass)}")
+            sb.appendLine("  ${s.other.value}: Light-Divide=${has}  biomass=${org.emerge.demo.cyto.sim.totalBiomass(sib.biomass)}")
         }
-        sb.appendLine("→ $lightMito/${springs2.size} connected siblings carry a Light-powered Mitosis gene")
+        sb.appendLine("→ $lightMito/${springs2.size} connected siblings carry a Light-powered Divide gene")
         java.io.File("/tmp/inspectcell.txt").writeText(sb.toString())
     }
 }

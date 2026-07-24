@@ -26,7 +26,7 @@ import kotlin.test.assertTrue
  */
 class LineageSurvivesTest {
 
-    private val mitosis = Gene(EnergySource.Light, GeneCondition(emptyList()), GeneAction(ActionType.Mitosis))
+    private val divide = Gene(EnergySource.Light, GeneCondition(emptyList()), GeneAction(ActionType.Divide))
 
     /** A controller with one founder, selected. */
     private fun oneCell(): Pair<CytoController, org.emerge.sim.core.EntityId> {
@@ -48,10 +48,10 @@ class LineageSurvivesTest {
     fun authoringAGenomeRecordsIt() {
         val (c, _) = oneCell()
         assertNull(c.lastAuthoredGenome, "nothing authored yet")
-        c.addHeldGenes(listOf(mitosis))
+        c.addHeldGenes(listOf(divide))
         c.tick(0f)
         assertNotNull(c.lastAuthoredGenome)
-        assertTrue(c.lastAuthoredGenome!!.any { it.action.type == ActionType.Mitosis })
+        assertTrue(c.lastAuthoredGenome!!.any { it.action.type == ActionType.Divide })
     }
 
     /** Selecting a cell is not authoring. The record is of what the player WROTE, so that it means their
@@ -67,7 +67,7 @@ class LineageSurvivesTest {
     @Test
     fun theGenomeOutlivesTheCellItWasWrittenOn() {
         val (c, id) = oneCell()
-        c.addHeldGenes(listOf(mitosis))
+        c.addHeldGenes(listOf(divide))
         c.tick(0f)
         kill(c, id)
 
@@ -82,7 +82,7 @@ class LineageSurvivesTest {
     @Test
     fun extinctionWithAGenomeIsAnOfferNotADeadEnd() {
         val (c, id) = oneCell()
-        c.addHeldGenes(listOf(mitosis))
+        c.addHeldGenes(listOf(divide))
         c.tick(0f)
         kill(c, id)
 
@@ -113,7 +113,7 @@ class LineageSurvivesTest {
     @Test
     fun aStepWhoseGoalIsExtinctionMakesNoOffer() {
         val (c, id) = oneCell()
-        c.addHeldGenes(listOf(mitosis))
+        c.addHeldGenes(listOf(divide))
         c.tick(0f)
         kill(c, id)
 
@@ -136,7 +136,7 @@ class LineageSurvivesTest {
     @Test
     fun aStepWhoseGoalIsExtinctionAdvancesItself() {
         val (c, id) = oneCell()
-        c.addHeldGenes(listOf(mitosis))
+        c.addHeldGenes(listOf(divide))
         c.tick(0f)
 
         val dir = CampaignDirector()
@@ -160,7 +160,7 @@ class LineageSurvivesTest {
     @Test
     fun aDeathDuringAReadingStepStillGetsTheOffer() {
         val (c, id) = oneCell()
-        c.addHeldGenes(listOf(mitosis))
+        c.addHeldGenes(listOf(divide))
         c.tick(0f)
         kill(c, id)
 
@@ -180,7 +180,7 @@ class LineageSurvivesTest {
     @Test
     fun aDeathWhileSittingOnASatisfiedGoalStillGetsTheOffer() {
         val (c, id) = oneCell()
-        c.addHeldGenes(listOf(mitosis))
+        c.addHeldGenes(listOf(divide))
         c.tick(0f)
         kill(c, id)
 
@@ -236,7 +236,7 @@ class LineageSurvivesTest {
     @Test
     fun aSelectedCellIsPreferredOverTheRememberedGenome() {
         val (c, _) = oneCell()
-        c.addHeldGenes(listOf(mitosis))
+        c.addHeldGenes(listOf(divide))
         c.tick(0f)
         val selected = c.heldGenome()!!
         assertEquals(selected.size, c.worldStats().lineage!!.geneCount)

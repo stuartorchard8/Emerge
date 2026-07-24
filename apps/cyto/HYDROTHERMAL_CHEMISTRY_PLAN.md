@@ -43,7 +43,7 @@
 Today, energy flows **light → bond**. Autotrophs spend light quanta to fuel
 `FormBond`; the resulting bond is a *store* of that energy, later released by
 `BreakBond`-sourced genes (heterotrophy — digest a neighbour, power your own
-Repair/Convert/Mitosis). Monomers are inert raw material; light is the only
+Repair/Convert/Divide). Monomers are inert raw material; light is the only
 free lunch.
 
 The proposal: flip which side of the bond is "spent" and which is "free".
@@ -150,7 +150,7 @@ control (§6).
 
 Currently (`CytoGenes.kt:677-679`, the autotroph/`Collector` genome):
 ```
-BreakBond("rg") + Biomass>DIVIDE_BIOMASS → Mitosis
+BreakBond("rg") + Biomass>DIVIDE_BIOMASS → Divide
 Light + Biomass<GROW_BIOMASS           → Convert("rg")
 Light + Chem("rg")<GROW_BIOMASS        → FormBond("r","g")
 ```
@@ -158,7 +158,7 @@ Light funds growth; a hoarded `rg` reserve funds division.
 
 Hydrothermal founder — replace `Light` with `FormBond("rg")` throughout:
 ```
-FormBond("rg") + Biomass>DIVIDE_BIOMASS → Mitosis
+FormBond("rg") + Biomass>DIVIDE_BIOMASS → Divide
 FormBond("rg") + Biomass<GROW_BIOMASS   → Convert("rg")
 FormBond("rg") + Chem("rg")<GROW_BIOMASS → FormBond("r","g")
 ```
@@ -167,7 +167,7 @@ that's intentional and matches the existing symmetry where `BreakBond("rg")`
 already sources from and acts on the same bond in Repair genes today
 (`CytoGenes.kt:689`). The cell builds `rg` bonds as its metabolism; each
 build both grows its `rg` reserve *and* pays for that growth. Division now
-becomes viable off `FormBond` (unlike the current `Mitosis` comment at
+becomes viable off `FormBond` (unlike the current `Divide` comment at
 `CytoBiologyCore.kt:383-386` explaining why light-division is emergently
 non-viable) — cross-check the size-scaling cost (`biomass/4`,
 `CytoBiologyCore.kt:391`) against your new per-tick `FormBond` yield the same

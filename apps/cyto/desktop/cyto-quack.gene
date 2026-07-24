@@ -8,5 +8,5 @@ Break rb : rb > 199 & gb > 199 & rg > 199 : FormBond g b @9
 Break rg : gb < 300 & gb > rb : Contract @15
 Break rb : bg < 8 & br < 8 : FormBond b r
 Break rb : bg < 16 & rg < 200 & br > 0 : FormBond b g @15
-Break rb : rg < 200 & bg > 15 : Mitosis across r
+Break rb : rg < 200 & bg > 15 : Divide across r
 Break rb : rg < 500 : Repair @10

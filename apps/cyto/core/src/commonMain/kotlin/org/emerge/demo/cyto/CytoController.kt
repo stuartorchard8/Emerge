@@ -672,11 +672,11 @@ class CytoController(
             CellInfo.MetRow(s, env, cyto, bio, dirEnvCyt, dirCytBio)
         }
         val bioTotal = org.emerge.demo.cyto.sim.totalBiomass(cell.biomass)
-        // How many Mitosis genes are contending for this tick's energy. The division phase splits the cell's
+        // How many Divide genes are contending for this tick's energy. The division phase splits the cell's
         // means by exactly this count (CytoBiologyCore: `quantaShare = work.quanta / dn`, and each reactant's
         // share is `count / n`), so it is what a DIVIDE gene can really draw on — not the whole pool.
         val divideShare = cell.genome.count { g ->
-            g.action.type == ActionType.Mitosis &&
+            g.action.type == ActionType.Divide &&
                 g.condition.clauses.none { clauseFails(it, cytoMap, bioTotal, weldedDegree, cell.touchCount) }
         }
         return CellInfo(
@@ -735,7 +735,7 @@ class CytoController(
         }
         val a = g.action
         // Division is the one all-or-nothing action: it needs `biomass/4` energy units IN ONE TICK
-        // (CytoBiologyCore's Mitosis branch — `k = if (k >= cost) cost else 0`), and energy can't be banked.
+        // (CytoBiologyCore's Divide branch — `k = if (k >= cost) cost else 0`), and energy can't be banked.
         // A DIVIDE gene whose gate passes but whose fuel pool can't clear the bar therefore reads perfectly
         // active while never once dividing, which is the least legible state in the game. Flag it — on the
         // SOURCE span, because what falls short is the chemical the source names, not the DIVIDE itself.
@@ -743,7 +743,7 @@ class CytoController(
         // [divideShare] is how many DIVIDE genes are gated open and therefore splitting the pool with this
         // one — the sim's `dn`. Two divides that would each fire alone can both be unfunded together, and
         // that is exactly what the cell does, so the panel says it.
-        val divideUnfunded = a.type == ActionType.Mitosis && !energyBlocked &&
+        val divideUnfunded = a.type == ActionType.Divide && !energyBlocked &&
             energyUnits(g.source, cyto, quanta, divideShare) < totalBiomass / 4
         val inputBlocked = when (a.type) {
             // Blocked unless the exact molecule the two fragments name is in the cytoplasm (the mirror of
@@ -914,7 +914,7 @@ class CytoController(
         ActionType.BreakBond -> "BREAK ${a.a}·${a.b}"
         ActionType.Convert -> "CONVERT ${a.a}"
         ActionType.Contract -> "CONTRACT"
-        ActionType.Mitosis -> {
+        ActionType.Divide -> {
             val asym = if (a.a.isEmpty()) "" else " ${if (a.morphogenToMother) "→M:" else "→"}${a.a}"
             val orient = if (a.b.isEmpty()) "" else " ${if (a.divideAcross) "across" else "along"} ${a.b}"
             "DIVIDE$asym$orient"

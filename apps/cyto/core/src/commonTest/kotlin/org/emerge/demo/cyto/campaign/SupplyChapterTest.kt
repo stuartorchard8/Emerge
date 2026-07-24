@@ -24,7 +24,7 @@ class SupplyChapterTest {
             FocusedCell(CellType.Collector, 3000, mapOf("rg" to 100)),
             Lineage(
                 geneCount = 2, convertChem = convertChem, convertProduct = convertProduct,
-                hasDivide = true, mitosisProduct = "rg", divideFuelConflicts = true,
+                hasDivide = true, divideProduct = "rg", divideFuelConflicts = true,
             ),
         ),
         paused = false, selectedGenome = null,

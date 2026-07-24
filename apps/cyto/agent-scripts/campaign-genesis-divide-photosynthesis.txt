@@ -71,7 +71,7 @@ expect step 1/11
 next
 tap-ui + NEW GENE
 tap-ui NOTHING
-tap-ui Mitosis
+tap-ui Divide
 expect hasDivide true
 next
 

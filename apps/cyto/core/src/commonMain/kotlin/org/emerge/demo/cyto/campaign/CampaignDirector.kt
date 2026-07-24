@@ -125,7 +125,7 @@ class CampaignDirector {
         var expanded = inputHints.expand(s)
         if (!expanded.contains("{chem}") && !expanded.contains("{bond}")) return expanded
         val chem = lastQuery?.lineage?.convertChem
-        val bond = lastQuery?.lineage?.mitosisProduct
+        val bond = lastQuery?.lineage?.divideProduct
         // Cheeky alt text for people who skip — fires when the token the copy is BUILT ON has nothing to
         // name, whichever token that is. (It used to key off {chem} alone, which left the divide chapter's
         // "you never picked a reaction" line unreachable on a step whose text is about {bond}.)

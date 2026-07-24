@@ -29,10 +29,10 @@ object GeneCardLabels {
         else -> t.name
     }
 
-    /** The verb the *read card* uses, which is not always the picker's word: [ActionType.Mitosis] picks as
+    /** The verb the *read card* uses, which is not always the picker's word: [ActionType.Divide] picks as
      *  MITOSIS but reads as DIVIDE. */
     fun actionVerb(t: ActionType): String = when (t) {
-        ActionType.Mitosis -> "DIVIDE"
+        ActionType.Divide -> "DIVIDE"
         else -> action(t)
     }
 
@@ -76,11 +76,11 @@ object GeneCardLabels {
         addAll(listOf("ALWAYS", "WHEN", "AND"))
         // The empty-molecule reading (SpeciesNames.name("")), stripped of its own parens by the extractor.
         add("NONE")
-        // Mitosis modifier lines, and the grey connective words the card writes between tokens.
+        // Divide modifier lines, and the grey connective words the card writes between tokens.
         addAll(listOf(
             "ALONG", "ACROSS", "NO GRADIENT", "GRADIENT",
             "RETAINING", "GIVING", "NOTHING", "CELL 1", "CELL 2",
-            "SEVERING CELL 2 FREE", "AND STICK", "TO MASS", "TO POWER", "WELDS",
+            "SEVERING CELL 2 FREE", "AND STICK", "TO MASS", "TO", "WELDS",
         ))
     }.mapTo(LinkedHashSet()) { it.uppercase() }
 }

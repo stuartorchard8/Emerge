@@ -29,13 +29,13 @@ class CampaignDirectorTest {
         paused = false, selectedGenome = null,
     )
 
-    /** A query whose selected cell has a division gene synthesising [mitosisProduct] for energy (null = no
+    /** A query whose selected cell has a division gene synthesising [divideProduct] for energy (null = no
      *  division gene, or one still on Light; "" = switched to bonding but the reactants aren't both chosen)
      *  — for the Divide chapter's gate + `{bond}` reaction copy. */
-    private fun mitosisQuery(mitosisProduct: String?) = CampaignQuery(
+    private fun divideQuery(divideProduct: String?) = CampaignQuery(
         WorldStats(0L, 1, mapOf(CellType.Collector to 1), 100, emptySet(),
             FocusedCell(CellType.Collector, 100, emptyMap()),
-            Lineage(geneCount = 2, hasDivide = true, mitosisProduct = mitosisProduct)),
+            Lineage(geneCount = 2, hasDivide = true, divideProduct = divideProduct)),
         paused = false, selectedGenome = null,
     )
 
@@ -149,13 +149,13 @@ class CampaignDirectorTest {
         val dir = CampaignDirector()
         dir.start(chapter(Step("{bond} it is.", Gate.Next)), CytoController())
         // Still on Light, so there is no reaction to name.
-        dir.update(mitosisQuery(null), emptySet())
+        dir.update(divideQuery(null), emptySet())
         assertEquals("nothing it is.", dir.snapshot()?.text)
         // Switched to bonding, but with an operand missing it builds nothing - still no reaction to name.
-        dir.update(mitosisQuery(""), emptySet())
+        dir.update(divideQuery(""), emptySet())
         assertEquals("nothing it is.", dir.snapshot()?.text)
         // A complete reaction: the coach names its product the way the world names it.
-        dir.update(mitosisQuery("rg"), emptySet())
+        dir.update(divideQuery("rg"), emptySet())
         assertEquals("${SpeciesNames.name("rg", emptyMap())} it is.", dir.snapshot()?.text)
     }
 

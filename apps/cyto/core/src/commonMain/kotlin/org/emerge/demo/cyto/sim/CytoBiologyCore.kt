@@ -207,8 +207,8 @@ object CytoBiologyCore {
         val tScan = if (stats != null) TimeSource.Monotonic.markNow() else null
         // Pre-populate species cache for O(1) gate lookups — max 32 entries, most cells have ~5.
         work.prefillSpeciesCache()
-        // Decrement mitosis cooldown (prevents instant re-division after a mitosis event).
-        if (work.mitosisCooldown > 0) work.mitosisCooldown--
+        // Decrement divide cooldown (prevents instant re-division after a divide event).
+        if (work.divideCooldown > 0) work.divideCooldown--
         val genomeSize = genome.size
         val active = work.activeScratch
         // Tick-start biomass — constant through the whole isActive scan AND equal to the 1/n snapshot's
@@ -224,7 +224,7 @@ object CytoBiologyCore {
         var activeMask = 0L
         for (i in genome.indices) {
             val g = genome[i]
-            if (g.action.type != ActionType.Mitosis && isActive(g, work, bio)) {
+            if (g.action.type != ActionType.Divide && isActive(g, work, bio)) {
                 active[n++] = i
                 if (i < 64) activeMask = activeMask or (1L shl i)
             }
@@ -242,27 +242,27 @@ object CytoBiologyCore {
 
         // Phase 2 — division resolved on the SETTLED state, as one atomic end-of-tick action (a clean
         // half-split is only sane atomically). The gate is RE-CHECKED here against the post-metabolism
-        // state: a Mitosis gene armed at tick start but whose condition no longer holds now does NOT
+        // state: a Divide gene armed at tick start but whose condition no longer holds now does NOT
         // divide. Funded from the settled cytoplasm (break the source bond to pay the bulk biomass/4 cost).
-        // Mitosis cooldown: after a division fires, the cell enters a [genomeSize]-tick cooldown
-        // before mitosis genes are re-evaluated. This prevents instant re-division cascades.
-        if (!work.dividing && work.mitosisCooldown <= 0 && genomeSize > 0) {
-            // Post-phase-1 biomass — constant through the Mitosis re-checks (a Mitosis gene either divides
+        // Divide cooldown: after a division fires, the cell enters a [genomeSize]-tick cooldown
+        // before divide genes are re-evaluated. This prevents instant re-division cascades.
+        if (!work.dividing && work.divideCooldown <= 0 && genomeSize > 0) {
+            // Post-phase-1 biomass — constant through the Divide re-checks (a Divide gene either divides
             // and breaks the loop, or no-ops; neither mutates biomass here), so sum it once for all gates.
             val bioNow = totalBiomass(work.biomass)
             var dn = 0
             for (i in genome.indices) {
                 val g = genome[i]
-                if (g.action.type == ActionType.Mitosis && gate(g.condition, work, bioNow)) active[dn++] = i
+                if (g.action.type == ActionType.Divide && gate(g.condition, work, bioNow)) active[dn++] = i
             }
             if (dn > 0) {
                 val snap = work.snapScratch.also { it.copyFrom(work.cytoplasm) }
                 val quantaShare = work.quanta / dn
                 for (j in 0 until dn) {
                     applyGene(genome[active[j]], work, snap, totalBiomass(work.biomass), dn, quantaShare, stats)
-                    // Set mitosis cooldown on first successful division — prevents re-division this tick
-                    // even if multiple mitosis genes fire (though work.dividing guards against that).
-                    if (work.dividing) { work.mitosisCooldown = genomeSize; break }
+                    // Set divide cooldown on first successful division — prevents re-division this tick
+                    // even if multiple divide genes fire (though work.dividing guards against that).
+                    if (work.dividing) { work.divideCooldown = genomeSize; break }
                 }
             }
         }
@@ -336,7 +336,7 @@ object CytoBiologyCore {
                 if (breakActFragL < 0 || breakActFragR < 0) return
                 cn = addConsume(ids, per, cn, breakActId)
             }
-            else -> {}   // Import draws from the grid; Repair/Expand/Contract/Mitosis consume no cytoplasm
+            else -> {}   // Import draws from the grid; Repair/Expand/Contract/Divide consume no cytoplasm
         }
         // Efficiency gear (see [Gene]): each energy unit performs gP1 = g+1 actions (the rate↔efficiency
         // multiplier — Convert / Import / Repair / Contract), but at most `energyCap` units may be spent this
@@ -355,7 +355,7 @@ object CytoBiologyCore {
         // one quantum per bond, or a single formed bond could fund gP1 breaks and the loop reopens). So on a
         // BreakBond gene the gear is pure potency-limiting: capping a morphogen source/sink's rate is the
         // gradient-spread dial (MORPHOGENESIS.md §Morphogens for shape — caps consumption rate k ⇒ reach
-        // λ≈√(D/k)). Mitosis stays exempt (fixed biomass/4 bulk cost).
+        // λ≈√(D/k)). Divide stays exempt (fixed biomass/4 bulk cost).
         val capGear = when (act.type) {
             ActionType.Convert, ActionType.Import, ActionType.Export, ActionType.Repair, ActionType.BreakBond, ActionType.Contract -> gene.efficiency.coerceIn(0, CytoTuning.EFFICIENCY_MAX_GEAR)
             else -> 0
@@ -368,11 +368,11 @@ object CytoBiologyCore {
             is EnergySource.FormBond -> minOf(snap.count(formLeftId), snap.count(formRightId)) / n
         }
         var k = (minOf(energyUnits.toLong(), energyCap.toLong()) * gP1).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        // Metabolic slowdown with size: every op (except Mitosis, which has its own size-scaling cost above)
+        // Metabolic slowdown with size: every op (except Divide, which has its own size-scaling cost above)
         // runs at `k × SCALE/(SCALE+biomass)`. A bigger cell spreads its metabolic capacity over more
         // structure, so its build/acquire rate falls while size-proportional decay keeps rising — they cross
         // at an EMERGENT size the cell can't outgrow. No hard cap: a stronger cell settles larger.
-        if (act.type != ActionType.Mitosis && act.type != ActionType.Retain) {
+        if (act.type != ActionType.Divide && act.type != ActionType.Retain) {
             val bio = totalBiomass(work.biomass)
             k = (k.toLong() * CytoTuning.METABOLIC_BIOMASS_SCALE / (CytoTuning.METABOLIC_BIOMASS_SCALE + bio)).toInt()
         }
@@ -412,10 +412,10 @@ object CytoBiologyCore {
             // reactant pool on hand. ANY energy source is accepted here; light-division is non-viable
             // **emergently, not by rule**: the
             // light scale is tuned so a cell's peak per-tick quanta stays well below biomass/4 for any real
-            // divide size, so a Light-sourced Mitosis just never reaches the cost (k < cost ⇒ 0). The "charge
+            // divide size, so a Light-sourced Divide just never reaches the cost (k < cost ⇒ 0). The "charge
             // up to divide" comes for free — only a hoarded reserve broken in one tick clears the bar. The
             // gate may hold below the cost; it then does nothing (no accumulation toward it).
-            ActionType.Mitosis -> { val cost = totalBiomass(work.biomass) / 4; k = if (k >= cost) cost else 0 }
+            ActionType.Divide -> { val cost = totalBiomass(work.biomass) / 4; k = if (k >= cost) cost else 0 }
             ActionType.Import, ActionType.Export -> {}   // k energy units become a junction bias (applied in passiveEnvExchange)
             ActionType.Repair -> k = minOf(k, repairOpsNeeded(work))
             ActionType.Contract -> k = minOf(k, flexOps(MIN_RADIUS, work.logicalRadius))
@@ -470,7 +470,7 @@ object CytoBiologyCore {
                 // with the one-way outward gate (canDiffuseOut only) this makes Export a pure secretion channel.
                 work.exportBias[act.aId] = (work.exportBias[act.aId] ?: 0) + k * CytoTuning.IMPORT_BIAS_GAIN
             }
-            ActionType.Mitosis -> {
+            ActionType.Divide -> {
                 work.dividing = true; work.divideMorphogen = act.a; work.divideMorphogenToMother = act.morphogenToMother
                 work.divideAxisMorphogen = act.b; work.divideAcross = act.divideAcross; work.divideRejectMother = act.rejectMother
             }

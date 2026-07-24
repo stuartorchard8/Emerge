@@ -74,7 +74,7 @@ class CytoSavesCampaignTest {
         CytoSaves.saveCampaignEntry(saved, "ch05-hold", listOf("ch05-hold"))
 
         val later = CytoController()
-        later.setAuthoredGenome(GeneCodec.parse("Light : Biomass > 0 : Mitosis"))
+        later.setAuthoredGenome(GeneCodec.parse("Light : Biomass > 0 : Divide"))
         assertTrue(CytoSaves.loadCampaignEntry(later, "ch05-hold"))
         assertEquals(genes, later.lastAuthoredGenome, "the chapter's own brush comes back")
     }
@@ -86,7 +86,7 @@ class CytoSavesCampaignTest {
         CytoSaves.saveCampaignEntry(saved, "ch00-genesis", listOf("ch00-genesis"))
 
         val later = CytoController()
-        later.setAuthoredGenome(GeneCodec.parse("Light : Biomass > 0 : Mitosis"))
+        later.setAuthoredGenome(GeneCodec.parse("Light : Biomass > 0 : Divide"))
         assertTrue(CytoSaves.loadCampaignEntry(later, "ch00-genesis"))
         assertNull(later.lastAuthoredGenome, "Genesis hands out a gene-less cell; the brush must be empty")
     }

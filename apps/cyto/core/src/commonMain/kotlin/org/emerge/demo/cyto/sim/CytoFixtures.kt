@@ -52,7 +52,7 @@ object CytoFixtures {
     private fun divideOnBond() = Gene(
         source = EnergySource.FormBond("r", "g"),
         condition = GeneCondition(emptyList()),
-        action = GeneAction(ActionType.Mitosis, rejectMother = true),
+        action = GeneAction(ActionType.Divide, rejectMother = true),
     )
 
     /** Fixtures reachable by name — what the harness's `fixture <name>` command offers. */

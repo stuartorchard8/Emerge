@@ -16,7 +16,7 @@ settled design we build toward; it is the contract, not a status log.
 > from this contract. Three **independently buildable** mechanisms (see **§Three mechanisms for stronger
 > selection** near the end): **(A)** reopen symmetric down-gradient diffusion — *drop the leak-block*,
 > concentrate via paid active `Import` (PLANNED); **(B)** a direct-harm `Lyse` action (predatory lysis of
-> touching cells) for active competition (PLANNED); **(C)** gene-driven **asymmetric** mitosis via
+> touching cells) for active competition (PLANNED); **(C)** gene-driven **asymmetric** division via
 > morphogen concentration, the differentiation keystone — ✅ **built**, together with **sensing ≠
 > permeability** (a sensed morphogen stays trace), so persistent one-genome→many-cell-types
 > differentiation is affirmed end-to-end. Remaining: A, B, and the additive **`Conc`** operand.
@@ -29,7 +29,7 @@ settled design we build toward; it is the contract, not a status log.
 > steady-state gradient a cell reads to know *where it is*). Neighbour-count gives only *topology*
 > (am I on the surface); a gradient gives *geometry* (how far from the centre, which axis). Decision
 > (with Stu): pivot the keystone to **positional gradients**, and reclassify signals into three
-> **genome-derived roles** — **determinant** (sensed + mitosis-allocated, never produced → isolated,
+> **genome-derived roles** — **determinant** (sensed + division-allocated, never produced → isolated,
 > persistent = memory/fate; the existing §C path) and **morphogen** = *an ordinary metabolite in a
 > centre-source → everywhere-sink loop* (a centre cell synthesises it from the primary molecule; every cell
 > metabolises it back — **the sink is the decay**; it diffuses for free because it's `canHold`-true). Fate
@@ -170,7 +170,7 @@ A gene is exactly three parts (no multi-input weighted sums like the legacy mode
      passive down-gradient leak* (§Three mechanisms A);
    - **Active export** a specific chemical (cytoplasm → environment);
    - **Sticky** (adhere on contact) / **Separate** (disconnect);
-   - **Mitosis** (divide) — optionally **asymmetric** (a named morphogen allocated whole to one daughter;
+   - **Divide** (divide) — optionally **asymmetric** (a named morphogen allocated whole to one daughter;
      §Three mechanisms C);
    - **Lyse** — predatory harm to a *touching, un-welded* cell (§Three mechanisms B);
    - **Convert** a chemical into biomass (lock it as structure).
@@ -229,14 +229,14 @@ wires up — none of it is hardcoded.
   >   Metabolic size stays emergent and uncapped. Degraded biomass is shed into that same disc
   >   (`5787a05d`), so a cell drops matter exactly where it can pick matter up.
 
-## Mitosis
+## Division
 
 - **The gate is the whole control** — no charge accumulator / threshold (the old `divideCharge` /
-  `DIVIDE_THRESHOLD` go away). A Mitosis gene fires whenever its binary condition holds and its energy
+  `DIVIDE_THRESHOLD` go away). A Divide gene fires whenever its binary condition holds and its energy
   source can power it. **The half-split is its own brake:** division halves biomass + cytoplasm, which
   drops both daughters back below any biomass gate, so back-to-back division needs genuine surplus.
 - **Symmetric split is the default** (biomass and cytoplasm ~50/50 to the two daughters). **Gene-driven
-  asymmetric split is now designed** (§Three mechanisms C): the Mitosis gene's `a` operand names a
+  asymmetric split is now designed** (§Three mechanisms C): the Divide gene's `a` operand names a
   **morphogen** allocated *whole to one daughter* while everything else still halves — the deterministic
   morphogen/axis source for differentiation. Empty `a` ⇒ today's symmetric split.
 
@@ -389,7 +389,7 @@ headless. Concrete decisions (knob magnitudes are starting values, tagged ⚙ tu
 - **Gene** = `{ energySource: Light, condition: (ChemQty(species, ≷, n) | Biomass(≷, n)), action }`.
   v1 actions: **Import(species)** env→cytoplasm, N ops; **FormBond(a,b)** join a cytoplasm molecule
   ending in `a` with one starting in `b` (canonical = lexicographically-smallest candidates), refused
-  on repeated bond, N ops; **Convert(species)** cytoplasm→biomass, N ops; **Mitosis** (1 op to trigger
+  on repeated bond, N ops; **Convert(species)** cytoplasm→biomass, N ops; **Divide** (1 op to trigger
   when gated). Deferred: Break-bond energy source, Export, Contract/Expand, Sticky/Separate.
 - **Cell↔cell diffusion:** as resolved (#5) — cytoplasm only, passive, integer floor-split.
 - **Degradation:** per-cell integer wear accumulator gains `totalBiomassBonds` each tick; `broken =
@@ -399,13 +399,13 @@ headless. Concrete decisions (knob magnitudes are starting values, tagged ⚙ tu
 - **Size:** `targetRadius = sqrt(totalBiomassBonds) × RADIUS_PER_SQRT_BOND` ⚙, coerced ≥ `MIN_RADIUS`.
 - **Death:** `totalBiomassBonds < DEATH_BIOMASS` ⚙ → cell dies, deposit **all** its cytoplasm + biomass
   molecules (whole) into its environment grid-cell.
-- **Mitosis split:** each species count C → daughter `⌊C/2⌋`, mother keeps `C−⌊C/2⌋`, for both
+- **Divide split:** each species count C → daughter `⌊C/2⌋`, mother keeps `C−⌊C/2⌋`, for both
   cytoplasm and biomass (deterministic). The biomass halving is the division brake.
 - **Determinism:** all of the above is integer + canonical-order; no PRNG. Cross-cell sequential steps
   (env import/export sharing one grid-cell) run in ascending-EntityId order in both paths.
 - **The test genome (autotroph):** ① `Import a` gated `cytoplasm.a < Ta`; ② `Import b` gated
   `cytoplasm.b < Tb`; ③ `FormBond a,b` gated `cytoplasm.a > 0`; ④ `Convert ab` gated `cytoplasm.ab >
-  Tc`; ⑤ `Mitosis` gated `biomass > Tm`. Expect: a founder grows, divides into a colony, and the
+  Tc`; ⑤ `Divide` gated `biomass > Tm`. Expect: a founder grows, divides into a colony, and the
   colony **plateaus** as the local environment's a/b is drawn down (matter carrying capacity) — and
   matter is bit-conserved throughout.
 
@@ -487,27 +487,27 @@ like any action.)
 **Selection consequence.** A carnivore tier appears, and prey gain reasons to evolve defences — size,
 separation, fast division, sealing — supplying the pressure that's currently missing.
 
-### C. Asymmetric mitosis via morphogen concentration — the differentiation keystone ✅ BUILT
+### C. Asymmetric divide via morphogen concentration — the differentiation keystone ✅ BUILT
 
 **Problem.** Division was a strict 50/50 floor-split (`CytoLifecycleSystem.floorSplit`), so a clonal
 colony had no deterministic way to differentiate from its founder.
 
-**Design.** The Mitosis gene's operand `a` names a **morphogen species**. On division that species is
+**Design.** The Divide gene's operand `a` names a **morphogen species**. On division that species is
 allocated **whole to the daughter** (the newly-spawned cell along the outward split normal); the mother
 keeps none, and **all other species still floor-split 50/50** (odd remainders to env, as now). Empty `a`
 ⇒ today's symmetric split — so every existing genome and the golden trajectories are **byte-identical**
-(the asymmetric path is taken only when a Mitosis gene names a morphogen). The morphogen is **not** added
-to the handle-set (Mitosis isn't processed by `handleableOf`), so naming it keeps it a *trace* species.
+(the asymmetric path is taken only when a Divide gene names a morphogen). The morphogen is **not** added
+to the handle-set (Divide isn't processed by `handleableOf`), so naming it keeps it a *trace* species.
 
 **Effect.** The two cells start with different cytoplasm composition, so genes gating on
 `Chem(morphogen)` fire in the daughter but not the mother → **deterministic differentiation** from a
 single genome. Matter conserved (the morphogen is allocated whole to one side; everything else unchanged).
 
-**Implementation (landed).** `CellWork.divideMorphogen` set when a Mitosis gene fires → captured by the
+**Implementation (landed).** `CellWork.divideMorphogen` set when a Divide gene fires → captured by the
 reducer's finish loop → carried on `CellDivisionIntent(id, morphogen)` → `CytoLifecycleSystem.divide`
 withholds the morphogen from `floorSplit` (new `skip` param) and hands its whole count to the daughter
 (deposited to env, conserved, if the split is non-viable). Affirmed by
-`CytoSoaSpecTest.asymmetricMitosisAllocatesMorphogenToOneDaughterAndItPersists` (the split + trace
+`CytoSoaSpecTest.asymmetricDivideAllocatesMorphogenToOneDaughterAndItPersists` (the split + trace
 persistence) and `morphogenGatedFatePersistsAsBehaviouralDifferentiation` (a `Chem(morphogen)`-gated fate
 stays divergent across the colony — see Morphogen maintenance below).
 
@@ -645,34 +645,34 @@ rides it to the expanding edge → an **axial / polar** gradient (a head–tail 
 keeps it embedded near the origin → a **radial / concentric** gradient (the skin-flesh-core plan). The
 asymmetry *defines a direction, and that direction is the body axis.* (Crisp only for cells with lopsided
 neighbours; for a fully-surrounded interior cell the outward normal degenerates to the cell's ~arbitrary
-angle — there the choice washes into jitter.) **BUILT (`123c860`):** the retain-side is a **Mitosis
-parameter** — `GeneAction.morphogenToMother` / codec `Mitosis <m> mother` (default daughter = edge source;
+angle — there the choice washes into jitter.) **BUILT (`123c860`):** the retain-side is a **Divide
+parameter** — `GeneAction.morphogenToMother` / codec `Divide <m> mother` (default daughter = edge source;
 `mother` = centred source). A body-plan selector, not a bug-knob; additive (goldens byte-identical), and not
 yet mutated (the flag is authored/inherited, deferred from the mutation operator). A rock-stable source
-regardless of side: commit the founder to a **non-dividing organizer** (gate its Mitosis off once it sources)
+regardless of side: commit the founder to a **non-dividing organizer** (gate its Divide off once it sources)
 so it stops moving via division entirely — though the side chosen *during the growth phase* still sets where
 that organizer ends up.
 
 **Oriented division — the anisotropy lever (BUILT `ce9cede`).** Daughter placement defaults to *toward free
 space* — which, it turns out, makes **threads** (each cell buds along the line away from its neighbours), not
-blobs. Oriented division lets a Mitosis gene name an **axis-morphogen** (`GeneAction.b`) and place the
+blobs. Oriented division lets a Divide gene name an **axis-morphogen** (`GeneAction.b`) and place the
 daughter **`along`** its gradient (project → extend a thread) or **`across`** it (slice → widen into a 2D
 sheet) — the ∇ computed once at division from welded neighbours (highest- to lowest-conc cell; Frac-safe,
-deterministic), falling back to the free-space normal when there's no gradient (so unoriented Mitosis is
-byte-identical). Demonstrated: the swimmer goes thread (41x0) → sheet (5x6) with `Mitosis cc across bc`.
+deterministic), falling back to the free-space normal when there's no gradient (so unoriented Divide is
+byte-identical). Demonstrated: the swimmer goes thread (41x0) → sheet (5x6) with `Divide cc across bc`.
 Real morphogenesis orients the *division plane*: consistently-oriented divisions elongate a structure
 (**strings / filaments / limbs**), mixed orientations fill out blobs. The
 reference axis is **the morphogen gradient ∇m** — a globally-coherent field, so the same field that says
 *where am I* also orients *which way do I divide* (real PCP / oriented division).
 
-- **`slice` vs `project` — a Mitosis gene parameter** (binary, gene-chosen — *not* a geometric tiebreak):
+- **`slice` vs `project` — a Divide gene parameter** (binary, gene-chosen — *not* a geometric tiebreak):
   given the gradient axis, **project** offsets the daughter *along* it (extend: `o-x` → `o-o-o`), **slice**
   offsets *perpendicular* (branch/widen: `o-x` → `o<8`). Placement is a **symmetric straddle**
   (`motherPos ± offset`), so the only degree of freedom is the offset *axis*; the `±` is just mother-vs-daughter
   = the **retain-side** body-plan param — there is no hidden sign ambiguity. `slice` is the escape from the
   self-reference: it deliberately lays the *new* axis across the current gradient, and the daughters then read
   fresh gradients of their own, so morphology can transition string↔blob (gated by `Conc` band, like any gene).
-- **Sensing is at-mitosis-only, not per-tick** — the axis matters only *when* a cell divides (a gated, rare,
+- **Sensing is at-divide-only, not per-tick** — the axis matters only *when* a cell divides (a gated, rare,
   1-tick event), so ∇m is computed once at that moment (O(neighbours)), after the division is locked in. This
   is **cheap** — the earlier "heavy per-tick vector sensing" worry was wrong.
 - **No-gradient fallback (no epsilon threshold).** A gradient is "present" iff there is **any** nonzero
@@ -682,16 +682,16 @@ reference axis is **the morphogen gradient ∇m** — a globally-coherent field,
   **∇m if any gradient → else the neighbour-derived normal** (`divide`'s "away-from-average-neighbour",
   i.e. project-along-it = today's free-space behaviour) **→ else `transform.ang`** (the existing zero-fallback).
   So "the axis" is never undefined.
-- **The four Mitosis params are independent — don't force morphogen reuse.** Asym-allocation morphogen,
+- **The four Divide params are independent — don't force morphogen reuse.** Asym-allocation morphogen,
   retain-side, **axis morphogen**, and slice/project are *decoupled*. Tying the axis morphogen to the
   allocation morphogen would bake in a prior (you always orient by the field you're actively pumping into a
   daughter) — a trap that limits body plans; and biologically the *positional* morphogen and the *fate
-  determinant* are different molecules. Cost: Mitosis is the richest gene (more mutation dimensions + codec
+  determinant* are different molecules. Cost: Divide is the richest gene (more mutation dimensions + codec
   work). Degrades gracefully — an axis-morphogen with no gradient just hits the fallback above.
 
 **Across-axis (`slice`) is *not* the only correct mode** — strings are exactly the non-blob morphology the
 continuous-space substrate can express and a fixed grid cannot (the payoff of the richer substrate). **Goldens
-re-baseline** (byte-identity isn't a constraint here), but a **bare `Mitosis` (no params) stays today's
+re-baseline** (byte-identity isn't a constraint here), but a **bare `Divide` (no params) stays today's
 behaviour** so existing saves / evolved genomes survive. Existing **spring reassignment generalises** — feed
 `divide`'s `ahead`/`side` classifier the gradient-derived normal. Caveat: forcing an axis can place a daughter
 into *occupied* space (vs today's free-space, rest-length, no-kick placement) — the spring solver turns that
@@ -726,7 +726,7 @@ cracking shape** (turn down locomotion/competition first). Both reinforce the st
 2–6. ✅ **Matter-model biology, end-to-end (AoS)** (`c3bd291`). The gene rewrite (source+gate+action;
    `Molecules` + no-repeat-bond + per-bond quantum), cytoplasm/biomass integer state (no `energy`),
    the `CytoMatterGrid` reservoir (retarget of the energy grid) + static light, deterministic
-   degradation / size / death-recycles-matter, gate-only mitosis, and the matter-conservation test —
+   degradation / size / death-recycles-matter, gate-only divide, and the matter-conservation test —
    all landed and validated: the autotroph (`AUTOTROPH_GENES`) grows **1 → 24** and plateaus
    (carrying capacity) with **total atoms bit-constant**. **Collapsed to the single AoS path** for the
    rewrite — the SoA structural-win path + its equivalence/perf gates are **shelved (recoverable from
@@ -736,7 +736,7 @@ cracking shape** (turn down locomotion/competition first). Both reinforce the st
    Break-bond, differentiation via asymmetric division + a fate latch), then mutation + selection.
    (The SoA path is now the live shipping path with its byte-identity gate — done, not pending.)
 8. **Stronger selection — the three-mechanism plan** (§Three mechanisms for stronger selection,
-   2026-06-17). Independently buildable. **(C)** morphogen-asymmetric mitosis ✅ **built** + **sensing ≠
+   2026-06-17). Independently buildable. **(C)** morphogen-asymmetric divide ✅ **built** + **sensing ≠
    permeability** ✅ **built** (both additive, all goldens byte-identical incl. `mutationOn`): persistent
    one-genome→two-states differentiation is affirmed end-to-end. **(A)** drop the leak-block /
    paid-retention-via-Import — still wanted (the food web). **(B)** `Lyse` predatory harm — **demoted**
@@ -744,6 +744,6 @@ cracking shape** (turn down locomotion/competition first). Both reinforce the st
 9. **Morphogens for shape → the hopeful monster** (§Morphogens for shape; the 2026-06-17 keystone shift;
    full program in `HOPEFUL_MONSTER.md`). The current front line. Substrate: **AND-conjunction gate** +
    **`Conc`** operand + **signal decay** + the **`canDiffuse`/`canMetabolise` split** (cell↔cell morphogen
-   diffusion) + **codec fix** so `Mitosis <morphogen>` round-trips. Then hand-author a gradient-sourced,
+   diffusion) + **codec fix** so `Divide <morphogen>` round-trips. Then hand-author a gradient-sourced,
    threshold-read, two-tissue organism (mutation off, calm physics) as a *reachability proof*, then turn
    selection back on from that ancestor.

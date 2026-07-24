@@ -9,5 +9,5 @@ Break rb : rg < 1000 & bg > 7860 : Contract @15
 Break rb : bg < 2000 : FormBond g b @15
 Break rb : gb > 2000 & bg < 8000 & rg < 1000 : FormBond b g @4
 Break bg : gb < 1900 & rr < 1000 : FormBond r b @14
-Break rb : rg < 1000 & bg > 7998 : Mitosis gb mother along gb
+Break rb : rg < 1000 & bg > 7998 : Divide gb mother along gb
 Break rr : rb < 1000 : Repair

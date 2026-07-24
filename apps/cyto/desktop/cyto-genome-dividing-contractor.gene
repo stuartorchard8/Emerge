@@ -9,4 +9,4 @@ Break gr : gb < gr & gb < 2000 : FormBond g g @10
 Break gg : gr < gg & gr < 2000 : FormBond g b @10
 Break gg : gr < gg & gr < 1000 & gg > 6000 : Contract @15
 Break gg : gr < gg : Repair @15
-Break gg : Biomass > 3990 & gg > 22000 : Mitosis across r @15
+Break gg : Biomass > 3990 & gg > 22000 : Divide across r @15

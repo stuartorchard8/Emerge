@@ -1005,7 +1005,7 @@ class GeneEditor {
 
     /** The [supplyWarning] appropriate to an action's own operand: the cytoplasm-consuming actions
      *  (Convert / Export / Retain) warn on the cytoplasm, Import warns on the environment it draws from, and
-     *  everything else (Mitosis morphogen, the operand-less actions) has no supply precondition to warn about. */
+     *  everything else (Divide morphogen, the operand-less actions) has no supply precondition to warn about. */
     private fun PanelBuilder.actionSupplyWarning(d: Gene, species: String) {
         when (d.action.type) {
             ActionType.Convert, ActionType.Export, ActionType.Retain -> supplyWarning(species, fromEnv = false)
@@ -1021,7 +1021,7 @@ class GeneEditor {
         ActionType.BreakBond -> "SPLIT A BOND APART - COSTS ENERGY"
         ActionType.Convert -> "LOCK A MOLECULE INTO BIOMASS - GROW"
         ActionType.Contract -> "SHRINK THE RADIUS - A MUSCLE FLEX"
-        ActionType.Mitosis -> "DIVIDE INTO TWO CELLS"
+        ActionType.Divide -> "DIVIDE INTO TWO CELLS"
         ActionType.Repair -> "HEAL THE MOST-DAMAGED WELD"
         ActionType.Lyse -> "TEAR BIOMASS FROM A TOUCHING CELL"
         ActionType.Retain -> "SEAL A MOLECULE INSIDE THE CELL"
@@ -1162,10 +1162,10 @@ class GeneEditor {
             srcLine.add(UiTok.Text(" ", grey))
             srcLine.add(UiTok.Toggle(synthesisLabel(s), ctlIf(energyBlocked)) { openInlinePick(controller, i, Pick.Bond) })
         }
-        srcLine.add(UiTok.Text(" TO POWER", grey))
+        srcLine.add(UiTok.Text(" TO", grey))
         lines.add(srcLine)
 
-        // DO: action Menu, its operand token(s), and efficiency (non-Mitosis).
+        // DO: action Menu, its operand token(s), and efficiency (non-Divide).
         // An action is never blocked by *itself* — CONVERT has no biomass ceiling, IMPORT no import quota.
         // What blocks it is always the chemical it names: unset, or absent from the cytoplasm/environment.
         // So the orange lands on the operand token, and only falls back to the verb for actions that have no
@@ -1192,7 +1192,7 @@ class GeneEditor {
             }
             else -> {}
         }
-        if (gene.action.type != ActionType.Mitosis) {
+        if (gene.action.type != ActionType.Divide) {
             val effKey = "$i:eff"
             actLine.add(UiTok.Text(" ", grey))
             actLine.add(UiTok.Menu("E${gene.efficiency}", ctl, (0..CytoTuning.EFFICIENCY_MAX_GEAR).map { "E$it" }, openMenu == effKey,
@@ -1201,8 +1201,8 @@ class GeneEditor {
         }
         lines.add(actLine)
 
-        // Mitosis modifiers — always shown (§8a step 3a wording), each token live.
-        if (gene.action.type == ActionType.Mitosis) {
+        // Divide modifiers — always shown (§8a step 3a wording), each token live.
+        if (gene.action.type == ActionType.Divide) {
             val a = gene.action
             lines.add(listOf(
                 UiTok.Text(" ", grey),
@@ -1307,21 +1307,21 @@ class GeneEditor {
 
     /**
      * Switch an action to type [t], keeping only the modifiers that still mean anything (they are all
-     * Mitosis-only, so a move away from Mitosis clears them).
+     * Divide-only, so a move away from Divide clears them).
      *
-     * Switching **to** Mitosis defaults to SEVER rather than STICK. A player picking DIVIDE without having
+     * Switching **to** Divide defaults to SEVER rather than STICK. A player picking DIVIDE without having
      * thought about welds — which is exactly the campaign's case, and near enough the only time it happens —
      * means "make another one of these", and a daughter that stays welded to its mother reads as a growing
-     * blob, not as reproduction. Re-picking Mitosis on a gene that already has it keeps whatever the player
+     * blob, not as reproduction. Re-picking Divide on a gene that already has it keeps whatever the player
      * chose.
      */
     private fun retype(a: GeneAction, t: ActionType): GeneAction {
-        val m = t == ActionType.Mitosis
+        val m = t == ActionType.Divide
         return a.copy(
             type = t,
             morphogenToMother = a.morphogenToMother && m,
             divideAcross = a.divideAcross && m,
-            rejectMother = if (!m) false else if (a.type == ActionType.Mitosis) a.rejectMother else true,
+            rejectMother = if (!m) false else if (a.type == ActionType.Divide) a.rejectMother else true,
         )
     }
 

@@ -56,7 +56,7 @@ prose companion (the campaign is the interactive path through the same material)
 >   the selected cell** ("last-modified brush", `Chapter.spawnCopiesHeldCell`). Uses Stu's swimmerx/swimmerxX
 >   genomes. (Growth-limiting NOT needed here — already in Ch8.)
 > - **Ch10 Spread** — arc close. Substrate = the Ch9 end-state swimmer (growth-capped); player inserts a
->   **Reproduce** group (Stu's `reproducer.gene` = a reserve Convert + a `Mitosis gr mother sever` division,
+>   **Reproduce** group (Stu's `reproducer.gene` = a reserve Convert + a `Divide gr mother sever` division,
 >   rejectMother) so a freed daughter buds off unwelded, escapes the size cap, and grows a new swimmer — one
 >   creature becomes a spreading, colonising lineage. Closes the "single speck → living lineage" through-line.
 >
@@ -86,7 +86,7 @@ prose companion (the campaign is the interactive path through the same material)
 >
 > **Ch10 Spread — BUILT (`f49522b4`).** Substrate = the Ch9 end-state swimmer (Stu's SwimmerxX, growth-capped
 > by the Ch8 morphogen); player inserts a REPRODUCE group (Stu's `reproducer.gene` payload = a reserve Convert
-> + a `Mitosis gr mother sever` division, rejectMother) so a freed daughter buds off unwelded, escapes the cap,
+> + a `Divide gr mother sever` division, rejectMother) so a freed daughter buds off unwelded, escapes the cap,
 > and grows a new swimmer. Objective `cellCount ≥ 20`. Harness-verified for flow (glyph-clean, 19→21 genes,
 > sever-division fires 1→2→3 once pushed to fresh matter). The full colonisation payoff joins Ch8/Ch9 on the
 > **live-GL-playtest** list — it needs autonomous swimming over many day/night cycles to see the lineage spread.
@@ -218,7 +218,7 @@ coach less). Act IV is essentially the existing sandbox with an optional challen
 - **Ch 10 — Spread** ✅ (`f49522b4`). *Problem:* "Your swimmer grows to a set size and stops — one creature.
   Make it spread." Substrate = the Ch9 end-state swimmer (Stu's SwimmerxX, growth-capped by the Ch8
   morphogen); player inserts a **Reproduce** group (Stu's `reproducer.gene` payload = a reserve-building
-  Convert + a `Mitosis gr mother sever` division, rejectMother) so a freed daughter buds off unwelded,
+  Convert + a `Divide gr mother sever` division, rejectMother) so a freed daughter buds off unwelded,
   escapes the size cap, and grows into a new swimmer. Objective: `cellCount ≥ 20` (new independent swimmers
   colonise). **Flow-verified in harness** (loads glyph-clean, ADD REPRODUCE = 19→21 genes, sever-division
   fires 1→2→3 once pushed to fresh matter); the full colonisation payoff shares the Ch8/Ch9 live-GL-playtest
@@ -573,7 +573,7 @@ resolution during implementation.
   the founder. Problem: "it makes `rg` but never grows." Player adds `Convert rg` via the editor.
   Objective: `focusedCell.biomass` climbs past a threshold *and* the genome contains a Convert gene.
   Payoff: the cell visibly swells. Teaches the cytoplasm→biomass lock + threshold gating.
-- **Ch 5 Divide.** From Ch 4's now-growing cell, add `Mitosis`. Coach the `Break`-powered bulk cost and
+- **Ch 5 Divide.** From Ch 4's now-growing cell, add `Divide`. Coach the `Break`-powered bulk cost and
   the halving brake; offer `sever` as an optional toggle ("bud off a colonist"). Objective:
   `cellCount >= 2`. Payoff: the first division.
 - **Ch 6 Food Web.** Scenario seeds an autotroph colony + one heterotroph (`CellType.Muscle`) a short
@@ -596,7 +596,7 @@ resolution during implementation.
   drive two different `Convert`s. Objective: `distinctBiomassProfiles >= 2` sustained across the colony
   (two stable tissues = two colours). Payoff: the colony visibly stripes. Coach sensing≠permeability
   ("reading the morphogen doesn't drain it — that's why the pattern holds").
-- **Ch 10 Shape.** From Ch 9's differentiated blob, introduce `Mitosis ... across/along <axis>`.
+- **Ch 10 Shape.** From Ch 9's differentiated blob, introduce `Divide ... across/along <axis>`.
   Objective: grow a non-round body (a shape metric — e.g. bounding-box aspect ratio from cell
   positions, or simply "a thread of length ≥ L"). Payoff: the colony elongates into a thread or widens
   into a sheet.
@@ -892,8 +892,8 @@ Gene groups slot into the plan as follows:
 > in which a cell carries **more than one DIVIDE gene**.
 
 Division is the one all-or-nothing action: it needs `biomass/4` energy units in a **single tick**, and
-energy can't be banked (`CytoBiologyCore`, `ActionType.Mitosis` — `k = if (k >= cost) cost else 0`). The
-division phase then splits the cell's means across **every Mitosis gene whose gate is open that tick**
+energy can't be banked (`CytoBiologyCore`, `ActionType.Divide` — `k = if (k >= cost) cost else 0`). The
+division phase then splits the cell's means across **every Divide gene whose gate is open that tick**
 (`quantaShare = work.quanta / dn`, each reactant's share `count / n`).
 
 So two DIVIDE genes that would each fire alone can both be unfunded together. That has always been true;

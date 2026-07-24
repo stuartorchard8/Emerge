@@ -13,6 +13,6 @@ Break rg : gr < 200 & bb > 0 : FormBond g r
 Break gr : bb < 1 & gr > 1 : FormBond r g @14
 Break rb : gr < 5 & br < rb : FormBond b r
 Break br : gr > 9 : FormBond r b @14
-Break rb : bb > 0 & br < 10 & Biomass > 2000 : Mitosis bb mother across gr
-Break rb : br > 3000 & gr < 5 & Biomass > 3999 : Mitosis gr mother sever along gr
+Break rb : bb > 0 & br < 10 & Biomass > 2000 : Divide bb mother across gr
+Break rb : br > 3000 & gr < 5 & Biomass > 3999 : Divide gr mother sever along gr
 Break rb : rg < 300 : Repair @10

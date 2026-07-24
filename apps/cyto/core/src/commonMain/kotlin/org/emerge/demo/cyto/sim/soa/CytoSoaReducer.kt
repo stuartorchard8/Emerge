@@ -329,7 +329,7 @@ class CytoSoaReducer(
     }
 
     /**
-     * SoA-native mitosis — a line-for-line port of [CytoLifecycleSystem.divide] onto the persistent world.
+     * SoA-native divide — a line-for-line port of [CytoLifecycleSystem.divide] onto the persistent world.
      * Reads the mother + neighbours via column [gather] (identical to what the round-trip's SimBuilder sees),
      * edits the spring topology on [adj], allocates the daughter via `world.createEntity` + `world.add` of all
      * 7 columns (matching `spawnBody`/`spawnCell` + `fromSimState`'s ImpulseComponent), and writes the mother's

@@ -42,7 +42,7 @@ class CytoSandbox {
         Break bg : rg > 900 & rr < 800 & r > rg : FormBond r r
         Break bg : rg < 900 & g > bg & rr < bg & g > rg : FormBond g g
         Break bg : Biomass < 2100 : Convert bg @12
-        Break bg : bg > 5000 & gg < 200 & r > 1000 & g > 1000 : Mitosis rg
+        Break bg : bg > 5000 & gg < 200 & r > 1000 & g > 1000 : Divide rg
         Light : g > gg : FormBond b g
         Light : rr < 20 & rg < 1000 : FormBond r g @15
         Light : rr > 100 : Repair

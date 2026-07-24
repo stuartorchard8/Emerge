@@ -9,7 +9,7 @@ disclosing depth on demand instead of showing everything at once.
 ## 1. The diagnosis behind the design
 
 The current gene editor isn't dense by accident — it's dense because **it's a form, and a form shows
-every field of every facet simultaneously**, including ones that don't apply. A 4-clause Mitosis gene
+every field of every facet simultaneously**, including ones that don't apply. A 4-clause Divide gene
 today renders ~24 rows: `SOURCE`, then per clause `LHS`/`L VAL`/`CMP`/`RHS`/`R VAL`, then `ACTION`,
 `MORPHOGEN`, `KEEP`, `AXIS`, `ORIENT`, `SEVER`, `EFF`, `GROUP`, `DONE/CANCEL/DUP/DEL`. The player
 must reconstruct the gene's *meaning* by reading a spreadsheet of its parts.
@@ -132,10 +132,10 @@ Full-screen. **The sentence, then its phrases.** This is where the ~24-row form 
 │                                              │
 │  DO                                          │
 │   ┌──────────────────────────────────────┐   │
-│   │ DIVIDE (mitosis)                     │   │
+│   │ DIVIDE (divide)                     │   │
 │   └──────────────────────────────────────┘   │
 │   Morphogen    ┌────────┐                    │
-│                │ (none) │                    │  ← only Mitosis shows these
+│                │ (none) │                    │  ← only Divide shows these
 │                └────────┘                    │
 │   Sever        [ yes | no ]                  │
 │                                              │
@@ -194,8 +194,8 @@ One value, one sheet, big targets. Four kinds cover every field in the editor:
 | `ACTION` ×9 | L3 "DO" → L4 list **+ descriptions** |
 | Per-action operands (Import/Export/Convert/Retain) | L3, conditional |
 | `FormBond` left/right + wildcard toggles | L3, conditional + segmented |
-| `Mitosis` morphogen / keep / axis / orient / sever | L3, conditional |
-| `EFF` gear | L3 (non-Mitosis actions) |
+| `Divide` morphogen / keep / axis / orient / sever | L3, conditional |
+| `EFF` gear | L3 (non-Divide actions) |
 | `GROUP` tag + new-group naming | L3 → L4 list (+ soft keyboard) |
 | `DONE` / `CANCEL` | L3 bottom bar |
 | `DUP` / `DEL` | L3 `⋮` overflow (+ confirm on delete) |
@@ -215,7 +215,7 @@ Reference phone: **411×914dp**, minus status + nav ≈ **387×800dp usable**. R
 | Screen | Rows | Height | Verdict |
 |---|---|---|---|
 | L3 typical (1 clause, Convert) | 11 | ~520dp | fits, room to spare |
-| L3 worst case (Mitosis, morphogen+axis, 4 clauses) | 16 | ~808dp | ~1 row over → scrolls |
+| L3 worst case (Divide, morphogen+axis, 4 clauses) | 16 | ~808dp | ~1 row over → scrolls |
 | L2, 10-gene genome, all groups collapsed | ~12 | ~576dp | fits |
 | Clause row: 3 chips across 387dp | — | ~120dp/chip | fits (a 4-char value needs ~48dp) |
 
@@ -354,7 +354,7 @@ separate editing form. A divide gene reads, and edits, as:
 ```
 WHEN BIO>3500              WHEN [BIO]>[3500]          ([BIO] operand, [>] cmp, [3500] value)
  AND GREED>1000       →     AND [GREED]>[1000]
-BREAK FUEL (R/G) TO POWER   [BREAK FUEL] TO POWER     (power source dropdown)
+BREAK FUEL (R/G) TO   [BREAK FUEL] TO     (power source dropdown)
 DIVIDE ALONG GREED GRADIENT [DIVIDE] [ALONG] [GREED] GRADIENT
  RETAINING GREED IN CELL 1   RETAINING [GREED] IN [CELL 1]
  SEVERING CELL 2 FREE        [AND STICK / SEVERING CELL 2 FREE]
@@ -400,8 +400,8 @@ Grounded in the current control surface (`geneBody` + the picker sheets). These 
    - **New-group naming** needs keyboard text capture (`startGroupCapture`) with focus handling — lives in
      the `⋮` modal, not an inline dropdown.
 3. **Action-type change cascades.** Switching the action reveals/hides sub-fields *and* clears now-invalid
-   modifiers (morphogen / KEEP / axis / ORIENT / SEVER exist only for Mitosis; the picker already sanitizes
-   them on change). The card re-lays-out and changes height live — Mitosis is the worst case.
+   modifiers (morphogen / KEEP / axis / ORIENT / SEVER exist only for Divide; the picker already sanitizes
+   them on change). The card re-lays-out and changes height live — Divide is the worst case.
 4. **Group change re-sections the genome view.** Genes render under collapsible group headers; changing a
    gene's group moves its card to another section — possibly a collapsed one. Rule: auto-expand the target
    group and keep the gene selected/scrolled-into-view, so it never appears to vanish.
@@ -529,7 +529,7 @@ Two consequences worth remembering:
 >   (`NOTHING`, `USE LIGHT`). Same rule on the fuel row.
 > - **A DIVIDE that cannot afford to split says so, on its fuel.** Division needs `biomass/4` in one tick;
 >   the panel checks the source against that cost, counting the per-gene 1/n split across contending
->   Mitosis genes. This is the affordance the Divide chapter's growth-cap step depends on.
+>   Divide genes. This is the affordance the Divide chapter's growth-cap step depends on.
 > - **Cards glow on a 12-sim-tick rolling average** of the "would fire" flag rather than the per-tick flag,
 >   so an intermittent gene reads as dimmed instead of strobing. Folded once per frame, weighted by ticks
 >   actually elapsed, so the window means 12 ticks at any speed and a paused world holds its glow.
@@ -670,7 +670,7 @@ Each step ends in something visible at phone size via the harness
    one row of three chips), and `GeneEditor.render(narrow = true)` — while a gene is open, the whole
    screen becomes the L3 modal instead of the two desktop panels. Wired to the **live draft**: rendered
    at 1080×2400 against the actual `ch10-reproduce` genome (harness `-Dcyto.agent.narrow=true`). Both the
-   Mitosis worst case (3 clauses + morphogen + axis, fits without scroll) and a typical Convert gene match
+   Divide worst case (3 clauses + morphogen + axis, fits without scroll) and a typical Convert gene match
    §3's wireframe. Inline binary controls (comparator, KEEP, ORIENT, SEVER, FormBond MATCH) are fully
    wired segmented controls; the value chips (operands, action, source, morphogen, group) lay out and read
    live state but their taps are inert until step 4 supplies the L4 pickers. Desktop (narrow=false) renders
