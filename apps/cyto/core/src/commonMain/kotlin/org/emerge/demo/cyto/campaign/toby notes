@@ -1,0 +1,37 @@
+Should division just cost biomass?
+
+What is energy? How can we express this? How much light would I need in this situation?
+
+1. Is light divided among genes? How can we represent this?
+
+Override constants when typing in the field. (autoselect all adjacent)
+
+Cancel gene edit? Undo?
+
+State upfront that bonding chemicals produces energy.
+
+Divide chapter needs to advance on focussed cell dying, not on extinction.
+
+Change CONVERT to GROW USING
+
+Change BOND REDREEN (R+G) to BOND (R+G) into REDREEN
+
+Include cheat-sheet on the chemical selector.
+
+Leave chemistry table open.
+
+Make it clearer on the UI what the user is meant to click.
+
+Make the tutorial auto-set the tapped cells to the last authored genome.
+
+Locked up 1/7. Look at the cytoplasm row in the chemistry table.
+
+Locked up 2/7. "Those atoms are not gone" - needs to explain that redreen is two atoms combined.
+
+Locked up 4/7.
+
+Divide 8/11. Every unit of X releases a unit of energy
+
+Exhaust 2/7. kinda assumes awareness of the other pathway
+
+2. Fix the chemistry ENV column so that it shows the combined ENV quantity over the cell's footprint
