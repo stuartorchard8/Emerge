@@ -86,9 +86,6 @@ case "$APP" in
     $GRADLE :apps:scavengers:core:jvmTest :engine:sim:core:jvmTest
     ;;
   cyto)
-    # NB: cyto's gate is currently RED on main (unfinished mitosis→divide rename +
-    # an un-rebaselined golden). This will fail until that baseline is greened —
-    # which is exactly the signal you want, not something to suppress.
     log "gate: unit/campaign/golden suite + scripted playthroughs"
     $GRADLE :apps:cyto:core:jvmTest
 
