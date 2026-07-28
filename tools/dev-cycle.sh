@@ -91,10 +91,25 @@ case "$APP" in
     # which is exactly the signal you want, not something to suppress.
     log "gate: unit/campaign/golden suite + scripted playthroughs"
     $GRADLE :apps:cyto:core:jvmTest
-    for script in apps/cyto/agent-scripts/campaign-*.txt; do
-      log "playthrough: $script"
-      $GRADLE :apps:cyto:desktop:cytoAgent --args="$script"
-    done
+
+    # The playthroughs drive the real game, so the harness needs a GL context —
+    # GLFW init fails outright with no display, which over ssh is every run. The
+    # host has a logged-in session on :0, so borrow it rather than failing the
+    # gate for a reason that has nothing to do with the code. (Note this puts a
+    # window on that session's screen; install xvfb for a headless context.)
+    if [ -z "${DISPLAY:-}" ] && [ -e /tmp/.X11-unix/X0 ]; then
+      export DISPLAY=:0
+      log "no DISPLAY over ssh — borrowing the local session on :0"
+    fi
+    if [ -z "${DISPLAY:-}" ]; then
+      warn "SKIP playthroughs — no display available for the GL harness."
+      warn "The unit suite still ran; the scripted playthroughs did not."
+    else
+      for script in apps/cyto/agent-scripts/campaign-*.txt; do
+        log "playthrough: $script"
+        $GRADLE :apps:cyto:desktop:cytoAgent --args="$script"
+      done
+    fi
     ;;
 esac
 
