@@ -55,6 +55,13 @@ dependency is absent (no phone, no systemd unit).
 
 Both gates **GREEN on main, verified end-to-end on former 2026-07-28.**
 
+A re-run with no source change is a Gradle **cache hit** — the gate reports success in
+~300 ms without executing a single test. That is sound when the inputs Gradle tracks
+are the only ones that matter, and it is the reason the loop is fast. It is *not* sound
+for a test that reads something outside the build graph: `WeldInspect` failed on former
+and passed on latitude purely on whether a local save file existed, and a cached pass
+would have hidden that. Use `--rerun-tasks` when you want the gate to actually run.
+
 Perf and fun-factor are **not** gated — perf stays manual (`CytoBench`), fun stays
 human playtest.
 
