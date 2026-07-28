@@ -18,7 +18,10 @@ class MainActivity : Activity() {
         val initial = LaunchSettings(
             mode = when (intent.getStringExtra(EXTRA_MODE)) {
                 MODE_HOST -> LaunchMode.HOST
-                MODE_JOIN -> LaunchMode.JOIN
+                // Plain "join" means the impulse join: the full-reducer path does not stay in
+                // sync on Android. MODE_JOIN_FULL is available for deliberate comparisons.
+                MODE_JOIN -> LaunchMode.JOIN_IMPULSE
+                MODE_JOIN_FULL -> LaunchMode.JOIN
                 MODE_LOOPBACK -> LaunchMode.LOCAL
                 else -> saved.mode
             },
@@ -47,6 +50,7 @@ class MainActivity : Activity() {
 
         const val MODE_HOST = "host"
         const val MODE_JOIN = "join"
+        const val MODE_JOIN_FULL = "join-full"
         const val MODE_LOOPBACK = "loopback"
         const val GAME_MODE_PVP = "pvp"
         const val GAME_MODE_CO_OP = "coOp"
