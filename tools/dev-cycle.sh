@@ -56,9 +56,25 @@ on_exit() {
 trap on_exit EXIT
 
 # 1 ─ pull ────────────────────────────────────────────────────────────────────
+# This script pulls the file it is itself executing. Bash reads a script by byte
+# offset as it goes, so a pull that changes this file means the rest of the run
+# comes from the *old* buffered contents — every first run after editing
+# dev-cycle.sh silently used the previous version. So: pull, and if this file
+# changed underneath us, re-exec so the new logic is what actually runs.
 stage "git pull"
-log "pulling latest"
-git pull --ff-only
+if [ "${DEV_CYCLE_REEXECED:-0}" != 1 ]; then
+  log "pulling latest"
+  self_before="$(git rev-parse HEAD:tools/dev-cycle.sh 2>/dev/null || echo none)"
+  git pull --ff-only
+  self_after="$(git rev-parse HEAD:tools/dev-cycle.sh 2>/dev/null || echo none)"
+  if [ "$self_before" != "$self_after" ]; then
+    log "dev-cycle.sh changed in that pull — re-executing the new version"
+    export DEV_CYCLE_REEXECED=1
+    exec "$REPO/tools/dev-cycle.sh" "$@"
+  fi
+else
+  log "running freshly pulled script"
+fi
 
 # 2 ─ gate ────────────────────────────────────────────────────────────────────
 # The gate is the contract: "no regressions in covered features." It must stay
