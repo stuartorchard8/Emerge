@@ -29,8 +29,8 @@ object GeneCardLabels {
         else -> t.name
     }
 
-    /** The verb the *read card* uses, which is not always the picker's word: [ActionType.Divide] picks as
-     *  MITOSIS but reads as DIVIDE. */
+    /** The verb the *read card* uses, which is not always the picker's word. (Since the mitosis→divide
+     *  rename [ActionType.Divide] reads the same either way; the hook stays for the next divergence.) */
     fun actionVerb(t: ActionType): String = when (t) {
         ActionType.Divide -> "DIVIDE"
         else -> action(t)

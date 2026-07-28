@@ -982,7 +982,8 @@ object CampaignContent {
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
-            // The payoff: measured, a capped cell comes back to 2999 and holds. 2800 is inside that.
+            // The payoff, read rather than waited out. (It used to gate on biomass >= 2800 — measured, a
+            // capped cell comes back to 2999 and holds — but that made the beat a wait.)
             Step(
                 text = "Watch it come back. The same two genes, and now the one feeds the other - the day's recycling leaves enough behind for growth.",
                 gate = Gate.Next,

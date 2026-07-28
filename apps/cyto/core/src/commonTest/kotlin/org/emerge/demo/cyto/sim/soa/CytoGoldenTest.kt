@@ -177,10 +177,17 @@ class CytoGoldenTest {
     // and sustains a carrying capacity, no collapse; the tighter upkeep just trims the peak. growth's meta
     // now diverges from mutation's (the faster turnover changes the 1500-tick population). Determinism +
     // round-trip still pass.
+    // Re-baselined 2026-07-28 (#3): NO SIMULATION CHANGE — the mitosis→divide rename. `biology` hashes
+    // GeneCodec.serialize(genome), so renaming ActionType.Mitosis to Divide changed the digest *text* while
+    // the sim stayed byte-identical: meta/physics/topology/grid are unchanged on both drifting goldens, and
+    // mapping "Divide" back to "Mitosis" before hashing made all eight pass against the pre-rename
+    // baselines untouched. Only growth + interact moved because only their genomes contain a divide gene.
+    // This is the hazard the substringAfter('\n') below already guards for, one level up: the digest is
+    // still coupled to the *spelling* of an action, so any future rename will masquerade as drift.
     private val GROWTH = mapOf(
         "meta" to "4c9bc7de8a088b75",
         "physics" to "1717a5ed6a3e0be7",
-        "biology" to "7723f642ba45a9b0",
+        "biology" to "3dfd7474cd2f83e6",
         "topology" to "cbf29ce484222325",
         "grid" to "d3f52dd866726bfb",
     )
@@ -300,10 +307,11 @@ class CytoGoldenTest {
     // Re-baselined 2026-07-18: genome-relevant starter biomass (see GROWTH). meta + topology byte-identical
     // (the scripted colony's population + spring structure are unchanged); physics/biology/grid shift with the
     // pure-rg seed chemistry.
+    // Re-baselined 2026-07-28: mitosis→divide rename, biology only, no simulation change (see GROWTH).
     private val INTERACT = mapOf(
         "meta" to "3185843a1972eddd",
         "physics" to "6e507d414971e3f6",
-        "biology" to "b3c19d2540602096",
+        "biology" to "67f171b6a04d1245",
         "topology" to "cbf29ce484222325",
         "grid" to "aa1a30d97ff0287d",
     )

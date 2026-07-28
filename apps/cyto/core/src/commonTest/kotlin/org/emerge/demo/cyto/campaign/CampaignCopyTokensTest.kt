@@ -78,7 +78,7 @@ class CampaignCopyTokensTest {
 
     /** The vocabulary is only useful if it's actually populated from the label functions. */
     @Test fun vocabularyCoversTheWordsTheCopyLeansOn() {
-        for (w in listOf("NOTHING", "CONVERT", "MITOSIS", "DIVIDE", "ALWAYS", "BIO", "USE LIGHT", "BOND", ">", "<")) {
+        for (w in listOf("NOTHING", "CONVERT", "DIVIDE", "ALWAYS", "BIO", "USE LIGHT", "BOND", ">", "<")) {
             if (w !in GeneCardLabels.VOCABULARY) fail("$w missing from GeneCardLabels.VOCABULARY")
         }
     }

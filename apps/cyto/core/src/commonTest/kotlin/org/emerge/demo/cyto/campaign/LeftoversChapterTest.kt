@@ -80,17 +80,16 @@ class LeftoversChapterTest {
         assertTrue(g.met(query("gb", reserve = 150)), "a player who reasoned their own way there")
     }
 
+    /**
+     * The closing "watch it come back" beat is a `Gate.Next`, not a measured one: it was a
+     * `Gate.World("Grow the cell back") { biomass >= 2800 }` until `edb38f5a`, which made the payoff
+     * something the player reads rather than something they wait out. Two tests covering that threshold
+     * retired with it. If the wait ever comes back, so should they — the numbers that worked were
+     * biomass 1200 = still falling, 2999 = recovered, and an empty world must not pass by default.
+     */
     @Test
-    fun theRecoveryGoalWaitsForTheCellToComeBack() {
-        val g = gate("Grow the cell back")
-        assertFalse(g.met(query("gb", reserve = 100, biomass = 1200)), "still on its way down")
-        assertTrue(g.met(query("gb", reserve = 100, biomass = 2999)), "the measured recovery")
-    }
-
-    /** An empty world does not satisfy the recovery goal by accident — there is no cell to have grown. */
-    @Test
-    fun anEmptyWorldIsNotARecovery() {
-        assertFalse(gate("Grow the cell back").met(query("gb", reserve = 100, cells = 0)))
+    fun theClosingBeatIsReadNotWaitedOut() {
+        assertEquals(Gate.Next, chapter.steps.last().gate)
     }
 
     @Test

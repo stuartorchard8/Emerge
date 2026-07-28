@@ -6,6 +6,7 @@ import org.emerge.demo.cyto.host.CampaignContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -133,10 +134,14 @@ class ExhaustChapterTest {
         assertFalse(dir.gateReady, "the goal is unreachable with nothing selected")
         assertTrue(dir.watchedCellOffer, "so the coach has to say so")
         assertTrue(dir.controlMask.allows(Control.Select), "and permit the pick it asks for")
-        assertTrue(
-            dir.snapshot()!!.text.contains("siblings"),
+        // Assert the *substitution*, not one word of the copy: an earlier version pinned this to "siblings"
+        // and broke on a routine copy pass, which tells you nothing about whether the beat still works.
+        val shown = dir.snapshot()!!.text
+        assertNotEquals(
+            chapter.steps.last().text, shown,
             "the coach's own words, not the step's — a headless observer sees what the player sees",
         )
+        assertTrue(shown.contains("place a new cell"), "and they name the way out")
     }
 
     /** ...and it goes away the moment they pick one, rather than needing to be dismissed. */
