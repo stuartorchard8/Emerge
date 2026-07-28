@@ -12,10 +12,11 @@
 #
 # Usage:  tools/dev-cycle.sh [scavengers|cyto] [--launch]   (default: scavengers)
 #
-#   --launch   also start the app on the phone, pointed at this host. Off by
-#              default: an automated relaunch can leave the GLSurfaceView paused
-#              (black screen, stuck HANDSHAKING), and a manual join is more
-#              reliable. Use it when you want a hands-off smoke test.
+#   --launch   also start the app on the phone pointed at this host, press START,
+#              and wait until the client reports conn=CONNECTED — a hands-off
+#              smoke test of the whole path. Off by default: an automated start
+#              can leave the GLSurfaceView paused (black, stuck HANDSHAKING), and
+#              a manual join is more reliable when that happens.
 #
 # Latitude side is just:  git push  &&  ssh former '~/emerge/tools/dev-cycle.sh'
 #
@@ -180,12 +181,47 @@ if command -v adb >/dev/null 2>&1 && [ -n "$(adb devices | sed '1d' | grep -w de
     if [ "$LAUNCH" = 1 ] && [ -n "${LAN_IP:-}" ]; then
       stage "launch app on phone"
       log "launching scavengers on the phone → $LAN_IP:$HOST_PORT"
+      adb logcat -c >/dev/null 2>&1 || true
       # "join" resolves to JOIN_IMPULSE — the only join mode that stays in sync on
       # Android (see LaunchMode's docs). Do not switch this to join-full.
       adb shell am start -n org.emerge.scavengers/.MainActivity \
         -e mode join -e hostIp "$LAN_IP" --ei port "$HOST_PORT" >/dev/null
-      warn "if the screen stays black or stuck HANDSHAKING, relaunch by hand — an"
-      warn "automated start can leave the GLSurfaceView paused."
+      sleep 3
+
+      # am start only gets us to the launcher screen with the fields pre-filled —
+      # it lands on START and waits. Press it, reading the button's real position
+      # out of the view hierarchy rather than hardcoding coordinates that go stale
+      # the moment the launcher gains a row.
+      bounds=""
+      if adb shell uiautomator dump /sdcard/dev-cycle-ui.xml >/dev/null 2>&1; then
+        bounds="$(adb shell cat /sdcard/dev-cycle-ui.xml 2>/dev/null \
+          | tr '>' '\n' | grep 'text="START"' | grep -oE 'bounds="[^"]+"' | head -1)"
+      fi
+      if [ -n "$bounds" ]; then
+        nums="$(echo "$bounds" | grep -oE '[0-9]+')"
+        x1=$(echo "$nums" | sed -n 1p); y1=$(echo "$nums" | sed -n 2p)
+        x2=$(echo "$nums" | sed -n 3p); y2=$(echo "$nums" | sed -n 4p)
+        log "pressing START at $(( (x1 + x2) / 2 )),$(( (y1 + y2) / 2 ))"
+        adb shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 )) >/dev/null 2>&1
+      else
+        warn "could not find the START button — press it on the phone to join"
+      fi
+
+      # Now the part that makes this a smoke test rather than a launch: watch the
+      # client's own log until it says it is in the shared sim.
+      joined=0
+      for _ in $(seq 1 15); do
+        if adb logcat -d 2>/dev/null | grep -q "conn=CONNECTED"; then joined=1; break; fi
+        sleep 2
+      done
+      if [ "$joined" = 1 ]; then
+        log "phone JOINED: $(adb logcat -d 2>/dev/null | grep 'join-tick' | tail -1 | sed 's/.*\[join-tick\] //')"
+      else
+        warn "phone did not report conn=CONNECTED within 30s. Last join log:"
+        warn "  $(adb logcat -d 2>/dev/null | grep -E 'join-tick|\[join\]' | tail -1)"
+        warn "An automated start can leave the GLSurfaceView paused (black, stuck"
+        warn "HANDSHAKING) — relaunching by hand is more reliable when that happens."
+      fi
     fi
   fi
 else
