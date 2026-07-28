@@ -55,6 +55,17 @@ tasks.register<JavaExec>("checkCytoConservation") {
     workingDir = rootDir   // so the default relative save path resolves from the repo root
 }
 
+tasks.register<JavaExec>("checkMatterSignature") {
+    group = "verification"
+    description = "Measure whether a colony leaves a visible footprint in the matter field (the render-stream " +
+        "fade-out premise). Judges contrast in display levels, on-screen extent and field coverage, and emits " +
+        "a two-panel PNG (matter only | + cell outlines). " +
+        "--args=\"<savePath.bin | --scenario> [<ticks> | <interval>x<count>] [outPng]\"."
+    mainClass = "org.emerge.desktop.CytoMatterSignatureCheckKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootDir
+}
+
 tasks.register<JavaExec>("benchCyto") {
     group = "verification"
     description = "Headless per-phase Cyto tick profiler: loads a save (or 'fresh'), warms the JIT, " +
