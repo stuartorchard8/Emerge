@@ -35,8 +35,11 @@ edit on latitude  →  git push  →  ssh former '~/emerge/tools/dev-cycle.sh [a
    still looks alive. On timeout it dumps `journalctl` and fails.
 4. **phone** — `installDebug` onto the attached device, then probe `:7777` *from the
    phone* with `nc -z`. That is the only check that catches the ufw trap below.
-   `--launch` additionally starts the app pointed at the host; it's opt-in because
-   an automated start can leave the GLSurfaceView paused (black, stuck HANDSHAKING).
+   `--launch` additionally starts the app pointed at the host, presses START (reading
+   the button out of the view hierarchy, since `am start` only lands on the launcher
+   with the fields pre-filled), and waits until the client logs `conn=CONNECTED` —
+   a hands-off smoke test of the whole path. Opt-in, because an automated start can
+   leave the GLSurfaceView paused (black, stuck HANDSHAKING).
 
 Every stage names itself, so a failure reports which one broke instead of leaving
 you to read it out of a wall of Gradle output. Legs skip cleanly when their
@@ -138,9 +141,16 @@ was assumed.
 - [x] A LAN client reaches the game ports through ufw — both confirmed open from
       latitude (`192.168.1.164` → `192.168.1.141`).
 - [x] The phone joins former's dedicated host and plays (2026-07-28, via `JOIN_IMPULSE`).
-- [ ] `adb devices` shows the Pixel; `installDebug` lands the APK. **Not re-checked** —
-      no device was attached during this pass, so the phone deploy and the `nc`
-      reachability probe are both unexercised since they were written.
+- [x] `adb devices` shows the Pixel; `installDebug` lands the APK ("Installed on 1
+      device").
+- [x] The `nc` reachability probe works *and discriminates* — reachable on `:7777`,
+      correctly NOT reachable for a closed port and an unroutable host. A probe that
+      only ever passes would be worse than none.
+- [x] `--launch` runs the whole path hands-off from a force-stopped app: install →
+      probe → start → press START → `conn=CONNECTED pid=PlayerId(value=1)` with the
+      tick advancing.
+- [x] The launcher opens on **JOIN_IMPULSE**, host `192.168.1.141`, port 7777 —
+      confirming the mode default and the LAN-IP derivation land on-device.
 - [ ] Anything works from **outside** the LAN. tailscale is down (below), so the
       out-of-home path is currently unverified.
 
