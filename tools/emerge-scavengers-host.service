@@ -1,0 +1,29 @@
+# Scavengers dedicated server — systemd *user* unit.
+#
+# Install on former (see tools/HOST_SETUP.md):
+#   mkdir -p ~/.config/systemd/user
+#   ln -sf ~/emerge/tools/emerge-scavengers-host.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now emerge-scavengers-host.service
+#   loginctl enable-linger $USER      # so it runs without an active login session
+#
+# tools/dev-cycle.sh rebuilds the distribution (installDist) and `systemctl --user
+# restart`s this unit, so a restart always picks up the freshly built server.
+
+[Unit]
+Description=Emerge Scavengers dedicated (headless) host
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Runs the display-free HEADLESS_HOST path (verified: no GLFW context needed).
+# Listens :7777 (tcp) and :7778 (ws). Port/game-mode are currently fixed in
+# Main.jvm.kt's headless-host branch; make them configurable there if you need to.
+Environment=JAVA_OPTS=-Demerge.mode=headless-host
+WorkingDirectory=%h/emerge
+ExecStart=%h/emerge/.build/scavengers-desktop/install/desktop/bin/desktop
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
