@@ -63,7 +63,10 @@ class ScavengersHeadlessHostController(
                     println("[headless-tcp] waiting for connection ...")
                     val pipe = listener.accept()
                     println("[headless-tcp] connection accepted, awaiting hello ...")
-                    enqueueAfterHello(pipe)
+                    // Wait for the hello off the accept thread: a connection that opens but never
+                    // sends a valid hello (half-open socket, probe, flaky mobile reconnect) must not
+                    // block every future join. The wait is bounded by [HELLO_TIMEOUT_MS].
+                    thread(isDaemon = true, name = "net-hello-wait") { enqueueAfterHello(pipe) }
                 }
             } catch (t: Throwable) {
                 println("[headless-tcp] accept loop failed: ${t::class.simpleName}: ${t.message}")
@@ -78,7 +81,7 @@ class ScavengersHeadlessHostController(
                 val ws = WsAcceptor(port + 1)
                 while (true) {
                     val pipe = ws.accept()
-                    enqueueAfterHello(pipe)
+                    thread(isDaemon = true, name = "net-hello-wait") { enqueueAfterHello(pipe) }
                 }
             } catch (t: Throwable) {
                 netStatus = "ws accept failed: ${t::class.simpleName}"
@@ -124,6 +127,10 @@ class ScavengersHeadlessHostController(
     }
 
     companion object {
+        /** How long to wait for a client's hello before closing the connection as dead. Bounds the
+         *  per-connection hello-wait thread so a silent/half-open socket can't leak a thread. */
+        private const val HELLO_TIMEOUT_MS = 5000
+
         private fun awaitHello(pipe: Pipe): ClientMode? {
             var polls = 0
             while (pipe.isOpen()) {
@@ -132,10 +139,12 @@ class ScavengersHeadlessHostController(
                     println("[headless] received hello packet (${pkt.size} bytes) after $polls polls")
                     return LockstepHost.parseHello(pkt)
                 }
-                polls++
-                if (polls % 5000 == 0) {
-                    println("[headless] still waiting for hello ($polls polls, pipe.isOpen=${pipe.isOpen()})")
+                if (polls >= HELLO_TIMEOUT_MS) {
+                    println("[headless] no hello after ${HELLO_TIMEOUT_MS}ms — closing idle connection")
+                    pipe.close()
+                    return null
                 }
+                polls++
                 Thread.sleep(1L)
             }
             println("[headless] pipe closed while awaiting hello (after $polls polls)")
