@@ -266,7 +266,10 @@ object GeneCodec {
         // morphogen + retain-side (§C/§Source placement), optional oriented-division axis (§Morphogens for
         // shape). Keyword tokens (mother/daughter/along/across) are recognised positionally; a bare `Divide`
         // = symmetric + unoriented.
-        "Divide" -> {
+        // `Mitosis` is the pre-rename spelling of `Divide` (renamed in commit "cyto: mitosis -> divide").
+        // Saves and `.gene` files written before the rename carry the old token, so decode it as Divide or
+        // every such save fails to load — silently, since CytoSaves.load swallows the decode exception.
+        "Divide", "Mitosis" -> {
             val kw = setOf("mother", "daughter", "along", "across", "sever")
             var i = 1; var morph = ""; var toMother = false; var axis = ""; var across = false; var sever = false
             if (i < t.size && t[i] !in kw) { morph = untok(t[i]); i++ }
