@@ -25,7 +25,15 @@ class WeldInspect {
         val target = System.getProperty("inspectcell")?.toIntOrNull() ?: 11
         val path = System.getProperty("savefile") ?: "/home/stu/emerge/apps/cyto/desktop/cyto-save.bin"
         val weldTicks = System.getProperty("weldticks")?.toIntOrNull() ?: 0   // run the reducer this many ticks first
-        val loaded = CytoSaveCodec.decode(java.io.File(path).readBytes())
+        // This is a dump tool, not a check — it asserts nothing, and the save it reads is a local,
+        // untracked artifact. Without this guard the gate passes or fails on whether the machine running
+        // it happens to have that file, which is how it came to fail on the host and not the laptop.
+        val file = java.io.File(path)
+        if (!file.isFile) {
+            println("[weld-inspect] no save at $path — nothing to inspect (pass -Dsavefile=<path> to run it)")
+            return
+        }
+        val loaded = CytoSaveCodec.decode(file.readBytes())
         val state = if (weldTicks <= 0) loaded else run {
             val soa = CytoSoaReducer(CytoConfig(mutationRateDenom = 0))   // mutation off — observe the fix only
             var w = CytoWorld.fromSimState(loaded)
