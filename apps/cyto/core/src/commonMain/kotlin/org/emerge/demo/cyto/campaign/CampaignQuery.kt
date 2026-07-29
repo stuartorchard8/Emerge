@@ -72,12 +72,20 @@ class CampaignQuery(
         )
     }
 
+    /**
+     * ⚠️ [watchedCellDied] is cleared here, not carried over like every other field. A world with a cell in
+     * it is one where the cell the player was watching need not be dead, and the probe's whole question is
+     * "would this gate still be met if a cell were alive?" — carrying the flag through answers "yes" for
+     * any watch-it-die gate, which reads as a goal that ISN'T about the death and hands the step to
+     * [CampaignDirector.extinctionOffer]: a recovery offer, in place of the beat's own copy, for a death the
+     * step deliberately asked for.
+     */
     fun asIfPopulated(): CampaignQuery =
         if (cellCount > 0) this
         else CampaignQuery(
             WorldStats(
                 stats.tick, cellCount = 1, stats.countByType, stats.maxBiomass, stats.speciesPresent,
-                stats.focused, stats.lineage, stats.watchedCellDied,
+                stats.focused, stats.lineage, watchedCellDied = false,
             ),
             paused, selectedGenome, chemistryOpen,
         )

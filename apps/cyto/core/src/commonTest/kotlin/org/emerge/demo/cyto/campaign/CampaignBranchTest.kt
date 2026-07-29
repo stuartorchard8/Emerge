@@ -17,18 +17,21 @@ class CampaignBranchTest {
 
     /**
      * A world that satisfies every gate in `ch01-divide` at once, so one query can walk the whole chapter.
-     * That includes `cellCount == 0`: the chapter's own arc runs the lineage to extinction (dividing below
-     * the rupture floor) before the player fixes it, and this test is about the routing, not the arc.
+     * That includes `watchedCellDied`: the chapter's arc has the player watch their own cell divide below the
+     * rupture floor before they fix it, and this test is about the routing, not the arc. The colony is left
+     * ALIVE around that death (`cellCount = 1`) — the die-off beat used to wait for the world to empty, and
+     * a fixture that still emptied it would keep passing if the gate regressed to extinction.
      */
-    private fun query(conflicts: Boolean?, focused: Boolean = true) = CampaignQuery(
+    private fun query(conflicts: Boolean?, focused: Boolean = true, cells: Int = 1) = CampaignQuery(
         WorldStats(
-            0L, 0, emptyMap(), 100, emptySet(),
+            0L, cells, emptyMap(), 100, emptySet(),
             if (!focused) null else FocusedCell(CellType.Collector, 100, emptyMap()),
             Lineage(
                 geneCount = 2, convertChem = "r", convertBiomassCap = 3000,
                 divideBiomassMinimum = 2000,
                 hasDivide = true, divideProduct = "rg", divideFuelConflicts = conflicts,
             ),
+            watchedCellDied = true,
         ),
         paused = false, selectedGenome = null,
     )
@@ -80,7 +83,8 @@ class CampaignBranchTest {
     fun anEmptyWorldStillRoutesByWhatThePlayerBuilt() {
         assertEquals(
             CampaignContent.BRANCH_CONVERSION,
-            destinationOf(divide, query(conflicts = true), atTheEnd = query(conflicts = true, focused = false)),
+            destinationOf(divide, query(conflicts = true),
+                atTheEnd = query(conflicts = true, focused = false, cells = 0)),
         )
     }
 

@@ -619,16 +619,23 @@ object CampaignContent {
             Step(
                 text = "{bond} it is. Every one your cell makes releases a unit of energy, and it can now raise a quarter of its own biomass in a single moment. Give it a push if it refuses to divide - it may need more materials.",
                 altText = "Your gene has no reaction to run, so it makes no energy and the cell cannot divide. Go back and give it two chemicals to join.",
-                gate = Gate.World("Watch and push stalled cells into fresh matter", met = { it.cellCount == 0 }),
+                // The player's OWN cell rupturing is the beat, not the world emptying. Gating on extinction
+                // made the step outlast its own lesson: once a lineage gets going the watched cell splits,
+                // its daughters rupture, and hundreds of cousins carry on for thousands of ticks with the
+                // coach still saying "push stalled cells". The mother keeps her id across a division
+                // (CytoBiologySystem's `state.divide`), so this fires when she herself ruptures — the moment
+                // the player was told to watch. Extinction still satisfies it: if nothing is alive, hers died.
+                gate = Gate.World("Watch your cell divide itself to death", met = { it.watchedCellDied }),
                 allow = LOOK,
                 world = WorldRun.Live,
                 // The die-off IS the beat. Waiting for a Next click would leave this instruction on screen
-                // telling the player to push cells that no longer exist, so the extinction moves the coach on
-                // by itself and the next step speaks to the empty world.
+                // telling the player to push a cell that no longer exists, so the rupture moves the coach on
+                // by itself and the next step speaks to the wreckage.
                 autoAdvance = true,
             ),
-            // TODO block the coach extinctionOffer and watchedCellOffer here, and introduce the copy for adding a new cell into this step.
             Step(
+                // Whether the world is empty now depends on how fast the collapse ran, so the copy can't
+                // assume either. SPAWN stays allowed for the case where it IS empty.
                 text = "Oops. It looks like we need some more tuning here. Take a look at your genome again.",
                 gate = Gate.World("Select a cell", met = { it.focused != null }),
                 allow = SPAWN,
