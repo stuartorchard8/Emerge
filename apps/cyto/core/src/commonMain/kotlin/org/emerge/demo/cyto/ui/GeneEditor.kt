@@ -185,6 +185,10 @@ class GeneEditor {
     // in [numberField] captures digit keystrokes into [constantBuffer] the same way group-name capture works.
     private var capturingConstant = false
     private val constantBuffer = StringBuilder()
+    // "Select-all on open": the buffer opens pre-filled with the current value, and the first keystroke
+    // REPLACES it rather than appending — typing 5 over a 2000 field means 5, not 20005. Cleared as soon as
+    // any edit lands, so subsequent keystrokes append normally.
+    private var constantPristine = false
     private var constantMin = 0
     private var constantMax = 0
     private var constantSet: ((Int) -> Unit)? = null
@@ -307,22 +311,32 @@ class GeneEditor {
     val capturingConstantValue: Boolean get() = capturingConstant
 
     /** Append a typed digit to the constant being entered (host char-callback). Digits only, capped at 7
-     *  characters (comfortably covers the 0..1_000_000 range fields use). */
-    fun typeConstantChar(c: Char) { if (capturingConstant && constantBuffer.length < 7 && c.isDigit()) constantBuffer.append(c) }
+     *  characters (comfortably covers the 0..1_000_000 range fields use). The first digit after the field
+     *  opens replaces the pre-filled value outright ([constantPristine]). */
+    fun typeConstantChar(c: Char) {
+        if (!capturingConstant || !c.isDigit()) return
+        if (constantPristine) { constantBuffer.setLength(0); constantPristine = false }
+        if (constantBuffer.length < 7) constantBuffer.append(c)
+    }
 
-    /** Delete the last typed digit (host BACKSPACE). */
-    fun constantBackspace() { if (capturingConstant && constantBuffer.isNotEmpty()) constantBuffer.setLength(constantBuffer.length - 1) }
+    /** Delete the last typed digit (host BACKSPACE) — or, on the pristine pre-filled value, clear it whole,
+     *  which is what backspacing over a fully-selected field does everywhere else. */
+    fun constantBackspace() {
+        if (!capturingConstant) return
+        if (constantPristine) { constantBuffer.setLength(0); constantPristine = false; return }
+        if (constantBuffer.isNotEmpty()) constantBuffer.setLength(constantBuffer.length - 1)
+    }
 
     /** Commit the typed value, clamped to the field's range (host ENTER); a blank/unparsable buffer leaves
      *  the value unchanged. */
     fun confirmConstantValue() {
         if (!capturingConstant) return
         constantBuffer.toString().toIntOrNull()?.let { constantSet?.invoke(it.coerceIn(constantMin, constantMax)) }
-        capturingConstant = false; constantSet = null
+        capturingConstant = false; constantSet = null; constantPristine = false
     }
 
     /** Abandon the typed value unchanged (host ESC). */
-    fun cancelConstantValue() { capturingConstant = false; constantSet = null }
+    fun cancelConstantValue() { capturingConstant = false; constantSet = null; constantPristine = false }
 
     /** The digits captured so far — a soft-keyboard host (Android) reads this to pre-fill its dialog. */
     val capturedConstantValue: String get() = constantBuffer.toString()
@@ -331,14 +345,16 @@ class GeneEditor {
      *  [typeConstantChar]). Filters to digits, then commits with the field's range clamp. */
     fun submitConstantValue(text: String) {
         if (!capturingConstant) return
-        constantBuffer.setLength(0)
+        constantBuffer.setLength(0); constantPristine = false
         for (c in text) typeConstantChar(c)
         confirmConstantValue()
     }
 
-    private fun startConstantCapture(current: Int, min: Int, max: Int, onSet: (Int) -> Unit) {
+    /** Open the numeric field on [current]. `internal` rather than private only so the keystroke contract
+     *  (select-all on open — see [constantPristine]) can be tested without driving a UI frame. */
+    internal fun startConstantCapture(current: Int, min: Int, max: Int, onSet: (Int) -> Unit) {
         capturingConstant = true
-        constantBuffer.setLength(0); constantBuffer.append(current.toString())
+        constantBuffer.setLength(0); constantBuffer.append(current.toString()); constantPristine = true
         constantMin = min; constantMax = max; constantSet = onSet
     }
 
@@ -753,11 +769,13 @@ class GeneEditor {
      *  value starts this, and the host routes keystrokes into [constantBuffer] via [typeConstantChar]. */
     private fun renderConstantCaptureDialog(b: UiBuilder, wide: Boolean) {
         val typed = constantBuffer.toString()
-        val shown = typed.ifEmpty { "" } + "_"   // trailing cursor
+        // Pristine = the pre-filled value, which the next keystroke replaces wholesale. Shown in the accent
+        // colour with no cursor to read as "selected"; once they start typing it's white text + a cursor.
+        val shown = if (constantPristine) typed else typed + "_"
         val body: PanelBuilder.() -> Unit = {
             row("TYPE A NUMBER ($constantMin-$constantMax), THEN ENTER.", 0x9A9A9AFFL)
             gap(6f)
-            row(shown, 0xFFFFFFFFL)
+            row(shown, if (constantPristine) 0x66CC66FFL else 0xFFFFFFFFL)
             gap(10f)
             val parsed = typed.toIntOrNull()
             listRow("SET VALUE", if (parsed == null) "TYPE A NUMBER FIRST" else "USE ${parsed.coerceIn(constantMin, constantMax)}") {
