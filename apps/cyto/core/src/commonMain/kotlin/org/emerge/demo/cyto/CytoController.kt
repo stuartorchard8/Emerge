@@ -623,11 +623,16 @@ class CytoController(
         // Welded-neighbour count (structural degree) — the live value the Operand.Neighbours gate reads.
         // Springs ARE the welds, so their count is the cell's weldedDegree this tick.
         val weldedDegree = state.components.getTable<SpringConstraintComponent>()[id]?.springs?.size ?: 0
-        // Local reservoir contents (the grid-cell this cell sits in).
+        // Local reservoir contents — summed over the cell's whole exchange footprint, not the one texel under
+        // its centre. The sim balances every texel in this disc (CytoBiologyCore's exchange, at exactly this
+        // radius), so the centre texel alone both understates a big cell's reserves and made the env↔cyt
+        // arrow below compare cytoplasm against a fraction of what the sim compares it against.
         val envMap: Map<String, Int> = run {
             val grid = state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid
             if (grid == null || pos == null) emptyMap()
-            else grid.contentsAt(CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y))
+            else grid.contentsOverFootprint(
+                CytoUnits.toLogical(pos.x), CytoUnits.toLogical(pos.y),
+                CytoTuning.physicalRadius(cell.logicalRadius).toFloat())
         }
         // Predicted matter flows for the two boundaries (like the env↔cyt arrow, derived from the cell's
         // genome + state, not measured). Convert genes build their operand cyt→bio; degradation breaks the
@@ -658,6 +663,10 @@ class CytoController(
             // env↔cyt is a SIGNED SUM: passive exchange (absorb usable when the reservoir's richer, leak
             // un-usable surplus) plus the degradation monomer ejected to the reservoir. So a monomer that's
             // abundant outside still reads ">>" (net drawn in) even while degradation trickles some out.
+            // Only the SIGN is used, and with `env` now the footprint total it is the sim's own test: the
+            // exchange balances each texel toward cEff/N, i.e. moves matter inward exactly when the footprint
+            // holds more than the cytoplasm. (Still an approximation of the rest — the sim skips texels
+            // contested by another cell, and species the membrane retains.)
             val passive = when {
                 canHold && env > cyto -> (env - cyto) / 2
                 !canHold && cyto > env -> -(cyto - env) / 2

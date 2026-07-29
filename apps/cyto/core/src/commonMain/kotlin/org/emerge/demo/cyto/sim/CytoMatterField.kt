@@ -684,6 +684,29 @@ class CytoMatterField private constructor(
         return m
     }
 
+    /**
+     * Read-only contents summed over the **whole footprint disc** at (cx,cy) — the reservoir a cell of this
+     * radius actually exchanges with, and so what the info panel's `ENV` column must show.
+     *
+     * [contentsAt] reads the single centre texel, which understates a multi-texel cell's reach and (worse)
+     * makes the panel's env↔cyt arrow compare cytoplasm against a fraction of what the sim compares it
+     * against — the arrow could point the opposite way to the transfer the player then watches happen. Pass
+     * the same radius the exchange uses (`CytoTuning.physicalRadius(logicalRadius)`) to line the two up.
+     *
+     * Uses no shared scratch (unlike [openFootprint]), so the draw thread may call it on a state snapshot
+     * while the sim thread is mid-exchange.
+     */
+    fun contentsOverFootprint(cx: Float, cy: Float, radius: Float): Map<String, Int> {
+        val m = LinkedHashMap<String, Int>()
+        for (sp in columns.indices) {
+            val col = columns[sp] ?: continue
+            var sum = 0
+            forEachFootprintTexel(cx, cy, radius) { i -> sum += col[i] }
+            if (sum > 0) m[SpeciesRegistry.string(sp)] = sum
+        }
+        return m
+    }
+
     /** Structured serialise: the present species, then each one's full dense column. Columns are written in
      *  ascending species id, and the reader reconstructs by id, so the format is independent of registry
      *  iteration order. */

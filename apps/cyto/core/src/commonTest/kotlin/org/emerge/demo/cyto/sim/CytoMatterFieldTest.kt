@@ -465,4 +465,41 @@ class CytoMatterFieldTest {
         f.forEachTexel { _, _, _, s -> rg += s.count(AB).toLong() }
         assertTrue(rg < 500, "decay should have atomised some 'rg' (so the read model tracked real churn)")
     }
+
+    // ── the UI's reservoir read ────────────────────────────────────────────────────────────────────────
+
+    /**
+     * [CytoMatterField.contentsOverFootprint] must report the reservoir the *exchange* sees, which is the
+     * whole disc — the info panel used to read [CytoMatterField.contentsAt] (one texel) and so understated a
+     * multi-texel cell by exactly the texel count.
+     */
+    @Test fun footprintContentsSumTheWholeDiscNotTheCentreTexel() {
+        val f = CytoMatterField.seededUniform(10)
+        var n = 0
+        f.forEachFootprintTexel(0f, 0f, 0.3f) { n++ }
+        assertTrue(n > 1, "test is meaningless unless the footprint spans several texels (got $n)")
+
+        val centre = f.contentsAt(0f, 0f)
+        val disc = f.contentsOverFootprint(0f, 0f, 0.3f)
+        assertEquals(10, centre["r"], "uniform seed: one texel holds `level`")
+        assertEquals(10 * n, disc["r"], "the disc holds `level` × its texel count")
+    }
+
+    /** It reads the same texels the exchange balances — the point of the whole thing — so a deposit spread
+     *  over one cell's footprint is fully accounted for by a read at the same centre and radius. */
+    @Test fun footprintContentsAgreeWithWhatWasDepositedOverThatFootprint() {
+        val f = CytoMatterField.empty()
+        f.deposit(1.25f, -0.5f, 0.4f, AB, 900)
+        assertEquals(900, f.contentsOverFootprint(1.25f, -0.5f, 0.4f)["rg"])
+        // A zero-radius read at the same spot sees only its own texel, which is a fraction of that.
+        assertTrue((f.contentsAt(1.25f, -0.5f)["rg"] ?: 0) < 900, "the centre texel is not the whole hoard")
+    }
+
+    /** Absent species stay absent — the panel lists a row per key, so a zero would print a phantom. */
+    @Test fun footprintContentsOmitSpeciesWithNothingInTheDisc() {
+        val f = CytoMatterField.empty()
+        f.deposit(0f, 0f, 0.3f, A, 40)
+        val disc = f.contentsOverFootprint(0f, 0f, 0.3f)
+        assertEquals(setOf("r"), disc.keys)
+    }
 }
