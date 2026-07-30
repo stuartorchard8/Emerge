@@ -1456,6 +1456,7 @@ object CampaignContent {
                     met = { q -> q.lineage?.let { it.groupedGeneCount >= it.geneCount && it.geneCount > 0 } == true },
                 ),
                 allow = LOOK,
+                spotlight = Spotlight(hint = "+ NEW GROUP, below the genome", target = "+ NEW GROUP"),
                 world = WorldRun.Frozen,
             ),
             Step(
