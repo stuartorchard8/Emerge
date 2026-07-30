@@ -105,6 +105,10 @@ object CytoAgentHarness {
     private const val AUTOSCROLL_ROUNDS = 40
     private const val AUTOSCROLL_STEP_SECONDS = 0.1f
 
+    /** UI animation clock step per built frame. A whole second, so every fade has finished and every pulse is
+     *  back at the same phase by the time anything is measured or captured. */
+    private const val UI_CLOCK_STEP = 1.0f
+
     fun run(scriptText: String, outDir: File) {
         outDir.mkdirs()
         val bad = CampaignContent.validateGlyphs()
@@ -764,6 +768,7 @@ object CytoAgentHarness {
         }
 
         private fun renderUiOnce() {
+            ui.advanceClock(UI_CLOCK_STEP)
             val mask = director.controlMask
             // Wide always keeps the HUD: nothing on this width claims the bottom bar — the cell panel docks
                 // right and every sheet is a centred, scrimmed popover — so there is nothing to make room for.
@@ -904,6 +909,13 @@ object CytoAgentHarness {
 
         // ── faithful GL render → PNG ──────────────────────────────────────────────────
         private fun shot(name: String) {
+            // Settle the coach's spotlight before capturing: a target change fades out, swaps and fades back
+            // in, so a single frame would catch it mid-transition. Three whole-second steps land it at rest —
+            // and on the same pulse phase every time, which is what makes the shots comparable.
+            repeat(3) { renderUiOnce() }
+            // ...then capture on the HALF second, the top of the one-second pulse: whole seconds are its
+            // dimmest point, and a shot taken there under-sells what the player sees.
+            ui.advanceClock(UI_CLOCK_STEP / 2f)
             val mask = director.controlMask
             controls.showBrush = mask.allows(Control.Brush)
             controls.showTouchModes = mask.allows(Control.Brush)
@@ -977,6 +989,9 @@ object CytoAgentHarness {
                     img.setRGB(x, y, (r shl 16) or (g shl 8) or b)
                 }
             }
+            // Put the pulse back on a whole second, so the next shot's half-second offset lands on the peak
+            // again rather than alternating bright/dim from one capture to the next.
+            ui.advanceClock(UI_CLOCK_STEP / 2f)
             val out = File(outDir, "$name.png")
             ImageIO.write(img, "png", out)
             println("[agent] shot -> ${out.name} (${controller.worldStats().cellCount} cells, tick ${controller.tick})")

@@ -197,6 +197,7 @@ object CytoSceneView {
             val delta = (now - lastTime).toFloat().coerceIn(0f, 0.25f)
             lastTime = now
             if (delta > 0f) fps = fps * 0.9 + (1.0 / delta) * 0.1   // smoothed draw rate
+            ui.advanceClock(delta)                                  // UI animation phase (coach spotlight)
 
             // Drive hold-to-repeat steppers (threshold +/-) while the primary button is held.
             if (isPrimaryDown(window)) {

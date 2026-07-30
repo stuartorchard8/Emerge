@@ -252,6 +252,8 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         r.colorMode = c.colorMode
         r.matterSpeciesId = c.matterSpeciesId
 
+        ui.advanceClock(delta)   // UI animation phase (coach spotlight)
+
         if (menu.inGame) {
             if (pointerDown) ui.updateHold(lastX, lastY, delta)
             controller.pruneDeadSelection()

@@ -10,6 +10,8 @@ import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.Ui
 import org.emerge.render.torus.ui.UiBuilder
 import org.emerge.render.torus.ui.UiTextRenderer
+import kotlin.math.PI
+import kotlin.math.cos
 
 /**
  * The campaign runtime. Owns the current chapter + step, evaluates the active step's [Gate] against the
@@ -507,21 +509,17 @@ class CampaignDirector {
      * a row scrolled out of view. The step's hint text is the fallback and is always drawn by [render]
      * itself, so a spotlight that can't point is a quieter coach, never a broken one.
      *
-     * ⚠️ A scrolled-away row still resolves (`Ui.element` enumerates regions, and does not intersect the
-     * scroll clip), so a box can currently be drawn outside its viewport. Handling that — suppress, or scroll
-     * the target into view — is the next phase; it is why this pilots on Genesis, whose panel does not scroll.
+     * **Animated** ([spotAlpha]): it fades in and out rather than appearing and vanishing, moves to the Next
+     * button the moment the task is done, and breathes on a one-second cycle while it waits.
      */
     fun renderSpotlight(ui: UiBuilder) {
-        if (!active) return
-        val spot = currentStep?.spotlight ?: return
-        val target = spot.target ?: return
-        // The situation offers (extinction / watched-cell) replace the step's copy with a recovery offer, so
-        // the step's own spotlight is pointing at something the player is no longer being asked to do.
-        if (extinctionOffer || watchedCellOffer) return
-        val hit = ui.element(target, spot.occurrence) ?: return
+        val now = ui.clockSeconds
+        val shown = spotAnim.advance(desiredSpot(), now) ?: return
+        val hit = ui.element(shown.target, shown.occurrence) ?: return
         // A target below the fold of a scrolling genome is culled at layout, so it resolves to nothing and the
         // coach falls back to its hint text unaided; this covers the residue.
         if (!hit.visible) return
+        val col = fade(LINE, spotAnim.alpha(now))
         val from = coachRect
         ui.canvas {
             val d = ui.density
@@ -535,11 +533,34 @@ class CampaignDirector {
                 val x1 = minOf(x + w, c.x + c.w); val y1 = minOf(y + h, c.y + c.h)
                 x = x0; y = y0; w = x1 - x0; h = y1 - y0
             }
-            if (from != null) elbow(this, from, x, y, w, h, d)
+            // No connector to a target inside the coach itself (the Next button): a line from the coach's
+            // centre to a box a few rows below it reads as a scribble, and there is nothing to bridge.
+            if (from != null && !from.contains(x, y, w, h)) elbow(this, from, x, y, w, h, d, col)
             // The box last, so the connector tucks under its edge rather than crossing into the widget.
-            outline(this, x, y, w, h, 2f * d)
+            outline(this, x, y, w, h, 2f * d, col)
         }
     }
+
+    /** What the coach should be ringing right now, or null for nothing. */
+    private fun desiredSpot(): Spot? {
+        if (!active) return null
+        // The situation offers (extinction / watched-cell) replace the step's copy with a recovery offer, so
+        // the step's own spotlight is pointing at something the player is no longer being asked to do.
+        if (extinctionOffer || watchedCellOffer) return null
+        val step = currentStep ?: return null
+        // The task is done: the thing to look at is no longer the widget, it is the way onward. `gateMet` is
+        // only ever true for a step that *had* something to do, so a page of prose doesn't get a ring on Next
+        // simply for existing.
+        if (gateMet) return Spot(NEXT_LABEL, 1)
+        val target = step.spotlight?.target ?: return null
+        return Spot(target, step.spotlight.occurrence)
+    }
+
+    private val spotAnim = SpotlightAnimator()
+
+    /** [c] (0xRRGGBBAA) at [a] of its opacity. */
+    private fun fade(c: Long, a: Float): Long =
+        (c and 0xFFFFFF00L) or ((a.coerceIn(0f, 1f) * (c and 0xFFL).toFloat()).toLong())
 
     /**
      * A right-angled connector from the coach panel to the spotlit box, routed through the **gap between
@@ -562,12 +583,12 @@ class CampaignDirector {
      * the cell panel, from nothing. The centre of a panel is visible by construction — anything covering it
      * would have covered the coach.
      */
-    private fun elbow(c: CanvasBuilder, from: Ui.UiElement, bx: Float, by: Float, bw: Float, bh: Float, d: Float) {
+    private fun elbow(c: CanvasBuilder, from: Ui.UiElement, bx: Float, by: Float, bw: Float, bh: Float, d: Float, col: Long) {
         val t = 2f * d                                   // line thickness
         val boxCy = by + bh * 0.5f
         val cx = from.x + from.w * 0.5f
-        fun hRun(x0: Float, x1: Float, y: Float) = c.rect(minOf(x0, x1), y - t * 0.5f, kotlin.math.abs(x1 - x0), t, LINE)
-        fun vRun(x: Float, y0: Float, y1: Float) = c.rect(x - t * 0.5f, minOf(y0, y1), t, kotlin.math.abs(y1 - y0), LINE)
+        fun hRun(x0: Float, x1: Float, y: Float) = c.rect(minOf(x0, x1), y - t * 0.5f, kotlin.math.abs(x1 - x0), t, col)
+        fun vRun(x: Float, y0: Float, y1: Float) = c.rect(x - t * 0.5f, minOf(y0, y1), t, kotlin.math.abs(y1 - y0), col)
         // The coach edge the target is on. A target level with the coach still leaves from an edge, not a side.
         val edgeY = if (boxCy < from.y + from.h * 0.5f) from.y else from.y + from.h
         if (bx > cx || bx + bw < cx) {
@@ -583,12 +604,16 @@ class CampaignDirector {
     }
 
     /** A hollow rectangle, as four thin rects — the toolkit draws fills only. */
-    private fun outline(c: CanvasBuilder, x: Float, y: Float, w: Float, h: Float, t: Float) {
-        c.rect(x, y, w, t, LINE)
-        c.rect(x, y + h - t, w, t, LINE)
-        c.rect(x, y, t, h, LINE)
-        c.rect(x + w - t, y, t, h, LINE)
+    private fun outline(c: CanvasBuilder, x: Float, y: Float, w: Float, h: Float, t: Float, col: Long) {
+        c.rect(x, y, w, t, col)
+        c.rect(x, y + h - t, w, t, col)
+        c.rect(x, y, t, h, col)
+        c.rect(x + w - t, y, t, h, col)
     }
+
+    /** Whether [this] panel's rect encloses the given box — "the target is inside the coach". */
+    private fun Ui.UiElement.contains(bx: Float, by: Float, bw: Float, bh: Float): Boolean =
+        bx >= x && by >= y && bx + bw <= x + w && by + bh <= y + h
 
     /**
      * Draw the coach panel — a top-docked banner when [narrow], a bottom-centre panel stacked above the HUD
@@ -719,7 +744,7 @@ class CampaignDirector {
             // when one of them is destructive.
             buttons.add(Triple("Reset", 0x4A3A2AFFL) { resetMenuOpen = true })
             buttons.add(Triple("Skip", 0x53384AFFL) { advance(controller) })
-            buttons.add(Triple("Next >", if (nextEnabled) 0x2E6E5EFFL else 0x2A3040FFL) { if (nextEnabled) advance(controller) })
+            buttons.add(Triple(NEXT_LABEL, if (nextEnabled) 0x2E6E5EFFL else 0x2A3040FFL) { if (nextEnabled) advance(controller) })
             actionRow(buttons)
         }
     }
@@ -748,6 +773,18 @@ class CampaignDirector {
         /** The spotlight's box + connector: the coach's own hint amber ([renderFull] draws hint rows in it),
          *  so the line and the sentence that sent the player down it read as one voice. */
         private const val LINE = 0xFFD86EFFL
+
+        /** How long the box takes to arrive, and to leave. Long enough to read as a move rather than a cut,
+         *  short enough that a player who did the task isn't kept waiting to be told what is next. */
+        internal const val FADE_SECONDS = 0.5f
+
+        /** The breathing cycle, and how far down it dips. Never to nothing: the box is a marker first and an
+         *  animation second, and a marker that blinks out is a marker you lose. */
+        internal const val PULSE_SECONDS = 1f
+        internal const val PULSE_FLOOR = 0.65f
+
+        /** The coach's own Next button, ringed once the step's task is done. Must match [renderFull]. */
+        internal const val NEXT_LABEL = "Next >"
 
         private const val BOTTOM_MARGIN_DP = 10f  // desktop coach's gap from the bottom edge — matches CytoHud's bar
         private const val COACH_WRAP = 58   // approx chars per coach line before wrapping (desktop cap)

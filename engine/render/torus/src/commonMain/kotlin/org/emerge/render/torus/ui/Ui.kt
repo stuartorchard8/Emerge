@@ -88,6 +88,22 @@ class Ui {
                 (x + w > clip.x && x < clip.x + clip.w && y + h > clip.y && y < clip.y + clip.h)
     }
 
+    /**
+     * Seconds of wall time the host has fed in through [advanceClock] — an animation clock for immediate-mode
+     * drawing, which has nowhere of its own to keep a phase.
+     *
+     * It is **not** derived from the frame count: a caller wanting a one-second pulse means one second, not
+     * sixty frames, and the draw rate varies with the sim. Monotonic, and never reset, so a caller animates by
+     * remembering the value it started at.
+     */
+    var clockSeconds: Float = 0f
+        private set
+
+    /** Advance the animation clock by one frame's wall time. Hosts already compute this for hold-to-repeat. */
+    fun advanceClock(dtSeconds: Float) {
+        if (dtSeconds > 0f) clockSeconds += dtSeconds
+    }
+
     /** The rect of the panel emitted most recently this frame, or null before any. A panel is auto-sized and
      *  anchor-placed, so a caller that wants to draw *relative to its own panel* (the campaign coach, pointing
      *  a connector at a widget elsewhere on screen) has no other way to know where it landed. */
@@ -952,6 +968,9 @@ class UiBuilder internal constructor(private val ui: Ui) {
 
     /** The most recently emitted panel's rect (see [Ui.lastPanelRect]). */
     val lastPanelRect: Ui.UiElement? get() = ui.lastPanelRect
+
+    /** The host's animation clock — see [Ui.clockSeconds]. */
+    val clockSeconds: Float get() = ui.clockSeconds
 
     /** Whether a card drag (drag-and-drop) is live this frame (see [Ui.isDragging]). */
     val isDragging: Boolean get() = ui.isDragging

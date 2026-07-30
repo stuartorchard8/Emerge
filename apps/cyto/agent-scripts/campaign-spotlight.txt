@@ -31,6 +31,8 @@ echo === 8/11: ring + NEW GENE ===
 shot spot-new-gene
 tap-ui + NEW GENE
 expect genes 1
+echo === and once the task is done, the ring hands off to the Next button ===
+shot spot-handed-off
 next
 echo === 9/11: ring the NOTHING action token ===
 shot spot-nothing
