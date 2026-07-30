@@ -1348,8 +1348,8 @@ object CampaignContent {
         spawnBiomass = STARTER_CELL_BIOMASS,
         // Into the Act I closer, and from there the rehomed Act II. The efficiency chapter that was going to
         // sit here is parked - its premise did not survive measurement (CAMPAIGN_PLAN.md 14).
-        branchesTo = listOf(KEEPSAKE),
-        next = { KEEPSAKE },
+        branchesTo = listOf(KEPT),
+        next = { KEPT },
         steps = listOf(
             Step(
                 text = "A clean world, and the genome you built. Tap an empty space to put one cell into it.",
@@ -1456,17 +1456,18 @@ object CampaignContent {
         ),
     )
 
-    const val KEEPSAKE = "ch05b-yours"
+    const val KEPT = "ch05b-kept"
 
     /**
-     * **Yours** — the close of Act I. No new biology: the player has a genome that holds a world, and this
-     * chapter's whole job is to hand it to them as a *thing they own* rather than a state this save happens
-     * to be in.
+     * **Kept** — the close of Act I. No new biology: the player has a genome that holds a world, and this
+     * chapter's whole job is to get it out of this save and into the genome library, where it survives the
+     * world it was built in.
      *
-     * It exists because of what comes next. Act II drops the guardrails and populates a world with
-     * multicellular organisms the player did not build, and that hand-off only reads as an invitation if the
-     * player is carrying something of their own into it. Exporting is the beat that makes Act I a body of
-     * work instead of a corridor they walked down.
+     * It also sets Act II up, which drops the guardrails and populates a world with multicellular organisms
+     * the player did not build - a hand-off that reads better if the player is carrying something of their
+     * own into it. But that is a reason for the chapter to exist, **not** something its copy should say. It
+     * closes on what the player can now do with the genome (it is on the brush; tap and plant one), not on a
+     * trailer for the next chapter: each chapter stands on its own.
      *
      * **One mechanism only: the genome library.** The world save is a checkpoint, not an artefact - and a
      * campaign world saved here can only be reopened into free play ([CytoMenu.Callbacks.onLoadNamed] stops
@@ -1478,11 +1479,11 @@ object CampaignContent {
      * button appearing here is itself the lesson - a control that had always been on-screen would make this
      * chapter a tour of furniture.
      */
-    private fun chapterKeepsake() = Chapter(
-        id = KEEPSAKE,
+    private fun chapterKept() = Chapter(
+        id = KEPT,
         act = 1,
-        title = "Yours",
-        blurb = "The genome you built, kept - and the last chapter that holds your hand.",
+        title = "Kept",
+        blurb = "Get the genome out of this world and into the library.",
         scenario = EMPTY_WORLD,
         // Continuous with ch05-reclaim: the colony the player just got holding IS the subject. Rebuilding the
         // world here would export a genome the player had not just watched succeed.
@@ -1494,8 +1495,8 @@ object CampaignContent {
         spawnBiomass = STARTER_CELL_BIOMASS,
         steps = listOf(
             Step(
-                text = "That colony is not going anywhere. It feeds, it divides, and it puts back what it spends - and every line of it is yours.",
-                detail = "Four genes. You wrote all four by hand, one field at a time.",
+                text = "That colony is not going anywhere. It feeds, it divides, and it puts back what it spends.",
+                detail = "Four genes, all four written by hand, one field at a time.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Frozen,
@@ -1519,15 +1520,11 @@ object CampaignContent {
                 world = WorldRun.Frozen,
                 spotlight = Spotlight(target = "EXPORT GENOME"),
             ),
+            // Closes on a capability, not a recap and not a cliffhanger: the genome is saved AND on the
+            // brush, so the last thing the chapter does is hand back a world the player can plant into.
             Step(
-                text = "It is in your library now, and it will still be there long after this world is gone. It is also loaded on your brush - tap anywhere and you plant one.",
+                text = "It is in the library now, and on your brush - tap anywhere and you plant one.",
                 detail = "The palette at the bottom left is every genome you have saved.",
-                gate = Gate.Next,
-                allow = WATCH_SAVE,
-                world = WorldRun.Live,
-            ),
-            Step(
-                text = "That is everything Act I had to teach. You can read a genome, write one, feed it, reproduce it, and keep it. From here on you are not the only thing in the world that can do that.",
                 gate = Gate.Next,
                 allow = WATCH_SAVE,
                 world = WorldRun.Live,
@@ -1660,7 +1657,7 @@ object CampaignContent {
         chapterSupplyScratch(),
         chapterLockedUpScratch(),
         chapterReclaimScratch(),
-        chapterKeepsake(),
+        chapterKept(),
         chapterHoldTogetherRehomed(),
     )
 

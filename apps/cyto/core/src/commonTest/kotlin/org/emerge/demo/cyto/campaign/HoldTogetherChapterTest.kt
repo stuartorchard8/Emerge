@@ -91,7 +91,7 @@ class HoldTogetherChapterTest {
     @Test
     fun itFollowsTheActOneCloserAndOffersOneSubsystem() {
         assertEquals(
-            listOf(CampaignContent.KEEPSAKE),
+            listOf(CampaignContent.KEPT),
             CampaignContent.predecessorsOf(CampaignContent.REHOMED_HOLD, CampaignContent.PLAYABLE_CHAPTERS),
         )
         assertEquals(setOf(CampaignContent.GROUP_HOLD_NAME), chapter.insertableGroups)

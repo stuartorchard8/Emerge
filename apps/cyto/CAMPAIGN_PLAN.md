@@ -1170,15 +1170,16 @@ not just chemistry binding but whether the player's organism can carry the subsy
 
 ---
 
-## 16. `ch05b-yours` — the close of Act I (2026-07-31)
+## 16. `ch05b-kept` — the close of Act I (2026-07-31)
 
-Act I ends with the player owning a genome that holds a world, and this chapter's only job is to hand it to
-them as **a thing they keep** rather than a state this save happens to be in. No new biology.
+Act I ends with the player owning a genome that holds a world, and this chapter's only job is to get it out
+of this save and into the genome library, where it survives the world it was built in. No new biology.
 
-It exists because of what follows. Act II drops the guardrails and populates a world with multicellular
-organisms the player did not build (§17) — a hand-off that only reads as an invitation if the player is
-carrying something of their own into it. Exporting is the beat that makes Act I a body of work instead of a
-corridor.
+It also sets up what follows — Act II drops the guardrails and populates a world with multicellular organisms
+the player did not build, a hand-off that reads better if the player carries something of their own into it.
+That is a reason for the chapter to **exist**, not something its copy should say. **Stu's rule (2026-07-31):
+each chapter stands on its own merits; no cliffhanger at each junction.** So it closes on a capability — the
+genome is saved *and* on the brush, tap and plant one — not on a recap of Act I or a trailer for Act II.
 
 ### One mechanism, and why the other two are not it
 
@@ -1200,7 +1201,7 @@ they meet and want to lift, which is the natural moment for "take a copy of that
 
 It was declared and never read (as `Control.Spawn` had been, and as `Control.Menu` still was — now deleted).
 It now gates `EXPORT GENOME`, and `WATCH_SAVE` is the only mask that grants it, so **the button's arrival is
-the lesson**. `KeepsakeChapterTest` asserts no earlier step in `PLAYABLE_CHAPTERS` grants it — the failure
+the lesson**. `KeptChapterTest` asserts no earlier step in `PLAYABLE_CHAPTERS` grants it — the failure
 mode being somewhere other than in this chapter.
 
 It deliberately does **not** gate MENU or the menu's Save page: leaving the game is an escape hatch and a

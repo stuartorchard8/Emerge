@@ -7,13 +7,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * `ch05b-yours` — the close of Act I. It teaches no biology, so what there is to guard is structural: the
+ * `ch05b-kept` — the close of Act I. It teaches no biology, so what there is to guard is structural: the
  * export affordance must arrive *here* and nowhere earlier (the button appearing IS the lesson), and the
  * chapter must sit between the reclaim chapter and the bridge into Act II.
  */
-class KeepsakeChapterTest {
+class KeptChapterTest {
 
-    private val chapter = CampaignContent.PLAYABLE_CHAPTERS.first { it.id == CampaignContent.KEEPSAKE }
+    private val chapter = CampaignContent.PLAYABLE_CHAPTERS.first { it.id == CampaignContent.KEPT }
 
     /**
      * **The load-bearing assertion.** `Control.Save` gates EXPORT GENOME, and the chapter's copy says "there
@@ -23,7 +23,7 @@ class KeepsakeChapterTest {
     @Test
     fun exportIsWithheldEverywhereBeforeThisChapter() {
         val leaks = CampaignContent.PLAYABLE_CHAPTERS
-            .takeWhile { it.id != CampaignContent.KEEPSAKE }
+            .takeWhile { it.id != CampaignContent.KEPT }
             .flatMap { ch -> ch.steps.filter { it.allow.allows(Control.Save) }.map { "${ch.id}: ${it.text}" } }
         assertEquals(emptyList(), leaks, "the export button must not exist before the chapter that introduces it")
     }
@@ -48,7 +48,7 @@ class KeepsakeChapterTest {
         assertEquals(1, chapter.act)
         assertEquals(
             listOf(CampaignContent.RECLAIM),
-            CampaignContent.predecessorsOf(CampaignContent.KEEPSAKE, CampaignContent.PLAYABLE_CHAPTERS),
+            CampaignContent.predecessorsOf(CampaignContent.KEPT, CampaignContent.PLAYABLE_CHAPTERS),
         )
         assertEquals(listOf(CampaignContent.REHOMED_HOLD), chapter.branchesTo)
     }

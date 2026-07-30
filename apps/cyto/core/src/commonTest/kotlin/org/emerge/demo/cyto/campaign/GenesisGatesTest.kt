@@ -73,7 +73,7 @@ class GenesisGatesTest {
             .filter { it.id != "ch00-genesis" }
             .flatMap { ch -> ch.steps.mapNotNull { it.gate as? Gate.Did }.map { "${ch.id}: ${it.desc}" } }
         assertEquals(
-            listOf("${CampaignContent.KEEPSAKE}: Export the genome"), events,
+            listOf("${CampaignContent.KEPT}: Export the genome"), events,
             "these would ask a player who got ahead to repeat themselves",
         )
     }

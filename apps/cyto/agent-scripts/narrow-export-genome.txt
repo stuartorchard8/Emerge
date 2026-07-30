@@ -7,14 +7,14 @@
 #
 # It is, in one gesture and with no scrolling: expand the sheet and the button is on screen.
 
-campaign ch05b-yours
+campaign ch05b-kept
 spawn 0.5 0.5
 select 0.5 0.5
 authorgenome /home/stu/emerge/apps/cyto/desktop/cyto-genomes/import light.gene
 select 0.5 0.5
 next
 next
-expect step 3/5
+expect step 3/4
 
 # Collapsed peek: the genome (and so the button) is not shown yet.
 expect-ui !EXPORT GENOME
@@ -26,4 +26,4 @@ shot narrow-export
 
 tap-ui EXPORT GENOME
 next
-expect step 4/5
+expect step 4/4
