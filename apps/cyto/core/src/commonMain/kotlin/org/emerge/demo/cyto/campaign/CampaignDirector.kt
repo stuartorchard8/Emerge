@@ -515,7 +515,8 @@ class CampaignDirector {
     fun renderSpotlight(ui: UiBuilder) {
         val now = ui.clockSeconds
         val shown = spotAnim.advance(desiredSpot(), now) ?: return
-        val hit = ui.element(shown.target, shown.occurrence) ?: return
+        val hit = if (shown.byKey) ui.elementByKey(shown.target) else ui.element(shown.target, shown.occurrence)
+        if (hit == null) return
         // A target below the fold of a scrolling genome is culled at layout, so it resolves to nothing and the
         // coach falls back to its hint text unaided; this covers the residue.
         if (!hit.visible) return
@@ -552,8 +553,11 @@ class CampaignDirector {
         // only ever true for a step that *had* something to do, so a page of prose doesn't get a ring on Next
         // simply for existing.
         if (gateMet) return Spot(NEXT_LABEL, 1)
-        val target = step.spotlight?.target ?: return null
-        return Spot(target, step.spotlight.occurrence)
+        val spot = step.spotlight ?: return null
+        // A gene slot is named by identity, everything else by the word on it.
+        spot.gene?.let { return Spot(it.key, 1, byKey = true) }
+        val target = spot.target ?: return null
+        return Spot(target, spot.occurrence)
     }
 
     private val spotAnim = SpotlightAnimator()

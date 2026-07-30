@@ -73,6 +73,10 @@ import javax.imageio.ImageIO
  * dragto <src> >> <dst>      # pick a card up and drop it on a target (long-press on narrow; autoscrolls
  *                            # the list when the target starts off-screen). draghover holds instead.
  * scroll <areaId> <dp>       # scroll a list (e.g. cell-sheet) so off-screen rows become reachable
+ * tap-key <key>              # click a gene slot by IDENTITY, not by the word on it (GeneKeys):
+ *                            # `tap-key gene:CONVERT:1:cond` is "the condition on the first GROW gene",
+ *                            # whether it currently reads ALWAYS or WHEN BIO < 3000. `elements` prints the
+ *                            # key beside each label. The campaign coach points at these same keys.
  * expect-ui <label>          # assert a (partial) label is on screen; !<label> asserts it is not
  * expect <field> <value>     # assert a reading (chapter/step/goal/cells/genes/convertChem/
  *                            # growthCap/divideFloor/hasDivide/recyclesExhaust/recycleReserve/
@@ -391,6 +395,10 @@ object CytoAgentHarness {
                     println("[agent] key ${t.getOrNull(1)}")
                 }
                 "tap-ui" -> tapUi(line.removePrefix("tap-ui").trim())
+                // Drive a gene slot by IDENTITY rather than by the word on it — the same key the campaign
+                // coach points at (GeneKeys), so "what the coach rings" and "what a script taps" stay the
+                // same thing now that the coach no longer matches on displayed text.
+                "tap-key" -> tapKey(line.removePrefix("tap-key").trim())
                 "hover-ui" -> hoverUi(line.removePrefix("hover-ui").trim())
                 "hover-clear" -> { ui.clearHover(); println("[agent] hover cleared") }
                 "drag-ui" -> dragUi(t[1], t[2].toFloat())
@@ -575,7 +583,7 @@ object CytoAgentHarness {
             ui.draggingId?.let { println("[agent] dragging: '$it' over drop target '${ui.hoveredDropTarget()}'") }
             // Geometry, so a touch-target audit can see how big these actually are at this render size.
             for (e in ui.elements())
-                println("[agent]   ui '${e.label}' x=${e.x.toInt()} y=${e.y.toInt()} w=${e.w.toInt()} h=${e.h.toInt()}")
+                println("[agent]   ui '${e.label}'${e.key?.let { " key=$it" } ?: ""} x=${e.x.toInt()} y=${e.y.toInt()} w=${e.w.toInt()} h=${e.h.toInt()}")
         }
 
         private fun dumpRaw() {
@@ -726,6 +734,14 @@ object CytoAgentHarness {
          * `@`, not `#`: scripts strip `#` to end-of-line as a comment, so `tap-ui USE LIGHT #2` silently
          * became `tap-ui USE LIGHT` and edited the FIRST gene — a wrong edit that reported success.
          */
+        private fun tapKey(key: String) {
+            buildOverlay()
+            val hit = ui.tapKey(key)
+            println("[agent] tap-key '$key' -> ${if (hit) "clicked" else "no match"}")
+            buildOverlay()
+            sync()
+        }
+
         private fun tapUi(arg: String) {
             val m = Regex("^(.*?)\\s*@(\\d+)$").find(arg)
             val label = (m?.groupValues?.get(1) ?: arg).trim()

@@ -208,6 +208,60 @@ class UiElementLookupTest {
         assertTrue(ui.elements().none { it.y == hit.y }, "the reading, not the gene card above it")
     }
 
+    /**
+     * Keys: identity, not text. A widget whose label changes as its state changes — a gene's condition slot
+     * reading ALWAYS until it reads WHEN BIO < 3000 — cannot be named by what it says, which is the whole
+     * reason the campaign coach resolves gene slots this way.
+     */
+    @Test fun aKeyedWidgetResolvesThroughItsLabelChanging() {
+        val ui = Ui().apply { setResolution(400f, 300f) }
+        var fired = 0
+        fun build(word: String) = ui.frame {
+            panel(Anchor.TopLeft) {
+                tokenLines(
+                    lines = listOf(listOf(UiTok.Toggle(word, 0x335577FFL, key = "gene:CONVERT:1:cond") { fired++ })),
+                    wrapWidth = 380f, textSize = 12f,
+                )
+            }
+        }
+        build("ALWAYS")
+        val before = assertNotNull(ui.elementByKey("gene:CONVERT:1:cond"))
+        assertEquals("ALWAYS", before.label)
+
+        build("WHEN BIO < 3000")
+        val after = assertNotNull(ui.elementByKey("gene:CONVERT:1:cond"), "same slot, new words")
+        assertEquals("WHEN BIO < 3000", after.label)
+        assertNull(ui.element("ALWAYS"), "and the old word really is gone")
+
+        // The key drives the same widget a tap would: agreement is the property, as with labels.
+        assertTrue(ui.tapKey("gene:CONVERT:1:cond"))
+        assertEquals(1, fired)
+        assertTrue(!ui.tapKey("gene:DIVIDE:1:cond"), "an absent key fires nothing")
+        assertNull(ui.elementByKey("gene:DIVIDE:1:cond"))
+    }
+
+    /** Repeated words are exactly what keys exist to disambiguate — no counting, no occurrence. */
+    @Test fun twoWidgetsSharingAWordAreStillDistinctKeys() {
+        val ui = Ui().apply { setResolution(400f, 300f) }
+        var fired = ""
+        ui.frame {
+            panel(Anchor.TopLeft) {
+                tokenLines(
+                    lines = listOf(
+                        listOf(UiTok.Toggle("ALWAYS", 0x335577FFL, key = "gene:CONVERT:1:cond") { fired = "grow" }),
+                        listOf(UiTok.Toggle("ALWAYS", 0x335577FFL, key = "gene:DIVIDE:1:cond") { fired = "divide" }),
+                    ),
+                    wrapWidth = 380f, textSize = 12f,
+                )
+            }
+        }
+        val grow = assertNotNull(ui.elementByKey("gene:CONVERT:1:cond"))
+        val divide = assertNotNull(ui.elementByKey("gene:DIVIDE:1:cond"))
+        assertTrue(grow.y != divide.y, "two different rows")
+        ui.tapKey("gene:DIVIDE:1:cond")
+        assertEquals("divide", fired, "the second one, without anyone counting to two")
+    }
+
     /** The connector's anchor end: a panel is auto-sized and anchor-placed, so its rect is knowable only from
      *  the toolkit. It reports the panel most recently emitted, and resets with the frame. */
     @Test fun theLastPanelRectIsTheLastPanelEmitted() {

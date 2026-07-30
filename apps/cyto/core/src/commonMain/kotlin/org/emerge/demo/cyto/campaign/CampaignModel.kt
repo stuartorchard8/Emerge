@@ -1,8 +1,10 @@
 package org.emerge.demo.cyto.campaign
 
 import org.emerge.demo.cyto.CytoController
+import org.emerge.demo.cyto.sim.ActionType
 import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.Gene
+import org.emerge.demo.cyto.ui.GeneKeys
 import org.emerge.demo.cyto.ui.GenomeGrouping
 
 /**
@@ -181,21 +183,42 @@ enum class PlayerAction {
 
 /**
  * A hint about where to point the player's attention: a [hint] line in the coach panel, and — when the thing
- * being described is a widget the player can actually see — a [target] the coach draws a box around, with a
+ * being described is something the player can actually see — a box the coach draws around it, with a
  * connector back to itself.
  *
- * [target] is a **widget label**, matched exactly the way the agent harness's `tap-ui` matches one
- * (`Ui.element`): case-insensitive, exact before substring, an open sheet's rows before the panel behind it.
- * That is the point of reusing it — the thing the coach circles is by construction the thing a script taps,
- * so a label that drifts breaks both at once rather than leaving the coach pointing confidently at the wrong
- * word. [occurrence] picks the n-th match for a label the screen repeats (every gene card carries its own
- * `USE LIGHT`), exactly as `tap-ui <label> @n` does.
+ * Two ways to name that thing, and **the gene card wants [gene], not [target]**:
  *
- * A target that doesn't resolve this frame — the panel is closed, the group is collapsed, the row is scrolled
- * away — simply isn't drawn, and the step falls back to its [hint] text. Steps about a world gesture ("press
- * and drag a cell") have no widget and take no target.
+ *  - [gene] is a *slot* on a gene, by what the gene does and what the slot is for — "the condition on the
+ *    GROW gene". It resolves by [GeneKeys] identity, so it survives the slot's text changing under it
+ *    (`ALWAYS` becomes `WHEN BIO < 3000` the moment the step's edit lands), the genome being reordered, and
+ *    a display word being renamed. Nothing to count, nothing to spell.
+ *  - [target] is a **widget label**, matched exactly the way the agent harness's `tap-ui` matches one
+ *    (`Ui.element`): case-insensitive, exact before substring, an open sheet's rows before the panel behind
+ *    it. Right for the fixed furniture — `+ NEW GENE`, `LAYERS`, `+ ADD HOLD TOGETHER` — where the word IS
+ *    the identity and a script taps it by the same name, so a drift breaks both at once.
+ *    [occurrence] picks the n-th match for a repeated label, as `tap-ui <label> @n` does; prefer [gene] over
+ *    ever reaching for it.
+ *
+ * Something that doesn't resolve this frame — the panel is closed, the group is collapsed, the gene doesn't
+ * exist yet — simply isn't drawn, and the step falls back to its [hint] text. Steps about a world gesture
+ * ("press and drag a cell") have no widget and take neither.
  */
-class Spotlight(val hint: String? = null, val target: String? = null, val occurrence: Int = 1)
+class Spotlight(
+    val hint: String? = null,
+    val target: String? = null,
+    val occurrence: Int = 1,
+    val gene: GeneSpot? = null,
+)
+
+/** A slot on the gene that does [action] — the [ordinal]-th such gene, in genome order. See [GeneKeys]. */
+class GeneSpot(
+    val action: ActionType,
+    val part: GeneKeys.Part,
+    val ordinal: Int = 1,
+    val clause: Int = 0,
+) {
+    val key: String get() = GeneKeys.part(action, part, ordinal, clause)
+}
 
 /** Which controls are live during a step — everything else is hidden/greyed by the host. An immutable
  *  allow-set so authored steps read declaratively (`ControlMask.of(Camera, Select)`). */

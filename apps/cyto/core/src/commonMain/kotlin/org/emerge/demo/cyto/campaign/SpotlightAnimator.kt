@@ -3,8 +3,11 @@ package org.emerge.demo.cyto.campaign
 import kotlin.math.PI
 import kotlin.math.cos
 
-/** The widget the coach is ringing: a [CampaignDirector] target label plus which match of it. */
-class Spot(val target: String, val occurrence: Int)
+/**
+ * The widget the coach is ringing: either a label plus which match of it, or — when [byKey] — a
+ * [org.emerge.demo.cyto.ui.GeneKeys] identity, which no more needs an occurrence than a name needs an index.
+ */
+class Spot(val target: String, val occurrence: Int, val byKey: Boolean = false)
 
 /**
  * When the campaign coach's spotlight is on what, and how brightly — the whole of its animation, kept apart
@@ -34,7 +37,8 @@ class SpotlightAnimator {
             if (want != null) { shown = want; since = now; leaving = false }
             return shown
         }
-        val same = want != null && want.target == cur.target && want.occurrence == cur.occurrence
+        val same = want != null && want.target == cur.target && want.occurrence == cur.occurrence &&
+            want.byKey == cur.byKey
         when {
             leaving && same -> { since = now - fade(now) * CampaignDirector.FADE_SECONDS; leaving = false }
             !leaving && !same -> { since = now - (1f - fade(now)) * CampaignDirector.FADE_SECONDS; leaving = true }

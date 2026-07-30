@@ -55,6 +55,9 @@ class Ui {
         /** Human-meaningful label for a button region (null for background/picker catchers). Lets a
          *  headless driver enumerate + tap widgets by name — see [elements] / [tapLabel]. */
         val label: String? = null,
+        /** A **stable identity** for this widget, independent of the words it displays — see [elementByKey].
+         *  Null for anything a caller has not bothered to name. */
+        val key: String? = null,
         /** Index into [clipRects], or -1. A region scrolled out of its viewport must not be clickable,
          *  so hit-testing intersects the clip too. */
         val clip: Int = -1,
@@ -82,6 +85,8 @@ class Ui {
         val w: Float,
         val h: Float,
         val clip: UiRect? = null,
+        /** The widget's stable identity, if it has one — see [elementByKey]. */
+        val key: String? = null,
     ) {
         val visible: Boolean
             get() = clip == null ||
@@ -630,8 +635,8 @@ class Ui {
     internal fun emitTextCentered(text: String, centerX: Float, topY: Float, h: Float, color: Long) {
         cmds.add(TextCmd(text, 0f, topY, h, color, centered = true, centerX = centerX, clip = currentClip))
     }
-    internal fun emitClick(x: Float, y: Float, w: Float, h: Float, label: String? = null, onClick: () -> Unit) {
-        clicks.add(ClickRegion(x, y, w, h, onClick, label = label, clip = currentClip))
+    internal fun emitClick(x: Float, y: Float, w: Float, h: Float, label: String? = null, key: String? = null, onClick: () -> Unit) {
+        clicks.add(ClickRegion(x, y, w, h, onClick, label = label, key = key, clip = currentClip))
     }
 
     /** Register a resize drag handle plus a co-located click region (so a tap on it fires [onTap] via the
@@ -737,7 +742,7 @@ class Ui {
     }
 
     private fun ClickRegion.asElement(fallbackLabel: String = "") =
-        UiElement(label ?: fallbackLabel, x, y, w, h, clipRectOf(clip))
+        UiElement(label ?: fallbackLabel, x, y, w, h, clipRectOf(clip), key)
 
     private fun clipRectOf(clip: Int): UiRect? =
         if (clip < 0) null else clipRects[clip].let { UiRect(it[0], it[1], it[2], it[3]) }
@@ -771,6 +776,32 @@ class Ui {
     /** Readout rows whose whole text is [label]. */
     private fun exactReadouts(label: String): List<UiElement> =
         readoutRegions.filter { it.label.equals(label, ignoreCase = true) }
+
+    /**
+     * **Where the widget with this [key] is** — the identity lookup, for callers that must not depend on the
+     * words a widget displays.
+     *
+     * A label is what a widget *says*, and it changes: renamed, retitled, or simply rewritten as the state
+     * behind it changes (a gene's condition token reads `ALWAYS` until it reads `WHEN BIO < 3000`). A key is
+     * what a widget *is*. The campaign coach points at slots that keep their meaning while their text moves
+     * under them, so it resolves by key; a driver naming a button by the word on it still uses [tapLabel].
+     *
+     * Keys are expected to be unique within a frame — the first match wins, and there is no occurrence.
+     */
+    fun elementByKey(key: String): UiElement? =
+        keyMatch(key)?.asElement()
+
+    /** Fire the widget with this [key]. The keyed twin of [tapLabel], so a script can drive the same slot the
+     *  coach points at without either of them naming the word on it. */
+    fun tapKey(key: String): Boolean {
+        val hit = keyMatch(key) ?: return false
+        hit.onClick()
+        return true
+    }
+
+    private fun keyMatch(key: String): ClickRegion? =
+        overlayClicks.firstOrNull { it.key == key }
+            ?: clicks.subList(modalFrom, clicks.size).firstOrNull { it.key == key }
 
     /** Invoke the first button region whose label contains [label] (case-insensitive). Returns true if
      *  one fired. Overlay regions (open dropdowns) win, then the base layer. */
@@ -920,7 +951,7 @@ class CanvasBuilder internal constructor(private val ui: Ui) {
     /** A clickable region with no appearance of its own — pair it with [rect]/[label]. [label] names it for
      *  the agent harness's `tap-ui` (see `Ui.tapLabel`), so give it the text the player reads. */
     fun clickable(x: Float, y: Float, w: Float, h: Float, label: String? = null, onClick: () -> Unit) =
-        ui.emitClick(x, y, w, h, label, onClick)
+        ui.emitClick(x, y, w, h, label, onClick = onClick)
 
     /** A filled box with centred text, optionally clickable — the common case, in one call. */
     fun box(
@@ -942,11 +973,12 @@ sealed class UiTok {
     class Text(val text: String, val color: Long = 0x9A9A9AFFL) : UiTok()
     /** A boxed word that fires [onClick] on click (the caller cycles a binary/small choice) — comparator,
      *  orient, sever, keep. Reads as an editable word; no dropdown. */
-    class Toggle(val value: String, val color: Long, val onClick: () -> Unit) : UiTok()
+    class Toggle(val value: String, val color: Long, val key: String? = null, val onClick: () -> Unit) : UiTok()
     /** A boxed word + `v` that opens an inline dropdown (overlay, edge-aware) of [options] — action, operand,
      *  source, morphogen, efficiency, group. [open]/[onToggle] drive the list; [onPick] selects. */
     class Menu(
         val value: String, val color: Long, val options: List<String>, val open: Boolean,
+        val key: String? = null,
         val onToggle: () -> Unit, val onPick: (Int) -> Unit,
     ) : UiTok()
 }
@@ -965,6 +997,9 @@ class UiBuilder internal constructor(private val ui: Ui) {
     /** Where the widget `tap-ui <label>` would hit is (see [Ui.element]) — for pointing at one. Sees only
      *  what has been laid out so far this frame. */
     fun element(label: String, occurrence: Int = 1): Ui.UiElement? = ui.element(label, occurrence)
+
+    /** See [Ui.elementByKey] — the identity lookup, independent of displayed text. */
+    fun elementByKey(key: String): Ui.UiElement? = ui.elementByKey(key)
 
     /** The most recently emitted panel's rect (see [Ui.lastPanelRect]). */
     val lastPanelRect: Ui.UiElement? get() = ui.lastPanelRect
@@ -1617,13 +1652,13 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
             is UiTok.Toggle -> {
                 ui.emitRect(px, ry + 1f, p.w, rowH - 2f, t.color)
                 ui.emitTextCentered(t.value, px + p.w * 0.5f, ty, textH, contrast(t.color))
-                ui.emitClick(px, ry + 1f, p.w, rowH - 2f, label = t.value, onClick = t.onClick)
+                ui.emitClick(px, ry + 1f, p.w, rowH - 2f, label = t.value, key = t.key, onClick = t.onClick)
             }
             is UiTok.Menu -> {
                 ui.emitRect(px, ry + 1f, p.w, rowH - 2f, t.color)
                 ui.emitTextLeft(t.value, px + textH * 0.35f, ty, textH, contrast(t.color))
                 ui.emitTextLeft("v", px + p.w - textH * 0.8f, ty, textH, 0xAACCFFFFL)
-                ui.emitClick(px, ry + 1f, p.w, rowH - 2f, label = t.value, onClick = t.onToggle)
+                ui.emitClick(px, ry + 1f, p.w, rowH - 2f, label = t.value, key = t.key, onClick = t.onToggle)
                 if (t.open && ui.isWithinClip(px, ry, p.w, rowH)) {
                     val ow = maxOf(p.w, (t.options.maxOfOrNull { UiTextRenderer.measureWidthPx(it, textH) } ?: 0f) + textH * 0.8f)
                     val listH = t.options.size * rowH

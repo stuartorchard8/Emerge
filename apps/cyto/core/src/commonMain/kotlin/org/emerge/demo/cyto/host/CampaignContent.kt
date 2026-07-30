@@ -6,6 +6,7 @@ import org.emerge.demo.cyto.campaign.ControlMask
 import org.emerge.demo.cyto.campaign.InputHints
 import org.emerge.demo.cyto.campaign.Gate
 import org.emerge.demo.cyto.campaign.PlayerAction
+import org.emerge.demo.cyto.campaign.GeneSpot
 import org.emerge.demo.cyto.campaign.Spotlight
 import org.emerge.demo.cyto.campaign.Step
 import org.emerge.demo.cyto.campaign.WorldRun
@@ -21,6 +22,7 @@ import org.emerge.demo.cyto.campaign.ChemBinding
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.ui.GeneGroup
+import org.emerge.demo.cyto.ui.GeneKeys
 import org.emerge.demo.cyto.ui.GenomeGrouping
 import org.emerge.render.torus.ui.UiTextRenderer
 
@@ -514,7 +516,7 @@ object CampaignContent {
                 gate = Gate.World("Set the new gene to GROW", met = { it.lineage?.convertChem == "" }),
                 // The action token on the one gene they just made. Genesis reaches this step with a
                 // single-gene genome, so occurrence 1 is unambiguous - it would not be in a grown one.
-                spotlight = Spotlight(target = "NOTHING"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.None, GeneKeys.Part.Action)),
                 allow = LOOK,
                 world = WorldRun.Frozen,
                 autoAdvance = true,
@@ -523,7 +525,7 @@ object CampaignContent {
                 text = "Tap (NONE) to change your GROW gene's chemical target to either REDOGEN, GREENUM or BLUEON - they're interchangeable, so pick whichever you like.",
                 detail = "The picker gives you a harmless heads-up if you name something the cell isn't holding. The gene will show itself as active once it's set up correctly.",
                 gate = Gate.World("Complete the GROW gene", met = { it.lineage?.convertChem != null && it.lineage?.convertChem != "" }),
-                spotlight = Spotlight(target = "(NONE)"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.Convert, GeneKeys.Part.Operand)),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
@@ -592,7 +594,7 @@ object CampaignContent {
                 // The blank gene's action token. The only NOTHING on screen: the gene that feeds the cell is
                 // a GROW gene by now, and the divide gene's own "RETAINING NOTHING" row only appears once
                 // this step is done.
-                spotlight = Spotlight(target = "NOTHING"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.None, GeneKeys.Part.Action)),
             ),
             // 3. Let them watch it NOT work — and pin the blame on SIZE, not on the energy source. This is the
             // first of the two reasons the gene is inert, and it has to come first: a cell that has outgrown
@@ -624,7 +626,7 @@ object CampaignContent {
                 allow = LOOK,
                 world = WorldRun.Frozen,
                 autoAdvance = true,
-                spotlight = Spotlight(target = "GROW"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.Convert, GeneKeys.Part.Condition)),
             ),
             // 4. NOW the second reason, with the first one out of the way: the pivot off Light onto chemistry.
             // Selecting BOND opens the reaction sheet straight away (GeneEditor.Pick.Bond), so switching the
@@ -642,7 +644,7 @@ object CampaignContent {
                 gate = Gate.World("Power DIVIDE by bonding", met = { !it.lineage?.divideProduct.isNullOrEmpty() }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "Divide"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.Divide, GeneKeys.Part.Source)),
             ),
             // 5. Cells divide, but they do so uncontrollably, resulting in extinction
             Step(
@@ -688,7 +690,7 @@ object CampaignContent {
                 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "Divide"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.Divide, GeneKeys.Part.Condition)),
             ),
         ),
         // THE BRANCH. Which chapter follows is decided by the pair the player just chose, and they were never
@@ -791,7 +793,7 @@ object CampaignContent {
                 gate = Gate.World("Update the gene to BREAK {bond}", met = { it.lineage?.hasPhotosynthesis == true }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "NOTHING"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.None, GeneKeys.Part.Action)),
             ),
             // The payoff, and the point of gating it on the world rather than a click: the {bond} reading in
             // the panel visibly drains away. Measured, same genome with and without this gene: ~700 units
@@ -886,7 +888,7 @@ object CampaignContent {
                 ),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "GROW"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.Convert, GeneKeys.Part.Source)),
             ),
             // The payoff: the sawtooth. Overnight {bond} piles up (measured ~767 by dawn) because nothing is
             // breaking it in the dark; the threshold is set well under that so an ordinary night clears it.
@@ -986,7 +988,7 @@ object CampaignContent {
                 ),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "GROW"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.Convert, GeneKeys.Part.Operand)),
             ),
             // The die-off. Measured: CONVERT goes inert immediately and the cell ruptures ~4,200 ticks later.
             //
@@ -1025,7 +1027,7 @@ object CampaignContent {
                 ),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "BREAK"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.BreakBond, GeneKeys.Part.Condition)),
             ),
             // The payoff, read rather than waited out. (It used to gate on biomass >= 2800 — measured, a
             // capped cell comes back to 2999 and holds — but that made the beat a wait.)
@@ -1090,7 +1092,7 @@ object CampaignContent {
                 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "GROW"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.Convert, GeneKeys.Part.Operand)),
             ),
             // The chapter ends here, on the die-off. It auto-advances, so the collapse itself is the segue
             // into `ch03-supply` rather than something the player has to click past.
@@ -1154,7 +1156,7 @@ object CampaignContent {
                 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "GROW"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.Convert, GeneKeys.Part.Source)),
             ),
             Step(
                 text = "Now we're cooking.",
@@ -1238,7 +1240,7 @@ object CampaignContent {
                 gate = Gate.World("Update the gene to BREAK {bond}", met = { it.lineage?.hasPhotosynthesis == true }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "NOTHING"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.None, GeneKeys.Part.Action)),
             ),
             // Taught up front rather than through a die-off: without a floor this gene strips the cytoplasm
             // bare, and CONVERT needs {bond} present at the start of a tick to fire at all.
@@ -1250,7 +1252,7 @@ object CampaignContent {
                 ),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "BREAK"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.BreakBond, GeneKeys.Part.Condition)),
             ),
             // The payoff, measured: the pile drains 586 -> 95 and biomass climbs 2700 -> 2975 on the way.
             Step(
@@ -1400,7 +1402,7 @@ object CampaignContent {
                 // Hint, not a target: by this chapter the genome carries a DIVIDE gene, whose card writes its
                 // own "RETAINING NOTHING" row ABOVE the blank gene appended at the end. Two NOTHINGs, and the
                 // wrong one comes first - exactly the count-the-matches fragility a target must not rely on.
-                spotlight = Spotlight(hint = "the new gene's (NOTHING) action"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.None, GeneKeys.Part.Action)),
             ),
             // Light, deliberately: a cell in a spent world has no spare atoms to bond with, so a chemistry-
             // powered import cannot get started from the floor. Chemistry is ch06's job, once it can afford it.
@@ -1419,7 +1421,7 @@ object CampaignContent {
                 ),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "Import"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.Import, GeneKeys.Part.Condition)),
             ),
             Step(
                 text = "Now let it run again. Same world, same three genes, and one more that puts back what the others throw away.",
@@ -1515,7 +1517,7 @@ object CampaignContent {
                 gate = Gate.Next,
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "Divide"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.Divide, GeneKeys.Part.Action)),
             ),
             Step(
                 text = "Find SEVER on that gene and switch it off. Daughters will stay welded to their mother instead of breaking away.",
@@ -1523,7 +1525,7 @@ object CampaignContent {
                 gate = Gate.World("Switch SEVER off", met = { it.lineage?.divideWelds == true }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "SEVERING"),
+                spotlight = Spotlight(gene = GeneSpot(ActionType.Divide, GeneKeys.Part.Sever)),
             ),
             Step(
                 text = "Watch what grows now. The same four genes, and this time the cells stay joined - a body, spreading as one thing.",
@@ -1783,7 +1785,7 @@ object CampaignContent {
                     met = { it.lineage?.divideWelds == true },
                 ),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "SEVER toggle, then DONE", target = "SEVERING"),
+                spotlight = Spotlight(hint = "SEVER toggle, then DONE", gene = GeneSpot(ActionType.Divide, GeneKeys.Part.Sever)),
                 detail = "SEVER yes = the daughter breaks free as its own cell. SEVER no = it stays welded to its mother. One field, two completely different creatures.",
             ),
             Step(

@@ -527,8 +527,13 @@ class GeneEditor {
     ) {
         // ONE gene UI at every width (§8a step 3b): the card is the editor, each editable word a control that
         // writes straight to the genome. Only the container differs — a docked column or a bottom sheet.
+        // The gene's ordinal among genes with the SAME action, in genome order — the disambiguator in its
+        // stable key (see GeneKeys). Counted off the genome rather than the rendered order, so folding a
+        // group away or dragging a card cannot move it.
+        fun ordinalOf(i: Int): Int =
+            info.genes.take(i + 1).count { it.gene.action.type == info.genes[i].gene.action.type }
         fun PanelBuilder.gene(g: CytoController.CellInfo.GeneRow, i: Int) =
-            geneTokenCard(controller, g, i, wrapDp = wrapDp, touch = !wide)
+            geneTokenCard(controller, g, i, ordinal = ordinalOf(i), wrapDp = wrapDp, touch = !wide)
         // Render the genes at [indices] (global genome positions, in group order). When [isOrigin] (the
         // section the dragged gene belongs to), interleave thin reorder drop slots — one before each gene and
         // one after the last, keyed by the target *rank* within the group — and cap the run with the DUPLICATE
@@ -1122,7 +1127,7 @@ class GeneEditor {
      *  group) open the shared pick sheet as a popover via [openInlinePick]. Every change flushes straight to
      *  the genome (see [render]) — no draft/DONE. */
     private fun PanelBuilder.geneTokenCard(
-        controller: CytoController, g: CytoController.CellInfo.GeneRow, i: Int,
+        controller: CytoController, g: CytoController.CellInfo.GeneRow, i: Int, ordinal: Int,
         wrapDp: Float, touch: Boolean,
     ) {
         // [touch] changes only where a token's *choices* appear, never the card: a mouse drops an inline
@@ -1142,13 +1147,17 @@ class GeneEditor {
         val clauseBlocks = if (ifIdx in 0 until parenIdx)
             g.spans.subList(ifIdx + 1, parenIdx).filter { it.text != " & " }.map { it.blocking } else emptyList()
         fun ctlIf(blocked: Boolean) = if (blocked) orange else ctl
+        // Stable identity per slot, so the coach (and a script) can lock onto "the condition on the GROW
+        // gene" without matching the word the slot happens to be showing. See GeneKeys.
+        fun key(part: GeneKeys.Part, clause: Int = 0) = GeneKeys.part(gene.action.type, part, ordinal, clause)
         val lines = ArrayList<List<UiTok>>()
 
         // WHEN <lhs> <cmp> <rhs>, one clause per line. An empty gate is the special ALWAYS case — no "WHEN"
         // prefix, just the ALWAYS token; tapping it drops in a first (blank) clause to author the condition.
         if (gene.condition.clauses.isEmpty()) {
             lines.add(listOf(
-                UiTok.Toggle("ALWAYS", ctl) { inlineEdit(controller, i) { addFirstClause(it) } },
+                // Both keys: while there is no condition, "the condition" IS this token.
+                UiTok.Toggle("ALWAYS", ctl, key = key(GeneKeys.Part.Condition)) { inlineEdit(controller, i) { addFirstClause(it) } },
             ))
         }
         gene.condition.clauses.forEachIndexed { ci, cl ->
@@ -1162,17 +1171,21 @@ class GeneEditor {
             fun value(v: Int?): UiTok? = v?.let { UiTok.Text(" $it", if (blocked) orange else grey) }
             lines.add(listOfNotNull(
                 UiTok.Text(if (ci == 0) "WHEN " else " AND ", grey),
-                UiTok.Toggle(operandLabel(cl.lhs), c) { openInlinePick(controller, i, Pick.Operand, ci, 0) },
+                // The first clause's left operand doubles as "the condition" once one exists, so a step that
+                // points at the condition keeps pointing at it across the edit that creates it.
+                UiTok.Toggle(operandLabel(cl.lhs), c, key = key(if (ci == 0) GeneKeys.Part.Condition else GeneKeys.Part.ConditionLhs, ci)) {
+                    openInlinePick(controller, i, Pick.Operand, ci, 0)
+                },
                 value(reading?.lhs),
                 UiTok.Text(" ", grey),
-                UiTok.Toggle(if (cl.cmp == Comparison.Greater) ">" else "<", c) {
+                UiTok.Toggle(if (cl.cmp == Comparison.Greater) ">" else "<", c, key = key(GeneKeys.Part.Comparator, ci)) {
                     inlineEdit(controller, i) { g2 ->
                         val cc = g2.condition.clauses[ci]
                         withClauseAt(g2, ci, cc.copy(cmp = if (cc.cmp == Comparison.Greater) Comparison.Less else Comparison.Greater))
                     }
                 },
                 UiTok.Text(" ", grey),
-                UiTok.Toggle(operandLabel(cl.rhs), c) { openInlinePick(controller, i, Pick.Operand, ci, 1) },
+                UiTok.Toggle(operandLabel(cl.rhs), c, key = key(GeneKeys.Part.ConditionRhs, ci)) { openInlinePick(controller, i, Pick.Operand, ci, 1) },
                 value(reading?.rhs),
             ))
         }
@@ -1189,6 +1202,7 @@ class GeneEditor {
         val hasReactionTok = gene.source is EnergySource.FormBond
         val srcLine = ArrayList<UiTok>()
         srcLine.add(UiTok.Menu(sourceTypeLabel(gene.source), ctlIf(energyBlocked && !hasReactionTok), srcOpts, openMenu == srcKey,
+            key = key(GeneKeys.Part.Source),
             onToggle = { if (touch) openInlinePick(controller, i, Pick.Source) else openMenu = if (openMenu == srcKey) null else srcKey },
             onPick = { idx ->
                 openMenu = null
@@ -1200,7 +1214,7 @@ class GeneEditor {
             }))
         (gene.source as? EnergySource.FormBond)?.let { s ->
             srcLine.add(UiTok.Text(" ", grey))
-            srcLine.add(UiTok.Toggle(synthesisLabel(s), ctlIf(energyBlocked)) { openInlinePick(controller, i, Pick.Bond) })
+            srcLine.add(UiTok.Toggle(synthesisLabel(s), ctlIf(energyBlocked), key = key(GeneKeys.Part.Reaction)) { openInlinePick(controller, i, Pick.Bond) })
         }
         // A DIVIDE gene's fuel reading, in the source line because that is where the shortfall is: the source
         // raises N energy units a tick and the split costs biomass/4, all-or-nothing, with no banking toward
@@ -1221,6 +1235,7 @@ class GeneEditor {
         val hasOperandTok = gene.action.type in OPERAND_ACTIONS
         val actLine = ArrayList<UiTok>()
         actLine.add(UiTok.Menu(actionTypeLabel(gene.action.type), ctlIf(inputBlocked && !hasOperandTok), actionChoices.map { actionTypeLabel(it) }, openMenu == actKey,
+            key = key(GeneKeys.Part.Action),
             onToggle = { if (touch) openInlinePick(controller, i, Pick.Action) else openMenu = if (openMenu == actKey) null else actKey },
             onPick = { idx ->
                 val t = actionChoices[idx]
@@ -1232,12 +1247,12 @@ class GeneEditor {
                 // GROW reads as a sentence — "GROW USING REDOGEN" — the same shape as the source row's
                 // "USE LIGHT TO". The others name a movement, where the bare chemical already reads right.
                 actLine.add(UiTok.Text(if (gene.action.type == ActionType.Convert) " USING " else " ", grey))
-                actLine.add(UiTok.Toggle(sp(gene.action.a), ctlIf(inputBlocked)) { openInlinePick(controller, i, Pick.SpeciesA) })
+                actLine.add(UiTok.Toggle(sp(gene.action.a), ctlIf(inputBlocked), key = key(GeneKeys.Part.Operand)) { openInlinePick(controller, i, Pick.SpeciesA) })
             }
             // One control for the whole reaction, exactly like the BOND source row above.
             ActionType.BreakBond -> {
                 actLine.add(UiTok.Text(" ", grey))
-                actLine.add(UiTok.Toggle(breakLabel(gene.action), ctlIf(inputBlocked)) { openInlinePick(controller, i, Pick.Break) })
+                actLine.add(UiTok.Toggle(breakLabel(gene.action), ctlIf(inputBlocked), key = key(GeneKeys.Part.Operand)) { openInlinePick(controller, i, Pick.Break) })
             }
             else -> {}
         }
@@ -1245,6 +1260,7 @@ class GeneEditor {
             val effKey = "$i:eff"
             actLine.add(UiTok.Text(" ", grey))
             actLine.add(UiTok.Menu("E${gene.efficiency}", ctl, (0..CytoTuning.EFFICIENCY_MAX_GEAR).map { "E$it" }, openMenu == effKey,
+                key = key(GeneKeys.Part.Efficiency),
                 onToggle = { if (touch) openInlinePick(controller, i, Pick.Eff) else openMenu = if (openMenu == effKey) null else effKey },
                 onPick = { idx -> inlineEdit(controller, i) { it.copy(efficiency = idx) }; openMenu = null }))
         }
@@ -1255,26 +1271,26 @@ class GeneEditor {
             val a = gene.action
             lines.add(listOf(
                 UiTok.Text(" ", grey),
-                UiTok.Toggle(if (a.divideAcross) "ACROSS" else "ALONG", ctl) { inlineEdit(controller, i) { it.copy(action = it.action.copy(divideAcross = !it.action.divideAcross)) } },
+                UiTok.Toggle(if (a.divideAcross) "ACROSS" else "ALONG", ctl, key = key(GeneKeys.Part.Orient)) { inlineEdit(controller, i) { it.copy(action = it.action.copy(divideAcross = !it.action.divideAcross)) } },
                 UiTok.Text(" ", grey),
-                UiTok.Toggle(if (a.b.isEmpty()) "NO" else sp(a.b), ctl) { openInlinePick(controller, i, Pick.SpeciesB) },
+                UiTok.Toggle(if (a.b.isEmpty()) "NO" else sp(a.b), ctl, key = key(GeneKeys.Part.Gradient)) { openInlinePick(controller, i, Pick.SpeciesB) },
                 UiTok.Text(" GRADIENT", grey),
             ))
             val keep = ArrayList<UiTok>()
             keep.add(UiTok.Text(" ", grey))
             if (a.a.isEmpty()) {
                 keep.add(UiTok.Text("RETAINING ", grey))
-                keep.add(UiTok.Toggle("NOTHING", ctl) { openInlinePick(controller, i, Pick.SpeciesA) })
+                keep.add(UiTok.Toggle("NOTHING", ctl, key = key(GeneKeys.Part.Morphogen)) { openInlinePick(controller, i, Pick.SpeciesA) })
             } else {
-                keep.add(UiTok.Toggle(if (a.morphogenToMother) "RETAINING" else "GIVING", ctl) { inlineEdit(controller, i) { it.copy(action = it.action.copy(morphogenToMother = !it.action.morphogenToMother)) } })
+                keep.add(UiTok.Toggle(if (a.morphogenToMother) "RETAINING" else "GIVING", ctl, key = key(GeneKeys.Part.Morphogen)) { inlineEdit(controller, i) { it.copy(action = it.action.copy(morphogenToMother = !it.action.morphogenToMother)) } })
                 keep.add(UiTok.Text(" ", grey))
-                keep.add(UiTok.Toggle(sp(a.a), ctl) { openInlinePick(controller, i, Pick.SpeciesA) })
+                keep.add(UiTok.Toggle(sp(a.a), ctl, key = key(GeneKeys.Part.Operand)) { openInlinePick(controller, i, Pick.SpeciesA) })
                 keep.add(UiTok.Text(if (a.morphogenToMother) " IN CELL 1" else " TO CELL 2", grey))
             }
             lines.add(keep)
             lines.add(listOf(
                 UiTok.Text(" ", grey),
-                UiTok.Toggle(if (a.rejectMother) "SEVERING CELL 2 FREE" else "AND STICK", ctl) { inlineEdit(controller, i) { it.copy(action = it.action.copy(rejectMother = !it.action.rejectMother)) } },
+                UiTok.Toggle(if (a.rejectMother) "SEVERING CELL 2 FREE" else "AND STICK", ctl, key = key(GeneKeys.Part.Sever)) { inlineEdit(controller, i) { it.copy(action = it.action.copy(rejectMother = !it.action.rejectMother)) } },
             ))
         }
 

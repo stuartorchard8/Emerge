@@ -80,7 +80,9 @@ next
 
 # 3.5. Cap growth — the first condition the player ever authors. ALWAYS drops in `CHEM (NONE) > 0`,
 # and all three parts change. The sheet is modal, so close it before touching the card again.
-tap-ui ALWAYS
+# By KEY, not by the word: both genes read ALWAYS here, and "@1" would only be right by accident. This is
+# the same slot the coach rings on this step.
+tap-key gene:CONVERT:1:cond
 tap-ui CHEM (NONE)
 tap-ui BIO
 tap-ui close
@@ -93,11 +95,11 @@ tap-ui close
 expect growthCap 3000
 next
 
-# 4. Light is a trickle; division needs a lump sum. Switch the DIVIDE gene (the SECOND gene, hence @2)
-# onto chemistry. Picking BOND opens the reaction sheet straight away; its default pair is r+g, so
+# 4. Light is a trickle; division needs a lump sum. Switch the DIVIDE gene's source by key - "the second
+# USE LIGHT" was only ever true while the genome had exactly two genes. Picking BOND opens the reaction sheet straight away; its default pair is r+g, so
 # rewrite the first reactant (backspace, then +B) to leave the growth chemical untouched.
 next
-tap-ui USE LIGHT @2
+tap-key gene:DIVIDE:1:src
 tap-ui BOND
 tap-ui < @1
 tap-ui +B @1
