@@ -1,0 +1,39 @@
+# ch05b-yours — the close of Act I. The chapter teaches no biology; what it teaches is that EXPORT GENOME
+# exists, so the thing worth driving end to end is the button's ARRIVAL. It is withheld by Control.Save on
+# every earlier step, appears on the beat whose spotlight rings it, and writing the genome is what satisfies
+# the gate (opening the name screen and backing out must not).
+
+campaign ch05b-yours
+expect chapter ch05b-yours
+expect step 1/5
+
+# A cell to export. The chapter is spawnCopiesHeldCell, so the brush carries whatever was authored last.
+spawn 0.5 0.5
+select 0.5 0.5
+authorgenome /home/stu/emerge/apps/cyto/desktop/cyto-genomes/import light.gene
+select 0.5 0.5
+expect genes 4
+
+# Step 1: the genome panel is open on a real cell and the button is still not there.
+expect-ui !EXPORT GENOME
+
+next
+expect step 2/5
+# Still withheld while the step is only asking for a selection.
+expect-ui !EXPORT GENOME
+
+next
+expect step 3/5
+# ...and now it exists. This is the whole chapter.
+expect-ui EXPORT GENOME
+shot export-spotlit
+
+# The gate is the export, not the reading of the step: Next does nothing until the genome is actually kept.
+next
+expect step 3/5
+
+# Tapping it writes the genome to the library and raises PlayerAction.ExportedGenome, which is the gate.
+tap-ui EXPORT GENOME
+shot export-arrived
+next
+expect step 4/5

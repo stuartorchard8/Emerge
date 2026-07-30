@@ -104,6 +104,9 @@ class GeneEditor {
      *  (the feature simply doesn't appear). */
     private var activeSnippets: List<GeneSnippet> = emptyList()
     private var onSaveGroupCb: (String, List<Gene>) -> Unit = { _, _ -> }
+    /** Whether EXPORT GENOME is offered, refreshed each [render] like [activeSnippets]. The campaign clears it
+     *  (`Control.Save`) until the chapter that teaches exporting; free play always sets it. */
+    private var exportOffered = true
     /** Paste UI state: the snippet picker sheet is open; and (if a paste hit a group-name clash) the snippet
      *  awaiting a Replace / Insert-duplicate / Cancel choice. */
     private var pastePicking = false
@@ -395,7 +398,9 @@ class GeneEditor {
     }
 
     /** [onExport] is invoked when the EXPORT button is tapped — the host writes the held cell's genome to a
-     *  file (desktop file-I/O lives outside this commonMain kit). No-op default keeps non-desktop hosts simple. */
+     *  file (desktop file-I/O lives outside this commonMain kit). No-op default keeps non-desktop hosts simple.
+     *  [canExport] hides the button outright rather than making it inert: a visible control that does nothing
+     *  is worse than an absent one, and the campaign's point is that the affordance ARRIVES. */
     fun render(
         b: UiBuilder,
         controller: CytoController,
@@ -403,6 +408,7 @@ class GeneEditor {
         insertableGroups: Set<String> = emptySet(),
         narrow: Boolean = false,
         onExport: () -> Unit = {},
+        canExport: Boolean = true,
         savedSnippets: List<GeneSnippet> = emptyList(),
         onSaveGroup: (String, List<Gene>) -> Unit = { _, _ -> },
     ) {
@@ -414,6 +420,7 @@ class GeneEditor {
         cellEnv = info.metabolism.filter { it.env > 0 }.associate { it.species to it.env }
         activeSnippets = savedSnippets
         onSaveGroupCb = onSaveGroup
+        exportOffered = canExport
         if (editingId != null && editingId != controller.lastHeldId) reset()   // grabbed a different cell
         if (controller.lastHeldId != peekedId) { peekedId = controller.lastHeldId; cellExpanded = false; sheetDragFrac = null }   // new cell → peek
 
@@ -625,7 +632,7 @@ class GeneEditor {
                 // Paste a banked group from the gene bank into this cell (only when the bank has something).
                 if (activeSnippets.isNotEmpty()) button("PASTE GROUP FROM BANK (${activeSnippets.size})", 0x3A5A6EFFL) { pastePicking = true }
             }
-            if (info.genes.isNotEmpty()) {
+            if (info.genes.isNotEmpty() && exportOffered) {
                 gap(6f)
                 button("EXPORT GENOME", 0x3A6EA5FFL) { onExport() }
             }

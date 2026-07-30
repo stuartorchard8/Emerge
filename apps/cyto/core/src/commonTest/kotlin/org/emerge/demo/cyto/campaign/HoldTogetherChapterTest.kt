@@ -87,11 +87,11 @@ class HoldTogetherChapterTest {
         assertFalse(gate.met(query(partial)), "one gene left outside the group is not organised")
     }
 
-    /** It follows the merge chapter, and offers exactly the one subsystem it teaches. */
+    /** It follows the Act I closer, and offers exactly the one subsystem it teaches. */
     @Test
-    fun itFollowsReclaimAndOffersOneSubsystem() {
+    fun itFollowsTheActOneCloserAndOffersOneSubsystem() {
         assertEquals(
-            listOf(CampaignContent.RECLAIM),
+            listOf(CampaignContent.KEEPSAKE),
             CampaignContent.predecessorsOf(CampaignContent.REHOMED_HOLD, CampaignContent.PLAYABLE_CHAPTERS),
         )
         assertEquals(setOf(CampaignContent.GROUP_HOLD_NAME), chapter.insertableGroups)

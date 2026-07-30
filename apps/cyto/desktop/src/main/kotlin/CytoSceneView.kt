@@ -14,6 +14,7 @@ import org.emerge.demo.cyto.campaign.CampaignQuery
 import org.emerge.demo.cyto.campaign.Control
 import org.emerge.demo.cyto.campaign.InputHints
 import org.emerge.demo.cyto.campaign.PlayerAction
+import org.emerge.demo.cyto.campaign.WorldRun
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
 import org.emerge.demo.cyto.ui.CytoHud
@@ -127,24 +128,32 @@ object CytoSceneView {
         director.onCampaignComplete = { menu.openCampaign(); simDriver.setPaused(true) }
         // Each step chooses whether the world runs or holds still (so a slow reader isn't overtaken by a
         // later concept). Applied on step entry; the player keeps manual pause/speed control within a step.
-        director.onStepEnter = { step -> simDriver.setPaused(step.world == org.emerge.demo.cyto.campaign.WorldRun.Frozen) }
+        director.onStepEnter = { step -> simDriver.setPaused(step.world == WorldRun.Frozen) }
         simDriver.setPaused(true)
+        // Re-entering the game must not override the campaign step's own choice of Live/Frozen. Every menu
+        // round-trip used to hard-resume, which was invisible while the only way back in was "Continue" — but
+        // exporting a genome is a round-trip that happens MID-STEP, and a Frozen step whose copy says the
+        // world is holding still must still be holding still when the player lands back in it.
+        fun resumeGame() {
+            menu.enterGame()
+            simDriver.setPaused(director.currentStep?.world == WorldRun.Frozen)
+        }
         val menuCallbacks = CytoMenu.Callbacks(
             onStart = { scenario ->
                 simDriver.setPaused(true)
                 director.stop()   // leaving the campaign for free play
                 controller.newGame(scenario)
                 renderer.resetView()
-                menu.enterGame(); simDriver.setPaused(false)
+                resumeGame()
             },
-            onContinue = { menu.enterGame(); simDriver.setPaused(false) },
+            onContinue = { resumeGame() },
             onLoadNamed = { name ->
                 simDriver.setPaused(true)
                 director.stop()
                 CytoSaves.load(controller, name)
                 lastSaveName = name
                 renderer.resetView()
-                menu.enterGame(); simDriver.setPaused(false)
+                resumeGame()
             },
             onStartChapter = { ch ->
                 simDriver.setPaused(true)
@@ -158,12 +167,12 @@ object CytoSceneView {
                 }
                 renderer.resetView()
                 director.start(ch, controller, CytoSaves.campaignEntryPath(ch.id))
-                menu.enterGame(); simDriver.setPaused(false)
+                resumeGame()
             },
             onOpenSave = { menu.openSave(lastSaveName ?: defaultSaveName(controller)); simDriver.setPaused(true) },
             onSave = { name ->
                 lastSaveName = CytoSaves.save(controller, name)   // returns the sanitized name actually written
-                menu.enterGame(); simDriver.setPaused(false)
+                resumeGame()
             },
             onDelete = { name -> CytoSaves.delete(name) },   // stays on the Load page; list refreshes next frame
             onSaveGenome = { name, color, genome ->
@@ -171,7 +180,8 @@ object CytoSceneView {
                 genomes = CytoGenomes.list()
                 selectedGenome = genomes.indexOfFirst { it.name == CytoSaves.sanitize(name) }.coerceAtLeast(0)
                 controller.brushGenome = genomes.getOrNull(selectedGenome)?.genome
-                menu.enterGame(); simDriver.setPaused(false)
+                signals.genomeExported = true
+                resumeGame()
             },
             onQuit = { glfwSetWindowShouldClose(window, true) },
             rightClickCamera = { CytoPrefs.rightClickCamera },
@@ -247,6 +257,7 @@ object CytoSceneView {
                 if (signals.consumeCameraMoved()) actions.add(PlayerAction.MovedCamera)
                 if (signals.consumeSpeedChanged()) actions.add(PlayerAction.ChangedSpeed)
                 if (signals.consumeCellMoved()) actions.add(PlayerAction.MovedCell)
+                if (signals.consumeGenomeExported()) actions.add(PlayerAction.ExportedGenome)
                 val heldNow = controller.lastHeldId?.value
                 if (heldNow != null && heldNow != prevHeldId) actions.add(PlayerAction.SelectedCell)
                 val query = CampaignQuery(
@@ -334,6 +345,7 @@ object CytoSceneView {
                                 CytoSnippets.save(name, genes)
                                 snippets = CytoSnippets.list()
                             },
+                            canExport = mask.allows(Control.Save),
                             onExport = {
                                 val g = controller.heldGenome()
                                 if (g != null) {
@@ -458,7 +470,10 @@ object CytoSceneView {
                             cb.onSaveGenome(menu.currentName(), menu.pendingGenomeColor(), menu.pendingGenome())
                         else cb.onSave(menu.currentName())
                     }
-                    GLFW_KEY_ESCAPE -> { menu.enterGame(); simDriver.setPaused(false) }
+                    // Cancelled the name entry. Routed through onContinue rather than enterGame directly so
+                    // the campaign step's Live/Frozen choice survives the round-trip (resumeGame is local to
+                    // runGl; the key callback only has the menu callbacks).
+                    GLFW_KEY_ESCAPE -> cb.onContinue()
                 }
                 return@glfwSetKeyCallback
             }
@@ -689,9 +704,11 @@ object CytoSceneView {
         var cameraMoved = false
         var speedChanged = false
         var cellMoved = false
+        var genomeExported = false
         fun consumeCameraMoved(): Boolean = cameraMoved.also { cameraMoved = false }
         fun consumeSpeedChanged(): Boolean = speedChanged.also { speedChanged = false }
         fun consumeCellMoved(): Boolean = cellMoved.also { cellMoved = false }
+        fun consumeGenomeExported(): Boolean = genomeExported.also { genomeExported = false }
     }
 
     /** F2 override to force the narrow gene UI on at any width (glfw callbacks run on the render thread, so a

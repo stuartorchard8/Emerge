@@ -23,6 +23,8 @@ import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
 import org.emerge.demo.cyto.ui.CytoHud
+import org.emerge.demo.cyto.host.CytoGenomes
+import org.emerge.demo.cyto.host.CytoStorage
 import org.emerge.demo.cyto.host.CytoSnippets
 import org.emerge.demo.cyto.ui.GeneEditor
 import org.emerge.demo.cyto.ui.GeneSnippet
@@ -113,8 +115,15 @@ object CytoAgentHarness {
      *  back at the same phase by the time anything is measured or captured. */
     private const val UI_CLOCK_STEP = 1.0f
 
+    /** The name a scripted EXPORT GENOME writes under. Fixed, so a script can assert on it. */
+    const val EXPORT_NAME = "agent export"
+
     fun run(scriptText: String, outDir: File) {
         outDir.mkdirs()
+        // Every on-disk store (saves, gene bank, genome library) lives under the run's output directory
+        // rather than the working directory. A scripted export used to land in the player's own genome
+        // palette; a harness run must not edit the library of whoever ran it.
+        CytoStorage.baseDir = outDir.toPath()
         val bad = CampaignContent.validateGlyphs()
         if (bad.isNotEmpty()) println("[agent] WARNING: campaign copy has unsupported glyphs (render as '?'): $bad")
         val h = Session(outDir)
@@ -510,6 +519,17 @@ object CytoAgentHarness {
             controls.worldTapsEnabled = director.active
         }
 
+        /** What the hosts' `onSaveGenome` does, minus the name dialog (there is no keyboard here): write the
+         *  held genome to the library under a scripted name, point the brush at it, and raise the action the
+         *  export step gates on. Lets a script tap the real EXPORT GENOME button rather than faking the
+         *  gate with `did`. */
+        private fun exportHeldGenome() {
+            val g = controller.heldGenome() ?: return
+            CytoGenomes.save(EXPORT_NAME, controller.heldBioColorRgba() ?: 0x888888FFL, g)
+            controller.brushGenome = g
+            pendingActions.add(PlayerAction.ExportedGenome)
+        }
+
         private fun sync() {
             applyTouchModeDefault()
             if (!director.active) { pendingActions.clear(); return }
@@ -840,6 +860,8 @@ object CytoAgentHarness {
                     narrow = NARROW,
                     savedSnippets = CytoSnippets.list().map { GeneSnippet(it.name, it.genes) },
                     onSaveGroup = { name, genes -> CytoSnippets.save(name, genes) },
+                    canExport = mask.allows(Control.Save),
+                    onExport = { exportHeldGenome() },
                 )
                 if (showHud) hud.renderSheets(this, controls, wide = !NARROW)
                 director.renderSpotlight(this)
@@ -1012,6 +1034,8 @@ object CytoAgentHarness {
                     narrow = NARROW,
                     savedSnippets = CytoSnippets.list().map { GeneSnippet(it.name, it.genes) },
                     onSaveGroup = { name, genes -> CytoSnippets.save(name, genes) },
+                    canExport = mask.allows(Control.Save),
+                    onExport = { exportHeldGenome() },
                 )
                 if (showHud) hud.renderSheets(this, controls, wide = !NARROW)
                 director.renderSpotlight(this)

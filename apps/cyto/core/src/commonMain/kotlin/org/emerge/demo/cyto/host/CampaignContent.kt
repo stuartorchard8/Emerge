@@ -38,21 +38,28 @@ import org.emerge.render.torus.ui.UiTextRenderer
 object CampaignContent {
 
     /** Camera + cell selection + the info panel - enough to explore, nothing to overwhelm. */
-    private val LOOK = ControlMask.of(Control.Camera, Control.Select, Control.GeneEditor, Control.Menu)
+    private val LOOK = ControlMask.of(Control.Camera, Control.Select, Control.GeneEditor)
 
     /** LOOK plus the overlay control - for watching the world run at the campaign's curated pace. Note: no
      *  Speed control. Early chapters deliberately withhold the SLOW/PAUSE/FAST buttons (the campaign runs its
      *  Live steps at a good default speed on its own); time controls are introduced later, in Ch8, where
      *  watching long-term locomotion across day/night cycles makes them genuinely useful. */
     private val WATCH = ControlMask.of(
-        Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Menu,
+        Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays,
     )
 
     /** WATCH plus the SLOW/PAUSE/FAST time controls - introduced in Ch8, the first chapter where the player
      *  watches long-running behaviour (day/night-linked locomotion) and needs to pace time. */
     private val WATCH_TIME = ControlMask.of(
-        Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Menu,
+        Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays,
         Control.Speed,
+    )
+
+    /** WATCH_TIME plus EXPORT GENOME - the closing chapter of Act I, and the only mask that grants
+     *  [Control.Save]. Every earlier chapter withholds it, so the button's arrival IS the lesson. */
+    private val WATCH_SAVE = ControlMask.of(
+        Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays,
+        Control.Speed, Control.Save,
     )
 
     private const val GROUP_GROW = "Grow"
@@ -425,7 +432,7 @@ object CampaignContent {
     /** Watch mask WITH the SLOW/PAUSE/FAST controls, so the player can fast-forward the slow beats (the
      *  gene-less cell's death; the first gene's biomass climbing back). */
     private val WATCH_SPEED = ControlMask.of(
-        Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Menu, Control.Speed,
+        Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Speed,
     )
 
     private fun chapterGenesisScratch() = Chapter(
@@ -1339,10 +1346,10 @@ object CampaignContent {
         spawnCopiesHeldCell = true,
         spawnGenome = emptyList(),
         spawnBiomass = STARTER_CELL_BIOMASS,
-        // Into the rehomed Act II. The efficiency chapter that was going to sit here is parked - its premise
-        // did not survive measurement (CAMPAIGN_PLAN.md 14) - and multicellularity is the next real step.
-        branchesTo = listOf(REHOMED_HOLD),
-        next = { REHOMED_HOLD },
+        // Into the Act I closer, and from there the rehomed Act II. The efficiency chapter that was going to
+        // sit here is parked - its premise did not survive measurement (CAMPAIGN_PLAN.md 14).
+        branchesTo = listOf(KEEPSAKE),
+        next = { KEEPSAKE },
         steps = listOf(
             Step(
                 text = "A clean world, and the genome you built. Tap an empty space to put one cell into it.",
@@ -1444,6 +1451,85 @@ object CampaignContent {
                 // still climbing at 24,000.
                 gate = Gate.World("Hold a living colony", met = { it.cellCount >= 400 }),
                 allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+        ),
+    )
+
+    const val KEEPSAKE = "ch05b-yours"
+
+    /**
+     * **Yours** — the close of Act I. No new biology: the player has a genome that holds a world, and this
+     * chapter's whole job is to hand it to them as a *thing they own* rather than a state this save happens
+     * to be in.
+     *
+     * It exists because of what comes next. Act II drops the guardrails and populates a world with
+     * multicellular organisms the player did not build, and that hand-off only reads as an invitation if the
+     * player is carrying something of their own into it. Exporting is the beat that makes Act I a body of
+     * work instead of a corridor they walked down.
+     *
+     * **One mechanism only: the genome library.** The world save is a checkpoint, not an artefact - and a
+     * campaign world saved here can only be reopened into free play ([CytoMenu.Callbacks.onLoadNamed] stops
+     * the director), so teaching it here would be teaching the exit. The gene bank is deliberately NOT taught
+     * in Act I either: banking a subsystem is a *reuse* idea with nothing yet to reuse, and it earns its
+     * keep in Act II, where the interesting genes belong to organisms the player meets and wants to lift.
+     *
+     * **[Control.Save] is a real permission now.** Every earlier chapter withholds EXPORT GENOME, so the
+     * button appearing here is itself the lesson - a control that had always been on-screen would make this
+     * chapter a tour of furniture.
+     */
+    private fun chapterKeepsake() = Chapter(
+        id = KEEPSAKE,
+        act = 1,
+        title = "Yours",
+        blurb = "The genome you built, kept - and the last chapter that holds your hand.",
+        scenario = EMPTY_WORLD,
+        // Continuous with ch05-reclaim: the colony the player just got holding IS the subject. Rebuilding the
+        // world here would export a genome the player had not just watched succeed.
+        startsFreshWorld = false,
+        branchesTo = listOf(REHOMED_HOLD),
+        next = { REHOMED_HOLD },
+        spawnCopiesHeldCell = true,
+        spawnGenome = emptyList(),
+        spawnBiomass = STARTER_CELL_BIOMASS,
+        steps = listOf(
+            Step(
+                text = "That colony is not going anywhere. It feeds, it divides, and it puts back what it spends - and every line of it is yours.",
+                detail = "Four genes. You wrote all four by hand, one field at a time.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Select one of them, and open its genome.",
+                gate = Gate.World("Select a cell", met = { it.focused != null }),
+                allow = WATCH,
+                world = WorldRun.Frozen,
+            ),
+            // The affordance arrives WITH this step's mask (WATCH_SAVE is the only mask granting
+            // Control.Save), so the spotlight rings a button that was not there a moment ago.
+            Step(
+                text = "There is a new button at the bottom of the genome: [EXPORT GENOME]. Tap it, give this creature a name, and save it.",
+                detail = "Saving a world keeps a moment. Saving a genome keeps the design - and a design can be planted into any world you like, as many times as you like.",
+                // Did, not World: the gate is the WRITE (PlayerAction.ExportedGenome fires from the host's
+                // onSaveGenome), so backing out of the name screen leaves the step unsatisfied rather than
+                // ticking it off for opening a dialog.
+                gate = Gate.Did(PlayerAction.ExportedGenome, "Export the genome"),
+                allow = WATCH_SAVE,
+                world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "EXPORT GENOME"),
+            ),
+            Step(
+                text = "It is in your library now, and it will still be there long after this world is gone. It is also loaded on your brush - tap anywhere and you plant one.",
+                detail = "The palette at the bottom left is every genome you have saved.",
+                gate = Gate.Next,
+                allow = WATCH_SAVE,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "That is everything Act I had to teach. You can read a genome, write one, feed it, reproduce it, and keep it. From here on you are not the only thing in the world that can do that.",
+                gate = Gate.Next,
+                allow = WATCH_SAVE,
                 world = WorldRun.Live,
             ),
         ),
@@ -1574,6 +1660,7 @@ object CampaignContent {
         chapterSupplyScratch(),
         chapterLockedUpScratch(),
         chapterReclaimScratch(),
+        chapterKeepsake(),
         chapterHoldTogetherRehomed(),
     )
 

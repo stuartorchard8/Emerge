@@ -180,6 +180,9 @@ enum class PlayerAction {
     /** The player dragged a cell around the world (grab + move). Lets the opening chapter teach "you can
      *  push cells about" as its own beat. */
     MovedCell,
+    /** The player wrote the held cell's genome to the genome library (EXPORT GENOME -> name it -> save).
+     *  Fires on the *write*, not on opening the name screen, so the gate can't be satisfied by a cancel. */
+    ExportedGenome,
 }
 
 /**
@@ -250,6 +253,13 @@ class ControlMask private constructor(private val allowed: Set<Control>) {
     }
 }
 
-/** The host-maskable control surfaces. [Spawn] permits tapping empty space to drop in a [Chapter.spawnGenome]
- *  cell *without* the full [Brush] palette. */
-enum class Control { Camera, Select, Brush, GeneEditor, Speed, Mutation, Overlays, Save, Menu }
+/**
+ * The host-maskable control surfaces.
+ *
+ * [Save] gates the cell panel's EXPORT GENOME button — the campaign withholds it until the chapter that
+ * teaches it, so "here is how you keep this" isn't a lesson about a button that was there all along. It does
+ * NOT gate the MENU button or the menu's own Save page: leaving the game is an escape hatch and a chapter
+ * must never take it away. (A `Menu` flag used to be declared here and listed in every mask; no host ever
+ * read it, for exactly that reason, so it is gone rather than left as a permission that isn't one.)
+ */
+enum class Control { Camera, Select, Brush, GeneEditor, Speed, Mutation, Overlays, Save }

@@ -1167,3 +1167,60 @@ Ch7 (Move) inserts a **Light-powered Contract** — no fuel tokens, so it should
 the real test: they depend on **morphogens** (`bb` marker, `gb` beat), which is what `Z` exists for, but they
 also assume a bespoke multi-gene swimmer lineage rather than the player's own — so for those the question is
 not just chemistry binding but whether the player's organism can carry the subsystem at all.
+
+---
+
+## 16. `ch05b-yours` — the close of Act I (2026-07-31)
+
+Act I ends with the player owning a genome that holds a world, and this chapter's only job is to hand it to
+them as **a thing they keep** rather than a state this save happens to be in. No new biology.
+
+It exists because of what follows. Act II drops the guardrails and populates a world with multicellular
+organisms the player did not build (§17) — a hand-off that only reads as an invitation if the player is
+carrying something of their own into it. Exporting is the beat that makes Act I a body of work instead of a
+corridor.
+
+### One mechanism, and why the other two are not it
+
+Three ways to keep something already existed, all wired on both hosts:
+
+| mechanism | what it keeps | taught here? |
+|---|---|---|
+| genome library (`EXPORT GENOME` → `CytoGenomes`) | one genome, named + swatch-coloured | **yes** |
+| world save (`MENU → Save` → `CytoSaves`) | the whole world, cells and matter | no |
+| gene bank (`SAVE <group> TO BANK` → `CytoSnippets`) | one subsystem, reusable | no — Act II |
+
+The **world save** is a checkpoint, not an artefact, and teaching it here would be teaching the exit: a
+campaign world saved during a chapter can only be reopened into free play, because `onLoadNamed` calls
+`director.stop()`. The **gene bank** is a *reuse* idea with nothing yet to reuse — the player has authored
+every gene they own by hand. It earns its keep in Act II, where the interesting genes belong to organisms
+they meet and want to lift, which is the natural moment for "take a copy of that subsystem".
+
+### `Control.Save` became a real permission
+
+It was declared and never read (as `Control.Spawn` had been, and as `Control.Menu` still was — now deleted).
+It now gates `EXPORT GENOME`, and `WATCH_SAVE` is the only mask that grants it, so **the button's arrival is
+the lesson**. `KeepsakeChapterTest` asserts no earlier step in `PLAYABLE_CHAPTERS` grants it — the failure
+mode being somewhere other than in this chapter.
+
+It deliberately does **not** gate MENU or the menu's Save page: leaving the game is an escape hatch and a
+chapter must never take it away.
+
+### Two things the export beat exposed
+
+1. **The gate has to be an event, and that is an argued exception.** `GenesisGatesTest` otherwise requires
+   every non-opening gate to read world state, so a player who got ahead is never asked to repeat themselves.
+   Export can't: the artefact leaves the world entirely and `CampaignQuery` sees only the simulation. The
+   hazard doesn't arise either — `Control.Save` means nobody can arrive having already exported. The test now
+   lists this one gate rather than being weakened.
+2. **A menu round-trip used to hard-resume the world.** Every path back in did `enterGame(); setPaused(false)`,
+   which was invisible while "Continue" was the only way back — but exporting is a round-trip that happens
+   *mid-step*, and a `Frozen` step whose copy says the world is holding still must still be holding still on
+   return. Both hosts now route through a `resumeGame()` that honours `director.currentStep?.world`. This also
+   fixed a latent case: `onStartChapter` clobbered the first step's own Live/Frozen choice.
+
+### Reach on a phone
+
+The button is the last row of the cell **sheet**, which opens as a two-line peek. One gesture (expand) puts
+it on screen with no scrolling — `narrow-export-genome.txt` holds that, since "the button at the bottom of
+the genome" is otherwise a claim about a layout most players will not be on.

@@ -87,6 +87,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
     private var cameraMovedSignal = false
     private var speedChangedSignal = false
     private var cellMovedSignal = false
+    private var genomeExportedSignal = false
 
     // A native name dialog is up (guards re-posting while the menu sits on a name page).
     private var nameDialogShown = false
@@ -184,18 +185,21 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         }
         director.onCampaignComplete = { menu.openCampaign(); paused = true }
         director.onStepEnter = { step -> paused = step.world == WorldRun.Frozen }
+        // Re-entering the game keeps the campaign step's own Live/Frozen choice (see CytoSceneView.resumeGame):
+        // exporting a genome is a menu round-trip that happens mid-step, and a hard resume would run a Frozen
+        // world out from under copy that says it is holding still.
 
         callbacks = CytoMenu.Callbacks(
             onStart = { scenario ->
                 director.stop()
                 controller.newGame(scenario); renderer.resetView()
-                menu.enterGame(); paused = false
+                resumeGame()
             },
-            onContinue = { menu.enterGame(); paused = false },
+            onContinue = { resumeGame() },
             onLoadNamed = { name ->
                 director.stop()
                 CytoSaves.load(controller, name); lastSaveName = name; renderer.resetView()
-                menu.enterGame(); paused = false
+                resumeGame()
             },
             onStartChapter = { ch ->
                 // Resume the world as this chapter actually began - the player's own lineage and spent
@@ -207,17 +211,18 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                 }
                 renderer.resetView()
                 director.start(ch, controller, CytoSaves.campaignEntryPath(ch.id))
-                menu.enterGame(); paused = false
+                resumeGame()
             },
             onOpenSave = { menu.openSave(lastSaveName ?: "world ${controller.tick}") },
-            onSave = { name -> lastSaveName = CytoSaves.save(controller, name); menu.enterGame(); paused = false },
+            onSave = { name -> lastSaveName = CytoSaves.save(controller, name); resumeGame() },
             onDelete = { name -> CytoSaves.delete(name) },
             onSaveGenome = { name, color, genome ->
                 CytoGenomes.save(name, color, genome)
                 genomes = CytoGenomes.list()
                 selectedGenome = genomes.indexOfFirst { it.name == CytoSaves.sanitize(name) }.coerceAtLeast(0)
                 controller.brushGenome = genomes.getOrNull(selectedGenome)?.genome
-                menu.enterGame(); paused = false
+                genomeExportedSignal = true
+                resumeGame()
             },
             onQuit = { mainHandler.post { (context as? Activity)?.finish() } },
         )
@@ -285,6 +290,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
             if (cameraMovedSignal) { actions.add(PlayerAction.MovedCamera); cameraMovedSignal = false }
             if (speedChangedSignal) { actions.add(PlayerAction.ChangedSpeed); speedChangedSignal = false }
             if (cellMovedSignal) { actions.add(PlayerAction.MovedCell); cellMovedSignal = false }
+            if (genomeExportedSignal) { actions.add(PlayerAction.ExportedGenome); genomeExportedSignal = false }
             val heldNow = controller.lastHeldId?.value
             if (heldNow != null && heldNow != prevHeldId) actions.add(PlayerAction.SelectedCell)
             director.update(
@@ -338,6 +344,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                         grouping = director.grouping,
                         insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                         narrow = true,
+                        canExport = mask.allows(Control.Save),
                         onExport = {
                             val g = controller.heldGenome()
                             if (g != null) {
@@ -396,6 +403,12 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         }
     }
 
+    /** Back into the game from the menu, keeping the campaign step's own Live/Frozen choice. GL thread. */
+    private fun resumeGame() {
+        menu?.enterGame()
+        paused = director?.currentStep?.world == WorldRun.Frozen
+    }
+
     // ── Native name dialog (main thread) ─────────────────────────────────────────
 
     private fun showNameDialog(forGenome: Boolean, default: String) {
@@ -411,15 +424,15 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                     if (name.isNotBlank()) {
                         if (forGenome) cb.onSaveGenome(name, menu.pendingGenomeColor(), menu.pendingGenome())
                         else cb.onSave(name)
-                    } else menu.enterGame().also { paused = false }
+                    } else resumeGame()
                     nameDialogShown = false
                 }
             }
             .setNegativeButton("Cancel") { _, _ ->
-                queueEvent { menu?.enterGame(); paused = false; nameDialogShown = false }
+                queueEvent { resumeGame(); nameDialogShown = false }
             }
             .setOnCancelListener {
-                queueEvent { menu?.enterGame(); paused = false; nameDialogShown = false }
+                queueEvent { resumeGame(); nameDialogShown = false }
             }
             .show()
     }

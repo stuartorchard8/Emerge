@@ -19,6 +19,8 @@ exits non-zero. A script that only *narrates* stops being checked the moment nob
 | `spotlight-labels.txt` | The gene-card words the coach rings that no walkthrough taps — BREAK, Import, SEVERING |
 | `campaign-set-brush.txt` | A campaign chapter starts on the SET brush, so a tap brings a straggler up to the authored lineage |
 | `matter-layers.txt` | the LAYERS sheet's per-species matter layers — the rows are there, named, and change what the ground draws |
+| `campaign-export-genome.txt` | Act I's closer: EXPORT GENOME is withheld by `Control.Save` until the beat that rings it, and Next stays blocked until the genome is actually written |
+| `narrow-export-genome.txt` | the same button on a phone (`-Dcyto.agent.narrow=true`) — reachable by expanding the cell sheet, no scrolling |
 
 The two differ only in the reaction chosen at the last step, which is the whole point: the branch is decided
 by that choice and nothing else.

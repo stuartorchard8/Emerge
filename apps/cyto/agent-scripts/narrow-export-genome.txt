@@ -1,0 +1,29 @@
+# Run with -Dcyto.agent.narrow=true.
+#
+# The phone reach for EXPORT GENOME. On a wide screen the button sits in a docked panel that is simply there;
+# on a phone the cell panel is a bottom sheet that opens as a two-line peek, and the button is the last row
+# of the expanded sheet. So the question this answers is whether the chapter's "there is a new button at the
+# bottom of the genome" is reachable at all on the layout most players will meet it on.
+#
+# It is, in one gesture and with no scrolling: expand the sheet and the button is on screen.
+
+campaign ch05b-yours
+spawn 0.5 0.5
+select 0.5 0.5
+authorgenome /home/stu/emerge/apps/cyto/desktop/cyto-genomes/import light.gene
+select 0.5 0.5
+next
+next
+expect step 3/5
+
+# Collapsed peek: the genome (and so the button) is not shown yet.
+expect-ui !EXPORT GENOME
+
+# Drag the peek up into the full sheet — what the step's "open its genome" is asking for.
+tap-ui cell-grab
+expect-ui EXPORT GENOME
+shot narrow-export
+
+tap-ui EXPORT GENOME
+next
+expect step 4/5
