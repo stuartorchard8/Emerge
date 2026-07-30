@@ -17,6 +17,7 @@ exits non-zero. A script that only *narrates* stops being checked the moment nob
 | `rehomed-insert.txt` | a group insert (`+ ADD HOLD TOGETHER`) rebinding onto the player's own chemistry |
 | `campaign-spotlight.txt` | Genesis's spotlit beats — the coach's box + connector, and that every label it points at is still tappable, and that the ring hands off to Next once the task is done |
 | `spotlight-labels.txt` | The gene-card words the coach rings that no walkthrough taps — BREAK, Import, SEVERING |
+| `campaign-set-brush.txt` | A campaign chapter starts on the SET brush, so a tap brings a straggler up to the authored lineage |
 | `matter-layers.txt` | the LAYERS sheet's per-species matter layers — the rows are there, named, and change what the ground draws |
 
 The two differ only in the reaction chosen at the last step, which is the whole point: the branch is decided

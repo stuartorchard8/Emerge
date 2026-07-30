@@ -262,6 +262,8 @@ object CytoSceneView {
             val mask = director.controlMask
             controls.showBrush = mask.allows(Control.Brush)
             controls.showTouchModes = mask.allows(Control.Brush)
+            // Entering/leaving a chapter picks the brush action once — see [consumeDefaultTouchMode].
+            director.consumeDefaultTouchMode()?.let { controls.setTouchMode(it) }
             // Ch8 "tap to add a cell": permit empty-space spawns of the chapter's genome without the full
             // brush palette. Only inside an active chapter - when idle the mask is ALL (which includes Spawn),
             // and applying it would clobber the sandbox's own brush genome with a null chapter spawnGenome.

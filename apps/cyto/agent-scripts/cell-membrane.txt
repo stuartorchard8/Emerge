@@ -1,0 +1,27 @@
+# MEMBRANE RENDERING — the welded-cluster path, which a single-cell world never touches.
+#
+# The cell fragment shader carves smooth "necks" between welded neighbours so a cluster reads as one
+# membrane, and clips each cell at the mid-plane so welded cells stay individually outlined. That geometry
+# is the delicate part of the cell pass, and it only runs for cells that actually HAVE welded neighbours —
+# so it needs a world full of them, not a fixture with one cell in it.
+#
+# squish.bin is the welded-cluster world; hydro.bin is the big population. Both, zoomed in far enough that
+# individual membranes and the necks between them are legible.
+
+load apps/cyto/desktop/cyto-saves/squish.bin
+night 1
+runs 1
+shot squish-wide
+
+camera zoom 8
+runs 1
+shot squish-close
+
+load apps/cyto/desktop/cyto-saves/hydro.bin
+night 1
+runs 1
+shot cells-wide
+
+camera zoom 8
+runs 1
+shot cells-close

@@ -133,6 +133,13 @@ object CytoRenderBenchmark {
 
             b.renderer.nightLevel = 1f   // skips the multiply pass entirely
             b.report("  − gene, − daylight", b.measure(frames))
+
+            // The cell pass on its own: one draw call per cell, each re-uploading an 8×vec4 neighbour
+            // uniform array. Skipping only the submission (the per-cell CPU work still runs) sizes what
+            // instancing the pass could win.
+            b.renderer.drawCells = false
+            b.report("  − gene, − daylight, − cells", b.measure(frames))
+            b.renderer.drawCells = true
             // Split the matter ground's cost: the CPU channel tally + texel fill is timed inside the
             // renderer, so whatever it adds beyond that is texture upload + the full-screen warp shader.
             println(

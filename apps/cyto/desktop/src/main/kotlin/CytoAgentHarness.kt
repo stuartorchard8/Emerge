@@ -258,7 +258,7 @@ object CytoAgentHarness {
                 "campaign" -> {
                     val ch = (CampaignContent.CHAPTERS + CampaignContent.SCRATCH_CHAPTERS).firstOrNull { it.id == t.getOrNull(1) }
                         ?: error("unknown chapter '${t.getOrNull(1)}' (have ${CampaignContent.ORDER} + ${CampaignContent.SCRATCH_CHAPTERS.map { it.id }})")
-                    controller.newGame(ch.scenario); director.start(ch, controller); renderer.resetView()
+                    controller.newGame(ch.scenario); director.start(ch, controller); renderer.resetView(); applyTouchModeDefault()
                 }
                 // Author a genome ONTO the selected cell, the way the player's gene editor does — through
                 // CytoController.addHeldGenes, so it counts as an edit and updates `lastAuthoredGenome`.
@@ -492,7 +492,7 @@ object CytoAgentHarness {
             onSave = {}, onDelete = {}, onSaveGenome = { _, _, _ -> },
             onStartChapter = { ch ->
                 menu = null
-                controller.newGame(ch.scenario); director.start(ch, controller); renderer.resetView()
+                controller.newGame(ch.scenario); director.start(ch, controller); renderer.resetView(); applyTouchModeDefault()
                 println("[agent] menu started chapter ${ch.id}")
             },
             onQuit = {},
@@ -503,7 +503,14 @@ object CytoAgentHarness {
             controller.publish(); sync()
         }
 
+        /** Mirror the host: entering a chapter picks the brush action once (CampaignDirector). Without this
+         *  a scripted `tap` would use the sandbox default and never exercise what a campaign player does. */
+        private fun applyTouchModeDefault() {
+            director.consumeDefaultTouchMode()?.let { controls.setTouchMode(it) }
+        }
+
         private fun sync() {
+            applyTouchModeDefault()
             if (!director.active) { pendingActions.clear(); return }
             applyChapterSpawn()
             val q = CampaignQuery(
@@ -552,9 +559,15 @@ object CytoAgentHarness {
         }
 
         private fun tapWorld(x: Float, y: Float) {
-            controller.cellAt(x, y)?.let { controller.focus(it); pendingActions.add(PlayerAction.SelectedCell) }
+            // Brush FIRST, then focus. The host computes the brush once a frame, so a press resolves against
+            // the selection as it stood *before* the tap; focusing first would let a `spawnCopiesHeldCell`
+            // chapter re-point the brush at the very cell being tapped, which then adopts its own genome.
             applyChapterSpawn()   // the current step may spawn the chapter's authored cell (brush + biomass)
-            controller.tap(x, y, TouchMode.Base, CellType.Stem); advance(1)
+            controller.cellAt(x, y)?.let { controller.focus(it); pendingActions.add(PlayerAction.SelectedCell) }
+            // The host taps with whatever brush action is selected, so the harness must too: on empty space
+            // every mode spawns alike, but on a CELL the mode is the whole behaviour (Base selects and does
+            // nothing; Set re-genomes it from the brush).
+            controller.tap(x, y, controls.touchMode, CellType.Stem); advance(1)
         }
 
         // ── coordinate mapping via the REAL renderer camera (so it matches the game) ──────────────

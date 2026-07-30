@@ -1,0 +1,30 @@
+# The campaign starts on the SET brush action, so tapping a straggler brings it up to the lineage the
+# player has authored — rather than the sandbox's Base, where a tap on a cell selects it and does nothing.
+#
+# ch05-reclaim because its first step allows Control.Spawn (a world tap only reaches the world at all on a
+# step that permits it) and it is `spawnCopiesHeldCell`, which is the case the ordering bug hid in: the
+# brush must resolve against the selection as it stood BEFORE the tap, or the tapped cell adopts its own
+# genome and nothing appears to happen.
+
+campaign ch05-reclaim
+spawn 0.35 0.5
+spawn 0.62 0.5
+expect cells 2
+
+# Author onto the first cell — this is what points the brush (lastAuthoredGenome).
+select 0.35 0.5
+authorgenome /home/stu/emerge/apps/cyto/desktop/cyto-genomes/import light.gene
+select 0.35 0.5
+expect genes 4
+
+# The other cell is still the gene-less one that was spawned.
+select 0.62 0.5
+expect genes 0
+
+# Back on the authored cell, as a player is after editing it.
+select 0.35 0.5
+
+# Tap the straggler: SET re-genomes it from the brush.
+tap 0.62 0.5
+select 0.62 0.5
+expect genes 4

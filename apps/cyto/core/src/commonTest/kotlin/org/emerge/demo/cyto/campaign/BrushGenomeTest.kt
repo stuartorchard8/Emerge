@@ -10,6 +10,7 @@ import org.emerge.demo.cyto.sim.EnergySource
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.GeneAction
 import org.emerge.demo.cyto.sim.GeneCondition
+import org.emerge.demo.cyto.sim.TouchMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -119,6 +120,30 @@ class BrushGenomeTest {
         c.focus(ids[1])
         assertTrue(c.heldGenome()!!.isEmpty(), "the newly selected cell really is gene-less")
         assertEquals(authored, d.brushGenome(c)?.size, "the brush still carries what they authored")
+    }
+
+    /**
+     * The brush is only half the story: what a tap on an existing cell *does* is the touch mode, and in the
+     * campaign that has to be SET, so tapping a straggler brings it up to the lineage the player authored.
+     * [TouchMode.Base] — the sandbox default — would select it and change nothing.
+     */
+    @Test
+    fun aChapterStartsOnTheSetBrushAndHandsBaseBackOnTheWayOut() {
+        val (d, _) = started(chapter("scratch"))
+        assertEquals(TouchMode.Set, d.consumeDefaultTouchMode(), "entering a chapter picks SET")
+        d.stop()
+        assertEquals(TouchMode.Base, d.consumeDefaultTouchMode(), "leaving hands the sandbox its own back")
+    }
+
+    /**
+     * Consumed, not enforced. Once the campaign teaches the modes, a player who picks a different one has to
+     * keep it — a host re-applying the default every frame would take it straight back off them.
+     */
+    @Test
+    fun theDefaultIsOfferedOnceOnly() {
+        val (d, _) = started(chapter("scratch"))
+        assertEquals(TouchMode.Set, d.consumeDefaultTouchMode())
+        assertNull(d.consumeDefaultTouchMode(), "nothing more to apply until the chapter changes")
     }
 
     /** A live selection wins only where the chapter asks for it — Ch9's "last-modified brush". */

@@ -5,14 +5,20 @@
 // The membrane-blend logic (drawConnection) is unchanged — it draws each cell as a
 // soft disc and carves smooth "necks" toward connected neighbour cells so a cluster
 // reads as one membrane. Neighbour positions/radii arrive as world-space deltas
-// divided by (u_radius * 2) in this shader, exactly as the original.
+// divided by (v_radius * 2) in this shader, exactly as the original.
 
 in vec2 v_texCoords;
 out vec4 fragColor;
 
+// Everything that varies per cell now arrives from the vertex stage as a flat varying rather than as a
+// uniform, so the whole pass can be one instanced draw call. The membrane logic below is unchanged: these
+// aliases keep it reading against the same names it was ported with.
+flat in vec4 v_color;
+flat in float v_radius;
+flat in float v_neighbourCount;
+flat in vec4 v_neighbour[8];
+
 uniform sampler2D u_texture;
-uniform float u_radius;
-uniform vec4 u_color;
 uniform float u_charge;
 // Membrane thickness in logical world units. <= 0 fills the body solid.
 uniform float u_border;
@@ -20,10 +26,6 @@ uniform float u_border;
 const float FAR = 1e9;
 
 const int MAX_NEIGHBOURS = 8;
-uniform int u_neighbourCount;
-// xy = relative neighbour position (world delta), z = neighbour radius. Packed into a
-// vec4 array so the renderer can upload it with a single vec4 uniform call.
-uniform vec4 u_neighbour[MAX_NEIGHBOURS];
 
 // Inside-depth (uv units) of the neck toward one neighbour: the distance from uv to the
 // nearer of the two outer tangent lines, or 0.0 when uv is outside the neck. `owned` is
@@ -87,7 +89,7 @@ void main() {
     float len = length(uv);
     float r1 = 0.5 / 2.0;
 
-    fragColor = min(u_color, texture(u_texture, v_texCoords));
+    fragColor = min(v_color, texture(u_texture, v_texCoords));
     fragColor.rgb *= (2.0 - len - (1.0 / (u_charge / 32.0 + 1.0)));
     fragColor.a = 1.0;
 
@@ -98,10 +100,11 @@ void main() {
     // clipping the body below, so welded cells stay individually outlined.
     float seams = FAR;
 
-    float divisor = u_radius * 2.0;
-    for (int i = 0; i < u_neighbourCount; ++i) {
-        float rad = u_neighbour[i].z / divisor;
-        vec2 pos = u_neighbour[i].xy / divisor;
+    float divisor = v_radius * 2.0;
+    int neighbourCount = int(v_neighbourCount);
+    for (int i = 0; i < neighbourCount; ++i) {
+        float rad = v_neighbour[i].z / divisor;
+        vec2 pos = v_neighbour[i].xy / divisor;
         bool owned;
         float seam;
         float neck = drawConnection(uv, r1, rad, pos, owned, seam);

@@ -295,6 +295,8 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         val mask = director.controlMask
         c.showBrush = mask.allows(Control.Brush)
         c.showTouchModes = mask.allows(Control.Brush)
+        // Entering/leaving a chapter picks the brush action once — see [consumeDefaultTouchMode].
+        director.consumeDefaultTouchMode()?.let { c.setTouchMode(it) }
         c.worldSpawnEnabled = director.active && mask.allows(Control.Spawn)
         if (c.worldSpawnEnabled) {
             val chapter = director.activeChapter

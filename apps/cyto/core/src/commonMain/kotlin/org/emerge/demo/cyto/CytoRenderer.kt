@@ -64,6 +64,10 @@ class CytoRenderer {
     // One period of the world is rendered into [periodTarget], then repeated across the screen by
     // [tileShader]. Only the seam-straddling objects are drawn more than once (into the target), so the
     // number of world copies on screen is independent of the number of cells.
+    /** Benchmark affordance: skip only the per-cell draw submission, leaving every other pass and all the
+     *  per-cell CPU work in place, so the cell pass's own cost can be attributed. */
+    var drawCells = true
+
     private val periodTarget = RenderTarget()
     private val tileShader = TileShader()
 
@@ -113,11 +117,9 @@ class CytoRenderer {
      *  specks in?") have to be judged, since the period texture's resolution is not the screen's. */
     private val passPxPerUnit: Float get() = passPixelsH / (2f * passHalfH)
 
+    // The cell pass builds its own model transform in the vertex shader from each instance's centre and
+    // size, so the projection is the only matrix the renderer still assembles for it.
     private val matP = Mat4.scratch()
-    private val matM = Mat4.scratch()
-    private val matMS = Mat4.scratch()
-    private val matMT = Mat4.scratch()
-    private val mvp = Mat4.scratch()
     private val colorTmp = FloatArray(4)
     private val neighbourTmp = FloatArray(CytoCellShader.MAX_NEIGHBOURS * 4)
 
@@ -528,7 +530,7 @@ class CytoRenderer {
         drawDecayField(cells, transforms, colliders)
 
         GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
-        shader.begin(cellTextureId)
+        shader.begin(cellTextureId, matP)
 
         // CSR-based spring access (avoids SimState SpringConstraintComponent allocation)
         val springData = frame.springData
@@ -628,8 +630,6 @@ class CytoRenderer {
                 }
             }
 
-            matMS.setScale(2f * radius, 2f * radius)
-
             val focused = id.value == focusedCellId
             // Dim a cell only when a present cell is focused and this one is neither it nor a direct weld.
             val dimmed = dimActive && !focused && id.value !in focusNeighbours
@@ -677,18 +677,18 @@ class CytoRenderer {
             // The neighbour deltas are relative, so an image of this cell at the far edge of the period
             // renders identically — only the placement differs.
             forEachSeamImage(viewX(cx), viewY(cy), radius) { ix, iy ->
-                matMT.setTranslation(ix, iy)
-                matM.setProduct(matMT, matMS)
-                mvp.setProduct(matP, matM)
-                shader.draw(
-                    mvp = mvp,
-                    radiusUniform = radius * 2f,
+                if (!drawCells) return@forEachSeamImage
+                shader.add(
+                    centerX = ix,
+                    centerY = iy,
+                    radius = radius,
                     color = colorTmp,
-                    neighbours = neighbourTmp,
-                    count = count,
+                    neighbourData = neighbourTmp,
+                    neighbourCount = count,
                 )
             }
         }
+        shader.flush()
         // Evict intensity state for cells that vanished (died/off-frame) — same pattern as focusNeighbours.
         if (buildIntensity.size > buildSeen.size) {
             buildIntensity.keys.retainAll(buildSeen); buildColor.keys.retainAll(buildSeen)

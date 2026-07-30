@@ -5,6 +5,7 @@ import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.ui.GenomeGrouping
 import org.emerge.demo.cyto.ui.MetabKeys
 import org.emerge.demo.cyto.sim.SpeciesNames
+import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.CanvasBuilder
 import org.emerge.render.torus.ui.PanelBuilder
@@ -290,6 +291,7 @@ class CampaignDirector {
         controller.setSpeciesAliases(chapter.scenario.aliases)
         stepIndex = 0
         active = true
+        pendingTouchMode = TouchMode.Set   // see consumeDefaultTouchMode
         pathInternal.clear()
         pathInternal.addAll(priorPath)
         if (pathInternal.lastOrNull() != chapter.id) pathInternal.add(chapter.id)
@@ -346,7 +348,24 @@ class CampaignDirector {
     /** Leave the campaign (host returns to the menu). */
     fun stop() {
         active = false; chapter = null; lastQuery = null; carriedGenome = null; host = null; pathInternal.clear()
+        pendingTouchMode = TouchMode.Base   // hand the sandbox back its own default
     }
+
+    /**
+     * The brush action the campaign wants selected, **once**, or null if nothing has changed it.
+     *
+     * A campaign chapter starts on [TouchMode.Set] rather than the sandbox's [TouchMode.Base]: the coach
+     * hands the player a genome and then asks them to grow a colony with it, and Set is what makes a tapped
+     * cell adopt the brush — so tapping any straggler brings it up to the lineage the player has actually
+     * authored, instead of silently doing nothing. Early chapters mask the touch-mode column off entirely
+     * ([Control.Brush]), so this is invisible until the campaign is ready to teach modes.
+     *
+     * Consumed rather than enforced: setting it every frame would fight a player who has been taught the
+     * modes and picked a different one.
+     */
+    fun consumeDefaultTouchMode(): TouchMode? = pendingTouchMode.also { pendingTouchMode = null }
+
+    private var pendingTouchMode: TouchMode? = null
 
     private fun enterStep(controller: CytoController) {
         host = controller
