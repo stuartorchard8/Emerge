@@ -775,13 +775,15 @@ object CytoAgentHarness {
                 // The front-end shell owns the whole screen when it is open, as in the real hosts.
                 val shell = menu
                 if (shell != null) { shell.render(this, emptyList(), menuCallbacks()); return@frame }
-                // Bar before the coach (BottomCenter stacks in draw order); its sheets go last.
+                // Bar before the coach (BottomCenter stacks in draw order); its sheets go last. Both centre on
+                // the free world area, off the same value the camera uses.
+                val freeDx = geneEditor
+                    .freeAreaOffsetPx(NARROW, controller.lastHeldId != null, RES_W.toFloat(), RES_H.toFloat(), ui.scale).first
                 if (showHud) {
-                    hud.renderBar(this, controls, showPause = NARROW) {}
+                    hud.renderBar(this, controls, showPause = NARROW, freeAreaDxPx = freeDx) {}
                     if (!NARROW) hud.renderSpeed(this, controls)
                 }
-                if (director.active) director.render(this, controller, narrow = NARROW, freeAreaDxPx = geneEditor
-                    .freeAreaOffsetPx(NARROW, controller.lastHeldId != null, RES_W.toFloat(), RES_H.toFloat(), ui.scale).first)
+                if (director.active) director.render(this, controller, narrow = NARROW, freeAreaDxPx = freeDx)
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(
                     this,
                     controller,
@@ -938,13 +940,15 @@ object CytoAgentHarness {
             ui.frame {                                        // info panel + coach overlay + L0 HUD (both widths)
                 val shell = menu
                 if (shell != null) { shell.render(this, emptyList(), menuCallbacks()); return@frame }
-                // Bar before the coach (BottomCenter stacks in draw order); its sheets go last.
+                // Bar before the coach (BottomCenter stacks in draw order); its sheets go last. Both centre on
+                // the free world area, off the same value the camera uses.
+                val freeDx = geneEditor
+                    .freeAreaOffsetPx(NARROW, controller.lastHeldId != null, RES_W.toFloat(), RES_H.toFloat(), ui.scale).first
                 if (showHud) {
-                    hud.renderBar(this, controls, showPause = NARROW) {}
+                    hud.renderBar(this, controls, showPause = NARROW, freeAreaDxPx = freeDx) {}
                     if (!NARROW) hud.renderSpeed(this, controls)
                 }
-                if (director.active) director.render(this, controller, narrow = NARROW, freeAreaDxPx = geneEditor
-                    .freeAreaOffsetPx(NARROW, controller.lastHeldId != null, RES_W.toFloat(), RES_H.toFloat(), ui.scale).first)
+                if (director.active) director.render(this, controller, narrow = NARROW, freeAreaDxPx = freeDx)
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(
                     this,
                     controller,

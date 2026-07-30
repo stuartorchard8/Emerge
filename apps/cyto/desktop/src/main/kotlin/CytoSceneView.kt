@@ -303,20 +303,22 @@ object CytoSceneView {
                 if (!showHud) hud.close()
                 // Last-held-cell info panel + gene-editor kit + a Menu button (on top of the controls).
                 ui.frame {
+                    // Both bottom-centre stacks — the HUD bar and the coach — centre on the free world area
+                    // rather than the screen, so neither ends up under the docked cell panel and the two stay
+                    // on the same grid. One value, read once: the same one the camera follows.
+                    val freeDx = geneEditor
+                        .freeAreaOffsetPx(narrow, controller.lastHeldId != null, ui.resWidth, ui.resHeight, ui.scale).first
                     // The bar claims the bottom edge before the coach: BottomCenter panels stack in draw order,
                     // so the coach going first would strand the bar above it in mid-screen. Its sheets come last.
                     if (showHud) {
-                        hud.renderBar(this, controls, showPause = false) { menu.openTitle(); simDriver.setPaused(true) }
+                        hud.renderBar(this, controls, showPause = false, freeAreaDxPx = freeDx) { menu.openTitle(); simDriver.setPaused(true) }
                         hud.renderSpeed(this, controls)   // top-left << · N TPS/PAUSED · >> cluster (desktop)
                     }
                     // Coach next so the (expanded) narrow cell sheet draws over it; the short peek never
                     // reaches it. On wide the coach is bottom-centre and the panel docks right — no overlap.
                     // Bottom-centre panel on wide, top-docked banner on narrow. Nothing is full-screen any
                     // more — a gene is edited in place in the sheet — so the coach always renders.
-                    // Centred on the free world area, not the screen: the cell panel docks right and is
-                    // drawn after the coach, so anything reaching under it is covered.
-                    director.render(this, controller, narrow = narrow, freeAreaDxPx = geneEditor
-                        .freeAreaOffsetPx(narrow, controller.lastHeldId != null, ui.resWidth, ui.resHeight, ui.scale).first)
+                    director.render(this, controller, narrow = narrow, freeAreaDxPx = freeDx)
                     if (mask.allows(Control.GeneEditor)) {
                         geneEditor.render(
                             this, controller,

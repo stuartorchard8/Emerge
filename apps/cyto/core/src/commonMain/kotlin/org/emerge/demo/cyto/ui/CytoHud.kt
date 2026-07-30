@@ -62,7 +62,16 @@ class CytoHud {
      *  so an open sheet layers over everything rather than under the coach. */
     /** [showPause] draws the play/pause target in the bar (single-threaded hosts, whose speed lives in the
      *  Speed sheet). Desktop passes false — its pause + speed live in the top-left [renderSpeed] cluster. */
-    fun renderBar(b: UiBuilder, controls: CytoControls, showPause: Boolean = true, onMenu: () -> Unit) = bar(b, controls, showPause, onMenu)
+    /**
+     * The bottom control bar. [freeAreaDxPx] is the host's `GeneEditor.freeAreaOffsetPx` dx — how far the
+     * centre of the *un-obscured* world is from the screen centre — so the bar centres on the space it can
+     * actually be seen in rather than on the screen, the same way the campaign coach does. The two stack at
+     * the same anchor and must agree, or they read as two bars on different grids. 0 ⇒ screen-centred.
+     */
+    fun renderBar(
+        b: UiBuilder, controls: CytoControls, showPause: Boolean = true, freeAreaDxPx: Float = 0f,
+        onMenu: () -> Unit,
+    ) = bar(b, controls, showPause, freeAreaDxPx, onMenu)
 
     /** Draw whichever sheet is open (none by default). Call **last** in the frame — sheets are the topmost
      *  layer, and the wide popover overlaps whatever sits beneath it. */
@@ -88,10 +97,10 @@ class CytoHud {
         }
     }
 
-    private fun bar(b: UiBuilder, controls: CytoControls, showPause: Boolean, onMenu: () -> Unit) {
+    private fun bar(b: UiBuilder, controls: CytoControls, showPause: Boolean, freeAreaDxPx: Float, onMenu: () -> Unit) {
         val playLabel = if (controls.simPaused) "PLAY" else "PAUSE"
         val playColor = if (controls.simBehind) 0xEFB000FFL else 0x3A6EA5FFL
-        b.panel(Anchor.BottomCenter, margin = 10f, padding = 8f, background = 0x11182AF2L, rowHeight = 46f, textSize = 15f) {
+        b.panel(Anchor.BottomCenter, margin = 10f, padding = 8f, background = 0x11182AF2L, rowHeight = 46f, textSize = 15f, offsetX = freeAreaDxPx / b.density) {
             val row = buildList {
                 if (showPause) add(Triple(playLabel, playColor) { controls.onTogglePause(); toggle(Sheet.Speed) })
                 add(Triple("BRUSH", 0x2E6E5EFFL) { toggle(Sheet.Brush) })
