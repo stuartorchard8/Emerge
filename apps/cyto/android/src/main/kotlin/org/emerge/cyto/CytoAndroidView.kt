@@ -139,6 +139,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
 
         val renderer = CytoRenderer().also { renderer = it }
         val controls = CytoControls().also { controls = it }
+        controls.onListMatterSpecies = { controller.matterLayers() }
         hud = CytoHud()
         geneEditor = GeneEditor()
         val ui = Ui().also { it.setDensity(displayDensity); ui = it }
@@ -249,6 +250,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
 
         r.nightLevel = c.nightLevel
         r.colorMode = c.colorMode
+        r.matterSpeciesId = c.matterSpeciesId
 
         if (menu.inGame) {
             if (pointerDown) ui.updateHold(lastX, lastY, delta)

@@ -651,10 +651,13 @@ class CytoMatterField private constructor(
      *  destination that is zeroed underneath a reader is not. Tallying from the reader's thread into the
      *  reader's own arrays makes that unrepresentable, and moves the cost off the sim thread (per tick, up
      *  to ~1000/s) onto the frame that actually wants it (~60/s). */
-    fun tallyChannels(outR: IntArray, outG: IntArray, outB: IntArray) {
+    fun tallyChannels(outR: IntArray, outG: IntArray, outB: IntArray, onlySpecies: Int = -1) {
         val chR = outR; val chG = outG; val chB = outB
         chR.fill(0); chG.fill(0); chB.fill(0)
         for (sp in columns.indices) {
+            // Single-species layer (LAYERS → MATTER LAYER): every other species contributes nothing, so the
+            // ground shows one molecule's distribution in its own pigment instead of the summed topology.
+            if (onlySpecies >= 0 && sp != onlySpecies) continue
             val col = columns[sp] ?: continue
             val ar = SpeciesRegistry.atomsInChannel(sp, 0)
             val ag = SpeciesRegistry.atomsInChannel(sp, 1)
@@ -663,6 +666,28 @@ class CytoMatterField private constructor(
             if (ag != 0) for (i in 0 until texels) chG[i] += col[i] * ag
             if (ab != 0) for (i in 0 until texels) chB[i] += col[i] * ab
         }
+    }
+
+    /**
+     * Every species actually present in the field, as `(id, total atoms)` richest first — the menu the
+     * LAYERS sheet offers as matter layers.
+     *
+     * Only what is *there* is listed: the registry enumerates every legal molecule over the alphabet
+     * (hundreds at k=3), which is not a menu, while a given world only ever holds a handful. Absent species
+     * are omitted rather than listed as zero, so the list reads as "what is in this world".
+     *
+     * A full scan per call, so call it when the sheet is open — not every frame.
+     */
+    fun speciesTotals(): List<Pair<Int, Long>> {
+        val out = ArrayList<Pair<Int, Long>>()
+        for (sp in columns.indices) {
+            val col = columns[sp] ?: continue
+            var total = 0L
+            for (i in 0 until texels) total += col[i]
+            if (total > 0L) out.add(sp to total)
+        }
+        out.sortByDescending { it.second }
+        return out
     }
 
     // ── snapshot / read / serialise (for the reducer bridge, UI, save codec) ───────────────────────────

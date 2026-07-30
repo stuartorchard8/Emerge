@@ -59,6 +59,9 @@ object CytoSceneView {
 
         val renderer = CytoRenderer()
         val controls = CytoControls()
+        // The matter-layer menu is a property of the world, and scanning the field is not free — so the sheet
+        // pulls it when it's open rather than the frame loop pushing it always.
+        controls.onListMatterSpecies = { controller.matterLayers() }
         val hud = CytoHud()   // narrow-layout L0 bottom bar + sheets (drives `controls`)
         // The bottom-left brush palette is driven by the genome library (cyto-genomes/, seeded on first use).
         // Selecting a swatch sets the brush genome; `genomes`/`selectedGenome` are refreshed on save/delete.
@@ -219,6 +222,7 @@ object CytoSceneView {
 
             renderer.nightLevel = controls.nightLevel           // LAYERS night dial → renderer
             renderer.colorMode = controls.colorMode             // Color button → renderer
+            renderer.matterSpeciesId = controls.matterSpeciesId // LAYERS matter layer → renderer
             controller.pruneDeadSelection()   // the selection no longer rides on the follow path, so prune here
             renderer.focusedCellId = controller.lastHeldId?.value ?: -1   // highlight = the inspected cell (left-click)
             // The camera follows a SEPARATE target (right-click), not the selection — unless it's being grabbed.

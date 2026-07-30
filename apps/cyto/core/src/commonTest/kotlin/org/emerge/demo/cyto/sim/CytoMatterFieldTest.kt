@@ -466,6 +466,60 @@ class CytoMatterFieldTest {
         assertTrue(rg < 500, "decay should have atomised some 'rg' (so the read model tracked real churn)")
     }
 
+    // ── the LAYERS sheet's per-species matter layer ────────────────────────────────────────────────────
+
+    /**
+     * A single-species layer must show that species **alone**, on the same scale as the combined view —
+     * the whole point of the layer is that a dark one means "there is little of this here", which a
+     * re-normalised or leaky tally would destroy.
+     */
+    @Test fun singleSpeciesTallyIsThatSpeciesAlone() {
+        val f = CytoMatterField.seededUniform(10)
+        f.deposit(0f, 0f, 0.3f, AB, 500)
+        val n = f.resolution * f.resolution
+        val r = IntArray(n); val g = IntArray(n); val b = IntArray(n)
+
+        // 'rg' alone: every lit texel must be inside the deposit disc, and its red must be the deposit's
+        // contribution only — NOT the uniform 'r' seed the combined view also counts.
+        f.tallyChannels(r, g, b, onlySpecies = AB)
+        val litByAB = (0 until n).count { r[it] != 0 || g[it] != 0 || b[it] != 0 }
+        assertTrue(litByAB in 1 until n, "the 'rg' layer must be a subset of the field, not all or nothing")
+        assertTrue(b.all { it == 0 }, "'rg' has no blue atoms, so its layer must leave blue empty")
+
+        // The combined view is the sum of the parts: tallying each species and adding must reproduce it.
+        val cr = IntArray(n); val cg = IntArray(n); val cb = IntArray(n)
+        f.tallyChannels(cr, cg, cb)
+        val sr = IntArray(n); val sg = IntArray(n); val sb = IntArray(n)
+        val pr = IntArray(n); val pg = IntArray(n); val pb = IntArray(n)
+        for ((sp, _) in f.speciesTotals()) {
+            f.tallyChannels(pr, pg, pb, onlySpecies = sp)
+            for (i in 0 until n) { sr[i] += pr[i]; sg[i] += pg[i]; sb[i] += pb[i] }
+        }
+        for (i in 0 until n) {
+            assertEquals(cr[i], sr[i], "red: layers must sum to the combined view at texel $i")
+            assertEquals(cg[i], sg[i], "green: layers must sum to the combined view at texel $i")
+            assertEquals(cb[i], sb[i], "blue: layers must sum to the combined view at texel $i")
+        }
+    }
+
+    /** [CytoMatterField.speciesTotals] is the layer menu: only what is actually in the world, richest first —
+     *  the registry enumerates hundreds of legal molecules, which would not be a menu. */
+    @Test fun speciesTotalsListOnlyWhatIsPresentRichestFirst() {
+        val f = CytoMatterField.seededUniform(10)
+        f.deposit(0f, 0f, 0.3f, AB, 500)
+        val totals = f.speciesTotals()
+
+        assertTrue(totals.all { it.second > 0L }, "an absent species must not be offered as a layer")
+        assertTrue(totals.size < SpeciesRegistry.size, "must list the world's species, not the whole registry")
+        assertEquals(totals.sortedByDescending { it.second }, totals, "richest first")
+        assertTrue(totals.any { it.first == AB }, "the deposited 'rg' must be on offer")
+
+        // The totals are atom counts per species, so they must agree with an independent walk.
+        var walkedAB = 0L
+        f.forEachTexel { _, _, _, s -> walkedAB += s.count(AB).toLong() }
+        assertEquals(walkedAB, totals.first { it.first == AB }.second, "'rg' total must match the columns")
+    }
+
     // ── the UI's reservoir read ────────────────────────────────────────────────────────────────────────
 
     /**

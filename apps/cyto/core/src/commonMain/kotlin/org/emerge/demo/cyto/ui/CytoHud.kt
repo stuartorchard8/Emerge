@@ -135,11 +135,35 @@ class CytoHud {
     }
 
     private fun layersSheet(b: UiBuilder, controls: CytoControls, wide: Boolean) {
-        sheetHost(b, "hud-layers", "LAYERS", wide, heightFraction = 0.5f) {
+        sheetHost(b, "hud-layers", "LAYERS", wide, heightFraction = 0.72f) {
             listRow("NIGHT LIGHT:  ${controls.nightLabel}") { controls.cycleNightLevel() }
             listRow("CELL COLOUR:  ${controls.colorMode.label}") { controls.cycleColorMode() }
             if (controls.showMutation) listRow("MUTATION:  ${controls.mutationLabel}") { controls.onCycleMutation() }
             listRow(if (controls.showChemicals) "READOUTS:  ON" else "READOUTS:  OFF") { controls.toggleChemicals() }
+            gap(8f)
+            // MATTER: which molecule the ground draws. ALL (the default) is the summed topology the ground
+            // has always shown; picking one species shows that molecule's distribution alone, in its own
+            // pigment and on the SAME density scale — so a layer that reads dim genuinely means "there is
+            // little of this here" rather than "this view is scaled differently".
+            row("MATTER", 0x7A8699FFL)
+            listRow("ALL SPECIES", selected = controls.matterSpeciesId == CytoControls.ALL_MATTER) {
+                controls.setMatterSpecies(CytoControls.ALL_MATTER)
+            }
+            val present = controls.onListMatterSpecies()
+            if (present.isEmpty()) row("nothing in the world yet", 0x707070FFL)
+            for ((id, name, total) in present) {
+                listRow("${name.uppercase()}  ${compactAmount(total)}", selected = id == controls.matterSpeciesId) {
+                    controls.setMatterSpecies(id)
+                }
+            }
         }
+    }
+
+    /** Atom totals run to millions in a settled world, which is noise at full precision — the useful reading
+     *  is the order of magnitude and the ranking, so long numbers collapse to 12.3k / 4.5M. */
+    private fun compactAmount(n: Long): String = when {
+        n >= 1_000_000L -> "${n / 100_000L / 10.0}M"
+        n >= 1_000L -> "${n / 100L / 10.0}k"
+        else -> n.toString()
     }
 }

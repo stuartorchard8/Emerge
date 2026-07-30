@@ -1,0 +1,31 @@
+# The LAYERS sheet's per-species matter layers, driven through the real UI.
+#
+# A cell that grows on `bg` and sheds it as waste steadily converts the world's free `b` and `g` into a
+# molecule nothing can take back in (a bonded molecule only crosses the membrane with an Import bias --
+# CytoBiologyCore.passiveEnvExchange). That is invisible in the combined ground, which looks much the same
+# whether the world is thriving or spent. Picking one species is what makes it legible, so this pins that
+# the rows exist, are ordered richest first, and actually change the selection.
+
+genome apps/cyto/desktop/cyto-genomes/leftovers.gene
+camera reset
+night 1
+run 3000
+
+# ALL is the default -- the summed topology the ground has always drawn.
+expect matterLayer all
+
+tap-ui LAYERS
+expect-ui ALL SPECIES
+# Named, not tokenised: the sheet reads molecules the way the rest of the UI does.
+expect-ui BLUEON
+expect-ui BLUGRAM
+
+# Pick the waste molecule; the ground redraws as that species alone.
+tap-ui BLUGRAM
+expect matterLayer bg
+shot layer-bg
+
+# And back to the combined view.
+tap-ui ALL SPECIES
+expect matterLayer all
+shot layer-all

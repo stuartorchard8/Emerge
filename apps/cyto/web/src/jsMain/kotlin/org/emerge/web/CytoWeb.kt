@@ -31,6 +31,7 @@ fun startCyto(canvas: HTMLCanvasElement) {
     val controller = CytoController()
     val renderer = CytoRenderer()
     val controls = CytoControls()
+    controls.onListMatterSpecies = { controller.matterLayers() }
 
     fun applySize() {
         val dpr = window.devicePixelRatio
@@ -127,6 +128,7 @@ fun startCyto(canvas: HTMLCanvasElement) {
         last = ts
         val f = controller.tick(delta)
         renderer.colorMode = controls.colorMode   // Color button → renderer
+        renderer.matterSpeciesId = controls.matterSpeciesId   // LAYERS matter layer → renderer
         // Only follow when a cell is focused but NOT being grabbed.
         if (!controller.isGrabbed) {
             val (fx, fy) = controller.heldCellPosition() ?: (-1f to -1f)

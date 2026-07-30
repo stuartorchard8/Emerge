@@ -19,6 +19,7 @@ import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.CytoUnits
 import org.emerge.demo.cyto.sim.FounderSpec
 import org.emerge.demo.cyto.sim.GeneCodec
+import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.demo.cyto.ui.CytoControls
 import org.emerge.demo.cyto.ui.CytoHud
@@ -63,7 +64,8 @@ import javax.imageio.ImageIO
  *                            # match (a genome shows one ALWAYS / USE LIGHT per gene). Open dropdown rows
  *                            # and pick-sheet rows are both reachable; a sheet's scrim hides whatever
  *                            # is behind it from `elements`/`tap-ui`, as it does from a real click.
- * overlay matter|light       # toggle the light/matter overlay
+ * night <0..1>               # night-light dial; 1 flattens daylight out entirely (for reading matter)
+ * matterlayer [tok|all]      # which species the matter ground draws; no argument lists what the world holds
  * next                       # click the coach "Next" (advances the chapter if its goal is met)
  * menu campaign [done,ids] # open the front-end shell on the campaign MAP with that progress
  *                            # (`menu title` opens the title screen, `menu off` closes it);
@@ -183,6 +185,7 @@ object CytoAgentHarness {
 
             renderer = CytoRenderer()
             controls = CytoControls()
+            controls.onListMatterSpecies = { controller.matterLayers() }
             ui = Ui()
             geneEditor = GeneEditor()
             renderer.setResolution(RES_W.toFloat(), RES_H.toFloat())
@@ -391,6 +394,26 @@ object CytoAgentHarness {
                 "draghover" -> dragHoverUi(line.removePrefix("draghover").trim())
                 // The matter ground and the daylight multiply are both always on now; what's left to vary is
                 // how dark night gets. `night 1` flattens the light out entirely (handy for reading matter).
+                // `matterlayer <token|all>` — the LAYERS sheet's MATTER rows, reachable without driving the
+                // sheet. With no argument, lists what the world actually holds (id, name, total).
+                "matterlayer" -> {
+                    val arg = line.removePrefix("matterlayer").trim()
+                    val layers = controller.matterLayers()
+                    when {
+                        arg.isEmpty() ->
+                            println("[agent] matter layers: ${layers.joinToString(", ") { (id, n, t) -> "$id '$n' $t" }}")
+                        arg.equals("all", ignoreCase = true) -> {
+                            controls.setMatterSpecies(CytoControls.ALL_MATTER)
+                            println("[agent] matter layer -> ALL")
+                        }
+                        else -> {
+                            val id = SpeciesRegistry.id(arg)
+                            require(id >= 0) { "unknown species '$arg' (world holds ${layers.map { it.second }})" }
+                            controls.setMatterSpecies(id)
+                            println("[agent] matter layer -> '$arg' (id $id)")
+                        }
+                    }
+                }
                 "night" -> {
                     renderer.nightLevel = t[1].toFloat()
                     println("[agent] night level -> ${renderer.nightLevel}")
@@ -792,6 +815,10 @@ object CytoAgentHarness {
                 "recyclesExhaust" -> lin?.hasPhotosynthesis?.toString()
                 "recycleReserve" -> lin?.recycleReserve?.toString()
                 "bond" -> lin?.divideProduct
+                // The LAYERS matter layer, as the species token (or "all") — the ground's own state, which
+                // no world reading can see.
+                "matterLayer" -> controls.matterSpeciesId
+                    .let { if (it == CytoControls.ALL_MATTER) "all" else SpeciesRegistry.string(it) }
                 "fuelConflicts" -> lin?.divideFuelConflicts?.toString()
                 else -> { failures.add("expect: unknown field '$field'"); println("[agent] EXPECT ?? unknown field '$field'"); return }
             }
@@ -864,6 +891,7 @@ object CytoAgentHarness {
             controls.showSimSpeed = mask.allows(Control.Speed)
             controls.showMutation = mask.allows(Control.Mutation)
             renderer.colorMode = controls.colorMode
+            renderer.matterSpeciesId = controls.matterSpeciesId
             renderer.focusedCellId = controller.lastHeldId?.value ?: -1
 
             // Mirror the host's split: the CAMERA follows cameraFocusId (the `camerafocus` command / right-click),

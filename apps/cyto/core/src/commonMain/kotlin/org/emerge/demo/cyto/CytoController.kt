@@ -17,6 +17,7 @@ import org.emerge.demo.cyto.sim.CytoTuning
 import org.emerge.demo.cyto.sim.EnergySource
 import org.emerge.demo.cyto.sim.Operand
 import org.emerge.demo.cyto.sim.Molecules
+import org.emerge.demo.cyto.sim.SpeciesNames
 import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.demo.cyto.sim.handleableOf
 import org.emerge.demo.cyto.sim.totalBiomass
@@ -308,6 +309,23 @@ class CytoController(
      *  segues into a chapter that carries the world forward (no [newGame]), so a later chapter's molecule
      *  names still take effect. Display-only; the sim is untouched. */
     fun setSpeciesAliases(map: Map<String, String>) { speciesAliases = map }
+
+    /**
+     * The matter layers the LAYERS sheet offers: `(species id, display name, total atoms)`, richest first —
+     * every species actually present in the world's matter field, named the way the rest of the UI names
+     * molecules (aliases first, then the built-in flavour names).
+     *
+     * Reads the published frame, so the draw thread may call it without taking `stepLock` — and it scans the
+     * whole field, so the sheet calls it while open rather than the host calling it every frame.
+     */
+    fun matterLayers(): List<Triple<Int, String, Long>> {
+        val grid = latestFrame().state.components.getTable<CytoMatterGridComponent>()[GRID_SINGLETON]?.grid
+            ?: return emptyList()
+        return grid.speciesTotals().map { (id, total) ->
+            val token = SpeciesRegistry.string(id)
+            Triple(id, SpeciesNames.name(token, speciesAliases), total)
+        }
+    }
 
     /** The authoring "brush" genome loaded from a `.gene` file (null until loaded). */
     var brushGenome: List<Gene>? = null

@@ -84,6 +84,24 @@ class CytoControls {
         nightLevel = NIGHT_LADDER[if (i < 0) 0 else (i + 1) % NIGHT_LADDER.size]
     }
 
+    // ── Matter layer: which species the ground draws ──────────────────────────────────────────────────
+    /** The species the matter ground shows ([SpeciesRegistry] id), or -1 for all of them summed — the
+     *  default, and what the ground has always drawn. The host copies this to the renderer. */
+    var matterSpeciesId: Int = ALL_MATTER
+        private set
+
+    /**
+     * The matter layers on offer: `(species id, display name, total atoms)`, richest first. Host-wired,
+     * because the species present are a property of the world and this class cannot see one.
+     *
+     * A **callback rather than a field** so the cost (a full scan of the field) is paid only while the
+     * LAYERS sheet is open and reading it, not once a frame forever. A host that never wires it gets the
+     * ALL row alone, which is exactly the behaviour before this existed.
+     */
+    var onListMatterSpecies: () -> List<Triple<Int, String, Long>> = { emptyList() }
+
+    fun setMatterSpecies(id: Int) { matterSpeciesId = id }
+
     /** The night-light dial as a percentage, for the LAYERS row. */
     val nightLabel: String get() = "${(nightLevel * 100f + 0.5f).toInt()}%"
     fun toggleChemicals() { showChemicals = !showChemicals }
@@ -373,6 +391,9 @@ class CytoControls {
     }
 
     companion object {
+        /** [matterSpeciesId] for "every species summed" — the combined nutrient topology, and the default. */
+        const val ALL_MATTER = -1
+
         /** Night-light steps for [cycleNightLevel], darkest first: 25% is the default (the moving band reads
          *  as a spotlight); 100% is a flat, always-lit world for players who want the nutrient map legible
          *  everywhere. */

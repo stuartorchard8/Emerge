@@ -110,6 +110,9 @@ class CytoRenderer {
     var lastTexelCount = 0; private set
     /** How cells are coloured (Host-set from the controls' "Color" button). */
     var colorMode = CellColorMode.Bio
+    /** Which species the matter ground shows, as a [SpeciesRegistry] id; -1 (the default) = all of them
+     *  summed, the combined nutrient topology. Host-set from the LAYERS sheet's MATTER LAYER rows. */
+    var matterSpeciesId = -1
     /** EntityId.value of the focused cell (info panel open) — drawn at full value; -1 = none. Host-set. */
     var focusedCellId = -1
 
@@ -1166,7 +1169,7 @@ class CytoRenderer {
         if (chRedTmp.size != fres * fres) {
             chRedTmp = IntArray(fres * fres); chGreenTmp = IntArray(fres * fres); chBlueTmp = IntArray(fres * fres)
         }
-        grid.tallyChannels(chRedTmp, chGreenTmp, chBlueTmp)
+        grid.tallyChannels(chRedTmp, chGreenTmp, chBlueTmp, matterSpeciesId)
         val chR = chRedTmp; val chG = chGreenTmp; val chB = chBlueTmp
         // Reciprocal-multiply, not divide: this runs 3x per texel over the whole grid, and a float multiply
         // is a fraction of the cost of a double divide.
