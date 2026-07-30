@@ -14,6 +14,7 @@ exits non-zero. A script that only *narrates* stops being checked the moment nob
 | `campaign-genesis-divide-conversion.txt` | `ch00-genesis` → `ch01-divide` end to end through the UI, taking the fuel pair that **conflicts** with the growth chemical → branches to `ch02-conversion` |
 | `campaign-genesis-divide-photosynthesis.txt` | the same run, taking a **non-conflicting** pair → branches to `ch02-photosynthesis` |
 | `campaign-eager-player.txt` | a player who selects the cell and opens its chemistry **before** the beats that ask for it — the state-gated goals must arrive already satisfied |
+| `rehomed-insert.txt` | a group insert (`+ ADD HOLD TOGETHER`) rebinding onto the player's own chemistry |
 | `matter-layers.txt` | the LAYERS sheet's per-species matter layers — the rows are there, named, and change what the ground draws |
 
 The two differ only in the reaction chosen at the last step, which is the whole point: the branch is decided

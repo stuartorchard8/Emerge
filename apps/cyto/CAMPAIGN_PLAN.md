@@ -1102,3 +1102,68 @@ explanation, with no copy required.
    (no population dynamics) - e.g. how fast one cell drains a {bond} pile with and without a second active
    light gene. A worthwhile beat regardless: an always-active gene that does nothing still takes its 1/N cut
    of the daylight.
+
+---
+
+## 15. Rehoming Act II — insert adaptivity, and the bridge chapter (2026-07-30)
+
+### The problem the old campaign has for a new-campaign player
+
+The two campaigns teach in **opposite directions**. §10.6 records the old plan: groups exist so Ch4-7 teach
+"by inserting a group, not by hand-writing gene fields", with raw gene editing deferred to "much later, or
+last". The new campaign opens on a blank gene and has the player author every field by hand; by
+`ch05-reclaim` they have built four genes from scratch.
+
+So groups cannot arrive here doing §10.6's job. For this player they are **compression** — four genes is
+where a flat list starts to hurt, and the Act II swimmer has nineteen — not a way to be spared raw genes.
+
+What is actually reusable, chapter by chapter: **Ch1-4 are redundant** (camera/selection, light + day/night,
+reading a gene, division — this player has authored all of it). The first genuinely new content is **Ch5
+Hold Together** (multicellularity), and Ch6-10 after it.
+
+### The blocker, and the fix
+
+`GeneGroup.insert` is a **static `List<Gene>`**, and every Act II subsystem was authored against the
+autotroph's `r`/`g` fuel (`AUTOTROPH_REPAIR_GENE` = `FormBond(r,g) : rg > 0 : Repair`). A player who came
+through the branch on `b`/`g` would be handed a gene that **cannot fire** — and it looks correct on the card.
+
+Note the dividing line: the old campaign is portable **up to and including Ch5**, whose content is a *field
+edit* (`SEVER`) on a gene the player already owns and whose gate (`divideWelds`) is chemistry-agnostic. It is
+blocked from **Ch6 onward**, exactly where chapters start *inserting* pre-made genes.
+
+**`ChemBinding`** is the fix. Subsystems are transcribed into placeholder atoms `x`/`y`/`z`, bound at insert
+time to the player's own: X/Y are their fuel bond's two atoms, Z the spare (what their metabolism does *not*
+use — which is what a later morphogen/marker wants). Substitution is a **per-character rewrite** of species
+tokens, so it covers every molecule over the alphabet without enumeration; the three token-bearing fields
+(energy source reactants, action operands, `Chem` condition operands) are exhaustive. With no readable
+lineage it is the **identity** (`x→r, y→g, z→b`), reproducing the authored autotroph exactly — so Ch1-10 are
+untouched, which `ChemBindingTest` pins against `AUTOTROPH_REPAIR_GENE` itself.
+
+Plumbing: `Chapter.groupingFor: (Lineage?) -> GenomeGrouping` and `CampaignDirector.grouping` (which the
+hosts now read instead of `activeChapter.grouping`), because resolving the binding needs the live lineage.
+
+### `ch06-hold` — the bridge
+
+Merges the group introduction with old Ch5's SEVER beat, because the second motivates the first: the SEVER
+field lives on the divide gene, which is *inside* the group they just made, so they name a group, watch it
+fold to one line, and must reopen it to reach a gene. The ladder is taught by use.
+
+Groups arrive as **labels**, not machinery — the player taps `+ NEW GROUP` and names their own subsystem, and
+the gate reads `groupedGeneCount`, **never the name**. Only the last beat introduces an insert, which is where
+`ChemBinding` is exercised for real.
+
+**Viability: CONFIRMED end-to-end through the real UI** (`agent-scripts/rehomed-insert.txt`). A player on
+`b`/`g` tapping `+ ADD HOLD TOGETHER` receives:
+
+```
+Bond b g : bg > 0 : Repair : Hold Together
+```
+
+bound to their fuel pair, tagged, and able to fire.
+
+### Reassess at each stage
+
+Ch7 (Move) inserts a **Light-powered Contract** — no fuel tokens, so it should rehome trivially. Ch8-10 are
+the real test: they depend on **morphogens** (`bb` marker, `gb` beat), which is what `Z` exists for, but they
+also assume a bespoke multi-gene swimmer lineage rather than the player's own — so for those the question is
+not just chemistry binding but whether the player's organism can carry the subsystem at all.

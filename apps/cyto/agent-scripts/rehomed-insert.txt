@@ -1,0 +1,20 @@
+# The rehomed Act II's load-bearing trick: a curated subsystem, authored against the campaign
+# autotroph's r/g fuel, inserted into a player whose lineage runs on b/g. If it arrives unbound it is a
+# gene that can never fire - and it LOOKS right on the card, which is why this is scripted.
+
+campaign ch06-hold
+spawn 0.5 0.5
+select 0.5 0.5
+authorgenome /home/stu/emerge/apps/cyto/desktop/cyto-genomes/import light.gene
+echo === the player arrives on b/g chemistry ===
+expect bond bg
+expect hasRepair false
+genes
+echo === the editor should offer the subsystem ===
+expect-ui ADD HOLD TOGETHER
+tap-ui ADD HOLD TOGETHER
+echo === and it must land bound to THEIR fuel pair, not r/g ===
+expect hasRepair true
+genes
+run 500
+state rehomed

@@ -30,6 +30,15 @@ class Chapter(
      *  gene editor shows the held cell's genes collapsed into named subsystems instead of a flat list, so
      *  Act II can teach at the subsystem level. Order-preserving label only — no effect on the sim. */
     val grouping: GenomeGrouping? = null,
+    /**
+     * A grouping built from the **player's own chemistry** rather than fixed at authoring time — used by the
+     * rehomed chapters, whose "+ ADD <group>" subsystems have to be bound to whatever fuel pair the player
+     * chose (see [ChemBinding]). Takes precedence over [grouping] when set.
+     *
+     * A function rather than a field because the answer depends on a `Lineage` that does not exist until the
+     * chapter is running; `CampaignDirector.grouping` resolves it and is what the hosts read.
+     */
+    val groupingFor: ((Lineage?) -> GenomeGrouping)? = null,
     /** Which of the [grouping]'s groups the gene editor offers as "+ ADD <group>" buttons when they're absent
      *  from the held cell. Named per chapter so a chapter offers only the one subsystem it teaches (Ch4 =
      *  Reproduce, Ch5 = Hold Together); empty (Act I / Ch3) = read-only, no inserts. */

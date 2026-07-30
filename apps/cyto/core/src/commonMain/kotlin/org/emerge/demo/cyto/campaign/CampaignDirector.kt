@@ -2,6 +2,7 @@ package org.emerge.demo.cyto.campaign
 
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.sim.Gene
+import org.emerge.demo.cyto.ui.GenomeGrouping
 import org.emerge.demo.cyto.sim.SpeciesNames
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.PanelBuilder
@@ -143,6 +144,18 @@ class CampaignDirector {
         else SpeciesNames.name(token, chapter?.scenario?.aliases ?: emptyMap())
 
     val activeChapter: Chapter? get() = chapter
+
+    /**
+     * The grouping the gene editor should render — **what the hosts read**, rather than
+     * `activeChapter.grouping` directly.
+     *
+     * A rehomed chapter declares [Chapter.groupingFor] instead of a fixed grouping, because the subsystems
+     * it offers to insert must be bound to the player's own fuel pair ([ChemBinding]); resolving that needs
+     * the live `Lineage`, which only the director has. Chapters with a static [Chapter.grouping] (the whole
+     * authored Ch1-10 arc) are returned unchanged.
+     */
+    val grouping: GenomeGrouping?
+        get() = chapter?.let { ch -> ch.groupingFor?.invoke(lastQuery?.lineage) ?: ch.grouping }
     val currentStep: Step? get() = chapter?.steps?.getOrNull(stepIndex)
 
     /** Which controls the host should keep live this step (ALL when no chapter is active). */

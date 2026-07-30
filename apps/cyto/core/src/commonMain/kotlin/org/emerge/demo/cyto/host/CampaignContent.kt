@@ -17,6 +17,7 @@ import org.emerge.demo.cyto.sim.AUTOTROPH_MOVE_GENE
 import org.emerge.demo.cyto.sim.AUTOTROPH_REPAIR_GENE
 import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.FounderSpec
+import org.emerge.demo.cyto.campaign.ChemBinding
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.ui.GeneGroup
@@ -59,7 +60,8 @@ object CampaignContent {
 
     private const val GROUP_GROW = "Grow"
     private const val GROUP_REPRODUCE = "Reproduce"
-    private const val GROUP_HOLD = "Hold Together"
+    const val GROUP_HOLD_NAME = "Hold Together"
+    private const val GROUP_HOLD = GROUP_HOLD_NAME
     private const val GROUP_MOVE = "Move"
 
     private fun List<Gene>.tagged(group: String): List<Gene> = map { it.copy(group = group) }
@@ -1284,9 +1286,10 @@ object CampaignContent {
         spawnCopiesHeldCell = true,
         spawnGenome = emptyList(),
         spawnBiomass = STARTER_CELL_BIOMASS,
-        // Leads nowhere yet: the chapter after this one is about paying for the import gene with chemistry
-        // instead of daylight, and that is not authored until its premise is measured (see below).
-        branchesTo = emptyList(),
+        // Into the rehomed Act II. The efficiency chapter that was going to sit here is parked - its premise
+        // did not survive measurement (CAMPAIGN_PLAN.md 14) - and multicellularity is the next real step.
+        branchesTo = listOf(REHOMED_HOLD),
+        next = { REHOMED_HOLD },
         steps = listOf(
             Step(
                 text = "A clean world, and the genome you built. Tap an empty space to put one cell into it.",
@@ -1377,6 +1380,117 @@ object CampaignContent {
         ),
     )
 
+    const val REHOMED_HOLD = "ch06-hold"
+
+    /** The "Hold Together" subsystem, transcribed into [ChemBinding] placeholders: while the cell holds any
+     *  of its own fuel bond (a proxy for "metabolising, not starved"), join more and spend the quanta on
+     *  Repair. The authored `AUTOTROPH_REPAIR_GENE` in `r`/`g`; here in x/y so it can be bound to whichever
+     *  pair the player's lineage actually runs on. */
+    private val HOLD_TEMPLATE = listOf(
+        GeneCodec.parse("Bond ${ChemBinding.X} ${ChemBinding.Y} : ${ChemBinding.X}${ChemBinding.Y} > 0 : Repair").single()
+    )
+
+    /**
+     * **Hold Together** — the bridge from the authored campaign into the rehomed Act II, and the chapter where
+     * gene groups arrive.
+     *
+     * Two jobs, deliberately merged rather than sequenced, because the second motivates the first: the SEVER
+     * field the player has to change lives on the divide gene, which is *inside* the group they have just
+     * made. So they name a group, watch it collapse to one line, and then have to open it again to reach a
+     * gene. The collapse/expand ladder gets taught by use instead of explanation.
+     *
+     * **Groups arrive as labels, not as machinery.** The player has authored every gene they own by hand
+     * since `ch00-genesis`, which is the exact inverse of the old campaign's plan (CAMPAIGN_PLAN.md §10.6:
+     * Ch4-7 teach "by inserting a group, not by hand-writing gene fields"). So grouping cannot be sold here
+     * as a way to avoid raw genes - they already fluently edit those. It is sold as **compression**: four
+     * genes is where a flat list starts to hurt, and the Act II swimmer has nineteen.
+     *
+     * The gate is [Lineage.groupedGeneCount], never a group *name*: the player names their own subsystem and
+     * the campaign has no business insisting on a word for it.
+     *
+     * **The insert is bound to their chemistry** ([ChemBinding], via [Chapter.groupingFor]). Every Act II
+     * subsystem was authored against the autotroph's `r`/`g` fuel; a player who came through the branch on
+     * `b`/`g` would be handed a gene that cannot fire. This chapter is where that machinery is first
+     * exercised end to end, and so where its viability gets decided.
+     */
+    private fun chapterHoldTogetherRehomed() = Chapter(
+        id = REHOMED_HOLD,
+        act = 2,
+        title = "Hold Together",
+        blurb = "Four genes, one job - and a body instead of a crowd.",
+        scenario = EMPTY_WORLD,
+        startsFreshWorld = false,
+        branchesTo = emptyList(),   // the rest of Act II is rehomed one chapter at a time
+        // Bound to the player's own fuel pair, whichever branch they walked.
+        groupingFor = { lineage ->
+            val bind = ChemBinding.of(lineage)
+            GenomeGrouping(listOf(GeneGroup(GROUP_HOLD, insert = bind.genes(HOLD_TEMPLATE).tagged(GROUP_HOLD))))
+        },
+        insertableGroups = setOf(GROUP_HOLD),
+        spawnCopiesHeldCell = true,
+        spawnGenome = emptyList(),
+        spawnBiomass = STARTER_CELL_BIOMASS,
+        steps = listOf(
+            Step(
+                text = "Select one of your cells and look at its genome. Four genes now, and they arrived one at a time - so they are sitting in one unnamed heap.",
+                gate = Gate.World("Select a cell", met = { it.focused != null }),
+                allow = SPAWN,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "Between them they do a single job: keep one cell alive off what it has already spent. Give that job a name - tap [+ NEW GROUP], name it whatever you like, and put your genes in it.",
+                detail = "Four genes still fits in your head. Nineteen does not, and organisms get there quickly. A group is just a label you can fold away.",
+                gate = Gate.World(
+                    "Put your genes in a group",
+                    // Their name, not ours - only that the work is organised.
+                    met = { q -> q.lineage?.let { it.groupedGeneCount >= it.geneCount && it.geneCount > 0 } == true },
+                ),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Now it folds up. Your whole genome reads as one line - one job, done. That is what a group is for.",
+                gate = Gate.Next,
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            // The reason to reopen it - and the beat old ch05-hold was built on, on the player's own gene.
+            Step(
+                text = "Open it again and find your DIVIDE gene. Every daughter it makes cuts itself loose and drifts off, which is why you have a crowd of cells and not a creature.",
+                gate = Gate.Next,
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Find SEVER on that gene and switch it off. Daughters will stay welded to their mother instead of breaking away.",
+                detail = "SEVER on = the daughter leaves as its own cell. SEVER off = it stays attached. One field, two completely different creatures.",
+                gate = Gate.World("Switch SEVER off", met = { it.lineage?.divideWelds == true }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Watch what grows now. The same four genes, and this time the cells stay joined - a body, spreading as one thing.",
+                gate = Gate.World("Grow a joined body", met = { it.cellCount >= 8 }),
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+            // The first insert: a subsystem the player did not author, bound to their chemistry.
+            Step(
+                text = "A body has a problem a loose cell never had: it can be pulled apart. Drag it around and the welds take the strain. There is a ready-made subsystem for that - tap [+ ADD HOLD TOGETHER].",
+                detail = "You did not write this one. That is the other half of what groups are for: a named job can be handed over whole.",
+                gate = Gate.World("Add the HOLD TOGETHER group", met = { it.lineage?.hasRepair == true }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "It mends weld damage as fast as the strain makes it, and costs nothing while nothing is torn. Take hold of your creature and pull it around - it holds.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+        ),
+    )
+
     val SCRATCH_CHAPTERS: List<Chapter> = listOf(
         chapterGenesisScratch(),
         chapterDivideScratch(),
@@ -1387,6 +1501,7 @@ object CampaignContent {
         chapterSupplyScratch(),
         chapterLockedUpScratch(),
         chapterReclaimScratch(),
+        chapterHoldTogetherRehomed(),
     )
 
     /**

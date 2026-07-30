@@ -320,7 +320,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                 if (mask.allows(Control.GeneEditor)) {
                     geneEditor.render(
                         this, controller,
-                        grouping = director.activeChapter?.grouping,
+                        grouping = director.grouping,
                         insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                         narrow = true,
                         onExport = {

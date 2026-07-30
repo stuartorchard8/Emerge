@@ -166,6 +166,14 @@ class Lineage(
     /** The import gene's efficiency gear: `g+1` molecules per energy unit, capped at `EFFICIENCY_REF shr g`
      *  energy per tick. 0 (the default) is one-for-one — fine on free daylight, ruinous on bonds. */
     val importGear: Int = 0,
+    /** The functional-group names the genome's genes carry, in first-seen order; empty = an untagged genome,
+     *  which the editor renders as one anonymous "Other" bucket. The player names these themselves, so a
+     *  chapter gates on *whether* the work has been grouped, never on what they called it. */
+    val groupNames: List<String> = emptyList(),
+    /** How many genes carry any group tag — `geneCount` when the genome is fully organised. */
+    val groupedGeneCount: Int = 0,
+    /** Carries a Repair gene: the "Hold Together" subsystem, which mends weld damage as it accrues. */
+    val hasRepair: Boolean = false,
     /** A Contract ("muscle") gene powered by chemistry rather than Light. */
     val contractOnChem: Boolean = false,
     /** A Contract gene that fires while the `bb` morphogen is PRESENT rather than absent. */

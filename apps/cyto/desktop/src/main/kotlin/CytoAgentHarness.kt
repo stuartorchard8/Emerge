@@ -396,6 +396,14 @@ object CytoAgentHarness {
                 // how dark night gets. `night 1` flattens the light out entirely (handy for reading matter).
                 // `matterlayer <token|all>` — the LAYERS sheet's MATTER rows, reachable without driving the
                 // sheet. With no argument, lists what the world actually holds (id, name, total).
+                // Print the selected cell's genome as `.gene` text. The readback for group inserts: an
+                // adapted subsystem is only correct if it names the chemistry the PLAYER runs on, and that is
+                // invisible in every other observation the harness offers.
+                "genes" -> {
+                    val g = controller.heldGenome()
+                    if (g == null) println("[agent] genes: no cell selected")
+                    else println("[agent] genome (${g.size}):\n${GeneCodec.serialize(g).trim()}")
+                }
                 "matterlayer" -> {
                     val arg = line.removePrefix("matterlayer").trim()
                     val layers = controller.matterLayers()
@@ -776,7 +784,7 @@ object CytoAgentHarness {
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(
                     this,
                     controller,
-                    grouping = director.activeChapter?.grouping,
+                    grouping = director.grouping,
                     insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                     narrow = NARROW,
                     savedSnippets = CytoSnippets.list().map { GeneSnippet(it.name, it.genes) },
@@ -818,6 +826,9 @@ object CytoAgentHarness {
                 "importCeiling" -> lin?.importCeiling?.toString()
                 "importOnChem" -> lin?.importOnChem?.toString()
                 "importGear" -> lin?.importGear?.toString()
+                "hasRepair" -> lin?.hasRepair?.toString()
+                "groupedGenes" -> lin?.groupedGeneCount?.toString()
+                "groupNames" -> lin?.groupNames?.joinToString(",")
                 "bond" -> lin?.divideProduct
                 // The LAYERS matter layer, as the species token (or "all") — the ground's own state, which
                 // no world reading can see.
@@ -934,7 +945,7 @@ object CytoAgentHarness {
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(
                     this,
                     controller,
-                    grouping = director.activeChapter?.grouping,
+                    grouping = director.grouping,
                     insertableGroups = director.activeChapter?.insertableGroups ?: emptySet(),
                     narrow = NARROW,
                     savedSnippets = CytoSnippets.list().map { GeneSnippet(it.name, it.genes) },
