@@ -578,6 +578,7 @@ object CampaignContent {
                 allow = LOOK,
                 world = WorldRun.Live,
                 autoAdvance = true,
+                spotlight = Spotlight(target = "+ NEW GENE"),
             ),
             // 3. Let them watch it NOT work — and pin the blame on SIZE, not on the energy source. This is the
             // first of the two reasons the gene is inert, and it has to come first: a cell that has outgrown
@@ -609,6 +610,7 @@ object CampaignContent {
                 allow = LOOK,
                 world = WorldRun.Frozen,
                 autoAdvance = true,
+                spotlight = Spotlight(target = "Convert"),
             ),
             // 4. NOW the second reason, with the first one out of the way: the pivot off Light onto chemistry.
             // Selecting BOND opens the reaction sheet straight away (GeneEditor.Pick.Bond), so switching the
@@ -626,6 +628,7 @@ object CampaignContent {
                 gate = Gate.World("Power DIVIDE by bonding", met = { !it.lineage?.divideProduct.isNullOrEmpty() }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "Divide"),
             ),
             // 5. Cells divide, but they do so uncontrollably, resulting in extinction
             Step(
@@ -671,6 +674,7 @@ object CampaignContent {
                 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "Divide"),
             ),
         ),
         // THE BRANCH. Which chapter follows is decided by the pair the player just chose, and they were never
@@ -765,6 +769,7 @@ object CampaignContent {
                 gate = Gate.World("Give a cell a new gene", met = { (it.lineage?.geneCount ?: 0) >= 3 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "+ NEW GENE"),
             ),
             Step(
                 text = "Set the new gene's action to [BREAK] {bond} using light. The trickle of sunlight cells receive in the day could never pay for division, but it can be used to gradually break {bond} waste back into usable atoms.",
@@ -772,6 +777,7 @@ object CampaignContent {
                 gate = Gate.World("Update the gene to BREAK {bond}", met = { it.lineage?.hasPhotosynthesis == true }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "NOTHING"),
             ),
             // The payoff, and the point of gating it on the world rather than a click: the {bond} reading in
             // the panel visibly drains away. Measured, same genome with and without this gene: ~700 units
@@ -866,6 +872,7 @@ object CampaignContent {
                 ),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "Convert"),
             ),
             // The payoff: the sawtooth. Overnight {bond} piles up (measured ~767 by dawn) because nothing is
             // breaking it in the dark; the threshold is set well under that so an ordinary night clears it.
@@ -965,6 +972,7 @@ object CampaignContent {
                 ),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "Convert"),
             ),
             // The die-off. Measured: CONVERT goes inert immediately and the cell ruptures ~4,200 ticks later.
             //
@@ -1003,6 +1011,7 @@ object CampaignContent {
                 ),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "BREAK"),
             ),
             // The payoff, read rather than waited out. (It used to gate on biomass >= 2800 — measured, a
             // capped cell comes back to 2999 and holds — but that made the beat a wait.)
@@ -1067,6 +1076,7 @@ object CampaignContent {
                 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "Convert"),
             ),
             // The chapter ends here, on the die-off. It auto-advances, so the collapse itself is the segue
             // into `ch03-supply` rather than something the player has to click past.
@@ -1130,6 +1140,7 @@ object CampaignContent {
                 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "Convert"),
             ),
             Step(
                 text = "Now we're cooking.",
@@ -1206,12 +1217,14 @@ object CampaignContent {
                 gate = Gate.World("Give a cell a new gene", met = { (it.lineage?.geneCount ?: 0) >= 3 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "+ NEW GENE"),
             ),
             Step(
                 text = "Set the new gene's action to [BREAK] {bond} using light. Sunlight could never pay for a division, but it is enough to take one bond apart.",
                 gate = Gate.World("Update the gene to BREAK {bond}", met = { it.lineage?.hasPhotosynthesis == true }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "NOTHING"),
             ),
             // Taught up front rather than through a die-off: without a floor this gene strips the cytoplasm
             // bare, and CONVERT needs {bond} present at the start of a tick to fire at all.
@@ -1223,6 +1236,7 @@ object CampaignContent {
                 ),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "BREAK"),
             ),
             // The payoff, measured: the pile drains 586 -> 95 and biomass climbs 2700 -> 2975 on the way.
             Step(
@@ -1339,6 +1353,7 @@ object CampaignContent {
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "LAYERS"),
             ),
             Step(
                 text = "Now pick one of the two single-atom chemicals {bond} is made of. The world goes dark - your cells took nearly all of it. Every cell that ever died here shed its {bond} whole, and {bond} is two atoms locked together.",
@@ -1358,6 +1373,7 @@ object CampaignContent {
                 gate = Gate.World("Update the new gene to IMPORT {bond}", met = { it.lineage?.importsExhaust == true }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "+ NEW GENE"),
             ),
             // Light, deliberately: a cell in a spent world has no spare atoms to bond with, so a chemistry-
             // powered import cannot get started from the floor. Chemistry is ch06's job, once it can afford it.
@@ -1376,6 +1392,7 @@ object CampaignContent {
                 ),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "Import"),
             ),
             Step(
                 text = "Now let it run again. Same world, same three genes, and one more that puts back what the others throw away.",
@@ -1471,6 +1488,7 @@ object CampaignContent {
                 gate = Gate.Next,
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "Divide"),
             ),
             Step(
                 text = "Find SEVER on that gene and switch it off. Daughters will stay welded to their mother instead of breaking away.",
@@ -1478,6 +1496,7 @@ object CampaignContent {
                 gate = Gate.World("Switch SEVER off", met = { it.lineage?.divideWelds == true }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "SEVERING"),
             ),
             Step(
                 text = "Watch what grows now. The same four genes, and this time the cells stay joined - a body, spreading as one thing.",
@@ -1492,6 +1511,7 @@ object CampaignContent {
                 gate = Gate.World("Add the HOLD TOGETHER group", met = { it.lineage?.hasRepair == true }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
+                spotlight = Spotlight(target = "+ ADD HOLD TOGETHER"),
             ),
             Step(
                 text = "It mends weld damage as fast as the strain makes it, and costs nothing while nothing is torn. Take hold of your creature and pull it around - it holds.",
@@ -1736,7 +1756,7 @@ object CampaignContent {
                     met = { it.lineage?.divideWelds == true },
                 ),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "SEVER toggle, then DONE"),
+                spotlight = Spotlight(hint = "SEVER toggle, then DONE", target = "SEVERING"),
                 detail = "SEVER yes = the daughter breaks free as its own cell. SEVER no = it stays welded to its mother. One field, two completely different creatures.",
             ),
             Step(

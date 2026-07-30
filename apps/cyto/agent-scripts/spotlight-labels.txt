@@ -1,0 +1,24 @@
+# The gene-card words the coach RINGS, pinned as labels that still exist.
+#
+# Most spotlight targets are also tapped by the walkthrough scripts, which is what keeps them honest. These
+# four are not: BREAK, Import and SEVERING are tokens on genes those scripts never author, and a coach that
+# points at a word the card stopped using fails silently — it just draws nothing, and the step goes quiet.
+#
+# So: state a genome that has all of them, open the groups they live in, and assert.
+
+campaign ch06-hold
+spawn 0.5 0.5
+select 0.5 0.5
+authorgenome /home/stu/emerge/apps/cyto/desktop/cyto-genomes/import light.gene
+
+# The recycling pair lives in `feed`: one gene breaks the waste bond, one hauls it back through the membrane.
+tap-ui + feed
+expect-ui BREAK
+expect-ui Import
+
+# ...and the divide gene, whose SEVER toggle two chapters ask the player to switch off. The token names the
+# state it is IN, so while daughters still cut loose it reads SEVERING - which is when the coach points at it.
+tap-ui + OTHER
+expect-ui SEVERING
+
+expect-ui LAYERS
