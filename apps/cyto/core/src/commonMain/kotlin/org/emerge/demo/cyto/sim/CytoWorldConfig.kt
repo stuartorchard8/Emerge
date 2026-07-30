@@ -40,10 +40,25 @@ object CytoWorldConfig {
      *  matter footprint (and thus its exchange dynamics) is invariant. `64/16 = 4` at the default. */
     val matterBaseRes: Int get() = (cellsPerAxis / 16).coerceAtLeast(1)
 
+    /** The geometry [applyFrom] would install for [scenario], without installing it — so a caller can ask
+     *  "is this stored world still the one this scenario describes?" (see `CytoSaves.geometryMatches`). */
+    fun geometryOf(scenario: CytoScenario): Geometry {
+        val orbit = (scenario.dayTicks + scenario.nightTicks).coerceAtLeast(1L)
+        return Geometry(
+            cellsPerAxis = scenario.worldSize.coerceAtLeast(16),
+            orbitPeriod = orbit,
+            dayFraction = (scenario.dayTicks.toFloat() / orbit.toFloat()).coerceIn(0.02f, 0.98f),
+        )
+    }
+
+    /** The three values that make a world's geometry — what a save's `.world` sidecar carries. */
+    data class Geometry(val cellsPerAxis: Int, val orbitPeriod: Long, val dayFraction: Float)
+
     fun applyFrom(scenario: CytoScenario) {
-        cellsPerAxis = scenario.worldSize.coerceAtLeast(16)
-        orbitPeriod = (scenario.dayTicks + scenario.nightTicks).coerceAtLeast(1L)
-        dayFraction = (scenario.dayTicks.toFloat() / orbitPeriod.toFloat()).coerceIn(0.02f, 0.98f)
+        val g = geometryOf(scenario)
+        cellsPerAxis = g.cellsPerAxis
+        orbitPeriod = g.orbitPeriod
+        dayFraction = g.dayFraction
     }
 
     /** Restore the geometry saved on a loaded world (see [CytoSimParamsComponent]). */

@@ -3,6 +3,7 @@ package org.emerge.demo.cyto.host
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.sim.CytoCellComponent
 import org.emerge.demo.cyto.sim.CytoScenario
+import org.emerge.demo.cyto.sim.CytoWorldConfig
 import org.emerge.demo.cyto.sim.FounderSpec
 import org.emerge.demo.cyto.sim.GeneCodec
 import org.emerge.demo.cyto.cells.CellType
@@ -98,6 +99,46 @@ class CytoSavesCampaignTest {
         assertFalse(CytoSaves.loadCampaignEntry(c, "ch00-genesis"),
             "no stored entry state ⇒ the caller falls back to the chapter's scenario")
         assertEquals(emptyList(), CytoSaves.campaignEntryPath("ch00-genesis"))
+    }
+
+    /**
+     * Re-authoring a chapter's world has to reach a player who already entered it. The entry state is
+     * preferred over `Chapter.scenario`, and its `.world` sidecar pushes its own geometry back into
+     * [CytoWorldConfig] — so before this check, shrinking Genesis to a pocket universe was a silent no-op on
+     * every install that had a 64-wide entry state, which entering re-saved forward for good measure.
+     */
+    @Test fun anEntryStateBuiltAtADifferentWorldSizeIsNotResumed() {
+        val old = CytoScenario.DEFAULT.copy(worldSize = 64, founders = emptyList())
+        val saved = CytoController()
+        saved.newGame(old)
+        CytoSaves.saveCampaignEntry(saved, "ch00-genesis", listOf("ch00-genesis"))
+
+        val c = CytoController()
+        assertTrue(CytoSaves.loadCampaignEntry(c, "ch00-genesis", old), "same geometry ⇒ resume their world")
+        assertFalse(CytoSaves.loadCampaignEntry(c, "ch00-genesis", old.copy(worldSize = 16)),
+            "the chapter is a pocket universe now; the stored 64-wide world is not it")
+        assertEquals(64, CytoWorldConfig.cellsPerAxis,
+            "and the rejected save must not have installed its geometry on the way out")
+    }
+
+    /** Day/night is geometry too — it sets the light band's width, which is what the chapters after Genesis
+     *  are built on. A retune there invalidates a stored world just as a resize does. */
+    @Test fun soIsAnEntryStateBuiltOnADifferentDayNightCycle() {
+        val old = CytoScenario.DEFAULT.copy(dayTicks = 900, nightTicks = 900, founders = emptyList())
+        CytoController().let { it.newGame(old); CytoSaves.saveCampaignEntry(it, "ch03-nightshift", listOf()) }
+
+        val c = CytoController()
+        assertFalse(CytoSaves.loadCampaignEntry(c, "ch03-nightshift", old.copy(nightTicks = 2700)))
+        assertTrue(CytoSaves.loadCampaignEntry(c, "ch03-nightshift", old))
+    }
+
+    /** Passing no scenario is the old behaviour: resume whatever is stored. Kept so a caller that has no
+     *  chapter in hand (a plain named load) is unaffected. */
+    @Test fun withoutAScenarioNothingIsChecked() {
+        val saved = CytoController()
+        saved.newGame(CytoScenario.DEFAULT.copy(worldSize = 64, founders = emptyList()))
+        CytoSaves.saveCampaignEntry(saved, "ch00-genesis", listOf("ch00-genesis"))
+        assertTrue(CytoSaves.loadCampaignEntry(CytoController(), "ch00-genesis"))
     }
 
     @Test fun entryStatesStayOutOfThePlayersSaveList() {

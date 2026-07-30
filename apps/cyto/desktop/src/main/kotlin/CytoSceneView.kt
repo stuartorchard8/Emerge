@@ -116,7 +116,7 @@ object CytoSceneView {
         director.onWorldReset = { ch -> controller.newGame(ch.scenario); renderer.resetView() }
         // The non-destructive counterpart: put the player's OWN world back as this chapter began.
         director.onRestoreEntryState = { ch ->
-            CytoSaves.loadCampaignEntry(controller, ch.id).also { if (it) renderer.resetView() }
+            CytoSaves.loadCampaignEntry(controller, ch.id, ch.scenario).also { if (it) renderer.resetView() }
         }
         // ...then put the player's OWN lineage back, under the middle of the camera. Only fires for a
         // chapter that seeds no founders of its own (see CampaignDirector.resetChapter).
@@ -153,7 +153,7 @@ object CytoSceneView {
                 // A cold start clears the brush as well as the world: chapters are isolated at this
                 // boundary, so a chapter never before visited must not inherit the genome authored in
                 // another one (see CytoSaves.restoreBrush, which does the same on the resume path).
-                if (!CytoSaves.loadCampaignEntry(controller, ch.id)) {
+                if (!CytoSaves.loadCampaignEntry(controller, ch.id, ch.scenario)) {
                     controller.newGame(ch.scenario); controller.setAuthoredGenome(null)
                 }
                 renderer.resetView()

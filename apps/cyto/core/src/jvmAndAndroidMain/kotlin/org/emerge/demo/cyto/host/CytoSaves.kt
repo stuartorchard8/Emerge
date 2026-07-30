@@ -1,6 +1,7 @@
 package org.emerge.demo.cyto.host
 
 import org.emerge.demo.cyto.CytoController
+import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.CytoWorldConfig
 import org.emerge.demo.cyto.sim.GeneCodec
 import java.nio.file.Files
@@ -84,12 +85,19 @@ object CytoSaves {
     }
 
     private fun applyGeometry(name: String) {
+        val g = storedGeometry(name) ?: return
+        CytoWorldConfig.applyFrom(g.cellsPerAxis, g.orbitPeriod, g.dayFraction)
+    }
+
+    /** The geometry recorded beside save [name], or null if there is no readable sidecar. */
+    private fun storedGeometry(name: String): CytoWorldConfig.Geometry? {
         val p = worldPath(name)
-        if (!Files.exists(p)) return
-        runCatching {
+        if (!Files.exists(p)) return null
+        return runCatching {
             val parts = Files.readAllBytes(p).decodeToString().trim().split(Regex("\\s+"))
-            if (parts.size >= 3) CytoWorldConfig.applyFrom(parts[0].toInt(), parts[1].toLong(), parts[2].toFloat())
-        }
+            if (parts.size < 3) null
+            else CytoWorldConfig.Geometry(parts[0].toInt(), parts[1].toLong(), parts[2].toFloat())
+        }.getOrNull()
     }
 
     private fun binPath(name: String): Path = DIR.resolve("${sanitize(name)}.bin")
@@ -125,13 +133,43 @@ object CytoSaves {
         }.onFailure { println("[cyto] campaign save for '$chapterId' failed: ${it.message}") }
     }
 
+    /** Whether the world stored as [name] was built at the geometry [scenario] now asks for. A save with no
+     *  readable sidecar counts as a mismatch: its geometry is unknown, and the safe reading of "unknown" is
+     *  that it is not this one. */
+    private fun geometryMatches(name: String, scenario: CytoScenario): Boolean {
+        val stored = storedGeometry(name) ?: return false
+        val want = CytoWorldConfig.geometryOf(scenario)
+        return stored.cellsPerAxis == want.cellsPerAxis && stored.orbitPeriod == want.orbitPeriod &&
+            kotlin.math.abs(stored.dayFraction - want.dayFraction) < 1e-4f
+    }
+
     /** True if [chapterId] has a stored entry state to resume from. */
     fun hasCampaignEntry(chapterId: String): Boolean = exists(campaignSaveName(chapterId))
 
-    /** Restore the world as [chapterId] began. False (nothing touched) if there is no stored entry state,
-     *  which is the cold-start case - the caller then builds from the chapter's scenario as before. */
-    fun loadCampaignEntry(controller: CytoController, chapterId: String): Boolean {
+    /**
+     * Restore the world as [chapterId] began. False (nothing touched) if there is no stored entry state,
+     * which is the cold-start case - the caller then builds from the chapter's scenario as before.
+     *
+     * [scenario] is the chapter's own recipe, and passing it makes **the scenario authoritative over a stale
+     * save**: an entry state whose geometry no longer matches is discarded rather than resumed. Without this,
+     * re-authoring a chapter's world was silently a no-op for anyone who had already entered it — the entry
+     * state was preferred, its `.world` sidecar pushed the OLD geometry back into [CytoWorldConfig], and
+     * entering re-saved the same stale geometry forward. Genesis became a pocket universe on 2026-07-24 and
+     * every world already on disk carried on at the old size.
+     *
+     * Geometry only: matter, lineage and the player's spent world are exactly what an entry state is FOR, and
+     * a scenario tweak that doesn't resize the world must not throw their experiment away.
+     */
+    fun loadCampaignEntry(
+        controller: CytoController,
+        chapterId: String,
+        scenario: CytoScenario? = null,
+    ): Boolean {
         if (!hasCampaignEntry(chapterId)) return false
+        if (scenario != null && !geometryMatches(campaignSaveName(chapterId), scenario)) {
+            println("[cyto] campaign entry for '$chapterId' predates its scenario's geometry - rebuilding")
+            return false
+        }
         if (!load(controller, campaignSaveName(chapterId))) return false
         restoreBrush(controller, campaignSaveName(chapterId))
         return true
