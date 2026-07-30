@@ -66,6 +66,16 @@ class Ui {
     /** A labelled interactive region, for headless enumeration ([elements]). */
     class UiElement(val label: String, val x: Float, val y: Float, val w: Float, val h: Float)
 
+    /** The rect of the panel emitted most recently this frame, or null before any. A panel is auto-sized and
+     *  anchor-placed, so a caller that wants to draw *relative to its own panel* (the campaign coach, pointing
+     *  a connector at a widget elsewhere on screen) has no other way to know where it landed. */
+    var lastPanelRect: UiElement? = null
+        private set
+
+    internal fun notePanelRect(x: Float, y: Float, w: Float, h: Float) {
+        lastPanelRect = UiElement("panel", x, y, w, h)
+    }
+
     // Base layer, as a single **insertion-ordered** stream (rects and text interleaved), so a later opaque
     // rect occludes earlier text — a modal's text vanishes behind a sheet drawn over it. (The old
     // rects-then-text split couldn't do that; it's why the dropdown "overlay" layer exists.)
@@ -212,7 +222,7 @@ class Ui {
 
     /** Rebuilds this frame's widget tree (clears the previous frame's geometry; hold state persists). */
     fun frame(block: UiBuilder.() -> Unit) {
-        cmds.clear(); clicks.clear(); modalFrom = 0
+        cmds.clear(); clicks.clear(); modalFrom = 0; lastPanelRect = null
         overlayRects.clear(); overlayTexts.clear(); overlayClicks.clear()
         anchorCursor.clear(); anchorInset.clear(); anchorColumnExtent.clear()
         clipRects.clear(); scrollRegions.clear(); currentClip = -1
@@ -673,6 +683,21 @@ class Ui {
         return out
     }
 
+    /**
+     * **Where the widget [tapLabel] would hit is** — the [occurrence]-th match for [label], as a rect, or null
+     * if nothing matches this frame.
+     *
+     * Deliberately the same lookup [tapLabel] uses rather than a parallel one, so "point at it" and "tap it"
+     * can never disagree: a campaign spotlight and the harness script that drives the same step resolve the
+     * identical widget, and a label that stops matching fails both at once instead of quietly pointing at
+     * the wrong thing.
+     *
+     * Only regions laid out **so far this frame** are visible to it, so call it after the panels are built.
+     */
+    fun element(label: String, occurrence: Int = 1): UiElement? =
+        labelMatches(label).getOrNull(occurrence - 1)
+            ?.let { UiElement(it.label ?: label, it.x, it.y, it.w, it.h) }
+
     /** Invoke the first button region whose label contains [label] (case-insensitive). Returns true if
      *  one fired. Overlay regions (open dropdowns) win, then the base layer. */
     fun tapLabel(label: String): Boolean = tapLabel(label, 1)
@@ -858,6 +883,13 @@ class UiBuilder internal constructor(private val ui: Ui) {
      *  hover-reveal. Always false on touch hosts. */
     fun isHovered(x: Float, y: Float, w: Float, h: Float): Boolean = ui.isHovered(x, y, w, h)
 
+    /** Where the widget `tap-ui <label>` would hit is (see [Ui.element]) — for pointing at one. Sees only
+     *  what has been laid out so far this frame. */
+    fun element(label: String, occurrence: Int = 1): Ui.UiElement? = ui.element(label, occurrence)
+
+    /** The most recently emitted panel's rect (see [Ui.lastPanelRect]). */
+    val lastPanelRect: Ui.UiElement? get() = ui.lastPanelRect
+
     /** Whether a card drag (drag-and-drop) is live this frame (see [Ui.isDragging]). */
     val isDragging: Boolean get() = ui.isDragging
 
@@ -942,6 +974,7 @@ class UiBuilder internal constructor(private val ui: Ui) {
         x: Float, y: Float, w: Float, h: Float, padding: Float,
         contentW: Float, textH: Float, background: Long, pb: PanelBuilder,
     ) {
+        ui.notePanelRect(x, y, w, h)
         ui.emitRect(x, y, w, h, background)
         // The panel background absorbs taps so a press on the panel (not just its buttons) doesn't fall
         // through to the world behind it. Registered BEFORE the items, so each button — added after — still
