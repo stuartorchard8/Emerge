@@ -4,9 +4,8 @@ The cell panel is dense, and the coach could only *describe* where to look ("the
 panel"), leaving the player to find it. A `Spotlight` can now name a widget: the coach draws a box around it
 and a connector back to itself.
 
-**Built (2026-07-30):** P1 + P2, piloted on Genesis, plus two layout fixes the pilot exposed.
-**Next:** P3 (visibility) — do this before authoring more targets; the Act II chapters spotlight groups
-partway down a long genome, which is exactly where the gap bites.
+**Built (2026-07-30):** P1–P5. Genesis and the rehomed Act II both point at their widgets; the box clamps
+to its clip; readouts are targetable. **Remaining:** P6 polish only — see the bottom.
 
 ---
 
@@ -19,9 +18,11 @@ partway down a long genome, which is exactly where the gap bites.
 | `Ui.element(label, occurrence)` — `tapLabel`'s lookup, returning a rect | `engine/.../ui/Ui.kt` |
 | `Ui.lastPanelRect` — the connector's anchor end | `engine/.../ui/Ui.kt` |
 | `panel(offsetX)` — nudge a panel off its anchor | `engine/.../ui/Ui.kt` |
-| 4 targets on Genesis | `host/CampaignContent.kt` |
+| 4 targets on Genesis + 13 in the rehomed Act II | `host/CampaignContent.kt` |
+| `Ui.readouts()` / `noteReadout` — non-clickable named rows | `engine/.../ui/Ui.kt` |
+| `UiElement.clip` / `.visible` — the scroll viewport it sits in | `engine/.../ui/Ui.kt` |
 | `campaign-spotlight.txt` — the four beats, shot + tapped | `apps/cyto/agent-scripts/` |
-| `UiElementLookupTest` (5) | `engine/render/torus/src/commonTest/` |
+| `UiElementLookupTest` (12) | `engine/render/torus/src/commonTest/` |
 
 Commits: `a897a7e6` (toolkit) · `04641d48` (coach + Genesis) · `bf114b80` (coach centring) · `e5a90c7b`
 (HUD bar centring).
@@ -60,52 +61,66 @@ cell — and shift *and re-wrap* to what is left. Each host reads it **once** in
 
 ---
 
-## P3 — visibility ⚠️ the real cost, do next
+## P3 — visibility ✅ done (`7fb809fb`)
 
-`Ui.element` enumerates labelled regions and **does not intersect the scroll clip**, so a target scrolled out
-of its viewport still resolves and the box draws outside the panel. Hit-*testing* already intersects the clip
-(`ClickRegion.clip`); enumeration doesn't. Genesis is a safe pilot only because its panel doesn't scroll at
-that length.
+Not the gap it looked like. A row scrolled **fully** out of its viewport is culled at layout, so it never
+becomes a region: the lookup returns null and the coach falls back to hint text unaided. What was real is the
+row **straddling** the viewport edge — emitted, drawn clipped, but decorated unclipped, so the box spilled
+onto the world behind the panel. `UiElement` now carries the clip it was laid out in (plus `visible`), and the
+director clamps the box the same way the renderer clamps the widget.
 
-1. Carry the clip through to `UiElement` (or expose `isVisible`), so a caller can tell "off-viewport" from
-   "absent".
-2. Then choose per case: **suppress** the box (fall back to hint text), or **autoscroll** the target into view.
-   Precedent for the latter: cards autoscroll while dragged (`71204b4e`).
-   *Open question for Stu:* autoscrolling is friendlier but fights a player who has scrolled deliberately.
-3. Collapsed containers are the sibling problem: a target inside a collapsed group, or the narrow layout's
-   collapsed cell sheet, isn't laid out at all. Needs an ordered fallback ("point at the container instead"),
-   which `Spotlight` would express as a target *chain*.
+So autoscroll was never needed, and the question of whether to fight a player who scrolled deliberately does
+not arise. Collapsed containers remain untouched (a target inside a collapsed group is not laid out and
+resolves to nothing → hint text): still the cleanest place for a target *chain* if a beat ever needs one.
 
-## P4 — named non-interactive regions
+## P4 — named non-interactive regions ✅ done (`3c0c9502`, `81d2d76e`, `3ba68161`)
 
-`elements()` lists **only clickable** labelled regions. So "the cell's LIGHT reading", "the chemistry table",
-a metabolism row, a `WHEN BIO 5988 < 3000` clause — none can be targeted. Given the whole point is directing
-attention in a dense *readout*, this is not optional for long. Needs a way for a panel to emit a named region
-that isn't a button (engine-level, `PanelBuilder`).
+Panel text and key/value rows now record their rect as a **readout region**. `element` resolves those too, so
+"the cell's LIGHT reading" is a target; `elements()` still lists only what can be tapped, so a tap driver's
+view of the frame is unchanged. A key/value row is named by its **key** — the value changes every tick.
 
-## P5 — author the remaining spotlights
+Two ordering rules, each of which was a live bug first:
 
-34 spotlights exist; 4 (Genesis) have targets. Of the 30 hint-only ones, all in the rehomed Act II:
+- **Exactness outranks clickability** (exact widget → exact readout → substring widget). A gene card is
+  labelled by its whole text, so `USE LIGHT` captured "LIGHT" as a substring and the coach ringed the card.
+- **A readout matches only its whole text.** Substring matching on readouts rang whichever *sentence*
+  contained the word — including the coach's own prose, so on a narrow screen with the cell sheet collapsed
+  the coach boxed itself and drew a connector to its own copy.
 
-- **~9 are already a widget label** and are near-mechanical: `+ ADD REPRODUCE` ×2, `+ ADD HOLD TOGETHER`,
-  `+ ADD MOVE`, `+ ADD POLARIZE`, `+ ADD CLOCK`, `+ GROW (2)`, `SEVER toggle, then DONE`, `PAUSE in the bottom
-  bar`. **Blocked on P3** — these sit below a long genome and will be scrolled away.
-- **~4 are multi-step chains** ("MOVE -> the muscle gene -> SOURCE -> BREAK FUEL"). Either target only the
-  first hop, or teach `Spotlight` a sequence. Prefer the first until a beat proves it insufficient.
-- **~11 are world gestures** ("Press and drag a cell to tow the body", "Select the cell") — no widget, keep as
-  text. That is a feature: a spotlight without a target is still a hint.
-- **2 need P4** ("the cell's LIGHT reading", "the cell's panel").
+## P5 — authoring ✅ done (`20299cd6`, `f6114dd8`)
+
+All 13 spotlights that name a widget now point at it, verified in-game on Genesis and Hold Together. Group
+headers use the **collapsed** form (`+ GROW`, `+ MOVE`), so the ring disappears the instant the player expands
+the group — which is what the step was asking for. `+ ADD X`, `+ NEW GROUP`, `PAUSE` and the `LIGHT` readout
+are unique on screen, so no `occurrence` was needed anywhere; the fragility warning below still stands for
+anything added later.
+
+Deliberately left as hint text:
+
+- the **world gestures** (drag a cell, tap empty space) — no widget exists to ring, and a spotlight without a
+  target is still a hint;
+- the **SEVER toggle**, whose label reads `AND STICK` until the player flips it, so a target would resolve
+  only after the step was already done;
+- **"the cell's panel"** — a panel is not a named region, and pointing at a whole panel is not what the
+  mechanism is for;
+- the **chains** ("MOVE -> the muscle gene -> SOURCE -> BREAK FUEL") point at their first hop only. No beat
+  has yet proved that insufficient.
 
 ⚠️ **`occurrence` is fragile.** It counts matches on screen, so "the DIVIDE gene's energy source" is *the
-second* `USE LIGHT` only until the genome grows. Genesis gets away with occurrence 1 on a single-gene genome.
-For Act II, prefer labels unique on screen; if a beat genuinely needs the n-th, pin it with a scripted step.
+second* `USE LIGHT` only until the genome grows. Prefer labels unique on screen; if a beat genuinely needs the
+n-th, pin it with a scripted step.
 
 ## P6 — polish
 
-- Pulse/glow. Needs a time source the director doesn't have (no `dt`, doesn't read `controller.tick`).
+- Pulse/glow. Needs a time source the director doesn't have (no `dt`, doesn't read `controller.tick`), and
+  `Ui` has no frame clock either — `updateHold`'s `dt` only ticks while a pointer is down. Plumbing a clock
+  through four hosts for a cosmetic pulse was judged not worth it; the static ring reads clearly in the
+  screenshots. Revisit only if a beat is observed to be missed.
 - Glow = nested translucent rects; the rect primitive is axis-aligned, **no rotation** — which is also why the
   connector is an elbow and not a diagonal. A true diagonal means a new engine primitive.
-- Narrow: the cell sheet can cover the coach entirely; the connector currently drops straight down into it.
+- Narrow: the cell sheet can cover the coach entirely. Harmless today (a target inside a collapsed sheet
+  isn't laid out, so nothing is drawn), but once the sheet is expanded over the coach the connector has
+  nowhere sensible to run. Unverified: no script drives the narrow sheet open yet.
 
 ---
 
