@@ -108,6 +108,12 @@ Card labels, confirmed against a live `elements` dump: `ActionType.name` for mos
 `Import`), `BREAK` for BreakBond, `NOTHING` for None, `USE LIGHT` / `BOND` for the sources, and the divide
 toggle names the state it is IN — `SEVERING CELL 2 FREE` while daughters cut loose, `AND STICK` after.
 
+**A step is one tap.** A step that asks for two ("tap [+ NEW GENE], then set it to DIVIDE") can only gate on
+the last of them, so its ring stays on the first widget after that tap has landed — which reads as *that
+didn't work*, and is worse than no ring at all. Divide 2 and Reclaim's import gene were both split into a
+beat each, both `autoAdvance` so a player doing them in one motion never sees the seam. Prefer splitting the
+step over cleverness in the spotlight.
+
 Deliberately left as hint text or nothing at all:
 
 - the **world gestures** (drag a cell, tap empty space, "watch it run") — no widget exists to ring, and a
