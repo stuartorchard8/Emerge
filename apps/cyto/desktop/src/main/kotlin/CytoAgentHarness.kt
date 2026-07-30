@@ -310,6 +310,11 @@ object CytoAgentHarness {
                     }
                     pendingActions.add(PlayerAction.MovedCamera)
                 }
+                // Route the world through the period render target and tile it (torus repeats when zoomed out).
+                "tile" -> {
+                    renderer.tileWorld = t[1].equals("on", ignoreCase = true)
+                    println("[agent] tile -> ${if (renderer.tileWorld) "on" else "off"}")
+                }
                 "tap" -> tapAt(t[1].toFloat(), t[2].toFloat())
                 "select" -> {
                     val (x, y) = world(t[1].toFloat(), t[2].toFloat())

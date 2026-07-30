@@ -23,6 +23,7 @@ actual object GPU {
     private val bufferObjs = HashMap<Int, dynamic>()
     private val textureObjs = HashMap<Int, dynamic>()
     private val vaoObjs = HashMap<Int, dynamic>()
+    private val framebufferObjs = HashMap<Int, dynamic>()
     private val uniformLocObjs = HashMap<Int, dynamic>()
 
     fun init(webgl2Context: dynamic) {
@@ -257,6 +258,59 @@ actual object GPU {
     actual fun bufferData(target: Int, count: Int, data: GpuFloatBuffer, usage: Int) {
         val view = data.float32Array.subarray(0, data.limit)
         gl.bufferData(target, view, usage)
+    }
+
+    // -- Render targets --
+
+    actual fun genFramebuffers(): Int {
+        val obj = gl.createFramebuffer() ?: error("createFramebuffer failed")
+        val id = allocId()
+        framebufferObjs[id] = obj
+        return id
+    }
+
+    actual fun deleteFramebuffers(fbo: Int) {
+        val obj = framebufferObjs.remove(fbo)
+        if (obj != null) gl.deleteFramebuffer(obj)
+    }
+
+    actual fun bindFramebuffer(fbo: Int) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, if (fbo == 0) null else framebufferObjs[fbo])
+    }
+
+    actual fun framebufferColorTexture2D(texture: Int) {
+        gl.framebufferTexture2D(
+            gl.FRAMEBUFFER,
+            gl.COLOR_ATTACHMENT0,
+            gl.TEXTURE_2D,
+            if (texture == 0) null else textureObjs[texture],
+            0,
+        )
+    }
+
+    actual fun isFramebufferComplete(): Boolean =
+        gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE
+
+    actual fun allocateTextureRGBA8(width: Int, height: Int) {
+        gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA8,
+            width,
+            height,
+            0,
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            null,
+        )
+    }
+
+    actual fun setClearColor(r: Float, g: Float, b: Float, a: Float) {
+        gl.clearColor(r, g, b, a)
+    }
+
+    actual fun clearColorBuffer() {
+        gl.clear(gl.COLOR_BUFFER_BIT)
     }
 
     // -- Draw --

@@ -12,6 +12,9 @@ import org.emerge.demo.cyto.sim.SpeciesRegistry
 import org.emerge.render.torus.ui.UiRectRenderer
 import kotlin.time.TimeSource
 import org.emerge.render.torus.shader.CircleShader
+import org.emerge.render.torus.shader.TileShader
+import org.emerge.render.torus.RenderTarget
+import org.emerge.sim.core.physics.primitives.Vec2
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.GpuFloatBuffer
 import org.emerge.render.torus.Mat4
@@ -55,6 +58,16 @@ class CytoRenderer {
     // without a platform-specific glClear (the engine GPU doesn't expose one), so this
     // works identically on desktop, Android, and web.
     private val bgShader = UiRectRenderer()
+
+    // ── Torus tiling ─────────────────────────────────────────────────────────────
+    // One period of the world is rendered into [periodTarget], then repeated across the screen by
+    // [tileShader]. Only the seam-straddling objects are drawn more than once (into the target), so the
+    // number of world copies on screen is independent of the number of cells.
+    private val periodTarget = RenderTarget()
+    private val tileShader = TileShader()
+
+    /** Whether to route the world through the period texture. */
+    var tileWorld = false
 
     // The cell shader does `min(u_color, texture)`, so a flat white texture yields the
     // cell's colour; the disc shape + shading come from the shader, not the texture. Built
@@ -404,11 +417,42 @@ class CytoRenderer {
         )
     }
 
+    /**
+     * Draw a frame.
+     *
+     * The world layer is drawn either straight to the screen or, when [tileWorld] is on, once into
+     * [periodTarget] and then tiled across the screen by [tileShader]. The tiled path is what lets the view
+     * zoom out past the world's own edges: the repeats cost one texture fetch per pixel rather than a
+     * redraw of every cell per repeat.
+     */
     fun draw(frame: CytoFrame) {
         advanceAnimClock(frame.tick)
         applyFollow()
         computeProjection()
 
+        val tiling = tileWorld && periodTarget.resize(resW.toInt(), resH.toInt())
+        if (tiling) {
+            periodTarget.begin()
+            drawWorldLayer(frame)
+            periodTarget.end(resW.toInt(), resH.toInt())
+
+            // Identity mapping for now: centre 0, half-extent half the period, so texUv == screen uv and the
+            // blit reproduces the target 1:1. Phase B makes the target period-aligned and Phase C feeds the
+            // real camera here, at which point this same call starts repeating the world.
+            GPU.disableBlend()
+            tileShader.useFullViewport(resW, resH)
+            tileShader.draw(
+                periodTextureId = periodTarget.textureId,
+                center = Vec2(0f, 0f),
+                viewHalfExtent = Vec2(0.5f, 0.5f),
+                period = Vec2(1f, 1f),
+            )
+        } else {
+            drawWorldLayer(frame)
+        }
+    }
+
+    private fun drawWorldLayer(frame: CytoFrame) {
         // Background fill (opaque) — clears the frame.
         GPU.disableBlend()
         bgShader.drawInstanced(1, BG_CENTER, BG_HALF_SIZE, BG_COLOR)
@@ -1209,6 +1253,8 @@ class CytoRenderer {
         lightFieldShader.deleteProgram()
         matterField.deleteProgram()
         circleShader.deleteProgram()
+        tileShader.deleteProgram()
+        periodTarget.delete()
         GPU.deleteBuffers(circleVbo)
         if (circleVao != null) GPU.deleteVertexArrays(circleVao)
         GPU.deleteTextures(cellTextureId)

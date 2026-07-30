@@ -107,6 +107,22 @@ actual object GPU {
     actual fun bindBuffer(target: Int, buffer: Int) = GL33C.glBindBuffer(target, buffer)
     actual fun bufferData(target: Int, count: Int, data: GpuFloatBuffer, usage: Int) = GL33C.glBufferData(target, data.nioBuffer, usage)
 
+    actual fun genFramebuffers(): Int = GL33C.glGenFramebuffers()
+    actual fun deleteFramebuffers(fbo: Int) = GL33C.glDeleteFramebuffers(fbo)
+    actual fun bindFramebuffer(fbo: Int) = GL33C.glBindFramebuffer(GL33C.GL_FRAMEBUFFER, fbo)
+    actual fun framebufferColorTexture2D(texture: Int) = GL33C.glFramebufferTexture2D(
+        GL33C.GL_FRAMEBUFFER, GL33C.GL_COLOR_ATTACHMENT0, GL33C.GL_TEXTURE_2D, texture, 0,
+    )
+    actual fun isFramebufferComplete(): Boolean =
+        GL33C.glCheckFramebufferStatus(GL33C.GL_FRAMEBUFFER) == GL33C.GL_FRAMEBUFFER_COMPLETE
+    actual fun allocateTextureRGBA8(width: Int, height: Int) = GL33C.glTexImage2D(
+        GL33C.GL_TEXTURE_2D, 0, GL33C.GL_RGBA8, width, height, 0,
+        GL33C.GL_RGBA, GL33C.GL_UNSIGNED_BYTE, null as java.nio.ByteBuffer?,
+    )
+
+    actual fun setClearColor(r: Float, g: Float, b: Float, a: Float) = GL33C.glClearColor(r, g, b, a)
+    actual fun clearColorBuffer() = GL33C.glClear(GL33C.GL_COLOR_BUFFER_BIT)
+
     actual fun setViewport(minX: Int, minY: Int, maxX: Int, maxY: Int) = GL33C.glViewport(minX, minY, maxX, maxY)
 
     actual fun useProgram(program: Int) = GL33C.glUseProgram(program)

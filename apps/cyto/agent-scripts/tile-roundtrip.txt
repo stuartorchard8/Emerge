@@ -1,0 +1,24 @@
+# PHASE A CHECK — does routing the world through a render target change what's on screen?
+#
+# With the tile blit set to an identity mapping, drawing the world into the period texture and blitting it
+# back must reproduce the direct path exactly. Any difference here is FBO plumbing (attachment, viewport,
+# alpha, y-orientation), isolated from the coordinate work that follows.
+#
+# The comparison is only worth anything if the world layer actually has content: a black frame round-trips
+# to black whatever the plumbing does. So this uses the campaign world (lit ground, matter, a living cell)
+# rather than a bare fixture, and shows the matter layers on top.
+#
+# Compare tile-off.png against tile-on.png — they should be indistinguishable.
+
+campaign ch00-genesis
+tap 0.35 0.5
+runs 8
+night 1
+matterlayer all
+runs 1
+
+tile off
+shot tile-off
+
+tile on
+shot tile-on

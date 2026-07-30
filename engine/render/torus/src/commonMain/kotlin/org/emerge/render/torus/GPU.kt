@@ -52,6 +52,30 @@ expect object GPU {
     fun bindBuffer(target: Int, buffer: Int)
     fun bufferData(target: Int, count: Int, data: GpuFloatBuffer, usage: Int)
 
+    // ── Render targets ───────────────────────────────────────────────────────────
+    // Draw into a texture instead of the screen. Used to render one period of the torus world once and
+    // then tile it, so a zoomed-out view repeats the world without redrawing its contents per repeat.
+
+    fun genFramebuffers(): Int
+    fun deleteFramebuffers(fbo: Int)
+
+    /** Bind [fbo] as the draw target. Pass 0 to restore the default (screen) framebuffer — valid on every
+     *  backend here (desktop GL, GLES via GLSurfaceView, WebGL2), none of which use a non-zero default. */
+    fun bindFramebuffer(fbo: Int)
+
+    /** Attach the currently-bound 2D [texture] as colour attachment 0 of the currently-bound framebuffer. */
+    fun framebufferColorTexture2D(texture: Int)
+
+    /** Whether the bound framebuffer is complete, i.e. safe to draw into. Check once after attaching. */
+    fun isFramebufferComplete(): Boolean
+
+    /** Size the bound 2D texture's RGBA8 storage without supplying pixels — the backing store for a render
+     *  target, whose contents come from drawing into it rather than from an upload. */
+    fun allocateTextureRGBA8(width: Int, height: Int)
+
+    fun setClearColor(r: Float, g: Float, b: Float, a: Float)
+    fun clearColorBuffer()
+
     fun setViewport(minX: Int, minY: Int, maxX: Int, maxY: Int)
 
     fun useProgram(program: Int)

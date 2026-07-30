@@ -129,6 +129,29 @@ actual object GPU {
     actual fun bindBuffer(target: Int, buffer: Int) = GLES30.glBindBuffer(target, buffer)
     actual fun bufferData(target: Int, count: Int, data: GpuFloatBuffer, usage: Int) = GLES30.glBufferData(target, count * 4, data.nioBuffer, usage)
 
+    actual fun genFramebuffers(): Int {
+        val fbos = IntArray(1)
+        GLES30.glGenFramebuffers(1, fbos, 0)
+        return fbos[0]
+    }
+    actual fun deleteFramebuffers(fbo: Int) {
+        val fbos = intArrayOf(fbo)
+        GLES30.glDeleteFramebuffers(1, fbos, 0)
+    }
+    actual fun bindFramebuffer(fbo: Int) = GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fbo)
+    actual fun framebufferColorTexture2D(texture: Int) = GLES30.glFramebufferTexture2D(
+        GLES30.GL_FRAMEBUFFER, GLES30.GL_COLOR_ATTACHMENT0, GLES30.GL_TEXTURE_2D, texture, 0,
+    )
+    actual fun isFramebufferComplete(): Boolean =
+        GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER) == GLES30.GL_FRAMEBUFFER_COMPLETE
+    actual fun allocateTextureRGBA8(width: Int, height: Int) = GLES30.glTexImage2D(
+        GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, width, height, 0,
+        GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null,
+    )
+
+    actual fun setClearColor(r: Float, g: Float, b: Float, a: Float) = GLES30.glClearColor(r, g, b, a)
+    actual fun clearColorBuffer() = GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+
     actual fun setViewport(minX: Int, minY: Int, maxX: Int, maxY: Int) = GLES30.glViewport(minX, minY, maxX, maxY)
 
     actual fun useProgram(program: Int) = GLES30.glUseProgram(program)
