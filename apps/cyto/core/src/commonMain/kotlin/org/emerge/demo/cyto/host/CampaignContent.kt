@@ -1613,14 +1613,14 @@ object CampaignContent {
                 text = "Its genome is shown by FUNCTION. Right now there's just one job: GROW. That single label sums up everything this organism does.",
                 gate = Gate.Next,
                 allow = LOOK,
-                spotlight = Spotlight(hint = "the GROW group, in the cell's panel"),
+                spotlight = Spotlight(hint = "the GROW group, in the cell's panel", target = "+ GROW"),
                 detail = "A genome is a set of subsystems, each doing one job. Grouping them this way turns a wall of rules into a handful of purposes you can read at a glance.",
             ),
             Step(
                 text = "Tap the GROW group to open it. Inside are the actual genes - two of them - that carry out the job.",
                 gate = Gate.Next,
                 allow = LOOK,
-                spotlight = Spotlight(hint = "tap + GROW (2) to expand it"),
+                spotlight = Spotlight(hint = "tap + GROW (2) to expand it", target = "+ GROW"),
             ),
             Step(
                 text = "Each gene reads as one sentence, on three lines: what it DOES, WHEN it does it, and what POWERS it.",
@@ -1668,7 +1668,7 @@ object CampaignContent {
                     met = { (it.lineage?.geneCount ?: 0) >= 3 },
                 ),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "+ ADD REPRODUCE, below the groups"),
+                spotlight = Spotlight(hint = "+ ADD REPRODUCE, below the groups", target = "+ ADD REPRODUCE"),
                 detail = "You're not writing a gene by hand - you're dropping in a whole pre-made function. That's how bodies are built here: from reusable subsystems.",
             ),
             Step(
@@ -1814,7 +1814,7 @@ object CampaignContent {
                     met = { (it.lineage?.geneCount ?: 0) >= 4 },
                 ),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "+ ADD HOLD TOGETHER, below the groups"),
+                spotlight = Spotlight(hint = "+ ADD HOLD TOGETHER, below the groups", target = "+ ADD HOLD TOGETHER"),
                 detail = "Repair costs nothing while the body is calm - it only fires when there's damage to heal. Under strain it spends stored rg to mend welds, up to a limit.",
             ),
             Step(
@@ -1861,7 +1861,7 @@ object CampaignContent {
                     met = { (it.lineage?.geneCount ?: 0) >= 5 },
                 ),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "+ ADD MOVE, below the groups"),
+                spotlight = Spotlight(hint = "+ ADD MOVE, below the groups", target = "+ ADD MOVE"),
                 detail = "Like its grow genes, this muscle runs on light - so it can only clench while daylight is on it. In the dark it goes slack.",
             ),
             Step(
@@ -1919,7 +1919,7 @@ object CampaignContent {
                 text = "Add the POLARIZE group. It builds a chemical marker and, on every division, hands it to just ONE of the two daughters - so one cell ends up marked and the other bare. That difference is a sense of place.",
                 gate = Gate.World("Add the Polarise group", met = { (it.lineage?.geneCount ?: 0) >= 13 }),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "+ ADD POLARIZE, below the groups"),
+                spotlight = Spotlight(hint = "+ ADD POLARIZE, below the groups", target = "+ ADD POLARIZE"),
                 detail = "The muscle only fires in cells WITHOUT the marker. So the marked cell holds still while its neighbours clench - the squeeze is now lopsided, and a lopsided squeeze travels.",
             ),
             Step(
@@ -1939,7 +1939,7 @@ object CampaignContent {
                 gate = Gate.Did(PlayerAction.ChangedSpeed, "Change the sim speed"),
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "PAUSE in the bottom bar opens the speed controls"),
+                spotlight = Spotlight(hint = "PAUSE in the bottom bar opens the speed controls", target = "PAUSE"),
                 detail = "This is why the speed controls matter now: locomotion plays out over whole day-night cycles - too slow to sit and watch in real time.",
             ),
             Step(
@@ -1983,7 +1983,7 @@ object CampaignContent {
                 text = "Add the CLOCK group. It builds a chemical that rises and falls on a loop of its own - an oscillator, ticking inside the cell whether or not the sun is up.",
                 gate = Gate.World("Add the Clock group", met = { (it.lineage?.geneCount ?: 0) >= 19 }),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "+ ADD CLOCK, below the groups"),
+                spotlight = Spotlight(hint = "+ ADD CLOCK, below the groups", target = "+ ADD CLOCK"),
                 detail = "The muscle only fires when this clock chemical runs high. So instead of one long squeeze through the daylight, the body now PULSES - clench, release, clench - in time with its own beat.",
             ),
             Step(
@@ -2010,7 +2010,7 @@ object CampaignContent {
                 gate = Gate.World("Switch the muscle to CHEMICAL FUEL", met = { it.lineage?.contractOnChem == true }),
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "MOVE -> the muscle gene -> SOURCE -> BREAK FUEL"),
+                spotlight = Spotlight(hint = "MOVE -> the muscle gene -> SOURCE -> BREAK FUEL", target = "+ MOVE"),
                 detail = "Change only its fuel and leave the rest. The clock keeps ticking - the muscle just draws on reserves now instead of waiting for daylight.",
             ),
             Step(
@@ -2032,7 +2032,7 @@ object CampaignContent {
                 gate = Gate.World("Flip the muscle to MARKER > 0", met = { it.lineage?.contractOnMarked == true }),
                 allow = WATCH_TIME,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "MOVE -> the muscle gene -> set MARKER's test to > and its value to 0"),
+                spotlight = Spotlight(hint = "MOVE -> the muscle gene -> set MARKER's test to > and its value to 0", target = "+ MOVE"),
                 detail = "In the editor, find the muscle's MARKER clause: set its comparator to > and step its value down to 0. That hands the driving role to the other cell type.",
             ),
             Step(
@@ -2082,7 +2082,7 @@ object CampaignContent {
                 text = "Add the REPRODUCE group. It's a division that SEVERS: once the body is large enough, it buds a daughter that breaks FREE - no weld holding it back - as its own single cell.",
                 gate = Gate.World("Add the Reproduce group", met = { (it.lineage?.geneCount ?: 0) >= 21 }),
                 allow = LOOK,
-                spotlight = Spotlight(hint = "+ ADD REPRODUCE, below the groups"),
+                spotlight = Spotlight(hint = "+ ADD REPRODUCE, below the groups", target = "+ ADD REPRODUCE"),
                 detail = "A freed daughter is small again, so it's back under the size cap - free to grow into a whole new swimmer. That's the trick: sever to escape the cap, then regrow. Severing also shoves the two apart, flinging the founder off toward fresh matter.",
             ),
             Step(
@@ -2131,7 +2131,7 @@ object CampaignContent {
                 gate = Gate.World("Select a cell", { it.focused != null }),
                 allow = WATCH,
                 world = WorldRun.Live,
-                spotlight = Spotlight(hint = "the cell's LIGHT reading"),
+                spotlight = Spotlight(hint = "the cell's LIGHT reading", target = "LIGHT"),
                 detail = "Watch SIZE too: it barely moves. Each spell of daylight rebuilds whatever the slow decay of living wears away, topping the cell back up to full - but never past it. A quiet, stable loop.",
             ),
             Step(
