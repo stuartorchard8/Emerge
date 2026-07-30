@@ -80,6 +80,52 @@ class DivideAffordanceTest {
     }
 
     /**
+     * The flag says "not funded"; the [CellInfo.Fuel] reading says **by how much**, which is the difference
+     * between "something is wrong" and "you are three quarters of the way there". Both numbers are the ones
+     * the sim uses: `energyUnits` split by the contending count, over `biomass/4`.
+     */
+    @Test fun theFuelReadingSaysHowCloseTheGeneIs() {
+        val one = cellInfoFor(CytoFixtures.divideContention(genes = 1)).genes[0]
+        val two = cellInfoFor(CytoFixtures.divideContention(genes = 2)).genes[0]
+
+        assertEquals(1000, one.fuel?.required, "cost is biomass/4, and the fixture holds 4000")
+        assertEquals(1500, one.fuel?.available, "a lone gene draws min(1500, 1500)")
+        assertFalse(one.fuel!!.short)
+
+        assertEquals(1000, two.fuel?.required, "the same cost - contention doesn't change what a split costs")
+        assertEquals(750, two.fuel?.available, "two contending genes halve the pool each gene can draw")
+        assertTrue(two.fuel!!.short)
+    }
+
+    /** The reading is on the card as well as in the model — beside the source, where the shortfall is. */
+    @Test fun theFuelReadingIsWrittenOnTheCard() {
+        val row = cellInfoFor(CytoFixtures.divideContention(genes = 2)).genes[0]
+        assertTrue(row.desc.contains("750/1000"), "the card must show the ratio: '${row.desc}'")
+        assertTrue(
+            row.spans.first { it.text.contains("750/1000") }.blocking,
+            "and colour it as part of what's blocking, since this is why the gene won't fire",
+        )
+    }
+
+    /**
+     * Only DIVIDE carries a reading. Every other action simply does fewer ops when energy is short, so a
+     * ratio there would imply an all-or-nothing threshold that doesn't exist.
+     */
+    @Test fun otherActionsHaveNoFuelReading() {
+        val info = cellInfoFor(
+            CytoTestWorld.empty()
+                .cell(
+                    "divider",
+                    genome = org.emerge.demo.cyto.sim.GeneCodec.parse("Light : Biomass < 3000 : Convert r"),
+                    cytoplasm = mapOf("r" to 500),
+                    biomass = mapOf("r" to 1000),
+                )
+                .build(),
+        )
+        assertEquals(null, info.genes[0].fuel, "a CONVERT gene has no threshold to be close to")
+    }
+
+    /**
      * The point of the pair: the *only* difference between the two states is how many genes are contending.
      * If this stops holding, the split is no longer what decides funding and the two cases above could both
      * be passing for some other reason.

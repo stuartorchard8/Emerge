@@ -1152,10 +1152,18 @@ class GeneEditor {
             ))
         }
         gene.condition.clauses.forEachIndexed { ci, cl ->
-            val c = ctlIf(clauseBlocks.getOrElse(ci) { false })
-            lines.add(listOf(
+            val blocked = clauseBlocks.getOrElse(ci) { false }
+            val c = ctlIf(blocked)
+            // What each side READS this tick, written beside the word it belongs to: `BIO 1840 > 2000` says
+            // how far off the gate is, where the bare `BIO` said only that it was. A constant contributes no
+            // reading (it is its own), and neither is a control — these are readings, not words to tap, so
+            // they stay outside the token labels (which the harness and the campaign copy match on).
+            val reading = g.readings.getOrNull(ci)
+            fun value(v: Int?): UiTok? = v?.let { UiTok.Text(" $it", if (blocked) orange else grey) }
+            lines.add(listOfNotNull(
                 UiTok.Text(if (ci == 0) "WHEN " else " AND ", grey),
                 UiTok.Toggle(operandLabel(cl.lhs), c) { openInlinePick(controller, i, Pick.Operand, ci, 0) },
+                value(reading?.lhs),
                 UiTok.Text(" ", grey),
                 UiTok.Toggle(if (cl.cmp == Comparison.Greater) ">" else "<", c) {
                     inlineEdit(controller, i) { g2 ->
@@ -1165,6 +1173,7 @@ class GeneEditor {
                 },
                 UiTok.Text(" ", grey),
                 UiTok.Toggle(operandLabel(cl.rhs), c) { openInlinePick(controller, i, Pick.Operand, ci, 1) },
+                value(reading?.rhs),
             ))
         }
 
@@ -1192,6 +1201,13 @@ class GeneEditor {
         (gene.source as? EnergySource.FormBond)?.let { s ->
             srcLine.add(UiTok.Text(" ", grey))
             srcLine.add(UiTok.Toggle(synthesisLabel(s), ctlIf(energyBlocked)) { openInlinePick(controller, i, Pick.Bond) })
+        }
+        // A DIVIDE gene's fuel reading, in the source line because that is where the shortfall is: the source
+        // raises N energy units a tick and the split costs biomass/4, all-or-nothing, with no banking toward
+        // it. Read at a glance, "900/1250" says both "not yet" and "close" — where the orange alone said only
+        // that something, somewhere, was short. Not a control: there is nothing to tap, it is a reading.
+        g.fuel?.let { f ->
+            srcLine.add(UiTok.Text(" ${f.available}/${f.required}", if (f.short) orange else grey))
         }
         srcLine.add(UiTok.Text(" TO", grey))
         lines.add(srcLine)

@@ -521,9 +521,37 @@ class CytoController(
             val dirEnvCyt: String, val dirCytBio: String,
         )
 
-        /** One gene as the panel sees it: [desc] plain text, whether it would FIRE this tick ([active]), and
-         *  [spans] — the description split into coloured segments with the blocking parts flagged. */
-        class GeneRow(val desc: String, val active: Boolean, val spans: List<Span>, val gene: Gene)
+        /** One gene as the panel sees it: [desc] plain text, whether it would FIRE this tick ([active]),
+         *  [spans] — the description split into coloured segments with the blocking parts flagged — and, for
+         *  a DIVIDE gene, the [fuel] reading behind that flag. */
+        class GeneRow(
+            val desc: String, val active: Boolean, val spans: List<Span>, val gene: Gene,
+            val fuel: Fuel? = null,
+            /** Live readings for the gene's condition clauses, one per clause, in the gene's own order. */
+            val readings: List<ClauseReading> = emptyList(),
+        )
+
+        /**
+         * **What a clause's two sides actually read right now** — so `BIO > 2000` can be shown as
+         * `BIO 1840 > 2000` and the player can see how far off it is, rather than only that it is off.
+         *
+         * Null on a side whose operand is a constant: the number is already written there, and repeating it
+         * ("2000 2000") reads as a fault. Both sides can be live at once (`CHEM RG > CHEM GG`).
+         */
+        class ClauseReading(val lhs: Int?, val rhs: Int?)
+
+        /**
+         * **How close a DIVIDE gene is to affording itself**, in energy units: what its source can raise this
+         * tick against the `biomass/4` the split costs.
+         *
+         * Only DIVIDE genes carry one. Division is the single all-or-nothing action — it pays the whole cost
+         * in one tick or does nothing, and energy cannot be banked toward it — so "not enough, and by how
+         * much" is a real, readable state. Every other action simply does fewer ops when energy is short,
+         * where a ratio would imply a threshold that isn't there.
+         */
+        class Fuel(val available: Int, val required: Int) {
+            val short: Boolean get() = available < required
+        }
 
         /** A run of a gene's description text; [blocking] ⇒ this part is currently keeping the gene from
          *  firing (a failed condition clause, the energy source with no energy, or a missing action input). */
@@ -717,10 +745,29 @@ class CytoController(
             metabolism = metabolism,
             genes = cell.genome.map { g ->
                 val spans = describeGeneSpans(g, cytoMap, envMap, totalBiomass = bioTotal, quanta = capturedQuanta, weldedDegree = weldedDegree, touch = cell.touchCount, divideShare = divideShare)
-                CellInfo.GeneRow(desc = spans.joinToString("") { it.text }, active = spans.none { it.blocking }, spans = spans, gene = g)
+                CellInfo.GeneRow(
+                    desc = spans.joinToString("") { it.text }, active = spans.none { it.blocking },
+                    spans = spans, gene = g,
+                    fuel = divideFuel(g, cytoMap, capturedQuanta, divideShare, bioTotal),
+                    readings = clauseReadings(g, cytoMap, bioTotal, weldedDegree, cell.touchCount),
+                )
             },
             aliases = speciesAliases,
         )
+    }
+
+    /**
+     * Each of a gene's clauses as the cell reads it this tick — the same [operandValue] the blocking flags
+     * are computed from, so the numbers on the card always explain the colour on the card.
+     *
+     * A constant side reads null: it is its own reading (see [CellInfo.ClauseReading]).
+     */
+    private fun clauseReadings(
+        g: Gene, cyto: Map<String, Int>, totalBiomass: Int, weldedDegree: Int, touch: Int,
+    ): List<CellInfo.ClauseReading> = g.condition.clauses.map { c ->
+        fun live(op: Operand) =
+            if (op is Operand.Constant) null else operandValue(op, cyto, totalBiomass, weldedDegree, touch)
+        CellInfo.ClauseReading(live(c.lhs), live(c.rhs))
     }
 
     /** One condition operand read against the panel snapshot — a constant, a cytoplasm count, or one of the
@@ -770,8 +817,8 @@ class CytoController(
         // [divideShare] is how many DIVIDE genes are gated open and therefore splitting the pool with this
         // one — the sim's `dn`. Two divides that would each fire alone can both be unfunded together, and
         // that is exactly what the cell does, so the panel says it.
-        val divideUnfunded = a.type == ActionType.Divide && !energyBlocked &&
-            energyUnits(g.source, cyto, quanta, divideShare) < totalBiomass / 4
+        val fuel = divideFuel(g, cyto, quanta, divideShare, totalBiomass)
+        val divideUnfunded = !energyBlocked && fuel?.short == true
         val inputBlocked = when (a.type) {
             // Blocked unless the exact molecule the two fragments name is in the cytoplasm (the mirror of
             // the synthesis check above: there both reactants must be present, here their join must be).
@@ -794,6 +841,10 @@ class CytoController(
         }
         spans += CellInfo.Span(" (", false)
         spans += CellInfo.Span(srcLabel(g.source), energyBlocked || divideUnfunded)
+        // A DIVIDE gene's fuel reading rides on the source, where the shortfall is: "raising 900 of the 1250
+        // this split costs". Without it an unfunded divide is a bare orange word — the player can see that
+        // something is short but not whether they are close.
+        fuel?.let { spans += CellInfo.Span(" ${it.available}/${it.required}", divideUnfunded) }
         spans += CellInfo.Span(")", false)
         if (g.efficiency != 0) spans += CellInfo.Span(" e${g.efficiency}", false)
         return spans
@@ -964,6 +1015,20 @@ class CytoController(
      * in the same integer order (divide by n first, then halve), so it agrees on the boundary rather than
      * near it.
      */
+    /**
+     * A DIVIDE gene's fuel reading — what its source can raise this tick over the `biomass/4` the split costs
+     * — or null for any other action (see [CellInfo.Fuel] for why only division gets one).
+     *
+     * [share] is the sim's `dn`: how many DIVIDE genes are gated open and therefore splitting the pool, so
+     * "available" is this gene's own share rather than the whole cell's means.
+     */
+    private fun divideFuel(
+        g: Gene, cyto: Map<String, Int>, quanta: Int, share: Int, totalBiomass: Int,
+    ): CellInfo.Fuel? {
+        if (g.action.type != ActionType.Divide) return null
+        return CellInfo.Fuel(energyUnits(g.source, cyto, quanta, share), totalBiomass / 4)
+    }
+
     internal fun energyUnits(s: EnergySource, cyto: Map<String, Int>, quanta: Int, share: Int): Int {
         val n = share.coerceAtLeast(1)
         return when (s) {
