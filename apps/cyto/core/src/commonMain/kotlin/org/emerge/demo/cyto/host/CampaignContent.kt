@@ -576,7 +576,7 @@ object CampaignContent {
             // gene was already added, which is worse than no ring: it says the tap didn't take.
             // Both auto-advance, so a player who does both in one motion never sees the seam.
             Step(
-                text = "Give it a way to spread. Tap [+ NEW GENE] again - a second gene, alongside the one that feeds it.",
+                text = "Give it a way to spread. Tap [+ NEW GENE] again to give it a second gene.",
                 gate = Gate.World("Add a second gene", met = { (it.lineage?.geneCount ?: 0) >= 2 }),
                 allow = LOOK,
                 world = WorldRun.Live,
@@ -584,7 +584,7 @@ object CampaignContent {
                 spotlight = Spotlight(target = "+ NEW GENE"),
             ),
             Step(
-                text = "Now change the new gene's action from (NOTHING) to (DIVIDE) - it splits the cell into two daughters, each taking half of the mother's biomass and cytoplasm.",
+                text = "Now change the new gene's action from (NOTHING) to (DIVIDE) - it will split the cell into two daughters, each taking half of the mother's biomass and cytoplasm.",
                 gate = Gate.World("Add a DIVIDE gene", met = { it.lineage?.hasDivide == true }),
                 allow = LOOK,
                 world = WorldRun.Live,
