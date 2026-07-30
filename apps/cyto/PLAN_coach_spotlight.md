@@ -4,8 +4,9 @@ The cell panel is dense, and the coach could only *describe* where to look ("the
 panel"), leaving the player to find it. A `Spotlight` can now name a widget: the coach draws a box around it
 and a connector back to itself.
 
-**Built (2026-07-30):** P1–P5. Genesis and the rehomed Act II both point at their widgets; the box clamps
-to its clip; readouts are targetable. **Remaining:** P6 polish only — see the bottom.
+**Built (2026-07-30):** P1–P6. Genesis and the rehomed Act II both point at their widgets; the box clamps to
+its clip; readouts are targetable; the ring fades, breathes, and hands off to Next when the task is done.
+**Remaining:** nothing planned — see P6 for the two open edges.
 
 ---
 
@@ -21,7 +22,10 @@ to its clip; readouts are targetable. **Remaining:** P6 polish only — see the 
 | 4 targets on Genesis + 13 in the rehomed Act II | `host/CampaignContent.kt` |
 | `Ui.readouts()` / `noteReadout` — non-clickable named rows | `engine/.../ui/Ui.kt` |
 | `UiElement.clip` / `.visible` — the scroll viewport it sits in | `engine/.../ui/Ui.kt` |
-| `campaign-spotlight.txt` — the four beats, shot + tapped | `apps/cyto/agent-scripts/` |
+| `SpotlightAnimator` — fade / pulse / hand-off, no GL needed | `campaign/SpotlightAnimator.kt` |
+| `Ui.clockSeconds` / `advanceClock` — the hosts' animation clock | `engine/.../ui/Ui.kt` |
+| `campaign-spotlight.txt` — the beats, shot + tapped | `apps/cyto/agent-scripts/` |
+| `SpotlightAnimatorTest` (6) | `apps/cyto/core/src/commonTest/` |
 | `UiElementLookupTest` (12) | `engine/render/torus/src/commonTest/` |
 
 Commits: `a897a7e6` (toolkit) · `04641d48` (coach + Genesis) · `bf114b80` (coach centring) · `e5a90c7b`
@@ -110,15 +114,32 @@ Deliberately left as hint text:
 second* `USE LIGHT` only until the genome grows. Prefer labels unique on screen; if a beat genuinely needs the
 n-th, pin it with a scripted step.
 
-## P6 — polish
+## P6 — animation ✅ done (`c91a119d`)
 
-- Pulse/glow. Needs a time source the director doesn't have (no `dt`, doesn't read `controller.tick`), and
-  `Ui` has no frame clock either — `updateHold`'s `dt` only ticks while a pointer is down. Plumbing a clock
-  through four hosts for a cosmetic pulse was judged not worth it; the static ring reads clearly in the
-  screenshots. Revisit only if a beat is observed to be missed.
-- Glow = nested translucent rects; the rect primitive is axis-aligned, **no rotation** — which is also why the
-  connector is an elbow and not a diagonal. A true diagonal means a new engine primitive.
-- Narrow: the cell sheet can cover the coach entirely. Harmless today (a target inside a collapsed sheet
+- **Fade** 500ms in and out. A target change is a **hand-off, not a cross-fade**: the old box finishes
+  leaving before the new one starts, because two rings in different corners read as two instructions.
+  Reversing mid-fade (the player undoes what they just did) resumes from the opacity already reached.
+- **Pulse** on a one-second cycle, over the top third of the opacity range only, with a floor — an alarm is
+  the wrong register, and a marker that blinks out is a marker the eye loses.
+- **Hand-off to Next** the instant `gateMet` goes true, so what to look at is always what to do. Only a step
+  that *had* a task qualifies (`gateMet` is never true for a `Gate.Next` page of prose), and the ring on Next
+  draws no connector — a line from the coach's centre to a box a few rows inside it is a scribble.
+
+All of it needs a clock, which immediate-mode drawing has nowhere to keep: `Ui.clockSeconds`, advanced by
+each host with the frame delta it already computes for hold-to-repeat. **Wall time, not frames** — a
+one-second pulse means one second, and cyto's draw rate moves with the sim.
+
+The timing lives in `SpotlightAnimator`, apart from the drawing, so the sequencing is testable without a GL
+context; that is the half a screenshot cannot show. The agent harness advances a whole second per built
+frame and captures on the **half** second: whole seconds are the pulse's dimmest point, and a shot taken
+there under-sells what the player sees.
+
+Still open, both cosmetic:
+
+- **Glow** proper (nested translucent rects) was not added — the pulse carries the emphasis on its own. The
+  rect primitive is axis-aligned with **no rotation**, which is also why the connector is an elbow and not a
+  diagonal; a true diagonal means a new engine primitive.
+- **Narrow**: the cell sheet can cover the coach entirely. Harmless today (a target inside a collapsed sheet
   isn't laid out, so nothing is drawn), but once the sheet is expanded over the coach the connector has
   nowhere sensible to run. Unverified: no script drives the narrow sheet open yet.
 
