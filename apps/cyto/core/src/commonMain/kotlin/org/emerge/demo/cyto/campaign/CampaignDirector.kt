@@ -214,10 +214,23 @@ class CampaignDirector {
      *
      * [gateWantsASelection] is what keeps this off every other step: a beat that never reads the selection is
      * unaffected by the death, and must not be interrupted to talk about it.
+     *
+     * [staleWatchedDeath] keeps it off a step the death *preceded*. Genesis has the player watch a gene-less
+     * cell rupture and then place a fresh one — the death is the previous beat's whole point, and the
+     * controller's "the cell you were watching is gone" memory outlives it, so the next step (which does want
+     * a selection) opened by telling them about a corpse they had already buried.
      */
     val watchedCellOffer: Boolean
-        get() = active && !gateMet && !extinctionOffer &&
+        get() = active && !gateMet && !extinctionOffer && !staleWatchedDeath &&
             lastQuery?.watchedCellDied == true && lastQuery?.extinct == false && gateWantsASelection
+
+    /**
+     * The watched-cell death was already true when this step began, so it is the *previous* beat's death and
+     * this step has nothing to recover from. Cleared the moment the world reports no such death (the player
+     * selected a living cell, or the controller's memory was reset), after which a fresh death on this step
+     * offers as normal.
+     */
+    private var staleWatchedDeath: Boolean = false
 
     /**
      * Whether the unmet gate would answer differently if *something* were selected — i.e. the missing
@@ -336,6 +349,8 @@ class CampaignDirector {
         gateMet = false
         showDetail = false
         resetMenuOpen = false
+        // A death the player has already been shown belongs to the step that just ended, not this one.
+        staleWatchedDeath = lastQuery?.watchedCellDied == true
         currentStep?.let { it.onEnter(controller); onStepEnter(it) }
     }
 
@@ -411,6 +426,7 @@ class CampaignDirector {
     fun update(query: CampaignQuery, actions: Set<PlayerAction>) {
         if (!active) return
         lastQuery = query
+        if (!query.watchedCellDied) staleWatchedDeath = false
         satisfiedDid.addAll(actions)
         gateMet = evalGate(currentStep?.gate, query)
         // A step that opted into Step.autoAdvance moves on here rather than waiting for the button. Uses the

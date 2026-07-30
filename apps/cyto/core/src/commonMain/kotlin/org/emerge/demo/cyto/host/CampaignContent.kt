@@ -485,8 +485,10 @@ object CampaignContent {
                 world = WorldRun.Live,
                 autoAdvance = true,
             ),
-            // 6. Place YOUR cell — a fresh start, this one gets a gene.
-            // TODO block the coach watchedCellOffer here. It appears after the fresh cell is placed into the world when it shouldn't.
+            // 6. Place YOUR cell — a fresh start, this one gets a gene. The rupture the previous step asked
+            // for leaves the controller's watched-cell memory set, and this step wants a selection, so the
+            // coach used to open by offering to recover from a death the player had just been walked through.
+            // Handled in the director now (CampaignDirector.staleWatchedDeath), not by masking it here.
             Step(
                 text = "That cell couldn't rebuild itself. Let's fix that. Tap an empty spot to place a fresh cell. Then select it to view its genome.",
                 gate = Gate.World("Place and select a cell", met = { it.focused != null }),
@@ -734,7 +736,7 @@ object CampaignContent {
             Step(
                 text = "Now select one and look at what it is holding. Every division your cells have ever paid for has left a molecule of {bond} behind, and they have no use for it. They are filling up with their own waste products.",
                 detail = "Nothing is destroyed in this world, only rearranged. The atoms in that {bond} are the same atoms your cells started with - they are simply locked into a shape the genome has no gene for.",
-                gate = Gate.World("Select a cell and read its chemistry", met = { it.focused != null }),
+                gate = Gate.World("Select a cell and read its chemistry", met = { it.chemistryOpen }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),

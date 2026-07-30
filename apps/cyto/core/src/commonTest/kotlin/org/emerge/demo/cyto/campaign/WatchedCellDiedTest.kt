@@ -185,6 +185,41 @@ class WatchedCellDiedTest {
         assertFalse(dir.watchedCellOffer)
     }
 
+    /**
+     * Genesis in miniature: a beat whose goal IS the death, auto-advancing into one that wants a selection.
+     * The controller remembers the death until a living cell is picked, so the next step opened by offering
+     * to recover from a rupture the player had just been walked through on purpose.
+     */
+    @Test
+    fun aDeathTheLastStepAskedForDoesNotFollowThePlayerIntoTheNext() {
+        val dir = CampaignDirector()
+        dir.start(
+            Chapter(
+                "t", 1, "T", "", org.emerge.demo.cyto.sim.CytoScenario.DEFAULT,
+                listOf(
+                    Step("it will die", Gate.World("watch it die", met = { it.watchedCellDied }), autoAdvance = true),
+                    Step("now place another", Gate.World("select one", met = { (it.focused?.biomass ?: 0) > 100 })),
+                ),
+            ),
+            CytoController(),
+        )
+        dir.update(afterADeath(), emptySet())
+        assertEquals("now place another", dir.snapshot()!!.text, "the death advanced the chapter")
+        assertFalse(dir.watchedCellOffer, "and belongs to the step it just left")
+
+        // A fresh death, once this step has seen a world without one, is this step's problem and does offer.
+        dir.update(
+            CampaignQuery(
+                WorldStats(0L, 8, mapOf(CellType.Collector to 8), 3000, emptySet(),
+                    focused = null, lineage = Lineage(geneCount = 3), watchedCellDied = false),
+                paused = false, selectedGenome = null,
+            ),
+            emptySet(),
+        )
+        dir.update(afterADeath(), emptySet())
+        assertTrue(dir.watchedCellOffer)
+    }
+
     /** A rebuilt world carries no history of the last one. */
     @Test
     fun aFreshWorldHasNoDeath() {
