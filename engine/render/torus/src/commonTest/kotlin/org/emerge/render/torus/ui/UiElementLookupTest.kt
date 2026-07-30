@@ -90,6 +90,53 @@ class UiElementLookupTest {
         assertTrue(inside.x >= shifted.x && inside.x + inside.w <= shifted.x + shifted.w)
     }
 
+    /** A tall genome in a short viewport: the same three labels every frame, scrolled. */
+    private fun scrolled(offset: Float): Ui {
+        val ui = Ui().apply { setResolution(400f, 300f) }
+        fun build() = ui.frame {
+            scrollArea("genome", 0f, 0f, 200f, 60f, rowHeight = 30f) {
+                button("GENE ONE", 0x333366FFL) {}
+                button("GENE TWO", 0x333366FFL) {}
+                button("GENE THREE", 0x333366FFL) {}
+            }
+        }
+        build() // lay out once so the area knows its content height, then scroll and rebuild.
+        ui.scrollBy("genome", offset)
+        build()
+        return ui
+    }
+
+    /**
+     * A row scrolled *fully* out of its viewport is culled at layout, so it never becomes a region at all —
+     * which is the fail-quiet the spotlight wants for free: no rect, no box, and the hint text still names it.
+     * Worth pinning, because it is the reason "point at a target below the fold" cannot draw off-panel.
+     */
+    @Test fun aRowBelowTheFoldIsNotARegionAtAll() {
+        val ui = scrolled(0f)
+        assertTrue(assertNotNull(ui.element("GENE ONE")).visible, "at the top of the viewport")
+        assertNull(ui.element("GENE THREE"), "culled below the fold, exactly as an absent label would be")
+    }
+
+    @Test fun scrollingBringsATargetIntoView() {
+        val ui = scrolled(60f)
+        assertTrue(assertNotNull(ui.element("GENE THREE")).visible, "scrolled down to it")
+        assertNull(ui.element("GENE ONE"), "and the first has left the top")
+    }
+
+    /**
+     * The case culling does *not* cover: a row straddling the viewport edge is emitted, and drawn clipped.
+     * The clip travels with the element so a decoration can be clamped the same way, instead of its far edge
+     * spilling past the panel onto the world behind.
+     */
+    @Test fun aPartlyScrolledRowIsVisibleAndCarriesItsViewport() {
+        val ui = scrolled(15f)
+        val straddling = assertNotNull(ui.element("GENE ONE"), "half of it is still on screen")
+        assertTrue(straddling.visible)
+        val clip = assertNotNull(straddling.clip)
+        assertEquals(60f, clip.h, "the viewport's height, not the content's")
+        assertTrue(straddling.y < clip.y, "it really does start above the viewport's top edge")
+    }
+
     /** The connector's anchor end: a panel is auto-sized and anchor-placed, so its rect is knowable only from
      *  the toolkit. It reports the panel most recently emitted, and resets with the frame. */
     @Test fun theLastPanelRectIsTheLastPanelEmitted() {

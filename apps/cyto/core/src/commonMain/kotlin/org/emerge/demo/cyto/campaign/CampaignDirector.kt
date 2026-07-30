@@ -519,12 +519,22 @@ class CampaignDirector {
         // the step's own spotlight is pointing at something the player is no longer being asked to do.
         if (extinctionOffer || watchedCellOffer) return
         val hit = ui.element(target, spot.occurrence) ?: return
+        // A target below the fold of a scrolling genome is culled at layout, so it resolves to nothing and the
+        // coach falls back to its hint text unaided; this covers the residue.
+        if (!hit.visible) return
         val from = coachRect
         ui.canvas {
             val d = ui.density
             val pad = 3f * d
-            val x = hit.x - pad; val y = hit.y - pad
-            val w = hit.w + pad * 2f; val h = hit.h + pad * 2f
+            var x = hit.x - pad; var y = hit.y - pad
+            var w = hit.w + pad * 2f; var h = hit.h + pad * 2f
+            // A partly-scrolled row is clipped when *drawn*, so clamp the box the same way rather than letting
+            // its far edge spill past the viewport onto the world behind.
+            hit.clip?.let { c ->
+                val x0 = maxOf(x, c.x); val y0 = maxOf(y, c.y)
+                val x1 = minOf(x + w, c.x + c.w); val y1 = minOf(y + h, c.y + c.h)
+                x = x0; y = y0; w = x1 - x0; h = y1 - y0
+            }
             if (from != null) elbow(this, from, x, y, w, h, d)
             // The box last, so the connector tucks under its edge rather than crossing into the widget.
             outline(this, x, y, w, h, 2f * d)

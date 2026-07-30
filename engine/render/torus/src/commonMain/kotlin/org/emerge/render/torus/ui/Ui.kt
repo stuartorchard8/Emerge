@@ -63,8 +63,30 @@ class Ui {
     /** A scroll viewport laid out this frame (see [UiBuilder.scrollArea]). */
     private class ScrollRegion(val id: String, val x: Float, val y: Float, val w: Float, val h: Float, val contentH: Float)
 
-    /** A labelled interactive region, for headless enumeration ([elements]). */
-    class UiElement(val label: String, val x: Float, val y: Float, val w: Float, val h: Float)
+    /** An axis-aligned rect, used for a [UiElement]'s clip viewport. */
+    class UiRect(val x: Float, val y: Float, val w: Float, val h: Float)
+
+    /**
+     * A labelled interactive region, for headless enumeration ([elements]).
+     *
+     * [clip] is the scroll viewport the region was laid out inside, if any, and [visible] whether the region
+     * is (partly) within it. A region scrolled out of its viewport is still *enumerated* — it exists, it is
+     * merely off-screen — but it is not clickable and must not be drawn on: a caller that decorates a widget
+     * (the campaign spotlight) has to be able to tell "scrolled away" from "absent", because those want
+     * opposite responses.
+     */
+    class UiElement(
+        val label: String,
+        val x: Float,
+        val y: Float,
+        val w: Float,
+        val h: Float,
+        val clip: UiRect? = null,
+    ) {
+        val visible: Boolean
+            get() = clip == null ||
+                (x + w > clip.x && x < clip.x + clip.w && y + h > clip.y && y < clip.y + clip.h)
+    }
 
     /** The rect of the panel emitted most recently this frame, or null before any. A panel is auto-sized and
      *  anchor-placed, so a caller that wants to draw *relative to its own panel* (the campaign coach, pointing
@@ -678,10 +700,16 @@ class Ui {
      *  frame with [frame] first. */
     fun elements(): List<UiElement> {
         val out = ArrayList<UiElement>()
-        for (c in overlayClicks) if (c.label != null) out.add(UiElement(c.label, c.x, c.y, c.w, c.h))
-        for (i in modalFrom until clicks.size) clicks[i].label?.let { out.add(UiElement(it, clicks[i].x, clicks[i].y, clicks[i].w, clicks[i].h)) }
+        for (c in overlayClicks) if (c.label != null) out.add(c.asElement())
+        for (i in modalFrom until clicks.size) if (clicks[i].label != null) out.add(clicks[i].asElement())
         return out
     }
+
+    private fun ClickRegion.asElement(fallbackLabel: String = "") =
+        UiElement(label ?: fallbackLabel, x, y, w, h, clipRectOf(clip))
+
+    private fun clipRectOf(clip: Int): UiRect? =
+        if (clip < 0) null else clipRects[clip].let { UiRect(it[0], it[1], it[2], it[3]) }
 
     /**
      * **Where the widget [tapLabel] would hit is** — the [occurrence]-th match for [label], as a rect, or null
@@ -693,10 +721,10 @@ class Ui {
      * the wrong thing.
      *
      * Only regions laid out **so far this frame** are visible to it, so call it after the panels are built.
+     * A match scrolled out of its viewport still resolves, with [UiElement.visible] false — see there.
      */
     fun element(label: String, occurrence: Int = 1): UiElement? =
-        labelMatches(label).getOrNull(occurrence - 1)
-            ?.let { UiElement(it.label ?: label, it.x, it.y, it.w, it.h) }
+        labelMatches(label).getOrNull(occurrence - 1)?.asElement(label)
 
     /** Invoke the first button region whose label contains [label] (case-insensitive). Returns true if
      *  one fired. Overlay regions (open dropdowns) win, then the base layer. */
