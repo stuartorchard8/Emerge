@@ -838,14 +838,12 @@ object CampaignContent {
      * Everything the player has built so far runs on the sun, and the sun is off for three quarters of this
      * world's cycle (`EMPTY_WORLD`: 900 ticks of day, 2700 of night). A Light-powered gene earns nothing in
      * the dark while degradation carries on regardless, so a cell spends most of every cycle going backwards
-     * and the day is merely long enough to undo it. Worse, `quantaShare` divides a cell's light between every
-     * active Light gene — so the recycling gene the last chapter added is now halving the growth gene's
-     * daylight, and vice versa.
+     * and the day is merely long enough to undo it.
      *
      * The fix is to move CONVERT onto the same `BOND` reaction that already funds division. The two halves of
      * the day then do different jobs: overnight the cell burns its monomer pair into {bond} to keep building,
-     * and by day the light gene — now holding the cell's whole quanta share — breaks that {bond} back into
-     * the pair. Measured over one night on this genome (one cell, biomass at its 3000 cap):
+     * and by day the light gene breaks that {bond} back into the pair. Measured over one night on this genome
+     * (one cell, biomass at its 3000 cap):
      *
      *   - CONVERT on Light: 2999 -> 2042 biomass (-32%), and no {bond} ever forms.
      *   - CONVERT on `BOND`: 2999 -> 2637 (-12%), {bond} climbs to ~767 by dawn and is back to 1 by morning.
@@ -882,12 +880,20 @@ object CampaignContent {
                 allow = LOOK,
                 world = WorldRun.Live,
             ),
-            Step(
-                text = "There is a second cost here that you cannot see. Your two light genes draw on the same daylight and split it between them, so the gene that grows your cell and the gene that clears its waste are each running at half strength.",
-                gate = Gate.Next,
-                allow = WATCH_SPEED,
-                world = WorldRun.Live,
-            ),
+            // A beat here once claimed a "second cost you cannot see": that the cell's two LIGHT genes split
+            // the daylight between them. Cut 2026-07-31, because it was not true as stated and the chapter
+            // could not show it either way.
+            //
+            // `runGenes` computes `quantaShare = work.quanta / n` where n is every active NON-DIVIDE gene,
+            // whatever it runs on — not every active *light* gene. So the split is real arithmetic but it is
+            // not about light, and the edit this chapter asks for does not undo it: a CONVERT gene moved onto
+            // BOND is still active, n stays 2, and the recycler's share never changes. (Same trap
+            // CAMPAIGN_PLAN.md §14.3 measured for the parked ch06.) Nothing on the card shows a gene's share
+            // either, and the obvious readout is taken: `253/506` on a source line already means
+            // available/required for a DIVIDE gene's fuel, which is a shortfall, not a share.
+            //
+            // Resource splitting is worth teaching — every active gene taking a cut whatever it runs on is a
+            // real and general idea — but it belongs where it can be shown, on the recombined path.
             // The edit. `convertProduct == divideProduct` is the reconvergence reading: the CONVERT gene is
             // powered by the same reaction the DIVIDE gene is.
             Step(
@@ -919,7 +925,7 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "Now wait for morning. The light gene has the whole day to itself, and it takes that pile of {bond} apart and hands the atoms back.",
+                text = "Now wait for morning. The light comes back, the recycling gene starts up again, and it takes that pile of {bond} apart and hands the atoms back.",
                 detail = "Your cells no longer depend on when the light arrives. They store the day as {bond} and spend it overnight.",
                 gate = Gate.World(
                     "Clear the night's {bond} by morning",

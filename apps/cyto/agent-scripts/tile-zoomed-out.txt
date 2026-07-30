@@ -1,0 +1,24 @@
+# PHASE B/C — zoomed out past the world's own edges, does the torus repeat?
+#
+# tile-out-off.png: the direct path. The fields (grid, light, matter) already wrap analytically, so they
+# tile forever, but the cells are drawn once at their shortest offset from the camera — one island of life
+# in an endlessly repeating ground.
+#
+# tile-out-on.png: the same view through the period texture. The cells should now repeat with the ground,
+# and the repeats should line up seamlessly at the edges.
+
+campaign ch00-genesis
+tap 0.35 0.5
+runs 8
+night 1
+matterlayer all
+
+# Zoom out until several copies of the world fit on screen.
+camera zoom 0.25
+runs 1
+
+tile off
+shot tile-out-off
+
+tile on
+shot tile-out-on

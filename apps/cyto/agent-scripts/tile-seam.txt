@@ -1,0 +1,30 @@
+# SEAM REPLICATION — is the period texture actually seamless?
+#
+# The tiled view only holds together if whatever overhangs one edge of the world is ALSO drawn at the
+# opposite edge, so neighbouring copies line up. Without that, cells on the boundary get sliced off.
+#
+# At `camera zoom 0.5` the view is 1.5 periods tall and 2 periods wide, so with the camera at the origin the
+# world's +x edge sits at screen u=0.75 and its +y edge at v=0.1667. Cells are spawned exactly there:
+#
+#   (0.75, 0.1667) -> world (+HALF, +HALF), the CORNER: needs all four images
+#   (0.75, 0.5)    -> world (+HALF, 0),     the +x edge: needs two
+#   (0.5,  0.1667) -> world (0, +HALF),     the +y edge: needs two
+#
+# In tile-seam-on.png each of those must appear whole on both/all sides, not cut in half.
+
+campaign ch00-genesis
+runs 2
+night 1
+matterlayer all
+
+camera zoom 0.5
+spawn 0.75 0.1667
+spawn 0.75 0.5
+spawn 0.5 0.1667
+runs 2
+
+tile off
+shot tile-seam-off
+
+tile on
+shot tile-seam-on

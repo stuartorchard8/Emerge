@@ -97,6 +97,9 @@ object CytoRenderBenchmark {
 
     private const val WARMUP = 60
 
+    /** Alternations per zoom level in the tiling A/B — enough to average out drift across the run. */
+    private const val TILE_AB_ROUNDS = 4
+
     @JvmStatic
     fun main(args: Array<String>) {
         val path = args.getOrNull(0) ?: "apps/cyto/desktop/cyto-saves/squish.bin"
@@ -147,6 +150,32 @@ object CytoRenderBenchmark {
                 b.renderer.zoomByFactor(zoom)
                 b.report("zoom ${zoom.toInt()}x", b.measure(frames))
             }
+
+            // ── Torus tiling A/B, zoomed OUT past the world's edges ──
+            // This is the regime tiling exists for, and the only one where the two paths differ: the direct
+            // path draws every cell once (one island in a repeating ground), the tiled path draws the period
+            // once and repeats it.
+            //
+            // The two variants are INTERLEAVED rather than run as two blocks, because this machine's clocks
+            // drift and thermally collapse over a long run — measured back to back, whichever ran second
+            // would look slower whatever it did.
+            println("\n-- torus tiling A/B (zoomed out; interleaved to survive clock drift) --")
+            for (zoomOut in listOf(0.5f, 0.25f, 0.0625f)) {
+                val off = ArrayList<Long>()
+                val on = ArrayList<Long>()
+                repeat(TILE_AB_ROUNDS) {
+                    b.renderer.resetView(); b.renderer.zoomByFactor(zoomOut)
+                    b.renderer.tileWorld = false
+                    off += b.measure(frames / TILE_AB_ROUNDS).toList()
+
+                    b.renderer.resetView(); b.renderer.zoomByFactor(zoomOut)
+                    b.renderer.tileWorld = true
+                    on += b.measure(frames / TILE_AB_ROUNDS).toList()
+                }
+                b.report("zoom ${zoomOut}x  direct", off.toLongArray())
+                b.report("zoom ${zoomOut}x  tiled", on.toLongArray())
+            }
+            b.renderer.tileWorld = false
         } finally {
             b.cleanup()
         }

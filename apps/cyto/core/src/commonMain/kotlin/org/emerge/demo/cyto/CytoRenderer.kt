@@ -30,6 +30,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
+import kotlin.math.ceil
 import kotlin.math.round
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -66,8 +67,17 @@ class CytoRenderer {
     private val periodTarget = RenderTarget()
     private val tileShader = TileShader()
 
-    /** Whether to route the world through the period texture. */
-    var tileWorld = false
+    /**
+     * Whether to route the world through the period texture, so that zooming out past the world's edges
+     * shows the torus repeating rather than an island of life in an endlessly repeating ground.
+     *
+     * On by default. It engages only once a period fits on screen (see [periodTargetSize]), and measured on
+     * a 4058-cell world it is a large win exactly where it engages — at 0.25× zoom, 53 → 93 FPS with p95
+     * frame time falling from 50.7ms to 12.3ms — and neutral at 0.5×. Far out (0.0625×) it costs a little
+     * more than the direct path while drawing some 256 copies of the world instead of one; both paths are
+     * dominated there by the per-cell draw calls, which is a matter for instancing, not for tiling.
+     */
+    var tileWorld = true
 
     // The cell shader does `min(u_color, texture)`, so a flat white texture yields the
     // cell's colour; the disc shape + shading come from the shader, not the texture. Built
@@ -87,6 +97,21 @@ class CytoRenderer {
     private var camLogX = 0f
     private var camLogY = 0f
     private var viewHeight = 100f
+
+    // Geometry of the pass currently being drawn — the screen (centred on the camera) or the period texture
+    // (centred on the world origin, one period across). Set by [computeProjection] /
+    // [computePeriodProjection]; read by everything in [drawWorldLayer], which is what lets one body of
+    // drawing code serve both.
+    private var passCenterX = 0f
+    private var passCenterY = 0f
+    private var passHalfW = 50f
+    private var passHalfH = 50f
+    private var passPixelsH = 1f
+    private var periodPass = false
+
+    /** Pass pixels per world unit — the scale at which detail gates ("is this cell big enough to draw
+     *  specks in?") have to be judged, since the period texture's resolution is not the screen's. */
+    private val passPxPerUnit: Float get() = passPixelsH / (2f * passHalfH)
 
     private val matP = Mat4.scratch()
     private val matM = Mat4.scratch()
@@ -430,26 +455,55 @@ class CytoRenderer {
         applyFollow()
         computeProjection()
 
-        val tiling = tileWorld && periodTarget.resize(resW.toInt(), resH.toInt())
+        val targetPx = periodTargetSize()
+        val tiling = targetPx > 0 && periodTarget.resize(targetPx, targetPx)
         if (tiling) {
+            computePeriodProjection(targetPx.toFloat())
             periodTarget.begin()
             drawWorldLayer(frame)
             periodTarget.end(resW.toInt(), resH.toInt())
 
-            // Identity mapping for now: centre 0, half-extent half the period, so texUv == screen uv and the
-            // blit reproduces the target 1:1. Phase B makes the target period-aligned and Phase C feeds the
-            // real camera here, at which point this same call starts repeating the world.
+            // Restore the screen projection so anything reading pass geometry after the world layer (and the
+            // next frame's screen-space queries) sees the camera, not the period.
+            computeProjection()
+
+            val aspect = resW / resH
             GPU.disableBlend()
             tileShader.useFullViewport(resW, resH)
             tileShader.draw(
                 periodTextureId = periodTarget.textureId,
-                center = Vec2(0f, 0f),
-                viewHalfExtent = Vec2(0.5f, 0.5f),
-                period = Vec2(1f, 1f),
+                center = Vec2(camLogX, camLogY),
+                viewHalfExtent = Vec2(viewHeight * aspect * 0.5f, viewHeight * 0.5f),
+                period = Vec2(CytoLightField.SPAN, CytoLightField.SPAN),
             )
         } else {
             drawWorldLayer(frame)
         }
+    }
+
+    /**
+     * Edge length in pixels for the period texture, or 0 to draw straight to the screen instead.
+     *
+     * The target holds one period of the world, so it is sized to what one period currently occupies on
+     * screen — roughly one texel per screen pixel, which is what keeps the tiled view as sharp as the direct
+     * one and means there is no minification for mipmaps to handle.
+     *
+     * Tiling only engages once a period is no larger than the screen — that is exactly the point where the
+     * world's edges come into view and there is something to repeat. Zoomed in past that, the direct path is
+     * both correct and cheaper, and the target would be larger than the screen for no visible gain. That
+     * bound is what keeps the tiled pass from ever costing more fill than drawing to the screen would.
+     *
+     * Sizes are quantised, since zoom is continuous and resizing every frame would reallocate constantly and
+     * shimmer. The step is deliberately much smaller than a doubling: rounding up to a power of two would
+     * waste up to 4× the fill. Within a step the blit rescales slightly, which is invisible.
+     */
+    private fun periodTargetSize(): Int {
+        if (!tileWorld) return 0
+        val periodPx = CytoLightField.SPAN * (resH / viewHeight)
+        if (!periodPx.isFinite() || periodPx <= 0f) return 0
+        if (periodPx > max(resW, resH)) return 0    // zoomed in: no edges in view, nothing to repeat
+        val steps = ceil(periodPx / TILE_SIZE_STEP.toFloat()).toInt()
+        return (steps * TILE_SIZE_STEP).coerceIn(TILE_MIN_PX, TILE_MAX_PX)
     }
 
     private fun drawWorldLayer(frame: CytoFrame) {
@@ -557,23 +611,24 @@ class CytoRenderer {
                     if (a <= 0.003f) continue
                     val r = frac * radius                                // grow 0 → cell radius
                     matCircS.setScale(r, r)
-                    matCircT.setTranslation(viewX(cx), viewY(cy))
-                    matCircM.setProduct(matCircT, matCircS)
-                    mvpCirc.setProduct(matP, matCircM)
-                    mvpCirc.copyInto(buildMatrices, buildCount * Mat4.FLOATS)
-                    buildPrimaryIds[buildCount] = 0f
-                    buildShapes[buildCount] = 0f
-                    buildAlphas[buildCount] = a.coerceIn(0f, 1f)
-                    val tb = buildCount * 3
-                    buildTints[tb] = speciesTmp[0]; buildTints[tb + 1] = speciesTmp[1]; buildTints[tb + 2] = speciesTmp[2]
-                    buildCount++
+                    forEachSeamImage(viewX(cx), viewY(cy), radius) { ix, iy ->
+                        if (buildCount < BUILD_MAX) {
+                            matCircT.setTranslation(ix, iy)
+                            matCircM.setProduct(matCircT, matCircS)
+                            mvpCirc.setProduct(matP, matCircM)
+                            mvpCirc.copyInto(buildMatrices, buildCount * Mat4.FLOATS)
+                            buildPrimaryIds[buildCount] = 0f
+                            buildShapes[buildCount] = 0f
+                            buildAlphas[buildCount] = a.coerceIn(0f, 1f)
+                            val tb = buildCount * 3
+                            buildTints[tb] = speciesTmp[0]; buildTints[tb + 1] = speciesTmp[1]; buildTints[tb + 2] = speciesTmp[2]
+                            buildCount++
+                        }
+                    }
                 }
             }
 
             matMS.setScale(2f * radius, 2f * radius)
-            matMT.setTranslation(viewX(cx), viewY(cy))
-            matM.setProduct(matMT, matMS)
-            mvp.setProduct(matP, matM)
 
             val focused = id.value == focusedCellId
             // Dim a cell only when a present cell is focused and this one is neither it nor a direct weld.
@@ -619,13 +674,20 @@ class CytoRenderer {
                 }
             }
 
-            shader.draw(
-                mvp = mvp,
-                radiusUniform = radius * 2f,
-                color = colorTmp,
-                neighbours = neighbourTmp,
-                count = count,
-            )
+            // The neighbour deltas are relative, so an image of this cell at the far edge of the period
+            // renders identically — only the placement differs.
+            forEachSeamImage(viewX(cx), viewY(cy), radius) { ix, iy ->
+                matMT.setTranslation(ix, iy)
+                matM.setProduct(matMT, matMS)
+                mvp.setProduct(matP, matM)
+                shader.draw(
+                    mvp = mvp,
+                    radiusUniform = radius * 2f,
+                    color = colorTmp,
+                    neighbours = neighbourTmp,
+                    count = count,
+                )
+            }
         }
         // Evict intensity state for cells that vanished (died/off-frame) — same pattern as focusNeighbours.
         if (buildIntensity.size > buildSeen.size) {
@@ -689,10 +751,12 @@ class CytoRenderer {
     ) {
         geneTime += GENE_TIME_STEP * animDt
         geneSeen.clear()
-        val pxPerUnit = resH / viewHeight
-        // Half-extents of the view in logical units, for the off-screen test.
-        val halfH = viewHeight / 2f
-        val halfW = halfH * (resW / resH)
+        // Judged against the pass being drawn, not the screen: in the period pass a cell is as big as it is
+        // in the texture, which past a certain zoom-out is too small to carry specks at all.
+        val pxPerUnit = passPxPerUnit
+        // Half-extents of the pass in logical units, for the off-view test.
+        val halfH = passHalfH
+        val halfW = passHalfW
         var inst = 0
 
         for ((id, cell) in cells) {
@@ -739,20 +803,24 @@ class CytoRenderer {
 
                 geneColorInto(genome[i].source, speciesTmp)
                 matCircS.setScale(size, size)
-                matCircT.setTranslation(vx + ox * orbit, vy + oy * orbit)
-                matCircM.setProduct(matCircT, matCircS)
-                mvpCirc.setProduct(matP, matCircM)
-                mvpCirc.copyInto(buildMatrices, inst * Mat4.FLOATS)
-                buildPrimaryIds[inst] = 0f
-                buildShapes[inst] = 0f
-                buildAlphas[inst] = GENE_ALPHA
-                val tb = inst * 3
-                // Scale the hue by the eased brightness — an inactive gene is the same colour at
-                // GENE_INACTIVE_VALUE of the value, not a different (washed-out) colour.
-                buildTints[tb] = speciesTmp[0] * v
-                buildTints[tb + 1] = speciesTmp[1] * v
-                buildTints[tb + 2] = speciesTmp[2] * v
-                inst++
+                forEachSeamImage(vx + ox * orbit, vy + oy * orbit, size) { ix, iy ->
+                    if (inst < GENE_MAX) {
+                        matCircT.setTranslation(ix, iy)
+                        matCircM.setProduct(matCircT, matCircS)
+                        mvpCirc.setProduct(matP, matCircM)
+                        mvpCirc.copyInto(buildMatrices, inst * Mat4.FLOATS)
+                        buildPrimaryIds[inst] = 0f
+                        buildShapes[inst] = 0f
+                        buildAlphas[inst] = GENE_ALPHA
+                        val tb = inst * 3
+                        // Scale the hue by the eased brightness — an inactive gene is the same colour at
+                        // GENE_INACTIVE_VALUE of the value, not a different (washed-out) colour.
+                        buildTints[tb] = speciesTmp[0] * v
+                        buildTints[tb + 1] = speciesTmp[1] * v
+                        buildTints[tb + 2] = speciesTmp[2] * v
+                        inst++
+                    }
+                }
             }
             if (inst >= GENE_MAX) break
         }
@@ -947,16 +1015,20 @@ class CytoRenderer {
             val alpha = sin(prog.toDouble() * PI).toFloat() * PARTICLE_MAX_ALPHA
             val s = partSize[i]
             matCircS.setScale(s, s)
-            matCircT.setTranslation(viewX(x), viewY(y))
-            matCircM.setProduct(matCircT, matCircS)
-            mvpCirc.setProduct(matP, matCircM)
-            mvpCirc.copyInto(buildMatrices, inst * Mat4.FLOATS)
-            buildPrimaryIds[inst] = 0f
-            buildShapes[inst] = 0f
-            buildAlphas[inst] = alpha
-            val tb = inst * 3
-            buildTints[tb] = partR[i]; buildTints[tb + 1] = partG[i]; buildTints[tb + 2] = partB[i]
-            inst++
+            forEachSeamImage(viewX(x), viewY(y), s) { ix, iy ->
+                if (inst < BUILD_MAX) {
+                    matCircT.setTranslation(ix, iy)
+                    matCircM.setProduct(matCircT, matCircS)
+                    mvpCirc.setProduct(matP, matCircM)
+                    mvpCirc.copyInto(buildMatrices, inst * Mat4.FLOATS)
+                    buildPrimaryIds[inst] = 0f
+                    buildShapes[inst] = 0f
+                    buildAlphas[inst] = alpha
+                    val tb = inst * 3
+                    buildTints[tb] = partR[i]; buildTints[tb + 1] = partG[i]; buildTints[tb + 2] = partB[i]
+                    inst++
+                }
+            }
             w++
         }
         partCount = w
@@ -1052,16 +1124,21 @@ class CytoRenderer {
                 // that starts at the rim, not a disc the cell happens to cover. `radius / r` is that rim
                 // expressed in the pulse's own local units, so the hole tracks the pulse as it expands.
                 matCircS.setScale(r, r)
-                matCircT.setTranslation(viewX(cx), viewY(cy))
-                matCircM.setProduct(matCircT, matCircS)
-                mvpCirc.setProduct(matP, matCircM)
-                mvpCirc.copyInto(buildMatrices, count * Mat4.FLOATS)
-                buildPrimaryIds[count] = radius / r
-                buildShapes[count] = CircleShader.SHAPE_ANNULUS
-                buildAlphas[count] = a.coerceIn(0f, 1f)
-                val tb = count * 3
-                buildTints[tb] = speciesTmp[0]; buildTints[tb + 1] = speciesTmp[1]; buildTints[tb + 2] = speciesTmp[2]
-                count++
+                // The halo, not the cell, is what may overhang the seam — replicate on its expanded radius.
+                forEachSeamImage(viewX(cx), viewY(cy), r) { ix, iy ->
+                    if (count < BUILD_MAX) {
+                        matCircT.setTranslation(ix, iy)
+                        matCircM.setProduct(matCircT, matCircS)
+                        mvpCirc.setProduct(matP, matCircM)
+                        mvpCirc.copyInto(buildMatrices, count * Mat4.FLOATS)
+                        buildPrimaryIds[count] = radius / r
+                        buildShapes[count] = CircleShader.SHAPE_ANNULUS
+                        buildAlphas[count] = a.coerceIn(0f, 1f)
+                        val tb = count * 3
+                        buildTints[tb] = speciesTmp[0]; buildTints[tb + 1] = speciesTmp[1]; buildTints[tb + 2] = speciesTmp[2]
+                        count++
+                    }
+                }
             }
         }
         if (decayIntensity.size > decaySeen.size) {
@@ -1155,13 +1232,12 @@ class CytoRenderer {
      *  wrapped, no tile edge). Passes the camera→world mapping + the band position for sim-time [tick]. */
     private fun drawLightMultiply(tick: Long) {
         if (nightLevel >= 1f) return   // a flat, always-lit world: the multiply would be an identity pass
-        val aspect = resW / resH
-        val hwx = viewHeight * aspect * 0.5f
+        val hwx = passHalfW
         if (hwx <= 0f) return
         GPU.enableBlend()
         GPU.setBlendFuncDstColorZero()   // scene *= light
         lightFieldShader.draw(
-            centerX = camLogX,
+            centerX = passCenterX,
             halfViewX = hwx,
             bandX = CytoLightField.bandCenterX(tick),
             falloff = CytoLightField.FALLOFF,
@@ -1178,16 +1254,15 @@ class CytoRenderer {
     private fun drawMatterField(frame: CytoFrame) {
         // No showMatterField guard: matter IS the ground now, not an optional overlay layered on top of it.
         val grid = frame.state.components.getTable<CytoMatterGridComponent>().asMap()[GRID_SINGLETON]?.grid ?: return
-        val aspect = resW / resH
-        val hwx = viewHeight * aspect * 0.5f
-        val hwy = viewHeight * 0.5f
+        val hwx = passHalfW
+        val hwy = passHalfH
         if (hwx <= 0f || hwy <= 0f) return
         val tRaster = TimeSource.Monotonic.markNow()
         rasterizeMatter(grid)
         lastRasterizeUs = tRaster.elapsedNow().inWholeMicroseconds
         matterField.draw(
             pixels = matterPixels,
-            centerX = camLogX, centerY = camLogY,
+            centerX = passCenterX, centerY = passCenterY,
             halfViewX = hwx, halfViewY = hwy,
             half = CytoLightField.HALF, span = CytoLightField.SPAN,
             time = frame.tick.toFloat(), amp = MATTER_WARP_AMP,
@@ -1271,14 +1346,55 @@ class CytoRenderer {
         return id
     }
 
+    /**
+     * Aim the world pass at the screen: centred on the camera, covering [viewHeight] world units vertically
+     * and whatever the aspect ratio makes that horizontally.
+     */
     private fun computeProjection() {
         val aspect = resW / resH
-        val viewWidth = viewHeight * aspect
-        // The camera is applied per-object (as a wrapped delta via viewX/viewY), not by a single translation
-        // matrix — a matrix can't wrap. So the projection is a pure scale-to-NDC; objects arrive pre-offset.
         camLogX = CytoUnits.toLogical(cameraX)
         camLogY = CytoUnits.toLogical(cameraY)
-        matP.setScale(2f / viewWidth, 2f / viewHeight)
+        setPass(
+            centerX = camLogX,
+            centerY = camLogY,
+            halfW = viewHeight * aspect * 0.5f,
+            halfH = viewHeight * 0.5f,
+            pixelsH = resH,
+            period = false,
+        )
+    }
+
+    /**
+     * Aim the world pass at the period texture instead: centred on the world origin and covering exactly one
+     * torus period, square. That the pass is square while the screen is not is fine — the texture is one
+     * period of the world, not a picture of the screen, and [TileShader] maps it back.
+     *
+     * Note that nothing else about the pass has to change. [viewX]/[viewY] already wrap, so centring on the
+     * origin turns them from "offset from the camera" into "wrapped into the period" — which is exactly the
+     * period-aligned placement the texture needs. What the period pass does add is [forEachSeamImage].
+     */
+    private fun computePeriodProjection(targetPixels: Float) {
+        val half = CytoLightField.SPAN * 0.5f
+        setPass(centerX = 0f, centerY = 0f, halfW = half, halfH = half, pixelsH = targetPixels, period = true)
+    }
+
+    private fun setPass(
+        centerX: Float,
+        centerY: Float,
+        halfW: Float,
+        halfH: Float,
+        pixelsH: Float,
+        period: Boolean,
+    ) {
+        passCenterX = centerX
+        passCenterY = centerY
+        passHalfW = halfW
+        passHalfH = halfH
+        passPixelsH = pixelsH
+        periodPass = period
+        // The centre is applied per-object (as a wrapped delta via viewX/viewY), not by a single translation
+        // matrix — a matrix can't wrap. So the projection is a pure scale-to-NDC; objects arrive pre-offset.
+        matP.setScale(1f / halfW, 1f / halfH)
     }
 
     /** Wrap a logical delta to the shortest torus offset, `[-HALF, HALF)` (period [CytoLightField.SPAN]). */
@@ -1287,11 +1403,39 @@ class CytoRenderer {
         return d - span * round(d / span)
     }
 
-    /** Logical world x/y → camera-relative logical, wrapped to the shortest torus offset. The per-object
-     *  camera transform: every drawn thing is placed at its nearest image of the camera, so it slides
+    /** Logical world x/y → pass-relative logical, wrapped to the shortest torus offset. The per-object
+     *  camera transform: every drawn thing is placed at its nearest image of the pass centre, so it slides
      *  seamlessly across the torus edges instead of off into unbounded space. */
-    private fun viewX(logicalX: Float): Float = wrapLogical(logicalX - camLogX)
-    private fun viewY(logicalY: Float): Float = wrapLogical(logicalY - camLogY)
+    private fun viewX(logicalX: Float): Float = wrapLogical(logicalX - passCenterX)
+    private fun viewY(logicalY: Float): Float = wrapLogical(logicalY - passCenterY)
+
+    /**
+     * Invoke [body] at every position an object of [radius] centred at ([vx], [vy]) has to be drawn.
+     *
+     * Normally that is once, at the position given. In the period pass it can be up to four times: the
+     * period texture is only seamless if whatever overhangs one edge of the world is also drawn at the
+     * opposite edge, so the tiling has something to line up with. A cell straddling a corner needs all four.
+     *
+     * This is the entire cost of the tiled path — a handful of extra draws for the objects actually touching
+     * the seam, no matter how many copies of the world end up on screen.
+     */
+    private inline fun forEachSeamImage(vx: Float, vy: Float, radius: Float, body: (Float, Float) -> Unit) {
+        body(vx, vy)
+        if (!periodPass) return
+
+        val span = CytoLightField.SPAN
+        val half = span * 0.5f
+        val overRight = vx + radius > half
+        val overLeft = vx - radius < -half
+        val overTop = vy + radius > half
+        val overBottom = vy - radius < -half
+
+        val dx = if (overRight) -span else if (overLeft) span else 0f
+        val dy = if (overTop) -span else if (overBottom) span else 0f
+        if (dx != 0f) body(vx + dx, vy)
+        if (dy != 0f) body(vx, vy + dy)
+        if (dx != 0f && dy != 0f) body(vx + dx, vy + dy)
+    }
 
     /**
      * Colour a cell by its **contents**, per [colorMode]. Each r/g/b atom count maps to R/G/B,
@@ -1356,6 +1500,12 @@ class CytoRenderer {
         const val ANIM_DT_MAX = 6f
 
         // ── Flow 3 (CYT→BIO "building") tuning — iterate via the agent harness. ──
+        // Bounds and quantisation for the period texture (see [periodTargetSize]). The max caps memory at
+        // 2048² RGBA (16 MB) and sits inside GL_MAX_TEXTURE_SIZE on every target, phones included.
+        const val TILE_MIN_PX = 128
+        const val TILE_MAX_PX = 2048
+        const val TILE_SIZE_STEP = 128
+
         const val BUILD_MAX = CircleShader.MAX_INSTANCES
         // Per-frame easing toward the tick's build target (warm-up / cool-down rate). Lower ⇒ gentler
         // fade-in; 0.03 ⇒ ≈2-3s ramp so the build glow eases in softly rather than popping on.
