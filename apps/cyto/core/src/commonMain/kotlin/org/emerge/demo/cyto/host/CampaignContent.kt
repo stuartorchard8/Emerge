@@ -765,6 +765,7 @@ object CampaignContent {
                 text = "Now select one and look at what it is holding. Every division your cells have ever paid for has left a molecule of {bond} behind, and they have no use for it. They are filling up with their own waste products.",
                 detail = "Nothing is destroyed in this world, only rearranged. The atoms in that {bond} are the same atoms your cells started with - they are simply locked into a shape the genome has no gene for.",
                 gate = Gate.World("Select a cell and read its chemistry", met = { it.chemistryOpen }),
+                spotlight = Spotlight(target = "CHEMISTRY"),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
