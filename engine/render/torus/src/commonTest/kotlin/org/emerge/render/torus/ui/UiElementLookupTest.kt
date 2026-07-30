@@ -137,6 +137,41 @@ class UiElementLookupTest {
         assertTrue(straddling.y < clip.y, "it really does start above the viewport's top edge")
     }
 
+    /**
+     * The readout fallback (P4): the point of the spotlight is directing attention through a dense *readout*,
+     * and a `LIGHT  4200` line is not a button. It resolves for pointing at, without becoming tappable.
+     */
+    @Test fun aReadoutRowCanBeTargetedWithoutBecomingClickable() {
+        val ui = Ui().apply { setResolution(400f, 300f) }
+        ui.frame {
+            panel(Anchor.TopLeft) {
+                row("METABOLISM")
+                keyValue("LIGHT", "4200")
+                button("+ NEW GENE", 0x336633FFL) {}
+            }
+        }
+        val light = assertNotNull(ui.element("LIGHT"), "a readout is a valid spotlight target")
+        assertTrue(light.w > 0f && light.h > 0f)
+        assertNotNull(ui.element("METABOLISM"))
+        assertTrue(ui.elements().none { it.label == "LIGHT" }, "but a tap driver must not see it as a widget")
+        assertTrue(!ui.tapLabel("LIGHT"), "and tapping it does nothing")
+    }
+
+    /** A readout must never shadow a widget, or the coach would circle a label while the script taps a
+     *  different thing of the same name — the failure the shared lookup exists to prevent. */
+    @Test fun aClickableWidgetWinsOverAReadoutOfTheSameName() {
+        val ui = Ui().apply { setResolution(400f, 300f) }
+        ui.frame {
+            panel(Anchor.TopLeft) {
+                row("DIVIDE")
+                button("DIVIDE", 0x336633FFL) {}
+            }
+        }
+        val hit = assertNotNull(ui.element("DIVIDE"))
+        val widget = assertNotNull(ui.elements().first { it.label == "DIVIDE" })
+        assertEquals(widget.y, hit.y, "the button's row, not the text row above it")
+    }
+
     /** The connector's anchor end: a panel is auto-sized and anchor-placed, so its rect is knowable only from
      *  the toolkit. It reports the panel most recently emitted, and resets with the frame. */
     @Test fun theLastPanelRectIsTheLastPanelEmitted() {

@@ -244,7 +244,7 @@ class Ui {
 
     /** Rebuilds this frame's widget tree (clears the previous frame's geometry; hold state persists). */
     fun frame(block: UiBuilder.() -> Unit) {
-        cmds.clear(); clicks.clear(); modalFrom = 0; lastPanelRect = null
+        cmds.clear(); clicks.clear(); modalFrom = 0; lastPanelRect = null; readoutRegions.clear()
         overlayRects.clear(); overlayTexts.clear(); overlayClicks.clear()
         anchorCursor.clear(); anchorInset.clear(); anchorColumnExtent.clear()
         clipRects.clear(); scrollRegions.clear(); currentClip = -1
@@ -705,6 +705,21 @@ class Ui {
         return out
     }
 
+    /**
+     * The frame's **non-interactive** labelled regions: the panel's readout rows (a `LIGHT  4200` line, a
+     * gene's condition clause). They are not clickable and never will be, but they are exactly what a coach
+     * directing attention through a dense readout needs to point at, and [elements] — a tap driver's view of
+     * the frame — must keep listing only what can actually be tapped.
+     */
+    fun readouts(): List<UiElement> = readoutRegions
+
+    private val readoutRegions = ArrayList<UiElement>()
+
+    /** Record a readout row's rect under [label] (its own text). Called by the panel items as they emit. */
+    internal fun noteReadout(label: String, x: Float, y: Float, w: Float, h: Float) {
+        if (label.isNotBlank()) readoutRegions.add(UiElement(label, x, y, w, h, clipRectOf(currentClip)))
+    }
+
     private fun ClickRegion.asElement(fallbackLabel: String = "") =
         UiElement(label ?: fallbackLabel, x, y, w, h, clipRectOf(clip))
 
@@ -722,9 +737,30 @@ class Ui {
      *
      * Only regions laid out **so far this frame** are visible to it, so call it after the panels are built.
      * A match scrolled out of its viewport still resolves, with [UiElement.visible] false — see there.
+     *
+     * Falls back to the frame's [readouts] when nothing clickable matches, so "point at the LIGHT reading"
+     * works without turning a readout into a button. Clickable regions win, so adding a readout can never
+     * steal a target from the widget a script taps.
      */
-    fun element(label: String, occurrence: Int = 1): UiElement? =
-        labelMatches(label).getOrNull(occurrence - 1)?.asElement(label)
+    fun element(label: String, occurrence: Int = 1): UiElement? {
+        val clickable = labelMatches(label)
+        // One layer or the other, never a blend: with both in one list, occurrence would count across widgets
+        // and readouts together and shift the moment a row is added elsewhere in the panel.
+        if (clickable.isNotEmpty()) return clickable.getOrNull(occurrence - 1)?.asElement(label)
+        return readoutMatches(label).getOrNull(occurrence - 1)
+    }
+
+    /** Readout rows matching [label], exact before substring — [labelMatches]' ordering, one layer. */
+    private fun readoutMatches(label: String): List<UiElement> {
+        val q = label.lowercase()
+        val exact = ArrayList<UiElement>()
+        val partial = ArrayList<UiElement>()
+        for (r in readoutRegions) when {
+            r.label.lowercase() == q -> exact.add(r)
+            r.label.lowercase().contains(q) -> partial.add(r)
+        }
+        return exact + partial
+    }
 
     /** Invoke the first button region whose label contains [label] (case-insensitive). Returns true if
      *  one fired. Overlay regions (open dropdowns) win, then the base layer. */
@@ -1406,8 +1442,10 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
 
     private class TextItem(val text: String, val color: Long, override val height: Float) : Item {
         override fun measureWidth(textH: Float) = UiTextRenderer.measureWidthPx(text, textH)
-        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) =
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
             ui.emitTextLeft(text, x, topY + (height - textH) * 0.5f, textH, color)
+            ui.noteReadout(text, x, topY, contentW, height)
+        }
     }
 
     private class KeyValueItem(val key: String, val value: String, val keyColor: Long, val valueColor: Long, override val height: Float) : Item {
@@ -1417,6 +1455,8 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
             val ty = topY + (height - textH) * 0.5f
             ui.emitTextLeft(key, x, ty, textH, keyColor)
             ui.emitTextLeft(value, x + contentW - UiTextRenderer.measureWidthPx(value, textH), ty, textH, valueColor)
+            // Named by its key, not "LIGHT  4200": the value changes every tick, the key is what a coach means.
+            ui.noteReadout(key, x, topY, contentW, height)
         }
     }
 
