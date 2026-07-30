@@ -47,12 +47,12 @@ select 0.35 0.5
 next
 expect step 8/11
 
-# 7. Author the first CONVERT gene: blank gene, then action, then chemical.
+# 7. Author the first GROW gene: blank gene, then action, then chemical.
 tap-ui + NEW GENE
 expect genes 1
 next
 tap-ui NOTHING
-tap-ui Convert
+tap-ui GROW
 expect convertChem
 next
 tap-ui (NONE)

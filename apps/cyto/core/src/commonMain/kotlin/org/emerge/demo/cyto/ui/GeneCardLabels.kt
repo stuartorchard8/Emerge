@@ -8,7 +8,7 @@ import org.emerge.demo.cyto.sim.Operand
 /**
  * **The gene card's word list** — every fixed label a player can read or tap on a gene, in one place.
  *
- * It exists because campaign copy *names* these words ("change the action from (NOTHING) to (CONVERT)")
+ * It exists because campaign copy *names* these words ("change the action from (NOTHING) to (GROW)")
  * as bare strings. Renaming a label used to silently make that copy lie, with every test still green;
  * `CampaignCopyTokensTest` now checks the copy against [VOCABULARY], so the rename fails loudly instead.
  *
@@ -26,6 +26,9 @@ object GeneCardLabels {
     fun action(t: ActionType): String = when (t) {
         ActionType.BreakBond -> "BREAK"
         ActionType.None -> "NOTHING"
+        // The player's word for it, not the model's. `Convert` describes the mechanism (one chemical becomes
+        // biomass); GROW describes what it is FOR, which is the thing a player is choosing between actions on.
+        ActionType.Convert -> "GROW"
         else -> t.name
     }
 
@@ -80,7 +83,7 @@ object GeneCardLabels {
         addAll(listOf(
             "ALONG", "ACROSS", "NO GRADIENT", "GRADIENT",
             "RETAINING", "GIVING", "NOTHING", "CELL 1", "CELL 2",
-            "SEVERING CELL 2 FREE", "AND STICK", "TO MASS", "TO", "WELDS",
+            "SEVERING CELL 2 FREE", "AND STICK", "TO MASS", "TO", "WELDS", "USING",
         ))
     }.mapTo(LinkedHashSet()) { it.uppercase() }
 }

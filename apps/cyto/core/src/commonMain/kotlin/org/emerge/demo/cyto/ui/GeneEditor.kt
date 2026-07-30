@@ -1050,7 +1050,7 @@ class GeneEditor {
         ActionType.Import -> "PULL A MOLECULE IN FROM OUTSIDE"
         ActionType.Export -> "PUSH A MOLECULE OUT TO OUTSIDE"
         ActionType.BreakBond -> "SPLIT A BOND APART - COSTS ENERGY"
-        ActionType.Convert -> "LOCK A MOLECULE INTO BIOMASS - GROW"
+        ActionType.Convert -> "LOCK A MOLECULE INTO BIOMASS"
         ActionType.Contract -> "SHRINK THE RADIUS - A MUSCLE FLEX"
         ActionType.Divide -> "DIVIDE INTO TWO CELLS"
         ActionType.Repair -> "HEAL THE MOST-DAMAGED WELD"
@@ -1229,7 +1229,9 @@ class GeneEditor {
             }))
         when (gene.action.type) {
             ActionType.Import, ActionType.Export, ActionType.Convert, ActionType.Retain -> {
-                actLine.add(UiTok.Text(" ", grey))
+                // GROW reads as a sentence — "GROW USING REDOGEN" — the same shape as the source row's
+                // "USE LIGHT TO". The others name a movement, where the bare chemical already reads right.
+                actLine.add(UiTok.Text(if (gene.action.type == ActionType.Convert) " USING " else " ", grey))
                 actLine.add(UiTok.Toggle(sp(gene.action.a), ctlIf(inputBlocked)) { openInlinePick(controller, i, Pick.SpeciesA) })
             }
             // One control for the whole reaction, exactly like the BOND source row above.

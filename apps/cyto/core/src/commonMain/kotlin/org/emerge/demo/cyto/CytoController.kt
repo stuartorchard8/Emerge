@@ -985,12 +985,12 @@ class CytoController(
         }
     }
 
-    /** The action part of a gene's description (`BREAK ab`, `CONVERT ab`, `DIVIDE →m`, …). */
+    /** The action part of a gene's description (`BREAK ab`, `GROW ab`, `DIVIDE →m`, …). */
     private fun actionLabel(a: org.emerge.demo.cyto.sim.GeneAction): String = when (a.type) {
         ActionType.Import -> "IMPORT ${a.a}"
         ActionType.Export -> "EXPORT ${a.a}"
         ActionType.BreakBond -> "BREAK ${a.a}·${a.b}"
-        ActionType.Convert -> "CONVERT ${a.a}"
+        ActionType.Convert -> "GROW ${a.a}"
         ActionType.Contract -> "CONTRACT"
         ActionType.Divide -> {
             val asym = if (a.a.isEmpty()) "" else " ${if (a.morphogenToMother) "→M:" else "→"}${a.a}"

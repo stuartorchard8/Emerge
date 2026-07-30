@@ -54,7 +54,7 @@ class NightShiftChapterTest {
 
     @Test
     fun theEditGoalNeedsConvertOnTheDivideReaction() {
-        val g = gate("Power the CONVERT gene")
+        val g = gate("Power the GROW gene")
         assertFalse(g.met(query(3000, 0, convertFuel = null)), "still on light")
         assertFalse(g.met(query(3000, 0, convertFuel = "")), "BOND chosen but no pair picked yet")
         assertTrue(g.met(query(3000, 0, convertFuel = "gb")))
@@ -64,7 +64,7 @@ class NightShiftChapterTest {
      *  one chemistry funding the whole genome, and it is what makes both branches converge on one shape. */
     @Test
     fun someOtherBondIsNotTheGoal() {
-        assertFalse(gate("Power the CONVERT gene").met(query(3000, 0, convertFuel = "rg")))
+        assertFalse(gate("Power the GROW gene").met(query(3000, 0, convertFuel = "rg")))
     }
 
     @Test

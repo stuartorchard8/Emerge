@@ -510,8 +510,8 @@ object CampaignContent {
                 world = WorldRun.Frozen,
             ),
             Step(
-                text = "Change your new gene's action from (NOTHING) to (CONVERT). CONVERT genes transform their specified chemical target from their cytoplasm [CYT] to their biomass [BIO].",
-                gate = Gate.World("Set the new gene to CONVERT", met = { it.lineage?.convertChem == "" }),
+                text = "Change your new gene's action from (NOTHING) to (GROW). GROW genes transform their specified chemical target from their cytoplasm [CYT] to their biomass [BIO].",
+                gate = Gate.World("Set the new gene to GROW", met = { it.lineage?.convertChem == "" }),
                 // The action token on the one gene they just made. Genesis reaches this step with a
                 // single-gene genome, so occurrence 1 is unambiguous - it would not be in a grown one.
                 spotlight = Spotlight(target = "NOTHING"),
@@ -520,9 +520,9 @@ object CampaignContent {
                 autoAdvance = true,
             ),
             Step(
-                text = "Tap (NONE) to change your convert gene's chemical target to either REDOGEN, GREENUM or BLUEON - they're interchangeable, so pick whichever you like.",
+                text = "Tap (NONE) to change your GROW gene's chemical target to either REDOGEN, GREENUM or BLUEON - they're interchangeable, so pick whichever you like.",
                 detail = "The picker gives you a harmless heads-up if you name something the cell isn't holding. The gene will show itself as active once it's set up correctly.",
-                gate = Gate.World("Complete the CONVERT gene", met = { it.lineage?.convertChem != null && it.lineage?.convertChem != "" }),
+                gate = Gate.World("Complete the GROW gene", met = { it.lineage?.convertChem != null && it.lineage?.convertChem != "" }),
                 spotlight = Spotlight(target = "(NONE)"),
                 allow = LOOK,
                 world = WorldRun.Frozen,
@@ -532,7 +532,7 @@ object CampaignContent {
             Step(
                 text = "{chem} it is. Now watch: when exposed to light, your cell locks {chem} into biomass. Its size stops falling and starts to climb - your cell is now able to use sunlight and raw materials to sustain itself indefinitely.",
                 altText = "Nothing it is. Now watch: your cell locks nothing into biomass, so its size continues falling and the cell dies. Try again.",
-                detail = "See the white particle wandering around inside your cell? That's the convert gene you added. It's white because it's powered by light.",
+                detail = "See the white particle wandering around inside your cell? That's the GROW gene you added. It's white because it's powered by light.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
@@ -596,21 +596,21 @@ object CampaignContent {
             // changed. Frozen while they author. Gated on the cap being one the cell can actually divide
             // under - see GROWTH_CAP_MAX.
             Step(
-                text = "Lets investigate why the cost is so high for your cell. Take another look at the genome you've authored. Your first gene always converts {chem} to biomass, resulting in this situation where division is too expensive.",
+                text = "Lets investigate why the cost is so high for your cell. Take another look at the genome you've authored. Your first gene always locks {chem} into biomass, resulting in this situation where division is too expensive.",
                 gate = Gate.Next,
                 allow = LOOK,
                 world = WorldRun.Live,
             ),
             Step(
-                text = "Let's add a condition on the CONVERT gene to limit the cell's growth. Tap (ALWAYS) on the CONVERT gene to give it a condition, set the left side to (BIO), flip the (>) to (<), and set the number to 3000.",
-                gate = Gate.World("Cap the CONVERT gene's growth", met = {
+                text = "Let's add a condition on the GROW gene to limit the cell's growth. Tap (ALWAYS) on the GROW gene to give it a condition, set the left side to (BIO), flip the (>) to (<), and set the number to 3000.",
+                gate = Gate.World("Cap the GROW gene", met = {
                     val cap = it.lineage?.convertBiomassCap
                     cap != null && cap <= GROWTH_CAP_MAX && cap >= DIVIDE_BIOMASS_MIN
                 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
                 autoAdvance = true,
-                spotlight = Spotlight(target = "Convert"),
+                spotlight = Spotlight(target = "GROW"),
             ),
             // 4. NOW the second reason, with the first one out of the way: the pivot off Light onto chemistry.
             // Selecting BOND opens the reaction sheet straight away (GeneEditor.Pick.Bond), so switching the
@@ -861,10 +861,10 @@ object CampaignContent {
             // The edit. `convertProduct == divideProduct` is the reconvergence reading: the CONVERT gene is
             // powered by the same reaction the DIVIDE gene is.
             Step(
-                text = "Now that daylight can clear {bond} back out of the cytoplasm, it is safe to spend it. Change the CONVERT gene's energy source from (USE LIGHT) to (BOND), and give it the same pair your DIVIDE gene uses. Growth then runs on chemistry, at any hour.",
+                text = "Now that daylight can clear {bond} back out of the cytoplasm, it is safe to spend it. Change the GROW gene's energy source from (USE LIGHT) to (BOND), and give it the same pair your DIVIDE gene uses. Growth then runs on chemistry, at any hour.",
                 detail = "Same move you made on the division gene, and for the same reason. Light arrives when it arrives. A bond is there whenever the cell has the atoms for it.",
                 gate = Gate.World(
-                    "Power the CONVERT gene with {bond}",
+                    "Power the GROW gene with {bond}",
                     met = { q ->
                         val fuel = q.lineage?.convertProduct
                         !fuel.isNullOrEmpty() && fuel == q.lineage?.divideProduct
@@ -872,7 +872,7 @@ object CampaignContent {
                 ),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "Convert"),
+                spotlight = Spotlight(target = "GROW"),
             ),
             // The payoff: the sawtooth. Overnight {bond} piles up (measured ~767 by dawn) because nothing is
             // breaking it in the dark; the threshold is set well under that so an ordinary night clears it.
@@ -962,9 +962,9 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "Update the CONVERT gene to change its target chemical from {chem} to {bond}.",
+                text = "Update the GROW gene to change its target chemical from {chem} to {bond}.",
                 gate = Gate.World(
-                    "Point the CONVERT gene at {bond}",
+                    "Point the GROW gene at {bond}",
                     met = { q ->
                         val target = q.lineage?.convertChem
                         !target.isNullOrEmpty() && target == q.lineage?.divideProduct
@@ -972,7 +972,7 @@ object CampaignContent {
                 ),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "Convert"),
+                spotlight = Spotlight(target = "GROW"),
             ),
             // The die-off. Measured: CONVERT goes inert immediately and the cell ruptures ~4,200 ticks later.
             //
@@ -994,7 +994,7 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "A gene can only work with what is already in the cytoplasm. Your CONVERT gene wants {bond} to build from - and your BREAK gene spends all day clearing out every last unit of it. Both genes are doing their job, but between them the cell can't grow anymore.",
+                text = "A gene can only work with what is already in the cytoplasm. Your GROW gene wants {bond} to build from - and your BREAK gene spends all day clearing out every last unit of it. Both genes are doing their job, but between them the cell can't grow anymore.",
                 gate = Gate.Next,
                 allow = LOOK,
                 world = WorldRun.Frozen,
@@ -1004,7 +1004,7 @@ object CampaignContent {
             // takes anything in a sane band rather than the exact number, so a player who reasons their own
             // way to 150 is not told they are wrong.
             Step(
-                text = "Lets give the BREAK gene a condition so it only clears the surplus. Tap (ALWAYS) on the BREAK gene, set the left side to {bond}, and set the right side to 100. Now it leaves a small reserve behind for the CONVERT gene to use.",
+                text = "Lets give the BREAK gene a condition so it only clears the surplus. Tap (ALWAYS) on the BREAK gene, set the left side to {bond}, and set the right side to 100. Now it leaves a small reserve behind for the GROW gene to use.",
                 gate = Gate.World(
                     "Block the BREAK gene when {bond} is low",
                     met = { q -> q.lineage?.recycleReserve?.let { it in 1..1000 } == true },
@@ -1069,14 +1069,14 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "Update your convert gene to change its target chemical from {chem} to {bond}. ",
-                gate = Gate.World("Update the first gene to CONVERT {bond}", met = {
+                text = "Update your GROW gene to change its target chemical from {chem} to {bond}. ",
+                gate = Gate.World("Update the first gene to GROW {bond}", met = {
                     it.lineage?.convertChem != null && it.lineage?.convertChem != ""
                             && it.lineage?.convertChem == it.lineage?.divideProduct
                 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "Convert"),
+                spotlight = Spotlight(target = "GROW"),
             ),
             // The chapter ends here, on the die-off. It auto-advances, so the collapse itself is the segue
             // into `ch03-supply` rather than something the player has to click past.
@@ -1133,14 +1133,14 @@ object CampaignContent {
                 world = WorldRun.Frozen,
             ),
             Step(
-                text = "Lets change the energy source of the convert gene to bond {chem}. This way the cell produces the {chem} it needs by using the bond as both the substrate and the energy source for growth.",
+                text = "Lets change the energy source of the GROW gene to bond {chem}. This way the cell produces the {chem} it needs by using the bond as both the substrate and the energy source for growth.",
                 gate = Gate.World("Update the first gene to BOND {bond} as its energy source", met = {
                     it.lineage?.convertChem != null && it.lineage?.convertChem != ""
                             && it.lineage?.convertChem == it.lineage?.convertProduct
                 }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "Convert"),
+                spotlight = Spotlight(target = "GROW"),
             ),
             Step(
                 text = "Now we're cooking.",
@@ -1229,7 +1229,7 @@ object CampaignContent {
             // Taught up front rather than through a die-off: without a floor this gene strips the cytoplasm
             // bare, and CONVERT needs {bond} present at the start of a tick to fire at all.
             Step(
-                text = "It needs a condition, or it will clear out every last unit and leave your CONVERT gene with nothing to build from. Tap (ALWAYS) on the new gene, set the left side to {bond}, and set the right side to 100.",
+                text = "It needs a condition, or it will clear out every last unit and leave your GROW gene with nothing to build from. Tap (ALWAYS) on the new gene, set the left side to {bond}, and set the right side to 100.",
                 gate = Gate.World(
                     "Block the BREAK gene when {bond} is low",
                     met = { q -> q.lineage?.recycleReserve?.let { it in 1..1000 } == true },
@@ -1647,13 +1647,13 @@ object CampaignContent {
                 text = "Each gene reads as one sentence, on three lines: what it DOES, WHEN it does it, and what POWERS it.",
                 gate = Gate.Next,
                 allow = LOOK,
-                detail = "Example: 'CONVERT FUEL TO MASS / WHEN BIO < 3000 / (USE LIGHT)' means - while the cell is still small, lock fuel into body mass, paid for by daylight. What to do, when to do it, and the power for it.",
+                detail = "Example: 'GROW USING FUEL / WHEN BIO < 3000 / (USE LIGHT)' means - while the cell is still small, lock fuel into body mass, paid for by daylight. What to do, when to do it, and the power for it.",
             ),
             Step(
                 text = "The two GROW genes work together: one bonds raw matter into food, the other locks that food into body mass. That loop keeps the cell fed and repaired.",
                 gate = Gate.Next,
                 allow = LOOK,
-                detail = "That's why it holds steady: as decay nibbles its body, CONVERT re-fires and rebuilds it, right back up to full size. Colour shows each gene's state - green is firing, grey is waiting, orange marks what's blocking it.",
+                detail = "That's why it holds steady: as decay nibbles its body, GROW re-fires and rebuilds it, right back up to full size. Colour shows each gene's state - green is firing, grey is waiting, orange marks what's blocking it.",
             ),
             Step(
                 text = "But notice what's missing: there's no group for reproduction. This organism can grow, but it can't multiply. Next, you'll add that.",

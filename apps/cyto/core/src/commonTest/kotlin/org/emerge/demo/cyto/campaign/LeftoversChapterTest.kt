@@ -51,7 +51,7 @@ class LeftoversChapterTest {
 
     @Test
     fun theRetargetGoalWantsTheDivideProductNotTheMonomer() {
-        val g = gate("Point the CONVERT gene")
+        val g = gate("Point the GROW gene")
         assertFalse(g.met(query("r")), "still on the bare monomer")
         assertFalse(g.met(query("")), "CONVERT exists but nothing is picked")
         assertTrue(g.met(query("gb")))

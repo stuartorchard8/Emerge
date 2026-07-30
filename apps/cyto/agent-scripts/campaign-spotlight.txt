@@ -37,7 +37,7 @@ next
 echo === 9/11: ring the NOTHING action token ===
 shot spot-nothing
 tap-ui NOTHING
-tap-ui Convert
+tap-ui GROW
 next
 echo === 10/11: ring the (NONE) chemical token ===
 shot spot-none
