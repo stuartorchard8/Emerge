@@ -379,6 +379,18 @@ class CytoController(
     }
 
     /**
+     * Whether a world interaction is queued and waiting for a tick to apply it.
+     *
+     * Only the paused hosts need this. A tap is buffered and drained by the reducer, so while the sim is held
+     * still it applies to *nothing*: the cell the player asked for appears whenever they next resume, which
+     * reads as a click that did nothing followed by one that did two things. Seeing it, a paused host can
+     * step exactly once to land the interaction and go back to holding still — the click acts now, and the
+     * world moves by one tick (1/64 s) rather than not at all.
+     */
+    fun hasPendingInput(): Boolean =
+        withLock(inputLock) { pendingSpawns.isNotEmpty() || pendingTaps.isNotEmpty() || pendingDetaches.isNotEmpty() }
+
+    /**
      * The cell whose disc contains the logical point ([x], [y]), or null.
      *
      * The point is converted to a torus [Coord2] **first**, so the hit test measures the same

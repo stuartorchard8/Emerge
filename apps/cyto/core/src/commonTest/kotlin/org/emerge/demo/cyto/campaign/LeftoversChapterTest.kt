@@ -63,7 +63,6 @@ class LeftoversChapterTest {
     fun theDieOffAdvancesItself() {
         val step = chapter.steps.single { (it.gate as? Gate.World)?.desc?.startsWith("Watch what happens") == true }
         assertTrue(step.autoAdvance, "the die-off must not wait for a click")
-        assertTrue(step.allow.allows(Control.Spawn), "and the player needs to be able to put a cell back")
     }
 
     /**

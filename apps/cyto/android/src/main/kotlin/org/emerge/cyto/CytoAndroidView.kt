@@ -245,7 +245,15 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         lastTimeNanos = now
 
         // The world is frozen behind the menu; in-game it advances at the inline speed unless paused.
-        val simDelta = if (paused || !menu.inGame) 0f else delta * SPEEDS[speedIdx]
+        val running = !paused && menu.inGame
+        // ...except that a queued world interaction gets exactly one tick to land, so a tap while paused acts
+        // NOW instead of applying whenever the player next resumes (CytoController.hasPendingInput). Fed as
+        // time rather than a bare stepOnce so it takes the ordinary path: drain, materialise, publish.
+        val simDelta = when {
+            running -> delta * SPEEDS[speedIdx]
+            menu.inGame && controller.hasPendingInput() -> CytoController.STEP
+            else -> 0f
+        }
         val frame = controller.tick(simDelta)
 
         r.nightLevel = c.nightLevel
@@ -297,8 +305,11 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
         c.showTouchModes = mask.allows(Control.Brush)
         // Entering/leaving a chapter picks the brush action once — see [consumeDefaultTouchMode].
         director.consumeDefaultTouchMode()?.let { c.setTouchMode(it) }
-        c.worldSpawnEnabled = director.active && mask.allows(Control.Spawn)
-        if (c.worldSpawnEnabled) {
+        // A world tap acts on EVERY step of a chapter, not just the Control.Spawn ones — see
+        // [CytoControls.worldTapsEnabled]. Still only inside an active chapter, or a null chapter
+        // spawnGenome would clobber the sandbox brush the player picked from the palette.
+        c.worldTapsEnabled = director.active
+        if (c.worldTapsEnabled) {
             val chapter = director.activeChapter
             controller.brushGenome = director.brushGenome(controller)
             controller.spawnBiomass = chapter?.spawnBiomass
@@ -564,7 +575,7 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                 controller.focus(hit)         // select → info sheet
                 controller.cameraFocus(hit)   // and follow it up into the free area
             }
-            if (c.showBrush || c.worldSpawnEnabled) {
+            if (c.showBrush || c.worldTapsEnabled) {
                 val world = r.screenToWorld(x, y)
                 controller.tap(world[0], world[1], c.touchMode, c.cellType)
             }

@@ -264,11 +264,12 @@ object CytoSceneView {
             controls.showTouchModes = mask.allows(Control.Brush)
             // Entering/leaving a chapter picks the brush action once — see [consumeDefaultTouchMode].
             director.consumeDefaultTouchMode()?.let { controls.setTouchMode(it) }
-            // Ch8 "tap to add a cell": permit empty-space spawns of the chapter's genome without the full
-            // brush palette. Only inside an active chapter - when idle the mask is ALL (which includes Spawn),
-            // and applying it would clobber the sandbox's own brush genome with a null chapter spawnGenome.
-            controls.worldSpawnEnabled = director.active && mask.allows(Control.Spawn)
-            if (controls.worldSpawnEnabled) {
+            // A world tap acts on EVERY step of a chapter, not just the Control.Spawn ones: the same gesture
+            // doing something on one beat and nothing on the next is worse than the stray cell it prevents.
+            // Still only inside an active chapter - when idle this is the sandbox's own brush, and applying a
+            // (null) chapter spawnGenome over it would clobber what the player picked from the palette.
+            controls.worldTapsEnabled = director.active
+            if (controls.worldTapsEnabled) {
                 val chapter = director.activeChapter
                 // Which genome a placed cell carries is the director's call — see [brushGenome]. It was
                 // three near-copies of the same precedence across the hosts, and they had drifted.
@@ -569,12 +570,12 @@ object CytoSceneView {
                         if (hit != null) {
                             controller.focus(hit)
                         }
-                        // Painting is gated with the brush: while a campaign step masks Brush off,
-                        // a world tap must not spawn/act (selection above still works via focus()).
-                        // worldSpawnEnabled is the narrow exception: Ch8 permits empty-space spawns of the
-                        // chapter genome without the palette (an empty-space tap spawns; a tap on a cell in
-                        // the default Base mode is a no-op, so selection is unaffected).
-                        if (controls.showBrush || controls.worldSpawnEnabled) {
+                        // Outside a chapter, painting is gated with the brush palette. Inside one the tap
+                        // always acts ([worldTapsEnabled]) with the campaign's own brush + action, so it
+                        // behaves the same on every step. The brush was resolved by the last frame, i.e.
+                        // against the selection as it stood BEFORE the focus() above — which is what lets a
+                        // tap carry the authored genome onto the cell being tapped.
+                        if (controls.showBrush || controls.worldTapsEnabled) {
                             val world = renderer.screenToWorld(px.first, px.second)
                             controller.tap(world[0], world[1], controls.touchMode, controls.cellType)
                         }

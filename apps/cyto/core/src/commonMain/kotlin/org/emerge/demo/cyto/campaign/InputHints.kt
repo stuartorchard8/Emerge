@@ -36,7 +36,7 @@ class InputHints(private val map: Map<String, String>) {
             "pan" to "Drag",
             "zoom" to "pinch",
             "grab" to "drag",
-            "panelLocation" to "at the bottom of the screen. Drag up to expand it.",
+            "panelLocation" to "at the bottom of the screen. Drag up to expand it",
         ))
     }
 }

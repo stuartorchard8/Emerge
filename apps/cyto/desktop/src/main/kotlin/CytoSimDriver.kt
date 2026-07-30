@@ -61,6 +61,10 @@ class CytoSimDriver(private val controller: CytoController) {
         while (running) {
             if (paused) {
                 actualTps = 0.0
+                // A queued world interaction gets exactly one tick to land, here on the sim thread where
+                // stepping is safe. Without it a tap while paused applies whenever the player next resumes —
+                // the click looks inert, then acts later, which is worse than either doing nothing or acting.
+                if (controller.hasPendingInput()) controller.stepOnce()
                 controller.publish()                 // reflect any just-applied load/edit while paused
                 LockSupport.parkNanos(PUBLISH_INTERVAL_NS)
                 windowStartNs = System.nanoTime(); ticksInWindow = 0

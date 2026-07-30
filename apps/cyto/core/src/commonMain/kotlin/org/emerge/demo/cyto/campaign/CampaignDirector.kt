@@ -167,10 +167,9 @@ class CampaignDirector {
     /** Which controls the host should keep live this step (ALL when no chapter is active). */
     val controlMask: ControlMask get() = when {
         !active -> ControlMask.ALL
-        // The extinction offer needs a tap on empty space to be possible, whatever the step was allowing —
-        // a step that masked spawning off did so to keep the player on task, and the task is gone.
-        extinctionOffer -> (currentStep?.allow ?: ControlMask.ALL).plus(Control.Spawn)
-        // Likewise: the coach is asking them to pick another cell, so picking one has to be possible.
+        // The offer asks them to tap a cell back into the world, and a world tap acts on every step of a
+        // chapter now (CytoControls.worldTapsEnabled), so there is nothing left to unmask for it.
+        // The watched-cell offer still needs one: the coach is asking them to pick another cell.
         watchedCellOffer -> (currentStep?.allow ?: ControlMask.ALL).plus(Control.Select)
         else -> currentStep?.allow ?: ControlMask.ALL
     }
@@ -382,7 +381,7 @@ class CampaignDirector {
     val gateReady: Boolean get() = currentStep?.gate is Gate.Next || gateMet
 
     /**
-     * The genome a cell placed by a [Control.Spawn] tap should carry, in precedence order. Lives here rather
+     * The genome a cell placed by a world tap should carry, in precedence order. Lives here rather
      * than in each host because all three of them (desktop, Android, the agent harness) need the same answer
      * and had drifted into three near-copies of it.
      *

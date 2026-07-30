@@ -59,7 +59,6 @@ class SupplyChapterTest {
     @Test
     fun supplyContinuesTheWorldItInherits() {
         assertFalse(supply.startsFreshWorld)
-        assertTrue(supply.steps.first().allow.allows(Control.Spawn), "they may need to put a cell back")
     }
 
     /** Its one edit: the CONVERT gene powered by the reaction that produces what it now grows on. */

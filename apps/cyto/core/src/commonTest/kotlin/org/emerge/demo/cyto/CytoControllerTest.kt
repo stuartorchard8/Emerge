@@ -10,6 +10,7 @@ import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.sim.core.physics.components.TransformComponent
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -146,6 +147,27 @@ class CytoControllerTest {
         var frame = restored.tick(0f)
         repeat(2) { frame = restored.tick(1f) }
         assertTrue(cells(frame) >= 1, "restored colony should keep living")
+    }
+
+    /**
+     * A tap is buffered and drained by the reducer, so while the world is held still it applies to nothing —
+     * and then lands whenever the player resumes, which reads as a click that did nothing followed by one
+     * that did two things. [CytoController.hasPendingInput] is how a paused host sees there is something
+     * waiting and gives it exactly one tick.
+     */
+    @Test
+    fun aTapWaitsForATickAndTheHostCanSeeThatItIsWaiting() {
+        val c = CytoController()
+        c.newGame(CytoScenario.DEFAULT.copy(founders = emptyList()))
+        assertEquals(0, cells(c.tick(0f)), "a founder-less scenario starts empty")
+        assertFalse(c.hasPendingInput(), "nothing queued yet")
+
+        c.tap(0f, 0f, TouchMode.Base, CellType.Stem)
+        assertTrue(c.hasPendingInput(), "queued, and waiting for a tick that a paused host is not running")
+        assertEquals(0, cells(c.tick(0f)), "so no cell yet - this is the click that looks inert")
+
+        assertEquals(1, cells(c.tick(CytoController.STEP)), "one tick lands it")
+        assertFalse(c.hasPendingInput(), "and the queue is empty again, so the host stops stepping")
     }
 
     @Test

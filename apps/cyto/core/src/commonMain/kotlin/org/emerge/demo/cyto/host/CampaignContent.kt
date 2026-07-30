@@ -48,17 +48,11 @@ object CampaignContent {
         Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Menu,
     )
 
-    /** WATCH plus tapping empty space to re-seed the chapter genome (Ch8's "tap to add a cell"). No time
-     *  controls yet — those arrive on the next beat. */
-    private val SPAWN = ControlMask.of(
-        Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Menu, Control.Spawn,
-    )
-
-    /** WATCH plus the SLOW/PAUSE/FAST time controls (and re-seeding) - introduced in Ch8, the first chapter
-     *  where the player watches long-running behaviour (day/night-linked locomotion) and needs to pace time. */
+    /** WATCH plus the SLOW/PAUSE/FAST time controls - introduced in Ch8, the first chapter where the player
+     *  watches long-running behaviour (day/night-linked locomotion) and needs to pace time. */
     private val WATCH_TIME = ControlMask.of(
         Control.Camera, Control.Select, Control.GeneEditor, Control.Overlays, Control.Menu,
-        Control.Speed, Control.Spawn,
+        Control.Speed,
     )
 
     private const val GROUP_GROW = "Grow"
@@ -456,7 +450,7 @@ object CampaignContent {
             Step(
                 text = "Now tap anywhere to place an empty cell - a small pocket that independently stores and processes chemicals",
                 gate = Gate.World("Place a cell", met = { it.cellCount >= 1 }),
-                allow = SPAWN,
+                allow = WATCH,
                 world = WorldRun.Live,
             ),
             // 3. Inspect it.
@@ -498,7 +492,7 @@ object CampaignContent {
             Step(
                 text = "That cell couldn't rebuild itself. Let's fix that. Tap an empty spot to place a fresh cell. Then select it to view its genome.",
                 gate = Gate.World("Place and select a cell", met = { it.focused != null }),
-                allow = SPAWN,
+                allow = WATCH,
                 world = WorldRun.Live,
                 autoAdvance = true,
             ),
@@ -667,10 +661,9 @@ object CampaignContent {
             ),
             Step(
                 // Whether the world is empty now depends on how fast the collapse ran, so the copy can't
-                // assume either. SPAWN stays allowed for the case where it IS empty.
                 text = "Oops. It looks like we need some more tuning here. Take a look at your genome again.",
                 gate = Gate.World("Select a cell", met = { it.focused != null }),
-                allow = SPAWN,
+                allow = WATCH,
                 world = WorldRun.Live,
             ),
             Step(
@@ -1019,14 +1012,14 @@ object CampaignContent {
             Step(
                 text = "Now let it run, and keep your eye on the cell you just edited.",
                 gate = Gate.World("Watch what happens to it", met = { it.watchedCellDied }),
-                allow = SPAWN,
+                allow = WATCH,
                 world = WorldRun.Live,
                 autoAdvance = true,
             ),
             Step(
                 text = "Worse, not better. That cell starved with food all around it. Let's work out why.",
                 gate = Gate.World("Select a cell", met = { it.focused != null }),
-                allow = SPAWN,
+                allow = WATCH,
                 world = WorldRun.Live,
             ),
             Step(
@@ -1159,7 +1152,7 @@ object CampaignContent {
             Step(
                 text = "Back to the drawing board. Lets take another look at the genome.",
                 gate = Gate.World("Select a cell", met = { it.focused != null }),
-                allow = SPAWN,
+                allow = WATCH,
                 world = WorldRun.Live,
             ),
             Step(
@@ -1355,7 +1348,7 @@ object CampaignContent {
                 text = "A clean world, and the genome you built. Tap an empty space to put one cell into it.",
                 detail = "Same three genes you finished the last chapter with. Nothing here is different except the world.",
                 gate = Gate.World("Place a cell", met = { it.cellCount >= 1 }),
-                allow = SPAWN,
+                allow = WATCH,
                 world = WorldRun.Live,
             ),
             // The boom. Peaks at 474 around tick 4,000, so 200 is comfortably inside it whichever branch's
@@ -1401,7 +1394,7 @@ object CampaignContent {
             Step(
                 text = "So lets teach them to pick it up. Tap an empty space to put a cell back in, and select it.",
                 gate = Gate.World("Select a cell", met = { it.focused != null }),
-                allow = SPAWN,
+                allow = WATCH,
                 world = WorldRun.Live,
             ),
             // Two beats, one tap each, for the reason the divide chapter's gene split: a single step ringing
@@ -1510,7 +1503,7 @@ object CampaignContent {
             Step(
                 text = "Select one of your cells and look at its genome. Four genes now, and they arrived one at a time - so they are sitting in one unnamed heap.",
                 gate = Gate.World("Select a cell", met = { it.focused != null }),
-                allow = SPAWN,
+                allow = WATCH,
                 world = WorldRun.Live,
             ),
             Step(
@@ -1999,7 +1992,7 @@ object CampaignContent {
                     met = { it.cellCount >= 2 },
                     progress = { it.cellCount.coerceAtMost(2) to 2 },
                 ),
-                allow = SPAWN,
+                allow = WATCH,
                 world = WorldRun.Live,
                 spotlight = Spotlight(hint = "Drag to push. Tap empty space to re-seed."),
                 detail = "It grows into a small cluster of a few cells and then stops - that's deliberate. POLARIZE does double duty: the same marker gradient that tells cells which side they're on also lets the body sense how big it is, so it grows to a set size and holds there instead of spreading forever. A lone cell can't locomote, so it needs that first shove (or a fresh neighbour) to get over the line.",

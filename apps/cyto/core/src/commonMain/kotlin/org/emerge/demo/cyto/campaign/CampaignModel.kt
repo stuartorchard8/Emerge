@@ -46,21 +46,21 @@ class Chapter(
      *  from the held cell. Named per chapter so a chapter offers only the one subsystem it teaches (Ch4 =
      *  Reproduce, Ch5 = Hold Together); empty (Act I / Ch3) = read-only, no inserts. */
     val insertableGroups: Set<String> = emptySet(),
-    /** The genome a tap on empty space drops in as a fresh cell, during steps whose [ControlMask] allows
-     *  [Control.Spawn] (Ch8's "tap an empty space to add another cell with the same genome" — a re-seed if a
-     *  founder dies before it gets going). Null ⇒ no world-spawn even if a step allowed it. The host sets this
-     *  as the brush genome and permits empty-space taps *without* surfacing the full brush palette. */
+    /** The genome a tap on empty space drops in as a fresh cell — a re-seed if a founder dies before it gets
+     *  going. A world tap acts on every step of a chapter (`CytoControls.worldTapsEnabled`), so this is live
+     *  throughout; the host sets it as the brush genome *without* surfacing the full brush palette. Null ⇒
+     *  the player's own lineage instead (see `CampaignDirector.brushGenome`). */
     val spawnGenome: List<Gene>? = null,
-    /** The biomass a [Control.Spawn] tap gives the cell it drops in, overriding the genome-derived default.
+    /** The biomass a world tap gives the cell it drops in, overriding the genome-derived default.
      *  Lets a chapter place a hand-authored starter — the opening chapter drops a gene-less cell holding a
      *  fixed reserve (1000 each of r/g/b) so it can be watched slowly decaying to death. Null ⇒ default. */
     val spawnBiomass: Map<String, Int>? = null,
-    /** The mobile **cytoplasm** a [Control.Spawn] tap seeds the cell with (brush-placed cells otherwise start
+    /** The mobile **cytoplasm** a world tap seeds the cell with (brush-placed cells otherwise start
      *  with none — only scenario founders get a reserve). Currently unused by the authored chapters: Genesis
      *  deliberately hands its first cell nothing, because monomers diffuse in from the environment anyway and
      *  a pre-filled reserve would hide where a cell's raw material actually comes from. Null ⇒ empty. */
     val spawnCytoplasm: Map<String, Int>? = null,
-    /** When true, an empty-space tap during a [Control.Spawn] step drops a **live copy of the currently
+    /** When true, an empty-space tap drops a **live copy of the currently
      *  selected cell's genome** instead of the fixed [spawnGenome] — a "last-modified brush". Ch9 leans on
      *  this: each time the player edits the muscle on their selected cell, the next cell they tap out carries
      *  those edits, so they iterate a lineage in place (and can go off-script if they choose). Falls back to
@@ -251,5 +251,5 @@ class ControlMask private constructor(private val allowed: Set<Control>) {
 }
 
 /** The host-maskable control surfaces. [Spawn] permits tapping empty space to drop in a [Chapter.spawnGenome]
- *  cell *without* the full [Brush] palette — a focused re-seed affordance (Ch8). */
-enum class Control { Camera, Select, Brush, GeneEditor, Speed, Mutation, Overlays, Save, Menu, Spawn }
+ *  cell *without* the full [Brush] palette. */
+enum class Control { Camera, Select, Brush, GeneEditor, Speed, Mutation, Overlays, Save, Menu }

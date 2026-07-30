@@ -28,3 +28,22 @@ select 0.35 0.5
 tap 0.62 0.5
 select 0.62 0.5
 expect genes 4
+
+# And on a step that is NOT about placing cells. Every step of a chapter takes a world tap now; it used to
+# be the Control.Spawn ones only, so the same gesture did something on one beat and nothing on the next.
+next
+expect step 2/12
+
+# This cell is placed carrying the brush, so re-point the brush at a different genome to tell the two
+# apart — then a tap on it can only be the new one.
+spawn 0.5 0.35
+select 0.5 0.35
+expect genes 4
+select 0.35 0.5
+authorgenome /home/stu/emerge/apps/cyto/desktop/cyto-genomes/autotroph.gene
+select 0.35 0.5
+expect genes 3
+
+tap 0.5 0.35
+select 0.5 0.35
+expect genes 3

@@ -98,7 +98,6 @@ class LineageSurvivesTest {
         dir.update(CampaignQuery(c.worldStats(), paused = false, selectedGenome = null), emptySet())
 
         assertTrue(dir.extinctionOffer, "extinct with a genome in hand")
-        assertTrue(dir.controlMask.allows(Control.Spawn), "the offer must permit the tap it asks for")
         assertTrue(
             dir.snapshot()!!.text.contains("genome is not"),
             "the coach must say so — a headless observer should see the same text the player does",
@@ -195,7 +194,6 @@ class LineageSurvivesTest {
 
         assertTrue(dir.gateReady, "the genome still satisfies the goal")
         assertTrue(dir.extinctionOffer, "but nothing is alive, and this step never asked for that")
-        assertTrue(dir.controlMask.allows(Control.Spawn))
     }
 
     /** The offer also survives a chapter the player has not authored anything in yet: the director's own

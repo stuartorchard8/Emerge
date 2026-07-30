@@ -48,9 +48,15 @@ class CytoControls {
      *  the modes act on the world the same way painting does, so they hide until painting is taught. */
     var showTouchModes: Boolean = true
 
-    /** Host-set: permit a tap on empty space to spawn the brush genome even while the brush palette is hidden
-     *  (Control.Spawn). Ch8's focused "tap to add a cell" re-seed, without exposing the full paint toolkit. */
-    var worldSpawnEnabled: Boolean = false
+    /**
+     * Host-set: a world tap **acts** (places a cell on empty space, applies the brush action to a cell) even
+     * while the brush palette is hidden. The campaign turns this on for every step of an active chapter.
+     *
+     * It used to follow `Control.Spawn`, so tapping did something on a handful of steps and nothing on the
+     * rest — the same gesture, two behaviours, with nothing on screen to tell them apart. Consistency is
+     * worth more than the steps it lets a player place a stray cell into.
+     */
+    var worldTapsEnabled: Boolean = false
 
     /**
      * How lit the world is at full night, as a multiplier on the whole scene (the daylight band's peak is

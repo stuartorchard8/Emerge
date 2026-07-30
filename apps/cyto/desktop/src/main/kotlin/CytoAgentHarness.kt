@@ -507,6 +507,7 @@ object CytoAgentHarness {
          *  a scripted `tap` would use the sandbox default and never exercise what a campaign player does. */
         private fun applyTouchModeDefault() {
             director.consumeDefaultTouchMode()?.let { controls.setTouchMode(it) }
+            controls.worldTapsEnabled = director.active
         }
 
         private fun sync() {
@@ -520,16 +521,15 @@ object CytoAgentHarness {
             director.update(q, pendingActions.toSet()); pendingActions.clear()
         }
 
-        /** Mirror the host: while the current step permits world-spawning, brush + biomass follow the chapter
-         *  so a `tap`/`spawn` drops the chapter's authored cell (e.g. the gene-less 2000-r/g/b starter). Called
-         *  in [sync] and right before a spawn action, since a `next` advances the step after its own sync. */
+        /** Mirror the host: inside a chapter the brush + biomass follow it on EVERY step, so a `tap`/`spawn`
+         *  drops (or re-genomes with) the chapter's authored cell — e.g. the gene-less 2000-r/g/b starter.
+         *  Called in [sync] and right before a spawn action, since a `next` advances the step after its own
+         *  sync. */
         private fun applyChapterSpawn() {
             val ch = director.activeChapter ?: return
-            if (director.controlMask.allows(Control.Spawn)) {
-                controller.brushGenome = director.brushGenome(controller)
-                controller.spawnBiomass = ch.spawnBiomass
-                controller.spawnCytoplasm = ch.spawnCytoplasm
-            }
+            controller.brushGenome = director.brushGenome(controller)
+            controller.spawnBiomass = ch.spawnBiomass
+            controller.spawnCytoplasm = ch.spawnCytoplasm
         }
 
         /**
@@ -566,8 +566,13 @@ object CytoAgentHarness {
             controller.cellAt(x, y)?.let { controller.focus(it); pendingActions.add(PlayerAction.SelectedCell) }
             // The host taps with whatever brush action is selected, so the harness must too: on empty space
             // every mode spawns alike, but on a CELL the mode is the whole behaviour (Base selects and does
-            // nothing; Set re-genomes it from the brush).
-            controller.tap(x, y, controls.touchMode, CellType.Stem); advance(1)
+            // nothing; Set re-genomes it from the brush). Gated as the hosts gate it — outside a chapter the
+            // brush palette permits painting, inside one every step does — so a script is under the same rule
+            // a player is. Selection above happens either way, exactly as in the host.
+            if (controls.showBrush || controls.worldTapsEnabled) {
+                controller.tap(x, y, controls.touchMode, CellType.Stem)
+            }
+            advance(1)
         }
 
         // ── coordinate mapping via the REAL renderer camera (so it matches the game) ──────────────
