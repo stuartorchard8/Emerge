@@ -157,6 +157,25 @@ class UiElementLookupTest {
         assertTrue(!ui.tapLabel("LIGHT"), "and tapping it does nothing")
     }
 
+    /**
+     * A readout is *any* text a panel prints — including the coach's own paragraph of prose. Matching those
+     * on substrings rang whichever sentence contained the word, so the coach boxed its own copy whenever the
+     * widget it meant was off screen. Only a row whose whole text is the name may be a target.
+     */
+    @Test fun aReadoutOnlyMatchesItsWholeText() {
+        val ui = Ui().apply { setResolution(400f, 300f) }
+        ui.frame {
+            panel(Anchor.TopLeft) {
+                row("TAP THE CHEMISTRY SECTION TO VIEW THE READOUTS.")
+                row("CHEMISTRY")
+            }
+        }
+        val hit = assertNotNull(ui.element("CHEMISTRY"))
+        val rows = ui.readouts()
+        assertEquals(rows[1].y, hit.y, "the row that IS the name, not the sentence above it that contains it")
+        assertNull(ui.element("SECTION"), "a word buried in prose is not a target at all")
+    }
+
     /** A readout must never shadow a widget of the same name, or the coach would circle a label while the
      *  script taps a different thing — the failure the shared lookup exists to prevent. */
     @Test fun aClickableWidgetWinsOverAReadoutOfTheSameName() {

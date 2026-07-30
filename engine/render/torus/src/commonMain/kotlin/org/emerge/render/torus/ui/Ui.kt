@@ -739,30 +739,22 @@ class Ui {
      * A match scrolled out of its viewport still resolves, with [UiElement.visible] false — see there.
      *
      * Also resolves the frame's [readouts], so "point at the LIGHT reading" works without turning a readout
-     * into a button. Priority is **exactness first, clickability second**: an exact widget, then an exact
-     * readout, then a substring widget, then a substring readout. Naming a readout exactly therefore beats a
-     * gene card that merely happens to contain the word — the `LIGHT` reading against a `USE LIGHT` card —
-     * while a widget a script would tap by that exact name is never displaced.
+     * into a button — but **only on an exact name**. A readout row is any text a panel prints, including a
+     * paragraph of coach prose, and substring matching there rings whichever sentence happens to contain the
+     * word. Order is exact widget, exact readout, substring widget: naming a readout exactly beats a gene
+     * card that merely contains the word (`LIGHT` against a `USE LIGHT` card), while a widget a script would
+     * tap by that exact name is never displaced.
      */
     fun element(label: String, occurrence: Int = 1): UiElement? {
         val (exactClick, partialClick) = labelMatchesSplit(label)
-        val (exactRead, partialRead) = readoutMatchesSplit(label)
-        val ordered = exactClick.map { it.asElement(label) } + exactRead +
-            partialClick.map { it.asElement(label) } + partialRead
+        val ordered = exactClick.map { it.asElement(label) } + exactReadouts(label) +
+            partialClick.map { it.asElement(label) }
         return ordered.getOrNull(occurrence - 1)
     }
 
-    /** Readout rows matching [label], split into exact and substring matches. */
-    private fun readoutMatchesSplit(label: String): Pair<List<UiElement>, List<UiElement>> {
-        val q = label.lowercase()
-        val exact = ArrayList<UiElement>()
-        val partial = ArrayList<UiElement>()
-        for (r in readoutRegions) when {
-            r.label.lowercase() == q -> exact.add(r)
-            r.label.lowercase().contains(q) -> partial.add(r)
-        }
-        return exact to partial
-    }
+    /** Readout rows whose whole text is [label]. */
+    private fun exactReadouts(label: String): List<UiElement> =
+        readoutRegions.filter { it.label.equals(label, ignoreCase = true) }
 
     /** Invoke the first button region whose label contains [label] (case-insensitive). Returns true if
      *  one fired. Overlay regions (open dropdowns) win, then the base layer. */
