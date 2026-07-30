@@ -580,9 +580,17 @@ class CampaignDirector {
         c.rect(x + w - t, y, t, h, LINE)
     }
 
-    /** Draw the coach panel — a top-docked banner when [narrow], a bottom-centre panel stacked above the HUD
-     *  bar otherwise. Call inside the host's `ui.frame { }` after the other overlays. */
-    fun render(ui: UiBuilder, controller: CytoController, narrow: Boolean = false) {
+    /**
+     * Draw the coach panel — a top-docked banner when [narrow], a bottom-centre panel stacked above the HUD
+     * bar otherwise. Call inside the host's `ui.frame { }` after the other overlays.
+     *
+     * [freeAreaDxPx] is the host's `GeneEditor.freeAreaOffsetPx` dx — how far the centre of the *un-obscured*
+     * world is from the screen centre, which on a wide screen is half the docked cell panel. The coach centres
+     * on THAT rather than on the screen, because the cell panel is drawn after it and covers anything that
+     * reaches underneath: at 1200px the coach spanned 272..928 while the dock began at 808, so the tail of
+     * every line sat behind the panel. Passing 0 keeps the old screen-centred behaviour.
+     */
+    fun render(ui: UiBuilder, controller: CytoController, narrow: Boolean = false, freeAreaDxPx: Float = 0f) {
         coachTopInsetPx = 0f
         coachRect = null
         val ch = chapter ?: return
@@ -602,7 +610,21 @@ class CampaignDirector {
         } else {
             // BOTTOM_MARGIN_DP, not a hand-tuned gap: the host draws the HUD bar first, so this panel stacks
             // directly above it and only needs the same edge gap the bar uses.
-            renderFull(ui, ch, step, controller, "${ch.title}  $counter", Anchor.BottomCenter, margin = BOTTOM_MARGIN_DP, wrapChars = COACH_WRAP, textSize = BOTTOM_TEXT_DP, fillWidth = false)
+            // The cell panel is docked to the right and drawn AFTER the coach, so it covers whatever of the
+            // coach reaches under it. A bottom-CENTRE anchor centres on the screen, which is the wrong centre
+            // while that dock is up: at 1200px the coach spans 272..928 and the dock starts at 808, so the
+            // last two words of every line were hidden behind it. Centre the coach in what is actually free
+            // instead, and wrap it to that width so a narrow desktop window shrinks the text rather than
+            // sliding it back under the panel.
+            // freeAreaDxPx is HALF the occluded width (it names the centre of what is left), so the coach has
+            // exactly that much less room and sits exactly that far off centre.
+            val free = ui.screenW - 2f * kotlin.math.abs(freeAreaDxPx)
+            renderFull(
+                ui, ch, step, controller, "${ch.title}  $counter", Anchor.BottomCenter,
+                margin = BOTTOM_MARGIN_DP,
+                wrapChars = wrapBudget(ui, BOTTOM_TEXT_DP, PAD_DP, BOTTOM_MARGIN_DP, availPx = free),
+                textSize = BOTTOM_TEXT_DP, fillWidth = false, offsetX = freeAreaDxPx / ui.density,
+            )
         }
         // Where the coach actually landed — it is auto-sized and anchor-placed, so this is the only way to
         // know. Read straight after emitting it, before any later panel overwrites the toolkit's note.
@@ -649,11 +671,12 @@ class CampaignDirector {
     private fun renderFull(
         ui: UiBuilder, ch: Chapter, step: Step, controller: CytoController,
         header: String, anchor: Anchor, margin: Float, wrapChars: Int, textSize: Float, fillWidth: Boolean,
+        offsetX: Float = 0f,
     ): Float {
         val query = lastQuery
         val gate = step.gate
         val nextEnabled = gate is Gate.Next || gateMet
-        return ui.panel(anchor, margin = margin, padding = PAD_DP, background = 0x11182AF2L, rowHeight = 22f, textSize = textSize, fillWidth = fillWidth) {
+        return ui.panel(anchor, margin = margin, padding = PAD_DP, background = 0x11182AF2L, rowHeight = 22f, textSize = textSize, fillWidth = fillWidth, offsetX = offsetX) {
             title(clip(header, wrapChars), 0x6FD6C4FFL)
             gap(4f)
             val situation = situationText()
@@ -692,11 +715,13 @@ class CampaignDirector {
     }
 
     /** Characters that fit one line of a [textSizeDp]-sized panel row across the screen, minus padding+margin. */
-    private fun wrapBudget(ui: UiBuilder, textSizeDp: Float, padDp: Float, marginDp: Float): Int {
+    private fun wrapBudget(
+        ui: UiBuilder, textSizeDp: Float, padDp: Float, marginDp: Float, availPx: Float = ui.screenW,
+    ): Int {
         val textH = textSizeDp * ui.density
         val sample = "abcdefghijklmnopqrstuvwxyz "
         val avgChar = (UiTextRenderer.measureWidthPx(sample, textH) / sample.length).coerceAtLeast(1f)
-        val avail = ui.screenW - 2f * (padDp + marginDp) * ui.density
+        val avail = availPx - 2f * (padDp + marginDp) * ui.density
         return (avail / avgChar).toInt().coerceIn(16, COACH_WRAP)
     }
 

@@ -780,7 +780,8 @@ object CytoAgentHarness {
                     hud.renderBar(this, controls, showPause = NARROW) {}
                     if (!NARROW) hud.renderSpeed(this, controls)
                 }
-                if (director.active) director.render(this, controller, narrow = NARROW)
+                if (director.active) director.render(this, controller, narrow = NARROW, freeAreaDxPx = geneEditor
+                    .freeAreaOffsetPx(NARROW, controller.lastHeldId != null, RES_W.toFloat(), RES_H.toFloat(), ui.scale).first)
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(
                     this,
                     controller,
@@ -942,7 +943,8 @@ object CytoAgentHarness {
                     hud.renderBar(this, controls, showPause = NARROW) {}
                     if (!NARROW) hud.renderSpeed(this, controls)
                 }
-                if (director.active) director.render(this, controller, narrow = NARROW)
+                if (director.active) director.render(this, controller, narrow = NARROW, freeAreaDxPx = geneEditor
+                    .freeAreaOffsetPx(NARROW, controller.lastHeldId != null, RES_W.toFloat(), RES_H.toFloat(), ui.scale).first)
                 if (mask.allows(Control.GeneEditor)) geneEditor.render(
                     this,
                     controller,

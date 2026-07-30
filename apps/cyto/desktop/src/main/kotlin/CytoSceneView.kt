@@ -313,7 +313,10 @@ object CytoSceneView {
                     // reaches it. On wide the coach is bottom-centre and the panel docks right — no overlap.
                     // Bottom-centre panel on wide, top-docked banner on narrow. Nothing is full-screen any
                     // more — a gene is edited in place in the sheet — so the coach always renders.
-                    director.render(this, controller, narrow = narrow)
+                    // Centred on the free world area, not the screen: the cell panel docks right and is
+                    // drawn after the coach, so anything reaching under it is covered.
+                    director.render(this, controller, narrow = narrow, freeAreaDxPx = geneEditor
+                        .freeAreaOffsetPx(narrow, controller.lastHeldId != null, ui.resWidth, ui.resHeight, ui.scale).first)
                     if (mask.allows(Control.GeneEditor)) {
                         geneEditor.render(
                             this, controller,

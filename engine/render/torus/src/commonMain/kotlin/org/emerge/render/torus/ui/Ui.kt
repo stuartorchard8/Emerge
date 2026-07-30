@@ -913,6 +913,11 @@ class UiBuilder internal constructor(private val ui: Ui) {
      * [textSize] defaults to a fixed ratio of [rowHeight] — the historical coupling — but is an
      * independent knob: touch layouts need a tall row (≥48dp) with *normal* text in it, which the ratio
      * can't express (a 48dp row would imply 33dp text, wider than a phone screen).
+     *
+     * [offsetX] nudges the panel off its anchor (dp, positive = right). For a panel that wants to centre on
+     * something other than the whole screen: a **centre anchor centres on the screen**, which is the wrong
+     * centre when a docked column owns part of it, and the anchor alone cannot express "centred in what's
+     * left". The caller knows what it is avoiding; this lets it say so without reimplementing placement.
      */
     fun panel(
         anchor: Anchor,
@@ -923,6 +928,7 @@ class UiBuilder internal constructor(private val ui: Ui) {
         textSize: Float = rowHeight * TEXT_TO_ROW_RATIO,
         newColumn: Boolean = false,
         fillWidth: Boolean = false,
+        offsetX: Float = 0f,
         block: PanelBuilder.() -> Unit,
     ): Float {
         val s = ui.scale
@@ -939,7 +945,7 @@ class UiBuilder internal constructor(private val ui: Ui) {
         val contentW = w - paddingPx * 2
         val h = paddingPx * 2 + contentH
         if (anchor == Anchor.Center) {
-            val x = (ui.resWidth - w) * 0.5f
+            val x = (ui.resWidth - w) * 0.5f + offsetX * s
             val stack = ui.nextPanelOffset(anchor, 0f, h, marginPx)  // 0 for the first, then h+margin for extras
             val y = (ui.resHeight - h) * 0.5f + stack
             emitPanel(x, y, w, h, paddingPx, contentW, textH, background, pb)
@@ -947,7 +953,7 @@ class UiBuilder internal constructor(private val ui: Ui) {
         }
         if (anchor == Anchor.BottomCenter) {
             // Centred horizontally, anchored a [margin] gap above the bottom edge; extra panels stack upward.
-            val x = (ui.resWidth - w) * 0.5f
+            val x = (ui.resWidth - w) * 0.5f + offsetX * s
             val stack = ui.nextPanelOffset(anchor, marginPx, h, marginPx)
             val y = ui.resHeight - h - stack
             emitPanel(x, y, w, h, paddingPx, contentW, textH, background, pb)
@@ -956,10 +962,10 @@ class UiBuilder internal constructor(private val ui: Ui) {
         if (newColumn) ui.startNewColumn(anchor, marginPx)             // a fresh column beside the previous one
         val inset = ui.columnInset(anchor, marginPx)                   // horizontal base for this column
         val offset = ui.nextPanelOffset(anchor, marginPx, h, marginPx) // vertical stack distance from the anchored edge
-        val x = when (anchor) {
+        val x = (when (anchor) {
             Anchor.TopRight, Anchor.BottomRight -> ui.resWidth - inset - w
             else -> inset
-        }
+        }) + offsetX * s
         val y = when (anchor) {
             Anchor.BottomLeft, Anchor.BottomRight -> ui.resHeight - offset - h
             else -> offset

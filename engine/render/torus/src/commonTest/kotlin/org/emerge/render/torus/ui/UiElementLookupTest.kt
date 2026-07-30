@@ -70,6 +70,26 @@ class UiElementLookupTest {
         assertNull(f.ui.element("USE LIGHT", 3), "only two of them exist")
     }
 
+    /**
+     * `offsetX` nudges a panel off its anchor — the campaign coach's way of centring on the free world area
+     * rather than the screen, since the cell panel docks right and is drawn over anything that reaches under
+     * it. A centre anchor cannot express "centred in what's left" on its own.
+     */
+    @Test fun offsetXShiftsAPanelOffItsAnchor() {
+        val ui = Ui().apply { setResolution(400f, 300f) }
+        fun place(offset: Float): Ui.UiElement {
+            ui.frame { panel(Anchor.BottomCenter, offsetX = offset) { button("COACH", 0x333366FFL) {} } }
+            return ui.lastPanelRect!!
+        }
+        val centred = place(0f)
+        val shifted = place(-50f)
+        assertEquals(centred.w, shifted.w, "the same panel, only moved")
+        assertEquals(-50f, shifted.x - centred.x, "moved left by exactly the offset (scale 1)")
+        // ...and the widget inside moves with it, so a spotlight still resolves against the shifted panel.
+        val inside = assertNotNull(ui.element("COACH"))
+        assertTrue(inside.x >= shifted.x && inside.x + inside.w <= shifted.x + shifted.w)
+    }
+
     /** The connector's anchor end: a panel is auto-sized and anchor-placed, so its rect is knowable only from
      *  the toolkit. It reports the panel most recently emitted, and resets with the frame. */
     @Test fun theLastPanelRectIsTheLastPanelEmitted() {
