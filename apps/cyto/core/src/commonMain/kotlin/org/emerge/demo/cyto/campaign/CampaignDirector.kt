@@ -5,7 +5,9 @@ import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.ui.GenomeGrouping
 import org.emerge.demo.cyto.sim.SpeciesNames
 import org.emerge.render.torus.ui.Anchor
+import org.emerge.render.torus.ui.CanvasBuilder
 import org.emerge.render.torus.ui.PanelBuilder
+import org.emerge.render.torus.ui.Ui
 import org.emerge.render.torus.ui.UiBuilder
 import org.emerge.render.torus.ui.UiTextRenderer
 
@@ -487,10 +489,102 @@ class CampaignDirector {
     var coachTopInsetPx: Float = 0f
         private set
 
+    /** The coach panel's own rect, captured as it is emitted — the anchor end of the spotlight connector.
+     *  Null while no coach is drawn. */
+    private var coachRect: Ui.UiElement? = null
+
+    /**
+     * **Point at the thing the step is talking about**: a box around the widget named by the current
+     * [Step.spotlight], and an elbow connector from the coach panel to it.
+     *
+     * A SECOND pass, called last inside the host's frame, and that ordering is the whole design. The coach
+     * panel is drawn early — before the gene editor, so the editor's dropdowns and sheets sit over it — but
+     * the widget being pointed at only exists once the editor has laid itself out, and a box drawn before it
+     * would be painted over. Emitting the box last solves both at once: `Ui.element` sees a fully-built
+     * frame, and the canvas lands on top of everything.
+     *
+     * Silent when there is no target, or when the target doesn't resolve — a collapsed group, a closed panel,
+     * a row scrolled out of view. The step's hint text is the fallback and is always drawn by [render]
+     * itself, so a spotlight that can't point is a quieter coach, never a broken one.
+     *
+     * ⚠️ A scrolled-away row still resolves (`Ui.element` enumerates regions, and does not intersect the
+     * scroll clip), so a box can currently be drawn outside its viewport. Handling that — suppress, or scroll
+     * the target into view — is the next phase; it is why this pilots on Genesis, whose panel does not scroll.
+     */
+    fun renderSpotlight(ui: UiBuilder) {
+        if (!active) return
+        val spot = currentStep?.spotlight ?: return
+        val target = spot.target ?: return
+        // The situation offers (extinction / watched-cell) replace the step's copy with a recovery offer, so
+        // the step's own spotlight is pointing at something the player is no longer being asked to do.
+        if (extinctionOffer || watchedCellOffer) return
+        val hit = ui.element(target, spot.occurrence) ?: return
+        val from = coachRect
+        ui.canvas {
+            val d = ui.density
+            val pad = 3f * d
+            val x = hit.x - pad; val y = hit.y - pad
+            val w = hit.w + pad * 2f; val h = hit.h + pad * 2f
+            if (from != null) elbow(this, from, x, y, w, h, d)
+            // The box last, so the connector tucks under its edge rather than crossing into the widget.
+            outline(this, x, y, w, h, 2f * d)
+        }
+    }
+
+    /**
+     * A right-angled connector from the coach panel to the spotlit box, routed through the **gap between
+     * them** and meeting the box's near edge.
+     *
+     * Right angles rather than a straight diagonal because the rect primitive is axis-aligned with no
+     * rotation ([CanvasBuilder.rect]): a diagonal would need a staircase of small rects or a new engine
+     * primitive, and against a UI that is entirely rectangles the elbow reads better anyway.
+     *
+     * Routing is the part that matters, and the naive version is worse than no line at all: run to the
+     * target's centre-x and turn, and the line is drawn straight down the middle of the cell panel across
+     * every gene card between the coach and the thing it is pointing at.
+     *
+     * So the line leaves the coach's near horizontal edge at the coach's **centre**, climbs clear, then runs
+     * in to the box's near vertical edge — the whole path over open world, meeting the box from outside.
+     *
+     * Centre rather than the nearer side edge, because a panel's rect is not what you can see of it: the
+     * desktop coach is auto-sized to its longest line and runs on *underneath* the docked cell panel, which
+     * is drawn later and covers it. A line leaving that hidden right edge appears to start in the middle of
+     * the cell panel, from nothing. The centre of a panel is visible by construction — anything covering it
+     * would have covered the coach.
+     */
+    private fun elbow(c: CanvasBuilder, from: Ui.UiElement, bx: Float, by: Float, bw: Float, bh: Float, d: Float) {
+        val t = 2f * d                                   // line thickness
+        val boxCy = by + bh * 0.5f
+        val cx = from.x + from.w * 0.5f
+        fun hRun(x0: Float, x1: Float, y: Float) = c.rect(minOf(x0, x1), y - t * 0.5f, kotlin.math.abs(x1 - x0), t, LINE)
+        fun vRun(x: Float, y0: Float, y1: Float) = c.rect(x - t * 0.5f, minOf(y0, y1), t, kotlin.math.abs(y1 - y0), LINE)
+        // The coach edge the target is on. A target level with the coach still leaves from an edge, not a side.
+        val edgeY = if (boxCy < from.y + from.h * 0.5f) from.y else from.y + from.h
+        if (bx > cx || bx + bw < cx) {
+            // Off to one side: up (or down) the open channel at the coach's centre, then in to the near edge.
+            val nearX = if (bx > cx) bx else bx + bw
+            vRun(cx, edgeY, boxCy)
+            hRun(cx, nearX, boxCy)
+        } else {
+            // Directly above/below (the phone: coach docked top, sheet below) — straight down, since no route
+            // avoids what is in between.
+            vRun(bx + bw * 0.5f, edgeY, if (boxCy < edgeY) by + bh else by)
+        }
+    }
+
+    /** A hollow rectangle, as four thin rects — the toolkit draws fills only. */
+    private fun outline(c: CanvasBuilder, x: Float, y: Float, w: Float, h: Float, t: Float) {
+        c.rect(x, y, w, t, LINE)
+        c.rect(x, y + h - t, w, t, LINE)
+        c.rect(x, y, t, h, LINE)
+        c.rect(x + w - t, y, t, h, LINE)
+    }
+
     /** Draw the coach panel — a top-docked banner when [narrow], a bottom-centre panel stacked above the HUD
      *  bar otherwise. Call inside the host's `ui.frame { }` after the other overlays. */
     fun render(ui: UiBuilder, controller: CytoController, narrow: Boolean = false) {
         coachTopInsetPx = 0f
+        coachRect = null
         val ch = chapter ?: return
         val step = currentStep ?: return
         // On a phone the coach is a single top-docked panel (the only campaign modal there): it clears the
@@ -510,6 +604,9 @@ class CampaignDirector {
             // directly above it and only needs the same edge gap the bar uses.
             renderFull(ui, ch, step, controller, "${ch.title}  $counter", Anchor.BottomCenter, margin = BOTTOM_MARGIN_DP, wrapChars = COACH_WRAP, textSize = BOTTOM_TEXT_DP, fillWidth = false)
         }
+        // Where the coach actually landed — it is auto-sized and anchor-placed, so this is the only way to
+        // know. Read straight after emitting it, before any later panel overwrites the toolkit's note.
+        coachRect = ui.lastPanelRect
         // Drawn last on both widths so its scrim covers the coach itself.
         if (resetMenuOpen) renderResetSheet(ui, controller, narrow)
     }
@@ -613,6 +710,10 @@ class CampaignDirector {
     )
 
     companion object {
+        /** The spotlight's box + connector: the coach's own hint amber ([renderFull] draws hint rows in it),
+         *  so the line and the sentence that sent the player down it read as one voice. */
+        private const val LINE = 0xFFD86EFFL
+
         private const val BOTTOM_MARGIN_DP = 10f  // desktop coach's gap from the bottom edge — matches CytoHud's bar
         private const val COACH_WRAP = 58   // approx chars per coach line before wrapping (desktop cap)
         private const val PAD_DP = 14f      // coach panel padding

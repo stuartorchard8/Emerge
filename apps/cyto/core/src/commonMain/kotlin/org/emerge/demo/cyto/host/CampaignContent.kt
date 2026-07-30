@@ -466,6 +466,9 @@ object CampaignContent {
             Step(
                 text = "Tap the chemistry section to view the detailed chemistry readouts. This cell is floating in a soup of three raw elements - REDOGEN, GREENUM and BLUEON. It also started with all three contributing equally to its biomass.",
                 gate = Gate.World("View the chemistry details", met = { it.chemistryOpen }),
+                // The panel is dense and this is the player's first errand inside it, so the coach points
+                // at the row rather than describing where it is. Substring match: the header carries a count.
+                spotlight = Spotlight(target = "CHEMISTRY"),
                 allow = LOOK,
             ),
             // 4. Move it.
@@ -502,12 +505,16 @@ object CampaignContent {
             Step(
                 text = "Tap [+ NEW GENE] on the info panel to add an empty gene. Note that the new gene has no conditions, so it's always active. It currently uses light as its energy source.",
                 gate = Gate.World("Give the cell a new gene", met = { it.lineage?.geneCount == 1 }),
+                spotlight = Spotlight(target = "+ NEW GENE"),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),
             Step(
                 text = "Change your new gene's action from (NOTHING) to (CONVERT). CONVERT genes transform their specified chemical target from their cytoplasm [CYT] to their biomass [BIO].",
                 gate = Gate.World("Set the new gene to CONVERT", met = { it.lineage?.convertChem == "" }),
+                // The action token on the one gene they just made. Genesis reaches this step with a
+                // single-gene genome, so occurrence 1 is unambiguous - it would not be in a grown one.
+                spotlight = Spotlight(target = "NOTHING"),
                 allow = LOOK,
                 world = WorldRun.Frozen,
                 autoAdvance = true,
@@ -516,6 +523,7 @@ object CampaignContent {
                 text = "Tap (NONE) to change your convert gene's chemical target to either REDOGEN, GREENUM or BLUEON - they're interchangeable, so pick whichever you like.",
                 detail = "The picker gives you a harmless heads-up if you name something the cell isn't holding. The gene will show itself as active once it's set up correctly.",
                 gate = Gate.World("Complete the CONVERT gene", met = { it.lineage?.convertChem != null && it.lineage?.convertChem != "" }),
+                spotlight = Spotlight(target = "(NONE)"),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),

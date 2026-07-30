@@ -791,6 +791,7 @@ object CytoAgentHarness {
                     onSaveGroup = { name, genes -> CytoSnippets.save(name, genes) },
                 )
                 if (showHud) hud.renderSheets(this, controls, wide = !NARROW)
+                director.renderSpotlight(this)
             }
         }
 
@@ -952,6 +953,7 @@ object CytoAgentHarness {
                     onSaveGroup = { name, genes -> CytoSnippets.save(name, genes) },
                 )
                 if (showHud) hud.renderSheets(this, controls, wide = !NARROW)
+                director.renderSpotlight(this)
             }
             ui.draw()
             glFinish()

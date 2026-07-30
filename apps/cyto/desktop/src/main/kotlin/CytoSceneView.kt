@@ -337,6 +337,9 @@ object CytoSceneView {
                     }
                     // Sheets last: the topmost layer, over the coach and the docked cell panel alike.
                     if (showHud) hud.renderSheets(this, controls, wide = !narrow)
+                    // ...and the coach's spotlight after even those: it points at a widget that only exists
+                    // once everything else has laid itself out (CampaignDirector.renderSpotlight).
+                    director.renderSpotlight(this)
                 }
             } else {
                 // Front-end shell over the (paused) world.

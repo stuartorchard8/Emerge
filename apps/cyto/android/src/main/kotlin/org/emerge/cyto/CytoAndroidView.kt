@@ -341,6 +341,8 @@ internal class CytoAndroidView(context: Context) : GLSurfaceView(context) {
                     )
                 }
                 if (showHud) hud.renderSheets(this, c, wide = false)
+                // Last of all: the coach's spotlight box needs a fully laid-out frame to find its target in.
+                director.renderSpotlight(this)
             } else {
                 menu.render(this, CytoSaves.list(), cb)
             }

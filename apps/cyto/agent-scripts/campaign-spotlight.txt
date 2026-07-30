@@ -1,0 +1,41 @@
+# Genesis's four spotlit beats: the coach boxes a named widget and draws a connector to it.
+#
+# Every `shot` here is the point - the spotlight is a *drawing*, and nothing but a screenshot can say
+# whether it landed on the right widget. What the script itself pins is the half that can fail silently:
+# each target label is also TAPPED below, so a label the coach points at that no longer exists fails the
+# run rather than quietly drawing nothing.
+#
+# Run narrow too (-Dcyto.agent.narrow=true -Dcyto.agent.w=560 -Dcyto.agent.h=1100): the coach docks to the
+# top there and the connector drops straight down into the cell sheet instead of routing around it.
+
+campaign ch00-genesis
+camera pan 0.05 0.05
+next
+tap 0.35 0.5
+next
+select 0.35 0.5
+next
+echo === 4/11: ring the CHEMISTRY row ===
+shot spot-chemistry
+tap-ui + CHEMISTRY
+next
+dragcell 0 0.4 0.55 20
+next
+run 4000
+expect cells 0
+next
+tap 0.35 0.5
+select 0.35 0.5
+next
+echo === 8/11: ring + NEW GENE ===
+shot spot-new-gene
+tap-ui + NEW GENE
+expect genes 1
+next
+echo === 9/11: ring the NOTHING action token ===
+shot spot-nothing
+tap-ui NOTHING
+tap-ui Convert
+next
+echo === 10/11: ring the (NONE) chemical token ===
+shot spot-none

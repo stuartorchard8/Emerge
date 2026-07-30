@@ -179,10 +179,23 @@ enum class PlayerAction {
     MovedCell,
 }
 
-/** A hint about where to point the player's attention. v1 is intentionally lightweight: an optional text
- *  cue rendered in the coach panel. Region-targeted rings / arrows are a planned enhancement
- *  (CAMPAIGN_PLAN.md §4.2). */
-class Spotlight(val hint: String? = null)
+/**
+ * A hint about where to point the player's attention: a [hint] line in the coach panel, and — when the thing
+ * being described is a widget the player can actually see — a [target] the coach draws a box around, with a
+ * connector back to itself.
+ *
+ * [target] is a **widget label**, matched exactly the way the agent harness's `tap-ui` matches one
+ * (`Ui.element`): case-insensitive, exact before substring, an open sheet's rows before the panel behind it.
+ * That is the point of reusing it — the thing the coach circles is by construction the thing a script taps,
+ * so a label that drifts breaks both at once rather than leaving the coach pointing confidently at the wrong
+ * word. [occurrence] picks the n-th match for a label the screen repeats (every gene card carries its own
+ * `USE LIGHT`), exactly as `tap-ui <label> @n` does.
+ *
+ * A target that doesn't resolve this frame — the panel is closed, the group is collapsed, the row is scrolled
+ * away — simply isn't drawn, and the step falls back to its [hint] text. Steps about a world gesture ("press
+ * and drag a cell") have no widget and take no target.
+ */
+class Spotlight(val hint: String? = null, val target: String? = null, val occurrence: Int = 1)
 
 /** Which controls are live during a step — everything else is hidden/greyed by the host. An immutable
  *  allow-set so authored steps read declaratively (`ControlMask.of(Camera, Select)`). */
