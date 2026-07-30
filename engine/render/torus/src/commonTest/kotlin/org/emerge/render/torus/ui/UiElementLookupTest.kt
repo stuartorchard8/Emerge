@@ -157,8 +157,8 @@ class UiElementLookupTest {
         assertTrue(!ui.tapLabel("LIGHT"), "and tapping it does nothing")
     }
 
-    /** A readout must never shadow a widget, or the coach would circle a label while the script taps a
-     *  different thing of the same name — the failure the shared lookup exists to prevent. */
+    /** A readout must never shadow a widget of the same name, or the coach would circle a label while the
+     *  script taps a different thing — the failure the shared lookup exists to prevent. */
     @Test fun aClickableWidgetWinsOverAReadoutOfTheSameName() {
         val ui = Ui().apply { setResolution(400f, 300f) }
         ui.frame {
@@ -170,6 +170,23 @@ class UiElementLookupTest {
         val hit = assertNotNull(ui.element("DIVIDE"))
         val widget = assertNotNull(ui.elements().first { it.label == "DIVIDE" })
         assertEquals(widget.y, hit.y, "the button's row, not the text row above it")
+    }
+
+    /**
+     * ...but exactness outranks clickability. The cell panel's `LIGHT` reading co-exists with gene cards
+     * whose whole text is the card's label, and one of those saying `USE LIGHT` must not capture "LIGHT" —
+     * that is precisely the wrong-widget confidence the spotlight is supposed to remove.
+     */
+    @Test fun anExactReadoutBeatsAWidgetThatMerelyContainsTheWord() {
+        val ui = Ui().apply { setResolution(400f, 300f) }
+        ui.frame {
+            panel(Anchor.TopLeft) {
+                button("WHEN ALWAYS USE LIGHT TO GROW", 0x336633FFL) {}
+                keyValue("LIGHT", "4200")
+            }
+        }
+        val hit = assertNotNull(ui.element("LIGHT"))
+        assertTrue(ui.elements().none { it.y == hit.y }, "the reading, not the gene card above it")
     }
 
     /** The connector's anchor end: a panel is auto-sized and anchor-placed, so its rect is knowable only from

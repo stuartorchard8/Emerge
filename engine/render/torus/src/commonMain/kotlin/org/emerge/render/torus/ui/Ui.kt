@@ -738,20 +738,22 @@ class Ui {
      * Only regions laid out **so far this frame** are visible to it, so call it after the panels are built.
      * A match scrolled out of its viewport still resolves, with [UiElement.visible] false — see there.
      *
-     * Falls back to the frame's [readouts] when nothing clickable matches, so "point at the LIGHT reading"
-     * works without turning a readout into a button. Clickable regions win, so adding a readout can never
-     * steal a target from the widget a script taps.
+     * Also resolves the frame's [readouts], so "point at the LIGHT reading" works without turning a readout
+     * into a button. Priority is **exactness first, clickability second**: an exact widget, then an exact
+     * readout, then a substring widget, then a substring readout. Naming a readout exactly therefore beats a
+     * gene card that merely happens to contain the word — the `LIGHT` reading against a `USE LIGHT` card —
+     * while a widget a script would tap by that exact name is never displaced.
      */
     fun element(label: String, occurrence: Int = 1): UiElement? {
-        val clickable = labelMatches(label)
-        // One layer or the other, never a blend: with both in one list, occurrence would count across widgets
-        // and readouts together and shift the moment a row is added elsewhere in the panel.
-        if (clickable.isNotEmpty()) return clickable.getOrNull(occurrence - 1)?.asElement(label)
-        return readoutMatches(label).getOrNull(occurrence - 1)
+        val (exactClick, partialClick) = labelMatchesSplit(label)
+        val (exactRead, partialRead) = readoutMatchesSplit(label)
+        val ordered = exactClick.map { it.asElement(label) } + exactRead +
+            partialClick.map { it.asElement(label) } + partialRead
+        return ordered.getOrNull(occurrence - 1)
     }
 
-    /** Readout rows matching [label], exact before substring — [labelMatches]' ordering, one layer. */
-    private fun readoutMatches(label: String): List<UiElement> {
+    /** Readout rows matching [label], split into exact and substring matches. */
+    private fun readoutMatchesSplit(label: String): Pair<List<UiElement>, List<UiElement>> {
         val q = label.lowercase()
         val exact = ArrayList<UiElement>()
         val partial = ArrayList<UiElement>()
@@ -759,7 +761,7 @@ class Ui {
             r.label.lowercase() == q -> exact.add(r)
             r.label.lowercase().contains(q) -> partial.add(r)
         }
-        return exact + partial
+        return exact to partial
     }
 
     /** Invoke the first button region whose label contains [label] (case-insensitive). Returns true if
@@ -782,7 +784,12 @@ class Ui {
     }
 
     /** Every region matching [label], in tap priority order. */
-    private fun labelMatches(label: String): List<ClickRegion> {
+    private fun labelMatches(label: String): List<ClickRegion> =
+        labelMatchesSplit(label).let { it.first + it.second }
+
+    /** As [labelMatches], but with the exact and substring tiers kept apart, so [element] can slot readouts
+     *  between them. */
+    private fun labelMatchesSplit(label: String): Pair<List<ClickRegion>, List<ClickRegion>> {
         val q = label.lowercase()
         // Prefer an *exact* label match (over any element whose label merely contains the query) so a driver
         // can target e.g. a picker row "FEED" without a co-visible "+ FEED (1)" header stealing the tap; then
@@ -798,7 +805,7 @@ class Ui {
             c.label?.lowercase() == q -> exact.add(c)
             c.label?.lowercase()?.contains(q) == true -> partial.add(c)
         }
-        return exact + partial
+        return exact to partial
     }
 
     /**
