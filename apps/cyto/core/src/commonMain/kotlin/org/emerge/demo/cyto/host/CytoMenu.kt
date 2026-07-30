@@ -1,5 +1,6 @@
 package org.emerge.demo.cyto.host
 
+import org.emerge.demo.cyto.build.BuildInfo
 import org.emerge.demo.cyto.campaign.CampaignMap
 import org.emerge.demo.cyto.campaign.Chapter
 import org.emerge.demo.cyto.cells.CellType
@@ -167,6 +168,11 @@ class CytoMenu {
                 Triple("?", MENU_BTN) { page = Page.About },
                 Triple("Settings", MENU_BTN) { page = Page.Settings },
             ))
+        }
+        // Which build this is. Dim and out of the way, but present on every host — the phone APK has no
+        // other way to say what it was built from.
+        ui.panel(Anchor.BottomCenter, rowHeight = 16f, background = 0x00000000) {
+            row(BuildInfo.LABEL, 0x7A8699FFL)
         }
     }
 

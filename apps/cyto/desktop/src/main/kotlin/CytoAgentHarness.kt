@@ -66,7 +66,8 @@ import javax.imageio.ImageIO
  * overlay matter|light       # toggle the light/matter overlay
  * next                       # click the coach "Next" (advances the chapter if its goal is met)
  * menu campaign [done,ids] # open the front-end shell on the campaign MAP with that progress
- *                            # (`menu off` closes it); tap-ui a chapter to start it
+ *                            # (`menu title` opens the title screen, `menu off` closes it);
+ *                            # tap-ui a chapter to start it
  * dragto <src> >> <dst>      # pick a card up and drop it on a target (long-press on narrow; autoscrolls
  *                            # the list when the target starts off-screen). draghover holds instead.
  * scroll <areaId> <dp>       # scroll a list (e.g. cell-sheet) so off-screen rows become reachable
@@ -431,7 +432,7 @@ object CytoAgentHarness {
             menu = CytoMenu().apply {
                 campaignChapters = CampaignContent.PLAYABLE_CHAPTERS
                 campaignCompleted = { it in menuCompleted }
-                openCampaign()
+                if (page == "title") openTitle() else openCampaign()
             }
             println("[agent] menu -> $page, completed=${menuCompleted.sorted()}")
         }

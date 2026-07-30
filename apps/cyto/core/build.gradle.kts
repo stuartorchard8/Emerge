@@ -108,3 +108,7 @@ tasks.withType<Test>().configureEach {
 
 // Generates *ShaderSources.kt from .vert / .frag files under src/commonMain/shaders/.
 registerShaderCodegen(packageName = "org.emerge.demo.cyto.shader")
+
+// Generates BuildInfo.kt (git commit + date + dirty flag), shown on the title screen so a running
+// build — desktop or the phone APK — can be identified without guessing.
+registerBuildInfo(packageName = "org.emerge.demo.cyto.build")
