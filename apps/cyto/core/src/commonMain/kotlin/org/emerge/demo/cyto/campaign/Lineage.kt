@@ -72,6 +72,21 @@ fun lineageOf(genome: List<Gene>): Lineage {
                 rhs.value else null
         }
         .maxOrNull()
+    // The reclaiming gene: an IMPORT of the very molecule the lineage sheds. Read off `product` for the same
+    // reason `breaksExhaust` is — importing some other molecule doesn't close the leak.
+    val importGene = if (product.isNullOrEmpty()) null else genome.firstOrNull { g ->
+        g.action.type == ActionType.Import && g.action.a == product
+    }
+    // What it is told to stop at: the largest `<waste> < N` clause on that same gene. Mirrors `reserve`,
+    // but a CEILING rather than a floor — import fills up to a level, the recycler drains down to one.
+    val importCeiling = importGene?.condition?.clauses
+        ?.mapNotNull { cl ->
+            val lhs = cl.lhs
+            val rhs = cl.rhs
+            if (lhs is Operand.Chem && lhs.species == product && cl.cmp == Comparison.Less && rhs is Operand.Constant)
+                rhs.value else null
+        }
+        ?.maxOrNull()
     val contract = genome.filter { it.action.type == ActionType.Contract }
     return Lineage(
         geneCount = genome.size,
@@ -85,6 +100,10 @@ fun lineageOf(genome: List<Gene>): Lineage {
         divideWelds = genome.any { it.action.type == ActionType.Divide && !it.action.rejectMother },
         divideProduct = product,
         divideFuelConflicts = conflicts,
+        importsExhaust = importGene != null,
+        importCeiling = importCeiling,
+        importOnChem = importGene?.source is EnergySource.FormBond,
+        importGear = importGene?.efficiency ?: 0,
         // "Runs on chemistry, not daylight" — the muscle keeps beating through the night. Since the chemistry
         // inversion that means a synthesis-powered source rather than a break-powered one.
         contractOnChem = contract.any { it.source is EnergySource.FormBond },

@@ -151,6 +151,21 @@ class Lineage(
     /** Whether the division gene's fuel reaction consumes the very monomer the CONVERT gene grows on — the
      *  campaign's branch point. Null when there is nothing to compare. */
     val divideFuelConflicts: Boolean? = null,
+    /** Carries an IMPORT gene for the waste molecule — the gene that reclaims what the lineage has already
+     *  shed. Only this molecule counts: a bonded molecule cannot cross the membrane at all without an import
+     *  bias (`CytoBiologyCore.passiveEnvExchange` transfers a species only if it is a monomer or biased), so
+     *  importing anything else leaves the leak exactly where it was. */
+    val importsExhaust: Boolean = false,
+    /** The ceiling the import gene runs under — the largest `<waste> < N` clause gating it. Null = it pulls
+     *  whenever it can, which spends energy holding a species the cell already has enough of. */
+    val importCeiling: Int? = null,
+    /** True when the import gene is powered by chemistry rather than Light. Light is what a starving lineage
+     *  in a spent world can actually afford (it has no atoms left to bond with); chemistry is the upgrade,
+     *  and only affordable geared up — see [importGear]. */
+    val importOnChem: Boolean = false,
+    /** The import gene's efficiency gear: `g+1` molecules per energy unit, capped at `EFFICIENCY_REF shr g`
+     *  energy per tick. 0 (the default) is one-for-one — fine on free daylight, ruinous on bonds. */
+    val importGear: Int = 0,
     /** A Contract ("muscle") gene powered by chemistry rather than Light. */
     val contractOnChem: Boolean = false,
     /** A Contract gene that fires while the `bb` morphogen is PRESENT rather than absent. */

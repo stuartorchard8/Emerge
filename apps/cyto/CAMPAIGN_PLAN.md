@@ -948,22 +948,32 @@ who never chooses the conflicting pair never learns the other chapter exists.
 1. **Both chapters are opening beats only.** Each runs to the point where its fix would be authored and
    stops with a "that is where this goes next" line. The fixes need: a `FocusedCell` reading for "has a
    gene that consumes the waste molecule" (both paths gate on a version of it), and Stu's voice on the copy.
-2. **⚠️ The recorded premise for the conversion path does not survive contact with the code.** The scoping
-   note said converting the waste to biomass is "unrecoverable once degraded into the environment without an
-   Import gene". Checked against `CytoBiologyCore.degrade`: a cell sheds its most-abundant biomass molecule
-   **whole and unsplit** into its own footprint — the disc it also absorbs from. And `canDiffuseIn` admits
-   any molecule the genome *metabolises*, which a `Convert <waste>` gene does by definition. So the cell
-   that can eat the waste can also re-absorb the waste it sheds: the matter is not lost, and that path has
-   no hidden cost as recorded. **Either find the real asymmetry or give the conversion path a different
-   drawback** before authoring copy that claims one. (Candidates worth measuring: the shed molecule decays
-   in the environment at its own rate, and a two-atom biomass unit changes the wear/upkeep arithmetic.)
+2. ~~**⚠️ The recorded premise for the conversion path does not survive contact with the code.**~~
+   **RESOLVED 2026-07-30 — the premise was right and this note was wrong.** It checked `canDiffuseIn`, which
+   governs **cell-to-cell weld diffusion**. The environment junction is `passiveEnvExchange`, and there a
+   species is transferable only if it is a **monomer** or carries an import/export bias:
+
+   ```kotlin
+   if (ib != 0 || eb != 0 || SpeciesRegistry.atomCount(sp) == 1) transferN++
+   ```
+
+   A two-atom waste molecule is therefore **genuinely unreachable without an Import gene** — not slow, zero.
+   `degrade` sheds it whole and unsplit into the cell's own footprint, so a colony steadily converts the
+   world's free monomers into something none of its cells can take back in. Measured (default world, one
+   founder, the three-gene end state): free `b`/`g` fall 32.8M → 6.0M while the duomer climbs 0 → 26.8M, and
+   `r` — which that lineage never touches — sits at 32.8M throughout. The world is still full of food, just
+   not food those cells can eat. This is also the mechanism behind the ⚠️ long tails recorded on both
+   `ch04-leftovers` and `ch04-lockedup`: "faster than the membrane brings it back" is really "the membrane
+   brings back none of it". It is now the subject of `ch05-reclaim`.
 3. **Unlock is predecessor-based (done), but only bites once the scratch chapters graduate.** `predecessorsOf` defaults to the authored
    `CHAPTERS`; the branch lives in `SCRATCH_CHAPTERS`, and a scratch id has no predecessors there, so it
    reads as always-unlocked — deliberate while these are WIP and iterated from the menu. The *routing* is
    live regardless; it is only the selector's padlock that waits.
-4. **Merge point undecided.** Both branches currently declare `branchesTo = emptyList()` ("leads nowhere
-   yet"). Whether they rejoin a common chapter or stay divergent tech trees is unanswered — §11's
-   contention note applies to whichever one first hands the player two DIVIDE genes.
+4. ~~**Merge point undecided.**~~ **DECIDED 2026-07-30: they rejoin.** Both tails arrive at the same
+   three-gene shape (grow / divide / recycle on the duomer), differing only in which chemical — so both now
+   declare `branchesTo = listOf(RECLAIM)` and lead to `ch05-reclaim`, the chapter about what that shape does
+   to the world around it. §11's contention note still applies to whichever chapter first hands the player
+   two DIVIDE genes; `ch05` does not.
 
 ---
 
@@ -1012,3 +1022,59 @@ With no genome there is no offer: nothing to put back, so the coach must not pro
 - New gate readings belong in `lineageOf(genome)` as pure functions — never derived at the call site.
 - A chapter may now assume the player can always get back to a living cell carrying their own genome. A
   chapter whose lineage is *expected* to die (the conversion branch) can lean on that.
+
+---
+
+## 14. `ch05-reclaim` — the merge, as built 2026-07-30
+
+Both branches now lead here. The lineage they arrive with works and is still terminal, for the reason §12.2
+records: it sheds a **two-atom** molecule that cannot cross a membrane without an Import bias, so it converts
+its world into matter it cannot eat. The chapter is the first one about the **world** rather than the cell.
+
+Measured in the chapter's own pocket universe (one founder, the genome authored onto the placed cell):
+
+|          | t2k | t4k | t6k | t9k | t13k | t18k | t24k |
+|----------|-----|-----|-----|-----|------|------|------|
+| 3 genes  | 155 | 474 | 466 |  25 |  **0** | 0 | 0 |
+| + import | 185 | 567 | 595 | 613 | 646 | 695 | **710** |
+
+One gene turns a boom-and-crash into a carrying capacity.
+
+### Two things this chapter needed
+
+- **It starts a fresh world** (`startsFreshWorld = true`), against the continuous-world rule, because the
+  curve *is* the lesson and both predecessors hand it a world that has already been spent. The founder
+  carries the player's own genome via `spawnCopiesHeldCell` → `lastAuthoredGenome` (§13), so the merge works
+  whichever branch they walked.
+- **The die-off beat gates on an empty world**, which is also what keeps `extinctionOffer` off it
+  (`goalIsExtinction`): the step asked for this death, so the recovery prompt must not replace its copy.
+
+### The reveal needed new UI
+
+The combined matter ground looks much the same whether a world is thriving or spent — the accumulation is
+already saturating at the population peak and simply stays there, so "watch the waste build up" is not a
+legible beat. The `LAYERS` sheet therefore grew a **per-species matter layer**: `ALL SPECIES` (default) plus
+every species actually present, richest first. Layers share the combined view's **absolute** density scale,
+so a dark layer means "there is none of this left" — toggling the duomer against its monomer is the whole
+explanation, with no copy required.
+
+### Still open
+
+1. **The chapter after it is unwritten.** `ch05` declares `branchesTo = emptyList()`.
+2. **⚠️ Efficiency does not yet have a chapter that earns it.** The intended `ch06` was "paying for import
+   with chemistry is ruinous at gear 0, so gear up". **That did not survive measurement.** Colony at t24k by
+   import gear: `0→619, 4→624, 8→666, 12→660, 15→673, 16→656` — flat within noise; and a single cell switched
+   to bond-import inside a settled colony holds its cap at every gear. In a **spent** world bond-import never
+   recovers *at any gear* (stuck at 1 cell at both 0 and 15), which confirms light is the only bootstrap.
+
+   The likely reason, and a better chapter: **`FormBond` as an energy source forms the bond**
+   (`work.cytoplasm.inc(formProductId, bondsFormed)`), so `Bond b g : Import bg` *manufactures* the very
+   molecule it imports. The import is the lesser of its two sources, which is why scaling it does almost
+   nothing — and in a spent world there are no loose atoms to bond, so the gene cannot fire at all. A chapter
+   about **circular fuel** is supported by the measurements; one about efficiency is not, and would need a
+   scenario where the gear genuinely bites (probably an import whose energy source does *not* also produce
+   its operand).
+
+   Note also that gear trades throughput for economy **geometrically**: `energyCap = EFFICIENCY_REF ushr g`,
+   so gear 16 permits 1 energy unit/tick (17 ops) against gear 15's 2 (32 ops). Gear 16 is the most throttled
+   setting in the game, which can read as a bug without being one.

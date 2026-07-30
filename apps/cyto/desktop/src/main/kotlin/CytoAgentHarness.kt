@@ -814,6 +814,10 @@ object CytoAgentHarness {
                 "divideFloor" -> lin?.divideBiomassMinimum?.toString()
                 "recyclesExhaust" -> lin?.hasPhotosynthesis?.toString()
                 "recycleReserve" -> lin?.recycleReserve?.toString()
+                "importsExhaust" -> lin?.importsExhaust?.toString()
+                "importCeiling" -> lin?.importCeiling?.toString()
+                "importOnChem" -> lin?.importOnChem?.toString()
+                "importGear" -> lin?.importGear?.toString()
                 "bond" -> lin?.divideProduct
                 // The LAYERS matter layer, as the species token (or "all") — the ground's own state, which
                 // no world reading can see.

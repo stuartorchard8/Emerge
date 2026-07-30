@@ -923,7 +923,10 @@ object CampaignContent {
         blurb = "Your cells throw away the best thing they make.",
         scenario = EMPTY_WORLD,
         startsFreshWorld = false,
-        branchesTo = emptyList(),   // leads nowhere yet - Act II is still the pre-inversion campaign
+        // Where the two branches MERGE: both tails reach the same three-gene shape, so both go on to the
+        // chapter about what that shape does to the world around it.
+        branchesTo = listOf(RECLAIM),
+        next = { RECLAIM },
         spawnGenome = emptyList(),
         spawnBiomass = STARTER_CELL_BIOMASS,
         steps = listOf(
@@ -1159,7 +1162,9 @@ object CampaignContent {
         blurb = "Your cells are carrying atoms they cannot spend.",
         scenario = EMPTY_WORLD,
         startsFreshWorld = false,
-        branchesTo = emptyList(),   // leads nowhere yet - Act II is still the pre-inversion campaign
+        // The other half of the merge - see the note on `chapterLeftoversScratch`.
+        branchesTo = listOf(RECLAIM),
+        next = { RECLAIM },
         spawnGenome = emptyList(),
         spawnBiomass = STARTER_CELL_BIOMASS,
         steps = listOf(
@@ -1230,6 +1235,148 @@ object CampaignContent {
         ),
     )
 
+    const val RECLAIM = "ch05-reclaim"
+
+    /**
+     * **Spent** — where the two branches MERGE (CAMPAIGN_PLAN.md §12.4), and the first chapter about the
+     * world rather than the cell.
+     *
+     * Both tails arrive at the same three-gene shape: grow on {bond}, divide on {bond}, break {bond} back
+     * down in the light. It works, and it is still terminal, for a reason nothing so far has shown them:
+     *
+     *  - `degrade` sheds the cell's most abundant BIOMASS molecule **whole and unsplit** into its own
+     *    footprint - and by now that molecule is {bond}, a two-atom molecule.
+     *  - `passiveEnvExchange` transfers a species across the membrane only if it is a **monomer** or carries
+     *    an import/export bias (`ib != 0 || eb != 0 || atomCount == 1`).
+     *
+     * So a colony steadily converts the world's free monomers into a molecule no cell can take back in. The
+     * matter is not destroyed and it is not far away - it is lying directly under them, unreachable. This is
+     * the asymmetry §12.2 went looking for and concluded was absent; that note checked `canDiffuseIn`, which
+     * governs cell-to-cell weld diffusion, not the environment junction.
+     *
+     * **Why this one starts a fresh world**, against the campaign's continuous-world rule: the chapter is
+     * about a world being consumed from a virgin state, and both predecessors hand it a world that has
+     * already been consumed. The curve IS the lesson, so it has to be watched from the beginning.
+     *
+     * Measured on the default world, one founder, the 3-gene genome: 6,241 cells by tick 8,000, then
+     * collapse to extinction by ~21,000. Free `b` and `g` fall 32.8M -> 6.0M while {bond} climbs 0 -> 26.8M;
+     * `r`, which this lineage never touches, sits at 32.8M throughout - the world is still full of food, just
+     * not food these cells can eat. With the light-powered import gene the same world holds ~11,000 cells
+     * indefinitely (still capped at tick 30,000).
+     *
+     * Those figures are the DEFAULT world. This chapter runs in [EMPTY_WORLD], a sixteenth of that area, so
+     * the gates below use the pocket universe's own numbers, measured the same way (one founder, this
+     * chapter's scenario, the genome authored onto the placed cell):
+     *
+     *              t2k   t4k   t6k   t9k   t13k  t18k  t24k
+     *   3 genes:   155   474   466    25     0     0     0     - peak at 4k, extinct by 13k
+     *   + import:  185   567   595   613   646   695   710     - climbs, then holds
+     */
+    private fun chapterReclaimScratch() = Chapter(
+        id = RECLAIM,
+        act = 1,
+        title = "Spent",
+        blurb = "Your cells strip the world, and then starve in it.",
+        scenario = EMPTY_WORLD,
+        // The one deliberate break in the continuous world - see the chapter doc.
+        startsFreshWorld = true,
+        // The player's own genome, whichever branch they walked, carried in by `lastAuthoredGenome` (§13).
+        spawnCopiesHeldCell = true,
+        spawnGenome = emptyList(),
+        spawnBiomass = STARTER_CELL_BIOMASS,
+        // Leads nowhere yet: the chapter after this one is about paying for the import gene with chemistry
+        // instead of daylight, and that is not authored until its premise is measured (see below).
+        branchesTo = emptyList(),
+        steps = listOf(
+            Step(
+                text = "A clean world, and the genome you built. Tap an empty space to put one cell into it.",
+                detail = "Same three genes you finished the last chapter with. Nothing here is different except the world.",
+                gate = Gate.World("Place a cell", met = { it.cellCount >= 1 }),
+                allow = SPAWN,
+                world = WorldRun.Live,
+            ),
+            // The boom. Peaks at 474 around tick 4,000, so 200 is comfortably inside it whichever branch's
+            // chemistry the player brought.
+            Step(
+                text = "Now let it run, and let it run fast. One cell becomes two, then hundreds. This is the genome working exactly as you designed it.",
+                gate = Gate.World("Spread across the world", met = { it.cellCount >= 200 }),
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+            // The crash. Gating on an EMPTY world also suppresses the extinction offer (goalIsExtinction),
+            // so this copy stands instead of being replaced by a recovery prompt - the death is the beat.
+            Step(
+                text = "Keep watching. Something is going wrong, and it is not a mistake you made - this is what that genome does when you give it long enough.",
+                detail = "It is not starving for want of anything you can see. The world looks as full as it ever did.",
+                gate = Gate.World("Watch the lineage die out", met = { it.cellCount == 0 }),
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "All of it, gone - from one cell to thousands to nothing. And the world is not empty. It is still holding almost everything your cells were ever made of.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Frozen,
+            ),
+            // The reveal. The campaign cannot see the LAYERS sheet, so these two beats are read-and-look
+            // rather than gated - the sheet's selection is not in any world reading.
+            Step(
+                text = "Open [LAYERS] and look at the MATTER list. It shows every chemical in the world, and how much of it there is. Pick {bond}.",
+                detail = "The ground is drawn from that one chemical now. Bright means plenty of it lying there.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Now pick one of the two single-atom chemicals {bond} is made of. The world goes dark - your cells took nearly all of it. Every cell that ever died here shed its {bond} whole, and {bond} is two atoms locked together.",
+                detail = "A single-atom chemical drifts through a membrane on its own. A bonded one does not - nothing crosses in unless a gene reaches out and pulls it. Your cells spent the world and then could not pick it back up.",
+                gate = Gate.Next,
+                allow = WATCH_SPEED,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "So lets teach them to pick it up. Tap an empty space to put a cell back in, and select it.",
+                gate = Gate.World("Select a cell", met = { it.focused != null }),
+                allow = SPAWN,
+                world = WorldRun.Live,
+            ),
+            Step(
+                text = "Add a fourth gene, and set its action to [IMPORT] {bond}. That is the gene that reaches out through the membrane and takes it back.",
+                gate = Gate.World("Update the new gene to IMPORT {bond}", met = { it.lineage?.importsExhaust == true }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            // Light, deliberately: a cell in a spent world has no spare atoms to bond with, so a chemistry-
+            // powered import cannot get started from the floor. Chemistry is ch06's job, once it can afford it.
+            Step(
+                text = "Power it with light. These cells are starting from nothing in a world with nothing loose in it - they have no atoms spare to pay chemistry with, and sunlight asks for none.",
+                gate = Gate.World("Power the IMPORT gene with light", met = { it.lineage?.importOnChem == false }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "And give it a condition, or it will spend all day hauling in {bond} the cell already has. Tap (ALWAYS), set the left side to {bond}, and set the right side to 200.",
+                detail = "The recycling gene empties the cytoplasm below 100. This one fills it back to 200. Between them the cell holds a working stock and stops.",
+                gate = Gate.World(
+                    "Stop the IMPORT gene when {bond} is high",
+                    met = { q -> q.lineage?.importCeiling?.let { it in 1..1000 } == true },
+                ),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+            ),
+            Step(
+                text = "Now let it run again. Same world, same three genes, and one more that puts back what the others throw away.",
+                detail = "It stops climbing, and then it just holds. Nothing here is growing forever - it is living off what it already spent.",
+                // 400 rather than 200: the dying lineage grazes 474 at its peak, so a lower bar could be met
+                // by a colony that is about to collapse. With the import gene it is past 400 by tick 4,000 and
+                // still climbing at 24,000.
+                gate = Gate.World("Hold a living colony", met = { it.cellCount >= 400 }),
+                allow = WATCH_SPEED,
+                world = WorldRun.Live,
+            ),
+        ),
+    )
+
     val SCRATCH_CHAPTERS: List<Chapter> = listOf(
         chapterGenesisScratch(),
         chapterDivideScratch(),
@@ -1239,6 +1386,7 @@ object CampaignContent {
         chapterConversionScratch(),
         chapterSupplyScratch(),
         chapterLockedUpScratch(),
+        chapterReclaimScratch(),
     )
 
     /**

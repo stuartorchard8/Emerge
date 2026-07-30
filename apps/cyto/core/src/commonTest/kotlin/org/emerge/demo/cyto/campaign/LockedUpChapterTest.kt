@@ -104,7 +104,15 @@ class LockedUpChapterTest {
                 "${ch.id} must end its lineage with a reserve on the recycler",
             )
         }
-        assertEquals(emptyList(), chapter.branchesTo, "both paths stop here until Act II is reworked")
-        assertEquals(emptyList(), leftovers.branchesTo)
+        // ...and because the shape is the same, both go on to the SAME chapter: the merge point the branch
+        // opened at `ch01-divide` finally closes here. A path that quietly kept its own sequel would make the
+        // branch a permanent fork rather than a detour.
+        assertEquals(listOf(CampaignContent.RECLAIM), chapter.branchesTo, "the competition path merges")
+        assertEquals(listOf(CampaignContent.RECLAIM), leftovers.branchesTo, "the photosynthesis path merges")
+        assertEquals(
+            setOf(CampaignContent.LEFTOVERS, CampaignContent.BRANCH_LOCKED_UP),
+            CampaignContent.predecessorsOf(CampaignContent.RECLAIM, CampaignContent.PLAYABLE_CHAPTERS).toSet(),
+            "the merge chapter is reachable from both tails and nowhere else",
+        )
     }
 }
