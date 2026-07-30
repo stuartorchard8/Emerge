@@ -14,7 +14,9 @@ its clip; readouts are targetable; the ring fades, breathes, and hands off to Ne
 
 | piece | where |
 |---|---|
-| `Spotlight(hint, target, occurrence)` | `campaign/CampaignModel.kt` |
+| `Spotlight(hint, target, occurrence, gene)` | `campaign/CampaignModel.kt` |
+| `GeneSpot` / `GeneKeys` — gene slots by identity, not by text | `campaign/CampaignModel.kt`, `ui/GeneKeys.kt` |
+| `Ui.elementByKey` / `Ui.tapKey`, harness `tap-key` | `engine/.../ui/Ui.kt` |
 | `CampaignDirector.renderSpotlight(ui)` — box + elbow, late pass | `campaign/CampaignDirector.kt` |
 | `Ui.element(label, occurrence)` — `tapLabel`'s lookup, returning a rect | `engine/.../ui/Ui.kt` |
 | `Ui.lastPanelRect` — the connector's anchor end | `engine/.../ui/Ui.kt` |
@@ -126,6 +128,29 @@ Deliberately left as hint text or nothing at all:
 ⚠️ **`occurrence` is fragile** if you ever reach for it: it counts matches on screen, so "the DIVIDE gene's
 energy source" is *the second* `USE LIGHT` only until the genome grows. Prefer a label unique on screen; if a
 beat genuinely needs the n-th, pin it with a scripted step.
+
+## P7 — identity, not text ✅ done (`6d4421f5`)
+
+A label could not name *"the condition on the GROW gene"*: its text changes as the state behind it changes
+(`ALWAYS` → `WHEN BIO < 3000`, which is the edit the step is asking for), the same word repeats down a
+genome so naming one means counting, and display words get revised. Divide 6 settled for ringing the gene's
+verb because of it.
+
+Gene widgets now carry a **key**: what the gene does + what the slot is for, `gene:CONVERT:1:cond`, ordinal
+for two genes of one action. Authored as `Spotlight(gene = GeneSpot(ActionType.Convert, Part.Condition))`.
+
+- **The gene's content is deliberately not in the key.** The chemical is the player's own pick, so the
+  campaign could not write it down in advance; and a content-derived key would change at the exact instant
+  the step's edit lands, losing the lock mid-edit. (This was the first idea, and it is the wrong one.)
+- **The condition slot spans the transition** — the `ALWAYS` toggle while there is none, the first clause's
+  left operand once there is. So the ring *follows* the edit: tap ALWAYS on Divide 6 and it moves onto the
+  `CHEM (NONE)` the step asks for next, rather than blinking out.
+- **Labels stay for the fixed furniture** (`+ NEW GENE`, `LAYERS`, `+ ADD X`) where the word IS the identity
+  and a script taps it by the same name.
+- No target anywhere uses `occurrence` now. Reclaim's blank gene became targetable for free —
+  `ActionType.None` is an identity, where `NOTHING` was a word the divide gene's card also prints.
+- Agreement is preserved by `tap-key` in the harness (and keys in the `elements` dump); both walkthroughs
+  use it for the two spots that were counting matches.
 
 ## P6 — animation ✅ done (`c91a119d`)
 
