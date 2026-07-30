@@ -4,7 +4,7 @@ The cell panel is dense, and the coach could only *describe* where to look ("the
 panel"), leaving the player to find it. A `Spotlight` can now name a widget: the coach draws a box around it
 and a connector back to itself.
 
-**Built (2026-07-30):** P1–P6. Genesis and the rehomed Act II both point at their widgets; the box clamps to
+**Built (2026-07-30):** P1–P6, and authored across the whole campaign. Genesis and the rehomed Act II both point at their widgets; the box clamps to
 its clip; readouts are targetable; the ring fades, breathes, and hands off to Next when the task is done.
 **Remaining:** nothing planned — see P6 for the two open edges.
 
@@ -25,6 +25,7 @@ its clip; readouts are targetable; the ring fades, breathes, and hands off to Ne
 | `SpotlightAnimator` — fade / pulse / hand-off, no GL needed | `campaign/SpotlightAnimator.kt` |
 | `Ui.clockSeconds` / `advanceClock` — the hosts' animation clock | `engine/.../ui/Ui.kt` |
 | `campaign-spotlight.txt` — the beats, shot + tapped | `apps/cyto/agent-scripts/` |
+| `spotlight-labels.txt` — the targets no walkthrough taps | `apps/cyto/agent-scripts/` |
 | `SpotlightAnimatorTest` (6) | `apps/cyto/core/src/commonTest/` |
 | `UiElementLookupTest` (12) | `engine/render/torus/src/commonTest/` |
 
@@ -91,28 +92,34 @@ Two ordering rules, each of which was a live bug first:
   contained the word — including the coach's own prose, so on a narrow screen with the cell sheet collapsed
   the coach boxed itself and drew a connector to its own copy.
 
-## P5 — authoring ✅ done (`20299cd6`, `f6114dd8`)
+## P5 — authoring ✅ done (`20299cd6`, `f6114dd8`, `6cc279f7`)
 
-All 13 spotlights that name a widget now point at it, verified in-game on Genesis and Hold Together. Group
-headers use the **collapsed** form (`+ GROW`, `+ MOVE`), so the ring disappears the instant the player expands
-the group — which is what the step was asking for. `+ ADD X`, `+ NEW GROUP`, `PAUSE` and the `LIGHT` readout
-are unique on screen, so no `occurrence` was needed anywhere; the fragility warning below still stands for
-anything added later.
+Every step whose copy names a widget now points at it — 34 targets, verified in-game across Genesis, Divide
+and Hold Together. Group headers use the **collapsed** form (`+ GROW`, `+ MOVE`), so the ring disappears the
+instant the player expands the group, which is what the step was asking for.
 
-Deliberately left as hint text:
+**No target uses `occurrence`.** Where a step names a *field on a particular gene* ("tap (ALWAYS) on the
+CONVERT gene", "the DIVIDE gene's energy source"), the ring goes on the gene's **action token** — `Convert`,
+`Divide`, `BREAK`, `Import` — not the field. ALWAYS and USE LIGHT appear once per gene, so pointing at the
+field means counting, and a ring that lands confidently on the wrong gene is worse than the prose alone. The
+gene's own verb is unique on screen and cannot drift if the player reorders the genome.
 
-- the **world gestures** (drag a cell, tap empty space) — no widget exists to ring, and a spotlight without a
-  target is still a hint;
-- the **SEVER toggle**, whose label reads `AND STICK` until the player flips it, so a target would resolve
-  only after the step was already done;
+Card labels, confirmed against a live `elements` dump: `ActionType.name` for most (`Convert`, `Divide`,
+`Import`), `BREAK` for BreakBond, `NOTHING` for None, `USE LIGHT` / `BOND` for the sources, and the divide
+toggle names the state it is IN — `SEVERING CELL 2 FREE` while daughters cut loose, `AND STICK` after.
+
+Deliberately left as hint text or nothing at all:
+
+- the **world gestures** (drag a cell, tap empty space, "watch it run") — no widget exists to ring, and a
+  spotlight without a target is still a hint;
 - **"the cell's panel"** — a panel is not a named region, and pointing at a whole panel is not what the
   mechanism is for;
 - the **chains** ("MOVE -> the muscle gene -> SOURCE -> BREAK FUEL") point at their first hop only. No beat
   has yet proved that insufficient.
 
-⚠️ **`occurrence` is fragile.** It counts matches on screen, so "the DIVIDE gene's energy source" is *the
-second* `USE LIGHT` only until the genome grows. Prefer labels unique on screen; if a beat genuinely needs the
-n-th, pin it with a scripted step.
+⚠️ **`occurrence` is fragile** if you ever reach for it: it counts matches on screen, so "the DIVIDE gene's
+energy source" is *the second* `USE LIGHT` only until the genome grows. Prefer a label unique on screen; if a
+beat genuinely needs the n-th, pin it with a scripted step.
 
 ## P6 — animation ✅ done (`c91a119d`)
 
