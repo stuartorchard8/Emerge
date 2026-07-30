@@ -63,7 +63,7 @@ expect step 11/11
 # Segue into Divide — same world, same cell.
 next
 expect chapter ch01-divide
-expect step 1/11
+expect step 1/12
 
 # 1-2. The dead end, then the DIVIDE gene.
 next
@@ -100,7 +100,7 @@ tap-ui close
 expect bond rg
 expect fuelConflicts true
 next
-expect step 8/11
+expect step 9/12
 
 # 5. It divides — and both daughters rupture on the spot. The step auto-advances on the die-off, so
 # there is no Next to click here. A cell splits its biomass in two, so dividing
@@ -109,7 +109,7 @@ expect step 8/11
 # tick 2000 and the die-off lands between 2000 and 4000. Nothing the player sees is on a clock.
 run 4000
 expect cells 0
-expect step 9/11
+expect step 10/12
 
 # 6. Put the genome back in the world and select it, so the gene card is there to edit.
 tap 0.35 0.5
@@ -117,7 +117,7 @@ select 0.35 0.5
 expect cells 1
 next
 next
-expect step 11/11
+expect step 12/12
 
 # 7. The fix: a BIO > 2000 floor on the DIVIDE gene. The blank clause ALWAYS drops in is already `> 0`,
 # so only the left side and the number change. The DIVIDE gene is the only one still unconditional, so

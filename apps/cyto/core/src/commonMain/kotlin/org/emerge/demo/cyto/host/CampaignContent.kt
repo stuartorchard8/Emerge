@@ -571,14 +571,28 @@ object CampaignContent {
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
             ),
-            // 2. Add the DIVIDE gene. Frozen while they author.
+            // 2. Add the DIVIDE gene, in two beats — one tap each, so the coach can point at the thing the
+            // player is being asked to touch *right now*. As one step it kept ringing "+ NEW GENE" after the
+            // gene was already added, which is worse than no ring: it says the tap didn't take.
+            // Both auto-advance, so a player who does both in one motion never sees the seam.
             Step(
-                text = "Give it a way to spread. Tap [+ NEW GENE] again, then change the new gene's action from (NOTHING) to (DIVIDE) - it splits the cell into two daughters, each taking half of the mother's biomass and cytoplasm.",
-                gate = Gate.World("Add a DIVIDE gene", met = { it.lineage?.hasDivide == true }),
+                text = "Give it a way to spread. Tap [+ NEW GENE] again - a second gene, alongside the one that feeds it.",
+                gate = Gate.World("Add a second gene", met = { (it.lineage?.geneCount ?: 0) >= 2 }),
                 allow = LOOK,
                 world = WorldRun.Live,
                 autoAdvance = true,
                 spotlight = Spotlight(target = "+ NEW GENE"),
+            ),
+            Step(
+                text = "Now change the new gene's action from (NOTHING) to (DIVIDE) - it splits the cell into two daughters, each taking half of the mother's biomass and cytoplasm.",
+                gate = Gate.World("Add a DIVIDE gene", met = { it.lineage?.hasDivide == true }),
+                allow = LOOK,
+                world = WorldRun.Live,
+                autoAdvance = true,
+                // The blank gene's action token. The only NOTHING on screen: the gene that feeds the cell is
+                // a GROW gene by now, and the divide gene's own "RETAINING NOTHING" row only appears once
+                // this step is done.
+                spotlight = Spotlight(target = "NOTHING"),
             ),
             // 3. Let them watch it NOT work — and pin the blame on SIZE, not on the energy source. This is the
             // first of the two reasons the gene is inert, and it has to come first: a cell that has outgrown
@@ -1368,12 +1382,25 @@ object CampaignContent {
                 allow = SPAWN,
                 world = WorldRun.Live,
             ),
+            // Two beats, one tap each, for the reason the divide chapter's gene split: a single step ringing
+            // "+ NEW GENE" keeps ringing it after the gene exists, which reads as "that didn't work".
             Step(
-                text = "Add a fourth gene, and set its action to [IMPORT] {bond}. That is the gene that reaches out through the membrane and takes it back.",
+                text = "Add a fourth gene.",
+                gate = Gate.World("Give the cell a fourth gene", met = { (it.lineage?.geneCount ?: 0) >= 4 }),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+                autoAdvance = true,
+                spotlight = Spotlight(target = "+ NEW GENE"),
+            ),
+            Step(
+                text = "Set its action to [IMPORT] {bond}. That is the gene that reaches out through the membrane and takes it back.",
                 gate = Gate.World("Update the new gene to IMPORT {bond}", met = { it.lineage?.importsExhaust == true }),
                 allow = LOOK,
                 world = WorldRun.Frozen,
-                spotlight = Spotlight(target = "+ NEW GENE"),
+                // Hint, not a target: by this chapter the genome carries a DIVIDE gene, whose card writes its
+                // own "RETAINING NOTHING" row ABOVE the blank gene appended at the end. Two NOTHINGs, and the
+                // wrong one comes first - exactly the count-the-matches fragility a target must not rely on.
+                spotlight = Spotlight(hint = "the new gene's (NOTHING) action"),
             ),
             // Light, deliberately: a cell in a spent world has no spare atoms to bond with, so a chemistry-
             // powered import cannot get started from the floor. Chemistry is ch06's job, once it can afford it.
