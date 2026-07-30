@@ -480,7 +480,7 @@ object CampaignContent {
             // 5. Watch it die.
             Step(
                 text = "Can you see the cell getting smaller? With no genes, a cell has no way to maintain itself. It slowly degrades into the environment, rupturing when its biomass goes below 1000 units.",
-                gate = Gate.World("The cell ruptures", met = { it.cellCount == 0 }),
+                gate = Gate.World("Wait for the cell to rupture", met = { it.cellCount == 0 }),
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
                 autoAdvance = true,
@@ -558,7 +558,7 @@ object CampaignContent {
         steps = listOf(
             // 1. Frame the dead end. Live, so the cell is visibly still growing while they read.
             Step(
-                text = "Your cell can sustain itself, but it's still only one cell. Your new gene has only one host, and if that host cell ruptures then your new species will go extinct.",
+                text = "This cell can sustain itself, but it's only one cell. Your new gene has only one host, and if that host cell ruptures then your new species will go extinct.",
                 gate = Gate.Next,
                 allow = WATCH_SPEED,
                 world = WorldRun.Live,
@@ -613,7 +613,7 @@ object CampaignContent {
                 world = WorldRun.Live,
             ),
             Step(
-                text = "Fortunately for your cell, there is another more abundant energy source available: chemistry. Change the DIVIDE gene's energy source from (USE LIGHT) to (BOND), then choose two chemicals to join together.",
+                text = "Fortunately for your cell, there is another more abundant energy source available: chemistry. Change the DIVIDE gene's energy source from (USE LIGHT) to (BOND), then choose two chemicals to combine for energy.",
                 detail = "Joining two molecules releases energy - one unit per bond made - and this world is full of loose atoms to join. Any pair works, so pick whichever you like.",
                 gate = Gate.World("Power DIVIDE by bonding", met = { !it.lineage?.divideProduct.isNullOrEmpty() }),
                 allow = LOOK,
