@@ -152,6 +152,23 @@ for two genes of one action. Authored as `Spotlight(gene = GeneSpot(ActionType.C
 - Agreement is preserved by `tap-key` in the harness (and keys in the `elements` dump); both walkthroughs
   use it for the two spots that were counting matches.
 
+## P8 — pointing at a number ✅ done
+
+Exhaust's waste beat is the campaign's most abstract claim ("they are filling up with their own waste"), and
+the evidence is one figure in the chemistry table. A readout could only be named by its whole text, and a
+data row's text *is* the data — different every tick.
+
+- Readouts can now carry a **key**, and a `row` can name **character spans** within itself. A fixed-width
+  column is a character range, so `metab:gb:cyt` is a rect around the number, not the row.
+- `MetabKeys` builds them from the species token, which does not change. The campaign never spells that
+  token: `Spotlight(metab = MetabSpot(Chem.Bond))` resolves against the selected lineage the same way the
+  `{bond}` in the copy does, so the ring and the sentence always name the same molecule.
+- The step split in two (open the table → look at the number), because pointing at the tab while the tab is
+  open is pointing at finished work. Same rule as Divide 2.
+- Widgets still beat readouts in `elementByKey`, so making a readout tappable later can't move the ring.
+- `elements` lists keyed readouts; `ExhaustChapterTest` pins the authored spot *and* the span arithmetic
+  against the table's row format, which is the part that would otherwise drift silently.
+
 ## P6 — animation ✅ done (`c91a119d`)
 
 - **Fade** 500ms in and out. A target change is a **hand-off, not a cross-fade**: the old box finishes

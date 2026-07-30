@@ -262,6 +262,41 @@ class UiElementLookupTest {
         assertEquals("divide", fired, "the second one, without anyone counting to two")
     }
 
+    /**
+     * A **number** in a data table, which is the hardest thing to name: its text is the value, so it is
+     * different every tick, and the coach still has to be able to point at that one figure rather than the
+     * row or the table. Key names the row, a span names the column within it.
+     */
+    @Test fun aKeyedColumnResolvesToJustThatColumnsRect() {
+        fun frame(cyt: String): Ui {
+            val ui = Ui().apply { setResolution(400f, 300f) }
+            val text = "BLUGRAM".padEnd(9) + "498".padStart(5) + " == " + cyt.padStart(5) + " == " + "0".padStart(5)
+            ui.frame {
+                panel(Anchor.TopLeft) {
+                    row(
+                        text, key = "metab:bg",
+                        spans = listOf(
+                            PanelBuilder.TextSpan("metab:bg:env", 9, 14),
+                            PanelBuilder.TextSpan("metab:bg:cyt", 18, 23),
+                        ),
+                    )
+                }
+            }
+            return ui
+        }
+        val ui = frame("708")
+        val whole = assertNotNull(ui.elementByKey("metab:bg"), "the row")
+        val cyt = assertNotNull(ui.elementByKey("metab:bg:cyt"), "the cytoplasm column")
+        val env = assertNotNull(ui.elementByKey("metab:bg:env"))
+        assertTrue(cyt.w < whole.w, "a column is narrower than its row")
+        assertTrue(cyt.x > env.x, "and CYT sits to the right of ENV")
+        assertTrue(cyt.x >= whole.x && cyt.x + cyt.w <= whole.x + whole.w + 1f, "inside the row")
+
+        // The point of the key: the value moved and the box did not.
+        val moved = assertNotNull(frame("9021").elementByKey("metab:bg:cyt"))
+        assertEquals(cyt.x, moved.x, "fixed-width columns, so the same place")
+    }
+
     /** The connector's anchor end: a panel is auto-sized and anchor-placed, so its rect is knowable only from
      *  the toolkit. It reports the panel most recently emitted, and resets with the frame. */
     @Test fun theLastPanelRectIsTheLastPanelEmitted() {

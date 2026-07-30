@@ -736,9 +736,11 @@ class Ui {
 
     private val readoutRegions = ArrayList<UiElement>()
 
-    /** Record a readout row's rect under [label] (its own text). Called by the panel items as they emit. */
-    internal fun noteReadout(label: String, x: Float, y: Float, w: Float, h: Float) {
-        if (label.isNotBlank()) readoutRegions.add(UiElement(label, x, y, w, h, clipRectOf(currentClip)))
+    /** Record a readout row's rect under [label] (its own text), optionally under a stable [key] as well.
+     *  Called by the panel items as they emit. */
+    internal fun noteReadout(label: String, x: Float, y: Float, w: Float, h: Float, key: String? = null) {
+        if (label.isNotBlank() || key != null)
+            readoutRegions.add(UiElement(label, x, y, w, h, clipRectOf(currentClip), key))
     }
 
     private fun ClickRegion.asElement(fallbackLabel: String = "") =
@@ -787,9 +789,14 @@ class Ui {
      * under them, so it resolves by key; a driver naming a button by the word on it still uses [tapLabel].
      *
      * Keys are expected to be unique within a frame — the first match wins, and there is no occurrence.
+     *
+     * Resolves keyed [readouts] too, and for the same reason it resolves keyed widgets: a number a coach has
+     * to point at (a cytoplasm count in a chemistry table) has no fixed text at all — its label *is* the
+     * value that keeps changing. Widgets win over readouts, so making a readout tappable later cannot move
+     * the ring.
      */
     fun elementByKey(key: String): UiElement? =
-        keyMatch(key)?.asElement()
+        keyMatch(key)?.asElement() ?: readoutRegions.firstOrNull { it.key == key }
 
     /** Fire the widget with this [key]. The keyed twin of [tapLabel], so a script can drive the same slot the
      *  coach points at without either of them naming the word on it. */
@@ -1365,7 +1372,21 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     internal val items = ArrayList<Item>()
 
     fun title(text: String, color: Long = 0xFFFFFFFFL) = items.add(TextItem(text, color, rowHeight))
-    fun row(text: String, color: Long = 0xC8C8C8FFL) = items.add(TextItem(text, color, rowHeight))
+
+    /**
+     * A read-only line of text.
+     *
+     * [key] gives the row a stable identity ([Ui.elementByKey]) for a caller that must not depend on the
+     * words in it — a data row's text is the data, so it changes every tick. [spans] name **parts** of the
+     * line the same way: a column in a fixed-width table is a character range, and pointing at the number
+     * rather than the whole row is the difference between "look here" and "look somewhere on this line".
+     * Character offsets only make sense against the monospace renderer, which is what panels use.
+     */
+    fun row(text: String, color: Long = 0xC8C8C8FFL, key: String? = null, spans: List<TextSpan> = emptyList()) =
+        items.add(TextItem(text, color, rowHeight, key, spans))
+
+    /** A named character range `[from, to)` within a [row]'s text. */
+    class TextSpan(val key: String, val from: Int, val to: Int)
     fun keyValue(key: String, value: String, keyColor: Long = 0x9A9A9AFFL, valueColor: Long = 0xFFFFFFFFL) =
         items.add(KeyValueItem(key, value, keyColor, valueColor, rowHeight))
     fun button(label: String, color: Long, dropTargetId: String? = null, onClick: () -> Unit) =
@@ -1493,11 +1514,25 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
         fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float)
     }
 
-    private class TextItem(val text: String, val color: Long, override val height: Float) : Item {
+    private class TextItem(
+        val text: String,
+        val color: Long,
+        override val height: Float,
+        val key: String? = null,
+        val spans: List<TextSpan> = emptyList(),
+    ) : Item {
         override fun measureWidth(textH: Float) = UiTextRenderer.measureWidthPx(text, textH)
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
             ui.emitTextLeft(text, x, topY + (height - textH) * 0.5f, textH, color)
-            ui.noteReadout(text, x, topY, contentW, height)
+            ui.noteReadout(text, x, topY, contentW, height, key)
+            for (s in spans) {
+                val from = s.from.coerceIn(0, text.length)
+                val to = s.to.coerceIn(from, text.length)
+                val left = UiTextRenderer.measureWidthPx(text.substring(0, from), textH)
+                val w = UiTextRenderer.measureWidthPx(text.substring(from, to), textH)
+                // Labelled with the span's own text so `elements`/`readouts` stay readable, but found by key.
+                ui.noteReadout(text.substring(from, to).trim(), x + left, topY, w, height, s.key)
+            }
         }
     }
 

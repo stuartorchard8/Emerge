@@ -3,10 +3,15 @@ package org.emerge.demo.cyto.campaign
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.host.CampaignContent
+import org.emerge.demo.cyto.ui.MetabKeys
+import org.emerge.demo.cyto.ui.metabolismTable
+import org.emerge.render.torus.ui.Anchor
+import org.emerge.render.torus.ui.Ui
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -154,6 +159,39 @@ class ExhaustChapterTest {
         dir.update(query(3, loaded, recycles = true), emptySet())
         assertFalse(dir.watchedCellOffer, "they are watching a cell again")
         assertTrue(dir.snapshot()!!.text.contains("watch the cell"), "and the beat's own copy is back")
+    }
+
+    /**
+     * The beat that names the waste points at **the number**, and the number is reachable.
+     *
+     * Two halves that can drift apart independently: the chapter has to author a [MetabSpot] on `{bond}`,
+     * and the table has to key the column it names. The span arithmetic is character offsets into a
+     * fixed-width row, so a change to the table's layout would otherwise ring the wrong column silently.
+     */
+    @Test
+    fun theWasteBeatPointsAtTheCytoplasmNumber() {
+        val spot = chapter.steps.mapNotNull { it.spotlight?.metab }.single()
+        assertEquals(MetabSpot.Chem.Bond, spot.chem, "the waste, which is what the copy is about")
+        assertEquals(MetabKeys.CYT, spot.column, "held in the cytoplasm, not locked into biomass")
+
+        // `gb` is the waste this lineage mints — the same molecule `query(...)` above hands the director.
+        val info = CytoController.CellInfo(
+            id = 1, type = "Collector", radius = "0.37", totalBiomass = 2232, light = "0 Q (0%)",
+            metabolism = listOf(
+                CytoController.CellInfo.MetRow("b", 542, 506, 2, ">>", "=="),
+                CytoController.CellInfo.MetRow("gb", 498, 708, 0, "==", "=="),
+            ),
+            genes = emptyList(),
+        )
+        val ui = Ui().apply { setResolution(400f, 300f) }
+        ui.frame { panel(Anchor.TopRight) { metabolismTable(info) } }
+
+        val cyt = assertNotNull(ui.elementByKey(MetabKeys.cell("gb", MetabKeys.CYT)), "the waste's CYT cell")
+        assertEquals("708", cyt.label, "the ring lands on the count itself")
+        val row = assertNotNull(ui.elementByKey(MetabKeys.row("gb")))
+        assertTrue(cyt.w < row.w * 0.5f, "a column, not the whole row")
+        val otherRow = assertNotNull(ui.elementByKey(MetabKeys.cell("b", MetabKeys.CYT)))
+        assertTrue(otherRow.y != cyt.y, "and the right species' row")
     }
 
     /** The goal still has to be won on its merits: picking a fresh cell is not itself a pass. */

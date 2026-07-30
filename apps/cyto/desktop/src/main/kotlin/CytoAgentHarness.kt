@@ -584,6 +584,10 @@ object CytoAgentHarness {
             // Geometry, so a touch-target audit can see how big these actually are at this render size.
             for (e in ui.elements())
                 println("[agent]   ui '${e.label}'${e.key?.let { " key=$it" } ?: ""} x=${e.x.toInt()} y=${e.y.toInt()} w=${e.w.toInt()} h=${e.h.toInt()}")
+            // Keyed readouts only: every line a panel prints is a readout, so listing them all buries the
+            // listing in coach prose. The keyed ones are the ones anything can point at (a chemistry number).
+            for (r in ui.readouts().filter { it.key != null })
+                println("[agent]   readout '${r.label}' key=${r.key} x=${r.x.toInt()} y=${r.y.toInt()} w=${r.w.toInt()} h=${r.h.toInt()}")
         }
 
         private fun dumpRaw() {

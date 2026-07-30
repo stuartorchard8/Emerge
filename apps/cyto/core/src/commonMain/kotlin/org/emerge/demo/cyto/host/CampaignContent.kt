@@ -7,6 +7,7 @@ import org.emerge.demo.cyto.campaign.InputHints
 import org.emerge.demo.cyto.campaign.Gate
 import org.emerge.demo.cyto.campaign.PlayerAction
 import org.emerge.demo.cyto.campaign.GeneSpot
+import org.emerge.demo.cyto.campaign.MetabSpot
 import org.emerge.demo.cyto.campaign.Spotlight
 import org.emerge.demo.cyto.campaign.Step
 import org.emerge.demo.cyto.campaign.WorldRun
@@ -761,11 +762,23 @@ object CampaignContent {
             ),
             // 2. Name the cost. The molecule is IN the cells and visible in the chemistry table, so this is a
             // "look at the thing" beat, not a claim the player has to take on trust.
+            // Two beats, because the ring has two different things to say: first "open this", then "look at
+            // THAT number". Pointing at the tab while the tab is already open is pointing at finished work,
+            // and this is the chapter's one abstract idea - it earns the extra beat.
             Step(
-                text = "Now select one and look at what it is holding. Every division your cells have ever paid for has left a molecule of {bond} behind, and they have no use for it. They are filling up with their own waste products.",
-                detail = "Nothing is destroyed in this world, only rearranged. The atoms in that {bond} are the same atoms your cells started with - they are simply locked into a shape the genome has no gene for.",
+                text = "Now select one and look at what it is holding. Open its chemistry.",
                 gate = Gate.World("Select a cell and read its chemistry", met = { it.chemistryOpen }),
                 spotlight = Spotlight(target = "CHEMISTRY"),
+                allow = LOOK,
+                world = WorldRun.Frozen,
+                autoAdvance = true,
+            ),
+            Step(
+                text = "There. Every division your cells have ever paid for has left a molecule of {bond} behind, sitting in the cytoplasm, and they have no use for it. They are filling up with their own waste products.",
+                detail = "Nothing is destroyed in this world, only rearranged. The atoms in that {bond} are the same atoms your cells started with - they are simply locked into a shape the genome has no gene for.",
+                gate = Gate.Next,
+                // The CYT column of the {bond} row: the count itself, not the table around it.
+                spotlight = Spotlight(metab = MetabSpot(MetabSpot.Chem.Bond)),
                 allow = LOOK,
                 world = WorldRun.Frozen,
             ),

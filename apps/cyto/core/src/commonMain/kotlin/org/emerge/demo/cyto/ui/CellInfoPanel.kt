@@ -42,8 +42,34 @@ fun PanelBuilder.metabolismTable(info: CytoController.CellInfo) {
             r.dirEnvCyt == "<<" || r.dirCytBio == "<<" -> 0xCC8855FFL
             else -> 0xC8C8C8FFL
         }
-        row(metabRow(r, info.aliases), color)
+        row(metabRow(r, info.aliases), color, key = MetabKeys.row(r.species), spans = columnSpans(r.species))
     }
+}
+
+/**
+ * **Stable identities for the metabolism table** — the campaign coach points at a single number in it
+ * ("the {bond} your cells are holding"), and a number has no stable text: its label *is* the value that
+ * changes every tick. The species token does not change, so the key is built from that and the column.
+ */
+object MetabKeys {
+    /** A whole species row. */
+    fun row(species: String): String = "metab:$species"
+
+    /** One column of a species row: `env` (the local reservoir), `cyt` (cytoplasm), `bio` (locked biomass). */
+    fun cell(species: String, column: String): String = "${row(species)}:$column"
+
+    const val ENV = "env"
+    const val CYT = "cyt"
+    const val BIO = "bio"
+}
+
+/** The three value columns as character ranges into [metabRow]'s fixed-width line. */
+private fun columnSpans(species: String): List<PanelBuilder.TextSpan> {
+    fun span(col: String, from: Int) = PanelBuilder.TextSpan(MetabKeys.cell(species, col), from, from + NUM_COL)
+    val env = SP_COL
+    val cyt = env + NUM_COL + 4      // + " >> "
+    val bio = cyt + NUM_COL + 4
+    return listOf(span(MetabKeys.ENV, env), span(MetabKeys.CYT, cyt), span(MetabKeys.BIO, bio))
 }
 
 // Column layout (monospace): species[9] env[5] ' ' dirEC[2] ' ' cyto[5] ' ' dirCB[2] ' ' bio[5] = 32 chars,

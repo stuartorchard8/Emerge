@@ -3,6 +3,7 @@ package org.emerge.demo.cyto.campaign
 import org.emerge.demo.cyto.CytoController
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.ui.GenomeGrouping
+import org.emerge.demo.cyto.ui.MetabKeys
 import org.emerge.demo.cyto.sim.SpeciesNames
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.CanvasBuilder
@@ -556,6 +557,15 @@ class CampaignDirector {
         val spot = step.spotlight ?: return null
         // A gene slot is named by identity, everything else by the word on it.
         spot.gene?.let { return Spot(it.key, 1, byKey = true) }
+        spot.metab?.let { m ->
+            // Nothing to point at until the player has actually made the molecule the copy is about.
+            val species = when (m.chem) {
+                MetabSpot.Chem.Convert -> lastQuery?.lineage?.convertChem
+                MetabSpot.Chem.Bond -> lastQuery?.lineage?.divideProduct
+            }
+            if (species.isNullOrEmpty()) return null
+            return Spot(MetabKeys.cell(species, m.column), 1, byKey = true)
+        }
         val target = spot.target ?: return null
         return Spot(target, spot.occurrence)
     }

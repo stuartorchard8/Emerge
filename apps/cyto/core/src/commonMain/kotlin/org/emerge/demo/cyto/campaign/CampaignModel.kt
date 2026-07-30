@@ -5,6 +5,7 @@ import org.emerge.demo.cyto.sim.ActionType
 import org.emerge.demo.cyto.sim.CytoScenario
 import org.emerge.demo.cyto.sim.Gene
 import org.emerge.demo.cyto.ui.GeneKeys
+import org.emerge.demo.cyto.ui.MetabKeys
 import org.emerge.demo.cyto.ui.GenomeGrouping
 
 /**
@@ -208,7 +209,21 @@ class Spotlight(
     val target: String? = null,
     val occurrence: Int = 1,
     val gene: GeneSpot? = null,
+    val metab: MetabSpot? = null,
 )
+
+/**
+ * A single number in the selected cell's chemistry table — the [column] of the row for one of the player's
+ * own molecules, named the way the coach's copy names it (`{chem}` / `{bond}`) rather than by a species
+ * token the campaign cannot know in advance.
+ *
+ * For the beats that talk about a quantity ("they are filling up with their own waste"): the concept is
+ * abstract enough that pointing at the table is not pointing at the evidence.
+ */
+class MetabSpot(val chem: Chem, val column: String = MetabKeys.CYT) {
+    /** Which of the player's molecules — resolved against the selected lineage at the moment of drawing. */
+    enum class Chem { Convert, Bond }
+}
 
 /** A slot on the gene that does [action] — the [ordinal]-th such gene, in genome order. See [GeneKeys]. */
 class GeneSpot(
