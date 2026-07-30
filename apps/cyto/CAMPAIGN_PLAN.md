@@ -1078,3 +1078,27 @@ explanation, with no copy required.
    Note also that gear trades throughput for economy **geometrically**: `energyCap = EFFICIENCY_REF ushr g`,
    so gear 16 permits 1 energy unit/tick (17 ops) against gear 15's 2 (32 ops). Gear 16 is the most throttled
    setting in the game, which can read as a bug without being one.
+
+3. **The light-contention idea for ch06 also measures flat — and the mechanism is not what it looks like.**
+   The idea was: two light genes split the day, so moving IMPORT onto chemistry gives the recycler the whole
+   day back. **It cannot.** `runGenes` computes `quantaShare = work.quanta / n` where **`n` is every active
+   gene, not every active *light* gene** — so an active bond-powered gene still shrinks the light share, and
+   (since it never draws that share) simply wastes it. Moving IMPORT from light to bond leaves `n` unchanged
+   and therefore leaves the recycler's light unchanged; all it adds is monomer consumption, which is why it
+   measured *worse* (619-673 vs 710).
+
+   What *does* free light is the gene being **inactive** — `isActive` is re-evaluated every tick and
+   "inactive genes don't reserve a share". So the lever is the gate, not the fuel. Tested by narrowing the
+   import ceiling toward the recycler's `bg > 100` floor (overlap = the band where both are active):
+
+   | import ceiling | 120 | 200 | 400 |
+   |---|---|---|---|
+   | cells @ t24k | 693 | 710 | 706 |
+
+   Flat. So the 1/N dilution, while provably real arithmetic, is **not the binding constraint** on colony
+   outcome in this scenario — something else is. Three candidate ch06 premises (gear, fuel source, gate
+   overlap) have now all measured flat on cell count, which suggests the metric is saturated rather than that
+   all three mechanisms are inert. **Before authoring any of them, isolate the effect on a single cell**
+   (no population dynamics) - e.g. how fast one cell drains a {bond} pile with and without a second active
+   light gene. A worthwhile beat regardless: an always-active gene that does nothing still takes its 1/N cut
+   of the daylight.
