@@ -358,6 +358,16 @@ class GeneEditor {
         constantMin = min; constantMax = max; constantSet = onSet
     }
 
+    /** Park an inline-edit draft (and optionally expand the sheet) without driving a UI frame. `internal`
+     *  rather than private only so the layout contracts that turn on "a gene is being edited" — see
+     *  [freeAreaOffsetPx] — can be tested; they are otherwise reachable only through a rendered token tap. */
+    internal fun parkInlineDraftForTest(gene: Gene? = BLANK_GENE, expanded: Boolean = false) {
+        editingIndex = if (gene == null) null else 0
+        draft = gene
+        inlineLive = gene != null
+        cellExpanded = expanded
+    }
+
     /** The framebuffer-pixel offset from the screen centre to the centre of the *un-obscured* world area,
      *  given the current layout — so the host can recentre the followed cell into the free space beside/above
      *  the panel (feed to `CytoRenderer.setFollowOffsetPx`). Returns `(dx right, dy down)`; `(0, 0)` when
@@ -366,10 +376,12 @@ class GeneEditor {
     fun freeAreaOffsetPx(narrow: Boolean, cellShown: Boolean, resW: Float, resH: Float, scale: Float, topObscuredPx: Float = 0f): Pair<Float, Float> {
         if (!cellShown) return 0f to 0f
         if (narrow) {
-            // A full-screen modal (editing) hides the world entirely; otherwise the world shows in the band
-            // between the top-docked campaign coach ([topObscuredPx] down from the top) and the cell sheet
-            // (its height set by the L1 peek vs full L2 detent). Centre the cell in that band.
-            if (draft != null) return 0f to 0f
+            // The world shows in the band between the top-docked campaign coach ([topObscuredPx] down from the
+            // top) and the cell sheet (its height set by the L1 peek vs full L2 detent). Centre the cell in
+            // that band — including while a gene is being edited. Editing used to raise a full-screen L3 modal
+            // that hid the world, so a parked draft returned (0, 0); a gene is now edited *in place in the
+            // sheet*, so that early return only made the camera jump the cell back to the true screen centre —
+            // behind the sheet — on the first token tap. (The wide branch below had the same stale assumption.)
             val frac = sheetDragFrac ?: (if (cellExpanded) SHEET_FRACTION else PEEK_FRACTION)
             return 0f to (topObscuredPx - frac * resH) * 0.5f
         }
@@ -435,8 +447,9 @@ class GeneEditor {
         if (pendingDeleteGene != null) renderDeleteConfirmDialog(b, controller, info, wide)
         if (pastePicking) renderPastePicker(b, controller, info, wide)
         pasteConflict?.let { renderPasteConflictDialog(b, controller, it, wide) }
-        // Desktop inline is live: the pick sheet / token controls mutate `draft`; flush each change straight
-        // to the genome (no DONE step). The narrow modal leaves `inlineLive` false and commits on DONE.
+        // Inline editing is live at BOTH widths: the pick sheet / token controls mutate `draft`; flush each
+        // change straight to the genome (no DONE step). Nothing leaves `inlineLive` false with a draft parked —
+        // the narrow full-screen modal that used to commit on DONE is gone.
         if (inlineLive) {
             val d = draft; val idx = editingIndex
             if (d != null && idx != null && d != lastFlush) { controller.setHeldGene(idx, d); lastFlush = d }
