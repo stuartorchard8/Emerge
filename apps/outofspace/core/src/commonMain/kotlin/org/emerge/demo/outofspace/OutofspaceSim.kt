@@ -12,6 +12,7 @@ import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.Rate
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Analyzer
 import org.emerge.demo.outofspace.world.Belt
 import org.emerge.demo.outofspace.world.Channel
@@ -40,6 +41,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.heatPerGram
+import org.emerge.demo.outofspace.world.stepAir
 import org.emerge.demo.outofspace.world.stepHeat
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimInput
@@ -168,6 +170,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val (heat, radiated) = stepHeat(
             state.grid, structure, w.machines.toList(), HeatField.of(warmed), cfg.ticksPerSecond,
         )
+        val (air, airVented) = stepAir(
+            state.grid, structure, state.air, state.gravity, cfg.ticksPerSecond,
+        )
 
         return state.copy(
             machines = w.machines.toList(),
@@ -180,6 +185,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             heat = heat,
             generatedJoules = w.generatedJoules,
             radiatedJoules = state.radiatedJoules + radiated,
+            air = air,
+            airVentedGrams = state.airVentedGrams + airVented,
         )
     }
 

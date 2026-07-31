@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Belt
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Analyzer
 import org.emerge.demo.outofspace.world.Fabricator
 import org.emerge.demo.outofspace.world.HeatField
@@ -40,6 +41,11 @@ import kotlin.math.max
 enum class Overlay(val label: String) {
     None("PLAIN"),
     Heat("HEAT"),
+    Air("AIR"),
+    ;
+
+    /** What `H` cycles to next. One key beats three, and the HUD has buttons for direct picks. */
+    val next: Overlay get() = entries[(ordinal + 1) % entries.size]
 }
 
 class OutofspaceRenderer {
@@ -157,15 +163,16 @@ class OutofspaceRenderer {
 
         // The overlay goes over the machines, not under them: the question it answers is "how hot is
         // it *there*", and putting it behind the thing you are asking about answers the wrong one.
-        if (overlay == Overlay.Heat) {
+        if (overlay != Overlay.None) {
             for (y in minY..maxY) {
                 for (x in minX..maxX) {
                     val index = grid.index(x, y)
-                    tileRect(
-                        x, y, 1f,
-                        if (state.structure.isVacuum(index)) 0x05070CD0L
-                        else temperatureColor(state.kelvinAt(index)),
-                    )
+                    val tint = when {
+                        state.structure.isVacuum(index) -> 0x05070CD0L
+                        overlay == Overlay.Heat -> temperatureColor(state.kelvinAt(index))
+                        else -> pressureColor(state, index)
+                    }
+                    tileRect(x, y, 1f, tint)
                 }
             }
         }
@@ -246,20 +253,30 @@ class OutofspaceRenderer {
                 }
             }
             is Analyzer -> {
-                tileRect(x, y, 0.92f, 0x2A3242FFL)
-                edgeMark(x, y, m.facing, m.channel.color)
-                // The last thing it saw, as a bar of that species' colour scaled by its purity —
-                // so a glance down a line shows where the ore gets cleaner.
+                // An instrument, drawn to look like nothing else on the grid. The first version used
+                // the belt's own body colour with a bar across it, so in a line of belts it read as
+                // "a belt with something on it" rather than as a separate machine.
+                //
+                // Frame colour is the channel it reports on — a frame rather than an edge notch,
+                // because a notch is already the language for "material leaves this way" and it also
+                // moves when the machine is rotated, which made the channel look like a direction.
+                frame(x, y, m.channel.color)
+                tileRect(x, y, 0.66f, 0x0E141CFFL)
+                // The reading: colour is the species, size is its share. A blob rather than a bar so
+                // it is orientation-independent, and it sits in the middle where the eye already is.
                 if (m.lastDominant != null) {
-                    val w = (m.lastPurity / 1000f).coerceIn(0.1f, 1f) * 0.7f
-                    rect(
-                        (x + 0.15f + w * 0.5f) * tilePx, (y + 0.5f) * tilePx,
-                        w * tilePx, 0.22f * tilePx,
-                        packetColor(m.lastDominant),
-                    )
+                    val f = (m.lastPurity / 1000f).coerceIn(0f, 1f)
+                    tileRect(x, y, 0.14f + 0.42f * f, speciesColor(m.lastDominant))
                 }
+                // Which way material leaves, kept thin and neutral so it cannot be read as the channel.
+                edgeMark(x, y, m.facing, 0x8A94A4FFL)
+                // And what is inside right now, drawn at belt-packet size so flow through it is visible.
                 m.holding?.let { p ->
-                    rect((x + 0.5f) * tilePx, (y + 0.78f) * tilePx, 0.2f * tilePx, 0.2f * tilePx, packetColor(p.contents.dominant))
+                    rect(
+                        (x + 0.5f) * tilePx, (y + 0.5f) * tilePx,
+                        0.16f * tilePx, 0.16f * tilePx,
+                        packetColor(p.contents.dominant),
+                    )
                 }
             }
             is Hull -> tileRect(x, y, 1f, 0x4A5464FFL)
@@ -284,6 +301,16 @@ class OutofspaceRenderer {
     private fun slotOffset(facing: Direction, i: Int, slots: Int): Pair<Float, Float> {
         val along = 0.5f - (i + 0.5f) / slots
         return (facing.dx * along) to (facing.dy * along)
+    }
+
+    /** A hollow square of [color] around the tile edge — a border, not a fill. */
+    private fun frame(x: Int, y: Int, color: Long) {
+        val thickness = 0.13f
+        val span = 0.94f
+        rect((x + 0.5f) * tilePx, (y + 0.5f - (span - thickness) * 0.5f) * tilePx, span * tilePx, thickness * tilePx, color)
+        rect((x + 0.5f) * tilePx, (y + 0.5f + (span - thickness) * 0.5f) * tilePx, span * tilePx, thickness * tilePx, color)
+        rect((x + 0.5f - (span - thickness) * 0.5f) * tilePx, (y + 0.5f) * tilePx, thickness * tilePx, span * tilePx, color)
+        rect((x + 0.5f + (span - thickness) * 0.5f) * tilePx, (y + 0.5f) * tilePx, thickness * tilePx, span * tilePx, color)
     }
 
     /** A thin bar on the output edge, showing which way a machine sends things. */
@@ -332,6 +359,27 @@ class OutofspaceRenderer {
         } else {
             rgba((0x50 + 0xAF * f).toInt(), (0xA0 - 0x50 * f).toInt(), (0xC0 - 0xB0 * f).toInt(), alpha)
         }
+    }
+
+    /**
+     * Air: hue is whichever gas dominates the tile, brightness is how much of it there is.
+     *
+     * Two facts in one colour because they are always asked together — a room can be full of the
+     * wrong gas or short of the right one, and either is a problem you want to spot from across the
+     * vessel rather than by pointing at tiles one at a time.
+     */
+    private fun pressureColor(state: VesselState, index: Int): Long {
+        val pressure = state.air.pressureAt(index)
+        if (pressure <= 0L) return 0x120A10D8L   // sealed but empty: a room that has lost its air
+        val f = (pressure.toFloat() / AirField.AMBIENT_AIR.total).coerceIn(0.08f, 1.6f)
+        val base = speciesColor(state.air.mixtureAt(index).dominant)
+        val scale = (f / 1.6f).coerceIn(0.12f, 1f)
+        return rgba(
+            (((base shr 24) and 0xFF) * scale).toInt(),
+            (((base shr 16) and 0xFF) * scale).toInt(),
+            (((base shr 8) and 0xFF) * scale).toInt(),
+            0xC8L,
+        )
     }
 
     private fun rgba(r: Int, g: Int, b: Int, a: Long): Long =

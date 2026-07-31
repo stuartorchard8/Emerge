@@ -32,24 +32,27 @@ enum class Phase {
  * Declaration order is part of the contract: it fixes the iteration order of every [Mixture]
  * operation and breaks ties in [Mixture.dominant]. Reordering this enum changes simulation results.
  * **Append new species at the end.**
+ *
+ * [molarMass] is grams per mole, near enough. It is what makes a gas heavy or light, and therefore
+ * what makes carbon dioxide pool at the floor and nitrogen ride above it.
  */
-enum class Species(val phase: Phase) {
+enum class Species(val phase: Phase, val molarMass: Int) {
     // ── Minerals: everything that comes out of the ground ──
-    Iron(Phase.Solid),
-    Aluminum(Phase.Solid),
-    Copper(Phase.Solid),
-    Titanium(Phase.Solid),
-    Silica(Phase.Solid),
-    Carbon(Phase.Solid),
-    RareEarth(Phase.Solid),
-    Uranium(Phase.Solid),
+    Iron(Phase.Solid, 56),
+    Aluminum(Phase.Solid, 27),
+    Copper(Phase.Solid, 64),
+    Titanium(Phase.Solid, 48),
+    Silica(Phase.Solid, 60),
+    Carbon(Phase.Solid, 12),
+    RareEarth(Phase.Solid, 140),
+    Uranium(Phase.Solid, 238),
 
     // ── Fluids. Present so the fluid transport path is exercised by real species rather than by a
     // test fixture; the set will grow as life support and coolant loops need it. ──
-    Oxygen(Phase.Gas),
-    Nitrogen(Phase.Gas),
-    CarbonDioxide(Phase.Gas),
-    Water(Phase.Liquid),
+    Oxygen(Phase.Gas, 32),
+    Nitrogen(Phase.Gas, 28),
+    CarbonDioxide(Phase.Gas, 44),
+    Water(Phase.Liquid, 18),
     ;
 
     val isFluid: Boolean get() = phase.isFluid
@@ -62,5 +65,8 @@ enum class Species(val phase: Phase) {
 
         val SOLIDS: List<Species> = ALL.filter { it.isSolid }
         val FLUIDS: List<Species> = ALL.filter { it.isFluid }
+
+        /** The species that make up a breathable — or unbreathable — atmosphere. */
+        val GASES: List<Species> = ALL.filter { it.phase == Phase.Gas }
     }
 }

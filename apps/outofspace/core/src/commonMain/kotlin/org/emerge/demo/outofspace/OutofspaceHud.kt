@@ -51,6 +51,12 @@ class OutofspaceHud {
                 val balanced = s.minedGrams == s.inTransitGrams + s.stockpile.totalGrams + s.ventedGrams
                 row(if (balanced) "balanced" else "LEAK", if (balanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 gap()
+                title("ATMOSPHERE")
+                keyValue("Aboard", grams(s.atmosphereGrams))
+                keyValue("Lost", grams(s.airVentedGrams))
+                val airBalanced = s.atmosphereGrams + s.airVentedGrams == s.baselineAirGrams
+                row(if (airBalanced) "balanced" else "LEAK", if (airBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
+                gap()
                 title("ENERGY")
                 keyValue("Generated", joules(s.generatedJoules))
                 keyValue("Radiated", joules(s.radiatedJoules))
@@ -200,6 +206,21 @@ class OutofspaceHud {
                 0x9A9A9AFFL,
                 if (k > HeatField.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
             )
+        }
+        if (structure == Structure.Interior) {
+            val percent = s.pressurePercentAt(index)
+            keyValue(
+                "PRESSURE",
+                "$percent% atm",
+                0x9A9A9AFFL,
+                when {
+                    percent < 40 -> 0xE05A4AFFL
+                    percent < 85 -> 0xE0A93AFFL
+                    else -> 0x9ED0B0FFL
+                },
+            )
+            val mix = s.air.mixtureAt(index)
+            if (!mix.isEmpty) row("   " + composition(mix), 0x9AA4B4FFL)
         }
     }
 

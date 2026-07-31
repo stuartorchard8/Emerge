@@ -76,6 +76,8 @@ data class VesselState(
      */
     val generatedJoules: Long = 0L,
     val radiatedJoules: Long = 0L,
+    /** Cumulative grams of atmosphere lost to space. Air's counterpart to [radiatedJoules]. */
+    val airVentedGrams: Long = 0L,
     /**
      * The channel values computed this tick. Kept in the snapshot rather than recomputed by the
      * renderer so that what is drawn is exactly what the sim acted on — and so a machine can be
@@ -90,6 +92,13 @@ data class VesselState(
      * has something to be compared against — the thermal twin of the mass balance.
      */
     val baselineJoules: Long = heat.totalJoules,
+    val air: AirField = AirField.ambient(grid, StructureMap.derive(grid, machines)),
+    /**
+     * The air the world started with. Solids and gases never interconvert, so they get separate
+     * ledgers — `atmosphere + airVented == baselineAir` is a cleaner statement than folding gas into
+     * the ore balance, and a break in one does not obscure the other.
+     */
+    val baselineAirGrams: Long = air.totalGrams,
 ) {
     init {
         require(machines.size == grid.size) { "machine list is ${machines.size}, grid holds ${grid.size}" }
@@ -100,6 +109,13 @@ data class VesselState(
         heat.kelvinAt(index, HeatField.capacityOf(structure, machines, index))
 
     val storedJoules: Long get() = heat.totalJoules
+
+    /** Total atmosphere still aboard. */
+    val atmosphereGrams: Long get() = air.totalGrams
+
+    /** Pressure of a tile as a percentage of one atmosphere, for readouts. */
+    fun pressurePercentAt(index: Int): Int =
+        (air.pressureAt(index) * 100 / AirField.AMBIENT_AIR.total).toInt()
 
     operator fun get(index: Int): Machine? = machines.getOrNull(index)
     operator fun get(x: Int, y: Int): Machine? = if (grid.inBounds(x, y)) machines[grid.index(x, y)] else null

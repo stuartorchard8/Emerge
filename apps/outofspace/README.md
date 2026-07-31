@@ -22,6 +22,7 @@ machines to sensors so the vessel runs itself.
 | `world/Grid.kt`, `world/Machine.kt` | The square lattice, `Direction`, and the machines: belt (four slots), miner, processor, smelter, fabricator, storage, sensor, node, vent. |
 | `world/Structure.kt` | `Structure` and `StructureMap` — hull, interior and vacuum, derived by flood fill from the grid edge. |
 | `world/Heat.kt` | `HeatField` (joules per tile), conduction, radiation to space, and per-gram machine heat. |
+| `world/Atmosphere.kt` | `AirField` (grams of each gas per tile), pressure flow, and `stratifyColumns`. |
 | `world/Signal.kt` | The trigger grammar: colour `Channel`s, `Signals`, and `Wiring` — `activation = Σ(signal × weight)`. |
 | `world/Vessel.kt` → `contentsBreakdown` | What the inspector reads: a machine's buffers, named separately. |
 | `world/Vessel.kt` | `VesselState` (the snapshot) and `Stockpile` (the global construction inventory the node feeds). |
@@ -31,7 +32,7 @@ machines to sensors so the vessel runs itself.
 Nothing of the app template's placeholder world remains.
 
 ```bash
-./gradlew :apps:outofspace:core:jvmTest    # 110 tests, well under a second
+./gradlew :apps:outofspace:core:jvmTest    # 122 tests, well under a second
 ./gradlew :apps:outofspace:desktop:run     # the game
 ```
 
@@ -67,8 +68,22 @@ heat per gram of work they do, so a throttled machine warms the room proportiona
 heat model needs no clock of its own. Hull tiles touching space radiate — slowly, because vacuum is
 an excellent insulator and a spacecraft's real problem is rejecting heat, not keeping it.
 
-Press `H` for the heat overlay. The invariant is `stored + radiated − generated == baseline`, shown
-live beside the mass balance.
+## Atmosphere
+
+Every enclosed tile holds grams of each gas. Pressure is total mass — tiles are all the same volume,
+so mass is density and gas flows from dense to sparse. What moves is a proportional sample of the
+source, so a draught carries the room's real mix rather than skimming one gas off it.
+
+Gravity sorts the column: heavy gas trades places with light gas below it, as a **swap**, so
+stratification rearranges composition without touching pressure. `stratifyColumns` is the only
+function in the codebase allowed to assume gravity is axis-aligned — hand it a diagonal and it
+declines to sort rather than guessing.
+
+A breach needs no code of its own: the tile stops being enclosed, so its air vents and its heat
+radiates, both onto their ledgers.
+
+Press `H` to cycle **plain → heat → air**. Each field has its own balance shown live in the corner:
+`stored + radiated − generated == baseline` for energy, `aboard + vented == baseline` for air.
 
 ## Wiring
 

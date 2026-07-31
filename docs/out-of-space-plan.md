@@ -226,8 +226,26 @@ own "is this legible?" question. One at a time.
   coarse timestep oscillating. Machines charge heat **per gram of work done** rather than per second,
   so it needs no clock of its own and a throttled machine warms the room proportionally less.
   Invariant: `stored + radiated − generated == baseline`, every tick.
-- **Atmosphere** — per-tile gas mixture, pressure-driven flow, gravity stratification. Next.
+- **Atmosphere. ✅ BUILT.** Grams of each gas per tile, in one flat array. Pressure is simply total
+  mass, since every tile is the same volume. Flow is the same conservative edge-flux pattern as heat,
+  and gas that moves is a *proportional sample* of its source, so a draught carries the room's actual
+  mix. Stratification is a **swap** — equal masses of heavy down and light up — so it rearranges
+  composition without disturbing pressure and cannot fight the flow pass. `stratifyColumns` is the
+  one function permitted to assume axis-aligned gravity, exactly as §3 promised; with a diagonal
+  gravity it declines to sort rather than guessing an axis. Breaching reuses the structure derivation
+  with no new code: the tile stops being enclosed, so its air is vented and its heat radiated.
+  Invariant: `aboard + vented == baseline`, every tick.
 - **Liquids and pipes**, then **power and mechanical linkage**.
+
+Deliberately deferred, and worth stating so they are not mistaken for oversights: **pressure is not
+yet coupled to temperature**. `P ∝ mT` is what produces convection, and it is a pass of its own
+rather than something to smuggle in with the plumbing. And there is **no way to make air** — a
+breached room stays empty, which is precisely the hook life support hangs on.
+
+A third integer lesson, after apportionment and the heat ramp: a flux of `rate × gap / ticks` with a
+rate below the tick rate **floors to zero**, so every gradient under ten grams froze permanently and
+rooms stopped equalising with a visible staircase across them. Fluxes need a minimum of one unit.
+Heat escaped this only by accident, its coefficient being larger than the tick rate.
 
 Two tuning lessons already banked. Radiating heat in vacuum is *hard* — the first `RADIANCE` tried
 was 90× too high, which meant a vessel could only ever freeze and heat was never a constraint;
