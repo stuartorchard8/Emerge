@@ -7,7 +7,9 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.conservationOf
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.logistics.SolidPacket
-import org.emerge.demo.outofspace.world.Belt
+import org.emerge.demo.outofspace.world.Bridge
+import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Machine
@@ -59,60 +61,26 @@ class VesselSimTest {
         )
     }
 
-    // ── Belts ─────────────────────────────────────────────────────────────────
+    // ── Track ─────────────────────────────────────────────────────────────────
 
-    @Test
-    fun `a packet advances along a belt one slot at a time`() {
-        val grid = Grid(4, 1)
-        val packet = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
-        val belt = Belt(Direction.Right, listOf(null, null, null, packet))
-        var s = VesselState(grid, listOf(belt, null, null, null))
-
-        assertEquals(3, (s[0] as Belt).slots.indexOfFirst { it != null }, "starts in the tail slot")
-        s = run(s, Belt.STEP_TICKS)
-        assertEquals(2, (s[0] as Belt).slots.indexOfFirst { it != null })
-        s = run(s, Belt.STEP_TICKS * 3)
-        assertEquals(0, (s[0] as Belt).slots.indexOfFirst { it != null }, "reaches the head and waits there")
-    }
-
-    @Test
-    fun `a belt hands its head packet to the next belt`() {
-        val grid = Grid(3, 1)
-        val packet = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
-        var s = VesselState(
-            grid,
-            listOf(Belt(Direction.Right, listOf(packet, null, null, null)), Belt(Direction.Right), null),
-        )
-        s = run(s, Belt.STEP_TICKS)
-        assertNull((s[0] as Belt).slots[0], "the head packet left")
-        // It arrives in the tail and is shifted along by the same advance, so assert on presence
-        // rather than on a slot index.
-        assertEquals(1_000L, (s[1] as Belt).slots.sumOf { it?.mass ?: 0L }, "and arrived in the next belt")
-    }
-
-    @Test
-    fun `a belt facing nothing holds onto its packets rather than dropping them`() {
-        val grid = Grid(2, 1)
-        val packet = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
-        var s = VesselState(grid, listOf(Belt(Direction.Right, listOf(packet, null, null, null)), null))
-        s = run(s, Belt.STEP_TICKS * 10)
-        assertEquals(1_000L, s.inTransitGrams, "the packet is still on the belt, not on the floor")
-    }
-
-    @Test
-    fun `a jam fills the belt from the head backwards and stays visible`() {
-        // Four belts feeding a dead end: they should pack solid, head first. The miner is three
-        // tiles across, so its output port is at x=3 and the belt run starts at x=4.
-        val grid = Grid(12, 5)
+    /** A miner at (2,2) with a run of track from its output port out to [toX]. */
+    private fun minedLine(grid: Grid, toX: Int): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
+        val rails = arrayOfNulls<Segment>(grid.size)
         machines[grid.index(2, 2)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
-        for (x in 4..7) machines[grid.index(x, 2)] = Belt(Direction.Right)
-        // (8, 2) left empty: nothing accepts, so the line backs up.
-        var s = VesselState(grid, machines.toList())
+        for (x in 3..toX) rails[grid.index(x, 2)] = Segment(Conduit.Rail)
+        return VesselState(grid, machines.toList(), rails = rails.toList())
+    }
 
+    @Test
+    fun `a jam fills the track from the far end backwards and stays visible`() {
+        // Track running to a dead end. It should pack solid from the end nearest the blockage.
+        val grid = Grid(12, 5)
+        var s = minedLine(grid, toX = 7)
         s = run(s, 60 * 30)
-        val belts = (4..7).map { s[grid.index(it, 2)] as Belt }
-        assertTrue(belts.all { it.isFull }, "every belt should be packed: ${belts.map { it.occupancy }}")
+
+        val carried = (3..7).map { s.railAt(grid.index(it, 2))?.held?.mass ?: 0L }
+        assertTrue(carried.all { it > 0L }, "every tile should be carrying something: $carried")
         assertTrue(
             (s[grid.index(2, 2)] as Miner).buffer.mass >= Miner.BUFFER_CAP,
             "and the miner should have stopped digging",
@@ -123,28 +91,45 @@ class VesselSimTest {
     @Test
     fun `a jam clears from the front when the blockage is removed`() {
         val grid = Grid(12, 5)
-        val machines = arrayOfNulls<Machine>(grid.size)
-        machines[grid.index(2, 2)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
-        for (x in 4..7) machines[grid.index(x, 2)] = Belt(Direction.Right)
-        var s = VesselState(grid, machines.toList())
+        var s = minedLine(grid, toX = 7)
         s = run(s, 60 * 30)
 
-        // Drop a vent on the end; the line should drain.
-        s = run(s, 60 * 10, OutofspaceInput(listOf(Edit.Place(grid.index(8, 2), MachineKind.Vent, Direction.Right))))
-        assertTrue((s[grid.index(7, 2)] as Belt).occupancy < 1, "the belt nearest the vent should have drained")
-        assertTrue(s.ventedGrams > 0L, "and material should have gone overboard")
+        // Drop a vent past the end of the run, and track under its port; the line should drain.
+        s = run(s, 60 * 10, OutofspaceInput(listOf(
+            Edit.Place(grid.index(8, 2), MachineKind.Vent, Direction.Right),
+            Edit.Place(grid.index(8, 2), MachineKind.Rail, Direction.Right),
+        )))
+        assertTrue(s.ventedGrams > 0L, "material should have gone overboard")
         assertBalanced(s, "drained line")
+    }
+
+    @Test
+    fun `track under no source carries nothing, however much is beside it`() {
+        // A run that no output port feeds is not part of any network. It is just track.
+        val grid = Grid(12, 5)
+        val machines = arrayOfNulls<Machine>(grid.size)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        machines[grid.index(2, 2)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        // Starts one tile past the miner's output port, so nothing ever reaches it.
+        for (x in 5..8) rails[grid.index(x, 2)] = Segment(Conduit.Rail)
+        var s = VesselState(grid, machines.toList(), rails = rails.toList())
+        s = run(s, 60 * 20)
+
+        assertEquals(0L, (5..8).sumOf { s.railAt(grid.index(it, 2))?.held?.mass ?: 0L })
+        assertBalanced(s, "orphan track")
     }
 
     // ── Machines ──────────────────────────────────────────────────────────────
 
     @Test
     fun `a miner ships exactly one packet per second at 1kg per second`() {
-        val grid = Grid(3, 1)
-        var s = VesselState(
-            grid,
-            listOf(Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY), Belt(Direction.Right), Vent()),
-        )
+        val grid = Grid(12, 5)
+        val machines = arrayOfNulls<Machine>(grid.size)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        machines[grid.index(2, 2)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        machines[grid.index(5, 2)] = Vent()
+        for (x in 3..5) rails[grid.index(x, 2)] = Segment(Conduit.Rail)
+        var s = VesselState(grid, machines.toList(), rails = rails.toList())
         s = run(s, 60 * 10)
         // minedGrams counts at the shovel, so it is the whole 10kg regardless of where it sits now.
         assertEquals(10_000L, s.minedGrams, "10s of digging is 10kg")
@@ -157,12 +142,14 @@ class VesselSimTest {
         val grid = Grid(16, 8)
         val machines = arrayOfNulls<Machine>(grid.size)
         machines[grid.index(2, 3)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
-        machines[grid.index(4, 3)] = Belt(Direction.Right)
         machines[grid.index(7, 3)] = Smelter(Direction.Right)     // covers x 5..9
-        machines[grid.index(10, 3)] = Belt(Direction.Right)
         machines[grid.index(12, 3)] = Storage(Direction.Right)
         machines[grid.index(7, 6)] = Vent()   // under the smelter's slag port: where slag goes
-        var s = VesselState(grid, machines.toList())
+        val rails = arrayOfNulls<Segment>(grid.size)
+        // One run under the lot, from the miner's port to the tank's.
+        for (x in 3..11) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        for (y in 4..6) rails[grid.index(7, y)] = Segment(Conduit.Rail)
+        var s = VesselState(grid, machines.toList(), rails = rails.toList())
 
         s = run(s, 60 * 60)
         assertTrue(s.ventedGrams > 0L, "slag should be pouring out the side")
@@ -204,11 +191,12 @@ class VesselSimTest {
         val grid = Grid(10, 5)
         val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
         val m = arrayOfNulls<Machine>(grid.size)
-        m[grid.index(2, 2)] = Belt(Direction.Right, listOf(ingot))
         // The tank faces open deck beyond it, so it fills rather than draining.
         m[grid.index(4, 2)] = Storage(Direction.Right)
-        var s = VesselState(grid, m.toList())
-        s = run(s, Belt.STEP_TICKS)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        rails[grid.index(3, 2)] = Segment(Conduit.Rail, held = ingot)   // its input port
+        var s = VesselState(grid, m.toList(), rails = rails.toList())
+        s = run(s, Bridge.STEP_TICKS)
         assertEquals(1_000L, (s[grid.index(4, 2)] as Storage).contents!!.mass, "it landed in the tank")
         assertEquals(1_000L, s.stockpile[Form.IronIngot].total, "and the stockpile is that tank")
 
@@ -220,15 +208,16 @@ class VesselSimTest {
 
     @Test
     fun `machines refuse a second form rather than mixing their input buffer`() {
-        val grid = Grid(2, 1)
+        val grid = Grid(10, 5)
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 500L))
         val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
-        var s = VesselState(
-            grid,
-            listOf(Belt(Direction.Right, listOf(ingot, null, null, null)), Processor(Direction.Right, input = ore)),
-        )
-        s = run(s, Belt.STEP_TICKS)
-        assertNotNull((s[0] as Belt).slots[0], "the ingot should still be waiting on the belt")
+        val m = arrayOfNulls<Machine>(grid.size)
+        m[grid.index(4, 2)] = Processor(Direction.Right, input = ore)   // input port at (3, 2)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        rails[grid.index(3, 2)] = Segment(Conduit.Rail, held = ingot)
+        var s = VesselState(grid, m.toList(), rails = rails.toList())
+        s = run(s, Bridge.STEP_TICKS * 2)
+        assertNotNull(s.railAt(grid.index(3, 2))?.held, "the ingot should still be waiting on the track")
     }
 
     // ── Edits ─────────────────────────────────────────────────────────────────
@@ -238,19 +227,21 @@ class VesselSimTest {
         val grid = Grid(2, 1)
         val store = Storage(Direction.Right, contents = Resource(Form.IronIngot, Mixture.of(Species.Iron to 999L)))
         var s = VesselState(grid, listOf(store, null))
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(0, MachineKind.Belt, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(0, MachineKind.Sensor, Direction.Right))))
         assertEquals(store, s[0], "a stray click must not destroy a machine and its contents")
     }
 
     @Test
-    fun `rotating turns a belt clockwise and leaves its cargo alone`() {
-        val grid = Grid(2, 1)
-        val packet = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 100L)))
-        var s = VesselState(grid, listOf(Belt(Direction.Right, listOf(null, null, null, packet)), null))
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(0))))
-        val belt = s[0] as Belt
-        assertEquals(Direction.Down, belt.facing)
-        assertEquals(100L, belt.slots.sumOf { it?.mass ?: 0L })
+    fun `rotating turns a machine clockwise and leaves its contents alone`() {
+        val grid = Grid(10, 6)
+        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 100L))
+        val m = arrayOfNulls<Machine>(grid.size)
+        m[grid.index(4, 3)] = Storage(Direction.Right, stored)
+        var s = VesselState(grid, m.toList())
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(grid.index(4, 3)))))
+        val tank = s[grid.index(4, 3)] as Storage
+        assertEquals(Direction.Down, tank.facing)
+        assertEquals(100L, tank.contents?.mass)
     }
 
     @Test
@@ -258,12 +249,12 @@ class VesselSimTest {
         val grid = Grid(2, 1)
         val base = VesselState(grid, listOf(null, null))
         val a = mapOf(
-            PlayerId(0) to OutofspaceInput(listOf(Edit.Place(0, MachineKind.Belt, Direction.Right))),
+            PlayerId(0) to OutofspaceInput(listOf(Edit.Place(0, MachineKind.Sensor, Direction.Right))),
             PlayerId(1) to OutofspaceInput(listOf(Edit.Place(0, MachineKind.Storage, Direction.Right))),
         )
         val b = mapOf(
             PlayerId(1) to OutofspaceInput(listOf(Edit.Place(0, MachineKind.Storage, Direction.Right))),
-            PlayerId(0) to OutofspaceInput(listOf(Edit.Place(0, MachineKind.Belt, Direction.Right))),
+            PlayerId(0) to OutofspaceInput(listOf(Edit.Place(0, MachineKind.Sensor, Direction.Right))),
         )
         assertEquals(
             OutofspaceReducer.reduce(cfg, base, a)[0],
@@ -294,7 +285,10 @@ class VesselSimTest {
         // gone for good, so it is reconstructed from what the vents recorded... which they do not
         // itemise — so this checks the species balance of what remains against what was mined,
         // allowing only for the vented total.
-        val inWorld = s.machines.fold(Mixture.EMPTY) { acc, m -> acc + contentsOf(m) }
+        // Everything on the track counts too -- it is a separate list, and forgetting it here once
+        // made a perfectly healthy world look 5kg short.
+        val onTrack = s.rails.fold(Mixture.EMPTY) { acc, r -> acc + (r?.held?.contents ?: Mixture.EMPTY) }
+        val inWorld = s.machines.fold(onTrack) { acc, m -> acc + contentsOf(m) }
         val accountedFor = inWorld.total + s.ventedGrams
         assertEquals(s.minedGrams, accountedFor)
 
@@ -318,14 +312,13 @@ class VesselSimTest {
     }
 
     @Test
-    fun `packets on belts are always whole and never oversized`() {
+    fun `packets on the track are always whole and never oversized`() {
         var s = starterVessel(cfg.grid)
         repeat(60 * 40) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
-            for (m in s.machines) {
-                if (m is Belt) for (p in m.slots) if (p != null) {
-                    assertTrue(p.mass in 1L..Capacity.PACKET_GRAMS, "bad packet on a belt: ${p.mass}g")
-                }
+            for (r in s.rails) {
+                val p = r?.held ?: continue
+                assertTrue(p.mass in 1L..Capacity.PACKET_GRAMS, "bad packet on the track: ${p.mass}g")
             }
         }
     }

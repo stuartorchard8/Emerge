@@ -78,7 +78,20 @@ class Stockpile private constructor(private val byForm: Array<Mixture>) {
  */
 data class VesselState(
     val grid: Grid,
+    /** The deck: buildings, walls, the things that take up floor space. */
     val machines: List<Machine?>,
+    /**
+     * The rail layer — one segment per tile, sharing tiles freely with the deck beneath.
+     *
+     * A separate list rather than a second thing in `machines`, because that is what a layer *is*:
+     * track running under a smelter and the smelter itself are both real, both at that tile, and
+     * neither is in the other's way. Structure, heat and air never look here.
+     */
+    val rails: List<Segment?> = List(machines.size) { null },
+    /** Bridges, stored at their middle tile. They occupy nothing, so they are not in [occupancy]. */
+    val bridges: List<Bridge?> = List(machines.size) { null },
+    /** Which way each fork last sent material — see [Diverters]. */
+    val diverters: Diverters = Diverters.EMPTY,
     val gravity: Frac2 = DEFAULT_GRAVITY,
     /** Loose material lying on the deck — see [Debris]. Part of "aboard" for conservation purposes. */
     val debris: Debris = Debris.EMPTY,
@@ -138,6 +151,32 @@ data class VesselState(
     /** The machine covering a tile, wherever its centre happens to be. */
     fun machineCovering(index: Int): Machine? = machines.getOrNull(occupancy[index])
 
+    /** The rail segment on a tile, if the layer has one there. */
+    fun railAt(index: Int): Segment? = rails.getOrNull(index)
+
+    /**
+     * Every port any building or bridge exposes, keyed by the tile it sits on.
+     *
+     * Derived rather than stored, like everything else structural. Bridges are folded in here rather
+     * than handled separately, which is the whole reason they need no special case: to the network a
+     * bridge is a thing with an input port and an output port, exactly like a smelter.
+     */
+    fun portsByTile(conduit: Conduit): Map<Int, List<Port>> {
+        val out = HashMap<Int, MutableList<Port>>()
+        fun add(port: Port) {
+            if (port.conduit == conduit) out.getOrPut(port.tile) { mutableListOf() }.add(port)
+        }
+        for (i in machines.indices) {
+            val m = machines[i] ?: continue
+            for (port in portsOf(grid, m, i)) add(port)
+        }
+        for (i in bridges.indices) {
+            val b = bridges[i] ?: continue
+            for (port in portsOf(grid, b, i)) add(port)
+        }
+        return out
+    }
+
     /** Every connection point of the machine stored at [index]. */
     fun portsAt(index: Int): List<Port> {
         val m = machines.getOrNull(index) ?: return emptyList()
@@ -166,6 +205,8 @@ data class VesselState(
         get() {
             var sum = debris.totalGrams
             for (m in machines) sum += massIn(m)
+            for (r in rails) sum += r?.held?.mass ?: 0L
+            for (b in bridges) sum += b?.held?.mass ?: 0L
             return sum
         }
 
@@ -194,13 +235,12 @@ fun spoilsOf(machine: Machine?): List<Resource> =
 /** Total mass held by one machine, wherever it keeps it. Used for world-wide conservation checks. */
 fun massIn(machine: Machine?): Long = when (machine) {
     null -> 0L
-    is Belt -> machine.slots.sumOf { it?.mass ?: 0L }
+    is Bridge -> machine.held?.mass ?: 0L
     is Miner -> machine.buffer.mass
     is Processor -> (machine.input?.mass ?: 0L) + (machine.product?.mass ?: 0L) + (machine.tailings?.mass ?: 0L)
     is Smelter -> (machine.input?.mass ?: 0L) + (machine.refined?.mass ?: 0L) + (machine.slag?.mass ?: 0L)
     is Fabricator -> machine.inputs.sumOf { it.mass } + (machine.output?.mass ?: 0L)
     is Storage -> machine.contents?.mass ?: 0L
-    is Analyzer -> machine.holding?.mass ?: 0L
     is Sensor -> 0L
     is Hull -> 0L
     is Vent -> 0L
@@ -215,13 +255,12 @@ fun massIn(machine: Machine?): Long = when (machine) {
  */
 fun fullness(machine: Machine?): Int = when (machine) {
     null -> 0
-    is Belt -> machine.occupancy * Signals.FULL / machine.slots.size
+    is Bridge -> if (machine.held != null) Signals.FULL else 0
     is Miner -> (machine.buffer.mass * Signals.FULL / Miner.BUFFER_CAP).toInt()
     is Processor -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
     is Smelter -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
     is Fabricator -> (massIn(machine) * Signals.FULL / (Fabricator.INPUT_CAP * 2 + MACHINE_OUTPUT_CAP)).toInt()
     is Storage -> ((machine.contents?.mass ?: 0L) * Signals.FULL / Storage.CAP).toInt()
-    is Analyzer -> if (machine.holding != null) Signals.FULL else 0
     is Sensor -> 0
     is Hull -> 0
     is Vent -> 0
@@ -235,11 +274,12 @@ fun fullness(machine: Machine?): Int = when (machine) {
  */
 fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (machine) {
     null -> emptyList()
-    is Belt -> machine.slots.mapIndexedNotNull { i, p ->
-        val packet = p ?: return@mapIndexedNotNull null
-        val form = (packet as? org.emerge.demo.outofspace.logistics.SolidPacket)?.form ?: Form.Ore
-        "SLOT ${i + 1}" to Resource(form, packet.contents)
-    }
+    is Bridge -> listOfNotNull(
+        machine.held?.let { p ->
+            val form = (p as? org.emerge.demo.outofspace.logistics.SolidPacket)?.form ?: Form.Ore
+            "IN TRANSIT" to Resource(form, p.contents)
+        },
+    )
     is Miner -> listOf("BUFFER" to machine.buffer)
     is Processor -> listOfNotNull(
         machine.input?.let { "INPUT" to it },
@@ -254,19 +294,13 @@ fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (m
     is Fabricator -> machine.inputs.mapIndexed { i, r -> "INPUT ${i + 1}" to r } +
         listOfNotNull(machine.output?.let { "OUTPUT" to it })
     is Storage -> listOfNotNull(machine.contents?.let { "STORED" to it })
-    is Analyzer -> listOfNotNull(
-        machine.holding?.let { p ->
-            val form = (p as? org.emerge.demo.outofspace.logistics.SolidPacket)?.form ?: Form.Ore
-            "PASSING" to Resource(form, p.contents)
-        },
-    )
     is Sensor, is Vent, is Hull -> emptyList()
 }
 
 /** Everything a machine holds, species by species — the finer-grained version of [massIn]. */
 fun contentsOf(machine: Machine?): Mixture = when (machine) {
     null -> Mixture.EMPTY
-    is Belt -> machine.slots.fold(Mixture.EMPTY) { acc, p -> if (p == null) acc else acc + p.contents }
+    is Bridge -> machine.held?.contents ?: Mixture.EMPTY
     is Miner -> machine.buffer.mixture
     is Processor -> (machine.input?.mixture ?: Mixture.EMPTY) +
         (machine.product?.mixture ?: Mixture.EMPTY) + (machine.tailings?.mixture ?: Mixture.EMPTY)
@@ -274,7 +308,6 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
         (machine.refined?.mixture ?: Mixture.EMPTY) + (machine.slag?.mixture ?: Mixture.EMPTY)
     is Fabricator -> machine.inputs.fold(machine.output?.mixture ?: Mixture.EMPTY) { acc, r -> acc + r.mixture }
     is Storage -> machine.contents?.mixture ?: Mixture.EMPTY
-    is Analyzer -> machine.holding?.contents ?: Mixture.EMPTY
     is Sensor -> Mixture.EMPTY
     is Hull -> Mixture.EMPTY
     is Vent -> Mixture.EMPTY

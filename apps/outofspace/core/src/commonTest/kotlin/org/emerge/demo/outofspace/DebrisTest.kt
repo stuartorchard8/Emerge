@@ -4,7 +4,7 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.Belt
+import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Debris
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -151,7 +151,7 @@ class DebrisTest {
         val s0 = room(12, 12) { x, y ->
             when {
                 x == 4 && y == 3 -> Storage(Direction.Right, ingots)
-                x == 4 && y == 8 -> Belt(Direction.Right)
+                x == 4 && y == 8 -> Sensor(Direction.Right)
                 else -> null
             }
         }

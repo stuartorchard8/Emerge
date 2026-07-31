@@ -7,22 +7,34 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.SolidPacket
 
-/** What kind of thing sits on a tile — the palette the player builds from. */
-enum class MachineKind(val label: String) {
-    Belt("BELT"),
+/**
+ * What kind of thing sits on a tile — the palette the player builds from.
+ *
+ * [conduit] is which layer it goes on. A null conduit means the **deck**: buildings, walls, the
+ * things that occupy floor space and that heat and air care about. Everything else is a fitting on a
+ * transport layer, and a fitting shares its tile with whatever is on the deck beneath it — which is
+ * the whole point of layers, and the reason a rail can run underneath a smelter to reach its port.
+ */
+enum class MachineKind(val label: String, val conduit: Conduit? = null) {
+    Rail("RAIL", Conduit.Rail),
+    Gauge("GAUGE", Conduit.Rail),
+    Bridge("BRIDGE", Conduit.Rail),
     Miner("MINER"),
     Processor("PROCESSOR"),
     Smelter("SMELTER"),
     Fabricator("FABRICATOR"),
     Storage("STORAGE"),
     Sensor("SENSOR"),
-    Analyzer("ANALYZER"),
     Vent("VENT"),
     Hull("HULL"),
     ;
 
+    /** True for the things that take up floor space. */
+    val isDeck: Boolean get() = conduit == null
+
     companion object {
         val ALL: List<MachineKind> = entries.toList()
+        val DECK: List<MachineKind> = ALL.filter { it.isDeck }
     }
 }
 
@@ -49,45 +61,45 @@ sealed interface Machine {
     fun withWiring(wiring: Wiring): Machine
 }
 
-/** A machine that faces somewhere. Belts move that way; producers push their product that way. */
+/** A machine that faces somewhere. Its ports are laid out relative to that direction. */
 sealed interface Directed : Machine {
     val facing: Direction
     fun rotated(): Machine
 }
 
 /**
- * A conveyor. [slots] are ordered **head first**: `slots[0]` is the end packets leave from, in the
- * direction of [facing]; the last slot is where new packets arrive.
+ * A **bridge**: a three-tile span that takes material in on one side and puts it out on the other a
+ * tick later, leaving everything between its two connections clear.
  *
- * Slots rather than a throughput number is the whole point — when the line backs up the slots fill
- * from the head, and you can *see* the jam and where it starts. A belt modelled as a rate would go
- * quietly slow instead.
+ * It is how two runs of the same conduit cross. And it needs no special case anywhere in the network
+ * code, because it is not one: it occupies **nothing on any layer**, so a run passing beneath it is
+ * unconnected for the ordinary reason — the two share no port. "Hopping over" is what that looks
+ * like from the outside; there is no hop in the model.
+ *
+ * The one packet of storage is what makes it a building rather than a wormhole. A tick of latency is
+ * a real cost, so a bridge is a trade rather than a free win, and a line built out of them is slower
+ * than one that did not need them.
+ *
+ * Its ports sit on the tiles **flanking** the span rather than at its ends, which matters more than
+ * it sounds: segments connect to one another by adjacency, so track at a bridge's own end would sit
+ * next to the track it is meant to be hopping over and the two runs would merge regardless of ports.
+ * Keeping the whole span clear of its own line is what actually separates them.
+ *
+ * Those two ports are the only thing constraining where it can go: no two ports of the same conduit
+ * may share a tile, or which of them a segment feeds would be ambiguous.
  */
-data class Belt(
+data class Bridge(
     override val facing: Direction,
-    val slots: List<Packet?> = List(SLOTS) { null },
+    val conduit: Conduit = Conduit.Rail,
+    val held: Packet? = null,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : Directed {
-    override val kind: MachineKind get() = MachineKind.Belt
+    override val kind: MachineKind get() = MachineKind.Bridge
     override fun rotated(): Machine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
 
-    val isFull: Boolean get() = slots.all { it != null }
-    val occupancy: Int get() = slots.count { it != null }
-
     companion object {
-        /**
-         * Packets on one belt tile: **one**.
-         *
-         * It was four, back when a machine was also one tile and a belt tile had to stand in for a
-         * length of line. Now that a processor is three tiles across and a smelter five, a belt tile
-         * is a belt tile — and one packet per tile makes the line's contents something you can
-         * count by looking at it rather than by reading four sub-slots. A jam is still perfectly
-         * visible; it is just measured in tiles, which is the unit everything else is now in.
-         */
-        const val SLOTS = 1
-
-        /** Ticks between advances. At 60 Hz this is 10 slots/second — 2.5 tiles/second. */
+        /** Ticks between a conduit advancing. At 60 Hz this is 2.5 tiles a second. */
         const val STEP_TICKS = 6
     }
 }
@@ -218,47 +230,6 @@ data class Sensor(
     override val kind: MachineKind get() = MachineKind.Sensor
     override fun rotated(): Machine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-}
-
-/**
- * An inline assay: material passes through it, and it reports what went by.
- *
- * It holds one packet at a time, reads the fraction of whatever species dominates it, then hands it
- * on — a belt tile that measures. The reading **persists** after the packet leaves, so the signal is
- * a stable "the last thing through here was 41% iron" rather than a flicker, and so the tile can
- * still tell you what it saw when the line is idle.
- *
- * It exists because ore is a mixture and nothing else in the world says so out loud. Wired to a
- * channel it also lets purity drive machinery — running a processor harder on dirtier ore, say.
- */
-data class Analyzer(
-    override val facing: Direction,
-    val channel: Channel = Channel.Amber,
-    /** The packet currently inside, if any. One at a time keeps it a measuring belt, not a buffer. */
-    val holding: Packet? = null,
-    val lastForm: Form? = null,
-    val lastDominant: Species? = null,
-    /** The dominant species' share of the last thing through, in permille. */
-    val lastPurity: Int = 0,
-    val lastMass: Long = 0L,
-    override val wiring: Wiring = Wiring.RUNNING,
-) : Directed {
-    override val kind: MachineKind get() = MachineKind.Analyzer
-    override fun rotated(): Machine = copy(facing = facing.clockwise)
-    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-
-    /** Reads [packet] without consuming it — the analysis is the whole job. */
-    fun reading(packet: Packet): Analyzer {
-        val dominant = packet.contents.dominant ?: return copy(holding = packet)
-        val mass = packet.mass
-        return copy(
-            holding = packet,
-            lastForm = (packet as? SolidPacket)?.form,
-            lastDominant = dominant,
-            lastPurity = if (mass == 0L) 0 else (packet.contents[dominant] * Signals.FULL / mass).toInt(),
-            lastMass = mass,
-        )
-    }
 }
 
 /** A vent: throws material overboard. Somewhere for slag to go that is not "jam the line". */

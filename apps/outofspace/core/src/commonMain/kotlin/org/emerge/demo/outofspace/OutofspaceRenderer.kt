@@ -2,15 +2,15 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
-import org.emerge.demo.outofspace.world.Belt
 import org.emerge.demo.outofspace.world.Debris
+import org.emerge.demo.outofspace.world.Bridge
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.AirField
-import org.emerge.demo.outofspace.world.Analyzer
 import org.emerge.demo.outofspace.world.Fabricator
 import org.emerge.demo.outofspace.world.HeatField
 import org.emerge.demo.outofspace.world.Hull
@@ -181,6 +181,14 @@ class OutofspaceRenderer {
             }
         }
 
+        // Track over the buildings, because it runs on top of the deck rather than being buried by
+        // it — and because a run threaded under a smelter is unreadable if the smelter covers it.
+        for (y in mMinY..mMaxY) {
+            for (x in mMinX..mMaxX) {
+                drawRail(state, grid.index(x, y), x, y)
+            }
+        }
+
         // The overlay goes over the machines, not under them: the question it answers is "how hot is
         // it *there*", and putting it behind the thing you are asking about answers the wrong one.
         if (overlay != Overlay.None) {
@@ -228,6 +236,27 @@ class OutofspaceRenderer {
         rect((x + 0.5f) * tilePx, (y + 1f - h) * tilePx, 0.94f * tilePx, 0.06f * tilePx, 0x00000060L)
     }
 
+    /**
+     * One tile of track, and whatever is riding on it.
+     *
+     * Drawn as a thin spine rather than a tile-filling block: it has to read as *running over* the
+     * building beneath without hiding it, since the whole point of the layer is that both are there.
+     * A gauge wears its channel as a collar.
+     */
+    private fun drawRail(state: VesselState, tile: Int, x: Int, y: Int) {
+        val segment = state.rails[tile] ?: return
+        rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, 0.96f * tilePx, 0.30f * tilePx, 0x39445AFFL)
+        rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, 0.30f * tilePx, 0.96f * tilePx, 0x39445AFFL)
+        segment.channel?.let { channel ->
+            frame(x, y, channel.color)
+        }
+        val packet = segment.held ?: return
+        // Size tracks how full the lump is, so a line of half-packets looks like one.
+        val fill = (packet.mass.toFloat() / Capacity.PACKET_GRAMS).coerceIn(0.35f, 1f)
+        val side = 0.62f * fill
+        rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, side * tilePx, side * tilePx, packetColor(packet.contents.dominant))
+    }
+
     // ── Machine drawing ───────────────────────────────────────────────────────
 
     private fun drawMachine(state: VesselState, index: Int, x: Int, y: Int, m: Machine) {
@@ -241,22 +270,15 @@ class OutofspaceRenderer {
             return
         }
         when (m) {
-            is Belt -> {
-                tileRect(x, y, 0.9f, 0x2A3242FFL)
-                // A notch on the output edge: which way this belt runs, readable at a glance.
-                edgeMark(x, y, m.facing, 0x6E7C94FFL)
-                for (i in m.slots.indices) {
-                    val packet = m.slots[i] ?: continue
-                    val (ox, oy) = slotOffset(m.facing, i, m.slots.size)
-                    // Slots sit 1/SLOTS of a tile apart, so a packet must be drawn narrower than
-                    // that or four of them smear into one bar and the jam stops being countable.
-                    val fill = (packet.mass.toFloat() / Capacity.PACKET_GRAMS).coerceIn(0.4f, 1f)
-                    val scale = (0.78f / m.slots.size) * fill
-                    rect(
-                        (x + 0.5f + ox) * tilePx, (y + 0.5f + oy) * tilePx,
-                        scale * tilePx, scale * tilePx,
-                        packetColor(packet.contents.dominant),
-                    )
+            is Bridge -> {
+                // A slim capsule spanning its three tiles, drawn over the track it crosses because
+                // that is what it does: nothing beneath it is connected to it.
+                val long = if (m.facing.dx != 0) 3f else 0.5f
+                val across = if (m.facing.dx != 0) 0.5f else 3f
+                rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, long * tilePx, across * tilePx, 0xD8DEE9FFL)
+                rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, (long - 0.3f) * tilePx, (across - 0.3f) * tilePx, 0x1A2030FFL)
+                m.held?.let {
+                    rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, 0.4f * tilePx, 0.4f * tilePx, packetColor(it.contents.dominant))
                 }
             }
             is Miner -> {
@@ -288,33 +310,6 @@ class OutofspaceRenderer {
                         (x + 0.5f) * tilePx, (bottom - h * 0.5f) * tilePx,
                         (n - 0.2f) * tilePx, h * tilePx,
                         packetColor(m.contents?.mixture?.dominant),
-                    )
-                }
-            }
-            is Analyzer -> {
-                // An instrument, drawn to look like nothing else on the grid. The first version used
-                // the belt's own body colour with a bar across it, so in a line of belts it read as
-                // "a belt with something on it" rather than as a separate machine.
-                //
-                // Frame colour is the channel it reports on — a frame rather than an edge notch,
-                // because a notch is already the language for "material leaves this way" and it also
-                // moves when the machine is rotated, which made the channel look like a direction.
-                frame(x, y, m.channel.color)
-                tileRect(x, y, 0.66f, 0x0E141CFFL)
-                // The reading: colour is the species, size is its share. A blob rather than a bar so
-                // it is orientation-independent, and it sits in the middle where the eye already is.
-                if (m.lastDominant != null) {
-                    val f = (m.lastPurity / 1000f).coerceIn(0f, 1f)
-                    tileRect(x, y, 0.14f + 0.42f * f, speciesColor(m.lastDominant))
-                }
-                // Which way material leaves, kept thin and neutral so it cannot be read as the channel.
-                edgeMark(x, y, m.facing, 0x8A94A4FFL)
-                // And what is inside right now, drawn at belt-packet size so flow through it is visible.
-                m.holding?.let { p ->
-                    rect(
-                        (x + 0.5f) * tilePx, (y + 0.5f) * tilePx,
-                        0.16f * tilePx, 0.16f * tilePx,
-                        packetColor(p.contents.dominant),
                     )
                 }
             }
@@ -498,14 +493,15 @@ class OutofspaceRenderer {
 
 /** Palette colour for a machine kind, shared by the renderer and the HUD's brush swatch. */
 fun kindColor(kind: MachineKind): Long = when (kind) {
-    MachineKind.Belt -> 0x2A3242FFL
+    MachineKind.Rail -> 0x39445AFFL
+    MachineKind.Gauge -> 0x39445AFFL
+    MachineKind.Bridge -> 0xD8DEE9FFL
     MachineKind.Miner -> 0x6B4A2AFFL
     MachineKind.Processor -> 0x2E5A6BFFL
     MachineKind.Smelter -> 0x8A3A2AFFL
     MachineKind.Fabricator -> 0x6B3A7AFFL
     MachineKind.Storage -> 0x3A4A5AFFL
     MachineKind.Sensor -> 0x24303CFFL
-    MachineKind.Analyzer -> 0x2A3242FFL
     MachineKind.Hull -> 0x4A5464FFL
     MachineKind.Vent -> 0x3A3A44FFL
 }

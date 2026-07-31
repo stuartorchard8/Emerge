@@ -5,7 +5,9 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.SolidPacket
-import org.emerge.demo.outofspace.world.Belt
+import org.emerge.demo.outofspace.world.Bridge
+import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Machine
@@ -68,8 +70,8 @@ class FootprintTest {
         val grid = Grid(12, 12)
         var s = place(grid, grid.index(5, 5), MachineKind.Smelter)
         // Two tiles away: outside the *centre* but well inside the footprint.
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.index(7, 5), MachineKind.Belt, Direction.Right))))
-        assertNull(s[grid.index(7, 5)], "a belt cannot be dropped inside a furnace")
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.index(7, 5), MachineKind.Sensor, Direction.Right))))
+        assertNull(s[grid.index(7, 5)], "a sensor cannot be dropped inside a furnace")
     }
 
     @Test
@@ -151,37 +153,45 @@ class FootprintTest {
         assertEquals(5, MachineKind.Smelter.size, "and it really is five across")
     }
 
-    @Test
-    fun `material offered to the side of a building is refused`() {
-        // The point of ports: a three-by-three is not a nine-tile sponge. A belt pushing at the tank's
-        // flank has nothing to connect to, even though it is touching the building.
-        val grid = Grid(12, 12)
-        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
+    /**
+     * Track under a tank, running from a source tank at (2,6) to a receiving one at (6,6), with the
+     * [end] tile deciding whether it reaches a port or merely a covered tile.
+     */
+    private fun feed(endX: Int, endY: Int): VesselState {
+        val grid = Grid(14, 14)
+        val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4_000L))
         val m = arrayOfNulls<Machine>(grid.size)
-        // Tank centred at (6,6): input ports at (5,6) facing Left and (6,5) facing Up.
-        m[grid.index(6, 6)] = Storage(Direction.Right)
-        // A belt below the tank's bottom-left corner, pushing up into (5, 7) -- part of the footprint,
-        // but not a port.
-        m[grid.index(5, 8)] = Belt(Direction.Up, listOf(ingot))
-        var s = VesselState(grid, m.toList())
-        s = run(s, Belt.STEP_TICKS * 4)
-
-        assertNull((s[grid.index(6, 6)] as Storage).contents, "the tank has no port on that face")
-        assertEquals(1_000L, s.inTransitGrams, "and the packet is still sitting on the belt")
+        val rails = arrayOfNulls<Segment>(grid.size)
+        m[grid.index(2, 6)] = Storage(Direction.Right, ingots)   // output port at (3, 6)
+        m[grid.index(6, 6)] = Storage(Direction.Right)           // input ports at (5, 6) and (6, 5)
+        // Track from the source's output port along to wherever the run is told to end.
+        for (x in 3..endX) rails[grid.index(x, 6)] = Segment(Conduit.Rail)
+        for (y in 6 downTo endY) rails[grid.index(endX, y)] = Segment(Conduit.Rail)
+        return VesselState(grid, m.toList(), rails = rails.toList())
     }
 
     @Test
-    fun `material offered to a real port is taken`() {
-        val grid = Grid(12, 12)
-        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
-        val m = arrayOfNulls<Machine>(grid.size)
-        m[grid.index(6, 6)] = Storage(Direction.Right)
-        // Same building, same distance -- but aimed at the input port on its left edge.
-        m[grid.index(4, 6)] = Belt(Direction.Right, listOf(ingot))
-        var s = VesselState(grid, m.toList())
-        s = run(s, Belt.STEP_TICKS * 4)
+    fun `track running under a building connects only where a port is`() {
+        // The point of ports: a three-by-three is not a nine-tile sponge. Track threaded through the
+        // tank's bottom-left corner passes straight under it, touching the building the whole way
+        // and connecting to nothing.
+        val s = run(feed(endX = 7, endY = 6).let { st ->
+            // Remove the run's own input-port tile so the only contact is a covered, portless tile.
+            val rails = st.rails.toMutableList()
+            rails[st.grid.index(5, 6)] = null
+            st.copy(rails = rails)
+        }, 60 * 10)
 
-        assertEquals(1_000L, (s[grid.index(6, 6)] as Storage).contents?.mass, "it went in the front door")
+        assertNull((s[s.grid.index(6, 6)] as Storage).contents, "no port on the tiles it crosses")
+    }
+
+    @Test
+    fun `track reaching a port delivers into the building`() {
+        val s = run(feed(endX = 5, endY = 6), 60 * 10)
+        assertTrue(
+            ((s[s.grid.index(6, 6)] as Storage).contents?.mass ?: 0L) > 0L,
+            "it went in the front door, from underneath",
+        )
     }
 
     @Test

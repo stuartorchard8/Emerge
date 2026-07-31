@@ -4,7 +4,6 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.Analyzer
 import org.emerge.demo.outofspace.world.HeatField
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.Channel
@@ -151,7 +150,7 @@ class OutofspaceHud {
         // A bare tile with a heap on it is still worth inspecting -- otherwise the material you just
         // dumped on the deck would be visible but unreadable, which is the gap the analyzer existed
         // to close in the first place.
-        if (machine == null && spill.isEmpty()) return
+        if (machine == null && spill.isEmpty() && s.railAt(index) == null) return
         val grid = s.grid
 
         panel(Anchor.TopRight) {
@@ -167,25 +166,34 @@ class OutofspaceHud {
                 }
                 gap()
             }
-            if (machine == null) return@panel
-
-            if (machine is Analyzer) {
-                // The whole point of the machine, so it leads.
-                if (machine.lastDominant == null) {
-                    row("nothing has passed through yet", 0x9A9A9AFFL)
-                } else {
-                    keyValue("LAST SEEN", machine.lastForm?.name ?: "?")
-                    keyValue(
-                        machine.lastDominant!!.name.uppercase(),
-                        "${machine.lastPurity / 10}%",
-                        0x9A9A9AFFL,
-                        speciesColor(machine.lastDominant),
-                    )
-                    keyValue("of", grams(machine.lastMass))
+            // The track on this tile, and anything riding on it. Listed before the building because
+            // it is literally on top of it, and because a run threaded under a machine is otherwise
+            // impossible to read.
+            val segment = s.railAt(index)
+            if (segment != null) {
+                title(if (segment.isGauge) "GAUGE" else "RAIL")
+                if (segment.isGauge) {
+                    if (segment.lastDominant == null) {
+                        row("nothing has passed through yet", 0x9A9A9AFFL)
+                    } else {
+                        keyValue("LAST SEEN", segment.lastForm?.name ?: "?")
+                        keyValue(
+                            segment.lastDominant!!.name.uppercase(),
+                            "${segment.lastPurity / 10}%",
+                            0x9A9A9AFFL,
+                            speciesColor(segment.lastDominant),
+                        )
+                        keyValue("of", grams(segment.lastMass))
+                    }
+                    segment.channel?.let { keyValue("reporting on", it.label, 0x9A9A9AFFL, it.color) }
                 }
-                keyValue("reporting on", machine.channel.label, 0x9A9A9AFFL, machine.channel.color)
+                val riding = segment.held
+                if (riding == null) row("(nothing on it)", 0x9A9A9AFFL)
+                else keyValue("carrying", grams(riding.mass))
                 gap()
             }
+
+            if (machine == null) return@panel
 
             val buffers = contentsBreakdown(machine)
             if (buffers.isEmpty()) {
@@ -295,11 +303,12 @@ class OutofspaceHud {
                 gap()
             }
 
-            if (machine is Analyzer) {
+            val gauge = controller.state.railAt(index)
+            if (gauge?.channel != null) {
                 clauseRow(
                     lhs = "REPORT ON",
-                    cmp = machine.channel.label,
-                    rhs = "${machine.lastPurity / 10}%",
+                    cmp = gauge.channel!!.label,
+                    rhs = "${gauge.lastPurity / 10}%",
                     onLhs = { controller.cycleSensorChannel(index, 1) },
                     onCmp = { controller.cycleSensorChannel(index, 1) },
                     onRhs = { controller.cycleSensorChannel(index, 1) },

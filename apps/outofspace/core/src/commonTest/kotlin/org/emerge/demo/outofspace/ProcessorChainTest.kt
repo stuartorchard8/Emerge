@@ -6,7 +6,9 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MACHINE_OUTPUT_CAP
+import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Miner
 import org.emerge.demo.outofspace.world.Processor
 import org.emerge.demo.outofspace.world.Storage
@@ -23,10 +25,10 @@ import kotlin.test.assertTrue
  * round would silently invert the whole refining game, and it is not something you can see by looking
  * at a running world — hence a test that measures purity on each side by name.
  *
- * These layouts are drawn to scale now that machines are rooms. A three-tile processor centred at
- * `x` covers `x-1 .. x+1`, takes material in at `x-1` and pushes concentrate out at `x+1`, so the
- * next processor's centre sits at `x+3` and the two buildings abut with no conveyor between them.
- * That adjacency is worth knowing: a straight refining chain packs solid.
+ * These layouts are drawn to scale now that machines are rooms, with track threaded underneath them
+ * to reach their ports. Each machine's output starts a **new run** — its input and its output are
+ * different networks, and one continuous line under everything would put a processor's concentrate
+ * back onto the pipe feeding its own input.
  */
 class ProcessorChainTest {
 
@@ -49,16 +51,18 @@ class ProcessorChainTest {
         val grid = Grid(12, 10)
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(40_000L))
         val m = arrayOfNulls<Machine>(grid.size)
-        m[grid.index(3, 3)] = Processor(Direction.Right, input = ore)
-        // Forward of the processor's product port, and below its tailings port. Both face Right, so
-        // both hold what they are given rather than passing it on.
-        m[grid.index(6, 3)] = Storage(Direction.Right)
-        m[grid.index(3, 6)] = Storage(Direction.Right)
-        var s = VesselState(grid, m.toList())
+        val rails = arrayOfNulls<Segment>(grid.size)
+        m[grid.index(3, 3)] = Processor(Direction.Right, input = ore)   // covers x 2..4
+        // Forward of the processor's product port, and below its tailings port.
+        m[grid.index(7, 3)] = Storage(Direction.Right)                 // input port at (6, 3)
+        m[grid.index(3, 8)] = Storage(Direction.Right)                 // input port at (3, 7)
+        for (x in 4..6) rails[grid.index(x, 3)] = Segment(Conduit.Rail)   // product run
+        for (y in 4..7) rails[grid.index(3, y)] = Segment(Conduit.Rail)   // tailings run
+        var s = VesselState(grid, m.toList(), rails = rails.toList())
         s = run(s, 60 * 200)
 
-        val forward = (s[grid.index(6, 3)] as Storage).contents
-        val below = (s[grid.index(3, 6)] as Storage).contents
+        val forward = (s[grid.index(7, 3)] as Storage).contents
+        val below = (s[grid.index(3, 8)] as Storage).contents
 
         assertEquals(Species.Iron, forward!!.mixture.dominant, "the concentrate keeps the ore's own metal")
         assertTrue(purity(forward) > 70, "forward should be concentrated, was ${purity(forward)}%")
@@ -72,21 +76,28 @@ class ProcessorChainTest {
     fun `chained straight through, purity climbs at every stage`() {
         // Miner -> processor -> processor -> processor -> tank, each processor venting its tailings
         // through the floor. Every building abuts the next; the ports line up without conveyors.
-        val grid = Grid(20, 8)
+        val grid = Grid(28, 10)
         val m = arrayOfNulls<Machine>(grid.size)
+        val rails = arrayOfNulls<Segment>(grid.size)
         m[grid.index(2, 3)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
-        val stages = listOf(5, 8, 11)
+        val stages = listOf(6, 11, 16)
         for (x in stages) {
             m[grid.index(x, 3)] = Processor(Direction.Right)
-            m[grid.index(x, 5)] = Vent()
+            m[grid.index(x, 7)] = Vent()
+            for (y in 4..7) rails[grid.index(x, y)] = Segment(Conduit.Rail)   // its tailings run
         }
-        m[grid.index(14, 3)] = Storage(Direction.Right)
-        var s = VesselState(grid, m.toList())
+        m[grid.index(21, 3)] = Storage(Direction.Right)
+        // One short run per stage, from an output port to the next input port.
+        for (x in 3..5) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        for (x in 7..10) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        for (x in 12..15) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        for (x in 17..20) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        var s = VesselState(grid, m.toList(), rails = rails.toList())
         s = run(s, 60 * 300)
 
         val purities = stages.map { purity((s[grid.index(it, 3)] as Processor).product) }
         assertEquals(listOf(75, 100, 100), purities, "each stage should be cleaner than the last: $purities")
-        assertEquals(100, purity((s[grid.index(14, 3)] as Storage).contents), "and the far end is pure metal")
+        assertEquals(100, purity((s[grid.index(21, 3)] as Storage).contents), "and the far end is pure metal")
     }
 
     /**
@@ -96,13 +107,18 @@ class ProcessorChainTest {
      */
     @Test
     fun `a processor with nowhere to put its tailings backs up instead of hoarding them`() {
-        val grid = Grid(20, 8)
+        val grid = Grid(28, 10)
         val m = arrayOfNulls<Machine>(grid.size)
+        val rails = arrayOfNulls<Segment>(grid.size)
         m[grid.index(2, 3)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
-        val stages = listOf(5, 8, 11)
-        for (x in stages) m[grid.index(x, 3)] = Processor(Direction.Right)   // no vents anywhere
-        m[grid.index(14, 3)] = Storage(Direction.Right)
-        var s = VesselState(grid, m.toList())
+        val stages = listOf(6, 11, 16)
+        for (x in stages) m[grid.index(x, 3)] = Processor(Direction.Right)   // no waste runs anywhere
+        m[grid.index(21, 3)] = Storage(Direction.Right)
+        for (x in 3..5) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        for (x in 7..10) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        for (x in 12..15) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        for (x in 17..20) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        var s = VesselState(grid, m.toList(), rails = rails.toList())
         s = run(s, 60 * 300)
 
         for (x in stages) {

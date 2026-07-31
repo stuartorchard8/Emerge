@@ -13,9 +13,14 @@ import org.emerge.demo.outofspace.logistics.Rate
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.AirField
-import org.emerge.demo.outofspace.world.Analyzer
-import org.emerge.demo.outofspace.world.Belt
+import org.emerge.demo.outofspace.world.Bridge
 import org.emerge.demo.outofspace.world.Channel
+import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.DiverterWork
+import org.emerge.demo.outofspace.world.FlowField
+import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.advanceSegments
+import org.emerge.demo.outofspace.world.squashOnto
 import org.emerge.demo.outofspace.world.DebrisWork
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Directed
@@ -26,7 +31,6 @@ import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.Stream
 import org.emerge.demo.outofspace.world.coveredTiles
 import org.emerge.demo.outofspace.world.footprintFits
-import org.emerge.demo.outofspace.world.inputPortAt
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.HeatField
@@ -109,8 +113,9 @@ data class OutofspaceInput(val edits: List<Edit> = emptyList()) : SimInput {
  *     output **port**: a specific tile of the machine's footprint, facing a specific way.
  *  6. **Settle debris** — loose material falls toward gravity, and anything lying outside the hull
  *     goes overboard.
- *  7. **Advance belts** — every [Belt.STEP_TICKS] ticks: deliver each belt's head packet, then shift
- *     every belt one slot toward its head.
+ *  7. **Advance the conduits** — every [Bridge.STEP_TICKS] ticks: derive each layer's flow field
+ *     from where its sources are, then move everything on it one step, offering each packet to the
+ *     port under it first.
  *
  * Every machine is throttled by its RUN activation: rate × activation, and nothing at all at zero or
  * below. Activation is a *throttle rather than a switch* so that a weight means something beyond on
@@ -153,11 +158,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         val seen = if (target < 0) -1 else w.originOf[target]
                         if (seen >= 0) raise(m.channel, fullness(w.machines[seen]))
                     }
-                    // The analyzer's reading persists after the packet leaves, so purity is a
-                    // steady signal rather than a flicker as lumps go past.
-                    is Analyzer -> raise(m.channel, m.lastPurity)
                     else -> {}
                 }
+            }
+            // A gauge's reading persists after the packet leaves, so purity is a steady signal
+            // rather than a flicker as lumps go past.
+            for (r in w.rails) {
+                val channel = r?.channel ?: continue
+                raise(channel, r.lastPurity)
             }
         }
         w.signals = signals
@@ -174,17 +182,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
         }
 
-        for (i in w.machines.indices) w.eject(i)
-
-        if (state.tick % Belt.STEP_TICKS == 0L) {
-            for (i in w.machines.indices) w.deliverBeltHead(i)
-            for (i in w.machines.indices) {
-                val b = w.machines[i]
-                if (b is Belt && b.wiring.activation(Action.Run, signals) > 0) {
-                    w.machines[i] = b.copy(slots = shiftTowardHead(b.slots))
-                }
-            }
+        // Ports first, so a building that produced this tick can put its output on the track before
+        // the track moves. The alternative -- move, then load -- costs every packet a step of
+        // latency for no reason anyone could observe.
+        val ports = w.portsByTile(Conduit.Rail)
+        for ((tile, at) in ports) for (port in at) {
+            if (port.kind == PortKind.Output) w.pushOut(tile, port)
         }
+
+        if (state.tick % Bridge.STEP_TICKS == 0L) w.advanceRails(ports)
 
         val warmed = state.heat.copyJoules()
         for (i in warmed.indices) warmed[i] += w.heatAdded[i]
@@ -201,6 +207,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         return state.copy(
             machines = w.machines.toList(),
+            rails = w.rails.toList(),
+            bridges = w.bridges.toList(),
+            diverters = w.diverters.snapshot(),
             tick = state.tick + 1,
             minedGrams = w.minedGrams,
             debris = w.debris.snapshot(),
@@ -364,6 +373,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val machines: MutableList<Machine?> = state.machines.toMutableList()
         var minedGrams: Long = state.minedGrams
         val debris: DebrisWork = DebrisWork(state.debris)
+        val rails: MutableList<Segment?> = state.rails.toMutableList()
+        val bridges: MutableList<Bridge?> = state.bridges.toMutableList()
+        val diverters: DiverterWork = DiverterWork(state.diverters)
         var ventedGrams: Long = state.ventedGrams
 
         /**
@@ -398,17 +410,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         fun apply(edit: Edit) {
             when (edit) {
                 is Edit.Place -> {
-                    // The click names the machine's *centre*, and the footprint grows around it.
                     if (edit.index !in machines.indices) return
-                    val size = edit.kind.size
-                    if (!footprintFits(grid, edit.index, size)) return
-                    val covered = coveredTiles(grid, edit.index, size)
-                    // Placing over anything occupied is a no-op, so a stray click cannot destroy a
-                    // machine — and everything inside it — by accident. With footprints that check
-                    // has to cover every tile, not just the one under the cursor.
-                    if (covered.any { originOf[it] >= 0 }) return
-                    machines[edit.index] = newMachine(edit.kind, edit.facing)
-                    for (t in covered) originOf[t] = edit.index
+                    when (edit.kind) {
+                        MachineKind.Rail -> if (rails[edit.index] == null) {
+                            rails[edit.index] = Segment(Conduit.Rail)
+                        }
+                        MachineKind.Gauge -> if (rails[edit.index] == null) {
+                            rails[edit.index] = Segment(Conduit.Rail, channel = Channel.Amber)
+                        }
+                        MachineKind.Bridge -> placeBridge(edit.index, edit.facing)
+                        else -> placeBuilding(edit.index, edit.kind, edit.facing)
+                    }
                 }
                 is Edit.Rotate -> {
                     // Rotating about the centre leaves the covered tiles alone -- footprints are
@@ -419,6 +431,21 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     if (m is Directed) machines[at] = m.rotated()
                 }
                 is Edit.Remove -> {
+                    // Fittings come off first, then the building under them. Peeling the track off a
+                    // smelter should not also demolish the smelter, and there is no other way to
+                    // reach the track once it is threaded underneath.
+                    val bridge = bridges[edit.index]
+                    if (bridge != null) {
+                        bridge.held?.let { debris.spill(edit.index, listOf(asResource(it))) }
+                        bridges[edit.index] = null
+                        return
+                    }
+                    val segment = rails[edit.index]
+                    if (segment != null) {
+                        segment.held?.let { debris.spill(edit.index, listOf(asResource(it))) }
+                        rails[edit.index] = null
+                        return
+                    }
                     // Clicking any tile of a machine removes the whole machine, not a slice of it.
                     val at = originAt(edit.index) ?: return
                     // Whatever it was holding falls on the deck. Deleting it instead would be a
@@ -440,14 +467,71 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     machines[at] = m.withWiring(m.wiring.with(edit.action, current))
                 }
                 is Edit.SetChannel -> {
+                    // A gauge is track, so it is retuned before whatever is under it.
+                    val gauge = rails[edit.index]
+                    if (gauge != null && gauge.isGauge) {
+                        rails[edit.index] = gauge.copy(channel = edit.channel)
+                        return
+                    }
                     val at = originAt(edit.index) ?: return
                     when (val m = machines[at]) {
                         is Sensor -> machines[at] = m.copy(channel = edit.channel)
-                        is Analyzer -> machines[at] = m.copy(channel = edit.channel)
                         else -> {}
                     }
                 }
             }
+        }
+
+        /**
+         * Puts a building on the deck. The click names its *centre*, and the footprint grows around
+         * it.
+         */
+        private fun placeBuilding(at: Int, kind: MachineKind, facing: Direction) {
+            val size = kind.size
+            if (!footprintFits(grid, at, size)) return
+            val covered = coveredTiles(grid, at, size)
+            // Placing over anything occupied is a no-op, so a stray click cannot destroy a machine —
+            // and everything inside it — by accident. With footprints that check has to cover every
+            // tile, not just the one under the cursor.
+            if (covered.any { originOf[it] >= 0 }) return
+            val built = newMachine(kind, facing)
+            if (portsClash(portsOf(grid, built, at))) return
+            machines[at] = built
+            for (t in covered) originOf[t] = at
+        }
+
+        /**
+         * Puts a bridge down, stored at its middle tile.
+         *
+         * It occupies nothing, so there is no footprint to check — the **only** constraint is its
+         * ports, and that is the constraint that gives bridges their shape: two of them cannot share
+         * an end, and neither can a bridge end and a building's port, because a segment on that tile
+         * would have no way to say which of the two it feeds.
+         */
+        private fun placeBridge(at: Int, facing: Direction) {
+            if (bridges[at] != null) return
+            val built = Bridge(facing)
+            val ports = portsOf(grid, built, at)
+            // Both ends have to be on the grid, or it is half a bridge.
+            if (ports.size < 2) return
+            if (portsClash(ports)) return
+            bridges[at] = built
+        }
+
+        /**
+         * Whether any of [proposed] would land on a port of the same conduit that already exists.
+         *
+         * One rule, applied to buildings and bridges alike, and it does **not** care whether the two
+         * are inputs or outputs: *any* two ports of one conduit on one tile clash. A bridge end over
+         * a tank's input is exactly as ambiguous as a bridge end over another bridge's end — the
+         * segment on that tile could not say which of the two it belongs to.
+         *
+         * Ports of *different* conduits may share a tile freely. A rail port and a pipe port are on
+         * different networks, so there is nothing to be ambiguous about.
+         */
+        private fun portsClash(proposed: List<Port>): Boolean {
+            val existing = portsByTile(Conduit.Rail)
+            return proposed.any { p -> existing[p.tile].orEmpty().any { it.conduit == p.conduit } }
         }
 
         /** The index the machine covering [tile] is stored at, so any tile of it can be edited. */
@@ -471,117 +555,159 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /**
-         * Pushes a full packet out of each of a machine's output ports.
+         * Every port on the layer, keyed by the tile it sits on.
          *
-         * Which buffer drains through which port is named by [Stream] rather than worked out from an
-         * angle. The old rule — product leaves by `facing`, waste by `facing.clockwise` — only ever
-         * worked because every machine was one tile; on a five-tile furnace the two streams leave
-         * from genuinely different tiles and the relationship between them is not a rotation.
+         * Bridges are folded in beside buildings rather than handled apart, which is exactly why a
+         * bridge needs no special case: to the network it is a thing with an input port and an
+         * output port, indistinguishable from a smelter with fewer buffers.
          */
-        fun eject(index: Int) {
-            val m = machines[index] ?: return
-            if (m is Belt) return   // belts move on their own cadence, below
-            // A storage only lets go while its RUN activation is positive, which is what turns it
-            // from a bucket into a valve the moment you wire something to it.
-            if (m is Storage && m.wiring.activation(Action.Run, signals) <= 0) return
-            for (port in portsOf(grid, m, index)) {
-                if (port.kind == PortKind.Output) ejectThrough(index, port)
+        fun portsByTile(conduit: Conduit): Map<Int, List<Port>> {
+            val out = HashMap<Int, MutableList<Port>>()
+            fun add(port: Port) {
+                if (port.conduit == conduit) out.getOrPut(port.tile) { mutableListOf() }.add(port)
             }
-        }
-
-        private fun ejectThrough(index: Int, port: Port) {
-            when (val m = machines[index]) {
-                is Miner -> {
-                    val (packet, rest) = takePacket(m.buffer) ?: return
-                    if (send(port, packet)) machines[index] = m.copy(buffer = rest)
-                }
-                is Processor -> {
-                    val buffer = if (port.stream == Stream.Waste) m.tailings else m.product
-                    val (packet, rest) = buffer?.let(::takePacket) ?: return
-                    if (!send(port, packet)) return
-                    val now = machines[index] as Processor
-                    machines[index] =
-                        if (port.stream == Stream.Waste) now.copy(tailings = rest.orNull())
-                        else now.copy(product = rest.orNull())
-                }
-                is Smelter -> {
-                    val buffer = if (port.stream == Stream.Waste) m.slag else m.refined
-                    val (packet, rest) = buffer?.let(::takePacket) ?: return
-                    if (!send(port, packet)) return
-                    val now = machines[index] as Smelter
-                    machines[index] =
-                        if (port.stream == Stream.Waste) now.copy(slag = rest.orNull())
-                        else now.copy(refined = rest.orNull())
-                }
-                is Fabricator -> {
-                    val (packet, rest) = m.output?.let(::takePacket) ?: return
-                    if (send(port, packet)) machines[index] = m.copy(output = rest.orNull())
-                }
-                is Analyzer -> {
-                    val held = m.holding ?: return
-                    // holding clears; the reading stays, which is what makes the tile readable when
-                    // the line is idle.
-                    if (send(port, held)) machines[index] = m.copy(holding = null)
-                }
-                is Storage -> {
-                    val (packet, rest) = m.contents?.let(::takePacket) ?: return
-                    if (send(port, packet)) machines[index] = m.copy(contents = rest.orNull())
-                }
-                else -> {}
+            for (i in machines.indices) {
+                val m = machines[i] ?: continue
+                for (port in portsOf(grid, m, i)) add(port)
             }
-        }
-
-        /** Hands a belt's head packet out through its output port. */
-        fun deliverBeltHead(index: Int) {
-            val belt = machines[index] as? Belt ?: return
-            val head = belt.slots.firstOrNull() ?: return
-            val port = portsOf(grid, belt, index).firstOrNull { it.kind == PortKind.Output } ?: return
-            if (send(port, head)) {
-                machines[index] = belt.copy(slots = belt.slots.toMutableList().also { it[0] = null })
+            for (i in bridges.indices) {
+                val b = bridges[i] ?: continue
+                for (port in portsOf(grid, b, i)) add(port)
             }
+            return out
         }
 
         /**
-         * Only whole packets move, so belts carry uniform lumps and a trickle of output does not
-         * spray the network with crumbs. Null while the buffer is still filling.
+         * Puts a packet from an output port onto the track **at the port's own tile**.
+         *
+         * This is what "ports behind the buildings" means in one line. Material does not cross into a
+         * neighbouring tile; the conduit is threaded underneath the building and the building reaches
+         * down into it. A machine with no track under its output port simply backs up, however much
+         * conveyor is butted against its outside.
+         *
+         * Where the tile already holds a partial packet the building **tops it up** rather than
+         * waiting for it to leave — but only where the two can genuinely combine, which for solids
+         * means powder. A full packet blocks.
          */
-        private fun takePacket(buffer: Resource): Pair<SolidPacket, Resource>? {
-            if (buffer.mass < Capacity.PACKET_GRAMS) return null
-            val taken = buffer.mixture.take(Capacity.PACKET_GRAMS)
+        fun pushOut(tile: Int, port: Port) {
+            val segment = rails[tile] ?: return
+            if (port.fromBridge) {
+                val bridge = bridges[port.owner] ?: return
+                val held = bridge.held ?: return
+                if (!load(tile, segment, held)) return
+                bridges[port.owner] = bridge.copy(held = null)
+                return
+            }
+
+            val m = machines[port.owner] ?: return
+            // A storage only lets go while its RUN activation is positive, which is what turns it
+            // from a bucket into a valve the moment you wire something to it.
+            if (m is Storage && m.wiring.activation(Action.Run, signals) <= 0) return
+
+            // Only as much as will actually fit: an empty tile takes a whole packet, a partial one
+            // takes what tops it up.
+            val room = segment.held?.let { Capacity.headroom(it) } ?: Capacity.PACKET_GRAMS
+            val buffer = bufferFor(m, port) ?: return
+            val (packet, rest) = takePacket(buffer, room) ?: return
+            if (!load(tile, segment, packet)) return
+            machines[port.owner] = withBuffer(m, port, rest.orNull())
+        }
+
+        /** Which of a machine's buffers drains through [port]. */
+        private fun bufferFor(m: Machine, port: Port): Resource? = when (m) {
+            is Miner -> m.buffer
+            is Processor -> if (port.stream == Stream.Waste) m.tailings else m.product
+            is Smelter -> if (port.stream == Stream.Waste) m.slag else m.refined
+            is Fabricator -> m.output
+            is Storage -> m.contents
+            else -> null
+        }
+
+        /** That machine with the drained buffer replaced. */
+        private fun withBuffer(m: Machine, port: Port, rest: Resource?): Machine = when (m) {
+            is Miner -> m.copy(buffer = rest ?: Resource(Form.Ore, Mixture.EMPTY))
+            is Processor -> if (port.stream == Stream.Waste) m.copy(tailings = rest) else m.copy(product = rest)
+            is Smelter -> if (port.stream == Stream.Waste) m.copy(slag = rest) else m.copy(refined = rest)
+            is Fabricator -> m.copy(output = rest)
+            is Storage -> m.copy(contents = rest)
+            else -> m
+        }
+
+        /** Places or merges [packet] onto the segment at [tile]. False if there was no room. */
+        private fun load(tile: Int, segment: Segment, packet: Packet): Boolean {
+            val existing = segment.held
+            if (existing == null) {
+                rails[tile] = segment.copy(held = packet).reading(packet)
+                return true
+            }
+            val merged = squashOnto(existing, packet) ?: return false
+            rails[tile] = segment.copy(held = merged.merged).reading(merged.merged)
+            return merged.rejected == null
+        }
+
+        /**
+         * Moves everything on one conduit one step.
+         *
+         * The flow field is derived fresh: sources are the output ports that actually have track
+         * under them, so laying or lifting one tile re-decides which way a whole run points, with no
+         * cache to invalidate.
+         */
+        fun advanceRails(ports: Map<Int, List<Port>>) {
+            val sources = ports.entries
+                .filter { (tile, at) -> rails[tile] != null && at.any { it.kind == PortKind.Output } }
+                .map { it.key }
+            val flow = FlowField.derive(grid, { rails[it] != null }, sources) { rails[it]?.held != null }
+
+            val carried = arrayOfNulls<Packet>(rails.size)
+            for (i in rails.indices) carried[i] = rails[i]?.held
+
+            advanceSegments(flow, carried, diverters) { tile, packet ->
+                var left: Packet? = packet
+                for (port in ports[tile].orEmpty()) {
+                    if (port.kind != PortKind.Input) continue
+                    val remaining = left ?: break
+                    left = offerTo(port, remaining)
+                }
+                left
+            }
+
+            for (i in rails.indices) {
+                val segment = rails[i] ?: continue
+                val now = carried[i]
+                if (now !== segment.held) {
+                    rails[i] = if (now == null) segment.copy(held = null) else segment.copy(held = now).reading(now)
+                }
+            }
+        }
+
+        /** Offers a passing packet to whatever owns [port]. Returns what was not taken. */
+        private fun offerTo(port: Port, packet: Packet): Packet? {
+            if (port.fromBridge) {
+                val bridge = bridges[port.owner] ?: return packet
+                if (bridge.held != null) return packet
+                bridges[port.owner] = bridge.copy(held = packet)
+                return null
+            }
+            val dest = machines[port.owner] ?: return packet
+            return if (deliver(port.owner, dest, packet)) null else packet
+        }
+
+        /**
+         * Only whole packets leave a buffer, so track carries uniform lumps and a trickle of output
+         * does not spray the network with crumbs. [limit] caps it to the room actually available.
+         */
+        private fun takePacket(buffer: Resource, limit: Long = Capacity.PACKET_GRAMS): Pair<SolidPacket, Resource>? {
+            val want = minOf(Capacity.PACKET_GRAMS, limit)
+            if (want <= 0L || buffer.mass < want) return null
+            val taken = buffer.mixture.take(want)
             return SolidPacket(Resource(buffer.form, taken)) to Resource(buffer.form, buffer.mixture - taken)
         }
 
         private fun Resource.orNull(): Resource? = if (isEmpty) null else this
 
-        /**
-         * Offers [packet] out through [port]. True if something on the other side took it.
-         *
-         * The receiving side must have an **input port on the tile the packet arrives at, facing
-         * back the way it came**. Checking the facing and not merely the tile is what stops a
-         * three-by-three building behaving like a nine-tile sponge that absorbs anything touching
-         * it — a machine has a back and two sides, and routing to the right one is the mechanic.
-         */
-        fun send(port: Port, packet: Packet): Boolean {
-            val target = grid.neighbour(port.tile, port.side)
-            if (target < 0) return false
-            val at = originOf[target]
-            if (at < 0) return false
-            val dest = machines[at] ?: return false
-            if (inputPortAt(grid, dest, at, target, port.side) == null) return false
-            return deliver(at, dest, packet)
-        }
-
         /** Puts [packet] into the accepting machine's own buffers, or refuses it. */
         private fun deliver(target: Int, destination: Machine, packet: Packet): Boolean {
             return when (val dest = destination) {
-                is Belt -> {
-                    val tail = dest.slots.lastIndex
-                    if (dest.slots[tail] != null) false
-                    else {
-                        machines[target] = dest.copy(slots = dest.slots.toMutableList().also { it[tail] = packet })
-                        true
-                    }
-                }
                 is Processor -> acceptInto(dest.input, packet)?.let { machines[target] = dest.copy(input = it); true } ?: false
                 is Smelter -> acceptInto(dest.input, packet)?.let { machines[target] = dest.copy(input = it); true } ?: false
                 is Storage -> {
@@ -599,20 +725,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     }
                 }
                 is Fabricator -> acceptIntoFabricator(target, dest, packet)
-                is Analyzer -> {
-                    // One at a time, and only while running: it is a measuring belt, not a buffer.
-                    if (dest.holding != null || dest.wiring.activation(Action.Run, signals) <= 0) false
-                    else {
-                        machines[target] = dest.reading(packet)
-                        true
-                    }
-                }
                 is Vent -> {
                     ventedGrams += packet.mass
                     machines[target] = dest.copy(ventedGrams = dest.ventedGrams + packet.mass)
                     true
                 }
-                // Miners take no input, and an empty tile is not a floor to drop things on.
+                // Miners take no input, and a wall is not a hopper.
                 else -> false
             }
         }
@@ -646,17 +764,21 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             else Resource(existing.form, existing.mixture + packet.contents)
         }
 
+        /** What a packet becomes when it is tipped onto the deck. */
+        private fun asResource(packet: Packet): Resource =
+            Resource((packet as? SolidPacket)?.form ?: Form.Ore, packet.contents)
+
         private fun newMachine(kind: MachineKind, facing: Direction): Machine = when (kind) {
-            MachineKind.Belt -> Belt(facing)
             MachineKind.Miner -> Miner(facing, DEFAULT_ORE_BODY)
             MachineKind.Processor -> Processor(facing)
             MachineKind.Smelter -> Smelter(facing)
             MachineKind.Fabricator -> Fabricator(facing)
             MachineKind.Storage -> Storage(facing)
             MachineKind.Sensor -> Sensor(facing)
-            MachineKind.Analyzer -> Analyzer(facing)
             MachineKind.Vent -> Vent()
             MachineKind.Hull -> Hull()
+            // Fittings are placed onto their layer directly and never come through here.
+            MachineKind.Rail, MachineKind.Gauge, MachineKind.Bridge -> Hull()
         }
     }
 }

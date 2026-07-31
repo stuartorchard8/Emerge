@@ -15,7 +15,10 @@ package org.emerge.demo.outofspace.world
  */
 val MachineKind.size: Int
     get() = when (this) {
-        MachineKind.Belt, MachineKind.Sensor, MachineKind.Analyzer, MachineKind.Vent, MachineKind.Hull -> 1
+        // Fittings and the small deck pieces. A bridge is three tiles long but occupies none of
+        // them, so its size says nothing about space -- only its two ports place it.
+        MachineKind.Rail, MachineKind.Gauge, MachineKind.Bridge -> 1
+        MachineKind.Sensor, MachineKind.Vent, MachineKind.Hull -> 1
         MachineKind.Miner -> 3
         MachineKind.Processor, MachineKind.Fabricator, MachineKind.Storage -> 3
         MachineKind.Smelter -> 5
@@ -121,10 +124,22 @@ enum class Stream { Product, Waste }
  */
 data class Port(
     val tile: Int,
-    /** Which way the port faces — material crosses the boundary in this direction on the way out. */
+    /**
+     * Which way the port faces.
+     *
+     * **Not** how it connects — a port binds to whatever segment shares its own tile, because
+     * conduits run *underneath* buildings rather than butting up against them. This is which face of
+     * the building the fitting is on, which is what gets drawn and what orients a bridge.
+     */
     val side: Direction,
     val kind: PortKind,
     val stream: Stream = Stream.Product,
+    /** Which network it belongs to. Two ports may share a tile only if these differ. */
+    val conduit: Conduit = Conduit.Rail,
+    /** Where the thing owning this port is stored — its centre tile. */
+    val owner: Int = -1,
+    /** Whether the owner lives on the bridge list rather than the deck. */
+    val fromBridge: Boolean = false,
 )
 
 /**
@@ -137,6 +152,7 @@ private data class LocalPort(
     val side: Direction,
     val kind: PortKind,
     val stream: Stream = Stream.Product,
+    val conduit: Conduit = Conduit.Rail,
 )
 
 /**
@@ -150,13 +166,20 @@ private data class LocalPort(
 private fun localPorts(machine: Machine): List<LocalPort> {
     val r = machine.kind.reach
     return when (machine) {
-        // Transport fittings take material from any side but the one they feed, which is what lets a
-        // line be assembled without thinking about it. They are the exception, deliberately: a
-        // conveyor with a designated back would make every corner a puzzle for no gain.
-        is Belt, is Analyzer -> Direction.ALL.filter { it != Direction.Right }
-            .map { LocalPort(0, 0, it, PortKind.Input) } +
-            LocalPort(0, 0, Direction.Right, PortKind.Output)
+        // A bridge spans three tiles and connects on the two **flanking** them — four apart, not
+        // two. That gap is the entire mechanism.
+        //
+        // Ports at its own ends would not work, and it took a failing test to see why: segments
+        // connect to each other by adjacency, so track at the bridge's end would sit next to the
+        // track it is meant to be hopping over and the two runs would merge anyway. Leaving the
+        // whole three-tile span clear of its own line is what actually keeps them apart — the
+        // nearest segment of one run is then two tiles from the nearest segment of the other.
+        is Bridge -> listOf(
+            LocalPort(-2, 0, Direction.Left, PortKind.Input, conduit = machine.conduit),
+            LocalPort(2, 0, Direction.Right, PortKind.Output, conduit = machine.conduit),
+        )
 
+        // A vent is a hole. It takes whatever is put into it, from whichever face.
         is Vent -> Direction.ALL.map { LocalPort(0, 0, it, PortKind.Input) }
 
         is Miner -> listOf(LocalPort(r, 0, Direction.Right, PortKind.Output))
@@ -210,7 +233,9 @@ fun portsOf(grid: Grid, machine: Machine, centre: Int): List<Port> {
         }
         val x = cx + dx
         val y = cy + dy
-        if (grid.inBounds(x, y)) out.add(Port(grid.index(x, y), side, p.kind, p.stream))
+        if (grid.inBounds(x, y)) {
+            out.add(Port(grid.index(x, y), side, p.kind, p.stream, p.conduit, centre, machine is Bridge))
+        }
     }
     return out
 }
@@ -222,7 +247,15 @@ fun portsOf(grid: Grid, machine: Machine, centre: Int): List<Port> {
  * heading right has to meet a port on that tile facing left. Checking the facing rather than just
  * the tile is what stops a three-by-three building behaving like a nine-tile sponge.
  */
-fun inputPortAt(grid: Grid, machine: Machine, centre: Int, tile: Int, heading: Direction): Port? =
+/**
+ * The port of [conduit] that this machine exposes at [tile], if any.
+ *
+ * Binding is by **tile alone**, not by an adjacent tile: conduits run underneath buildings, so a
+ * segment connects to whatever building shares its own tile. That is what "ports behind the
+ * buildings" means, and it is why a run has to be threaded *under* a machine to reach it rather than
+ * butted against its edge.
+ */
+fun portAt(grid: Grid, machine: Machine, centre: Int, tile: Int, kind: PortKind, conduit: Conduit): Port? =
     portsOf(grid, machine, centre).firstOrNull {
-        it.kind == PortKind.Input && it.tile == tile && it.side == heading.opposite
+        it.kind == kind && it.tile == tile && it.conduit == conduit
     }

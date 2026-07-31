@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.Analyzer
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.MachineKind
@@ -38,7 +37,7 @@ class OutofspaceController(
     var speed: Float = 1f
 
     /** What the player is about to place, and which way it will face. */
-    var brush: MachineKind = MachineKind.Belt
+    var brush: MachineKind = MachineKind.Rail
     var brushFacing: Direction = Direction.Right
 
     /**
@@ -90,13 +89,14 @@ class OutofspaceController(
         wire(index, action, slot, current.copy(weightPermille = next))
     }
 
-    /** Retunes whatever broadcasts on this tile — a sensor or an analyzer. */
+    /** Retunes whatever broadcasts on this tile — a gauge in the track, or a sensor on the deck. */
     fun cycleSensorChannel(index: Int, delta: Int) {
-        val current = when (val m = state.machineCovering(index)) {
-            is Sensor -> m.channel
-            is Analyzer -> m.channel
-            else -> return
-        }
+        // Track first, matching the edit's own order: a gauge sits on top of whatever it crosses.
+        val current = state.railAt(index)?.channel
+            ?: when (val m = state.machineCovering(index)) {
+                is Sensor -> m.channel
+                else -> return
+            }
         val all = Channel.EMITTABLE
         val next = all[((all.indexOf(current) + delta) % all.size + all.size) % all.size]
         setChannel(index, next)

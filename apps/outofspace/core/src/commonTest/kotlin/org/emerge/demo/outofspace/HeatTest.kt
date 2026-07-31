@@ -4,7 +4,9 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.Belt
+import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.HeatField
@@ -54,7 +56,12 @@ class HeatTest {
     }
 
     /** A hull box with a hollow middle, [w] x [h] outer. */
-    private fun sealedRoom(w: Int, h: Int, fill: (Int, Int) -> Machine? = { _, _ -> null }): VesselState {
+    private fun sealedRoom(
+        w: Int,
+        h: Int,
+        rail: Set<Int> = emptySet(),
+        fill: (Int, Int) -> Machine? = { _, _ -> null },
+    ): VesselState {
         val grid = Grid(w + 2, h + 2)   // a ring of open space around the box, so it is not clipped
         val machines = arrayOfNulls<Machine>(grid.size)
         for (x in 1..w) {
@@ -66,7 +73,9 @@ class HeatTest {
             machines[grid.index(w, y)] = Hull()
         }
         for (y in 2 until h) for (x in 2 until w) machines[grid.index(x, y)] = fill(x, y)
-        return VesselState(grid, machines.toList())
+        val rails = arrayOfNulls<Segment>(grid.size)
+        for (t in rail) rails[t] = Segment(Conduit.Rail)
+        return VesselState(grid, machines.toList(), rails = rails.toList())
     }
 
     // ── Structure ─────────────────────────────────────────────────────────────
@@ -95,18 +104,18 @@ class HeatTest {
     }
 
     @Test
-    fun `only hull seals - a wall of belts does not`() {
+    fun `only hull seals - a wall of machinery does not`() {
         val grid = Grid(5, 3)
         val machines = arrayOfNulls<Machine>(15)
         for (x in 0 until 5) {
-            machines[grid.index(x, 0)] = Belt(Direction.Right)
-            machines[grid.index(x, 2)] = Belt(Direction.Right)
+            machines[grid.index(x, 0)] = Sensor(Direction.Right)
+            machines[grid.index(x, 2)] = Sensor(Direction.Right)
         }
         val s = VesselState(grid, machines.toList())
         assertEquals(
             Structure.Vacuum,
             s.structure[grid.index(2, 1)],
-            "a conveyor is machinery in a room, not a pressure vessel",
+            "machinery in a room is not a pressure vessel",
         )
     }
 
@@ -152,7 +161,14 @@ class HeatTest {
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 200_000L))
         // A five-tile furnace centred at (5,5) covers 3..7. Its product port is at (7,5) and its
         // slag port at (5,7), so the vents go one tile beyond each.
-        val room = sealedRoom(10, 10) { x, y ->
+        val g0 = Grid(12, 12)
+        val room = sealedRoom(
+            10, 10,
+            // Track from each of the furnace's two ports to the vent that takes it. Without it the
+            // furnace has nowhere to put anything and stalls on its output cap after four kilograms
+            // -- which is what happened the first time, and it never got warm enough to measure.
+            rail = setOf(g0.index(7, 5), g0.index(8, 5), g0.index(5, 7), g0.index(5, 8)),
+        ) { x, y ->
             when {
                 x == 5 && y == 5 -> Smelter(Direction.Right, input = ore)
                 x == 8 && y == 5 -> Vent()      // refined leaves forward

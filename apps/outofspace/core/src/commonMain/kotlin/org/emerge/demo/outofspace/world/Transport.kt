@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Form
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.logistics.MergeResult
 import org.emerge.demo.outofspace.logistics.Packet
@@ -39,7 +40,39 @@ data class Segment(
     val conduit: Conduit,
     /** What is riding on this tile. Partial packets are normal — see [org.emerge.demo.outofspace.logistics.mergeInto]. */
     val held: Packet? = null,
-)
+    /**
+     * If set, this length of track is a **gauge**: it reports what passes through it on this channel.
+     *
+     * A gauge is a property of a segment rather than a machine of its own, which is what it always
+     * wanted to be — the old analyzer was described in its own documentation as "a belt tile that
+     * measures", and making it a building meant it needed ports, which meant it broke a run in two
+     * for no reason. As a segment it is simply track that reads.
+     *
+     * It measures without taking: material passes at full speed, and the reading **persists** after
+     * it has gone, so an idle line still says what last went down it.
+     */
+    val channel: Channel? = null,
+    val lastForm: Form? = null,
+    val lastDominant: Species? = null,
+    /** The dominant species' share of the last thing through, in permille. */
+    val lastPurity: Int = 0,
+    val lastMass: Long = 0L,
+) {
+    val isGauge: Boolean get() = channel != null
+
+    /** This segment having seen [packet] go past. Reads it; does not consume it. */
+    fun reading(packet: Packet): Segment {
+        if (channel == null) return this
+        val dominant = packet.contents.dominant ?: return this
+        val mass = packet.mass
+        return copy(
+            lastForm = (packet as? SolidPacket)?.form,
+            lastDominant = dominant,
+            lastPurity = if (mass == 0L) 0 else (packet.contents[dominant] * Signals.FULL / mass).toInt(),
+            lastMass = mass,
+        )
+    }
+}
 
 /**
  * Which way material moves on one conduit layer, derived from where its sources are.
@@ -79,14 +112,24 @@ class FlowField private constructor(
         /**
          * @param isSegment whether a tile carries a segment of the layer being derived
          * @param sources tiles where material enters the layer — a building or bridge output port
+         * @param stranded material sitting on a run that no source reaches. Seeded after the ports,
+         *   so it drains instead of freezing where it stands: pull the miner off the end of a line
+         *   and what is already on the line should still finish its journey, not become a permanent
+         *   ornament. Seeded in ascending tile order, so which way it picks is fixed.
          */
-        fun derive(grid: Grid, isSegment: (Int) -> Boolean, sources: Collection<Int>): FlowField {
+        fun derive(
+            grid: Grid,
+            isSegment: (Int) -> Boolean,
+            sources: Collection<Int>,
+            stranded: (Int) -> Boolean = { false },
+        ): FlowField {
             val distance = IntArray(grid.size) { -1 }
 
             // Sorted, so a world with several sources produces the same field however the caller
-            // happened to collect them.
+            // happened to collect them. `sorted()` rather than `toSortedSet()`: the latter is a JVM-only
+            // extension, and this has to compile for JS and Android too.
             val queue = ArrayDeque<Int>()
-            for (tile in sources.toSortedSet()) {
+            for (tile in sources.distinct().sorted()) {
                 if (tile in distance.indices && isSegment(tile) && distance[tile] < 0) {
                     distance[tile] = 0
                     queue.addLast(tile)
@@ -99,6 +142,23 @@ class FlowField private constructor(
                     if (next < 0 || !isSegment(next) || distance[next] >= 0) continue
                     distance[next] = distance[at] + 1
                     queue.addLast(next)
+                }
+            }
+
+            // Second pass: anything left holding material has no source behind it, so it becomes
+            // its own. Done after the ports so a real source always wins the direction.
+            for (tile in 0 until grid.size) {
+                if (distance[tile] >= 0 || !isSegment(tile) || !stranded(tile)) continue
+                distance[tile] = 0
+                queue.addLast(tile)
+                while (queue.isNotEmpty()) {
+                    val at = queue.removeFirst()
+                    for (dir in Direction.ALL) {
+                        val next = grid.neighbour(at, dir)
+                        if (next < 0 || !isSegment(next) || distance[next] >= 0) continue
+                        distance[next] = distance[at] + 1
+                        queue.addLast(next)
+                    }
                 }
             }
 
@@ -239,7 +299,7 @@ fun advanceSegments(
         // in the successors' own order so a fork behaves the same way it would when moving.
         for (option in options) {
             val ahead = held[option] ?: continue
-            val squashed = squash(ahead, leftover) ?: continue
+            val squashed = squashOnto(ahead, leftover) ?: continue
             held[option] = squashed.merged
             held[tile] = squashed.rejected
             moved++
@@ -257,7 +317,7 @@ fun advanceSegments(
  * ingots of the same metal are still two ingots, and pressing them against each other on a jammed
  * belt does not make one bigger ingot.
  */
-private fun squash(ahead: Packet, incoming: Packet): MergeResult? {
+fun squashOnto(ahead: Packet, incoming: Packet): MergeResult? {
     if (Capacity.headroom(ahead) <= 0L) return null
     val form = (ahead as? SolidPacket)?.form
     // Fluids always flow together; a solid only does if it is a powder.

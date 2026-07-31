@@ -6,7 +6,9 @@ import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.Belt
+import org.emerge.demo.outofspace.world.Bridge
+import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Fabricator
@@ -130,14 +132,21 @@ class WiringTest {
     }
 
     @Test
-    fun `a belt with no activation stops moving but keeps its cargo`() {
-        val grid = Grid(2, 1)
-        val packet = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
-        val belt = Belt(Direction.Right, listOf(null, null, null, packet)).copy(wiring = wiring())
-        var s = VesselState(grid, listOf(belt, Storage(Direction.Right)))
-        s = run(s, Belt.STEP_TICKS * 8)
-        assertEquals(3, (s[0] as Belt).slots.indexOfFirst { it != null }, "the packet never moved")
-        assertEquals(0L, s.stockpile.totalGrams, "and nothing reached the store beyond it")
+    fun `a tank with no activation holds everything it has`() {
+        // Track is inert -- it has no wiring and cannot be switched off, because it is plumbing. The
+        // thing you switch off is the machine at the end of it, and a shut tank is a shut valve.
+        val grid = Grid(12, 6)
+        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4_000L))
+        val m = arrayOfNulls<Machine>(grid.size)
+        m[grid.index(3, 3)] = Storage(Direction.Right, stored).copy(wiring = wiring()) as Storage
+        m[grid.index(8, 3)] = Storage(Direction.Right)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        for (x in 4..7) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        var s = VesselState(grid, m.toList(), rails = rails.toList())
+
+        s = run(s, Bridge.STEP_TICKS * 8)
+        assertEquals(4_000L, (s[grid.index(3, 3)] as Storage).contents?.mass, "it let go of nothing")
+        assertEquals(0L, (4..7).sumOf { s.railAt(grid.index(it, 3))?.held?.mass ?: 0L }, "so the track is bare")
     }
 
     // ── The loop that makes wiring worth having ───────────────────────────────
@@ -160,9 +169,11 @@ class WiringTest {
         val machines = arrayOfNulls<Machine>(grid.size)
         machines[grid.index(2, 3)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
             .withWiring(wiring(Channel.Always to 1000, Channel.Red to -1000)) as Miner
-        machines[grid.index(5, 3)] = Storage(Direction.Right)   // faces open deck, so it fills
-        machines[grid.index(5, 5)] = Sensor(Direction.Up, Channel.Red)
-        var s = VesselState(grid, machines.toList())
+        machines[grid.index(6, 3)] = Storage(Direction.Right)   // input port at (5, 3)
+        machines[grid.index(6, 5)] = Sensor(Direction.Up, Channel.Red)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        for (x in 3..5) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        var s = VesselState(grid, machines.toList(), rails = rails.toList())
 
         // Throttling begins on the very first tick — fullness is continuous, so there is no grace
         // period. What matters is the *shape*: the rate falls away as the tank fills.
@@ -178,7 +189,7 @@ class WiringTest {
             lateRate * 4 < firstTenSeconds,
             "should be throttled to a fraction of its early rate: ${firstTenSeconds}g then ${lateRate}g",
         )
-        assertTrue((s[grid.index(5, 3)] as Storage).contents!!.mass <= Storage.CAP, "and it never overfills")
+        assertTrue((s[grid.index(6, 3)] as Storage).contents!!.mass <= Storage.CAP, "and it never overfills")
     }
 
     @Test
@@ -230,17 +241,19 @@ class WiringTest {
     // ── Fabricator and storage ────────────────────────────────────────────────
 
     /**
-     * [upstream] at (3, 3) feeding a tank at (6, 3).
+     * [upstream] at (3, 3) feeding a tank at (7, 3), with a short run of track between their ports.
      *
-     * Both are three tiles across, so their centres sit three apart and the buildings abut: the
-     * upstream machine's output port at x=4 lands exactly on the tank's input port at x=5.
+     * The track has to be there: ports connect to whatever segment shares their tile, so two
+     * buildings touching each other are not connected — nothing joins them but rail.
      */
     private fun twoUp(upstream: Machine): VesselState {
         val g = Grid(12, 6)
         val m = arrayOfNulls<Machine>(g.size)
-        m[g.index(3, 3)] = upstream
-        m[g.index(6, 3)] = Storage(Direction.Right)
-        return VesselState(g, m.toList())
+        val rails = arrayOfNulls<Segment>(g.size)
+        m[g.index(3, 3)] = upstream                  // output port at (4, 3)
+        m[g.index(7, 3)] = Storage(Direction.Right)  // input port at (6, 3)
+        for (x in 4..6) rails[g.index(x, 3)] = Segment(Conduit.Rail)
+        return VesselState(g, m.toList(), rails = rails.toList())
     }
 
     @Test
@@ -290,11 +303,12 @@ class WiringTest {
         val packet = SolidPacket(Resource(Form.CopperIngot, Mixture.of(Species.Copper to 1_000L)))
         val g = Grid(12, 6)
         val m = arrayOfNulls<Machine>(g.size)
-        m[g.index(2, 3)] = Belt(Direction.Right, listOf(packet))
         m[g.index(4, 3)] = fab                                  // input port at (3, 3)
-        var s = VesselState(g, m.toList())
-        s = run(s, Belt.STEP_TICKS * 2)
-        assertNotNull((s[g.index(2, 3)] as Belt).slots.firstOrNull { it != null }, "the copper is still on the belt")
+        val rails = arrayOfNulls<Segment>(g.size)
+        rails[g.index(3, 3)] = Segment(Conduit.Rail, held = packet)
+        var s = VesselState(g, m.toList(), rails = rails.toList())
+        s = run(s, Bridge.STEP_TICKS * 2)
+        assertNotNull(s.railAt(g.index(3, 3))?.held, "the copper is still on the track")
         assertEquals(2, (s[g.index(4, 3)] as Fabricator).inputs.size)
     }
 
@@ -307,10 +321,10 @@ class WiringTest {
         val g = twoUp(shut).grid
         var s = run(twoUp(shut), 60 * 5)
         assertEquals(5_000L, (s[g.index(3, 3)] as Storage).contents!!.mass, "a closed valve holds everything")
-        assertNull((s[g.index(6, 3)] as Storage).contents, "so nothing arrives downstream")
+        assertNull((s[g.index(7, 3)] as Storage).contents, "so nothing arrives downstream")
 
         var s2 = run(twoUp(Storage(Direction.Right, stored)), 60 * 5)
-        assertEquals(5_000L, (s2[g.index(6, 3)] as Storage).contents!!.mass, "an open one drains into the next tank")
+        assertEquals(5_000L, (s2[g.index(7, 3)] as Storage).contents!!.mass, "an open one drains into the next tank")
         assertNull((s2[g.index(3, 3)] as Storage).contents, "and empties itself doing it")
     }
 
