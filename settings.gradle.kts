@@ -34,6 +34,15 @@ plugins {
 // Include subprojects in the build.
 // If there are changes in only one of the projects, Gradle will rebuild only the one that has changed.
 // Learn more about structuring projects with Gradle - https://docs.gradle.org/8.7/userguide/multi_project_builds.html
+
+// The starting point for a new app — copy it with `tools/new-app.sh <name>`. It is a real, built
+// app rather than inert files so that an engine API change breaks it here, not the first time it
+// gets copied. See apps/template/README.md.
+include(":apps:template:core")
+include(":apps:template:desktop")
+include(":apps:template:android")
+include(":apps:template:web")
+
 include(":apps:scavengers:desktop")
 include(":apps:cyto:desktop")
 include(":apps:drockets:desktop")
