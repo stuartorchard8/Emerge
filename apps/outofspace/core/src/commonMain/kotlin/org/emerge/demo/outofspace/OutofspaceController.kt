@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.Analyzer
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.MachineKind
@@ -84,10 +85,15 @@ class OutofspaceController(
         wire(index, action, slot, current.copy(weightPermille = next))
     }
 
+    /** Retunes whatever broadcasts on this tile — a sensor or an analyzer. */
     fun cycleSensorChannel(index: Int, delta: Int) {
-        val sensor = state[index] as? Sensor ?: return
+        val current = when (val m = state[index]) {
+            is Sensor -> m.channel
+            is Analyzer -> m.channel
+            else -> return
+        }
         val all = Channel.EMITTABLE
-        val next = all[((all.indexOf(sensor.channel) + delta) % all.size + all.size) % all.size]
+        val next = all[((all.indexOf(current) + delta) % all.size + all.size) % all.size]
         setChannel(index, next)
     }
 

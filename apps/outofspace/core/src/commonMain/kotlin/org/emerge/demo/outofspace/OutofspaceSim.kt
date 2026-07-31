@@ -12,6 +12,7 @@ import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.Rate
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.Analyzer
 import org.emerge.demo.outofspace.world.Belt
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Direction
@@ -115,9 +116,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         val signals = Signals.build { raise ->
             for (i in w.machines.indices) {
-                val sensor = w.machines[i] as? Sensor ?: continue
-                val target = w.grid.neighbour(i, sensor.facing)
-                if (target >= 0) raise(sensor.channel, fullness(w.machines[target]))
+                when (val m = w.machines[i]) {
+                    is Sensor -> {
+                        val target = w.grid.neighbour(i, m.facing)
+                        if (target >= 0) raise(m.channel, fullness(w.machines[target]))
+                    }
+                    // The analyzer's reading persists after the packet leaves, so purity is a
+                    // steady signal rather than a flicker as lumps go past.
+                    is Analyzer -> raise(m.channel, m.lastPurity)
+                    else -> {}
+                }
             }
         }
         w.signals = signals
@@ -333,8 +341,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     machines[edit.index] = m.withWiring(m.wiring.with(edit.action, current))
                 }
                 is Edit.SetChannel -> {
-                    val m = machines.getOrNull(edit.index)
-                    if (m is Sensor) machines[edit.index] = m.copy(channel = edit.channel)
+                    when (val m = machines.getOrNull(edit.index)) {
+                        is Sensor -> machines[edit.index] = m.copy(channel = edit.channel)
+                        is Analyzer -> machines[edit.index] = m.copy(channel = edit.channel)
+                        else -> {}
+                    }
                 }
             }
         }
@@ -392,6 +403,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         if (send(index, m.facing, packet)) {
                             machines[index] = (machines[index] as Fabricator).copy(output = rest.orNull())
                         }
+                    }
+                }
+                is Analyzer -> {
+                    val held = m.holding ?: return
+                    if (send(index, m.facing, held)) {
+                        // holding clears; the reading stays, which is what makes the tile readable
+                        // when the line is idle.
+                        machines[index] = (machines[index] as Analyzer).copy(holding = null)
                     }
                 }
                 is Storage -> {
@@ -459,6 +478,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     }
                 }
                 is Fabricator -> acceptIntoFabricator(target, dest, packet)
+                is Analyzer -> {
+                    // One at a time, and only while running: it is a measuring belt, not a buffer.
+                    if (dest.holding != null || dest.wiring.activation(Action.Run, signals) <= 0) false
+                    else {
+                        machines[target] = dest.reading(packet)
+                        true
+                    }
+                }
                 is Node -> {
                     if (packet !is SolidPacket) false
                     else {
@@ -514,6 +541,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Fabricator -> Fabricator(facing)
             MachineKind.Storage -> Storage(facing)
             MachineKind.Sensor -> Sensor(facing)
+            MachineKind.Analyzer -> Analyzer(facing)
             MachineKind.Node -> Node()
             MachineKind.Vent -> Vent()
         }

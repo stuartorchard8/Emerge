@@ -3,7 +3,9 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Packet
+import org.emerge.demo.outofspace.logistics.SolidPacket
 
 /** What kind of thing sits on a tile — the palette the player builds from. */
 enum class MachineKind(val label: String) {
@@ -14,6 +16,7 @@ enum class MachineKind(val label: String) {
     Fabricator("FABRICATOR"),
     Storage("STORAGE"),
     Sensor("SENSOR"),
+    Analyzer("ANALYZER"),
     Node("NODE"),
     Vent("VENT"),
     ;
@@ -202,6 +205,47 @@ data class Sensor(
     override val kind: MachineKind get() = MachineKind.Sensor
     override fun rotated(): Machine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
+}
+
+/**
+ * An inline assay: material passes through it, and it reports what went by.
+ *
+ * It holds one packet at a time, reads the fraction of whatever species dominates it, then hands it
+ * on — a belt tile that measures. The reading **persists** after the packet leaves, so the signal is
+ * a stable "the last thing through here was 41% iron" rather than a flicker, and so the tile can
+ * still tell you what it saw when the line is idle.
+ *
+ * It exists because ore is a mixture and nothing else in the world says so out loud. Wired to a
+ * channel it also lets purity drive machinery — running a processor harder on dirtier ore, say.
+ */
+data class Analyzer(
+    override val facing: Direction,
+    val channel: Channel = Channel.Amber,
+    /** The packet currently inside, if any. One at a time keeps it a measuring belt, not a buffer. */
+    val holding: Packet? = null,
+    val lastForm: Form? = null,
+    val lastDominant: Species? = null,
+    /** The dominant species' share of the last thing through, in permille. */
+    val lastPurity: Int = 0,
+    val lastMass: Long = 0L,
+    override val wiring: Wiring = Wiring.RUNNING,
+) : Directed {
+    override val kind: MachineKind get() = MachineKind.Analyzer
+    override fun rotated(): Machine = copy(facing = facing.clockwise)
+    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
+
+    /** Reads [packet] without consuming it — the analysis is the whole job. */
+    fun reading(packet: Packet): Analyzer {
+        val dominant = packet.contents.dominant ?: return copy(holding = packet)
+        val mass = packet.mass
+        return copy(
+            holding = packet,
+            lastForm = (packet as? SolidPacket)?.form,
+            lastDominant = dominant,
+            lastPurity = if (mass == 0L) 0 else (packet.contents[dominant] * Signals.FULL / mass).toInt(),
+            lastMass = mass,
+        )
+    }
 }
 
 /**

@@ -110,6 +110,7 @@ fun massIn(machine: Machine?): Long = when (machine) {
     is Smelter -> (machine.input?.mass ?: 0L) + (machine.refined?.mass ?: 0L) + (machine.slag?.mass ?: 0L)
     is Fabricator -> machine.inputs.sumOf { it.mass } + (machine.output?.mass ?: 0L)
     is Storage -> machine.contents?.mass ?: 0L
+    is Analyzer -> machine.holding?.mass ?: 0L
     is Sensor -> 0L
     is Node -> 0L
     is Vent -> 0L
@@ -130,10 +131,47 @@ fun fullness(machine: Machine?): Int = when (machine) {
     is Smelter -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
     is Fabricator -> (massIn(machine) * Signals.FULL / (Fabricator.INPUT_CAP * 2 + MACHINE_OUTPUT_CAP)).toInt()
     is Storage -> ((machine.contents?.mass ?: 0L) * Signals.FULL / Storage.CAP).toInt()
+    is Analyzer -> if (machine.holding != null) Signals.FULL else 0
     is Sensor -> 0
     is Node -> 0
     is Vent -> 0
 }.coerceIn(0, Signals.FULL)
+
+/**
+ * A machine's contents broken out by the buffer they sit in, for the inspector.
+ *
+ * Named buffers rather than one lump, because "this processor holds 6kg" is far less useful than
+ * "3kg waiting, 2kg of concentrate, 1kg of tailings" — the second tells you which side is stuck.
+ */
+fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (machine) {
+    null -> emptyList()
+    is Belt -> machine.slots.mapIndexedNotNull { i, p ->
+        val packet = p ?: return@mapIndexedNotNull null
+        val form = (packet as? org.emerge.demo.outofspace.logistics.SolidPacket)?.form ?: Form.Ore
+        "SLOT ${i + 1}" to Resource(form, packet.contents)
+    }
+    is Miner -> listOf("BUFFER" to machine.buffer)
+    is Processor -> listOfNotNull(
+        machine.input?.let { "INPUT" to it },
+        machine.product?.let { "CONCENTRATE" to it },
+        machine.tailings?.let { "TAILINGS" to it },
+    )
+    is Smelter -> listOfNotNull(
+        machine.input?.let { "INPUT" to it },
+        machine.refined?.let { "REFINED" to it },
+        machine.slag?.let { "SLAG" to it },
+    )
+    is Fabricator -> machine.inputs.mapIndexed { i, r -> "INPUT ${i + 1}" to r } +
+        listOfNotNull(machine.output?.let { "OUTPUT" to it })
+    is Storage -> listOfNotNull(machine.contents?.let { "STORED" to it })
+    is Analyzer -> listOfNotNull(
+        machine.holding?.let { p ->
+            val form = (p as? org.emerge.demo.outofspace.logistics.SolidPacket)?.form ?: Form.Ore
+            "PASSING" to Resource(form, p.contents)
+        },
+    )
+    is Sensor, is Node, is Vent -> emptyList()
+}
 
 /** Everything a machine holds, species by species — the finer-grained version of [massIn]. */
 fun contentsOf(machine: Machine?): Mixture = when (machine) {
@@ -146,6 +184,7 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
         (machine.refined?.mixture ?: Mixture.EMPTY) + (machine.slag?.mixture ?: Mixture.EMPTY)
     is Fabricator -> machine.inputs.fold(machine.output?.mixture ?: Mixture.EMPTY) { acc, r -> acc + r.mixture }
     is Storage -> machine.contents?.mixture ?: Mixture.EMPTY
+    is Analyzer -> machine.holding?.contents ?: Mixture.EMPTY
     is Sensor -> Mixture.EMPTY
     is Node -> Mixture.EMPTY
     is Vent -> Mixture.EMPTY

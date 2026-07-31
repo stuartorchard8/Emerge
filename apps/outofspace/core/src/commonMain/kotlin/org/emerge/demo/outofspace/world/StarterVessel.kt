@@ -10,10 +10,15 @@ import org.emerge.demo.outofspace.OutofspaceReducer
  * exit criterion made executable, and the fixture the tests drive.
  *
  * ```
- *  MINER > belt belt belt > PROCESSOR > belt belt belt > SMELTER > belt belt belt > NODE
- *                               v                           v
- *                             VENT                        VENT
+ *  MINER > belt belt ANLZ > PROCESSOR > ANLZ belt belt > SMELTER > belt belt belt > NODE
+ *                                v                            v
+ *                              VENT                         VENT
  * ```
+ *
+ * The two analyzers are there to answer the question the world otherwise never answers out loud:
+ * the one before the processor reports the raw ore on AMBER (about 41% iron) and the one after it
+ * reports the concentrate on CYAN (about 75%). Watching those two numbers side by side in the
+ * signals panel *is* the explanation of what a processor does.
  *
  * The processor is deliberately half the miner's throughput, so the line backs up and the belts
  * behind it fill — the jam is the point, and it is visible from the first minute.
@@ -37,10 +42,12 @@ fun starterVessel(grid: Grid): VesselState {
 
     var x = 4
     put(x, y, Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)); x++
-    beltRun(x, x + 2, y); x += 3
+    beltRun(x, x + 1, y); x += 2
+    put(x, y, Analyzer(Direction.Right, Channel.Amber)); x++       // raw ore, on the way in
     put(x, y, Processor(Direction.Right))
     put(x, y + 1, Vent()); x++            // tailings drop out the side clockwise of Right
-    beltRun(x, x + 2, y); x += 3
+    put(x, y, Analyzer(Direction.Right, Channel.Cyan)); x++        // concentrate, on the way out
+    beltRun(x, x + 1, y); x += 2
     put(x, y, Smelter(Direction.Right))
     put(x, y + 1, Vent()); x++            // slag likewise
     beltRun(x, x + 2, y); x += 3

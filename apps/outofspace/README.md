@@ -21,6 +21,7 @@ machines to sensors so the vessel runs itself.
 | `logistics/Packet.kt` | 1 kg packets (`SolidPacket` / `FluidPacket`), `Capacity` (the one home for the eventual volume switch) and `Rate` (integer carry, so 1 kg/s at 60 Hz stays exact). |
 | `world/Grid.kt`, `world/Machine.kt` | The square lattice, `Direction`, and the machines: belt (four slots), miner, processor, smelter, fabricator, storage, sensor, node, vent. |
 | `world/Signal.kt` | The trigger grammar: colour `Channel`s, `Signals`, and `Wiring` — `activation = Σ(signal × weight)`. |
+| `world/Vessel.kt` → `contentsBreakdown` | What the inspector reads: a machine's buffers, named separately. |
 | `world/Vessel.kt` | `VesselState` (the snapshot) and `Stockpile` (the global construction inventory the node feeds). |
 | `world/StarterVessel.kt` | The world the game opens on: one complete line, already running. |
 | `OutofspaceSim.kt` | The reducer — five ordered passes per tick. `OutofspaceController` is the real-time boundary; the renderer and HUD sit beside them. |
@@ -28,13 +29,30 @@ machines to sensors so the vessel runs itself.
 Nothing of the app template's placeholder world remains.
 
 ```bash
-./gradlew :apps:outofspace:core:jvmTest    # 87 tests, well under a second
+./gradlew :apps:outofspace:core:jvmTest    # 98 tests, well under a second
 ./gradlew :apps:outofspace:desktop:run     # the game
 ```
 
 Click to place, drag to paint a line of them, right-click to remove. `R` rotates the brush, `1`–`9`
 pick a machine, middle-drag pans, wheel zooms, space pauses. `W` switches between the **build** and
 **wire** tools; in wire mode, click a machine to open its wiring.
+
+## Reading the world
+
+Ore is a *mixture*, and nothing about a running refinery says so out loud — which is exactly how a
+correct simulation comes to look like a broken one. Two things fix that:
+
+- **Point at anything.** The inspector panel shows every buffer of the tile under the cursor with its
+  full composition: a processor reads `INPUT 40% iron` / `CONCENTRATE 75% iron` / `TAILINGS 7% iron`,
+  which is the direction contract made visible. On touch there is no hover, so it shows whatever was
+  last tapped in wire mode instead.
+- **The analyzer.** A belt tile that measures: material passes through, and it reports the dominant
+  species and its share — on the tile, in the inspector, and as a signal on a channel, so purity can
+  drive machinery. Its reading persists after the packet leaves, so an idle line still tells you what
+  went down it.
+
+The starter world has one either side of the processor, reporting on AMBER and CYAN. Watching those
+two numbers in the signals panel is the whole explanation of what a processor does.
 
 ## Wiring
 

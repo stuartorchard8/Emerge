@@ -1,11 +1,16 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.Resource
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.Analyzer
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Signals
 import org.emerge.demo.outofspace.world.Trigger
+import org.emerge.demo.outofspace.world.contentsBreakdown
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.Ui
 
@@ -23,7 +28,11 @@ class OutofspaceHud {
     var onTogglePause: () -> Unit = {}
     var onReset: () -> Unit = {}
 
-    fun build(ui: Ui, controller: OutofspaceController, fps: Float) {
+    /**
+     * @param hovered the tile under the pointer, or -1. Desktop and web have a pointer; on touch
+     *   there is no hover, so the inspector falls back to the machine the player last tapped.
+     */
+    fun build(ui: Ui, controller: OutofspaceController, fps: Float, hovered: Int = -1) {
         val s = controller.state
         ui.frame {
             panel(Anchor.TopLeft) {
@@ -88,6 +97,7 @@ class OutofspaceHud {
                 row("W tool · wheel zoom · space pause", 0x9A9A9AFFL)
             }
 
+            inspectPanel(controller, if (hovered >= 0) hovered else controller.selected)
             wiringPanel(controller)
 
             panel(Anchor.BottomRight) {
@@ -95,6 +105,68 @@ class OutofspaceHud {
                 button("RESET", 0xCC3333FFL) { onReset() }
             }
         }
+    }
+
+    /**
+     * What is actually inside the thing under the pointer.
+     *
+     * Ore is a *mixture*, and until this existed nothing in the game said so — you could watch a
+     * refinery run for an hour and never learn that its ore was 41% iron, let alone that the
+     * concentrate leaving the front was 75%. Every buffer is listed separately, because "this
+     * processor holds 6kg" is far less useful than knowing which of its three buffers is the stuck
+     * one.
+     */
+    private fun org.emerge.render.torus.ui.UiBuilder.inspectPanel(controller: OutofspaceController, index: Int) {
+        if (index < 0) return
+        val machine = controller.state[index] ?: return
+        val grid = controller.state.grid
+
+        panel(Anchor.TopRight) {
+            title("INSPECT  ·  ${machine.kind.label} (${grid.xOf(index)}, ${grid.yOf(index)})")
+
+            if (machine is Analyzer) {
+                // The whole point of the machine, so it leads.
+                if (machine.lastDominant == null) {
+                    row("nothing has passed through yet", 0x9A9A9AFFL)
+                } else {
+                    keyValue("LAST SEEN", machine.lastForm?.name ?: "?")
+                    keyValue(
+                        machine.lastDominant!!.name.uppercase(),
+                        "${machine.lastPurity / 10}%",
+                        0x9A9A9AFFL,
+                        speciesColor(machine.lastDominant),
+                    )
+                    keyValue("of", grams(machine.lastMass))
+                }
+                keyValue("reporting on", machine.channel.label, 0x9A9A9AFFL, machine.channel.color)
+                gap()
+            }
+
+            val buffers = contentsBreakdown(machine)
+            if (buffers.isEmpty()) {
+                row("(empty)", 0x9A9A9AFFL)
+            } else {
+                for ((label, resource) in buffers) {
+                    keyValue(label, "${grams(resource.mass)}  ${resource.form.name}")
+                    row("   " + composition(resource.mixture), 0x9AA4B4FFL)
+                }
+            }
+        }
+    }
+
+    /**
+     * A mixture as percentages, richest first — `IRON 41%  SILI 30%  COPP 18%  TITA 11%`.
+     *
+     * Percentages rather than masses because the question being asked is almost always "how clean is
+     * this", and four-letter species keep the line narrow enough not to stretch the panel.
+     */
+    private fun composition(mixture: Mixture): String {
+        if (mixture.isEmpty) return "empty"
+        val total = mixture.total
+        return Species.ALL
+            .filter { mixture[it] > 0L }
+            .sortedByDescending { mixture[it] }
+            .joinToString("  ") { "${it.name.take(4).uppercase()} ${mixture[it] * 100 / total}%" }
     }
 
     /**
@@ -129,6 +201,18 @@ class OutofspaceHud {
                 )
                 val target = if (watched >= 0) controller.state[watched] else null
                 row("watching: ${target?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
+                gap()
+            }
+
+            if (machine is Analyzer) {
+                clauseRow(
+                    lhs = "REPORT ON",
+                    cmp = machine.channel.label,
+                    rhs = "${machine.lastPurity / 10}%",
+                    onLhs = { controller.cycleSensorChannel(index, 1) },
+                    onCmp = { controller.cycleSensorChannel(index, 1) },
+                    onRhs = { controller.cycleSensorChannel(index, 1) },
+                )
                 gap()
             }
 

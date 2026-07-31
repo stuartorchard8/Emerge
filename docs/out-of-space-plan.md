@@ -203,6 +203,14 @@ better behaviour and it is kept — but it means the grammar cannot express a **
 when past 90%" needs a comparison, which is a new kind of term rather than a change to the
 arithmetic. Pipes and pumps are deliberately not here; they belong with the fluid model in Phase 4.
 
+**Phase 3.5 — making a world of mixtures readable. ✅ BUILT**
+An **inspector** (point at any tile, see every buffer with its full composition) and an **analyzer**
+machine (a belt tile that measures what passes through, reports it on the tile and broadcasts its
+purity on a channel). Added because the absence of them was actively misleading: a correct refinery
+looked wrong, since nothing anywhere said that ore is 40% iron or that the concentrate leaving the
+front is 75%. Any simulation of mixtures needs this before it needs more mechanics — a lesson to
+carry into Phase 4, where a tile of air is far less legible than a lump of ore.
+
 **Phase 4 — The systems layer. (the actual goal)**
 Now the interior is a cell network and everything before was scaffolding. In order, each with its
 own "is this legible?" question: heat conduction between adjacent tiles and machines; atmosphere as

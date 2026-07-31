@@ -124,6 +124,7 @@ fun main() {
             GLFW_KEY_RIGHT_BRACKET -> controller.speed = (controller.speed * 2f).coerceAtMost(16f)
             GLFW_KEY_ESCAPE -> glfwSetWindowShouldClose(window, true)
             in GLFW_KEY_1..GLFW_KEY_9 -> MachineKind.ALL.getOrNull(key - GLFW_KEY_1)?.let { controller.brush = it }
+            GLFW_KEY_0 -> MachineKind.ALL.getOrNull(9)?.let { controller.brush = it }
         }
     }
 
@@ -151,7 +152,7 @@ fun main() {
         val state = controller.tick(delta)
 
         renderer.draw(state, hovered)
-        hud.build(ui, controller, fps)
+        hud.build(ui, controller, fps, hovered)
         ui.draw()
 
         glfwSwapBuffers(window)

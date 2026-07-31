@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Belt
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.Analyzer
 import org.emerge.demo.outofspace.world.Fabricator
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
@@ -221,6 +222,23 @@ class OutofspaceRenderer {
                     )
                 }
             }
+            is Analyzer -> {
+                tileRect(x, y, 0.92f, 0x2A3242FFL)
+                edgeMark(x, y, m.facing, m.channel.color)
+                // The last thing it saw, as a bar of that species' colour scaled by its purity —
+                // so a glance down a line shows where the ore gets cleaner.
+                if (m.lastDominant != null) {
+                    val w = (m.lastPurity / 1000f).coerceIn(0.1f, 1f) * 0.7f
+                    rect(
+                        (x + 0.15f + w * 0.5f) * tilePx, (y + 0.5f) * tilePx,
+                        w * tilePx, 0.22f * tilePx,
+                        packetColor(m.lastDominant),
+                    )
+                }
+                m.holding?.let { p ->
+                    rect((x + 0.5f) * tilePx, (y + 0.78f) * tilePx, 0.2f * tilePx, 0.2f * tilePx, packetColor(p.contents.dominant))
+                }
+            }
             is Sensor -> {
                 tileRect(x, y, 0.94f, 0x24303CFFL)
                 // The eye faces what it watches, and wears the colour it broadcasts on.
@@ -266,21 +284,7 @@ class OutofspaceRenderer {
         )
     }
 
-    private fun packetColor(dominant: Species?): Long = when (dominant) {
-        Species.Iron -> 0xB07A5AFFL
-        Species.Aluminum -> 0xB8BCC4FFL
-        Species.Copper -> 0xE08A3AFFL
-        Species.Titanium -> 0xC8CCD4FFL
-        Species.Silica -> 0xD8D0A8FFL
-        Species.Carbon -> 0x484848FFL
-        Species.RareEarth -> 0x6ED09AFFL
-        Species.Uranium -> 0xA8E04AFFL
-        Species.Oxygen -> 0x7AB8FFFFL
-        Species.Nitrogen -> 0x9A9AD0FFL
-        Species.CarbonDioxide -> 0x8A8A8AFFL
-        Species.Water -> 0x4A8AD0FFL
-        null -> 0x707070FFL
-    }
+    private fun packetColor(dominant: Species?): Long = speciesColor(dominant)
 
     // ── Primitives ────────────────────────────────────────────────────────────
 
@@ -322,6 +326,27 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Fabricator -> 0x6B3A7AFFL
     MachineKind.Storage -> 0x3A4A5AFFL
     MachineKind.Sensor -> 0x24303CFFL
+    MachineKind.Analyzer -> 0x2A3242FFL
     MachineKind.Node -> 0x2E7A4AFFL
     MachineKind.Vent -> 0x3A3A44FFL
+}
+
+/**
+ * The colour a species is drawn in — shared by the renderer's packets and the HUD's readouts, so a
+ * lump on a belt and its name in the inspector are unmistakably the same stuff.
+ */
+fun speciesColor(dominant: Species?): Long = when (dominant) {
+    Species.Iron -> 0xB07A5AFFL
+    Species.Aluminum -> 0xB8BCC4FFL
+    Species.Copper -> 0xE08A3AFFL
+    Species.Titanium -> 0xC8CCD4FFL
+    Species.Silica -> 0xD8D0A8FFL
+    Species.Carbon -> 0x484848FFL
+    Species.RareEarth -> 0x6ED09AFFL
+    Species.Uranium -> 0xA8E04AFFL
+    Species.Oxygen -> 0x7AB8FFFFL
+    Species.Nitrogen -> 0x9A9AD0FFL
+    Species.CarbonDioxide -> 0x8A8A8AFFL
+    Species.Water -> 0x4A8AD0FFL
+    null -> 0x707070FFL
 }

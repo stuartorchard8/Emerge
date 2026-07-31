@@ -132,7 +132,7 @@ private fun start(canvas: HTMLCanvasElement) {
         last = ts
         ui.advanceClock(delta)
         renderer.draw(controller.tick(delta), hovered)
-        hud.build(ui, controller, if (delta > 0f) 1f / delta else 0f)
+        hud.build(ui, controller, if (delta > 0f) 1f / delta else 0f, hovered)
         ui.draw()
         window.requestAnimationFrame(::frame)
     }
