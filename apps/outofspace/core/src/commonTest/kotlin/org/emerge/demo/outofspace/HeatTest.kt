@@ -5,7 +5,6 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Conduit
-import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -59,7 +58,7 @@ class HeatTest {
     private fun sealedRoom(
         w: Int,
         h: Int,
-        rail: Set<Int> = emptySet(),
+        track: RailPlan.() -> Unit = {},
         fill: (Int, Int) -> Machine? = { _, _ -> null },
     ): VesselState {
         val grid = Grid(w + 2, h + 2)   // a ring of open space around the box, so it is not clipped
@@ -73,9 +72,7 @@ class HeatTest {
             machines[grid.index(w, y)] = Hull()
         }
         for (y in 2 until h) for (x in 2 until w) machines[grid.index(x, y)] = fill(x, y)
-        val rails = arrayOfNulls<Segment>(grid.size)
-        for (t in rail) rails[t] = Segment(Conduit.Rail)
-        return VesselState(grid, machines.toList(), rails = rails.toList())
+        return VesselState(grid, machines.toList(), rails = rails(grid, track))
     }
 
     // ── Structure ─────────────────────────────────────────────────────────────
@@ -164,10 +161,12 @@ class HeatTest {
         val g0 = Grid(12, 12)
         val room = sealedRoom(
             10, 10,
-            // Track from each of the furnace's two ports to the vent that takes it. Without it the
-            // furnace has nowhere to put anything and stalls on its output cap after four kilograms
-            // -- which is what happened the first time, and it never got warm enough to measure.
-            rail = setOf(g0.index(7, 5), g0.index(8, 5), g0.index(5, 7), g0.index(5, 8)),
+            // Track from each of the furnace's two ports to the vent that takes it, joined -- and
+            // the vent end is what makes it move at all, since material is pulled toward a consumer
+            // rather than pushed out of a machine. Without this the furnace has nowhere to put
+            // anything and stalls on its output cap after four kilograms, never getting warm enough
+            // to measure. Which is what happened the first time.
+            track = { row(7, 8, 5); col(5, 7, 8) },
         ) { x, y ->
             when {
                 x == 5 && y == 5 -> Smelter(Direction.Right, input = ore)

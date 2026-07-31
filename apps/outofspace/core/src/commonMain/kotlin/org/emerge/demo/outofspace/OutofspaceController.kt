@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Channel
+import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Sensor
@@ -58,14 +59,58 @@ class OutofspaceController(
 
     fun place(index: Int) = pending.add(Edit.Place(index, brush, brushFacing))
 
+    /**
+     * The tile the current drag last reached, or -1 when nothing is being dragged.
+     *
+     * Conduit is laid by dragging, and connection follows the gesture rather than the geometry: two
+     * runs can touch without joining, so a line is only a line where the player actually drew one.
+     */
+    private var dragFrom: Int = -1
+
     /** Left-click behaviour, which depends on the tool. */
     fun apply(index: Int) {
         when (tool) {
-            Tool.Build -> place(index)
+            Tool.Build -> {
+                place(index)
+                if (brush.conduit != null) dragFrom = index
+            }
             // Resolve to the machine's own tile, so clicking any part of a five-tile furnace
             // selects the furnace rather than nothing.
             Tool.Wire -> selected = state.occupancy[index]
         }
+    }
+
+    /**
+     * Continues a conduit drag to [index], laying and joining every tile along the way.
+     *
+     * The path is stepped out rather than trusting the pointer to visit every tile: a fast drag skips
+     * tiles, and a run with a hole in it is not a run. Horizontal first, then vertical — an L, which
+     * is both what the player drew if they dragged along an axis and a predictable answer if they
+     * did not.
+     */
+    fun dragTo(index: Int) {
+        if (dragFrom < 0 || index == dragFrom || tool != Tool.Build) return
+        val grid = cfg.grid
+        if (index !in 0 until grid.size) return
+        var at = dragFrom
+        while (at != index) {
+            val dir = when {
+                grid.xOf(at) != grid.xOf(index) ->
+                    if (grid.xOf(index) > grid.xOf(at)) Direction.Right else Direction.Left
+                else -> if (grid.yOf(index) > grid.yOf(at)) Direction.Down else Direction.Up
+            }
+            val next = grid.neighbour(at, dir)
+            if (next < 0) break
+            place(next)
+            pending.add(Edit.Lay(at, next, brush.conduit ?: Conduit.Rail))
+            at = next
+        }
+        dragFrom = at
+    }
+
+    /** Ends a conduit drag. The next click starts a new one, unjoined to this. */
+    fun endDrag() {
+        dragFrom = -1
     }
 
     fun wire(index: Int, action: Action, slot: Int, trigger: Trigger?) =

@@ -72,6 +72,7 @@ fun main() {
             } else {
                 leftDown = false
                 lastPainted = -1
+                controller.endDrag()
                 if (uiConsumed) { ui.hitTestUp(px, py); ui.releaseHold() }
                 uiConsumed = false
             }
@@ -99,8 +100,11 @@ fun main() {
             leftDown && uiConsumed -> ui.dragTo(px, py)
             // Painting a run of machines is a Build-tool gesture; a wire drag would just thrash
             // the selection, so dragging does nothing while wiring.
+            // Painting a run of machines is a Build-tool gesture. For conduit it is more than that:
+            // the drag is what *connects* the tiles, since track no longer joins by touching, so the
+            // gesture is handed to the controller whole rather than replayed as isolated placements.
             leftDown && controller.tool == Tool.Build -> if (hovered >= 0 && hovered != lastPainted) {
-                controller.place(hovered)
+                if (controller.brush.conduit != null) controller.dragTo(hovered) else controller.place(hovered)
                 lastPainted = hovered
             }
         }

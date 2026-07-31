@@ -166,17 +166,18 @@ private data class LocalPort(
 private fun localPorts(machine: Machine): List<LocalPort> {
     val r = machine.kind.reach
     return when (machine) {
-        // A bridge spans three tiles and connects on the two **flanking** them — four apart, not
-        // two. That gap is the entire mechanism.
+        // A bridge is three tiles long and connects at its own two ends, one either side of the tile
+        // it hops.
         //
-        // Ports at its own ends would not work, and it took a failing test to see why: segments
-        // connect to each other by adjacency, so track at the bridge's end would sit next to the
-        // track it is meant to be hopping over and the two runs would merge anyway. Leaving the
-        // whole three-tile span clear of its own line is what actually keeps them apart — the
-        // nearest segment of one run is then two tiles from the nearest segment of the other.
+        // These sat two tiles further out for a while, flanking the span, because segments used to
+        // join to each other by mere adjacency: track at a bridge's end sat *next to* the track it
+        // was meant to be hopping over, and the two runs merged regardless of ports. Explicit links
+        // removed the reason — a line crossing underneath is now unconnected because nobody drew a
+        // join, which is the ordinary rule and not a clearance the bridge has to buy. So the ports
+        // came home, and a bridge is the three tiles it looks like.
         is Bridge -> listOf(
-            LocalPort(-2, 0, Direction.Left, PortKind.Input, conduit = machine.conduit),
-            LocalPort(2, 0, Direction.Right, PortKind.Output, conduit = machine.conduit),
+            LocalPort(-1, 0, Direction.Left, PortKind.Input, conduit = machine.conduit),
+            LocalPort(1, 0, Direction.Right, PortKind.Output, conduit = machine.conduit),
         )
 
         // A vent is a hole. It takes whatever is put into it, from whichever face.
@@ -196,14 +197,16 @@ private fun localPorts(machine: Machine): List<LocalPort> {
             LocalPort(0, r, Direction.Down, PortKind.Output, Stream.Waste),
         )
 
-        // Two ingredients, two inputs, and they are on different sides so a fabricator has to be fed
-        // by two lines that arrive from different directions. That is the recipe, spatially.
-        is Fabricator -> listOf(
+        // In one side, out the other, like everything else. The second input it used to have on top
+        // bought nothing: two lines arriving at one tank is a merge, and a merge is something the
+        // player should have to build out of track where they can see it, not something a building
+        // does for them out of sight.
+        is Storage -> listOf(
             LocalPort(-r, 0, Direction.Left, PortKind.Input),
-            LocalPort(0, -r, Direction.Up, PortKind.Input),
             LocalPort(r, 0, Direction.Right, PortKind.Output),
         )
-        is Storage -> listOf(
+
+        is Fabricator -> listOf(
             LocalPort(-r, 0, Direction.Left, PortKind.Input),
             LocalPort(0, -r, Direction.Up, PortKind.Input),
             LocalPort(r, 0, Direction.Right, PortKind.Output),

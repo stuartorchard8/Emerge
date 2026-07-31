@@ -51,8 +51,7 @@ class GaugeTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         m[grid.index(3, 2)] = Storage(Direction.Right, carrying)
         m[grid.index(10, 2)] = Storage(Direction.Right)
-        for (x in 4..9) rails[grid.index(x, 2)] = Segment(Conduit.Rail)
-        rails[grid.index(6, 2)] = Segment(Conduit.Rail, channel = channel)
+        joinRow(grid, rails, 4, 9, 2, mapOf(6 to channel))
         return VesselState(grid, m.toList(), rails = rails.toList())
     }
 

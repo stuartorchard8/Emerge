@@ -55,9 +55,11 @@ class ProcessorChainTest {
         m[grid.index(3, 3)] = Processor(Direction.Right, input = ore)   // covers x 2..4
         // Forward of the processor's product port, and below its tailings port.
         m[grid.index(7, 3)] = Storage(Direction.Right)                 // input port at (6, 3)
-        m[grid.index(3, 8)] = Storage(Direction.Right)                 // input port at (3, 7)
-        for (x in 4..6) rails[grid.index(x, 3)] = Segment(Conduit.Rail)   // product run
-        for (y in 4..7) rails[grid.index(3, y)] = Segment(Conduit.Rail)   // tailings run
+        // Facing Down, so its input port is on top at (3, 7), under the end of the tailings run.
+        // A tank has one input now, not two, so which way it faces is the whole of how you feed it.
+        m[grid.index(3, 8)] = Storage(Direction.Down)
+        joinRow(grid, rails, 4, 6, 3)   // product run
+        joinCol(grid, rails, 3, 4, 7)   // tailings run
         var s = VesselState(grid, m.toList(), rails = rails.toList())
         s = run(s, 60 * 200)
 
@@ -84,14 +86,14 @@ class ProcessorChainTest {
         for (x in stages) {
             m[grid.index(x, 3)] = Processor(Direction.Right)
             m[grid.index(x, 7)] = Vent()
-            for (y in 4..7) rails[grid.index(x, y)] = Segment(Conduit.Rail)   // its tailings run
+            joinCol(grid, rails, x, 4, 7)   // its tailings run
         }
         m[grid.index(21, 3)] = Storage(Direction.Right)
         // One short run per stage, from an output port to the next input port.
-        for (x in 3..5) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
-        for (x in 7..10) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
-        for (x in 12..15) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
-        for (x in 17..20) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        joinRow(grid, rails, 3, 5, 3)
+        joinRow(grid, rails, 7, 10, 3)
+        joinRow(grid, rails, 12, 15, 3)
+        joinRow(grid, rails, 17, 20, 3)
         var s = VesselState(grid, m.toList(), rails = rails.toList())
         s = run(s, 60 * 300)
 
@@ -114,10 +116,10 @@ class ProcessorChainTest {
         val stages = listOf(6, 11, 16)
         for (x in stages) m[grid.index(x, 3)] = Processor(Direction.Right)   // no waste runs anywhere
         m[grid.index(21, 3)] = Storage(Direction.Right)
-        for (x in 3..5) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
-        for (x in 7..10) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
-        for (x in 12..15) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
-        for (x in 17..20) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        joinRow(grid, rails, 3, 5, 3)
+        joinRow(grid, rails, 7, 10, 3)
+        joinRow(grid, rails, 12, 15, 3)
+        joinRow(grid, rails, 17, 20, 3)
         var s = VesselState(grid, m.toList(), rails = rails.toList())
         s = run(s, 60 * 300)
 

@@ -38,6 +38,25 @@ enum class Conduit(val label: String) {
  */
 data class Segment(
     val conduit: Conduit,
+    /**
+     * Which neighbours this tile is **joined** to: one bit per [Direction], by ordinal.
+     *
+     * Two segments sitting next to each other are not connected. They are connected when the player
+     * drew a line through both, and only then. That is the difference between track being a *shape*
+     * and track being a *graph*, and it decides how the whole game reads:
+     *
+     *  - Two lines can run side by side, touching, without merging. Without this, every parallel run
+     *    needs a tile of clearance and a factory sprawls for no reason anyone can see.
+     *  - A bridge can genuinely cross, because the line passing underneath is unlinked to it in the
+     *    ordinary way rather than being kept at arm's length. This is what let a bridge's ports move
+     *    back to its own two ends, where they belong.
+     *  - Adding a tile of track cannot silently rewire a distant part of the factory, which
+     *    adjacency-joining did every time a new run brushed an old one.
+     *
+     * Always symmetric: [linkedTo] is only ever set through [joinedTo], which sets both halves. A
+     * one-sided link would be a valve nobody asked for.
+     */
+    val links: Int = 0,
     /** What is riding on this tile. Partial packets are normal — see [org.emerge.demo.outofspace.logistics.mergeInto]. */
     val held: Packet? = null,
     /**
@@ -60,6 +79,16 @@ data class Segment(
 ) {
     val isGauge: Boolean get() = channel != null
 
+    /** Whether this tile is joined to its neighbour in [dir]. */
+    fun linkedTo(dir: Direction): Boolean = links and (1 shl dir.ordinal) != 0
+
+    /** True for track that joins nothing — a stub, laid but not yet drawn into a line. */
+    val isIsolated: Boolean get() = links == 0
+
+    fun joinedTo(dir: Direction): Segment = copy(links = links or (1 shl dir.ordinal))
+
+    fun cutFrom(dir: Direction): Segment = copy(links = links and (1 shl dir.ordinal).inv())
+
     /** This segment having seen [packet] go past. Reads it; does not consume it. */
     fun reading(packet: Packet): Segment {
         if (channel == null) return this
@@ -75,31 +104,43 @@ data class Segment(
 }
 
 /**
- * Which way material moves on one conduit layer, derived from where its sources are.
+ * Which way material moves on one conduit layer — **toward whatever will consume it**.
  *
- * A breadth-first sweep outward from every output port gives each segment tile a **distance from the
- * nearest source**, and material flows from lower distance to higher. Nothing about a tile says which
- * way it points; the shape of the network says it.
+ * A breadth-first sweep outward from every *input* port gives each linked segment tile a **distance
+ * to the nearest sink**, and material moves downhill from there. Nothing about a tile says which way
+ * it points; where the consumers are says it.
+ *
+ * Pulling rather than pushing is the correction that makes a junction behave the way a player
+ * expects, and it is not a tuning detail — it changes what a network *is*. Pushed away from its
+ * source, material fans out into every branch it can reach and piles up at the end of the ones that
+ * lead nowhere, so a half-built line silently fills with stock you then have to dig out. Pulled
+ * toward its sinks, a branch with nothing on the end of it has **no distance at all**, so nothing
+ * ever enters it. Dead ends stay empty because they are dead ends, not because anything checks for
+ * one.
+ *
+ * It also makes the useful failure legible: a line that has stopped moving is a line with no
+ * consumer on it, and that is a thing the player can go and look at.
  *
  * The important property is not the flow itself but the **order**. "The first input a packet reaches"
  * has to be a fact about the pipe's topology, and if runs were walked in grid order it would instead
  * be a fact about how the array is indexed — which is exactly the arbitrary junction priority this
- * project decided not to inherit. Walking outward from the source makes *upstream buildings starve
- * downstream ones* a real, discoverable, deterministic mechanic rather than a coin flip.
+ * project decided not to inherit. Walking outward from the sink makes *downstream buildings starve
+ * upstream ones* a real, discoverable, deterministic mechanic rather than a coin flip.
  */
 class FlowField private constructor(
     private val distance: IntArray,
     private val successors: Array<IntArray>,
     /**
-     * Segment tiles, **furthest from a source first**. Advancing in this order means a tile is
+     * Segment tiles, **nearest to a sink first**. Advancing in this order means the tile in front is
      * emptied before the one behind it tries to move into it, so a full run shuffles along by one in
      * a single pass instead of one tile per tick.
      */
     val order: IntArray,
 ) {
-    /** Steps from the nearest source, or -1 for a tile no source can reach. */
+    /** Steps to the nearest sink, or -1 for a tile that can reach none. */
     fun distanceAt(tile: Int): Int = if (tile in distance.indices) distance[tile] else -1
 
+    /** True when something on this tile has somewhere to go. */
     fun isFed(tile: Int): Boolean = distanceAt(tile) >= 0
 
     /** The tiles material moves to from here. More than one is a fork. */
@@ -111,25 +152,24 @@ class FlowField private constructor(
 
         /**
          * @param isSegment whether a tile carries a segment of the layer being derived
-         * @param sources tiles where material enters the layer — a building or bridge output port
-         * @param stranded material sitting on a run that no source reaches. Seeded after the ports,
-         *   so it drains instead of freezing where it stands: pull the miner off the end of a line
-         *   and what is already on the line should still finish its journey, not become a permanent
-         *   ornament. Seeded in ascending tile order, so which way it picks is fixed.
+         * @param linked whether the segment at a tile is joined to its neighbour in a direction.
+         *   Asked in one direction only; the caller keeps links symmetric.
+         * @param sinks tiles where material leaves the layer — a building or bridge **input** port
+         *   with track under it.
          */
         fun derive(
             grid: Grid,
             isSegment: (Int) -> Boolean,
-            sources: Collection<Int>,
-            stranded: (Int) -> Boolean = { false },
+            linked: (tile: Int, dir: Direction) -> Boolean,
+            sinks: Collection<Int>,
         ): FlowField {
             val distance = IntArray(grid.size) { -1 }
 
-            // Sorted, so a world with several sources produces the same field however the caller
-            // happened to collect them. `sorted()` rather than `toSortedSet()`: the latter is a JVM-only
-            // extension, and this has to compile for JS and Android too.
+            // Sorted, so a world with several sinks produces the same field however the caller
+            // happened to collect them. `sorted()` rather than `toSortedSet()`: the latter is a
+            // JVM-only extension, and this has to compile for JS and Android too.
             val queue = ArrayDeque<Int>()
-            for (tile in sources.distinct().sorted()) {
+            for (tile in sinks.distinct().sorted()) {
                 if (tile in distance.indices && isSegment(tile) && distance[tile] < 0) {
                     distance[tile] = 0
                     queue.addLast(tile)
@@ -138,6 +178,7 @@ class FlowField private constructor(
             while (queue.isNotEmpty()) {
                 val at = queue.removeFirst()
                 for (dir in Direction.ALL) {
+                    if (!linked(at, dir)) continue
                     val next = grid.neighbour(at, dir)
                     if (next < 0 || !isSegment(next) || distance[next] >= 0) continue
                     distance[next] = distance[at] + 1
@@ -145,38 +186,25 @@ class FlowField private constructor(
                 }
             }
 
-            // Second pass: anything left holding material has no source behind it, so it becomes
-            // its own. Done after the ports so a real source always wins the direction.
-            for (tile in 0 until grid.size) {
-                if (distance[tile] >= 0 || !isSegment(tile) || !stranded(tile)) continue
-                distance[tile] = 0
-                queue.addLast(tile)
-                while (queue.isNotEmpty()) {
-                    val at = queue.removeFirst()
-                    for (dir in Direction.ALL) {
-                        val next = grid.neighbour(at, dir)
-                        if (next < 0 || !isSegment(next) || distance[next] >= 0) continue
-                        distance[next] = distance[at] + 1
-                        queue.addLast(next)
-                    }
-                }
-            }
-
+            // Downhill: a successor is a linked neighbour one step closer to a sink. A tile at
+            // distance 0 is already at one and has none, which is what stops material walking
+            // through a consumer and out the far side.
             val successors = Array(grid.size) { EMPTY }
             for (tile in 0 until grid.size) {
-                if (distance[tile] < 0) continue
+                if (distance[tile] <= 0) continue
                 var found = 0
                 val buffer = IntArray(4)
                 for (dir in Direction.ALL) {
+                    if (!linked(tile, dir)) continue
                     val next = grid.neighbour(tile, dir)
-                    if (next >= 0 && distance[next] == distance[tile] + 1) buffer[found++] = next
+                    if (next >= 0 && distance[next] == distance[tile] - 1) buffer[found++] = next
                 }
                 if (found > 0) successors[tile] = buffer.copyOf(found)
             }
 
             val fed = (0 until grid.size).filter { distance[it] >= 0 }
-            // Furthest first; ties by tile index so the order is total, not merely a partial one.
-            val order = fed.sortedWith(compareByDescending<Int> { distance[it] }.thenBy { it })
+            // Nearest first; ties by tile index so the order is total, not merely a partial one.
+            val order = fed.sortedWith(compareBy<Int> { distance[it] }.thenBy { it })
             return FlowField(distance, successors, order.toIntArray())
         }
     }
@@ -249,10 +277,14 @@ class DiverterWork(diverters: Diverters) {
  *
  *  1. **A tile's own port gets first refusal.** A packet passing under a building's input is taken
  *     if the building has room — that is what makes "the first input along the run wins" true, and
- *     with [FlowField.order] walking outward from the source it is a statement about the pipe rather
+ *     with [FlowField.order] walking outward from the sink it is a statement about the pipe rather
  *     than about the array.
- *  2. **Furthest from the source moves first**, so a packed run advances by one along its whole
- *     length in a single pass rather than crawling a tile per tick.
+ *  2. **Nearest to a sink moves first**, so the tile ahead is always empty by the time the one
+ *     behind it tries to move up. A packed run advances by one along its whole length in a single
+ *     pass rather than crawling a tile per tick.
+ *
+ * Material on a tile the field never reached does not move at all: it is on a run with no consumer,
+ * and there is nowhere for it to go that would be an improvement.
  *
  * A packet that cannot move because the tile ahead is occupied will **squash into it** where the two
  * can combine at all, so a blocked run bunches up toward its destination rather than standing in a

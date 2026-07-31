@@ -291,6 +291,43 @@ Two runs crossing in the same layer simply share no port, so the network derivat
 know the special case exists. Four layers — Deck, Conduit, Power, Signal — one occupant each per
 tile; structure, heat and air only ever read the Deck.
 
+### Two corrections from playtesting (2026-08-01)
+
+Both from Stu playing the built version, and both changed the model rather than tuning it.
+
+**Track connects by being drawn, not by touching.** Segments used to join every adjacent segment.
+That is what ONI does, but it makes two parallel lines need a tile of clearance between them, and it
+made bridges nearly pointless — a bridge's ports had to sit *two* tiles out, flanking its span, or
+the track at its own ends would merge with the line it was hopping. Segments now carry an explicit
+four-bit link mask, set only by a drag (`Edit.Lay`), and always symmetric by construction. Bridge
+ports moved back to the bridge's own two ends, where they always belonged. A single click now lays an
+unconnected stub, which the renderer draws dimmer so it is visible as a mistake.
+
+**Material is pulled toward consumers, not pushed away from producers.** The flow field BFSes out
+from *input* ports, and material runs downhill toward the nearest one. This is the fix for
+"resources are never pushed onto dead ends": a branch with nothing on the end of it has no distance
+to a sink, so nothing is ever offered to it — no rule required. It also deleted the `stranded`
+special case, which existed only to un-freeze material a source could no longer reach.
+
+Worth recording how the *symptoms* changed, because they are more legible now:
+
+| | pushed | pulled |
+|---|---|---|
+| run with no consumer | packs solid with stock to dig out | stays empty; backlog visible in the machine |
+| two lines wrongly merged | material dribbles into both tanks — looks like it works | the nearer tank takes everything, the far one starves |
+| dead-end branch | fills up and stays full | never receives anything |
+
+A jam is now *a destination that has stopped accepting* rather than *an absent destination*, which is
+both truer to a factory and a better thing to be able to point at.
+
+One trap worth naming, since it cost real time: a fixture that lays track **over** existing track
+must preserve its links. Replacing the segment wipes that tile's links while its neighbours keep
+theirs, giving a join that exists in one direction only — a network connected one way and not the
+other. Every crossing drawn by the first version of the test helper was silently cut this way.
+
+Storage also lost its second input port. Two lines arriving at one tank is a merge, and a merge
+should be something built out of track where the player can see it.
+
 #### Parked: liquids and gases might not want packets at all
 
 Raised while scoping the transport layer, and deliberately *not* being built now — packets carry all

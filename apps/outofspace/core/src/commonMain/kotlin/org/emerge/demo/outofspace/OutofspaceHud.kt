@@ -115,6 +115,11 @@ class OutofspaceHud {
                     }
                     gap()
                     row("click place · right-click remove", 0x9A9A9AFFL)
+                    // Track connects by being dragged, not by touching, so this is not a shortcut —
+                    // it is the only way to build a run, and the player has to be told.
+                    if (controller.brush.conduit != null) {
+                        row("DRAG to connect · a click alone joins nothing", 0xE8B84AFFL)
+                    }
                     row("R rotate brush · middle-drag pan", 0x9A9A9AFFL)
                 } else {
                     row("click a machine to wire it", 0x9A9A9AFFL)

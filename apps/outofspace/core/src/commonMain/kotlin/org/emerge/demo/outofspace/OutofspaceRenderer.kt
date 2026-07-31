@@ -189,6 +189,18 @@ class OutofspaceRenderer {
             }
         }
 
+        // Bridges last of all, because a bridge is the one thing that is genuinely *above* the track.
+        //
+        // They get their own pass because they live on their own list. `drawMachine` has always had a
+        // Bridge branch, but nothing ever reached it: that loop walks `state.machines`, and a bridge
+        // is never in it. It was drawing correctly and invisibly.
+        for (y in mMinY..mMaxY) {
+            for (x in mMinX..mMaxX) {
+                val index = grid.index(x, y)
+                drawBridge(state.bridges[index] ?: continue, x, y)
+            }
+        }
+
         // The overlay goes over the machines, not under them: the question it answers is "how hot is
         // it *there*", and putting it behind the thing you are asking about answers the wrong one.
         if (overlay != Overlay.None) {
@@ -245,8 +257,23 @@ class OutofspaceRenderer {
      */
     private fun drawRail(state: VesselState, tile: Int, x: Int, y: Int) {
         val segment = state.rails[tile] ?: return
-        rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, 0.96f * tilePx, 0.30f * tilePx, 0x39445AFFL)
-        rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, 0.30f * tilePx, 0.96f * tilePx, 0x39445AFFL)
+        val cx = (x + 0.5f) * tilePx
+        val cy = (y + 0.5f) * tilePx
+        // Only the arms that are actually **joined**, so the picture is the graph. Track is no longer
+        // connected by touching, and drawing a full cross on every tile would say the opposite of
+        // what the network does — two lines running side by side would look like one grid.
+        for (dir in Direction.ALL) {
+            if (!segment.linkedTo(dir)) continue
+            rect(
+                cx + dir.dx * 0.25f * tilePx, cy + dir.dy * 0.25f * tilePx,
+                (if (dir.dx != 0) 0.55f else 0.30f) * tilePx,
+                (if (dir.dy != 0) 0.55f else 0.30f) * tilePx,
+                RAIL_COLOR,
+            )
+        }
+        // The hub, always drawn: an isolated stub is still a thing you built and have to be able to
+        // see, or laying track and forgetting to connect it looks like laying nothing at all.
+        rect(cx, cy, 0.30f * tilePx, 0.30f * tilePx, if (segment.isIsolated) RAIL_STUB_COLOR else RAIL_COLOR)
         segment.channel?.let { channel ->
             frame(x, y, channel.color)
         }
@@ -255,6 +282,35 @@ class OutofspaceRenderer {
         val fill = (packet.mass.toFloat() / Capacity.PACKET_GRAMS).coerceIn(0.35f, 1f)
         val side = 0.62f * fill
         rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, side * tilePx, side * tilePx, packetColor(packet.contents.dominant))
+    }
+
+    /**
+     * A bridge: a capsule spanning its three tiles, drawn over the track it crosses.
+     *
+     * Raised off the deck with a shadow line under it, because the one thing a player has to read at
+     * a glance is that the run passing beneath is *not* connected to it. A flat capsule sitting in
+     * the same plane as the track would look exactly like a junction.
+     */
+    private fun drawBridge(b: Bridge, x: Int, y: Int) {
+        val horizontal = b.facing.dx != 0
+        val long = if (horizontal) 3f else 0.62f
+        val across = if (horizontal) 0.62f else 3f
+        val cx = (x + 0.5f) * tilePx
+        val cy = (y + 0.5f) * tilePx
+        rect(cx, cy + 0.10f * tilePx, long * tilePx, across * tilePx, 0x00000070L)
+        rect(cx, cy, long * tilePx, across * tilePx, 0xD8DEE9FFL)
+        rect(cx, cy, (long - 0.26f) * tilePx, (across - 0.26f) * tilePx, 0x1A2030FFL)
+        // Its two ends, which are its ports -- and the only tiles it connects to.
+        for (end in listOf(-1, 1)) {
+            rect(
+                cx + (if (horizontal) end * 1f else 0f) * tilePx,
+                cy + (if (horizontal) 0f else end * 1f) * tilePx,
+                0.34f * tilePx, 0.34f * tilePx, 0xD8DEE9FFL,
+            )
+        }
+        b.held?.let {
+            rect(cx, cy, 0.40f * tilePx, 0.40f * tilePx, packetColor(it.contents.dominant))
+        }
     }
 
     // ── Machine drawing ───────────────────────────────────────────────────────
@@ -270,17 +326,8 @@ class OutofspaceRenderer {
             return
         }
         when (m) {
-            is Bridge -> {
-                // A slim capsule spanning its three tiles, drawn over the track it crosses because
-                // that is what it does: nothing beneath it is connected to it.
-                val long = if (m.facing.dx != 0) 3f else 0.5f
-                val across = if (m.facing.dx != 0) 0.5f else 3f
-                rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, long * tilePx, across * tilePx, 0xD8DEE9FFL)
-                rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, (long - 0.3f) * tilePx, (across - 0.3f) * tilePx, 0x1A2030FFL)
-                m.held?.let {
-                    rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, 0.4f * tilePx, 0.4f * tilePx, packetColor(it.contents.dominant))
-                }
-            }
+            // Never reached: bridges are not on the deck list. They have their own pass.
+            is Bridge -> Unit
             is Miner -> {
                 bodyRect(x, y, n, 0.94f, 0x6B4A2AFFL)
                 fillBar(x, y, n, m.buffer.mass.toFloat() / Miner.BUFFER_CAP)
@@ -480,6 +527,11 @@ class OutofspaceRenderer {
 
         /** Reach of the largest footprint, used to widen the machine pass past the screen edge. */
         private const val MAX_REACH = 2
+
+        private const val RAIL_COLOR = 0x39445AFFL
+
+        /** Dimmer, for track that joins nothing yet — laid, but not drawn into a line. */
+        private const val RAIL_STUB_COLOR = 0x2A3040FFL
         private const val MIN_TILE_PX = 6f
         private const val MAX_TILE_PX = 64f
 

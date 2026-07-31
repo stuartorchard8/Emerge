@@ -165,8 +165,8 @@ class FootprintTest {
         m[grid.index(2, 6)] = Storage(Direction.Right, ingots)   // output port at (3, 6)
         m[grid.index(6, 6)] = Storage(Direction.Right)           // input ports at (5, 6) and (6, 5)
         // Track from the source's output port along to wherever the run is told to end.
-        for (x in 3..endX) rails[grid.index(x, 6)] = Segment(Conduit.Rail)
-        for (y in 6 downTo endY) rails[grid.index(endX, y)] = Segment(Conduit.Rail)
+        joinRow(grid, rails, 3, endX, 6)
+        joinCol(grid, rails, endX, endY, 6)
         return VesselState(grid, m.toList(), rails = rails.toList())
     }
 

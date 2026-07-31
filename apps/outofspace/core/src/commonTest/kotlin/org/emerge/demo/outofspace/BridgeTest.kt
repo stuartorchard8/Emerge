@@ -52,27 +52,29 @@ class BridgeTest {
      */
     private fun crossing(bridged: Boolean = false): VesselState {
         val m = arrayOfNulls<Machine>(grid.size)
-        val rails = arrayOfNulls<Segment>(grid.size)
         val bridges = arrayOfNulls<Bridge>(grid.size)
 
         m[grid.index(3, 5)] = Storage(Direction.Right, ingots)      // out at (4, 5)
         m[grid.index(15, 5)] = Storage(Direction.Right)             // in at (14, 5)
         m[grid.index(9, 2)] = Storage(Direction.Down, ingots)       // out at (9, 3)
         m[grid.index(9, 9)] = Storage(Direction.Down)               // in at (9, 8)
-        for (y in 3..8) rails[grid.index(9, y)] = Segment(Conduit.Rail)
 
-        if (bridged) {
-            // The horizontal run stops two tiles short of the column on each side, and the bridge
-            // spans the three-tile gap. Its ports are on (7, 5) and (11, 5) — the tiles where the
-            // track actually is. Nothing of the horizontal line comes within two tiles of (9, 5),
-            // which is what keeps the two runs from merging by adjacency.
-            for (x in 4..7) rails[grid.index(x, 5)] = Segment(Conduit.Rail)
-            for (x in 11..14) rails[grid.index(x, 5)] = Segment(Conduit.Rail)
-            bridges[grid.index(9, 5)] = Bridge(Direction.Right)
-        } else {
-            for (x in 4..14) rails[grid.index(x, 5)] = Segment(Conduit.Rail)
+        val track = rails(grid) {
+            col(9, 3, 8)
+            if (bridged) {
+                // The horizontal run stops one tile short of the column on each side, and the bridge
+                // spans the three tiles between. Its ports are (8, 5) and (10, 5) — where the track
+                // is. Those tiles are *adjacent* to the column's (9, 5) and that is now fine: they
+                // are not joined to it, because nobody drew a join.
+                row(4, 8, 5)
+                row(10, 14, 5)
+            } else {
+                // Drawn straight through the crossing tile, which really does join the two runs.
+                row(4, 14, 5)
+            }
         }
-        return VesselState(grid, m.toList(), rails = rails.toList(), bridges = bridges.toList())
+        if (bridged) bridges[grid.index(9, 5)] = Bridge(Direction.Right)
+        return VesselState(grid, m.toList(), rails = track, bridges = bridges.toList())
     }
 
     // ── The shape of a bridge ─────────────────────────────────────────────────
@@ -82,34 +84,58 @@ class BridgeTest {
         val at = grid.index(9, 5)
         val ports = portsOf(grid, Bridge(Direction.Right), at)
         assertEquals(2, ports.size)
-        assertEquals(grid.index(7, 5), ports.single { it.kind == PortKind.Input }.tile, "in on one side")
-        assertEquals(grid.index(11, 5), ports.single { it.kind == PortKind.Output }.tile, "out on the other")
+        assertEquals(grid.index(8, 5), ports.single { it.kind == PortKind.Input }.tile, "in on one side")
+        assertEquals(grid.index(10, 5), ports.single { it.kind == PortKind.Output }.tile, "out on the other")
 
-        // The span between them is clear, and the crossing line runs through it untouched.
+        // The tile it hops is clear, and the crossing line runs through it untouched.
         val s = crossing(bridged = true)
         assertTrue((8..10).all { s.occupancy.isFree(grid.index(it, 5)) }, "it takes up no floor")
         assertNotNull(s.railAt(grid.index(9, 5)), "and the track it spans is untouched")
-        assertNull(s.railAt(grid.index(8, 5)), "with nothing of its own line inside the span")
     }
 
     @Test
     fun `a bridge turns with its facing`() {
         val at = grid.index(9, 5)
         val ports = portsOf(grid, Bridge(Direction.Down), at)
-        assertEquals(grid.index(9, 3), ports.single { it.kind == PortKind.Input }.tile)
-        assertEquals(grid.index(9, 7), ports.single { it.kind == PortKind.Output }.tile)
+        assertEquals(grid.index(9, 4), ports.single { it.kind == PortKind.Input }.tile)
+        assertEquals(grid.index(9, 6), ports.single { it.kind == PortKind.Output }.tile)
     }
 
     // ── Crossing ──────────────────────────────────────────────────────────────
 
     @Test
-    fun `without a bridge the two lines are one network and material takes the wrong turn`() {
-        // Worth asserting, because it is what the bridge exists to prevent: the crossing tile is
-        // shared, so the two runs are joined and the horizontal line bleeds into the vertical one.
+    fun `drawn straight through, the two lines really are one network`() {
+        // What the bridge exists to prevent, and it has to be a real failure or the bridge is
+        // solving nothing. Drawing the horizontal line *through* (9, 5) makes a four-way junction,
+        // and pulling gives that junction a very definite opinion: the vertical tank is nearer, so
+        // it takes everything and the horizontal line's own tank is starved.
+        //
+        // Worth noting how the symptom changed. Under pushing, the merge showed up as material
+        // dribbling into both tanks — untidy, but it looked like it was working. Pulling makes it a
+        // clean theft, which is easier to see and much easier to diagnose.
         val s = run(crossing(), 60 * 30)
         val downstream = (s[grid.index(9, 9)] as Storage).contents?.mass ?: 0L
         val across = (s[grid.index(15, 5)] as Storage).contents?.mass ?: 0L
-        assertTrue(downstream > 0L && across > 0L, "both tanks fill: the lines are merged")
+        assertTrue(downstream > 0L, "the nearer tank is fed by both lines")
+        assertEquals(0L, across, "and the far one gets nothing at all: the lines are merged")
+    }
+
+    @Test
+    fun `simply running alongside is not a crossing problem in the first place`() {
+        // The reason the bridge's ports could move back to its own ends. Under adjacency-joining,
+        // track at (8, 5) touching the column at (9, 5) merged the two runs regardless of ports, and
+        // a bridge had to hold its connections two tiles out to stay clear. Now touching is nothing.
+        val s = crossing(bridged = true)
+        assertEquals(
+            false,
+            s.railAt(grid.index(8, 5))!!.linkedTo(Direction.Right),
+            "the horizontal run stops dead at the column rather than joining it",
+        )
+        assertEquals(
+            false,
+            s.railAt(grid.index(9, 5))!!.linkedTo(Direction.Left),
+            "and the column does not reach back",
+        )
     }
 
     @Test
@@ -141,11 +167,12 @@ class BridgeTest {
 
     @Test
     fun `a bridge cannot be placed so its port lands on another port of the same conduit`() {
-        // The tank at (15, 5) has its input port at (14, 5). A bridge whose output would land there
-        // has to be refused: a segment on that tile could not say which of the two it feeds.
+        // The tank at (15, 5) has its input port at (14, 5). A bridge at (13, 5) puts its output
+        // port there too, and has to be refused: a segment on that tile could not say which of the
+        // two it feeds.
         var s = crossing()
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.index(12, 5), MachineKind.Bridge, Direction.Right))))
-        assertNull(s.bridges[grid.index(12, 5)], "its output port would collide with the tank's input")
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.index(13, 5), MachineKind.Bridge, Direction.Right))))
+        assertNull(s.bridges[grid.index(13, 5)], "its output port would collide with the tank's input")
     }
 
     @Test
@@ -155,8 +182,8 @@ class BridgeTest {
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(first, MachineKind.Bridge, Direction.Right))))
         assertNotNull(s.bridges[first], "the first one goes down fine")
 
-        // Four tiles along: its input port would land on the first bridge's output port.
-        val second = grid.index(13, 5)
+        // Two tiles along: its input port would land on the first bridge's output port.
+        val second = grid.index(11, 5)
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(second, MachineKind.Bridge, Direction.Right))))
         assertNull(s.bridges[second], "ends may not overlap")
     }

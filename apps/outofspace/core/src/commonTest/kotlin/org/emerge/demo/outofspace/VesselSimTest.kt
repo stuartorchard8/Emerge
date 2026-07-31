@@ -63,21 +63,33 @@ class VesselSimTest {
 
     // ── Track ─────────────────────────────────────────────────────────────────
 
-    /** A miner at (2,2) with a run of track from its output port out to [toX]. */
+    /**
+     * A miner at (2,2) with a run of track from its output port to a **full** tank at [toX] + 1.
+     *
+     * The tank is what makes this a jam. Material is pulled toward a consumer, so a run that simply
+     * stopped would not fill up — nothing would ever leave the miner at all. A jam is now a
+     * destination that has stopped accepting, which is both a truer picture of a factory backing up
+     * and a more useful thing to be able to see.
+     */
     private fun minedLine(grid: Grid, toX: Int): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         machines[grid.index(2, 2)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
-        for (x in 3..toX) rails[grid.index(x, 2)] = Segment(Conduit.Rail)
+        // Empty to begin with, and filled by the miner. Starting it full would be quicker but the
+        // conservation ledger counts everything aboard as mined, and 20kg conjured into a tank is
+        // exactly the sort of leak that ledger exists to catch.
+        machines[grid.index(toX + 1, 2)] = Storage(Direction.Right)
+        joinRow(grid, rails, 3, toX, 2)
         return VesselState(grid, machines.toList(), rails = rails.toList())
     }
 
     @Test
     fun `a jam fills the track from the far end backwards and stays visible`() {
-        // Track running to a dead end. It should pack solid from the end nearest the blockage.
+        // A full tank at the end of the run. It should pack solid from the end nearest the tank.
         val grid = Grid(12, 5)
         var s = minedLine(grid, toX = 7)
-        s = run(s, 60 * 30)
+        // Long enough to fill the 20kg tank at 1kg a second, and then back the line up behind it.
+        s = run(s, 60 * 60)
 
         val carried = (3..7).map { s.railAt(grid.index(it, 2))?.held?.mass ?: 0L }
         assertTrue(carried.all { it > 0L }, "every tile should be carrying something: $carried")
@@ -92,12 +104,13 @@ class VesselSimTest {
     fun `a jam clears from the front when the blockage is removed`() {
         val grid = Grid(12, 5)
         var s = minedLine(grid, toX = 7)
-        s = run(s, 60 * 30)
+        s = run(s, 60 * 60)
 
-        // Drop a vent past the end of the run, and track under its port; the line should drain.
+        // Tear out the full tank and put a vent on the end of the run instead. The vent takes
+        // anything, so the line drains from the front — the tile nearest the consumer moves first.
         s = run(s, 60 * 10, OutofspaceInput(listOf(
-            Edit.Place(grid.index(8, 2), MachineKind.Vent, Direction.Right),
-            Edit.Place(grid.index(8, 2), MachineKind.Rail, Direction.Right),
+            Edit.Remove(grid.index(8, 2)),
+            Edit.Place(grid.index(7, 2), MachineKind.Vent, Direction.Right),
         )))
         assertTrue(s.ventedGrams > 0L, "material should have gone overboard")
         assertBalanced(s, "drained line")
@@ -106,17 +119,48 @@ class VesselSimTest {
     @Test
     fun `track under no source carries nothing, however much is beside it`() {
         // A run that no output port feeds is not part of any network. It is just track.
+        // (See also the companion below: track with no *consumer* is equally inert, for the
+        // opposite reason.)
         val grid = Grid(12, 5)
         val machines = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         machines[grid.index(2, 2)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
         // Starts one tile past the miner's output port, so nothing ever reaches it.
-        for (x in 5..8) rails[grid.index(x, 2)] = Segment(Conduit.Rail)
+        joinRow(grid, rails, 5, 8, 2)
         var s = VesselState(grid, machines.toList(), rails = rails.toList())
         s = run(s, 60 * 20)
 
         assertEquals(0L, (5..8).sumOf { s.railAt(grid.index(it, 2))?.held?.mass ?: 0L })
         assertBalanced(s, "orphan track")
+    }
+
+    @Test
+    fun `a run with no consumer on the end of it never fills up`() {
+        // The rule that replaced "material piles up at a dead end". Nothing pulls, so the miner's
+        // output has nowhere to be and it backs up in the miner itself — where it is obvious — with
+        // the track left clean. Under the old push model this line packed solid with stock the
+        // player then had to dig back out of it.
+        val grid = Grid(12, 5)
+        val machines = arrayOfNulls<Machine>(grid.size)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        machines[grid.index(2, 2)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        joinRow(grid, rails, 3, 7, 2)
+        var s = VesselState(grid, machines.toList(), rails = rails.toList())
+        s = run(s, 60 * 30)
+
+        // One packet does leave the miner: pushing out onto the tile under an output port is how
+        // material enters a network at all, and that happens before anything asks where it is going.
+        // It gets no further, which is the part that matters.
+        assertEquals(
+            0L,
+            (4..7).sumOf { s.railAt(grid.index(it, 2))?.held?.mass ?: 0L },
+            "nothing travelled: there is nothing to travel toward",
+        )
+        assertTrue(
+            (s[grid.index(2, 2)] as Miner).buffer.mass >= Miner.BUFFER_CAP,
+            "and the backlog is where you can see it, in the miner",
+        )
+        assertBalanced(s, "unconsumed line")
     }
 
     // ── Machines ──────────────────────────────────────────────────────────────
@@ -128,7 +172,7 @@ class VesselSimTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         machines[grid.index(2, 2)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
         machines[grid.index(5, 2)] = Vent()
-        for (x in 3..5) rails[grid.index(x, 2)] = Segment(Conduit.Rail)
+        joinRow(grid, rails, 3, 5, 2)
         var s = VesselState(grid, machines.toList(), rails = rails.toList())
         s = run(s, 60 * 10)
         // minedGrams counts at the shovel, so it is the whole 10kg regardless of where it sits now.
@@ -147,8 +191,8 @@ class VesselSimTest {
         machines[grid.index(7, 6)] = Vent()   // under the smelter's slag port: where slag goes
         val rails = arrayOfNulls<Segment>(grid.size)
         // One run under the lot, from the miner's port to the tank's.
-        for (x in 3..11) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
-        for (y in 4..6) rails[grid.index(7, y)] = Segment(Conduit.Rail)
+        joinRow(grid, rails, 3, 11, 3)
+        joinCol(grid, rails, 7, 3, 6)
         var s = VesselState(grid, machines.toList(), rails = rails.toList())
 
         s = run(s, 60 * 60)

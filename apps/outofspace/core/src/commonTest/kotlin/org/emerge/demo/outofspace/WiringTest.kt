@@ -141,7 +141,7 @@ class WiringTest {
         m[grid.index(3, 3)] = Storage(Direction.Right, stored).copy(wiring = wiring()) as Storage
         m[grid.index(8, 3)] = Storage(Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
-        for (x in 4..7) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        joinRow(grid, rails, 4, 7, 3)
         var s = VesselState(grid, m.toList(), rails = rails.toList())
 
         s = run(s, Bridge.STEP_TICKS * 8)
@@ -172,7 +172,7 @@ class WiringTest {
         machines[grid.index(6, 3)] = Storage(Direction.Right)   // input port at (5, 3)
         machines[grid.index(6, 5)] = Sensor(Direction.Up, Channel.Red)
         val rails = arrayOfNulls<Segment>(grid.size)
-        for (x in 3..5) rails[grid.index(x, 3)] = Segment(Conduit.Rail)
+        joinRow(grid, rails, 3, 5, 3)
         var s = VesselState(grid, machines.toList(), rails = rails.toList())
 
         // Throttling begins on the very first tick — fullness is continuous, so there is no grace
@@ -252,7 +252,7 @@ class WiringTest {
         val rails = arrayOfNulls<Segment>(g.size)
         m[g.index(3, 3)] = upstream                  // output port at (4, 3)
         m[g.index(7, 3)] = Storage(Direction.Right)  // input port at (6, 3)
-        for (x in 4..6) rails[g.index(x, 3)] = Segment(Conduit.Rail)
+        joinRow(g, rails, 4, 6, 3)
         return VesselState(g, m.toList(), rails = rails.toList())
     }
 

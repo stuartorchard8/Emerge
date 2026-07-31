@@ -38,23 +38,55 @@ fun starterVessel(grid: Grid): VesselState {
     }
 
     /**
-     * Track from [fromX] to [toX] inclusive, running *through* whatever is on the deck.
+     * Lays track, **keeping** whatever joins are already at that tile.
      *
-     * That is the change worth seeing in this layout: the rail does not stop at a machine's edge and
-     * resume on the far side. It carries on underneath, and the building reaches down to it at the
-     * one tile its port is on.
+     * Overwriting instead would cut a crossing run's links while leaving its neighbours' intact — a
+     * join that exists in one direction only, and a line that mysteriously stops halfway.
+     */
+    fun lay(tile: Int, channel: Channel? = null) {
+        val existing = rails[tile]
+        rails[tile] = existing?.copy(channel = channel ?: existing.channel)
+            ?: Segment(Conduit.Rail, channel = channel)
+    }
+
+    /** Joins two adjacent tiles of track, both halves, exactly as a drag would. */
+    fun join(a: Int, b: Int, dir: Direction) {
+        rails[a] = rails[a]!!.joinedTo(dir)
+        rails[b] = rails[b]!!.joinedTo(dir.opposite)
+    }
+
+    /**
+     * Track from [fromX] to [toX] inclusive, running *through* whatever is on the deck, laid and
+     * joined end to end.
+     *
+     * Two things worth seeing in this layout. The rail does not stop at a machine's edge and resume
+     * on the far side — it carries on underneath, and the building reaches down to it at the one
+     * tile its port is on. And each tile is explicitly **joined** to the next, because track that
+     * merely touches is not connected.
      */
     fun rail(fromX: Int, toX: Int, y: Int, channelAt: Map<Int, Channel> = emptyMap()) {
         for (x in fromX..toX) {
             if (!grid.inBounds(x, y)) continue
-            rails[grid.index(x, y)] = Segment(Conduit.Rail, channel = channelAt[x])
+            lay(grid.index(x, y), channelAt[x])
+        }
+        // Laid *and* connected. Track that merely touches is not joined any more, so a run has to
+        // say so tile by tile — which is what makes two lines able to sit side by side.
+        for (x in fromX until toX) {
+            if (grid.inBounds(x, y) && grid.inBounds(x + 1, y)) {
+                join(grid.index(x, y), grid.index(x + 1, y), Direction.Right)
+            }
         }
     }
 
     /** A vertical run, for the waste that leaves through a machine's floor. */
     fun column(x: Int, fromY: Int, toY: Int) {
         for (y in fromY..toY) {
-            if (grid.inBounds(x, y)) rails[grid.index(x, y)] = Segment(Conduit.Rail)
+            if (grid.inBounds(x, y)) lay(grid.index(x, y))
+        }
+        for (y in fromY until toY) {
+            if (grid.inBounds(x, y) && grid.inBounds(x, y + 1)) {
+                join(grid.index(x, y), grid.index(x, y + 1), Direction.Down)
+            }
         }
     }
 
@@ -62,11 +94,10 @@ fun starterVessel(grid: Grid): VesselState {
     // edge and puts product out at the centre of its right edge — one tile from centre for the
     // three-tile machines, two for the smelter. Waste leaves through the floor.
     //
-    // **Each machine's output starts a NEW run.** That is not a stylistic choice: a machine's input
-    // and output are two different networks, and track running continuously under a building would
-    // put its output back onto the pipe feeding its own input. The flow would then have two sources
-    // pointing at each other and the line would stall — which is exactly what the first version of
-    // this layout did. One bus under everything is the wrong shape; a chain of short runs is right.
+    // **Each machine's output starts a NEW run.** A machine's input and output are two different
+    // networks, and one continuous line under everything would join a machine's output back to the
+    // track feeding its own input — where, material being pulled toward the nearest consumer, it
+    // would go straight back in. A chain of short runs is the right shape.
     val y = 12
 
     put(5, y, Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY))   // covers x 4..6

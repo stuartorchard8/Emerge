@@ -82,6 +82,23 @@ sealed interface Edit {
     data class Remove(val index: Int) : Edit
 
     /**
+     * Lays conduit from [from] to the **adjacent** tile [to] and joins the two — one step of a drag.
+     *
+     * Connection is an edit in its own right rather than a consequence of placement, because that is
+     * the only way two runs can touch without merging. A drag is a stream of these, so the line the
+     * player drew is exactly the graph they get; track placed by a single click joins nothing until
+     * something is drawn through it.
+     *
+     * Missing track at either end is laid, so one gesture both builds and connects. Non-adjacent
+     * tiles are ignored rather than pathfound: a drag that skips a tile is a slipped mouse, and
+     * quietly inventing the tiles in between is how you end up with runs nobody meant to build.
+     */
+    data class Lay(val from: Int, val to: Int, val conduit: Conduit = Conduit.Rail) : Edit
+
+    /** Severs the join between two adjacent tiles, leaving both lengths of track in place. */
+    data class Cut(val from: Int, val to: Int, val conduit: Conduit = Conduit.Rail) : Edit
+
+    /**
      * Rewires one term of one action. [slot] at or past the end appends; a null [trigger] removes.
      * One edit covers add, change and remove because they are the same operation on a list, and
      * three edit types would be three chances to get replay ordering subtly different.
@@ -422,6 +439,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         else -> placeBuilding(edit.index, edit.kind, edit.facing)
                     }
                 }
+                is Edit.Lay -> layConduit(edit.from, edit.to, edit.conduit)
+                is Edit.Cut -> {
+                    val dir = adjacency(edit.from, edit.to) ?: return
+                    rails[edit.from]?.let { rails[edit.from] = it.cutFrom(dir) }
+                    rails[edit.to]?.let { rails[edit.to] = it.cutFrom(dir.opposite) }
+                }
                 is Edit.Rotate -> {
                     // Rotating about the centre leaves the covered tiles alone -- footprints are
                     // square -- so only the ports move. That is the whole reason machines anchor at
@@ -444,6 +467,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     if (segment != null) {
                         segment.held?.let { debris.spill(edit.index, listOf(asResource(it))) }
                         rails[edit.index] = null
+                        // Cut the far half of every join too. Leaving them would let a later tile of
+                        // track laid here inherit connections the player never drew.
+                        for (dir in Direction.ALL) {
+                            val n = grid.neighbour(edit.index, dir)
+                            if (n >= 0) rails[n]?.let { rails[n] = it.cutFrom(dir.opposite) }
+                        }
                         return
                     }
                     // Clicking any tile of a machine removes the whole machine, not a slice of it.
@@ -532,6 +561,29 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun portsClash(proposed: List<Port>): Boolean {
             val existing = portsByTile(Conduit.Rail)
             return proposed.any { p -> existing[p.tile].orEmpty().any { it.conduit == p.conduit } }
+        }
+
+        /** The direction from [from] to [to] when the two are neighbours, else null. */
+        private fun adjacency(from: Int, to: Int): Direction? {
+            if (from !in rails.indices || to !in rails.indices) return null
+            return Direction.ALL.firstOrNull { grid.neighbour(from, it) == to }
+        }
+
+        /**
+         * One step of a drag: track at both ends, joined.
+         *
+         * Both halves of the link are set here and nowhere else, which is what keeps connection
+         * symmetric by construction rather than by a rule somebody has to remember. A gauge keeps its
+         * channel — drawing a line through one connects it up without retuning it.
+         */
+        private fun layConduit(from: Int, to: Int, conduit: Conduit) {
+            val dir = adjacency(from, to) ?: return
+            val a = rails[from] ?: Segment(conduit)
+            val b = rails[to] ?: Segment(conduit)
+            // Two layers never join. A pipe drawn across a rail is a crossing, not a junction.
+            if (a.conduit != conduit || b.conduit != conduit) return
+            rails[from] = a.joinedTo(dir)
+            rails[to] = b.joinedTo(dir.opposite)
         }
 
         /** The index the machine covering [tile] is stored at, so any tile of it can be edited. */
@@ -648,15 +700,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /**
          * Moves everything on one conduit one step.
          *
-         * The flow field is derived fresh: sources are the output ports that actually have track
-         * under them, so laying or lifting one tile re-decides which way a whole run points, with no
-         * cache to invalidate.
+         * The flow field is derived fresh: sinks are the **input** ports that actually have track
+         * under them, so connecting or cutting one tile re-decides which way a whole run points,
+         * with no cache to invalidate.
          */
         fun advanceRails(ports: Map<Int, List<Port>>) {
-            val sources = ports.entries
-                .filter { (tile, at) -> rails[tile] != null && at.any { it.kind == PortKind.Output } }
+            val sinks = ports.entries
+                .filter { (tile, at) -> rails[tile] != null && at.any { it.kind == PortKind.Input } }
                 .map { it.key }
-            val flow = FlowField.derive(grid, { rails[it] != null }, sources) { rails[it]?.held != null }
+            val flow = FlowField.derive(
+                grid,
+                { rails[it] != null },
+                { tile, dir -> rails[tile]?.linkedTo(dir) == true },
+                sinks,
+            )
 
             val carried = arrayOfNulls<Packet>(rails.size)
             for (i in rails.indices) carried[i] = rails[i]?.held
