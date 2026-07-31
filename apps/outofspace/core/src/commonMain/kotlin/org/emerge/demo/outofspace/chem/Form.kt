@@ -112,7 +112,12 @@ val SMELT_PRODUCTS: Map<Species, Form> = mapOf(
  * [recipeFor].
  *
  * The tree is deliberately binary the whole way up: two things go in, one comes out. It keeps the
- * crafting UI trivial and it means a fabricator never needs an ingredient list.
+ * crafting UI trivial and it means a machine that crafts never needs an ingredient list.
+ *
+ * **Currently unused by any machine.** The fabricator that read it was dropped — a throwback to an
+ * earlier shape of the game. This is kept rather than deleted because it is what construction costs
+ * will be denominated in: "what does a smelter cost" is a question about this tree. If costs turn out
+ * not to want it, delete it then; it is chemistry, and it is covered by its own tests either way.
  */
 val RECIPES: Map<Form, Pair<Form, Form>> = mapOf(
     // Tier 2 — alloys and composites

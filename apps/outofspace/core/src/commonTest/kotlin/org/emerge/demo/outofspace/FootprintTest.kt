@@ -195,18 +195,6 @@ class FootprintTest {
     }
 
     @Test
-    fun `a fabricator's two inputs are on two different faces`() {
-        // Which is the recipe, spatially: two ingredients means two lines arriving from two
-        // directions, rather than one belt that happens to carry both.
-        val grid = Grid(12, 12)
-        val ports = portsOf(grid, org.emerge.demo.outofspace.world.Fabricator(Direction.Right), grid.index(6, 6))
-        val inputs = ports.filter { it.kind == PortKind.Input }
-        assertEquals(2, inputs.size)
-        assertEquals(setOf(Direction.Left, Direction.Up), inputs.map { it.side }.toSet())
-        assertEquals(2, inputs.map { it.tile }.toSet().size, "and they are genuinely different tiles")
-    }
-
-    @Test
     fun `a sensor pointed at any tile of a building reads that building`() {
         val grid = Grid(12, 12)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to Storage.CAP))

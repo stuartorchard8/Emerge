@@ -5,7 +5,6 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.process
-import org.emerge.demo.outofspace.chem.recipeFor
 import org.emerge.demo.outofspace.chem.smelt
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.logistics.Packet
@@ -40,7 +39,6 @@ import org.emerge.demo.outofspace.world.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Miner
-import org.emerge.demo.outofspace.world.Fabricator
 import org.emerge.demo.outofspace.world.Processor
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Signals
@@ -125,14 +123,14 @@ data class OutofspaceInput(val edits: List<Edit> = emptyList()) : SimInput {
  *     snapshot that the whole tick then agrees on. Reading signals as they are computed would make a
  *     machine's behaviour depend on where it sits in the grid relative to its sensor.
  *  3. **Produce** — miners accrue ore into their buffers.
- *  4. **Process** — processors, smelters and fabricators draw from their inputs and fill outputs.
+ *  4. **Process** — processors and smelters draw from their inputs and fill outputs.
  *  5. **Eject** — anything holding a full packet's worth of output pushes it out through the matching
  *     output **port**: a specific tile of the machine's footprint, facing a specific way.
  *  6. **Settle debris** — loose material falls toward gravity, and anything lying outside the hull
  *     goes overboard.
  *  7. **Advance the conduits** — every [Bridge.STEP_TICKS] ticks: derive each layer's flow field
- *     from where its sources are, then move everything on it one step, offering each packet to the
- *     port under it first.
+ *     from where its **input** ports are, then move everything on it one step toward the nearest of
+ *     them, offering each packet to the port under it first.
  *
  * Every machine is throttled by its RUN activation: rate × activation, and nothing at all at zero or
  * below. Activation is a *throttle rather than a switch* so that a weight means something beyond on
@@ -194,7 +192,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Miner -> w.produce(cfg, m, activation)
                 is Processor -> w.refine(cfg, m, activation, i)
                 is Smelter -> w.melt(cfg, m, activation, i)
-                is Fabricator -> w.fabricate(cfg, m, activation, i)
                 else -> m
             }
         }
@@ -301,37 +298,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             slag = slag.buffer,
             carry = carry,
         )
-    }
-
-    /**
-     * Combines the fabricator's two input forms into whatever they make, equal masses of each.
-     *
-     * No recipe needs selecting: the crafting tree is binary, so holding two things that make a third
-     * *is* the instruction. Holding two that make nothing is a machine sitting visibly idle, which is
-     * a better error message than a dialog.
-     */
-    private fun Work.fabricate(cfg: OutofspaceConfig, m: Fabricator, activation: Int, at: Int): Fabricator {
-        val (grams, carry) = Rate.tick(throttled(m.gramsPerSecond, activation), cfg.ticksPerSecond, m.carry)
-        if (blocked(m.output)) return m.copy(carry = carry)
-        if (m.inputs.size < 2 || grams <= 0L) return m.copy(carry = carry)
-
-        val a = m.inputs[0]
-        val b = m.inputs[1]
-        val outputForm = recipeFor(a.form, b.form) ?: return m.copy(carry = carry)
-        val each = minOf(grams, a.mass, b.mass)
-        if (each <= 0L) return m.copy(carry = carry)
-
-        heat(at, each * 2L * heatPerGram(m))
-        val chunkA = a.mixture.take(each)
-        val chunkB = b.mixture.take(each)
-        val made = Resource(outputForm, chunkA + chunkB)
-        val output = m.output.merged(made) ?: return m.copy(carry = carry)
-
-        val remaining = listOf(
-            Resource(a.form, a.mixture - chunkA),
-            Resource(b.form, b.mixture - chunkB),
-        ).filterNot { it.isEmpty }
-        return m.copy(inputs = remaining, output = output.buffer, carry = carry)
     }
 
     /**
@@ -670,7 +636,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             is Miner -> m.buffer
             is Processor -> if (port.stream == Stream.Waste) m.tailings else m.product
             is Smelter -> if (port.stream == Stream.Waste) m.slag else m.refined
-            is Fabricator -> m.output
             is Storage -> m.contents
             else -> null
         }
@@ -680,7 +645,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             is Miner -> m.copy(buffer = rest ?: Resource(Form.Ore, Mixture.EMPTY))
             is Processor -> if (port.stream == Stream.Waste) m.copy(tailings = rest) else m.copy(product = rest)
             is Smelter -> if (port.stream == Stream.Waste) m.copy(slag = rest) else m.copy(refined = rest)
-            is Fabricator -> m.copy(output = rest)
             is Storage -> m.copy(contents = rest)
             else -> m
         }
@@ -781,7 +745,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         }
                     }
                 }
-                is Fabricator -> acceptIntoFabricator(target, dest, packet)
                 is Vent -> {
                     ventedGrams += packet.mass
                     machines[target] = dest.copy(ventedGrams = dest.ventedGrams + packet.mass)
@@ -790,26 +753,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // Miners take no input, and a wall is not a hopper.
                 else -> false
             }
-        }
-
-        /**
-         * A fabricator takes up to [Fabricator.MAX_INPUTS] distinct forms and tops up either of them.
-         * A third form is refused rather than swapped in, so a mis-wired line backs up visibly
-         * instead of silently displacing an ingredient.
-         */
-        private fun acceptIntoFabricator(target: Int, dest: Fabricator, packet: Packet): Boolean {
-            if (packet !is SolidPacket) return false
-            val existing = dest.inputs.indexOfFirst { it.form == packet.form }
-            if (existing >= 0) {
-                if (dest.inputs[existing].mass >= Fabricator.INPUT_CAP) return false
-                val merged = dest.inputs.toMutableList()
-                merged[existing] = Resource(packet.form, merged[existing].mixture + packet.contents)
-                machines[target] = dest.copy(inputs = merged)
-                return true
-            }
-            if (dest.inputs.size >= Fabricator.MAX_INPUTS) return false
-            machines[target] = dest.copy(inputs = dest.inputs + packet.resource)
-            return true
         }
 
         /** The new input buffer if [packet] is acceptable, else null. */
@@ -829,7 +772,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Miner -> Miner(facing, DEFAULT_ORE_BODY)
             MachineKind.Processor -> Processor(facing)
             MachineKind.Smelter -> Smelter(facing)
-            MachineKind.Fabricator -> Fabricator(facing)
             MachineKind.Storage -> Storage(facing)
             MachineKind.Sensor -> Sensor(facing)
             MachineKind.Vent -> Vent()

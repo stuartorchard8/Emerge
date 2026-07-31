@@ -22,7 +22,6 @@ enum class MachineKind(val label: String, val conduit: Conduit? = null) {
     Miner("MINER"),
     Processor("PROCESSOR"),
     Smelter("SMELTER"),
-    Fabricator("FABRICATOR"),
     Storage("STORAGE"),
     Sensor("SENSOR"),
     Vent("VENT"),
@@ -165,31 +164,6 @@ data class Smelter(
     override val kind: MachineKind get() = MachineKind.Smelter
     override fun rotated(): Machine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-}
-
-/**
- * A fabricator: combines two forms into the one they make, per the crafting tree.
- *
- * It holds at most [MAX_INPUTS] distinct forms and needs no recipe selected — the tree is binary, so
- * having two things that make a third *is* the instruction. A fabricator holding two forms that make
- * nothing simply sits there, which is a legible failure.
- */
-data class Fabricator(
-    override val facing: Direction,
-    val inputs: List<Resource> = emptyList(),
-    val output: Resource? = null,
-    val carry: Long = 0L,
-    val gramsPerSecond: Long = 400L,
-    override val wiring: Wiring = Wiring.RUNNING,
-) : Directed {
-    override val kind: MachineKind get() = MachineKind.Fabricator
-    override fun rotated(): Machine = copy(facing = facing.clockwise)
-    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-
-    companion object {
-        const val MAX_INPUTS = 2
-        const val INPUT_CAP = 8_000L
-    }
 }
 
 /**

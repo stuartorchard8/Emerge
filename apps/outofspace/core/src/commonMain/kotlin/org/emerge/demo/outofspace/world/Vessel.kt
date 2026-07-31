@@ -239,7 +239,6 @@ fun massIn(machine: Machine?): Long = when (machine) {
     is Miner -> machine.buffer.mass
     is Processor -> (machine.input?.mass ?: 0L) + (machine.product?.mass ?: 0L) + (machine.tailings?.mass ?: 0L)
     is Smelter -> (machine.input?.mass ?: 0L) + (machine.refined?.mass ?: 0L) + (machine.slag?.mass ?: 0L)
-    is Fabricator -> machine.inputs.sumOf { it.mass } + (machine.output?.mass ?: 0L)
     is Storage -> machine.contents?.mass ?: 0L
     is Sensor -> 0L
     is Hull -> 0L
@@ -259,7 +258,6 @@ fun fullness(machine: Machine?): Int = when (machine) {
     is Miner -> (machine.buffer.mass * Signals.FULL / Miner.BUFFER_CAP).toInt()
     is Processor -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
     is Smelter -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
-    is Fabricator -> (massIn(machine) * Signals.FULL / (Fabricator.INPUT_CAP * 2 + MACHINE_OUTPUT_CAP)).toInt()
     is Storage -> ((machine.contents?.mass ?: 0L) * Signals.FULL / Storage.CAP).toInt()
     is Sensor -> 0
     is Hull -> 0
@@ -291,8 +289,6 @@ fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (m
         machine.refined?.let { "REFINED" to it },
         machine.slag?.let { "SLAG" to it },
     )
-    is Fabricator -> machine.inputs.mapIndexed { i, r -> "INPUT ${i + 1}" to r } +
-        listOfNotNull(machine.output?.let { "OUTPUT" to it })
     is Storage -> listOfNotNull(machine.contents?.let { "STORED" to it })
     is Sensor, is Vent, is Hull -> emptyList()
 }
@@ -306,7 +302,6 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
         (machine.product?.mixture ?: Mixture.EMPTY) + (machine.tailings?.mixture ?: Mixture.EMPTY)
     is Smelter -> (machine.input?.mixture ?: Mixture.EMPTY) +
         (machine.refined?.mixture ?: Mixture.EMPTY) + (machine.slag?.mixture ?: Mixture.EMPTY)
-    is Fabricator -> machine.inputs.fold(machine.output?.mixture ?: Mixture.EMPTY) { acc, r -> acc + r.mixture }
     is Storage -> machine.contents?.mixture ?: Mixture.EMPTY
     is Sensor -> Mixture.EMPTY
     is Hull -> Mixture.EMPTY

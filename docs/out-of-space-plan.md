@@ -250,7 +250,7 @@ own "is this legible?" question. One at a time.
   `downDirection(gravity)` is shared with `stratifyColumns`, since the two must not be able to
   disagree about which way is down.
 - **Footprints and ports** (`world/Footprint.kt`). Conveyors are one tile; miners, processors,
-  fabricators and tanks three; smelters five. Belts carry one packet. This had to precede pipes,
+  processors and tanks three; smelters five. Belts carry one packet. This had to precede pipes,
   because **a port is a property of a tile**: on a one-tile machine every port overlaps every other
   and connectivity collapses into "which way is it pointing".
   - Machines anchor at their **centre**, hence odd sizes. Rotating about a centre leaves the covered
@@ -324,6 +324,10 @@ One trap worth naming, since it cost real time: a fixture that lays track **over
 must preserve its links. Replacing the segment wipes that tile's links while its neighbours keep
 theirs, giving a join that exists in one direction only — a network connected one way and not the
 other. Every crossing drawn by the first version of the test helper was silently cut this way.
+
+The **fabricator** was dropped in the same pass — a throwback to an earlier shape of the game,
+and the only machine reading the binary recipe tree. The tree itself stays: construction costs are
+the question it answers next.
 
 Storage also lost its second input port. Two lines arriving at one tank is a merge, and a merge
 should be something built out of track where the player can see it.

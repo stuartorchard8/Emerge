@@ -11,7 +11,6 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Direction
-import org.emerge.demo.outofspace.world.Fabricator
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
@@ -238,7 +237,7 @@ class WiringTest {
         assertEquals(listOf(Trigger(Channel.Cyan, 750)), s[0]!!.wiring.triggers(Action.Run))
     }
 
-    // ── Fabricator and storage ────────────────────────────────────────────────
+    // ── Storage ───────────────────────────────────────────────────────────────
 
     /**
      * [upstream] at (3, 3) feeding a tank at (7, 3), with a short run of track between their ports.
@@ -254,62 +253,6 @@ class WiringTest {
         m[g.index(7, 3)] = Storage(Direction.Right)  // input port at (6, 3)
         joinRow(g, rails, 4, 6, 3)
         return VesselState(g, m.toList(), rails = rails.toList())
-    }
-
-    @Test
-    fun `a fabricator combines its two inputs into what they make`() {
-        val grid = Grid(2, 1)
-        val fab = Fabricator(
-            Direction.Right,
-            inputs = listOf(
-                Resource(Form.IronIngot, Mixture.of(Species.Iron to 4_000L)),
-                Resource(Form.CarbonFiber, Mixture.of(Species.Carbon to 4_000L)),
-            ),
-        )
-        var s = twoUp(fab)
-        s = run(s, 60 * 20)
-        assertTrue(s.stockpile[Form.SteelAlloy].total > 0L, "iron + carbon fibre makes steel: ${s.stockpile}")
-        // Composition is carried through: steel from these inputs is half iron, half carbon.
-        val steel = s.stockpile[Form.SteelAlloy]
-        assertEquals(steel[Species.Iron], steel[Species.Carbon])
-    }
-
-    @Test
-    fun `a fabricator holding two forms that make nothing sits idle rather than crashing`() {
-        val grid = Grid(2, 1)
-        val fab = Fabricator(
-            Direction.Right,
-            inputs = listOf(
-                Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)),
-                Resource(Form.TitaniumIngot, Mixture.of(Species.Titanium to 1_000L)),
-            ),
-        )
-        var s = twoUp(fab)
-        s = run(s, 60 * 5)
-        assertEquals(2_000L, s.inTransitGrams, "nothing consumed, nothing lost")
-        assertEquals(0L, s.stockpile.totalGrams)
-    }
-
-    @Test
-    fun `a fabricator refuses a third form rather than displacing an ingredient`() {
-        val grid = Grid(2, 1)
-        val fab = Fabricator(
-            Direction.Right,
-            inputs = listOf(
-                Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)),
-                Resource(Form.TitaniumIngot, Mixture.of(Species.Titanium to 1_000L)),
-            ),
-        )
-        val packet = SolidPacket(Resource(Form.CopperIngot, Mixture.of(Species.Copper to 1_000L)))
-        val g = Grid(12, 6)
-        val m = arrayOfNulls<Machine>(g.size)
-        m[g.index(4, 3)] = fab                                  // input port at (3, 3)
-        val rails = arrayOfNulls<Segment>(g.size)
-        rails[g.index(3, 3)] = Segment(Conduit.Rail, held = packet)
-        var s = VesselState(g, m.toList(), rails = rails.toList())
-        s = run(s, Bridge.STEP_TICKS * 2)
-        assertNotNull(s.railAt(g.index(3, 3))?.held, "the copper is still on the track")
-        assertEquals(2, (s[g.index(4, 3)] as Fabricator).inputs.size)
     }
 
     @Test

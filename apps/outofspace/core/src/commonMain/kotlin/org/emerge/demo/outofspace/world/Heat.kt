@@ -189,7 +189,6 @@ fun stepHeat(
  */
 fun heatPerGram(machine: Machine?): Long = when (machine) {
     is Smelter -> 40L      // a furnace, and the main reason a vessel needs to shed heat at all
-    is Fabricator -> 12L
     is Processor -> 8L     // crushing and grinding
     is Miner -> 4L
     else -> 0L

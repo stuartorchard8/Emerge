@@ -11,7 +11,6 @@ import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.AirField
-import org.emerge.demo.outofspace.world.Fabricator
 import org.emerge.demo.outofspace.world.HeatField
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
@@ -340,10 +339,6 @@ class OutofspaceRenderer {
                 bodyRect(x, y, n, 0.94f, 0x8A3A2AFFL)
                 fillBar(x, y, n, massIn(m).toFloat() / BUFFER_BAR_FULL)
             }
-            is Fabricator -> {
-                bodyRect(x, y, n, 0.94f, 0x6B3A7AFFL)
-                fillBar(x, y, n, massIn(m).toFloat() / (Fabricator.INPUT_CAP * 2))
-            }
             is Storage -> {
                 bodyRect(x, y, n, 0.94f, 0x3A4A5AFFL)
                 // A tank shows its level as a rising fill, not a thin bar, and now it rises through
@@ -551,7 +546,6 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Miner -> 0x6B4A2AFFL
     MachineKind.Processor -> 0x2E5A6BFFL
     MachineKind.Smelter -> 0x8A3A2AFFL
-    MachineKind.Fabricator -> 0x6B3A7AFFL
     MachineKind.Storage -> 0x3A4A5AFFL
     MachineKind.Sensor -> 0x24303CFFL
     MachineKind.Hull -> 0x4A5464FFL

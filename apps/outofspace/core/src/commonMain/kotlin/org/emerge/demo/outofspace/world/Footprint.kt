@@ -20,7 +20,7 @@ val MachineKind.size: Int
         MachineKind.Rail, MachineKind.Gauge, MachineKind.Bridge -> 1
         MachineKind.Sensor, MachineKind.Vent, MachineKind.Hull -> 1
         MachineKind.Miner -> 3
-        MachineKind.Processor, MachineKind.Fabricator, MachineKind.Storage -> 3
+        MachineKind.Processor, MachineKind.Storage -> 3
         MachineKind.Smelter -> 5
     }
 
@@ -203,12 +203,6 @@ private fun localPorts(machine: Machine): List<LocalPort> {
         // does for them out of sight.
         is Storage -> listOf(
             LocalPort(-r, 0, Direction.Left, PortKind.Input),
-            LocalPort(r, 0, Direction.Right, PortKind.Output),
-        )
-
-        is Fabricator -> listOf(
-            LocalPort(-r, 0, Direction.Left, PortKind.Input),
-            LocalPort(0, -r, Direction.Up, PortKind.Input),
             LocalPort(r, 0, Direction.Right, PortKind.Output),
         )
 
