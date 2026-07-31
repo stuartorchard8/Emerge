@@ -1,46 +1,81 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.Ui
 
 /**
- * The in-game UI, built with the shared immediate-mode toolkit in `:engine:render:torus`.
+ * The in-game UI, built with the shared immediate-mode toolkit.
  *
- * Immediate mode means there are no widget objects and no state to keep in sync: every frame you
- * describe the panels you want from the state you have, and a click runs the lambda you passed this
- * frame. Deleting a panel is deleting its code.
- *
- * The whole widget set is browsable — run `./gradlew :engine:render:ui-gallery:run` for a live
- * window with one panel per widget kind, and read `UIGallery.kt` beside it for the call sites.
- *
- * Sizes are **dp**, scaled to pixels by [Ui.setDensity]. Desktop leaves the scale at 1 (dp == px);
- * a phone host sets it from the display density, which is why the same code is legible on both.
+ * Three panels, each answering one question the player actually has: what am I building, what does
+ * the vessel own, and is the world balanced. The last one is a development readout and will go, but
+ * while the logistics are young a visible `mined = transit + banked + vented` is worth more than
+ * anything else on screen.
  */
 class OutofspaceHud {
 
-    /** Set by the host so the buttons can drive it — the HUD never reaches into the sim itself. */
-    var onSpawnBurst: () -> Unit = {}
-    var onClear: () -> Unit = {}
     var onTogglePause: () -> Unit = {}
+    var onReset: () -> Unit = {}
 
     fun build(ui: Ui, controller: OutofspaceController, fps: Float) {
+        val s = controller.state
         ui.frame {
             panel(Anchor.TopLeft) {
-                title("OUTOFSPACE")
-                keyValue("Tick", controller.tick.toString())
-                keyValue("Bodies", controller.bodyCount.toString())
+                title("OUT OF SPACE")
+                keyValue("Tick", s.tick.toString())
                 keyValue("FPS", fps.toInt().toString())
                 keyValue("Speed", "${controller.speed}x")
-            }
-            panel(Anchor.BottomLeft) {
-                title("CONTROLS")
-                button(if (controller.paused) "PLAY" else "PAUSE", 0x3A6EA5FFL) { onTogglePause() }
-                button("SPAWN 50", 0x2E8B40FFL) { onSpawnBurst() }
-                button("CLEAR", 0xCC3333FFL) { onClear() }
                 gap()
-                row("Drag to pan, wheel to zoom", 0x9A9A9AFFL)
-                row("Click empty space to spawn", 0x9A9A9AFFL)
+                title("MASS BALANCE")
+                keyValue("Mined", grams(s.minedGrams))
+                keyValue("In transit", grams(s.inTransitGrams))
+                keyValue("Banked", grams(s.stockpile.totalGrams))
+                keyValue("Vented", grams(s.ventedGrams))
+                val balanced = s.minedGrams == s.inTransitGrams + s.stockpile.totalGrams + s.ventedGrams
+                row(if (balanced) "balanced" else "LEAK", if (balanced) 0x6ED09AFFL else 0xE05A4AFFL)
+            }
+
+            panel(Anchor.TopRight) {
+                title("STOCKPILE")
+                val entries = s.stockpile.entries()
+                if (entries.isEmpty()) {
+                    row("(nothing banked yet)", 0x9A9A9AFFL)
+                } else {
+                    for ((form, mixture) in entries) {
+                        keyValue(form.name, grams(mixture.total))
+                        val dominant = mixture.dominant
+                        if (dominant != null && mixture[dominant] < mixture.total) {
+                            // Purity is the interesting number, so say it rather than hide it.
+                            val pct = mixture[dominant] * 100 / mixture.total
+                            row("   $pct% ${dominant.name}", 0x9A9A9AFFL)
+                        }
+                    }
+                }
+            }
+
+            panel(Anchor.BottomLeft) {
+                title("BUILD  ·  ${controller.brush.label} facing ${controller.brushFacing.name.uppercase()}")
+                for (kind in MachineKind.ALL) {
+                    val selected = kind == controller.brush
+                    button(
+                        if (selected) "> ${kind.label}" else "  ${kind.label}",
+                        if (selected) kindColor(kind) or 0xFFL else 0x232A38FFL,
+                    ) { controller.brush = kind }
+                }
+                gap()
+                row("click place · right-click remove", 0x9A9A9AFFL)
+                row("R rotate brush · middle-drag pan", 0x9A9A9AFFL)
+                row("wheel zoom · space pause · F5 reset", 0x9A9A9AFFL)
+            }
+
+            panel(Anchor.BottomRight) {
+                button(if (controller.paused) "PLAY" else "PAUSE", 0x3A6EA5FFL) { onTogglePause() }
+                button("RESET", 0xCC3333FFL) { onReset() }
             }
         }
     }
+
+    /** Grams are the sim's unit; kilograms are the reading unit past a certain size. */
+    private fun grams(g: Long): String =
+        if (g < 10_000L) "${g}g" else "${g / 1000}.${(g % 1000) / 100}kg"
 }

@@ -97,6 +97,16 @@ class Mixture private constructor(private val grams: LongArray) {
         return Mixture(apportion(grams, amount))
     }
 
+    /**
+     * This mixture's *proportions* rendered at a different total — the "recipe" operation. An ore
+     * body described as 410g iron / 300g silica per kilogram becomes any number of grams of the same
+     * stuff. Unlike [take] this may scale up, because a recipe is a ratio and not a pile.
+     */
+    fun scaledTo(grams: Long): Mixture {
+        if (grams <= 0L || isEmpty) return EMPTY
+        return Mixture(apportion(this.grams, grams))
+    }
+
     /** This mixture with only [species] kept, at [amount] grams. */
     fun onlyOf(species: Species, amount: Long): Mixture = of(species to amount)
 
@@ -138,7 +148,9 @@ class Mixture private constructor(private val grams: LongArray) {
  * what lets a proportional split conserve mass; naive rounding would lose or invent a gram per
  * split, and this simulation performs a great many splits.
  *
- * Requires `0 <= target <= sum(weights)`.
+ * [target] may exceed the sum of the weights — this is proportional *distribution*, so scaling a
+ * recipe up is as valid as splitting a pile down. Callers that must not exceed what is actually
+ * present enforce that themselves ([Mixture.take] does).
  */
 internal fun apportion(weights: LongArray, target: Long): LongArray {
     val out = LongArray(weights.size)
@@ -146,7 +158,6 @@ internal fun apportion(weights: LongArray, target: Long): LongArray {
 
     var sum = 0L
     for (w in weights) sum += w
-    require(target <= sum) { "cannot apportion $target from a total of $sum" }
     if (sum == 0L) return out
 
     var assigned = 0L

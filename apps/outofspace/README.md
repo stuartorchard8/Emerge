@@ -8,8 +8,8 @@ playable is one vessel interior with no flight) and what is deliberately deferre
 
 ## State of the app
 
-**Phase 1 (chemistry) is built, plus the Phase 2 logistics primitives.** `core/…/chem/` and
-`core/…/logistics/` are real and are the layer everything else is built to serve:
+**Phases 1 and 2 are built.** The game runs: a refinery line digs ore, concentrates it, smelts it,
+banks iron ingot and vents the waste — and you can build more of it with the mouse.
 
 | File | What it is |
 | --- | --- |
@@ -18,15 +18,28 @@ playable is one vessel interior with no flight) and what is deliberately deferre
 | `chem/Form.kt` | `Form` (what matter has been made into), the smelt table, and the binary crafting tree as data. |
 | `chem/Chemistry.kt` | `smelt`, `process`, `craft`, `merge`, `takeFrom`, `conservationOf`. |
 | `logistics/Packet.kt` | 1 kg packets (`SolidPacket` / `FluidPacket`), `Capacity` (the one home for the eventual volume switch) and `Rate` (integer carry, so 1 kg/s at 60 Hz stays exact). |
+| `world/Grid.kt`, `world/Machine.kt` | The square lattice, `Direction`, and the machines: belt (four slots), miner, processor, smelter, node, vent. |
+| `world/Vessel.kt` | `VesselState` (the snapshot) and `Stockpile` (the global construction inventory the node feeds). |
+| `world/StarterVessel.kt` | The world the game opens on: one complete line, already running. |
+| `OutofspaceSim.kt` | The reducer — five ordered passes per tick. `OutofspaceController` is the real-time boundary; the renderer and HUD sit beside them. |
 
-**Everything else is still the template's placeholder** — the bouncing-disc sim, its renderer and
-its HUD (`OutofspaceSim.kt`, `OutofspaceRenderer.kt`, `OutofspaceHud.kt`). It is left in place only
-so the app runs and the hosts stay exercised; the Phase 2 tile grid replaces it wholesale.
+Nothing of the app template's placeholder world remains.
 
 ```bash
-./gradlew :apps:outofspace:core:jvmTest    # 48 chemistry + logistics tests, <200ms
-./gradlew :apps:outofspace:desktop:run     # placeholder world
+./gradlew :apps:outofspace:core:jvmTest    # 67 tests, well under a second
+./gradlew :apps:outofspace:desktop:run     # the game
 ```
+
+Click to place, drag to paint a line of them, right-click to remove. `R` rotates the brush, `1`–`6`
+pick a machine, middle-drag pans, wheel zooms, space pauses.
+
+## The invariant to keep
+
+`mined == in transit + banked + vented`, on every tick. A miner is the only place matter legitimately
+enters the world and a vent the only place it leaves, so that one line catches a whole category of
+logistics bug — a packet duplicated on handoff, a jam that eats a slot, a buffer overwritten instead
+of merged. It is asserted in the tests and shown live in the HUD, and it is the first thing to look
+at when something feels wrong.
 
 ## The two rules of the chemistry layer
 

@@ -178,11 +178,16 @@ Each ends in something runnable and verified, and none needs the next to exist.
 piles, craft up the tree, split by purity, and assert **mass is conserved exactly through every
 path**. No renderer, no grid, no world. The piece most wanted, and it stands alone.
 
-**Phase 2 — The grid, and things that move on it.**
-Square tile grid, structure placement, and logistics: belts carrying discrete stacks, machines with
-input/output buffers, the central node absorbing arrivals into the global pool. Enough renderer and
-UI to place a machine and watch a stack move. Exit criterion: ore enters at one edge, leaves a
-smelter as an ingot, reaches the node, and becomes buildable material.
+**Phase 2 — The grid, and things that move on it. ✅ BUILT**
+Square tile grid; belts with **slots**; miner, processor, smelter, node and vent; a renderer and a
+build UI. Exit criterion met: ore is dug, concentrated, smelted, banked as iron ingot, and its waste
+vented — and the default world opens with that line already running so the loop is visible in the
+first second.
+
+Two things settled while building it. **Belts have slots** (four per tile), not a throughput number:
+when the line backs up the slots fill from the head and you can count the jam, which is the whole
+argument for the packet model. And **structure is deferred** — Phase 2 needs no notion of hull or
+floor, and Phase 4 will define it properly when it has to answer "what is inside the vessel".
 
 **Phase 3 — Machines and the trigger grammar.**
 Smelter, mineral processor, fabricator, storage, pumps. The `action_triggers` evaluator and its
@@ -206,15 +211,17 @@ before relying on it.
 
 ## 6. Open questions
 
-1. **Is the vessel grid a fixed size?** Fixed bounds are much simpler for the atmosphere solver; a
-   growable hull suits the "expand your vessel" fantasy better. A generous fixed bound with the hull
-   inside it is the cheap compromise.
-2. **What is outside the hull?** Vacuum as a special tile, or genuinely absent tiles? This decides
-   what a breach means, and the atmosphere solver wants to know early.
-3. **How does a pump differ from a compressor?** Both push fluid down the same pipe, but a liquid
+1. **What is outside the hull?** Vacuum as a special tile, or genuinely absent tiles? This decides
+   what a breach means, and the atmosphere solver wants to know early. Bundled with defining
+   structure at the start of Phase 4.
+2. **How does a pump differ from a compressor?** Both push fluid down the same pipe, but a liquid
    pump works against gravitational head while a gas compressor works against pressure. That
    difference is the interesting part of fluid machinery and it wants designing alongside the
    atmosphere model in Phase 4, not before — noted here so it does not get quietly forgotten.
-4. **Do belts have slots?** A belt as an ordered list of packets with positions (Godot conveyor,
-   ONI rail) versus a belt as a queue with a throughput. The former is what makes a jammed line
-   visible, which argues for it; decide with Phase 2's grid.
+3. **Does the ore body vary across the map?** Every miner currently draws the same composition. Ore
+   that differs by location is what makes *where* you mine a decision and gives the smelter's
+   one-metal-at-a-time stall something to mean. Cheap to add, so it is a question of when.
+
+*Settled:* the grid is a **fixed generous bound** with the vessel built inside it (much simpler for
+the Phase 4 atmosphere solver, and it still allows expansion); belts have **slots**; solids and
+fluids are the two networks; packets are 1 kg; quantity is mass with a per-phase route to volume.

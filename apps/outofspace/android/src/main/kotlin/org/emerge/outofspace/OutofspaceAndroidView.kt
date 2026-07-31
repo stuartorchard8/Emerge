@@ -13,30 +13,27 @@ import kotlin.math.abs
 import kotlin.math.hypot
 
 /**
- * Android host. Same three jobs as the desktop host — GL context, real time, platform input — and
- * the same zero game rules.
+ * Android host. Same three jobs as the desktop host — GL context, real time, platform input — and the
+ * same zero game rules.
  *
- * Two things are specific to this platform and easy to get wrong:
+ * Two things are specific to the platform: everything GL happens on the GL thread (touch events
+ * arrive on the main thread and are marshalled across with [queueEvent]), and [Ui.setDensity] must
+ * be told the display density or every panel is a third of its intended size.
  *
- *  1. **Everything GL happens on the GL thread.** The renderer, the UI and the sim tick are all
- *     created and touched inside the [Renderer] callbacks. Touch events arrive on the *main* thread,
- *     so they are marshalled across with [queueEvent] rather than acted on where they land.
- *  2. **Density.** A phone has ~3 physical pixels per dp. Without [Ui.setDensity] every panel is a
- *     third of its intended size and unusably small; with it, the same layout code that draws the
- *     desktop HUD is legible in the hand.
+ * Touch model: one finger pans, a tap places, two fingers pinch-zoom. Panning beats painting on a
+ * phone — a finger is imprecise and an accidental line of belts is much more annoying than an
+ * accidental pan.
  */
 internal class OutofspaceAndroidView(context: Context) : GLSurfaceView(context) {
 
     private val controller = OutofspaceController()
     private val density = context.resources.displayMetrics.density
 
-    // Created on the GL thread (they need a current context); only touched there afterwards.
     private var renderer: OutofspaceRenderer? = null
     private var hud: OutofspaceHud? = null
     private var ui: Ui? = null
     private var lastTimeNanos = 0L
 
-    // Touch state, GL-thread only.
     private var lastX = 0f
     private var lastY = 0f
     private var dragged = false
@@ -59,11 +56,10 @@ internal class OutofspaceAndroidView(context: Context) : GLSurfaceView(context) 
     }
 
     private fun setup() {
-        renderer = OutofspaceRenderer(controller.cfg)
+        renderer = OutofspaceRenderer().also { it.centreOn(controller.state) }
         hud = OutofspaceHud().also {
             it.onTogglePause = { controller.paused = !controller.paused }
-            it.onClear = { controller.clear() }
-            it.onSpawnBurst = { repeat(50) { controller.spawnAt(0f, 0f) } }
+            it.onReset = { controller.reset(); renderer?.centreOn(controller.state) }
         }
         ui = Ui().also { it.setDensity(density) }
     }
@@ -78,15 +74,14 @@ internal class OutofspaceAndroidView(context: Context) : GLSurfaceView(context) 
         lastTimeNanos = now
 
         ui.advanceClock(delta)
-        val state = controller.tick(delta)
-        renderer.draw(state)
+        renderer.draw(controller.tick(delta))
         hud.build(ui, controller, if (delta > 0f) 1f / delta else 0f)
         ui.draw()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        // Copy what we need off the event: it is recycled the moment this method returns, so reading
-        // it later on the GL thread would read whatever the next gesture put there.
+        // Copy what is needed off the event: it is recycled the moment this returns, so reading it
+        // later on the GL thread would read whatever the next gesture put there.
         val action = event.actionMasked
         val x = event.x
         val y = event.y
@@ -126,8 +121,8 @@ internal class OutofspaceAndroidView(context: Context) : GLSurfaceView(context) 
                         ui.hitTestUp(x, y)
                         ui.releaseHold()
                     } else if (!dragged) {
-                        val w = renderer.screenToWorld(x, y)
-                        controller.spawnAt(w[0], w[1])
+                        val tile = renderer.tileIndexAt(x, y, controller.state)
+                        if (tile >= 0) controller.place(tile)
                     }
                     uiConsumed = false
                     pinchDist = 0f
@@ -139,7 +134,7 @@ internal class OutofspaceAndroidView(context: Context) : GLSurfaceView(context) 
     }
 
     private companion object {
-        /** In pixels — a phone's pixels are small, so this is deliberately larger than desktop's. */
+        /** In pixels — a phone's pixels are small, so deliberately larger than desktop's. */
         const val DRAG_THRESHOLD = 12f
     }
 }

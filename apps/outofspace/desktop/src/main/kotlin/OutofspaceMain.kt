@@ -3,25 +3,23 @@ package org.emerge.desktop
 import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
+import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.render.torus.ui.Ui
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.NULL
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.pow
 
 /**
  * Desktop host: a GLFW window, an input loop, and a call to the shared game every frame.
  *
- * A host owns exactly three things — a GL context, real time, and platform input — and knows no
- * game rules whatsoever. Every line of behaviour lives in `:apps:outofspace:core`, which is why the
- * Android and web hosts beside this one are the same forty lines in a different dialect.
+ * The host owns a GL context, real time and platform input, and knows no game rules whatsoever —
+ * all of those live in `:apps:outofspace:core`, which is why the Android and web hosts beside it are
+ * the same loop in a different dialect.
  *
- * The sim ticks inline on this thread. That is right up to the point where a tick costs more than a
- * frame; past it, move the sim to its own thread and have the draw thread read a snapshot. If you
- * do, read `reference_cyto_threading` first — the rule that a draw thread must never block on the
- * sim's lock is learned expensively.
+ * Pointer routing is UI first, then the world. Left-drag paints a run of machines, which makes
+ * laying a belt line feel like drawing rather than clicking; middle-drag pans.
  */
 fun main() {
     if (!glfwInit()) error("GLFW init failed")
@@ -33,77 +31,95 @@ fun main() {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE)
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, 1)
 
-    val window = glfwCreateWindow(1280, 800, "Emerge: Outofspace", NULL, NULL)
+    val window = glfwCreateWindow(1440, 900, "Out of Space", NULL, NULL)
     if (window == NULL) error("Failed to create GLFW window")
     glfwMakeContextCurrent(window)
     glfwSwapInterval(1)
     glfwShowWindow(window)
     org.lwjgl.opengl.GL.createCapabilities()
 
-    // Everything GL must be constructed *after* the context is current.
+    // Everything GL must be constructed after the context is current.
     val controller = OutofspaceController()
-    val renderer = OutofspaceRenderer(controller.cfg)
+    val renderer = OutofspaceRenderer()
     val hud = OutofspaceHud()
     val ui = Ui()
+    renderer.centreOn(controller.state)
 
     hud.onTogglePause = { controller.paused = !controller.paused }
-    hud.onClear = { controller.clear() }
-    hud.onSpawnBurst = { repeat(50) { controller.spawnAt(randomWorld(controller.cfg.worldSize), randomWorld(controller.cfg.worldSize)) } }
+    hud.onReset = { controller.reset(); renderer.centreOn(controller.state) }
 
-    var mouseDown = false
-    var dragged = false
+    var leftDown = false
+    var middleDown = false
     var uiConsumed = false
     var lastX = 0f
     var lastY = 0f
+    var hovered = -1
+    // So a drag paints each tile once rather than re-issuing the same edit every frame.
+    var lastPainted = -1
 
-    // Pointer routing, in priority order: UI first, then the world. Getting this order wrong means
-    // clicks fall through panels into the world behind them.
     glfwSetMouseButtonCallback(window) { _, button, action, _ ->
-        if (button != GLFW_MOUSE_BUTTON_LEFT) return@glfwSetMouseButtonCallback
         val (px, py) = cursorPixel(window)
-        if (action == GLFW_PRESS) {
-            mouseDown = true
-            dragged = false
-            lastX = px; lastY = py
-            uiConsumed = ui.hitTestDown(px, py)
-        } else {
-            mouseDown = false
-            if (uiConsumed) {
-                ui.hitTestUp(px, py)
-                ui.releaseHold()
-            } else if (!dragged) {
-                // A click that didn't drag and didn't hit the UI is a world action.
-                val w = renderer.screenToWorld(px, py)
-                controller.spawnAt(w[0], w[1])
+        when (button) {
+            GLFW_MOUSE_BUTTON_LEFT -> if (action == GLFW_PRESS) {
+                leftDown = true
+                lastX = px; lastY = py
+                uiConsumed = ui.hitTestDown(px, py)
+                if (!uiConsumed) {
+                    val tile = renderer.tileIndexAt(px, py, controller.state)
+                    if (tile >= 0) { controller.place(tile); lastPainted = tile }
+                }
+            } else {
+                leftDown = false
+                lastPainted = -1
+                if (uiConsumed) { ui.hitTestUp(px, py); ui.releaseHold() }
+                uiConsumed = false
             }
-            uiConsumed = false
+
+            GLFW_MOUSE_BUTTON_RIGHT -> if (action == GLFW_PRESS) {
+                val tile = renderer.tileIndexAt(px, py, controller.state)
+                if (tile >= 0) controller.remove(tile)
+            }
+
+            GLFW_MOUSE_BUTTON_MIDDLE -> {
+                middleDown = action == GLFW_PRESS
+                lastX = px; lastY = py
+            }
         }
     }
 
     glfwSetCursorPosCallback(window) { _, _, _ ->
         val (px, py) = cursorPixel(window)
         ui.hover(px, py)
-        if (!mouseDown) return@glfwSetCursorPosCallback
+        hovered = renderer.tileIndexAt(px, py, controller.state)
         val dx = px - lastX
         val dy = py - lastY
-        if (!dragged && (abs(px - lastX) > DRAG_THRESHOLD || abs(py - lastY) > DRAG_THRESHOLD)) dragged = true
-        if (uiConsumed) ui.dragTo(px, py) else if (dragged) renderer.panByPixels(dx, dy)
+        when {
+            middleDown -> renderer.panByPixels(dx, dy)
+            leftDown && uiConsumed -> ui.dragTo(px, py)
+            leftDown -> if (hovered >= 0 && hovered != lastPainted) {
+                controller.place(hovered)
+                lastPainted = hovered
+            }
+        }
         lastX = px; lastY = py
     }
 
     glfwSetScrollCallback(window) { _, _, yoffset ->
         val (px, py) = cursorPixel(window)
-        renderer.zoomAtScreen(px, py, 1.1f.pow(yoffset.toFloat().coerceIn(-24f, 24f)))
+        renderer.zoomAtScreen(px, py, 1.12f.pow(yoffset.toFloat().coerceIn(-24f, 24f)))
     }
 
     glfwSetKeyCallback(window) { _, key, _, action, _ ->
         if (action != GLFW_PRESS) return@glfwSetKeyCallback
         when (key) {
             GLFW_KEY_SPACE -> controller.paused = !controller.paused
-            GLFW_KEY_R -> controller.reset()
+            GLFW_KEY_R -> controller.rotateBrush()
+            GLFW_KEY_TAB -> controller.cycleBrush(1)
+            GLFW_KEY_F5 -> { controller.reset(); renderer.centreOn(controller.state) }
             GLFW_KEY_LEFT_BRACKET -> controller.speed = max(0.25f, controller.speed / 2f)
             GLFW_KEY_RIGHT_BRACKET -> controller.speed = (controller.speed * 2f).coerceAtMost(16f)
             GLFW_KEY_ESCAPE -> glfwSetWindowShouldClose(window, true)
+            in GLFW_KEY_1..GLFW_KEY_6 -> controller.brush = MachineKind.ALL[key - GLFW_KEY_1]
         }
     }
 
@@ -120,20 +136,17 @@ fun main() {
         val delta = (now - lastTime).toFloat().coerceIn(0f, 0.25f)
         lastTime = now
         frames++
-        if (now - lastFpsTime >= 1.0) {
-            fps = frames.toFloat(); frames = 0; lastFpsTime = now
-        }
+        if (now - lastFpsTime >= 1.0) { fps = frames.toFloat(); frames = 0; lastFpsTime = now }
 
         ui.advanceClock(delta)
-        if (mouseDown && uiConsumed) {
+        if (leftDown && uiConsumed) {
             val (px, py) = cursorPixel(window)
             ui.updateHold(px, py, delta)
         }
 
         val state = controller.tick(delta)
 
-        // Draw order: world, then UI on top of it.
-        renderer.draw(state)
+        renderer.draw(state, hovered)
         hud.build(ui, controller, fps)
         ui.draw()
 
@@ -145,15 +158,6 @@ fun main() {
     glfwDestroyWindow(window)
     glfwTerminate()
 }
-
-private const val DRAG_THRESHOLD = 4f
-
-/**
- * Host-side randomness for a UI convenience (where to scatter a burst). Note that it is *not* used
- * for anything the sim depends on — a spawn position becomes an input value, which the reducer then
- * treats as data. Platform randomness inside the reducer would desync every peer.
- */
-private fun randomWorld(worldSize: Float): Float = (kotlin.random.Random.nextFloat() - 0.5f) * worldSize
 
 private fun updateResolution(window: Long, ui: Ui, renderer: OutofspaceRenderer) {
     MemoryStack.stackPush().use { st ->

@@ -1,187 +1,363 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Form
+import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.Resource
+import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.process
+import org.emerge.demo.outofspace.chem.smelt
+import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.logistics.Packet
+import org.emerge.demo.outofspace.logistics.Rate
+import org.emerge.demo.outofspace.logistics.SolidPacket
+import org.emerge.demo.outofspace.world.Belt
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Directed
+import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.MACHINE_BUFFER_CAP
+import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.Miner
+import org.emerge.demo.outofspace.world.Node
+import org.emerge.demo.outofspace.world.Processor
+import org.emerge.demo.outofspace.world.Smelter
+import org.emerge.demo.outofspace.world.Stockpile
+import org.emerge.demo.outofspace.world.Vent
+import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimInput
 import org.emerge.sim.core.SimReducer
 
-/**
- * The simulation. Replace all of this with your game — it exists to show the shape the engine
- * expects, not because bouncing discs are interesting.
- *
- * The contract that matters is [SimReducer]: `reduce(cfg, state, inputs) -> state` must be a pure
- * function. Nothing outside it may mutate the state, and it must not read wall-clock time, platform
- * `Random`, or anything else that differs between two machines. Hold that line and you get replay,
- * save/load, headless tests, and lockstep multiplayer for free; break it and all four break at once.
- *
- * This state is a `List<Body>` of immutable values because that reads clearly. Real worlds here
- * (Cyto, Scavengers) hold thousands to millions of entities and use the engine's structure-of-arrays
- * ECS (`org.emerge.sim.core.ecs.soa`) instead — parallel `FloatArray`s mutated in place, which the
- * reducer contract still permits as long as the mutation is confined to the tick. Start with the
- * list; move when you have measured that you need to.
- */
+/** Fixed world parameters. */
 data class OutofspaceConfig(
-    /** Side length of the square, toroidal world. World coordinates run over `[-size/2, +size/2)`. */
-    val worldSize: Float = 2f,
-    /** Fixed timestep. The sim always advances in whole ticks of this length, never by frame delta. */
-    val secondsPerTick: Float = 1f / 60f,
-    /** Hard cap, so a stuck finger on the spawn button can't grow the world without bound. */
-    val maxBodies: Int = 4000,
-    /** How sharply velocities curve each tick — the only thing making the demo world move. */
-    val swirlPerTick: Float = 0.004f,
-)
+    val grid: Grid = Grid(48, 28),
+    /** Sim tick rate. Feeds [Rate], which is what makes a machine's grams-per-second exact. */
+    val ticksPerSecond: Int = 60,
+) {
+    val secondsPerTick: Float get() = 1f / ticksPerSecond
+}
 
-/** One simulated thing. */
-data class Body(
-    val x: Float,
-    val y: Float,
-    val vx: Float,
-    val vy: Float,
-    val radius: Float,
-    /** 0..1, straight through to the renderer's palette. */
-    val hue: Float,
-)
+/** A player action. Actions are values, so they replay, serialise and travel over a wire. */
+sealed interface Edit {
+    data class Place(val index: Int, val kind: MachineKind, val facing: Direction) : Edit
+    data class Rotate(val index: Int) : Edit
+    data class Remove(val index: Int) : Edit
+}
 
-/**
- * Everything one player asks of one tick. Inputs are values, not callbacks: they are what a network
- * transport serialises and what a replay file records.
- */
-data class OutofspaceInput(
-    val spawns: List<Pair<Float, Float>> = emptyList(),
-    val clear: Boolean = false,
-) : SimInput {
+data class OutofspaceInput(val edits: List<Edit> = emptyList()) : SimInput {
     companion object {
         val EMPTY = OutofspaceInput()
     }
 }
 
-/** The whole world at one instant. */
-data class OutofspaceState(
-    val bodies: List<Body>,
-    val tick: Long,
-    /** PRNG state carried in the snapshot — never seed from the platform, that desyncs peers. */
-    val randomSeed: Long,
-) {
-    companion object {
-        /** A world with [count] bodies scattered by the deterministic PRNG from [seed]. */
-        fun initial(cfg: OutofspaceConfig, count: Int = 120, seed: Long = 0x5EEDL): OutofspaceState {
-            var s = seed
-            val bodies = ArrayList<Body>(count)
-            repeat(count) {
-                val (nx, s1) = nextUnit(s); s = s1
-                val (ny, s2) = nextUnit(s); s = s2
-                val (nvx, s3) = nextUnit(s); s = s3
-                val (nvy, s4) = nextUnit(s); s = s4
-                val (nh, s5) = nextUnit(s); s = s5
-                bodies.add(
-                    Body(
-                        x = (nx - 0.5f) * cfg.worldSize,
-                        y = (ny - 0.5f) * cfg.worldSize,
-                        vx = (nvx - 0.5f) * 0.4f,
-                        vy = (nvy - 0.5f) * 0.4f,
-                        radius = 0.012f,
-                        hue = nh,
-                    ),
-                )
-            }
-            return OutofspaceState(bodies, tick = 0, randomSeed = s)
-        }
-    }
-}
-
 /**
- * The reducer. Every rule of the game lives in here or in something it calls.
+ * The rules of the world.
  *
- * Note how the per-player inputs are folded in **sorted by [PlayerId]** rather than in map order:
- * two peers must apply the same inputs in the same order or their worlds diverge on the first tick
- * where two players act at once.
+ * One tick, in order:
+ *
+ *  1. **Edits** — the player's placements land first, so a machine placed this tick works this tick.
+ *  2. **Produce** — miners accrue ore into their buffers.
+ *  3. **Process** — processors and smelters draw from their input buffer and fill their outputs.
+ *  4. **Eject** — anything holding a full packet's worth of output pushes it into the tile it faces.
+ *     Waste leaves by the side clockwise of facing, so a rightward line drops its waste downward.
+ *  5. **Advance belts** — every [Belt.STEP_TICKS] ticks: deliver each belt's head packet, then shift
+ *     every belt one slot toward its head.
+ *
+ * Passes 4 and 5 walk the grid in row-major order, so when two machines compete to feed one tile the
+ * lower index wins. Arbitrary, but *fixed* — which is what determinism actually requires.
+ *
+ * Delivery is one step per belt per advance rather than a chain resolved instantly. A full
+ * downstream belt therefore costs its upstream neighbour a step of latency, which is exactly what
+ * makes a jam crawl backwards up the line where you can watch it happen.
  */
-object OutofspaceReducer : SimReducer<OutofspaceConfig, OutofspaceState, OutofspaceInput> {
+object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceInput> {
 
     override fun reduce(
         cfg: OutofspaceConfig,
-        state: OutofspaceState,
+        state: VesselState,
         inputs: Map<PlayerId, OutofspaceInput>,
-    ): OutofspaceState {
-        val ordered = inputs.entries.sortedBy { it.key.value }
-        if (ordered.any { it.value.clear }) {
-            return state.copy(bodies = emptyList(), tick = state.tick + 1)
+    ): VesselState {
+        val w = Work(state)
+
+        // Sorted by PlayerId: two players editing on the same tick must be applied in the same order
+        // on every peer, and map iteration order is not a promise.
+        for ((_, input) in inputs.entries.sortedBy { it.key.value }) {
+            for (edit in input.edits) w.apply(edit)
         }
 
-        val dt = cfg.secondsPerTick
-        val half = cfg.worldSize * 0.5f
-        val moved = ArrayList<Body>(state.bodies.size + 8)
-        for (b in state.bodies) {
-            // A slow rotation of the velocity vector, so the world visibly does something. Small-angle
-            // rotation: (vx, vy) turned by `swirl` radians, normalised back to its original speed.
-            val a = cfg.swirlPerTick
-            val vx = b.vx - b.vy * a
-            val vy = b.vy + b.vx * a
-            moved.add(b.copy(x = wrap(b.x + vx * dt, half), y = wrap(b.y + vy * dt, half), vx = vx, vy = vy))
-        }
-
-        var seed = state.randomSeed
-        for ((_, input) in ordered) {
-            for ((sx, sy) in input.spawns) {
-                if (moved.size >= cfg.maxBodies) break
-                val (nvx, s1) = nextUnit(seed); seed = s1
-                val (nvy, s2) = nextUnit(seed); seed = s2
-                val (nh, s3) = nextUnit(seed); seed = s3
-                moved.add(
-                    Body(
-                        x = wrap(sx, half),
-                        y = wrap(sy, half),
-                        vx = (nvx - 0.5f) * 0.4f,
-                        vy = (nvy - 0.5f) * 0.4f,
-                        radius = 0.012f,
-                        hue = nh,
-                    ),
-                )
+        for (i in w.machines.indices) {
+            when (val m = w.machines[i]) {
+                is Miner -> w.machines[i] = w.produce(cfg, m)
+                is Processor -> w.machines[i] = refine(cfg, m)
+                is Smelter -> w.machines[i] = melt(cfg, m)
+                else -> {}
             }
         }
 
-        return OutofspaceState(bodies = moved, tick = state.tick + 1, randomSeed = seed)
+        for (i in w.machines.indices) w.eject(i)
+
+        if (state.tick % Belt.STEP_TICKS == 0L) {
+            for (i in w.machines.indices) w.deliverBeltHead(i)
+            for (i in w.machines.indices) {
+                val b = w.machines[i]
+                if (b is Belt) w.machines[i] = b.copy(slots = shiftTowardHead(b.slots))
+            }
+        }
+
+        return state.copy(
+            machines = w.machines.toList(),
+            stockpile = w.stockpile,
+            tick = state.tick + 1,
+            minedGrams = w.minedGrams,
+            ventedGrams = w.ventedGrams,
+        )
+    }
+
+    /** Full snapshots on the wire; a demo sending partial state would merge here instead. */
+    override fun patchState(state: VesselState, delta: VesselState): VesselState = delta
+
+    // ── Machine behaviour ─────────────────────────────────────────────────────
+
+    private fun refine(cfg: OutofspaceConfig, m: Processor): Processor {
+        val input = m.input ?: return m
+        val (grams, carry) = Rate.tick(m.gramsPerSecond, cfg.ticksPerSecond, m.carry)
+        val chunkMass = minOf(grams, input.mass)
+        if (chunkMass <= 0L) return m.copy(carry = carry)
+
+        val chunk = Resource(input.form, input.mixture.take(chunkMass))
+        val r = process(chunk, m.efficiencyPermille)
+        val product = m.product.merged(r.product) ?: return m.copy(carry = carry)
+        val tailings = m.tailings.merged(r.tailings) ?: return m.copy(carry = carry)
+
+        return m.copy(
+            input = Resource(input.form, input.mixture - chunk.mixture).orNull(),
+            product = product.buffer,
+            tailings = tailings.buffer,
+            carry = carry,
+        )
+    }
+
+    private fun melt(cfg: OutofspaceConfig, m: Smelter): Smelter {
+        val input = m.input ?: return m
+        val (grams, carry) = Rate.tick(m.gramsPerSecond, cfg.ticksPerSecond, m.carry)
+        val chunkMass = minOf(grams, input.mass)
+        if (chunkMass <= 0L) return m.copy(carry = carry)
+
+        val chunk = Resource(input.form, input.mixture.take(chunkMass))
+        val r = smelt(chunk)
+        // A smelter holds one kind of ingot at a time. If this chunk's dominant species differs from
+        // what is already waiting, stall rather than quietly mixing two metals — a stopped machine is
+        // the honest signal that the ore body changed under it.
+        val refined = m.refined.merged(r.refined) ?: return m.copy(carry = carry)
+        val slag = m.slag.merged(r.slag) ?: return m.copy(carry = carry)
+
+        return m.copy(
+            input = Resource(input.form, input.mixture - chunk.mixture).orNull(),
+            refined = refined.buffer,
+            slag = slag.buffer,
+            carry = carry,
+        )
     }
 
     /**
-     * Applies a delta snapshot from the host. Full-snapshot demos just take the delta wholesale;
-     * a demo that sends partial state merges it here.
+     * The new contents of an output buffer after [addition] is merged in, or null if the two forms
+     * cannot coexist.
+     *
+     * The wrapper exists because "nothing to add, buffer still empty" and "these cannot mix" are
+     * *both* naturally expressed as a null buffer, and conflating them made every machine stall
+     * whenever one of its two output streams happened to be empty — which for an all-slag smelt is
+     * always. Distinguishing the two is the whole job of this type.
      */
-    override fun patchState(state: OutofspaceState, delta: OutofspaceState): OutofspaceState = delta
-}
+    private class Merge(val buffer: Resource?)
 
-/** Toroidal wrap into `[-half, +half)`. */
-fun wrap(v: Float, half: Float): Float {
-    val size = half * 2f
-    var r = v
-    while (r >= half) r -= size
-    while (r < -half) r += size
-    return r
-}
+    private fun Resource?.merged(addition: Resource): Merge? = when {
+        addition.isEmpty -> Merge(this)
+        this == null || this.isEmpty -> Merge(addition)
+        this.form != addition.form -> null
+        else -> Merge(Resource(form, mixture + addition.mixture))
+    }
 
-/**
- * Shortest signed distance from 0 to [d] on a torus of [size] — use this for *every* difference
- * between two world positions (rendering offsets, distance checks, steering). Plain subtraction is
- * wrong near the seam and the bug it causes only shows up at the edges of the world.
- */
-fun wrapDelta(d: Float, size: Float): Float {
-    val half = size * 0.5f
-    var r = d
-    while (r > half) r -= size
-    while (r < -half) r += size
-    return r
-}
+    private fun Resource.orNull(): Resource? = if (isEmpty) null else this
 
-/**
- * SplitMix64 — a deterministic PRNG whose state is one `Long`, so it serialises with the snapshot.
- * Returns the value in `[0, 1)` plus the next seed; the caller threads the seed through, which keeps
- * the reducer pure.
- */
-fun nextUnit(seed: Long): Pair<Float, Long> {
-    var z = seed + -0x61c8864680b583ebL
-    val next = z
-    z = (z xor (z ushr 30)) * -0x40a7b892e31b1a47L
-    z = (z xor (z ushr 27)) * -0x6b2fb644ecceee15L
-    z = z xor (z ushr 31)
-    // Top 24 bits → a float in [0,1): enough precision for a Float, and never negative.
-    return ((z ushr 40).toFloat() / (1 shl 24).toFloat()) to next
+    /** Moves everything one slot toward the head, leaving the tail free. */
+    private fun shiftTowardHead(slots: List<Packet?>): List<Packet?> {
+        val out = arrayOfNulls<Packet>(slots.size)
+        for (i in slots.indices) out[i] = slots[i]
+        for (i in out.indices) {
+            if (out[i] == null && i + 1 < out.size) {
+                out[i] = out[i + 1]
+                out[i + 1] = null
+            }
+        }
+        return out.toList()
+    }
+
+    /**
+     * The ore body a new miner draws from, per kilogram. Mostly iron and far too dirty to smelt
+     * straight — 410g of iron against 590g of everything else — so a line that runs ore directly into
+     * a smelter yields nothing but slag. Learning to put a processor in front is the first thing this
+     * world teaches, and it teaches it without a tutorial.
+     */
+    val DEFAULT_ORE_BODY: Mixture = Mixture.of(
+        Species.Iron to 410L,
+        Species.Silica to 300L,
+        Species.Copper to 180L,
+        Species.Titanium to 110L,
+    )
+
+    /**
+     * Mutable scratch for one tick. The incoming [VesselState] is never touched — this copies the
+     * machine list up front and hands back a fresh one, so the reducer stays pure while the passes
+     * inside it can still see each other's work.
+     */
+    private class Work(state: VesselState) {
+        val grid: Grid = state.grid
+        val machines: MutableList<Machine?> = state.machines.toMutableList()
+        var stockpile: Stockpile = state.stockpile
+        var minedGrams: Long = state.minedGrams
+        var ventedGrams: Long = state.ventedGrams
+
+        fun apply(edit: Edit) {
+            when (edit) {
+                is Edit.Place -> {
+                    if (edit.index !in machines.indices) return
+                    // Placing onto an occupied tile is a no-op, so a stray click cannot destroy a
+                    // machine — and everything inside it — by accident.
+                    if (machines[edit.index] != null) return
+                    machines[edit.index] = newMachine(edit.kind, edit.facing)
+                }
+                is Edit.Rotate -> {
+                    val m = machines.getOrNull(edit.index)
+                    if (m is Directed) machines[edit.index] = m.rotated()
+                }
+                is Edit.Remove -> {
+                    if (edit.index in machines.indices) machines[edit.index] = null
+                }
+            }
+        }
+
+        /**
+         * Digs. [minedGrams] is incremented **here**, not when a packet ships, because that is the
+         * moment matter enters the world — counting it at the belt instead would leave whatever sits
+         * in the miner's buffer unaccounted for, and the world-conservation invariant would be a
+         * statement about shipping rather than about mass.
+         */
+        fun produce(cfg: OutofspaceConfig, m: Miner): Miner {
+            val (grams, carry) = Rate.tick(m.gramsPerSecond, cfg.ticksPerSecond, m.carry)
+            if (m.buffer.mass >= Miner.BUFFER_CAP) return m.copy(carry = carry)  // backed up: stop digging
+            if (grams <= 0L) return m.copy(carry = carry)
+            val dug = m.composition.scaledTo(grams)
+            minedGrams += dug.total
+            return m.copy(buffer = Resource(Form.Ore, m.buffer.mixture + dug), carry = carry)
+        }
+
+        /** Pushes a full packet out of any machine holding one: product forward, waste sideways. */
+        fun eject(index: Int) {
+            when (val m = machines[index]) {
+                is Miner -> {
+                    val (packet, rest) = takePacket(m.buffer) ?: return
+                    if (send(index, m.facing, packet)) machines[index] = m.copy(buffer = rest)
+                }
+                is Processor -> {
+                    m.product?.let(::takePacket)?.let { (packet, rest) ->
+                        if (send(index, m.facing, packet)) {
+                            machines[index] = (machines[index] as Processor).copy(product = rest.orNull())
+                        }
+                    }
+                    val after = machines[index] as? Processor ?: return
+                    after.tailings?.let(::takePacket)?.let { (packet, rest) ->
+                        if (send(index, after.facing.clockwise, packet)) {
+                            machines[index] = (machines[index] as Processor).copy(tailings = rest.orNull())
+                        }
+                    }
+                }
+                is Smelter -> {
+                    m.refined?.let(::takePacket)?.let { (packet, rest) ->
+                        if (send(index, m.facing, packet)) {
+                            machines[index] = (machines[index] as Smelter).copy(refined = rest.orNull())
+                        }
+                    }
+                    val after = machines[index] as? Smelter ?: return
+                    after.slag?.let(::takePacket)?.let { (packet, rest) ->
+                        if (send(index, after.facing.clockwise, packet)) {
+                            machines[index] = (machines[index] as Smelter).copy(slag = rest.orNull())
+                        }
+                    }
+                }
+                else -> {}
+            }
+        }
+
+        /** Hands a belt's head packet to whatever it faces. */
+        fun deliverBeltHead(index: Int) {
+            val belt = machines[index] as? Belt ?: return
+            val head = belt.slots.firstOrNull() ?: return
+            if (send(index, belt.facing, head)) {
+                machines[index] = belt.copy(slots = belt.slots.toMutableList().also { it[0] = null })
+            }
+        }
+
+        /**
+         * Only whole packets move, so belts carry uniform lumps and a trickle of output does not
+         * spray the network with crumbs. Null while the buffer is still filling.
+         */
+        private fun takePacket(buffer: Resource): Pair<SolidPacket, Resource>? {
+            if (buffer.mass < Capacity.PACKET_GRAMS) return null
+            val taken = buffer.mixture.take(Capacity.PACKET_GRAMS)
+            return SolidPacket(Resource(buffer.form, taken)) to Resource(buffer.form, buffer.mixture - taken)
+        }
+
+        private fun Resource.orNull(): Resource? = if (isEmpty) null else this
+
+        /** Offers [packet] to the neighbour of [from] in [dir]. True if it was taken. */
+        fun send(from: Int, dir: Direction, packet: Packet): Boolean {
+            val target = grid.neighbour(from, dir)
+            if (target < 0) return false
+            return when (val dest = machines[target]) {
+                is Belt -> {
+                    val tail = dest.slots.lastIndex
+                    if (dest.slots[tail] != null) false
+                    else {
+                        machines[target] = dest.copy(slots = dest.slots.toMutableList().also { it[tail] = packet })
+                        true
+                    }
+                }
+                is Processor -> acceptInto(dest.input, packet)?.let { machines[target] = dest.copy(input = it); true } ?: false
+                is Smelter -> acceptInto(dest.input, packet)?.let { machines[target] = dest.copy(input = it); true } ?: false
+                is Node -> {
+                    if (packet !is SolidPacket) false
+                    else {
+                        stockpile = stockpile.deposit(packet.resource)
+                        machines[target] = dest.copy(absorbedGrams = dest.absorbedGrams + packet.mass)
+                        true
+                    }
+                }
+                is Vent -> {
+                    ventedGrams += packet.mass
+                    machines[target] = dest.copy(ventedGrams = dest.ventedGrams + packet.mass)
+                    true
+                }
+                // Miners take no input, and an empty tile is not a floor to drop things on.
+                else -> false
+            }
+        }
+
+        /** The new input buffer if [packet] is acceptable, else null. */
+        private fun acceptInto(existing: Resource?, packet: Packet): Resource? {
+            if (packet !is SolidPacket) return null
+            if (existing != null && existing.form != packet.form) return null
+            if ((existing?.mass ?: 0L) >= MACHINE_BUFFER_CAP) return null
+            return if (existing == null) packet.resource
+            else Resource(existing.form, existing.mixture + packet.contents)
+        }
+
+        private fun newMachine(kind: MachineKind, facing: Direction): Machine = when (kind) {
+            MachineKind.Belt -> Belt(facing)
+            MachineKind.Miner -> Miner(facing, DEFAULT_ORE_BODY)
+            MachineKind.Processor -> Processor(facing)
+            MachineKind.Smelter -> Smelter(facing)
+            MachineKind.Node -> Node()
+            MachineKind.Vent -> Vent()
+        }
+    }
 }

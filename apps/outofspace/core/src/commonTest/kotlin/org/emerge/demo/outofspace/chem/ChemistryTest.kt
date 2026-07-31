@@ -71,8 +71,18 @@ class ChemistryTest {
     }
 
     @Test
-    fun `apportion rejects a target larger than the total`() {
-        assertFailsWith<IllegalArgumentException> { apportion(longArrayOf(1, 1, 0, 0, 0, 0, 0, 0), 3) }
+    fun `apportion scales up as happily as it splits down`() {
+        // It is proportional distribution, not subdivision: a per-kilogram ore recipe rendered at
+        // ten kilograms is the same operation as taking a shovelful.
+        val out = apportion(longArrayOf(410, 300, 180, 110, 0, 0, 0, 0), 10_000)
+        assertEquals(10_000L, out.sum())
+        assertEquals(4_100L, out[0])
+    }
+
+    @Test
+    fun `take never yields more than is present, however much is asked for`() {
+        val pile = Mixture.of(Species.Iron to 100L)
+        assertEquals(100L, pile.take(1_000_000L).total)
     }
 
     // ── Mixture ────────────────────────────────────────────────────────────────

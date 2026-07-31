@@ -1,60 +1,53 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.world.Belt
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.Miner
+import org.emerge.demo.outofspace.world.Node
+import org.emerge.demo.outofspace.world.Processor
+import org.emerge.demo.outofspace.world.Smelter
+import org.emerge.demo.outofspace.world.Vent
+import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.massIn
 import org.emerge.render.torus.GPU
-import org.emerge.render.torus.GpuFloatBuffer
-import org.emerge.render.torus.Mat4
-import org.emerge.render.torus.put
-import org.emerge.render.torus.shader.CircleShader
-import kotlin.math.abs
+import org.emerge.render.torus.ui.UiRectRenderer
+import kotlin.math.floor
 import kotlin.math.max
 
 /**
- * Draws the world, and owns the camera.
+ * Draws the vessel: tiles, machines, and every packet in transit.
  *
- * Everything here runs on the GL thread and only on the GL thread — construct it inside
- * `onSurfaceCreated` / after `glfwMakeContextCurrent`, never in a field initialiser that runs
- * earlier, or shader compilation happens with no current context.
+ * Everything is an axis-aligned rectangle, so the whole world goes out in **one instanced draw
+ * call** through the engine's [UiRectRenderer] — no custom shader, and no per-tile draw overhead. A
+ * tile game earns that simplicity; spending a shader on it before there is art would be premature.
  *
- * The engine's [CircleShader] draws instanced discs: one draw call for every body in the world,
- * with per-instance transform, colour and alpha. Give it a matrix per body and it will happily
- * take thousands. Game-specific looks belong in your own shader beside this file — see
- * `apps/cyto/core/.../CytoCellShader.kt` or `apps/drockets/core/.../shader/PlanetShader.kt`,
- * and note the `registerShaderCodegen` line in a build file, which turns `.vert`/`.frag` files
- * into Kotlin sources so shaders work on desktop GL, GLES and WebGL alike.
+ * The camera lives here and works in tile units: [camX]/[camY] is the tile at the centre of the
+ * screen and [tilePx] is the zoom. Screen y is down, matching the grid's +y and the direction
+ * gravity will point when Phase 4 arrives.
  */
-class OutofspaceRenderer(private val cfg: OutofspaceConfig = OutofspaceConfig()) {
+class OutofspaceRenderer {
 
-    // ── Camera ────────────────────────────────────────────────────────────────────
-    // World-space point at the centre of the screen, and NDC units per world unit vertically.
-    // zoom == 1 fits exactly `worldSize` world units into the screen height.
-    private var camX = 0f
-    private var camY = 0f
-    private var zoom = 1f
+    private val rects = UiRectRenderer(maxRects = MAX_RECTS)
 
     private var resW = 1f
     private var resH = 1f
 
-    private val vao = GPU.genAndBindVertexArrays()
-    private val vbo = GPU.genBuffers()
-    private val circleShader = CircleShader()
+    var camX = 0f
+        private set
+    var camY = 0f
+        private set
+    var tilePx = 34f
+        private set
 
-    private var matrices = FloatArray(0)
-    private var primaryIds = FloatArray(0)
-    private var shapes = FloatArray(0)
-    private var alphas = FloatArray(0)
-    private var tints = FloatArray(0)
-
-    private val matView = Mat4.scratch()
-    private val matModel = Mat4.scratch()
-    private val matT = Mat4.scratch()
-    private val matS = Mat4.scratch()
-    private val matOut = Mat4.scratch()
-
-    init {
-        GPU.bindVertexArray(vao)
-        uploadVerts()
-        ensureCapacity(256)
-    }
+    // One flat batch, refilled each frame.
+    private val centers = FloatArray(MAX_RECTS * 2)
+    private val halfSizes = FloatArray(MAX_RECTS * 2)
+    private val colors = FloatArray(MAX_RECTS * 4)
+    private var count = 0
 
     fun setResolution(widthPx: Float, heightPx: Float) {
         resW = max(1f, widthPx)
@@ -62,165 +55,234 @@ class OutofspaceRenderer(private val cfg: OutofspaceConfig = OutofspaceConfig())
         GPU.setViewport(0, 0, resW.toInt(), resH.toInt())
     }
 
-    /** Pixels per world unit at the current zoom — identical on both axes, so circles stay circular. */
-    private val pixelsPerWorldUnit: Float get() = zoom * resH * 0.5f
-
-    /** Drag-to-pan: moves the camera so the world appears to follow the pointer. */
-    fun panByPixels(dxPixels: Float, dyPixels: Float) {
-        val s = pixelsPerWorldUnit
-        camX -= dxPixels / s
-        camY -= dyPixels / s
-        camX = wrap(camX, cfg.worldSize * 0.5f)
-        camY = wrap(camY, cfg.worldSize * 0.5f)
+    /**
+     * Centres the camera on what has actually been built, falling back to the middle of the grid
+     * when nothing has. Centring on the grid instead would open the game looking at empty floor
+     * beside the vessel, which is a poor first impression of a game about the vessel.
+     */
+    fun centreOn(state: VesselState) {
+        var minX = Int.MAX_VALUE
+        var minY = Int.MAX_VALUE
+        var maxX = Int.MIN_VALUE
+        var maxY = Int.MIN_VALUE
+        for (i in state.machines.indices) {
+            if (state.machines[i] == null) continue
+            val x = state.grid.xOf(i)
+            val y = state.grid.yOf(i)
+            if (x < minX) minX = x
+            if (x > maxX) maxX = x
+            if (y < minY) minY = y
+            if (y > maxY) maxY = y
+        }
+        if (maxX < minX) {
+            camX = state.grid.width / 2f
+            camY = state.grid.height / 2f
+        } else {
+            camX = (minX + maxX + 1) / 2f
+            camY = (minY + maxY + 1) / 2f
+        }
     }
 
-    /** Wheel/pinch zoom that keeps the world point under [px],[py] pinned there. */
+    fun panByPixels(dxPixels: Float, dyPixels: Float) {
+        camX -= dxPixels / tilePx
+        camY -= dyPixels / tilePx
+    }
+
     fun zoomAtScreen(px: Float, py: Float, factor: Float) {
         if (!factor.isFinite() || factor <= 0f) return
-        val before = screenToWorld(px, py)
-        zoom = (zoom * factor).coerceIn(MIN_ZOOM, MAX_ZOOM)
-        val after = screenToWorld(px, py)
-        camX = wrap(camX + wrapDelta(before[0] - after[0], cfg.worldSize), cfg.worldSize * 0.5f)
-        camY = wrap(camY + wrapDelta(before[1] - after[1], cfg.worldSize), cfg.worldSize * 0.5f)
+        val before = screenToTile(px, py)
+        tilePx = (tilePx * factor).coerceIn(MIN_TILE_PX, MAX_TILE_PX)
+        val after = screenToTile(px, py)
+        camX += before[0] - after[0]
+        camY += before[1] - after[1]
     }
 
-    /** Framebuffer pixel → world coordinates. Pair this with [worldToScreen] for labels/pick tests. */
-    fun screenToWorld(px: Float, py: Float): FloatArray {
-        val ndcX = px / resW * 2f - 1f
-        val ndcY = 1f - py / resH * 2f
-        val aspect = resW / resH
-        return floatArrayOf(
-            camX + ndcX * aspect / zoom,
-            camY - ndcY / zoom,
-        )
+    /** Framebuffer pixel → fractional tile coordinates. */
+    fun screenToTile(px: Float, py: Float): FloatArray = floatArrayOf(
+        camX + (px - resW * 0.5f) / tilePx,
+        camY + (py - resH * 0.5f) / tilePx,
+    )
+
+    /** Framebuffer pixel → tile index, or -1 when the pointer is off the grid. */
+    fun tileIndexAt(px: Float, py: Float, state: VesselState): Int {
+        val t = screenToTile(px, py)
+        val x = floor(t[0]).toInt()
+        val y = floor(t[1]).toInt()
+        return if (state.grid.inBounds(x, y)) state.grid.index(x, y) else -1
     }
 
-    /** World coordinates → framebuffer pixel. */
-    fun worldToScreen(wx: Float, wy: Float): FloatArray {
-        val aspect = resW / resH
-        val dx = wrapDelta(wx - camX, cfg.worldSize)
-        val dy = wrapDelta(wy - camY, cfg.worldSize)
-        val ndcX = dx * zoom / aspect
-        val ndcY = -dy * zoom
-        return floatArrayOf((ndcX + 1f) * 0.5f * resW, (1f - ndcY) * 0.5f * resH)
-    }
-
-    /** Draws one frame of [state]. Call before the UI draws, so panels sit on top. */
-    fun draw(state: OutofspaceState) {
-        GPU.setClearColor(0.04f, 0.05f, 0.08f, 1f)
+    fun draw(state: VesselState, hoveredIndex: Int = -1) {
+        GPU.setClearColor(0.05f, 0.06f, 0.08f, 1f)
         GPU.clearColorBuffer()
-
-        GPU.bindVertexArray(vao)
         GPU.enableBlend()
         GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
+        count = 0
 
-        computeViewMatrix()
-        ensureCapacity(state.bodies.size)
+        val grid = state.grid
+        // Only the tiles actually on screen. Free at this size; the habit is what matters.
+        val halfW = resW / (2f * tilePx)
+        val halfH = resH / (2f * tilePx)
+        val minX = max(0, floor(camX - halfW).toInt())
+        val maxX = minOf(grid.width - 1, floor(camX + halfW).toInt() + 1)
+        val minY = max(0, floor(camY - halfH).toInt())
+        val maxY = minOf(grid.height - 1, floor(camY + halfH).toInt() + 1)
 
-        var n = 0
-        for (b in state.bodies) {
-            if (n >= CircleShader.MAX_INSTANCES) break
-            // Cull what is off-screen. At outofspace scale this is free; at Cyto scale it is the
-            // difference between a smooth frame and a slideshow, so the habit is worth forming.
-            val dx = wrapDelta(b.x - camX, cfg.worldSize)
-            val dy = wrapDelta(b.y - camY, cfg.worldSize)
-            val halfW = (resW / resH) / zoom + b.radius
-            val halfH = 1f / zoom + b.radius
-            if (abs(dx) > halfW || abs(dy) > halfH) continue
-
-            matT.setTranslation(dx, dy)
-            matS.setScale(b.radius, b.radius)
-            matModel.setProduct(matT, matS)
-            matOut.setProduct(matView, matModel)
-            matOut.copyInto(matrices, n * Mat4.FLOATS)
-
-            primaryIds[n] = 0f
-            shapes[n] = CircleShader.SHAPE_DISC
-            alphas[n] = 1f
-            val rgb = hueToRgb(b.hue)
-            tints[n * 3] = rgb[0]
-            tints[n * 3 + 1] = rgb[1]
-            tints[n * 3 + 2] = rgb[2]
-            n++
+        // Floor, so the buildable area reads as a place rather than as a void.
+        for (y in minY..maxY) {
+            for (x in minX..maxX) {
+                val shade = if ((x + y) and 1 == 0) 0x141A24FFL else 0x111722FFL
+                tileRect(x, y, 1f, shade)
+            }
         }
 
-        circleShader.drawInstanced(
-            vOffset = 0,
-            instanceCount = n,
-            matricesColMajor = matrices,
-            primaryIds = primaryIds,
-            shapes = shapes,
-            alphas = alphas,
-            tintColorsRgb = tints,
-        )
+        for (y in minY..maxY) {
+            for (x in minX..maxX) {
+                val index = grid.index(x, y)
+                drawMachine(state, index, x, y, state.machines[index] ?: continue)
+            }
+        }
+
+        if (hoveredIndex >= 0) {
+            tileRect(grid.xOf(hoveredIndex), grid.yOf(hoveredIndex), 1f, 0xFFFFFF1AL)
+        }
+
+        rects.drawInstanced(count, centers, halfSizes, colors)
         GPU.disableBlend()
     }
 
-    /** Frees GPU objects. Desktop hosts call this on window close; mobile hosts let the context die. */
-    fun cleanup() {
-        circleShader.deleteProgram()
-        GPU.deleteBuffers(vbo)
-        vao?.let { GPU.deleteVertexArrays(it) }
-    }
+    fun cleanup() = rects.deleteProgram()
 
-    // ── Internals ─────────────────────────────────────────────────────────────────
+    // ── Machine drawing ───────────────────────────────────────────────────────
 
-    /**
-     * World → clip space. Only a scale: the per-body translation is folded into the model matrix so
-     * it can be the *wrapped* delta to the camera, which is what makes a body at the far edge of the
-     * torus draw just off the near edge instead of flying across the screen.
-     */
-    private fun computeViewMatrix() {
-        val aspect = resW / resH
-        // Negative Y so world +y points down the screen, matching pointer coordinates.
-        matView.setScale(zoom / aspect, -zoom)
-    }
-
-    private fun ensureCapacity(count: Int) {
-        val n = count.coerceAtMost(CircleShader.MAX_INSTANCES)
-        if (n <= alphas.size) return
-        val cap = maxOf(n, alphas.size * 2, 256).coerceAtMost(CircleShader.MAX_INSTANCES)
-        matrices = FloatArray(cap * Mat4.FLOATS)
-        primaryIds = FloatArray(cap)
-        shapes = FloatArray(cap)
-        alphas = FloatArray(cap)
-        tints = FloatArray(cap * 3)
-    }
-
-    private fun uploadVerts() {
-        // One triangle that circumscribes the unit circle. The shader discards fragments outside the
-        // disc, so three vertices draw a perfectly round, antialiased circle at any zoom.
-        val verts = floatArrayOf(
-            -1f, 1.7320508f,
-            2f, 0f,
-            -1f, -1.7320508f,
-        )
-        val buf = GpuFloatBuffer(verts.size)
-        buf.put(verts).flip()
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, vbo)
-        GPU.enableVertexAttribArray(0)
-        GPU.putVertexAttribPointer(0, 2, GPU.FLOAT, false, 2 * 4, 0)
-        GPU.bufferData(GPU.ARRAY_BUFFER, verts.size, buf, GPU.STATIC_DRAW)
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
-    }
-
-    private fun hueToRgb(hue: Float): FloatArray {
-        val h = (hue - kotlin.math.floor(hue)) * 6f
-        val i = h.toInt()
-        val f = h - i
-        val q = 1f - f
-        return when (i) {
-            0 -> floatArrayOf(1f, f, 0f)
-            1 -> floatArrayOf(q, 1f, 0f)
-            2 -> floatArrayOf(0f, 1f, f)
-            3 -> floatArrayOf(0f, q, 1f)
-            4 -> floatArrayOf(f, 0f, 1f)
-            else -> floatArrayOf(1f, 0f, q)
+    private fun drawMachine(state: VesselState, index: Int, x: Int, y: Int, m: Machine) {
+        when (m) {
+            is Belt -> {
+                tileRect(x, y, 0.9f, 0x2A3242FFL)
+                // A notch on the output edge: which way this belt runs, readable at a glance.
+                edgeMark(x, y, m.facing, 0x6E7C94FFL)
+                for (i in m.slots.indices) {
+                    val packet = m.slots[i] ?: continue
+                    val (ox, oy) = slotOffset(m.facing, i, m.slots.size)
+                    // Slots sit 1/SLOTS of a tile apart, so a packet must be drawn narrower than
+                    // that or four of them smear into one bar and the jam stops being countable.
+                    val fill = (packet.mass.toFloat() / Capacity.PACKET_GRAMS).coerceIn(0.4f, 1f)
+                    val scale = (0.78f / m.slots.size) * fill
+                    rect(
+                        (x + 0.5f + ox) * tilePx, (y + 0.5f + oy) * tilePx,
+                        scale * tilePx, scale * tilePx,
+                        packetColor(packet.contents.dominant),
+                    )
+                }
+            }
+            is Miner -> {
+                tileRect(x, y, 0.94f, 0x6B4A2AFFL)
+                edgeMark(x, y, m.facing, 0xD9A066FFL)
+                fillBar(x, y, m.buffer.mass.toFloat() / Miner.BUFFER_CAP)
+            }
+            is Processor -> {
+                tileRect(x, y, 0.94f, 0x2E5A6BFFL)
+                edgeMark(x, y, m.facing, 0x7FD4EEFFL)
+                edgeMark(x, y, m.facing.clockwise, 0x6B5A2EFFL)   // where tailings leave
+                fillBar(x, y, massIn(m).toFloat() / BUFFER_BAR_FULL)
+            }
+            is Smelter -> {
+                tileRect(x, y, 0.94f, 0x8A3A2AFFL)
+                edgeMark(x, y, m.facing, 0xFFB05AFFL)
+                edgeMark(x, y, m.facing.clockwise, 0x4A3A32FFL)   // where slag leaves
+                fillBar(x, y, massIn(m).toFloat() / BUFFER_BAR_FULL)
+            }
+            is Node -> {
+                tileRect(x, y, 0.94f, 0x2E7A4AFFL)
+                tileRect(x, y, 0.45f, 0xBFF5D0FFL)
+            }
+            is Vent -> {
+                tileRect(x, y, 0.94f, 0x3A3A44FFL)
+                tileRect(x, y, 0.4f, 0x0A0A0CFFL)
+            }
         }
     }
 
-    companion object {
-        private const val MIN_ZOOM = 0.2f
-        private const val MAX_ZOOM = 60f
+    /** Position of belt slot [i] within its tile, in tile units from the centre. Slot 0 is the head. */
+    private fun slotOffset(facing: Direction, i: Int, slots: Int): Pair<Float, Float> {
+        val along = 0.5f - (i + 0.5f) / slots
+        return (facing.dx * along) to (facing.dy * along)
     }
+
+    /** A thin bar on the output edge, showing which way a machine sends things. */
+    private fun edgeMark(x: Int, y: Int, dir: Direction, color: Long) {
+        val cx = (x + 0.5f + dir.dx * 0.4f) * tilePx
+        val cy = (y + 0.5f + dir.dy * 0.4f) * tilePx
+        val hw = if (dir.dx != 0) 0.09f else 0.3f
+        val hh = if (dir.dy != 0) 0.09f else 0.3f
+        rect(cx, cy, hw * tilePx * 2f, hh * tilePx * 2f, color)
+    }
+
+    /** How full a machine is, along the bottom of its tile. The at-a-glance "is this backing up?". */
+    private fun fillBar(x: Int, y: Int, fraction: Float) {
+        val f = fraction.coerceIn(0f, 1f)
+        if (f <= 0f) return
+        val w = f * 0.8f
+        rect(
+            (x + 0.1f + w * 0.5f) * tilePx,
+            (y + 0.86f) * tilePx,
+            w * tilePx, 0.1f * tilePx,
+            if (f > 0.85f) 0xE05A4AFFL else 0x9AE07AFFL,
+        )
+    }
+
+    private fun packetColor(dominant: Species?): Long = when (dominant) {
+        Species.Iron -> 0xB07A5AFFL
+        Species.Aluminum -> 0xB8BCC4FFL
+        Species.Copper -> 0xE08A3AFFL
+        Species.Titanium -> 0xC8CCD4FFL
+        Species.Silica -> 0xD8D0A8FFL
+        Species.Carbon -> 0x484848FFL
+        Species.RareEarth -> 0x6ED09AFFL
+        Species.Uranium -> 0xA8E04AFFL
+        Species.Oxygen -> 0x7AB8FFFFL
+        Species.Nitrogen -> 0x9A9AD0FFL
+        Species.CarbonDioxide -> 0x8A8A8AFFL
+        Species.Water -> 0x4A8AD0FFL
+        null -> 0x707070FFL
+    }
+
+    // ── Primitives ────────────────────────────────────────────────────────────
+
+    private fun tileRect(x: Int, y: Int, scale: Float, color: Long) =
+        rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, scale * tilePx, scale * tilePx, color)
+
+    /** [wx],[wy] are world pixels (tile units × [tilePx]); converted to NDC here. */
+    private fun rect(wx: Float, wy: Float, w: Float, h: Float, color: Long) {
+        if (count >= MAX_RECTS) return
+        val px = wx - camX * tilePx + resW * 0.5f
+        val py = wy - camY * tilePx + resH * 0.5f
+        centers[count * 2] = px / resW * 2f - 1f
+        centers[count * 2 + 1] = 1f - py / resH * 2f
+        halfSizes[count * 2] = w / resW
+        halfSizes[count * 2 + 1] = h / resH
+        colors[count * 4] = ((color shr 24) and 0xFF).toFloat() / 255f
+        colors[count * 4 + 1] = ((color shr 16) and 0xFF).toFloat() / 255f
+        colors[count * 4 + 2] = ((color shr 8) and 0xFF).toFloat() / 255f
+        colors[count * 4 + 3] = (color and 0xFF).toFloat() / 255f
+        count++
+    }
+
+    companion object {
+        private const val MAX_RECTS = 20_000
+        private const val MIN_TILE_PX = 6f
+        private const val MAX_TILE_PX = 64f
+
+        /** Bar-full reference for machine buffers — a machine holding this much is visibly backed up. */
+        private const val BUFFER_BAR_FULL = 4_000f
+    }
+}
+
+/** Palette colour for a machine kind, shared by the renderer and the HUD's brush swatch. */
+fun kindColor(kind: MachineKind): Long = when (kind) {
+    MachineKind.Belt -> 0x2A3242FFL
+    MachineKind.Miner -> 0x6B4A2AFFL
+    MachineKind.Processor -> 0x2E5A6BFFL
+    MachineKind.Smelter -> 0x8A3A2AFFL
+    MachineKind.Node -> 0x2E7A4AFFL
+    MachineKind.Vent -> 0x3A3A44FFL
 }
