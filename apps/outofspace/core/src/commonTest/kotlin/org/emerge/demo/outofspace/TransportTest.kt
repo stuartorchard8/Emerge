@@ -30,8 +30,9 @@ class TransportTest {
 
     private val grid = Grid(12, 6)
 
+    /** A lump of ore — a powder, so lumps of it bunch up against a blockage. */
     private fun lump(grams: Long = 1_000L): Packet =
-        SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to grams)))
+        SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to grams)))
 
     /** A horizontal run of segments on row [y], from [fromX] to [toX] inclusive. */
     private fun run(fromX: Int, toX: Int, y: Int): Set<Int> =
@@ -179,20 +180,102 @@ class TransportTest {
         assertEquals(1_000L, h[grid.index(4, 3)]?.mass, "still there")
     }
 
+    // ── Bunching up against a blockage ────────────────────────────────────────
+
     @Test
-    fun `packets queue behind each other rather than merging as they travel`() {
+    fun `identical lumps squash together against a blockage`() {
         val segments = run(2, 5, 3)
         val f = flow(segments, grid.index(2, 3))
         val h = held(
             segments,
             grid.index(4, 3) to lump(400L),
-            grid.index(5, 3) to lump(400L),
+            grid.index(5, 3) to lump(400L),   // at the end of the run, nowhere to go
         )
         step(f, h)
-        // The leading packet has nowhere to go, so the one behind cannot advance either. Two
-        // partial lumps stay two partial lumps: topping up is something a source does.
-        assertEquals(400L, h[grid.index(4, 3)]?.mass)
-        assertEquals(400L, h[grid.index(5, 3)]?.mass)
+        assertEquals(800L, h[grid.index(5, 3)]?.mass, "the one behind squashed into the one ahead")
+        assertNull(h[grid.index(4, 3)], "leaving its tile free")
+    }
+
+    @Test
+    fun `squashing stops at a full packet and the rest queues behind it`() {
+        val segments = run(2, 5, 3)
+        val f = flow(segments, grid.index(2, 3))
+        val h = held(
+            segments,
+            grid.index(4, 3) to lump(600L),
+            grid.index(5, 3) to lump(700L),
+        )
+        step(f, h)
+        assertEquals(1_000L, h[grid.index(5, 3)]?.mass, "filled to capacity")
+        assertEquals(300L, h[grid.index(4, 3)]?.mass, "and the overflow stayed put")
+    }
+
+    /**
+     * The consequence of powder being powder, and the reason routing matters.
+     *
+     * Tip 41% ore into a line carrying 75% concentrate and you get one pile at a purity in between,
+     * with no way back. That is not a limitation to design around — it is the cost of merging two
+     * streams that should have been kept apart, and it is what makes the separation a processor
+     * performs worth protecting.
+     */
+    @Test
+    fun `ore of different purities blends, because that is what powder does`() {
+        val dirty = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to 200L, Species.Silica to 300L)))
+        val clean = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to 375L, Species.Silica to 125L)))
+        val segments = run(2, 5, 3)
+        val f = flow(segments, grid.index(2, 3))
+        val h = held(segments, grid.index(4, 3) to dirty, grid.index(5, 3) to clean)
+
+        step(f, h)
+        val merged = h[grid.index(5, 3)]!!
+        assertNull(h[grid.index(4, 3)], "the two piles became one")
+        assertEquals(1_000L, merged.mass, "and nothing was lost doing it")
+        // 375g + 200g of iron in a kilogram: the concentrate has been spoiled, and deservedly.
+        assertEquals(575L, merged.contents[Species.Iron], "purity is now somewhere in between")
+    }
+
+    @Test
+    fun `ingots stay separate lumps however hard they are pressed together`() {
+        // A made thing is a made thing. Two bars on a jammed belt are still two bars, so the run
+        // queues rather than bunching, and they can be told apart at the far end.
+        val bar = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 400L)))
+        val segments = run(2, 5, 3)
+        val f = flow(segments, grid.index(2, 3))
+        val h = held(segments, grid.index(4, 3) to bar, grid.index(5, 3) to bar)
+
+        step(f, h)
+        assertEquals(400L, h[grid.index(5, 3)]?.mass, "still one bar")
+        assertEquals(400L, h[grid.index(4, 3)]?.mass, "and the other queued behind it")
+    }
+
+    @Test
+    fun `different forms never bunch, however alike their contents`() {
+        val pure = Mixture.of(Species.Iron to 500L)
+        val ingot = SolidPacket(Resource(Form.IronIngot, pure))
+        val ore = SolidPacket(Resource(Form.Ore, pure))
+        val segments = run(2, 5, 3)
+        val f = flow(segments, grid.index(2, 3))
+        val h = held(segments, grid.index(4, 3) to ore, grid.index(5, 3) to ingot)
+
+        step(f, h)
+        assertEquals(500L, h[grid.index(5, 3)]?.mass, "an ingot is not a lump of ore")
+        assertEquals(500L, h[grid.index(4, 3)]?.mass)
+    }
+
+    @Test
+    fun `a jammed run bunches toward its destination over several ticks`() {
+        val segments = run(2, 8, 3)
+        val f = flow(segments, grid.index(2, 3))
+        val h = held(
+            segments,
+            grid.index(5, 3) to lump(250L),
+            grid.index(6, 3) to lump(250L),
+            grid.index(7, 3) to lump(250L),
+            grid.index(8, 3) to lump(250L),
+        )
+        repeat(8) { step(f, h) }
+        assertEquals(1_000L, h[grid.index(8, 3)]?.mass, "all of it ended up in one lump at the end")
+        assertEquals(1, (2..8).count { h[grid.index(it, 3)] != null }, "and the rest of the run is clear")
     }
 
     // ── Forks ─────────────────────────────────────────────────────────────────

@@ -1,6 +1,11 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.chem.Form
+import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.logistics.MergeResult
 import org.emerge.demo.outofspace.logistics.Packet
+import org.emerge.demo.outofspace.logistics.SolidPacket
+import org.emerge.demo.outofspace.logistics.mergeInto
 
 /**
  * Which transport network something belongs to.
@@ -189,13 +194,23 @@ class DiverterWork(diverters: Diverters) {
  *  2. **Furthest from the source moves first**, so a packed run advances by one along its whole
  *     length in a single pass rather than crawling a tile per tick.
  *
- * Movement is into *free* tiles only. Packets do not coalesce as they travel — a lump catching up
- * with a slower one queues behind it, which is what makes a jam visible. Topping a partial packet up
- * is something a **source** does, not something travel does.
+ * A packet that cannot move because the tile ahead is occupied will **squash into it** where the two
+ * can combine at all, so a blocked run bunches up toward its destination rather than standing in a
+ * queue of gaps. ONI does this too, and gets it free because materials there cannot mix.
+ *
+ * Here they can, and what decides it is [Form.isPowder]. Two lots of ore tip together into one lot
+ * at a purity in between, because that is what powder does and there is no way back from it. Two
+ * ingots stay two ingots however hard they are pressed together, and two *different* forms never
+ * combine at all.
+ *
+ * That is not a limitation to work around — it is the mechanic. Merging a line of 41% ore into one
+ * carrying 75% concentrate destroys the refining that separated them, so keeping streams apart is
+ * something the player has to actually do. Sending four kinds of ingot down one belt, by contrast,
+ * is merely untidy.
  *
  * @param absorb offered every packet on the tile it currently occupies; returns what is left, or
  *   null when the whole packet was taken.
- * @return the number of packets that moved, which is only useful for tests and diagnostics.
+ * @return the number of packets that moved or merged, which is only useful for tests.
  */
 fun advanceSegments(
     flow: FlowField,
@@ -211,11 +226,41 @@ fun advanceSegments(
         held[tile] = leftover
         if (leftover == null) continue
 
-        val target = diverters.choose(tile, flow.successorsOf(tile)) { held[it] == null }
-        if (target < 0) continue
-        held[target] = leftover
-        held[tile] = null
-        moved++
+        val options = flow.successorsOf(tile)
+        val target = diverters.choose(tile, options) { held[it] == null }
+        if (target >= 0) {
+            held[target] = leftover
+            held[tile] = null
+            moved++
+            continue
+        }
+
+        // Nowhere free. Squash forward into an identical packet if there is one with room. Checked
+        // in the successors' own order so a fork behaves the same way it would when moving.
+        for (option in options) {
+            val ahead = held[option] ?: continue
+            val squashed = squash(ahead, leftover) ?: continue
+            held[option] = squashed.merged
+            held[tile] = squashed.rejected
+            moved++
+            break
+        }
     }
     return moved
+}
+
+/**
+ * Merges [incoming] into [ahead] where the two can genuinely combine, else null.
+ *
+ * [mergeInto] already refuses to mix two different forms, or a solid with a fluid. The extra
+ * condition here is [Form.isPowder]: within one form, only a powder actually flows together. Two
+ * ingots of the same metal are still two ingots, and pressing them against each other on a jammed
+ * belt does not make one bigger ingot.
+ */
+private fun squash(ahead: Packet, incoming: Packet): MergeResult? {
+    if (Capacity.headroom(ahead) <= 0L) return null
+    val form = (ahead as? SolidPacket)?.form
+    // Fluids always flow together; a solid only does if it is a powder.
+    if (form != null && !form.isPowder) return null
+    return mergeInto(ahead, incoming)
 }

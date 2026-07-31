@@ -65,6 +65,25 @@ enum class Form {
     Vessel,
     ;
 
+    /**
+     * Whether this form is a **powder** — a heap with no internal structure — rather than a discrete
+     * object.
+     *
+     * The difference is what happens when two lots of it meet on a conveyor. Tip two piles of ore
+     * together and you have one pile of ore, at a purity in between, and no way back: that is what
+     * powder *is*. Put two ingots on the same belt and they are still two ingots; they can share a
+     * line all day and be told apart at the end of it.
+     *
+     * So this decides whether material bunching up against a blockage may merge. It is the reason
+     * routing 41% ore into a line carrying 75% concentrate is a genuine mistake with a genuine cost —
+     * the refining that separated them is undone by the two touching — while sending ingots of four
+     * different metals down one belt is merely untidy.
+     *
+     * Only the two blended forms qualify. Everything from tier one upward has been *made* into
+     * something, and being made into something is exactly what stops it flowing back together.
+     */
+    val isPowder: Boolean get() = this == Ore || this == Slag
+
     companion object {
         val ALL: List<Form> = entries.toList()
     }

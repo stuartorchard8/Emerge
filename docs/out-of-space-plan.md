@@ -291,6 +291,37 @@ Two runs crossing in the same layer simply share no port, so the network derivat
 know the special case exists. Four layers — Deck, Conduit, Power, Signal — one occupant each per
 tile; structure, heat and air only ever read the Deck.
 
+#### Parked: liquids and gases might not want packets at all
+
+Raised while scoping the transport layer, and deliberately *not* being built now — packets carry all
+three phases for the moment. Recorded because it is a better model than the one being built, and
+because the cost is much lower than it looks.
+
+The observation is that packets suit solids because a solid genuinely *is* a discrete object, and
+that liquids and gases are only packets by convention. Two alternatives that follow their physics
+instead:
+
+- **Liquids fill a pipe only by being pushed from a source.** Incompressible, so no push from behind
+  means the flow stops — the pipe is a column of fluid, not a queue of lumps. That single rule is
+  most of what makes plumbing feel different from a conveyor.
+- **Gases diffuse along a pipe exactly as they do in the open hull**, with no push-or-pull direction
+  at all. A building *compresses* gas into the segment when it outputs, and *decompresses* when it
+  takes — so pressure, not routing, is what moves it.
+
+The reason to write this down rather than dismiss it: **the gas half is nearly free.** `stepAir`
+already diffuses an integer mixture over a graph of cells; a pipe network is just a different
+topology for the same sweep, with a higher per-cell capacity standing in for compression. The
+apparent scope creep is mostly a matter of pointing existing machinery at a different adjacency.
+
+It also collapses a distinction that currently has to be maintained by hand. Right now a pipe segment
+and an air tile are two different things holding the same `Mixture` for two different reasons; under
+this model they are the same thing at different pressures, and `FluidPacket` largely stops existing.
+
+What it would cost: the port model survives intact (a port is still where a building meets a layer),
+but `advanceSegments` stops applying to two of the three networks, and pumps versus compressors stop
+being a naming question and become genuinely different machines — which was already an open question
+in §6.
+
 Explicit isometric 3D was considered and set aside: the honest version makes the *simulation* 3D
 (heat, air and fluid fields all gain a depth axis), which would undo the 2D cut this whole version
 rests on.
