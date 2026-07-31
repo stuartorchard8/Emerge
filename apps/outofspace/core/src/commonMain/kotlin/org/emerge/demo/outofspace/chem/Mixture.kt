@@ -1,36 +1,7 @@
 package org.emerge.demo.outofspace.chem
 
 /**
- * The minerals everything in the world is made of.
- *
- * There is no "iron ore" mineral — ore is a [Mixture] that happens to be mostly [Iron]. Purity is a
- * property of a pile of stuff, not a name attached to it, and that is what makes refining a real
- * decision rather than a lookup.
- *
- * Declaration order is part of the contract: it fixes the iteration order of every [Mixture]
- * operation and breaks ties in [Mixture.dominant]. Reordering this enum changes simulation results.
- * Append new minerals at the end.
- */
-enum class Mineral {
-    Iron,
-    Aluminum,
-    Copper,
-    Titanium,
-    Silica,
-    Carbon,
-    RareEarth,
-    Uranium,
-    ;
-
-    companion object {
-        /** Cached because `entries` allocates on some targets and this is read in inner loops. */
-        val ALL: List<Mineral> = entries.toList()
-        val COUNT: Int = ALL.size
-    }
-}
-
-/**
- * A quantity of matter: how many grams of each [Mineral] are present.
+ * A quantity of matter: how many grams of each [Species] are present.
  *
  * **Mass is an integer.** Floats would make the same world diverge between two machines, and would
  * make conservation approximate — and "where did the mass go" is the only bug this simulation is
@@ -47,10 +18,10 @@ enum class Mineral {
 class Mixture private constructor(private val grams: LongArray) {
 
     init {
-        require(grams.size == Mineral.COUNT) { "expected ${Mineral.COUNT} minerals, got ${grams.size}" }
+        require(grams.size == Species.COUNT) { "expected ${Species.COUNT} species, got ${grams.size}" }
     }
 
-    operator fun get(mineral: Mineral): Long = grams[mineral.ordinal]
+    operator fun get(species: Species): Long = grams[species.ordinal]
 
     /** Total mass in grams. */
     val total: Long get() {
@@ -62,44 +33,59 @@ class Mixture private constructor(private val grams: LongArray) {
     val isEmpty: Boolean get() = total == 0L
 
     /**
-     * The mineral present in the greatest quantity, or null if this is empty. Ties go to the
-     * earliest-declared mineral, so the result never depends on iteration luck.
+     * The species present in the greatest quantity, or null if this is empty. Ties go to the
+     * earliest-declared species, so the result never depends on iteration luck.
      */
-    val dominant: Mineral?
+    val dominant: Species?
         get() {
             var best = -1
             var bestMass = 0L
             for (i in grams.indices) {
                 if (grams[i] > bestMass) { bestMass = grams[i]; best = i }
             }
-            return if (best < 0) null else Mineral.ALL[best]
+            return if (best < 0) null else Species.ALL[best]
         }
 
     /** Mass of everything that is not [dominant] — the impurities, for refining purposes. */
     val impurities: Long get() = dominant?.let { total - this[it] } ?: 0L
 
+    /**
+     * True when nothing present is a fluid — i.e. this can ride a belt. Empty counts as both this
+     * and [isAllFluid]: nothing is the wrong phase for anything.
+     */
+    val isAllSolid: Boolean get() {
+        for (s in Species.FLUIDS) if (grams[s.ordinal] > 0L) return false
+        return true
+    }
+
+    /** True when nothing present is a solid — i.e. this can go down a pipe. */
+    val isAllFluid: Boolean get() {
+        for (s in Species.SOLIDS) if (grams[s.ordinal] > 0L) return false
+        return true
+    }
+
     operator fun plus(other: Mixture): Mixture {
-        val out = LongArray(Mineral.COUNT)
+        val out = LongArray(Species.COUNT)
         for (i in out.indices) out[i] = grams[i] + other.grams[i]
         return Mixture(out)
     }
 
     /**
      * Removes [other] from this mixture. Requires that this contains at least as much of every
-     * mineral — a negative mass is never a meaningful state, so it fails loudly rather than
+     * species — a negative mass is never a meaningful state, so it fails loudly rather than
      * silently inventing matter.
      */
     operator fun minus(other: Mixture): Mixture {
-        val out = LongArray(Mineral.COUNT)
+        val out = LongArray(Species.COUNT)
         for (i in out.indices) {
             out[i] = grams[i] - other.grams[i]
-            require(out[i] >= 0L) { "subtracting more ${Mineral.ALL[i]} than present: ${grams[i]} - ${other.grams[i]}" }
+            require(out[i] >= 0L) { "subtracting more ${Species.ALL[i]} than present: ${grams[i]} - ${other.grams[i]}" }
         }
         return Mixture(out)
     }
 
     /**
-     * Takes [amount] grams spread across the minerals in proportion to what is here — the operation
+     * Takes [amount] grams spread across the species in proportion to what is here — the operation
      * behind "grab a shovelful" and "the belt can only carry so much". Returns everything if
      * [amount] is at least [total]; returns empty for a non-positive amount.
      *
@@ -111,13 +97,13 @@ class Mixture private constructor(private val grams: LongArray) {
         return Mixture(apportion(grams, amount))
     }
 
-    /** This mixture with only [mineral] kept, at [amount] grams. */
-    fun onlyOf(mineral: Mineral, amount: Long): Mixture = of(mineral to amount)
+    /** This mixture with only [species] kept, at [amount] grams. */
+    fun onlyOf(species: Species, amount: Long): Mixture = of(species to amount)
 
-    /** Human-readable, dominant mineral first — for debug output and test failures. */
+    /** Human-readable, dominant species first — for debug output and test failures. */
     override fun toString(): String {
         if (isEmpty) return "Mixture(empty)"
-        val parts = Mineral.ALL.filter { this[it] > 0L }.sortedByDescending { this[it] }
+        val parts = Species.ALL.filter { this[it] > 0L }.sortedByDescending { this[it] }
         return parts.joinToString(prefix = "Mixture(", postfix = ")") { "${it.name}=${this[it]}g" }
     }
 
@@ -127,18 +113,18 @@ class Mixture private constructor(private val grams: LongArray) {
     override fun hashCode(): Int = grams.contentHashCode()
 
     companion object {
-        val EMPTY: Mixture = Mixture(LongArray(Mineral.COUNT))
+        val EMPTY: Mixture = Mixture(LongArray(Species.COUNT))
 
-        fun of(vararg parts: Pair<Mineral, Long>): Mixture {
-            val out = LongArray(Mineral.COUNT)
-            for ((mineral, mass) in parts) {
-                require(mass >= 0L) { "negative mass for $mineral: $mass" }
-                out[mineral.ordinal] += mass
+        fun of(vararg parts: Pair<Species, Long>): Mixture {
+            val out = LongArray(Species.COUNT)
+            for ((species, mass) in parts) {
+                require(mass >= 0L) { "negative mass for $species: $mass" }
+                out[species.ordinal] += mass
             }
             return Mixture(out)
         }
 
-        /** Builds from raw per-mineral grams, indexed by [Mineral] ordinal. The array is copied. */
+        /** Builds from raw per-species grams, indexed by [Species] ordinal. The array is copied. */
         fun ofGrams(grams: LongArray): Mixture = Mixture(grams.copyOf())
     }
 }

@@ -2,14 +2,14 @@ package org.emerge.demo.outofspace.chem
 
 /**
  * What a pile of matter has been *made into*. Orthogonal to what it is made *of*: a
- * [Form.SteelAlloy] still carries the exact minerals that went into it, impurities and all.
+ * [Form.SteelAlloy] still carries the exact species that went into it, impurities and all.
  *
- * As with [Mineral], declaration order is part of the contract — it is the tie-break and the
+ * As with [Species], declaration order is part of the contract — it is the tie-break and the
  * serialisation order. Append, do not reorder.
  *
  * ### Difference from the Godot recipe table
  * The original had a first tier of recipes taking named ores (`iron_ore + carbon_ore → iron_ingot`)
- * *and* a `smelt` that turned blended ore into an ingot by its dominant mineral. Those are two
+ * *and* a `smelt` that turned blended ore into an ingot by its dominant species. Those are two
  * answers to the same question, and the blended one is the better game: it makes ore quality matter
  * everywhere instead of at a lookup. So the named `*_ore` forms are gone and smelting is the only
  * way into tier one. Everything from alloys upward is unchanged.
@@ -21,7 +21,7 @@ enum class Form {
     /** The waste stream of refining. Can be re-processed; it is ore with the good bits taken out. */
     Slag,
 
-    // ── Tier 1: smelted from ore, one per mineral ──
+    // ── Tier 1: smelted from ore, one per species ──
     IronIngot,
     AluminumIngot,
     CopperIngot,
@@ -71,20 +71,21 @@ enum class Form {
 }
 
 /**
- * What smelting a mixture yields, chosen by its dominant mineral.
+ * What smelting a mixture yields, chosen by its dominant species.
  *
- * Every mineral has an entry, so smelting can never fail for want of a recipe — it fails only when
- * the ore is too impure to be worth refining (see [smelt]).
+ * Every *mineral* has an entry; fluids do not, so smelting something mostly water yields slag rather
+ * than an exception. The other way smelting fails is the ore simply being too impure to be worth
+ * refining — see [smelt].
  */
-val SMELT_PRODUCTS: Map<Mineral, Form> = mapOf(
-    Mineral.Iron to Form.IronIngot,
-    Mineral.Aluminum to Form.AluminumIngot,
-    Mineral.Copper to Form.CopperIngot,
-    Mineral.Titanium to Form.TitaniumIngot,
-    Mineral.Silica to Form.SiliconCrystal,
-    Mineral.Carbon to Form.CarbonFiber,
-    Mineral.RareEarth to Form.RareEarthPowder,
-    Mineral.Uranium to Form.EnrichedUranium,
+val SMELT_PRODUCTS: Map<Species, Form> = mapOf(
+    Species.Iron to Form.IronIngot,
+    Species.Aluminum to Form.AluminumIngot,
+    Species.Copper to Form.CopperIngot,
+    Species.Titanium to Form.TitaniumIngot,
+    Species.Silica to Form.SiliconCrystal,
+    Species.Carbon to Form.CarbonFiber,
+    Species.RareEarth to Form.RareEarthPowder,
+    Species.Uranium to Form.EnrichedUranium,
 )
 
 /**

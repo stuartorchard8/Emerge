@@ -31,18 +31,18 @@ data class SmeltResult(val refined: Resource, val slag: Resource) {
     val totalMass: Long get() = refined.mass + slag.mass
 }
 
-/** The two streams out of a mineral processor: a concentrated product and its tailings. */
+/** The two streams out of a species processor: a concentrated product and its tailings. */
 data class ProcessResult(val product: Resource, val tailings: Resource) {
     val totalMass: Long get() = product.mass + tailings.mass
 }
 
 /**
- * Smelts [input], yielding a refined product of its dominant mineral plus slag.
+ * Smelts [input], yielding a refined product of its dominant species plus slag.
  *
  * The impurities do not merely dilute the product — they *consume* it: the refined mass is
  * `dominant - impurities`. Smelting ore that is half rubbish gives you almost nothing, and smelting
  * ore that is more rubbish than metal gives you nothing at all. That is the pressure that makes a
- * mineral processor worth building upstream.
+ * species processor worth building upstream.
  *
  * Deviation from the Godot original: the all-slag case triggers at `impurities >= dominant` rather
  * than `>`, because the boundary case produced a zero-mass product that every downstream consumer
@@ -55,8 +55,8 @@ fun smelt(input: Resource): SmeltResult {
     val dominantMass = input.mixture[dominant]
     val impurities = input.mixture.total - dominantMass
 
-    // Too dirty to be worth refining: the whole lot is slag.
-    if (impurities >= dominantMass) {
+    // Nothing to smelt a fluid into, and too dirty is too dirty: either way the whole lot is slag.
+    if (dominant !in SMELT_PRODUCTS || impurities >= dominantMass) {
         return SmeltResult(
             refined = Resource(Form.Slag, Mixture.EMPTY),
             slag = Resource(Form.Slag, input.mixture),
@@ -67,7 +67,7 @@ fun smelt(input: Resource): SmeltResult {
     return SmeltResult(
         refined = Resource(SMELT_PRODUCTS.getValue(dominant), refinedMixture),
         // The remainder, so nothing can go missing: the impurities plus an equal mass of the
-        // dominant mineral that they dragged out with them.
+        // dominant species that they dragged out with them.
         slag = Resource(Form.Slag, input.mixture - refinedMixture),
     )
 }
@@ -105,17 +105,17 @@ fun process(input: Resource, efficiencyPermille: Int = 1000): ProcessResult {
     val totalImpurities = total - dominantMass
     val impuritiesForProduct = totalImpurities * (d - n) / (2L * d)
 
-    // The product is half the total mass; whatever of that is not impurity is dominant mineral.
+    // The product is half the total mass; whatever of that is not impurity is dominant species.
     // Both quantities are provably in range for exact arithmetic (flooring can only shrink them),
     // so the clamp is a guard rail rather than a correction.
     val dominantForProduct = (total / 2L - impuritiesForProduct).coerceIn(0L, dominantMass)
 
-    val productGrams = LongArray(Mineral.COUNT)
+    val productGrams = LongArray(Species.COUNT)
     productGrams[dominant.ordinal] = dominantForProduct
     if (impuritiesForProduct > 0L) {
-        // Spread the product's impurity allowance across the non-dominant minerals in proportion.
-        val impurityWeights = LongArray(Mineral.COUNT)
-        for (m in Mineral.ALL) if (m != dominant) impurityWeights[m.ordinal] = input.mixture[m]
+        // Spread the product's impurity allowance across the non-dominant species in proportion.
+        val impurityWeights = LongArray(Species.COUNT)
+        for (m in Species.ALL) if (m != dominant) impurityWeights[m.ordinal] = input.mixture[m]
         val share = apportion(impurityWeights, impuritiesForProduct)
         for (i in productGrams.indices) if (i != dominant.ordinal) productGrams[i] = share[i]
     }
@@ -141,7 +141,7 @@ fun merge(a: Resource, b: Resource): Resource? =
     if (a.form != b.form) null else Resource(a.form, a.mixture + b.mixture)
 
 /**
- * Splits [amount] grams off [input], proportionally across its minerals — what a belt, a grabber or
+ * Splits [amount] grams off [input], proportionally across its species — what a belt, a grabber or
  * a machine input buffer does. Returns `(taken, left)`, which always sum back to [input].
  */
 fun takeFrom(input: Resource, amount: Long): Pair<Resource, Resource> {
@@ -150,13 +150,13 @@ fun takeFrom(input: Resource, amount: Long): Pair<Resource, Resource> {
 }
 
 /**
- * Per-mineral difference between what went in and what came out — all zeroes when an operation
+ * Per-species difference between what went in and what came out — all zeroes when an operation
  * conserved mass. Tests assert on this rather than on totals alone, because a total can balance
  * while iron quietly turns into copper.
  */
 fun conservationOf(inputs: List<Mixture>, outputs: List<Mixture>): LongArray {
-    val delta = LongArray(Mineral.COUNT)
-    for (m in Mineral.ALL) {
+    val delta = LongArray(Species.COUNT)
+    for (m in Species.ALL) {
         var sum = 0L
         for (i in inputs) sum += i[m]
         for (o in outputs) sum -= o[m]

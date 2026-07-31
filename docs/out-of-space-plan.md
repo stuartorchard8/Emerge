@@ -107,6 +107,43 @@ composition, atmosphere contents and cytoplasm are one concept. **Not yet**: it 
 being used here first, and then be *designed* as game-agnostic rather than lifted from either side.
 (Repo rule: the engine stays game-agnostic; apps never depend on each other.)
 
+### Logistics: packets, not flow rates
+
+Matter moves as **discrete packets**, ONI-style, capped at **1 kg** each. A packet is a thing you can
+see, point at and read the contents of, which is the whole reason this game is side-on; a continuous
+throughput number would be easier to simulate and impossible to look at. Packet size and throughput
+are separate dials and both are data — 1 kg lumps at 1 kg/s is a starting tune, not physics.
+
+**Solid vs fluid, not solid/liquid/gas.** Solids ride belts; liquids and gases share pipes. The
+liquid/gas distinction is real but it lives at the *ends* of a network — lifting a liquid against
+gravity and compressing a gas are different machines with different costs — so the transport layer
+only needs the two-way split, and `Species.phase` carries the three-way one for when it matters.
+
+Two asymmetries that fell out of this and are worth keeping:
+
+- **A solid packet has a `Form`; a fluid packet does not.** It matters enormously whether a solid is
+  an ingot or a structural frame, so a solid packet carries a whole `Resource`. A fluid is only ever
+  "whatever was at the source" — an amalgam with no identity beyond its composition — so a fluid
+  packet is a bare `Mixture`.
+- **Solids merge only within a form; fluids always merge.** You cannot pour an ingot into a
+  structural frame, but any two fluids make a third fluid.
+
+Pure ingots and elemental products are single-species, as intended — `smelt` yields only the
+dominant species. But **alloys are amalgams too**, not just ore and slag: `SteelAlloy = IronIngot +
+CarbonFiber` sums compositions, which is what an alloy is.
+
+**Mass now, volume later — but per-phase.** Volume is the truer measure and everything goes through
+`Capacity.quantityOf(packet)` so there is one place to change it. The caveat to record before that
+switch: volume works for solids and liquids and is *meaningless for gases*. A gas has no volume of
+its own; it fills its container, and "a litre of gas" says nothing without a pressure. ONI is
+mass-based for gas packets for exactly this reason. So the likely end state is **volume for solids
+and liquids, mass for gases**, which is why `quantityOf` takes a whole packet rather than a mass.
+
+**Rates carry their fraction.** "1 kg/s" at 60 ticks/s is 16.67 g/tick and there is no honest integer
+for that. Rounding each tick either leaks mass or runs the belt at the wrong speed, and over an hour
+either is a lot. `Rate.tick` keeps the remainder in a `Long` carry that lives in the owning machine's
+state, so it serialises with the snapshot and the delivered total is exact over any whole second.
+
 ### World state
 
 - **Vessel** = a square tile grid + a gravity vector + aggregate mass/centre of mass (kept from the
@@ -169,12 +206,15 @@ before relying on it.
 
 ## 6. Open questions
 
-1. **Belt granularity.** Discrete stacks on belts (Factorio) or a continuous flow rate? Discrete is
-   more legible and matches the Godot conveyor; continuous composes better with the fluid model
-   arriving in Phase 4. They can coexist — items discrete, gas and liquid continuous — which is
-   probably the answer, but it should be decided before Phase 2 rather than during.
-2. **Is the vessel grid a fixed size?** Fixed bounds are much simpler for the atmosphere solver; a
+1. **Is the vessel grid a fixed size?** Fixed bounds are much simpler for the atmosphere solver; a
    growable hull suits the "expand your vessel" fantasy better. A generous fixed bound with the hull
    inside it is the cheap compromise.
-3. **What is outside the hull?** Vacuum as a special tile, or genuinely absent tiles? This decides
+2. **What is outside the hull?** Vacuum as a special tile, or genuinely absent tiles? This decides
    what a breach means, and the atmosphere solver wants to know early.
+3. **How does a pump differ from a compressor?** Both push fluid down the same pipe, but a liquid
+   pump works against gravitational head while a gas compressor works against pressure. That
+   difference is the interesting part of fluid machinery and it wants designing alongside the
+   atmosphere model in Phase 4, not before — noted here so it does not get quietly forgotten.
+4. **Do belts have slots?** A belt as an ordered list of packets with positions (Godot conveyor,
+   ONI rail) versus a belt as a queue with a throughput. The former is what makes a jammed line
+   visible, which argues for it; decide with Phase 2's grid.

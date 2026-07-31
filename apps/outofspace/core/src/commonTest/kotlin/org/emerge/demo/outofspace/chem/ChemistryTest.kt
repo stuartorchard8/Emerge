@@ -21,16 +21,16 @@ class ChemistryTest {
     private val dirtyOre = Resource(
         Form.Ore,
         Mixture.of(
-            Mineral.Iron to 4100L,
-            Mineral.Silica to 3000L,
-            Mineral.Copper to 1800L,
-            Mineral.Titanium to 1100L,
+            Species.Iron to 4100L,
+            Species.Silica to 3000L,
+            Species.Copper to 1800L,
+            Species.Titanium to 1100L,
         ),
     )
 
     private fun assertConserved(inputs: List<Mixture>, outputs: List<Mixture>, what: String) {
         val delta = conservationOf(inputs, outputs)
-        for (m in Mineral.ALL) {
+        for (m in Species.ALL) {
             assertEquals(0L, delta[m.ordinal], "$what did not conserve ${m.name} (delta ${delta[m.ordinal]}g)")
         }
     }
@@ -95,23 +95,23 @@ class ChemistryTest {
     fun `take preserves proportions`() {
         // Half of the ore should be half of each mineral, since all four masses are even.
         val half = dirtyOre.mixture.take(dirtyOre.mass / 2)
-        assertEquals(2050L, half[Mineral.Iron])
-        assertEquals(1500L, half[Mineral.Silica])
-        assertEquals(900L, half[Mineral.Copper])
-        assertEquals(550L, half[Mineral.Titanium])
+        assertEquals(2050L, half[Species.Iron])
+        assertEquals(1500L, half[Species.Silica])
+        assertEquals(900L, half[Species.Copper])
+        assertEquals(550L, half[Species.Titanium])
     }
 
     @Test
     fun `subtracting more than is present fails loudly`() {
         assertFailsWith<IllegalArgumentException> {
-            Mixture.of(Mineral.Iron to 10L) - Mixture.of(Mineral.Iron to 11L)
+            Mixture.of(Species.Iron to 10L) - Mixture.of(Species.Iron to 11L)
         }
     }
 
     @Test
     fun `dominant breaks ties by declaration order`() {
-        val tied = Mixture.of(Mineral.Copper to 100L, Mineral.Iron to 100L)
-        assertEquals(Mineral.Iron, tied.dominant, "Iron is declared before Copper")
+        val tied = Mixture.of(Species.Copper to 100L, Species.Iron to 100L)
+        assertEquals(Species.Iron, tied.dominant, "Iron is declared before Copper")
         assertNull(Mixture.EMPTY.dominant)
     }
 
@@ -130,18 +130,18 @@ class ChemistryTest {
         // else) — that is the point of it, and why the end-to-end test concentrates first.
         val concentrated = Resource(
             Form.Ore,
-            Mixture.of(Mineral.Iron to 4100L, Mineral.Silica to 900L, Mineral.Copper to 500L),
+            Mixture.of(Species.Iron to 4100L, Species.Silica to 900L, Species.Copper to 500L),
         )
         val r = smelt(concentrated)
         assertEquals(Form.IronIngot, r.refined.form)
-        assertEquals(r.refined.mass, r.refined.mixture[Mineral.Iron], "the ingot should be nothing but iron")
+        assertEquals(r.refined.mass, r.refined.mixture[Species.Iron], "the ingot should be nothing but iron")
         assertEquals(2700L, r.refined.mass, "4100 iron less 1400 impurity")
     }
 
     @Test
     fun `impurities eat the product rather than dilute it`() {
-        val clean = Resource(Form.Ore, Mixture.of(Mineral.Iron to 1000L, Mineral.Silica to 100L))
-        val dirty = Resource(Form.Ore, Mixture.of(Mineral.Iron to 1000L, Mineral.Silica to 400L))
+        val clean = Resource(Form.Ore, Mixture.of(Species.Iron to 1000L, Species.Silica to 100L))
+        val dirty = Resource(Form.Ore, Mixture.of(Species.Iron to 1000L, Species.Silica to 400L))
         assertEquals(900L, smelt(clean).refined.mass, "1000 iron less 100 impurity")
         assertEquals(600L, smelt(dirty).refined.mass, "1000 iron less 400 impurity")
     }
@@ -151,7 +151,7 @@ class ChemistryTest {
         // Iron is still the largest single mineral, but everything else together outweighs it.
         val junk = Resource(
             Form.Ore,
-            Mixture.of(Mineral.Iron to 1000L, Mineral.Silica to 600L, Mineral.Copper to 600L),
+            Mixture.of(Species.Iron to 1000L, Species.Silica to 600L, Species.Copper to 600L),
         )
         val r = smelt(junk)
         assertTrue(r.refined.isEmpty, "expected no product, got ${r.refined}")
@@ -162,13 +162,22 @@ class ChemistryTest {
 
     @Test
     fun `every mineral has somewhere to go when smelted`() {
-        for (m in Mineral.ALL) {
+        for (m in Species.SOLIDS) {
             val pure = Resource(Form.Ore, Mixture.of(m to 1000L))
             val r = smelt(pure)
             assertEquals(SMELT_PRODUCTS.getValue(m), r.refined.form)
             assertEquals(1000L, r.refined.mass)
             assertTrue(r.slag.isEmpty)
         }
+    }
+
+    @Test
+    fun `smelting something mostly fluid yields slag rather than an exception`() {
+        val sludge = Resource(Form.Ore, Mixture.of(Species.Water to 900L, Species.Iron to 100L))
+        val r = smelt(sludge)
+        assertTrue(r.refined.isEmpty)
+        assertEquals(sludge.mass, r.slag.mass)
+        assertConserved(listOf(sludge.mixture), listOf(r.refined.mixture, r.slag.mixture), "smelt(sludge)")
     }
 
     // ── Mineral processing ─────────────────────────────────────────────────────
@@ -188,8 +197,8 @@ class ChemistryTest {
     @Test
     fun `processing makes the product purer than the input`() {
         val r = process(dirtyOre, 1000)
-        val inputPurity = dirtyOre.mixture[Mineral.Iron].toDouble() / dirtyOre.mass
-        val outputPurity = r.product.mixture[Mineral.Iron].toDouble() / r.product.mass
+        val inputPurity = dirtyOre.mixture[Species.Iron].toDouble() / dirtyOre.mass
+        val outputPurity = r.product.mixture[Species.Iron].toDouble() / r.product.mass
         assertTrue(outputPurity > inputPurity, "purity should rise: $inputPurity -> $outputPurity")
     }
 
@@ -197,7 +206,7 @@ class ChemistryTest {
     fun `a perfect machine cannot beat the ore it is fed`() {
         // Efficiency is capped by purity, so a perfect machine and a machine matching the ore's own
         // purity produce identical output.
-        val purityPermille = (dirtyOre.mixture[Mineral.Iron] * 1000L / dirtyOre.mass).toInt()
+        val purityPermille = (dirtyOre.mixture[Species.Iron] * 1000L / dirtyOre.mass).toInt()
         assertEquals(process(dirtyOre, 1000).product, process(dirtyOre, purityPermille).product)
     }
 
@@ -205,14 +214,14 @@ class ChemistryTest {
     fun `a worse machine yields a less pure product`() {
         val good = process(dirtyOre, 1000).product
         val bad = process(dirtyOre, 100).product
-        val goodPurity = good.mixture[Mineral.Iron].toDouble() / good.mass
-        val badPurity = bad.mixture[Mineral.Iron].toDouble() / bad.mass
+        val goodPurity = good.mixture[Species.Iron].toDouble() / good.mass
+        val badPurity = bad.mixture[Species.Iron].toDouble() / bad.mass
         assertTrue(goodPurity > badPurity, "expected $goodPurity > $badPurity")
     }
 
     @Test
     fun `processing already-pure material just halves it`() {
-        val pure = Resource(Form.Ore, Mixture.of(Mineral.Iron to 1000L))
+        val pure = Resource(Form.Ore, Mixture.of(Species.Iron to 1000L))
         val r = process(pure, 1000)
         assertEquals(500L, r.product.mass)
         assertEquals(500L, r.tailings.mass)
@@ -228,8 +237,8 @@ class ChemistryTest {
 
     @Test
     fun `crafting conserves mass and works in either input order`() {
-        val iron = Resource(Form.IronIngot, Mixture.of(Mineral.Iron to 500L))
-        val fiber = Resource(Form.CarbonFiber, Mixture.of(Mineral.Carbon to 300L))
+        val iron = Resource(Form.IronIngot, Mixture.of(Species.Iron to 500L))
+        val fiber = Resource(Form.CarbonFiber, Mixture.of(Species.Carbon to 300L))
         val steel = assertNotNull(craft(iron, fiber))
         assertEquals(Form.SteelAlloy, steel.form)
         assertConserved(listOf(iron.mixture, fiber.mixture), listOf(steel.mixture), "craft")
@@ -238,16 +247,16 @@ class ChemistryTest {
 
     @Test
     fun `crafting a non-recipe returns null`() {
-        val iron = Resource(Form.IronIngot, Mixture.of(Mineral.Iron to 500L))
+        val iron = Resource(Form.IronIngot, Mixture.of(Species.Iron to 500L))
         assertNull(craft(iron, iron))
     }
 
     @Test
     fun `merging requires matching forms`() {
-        val a = Resource(Form.IronIngot, Mixture.of(Mineral.Iron to 100L))
-        val b = Resource(Form.IronIngot, Mixture.of(Mineral.Iron to 250L))
+        val a = Resource(Form.IronIngot, Mixture.of(Species.Iron to 100L))
+        val b = Resource(Form.IronIngot, Mixture.of(Species.Iron to 250L))
         assertEquals(350L, assertNotNull(merge(a, b)).mass)
-        assertNull(merge(a, Resource(Form.CopperIngot, Mixture.of(Mineral.Copper to 1L))))
+        assertNull(merge(a, Resource(Form.CopperIngot, Mixture.of(Species.Copper to 1L))))
     }
 
     // ── The tree as a whole ────────────────────────────────────────────────────
@@ -286,10 +295,10 @@ class ChemistryTest {
         val mined = Resource(
             Form.Ore,
             Mixture.of(
-                Mineral.Iron to 41_237L,   // deliberately not round, to exercise the remainders
-                Mineral.Silica to 30_011L,
-                Mineral.Copper to 18_503L,
-                Mineral.Carbon to 11_249L,
+                Species.Iron to 41_237L,   // deliberately not round, to exercise the remainders
+                Species.Silica to 30_011L,
+                Species.Copper to 18_503L,
+                Species.Carbon to 11_249L,
             ),
         )
         val leftovers = mutableListOf<Mixture>()
@@ -306,7 +315,7 @@ class ChemistryTest {
         assertTrue(smelted.refined.mass > 0L, "twice-concentrated ore should smelt to something")
 
         // Feed it carbon fibre and make steel.
-        val fiber = Resource(Form.CarbonFiber, Mixture.of(Mineral.Carbon to 5_000L))
+        val fiber = Resource(Form.CarbonFiber, Mixture.of(Species.Carbon to 5_000L))
         val steel = assertNotNull(craft(smelted.refined, fiber))
 
         assertConserved(

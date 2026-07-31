@@ -8,21 +8,23 @@ playable is one vessel interior with no flight) and what is deliberately deferre
 
 ## State of the app
 
-**Phase 1 (chemistry) is built.** `core/…/chem/` is real and is the layer everything else will be
-built to serve:
+**Phase 1 (chemistry) is built, plus the Phase 2 logistics primitives.** `core/…/chem/` and
+`core/…/logistics/` are real and are the layer everything else is built to serve:
 
 | File | What it is |
 | --- | --- |
-| `chem/Mixture.kt` | `Mineral`, and `Mixture` — integer grams per mineral. Plus `apportion`, the exact proportional split every other operation rests on. |
+| `chem/Species.kt` | `Species` (what matter is made of) and `Phase`. Solid vs fluid is the split logistics cares about. |
+| `chem/Mixture.kt` | `Mixture` — integer grams per species. Plus `apportion`, the exact proportional split every other operation rests on. |
 | `chem/Form.kt` | `Form` (what matter has been made into), the smelt table, and the binary crafting tree as data. |
 | `chem/Chemistry.kt` | `smelt`, `process`, `craft`, `merge`, `takeFrom`, `conservationOf`. |
+| `logistics/Packet.kt` | 1 kg packets (`SolidPacket` / `FluidPacket`), `Capacity` (the one home for the eventual volume switch) and `Rate` (integer carry, so 1 kg/s at 60 Hz stays exact). |
 
 **Everything else is still the template's placeholder** — the bouncing-disc sim, its renderer and
 its HUD (`OutofspaceSim.kt`, `OutofspaceRenderer.kt`, `OutofspaceHud.kt`). It is left in place only
 so the app runs and the hosts stay exercised; the Phase 2 tile grid replaces it wholesale.
 
 ```bash
-./gradlew :apps:outofspace:core:jvmTest    # 27 chemistry tests, ~80ms
+./gradlew :apps:outofspace:core:jvmTest    # 48 chemistry + logistics tests, <200ms
 ./gradlew :apps:outofspace:desktop:run     # placeholder world
 ```
 
