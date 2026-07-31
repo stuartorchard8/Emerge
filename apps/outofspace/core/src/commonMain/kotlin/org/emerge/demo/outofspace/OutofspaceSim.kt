@@ -27,13 +27,11 @@ import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Miner
 import org.emerge.demo.outofspace.world.Fabricator
-import org.emerge.demo.outofspace.world.Node
 import org.emerge.demo.outofspace.world.Processor
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Signals
 import org.emerge.demo.outofspace.world.Smelter
 import org.emerge.demo.outofspace.world.Storage
-import org.emerge.demo.outofspace.world.Stockpile
 import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.Vent
 import org.emerge.demo.outofspace.world.Trigger
@@ -176,7 +174,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         return state.copy(
             machines = w.machines.toList(),
-            stockpile = w.stockpile,
             tick = state.tick + 1,
             minedGrams = w.minedGrams,
             ventedGrams = w.ventedGrams,
@@ -336,7 +333,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private class Work(state: VesselState) {
         val grid: Grid = state.grid
         val machines: MutableList<Machine?> = state.machines.toMutableList()
-        var stockpile: Stockpile = state.stockpile
         var minedGrams: Long = state.minedGrams
         var ventedGrams: Long = state.ventedGrams
 
@@ -530,14 +526,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         true
                     }
                 }
-                is Node -> {
-                    if (packet !is SolidPacket) false
-                    else {
-                        stockpile = stockpile.deposit(packet.resource)
-                        machines[target] = dest.copy(absorbedGrams = dest.absorbedGrams + packet.mass)
-                        true
-                    }
-                }
                 is Vent -> {
                     ventedGrams += packet.mass
                     machines[target] = dest.copy(ventedGrams = dest.ventedGrams + packet.mass)
@@ -586,7 +574,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Storage -> Storage(facing)
             MachineKind.Sensor -> Sensor(facing)
             MachineKind.Analyzer -> Analyzer(facing)
-            MachineKind.Node -> Node()
             MachineKind.Vent -> Vent()
             MachineKind.Hull -> Hull()
         }

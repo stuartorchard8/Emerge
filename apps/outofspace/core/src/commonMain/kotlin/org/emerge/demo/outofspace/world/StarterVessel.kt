@@ -6,11 +6,11 @@ import org.emerge.demo.outofspace.OutofspaceReducer
  * The world the game opens on: one complete refinery line, already running.
  *
  * It exists so the first thing anyone sees is the loop working end to end — ore mined, concentrated,
- * smelted, banked, waste vented — rather than an empty grid and a palette. It is also the Phase 2
+ * smelted, stored, waste vented — rather than an empty grid and a palette. It is also the Phase 2
  * exit criterion made executable, and the fixture the tests drive.
  *
  * ```
- *  MINER > belt belt ANLZ > PROCESSOR > ANLZ belt belt > SMELTER > belt belt belt > NODE
+ *  MINER > belt belt ANLZ > PROCESSOR > ANLZ belt belt > SMELTER > belt belt belt > STORE
  *                                v                            v
  *                              VENT                         VENT
  * ```
@@ -55,7 +55,7 @@ fun starterVessel(grid: Grid): VesselState {
     put(x, y, Smelter(Direction.Right))
     put(x, y + 1, Vent()); x++            // slag likewise
     beltRun(x, x + 2, y); x += 3
-    put(x, y, Node())
+    put(x, y, Storage(Direction.Right))   // the vessel's inventory: what is in here is what you can build with
 
     // ── The wiring demonstration, three rows below ──
     val wy = y + 3

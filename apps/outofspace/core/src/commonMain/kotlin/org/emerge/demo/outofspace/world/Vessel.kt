@@ -7,12 +7,19 @@ import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 
 /**
- * The global construction inventory: how much of each [Form] the vessel has banked, and what it is
- * made of.
+ * The global construction inventory: how much of each [Form] the vessel has to build with, and what
+ * it is made of.
  *
- * Composition survives being banked — a stockpile of steel smelted from filthy ore is still filthy,
- * and whatever gets built from it inherits that. It would be much easier to reduce everything to a
- * count of items here, and it would throw away the point of the chemistry.
+ * **This is a view over the vessel's [Storage] machines, not an account of its own.** Material is
+ * available for construction because it is sitting in a warehouse somewhere aboard, and it stops
+ * being available the moment that warehouse is emptied, moved or breached. The earlier design had a
+ * central node that absorbed deliveries into a separate tally, which meant matter existed in one of
+ * two mutually exclusive places and the conservation check had to name both; deriving it instead
+ * removes the seam entirely — there is no act of "banking", only of storing.
+ *
+ * Composition survives storage — a tank of steel smelted from filthy ore is still filthy, and
+ * whatever gets built from it inherits that. It would be much easier to reduce everything to a count
+ * of items here, and it would throw away the point of the chemistry.
  */
 class Stockpile private constructor(private val byForm: Array<Mixture>) {
 
@@ -28,13 +35,6 @@ class Stockpile private constructor(private val byForm: Array<Mixture>) {
     fun entries(): List<Pair<Form, Mixture>> =
         Form.ALL.mapNotNull { f -> byForm[f.ordinal].takeIf { !it.isEmpty }?.let { f to it } }
 
-    fun deposit(resource: Resource): Stockpile {
-        if (resource.isEmpty) return this
-        val next = byForm.copyOf()
-        next[resource.form.ordinal] = next[resource.form.ordinal] + resource.mixture
-        return Stockpile(next)
-    }
-
     override fun equals(other: Any?): Boolean =
         this === other || (other is Stockpile && byForm.contentEquals(other.byForm))
 
@@ -44,6 +44,19 @@ class Stockpile private constructor(private val byForm: Array<Mixture>) {
 
     companion object {
         val EMPTY: Stockpile = Stockpile(Array(Form.ALL.size) { Mixture.EMPTY })
+
+        /** Everything sitting in every storage aboard, gathered by form. */
+        fun of(machines: List<Machine?>): Stockpile {
+            var any = false
+            val byForm = Array(Form.ALL.size) { Mixture.EMPTY }
+            for (m in machines) {
+                val held = (m as? Storage)?.contents ?: continue
+                if (held.isEmpty) continue
+                byForm[held.form.ordinal] = byForm[held.form.ordinal] + held.mixture
+                any = true
+            }
+            return if (any) Stockpile(byForm) else EMPTY
+        }
     }
 }
 
@@ -57,13 +70,15 @@ class Stockpile private constructor(private val byForm: Array<Mixture>) {
  *
  * [ventedGrams] and [minedGrams] exist so conservation can be checked across the *whole world*, not
  * just one operation. A vent is the only place matter legitimately leaves and a miner the only place
- * it legitimately arrives, so `mined == in-world + banked + vented` must hold on every tick. That
- * invariant catches an entire category of logistics bug at once.
+ * it legitimately arrives, so `mined == in-world + vented` must hold on every tick. That invariant
+ * catches an entire category of logistics bug at once.
+ *
+ * There is no separate "banked" term any more: the [Stockpile] is derived from the storages, so what
+ * it holds is already counted in [inTransitGrams] and adding it again would double-count.
  */
 data class VesselState(
     val grid: Grid,
     val machines: List<Machine?>,
-    val stockpile: Stockpile = Stockpile.EMPTY,
     val gravity: Frac2 = DEFAULT_GRAVITY,
     val tick: Long = 0L,
     val minedGrams: Long = 0L,
@@ -103,6 +118,14 @@ data class VesselState(
     init {
         require(machines.size == grid.size) { "machine list is ${machines.size}, grid holds ${grid.size}" }
     }
+
+    /**
+     * What the vessel can build with: the contents of every storage aboard.
+     *
+     * Derived rather than stored, for the same reason [structure] is — a cached copy is one more
+     * thing that can disagree with the world, and this is cheap to fold.
+     */
+    val stockpile: Stockpile get() = Stockpile.of(machines)
 
     /** Temperature of a tile in kelvin, accounting for what is in it. */
     fun kelvinAt(index: Int): Int =
@@ -151,7 +174,6 @@ fun massIn(machine: Machine?): Long = when (machine) {
     is Analyzer -> machine.holding?.mass ?: 0L
     is Sensor -> 0L
     is Hull -> 0L
-    is Node -> 0L
     is Vent -> 0L
 }
 
@@ -173,7 +195,6 @@ fun fullness(machine: Machine?): Int = when (machine) {
     is Analyzer -> if (machine.holding != null) Signals.FULL else 0
     is Sensor -> 0
     is Hull -> 0
-    is Node -> 0
     is Vent -> 0
 }.coerceIn(0, Signals.FULL)
 
@@ -210,7 +231,7 @@ fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (m
             "PASSING" to Resource(form, p.contents)
         },
     )
-    is Sensor, is Node, is Vent, is Hull -> emptyList()
+    is Sensor, is Vent, is Hull -> emptyList()
 }
 
 /** Everything a machine holds, species by species — the finer-grained version of [massIn]. */
@@ -227,6 +248,5 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
     is Analyzer -> machine.holding?.contents ?: Mixture.EMPTY
     is Sensor -> Mixture.EMPTY
     is Hull -> Mixture.EMPTY
-    is Node -> Mixture.EMPTY
     is Vent -> Mixture.EMPTY
 }

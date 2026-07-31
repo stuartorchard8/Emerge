@@ -105,7 +105,7 @@ class ProcessorChainTest {
         }
         assertEquals(
             s.minedGrams,
-            s.inTransitGrams + s.stockpile.totalGrams + s.ventedGrams,
+            s.inTransitGrams + s.ventedGrams,
             "and a stalled chain still conserves mass",
         )
     }

@@ -13,7 +13,7 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Miner
-import org.emerge.demo.outofspace.world.Node
+import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Processor
 import org.emerge.demo.outofspace.world.Smelter
 import org.emerge.demo.outofspace.world.Vent
@@ -33,7 +33,7 @@ import kotlin.test.assertTrue
  * The headline assertion is [`nothing is created or destroyed`][`the world never loses a gram`]:
  * a miner is the only place matter legitimately enters and a vent the only place it leaves, so
  *
- *     mined == in-transit + banked + vented
+ *     mined == aboard + vented
  *
  * must hold on **every** tick. One assertion catches an entire category of logistics bug — a packet
  * duplicated on handoff, a jam that eats a slot, a buffer overwritten instead of merged.
@@ -50,11 +50,12 @@ class VesselSimTest {
     }
 
     private fun assertBalanced(s: VesselState, what: String) {
-        val banked = s.stockpile.totalGrams
+        // Storage contents are part of inTransitGrams -- the stockpile is a view over the storages,
+        // not an account beside them -- so there is no separate "banked" term to add here.
         assertEquals(
             s.minedGrams,
-            s.inTransitGrams + banked + s.ventedGrams,
-            "$what: mined ${s.minedGrams} != transit ${s.inTransitGrams} + banked $banked + vented ${s.ventedGrams}",
+            s.inTransitGrams + s.ventedGrams,
+            "$what: mined ${s.minedGrams} != aboard ${s.inTransitGrams} + vented ${s.ventedGrams}",
         )
     }
 
@@ -154,13 +155,13 @@ class VesselSimTest {
         machines[0] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
         machines[1] = Belt(Direction.Right)
         machines[2] = Smelter(Direction.Right)
-        machines[3] = Node()
+        machines[3] = Storage(Direction.Right)
         machines[2 + 5] = Vent()   // below the smelter: where slag goes
         var s = VesselState(Grid(5, 2), machines.toList())
 
         s = run(s, 60 * 60)
         assertTrue(s.ventedGrams > 0L, "slag should be pouring out the side")
-        assertEquals(0L, s.stockpile.totalGrams, "and nothing should reach the bank")
+        assertEquals(0L, s.stockpile[Form.IronIngot].total, "and no ingot should ever reach the store")
         assertBalanced(s, "ore straight to smelter")
     }
 
@@ -168,7 +169,7 @@ class VesselSimTest {
     fun `a processor in front of the smelter is what makes ingots`() {
         val s = run(starterVessel(cfg.grid), 60 * 120)
         val ironIngots = s.stockpile[Form.IronIngot]
-        assertTrue(ironIngots.total > 0L, "the full line should bank iron: ${s.stockpile}")
+        assertTrue(ironIngots.total > 0L, "the full line should store iron: ${s.stockpile}")
         assertEquals(ironIngots.total, ironIngots[Species.Iron], "and the ingots should be pure iron")
         assertBalanced(s, "starter vessel")
     }
@@ -194,13 +195,19 @@ class VesselSimTest {
     }
 
     @Test
-    fun `the node banks what reaches it and the vent throws it away`() {
+    fun `what a storage holds is what the vessel can build with`() {
         val grid = Grid(3, 1)
         val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
-        var s = VesselState(grid, listOf(Belt(Direction.Right, listOf(ingot, null, null, null)), Node(), null))
+        // The storage faces the empty tile beyond it, so it fills rather than draining.
+        var s = VesselState(grid, listOf(Belt(Direction.Right, listOf(ingot, null, null, null)), Storage(Direction.Right), null))
         s = run(s, Belt.STEP_TICKS)
-        assertEquals(1_000L, s.stockpile[Form.IronIngot].total)
-        assertEquals(1_000L, (s[1] as Node).absorbedGrams)
+        assertEquals(1_000L, (s[1] as Storage).contents!!.mass, "it landed in the tank")
+        assertEquals(1_000L, s.stockpile[Form.IronIngot].total, "and the stockpile is that tank")
+
+        // Take the storage away and the stockpile goes with it: availability is a fact about where
+        // things are, not a number banked somewhere safe.
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Remove(1))))
+        assertEquals(0L, s.stockpile.totalGrams)
     }
 
     @Test
@@ -221,10 +228,10 @@ class VesselSimTest {
     @Test
     fun `placing never overwrites an existing machine`() {
         val grid = Grid(2, 1)
-        val node = Node(absorbedGrams = 999L)
-        var s = VesselState(grid, listOf(node, null))
+        val store = Storage(Direction.Right, contents = Resource(Form.IronIngot, Mixture.of(Species.Iron to 999L)))
+        var s = VesselState(grid, listOf(store, null))
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(0, MachineKind.Belt, Direction.Right))))
-        assertEquals(node, s[0], "a stray click must not destroy a machine and its contents")
+        assertEquals(store, s[0], "a stray click must not destroy a machine and its contents")
     }
 
     @Test
@@ -244,10 +251,10 @@ class VesselSimTest {
         val base = VesselState(grid, listOf(null, null))
         val a = mapOf(
             PlayerId(0) to OutofspaceInput(listOf(Edit.Place(0, MachineKind.Belt, Direction.Right))),
-            PlayerId(1) to OutofspaceInput(listOf(Edit.Place(0, MachineKind.Node, Direction.Right))),
+            PlayerId(1) to OutofspaceInput(listOf(Edit.Place(0, MachineKind.Storage, Direction.Right))),
         )
         val b = mapOf(
-            PlayerId(1) to OutofspaceInput(listOf(Edit.Place(0, MachineKind.Node, Direction.Right))),
+            PlayerId(1) to OutofspaceInput(listOf(Edit.Place(0, MachineKind.Storage, Direction.Right))),
             PlayerId(0) to OutofspaceInput(listOf(Edit.Place(0, MachineKind.Belt, Direction.Right))),
         )
         assertEquals(
@@ -280,13 +287,12 @@ class VesselSimTest {
         // itemise — so this checks the species balance of what remains against what was mined,
         // allowing only for the vented total.
         val inWorld = s.machines.fold(Mixture.EMPTY) { acc, m -> acc + contentsOf(m) }
-        val banked = s.stockpile.entries().fold(Mixture.EMPTY) { acc, (_, m) -> acc + m }
-        val accountedFor = inWorld.total + banked.total + s.ventedGrams
+        val accountedFor = inWorld.total + s.ventedGrams
         assertEquals(s.minedGrams, accountedFor)
 
         // And no species appeared from nowhere: only what the ore body contains is present.
         val fromOreBody = setOf(Species.Iron, Species.Silica, Species.Copper, Species.Titanium)
-        val present = Species.ALL.filter { (inWorld + banked)[it] > 0L }
+        val present = Species.ALL.filter { inWorld[it] > 0L }
         assertTrue(present.all { it in fromOreBody }, "unexpected species in the world: $present")
     }
 

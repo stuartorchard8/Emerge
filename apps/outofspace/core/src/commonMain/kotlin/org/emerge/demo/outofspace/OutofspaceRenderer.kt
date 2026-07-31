@@ -13,7 +13,6 @@ import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Miner
-import org.emerge.demo.outofspace.world.Node
 import org.emerge.demo.outofspace.world.Processor
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Smelter
@@ -192,7 +191,7 @@ class OutofspaceRenderer {
     private fun drawMachine(state: VesselState, index: Int, x: Int, y: Int, m: Machine) {
         // A machine with no activation is stopped, and saying so on the tile is the answer to the
         // only question wiring ever raises: why is this not running?
-        if (m !is Sensor && m !is Node && m.wiring.activation(Action.Run, state.signals) <= 0) {
+        if (m !is Sensor && m.wiring.activation(Action.Run, state.signals) <= 0) {
             tileRect(x, y, 0.94f, 0x1A1A20FFL)
             tileRect(x, y, 0.34f, 0x8A3030FFL)
             return
@@ -285,10 +284,6 @@ class OutofspaceRenderer {
                 // The eye faces what it watches, and wears the colour it broadcasts on.
                 edgeMark(x, y, m.facing, m.channel.color)
                 tileRect(x, y, 0.3f, m.channel.color)
-            }
-            is Node -> {
-                tileRect(x, y, 0.94f, 0x2E7A4AFFL)
-                tileRect(x, y, 0.45f, 0xBFF5D0FFL)
             }
             is Vent -> {
                 tileRect(x, y, 0.94f, 0x3A3A44FFL)
@@ -431,7 +426,6 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Sensor -> 0x24303CFFL
     MachineKind.Analyzer -> 0x2A3242FFL
     MachineKind.Hull -> 0x4A5464FFL
-    MachineKind.Node -> 0x2E7A4AFFL
     MachineKind.Vent -> 0x3A3A44FFL
 }
 

@@ -45,10 +45,12 @@ class OutofspaceHud {
                 gap()
                 title("MASS BALANCE")
                 keyValue("Mined", grams(s.minedGrams))
-                keyValue("In transit", grams(s.inTransitGrams))
-                keyValue("Banked", grams(s.stockpile.totalGrams))
+                keyValue("Aboard", grams(s.inTransitGrams))
+                keyValue("- in storage", grams(s.stockpile.totalGrams))
                 keyValue("Vented", grams(s.ventedGrams))
-                val balanced = s.minedGrams == s.inTransitGrams + s.stockpile.totalGrams + s.ventedGrams
+                // Storage is part of "aboard", not a term beside it: the stockpile is a view over the
+                // storages rather than a separate account, so adding it here would double-count.
+                val balanced = s.minedGrams == s.inTransitGrams + s.ventedGrams
                 row(if (balanced) "balanced" else "LEAK", if (balanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 gap()
                 title("ATMOSPHERE")
@@ -73,9 +75,10 @@ class OutofspaceHud {
 
             panel(Anchor.TopRight) {
                 title("STOCKPILE")
+                row("(sum of all storage aboard)", 0x7A8A9AFFL)
                 val entries = s.stockpile.entries()
                 if (entries.isEmpty()) {
-                    row("(nothing banked yet)", 0x9A9A9AFFL)
+                    row("(no storage holding anything)", 0x9A9A9AFFL)
                 } else {
                     for ((form, mixture) in entries) {
                         keyValue(form.name, grams(mixture.total))

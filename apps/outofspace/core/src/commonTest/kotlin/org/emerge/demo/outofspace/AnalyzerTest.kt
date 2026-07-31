@@ -11,10 +11,9 @@ import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Machine
-import org.emerge.demo.outofspace.world.Node
+import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Processor
 import org.emerge.demo.outofspace.world.Smelter
-import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.contentsBreakdown
 import org.emerge.demo.outofspace.world.starterVessel
@@ -45,7 +44,7 @@ class AnalyzerTest {
         val ore = SolidPacket(Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY))
         var s = VesselState(
             grid,
-            listOf(Belt(Direction.Right, listOf(ore, null, null, null)), Analyzer(Direction.Right), Node()),
+            listOf(Belt(Direction.Right, listOf(ore, null, null, null)), Analyzer(Direction.Right), Storage(Direction.Right)),
         )
         s = run(s, Belt.STEP_TICKS * 2)
 
@@ -61,7 +60,7 @@ class AnalyzerTest {
         val ore = SolidPacket(Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY))
         var s = VesselState(
             grid,
-            listOf(Belt(Direction.Right, listOf(ore, null, null, null)), Analyzer(Direction.Right), Node()),
+            listOf(Belt(Direction.Right, listOf(ore, null, null, null)), Analyzer(Direction.Right), Storage(Direction.Right)),
         )
         s = run(s, Belt.STEP_TICKS * 20)
 
@@ -80,7 +79,7 @@ class AnalyzerTest {
             listOf(
                 Belt(Direction.Right, listOf(pure, null, null, null)),
                 Analyzer(Direction.Right, Channel.Violet),
-                Node(),
+                Storage(Direction.Right),
             ),
         )
         s = run(s, Belt.STEP_TICKS * 2)
@@ -105,7 +104,7 @@ class AnalyzerTest {
             if (it % 91 == 0) {
                 assertEquals(
                     s.minedGrams,
-                    s.inTransitGrams + s.stockpile.totalGrams + s.ventedGrams,
+                    s.inTransitGrams + s.ventedGrams,
                     "tick ${s.tick}",
                 )
             }
@@ -136,7 +135,7 @@ class AnalyzerTest {
 
     @Test
     fun `machines that hold nothing report nothing rather than a phantom row`() {
-        assertEquals(emptyList(), contentsBreakdown(Node()))
+        assertEquals(emptyList(), contentsBreakdown(Storage(Direction.Right)))
         assertEquals(emptyList(), contentsBreakdown(Storage(Direction.Right)))
         assertEquals(emptyList(), contentsBreakdown(Smelter(Direction.Right)))
     }

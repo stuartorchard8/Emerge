@@ -14,11 +14,10 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Miner
-import org.emerge.demo.outofspace.world.Node
+import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Signals
 import org.emerge.demo.outofspace.world.Smelter
-import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
@@ -135,10 +134,10 @@ class WiringTest {
         val grid = Grid(2, 1)
         val packet = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
         val belt = Belt(Direction.Right, listOf(null, null, null, packet)).copy(wiring = wiring())
-        var s = VesselState(grid, listOf(belt, Node()))
+        var s = VesselState(grid, listOf(belt, Storage(Direction.Right)))
         s = run(s, Belt.STEP_TICKS * 8)
         assertEquals(3, (s[0] as Belt).slots.indexOfFirst { it != null }, "the packet never moved")
-        assertEquals(0L, s.stockpile.totalGrams, "and nothing reached the node")
+        assertEquals(0L, s.stockpile.totalGrams, "and nothing reached the store beyond it")
     }
 
     // ── The loop that makes wiring worth having ───────────────────────────────
@@ -185,7 +184,7 @@ class WiringTest {
         val s = run(starterVessel(cfg.grid.copy(width = 24, height = 14)), 60 * 40)
         assertTrue(s.signals[Channel.Red] > 800, "the demonstration storage should have nearly filled")
         // And the main line is unaffected by it.
-        assertTrue(s.stockpile[Form.IronIngot].total > 0L, "the refinery line still banks iron")
+        assertTrue(s.stockpile[Form.IronIngot].total > 0L, "the refinery line still stores iron")
     }
 
     // ── Editing wiring ────────────────────────────────────────────────────────
@@ -236,7 +235,7 @@ class WiringTest {
                 Resource(Form.CarbonFiber, Mixture.of(Species.Carbon to 4_000L)),
             ),
         )
-        var s = VesselState(grid, listOf(fab, Node()))
+        var s = VesselState(grid, listOf(fab, Storage(Direction.Right)))
         s = run(s, 60 * 20)
         assertTrue(s.stockpile[Form.SteelAlloy].total > 0L, "iron + carbon fibre makes steel: ${s.stockpile}")
         // Composition is carried through: steel from these inputs is half iron, half carbon.
@@ -254,7 +253,7 @@ class WiringTest {
                 Resource(Form.TitaniumIngot, Mixture.of(Species.Titanium to 1_000L)),
             ),
         )
-        var s = VesselState(grid, listOf(fab, Node()))
+        var s = VesselState(grid, listOf(fab, Storage(Direction.Right)))
         s = run(s, 60 * 5)
         assertEquals(2_000L, s.inTransitGrams, "nothing consumed, nothing lost")
         assertEquals(0L, s.stockpile.totalGrams)
@@ -282,14 +281,18 @@ class WiringTest {
         val grid = Grid(3, 1)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 5_000L))
         val shut = Storage(Direction.Right, stored).copy(wiring = wiring())
-        var s = VesselState(grid, listOf(shut, Node(), null))
+        // The downstream tank is what gets checked, not the stockpile: both tanks feed the stockpile
+        // now, so its total is 5kg either way and would say nothing about whether the valve opened.
+        var s = VesselState(grid, listOf(shut, Storage(Direction.Right), null))
         s = run(s, 60 * 5)
-        assertEquals(0L, s.stockpile.totalGrams, "a closed valve holds everything")
+        assertEquals(5_000L, (s[0] as Storage).contents!!.mass, "a closed valve holds everything")
+        assertNull((s[1] as Storage).contents, "so nothing arrives downstream")
 
         val open = Storage(Direction.Right, stored)
-        var s2 = VesselState(grid, listOf(open, Node(), null))
+        var s2 = VesselState(grid, listOf(open, Storage(Direction.Right), null))
         s2 = run(s2, 60 * 5)
-        assertEquals(5_000L, s2.stockpile.totalGrams, "an open one drains")
+        assertEquals(5_000L, (s2[1] as Storage).contents!!.mass, "an open one drains into the next tank")
+        assertNull((s2[0] as Storage).contents, "and empties itself doing it")
     }
 
     // ── Conservation still holds with all of it running ───────────────────────
@@ -302,7 +305,7 @@ class WiringTest {
             if (it % 89 == 0) {
                 assertEquals(
                     s.minedGrams,
-                    s.inTransitGrams + s.stockpile.totalGrams + s.ventedGrams,
+                    s.inTransitGrams + s.ventedGrams,
                     "tick ${s.tick}",
                 )
             }
