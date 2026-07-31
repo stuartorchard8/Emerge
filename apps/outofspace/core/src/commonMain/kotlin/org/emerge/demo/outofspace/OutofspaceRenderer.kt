@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Belt
+import org.emerge.demo.outofspace.world.Debris
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.AirField
@@ -153,6 +154,17 @@ class OutofspaceRenderer {
             }
         }
 
+        // Debris under the machines: it lies on the deck, and a conveyor spanning a heap should read
+        // as running over it rather than as being buried by it.
+        if (!state.debris.isEmpty) {
+            for (tile in state.debris.tiles()) {
+                val x = grid.xOf(tile)
+                val y = grid.yOf(tile)
+                if (x !in minX..maxX || y !in minY..maxY) continue
+                drawDebris(state, tile, x, y)
+            }
+        }
+
         for (y in minY..maxY) {
             for (x in minX..maxX) {
                 val index = grid.index(x, y)
@@ -185,6 +197,27 @@ class OutofspaceRenderer {
     }
 
     fun cleanup() = rects.deleteProgram()
+
+    /**
+     * A heap on the floor, its height set by how much is in it and its colour by what dominates.
+     *
+     * Drawn rising from the bottom of the tile rather than centred, because the whole point of the
+     * thing is that it fell: a pile floating in the middle of a tile would say nothing about gravity.
+     * A pile is deliberately never full-height — the deck stays readable underneath it.
+     */
+    private fun drawDebris(state: VesselState, tile: Int, x: Int, y: Int) {
+        val mass = state.debris.massAt(tile)
+        if (mass <= 0L) return
+        val fill = (mass.toFloat() / Debris.TILE_CAP).coerceIn(0.05f, 1f)
+        val h = 0.15f + fill * 0.6f
+        rect(
+            (x + 0.5f) * tilePx, (y + 1f - h * 0.5f) * tilePx,
+            0.94f * tilePx, h * tilePx,
+            packetColor(state.debris.mixtureAt(tile).dominant),
+        )
+        // A dark line along the top, so a heap does not read as a solid block of material.
+        rect((x + 0.5f) * tilePx, (y + 1f - h) * tilePx, 0.94f * tilePx, 0.06f * tilePx, 0x00000060L)
+    }
 
     // ── Machine drawing ───────────────────────────────────────────────────────
 

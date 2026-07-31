@@ -47,6 +47,7 @@ class OutofspaceHud {
                 keyValue("Mined", grams(s.minedGrams))
                 keyValue("Aboard", grams(s.inTransitGrams))
                 keyValue("- in storage", grams(s.stockpile.totalGrams))
+                keyValue("- spilled", grams(s.debrisGrams))
                 keyValue("Vented", grams(s.ventedGrams))
                 // Storage is part of "aboard", not a term beside it: the stockpile is a view over the
                 // storages rather than a separate account, so adding it here would double-count.
@@ -144,12 +145,29 @@ class OutofspaceHud {
      */
     private fun org.emerge.render.torus.ui.UiBuilder.inspectPanel(controller: OutofspaceController, index: Int) {
         if (index < 0) return
-        val machine = controller.state[index] ?: return
-        val grid = controller.state.grid
+        val s = controller.state
+        val machine = s[index]
+        val spill = s.debris[index]
+        // A bare tile with a heap on it is still worth inspecting -- otherwise the material you just
+        // dumped on the deck would be visible but unreadable, which is the gap the analyzer existed
+        // to close in the first place.
+        if (machine == null && spill.isEmpty()) return
+        val grid = s.grid
 
         panel(Anchor.TopRight) {
-            title("INSPECT  ·  ${machine.kind.label} (${grid.xOf(index)}, ${grid.yOf(index)})")
+            val what = machine?.kind?.label ?: "DECK"
+            title("INSPECT  ·  $what (${grid.xOf(index)}, ${grid.yOf(index)})")
             tileConditions(controller, index)
+
+            if (spill.isNotEmpty()) {
+                title("SPILLED")
+                for (resource in spill) {
+                    keyValue(resource.form.name, grams(resource.mass))
+                    row("   " + composition(resource.mixture), 0x9AA4B4FFL)
+                }
+                gap()
+            }
+            if (machine == null) return@panel
 
             if (machine is Analyzer) {
                 // The whole point of the machine, so it leads.

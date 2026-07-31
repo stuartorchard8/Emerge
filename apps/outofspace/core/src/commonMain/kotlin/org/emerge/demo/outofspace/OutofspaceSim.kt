@@ -16,6 +16,7 @@ import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Analyzer
 import org.emerge.demo.outofspace.world.Belt
 import org.emerge.demo.outofspace.world.Channel
+import org.emerge.demo.outofspace.world.DebrisWork
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Directed
 import org.emerge.demo.outofspace.world.Grid
@@ -38,6 +39,8 @@ import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.fullness
+import org.emerge.demo.outofspace.world.settleDebris
+import org.emerge.demo.outofspace.world.spoilsOf
 import org.emerge.demo.outofspace.world.heatPerGram
 import org.emerge.demo.outofspace.world.stepAir
 import org.emerge.demo.outofspace.world.stepHeat
@@ -90,7 +93,9 @@ data class OutofspaceInput(val edits: List<Edit> = emptyList()) : SimInput {
  *  4. **Process** — processors, smelters and fabricators draw from their inputs and fill outputs.
  *  5. **Eject** — anything holding a full packet's worth of output pushes it into the tile it faces.
  *     Waste leaves by the side clockwise of facing, so a rightward line drops its waste downward.
- *  6. **Advance belts** — every [Belt.STEP_TICKS] ticks: deliver each belt's head packet, then shift
+ *  6. **Settle debris** — loose material falls toward gravity, and anything lying outside the hull
+ *     goes overboard.
+ *  7. **Advance belts** — every [Belt.STEP_TICKS] ticks: deliver each belt's head packet, then shift
  *     every belt one slot toward its head.
  *
  * Every machine is throttled by its RUN activation: rate × activation, and nothing at all at zero or
@@ -168,6 +173,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val (heat, radiated) = stepHeat(
             state.grid, structure, w.machines.toList(), HeatField.of(warmed), cfg.ticksPerSecond,
         )
+        // Settling runs after the edits and after structure is re-derived, so a pile the player just
+        // dropped falls this tick, and a pile in a room they just breached leaves with the air.
+        w.ventedGrams += settleDebris(state.grid, structure, w.debris, state.gravity)
+
         val (air, airVented) = stepAir(
             state.grid, structure, state.air, state.gravity, cfg.ticksPerSecond,
         )
@@ -176,6 +185,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             machines = w.machines.toList(),
             tick = state.tick + 1,
             minedGrams = w.minedGrams,
+            debris = w.debris.snapshot(),
             ventedGrams = w.ventedGrams,
             signals = signals,
             structure = structure,
@@ -334,6 +344,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val grid: Grid = state.grid
         val machines: MutableList<Machine?> = state.machines.toMutableList()
         var minedGrams: Long = state.minedGrams
+        val debris: DebrisWork = DebrisWork(state.debris)
         var ventedGrams: Long = state.ventedGrams
 
         /** This tick's signal snapshot, set once the sensing pass has run. */
@@ -367,7 +378,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     if (m is Directed) machines[edit.index] = m.rotated()
                 }
                 is Edit.Remove -> {
-                    if (edit.index in machines.indices) machines[edit.index] = null
+                    if (edit.index !in machines.indices) return
+                    // Whatever it was holding falls on the deck. Deleting it instead would be a
+                    // genuine leak, and the mass balance said so -- the answer is somewhere for the
+                    // material to go, not an exemption for the player's own edits.
+                    debris.spill(edit.index, spoilsOf(machines[edit.index]))
+                    machines[edit.index] = null
                 }
                 is Edit.Wire -> {
                     val m = machines.getOrNull(edit.index) ?: return

@@ -80,6 +80,8 @@ data class VesselState(
     val grid: Grid,
     val machines: List<Machine?>,
     val gravity: Frac2 = DEFAULT_GRAVITY,
+    /** Loose material lying on the deck — see [Debris]. Part of "aboard" for conservation purposes. */
+    val debris: Debris = Debris.EMPTY,
     val tick: Long = 0L,
     val minedGrams: Long = 0L,
     val ventedGrams: Long = 0L,
@@ -143,13 +145,21 @@ data class VesselState(
     operator fun get(index: Int): Machine? = machines.getOrNull(index)
     operator fun get(x: Int, y: Int): Machine? = if (grid.inBounds(x, y)) machines[grid.index(x, y)] else null
 
-    /** Mass currently sitting in belts and machine buffers — everything the logistics network holds. */
+    /**
+     * Every gram still aboard: in belts, in machine buffers, and lying loose on the deck.
+     *
+     * Debris counts. Taking a machine apart moves its contents from one term of this sum to another
+     * rather than removing them, which is exactly why dismantling stopped reading as a leak.
+     */
     val inTransitGrams: Long
         get() {
-            var sum = 0L
+            var sum = debris.totalGrams
             for (m in machines) sum += massIn(m)
             return sum
         }
+
+    /** Just the loose material, for the readout that distinguishes "stored" from "spilled". */
+    val debrisGrams: Long get() = debris.totalGrams
 
     fun withMachine(index: Int, machine: Machine?): VesselState =
         copy(machines = machines.toMutableList().also { it[index] = machine })
@@ -161,6 +171,14 @@ data class VesselState(
         fun empty(grid: Grid): VesselState = VesselState(grid, List(grid.size) { null })
     }
 }
+
+/**
+ * What falls on the floor when a machine is taken apart: everything it was holding, keeping forms
+ * separate. Defined in terms of [contentsBreakdown] so there is exactly one list of "where a machine
+ * keeps things" — a second one would drift, and the drift would look like a conservation bug.
+ */
+fun spoilsOf(machine: Machine?): List<Resource> =
+    contentsBreakdown(machine).map { it.second }.filter { !it.isEmpty }
 
 /** Total mass held by one machine, wherever it keeps it. Used for world-wide conservation checks. */
 fun massIn(machine: Machine?): Long = when (machine) {

@@ -180,17 +180,9 @@ fun stratifyColumns(
     gravity: Frac2,
     ticksPerSecond: Int,
 ) {
-    // Which way is down, and is it even a grid direction? A diagonal or zero gravity means no
-    // stratification rather than a wrong one.
-    val gx = gravity.x.raw
-    val gy = gravity.y.raw
-    val down: Direction = when {
-        gx == 0L && gy > 0L -> Direction.Down
-        gx == 0L && gy < 0L -> Direction.Up
-        gy == 0L && gx > 0L -> Direction.Right
-        gy == 0L && gx < 0L -> Direction.Left
-        else -> return
-    }
+    // A diagonal or zero gravity means no stratification rather than a wrong one. Shared with
+    // debris settling, which needs the identical answer and must not be able to disagree.
+    val down: Direction = downDirection(gravity) ?: return
 
     // Heaviest first, so each pair is considered once in the order (heavy, lighter).
     val byWeight = Species.GASES.sortedByDescending { it.molarMass }
