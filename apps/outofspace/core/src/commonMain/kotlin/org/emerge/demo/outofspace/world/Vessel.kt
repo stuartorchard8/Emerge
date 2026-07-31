@@ -68,6 +68,12 @@ data class VesselState(
     val tick: Long = 0L,
     val minedGrams: Long = 0L,
     val ventedGrams: Long = 0L,
+    /**
+     * The channel values computed this tick. Kept in the snapshot rather than recomputed by the
+     * renderer so that what is drawn is exactly what the sim acted on — and so a machine can be
+     * drawn dimmed when its activation is zero, which is the answer to "why has this stopped".
+     */
+    val signals: Signals = Signals.build { },
 ) {
     init {
         require(machines.size == grid.size) { "machine list is ${machines.size}, grid holds ${grid.size}" }
@@ -102,9 +108,32 @@ fun massIn(machine: Machine?): Long = when (machine) {
     is Miner -> machine.buffer.mass
     is Processor -> (machine.input?.mass ?: 0L) + (machine.product?.mass ?: 0L) + (machine.tailings?.mass ?: 0L)
     is Smelter -> (machine.input?.mass ?: 0L) + (machine.refined?.mass ?: 0L) + (machine.slag?.mass ?: 0L)
+    is Fabricator -> machine.inputs.sumOf { it.mass } + (machine.output?.mass ?: 0L)
+    is Storage -> machine.contents?.mass ?: 0L
+    is Sensor -> 0L
     is Node -> 0L
     is Vent -> 0L
 }
+
+/**
+ * How full a machine is, 0..1000 permille — the one number a [Sensor] reads.
+ *
+ * Every machine answers, so a sensor can be pointed at anything and mean something. The reference
+ * capacity differs by kind (a belt's is its slots, a storage's is its tank), which is the point: the
+ * question a sensor asks is "is this backing up?", not "how many grams".
+ */
+fun fullness(machine: Machine?): Int = when (machine) {
+    null -> 0
+    is Belt -> machine.occupancy * Signals.FULL / machine.slots.size
+    is Miner -> (machine.buffer.mass * Signals.FULL / Miner.BUFFER_CAP).toInt()
+    is Processor -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP * 2)).toInt()
+    is Smelter -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP * 2)).toInt()
+    is Fabricator -> (massIn(machine) * Signals.FULL / (Fabricator.INPUT_CAP * 2)).toInt()
+    is Storage -> ((machine.contents?.mass ?: 0L) * Signals.FULL / Storage.CAP).toInt()
+    is Sensor -> 0
+    is Node -> 0
+    is Vent -> 0
+}.coerceIn(0, Signals.FULL)
 
 /** Everything a machine holds, species by species — the finer-grained version of [massIn]. */
 fun contentsOf(machine: Machine?): Mixture = when (machine) {
@@ -115,6 +144,9 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
         (machine.product?.mixture ?: Mixture.EMPTY) + (machine.tailings?.mixture ?: Mixture.EMPTY)
     is Smelter -> (machine.input?.mixture ?: Mixture.EMPTY) +
         (machine.refined?.mixture ?: Mixture.EMPTY) + (machine.slag?.mixture ?: Mixture.EMPTY)
+    is Fabricator -> machine.inputs.fold(machine.output?.mixture ?: Mixture.EMPTY) { acc, r -> acc + r.mixture }
+    is Storage -> machine.contents?.mixture ?: Mixture.EMPTY
+    is Sensor -> Mixture.EMPTY
     is Node -> Mixture.EMPTY
     is Vent -> Mixture.EMPTY
 }

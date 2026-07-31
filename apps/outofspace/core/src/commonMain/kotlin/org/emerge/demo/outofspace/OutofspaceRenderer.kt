@@ -4,12 +4,16 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Belt
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.Fabricator
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Miner
 import org.emerge.demo.outofspace.world.Node
 import org.emerge.demo.outofspace.world.Processor
+import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Smelter
+import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Vent
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
@@ -155,6 +159,13 @@ class OutofspaceRenderer {
     // ── Machine drawing ───────────────────────────────────────────────────────
 
     private fun drawMachine(state: VesselState, index: Int, x: Int, y: Int, m: Machine) {
+        // A machine with no activation is stopped, and saying so on the tile is the answer to the
+        // only question wiring ever raises: why is this not running?
+        if (m !is Sensor && m !is Node && m.wiring.activation(Action.Run, state.signals) <= 0) {
+            tileRect(x, y, 0.94f, 0x1A1A20FFL)
+            tileRect(x, y, 0.34f, 0x8A3030FFL)
+            return
+        }
         when (m) {
             is Belt -> {
                 tileRect(x, y, 0.9f, 0x2A3242FFL)
@@ -190,6 +201,31 @@ class OutofspaceRenderer {
                 edgeMark(x, y, m.facing, 0xFFB05AFFL)
                 edgeMark(x, y, m.facing.clockwise, 0x4A3A32FFL)   // where slag leaves
                 fillBar(x, y, massIn(m).toFloat() / BUFFER_BAR_FULL)
+            }
+            is Fabricator -> {
+                tileRect(x, y, 0.94f, 0x6B3A7AFFL)
+                edgeMark(x, y, m.facing, 0xD9A0EEFFL)
+                fillBar(x, y, massIn(m).toFloat() / (Fabricator.INPUT_CAP * 2))
+            }
+            is Storage -> {
+                tileRect(x, y, 0.94f, 0x3A4A5AFFL)
+                edgeMark(x, y, m.facing, 0x8AA0B8FFL)
+                // A storage shows its level as a rising fill, not a thin bar: it is a tank.
+                val level = (m.contents?.mass ?: 0L).toFloat() / Storage.CAP
+                if (level > 0f) {
+                    val h = level.coerceIn(0f, 1f) * 0.8f
+                    rect(
+                        (x + 0.5f) * tilePx, (y + 0.9f - h * 0.5f) * tilePx,
+                        0.8f * tilePx, h * tilePx,
+                        packetColor(m.contents?.mixture?.dominant),
+                    )
+                }
+            }
+            is Sensor -> {
+                tileRect(x, y, 0.94f, 0x24303CFFL)
+                // The eye faces what it watches, and wears the colour it broadcasts on.
+                edgeMark(x, y, m.facing, m.channel.color)
+                tileRect(x, y, 0.3f, m.channel.color)
             }
             is Node -> {
                 tileRect(x, y, 0.94f, 0x2E7A4AFFL)
@@ -283,6 +319,9 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Miner -> 0x6B4A2AFFL
     MachineKind.Processor -> 0x2E5A6BFFL
     MachineKind.Smelter -> 0x8A3A2AFFL
+    MachineKind.Fabricator -> 0x6B3A7AFFL
+    MachineKind.Storage -> 0x3A4A5AFFL
+    MachineKind.Sensor -> 0x24303CFFL
     MachineKind.Node -> 0x2E7A4AFFL
     MachineKind.Vent -> 0x3A3A44FFL
 }

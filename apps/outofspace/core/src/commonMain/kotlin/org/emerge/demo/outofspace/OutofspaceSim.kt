@@ -5,12 +5,15 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.process
+import org.emerge.demo.outofspace.chem.recipeFor
 import org.emerge.demo.outofspace.chem.smelt
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.Rate
 import org.emerge.demo.outofspace.logistics.SolidPacket
+import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Belt
+import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Directed
 import org.emerge.demo.outofspace.world.Grid
@@ -18,12 +21,19 @@ import org.emerge.demo.outofspace.world.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Miner
+import org.emerge.demo.outofspace.world.Fabricator
 import org.emerge.demo.outofspace.world.Node
 import org.emerge.demo.outofspace.world.Processor
+import org.emerge.demo.outofspace.world.Sensor
+import org.emerge.demo.outofspace.world.Signals
 import org.emerge.demo.outofspace.world.Smelter
+import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Stockpile
 import org.emerge.demo.outofspace.world.Vent
+import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.Wiring
+import org.emerge.demo.outofspace.world.fullness
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimInput
 import org.emerge.sim.core.SimReducer
@@ -42,6 +52,16 @@ sealed interface Edit {
     data class Place(val index: Int, val kind: MachineKind, val facing: Direction) : Edit
     data class Rotate(val index: Int) : Edit
     data class Remove(val index: Int) : Edit
+
+    /**
+     * Rewires one term of one action. [slot] at or past the end appends; a null [trigger] removes.
+     * One edit covers add, change and remove because they are the same operation on a list, and
+     * three edit types would be three chances to get replay ordering subtly different.
+     */
+    data class Wire(val index: Int, val action: Action, val slot: Int, val trigger: Trigger?) : Edit
+
+    /** Retunes a sensor to a different channel. */
+    data class SetChannel(val index: Int, val channel: Channel) : Edit
 }
 
 data class OutofspaceInput(val edits: List<Edit> = emptyList()) : SimInput {
@@ -56,12 +76,19 @@ data class OutofspaceInput(val edits: List<Edit> = emptyList()) : SimInput {
  * One tick, in order:
  *
  *  1. **Edits** — the player's placements land first, so a machine placed this tick works this tick.
- *  2. **Produce** — miners accrue ore into their buffers.
- *  3. **Process** — processors and smelters draw from their input buffer and fill their outputs.
- *  4. **Eject** — anything holding a full packet's worth of output pushes it into the tile it faces.
+ *  2. **Sense** — every sensor reads the tile it faces and raises its channel, giving one [Signals]
+ *     snapshot that the whole tick then agrees on. Reading signals as they are computed would make a
+ *     machine's behaviour depend on where it sits in the grid relative to its sensor.
+ *  3. **Produce** — miners accrue ore into their buffers.
+ *  4. **Process** — processors, smelters and fabricators draw from their inputs and fill outputs.
+ *  5. **Eject** — anything holding a full packet's worth of output pushes it into the tile it faces.
  *     Waste leaves by the side clockwise of facing, so a rightward line drops its waste downward.
- *  5. **Advance belts** — every [Belt.STEP_TICKS] ticks: deliver each belt's head packet, then shift
+ *  6. **Advance belts** — every [Belt.STEP_TICKS] ticks: deliver each belt's head packet, then shift
  *     every belt one slot toward its head.
+ *
+ * Every machine is throttled by its RUN activation: rate × activation, and nothing at all at zero or
+ * below. Activation is a *throttle rather than a switch* so that a weight means something beyond on
+ * and off — half a signal is half a machine.
  *
  * Passes 4 and 5 walk the grid in row-major order, so when two machines compete to feed one tile the
  * lower index wins. Arbitrary, but *fixed* — which is what determinism actually requires.
@@ -85,12 +112,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (edit in input.edits) w.apply(edit)
         }
 
+        val signals = Signals.build { raise ->
+            for (i in w.machines.indices) {
+                val sensor = w.machines[i] as? Sensor ?: continue
+                val target = w.grid.neighbour(i, sensor.facing)
+                if (target >= 0) raise(sensor.channel, fullness(w.machines[target]))
+            }
+        }
+        w.signals = signals
+
         for (i in w.machines.indices) {
-            when (val m = w.machines[i]) {
-                is Miner -> w.machines[i] = w.produce(cfg, m)
-                is Processor -> w.machines[i] = refine(cfg, m)
-                is Smelter -> w.machines[i] = melt(cfg, m)
-                else -> {}
+            val m = w.machines[i] ?: continue
+            val activation = m.wiring.activation(Action.Run, signals)
+            w.machines[i] = when (m) {
+                is Miner -> w.produce(cfg, m, activation)
+                is Processor -> refine(cfg, m, activation)
+                is Smelter -> melt(cfg, m, activation)
+                is Fabricator -> fabricate(cfg, m, activation)
+                else -> m
             }
         }
 
@@ -100,7 +139,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (i in w.machines.indices) w.deliverBeltHead(i)
             for (i in w.machines.indices) {
                 val b = w.machines[i]
-                if (b is Belt) w.machines[i] = b.copy(slots = shiftTowardHead(b.slots))
+                if (b is Belt && b.wiring.activation(Action.Run, signals) > 0) {
+                    w.machines[i] = b.copy(slots = shiftTowardHead(b.slots))
+                }
             }
         }
 
@@ -110,6 +151,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             tick = state.tick + 1,
             minedGrams = w.minedGrams,
             ventedGrams = w.ventedGrams,
+            signals = signals,
         )
     }
 
@@ -118,9 +160,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
     // ── Machine behaviour ─────────────────────────────────────────────────────
 
-    private fun refine(cfg: OutofspaceConfig, m: Processor): Processor {
+    /** Rate scaled by activation: a throttle, not a switch. Zero or negative activation stops it. */
+    private fun throttled(gramsPerSecond: Long, activation: Int): Long =
+        if (activation <= 0) 0L else gramsPerSecond * activation / Signals.FULL
+
+    private fun refine(cfg: OutofspaceConfig, m: Processor, activation: Int): Processor {
         val input = m.input ?: return m
-        val (grams, carry) = Rate.tick(m.gramsPerSecond, cfg.ticksPerSecond, m.carry)
+        val (grams, carry) = Rate.tick(throttled(m.gramsPerSecond, activation), cfg.ticksPerSecond, m.carry)
         val chunkMass = minOf(grams, input.mass)
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
@@ -137,9 +183,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         )
     }
 
-    private fun melt(cfg: OutofspaceConfig, m: Smelter): Smelter {
+    private fun melt(cfg: OutofspaceConfig, m: Smelter, activation: Int): Smelter {
         val input = m.input ?: return m
-        val (grams, carry) = Rate.tick(m.gramsPerSecond, cfg.ticksPerSecond, m.carry)
+        val (grams, carry) = Rate.tick(throttled(m.gramsPerSecond, activation), cfg.ticksPerSecond, m.carry)
         val chunkMass = minOf(grams, input.mass)
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
@@ -157,6 +203,35 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             slag = slag.buffer,
             carry = carry,
         )
+    }
+
+    /**
+     * Combines the fabricator's two input forms into whatever they make, equal masses of each.
+     *
+     * No recipe needs selecting: the crafting tree is binary, so holding two things that make a third
+     * *is* the instruction. Holding two that make nothing is a machine sitting visibly idle, which is
+     * a better error message than a dialog.
+     */
+    private fun fabricate(cfg: OutofspaceConfig, m: Fabricator, activation: Int): Fabricator {
+        val (grams, carry) = Rate.tick(throttled(m.gramsPerSecond, activation), cfg.ticksPerSecond, m.carry)
+        if (m.inputs.size < 2 || grams <= 0L) return m.copy(carry = carry)
+
+        val a = m.inputs[0]
+        val b = m.inputs[1]
+        val outputForm = recipeFor(a.form, b.form) ?: return m.copy(carry = carry)
+        val each = minOf(grams, a.mass, b.mass)
+        if (each <= 0L) return m.copy(carry = carry)
+
+        val chunkA = a.mixture.take(each)
+        val chunkB = b.mixture.take(each)
+        val made = Resource(outputForm, chunkA + chunkB)
+        val output = m.output.merged(made) ?: return m.copy(carry = carry)
+
+        val remaining = listOf(
+            Resource(a.form, a.mixture - chunkA),
+            Resource(b.form, b.mixture - chunkB),
+        ).filterNot { it.isEmpty }
+        return m.copy(inputs = remaining, output = output.buffer, carry = carry)
     }
 
     /**
@@ -217,6 +292,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var minedGrams: Long = state.minedGrams
         var ventedGrams: Long = state.ventedGrams
 
+        /** This tick's signal snapshot, set once the sensing pass has run. */
+        var signals: Signals = Signals.build { }
+
         fun apply(edit: Edit) {
             when (edit) {
                 is Edit.Place -> {
@@ -233,6 +311,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Edit.Remove -> {
                     if (edit.index in machines.indices) machines[edit.index] = null
                 }
+                is Edit.Wire -> {
+                    val m = machines.getOrNull(edit.index) ?: return
+                    val current = m.wiring.triggers(edit.action).toMutableList()
+                    when {
+                        edit.trigger == null -> if (edit.slot in current.indices) current.removeAt(edit.slot)
+                        edit.slot in current.indices -> current[edit.slot] = edit.trigger
+                        else -> current.add(edit.trigger)
+                    }
+                    machines[edit.index] = m.withWiring(m.wiring.with(edit.action, current))
+                }
+                is Edit.SetChannel -> {
+                    val m = machines.getOrNull(edit.index)
+                    if (m is Sensor) machines[edit.index] = m.copy(channel = edit.channel)
+                }
             }
         }
 
@@ -242,8 +334,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * in the miner's buffer unaccounted for, and the world-conservation invariant would be a
          * statement about shipping rather than about mass.
          */
-        fun produce(cfg: OutofspaceConfig, m: Miner): Miner {
-            val (grams, carry) = Rate.tick(m.gramsPerSecond, cfg.ticksPerSecond, m.carry)
+        fun produce(cfg: OutofspaceConfig, m: Miner, activation: Int): Miner {
+            val (grams, carry) = Rate.tick(throttled(m.gramsPerSecond, activation), cfg.ticksPerSecond, m.carry)
             if (m.buffer.mass >= Miner.BUFFER_CAP) return m.copy(carry = carry)  // backed up: stop digging
             if (grams <= 0L) return m.copy(carry = carry)
             val dug = m.composition.scaledTo(grams)
@@ -281,6 +373,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     after.slag?.let(::takePacket)?.let { (packet, rest) ->
                         if (send(index, after.facing.clockwise, packet)) {
                             machines[index] = (machines[index] as Smelter).copy(slag = rest.orNull())
+                        }
+                    }
+                }
+                is Fabricator -> {
+                    m.output?.let(::takePacket)?.let { (packet, rest) ->
+                        if (send(index, m.facing, packet)) {
+                            machines[index] = (machines[index] as Fabricator).copy(output = rest.orNull())
+                        }
+                    }
+                }
+                is Storage -> {
+                    // A storage only lets go while its RUN activation is positive, which is what
+                    // turns it from a bucket into a valve the moment you wire something to it.
+                    if (m.wiring.activation(Action.Run, signals) <= 0) return
+                    m.contents?.let(::takePacket)?.let { (packet, rest) ->
+                        if (send(index, m.facing, packet)) {
+                            machines[index] = (machines[index] as Storage).copy(contents = rest.orNull())
                         }
                     }
                 }
@@ -324,6 +433,21 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 }
                 is Processor -> acceptInto(dest.input, packet)?.let { machines[target] = dest.copy(input = it); true } ?: false
                 is Smelter -> acceptInto(dest.input, packet)?.let { machines[target] = dest.copy(input = it); true } ?: false
+                is Storage -> {
+                    if (packet !is SolidPacket) false
+                    else {
+                        val existing = dest.contents
+                        if (existing != null && existing.form != packet.form) false
+                        else if ((existing?.mass ?: 0L) >= Storage.CAP) false
+                        else {
+                            val merged = if (existing == null) packet.resource
+                            else Resource(existing.form, existing.mixture + packet.contents)
+                            machines[target] = dest.copy(contents = merged)
+                            true
+                        }
+                    }
+                }
+                is Fabricator -> acceptIntoFabricator(target, dest, packet)
                 is Node -> {
                     if (packet !is SolidPacket) false
                     else {
@@ -342,6 +466,26 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
         }
 
+        /**
+         * A fabricator takes up to [Fabricator.MAX_INPUTS] distinct forms and tops up either of them.
+         * A third form is refused rather than swapped in, so a mis-wired line backs up visibly
+         * instead of silently displacing an ingredient.
+         */
+        private fun acceptIntoFabricator(target: Int, dest: Fabricator, packet: Packet): Boolean {
+            if (packet !is SolidPacket) return false
+            val existing = dest.inputs.indexOfFirst { it.form == packet.form }
+            if (existing >= 0) {
+                if (dest.inputs[existing].mass >= Fabricator.INPUT_CAP) return false
+                val merged = dest.inputs.toMutableList()
+                merged[existing] = Resource(packet.form, merged[existing].mixture + packet.contents)
+                machines[target] = dest.copy(inputs = merged)
+                return true
+            }
+            if (dest.inputs.size >= Fabricator.MAX_INPUTS) return false
+            machines[target] = dest.copy(inputs = dest.inputs + packet.resource)
+            return true
+        }
+
         /** The new input buffer if [packet] is acceptable, else null. */
         private fun acceptInto(existing: Resource?, packet: Packet): Resource? {
             if (packet !is SolidPacket) return null
@@ -356,6 +500,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Miner -> Miner(facing, DEFAULT_ORE_BODY)
             MachineKind.Processor -> Processor(facing)
             MachineKind.Smelter -> Smelter(facing)
+            MachineKind.Fabricator -> Fabricator(facing)
+            MachineKind.Storage -> Storage(facing)
+            MachineKind.Sensor -> Sensor(facing)
             MachineKind.Node -> Node()
             MachineKind.Vent -> Vent()
         }

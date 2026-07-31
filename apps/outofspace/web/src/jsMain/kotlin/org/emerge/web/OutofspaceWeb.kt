@@ -5,6 +5,7 @@ import kotlinx.browser.window
 import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
+import org.emerge.demo.outofspace.Tool
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ui.Ui
 import org.w3c.dom.HTMLCanvasElement
@@ -75,7 +76,7 @@ private fun start(canvas: HTMLCanvasElement) {
                 uiConsumed = ui.hitTestDown(x, y)
                 if (!uiConsumed) {
                     val tile = renderer.tileIndexAt(x, y, controller.state)
-                    if (tile >= 0) { controller.place(tile); lastPainted = tile }
+                    if (tile >= 0) { controller.apply(tile); lastPainted = tile }
                 }
             }
             1 -> middleDown = true
@@ -96,7 +97,7 @@ private fun start(canvas: HTMLCanvasElement) {
         when {
             middleDown -> renderer.panByPixels(dx, dy)
             leftDown && uiConsumed -> ui.dragTo(x, y)
-            leftDown -> if (hovered >= 0 && hovered != lastPainted) {
+            leftDown && controller.tool == Tool.Build -> if (hovered >= 0 && hovered != lastPainted) {
                 controller.place(hovered)
                 lastPainted = hovered
             }

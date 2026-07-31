@@ -1,12 +1,20 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.Sensor
+import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.WEIGHT_LADDER
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.Tick
 import org.emerge.sim.core.TickStepper
+
+/** Which mouse-click means what. */
+enum class Tool(val label: String) { Build("BUILD"), Wire("WIRE") }
 
 /**
  * Owns the running world and the boundary between real time and sim time.
@@ -32,12 +40,62 @@ class OutofspaceController(
     var brush: MachineKind = MachineKind.Belt
     var brushFacing: Direction = Direction.Right
 
+    /**
+     * Build or wire. Two tools rather than a modifier key, because wiring is a mode you stay in for
+     * a while and a held key is a poor way to express that — and there is no modifier key on a phone.
+     */
+    var tool: Tool = Tool.Build
+
+    /** The machine the wiring panel is editing, or -1. Cleared whenever it stops being a machine. */
+    var selected: Int = -1
+        private set
+
     val state: VesselState get() = stepper.state
     val tick: Long get() = stepper.state.tick
 
     fun place(index: Int) = pending.add(Edit.Place(index, brush, brushFacing))
+
+    /** Left-click behaviour, which depends on the tool. */
+    fun apply(index: Int) {
+        when (tool) {
+            Tool.Build -> place(index)
+            Tool.Wire -> selected = if (state[index] == null) -1 else index
+        }
+    }
+
+    fun wire(index: Int, action: Action, slot: Int, trigger: Trigger?) =
+        pending.add(Edit.Wire(index, action, slot, trigger))
+
+    fun setChannel(index: Int, channel: Channel) = pending.add(Edit.SetChannel(index, channel))
+
+    /** Cycles a trigger's channel; the constant is included so a term can be pinned on. */
+    fun cycleTriggerChannel(index: Int, action: Action, slot: Int, delta: Int) {
+        val current = state[index]?.wiring?.triggers(action)?.getOrNull(slot) ?: return
+        val all = Channel.ALL
+        val next = all[((all.indexOf(current.channel) + delta) % all.size + all.size) % all.size]
+        wire(index, action, slot, current.copy(channel = next))
+    }
+
+    /** Cycles a trigger's weight through [WEIGHT_LADDER] — a ladder beats a slider on a touchscreen. */
+    fun cycleTriggerWeight(index: Int, action: Action, slot: Int, delta: Int) {
+        val current = state[index]?.wiring?.triggers(action)?.getOrNull(slot) ?: return
+        val at = WEIGHT_LADDER.indexOf(current.weightPermille).let { if (it < 0) 0 else it }
+        val next = WEIGHT_LADDER[((at + delta) % WEIGHT_LADDER.size + WEIGHT_LADDER.size) % WEIGHT_LADDER.size]
+        wire(index, action, slot, current.copy(weightPermille = next))
+    }
+
+    fun cycleSensorChannel(index: Int, delta: Int) {
+        val sensor = state[index] as? Sensor ?: return
+        val all = Channel.EMITTABLE
+        val next = all[((all.indexOf(sensor.channel) + delta) % all.size + all.size) % all.size]
+        setChannel(index, next)
+    }
+
     fun rotate(index: Int) = pending.add(Edit.Rotate(index))
-    fun remove(index: Int) = pending.add(Edit.Remove(index))
+    fun remove(index: Int) {
+        if (index == selected) selected = -1
+        pending.add(Edit.Remove(index))
+    }
 
     fun cycleBrush(delta: Int) {
         val all = MachineKind.ALL
@@ -81,6 +139,7 @@ class OutofspaceController(
 
     /** Replaces the world — what "new game" and "load" will call. */
     fun reset(newState: VesselState = starterVessel(cfg.grid)) {
+        selected = -1
         pending.clear()
         accumulator = 0f
         stepper.reset(newState, Tick(0))

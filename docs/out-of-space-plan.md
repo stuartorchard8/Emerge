@@ -189,11 +189,19 @@ when the line backs up the slots fill from the head and you can count the jam, w
 argument for the packet model. And **structure is deferred** — Phase 2 needs no notion of hull or
 floor, and Phase 4 will define it properly when it has to answer "what is inside the vessel".
 
-**Phase 3 — Machines and the trigger grammar.**
-Smelter, mineral processor, fabricator, storage, pumps. The `action_triggers` evaluator and its
-wiring UI — adapted from Cyto's "a gene is a sentence" editor, which is the same sentence
-(`WHEN <signal> DO <action> AT <weight>`) and the largest single UI saving available. Exit
-criterion: a player-built refinery chain runs unattended and can be re-wired without a config file.
+**Phase 3 — Machines and the trigger grammar. ✅ BUILT**
+Fabricator, storage, sensor; the `Σ(signal × weight)` evaluator; and the wiring UI, built on the
+toolkit's `clauseRow` — the same three-tappable-token sentence as Cyto's gene editor, which is
+exactly the saving that was hoped for. Signals are six colour channels plus a constant `ALWAYS`;
+sensors read the fullness of the tile they face; every machine is wired to `ALWAYS` by default, so
+placing one just works and wiring is something you *add*.
+
+One property worth knowing, discovered by a failing test rather than by design: **activation is a
+throttle, not a switch**, so `ALWAYS − RED` is a *proportional controller*. A miner filling a tank
+slows as the tank fills and approaches full asymptotically instead of stopping dead. That is the
+better behaviour and it is kept — but it means the grammar cannot express a **threshold**. "Stop
+when past 90%" needs a comparison, which is a new kind of term rather than a change to the
+arithmetic. Pipes and pumps are deliberately not here; they belong with the fluid model in Phase 4.
 
 **Phase 4 — The systems layer. (the actual goal)**
 Now the interior is a cell network and everything before was scaffolding. In order, each with its
@@ -218,9 +226,13 @@ before relying on it.
    pump works against gravitational head while a gas compressor works against pressure. That
    difference is the interesting part of fluid machinery and it wants designing alongside the
    atmosphere model in Phase 4, not before — noted here so it does not get quietly forgotten.
-3. **Does the ore body vary across the map?** Every miner currently draws the same composition. Ore
-   that differs by location is what makes *where* you mine a decision and gives the smelter's
-   one-metal-at-a-time stall something to mean. Cheap to add, so it is a question of when.
+3. **Should the grammar get a comparison?** `WHEN RED > 900` would buy digital control — latches,
+   hysteresis, "top up only when nearly empty" — alongside the proportional behaviour it already
+   has. It is the obvious next expressive step, and the obvious risk is turning a small language
+   into a big one.
+4. **Miners are a stand-in** and should not grow depth. Whatever eventually replaces them — imports
+   from outside the vessel, a mining rig on a surface — is a Phase 5 question, not a machine to
+   elaborate now.
 
 *Settled:* the grid is a **fixed generous bound** with the vessel built inside it (much simpler for
 the Phase 4 atmosphere solver, and it still allows expansion); belts have **slots**; solids and

@@ -122,7 +122,7 @@ internal class OutofspaceAndroidView(context: Context) : GLSurfaceView(context) 
                         ui.releaseHold()
                     } else if (!dragged) {
                         val tile = renderer.tileIndexAt(x, y, controller.state)
-                        if (tile >= 0) controller.place(tile)
+                        if (tile >= 0) controller.apply(tile)
                     }
                     uiConsumed = false
                     pinchDist = 0f

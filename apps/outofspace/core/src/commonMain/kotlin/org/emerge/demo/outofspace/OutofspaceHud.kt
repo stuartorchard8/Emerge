@@ -1,16 +1,22 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.Sensor
+import org.emerge.demo.outofspace.world.Signals
+import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.Ui
 
 /**
  * The in-game UI, built with the shared immediate-mode toolkit.
  *
- * Three panels, each answering one question the player actually has: what am I building, what does
- * the vessel own, and is the world balanced. The last one is a development readout and will go, but
- * while the logistics are young a visible `mined = transit + banked + vented` is worth more than
- * anything else on screen.
+ * The wiring panel is the interesting one. It is the same *sentence* as Cyto's gene editor —
+ * `WHEN <channel> AT <weight>` instead of `WHEN <condition> DO <action>` — and it is built on the
+ * same `clauseRow` widget, three tappable tokens in a row. Reusing that shape rather than inventing
+ * a node graph is the largest single saving available here, and it means the mechanic arrives
+ * already legible to anyone who has met the other game.
  */
 class OutofspaceHud {
 
@@ -33,6 +39,12 @@ class OutofspaceHud {
                 keyValue("Vented", grams(s.ventedGrams))
                 val balanced = s.minedGrams == s.inTransitGrams + s.stockpile.totalGrams + s.ventedGrams
                 row(if (balanced) "balanced" else "LEAK", if (balanced) 0x6ED09AFFL else 0xE05A4AFFL)
+                gap()
+                title("SIGNALS")
+                for (channel in Channel.EMITTABLE) {
+                    val value = s.signals[channel]
+                    keyValue(channel.label, "${value / 10}%", channel.color, if (value > 0) channel.color else 0x5A5A5AFFL)
+                }
             }
 
             panel(Anchor.TopRight) {
@@ -54,19 +66,29 @@ class OutofspaceHud {
             }
 
             panel(Anchor.BottomLeft) {
-                title("BUILD  ·  ${controller.brush.label} facing ${controller.brushFacing.name.uppercase()}")
-                for (kind in MachineKind.ALL) {
-                    val selected = kind == controller.brush
-                    button(
-                        if (selected) "> ${kind.label}" else "  ${kind.label}",
-                        if (selected) kindColor(kind) or 0xFFL else 0x232A38FFL,
-                    ) { controller.brush = kind }
-                }
+                title("TOOL  ·  ${controller.tool.label}")
+                controlRowOfTools(controller)
                 gap()
-                row("click place · right-click remove", 0x9A9A9AFFL)
-                row("R rotate brush · middle-drag pan", 0x9A9A9AFFL)
-                row("wheel zoom · space pause · F5 reset", 0x9A9A9AFFL)
+                if (controller.tool == Tool.Build) {
+                    title("BUILD  ·  ${controller.brush.label} facing ${controller.brushFacing.name.uppercase()}")
+                    for (kind in MachineKind.ALL) {
+                        val selected = kind == controller.brush
+                        button(
+                            if (selected) "> ${kind.label}" else "  ${kind.label}",
+                            if (selected) kindColor(kind) or 0xFFL else 0x232A38FFL,
+                        ) { controller.brush = kind }
+                    }
+                    gap()
+                    row("click place · right-click remove", 0x9A9A9AFFL)
+                    row("R rotate brush · middle-drag pan", 0x9A9A9AFFL)
+                } else {
+                    row("click a machine to wire it", 0x9A9A9AFFL)
+                    row("a sensor reads the tile it faces", 0x9A9A9AFFL)
+                }
+                row("W tool · wheel zoom · space pause", 0x9A9A9AFFL)
             }
+
+            wiringPanel(controller)
 
             panel(Anchor.BottomRight) {
                 button(if (controller.paused) "PLAY" else "PAUSE", 0x3A6EA5FFL) { onTogglePause() }
@@ -74,6 +96,80 @@ class OutofspaceHud {
             }
         }
     }
+
+    /**
+     * The wiring editor: one tappable sentence per term of `RUN = Σ(signal × weight)`.
+     *
+     * Tapping the channel cycles it, tapping the weight cycles the ladder, tapping the `×` removes
+     * the term. Cycling rather than opening a dropdown keeps the whole editor to three tap targets
+     * per row, which is what makes it work under a thumb.
+     */
+    private fun org.emerge.render.torus.ui.UiBuilder.wiringPanel(controller: OutofspaceController) {
+        if (controller.tool != Tool.Wire) return
+        val index = controller.selected
+        if (index < 0) return
+        val machine = controller.state[index] ?: return
+        val grid = controller.state.grid
+
+        // Bottom-right rather than centred: a centre anchor centres on the *screen*, which is the
+        // wrong centre when the build palette owns the bottom-left corner — they overlapped.
+        panel(Anchor.BottomRight, rowHeight = 20f) {
+            title("WIRING  ·  ${machine.kind.label} (${grid.xOf(index)}, ${grid.yOf(index)})")
+
+            if (machine is Sensor) {
+                val watched = grid.neighbour(index, machine.facing)
+                val reading = controller.state.signals[machine.channel]
+                clauseRow(
+                    lhs = "EMIT ON",
+                    cmp = machine.channel.label,
+                    rhs = "${reading / 10}%",
+                    onLhs = { controller.cycleSensorChannel(index, 1) },
+                    onCmp = { controller.cycleSensorChannel(index, 1) },
+                    onRhs = { controller.cycleSensorChannel(index, 1) },
+                )
+                val target = if (watched >= 0) controller.state[watched] else null
+                row("watching: ${target?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
+                gap()
+            }
+
+            val action = Action.Run
+            val triggers = machine.wiring.triggers(action)
+            val activation = machine.wiring.activation(action, controller.state.signals)
+            keyValue(action.label, "${activation / 10}%", 0x9A9A9AFFL, if (activation > 0) 0x6ED09AFFL else 0xE05A4AFFL)
+
+            if (triggers.isEmpty()) {
+                row("(never runs — no terms)", 0xE05A4AFFL)
+            } else {
+                for ((slot, trigger) in triggers.withIndex()) {
+                    clauseRow(
+                        lhs = if (slot == 0) "WHEN " + trigger.channel.label else "PLUS " + trigger.channel.label,
+                        cmp = "x",
+                        rhs = signed(trigger.percent),
+                        onLhs = { controller.cycleTriggerChannel(index, action, slot, 1) },
+                        onCmp = { controller.wire(index, action, slot, null) },
+                        onRhs = { controller.cycleTriggerWeight(index, action, slot, 1) },
+                    )
+                }
+            }
+            button("+ ADD TERM", 0x2E5A6BFFL) {
+                controller.wire(index, action, triggers.size, Trigger(Channel.Red, Signals.FULL))
+            }
+            row("tap channel / weight to cycle, x to delete", 0x7A7A7AFFL)
+        }
+    }
+
+    private fun org.emerge.render.torus.ui.PanelBuilder.controlRowOfTools(controller: OutofspaceController) {
+        actionRow(
+            Tool.entries.map { tool ->
+                Triple(
+                    if (tool == controller.tool) "> ${tool.label}" else tool.label,
+                    if (tool == controller.tool) 0x3A6EA5FFL else 0x232A38FFL,
+                ) { controller.tool = tool }
+            },
+        )
+    }
+
+    private fun signed(percent: Int): String = if (percent >= 0) "+$percent%" else "$percent%"
 
     /** Grams are the sim's unit; kilograms are the reading unit past a certain size. */
     private fun grams(g: Long): String =

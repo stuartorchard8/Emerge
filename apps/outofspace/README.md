@@ -8,8 +8,9 @@ playable is one vessel interior with no flight) and what is deliberately deferre
 
 ## State of the app
 
-**Phases 1 and 2 are built.** The game runs: a refinery line digs ore, concentrates it, smelts it,
-banks iron ingot and vents the waste — and you can build more of it with the mouse.
+**Phases 1, 2 and 3 are built.** The game runs: a refinery line digs ore, concentrates it, smelts it,
+banks iron ingot and vents the waste; you can build more of it with the mouse; and you can wire
+machines to sensors so the vessel runs itself.
 
 | File | What it is |
 | --- | --- |
@@ -18,7 +19,8 @@ banks iron ingot and vents the waste — and you can build more of it with the m
 | `chem/Form.kt` | `Form` (what matter has been made into), the smelt table, and the binary crafting tree as data. |
 | `chem/Chemistry.kt` | `smelt`, `process`, `craft`, `merge`, `takeFrom`, `conservationOf`. |
 | `logistics/Packet.kt` | 1 kg packets (`SolidPacket` / `FluidPacket`), `Capacity` (the one home for the eventual volume switch) and `Rate` (integer carry, so 1 kg/s at 60 Hz stays exact). |
-| `world/Grid.kt`, `world/Machine.kt` | The square lattice, `Direction`, and the machines: belt (four slots), miner, processor, smelter, node, vent. |
+| `world/Grid.kt`, `world/Machine.kt` | The square lattice, `Direction`, and the machines: belt (four slots), miner, processor, smelter, fabricator, storage, sensor, node, vent. |
+| `world/Signal.kt` | The trigger grammar: colour `Channel`s, `Signals`, and `Wiring` — `activation = Σ(signal × weight)`. |
 | `world/Vessel.kt` | `VesselState` (the snapshot) and `Stockpile` (the global construction inventory the node feeds). |
 | `world/StarterVessel.kt` | The world the game opens on: one complete line, already running. |
 | `OutofspaceSim.kt` | The reducer — five ordered passes per tick. `OutofspaceController` is the real-time boundary; the renderer and HUD sit beside them. |
@@ -26,12 +28,26 @@ banks iron ingot and vents the waste — and you can build more of it with the m
 Nothing of the app template's placeholder world remains.
 
 ```bash
-./gradlew :apps:outofspace:core:jvmTest    # 67 tests, well under a second
+./gradlew :apps:outofspace:core:jvmTest    # 87 tests, well under a second
 ./gradlew :apps:outofspace:desktop:run     # the game
 ```
 
-Click to place, drag to paint a line of them, right-click to remove. `R` rotates the brush, `1`–`6`
-pick a machine, middle-drag pans, wheel zooms, space pauses.
+Click to place, drag to paint a line of them, right-click to remove. `R` rotates the brush, `1`–`9`
+pick a machine, middle-drag pans, wheel zooms, space pauses. `W` switches between the **build** and
+**wire** tools; in wire mode, click a machine to open its wiring.
+
+## Wiring
+
+`RUN = Σ(signal × weight)`, clamped to ±100%. Sensors read the fullness of the tile they face and
+broadcast it on one of six colour channels; `ALWAYS` is a constant every machine is wired to by
+default, so a machine you place simply works.
+
+**Activation is a throttle, not a switch** — half a signal is half a machine. So `ALWAYS − RED` is a
+proportional controller: a miner filling a tank slows as it fills rather than stopping dead. The
+starter world ships that loop as a live demonstration, on the short line below the refinery.
+
+What the grammar cannot say is a *threshold*: "stop when past 90%" needs a comparison, and there
+isn't one yet.
 
 ## The invariant to keep
 

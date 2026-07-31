@@ -17,6 +17,11 @@ import org.emerge.demo.outofspace.OutofspaceReducer
  *
  * The processor is deliberately half the miner's throughput, so the line backs up and the belts
  * behind it fill — the jam is the point, and it is visible from the first minute.
+ *
+ * A second, shorter line below it demonstrates **wiring**: a storage with nowhere to send its
+ * contents fills up, a sensor watching it broadcasts that fullness on RED, and the miner feeding it
+ * is wired `ALWAYS - RED`, so it digs until the tank is full and then stops. Two machines and one
+ * sensor is the smallest thing that shows what the trigger grammar is for.
  */
 fun starterVessel(grid: Grid): VesselState {
     val machines = arrayOfNulls<Machine>(grid.size)
@@ -41,5 +46,22 @@ fun starterVessel(grid: Grid): VesselState {
     beltRun(x, x + 2, y); x += 3
     put(x, y, Node())
 
+    // ── The wiring demonstration, three rows below ──
+    val wy = y + 3
+    put(4, wy, Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY).withWiring(STOP_WHEN_RED))
+    beltRun(5, 6, wy)
+    put(7, wy, Storage(Direction.Right))          // faces empty floor, so it fills rather than drains
+    put(7, wy + 1, Sensor(Direction.Up, Channel.Red))
+
     return VesselState(grid = grid, machines = machines.toList())
 }
+
+/** `RUN = ALWAYS − RED`: dig at full rate until something raises RED, then stop dead. */
+private val STOP_WHEN_RED = Wiring(
+    mapOf(
+        Action.Run to listOf(
+            Trigger(Channel.Always, Signals.FULL),
+            Trigger(Channel.Red, -Signals.FULL),
+        ),
+    ),
+)

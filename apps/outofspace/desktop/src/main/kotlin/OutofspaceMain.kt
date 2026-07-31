@@ -3,6 +3,7 @@ package org.emerge.desktop
 import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
+import org.emerge.demo.outofspace.Tool
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.render.torus.ui.Ui
 import org.lwjgl.glfw.GLFW.*
@@ -66,7 +67,7 @@ fun main() {
                 uiConsumed = ui.hitTestDown(px, py)
                 if (!uiConsumed) {
                     val tile = renderer.tileIndexAt(px, py, controller.state)
-                    if (tile >= 0) { controller.place(tile); lastPainted = tile }
+                    if (tile >= 0) { controller.apply(tile); lastPainted = tile }
                 }
             } else {
                 leftDown = false
@@ -96,7 +97,9 @@ fun main() {
         when {
             middleDown -> renderer.panByPixels(dx, dy)
             leftDown && uiConsumed -> ui.dragTo(px, py)
-            leftDown -> if (hovered >= 0 && hovered != lastPainted) {
+            // Painting a run of machines is a Build-tool gesture; a wire drag would just thrash
+            // the selection, so dragging does nothing while wiring.
+            leftDown && controller.tool == Tool.Build -> if (hovered >= 0 && hovered != lastPainted) {
                 controller.place(hovered)
                 lastPainted = hovered
             }
@@ -114,12 +117,13 @@ fun main() {
         when (key) {
             GLFW_KEY_SPACE -> controller.paused = !controller.paused
             GLFW_KEY_R -> controller.rotateBrush()
+            GLFW_KEY_W -> controller.tool = if (controller.tool == Tool.Build) Tool.Wire else Tool.Build
             GLFW_KEY_TAB -> controller.cycleBrush(1)
             GLFW_KEY_F5 -> { controller.reset(); renderer.centreOn(controller.state) }
             GLFW_KEY_LEFT_BRACKET -> controller.speed = max(0.25f, controller.speed / 2f)
             GLFW_KEY_RIGHT_BRACKET -> controller.speed = (controller.speed * 2f).coerceAtMost(16f)
             GLFW_KEY_ESCAPE -> glfwSetWindowShouldClose(window, true)
-            in GLFW_KEY_1..GLFW_KEY_6 -> controller.brush = MachineKind.ALL[key - GLFW_KEY_1]
+            in GLFW_KEY_1..GLFW_KEY_9 -> MachineKind.ALL.getOrNull(key - GLFW_KEY_1)?.let { controller.brush = it }
         }
     }
 
