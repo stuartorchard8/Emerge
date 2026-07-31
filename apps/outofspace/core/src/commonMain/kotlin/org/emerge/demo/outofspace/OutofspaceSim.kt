@@ -669,14 +669,21 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * with no cache to invalidate.
          */
         fun advanceRails(ports: Map<Int, List<Port>>) {
-            val sinks = ports.entries
+            // Split by whether the consumer can take anything at all. A full one still pulls, but
+            // only once no accepting one is reachable — so traffic runs *past* a full machine to
+            // reach a working one, and backs up against it when there is nowhere else to be.
+            val inputs = ports.entries
                 .filter { (tile, at) -> rails[tile] != null && at.any { it.kind == PortKind.Input } }
                 .map { it.key }
+            val (accepting, full) = inputs.partition { tile ->
+                ports[tile].orEmpty().any { it.kind == PortKind.Input && hasRoom(it) }
+            }
             val flow = FlowField.derive(
                 grid,
                 { rails[it] != null },
                 { tile, dir -> rails[tile]?.linkedTo(dir) == true },
-                sinks,
+                accepting,
+                full,
             )
 
             val carried = arrayOfNulls<Packet>(rails.size)
@@ -698,6 +705,28 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (now !== segment.held) {
                     rails[i] = if (now == null) segment.copy(held = null) else segment.copy(held = now).reading(now)
                 }
+            }
+        }
+
+        /**
+         * Whether the thing behind an input port could take **anything** at all right now.
+         *
+         * This is what makes a full machine transparent to the traffic rather than a wall across it:
+         * an input with no room does not pull, so the flow field routes past it to the next consumer
+         * that does. Deliberately asked without reference to a particular packet — the field is
+         * derived once for the whole layer, before any packet is looked at, and a port that has room
+         * but refuses *this* form is handled by the other half of the fix (a tile at a sink still
+         * has successors).
+         */
+        private fun hasRoom(port: Port): Boolean {
+            if (port.fromBridge) return bridges[port.owner]?.held == null
+            return when (val m = machines[port.owner]) {
+                is Processor -> (m.input?.mass ?: 0L) < MACHINE_BUFFER_CAP
+                is Smelter -> (m.input?.mass ?: 0L) < MACHINE_BUFFER_CAP
+                is Storage -> (m.contents?.mass ?: 0L) < Storage.CAP
+                // A vent is a hole in the hull; it never fills up.
+                is Vent -> true
+                else -> false
             }
         }
 

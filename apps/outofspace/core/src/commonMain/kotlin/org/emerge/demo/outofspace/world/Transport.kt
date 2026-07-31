@@ -121,6 +121,25 @@ data class Segment(
  * It also makes the useful failure legible: a line that has stopped moving is a line with no
  * consumer on it, and that is a thing the player can go and look at.
  *
+ * ### A consumer that cannot take anything does not pull
+ *
+ * The sinks handed in are the inputs **with room right now**, not every input that exists. That one
+ * qualifier is what lets material run *past* a machine to reach one further along, which is the
+ * behaviour a belt has to have: a full tank beside the line should be something the traffic ignores,
+ * not a wall across it.
+ *
+ * The first version got this wrong in a way worth recording, because it looked principled. A tile at
+ * distance zero was given no successors at all, reasoning that material had arrived and should stop
+ * there — "what stops material walking through a consumer and out the far side". But arriving and
+ * being *taken* are different events, and conflating them meant a packet the consumer refused was
+ * pinned to that tile for ever. A line whose bridge was momentarily full jammed solid two tiles from
+ * a vent that would have swallowed everything.
+ *
+ * So sinks are filtered by room, **and** a tile at a sink still has somewhere onward to go: its
+ * linked neighbours, nearest first, minus any whose own nearest sink is this very tile — those would
+ * only hand the packet straight back. Between the two, a consumer's refusal costs a packet a step of
+ * latency rather than its future.
+ *
  * The important property is not the flow itself but the **order**. "The first input a packet reaches"
  * has to be a fact about the pipe's topology, and if runs were walked in grid order it would instead
  * be a fact about how the array is indexed — which is exactly the arbitrary junction priority this
@@ -151,47 +170,89 @@ class FlowField private constructor(
         private val EMPTY = IntArray(0)
 
         /**
+         * How much further away a consumer with no room counts as being.
+         *
+         * Larger than any path across any grid this game will have, so an accepting consumer
+         * *anywhere* on a run beats a full one next door. It is a tie-break with a very heavy thumb
+         * rather than an exclusion, which is the whole point — see [derive].
+         */
+        const val FULL_PENALTY = 1_000_000
+
+        /**
          * @param isSegment whether a tile carries a segment of the layer being derived
          * @param linked whether the segment at a tile is joined to its neighbour in a direction.
          *   Asked in one direction only; the caller keeps links symmetric.
-         * @param sinks tiles where material leaves the layer — a building or bridge **input** port
-         *   with track under it.
+         * @param accepting tiles where material can leave the layer **right now** — an input port
+         *   with track under it and room behind it.
+         * @param full input ports with track under them and no room. These still pull, but only
+         *   once nothing else will: material queues up behind a blockage rather than abandoning it,
+         *   and that queue is how a jam stays visible.
          */
         fun derive(
             grid: Grid,
             isSegment: (Int) -> Boolean,
             linked: (tile: Int, dir: Direction) -> Boolean,
-            sinks: Collection<Int>,
+            accepting: Collection<Int>,
+            full: Collection<Int> = emptyList(),
         ): FlowField {
             val distance = IntArray(grid.size) { -1 }
+            /** Which sink each tile's shortest path leads to. Only read for tiles *at* a sink. */
+            val nearest = IntArray(grid.size) { -1 }
+            val queue = ArrayDeque<Int>()
 
             // Sorted, so a world with several sinks produces the same field however the caller
             // happened to collect them. `sorted()` rather than `toSortedSet()`: the latter is a
             // JVM-only extension, and this has to compile for JS and Android too.
-            val queue = ArrayDeque<Int>()
-            for (tile in sinks.distinct().sorted()) {
-                if (tile in distance.indices && isSegment(tile) && distance[tile] < 0) {
-                    distance[tile] = 0
-                    queue.addLast(tile)
+            fun seed(tiles: Collection<Int>, from: Int) {
+                for (tile in tiles.distinct().sorted()) {
+                    if (tile in distance.indices && isSegment(tile) && distance[tile] < 0) {
+                        distance[tile] = from
+                        nearest[tile] = tile
+                        queue.addLast(tile)
+                    }
                 }
             }
-            while (queue.isNotEmpty()) {
-                val at = queue.removeFirst()
-                for (dir in Direction.ALL) {
-                    if (!linked(at, dir)) continue
-                    val next = grid.neighbour(at, dir)
-                    if (next < 0 || !isSegment(next) || distance[next] >= 0) continue
-                    distance[next] = distance[at] + 1
-                    queue.addLast(next)
+            fun sweep() {
+                while (queue.isNotEmpty()) {
+                    val at = queue.removeFirst()
+                    for (dir in Direction.ALL) {
+                        if (!linked(at, dir)) continue
+                        val next = grid.neighbour(at, dir)
+                        if (next < 0 || !isSegment(next) || distance[next] >= 0) continue
+                        distance[next] = distance[at] + 1
+                        nearest[next] = nearest[at]
+                        queue.addLast(next)
+                    }
                 }
             }
 
-            // Downhill: a successor is a linked neighbour one step closer to a sink. A tile at
-            // distance 0 is already at one and has none, which is what stops material walking
-            // through a consumer and out the far side.
+            // Two tiers, and the order is the behaviour. Everything an accepting consumer can reach
+            // is measured first, so a full machine that happens to sit on such a run comes out as an
+            // ordinary transit tile with an ordinary downhill successor — material flows *past* it.
+            // Only then do the still-unreached full consumers get seeded, far away, which is what
+            // gives a line with nowhere else to go something to queue against.
+            seed(accepting, 0)
+            sweep()
+            seed(full, FULL_PENALTY)
+            sweep()
+
+            // Downhill: a successor is a linked neighbour one step closer to a sink.
             val successors = Array(grid.size) { EMPTY }
             for (tile in 0 until grid.size) {
-                if (distance[tile] <= 0) continue
+                if (distance[tile] < 0) continue
+                if (distance[tile] == 0) {
+                    // A tile at a sink is not the end of the road. Whatever the consumer there does
+                    // not take carries on to the next one — see the class note. Neighbours whose own
+                    // nearest sink is *this* one are excluded, or material refused here would be sent
+                    // to a tile that would only send it straight back.
+                    val onward = Direction.ALL.mapNotNull { dir ->
+                        if (!linked(tile, dir)) return@mapNotNull null
+                        val next = grid.neighbour(tile, dir)
+                        if (next < 0 || distance[next] < 0 || nearest[next] == tile) null else next
+                    }.sortedWith(compareBy<Int> { distance[it] }.thenBy { it })
+                    if (onward.isNotEmpty()) successors[tile] = onward.toIntArray()
+                    continue
+                }
                 var found = 0
                 val buffer = IntArray(4)
                 for (dir in Direction.ALL) {

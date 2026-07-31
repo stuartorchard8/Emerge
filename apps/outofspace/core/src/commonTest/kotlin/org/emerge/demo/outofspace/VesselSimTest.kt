@@ -100,6 +100,37 @@ class VesselSimTest {
         assertBalanced(s, "jammed line")
     }
 
+    /**
+     * From a save Stu sent: a line that jammed solid two tiles from a vent that would have taken
+     * everything on it.
+     *
+     * The shape is a run with a **branch**. Material goes right along row 2 toward a tank, and the
+     * branch turns up to a vent. Once the tank is full, everything should turn up the branch and go
+     * overboard — the tank stops pulling, so the traffic goes where it can.
+     *
+     * It used not to. The tank's input tile was a consumer, consumers were terminal, and a packet
+     * the full tank refused could not move anywhere at all — least of all back up a branch it had
+     * already passed. The line seized with an open vent in plain sight.
+     */
+    @Test
+    fun `a full tank is something the traffic goes round, not a wall across the line`() {
+        val grid = Grid(12, 8)
+        val machines = arrayOfNulls<Machine>(grid.size)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        machines[grid.index(2, 5)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        machines[grid.index(8, 5)] = Storage(Direction.Right)          // in at (7, 5)
+        machines[grid.index(5, 2)] = Vent()                            // in at its own tile
+        joinRow(grid, rails, 3, 7, 5)
+        joinCol(grid, rails, 5, 2, 5)   // the branch, up from the middle of the run to the vent
+
+        // Long enough to fill the 20 kg tank several times over.
+        val s = run(VesselState(grid, machines.toList(), rails = rails.toList()), 60 * 120)
+
+        assertEquals(Storage.CAP, (s[grid.index(8, 5)] as Storage).contents?.mass, "the tank filled")
+        assertTrue(s.ventedGrams > 0L, "and the rest went up the branch and overboard")
+        assertBalanced(s, "line with a full tank and an open vent")
+    }
+
     @Test
     fun `a jam clears from the front when the blockage is removed`() {
         val grid = Grid(12, 5)

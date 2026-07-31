@@ -55,6 +55,8 @@ drockets-save*
 drockets-prefs*
 *-save.bin
 norns.save
+# Out of Space writes its save beside wherever the game was started, which is inside the repo
+outofspace.save
 *.gene
 # Cyto named-save + genome-library folders (world snapshots + geometry sidecars + saved genomes)
 cyto-saves/

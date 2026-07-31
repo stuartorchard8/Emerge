@@ -108,16 +108,27 @@ class BridgeTest {
         // What the bridge exists to prevent, and it has to be a real failure or the bridge is
         // solving nothing. Drawing the horizontal line *through* (9, 5) makes a four-way junction,
         // and pulling gives that junction a very definite opinion: the vertical tank is nearer, so
-        // it takes everything and the horizontal line's own tank is starved.
+        // it takes the horizontal line's material too and the line's own tank is starved.
         //
-        // Worth noting how the symptom changed. Under pushing, the merge showed up as material
-        // dribbling into both tanks — untidy, but it looked like it was working. Pulling makes it a
-        // clean theft, which is easier to see and much easier to diagnose.
-        val s = run(crossing(), 60 * 30)
-        val downstream = (s[grid.index(9, 9)] as Storage).contents?.mass ?: 0L
-        val across = (s[grid.index(15, 5)] as Storage).contents?.mass ?: 0L
-        assertTrue(downstream > 0L, "the nearer tank is fed by both lines")
-        assertEquals(0L, across, "and the far one gets nothing at all: the lines are merged")
+        // Stated as an ordering rather than a final total, because a full consumer no longer stops
+        // traffic — once the nearer tank is full the queue moves past it and the far one does
+        // eventually fill. "Starved until the thief is full" is the merge; "starved for ever" was an
+        // artefact of consumers being terminal, which was its own bug.
+        var s = crossing()
+        var sawStarvation = false
+        repeat(60 * 30) {
+            s = run(s, 1)
+            val downstream = (s[grid.index(9, 9)] as Storage).contents?.mass ?: 0L
+            val across = (s[grid.index(15, 5)] as Storage).contents?.mass ?: 0L
+            if (downstream > 0L && across == 0L) sawStarvation = true
+            if (across > 0L) {
+                assertEquals(
+                    Storage.CAP, downstream,
+                    "the far tank got something while the nearer one still had room: not merged",
+                )
+            }
+        }
+        assertTrue(sawStarvation, "the nearer tank should have been taking everything for a while")
     }
 
     @Test

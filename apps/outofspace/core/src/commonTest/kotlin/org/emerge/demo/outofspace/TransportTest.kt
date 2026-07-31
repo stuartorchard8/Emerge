@@ -83,6 +83,13 @@ class TransportTest {
         /** The flow field this network has, given where its consumers are. */
         fun toward(vararg sinks: Int): FlowField =
             FlowField.derive(grid, { it in tiles }, ::linked, sinks.toList())
+
+        /**
+         * As [toward], but some of the consumers have no room. They still pull — material queues
+         * against a blockage rather than abandoning it — but only where nothing else will have it.
+         */
+        fun toward(accepting: List<Int>, full: List<Int>): FlowField =
+            FlowField.derive(grid, { it in tiles }, ::linked, accepting, full)
     }
 
     private fun net(): Net = Net()
@@ -259,6 +266,70 @@ class TransportTest {
             }
         }
         assertEquals(listOf(7), taken)
+    }
+
+    // ── A consumer with no room is traffic to drive round, not a wall ─────────
+
+    /**
+     * The bug that made this whole section necessary, in its simplest form.
+     *
+     * A consumer partway along a run has filled up. Everything behind it should carry on to the one
+     * at the end. The first version of pulling could not do this at all: a tile with an input port
+     * was distance zero and distance zero had no successors, so a packet the full machine refused
+     * was pinned to that tile for ever and the rest of the line jammed behind it.
+     */
+    @Test
+    fun `material runs past a consumer that has no room to one that has`() {
+        val n = net().row(2, 8, 3)
+        val fullOne = grid.index(5, 3)
+        val end = grid.index(8, 3)
+        val f = n.toward(accepting = listOf(end), full = listOf(fullOne))
+
+        // The full one is an ordinary transit tile: it has a downhill successor, pointing onward.
+        assertEquals(3, f.distanceAt(fullOne), "measured from the consumer that can actually take it")
+        assertEquals(listOf(grid.index(6, 3)), f.successorsOf(fullOne).toList())
+
+        val h = held(n, grid.index(2, 3) to lump())
+        val taken = mutableListOf<Int>()
+        repeat(12) {
+            step(f, h) { tile, packet ->
+                // The near building refuses everything; the far one takes it.
+                if (tile == end) { taken.add(grid.xOf(tile)); null } else packet
+            }
+        }
+        assertEquals(listOf(8), taken, "it should have got past the full machine")
+    }
+
+    /**
+     * The other half, and the reason a full consumer is *demoted* rather than deleted.
+     *
+     * With nowhere better to be, material still travels toward the blockage and packs in behind it.
+     * Dropping full consumers from the field entirely also fixed the bug above, but it emptied every
+     * jammed line: the belt went bare while the backlog hid inside the machine feeding it. A jam
+     * should be the most visible thing on the deck.
+     */
+    @Test
+    fun `when the only consumer is full, material still queues up against it`() {
+        val n = net().row(2, 8, 3)
+        val end = grid.index(8, 3)
+        val f = n.toward(accepting = emptyList(), full = listOf(end))
+
+        assertTrue(f.isFed(grid.index(2, 3)), "the run still has a direction")
+        assertEquals(listOf(grid.index(7, 3)), f.successorsOf(grid.index(6, 3)).toList())
+
+        val h = held(n, grid.index(2, 3) to lump(), grid.index(3, 3) to lump())
+        repeat(12) { step(f, h) }
+        assertEquals(1_000L, h[end]?.mass, "the leader is against the blockage")
+        assertEquals(1_000L, h[grid.index(7, 3)]?.mass, "and the next one is right behind it")
+    }
+
+    @Test
+    fun `an accepting consumer anywhere beats a full one next door`() {
+        // The penalty has to be heavier than any distance, or a run would prefer the blockage simply
+        // because it was closer — which is the jam this fix exists to clear.
+        val n = net().row(2, 8, 3)
+        val f = n.toward(accepting = listOf(grid.index(8, 3)), full = listOf(grid.index(3, 3)))
+        assertEquals(listOf(grid.index(5, 3)), f.successorsOf(grid.index(4, 3)).toList(), "onward, not back")
     }
 
     /**

@@ -332,6 +332,39 @@ the question it answers next.
 Storage also lost its second input port. Two lines arriving at one tank is a merge, and a merge
 should be something built out of track where the player can see it.
 
+### A full consumer is traffic to drive round, not a wall (2026-08-01)
+
+Found from a save Stu sent — the first thing the save format was used for, and it paid for itself
+immediately. A line jammed solid two tiles from a vent that would have taken everything on it.
+
+The cause was a piece of reasoning that looked principled and was not. Pulling gave every tile a
+distance to the nearest input port, and a tile *at* a port got distance zero and **no successors** —
+justified in the comment as "what stops material walking through a consumer and out the far side".
+But arriving somewhere and being *taken* there are different events. A packet the consumer refused
+was pinned to that tile permanently, and everything behind it queued forever. A belt has to let
+material past a machine that does not want it.
+
+The fix is two rules, and it needed both:
+
+1. **Sinks are filtered by room.** An input with nothing free does not pull, so the field routes
+   traffic past it to the next consumer that will have it.
+2. **A tile at a sink still has successors** — its linked neighbours, nearest first, minus any whose
+   own nearest sink is this very tile (those would hand the packet straight back). This covers the
+   case rule 1 cannot: a machine with room that refuses *this* particular form.
+
+Rule 1 alone was tried first and was wrong in an instructive way: it fixed the reported bug and
+**emptied every jammed line**. With no accepting consumer anywhere, a run has no field at all, so
+nothing moves and the backlog hides inside the machine feeding the belt — while the belt itself goes
+bare. A jam should be the most visible thing on the deck. So a full consumer is **demoted, not
+deleted**: it is seeded into the BFS at `FULL_PENALTY`, heavier than any real path, in a second pass
+after the accepting ones. An accepting consumer anywhere on the run beats a full one next door; with
+nothing better available, material still travels toward the blockage and packs in behind it.
+
+One test changed meaning rather than being retuned. `drawn straight through, the two lines really are
+one network` asserted the starved tank got *nothing*; it now gets everything the nearer tank cannot
+hold. The merge is still real, so the test now asserts the ordering — the far tank receives nothing
+until the near one is at capacity — which is the honest statement of what merging costs.
+
 ### Saving is a text file, and that is the point (2026-08-01)
 
 Built before liquids, ahead of the other suggestions, for one reason: the loop it shortens is the
